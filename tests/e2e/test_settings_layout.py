@@ -3,29 +3,18 @@
 
 Корень настроек, «🔧 Сервис» по состояниям переезда, выход из разделов в
 корень, список сайтов РФ-доступа — в эталоне (adm.set.root, adm.set.svc*,
-adm.set.mig.cancel.yes, adm.set.*, adm.rf.sites); здесь — ветки, которых в
-снимках нет, и проверки, не сводящиеся к одному экрану."""
+adm.set.mig.cancel.yes, adm.set.*, adm.rf.sites), значки списков
+(adm.clients.icons, adm.devices.gw), тихие часы с границами
+(adm.set.notify.quiet); здесь — ветки, которых в снимках нет, и проверки, не
+сводящиеся к одному экрану."""
 import pytest
 
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot import sections
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.roles import MAIN
-from awgbot.core import config
-from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
-
-ADMIN = config.ADMIN_ID
-
-
-def _acb(bot):
-    nav = FakeMessage(chat_id=ADMIN, user_id=ADMIN, bot=bot)
-    return FakeCallback(message=nav, user_id=ADMIN, bot=bot), nav
-
-
-def _amsg(bot, text=""):
-    return FakeMessage(text=text, chat_id=ADMIN, user_id=ADMIN, bot=bot)
 
 
 def test_every_edit_button_points_at_a_known_setting():
@@ -54,36 +43,6 @@ def test_every_edit_button_points_at_a_known_setting():
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"
 
-def test_gateway_device_keeps_its_icon_in_the_button_list():
-    """В текстовых списках шлюз был 🛰, а в кнопках «Мои устройства» — обычным
-    телефоном: две функции иконки разошлись. Перепутать шлюз с телефоном там,
-    где их удаляют и блокируют, дороже всего."""
-    from awgbot.bot import keyboards as kb
-
-    from awgbot.util import timeutil
-
-    class _Traffic:
-        last_handshake = int(timeutil.now().timestamp())
-
-    class _Dev:
-        id, name, block_reason, friend, traffic_limit = 1, "Шлюз", 0, None, 0
-        is_gateway, is_managed, private_key = 1, 1, "priv"
-        address, traffic = "10.8.1.5", _Traffic()
-
-    class _Phone(_Dev):
-        id, name, is_gateway = 2, "iPhone", 0
-        traffic = type("T", (), {"last_handshake": 0})()
-
-    labels = [b.text for row in kb.client_devices([_Dev(), _Phone()]).inline_keyboard
-              for b in row]
-    assert labels[0] == "🛰 Шлюз", labels
-    # у остальных значок — состояние (⛔ ⏳ 🟢 ⚪): не подключалось — офлайн
-    assert labels[1] == "⚪ iPhone", labels
-    # Значок ровно один: у шлюза, который онлайн, кружок к 🛰 не добавляется —
-    # два подряд в каждой строке превращают список в рябь.
-    assert not any("🟢" in l for l in labels), labels
-
-
 # ── значки состояния: где кружок, где галочка ────────────────────────────────
 
 def test_gateway_switches_off_are_ticks_not_circles():
@@ -91,7 +50,8 @@ def test_gateway_switches_off_are_ticks_not_circles():
     автопереключение в «🛰 Шлюзах» — тумблер ☑️, а не 🔴: иначе админ примет
     настройку за упавший шлюз. Включённые тумблеры, списки «кому доступен» и
     «о чём сообщать» — в эталоне (adm.rt.users, adm.set.ncl, adm.gw.peer_yes);
-    выключенного автопереключения в снимках нет."""
+    выключенного автопереключения в снимках нет. Значки списка профилей и
+    «Моих устройств» — снимки adm.clients.icons и adm.devices.gw."""
     from awgbot.bot import keyboards as kb
     from types import SimpleNamespace as NS
     states = [{"gateway": NS(id=i), "device": NS(name=n), "active": i == 1, "preferred": i == 1}
@@ -101,30 +61,6 @@ def test_gateway_switches_off_are_ticks_not_circles():
     assert "☑️ Автопереключение" in rt and "✅ Связь подсетей" in rt, rt
     assert not any(t.startswith(("🟢", "🔴")) for t in rt), rt
 
-
-def test_client_list_circle_means_online_not_subscription():
-    """«Кто сейчас в сети» из списка было не узнать, а состояние подписки и так
-    видно в карточке. ⏳ остаётся за теми, кто ещё не активировал доступ."""
-    from awgbot.bot import keyboards as kb
-    from awgbot.core.enums import ActivationStatus, SubStatus
-
-    class _C:
-        def __init__(self, cid, name, act=ActivationStatus.ACTIVE, status=SubStatus.ACTIVE):
-            self.id, self.name = cid, name
-            self.activation_status, self.status = act, status
-            self.block_reason = 0
-
-    from awgbot.core.blocks import ClientBlock
-    clients = [_C(1, "Онлайн"), _C(2, "Офлайн"),
-               _C(3, "Ждёт", act=ActivationStatus.PENDING),
-               _C(4, "Истёк", status=SubStatus.EXPIRED),
-               _C(5, "Блок"), _C(6, "Пауза")]
-    clients[4].block_reason = int(ClientBlock.ADMIN_SILENT) | int(ClientBlock.PAUSED)
-    clients[5].block_reason = int(ClientBlock.PAUSED)
-    labels = [b.text for row in kb.admin_clients(clients, online_ids={1, 4, 5, 6}).inline_keyboard
-              for b in row]
-    assert labels[:6] == ["🟢 Онлайн", "⚪ Офлайн", "⏳ Ждёт", "🟢 Истёк", "⛔ Блок", "⏸️ Пауза"], \
-        "один значок по приоритету: ⛔ блок → ⏸️ пауза → ⏳ не активирован → 🟢 онлайн → ⚪ нет"
 
 # ── порядок фильтров в роутере настроек ──────────────────────────────────────
 
@@ -163,24 +99,12 @@ def test_specific_settings_handlers_are_registered_before_the_generic_one():
         == "edit_value", "«Добавить адрес» по-прежнему идёт общим вводом"
 
 
-async def test_migration_port_button_opens_the_port_prompt(services, fake_bot):
+def test_migration_port_button_opens_the_port_prompt():
     """«Задать порт» у подготовки переезда: первый хендлер, чьи фильтры
-    пропускают этот колбэк, — именно ввод порта, и введённое дальше
-    проверяется как порт."""
-    from awgbot.bot.callbacks import SetCB
-    from awgbot.bot.handlers import settings as sh
-
+    пропускают этот колбэк, — именно ввод порта (приглашение и отказ на
+    буквы — снимки adm.set.mig_prep.port и adm.set.mig_prep.port.bad)."""
     assert _first_matching_handler(sh.router, SetCB(sec="mig_prep", act="edit", key="port")) \
         == "migration_port_ask"
-
-    # приглашение — снимок adm.set.mig_prep.port; здесь — что ввод ждёт порт
-    cb, _ = _acb(fake_bot)
-    state = FakeState()
-    await sh.migration_port_ask(cb, state, services)
-
-    bad = _amsg(fake_bot, "abc")
-    await sh.migration_port_received(bad, state, services)
-    assert any("1 до 65535" in s[1] for s in bad.sent), "буквы — не порт"
 
 
 def _first_matching_handler(router, cb_data) -> str:
@@ -200,16 +124,3 @@ def _first_matching_handler(router, cb_data) -> str:
         if ok:
             return h.callback.__name__
     return ""
-
-def test_notify_section_with_quiet_hours_on_shows_their_bounds(monkeypatch):
-    """«🔔 Уведомления» с включёнными тихими часами: границы «С»/«До» — парой
-    под тумблером. Выключенные тихие часы и алерты, подменю событий — в
-    эталоне (adm.set.notify, adm.set.notify.off, adm.set.ncl); включённых
-    тихих часов в снимках нет."""
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
-    monkeypatch.setattr(settings, "get_int", lambda k, d=0: d)
-    rows = [[b.text for b in r] for r in sections.notify.keyboard(MAIN).inline_keyboard]
-    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
-                    ["CPU 80%", "RAM 80%", "Диск 80%"], ["☑️ Аварии на e-mail", "👥 События"],
-                    ["⬅️ Назад"]], rows

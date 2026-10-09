@@ -12,7 +12,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.handlers import routing as routing_h
 from awgbot.bot.callbacks import RoutingCB
 from awgbot.core import config
-from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -41,14 +41,14 @@ def _allowed_client(services, make_active_client, tg_id):
 async def test_revoked_permission_blocks_stale_button(
         services, make_active_client, fake_bot):
     """У человека открыт экран со старыми кнопками, а разрешение уже отозвали —
-    действие должно отбиться, а не сработать."""
+    действие должно отбиться, а не сработать (отказ того же обработчика —
+    снимок adm.rf.all.denied)."""
     c = _allowed_client(services, make_active_client, 72)
     services.set_routing_allowed(c.id, False)
     c = services.db.get_client(c.id)
     cb, _ = _cb(fake_bot, 72)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
-    assert cb.answers[0][1] is True
-    assert services.routing_profile_on(c.id) is False
+    assert services.routing_profile_on(c.id) is False, "старая кнопка сработала после отзыва"
 
 
 # ── тумблеры ─────────────────────────────────────────────────────────────────
@@ -87,14 +87,13 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
 async def test_delete_by_stale_index_does_not_remove_wrong_domain(
         services, make_active_client, fake_bot):
     """Индекс из старого экрана не должен удалить не тот адрес: список
-    перечитывается, границы проверяются."""
+    перечитывается, границы проверяются (отказ — снимок adm.rf.del.stale_idx)."""
     c = _allowed_client(services, make_active_client, 78)
     services.routing_add_domains(c.id, "a.com b.com")
     cb, _ = _cb(fake_bot, 78)
     await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=9),
                                    c, services)
-    assert services.routing_domains(c.id) == ["a.com", "b.com"]
-    assert cb.answers[0][1] is True
+    assert services.routing_domains(c.id) == ["a.com", "b.com"], "удалён не тот адрес"
 
 
 async def test_delete_removes_selected_domain(services, make_active_client, fake_bot):
@@ -204,11 +203,12 @@ async def test_admin_toggles_client_master(services, make_active_client, fake_bo
 
 
 async def test_admin_master_refused_without_grant(services, make_active_client, fake_bot):
+    """Профилю без разрешения админ режим не включает (отказ — снимок
+    adm.rf.all.denied)."""
     c = make_active_client(tg_id=97)                      # разрешения нет
     cb, _ = _cb(fake_bot, 1)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services)
-    assert cb.answers[0][1] is True
-    assert services.routing_profile_on(c.id) is False
+    assert services.routing_profile_on(c.id) is False, "режим включён без разрешения"
 
 
 # ── ввод адресов без контекста и после отзыва ────────────────────────────────
@@ -497,10 +497,8 @@ async def test_admin_edits_foreign_list_not_his_own(services, make_active_client
     await routing_h.routing_add_apply(msg, None, services, st)
     assert set(services.routing_domains(other.id)) == {"b.ru", "z.ru"}
     assert services.routing_domains(admin.id) == []
-    # после приёма — «Сайты» чужого профиля, «Назад» — в его раздел
-    sites = [s for s in msg.sent if s[0] == "answer" and s[2] is not None][-1]
-    assert sites[2].inline_keyboard[-1][0].callback_data == RoutingCB(action="panel", ref=other.id).pack()
-    assert "➖ z.ru" in [b.text for row in sites[2].inline_keyboard for b in row]
+    # после приёма — «Сайты» чужого профиля, «Назад» — в его раздел: снимок
+    # adm.rf.sites.add.done
 
     cb, _ = _admin_cb(fake_bot)
     await routing_h.routing_clear_apply(cb, RoutingCB(action="clear_yes", ref=other.id),
@@ -532,7 +530,8 @@ async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
 async def test_device_switches_consistent_for_admin_and_client(
         services, make_active_client, fake_bot, monkeypatch):
     """Экран устройств одного профиля одинаков для клиента и админа, и
-    переключения любого из них видны обоим — состояние одно, в БД."""
+    переключения любого из них видны обоим — состояние одно, в БД (экран
+    админа с выключенным устройством — снимок adm.rf.devs)."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=142)
     d2 = services.add_device(other.id, "Второй")
     services.set_routing_device(d2.device_id, False)      # выключили руками
@@ -547,9 +546,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    assert labels(nav_a) == labels(nav_c)
-    assert any(l.startswith("✅ Чужой") for l in labels(nav_a))
-    assert any(l.startswith("☑️ Второй") for l in labels(nav_a))
+    assert labels(nav_a) == labels(nav_c), "админ и клиент видят разное"
 
     # админ включил второе — клиент видит; клиент выключил первое — админ видит
     cb, _ = _admin_cb(fake_bot)
@@ -558,7 +555,11 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    assert all(l.startswith("✅") for l in labels(nav_c) if "Чужой" in l or "Второй" in l)
+    cb_a, nav_a = _admin_cb(fake_bot)
+    await routing_h.routing_panel(cb_a, RoutingCB(action="devs", ref=other.id),
+                                  None, services, FakeState())
+    assert labels(nav_a) == labels(nav_c), "после правки админа клиент видит другое"
+    assert services.routing_device_counts(other.id) == (2, 2), "правка админа не дошла до профиля"
 
     first = [d for d in services.db.list_devices(other.id) if d.name == "Чужой"][0]
     cb, _ = _cb(fake_bot, other.tg_id)
@@ -567,15 +568,18 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_a, nav_a = _admin_cb(fake_bot)
     await routing_h.routing_panel(cb_a, RoutingCB(action="devs", ref=other.id),
                                   None, services, FakeState())
-    assert any(l.startswith("☑️ Чужой") for l in labels(nav_a))
+    cb_c, nav_c = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
+                                  other, services, FakeState())
+    assert labels(nav_a) == labels(nav_c), "после правки клиента админ видит другое"
     assert services.routing_device_counts(other.id) == (1, 2)
 
 
 async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
         services, make_active_client, fake_bot, monkeypatch):
-    """Разрешение отозвано — правка закрыта и админу в панели профиля (отказ
-    клиенту — эталон cl.rf.panel.hidden); вернули — флаги устройств и список
-    адресов как были."""
+    """Разрешение отозвано — правка закрыта и админу в панели профиля (отказ —
+    снимок adm.rf.del.revoked, клиенту — эталон cl.rf.panel.hidden); вернули —
+    флаги устройств и список адресов как были."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=143)
     before = services.routing_device_counts(other.id)
     services.set_routing_allowed(other.id, False)
@@ -584,8 +588,7 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
     cb, nav = _admin_cb(fake_bot)
     await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0,
                                                  tag=kb.entry_tag("a.ru")), None, services)
-    assert cb.answers and cb.answers[0][1] is True
-    assert services.routing_domains(other.id) == ["a.ru", "b.ru"]
+    assert services.routing_domains(other.id) == ["a.ru", "b.ru"], "правка прошла после отзыва"
 
     services.set_routing_allowed(other.id, True)
     assert services.routing_device_counts(other.id) == before
@@ -690,9 +693,9 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
 
 async def test_device_switch_and_select_all_redraw_the_section_in_place(
         services, make_active_client, fake_bot):
-    """«Выбрать все» следует за отметками: включили вручную последнее — ✅;
-    нажатие на ✅ выключает все. Выключение одного и «выключить все» на
-    экране — эталоны cl.rf.dev и cl.rf.all.off."""
+    """«Выбрать все» следует за отметками: включили вручную последнее — ✅
+    (снимок adm.rf.dev.last); нажатие на ✅ выключает все. Выключение одного
+    и «выключить все» на экране — эталоны cl.rf.dev и cl.rf.all.off."""
     c = _allowed_client(services, make_active_client, 160)
     a = services.add_device(c.id, "iPhone")
     b = services.add_device(c.id, "MacBook")
@@ -703,8 +706,7 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
 
     cb, nav = _cb(fake_bot, 160)
     await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
-    assert last_screen(nav)[1][:3] == ["✅ iPhone", "✅ MacBook", "✅ Выбрать все"], \
-        "включили по одному — «Выбрать все» не стала ✅"
+    assert services.routing_device_counts(c.id) == (2, 2)
 
     cb, nav = _cb(fake_bot, 160)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
@@ -714,7 +716,8 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
 async def test_delete_with_a_stale_tag_does_not_remove_a_neighbour(
         services, make_active_client, fake_bot):
     """Кнопка из старого сообщения: номер тот же, а запись под ним уже другая.
-    Метка записи в колбэке отличает «тот самый адрес» от соседа."""
+    Метка записи в колбэке отличает «тот самый адрес» от соседа (отказ —
+    снимок adm.rf.del.stale_tag)."""
     c = _allowed_client(services, make_active_client, 78)
     services.routing_add_domains(c.id, "a.com b.com")
     for tag in ("", kb.entry_tag("b.com"), "deadbeef"):
@@ -722,7 +725,6 @@ async def test_delete_with_a_stale_tag_does_not_remove_a_neighbour(
         await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0, tag=tag),
                                        c, services)
         assert services.routing_domains(c.id) == ["a.com", "b.com"], tag
-        assert cb.answers[0][1] is True, tag
 
 
 def test_delete_buttons_carry_the_entry_tag(services, make_active_client):

@@ -3833,3 +3833,2176 @@ IMAP и SMTP отвечают, вход выполнен
 Цена: адрес DNS вшит в каждую выданную ссылку, поэтому переход — это переезд профилей: рядом поднимается новый интерфейс, у каждого устройства рождается двойник, люди переносят конфиги когда удобно, старые пиры работают до финала</blockquote>
   [🚚 Переехать сейчас | set:dns:do:now:]
   [⏳ При переезде | set:dns:do:later:] [Не нужно | set:dns:do:never:]
+
+### adm.migration.params — обзор переезда: порт и ядро меняются, отстающие по убыванию остатка
+> press m:migration
+= edit #1
+🚚 <b>Переезд</b> · порт: 43125 → 51821 · подсеть: <code>10.8.1</code> → <code>10.9.1</code> · awg: gen1 → gen2
+
+🔴 <a href="https://t.me/test_bot?start=migration-2">Администратор</a>: 0/2 устройств
+
+🔴 <a href="https://t.me/test_bot?start=migration-3">Ксюша</a>: 1/2 устройств
+
+🟢 Боря: 1/1 устройств
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.migration.empty — обзор переезда: переезд не настроен — переезжать некому
+> press m:migration
+= edit #1
+🚚 <b>Переезд</b>
+
+Переезжать некому
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.link.migration_cl.spread — переезд профиля: коннект старого пира, не подключалось
+> /start migration-2
+- delete #1
++ send #2
+🚚 <b>Переезд:</b> Администратор, 0/2 устройств
+
+🔴 iPhone — последний коннект: 15.09 11:00
+🔴 MacBook — последний коннект: не подключалось
+  [⬅️ Назад | m:migration]
+
+### adm.link.migration_cl.missing — переезд профиля, которого нет — главная
+> /start migration-99
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (3 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+<a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.rt_disabled — главная: РФ-доступ выключен, шлюзов нет
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+📶 Онлайн: 0
+📊 Трафик за 09.26: 0 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.nobody_online — главная: онлайн 0 без ссылки рядом с «Истекают» и «Без профиля»; аптайм в днях и часах
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 12 дн 4 ч
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: 0 · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.update — главная: доступна версия (тег без «v»), переезд — последней строкой
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (3 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+<b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
+<a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.down — главная: сервер не отвечает, шлюз РФ-доступа недоступен
+> /start
++ send #2
+🛠 <b>pi</b> 🔴 не отвечает
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🔴 недоступен, <a href="https://t.me/test_bot?start=gw-1">NASPi</a> не отвечает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.link.dev.missing — устройства нет — главная
+> /start dev-99
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.online.gw — онлайн: шлюз вверху с пометкой
+> press m:online
+= edit #1
+📶 <b>Онлайн:</b> 2 (2 устройства)
+
+🛰 <a href="https://t.me/test_bot?start=dev-7">NASPi</a> [шлюз] · <code>10.8.1.7</code>
+
+🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.expiring.two — истекают двое: ближайший сверху
+> press m:expiring
+= edit #1
+⏳ <b>Истекают:</b> 2
+
+<a href="https://t.me/test_bot?start=cl-3">Ксюша</a> — 1 дн., до 16.09 12:00
+
+<a href="https://t.me/test_bot?start=cl-4">Боря</a> — 2 дн., до 17.09 12:00
+  [⏱ Ксюша | c:extend_exp:3] [⏱ Боря | c:extend_exp:4]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.devices.gw — мои устройства: шлюз со значком 🛰, без кружка
+> press m:devices
+= edit #1
+📱 <b>Мои устройства</b> · 4, без лимита
+  [🛰 NASPi [шлюз] | d:open:7]
+  [⚪ iPhone | d:open:1]
+  [⚪ MacBook | d:open:2]
+  [⚪ Pi4 | d:open:8]
+  [➕ Устройство | as:add] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### adm.clients.icons — значки: истёкший онлайн, пауза, блок поверх паузы
+> press m:clients
+~ (пустой ответ)
+= edit #1
+👥 <b>Профили</b> · 4 · онлайн 2
+  [⛔ Аня | c:open:6]
+  [🟢 Боря | c:open:4]
+  [⏸️ Ксюша | c:open:3]
+  [⏳ Петя | c:open:5]
+  [⬅️ Назад | m:main]
+
+### adm.set.notify.quiet — уведомления: тихие часы включены — границы в тексте и «С»/«До», свой порог CPU
+> press set:notify:open::
+= edit #1
+🔔 <b>Уведомления</b>
+Тихие часы 22:00–06:00 МСК — без звука, кроме аварий
+Алерты хоста: CPU 90% · RAM 80% · диск 80%
+<blockquote expandable>Аварии на e-mail — только когда Telegram недоступен: падение VPN-сервиса, шлюз, перегруз хоста</blockquote>
+  [✅ Тихие часы | set:notify:toggle:quiet_hours.quiet_hours_enabled:]
+  [С 22:00 | set:notify:edit:quiet_hours.quiet_hours_start:] [До 06:00 | set:notify:edit:quiet_hours.quiet_hours_end:]
+  [✅ Алерты хоста | set:notify:toggle:resource_alerts.enabled:]
+  [CPU 90% | set:notify:edit:resource_alerts.thresholds_percent.cpu:] [RAM 80% | set:notify:edit:resource_alerts.thresholds_percent.ram:] [Диск 80% | set:notify:edit:resource_alerts.thresholds_percent.disk:]
+  [☑️ Аварии на e-mail | set:notify:toggle:notifications.email_fallback:] [👥 События | set:ncl:open::]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.mig_prep.port.bad — свой порт: буквы — не порт
+> text «abc»
++ send #3
+⚠️ Порт — число от 1 до 65535, попробуй ещё раз
+
+### adm.traffic.no_rf — трафик: РФ-итог 0 при живом трафике, профиль без трафика выпал
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.outside — трафик: «Вне профилей» под РФ-итогом
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ (все): 2 ГБ (↑1 ↓1)
+└ 🧐 Вне профилей: 1 ГБ — удалённые устройства и первые минуты новых
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 1 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.outside.noise — трафик: «Вне профилей» меньше 0.01 ГБ — шум, строки нет
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ (все): 2.01 ГБ (↑1 ↓1.01)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 2 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.outside.min — трафик: «Вне профилей» ровно 0.01 ГБ
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ (все): 2.01 ГБ (↑1 ↓1.01)
+└ 🧐 Вне профилей: 0.01 ГБ — удалённые устройства и первые минуты новых
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 2 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.outside.deleted — трафик: РФ удалённого устройства — во «Вне профилей»
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ (все): 4 ГБ (↑2 ↓2)
+└ 🧐 Вне профилей: 2 ГБ — удалённые устройства и первые минуты новых
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 2 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.old_back — «Назад» прежнего экрана РФ — дерево трафика
+> press m:traffic_local
+= edit #1
+📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.no_feature — трафик: сервер без функции РФ-доступа
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2 ГБ (↑1 ↓1)
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.link.traffic_dev.idle — трафик профиля: устройства без трафика выпали, итог — только профиля
+> /start traffic-3
+- delete #1
++ send #2
+📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+  [⬅️ Назад | m:traffic]
+
+### adm.link.traffic_dev.gw — трафик профиля со шлюзом: у шлюза нет РФ-ветки
+> /start traffic-2
+- delete #1
++ send #2
+📊 <b>Трафик за 09.26:</b> 2.2 ГБ (↑2 ↓0.2) · профиль Администратор
+└ 🇷🇺 РФ-доступ (все): 2 ГБ (↑1 ↓1)
+
+🛰 NASPi: 6 ГБ (↑3 ↓3)
+
+🟢 iPhone: 2.2 ГБ (↑2 ↓0.2)
+└ 🇷🇺 РФ-доступ: 2 ГБ
+  [⬅️ Назад | m:traffic]
+
+### adm.link.traffic_dev.no_feature — трафик профиля: сервер без функции РФ-доступа
+> /start traffic-2
+- delete #1
++ send #2
+📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1) · профиль Администратор
+
+⚪ phone: 2 ГБ (↑1 ↓1)
+  [⬅️ Назад | m:traffic]
+
+### adm.link.traffic_dev.missing — трафик профиля, которого нет — главная
+> /start traffic-99
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.link.traffic_local_dev.short — прежняя ссылка «traffic_local-<id>» без хвоста
+> /start traffic_local-3
+- delete #1
++ send #2
+📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+  [⬅️ Назад | m:traffic]
+
+### adm.link.traffic_dev.t — ссылка «traffic-<id>-t»
+> /start traffic-3-t
+- delete #1
++ send #2
+📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+  [⬅️ Назад | m:traffic]
+
+### adm.link.traffic.live — /start traffic при живой главной — правка меню, команда убрана
+> /start traffic
+- delete #3
+= edit #2
+📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+  [⬅️ В меню | m:main]
+
+### adm.link.traffic_local.live — прежняя /start traffic_local при живой главной — то же дерево
+> /start traffic_local
+- delete #3
+= edit #2
+📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
+└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+  [⬅️ В меню | m:main]
+
+### adm.cl.admin — карточка своего профиля — главная
+> press c:open:2
+= edit #1
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+~ (пустой ответ)
+
+### adm.traffic.rf_on — строки РФ в списке: функция включена
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 8 ГБ (↑4 ↓4)
+└ 🇷🇺 РФ-доступ (все): 8 ГБ (↑2 ↓6)
+
+👤 <a href="https://t.me/test_bot?start=traffic-3">Аня</a>: 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-5">Вера</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+
+👤 <a href="https://t.me/test_bot?start=traffic-6">Гоша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.traffic.rf_off — строки РФ в списке: функция выключена
+> press m:traffic
+= edit #1
+📊 <b>Трафик за 09.26:</b> 8 ГБ (↑4 ↓4)
+└ 🇷🇺 РФ-доступ (все): 8 ГБ (↑2 ↓6)
+
+👤 <a href="https://t.me/test_bot?start=traffic-3">Аня</a>: 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 2 ГБ (↑1 ↓1)
+
+👤 <a href="https://t.me/test_bot?start=traffic-5">Вера</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+
+👤 <a href="https://t.me/test_bot?start=traffic-6">Гоша</a>: 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.cl.rf.on.3 — строка РФ в карточке профиля: функция включена, РФ разрешён, за месяц 0 ГБ
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2020">Аня</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3 · 🇷🇺 вкл на всех
+📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 0 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [⚪ Телефон | d:open:1]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.on.1 — строка РФ в карточке устройства: функция включена, РФ разрешён, за месяц 0 ГБ
+> press d:open:1
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.2</code> · <a href="https://t.me/test_bot?start=cl-3">Аня</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 0 ГБ
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [🔀 Передать | d:reassign:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.rf.on.4 — строка РФ в карточке профиля: функция включена, РФ не разрешён, за месяц 0 ГБ
+> press c:open:4
+= edit #1
+👤 <a href="tg://user?id=2021">Боря</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3
+📊 2 ГБ (↑1 ↓1)
+  [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
+  [🛑 Блок | bl:cli:menu_block:4::-1]
+  [⚪ Телефон | d:open:2]
+  [➕ Устройство | c:add_device:4] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.on.2 — строка РФ в карточке устройства: функция включена, РФ не разрешён, за месяц 0 ГБ
+> press d:open:2
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.3</code> · <a href="https://t.me/test_bot?start=cl-4">Боря</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+  [🔗 Ссылка | d:gen_link:2] [🔳 QR | d:gen_qr:2] [📄 Файл | d:gen_file:2]
+  [✏️ Имя | d:edit_name:2] [✏️ Лимит | d:edit_traffic:2]
+  [🔀 Передать | d:reassign:2] [🛑 Блок | bl:dev:menu_block:2::-1]
+  [🗑 Удалить | dd:2:ask] [⬅️ Назад | c:open:4]
+~ (пустой ответ)
+
+### adm.cl.rf.on.5 — строка РФ в карточке профиля: функция включена, РФ не разрешён, за месяц 4 ГБ
+> press c:open:5
+= edit #1
+👤 <a href="tg://user?id=2022">Вера</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3
+📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [⏱ Продлить | c:extend:5] [✏️ Изменить | c:edit:5]
+  [🛑 Блок | bl:cli:menu_block:5::-1]
+  [⚪ Телефон | d:open:3]
+  [➕ Устройство | c:add_device:5] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.on.3 — строка РФ в карточке устройства: функция включена, РФ не разрешён, за месяц 4 ГБ
+> press d:open:3
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-5">Вера</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
+  [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
+  [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
+  [🗑 Удалить | dd:3:ask] [⬅️ Назад | c:open:5]
+~ (пустой ответ)
+
+### adm.cl.rf.off.3 — строка РФ в карточке профиля: функция выключена, РФ разрешён, за месяц 0 ГБ
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2020">Аня</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3
+📊 2 ГБ (↑1 ↓1)
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🛑 Блок | bl:cli:menu_block:3::-1]
+  [⚪ Телефон | d:open:1]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.off.1 — строка РФ в карточке устройства: функция выключена, РФ разрешён, за месяц 0 ГБ
+> press d:open:1
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.2</code> · <a href="https://t.me/test_bot?start=cl-3">Аня</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [🔀 Передать | d:reassign:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.rf.off.6 — строка РФ в карточке профиля: функция выключена, РФ разрешён, за месяц 4 ГБ
+> press c:open:6
+= edit #1
+👤 <a href="tg://user?id=2023">Гоша</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3
+📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [⏱ Продлить | c:extend:6] [✏️ Изменить | c:edit:6]
+  [🛑 Блок | bl:cli:menu_block:6::-1]
+  [⚪ Телефон | d:open:4]
+  [➕ Устройство | c:add_device:6] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.off.4 — строка РФ в карточке устройства: функция выключена, РФ разрешён, за месяц 4 ГБ
+> press d:open:4
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-6">Гоша</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 4 ГБ
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | c:open:6]
+~ (пустой ответ)
+
+### adm.cl.rf.selfcheck — строка РФ в карточке профиля: самопроверка обвязки не прошла — «0 ГБ» остаётся
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2020">Аня</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 1 из 3
+📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 0 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🛑 Блок | bl:cli:menu_block:3::-1]
+  [⚪ Телефон | d:open:1]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.dev.rf.selfcheck — строка РФ в карточке устройства: самопроверка обвязки не прошла — «0 ГБ» остаётся
+> press d:open:1
+= edit #1
+⚪ <b>Телефон</b> · <code>10.8.1.2</code> · <a href="https://t.me/test_bot?start=cl-3">Аня</a>
+Не подключался · 📊 2 ГБ (↑1 ↓1)
+└ 🇷🇺 РФ-доступ: 0 ГБ
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [🔀 Передать | d:reassign:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.set.fw.on.empty — SSH-доступ: фильтр включён, адресов нет — выключить можно
+> press set:fw:open::
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+🟢 Снаружи: фильтр включён — только адреса из списка
+
+Адреса для SSH-доступа (фильтр): не заданы
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [✅ Фильтр снаружи | set:fw:do:off:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.fw.confirm — кнопка таймера CLI: «оставить» — таймер снят
+> press set:fw:do:confirm:
+~ (пустой ответ)
++ send #2
+✅ Таймер снят, фильтр остаётся включённым
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+🟢 Снаружи: фильтр включён — только адреса из списка
+
+Адреса для SSH-доступа (фильтр): 2 адреса — редактируемый список ниже
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [➖ 203.0.113.5 | set:fw:do:del:0.8910e4e3]
+  [➖ 198.51.100.0/24 | set:fw:do:del:1.b991faee]
+  [✅ Фильтр снаружи | set:fw:do:off:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.fw.rollback — кнопка таймера CLI: «откатить сейчас» — SSH снова открыт
+> press set:fw:do:rollback:
+~ (пустой ответ)
++ send #2
+↩️ Правила сняты, SSH снова открыт всем адресам. NAT клиентов на месте
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): 2 адреса — редактируемый список ниже
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [➖ 203.0.113.5 | set:fw:do:del:0.8910e4e3]
+  [➖ 198.51.100.0/24 | set:fw:do:del:1.b991faee]
+  [☑️ Фильтр снаружи | set:fw:do:on:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.fw.add.bad — адрес: не адрес — отказ, ввод открыт
+> text «мусор»
++ send #3
+⚠️ «мусор» не адрес, не подсеть и не имя
+
+### adm.set.fw.del.stale — убрать адрес: список изменился — номер вне списка
+> press set:fw:do:del:5
+~! Список изменился — открой раздел заново
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): 2 адреса — редактируемый список ниже
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [➖ 203.0.113.5 | set:fw:do:del:0.8910e4e3]
+  [➖ 198.51.100.0/24 | set:fw:do:del:1.b991faee]
+  [☑️ Фильтр снаружи | set:fw:do:on:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.fw.unknown — неизвестное действие раздела — кнопка устарела
+> press set:fw:do:чего-то-нет:
+~! Кнопка устарела — открой раздел заново
+
+### adm.set.fw.on.fail — включить фильтр: отказ nft — «Не вышло», раздел перерисован
+> press set:fw:do:on:
+~! Не вышло: nft: Operation not permitted
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): 2 адреса — редактируемый список ниже
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [➖ 203.0.113.5 | set:fw:do:del:0.8910e4e3]
+  [➖ 198.51.100.0/24 | set:fw:do:del:1.b991faee]
+  [☑️ Фильтр снаружи | set:fw:do:on:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.fw.owner — SSH-доступ: конфигом sshd владеет другой процесс
+> press set:fw:open::
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22 — <b>контролирует другой процесс</b>
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): не заданы
+
+<b>Предупреждения:</b>
+ℹ️ В <code>/etc/ssh/sshd_config</code> сказано: «<i>managed by ansible</i>»
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.fw.drift — SSH-доступ: sshd слушает не тот порт, что держит фильтр
+> press set:fw:open::
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): не заданы
+
+<b>Предупреждения:</b>
+⚠️ sshd слушает порт 2222, а фильтр держит 22 — вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → 2222 или верни sshd на 22
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.fw.firewalld — SSH-доступ: firewalld активен
+> press set:fw:open::
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): не заданы
+
+<b>Предупреждения:</b>
+⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.fw.port.busy.unknown — порт SSH занят, имя процесса не видно
+> text «8443»
+- delete #1
+- delete #2
++ send #3
+⛔ Смена порта SSH не выполнена: порт 8443 занят
+  [✏️ Другой порт | set:fw:do:port_retry:] [⬅️ Назад | set:fw:do:port_back:]
+
+### adm.set.fw.port.range — порт SSH вне 1–65535 — переспрос
+> text «70000»
++ send #3
+⚠️ Порт — число от 1 до 65535, попробуй ещё раз
+
+### adm.set.fw.port.refused — порт SSH: sshd отказал — первой строкой раздела
+> text «2222»
+- delete #1
+- delete #2
++ send #3
+🔴 Порт не изменён: sshd -t: Bad configuration option
+
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): не заданы
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.fw.port.back — финишер порта: «Назад» — раздел
+> press set:fw:do:port_back:
+= markup #1
+  [Скрыть | hd]
++ send #2
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (1)
+
+Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)
+
+Адреса для SSH-доступа (фильтр): не заданы
+  [🅿️ Порт | set:fw:edit:port:] [➕ Адрес | set:fw:edit:app.firewall.ssh_allow:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.srv.pending — сервер: DNS публичный, при переезде станет свой
+> press set:srv:open::
+= edit #1
+🖥 <b>AWG-SRV</b> · <code>vpn.example.org</code>
+
+ядро 3.1.20260812, gen1
+DNS <code>1.1.1.1</code>, <code>1.0.0.1</code> — публичный; при переезде станет свой · MTU 1376 · keepalive 25-35
+awg0 · порт 43125 · <code>10.8.1.0/24</code>
+<blockquote expandable>Правки уходят только в новые ссылки: старые несут те параметры, с которыми их выдали.
+Порт и подсеть меняются переездом: у устройств появляются двойники, пользователи перевыпускают конфиги, когда им удобно</blockquote>
+  [✏️ Домен | set:srv:edit:app.network.server_host:] [✏️ Имя | set:srv:edit:app.client_config.server_name:]
+  [✏️ DNS | set:srv:edit:app.client_config.dns1:] [✏️ MTU | set:srv:edit:app.client_config.mtu:]
+  [🔒 Свой резолвер | set:dns:open::] [🚚 Порт, подсеть | set:mig_prep:open::]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.dns.blocked — свой резолвер при невозможном переезде — без «Переехать сейчас»
+> press set:dns:open::
+= edit #1
+🔒 <b>Свой DNS-резолвер</b> сейчас публичный
+Свой — <code>10.8.1.1</code>: меньшие задержки, запросы не уходят третьим лицам, защита от обхода через DoH. Цена — переезд профилей при включении<blockquote expandable>Сервер умеет отвечать сам — dnsmasq на собственном адресе в туннеле — и это даёт три вещи:
+• РФ-доступ у всех, а не «через раз»: с публичным адресом Chrome и Edge молча уходят на DoH мимо сервера, набор адресов не наполняется, и у такого человека российские сайты ругаются;
+• DNS-запросы клиентов не уходят третьей стороне открытым текстом — резолвит сервер, наружу идёт уже от него, с кэшем;
+• защита от DoH-обхода и DNS rebinding с первого дня, а не только со шлюзом.
+Цена: адрес DNS вшит в каждую выданную ссылку, поэтому переход — это переезд профилей: рядом поднимается новый интерфейс, у каждого устройства рождается двойник, люди переносят конфиги когда удобно, старые пиры работают до финала</blockquote>
+  [⏳ При переезде | set:dns:do:later:] [Не нужно | set:dns:do:never:]
+  [⬅️ Назад | set:srv:open::]
+~ (пустой ответ)
+
+### adm.set.dns.now.blocked — «Переехать сейчас», когда идёт переезд — объяснение
+> press set:dns:do:now:
+~! Сейчас переезд невозможен: идёт переезд
+= edit #1
+🖥 <b>Сервер 1</b> · адрес сервера не задан
+
+ядро v3.1.20260906, gen1
+DNS <code>1.1.1.1</code>, <code>1.0.0.1</code> — публичный · MTU 1376 · keepalive 25-35
+awg0 · порт 43125 · <code>10.8.1.0/24</code>
+🚚 Сменить порт или подсеть сейчас нельзя: идёт переезд
+<blockquote expandable>Правки уходят только в новые ссылки: старые несут те параметры, с которыми их выдали.
+Порт и подсеть меняются переездом: у устройств появляются двойники, пользователи перевыпускают конфиги, когда им удобно</blockquote>
+  [✏️ Домен | set:srv:edit:app.network.server_host:] [✏️ Имя | set:srv:edit:app.client_config.server_name:]
+  [✏️ DNS | set:srv:edit:app.client_config.dns1:] [✏️ MTU | set:srv:edit:app.client_config.mtu:]
+  [🔒 Свой резолвер | set:dns:open::]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.mig_prep.go — подготовка переезда: интерфейс поднят, перезапуск по кнопке
+> press set:mig_prep:do:go:443
+~ Поднимаю интерфейс…
+= edit #1
+🚚 Поднимаю второй интерфейс: ключи, порт, обфускация, автозагрузка. Это несколько секунд
++ send #2
+✅ Второй интерфейс поднят: awg1, <code>10.9.1.0/24</code>, порт 443 · после перезапуска бота: 🔧 Сервис → 🚚 Начать переезд
+  [🔁 Перезапустить сейчас | set:svc:do:bot!:]
+  [⬅️ Позже | m:main]
+
+### adm.set.mig_prep.go.fail — подготовка переезда: отказ — ничего не тронуто
+> press set:mig_prep:do:go:
+~ Поднимаю интерфейс…
+= edit #1
+🚚 Поднимаю второй интерфейс: ключи, порт, обфускация, автозагрузка. Это несколько секунд
++ send #2
+⚠️ Второй интерфейс не поднят.
+
+<pre>порт 443 занят</pre>
+
+Ничего наполовину не осталось: конфиг бота не тронут, старый интерфейс работает как работал.
+
+### adm.set.mon.edit — частота опроса: приглашение с текущим и границами
+> press set:mon:edit:app.scheduler.monitor_minutes:
+= edit #1
+✏️ <b>Частота опроса</b> · сейчас 3 мин · 1–1440
+  [✖️ Отмена | x:set_mon:0]
+~ (пустой ответ)
+
+### adm.set.mon.edit.bad — частота опроса: 0 — переспрос
+> text «0»
++ send #3
+⚠️ Нужно целое число 1–1440 мин
+
+### adm.set.mon.quiet — мониторинг: простой AWG — по правилам тихих часов
+> press set:mon:open::
+= edit #1
+🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 5 плохих замеров · простой AWG дольше 5 мин — по правилам тихих часов
+  [⏱ Опрос: 3 мин | set:mon:edit:app.scheduler.monitor_minutes:] [🔢 Замеров: 5 | set:mon:edit:app.monitoring.alert_streak:]
+  [⏳ Простой: 5 мин | set:mon:edit:app.monitoring.service_failure_alert_minutes:] [☑️ Звук 24/7 | set:mon:toggle:app.monitoring.service_failure_alert_loud:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.fw.add.many — адрес: приглашение — пять текущих и «и ещё 2»
+> press set:fw:edit:app.firewall.ssh_allow:
+= edit #1
+➕ <b>Адреса для SSH-доступа</b> · сейчас <code>203.0.113.1</code>, <code>203.0.113.2</code>, <code>203.0.113.3</code>, <code>203.0.113.4</code>, <code>203.0.113.5</code> и ещё 2
+IP, подсеть или имя DynDNS; можно несколько
+  [✖️ Отмена | x:set_fw:0]
+~ (пустой ответ)
+
+### adm.set.email.unchecked — e-mail: вход ещё не проверялся, аварийный выход выключен
+> press set:email:open::
+= edit #1
+✉️ <b>E-mail</b> ⚪ ещё не проверялось
+<code>box@icloud.com</code> · IMAP <code>imap.mail.me.com:993</code> · SMTP <code>smtp.mail.me.com:587</code>
+🆘 Аварийный выход из паузы выключен
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [☑️ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.set.email.bad_host — мастер почты: негодный порт в «сервер:порт» — переспрос
+> text «imap.corp.example:0»
++ send #5
+⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>
+
+### adm.set.email.bare_host — мастер почты: голое имя сервера — шаг порта
+> text «imap.corp.example»
++ send #5
+Порт IMAP (SSL/TLS), обычно 993:
+  [✖️ Отмена | x:set_email:0]
+
+### adm.set.email.check.fail — проверка соединения: отказ в шапке раздела
+> press set:email:do:check:
+~ Проверяю…
+= edit #1
+✉️ <b>E-mail</b> 🔴 IMAP: &lt;auth&gt; отказ
+<code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
+🆘 Аварийный выход из паузы: код на <code>admin@example.org</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 1 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 8 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.email.test.fail — тестовое письмо: отказ первой строкой раздела
+> press set:email:do:test:
+~ Отправляю…
+= edit #1
+🔴 SMTP 535 &lt;bad&gt;
+
+✉️ <b>E-mail</b> 🟢 <i>10 мин назад</i>
+<code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
+🆘 Аварийный выход из паузы: код на <code>admin@example.org</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 1 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 8 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.email.cycle.poll — опрос ящика циклом: 1 → 5 мин
+> press set:email:cycle:email.poll_interval_sec:
+~ Опрос: 5 мин
+= edit #1
+✉️ <b>E-mail</b> 🟢 <i>10 мин назад</i>
+<code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
+🆘 Аварийный выход из паузы: код на <code>admin@example.org</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 5 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 8 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.email.cycle.code — длина кода циклом: 8 → 12
+> press set:email:cycle:email.resume_code_len:
+~ Код: 12 символов
+= edit #1
+✉️ <b>E-mail</b> 🟢 <i>10 мин назад</i>
+<code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
+🆘 Аварийный выход из паузы: код на <code>admin@example.org</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 1 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 12 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.backup.when.bad — день и час: день за 28 — переспрос
+> text «31 12»
++ send #3
+⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>
+
+### adm.set.upd.failed — обновления: проверка не удалась
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 ⚪ проверка не удалась
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.blocked — обновления: новая есть, но сейчас недоступна — строка, а не кнопка
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
+⛔ Обновление до v1.3.0 сейчас недоступно: идёт переезд на поколение 2
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.huge — обновления: список изменений обрезан со ссылкой на релиз
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
+<blockquote expandable>- пункт номер 0 с подробным текстом
+- пункт номер 1 с подробным текстом
+- пункт номер 2 с подробным текстом
+- пункт номер 3 с подробным текстом
+- пункт номер 4 с подробным текстом
+- пункт номер 5 с подробным текстом
+- пункт номер 6 с подробным текстом
+- пункт номер 7 с подробным текстом
+- пункт номер 8 с подробным текстом
+- пункт номер 9 с подробным текстом
+- пункт номер 10 с подробным текстом
+- пункт номер 11 с подробным текстом
+- пункт номер 12 с подробным текстом
+- пункт номер 13 с подробным текстом
+- пункт номер 14 с подробным текстом
+- пункт номер 15 с подробным текстом
+- пункт номер 16 с подробным текстом
+- пункт номер 17 с подробным текстом
+- пункт номер 18 с подробным текстом
+- пункт номер 19 с подробным текстом
+- пункт номер 20 с подробным текстом
+- пункт номер 21 с подробным текстом
+- пункт номер 22 с подробным текстом
+- пункт номер 23 с подробным текстом
+- пункт номер 24 с подробным текстом
+- пункт номер 25 с подробным текстом
+- пункт номер 26 с подробным текстом
+- пункт номер 27 с подробным текстом
+- пункт номер 28 с подробным текстом
+- пункт номер 29 с подробным текстом
+- пункт номер 30 с подробным текстом
+- пункт номер 31 с подробным текстом
+- пункт номер 32 с подробным текстом
+- пункт номер 33 с подробным текстом
+- пункт номер 34 с подробным текстом
+- пункт номер 35 с подробным текстом
+- пункт номер 36 с подробным текстом
+- пункт номер 37 с подробным текстом
+- пункт номер 38 с подробным текстом
+- пункт номер 39 с подробным текстом
+- пункт номер 40 с подробным текстом
+- пункт номер 41 с подробным текстом
+- пункт номер 42 с подробным текстом
+- пункт номер 43 с подробным текстом
+- пункт номер 44 с подробным текстом
+- пункт номер 45 с подробным текстом
+- пункт номер 46 с подробным текстом
+- пункт номер 47 с подробным текстом
+- пункт номер 48 с подробным текстом
+- пункт номер 49 с подробным текстом
+- пункт номер 50 с подробным текстом
+- пункт номер 51 с подробным текстом
+- пункт номер 52 с подробным текстом
+- пункт номер 53 с подробным текстом
+- пункт номер 54 с подробным текстом
+- пункт номер 55 с подробным текстом
+- пункт номер 56 с подробным текстом
+- пункт номер 57 с подробным текстом
+- пункт номер 58 с подробным текстом
+- пункт номер 59 с подробным текстом
+- пункт номер 60 с подробным текстом
+- пункт номер 61 с подробным текстом
+- пункт номер 62 с подробным текстом
+- пункт номер 63 с подробным текстом
+- пункт номер 64 с подробным текстом
+- пункт номер 65 с подробным текстом
+- пункт номер 66 с подробным текстом
+- пункт номер 67 с подробным текстом
+- пункт номер 68 с подробным текстом
+- пункт номер 69 с подробным текстом
+- пункт номер 70 с подробным текстом
+- пункт номер 71 с подробным текстом
+- пункт номер 72 с подробным текстом
+- пункт номер 73 с подробным текстом
+- пункт номер 74 с подробным текстом
+- пункт номер 75 с подробным текстом
+- пункт номер 76 с подробным текстом
+- пункт номер 77 с подробным текстом
+- пункт номер 78 с подробным текстом
+- пункт номер 79 с подробным текстом
+- пункт номер 80 с подробным текстом
+- пункт номер 81 с подробным текстом
+- пункт номер 82 с подробным текстом
+- пункт номер 83 с подробным текстом
+- пункт номер 84 с подробным текстом
+- пункт номер 85 с подробным текстом
+- пункт номер 86 с подробным текстом
+- пункт номер 87 с подробным текстом
+- пункт номер 88 с подробным текстом
+- пункт номер 89 с подробным текстом
+- пункт номер 90 с подробным текстом
+- пункт номер 91 с подробным текстом
+- пункт номер 92 с подробным текстом
+- пункт номер 93 с подробным текстом
+- пункт номер 94 с подробным текстом
+- пункт номер 95 с подробным текстом
+- пункт номер 96 с подробным текстом
+- пункт номер 97 с подробным текстом
+- пункт номер 98 с подробным текстом
+- пункт номер 99 с подробным текстом
+- пункт номер 100 с подробным текстом
+- пункт номер 101 с подробным текстом
+- пункт номер 102 с подробным текстом
+- пункт номер 103 с подробным текстом
+- пункт номер 104 с подробным текстом
+…
+<a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">Весь список изменений — на GitHub</a></blockquote>
+  [⬆️ Обновить до v1.3.0 | upd:install]
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.svc.awg.fail — AWG не перезапущен — первой строкой раздела
+> press set:svc:do:awg!:
+~ Перезапускаю AWG…
+= edit #1
+🔴 AWG не перезапущен: docker: &lt;no such container&gt;
+
+🔧 <b>Сервис</b>
+Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
+  [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.cl.traffic_limit — карточка: трафик против лимита профиля
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.traffic_blocked — карточка: ручной блок и исчерпанный трафик — разными строками
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+⛔ Заблокирован: администратором
+🟡 исчерпан лимит трафика за месяц
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.traffic_out — карточка: трафик исчерпан, ручного блока нет
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+🟡 исчерпан лимит трафика за месяц
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.zero_limited — карточка: ноль трафика при лимите
+> press c:open:6
+= edit #1
+👤 <a href="tg://user?id=2031">Новенькая</a> ⚪ офлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 0 из 3
+📊 0 из 100 ГБ
+  [⏱ Продлить | c:extend:6] [✏️ Изменить | c:edit:6]
+  [🛑 Блок | bl:cli:menu_block:6::-1]
+  [➕ Устройство | c:add_device:6] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.expired.status — карточка: истёкшая, доступ приостановлен
+> press c:open:4
+= edit #1
+👤 <a href="tg://user?id=2002">Боря</a> ⚪ офлайн
+
+🟡 доступ приостановлен
+💳 🔴 истекла 14.09 · месяц, с 15.08
+⏸️ Пауза: 2 из 24 дн.
+📱 1 из 1
+📊 0.3 ГБ (↑0.25 ↓0.05)
+  [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
+  [🛑 Блок | bl:cli:menu_block:4::-1]
+  [⚪ Планшет | d:open:5]
+  [➕ Устройство | c:add_device:4] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.many.paused — карточка: пауза и РФ — устройства всё равно свёрнуты
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+🟡 доступ приостановлен
+💳 ⏸️ на паузе до 22.09
+⏸️ Пауза: 21 из 56 дн.
+📱 9 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [▶️ Снять паузу | c:resume_pause:3]
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [📱 Устройства: 9 | c:devices:3]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.devices.unlimited — устройства профиля без лимита — просто число
+> press c:devices:3
+= edit #1
+📱 <b>Устройства профиля Ксюша</b> · 9
+  [⛔ Телефон | d:open:3]
+  [⛔ Ноутбук | d:open:4]
+  [⛔ Планшет | d:open:7]
+  [⛔ Часы | d:open:8]
+  [⛔ ТВ | d:open:9]
+  [⛔ Приставка | d:open:10]
+  [⛔ Рабочий | d:open:11]
+  [⛔ Ноут 2 | d:open:12]
+  [⛔ Колонка | d:open:13]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.migration — карточка во время переезда — строка последней
+> press c:open:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+🚚 Переезд: 1 из 2 живых устройств
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:9]
+  [⚪ Ноутбук | d:open:10]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.cl.edit.forever — «✏️ Изменить» бессрочного без лимита устройств
+> press c:edit:6
+= edit #1
+✏️ <b>Вечный</b> — изменить
+Бессрочная · ∞ устройств · ∞ ГБ в месяц
+  [✏️ Имя | c:edit_name:6] [✏️ Период | c:edit_period:6]
+  [✏️ Лимит устр-в | c:edit_limit:6] [✏️ Трафик | c:edit_traffic:6]
+  [🗑 Удалить профиль | c:delete:6]
+  [⬅️ Назад | c:open:6]
+~ (пустой ответ)
+
+### adm.cl.name.empty — имя профиля: пустое — переспрос
+> text «  »
++ send #3
+⚠️ Имя пустое — пришли ещё раз
+
+### adm.cl.name.cancel — имя профиля: «✖️ Отмена» — «✏️ Изменить»
+> press x:edit:3
+~ (пустой ответ)
+= edit #1
+✏️ <b>Ксюша</b> — изменить
+Период 15.09.26 → 15.09.27 · 3 устройства · ∞ ГБ в месяц
+  [✏️ Имя | c:edit_name:3] [✏️ Период | c:edit_period:3]
+  [✏️ Лимит устр-в | c:edit_limit:3] [✏️ Трафик | c:edit_traffic:3]
+  [🗑 Удалить профиль | c:delete:3]
+  [⬅️ Назад | c:open:3]
+
+### adm.cl.period.bad — период: не дата — переспрос
+> text «вчера»
++ send #3
+⚠️ Не разобрал дату. Формат: ДД.ММ.ГГГГ ЧЧ:ММ, время можно опустить
+
+### adm.new.devs.bad — новый профиль: число устройств словом — переспрос
+> text «семь»
++ send #5
+⚠️ Нужно целое число, 0 — без лимита
+
+### adm.new.stale — срок нового профиля без диалога — главная
+> press p:month:create:0:1
+~! Диалог устарел — открой создание профиля заново
+- markup off #1
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.link.cl.admin — ссылка на карточку своего профиля — главная
+> /start cl-2
+- delete #1
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.dev.limit.profile — карточка устройства: лимит профиля
+> press d:open:4
+= edit #1
+⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Не подключался · 📊 0.6 из 100 ГБ (↑0.5 ↓0.1), лимит профиля
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.dev.limit.own — карточка устройства: свой лимит важнее профильного
+> press d:open:4
+= edit #1
+⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Не подключался · 📊 0.6 из 50 ГБ (↑0.5 ↓0.1)
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.dev.limit.zero — карточка устройства: ноль при своём лимите
+> press d:open:7
+= edit #1
+⚪ <b>Часы</b> · <code>10.8.1.7</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Не подключался · 📊 0 из 50 ГБ
+  [🔗 Ссылка | d:gen_link:7] [🔳 QR | d:gen_qr:7] [📄 Файл | d:gen_file:7]
+  [✏️ Имя | d:edit_name:7] [✏️ Лимит | d:edit_traffic:7]
+  [🔀 Передать | d:reassign:7] [🛑 Блок | bl:dev:menu_block:7::-1]
+  [🗑 Удалить | dd:7:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.dev.reassign.owned — перенос устройства профиля: чьё оно
+> press d:reassign:4
+= edit #1
+🔀 <b>Перенос устройства «Ноутбук»</b> (<a href="https://t.me/test_bot?start=cl-3">Ксюша</a>) — в какой профиль?
+  [Администратор | ra:4:2:go]
+  [Боря | ra:4:4:go]
+  [Петя | ra:4:5:go]
+  [⬅️ Назад | d:open:4]
+~ (пустой ответ)
+
+### adm.dev.reassign.owned.go — перенос между профилями: оба ссылками
+> press ra:4:5:go
++ send #1 → чат tg 2001
+Устройство «Ноутбук» удалено из твоего профиля администратором.
+Теперь у тебя 1 из 3 устройств
+  [Скрыть | hd]
+~ Перенесено
+= edit #1
+✅ устройство «Ноутбук» перенесено: <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> → <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+
+⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+Не подключался · 📊 0.6 ГБ (↑0.5 ↓0.1)
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | c:open:5]
+
+### adm.dev.block.silent — тихий блок устройства — всплывашка с «(тихо)»
+> press bl:dev:block:3:silent:-1
+= edit #1
+⛔ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+
+⛔ Заблокировано: администратором (тихо)
+  [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
+  [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
+  [🔀 Передать | d:reassign:3] [✅ Разблок | bl:dev:menu_unblock:3::-1]
+  [🗑 Удалить | dd:3:ask] [⬅️ Назад | c:open:3]
+~ 🛑 Устройство «Телефон» (Ксюша) заблокировано (тихо)
+
+### adm.main.menu — «⬅️ В меню» — главная поверх экрана
+> press m:main
+~ (пустой ответ)
+= edit #1
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.cl.delete.one — удалить профиль с одним устройством?
+> press c:delete:4
+= edit #1
+🗑 Удалить профиль Боря?
+Вместе с 1 устройством — его ссылка перестанет работать
+  [⬅️ Отмена | c:edit:4] [🗑 Удалить | c:delete_yes:4 | красная]
+~ (пустой ответ)
+
+### adm.main.rf_zero — главная: функция включена — «0 ГБ» РФ под нулевым трафиком, без ссылок
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: 0
+📊 Трафик за 09.26: 0 ГБ
+└ 🇷🇺 РФ-доступ: 0 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.rf_kept — главная: функция выключена, а РФ за месяц был — строка остаётся
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.rf_broken — главная: учёт РФ сломан — пометка без текста ошибки ядра
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.rf_only — главная: трафика нет, а РФ есть — ссылок нет
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: 0
+📊 Трафик за 09.26: 0 ГБ
+└ 🇷🇺 РФ-доступ: 1 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.no_username — главная: имя бота неизвестно — подписи без ссылок
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: 2 (2 устройства) · ⏳ Истекают: 1 · 📦 Без профиля: 1
+📊 Трафик за 09.26: 6.7 ГБ
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.cl.limit.preset.low — лимит устройств пресетом ниже занятого — сразу, с ⚠️
+> press ps:cli_devs:3:1
++ send #1 → чат tg 2001
+Лимит устройств изменён: 3 → 1
+  [Скрыть | hd]
+= edit #1
+✅ Устройств: 3 → 1 · ⚠️ сейчас 2 из 1 — новые не добавить, пока не станет меньше
+
+✏️ <b>Ксюша</b> — изменить
+Период 15.09.26 → 15.09.27 · 1 устройство · ∞ ГБ в месяц
+  [✏️ Имя | c:edit_name:3] [✏️ Период | c:edit_period:3]
+  [✏️ Лимит устр-в | c:edit_limit:3] [✏️ Трафик | c:edit_traffic:3]
+  [🗑 Удалить профиль | c:delete:3]
+  [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.limit.other.bad — лимит устройств своим числом: не число — переспрос
+> text «много»
++ send #3
+⚠️ Нужно целое число, 0 — без лимита
+
+### adm.self.gen_qr — кнопка старого образца «QR»: выбор своего устройства
+> press as:gen_qr
+= edit #1
+🔳 <b>QR</b> — для какого устройства?
+  [🟢 iPhone | d:gen_qr:1]
+  [⚪ MacBook | d:gen_qr:2]
+  [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### adm.self.gen_file — кнопка старого образца «Файл»: выбор своего устройства
+> press as:gen_file
+= edit #1
+📄 <b>Файл</b> — для какого устройства?
+  [🟢 iPhone | d:gen_file:1]
+  [⚪ MacBook | d:gen_file:2]
+  [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### adm.self.gen_link.gw_only — кнопка старого образца «Ссылка»: только шлюз — выдавать нечего
+> press as:gen_link
+~! Сначала добавь устройство
+
+### adm.self.gen_link.gw — кнопка старого образца «Ссылка»: шлюза в выборе нет
+> press as:gen_link
+= edit #1
+🔗 <b>Ссылка</b> — для какого устройства?
+  [🟢 iPhone | d:gen_link:1]
+  [⚪ MacBook | d:gen_link:2]
+  [⚪ Pi4 | d:gen_link:8]
+  [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### adm.cl.gen_for.admin — старая «Выдать конфиг» у профиля админа — главная
+> press c:gen_for:2
+= edit #1
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+~ (пустой ответ)
+
+### adm.self.add.full — своё устройство при занятом лимите — сколько удалить
+> press as:add
+~! Достигнут лимит устройств: чтобы добавить новое, удали 1
+
+### adm.cl.add_device.race — устройство профилю: слот заняли, пока вводилось имя
+> text «Планшет»
+- delete #1
+- delete #2
++ send #3
+⚠️ Достигнут лимит устройств: чтобы добавить новое, удали 1
+
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 3 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [⚪ Часы | d:open:7]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+
+### adm.dev.friend_pending — карточка устройства с приглашением другу — без перевыдачи
+> press d:open:4
+= edit #1
+⏳ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Не подключался · 📊 0.6 ГБ (↑0.5 ↓0.1)
+
+⏳ приглашение другу ждёт активации
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.dev.connect_menu.unmanaged — старая кнопка «Данные для подключения» у пира без ключа
+> press d:connect_menu:6
+= edit #1
+⚪ <b>app</b> · <code>10.8.1.70</code> · без профиля
+Не подключался · 📊 0 ГБ
+
+✳️ Добавлено не ботом — ссылки нет
+  [✏️ Имя | d:edit_name:6] [✏️ Лимит | d:edit_traffic:6]
+  [🔀 Передать | d:reassign:6] [🛑 Блок | bl:dev:menu_block:6::-1]
+  [🗑 Удалить | dd:6:ask] [⬅️ Назад | m:unassigned]
+~ (пустой ответ)
+
+### adm.bc.ext.marks — с продлением: пометки ∞ и 🟡 у адресатов
+> press bc:ext:0
+= edit #1
+📢 <b>Объявление с продлением</b> · отмечено 0
+Получат только владельцы профилей с подпиской
+∞ — бессрочная (не продлится), 🟡 — истекла (продлится от текущего времени)
+  [✅ С продлением подписки | bc:ext:0]
+  [☑️ Выбрать все | bc:all:0]
+  [☑️ Боря 🟡 14.09 | bc:tgl:4]
+  [☑️ Вечный ∞ | bc:tgl:6]
+  [☑️ Ксюша | bc:tgl:3]
+  [⬅️ Отмена | bc:cancel:0] [➡️ Далее | bc:next:0]
+~ (пустой ответ)
+
+### adm.new.name.empty — новый профиль: пустое имя — переспрос
+> text «   »
++ send #3
+⚠️ Имя пустое — пришли ещё раз
+
+### adm.cl.traffic.other — лимит трафика: «✏️ Другое» — приглашение
+> press ps:cli_traffic:3:-1
+= edit #1
+✏️ Число, 0 — без лимита
+  [✖️ Отмена | x:edit:3]
+~ (пустой ответ)
+
+### adm.cl.traffic.other.done — лимит трафика своим числом — итог в «✏️ Изменить»
+> text «70»
+- delete #1
+- delete #2
++ send #3
+✅ Трафик: 50 ГБ → 70 ГБ
+
+✏️ <b>Ксюша</b> — изменить
+Период 15.09.26 → 15.09.27 · 3 устройства · 70 ГБ в месяц
+  [✏️ Имя | c:edit_name:3] [✏️ Период | c:edit_period:3]
+  [✏️ Лимит устр-в | c:edit_limit:3] [✏️ Трафик | c:edit_traffic:3]
+  [🗑 Удалить профиль | c:delete:3]
+  [⬅️ Назад | c:open:3]
+
+### adm.cl.gen_for — старая «Выдать конфиг» профиля — карточка с устройствами
+> press c:gen_for:3
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.gen.link.client — ссылка устройства профиля
+> press d:gen_link:3
+- delete #1
++ send #2
+<code>vpn://RFVNTVktQ09ORklH</code>
+
+☝️ Ссылка для Телефон — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.dev.connect_menu — старая кнопка «Данные для подключения» — карточка с рядом выдачи
+> press d:connect_menu:3
+= edit #1
+🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
+  [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
+  [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
+  [🗑 Удалить | dd:3:ask] [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.extend.keep_on — продление: тумблер остатка включён обратно
+> press p:keep_tgl:extend:3:1
+= edit #1
+⏱ <b>Продление:</b> <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+Сейчас до 15.09.27 · осталось 365 дн.
+  [День | p:day:extend:3:1] [Неделя | p:week:extend:3:1]
+  [Месяц | p:month:extend:3:1] [Год | p:year:extend:3:1]
+  [∞ | p:never:extend:3:0]
+  [✅ Сохранить остаток | p:keep_tgl:extend:3:0]
+  [⬅️ Отмена | c:open:3]
+~ (пустой ответ)
+
+### adm.cl.extend.forever — продление бессрочной — без тумблера остатка
+> press c:extend:6
+= edit #1
+⏱ <b>Продление:</b> <a href="https://t.me/test_bot?start=cl-6">Вечный</a>
+Сейчас: бессрочная
+  [День | p:day:extend:6:1] [Неделя | p:week:extend:6:1]
+  [Месяц | p:month:extend:6:1] [Год | p:year:extend:6:1]
+  [∞ | p:never:extend:6:0]
+  [⬅️ Отмена | c:open:6]
+~ (пустой ответ)
+
+### adm.cl.extend.never — продление «∞» — подписка бессрочная
+> press p:never:extend:3:1
++ send #1 → чат tg 2001
+Подписка теперь бессрочная 🎉
+  [Скрыть | hd]
+~ Продлено
+= edit #1
+✅ <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>: подписка теперь бессрочная
++ send #2
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 бессрочная
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+
+### adm.cl.extend.grace_week — продление при долге отсрочки в неделю — «Недели» нет
+> press c:extend:4
+= edit #1
+⏱ <b>Продление:</b> <a href="https://t.me/test_bot?start=cl-4">Боря</a>
+Сейчас до 17.09 12:00 · осталось 2 дн.
+⚠️ Брал отсрочку на 7 дн. — вычтется
+  [Месяц | p:month:extend:4:1] [Год | p:year:extend:4:1]
+  [∞ | p:never:extend:4:0]
+  [✅ Сохранить остаток | p:keep_tgl:extend:4:0]
+  [⬅️ Отмена | c:open:4]
+~ (пустой ответ)
+
+### adm.cl.extend_exp.more — продлено из «Истекают» — в списке остался другой
+> press p:month:extend:3:1
++ send #1 → чат tg 2001
+✅ Подписка продлена до 16.10.
+⏸️ Дни паузы не добавлены: достигнуто максимальное количество для ежемесячной подписки (24)
+  [Скрыть | hd]
+~ Продлено
+= edit #1
+✅ <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>: подписка продлена на месяц,
+→ 16.10 · дни паузы не начислены, доступно 28
++ send #2
+⏳ <b>Истекают:</b> 1
+
+<a href="https://t.me/test_bot?start=cl-4">Боря</a> — 2 дн., до 17.09 12:00
+  [⏱ Боря | c:extend_exp:4]
+  [⬅️ В меню | m:main]
+
+### adm.cl.block.pause_no — блок профиля: уведомить? (без паузы)
+> press bl:cli:pause_no:3::-1
+= edit #1
+Уведомить владельца профиля?
+  [🔔 Да | bl:cli:block:3:notified:-1] [🔕 Нет | bl:cli:block:3:silent:-1]
+  [⬅️ Отмена | bl:cli:cancel:3::-1]
+~ (пустой ответ)
+
+### adm.cl.block.silent — профиль заблокирован тихо, без паузы
+> press bl:cli:block:3:silent:-1
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+⛔ Заблокирован: администратором (тихо)
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
+  [⛔ Телефон | d:open:3]
+  [⛔ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ 🛑 Профиль Ксюша заблокирован (тихо)
+
+### adm.cl.block.cancel — блок профиля: «⬅️ Отмена» — карточка
+> press bl:cli:cancel:3::-1
+= edit #1
+👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
+
+💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
+⏸️ Пауза: 28 из 56 дн.
+📱 2 из 3 · 🇷🇺 вкл на всех
+📊 4.2 ГБ (↑3.5 ↓0.7)
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
+  [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
+  [🟢 Телефон | d:open:3]
+  [⚪ Ноутбук | d:open:4]
+  [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
+
+### adm.set.email.setup.icloud — мастер почты: iCloud — пароль приложения
+> text «box@icloud.com»
++ send #3
+Провайдер распознан: IMAP <code>imap.mail.me.com:993</code>, SMTP <code>smtp.mail.me.com:587</code>
+
+Пароль ящика — сообщение с ним удалю сразу после приёма; вход по IMAP и SMTP проверю до сохранения
+⚠️ нужен app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords); показывается один раз
+  [✖️ Отмена | x:set_email:0]
+
+### adm.set.email.port.bad — мастер почты: порт IMAP вне диапазона — переспрос
+> text «99999»
++ send #7
+⚠️ Нужен номер порта от 1 до 65535
+
+### adm.set.backup.now.email — копия сейчас — письмом на ящик
+> press set:backup:do:now:
+~ Готовлю резервную копию…
++ send #2
+📨 Бэкап отправлен на <code>admin@example.org</code>
+  [Скрыть | hd]
+= edit #1
+💾 <b>Бэкапы</b> ✅ вкл · 🔐 фраза задана
+Каждое 1-е число в 12:00 → на e-mail
+Восстановить — пришли боту файл бэкапа (.tgz.enc)
+  [✅ Автобэкапы | set:backup:toggle:app.scheduler.backup_enabled:] [🔐 Шифрование | set:backup:do:enc:]
+  [📨 Куда: E-mail | set:backup:cycle:app.scheduler.backup_channel:] [✏️ 1-е, 12:00 | set:backup:edit:backup_when:]
+  [💾 Сделать сейчас | set:backup:do:now:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.backup.enc_set.short — фраза короче нужного — переспрос
+> text «abc»
+- delete #2
++ send #3
+⚠️ Фраза короче 8 символов. Пришли другую
+
+### adm.bc.partial — отмечены не все — «Выбрать все» остаётся ☑️
+> press bc:tgl:3
+= edit #1
+📢 <b>Объявление</b> · отмечено 1
+Получат владельцы и те, с кем они делятся устройствами
+  [☑️ С продлением подписки | bc:ext:0]
+  [☑️ Выбрать все | bc:all:0]
+  [☑️ Боря | bc:tgl:4]
+  [✅ Ксюша | bc:tgl:3]
+  [☑️ Петя | bc:tgl:5]
+  [⬅️ Отмена | bc:cancel:0] [➡️ Далее | bc:next:0]
+~ (пустой ответ)
+
+### adm.bc.by_hand — все отмечены по одному — «✅ Выбрать все»
+> press bc:tgl:5
+= edit #1
+📢 <b>Объявление</b> · отмечено 3
+Получат владельцы и те, с кем они делятся устройствами
+  [☑️ С продлением подписки | bc:ext:0]
+  [✅ Выбрать все | bc:all:0]
+  [✅ Боря | bc:tgl:4]
+  [✅ Ксюша | bc:tgl:3]
+  [✅ Петя | bc:tgl:5]
+  [⬅️ Отмена | bc:cancel:0] [➡️ Далее | bc:next:0]
+~ (пустой ответ)
+
+### adm.bc.next.none — «Далее» без адресатов — всплывашка
+> press bc:next:0
+~! Никого не отметил — выбери хотя бы один профиль
+
+### adm.bc.blank — пустое сообщение вместо объявления — переспрос с кнопкой
+> text «   »
++ send #3
+Так не пойдёт: жду текст объявления или картинку. Пришли что-нибудь из этого или нажми «Отмена».
+  [⬅️ Отмена | bc:cancel:0]
+
+### adm.bc.preview.one — превью одному профилю — адресат по имени
+> text «В субботу с 02:00 до 03:00 — работы на сервере»
++ send #3
+👆 <b>Так увидят получатели</b> · 1 адресат: профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+
+В субботу с 02:00 до 03:00 — работы на сервере
+  [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
+
+### adm.bc.send.one — разослано одному профилю — отчёт
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
+= edit #3
+В субботу с 02:00 до 03:00 — работы на сервере
++ send #4
+✅ Доставлено: профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> — 1 адресат
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.bc.send.holders — разослано профилю и тем, с кем он делится устройствами
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
++ send #1 → чат tg 2050
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
+= edit #3
+В субботу с 02:00 до 03:00 — работы на сервере
++ send #4
+✅ Доставлено: профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> и те, с кем он делится устройствами — 2 адресата
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.bc.send.undelivered — разослано всем, держателям тоже; одному не доставлено
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
++ send #1 → чат tg 2050
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
+= edit #3
+В субботу с 02:00 до 03:00 — работы на сервере
++ send #4
+✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> и те, с кем они делятся устройствами — 2 адресата
+⚠️ не доставлено 1 — бот заблокирован или аккаунт удалён
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.bc.next.unlimited — с продлением отмечены одни бессрочные — продлевать некого
+> press bc:next:0
+~! Все отмеченные — с бессрочной подпиской, продлевать некого. Для них — объявление без продления
+
+### adm.bc.next.ext.mixed — с продлением: дни, бессрочный — «без продления»
+> press bc:next:0
+= edit #1
+📢 <b>Профили для продления подписки:</b> <a href="https://t.me/test_bot?start=cl-6">Вечный</a> (∞, без продления), <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+На сколько дней продлеваем?
+  [1 дн. | ps:bc_days:0:1] [3 дн. | ps:bc_days:0:3] [7 дн. | ps:bc_days:0:7]
+  [✏️ Другое | ps:bc_days:0:-1] [✖️ Отмена | bc:cancel:0]
+  [⬅️ Назад | bc:targets:0]
+~ (пустой ответ)
+
+### adm.bc.days.one — с продлением одному профилю: приглашение к тексту
+> press ps:bc_days:0:7
+= edit #1
+📢 <b>Текст для профиля:</b> <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · продление на 7 дней
+Форматирование Telegram сохранится; можно вложить до 10 изображений.
+<blockquote expandable>без картинок — до 4011 символов, с картинками — до 939</blockquote>
+  [⬅️ Отмена | bc:cancel:0]
+~ (пустой ответ)
+
+### adm.bc.days.bad — свои дни продления вне границ — переспрос
+> text «400»
++ send #3
+⚠️ Нужно целое число от 1 до 365
+
+### adm.bc.days.typed — свои дни продления — приглашение к тексту с кнопкой
+> text «10»
+- delete #1
+- delete #2
++ send #3
+📢 <b>Текст для профиля:</b> <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · продление на 10 дней
+Форматирование Telegram сохранится; можно вложить до 10 изображений.
+<blockquote expandable>без картинок — до 4011 символов, с картинками — до 939</blockquote>
+  [⬅️ Отмена | bc:cancel:0]
+
+### adm.bc.preview.ext.one — превью с продлением одному профилю на свои дни
+> text «Спасибо за терпение»
++ send #5
+👆 <b>Так увидят получатели</b> · 1 адресат · продление на <b>10 дней</b>:
+• <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>: 15.09.27 → 25.09.27
+
+<b>Подписка продлена на 10 дней 🙂
+15.09.27 → 25.09.27</b>
+
+Спасибо за терпение
+  [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
+
+### adm.bc.send.ext.marks — разослано с продлением: истёкшему — с текущей даты, бессрочному — без
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+<b>Подписка продлена на 7 дней 🙂
+15.09.27 → 22.09.27</b>
+
+Спасибо за терпение
+  [Скрыть | hd]
++ send #1 → чат tg 2002
+<b>К твоей подписке добавлено 7 дней с текущей даты 🙂
+Теперь срок подписки: до 22.09</b>
+
+Спасибо за терпение
+  [Скрыть | hd]
++ send #1 → чат tg 2030
+Спасибо за терпение
+  [Скрыть | hd]
+= edit #3
+<b>К твоей подписке добавлено 7 дней с текущей даты 🙂
+Теперь срок подписки: до 22.09</b>
+
+Спасибо за терпение
++ send #4
+✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-6">Вечный</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> — 3 адресата · продлено на 7 дней (<a href="https://t.me/test_bot?start=cl-6">Вечный</a> — без продления)
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.rf.all.denied — «все» у профиля без разрешения — отказ
+> press rt:all:4:-1:
+~! РФ-доступ этому профилю не разрешён
+
+### adm.rf.del.stale_idx — убрать сайт: номер за концом списка — отказ
+> press rt:del:3:9:689f23ef
+~! Список изменился — открой раздел заново
+= edit #1
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:3:0:e753a0ae]
+  [➖ kinopoisk.ru | rt:del:3:1:689f23ef]
+  [➖ ozon.ru | rt:del:3:2:b22c3d8d]
+  [➕ Сайт | rt:add:3:-1:] [🗑 Очистить | rt:clear:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:]
+
+### adm.rf.del.stale_tag — убрать сайт: метка не та — отказ, сосед цел
+> press rt:del:3:1:deadbeef
+~! Список изменился — открой раздел заново
+= edit #1
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:3:0:e753a0ae]
+  [➖ kinopoisk.ru | rt:del:3:1:689f23ef]
+  [➖ ozon.ru | rt:del:3:2:b22c3d8d]
+  [➕ Сайт | rt:add:3:-1:] [🗑 Очистить | rt:clear:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:]
+
+### adm.rf.del.revoked — убрать сайт после отзыва разрешения — отказ
+> press rt:del:3:1:689f23ef
+~! РФ-доступ этому профилю не разрешён
+
+### adm.rf.sites.add.done — добавить сайт из «Сайтов» профиля — снова «Сайты», «Назад» в его раздел
+> text «z.ru»
+- delete #1
+- delete #2
++ send #3
+✅ Добавлено: <code>z.ru</code> · применится в теч. минуты, не сработало — переподключись
+
+📋 <b>Свои сайты</b> · 4
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:3:0:e753a0ae]
+  [➖ kinopoisk.ru | rt:del:3:1:689f23ef]
+  [➖ ozon.ru | rt:del:3:2:b22c3d8d]
+  [➖ z.ru | rt:del:3:3:3c99495b]
+  [➕ Сайт | rt:add:3:-1:] [🗑 Очистить | rt:clear:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:]
+
+### adm.rf.devs — старое действие «устройства» — раздел профиля, одно устройство выключено
+> press rt:devs:3:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2
+  [✅ Телефон | rt:dev:3:-1:]
+  [☑️ Ноутбук | rt:dev:4:-1:]
+  [☑️ Выбрать все | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+  [⬅️ Назад | c:open:3]
+~ (пустой ответ)
+
+### adm.rf.dev.last — включили вручную последнее — «✅ Выбрать все»
+> press rt:dev:4:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон | rt:dev:3:-1:]
+  [✅ Ноутбук | rt:dev:4:-1:]
+  [✅ Выбрать все | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+  [⬅️ Назад | c:open:3]
+~ включено

@@ -1,7 +1,8 @@
 """E2E: admin-хендлеры ручной блокировки/разблокировки (callback-и BlockCB).
 
-Экраны веток с уведомлением и разблокировки — в эталоне tests/screens/admin.txt;
-здесь — биты блокировки в БД, пауза, уведомления владельцу и тихие ветки.
+Экраны веток (с паузой и без, тихие и с уведомлением, отмена, разблокировка) —
+в эталоне tests/screens/admin.txt; здесь — биты блокировки в БД, пауза и
+уведомления владельцу.
 
 Проверяем маршрутизацию бита по kind (silent/notified), каскад на устройства,
 проброс уведомлений через бота и ветку menu_unblock: одна причина → снимаем
@@ -38,6 +39,8 @@ async def test_block_device_notified(services, fake_bot, make_active_client):
 
 
 async def test_block_device_silent_no_owner_notice(services, fake_bot, make_active_client):
+    """Тихий блок — владельцу ничего (всплывашка с «(тихо)» — снимок
+    adm.dev.block.silent)."""
     client = make_active_client(tg_id=7101)
     dc = services.add_device(client.id, "d")
     cb, nav = _admin_cb(fake_bot)
@@ -45,8 +48,7 @@ async def test_block_device_silent_no_owner_notice(services, fake_bot, make_acti
         cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind="silent"), services)
     dev = services.db.get_device(dc.device_id)
     assert int(dev.block_reason) & int(DeviceBlock.ADMIN_SILENT)
-    assert not any(r[0] == "send_message" and r[1] == 7101 for r in fake_bot.records)  # тихо
-    assert "тихо" in cb.answers[-1][0]
+    assert not any(r[0] == "send_message" and r[1] == 7101 for r in fake_bot.records), "тихий блок уведомил"
 
 
 # ── блок клиента ─────────────────────────────────────────────────────────────
@@ -104,24 +106,15 @@ async def test_unblock_do_removes_specific_bit(services, fake_bot, make_active_c
 
 # ── блокировка профиля: пауза до снятия, без выбора срока ───────────────────
 
-def _labels(nav):
-    shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown, "экран не отрисован"
-    return shown[-1][1], [b.text for row in shown[-1][2].inline_keyboard for b in row]
-
-
 async def _pick(services, bot, client_id, pause: str):
-    """«🛑 Блок» профиля → «⏸️ Да» / «▶️ Нет» → экран «Уведомить владельца?»:
-    возвращает кнопки второго шага. Шаг «▶️ Нет» в эталоне не снят — его
-    экран проверяется здесь."""
+    """«🛑 Блок» профиля → «⏸️ Да» / «▶️ Нет» → экран «Уведомить владельца?»
+    (снимки adm.cl.block.pause_yes, adm.cl.block.pause_no): возвращает
+    колбэки кнопок второго шага — «🔔 Да», «🔕 Нет», «⬅️ Отмена»."""
     cb, nav = _admin_cb(bot)
     await admin_h.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client_id), services)
     step = admin_h.admin_block_pause_yes if pause == "yes" else admin_h.admin_block_pause_no
     cb2, nav2 = _admin_cb(bot)
     await step(cb2, BlockCB(target="cli", action=f"pause_{pause}", ref=client_id))
-    text2, labels2 = _labels(nav2)
-    assert text2 == "Уведомить владельца профиля?", text2
-    assert labels2 == ["🔔 Да", "🔕 Нет", "⬅️ Отмена"], labels2
     markup = [s for s in nav2.sent if s[0] == "edit_text"][-1][2]
     return [b.callback_data for row in markup.inline_keyboard for b in row]
 
@@ -152,7 +145,8 @@ async def test_block_profile_with_pause_pauses_until_unblocked(services, fake_bo
 
 
 async def test_block_profile_without_pause_and_silently(services, fake_bot, make_active_client):
-    """«▶️ Нет» → «🔕 Нет»: блок без паузы и без уведомления владельцу."""
+    """«▶️ Нет» → «🔕 Нет»: блок без паузы и без уведомления владельцу
+    (карточка и всплывашка «(тихо)» — снимок adm.cl.block.silent)."""
     client = make_active_client(tg_id=7111, period_kind="year")
     _, notify_no, cancel = await _pick(services, fake_bot, client.id, "no")
     cb, _ = _admin_cb(fake_bot)
@@ -160,15 +154,14 @@ async def test_block_profile_without_pause_and_silently(services, fake_bot, make
     fresh = services.db.get_client(client.id)
     assert int(fresh.block_reason) & int(ClientBlock.ADMIN_SILENT)
     assert not fresh.is_paused, "пауза без просьбы"
-    assert not any(r[0] == "send_message" and r[1] == 7111 for r in fake_bot.records)
-    assert cb.answers[-1][0] == f"🛑 Профиль {client.name} заблокирован (тихо)"
+    assert not any(r[0] == "send_message" and r[1] == 7111 for r in fake_bot.records), "тихий блок уведомил"
     assert BlockCB.unpack(cancel).action == "cancel"
 
 
 async def test_block_profile_cancel_changes_nothing(services, fake_bot, make_active_client):
+    """Отмена ничего не блокирует (возврат в карточку — снимок adm.cl.block.cancel)."""
     client = make_active_client(tg_id=7112)
     _, _, cancel = await _pick(services, fake_bot, client.id, "yes")
     cb, nav = _admin_cb(fake_bot)
     await admin_h.admin_block_cancel(cb, BlockCB.unpack(cancel), services)
-    assert int(services.db.get_client(client.id).block_reason) == 0
-    assert _labels(nav)[0].startswith("👤 "), "отмена не вернула в карточку"
+    assert int(services.db.get_client(client.id).block_reason) == 0, "отмена заблокировала профиль"

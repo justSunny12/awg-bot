@@ -158,6 +158,189 @@
   [🔀 VPN-транзит | gw:lan:]
   [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
 
+### gw.panel.own_failed — свои списки не применились — хвост со ссылкой на здоровье
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🔀 VPN-транзит 🟢 · 123 456 пакетов с роутера
+📋 Списки: 1 234 домена, 56 подсетей · свои: 2 в туннель, 1 напрямую · ⚠️ не применились (🩺 Здоровье)
+🗂 SMB: свои — 1, извне — 2
+🩺 Здоровье ⚪ не проверено: SMB подсетей других шлюзов
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔀 VPN-транзит | gw:lan:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.lan.empty — своих доменов нет — без хвоста «свои»; лента SMB пришла пустой — «не найдены»
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🔀 VPN-транзит 🟢 · 123 456 пакетов с роутера
+📋 Списки: 1 234 домена, 56 подсетей
+🗂 SMB: не найдены
+🩺 Здоровье ⚪ не проверено: SMB подсетей других шлюзов
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔀 VPN-транзит | gw:lan:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.smb_peers — SMB только от соседей (одно имя с разметкой) — счёт без нулевой части, имён на панели нет
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🔀 VPN-транзит 🟢 · 123 456 пакетов с роутера
+📋 Списки: 1 234 домена, 56 подсетей · свои: 2 в туннель, 1 напрямую
+🗂 SMB: извне — 5
+🩺 Здоровье ⚪ не проверено: SMB подсетей других шлюзов
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔀 VPN-транзит | gw:lan:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.smb_off — связь подсетей не действует — строки 🗂 нет
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🔀 VPN-транзит 🟢 · 123 456 пакетов с роутера
+📋 Списки: 1 234 домена, 56 подсетей · свои: 2 в туннель, 1 напрямую
+🩺 Здоровье ⚪ не проверено: SMB подсетей других шлюзов
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔀 VPN-транзит | gw:lan:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.whole_days — ровно 12 суток аплинка — «12 дн» без «0 ч»
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн
+
+📡 Линк до awg-srv 🟢 40 с
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.down — линк лежит, аптайма в замере нет — шапка без «·»
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🔴 линк лежит
+
+📡 Линк до awg-srv 🔴 интерфейс лежит
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.tag_without_v — тег последней проверки без «v» — на панели «v1.2.4»
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+<b>⬆️ Доступна v1.2.4</b>
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.start.update — /start из снимка тика — строка «⬆️ Доступна» и здесь
+> /start
++ send #2
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+<b>⬆️ Доступна v1.2.4</b>
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.no_ssh — снимок агента без поля ssh — панель без строки SSH
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.link_late — хендшейк 12 мин назад при пороге 5 мин — 🟡; снимок 40 с назад
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟡 12 мин
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 40 с назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.link_late.raised — те же 12 мин при пороге 15 мин — 🟢
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 12 мин
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.panel.link_hours — хендшейк 3 ч назад — 🟡 «3 ч»
+> press gw:panel:
+~ (пустой ответ)
+= edit #1
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟡 3 ч
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅
+<i>обновлено 2 мин назад</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
 ### gw.health — всё в порядке, просадка питания с загрузки
 > press gw:health:
 ~ Проверяю…
@@ -190,6 +373,32 @@ RAM свободно 2 345 МБ · диск свободно 87 ГБ, SMART OK �
 🔴 выход наружу — таймаут 5 с &lt;проба&gt;
 ✅ ядра — модуль собран для 2 из 2
 RAM свободно 312 МБ · диск свободно 3.2 ГБ, SMART FAIL · питание ⚠️ недонапряжение
+Модуль awg 1.0.20260901 · srcversion ABCDEF01… · ядер 2
+«🔧 Восстановить» переставит правила и переподнимет линк
+  [🔧 Восстановить | gw:reassert:health] [⬅️ В меню | gw:panel:]
+
+### gw.health.no_host — имени хоста в замере нет — «Здоровье шлюза»; терабайтный диск — «1 234 ГБ»
+> press gw:health:
+~ Проверяю…
+= edit #1
+🩺 <b>Здоровье шлюза</b> ✅ проблем нет
+✅ линк — хендшейк 40 с назад
+✅ таблица awg_gw_guard
+✅ ip_forward
+✅ маршрут к Telegram
+✅ выход наружу — 35 мс через канал
+✅ ядра — модуль собран для 2 из 2
+RAM свободно 2 345 МБ · диск свободно 1 234 ГБ, SMART OK · питание ОК
+Модуль awg 1.0.20260901 · srcversion ABCDEF01… · ядер 2
+  [🔧 Восстановить | gw:reassert:health] [⬅️ В меню | gw:panel:]
+
+### gw.health.escaped — имя проверки и подробность с хоста экранированы
+> press gw:health:
+~ Проверяю…
+= edit #1
+🩺 <b>Здоровье pi</b> 🔴 проблем: 1
+🔴 &lt;b&gt;x&lt;/b&gt; — rc=1 &amp; &lt;i&gt;
+RAM свободно 2 345 МБ · диск свободно 87 ГБ, SMART OK · питание ОК
 Модуль awg 1.0.20260901 · srcversion ABCDEF01… · ядер 2
 «🔧 Восстановить» переставит правила и переподнимет линк
   [🔧 Восстановить | gw:reassert:health] [⬅️ В меню | gw:panel:]
@@ -261,6 +470,59 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
   [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
 ~ (пустой ответ)
 
+### gw.lan.empty.shared — своих доменов нет, списки общие — обе подсказки первыми под «подробнее»
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: пусто
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>добавь домены кнопками «➕ В туннель» и «➕ Напрямую»;
+роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
+### gw.lan.bare — аплинк не назван, списки ещё не обновлялись, своих «напрямую» нет, SMB только извне
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>аплинк</code>
+📋 Списки: 1 234 домена, 56 подсетей (ещё не обновлялись)
+Свои списки: 1 в туннель
+🗂 SMB: извне — 1
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🌍 a.com | gw:lan_rm:0.1266c1d8]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
+### gw.lan.smb_off — связь подсетей не действует — строки 🗂 нет
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
 ### gw.lan — три своих домена, списки общие и синхронизированы
 > press gw:lan:
 = edit #1
@@ -302,6 +564,27 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
   [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
 ~ (пустой ответ)
 
+### gw.lan.pending.online — одна правка ждёт — связь есть, сервер ещё не ответил
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+⏳ Ждут синхронизации: 1 правка — сервер AWG ещё не ответил
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
 ### gw.lan.failed — свои списки не применились (ошибка с хоста — экранирована)
 > press gw:lan:
 = edit #1
@@ -312,6 +595,27 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 Свои списки: 2 в туннель, 1 напрямую
 🗂 SMB: свои — 1, извне — 2
 ⚠️ Не применились: dnsmasq отверг конфиг &lt;vpn.conf&gt;
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
+### gw.lan.broken — поломка записи файла на шлюзе — отдельной фразой, без второго двоеточия
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+⚠️ Не удалось применить. Ошибка записи файла: нет места на диске
 <blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
 свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
 введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
@@ -464,6 +768,175 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
   [➖ 🌍 example.org | gw:lan_rm:3.7a9acb26]
   [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
 
+### gw.lan.add.later — итог с хвостом «будут синхронизированы» — канал включён, связи нет
+> text «shop.ru»
+- delete #1
+- delete #2
++ send #3
+✅ <code>shop.ru</code>: добавлен
+Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 2 напрямую
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🇷🇺 shop.ru | gw:lan_rm:1.0166c09c]
+  [➖ 🌍 example.com | gw:lan_rm:2.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:3.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.add.already — «уже в списке» при живом канале — ничего не изменилось, хвоста нет
+> text «example.com»
+- delete #1
+- delete #2
++ send #3
+✅ <code>example.com</code>: уже в списке
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.add.already.local — «уже в списке» без канала — «применено только здесь» не к месту
+> text «example.com»
+- delete #1
+- delete #2
++ send #3
+✅ <code>example.com</code>: уже в списке
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера AWG — перевыпусти конфигурацию шлюза
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.add.solo.local — без канала, сервер сказал, что другого шлюза нет, — хвоста нет
+> text «example.org»
+- delete #1
+- delete #2
++ send #3
+✅ <code>example.org</code>: добавлен
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 3 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера AWG — перевыпусти конфигурацию шлюза
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [➖ 🌍 example.org | gw:lan_rm:3.7a9acb26]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.add.huge — вставили 80 длинных доменов — итог обрезан, экран под ним в том же сообщении
+> text «very-long-subdomain-name-0000.example-shop.com very-long-subdomain-name-0001.example-shop.com very-long-subdomain-name-0002.example-shop.com very-long-subdomain-name-0003.example-shop.com very-long-subdomain-name-0004.example-shop.com very-long-subdomain-name-0005.example-shop.com very-long-subdomain-name-0006.example-shop.com very-long-subdomain-name-0007.example-shop.com very-long-subdomain-name-0008.example-shop.com very-long-subdomain-name-0009.example-shop.com very-long-subdomain-name-0010.example-shop.com very-long-subdomain-name-0011.example-shop.com very-long-subdomain-name-0012.example-shop.com very-long-subdomain-name-0013.example-shop.com very-long-subdomain-name-0014.example-shop.com very-long-subdomain-name-0015.example-shop.com very-long-subdomain-name-0016.example-shop.com very-long-subdomain-name-0017.example-shop.com very-long-subdomain-name-0018.example-shop.com very-long-subdomain-name-0019.example-shop.com very-long-subdomain-name-0020.example-shop.com very-long-subdomain-name-0021.example-shop.com very-long-subdomain-name-0022.example-shop.com very-long-subdomain-name-0023.example-shop.com very-long-subdomain-name-0024.example-shop.com very-long-subdomain-name-0025.example-shop.com very-long-subdomain-name-0026.example-shop.com very-long-subdomain-name-0027.example-shop.com very-long-subdomain-name-0028.example-shop.com very-long-subdomain-name-0029.example-shop.com very-long-subdomain-name-0030.example-shop.com very-long-subdomain-name-0031.example-shop.com very-long-subdomain-name-0032.example-shop.com very-long-subdomain-name-0033.example-shop.com very-long-subdomain-name-0034.example-shop.com very-long-subdomain-name-0035.example-shop.com very-long-subdomain-name-0036.example-shop.com very-long-subdomain-name-0037.example-shop.com very-long-subdomain-name-0038.example-shop.com very-long-subdomain-name-0039.example-shop.com very-long-subdomain-name-0040.example-shop.com very-long-subdomain-name-0041.example-shop.com very-long-subdomain-name-0042.example-shop.com very-long-subdomain-name-0043.example-shop.com very-long-subdomain-name-0044.example-shop.com very-long-subdomain-name-0045.example-shop.com very-long-subdomain-name-0046.example-shop.com very-long-subdomain-name-0047.example-shop.com very-long-subdomain-name-0048.example-shop.com very-long-subdomain-name-0049.example-shop.com very-long-subdomain-name-0050.example-shop.com very-long-subdomain-name-0051.example-shop.com very-long-subdomain-name-0052.example-shop.com very-long-subdomain-name-0053.example-shop.com very-long-subdomain-name-0054.example-shop.com very-long-subdomain-name-0055.example-shop.com very-long-subdomain-name-0056.example-shop.com very-long-subdomain-name-0057.example-shop.com very-long-subdomain-name-0058.example-shop.com very-long-subdomain-name-0059.example-shop.com very-long-subdomain-name-0060.example-shop.com very-long-subdomain-name-0061.example-shop.com very-long-subdomain-name-0062.example-shop.com very-long-subdomain-name-0063.example-shop.com very-long-subdomain-name-0064.example-shop.com very-long-subdomain-name-0065.example-shop.com very-long-subdomain-name-0066.example-shop.com very-long-subdomain-name-0067.example-shop.com very-long-subdomain-name-0068.example-shop.com very-long-subdomain-name-0069.example-shop.com very-long-subdomain-name-0070.example-shop.com very-long-subdomain-name-0071.example-shop.com very-long-subdomain-name-0072.example-shop.com very-long-subdomain-name-0073.example-shop.com very-long-subdomain-name-0074.example-shop.com very-long-subdomain-name-0075.example-shop.com very-long-subdomain-name-0076.example-shop.com very-long-subdomain-name-0077.example-shop.com very-long-subdomain-name-0078.example-shop.com very-long-subdomain-name-0079.example-shop.com»
+- delete #1
+- delete #2
++ send #3
+✅ <code>very-long-subdomain-name-0000.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0001.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0002.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0003.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0004.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0005.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0006.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0007.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0008.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0009.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0010.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0011.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0012.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0013.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0014.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0015.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0016.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0017.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0018.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0019.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0020.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0021.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0022.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0023.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0024.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0025.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0026.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0027.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0028.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0029.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0030.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0031.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0032.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0033.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0034.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0035.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0036.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0037.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0038.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0039.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0040.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0041.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0042.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0043.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0044.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0045.example-shop.com</code>: добавлен
+<code>very-long-subdomain-name-0046.example-shop.com</code>: добавлен
+…и ещё 33 строки
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 80 в туннель
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🌍 very-long-subdomain-name-0000.example-shop.com | gw:lan_rm:0.ae63bec4]
+  [➖ 🌍 very-long-subdomain-name-0001.example-shop.com | gw:lan_rm:1.89111cb2]
+  [➖ 🌍 very-long-subdomain-name-0002.example-shop.com | gw:lan_rm:2.d715f3ee]
+  [➖ 🌍 very-long-subdomain-name-0003.example-shop.com | gw:lan_rm:3.98494847]
+  [➖ 🌍 very-long-subdomain-name-0004.example-shop.com | gw:lan_rm:4.5d3f5b22]
+  [➖ 🌍 very-long-subdomain-name-0005.example-shop.com | gw:lan_rm:5.c6152768]
+  [➖ 🌍 very-long-subdomain-name-0006.example-shop.com | gw:lan_rm:6.9d62494f]
+  [След. страница ▶️ | pg|lanlist|0|1|gw:lan:]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
 ### gw.lan.ru.solo — другого шлюза нет — итог без хвоста
 > text «gosuslugi.ru»
 - delete #1
@@ -547,6 +1020,86 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 🗂 SMB: свои — 1, извне — 2
 <blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
 свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.rm.later — «➖» при канале без связи — «будут синхронизированы»
+> press gw:lan_rm:2.f138607b
+~ example.net: убран
+Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 1 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.rm.local — «➖» без канала — «применено только здесь»
+> press gw:lan_rm:2.f138607b
+~ example.net: убран
+Применено только здесь: канала до сервера AWG нет
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 1 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера AWG — перевыпусти конфигурацию шлюза
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.rm.solo — «➖», другого шлюза нет — итог без хвоста
+> press gw:lan_rm:2.f138607b
+~ example.net: убран
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 1 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.lan.rm.late — скрипт ответил дольше, чем Telegram держит нажатие, — итог сообщением, экран перерисован
+> press gw:lan_rm:2.f138607b
++ send #2
+✅ <code>example.net</code>: убран
+Применено только здесь: канала до сервера AWG нет
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 1 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера AWG — перевыпусти конфигурацию шлюза
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
 введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
 сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
   [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
@@ -644,6 +1197,142 @@ uci commit</pre>
 Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, iptables — в /etc/firewall.user
 Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
   [MikroTik | gw:lan_router:mt] [✅ OpenWrt | gw:lan_router:ow]
+  [⬅️ Назад | gw:lan:]
+~ (пустой ответ)
+
+### gw.lan.router.unknown_tab — вкладка из чужого колбэка — рецепт MikroTik
+> press gw:lan_router:zz
+= edit #1
+❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.10</code>
+Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
+<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
+• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
+• аппаратное ускорение (fasttrack, flow offloading) выключено;
+• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
+• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
+<b>MikroTik RouterOS 7</b>
+<pre>/routing table add disabled=no fib name=antiblock
+/ip firewall mangle
+add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.10
+add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
+    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.10 routing-table=antiblock
+/ip firewall filter
+add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=192.168.2.0/24 gateway=192.168.1.10
+/ip dhcp-server network set [find] dns-server=192.168.1.10</pre>
+Правило asym-via-gw — выше drop invalid; fasttrack выключить
+Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
+  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
+  [⬅️ Назад | gw:lan:]
+~ (пустой ответ)
+
+### gw.lan.router.peers — два соседа — маршрут до каждого через адрес шлюза (MikroTik)
+> press gw:lan_router:
+= edit #1
+❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
+Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
+<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
+• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
+• аппаратное ускорение (fasttrack, flow offloading) выключено;
+• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
+• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
+<b>MikroTik RouterOS 7</b>
+<pre>/routing table add disabled=no fib name=antiblock
+/ip firewall mangle
+add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.2
+add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
+    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock
+/ip firewall filter
+add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=192.168.68.0/24 gateway=192.168.1.2
+/ip route add dst-address=10.20.0.0/16 gateway=192.168.1.2
+/ip dhcp-server network set [find] dns-server=192.168.1.2</pre>
+Правило asym-via-gw — выше drop invalid; fasttrack выключить
+Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.68.0/24</code>, <code>10.20.0.0/16</code>). Устройствам за роутером это не нужно
+  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
+  [⬅️ Назад | gw:lan:]
+~ (пустой ответ)
+
+### gw.lan.router.peers.ow — два соседа — вкладка OpenWrt своими командами
+> press gw:lan_router:ow
+= edit #1
+❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
+Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
+<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
+• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
+• аппаратное ускорение (fasttrack, flow offloading) выключено;
+• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
+• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
+<b>OpenWrt</b>
+<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables
+ip route add default via 192.168.1.2 table vpn
+ip rule add from 192.168.1.2 priority 100 lookup main
+ip rule add from 192.168.1.0/24 to 192.168.1.0/24 priority 110 lookup main
+ip rule add from 192.168.1.0/24 priority 120 lookup vpn
+iptables -I FORWARD 1 -s 192.168.1.0/24 ! -d 192.168.1.0/24 -j ACCEPT
+uci set firewall.@defaults[0].flow_offloading_hw='0'
+uci set firewall.@defaults[0].flow_offloading='0'
+ip route add 192.168.68.0/24 via 192.168.1.2
+ip route add 10.20.0.0/16 via 192.168.1.2
+uci add_list dhcp.lan.dhcp_option='6,192.168.1.2'
+uci commit</pre>
+Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, iptables — в /etc/firewall.user
+Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.68.0/24</code>, <code>10.20.0.0/16</code>). Устройствам за роутером это не нужно
+  [MikroTik | gw:lan_router:mt] [✅ OpenWrt | gw:lan_router:ow]
+  [⬅️ Назад | gw:lan:]
+~ (пустой ответ)
+
+### gw.lan.router.no_peers — соседей нет — без маршрутов до них и абзаца
+> press gw:lan_router:
+= edit #1
+❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
+Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
+<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
+• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
+• аппаратное ускорение (fasttrack, flow offloading) выключено;
+• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
+• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
+<b>MikroTik RouterOS 7</b>
+<pre>/routing table add disabled=no fib name=antiblock
+/ip firewall mangle
+add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.2
+add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
+    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock
+/ip firewall filter
+add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip dhcp-server network set [find] dns-server=192.168.1.2</pre>
+Правило asym-via-gw — выше drop invalid; fasttrack выключить
+  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
+  [⬅️ Назад | gw:lan:]
+~ (пустой ответ)
+
+### gw.lan.router.named — имя слота с сервера экранировано в заголовке
+> press gw:lan_router:
+= edit #1
+❓ <b>Роутер для NASPi (&lt;дача&gt;)</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.10</code>
+Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
+<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
+• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
+• аппаратное ускорение (fasttrack, flow offloading) выключено;
+• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
+• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
+<b>MikroTik RouterOS 7</b>
+<pre>/routing table add disabled=no fib name=antiblock
+/ip firewall mangle
+add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.10
+add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
+    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.10 routing-table=antiblock
+/ip firewall filter
+add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
+/ip route add dst-address=192.168.2.0/24 gateway=192.168.1.10
+/ip dhcp-server network set [find] dns-server=192.168.1.10</pre>
+Правило asym-via-gw — выше drop invalid; fasttrack выключить
+Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
+  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
   [⬅️ Назад | gw:lan:]
 ~ (пустой ответ)
 
@@ -1074,6 +1763,112 @@ IMAP и SMTP отвечают, вход выполнен
   [⬅️ Назад | gw:settings:]
 ~ (пустой ответ)
 
+### gw.ssh.omv.same — порт под OMV, в OMV и у sshd совпадает — предупреждения о порте нет
+> press gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 2222 — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>. Бот следит за портом и держит фильтр на нём.
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+🟢 Снаружи: фильтр включён — только адреса из списка и сервер
+
+Адреса для SSH-доступа (фильтр): 1 адрес — редактируемый список ниже
+
+<b>Предупреждения:</b>
+⚠️ В OMV заданы правила файервола (3): они действуют рядом с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол)
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ 203.0.113.7 | gw:ssh_del!:0.5fd47831]
+  [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
+### gw.ssh.conf_differs — конфиг sshd разошёлся с тем, что слушает сервис
+> press gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным
+
+Адреса для SSH-доступа (фильтр): не заданы
+
+<b>Предупреждения:</b>
+⚠️ В конфиге sshd порт 2222, сервис слушает 22 — перезапусти sshd
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [☑️ Фильтр снаружи | gw:ssh_on!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
+### gw.ssh.unresolved — имя не резолвится и прошлого адреса нет
+> press gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+🟢 Снаружи: фильтр включён — только адреса из списка и сервер
+
+Адреса для SSH-доступа (фильтр): 1 адрес — редактируемый список ниже
+
+<b>Предупреждения:</b>
+⚠️ Не резолвится: <code>home2.dyn.example</code> — прошлого адреса нет, снаружи по этому имени не зайти
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ home2.dyn.example | gw:ssh_del!:0.e5b4065e]
+  [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
+### gw.ssh.no_lan — подсеть шлюза неизвестна — строка локальной сети без адреса
+> press gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным
+
+Адреса для SSH-доступа (фильтр): не заданы
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [☑️ Фильтр снаружи | gw:ssh_on!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
+### gw.ssh.peers.many — подсети соседей — первые три, экранированы
+> press gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Из локальных сетей других шлюзов: открыт для <code>10.0.0.0/8&lt;b&gt;</code>, <code>10.2.0.0/16</code>, <code>10.3.0.0/16</code>
+
+Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным
+
+Адреса для SSH-доступа (фильтр): не заданы
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [☑️ Фильтр снаружи | gw:ssh_on!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
 ### gw.ssh.generator — порт держит другой процесс — его пометка в конфиге
 > press gw:ssh:
 = edit #1
@@ -1141,6 +1936,33 @@ IMAP и SMTP отвечают, вход выполнен
   [⬅️ Назад | gw:settings:]
 ~ (пустой ответ)
 
+### gw.ssh.many.page2 — листание: вторая страница — номера кнопок по полному списку
+> press pg|gwssh|0|1|gw:ssh:
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+🟢 Снаружи: фильтр включён — только адреса из списка и сервер
+
+Адреса для SSH-доступа (фильтр): 12 адресов — редактируемый список ниже
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ 203.0.113.7 | gw:ssh_del!:6.5fd47831]
+  [➖ 203.0.113.8 | gw:ssh_del!:7.73a57680]
+  [➖ 203.0.113.9 | gw:ssh_del!:8.a7cd483b]
+  [➖ 203.0.113.10 | gw:ssh_del!:9.7509bdf6]
+  [➖ 203.0.113.11 | gw:ssh_del!:10.aaa1c90a]
+  [➖ 203.0.113.12 | gw:ssh_del!:11.e1bf5d31]
+  [◀️ Пред. страница | pg|gwssh|0|0|gw:ssh:]
+  [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+~ (повторный ответ)
+
 ### gw.ssh.on — включить фильтр — сразу, предупреждение alert
 > press gw:ssh_on!:
 ~! Фильтр включён: снаружи — только список и сервер. Проверь вход новым подключением; если роутер подменяет адрес при пробросе, фильтр по адресам не сработает
@@ -1160,6 +1982,27 @@ IMAP и SMTP отвечают, вход выполнен
   [➖ 203.0.113.7 | gw:ssh_del!:0.5fd47831]
   [➖ home.example.net | gw:ssh_del!:1.d9e39eb4]
   [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+
+### gw.ssh.on.refused — включить фильтр на старой обвязке — отказ alert, раздел как был
+> press gw:ssh_on!:
+~! обвязка шлюза старого образца: перевыпусти конфигурацию шлюза
+= edit #1
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным
+
+Адреса для SSH-доступа (фильтр): 2 адреса — редактируемый список ниже
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ 203.0.113.7 | gw:ssh_del!:0.5fd47831]
+  [➖ home.example.net | gw:ssh_del!:1.d9e39eb4]
+  [☑️ Фильтр снаружи | gw:ssh_on!:]
   [⬅️ Назад | gw:settings:]
 
 ### gw.ssh.off — выключить фильтр — alert
@@ -1309,6 +2152,44 @@ IMAP и SMTP отвечают, вход выполнен
   [⬅️ Назад | gw:ssh:]
 ~ (пустой ответ)
 
+### gw.ssh.port.owner_late — OMV взял конфиг между приглашением и вводом — отказ экраном, ввод закрыт
+> text «2200»
+- delete #1
+- delete #2
++ send #3
+⛔ <b>Смена порта SSH не выполнена:</b> файлом sshd_config на этом шлюзе управляет OMV
+
+Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.
+
+Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере (при наличии) поправь сам.
+
+Сейчас: sshd слушает 2222, в OMV задан 2222.
+  [⬅️ Назад | gw:ssh:]
+
+### gw.ssh.port.owner_late.generator — другой генератор взял конфиг между приглашением и вводом — его строка в отказе
+> text «2200»
+- delete #1
+- delete #2
++ send #3
+⛔ <b>Смена порта SSH не выполнена:</b> файлом sshd_config на этом шлюзе управляет другой процесс
+
+В <code>/etc/ssh/sshd_config.d/10-ansible.conf</code> сказано: «<i>Ansible managed: do not edit</i>». Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей генерации. Бот увидит новый порт сам и переведёт на него фильтр.
+  [⬅️ Назад | gw:ssh:]
+
+### gw.ssh.port.race — OMV переписал конфиг уже во время смены — отказ сервиса тем же экраном
+> text «2200»
+- delete #1
+- delete #2
++ send #3
+⛔ <b>Смена порта SSH не выполнена:</b> файлом sshd_config на этом шлюзе управляет OMV
+
+Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.
+
+Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере (при наличии) поправь сам.
+
+Сейчас: sshd слушает 22, в OMV задан 22.
+  [⬅️ Назад | gw:ssh:]
+
 ### gw.ssh.port.retry — финишер после ввода → «✏️ Другой порт»: финишер со «Скрыть», приглашение новым
 > press gw:ssh_port_retry:
 = markup #3
@@ -1369,6 +2250,35 @@ IMAP и SMTP отвечают, вход выполнен
   [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
   [➖ 198.51.100.4 | gw:ssh_del!:0.c73061ae]
   [➖ home.example.net | gw:ssh_del!:1.d9e39eb4]
+  [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+
+### gw.ssh.add.many — 15 адресов — итог перечисляет двенадцать и «и ещё 3»
+> text «198.51.100.1 198.51.100.2 198.51.100.3 198.51.100.4 198.51.100.5 198.51.100.6 198.51.100.7 198.51.100.8 198.51.100.9 198.51.100.10 198.51.100.11 198.51.100.12 198.51.100.13 198.51.100.14 198.51.100.15»
+- delete #1
+- delete #2
++ send #3
+✅ Адреса для SSH-доступа: добавлено <code>198.51.100.1</code>, <code>198.51.100.2</code>, <code>198.51.100.3</code>, <code>198.51.100.4</code>, <code>198.51.100.5</code>, <code>198.51.100.6</code>, <code>198.51.100.7</code>, <code>198.51.100.8</code>, <code>198.51.100.9</code>, <code>198.51.100.10</code>, <code>198.51.100.11</code>, <code>198.51.100.12</code> и ещё 3
+
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Когда подсети связаны, SSH доступен и из подсетей других шлюзов
+
+🟢 Снаружи: фильтр включён — только адреса из списка и сервер
+
+Адреса для SSH-доступа (фильтр): 15 адресов — редактируемый список ниже
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ 198.51.100.1 | gw:ssh_del!:0.5b51acf5]
+  [➖ 198.51.100.2 | gw:ssh_del!:1.4f7c140a]
+  [➖ 198.51.100.3 | gw:ssh_del!:2.1c3e1a12]
+  [➖ 198.51.100.4 | gw:ssh_del!:3.c73061ae]
+  [➖ 198.51.100.5 | gw:ssh_del!:4.ff830559]
+  [➖ 198.51.100.6 | gw:ssh_del!:5.ba79b105]
+  [След. страница ▶️ | pg|gwssh|0|1|gw:ssh:]
   [✅ Фильтр снаружи | gw:ssh_off!:]
   [⬅️ Назад | gw:settings:]
 
@@ -1489,6 +2399,44 @@ IMAP и SMTP отвечают, вход выполнен
   [⏱ Опрос: 3 мин | gw:edit:app.gateway.monitor_minutes] [🔢 Замеров: 5 | gw:edit:app.monitoring.alert_streak]
   [⏳ Линк: 10 мин | gw:edit:app.gateway.handshake_max_age] [✅ Звук 24/7 | gw:tgl:app.gateway.link_alert_loud]
   [⬅️ Назад | gw:settings:]
+
+### gw.set.mon.edit.bad — порог линка вне 1–1440 — переспрос
+> text «0»
++ send #3
+⚠️ Нужно целое число 1–1440 мин
+
+### gw.set.mon.minutes.ask — приглашение: частота опроса
+> press gw:edit:app.gateway.monitor_minutes
+= edit #1
+✏️ <b>Частота опроса</b> · сейчас 3 мин · 1–1440
+  [✖️ Отмена | x:set_mon:0]
+~ (пустой ответ)
+
+### gw.set.mon.minutes.bad — частота опроса вне границ — переспрос
+> text «0»
++ send #3
+⚠️ Нужно целое число 1–1440 мин
+
+### gw.set.mon.minutes.done — частота опроса: итог первой строкой раздела
+> text «5»
+- delete #1
+- delete #2
++ send #3
+✅ Частота опроса: 3 → 5 мин
+
+🩺 <b>Мониторинг</b> · опрос раз в 5 мин · алерт после 5 плохих замеров · линк молчит дольше 5 мин — со звуком круглые сутки
+  [⏱ Опрос: 5 мин | gw:edit:app.gateway.monitor_minutes] [🔢 Замеров: 5 | gw:edit:app.monitoring.alert_streak]
+  [⏳ Линк: 5 мин | gw:edit:app.gateway.handshake_max_age] [✅ Звук 24/7 | gw:tgl:app.gateway.link_alert_loud]
+  [⬅️ Назад | gw:settings:]
+
+### gw.set.mon.streak_one — один замер до алерта — «1 плохого замера»; порог 30 с — «1 мин», не «0»
+> press gw:mon:
+= edit #1
+🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 1 плохого замера · линк молчит дольше 1 мин — со звуком круглые сутки
+  [⏱ Опрос: 3 мин | gw:edit:app.gateway.monitor_minutes] [🔢 Замеров: 1 | gw:edit:app.monitoring.alert_streak]
+  [⏳ Линк: 1 мин | gw:edit:app.gateway.handshake_max_age] [✅ Звук 24/7 | gw:tgl:app.gateway.link_alert_loud]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
 
 ### gw.set.mon.edit.unknown — ключ из старой клавиатуры — alert
 > press gw:edit:app.nope
@@ -1906,6 +2854,15 @@ IMAP и SMTP отвечают, вход выполнен
 Конфиг линка не изменился — линк не перезапустится; правила переставятся
   [⬅️ Отмена | gw:drop:] [📦 Применить | gw:apply!:]
 
+### gw.bundle.received.same_link.carries — конфиг линка тот же у шлюза, несущего трафик, — без угрозы РФ-доступу
+> file awg-gw-NASPi.bin
+- delete #3
+- delete #2
++ send #4
+📦 <b>Конфигурация с сервера AWG</b>
+Конфиг линка не изменился — линк не перезапустится; правила переставятся
+  [⬅️ Отмена | gw:drop:] [📦 Применить | gw:apply!:]
+
 ### gw.bundle.first_run — файл первого применения по имени — убран из чата
 > file awg-gw-bundle.sh
 - delete #1
@@ -2066,6 +3023,30 @@ routing-gw-setup.sh: аплинк &lt;awg1&gt; не поднялся — отк�
 🛰 <b>pi</b> 🟢 несёт трафик · 12 дн 3 ч
 
 📡 Линк до awg-srv 🟢 40 с · 🔗 упр. канал 🟢
+🛡 SSH :22, открыт
+📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
+🩺 Здоровье ✅ · 📊 3.5 ГБ (↑3 ↓0.5)
+<i>обновлено только что</i>
+  [🩺 Здоровье | gw:health:] [🔧 Восстановить | gw:reassert:]
+  [🔄 Обновить | gw:refresh:] [⚙️ Настройки | gw:settings:]
+
+### gw.bundle.claim.unmarked — шлюз не назначен, канала нет — переслать сообщение
+> press gw:apply!:
+~ Применяю…
+= edit #2
+✅ <b>Конфигурация шлюза применена</b>
+Аплинк обновлён и поднят · линк поднят · шлюз в боте сервера AWG не назначен
++ send #3
+🛰 <b>Шлюз в боте сервера AWG не назначен</b>
+
+Канал конфигурации сервера AWG недоступен. Перешли это сообщение боту сервера AWG как есть: он найдёт это устройство по ключу, назначит его шлюзом и перевыпустит файл конфигурации — отправь его сюда
+
+<code>DUMMY-claim-token</code>
+  [Скрыть | hd]
++ send #4
+🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
+
+📡 Линк до awg-srv 🟢 40 с
 🛡 SSH :22, открыт
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3.5 ГБ (↑3 ↓0.5)

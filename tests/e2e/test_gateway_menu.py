@@ -89,17 +89,14 @@ async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monk
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     state = FakeState()
     await gh.gw_edit(cb, GwCB(action="edit", val="app.gateway.monitor_minutes"), svc, state)
-    assert any("Частота опроса" in t for kind, t, _ in msg.sent if kind == "edit_text")
     bad = FakeMessage(text="0", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_receive_value(bad, state, svc)
-    assert written == {} and any("⚠️ Нужно целое число 1–1440 мин" in t for kind, t, _ in bad.sent)
+    assert written == {}, "значение вне границ записано"
+    assert await state.get_state() is not None, "переспрос закрыл ввод"
     good = FakeMessage(text="5", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_receive_value(good, state, svc)
     assert written == {"app.gateway.monitor_minutes": 5}
-    # итог ввода — первой строкой раздела, отдельного сообщения нет
-    sections = [t for kind, t, _ in good.sent if kind == "answer" and "Мониторинг" in t]
-    assert len(sections) == 1 and sections[0].startswith("✅ Частота опроса: ") \
-        and sections[0].split("\n", 1)[0].endswith(" → 5 мин"), good.sent
+    assert await state.get_state() is None, "ввод остался открытым после записи"
 
 
 async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, monkeypatch):

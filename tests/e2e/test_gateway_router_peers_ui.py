@@ -1,19 +1,15 @@
-"""Рецепт роутера при связанных подсетях: у основного бота («❓ Роутер» в
-карточке слота, вкладками) подсети соседей берутся из состояния слота, у
-агента — из юнита обвязки вместе с адресом шлюза. В обоих рецепт получает
-маршруты до соседей только тогда, когда связь реально включена."""
+"""Рецепт роутера при связанных подсетях у основного бота («❓ Роутер» в
+карточке слота, вкладками): подсети соседей берутся из состояния слота, и
+маршруты до них рецепт получает только тогда, когда связь реально включена.
+Рецепт агента (соседи, их нет, имя слота с сервера) — в эталоне
+tests/screens/gateway.txt (gw.lan.router*)."""
 from __future__ import annotations
 
 import pytest
 
-import awgbot.core.config as cfg
-from awgbot.bot.callbacks import GwCB, GwSlotCB
-from awgbot.bot.handlers import gateway as gh
+from awgbot.bot.callbacks import GwSlotCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.texts.routing import ROUTER_IP_PLACEHOLDER
-from awgbot.domain.gateway import GatewayServices
-from awgbot.infra.db import Database
-from tests.conftest import FakeCallback, FakeMessage
 from tests.e2e import test_gateway_slots_ui as _slots_ui
 from tests.e2e.test_gateway_slots_ui import _acb, _peer_conf, _screen, _slot1, _slot2
 
@@ -69,53 +65,4 @@ async def test_slot_router_recipe_without_peer_access_has_no_peer_routes(service
 
 # ── агент: экран «🔀 VPN-транзит» → «❓ Роутер» ───────────────────────────────
 
-@pytest.fixture()
-def gw_svc(tmp_path):
-    d = Database(tmp_path / "gw.db"); d.init_schema()
-    return GatewayServices(d)
 
-
-async def _lan_router(gw_svc, fake_bot, monkeypatch, params, tab=""):
-    import socket
-    monkeypatch.setattr(socket, "gethostname", lambda: "naspi")
-    monkeypatch.setattr(gw_svc, "lan_router_params", lambda: params)
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_transit_router(cb, GwCB(action="lan_router", val=tab), gw_svc)
-    kind, text, markup = msg.sent[-1]
-    assert kind == "edit_text", msg.sent
-    return text, markup
-
-
-async def test_agent_router_recipe_routes_to_every_peer_via_its_own_address(gw_svc, fake_bot, monkeypatch):
-    """Агент знает свой адрес в подсети: маршрут до каждого соседа — через
-    него, на каждой вкладке своими командами; соседа, оставшегося без
-    маршрута, роутер не достанет."""
-    peers = ("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"])
-    text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, peers)
-    for p in ("192.168.68.0/24", "10.20.0.0/16"):
-        assert f"/ip route add dst-address={p} gateway=192.168.1.2" in text, text
-        assert f"ip route add {p} via 192.168.1.2" not in text, "команды OpenWrt на вкладке MikroTik"
-    text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, peers, "ow")
-    for p in ("192.168.68.0/24", "10.20.0.0/16"):
-        assert f"ip route add {p} via 192.168.1.2" in text, text
-    assert "/ip route add" not in text, "команды MikroTik на вкладке OpenWrt"
-
-
-async def test_agent_router_recipe_without_peers(gw_svc, fake_bot, monkeypatch):
-    text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, ("192.168.1.0/24", "192.168.1.2", []))
-    assert NOTE not in text, "абзац про связь подсетей без соседей"
-    assert [ln for ln in text.splitlines() if ln.startswith("/ip route add")] == \
-        ["/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock"], text
-
-
-async def test_agent_router_recipe_title_escapes_the_slot_name_from_the_server(gw_svc, fake_bot, monkeypatch):
-    """Заголовок рецепта — имя слота, каким его знает сервер («NASPi (дача)»):
-    по нему человек узнаёт шлюз в боте сервера. Hostname («naspi») — только
-    пока сервер имени не сообщал: у двух малин из одного образа он один и тот
-    же. Имя приходит с сервера и экранируется — «<» в нём не ломает экран."""
-    params = ("192.168.1.0/24", "192.168.1.2", [])
-    gw_svc.set_link_role(True, standby=True, name="NASPi (<дача>)")
-    text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, params)
-    assert text.startswith("❓ <b>Роутер для NASPi (&lt;дача&gt;)</b> · <code>192.168.1.0/24</code>"), text.splitlines()[0]
-    assert "naspi ·" not in text

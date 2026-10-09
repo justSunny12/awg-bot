@@ -244,9 +244,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     shared = bool(own.get("active"))
     about = lan_about(shared)
     if items is not None and not items:                 # подсказки пустого списка — под «подробнее»
-        about = ("добавь домены кнопками «➕ В туннель» и «➕ Напрямую»"
-                 + (";\nсписки общие для всех шлюзов — добавленное здесь появится и на остальных"
-                    if shared else "") + ";\n" + about)
+        about = "добавь домены кнопками «➕ В туннель» и «➕ Напрямую»;\n" + about
     if shared:
         line = own_lists_state_line(own)
         if line:

@@ -1,16 +1,15 @@
 """E2E: admin-хендлеры (прямой вызов с фейками) — панель, клиенты, создание,
 удаление, обещание после перезапуска, окна и финишеры обновления.
 
-Главная, список и карточка профиля, создание, приглашение и удаление — в
-эталоне tests/screens/admin.txt; здесь — БД, память диалога, живое меню,
-история окон и состояния главной (РФ-строка), которых в эталоне нет."""
+Главная (с РФ-строкой по состояниям), список и карточка профиля, создание,
+приглашение и удаление — в эталоне tests/screens/admin.txt; здесь — БД,
+память диалога, живое меню, история окон и главные клиента и гостя."""
 import pytest
 
-from awgbot.bot import texts
 from awgbot.bot.handlers import admin as admin_h
 from awgbot.bot.callbacks import ClientCB, PeriodCB
 from awgbot.core import config
-from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -23,19 +22,15 @@ def _admin_cb(services, bot, data=""):
 
 
 # ── панель ───────────────────────────────────────────────────────────────────
-async def test_admin_start_shows_panel_and_menu_opens_it_again(services, fake_bot,
+async def test_admin_start_remembers_the_panel_as_the_live_menu(services, fake_bot,
                                                               make_active_client):
-    """/start рисует панель и запоминает её как активное меню; кнопка «В меню»
-    с любого экрана рисует ту же панель поверх текущего сообщения."""
+    """/start рисует панель и запоминает её как активное меню (панель поверх
+    текущего сообщения по «В меню» — снимок adm.main.menu)."""
     services.ensure_admin_client()
     make_active_client(tg_id=6000, name="Клиент")
     msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await admin_h.admin_start(msg, services, FakeState())
-    assert services.db.get_nav_message_id(ADMIN) is not None
-
-    cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.admin_main_menu(cb, services, FakeState())
-    assert any(s[0] == "edit_text" and s[2] is not None for s in nav.sent)
+    assert services.db.get_nav_message_id(ADMIN) is not None, "панель не стала активным меню"
 
 
 # ── создание клиента (FSM: имя → лимит → трафик → период) ─────────────────────
@@ -57,16 +52,6 @@ async def test_create_client_full_fsm(services, fake_bot):
     await admin_h.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, state)
     names = [c.name for c in services.db.list_clients(include_service=False)]
     assert "Новичок" in names
-
-
-async def test_create_client_period_stale_dialog(services, fake_bot):
-    """Срок нажат, а диалога уже нет (перезапуск, старое сообщение) — alert,
-    а не падение обработчика и не профиль без имени."""
-    services.ensure_admin_client()
-    cb, nav = _admin_cb(services, fake_bot)
-    # пустой state (диалог устарел) → алерт, не падаем
-    await admin_h.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, FakeState())
-    assert cb.answers and cb.answers[0][1] is True    # show_alert
 
 
 # ── регенерация инвайта / удаление ───────────────────────────────────────────
@@ -91,15 +76,13 @@ async def test_client_delete_apply(services, make_active_client, fake_bot):
 
 
 async def test_client_delete_ask_keeps_profile(services, make_active_client, fake_bot):
-    """Вопрос об удалении ничего не удаляет; цена с одним устройством — в
-    единственном числе (в эталоне — два устройства)."""
+    """Вопрос об удалении ничего не удаляет (цена с одним устройством —
+    снимок adm.cl.delete.one)."""
     client = make_active_client(name="Остаётся", tg_id=7003)
     services.add_device(client.id, "Тел")
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.client_delete_confirm(cb, ClientCB(action="delete", client_id=client.id), services)
-    text, _ = last_screen(nav)
-    assert "Вместе с 1 устройством" in text, text
-    assert services.db.get_client(client.id) is not None   # вопрос ничего не удалил
+    assert services.db.get_client(client.id) is not None, "вопрос об удалении удалил профиль"
 
 
 # ── обещание вернуться после перезапуска ─────────────────────────────────────
@@ -223,16 +206,10 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     assert services.pop_update_reports() == [], "история не очищена"
 
 
-# ── РФ-часть трафика на главной ──────
+# ── РФ-часть трафика: только у админа ────────────────────────────────────────
+# строка на главной админа по состояниям функции и учёта — снимки adm.main.rf_*
 
 GB = 1024 ** 3
-
-
-async def _panel_text(services, fake_bot) -> str:
-    services.ensure_admin_client()
-    msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    await admin_h.admin_start(msg, services, FakeState())
-    return [s for s in msg.sent if s[0] == "answer"][-1][1]
 
 
 def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error=""):
@@ -243,75 +220,6 @@ def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error
     services.db.set_state("rf_month_rx", str(rx))
     services.db.set_state("rf_month_tx", str(tx))
     services.db.set_state("rf_acct_error", error)
-
-
-def _rf_line(text: str):
-    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 РФ-доступ:")]
-    return lines[0] if lines else None
-
-
-async def test_panel_shows_zero_rf_line_when_the_feature_is_on(services, fake_bot, fake_routing,
-                                                              monkeypatch):
-    """Функция включена — строка всегда, и «0 ГБ» тоже: ровно тогда видно, что
-    маркировка не работает, хотя люди пользуются. Ветка под трафиком — знаком
-    «└», без стрелок: разбивка ↑↓ живёт на экране «Трафик»."""
-    _rf_world(services, fake_routing, monkeypatch, enabled=True)
-    text = await _panel_text(services, fake_bot)
-    line = _rf_line(text)
-    assert line == "└ 🇷🇺 РФ-доступ: 0 ГБ", text
-    head = [ln for ln in text.splitlines() if f"📊 Трафик за {texts.month_label()}" in ln][0]
-    assert text.splitlines().index(line) == text.splitlines().index(head) + 1, \
-        "строка РФ не сразу под трафиком"
-
-
-async def test_panel_hides_rf_line_when_off_and_nothing_counted(services, fake_bot, fake_routing,
-                                                               monkeypatch):
-    _rf_world(services, fake_routing, monkeypatch, enabled=False)
-    text = await _panel_text(services, fake_bot)
-    assert _rf_line(text) is None, text
-
-
-async def test_panel_keeps_rf_line_when_off_but_month_has_rf(services, fake_bot, fake_routing,
-                                                            monkeypatch):
-    """Выключили в середине месяца — накопленное не пропадает с главной."""
-    _rf_world(services, fake_routing, monkeypatch, enabled=False, rx=GB, tx=3 * GB)
-    line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 4 ГБ", line
-
-
-async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services, fake_bot,
-                                                                      fake_routing, monkeypatch):
-    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
-              error="nft не найден — поставь пакет nftables")
-    line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт трафика РФ-доступа не идёт", line
-    assert "nft" not in line, "текст ошибки ядра в шапке админа"
-
-
-async def test_panel_zero_traffic_and_zero_rf_are_plain_text(services, fake_bot, fake_routing,
-                                                            monkeypatch):
-    """Нулевой итог — строка стоит, но не ссылкой: за ней пустой экран. РФ-строка
-    ссылкой не бывает — трафик нулевой, а РФ нет — ссылок нет вовсе.
-    Нулевая главная без РФ-строки — в эталоне (adm.main.quiet)."""
-    services.bot_username = "awg_test_bot"
-    _rf_world(services, fake_routing, monkeypatch, enabled=True)
-    text = await _panel_text(services, fake_bot)
-    assert "└ 🇷🇺 РФ-доступ: 0 ГБ" in text.splitlines(), text
-    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
-    text = await _panel_text(services, fake_bot)
-    assert text.count("start=traffic\"") == 0, text
-    assert f"📊 Трафик за {texts.month_label()}: 0 ГБ" in text.splitlines(), \
-        "нулевой трафик сервера стал ссылкой из-за РФ"
-
-
-async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_bot, fake_routing,
-                                                               monkeypatch):
-    """Имя бота ещё не известно — ссылку собрать не из чего: подпись простым
-    текстом, а не битая ссылка «t.me/?start=…»."""
-    services.bot_username = ""
-    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
-    line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 1 ГБ", line
 
 
 async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,

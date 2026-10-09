@@ -1,14 +1,14 @@
 """E2E: входы в экраны клиента и гостя помимо кнопок — кнопка из старого
-меню (обработчик устаревших), ссылки /start sub|rf|dev-<id>, коды C…/F… через
-тот же /start; и главная клиента по строкам.
+меню (обработчик устаревших) и коды F… через тот же /start, что и ссылки.
 
 Цена ошибки: устаревшая кнопка без обработчика крутит часики и молчит;
-ссылка из уведомления, открывающая чужое устройство, — утечка; ссылка,
-принятая за код, — «такого кода нет» вместо экрана.
+ссылка, принятая за код, — «такого кода нет» вместо экрана, а код, принятый
+за ссылку, — устройство не уходит в держание.
 
-Экраны по ссылкам и главная в типичных состояниях — в эталоне (cl.link.*,
-gst.link.*, cl.main*); здесь — ветки, которых в снимках нет, и побочные
-эффекты (живое меню, держание по коду).
+Экраны по ссылкам (/start sub|rf|dev-<id>, в том числе правкой живого меню и
+на чужое устройство) и главная клиента во всех состояниях — в эталоне
+(cl.link.*, gst.link.*, cl.main.*). Устаревшую кнопку эталон не снимает (его
+сторож запрещает уход в обработчик устаревших) — она здесь.
 """
 import datetime
 
@@ -26,7 +26,6 @@ from awgbot.bot.handlers.common import show_main_menu
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
-G = 1024 ** 3
 
 
 def _cmd(args):
@@ -105,56 +104,12 @@ async def test_stale_router_catches_any_callback_no_screen_took(services):
     assert answers and answers[0].text == stale.STALE_BUTTON
 
 
-# ── ссылки /start у клиента ──────────────────────────────────────────────────
+# ── коды через /start у клиента ──────────────────────────────────────────────
 
-async def _start(services, fake_bot, cl, payload, *, nav_id=None):
+async def _start(services, fake_bot, cl, payload):
     msg = FakeMessage(text=f"/start {payload}", chat_id=cl.tg_id, user_id=cl.tg_id, bot=fake_bot)
-    if nav_id is not None:
-        services.db.nav_touch(cl.tg_id, nav_id)
-    fake_bot.records.clear()
     await ch.start_client_with_code(msg, _cmd(payload), cl, services, FakeState())
     return msg
-
-
-def _screen(fake_bot, msg):
-    """Что человек увидел: экран на месте живого меню (правка) или новым
-    сообщением, если живого меню не было."""
-    edits = [r[2] for r in fake_bot.records if r[0] == "edit_message_text"]
-    answers = [s[1] for s in msg.sent if s[0] == "answer"]
-    shown = edits + answers
-    assert shown, "экран не показан"
-    return shown[-1]
-
-
-async def test_client_link_sub_opens_subscription_in_place_of_the_live_menu(
-        services, fake_bot, make_active_client):
-    """«/start sub» из строки главной: экран подписки — на месте живого меню,
-    сама команда убрана из чата."""
-    cl = make_active_client(tg_id=9110, period_kind="year")
-    msg = await _start(services, fake_bot, cl, "sub", nav_id=555)
-    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert len(edits) == 1 and edits[0][2].startswith("💳 <b>Подписка:</b> годовая · 🟢 активна"), fake_bot.records
-    assert msg.deleted, "команда /start осталась в чате"
-    assert not any(s[0] == "answer" for s in msg.sent), "второе меню вместо правки живого"
-
-
-async def test_client_link_dev_opens_held_card_and_refuses_an_existing_foreign_one(
-        services, fake_bot, make_active_client):
-    """«/start dev-<id>» на удерживаемое — его карточка; на существующее чужое —
-    главная, о чужом устройстве ни слова: иначе ссылка с подобранным номером
-    раскрывает чужие устройства. Своё и несуществующее — снимки cl.link.dev,
-    cl.link.dev_foreign."""
-    owner = make_active_client(tg_id=9113, name="Вася", device_limit=3)
-    cl = make_active_client(tg_id=9114, name="Петя")
-    held = services.add_device(owner.id, "Держит")
-    assert services.activate_friend(services.make_device_friendly(held.device_id), tg_id=9114).ok
-    foreign = services.add_device(owner.id, "Чужое")
-    cl = services.db.get_client(cl.id)
-    msg = await _start(services, fake_bot, cl, f"dev-{held.device_id}")
-    assert _screen(fake_bot, msg).startswith("⚪ <b>Держит</b> · "), "удерживаемое не открылось по ссылке"
-    msg = await _start(services, fake_bot, cl, f"dev-{foreign.device_id}")
-    shown = _screen(fake_bot, msg)
-    assert shown.startswith("👋 <b>Петя</b>\n") and "Чужое" not in shown, shown
 
 
 async def test_friend_code_through_start_still_activates_for_a_client(
@@ -169,23 +124,12 @@ async def test_friend_code_through_start_still_activates_for_a_client(
     assert services.db.get_device(dc.device_id).holder_client_id == cl.id
 
 
-# ── ссылки /start у гостя ────────────────────────────────────────────────────
+# ── коды через /start у гостя ────────────────────────────────────────────────
 
 async def _guest_start(services, fake_bot, guest, payload):
     msg = FakeMessage(text=f"/start {payload}", chat_id=guest.tg_id, user_id=guest.tg_id, bot=fake_bot)
     await fh.friend_start_with_code(msg, _cmd(payload), guest, services, FakeState())
     return [s for s in msg.sent if s[0] == "answer"]
-
-
-async def test_guest_link_to_an_existing_device_of_the_owner_he_does_not_hold(
-        services, fake_bot, make_active_client):
-    """Устройство того же владельца, но не у гостя, — главная гостя, о нём ни
-    слова. Удерживаемое и «sub» — снимки gst.link.dev, gst.link.sub."""
-    owner = make_active_client(tg_id=9120, name="Вася", device_limit=3)
-    _, guest = _lend(services, owner, 99120, "Тел")
-    other = services.add_device(owner.id, "Не его")
-    shown = await _guest_start(services, fake_bot, guest, f"dev-{other.device_id}")
-    assert shown[-1][1].startswith("👋 <b>Артём</b>\n") and "Не его" not in shown[-1][1], shown
 
 
 async def test_guest_second_code_through_start_still_activates(services, fake_bot, make_active_client):
@@ -194,56 +138,3 @@ async def test_guest_second_code_through_start_still_activates(services, fake_bo
     d2 = services.add_device(owner.id, "Ноут")
     await _guest_start(services, fake_bot, guest, services.make_device_friendly(d2.device_id))
     assert services.db.get_device(d2.device_id).holder_client_id == guest.id
-
-
-# ── главная клиента ──────────────────────────────────────────────────────────
-
-async def test_client_main_says_when_the_vpn_does_not_answer(
-        services, fake_bot, make_active_client, monkeypatch):
-    """Сервер не отвечает — «🔴 VPN не отвечает», и человек не ищет причину у
-    себя; РФ-доступ не выдан — о нём ни слова. Главная с живым сервером —
-    снимки cl.main*."""
-    cl = make_active_client(tg_id=9131, name="Ксюша")
-    monkeypatch.setattr(services, "server_ok_cached", lambda: False)
-    text, _ = await ch.main_payload(services, cl)
-    lines = text.splitlines()
-    assert lines[2] == "🔴 VPN не отвечает", lines
-
-
-async def test_client_main_traffic_block_line_above_the_subscription(
-        services, fake_bot, make_active_client, monkeypatch):
-    """Доступ приостановлен исчерпанным трафиком — строка «🟡» над подпиской
-    своей формулировкой: человек видит, почему VPN не работает, до того как
-    пишет админу. Истекшая подписка и паузы — снимки cl.main.expired,
-    cl.main.paused, cl.main.admin_paused."""
-    from awgbot.core.blocks import ClientBlock
-    monkeypatch.setattr(services, "server_ok_cached", lambda: True)
-    tr = make_active_client(tg_id=9135, name="Петя", traffic_limit=10 * G)
-    services._client_set_block(tr.id, ClientBlock.TRAFFIC_CLIENT)
-    lines = (await ch.main_payload(services, services.db.get_client(tr.id)))[0].splitlines()
-    i = next(k for k, ln in enumerate(lines) if "💳" in ln)
-    assert lines[i - 1] == "🟡 исчерпан лимит трафика за месяц", lines
-
-
-async def test_client_main_hides_a_silent_admin_pause(services, fake_bot, make_active_client, monkeypatch):
-    """Тихая пауза администратора клиенту не видна — ни «🟡», ни паузы: тихо
-    значит тихо (громкая — снимок cl.main.admin_paused)."""
-    from awgbot.core.blocks import ClientBlock
-    monkeypatch.setattr(services, "server_ok_cached", lambda: True)
-    q = make_active_client(tg_id=9137, name="Петя")
-    services.enter_admin_pause(q.id, 0)
-    services._client_set_block(q.id, ClientBlock.PAUSED | ClientBlock.ADMIN_SILENT)
-    text, _ = await ch.main_payload(services, services.db.get_client(q.id))
-    assert "🟡" not in text and "приостановлен" not in text, text
-
-
-async def test_client_main_counts_held_devices_as_having_something_to_issue(
-        services, fake_bot, make_active_client):
-    """Своих нет, а удерживаемое есть — ряд выдачи нужен: выдавать есть что."""
-    owner = make_active_client(tg_id=9132, name="Вася", device_limit=3)
-    cl = make_active_client(tg_id=9133, name="Петя")
-    dc = services.add_device(owner.id, "Планшет")
-    assert services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=9133).ok
-    text, markup = await ch.main_payload(services, services.db.get_client(cl.id))
-    assert text.splitlines()[-1] == '📱 Устройств 0 из 3 (+1 от профиля <a href="tg://user?id=9132">Вася</a>)'
-    assert [b.text for b in markup.inline_keyboard[0]] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"]

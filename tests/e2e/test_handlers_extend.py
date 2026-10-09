@@ -9,9 +9,9 @@
 вопрос после срока вернулся — лишний шаг на каждом продлении; возврат не туда —
 админ, продлевающий подряд из списка истекающих, каждый раз ищет его заново.
 
-Экраны продления (с остатком, снятый тумблер, истёкшая, отсрочка, итог и
-возврат из «Истекают») — в эталоне tests/screens/admin.txt; здесь — срок в
-БД, живое меню, память диалога и ветки, которых в эталоне нет.
+Экраны продления (с остатком, тумблер туда и обратно, истёкшая, бессрочная,
+отсрочка с границей в неделю, «∞», итог и возврат в «Истекают») — в эталоне
+tests/screens/admin.txt; здесь — срок в БД, живое меню и память диалога.
 """
 import datetime
 
@@ -21,7 +21,7 @@ from awgbot.bot.callbacks import ClientCB, PeriodCB
 from awgbot.bot.handlers import admin as admin_h
 from awgbot.core import config
 from awgbot.util import timeutil
-from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -36,36 +36,6 @@ def _admin_cb(bot):
 def _buttons(nav):
     markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
     return [b for row in markup.inline_keyboard for b in row]
-
-
-async def _open(services, bot, client_id, state=None, action="extend"):
-    cb, nav = _admin_cb(bot)
-    await admin_h.extend_start(cb, ClientCB(action=action, client_id=client_id), services,
-                               state or FakeState())
-    return cb, nav
-
-
-async def test_keep_toggle_switches_off_and_back(services, fake_bot, make_active_client):
-    """Тумблер возвращается обратно: второе нажатие снова включает
-    «Сохранить остаток» (снятое состояние — в эталоне)."""
-    client = make_active_client(tg_id=7201, period_kind="year")
-    _, nav = await _open(services, fake_bot, client.id)
-    toggle = [b for b in _buttons(nav) if "Сохранить остаток" in b.text][0]
-    cb, nav2 = _admin_cb(fake_bot)
-    await admin_h.extend_keep_toggle(cb, PeriodCB.unpack(toggle.callback_data), services, FakeState())
-    toggle2 = [b for b in _buttons(nav2) if "Сохранить остаток" in b.text][0]
-    cb3, nav3 = _admin_cb(fake_bot)
-    await admin_h.extend_keep_toggle(cb3, PeriodCB.unpack(toggle2.callback_data), services, FakeState())
-    assert "✅ Сохранить остаток" in last_screen(nav3)[1]
-
-
-async def test_no_keep_toggle_without_remainder(services, fake_bot, make_active_client):
-    """Нечего сохранять (истекла или бессрочная) — тумблера нет."""
-    client = make_active_client(tg_id=7202, period_kind="never")
-    _, nav = await _open(services, fake_bot, client.id)
-    text, labels = last_screen(nav)
-    assert text.endswith("Сейчас: бессрочная"), text
-    assert not any("остаток" in l for l in labels), labels
 
 
 @pytest.mark.parametrize("keep", [1, 0])
@@ -92,15 +62,13 @@ async def test_period_applies_at_once_leaves_a_two_line_note_and_returns_to_the_
 
 async def test_never_ignores_keep_and_makes_it_unlimited(services, fake_bot, make_active_client):
     """«∞» делает подписку бессрочной независимо от тумблера: остаток тут
-    некуда сохранять."""
+    некуда сохранять (след — снимок adm.cl.extend.never)."""
     client = make_active_client(tg_id=7204, period_kind="year")
     cb, nav = _admin_cb(fake_bot)
     await admin_h.extend_period_chosen(
         cb, PeriodCB(kind="never", ctx="extend", ref=client.id, keep=1), services, FakeState())
     fresh = services.db.get_client(client.id)
-    assert fresh.period_kind == "never" and fresh.period_end is None
-    assert [s[1] for s in nav.sent if s[0] == "edit_text"][-1] == \
-        f"✅ {client.name}: подписка теперь бессрочная"
+    assert fresh.period_kind == "never" and fresh.period_end is None, "подписка не стала бессрочной"
 
 
 async def test_extend_from_expired_reactivates(services, fake_bot, make_active_client):
@@ -116,17 +84,6 @@ async def test_extend_from_expired_reactivates(services, fake_bot, make_active_c
     assert int(fresh.block_reason) & int(ClientBlock.EXPIRY) == 0, "причина EXPIRY не снята"
 
 
-async def test_grace_debt_warns_and_hides_periods_shorter_than_it(services, fake_bot, make_active_client):
-    """Брал отсрочку — строка «⚠️ Брал отсрочку на N дн. — вычтется», сроки
-    короче долга не предлагаются (продлить на день при долге в неделю — в минус)."""
-    client = make_active_client(tg_id=7206, period_kind="year")
-    services.db.update_client_fields(client.id, grace_pending_cut=7 * 86400)
-    _, nav = await _open(services, fake_bot, client.id)
-    _, labels = last_screen(nav)
-    # долг ровно в неделю прячет и «Неделю»: в эталоне долг 3 дн., граница — здесь
-    assert "День" not in labels and "Неделя" not in labels and "Месяц" in labels, labels
-
-
 def _expiring(services, make_active_client, name, tg_id, days):
     c = make_active_client(name, tg_id=tg_id)
     now = timeutil.now()
@@ -136,11 +93,12 @@ def _expiring(services, make_active_client, name, tg_id, days):
     return services.db.get_client(c.id)
 
 
-async def test_extend_from_the_expiring_list_returns_to_it_while_it_is_not_empty(
+async def test_extend_from_the_expiring_list_takes_the_profile_out_of_it(
         services, fake_bot, make_active_client):
     """«⏱ Имя» в «Истекают»: после продления — снова список, пока в нём
-    кто-то есть, и продлённого в нём уже нет. Отмена в список и «последний
-    продлён — карточка» — в эталоне."""
+    кто-то есть (экран — снимок adm.cl.extend_exp.more): продлённый из
+    истекающих ушёл, второй остался. Отмена в список и «последний продлён —
+    карточка» — в эталоне."""
     _expiring(services, make_active_client, "Аня", 7210, 2)
     _expiring(services, make_active_client, "Боря", 7211, 3)
 
@@ -153,6 +111,5 @@ async def test_extend_from_the_expiring_list_returns_to_it_while_it_is_not_empty
     await admin_h.extend_start(cb2, ClientCB.unpack(buttons[0].callback_data), services, state)
     period = [x for x in _buttons(nav2) if x.text == "Месяц"][0]
     await admin_h.extend_period_chosen(cb2, PeriodCB.unpack(period.callback_data), services, state)
-    after = [s[1] for s in nav2.sent if s[0] == "answer"]
-    assert after and after[-1].startswith("⏳ <b>Истекают:</b> 1"), after
-    assert "Боря" in after[-1] and "Аня" not in after[-1]
+    left = [c.name for c, _ in services.expiring_subscriptions()]
+    assert left == ["Боря"], left

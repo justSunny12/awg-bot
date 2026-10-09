@@ -1,6 +1,6 @@
 """Устройство-шлюз в чате: назначение из настроек (своё устройство / новая
-машина), смена и снятие без токенов, запасной путь через пересланный claim,
-отчёт агента после применения. Экраны этих путей — в эталонах
+машина), смена и снятие без токенов, запасной путь через пересланный claim.
+Экраны этих путей и отчёт агента после применения — в эталонах
 (tests/screens/admin.txt, gateway.txt); здесь — что меняется в БД, ключах линка
 и выданных файлах, и ветки, которых в эталонах нет."""
 from __future__ import annotations
@@ -215,44 +215,6 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     res = services.gateway_setup(phone.id, slot_id=1)
     assert res["previous"].id == pi.id and _gw_dev_id(services) == phone.id
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
-
-
-async def _agent_apply(fake_bot, monkeypatch, tmp_path, status: dict):
-    import asyncio
-    from awgbot.bot.handlers import gateway as gh
-    from awgbot.bot.callbacks import GwCB
-    from awgbot.domain import gateway as gw
-    from awgbot.domain.gateway import GatewayServices, GwStatus
-    from awgbot.infra import gwguard
-    from awgbot.infra.db import Database
-    monkeypatch.setattr(gwguard, "script_status", lambda: status)
-    monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", "K="))
-    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
-    real_sleep = asyncio.sleep
-
-    async def _no_wait(_s):                       # ожидание канала после пометки — без секунд
-        await real_sleep(0)
-    monkeypatch.setattr(gh.asyncio, "sleep", _no_wait)
-    db = Database(tmp_path / f"gw-{status.get('GW_STATUS', 'x')}.db"); db.init_schema()
-    svc = GatewayServices(db)
-    monkeypatch.setattr(svc, "apply_bundle", lambda blob, ow=False: (True, "хвост вывода скрипта"))
-    monkeypatch.setattr(svc, "status", lambda: GwStatus())
-    cb, nav = _acb(fake_bot)
-    st = FakeState(); await st.update_data(bundle=base64.b64encode(b"x").decode())
-    try:
-        await gh.gw_bundle_apply(cb, GwCB(action="apply"), svc, st)
-    finally:
-        db.close()
-    return nav
-
-
-async def test_agent_claims_when_unmarked_without_a_channel(fake_bot, monkeypatch, tmp_path):
-    """Шлюз не назначен, а канала нет — агент отдаёт подписанное сообщение для
-    пересылки основному боту ровно одним сообщением с кнопкой: иначе назначить
-    шлюз нечем."""
-    nav = await _agent_apply(fake_bot, monkeypatch, tmp_path, {"GW_STATUS": "unmarked"})
-    claims = [s for s in nav.sent if s[0] == "answer" and "GW1:" in s[1]]
-    assert len(claims) == 1 and claims[0][2] is not None and "перешли" in claims[0][1].lower()
 
 
 async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fake_bot, gwsetup, monkeypatch):

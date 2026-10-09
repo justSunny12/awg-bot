@@ -2,16 +2,16 @@
 (отмена), передача другу, добавление устройства другу, активация по команде
 /code.
 
-Тексты и кнопки этих экранов — в эталоне tests/screens/client.txt; здесь —
-БД, память диалога и выдача QR/файла с главной при одном устройстве, которой
-в эталоне нет.
+Тексты и кнопки этих экранов (и выдача QR/файла с главной при одном
+устройстве) — в эталоне tests/screens/client.txt; здесь — БД и память
+диалога.
 """
 import types
 
 import pytest
 
 from awgbot.bot.handlers import client as ch
-from awgbot.bot.callbacks import DeviceCB, Menu, PauseCB
+from awgbot.bot.callbacks import DeviceCB, PauseCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
@@ -24,20 +24,6 @@ def _cb(bot, uid):
 
 def _fresh(services, client):
     return services.db.get_client(client.id)
-
-
-async def test_menu_gen_qr_and_file(services, fake_bot, make_active_client):
-    """QR и файл с главной при одном устройстве — сразу выдача, без выбора."""
-    client = make_active_client(tg_id=5100)
-    services.add_device(client.id, "d")
-    cl = _fresh(services, client)
-    cb, nav = _cb(fake_bot, 5100)
-    await ch.menu_gen_pick(cb, Menu(action="gen_qr"), cl, services)
-    assert [s[0] for s in nav.sent if s[0] != "edit_text"] == ["animation"], nav.sent
-    cb2, nav2 = _cb(fake_bot, 5100)
-    await ch.menu_gen_pick(cb2, Menu(action="gen_file"), cl, services)
-    assert [s[0] for s in nav2.sent if s[0] != "edit_text"] == ["document"], nav2.sent
-    assert not any(s[0] == "edit_text" for s in nav.sent + nav2.sent), "экран выбора из одного"
 
 
 async def test_device_transfer_ask_changes_nothing(services, fake_bot, make_active_client):

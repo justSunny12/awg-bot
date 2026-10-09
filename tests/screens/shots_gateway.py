@@ -45,8 +45,9 @@ from awgbot.bot.callbacks import CancelCB, GwCB, HideCB, PageCB, UpdateCB
 from awgbot.core import config
 from awgbot.domain.backupcrypto import BackupKeyMissing
 from awgbot.domain.gateway import GatewayServices, GwCheck, GwStatus
+from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
-from awgbot.infra import mail, updates
+from awgbot.infra import mail, sshd, updates
 from awgbot.runtime import linkclient
 from awgbot.util import timeutil
 
@@ -208,17 +209,24 @@ _FAST_ASYNCIO = types.SimpleNamespace(sleep=_no_sleep, get_running_loop=asyncio.
 class _Host:
     """Что агент увидел бы на хосте, если бы это был шлюз."""
     live: GwStatus = field(default_factory=_status)        # живой замер (status)
-    tick: GwStatus | None = None                           # снимок тика в БД, 2 мин назад
+    tick: GwStatus | None = None                           # снимок тика в БД, tick_age с назад
+    tick_age: int = 120
     channel: str = ""                                      # "" — канала нет; active | standby | offline
+    slot_name: str = "NASPi"                               # имя слота по слову сервера
     standby: bool | None = None                            # есть ли другой шлюз (по слову сервера)
     carries: bool = False                                  # несёт трафик и линк жив
     op: tuple = (True, "")                                 # итог restart_link / reassert
     ssh: dict = field(default_factory=_ssh)
+    ssh_after: tuple = ()                                  # (N, правка): после N-го ssh_screen хост меняется
     busy: str = ""                                         # ssh_port_busy
     port_error: str = ""                                   # ssh_port_change: ServiceError
+    port_refusal: bool = False                             # ssh_port_change: OMV успел переписать конфиг
+    filter_error: str = ""                                 # ssh_filter_on: ServiceError
     own_items: list = field(default_factory=list)          # свои домены (vpn|ru, домен)
     own: dict = field(default_factory=lambda: dict(_OWN_OFF))
     lan_fail: str = ""                                     # скрипт своих списков отказал
+    router: tuple = ("192.168.1.0/24", "192.168.1.10", ["192.168.2.0/24"])   # подсеть, адрес, соседи
+    late_answer: bool = False                              # итог «➖» дольше, чем Telegram держит нажатие
     mail: bool = False                                     # ящик подключён
     mail_last: str = ""                                    # ok | fail — последняя проверка
     mail_error: str = ""                                   # проверка/тест-письмо падают
@@ -295,6 +303,10 @@ class _Agent(GatewayServices):
 
     # ── SSH ─────────────────────────────────────────────────────────────────
     def ssh_screen(self, info=None, fact=None, conf=True):
+        """Раздел SSH; ssh_after — хост меняется между показом и вводом (гонка)."""
+        self._ssh_reads = getattr(self, "_ssh_reads", 0) + 1
+        if self.h.ssh_after and self._ssh_reads == self.h.ssh_after[0] + 1:
+            self.h.ssh.update(self.h.ssh_after[1])
         return copy.deepcopy(self.h.ssh)
 
     def ssh_allow_current(self):
@@ -321,6 +333,8 @@ class _Agent(GatewayServices):
         return list(self.h.ssh["allow"])
 
     def ssh_filter_on(self):
+        if self.h.filter_error:
+            raise ServiceError(self.h.filter_error)
         self.h.ssh["filter"] = True
 
     def ssh_filter_off(self):
@@ -332,6 +346,10 @@ class _Agent(GatewayServices):
     def ssh_port_change(self, port):
         if self.h.port_error:
             raise ServiceError(self.h.port_error)
+        if self.h.port_refusal:
+            # OMV переписал sshd_config между вводом и сменой — отказ сервиса
+            self.h.ssh.update(owner="omv", owner_port=22)
+            raise SshOwnerRefusal(sshd.SshdOwner("omv", "OMV: Службы → SSH", 22), 22)
         old = self.h.ssh["port"]
         self.h.ssh.update(port=port, ports=[port], conf_ports=[port], env_port=port)
         return old
@@ -364,6 +382,8 @@ class _Agent(GatewayServices):
                 continue
             items = [(k, x) for k, x in items if x != d] + [(kind, d)]
             out.append(f"<code>{d}</code>: добавлен")
+        # сверка файлов (own_reconcile) видит правку, только если список изменился
+        self._own_changed = items != self.h.own_items
         self.h.own_items = items
         self.lan_own_counts_refresh()
         return True, "\n".join(out)
@@ -384,13 +404,14 @@ class _Agent(GatewayServices):
         return dict(self.h.own), []
 
     def own_reconcile(self):
-        return True
+        return getattr(self, "_own_changed", True)
 
     def own_unsent(self):
         return False
 
     def lan_router_params(self):
-        return "192.168.1.0/24", "192.168.1.10", ["192.168.2.0/24"]
+        net, addr, peers = self.h.router
+        return net, addr, list(peers)
 
     # ── почта и бэкапы ──────────────────────────────────────────────────────
     def email_check(self, acc=None):
@@ -474,12 +495,12 @@ def _agent(**opts):
         services.h = h
         if h.tick is not None:
             st = GwStatus.from_json(h.tick.to_json())
-            st.ts = timeutil.to_iso(NOW - _dt.timedelta(minutes=2))
+            st.ts = timeutil.to_iso(NOW - _dt.timedelta(seconds=h.tick_age))
             services.db.set_state(services._SNAPSHOT_KEY, st.to_json())
             if h.own_items:
                 services.lan_own_counts_refresh()
         if h.channel in ("active", "standby"):
-            services.set_link_role(h.channel == "active", standby=h.standby, name="NASPi")
+            services.set_link_role(h.channel == "active", standby=h.standby, name=h.slot_name)
         elif h.standby is not None:
             services.db.set_state(services._LINK_STANDBY_KEY, "1" if h.standby else "0")
         if h.channel:
@@ -514,8 +535,26 @@ def _agent(**opts):
         mp.setattr(updates, "release_body", lambda tag: _RELEASE.body)
         mp.setattr(hostboot, "reboot_detected", lambda db: True)
         mp.setattr(gateway_handlers, "asyncio", _FAST_ASYNCIO)
+        if h.late_answer:
+            _late_removal_toast(mp)
         return config.ADMIN_ID, "Админ"
     return build
+
+
+def _late_removal_toast(mp) -> None:
+    """Всплывашка итога «➖» опоздала: скрипт ответил дольше, чем Telegram
+    держит нажатие, — ответ на колбэк отвергнут (остальные ответы — как были)."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.types import CallbackQuery
+    real = CallbackQuery.answer
+
+    def answer(self, text=None, **kw):
+        if text and ": убран" in text:
+            async def too_old():
+                raise TelegramBadRequest(method=None, message="query is too old and response timeout expired")
+            return too_old()
+        return real(self, text=text, **kw)
+    mp.setattr(CallbackQuery, "answer", answer)
 
 
 def _shot(id_: str, *, press=(), text=None, conf=None, start=None, title="", steps=(), call=None,
@@ -575,6 +614,10 @@ _ALLOW2 = ["203.0.113.7", "home.example.net"]
 _ALLOW_MANY = [f"203.0.113.{n}" for n in range(1, 13)]
 _TICK_LAN = _status_lan()
 _MAIL = {"mail": True, "mail_last": "ok"}
+_SMB_PEERS = ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"]
+_HUGE = [f"very-long-subdomain-name-{i:04d}.example-shop.com" for i in range(80)]
+_ADDR_15 = [f"198.51.100.{n}" for n in range(1, 16)]
+_OWNER_LATE = {"owner": "omv", "owner_port": 2222, "port": 2222, "ports": [2222], "conf_ports": [2222]}
 
 # ── снимки ───────────────────────────────────────────────────────────────────
 
@@ -606,6 +649,36 @@ SHOTS = [
                            checks=copy.deepcopy(_CHECKS_OK) + [
                                GwCheck("резолвер", False, "dnsmasq не отвечает", group="lan")]),
           title="VPN-транзит: резолвер упал, свои списки ждут синхронизации, SMB ещё не пришли"),
+    _shot("gw.panel.own_failed", press=[GwCB(action="panel")],
+          tick=_status_lan(lan=_lan(own={"active": True, "state": "failed"})),
+          title="свои списки не применились — хвост со ссылкой на здоровье"),
+    _shot("gw.panel.lan.empty", press=[GwCB(action="panel")],
+          tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0,
+                                    svc={"active": True, "own": [], "peer": [], "ever": True})),
+          title="своих доменов нет — без хвоста «свои»; лента SMB пришла пустой — «не найдены»"),
+    _shot("gw.panel.smb_peers", press=[GwCB(action="panel")],
+          tick=_status_lan(lan=_lan(svc={"active": True, "own": [], "peer": list(_SMB_PEERS), "ever": True})),
+          title="SMB только от соседей (одно имя с разметкой) — счёт без нулевой части, имён на панели нет"),
+    _shot("gw.panel.smb_off", press=[GwCB(action="panel")],
+          tick=_status_lan(lan=_lan(svc={"active": False, "own": ["nas"], "peer": ["nas-2"], "ever": True})),
+          title="связь подсетей не действует — строки 🗂 нет"),
+    _shot("gw.panel.whole_days", press=[GwCB(action="panel")], tick=_status(uptime_seconds=12 * 86400),
+          title="ровно 12 суток аплинка — «12 дн» без «0 ч»"),
+    _shot("gw.panel.down", press=[GwCB(action="panel")],
+          tick=_status(link_up=False, handshake_age=None, uptime_seconds=None),
+          title="линк лежит, аптайма в замере нет — шапка без «·»"),
+    _shot("gw.panel.tag_without_v", press=[GwCB(action="panel")], tick=_status(), update_tag="1.2.4",
+          title="тег последней проверки без «v» — на панели «v1.2.4»"),
+    _shot("gw.panel.start.update", start="", tick=_status(), update_tag="v1.2.4",
+          title="/start из снимка тика — строка «⬆️ Доступна» и здесь"),
+    _shot("gw.panel.no_ssh", press=[GwCB(action="panel")], tick=_status(ssh={}),
+          title="снимок агента без поля ssh — панель без строки SSH"),
+    _shot("gw.panel.link_late", press=[GwCB(action="panel")], tick=_status(handshake_age=720.0), tick_age=40,
+          title="хендшейк 12 мин назад при пороге 5 мин — 🟡; снимок 40 с назад"),
+    _shot("gw.panel.link_late.raised", press=[GwCB(action="panel")], tick=_status(handshake_age=720.0),
+          conf={"app.gateway.handshake_max_age": 900}, title="те же 12 мин при пороге 15 мин — 🟢"),
+    _shot("gw.panel.link_hours", press=[GwCB(action="panel")], tick=_status(handshake_age=3 * 3600.0),
+          title="хендшейк 3 ч назад — 🟡 «3 ч»"),
 
     # ── W01 здоровье ────────────────────────────────────────────────────────
     _shot("gw.health", press=[GwCB(action="health")],
@@ -613,6 +686,11 @@ SHOTS = [
           title="всё в порядке, просадка питания с загрузки"),
     _shot("gw.health.broken", press=[GwCB(action="health")], live=_status_bad(),
           title="проблемы, «не проверено», питание сейчас"),
+    _shot("gw.health.no_host", press=[GwCB(action="health")], live=_status(hostname="", disk_free_gb=1234.4),
+          title="имени хоста в замере нет — «Здоровье шлюза»; терабайтный диск — «1 234 ГБ»"),
+    _shot("gw.health.escaped", press=[GwCB(action="health")],
+          live=_status(checks=[GwCheck("<b>x</b>", False, "rc=1 & <i>")]),
+          title="имя проверки и подробность с хоста экранированы"),
 
     # ── W02 мастер восстановления ───────────────────────────────────────────
     _shot("gw.reassert.ask", press=[GwCB(action="reassert")], title="с панели, шлюз трафик не несёт"),
@@ -627,14 +705,29 @@ SHOTS = [
     _shot("gw.lan.empty", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
           own={"active": False, "state": "off", "no_channel": True},
           title="своих доменов нет, упр. канала нет — списки только этого шлюза"),
+    _shot("gw.lan.empty.shared", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
+          own=_OWN_SYNCED, title="своих доменов нет, списки общие — обе подсказки первыми под «подробнее»"),
+    _shot("gw.lan.bare", press=[GwCB(action="lan")], own_items=[("vpn", "a.com")],
+          tick=_status_lan(lan=_lan(uplink="", updated_at="", own_vpn=1, own_ru=0,
+                                    svc={"active": True, "own": [], "peer": ["naspi5"], "ever": True})),
+          title="аплинк не назван, списки ещё не обновлялись, своих «напрямую» нет, SMB только извне"),
+    _shot("gw.lan.smb_off", press=[GwCB(action="lan")], own_items=_OWN_ITEMS,
+          tick=_status_lan(lan=_lan(svc={"active": False, "own": ["nas"], "peer": ["nas-2"], "ever": True})),
+          title="связь подсетей не действует — строки 🗂 нет"),
     _shot("gw.lan", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED,
           title="три своих домена, списки общие и синхронизированы"),
     _shot("gw.lan.pending", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS,
           own={"active": True, "state": "no_link", "pending": 2},
           title="правки ждут синхронизации — нет связи с сервером"),
+    _shot("gw.lan.pending.online", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS,
+          own={"active": True, "state": "pending", "pending": 1},
+          title="одна правка ждёт — связь есть, сервер ещё не ответил"),
     _shot("gw.lan.failed", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS,
           own={"active": True, "state": "failed", "err": "dnsmasq отверг конфиг <vpn.conf>"},
           title="свои списки не применились (ошибка с хоста — экранирована)"),
+    _shot("gw.lan.broken", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS,
+          own={"active": True, "state": "failed", "err": "ошибка записи файла: нет места на диске"},
+          title="поломка записи файла на шлюзе — отдельной фразой, без второго двоеточия"),
     _shot("gw.lan.rejected", press=[GwCB(action="lan")], tick=_TICK_LAN, own_items=_OWN_ITEMS,
           own={"active": True, "state": "rejected", "rej": [["awg-srv.example.com", "это хост сервера"]]},
           title="сервер не принял домен"),
@@ -654,6 +747,20 @@ SHOTS = [
     _shot("gw.lan.add.online", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.org",
           tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=True,
           title="итог с хвостом «синхронизируются» — канал на связи"),
+    _shot("gw.lan.add.later", press=[GwCB(action="lan"), GwCB(action="lan_ru")], text="shop.ru",
+          tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="offline",
+          title="итог с хвостом «будут синхронизированы» — канал включён, связи нет"),
+    _shot("gw.lan.add.already", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.com",
+          tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=True,
+          title="«уже в списке» при живом канале — ничего не изменилось, хвоста нет"),
+    _shot("gw.lan.add.already.local", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.com",
+          tick=_TICK_LAN, own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
+          title="«уже в списке» без канала — «применено только здесь» не к месту"),
+    _shot("gw.lan.add.solo.local", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.org",
+          tick=_TICK_LAN, own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
+          standby=False, title="без канала, сервер сказал, что другого шлюза нет, — хвоста нет"),
+    _shot("gw.lan.add.huge", press=[GwCB(action="lan"), GwCB(action="lan_add")], text=" ".join(_HUGE),
+          tick=_TICK_LAN, title="вставили 80 длинных доменов — итог обрезан, экран под ним в том же сообщении"),
     _shot("gw.lan.ru.solo", press=[GwCB(action="lan"), GwCB(action="lan_ru")], text="gosuslugi.ru",
           tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=False,
           title="другого шлюза нет — итог без хвоста"),
@@ -667,6 +774,18 @@ SHOTS = [
     _shot("gw.lan.rm", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
           own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=True,
           title="«➖ домен» — сразу, всплывашка с хвостом синхронизации"),
+    _shot("gw.lan.rm.later", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
+          own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="offline",
+          title="«➖» при канале без связи — «будут синхронизированы»"),
+    _shot("gw.lan.rm.local", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
+          own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
+          title="«➖» без канала — «применено только здесь»"),
+    _shot("gw.lan.rm.solo", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
+          own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=False,
+          title="«➖», другого шлюза нет — итог без хвоста"),
+    _shot("gw.lan.rm.late", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
+          own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True}, late_answer=True,
+          title="скрипт ответил дольше, чем Telegram держит нажатие, — итог сообщением, экран перерисован"),
     _shot("gw.lan.rm.stale", press=[GwCB(action="lan"), GwCB(action="lan_rm", val="0.deadbeef")],
           tick=_TICK_LAN, own_items=_OWN_ITEMS, title="список изменился — переспрос, экран заново"),
     _shot("gw.lan.rm.failed", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "sber.ru")], tick=_TICK_LAN,
@@ -676,6 +795,18 @@ SHOTS = [
           title="❓ Роутер: вкладка MikroTik"),
     _shot("gw.lan.router.ow", press=[GwCB(action="lan"), GwCB(action="lan_router", val="ow")],
           tick=_TICK_LAN, channel="active", title="❓ Роутер: вкладка OpenWrt, имя слота с сервера"),
+    _shot("gw.lan.router.unknown_tab", press=[GwCB(action="lan"), GwCB(action="lan_router", val="zz")],
+          tick=_TICK_LAN, title="вкладка из чужого колбэка — рецепт MikroTik"),
+    _shot("gw.lan.router.peers", press=[GwCB(action="lan"), GwCB(action="lan_router")], tick=_TICK_LAN,
+          router=("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"]),
+          title="два соседа — маршрут до каждого через адрес шлюза (MikroTik)"),
+    _shot("gw.lan.router.peers.ow", press=[GwCB(action="lan"), GwCB(action="lan_router", val="ow")],
+          tick=_TICK_LAN, router=("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"]),
+          title="два соседа — вкладка OpenWrt своими командами"),
+    _shot("gw.lan.router.no_peers", press=[GwCB(action="lan"), GwCB(action="lan_router")], tick=_TICK_LAN,
+          router=("192.168.1.0/24", "192.168.1.2", []), title="соседей нет — без маршрутов до них и абзаца"),
+    _shot("gw.lan.router.named", press=[GwCB(action="lan"), GwCB(action="lan_router")], tick=_TICK_LAN,
+          channel="active", slot_name="NASPi (<дача>)", title="имя слота с сервера экранировано в заголовке"),
 
     # ── W20 корень настроек ─────────────────────────────────────────────────
     _shot("gw.set", press=[GwCB(action="settings")], title="корень настроек"),
@@ -777,6 +908,20 @@ SHOTS = [
                    filter=True, allow=["203.0.113.7", "dyn.example.net"], unresolved=["dyn.example.net"],
                    held=["203.0.113.99"]),
           title="порт под OMV и все предупреждения"),
+    _shot("gw.ssh.omv.same", press=[GwCB(action="ssh")],
+          ssh=_ssh(port=2222, env_port=2222, owner="omv", owner_port=2222, ports=[2222], conf_ports=[2222],
+                   table_ports={"tunnel_in": 2222}, filter=True, allow=["203.0.113.7"], omv_rules=3),
+          title="порт под OMV, в OMV и у sshd совпадает — предупреждения о порте нет"),
+    _shot("gw.ssh.conf_differs", press=[GwCB(action="ssh")], ssh=_ssh(conf_ports=[2222]),
+          title="конфиг sshd разошёлся с тем, что слушает сервис"),
+    _shot("gw.ssh.unresolved", press=[GwCB(action="ssh")],
+          ssh=_ssh(filter=True, allow=["home2.dyn.example"], unresolved=["home2.dyn.example"]),
+          title="имя не резолвится и прошлого адреса нет"),
+    _shot("gw.ssh.no_lan", press=[GwCB(action="ssh")], ssh=_ssh(lan=[]),
+          title="подсеть шлюза неизвестна — строка локальной сети без адреса"),
+    _shot("gw.ssh.peers.many", press=[GwCB(action="ssh")],
+          ssh=_ssh(peer_nets=["10.0.0.0/8<b>", "10.2.0.0/16", "10.3.0.0/16", "10.4.0.0/16"]),
+          title="подсети соседей — первые три, экранированы"),
     _shot("gw.ssh.generator", press=[GwCB(action="ssh")],
           ssh=_ssh(owner="generator", owner_detail="managed by <cloud-init>",
                    owner_files=["/etc/ssh/sshd_config"]),
@@ -785,8 +930,15 @@ SHOTS = [
           title="sshd не запущен"),
     _shot("gw.ssh.many", press=[GwCB(action="ssh")], ssh=_ssh(filter=True, allow=list(_ALLOW_MANY)),
           title="12 адресов — листание"),
+    _shot("gw.ssh.many.page2", press=[GwCB(action="ssh"),
+                                      PageCB(screen="gwssh", ref=0, page=1, back=GwCB(action="ssh").pack())],
+          ssh=_ssh(filter=True, allow=list(_ALLOW_MANY)),
+          title="листание: вторая страница — номера кнопок по полному списку"),
     _shot("gw.ssh.on", press=[GwCB(action="ssh"), GwCB(action="ssh_on!")], ssh=_ssh(allow=list(_ALLOW2)),
           title="включить фильтр — сразу, предупреждение alert"),
+    _shot("gw.ssh.on.refused", press=[GwCB(action="ssh"), GwCB(action="ssh_on!")], ssh=_ssh(allow=list(_ALLOW2)),
+          filter_error="обвязка шлюза старого образца: перевыпусти конфигурацию шлюза",
+          title="включить фильтр на старой обвязке — отказ alert, раздел как был"),
     _shot("gw.ssh.off", press=[GwCB(action="ssh"), GwCB(action="ssh_off!")],
           ssh=_ssh(filter=True, allow=list(_ALLOW2)), title="выключить фильтр — alert"),
     _shot("gw.ssh.del", press=[GwCB(action="ssh"), _ssh_del(_ALLOW2, "home.example.net")],
@@ -806,6 +958,14 @@ SHOTS = [
           port_error="sshd не поднялся на 2222 — вернул 22", title="смена не прошла"),
     _shot("gw.ssh.port.owner", press=[GwCB(action="ssh"), GwCB(action="ssh_port")],
           ssh=_ssh(owner="omv", owner_port=22), title="порт под OMV — отказ сразу по кнопке"),
+    _shot("gw.ssh.port.owner_late", press=[GwCB(action="ssh_port")], text="2200", ssh_after=(1, _OWNER_LATE),
+          title="OMV взял конфиг между приглашением и вводом — отказ экраном, ввод закрыт"),
+    _shot("gw.ssh.port.owner_late.generator", press=[GwCB(action="ssh_port")], text="2200",
+          ssh_after=(1, {"owner": "generator", "owner_detail": "Ansible managed: do not edit",
+                         "owner_files": ["/etc/ssh/sshd_config.d/10-ansible.conf"]}),
+          title="другой генератор взял конфиг между приглашением и вводом — его строка в отказе"),
+    _shot("gw.ssh.port.race", press=[GwCB(action="ssh_port")], text="2200", port_refusal=True,
+          title="OMV переписал конфиг уже во время смены — отказ сервиса тем же экраном"),
     _shot("gw.ssh.port.retry", steps=[_p(GwCB(action="ssh")), _p(GwCB(action="ssh_port")), _t("22"),
                                       _p(GwCB(action="ssh_port_retry"))],
           title="финишер после ввода → «✏️ Другой порт»: финишер со «Скрыть», приглашение новым"),
@@ -815,6 +975,8 @@ SHOTS = [
     _shot("gw.ssh.add.ask", press=[GwCB(action="ssh"), GwCB(action="ssh_add")], title="приглашение: адреса"),
     _shot("gw.ssh.add.done", press=[GwCB(action="ssh"), GwCB(action="ssh_add")],
           text="198.51.100.4 home.example.net", ssh=_ssh(filter=True), title="добавлено"),
+    _shot("gw.ssh.add.many", press=[GwCB(action="ssh"), GwCB(action="ssh_add")], text=" ".join(_ADDR_15),
+          ssh=_ssh(filter=True), title="15 адресов — итог перечисляет двенадцать и «и ещё 3»"),
     _shot("gw.ssh.add.merged", press=[GwCB(action="ssh"), GwCB(action="ssh_add")], text="203.0.113.0/24",
           ssh=_ssh(allow=["203.0.113.7", "203.0.113.9", "home.example.net"]),
           title="подсеть поглотила адреса"),
@@ -838,6 +1000,21 @@ SHOTS = [
     _shot("gw.set.mon.edit.done", press=[GwCB(action="mon"),
                                          GwCB(action="edit", val="app.gateway.handshake_max_age")],
           text="10", title="итог: минуты, в conf — секунды"),
+    _shot("gw.set.mon.edit.bad", press=[GwCB(action="mon"),
+                                        GwCB(action="edit", val="app.gateway.handshake_max_age")],
+          text="0", title="порог линка вне 1–1440 — переспрос"),
+    _shot("gw.set.mon.minutes.ask", press=[GwCB(action="mon"),
+                                           GwCB(action="edit", val="app.gateway.monitor_minutes")],
+          title="приглашение: частота опроса"),
+    _shot("gw.set.mon.minutes.bad", press=[GwCB(action="mon"),
+                                           GwCB(action="edit", val="app.gateway.monitor_minutes")],
+          text="0", title="частота опроса вне границ — переспрос"),
+    _shot("gw.set.mon.minutes.done", press=[GwCB(action="mon"),
+                                            GwCB(action="edit", val="app.gateway.monitor_minutes")],
+          text="5", title="частота опроса: итог первой строкой раздела"),
+    _shot("gw.set.mon.streak_one", press=[GwCB(action="mon")],
+          conf={"app.monitoring.alert_streak": 1, "app.gateway.handshake_max_age": 30},
+          title="один замер до алерта — «1 плохого замера»; порог 30 с — «1 мин», не «0»"),
     _shot("gw.set.mon.edit.unknown", press=[GwCB(action="mon"), GwCB(action="edit", val="app.nope")],
           title="ключ из старой клавиатуры — alert"),
 
@@ -937,6 +1114,9 @@ SHOTS = [
           tick=_status(), title="шлюз несёт трафик — прежняя панель удалена, предупреждение об обрыве"),
     _shot("gw.bundle.received.same_link", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
           bundle={"ok": True, "link_changed": False}, title="конфиг линка тот же — без обрыва"),
+    _shot("gw.bundle.received.same_link.carries", steps=[("start", ""), _file(_BUNDLE_NAME, _BUNDLE)],
+          carries=True, tick=_status(), bundle={"ok": True, "link_changed": False},
+          title="конфиг линка тот же у шлюза, несущего трафик, — без угрозы РФ-доступу"),
     _shot("gw.bundle.first_run", steps=[_file("awg-gw-bundle.sh", b"#!/bin/sh\n# DUMMY\n")],
           title="файл первого применения по имени — убран из чата"),
     _shot("gw.bundle.first_run.renamed", steps=[_file("setup.sh", b"#!/bin/sh\n# awg-gw-bundle DUMMY\n")],
@@ -973,6 +1153,10 @@ SHOTS = [
           channel="active", mark={"status": "unmarked", "claim": "DUMMY-claim-token"},
           apply_status={"UPLINK": "installed", "LINK": "up", "GW_STATUS": "unmarked"},
           title="шлюз не назначен, канал на связи — запрос ушёл сам"),
+    _shot("gw.bundle.claim.unmarked", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          mark={"status": "unmarked", "claim": "DUMMY-claim-token"},
+          apply_status={"UPLINK": "installed", "LINK": "up", "GW_STATUS": "unmarked"},
+          title="шлюз не назначен, канала нет — переслать сообщение"),
     _shot("gw.bundle.claim.forward", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
           mark={"status": "foreign", "claim": "DUMMY-claim-token"},
           apply_status={"UPLINK": "installed", "LINK": "foreign", "GW_STATUS": "foreign"},

@@ -3,8 +3,9 @@
 из файла в чате.
 
 Экраны разделов «E-mail» и «Бэкапы», шагов мастера и восстановления — в
-эталоне tests/screens/admin.txt; здесь — что сохранено, проверено, удалено из
-чата и отправлено, и ветки, которых в эталоне нет."""
+эталоне tests/screens/admin.txt (с подсказкой iCloud, переспросом порта,
+итогом бэкапа письмом и отказом короткой фразе); здесь — что сохранено,
+проверено, удалено из чата и отправлено."""
 
 import pytest
 
@@ -40,8 +41,7 @@ async def test_email_wizard_known_provider_saves_after_live_check(services, fake
     await sh.email_action(cb, SetCB(sec="email", act="do", key="setup"), services, state)
     addr = FakeMessage(text="box@icloud.com", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.email_address(addr, state, services)
-    # в эталоне — Gmail; подсказка iCloud про пароль приложения — только здесь
-    assert any("Провайдер распознан" in t and "app-specific" in t for kind, t, _ in addr.sent)
+    # подсказка iCloud про пароль приложения — снимок adm.set.email.setup.icloud
     pw = FakeMessage(text="s3cret", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.email_password(pw, state, services)
     assert any(r[0] == "delete" for r in fake_bot.records), "сообщение с паролем не удалено"
@@ -67,8 +67,7 @@ async def test_email_wizard_unknown_domain_asks_servers_and_failed_check_saves_n
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     a = m("box@corp.example"); await sh.email_address(a, state, services)
     await sh.email_imap_host(m("imap.corp.example"), state, services)
-    bad = m("99999"); await sh.email_imap_port(bad, state, services)
-    assert any("порта" in t for kind, t, _ in bad.sent)
+    bad = m("99999"); await sh.email_imap_port(bad, state, services)   # переспрос — снимок adm.set.email.port.bad
     await sh.email_imap_port(m("993"), state, services)
     await sh.email_smtp_host(m("smtp.corp.example"), state, services)
     await sh.email_smtp_port(m("587"), state, services)
@@ -119,9 +118,8 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     monkeypatch.setattr(services, "make_backup", lambda: ["/tmp/a.enc", "/tmp/b.enc"])
     monkeypatch.setattr(services, "email_send_backup", lambda paths: mailed.append(paths))
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
-    assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]]
-    # итог отправки у основного в эталоне не снят (есть только у агента)
-    assert any(t == "📨 Бэкап отправлен на <code>box@icloud.com</code>" for kind, t, _ in msg.sent if kind == "answer"), msg.sent
+    assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]], "копия не ушла письмом"
+    # итог отправки — снимок adm.set.backup.now.email
 
 
 async def test_email_fallback_toggle_offers_setup_without_mailbox(services, fake_bot, monkeypatch):
@@ -180,8 +178,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     await sh.backup_passphrase_start(cb, state, services)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     short = m("abc"); await sh.backup_passphrase_first(short, state, services)
-    # отказ короткой фразе у основного в эталоне не снят
-    assert any("короче" in t for kind, t, _ in short.sent)
+    # отказ короткой фразе — снимок adm.set.backup.enc_set.short
     await sh.backup_passphrase_first(m("correct horse battery"), state, services)
     wrong = m("correct horse batery"); await sh.backup_passphrase_second(wrong, state, services)
     assert not services.backup_encryption_enabled(), "несовпавшая фраза включила шифрование"

@@ -34,9 +34,9 @@ async def test_device_transfer_makes_friendly(services, make_active_client, fake
 # ── добавление устройства себе: одно поле — имя, затем экран с выдачей ─────
 async def test_add_device_self_full_fsm(services, make_active_client, fake_bot):
     """Себе — один ввод: имя. Без вопроса о лимите (он ставится в карточке);
-    после имени — устройство в БД без своего лимита, диалог закрыт, итог
-    говорит, что трафик идёт в пределах лимита профиля. Приглашение и ввод
-    убраны из чата."""
+    после имени — устройство в БД без своего лимита, диалог закрыт.
+    Приглашение и ввод убраны из чата. Итог с лимитом профиля — снимок
+    cl.add.name.done.capped."""
     client = make_active_client(tg_id=64, device_limit=3, traffic_limit=100 * 1024 ** 3)
     state = FakeState()
     cb, nav = _cb_with_nav(fake_bot, 64)
@@ -48,9 +48,6 @@ async def test_add_device_self_full_fsm(services, make_active_client, fake_bot):
     devs = services.db.list_devices(client.id)
     assert [d.name for d in devs] == ["Ноут"] and devs[0].traffic_limit == 0
     assert await state.get_state() is None, "после имени спрашивают ещё что-то"
-    shown = [s for s in typed.sent if s[0] == "answer"]
-    # в эталоне профиль без лимита трафика; хвост про лимит профиля — только здесь
-    assert shown[-1][1] == "✅ Ноут создано · трафик в пределах 100 ГБ профиля"
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
     assert {nav.message_id, typed.message_id} <= deleted, "приглашение или ввод остались в чате"
 

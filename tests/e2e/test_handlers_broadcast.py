@@ -1,8 +1,11 @@
 """E2E: объявления админа — частичный выбор адресатов, черновик с фото и
 альбомами, лимиты подписи, отчёт о доставке.
 
-Экраны объявления (вход с главной, адресаты, приглашение, превью, рассылка с
-отчётом и панелью следом) — в эталоне tests/screens/admin.txt (adm.bc.*)."""
+Экраны объявления (вход с главной, адресаты с частичным выбором, приглашение,
+переспрос на пустое, превью одному и всем, рассылка с отчётом по формам —
+профиль, профили, держатели, недоставленные — и панелью следом) — в эталоне
+tests/screens/admin.txt (adm.bc.*). Черновик с картинками снимком не снять
+(сообщение с фото обвязка эталонов не шлёт): его отказы и превью — здесь."""
 import asyncio
 
 import pytest
@@ -13,26 +16,6 @@ pytestmark = pytest.mark.e2e
 
 
 # ── объявление: адресаты и черновик ─────────────────────────────────────────
-
-def _btn_texts(markup):
-    return [b.text for row in markup.inline_keyboard for b in row]
-
-
-def test_target_picker_marks_partial_selection():
-    """Отмечены не все: отметка — на самой кнопке профиля, «Выбрать все»
-    остаётся ☑️ — иначе нажатие на неё сняло бы и то, что админ уже выбрал."""
-    from awgbot.core import models
-    from awgbot.bot import keyboards as kb
-
-    def _c(i):
-        return models.Client(id=i, tg_id=100 + i, name=f"К{i}", device_limit=1,
-                             block_reason=0, is_service=0, activation_status="active",
-                             invite_code=None, created_at="2026-01-01")
-
-    clients = [_c(1), _c(2)]
-    labels = _btn_texts(kb.broadcast_targets(clients, {1}))
-    assert labels[1:4] == ["☑️ Выбрать все", "✅ К1", "☑️ К2"], labels
-
 
 async def test_broadcast_keeps_telegram_formatting(services, make_active_client, fake_bot):
     """Форматирование, сделанное средствами Telegram, обязано попасть в
@@ -56,24 +39,6 @@ async def test_broadcast_keeps_telegram_formatting(services, make_active_client,
     await admin_h.broadcast_receive(msg, state, services)
 
     assert (await state.get_data())["text"] == "Профилактика <b>в ночь на 12-е</b>"
-
-
-async def test_broadcast_rejects_blank_before_reading_markup(services, make_active_client,
-                                                             fake_bot):
-    """Пустое сообщение отбиваем по тексту, а не по разметке: у сообщения без
-    текста html_text брать неоткуда."""  # формулировку см. texts.BROADCAST_EMPTY
-    from tests.conftest import FakeMessage
-    from awgbot.bot.handlers.admin import broadcast as admin_h
-    import awgbot.core.config as cfg
-
-    c = make_active_client(name="Ксюша", tg_id=7002)
-    state = FakeState()
-    await state.update_data(targets=[c.id])
-
-    msg = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await admin_h.broadcast_receive(msg, state, services)
-    assert any("жду текст объявления или картинку" in s[1]
-               for s in msg.sent if s[0] == "answer")
 
 
 def _photo(file_id):
@@ -232,7 +197,8 @@ async def test_every_draft_prompt_offers_a_way_out(services, make_active_client,
 
     «Отмена» текстом бот понять не обязан (и не пытается: слово ушло бы в
     рассылку), значит кнопка обязана быть на каждом сообщении, где диалог
-    чего-то ждёт: и на отказе по длине, и на «жду текст или картинку».
+    чего-то ждёт: и на отказе по длине (черновик с картинками — снимком его
+    не снять), и на «жду текст или картинку» (снимок adm.bc.blank).
     """
     from tests.conftest import FakeMessage
     from awgbot.bot.handlers.admin import broadcast as admin_h
@@ -248,12 +214,6 @@ async def test_every_draft_prompt_offers_a_way_out(services, make_active_client,
     await admin_h.broadcast_receive(over, state, services)
     markups = [mk for kind, t, mk in over.sent if kind == "answer"]
     assert markups and markups[-1] is not None, "отказ по длине — тупик без кнопки"
-
-    empty = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
-                        bot=fake_bot)
-    await admin_h.broadcast_receive(empty, state, services)
-    markups = [mk for kind, t, mk in empty.sent if kind == "answer"]
-    assert markups and markups[-1] is not None, "пустое сообщение — тупик без кнопки"
 
 
 async def test_broadcast_album_with_caption_is_one_action(
@@ -285,8 +245,7 @@ async def test_broadcast_album_with_caption_is_one_action(
     assert media[0].caption == "Переезд начался"
     confirms = [t for m in (first, second) for kind, t, mk in m.sent
                 if kind == "answer" and mk is not None]
-    assert confirms and confirms[-1].startswith("👆 <b>Так увидят получатели</b> · 1 адресат: профиль Ксюша"), \
-        "нет блока подтверждения"
+    assert confirms, "нет блока подтверждения"   # его шапка — снимок adm.bc.preview.one
     ids = (await state.get_data())["preview_ids"]
     assert len(ids) == 3, "в preview_ids не альбом плюс блок подтверждения"
 
@@ -503,33 +462,3 @@ async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_
     tracked = services.db.pop_content_msg_ids(chat)
     assert msg.message_id in tracked, "сообщение админа осталось бы висеть"
     assert 555 in tracked, "экран-приглашение осталось бы висеть"
-
-
-def _cl(name, tg_name=""):
-    from awgbot.core import models
-    return models.Client(id=hash(name) % 1000, tg_id=100, name=name, device_limit=1,
-                         block_reason=0, is_service=0, activation_status="active",
-                         invite_code=None, created_at="2026-01-01", tg_name=tg_name)
-
-
-def test_broadcast_report_wording_by_shape():
-    """Отчёт — только ФАКТ доставки: кому (профили поимённо, про держателей —
-    только если они среди адресатов) и сколько адресатов. Само объявление
-    остаётся в чате строкой выше; пересказывать его — удваивать рассылку."""
-    from awgbot.bot import texts as T
-
-    n, k = _cl("Наташа"), _cl("Ксюша")
-    assert T.broadcast_report([n], False, 1, 0) == "✅ Доставлено: профиль Наташа — 1 адресат"
-    assert T.broadcast_report([n], True, 2, 0) == \
-        "✅ Доставлено: профиль Наташа и те, с кем он делится устройствами — 2 адресата"
-    assert T.broadcast_report([n, k], False, 2, 0) == "✅ Доставлено: профили Наташа, Ксюша — 2 адресата"
-    assert T.broadcast_report([n, k], True, 5, 0) == \
-        "✅ Доставлено: профили Наташа, Ксюша и те, с кем они делятся устройствами — 5 адресатов"
-
-
-def test_broadcast_report_does_not_hide_failures():
-    """«Доставлено» при недоставленных было бы неправдой, а узнать об этом
-    больше неоткуда."""
-    from awgbot.bot import texts as T
-    r = T.broadcast_report([_cl("А")], True, 3, 2)
-    assert r.split("\n")[1] == "⚠️ не доставлено 2 — бот заблокирован или аккаунт удалён", r

@@ -1,22 +1,21 @@
 """Раздел «🛡 SSH-доступ» агента — то, чего нет в эталонах экранов
 (tests/screens/gateway.txt): что порт, адреса и фильтр реально меняются (и не
-меняются при отказе), ввод открыт или закрыт, отказ владельца порта по вводу и
-в гонке, устаревшие кнопки 3.1.0, листание длинного списка адресов, редкие
-ветки текста раздела и строки панели."""
+меняются при отказе), ввод открыт или закрыт, отказ владельца порта по вводу
+ничего не трогает, устаревшие кнопки 3.1.0, листание длинного списка адресов
+и номер кнопки «➖» по полному списку. Тексты раздела, отказов и строки
+панели — в эталоне."""
 from __future__ import annotations
 
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.bot import keyboards as kb, texts
+from awgbot.bot import keyboards as kb
 from awgbot.bot.keyboards import common as kbc
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.gateway import GatewayServices, GwStatus
-from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
-from awgbot.infra import sshd
 from awgbot.infra.db import Database
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
@@ -93,25 +92,6 @@ def _labels(markup):
 
 # ── экран ────────────────────────────────────────────────────────────────────
 
-def test_section_under_omv_warns_only_about_a_real_port_mismatch():
-    """Порт в OMV и у sshd совпадают — предупреждать не о чем: лишняя «⚠️»
-    учит пропускать предупреждения. Конфиг sshd разошёлся с тем, что слушает
-    сервис, — своя строка: нужен перезапуск sshd, а не OMV."""
-    text = texts.gateway_ssh_text(_scr(port=2222, owner="omv", owner_port=2222, ports=[2222],
-                                       conf_ports=[2222], filter=True, allow=["203.0.113.7"], omv_rules=3))
-    assert "⚠️ В OMV задан порт" not in text and "не перезапущен" not in text, \
-        "порты совпадают — предупреждать не о чем"
-    text = texts.gateway_ssh_text(_scr(conf_ports=[2222]))
-    assert "В конфиге sshd порт 2222, сервис слушает 22 — перезапусти sshd" in text
-
-
-def test_panel_of_an_old_agent_snapshot_has_no_ssh_line():
-    """Снимок старого агента без поля ssh — панель без строки SSH, а не
-    «🛡 SSH :None»."""
-    assert texts.gateway_ssh_panel_line({}) == ""
-    assert "SSH" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=1.0)), \
-        "снимок старого агента без поля ssh — панель без строки"
-
 
 # ── порт ─────────────────────────────────────────────────────────────────────
 
@@ -147,53 +127,23 @@ async def test_port_change_reaches_the_service_and_a_bad_port_keeps_the_input_op
     assert await st.get_state() == SshPort.value.state, "переспрос — ввод открыт"
 
 
-async def test_foreign_owner_refuses_before_touching_anything(svc, fake_bot):
-    """OMV владеет sshd_config: отказ экраном с «где менять» и «что бот сделает
-    сам»; ни ss, ни sshd не тронуты, ввод закрыт, «Назад» — в раздел."""
-    svc.screen = _scr(port=2222, owner="omv", owner_port=2222,
-                      owner_where="OMV: Службы → SSH → «Порт», затем «Применить»")
+@pytest.mark.parametrize("owner", [
+    {"port": 2222, "owner": "omv", "owner_port": 2222},
+    {"owner": "generator", "owner_detail": "Ansible managed: do not edit",
+     "owner_files": ["/etc/ssh/sshd_config.d/10-ansible.conf"]},
+], ids=["omv", "generator"])
+async def test_foreign_owner_refuses_before_touching_anything(svc, fake_bot, owner):
+    """Конфигом sshd владеет OMV или другой генератор: по вводу порта ни ss,
+    ни sshd не тронуты, ввод закрыт — следующий текст в чате не меняет порт.
+    Экран отказа (где менять, что бот сделает сам) — в эталоне
+    (gw.ssh.port.owner_late*)."""
+    svc.screen = _scr(**owner)
     st = FakeState()
     await st.set_state(SshPort.value)
     msg = FakeMessage(text="2200", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_port_received(msg, st, svc)
-    sent = [s for s in msg.sent if s[0] == "answer" and "управляет OMV" in s[1]]
-    assert sent, msg.sent
-    t = sent[0][1]
-    assert "Службы → SSH → «Порт»" in t and "проживёт до первого применения" in t
-    assert "переведёт на него фильтр" in t and "sshd слушает 2222, в OMV задан 2222" in t
-    assert _labels(sent[0][2]) == ["⬅️ Назад"]
-    assert GwCB.unpack(sent[0][2].inline_keyboard[0][0].callback_data).action == "ssh"
-    assert not svc.calls and await st.get_state() is None
-    # иной генератор — свой текст с найденной строкой
-    svc.screen = _scr(owner="generator", owner_detail="Ansible managed: do not edit",
-                      owner_files=["/etc/ssh/sshd_config.d/10-ansible.conf"])
-    await st.set_state(SshPort.value)
-    msg = FakeMessage(text="2200", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    await gh.gw_ssh_port_received(msg, st, svc)
-    assert any("управляет другой процесс" in s[1] and "Ansible managed" in s[1]
-               for s in msg.sent if s[0] == "answer")
-
-
-async def test_owner_refusal_raised_by_the_service_is_shown_too(svc, fake_bot, monkeypatch):
-    """Гонка: экран видел владельца «бот», а к моменту смены OMV уже
-    переписал файл — сервис отказывает тем же экраном."""
-    def refuse(p):
-        raise SshOwnerRefusal(sshd.SshdOwner("omv", "OMV: Службы → SSH", 22), 22)
-    monkeypatch.setattr(svc, "ssh_port_change", refuse)
-    svc.busy = ""
-    st = FakeState()
-    await st.set_state(SshPort.value)
-    msg = FakeMessage(text="2200", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    svc.screen = _scr()
-    orig = svc.ssh_screen
-    calls = {"n": 0}
-
-    def screen(info=None):
-        calls["n"] += 1
-        return orig() if calls["n"] == 1 else _scr(owner="omv", owner_port=22)
-    monkeypatch.setattr(svc, "ssh_screen", screen)
-    await gh.gw_ssh_port_received(msg, st, svc)
-    assert any("управляет OMV" in s[1] for s in msg.sent if s[0] == "answer")
+    assert not svc.calls, f"при чужом владельце тронуты ss/sshd: {svc.calls}"
+    assert await st.get_state() is None, "ввод порта остался открытым"
 
 
 async def test_finisher_buttons_reopen_or_close_the_input(svc, fake_bot):
@@ -261,15 +211,6 @@ async def test_filter_on_and_off_are_immediate(svc, fake_bot):
     assert svc.calls[-1] == ("on",)
 
 
-async def test_filter_on_refusal_from_old_plumbing_is_an_alert(svc, fake_bot, monkeypatch):
-    def boom():
-        raise ServiceError("обвязка шлюза старого образца: перевыпусти конфигурацию шлюза")
-    monkeypatch.setattr(svc, "ssh_filter_on", boom)
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_on!"), svc, FakeState())
-    assert any("старого образца" in str(a) for a in cb.answers)
-
-
 async def test_owner_refusal_comes_right_on_the_button(svc, fake_bot):
     """На малине с OMV «Изменить порт» сразу показывает отказ — без приглашения
     и ввода: лишний шаг у целевых пользователей ни к чему."""
@@ -280,11 +221,9 @@ async def test_owner_refusal_comes_right_on_the_button(svc, fake_bot):
     assert await st.get_state() is None, "ввод порта открыт, хотя порт задаёт OMV"
 
 
-def test_section_text_says_no_held_address_and_pages_the_whole_list():
-    """Имя не резолвится и прошлого адреса нет — так и сказано (фильтр его не
-    пускает); двадцать адресов доступны листанием все и по порядку."""
-    text = texts.gateway_ssh_text(_scr(allow=["home2.dyn.example"], unresolved=["home2.dyn.example"]))
-    assert "прошлого адреса нет" in text
+def test_the_address_list_pages_through_the_whole_list():
+    """Двадцать адресов доступны листанием все и по порядку, ни одна страница
+    не длиннее предела рядов: адрес, до которого не долистать, не убрать."""
     many = [f"h{i}.dyn.example" for i in range(20)]
     # весь список — кнопками, но не больше десяти рядов на экране: остальное листается
     seen: list[str] = []
@@ -318,20 +257,13 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     monkeypatch.setattr(paging, "_pages", {})
     many = [f"198.51.100.{i}" for i in range(1, 16)]
     svc.screen = _scr(allow=list(many))
-    cb, nav = _cb(fake_bot)
-    await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
-    first = _labels(nav.sent[-1][2])
-    assert len(nav.sent[-1][2].inline_keyboard) <= kbc.MAX_ROWS, first
-    assert kbc.NEXT_LABEL in first and kbc.PREV_LABEL not in first, first
-
     # страница запомнена листанием — экран раздела рисует её
     paging.remember(ADMIN, "gwssh", 0, 1)
     cb, nav = _cb(fake_bot)
     await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
     markup = nav.sent[-1][2]
-    second = _labels(markup)
-    assert kbc.PREV_LABEL in second and len(markup.inline_keyboard) <= kbc.MAX_ROWS, second
-    rm = [b for row in markup.inline_keyboard for b in row if b.text.startswith("➖")]
+    assert len(markup.inline_keyboard) <= kbc.MAX_ROWS, len(markup.inline_keyboard)
+    rm =[b for row in markup.inline_keyboard for b in row if b.text.startswith("➖")]
     assert rm and rm[0].text != "➖ " + many[0], "вторая страница показывает начало списка"
     target = rm[0]
     entry = target.text.removeprefix("➖ ")
@@ -347,25 +279,6 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
 
 PEER_LINE = "Из локальных сетей других шлюзов: открыт для "
 PEER_OFF_LINE = "Когда подсети связаны, SSH доступен и из подсетей других шлюзов"
-
-
-def test_section_without_lan_or_peers_says_how_to_get_them():
-    """Подсеть шлюза неизвестна и соседей нет (ключа нет или список пуст) —
-    строка локальной сети без адреса, под ней — что даёт связь подсетей."""
-    for empty in ({}, {"peer_nets": []}):
-        text = texts.gateway_ssh_text(_scr(**empty))
-        lines = text.splitlines()
-        i = lines.index("Из локальной сети: открыт всегда")
-        assert lines[i + 1] == PEER_OFF_LINE, (empty, lines)
-        assert "открыт для" not in text, (empty, text)
-
-
-def test_section_peer_nets_line_is_capped_and_escaped():
-    text = texts.gateway_ssh_text(_scr(peer_nets=["10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16", "10.4.0.0/16"]))
-    line = next(ln for ln in text.splitlines() if ln.startswith(PEER_LINE))
-    assert "10.3.0.0/16" in line and "10.4.0.0/16" not in line, line
-    text = texts.gateway_ssh_text(_scr(peer_nets=["10.0.0.0/8<b>"]))
-    assert "10.0.0.0/8&lt;b&gt;" in text and "10.0.0.0/8<b>" not in text, text
 
 
 async def test_cancel_under_a_prompt_closes_the_dialog_and_returns_the_section(svc, fake_bot, monkeypatch):

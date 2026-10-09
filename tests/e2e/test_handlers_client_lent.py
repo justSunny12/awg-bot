@@ -3,16 +3,16 @@
 клиент-держатель видит чужое после своих, управляет им как держатель;
 блокировка — с подтверждением.
 
-Карточки, списки и подтверждения этих веток — в эталоне
-tests/screens/client.txt; здесь — БД, уведомления второй стороне и
-состояния, которых в эталоне нет (лимит профиля, РФ-байты).
+Карточки, списки и подтверждения этих веток (в том числе с лимитом профиля
+и с РФ-байтами владельца) — в эталонах tests/screens/{client,guest}.txt;
+здесь — БД и уведомления второй стороне.
 """
 import pytest
 
 from awgbot.bot.handlers import client as ch
-from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB
+from awgbot.bot.callbacks import BlockCB, DelDeviceCB
 from awgbot.core.blocks import DeviceBlock
-from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -20,22 +20,6 @@ pytestmark = pytest.mark.e2e
 def _cb(bot, uid):
     nav = FakeMessage(chat_id=uid, user_id=uid, bot=bot)
     return FakeCallback(message=nav, user_id=uid, bot=bot), nav
-
-
-async def test_owner_card_of_lent_device_shows_profile_traffic_limit(services, fake_bot,
-                                                                     make_active_client):
-    """У профиля с лимитом трафика карточка переданного показывает расход
-    против лимита профиля: держатель тратит трафик владельца, и владелец
-    должен это видеть."""
-    owner = make_active_client(tg_id=7100, name="Вася", device_limit=3, traffic_limit=100 * 1024 ** 3)
-    dc = services.add_device(owner.id, "Ноут")
-    res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=97100,
-                                   tg_name="Артём")
-    assert res.ok
-    cb, nav = _cb(fake_bot, 7100)
-    await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), owner, services, FakeState())
-    text, _ = last_screen(nav)
-    assert text.splitlines()[1] == "Не подключался · 📊 0 из 100 ГБ (лимит твоего профиля)", text
 
 
 async def test_owner_delete_of_lent_device_notifies_holder(services, fake_bot, make_active_client):
@@ -96,35 +80,3 @@ async def test_created_for_friend_finisher(services, fake_bot, make_active_clien
     await ch.device_add_traffic(typed, cl, services, st)
     dev = services.db.list_devices(cl.id)[0]
     assert dev.name == "Другу" and dev.traffic_limit == 0 and dev.friend_status == "pending"
-
-
-async def test_holder_and_guest_cards_do_not_show_rf(services, fake_bot, make_active_client):
-    """Переданное устройство с РФ-байтами владельца: ни клиент-держатель, ни
-    гость по ссылке строки РФ в карточке не видят — это сведения для админа."""
-    from awgbot.bot.callbacks import FriendCB
-    from awgbot.bot.handlers import friend as fh
-    owner = make_active_client(tg_id=7200, name="Вася", device_limit=3)
-    services.db.update_client_fields(owner.id, routing_allowed=1)
-    holder = make_active_client(tg_id=7201, name="Петя", device_limit=2)
-    to_holder = services.add_device(owner.id, "Ноут")
-    to_guest = services.add_device(owner.id, "Планшет")
-    assert services.activate_friend(services.make_device_friendly(to_holder.device_id), tg_id=7201).ok
-    guest = services.activate_friend(services.make_device_friendly(to_guest.device_id), tg_id=97201)
-    assert guest.ok, guest.reason
-
-    async def cards():
-        cb, nav = _cb(fake_bot, 7201)
-        await ch.device_open(cb, DeviceCB(action="open", device_id=to_holder.device_id),
-                             services.db.get_client(holder.id), services, FakeState())
-        held = last_screen(nav)
-        cb, nav = _cb(fake_bot, 97201)
-        await fh.friend_open(cb, FriendCB(action="open", device_id=to_guest.device_id),
-                             guest.holder, services)
-        return held, last_screen(nav)
-
-    before = await cards()
-    services.db.rf_add_bulk([(to_holder.device_id, 1024 ** 3, 1024 ** 3),
-                             (to_guest.device_id, 1024 ** 3, 1024 ** 3)])
-    after = await cards()
-    assert after == before, "карточка держателя или гостя изменилась от РФ-данных"
-    assert all("🇷🇺" not in text for text, _ in after), after

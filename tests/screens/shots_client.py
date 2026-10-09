@@ -116,6 +116,36 @@ def _no_pause_days(services, cid):
     services.db.set_pause_balance(cid, 0)
 
 
+def _admin_silent(services, cid):
+    """Тихая пауза администратора: блок без уведомления, подписка стоит."""
+    services.block_client_manual(cid, ClientBlock.ADMIN_SILENT, False, pause_days=0)
+
+
+def _traffic_blocked(services, cid):
+    """Доступ приостановлен исчерпанным лимитом трафика профиля."""
+    services._client_set_block(cid, ClientBlock.TRAFFIC_CLIENT)
+
+
+def _rf_bytes(services, cid):
+    """РФ-часть трафика накоплена: по устройству 1 и за месяц сервера."""
+    services.db.rf_add_bulk([(1, G, 3 * G)])
+    services.db.set_state("rf_month_rx", str(G))
+    services.db.set_state("rf_month_tx", str(3 * G))
+
+
+def _foreign_device(services, cid):
+    """У «Пети» своё устройство «Чужое» — существует, Васе не передано."""
+    services.add_device(_make(services, "Петя", OTHER_TG), "Чужое")
+
+
+def _vpn_down(build):
+    """Сервер VPN не отвечает (кэш проверки — «нет»)."""
+    def wrapped(services, mp):
+        mp.setattr(services, "server_ok_cached", lambda: False)
+        return build(services)
+    return wrapped
+
+
 MAIL_CONF = {"email.imap_host": "imap.example.com", "email.smtp_host": "smtp.example.com"}
 
 
@@ -203,6 +233,17 @@ def guest(n=1, *, rf=False, drop=False, owner_after=None, more=False, other=Fals
     return build
 
 
+def _guest_gen_fails(services, mp):
+    """Гость с одним устройством; сервер не выдаёт конфиг (ServiceError)."""
+    from awgbot.domain.services import ServiceError
+
+    def boom(device_id, **kw):
+        raise ServiceError("сервер не отвечает")
+    who = G1(services)
+    mp.setattr(services, "generate_config", boom)
+    return who
+
+
 def _guest_code_wait(services):
     """Вася с одним устройством и выписанным приглашением FTEST0000002."""
     cid = _make(services, "Вася", CLIENT_TG)
@@ -270,6 +311,14 @@ CLIENT_SHOTS = [
          title="главная: приостановлена администратором"),
     Shot("cl.main.never", role="client", start="", data=vasya(["Телефон"], period="never"),
          title="главная: бессрочная подписка"),
+    Shot("cl.main.admin_silent", role="client", start="", data=vasya(["Телефон"], after=_admin_silent),
+         title="главная: тихая пауза администратора не видна"),
+    Shot("cl.main.traffic_blocked", role="client", start="",
+         data=vasya(["Телефон"], traffic=10 * G, after=_traffic_blocked),
+         title="главная: доступ приостановлен лимитом трафика"),
+    Shot("cl.main.vpn_down", role="client", start="", data=_vpn_down(ONE), title="главная: VPN не отвечает"),
+    Shot("cl.main.held_only", role="client", start="", data=vasya(holds=True),
+         title="главная: своих нет, чужое в держании — ряд выдачи"),
     Shot("cl.main.back", role="client", press=[DEVICES, MAIN], data=ONE,
          title="«Назад» из устройств — главная на месте"),
 
@@ -307,10 +356,16 @@ CLIENT_SHOTS = [
 
     # ссылки /start <payload>
     Shot("cl.link.sub", role="client", start="sub", data=ONE, title="ссылка на подписку"),
+    Shot("cl.link.sub.live", role="client", steps=[("start", ""), ("start", "sub")], data=ONE,
+         title="ссылка на подписку при живом меню — правкой на месте"),
     Shot("cl.link.rf", role="client", start="rf", data=RF, title="ссылка на РФ-доступ"),
     Shot("cl.link.rf_hidden", role="client", start="rf", data=ONE, title="ссылка на РФ-доступ без разрешения"),
     Shot("cl.link.dev", role="client", start="dev-1", data=ONE, title="ссылка на устройство"),
     Shot("cl.link.dev_foreign", role="client", start="dev-99", data=ONE, title="ссылка на чужое устройство"),
+    Shot("cl.link.dev.held", role="client", start="dev-5", data=MIXED, title="ссылка на чужое в держании"),
+    Shot("cl.link.dev.foreign_existing", role="client", start="dev-2",
+         data=vasya(["Телефон"], after=_foreign_device),
+         title="ссылка на существующее чужое устройство — главная"),
 
     # подписка
     Shot("cl.sub", role="client", press=[INFO], data=ONE, title="💳 Подписка: годовая активна"),
@@ -330,6 +385,10 @@ CLIENT_SHOTS = [
          title="💳 Подписка: приостановлена администратором"),
     Shot("cl.sub.no_days", role="client", press=[INFO], data=vasya(["Телефон"], after=_no_pause_days),
          title="💳 Подписка: дней паузы нет"),
+    Shot("cl.sub.admin_silent", role="client", press=[INFO], data=vasya(["Телефон"], after=_admin_silent),
+         title="💳 Подписка: тихая пауза администратора не видна"),
+    Shot("cl.sub.rf_bytes", role="client", press=[INFO], data=vasya(["Телефон"], rf=True, after=_rf_bytes),
+         title="💳 Подписка: РФ-байты накоплены — клиенту не видны"),
 
     # пауза
     Shot("cl.pause.ask", role="client", press=[INFO, PauseCB(action="ask", ref=2)], data=ONE,
@@ -353,6 +412,10 @@ CLIENT_SHOTS = [
     Shot("cl.pause.other.bad", role="client", press=[INFO, PauseCB(action="ask", ref=2),
                                                       PauseCB(action="other", ref=2)],
          text="100", data=ONE, title="пауза: своё число вне диапазона"),
+    *[Shot(f"cl.pause.other.bad.{v}", role="client", press=[PauseCB(action="ask", ref=2),
+                                                           PauseCB(action="other", ref=2)],
+           text=v, data=ONE, title=f"пауза: своё число «{v}» — отказ")
+      for v in ("0", "29", "abc")],
     Shot("cl.pause.other.done", role="client", press=[INFO, PauseCB(action="ask", ref=2),
                                                        PauseCB(action="other", ref=2)],
          text="10", data=ONE, title="пауза: своё число — итог"),
@@ -383,6 +446,8 @@ CLIENT_SHOTS = [
          data=vasya(["Телефон", "Ноутбук"]), title="🔗 с уведомления о добавленном"),
     Shot("cl.grace.stale", role="client", press=[GraceCB(action="take", ref=2)],
          data=vasya(["Телефон"], period="month"), title="отсрочка неактуальна"),
+    Shot("cl.grace.foreign", role="client", press=[GraceCB(action="take", ref=99)],
+         data=vasya(["Телефон"], after=_soon), title="отсрочка с чужим номером профиля — отказ"),
 
     # устройства
     Shot("cl.devices.one", role="client", press=[DEVICES], data=ONE, title="📱 Устройства: одно"),
@@ -401,15 +466,26 @@ CLIENT_SHOTS = [
          title="карточка своего: потребление и лимит профиля"),
     Shot("cl.dev.own.blocked", role="client", press=[dev("open")], data=vasya(["Телефон"], blocked=(1,)),
          title="карточка своего: заблокировано мной"),
+    Shot("cl.dev.own.rf_bytes", role="client", press=[dev("open")],
+         data=vasya(["Телефон"], rf=True, after=_rf_bytes), title="карточка своего: РФ-байты не видны"),
     Shot("cl.dev.pending", role="client", press=[dev("open", 4)], data=MIXED,
          title="карточка своего: приглашение не принято"),
     Shot("cl.dev.lent", role="client", press=[dev("open", 3)], data=MIXED, title="карточка переданного"),
+    Shot("cl.dev.lent.capped", role="client", press=[dev("open")],
+         data=vasya(["Ноут"], traffic=100 * G, lend=(1,)), title="карточка переданного: лимит профиля"),
     Shot("cl.dev.held", role="client", press=[dev("open", 5)], data=MIXED, title="карточка чужого в держании"),
+    Shot("cl.dev.held.rf_bytes", role="client", press=[dev("open")],
+         data=vasya(holds=True, after=lambda s, c: (s.set_routing_allowed(3, True), _rf_bytes(s, 3))),
+         title="карточка чужого в держании: РФ-байты владельца не видны"),
     Shot("cl.dev.unmanaged", role="client", press=[dev("open", 2)], data=vasya(["Телефон"], unmanaged=True),
          title="карточка пира без ключа"),
     Shot("cl.dev.connect_menu", role="client", press=[dev("connect_menu")], data=ONE,
          title="«Данные для подключения» прежнего образца — карточка"),
+    Shot("cl.dev.connect_menu.unmanaged", role="client", press=[dev("connect_menu", 2)],
+         data=vasya(["Телефон"], unmanaged=True), title="«Данные для подключения» у пира без ключа"),
     Shot("cl.dev.foreign", role="client", press=[dev("open", 99)], data=ONE, title="чужое устройство — отказ"),
+    Shot("cl.dev.foreign.existing", role="client", press=[dev("open", 2)],
+         data=vasya(["Телефон"], after=_foreign_device), title="существующее чужое устройство — отказ"),
 
     # переименование
     Shot("cl.dev.rename", role="client", press=[dev("open"), dev("edit_name")], data=ONE,
@@ -464,6 +540,10 @@ CLIENT_SHOTS = [
          title="«⬅️ В меню» под выдачей — главная"),
     Shot("cl.gen.one", role="client", press=[Menu(action="gen_link")], data=ONE,
          title="🔗 с главной: одно устройство — сразу"),
+    Shot("cl.gen.one.qr", role="client", press=[Menu(action="gen_qr")], data=ONE,
+         title="🔳 с главной: одно устройство — сразу"),
+    Shot("cl.gen.one.file", role="client", press=[Menu(action="gen_file")], data=ONE,
+         title="📄 с главной: одно устройство — сразу"),
     Shot("cl.gen.pick", role="client", press=[Menu(action="gen_link")], data=TWO,
          title="🔗 с главной: выбор устройства"),
     Shot("cl.gen.pick.qr", role="client", press=[Menu(action="gen_qr")], data=TWO, title="🔳 с главной: выбор"),
@@ -475,6 +555,8 @@ CLIENT_SHOTS = [
          title="выдача без устройств — отказ"),
     Shot("cl.gen.unmanaged", role="client", press=[Menu(action="gen_link"), dev("gen_link", 2)],
          data=vasya(["Телефон"], unmanaged=True), title="выдача пира без ключа — «удали»"),
+    Shot("cl.gen.unmanaged.qr", role="client", press=[dev("gen_qr", 2)],
+         data=vasya(["Телефон"], unmanaged=True), title="QR пиру без ключа — «удали», QR не уходит"),
     Shot("cl.gen.unmanaged.delete", role="client",
          press=[Menu(action="gen_link"), dev("gen_link", 2), DelDeviceCB(device_id=2)],
          data=vasya(["Телефон"], unmanaged=True), title="пир без ключа — 🗑 Удалить"),
@@ -490,6 +572,9 @@ CLIENT_SHOTS = [
     Shot("cl.dev.unblock", role="client",
          press=[dev("open"), BlockCB(target="dev", action="menu_unblock", ref=1, kind="user")],
          data=vasya(["Телефон"], blocked=(1,)), title="разблокировать своё"),
+    Shot("cl.dev.unblock.not_blocked", role="client",
+         press=[BlockCB(target="dev", action="menu_unblock", ref=1, kind="user")], data=ONE,
+         title="разблокировать не заблокированное мной — отказ"),
     Shot("cl.dev.block.held", role="client",
          press=[dev("open", 5), BlockCB(target="dev", action="menu_block", ref=5, kind="user")], data=MIXED,
          title="🛑 чужое в держании — подтверждение"),
@@ -541,6 +626,8 @@ CLIENT_SHOTS = [
          title="➕ имя пустое"),
     Shot("cl.add.name.done", role="client", press=[dev("add", 0)], text="Ноутбук", data=ONE,
          title="➕ себе — создано, ряд выдачи"),
+    Shot("cl.add.name.done.capped", role="client", press=[dev("add", 0)], text="Ноутбук", data=CAPPED,
+         title="➕ себе — создано, трафик в пределах лимита профиля"),
     Shot("cl.add.friend.name", role="client", press=[dev("add", 0), dev("add_friend", 0)], text="Телефон мамы",
          data=ONE, title="➕ другу — лимит пресетами"),
     Shot("cl.add.friend.name.capped", role="client", press=[dev("add", 0), dev("add_friend", 0)],
@@ -579,6 +666,9 @@ CLIENT_SHOTS = [
     Shot("cl.guide.connect.link", role="client",
          press=[GuideCB(guide="connect", step=1, dev=1, kind="link")], data=ONE,
          title="подключение: ссылка и шаг «Подключаемся»"),
+    Shot("cl.guide.connect.file", role="client",
+         press=[GuideCB(guide="connect", step=1, dev=1, kind="file")], data=ONE,
+         title="подключение: файл и шаг «Подключаемся»"),
     Shot("cl.guide.connect_apple.qr", role="client",
          press=[GuideCB(guide="connect_apple", step=1, dev=1, kind="qr")], data=ONE,
          title="подключение Apple: QR и шаг со шторкой"),
@@ -592,6 +682,9 @@ CLIENT_SHOTS = [
     Shot("cl.guide.add.done", role="client",
          press=[GuideCB(guide="connect", step=0), GuideCB(guide="connect", step=-1)], text="Айпад", data=ONE,
          title="подключение: ➕ создано — способ"),
+    Shot("cl.guide.add.empty", role="client",
+         press=[GuideCB(guide="connect", step=0), GuideCB(guide="connect", step=-1)], text="   ", data=ONE,
+         title="подключение: ➕ имя пустое"),
     Shot("cl.guide.add.cancel", role="client",
          press=[GuideCB(guide="connect_apple", step=0), GuideCB(guide="connect_apple", step=-1),
                 CancelCB(kind="guide", ref=1)], data=ONE, title="подключение: ➕ «✖️ Отмена» — тот же шаг"),
@@ -619,6 +712,9 @@ CLIENT_SHOTS = [
     Shot("cl.rf.lent", role="client", press=[rt("lent", 3)],
          data=vasya(["Телефон", "Ноутбук", "Планшет"], limit=5, rf=True, lend=(3,)),
          title="переданное в разделе — всплывашка"),
+    Shot("cl.rf.dev.lent", role="client", press=[rt("dev", 3)],
+         data=vasya(["Телефон", "Ноутбук", "Планшет"], limit=5, rf=True, lend=(3,)),
+         title="переключить переданное старой кнопкой — отказ"),
     Shot("cl.rf.sites.empty", role="client", press=[rt("panel"), rt("sites")], data=RF,
          title="📋 Сайты: пусто"),
     Shot("cl.rf.sites", role="client", press=[rt("panel"), rt("sites")], data=RF_SITES, title="📋 Сайты: список"),
@@ -681,6 +777,17 @@ GUEST_SHOTS = [
     Shot("gst.main.usage", role="guest", start="",
          data=guest(1, owner_after=lambda s, c: s.db.add_traffic_bulk([(1, 3 * G, G)])),
          title="главная гостя: потребление"),
+    Shot("gst.main.owner_limit", role="guest", start="",
+         data=guest(1, owner_after=lambda s, c: (
+             s.db.update_client_fields(c, traffic_limit=50 * G, notified_thresholds="10080"),
+             s.db.add_traffic_bulk([(1, 20 * G, 4 * G + G // 10)]))),
+         title="главная гостя: лимит профиля владельца, срок владельца не виден"),
+    Shot("gst.main.device_limit", role="guest", start="",
+         data=guest(1, owner_after=lambda s, c: (
+             s.db.update_client_fields(c, traffic_limit=50 * G),
+             s.set_device_traffic_limit(1, 30 * G),
+             s.db.add_traffic_bulk([(1, 20 * G, 4 * G + G // 10)]))),
+         title="главная гостя: свой лимит устройства"),
     Shot("gst.refresh", role="guest", press=[fr("list"), fr("refresh")], data=G1,
          title="«Назад» из устройств — главная на месте"),
 
@@ -689,18 +796,30 @@ GUEST_SHOTS = [
          title="ещё одно устройство от того же владельца"),
     Shot("gst.code.other_donor", role="guest", start="FTEST0000004", data=guest(1, other=True),
          title="код от другого владельца — отказ"),
+    Shot("gst.code.other_donor.many", role="guest", start="FTEST0000005", data=guest(2, other=True),
+         title="код от другого владельца у гостя с двумя устройствами — отказ"),
     Shot("gst.code.upgrade", role="guest", start="CTEST0000003", data=guest(1, upgrade=True),
          title="код клиента — гость становится владельцем"),
+    Shot("gst.code.upgrade.over", role="guest", start="CTEST0000005",
+         data=guest(3, owner_after=lambda s, c: s.create_client("Артём", 2, "year", 0)),
+         title="код клиента: перенесено больше лимита подписки"),
     Shot("gst.code.no_arg", role="guest", text="/code", data=G1, title="/code без кода"),
     Shot("gst.code.invalid", role="guest", text="/code FNOSUCHCODE1", data=G1, title="/code с неверным кодом"),
     Shot("gst.link.rf", role="guest", start="rf", data=guest(1, rf=True), title="ссылка на РФ-доступ"),
     Shot("gst.link.dev", role="guest", start="dev-1", data=G1, title="ссылка на устройство"),
+    Shot("gst.link.dev.foreign", role="guest", start="dev-2", data=guest(1, more=True),
+         title="ссылка на устройство владельца, не переданное гостю — главная"),
     Shot("gst.link.sub", role="guest", start="sub", data=G1, title="ссылка на подписку — у гостя главная"),
 
     # устройства
     Shot("gst.devices", role="guest", press=[fr("list")], data=G1, title="📱 Устройства гостя"),
     Shot("gst.devices.many", role="guest", press=[fr("list")], data=G2, title="📱 Устройства гостя: несколько"),
     Shot("gst.dev", role="guest", press=[fr("list"), fr("open", 1)], data=G1, title="карточка гостя"),
+    Shot("gst.dev.owner_limit", role="guest", press=[fr("open", 1)],
+         data=guest(1, owner_after=lambda s, c: s.db.update_client_fields(c, traffic_limit=100 * G)),
+         title="карточка гостя: лимит профиля владельца"),
+    Shot("gst.dev.rf_bytes", role="guest", press=[fr("open", 1)],
+         data=guest(1, rf=True, owner_after=_rf_bytes), title="карточка гостя: РФ-байты владельца не видны"),
     Shot("gst.dev.blocked", role="guest", press=[fr("open", 1)],
          data=guest(1, owner_after=lambda s, c: s.block_device_manual(1, DeviceBlock.USER, True)),
          title="карточка гостя: заблокировано"),
@@ -718,6 +837,8 @@ GUEST_SHOTS = [
          title="🔳 выбор → QR"),
     Shot("gst.gen.none", role="guest", press=[fr("gen_link")], data=guest(1, drop=True),
          title="выдача без устройств — отказ"),
+    Shot("gst.gen.fail", role="guest", press=[fr("gen_link", 1)], data=_guest_gen_fails,
+         title="сервер не выдал конфиг — отказ и главная"),
     Shot("gst.dev.link", role="guest", press=[fr("open", 1), fr("gen_link", 1)], data=G1, title="выдача: ссылка"),
     Shot("gst.dev.file", role="guest", press=[fr("open", 1), fr("gen_file", 1)], data=G1, title="выдача: файл"),
     Shot("gst.finisher.menu", role="guest", press=[fr("gen_link", 1), fr("refresh")], data=G1,

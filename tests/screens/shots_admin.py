@@ -1525,3 +1525,918 @@ assert all(sh.data is not None for sh in SHOTS), [sh.id for sh in SHOTS if sh.da
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
 # длина считается без селектора варианта («☑️ Аварии на e-mail» — 18).
 LABEL_EXCEPTIONS: dict[str, set[str]] = {}
+
+
+# ── шаг 5: ветки, которые держали e2e — переезд и главная ──────────────────
+
+def _mig_spread(services, mp):
+    """Переезд идёт, меняются порт (43125 → 51821), подсеть и ядро (gen1 →
+    gen2). Когорта — пять устройств: у админа не переехало ни одно из двух
+    (iPhone был на связи час назад, MacBook — ни разу), у Ксюши — одно из
+    двух, Боря переехал целиком."""
+    from awgbot.infra import awg, awglock
+    who = _mig_ready(services, mp)
+    hour_ago = int(NOW.timestamp()) - 3600
+    for d in (IPHONE, MAC, PHONE, LAPTOP, TABLET):
+        services.db.update_device_fields(d, last_handshake=hour_ago)
+    services.migration_start()
+    twins = services.db.twins_by_origin()
+    _online(services, twins[PHONE], twins[TABLET])
+    services.db.update_device_fields(MAC, last_handshake=0)
+    mp.setattr(awg, "read_server_params", lambda force=False, iface=None: {"listen_port": 51821})
+    mp.setattr(awglock, "target_generation", lambda: 2)
+    return who
+
+
+def _rt_disabled_quiet(services, mp):
+    """Только админ, РФ-доступ развёрнут, но выключен, шлюзов нет."""
+    who = _base(services)
+    _routing(services, mp, enabled=False)
+    return who
+
+
+def _nobody_online(services):
+    """Никто не на связи, но есть истекающий профиль и пир без профиля;
+    сервер работает 12 дней 4 часа."""
+    who = _people(services)
+    for d in (PHONE, IPHONE):
+        services.db.update_device_fields(d, last_handshake=0)
+    services.db.set_state("container_started_at", "2026-09-03T05:00:00Z")
+    return who
+
+
+def _update_and_migration(services, mp):
+    """Идёт переезд, и проверка нашла версию; тег — без «v»."""
+    who = _mig_running(services, mp)
+    services.update_available_tag = lambda: "1.3.0"
+    return who
+
+
+def _down(services, mp):
+    """Сервер не отвечает, шлюз РФ-доступа — тоже."""
+    who = _slots(1)(services, mp)
+    services.db.set_state("server_ok_view", "0")
+    services.routing_admin_status = lambda: {"ok": False, "active": "NASPi", "active_slot": 1, "standby": []}
+    return who
+
+
+def _gw_online(services, mp):
+    """Шлюз NASPi и Ксюшин телефон на связи."""
+    who = _slots(1)(services, mp)
+    _online(services, NASPI)
+    services.db.update_device_fields(IPHONE, last_handshake=0)
+    return who
+
+
+def _two_expiring(services):
+    """Истекают двое: Ксюша — завтра, Боря — через два дня."""
+    who = _people(services)
+    services.db.update_client_fields(KS, period_start=_iso(NOW - _dt.timedelta(days=29)),
+                                     period_end=_iso(NOW + _dt.timedelta(days=1)), period_kind="month")
+    return who
+
+
+SHOTS += [
+    Shot("adm.migration.params", role="admin", press=[Menu(action="migration")], data=_mig_spread,
+         title="обзор переезда: порт и ядро меняются, отстающие по убыванию остатка"),
+    Shot("adm.migration.empty", role="admin", press=[Menu(action="migration")], data=_people,
+         title="обзор переезда: переезд не настроен — переезжать некому"),
+    Shot("adm.link.migration_cl.spread", role="admin", start=f"migration-{ADM}", data=_mig_spread,
+         title="переезд профиля: коннект старого пира, не подключалось"),
+    Shot("adm.link.migration_cl.missing", role="admin", start="migration-99", data=_mig_running,
+         title="переезд профиля, которого нет — главная"),
+    Shot("adm.main.rt_disabled", role="admin", start="", data=_rt_disabled_quiet,
+         title="главная: РФ-доступ выключен, шлюзов нет"),
+    Shot("adm.main.nobody_online", role="admin", start="", data=_nobody_online,
+         title="главная: онлайн 0 без ссылки рядом с «Истекают» и «Без профиля»; аптайм в днях и часах"),
+    Shot("adm.main.update", role="admin", start="", data=_update_and_migration,
+         title="главная: доступна версия (тег без «v»), переезд — последней строкой"),
+    Shot("adm.main.down", role="admin", start="", data=_down,
+         title="главная: сервер не отвечает, шлюз РФ-доступа недоступен"),
+    Shot("adm.link.dev.missing", role="admin", start="dev-99", data=_people,
+         title="устройства нет — главная"),
+    Shot("adm.online.gw", role="admin", press=[Menu(action="online")], data=_gw_online,
+         title="онлайн: шлюз вверху с пометкой"),
+    Shot("adm.expiring.two", role="admin", press=[Menu(action="expiring")], data=_two_expiring,
+         title="истекают двое: ближайший сверху"),
+]
+
+
+# ── шаг 5: устройства и профили списком, настройки — ветки из e2e ──────────
+
+def _clients_icons(services):
+    """Значки списка профилей по приоритету: Боря истёк, но на связи (🟢);
+    Ксюша на паузе и на связи (⏸️); Аня на паузе и под блоком (⛔)."""
+    from awgbot.core.blocks import ClientBlock
+    who = _br_expired(services)
+    _online(services, TABLET)
+    ok, *_ = services.enter_pause(KS, 7)
+    assert ok
+    ann = _client(services, "Аня", 2010, devices=("Телефон Ани",))
+    ok, *_ = services.enter_pause(ann, 7)
+    assert ok
+    services.block_client_manual(ann, ClientBlock.ADMIN_SILENT, False)
+    return who
+
+
+SHOTS += [
+    Shot("adm.devices.gw", role="admin", press=[Menu(action="devices")], data=_gw_online,
+         title="мои устройства: шлюз со значком 🛰, без кружка"),
+    Shot("adm.clients.icons", role="admin", press=[Menu(action="clients")], data=_clients_icons,
+         title="значки: истёкший онлайн, пауза, блок поверх паузы"),
+    Shot("adm.set.notify.quiet", role="admin", press=[SetCB(sec="notify")], data=_people,
+         conf={"quiet_hours.quiet_hours_enabled": True, "quiet_hours.quiet_hours_start": 22,
+               "quiet_hours.quiet_hours_end": 6, "resource_alerts.thresholds_percent.cpu": 90},
+         title="уведомления: тихие часы включены — границы в тексте и «С»/«До», свой порог CPU"),
+    Shot("adm.set.mig_prep.port.bad", role="admin", press=[SetCB(sec="mig_prep", act="edit", key="port")],
+         text="abc", data=_people, title="свой порт: буквы — не порт"),
+]
+
+
+# ── шаг 5: трафик списком и строка РФ в карточках — ветки из e2e ────────────
+
+def _traffic_world(*, enabled: bool = True, rf_total=None, outside: int = 0, gone: bool = False):
+    """Профили для экранов трафика без шлюзов: «Молчун» без трафика, Ксюша
+    (РФ разрешён) с 2 ГБ, у её телефона rf_total — РФ-часть; РФ-итог сервера
+    — сумма устройств плюс outside байт; gone — у Ксюши был «Ноут» с 2 ГБ
+    РФ, его удалили в середине месяца."""
+    def build(services, mp):
+        who = _base(services)
+        _routing(services, mp, enabled=enabled)
+        _client(services, "Молчун", 2011, devices=("Телефон",))
+        ks = _client(services, "Ксюша", 2012, devices=("Телефон",), routing=True)
+        phone = services.db.list_devices(ks)[0].id
+        services.db.add_traffic_bulk([(phone, GB, GB)])
+        rx, tx = rf_total or (0, 0)
+        if rx or tx:
+            services.db.rf_add_bulk([(phone, rx, tx)])
+        if gone:
+            dev = services.add_device(ks, "Ноут").device_id
+            services.db.add_traffic_bulk([(dev, GB, GB)])
+            services.db.rf_add_bulk([(dev, GB, GB)])
+            services.remove_device(dev)
+            rx, tx = rx + GB, tx + GB
+        services.db.set_state("rf_month_rx", str(rx))
+        services.db.set_state("rf_month_tx", str(tx + outside))
+        return who
+    return build
+
+
+# профили матрицы строки РФ: (имя, РФ разрешён, РФ-часть за месяц)
+_RF_MATRIX = (("Аня", True, 0), ("Боря", False, 0), ("Вера", False, 4), ("Гоша", True, 4))
+RFM = {n: (3 + i, 1 + i) for i, (n, _a, _r) in enumerate(_RF_MATRIX)}      # имя → (профиль, устройство)
+
+
+def _rf_matrix(*, enabled: bool, selfcheck: bool = True):
+    """Строка «└ 🇷🇺 РФ-доступ» в карточках и списке по правилу «разрешён и
+    функция включена, или за месяц было»: четыре профиля по одному
+    устройству (_RF_MATRIX), у каждого 2 ГБ трафика; selfcheck — самопроверка
+    обвязки проходит."""
+    def build(services, mp):
+        from awgbot.infra import routing as rt
+        who = _base(services)
+        _routing(services, mp, enabled=enabled)
+        if not selfcheck:
+            mp.setattr(rt.selfcheck, "available", lambda: False)
+        total = 0
+        for i, (name, allowed, rf_gb) in enumerate(_RF_MATRIX):
+            cid = _client(services, name, 2020 + i, devices=("Телефон",), routing=allowed)
+            dev = services.db.list_devices(cid)[0].id
+            assert (cid, dev) == RFM[name]
+            services.db.add_traffic_bulk([(dev, GB, GB)])
+            if rf_gb:
+                services.db.rf_add_bulk([(dev, GB, (rf_gb - 1) * GB)])
+                total += rf_gb * GB
+        services.db.set_state("rf_month_rx", str(total // 4))
+        services.db.set_state("rf_month_tx", str(total - total // 4))
+        return who
+    return build
+
+
+def _rf_gateway(services, mp):
+    """Профиль админа: iPhone и устройство-шлюз NASPi, у обоих трафик и
+    РФ-счётчики (у шлюза — как если бы байты на него всё-таки легли)."""
+    who = _slots(1)(services, mp)
+    services.db.add_traffic_bulk([(NASPI, 3 * GB, 3 * GB)])
+    services.db.rf_add_bulk([(IPHONE, GB, GB), (NASPI, 5 * GB, 5 * GB)])
+    services.db.set_state("rf_month_rx", str(GB // 2 + GB))
+    services.db.set_state("rf_month_tx", str(GB // 10 + GB))
+    return who
+
+
+def _no_feature(services):
+    """Сервер без функции РФ-доступа: у админа телефон с трафиком."""
+    who = _base(services)
+    dev = services.add_device(ADM, "phone").device_id
+    services.db.add_traffic_bulk([(dev, GB, GB)])
+    return who
+
+
+_LIVE = [("start", "")]                 # главная — живое меню #2, ссылка правит его
+
+SHOTS += [
+    Shot("adm.traffic.no_rf", role="admin", press=[Menu(action="traffic")], data=_traffic_world(),
+         title="трафик: РФ-итог 0 при живом трафике, профиль без трафика выпал"),
+    Shot("adm.traffic.outside", role="admin", press=[Menu(action="traffic")],
+         data=_traffic_world(rf_total=(GB, 0), outside=GB), title="трафик: «Вне профилей» под РФ-итогом"),
+    Shot("adm.traffic.outside.noise", role="admin", press=[Menu(action="traffic")],
+         data=_traffic_world(rf_total=(GB, GB), outside=GB // 100 - 1),
+         title="трафик: «Вне профилей» меньше 0.01 ГБ — шум, строки нет"),
+    Shot("adm.traffic.outside.min", role="admin", press=[Menu(action="traffic")],
+         data=_traffic_world(rf_total=(GB, GB), outside=GB // 100),
+         title="трафик: «Вне профилей» ровно 0.01 ГБ"),
+    Shot("adm.traffic.outside.deleted", role="admin", press=[Menu(action="traffic")],
+         data=_traffic_world(rf_total=(GB, GB), gone=True),
+         title="трафик: РФ удалённого устройства — во «Вне профилей»"),
+    Shot("adm.traffic.old_back", role="admin", press=[Menu(action="traffic_local")], data=_people,
+         title="«Назад» прежнего экрана РФ — дерево трафика"),
+    Shot("adm.traffic.no_feature", role="admin", press=[Menu(action="traffic")], data=_no_feature,
+         title="трафик: сервер без функции РФ-доступа"),
+    Shot("adm.link.traffic_dev.idle", role="admin", start=f"traffic-{KS}", data=_ks_many,
+         title="трафик профиля: устройства без трафика выпали, итог — только профиля"),
+    Shot("adm.link.traffic_dev.gw", role="admin", start=f"traffic-{ADM}", data=_rf_gateway,
+         title="трафик профиля со шлюзом: у шлюза нет РФ-ветки"),
+    Shot("adm.link.traffic_dev.no_feature", role="admin", start=f"traffic-{ADM}", data=_no_feature,
+         title="трафик профиля: сервер без функции РФ-доступа"),
+    Shot("adm.link.traffic_dev.missing", role="admin", start="traffic-99", data=_people,
+         title="трафик профиля, которого нет — главная"),
+    Shot("adm.link.traffic_local_dev.short", role="admin", start=f"traffic_local-{KS}", data=_people,
+         title="прежняя ссылка «traffic_local-<id>» без хвоста"),
+    Shot("adm.link.traffic_dev.t", role="admin", start=f"traffic-{KS}-t", data=_people,
+         title="ссылка «traffic-<id>-t»"),
+    Shot("adm.link.traffic.live", role="admin", steps=_LIVE + [("start", "traffic")], data=_people,
+         title="/start traffic при живой главной — правка меню, команда убрана"),
+    Shot("adm.link.traffic_local.live", role="admin", steps=_LIVE + [("start", "traffic_local")],
+         data=_people, title="прежняя /start traffic_local при живой главной — то же дерево"),
+    Shot("adm.cl.admin", role="admin", press=[ClientCB(action="open", client_id=ADM)], data=_people,
+         title="карточка своего профиля — главная"),
+    Shot("adm.traffic.rf_on", role="admin", press=[Menu(action="traffic")], data=_rf_matrix(enabled=True),
+         title="строки РФ в списке: функция включена"),
+    Shot("adm.traffic.rf_off", role="admin", press=[Menu(action="traffic")], data=_rf_matrix(enabled=False),
+         title="строки РФ в списке: функция выключена"),
+]
+
+for _on, _names in ((True, ("Аня", "Боря", "Вера")), (False, ("Аня", "Гоша"))):
+    for _n in _names:
+        _cid, _dev = RFM[_n]
+        _what = dict((n, (a, r)) for n, a, r in _RF_MATRIX)[_n]
+        _desc = (f"функция {'включена' if _on else 'выключена'}, РФ {'разрешён' if _what[0] else 'не разрешён'}, "
+                 f"за месяц {_what[1]} ГБ")
+        SHOTS += [
+            Shot(f"adm.cl.rf.{'on' if _on else 'off'}.{_cid}", role="admin",
+                 press=[ClientCB(action="open", client_id=_cid)], data=_rf_matrix(enabled=_on),
+                 title=f"строка РФ в карточке профиля: {_desc}"),
+            Shot(f"adm.dev.rf.{'on' if _on else 'off'}.{_dev}", role="admin",
+                 press=[DeviceCB(action="open", device_id=_dev)], data=_rf_matrix(enabled=_on),
+                 title=f"строка РФ в карточке устройства: {_desc}"),
+        ]
+
+SHOTS += [
+    Shot("adm.cl.rf.selfcheck", role="admin", press=[ClientCB(action="open", client_id=RFM["Аня"][0])],
+         data=_rf_matrix(enabled=True, selfcheck=False),
+         title="строка РФ в карточке профиля: самопроверка обвязки не прошла — «0 ГБ» остаётся"),
+    Shot("adm.dev.rf.selfcheck", role="admin", press=[DeviceCB(action="open", device_id=RFM["Аня"][1])],
+         data=_rf_matrix(enabled=True, selfcheck=False),
+         title="строка РФ в карточке устройства: самопроверка обвязки не прошла — «0 ГБ» остаётся"),
+]
+
+
+# ── шаг 5: SSH-доступ, сервер, резолвер, подготовка переезда — ветки из e2e ──
+
+def _raise(kind: str, text: str):
+    """Подмена метода сервиса, которая отказывает: kind — «service»
+    (ServiceError — отказ, который бот объясняет) или «runtime» (сбой)."""
+    def boom(*a, **k):
+        from awgbot.domain.services import ServiceError
+        raise (ServiceError if kind == "service" else RuntimeError)(text)
+    return boom
+
+
+def _fw_with(extra: dict | None = None, **over):
+    """SSH-доступ (_FwHost) с подменами сверх него: extra — {метод сервиса:
+    функция} (ответы CLI-таймера, отказы nft и sshd)."""
+    def build(services):
+        who = _fw(**over)(services)
+        for k, v in (extra or {}).items():
+            setattr(services, k, v)
+        return who
+    return build
+
+
+_DNS_PUBLIC = {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1"}
+
+
+def _dns_blocked(services):
+    """Свой резолвер не решён, переезд сейчас невозможен (идёт другой)."""
+    who = _people(services)
+    services.private_dns_info = lambda: {**_DNS_PUBLIC, "decision": ""}
+    services.migration_blocked_reason = lambda: "идёт переезд"
+    return who
+
+
+def _mig_prepare(ok: bool):
+    """Подготовка переезда: второй интерфейс поднят (awg1, порт 443) или
+    отказ хоста; перезапуск бота — только по кнопке, здесь не зовётся."""
+    def build(services):
+        who = _people(services)
+        services.migration_prepare = ((lambda port=None: {"iface": "awg1", "subnet": "10.9.1.0/24",
+                                                          "port": str(port or 443)})
+                                      if ok else _raise("runtime", "порт 443 занят"))
+        services.restart_bot = _raise("runtime", "перезапуск без кнопки")
+        return who
+    return build
+
+
+_PORT = [("press", SetCB(sec="fw", act="edit", key="port"))]
+
+SHOTS += [
+    Shot("adm.set.fw.on.empty", role="admin", press=[SetCB(sec="fw")], data=_fw(enabled=True, present=True),
+         title="SSH-доступ: фильтр включён, адресов нет — выключить можно"),
+    Shot("adm.set.fw.confirm", role="admin", press=[SetCB(sec="fw", act="do", key="confirm")],
+         data=_fw_with({"firewall_confirm": lambda: True}, enabled=True, present=True, rollback=True,
+                       **_FW_ALLOW),
+         title="кнопка таймера CLI: «оставить» — таймер снят"),
+    Shot("adm.set.fw.rollback", role="admin", press=[SetCB(sec="fw", act="do", key="rollback")],
+         data=_fw_with({"firewall_confirm": lambda: True}, enabled=True, present=True, rollback=True,
+                       **_FW_ALLOW),
+         title="кнопка таймера CLI: «откатить сейчас» — SSH снова открыт"),
+    Shot("adm.set.fw.add.bad", role="admin",
+         press=[SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow")], text="мусор",
+         data=_fw_with({"firewall_allow_add": _raise("service", "«мусор» не адрес, не подсеть и не имя")}),
+         title="адрес: не адрес — отказ, ввод открыт"),
+    Shot("adm.set.fw.del.stale", role="admin", press=[SetCB(sec="fw", act="do", key="del", val="5")],
+         data=_fw(**_FW_ALLOW), title="убрать адрес: список изменился — номер вне списка"),
+    Shot("adm.set.fw.unknown", role="admin", press=[SetCB(sec="fw", act="do", key="чего-то-нет")],
+         data=_fw(), title="неизвестное действие раздела — кнопка устарела"),
+    Shot("adm.set.fw.on.fail", role="admin", press=[SetCB(sec="fw", act="do", key="on")],
+         data=_fw_with({"firewall_enable": _raise("runtime", "nft: Operation not permitted")}, **_FW_ALLOW),
+         title="включить фильтр: отказ nft — «Не вышло», раздел перерисован"),
+    Shot("adm.set.fw.owner", role="admin", press=[SetCB(sec="fw")],
+         data=_fw(owner="generator", owner_detail="managed by ansible", owner_files=["/etc/ssh/sshd_config"]),
+         title="SSH-доступ: конфигом sshd владеет другой процесс"),
+    Shot("adm.set.fw.drift", role="admin", press=[SetCB(sec="fw")], data=_fw(listening=2222, drift=True),
+         title="SSH-доступ: sshd слушает не тот порт, что держит фильтр"),
+    Shot("adm.set.fw.firewalld", role="admin", press=[SetCB(sec="fw")], data=_fw(firewalld=True),
+         title="SSH-доступ: firewalld активен"),
+    Shot("adm.set.fw.port.busy.unknown", role="admin", steps=_PORT + [("text", "8443")],
+         data=_fw_with({"ssh_port_busy": lambda port: "?"}),
+         title="порт SSH занят, имя процесса не видно"),
+    Shot("adm.set.fw.port.range", role="admin", steps=_PORT + [("text", "70000")], data=_fw(),
+         title="порт SSH вне 1–65535 — переспрос"),
+    Shot("adm.set.fw.port.refused", role="admin", steps=_PORT + [("text", "2222")],
+         data=_fw_with({"ssh_port_change": _raise("service", "sshd -t: Bad configuration option")}),
+         title="порт SSH: sshd отказал — первой строкой раздела"),
+    Shot("adm.set.fw.port.back", role="admin", press=[SetCB(sec="fw", act="do", key="port_back")],
+         data=_fw(), title="финишер порта: «Назад» — раздел"),
+    Shot("adm.set.srv.pending", role="admin", press=[SetCB(sec="srv")],
+         data=_srv(dns="1.1.1.1, 1.0.0.1", private_dns={**_DNS_PUBLIC, "decision": "pending"}),
+         title="сервер: DNS публичный, при переезде станет свой"),
+    Shot("adm.set.dns.blocked", role="admin", press=[SetCB(sec="dns")], data=_dns_blocked,
+         title="свой резолвер при невозможном переезде — без «Переехать сейчас»"),
+    Shot("adm.set.dns.now.blocked", role="admin", press=[SetCB(sec="dns", act="do", key="now")],
+         data=_dns_blocked, title="«Переехать сейчас», когда идёт переезд — объяснение"),
+    Shot("adm.set.mig_prep.go", role="admin", press=[SetCB(sec="mig_prep", act="do", key="go", val="443")],
+         data=_mig_prepare(True), title="подготовка переезда: интерфейс поднят, перезапуск по кнопке"),
+    Shot("adm.set.mig_prep.go.fail", role="admin", press=[SetCB(sec="mig_prep", act="do", key="go")],
+         data=_mig_prepare(False), title="подготовка переезда: отказ — ничего не тронуто"),
+]
+
+
+# ── шаг 5: разделы настроек — ввод, почта, бэкапы, обновления, сервис ───────
+
+def _mailbox(services):
+    """Ящик сохранён мастером, вход ещё не проверялся."""
+    who = _people(services)
+    services.email_save("box@icloud.com", "DUMMY", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    return who
+
+
+def _mail_fails(services):
+    """Ящик подключён, но вход не проходит (итог записан, как пишет настоящая
+    проверка), а тест-письмо отвергает SMTP; причины — с угловыми скобками."""
+    from awgbot.infra import mail
+    from awgbot.util import timeutil
+    who = _email_on(services)
+
+    def check(acc=None):
+        services.db.set_state(services._MAIL_CHECK_KEY, f"fail|{timeutil.now_iso()}|IMAP: <auth> отказ")
+        return False, "IMAP: <auth> отказ"
+
+    def send():
+        raise mail.MailError("SMTP 535 <bad>")
+    services.email_check = check
+    services.email_send_test = send
+    return who
+
+
+def _upd_scan_failed(services):
+    """Проверка обновлений не дошла до списка релизов (сеть)."""
+    who = _people(services)
+    del services.update_scan                    # настоящая: признак сбоя ставит update_next
+
+    def nxt():
+        services.update_scan_failed = True
+    services.update_next = nxt
+    return who
+
+
+def _upd_blocked(services):
+    """Следующая версия найдена, но ставить её сейчас нельзя."""
+    who = _upd_found(services)
+    services.update_block_reason = lambda f: "идёт переезд на поколение 2"
+    return who
+
+
+def _upd_huge(services):
+    """Список изменений следующей версии не влезает в сообщение."""
+    import types
+    who = _upd_found(services)
+    found = types.SimpleNamespace(tag="v1.3.0", name="v1.3.0", url="https://example.org/r/v1.3.0",
+                                  body="\n".join(f"- пункт номер {i} с подробным текстом" for i in range(150)))
+    services.update_scan = lambda: found
+    services.update_next = lambda: found
+    return who
+
+
+def _awg_restart_fails(services):
+    who = _restarts(services)
+    services.restart_service = _raise("runtime", "docker: <no such container>")
+    return who
+
+
+_MAIL_CORP = [("press", SetCB(sec="email", act="do", key="setup")), ("text", "box@corp.example")]
+_BACKUP_WHEN = [("press", SetCB(sec="backup", act="edit", key="backup_when"))]
+
+SHOTS += [
+    Shot("adm.set.mon.edit", role="admin",
+         press=[SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes")], data=_people,
+         conf={"app.scheduler.monitor_minutes": 3}, title="частота опроса: приглашение с текущим и границами"),
+    Shot("adm.set.mon.edit.bad", role="admin",
+         press=[SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes")], text="0", data=_people,
+         title="частота опроса: 0 — переспрос"),
+    Shot("adm.set.mon.quiet", role="admin", press=[SetCB(sec="mon")], data=_people,
+         conf={"app.scheduler.monitor_minutes": 3, "app.monitoring.alert_streak": 5,
+               "app.monitoring.service_failure_alert_minutes": 5,
+               "app.monitoring.service_failure_alert_loud": False},
+         title="мониторинг: простой AWG — по правилам тихих часов"),
+    Shot("adm.set.fw.add.many", role="admin", press=[SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow")],
+         data=_fw(raw_allow=[f"203.0.113.{i}" for i in range(1, 8)], allow=[f"203.0.113.{i}" for i in range(1, 8)]),
+         title="адрес: приглашение — пять текущих и «и ещё 2»"),
+    Shot("adm.set.email.unchecked", role="admin", press=[SetCB(sec="email")], data=_mailbox,
+         conf={"email.resume_enabled": False},
+         title="e-mail: вход ещё не проверялся, аварийный выход выключен"),
+    Shot("adm.set.email.bad_host", role="admin", steps=_MAIL_CORP + [("text", "imap.corp.example:0")],
+         data=_people, title="мастер почты: негодный порт в «сервер:порт» — переспрос"),
+    Shot("adm.set.email.bare_host", role="admin", steps=_MAIL_CORP + [("text", "imap.corp.example")],
+         data=_people, title="мастер почты: голое имя сервера — шаг порта"),
+    Shot("adm.set.email.check.fail", role="admin", press=[SetCB(sec="email", act="do", key="check")],
+         data=_mail_fails, title="проверка соединения: отказ в шапке раздела"),
+    Shot("adm.set.email.test.fail", role="admin", press=[SetCB(sec="email", act="do", key="test")],
+         data=_mail_fails, title="тестовое письмо: отказ первой строкой раздела"),
+    Shot("adm.set.email.cycle.poll", role="admin",
+         press=[SetCB(sec="email", act="cycle", key="email.poll_interval_sec")], data=_email_on,
+         title="опрос ящика циклом: 1 → 5 мин"),
+    Shot("adm.set.email.cycle.code", role="admin",
+         press=[SetCB(sec="email", act="cycle", key="email.resume_code_len")], data=_email_on,
+         title="длина кода циклом: 8 → 12"),
+    Shot("adm.set.backup.when.bad", role="admin", steps=_BACKUP_WHEN + [("text", "31 12")], data=_people,
+         title="день и час: день за 28 — переспрос"),
+    Shot("adm.set.upd.failed", role="admin", press=[SetCB(sec="upd")], data=_upd_scan_failed,
+         title="обновления: проверка не удалась"),
+    Shot("adm.set.upd.blocked", role="admin", press=[SetCB(sec="upd")], data=_upd_blocked,
+         title="обновления: новая есть, но сейчас недоступна — строка, а не кнопка"),
+    Shot("adm.set.upd.huge", role="admin", press=[SetCB(sec="upd")], data=_upd_huge,
+         title="обновления: список изменений обрезан со ссылкой на релиз"),
+    Shot("adm.set.svc.awg.fail", role="admin", press=[SetCB(sec="svc", act="do", key="awg!")],
+         data=_awg_restart_fails, title="AWG не перезапущен — первой строкой раздела"),
+]
+
+
+# ── шаг 5: карточки профиля и устройства, правки профиля — ветки из e2e ────
+
+def _ks(**fields):
+    """_people, поля профиля Ксюши поверх (лимит трафика, статус, блок)."""
+    def build(services):
+        from awgbot.core.blocks import ClientBlock
+        who = _people(services)
+        block = fields.pop("_block", 0)
+        if fields:
+            services.db.update_client_fields(KS, **fields)
+        if block:
+            services._client_set_block(KS, ClientBlock(block))
+        return who
+    return build
+
+
+def _ks_many_paused(services):
+    """Девять устройств у Ксюши без лимита, она на паузе, РФ разрешён."""
+    who = _ks_many(services)
+    services.db.update_client_fields(KS, device_limit=0)
+    ok, *_ = services.enter_pause(KS, 7)
+    assert ok
+    return who
+
+
+FOREVER = 6                             # бессрочный профиль после _people
+
+
+def _forever(services):
+    """Бессрочный профиль без лимита устройств."""
+    who = _people(services)
+    assert _client(services, "Вечный", 2030, kind="never", limit=0) == FOREVER
+    return who
+
+
+def _br_expired_status(services):
+    """Подписка Бори кончилась, сроки уже отметили её истёкшей."""
+    who = _br_expired(services)
+    services.db.update_client_fields(BR, status="expired")
+    return who
+
+
+def _zero_limited(services):
+    """Активированный профиль с лимитом 100 ГБ и без трафика."""
+    who = _people(services)
+    assert _client(services, "Новенькая", 2031, traffic_gb=100) == FOREVER
+    return who
+
+
+WATCH = 7                               # «Часы» Ксюши без трафика (после _people)
+
+
+def _dev_limits(dev_limit: int, profile_limit: int, used: bool):
+    """Устройство Ксюши со своим лимитом и лимитом профиля в ГБ: used —
+    «Ноутбук» с трафиком за месяц, иначе — новые «Часы» без трафика."""
+    def build(services):
+        who = _people(services)
+        services.db.update_client_fields(KS, traffic_limit=profile_limit * GB)
+        dev = LAPTOP if used else services.add_device(KS, "Часы").device_id
+        assert dev == (LAPTOP if used else WATCH)
+        services.db.update_device_fields(dev, traffic_limit=dev_limit * GB)
+        return who
+    return build
+
+
+_NAME = [("press", ClientCB(action="edit_name", client_id=KS))]
+
+SHOTS += [
+    Shot("adm.cl.traffic_limit", role="admin", press=[ClientCB(action="open", client_id=KS)],
+         data=_ks(traffic_limit=100 * GB), title="карточка: трафик против лимита профиля"),
+    Shot("adm.cl.traffic_blocked", role="admin", press=[ClientCB(action="open", client_id=KS)],
+         data=_ks(traffic_limit=100 * GB, _block=4 | 16),
+         title="карточка: ручной блок и исчерпанный трафик — разными строками"),
+    Shot("adm.cl.traffic_out", role="admin", press=[ClientCB(action="open", client_id=KS)],
+         data=_ks(traffic_limit=100 * GB, _block=4),
+         title="карточка: трафик исчерпан, ручного блока нет"),
+    Shot("adm.cl.zero_limited", role="admin", press=[ClientCB(action="open", client_id=FOREVER)],
+         data=_zero_limited, title="карточка: ноль трафика при лимите"),
+    Shot("adm.cl.expired.status", role="admin", press=[ClientCB(action="open", client_id=BR)],
+         data=_br_expired_status, title="карточка: истёкшая, доступ приостановлен"),
+    Shot("adm.cl.many.paused", role="admin", press=[ClientCB(action="open", client_id=KS)],
+         data=_ks_many_paused, title="карточка: пауза и РФ — устройства всё равно свёрнуты"),
+    Shot("adm.cl.devices.unlimited", role="admin", press=[ClientCB(action="devices", client_id=KS)],
+         data=_ks_many_paused, title="устройства профиля без лимита — просто число"),
+    Shot("adm.cl.migration", role="admin", press=[ClientCB(action="open", client_id=KS)], data=_mig_spread,
+         title="карточка во время переезда — строка последней"),
+    Shot("adm.cl.edit.forever", role="admin", press=[ClientCB(action="edit", client_id=FOREVER)],
+         data=_forever, title="«✏️ Изменить» бессрочного без лимита устройств"),
+    Shot("adm.cl.name.empty", role="admin", steps=_NAME + [("text", "  ")], data=_people,
+         title="имя профиля: пустое — переспрос"),
+    Shot("adm.cl.name.cancel", role="admin", steps=_NAME + [("press", CancelCB(kind="edit", ref=KS))],
+         data=_people, title="имя профиля: «✖️ Отмена» — «✏️ Изменить»"),
+    Shot("adm.cl.period.bad", role="admin", steps=_PERIOD[:1] + [("text", "вчера")], data=_people,
+         title="период: не дата — переспрос"),
+    Shot("adm.new.devs.bad", role="admin",
+         steps=_NEWP + [("press", PresetCB(kind="new_devs", val=-1)), ("text", "семь")], data=_people,
+         title="новый профиль: число устройств словом — переспрос"),
+    Shot("adm.new.stale", role="admin", press=[PeriodCB(kind="month", ctx="create")], data=_people,
+         title="срок нового профиля без диалога — главная"),
+    Shot("adm.link.cl.admin", role="admin", start=f"cl-{ADM}", data=_people,
+         title="ссылка на карточку своего профиля — главная"),
+    Shot("adm.dev.limit.profile", role="admin", press=[DeviceCB(action="open", device_id=LAPTOP)],
+         data=_dev_limits(0, 100, True), title="карточка устройства: лимит профиля"),
+    Shot("adm.dev.limit.own", role="admin", press=[DeviceCB(action="open", device_id=LAPTOP)],
+         data=_dev_limits(50, 100, True), title="карточка устройства: свой лимит важнее профильного"),
+    Shot("adm.dev.limit.zero", role="admin", press=[DeviceCB(action="open", device_id=WATCH)],
+         data=_dev_limits(50, 0, False), title="карточка устройства: ноль при своём лимите"),
+    Shot("adm.dev.reassign.owned", role="admin", press=[DeviceCB(action="reassign", device_id=LAPTOP)],
+         data=_people, title="перенос устройства профиля: чьё оно"),
+    Shot("adm.dev.reassign.owned.go", role="admin",
+         press=[ReassignCB(device_id=LAPTOP, client_id=PT, stage="go")], data=_people,
+         title="перенос между профилями: оба ссылками"),
+    Shot("adm.dev.block.silent", role="admin",
+         press=[BlockCB(target="dev", action="block", ref=PHONE, kind="silent")], data=_people,
+         title="тихий блок устройства — всплывашка с «(тихо)»"),
+]
+
+
+# ── шаг 5: главная — «В меню» и строка РФ под трафиком ──────────────────────
+
+def _rf_home(*, people: bool = False, enabled: bool = True, rx: int = 0, error: str = "",
+             username: bool = True):
+    """Главная со строкой РФ: функция развёрнута и включена/выключена; rx —
+    РФ-итог месяца (иначе — как у построителя); error — учёт сломан (как
+    его оставил опрос); username — имя бота известно."""
+    def build(services, mp):
+        who = _people(services) if people else _base(services)
+        _routing(services, mp, enabled=enabled)
+        if rx:
+            services.db.set_state("rf_month_rx", str(rx))
+            services.db.set_state("rf_month_tx", "0")
+        if error:
+            services.db.set_state("rf_acct_error", error)
+        if not username:
+            services.bot_username = ""
+        return who
+    return build
+
+
+SHOTS += [
+    Shot("adm.main.menu", role="admin", press=[Menu(action="main")], data=_people,
+         title="«⬅️ В меню» — главная поверх экрана"),
+    Shot("adm.cl.delete.one", role="admin", press=[ClientCB(action="delete", client_id=BR)], data=_people,
+         title="удалить профиль с одним устройством?"),
+    Shot("adm.main.rf_zero", role="admin", start="", data=_rf_home(),
+         title="главная: функция включена — «0 ГБ» РФ под нулевым трафиком, без ссылок"),
+    Shot("adm.main.rf_kept", role="admin", start="", data=_rf_home(people=True, enabled=False),
+         title="главная: функция выключена, а РФ за месяц был — строка остаётся"),
+    Shot("adm.main.rf_broken", role="admin", start="", data=_rf_home(
+         people=True, error="nft не найден — поставь пакет nftables"),
+         title="главная: учёт РФ сломан — пометка без текста ошибки ядра"),
+    Shot("adm.main.rf_only", role="admin", start="", data=_rf_home(rx=GB),
+         title="главная: трафика нет, а РФ есть — ссылок нет"),
+    Shot("adm.main.no_username", role="admin", start="", data=_rf_home(people=True, username=False),
+         title="главная: имя бота неизвестно — подписи без ссылок"),
+]
+
+
+# ── шаг 5: устройства у админа — лимиты, выдача, гонки ─────────────────────
+
+def _self_limited(services):
+    """У профиля админа (вопреки обыкновению) лимит 2, и он занят."""
+    who = _people(services)
+    services.db.update_client_fields(ADM, device_limit=2)
+    return who
+
+
+def _gw_only(services, mp):
+    """У админа единственное устройство — шлюз: выдавать нечего."""
+    who = _base(services)
+    _routing(services, mp)
+    dev = services.add_device(ADM, "NASPi").device_id
+    services.db.gateway_add(dev, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    return who
+
+
+def _ks_friend_pending(services):
+    """Ксюша отдала «Ноутбук» другу, тот ещё не принял приглашение."""
+    who = _people(services)
+    services.make_device_friendly(LAPTOP)
+    return who
+
+
+def _bc_marks(services):
+    """Адресаты с продлением: бессрочный профиль и истёкший (со статусом)."""
+    who = _bc_ready(services)
+    assert _client(services, "Вечный", 2030, kind="never", limit=0) == FOREVER
+    services.db.update_client_fields(BR, period_start=_iso(NOW - _dt.timedelta(days=31)),
+                                     period_end=_iso(NOW - _dt.timedelta(days=1)), status="expired")
+    return who
+
+
+async def _ev_slot_taken(services, bot):
+    """Пока админ вводил имя, последний слот Ксюши занял кто-то ещё."""
+    services.add_device(KS, "Часы")
+
+
+SHOTS += [
+    Shot("adm.cl.limit.preset.low", role="admin", press=[PresetCB(kind="cli_devs", ref=KS, val=1)],
+         data=_people, title="лимит устройств пресетом ниже занятого — сразу, с ⚠️"),
+    Shot("adm.cl.limit.other.bad", role="admin",
+         steps=[("press", PresetCB(kind="cli_devs", ref=KS, val=-1)), ("text", "много")], data=_people,
+         title="лимит устройств своим числом: не число — переспрос"),
+    Shot("adm.self.gen_qr", role="admin", press=[AdminSelfCB(action="gen_qr")], data=_people_gen,
+         title="кнопка старого образца «QR»: выбор своего устройства"),
+    Shot("adm.self.gen_file", role="admin", press=[AdminSelfCB(action="gen_file")], data=_people_gen,
+         title="кнопка старого образца «Файл»: выбор своего устройства"),
+    Shot("adm.self.gen_link.gw_only", role="admin", press=[AdminSelfCB(action="gen_link")], data=_gw_only,
+         title="кнопка старого образца «Ссылка»: только шлюз — выдавать нечего"),
+    Shot("adm.self.gen_link.gw", role="admin", press=[AdminSelfCB(action="gen_link")], data=_slots(1),
+         title="кнопка старого образца «Ссылка»: шлюза в выборе нет"),
+    Shot("adm.cl.gen_for.admin", role="admin", press=[ClientCB(action="gen_for", client_id=ADM)],
+         data=_people, title="старая «Выдать конфиг» у профиля админа — главная"),
+    Shot("adm.self.add.full", role="admin", press=[AdminSelfCB(action="add")], data=_self_limited,
+         title="своё устройство при занятом лимите — сколько удалить"),
+    Shot("adm.cl.add_device.race", role="admin",
+         steps=[("press", ClientCB(action="add_device", client_id=KS)), ("call", _ev_slot_taken),
+                ("text", "Планшет")], data=_people,
+         title="устройство профилю: слот заняли, пока вводилось имя"),
+    Shot("adm.dev.friend_pending", role="admin", press=[DeviceCB(action="open", device_id=LAPTOP)],
+         data=_ks_friend_pending, title="карточка устройства с приглашением другу — без перевыдачи"),
+    Shot("adm.dev.connect_menu.unmanaged", role="admin",
+         press=[DeviceCB(action="connect_menu", device_id=ALIEN)], data=_people,
+         title="старая кнопка «Данные для подключения» у пира без ключа"),
+    Shot("adm.bc.ext.marks", role="admin", press=[BroadcastCB(action="pick"), BroadcastCB(action="ext")],
+         data=_bc_marks, title="с продлением: пометки ∞ и 🟡 у адресатов"),
+]
+
+
+# ── шаг 5: ввод нового профиля, трафик своим числом, кнопки прежнего образца ─
+
+SHOTS += [
+    Shot("adm.new.name.empty", role="admin", steps=[("press", Menu(action="add_client")), ("text", "   ")],
+         data=_people, title="новый профиль: пустое имя — переспрос"),
+    Shot("adm.cl.traffic.other", role="admin", press=[PresetCB(kind="cli_traffic", ref=KS, val=-1)],
+         data=_ks(traffic_limit=50 * GB), title="лимит трафика: «✏️ Другое» — приглашение"),
+    Shot("adm.cl.traffic.other.done", role="admin", press=[PresetCB(kind="cli_traffic", ref=KS, val=-1)],
+         text="70", data=_ks(traffic_limit=50 * GB), title="лимит трафика своим числом — итог в «✏️ Изменить»"),
+    Shot("adm.cl.gen_for", role="admin", press=[ClientCB(action="gen_for", client_id=KS)], data=_people,
+         title="старая «Выдать конфиг» профиля — карточка с устройствами"),
+    Shot("adm.gen.link.client", role="admin", press=[DeviceCB(action="gen_link", device_id=PHONE)],
+         data=_people_gen, title="ссылка устройства профиля"),
+    Shot("adm.dev.connect_menu", role="admin", press=[DeviceCB(action="connect_menu", device_id=PHONE)],
+         data=_people, title="старая кнопка «Данные для подключения» — карточка с рядом выдачи"),
+]
+
+
+# ── шаг 5: продление — ветки из e2e ─────────────────────────────────────────
+
+def _br_grace_week(services):
+    """Боря брал отсрочку ровно на неделю."""
+    who = _people(services)
+    services.db.update_client_fields(BR, grace_pending_cut=7 * 86400)
+    return who
+
+
+SHOTS += [
+    Shot("adm.cl.extend.keep_on", role="admin",
+         press=[ClientCB(action="extend", client_id=KS),
+                PeriodCB(kind="keep_tgl", ctx="extend", ref=KS, keep=0),
+                PeriodCB(kind="keep_tgl", ctx="extend", ref=KS, keep=1)],
+         data=_people, title="продление: тумблер остатка включён обратно"),
+    Shot("adm.cl.extend.forever", role="admin", press=[ClientCB(action="extend", client_id=FOREVER)],
+         data=_forever, title="продление бессрочной — без тумблера остатка"),
+    Shot("adm.cl.extend.never", role="admin", press=[PeriodCB(kind="never", ctx="extend", ref=KS, keep=1)],
+         data=_people, title="продление «∞» — подписка бессрочная"),
+    Shot("adm.cl.extend.grace_week", role="admin", press=[ClientCB(action="extend", client_id=BR)],
+         data=_br_grace_week, title="продление при долге отсрочки в неделю — «Недели» нет"),
+    Shot("adm.cl.extend_exp.more", role="admin",
+         press=[ClientCB(action="extend_exp", client_id=KS), PeriodCB(kind="month", ctx="extend", ref=KS)],
+         data=_two_expiring, title="продлено из «Истекают» — в списке остался другой"),
+]
+
+
+# ── шаг 5: блок профиля без паузы и отмена ──────────────────────────────────
+
+SHOTS += [
+    Shot("adm.cl.block.pause_no", role="admin", press=[BlockCB(target="cli", action="pause_no", ref=KS)],
+         data=_people, title="блок профиля: уведомить? (без паузы)"),
+    Shot("adm.cl.block.silent", role="admin",
+         press=[BlockCB(target="cli", action="block", ref=KS, kind="silent", days=-1)], data=_people,
+         title="профиль заблокирован тихо, без паузы"),
+    Shot("adm.cl.block.cancel", role="admin", press=[BlockCB(target="cli", action="cancel", ref=KS)],
+         data=_people, title="блок профиля: «⬅️ Отмена» — карточка"),
+]
+
+
+# ── шаг 5: почта и бэкапы у основного — ветки из e2e ───────────────────────
+
+def _backup_to_mail(services):
+    """Бэкапы на e-mail: ящик подключён, шифрование включено; копия и письмо
+    — без диска и сети."""
+    who = _email_on(services)
+    services.backup_set_passphrase("DUMMY-passphrase-1234")
+    services.make_backup = lambda: ["/nonexistent/DUMMY-a.enc", "/nonexistent/DUMMY-b.enc"]
+    services.email_send_backup = lambda paths: None
+    return who
+
+
+_SETUP = [("press", SetCB(sec="email", act="do", key="setup"))]
+
+SHOTS += [
+    Shot("adm.set.email.setup.icloud", role="admin", steps=_SETUP + [("text", "box@icloud.com")],
+         data=_people, title="мастер почты: iCloud — пароль приложения"),
+    Shot("adm.set.email.port.bad", role="admin",
+         steps=_MAIL_CORP + [("text", "imap.corp.example"), ("text", "99999")], data=_people,
+         title="мастер почты: порт IMAP вне диапазона — переспрос"),
+    Shot("adm.set.backup.now.email", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
+         data=_backup_to_mail, conf={"app.scheduler.backup_channel": "email"},
+         title="копия сейчас — письмом на ящик"),
+    Shot("adm.set.backup.enc_set.short", role="admin", steps=_PHRASE[:1] + [("text", "abc")], data=_people,
+         title="фраза короче нужного — переспрос"),
+]
+
+
+# ── шаг 5: объявление — адресаты, дни, превью и отчёт — ветки из e2e ───────
+
+FRIEND_TG = 2050                         # гость, которому Ксюша отдала «Ноутбук»
+
+
+def _bc_holders(services):
+    """Ксюша делится «Ноутбуком» с гостем: объявление уходит и ему."""
+    who = _bc_ready(services)
+    res = services.activate_friend(services.make_device_friendly(LAPTOP), tg_id=FRIEND_TG)
+    assert res.ok, res.reason
+    return who
+
+
+def _bc_undelivered(services, mp):
+    """Как _bc_holders, но Боря заблокировал бота: доставка ему не проходит
+    (остальным — настоящей рассылкой)."""
+    from awgbot.bot.handlers.admin import broadcast as bc
+    who = _bc_holders(services)
+    real = bc.broadcast
+
+    async def broadcast(bot, tg_ids, text, photos=(), by_tg=None):
+        ok, failed = await real(bot, [t for t in tg_ids if t != 2002], text, photos, by_tg)
+        return ok, failed + (2002 in tg_ids)
+    mp.setattr(bc, "broadcast", broadcast)
+    return who
+
+
+_BC = [("press", BroadcastCB(action="pick"))]
+_BC_EXT = _BC + [("press", BroadcastCB(action="ext"))]
+_BC_KS = [("press", BroadcastCB(action="tgl", ref=KS))]
+_BC_NEXT = [("press", BroadcastCB(action="next"))]
+_BC_TYPED = [("press", PresetCB(kind="bc_days", val=-1)), ("text", "10")]
+_BC_SEND = [("text", "В субботу с 02:00 до 03:00 — работы на сервере"), ("press", BroadcastCB(action="send"))]
+
+SHOTS += [
+    Shot("adm.bc.partial", role="admin", steps=_BC + _BC_KS, data=_bc_ready,
+         title="отмечены не все — «Выбрать все» остаётся ☑️"),
+    Shot("adm.bc.by_hand", role="admin",
+         steps=_BC + [("press", BroadcastCB(action="tgl", ref=c)) for c in (BR, KS, PT)], data=_bc_ready,
+         title="все отмечены по одному — «✅ Выбрать все»"),
+    Shot("adm.bc.next.none", role="admin", steps=_BC + _BC_NEXT, data=_bc_ready,
+         title="«Далее» без адресатов — всплывашка"),
+    Shot("adm.bc.blank", role="admin", steps=_BC_TEXT[:3] + [("text", "   ")], data=_bc_ready,
+         title="пустое сообщение вместо объявления — переспрос с кнопкой"),
+    Shot("adm.bc.preview.one", role="admin",
+         steps=_BC + _BC_KS + _BC_NEXT + [("text", "В субботу с 02:00 до 03:00 — работы на сервере")],
+         data=_bc_ready, title="превью одному профилю — адресат по имени"),
+    Shot("adm.bc.send.one", role="admin", steps=_BC + _BC_KS + _BC_NEXT + _BC_SEND, data=_bc_ready,
+         title="разослано одному профилю — отчёт"),
+    Shot("adm.bc.send.holders", role="admin", steps=_BC + _BC_KS + _BC_NEXT + _BC_SEND, data=_bc_holders,
+         title="разослано профилю и тем, с кем он делится устройствами"),
+    Shot("adm.bc.send.undelivered", role="admin",
+         steps=_BC + [("press", BroadcastCB(action="all"))] + _BC_NEXT + _BC_SEND, data=_bc_undelivered,
+         title="разослано всем, держателям тоже; одному не доставлено"),
+    Shot("adm.bc.next.unlimited", role="admin",
+         steps=_BC_EXT + [("press", BroadcastCB(action="tgl", ref=FOREVER))] + _BC_NEXT, data=_bc_marks,
+         title="с продлением отмечены одни бессрочные — продлевать некого"),
+    Shot("adm.bc.next.ext.mixed", role="admin",
+         steps=_BC_EXT + _BC_KS + [("press", BroadcastCB(action="tgl", ref=FOREVER))] + _BC_NEXT,
+         data=_bc_marks, title="с продлением: дни, бессрочный — «без продления»"),
+    Shot("adm.bc.days.one", role="admin",
+         steps=_BC_EXT + _BC_KS + _BC_NEXT + [("press", PresetCB(kind="bc_days", val=7))], data=_bc_ready,
+         title="с продлением одному профилю: приглашение к тексту"),
+    Shot("adm.bc.days.bad", role="admin",
+         steps=_BC_EXT + _BC_KS + _BC_NEXT + [("press", PresetCB(kind="bc_days", val=-1)), ("text", "400")],
+         data=_bc_ready, title="свои дни продления вне границ — переспрос"),
+    Shot("adm.bc.days.typed", role="admin", steps=_BC_EXT + _BC_KS + _BC_NEXT + _BC_TYPED, data=_bc_ready,
+         title="свои дни продления — приглашение к тексту с кнопкой"),
+    Shot("adm.bc.preview.ext.one", role="admin",
+         steps=_BC_EXT + _BC_KS + _BC_NEXT + _BC_TYPED + [("text", "Спасибо за терпение")], data=_bc_ready,
+         title="превью с продлением одному профилю на свои дни"),
+    Shot("adm.bc.send.ext.marks", role="admin",
+         steps=_BC_EXT + [("press", BroadcastCB(action="all"))] + _BC_NEXT
+         + [("press", PresetCB(kind="bc_days", val=7)), ("text", "Спасибо за терпение"),
+            ("press", BroadcastCB(action="send"))],
+         data=_bc_marks, title="разослано с продлением: истёкшему — с текущей даты, бессрочному — без"),
+]
+
+
+# ── шаг 5: РФ-доступ профиля — отказы старых кнопок и правка чужого списка ──
+
+def _ks_sites_revoked(services):
+    """У Ксюши три сайта, а разрешение на РФ-доступ у неё уже отозвали."""
+    who = _ks_sites(services)
+    services.set_routing_allowed(KS, False)
+    return who
+
+
+def _ks_laptop_off(services):
+    """РФ-доступ Ксюши: «Ноутбук» выключен вручную, «Телефон» включён."""
+    who = _people(services)
+    services.set_routing_device(LAPTOP, False)
+    return who
+
+
+SHOTS += [
+    Shot("adm.rf.all.denied", role="admin", press=[RoutingCB(action="all", ref=BR)], data=_people,
+         title="«все» у профиля без разрешения — отказ"),
+    Shot("adm.rf.del.stale_idx", role="admin",
+         press=[RoutingCB(action="del", ref=KS, idx=9, tag=_tag("kinopoisk.ru"))], data=_ks_sites,
+         title="убрать сайт: номер за концом списка — отказ"),
+    Shot("adm.rf.del.stale_tag", role="admin", press=[RoutingCB(action="del", ref=KS, idx=1, tag="deadbeef")],
+         data=_ks_sites, title="убрать сайт: метка не та — отказ, сосед цел"),
+    Shot("adm.rf.del.revoked", role="admin",
+         press=[RoutingCB(action="del", ref=KS, idx=1, tag=_tag("kinopoisk.ru"))], data=_ks_sites_revoked,
+         title="убрать сайт после отзыва разрешения — отказ"),
+    Shot("adm.rf.sites.add.done", role="admin", press=[RoutingCB(action="add", ref=KS)], text="z.ru",
+         data=_ks_sites, title="добавить сайт из «Сайтов» профиля — снова «Сайты», «Назад» в его раздел"),
+    Shot("adm.rf.devs", role="admin", press=[RoutingCB(action="devs", ref=KS)], data=_ks_laptop_off,
+         title="старое действие «устройства» — раздел профиля, одно устройство выключено"),
+    Shot("adm.rf.dev.last", role="admin", press=[RoutingCB(action="dev", ref=LAPTOP)], data=_ks_laptop_off,
+         title="включили вручную последнее — «✅ Выбрать все»"),
+]

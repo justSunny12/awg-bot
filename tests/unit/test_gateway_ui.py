@@ -1,12 +1,11 @@
 """Агент шлюза: снимок, потребление за месяц, имя ВПС, метрики, бандл и
-бэкап. Раскладка панели и здоровья — в эталонах экранов
-(tests/screens/gateway.txt); здесь — данные под ними и редкие ветки текста."""
+бэкап. Панель, здоровье и вопрос о файле конфигурации — в эталонах экранов
+(tests/screens/gateway.txt); здесь — данные под ними."""
 from __future__ import annotations
 
 
 import pytest
 
-from awgbot.bot import texts
 from awgbot.domain import gateway as gw
 from awgbot.domain.gateway import GatewayServices, GwStatus, GwCheck
 from awgbot.infra.db import Database
@@ -77,15 +76,6 @@ def test_apply_bundle_remembers_server_name(svc, monkeypatch, tmp_path):
     assert ok and svc.db.get_state(GatewayServices._SERVER_NAME_KEY) == "awg-srv"
 
 
-def test_health_screen_without_a_hostname_names_the_gateway():
-    """Имени хоста в замере нет — заголовок «Здоровье шлюза», а не
-    «Здоровье » с пустым местом."""
-    st = GwStatus(checks=[GwCheck("ядра", True)], module_version="1.0.2026", srcversion="ABCDEF1234",
-                  kernels_total=1, throttled={"raw": 0, "now": [], "ever": ["недонапряжение случалось"]})
-    out = texts.gateway_health(st)
-    assert out.splitlines()[0] == "🩺 <b>Здоровье шлюза</b> ✅ проблем нет", out
-
-
 def test_root_block_device_strips_partition(tmp_path):
     for src, want in (("/dev/sda2", "/dev/sda"), ("/dev/mmcblk0p2", "/dev/mmcblk0"),
                       ("/dev/nvme0n1p3", "/dev/nvme0n1")):
@@ -150,11 +140,11 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
     assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/backup-meta.json", "state/conf/app.yaml"]
 
 
-def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_path):
-    """Тот же конфиг линка в бандле — «линк не перезапустится», и без угрозы
-    РФ-доступу даже на шлюзе, который несёт трафик: иначе человек откладывает
+def test_bundle_link_change_detection(svc, monkeypatch, tmp_path):
+    """Тот же конфиг линка в бандле — осмотр говорит «не изменился»: по нему
+    вопрос обещает «линк не перезапустится» без угрозы РФ-доступу даже на
+    шлюзе, который несёт трафик (экран — в эталоне), иначе человек откладывает
     безобидное применение."""
-    from awgbot.bot import texts
     from awgbot.util import bundlecrypt as bc
     from awgbot.core import config
     priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
@@ -168,5 +158,3 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
         return bc.encrypt(plain, bc.read_privkey(conf.read_text()))
     assert svc.inspect_bundle(bundle(link))["link_changed"] is False
     assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
-    # линк не перезапускается — прерываться нечему и у шлюза, несущего трафик
-    assert texts.gateway_bundle_received(False, carries=False) == texts.gateway_bundle_received(False)

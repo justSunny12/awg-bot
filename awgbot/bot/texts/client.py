@@ -84,10 +84,12 @@ def subscription_short(client, bot_username: str = "") -> str:
             client.period_end and timeutil.remaining_seconds(timeutil.parse_iso(client.period_end)) <= 0):
         end = timeutil.parse_iso(client.period_end) if client.period_end else None
         text = f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}" if end else "💳 🔴 истекла"
-    elif not client.period_end:
+    elif not client.effective_period_end:
         text = "💳 бессрочная"
     else:
-        end = timeutil.parse_iso(client.period_end)
+        # срок — эффективный: тихая пауза администратора обнуляет period_end,
+        # а выдавать себя не должна (экран «💳 Подписка» считает так же)
+        end = timeutil.parse_iso(client.effective_period_end)
         if client.notified_thresholds:
             text = f"💳 🟡 истекает {timeutil.fmt_end_ui(end)}"
         else:

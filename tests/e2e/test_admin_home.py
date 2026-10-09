@@ -10,7 +10,10 @@ gw-|extend-|traffic…), «⬆️ Доступна vX» из периодиче�
 
 Экраны в типичных состояниях (главная, ссылки /start, «Онлайн», «Истекают»,
 «Без профиля») сверяет эталон adm.main*, adm.link.*, adm.online*,
-adm.expiring*; здесь — состояния, которых в снимках нет, и побочные эффекты.
+adm.expiring*, в том числе тихая главная с выключенным РФ-доступом, «Онлайн:
+0» рядом со ссылками, версия и переезд, сервер и шлюз не отвечают, шлюз в
+«Онлайн», двое истекающих; здесь — побочные эффекты, атомы форматтеров и
+разбор ссылок.
 """
 import datetime
 from types import SimpleNamespace
@@ -19,12 +22,11 @@ import pytest
 from aiogram.filters import CommandObject
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import ClientCB, Menu
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers.admin.panel import parse_link
 from awgbot.core import config
 from awgbot.util import timeutil
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -34,20 +36,6 @@ BOT = "awg_test_bot"
 
 def _cmd(args):
     return CommandObject(prefix="/", command="start", args=args)
-
-
-def _link(payload, label):
-    return f'<a href="https://t.me/{BOT}?start={payload}">{label}</a>'
-
-
-async def _home(services, bot):
-    """Главная по /start: (строки шапки, ряды подписей кнопок)."""
-    services.bot_username = BOT
-    services.ensure_admin_client()
-    msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=bot)
-    await ah.admin_start(msg, services, FakeState())
-    text, markup = [(t, m) for kind, t, m in msg.sent if kind == "answer"][-1]
-    return text.split("\n"), [[b.text for b in r] for r in markup.inline_keyboard]
 
 
 def _expiring(services, make_active_client, name, tg_id, days=2):
@@ -61,113 +49,33 @@ def _expiring(services, make_active_client, name, tg_id, days=2):
 
 # ── шапка ────────────────────────────────────────────────────────────────────
 
-async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake_routing):
-    """Нечего сказать — нет строк «Истекают», «Без профиля», «Доступна»,
-    «Переезд»; кнопок восемь, «🛰 Шлюзы» на месте и без шлюзов: через неё
-    РФ-доступ разворачивают и включают."""
-    fake_routing.enabled = False
-    services.db.set_state("online_count", "0")
-    lines, rows = await _home(services, fake_bot)
-    assert lines[0].startswith("🛠 <b>") and "🔴 не отвечает" not in lines[0], lines
-    # нули — без ссылок: за ними пустые экраны
-    assert lines[-2] == "📶 Онлайн: 0", lines
-    assert lines[-1] == f"📊 Трафик за {texts.month_label()}: 0 ГБ", lines
-    joined = "\n".join(lines)
-    assert "<a " not in joined, f"ссылка на пустой экран:\n{joined}"
-    assert "РФ-доступ" not in joined, f"строка РФ-доступа без шлюзов и без функции:\n{joined}"
-    assert lines[1] == "" and "" not in lines[2:], "пустая строка — только после шапки, без временных строк"
-    for word in ("Истекают", "Без профиля", "Доступна", "Переезд"):
-        assert word not in joined, f"строка «{word}» без повода:\n{joined}"
-    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
-                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
-
-
-async def test_home_counters_line_links_expiring_and_unassigned(services, fake_bot, make_active_client):
-    """«📶 Онлайн · ⏳ Истекают · 📦 Без профиля» — одной строкой ссылками на
-    свои экраны; «Истекают» и «Без профиля» — только при ненулевом числе."""
-    _expiring(services, make_active_client, "Скоро", 3101)
-    svc = services.db.get_service_client_id()
-    services.db.create_device(svc, "чужой", "PUBU", "PSK", "10.8.0.70")
-    lines, _ = await _home(services, fake_bot)
-    # онлайн — живьём из устройств с хендшейком, не из счётчика опроса: никого нет — «0» без ссылки
-    assert (" · ".join(["📶 Онлайн: 0", "⏳ Истекают: " + _link("expiring", "1"),
-                        "📦 Без профиля: " + _link("unassigned", "1")])) in lines, lines
-
-
-async def test_home_shows_available_update_from_the_periodic_check(services, fake_bot, monkeypatch):
-    """«⬆️ Доступна vX» — из ключа, который пишет периодическая проверка
-    (update_scan), а не из тега уведомления: он пишется и при выключенных
-    уведомлениях. Нечего ставить — строка уходит."""
+async def test_periodic_check_records_the_found_version_even_when_muted(services, monkeypatch):
+    """«⬆️ Доступна vX» на главной (снимок adm.main.update) берётся из ключа,
+    который пишет периодическая проверка (update_scan), а не из тега
+    уведомления: он пишется и при выключенных уведомлениях. Нечего ставить —
+    ключ пуст, и строка уходит."""
     monkeypatch.setattr(services, "update_next", lambda: SimpleNamespace(tag="v3.2.0"))
     monkeypatch.setattr(services, "updates_muted", lambda: True)
     assert services.update_scan().tag == "v3.2.0"
     assert services.update_to_notify() is None, "уведомления выключены — уведомлять нечего"
     assert services.update_available_tag() == "v3.2.0", "проверка не записала найденную версию"
-    lines, _ = await _home(services, fake_bot)
-    upd = ("<b>" + _link("upd", "⬆️ Доступна v3.2.0") + "</b> — "
-           '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>')
-    assert lines[-2:] == ["", upd], lines
 
     monkeypatch.setattr(services, "update_next", lambda: None)
     services.update_scan()
-    lines, _ = await _home(services, fake_bot)
-    assert not any("Доступна" in ln for ln in lines), "обновились — строка должна уйти"
+    assert services.update_available_tag() == "", "обновились — строка должна уйти"
 
 
-def test_update_tag_without_v_gets_it_and_migration_line_goes_last():
-    """Тег без «v» — с ней, и в подписи, и в адресе страницы релиза;
-    временные строки — отдельным блоком через пустую строку; «🚚 Переезд» —
-    последней, ссылкой на обзор и только пока идёт переезд."""
-    mig = SimpleNamespace(clients_total=12, clients_done=11, devices_total=20, devices_done=18)
-    out = texts.admin_panel({"ok": True}, update_tag="3.2.0", migration=mig).split("\n")
-    rel = '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>'
-    assert out[-3:] == ["", f"<b>⬆️ Доступна v3.2.0</b> — {rel}",
-                        "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
-    out = texts.admin_panel({"ok": True}, update_tag="v3.2.0", migration=mig,
-                            bot_username=BOT).split("\n")
-    assert out[-3:] == ["", f"<b>{_link('upd', '⬆️ Доступна v3.2.0')}</b> — {rel}",
-                        f"{_link('migration', '🚚 Переезд')}: 11/12 профилей, 18/20 устройств"], out
-    # один переезд, без обновления — тоже отдельным блоком
-    out = texts.admin_panel({"ok": True}, migration=mig).split("\n")
-    assert out[-2:] == ["", "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
-    done = SimpleNamespace(clients_total=0, clients_done=0, devices_total=0, devices_done=0)
-    assert "Переезд" not in texts.admin_panel({"ok": True}, migration=done)
+def test_release_url_points_to_the_tag():
     assert texts.release_url("v3.2.0") == "https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0"
 
 
 def test_home_routing_line_is_silent_without_gateways():
     """«🇷🇺 РФ-доступ: 🔴 недоступен» без единого шлюза — шум: сказать нечего,
-    добавить шлюз можно в «🛰 Шлюзы». С шлюзом, который не отвечает, — строка
-    нужна: иначе админ не узнает, что РФ-доступ лёг."""
+    добавить шлюз можно в «🛰 Шлюзы» (шлюз, который не отвечает, — снимок
+    adm.main.down)."""
     assert texts.routing_admin_status_line({"ok": False, "active": "", "standby": []}) == ""
-    down = texts.routing_admin_status_line({"ok": False, "active": "NASPi", "active_slot": 1,
-                                            "standby": []})
-    assert down.startswith("🇷🇺 РФ-доступ: 🔴 недоступен") and "NASPi" in down, down
     out = texts.admin_panel({"ok": True}, routing_info={"ok": False, "active": "", "standby": []})
     assert "РФ-доступ" not in out, out
-
-
-def test_home_first_line_is_host_status_and_short_uptime():
-    out = texts.admin_panel({"ok": True, "uptime": "12 дней 4 часа"})
-    assert out.split("\n")[0].endswith("</b> 🟢 · 12 дн 4 ч"), out
-    assert texts.admin_panel({"ok": False}).split("\n")[0].endswith("</b> 🔴 не отвечает")
-
-
-# РФ-доступ включён и шлюзов нет — снимок adm.main.quiet
-@pytest.mark.parametrize("gateways, enabled", [(False, False), (True, False)])
-async def test_gateways_button_is_always_there(services, fake_bot, fake_routing, make_active_client,
-                                               gateways, enabled):
-    """«🛰 Шлюзы» — всегда, рядом с «⚙️ Настройки»: без шлюзов и при
-    выключенной функции это единственный вход к её развёртыванию и
-    включению."""
-    fake_routing.enabled = enabled
-    if gateways:
-        services.ensure_admin_client()
-        pi = services.add_device(services.admin_client().id, "NASPi")
-        services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
-    _, rows = await _home(services, fake_bot)
-    assert ["🛰 Шлюзы", "⚙️ Настройки"] in rows, rows
-    assert sum(len(r) for r in rows) <= 11 and all(len(r) <= 3 for r in rows), rows
 
 
 # ── ссылки ───────────────────────────────────────────────────────────────────
@@ -186,26 +94,6 @@ def test_parse_link_maps_payloads_to_screens(payload, link):
     assert parse_link(payload) == link
 
 
-async def _open(services, bot, payload):
-    services.bot_username = BOT
-    services.db.set_nav_message_id(ADMIN, None)
-    msg = FakeMessage(text=f"/start {payload}", chat_id=ADMIN, user_id=ADMIN, bot=bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
-    shown = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert shown, f"по ссылке {payload} ничего не пришло"
-    text, markup = shown[-1]
-    return msg, text, [b.text for r in markup.inline_keyboard for b in r]
-
-
-async def test_link_to_a_deleted_device_falls_back_to_the_home(services, fake_bot):
-    """Устройство удалено, а ссылка «dev-<id>» осталась в уведомлении —
-    главная, а не исключение (карточки по ссылкам и удалённый профиль —
-    снимки adm.link.cl, adm.link.dev, adm.link.cl.missing)."""
-    services.ensure_admin_client()
-    _, text, _ = await _open(services, fake_bot, "dev-999999")
-    assert text.startswith("🛠 "), f"не главная, а {text[:40]}"
-
-
 async def test_link_extend_remembers_to_return_to_the_expiring_list(services, fake_bot, make_active_client):
     """«extend-<id>» (из списка истекающих прежнего образца): после продления —
     список истекающих, пока в нём кто-то есть (экран — снимок adm.link.extend)."""
@@ -219,49 +107,3 @@ async def test_link_extend_remembers_to_return_to_the_expiring_list(services, fa
     assert [t for kind, t, _ in msg.sent if kind == "answer"], "по ссылке ничего не пришло"
     assert (await state.get_data()).get("return_to") == "expiring", \
         "после продления админ вернётся не в список истекающих"
-
-
-# ── «Онлайн» и «Истекают» ────────────────────────────────────────────────────
-
-async def test_online_list_puts_gateways_first_with_links_and_blank_lines(
-        services, fake_bot, make_active_client, monkeypatch):
-    """«📶 Онлайн: N»; шлюзы вверху с «[шлюз]»; «🟢 устройство · профиль ·
-    адрес» — имена ссылками на карточки; между записями — пустая строка."""
-    c = make_active_client("Ксюша", tg_id=3401)
-    phone = services.add_device(c.id, "iPhone")
-    services.ensure_admin_client()
-    pi = services.add_device(services.admin_client().id, "NASPi")
-    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
-    now = int(timeutil.now().timestamp())
-    for dev_id in (phone.device_id, pi.device_id):
-        services.db.update_device_fields(dev_id, last_handshake=now)
-    _, text, _ = await _open(services, fake_bot, "online")
-    ph, gw = services.db.get_device(phone.device_id), services.db.get_device(pi.device_id)
-    assert text.split("\n\n") == [
-        "📶 <b>Онлайн:</b> 2 (2 устройства)",
-        f"🛰 {_link(f'dev-{gw.id}', 'NASPi')} [шлюз] · <code>{gw.address}</code>",
-        f"🟢 {_link(f'dev-{ph.id}', 'iPhone')} · {_link(f'cl-{c.id}', 'Ксюша')} · <code>{ph.address}</code>",
-    ], text
-
-
-async def test_expiring_list_links_names_and_offers_extend_buttons(services, fake_bot, make_active_client):
-    """«⏳ Истекают: 2»; «[Имя] — 3 дн., до 27.09 18:00», ближайшие сверху;
-    кнопки «⏱ Имя» — продление прямо из списка."""
-    b = _expiring(services, make_active_client, "Боря", 3502, days=3)
-    a = _expiring(services, make_active_client, "Аня", 3501, days=1)
-    cb = FakeCallback(message=FakeMessage(chat_id=ADMIN, user_id=ADMIN, bot=fake_bot),
-                      user_id=ADMIN, bot=fake_bot)
-    services.bot_username = BOT
-    await ah.admin_expiring(cb, services, FakeState())
-    text, markup = [(s[1], s[2]) for s in cb.message.sent if s[0] == "edit_text"][-1]
-    blocks = text.split("\n\n")
-    assert blocks[0] == "⏳ <b>Истекают:</b> 2", text
-    for block, c in zip(blocks[1:], (a, b)):
-        end = timeutil.parse_iso(c.period_end)
-        assert block == (f"{_link(f'cl-{c.id}', c.name)} — {timeutil.remaining_brief(end)}, "
-                         f"до {timeutil.fmt_end_ui(end)}"), block
-    btns = [x for r in markup.inline_keyboard for x in r]
-    assert [(x.text, x.callback_data) for x in btns] == [
-        ("⏱ Аня", ClientCB(action="extend_exp", client_id=a.id).pack()),
-        ("⏱ Боря", ClientCB(action="extend_exp", client_id=b.id).pack()),
-        ("⬅️ В меню", Menu(action="main").pack())]

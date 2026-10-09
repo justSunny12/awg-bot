@@ -2,18 +2,17 @@
 конфигов, добавление/удаление, карточка устройства без ключа, самоблок,
 пауза подписки, отсрочка.
 
-Экраны этих веток в обычном состоянии — в эталоне tests/screens/client.txt;
-здесь — БД, память диалога, чистка чата и ветки, которых в эталоне нет
-(чужое существующее устройство, старые кнопки у пира без ключа, тихая пауза
-администратора, РФ-байты).
+Экраны этих веток — в эталоне tests/screens/client.txt (в том числе чужое
+существующее устройство, старые кнопки у пира без ключа, тихая пауза
+администратора, РФ-байты, отказы ввода дней паузы и чужой отсрочки); здесь —
+БД, память диалога и чистка чата.
 """
 import pytest
 
-from awgbot.bot import texts
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, PauseCB, PresetCB
 from awgbot.core.blocks import ClientBlock, DeviceBlock
-from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 G = 1024 ** 3
@@ -28,33 +27,6 @@ def _fresh(services, client):
     return services.db.get_client(client.id)
 
 
-async def test_device_open_foreign_existing_device_is_refused(services, fake_bot, make_active_client):
-    """Существующее устройство другого клиента не открывается — отказ, а не
-    чужая карточка (в эталоне — только несуществующий номер)."""
-    client = make_active_client(tg_id=5002)
-    cl = _fresh(services, client)
-    other = make_active_client(tg_id=5003)
-    foreign = services.add_device(other.id, "чужое")
-    cb2, nav2 = _cb(fake_bot, 5002)
-    await ch.device_open(cb2, DeviceCB(action="open", device_id=foreign.device_id), cl, services, FakeState())
-    assert cb2.answers[-1][1] is True, "show_alert «не найдено»"
-    assert not any(s[0] == "edit_text" for s in nav2.sent)
-
-
-async def test_device_connect_menu_of_unmanaged_device(services, fake_bot, make_active_client):
-    """Кнопка старого образца «Данные для подключения» у пира без ключа:
-    ряда выдачи нет — пояснение и удаление (обычное устройство — в эталоне)."""
-    client = make_active_client(tg_id=5003)
-    app_id = services.db.create_device(client.id, "app", "PUBY", "PSK", "10.8.0.61", private_key=None)
-    cl = _fresh(services, client)
-    cb2, nav2 = _cb(fake_bot, 5003)
-    await ch.device_connect_menu(cb2, DeviceCB(action="connect_menu", device_id=app_id), cl, services)
-    text2, labels2 = last_screen(nav2)
-    assert texts.UNMANAGED_DEVICE_LINE in text2 and "🗑 Удалить" in labels2
-    assert not any(l in labels2 for l in ("🔗 Ссылка", "🔳 QR", "📄 Файл", "👤 Другу")), \
-        "у пира без ключа выдать нечего — только объяснение и удаление"
-
-
 async def test_gen_from_card_removes_the_menu_under_the_link(
         services, fake_bot, make_active_client):
     """Меню под кнопкой выдачи убрано — живым становится сообщение со ссылкой
@@ -65,19 +37,6 @@ async def test_gen_from_card_removes_the_menu_under_the_link(
     cb, nav = _cb(fake_bot, 5004)
     await ch.device_gen(cb, DeviceCB(action="gen_link", device_id=dc.device_id), cl, services)
     assert nav.deleted, "меню не должно висеть над ссылкой"
-
-
-async def test_gen_from_menu_app_shows_dialog(services, fake_bot, make_active_client):
-    """QR пиру без ключа: диалог «удали и добавь заново», QR не уходит (в
-    эталоне — только ссылка)."""
-    client = make_active_client(tg_id=5005)
-    app_id = services.db.create_device(client.id, "app", "PUBW", "PSK", "10.8.0.62", private_key=None)
-    cl = _fresh(services, client)
-    cb, nav = _cb(fake_bot, 5005)
-    await ch.device_gen(cb, DeviceCB(action="gen_qr", device_id=app_id), cl, services)
-    text, labels = last_screen(nav)
-    assert text == texts.UNMANAGED_DEVICE_DIALOG and "🗑 Удалить" in labels
-    assert not any(s[0] in ("photo", "animation") for s in nav.sent), "QR для пира без ключа"
 
 
 async def test_edit_device_traffic_flow(services, fake_bot, make_active_client):
@@ -168,16 +127,6 @@ async def test_client_block_unblock_own_device(services, fake_bot, make_active_c
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER) == 0
 
 
-async def test_client_unblock_when_not_user_blocked(services, fake_bot, make_active_client):
-    """Снять свой блок, которого нет (кнопка устарела), — отказ всплывашкой."""
-    client = make_active_client(tg_id=5016)
-    dc = services.add_device(client.id, "d")
-    cl = _fresh(services, client)
-    cb, nav = _cb(fake_bot, 5016)
-    await ch.client_unblock_device(cb, BlockCB(target="dev", action="menu_unblock", ref=dc.device_id), cl, services)
-    assert cb.answers[-1][1] is True
-
-
 async def test_pause_full_cycle(services, fake_bot, make_active_client):
     """Пауза одним экраном: экран дней паузу не ставит, выбор дней ставит
     сразу, снятие — без вопроса. Экраны, итоги и всплывашки — в эталоне."""
@@ -198,9 +147,8 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
 
 
 async def test_pause_other_accepts_a_number_in_range_only(services, fake_bot, make_active_client):
-    """Своё число дней: границы диапазона и не-число отклоняются одной
-    строкой (в эталоне — одно значение вне диапазона), пауза не ставится;
-    число в диапазоне — ставит."""
+    """Своё число дней: границы диапазона и не-число паузу не ставят; число
+    в диапазоне — ставит. Строка отказа — снимки cl.pause.other.bad*."""
     client = make_active_client(tg_id=5023, period_kind="year")
     cl = _fresh(services, client)
     st = FakeState()
@@ -209,23 +157,10 @@ async def test_pause_other_accepts_a_number_in_range_only(services, fake_bot, ma
     for bad in ("0", "29", "abc"):
         m = FakeMessage(text=bad, chat_id=5023, user_id=5023, bot=fake_bot)
         await ch.pause_other_apply(m, cl, services, st)
-        assert [s[1] for s in m.sent if s[0] == "answer"] == ["⚠️ Нужно целое число от 1 до 28"], bad
     assert not _fresh(services, client).is_paused
     m = FakeMessage(text="3", chat_id=5023, user_id=5023, bot=fake_bot)
     await ch.pause_other_apply(m, cl, services, st)
     assert int(_fresh(services, client).pause_reserved_days) == 3
-
-
-async def test_silent_admin_pause_is_invisible_to_the_client(services, fake_bot, make_active_client):
-    """Тихая пауза администратора клиенту не видна — ни строки доступа, ни
-    паузы в «💳 Подписка». Остальные варианты экрана (истекает, своя пауза,
-    пауза администратора, бессрочная, без дней паузы) — в эталоне."""
-    q = make_active_client(tg_id=5036, period_kind="year")
-    services.enter_admin_pause(q.id, 0)
-    services._client_set_block(q.id, ClientBlock.PAUSED | ClientBlock.ADMIN_SILENT)
-    text, _ = await ch.sub_parts(services, q.id)
-    assert "🟡" not in text and "приостановлен" not in text, \
-        f"тихая пауза выдала себя клиенту: {text}"
 
 
 async def test_resume_guard_blocks_non_user_pause(services, fake_bot, make_active_client):
@@ -240,13 +175,13 @@ async def test_resume_guard_blocks_non_user_pause(services, fake_bot, make_activ
 
 
 async def test_grace_take_happy_and_stale_ref(services, fake_bot, make_active_client):
-    """Кнопка отсрочки с чужим номером профиля — отказ; своя — отсрочка
-    записана в профиль."""
+    """Кнопка отсрочки с чужим номером профиля отсрочку не даёт; своя —
+    записана в профиль. Отказ всплывашкой — снимок cl.grace.foreign."""
     client = make_active_client(tg_id=5020, period_kind="year")
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5020)
     await ch.grace_take(cb, GraceCB(action="take", ref=999999), cl, services)
-    assert cb.answers[-1][1] is True
+    assert _fresh(services, client).grace_used == 0, "отсрочка по чужому номеру записана"
     cb2, nav2 = _cb(fake_bot, 5020)
     await ch.grace_take(cb2, GraceCB(action="take", ref=client.id), cl, services)
     assert _fresh(services, client).grace_used == 1
@@ -284,33 +219,3 @@ async def test_client_cannot_rename_foreign_device(services, fake_bot, make_acti
 
 
 # ── РФ-доступ только админу ──────────────
-
-async def test_client_screens_do_not_show_rf_even_when_allowed_and_counted(
-        services, fake_bot, make_active_client):
-    """РФ-часть трафика — сведения для админа. Клиенту с разрешённым
-    РФ-доступом и накопленными байтами карточка устройства и экран подписки
-    те же, что без них: иначе вопросы «что за РФ и почему столько»."""
-    client = make_active_client(tg_id=5100, name="Ксюша")
-    services.db.update_client_fields(client.id, routing_allowed=1)
-    dc = services.add_device(client.id, "Телефон")
-
-    async def screens():
-        cl = _fresh(services, client)
-        cb, nav = _cb(fake_bot, 5100)
-        await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), cl, services, FakeState())
-        card = last_screen(nav)
-        cb, nav = _cb(fake_bot, 5100)
-        await ch.menu_info(cb, cl, services)
-        return card, last_screen(nav)
-
-    before = await screens()
-    services.db.rf_add_bulk([(dc.device_id, 1024 ** 3, 3 * 1024 ** 3)])
-    services.db.set_state("rf_month_rx", str(1024 ** 3))
-    services.db.set_state("rf_month_tx", str(3 * 1024 ** 3))
-    after = await screens()
-    assert after == before, "экран клиента изменился от РФ-данных"
-    card, sub = after
-    assert "🇷🇺" not in card[0], card
-    # в подписке «🇷🇺» — только слово в строке лимитов (доступ выдан), без байт
-    assert [l for l in sub[0].splitlines() if "🇷🇺" in l] == [
-        "Включено в подписку: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ"], sub

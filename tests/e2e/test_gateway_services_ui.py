@@ -1,11 +1,11 @@
 """Сервисы соседних сетей на экранах:
 строка в карточке слота основного бота — «🗂 SMB: свои — N, извне — M»
 (нулевая часть не выводится), а состояние на шлюзе — строкой сразу под ней;
-строка про SMB в диалоге «↔️ Связь подсетей»; у агента
-— одна строка SMB в панели и на экране «🔀 VPN-транзит». Раскладка экранов,
-диалог включения связи подсетей и строки SMB агента в обычных состояниях —
-в эталонах экранов (tests/screens/admin.txt, gateway.txt); здесь — судьба
-записей в карточке слота, выключение, счёт из ленты соседей и редкие ветки.
+строка про SMB в диалоге «↔️ Связь подсетей». Раскладка экранов, диалог
+включения связи подсетей и строка SMB агента в панели и на экране
+«🔀 VPN-транзит» во всех состояниях — в эталонах экранов
+(tests/screens/admin.txt, gateway.txt); здесь — судьба записей в карточке
+слота, выключение и строка SMB без нулей.
 
 Цена ошибки: имя с малины на экране ВПС — чужой текст в разметке сервера;
 неэкранированная ошибка шлюза ломает всю карточку (Telegram отвергает
@@ -16,15 +16,10 @@ from __future__ import annotations
 
 import pytest
 
-import awgbot.core.config as cfg
 from awgbot.bot.callbacks import GwSlotCB
-from awgbot.bot.handlers import gateway as gh
 from awgbot.bot.handlers import settings as sh
 from awgbot.domain import gwservices
-from awgbot.domain.gateway import GatewayServices, GwStatus
-from awgbot.infra import gwguard
-from awgbot.infra.db import Database
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeState
 from tests.e2e import test_gateway_slots_ui as _slots_ui
 from tests.e2e.test_gateway_router_peers_ui import _two_lan_slots
 from tests.e2e.test_gateway_slots_ui import _acb, _peer_conf, _screen
@@ -242,98 +237,6 @@ async def test_turning_peer_access_off_does_not_mention_finder(services, peers, 
 
 # ── агент ────────────────────────────────────────────────────────────────────
 
-@pytest.fixture()
-def gw_svc(tmp_path, monkeypatch):
-    d = Database(tmp_path / "gw.db"); d.init_schema()
-    svc = GatewayServices(d)
-    env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "PEER_HOME_NETS": "192.168.1.0/24",
-           "LINK_CHANNEL": "1"}
-    monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
-    monkeypatch.setattr(gwguard, "avahi_active", lambda: True)
-    monkeypatch.setattr(gwguard, "dns_local", lambda name, qtype="PTR": ["x"])
-    svc.env = env
-    yield svc
-    d.close()
-
-
-def _lan_status(svc_info: dict) -> GwStatus:
-    return GwStatus(link_up=True, handshake_age=5.0,
-                    lan={"iface": "end0", "addr": "192.168.68.222", "resolver": "10.9.1.1", "domains": 3,
-                         "nets": 4, "updated_at": "", "own_vpn": 1, "own_ru": 0, "lan_pkts": 9,
-                         "svc": svc_info})
-
-
-def _peer(svc, names):
-    import json
-    items = [{"t": "_smb._tcp", "n": n, "h": n.lower().replace(" ", "-").replace("<", "").replace(">", ""),
-              "p": 445, "a": f"192.168.1.{i + 1}"} for i, n in enumerate(names)]
-    svc.db.set_state("gw_peer_svc", json.dumps({"hash": "ab" * 32, "items": items}))
-
-
-async def _agent_screens(svc, fake_bot, monkeypatch):
-    import shutil
-    real = shutil.which
-    monkeypatch.setattr(shutil, "which", lambda n, *a, **k: "/usr/bin/avahi-browse" if n == "avahi-browse" else real(n, *a, **k))
-    info, _ = svc.services_status()
-    monkeypatch.setattr(svc, "cached_status", lambda max_age: _lan_status(info))
-    # свои списки здесь не предмет: один домен, синхронизация не действует
-    monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", "a.com")])
-    monkeypatch.setattr(svc, "own_status", lambda: ({"active": False, "state": "off"}, []))
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_panel(cb, svc, FakeState())
-    panel, panel_kb = msg.sent[-1][1], msg.sent[-1][2]
-    await gh.gw_transit(cb, svc, FakeState())
-    lan, lan_kb = msg.sent[-1][1], msg.sent[-1][2]
-    labels = lambda m: [b.text for row in m.inline_keyboard for b in row]   # noqa: E731
-    return panel, labels(panel_kb), lan, labels(lan_kb)
-
-
-def _lines(text: str) -> list[str]:
-    return text.splitlines()
-
-
-async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot, monkeypatch):
-    """Панель и экран «🔀 VPN-транзит» считают SMB из ленты соседей: своих не
-    нашлось — нулевая часть не выводится («свои — 0» читается как поломка);
-    имён здесь нет (они — в здоровье): имя с чужой малины не попадает в
-    разметку вовсе."""
-    _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
-    panel, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    line = "🗂 SMB: извне — 5"
-    for t in (panel, lan):
-        assert line in _lines(t), f"счёт из ленты соседей не дошёл до экрана: {t}"
-        assert "naspi5" not in t and "&lt;b&gt;" not in t and "<b>x</b>" not in t, f"имена соседей на экране: {t}"
-
-
-async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_bot, monkeypatch):
-    """Экран «🔀 VPN-транзит» в состоянии, которого нет в эталоне: аплинк не
-    назван — «через аплинк», списки ещё не обновлялись, своих «напрямую» нет —
-    нулевая часть не выводится; строки подряд, без пустых."""
-    _peer(gw_svc, ["naspi5"])
-    _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    head = ("🔀 <b>VPN-транзит</b> 🟢 работает\n"
-            "<code>end0</code> · <code>192.168.68.222</code> · 9 пакетов с роутера\n"
-            "DNS — <code>10.9.1.1</code> через <code>аплинк</code>\n"
-            "📋 Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
-            "Свои списки: 1 в туннель\n"
-            "🗂 SMB: извне — 1\n")
-    assert lan.startswith(head), lan
-
-
-async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
-    """Записей от других шлюзов нет — строка целиком про сервисы: сервер ещё
-    ничего не присылал — «обновляю…», прислал пустое — «не найдены»; почему
-    своих не видно (нет avahi) — пишет здоровье, не панель."""
-    panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "🗂 SMB: обновляю…" in _lines(panel), panel
-    gw_svc.db.set_state("gw_peer_svc", '{"hash": "", "items": []}')
-    monkeypatch.setattr(gwguard, "avahi_active", lambda: False)
-    panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "🗂 SMB: не найдены" in _lines(panel), panel
-    assert "avahi" not in panel, panel
-
 
 @pytest.mark.parametrize("svc, line", [
     ({"own": ["x", "y"], "peer": [], "ever": True}, "🗂 SMB: свои — 2"),
@@ -349,9 +252,3 @@ def test_smb_line_does_not_print_zeros_on_the_agent_either(svc, line):
     assert smb_line(svc) == line
 
 
-async def test_agent_screens_are_silent_where_the_function_does_not_work(gw_svc, fake_bot, monkeypatch):
-    """Соседей в юните нет — ни строк панели, ни экрана: функции нет."""
-    gw_svc.env["PEER_HOME_NETS"] = ""
-    _peer(gw_svc, ["naspi5"])
-    panel, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "🗂" not in panel and "🗂" not in lan and "awg.internal" not in lan, (panel, lan)
