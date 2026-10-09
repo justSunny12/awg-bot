@@ -406,8 +406,8 @@ CREATE TABLE IF NOT EXISTS gateways (
     link_port     INTEGER NOT NULL UNIQUE,               -- 443, 8443
     link_cidr     TEXT    NOT NULL UNIQUE,               -- 10.99.99.0/30
     preferred     INTEGER NOT NULL DEFAULT 0,            -- 0/1: берёт трафик при холодном старте
-    lan_subnets  TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
-    label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дом 1»)
+    lan_subnets   TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
+    label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дача»)
     lan_mode      INTEGER NOT NULL DEFAULT 0,            -- 0/1: «за шлюзом — без VPN»
     created_at    TEXT    NOT NULL,
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
@@ -619,11 +619,13 @@ class SchemaMixin:
         """Создаёт таблицы (идемпотентно) и гарантирует служебного клиента.
 
         Схема нормализована (identity/подписка/квота/grace/pause разведены по
-        таблицам). Боевую БД не пересоздаём; миграций нет — минимальная
-        поддерживаемая версия 3.2.0 (README-bot §9a), её схема полная, всё,
-        что доводило БД версий старше (гостевые колонки, счёт паузы, слоты
-        шлюзов, режим без VPN, РФ-трафик), снято: хост старше проходит через
-        3.2.0 и получает это там, копия старше не разворачивается (schema_gap).
+        таблицам). Боевую БД не пересоздаём. Единственный шаг доводки —
+        переименование колонки подсетей слота на месте (_rename_lan_subnets,
+        до SCHEMA); прочих миграций нет — минимальная поддерживаемая версия
+        3.2.0 (README-bot §9a), её схема полная, всё, что доводило БД версий
+        старше (гостевые колонки, счёт паузы, слоты шлюзов, режим без VPN,
+        РФ-трафик), снято: хост старше проходит через 3.2.0 и получает это
+        там, копия старше не разворачивается (schema_gap).
         """
         with self._tx() as cur:
             self._rename_lan_subnets(cur)

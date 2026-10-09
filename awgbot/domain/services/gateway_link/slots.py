@@ -191,7 +191,7 @@ class SlotsMixin:
         return None if age > self._GW_PING_TTL else (val, at)
 
     def gateway_external_ip(self, slot_id: int) -> Optional[str]:
-        """Внешний адрес дома шлюза — эндпоинт пира линка, как его видит ВПС с
+        """Внешний адрес шлюза — эндпоинт пира линка, как его видит ВПС с
         последнего хендшейка. Один локальный exec, наружу ничего не уходит."""
         gw = self._gw_slot(slot_id)
         try:

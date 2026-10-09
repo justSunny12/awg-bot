@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         if config.ROLE != "gateway" and os.path.exists(config.DB_PATH):
             from awgbot.infra.db import Database
             db = Database(config.DB_PATH)
+            db.init_schema()          # база прежней версии до первого старта сервиса — довести
         snap = _Snapshot(db)
         raw = snap.build_backup_archive(snap.backup_extra())
     except Exception as e:                            # noqa: BLE001

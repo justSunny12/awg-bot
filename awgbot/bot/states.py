@@ -80,7 +80,7 @@ class GatewayLanSubnets(StatesGroup):
 
 
 class GatewayLabel(StatesGroup):
-    """Подпись места слота шлюза («дом 1»). В данных — gw_slot."""
+    """Подпись места слота шлюза («дача»). В данных — gw_slot."""
     value = State()
 
 

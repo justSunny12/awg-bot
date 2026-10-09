@@ -77,7 +77,7 @@
 #   sudo ./awg-bot-install.sh --advanced      # спросить всё, как в прежних версиях
 #   sudo ./awg-bot-install.sh --skip-verify   # своя сборка: не сверять sha256 с релизом
 #   … --role gateway [--bundle <файл>]        # агент шлюза; без --bundle файл ищется
-#                                             # в /root и в каталоге SUDO_USER ($HOME)
+#                                             # в /root и в каталоге SUDO_USER (из passwd)
 #
 set -euo pipefail
 
@@ -412,7 +412,7 @@ ln -sf "$INSTALL_DIR/awg-bot.sh" "$SELF_LINK"
 log "запускаю мастер настройки…"
 # Убрать за собой: архив и каталог распаковки. Каталог сносим ТОЛЬКО если он
 # временный (/tmp, /var/tmp) — человек мог распаковать поставку и к себе в
-# свой каталог ($HOME), и удалять её там мы не вправе.
+# свой каталог, и удалять её там мы не вправе.
 CLEANUP_DIR=""
 case "${SRC_ROOT:-}" in
     /tmp/*|/var/tmp/*|/private/tmp/*) CLEANUP_DIR="$SRC_ROOT" ;;

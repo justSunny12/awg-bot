@@ -298,7 +298,7 @@ ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 # Слоты шлюзов: порты и /30 линков по номеру слота.
 # Второй порт — не 443 (его держит первый линк); 8443 так же теряется среди
-# QUIC-подобного. Больше двух слотов — смысл только при трёх домах.
+# QUIC-подобного. Больше двух слотов — смысл только при трёх площадках.
 ROUTING_LINK_PORTS: list[int] = [int(p) for p in (_rt.get("link_ports") or [443, 8443])]
 ROUTING_LINK_CIDRS: list[str] = [str(c) for c in (_rt.get("link_cidrs") or ["10.99.99.0/30", "10.99.99.4/30"])]
 ROUTING_GATEWAYS_MAX = int(_rt.get("gateways_max", 2))

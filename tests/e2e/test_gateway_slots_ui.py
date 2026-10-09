@@ -191,7 +191,7 @@ async def test_manual_switch_both_ways_with_confirmation(services, slots, fake_b
 async def test_lan_subnets_and_label_inputs(services, slots, fake_bot):
     """«🗺 Подсети»: принятое сохраняется, мусор — нет; «✏️ Подпись»
     сохраняется, «—» её убирает. Итоги («⚠️ Не принято: …» первыми строками
-    карточки, «✅ Подпись: дача → —») — эталоны adm.gw.home.partial и
+    карточки, «✅ Подпись: дача → —») — эталоны adm.gw.lan_nets.partial и
     adm.gw.label.clear."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)

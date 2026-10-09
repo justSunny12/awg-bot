@@ -216,11 +216,13 @@ def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
     """«Малина» — железо конкретной установки, а не термин проекта: шлюзом может
     быть любая машина; «квартира» и «домашний» — та же история про локальную
     сеть (термины: «локальная сеть», «локальные подсети», «канал шлюза»). В живой
-    документации, в коде и в скриптах их нет (комментарии тоже); журнал
+    документации (включая README и комментарии conf), в коде и в скриптах их
+    нет (комментарии тоже); журнал
     изменений — история, его не правим; README называет запрещённые слова в
     описании этого сторожа."""
     repo = REPO
     files = [p for p in (repo / "docs").glob("*.md") if p.name != "CHANGELOG.md"]
+    files += [repo / "README.md"] + sorted((repo / "conf").glob("*.yaml"))
     files += sorted((repo / "awgbot").rglob("*.py")) + sorted((repo / "tools").glob("*.py"))
     files += sorted((repo / "install").glob("*.sh")) + [repo / "awg-bot.sh"]
     found = [f"{p.relative_to(repo)}:{i}" for p in files
