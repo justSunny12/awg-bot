@@ -1021,7 +1021,7 @@ _GATEWAYS = [
     Shot("adm.rt.params.lists", role="admin", press=[SetCB(sec="rt", act="do", key="lists_refresh")],
          data=_slots(1), title="списки обновлены"),
     Shot("adm.rt.disable", role="admin",
-         press=[SetCB(sec="rt_params", act="toggle", key="app.routing.enabled")], data=_slots(1),
+         press=[SetCB(sec="rt", act="toggle", key="app.routing.enabled")], data=_slots(1),
          title="выключить РФ-доступ для всех?"),
     Shot("adm.rt.disable.yes", role="admin", press=[SetCB(sec="rt", act="do", key="off!")], data=_slots(1),
          title="РФ-доступ выключен"),

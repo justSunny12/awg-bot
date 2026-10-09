@@ -7,6 +7,10 @@ gw-|extend-|traffic…), «⬆️ Доступна vX» из периодиче�
 списке — админ не узнает о чужом пире и о людях без доступа; строка висит при
 пустом — шум; ссылка из уведомления не открывает экран — кнопок на
 уведомлении больше нет, путь к объекту — только ссылка.
+
+Экраны в типичных состояниях (главная, ссылки /start, «Онлайн», «Истекают»,
+«Без профиля») сверяет эталон adm.main*, adm.link.*, adm.online*,
+adm.expiring*; здесь — состояния, которых в снимках нет, и побочные эффекты.
 """
 import datetime
 from types import SimpleNamespace
@@ -149,7 +153,8 @@ def test_home_first_line_is_host_status_and_short_uptime():
     assert texts.admin_panel({"ok": False}).split("\n")[0].endswith("</b> 🔴 не отвечает")
 
 
-@pytest.mark.parametrize("gateways, enabled", [(False, False), (False, True), (True, False)])
+# РФ-доступ включён и шлюзов нет — снимок adm.main.quiet
+@pytest.mark.parametrize("gateways, enabled", [(False, False), (True, False)])
 async def test_gateways_button_is_always_there(services, fake_bot, fake_routing, make_active_client,
                                                gateways, enabled):
     """«🛰 Шлюзы» — всегда, рядом с «⚙️ Настройки»: без шлюзов и при
@@ -192,47 +197,18 @@ async def _open(services, bot, payload):
     return msg, text, [b.text for r in markup.inline_keyboard for b in r]
 
 
-async def test_links_open_profile_and_device_cards(services, fake_bot, make_active_client):
-    """«cl-<id>» из имени профиля и «dev-<id>» из имени устройства открывают
-    карточки; команда убирается из чата; удалённый объект — главная."""
-    c = make_active_client("Ксюша", tg_id=3201)
-    d = services.add_device(c.id, "iPhone")
-    msg, text, labels = await _open(services, fake_bot, f"cl-{c.id}")
-    assert msg.deleted and text.startswith("👤 ") and "Ксюша" in text.split("\n")[0], text
-    assert labels[:2] == ["⏱ Продлить", "✏️ Изменить"], labels
-    _, text, labels = await _open(services, fake_bot, f"dev-{d.device_id}")
-    assert text.startswith("⚪ <b>iPhone</b> · ") and _link(f"cl-{c.id}", "Ксюша") in text.split("\n")[0], text
-    assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
-    for payload in ("cl-999999", "dev-999999"):
-        _, text, _ = await _open(services, fake_bot, payload)
-        assert text.startswith("🛠 "), f"{payload}: не главная, а {text[:40]}"
-
-
-async def test_link_unassigned_lists_foreign_peers(services, fake_bot):
-    svc = services.db.get_service_client_id()
-    services.db.create_device(svc, "app", "PUBU", "PSK", "10.8.0.70")
-    _, text, labels = await _open(services, fake_bot, "unassigned")
-    assert text == "📦 <b>Без профиля:</b> 1 — пир создан мимо бота", text
-    assert labels == ["app * · 10.8.0.70", "⬅️ В меню"], "«*» — пир добавлен не ботом"
-
-
-async def test_link_gw_opens_the_slot_card_and_a_missing_slot_says_so(services, fake_bot, monkeypatch):
-    monkeypatch.setattr(services, "gateway_ping", lambda slot: None)
-    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
+async def test_link_to_a_deleted_device_falls_back_to_the_home(services, fake_bot):
+    """Устройство удалено, а ссылка «dev-<id>» осталась в уведомлении —
+    главная, а не исключение (карточки по ссылкам и удалённый профиль —
+    снимки adm.link.cl, adm.link.dev, adm.link.cl.missing)."""
     services.ensure_admin_client()
-    pi = services.add_device(services.admin_client().id, "NASPi")
-    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
-    _, text, labels = await _open(services, fake_bot, "gw-1")
-    head = text.split("\n", 1)[0]
-    assert "NASPi</b> — " in head and "Активен" in head, text
-    assert "✏️ Изменить" in labels and labels[-1] == "⬅️ Назад", labels
-    _, text, _ = await _open(services, fake_bot, "gw-9")
-    assert text.startswith("🛰 Такого шлюза больше нет"), text
+    _, text, _ = await _open(services, fake_bot, "dev-999999")
+    assert text.startswith("🛠 "), f"не главная, а {text[:40]}"
 
 
-async def test_link_extend_opens_extension_with_cancel_back_to_expiring(services, fake_bot, make_active_client):
-    """«extend-<id>» (из списка истекающих прежнего образца): экран продления;
-    после продления — список истекающих, пока в нём кто-то есть."""
+async def test_link_extend_remembers_to_return_to_the_expiring_list(services, fake_bot, make_active_client):
+    """«extend-<id>» (из списка истекающих прежнего образца): после продления —
+    список истекающих, пока в нём кто-то есть (экран — снимок adm.link.extend)."""
     a = _expiring(services, make_active_client, "Аня", 3301)
     _expiring(services, make_active_client, "Боря", 3302, days=3)
     services.bot_username = BOT
@@ -240,9 +216,9 @@ async def test_link_extend_opens_extension_with_cancel_back_to_expiring(services
     state = FakeState()
     msg = FakeMessage(text=f"/start extend-{a.id}", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await ah.admin_start(msg, services, state, command=_cmd(f"extend-{a.id}"))
-    text = [t for kind, t, _ in msg.sent if kind == "answer"][-1]
-    assert text.startswith(f"⏱ <b>Продление:</b> {_link(f'cl-{a.id}', 'Аня')}"), text
-    assert (await state.get_data()).get("return_to") == "expiring"
+    assert [t for kind, t, _ in msg.sent if kind == "answer"], "по ссылке ничего не пришло"
+    assert (await state.get_data()).get("return_to") == "expiring", \
+        "после продления админ вернётся не в список истекающих"
 
 
 # ── «Онлайн» и «Истекают» ────────────────────────────────────────────────────
@@ -259,20 +235,13 @@ async def test_online_list_puts_gateways_first_with_links_and_blank_lines(
     now = int(timeutil.now().timestamp())
     for dev_id in (phone.device_id, pi.device_id):
         services.db.update_device_fields(dev_id, last_handshake=now)
-    _, text, labels = await _open(services, fake_bot, "online")
+    _, text, _ = await _open(services, fake_bot, "online")
     ph, gw = services.db.get_device(phone.device_id), services.db.get_device(pi.device_id)
     assert text.split("\n\n") == [
         "📶 <b>Онлайн:</b> 2 (2 устройства)",
         f"🛰 {_link(f'dev-{gw.id}', 'NASPi')} [шлюз] · <code>{gw.address}</code>",
         f"🟢 {_link(f'dev-{ph.id}', 'iPhone')} · {_link(f'cl-{c.id}', 'Ксюша')} · <code>{ph.address}</code>",
     ], text
-    assert labels == ["⬅️ В меню"]
-
-
-async def test_online_list_when_nobody_is_connected(services, fake_bot):
-    services.ensure_admin_client()
-    _, text, _ = await _open(services, fake_bot, "online")
-    assert text == "📶 <b>Онлайн:</b> 0\n\nСейчас никто не подключён", text
 
 
 async def test_expiring_list_links_names_and_offers_extend_buttons(services, fake_bot, make_active_client):

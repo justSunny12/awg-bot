@@ -8,13 +8,17 @@
 приглашение без «📤 / 📋» — ссылку переписывают руками с опечатками;
 «✏️ Другое» не возвращает на шаг — профиль с нестандартным лимитом не
 создать.
+
+Карточки, «✏️ Изменить», приглашения и пресеты в снятых состояниях сверяет
+эталон (adm.cl*, adm.new*, adm.dev*); здесь — запись в БД, переспросы,
+уборка диалога и состояния, которых в снимках нет.
 """
 import datetime
 
 import pytest
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import CancelCB, ClientCB, Menu, PeriodCB, PresetCB
+from awgbot.bot.callbacks import CancelCB, ClientCB, PeriodCB, PresetCB
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import reply_commands as rc
 from awgbot.core import config
@@ -40,38 +44,26 @@ def _answers(msg):
     return [(t, m) for kind, t, m in msg.sent if kind == "answer"]
 
 
-def _labels(markup):
-    return [b.text for r in markup.inline_keyboard for b in r] if markup else []
-
-
 # ── карточка ─────────────────────────────────────────────────────────────────
 
-async def test_card_lines(services, fake_bot, make_active_client):
-    """Шапка — имя со ссылкой на Telegram и онлайн; подписка одной строкой с
-    типом и началом; «📱 N из M»; «📊» — трафик против лимита со стрелками."""
+async def test_card_traffic_line_against_the_profile_limit(services, fake_bot, make_active_client):
+    """«📊» карточки при лимите трафика — «из N ГБ» со стрелками: сколько
+    осталось, видно без калькулятора. Карточки без лимита — снимки adm.cl*."""
     c = make_active_client("Ксюша", tg_id=4101, period_kind="month", traffic_limit=100 * G)
     d = services.add_device(c.id, "iPhone")
     services.db.add_traffic_bulk([(d.device_id, G, 11 * G)])
     cb, nav = _acb(fake_bot)
     await ah.client_open(cb, ClientCB(action="open", client_id=c.id), services, FakeState())
-    text, labels = last_screen(nav)
-    lines = text.split("\n")
-    c = services.db.get_client(c.id)
-    end = timeutil.parse_iso(c.period_end)
-    start = timeutil.parse_iso(c.period_start)
-    assert lines[0] == '👤 <a href="tg://user?id=4101">Ксюша</a> ⚪ офлайн' and lines[1] == "", lines
-    assert lines[2] == (f"💳 🟢 до {timeutil.fmt_end_ui(end)} · {timeutil.remaining_brief(end)} · "
-                        f"месяц, с {timeutil.fmt_date_ui(start)}"), lines
-    assert "📱 1 из 3" in lines, lines
-    assert "📊 12 из 100 ГБ (↑1 ↓11)" in lines, lines
-    assert not any("Заблокирован" in ln for ln in lines)
-    assert labels == ["⏱ Продлить", "✏️ Изменить", "🛑 Блок", "⚪ iPhone", "➕ Устройство", "⬅️ Назад"], labels
+    text, _ = last_screen(nav)
+    assert "📊 12 из 100 ГБ (↑1 ↓11)" in text.split("\n"), text
 
 
-async def test_card_collapses_devices_that_do_not_fit_and_lists_them_separately(
+async def test_card_with_pause_and_rf_still_collapses_devices_and_lists_them_unlimited(
         services, fake_bot, make_active_client):
-    """Устройств больше, чем влезает в десять рядов, — одна «📱 Устройства:
-    N», за ней — отдельный экран со всеми."""
+    """Пауза и РФ-доступ добавляют ряды — устройства всё равно сворачиваются в
+    «📱 Устройства: N», карточка не вылезает за десять рядов; у профиля без
+    лимита устройств шапка списка — просто число. Свёрнутая карточка и список
+    с лимитом — снимки adm.cl.many, adm.cl.devices."""
     from awgbot.core.blocks import ClientBlock
     c = make_active_client("Ксюша", tg_id=4102, device_limit=0)
     for i in range(7):
@@ -89,7 +81,6 @@ async def test_card_collapses_devices_that_do_not_fit_and_lists_them_separately(
     text, labels2 = last_screen(nav2)
     assert text == "📱 <b>Устройства профиля Ксюша</b> · 7", text
     assert [l for l in labels2 if "Тел" in l] == [f"⚪ Тел {i}" for i in range(7)], labels2
-    assert labels2[-2:] == ["➕ Устройство", "⬅️ Назад"]
 
 
 # ── «✏️ Изменить» ─────────────────────────────────────────────────────────────
@@ -100,53 +91,45 @@ async def _edit_screen(services, bot, cid):
     return last_screen(nav)
 
 
-async def test_edit_screen_shows_current_values(services, fake_bot, make_active_client):
-    c = make_active_client("Ксюша", tg_id=4201, period_kind="month", traffic_limit=100 * G)
-    c = services.db.get_client(c.id)
-    text, labels = await _edit_screen(services, fake_bot, c.id)
-    s, e = timeutil.parse_iso(c.period_start), timeutil.parse_iso(c.period_end)
-    assert text == (f"✏️ <b>Ксюша</b> — изменить\nПериод {timeutil.fmt_period_ui(s, e)} · 3 устройства · "
-                    "100 ГБ в месяц"), text
-    assert labels == ["✏️ Имя", "✏️ Период", "✏️ Лимит устр-в", "✏️ Трафик", "🗑 Удалить профиль",
-                      "⬅️ Назад"], labels
+async def test_edit_screen_of_an_unlimited_profile(services, fake_bot, make_active_client):
+    """Бессрочный профиль без лимита устройств — «∞ устройств», а не «0».
+    Экран с лимитами — снимки adm.cl.edit, adm.cl.period.forever."""
     u = make_active_client("Вечный", tg_id=4202, period_kind="never", device_limit=0)
     text, _ = await _edit_screen(services, fake_bot, u.id)
     assert text == "✏️ <b>Вечный</b> — изменить\nБессрочная · ∞ устройств · ∞ ГБ в месяц", text
 
 
-async def test_rename_returns_to_edit_with_the_note_first(services, fake_bot, make_active_client):
-    """«✏️ Имя» — приглашение на месте экрана с «✖️ Отмена»; пустое имя —
-    переспрос; после ввода — «✏️ Изменить» новым живым меню с итогом первой
-    строкой, приглашение и ввод убраны."""
+async def test_rename_refuses_an_empty_name_and_cleans_up_the_dialog(services, fake_bot, make_active_client):
+    """Пустое имя — переспрос, ничего не записано; после ввода имя в БД,
+    приглашение, пустой и удачный ввод убраны из чата, диалог закрыт.
+    Приглашение и итог первой строкой «✏️ Изменить» — снимки adm.cl.name,
+    adm.cl.name.done."""
     c = make_active_client("Ксюша", tg_id=4203)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     services.db.nav_touch(ADMIN, nav.message_id)
     await ah.edit_name_start(cb, ClientCB(action="edit_name", client_id=c.id), services, st)
-    text, labels = last_screen(nav)
-    assert text == "✏️ <b>Новое имя для профиля «Ксюша»</b>" and labels == ["✖️ Отмена"], (text, labels)
     empty = _amsg(fake_bot, "  ")
     await ah.edit_name_apply(empty, services, st)
     assert [t for t, _ in _answers(empty)] == [texts.NAME_EMPTY]
+    assert services.db.get_client(c.id).name == "Ксюша", "пустое имя записано"
     msg = _amsg(fake_bot, "Ксения")
     await ah.edit_name_apply(msg, services, st)
     assert services.db.get_client(c.id).name == "Ксения"
-    shown = _answers(msg)
-    assert len(shown) == 1, "итог и экран — одним сообщением"
-    assert shown[0][0].split("\n")[:3] == ["✅ Имя профиля: Ксюша → Ксения", "", "✏️ <b>Ксения</b> — изменить"], shown
-    assert "✏️ Трафик" in _labels(shown[0][1])
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
     assert {nav.message_id, empty.message_id, msg.message_id} <= deleted, "приглашение или ввод остались"
     assert await st.get_data() == {}
 
 
 async def test_cancel_from_an_edit_prompt_goes_back_to_edit(services, fake_bot, make_active_client):
+    """«✖️ Отмена» под вводом имени (колбэк — снимок adm.cl.name) — обратно в
+    «✏️ Изменить», имя не тронуто, диалог закрыт: следующее сообщение не
+    переименует профиль."""
     c = make_active_client("Ксюша", tg_id=4204)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.edit_name_start(cb, ClientCB(action="edit_name", client_id=c.id), services, st)
     cancel = [s for s in nav.sent if s[0] == "edit_text"][-1][2].inline_keyboard[0][0].callback_data
-    assert cancel == CancelCB(kind="edit", ref=c.id).pack()
     cb2, nav2 = _acb(fake_bot)
     await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel), st, services, role="admin")
     text, _ = last_screen(nav2)
@@ -154,35 +137,26 @@ async def test_cancel_from_an_edit_prompt_goes_back_to_edit(services, fake_bot, 
     assert services.db.get_client(c.id).name == "Ксюша" and await st.get_data() == {}
 
 
-async def test_period_edit_two_prompts_new_format_and_note(services, fake_bot, make_active_client):
-    """«✏️ Период»: начало, потом окончание — в формате ДД.ММ.ГГГГ ЧЧ:ММ, «-» —
-    не менять, «0» у окончания — бессрочно; мусор — переспрос; итог —
-    первой строкой «✏️ Изменить»."""
+async def test_period_edit_parses_dates_and_asks_again_on_garbage(services, fake_bot, make_active_client):
+    """«✏️ Период»: мусор вместо даты — переспрос; дата с временем и без —
+    обе разбираются, период записан минута в минуту. Приглашения и итог —
+    снимки adm.cl.period, adm.cl.period.start, adm.cl.period.done."""
     c = make_active_client("Ксюша", tg_id=4205, period_kind="month")
     st = FakeState()
-    cb, nav = _acb(fake_bot)
+    cb, _ = _acb(fake_bot)
     await ah.edit_period_start(cb, ClientCB(action="edit_period", client_id=c.id), services, st)
-    text, labels = last_screen(nav)
-    assert text.startswith("📅 <b>Начало периода профиля Ксюша</b> · сейчас "), text
-    assert text.endswith("Введи дату в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code> (без времени — 00:00), «-» — не менять")
-    assert labels == ["✖️ Отмена"]
     bad = _amsg(fake_bot, "вчера")
     await ah.edit_period_start_apply(bad, services, st)
     assert [t for t, _ in _answers(bad)] == [texts.PERIOD_BAD]
     year = timeutil.now().year + 1
     start = _amsg(fake_bot, f"01.02.{year}")
     await ah.edit_period_start_apply(start, services, st)
-    prompt = _answers(start)[-1][0]
-    assert prompt.startswith("📅 <b>Окончание периода профиля Ксюша</b> · сейчас ") and \
-        prompt.endswith("Дата в том же формате, «-» — не менять, «0» — бессрочно"), prompt
     end = _amsg(fake_bot, f"01.03.{year} 18:30")
     await ah.edit_period_end_apply(end, services, st)
     fresh = services.db.get_client(c.id)
     assert timeutil.parse_iso(fresh.period_end) == datetime.datetime(year, 3, 1, 18, 30, tzinfo=timeutil.TZ)
-    shown = _answers(end)[-1][0]
-    yy = str(year)[2:]
-    assert shown.split("\n")[0] == f"✅ Период: 01.02.{yy} 00:00 → 01.03.{yy} 18:30", shown
-    assert shown.split("\n")[2].startswith("✏️ <b>Ксюша</b> — изменить"), shown
+    assert timeutil.parse_iso(fresh.period_start) == datetime.datetime(year, 2, 1, 0, 0, tzinfo=timeutil.TZ), \
+        "дата без времени — 00:00"
 
 
 async def test_period_end_zero_makes_it_unlimited(services, fake_bot, make_active_client):
@@ -193,83 +167,51 @@ async def test_period_end_zero_makes_it_unlimited(services, fake_bot, make_activ
     await ah.edit_period_start_apply(_amsg(fake_bot, "-"), services, st)
     end = _amsg(fake_bot, "0")
     await ah.edit_period_end_apply(end, services, st)
-    assert services.db.get_client(c.id).period_end is None
-    assert _answers(end)[-1][0].split("\n")[0].endswith("→ бессрочно")
+    assert services.db.get_client(c.id).period_end is None, "«0» у окончания не сделал профиль бессрочным"
 
 
 # ── новый профиль ────────────────────────────────────────────────────────────
 
-async def test_new_profile_name_presets_invite_note_and_card(services, fake_bot):
-    """Имя → три шага пресетами → приглашение одним сообщением-меню: текст для
-    пересылки, черта, сводка профиля без ссылки на карточку; «📤 / 📋» несут
-    только текст приглашения, ниже выходы в карточку и на главную."""
+async def test_new_profile_presets_create_exactly_what_was_chosen(services, fake_bot):
+    """Имя → три шага пресетами → профиль создан ровно с выбранными
+    значениями, приглашение — новым живым меню, диалог закрыт. Шаги и
+    приглашение с «📤 / 📋» — снимки adm.new, adm.new.devs, adm.new.traffic,
+    adm.new.period, adm.new.invite."""
     services.ensure_admin_client()
     st = FakeState()
-    cb, nav = _acb(fake_bot)
+    cb, _ = _acb(fake_bot)
     await ah.add_client_start(cb, services, st)
-    text, labels = last_screen(nav)
-    assert text == "➕ <b>Новый профиль</b> — как назвать?" and labels == ["✖️ Отмена"], (text, labels)
-
-    name = _amsg(fake_bot, "Ксюша")
-    await ah.add_client_name(name, services, st)
-    text, markup = _answers(name)[-1]
-    assert text == "➕ <b>Ксюша</b> — сколько устройств?", text
-    assert _labels(markup) == ["1", "2", "3", "5", "10", "∞", "✏️ Другое", "✖️ Отмена"], _labels(markup)
-
-    cb2, nav2 = _acb(fake_bot)
+    await ah.add_client_name(_amsg(fake_bot, "Ксюша"), services, st)
+    cb2, _ = _acb(fake_bot)
     await ah.add_client_devs_preset(cb2, PresetCB(kind="new_devs", val=3), services, st)
-    text, labels = last_screen(nav2)
-    assert text.startswith("➕ <b>Ксюша</b> · 3 устройства — трафик в месяц?"), text
-    assert labels == ["50 ГБ", "100 ГБ", "200 ГБ", "500 ГБ", "∞", "✏️ Другое", "✖️ Отмена"], labels
-
-    cb3, nav3 = _acb(fake_bot)
+    cb3, _ = _acb(fake_bot)
     await ah.add_client_traffic_preset(cb3, PresetCB(kind="new_traffic", val=100), services, st)
-    text, labels = last_screen(nav3)
-    assert text == "➕ <b>Ксюша</b> · 3 устройства · 100 ГБ — срок подписки?", text
-    assert labels == ["День", "Неделя", "Месяц", "Год", "∞", "✖️ Отмена"], labels
-
     cb4, nav4 = _acb(fake_bot)
     await ah.add_client_period(cb4, PeriodCB(kind="month", ctx="create"), services, st)
     c = next(x for x in services.db.list_clients(include_service=False) if x.name == "Ксюша")
     assert (c.device_limit, int(c.traffic_limit), c.period_kind) == (3, 100 * G, "month")
-    invite = _answers(nav4)[-1]
-    end = timeutil.parse_iso(c.period_end)
-    assert invite[0].startswith("Привет! ") and "https://t.me/test_bot?start=" in invite[0], invite
-    assert invite[0].endswith("\n—\n☝️ Приглашение с индивидуальным кодом для нового профиля:\n"
-                              f"Ксюша — 3 устройства · 100 ГБ в месяц · → {timeutil.fmt_date_ui(end)}"), invite[0]
-    assert "start=cl-" not in invite[0], "имя без ссылки: в карточку ведёт кнопка"
-    assert _labels(invite[1]) == ["📤 Отправить", "📋 Скопировать", "👤 В карточку", "⬅️ На главную"], _labels(invite[1])
-    copy = next(b for r in invite[1].inline_keyboard for b in r if b.copy_text is not None)
-    assert copy.copy_text.text.startswith("Привет! ") and "☝️" not in copy.copy_text.text, "копируется только приглашение"
-    assert services.db.get_nav_message_id(ADMIN) not in (None, nav4.message_id)
+    assert _answers(nav4), "приглашение не отправлено"
+    assert services.db.get_nav_message_id(ADMIN) not in (None, nav4.message_id), "приглашение — не живое меню"
     assert await st.get_data() == {}
 
 
 async def test_new_profile_other_number_comes_back_to_the_flow(services, fake_bot):
-    """«✏️ Другое» на шаге устройств и трафика: ввод числа на месте экрана с
-    «✖️ Отмена», мусор — переспрос, число — следующий шаг тем же порядком."""
+    """«✏️ Другое» на шаге устройств и трафика: мусор — переспрос, числа
+    доходят до диалога и ведут дальше по шагам. Приглашение ввести число и
+    следующий шаг — снимки adm.cl.limit.other, adm.new.devs.other,
+    adm.new.period."""
     services.ensure_admin_client()
     st = FakeState()
     await ah.add_client_name(_amsg(fake_bot, "Петя"), services, st)
-    cb, nav = _acb(fake_bot)
+    cb, _ = _acb(fake_bot)
     await ah.add_client_devs_preset(cb, PresetCB(kind="new_devs", val=-1), services, st)
-    text, labels = last_screen(nav)
-    assert text == texts.OTHER_NUMBER_PROMPT and labels == ["✖️ Отмена"], (text, labels)
     bad = _amsg(fake_bot, "семь")
     await ah.add_client_limit(bad, services, st)
     assert [t for t, _ in _answers(bad)] == [texts.NUMBER_BAD_LIMIT]
-    seven = _amsg(fake_bot, "7")
-    await ah.add_client_limit(seven, services, st)
-    assert _answers(seven)[-1][0].startswith("➕ <b>Петя</b> · 7 устройств — трафик в месяц?")
-
-    cb2, nav2 = _acb(fake_bot)
+    await ah.add_client_limit(_amsg(fake_bot, "7"), services, st)
+    cb2, _ = _acb(fake_bot)
     await ah.add_client_traffic_preset(cb2, PresetCB(kind="new_traffic", val=-1), services, st)
-    assert last_screen(nav2)[0] == texts.OTHER_NUMBER_PROMPT
-    t = _amsg(fake_bot, "70")
-    await ah.add_client_traffic(t, services, st)
-    text, markup = _answers(t)[-1]
-    assert text == "➕ <b>Петя</b> · 7 устройств · 70 ГБ — срок подписки?", text
-    assert "∞" in _labels(markup)
+    await ah.add_client_traffic(_amsg(fake_bot, "70"), services, st)
     data = await st.get_data()
     assert (data["limit"], data["traffic_gb"]) == (7, 70)
 
@@ -282,35 +224,6 @@ async def test_new_profile_with_a_stale_dialog_does_not_create_anything(services
     assert cb.answers and cb.answers[0][1] is True
     assert len(services.db.list_clients(include_service=False)) == before
     assert _answers(nav)[-1][0].startswith("🛠 "), "после устаревшего диалога — главная"
-
-
-async def test_regen_invite_sends_share_buttons_and_leads_back_to_the_card(
-        services, fake_bot):
-    """Новое приглашение — то же одно сообщение-меню со сводкой «☝️ Новое
-    приглашение…» и выходами в карточку профиля и на главную."""
-    created = services.create_client("Ждёт", 1, "year")
-    cb, nav = _acb(fake_bot)
-    await ah.regen_invite(cb, ClientCB(action="regen_invite", client_id=created.client_id), services)
-    text, markup = _answers(nav)[-1]
-    end = timeutil.parse_iso(services.db.get_client(created.client_id).period_end)
-    assert text.endswith("\n—\n☝️ Новое приглашение с индивидуальным кодом для профиля:\n"
-                         f"Ждёт — 1 устройство · ∞ ГБ в месяц · → {timeutil.fmt_date_ui(end)}"), text
-    assert _labels(markup) == ["📤 Отправить", "📋 Скопировать", "👤 В карточку", "⬅️ На главную"], _labels(markup)
-    back = [(b.text, b.callback_data) for r in markup.inline_keyboard[1:] for b in r]
-    assert back == [("👤 В карточку", ClientCB(action="open", client_id=created.client_id).pack()),
-                    ("⬅️ На главную", Menu(action="main").pack())], back
-
-
-async def test_deleting_a_profile_leaves_a_note_and_opens_profiles(services, fake_bot, make_active_client):
-    c = make_active_client("Ксюша", tg_id=4301)
-    services.add_device(c.id, "Тел")
-    cb, nav = _acb(fake_bot)
-    await ah.client_delete_apply(cb, ClientCB(action="delete_yes", client_id=c.id), services)
-    note = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert note[1] == "🗑 Профиль Ксюша удалён · устройств удалено: 1" and note[2] is None, note
-    listing = _answers(nav)[-1]
-    assert listing[0].startswith("👥 <b>Профили</b> · 0"), listing
-    assert Menu(action="main").pack() in [b.callback_data for r in listing[1].inline_keyboard for b in r]
 
 
 # ── карточка: строки состояния доступа, подписки, трафика, переезда ─────────
@@ -351,29 +264,6 @@ async def test_card_traffic_exhausted_without_manual_block_has_no_blocked_line(
     assert "🟡 исчерпан лимит трафика за месяц" in lines, lines
 
 
-async def test_card_own_pause_line_and_access_line(services, fake_bot, make_active_client):
-    """Своя пауза клиента: «🟡 доступ приостановлен» над «💳 ⏸️ на паузе до ДД.ММ»
-    — без «(пауза клиента)» и без «⛔»: это не блокировка."""
-    c = make_active_client("Ксюша", tg_id=4403, period_kind="year")
-    services.enter_pause(c.id, 5)
-    fresh = services.db.get_client(c.id)
-    until = timeutil.fmt_date_ui(timeutil.parse_iso(fresh.pause_active_since) + datetime.timedelta(days=5))
-    lines, _, _ = await _card(services, fake_bot, c.id)
-    i = _sub_index(lines)
-    assert lines[i - 1:i + 1] == ["🟡 доступ приостановлен", f"💳 ⏸️ на паузе до {until}"], lines
-    assert not any(ln.startswith("⛔") for ln in lines), lines
-
-
-async def test_card_admin_pause_says_who_paused(services, fake_bot, make_active_client):
-    from awgbot.core.blocks import ClientBlock
-    c = make_active_client("Ксюша", tg_id=4404, period_kind="year")
-    services.enter_admin_pause(c.id, 0)
-    services._client_set_block(c.id, ClientBlock.PAUSED)
-    lines, _, _ = await _card(services, fake_bot, c.id)
-    i = _sub_index(lines)
-    assert lines[i - 1:i + 1] == ["🟡 доступ приостановлен", "💳 ⏸️ приостановлена администратором"], lines
-
-
 async def test_card_expired_subscription_shows_the_date_and_the_access_line(
         services, fake_bot, make_active_client):
     c = make_active_client("Ксюша", tg_id=4405, period_kind="month")
@@ -384,14 +274,8 @@ async def test_card_expired_subscription_shows_the_date_and_the_access_line(
     assert lines[i].startswith("💳 🔴 истекла 01.09"), lines
 
 
-async def test_active_card_has_no_access_line(services, fake_bot, make_active_client):
-    """Всё в порядке — строки «🟡» нет: иначе она перестаёт что-то значить."""
-    c = make_active_client("Ксюша", tg_id=4406)
-    lines, _, _ = await _card(services, fake_bot, c.id)
-    assert not any(ln.startswith("🟡") for ln in lines), lines
-
-
-@pytest.mark.parametrize("limit, expected", [(100 * G, "📊 0 из 100 ГБ"), (0, "📊 0 ГБ (безлимит)")])
+# без лимита — «📊 0 ГБ (безлимит)», снимок adm.cl.pending
+@pytest.mark.parametrize("limit, expected", [(100 * G, "📊 0 из 100 ГБ")])
 async def test_card_zero_traffic_line(services, fake_bot, make_active_client, limit, expected):
     """Нуль трафика — строка стоит («0 из 100 ГБ» / «0 ГБ (безлимит)») без стрелок:
     пропавшая строка читается как «учёт сломан», а «↑0 ↓0» — шум."""
@@ -438,26 +322,14 @@ async def test_admin_profile_has_no_card_and_links_lead_home(services, fake_bot)
     assert services.cl_link(ac) == ac.name, "ссылка на несуществующую карточку админа"
 
 
-async def test_profile_links_and_back_button_for_a_regular_profile(services, fake_bot, make_active_client):
-    """У обычного профиля имя — ссылка cl-<id>, «⬅️ Назад» карточки — к списку профилей."""
-    services.bot_username = "awg_test_bot"
-    c = make_active_client("Ксюша", tg_id=4409)
-    assert texts.profile_link(c, "awg_test_bot") == \
-        f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">Ксюша</a>'
-    _, _, markup = await _card(services, fake_bot, c.id)
-    back = markup.inline_keyboard[-1][-1]
-    assert (back.text, back.callback_data) == ("⬅️ Назад", Menu(action="clients").pack())
-
-
 # ── карточка устройства у админа ─────────────────────────────────────────────
 
+# свой лимит без профильного, без лимитов вовсе (с трафиком и без) — снимки
+# adm.dev.limit.preset, adm.dev.client, adm.dev.alien
 @pytest.mark.parametrize("dev_limit, profile_limit, used, expected", [
-    (50, 0, True, "📊 3.2 из 50 ГБ (↑0.4 ↓2.8)"),
     (0, 100, True, "📊 3.2 из 100 ГБ (↑0.4 ↓2.8), лимит профиля"),
     (50, 100, True, "📊 3.2 из 50 ГБ (↑0.4 ↓2.8)"),          # свой лимит важнее профильного
-    (0, 0, True, "📊 3.2 ГБ (↑0.4 ↓2.8)"),
     (50, 0, False, "📊 0 из 50 ГБ"),
-    (0, 0, False, "📊 0 ГБ"),
 ])
 async def test_admin_device_card_usage_line(services, make_active_client, dev_limit, profile_limit,
                                             used, expected):
@@ -476,54 +348,6 @@ async def test_admin_device_card_usage_line(services, make_active_client, dev_li
     assert usage == f"Не подключался · {expected}", text
 
 
-async def test_admin_device_card_states_go_in_a_separate_block(services, make_active_client):
-    """Блокировка и прочие состояния — отдельным блоком через пустую строку,
-    а не хвостом к трафику: иначе «⛔» теряется среди цифр."""
-    from awgbot.bot.handlers.admin.devices import device_card_parts
-    from awgbot.core.blocks import DeviceBlock
-    c = make_active_client("Ксюша", tg_id=4502)
-    dev_id = services.add_device(c.id, "iPhone").device_id
-    text, _ = await device_card_parts(services, services.db.get_device(dev_id))
-    assert "" not in text.split("\n"), f"пустая строка без состояний:\n{text}"
-    services._device_set_block(dev_id, DeviceBlock.ADMIN_NOTIFIED)
-    text, _ = await device_card_parts(services, services.db.get_device(dev_id))
-    lines = text.split("\n")
-    assert lines[-2:] == ["", "⛔ Заблокировано: администратором"], text
-
-
-# ── раскладка пресетов ───────────────────────────────────────────────────────
-
-def _rows(markup):
-    return [[b.text for b in r] for r in markup.inline_keyboard]
-
-
-def test_device_presets_three_in_a_row_with_cancel_in_the_last_row():
-    """Устройства: [1][2][3] / [5][10][∞] / [✏️ Другое][Отмена] — отмена
-    садится в последний ряд, где есть место; лишний ряд из одной кнопки —
-    лишний экран прокрутки на телефоне."""
-    from awgbot.bot import keyboards as kb
-    assert _rows(kb.devs_limit_kb(1)) == [["1", "2", "3"], ["5", "10", "∞"], ["✏️ Другое", "⬅️ Отмена"]]
-    assert _rows(kb.new_profile_devs_kb()) == [["1", "2", "3"], ["5", "10", "∞"], ["✏️ Другое", "✖️ Отмена"]]
-
-
-def test_traffic_presets_put_cancel_on_its_own_row_when_the_last_is_full():
-    """Трафик: [50][100][200] / [500][∞][✏️ Другое] / [Отмена] — ряд полон,
-    отмена своим рядом, а не четвёртой кнопкой с обрезанными подписями."""
-    from awgbot.bot import keyboards as kb
-    assert _rows(kb.traffic_limit_kb(1)) == [["50 ГБ", "100 ГБ", "200 ГБ"], ["500 ГБ", "∞", "✏️ Другое"],
-                                             ["⬅️ Отмена"]]
-    assert _rows(kb.new_profile_traffic_kb())[-1] == ["✖️ Отмена"]
-
-
-def test_preset_cancel_leads_back_to_edit_and_other_asks_a_number():
-    from awgbot.bot import keyboards as kb
-    m = kb.devs_limit_kb(7)
-    flat = {b.text: b.callback_data for r in m.inline_keyboard for b in r}
-    assert flat["⬅️ Отмена"] == ClientCB(action="edit", client_id=7).pack()
-    assert flat["✏️ Другое"] == PresetCB(kind="cli_devs", ref=7, val=-1).pack()
-    assert flat["∞"] == PresetCB(kind="cli_devs", ref=7, val=0).pack(), "∞ — безлимит (0)"
-
-
 # ── перенос и блокировка устройства: чьё оно ─────────────────────────────────
 
 def _cl(c):
@@ -533,7 +357,8 @@ def _cl(c):
 async def test_reassign_names_the_device_and_both_profiles(services, fake_bot, make_active_client):
     """Вопрос переноса и итог называют устройство в кавычках и профили
     ссылками: «iPhone» у каждого второго — без владельца админ не отличит,
-    чей телефон он переносит и куда тот ушёл."""
+    чей телефон он переносит и куда тот ушёл. Перенос пира без профиля —
+    снимки adm.dev.reassign, adm.dev.reassign.go."""
     from awgbot.bot.callbacks import DeviceCB, ReassignCB
     services.bot_username = "awg_test_bot"
     kolya = make_active_client("Коля", tg_id=4601)
@@ -550,35 +375,18 @@ async def test_reassign_names_the_device_and_both_profiles(services, fake_bot, m
     assert text.split("\n")[0] == f"✅ устройство «iPhone» перенесено: {_cl(kolya)} → {_cl(ksu)}", text
 
 
-async def test_reassign_of_an_unassigned_peer_says_without_profile(services, fake_bot, make_active_client):
-    from awgbot.bot.callbacks import DeviceCB, ReassignCB
-    services.bot_username = "awg_test_bot"
-    ksu = make_active_client("Ксюша", tg_id=4603)
-    svc = services.db.get_service_client_id()
-    dev_id = services.db.create_device(svc, "app", "PUBKEYAPP", "PSK", "10.8.0.71")
-    cb, nav = _acb(fake_bot)
-    await ah.device_reassign_start(cb, DeviceCB(action="reassign", device_id=dev_id), services)
-    text, _ = last_screen(nav)
-    assert text == "🔀 <b>Перенос устройства «app»</b> — в какой профиль?", text
-    cb, nav = _acb(fake_bot)
-    await ah.device_reassign_apply(cb, ReassignCB(device_id=dev_id, client_id=ksu.id, stage="go"), services)
-    shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and shown[-1][1].split("\n")[0] == f"✅ устройство «app» перенесено: без профиля → {_cl(ksu)}", \
-        shown[-1][1]
-
-
 async def test_block_toast_names_the_owner_in_plain_text(services, fake_bot, make_active_client):
-    """Всплывашка — простой текст (ссылки в ней не работают): «🛑 Устройство
-    «iPhone» (Петя) заблокировано», тихо — с «(тихо)»."""
+    """Всплывашка — простой текст (ссылки в ней не работают); тихая
+    блокировка — с «(тихо)», иначе админ не поймёт, узнал ли владелец.
+    Блокировка с уведомлением — снимок adm.dev.block.do."""
     from awgbot.bot.callbacks import BlockCB
     services.bot_username = "awg_test_bot"
     petya = make_active_client("Петя", tg_id=4604)
-    for kind, tail in (("notified", ""), ("silent", " (тихо)")):
-        dc = services.add_device(petya.id, f"iPhone{kind[0]}")
-        cb, _ = _acb(fake_bot)
-        await ah.admin_block_do(cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind=kind),
-                                services)
-        assert cb.answers[-1][0] == f"🛑 Устройство «iPhone{kind[0]}» (Петя) заблокировано{tail}", cb.answers
+    dc = services.add_device(petya.id, "iPhone")
+    cb, _ = _acb(fake_bot)
+    await ah.admin_block_do(cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind="silent"),
+                            services)
+    assert cb.answers[-1][0] == "🛑 Устройство «iPhone» (Петя) заблокировано (тихо)", cb.answers
 
 
 async def test_deleting_a_profile_with_a_partial_failure_still_tells_the_holders(services, fake_bot,
@@ -594,4 +402,3 @@ async def test_deleting_a_profile_with_a_partial_failure_still_tells_the_holders
     cb, nav = _acb(fake_bot)
     await ah.client_delete_apply(cb, ClientCB(action="delete_yes", client_id=c.id), services)
     assert any(r[0] == "send_message" and r[1] == 8100 for r in fake_bot.records), fake_bot.records
-    assert cb.answers and "не удалён" in cb.answers[-1][0]

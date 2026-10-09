@@ -1,5 +1,9 @@
 """E2E: admin-хендлеры (прямой вызов с фейками) — панель, клиенты, создание,
-удаление, обещание после перезапуска, окна и финишеры обновления."""
+удаление, обещание после перезапуска, окна и финишеры обновления.
+
+Главная, список и карточка профиля, создание, приглашение и удаление — в
+эталоне tests/screens/admin.txt; здесь — БД, память диалога, живое меню,
+история окон и состояния главной (РФ-строка), которых в эталоне нет."""
 import pytest
 
 from awgbot.bot import texts
@@ -27,7 +31,6 @@ async def test_admin_start_shows_panel_and_menu_opens_it_again(services, fake_bo
     make_active_client(tg_id=6000, name="Клиент")
     msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await admin_h.admin_start(msg, services, FakeState())
-    assert any(s[0] == "answer" for s in msg.sent)
     assert services.db.get_nav_message_id(ADMIN) is not None
 
     cb, nav = _admin_cb(services, fake_bot)
@@ -35,58 +38,9 @@ async def test_admin_start_shows_panel_and_menu_opens_it_again(services, fake_bo
     assert any(s[0] == "edit_text" and s[2] is not None for s in nav.sent)
 
 
-# ── список / карточка клиента ────────────────────────────────────────────────
-async def test_clients_list_with_client(services, make_active_client, fake_bot):
-    make_active_client(name="Ося", tg_id=7000)
-    cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.startswith("👥 <b>Профили</b> · 1 · онлайн 0"), text
-    assert any("Ося" in t for t in labels), "профиль должен быть кнопкой в списке"
-    assert cb.answers
-
-
-async def test_clients_list_hides_admin_profile(services, fake_bot, make_active_client):
-    """Профиля админа в списке нет — он дублировал главную.
-
-    Весь его функционал (свои устройства, конфиги, РФ-доступ) всегда на главной,
-    а карточка была урезана до тех же кнопок: строка в списке только путала, кто
-    тут кем управляет. Единственный профиль-админ ⇒ список пуст.
-    """
-    services.ensure_admin_client()
-    cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.startswith("👥 <b>Профили</b> · 0"), text
-    assert labels == ["⬅️ Назад"], f"в пустом списке оказались профили: {labels}"
-
-    make_active_client(name="Ксюша", tg_id=4242)
-    cb2, nav2 = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb2, services, FakeState())
-    text2, labels2 = last_screen(nav2)
-    assert text2.startswith("👥 <b>Профили</b> · 1"), text2
-    assert [l for l in labels2 if "Ксюша" in l], labels2
-
-
-async def test_client_open_card(services, make_active_client, fake_bot):
-    """Карточка: «⏱ Продлить» и «✏️ Изменить» первым рядом; удаление — только
-    в «✏️ Изменить», в карточке его нет (случайное нажатие стоило бы профиля)."""
-    client = make_active_client(name="Ким", tg_id=7001)
-    cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.client_open(cb, ClientCB(action="open", client_id=client.id), services, FakeState())
-    text, labels = last_screen(nav)
-    assert "Ким" in text, "карточка без имени профиля"
-    assert labels[:2] == ["⏱ Продлить", "✏️ Изменить"], labels
-    assert not any("Удалить" in l for l in labels), labels
-
-    cb2, nav2 = _admin_cb(services, fake_bot)
-    await admin_h.client_edit(cb2, ClientCB(action="edit", client_id=client.id), services, FakeState())
-    _, edit_labels = last_screen(nav2)
-    assert "🗑 Удалить профиль" in edit_labels, edit_labels
-
-
 # ── создание клиента (FSM: имя → лимит → трафик → период) ─────────────────────
 async def test_create_client_full_fsm(services, fake_bot):
+    """Каждый ввод ложится в память диалога, выбор срока создаёт профиль."""
     services.ensure_admin_client()
     state = FakeState()
     m = lambda text: FakeMessage(text=text, chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
@@ -103,11 +57,11 @@ async def test_create_client_full_fsm(services, fake_bot):
     await admin_h.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, state)
     names = [c.name for c in services.db.list_clients(include_service=False)]
     assert "Новичок" in names
-    # выданы приветствие + шаблон приглашения со ссылкой на бота
-    assert any("t.me/test_bot" in s[1] for s in nav.sent if s[0] == "answer")
 
 
 async def test_create_client_period_stale_dialog(services, fake_bot):
+    """Срок нажат, а диалога уже нет (перезапуск, старое сообщение) — alert,
+    а не падение обработчика и не профиль без имени."""
     services.ensure_admin_client()
     cb, nav = _admin_cb(services, fake_bot)
     # пустой state (диалог устарел) → алерт, не падаем
@@ -117,56 +71,35 @@ async def test_create_client_period_stale_dialog(services, fake_bot):
 
 # ── регенерация инвайта / удаление ───────────────────────────────────────────
 async def test_regen_invite(services, fake_bot):
+    """Новое приглашение меняет код: старая ссылка перестаёт работать."""
     created = services.create_client("Пенд", 1, "year")
     old = created.invite_code
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.regen_invite(cb, ClientCB(action="regen_invite", client_id=created.client_id), services)
     new_code = services.db.get_client(created.client_id).invite_code
     assert new_code != old
-    assert any("t.me/test_bot" in s[1] for s in nav.sent if s[0] == "answer")
 
 
 async def test_client_delete_apply(services, make_active_client, fake_bot):
+    """«🗑 Удалить» стирает профиль из БД."""
     client = make_active_client(name="НаУдаление", tg_id=7002)
     services.add_device(client.id, "d")
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.client_delete_apply(
         cb, ClientCB(action="delete_yes", client_id=client.id), services)
     assert services.db.get_client(client.id) is None
-    assert any("удал" in s[1].lower() for s in nav.sent if s[0] == "edit_text")
 
 
-async def test_client_delete_asks_with_cancel_first_and_cancel_keeps_profile(
-        services, make_active_client, fake_bot):
-    """Удаление профиля: первая кнопка — «⬅️ Отмена» (ведёт в «✏️ Изменить»),
-    вторая — «🗑 Удалить». Перепутанный порядок — палец по привычке жмёт
-    правую и сносит профиль вместе со всеми ссылками."""
+async def test_client_delete_ask_keeps_profile(services, make_active_client, fake_bot):
+    """Вопрос об удалении ничего не удаляет; цена с одним устройством — в
+    единственном числе (в эталоне — два устройства)."""
     client = make_active_client(name="Остаётся", tg_id=7003)
     services.add_device(client.id, "Тел")
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.client_delete_confirm(cb, ClientCB(action="delete", client_id=client.id), services)
-    text, labels = last_screen(nav)
-    assert text.startswith("🗑 Удалить профиль Остаётся?"), text
+    text, _ = last_screen(nav)
     assert "Вместе с 1 устройством" in text, text
-    assert labels == ["⬅️ Отмена", "🗑 Удалить"], labels
-    markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
-    cancel = markup.inline_keyboard[0][0].callback_data
-    assert cancel == ClientCB(action="edit", client_id=client.id).pack(), \
-        "отмена удаления должна возвращать в «✏️ Изменить»"
     assert services.db.get_client(client.id) is not None   # вопрос ничего не удалил
-
-
-def test_period_choices_has_cancel_both_contexts():
-    """Баг-фикс: диалог выбора срока не тупик — есть кнопка отмены."""
-    from awgbot.bot import keyboards as kb
-    ext = [b.text for r in kb.period_kb("extend", ref=7).inline_keyboard for b in r]
-    cre = [b.text for r in kb.period_kb("create").inline_keyboard for b in r]
-    assert any("Отмена" in t for t in ext)
-    assert any("Отмена" in t for t in cre)
-    # extend-отмена ведёт к карточке клиента, create — в меню
-    ext_cb = [b.callback_data for r in kb.period_kb("extend", ref=7).inline_keyboard
-              for b in r if "Отмена" in b.text][0]
-    assert ext_cb == "c:open:7"
 
 
 # ── обещание вернуться после перезапуска ─────────────────────────────────────
@@ -355,29 +288,14 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
-async def test_panel_rf_line_is_plain_text_link_only_on_traffic(services, fake_bot, fake_routing, monkeypatch):
-    """«РФ-доступ» на главной — простым текстом: экраны РФ слиты с экраном
-    «Трафик», и на него ведёт одна ссылка — строка общего трафика над ней."""
-    services.bot_username = "awg_test_bot"
-    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
-    services.ensure_admin_client()
-    dev = services.add_device(services.admin_client().id, "phone")
-    services.db.add_traffic_bulk([(dev.device_id, GB, GB)])
-    text = await _panel_text(services, fake_bot)
-    lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
-    assert lines and lines[0] == "└ 🇷🇺 РФ-доступ: 1 ГБ", text
-    assert text.count("start=traffic\"") == 1, "на экран «Трафик» — только строка трафика"
-
-
 async def test_panel_zero_traffic_and_zero_rf_are_plain_text(services, fake_bot, fake_routing,
                                                             monkeypatch):
     """Нулевой итог — строка стоит, но не ссылкой: за ней пустой экран. РФ-строка
-    ссылкой не бывает — трафик нулевой, а РФ нет — ссылок нет вовсе."""
+    ссылкой не бывает — трафик нулевой, а РФ нет — ссылок нет вовсе.
+    Нулевая главная без РФ-строки — в эталоне (adm.main.quiet)."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True)
     text = await _panel_text(services, fake_bot)
-    assert "start=traffic" not in text, f"ссылка на пустой экран трафика:\n{text}"
-    assert f"📊 Трафик за {texts.month_label()}: 0 ГБ" in text.splitlines(), text
     assert "└ 🇷🇺 РФ-доступ: 0 ГБ" in text.splitlines(), text
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)

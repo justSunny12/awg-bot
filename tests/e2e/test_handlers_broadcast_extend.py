@@ -33,30 +33,19 @@ async def _press(handler, bot, *args):
 
 
 async def test_entry_is_the_targets_screen_with_the_extend_toggle(services, make_active_client, fake_bot):
-    """Экрана выбора режима больше нет: сразу адресаты; режим — тумблером.
-    С продлением не активировавшие исчезают из списка и снимаются с отметки."""
+    """Вход — сразу экран адресатов (диалог в состоянии выбора); тумблер «С
+    продлением» снимает отметку с не активировавшего: продлевать и доставлять
+    ему нечего, а отчёт посчитал бы его адресатом."""
     make_active_client("Анна", tg_id=9101)
     pending = services.create_client("Ждёт", 1, "year", 0)            # не активировал
     state = FakeState()
-    text, labels = await _press(admin_h.broadcast_pick, fake_bot, state, services)
-    assert text == ("📢 <b>Объявление</b> · отмечено 0\n"
-                    "Получат владельцы и те, с кем они делятся устройствами"), text
-    assert labels == ["☑️ С продлением подписки", "☑️ Выбрать все", "☑️ Анна", "☑️ Ждёт",
-                      "⬅️ Отмена", "➡️ Далее"], labels
+    await _press(admin_h.broadcast_pick, fake_bot, state, services)
     assert await state.get_state() == "Broadcast:targets"
 
     await _press(admin_h.broadcast_toggle, fake_bot, BroadcastCB(action="tgl", ref=pending.client_id),
                  state, services)
-    text, labels = await _press(admin_h.broadcast_extend_toggle, fake_bot, state, services)
-    assert text.startswith("📢 <b>Объявление с продлением</b> · отмечено 0\n"
-                           "Получат только владельцы профилей с подпиской\n"), text
-    assert labels[0] == "✅ С продлением подписки"
-    assert not any("Ждёт" in l for l in labels), "не активировавший доступ попал в адресаты продления"
+    await _press(admin_h.broadcast_extend_toggle, fake_bot, state, services)
     assert (await state.get_data())["targets"] == [], "отметка не активировавшего пережила тумблер"
-
-    text, labels = await _press(admin_h.broadcast_extend_toggle, fake_bot, state, services)
-    assert labels[0] == "☑️ С продлением подписки" and "☑️ Ждёт" in labels
-    assert not any("🟢" in l or "🔴" in l for l in labels), "онлайн-кружки вернулись"
 
 
 async def test_mark_all_by_hand_turns_bulk_on_and_bulk_on_clears_everything(
@@ -73,13 +62,11 @@ async def test_mark_all_by_hand_turns_bulk_on_and_bulk_on_clears_everything(
     assert text.startswith("📢 <b>Объявление</b> · отмечено 2"), text
     assert labels[1:4] == ["✅ Выбрать все", "✅ Анна", "✅ Борис"], labels
 
-    text, labels = await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
+    await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
     assert (await state.get_data())["targets"] == [], "✅ не сняла отметки"
-    assert labels[1:4] == ["☑️ Выбрать все", "☑️ Анна", "☑️ Борис"], labels
 
-    text, labels = await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
+    await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
     assert sorted((await state.get_data())["targets"]) == sorted([a.id, b.id])
-    assert labels[1] == "✅ Выбрать все"
 
 
 async def test_next_without_targets_refuses(services, make_active_client, fake_bot):
@@ -104,23 +91,13 @@ async def test_next_asks_days_by_presets_and_refuses_only_unlimited(services, ma
     assert cb.answers[-1] == (texts.BROADCAST_ALL_UNLIMITED, True), "отмечены одни бессрочные — продлевать некого"
 
     await state.set_data({"targets": [a.id, u.id], "extend": True})
-    text, labels = await _press(admin_h.broadcast_next, fake_bot, state, services)
+    text, _ = await _press(admin_h.broadcast_next, fake_bot, state, services)
 
     def link(c):
         return f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">{c.name}</a>'
     assert text == (f"📢 <b>Профили для продления подписки:</b> {link(a)}, {link(u)} (∞, без продления)\n"
                     "На сколько дней продлеваем?"), text
-    assert labels == ["1 дн.", "3 дн.", "7 дн.", "✏️ Другое", "✖️ Отмена", "⬅️ Назад"], labels
     assert await state.get_state() == "Broadcast:days"
-    # раскладка: пресеты рядом, «Другое» с отменой, «Назад» к адресатам своим рядом —
-    # иначе «Назад» из дней выбросит из объявления вместе с отметками
-    from awgbot.bot import keyboards as kbs
-    markup = kbs.broadcast_days_kb()
-    rows = [[b.text for b in r] for r in markup.inline_keyboard]
-    assert rows == [["1 дн.", "3 дн.", "7 дн."], ["✏️ Другое", "✖️ Отмена"], ["⬅️ Назад"]], rows
-    assert markup.inline_keyboard[2][0].callback_data == BroadcastCB(action="targets").pack(), \
-        "«⬅️ Назад» из дней обязан вести к адресатам, а не отменять объявление"
-    assert markup.inline_keyboard[1][1].callback_data == BroadcastCB(action="cancel").pack()
 
 
 async def test_days_preset_moves_to_the_text_prompt(services, make_active_client, fake_bot):
@@ -128,11 +105,10 @@ async def test_days_preset_moves_to_the_text_prompt(services, make_active_client
     state = FakeState()
     await state.set_data({"targets": [a.id], "extend": True})
     await state.set_state("Broadcast:days")
-    text, labels = await _press(admin_h.broadcast_days_preset, fake_bot,
-                                PresetCB(kind="bc_days", val=7), state, services)
+    text, _ = await _press(admin_h.broadcast_days_preset, fake_bot,
+                           PresetCB(kind="bc_days", val=7), state, services)
     assert (await state.get_data())["days"] == 7 and await state.get_state() == "Broadcast:text"
     assert text.startswith("📢 <b>Текст для профиля:</b> Анна · продление на 7 дней\n"), text
-    assert labels == ["⬅️ Отмена"]
 
 
 async def test_days_other_validates_then_prompts_for_text(services, make_active_client, fake_bot):
@@ -141,9 +117,7 @@ async def test_days_other_validates_then_prompts_for_text(services, make_active_
     state = FakeState()
     await state.set_data({"targets": [a.id], "extend": True})
     await state.set_state("Broadcast:days")
-    text, labels = await _press(admin_h.broadcast_days_preset, fake_bot,
-                                PresetCB(kind="bc_days", val=-1), state, services)
-    assert text == "✏️ Дней, 1–365" and labels == ["✖️ Отмена"], (text, labels)
+    await _press(admin_h.broadcast_days_preset, fake_bot, PresetCB(kind="bc_days", val=-1), state, services)
 
     bad = FakeMessage(text="400", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await admin_h.broadcast_days(bad, state, services)

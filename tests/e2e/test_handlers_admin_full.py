@@ -3,11 +3,13 @@
 бэкап, перезапуск, личный VPN админа.
 
 Не дублирует уже покрытое в test_handlers_block / test_handlers_extend.
+Экраны этих веток — в эталоне tests/screens/admin.txt; здесь — БД, память
+диалога, вызовы сервисов и ветки, которых в эталоне нет.
 """
 import pytest
 
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import AdminSelfCB, ClientCB, DelDeviceCB, DeviceCB, ReassignCB
+from awgbot.bot.callbacks import ClientCB, DelDeviceCB, DeviceCB, ReassignCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -27,6 +29,8 @@ def _amsg(bot, text=""):
 
 # ── создание клиента (FSM) ───────────────────────────────────────────────────
 async def test_create_client_bad_inputs(services, fake_bot):
+    """Пустое имя и нечисловой лимит не принимаются, и человеку говорят
+    почему (в эталоне этих отказов нет)."""
     st = FakeState()
     m = _amsg(fake_bot, "   ")
     await ah.add_client_name(m, services, st)
@@ -61,29 +65,23 @@ async def test_edit_name_flow(services, fake_bot, make_active_client):
 
 
 async def test_edit_client_traffic_flow(services, fake_bot, make_active_client):
-    """Трафик профиля — пресеты [50 ГБ] [100 ГБ] [200 ГБ] / [500 ГБ] [∞]
-    [✏️ Другое] / [⬅️ Отмена]; пресет применяется сразу, итог — первой строкой
-    «✏️ Изменить»."""
+    """Пресет трафика профиля применяется сразу, без второго вопроса."""
     from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6004)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.edit_client_traffic_start(cb, ClientCB(action="edit_traffic", client_id=client.id), services, st)
-    text, labels = last_screen(nav)
-    assert text == f"📊 <b>Трафик профиля {client.name} в месяц</b> · сейчас ∞", text
-    assert labels == ["50 ГБ", "100 ГБ", "200 ГБ", "500 ГБ", "∞", "✏️ Другое", "⬅️ Отмена"], labels
     cb2, nav2 = _acb(fake_bot)
     await ah.edit_traffic_preset(cb2, PresetCB(kind="cli_traffic", ref=client.id, val=50), services, st)
     assert services.db.get_client(client.id).traffic_limit == 50 * (1024 ** 3)
-    text2, _ = last_screen(nav2)
-    assert text2.splitlines()[0] == "✅ Трафик: ∞ → 50 ГБ", text2
 
 
 async def test_edit_client_traffic_other_asks_a_number_and_returns_to_edit(
         services, fake_bot, make_active_client):
-    """«✏️ Другое» у трафика профиля — ввод числа на месте экрана с «✖️ Отмена»,
-    после ввода — «✏️ Изменить» новым сообщением с итогом первой строкой. Не
-    откроется ввод — лимит, которого нет в пресетах (70 ГБ), не поставить."""
+    """«✏️ Другое» у трафика профиля — ввод числа, после ввода — «✏️ Изменить»
+    новым сообщением с итогом первой строкой (в эталоне ввода у трафика
+    профиля нет). Не откроется ввод — лимит, которого нет в пресетах (70 ГБ),
+    не поставить."""
     from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6006, traffic_limit=50 * (1024 ** 3))
     st = FakeState()
@@ -97,13 +95,12 @@ async def test_edit_client_traffic_other_asks_a_number_and_returns_to_edit(
 
 
 async def test_edit_limit_raise(services, fake_bot, make_active_client):
+    """Пресет лимита устройств записывается в профиль."""
     from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6005, device_limit=2)
     cb, nav = _acb(fake_bot)
     await ah.edit_limit_preset(cb, PresetCB(kind="cli_devs", ref=client.id, val=5), services, FakeState())
     assert services.db.get_client(client.id).device_limit == 5
-    text, _ = last_screen(nav)
-    assert text.splitlines()[0] == "✅ Устройств: 2 → 5", text
 
 
 # ── инвайт / удаление ────────────────────────────────────────────────────────
@@ -113,44 +110,35 @@ async def test_delete_client_asks_before_deleting(services, fake_bot, make_activ
     client = make_active_client(tg_id=6007)
     cb, nav = _acb(fake_bot)
     await ah.client_delete_confirm(cb, ClientCB(action="delete", client_id=client.id), services)
-    shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and shown[-1][2] is not None, "подтверждение без кнопок — тупик"
     assert services.db.get_client(client.id) is not None
 
 
 # ── выдача конфигов клиенту / устройству ─────────────────────────────────────
-async def test_admin_gen_for_and_client_devices(services, fake_bot, make_active_client):
+async def test_admin_gen_for_opens_the_card(services, fake_bot, make_active_client):
+    """Кнопка прежнего образца «Выдать конфиг» ведёт в карточку профиля с его
+    устройствами (в эталоне её нет)."""
     client = make_active_client(tg_id=6008)
     services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=client.id), services, FakeState())
     _, labels = last_screen(nav)
     assert any(l.endswith(" d") for l in labels), "старая «Выдать конфиг» — карточка с устройством"
-    cb2, nav2 = _acb(fake_bot)
-    await ah.admin_client_devices(cb2, ClientCB(action="devices", client_id=client.id), services)
-    _, labels2 = last_screen(nav2)
-    assert any("d" in l for l in labels2), "устройства профиля не показаны"
 
 
-async def test_admin_dev_link_and_qr(services, fake_bot, make_active_client):
+async def test_admin_dev_link(services, fake_bot, make_active_client):
+    """Ссылка устройства профиля приходит сообщением (QR — в эталоне)."""
     client = make_active_client(tg_id=6009)
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.admin_dev_gen(cb, DeviceCB(action="gen_link", device_id=dc.device_id), services)
     assert any(s[0] == "answer" for s in nav.sent)
-    cb2, nav2 = _acb(fake_bot)
-    await ah.admin_dev_gen(cb2, DeviceCB(action="gen_qr", device_id=dc.device_id), services)
-    assert any(s[0] == "animation" for s in nav2.sent)
 
 
-async def test_admin_device_open_and_connect(services, fake_bot, make_active_client):
+async def test_admin_device_connect_menu_opens_the_card(services, fake_bot, make_active_client):
+    """Кнопка прежнего образца «Данные для подключения» открывает карточку с
+    рядом выдачи (сама карточка — в эталоне)."""
     client = make_active_client(tg_id=6010)
     dc = services.add_device(client.id, "d")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services, FakeState())
-    text, labels = last_screen(nav)
-    assert "d" in text and labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
-    assert labels[3:] == ["✏️ Имя", "✏️ Лимит", "🔀 Передать", "🛑 Блок", "🗑 Удалить", "⬅️ Назад"], labels
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_device_connect_menu(cb2, DeviceCB(action="connect_menu", device_id=dc.device_id),
                                        services, FakeState())
@@ -165,7 +153,6 @@ async def test_reassign_flow_with_slot(services, fake_bot, make_active_client):
     dc = services.add_device(a.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_start(cb, DeviceCB(action="reassign", device_id=dc.device_id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
     cb2, nav2 = _acb(fake_bot)
     await ah.device_reassign_apply(cb2, ReassignCB(device_id=dc.device_id, client_id=b.id, stage="go"), services)
     assert services.db.get_device(dc.device_id).client_id == b.id
@@ -178,7 +165,7 @@ async def test_reassign_no_slot_prompts_then_slot_yes(services, fake_bot, make_a
     dc = services.add_device(a.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_apply(cb, ReassignCB(device_id=dc.device_id, client_id=b.id, stage="go"), services)
-    assert any(s[0] == "edit_text" and "слот" in s[1].lower() for s in nav.sent)
+    assert services.db.get_device(dc.device_id).client_id == a.id, "перенесено без согласия на слот"
     cb2, nav2 = _acb(fake_bot)
     await ah.device_reassign_slot_yes(cb2, ReassignCB(device_id=dc.device_id, client_id=b.id, stage="slot_yes"), services)
     assert services.db.get_device(dc.device_id).client_id == b.id
@@ -197,17 +184,6 @@ async def test_reassign_slot_no_aborts(services, fake_bot, make_active_client):
 
 
 # ── бэкап / перезапуск (переехали в ⚙️ Настройки) ────────────────────────────
-async def test_backup_now_sends_files(services, fake_bot, monkeypatch, tmp_path):
-    from awgbot.bot.handlers import settings as sh
-    from awgbot.bot.callbacks import SetCB
-    f = tmp_path / "bot_backup.db"
-    f.write_bytes(b"x")
-    monkeypatch.setattr(services, "make_backup", lambda: [str(f)])
-    cb, nav = _acb(fake_bot)
-    await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
-    assert any(s[0] == "document" for s in nav.sent)
-
-
 async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
@@ -217,11 +193,8 @@ async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
     # кнопка сама ничего не рвёт — сначала подтверждение с ценой
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg"), services)
     assert restarted == []
-    assert any(s[0] == "edit_text" and "Перезапустить AWG?" in s[1] for s in nav.sent)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
     assert restarted == [1]
-    last = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert last[1].startswith("✅ AWG перезапущен\n\n🔧 <b>Сервис</b>"), "итог — первой строкой раздела «Сервис»"
 
 
 async def test_restart_bot_from_settings_needs_confirmation(services, fake_bot, monkeypatch):
@@ -232,17 +205,14 @@ async def test_restart_bot_from_settings_needs_confirmation(services, fake_bot, 
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="bot"), services)
     assert restarted == [] and services.db.get_state("restart_wait") in (None, "")
-    assert any(s[0] == "edit_text" and "Перезапустить бота?" in s[1] for s in nav.sent)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="bot!"), services)
     assert restarted == [1] and services.db.get_state("restart_wait")
 
 
 # ── личный VPN админа ────────────────────────────────────────────────────────
-async def test_admin_self_devices_and_add(services, fake_bot):
+async def test_admin_self_add(services, fake_bot):
+    """Своё устройство админа после имени появляется в его профиле."""
     services.ensure_admin_client()
-    cb, nav = _acb(fake_bot)
-    await ah.self_devices(cb, services, FakeState())
-    assert any(s[0] == "edit_text" for s in nav.sent)
     st = FakeState()
     cb2, nav2 = _acb(fake_bot)
     await ah.self_add_start(cb2, services, st)
@@ -250,19 +220,6 @@ async def test_admin_self_devices_and_add(services, fake_bot):
     await ah.self_add_name(msg, services, st)
     ac = services.admin_client()
     assert any(d.name == "МойДев" for d in services.db.list_devices(ac.id))
-    shown = [s for s in msg.sent if s[0] == "answer"]
-    assert shown and shown[-1][1] == "✅ МойДев создано", shown
-    labels = [b.text for row in shown[-1][2].inline_keyboard for b in row]
-    assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], "своё устройство — сразу с рядом выдачи"
-
-
-async def test_admin_self_gen_link(services, fake_bot):
-    services.ensure_admin_client()
-    ac = services.admin_client()
-    services.add_device(ac.id, "d")
-    cb, nav = _acb(fake_bot)
-    await ah.self_gen_pick(cb, AdminSelfCB(action="gen_link"), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)       # пикер устройства, не прямая ссылка
 
 
 # ── удаление устройства (админ) ──────────────────────────────────────────────
@@ -272,22 +229,11 @@ async def test_admin_delete_device(services, fake_bot, make_active_client):
     d2 = services.add_device(client.id, "b")
     cb, nav = _acb(fake_bot)
     await ah.admin_del_ask(cb, DelDeviceCB(device_id=d2.device_id, stage="ask"), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
     assert services.db.get_device(d2.device_id) is not None, "вопрос ещё ничего не удаляет"
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_del_confirm(cb2, DelDeviceCB(device_id=d2.device_id, stage="confirm"), services)
     assert services.db.get_device(d2.device_id) is None
     assert services.db.get_device(d1.device_id) is not None, "соседнее устройство цело"
-
-
-# ── unassigned / add-device choice ───────────────────────────────────────────
-async def test_unassigned_list_and_choice(services, fake_bot):
-    svc = services.db.get_service_client_id()
-    services.db.create_device(svc, "app", "PUBU", "PSK", "10.8.0.70")
-    cb, nav = _acb(fake_bot)
-    await ah.unassigned_list(cb, services)
-    _, labels = last_screen(nav)
-    assert any("app" in l for l in labels), "устройство без профиля не показано"
 
 
 async def test_delete_client_keeps_profile_when_peer_stays_on_server(
@@ -313,19 +259,3 @@ async def test_delete_client_keeps_profile_when_peer_stays_on_server(
 
     assert services.db.get_client(client.id) is not None, "профиль удалён вопреки отказу"
     assert services.db.get_device(dc.device_id) is not None
-    said = " ".join(str(s) for s in nav.sent)
-    assert "НЕ удалён" in said and "телефон" in said
-
-
-
-
-async def test_admin_delete_result_is_the_first_line_of_the_next_screen(services, fake_bot, make_active_client):
-    """Итог удаления у админа — первой строкой экрана на месте вопроса, как у
-    владельца и гостя: отдельного следа и второго сообщения с экраном нет."""
-    client = make_active_client(tg_id=6018)
-    d = services.add_device(client.id, "b")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_del_confirm(cb, DelDeviceCB(device_id=d.device_id, stage="confirm"), services)
-    edits = [t for k, t, _ in nav.sent if k == "edit_text"]
-    assert edits and edits[-1].startswith("🗑 b удалено") and "\n\n" in edits[-1], edits
-    assert not [s for s in nav.sent if s[0] == "answer"], "экран пришёл отдельным сообщением"

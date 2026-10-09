@@ -1,5 +1,8 @@
-"""E2E: объявления админа — вход с главной, выбор адресатов, черновик с фото
-и альбомами, лимиты подписи, отчёт о доставке."""
+"""E2E: объявления админа — частичный выбор адресатов, черновик с фото и
+альбомами, лимиты подписи, отчёт о доставке.
+
+Экраны объявления (вход с главной, адресаты, приглашение, превью, рассылка с
+отчётом и панелью следом) — в эталоне tests/screens/admin.txt (adm.bc.*)."""
 import asyncio
 
 import pytest
@@ -9,48 +12,15 @@ from tests.conftest import FakeState
 pytestmark = pytest.mark.e2e
 
 
-# ── объявление: вход только с главной админа ─────────────────────────────────
+# ── объявление: адресаты и черновик ─────────────────────────────────────────
 
 def _btn_texts(markup):
     return [b.text for row in markup.inline_keyboard for b in row]
 
 
-def _btn_data(markup, needle):
-    for row in markup.inline_keyboard:
-        for b in row:
-            if needle in b.text:
-                return b.callback_data
-    return None
-
-
-def test_client_card_has_no_announcement_button(services, make_active_client):
-    """В карточке профиля кнопки объявления быть не должно.
-
-    Вход у рассылки ровно один — с главной админа, где следующим шагом
-    выбираются адресаты. Кнопка в карточке отвечала на тот же вопрос «кому», но
-    лезла в глаза там, где админ занят совсем другим.
-    """
-    from awgbot.bot import keyboards as kb
-    c = make_active_client(name="c1", tg_id=4001)
-    client = services.db.get_client(c.id)
-
-    for owner in (True, False):
-        labels = _btn_texts(kb.admin_client_actions(client))
-        assert not any("Объявление" in x for x in labels), owner
-
-
-def test_main_menu_entry_opens_target_picker():
-    """Кнопка с главной ведёт на выбор адресатов, а не сразу на ввод текста."""
-    from awgbot.bot import keyboards as kb
-    data = _btn_data(kb.admin_main(), "Объявление")
-    assert data == "bc:pick:0"
-
-
-def test_target_picker_marks_selection_and_offers_bulk():
-    """Отметки — на самих кнопках; «Выбрать все» по правилу массового
-    выбора: ☑️, пока отмечены не все; ✅, когда все — в том числе отмеченные
-    по одному. Тумблер «С продлением» — первым рядом, «⬅️ Отмена» — первой
-    в последнем ряду."""
+def test_target_picker_marks_partial_selection():
+    """Отмечены не все: отметка — на самой кнопке профиля, «Выбрать все»
+    остаётся ☑️ — иначе нажатие на неё сняло бы и то, что админ уже выбрал."""
     from awgbot.core import models
     from awgbot.bot import keyboards as kb
 
@@ -60,38 +30,13 @@ def test_target_picker_marks_selection_and_offers_bulk():
                              invite_code=None, created_at="2026-01-01")
 
     clients = [_c(1), _c(2)]
-    labels_none = _btn_texts(kb.broadcast_targets(clients, set()))
-    assert labels_none == ["☑️ С продлением подписки", "☑️ Выбрать все", "☑️ К1", "☑️ К2",
-                           "⬅️ Отмена", "➡️ Далее"], labels_none
-
     labels = _btn_texts(kb.broadcast_targets(clients, {1}))
     assert labels[1:4] == ["☑️ Выбрать все", "✅ К1", "☑️ К2"], labels
 
-    every = _btn_texts(kb.broadcast_targets(clients, {1, 2}))
-    assert every[1] == "✅ Выбрать все", "все отмечены по одному — массовая кнопка обязана стать ✅"
-    assert _btn_texts(kb.broadcast_targets(clients, set(), extend=True))[0] == "✅ С продлением подписки"
-
-
-def test_broadcast_cancel_clears_the_input_state():
-    """Отмена обязана сбросить FSM, иначе следующее сообщение админа станет
-    черновиком объявления.
-
-    Раньше отмена вела прямо в главное меню, чей хендлер чистит состояние
-    попутно, — работало, но держалось на побочном эффекте соседа.
-    """
-    from awgbot.bot import keyboards as kb
-    for markup in (kb.broadcast_cancel(), kb.broadcast_confirm()):
-        data = _btn_data(markup, "Отмена")
-        assert data == "bc:cancel:0", data
-
-
-def test_broadcast_confirm_leads_to_send():
-    from awgbot.bot import keyboards as kb
-    assert _btn_data(kb.broadcast_confirm(), "Отправить") == "bc:send:0"
-
 
 async def test_broadcast_keeps_telegram_formatting(services, make_active_client, fake_bot):
-    """Форматирование, сделанное средствами Telegram, обязано дожить до превью.
+    """Форматирование, сделанное средствами Telegram, обязано попасть в
+    черновик — из него строятся и превью, и рассылка.
 
     Жирный/курсив/ссылки живут не в тексте сообщения, а в entities. Пока
     читали `message.text`, объявление уходило голым — и превью тоже, поэтому
@@ -110,8 +55,6 @@ async def test_broadcast_keeps_telegram_formatting(services, make_active_client,
                       chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await admin_h.broadcast_receive(msg, state, services)
 
-    preview = "".join(s[1] for s in msg.sent if s[0] == "answer")
-    assert "<b>в ночь на 12-е</b>" in preview, preview
     assert (await state.get_data())["text"] == "Профилактика <b>в ночь на 12-е</b>"
 
 
@@ -584,54 +527,9 @@ def test_broadcast_report_wording_by_shape():
         "✅ Доставлено: профили Наташа, Ксюша и те, с кем они делятся устройствами — 5 адресатов"
 
 
-def test_broadcast_report_links_profile_names():
-    """Имена профилей в отчёте — ссылки на их карточки (cl-<id>)."""
-    from awgbot.bot import texts as T
-    n = _cl("Наташа")
-    r = T.broadcast_report([n], False, 1, 0, bot_username="awg_test_bot")
-    assert f'<a href="https://t.me/awg_test_bot?start=cl-{n.id}">Наташа</a>' in r, r
-
-
 def test_broadcast_report_does_not_hide_failures():
     """«Доставлено» при недоставленных было бы неправдой, а узнать об этом
     больше неоткуда."""
     from awgbot.bot import texts as T
     r = T.broadcast_report([_cl("А")], True, 3, 2)
     assert r.split("\n")[1] == "⚠️ не доставлено 2 — бот заблокирован или аккаунт удалён", r
-
-
-async def test_send_leaves_report_and_opens_panel_separately(
-        services, make_active_client, fake_bot):
-    """Отчёт остаётся в чате без кнопок, панель приходит СЛЕДУЮЩИМ сообщением.
-
-    Раньше отчёт нёс на себе клавиатуру главного меню: тогда он либо
-    переписывался при следующей навигации, либо оставлял в чате второе живое
-    меню — держать инвариант «одно активное» было нечем.
-    """
-    from tests.conftest import FakeCallback, FakeMessage, FakeState
-    from awgbot.bot.handlers.admin import broadcast as admin_h
-    import awgbot.core.config as cfg
-
-    admin_h._last_broadcast_at.clear()
-    c = make_active_client(name="Наташа", tg_id=7100)
-    chat = cfg.ADMIN_ID
-
-    state = FakeState()
-    await state.update_data(targets=[c.id], text="Профилактика <b>в ночь</b>")
-    nav = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot)
-    cb = FakeCallback(message=nav, user_id=chat, bot=fake_bot)
-
-    await admin_h.broadcast_send(cb, state, services)
-
-    # текстовая рассылка: превью редактируется в ЧИСТЫЙ текст объявления
-    # (след в чате), отчёт-факт приходит следом, панель — последней
-    edits = [s for s in nav.sent if s[0] == "edit_text"]
-    trace = edits[-1]
-    assert trace[1] == "Профилактика <b>в ночь</b>", "след объявления потерян"
-    assert trace[2] is None, "на следе не должно остаться кнопок"
-
-    answers = [s for s in nav.sent if s[0] == "answer"]
-    report = answers[0]
-    assert report[1] == "✅ Доставлено: профиль Наташа — 1 адресат", report[1]
-    assert "Текст объявления" not in report[1], "отчёт дублирует текст"
-    assert answers[-1][2] is not None, "у панели должна быть клавиатура"

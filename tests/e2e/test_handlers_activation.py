@@ -1,7 +1,9 @@
 """E2E: активация по коду (_try_activate) — маршрутизация F… → друг, иначе клиент.
 
 Покрывает вход нового друга (роль invited) и активацию клиентского инвайта:
-успех, невалидный код, «уже пользователь», плюс уведомления хозяину/админу.
+что записано в БД, уведомления хозяину/админу и отказ админу, который зашёл
+по коду друга. Тексты и кнопки экранов активации — в эталонах
+tests/screens/{client,guest}.txt.
 """
 import pytest
 
@@ -20,28 +22,23 @@ def _friendly_device(services, owner_id):
 
 # ── друг (код F…) ────────────────────────────────────────────────────────────
 async def test_activate_friend_code_happy(services, fake_bot, make_active_client):
+    """Друг активировал код — устройство закреплено за ним, хозяин узнал об
+    этом. Не запишется держатель — друг увидит гостевую панель, а устройства
+    у него не будет; не уйдёт уведомление — хозяин не узнает, что код принят."""
     owner = make_active_client(tg_id=8200, name="Хозяин")
     dc, code = _friendly_device(services, owner.id)
     msg = FakeMessage(text=f"/start {code}", chat_id=98200, user_id=98200,
                       username="guest", bot=fake_bot)
     await client_h._try_activate(msg, services, code)
-    # друг получил подтверждение и гостевую панель
-    assert any(s[0] == "answer" for s in msg.sent)
     dev = services.db.get_device(dc.device_id)
     assert dev.friend_tg_id == 98200
     # хозяину ушло уведомление, что друг подключился
     assert any(r[0] == "send_message" and r[1] == 8200 for r in fake_bot.records)
 
 
-async def test_activate_friend_code_invalid(services, fake_bot):
-    msg = FakeMessage(text="/start Fbad", chat_id=98201, user_id=98201, bot=fake_bot)
-    await client_h._try_activate(msg, services, "Fbad")
-    from awgbot.bot import texts
-    assert any(s[0] == "answer" and s[1] == texts.ACTIVATION_INVALID for s in msg.sent)
-
-
 async def test_activate_friend_code_by_admin_is_refused(services, fake_bot, make_active_client):
-    from awgbot.core import config
+    """Админ открыл чужой код друга — отказ, а не гостевой профиль поверх
+    админского."""
     owner = make_active_client(tg_id=8202)
     _, code = _friendly_device(services, owner.id)
     msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)
@@ -52,26 +49,14 @@ async def test_activate_friend_code_by_admin_is_refused(services, fake_bot, make
 
 # ── клиент (инвайт) ──────────────────────────────────────────────────────────
 async def test_activate_client_invite_happy(services, fake_bot):
+    """Инвайт принят — профиль активен и админ получил уведомление. Без
+    записи в БД человек увидит «доступ открыт», а бот его не узнает."""
     services.ensure_admin_client()
     created = services.create_client("Новый", 3, "year", traffic_limit=0)
     msg = FakeMessage(text=f"/start {created.invite_code}", chat_id=8300, user_id=8300,
                       username="newbie", bot=fake_bot)
     await client_h._try_activate(msg, services, created.invite_code)
-    from awgbot.bot import texts
-    # одно сообщение: «доступ открыт» и сразу выбор платформы для гайда, выход —
-    # «✅ Всё умею сам», а не «⬅️ В меню»
-    shown = [s for s in msg.sent if s[0] == "answer"]
-    assert [s[1] for s in shown] == [texts.ACTIVATION_OK_HELP] == ["🎉 Доступ открыт. Какое у тебя устройство?"]
-    labels = [b.text for row in shown[0][2].inline_keyboard for b in row]
-    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Настрою сам"], labels
     fresh = services.db.get_client_by_tg(8300)
     assert fresh is not None and fresh.activation_status == "active"
     # админу — уведомление об активации
     assert any(r[0] == "send_message" and r[1] == config.ADMIN_ID for r in fake_bot.records)
-
-
-async def test_activate_client_invite_invalid(services, fake_bot):
-    msg = FakeMessage(text="/start Cxxxxxx", chat_id=8301, user_id=8301, bot=fake_bot)
-    await client_h._try_activate(msg, services, "Cxxxxxx")
-    from awgbot.bot import texts
-    assert any(s[0] == "answer" and s[1] == texts.ACTIVATION_INVALID for s in msg.sent)

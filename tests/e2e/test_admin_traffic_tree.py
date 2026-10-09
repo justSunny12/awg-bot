@@ -6,6 +6,10 @@
 потребитель теряется внизу; нулевые строки — шум, за которым не видно
 живого; вложенная строка без «└ » читается как соседняя запись; старая
 ссылка из истории чата (traffic_local…) ведёт в исключение вместо экрана.
+
+Раскладку A03/A04 в типичном состоянии, пустой список и ссылки traffic,
+traffic_local, traffic-<id>, traffic_local-<id>-t сверяет эталон
+(adm.traffic*, adm.link.traffic*); здесь — состояния, которых в снимках нет.
 """
 import pytest
 from aiogram.filters import CommandObject
@@ -89,37 +93,6 @@ def test_list_separates_entries_with_a_blank_line_and_nests_with_the_same_mark()
 
 # ── A03: трафик по профилям ──────────────────────────────────────────────────
 
-async def test_traffic_tree_leads_with_rf_total_then_profiles_by_size(
-        services, fake_bot, fake_routing, make_active_client, monkeypatch):
-    """Раскладка A03: шапка с итогом сервера одной строкой, под ней РФ-итог,
-    профили по убыванию общего трафика через пустую строку, РФ-строка — под
-    своей записью."""
-    _rf_feature(monkeypatch, services, fake_routing, True)
-    services.bot_username = "awg_test_bot"
-    kolya, _ = _profile(services, make_active_client, "Коля", 7101, traffic=(0, GB), rf=(0, GB))
-    ksu, _ = _profile(services, make_active_client, "Ксюша", 7102, traffic=(2 * GB, 10 * GB),
-                      rf=(GB, 2 * GB))
-    petya, _ = _profile(services, make_active_client, "Петя", 7103, traffic=(GB, 3 * GB))
-    _rf_total(services, GB, 3 * GB)                    # ровно сумма устройств — «вне профилей» нет
-    text, labels, cbs = await _deep(services, fake_bot, "traffic")
-
-    def link(c):
-        return f'<a href="https://t.me/awg_test_bot?start=traffic-{c.id}">{c.name}</a>'
-    assert text.split("\n") == [
-        f"📊 <b>Трафик за {texts.month_label()}:</b> 17 ГБ (↑3 ↓14)",
-        f"└ {RF_ALL}: 4 ГБ (↑1 ↓3)",
-        "",
-        f"👤 {link(ksu)}: 12 ГБ (↑2 ↓10)",
-        f"└ {RF}: 3 ГБ",
-        "",
-        f"👤 {link(petya)}: 4 ГБ (↑1 ↓3)",
-        "",
-        f"👤 {link(kolya)}: 1 ГБ (↑0 ↓1)",
-        f"└ {RF}: 1 ГБ",
-    ], text
-    assert (labels, cbs) == (["⬅️ В меню"], [Menu(action="main").pack()])
-
-
 async def test_traffic_tree_drops_zero_profiles_zero_rf_and_zero_outside(
         services, fake_bot, fake_routing, make_active_client, monkeypatch):
     """Нули не выводятся: профиль без трафика, РФ-ветка с нулём у профиля,
@@ -133,13 +106,6 @@ async def test_traffic_tree_drops_zero_profiles_zero_rf_and_zero_outside(
     assert RF not in text, f"нулевая РФ-строка выведена:\n{text}"
     assert "Вне профилей" not in text, text
     assert text.split("\n")[1:] == ["", "👤 Ксюша: 2 ГБ (↑1 ↓1)"], text
-
-
-async def test_traffic_tree_without_any_traffic_says_so(services, fake_bot):
-    services.ensure_admin_client()
-    text, _, _ = await _deep(services, fake_bot, "traffic")
-    assert text.split("\n") == [f"📊 <b>Трафик за {texts.month_label()}:</b> 0 ГБ", "",
-                                "Трафика за месяц ещё нет"], text
 
 
 async def test_outside_profiles_nests_under_the_rf_total(services, fake_bot, make_active_client):
@@ -193,36 +159,19 @@ async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make
 
 # ── A04: трафик профиля по устройствам ───────────────────────────────────────
 
-async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
+async def test_profile_traffic_tree_drops_idle_devices_and_counts_only_the_profile(
         services, fake_bot, fake_routing, make_active_client, monkeypatch):
-    """A04: шапка с именем профиля и итогом профиля (а не сервера), под ней
-    РФ профиля, устройства по убыванию трафика с РФ-строкой; устройство без
-    трафика и нулевая РФ-строка не выводятся; «⬅️ Назад» — на A03."""
+    """A04: итог в шапке — профиля, а не сервера (трафик чужого профиля в него
+    не входит); устройство без трафика не выводится — за нулями не видно
+    живого. Раскладка A04 и «⬅️ Назад» на A03 — снимок adm.link.traffic_dev."""
     _rf_feature(monkeypatch, services, fake_routing, True)
-    c, mac = _profile(services, make_active_client, "Ксюша", 7131, traffic=(GB, GB), rf=(0, 0),
-                      device="MacBook")
-    phone = services.add_device(c.id, "iPhone").device_id
-    idle = services.add_device(c.id, "Планшет").device_id
-    services.db.add_traffic_bulk([(phone, GB, 5 * GB)])
-    services.db.rf_add_bulk([(phone, GB, 2 * GB)])
+    c, _ = _profile(services, make_active_client, "Ксюша", 7131, traffic=(GB, GB), device="MacBook")
+    services.add_device(c.id, "Планшет")
     _profile(services, make_active_client, "Чужой", 7132, traffic=(9 * GB, 9 * GB))
-    text, labels, cbs = await _deep(services, fake_bot, f"traffic-{c.id}")
-    assert text.split("\n") == [
-        f"📊 <b>Трафик за {texts.month_label()}:</b> 8 ГБ (↑2 ↓6) · профиль Ксюша",
-        f"└ {RF_ALL}: 3 ГБ (↑1 ↓2)",
-        "",
-        "⚪ iPhone: 6 ГБ (↑1 ↓5)",
-        f"└ {RF}: 3 ГБ",
-        "",
-        "⚪ MacBook: 2 ГБ (↑1 ↓1)",
-    ], text
-    assert idle and "Планшет" not in text
-    assert (labels, cbs) == (["⬅️ Назад"], [Menu(action="traffic").pack()])
-
-    cb, nav = _acb(fake_bot)
-    await ah.admin_traffic_profiles(cb, services)
-    back, _ = last_screen(nav)
-    assert back.startswith(f"📊 <b>Трафик за {texts.month_label()}:</b> "), back
+    text, _, _ = await _deep(services, fake_bot, f"traffic-{c.id}")
+    assert text.split("\n")[0] == f"📊 <b>Трафик за {texts.month_label()}:</b> 2 ГБ (↑1 ↓1) · профиль Ксюша", \
+        f"в итог профиля попал чужой трафик:\n{text}"
+    assert "Планшет" not in text, f"устройство без трафика в списке:\n{text}"
 
 
 @pytest.fixture()
@@ -270,8 +219,9 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "второе меню вместо правки живого"
 
 
-@pytest.mark.parametrize("fmt_", ["traffic-{id}", "traffic_local-{id}", "traffic_local-{id}-t",
-                                  "traffic-{id}-t"])
+# «traffic-<id>» и «traffic_local-<id>-t» — снимки adm.link.traffic_dev и
+# adm.link.traffic_local_dev; здесь — остальные формы старых ссылок
+@pytest.mark.parametrize("fmt_", ["traffic_local-{id}", "traffic-{id}-t"])
 async def test_profile_links_open_the_profile_traffic(services, fake_bot, make_active_client, fmt_):
     c, _ = _profile(services, make_active_client, "Ксюша", 7142, traffic=(GB, GB))
     text, labels, _ = await _deep(services, fake_bot, fmt_.format(id=c.id))

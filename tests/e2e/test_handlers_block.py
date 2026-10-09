@@ -1,5 +1,8 @@
 """E2E: admin-хендлеры ручной блокировки/разблокировки (callback-и BlockCB).
 
+Экраны веток с уведомлением и разблокировки — в эталоне tests/screens/admin.txt;
+здесь — биты блокировки в БД, пауза, уведомления владельцу и тихие ветки.
+
 Проверяем маршрутизацию бита по kind (silent/notified), каскад на устройства,
 проброс уведомлений через бота и ветку menu_unblock: одна причина → снимаем
 сразу, несколько → диалог выбора.
@@ -32,7 +35,6 @@ async def test_block_device_notified(services, fake_bot, make_active_client):
     dev = services.db.get_device(dc.device_id)
     assert int(dev.block_reason) & int(DeviceBlock.ADMIN_NOTIFIED)
     assert any(r[0] == "send_message" and r[1] == 7100 for r in fake_bot.records)  # владелец уведомлён
-    assert cb.answers and "аблокировано" in cb.answers[-1][0]
 
 
 async def test_block_device_silent_no_owner_notice(services, fake_bot, make_active_client):
@@ -71,7 +73,6 @@ async def test_unblock_menu_single_reason_auto(services, fake_bot, make_active_c
         cb, BlockCB(target="dev", action="menu_unblock", ref=dc.device_id), services)
     dev = services.db.get_device(dc.device_id)
     assert int(dev.block_reason) == 0                         # единственную причину сняли сразу
-    assert any("азблокировано" in (a[0] or "") for a in cb.answers)
 
 
 async def test_unblock_menu_multiple_reasons_shows_dialog(services, fake_bot, make_active_client):
@@ -86,7 +87,6 @@ async def test_unblock_menu_multiple_reasons_shows_dialog(services, fake_bot, ma
     # две причины → диалог выбора, ничего пока не сняли
     assert int(dev.block_reason) & int(DeviceBlock.ADMIN_SILENT)
     assert int(dev.block_reason) & int(DeviceBlock.USER)
-    assert any(s[0] == "edit_text" and "снять" in s[1].lower() for s in nav.sent)
 
 
 async def test_unblock_do_removes_specific_bit(services, fake_bot, make_active_client):
@@ -112,12 +112,10 @@ def _labels(nav):
 
 async def _pick(services, bot, client_id, pause: str):
     """«🛑 Блок» профиля → «⏸️ Да» / «▶️ Нет» → экран «Уведомить владельца?»:
-    возвращает кнопки второго шага."""
+    возвращает кнопки второго шага. Шаг «▶️ Нет» в эталоне не снят — его
+    экран проверяется здесь."""
     cb, nav = _admin_cb(bot)
     await admin_h.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client_id), services)
-    text, labels = _labels(nav)
-    assert text.split("\n")[1] == "Поставить подписку на паузу на время блокировки?", text
-    assert labels == ["⏸️ Да", "▶️ Нет", "⬅️ Отмена"], labels
     step = admin_h.admin_block_pause_yes if pause == "yes" else admin_h.admin_block_pause_no
     cb2, nav2 = _admin_cb(bot)
     await step(cb2, BlockCB(target="cli", action=f"pause_{pause}", ref=client_id))
@@ -145,9 +143,6 @@ async def test_block_profile_with_pause_pauses_until_unblocked(services, fake_bo
     assert fresh.is_paused and fresh.pause_mode == PauseMode.ADMIN_OPEN, fresh.pause_mode
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.PAUSED)
     assert any(r[0] == "send_message" and r[1] == 7110 for r in fake_bot.records), "владелец не уведомлён"
-    text, _ = _labels(nav)
-    assert text.startswith("👤 ") and "⛔ Заблокирован: администратором" in text, text
-    assert cb.answers[-1][0] == f"🛑 Профиль {client.name} заблокирован"
 
     cb2, _ = _admin_cb(fake_bot)
     await admin_h.admin_unblock_menu(cb2, BlockCB(target="cli", action="menu_unblock", ref=client.id), services)

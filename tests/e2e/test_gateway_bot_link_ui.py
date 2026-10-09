@@ -1,8 +1,9 @@
-"""Ссылки из экранов в сторону шлюза: строка «Бот шлюза» последней в
-карточке слота и в карточке устройства-шлюза, deep-link «/start gw-<слот>»
-из строки РФ-доступа в шапке админа (и «Назад» с такой карточки — на
-главную), getMe сразу после ввода токена и подпись под файлом конфигурации
-со ссылкой на бота шлюза."""
+"""Ссылки из экранов в сторону шлюза — то, чего нет в эталонах экранов
+(tests/screens/admin.txt): строка «Бот шлюза» появляется и пропадает вместе
+с ответом getMe или снимком канала, deep-link «/start gw-<слот>» поверх
+живого меню и для мусорных номеров, «Назад» на главную переживает
+перерисовки карточки, getMe сразу после ввода токена, подпись под файлом
+конфигурации без бота, с подписью слота и с экранированием."""
 from __future__ import annotations
 
 import types
@@ -10,7 +11,7 @@ import types
 import pytest
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, Menu, SetCB
+from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, Menu
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config
@@ -123,16 +124,14 @@ async def test_gateway_device_card_ends_with_the_agent_bot_link(services, slots,
 # ── строка РФ-доступа: ссылки ведут в существующие карточки ─────────────────
 
 async def test_admin_line_links_point_to_real_slots(services, slots):
-    """Номера слотов в ссылках берутся из routing_admin_status: после
-    переключения на слот 2 имя активного ведёт в карточку слота 2."""
+    """Номера слотов в ссылках шапки берутся из routing_admin_status: после
+    переключения на слот 2 активным числится слот 2 — имя активного ведёт в
+    его карточку, а не в карточку резерва."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.db.set_state("routing_gw_2_up_streak", "3")
     info = services.routing_admin_status()
     assert info["active_slot"] == 1 and [s["slot"] for s in info["standby"]] == [2]
-    line = texts.routing_admin_status_line(info, "awg_test_bot")
-    assert '<a href="https://t.me/awg_test_bot?start=gw-1">NASPi</a>' in line, line
-    assert '<a href="https://t.me/awg_test_bot?start=gw-2">резерв</a> жив' in line, line
     services.gateway_switch(2, manual=True)
     info = services.routing_admin_status()
     assert info["active_slot"] == 2 and [s["slot"] for s in info["standby"]] == [1], info
@@ -172,36 +171,22 @@ async def test_start_gw_card_does_not_call_a_live_gateway_dead(services, slots, 
         "карточка по ссылке объявила неизмеренный пинг отказом шлюза"
 
 
-async def test_start_gw_without_an_active_menu_sends_the_card(services, slots, fake_bot):
-    _, pi, pi2 = slots
-    _slot1(services, pi)
-    msg = _amsg(fake_bot, "/start gw-1")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-1"))
-    sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert sent and "NASPi</b> — " in sent[-1].split("\n")[0] and "📡 <code>awglink:443</code>" in sent[-1], sent
-
-
 async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_bot):
     """Слот сняли, а старая шапка со ссылкой осталась в чате: клик не роняет
-    апдейт — свой экран «слот снят» с «Назад» в раздел маршрутизации (не
-    «профиль не найден» с кнопками потребления), команда убрана."""
+    апдейт — свой экран «слот снят» (не «профиль не найден» с кнопками
+    потребления), команда убрана; и для номера вне слотов, и для «gw-0»
+    поверх уже показанного экрана."""
     _, pi, pi2 = slots
     _slot1(services, pi)
-    msgs = []
     for payload in ("gw-9", "gw-0"):
         # первый экран уходит новым сообщением и становится активным меню —
         # второй встаёт на его место правкой; смотрим, что показано последним
         fake_bot.records.clear()
         msg = _amsg(fake_bot, f"/start {payload}")
         await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
-        msgs.append(msg)
         assert msg.deleted, payload
         shown = [r[2] for r in fake_bot.records if r[0] in ("answer", "edit_message_text")]
         assert shown and shown[-1] == "🛰 Такого шлюза больше нет — слот снят", (payload, shown)
-    # у первого показа (сообщением) видна клавиатура
-    markup = next(s[2] for s in msgs[0].sent if s[0] == "answer")
-    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert datas == [SetCB(sec="rt").pack()], datas
 
 
 async def test_start_gw_with_garbage_is_a_plain_start(services, slots, fake_bot):
@@ -248,15 +233,6 @@ async def _deeplink(services, fake_bot, slot=2):
 def _cb_in(fake_bot, chat_id=ADMIN):
     nav = FakeMessage(chat_id=chat_id, user_id=ADMIN, bot=fake_bot)
     return FakeCallback(message=nav, user_id=ADMIN, bot=fake_bot), nav
-
-
-async def test_start_gw_card_back_leads_to_the_main_screen(services, slots, fake_bot):
-    """Человек кликнул имя шлюза в шапке главного экрана: «Назад» с карточки
-    должно вернуть его туда же. Уводить в список шлюзов, где он не был, —
-    заблудиться на два экрана вглубь настроек."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    assert _back(await _deeplink(services, fake_bot)) == HOME, "«Назад» с карточки по ссылке ведёт не на главную"
 
 
 async def test_start_gw_card_keeps_the_home_exit_after_ping(services, slots, fake_bot):
@@ -372,16 +348,6 @@ async def test_start_gw_single_slot_card_also_goes_home(services, slots, fake_bo
     _, pi, _ = slots
     _slot1(services, pi)
     assert _back(await _deeplink(services, fake_bot, 1)) == HOME
-
-
-def test_card_keyboard_back_targets():
-    """Сама клавиатура: back_main главнее списка, без него — как раньше."""
-    from awgbot.bot import keyboards as kb
-    gw = types.SimpleNamespace(id=2, device_id=0, preferred=0, lan_mode=0, label="")
-    st = {"gateway": gw, "states": [{}, {}], "active": False, "preferred": False}
-    assert _back(kb.gateway_card(st, back_to_list=True, back_main=True)) == HOME
-    assert _back(kb.gateway_card(st, back_to_list=True)) == LIST
-    assert _back(kb.gateway_card(st, back_to_list=False)) == SetCB(sec="rt").pack()
 
 
 # ── getMe сразу после ввода токена ───────────────────────────────────────────
@@ -590,27 +556,6 @@ async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots
 
 
 # ── кнопки «Токен бота шлюза» больше нет ─────────────────────────────────────
-
-async def test_no_token_button_in_the_card_or_under_the_files(services, slots, fake_bot):
-    """Токен задаётся один раз при настройке. Экрана перед выпуском файла
-    больше нет — файл выпускается из карточки слота; ни в карточке, ни под
-    обоими файлами кнопки токена нет — там только «⬅️ В меню»."""
-    from awgbot.bot import keyboards as kbs
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    for slot in (1, 2):
-        cb, nav = _acb(fake_bot)
-        await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
-        markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
-        datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-        labels = [b.text for row in markup.inline_keyboard for b in row]
-        assert GwSlotCB(action="token", slot=slot).pack() not in datas, (slot, datas)
-        assert not [t for t in labels if "Токен" in t], (slot, labels)
-    for slot in (0, 1, 2):
-        mk = kbs.bundle_menu_kb(slot)
-        labels = [b.text for row in mk.inline_keyboard for b in row]
-        assert labels == ["🛰 В карточку", "⬅️ На главную"], (slot, labels)
-
 
 def _all_routers():
     from awgbot.bot import paging

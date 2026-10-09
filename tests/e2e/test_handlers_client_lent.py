@@ -1,10 +1,14 @@
 """E2E: переданные устройства с точки зрения КЛИЕНТА:
 владелец видит переданное с пометкой и может только переименовать/удалить;
 клиент-держатель видит чужое после своих, управляет им как держатель;
-блокировка — с подтверждением."""
+блокировка — с подтверждением.
+
+Карточки, списки и подтверждения этих веток — в эталоне
+tests/screens/client.txt; здесь — БД, уведомления второй стороне и
+состояния, которых в эталоне нет (лимит профиля, РФ-байты).
+"""
 import pytest
 
-from awgbot.bot import texts
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB
 from awgbot.core.blocks import DeviceBlock
@@ -18,8 +22,11 @@ def _cb(bot, uid):
     return FakeCallback(message=nav, user_id=uid, bot=bot), nav
 
 
-async def test_owner_sees_lent_device_with_holder_and_limited_buttons(services, fake_bot,
-                                                                       make_active_client):
+async def test_owner_card_of_lent_device_shows_profile_traffic_limit(services, fake_bot,
+                                                                     make_active_client):
+    """У профиля с лимитом трафика карточка переданного показывает расход
+    против лимита профиля: держатель тратит трафик владельца, и владелец
+    должен это видеть."""
     owner = make_active_client(tg_id=7100, name="Вася", device_limit=3, traffic_limit=100 * 1024 ** 3)
     dc = services.add_device(owner.id, "Ноут")
     res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=97100,
@@ -27,27 +34,16 @@ async def test_owner_sees_lent_device_with_holder_and_limited_buttons(services, 
     assert res.ok
     cb, nav = _cb(fake_bot, 7100)
     await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), owner, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.splitlines()[0].endswith('· управляется профилем <a href="tg://user?id=97100">Артём</a>')
+    text, _ = last_screen(nav)
     assert text.splitlines()[1] == "Не подключался · 📊 0 из 100 ГБ (лимит твоего профиля)", text
-    assert labels == ["✏️ Имя", "✏️ Лимит", "🗑 Удалить", "⬅️ Назад"], \
-        "у переданного владельцу — только имя, лимит и удаление"
-    cb, nav = _cb(fake_bot, 7100)
-    await ch.menu_devices(cb, owner, services)
-    _, labels = last_screen(nav)
-    assert labels[0] == "⚪ Ноут [Артём]", labels
 
 
-async def test_owner_delete_of_lent_device_warns_and_notifies_holder(services, fake_bot,
-                                                                     make_active_client):
+async def test_owner_delete_of_lent_device_notifies_holder(services, fake_bot, make_active_client):
+    """Владелец удалил переданное — держатель узнаёт, что доступ пропал, а
+    его гостевой профиль остаётся (иначе он потеряет и остальные устройства)."""
     owner = make_active_client(tg_id=7101, name="Вася", device_limit=3)
     dc = services.add_device(owner.id, "Ноут")
     services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=97101, tg_name="Артём")
-    cb, nav = _cb(fake_bot, 7101)
-    await ch.device_delete_ask(cb, DelDeviceCB(device_id=dc.device_id, stage="ask"), owner, services)
-    text, _ = last_screen(nav)
-    assert text == ('🗑 Удалить Ноут?\nУ профиля <a href="tg://user?id=97101">Артём</a> пропадёт доступ; '
-                    "новое устройство он получит только с новым приглашением от тебя")
     cb, nav = _cb(fake_bot, 7101)
     fake_bot.records.clear()
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
@@ -58,30 +54,15 @@ async def test_owner_delete_of_lent_device_warns_and_notifies_holder(services, f
     assert services.db.get_client_by_tg(97101) is not None, "профиль гостя не терминируется"
 
 
-async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, make_active_client):
+async def test_client_holder_delete_of_foreign_device_notifies_owner(services, fake_bot,
+                                                                     make_active_client):
+    """Клиент-держатель удалил чужое: владельцу — уведомление с его новым
+    счётом устройств, профиль держателя цел."""
     owner = make_active_client(tg_id=7102, name="Вася", device_limit=3)
     holder = make_active_client(tg_id=7103, name="Петя", device_limit=2)
     services.add_device(holder.id, "Своё")
     dc = services.add_device(owner.id, "Чужое")
     assert services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=7103).ok
-    # главный экран: «(+1 от профиля Вася)»
-    text, _ = await ch.main_payload(services, holder)
-    assert text.splitlines()[-1] == '📱 Устройств 1 из 2 (+1 от профиля <a href="tg://user?id=7102">Вася</a>)'
-    cb, nav = _cb(fake_bot, 7103)
-    await ch.menu_devices(cb, holder, services)
-    text, labels = last_screen(nav)
-    assert text == '📱 <b>Устройства</b> · 1 из 2 (+1 от профиля <a href="tg://user?id=7102">Вася</a>)', text
-    assert labels[:2] == ["⚪ Своё", "⚪ Чужое · от профиля Вася"], labels
-    # карточка держателя: выдача, блок, удаление — без имени и лимита
-    cb, nav = _cb(fake_bot, 7103)
-    await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), holder, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.splitlines()[0].endswith('· от профиля <a href="tg://user?id=7102">Вася</a>'), text
-    assert labels == ["🔗 Ссылка", "🔳 QR", "📄 Файл", "🛑 Блок", "🗑 Удалить", "⬅️ Назад"], labels
-    # удаление держателем: строгий текст, владельцу — уведомление, список следом
-    cb, nav = _cb(fake_bot, 7103)
-    await ch.device_delete_ask(cb, DelDeviceCB(device_id=dc.device_id, stage="ask"), holder, services)
-    assert last_screen(nav)[0] == texts.device_delete_ask(services.db.get_device(dc.device_id), held=True)
     cb, nav = _cb(fake_bot, 7103)
     fake_bot.records.clear()
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
@@ -89,43 +70,32 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     owner_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 7102]
     assert owner_msgs and "удалено по его запросу" in owner_msgs[0] and "0 из 3" in owner_msgs[0]
     assert services.db.get_client(holder.id) is not None
-    edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1].endswith("\n\n📱 <b>Устройства</b> · 1 из 2"), "итог — первой строкой списка устройств"
+    assert services.db.get_device(dc.device_id) is None, "чужое устройство осталось в БД"
 
 
 async def test_client_block_own_device_needs_confirmation(services, fake_bot, make_active_client):
+    """Вопрос о блокировке ничего не блокирует; блокирует только «🛑
+    Заблокировать» — иначе случайное нажатие отрезает человека от VPN."""
     cl = make_active_client(tg_id=7104)
     dc = services.add_device(cl.id, "Тел")
     cb, nav = _cb(fake_bot, 7104)
     await ch.client_block_ask(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), cl, services)
-    text, labels = last_screen(nav)
-    assert text == texts.block_device_ask("Тел") and labels == ["⬅️ Отмена", "🛑 Заблокировать"]
     assert not int(services.db.get_device(dc.device_id).block_reason)
     cb, nav = _cb(fake_bot, 7104)
     await ch.client_block_device(cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind="user"),
                                  cl, services)
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER)
-    # переданное своё владелец не блокирует — управляет держатель
-    other = services.add_device(cl.id, "Отдано")
-    services.activate_friend(services.make_device_friendly(other.device_id), tg_id=97104)
-    cb, nav = _cb(fake_bot, 7104)
-    await ch.client_block_ask(cb, BlockCB(target="dev", action="menu_block", ref=other.device_id), cl, services)
-    assert cb.answers[-1][1] is True
 
 
 async def test_created_for_friend_finisher(services, fake_bot, make_active_client):
-    """Ввод «✏️ Другое» при создании другу: «0» — по лимиту профиля; дальше —
-    приглашение и пояснение «☝️ Отправь приглашение другу…» с «⬅️ В меню»."""
-    from tests.conftest import FakeState
+    """Ввод «✏️ Другое» при создании другу: «0» — по лимиту профиля, без
+    своего лимита; устройство сразу ждёт друга."""
     cl = make_active_client(tg_id=7105, device_limit=3, traffic_limit=50 * 1024 ** 3)
     st = FakeState(); await st.update_data(dev_name="Другу", for_friend=True)
     typed = FakeMessage(text="0", chat_id=7105, user_id=7105, bot=fake_bot)
     await ch.device_add_traffic(typed, cl, services, st)
     dev = services.db.list_devices(cl.id)[0]
     assert dev.name == "Другу" and dev.traffic_limit == 0 and dev.friend_status == "pending"
-    fin = [s for s in typed.sent if s[0] == "answer"][-1]
-    assert fin[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство «Другу»"
-    assert [b.text for r in fin[2].inline_keyboard for b in r] == ["⬅️ В меню"]
 
 
 async def test_holder_and_guest_cards_do_not_show_rf(services, fake_bot, make_active_client):

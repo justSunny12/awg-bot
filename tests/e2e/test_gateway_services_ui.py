@@ -2,7 +2,10 @@
 строка в карточке слота основного бота — «🗂 SMB: свои — N, извне — M»
 (нулевая часть не выводится), а состояние на шлюзе — строкой сразу под ней;
 строка про SMB в диалоге «↔️ Связь подсетей»; у агента
-— одна строка SMB в панели и на экране «🔀 VPN-транзит». Новых кнопок нет.
+— одна строка SMB в панели и на экране «🔀 VPN-транзит». Раскладка экранов,
+диалог включения связи подсетей и строки SMB агента в обычных состояниях —
+в эталонах экранов (tests/screens/admin.txt, gateway.txt); здесь — судьба
+записей в карточке слота, выключение, счёт из ленты соседей и редкие ветки.
 
 Цена ошибки: имя с малины на экране ВПС — чужой текст в разметке сервера;
 неэкранированная ошибка шлюза ломает всю карточку (Telegram отвергает
@@ -226,17 +229,10 @@ def test_smb_line_does_not_print_zeros(own, peer, line):
         line + (" · 🟢 доступны" if peer else ""))
 
 
-async def test_the_peer_access_dialog_mentions_finder_only_when_turning_on(services, peers, fake_bot):
+async def test_turning_peer_access_off_does_not_mention_finder(services, peers, fake_bot):
+    """При выключении про Finder говорить нечего — диалог говорит, что
+    подсети перестанут видеть друг друга сразу."""
     cb, nav = _acb(fake_bot)
-    peers["app.routing.peer_nets.enabled"] = False
-    await sh.gw_slot_peer_ask(cb, services)
-    text = _screen(nav)[0]
-    smb = ("SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
-           "«Сеть» → awg.internal")
-    assert smb in text.split("\n"), text
-    assert text.index(smb) < text.index("После включения перевыпусти"), "про SMB — до совета о перевыпуске"
-    assert "подсети шлюзов живут в конфиге линка, а его везёт только файл" in text, text
-    assert "avahi-daemon" in text.split("\n")[-1], "условие avahi — под «подробнее»"
     peers["app.routing.peer_nets.enabled"] = True
     await sh.gw_slot_peer_ask(cb, services)
     off = _screen(nav)[0]
@@ -299,30 +295,22 @@ def _lines(text: str) -> list[str]:
 
 
 async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot, monkeypatch):
-    """Панель и экран «🔀 VPN-транзит» — одной строкой «🗂 SMB» с числами:
-    своих не нашлось — нулевая часть не выводится («свои — 0» читается как
-    поломка); имён и avahi здесь нет (они — в здоровье): имя с чужой малины
-    не попадает в разметку вовсе."""
+    """Панель и экран «🔀 VPN-транзит» считают SMB из ленты соседей: своих не
+    нашлось — нулевая часть не выводится («свои — 0» читается как поломка);
+    имён здесь нет (они — в здоровье): имя с чужой малины не попадает в
+    разметку вовсе."""
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
-    panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
+    panel, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
     line = "🗂 SMB: извне — 5"
-    # на панели — сразу под строкой списков, на экране — под своими списками
-    p = _lines(panel)
-    assert p[p.index(line) - 1].startswith("📋 Списки: "), panel
-    lan_lines = _lines(lan)
-    assert lan_lines[lan_lines.index(line) - 1].startswith("Свои списки: "), lan
     for t in (panel, lan):
+        assert line in _lines(t), f"счёт из ленты соседей не дошёл до экрана: {t}"
         assert "naspi5" not in t and "&lt;b&gt;" not in t and "<b>x</b>" not in t, f"имена соседей на экране: {t}"
-        assert "avahi" not in t, f"про avahi — только в здоровье: {t}"
-    assert "Finder" not in lan, "абзаца про Finder на экране нет"
-    assert lan_labels == ["➕ В туннель", "➕ Напрямую", "➖ 🌍 a.com", "❓ Роутер", "⬅️ В меню"], lan_labels
-    assert "🔀 VPN-транзит" in panel_labels
 
 
 async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_bot, monkeypatch):
-    """Экран «🔀 VPN-транзит»: состояние, интерфейс с адресом и трафиком одной
-    строкой, DNS, списки со временем обновления, свои списки, SMB — подряд,
-    без пустых строк; объяснение — под «подробнее» последним."""
+    """Экран «🔀 VPN-транзит» в состоянии, которого нет в эталоне: аплинк не
+    назван — «через аплинк», списки ещё не обновлялись, своих «напрямую» нет —
+    нулевая часть не выводится; строки подряд, без пустых."""
     _peer(gw_svc, ["naspi5"])
     _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
     head = ("🔀 <b>VPN-транзит</b> 🟢 работает\n"
@@ -332,11 +320,6 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
             "Свои списки: 1 в туннель\n"
             "🗂 SMB: извне — 1\n")
     assert lan.startswith(head), lan
-    assert lan.endswith("</blockquote>") and lan.count("<blockquote expandable>") == 1, lan
-    about = lan.split("<blockquote expandable>", 1)[1]
-    assert "свои списки общие для всех шлюзов" in about and \
-        "правила «напрямую» приоритетнее правил «в туннель»" in about, about
-    assert "Личные" not in lan, "«Личные» → «Свои» во всех строках"
 
 
 async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
@@ -353,17 +336,15 @@ async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_sv
 
 
 @pytest.mark.parametrize("svc, line", [
-    ({"own": ["x"], "peer": ["a", "b"], "ever": True}, "🗂 SMB: свои — 1, извне — 2"),
     ({"own": ["x", "y"], "peer": [], "ever": True}, "🗂 SMB: свои — 2"),
     ({"own": [], "peer": ["a"], "ever": True}, "🗂 SMB: извне — 1"),
     ({"own": [], "peer": [], "ever": True}, "🗂 SMB: не найдены"),
-    ({"own": [], "peer": [], "ever": False}, "🗂 SMB: обновляю…"),
     ({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}, "🗂 SMB: извне — 1"),
-], ids=["both", "own-only", "peer-only", "none", "not-yet", "no-browse"])
+], ids=["own-only", "peer-only", "none", "no-browse"])
 def test_smb_line_does_not_print_zeros_on_the_agent_either(svc, line):
     """Как в карточке слота: нулевая часть не выводится, обе нулевые — «не
-    найдены», сервер ещё ничего не присылал — «обновляю…»; avahi-browse нет —
-    своя подсеть не посчитана и в строку не идёт."""
+    найдены»; avahi-browse нет — своя подсеть не посчитана и в строку не
+    идёт."""
     from awgbot.bot.texts.gateway import smb_line
     assert smb_line(svc) == line
 

@@ -5,8 +5,12 @@
 же меняется; переехавшие профили вперемешку с отстающими — отстающих не
 видно; имя переехавшего ссылкой ведёт на пустой по смыслу экран; дата
 последнего коннекта не того пира (старого вместо двойника) — админ пишет
-человеку «ты не переехал», хотя тот давно на новом интерфейсе; «⬅️ Назад»
-с экрана профиля выбрасывает на главную вместо обзора.
+человеку «ты не переехал», хотя тот давно на новом интерфейсе.
+
+Кнопки обоих экранов и переход «⬅️ Назад» в обзор сверяет эталон
+(adm.migration, adm.link.migration, adm.link.migration_cl); здесь — ветки,
+которых в снимках нет: изменившиеся порт и ядро, порядок отстающих,
+устройства без коннекта, устаревшая ссылка.
 """
 import datetime
 
@@ -14,13 +18,12 @@ import pytest
 from aiogram.filters import CommandObject
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import Menu
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers.admin import panel
 from awgbot.core import config
 from awgbot.infra import awg, awglock
 from awgbot.util import timeutil
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -90,9 +93,9 @@ def world(services, mig, make_active_client):
 async def test_overview_lists_laggards_first_and_links_only_them(services, fake_bot, world, monkeypatch):
     """Шапка — только изменившиеся параметры; профили по убыванию оставшегося
     (Ксюше осталось 2, Пете 1), переехавший целиком — внизу, 🟢 и без ссылки;
-    «⬅️ В меню»; команда /start из чата убрана."""
+    команда /start из чата убрана."""
     _params(monkeypatch)
-    msg, text, buttons = await _open(services, fake_bot, "migration")
+    msg, text, _ = await _open(services, fake_bot, "migration")
     ksu, petya = world["ksu"], world["petya"]
     assert text.split("\n\n") == [
         "🚚 <b>Переезд</b> · порт: 51820 → 51821 · подсеть: <code>10.8.1</code> → <code>10.9.1</code> · awg: gen1 → gen2",
@@ -100,7 +103,6 @@ async def test_overview_lists_laggards_first_and_links_only_them(services, fake_
         f"🔴 {_link(f'migration-{petya.id}', 'Петя')}: 0/1 устройств",
         "🟢 Коля: 2/2 устройств",
     ], text
-    assert buttons == [("⬅️ В меню", Menu(action="main").pack())], buttons
     assert msg.deleted, "команда /start migration осталась в чате"
 
 
@@ -125,13 +127,13 @@ def test_overview_head_without_known_changes_and_without_profiles():
 
 async def test_profile_screen_shows_each_device_with_the_last_connect(services, fake_bot, world, monkeypatch):
     """«🚚 <b>Переезд:</b> [Ксюша], 1/3 устройств»; переехавшее — 🟢 с коннектом
-    двойника, остальные — 🔴 с коннектом старого пира; «⬅️ Назад» — в обзор."""
+    двойника, остальные — 🔴 с коннектом старого пира."""
     _params(monkeypatch)
-    ksu, devs, now = world["ksu"], world["devs"], world["now"]
+    ksu, now = world["ksu"], world["now"]
 
     def seen(ts):
         return timeutil.fmt_dt_ui(datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc))
-    msg, text, buttons = await _open(services, fake_bot, f"migration-{ksu.id}")
+    msg, text, _ = await _open(services, fake_bot, f"migration-{ksu.id}")
     head, body = text.split("\n\n")
     assert head == f"🚚 <b>Переезд:</b> {_link(f'cl-{ksu.id}', 'Ксюша')}, 1/3 устройств", text
     lines = body.split("\n")
@@ -141,7 +143,6 @@ async def test_profile_screen_shows_each_device_with_the_last_connect(services, 
         f"🔴 iPad — последний коннект: {seen(now - 3600)}",
     ]), text
     assert len(lines) == 3, "двойники задвоили список устройств"
-    assert devs and buttons == [("⬅️ Назад", Menu(action="migration").pack())], buttons
     assert msg.deleted
 
 
@@ -151,17 +152,6 @@ def test_profile_screen_device_without_any_connect_says_so(services, make_active
     dev = services.db.get_device(services.add_device(c.id, "iPad").device_id)
     text = texts.migration_client_text(c, [(dev, False, 0)])
     assert text == "🚚 <b>Переезд:</b> Ксюша, 0/1 устройств\n\n🔴 iPad — последний коннект: не подключалось", text
-
-
-async def test_back_from_the_profile_leads_to_the_overview(services, fake_bot, world, monkeypatch):
-    """«⬅️ Назад» с экрана профиля — обзор на месте того же сообщения."""
-    _params(monkeypatch)
-    services.bot_username = BOT
-    nav = FakeMessage(chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    cb = FakeCallback(message=nav, user_id=ADMIN, bot=fake_bot)
-    await panel.admin_migration_overview(cb, services)
-    shown = [s for s in nav.sent if s[0] in ("edit_text", "answer")]
-    assert shown and shown[-1][1].startswith("🚚 <b>Переезд</b> · порт: 51820 → 51821"), shown
 
 
 async def test_stale_profile_link_falls_back_to_the_home(services, fake_bot, world):

@@ -1,8 +1,10 @@
 """E2E: условная маршрутизация в интерфейсе — раздел клиента, тумблеры,
 личный список адресов, админское разрешение.
 
-Инфраструктура подменена (fake_routing), поэтому проверяем поведение диалога:
-что видит пользователь и что реально меняется в БД.
+Инфраструктура подменена (fake_routing), поэтому проверяем, что реально
+меняется в БД, наборах и диалоге. Экраны раздела, «Шлюзов», главных и
+карточек — в эталонах tests/screens/*.txt (cl.rf.*, adm.rf.*, adm.rt.*,
+gst.rf.*); здесь — только ветки, которых в эталонах нет.
 """
 import pytest
 
@@ -34,29 +36,7 @@ def _allowed_client(services, make_active_client, tg_id):
     return services.db.get_client(c.id)
 
 
-# ── видимость: без разрешения фичи нет вовсе ─────────────────────────────────
-
-async def test_panel_hidden_without_permission(services, make_active_client, fake_bot):
-    """Пока админ не разрешил, фича невидима — иначе каждый первый пойдёт
-    спрашивать, что это за пункт и почему не работает."""
-    c = make_active_client(tg_id=70)
-    cb, nav = _cb(fake_bot, 70)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
-    assert cb.answers and cb.answers[0][1] is True         # show_alert «недоступно»
-    assert not any(s[0] == "edit_text" for s in nav.sent)
-
-
-async def test_panel_opens_when_allowed(services, make_active_client, fake_bot):
-    c = _allowed_client(services, make_active_client, 71)
-    services.add_device(c.id, "Телефон")                  # у разрешённого — сразу в режиме
-    cb, nav = _cb(fake_bot, 71)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на всех"), text
-    # переключатель устройства — прямо на экране раздела, без промежуточного
-    assert labels[0] == "✅ Телефон", labels
-    assert labels[1:] == ["✅ Выбрать все", "➕ Сайт", "📋 Сайты", "⬅️ Назад"], labels
-
+# ── отзыв разрешения: старые кнопки не работают ──────────────────────────────
 
 async def test_revoked_permission_blocks_stale_button(
         services, make_active_client, fake_bot):
@@ -91,9 +71,9 @@ async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake
 # ── личный список ────────────────────────────────────────────────────────────
 
 async def test_add_domains_reports_each_line(services, make_active_client, fake_bot):
-    """Итог пачки — первой строкой экрана «📋 Сайты»: что взято, что нет и
-    почему. Человек вставляет списком; молча взять половину — он не узнает,
-    какой сайт так и открывается с зарубежного адреса."""
+    """Пачка списком: ссылки сводятся к домену, мусорная строка не мешает
+    остальным — в список попадает ровно то, что годится. Взять половину или
+    сохранить ссылку целиком — сайт так и откроется с зарубежного адреса."""
     c = _allowed_client(services, make_active_client, 77)
     st = FakeState()
     cb, nav = _cb(fake_bot, 77)
@@ -101,12 +81,6 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
     msg = FakeMessage(text="https://www.bank.com/x\nсбер.мусор_\nnetflix.com",
                       chat_id=77, user_id=77, bot=fake_bot)
     await routing_h.routing_add_apply(msg, c, services, st)
-    out = [s for s in msg.sent if s[0] == "answer"]
-    assert len(out) == 1, "итог — не отдельным сообщением, а первой строкой экрана"
-    first, rest = out[0][1].split("\n\n", 1)
-    assert first.startswith("✅ Добавлено: <code>bank.com</code>, <code>netflix.com</code> · ⚠️ Не добавлено: <code>сбер.мусор_</code> — "), first
-    assert first.endswith("применится в теч. минуты, не сработало — переподключись"), first
-    assert rest.startswith("📋 <b>Свои сайты</b> · 2"), "после ввода — экран «Сайты», откуда пришли"
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
 
 
@@ -123,25 +97,6 @@ async def test_delete_by_stale_index_does_not_remove_wrong_domain(
     assert cb.answers[0][1] is True
 
 
-async def test_delete_answers_with_a_popup_and_redraws_sites_in_place(
-        services, make_active_client, fake_bot):
-    """«➖» — сразу, без подтверждения: итог всплывашкой, список «Сайты»
-    перерисован на месте. Сообщение-след на каждый убранный адрес засоряло
-    бы чат."""
-    c = _allowed_client(services, make_active_client, 78)
-    services.set_routing_all(c.id, True)
-    services.routing_add_domains(c.id, "megafon.ru\nozon.ru")
-    c = services.db.get_client(c.id)
-    cb, nav = _cb(fake_bot, 78)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0,
-                                                 tag=kb.entry_tag("megafon.ru")), c, services)
-    assert cb.answers == [("megafon.ru убран · применится в теч. минуты", False)], cb.answers
-    assert not any(s[0] == "answer" for s in nav.sent), "след в чате вместо всплывашки"
-    text, labels = last_screen(nav)
-    assert text.startswith("📋 <b>Свои сайты</b> · 1") and labels[0] == "➖ ozon.ru", (text, labels)
-    assert "➖ megafon.ru" not in labels
-
-
 async def test_delete_removes_selected_domain(services, make_active_client, fake_bot):
     c = _allowed_client(services, make_active_client, 79)
     services.routing_add_domains(c.id, "a.com b.com")
@@ -156,7 +111,6 @@ async def test_clear_confirm_then_apply(services, make_active_client, fake_bot):
     services.routing_add_domains(c.id, "a.com b.com")
     cb, nav = _cb(fake_bot, 80)
     await routing_h.routing_clear_ask(cb, RoutingCB(action="clear", ref=c.id), c, services)
-    assert any("Удалить" in str(s[1]) for s in nav.sent if s[0] == "edit_text")
     assert services.routing_domains(c.id) == ["a.com", "b.com"]   # ещё не тронуто
 
     cb2, _ = _cb(fake_bot, 80)
@@ -164,50 +118,7 @@ async def test_clear_confirm_then_apply(services, make_active_client, fake_bot):
     assert services.routing_domains(c.id) == []
 
 
-# ── карточка админского профиля ──────────────────────────────────────────────
-
-def test_profile_cards_have_no_routing_controls(monkeypatch):
-    """Управление РФ-доступом живёт в настройках, а не в карточках профилей:
-    это настройка сервиса, а не свойство клиента. В карточках его быть не должно
-    ни у обычного профиля, ни у админского."""
-    from awgbot.core import config, models
-    from awgbot.bot import keyboards as kb
-
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    client = models.Client(id=5, tg_id=1, name="Профиль", device_limit=0,
-                           block_reason=0, is_service=0, activation_status="active",
-                           invite_code=None, created_at="2026-01-01")
-    for _ in (True, False):
-        markup = kb.admin_client_actions(client, [])
-        labels = [b.text for row in markup.inline_keyboard for b in row]
-        assert not any("РФ-доступ" in t for t in labels), \
-            "кнопка осталась в карточке профиля"
-
-
-def test_settings_screen_lists_clients_only_when_enabled():
-    """Список профилей показываем только при включённой функции: раздавать
-    разрешения на выключённое — приглашение к «я же разрешил, почему не работает»."""
-    from awgbot.core import models
-    from awgbot.bot import keyboards as kb
-
-    clients = [models.Client(id=i, tg_id=100 + i, name=f"К{i}", device_limit=0,
-                             block_reason=0, is_service=0, activation_status="active",
-                             invite_code=None, created_at="2026-01-01",
-                             routing_allowed=i % 2)
-               for i in (1, 2)]
-
-    # «Шлюзы» при выключенной функции — только «Включить» и выход
-    off = [b.text for row in kb.gateways_kb((), enabled=False).inline_keyboard for b in row]
-    assert off == ["✅ Включить", "⬅️ В меню"], off
-
-    # при включённой — «👥 Кому доступен», профили в НЁМ
-    on = [b.text for row in kb.gateways_kb(()).inline_keyboard for b in row]
-    assert "👥 Кому доступен" in on
-    assert not any("К1" in t or "К2" in t for t in on), "профили не на экране «Шлюзы»"
-    users = [b.text for row in kb.settings_routing_users(clients).inline_keyboard
-             for b in row]
-    assert "✅ К1" in users and "☑️ К2" in users    # кружок = состояние разрешения
-
+# ── разрешение и профиль админа ──────────────────────────────────────────────
 
 async def test_grant_from_settings_screen(services, make_active_client, fake_bot):
     """Выдача разрешения из настроек — тот же верхний слой флага."""
@@ -259,18 +170,6 @@ async def test_admin_can_enable_feature_for_himself(services, make_active_client
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {c.id: [dc.address]}
 
 
-async def test_admin_panel_opens_without_client_in_context(services, make_active_client,
-                                                           fake_bot):
-    """Раздел РФ-доступа открывается админу, хотя client=None."""
-    from awgbot.core import config
-    make_active_client(tg_id=config.ADMIN_ID)
-    cb, nav = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=0), None, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 <b>РФ-доступ") and "➕ Сайт" in labels and "📋 Сайты" in labels, (text, labels)
-    assert nav.sent[-1][2].inline_keyboard[-1][0].callback_data == "m:main"
-
-
 def test_status_line_appears_for_everyone_granted(services, make_active_client):
     """Строка о РФ-шлюзе — в общем статусном блоке, рядом со статусом сервера.
 
@@ -278,23 +177,16 @@ def test_status_line_appears_for_everyone_granted(services, make_active_client):
     человека выключен: она отвечает на вопрос «а работает ли оно вообще»,
     который иначе задаётся заходом в раздел, и полезнее всего как раз перед
     включением. Не разрешил — строки нет вовсе: рассказывать про механизм тому,
-    кому он недоступен, значит шуметь.
+    кому он недоступен, значит шуметь. Сами строки главной — эталоны
+    cl.main.one, cl.main.rf, cl.main.rf_off, cl.main.rf_down.
     """
-    from awgbot.bot import texts
     c = make_active_client(tg_id=95)
     assert services.routing_health_for_client(c) is None
-    assert "РФ-доступ" not in texts.greeting_client(c, True, (1, 3), None)
 
     services.set_routing_allowed(c.id, True)
     c = services.db.get_client(c.id)
     ok = services.routing_health_for_client(c)
     assert ok is not None, "разрешено — строка обязана быть, даже при выключенном режиме"
-    out = texts.greeting_client(c, True, (1, 3), ok)
-    assert out.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ выкл", out
-    on = texts.greeting_client(c, True, (1, 3), True, routing_on=True)
-    assert on.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🟢", on
-    broken = texts.greeting_client(c, True, (1, 3), False, routing_on=True)
-    assert broken.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🔴 не работает", broken
 
 
 async def test_admin_toggles_client_master(services, make_active_client, fake_bot):
@@ -319,68 +211,7 @@ async def test_admin_master_refused_without_grant(services, make_active_client, 
     assert services.routing_profile_on(c.id) is False
 
 
-def test_client_menu_button_position_and_state(monkeypatch):
-    """Кнопка «🇷🇺 РФ-доступ» — в одном ряду с «💳 Подписка», слева; без
-    кружка: состояние — строкой на главной, кнопка только ведёт в раздел.
-    Не выдан — кнопки нет, «Подписка» одна в ряду."""
-    from awgbot.bot import keyboards as kb
-    rows = [[b.text for b in row] for row in kb.client_main(
-        has_devices=True, routing_visible=True, client_id=1).inline_keyboard]
-    assert ["🇷🇺 РФ-доступ", "💳 Подписка"] in rows, rows
-    off = [[b.text for b in row] for row in kb.client_main(
-        has_devices=True, routing_visible=False, client_id=1).inline_keyboard]
-    assert ["💳 Подписка", "❓ Как подключить"] in off and not any("РФ" in t for r in off for t in r), off
-
-
-def test_admin_card_button_above_block(monkeypatch):
-    """В карточке профиля «🇷🇺 РФ-доступ» стоит в одном ряду с «🛑 Блок» и
-    слева от него: это настройка, а не карательное действие. Без кружка —
-    состояние режима на экране раздела и строкой карточки."""
-    from awgbot.core import models
-    from awgbot.bot import keyboards as kb
-    c = models.Client(id=7, tg_id=500, name="Клиент", device_limit=1, block_reason=0,
-                      is_service=0, activation_status="active", invite_code=None,
-                      created_at="2026-01-01", routing_allowed=1)
-    rows = [[b.text for b in row] for row in kb.admin_client_actions(
-        c, routing_visible=True).inline_keyboard]
-    assert ["🇷🇺 РФ-доступ", "🛑 Блок"] in rows, rows
-    hidden = [b.text for row in kb.admin_client_actions(c, routing_visible=False).inline_keyboard
-              for b in row]
-    assert not any("РФ" in t for t in hidden) and "🛑 Блок" in hidden, hidden
-
-
-# ── режим — свойство профиля, не устройства ──────────────────────────────────
-
-def test_device_card_has_no_routing_toggle(monkeypatch):
-    """В КАРТОЧКЕ устройства тумблера нет — и это не значит, что режим не
-    пер-девайсный.
-
-    Переключатели живут на отдельном экране (RoutingCB action=devs): там всё
-    состояние профиля видно разом и рядом лежит массовое действие. В карточке
-    они терялись бы среди выдачи конфигов, лимитов и блокировок, а охват
-    профиля не был бы виден нигде."""
-    from awgbot.core import config, models
-    from awgbot.bot import keyboards as kb
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    d = models.Device(id=1, client_id=7, name="Телефон", private_key="k",
-                      public_key="p", preshared_key="s", address="10.8.1.2",
-                      block_reason=0, created_at="2026-01-01")
-    labels = [b.text for row in kb.device_actions(
-        d, is_admin=False, back_target="m:devices").inline_keyboard for b in row]
-    assert not any("РФ" in t for t in labels), labels
-
-
-def test_admin_main_has_routing_under_devices(monkeypatch):
-    """У админа «🇷🇺 РФ-доступ» — в одном ряду с «📱 Мои устройства», без
-    кружка: он такой же пользователь VPN, и режим ему нужен там же, где
-    остальным. Не выдан — кнопки нет, «Мои устройства» одна в ряду."""
-    from awgbot.bot import keyboards as kb
-    rows = [[b.text for b in row] for row in kb.admin_main(
-        routing_visible=True, self_client_id=2).inline_keyboard]
-    assert rows[1] == ["📱 Мои устройства", "🇷🇺 РФ-доступ"], rows
-    off = [[b.text for b in row] for row in kb.admin_main().inline_keyboard]
-    assert off[1] == ["📱 Мои устройства"] and not any("РФ" in t for r in off for t in r), off
-
+# ── ввод адресов без контекста и после отзыва ────────────────────────────────
 
 async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(
         services, make_active_client, fake_bot):
@@ -414,40 +245,6 @@ async def test_revoked_permission_blocks_the_pending_input(
     await routing_h.routing_add_apply(msg, c, services, FakeState())
 
     assert services.routing_domains(c.id) == [], "домен принят после отзыва доступа"
-
-
-# ── переключатель режима в настройках ────────────────────────────────────────
-
-
-async def test_settings_section_is_always_shown_but_its_content_depends_on_provisioning(
-        services, fake_bot, monkeypatch):
-    """Раздел показывается ВСЕГДА: пока обвязка не развёрнута, он и есть место,
-    где её разворачивают. А вот содержимое разное — экран развёртывания, экран
-    «интерфейс задан, но линка нет» или обычные переключатели.
-    """
-    from awgbot.bot import keyboards as kb, sections, texts
-    from awgbot.bot.handlers import settings as sh
-    from awgbot.bot.roles import MAIN
-    from awgbot.core import config
-
-    # вход — «🛰 Шлюзы» на главной, всегда; в корне настроек его больше нет
-    from awgbot.bot.callbacks import SetCB
-    main = [b for row in kb.admin_main().inline_keyboard for b in row]
-    assert any(b.text == "🛰 Шлюзы" and b.callback_data == SetCB(sec="rt").pack() for b in main)
-    labels = [b.text for row in sections.root.keyboard(MAIN).inline_keyboard for b in row]
-    assert not any("РФ-доступ" in l for l in labels), labels
-
-    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
-    monkeypatch.setattr(services, "routing_provisioned", lambda: False)
-    text, markup = await sh._screen("rt", services)
-    assert text == texts.ROUTING_PROVISION_INTRO
-    assert any("Развернуть" in b.text for row in markup.inline_keyboard for b in row)
-
-    # Интерфейс уже вписан, но процесс ещё не перезапускался — честно говорим,
-    # что функция спит, а не предлагаем развернуть ещё раз поверх готового.
-    monkeypatch.setattr(services, "routing_provisioned", lambda: True)
-    text, _ = await sh._screen("rt", services)
-    assert text == texts.SETTINGS_ROUTING_ABSENT
 
 
 # ── пер-девайсные переключатели ──────────────────────────────────────────────
@@ -505,49 +302,6 @@ async def test_device_toggle_rejects_foreign_device(
     assert services.db.get_device(victim.device_id).routing_on == 1
 
 
-def test_devices_screen_bulk_button_follows_state():
-    """Массовый выбор одной кнопкой «Выбрать все»: ☑️, пока включены не все
-    (и частично — доводить набор до полного обычное действие); ✅, когда
-    включены все, — её нажатие снимает всё."""
-    from awgbot.core import models
-    from awgbot.bot import keyboards as kb
-
-    def _dev(i, on):
-        return models.Device(id=i, client_id=1, name=f"D{i}", private_key="k",
-                             public_key=f"p{i}", preshared_key="s",
-                             address=f"10.8.1.{i}", block_reason=0,
-                             routing_on=on, created_at="2026-01-01")
-
-    def bulk(devs):
-        on = sum(d.routing_on for d in devs)
-        mk = kb.routing_panel(1, devs, enabled=on, total=len(devs), back_target="m:main")
-        return [b.text for row in mk.inline_keyboard for b in row if "Выбрать все" in b.text]
-
-    assert bulk([_dev(1, 0), _dev(2, 0)]) == ["☑️ Выбрать все"]
-    assert bulk([_dev(1, 1), _dev(2, 0)]) == ["☑️ Выбрать все"]
-    assert bulk([_dev(1, 1), _dev(2, 1)]) == ["✅ Выбрать все"]
-
-
-def test_devices_screen_uses_checkmarks_not_status_dots():
-    """Список с отметками — это выбор, и читаться должен как выбор адресатов
-    объявления. Кружки _chk остаются там, где кнопка показывает СОСТОЯНИЕ
-    чего-то одного, а не отмеченность в списке."""
-    from awgbot.core import models
-    from awgbot.bot import keyboards as kb
-
-    def _dev(i, on):
-        return models.Device(id=i, client_id=1, name=f"D{i}", private_key="k",
-                             public_key=f"p{i}", preshared_key="s",
-                             address=f"10.8.1.{i}", block_reason=0,
-                             routing_on=on, created_at="2026-01-01")
-
-    labels = [b.text for row in kb.routing_panel(
-        1, [_dev(1, 1), _dev(2, 0)], enabled=1, total=2, back_target="m:main").inline_keyboard
-        for b in row]
-    assert "✅ D1" in labels and "☑️ D2" in labels
-    assert not any(x.startswith(("🟢", "🔴")) for x in labels), labels
-
-
 async def test_bulk_completes_partial_selection(services, make_active_client, fake_bot):
     """При частичном включении массовое действие ДОВОДИТ до полного, а не гасит.
 
@@ -568,31 +322,6 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
     await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
     assert services.routing_device_counts(c.id) == (0, 2)
     assert d2 is not None
-
-
-async def test_admin_panel_back_goes_to_main_not_own_card(services, make_active_client,
-                                                          fake_bot, monkeypatch):
-    """Из раздела РФ-доступа админ возвращается на главную, а не в свою карточку.
-
-    Профиль админа убран из списка профилей, вход в раздел — прямо с главной;
-    карточки как экрана в текущей навигации попросту нет.
-    """
-    from awgbot.core import config
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    admin = make_active_client(tg_id=config.ADMIN_ID)
-    other = _allowed_client(services, make_active_client, 131)
-
-    cb, nav = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=admin.id),
-                                  None, services, FakeState())
-    back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
-    assert back == "m:main", back
-
-    cb2, nav2 = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_panel(cb2, RoutingCB(action="panel", ref=other.id),
-                                  None, services, FakeState())
-    back2 = nav2.sent[-1][2].inline_keyboard[-1][0].callback_data
-    assert back2 == f"c:open:{other.id}", back2
 
 
 # ── раздел маршрутизации в настройках админа: списки, бандл, подразделы ──────
@@ -676,44 +405,17 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     cb.answers.clear()
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
     assert forced == [True], "«обновить сейчас» не форсирует обновление"
-    # ответ колбэку — сразу (скачивание идёт секунды, колбэк протухал), итог —
-    # первой строкой перерисованного раздела; ровно один ответ на колбэк
-    assert cb.answers == [("Обновляю списки…", False)], cb.answers
-    assert "✅ Списки обновлены: 7 записей" in last_screen(msg)[0]
 
-def test_routing_section_buttons_depend_on_gateway():
-    """«🛰 Шлюзы»: слоты кнопками («⭐» у предпочтительного), при одном —
-    «➕ Резерв» рядом; при двух — «▶️ Переключить на <резерв>» и тумблеры;
-    без шлюза — «🛰 Назначить»; «Кому доступен» и «Параметры» при включённой
-    функции всегда, «⬅️ В меню» — последней."""
+
+def test_one_slot_at_the_ceiling_offers_no_reserve_button():
+    """«🛰 Шлюзы» с одним слотом, когда слотов больше не выпустить: без
+    «➕ Резерв» — иначе кнопка вела бы в отказ «слоты заняты»."""
     from types import SimpleNamespace
     from awgbot.bot import keyboards as kb
-    from awgbot.bot.callbacks import GwSlotCB
     one = [{"gateway": SimpleNamespace(id=1), "device": SimpleNamespace(name="NASPi"),
             "active": True, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 3}]
-    rows = [[b.text for b in row] for row in kb.gateways_kb(one).inline_keyboard]
-    assert rows == [["NASPi", "➕ Резерв"], ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
     rows = [[b.text for b in row] for row in kb.gateways_kb(one, can_add=False).inline_keyboard]
     assert rows[0] == ["NASPi"], "потолок слотов — без «➕ Резерв»"
-    two = [dict(one[0], preferred=True),
-           {"gateway": SimpleNamespace(id=2), "device": SimpleNamespace(name="Pi4"),
-            "active": False, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 5}]
-    markup = kb.gateways_kb(two, can_add=False, failover_on=True, peer_nets_on=False)
-    rows = [[b.text for b in row] for row in markup.inline_keyboard]
-    assert rows == [["⭐ NASPi", "Pi4"], ["▶️ Переключить на Pi4"], ["✅ Автопереключение", "☑️ Связь подсетей"],
-                    ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
-    assert markup.inline_keyboard[1][0].callback_data == GwSlotCB(action="switch_ask", slot=2, val="l").pack(), \
-        "со списка: отмена подтверждения вернёт в «Шлюзы»"
-    assert [b.callback_data for b in markup.inline_keyboard[0]] == [
-        GwSlotCB(action="card", slot=1).pack(), GwSlotCB(action="card", slot=2).pack()]
-    rows = [[b.text for b in row] for row in kb.gateways_kb([]).inline_keyboard]
-    assert rows == [["🛰 Назначить"], ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
-    off = [b.text for row in kb.gateways_kb((), enabled=False).inline_keyboard for b in row]
-    assert off == ["✅ Включить", "⬅️ В меню"]
-
-    params = [b.text for row in kb.routing_params_kb(
-        {"probe_seconds": 30, "window": 10, "availability": 50}, 6).inline_keyboard for b in row]
-    assert "🔄 Списки: 6 ч" in params and "⬇️ Обновить списки" in params
 
 
 async def test_routing_subsections_render_and_are_empty_when_off(services, monkeypatch):
@@ -733,30 +435,21 @@ async def test_routing_subsections_render_and_are_empty_when_off(services, monke
         text, markup = await sh._screen(sec, services)
         assert text.startswith("⚙️ <b>Параметры РФ-доступа</b>\n"), (sec, text)
         assert "Списки: 3 записи из 2 источников, 2 ч назад · раз в 12 ч" in text.split("\n"), text
-    text, markup = await sh._screen("rt_users", services)
-    assert text.startswith("👥 <b>Кому доступен РФ-доступ</b> (тебе — всегда)"), text
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
     text, markup = await sh._screen("rt_lists", services)
     assert text == "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён", text
 
 
 async def test_bundle_button_in_the_card_issues_the_file_without_an_intro_screen(services, fake_bot, monkeypatch):
-    """«⚙️ Конфигурация шлюза» в карточке слота ведёт на выпуск этого слота, а
-    промежуточного экрана «что произойдёт» больше нет: раздел `rt_bundle`
-    ничего не рисует (из старого сообщения — обычные настройки)."""
+    """Промежуточного экрана «что произойдёт» перед выпуском конфигурации
+    шлюза больше нет: раздел `rt_bundle` из старого сообщения его не рисует
+    (кнопка карточки слота ведёт прямо на выпуск — эталон adm.gw.card)."""
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot import keyboards as kb
     from awgbot.core import settings as st
     import awgbot.core.config as cfg
     monkeypatch.setattr(cfg, "ROUTING_ENABLED", True)
     monkeypatch.setattr(st, "get_bool", lambda key, default=False: True)
-    from types import SimpleNamespace
-    from awgbot.bot.callbacks import GwSlotCB
-    state = {"gateway": SimpleNamespace(id=1, home_subnets=[], label="", lan_mode=0), "device": SimpleNamespace(name="NASPi"),
-             "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}
-    markup = kb.gateway_card(state, back_to_list=False)
-    btn = [b for row in markup.inline_keyboard for b in row if "Конфигурация" in b.text][0]
-    assert btn.callback_data == GwSlotCB(action="bundle", slot=1).pack()
     assert not hasattr(kb, "settings_routing_bundle"), "клавиатура упразднённого экрана вернулась"
     text, _markup = await sh._screen("rt_bundle", services, "1")
     assert "Что произойдёт" not in text, "промежуточный экран перед выпуском вернулся"
@@ -880,17 +573,14 @@ async def test_device_switches_consistent_for_admin_and_client(
 
 async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
         services, make_active_client, fake_bot, monkeypatch):
-    """Разрешение отозвано — раздел закрыт и клиенту, и админу в его панели;
-    вернули — флаги устройств и список адресов как были."""
+    """Разрешение отозвано — правка закрыта и админу в панели профиля (отказ
+    клиенту — эталон cl.rf.panel.hidden); вернули — флаги устройств и список
+    адресов как были."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=143)
     before = services.routing_device_counts(other.id)
     services.set_routing_allowed(other.id, False)
     other = services.db.get_client(other.id)
 
-    cb, nav = _cb(fake_bot, other.tg_id)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=0), other, services,
-                                  FakeState())
-    assert cb.answers and cb.answers[0][1] is True
     cb, nav = _admin_cb(fake_bot)
     await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0,
                                                  tag=kb.entry_tag("a.ru")), None, services)
@@ -899,16 +589,7 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
 
     services.set_routing_allowed(other.id, True)
     assert services.routing_device_counts(other.id) == before
-    cb, nav = _admin_cb(fake_bot)
-    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=other.id), None,
-                                  services, FakeState())
-    text, labels = last_screen(nav)
-    assert "Свои сайты: <code>a.ru</code>, <code>b.ru</code>" in text and "📋 Сайты: 2" in labels, (text, labels)
-    cb, nav = _admin_cb(fake_bot)
-    await routing_h.routing_sites(cb, RoutingCB(action="sites", ref=other.id), None,
-                                  services, FakeState())
-    _, labels = last_screen(nav)
-    assert labels[:2] == ["➖ a.ru", "➖ b.ru"], labels
+    assert services.routing_domains(other.id) == ["a.ru", "b.ru"], "список адресов не пережил отзыв"
 
 
 # ── выдача разрешения: включает все устройства и уведомляет владельца ────────
@@ -947,18 +628,6 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
     assert services.set_routing_allowed(c.id, False) == [], "то же состояние — молча"
 
 
-def test_pending_friend_device_has_hourglass_icon(services, make_active_client):
-    from awgbot.bot import keyboards as kb
-    c = make_active_client(tg_id=151, device_limit=3)
-    services.add_device(c.id, "Своё")
-    friend = services.add_device(c.id, "Другу")
-    services.make_device_friendly(friend.device_id)
-    devs = {d.name: d for d in services.db.list_devices(c.id)}
-    labels = [b.text for row in kb.client_devices(devs.values()).inline_keyboard for b in row]
-    # на кнопках — значок состояния: ⏳ ждёт друга, ⚪ не подключалось
-    assert "⏳ Другу" in labels and "⚪ Своё" in labels, labels
-
-
 # ── общий выключатель фичи: выключение через подтверждение ──────────────────
 
 async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
@@ -975,19 +644,15 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
                         lambda k, v: state.__setitem__(k, v) or [k])
     monkeypatch.setattr(services, "reconcile_routing", lambda: None)
 
-    # включено → нажатие показывает вопрос, значение не тронуто
+    # включено → нажатие показывает вопрос (эталон adm.rt.disable), значение не тронуто
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
-    text, labels = last_screen(nav)
-    assert text.startswith("🔴 Выключить РФ-доступ для всех?"), text
-    assert labels == ["⬅️ Отмена", "🔴 Выключить"], labels
     assert state["app.routing.enabled"] is True
 
-    # подтверждение — выключено, раздел перерисован
+    # подтверждение — выключено
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="off!"), services)
     assert state["app.routing.enabled"] is False
-    assert cb.answers and "выключен" in cb.answers[0][0]
 
     # выключено → нажатие включает сразу, без вопроса; шлюз тут же замеряется:
     # пока фича спала, о нём молчали (и на старте тоже), лежит — сказать сейчас
@@ -1025,21 +690,16 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
 
 async def test_device_switch_and_select_all_redraw_the_section_in_place(
         services, make_active_client, fake_bot):
-    """Переключатель устройства — прямо на экране раздела: нажатие
-    перерисовывает его на месте, итог — всплывашкой. «Выбрать все» — ☑️,
-    пока включены не все; включили вручную последнее — ✅; нажатие на ✅
-    выключает все."""
+    """«Выбрать все» следует за отметками: включили вручную последнее — ✅;
+    нажатие на ✅ выключает все. Выключение одного и «выключить все» на
+    экране — эталоны cl.rf.dev и cl.rf.all.off."""
     c = _allowed_client(services, make_active_client, 160)
     a = services.add_device(c.id, "iPhone")
     b = services.add_device(c.id, "MacBook")
     c = services.db.get_client(c.id)
     cb, nav = _cb(fake_bot, 160)
     await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
-    assert cb.answers[-1] == ("выключено", False)
-    text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2"), text
-    assert labels[:3] == ["✅ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
-    assert not any(s[0] == "answer" for s in nav.sent), "экран не на месте"
+    assert services.routing_device_counts(c.id) == (1, 2)
 
     cb, nav = _cb(fake_bot, 160)
     await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
@@ -1048,10 +708,6 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
 
     cb, nav = _cb(fake_bot, 160)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
-    assert cb.answers[-1] == ("Выключено на всех", False)
-    text, labels = last_screen(nav)
-    assert labels[:3] == ["☑️ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
-    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> выкл\nВключишь — банки, госуслуги"), text
     assert services.routing_device_counts(c.id) == (0, 2) and a is not None
 
 
@@ -1123,7 +779,6 @@ async def test_a_command_during_site_input_resets_the_input_for_a_client(service
     msg = FakeMessage(text="/start", chat_id=c.tg_id, user_id=c.tg_id, bot=fake_bot)
     await routing_h.routing_input_start(msg, c, services, st)
     assert await st.get_state() is None, "ввод остался открытым"
-    assert any(s[0] == "answer" and str(s[1]).startswith("👋 ") for s in msg.sent), msg.sent
 
 
 async def test_admin_paging_in_a_foreign_profile_section_remembers_the_viewer(services, fake_bot,

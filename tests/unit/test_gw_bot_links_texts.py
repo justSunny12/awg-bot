@@ -1,6 +1,8 @@
 """Ссылки в текстах про шлюзы: строка «Бот шлюза» (чат бота слота по его
 username) и имена шлюзов в строке РФ-доступа шапки админа — deep-link
-«/start gw-<слот>» в карточку слота."""
+«/start gw-<слот>» в карточку слота. Обычные формы обеих строк — в эталонах
+экранов (tests/screens/admin.txt); здесь — экранирование, пустые значения и
+состояния, которых в эталонах нет."""
 from __future__ import annotations
 
 import re
@@ -20,12 +22,6 @@ def _card(slot: int) -> str:
 
 
 # ── «Бот шлюза: …» ───────────────────────────────────────────────────────────
-
-def test_agent_bot_line_links_to_the_bot_chat_by_username():
-    line = texts.agent_bot_line({"agent_bot": {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}})
-    assert line == 'Бот шлюза: <a href="https://t.me/naspi_gw_bot">Шлюз квартиры</a>', \
-        "ссылка — на диалог с ботом, без команд"
-
 
 def test_agent_bot_line_escapes_the_profile_name():
     """Имя профиля бота задаёт человек в BotFather: «<» или «&» без
@@ -54,22 +50,16 @@ def _info(ok=True, active="NASPi", active_slot=1, standby=()):
     return {"ok": ok, "active": active, "active_slot": active_slot, "standby": list(standby)}
 
 
-def test_working_line_links_the_active_gateway_to_its_card():
-    line = texts.routing_admin_status_line(_info(), BOT)
-    assert line == f'🇷🇺 РФ-доступ: 🟢 работает · <a href="{_card(1)}">NASPi</a>', line
-
-
 def _plain(line: str) -> str:
     return re.sub(r"</?a[^>]*>", "", line)
 
 
 def test_standby_word_links_to_the_standby_slot_not_the_active_one():
     """Слово «резерв» ведёт в карточку РЕЗЕРВА (ссылка в карточку активного
-    здесь показала бы не тот шлюз); состояние — жив / не отвечает /
-    проверяется — остаётся текстом, и строка без разметки читается как
-    прежде."""
-    for state, tail, dot in (("alive", "жив", "🟢"), ("dead", "не отвечает", "🟠"),
-                             ("unknown", "проверяется", "🟢")):
+    здесь показала бы не тот шлюз); состояние (не отвечает / проверяется;
+    «жив» — в эталоне главной) остаётся текстом, и строка без разметки
+    читается как прежде."""
+    for state, tail, dot in (("dead", "не отвечает", "🟠"), ("unknown", "проверяется", "🟢")):
         line = texts.routing_admin_status_line(
             _info(standby=[{"name": "Pi2", "slot": 2, "state": state}]), BOT)
         assert _hrefs(line) == [(_card(1), "NASPi"), (_card(2), "резерв")], (state, line)
@@ -121,9 +111,3 @@ def test_without_slot_numbers_there_is_nothing_to_link():
     line = texts.routing_admin_status_line(
         {"ok": True, "active": "NASPi", "standby": [{"name": "Pi2", "state": "alive"}]}, BOT)
     assert line == "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив", line
-
-
-def test_admin_panel_passes_the_bot_username_to_the_routing_line():
-    out = texts.admin_panel({"ok": True}, bot_username=BOT,
-                            routing_info=_info(standby=[{"name": "Pi2", "slot": 2, "state": "alive"}]))
-    assert f'<a href="{_card(1)}">NASPi</a>' in out and f'<a href="{_card(2)}">резерв</a> жив' in out, out

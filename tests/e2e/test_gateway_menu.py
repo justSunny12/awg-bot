@@ -1,14 +1,12 @@
-"""Интерфейс агента v2.4.3: раскладка кнопок, снимок vs живьём, перезапуск бота."""
+"""Интерфейс агента: снимок vs живьём, перезапуск бота, побочные эффекты
+разделов настроек. Тексты и раскладки экранов — в эталоне tests/screens/gateway.txt."""
 from __future__ import annotations
 
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.bot import sections, texts
-from awgbot.bot.roles import GATEWAY, MAIN
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
-from awgbot.bot.handlers import hide as hide_h
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
 from tests.conftest import FakeCallback, FakeMessage, FakeState
@@ -34,17 +32,6 @@ def svc(tmp_path):
     return _Svc(d)
 
 
-def _labels(markup):
-    return [[b.text for b in row] for row in markup.inline_keyboard]
-
-
-def test_updates_back_leads_to_settings(monkeypatch):
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "get", lambda key, default=None: "day")
-    rows = sections.updates.keyboard(GATEWAY, False).inline_keyboard
-    assert rows[-1][0].callback_data == GwCB(action="settings").pack()
-
-
 async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bot):
     """/start и «В меню» рисуются из снимка тика (ноль проб), «Обновить» —
     живьём и обновляет снимок."""
@@ -55,82 +42,41 @@ async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bo
     assert svc.probes == 1, "/start сходил по пробам вместо снимка"
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_refresh(cb, svc, FakeState())
-    assert svc.probes == 2
-    assert any(t.startswith("🛰 <b>pi</b> ") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert svc.probes == 2, "«Обновить» не сходил по пробам живьём"
 
 
 async def test_stale_snapshot_falls_back_to_live(svc, fake_bot):
+    """Протухший снимок тика не выдаётся за свежие показания — панель
+    снимается живьём."""
     svc.db.set_state(GatewayServices._SNAPSHOT_KEY,
                      GwStatus(ts="2000-01-01T00:00:00+03:00").to_json())
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_start(msg, svc, FakeState())
-    assert svc.probes == 1
+    assert svc.probes == 1, "протухший снимок показан без живого замера"
 
 
 async def test_bot_restart_is_confirmed_then_promised_and_kept(svc, fake_bot):
+    """Перезапуск — только после подтверждения; обещание запоминается, чтобы
+    новый процесс нашёл его, исполнил и забыл (иначе «вернётся через
+    несколько секунд» висит в чате навсегда)."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_confirm(cb, GwCB(action="botrestart"), svc)
-    assert svc.bot_restarts == 0
-    assert any("Перезапустить бота?" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert svc.bot_restarts == 0, "бот перезапущен без подтверждения"
     await gh.gw_bot_restart(cb, svc)
     assert svc.bot_restarts == 1
     assert svc.db.get_state("restart_wait") == f"{cfg.ADMIN_ID}:{msg.message_id}"
-    # новый процесс: обещание → отчёт, панель следом
+    # новый процесс: обещание исполнено и забыто
     await gh.restore_panel_after_restart(fake_bot, svc)
-    assert svc.db.get_state("restart_wait") == ""
-    edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edited and texts.BOT_RESTARTED in str(edited[-1])
-    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 <b>pi</b> ") for r in fake_bot.records), \
-        "панель после перезапуска не пришла"
+    assert svc.db.get_state("restart_wait") == "", "обещание не забыто — повторится на следующем старте"
 
 
 async def test_health_screen_is_live(svc, fake_bot):
+    """«Здоровье» — всегда живой замер, а не снимок тика."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_health(cb, svc)
-    assert svc.probes == 1
-    assert any(t.startswith("🩺 <b>Здоровье pi</b> ") for kind, t, _ in msg.sent if kind == "edit_text")
-
-
-async def test_hide_button_deletes_the_notification(svc, fake_bot):
-    """«Скрыть» на уведомлениях агента: раньше обработчика не было, кнопка
-    молчала («not handled»)."""
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await hide_h.on_hide(cb)
-    assert any(r[0] == "delete" for r in fake_bot.records), "уведомление не удалено"
-
-
-def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
-    """Тихие часы с границами, алерты с четырьмя порогами парами, аварии на
-    e-mail — в одном ряду с «Назад»; событий клиентов у шлюза нет."""
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
-    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
-    rows = _labels(sections.notify.keyboard(GATEWAY))
-    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
-                    ["CPU 80%", "RAM 80%"], ["Диск 80%", "75 °C"],
-                    ["✅ Аварии на e-mail", "⬅️ Назад"]], rows
-    assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
-    # выключенные тихие часы и алерты — без границ и порогов
-    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(sections.notify.keyboard(GATEWAY)) == [["☑️ Тихие часы"], ["☑️ Алерты хоста"],
-                                               ["☑️ Аварии на e-mail", "⬅️ Назад"]]
-
-
-def test_mon_section_mirrors_main(monkeypatch):
-    """Порог молчания линка — в минутах (хранится в секундах): «300 сек» в
-    подписи человек переводил в уме, а ввод просил секунды."""
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
-    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
-    rows = _labels(sections.mon.keyboard(GATEWAY))
-    assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
-                    ["⬅️ Назад"]], rows
-    assert texts.settings_mon_text(GATEWAY) == (
-        "🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 5 плохих замеров · "
-        "линк молчит дольше 5 мин — со звуком круглые сутки")
+    assert svc.probes == 1, "здоровье нарисовано без живого замера"
 
 
 async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monkeypatch):
@@ -157,37 +103,19 @@ async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monk
 
 
 async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, monkeypatch):
+    """Без фразы бэкап шлюза не уходит в чат: внутри приватные ключи линка."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_backup_now(cb, GatewayServices(svc.db))
-    assert any("парольную фразу" in t for kind, t, _ in msg.sent if kind == "answer")
-    assert not any(kind == "answer_document" for kind, *_ in msg.sent)
-
-
-def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
-    """Автобэкапы выключены — остаются тумблер и «🔐 Шифрование» (фраза нужна
-    и для восстановления шифрованных копий): канал, расписание и «сделать
-    сейчас» без включённых бэкапов ничего не значат. Раскладка агента — та же,
-    что у основного бота."""
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
-    monkeypatch.setattr(settings, "get", lambda key, default=None: default)
-    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(sections.backup.keyboard(GATEWAY, False)) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]]
-    assert _labels(sections.backup.keyboard(MAIN)) == _labels(sections.backup.keyboard(GATEWAY, False))
-    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
-    rows = _labels(sections.backup.keyboard(GATEWAY, True))
-    assert rows == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
-                    ["💾 Сделать сейчас"], ["⬅️ Назад"]], rows
-    assert rows == _labels(sections.backup.keyboard(MAIN, True)), "раскладка агента разошлась с основным ботом"
+    assert not any(kind == "document" for kind, *_ in msg.sent), "открытый бэкап с ключами ушёл в чат"
 
 
 async def test_gateway_passphrase_flow(svc, fake_bot):
+    """Фраза, введённая дважды, становится ключом шифрования бэкапов."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     state = FakeState()
     await gh.gw_encryption(cb, svc, state)
-    assert any(t.startswith("🔐 <b>Шифрование бэкапов") for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_encryption_set(cb, svc, state)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_passphrase_first(m("correct horse battery"), state, svc)
@@ -196,6 +124,8 @@ async def test_gateway_passphrase_flow(svc, fake_bot):
 
 
 async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatch):
+    """Без ящика «📨 Куда» и «Аварии на e-mail» не переключаются (иначе
+    бэкапы и аварии уходят в никуда); с ящиком и фразой — переключаются."""
     from awgbot.core import settings
     store = {}
     monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
@@ -205,16 +135,11 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_section(cb, GwCB(action="email"), svc, FakeState())
-    txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert txt.startswith("✉️ <b>E-mail</b> ящик не подключён") and "конфигурации шлюза" in txt, txt
-    assert "паузы" not in txt and "Аварийный выход" not in txt, "аварийного выхода у агента нет"
-    # «📨 Куда» без ящика — предложение настроить почту, канал не меняется
     channel = GwCB(action="cyc", val="app.scheduler.backup_channel")
     await gh.gw_cycle(cb, channel, svc)
-    assert "app.scheduler.backup_channel" not in store
-    assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert "app.scheduler.backup_channel" not in store, "канал переключён на почту без ящика"
     await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
-    assert "notifications.email_fallback" not in store
+    assert "notifications.email_fallback" not in store, "аварии на e-mail включены без ящика"
     svc.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     svc.backup_set_passphrase("correct horse battery")
     await gh.gw_cycle(cb, channel, svc)

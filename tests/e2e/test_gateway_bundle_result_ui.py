@@ -145,19 +145,15 @@ async def _issue_plain(services, bot, pi2, slot=2):
 
 # ── выпуск из карточки ───────────────────────────────────────────────────────
 
-async def test_the_card_button_issues_the_file_at_once_and_the_card_goes_dark(services, slots):
-    """«📤 Конфигурация» в карточке — файл сразу, без промежуточного
-    экрана. Карточка теряет клавиатуру (живое меню одно — «В меню» на файле)
-    и помечается контентом: возврат в меню её уберёт. Под файлом одна кнопка —
-    «⬅️ В меню» с номером слота; запись указывает на файл и на карточку над
-    ним — итог с шлюза должен найти оба."""
+async def test_the_card_button_issues_the_file_and_remembers_it_with_the_dark_card(services, slots):
+    """«📤 Конфигурация» в карточке: погасшая карточка помечается контентом —
+    возврат в меню её уберёт; кнопки под файлом несут номер именно этого
+    слота; запись указывает на файл и на карточку над ним — итог с шлюза
+    должен найти оба."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     bot = _Bot()
     nav, (_caption, markup, doc) = await _issue(services, bot, 2)
-    assert nav.cb.answers == [("Собираю и шифрую…", False)], nav.cb.answers
-    assert nav.markup_cleared, "карточка над файлом осталась с кнопками — два живых меню"
-    assert not [s for s in nav.sent if s[0] == "edit_text"], "вместо файла нарисован промежуточный экран"
     assert nav.message_id in services.db.pop_content_msg_ids(ADMIN), \
         "карточка не помечена как контент — возврат в меню её не уберёт"
     assert [b for b in _buttons(markup) if b[1]] == FILE_BUTTONS2, _buttons(markup)
@@ -359,7 +355,6 @@ async def test_menu_removes_the_file_and_the_dark_card_and_opens_the_slot_card(s
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
         f"в чате остались файл или карточка: удалены {_deleted(bot)}"
     assert services.gw_bundle_msg_get(2) == {}, "запись о файле пережила «В меню»"
-    assert cb.answers, "колбэк без ответа — у кнопки крутятся часики"
     shown = [s for s in doc.sent if s[0] == "answer"]
     assert len(shown) == 1, f"после «В меню» показано не одно сообщение: {shown}"
     _, text, markup, _sent = shown[0]

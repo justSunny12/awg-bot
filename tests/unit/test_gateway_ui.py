@@ -1,4 +1,6 @@
-"""Панель агента v2.4.3: снимок, потребление за месяц, имя ВПС, метрики."""
+"""Агент шлюза: снимок, потребление за месяц, имя ВПС, метрики, бандл и
+бэкап. Раскладка панели и здоровья — в эталонах экранов
+(tests/screens/gateway.txt); здесь — данные под ними и редкие ветки текста."""
 from __future__ import annotations
 
 
@@ -75,41 +77,13 @@ def test_apply_bundle_remembers_server_name(svc, monkeypatch, tmp_path):
     assert ok and svc.db.get_state(GatewayServices._SERVER_NAME_KEY) == "awg-srv"
 
 
-def test_panel_text_mirrors_the_main_bot_layout(monkeypatch):
-    """Панель — по строке на тему: имя, роль и аптайм; линк; железо; здоровье
-    с трафиком за месяц; свежесть курсивом. Модуль и ядра — на экране
-    здоровья, не здесь."""
-    from awgbot.runtime import linkclient
-    monkeypatch.setattr(linkclient, "enabled", lambda: False)
-    st = GwStatus(link_up=True, handshake_age=69.0, cpu=4.0, temp=59.0, ram=51.0,
-                  ram_free_mb=999, disk=58.0, disk_free_gb=100.0, smart="OK",
-                  throttled={"raw": 0, "now": [], "ever": []}, uptime_seconds=17 * 86400 + 20 * 3600,
-                  hostname="NASPi", server_name="awg-srv",
-                  checks=[GwCheck("линк", True)], month_rx=10 * 1024 ** 3, month_tx=175 * 1024 ** 3)
-    out = texts.gateway_panel(st)
-    assert out == ("🛰 <b>NASPi</b> 🟢 линк поднят · 17 дн 20 ч\n\n"
-                   "📡 Линк до awg-srv 🟢 69 с\n"
-                   "📈 CPU 4% | 59 °C · RAM 51% · диск 58% · питание ОК\n"
-                   "🩺 Здоровье ✅ · 📊 185 ГБ (↑10 ↓175)\n"
-                   "<i>обновлено только что</i>"), out
-    assert "Модуль awg" not in out and "ядер" not in out
-
-
-def test_panel_health_line_counts_problems():
-    st = GwStatus(checks=[GwCheck("MASQUERADE", False, "нет"), GwCheck("линк", False, "лежит"),
-                          GwCheck("ядра", True)])
-    assert "🔴 проблем: 2 — MASQUERADE, линк" in texts.gateway_panel(st)
-
-
-def test_health_screen_carries_module_and_kernels():
+def test_health_screen_without_a_hostname_names_the_gateway():
+    """Имени хоста в замере нет — заголовок «Здоровье шлюза», а не
+    «Здоровье » с пустым местом."""
     st = GwStatus(checks=[GwCheck("ядра", True)], module_version="1.0.2026", srcversion="ABCDEF1234",
                   kernels_total=1, throttled={"raw": 0, "now": [], "ever": ["недонапряжение случалось"]})
     out = texts.gateway_health(st)
-    assert out == ("🩺 <b>Здоровье шлюза</b> ✅ проблем нет\n"
-                   "✅ ядра\n"
-                   "питание ОК (с загрузки: недонапряжение случалось)\n"
-                   "Модуль awg 1.0.2026 · srcversion ABCDEF12… · ядер 1"), out
-    assert "Восстановить" not in out, "проблем нет — совет про восстановление лишний"
+    assert out.splitlines()[0] == "🩺 <b>Здоровье шлюза</b> ✅ проблем нет", out
 
 
 def test_root_block_device_strips_partition(tmp_path):
@@ -177,6 +151,9 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
 
 
 def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_path):
+    """Тот же конфиг линка в бандле — «линк не перезапустится», и без угрозы
+    РФ-доступу даже на шлюзе, который несёт трафик: иначе человек откладывает
+    безобидное применение."""
     from awgbot.bot import texts
     from awgbot.util import bundlecrypt as bc
     from awgbot.core import config
@@ -191,14 +168,5 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
         return bc.encrypt(plain, bc.read_privkey(conf.read_text()))
     assert svc.inspect_bundle(bundle(link))["link_changed"] is False
     assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
-    assert texts.gateway_bundle_received(False) == (
-        "📦 <b>Конфигурация с сервера AWG</b>\n"
-        "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
-    assert texts.gateway_bundle_received(True) == (
-        "📦 <b>Конфигурация с сервера AWG</b>\n"
-        "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся")
-    # резерв или мёртвый линк: трафика на шлюзе нет — прерываться нечему
-    assert texts.gateway_bundle_received(True, carries=False) == (
-        "📦 <b>Конфигурация с сервера AWG</b>\n"
-        "Линк перезапустится; правила переставятся")
+    # линк не перезапускается — прерываться нечему и у шлюза, несущего трафик
     assert texts.gateway_bundle_received(False, carries=False) == texts.gateway_bundle_received(False)

@@ -5,6 +5,11 @@
 
 Объявления — test_handlers_broadcast.py; почта и бэкапы из чата —
 test_handlers_settings_mail_backup.py; раскладка настроек — test_settings_layout.py.
+
+Экраны этих веток в обычном состоянии — в эталоне tests/screens/admin.txt;
+здесь — БД, память диалога, уведомления владельцу, гонки и состояния, которых
+в эталоне нет (понижение лимита ниже занятого, шлюз в «Моих устройствах»,
+приглашение другу на карточке админа).
 """
 
 import pytest
@@ -12,7 +17,7 @@ import pytest
 from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers.admin import devices as admin_devices
-from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, DeviceCB
+from awgbot.bot.callbacks import AdminSelfCB, ClientCB, DeviceCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -41,34 +46,25 @@ async def test_lowering_the_device_limit_by_preset_applies_at_once_with_a_warnin
     client = make_active_client(tg_id=6300, device_limit=5)
     services.add_device(client.id, "a")
     services.add_device(client.id, "b")
-    cb, nav = _acb(fake_bot)
-    await ah.edit_limit_start(cb, ClientCB(action="edit_limit", client_id=client.id), services, FakeState())
-    text, labels = last_screen(nav)
-    assert text == f"🔢 <b>Лимит устройств профиля {client.name}</b> · сейчас 5, занято 2", text
-    assert labels == ["1", "2", "3", "5", "10", "∞", "✏️ Другое", "⬅️ Отмена"], labels
-
     cb2, nav2 = _acb(fake_bot)
     await ah.edit_limit_preset(cb2, PresetCB(kind="cli_devs", ref=client.id, val=1), services, FakeState())
     assert services.db.get_client(client.id).device_limit == 1, "лимит не применён сразу"
-    text2, labels2 = last_screen(nav2)
+    text2, _ = last_screen(nav2)
     first = text2.splitlines()[0]
     assert first == "✅ Устройств: 5 → 1 · ⚠️ сейчас 2 из 1 — новые не добавить, пока не станет меньше", text2
-    assert "✏️ Лимит устр-в" in labels2, "после пресета — не «✏️ Изменить»"
     notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6300]
     assert len(notes) == 1, "клиент должен узнать о новом лимите ровно одним уведомлением"
 
 
-async def test_typed_device_limit_returns_to_edit_with_the_note(services, fake_bot, make_active_client):
-    """«✏️ Другое» → число → «✏️ Изменить» новым сообщением с итогом первой
-    строкой; повышение — без строки ⚠️."""
+async def test_typed_device_limit_rejects_garbage_and_applies_the_number(services, fake_bot, make_active_client):
+    """«✏️ Другое» → мусор не применяется и переспрашивается, число —
+    применяется, диалог закрыт. Итог на «✏️ Изменить» — в эталоне."""
     from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6301, device_limit=2)
     services.add_device(client.id, "a")
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.edit_limit_preset(cb, PresetCB(kind="cli_devs", ref=client.id, val=-1), services, st)
-    text, labels = last_screen(nav)
-    assert text == texts.OTHER_NUMBER_PROMPT and labels == ["✖️ Отмена"], (text, labels)
     bad = _amsg(fake_bot, "много")
     await ah.edit_limit_apply(bad, services, st)
     assert [s[1] for s in bad.sent if s[0] == "answer"] == [texts.NUMBER_BAD_LIMIT]
@@ -76,48 +72,13 @@ async def test_typed_device_limit_returns_to_edit_with_the_note(services, fake_b
     ok = _amsg(fake_bot, "7")
     await ah.edit_limit_apply(ok, services, st)
     assert services.db.get_client(client.id).device_limit == 7
-    shown = [s for s in ok.sent if s[0] == "answer"]
-    assert shown and shown[-1][1].splitlines()[0] == "✅ Устройств: 2 → 7", shown[-1][1]
-    assert shown[-1][1].splitlines()[2].startswith(f"✏️ <b>{client.name}</b> — изменить"), shown[-1][1]
-    assert "⚠️" not in shown[-1][1]
     assert await st.get_data() == {}, "диалог не закрыт"
-
-
-# ── продление / файл ─────────────────────────────────────────────────────────
-async def test_extend_start_renders(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6303, period_kind="year")
-    cb, nav = _acb(fake_bot)
-    await ah.extend_start(cb, ClientCB(action="extend", client_id=client.id), services, FakeState())
-    text, labels = last_screen(nav)
-    assert text.startswith(f"⏱ <b>Продление:</b> {client.name}\nСейчас до "), text
-    assert labels[:5] == ["День", "Неделя", "Месяц", "Год", "∞"], labels
-    assert labels[-1] == "⬅️ Отмена", "диалог выбора срока — не тупик"
-
-
-async def test_admin_dev_file(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6304)
-    dc = services.add_device(client.id, "d")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_dev_gen(cb, DeviceCB(action="gen_file", device_id=dc.device_id), services)
-    assert any(s[0] == "document" for s in nav.sent)
-
-
-async def test_block_menu_device_branch(services, fake_bot, make_active_client):
-    """Вопрос о блокировке устройства называет владельца ссылкой — одноимённые
-    устройства разных профилей («iPhone») иначе не различить."""
-    client = make_active_client("Петя", tg_id=6306)
-    services.bot_username = "awg_test_bot"
-    dc = services.add_device(client.id, "d")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_block_menu(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), services)
-    text, labels = last_screen(nav)
-    assert text == (f'🛑 <b>Блокировка d</b> (<a href="https://t.me/awg_test_bot?start=cl-{client.id}">Петя</a>). '
-                    "Уведомить владельца?"), text
-    assert labels == ["🔔 С уведомлением", "🔕 Тихо", "⬅️ Отмена"], labels
 
 
 # ── личные qr/file, устройство профилю ───────────────────────────────────────
 async def test_self_gen_qr_file_pickers(services, fake_bot):
+    """QR и файл с главной админа предлагают его устройство (в эталоне —
+    только выбор под ссылку)."""
     services.ensure_admin_client()
     ac = services.admin_client()
     services.add_device(ac.id, "d")
@@ -129,49 +90,31 @@ async def test_self_gen_qr_file_pickers(services, fake_bot):
             or any("d" in l for l in labels), "устройство не предложено к выбору"
 
 
-async def test_add_device_to_a_profile_asks_only_the_name_and_returns_to_the_card(
+async def test_add_device_to_a_profile_creates_it_and_notifies_the_owner_once(
         services, fake_bot, make_active_client):
-    """«➕ Устройство» в карточке профиля: одно имя → карточка профиля новым
-    сообщением с итогом первой строкой; владельцу — уведомление с рядом выдачи.
-    Экрана «Кому добавить» больше нет — устройство профилю добавляется из его
-    карточки."""
+    """«➕ Устройство» в карточке профиля: одно имя → устройство в БД,
+    владельцу — ровно одно уведомление. Экраны — в эталоне."""
     client = make_active_client(tg_id=6307, name="Клиент-6307", device_limit=3)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
-    text, labels = last_screen(nav)
-    assert text == "➕ <b>Устройство профилю Клиент-6307</b> · 0 из 3\nКак назвать?", text
-    assert labels == ["✖️ Отмена"], labels
     msg = _amsg(fake_bot, "Планшет")
     await ah.admin_add_device_name(msg, services, st)
     assert [d.name for d in services.db.list_devices(client.id)] == ["Планшет"]
-    shown = [s for s in msg.sent if s[0] == "answer"]
-    assert shown and shown[-1][1].startswith("✅ Планшет создано для профиля Клиент-6307\n\n👤 "), \
-        shown[-1][1]
     owner_notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6307]
     assert len(owner_notes) == 1 and "Планшет" in owner_notes[0][2]
 
 
-async def test_add_device_to_a_full_profile_offers_a_slot_instead_of_refusing(
+async def test_add_device_to_a_full_profile_opens_no_name_input_and_keeps_the_limit(
         services, fake_bot, make_active_client):
-    """Лимит исчерпан — не всплывашка-отказ, а экран «добавить слот?» с
-    «⬅️ Отмена» в карточку и «➕ Слот и добавить». Отказ заставлял идти в
-    «✏️ Изменить», поднимать лимит и возвращаться — три экрана на одно
-    устройство; ввод имени при полном лимите кончался бы ошибкой сервиса."""
+    """Лимит исчерпан — экран «добавить слот?» (в эталоне), ввод имени не
+    открыт: при полном лимите он кончался бы ошибкой сервиса; лимит без
+    согласия не растёт."""
     client = make_active_client("Коля", tg_id=6308, device_limit=1)
-    services.bot_username = "awg_test_bot"
     services.add_device(client.id, "a")
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
-    assert not any(alert for _, alert in cb.answers), f"всплывашка вместо экрана: {cb.answers}"
-    text, _ = last_screen(nav)
-    assert text == (f'📱 У профиля <a href="https://t.me/awg_test_bot?start=cl-{client.id}">Коля</a> '
-                    "исчерпан лимит устройств (1 из 1) — добавить слот?"), text
-    markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
-    rows = [[(b.text, b.callback_data) for b in r] for r in markup.inline_keyboard]
-    assert rows == [[("⬅️ Отмена", ClientCB(action="open", client_id=client.id).pack()),
-                     ("➕ Слот и добавить", ClientCB(action="add_device_slot", client_id=client.id).pack())]], rows
     assert await st.get_state() is None, "ввод имени открыт при исчерпанном лимите"
     assert services.db.get_client(client.id).device_limit == 1, "лимит поднят без согласия"
 
@@ -192,8 +135,6 @@ async def test_add_slot_raises_the_limit_notifies_the_owner_once_and_asks_the_na
     assert notes == [texts.limit_changed_notice(1, 2)], notes
     assert notes[0] == "Лимит устройств изменён: 1 → 2"
     assert await st.get_state() == "AdminAddDevice:name"
-    text, labels = last_screen(nav)
-    assert text == "➕ <b>Устройство профилю Коля</b> · 1 из 2\nКак назвать?", text
     msg = _amsg(fake_bot, "Планшет")
     await ah.admin_add_device_name(msg, services, st)
     assert sorted(d.name for d in services.db.list_devices(client.id)) == ["a", "Планшет"]
@@ -255,8 +196,9 @@ def test_limit_reached_line_counts_what_to_delete():
     assert texts.limit_reached_line(5, 3).endswith("удали 3")
 
 
-async def test_admin_menu_devices(services, fake_bot):
-    """«📱 <b>Мои устройства</b> · 1, без лимита»; шлюз — вверху с «[шлюз]»."""
+async def test_admin_menu_devices_puts_the_gateway_on_top(services, fake_bot):
+    """Шлюз в «Моих устройствах» — вверху с «[шлюз]» (в эталоне шлюза в
+    списке нет)."""
     services.ensure_admin_client()
     ac = services.admin_client()
     services.add_device(ac.id, "Ноут")
@@ -264,41 +206,15 @@ async def test_admin_menu_devices(services, fake_bot):
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     cb, nav = _acb(fake_bot)
     await ah.admin_menu_devices(cb, services, FakeState())
-    text, labels = last_screen(nav)
-    assert text == "📱 <b>Мои устройства</b> · 2, без лимита", text
+    _, labels = last_screen(nav)
     assert labels[0] == "🛰 NASPi [шлюз]", labels
     assert any(l.endswith(" Ноут") for l in labels[1:]), labels
-    assert labels[-2:] == ["➕ Устройство", "⬅️ Назад"], labels
-
-
-# ── регресс: у устройства без ключа не должно остаться тупиковых кнопок ───────
-async def test_unmanaged_device_offers_no_dead_restore_button(services, fake_bot):
-    """Пир, подхваченный с сервера: реставрации больше нет — и кнопок в неё тоже.
-
-    Обработчика action="restore" в боте не осталось. Кнопка, которая на него
-    ссылается, молча ничего не делает: нажатие уходит в пустоту, а человек
-    остаётся с ощущением сломанного бота. Проверяем оба экрана, где такое
-    устройство вообще показывается.
-    """
-    from awgbot.bot import keyboards as kb
-
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Неизвестный пир 10.8.1.9", "PUBQ", "PSK",
-                                    "10.8.1.9", private_key=None)
-    dev = services.db.get_device(did)
-    assert not dev.is_managed
-
-    markups = [kb.device_actions(dev, is_admin=True, back_target="x"),
-               kb.unmanaged_device_dialog(did)]
-    for m in markups:
-        for row in m.inline_keyboard:
-            for b in row:
-                assert "restore" not in (b.callback_data or ""), b.text
 
 
 async def test_admin_card_hides_the_reinvite_button(services, make_active_client):
     """Устройство с незавершённым инвайтом другу: у владельца кнопка «Перевыдать
-    инвайт» есть, у админа на карточке того же устройства — нет.
+    инвайт» есть (эталон cl.dev.pending), у админа на карточке того же
+    устройства — нет.
 
     Хендлер перевыдачи живёт в роутере клиента (ссылка уходит в чат владельца);
     для админа нажатие уходило в никуда — спиннер до таймаута.
@@ -311,18 +227,15 @@ async def test_admin_card_hides_the_reinvite_button(services, make_active_client
     dev = services.db.get_device(did)
     assert dev.friend_status == "pending"
 
-    owner = _btn_texts(kb.device_actions(dev, is_admin=False, back_target="x"))
     admin = _btn_texts(kb.device_actions(dev, is_admin=True, back_target="x"))
-    assert "🔁 Приглашение" in owner, owner
     assert not any("Приглашение" in t for t in admin), admin
 
 
-async def test_unmanaged_device_card_and_issue_say_there_is_no_link(
+async def test_unmanaged_device_card_via_the_old_button_says_there_is_no_link(
         services, fake_bot):
-    """Пир без приватного ключа: карточка говорит «ссылки нет», ряда выдачи в
-    ней нет, а кнопка старого образца выдачи отвечает тем же диалогом."""
-    from awgbot.bot import texts
-
+    """Пир без приватного ключа, открытый старой кнопкой «Данные для
+    подключения»: карточка говорит «ссылки нет», ряда выдачи в ней нет.
+    Диалог выдачи такому пиру — в эталоне (adm.gen.unmanaged)."""
     svc = services.db.get_service_client_id()
     did = services.db.create_device(svc, "чужой", "PUBQ2", "PSK", "10.8.1.10",
                                     private_key=None)
@@ -332,24 +245,9 @@ async def test_unmanaged_device_card_and_issue_say_there_is_no_link(
     text, labels = last_screen(nav)
     assert "✳️ Добавлено не ботом — ссылки нет" in text, text
     assert not {"🔗 Ссылка", "🔳 QR", "📄 Файл"} & set(labels), labels
-    cb2, nav2 = _acb(fake_bot)
-    await ah.admin_dev_gen(cb2, DeviceCB(action="gen_link", device_id=did), services)
-    assert texts.UNMANAGED_DEVICE_DIALOG in [r[1] for r in nav2.sent if r[0] == "edit_text"]
 
 def _btn_texts(markup):
     return [b.text for row in markup.inline_keyboard for b in row]
-
-
-def test_transfer_buttons_are_split_by_role(services, make_active_client):
-    """Владелец: «👤 Другу», без «🔀 Передать» в другой профиль. Админ: наоборот."""
-    from awgbot.bot import keyboards as kbs
-    c = make_active_client("Профиль Г")
-    services.add_device(c.id, "Ноут")
-    dev = services.db.list_devices(c.id)[0]
-    owner = [b.text for row in kbs.device_actions(dev, is_admin=False, back_target="x").inline_keyboard for b in row]
-    admin = [b.text for row in kbs.device_actions(dev, is_admin=True, back_target="x").inline_keyboard for b in row]
-    assert "👤 Другу" in owner and "🔀 Передать" not in owner
-    assert "🔀 Передать" in admin and "👤 Другу" not in admin
 
 
 # ── онлайн: статус в списке получателей и экран устройств онлайн ─────────────
@@ -398,24 +296,19 @@ async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
     assert text.startswith("🛠 "), f"старая «Выдать конфиг» у профиля админа не привела на главную: {text}"
 
 
-async def test_device_limit_other_asks_a_number_and_returns_to_the_card(
+async def test_device_limit_other_refuses_above_profile_and_applies_within(
         services, fake_bot, make_active_client):
-    """«✏️ Другое» у лимита устройства: ввод на месте экрана с «✖️ Отмена»,
-    число выше лимита профиля — переспрос, в пределах — карточка устройства
-    с итогом первой строкой. Не откроется ввод — лимит вне пресетов не задать."""
+    """«✏️ Другое» у лимита устройства: число выше лимита профиля не
+    принимается, в пределах — записывается. Экраны ввода и итога — в эталоне."""
     from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6309, traffic_limit=50 * 1024 ** 3)
     dc = services.add_device(client.id, "Тел")
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=-1), services, st)
-    text, labels = last_screen(nav)
-    assert labels == ["✖️ Отмена"], (text, labels)
     over = _amsg(fake_bot, "70")
     await ah.edit_traffic_apply(over, services, st)
     assert int(services.db.get_device(dc.device_id).traffic_limit) == 0, "лимит выше профиля принят"
     ok = _amsg(fake_bot, "20")
     await ah.edit_traffic_apply(ok, services, st)
     assert int(services.db.get_device(dc.device_id).traffic_limit) == 20 * 1024 ** 3
-    shown = [s for s in ok.sent if s[0] == "answer"]
-    assert shown and "Тел" in shown[-1][1].split("\n\n")[1], shown

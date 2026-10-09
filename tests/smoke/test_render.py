@@ -1,6 +1,7 @@
 """Smoke/unit: рендер-функции пакетов texts/ и keyboards/.
 
-Pure-форматтеры проверяем на ожидаемые подстроки; объект-рендеры (карточки,
+Pure-форматтеры проверяем на ожидаемые подстроки там, где ветки нет в эталонах
+экранов (tests/screens) и в tests/unit/test_ui_atoms.py; объект-рендеры (карточки,
 панели) и билдеры клавиатур — что не падают и дают непустой результат на живых
 доменных объектах. Ловит регрессии сигнатур/полей при рефакторинге моделей.
 """
@@ -32,12 +33,6 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert texts.used_of_limit(512 * M, 50 * G) == "0.5 из 50 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8.99 из 50 ГБ (лимит устройства)"
     assert texts.used_of_limit(int(8.99 * G), 0) == "8.99 ГБ"
-    from awgbot.core import models
-    gw = models.Device(id=1, client_id=1, name="Малина", public_key="P", private_key="k",
-                       preshared_key="", address="10.8.1.9", block_reason=0, created_at="2026-01-01",
-                       is_gateway=1, traffic=models.DeviceTraffic(rx_month=int(0.83 * G), tx_month=int(10.95 * G)))
-    assert "Потребление: 11.78 ГБ (↑ 10.95 ГБ | ↓ 0.83 ГБ)" in texts.gateway_device_card(gw), \
-        "у шлюза единица дублировалась: «11.79 ГБ ГБ»"
 
 
 def test_gb_str_and_slots_and_limit_notice():
@@ -59,8 +54,7 @@ def test_device_count_is_a_fraction_everywhere():
     owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
     assert owner.endswith("Теперь у тебя 6 устройств"), owner
     assert "∞" not in owner, "безлимит — без «из ∞»"
-    # с лимитом — тот же вид, число вместо ∞
-    assert texts.reassign_recipient_notice("Тел", 1, 5).endswith("Теперь у тебя 1 из 5 устройств")
+    # с лимитом — тот же вид «m из n» (снимок adm.dev.reassign.go)
     # после «из» слово не склоняем по первому числу: «1 из 5 подключённое устройство» — брак
     assert "подключённое" not in texts.reassign_donor_notice("Тел", 1, 5)
 
@@ -81,16 +75,6 @@ def test_static_keyboards_build():
     assert _is_markup(kb.guest_main()) and _is_markup(kb.guest_main(routing_visible=True, client_id=1))
 
 
-def test_added_by_admin_offers_all_three_ways_and_hides():
-    """Уведомление о выданном устройстве: способы выдачи тройкой в один ряд (как
-    в главном меню) и «Скрыть» последней строкой — оно проактивное, человек его
-    не заказывал."""
-    rows = kb.added_by_admin(7).inline_keyboard
-    assert [b.text for b in rows[0]] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"]
-    assert len(rows[-1]) == 1 and rows[-1][0].text == "Скрыть"
-    assert any("gen_qr" in b.callback_data for b in rows[0]), "QR не выдавался вовсе"
-
-
 def test_block_unblock_reasons_lists_active_bits():
     mask = int(DeviceBlock.ADMIN_SILENT | DeviceBlock.USER)
     assert _is_markup(kb.block_unblock_reasons("dev", 1, mask))
@@ -102,31 +86,6 @@ def test_object_renders_do_not_crash(services, make_active_client):
     services.add_device(client.id, "Устройство")
     client = services.db.get_client(client.id)
     assert texts.greeting_client(client, server_ok=True, slots=(1, 3))
-
-
-def test_client_greeting_shows_consumption_and_expiry(services, make_active_client):
-    """Главная клиента: подписка и трафик одной строкой против лимита, с
-    первого напоминания — «🟡 истекает 12.10 18:00»; без лимита — просто
-    объём. Уедет строка — человек не видит, сколько осталось, пока не
-    откроет «💳 Подписка»."""
-    from awgbot.util import timeutil
-    G = 1024 ** 3
-    c = make_active_client(name="Тестовый клиент", tg_id=8601, traffic_limit=50 * G)
-    traffic = {"rx_month": 20 * G, "tx_month": 4 * G + G // 10}
-    end = timeutil.parse_iso(c.period_end)
-    out = texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
-    assert out.splitlines() == [
-        "👋 <b>Тестовый клиент</b>", "", "🟢 VPN работает",
-        f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 24.1 из 50 ГБ",
-        "📱 Устройств 3 из 4"], out
-    services.db.update_client_fields(c.id, notified_thresholds="10080")
-    c = services.db.get_client(c.id)
-    assert f"💳 🟡 истекает {timeutil.fmt_end_ui(end)} · 📊 24.1 из 50 ГБ" in \
-        texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
-    assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
-    services.db.update_client_fields(c.id, traffic_limit=0)
-    assert " · 📊 24.1 ГБ (безлимит)\n" in texts.greeting_client(
-        services.db.get_client(c.id), True, (3, 4), None, traffic=traffic)
 
 
 def test_friend_panel_and_admin_panel_render(services, make_active_client):
@@ -152,13 +111,12 @@ def test_object_keyboards_build(services, make_active_client):
 
 
 def test_rf_traffic_line_render():
-    """Вложенная строка РФ под трафиком на главной: объём без ↑↓ (разбивка —
-    на экране «Трафик»); суффикс — только при ошибке учёта."""
+    """Вложенная строка РФ под трафиком на главной: суффикс — только при ошибке
+    учёта; без данных о РФ и при show=False строки нет. Обычная строка «└ 🇷🇺
+    РФ-доступ: N ГБ» — в эталоне (adm.main)."""
     G = 1024 ** 3
-    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ"
     assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
         "└ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт трафика РФ-доступа не идёт"
     st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st), "строка РФ без данных о ней"
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})
-    assert "└ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})

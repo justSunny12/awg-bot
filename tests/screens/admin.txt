@@ -2421,7 +2421,7 @@ Pi4 — 🟡 Резерв, проверка связи
   [⬅️ Назад | set:rt:open::]
 
 ### adm.rt.disable — выключить РФ-доступ для всех?
-> press set:rt_params:toggle:app.routing.enabled:
+> press set:rt:toggle:app.routing.enabled:
 = edit #1
 🔴 Выключить РФ-доступ для всех?
 Российские сервисы снова будут ругаться на VPN; разрешения и списки сохранятся

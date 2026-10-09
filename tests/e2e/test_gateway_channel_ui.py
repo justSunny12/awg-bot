@@ -1,8 +1,11 @@
 """
 Экраны канала до шлюза: строка «🔗 Упр. канал …» в карточке слота и
 предупреждения открытыми строками под ней — вместе со сверкой выданного с
-установленным, строка канала в панели агента. Спрашивать шлюз по кнопке (свежий снимок, диагностика) карточка
-больше не умеет — показывает то, что шлюз прислал сам.
+установленным. Спрашивать шлюз по кнопке (свежий снимок, диагностика) карточка
+больше не умеет — показывает то, что шлюз прислал сам. Карточка канала, который
+ещё не поднимался, и строка канала в панели агента — в эталонах экранов
+(tests/screens/admin.txt, gateway.txt); здесь — состояния канала, которых в
+эталонах нет.
 
 Экрана «Конфигурация шлюза» перед выпуском файла больше нет (вычитка 3.1.0):
 файл выпускается из карточки сразу. Всё, что человеку нужно для решения,
@@ -25,7 +28,6 @@ import os
 
 import pytest
 
-from awgbot.bot import texts
 from awgbot.bot.callbacks import GwSlotCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config, settings
@@ -120,15 +122,6 @@ async def test_a_live_channel_shows_one_line_and_no_request_buttons(services, sl
     assert lines[1].endswith(" · 61 мс") and services.pings == [1], (
         "пинг меряет путь ядро ↔ ядро, отклик канала — занятость процесса агента; "
         "подменить первое вторым значило бы врать в карточке")
-
-
-async def test_a_gateway_that_never_spoke_says_so_and_offers_no_button(services, slot, fake_bot):
-    """Канал ещё не поднимался: ни одной строки о конфигурации шлюза мы не
-    выдумываем — «сказать нечего» честнее, чем «всё сошлось» без единого
-    факта."""
-    text, labels = await _card(services, fake_bot)
-    assert "🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза" in text.split("\n"), text
-    assert "конфиг актуален" not in text and "· v" not in text
 
 
 async def test_a_dead_channel_shows_the_last_known_picture_with_its_age(services, slot, fake_bot):
@@ -368,30 +361,6 @@ def test_a_channel_that_never_came_up_does_not_silence_the_reminder(services, sl
     нечем, и напоминание работает как до канала."""
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
     assert len(services.gw_bundle_drift_notes()) == 1
-
-
-# ── панель агента ────────────────────────────────────────────────────────────
-
-def test_the_agent_panel_shows_the_channel_only_when_the_bundle_turned_it_on(monkeypatch):
-    """Канал не включён бандлом — строки нет вовсе: сказать о нём нечего, а
-    «выключено» читалось бы как поломка на машине, где функции просто нет."""
-    from awgbot.bot.texts.gateway import channel_panel_line
-    from awgbot.domain.gateway import GwStatus
-    from awgbot.runtime import linkclient
-
-    monkeypatch.setattr(linkclient, "enabled", lambda: False)
-    assert channel_panel_line() == ""
-    assert "упр. канал" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=5.0))
-
-    monkeypatch.setattr(linkclient, "enabled", lambda: True)
-    monkeypatch.setattr(linkclient, "online", lambda: False)
-    monkeypatch.setattr(linkclient, "role", lambda: "")
-    assert channel_panel_line() == "🔗 упр. канал ⚪ нет связи"
-    monkeypatch.setattr(linkclient, "online", lambda: True)
-    assert channel_panel_line() == "🔗 упр. канал 🟢"
-    panel = texts.gateway_panel(GwStatus(link_up=True, handshake_age=5.0, server_name="awg-srv"))
-    # канал — хвостом строки линка: они про один и тот же путь
-    assert "📡 Линк до awg-srv 🟢 5 с · 🔗 упр. канал 🟢" in panel.splitlines(), panel
 
 
 # ── этап 4: тумблеры при живом канале ────────────────────────────────────────
