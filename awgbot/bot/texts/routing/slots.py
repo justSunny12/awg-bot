@@ -90,13 +90,6 @@ def gateway_claim_already(dev) -> str:
 # ── слоты шлюзов ───────────────────────────────
 
 
-def slot_short(state) -> str:
-    """«NASPi (дом 1)» — для уведомлений и кнопок."""
-    dev, gw = state.get("device"), state.get("gateway")
-    name = _e(dev.name) if dev is not None else f"слот {gw.id}"
-    return name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
-
-
 def _slot_down_for(state) -> str:
     """Сколько слот не отвечает: от момента падения из state («13 дн 4 ч»);
     момента нет (старый state) — по тактам окна, минутами."""

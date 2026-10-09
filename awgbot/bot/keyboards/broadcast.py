@@ -45,8 +45,3 @@ def broadcast_cancel() -> InlineKeyboardMarkup:
 
 def broadcast_confirm() -> InlineKeyboardMarkup:
     return confirm(BroadcastCB(action="cancel"), "📢 Отправить", BroadcastCB(action="send"), danger=False)
-
-
-def broadcast_mode() -> InlineKeyboardMarkup:
-    """Совместимость: прежний экран режима — теперь тумблер на адресатах."""
-    return broadcast_cancel()

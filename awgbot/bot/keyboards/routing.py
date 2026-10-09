@@ -206,11 +206,6 @@ def routing_params_kb(info: dict, lists_every: int) -> InlineKeyboardMarkup:
         ui.back(SetCB(sec="rt")))
 
 
-def routing_provision() -> InlineKeyboardMarkup:
-    """Экран «функция не развёрнута»: одно действие и в меню."""
-    return gateways_kb((), provisioned=False)
-
-
 def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     """«👥 Кому доступен»: отметки профилей и «Выбрать все» по правилу
     массового выбора; назад — в «Шлюзы»."""

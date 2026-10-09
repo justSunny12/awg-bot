@@ -94,10 +94,6 @@ def routing_provision_failed(reason: str) -> str:
             "Частая причина — нет пакета dnsmasq в репозиториях образа.")
 
 
-GW_INSTALL_URL = ("https://raw.githubusercontent.com/justSunny12/awg-bot/main/"
-                  "install/awg-bot-install.sh")
-
-
 def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
                                  routing_reset: bool = False) -> str:
     """Что делать с файлом первого применения — ОДНА строка со своей машины.
@@ -179,7 +175,6 @@ ROUTING_ABOUT = (
     "Включишь — банки, госуслуги, маркетплейсы будут открываться с российского "
     "адреса, заблокированное — через VPN. Ссылки менять не нужно"
 )
-ROUTING_ABOUT_OFF = ROUTING_ABOUT
 
 ROUTING_ADD_PROMPT = (
     ui.head("➕ Сайты с российского адреса") + "\n"
@@ -188,7 +183,6 @@ ROUTING_ADD_PROMPT = (
 )
 
 ROUTING_APPLY_HINT = "применится в теч. минуты, не сработало — переподключись"
-ROUTING_ADDED_HINT = ROUTING_APPLY_HINT
 ROUTING_SITES_ABOUT = ("Открываются с российского адреса. Банки, госуслуги, маркетплейсы — "
                        "уже в общем списке")
 
@@ -263,8 +257,6 @@ def routing_clear_ask(n: int) -> str:
     return ui.confirm(f"🗑 Удалить все свои сайты ({n})?", "Общий список останется")
 
 
-ROUTING_CLEAR_CONFIRM = routing_clear_ask(0)
-
 ROUTING_UNAVAILABLE = "РФ-доступ временно недоступен. Попробуй позже"
 ROUTING_NOT_ALLOWED_ADMIN = "РФ-доступ этому профилю не разрешён"     # админу — причина, а не «попробуй позже»
 
@@ -308,4 +300,3 @@ ROUTING_REVOKED_NOTICE = (
 )
 
 
-ROUTING_LENT_OUT_NOTE = "Переданными устройствами управляют те, кому они переданы"

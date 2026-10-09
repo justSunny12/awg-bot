@@ -1367,9 +1367,17 @@ _STEP3 = [
     Shot("adm.cl.period.forever", role="admin", steps=_PERIOD + [("text", "0")], data=_people,
          title="период: бессрочно"),
     Shot("adm.new.traffic", role="admin", steps=_NEWP_TRAFFIC, data=_people, title="новый профиль: трафик"),
+    Shot("adm.new.devs.ask", role="admin", steps=_NEWP + [("press", PresetCB(kind="new_devs", val=-1))],
+         data=_people, title="новый профиль: «✏️ Другое» — приглашение к числу устройств"),
     Shot("adm.new.devs.other", role="admin",
          steps=_NEWP + [("press", PresetCB(kind="new_devs", val=-1)), ("text", "4")], data=_people,
          title="новый профиль: своё число устройств — трафик"),
+    Shot("adm.new.traffic.other", role="admin",
+         steps=_NEWP_TRAFFIC + [("press", PresetCB(kind="new_traffic", val=-1))], data=_people,
+         title="новый профиль: «✏️ Другое» — приглашение к трафику"),
+    Shot("adm.new.traffic.typed", role="admin",
+         steps=_NEWP_TRAFFIC + [("press", PresetCB(kind="new_traffic", val=-1)), ("text", "70")], data=_people,
+         title="новый профиль: свой трафик текстом — срок"),
     Shot("adm.new.period", role="admin", steps=_NEWP_PERIOD, data=_people, title="новый профиль: срок"),
     Shot("adm.new.invite", role="admin",
          steps=_NEWP_PERIOD + [("press", PeriodCB(kind="year", ctx="create"))], data=_people,
@@ -1461,6 +1469,8 @@ def _gw_dev_no_slot(services, mp):
     переезда: признак шлюза есть, строки слота по нему нет)."""
     who = _slots(1)(services, mp)
     services.db.gateway_by_device = lambda device_id: None
+    # трафик несимметричный: у шлюза стрелки развёрнуты (отдача ↑ — это tx)
+    services.db.add_traffic_bulk([(NASPI, int(0.83 * GB), int(10.95 * GB))])
     return who
 
 

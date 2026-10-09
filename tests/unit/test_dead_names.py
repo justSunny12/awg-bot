@@ -18,10 +18,10 @@ from awgbot.bot import keyboards as kbm
 
 BOT = pathlib.Path(kbm.__file__).parent.parent              # awgbot/bot
 PKG = BOT.parent                                             # awgbot/
-REEXPORTS = {BOT / "texts" / "__init__.py", BOT / "keyboards" / "__init__.py"}
 MODULES = [*sorted((BOT / "texts").rglob("*.py")), *sorted((BOT / "keyboards").glob("*.py")),
            *sorted((BOT / "sections").glob("*.py"))]
 _ALL = re.compile(r"__all__\s*=\s*\[[^\]]*\]", re.S)
+_IDENT = re.compile(r"[A-Za-z_]\w*")
 
 
 def _public_names(src: str) -> set[str]:
@@ -41,26 +41,55 @@ def _definitions(src: str, name: str) -> int:
                           + re.escape(name) + r"\s*(?::[^=\n]*)?=", src, re.M))
 
 
-_IDENT = re.compile(r"[A-Za-z_]\w*")
+def _identifiers(src: str) -> Counter:
+    """Идентификаторы кода: имена, атрибуты, импорты и строки (ключи getattr);
+    докстринги и комментарии — не ссылки."""
+    tree = ast.parse(src)
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                docs.add(id(body[0].value))
+    out = Counter()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            out[node.id] += 1
+        elif isinstance(node, ast.Attribute):
+            out[node.attr] += 1
+        elif isinstance(node, ast.alias):
+            out[node.name.rsplit(".", 1)[-1]] += 1
+            if node.asname:
+                out[node.asname] += 1
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            out[node.name] += 1
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
+            out.update(_IDENT.findall(node.value))
+    return out
 
 
 def dead_names(extra: dict | None = None) -> list[str]:
-    """extra — {модуль: текст}, подменяет исходник (для проверки сторожа).
-    Счёт — по идентификаторам в тексте (и внутри строк: ключи getattr)."""
+    """extra — {модуль: текст}, подменяет исходник (для проверки сторожа)."""
     code = {p: _ALL.sub("", (extra or {}).get(p) or p.read_text(encoding="utf-8")) for p in PKG.rglob("*.py")}
-    counts = {p: Counter(_IDENT.findall(src)) for p, src in code.items()}
-    total = Counter()
-    for c in counts.values():
-        total.update(c)
+    counts = {p: _identifiers(src) for p, src in code.items()}
     out = []
     for mod in MODULES:
         if mod.name == "__init__.py":
             continue
-        reexport = next((p for p in REEXPORTS if p.parent == mod.parent), None)
+        pkg = mod.relative_to(BOT).parts[0]                   # texts | keyboards | sections
+        reexport = mod.parent / "__init__.py" if pkg != "sections" else None
+        # считают только файлы, которым пакет виден: сам пакет и те, кто его
+        # импортирует; одноимённый обработчик или метод сервиса — не ссылка
+        readers = [p for p, src in code.items()
+                   if p.is_relative_to(BOT / pkg) or re.search(r"\b" + pkg + r"\b", src)]
         for name in sorted(_public_names(code[mod])):
-            refs = total[name] - _definitions(code[mod], name)
+            refs = sum(counts[p][name] - _definitions(code[p], name) for p in readers)
             if reexport is not None:
                 refs -= counts[reexport][name]
+                outer = reexport.parent.parent / "__init__.py"          # texts/__init__ над texts/routing
+                if outer.exists() and outer in counts:
+                    refs -= counts[outer][name]
             if refs == 0:
                 out.append(f"{mod.relative_to(BOT)}:{name}")
     return out
@@ -71,7 +100,18 @@ def test_every_public_name_of_texts_keyboards_and_sections_is_used():
 
 
 def test_the_guard_notices_a_fresh_dead_name():
-    """Сторож сторожа: имя, на которое ссылается только тест, — мёртвое."""
-    mod = BOT / "texts" / "fmt.py"
-    src = mod.read_text(encoding="utf-8") + "\nONLY_IN_TESTS = 1\n"
-    assert dead_names({mod: src}) == ["texts/fmt.py:ONLY_IN_TESTS"]
+    """Сторож сторожа: имя, на которое ссылается только тест, докстринг или
+    реэкспорт, — мёртвое; и в подпакете routing тоже."""
+    fmt = BOT / "texts" / "fmt.py"
+    src = fmt.read_text(encoding="utf-8") + "\nONLY_IN_TESTS = 1\n"
+    assert dead_names({fmt: src}) == ["texts/fmt.py:ONLY_IN_TESTS"]
+    init = BOT / "texts" / "__init__.py"
+    reexported = init.read_text(encoding="utf-8") + "\nfrom .fmt import ONLY_IN_TESTS\n"
+    handler = BOT / "handlers" / "client.py"
+    doc = '"""Упоминание ONLY_IN_TESTS в докстринге — не ссылка."""\n' + handler.read_text(encoding="utf-8")
+    assert dead_names({fmt: src, init: reexported, handler: doc}) == ["texts/fmt.py:ONLY_IN_TESTS"]
+    slots = BOT / "texts" / "routing" / "slots.py"
+    rinit = BOT / "texts" / "routing" / "__init__.py"
+    assert dead_names({slots: slots.read_text(encoding="utf-8") + "\nDEAD_IN_ROUTING = 1\n",
+                       rinit: rinit.read_text(encoding="utf-8") + "\nfrom .slots import DEAD_IN_ROUTING\n"}) \
+        == ["texts/routing/slots.py:DEAD_IN_ROUTING"]
