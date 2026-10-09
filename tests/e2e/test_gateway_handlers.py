@@ -67,7 +67,7 @@ async def test_restart_needs_confirmation(svc, fake_bot):
     await gh.gw_confirm(cb, GwCB(action="restart"), svc)
     assert svc.restarted == 0
     kind, text, markup = msg.sent[-1]
-    assert text == ("🔁 Перезапустить AWG? Линк опустится и поднимется — РФ-доступ у всех "
+    assert text == ("🔁 Перезапустить AWG?\nЛинк опустится и поднимется — РФ-доступ у всех "
                     "прервётся на секунды"), text
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert [b.text for b in buttons] == ["⬅️ Отмена", "🔁 Перезапустить"]

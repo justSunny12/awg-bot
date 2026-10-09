@@ -287,11 +287,12 @@ def _carrying(svc, role: str = "active", link_up: bool = True) -> None:
 
 
 @pytest.mark.parametrize("action, text", [
-    ("restart", "🔁 Перезапустить AWG? Линк опустится и поднимется — РФ-доступ у всех прервётся на секунды"),
-    ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"),
+    ("restart", "🔁 Перезапустить AWG?\nЛинк опустится и поднимется — РФ-доступ у всех прервётся на секунды"),
+    ("botrestart", "🔁 Перезапустить бота?\nВернётся через несколько секунд; без влияния на пользователей"),
 ])
 async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, action, text):
-    """Перезапуски — из «🔧 Сервис», «Отмена» первой и назад — туда же."""
+    """Перезапуски — из «🔧 Сервис»: вопрос и цена строками, «Отмена» первой
+    и назад — туда же."""
     _carrying(svc)
     cb, nav = _acb(fake_bot)
     await gh.gw_confirm(cb, GwCB(action=action), svc)
@@ -304,10 +305,10 @@ async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, 
 
 @pytest.mark.parametrize("role, link_up", [("standby", True), ("active", False)])
 @pytest.mark.parametrize("action, text", [
-    ("restart", "🔁 Перезапустить AWG? Линк опустится и поднимется"),
+    ("restart", "🔁 Перезапустить AWG?\nЛинк опустится и поднимется"),
     ("reassert", "🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
                  "переподнимет линк"),
-    ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"),
+    ("botrestart", "🔁 Перезапустить бота?\nВернётся через несколько секунд; без влияния на пользователей"),
 ])
 async def test_a_gateway_not_carrying_traffic_is_not_threatened_with_rf_access_loss(
         svc, fake_bot, role, link_up, action, text):

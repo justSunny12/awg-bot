@@ -7,6 +7,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB
 from awgbot.bot.states import GatewayToken
@@ -39,7 +40,7 @@ async def gateway_pick_list(cb: CallbackQuery, callback_data: GwMarkCB, services
 async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await cb.answer()
     slot = _slot_of(callback_data)
@@ -67,7 +68,7 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
     try:
         token_slot = slot or (await call(services.gateway_next_slot))[0]
     except ServiceError as e:                      # слоты заняты, нет портов/подсетей
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         await state.clear()
         return
     if not await call(services.gw_bot_token, token_slot):
@@ -107,7 +108,7 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
     try:
         token_slot = slot or (await call(services.gateway_next_slot))[0]
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         await state.clear()
         return
     if not await call(services.gw_bot_token, token_slot):
@@ -180,7 +181,7 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     try:
         blob, name = await call(services.gw_bundle_plain, slot or None)
     except (ServiceError, OSError) as e:
-        await message.answer(f"⚠️ Файл первого применения не собран: {texts._e(str(e))}")
+        await message.answer(ui.fail("Файл первого применения не собран", str(e)))
         return
     from aiogram.types import BufferedInputFile
     if slot:

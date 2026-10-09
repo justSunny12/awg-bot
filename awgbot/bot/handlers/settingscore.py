@@ -25,6 +25,7 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from awgbot.core import settings
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
@@ -77,7 +78,7 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
     """Открыть ввод значения key; False — ключ неизвестен (старая клавиатура)."""
     from awgbot.bot import sections
     if sections.bounds(key) is None and key not in texts.SETTINGS_TEXT and key != "backup_when":
-        await cb.answer("Эта настройка недоступна", show_alert=True)
+        await cb.answer(ui.Toast.stale, show_alert=True)
         return False
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=sec)
@@ -281,7 +282,7 @@ async def toggle_bool(cb: CallbackQuery, services, hooks: Hooks, key: str, sec: 
     try:
         await call(settings.set_value, key, not cur)
     except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     if after_set is not None:
         await after_set(key)
@@ -351,7 +352,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
         await send_menu(message, services, *spec.owner_refusal(st, e.listening))
         return
     except ServiceError as e:
-        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {texts._e(str(e))}")
+        await after_input(message, services, hooks, spec.sec, ui.fail("Порт не изменён", str(e)))
     else:
         await after_input(message, services, hooks, spec.sec, spec.changed_text(old, port))
 
@@ -367,7 +368,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
         await cb.message.answer(texts.GW_BACKUP_NO_KEY)
         return
     except Exception as e:                            # noqa: BLE001
-        await cb.message.answer(f"⚠️ {e}")
+        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
         return
     if await call(services.backup_channel) == "email":
         try:
@@ -376,7 +377,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
             await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
                                     reply_markup=kb.hide_only())
         except mail.MailError as e:
-            await cb.message.answer(f"🔴 {e}")
+            await cb.message.answer(f"🔴 {texts._e(str(e))}")
         await hooks.render(cb, services, "backup")
         return
     for p in paths:
@@ -390,7 +391,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
 async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str) -> None:
     """telegram | email; почта — только с настроенным ящиком и шифрованием."""
     if val not in ("telegram", "email"):
-        await cb.answer("Нет такого варианта", show_alert=True)
+        await cb.answer(ui.Toast.stale, show_alert=True)
         return
     if val == "email":
         if not await call(services.email_configured):
@@ -404,7 +405,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
     try:
         await call(settings.set_value, "app.scheduler.backup_channel", val)
     except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await hooks.render(cb, services, "backup")
     await cb.answer(texts.cycle_toast("app.scheduler.backup_channel", val))
@@ -451,7 +452,7 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
     if key == "check":
         # колбэк отвечаем сразу (IMAP-вход может идти дольше лимита ответа),
         # итог — первой строкой раздела
-        await cb.answer("Проверяю…")
+        await cb.answer(ui.Toast.checking)
         ok, detail = await call(services.email_check)
         # отказ уже в шапке раздела («✉️ E-mail 🔴 …») — вторая строка была дублем
         await _render_with_note(cb, services, hooks, "email", texts.EMAIL_CHECK_OK if ok else "")

@@ -19,6 +19,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, FriendCB
 from awgbot.bot.filters import RoleFilter
@@ -132,7 +133,7 @@ async def friend_list(cb: CallbackQuery, client, services):
 async def friend_open(cb: CallbackQuery, callback_data: FriendCB, client, services):
     dev = await _held(services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, *await card_payload(services, dev))
     await cb.answer()
@@ -151,7 +152,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     devs = await _held(services, client)
     if not callback_data.device_id:
         if not devs:
-            await cb.answer("Устройств нет", show_alert=True)
+            await cb.answer(ui.Toast.no_devices_yet, show_alert=True)
             return
         if len(devs) > 1:
             from awgbot.bot import paging
@@ -164,7 +165,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     else:
         dev = next((d for d in devs if d.id == callback_data.device_id), None)
         if dev is None:
-            await cb.answer("Устройство не найдено", show_alert=True)
+            await cb.answer(ui.Toast.no_device, show_alert=True)
             return
     kind = kb.gen_kind(callback_data.action)
     await drop_message(cb, services)
@@ -182,7 +183,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
 async def friend_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, services):
     dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id, guest=True))
     await cb.answer()
@@ -192,7 +193,7 @@ async def friend_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
 async def friend_block_do(cb: CallbackQuery, callback_data: BlockCB, client, services):
     dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await devcore.block_device(cb, services, dev, lambda d: card_payload(services, d))
 
@@ -201,7 +202,7 @@ async def friend_block_do(cb: CallbackQuery, callback_data: BlockCB, client, ser
 async def friend_unblock(cb: CallbackQuery, callback_data: BlockCB, client, services):
     dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await devcore.unblock_device(cb, services, dev, lambda d: card_payload(services, d))
 
@@ -212,7 +213,7 @@ async def friend_unblock(cb: CallbackQuery, callback_data: BlockCB, client, serv
 async def friend_delete_ask(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
     dev = await _held(services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, texts.device_delete_ask(dev, held=True),
                kb.confirm_delete_device(dev.id, guest=True))
@@ -223,7 +224,7 @@ async def friend_delete_ask(cb: CallbackQuery, callback_data: DelDeviceCB, clien
 async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
     dev = await _held(services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if not await devcore.delete_by_holder(cb, services, dev):
         return

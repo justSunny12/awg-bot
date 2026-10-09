@@ -23,6 +23,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import ClientCB, FriendCB, Menu, RoutingCB
 from awgbot.bot.filters import RoleFilter
@@ -123,7 +124,7 @@ async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, ser
 
 @router.callback_query(RoutingCB.filter(F.action == "lent"))
 async def routing_lent_row(cb: CallbackQuery):
-    await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
+    await cb.answer(ui.Toast.held_by_other, show_alert=True)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
@@ -140,7 +141,7 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
         await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
         return
     if client is None and dev.is_lent:
-        await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
+        await cb.answer(ui.Toast.held_by_other, show_alert=True)
         return
     profile = await _profile(services, client, subject_id)
     if not await _guard(cb, services, profile):
@@ -158,7 +159,7 @@ async def routing_all_toggle(cb: CallbackQuery, callback_data: RoutingCB, client
         return
     enabled, total = await call(services.routing_device_counts, profile.id)
     if not total:
-        await cb.answer("Устройств пока нет", show_alert=True)
+        await cb.answer(ui.Toast.no_devices_yet, show_alert=True)
         return
     turn_on = enabled < total
     await call(services.set_routing_all, profile.id, turn_on)
@@ -246,7 +247,7 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
     domains = await call(services.routing_domains, profile.id)
     idx = callback_data.idx
     if not (0 <= idx < len(domains)) or callback_data.tag != kb.entry_tag(domains[idx]):
-        await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+        await cb.answer(ui.Toast.list_changed, show_alert=True)
         await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
         return
     removed = domains[idx]

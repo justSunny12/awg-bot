@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -55,7 +56,7 @@ async def admin_menu_gen_pick(cb: CallbackQuery, callback_data: Menu, services):
         ac = await call(services.admin_client)
     devices = kb.issuable(list(await call(services.db.list_devices, ac.id)))
     if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
+        await cb.answer(ui.Toast.add_device_first, show_alert=True)
         return
     if len(devices) == 1:
         await admin_dev_gen(cb, DeviceCB(action=callback_data.action, device_id=devices[0].id), services)
@@ -82,7 +83,7 @@ async def admin_menu_devices(cb: CallbackQuery, services, state: FSMContext):
 async def admin_add_device_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
     client = await call(services.db.get_client, callback_data.client_id)
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     used, limit = await call(services.device_quota, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
@@ -101,7 +102,7 @@ async def admin_add_device_slot(cb: CallbackQuery, callback_data: ClientCB, serv
     """«➕ Слот и добавить»: лимит профиля +1, затем ввод имени."""
     client = await call(services.db.get_client, callback_data.client_id)
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     used, limit = await call(services.device_quota, client.id)
     if limit != 0 and used >= limit:
@@ -186,7 +187,7 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
     await state.clear()
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, *await device_card_parts(services, dev))
     await cb.answer()
@@ -203,7 +204,7 @@ async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
     """Ссылка / QR / файл любого устройства — одним сообщением с «⬅️ В меню»."""
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if not dev.private_key:
         await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
@@ -224,7 +225,7 @@ async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, servi
     """Устройства профиля отдельным экраном — когда в карточку не влезли."""
     client = await call(services.db.get_client, callback_data.client_id)
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     devices = await call(services.db.list_devices, client.id)
     used, limit = await call(services.device_quota, client.id)
@@ -250,7 +251,7 @@ async def admin_gen_for(cb: CallbackQuery, callback_data: ClientCB, services, st
 async def device_edit_name_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await state.set_state(EditDeviceName.value)
     await ask_here(cb, services, state, texts.device_name_prompt(dev.name), "dev", dev.id, device_id=dev.id)
@@ -282,7 +283,7 @@ async def device_edit_name_apply(message: Message, services, state: FSMContext):
 async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await state.clear()
     plimit = await call(services.profile_traffic_limit, dev.client_id)
@@ -295,7 +296,7 @@ async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB, 
 async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
     dev = await call(services.db.get_device, callback_data.ref)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if callback_data.val < 0:
         plimit = await call(services.profile_traffic_limit, dev.client_id)
@@ -339,7 +340,7 @@ async def apply_device_limit_typed(message: Message, services, state: FSMContext
 async def device_reassign_start(cb: CallbackQuery, callback_data: DeviceCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     clients = [c for c in await call(services.db.list_clients) if c.id != dev.client_id]
     if not clients:
@@ -359,7 +360,7 @@ async def device_reassign_apply(cb: CallbackQuery, callback_data: ReassignCB, se
     if not await call(services.has_free_slot, callback_data.client_id):
         client = await call(services.db.get_client, callback_data.client_id)
         if client is None:
-            await cb.answer("Профиль не найден", show_alert=True)
+            await cb.answer(ui.Toast.no_profile, show_alert=True)
             return
         await edit(cb, texts.reassign_slot_ask(client, _bot(services)),
                    kb.reassign_addslot(callback_data.device_id, callback_data.client_id))
@@ -384,7 +385,7 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
     try:
         info = await call(services.reassign_device, device_id, client_id, add_slot)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     rec = info["recipient"]
     if rec["tg_id"]:
@@ -423,7 +424,7 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
 async def admin_del_ask(cb: CallbackQuery, callback_data: DelDeviceCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     client = await call(services.db.get_client, dev.client_id)
     only = await call(services.is_only_device, dev.id)
@@ -436,14 +437,14 @@ async def admin_del_ask(cb: CallbackQuery, callback_data: DelDeviceCB, services)
 async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     client = await call(services.db.get_client, dev.client_id)
     back = await _back_target(services, dev)
     try:
         await remove_device_and_notify(cb.bot, services, dev.id)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await cb.answer()
     # итог — первой строкой экрана, откуда пришли (как у владельца и гостя):

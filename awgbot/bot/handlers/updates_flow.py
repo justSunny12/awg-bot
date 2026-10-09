@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.handlers.common import call, cleanup_content, dismiss_update_reports, drop_message
 from awgbot.core import settings
@@ -106,7 +107,7 @@ async def set_schedule(cb: CallbackQuery, services, opt: str) -> bool:
     try:
         await call(settings.set_value, "updates.poll_schedule", want)
     except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return False
     if opt == "never":
         await call(services.mute_updates)

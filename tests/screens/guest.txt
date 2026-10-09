@@ -278,7 +278,7 @@
 
 ### gst.gen.none — выдача без устройств — отказ
 > press fr:gen_link:0
-~! Устройств нет
+~! Устройств пока нет
 
 ### gst.dev.link — выдача: ссылка
 > press fr:gen_link:1

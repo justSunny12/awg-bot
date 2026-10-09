@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit_nav
 
 from ._kb import back_button
@@ -64,7 +65,7 @@ async def _awg_restart(ctx) -> str:
     «🔴 AWG не перезапущен: причина»."""
     await ctx.cb.answer("Перезапускаю AWG…")           # ответ сразу: рестарт может идти долго
     ok, detail = await call(ctx.services.restart_awg)
-    return texts.SVC_AWG_RESTARTED if ok else f"🔴 AWG не перезапущен: {texts._e(detail)}"
+    return ui.result(ok, "AWG перезапущен", "AWG не перезапущен", detail)
 
 
 async def _bot_question(ctx) -> str:

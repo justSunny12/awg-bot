@@ -6,6 +6,7 @@ handlers/admin/selfops.py — личный VPN администратора (Adm
 from __future__ import annotations
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -39,7 +40,7 @@ async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services)
     ac = await _self(services)
     devices = kb.issuable(await call(services.db.list_devices, ac.id))
     if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
+        await cb.answer(ui.Toast.add_device_first, show_alert=True)
         return
     from awgbot.bot import paging
     await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],

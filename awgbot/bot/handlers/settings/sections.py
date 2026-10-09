@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from awgbot.core import settings
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot import screens
 from awgbot.bot import sections as secs
@@ -58,7 +59,7 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         try:
             await call(settings.set_value, key, new)
         except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
+            await cb.answer(ui.toast(e), show_alert=True)
             return
         await _render(cb, "rt", services)
         await cb.answer("Автопереключение " + ("включено" if new else "выключено"))
@@ -92,7 +93,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.key == "bundle":
         # «📤 Выпустить файл» упразднённого экрана «что произойдёт» — на случай
         # старого сообщения в чате: тот же выпуск с карточки/экрана
-        await cb.answer("Собираю и шифрую…")
+        await cb.answer(ui.Toast.packing)
         await _issue_bundle_here(cb, services, int(callback_data.val or 0))
         return
     if callback_data.key == "lists_refresh":
@@ -113,7 +114,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         try:
             await call(settings.set_value, "app.routing.enabled", False)
         except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
+            await cb.answer(ui.toast(e), show_alert=True)
             return
         await call(services.reconcile_routing)
         await _render(cb, "rt", services)
@@ -164,11 +165,11 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await _render(cb, "rt_users", services)
         return
     if callback_data.key != "allow":
-        await cb.answer("Действие недоступно", show_alert=True)
+        await cb.answer(ui.Toast.stale, show_alert=True)
         return
     client = await call(services.db.get_client, int(callback_data.val or 0))
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     new_state = not client.routing_allowed
     notes = await call(services.set_routing_allowed, client.id, new_state)

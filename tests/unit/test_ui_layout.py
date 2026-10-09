@@ -114,19 +114,6 @@ CLIENT = {
     "routing_clear_confirm": lambda: [kbr.routing_clear_confirm(1)],
 }
 
-# подтверждения клиента: (разметка, разрушительное ли действие)
-CONFIRMS = [
-    (lambda: kbc.block_device_confirm(1), True),
-    (lambda: kbc.block_device_confirm(1, guest=True), True),
-    (lambda: kbc.confirm_delete_device(1), True),
-    (lambda: kbc.confirm_delete_device(1, guest=True), True),
-    (lambda: kbr.routing_clear_confirm(1), True),
-    (lambda: kbc.confirm_transfer(1), False),
-    # администратор
-    (lambda: kba.client_delete_confirm(1), True),
-    (lambda: kba.reassign_addslot(1, 2), False),
-]
-
 # не клавиатуры — помощники разметки, у них своих экранов нет
 NOT_SCREENS = {"issue_row", "gen_kind", "issuable"}
 
@@ -171,15 +158,6 @@ def test_every_client_keyboard_has_a_sample():
               if f.__module__ == kbc.__name__ and not n.startswith("_")}
     missing = public - NOT_SCREENS - set(CLIENT)
     assert not missing, f"нет образца: {sorted(missing)}"
-
-
-@pytest.mark.parametrize("make, destructive", CONFIRMS)
-def test_confirmations_put_cancel_first_and_paint_destruction_red(make, destructive):
-    buttons = _buttons(make())
-    assert [b.text for b in buttons][0] == "⬅️ Отмена", [b.text for b in buttons]
-    assert len(buttons) == 2 and len(make().inline_keyboard) == 1, "Отмена и действие — одним рядом"
-    assert buttons[0].style is None, "«Отмена» не должна быть красной"
-    assert buttons[1].style == ("danger" if destructive else None)
 
 
 def test_toggle_marks_are_ticks_for_both_roles():

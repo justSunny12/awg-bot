@@ -308,7 +308,8 @@ awgbot/
                         ключи настроек, блоки, корень настроек, переводчик колбэков
                         (br.cb); общий текст пишется один раз с подстановкой слов роли
              ui         сборщик экрана и атомы: head, screen, prompt, label, sub, st,
-                        toast, tick; правила оформления живут здесь один раз
+                        toast, tick, confirm, result, changed, таблица всплывашек
+                        Toast; правила оформления живут здесь один раз
              sections/  общие разделы настроек обеих ролей — модуль на раздел: root,
                         notify, ncl, mon, email, backup, updates, svc; один диспетчер
                         open/toggle/edit/cycle/do и фабрика роутера make_router(br)

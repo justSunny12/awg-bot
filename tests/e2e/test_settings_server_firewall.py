@@ -227,7 +227,7 @@ async def test_unknown_action_is_refused_and_screen_survives(services, fake_bot,
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="fw", act="do", key="чего-то-нет"), services)
-    assert any("недоступно" in (a[0] or "") for a in cb.answers)
+    assert any("Кнопка устарела" in (a[0] or "") for a in cb.answers), cb.answers
 
 
 async def test_failure_inside_an_action_is_shown_not_swallowed(services, fake_bot, monkeypatch):
@@ -524,7 +524,7 @@ async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, 
     msg = FakeMessage(text="2222", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await sh.ssh_port_received(msg, st, services)
     sections = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert sections and sections[-1].startswith("⚠️ Порт не изменён: sshd -t: Bad configuration option\n"), \
+    assert sections and sections[-1].startswith("🔴 Порт не изменён: sshd -t: Bad configuration option\n"), \
         "отказ sshd — первой строкой раздела"
 
 

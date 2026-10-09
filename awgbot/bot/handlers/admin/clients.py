@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.util import timeutil
 from aiogram import F, Router
@@ -78,7 +79,7 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int, *, answ
             if answer:
                 await cb.answer()
             return
-        await cb.answer("Профиль не найден", show_alert=True)   # единственный ответ: иначе alert теряется
+        await cb.answer(ui.Toast.no_profile, show_alert=True)   # единственный ответ: иначе alert теряется
         return
     await edit(cb, *parts)
     if answer:                                 # answer=False — вызывающий ответит своей всплывашкой
@@ -96,7 +97,7 @@ async def client_edit(cb: CallbackQuery, callback_data: ClientCB, services, stat
     await state.clear()
     parts = await client_edit_parts(services, callback_data.client_id)
     if parts is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     await edit(cb, *parts)
     await cb.answer()
@@ -214,7 +215,7 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
         created = await call(services.create_client, name, int(limit), callback_data.kind,
                              int(traffic_gb) * BYTES_PER_GB)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     client = await call(services.db.get_client, created.client_id)
     await cb.answer()
@@ -239,7 +240,7 @@ async def _invite_menu(message: Message, services, client, code: str, *, new: bo
 async def _client_or_alert(cb: CallbackQuery, services, client_id: int):
     client = await call(services.db.get_client, client_id)
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
     return client
 
 
@@ -479,7 +480,7 @@ async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
     try:
         code = await call(services.regenerate_invite, client.id)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await cb.answer("Новое приглашение")
     await drop_message(cb, services)
@@ -551,7 +552,7 @@ async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services, sta
         services, callback_data.client_id,
         cancel_to=Menu(action="expiring").pack() if return_to == "expiring" else None)
     if screen is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     await edit(cb, *screen)
     await cb.answer()
@@ -564,7 +565,7 @@ async def extend_keep_toggle(cb: CallbackQuery, callback_data: PeriodCB, service
         services, callback_data.ref, keep=bool(callback_data.keep),
         cancel_to=Menu(action="expiring").pack() if return_to == "expiring" else None)
     if screen is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     await edit(cb, *screen)
     await cb.answer()
@@ -585,11 +586,11 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
     try:
         result = await call(services.extend_period, client_id, kind, keep)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await send_notifications(cb.bot, result.notifications)
     fresh = await call(services.db.get_client, client_id)
-    await cb.answer("Продлено")
+    await cb.answer(ui.Toast.extended)
     await edit(cb, texts.extended_note(fresh, kind, result.new_end, result.pause, _bot(services)), None)
     keep_id = cb.message.message_id
     if return_to == "expiring" and await call(services.expiring_subscriptions):
@@ -617,7 +618,7 @@ async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, service
         await _show_client_card(cb, services, client.id, answer=False)
         return
     await send_notifications(cb.bot, notes)
-    await cb.answer("Пауза снята")
+    await cb.answer(ui.Toast.pause_lifted)
     await edit(cb, texts.resumed_note(client, actual, new_end, _bot(services)), None)
     parts = await client_card_parts(services, client.id)
     if parts is not None:

@@ -42,6 +42,29 @@ def test_screen_skips_none_keeps_empty_lines_and_puts_the_note_first():
 
 # ── всплывашка ───────────────────────────────────────────────────────────────
 
+def test_confirm_puts_the_question_first_and_the_cost_on_the_next_line():
+    assert ui.confirm("🔁 Перезапустить AWG?", "Все соединения оборвутся") == "🔁 Перезапустить AWG?\nВсе соединения оборвутся"
+    assert ui.confirm("🗑 Удалить?") == "🗑 Удалить?"
+
+
+def test_result_has_both_forms_and_escapes_the_reason():
+    assert ui.result(True, "AWG перезапущен", "AWG не перезапущен") == "✅ AWG перезапущен"
+    assert ui.result(False, "AWG перезапущен", "AWG не перезапущен", "awg <quick> & dirty") == \
+        "🔴 AWG не перезапущен: awg &lt;quick&gt; &amp; dirty"
+    assert ui.fail("Порт не изменён") == "🔴 Порт не изменён"
+
+
+def test_changed_shows_old_arrow_new_with_the_unit():
+    assert ui.changed("Частота опроса", 3, 5, " мин") == "✅ Частота опроса: 3 → 5 мин"
+    assert ui.changed("Бонус", "—", 10, " ГБ") == "✅ Бонус: — → 10 ГБ"
+
+
+def test_toast_table_is_plain_short_and_without_duplicates():
+    table = {k: v for k, v in vars(ui.Toast).items() if not k.startswith("_")}
+    assert table and all(v == ui.toast(v) for v in table.values()), "теги или сущности во всплывашке"
+    assert len(set(table.values())) == len(table), "одна строка под двумя именами"
+
+
 def test_toast_strips_tags_unescapes_and_caps_at_200():
     assert ui.toast("<b>Готово</b> &amp; точка") == "Готово & точка"
     long = "x" * 300

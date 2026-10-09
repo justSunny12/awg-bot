@@ -112,7 +112,7 @@ EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
 EMAIL_BAD_HOST = "⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>"
 def email_forget_confirm(br) -> str:
     """Что перестанет работать без почты — у роли своё (email_forget_tail)."""
-    return f"🗑 Отключить почту?\nЛогин, пароль и серверы будут стёрты; {br.email_forget_tail}"
+    return ui.confirm("🗑 Отключить почту?", f"Логин, пароль и серверы будут стёрты; {br.email_forget_tail}")
 
 
 EMAIL_FORGET_CONFIRM = email_forget_confirm(MAIN)
@@ -265,13 +265,13 @@ def backup_mailed(address: str, n: int = 1) -> str:
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
 
 def svc_confirm_awg(br, carries: bool = True) -> str:
-    """«🔁 Перезапустить AWG? <цена>» — цена словами роли; carries — роль
-    сейчас несёт трафик (у агента предупреждение про РФ-доступ только тогда)."""
-    return f"🔁 Перезапустить AWG? {br.awg_restart_cost_carrying if carries else br.awg_restart_cost}"
+    """«🔁 Перезапустить AWG?» и цена словами роли; carries — роль сейчас
+    несёт трафик (у агента предупреждение про РФ-доступ только тогда)."""
+    return ui.confirm("🔁 Перезапустить AWG?", br.awg_restart_cost_carrying if carries else br.awg_restart_cost)
 
 
 def svc_confirm_bot(br) -> str:
-    return f"🔁 Перезапустить бота? {br.bot_restart_cost}"
+    return ui.confirm("🔁 Перезапустить бота?", br.bot_restart_cost)
 
 
 SVC_CONFIRM_AWG = svc_confirm_awg(MAIN)
@@ -587,7 +587,7 @@ def settings_changed(key: str, old, new) -> str:
         unit = unit_suffix(unit)
     old_s = _setting_value(key, old) if old not in (None, "", []) else "—"
     new_s = _setting_value(key, new) if new not in (None, "", []) else "—"
-    return f"✅ {_e(label)}: {old_s} → {new_s}{unit}"
+    return ui.changed(_e(label), old_s, new_s, unit)
 
 
 def settings_ssh_allow_added(entries: list) -> str:

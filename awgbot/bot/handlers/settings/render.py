@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.domain.services import ServiceError
@@ -162,7 +163,7 @@ async def send_gw_bundle(message: Message, services, slot: int = 0, instr_id: in
     try:
         blob, name = await call(services.gw_bundle_encrypted, slot or None)
     except (ServiceError, OSError) as e:
-        await message.answer(f"⚠️ Конфигурация шлюза не собрана: {texts._e(str(e))}")
+        await message.answer(ui.fail("Конфигурация шлюза не собрана", str(e)))
         return False
     from aiogram.types import BufferedInputFile
     display, agent_bot = await call(services.gw_bundle_target, slot or None)

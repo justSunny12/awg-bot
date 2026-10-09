@@ -364,7 +364,6 @@ def gw_confirm_reassert(carries: bool = True) -> str:
 
 
 GW_CONFIRM_REASSERT = gw_confirm_reassert()
-GW_BOT_RESTARTING = "🔁 Бот перезапускается — вернётся через несколько секунд"
 
 
 GW_FIRST_RUN_FILE = ("Это файл первого применения — его не присылают боту, а запускают на устройстве: "

@@ -9,6 +9,7 @@ handlers/admin/blocks.py — ручные блокировки (админ): у�
 from __future__ import annotations
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
@@ -45,13 +46,13 @@ async def admin_block_menu(cb: CallbackQuery, callback_data: BlockCB, services):
     if callback_data.target == "cli":
         client = await call(services.db.get_client, callback_data.ref)
         if client is None:
-            await cb.answer("Профиль не найден", show_alert=True)
+            await cb.answer(ui.Toast.no_profile, show_alert=True)
             return
         await edit(cb, texts.block_client_ask(client, _bot(services)), kb.block_pause_kb(client.id))
     else:
         dev = await call(services.db.get_device, callback_data.ref)
         if dev is None:
-            await cb.answer("Устройство не найдено", show_alert=True)
+            await cb.answer(ui.Toast.no_device, show_alert=True)
             return
         owner = await call(services.db.get_client, dev.client_id)
         await edit(cb, texts.block_device_ask_admin(dev.name, None if owner is None or owner.is_service else owner,
@@ -91,7 +92,7 @@ async def admin_unblock_menu(cb: CallbackQuery, callback_data: BlockCB, services
     if len(active_kinds) <= 1:
         kind = active_kinds[0] if active_kinds else "all"
         await _do_unblock(cb, services, target, ref, kind)
-        await cb.answer("Разблокировано")
+        await cb.answer(ui.Toast.unblocked)
         return
     await edit(cb, "Какую блокировку снять?", kb.block_unblock_reasons(target, ref, mask))
     await cb.answer()
@@ -148,7 +149,7 @@ async def _do_unblock(cb, services, target: str, ref: int, kind: str):
 @router.callback_query(BlockCB.filter(F.action == "unblock"))
 async def admin_unblock_do(cb: CallbackQuery, callback_data: BlockCB, services):
     await _do_unblock(cb, services, callback_data.target, callback_data.ref, callback_data.kind)
-    await cb.answer("Разблокировано")
+    await cb.answer(ui.Toast.unblocked)
 
 
 @router.callback_query(BlockCB.filter(F.action == "cancel"))

@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.core import settings
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, GwSlotCB
 from awgbot.bot.states import GatewayHome, GatewayLabel
@@ -25,7 +26,7 @@ async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool
     try:
         return await call(services.gateway_screen_state, slot, lazy_ping=lazy_ping)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return None
 
 
@@ -69,7 +70,7 @@ async def gw_slot_failover(cb: CallbackQuery, services):
     try:
         await call(settings.set_value, key, not settings.get_bool(key, True))
     except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await _render_list(cb, services)
     await cb.answer("Автопереключение " + ("включено" if settings.get_bool(key, True) else "выключено"))
@@ -93,7 +94,7 @@ async def gw_slot_peer_yes(cb: CallbackQuery, callback_data: GwSlotCB, services)
     try:
         await call(services.set_peer_nets, on)
     except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await _render_list(cb, services)
     await cb.answer(("Подсети связаны" if on else "Связь подсетей выключена")
@@ -115,14 +116,14 @@ async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
     """Галочка на месте: у ☑️ — перенести на этот слот, у ✅ — снять вовсе."""
     gw = await call(services.db.gateway, callback_data.slot)
     if gw is None:
-        await cb.answer("Такого слота нет", show_alert=True)
+        await cb.answer(ui.Toast.no_slot, show_alert=True)
         return
     await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
     st = await _slot_state(cb, services, gw.id, lazy_ping=False)
     if st is not None:
         await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
     dev = await call(services.db.get_device, gw.device_id)
-    await cb.answer(("Предпочтительный: " + ("снят" if gw.preferred else (dev.name if dev else "этот шлюз")))[:190])
+    await cb.answer(ui.toast("Предпочтительный: " + ("снят" if gw.preferred else (dev.name if dev else "этот шлюз"))))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "ping"))
@@ -131,7 +132,7 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
     устройства — она, из карточки слота — она."""
     gw = await call(services.db.gateway, callback_data.slot)
     if gw is None:
-        await cb.answer("Такого слота нет", show_alert=True)
+        await cb.answer(ui.Toast.no_slot, show_alert=True)
         return
     ms = await call(services.gateway_ping, gw.id)
     st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
@@ -168,14 +169,14 @@ async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     try:
         gw = await call(services.gateway_switch, callback_data.slot, manual=True)
     except ServiceError as e:
-        await cb.answer(str(e)[:190], show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     if callback_data.val == "l":
         await _render_list(cb, services)
     else:
         await _render_card(cb, services, gw.id)
     st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
-    await cb.answer(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", "")[:190])
+    await cb.answer(ui.toast(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", "")))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "lan_ask"))
@@ -208,7 +209,7 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     try:
         await call(services.gateway_set_lan_mode, callback_data.slot, on)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await _render_card(cb, services, callback_data.slot)
     online = bool((st.get("channel") or {}).get("online"))
@@ -241,7 +242,7 @@ async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
     произойдёт». Карточка гаснет и помечается как контент: живым остаётся
     «В меню» на файле, а «В меню» и итог применения с шлюза уберут её вместе
     с файлом (send_gw_bundle запоминает обе)."""
-    await cb.answer("Собираю и шифрую…")
+    await cb.answer(ui.Toast.packing)
     await _issue_bundle_here(cb, services, int(callback_data.slot or 0))
 
 
@@ -305,7 +306,7 @@ async def gw_slot_name(cb: CallbackQuery, callback_data: GwSlotCB, services, sta
         return
     dev = st.get("device")
     if dev is None:
-        await cb.answer("Устройство слота не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_slot_device, show_alert=True)
         return
     await state.set_state(EditDeviceName.value)
     await ask_here(cb, services, state, texts.device_name_prompt(dev.name), "gwedit", st["gateway"].id,
@@ -351,7 +352,7 @@ async def _remove_ask(cb: CallbackQuery, services, slot: int) -> None:
         return
     dev = st.get("device")
     if dev is None:
-        await cb.answer("Устройство слота не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_slot_device, show_alert=True)
         return
     other = next((x for x in st["states"] if x["gateway"].id != slot), None)
     await cb.answer()

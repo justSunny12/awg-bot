@@ -10,6 +10,7 @@ from __future__ import annotations
 from aiogram.types import CallbackQuery
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.core.blocks import DeviceBlock
@@ -47,7 +48,7 @@ async def unblock_device(cb: CallbackQuery, services, dev, card) -> None:
     await send_notifications(cb.bot, notes)
     dev = await call(services.db.get_device, dev.id)
     await edit(cb, *await card(dev))
-    await cb.answer("Разблокировано")
+    await cb.answer(ui.Toast.unblocked)
 
 
 async def delete_by_holder(cb: CallbackQuery, services, dev) -> bool:
@@ -57,7 +58,7 @@ async def delete_by_holder(cb: CallbackQuery, services, dev) -> bool:
     try:
         await call(services.remove_device, dev.id)          # «удалено владельцем» ему не шлём
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return False
     await cb.answer()
     if dev.owner_tg_id:

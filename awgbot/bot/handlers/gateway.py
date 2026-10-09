@@ -150,7 +150,7 @@ async def gw_refresh(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(GwCB.filter(F.action == "health"))
 async def gw_health(cb: CallbackQuery, services):
-    await cb.answer("Проверяю…")
+    await cb.answer(ui.Toast.checking)
     await call(services.invalidate_static)               # монитор здоровья — всё живьём
     st = await call(services.snapshot)         # с сохранением: панель и здоровье из одного момента
     await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_health_kb())
@@ -428,7 +428,7 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
             num, _dot, tag = (callback_data.val or "").partition(".")
             idx = int(num) if num.isdigit() else -1
             if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):
-                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+                await cb.answer(ui.Toast.list_changed, show_alert=True)
             else:
                 await call(services.ssh_allow_remove, allow[idx])
                 await cb.answer(f"{texts.short_name(allow[idx])} убран")
@@ -439,7 +439,7 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
             await call(services.ssh_filter_off)
             await cb.answer(texts.GW_SSH_FILTER_OFF, show_alert=True)
     except ServiceError as e:
-        await cb.answer(str(e)[:180], show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
     await _render(cb, services, "ssh")
 
 
@@ -558,7 +558,7 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
     num, _dot, tag = (callback_data.val or "").partition(".")
     idx = int(num) if num.isdigit() else -1
     if not 0 <= idx < len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
-        await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+        await cb.answer(ui.Toast.list_changed, show_alert=True)
         await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
         return
     _kind, dom = items[idx]
@@ -568,8 +568,7 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
         if ok:
             await cb.answer(texts.gateway_transit_removed_toast(dom, sync=tail))
         else:
-            import html as _html
-            await cb.answer(_html.unescape(texts.gateway_transit_result(ok, out, tail))[:180], show_alert=True)
+            await cb.answer(ui.toast(texts.gateway_transit_result(ok, out, tail)), show_alert=True)
     except TelegramBadRequest:
         await ask_tracked(cb.message, services, texts.gateway_transit_result(ok, out, tail))
     await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
@@ -610,7 +609,7 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     raw = (await state.get_data()).get("bundle")
     if not raw:
         await state.clear()
-        await cb.answer("Файла в памяти нет — пришли его заново", show_alert=True)
+        await cb.answer(ui.Toast.no_file, show_alert=True)
         return
     blob = base64.b64decode(raw)
     if callback_data.action == "apply!":
@@ -665,4 +664,4 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
 async def gw_bundle_drop(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     await _panel(cb.message, services, cb)
-    await cb.answer("Файл отброшен")
+    await cb.answer(ui.Toast.file_dropped)

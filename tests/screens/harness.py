@@ -702,8 +702,15 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
             rows = c.markup.inline_keyboard
             if len(rows) > ROWS_MAX:
                 out.append(f"{where}: рядов {len(rows)} > {ROWS_MAX}")
+            if len(rows) == 1 and len(rows[0]) == 2 and any(b.text == "⬅️ Отмена" for b in rows[0]):
+                # подтверждение (keyboards/common.confirm): один ряд, «Отмена»
+                # первой, действие второй
+                if rows[0][0].text != "⬅️ Отмена":
+                    out.append(f"{where}: подтверждение не вида [⬅️ Отмена][действие]: {[b.text for b in rows[0]]}")
             for row in rows:
                 for b in row:
+                    if b.text == "⬅️ Отмена" and getattr(b, "style", None) is not None:
+                        out.append(f"{where}: «Отмена» красная")
                     if b.callback_data is not None and not 1 <= len(b.callback_data.encode()) <= CB_MAX:
                         out.append(f"{where}: callback_data {b.callback_data!r} — "
                                    f"{len(b.callback_data.encode())} байт вне 1…{CB_MAX}")

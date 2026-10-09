@@ -19,6 +19,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot.callbacks import CancelCB, NoteCB
 from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 
@@ -71,7 +72,7 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     if role == "admin" and kind == "gwcfg":
         # перевыпуск конфигурации слота — файл сразу, как из карточки
         from awgbot.bot.handlers.settings import send_gw_bundle
-        await cb.answer("Собираю и шифрую…")
+        await cb.answer(ui.Toast.packing)
         await send_gw_bundle(cb.message, services, ref)
         return
     screen_kind = {"extend": "extend", "unassigned": "unassigned", "sub": "sub"}.get(kind, "main")

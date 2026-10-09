@@ -23,6 +23,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot import screens
 from awgbot.bot.callbacks import (BlockCB, CancelCB, DelDeviceCB, DeviceCB, GraceCB, HelpCB, Menu,
@@ -291,7 +292,7 @@ async def sub_parts(services, client_id: int):
 async def menu_info(cb: CallbackQuery, client, services):
     parts = await sub_parts(services, client.id)
     if parts is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer(ui.Toast.no_profile, show_alert=True)
         return
     await edit(cb, *parts)
     await cb.answer()
@@ -325,7 +326,7 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
     """Выдача с главной: одно устройство — сразу, несколько — выбор."""
     devices = await _issuable(services, client)
     if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
+        await cb.answer(ui.Toast.add_device_first, show_alert=True)
         return
     if len(devices) == 1:
         await _issue(cb, services, client, devices[0], kb.gen_kind(callback_data.action))
@@ -373,7 +374,7 @@ async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, servic
     await state.clear()
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, *await device_card_parts(services, client, dev))
     await cb.answer()
@@ -385,7 +386,7 @@ async def client_device_edit_name_start(cb: CallbackQuery, callback_data: Device
     """Переименование СВОЕГО устройства — приглашение на месте карточки."""
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await state.set_state(EditDeviceName.value)
     await ask_here(cb, services, state, texts.device_name_prompt(dev.name), "dev", dev.id,
@@ -421,7 +422,7 @@ async def device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, client
     """Кнопка старого образца «Данные для подключения» → карточка с рядом выдачи."""
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, *await device_card_parts(services, client, dev))
     await cb.answer()
@@ -434,7 +435,7 @@ async def client_edit_device_traffic(cb: CallbackQuery, callback_data: DeviceCB,
     лимита профиля на месте карточки."""
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await state.clear()
     plimit = await call(services.profile_traffic_limit, dev.client_id)
@@ -461,7 +462,7 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, client
     """Пресет лимита существующего устройства; «✏️ Другое» — ввод на месте."""
     dev = await call(own_device, services, client, callback_data.ref)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if callback_data.val < 0:
         plimit = await call(services.profile_traffic_limit, dev.client_id)
@@ -499,7 +500,7 @@ async def client_edit_traffic_apply(message: Message, client, services, state: F
 async def device_transfer_ask(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, texts.transfer_ask(dev.name), kb.confirm_transfer(dev.id))
     await cb.answer()
@@ -521,12 +522,12 @@ async def _send_invite(message: Message, services, dev, code: str) -> None:
 async def device_transfer_do(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     try:
         code = await call(services.make_device_friendly, dev.id)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await drop_message(cb, services)
     await _send_invite(cb.message, services, dev, code)
@@ -537,12 +538,12 @@ async def device_transfer_do(cb: CallbackQuery, callback_data: DeviceCB, client,
 async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     try:
         code = await call(services.reissue_friend_code, dev.id)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await drop_message(cb, services)
     await _send_invite(cb.message, services, dev, code)
@@ -554,7 +555,7 @@ async def device_gen(cb: CallbackQuery, callback_data: DeviceCB, client, service
     """Выдача по устройству — один обработчик на три вида. Своё или удерживаемое."""
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await _issue(cb, services, client, dev, kb.gen_kind(callback_data.action))
 
@@ -721,7 +722,7 @@ async def _show_delete_prompt(cb, services, client, dev):
 async def device_delete_ask(cb: CallbackQuery, callback_data, client, services):
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await _show_delete_prompt(cb, services, client, dev)
     await cb.answer()
@@ -731,7 +732,7 @@ async def device_delete_ask(cb: CallbackQuery, callback_data, client, services):
 async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if dev.holder_client_id == client.id:
         if not await devcore.delete_by_holder(cb, services, dev):
@@ -747,7 +748,7 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         else:
             await remove_device_and_notify(cb.bot, services, dev.id)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
         return
     await cb.answer()
     # итог — первой строкой экрана на месте вопроса, как итог создания:
@@ -796,7 +797,7 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     if settings.get_bool("notifications.client_events.grace", True):
         await notify_one(cb.message.bot, config.ADMIN_ID,
                          texts.grace_activated_admin(texts.profile_link(client, _bot_username(services)), grace_days))
-    await cb.answer("Продлено")
+    await cb.answer(ui.Toast.extended)
 
 
 # ── ручная блокировка своего устройства ──────────────────────────────────────
@@ -818,7 +819,7 @@ async def client_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
     """Блокировка — с подтверждением: может отрезать от бота."""
     dev = await _blockable(services, client, callback_data)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id))
     await cb.answer()
@@ -828,7 +829,7 @@ async def client_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
 async def client_block_device(cb: CallbackQuery, callback_data: BlockCB, client, services):
     dev = await _blockable(services, client, callback_data)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await devcore.block_device(cb, services, dev, lambda d: device_card_parts(services, client, d))
 
@@ -838,7 +839,7 @@ async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, clien
     """Снимает ТОЛЬКО свой USER-бит; админские биты остаются."""
     dev = await _blockable(services, client, callback_data)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await devcore.unblock_device(cb, services, dev, lambda d: device_card_parts(services, client, d))
 
@@ -933,7 +934,7 @@ async def _user_pause_guard(cb, client, services) -> bool:
     """True — у клиента активна ЕГО СОБСТВЕННАЯ пауза (mode=user)."""
     fresh = await call(services.db.get_client, client.id)
     if fresh is None or not fresh.is_paused:
-        await cb.answer("Подписка не на паузе", show_alert=True)
+        await cb.answer(ui.Toast.not_paused, show_alert=True)
         await _show_sub(cb, client, services)
         return False
     if fresh.pause_mode != PauseMode.USER:
@@ -951,11 +952,11 @@ async def pause_resume(cb: CallbackQuery, callback_data: PauseCB, client, servic
         return
     ok, actual, new_end, notes = await call(services.exit_pause, client.id, auto=False)
     if not ok:
-        await cb.answer("Подписка не на паузе", show_alert=True)
+        await cb.answer(ui.Toast.not_paused, show_alert=True)
         await _show_sub(cb, client, services)
         return
     await send_notifications(cb.bot, notes)     # друзьям — о снятии
-    await cb.answer("Пауза снята")
+    await cb.answer(ui.Toast.pause_lifted)
     await edit(cb, texts.pause_resumed_self(actual, new_end), None)
     parts = await sub_parts(services, client.id)
     if parts is not None:

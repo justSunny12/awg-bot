@@ -18,6 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, FSInputFile, InputMediaPhoto, Message
 
 from awgbot.bot import guides
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import DeviceCB, GuideCB, HelpCB
@@ -153,7 +154,7 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
     новым сообщением ПОД выданным конфигом (порядок как раньше при авто-выдаче)."""
     dev = await call(_device, services, client, callback_data.dev)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     await drop_message(cb, services)             # убрать сообщение с выбором способа
     try:
@@ -178,7 +179,7 @@ async def guide_connect_methods(cb: CallbackQuery, callback_data: GuideCB, servi
     устройства. Шаг 1 текстовый, картинки нет → простой edit_text."""
     dev = await call(_device, services, client, callback_data.dev)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     markup = kb.guide_connect_method(dev.id, callback_data.guide, guest=_guest(client))
     try:
@@ -202,7 +203,7 @@ async def help_launch(cb: CallbackQuery, callback_data: HelpCB, services, client
 async def guide_pick_device(cb: CallbackQuery, callback_data: DeviceCB, services, client):
     dev = await call(_device, services, client, callback_data.device_id)
     if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
+        await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     # удалить сообщение-список, чтобы кнопки не висели над ссылкой
     await drop_message(cb, services)

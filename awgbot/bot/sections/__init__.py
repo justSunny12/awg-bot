@@ -27,6 +27,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import call, edit_nav
@@ -38,7 +39,7 @@ from . import backup, email, mon, ncl, notify, root, svc, updates
 
 MODULES = (root, notify, ncl, mon, email, backup, updates, svc)
 SECTIONS = {m.ID: m for m in MODULES}
-STALE = "Кнопка устарела — открой раздел заново"
+STALE = ui.Toast.stale
 
 
 # ── реестр ───────────────────────────────────────────────────────────────────
@@ -202,7 +203,7 @@ async def handle(cb: CallbackQuery, packed, services, state: FSMContext, br) -> 
         try:
             await call(settings.set_value, key, new)
         except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
+            await cb.answer(ui.toast(e), show_alert=True)
             return
         await cb.answer(texts.cycle_toast(key, new))
         await render(cb, br, services, sec, getattr(module, "AFTER_CYCLE_KEY", ""))

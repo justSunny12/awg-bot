@@ -11,6 +11,7 @@ import io
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import texts, roles
+from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, forget_secret
 
 _MAX_BYTES = 64 * 1024 * 1024
@@ -52,7 +53,7 @@ async def run_restore(cb: CallbackQuery, services, state) -> None:
     raw = data.get("restore_plain")
     await state.clear()
     if not raw:
-        await cb.answer("Файла в памяти нет — пришли его заново", show_alert=True)
+        await cb.answer(ui.Toast.no_file, show_alert=True)
         return
     await cb.answer()
     path = await call(services.prepare_restore, base64.b64decode(raw))
@@ -70,7 +71,7 @@ async def drop_restore(cb: CallbackQuery, state) -> None:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                  # noqa: BLE001
         pass
-    await cb.answer("Файл отброшен")
+    await cb.answer(ui.Toast.file_dropped)
 
 
 async def report_restore_result(bot, services) -> None:

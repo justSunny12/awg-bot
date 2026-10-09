@@ -393,7 +393,7 @@ async def test_replacing_a_machine_still_asks_first(services, slots, fake_bot):
     _, pi, _ = slots
     _slot1(services, pi)
     text, markup = await sh._screen("rt_gw", services, "1")
-    assert text.startswith("🔁 Заменить устройство NASPi? Ключи линка сменятся"), text
+    assert text.startswith("🔁 Заменить устройство NASPi?\nКлючи линка сменятся"), text
     back = markup.inline_keyboard[-1][0]
     assert back.text == "⬅️ Назад" and back.callback_data == GwSlotCB(action="edit", slot=1).pack()
     cb, nav = _acb(fake_bot)
@@ -414,7 +414,7 @@ async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi2.id, slot=0), services)
     text, labels = _screen(nav)
-    assert text == ("🛰 Pi2 станет шлюзом? Выйдет из лимитов; удалить, заблокировать, выдать ссылку будет "
+    assert text == ("🛰 Pi2 станет шлюзом?\nВыйдет из лимитов; удалить, заблокировать, выдать ссылку будет "
                     "нельзя. Ключи линка — новые, файл первого применения выпущу сразу\n"
                     "Станет резервным: трафик пойдёт через него, только если основной не отвечает"), text
     assert labels == ["⬅️ Отмена", "🛰 Назначить"]

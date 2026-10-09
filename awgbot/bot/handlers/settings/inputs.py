@@ -7,6 +7,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
@@ -48,7 +49,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
         await edit(cb, texts.PRIVATE_DNS_DISMISSED, kb.settings_back("srv"))
         await cb.answer()
         return
-    await cb.answer("Действие недоступно", show_alert=True)
+    await cb.answer(ui.Toast.stale, show_alert=True)
 
 
 # ── ввод порта для переезда ──────────────────────────────────────────────────
@@ -201,20 +202,20 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
             num, _dot, tag = (val or "").partition(".")
             idx = int(num) if num.isdigit() else -1
             if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):   # без метки — не наша кнопка
-                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+                await cb.answer(ui.Toast.list_changed, show_alert=True)
                 text, markup = await _screen("fw", services)
                 await edit(cb, text, markup)
                 return
             entry = allow[idx]
             await call(services.firewall_allow_remove, entry)
-            await cb.answer(f"{entry} убран"[:190])
+            await cb.answer(ui.toast(f"{entry} убран"))
         else:
-            await cb.answer("Действие недоступно", show_alert=True)
+            await cb.answer(ui.Toast.stale, show_alert=True)
             return
     except ServiceError as e:
-        await cb.answer(str(e)[:180], show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)
     except Exception as e:                                # noqa: BLE001
         log.warning("firewall %s: %s", key, e)
-        await cb.answer(f"Не вышло: {e}"[:180], show_alert=True)
+        await cb.answer(ui.toast(f"Не вышло: {e}"), show_alert=True)
     text, markup = await _screen("fw", services)
     await edit(cb, text, markup)

@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.callbacks import UpdateCB
 from awgbot.bot.handlers import updates_flow
 from awgbot.bot.handlers.common import call, cleanup_content, send_menu
@@ -70,7 +71,7 @@ async def screen(br, services, key: str = ""):
 async def open(ctx) -> bool:  # noqa: A001 — имя действия раздела
     """Раздел ходит к списку релизов — колбэк отвечаем сразу."""
     from . import render
-    await ctx.cb.answer("Проверяю…")
+    await ctx.cb.answer(ui.Toast.checking)
     await render(ctx.cb, ctx.br, ctx.services, ID)
     return True
 

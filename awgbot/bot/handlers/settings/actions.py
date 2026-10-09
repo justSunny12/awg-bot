@@ -7,6 +7,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
@@ -121,7 +122,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await _record(cb, texts.migration_cancelled(moved), services)
         return
 
-    await cb.answer("Действие недоступно", show_alert=True)
+    await cb.answer(ui.Toast.stale, show_alert=True)
 
 # Восстановление, шифрование, почта, бэкап сейчас, перезапуски — общие разделы
 # (bot/sections); сюда их колбэк не доходит. Имена ниже — для тестов, которые
@@ -169,4 +170,4 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.sec == "mig_prep" and key == "go":
         await _migration_prepare(cb, services, callback_data.val)
         return
-    await cb.answer("Кнопка устарела — открой раздел заново", show_alert=True)
+    await cb.answer(ui.Toast.stale, show_alert=True)

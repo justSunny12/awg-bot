@@ -43,8 +43,8 @@ def routing_users_text() -> str:
             "Владельцы устройств управляют настройкой на них сами")
 
 
-ROUTING_DISABLE_CONFIRM = ("🔴 Выключить РФ-доступ для всех? Российские сервисы снова будут ругаться "
-                           "на VPN; разрешения и списки сохранятся")
+ROUTING_DISABLE_CONFIRM = ui.confirm("🔴 Выключить РФ-доступ для всех?",
+                                     "Российские сервисы снова будут ругаться на VPN; разрешения и списки сохранятся")
 
 
 def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
@@ -260,7 +260,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
 
 
 def routing_clear_ask(n: int) -> str:
-    return f"🗑 Удалить все свои сайты ({n})? Общий список останется"
+    return ui.confirm(f"🗑 Удалить все свои сайты ({n})?", "Общий список останется")
 
 
 ROUTING_CLEAR_CONFIRM = routing_clear_ask(0)
