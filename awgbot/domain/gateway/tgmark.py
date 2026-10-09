@@ -24,7 +24,7 @@ class TgMarkMixin:
 
     _guard_info: dict | None = None
     _REASSERT_MIN_INTERVAL = 10 * 60
-    _last_reassert: float = float("-inf")   # monotonic: 0.0 на свежезагруженной малине откладывал бы первый реассерт
+    _last_reassert: float = float("-inf")   # monotonic: 0.0 на свежезагруженном шлюзе откладывал бы первый реассерт
 
     def tg_mark_missing(self, info: dict | None = None) -> list[str]:
         """Диапазоны Telegram, которых нет в set tg_nets4 таблицы. Таблица —

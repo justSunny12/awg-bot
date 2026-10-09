@@ -14,8 +14,8 @@ class PeerNetsMixin:
     """VPN-транзит слота и доступ между подсетями за шлюзами."""
     # ── «за шлюзом — без VPN» ───────────────
     def gateway_resolver_addr(self, gw) -> str:
-        """Апстрим резолвера малины — свой резолвер ВПС из DNS устройства слота;
-        пусто — резолвера нет, малина возьмёт запасной через аплинк."""
+        """Апстрим резолвера шлюза — свой резолвер ВПС из DNS устройства слота;
+        пусто — резолвера нет, шлюз возьмёт запасной через аплинк."""
         from awgbot.infra import resolver
         dev = self.db.get_device(gw.device_id) if gw.device_id else None
         if dev is None:
@@ -99,7 +99,7 @@ class PeerNetsMixin:
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
-        локальной подсети: по ней малина находит свой адрес. Возвращает
+        локальной подсети: по ней шлюз находит свой адрес. Возвращает
         {'gateway', 'resolver': адрес или '' (запасной апстрим)}."""
         gw = self._gw_slot(slot_id)
         if on and not gw.home_subnets:

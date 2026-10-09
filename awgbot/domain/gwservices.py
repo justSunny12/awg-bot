@@ -38,7 +38,7 @@ _NAME_STRIP_RE = re.compile(r"[^A-Za-z0-9 _-]+")
 _HOST_STRIP_RE = re.compile(r"[^A-Za-z0-9-]+")
 _D = BROWSE_DOMAIN.replace(".", r"\.")
 # Построчный белый список файла dnsmasq — те же шаблоны, что в помощнике
-# awg-lan-services.sh (routing-gw-setup.sh): последний рубеж на малине против
+# awg-lan-services.sh (routing-gw-setup.sh): последний рубеж на шлюзе против
 # server=/address=/conf-file= из канала. Агент проверяет им файл до записи
 # (lines_ok), помощник — своим grep; тест сверяет оба набора.
 LINE_RES = tuple(re.compile(p) for p in (

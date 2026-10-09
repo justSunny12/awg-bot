@@ -399,7 +399,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway ON devices(is_gateway) WHE
 -- трафик, остальные в резерве; кто именно — в state (routing_active_gateway).
 CREATE TABLE IF NOT EXISTS gateways (
     id            INTEGER PRIMARY KEY,                   -- номер слота: 1, 2 …
-    device_id     INTEGER NOT NULL UNIQUE,               -- аплинк малины — устройство админа
+    device_id     INTEGER NOT NULL UNIQUE,               -- аплинк шлюза — устройство админа
     link_if       TEXT    NOT NULL UNIQUE,               -- awglink, awglink2
     link_port     INTEGER NOT NULL UNIQUE,               -- 443, 8443
     link_cidr     TEXT    NOT NULL UNIQUE,               -- 10.99.99.0/30

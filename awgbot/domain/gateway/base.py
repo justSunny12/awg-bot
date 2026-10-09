@@ -93,7 +93,7 @@ class GwStatus:
     kernels_total: int = 0
     month_rx: int = 0                       # потребление линка за календарный месяц
     month_tx: int = 0
-    egress_ms: float | None = None          # выход наружу через канал квартиры, мс последнего замера
+    egress_ms: float | None = None          # выход наружу через локальный канал, мс последнего замера
     egress_ok: bool | None = None           # он же вердиктом: улики или зонд
     egress_src: str = ""                    # чем доказан: трафик | проба | кэш
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки

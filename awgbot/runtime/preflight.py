@@ -304,7 +304,7 @@ def _unit_enabled(unit: str) -> str:
 
 
 def _service_autostart_warning() -> list[str]:
-    """Сам юнит бота не включён — после ребута бот не поднимется. Ребут малины:
+    """Сам юнит бота не включён — после ребута бот не поднимется. Ребут шлюза:
     установка агента оставила юнит disabled, и узнать об этом было неоткуда."""
     state = _unit_enabled("awg-bot")
     if state and state != "enabled":

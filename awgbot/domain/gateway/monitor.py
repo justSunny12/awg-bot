@@ -48,7 +48,7 @@ class MonitorMixin:
 
         # Весь тик — одной транзакцией: снимок для панели, месячный трафик и
         # стрики. Было три коммита за тик (снимок, трафик, стрики) — на флеш
-        # малины это три fsync каждые три минуты; стал один.
+        # шлюза это три fsync каждые три минуты; стал один.
         with self.db.transaction():
             st = self.snapshot()
             notes += self._tick_alerts(st, streak)
@@ -109,7 +109,7 @@ class MonitorMixin:
                         for c in broken[:3]),
             "✅ Обвязка шлюза снова в порядке")
         # локальная сеть без VPN — отдельно и не критично: тишина в пустой
-        # квартире или упавший резолвер — не «РФ-доступ у всех лёг»
+        # локальной сети или упавший резолвер — не «РФ-доступ у всех лёг»
         lan_broken = [c for c in st.checks if c.ok is False and c.group == "lan"]
         subnet = html.escape((st.lan or {}).get("subnet", "") or "", quote=False)
         notes += self._streak_alert(

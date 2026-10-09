@@ -210,7 +210,7 @@ _PI_MODEL = "/proc/device-tree/model"
 
 
 def is_raspberry_pi() -> bool:
-    """Малина ли это: по модели из device-tree (один раз за процесс). Не Pi —
+    """Raspberry Pi ли это: по модели из device-tree (один раз за процесс). Не Pi —
     питание не смотрим вовсе: ни строк, ни алертов."""
     global _is_pi
     if _is_pi is None:

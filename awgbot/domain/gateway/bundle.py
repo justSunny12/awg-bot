@@ -184,7 +184,7 @@ class BundleMixin:
             with os.fdopen(fd, "wb") as f:
                 f.write(plain)
             # 600, как у настроек из канала: первое включение режима без VPN
-            # ставит dnsmasq через apt, на малине это минуты
+            # ставит dnsmasq через apt, на шлюзе это минуты
             proc = base._run(base._bundle_argv(path), timeout=600)
             out = (base._out(proc) + proc.stderr.decode(errors="replace")).strip()
             if proc.returncode == 124:
@@ -239,7 +239,7 @@ class BundleMixin:
             except (OSError, gwguard.GwGuardError) as e:
                 return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})"}
             # Запас на включение режима без VPN: скрипт ставит dnsmasq через apt,
-            # а на малине это минуты, не секунды.
+            # а на шлюзе это минуты, не секунды.
             self._last_reassert = time.monotonic()
             ok, err = gwguard.reassert(timeout=600)
             if not ok and gwguard.is_timeout(err):

@@ -166,7 +166,7 @@ class PeerServicesMixin:
         info["browse"] = gwguard.avahi_browse_available()
         info["avahi"] = gwguard.avahi_active()
         # сначала демон: без него обвязка avahi-utils не ставит, и совет про
-        # мастер восстановления на малине без NAS был бы пустым
+        # мастер восстановления на шлюзе без NAS был бы пустым
         if info["avahi"] is False:
             checks.append(GwCheck("SMB этой подсети", None,
                                   "avahi-daemon не запущен: SMB-серверы этой подсети не видны из подсетей "

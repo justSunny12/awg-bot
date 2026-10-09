@@ -33,6 +33,7 @@ TERMS = {
     "квартир": re.compile(r"квартир", re.I),
     "ВПН": re.compile(r"впн", re.I),
     "потребление": re.compile(r"потреблени", re.I),
+    "малина": re.compile(r"малин", re.I),          # железо шлюза — любое; термин — «шлюз»
 }
 
 # (файл, термин, кусок строки) → почему пока можно
@@ -208,4 +209,20 @@ def test_terminal_strings_of_scripts_follow_the_terms():
             for name, rx in TERMS.items():
                 if rx.search(line):
                     found.append((path.name, i, name, line.strip()[:80]))
+    assert found == [], found
+
+
+def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
+    """«Малина» — железо конкретной установки, а не термин проекта: шлюзом может
+    быть любая машина; «квартира» — та же история про локальную сеть. В живой
+    документации, в коде и в скриптах их нет (комментарии тоже); журнал
+    изменений — история, его не правим; README называет запрещённые слова в
+    описании этого сторожа."""
+    repo = REPO
+    files = [p for p in (repo / "docs").glob("*.md") if p.name != "CHANGELOG.md"]
+    files += sorted((repo / "awgbot").rglob("*.py")) + sorted((repo / "tools").glob("*.py"))
+    files += sorted((repo / "install").glob("*.sh")) + [repo / "awg-bot.sh"]
+    found = [f"{p.relative_to(repo)}:{i}" for p in files
+             for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+             if "малин" in line.lower() or "квартир" in line.lower()]
     assert found == [], found
