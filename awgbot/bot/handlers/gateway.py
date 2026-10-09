@@ -431,7 +431,7 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
                 await cb.answer(ui.Toast.list_changed, show_alert=True)
             else:
                 await call(services.ssh_allow_remove, allow[idx])
-                await cb.answer(f"{texts.short_name(allow[idx])} убран")
+                await cb.answer(ui.toast(f"{allow[idx]} убран"))
         elif act == "ssh_on":
             await call(services.ssh_filter_on)
             await cb.answer(texts.GW_SSH_FILTER_ON_ALERT, show_alert=True)
@@ -568,7 +568,7 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
         if ok:
             await cb.answer(texts.gateway_transit_removed_toast(dom, sync=tail))
         else:
-            await cb.answer(ui.toast(texts.gateway_transit_result(ok, out, tail)), show_alert=True)
+            await cb.answer(ui.toast(texts.gateway_transit_result(ok, out, tail), html=True), show_alert=True)
     except TelegramBadRequest:
         await ask_tracked(cb.message, services, texts.gateway_transit_result(ok, out, tail))
     await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))

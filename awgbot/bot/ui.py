@@ -4,7 +4,7 @@
   • заголовок — значок и жирное имя: «🔔 <b>Уведомления</b>»; значок вне <b>;
   • статус — через пробел вплотную к одной сущности («🔀 <b>VPN-транзит</b> 🟢 работает»),
     несколько сущностей — через « · » (meta);
-  • всплывашка — без тегов и сущностей, не длиннее 200 знаков; повторяющиеся
+  • всплывашка — без тегов и сущностей, не длиннее 200 единиц UTF-16; повторяющиеся
     строки — таблицей Toast, одиночные живут у своего обработчика;
   • тумблер в тексте — тем же значком, что на его кнопке (✅ / ☑️);
   • подтверждение — «Вопрос?» и цена следующей строкой (confirm), клавиатура —
@@ -134,10 +134,25 @@ class Toast:
     pause_lifted = "Пауза снята"
 
 
-def toast(text: str, limit: int = TOAST_MAX) -> str:
-    """Текст всплывашки: теги сняты, сущности раскрыты, не длиннее limit — с «…»."""
-    plain = _html.unescape(_TAG.sub("", str(text or "")))
-    return plain if len(plain) <= limit else plain[:limit - 1] + "…"
+def _u16(text: str) -> int:
+    """Длина, как её считает Telegram — в единицах UTF-16 (эмодзи — две)."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+def toast(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
+    """Текст всплывашки: не длиннее limit единиц UTF-16 — с «…». Всплывашку
+    Telegram не разбирает как разметку, поэтому текст идёт как есть (имена с
+    «<» целы); html=True — текст собран из HTML-строки экрана: теги снять,
+    сущности раскрыть."""
+    plain = str(text or "")
+    if html:
+        plain = _html.unescape(_TAG.sub("", plain))
+    if _u16(plain) <= limit:
+        return plain
+    cut = plain[:limit - 1]
+    while _u16(cut) > limit - 1:
+        cut = cut[:-1]
+    return cut + "…"
 
 
 def note_budget(screen_text: str, reserve: int = 300) -> int:

@@ -276,7 +276,6 @@ def svc_confirm_bot(br) -> str:
 
 SVC_CONFIRM_AWG = svc_confirm_awg(MAIN)
 SVC_CONFIRM_BOT = svc_confirm_bot(MAIN)
-SVC_AWG_RESTARTED = "✅ AWG перезапущен"
 
 
 def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:

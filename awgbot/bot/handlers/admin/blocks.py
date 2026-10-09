@@ -118,8 +118,8 @@ async def admin_block_do(cb: CallbackQuery, callback_data: BlockCB, services):
         owner = oc.name if oc is not None and not oc.is_service else ""
     await send_notifications(cb.bot, notes)
     await _rerender_after_block(cb, services, callback_data.target, callback_data.ref)
-    await cb.answer(texts.blocked_toast(obj.name if obj else "", silent=not notify,
-                                        profile=callback_data.target == "cli", owner=owner))
+    await cb.answer(ui.toast(texts.blocked_toast(obj.name if obj else "", silent=not notify,
+                                                 profile=callback_data.target == "cli", owner=owner)))
 
 
 async def _do_unblock(cb, services, target: str, ref: int, kind: str):

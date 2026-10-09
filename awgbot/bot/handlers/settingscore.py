@@ -190,7 +190,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         await call(settings.set_value, key, raw)
     except settings.SettingsWriteError as e:
         await state.clear()
-        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
+        await after_input(message, services, hooks, sec, ui.fail("Не сохранено", str(e)))
         return
     await state.clear()
     await after_input(message, services, hooks, sec, texts.settings_changed(key, old, shown_new))
@@ -213,7 +213,7 @@ async def _receive_backup_when(message: Message, state: FSMContext, services, ho
         await call(settings.set_value, "app.scheduler.backup_hour", hour)
     except settings.SettingsWriteError as e:
         await state.clear()
-        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
+        await after_input(message, services, hooks, sec, ui.fail("Не сохранено", str(e)))
         return
     await state.clear()
     await after_input(message, services, hooks, sec,
@@ -254,7 +254,7 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
         await call(settings.set_value, key, val * k)
     except settings.SettingsWriteError as e:
         await state.clear()
-        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
+        await after_input(message, services, hooks, sec, ui.fail("Не сохранено", str(e)))
         return
     await state.clear()
     await after_input(message, services, hooks, sec, texts.settings_changed(key, old, val))

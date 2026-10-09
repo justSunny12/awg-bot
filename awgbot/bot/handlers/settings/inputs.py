@@ -55,7 +55,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
 # ── ввод порта для переезда ──────────────────────────────────────────────────
 # Регистрируется РАНЬШЕ общего edit_value: тот ловит любой act == "edit", а
 # ключ "port" в SETTINGS_BOUNDS не значится — кнопка «Задать порт» упиралась бы
-# в «Эта настройка недоступна».
+# в «Кнопка устарела — открой раздел заново».
 @router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
 async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await state.set_state(MigrationPort.value)

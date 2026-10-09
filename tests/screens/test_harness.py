@@ -88,6 +88,32 @@ def test_limits_are_checked_on_every_call():
         assert what in found, f"не поймано: {what}\n{found}"
 
 
+def test_confirmation_rule_catches_a_reversed_or_red_cancel_and_leaves_presets_alone():
+    """Подтверждение — один ряд [⬅️ Отмена][действие]: перевёрнутое и красная
+    «Отмена» (любая из двух) ловятся; пресеты с «✏️ Другое» и приглашение с
+    одной «Отменой» — нет."""
+    red = InlineKeyboardButton(text="⬅️ Отмена", callback_data="m:b", style="danger")
+    rec = _rec(
+        Call("= edit #1", "ok", markup=_kb([("🗑 Удалить", "m:a"), ("⬅️ Отмена", "m:b")])),
+        Call("= edit #1", "ok", markup=InlineKeyboardMarkup(inline_keyboard=[
+            [red, InlineKeyboardButton(text="🗑 Удалить", callback_data="m:a")]])),
+        Call("= edit #1", "ok", markup=_kb([("5", "m:5"), ("10", "m:10")], [("✏️ Другое", "m:o"), ("⬅️ Отмена", "m:b")])),
+        Call("= edit #1", "ok", markup=_kb([("✏️ Другое", "m:o"), ("⬅️ Отмена", "m:b")])),
+        Call("= edit #1", "ok", markup=_kb([("✖️ Отмена", "m:b")])),
+        Call("= edit #1", "ok", markup=_kb([("⬅️ Отмена", "m:b"), ("🗑 Удалить", "m:a")])),
+    )
+    found = harness.problems("adm.x", rec, {})
+    assert len(found) == 2, found
+    assert "подтверждение не вида [⬅️ Отмена][действие]: ['🗑 Удалить', '⬅️ Отмена']" in found[0]
+    assert "«⬅️ Отмена» красная" in found[1]
+
+
+def test_toast_length_is_counted_in_utf16_units():
+    """Эмодзи занимает две единицы UTF-16 — так предел считает Telegram."""
+    assert harness.problems("adm.x", _rec(Call("~ x", toast="🔁" * 100)), {}) == []
+    assert "всплывашка 202 > 200" in "\n".join(harness.problems("adm.x", _rec(Call("~ x", toast="🔁" * 101)), {}))
+
+
 def test_text_length_is_counted_after_markup_is_parsed():
     """4096 — после разбора разметки: теги и сущности знаков не занимают.
     Иначе длинный, но законный экран с разметкой считался бы нарушением."""

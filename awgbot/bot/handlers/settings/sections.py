@@ -175,5 +175,4 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     notes = await call(services.set_routing_allowed, client.id, new_state)
     await send_notifications(cb.bot, notes)
     await _render(cb, "rt_users", services)
-    await cb.answer(f"{client.name}: РФ-доступ "
-                    + ("разрешён" if new_state else "запрещён"))
+    await cb.answer(ui.toast(f"{client.name}: РФ-доступ " + ("разрешён" if new_state else "запрещён")))

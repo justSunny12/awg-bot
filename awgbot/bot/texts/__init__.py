@@ -122,8 +122,7 @@ from .settings import (
     SSH_PORT_ASK, ssh_port_busy, ssh_port_same, ssh_port_changed, ssh_owner_refusal,
     settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value,
     settings_root_text, settings_notify_text, settings_subs_text, settings_mon_text,
-    settings_backup_text, EMAIL_ASK_IMAP, EMAIL_ASK_SMTP, EMAIL_CHECK_OK, SVC_AWG_RESTARTED,
-    backup_when_prompt, BACKUP_WHEN_BAD, ssh_port_ask, FIREWALL_ON_ALERT, cycle_toast)
+    settings_backup_text, EMAIL_ASK_IMAP, EMAIL_ASK_SMTP, EMAIL_CHECK_OK, backup_when_prompt, BACKUP_WHEN_BAD, ssh_port_ask, FIREWALL_ON_ALERT, cycle_toast)
 from .broadcast import (
     BROADCAST_EMPTY, BROADCAST_MODE, BROADCAST_TARGETS, BROADCAST_TARGETS_EXTEND, broadcast_targets_text,
     BROADCAST_NO_TARGETS, BROADCAST_ALL_UNLIMITED, BROADCAST_DAYS_BAD,
@@ -192,7 +191,7 @@ __all__ = [
     "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
     "SSH_PORT_ASK", "ssh_port_busy", "ssh_port_same", "ssh_port_changed", "ssh_owner_refusal",
     "settings_changed", "settings_ssh_allow_added", "settings_bad_value",
-    "settings_root_text", "settings_notify_text", "settings_subs_text", "settings_mon_text", "settings_backup_text", "EMAIL_ASK_IMAP", "EMAIL_ASK_SMTP", "EMAIL_CHECK_OK", "SVC_AWG_RESTARTED", "backup_when_prompt", "BACKUP_WHEN_BAD", "ssh_port_ask", "FIREWALL_ON_ALERT", "cycle_toast",
+    "settings_root_text", "settings_notify_text", "settings_subs_text", "settings_mon_text", "settings_backup_text", "EMAIL_ASK_IMAP", "EMAIL_ASK_SMTP", "EMAIL_CHECK_OK", "backup_when_prompt", "BACKUP_WHEN_BAD", "ssh_port_ask", "FIREWALL_ON_ALERT", "cycle_toast",
     "BROADCAST_EMPTY", "BROADCAST_MODE", "broadcast_targets_text", "BROADCAST_TARGETS",
     "BROADCAST_TARGETS_EXTEND", "BROADCAST_NO_TARGETS", "BROADCAST_ALL_UNLIMITED",
     "BROADCAST_DAYS_BAD", "subscription_mark", "broadcast_days_prompt",

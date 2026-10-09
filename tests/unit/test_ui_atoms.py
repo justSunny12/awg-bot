@@ -65,12 +65,14 @@ def test_toast_table_is_plain_short_and_without_duplicates():
     assert len(set(table.values())) == len(table), "одна строка под двумя именами"
 
 
-def test_toast_strips_tags_unescapes_and_caps_at_200():
-    assert ui.toast("<b>Готово</b> &amp; точка") == "Готово & точка"
+def test_toast_keeps_plain_text_strips_html_on_request_and_caps_at_200_utf16():
+    assert ui.toast("<b>Готово</b> &amp; точка", html=True) == "Готово & точка"
+    assert ui.toast("Предпочтительный: Pi <офис>") == "Предпочтительный: Pi <офис>", "имя с «<» — не тег"
     long = "x" * 300
     out = ui.toast(long)
     assert len(out) == ui.TOAST_MAX == 200 and out.endswith("…")
     assert ui.toast("y" * 200) == "y" * 200, "ровно предел — без многоточия"
+    assert ui.toast("🔁" * 101) == "🔁" * 99 + "…", "предел — в единицах UTF-16, обрезка по целым знакам"
     assert ui.toast(None) == ""
 
 

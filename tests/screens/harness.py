@@ -617,6 +617,7 @@ def serialize(shot_id: str, title: str, rec: Record) -> str:
 # ── проверки ограничений Telegram и разметки (§ «Ограничения Telegram») ─────
 
 TEXT_MAX, CAPTION_MAX, TOAST_MAX, CB_MAX, ROWS_MAX, LABEL_MAX = 4096, 1024, 200, 64, 10, 18
+CANCELS = ("⬅️ Отмена", "\u2716\ufe0f Отмена")       # под подтверждением и под приглашением
 ALLOWED = {"b": set(), "i": set(), "u": set(), "s": set(), "code": {"class"}, "pre": set(),
            "a": {"href"}, "blockquote": {"expandable"}, "tg-spoiler": set()}
 _TAG = re.compile(r'<(/?)([a-z][a-z-]*)((?:\s+[a-z-]+(?:="[^"<>]*")?)*)\s*>')
@@ -685,8 +686,9 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
     for c in rec.calls:
         where = f"{shot_id} {c.head}"
         if c.toast is not None:
-            if len(c.toast) > TOAST_MAX:
-                out.append(f"{where}: всплывашка {len(c.toast)} > {TOAST_MAX}")
+            n = len(c.toast.encode("utf-16-le")) // 2           # Telegram считает в UTF-16
+            if n > TOAST_MAX:
+                out.append(f"{where}: всплывашка {n} > {TOAST_MAX}")
             if _TAG.search(c.toast) or _ENTITY.search(c.toast):
                 out.append(f"{where}: разметка во всплывашке (Telegram покажет её буквально)")
         if c.body is not None:
@@ -702,15 +704,16 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
             rows = c.markup.inline_keyboard
             if len(rows) > ROWS_MAX:
                 out.append(f"{where}: рядов {len(rows)} > {ROWS_MAX}")
-            if len(rows) == 1 and len(rows[0]) == 2 and any(b.text == "⬅️ Отмена" for b in rows[0]):
+            texts_ = [b.text for b in rows[0]] if len(rows) == 1 else []
+            if len(texts_) == 2 and "⬅️ Отмена" in texts_ and "✏️ Другое" not in texts_:
                 # подтверждение (keyboards/common.confirm): один ряд, «Отмена»
-                # первой, действие второй
-                if rows[0][0].text != "⬅️ Отмена":
-                    out.append(f"{where}: подтверждение не вида [⬅️ Отмена][действие]: {[b.text for b in rows[0]]}")
+                # первой, действие второй; пресеты с «✏️ Другое» — выбор, не оно
+                if texts_[0] != "⬅️ Отмена":
+                    out.append(f"{where}: подтверждение не вида [⬅️ Отмена][действие]: {texts_}")
             for row in rows:
                 for b in row:
-                    if b.text == "⬅️ Отмена" and getattr(b, "style", None) is not None:
-                        out.append(f"{where}: «Отмена» красная")
+                    if b.text in CANCELS and getattr(b, "style", None) is not None:
+                        out.append(f"{where}: «{b.text}» красная")
                     if b.callback_data is not None and not 1 <= len(b.callback_data.encode()) <= CB_MAX:
                         out.append(f"{where}: callback_data {b.callback_data!r} — "
                                    f"{len(b.callback_data.encode())} байт вне 1…{CB_MAX}")
