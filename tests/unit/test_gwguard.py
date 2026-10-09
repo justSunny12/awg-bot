@@ -92,7 +92,7 @@ def test_unit_admin_ips_reads_the_bundle_value(tmp_path, monkeypatch):
     unit.write_text('[Service]\nEnvironment=LINK_IF=awglink\nEnvironment="ADMIN_IPS=10.9.1.2 10.9.1.3"\n',
                     encoding="utf-8")
     monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
-    gwguard._unit_cache = None
+    gwguard.unit._unit_cache = None
     assert gwguard.unit_admin_ips() == ["10.9.1.2", "10.9.1.3"]
 
 
@@ -372,7 +372,7 @@ def test_unit_text_is_cached_by_mtime_and_size(tmp_path, monkeypatch):
     unit = tmp_path / "awg-link-gw.service"
     unit.write_text("[Service]\nEnvironment=LAN_MODE=1\n", encoding="utf-8")
     monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
-    gwguard._unit_cache = None
+    gwguard.unit._unit_cache = None
     assert gwguard.unit_env("LAN_MODE") == "1"
     reads = []
     real = type(unit).read_text

@@ -1,0 +1,14 @@
+"""common.py — общее для частей клиента канала: журнал, порт по умолчанию, задержки переподключения, предел сдачи."""
+from __future__ import annotations
+
+import logging
+
+from awgbot.util import gwlink
+
+log = logging.getLogger(__name__)
+
+DEFAULT_PORT = gwlink.DEFAULT_PORT
+# 5 с → 15 → 45 → 135 → 300, каждый шаг × uniform(0.6, 1.4). Потолок пять минут:
+# линк лежит редко и надолго, а долбиться в него чаще незачем.
+_BACKOFF = (5, 15, 45, 135, 300)
+SEND_TIMEOUT = 30       # с — drain не дождался: ВПС не читает, сессия мёртвая

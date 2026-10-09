@@ -1,0 +1,168 @@
+"""
+linkserver/ — сторона ВПС для канала ВПС ↔ шлюз (части: common — сессия и предел hello;
+session — слушатели и сессии; inbound — разбор входящих; deliver — доставки).
+
+Слушатель живёт ТОЛЬКО на адресах линков: публичный адрес сервера порт канала
+не показывает даже при снятом файерволе. Коннект всегда устанавливает шлюз —
+на шлюзе не появляется ни одного слушающего сокета, и механика одинаково
+работает за любым NAT.
+
+По серверу на адрес линка, а не один на все: bind списка адресов в asyncio —
+«всё или ничего», и лежащий второй линк оставлял бы без канала здоровый
+первый. Отдельные серверы изолируют отказ по слотам и не рвут чужие сессии,
+когда состав слотов меняется.
+
+Слот определяется парой «на какой локальный адрес пришли» и «каким ключом линка
+проверилась подпись»: обе должны указывать на один слот, иначе разрыв. Вторая
+сессия того же слота вытесняет первую — шлюз перезагрузился, старая висит.
+Повтор отсекают нонсы сессии (gwlink, proto 2): hello приносит нонс шлюза
+(поле `nonce`), первое сообщение сервера несёт его нонс тем же полем, дальше
+каждая сторона подписывает нонсом получателя. Часы в проверку не входят. До
+hello сервер не шлёт ничего.
+Ключ читается заново на каждую сессию: после замены машины в слоте ключ линка
+новый, а номер слота тот же, и кеш по номеру держал бы канал мёртвым до
+перезапуска бота.
+
+Периодического прикладного обмена здесь нет вовсе: сессия держится открытой,
+в простое прикладных сообщений ноль. TCP-keepalive ядра на сокете включён
+(`gwlink.tcp_keepalive`: 20 мин / 60 с / 3 пробы) — он идёт внутри линка и
+снаружи не виден, а полуоткрытую сессию добивает за минуты. Мёртвые сессии
+снимаются и раньше: такт живости (`liveness_tick`) снимает сессию слота, чей
+хендшейк линка старше двойного `gateway.handshake_max_age` (`sweep_dead`),
+отправка, не сданная за `SEND_TIMEOUT`, снимает сессию, закрытие не ждёт
+сдачи буфера дольше 5 с. Исключение обработчика — отказ сессии с причиной в
+state слота (`_handle_safe`), а не падение задачи слушателя.
+
+Доставка на шлюз — по расхождению, а не по расписанию: на каждом снимке, при
+старте (`ensure`), каждый четвёртый такт живости и на тике монитора
+(`monitor_tick`) — отдельной задачей `deliver_soon`, такт её не ждёт; правка
+из чата основного бота будит её сразу (`touch`, он же `services.channel_touch`:
+сервисы работают в потоке) — сверяется локально, что разошлось,
+и по сети уходит только это — настройки (`deliver`), фиды локальной сети
+(`deliver_lists`), записи SMB соседних сетей (`deliver_peer_services`), канон
+своих списков (`deliver_own`), роль слота (`send_role`: активен ли, есть ли
+другой слот с устройством, имя слота; её такт говорит каждый раз). Один и тот же набор
+за сессию повторно не уходит — кроме временного отказа агента (`ack` с
+`retry`): тогда набор снова ждёт расхождения снимка. Полный снимок сервер просит сам (`ask snap`) —
+только при разрыве нумерации дельт; по запросу человека ничего у шлюза не
+спрашивается, диагностики по каналу нет.
+
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from awgbot.core import config
+from awgbot.util import gwlink
+
+from .common import HELLO_TIMEOUT, _Session
+from .session import SessionMixin
+from .inbound import InboundMixin
+from .deliver import DeliverMixin
+
+log = logging.getLogger(__name__)
+
+DEFAULT_PORT = gwlink.DEFAULT_PORT
+
+
+
+
+def channel_port() -> int:
+    """Порт слушателя — из общего места (gwlink); своё имя оставлено, чтобы
+    тесты подменяли порт слушателю, не трогая бандл и сторож."""
+    return gwlink.channel_port()
+
+
+def vps_address(link_cidr: str) -> str:
+    """Адрес ВПС в /30 линка — первый хост, как его считает скрипт линка."""
+    return gwlink.link_hosts(link_cidr)[0]
+
+
+def gw_address(link_cidr: str) -> str:
+    """Адрес шлюза в /30 линка — второй хост."""
+    return gwlink.link_hosts(link_cidr)[1]
+
+
+
+class LinkServer(SessionMixin, InboundMixin, DeliverMixin):
+    """По серверу на адрес линка, по сессии на слот — собирается из частей пакета."""
+
+
+# ── единственный экземпляр на процесс ────────────────────────────────────────
+
+_server: LinkServer | None = None
+
+
+_on_applied = None
+_on_installed = None
+
+
+def set_on_installed(fn) -> None:
+    """Корутина `fn(slot_id)` — сказать админу, что новый шлюз настроен и на
+    связи (вид `installed` от агента). Ставит main: у слушателя канала своего
+    бота нет."""
+    global _on_installed
+    _on_installed = fn
+
+
+def set_on_applied(fn) -> None:
+    """Корутина `fn(slot_id, ok, error, fp)` — показать итог применения в чате
+    админа (fp — отпечаток применённого файла, "" у старого агента). Ставит
+    main: у слушателя канала своего бота нет."""
+    global _on_applied
+    _on_applied = fn
+
+
+async def ensure(services) -> LinkServer | None:
+    """Поднять/перевесить слушатели. Роль gateway сюда не заходит вовсе.
+    Сессии прошлого процесса сбрасывает старт бота (main, до поллинга)."""
+    global _server
+    if config.ROLE == "gateway":
+        return None
+    if _server is None:
+        _server = LinkServer(services)
+    _server._loop = asyncio.get_running_loop()
+    await _server.ensure()
+    await _server.deliver_all()
+    return _server
+
+
+async def liveness_tick(services) -> None:
+    """Такт живости (30 с): слушатели по слотам, мёртвые сессии долой, роль —
+    и только каждый четвёртый такт полная сверка доставки в отдельной задаче:
+    ~20 запросов к БД на сессию каждые 30 с ради редкого расхождения — лишнее."""
+    global _server
+    if config.ROLE == "gateway":
+        return
+    if _server is None:
+        _server = LinkServer(services)
+    await _server.ensure()
+    await _server.sweep_dead()
+    await _server.send_roles()
+    n = _server.__dict__.get("_ticks", 0) + 1
+    _server.__dict__["_ticks"] = n
+    if n % 4 == 0:
+        _server.deliver_soon()
+
+
+async def monitor_tick(services) -> None:
+    """Тик монитора (минуты): полная сверка доставки отдельной задачей."""
+    if config.ROLE == "gateway" or _server is None:
+        return
+    _server.deliver_soon()
+
+
+def current() -> LinkServer | None:
+    return _server
+
+
+async def shutdown() -> None:
+    global _server
+    if _server is not None:
+        await _server.stop()
+        _server = None
+
+
+__all__ = ["LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+           "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

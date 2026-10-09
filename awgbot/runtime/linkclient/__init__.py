@@ -1,0 +1,267 @@
+"""
+linkclient/ — сторона шлюза для канала ВПС ↔ шлюз (части: common — задержки и пределы;
+session — подключение и hello; outbox — отправка; feeds — свои списки, сервисы, фиды;
+dispatch — разбор входящих).
+
+Коннект устанавливает ТОЛЬКО шлюз: на нём не появляется ни одного слушающего
+сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
+`tunnel_in` по `ct state established` — на шлюзе не нужно ни одного нового
+правила файервола.
+
+Периодической задачи здесь нет. Сессия держится открытой, и в простое по ней не
+уходит ни одного прикладного сообщения: снимок отправляется при подключении,
+дальше — только когда факт или вердикт действительно сменились. TCP-keepalive
+ядра на сокете включён (`gwlink.tcp_keepalive`) — внутри линка, снаружи не
+виден, полуоткрытую сессию после жёсткого ребута ВПС добивает за ~23 минуты;
+отправка, не сданная за `SEND_TIMEOUT`, рвёт сессию сразу. Переподключение — с
+бэкоффом и джиттером: ровный ритм попыток был бы тем же маячком, только на
+уровне TCP. Бэкофф сбрасывает только сессия, в которой сервер ответил. Линк
+лёг и поднялся (`on_tick`) — сессия рвётся и ставится заново, а спящий бэкофф
+будится с нулевого шага. Канал свежий для фидов, пока жива сессия
+(`services.channel.online`; слово сервера не мерило — в здоровой сессии он
+молчит); запас на своё скачивание фидов продлевает только сессия, в которой
+сервер ответил. После операций из чата
+(бандл, мастер восстановления) снимок уходит сразу (`poke`). Байты канала
+копятся в `services.channel`: зонд выхода наружу вычитает их из счётчиков линка.
+
+Канал включается тем, что привёз бандл (`LINK_CHANNEL=1` в юните обвязки): без
+перевыпуска конфигурации агент никуда не ходит — это и есть рубильник.
+
+С ВПС по той же сессии приходят только данные из закрытого списка: `settings`
+— четыре настройки обвязки (применяет `apply_link_settings`, ответ `ack`,
+уведомление человеку в чат агента; временный отказ — `ack` с `retry`, без
+уведомления: сервер повторит набор в той же сессии), `lists` — фиды локальной сети
+(`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же, запас
+своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот
+трафик (`active`), есть ли другой слот с устройством (`standby`) и имя слота
+(`name`; старый сервер шлёт только `active`), `ask snap` — просьба о полном снимке, `peer_svc` — записи SMB
+соседних сетей (`apply_peer_services`, ответ `peer_svc_ack`), `own_set` —
+канон своих списков, общих для всех шлюзов (`apply_own_lists`, ответ
+`own_ack`), `applied_ack` — подтверждение итога применения файла. В обратную
+сторону, кроме снимка и ответов, — свои SMB-серверы (`svc`), правки своих
+списков (`own_ev`: после кнопки в чате сразу, `own_changed`; правки мимо агента
+находит сверка файлов на тике монитора, `own_tick`), итог применения файла из
+чата (`applied`) и «установлен» в первый час после установки (`installed`).
+Неизвестный вид пропускается с записью в журнал: новый ВПС со старым агентом
+не рвёт сессию.
+Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
+сообщение сервера — его; дальше подписываем нонсом сервера, проверяем своим.
+Часы хоста в проверку не входят — шлюз без RTC поднимает канал и до NTP.
+"""
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import ipaddress
+import logging
+import random          # noqa: F401 — тесты подменяют random.uniform через пакет
+import subprocess
+
+from awgbot.core import config
+from awgbot.util import gwlink
+
+from .common import DEFAULT_PORT, SEND_TIMEOUT, _BACKOFF
+from .session import SessionMixin
+from .outbox import OutboxMixin
+from .feeds import FeedsMixin
+from .dispatch import DispatchMixin
+
+log = logging.getLogger(__name__)
+
+
+def enabled() -> bool:
+    from awgbot.infra import gwguard
+    return gwguard.unit_env("LINK_CHANNEL") == "1"
+
+
+def server_port() -> int:
+    from awgbot.infra import gwguard
+    raw = gwguard.unit_env("LINK_CHANNEL_PORT")
+    return int(raw) if raw.isdigit() else DEFAULT_PORT
+
+
+def server_address() -> str:
+    """Адрес ВПС в /30 линка: наш адрес спрашиваем у ядра, второй считается
+    однозначно. Ядро достовернее конфига — его могли и не применить."""
+    try:
+        proc = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", config.GW_LINK_IF],
+                              capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for tok in proc.stdout.decode(errors="replace").split():
+        if "/" not in tok or tok.count(".") != 3:
+            continue
+        try:
+            iface = ipaddress.ip_interface(tok)
+        except ValueError:
+            continue
+        if iface.network.prefixlen != 30:
+            return ""
+        peers = [h for h in iface.network.hosts() if h != iface.ip]
+        return str(peers[0]) if peers else ""
+    return ""
+
+
+
+class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin):
+    """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
+
+
+_client: LinkClient | None = None
+_notify = None
+
+
+def set_notify(fn) -> None:
+    """Корутина `fn(text)` — отправить человеку в чат агента. Ставит main:
+    у клиента канала своего бота нет."""
+    global _notify
+    _notify = fn
+
+
+def ensure(services) -> LinkClient | None:
+    """Поднять клиента, если канал включён бандлом. Роль client сюда не ходит.
+    Бандл с LINK_CHANNEL=0 гасит уже запущенного клиента на ближайшем тике —
+    рубильник не должен ждать перезапуска агента."""
+    global _client
+    if config.ROLE != "gateway":
+        return None
+    if not enabled():
+        if _client is not None and _client._task is not None:
+            _client._task.cancel()
+            _client._task = None
+            _client._set_online(False)
+        return None
+    if _client is None:
+        _client = LinkClient(services)
+    _client.start()
+    return _client
+
+
+def role() -> str:
+    """active | standby | "" — что последним сообщил сервер."""
+    if _client is None:
+        return ""
+    try:
+        return _client.services.link_role()
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+
+def online() -> bool:
+    """Сессия с ВПС сейчас открыта. Без сети: просто состояние объекта."""
+    return _client is not None and _client._writer is not None
+
+
+def view() -> dict:
+    """Состояние канала для текстов панели одним словарём: включён ли бандлом,
+    открыта ли сессия, роль по последнему слову сервера."""
+    en, on = enabled(), online()
+    return {"enabled": en, "online": on, "role": role() if en and on else ""}
+
+
+async def on_tick(services) -> None:
+    """После тика монитора: отправить дельту, если что-то действительно
+    изменилось. Зовётся из задачи планировщика, а не своим расписанием —
+    своего расписания у канала нет по замыслу.
+
+    Здесь же — переподключение по восстановлению линка. Жёсткий ребут ВПС не
+    шлёт FIN, а агент в простое сам ничего не отправляет и RST не получит:
+    сессия висела бы «открытой» днями, подавляя своё скачивание фидов. Линк
+    лёг и поднялся — значит, прежней сессии на той стороне нет наверняка;
+    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт."""
+    client = ensure(services)
+    if client is None:
+        return
+    try:
+        st = services.cached_status(24 * 3600)
+        link_ok = bool(st is not None and services.link_ok(st))
+    except Exception:                                     # noqa: BLE001
+        link_ok = None
+    if link_ok is not None:
+        was = client._link_ok
+        client._link_ok = link_ok
+        if was is False and link_ok:
+            if client._writer is not None:
+                log.info("канал линка: линк восстановился — переподключаюсь")
+                with contextlib.suppress(Exception):
+                    client._writer.close()
+                return
+            client._wake.set()                            # бэкофф спит — будим, шаг с нуля
+    await client.push()
+    for step in (client.retry_peer_services, client.own_tick):
+        try:
+            await step()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: %s на тике не прошёл: %s", step.__name__, e)
+
+
+async def poke(services) -> None:
+    """После операции из чата агента (бандл, мастер восстановления): поднять
+    клиента, если бандл только что включил канал, и сразу отправить дельту —
+    человек ждёт результата на ВПС сейчас, а не через тик. Заодно — внеочередной
+    обзор сервисов: бандл мог включить или выключить доступ между подсетями."""
+    client = ensure(services)
+    if client is not None:
+        with contextlib.suppress(Exception):
+            await client.push()
+    try:
+        await services_changed(services)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("канал линка: внеочередной обзор SMB не прошёл: %s", e)
+
+
+async def report_applied(services, ok: bool, error: str = "", fp: str = "") -> None:
+    """Файл конфигурации применён из чата агента (или нет): сказать серверу
+    сразу, если канал жив, иначе — первым делом при подключении. fp —
+    отпечаток файла (sha256 шифрованного, первые 16 знаков): сервер сверит
+    его с выданным и не уберёт из чата чужой или более новый файл."""
+    await asyncio.to_thread(services.applied_pending_set, ok, error, fp)
+    client = _live_client()
+    if client is not None:
+        with contextlib.suppress(Exception):
+            await client.flush_applied()
+
+
+def _live_client() -> "LinkClient | None":
+    """Клиент с открытой сессией — или None."""
+    client = _client
+    return client if client is not None and client._writer is not None else None
+
+
+async def own_changed(services) -> bool:
+    """Кнопка своих списков в чате агента: сверка сразу и правки серверу, если
+    канал жив; нет — уйдут при подключении. Всё, что человек сделал руками,
+    уходит по каналу немедленно. True — сверка нашла
+    новые правки (неотправленные прежние тоже уходят, но хвост в чате — только
+    за новые)."""
+    reconcile = services.own_reconcile
+    client = _client
+    if client is not None:
+        async with client._own_lock:
+            changed = await asyncio.to_thread(reconcile)
+    else:
+        changed = await asyncio.to_thread(reconcile)
+    if _live_client() is not None and (changed or await asyncio.to_thread(services.own_unsent)):
+        await client.push_own()
+    return changed
+
+
+async def services_changed(services) -> None:
+    """Задача обзора: изменился свой список
+    — отправить серверу, если канал жив; нет — уйдёт целиком при подключении."""
+    changed = await asyncio.to_thread(services.services_scan)
+    client = _live_client()
+    if changed and client is not None:
+        await client.push_services()
+
+
+async def shutdown() -> None:
+    global _client
+    if _client is not None:
+        await _client.stop()
+        _client = None
+
+
+__all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
+           "set_notify", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "services_changed", "shutdown", "asyncio", "random", "gwlink"]

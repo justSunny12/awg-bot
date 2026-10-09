@@ -314,7 +314,7 @@ def test_two_threads_create_one_generation(pair, monkeypatch):
     def slow_token(k):
         time.sleep(0.05)                          # окно гонки шире, чем разница стартов потоков
         return f"{next(n):0{2 * k}x}"
-    monkeypatch.setattr(gwchannel.secrets, "token_hex", slow_token)
+    monkeypatch.setattr(gwchannel.own.secrets, "token_hex", slow_token)
     gens: list[str] = []
     threads = [threading.Thread(target=lambda: gens.append(s.gwlink_own_canon()["gen"])) for _ in range(4)]
     for t in threads:

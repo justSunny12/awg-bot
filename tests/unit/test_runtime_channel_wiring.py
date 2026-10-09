@@ -29,7 +29,7 @@ def test_liveness_tick_is_light_and_the_monitor_tick_delivers():
     src = (ROOT / "scheduler.py").read_text(encoding="utf-8")
     assert "linkserver.liveness_tick(services)" in src and "linkserver.monitor_tick(services)" in src
     assert "await linkserver.ensure(services)" not in src, "такт снова зовёт полную доставку синхронно"
-    ls = (ROOT / "linkserver.py").read_text(encoding="utf-8")
+    ls = (ROOT / "linkserver" / "__init__.py").read_text(encoding="utf-8")
     body = ls.split("async def liveness_tick", 1)[1].split("async def monitor_tick", 1)[0]
     assert "sweep_dead()" in body and "send_roles()" in body and "deliver_soon()" in body
     assert "await _server.deliver_all()" not in body

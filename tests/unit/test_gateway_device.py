@@ -167,7 +167,7 @@ def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):
     unit.write_text("[Service]\nEnvironment=LINK_IF=awglink\nEnvironment=CLIENT_SUBNET=10.8.1.0/24\n",
                     encoding="utf-8")
     monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
-    gwguard._unit_cache = None
+    gwguard.unit._unit_cache = None
     assert gwguard.client_subnet() == "10.8.1.0/24", "подсеть приезжает в юните из бандла"
     unit.unlink()
     assert gwguard.client_subnet() == ""
