@@ -20,7 +20,6 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.session.base import BaseSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import paging
 from awgbot.bot.callbacks import (AdminSelfCB, ClientCB, Menu, PageCB)
@@ -109,9 +108,7 @@ def test_a_negative_or_missing_page_is_the_first(asked):
 
 def test_page_nav_draws_arrows_that_point_to_the_neighbour_pages():
     back = Menu(action="clients").pack()
-    kb = InlineKeyboardBuilder()
-    assert kbm.page_nav(kb, "clients", 7, 3, True, True, back) == 2
-    buttons = [b for row in kb.as_markup().inline_keyboard for b in row]
+    buttons = kbm.page_nav("clients", 7, 3, True, True, back)
     assert [b.text for b in buttons] == [kbm.PREV_LABEL, kbm.NEXT_LABEL]
     prev, nxt = (PageCB.unpack(b.callback_data) for b in buttons)
     assert (prev.screen, prev.ref, prev.page, prev.back) == ("clients", 7, 2, back)
@@ -119,12 +116,8 @@ def test_page_nav_draws_arrows_that_point_to_the_neighbour_pages():
 
 
 def test_page_nav_without_neighbours_draws_nothing():
-    kb = InlineKeyboardBuilder()
-    assert kbm.page_nav(kb, "clients", 0, 0, False, False, "m:clients") == 0
-    assert kb.as_markup().inline_keyboard == []
-    kb = InlineKeyboardBuilder()
-    assert kbm.page_nav(kb, "clients", 0, 0, False, True, "m:clients") == 1
-    assert [b.text for row in kb.as_markup().inline_keyboard for b in row] == [kbm.NEXT_LABEL]
+    assert kbm.page_nav("clients", 0, 0, False, False, "m:clients") == []
+    assert [b.text for b in kbm.page_nav("clients", 0, 0, False, True, "m:clients")] == [kbm.NEXT_LABEL]
 
 
 # ── все экраны с листанием: десять рядов и 64 байта ─────────────────────────

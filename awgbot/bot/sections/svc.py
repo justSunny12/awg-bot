@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
 from awgbot.bot import ui
@@ -25,26 +24,18 @@ def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0)
     """Перезапуски парой; переезд — по состоянию: идёт — кто не переехал,
     завершить и отменить; нет — начать (если настроен) и переехавшие после
     отмены (если есть)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🔁 Перезапуск AWG", callback_data=br.cb.pack(ID, "do", "awg"))
-    kb.button(text="🔁 Перезапуск бота", callback_data=br.cb.pack(ID, "do", "bot"))
-    rows = [2]
+    mig: list = []
     if br.has.migration and available:
         if migration:
-            kb.button(text="👥 Кто не переехал", callback_data=br.cb.pack("mig", "do", "pending"))
-            kb.button(text="✅ Завершить", callback_data=br.cb.pack("mig", "do", "finish"))
-            kb.button(text="↩️ Отменить", callback_data=br.cb.pack("mig", "do", "cancel"))
-            rows += [1, 2]
+            mig = [("👥 Кто не переехал", br.cb.pack("mig", "do", "pending")),
+                   [("✅ Завершить", br.cb.pack("mig", "do", "finish")), ("↩️ Отменить", br.cb.pack("mig", "do", "cancel"))]]
         else:
-            kb.button(text="🚚 Начать переезд", callback_data=br.cb.pack("mig", "do", "start"))
-            rows.append(1)
-            if orphans:
-                kb.button(text=f"⚠️ Переехавшие после отмены: {orphans}",
-                          callback_data=br.cb.pack("mig", "do", "orphans"))
-                rows.append(1)
-    kb.adjust(*rows)
-    kb.row(back_button(br))
-    return kb.as_markup()
+            mig = [("🚚 Начать переезд", br.cb.pack("mig", "do", "start")),
+                   (f"⚠️ Переехавшие после отмены: {orphans}", br.cb.pack("mig", "do", "orphans")) if orphans else None]
+    return ui.rows(
+        [("🔁 Перезапуск AWG", br.cb.pack(ID, "do", "awg")), ("🔁 Перезапуск бота", br.cb.pack(ID, "do", "bot"))],
+        *mig,
+        back_button(br))
 
 
 async def screen(br, services, key: str = ""):

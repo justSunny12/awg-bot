@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.core import settings
 
 from ._kb import _tick, back_button
@@ -24,14 +24,11 @@ def text(br) -> str:
 
 
 def keyboard(br) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    for key, lbl in CLIENT_EVENT_LABELS:
-        on = settings.get_bool(f"notifications.client_events.{key}", True)
-        kb.button(text=f"{_tick(on)} {lbl}",
-                  callback_data=br.cb.pack(ID, "toggle", f"notifications.client_events.{key}"))
-    kb.adjust(2)
-    kb.row(back_button(br, BACK))
-    return kb.as_markup()
+    return ui.rows(
+        *ui.grid([(f"{_tick(settings.get_bool(f'notifications.client_events.{key}', True))} {lbl}",
+                   br.cb.pack(ID, "toggle", f"notifications.client_events.{key}"))
+                  for key, lbl in CLIENT_EVENT_LABELS], 2),
+        back_button(br, BACK))
 
 
 async def screen(br, services, key: str = ""):

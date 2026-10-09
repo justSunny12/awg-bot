@@ -10,7 +10,10 @@
   • подтверждение — «Вопрос?» и цена следующей строкой (confirm), клавиатура —
     keyboards/common.confirm («⬅️ Отмена» первой);
   • итог действия — «✅ сделано» / «🔴 не сделано: причина» (result, fail),
-    итог ввода — «✅ Подпись: было → стало» (changed).
+    итог ввода — «✅ Подпись: было → стало» (changed);
+  • клавиатура — рядами как есть (rows): ряд — список кнопок, кнопка —
+    (подпись, колбэк[, "danger"]); хвосты back/to_menu, сетка grid, листание
+    paged. InlineKeyboardBuilder в коде экранов не используется.
 
 Таблица статусов — только значки: слово у каждого состояния своё и
 передаётся аргументом st(). Маркеры строк итога — отдельно: ✅ готово,
@@ -20,6 +23,8 @@ from __future__ import annotations
 
 import html as _html
 import re as _re
+
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 STATUS = {"ok": "🟢", "warn": "🟡", "bad": "🔴", "wait": "⏳", "off": "⚪"}
 TOAST_MAX = 200                  # предел всплывашки Telegram
@@ -160,3 +165,78 @@ def note_budget(screen_text: str, reserve: int = 300) -> int:
     видимый текст экрана и запас на хвост и «…и ещё N строк»."""
     visible = _html.unescape(_TAG.sub("", screen_text))
     return max(400, TEXT_MAX - len(visible) - reserve)
+
+
+# ── клавиатуры ───────────────────────────────────────────────────────────────
+
+BACK_LABEL = "⬅️ Назад"
+MENU_LABEL = "⬅️ В меню"
+
+
+def btn(text: str, cb=None, *, danger: bool = False, url: str | None = None,
+        copy: str | None = None) -> InlineKeyboardButton:
+    """Кнопка: колбэк (строка или CallbackData), ссылка (url) или копирование
+    текста (copy); danger — красная (Bot API 9.x, старые клиенты рисуют обычную)."""
+    kw: dict = {}
+    if url is not None:
+        kw["url"] = url
+    elif copy is not None:
+        kw["copy_text"] = CopyTextButton(text=copy)
+    else:
+        kw["callback_data"] = cb if isinstance(cb, str) else cb.pack()
+    if danger:
+        kw["style"] = "danger"
+    return InlineKeyboardButton(text=text, **kw)
+
+
+def _button(b) -> InlineKeyboardButton:
+    if isinstance(b, InlineKeyboardButton):
+        return b
+    text, cb, *flags = b
+    return btn(text, cb, danger="danger" in flags)
+
+
+def rows(*spec) -> InlineKeyboardMarkup:
+    """Ряды кнопок как есть. Ряд — список кнопок; одиночная кнопка (кортеж
+    или InlineKeyboardButton) — свой ряд. None вместо кнопки или ряда —
+    пропуск, пустой ряд выпадает: условные кнопки пишутся прямо в раскладке."""
+    out = []
+    for row in spec:
+        if row is None:
+            continue
+        if isinstance(row, (tuple, InlineKeyboardButton)):
+            row = [row]
+        buttons = [_button(b) for b in row if b is not None]
+        if buttons:
+            out.append(buttons)
+    return InlineKeyboardMarkup(inline_keyboard=out)
+
+
+def grid(buttons, per: int) -> list[list]:
+    """Плоский список кнопок — рядами по per (None пропускаются)."""
+    buttons = [b for b in buttons if b is not None]
+    return [buttons[i:i + per] for i in range(0, len(buttons), per)]
+
+
+def back(cb, text: str = BACK_LABEL) -> tuple:
+    """Хвост «⬅️ Назад» — на экран cb."""
+    return (text, cb)
+
+
+def to_menu(cb, text: str = MENU_LABEL) -> tuple:
+    """Хвост «⬅️ В меню» — на главную роли cb."""
+    return (text, cb)
+
+
+def paged(items, page: int, *, static: int, screen: str, ref: int, back, button) -> list[list]:
+    """Ряды списка с листанием: по кнопке на запись (button(index, item) —
+    index по ПОЛНОМУ списку) и ряд листания, если страницы есть. static —
+    сколько постоянных рядов у экрана кроме списка (правило десяти рядов —
+    keyboards/common.page_slice)."""
+    from awgbot.bot.keyboards.common import page_nav, page_slice
+    chunk, page, prev, nxt = page_slice(items, page, static)
+    out = [[button(i, item)] for i, item in chunk]
+    nav = page_nav(screen, ref, page, prev, nxt, back)
+    if nav:
+        out.append(nav)
+    return out

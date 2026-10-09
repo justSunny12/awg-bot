@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit_nav
 from awgbot.core import settings
 
-from ._kb import _chk, back_button, button
+from ._kb import _chk, back_button
 
 ID, LABEL, BACK = "backup", "💾 Бэкапы", "root"
 KEYS = ("app.scheduler.backup_enabled", "app.scheduler.backup_channel",
@@ -33,31 +33,21 @@ def backup_when_label(day: int, hour: int) -> str:
 
 def keyboard(br, encryption: bool = False) -> InlineKeyboardMarkup:
     s = settings
-    kb_ = InlineKeyboardBuilder()
     on = s.get_bool("app.scheduler.backup_enabled", True)
-    kb_.button(text=f"{_chk(on)} Автобэкапы", callback_data=br.cb.pack(ID, "toggle", "app.scheduler.backup_enabled"))
-    kb_.button(text="🔐 Шифрование", callback_data=br.cb.pack(ID, "do", "enc"))
-    rows = [2]
-    if on:
-        ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
-        kb_.add(button("📨 Куда: " + ("E-mail" if ch == "email" else "Telegram"),
-                       br.cb.pack(ID, "cycle", "app.scheduler.backup_channel")))
-        kb_.button(text=backup_when_label(s.get_int("app.scheduler.backup_day", 1),
-                                          s.get_int("app.scheduler.backup_hour", 12)),
-                   callback_data=br.cb.pack(ID, "edit", "backup_when"))
-        kb_.button(text="💾 Сделать сейчас", callback_data=br.cb.pack(ID, "do", "now"))
-        rows += [2, 1]
-    kb_.adjust(*rows)
-    kb_.row(back_button(br))
-    return kb_.as_markup()
+    ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
+    return ui.rows(
+        [(f"{_chk(on)} Автобэкапы", br.cb.pack(ID, "toggle", "app.scheduler.backup_enabled")),
+         ("🔐 Шифрование", br.cb.pack(ID, "do", "enc"))],
+        [("📨 Куда: " + ("E-mail" if ch == "email" else "Telegram"), br.cb.pack(ID, "cycle", "app.scheduler.backup_channel")),
+         (backup_when_label(s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)),
+          br.cb.pack(ID, "edit", "backup_when"))] if on else None,
+        ("💾 Сделать сейчас", br.cb.pack(ID, "do", "now")) if on else None,
+        back_button(br))
 
 
 def encryption_kb(br, has_secret: bool) -> InlineKeyboardMarkup:
-    kb_ = InlineKeyboardBuilder()
-    kb_.button(text="✏️ Сменить фразу" if has_secret else "🔑 Задать фразу", callback_data=br.cb.pack(ID, "do", "enc_set"))
-    kb_.add(back_button(br, ID))
-    kb_.adjust(1)
-    return kb_.as_markup()
+    return ui.rows(("✏️ Сменить фразу" if has_secret else "🔑 Задать фразу", br.cb.pack(ID, "do", "enc_set")),
+                   back_button(br, ID))
 
 
 def restore_confirm_kb(br) -> InlineKeyboardMarkup:

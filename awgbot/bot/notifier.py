@@ -139,19 +139,14 @@ def action_markup(action, base=None):
     (например, отсрочка): её кнопки идут первыми, «Скрыть» остаётся одна."""
     if not action or action[0] not in ACTION_LABELS:
         return base or kb.hide_only()
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from awgbot.bot.callbacks import NoteCB
-    b = InlineKeyboardBuilder()
-    from awgbot.bot.callbacks import HideCB
+    from awgbot.bot import ui
+    from awgbot.bot.callbacks import HideCB, NoteCB
     hide = HideCB().pack()
-    for row in (base.inline_keyboard if base is not None else []):
-        for btn in row:
-            if btn.callback_data != hide:            # «Скрыть» добавим одну, последней
-                b.add(btn)
-    b.button(text=ACTION_LABELS[action[0]],
-             callback_data=NoteCB(kind=action[0], ref=int(action[1] if len(action) > 1 else 0)))
-    b.adjust(1)
-    return kb.append_hide_row(b)
+    # кнопки base по одной в ряд, «Скрыть» — одна, последней
+    own = [btn for row in (base.inline_keyboard if base is not None else []) for btn in row
+           if btn.callback_data != hide]
+    return kb.append_hide_row(ui.rows(
+        *own, (ACTION_LABELS[action[0]], NoteCB(kind=action[0], ref=int(action[1] if len(action) > 1 else 0)))))
 
 
 async def send_notifications(bot, notifications) -> None:

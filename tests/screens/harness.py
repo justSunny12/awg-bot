@@ -618,6 +618,10 @@ def serialize(shot_id: str, title: str, rec: Record) -> str:
 
 TEXT_MAX, CAPTION_MAX, TOAST_MAX, CB_MAX, ROWS_MAX, LABEL_MAX = 4096, 1024, 200, 64, 10, 18
 CANCELS = ("⬅️ Отмена", "\u2716\ufe0f Отмена")       # под подтверждением и под приглашением
+# кружок 🟢/🔴 на кнопке — состояние объекта (устройство или профиль онлайн),
+# тумблеры — ✅/☑️; «🔴 Выключить…» — действие, не тумблер (макет «Параметров»)
+CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_", "c:open:")
+CIRCLE_ACTIONS = ("🔴 Выключить", "🔴 Выключить РФ-доступ")
 ALLOWED = {"b": set(), "i": set(), "u": set(), "s": set(), "code": {"class"}, "pre": set(),
            "a": {"href"}, "blockquote": {"expandable"}, "tg-spoiler": set()}
 _TAG = re.compile(r'<(/?)([a-z][a-z-]*)((?:\s+[a-z-]+(?:="[^"<>]*")?)*)\s*>')
@@ -714,6 +718,11 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
                 for b in row:
                     if b.text in CANCELS and getattr(b, "style", None) is not None:
                         out.append(f"{where}: «{b.text}» красная")
+                    if "🏠" in b.text:
+                        out.append(f"{where}: «🏠» на кнопке «{b.text}» — «⬅️ В меню», локальная сеть — не «дом»")
+                    if (b.text.startswith(("🟢", "🔴")) and b.text not in CIRCLE_ACTIONS
+                            and not (b.callback_data or "").startswith(CIRCLE_OK_PREFIXES)):
+                        out.append(f"{where}: кружок вместо ✅/☑️ на кнопке «{b.text}»")
                     if b.callback_data is not None and not 1 <= len(b.callback_data.encode()) <= CB_MAX:
                         out.append(f"{where}: callback_data {b.callback_data!r} — "
                                    f"{len(b.callback_data.encode())} байт вне 1…{CB_MAX}")

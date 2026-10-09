@@ -21,7 +21,7 @@ import itertools
 import types
 
 import pytest
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup
 
 from awgbot.bot import roles, sections, ui
 from awgbot.bot.callbacks import CancelCB, GwCB, SetCB
@@ -52,16 +52,12 @@ def _module() -> types.ModuleType:
         return ui.screen(m.LABEL, f"{ui.tick(on)} {'вкл' if on else 'выкл'}",
                          lines=[f"Запуск в {hour:02d}:00 по часам {br.host_gen}" if on else None])
 
-    def keyboard(br):
+    def keyboard(br) -> InlineKeyboardMarkup:
         on = settings.get_bool(ON, True)
-        kb = InlineKeyboardBuilder()
-        kb.button(text=f"{ui.tick(on)} Расписание", callback_data=br.cb.pack(ID, "toggle", ON))
-        if on:
-            kb.button(text=f"✏️ {settings.get_int(HOUR, m.DEFAULTS[HOUR]):02d}:00",
-                      callback_data=br.cb.pack(ID, "edit", HOUR))
-        kb.adjust(2)
-        kb.row(back_button(br))
-        return kb.as_markup()
+        return ui.rows(
+            [(f"{ui.tick(on)} Расписание", br.cb.pack(ID, "toggle", ON)),
+             (f"✏️ {settings.get_int(HOUR, m.DEFAULTS[HOUR]):02d}:00", br.cb.pack(ID, "edit", HOUR)) if on else None],
+            back_button(br))
 
     async def screen(br, services, key: str = ""):
         return text(br), keyboard(br)

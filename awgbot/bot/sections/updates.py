@@ -8,7 +8,6 @@ from __future__ import annotations
 from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
 from awgbot.bot import ui
@@ -17,7 +16,7 @@ from awgbot.bot.handlers import updates_flow
 from awgbot.bot.handlers.common import call, cleanup_content, send_menu
 from awgbot.core import settings
 
-from ._kb import _chk, back_button, button
+from ._kb import _chk, back_button
 
 ID, LABEL, BACK = "upd", "⬆️ Обновления", "root"
 KEYS = ("updates.poll_schedule",)
@@ -32,22 +31,15 @@ ACTIONS: dict = {}
 def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
     """target_tag — найденная цель (кнопка «⬆️ Обновить до vX», если не
     заблокирована); «Уведомлять» — мьют в БД; «Проверка» — цикл."""
-    s = settings
-    kb = InlineKeyboardBuilder()
-    rows = []
-    if target_tag and not blocked:
-        tag = target_tag if str(target_tag).startswith("v") else f"v{target_tag}"
-        kb.button(text=f"⬆️ Обновить до {tag}", callback_data=UpdateCB(action="install"))
-        rows.append(1)
-    sched = str(s.get("updates.poll_schedule", "day")).lower()
+    sched = str(settings.get("updates.poll_schedule", "day")).lower()
     if sched not in UPDATE_SCHEDULE_LABELS:
         sched = "month"
-    kb.button(text=f"{_chk(not muted)} Уведомлять", callback_data=br.cb.pack(ID, "toggle", "notify"))
-    kb.add(button(f"📅 Проверка: {UPDATE_SCHEDULE_LABELS[sched]}", br.cb.pack(ID, "cycle", "updates.poll_schedule")))
-    rows.append(2)
-    kb.adjust(*rows)
-    kb.row(back_button(br))
-    return kb.as_markup()
+    tag = target_tag if str(target_tag).startswith("v") else f"v{target_tag}"
+    return ui.rows(
+        (f"⬆️ Обновить до {tag}", UpdateCB(action="install")) if target_tag and not blocked else None,
+        [(f"{_chk(not muted)} Уведомлять", br.cb.pack(ID, "toggle", "notify")),
+         (f"📅 Проверка: {UPDATE_SCHEDULE_LABELS[sched]}", br.cb.pack(ID, "cycle", "updates.poll_schedule"))],
+        back_button(br))
 
 
 async def screen(br, services, key: str = ""):

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.core import settings
 
 from ._kb import _chk, back_button
@@ -48,46 +48,23 @@ def text(br) -> str:
 
 def keyboard(br) -> InlineKeyboardMarkup:
     from . import available
-    kb = InlineKeyboardBuilder()
-    rows: list[int] = []
     qh = _bool("quiet_hours.quiet_hours_enabled")
-    kb.button(text=f"{_chk(qh)} Тихие часы", callback_data=br.cb.pack(ID, "toggle", "quiet_hours.quiet_hours_enabled"))
-    rows.append(1)
-    if qh:
-        kb.button(text=f"С {_int('quiet_hours.quiet_hours_start'):02d}:00",
-                  callback_data=br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_start"))
-        kb.button(text=f"До {_int('quiet_hours.quiet_hours_end'):02d}:00",
-                  callback_data=br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_end"))
-        rows.append(2)
     ra = _bool("resource_alerts.enabled")
-    kb.button(text=f"{_chk(ra)} Алерты хоста", callback_data=br.cb.pack(ID, "toggle", "resource_alerts.enabled"))
-    rows.append(1)
-    if ra:
-        kb.button(text=f"CPU {_int('resource_alerts.thresholds_percent.cpu')}%",
-                  callback_data=br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.cpu"))
-        kb.button(text=f"RAM {_int('resource_alerts.thresholds_percent.ram')}%",
-                  callback_data=br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.ram"))
-        kb.button(text=f"Диск {_int('resource_alerts.thresholds_percent.disk')}%",
-                  callback_data=br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.disk"))
-        if br.keys.temp_alert:
-            kb.button(text=f"{_int(br.keys.temp_alert)} °C",
-                      callback_data=br.cb.pack(ID, "edit", br.keys.temp_alert))
-            rows += [2, 2]
-        else:
-            rows.append(3)
-    ef = _bool("notifications.email_fallback")
-    kb.button(text=f"{_chk(ef)} Аварии на e-mail", callback_data=br.cb.pack(ID, "toggle", "notifications.email_fallback"))
-    if available(br, "ncl"):
-        # подраздел событий — рядом с тумблером, «Назад» своим рядом
-        kb.button(text="👥 События", callback_data=br.cb.pack("ncl"))
-        rows.append(2)
-        kb.adjust(*rows)
-        kb.row(back_button(br))
-    else:
-        kb.add(back_button(br))
-        rows.append(2)
-        kb.adjust(*rows)
-    return kb.as_markup()
+    cpu = ("CPU " + f"{_int('resource_alerts.thresholds_percent.cpu')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.cpu"))
+    ram = ("RAM " + f"{_int('resource_alerts.thresholds_percent.ram')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.ram"))
+    disk = ("Диск " + f"{_int('resource_alerts.thresholds_percent.disk')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.disk"))
+    temp = (f"{_int(br.keys.temp_alert)} °C", br.cb.pack(ID, "edit", br.keys.temp_alert)) if br.keys.temp_alert else None
+    mail = (f"{_chk(_bool('notifications.email_fallback'))} Аварии на e-mail",
+            br.cb.pack(ID, "toggle", "notifications.email_fallback"))
+    events = available(br, "ncl")           # подраздел событий — рядом с тумблером, «Назад» своим рядом
+    return ui.rows(
+        (f"{_chk(qh)} Тихие часы", br.cb.pack(ID, "toggle", "quiet_hours.quiet_hours_enabled")),
+        [(f"С {_int('quiet_hours.quiet_hours_start'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_start")),
+         (f"До {_int('quiet_hours.quiet_hours_end'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_end"))] if qh else None,
+        (f"{_chk(ra)} Алерты хоста", br.cb.pack(ID, "toggle", "resource_alerts.enabled")),
+        *(([cpu, ram], [disk, temp]) if temp else ([cpu, ram, disk],)) if ra else (),
+        [mail, ("👥 События", br.cb.pack("ncl")) if events else back_button(br)],
+        back_button(br) if events else None)
 
 
 async def screen(br, services, key: str = ""):

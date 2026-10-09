@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup
+from awgbot.bot import ui
 from awgbot.bot.callbacks import (
     BlockCB, CancelCB, DelDeviceCB, DeviceCB, FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
     RoutingCB)
 from awgbot.bot import texts as _texts
 
-from .common import (paged_rows, _btn_suffix, append_hide_row, _manual_block_button, confirm, issuable)
+from .common import (_btn_suffix, append_hide_row, _manual_block_button, confirm, issuable)
 
 
 ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1): «➕ Устройство» из списка — отмена туда же
+_ISSUE = (("🔗 Ссылка", "gen_link"), ("🔳 QR", "gen_qr"), ("📄 Файл", "gen_file"))
 
 
 def _dot(dev) -> str:
@@ -22,16 +23,14 @@ def _dot(dev) -> str:
     return _texts.device_state(dev)
 
 
-def issue_row(kb: InlineKeyboardBuilder, cb_cls, device_id: int = 0) -> None:
+def issue_row(cb_cls, device_id: int = 0) -> list:
     """Ряд выдачи [🔗 Ссылка] [🔳 QR] [📄 Файл] — три кнопки одним рядом.
     device_id=0 — «выбери устройство» (при одном — сразу выдача)."""
-    for text, action in (("🔗 Ссылка", "gen_link"), ("🔳 QR", "gen_qr"), ("📄 Файл", "gen_file")):
-        kb.button(text=text, callback_data=cb_cls(action=action, device_id=device_id))
+    return [(text, cb_cls(action=action, device_id=device_id)) for text, action in _ISSUE]
 
 
-def _menu_issue_row(kb: InlineKeyboardBuilder) -> None:
-    for text, action in (("🔗 Ссылка", "gen_link"), ("🔳 QR", "gen_qr"), ("📄 Файл", "gen_file")):
-        kb.button(text=text, callback_data=Menu(action=action))
+def _menu_issue_row() -> list:
+    return [(text, Menu(action=action)) for text, action in _ISSUE]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -43,54 +42,28 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     """Главная клиента: ряд выдачи (когда есть что выдавать), устройства и
     добавление (пока есть место в лимите), РФ-доступ (только когда админ
     выдал) и подписка, помощь. Без РФ-доступа подписка и помощь — одним рядом."""
-    kb = InlineKeyboardBuilder()
-    rows = []
-    if has_devices:
-        _menu_issue_row(kb)
-        rows.append(3)
-        kb.button(text="📱 Устройства", callback_data=Menu(action="devices"))
-        n = 1
-        if can_add:
-            kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
-            n = 2
-        rows.append(n)
-    elif can_add:
-        kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
-        rows.append(1)
-    if routing_visible:
-        kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client_id))
-        kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
-        rows += [2, 1]
-    else:
-        kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
-        rows.append(2)
-    kb.adjust(*rows)
-    return kb.as_markup()
+    add = ("➕ Устройство", DeviceCB(action="add")) if can_add else None
+    sub = ("💳 Подписка", Menu(action="info"))
+    help_ = ("❓ Как подключить", HelpCB(platform="root"))
+    return ui.rows(
+        _menu_issue_row() if has_devices else None,
+        [("📱 Устройства", Menu(action="devices")), add] if has_devices else [add],
+        [(f"🇷🇺 {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=client_id)), sub] if routing_visible else [sub, help_],
+        help_ if routing_visible else None)
 
 
 def guest_main(*, routing_visible: bool = False, client_id: int = 0,
                has_devices: bool = True) -> InlineKeyboardMarkup:
     """Главная гостя: выдача, устройства, РФ-доступ (при фиче у владельца),
     помощь. Без устройств — только помощь."""
-    kb = InlineKeyboardBuilder()
+    help_ = ("❓ Как подключить", FriendCB(action="help"))
     if not has_devices:
-        kb.button(text="❓ Как подключить", callback_data=FriendCB(action="help"))
-        kb.adjust(1)
-        return kb.as_markup()
-    issue_row(kb, FriendCB)                    # device_id=0: одно — сразу, иначе выбор
-    kb.button(text="📱 Устройства", callback_data=FriendCB(action="list"))
-    rows = [3]
-    if routing_visible:
-        kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client_id))
-        rows.append(2)
-    else:
-        rows.append(1)
-    kb.button(text="❓ Как подключить", callback_data=FriendCB(action="help"))
-    rows.append(1)
-    kb.adjust(*rows)
-    return kb.as_markup()
+        return ui.rows(help_)
+    return ui.rows(
+        issue_row(FriendCB),                    # device_id=0: одно — сразу, иначе выбор
+        [("📱 Устройства", FriendCB(action="list")),
+         (f"🇷🇺 {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=client_id)) if routing_visible else None],
+        help_)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,8 +75,6 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
     """Список своих устройств (переданное другу — с «[имя держателя]»);
     следом — чужие, которые профиль держит, с пометкой «от профиля …».
     Значок — состояние (⛔ ⏳ 🟢 ⚪). add — есть место в лимите."""
-    kb = InlineKeyboardBuilder()
-
     def _entry(_i, item):
         d, is_held = item
         if is_held:
@@ -111,27 +82,20 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
         else:
             lent = f" [{_texts.holder_name(d)}]" if getattr(d, "is_lent", False) else ""
             label = f"{_dot(d)} {d.name}{_btn_suffix(d)}{lent}"
-        kb.button(text=label, callback_data=DeviceCB(action="open", device_id=d.id))
-    rows = paged_rows(kb, [(d, False) for d in devices] + [(d, True) for d in held], page, static=1,
-                      screen="devices", ref=0, back=render or Menu(action="devices").pack(), button=_entry)
-    tail = 0
-    if add:
-        kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add", device_id=ADD_FROM_DEVICES))
-        tail += 1
-    kb.button(text="⬅️ Назад", callback_data=back or Menu(action="main").pack())
-    tail += 1
-    kb.adjust(*rows, tail)
-    return kb.as_markup()
+        return (label, DeviceCB(action="open", device_id=d.id))
+    return ui.rows(
+        *ui.paged([(d, False) for d in devices] + [(d, True) for d in held], page, static=1,
+                  screen="devices", ref=0, back=render or Menu(action="devices").pack(), button=_entry),
+        [("➕ Устройство", DeviceCB(action="add", device_id=ADD_FROM_DEVICES)) if add else None,
+         ui.back(back or Menu(action="main").pack())])
 
 
 def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     """«📱 Устройства» гостя: список, назад — на главный экран гостя."""
-    kb = InlineKeyboardBuilder()
-    rows = paged_rows(kb, devices, page, static=1, screen="gdevices", ref=0, back=FriendCB(action="list").pack(),
-                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action="open", device_id=d.id)))
-    kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(*rows, 1)
-    return kb.as_markup()
+    return ui.rows(
+        *ui.paged(devices, page, static=1, screen="gdevices", ref=0, back=FriendCB(action="list").pack(),
+                  button=lambda _i, d: (f"{_dot(d)} {d.name}", FriendCB(action="open", device_id=d.id))),
+        ui.back(FriendCB(action="refresh")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -143,60 +107,42 @@ def device_actions(dev, *, is_admin: bool, back_target: str) -> InlineKeyboardMa
     созданных ботом (у пира без приватного ключа выдавать нечего); затем имя и
     лимит, передача (владельцу — другу, админу — в другой профиль) и блок,
     удаление и назад. Удаление — всегда через подтверждение."""
-    kb = InlineKeyboardBuilder()
-    rows = []
-    if dev.is_managed:
-        issue_row(kb, DeviceCB, dev.id)
-        rows.append(3)
-    kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
-    kb.button(text="✏️ Лимит", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
-    rows.append(2)
-    mid = 0
     fstatus = dev.friend_status
     if not is_admin:
         if dev.is_managed and fstatus is None:
-            kb.button(text="👤 Другу", callback_data=DeviceCB(action="transfer", device_id=dev.id))
-            mid += 1
+            pass_on = ("👤 Другу", DeviceCB(action="transfer", device_id=dev.id))
         elif fstatus == "pending":
-            kb.button(text="🔁 Приглашение", callback_data=DeviceCB(action="reinvite", device_id=dev.id))
-            mid += 1
+            pass_on = ("🔁 Приглашение", DeviceCB(action="reinvite", device_id=dev.id))
+        else:
+            pass_on = None
     else:
-        kb.button(text="🔀 Передать", callback_data=DeviceCB(action="reassign", device_id=dev.id))
-        mid += 1
-    bt, bcb = _manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=is_admin)
-    kb.button(text=bt, callback_data=bcb)
-    rows.append(mid + 1)
-    kb.button(text="🗑 Удалить", callback_data=DelDeviceCB(device_id=dev.id, stage="ask"))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
-    kb.adjust(*rows, 2)
-    return kb.as_markup()
+        pass_on = ("🔀 Передать", DeviceCB(action="reassign", device_id=dev.id))
+    return ui.rows(
+        issue_row(DeviceCB, dev.id) if dev.is_managed else None,
+        [("✏️ Имя", DeviceCB(action="edit_name", device_id=dev.id)),
+         ("✏️ Лимит", DeviceCB(action="edit_traffic", device_id=dev.id))],
+        [pass_on, _manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=is_admin)],
+        [("🗑 Удалить", DelDeviceCB(device_id=dev.id, stage="ask")), ui.back(back_target)])
 
 
 def lent_out_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
     """Своё переданное — у владельца: имя, лимит, удаление; остальным
     управляет держатель."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
-    kb.button(text="✏️ Лимит", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
-    kb.button(text="🗑 Удалить", callback_data=DelDeviceCB(device_id=dev.id, stage="ask"))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
-    kb.adjust(2, 2)
-    return kb.as_markup()
+    return ui.rows(
+        [("✏️ Имя", DeviceCB(action="edit_name", device_id=dev.id)),
+         ("✏️ Лимит", DeviceCB(action="edit_traffic", device_id=dev.id))],
+        [("🗑 Удалить", DelDeviceCB(device_id=dev.id, stage="ask")), ui.back(back_target)])
 
 
 def held_device_actions(dev, back_target: str, *, cb_cls=None) -> InlineKeyboardMarkup:
     """Удерживаемое (от друга) у держателя — гостя или клиента: выдача, блок,
     удаление. cb_cls — класс колбэков выдачи (DeviceCB у клиента, FriendCB у
     гостя)."""
-    cb_cls = cb_cls or DeviceCB
-    kb = InlineKeyboardBuilder()
-    issue_row(kb, cb_cls, dev.id)
-    bt, bcb = _manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=False)
-    kb.button(text=bt, callback_data=bcb)
-    kb.button(text="🗑 Удалить", callback_data=DelDeviceCB(device_id=dev.id, stage="ask"))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
-    kb.adjust(3, 2, 1)
-    return kb.as_markup()
+    return ui.rows(
+        issue_row(cb_cls or DeviceCB, dev.id),
+        [_manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=False),
+         ("🗑 Удалить", DelDeviceCB(device_id=dev.id, stage="ask"))],
+        ui.back(back_target))
 
 
 def block_device_confirm(device_id: int, *, guest: bool = False) -> InlineKeyboardMarkup:
@@ -220,11 +166,7 @@ def confirm_transfer(device_id: int) -> InlineKeyboardMarkup:
 
 def unmanaged_device_dialog(device_id: int) -> InlineKeyboardMarkup:
     """Клик по устройству без ключа в выборе под ссылку: удалить / назад."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🗑 Удалить", callback_data=DelDeviceCB(device_id=device_id, stage="ask"))
-    kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return ui.rows([("🗑 Удалить", DelDeviceCB(device_id=device_id, stage="ask")), ui.back(Menu(action="main"))])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -248,24 +190,18 @@ def pick_device(devices, action: str, back_cb: str = None, page: int = 0,
     состояния. Устройства без ключа — с суффиксом: клик ведёт в диалог
     «удали», а не в ошибку. Шлюз не предлагается: его конфиг едет только в
     конфигурации шлюза."""
-    kb = InlineKeyboardBuilder()
-    rows = paged_rows(kb, issuable(devices), page, static=1, screen="pick", ref=ref,
-                      back=render or Menu(action=action).pack(),
-                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}{_btn_suffix(d)}",
-                                                     callback_data=DeviceCB(action=action, device_id=d.id)))
-    kb.adjust(*rows)
-    kb.row(InlineKeyboardButton(
-        text="⬅️ Назад", callback_data=back_cb or Menu(action="main").pack()))
-    return kb.as_markup()
+    return ui.rows(
+        *ui.paged(issuable(devices), page, static=1, screen="pick", ref=ref,
+                  back=render or Menu(action=action).pack(),
+                  button=lambda _i, d: (f"{_dot(d)} {d.name}{_btn_suffix(d)}", DeviceCB(action=action, device_id=d.id))),
+        ui.back(back_cb or Menu(action="main").pack()))
 
 
 def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    rows = paged_rows(kb, devices, page, static=1, screen="gpick", ref=0, back=FriendCB(action=action).pack(),
-                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action=action, device_id=d.id)))
-    kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(*rows, 1)
-    return kb.as_markup()
+    return ui.rows(
+        *ui.paged(devices, page, static=1, screen="gpick", ref=0, back=FriendCB(action=action).pack(),
+                  button=lambda _i, d: (f"{_dot(d)} {d.name}", FriendCB(action=action, device_id=d.id))),
+        ui.back(FriendCB(action="refresh")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -275,33 +211,22 @@ def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMark
 def add_device_kb(*, for_friend: bool, ctx_kind: str = "main") -> InlineKeyboardMarkup:
     """Под приглашением ввода имени: переключатель «для кого» и отмена на
     экран, откуда пришли."""
-    kb = InlineKeyboardBuilder()
-    if for_friend:
-        kb.button(text="📱 Это для меня", callback_data=DeviceCB(action="add_self"))
-    else:
-        kb.button(text="👤 Это для друга", callback_data=DeviceCB(action="add_friend"))
-    kb.button(text="✖️ Отмена", callback_data=CancelCB(kind=ctx_kind))
-    kb.adjust(1, 1)
-    return kb.as_markup()
+    return ui.rows(
+        ("📱 Это для меня", DeviceCB(action="add_self")) if for_friend else ("👤 Это для друга", DeviceCB(action="add_friend")),
+        ("✖️ Отмена", CancelCB(kind=ctx_kind)))
 
 
 def device_created_kb(device_id: int) -> InlineKeyboardMarkup:
     """После создания своего устройства: сразу выдача, помощь, в меню."""
-    kb = InlineKeyboardBuilder()
-    issue_row(kb, DeviceCB, device_id)
-    kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
-    kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
-    kb.adjust(3, 2)
-    return kb.as_markup()
+    return ui.rows(issue_row(DeviceCB, device_id),
+                   [("❓ Как подключить", HelpCB(platform="root")), ui.to_menu(Menu(action="main"))])
 
 
 def invite_kb(plain_text: str, link: str) -> InlineKeyboardMarkup:
     """Под приглашением другу: «📤 Отправить» — выбор чата (t.me/share) с тем
     же текстом, «📋 Скопировать» — текст в буфер."""
     share = f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(plain_text, safe='')}"
-    row = [InlineKeyboardButton(text="📤 Отправить", url=share),
-           InlineKeyboardButton(text="📋 Скопировать", copy_text=CopyTextButton(text=plain_text[:256]))]
-    return InlineKeyboardMarkup(inline_keyboard=[row])
+    return ui.rows([ui.btn("📤 Отправить", url=share), ui.btn("📋 Скопировать", copy=plain_text[:256])])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -313,80 +238,59 @@ def help_menu(is_initial: bool = False, *, guest: bool = False) -> InlineKeyboar
     активации: вместо «В меню» — «✅ Настрою сам». guest — тот же выход
     «✅ Настрою сам» на главную гостя (его помощь всегда «первая»: сам он
     устройств не заводит)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🍎 iPhone / iPad", callback_data=HelpCB(platform="apple"))
-    kb.button(text="🤖 Android", callback_data=HelpCB(platform="android"))
-    kb.button(text="🪟 Windows", callback_data=HelpCB(platform="windows"))
-    kb.button(text="🍏 Mac", callback_data=HelpCB(platform="mac"))
     if is_initial:
-        kb.button(text="✅ Настрою сам", callback_data=HelpCB(platform="skip"))
+        exit_ = ("✅ Настрою сам", HelpCB(platform="skip"))
     elif guest:
-        kb.button(text="✅ Настрою сам", callback_data=FriendCB(action="refresh"))
+        exit_ = ("✅ Настрою сам", FriendCB(action="refresh"))
     else:
-        kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
-    kb.adjust(2, 2, 1)
-    return kb.as_markup()
+        exit_ = ui.to_menu(Menu(action="main"))
+    return ui.rows(
+        [("🍎 iPhone / iPad", HelpCB(platform="apple")), ("🤖 Android", HelpCB(platform="android"))],
+        [("🪟 Windows", HelpCB(platform="windows")), ("🍏 Mac", HelpCB(platform="mac"))],
+        exit_)
 
 
 def friend_finisher() -> InlineKeyboardMarkup:
     """«⬅️ В меню» под содержимым гостя — возврат на его главный экран."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ В меню", callback_data=FriendCB(action="refresh"))
-    return kb.as_markup()
+    return ui.rows(ui.to_menu(FriendCB(action="refresh")))
 
 
-def _menu_button(guest: bool) -> InlineKeyboardButton:
-    if guest:
-        return InlineKeyboardButton(text="⬅️ В меню", callback_data=FriendCB(action="refresh").pack())
-    return InlineKeyboardButton(text="⬅️ В меню", callback_data=Menu(action="main").pack())
+def _menu_button(guest: bool) -> tuple:
+    return ui.to_menu(FriendCB(action="refresh") if guest else Menu(action="main"))
 
 
 def guide_nav(guide: str, step: int, last: int, *, next_guide: str = None,
               apple_connect_end: bool = False, guest: bool = False) -> InlineKeyboardMarkup:
     """Кнопки под шагом гайда: Назад / Далее (или переход к подключению),
     затем «В меню». last — индекс последнего шага."""
-    kb = InlineKeyboardBuilder()
-    row = 0
-    if step > 0:
-        kb.button(text="⬅️ Назад", callback_data=GuideCB(guide=guide, step=step - 1))
-        row += 1
     if step < last:
-        kb.button(text="Далее ➡️", callback_data=GuideCB(guide=guide, step=step + 1))
-        row += 1
+        forward = ("Далее ➡️", GuideCB(guide=guide, step=step + 1))
     elif next_guide:
-        kb.button(text="📶 Подключение", callback_data=GuideCB(guide=next_guide, step=0))
-        row += 1
-    if apple_connect_end:
-        kb.button(text="🎛 VPN в шторку", callback_data=GuideCB(guide="toggle", step=0))
-    kb.row(_menu_button(guest))
-    if apple_connect_end:
-        kb.adjust(row if row else 1, 1, 1)
+        forward = ("📶 Подключение", GuideCB(guide=next_guide, step=0))
     else:
-        kb.adjust(row if row else 1, 1)
-    return kb.as_markup()
+        forward = None
+    return ui.rows(
+        [ui.back(GuideCB(guide=guide, step=step - 1)) if step > 0 else None, forward],
+        ("🎛 VPN в шторку", GuideCB(guide="toggle", step=0)) if apple_connect_end else None,
+        _menu_button(guest))
 
 
 def guide_connect_method(device_id: int, guide: str, *, guest: bool = False) -> InlineKeyboardMarkup:
     """Шаг «Настраиваем подключение»: ряд выдачи для выбранного устройства."""
-    kb = InlineKeyboardBuilder()
-    for text, kind in (("🔗 Ссылка", "link"), ("🔳 QR", "qr"), ("📄 Файл", "file")):
-        kb.button(text=text, callback_data=GuideCB(guide=guide, step=1, dev=device_id, kind=kind))
-    kb.button(text="⬅️ Назад", callback_data=GuideCB(guide=guide, step=0))
-    kb.row(_menu_button(guest))
-    kb.adjust(3, 1, 1)
-    return kb.as_markup()
+    return ui.rows(
+        [(text, GuideCB(guide=guide, step=1, dev=device_id, kind=kind))
+         for text, kind in (("🔗 Ссылка", "link"), ("🔳 QR", "qr"), ("📄 Файл", "file"))],
+        ui.back(GuideCB(guide=guide, step=0)),
+        _menu_button(guest))
 
 
 def guide_connect_done(guide: str, device_id: int, *, apple_end: bool,
                        guest: bool = False) -> InlineKeyboardMarkup:
     """Шаг «Подключаемся»: назад к выбору способа; на Apple — гайд про шторку."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Назад", callback_data=GuideCB(guide=guide, step=1, dev=device_id))
-    if apple_end:
-        kb.button(text="🎛 VPN в шторку", callback_data=GuideCB(guide="toggle", step=0))
-    kb.row(_menu_button(guest))
-    kb.adjust(1, 1, 1)
-    return kb.as_markup()
+    return ui.rows(
+        ui.back(GuideCB(guide=guide, step=1, dev=device_id)),
+        ("🎛 VPN в шторку", GuideCB(guide="toggle", step=0)) if apple_end else None,
+        _menu_button(guest))
 
 
 def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
@@ -394,16 +298,13 @@ def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
     """Шаг 0 подключения: добавить (клиенту, пока есть место) + устройства.
     Кнопки сами ведут дальше — отдельной «Далее» нет."""
     used, limit = slots
-    kb = InlineKeyboardBuilder()
     can_add = (not guest) and (limit == 0 or used < limit)
-    if can_add:
-        kb.button(text="➕ Устройство", callback_data=GuideCB(guide=guide, step=-1))
-    rows = paged_rows(kb, issuable(devices), page, static=2 if can_add else 1, screen="guidedev", ref=0,
-                      back=GuideCB(guide=guide, step=0).pack(),
-                      button=lambda _i, d: kb.button(text=f"🔗 {d.name}", callback_data=DeviceCB(action="gen_guide", device_id=d.id)))
-    kb.row(_menu_button(guest))
-    kb.adjust(*([1] if can_add else []), *rows, 1)
-    return kb.as_markup()
+    return ui.rows(
+        ("➕ Устройство", GuideCB(guide=guide, step=-1)) if can_add else None,
+        *ui.paged(issuable(devices), page, static=2 if can_add else 1, screen="guidedev", ref=0,
+                  back=GuideCB(guide=guide, step=0).pack(),
+                  button=lambda _i, d: (f"🔗 {d.name}", DeviceCB(action="gen_guide", device_id=d.id))),
+        _menu_button(guest))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,19 +313,11 @@ def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
 
 def added_by_admin(device_id: int) -> InlineKeyboardMarkup:
     """«Устройство добавлено администратором»: ряд выдачи, помощь, «Скрыть»."""
-    kb = InlineKeyboardBuilder()
-    issue_row(kb, DeviceCB, device_id)
-    kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
-    kb.adjust(3, 1)
-    return append_hide_row(kb)
+    return append_hide_row(ui.rows(issue_row(DeviceCB, device_id), ("❓ Как подключить", HelpCB(platform="root"))))
 
 
 def grace_offer(client_id: int, days: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text=f"Продли чуток? 🙏 (+{days} дн.)",
-              callback_data=GraceCB(action="take", ref=client_id))
-    kb.adjust(1)
-    return append_hide_row(kb)
+    return append_hide_row(ui.rows((f"Продли чуток? 🙏 (+{days} дн.)", GraceCB(action="take", ref=client_id))))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -434,32 +327,22 @@ def grace_offer(client_id: int, days: int) -> InlineKeyboardMarkup:
 def subscription_kb(client_id: int, *, paused_user: bool, can_pause: bool) -> InlineKeyboardMarkup:
     """Под «💳 Подписка»: пауза (когда есть дни), снятие своей паузы — сразу,
     без вопроса; администраторскую снимает админ."""
-    kb = InlineKeyboardBuilder()
-    n = 1
     if paused_user:
-        kb.button(text="▶️ Снять паузу", callback_data=PauseCB(action="resume", ref=client_id))
-        n = 2
+        pause = ("▶️ Снять паузу", PauseCB(action="resume", ref=client_id))
     elif can_pause:
-        kb.button(text="⏸️ Пауза", callback_data=PauseCB(action="ask", ref=client_id))
-        n = 2
-    kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(n)
-    return kb.as_markup()
+        pause = ("⏸️ Пауза", PauseCB(action="ask", ref=client_id))
+    else:
+        pause = None
+    return ui.rows([pause, ui.back(Menu(action="main"))])
 
 
 def pause_kb(client_id: int, available: int) -> InlineKeyboardMarkup:
     """Пресеты дней = подтверждение: 7 / 14 (не выше доступного) и весь
     остаток, если он не совпал с пресетом; «✏️ Другое» — ввод."""
-    kb = InlineKeyboardBuilder()
     shown = [p for p in (7, 14) if p <= available]
     if available not in shown:
         shown.append(available)
-    for preset in shown:
-        kb.button(text=f"{preset} дн.", callback_data=PauseCB(action="pick", ref=client_id, days=preset))
-    other = available >= 2
-    if other:
-        kb.button(text="✏️ Другое", callback_data=PauseCB(action="other", ref=client_id))
-    kb.button(text="⬅️ Отмена", callback_data=PauseCB(action="cancel", ref=client_id))
-    n = len(shown)
-    kb.adjust(*([2] * (n // 2) + ([1] if n % 2 else [])), 2 if other else 1)
-    return kb.as_markup()
+    return ui.rows(
+        *ui.grid([(f"{preset} дн.", PauseCB(action="pick", ref=client_id, days=preset)) for preset in shown], 2),
+        [("✏️ Другое", PauseCB(action="other", ref=client_id)) if available >= 2 else None,
+         ("⬅️ Отмена", PauseCB(action="cancel", ref=client_id))])

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 
 ID, LABEL, BACK = "root", "⚙️ Настройки", ""
 KEYS: tuple[str, ...] = ()
@@ -20,12 +20,8 @@ def text(br) -> str:
 
 def keyboard(br) -> InlineKeyboardMarkup:
     from . import label
-    kb = InlineKeyboardBuilder()
-    for sec in br.settings_root:
-        kb.button(text=label(br, sec), callback_data=br.cb.pack(sec))
-    kb.button(text="⬅️ В меню", callback_data=br.cb.menu())
-    kb.adjust(2)
-    return kb.as_markup()
+    return ui.rows(*ui.grid([*[(label(br, sec), br.cb.pack(sec)) for sec in br.settings_root],
+                             ui.to_menu(br.cb.menu())], 2))
 
 
 async def screen(br, services, key: str = ""):

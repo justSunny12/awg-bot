@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import blocks as _blocks
+from awgbot.bot import ui
 from awgbot.bot.callbacks import (BlockCB, CancelCB, Menu, PresetCB, HideCB, PageCB)
 
 
@@ -15,7 +15,7 @@ from awgbot.bot.callbacks import (BlockCB, CancelCB, Menu, PresetCB, HideCB, Pag
 # (имя устройства и т.п.) практически невозможным.
 # ─────────────────────────────────────────────────────────────────────────────
 
-BTN_CANCEL = "\u2716\ufe0f Отмена"  # ✖️ Отмена
+BTN_CANCEL = "✖️ Отмена"  # ✖️ Отмена
 
 
 def reply_hide() -> ReplyKeyboardRemove:
@@ -34,18 +34,13 @@ def _chk(on: bool) -> str:
 def cancel_input(kind: str, ref: int = 0) -> InlineKeyboardMarkup:
     """«✖️ Отмена» под приглашением к вводу — возврат на экран (kind, ref)
     реестра экранов без сообщения-следа."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text=BTN_CANCEL, callback_data=CancelCB(kind=kind, ref=ref))
-    return kb.as_markup()
+    return ui.rows((BTN_CANCEL, CancelCB(kind=kind, ref=ref)))
 
 
 def confirm(cancel_cb, do_text: str, do_cb, *, danger: bool = True) -> InlineKeyboardMarkup:
     """Подтверждение: «⬅️ Отмена» первой, действие второй; разрушительное —
     красным (style у кнопки, Bot API 9.x; старые клиенты рисуют обычную)."""
-    cancel = InlineKeyboardButton(text="⬅️ Отмена", callback_data=_packed(cancel_cb))
-    kw = {"style": "danger"} if danger else {}
-    do = InlineKeyboardButton(text=do_text, callback_data=_packed(do_cb), **kw)
-    return InlineKeyboardMarkup(inline_keyboard=[[cancel, do]])
+    return ui.rows([("⬅️ Отмена", cancel_cb), (do_text, do_cb, "danger") if danger else (do_text, do_cb)])
 
 
 def _packed(cb) -> str:
@@ -56,7 +51,7 @@ def select_all_button(selected: int, total: int, cb) -> InlineKeyboardButton:
     """Массовый выбор: ☑️, пока выбраны не все; ✅, когда все (и когда их
     отметили по одному) — нажатие на ✅ снимает всё."""
     mark = "✅" if total and selected >= total else "☑️"
-    return InlineKeyboardButton(text=f"{mark} Выбрать все", callback_data=_packed(cb))
+    return ui.btn(f"{mark} Выбрать все", cb)
 
 
 # Пресеты лимита трафика устройства, ГБ: не выше лимита профиля; «∞» — только
@@ -79,16 +74,11 @@ def device_limit_presets(profile_limit_bytes: int) -> list[int]:
 def device_limit_kb(ref: int, profile_limit_bytes: int, cancel_cb) -> InlineKeyboardMarkup:
     """Пресеты лимита устройства по три в ряд, затем «✏️ Другое» и «⬅️ Отмена».
     ref — id устройства (карточка) или 0 (новое устройство другу)."""
-    kb = InlineKeyboardBuilder()
-    vals = device_limit_presets(profile_limit_bytes)
-    for g in vals:
-        kb.button(text="∞" if g == 0 else f"{g} ГБ",
-                  callback_data=PresetCB(kind="devlimit", ref=ref, val=g))
-    kb.button(text="✏️ Другое", callback_data=PresetCB(kind="devlimit", ref=ref, val=-1))
-    kb.row(InlineKeyboardButton(text="⬅️ Отмена", callback_data=_packed(cancel_cb)))
-    n = len(vals)
-    kb.adjust(*([3] * (n // 3) + ([n % 3] if n % 3 else [])), 1, 1)
-    return kb.as_markup()
+    presets = [("∞" if g == 0 else f"{g} ГБ", PresetCB(kind="devlimit", ref=ref, val=g))
+               for g in device_limit_presets(profile_limit_bytes)]
+    return ui.rows(*ui.grid(presets, 3),
+                   ("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1)),
+                   ("⬅️ Отмена", cancel_cb))
 
 
 def _tick(on: bool) -> str:
@@ -107,7 +97,7 @@ def _tick(on: bool) -> str:
 # Кнопки списка (по одной в ряду) занимают то, что осталось от постоянных
 # рядов экрана; не влезло — страницы, и тогда ряд листания (две кнопки) тоже
 # входит в десятку. Подписи намеренно словами, а не «◀️ Назад»: та ведёт на
-# другой экран.
+# другой экран. Экраны собирают список через ui.paged.
 MAX_ROWS = 10
 PREV_LABEL = "◀️ Пред. страница"
 NEXT_LABEL = "След. страница ▶️"
@@ -138,31 +128,15 @@ def page_slice(items, page: int, static: int) -> tuple[list, int, bool, bool]:
     return chunk, page, page > 0, page < pages - 1
 
 
-def page_nav(kb: InlineKeyboardBuilder, screen: str, ref: int, page: int,
-             has_prev: bool, has_next: bool, back: str) -> int:
-    """Кнопки листания рядом; возвращает, сколько их добавлено (для adjust)."""
-    n = 0
+def page_nav(screen: str, ref: int, page: int, has_prev: bool, has_next: bool,
+             back: str) -> list[InlineKeyboardButton]:
+    """Ряд листания: кнопки к соседним страницам (пустой — страниц нет)."""
+    out = []
     if has_prev:
-        kb.button(text=PREV_LABEL, callback_data=PageCB(screen=screen, ref=ref, page=page - 1, back=back))
-        n += 1
+        out.append(ui.btn(PREV_LABEL, PageCB(screen=screen, ref=ref, page=page - 1, back=back)))
     if has_next:
-        kb.button(text=NEXT_LABEL, callback_data=PageCB(screen=screen, ref=ref, page=page + 1, back=back))
-        n += 1
-    return n
-
-
-def paged_rows(kb: InlineKeyboardBuilder, items, page: int, *, static: int, screen: str,
-               ref: int, back: str, button) -> list[int]:
-    """Список с листанием одним вызовом: page_slice → кнопки записей → ряд
-    листания. button(index, item) добавляет кнопку записи (index — номер в
-    ПОЛНОМ списке, для колбэков удаления и переключения). Возвращает ряды для
-    adjust: по одной кнопке на запись и ряд листания, если он есть; хвост
-    экрана вызывающий добавляет сам."""
-    chunk, page, prev, nxt = page_slice(items, page, static)
-    for i, item in chunk:
-        button(i, item)
-    nav = page_nav(kb, screen, ref, page, prev, nxt, back)
-    return [*([1] * len(chunk)), *([nav] if nav else [])]
+        out.append(ui.btn(NEXT_LABEL, PageCB(screen=screen, ref=ref, page=page + 1, back=back)))
+    return out
 
 
 def issuable(devices) -> list:
@@ -184,25 +158,19 @@ def _btn_suffix(dev) -> str:
 
 def to_menu() -> InlineKeyboardMarkup:
     """Одна кнопка «В меню» — завершитель под контентом (admin/client)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
-    return kb.as_markup()
+    return ui.rows(ui.to_menu(Menu(action="main")))
 
 
-def append_hide_row(kb: InlineKeyboardBuilder) -> InlineKeyboardMarkup:
-    """Добавляет «Скрыть» ПОСЛЕДНЕЙ строкой к уже собранной клавиатуре и
-    возвращает готовую разметку. Используется везде, где у проактивного
-    уведомления есть свои кнопки действия (сейчас — только grace_offer)."""
-    kb.row(InlineKeyboardButton(text="Скрыть", callback_data=HideCB().pack()))
-    return kb.as_markup()
+def append_hide_row(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    """Добавляет «Скрыть» ПОСЛЕДНЕЙ строкой к готовой разметке. Используется
+    везде, где у проактивного уведомления есть свои кнопки действия."""
+    return InlineKeyboardMarkup(inline_keyboard=[*markup.inline_keyboard, [ui.btn("Скрыть", HideCB())]])
 
 
 def hide_only() -> InlineKeyboardMarkup:
     """Клавиатура из одной кнопки «Скрыть» — дефолт для проактивных уведомлений
     без собственных кнопок действия (notifier подставляет её автоматически)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="Скрыть", callback_data=HideCB())
-    return kb.as_markup()
+    return ui.rows(("Скрыть", HideCB()))
 
 
 # ── Ручные блокировки ────────────────────────────────────────────────────────
@@ -230,7 +198,6 @@ def block_unblock_reasons(target: str, ref: int, mask: int) -> InlineKeyboardMar
     """Админ снимает блок: перечислить активные РУЧНЫЕ причины + «Снять всё»
     (если больше одной). Если причина ровно одна — этот экран не показываем
     вовсе (см. admin_unblock_menu), снимаем сразу."""
-    kb = InlineKeyboardBuilder()
     if target == "dev":
         items = [("silent", _blocks.DeviceBlock.ADMIN_SILENT, "Тихий админ-блок"),
                  ("notified", _blocks.DeviceBlock.ADMIN_NOTIFIED, "Админ-блок"),
@@ -240,12 +207,7 @@ def block_unblock_reasons(target: str, ref: int, mask: int) -> InlineKeyboardMar
                  ("notified", _blocks.ClientBlock.ADMIN_NOTIFIED, "Админ-блок"),
                  ("user", _blocks.ClientBlock.USER, "Блок владельца")]
     active = [(kind, lbl) for kind, bit, lbl in items if int(mask) & int(bit)]
-    for kind, lbl in active:
-        kb.button(text=lbl,
-                  callback_data=BlockCB(target=target, action="unblock", ref=ref, kind=kind))
-    if len(active) > 1:
-        kb.button(text="Снять всё",
-                  callback_data=BlockCB(target=target, action="unblock", ref=ref, kind="all"))
-    kb.button(text="⬅️ Отмена", callback_data=BlockCB(target=target, action="cancel", ref=ref))
-    kb.adjust(1)
-    return kb.as_markup()
+    return ui.rows(
+        *[(lbl, BlockCB(target=target, action="unblock", ref=ref, kind=kind)) for kind, lbl in active],
+        ("Снять всё", BlockCB(target=target, action="unblock", ref=ref, kind="all")) if len(active) > 1 else None,
+        ("⬅️ Отмена", BlockCB(target=target, action="cancel", ref=ref)))

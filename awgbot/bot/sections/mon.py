@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
+from awgbot.bot import ui
 from awgbot.core import settings
 
 from ._kb import _chk, back_button
@@ -44,19 +44,15 @@ def text(br) -> str:
 
 def keyboard(br) -> InlineKeyboardMarkup:
     s = settings
-    kb = InlineKeyboardBuilder()
-    kb.button(text=f"⏱ Опрос: {s.get_int(br.keys.monitor_minutes, DEFAULTS[br.keys.monitor_minutes])} мин",
-              callback_data=br.cb.pack(ID, "edit", br.keys.monitor_minutes))
     streak = s.get_int("app.monitoring.alert_streak", DEFAULTS["app.monitoring.alert_streak"])
-    kb.button(text=f"🔢 Замеров: {streak}",
-              callback_data=br.cb.pack(ID, "edit", "app.monitoring.alert_streak"))
-    kb.button(text=f"{br.mon_outage_button}: {outage_minutes(br)} мин",
-              callback_data=br.cb.pack(ID, "edit", br.keys.outage))
     loud = s.get_bool(br.keys.outage_loud, True)
-    kb.button(text=f"{_chk(loud)} Звук 24/7", callback_data=br.cb.pack(ID, "toggle", br.keys.outage_loud))
-    kb.adjust(2, 2)
-    kb.row(back_button(br))
-    return kb.as_markup()
+    return ui.rows(
+        [(f"⏱ Опрос: {s.get_int(br.keys.monitor_minutes, DEFAULTS[br.keys.monitor_minutes])} мин",
+          br.cb.pack(ID, "edit", br.keys.monitor_minutes)),
+         (f"🔢 Замеров: {streak}", br.cb.pack(ID, "edit", "app.monitoring.alert_streak"))],
+        [(f"{br.mon_outage_button}: {outage_minutes(br)} мин", br.cb.pack(ID, "edit", br.keys.outage)),
+         (f"{_chk(loud)} Звук 24/7", br.cb.pack(ID, "toggle", br.keys.outage_loud))],
+        back_button(br))
 
 
 async def screen(br, services, key: str = ""):
