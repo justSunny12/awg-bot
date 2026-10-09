@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import base64
+
 import datetime as _dt
 import json
 
@@ -2716,7 +2718,7 @@ async def _drop_slot2(services, bot):
 
 
 _PIN = "RERERERERERERERERERERERERERERERERERERERERERE="   # ключ аплинка Ксюшиного телефона — заглушка
-_CLAIM_PRIV = "REREREREREREREREREREREREREREREREREREREREREQ="   # ключ линка, которым подписан claim (32 байта)
+_CLAIM_PRIV = base64.b64encode(b"DUMMY-CLAIM-KEY-FOR-SCREENS-32B!").decode()   # ключ линка под claim — заглушка, 32 байта
 
 
 def _iphone_key(services, mp):

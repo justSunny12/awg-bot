@@ -7444,7 +7444,7 @@ NASPi — 🟢 Активен
 ~ (пустой ответ)
 
 ### adm.claim.foreign — claim другого устройства при назначенном шлюзе — не принято
-> text «GW1:eyJhY3QiOiJjbGFpbSIsInB1YiI6IlJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFPSIsInRzIjoxNzg5NDYyODAwLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAiLCJob3N0IjoiIn0.NICPCBPWRiJNY1QWFmDk7QPy49A»
+> text «GW1:eyJhY3QiOiJjbGFpbSIsInB1YiI6IlJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFPSIsInRzIjoxNzg5NDYyODAwLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAiLCJob3N0IjoiIn0.Qed97rqvIPVrjNc-9I7k-pAKVA8»
 + send #2
 🛰 Сообщение шлюза не принято: в слоте этого линка уже назначен NASPi. Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»
 
