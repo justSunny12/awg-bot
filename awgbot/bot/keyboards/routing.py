@@ -11,7 +11,7 @@ from .common import _tick, _btn_suffix, select_all_button, confirm, entry_tag
 from .settings import _cycle
 
 
-def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, total: int = 0,
+def routing_panel(client_id: int, devices, *, enabled: int = 0, total: int = 0,
                   n_domains: int = 0, back_target: str, page: int = 0) -> InlineKeyboardMarkup:
     """Раздел «🇷🇺 РФ-доступ» одним экраном: переключатели устройств (свои и
     удерживаемые), «Выбрать все» по правилу массового выбора, добавление

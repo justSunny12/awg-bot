@@ -183,8 +183,6 @@ def test_gateway_traffic_is_not_the_profiles_but_the_device_is_listed_first(
     services.db.update_device_fields(phone.device_id, last_handshake=now)
     rows = services.online_devices()
     assert rows[0][0].name == "NASPi", "шлюз первой строкой и среди онлайн"
-    from awgbot.bot import texts
-    assert "🛰" in texts.device_label(services.db.get_device(pi.device_id))
 
 
 def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):

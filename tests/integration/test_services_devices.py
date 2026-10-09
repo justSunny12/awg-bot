@@ -174,8 +174,6 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
 
     card = services.client_card_data(client.id)
     assert card is not None and card["online"] is True
-    assert texts.client_card(card["client"], card["devices"], card["traffic"],
-                             card["online"], for_admin=True)
 
     info = services.client_info_data(client.id)
     assert info is not None and info["online"] is True

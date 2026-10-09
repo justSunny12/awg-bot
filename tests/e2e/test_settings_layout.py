@@ -109,7 +109,7 @@ def test_gateway_device_keeps_its_icon_in_the_button_list():
     """В текстовых списках шлюз был 🛰, а в кнопках «Мои устройства» — обычным
     телефоном: две функции иконки разошлись. Перепутать шлюз с телефоном там,
     где их удаляют и блокируют, дороже всего."""
-    from awgbot.bot import keyboards as kb, texts
+    from awgbot.bot import keyboards as kb
 
     from awgbot.util import timeutil
 
@@ -130,7 +130,6 @@ def test_gateway_device_keeps_its_icon_in_the_button_list():
     assert labels[0] == "🛰 Шлюз", labels
     # у остальных значок — состояние (⛔ ⏳ 🟢 ⚪): не подключалось — офлайн
     assert labels[1] == "⚪ iPhone", labels
-    assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
     # Значок ровно один: у шлюза, который онлайн, кружок к 🛰 не добавляется —
     # два подряд в каждой строке превращают список в рябь.
     assert not any("🟢" in l for l in labels), labels

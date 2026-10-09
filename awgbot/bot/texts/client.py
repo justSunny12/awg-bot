@@ -7,11 +7,11 @@ import datetime
 from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import ui
-from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
+from awgbot.core.enums import SubStatus, FriendStatus
 
 from .fmt import (
-    rf_line, deep_link, details, device_state, access_status_line,
-    _e, used_of_limit, gb, gb_str, unit_for, amount, volume, client_total_line, device_label,
+    deep_link, details, device_state, access_status_line,
+    _e, used_of_limit, gb, gb_str, unit_for, amount, volume,
     client_link, owner_link, holder_link, owner_name, _n_devices, plural_ru,
     _days_word, _days)
 from .routing import ROUTING_NAME
@@ -29,71 +29,6 @@ DEV_PAYLOAD = "dev"
 # ─────────────────────────────────────────────────────────────────────────────
 # Срок подписки (блок админской карточки — как есть)
 # ─────────────────────────────────────────────────────────────────────────────
-
-def subscription_block(client, *, for_admin: bool = False, show_pause: bool = True) -> str:
-    """Блок срока: период + остаток. Учитывает приостановку (самоблок клиента и
-    админский блок с паузой). Тихий (silent) админ-блок пользователю не виден —
-    для него период/статус как будто ничего не произошло.
-    for_admin=True — админ видит всё (включая silent-паузу и temp-бессрочность).
-    show_pause=False — скрыть счётчик дней приостановки (друг ей не управляет)."""
-    from awgbot.core import blocks
-    mask = int(client.block_reason)
-    paused = bool(mask & int(blocks.ClientBlock.PAUSED))
-    mode = client.pause_mode or ""
-    silent_admin = bool(mask & int(blocks.ClientBlock.ADMIN_SILENT)) and \
-        not bool(mask & int(blocks.ClientBlock.ADMIN_NOTIFIED))
-    pause_visible = paused and (for_admin or mode == "user" or not silent_admin)
-
-    if not client.period_end:
-        if paused and mode == "admin_open" and not pause_visible and client.pause_saved_end:
-            start = timeutil.parse_iso(client.period_start) if client.period_start else None
-            end = timeutil.parse_iso(client.pause_saved_end)
-            status = "🟢 активна"
-            body = f"Период подписки: {timeutil.fmt_period(start, end)}" if start else \
-                   f"Период подписки: до {timeutil.fmt_dt(end)}"
-            return f"Статус подписки: {status}\n{body}\nДо истечения: {timeutil.fmt_remaining(end)}"
-        status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
-        if pause_visible and mode == "admin_open":
-            status = "⏸️ приостановлено администратором"
-            return (f"Статус подписки: {status}\n"
-                    "Период подписки: временно бессрочный "
-                    "(пересчитается при снятии блокировки)")
-        return f"Статус подписки: {status}\nПериод подписки: бессрочно"
-
-    if not client.period_start:
-        status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
-        return f"Статус подписки: {status}\nПериод подписки: дата начала не определена"
-    start = timeutil.parse_iso(client.period_start)
-    end = timeutil.parse_iso(client.period_end)
-
-    if pause_visible:
-        status = ("⏸️ приостановлено пользователем" if mode == "user"
-                  else "⏸️ приостановлено администратором")
-    else:
-        status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
-
-    lines = [f"Статус подписки: {status}"]
-    period_line = f"Период подписки: {timeutil.fmt_period(start, end)}"
-    if pause_visible and mode == "user":
-        period_line += f" (+ до {int(client.pause_reserved_days)} дней приостановки)"
-    elif pause_visible and mode == "admin_fixed":
-        period_line += " (пересчитается при снятии блокировки)"
-    lines.append(period_line)
-    if not pause_visible:
-        lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
-    if show_pause and end:
-        bal = int(client.pause_balance_days)
-        kind = str(client.period_kind or "")
-        if kind == "year":
-            of = f"/{2 * settings.get_int('pause.pause_max_total_days', 28)}"
-        elif kind == "month":
-            of = f"/{12 * settings.get_int('pause.monthly_pause_days', 2)}"
-        else:
-            of = ""
-        word = "дней" if of else _days_word(bal)
-        lines.append(f"Приостановка: доступно {bal}{of} {word}")
-    return "\n".join(lines)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Общие кусочки экранов клиента и гостя
@@ -568,8 +503,6 @@ def guest_upgraded_admin_tail(donor, moved: list, limit: int) -> str:
             f"лимит подписки {limit if limit else 'без ограничения'}.")
 
 
-GUEST_NO_DEVICES_LEFT = "Устройств нет — попроси у друга новый код"
-
 FRIEND_ALREADY_USER = (
     "Ты администратор — принимать чужие устройства незачем: все устройства "
     "сервера и так под твоим управлением 🙂"
@@ -599,41 +532,9 @@ def finish_file(name: str) -> str:
     return f"📄 Для {_e(name)} — импортируй файл в AmneziaVPN"
 
 
-FINISH_CLIENT_INVITE = (
-    "☝️ Выше — ссылка-приглашение. Перешли её человеку, чтобы он активировал доступ.\n\n"
-    "❗️ После возврата в меню это сообщение исчезнет — повторно сгенерировать его "
-    "будет можно из профиля клиента, до момента принятия приглашения. Уже "
-    "пересланное сообщение останется рабочим."
-)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Карточка клиента (админ)
 # ─────────────────────────────────────────────────────────────────────────────
-
-def client_card(client, devices, traffic, online: bool, *, for_admin: bool,
-                rf: tuple[int, int] | None = None) -> str:
-    head = f"👤 {_e(client.name)}"
-    if for_admin and client.activation_status == ActivationStatus.PENDING:
-        head += "  ⏳ ждёт активации"
-    online_line = "Сейчас: " + ("🟢 онлайн" if online else "🔴 оффлайн")
-    sub = subscription_block(client, for_admin=for_admin)
-    tr = client_total_line(
-        traffic["rx_month"], traffic["tx_month"],
-        client.traffic_limit, client.bonus_bytes, for_admin=for_admin)
-    if for_admin and rf is not None:
-        tr += "\n" + rf_line(*rf)
-    lim = client.device_limit
-    limit_line = (f"Устройств: {len(devices)} (без ограничения)" if lim == 0
-                  else f"Устройств: {len(devices)} из {lim}")
-    dev_block = "\n".join("  " + device_label(d, for_admin=for_admin) for d in devices)
-    limit_and_devs = f"{limit_line}\n{dev_block}" if dev_block else limit_line
-    parts = [f"{head}\n{online_line}", sub, tr, limit_and_devs]
-    from awgbot.core import blocks
-    reasons = blocks.client_reasons_ru(int(client.block_reason), for_admin=for_admin)
-    if reasons:
-        parts.insert(1, "⛔ Заблокирован: " + ", ".join(reasons))
-    return "\n\n".join(parts)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -830,7 +731,6 @@ COLD_START_GREETING = ("👋 Не узнаю тебя. Пришёл по при�
 
 CODE_NO_ARG = "Отправь код после команды: <code>/code КОД</code>"
 
-UNMANAGED_DEVICE_EXPLAIN = "\n\n" + UNMANAGED_DEVICE_LINE
 
 UNMANAGED_DEVICE_DIALOG = (
     "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
@@ -858,15 +758,3 @@ def grace_activated_admin(link: str, days: int) -> str:
     return f"🙏 {link}: взята отсрочка на {days} дн."
 
 
-CONNECT_METHOD_ASK = "Как подключить устройство?"
-
-DELETE_ONLY_DEVICE_WARNING = (
-    "⚠️ Удалить единственное устройство?\n"
-    "VPN у профиля выключится сразу; если владелец заходит в Telegram только "
-    "через этот VPN, до бота он не достучится"
-)
-
-DELETE_DEVICE_CONFIRM = (
-    "🗑 Удалить {name}?\n"
-    "Ссылка перестанет работать; добавить снова — ссылка изменится"
-)

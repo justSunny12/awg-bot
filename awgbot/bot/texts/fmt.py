@@ -173,20 +173,6 @@ def _limit_devices_str(limit: int) -> str:
     return "∞" if not limit else str(limit)
 
 
-def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
-                      *, for_admin: bool) -> str:
-    """Тотал клиента. С доп.квотой показываем разбивку «лимит + доп. до конца
-    месяца» и клиенту, и админу (по договорённости — не словом «бонус»)."""
-    total = int(rx) + int(tx)
-    if limit_bytes and bonus_bytes:
-        base = f"{gb(total)} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
-    else:
-        base = used_of_limit(total, limit_bytes)
-    if for_admin:
-        return f"Трафик профиля за месяц: {base} {_updown(rx, tx)}"
-    return f"Трафик за месяц: {base}"
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Устройства
 # ─────────────────────────────────────────────────────────────────────────────
@@ -210,23 +196,6 @@ def details(text: str) -> str:
     """Свёрнутый абзац «подробнее»: раскрывается нажатием, экран остаётся
     коротким."""
     return f"<blockquote expandable>{text}</blockquote>"
-
-
-def device_label(dev, *, for_admin: bool = False) -> str:
-    """Имя устройства + звёздочка «создано не ботом» + индикатор онлайна +
-    маркер блокировки.
-    Маркер 🛑 показывается по ВИДИМОЙ для роли маске: тихий админ-блок пользователю
-    не виден (устройство выглядит рабочим). Суффикс/маркер в имени не хранятся."""
-    from awgbot.core import blocks
-    online = timeutil.handshake_is_online(dev.last_handshake)
-    dot = "🟢" if online else "🔴"
-    name = _e(dev.name)
-    if not dev.is_managed:
-        name = f"{name} <b>*</b>"
-    marker = blocks.blocked_marker_device(int(dev.block_reason), for_admin=for_admin)
-    if getattr(dev, "is_gateway", 0):
-        return f"{dot} 🛰 {name}"
-    return f"{marker}{dot} {name}"
 
 
 def plain_ip(addr: str) -> str:
@@ -316,13 +285,3 @@ def _days(n: int) -> str:
     return f"{n} {plural_ru(n, 'день', 'дня', 'дней')}"
 
 
-def device_emoji(d) -> str:
-    """Иконка типа устройства — единая для текстов и кнопок: 🛰 шлюз,
-    ⏳ отдано другу, но инвайт ещё не принят, 📲 у друга, 📱 своё."""
-    if getattr(d, "is_gateway", 0):
-        return "🛰"
-    if getattr(d, "is_lent", False):
-        return "📲"
-    if d.friend is not None and d.friend.status == "pending":
-        return "⏳"
-    return "📱"

@@ -32,16 +32,12 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert texts.used_of_limit(512 * M, 50 * G) == "0.5 из 50 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8.99 из 50 ГБ (лимит устройства)"
     assert texts.used_of_limit(int(8.99 * G), 0) == "8.99 ГБ"
-    assert texts.client_total_line(G, 2 * G, 50 * G, 10 * G, for_admin=False) == \
-        "Трафик за месяц: 3 из 50 + 10 ГБ до конца месяца"
     from awgbot.core import models
     gw = models.Device(id=1, client_id=1, name="Малина", public_key="P", private_key="k",
                        preshared_key="", address="10.8.1.9", block_reason=0, created_at="2026-01-01",
                        is_gateway=1, traffic=models.DeviceTraffic(rx_month=int(0.83 * G), tx_month=int(10.95 * G)))
     assert "Потребление: 11.78 ГБ (↑ 10.95 ГБ | ↓ 0.83 ГБ)" in texts.gateway_device_card(gw), \
         "у шлюза единица дублировалась: «11.79 ГБ ГБ»"
-    assert texts.client_total_line(M, 2 * M, 50 * G, 10 * G, for_admin=True) == \
-        "Трафик профиля за месяц: 0.01 из 50 + 10 ГБ до конца месяца (↑ 0.01 ГБ | ↓ 0.01 ГБ)"
 
 
 def test_gb_str_and_slots_and_limit_notice():
@@ -105,13 +101,6 @@ def test_object_renders_do_not_crash(services, make_active_client):
     client = make_active_client(name="Смок", tg_id=8500, traffic_limit=100 * 1024 ** 3)
     services.add_device(client.id, "Устройство")
     client = services.db.get_client(client.id)
-    devices = services.db.list_devices(client.id)
-    traffic = services.db.get_client_traffic(client.id)
-
-    for for_admin in (True, False):
-        assert texts.subscription_block(client, for_admin=for_admin)
-        assert texts.client_card(client, devices, traffic, online=False, for_admin=for_admin)
-
     assert texts.greeting_client(client, server_ok=True, slots=(1, 3))
 
 

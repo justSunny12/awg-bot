@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.util import timeutil
-from awgbot.bot.roles import MAIN
 from .fmt import _e, plural_ru, details, more
 from .updates import _ver
 
@@ -102,10 +101,7 @@ EMAIL_ASK_ADDRESS = ui.prompt("✉️ Подключение ящика", "пр�
 EMAIL_ASK_IMAP = ("Домен незнакомый — укажи серверы сам.\n"
                   "IMAP-сервер и порт: <code>imap.example.com:993</code>")
 EMAIL_ASK_SMTP = "SMTP-сервер и порт: <code>smtp.example.com:587</code>"
-# прежние четыре шага — на случай старых состояний в памяти диалога
-EMAIL_ASK_IMAP_HOST = EMAIL_ASK_IMAP
 EMAIL_ASK_IMAP_PORT = "Порт IMAP (SSL/TLS), обычно 993:"
-EMAIL_ASK_SMTP_HOST = EMAIL_ASK_SMTP
 EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
 EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида <code>box@example.com</code>"
 EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
@@ -115,7 +111,6 @@ def email_forget_confirm(br) -> str:
     return ui.confirm("🗑 Отключить почту?", f"Логин, пароль и серверы будут стёрты; {br.email_forget_tail}")
 
 
-EMAIL_FORGET_CONFIRM = email_forget_confirm(MAIN)
 EMAIL_FORGOTTEN = "✅ Почта отключена"
 
 
@@ -226,9 +221,6 @@ def backup_needs_encryption(br) -> str:
     return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу — 🔐 Шифрование"
 
 
-BACKUP_NEEDS_ENCRYPTION = backup_needs_encryption(MAIN)
-
-
 def backup_encryption_text(mode: str, br) -> str:
     """Экран «Шифрование»: состояние и правила; «вне сервера» / «вне шлюза» — роли."""
     if mode == "passphrase":
@@ -272,10 +264,6 @@ def svc_confirm_awg(br, carries: bool = True) -> str:
 
 def svc_confirm_bot(br) -> str:
     return ui.confirm("🔁 Перезапустить бота?", br.bot_restart_cost)
-
-
-SVC_CONFIRM_AWG = svc_confirm_awg(MAIN)
-SVC_CONFIRM_BOT = svc_confirm_bot(MAIN)
 
 
 def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:
@@ -523,9 +511,6 @@ def ssh_port_ask(current: int | None, br) -> str:
     return (ui.head("🅿️ Порт SSH", meta=[f"сейчас {current}" if current else "",
                                          "1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
                                          f"проверь вход новым подключением{br.ssh_port_tail}"]))
-
-
-SSH_PORT_ASK = ssh_port_ask(None, MAIN)
 
 
 def ssh_port_busy(port: int, proc: str = "") -> str:

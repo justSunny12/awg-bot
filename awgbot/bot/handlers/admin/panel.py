@@ -32,7 +32,7 @@ def _bot(services) -> str:
 
 def _menu_markup_from(snap: dict):
     ac = snap["ac"]
-    return kb.admin_main(gateways=bool(snap.get("gateways")), routing_visible=snap["rt_visible"],
+    return kb.admin_main(routing_visible=snap["rt_visible"],
                          self_client_id=(ac.id if ac else 0))
 
 

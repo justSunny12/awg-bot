@@ -28,27 +28,20 @@ def test_pause_day_choice_and_days(services, fake_awg):
 
 def test_pause_counter_shows_balance_of_type_max(services, fake_awg):
     """Счётчик у админа: накопленное из максимума типа (год — 56, месяц — 24),
-    без срока — дни не сгорают."""
-    from awgbot.bot import texts
+    без срока — дни не сгорают; у недели максимума нет — строки нет."""
+    from awgbot.bot.texts.admin import _pause_of
     from awgbot.util import timeutil
     from datetime import datetime
     end = timeutil.to_iso(datetime(2027, 3, 15, 12, 0, 0, tzinfo=timeutil.TZ))
     cid = services.db.create_client("X", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
     services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
-    c = services.db.get_client(cid)
-    block = texts.subscription_block(c, for_admin=True)
-    line = [l for l in block.split("\n") if "Приостановка" in l][0]
-    assert line == "Приостановка: доступно 28/56 дней"
+    assert _pause_of(services.db.get_client(cid)) == "⏸️ Пауза: 28 из 56 дн."
     services.db.set_pause_balance(cid, 21)
     services.db.update_client_fields(cid, period_kind="month")
-    line = [l for l in texts.subscription_block(services.db.get_client(cid), for_admin=True).split("\n")
-            if "Приостановка" in l][0]
-    assert line == "Приостановка: доступно 21/24 дней"
+    assert _pause_of(services.db.get_client(cid)) == "⏸️ Пауза: 21 из 24 дн."
     services.db.update_client_fields(cid, period_kind="week")
-    line = [l for l in texts.subscription_block(services.db.get_client(cid), for_admin=True).split("\n")
-            if "Приостановка" in l][0]
-    assert line == "Приостановка: доступно 21 день", "без максимума — склонение по числу"
+    assert _pause_of(services.db.get_client(cid)) == "", "у недели максимума нет — строки нет"
 
 
 def test_pause_limit_exhausted_text():
@@ -73,17 +66,3 @@ def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
     # и реально можно поставить на весь лимит
     ok, reserved, _, _ = services.enter_pause(cid, settings.get_int("pause.pause_max_total_days", 28))
     assert ok and reserved == settings.get_int("pause.pause_max_total_days", 28)
-
-
-def test_friend_panel_hides_pause_counter(services, fake_awg):
-    """Друг не видит счётчик приостановки — он ей не управляет."""
-    from awgbot.bot import texts
-    from awgbot.util import timeutil
-    from datetime import datetime, timedelta
-    end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=200))
-    cid = services.db.create_client("Host", 2, timeutil.now_iso(), end, "c", period_kind="year")
-    services.db.activate_client("c", 5)
-    services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
-    c = services.db.get_client(cid)
-    assert "Приостановка" in texts.subscription_block(c, for_admin=True)   # админ видит
-    assert "Приостановка" not in texts.subscription_block(c, show_pause=False)  # друг нет

@@ -463,5 +463,5 @@ def test_builder_list_counts_each_builder_once_and_skips_helpers():
     assert "settings.settings_firewall" in b and "gateway.gateway_panel_kb" in b
     assert not any(k.startswith("__init__") for k in b)
     for helper in ("common.entry_tag", "common.page_slice", "common.select_all_button", "common.reply_hide",
-                   "gateway.link_minutes", "settings._cycle"):
+                   "settings._cycle"):
         assert helper not in b, helper

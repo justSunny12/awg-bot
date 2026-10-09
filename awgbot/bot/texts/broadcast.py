@@ -25,10 +25,6 @@ def broadcast_targets_text(selected: int, extend: bool) -> str:
             "Получат владельцы и те, с кем они делятся устройствами")
 
 
-BROADCAST_MODE = broadcast_targets_text(0, False)
-BROADCAST_TARGETS = broadcast_targets_text(0, False)
-BROADCAST_TARGETS_EXTEND = broadcast_targets_text(0, True)
-
 BROADCAST_NO_TARGETS = "Никого не отметил — выбери хотя бы один профиль"
 BROADCAST_ALL_UNLIMITED = ("Все отмеченные — с бессрочной подпиской, продлевать некого. "
                            "Для них — объявление без продления")

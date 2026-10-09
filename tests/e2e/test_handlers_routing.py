@@ -948,14 +948,12 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
 
 
 def test_pending_friend_device_has_hourglass_icon(services, make_active_client):
-    from awgbot.bot import keyboards as kb, texts
+    from awgbot.bot import keyboards as kb
     c = make_active_client(tg_id=151, device_limit=3)
     services.add_device(c.id, "Своё")
     friend = services.add_device(c.id, "Другу")
     services.make_device_friendly(friend.device_id)
     devs = {d.name: d for d in services.db.list_devices(c.id)}
-    assert texts.device_emoji(devs["Своё"]) == "📱"
-    assert texts.device_emoji(devs["Другу"]) == "⏳"
     labels = [b.text for row in kb.client_devices(devs.values()).inline_keyboard for b in row]
     # на кнопках — значок состояния: ⏳ ждёт друга, ⚪ не подключалось
     assert "⏳ Другу" in labels and "⚪ Своё" in labels, labels

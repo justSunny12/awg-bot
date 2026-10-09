@@ -78,7 +78,7 @@ async def panel_view(services, client, back_target: str, viewer_chat: int | None
     text = texts.routing_panel_text(enabled=enabled, total=total, domains=domains,
                                     lent_out=lent_out, link_ok=link_ok)
     return text, kb.routing_panel(
-        client.id, devices, lent_out=lent_out, enabled=enabled, total=total,
+        client.id, devices, enabled=enabled, total=total,
         n_domains=len(domains), back_target=back_target,
         page=paging.page_of(viewer_chat or client.tg_id, "rtpanel", client.id))
 

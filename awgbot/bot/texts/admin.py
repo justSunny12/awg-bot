@@ -771,7 +771,5 @@ def activated_admin_notice(client_or_name, who: str, bot_username: str = "") -> 
 
 
 LIMIT_REACHED = "Достигнут лимит устройств"
-TRAFFIC_LIMIT_CLIENT_ASK = OTHER_NUMBER_PROMPT
 
 
-TRAFFIC_LIMIT_BAD = NUMBER_BAD_LIMIT

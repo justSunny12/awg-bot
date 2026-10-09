@@ -26,7 +26,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = [REPO / "awg-bot.sh"] + sorted((REPO / "install").glob("*.sh"))
 _SAY = re.compile(r"^\s*(?:say|log|warn|die|ok|step|echo|printf|info|err)\b")
 FILES = (sorted((ROOT / "texts").rglob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
-         + [ROOT / "guides.py"])
+         + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "guides.py", ROOT / "ui.py", ROOT / "roles.py"])
 
 TERMS = {
     "дом": re.compile(r"(?<![а-яё])дом(?![а-яё])", re.I),
@@ -63,6 +63,7 @@ OLD_NAMES_ALLOWED: dict = {}
 # детали проверок здоровья агента собираются в домене — человек читает их на
 # экране «🩺 Здоровье» так же, как тексты бота
 MAIN_FILES = (sorted((ROOT / "texts").rglob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
+              + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "ui.py", ROOT / "roles.py"]
               + sorted((ROOT / "handlers").rglob("*.py"))
               + [ROOT.parent / "domain" / n for n in ("gwssh.py", "gwchecks.py")]
               + sorted((ROOT.parent / "domain" / "gateway").glob("*.py")))

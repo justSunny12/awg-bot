@@ -57,12 +57,6 @@ def _gw_back(sec: str = "settings") -> tuple:
     return ui.back(GwCB(action=sec))
 
 
-def link_minutes(seconds: int) -> int:
-    """Порог молчания линка в минутах — вверх: 90 с показываем как 2 мин, а
-    не как 1, иначе алерт кажется более ранним, чем есть."""
-    return max(1, -(-int(seconds or 0) // 60))
-
-
 def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     """«🛡 SSH-доступ» агента — зеркало раздела основного бота: порт, адреса
     (val — номер записи по полному списку), тумблер фильтра снаружи. На

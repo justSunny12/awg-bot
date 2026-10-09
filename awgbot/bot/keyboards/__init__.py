@@ -55,8 +55,7 @@ from .broadcast import (
 from .gateway import (
     gateway_panel_kb, gateway_health_kb, gateway_transit_router_kb,
     gateway_confirm_kb, gateway_bundle_kb,
-    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_transit_kb, lan_own_sorted, lan_own_tag, link_minutes,
-    gateway_ssh_kb, gateway_ssh_port_finisher_kb)
+    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_transit_kb, lan_own_sorted, lan_own_tag, gateway_ssh_kb, gateway_ssh_port_finisher_kb)
 
 __all__ = [
     "BTN_CANCEL", "entry_tag", "reply_hide", "to_menu",
@@ -87,5 +86,4 @@ __all__ = [
     "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_health_kb", "gateway_transit_router_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
     "gateway_back_kb", "gateway_transit_kb",
-    "lan_own_sorted", "lan_own_tag", "link_minutes",
-]
+    "lan_own_sorted", "lan_own_tag", ]

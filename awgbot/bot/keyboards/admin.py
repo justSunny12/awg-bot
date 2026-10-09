@@ -19,8 +19,7 @@ from .common import (_btn_suffix, _manual_block_button, confirm, to_menu, MAX_RO
 # Главная
 # ─────────────────────────────────────────────────────────────────────────────
 
-def admin_main(*, gateways: bool = False, routing_visible: bool = False,
-               self_client_id: int = 0) -> InlineKeyboardMarkup:
+def admin_main(*, routing_visible: bool = False, self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
     новый профиль, шлюзы и настройки, объявление и обновление."""
     from .client import menu_issue_row

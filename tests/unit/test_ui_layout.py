@@ -189,15 +189,11 @@ def test_admin_main_is_eight_buttons_with_gateways_always():
     функцию на новом сервере не найти."""
     full = [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
             ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]]
-    rows = [[b.text for b in r] for r in kba.admin_main(gateways=True, routing_visible=True,
-                                                       self_client_id=1).inline_keyboard]
+    rows = [[b.text for b in r] for r in kba.admin_main(routing_visible=True, self_client_id=1).inline_keyboard]
     assert rows == full, rows
     rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
                     ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
-    rows = [[b.text for b in r] for r in kba.admin_main(gateways=False, routing_visible=True,
-                                                       self_client_id=1).inline_keyboard]
-    assert rows == full, "параметр gateways больше ничего не прячет"
 
 
 @pytest.mark.parametrize("n", [1, 3, 5, 6, 8, 14])

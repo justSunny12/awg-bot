@@ -320,7 +320,6 @@ def short_name(name: str, limit: int = 80) -> str:
     return name if len(name) <= limit else name[:limit - 1] + "…"
 
 
-
 def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 3300) -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
     списке»; служебные строки про адреса в наборе (с отступом) не показываем.
@@ -361,9 +360,6 @@ def host_rebooted(hostname: str, who: str) -> str:
 def gw_confirm_reassert(carries: bool = True) -> str:
     return ("🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
             "переподнимет линк" + (" — РФ-доступ прервётся на секунды" if carries else ""))
-
-
-GW_CONFIRM_REASSERT = gw_confirm_reassert()
 
 
 GW_FIRST_RUN_FILE = ("Это файл первого применения — его не присылают боту, а запускают на устройстве: "
