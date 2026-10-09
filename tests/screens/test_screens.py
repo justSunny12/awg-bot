@@ -45,7 +45,7 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
     в байт."""
     shots = [s for s in catalog.SHOTS if s.role == name]
     drawn = harness.record_section_screens(monkeypatch)
-    parts, bad = [], []
+    parts, bad, circles = [], [], set()
     for shot in shots:
         rec = await take(shot, tmp_path, fakes)
         # ровно текст обработчика устаревшей кнопки (handlers/stale.py); alert
@@ -58,8 +58,12 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
         spare = catalog.LABEL_EXCEPTIONS.get(shot.id, set()) - harness.long_labels(rec)
         assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
+        circles |= harness.circle_actions_seen(rec)
         parts.append(harness.serialize(shot.id, shot.title, rec))
     assert not bad, "нарушения ограничений Telegram:\n" + "\n".join(bad)
+    if name == "admin":
+        unused = set(harness.CIRCLE_ACTIONS) - circles
+        assert not unused, f"исключение кружка больше не нужно — убери из CIRCLE_ACTIONS: {unused}"
     br = SECTION_ROLE.get(name)
     if br is not None:
         from awgbot.bot import sections

@@ -1,4 +1,7 @@
-"""Общие элементы: reply-клавиатура, маркеры состояния, подтверждение, пресеты лимита устройства, листание, да/нет, «Скрыть», блокировки."""
+"""Общие элементы: reply-клавиатура, маркеры состояния, подтверждение, пресеты
+лимита устройства, листание (page_slice — нарезка по правилу десяти рядов,
+page_nav — ряд листания; сборка списка — ui.paged), да/нет, «Скрыть»
+(append_hide_row дописывает её к готовой разметке), блокировки."""
 
 from __future__ import annotations
 
@@ -10,7 +13,7 @@ from awgbot.bot.callbacks import (BlockCB, CancelCB, Menu, PresetCB, HideCB, Pag
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reply-клавиатура (глобальные команды у поля ввода): «Меню» и «Отмена».
-# Тексты кнонок — точные строки, по ним ловим в приоритетном роутере
+# Тексты кнопок — точные строки, по ним ловим в приоритетном роутере
 # reply_commands. Эмодзи-префикс делает случайное совпадение с вводом
 # (имя устройства и т.п.) практически невозможным.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -41,10 +44,6 @@ def confirm(cancel_cb, do_text: str, do_cb, *, danger: bool = True) -> InlineKey
     """Подтверждение: «⬅️ Отмена» первой, действие второй; разрушительное —
     красным (style у кнопки, Bot API 9.x; старые клиенты рисуют обычную)."""
     return ui.rows([("⬅️ Отмена", cancel_cb), (do_text, do_cb, "danger") if danger else (do_text, do_cb)])
-
-
-def _packed(cb) -> str:
-    return cb if isinstance(cb, str) else cb.pack()
 
 
 def select_all_button(selected: int, total: int, cb) -> InlineKeyboardButton:
@@ -164,7 +163,7 @@ def to_menu() -> InlineKeyboardMarkup:
 def append_hide_row(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
     """Добавляет «Скрыть» ПОСЛЕДНЕЙ строкой к готовой разметке. Используется
     везде, где у проактивного уведомления есть свои кнопки действия."""
-    return InlineKeyboardMarkup(inline_keyboard=[*markup.inline_keyboard, [ui.btn("Скрыть", HideCB())]])
+    return ui.rows(*markup.inline_keyboard, ("Скрыть", HideCB()))
 
 
 def hide_only() -> InlineKeyboardMarkup:

@@ -622,6 +622,12 @@ CANCELS = ("⬅️ Отмена", "\u2716\ufe0f Отмена")       # под п
 # тумблеры — ✅/☑️; «🔴 Выключить…» — действие, не тумблер (макет «Параметров»)
 CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_", "c:open:")
 CIRCLE_ACTIONS = ("🔴 Выключить", "🔴 Выключить РФ-доступ")
+
+
+def label_len(text: str) -> int:
+    """Длина подписи, как она видна: селектор варианта U+FE0F («☑️») ширины
+    не добавляет, иначе «☑️ Х» и «✅ Х» считались бы по-разному."""
+    return len(text.replace("\ufe0f", ""))
 ALLOWED = {"b": set(), "i": set(), "u": set(), "s": set(), "code": {"class"}, "pre": set(),
            "a": {"href"}, "blockquote": {"expandable"}, "tg-spoiler": set()}
 _TAG = re.compile(r'<(/?)([a-z][a-z-]*)((?:\s+[a-z-]+(?:="[^"<>]*")?)*)\s*>')
@@ -726,8 +732,8 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
                     if b.callback_data is not None and not 1 <= len(b.callback_data.encode()) <= CB_MAX:
                         out.append(f"{where}: callback_data {b.callback_data!r} — "
                                    f"{len(b.callback_data.encode())} байт вне 1…{CB_MAX}")
-                    if len(row) >= 2 and len(b.text) > LABEL_MAX and b.text not in allowed_long:
-                        out.append(f"{where}: подпись «{b.text}» ({len(b.text)}) длиннее "
+                    if len(row) >= 2 and label_len(b.text) > LABEL_MAX and b.text not in allowed_long:
+                        out.append(f"{where}: подпись «{b.text}» ({label_len(b.text)}) длиннее "
                                    f"{LABEL_MAX} в ряду из {len(row)}")
     return out
 
@@ -736,8 +742,16 @@ def long_labels(rec: Record) -> set[str]:
     """Длинные подписи в рядах из 2+ — для сторожа отживших исключений."""
     return {b.text for c in rec.calls if isinstance(c.markup, InlineKeyboardMarkup)
             for row in c.markup.inline_keyboard if len(row) >= 2
-            for b in row if len(b.text) > LABEL_MAX}
+            for b in row if label_len(b.text) > LABEL_MAX}
+
+
+def circle_actions_seen(rec: Record) -> set[str]:
+    """Подписи из CIRCLE_ACTIONS, встреченные в записи, — для сторожа
+    отживших исключений."""
+    return {b.text for c in rec.calls if isinstance(c.markup, InlineKeyboardMarkup)
+            for row in c.markup.inline_keyboard for b in row if b.text in CIRCLE_ACTIONS}
 
 
 __all__ = ["keyboard_builders", "unannotated_keyboard_functions", "BuilderCalls", "StubSession", "Record", "Call", "run", "take", "run_builder", "check_step", "serialize",
-           "problems", "html_problems", "plain", "long_labels", "packed", "CallbackData", "BOT_USERNAME"]
+           "problems", "html_problems", "plain", "long_labels", "circle_actions_seen", "packed", "CallbackData",
+           "BOT_USERNAME"]

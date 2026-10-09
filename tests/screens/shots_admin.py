@@ -1513,12 +1513,5 @@ SHOTS += [
 assert all(sh.data is not None for sh in SHOTS), [sh.id for sh in SHOTS if sh.data is None]
 
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
-# те же исключения, что в tests/unit/test_ui_layout.py: макет «Уведомления» —
-# «☑️ Аварии на e-mail» в ряду с «👥 События» (settings_notify).
-_NOTIFY_MAIL = {"☑️ Аварии на e-mail"}
-LABEL_EXCEPTIONS: dict[str, set[str]] = {
-    "adm.set.notify": _NOTIFY_MAIL,
-    "adm.set.notify.off": _NOTIFY_MAIL,
-    "adm.set.notify.edit.done": _NOTIFY_MAIL,
-    "adm.set.notify.edit.cancel": _NOTIFY_MAIL,
-}
+# длина считается без селектора варианта («☑️ Аварии на e-mail» — 18).
+LABEL_EXCEPTIONS: dict[str, set[str]] = {}

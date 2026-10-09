@@ -153,7 +153,7 @@ def _doms(n):
 
 _BACK = Menu(action="main").pack()
 
-# Все 19 вызовов page_nav и все «render», с которыми их зовут хендлеры
+# Все 18 экранов с ui.paged и все «render», с которыми их зовут хендлеры
 # (client.py: cb.data пункта меню; selfops.py: AdminSelfCB; devices.py:
 # ClientCB gen_for с id профиля). Каждая функция — (n, page) → клавиатура.
 SCREENS = {

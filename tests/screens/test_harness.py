@@ -136,15 +136,18 @@ def test_text_length_is_counted_after_markup_is_parsed():
 
 def test_label_exception_allows_only_the_named_label_on_the_named_shot():
     """Исключение макета — точечное: та же подпись на другом снимке и другая
-    длинная подпись на том же снимке остаются нарушениями."""
-    rec = _rec(Call("= edit #1", "ok", markup=_kb([("☑️ Аварии на e-mail", "m:a"), ("⬅️ Назад", "m:b")]),
+    длинная подпись на том же снимке остаются нарушениями. Длина — без
+    селектора варианта: «☑️ Аварии на e-mail» (18 видимых) не нарушение."""
+    rec = _rec(Call("= edit #1", "ok", markup=_kb([("☑️ Длинная подпись кнопки", "m:a"), ("⬅️ Назад", "m:b")]),
                     ), Call("= edit #1", "ok", markup=_kb([("☑️ Другая длинная кнопка", "m:a"),
                                                            ("⬅️ Назад", "m:b")])))
-    exc = {"gw.set.notify": {"☑️ Аварии на e-mail"}}
+    exc = {"gw.set.notify": {"☑️ Длинная подпись кнопки"}}
     found = harness.problems("gw.set.notify", rec, exc)
     assert len(found) == 1 and "Другая длинная" in found[0], found
     assert len(harness.problems("gw.set.mon", rec, exc)) == 2, "исключение протекло на чужой снимок"
-    assert harness.long_labels(rec) == {"☑️ Аварии на e-mail", "☑️ Другая длинная кнопка"}
+    assert harness.long_labels(rec) == {"☑️ Длинная подпись кнопки", "☑️ Другая длинная кнопка"}
+    ok = _rec(Call("= edit #1", "ok", markup=_kb([("☑️ Аварии на e-mail", "m:a"), ("⬅️ Назад", "m:b")])))
+    assert harness.problems("gw.set.notify", ok, {}) == [] and harness.label_len("☑️ Аварии на e-mail") == 18
 
 
 # ── сериализация ─────────────────────────────────────────────────────────────

@@ -1024,12 +1024,5 @@ SHOTS = [
 ]
 
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
-# те же исключения, что в tests/unit/test_ui_layout.py: у агента одно —
-# gateway_notify_kb, «Аварии на e-mail» в ряду с «⬅️ Назад».
-LABEL_EXCEPTIONS: dict[str, set[str]] = {
-    "gw.set.notify": {"☑️ Аварии на e-mail"},
-    "gw.set.notify.alerts_off": {"☑️ Аварии на e-mail"},
-    "gw.set.notify.toggle": {"☑️ Аварии на e-mail"},
-    "gw.set.notify.edit.done": {"☑️ Аварии на e-mail"},
-    "gw.set.notify.edit.cancel": {"☑️ Аварии на e-mail"},
-}
+# длина считается без селектора варианта («☑️ Аварии на e-mail» — 18).
+LABEL_EXCEPTIONS: dict[str, set[str]] = {}

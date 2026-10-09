@@ -63,17 +63,26 @@ def test_toggle_marks_are_ticks_for_both_roles():
 _BOT = pathlib.Path(kbm.__file__).parent.parent          # awgbot/bot
 
 
-def _sources():
+def _sources(skip_ui: bool = True):
     for path in sorted(_BOT.rglob("*.py")):
-        if path.name != "ui.py":
-            yield path, path.read_text(encoding="utf-8")
+        if skip_ui and path.name == "ui.py":
+            continue
+        yield path, path.read_text(encoding="utf-8")
 
 
 def test_keyboards_are_built_only_through_ui_rows():
     """InlineKeyboardBuilder в коде бота не используется: раскладка — рядами
-    как есть (ui.rows), иначе правила раскладки проверялись бы в двух местах."""
-    found = [str(p.relative_to(_BOT)) for p, src in _sources() if "InlineKeyboardBuilder" in src]
-    assert found == [], found
+    как есть (ui.rows), иначе правила раскладки проверялись бы в двух местах.
+    Смотрим имена в коде, не текст: упоминание в докстринге — не использование."""
+    found = set()
+    for path, src in _sources(skip_ui=False):
+        for node in ast.walk(ast.parse(src)):
+            names = ([a.name for a in node.names] if isinstance(node, (ast.Import, ast.ImportFrom))
+                     else [node.id] if isinstance(node, ast.Name)
+                     else [node.attr] if isinstance(node, ast.Attribute) else [])
+            if any(n.rsplit(".", 1)[-1] == "InlineKeyboardBuilder" for n in names):
+                found.add(str(path.relative_to(_BOT)))
+    assert found == set(), sorted(found)
 
 
 def test_tail_labels_come_only_from_ui():
@@ -83,7 +92,8 @@ def test_tail_labels_come_only_from_ui():
     for path, src in _sources():
         for node in ast.walk(ast.parse(src)):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value in (ui.BACK_LABEL, ui.MENU_LABEL, "⬅️ В меню"):
+                if node.value.replace("\ufe0f", "") in (ui.BACK_LABEL.replace("\ufe0f", ""),
+                                                        ui.MENU_LABEL.replace("\ufe0f", "")):
                     found.add((str(path.relative_to(_BOT)), node.value))
     assert found == set(), found
 

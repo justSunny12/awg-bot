@@ -23,11 +23,11 @@ def admin_main(*, gateways: bool = False, routing_visible: bool = False,
                self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
     новый профиль, шлюзы и настройки, объявление и обновление."""
-    from .client import issue_row
+    from .client import menu_issue_row
     # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
     # включению, других входов у функции нет
     return ui.rows(
-        issue_row(Menu),                      # выдача своим устройствам — первой строкой, как у клиента
+        menu_issue_row(),                     # выдача своим устройствам — первой строкой, как у клиента
         [("📱 Мои устройства", Menu(action="devices")),
          (f"🇷🇺 {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=self_client_id)) if routing_visible else None],
         [("👥 Профили", Menu(action="clients")), ("➕ Профиль", Menu(action="add_client"))],
@@ -274,8 +274,7 @@ def invite_menu(plain_text: str, link: str, client_id: int) -> InlineKeyboardMar
     несут только текст приглашения (не сводку под чертой), ниже — «👤 В карточку»
     и «⬅️ На главную»."""
     from .client import invite_kb
-    rows = invite_kb(plain_text, link).inline_keyboard + to_client_card(client_id).inline_keyboard
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return ui.rows(*invite_kb(plain_text, link).inline_keyboard, *to_client_card(client_id).inline_keyboard)
 
 
 def to_client_card(client_id: int) -> InlineKeyboardMarkup:

@@ -193,6 +193,8 @@ def _button(b) -> InlineKeyboardButton:
     if isinstance(b, InlineKeyboardButton):
         return b
     text, cb, *flags = b
+    if set(flags) - {"danger"}:
+        raise ValueError(f"кнопка «{text}»: неизвестный флаг {flags}; ссылка и копирование — через ui.btn")
     return btn(text, cb, danger="danger" in flags)
 
 

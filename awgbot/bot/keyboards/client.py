@@ -29,7 +29,9 @@ def issue_row(cb_cls, device_id: int = 0) -> list:
     return [(text, cb_cls(action=action, device_id=device_id)) for text, action in _ISSUE]
 
 
-def _menu_issue_row() -> list:
+def menu_issue_row() -> list:
+    """Тот же ряд выдачи с главной: колбэки меню (при одном устройстве — сразу
+    выдача, иначе выбор)."""
     return [(text, Menu(action=action)) for text, action in _ISSUE]
 
 
@@ -46,7 +48,7 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     sub = ("💳 Подписка", Menu(action="info"))
     help_ = ("❓ Как подключить", HelpCB(platform="root"))
     return ui.rows(
-        _menu_issue_row() if has_devices else None,
+        menu_issue_row() if has_devices else None,
         [("📱 Устройства", Menu(action="devices")), add] if has_devices else [add],
         [(f"🇷🇺 {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=client_id)), sub] if routing_visible else [sub, help_],
         help_ if routing_visible else None)

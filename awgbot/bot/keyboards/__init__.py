@@ -1,5 +1,8 @@
 """
 keyboards — инлайн-клавиатуры (aiogram). Callback-data берутся из callbacks.py.
+Построители собирают разметку описанием через ui.rows (ряды как есть, хвосты
+ui.back / ui.to_menu, сетка ui.grid, листание ui.paged); InlineKeyboardBuilder
+не используется.
 
 Пакет разрезан по экранам:
 

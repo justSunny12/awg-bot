@@ -50,9 +50,9 @@ def keyboard(br) -> InlineKeyboardMarkup:
     from . import available
     qh = _bool("quiet_hours.quiet_hours_enabled")
     ra = _bool("resource_alerts.enabled")
-    cpu = ("CPU " + f"{_int('resource_alerts.thresholds_percent.cpu')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.cpu"))
-    ram = ("RAM " + f"{_int('resource_alerts.thresholds_percent.ram')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.ram"))
-    disk = ("Диск " + f"{_int('resource_alerts.thresholds_percent.disk')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.disk"))
+    cpu = (f"CPU {_int('resource_alerts.thresholds_percent.cpu')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.cpu"))
+    ram = (f"RAM {_int('resource_alerts.thresholds_percent.ram')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.ram"))
+    disk = (f"Диск {_int('resource_alerts.thresholds_percent.disk')}%", br.cb.pack(ID, "edit", "resource_alerts.thresholds_percent.disk"))
     temp = (f"{_int(br.keys.temp_alert)} °C", br.cb.pack(ID, "edit", br.keys.temp_alert)) if br.keys.temp_alert else None
     mail = (f"{_chk(_bool('notifications.email_fallback'))} Аварии на e-mail",
             br.cb.pack(ID, "toggle", "notifications.email_fallback"))

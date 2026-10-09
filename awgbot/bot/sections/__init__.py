@@ -10,7 +10,8 @@ SCALE (множитель хранения: ввод в минутах, conf в 
 раздела, None — действие нарисовало экран само; или Confirm — подтверждение
 с ценой, исполняется по ключу с «!»), text(br, …), `keyboard(br, …) ->
 InlineKeyboardMarkup` (по аннотации построитель находит сторож полноты
-эталонов), `async screen(br, services, key)`.
+эталонов; разметка — ui.rows, кнопка — кортеж (подпись, br.cb.pack(…)),
+хвост «⬅️ Назад» — _kb.back_button), `async screen(br, services, key)`.
 
 Отсюда выводится остальное: реестр SECTIONS из MODULES, доступность раздела
 роли (ID в settings_root или subsections), границы, умолчания, множители и
