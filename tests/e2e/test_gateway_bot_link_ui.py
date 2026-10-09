@@ -1,9 +1,16 @@
-"""Ссылки из экранов в сторону шлюза — то, чего нет в эталонах экранов
-(tests/screens/admin.txt): строка «Бот шлюза» появляется и пропадает вместе
-с ответом getMe или снимком канала, deep-link «/start gw-<слот>» поверх
-живого меню и для мусорных номеров, «Назад» на главную переживает
-перерисовки карточки, getMe сразу после ввода токена, подпись под файлом
-конфигурации без бота, с подписью слота и с экранированием."""
+"""Ссылки из экранов в сторону шлюза — то, что не сводится к одному экрану
+эталона: deep-link «/start gw-<слот>» встаёт на место живого меню и не роняет
+апдейт на мусорных номерах, пометка «карточка с главной» живёт до возврата
+на главную и только в своём чате, getMe сразу после ввода токена, подпись
+файла на входе функции (пустой бот, экранирование).
+
+Экраны — в эталоне tests/screens/admin.txt: строка «Бот шлюза» в карточках
+слота и устройства с ботом, без него, после смены токена и из снимка канала
+(adm.gw.card.bot*, adm.gw.card.nobot, adm.gw.card.token_replaced,
+adm.gw.card.snapbot*, adm.gw.dev.nobot); карточка по ссылке и «Назад» на
+главную после пинга, галочки, ввода и отмены подписи (adm.link.gw*); подпись
+под файлом с подписью слота, по username, после смены токена и из снимка
+(adm.gw.bundle.*)."""
 from __future__ import annotations
 
 import types
@@ -11,7 +18,7 @@ import types
 import pytest
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, Menu
+from awgbot.bot.callbacks import GwMarkCB, GwSlotCB, Menu
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config
@@ -49,21 +56,6 @@ def _cmd(args):
     return CommandObject(prefix="/", command="start", args=args)
 
 
-def _known_bot(services, slot=2):
-    """Бот слота уже известен: токен есть, ответ getMe в кэше."""
-    services.token[slot] = TOKEN2
-    services.set_gw_bot_identity(slot, "pi2_gw_bot", "Шлюз <Pi2>")
-
-
-def _with_agent(plain: str, agent: str = AGENT) -> str:
-    """Карточка без бота → с ботом: строка «Бот шлюза» — последней строкой
-    содержимого, под ней только «подробнее» (если есть)."""
-    lines = plain.split("\n")
-    if lines[-1].startswith("<blockquote"):
-        return "\n".join(lines[:-1] + [agent, lines[-1]])
-    return plain + "\n" + agent
-
-
 def _ends_with_agent(text: str, agent: str = AGENT) -> bool:
     lines = text.split("\n")
     if lines[-1].startswith("<blockquote"):
@@ -75,50 +67,6 @@ async def _card_text(services, fake_bot, slot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
     return _screen(nav)
-
-
-# ── «Бот шлюза» в карточках ──────────────────────────────────────────────────
-
-async def test_slot_card_ends_with_the_agent_bot_link(services, slots, fake_bot):
-    """Строка — последней перед «подробнее» и больше ничего в карточке не
-    меняет: ни текста выше, ни кнопок."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    plain, plain_labels = await _card_text(services, fake_bot, 2)
-    assert "Бот шлюза" not in plain, "без ответа getMe строки быть не должно"
-    _known_bot(services, 2)
-    text, labels = await _card_text(services, fake_bot, 2)
-    assert text == _with_agent(plain), "строка «Бот шлюза» не последней или карточка изменилась выше"
-    assert labels == plain_labels, "кнопки карточки от бота шлюза меняться не должны"
-    other, _ = await _card_text(services, fake_bot, 1)
-    assert "Бот шлюза" not in other, "бот слота 2 попал в карточку слота 1"
-
-
-async def test_slot_card_forgets_the_bot_when_its_token_is_replaced(services, slots, fake_bot):
-    """Токен слота сменили — прежний бот уже не тот: ссылка из карточки
-    пропадает до нового getMe."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    _known_bot(services, 2)
-    services.token[2] = "222222222:BB-another-token-value-long-enough"
-    text, _ = await _card_text(services, fake_bot, 2)
-    assert "Бот шлюза" not in text, "ссылка на бота старого токена пережила замену токена"
-
-
-async def test_gateway_device_card_ends_with_the_agent_bot_link(services, slots, fake_bot):
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-
-    async def _open():
-        cb, nav = _acb(fake_bot)
-        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services, FakeState())
-        return _screen(nav)
-    plain, plain_labels = await _open()
-    assert "Бот шлюза" not in plain
-    _known_bot(services, 2)
-    text, labels = await _open()
-    assert text == _with_agent(plain), "в карточке устройства строка не последней или сдвинула остальное"
-    assert labels == plain_labels
 
 
 # ── строка РФ-доступа: ссылки ведут в существующие карточки ─────────────────
@@ -141,41 +89,24 @@ async def test_admin_line_links_point_to_real_slots(services, slots):
 
 async def test_start_gw_opens_the_slot_card_in_place_of_the_menu(services, slots, fake_bot):
     """Клик по имени шлюза в шапке: карточка слота встаёт на место активного
-    меню, служебная команда из чата убрана."""
+    меню (правкой, а не новым сообщением), служебная команда из чата убрана.
+    Сама карточка по ссылке — эталоны adm.link.gw.nav и adm.link.gw.standby."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    _known_bot(services, 2)
     services.db.set_nav_message_id(ADMIN, 777)
     msg = _amsg(fake_bot, "/start gw-2")
     await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-2"))
     assert msg.deleted, "команда /start gw-2 осталась в чате"
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edits, "карточка не встала на место меню"
-    shown = edits[-1][2]
-    assert shown.startswith("🛰 <b>Pi2</b> — ") and _ends_with_agent(shown), shown
     assert not [s for s in msg.sent if s[0] == "answer"], "карточка ушла новым сообщением при живом меню"
-
-
-async def test_start_gw_card_does_not_call_a_live_gateway_dead(services, slots, fake_bot):
-    """По ссылке пинг не меряется (lazy_ping=False), а пустой замер карточка
-    печатает как «шлюз не отвечает»: живой резерв, у которого пинг просто ещё
-    не мерили, по клику из шапки выглядит мёртвым. По кнопке «Карточка» тот
-    же слот показывает честные миллисекунды."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    services.db.set_nav_message_id(ADMIN, 777)
-    msg = _amsg(fake_bot, "/start gw-2")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-2"))
-    shown = [r for r in fake_bot.records if r[0] == "edit_message_text"][-1][2]
-    assert "шлюз не отвечает" not in shown, \
-        "карточка по ссылке объявила неизмеренный пинг отказом шлюза"
 
 
 async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_bot):
     """Слот сняли, а старая шапка со ссылкой осталась в чате: клик не роняет
-    апдейт — свой экран «слот снят» (не «профиль не найден» с кнопками
-    потребления), команда убрана; и для номера вне слотов, и для «gw-0»
-    поверх уже показанного экрана."""
+    апдейт, команда убрана, экран показан — и для номера вне слотов, и для
+    «gw-0» поверх уже показанного экрана. Экран «слот снят» — эталоны
+    adm.link.gw.missing и adm.link.gw.zero."""
     _, pi, pi2 = slots
     _slot1(services, pi)
     for payload in ("gw-9", "gw-0"):
@@ -186,23 +117,7 @@ async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_
         await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
         assert msg.deleted, payload
         shown = [r[2] for r in fake_bot.records if r[0] in ("answer", "edit_message_text")]
-        assert shown and shown[-1] == "🛰 Такого шлюза больше нет — слот снят", (payload, shown)
-
-
-async def test_start_gw_with_garbage_is_a_plain_start(services, slots, fake_bot):
-    """«/start gw-abc» — не ссылка на карточку: обычный /start с панелью, а не
-    «не найдено»."""
-    _, pi, pi2 = slots
-    _slot1(services, pi)
-    msg = _amsg(fake_bot, "/start gw-abc")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-abc"))
-    shown = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert shown, "обычный /start ничего не показал"
-    assert "не найден" not in shown[-1] and "Шлюз «" not in shown[-1], shown[-1]
-    plain = _amsg(fake_bot, "/start")
-    await ah.admin_start(plain, services, FakeState(), command=_cmd(None))
-    assert [s[1] for s in plain.sent if s[0] == "answer"][-1] == shown[-1], \
-        "«/start gw-abc» показал не то же, что голый /start"
+        assert shown, f"{payload}: ничего не показано"
 
 
 # ── «Назад» с карточки, открытой ссылкой с главного экрана ──────────────────
@@ -233,80 +148,6 @@ async def _deeplink(services, fake_bot, slot=2):
 def _cb_in(fake_bot, chat_id=ADMIN):
     nav = FakeMessage(chat_id=chat_id, user_id=ADMIN, bot=fake_bot)
     return FakeCallback(message=nav, user_id=ADMIN, bot=fake_bot), nav
-
-
-async def test_start_gw_card_keeps_the_home_exit_after_ping(services, slots, fake_bot):
-    """«📡 Пинг» перерисовывает карточку — выход на главную не должен
-    подмениться списком от одного нажатия."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    await _deeplink(services, fake_bot)
-    cb, nav = _cb_in(fake_bot)
-    await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
-    markup = _last_markup(nav, ("edit_text",))
-    assert _back(markup) == HOME, "после пинга «Назад» перестало вести на главную"
-
-
-async def _card_again_via(services, fake_bot, markup, text="⬅️ Назад"):
-    """Нажать «Назад» с подэкрана карточки и получить клавиатуру карточки."""
-    btn = next(b for r in markup.inline_keyboard for b in r if b.text == text)
-    assert btn.callback_data == GwSlotCB(action="card", slot=2).pack(), btn.callback_data
-    cb, nav = _cb_in(fake_bot)
-    await sh.gw_slot_card(cb, GwSlotCB.unpack(btn.callback_data), services, FakeState())
-    return _last_markup(nav, ("edit_text",))
-
-
-async def test_start_gw_card_keeps_the_home_exit_after_preferred_toggle(services, slots, fake_bot):
-    """Галочка «⭐ При старте» живёт в «✏️ Изменить»; вернувшись оттуда в
-    карточку, человек, пришедший с главной, уходит «Назад» на главную."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    await _deeplink(services, fake_bot)
-    cb, nav = _cb_in(fake_bot)
-    await sh.gw_slot_edit(cb, GwSlotCB(action="edit", slot=2), services, FakeState())
-    cb, nav = _cb_in(fake_bot)
-    await sh.gw_slot_pref(cb, GwSlotCB(action="pref", slot=2), services)
-    markup = await _card_again_via(services, fake_bot, _last_markup(nav, ("edit_text",)))
-    assert _back(markup) == HOME, "после галочки «Назад» перестало вести на главную"
-
-
-async def test_start_gw_card_keeps_the_home_exit_after_label_input(services, slots, fake_bot):
-    """Подпись введена — «✏️ Изменить» приходит заново сообщением; из него в
-    карточку, и выход тот же."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    await _deeplink(services, fake_bot)
-    st = FakeState()
-    cb, _ = _cb_in(fake_bot)
-    await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
-    msg = _amsg(fake_bot, "дача")
-    await sh.gateway_label_received(msg, st, services)
-    markup = await _card_again_via(services, fake_bot, _last_markup(msg, ("answer",)))
-    assert _back(markup) == HOME, "после ввода подписи «Назад» перестало вести на главную"
-
-
-async def test_start_gw_card_keeps_the_home_exit_after_label_cancel(services, slots, fake_bot):
-    """Открыл подпись и передумал — «✖️ Отмена» возвращает в «✏️ Изменить»,
-    оттуда — в ту же карточку; выход с неё должен остаться на главную."""
-    from awgbot.bot.callbacks import CancelCB
-    from awgbot.bot.handlers import reply_commands as rc
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    await _deeplink(services, fake_bot)
-    st = FakeState()
-    cb, nav = _cb_in(fake_bot)
-    await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
-    cancel = _last_markup(nav, ("edit_text", "answer")).inline_keyboard[0][0]
-    assert cancel.text == "✖️ Отмена"
-    cb2, nav2 = _cb_in(fake_bot)
-    await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel.callback_data), st, services, role="admin")
-    edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    shown = [s for s in nav2.sent if s[0] == "edit_text"]
-    assert shown or edited, "отмена ничего не нарисовала"
-    markup = shown[-1][2] if shown else edited[-1][3]
-    assert await st.get_state() is None
-    markup = await _card_again_via(services, fake_bot, markup)
-    assert _back(markup) == HOME, "отмена ввода подписи увела выход карточки с главной в список"
 
 
 async def test_card_opened_from_the_list_goes_back_to_the_list(services, slots, fake_bot):
@@ -340,14 +181,6 @@ async def test_card_home_exit_is_per_chat(services, slots, fake_bot):
     cb, nav = _cb_in(fake_bot)
     await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
     assert _back(_last_markup(nav, ("edit_text",))) == HOME, "чужой чат снял пометку у чата админа"
-
-
-async def test_start_gw_single_slot_card_also_goes_home(services, slots, fake_bot):
-    """С одним шлюзом обычный «Назад» ведёт в раздел маршрутизации; по
-    ссылке — всё равно на главную."""
-    _, pi, _ = slots
-    _slot1(services, pi)
-    assert _back(await _deeplink(services, fake_bot, 1)) == HOME
 
 
 # ── getMe сразу после ввода токена ───────────────────────────────────────────
@@ -408,26 +241,12 @@ async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot)
 
 # ── подпись под файлом конфигурации ──────────────────────────────────────────
 
-def test_bundle_caption_links_the_agent_bot():
-    """Файл уходит в чат ВПС, а применять его надо в другом боте: подпись
-    говорит, для какого шлюза файл и куда его переслать — ссылкой."""
-    got = texts.gateway_bundle_caption("Pi2 (дом 2)", {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
-    assert got == ('📤 <b>Конфигурация шлюза Pi2 (дом 2)</b>\nПерешли это сообщение боту шлюза '
-                   '(<a href="https://t.me/pi2_gw_bot">Шлюз Pi2</a>) — он проверит и применит сам\n'
-                   "\nℹ️ Возврат в меню удалит это сообщение"), got
-
-
 def test_bundle_caption_without_known_bot_has_no_link():
     """getMe ещё не отвечал — без ссылки и без пустых скобок."""
     for bot in ({}, None, {"username": "", "name": "x"}):
         got = texts.gateway_bundle_caption("Pi2", bot)
         assert got == ("📤 <b>Конфигурация шлюза Pi2</b>\nПерешли это сообщение боту шлюза — "
                        "он проверит и применит сам\n" "\nℹ️ Возврат в меню удалит это сообщение"), (bot, got)
-
-
-def test_bundle_caption_without_bot_name_shows_username():
-    got = texts.gateway_bundle_caption("Pi2", {"username": "pi2_gw_bot"})
-    assert '(<a href="https://t.me/pi2_gw_bot">pi2_gw_bot</a>)' in got, got
 
 
 def test_bundle_caption_escapes_names():
@@ -437,40 +256,6 @@ def test_bundle_caption_escapes_names():
     assert "A&lt;B&gt; (x &amp; y)" in got, got
     assert ">Шлюз &lt;Pi2&gt; &amp; co</a>" in got, got
     assert "<B>" not in got and "<Pi2>" not in got, got
-
-
-async def test_send_gw_bundle_captions_the_file_with_slot_and_bot(services, slots, fake_bot):
-    """Документ реально уходит с подписью: имя и подпись слота, ссылка на его
-    бота; соседний слот без известного бота — без ссылки."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    services.db.gateway_update(2, label="дом <2>")
-    _known_bot(services, 2)
-    msg = _amsg(fake_bot)
-    assert await sh.send_gw_bundle(msg, services, 2) is True
-    docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['📤 <b>Конфигурация шлюза Pi2 (дом &lt;2&gt;)</b>\nПерешли это сообщение боту шлюза '
-                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам\n'
-                    "\nℹ️ Возврат в меню удалит это сообщение"], docs
-    msg1 = _amsg(fake_bot)
-    assert await sh.send_gw_bundle(msg1, services, 1) is True
-    docs1 = [s[1] for s in msg1.sent if s[0] == "document"]
-    assert docs1 == ["📤 <b>Конфигурация шлюза NASPi</b>\nПерешли это сообщение боту шлюза — "
-                     "он проверит и применит сам\n" "\nℹ️ Возврат в меню удалит это сообщение"], \
-        "бот слота 2 попал в подпись файла слота 1"
-
-
-async def test_send_gw_bundle_forgets_the_bot_of_a_replaced_token(services, slots, fake_bot):
-    """Токен слота сменили — ссылка на прежнего бота в подписи увела бы файл
-    с ключами не туда."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    _known_bot(services, 2)
-    services.token[2] = "222222222:BB-another-token-value-long-enough"
-    msg = _amsg(fake_bot)
-    await sh.send_gw_bundle(msg, services, 2)
-    docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs and "t.me/pi2_gw_bot" not in docs[0], docs
 
 
 async def test_send_gw_bundle_failure_sends_no_file(services, slots, fake_bot, monkeypatch):
@@ -492,67 +277,6 @@ def _async(value):
     async def _f(*a, **k):
         return value
     return _f
-
-
-# ── бот шлюза из снимка канала (токена на сервере нет) ───────────────────────
-
-def _snapshot_bot(services, slot, username, name, rev=1, full=True):
-    """Агент прислал себя снимком канала: полным или дельтой."""
-    body = {"agent_bot": {"username": username, "name": name}, "rev": rev}
-    if full:
-        body.update(agent_version="3.1.0", mark_status="confirmed", egress_ok=True)
-    assert services.gwlink_snapshot_in(slot, body, rev, full) is True
-
-
-async def test_slot_card_links_the_bot_from_the_channel_snapshot(services, slots, fake_bot):
-    """Слот заведён до того, как сервер стал спрашивать токен, и ввести токен
-    в интерфейсе негде: ссылку в чат бота даёт снимок канала — та же строка,
-    последней, и кнопки карточки те же."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    assert services.token == {}, "сцена этого теста — слот без токена на сервере"
-    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
-    text, labels = await _card_text(services, fake_bot, 2)
-    assert _ends_with_agent(text), f"карточка без ссылки на бота из снимка:\n{text}"
-    other, _ = await _card_text(services, fake_bot, 1)
-    assert "Бот шлюза" not in other, "бот из снимка слота 2 попал в карточку слота 1"
-
-
-async def test_slot_card_link_follows_the_snapshot_delta(services, slots, fake_bot):
-    """Бота переименовали — дельта снимка, и карточка уже с новым именем;
-    агент перезапустился без сети (пустой username) — строки нет."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
-    _snapshot_bot(services, 2, "pi2_gw_bot", "Новое имя", rev=2, full=False)
-    text, _ = await _card_text(services, fake_bot, 2)
-    assert _ends_with_agent(text, 'Бот шлюза: <a href="https://t.me/pi2_gw_bot">Новое имя</a>'), text
-    _snapshot_bot(services, 2, "", "", rev=3, full=False)
-    text, _ = await _card_text(services, fake_bot, 2)
-    assert "Бот шлюза" not in text, "пустой username в снимке, а ссылка осталась"
-
-
-async def test_token_answer_wins_over_the_snapshot_in_the_card(services, slots, fake_bot):
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    _snapshot_bot(services, 2, "snap_bot", "Из снимка")
-    _known_bot(services, 2)
-    text, _ = await _card_text(services, fake_bot, 2)
-    assert _ends_with_agent(text) and "snap_bot" not in text, text
-
-
-async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots, fake_bot):
-    """Файл с ключами уходит с подписью, какому боту его пересылать, и без
-    токена на сервере — по снимку канала."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
-    msg = _amsg(fake_bot)
-    assert await sh.send_gw_bundle(msg, services, 2) is True
-    docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['📤 <b>Конфигурация шлюза Pi2</b>\nПерешли это сообщение боту шлюза '
-                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам\n'
-                    "\nℹ️ Возврат в меню удалит это сообщение"], docs
 
 
 # ── кнопки «Токен бота шлюза» больше нет ─────────────────────────────────────

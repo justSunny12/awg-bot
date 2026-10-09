@@ -385,6 +385,7 @@
 
 ### cl.link.rf_hidden — ссылка на РФ-доступ без разрешения
 > /start rf
+- delete #1
 + send #2
 👋 <b>Вася</b>
 
@@ -408,6 +409,7 @@
 
 ### cl.link.dev_foreign — ссылка на чужое устройство
 > /start dev-99
+- delete #1
 + send #2
 👋 <b>Вася</b>
 
@@ -430,6 +432,7 @@
 
 ### cl.link.dev.foreign_existing — ссылка на существующее чужое устройство — главная
 > /start dev-2
+- delete #1
 + send #2
 👋 <b>Вася</b>
 

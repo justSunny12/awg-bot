@@ -85,7 +85,8 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     """Своё устройство → подтверждение → токен агента: до токена ничего не
     назначено, после — пометка с новыми ключами линка и файл первого
     применения (устройство линка не знает, поэтому путь всегда полный, как у
-    нового); в «Шлюзах» новый шлюз не зелёный, пока не поднялся."""
+    нового). Новый шлюз в «Шлюзах» не зелёный, пока не поднялся, — эталон
+    adm.rt.one.fresh."""
     _, phone, pi = gwsetup
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
@@ -98,9 +99,6 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert _gw_dev_id(services) == pi.id
     assert services.modes == ["--rekey"], "ключи линка новые: устройство линка не знает"
     assert len(_docs(msg)) == 1, f"открытый файл, руками: {msg.sent}"
-    text, _ = await sh._screen("rt", services)
-    assert "NASPi — 🟡 Активен, проверка связи" in text or "NASPi — 🔴 Активен" in text, \
-        "новый шлюз ещё не поднялся — не зелёный"
 
 
 async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(services, fake_bot, gwsetup):
@@ -128,7 +126,9 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
 
 async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake_bot, gwsetup, monkeypatch):
     """Токен бота-агента спрашивается ЗДЕСЬ и один раз: он уедет внутрь файла
-    первого применения, и установка на шлюзе не задаст ни одного вопроса."""
+    первого применения, и установка на шлюзе не задаст ни одного вопроса.
+    Приглашение сразу, без подтверждения, — эталон adm.rt.new_ask; при
+    известном токене не спрашивается — adm.rt.new_yes.known."""
     _, phone, pi = gwsetup
     stored: dict = {}
     monkeypatch.setattr(services, "gw_bot_token", lambda slot=None: stored.get("t", ""))
@@ -138,8 +138,6 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services, st)
-    assert not any("Новое устройство" in s[1] for s in nav.sent if s[0] == "edit_text"), "лишнее подтверждение"
-    assert any(s[1].startswith("🤖 <b>Токен бота шлюза</b> — ") for s in nav.sent if s[0] == "edit_text")
     assert _gw_dev_id(services) is None, "без токена ничего не создаём"
 
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
@@ -154,14 +152,14 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     services.db.gateway_delete(1)
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, FakeState())
-    assert not any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
-    assert _gw_dev_id(services) is not None, nav.sent
+    assert _gw_dev_id(services) is not None, f"известный токен спрошен заново, шлюз не заведён: {nav.sent}"
 
 
 async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup):
     """«Убрать шлюз» (единственный): флаг снят, ключи сменены, маршрутизация
     выключена; карточка устройства снова обычная; повторное снятие —
-    сообщение, а не падение."""
+    сообщение, а не падение. Итог снятия и «и так не назначен» с «⬅️ Назад»
+    в «Шлюзы» — эталоны adm.gw.remove_yes.old и adm.gw.remove_yes.none."""
     _, phone, pi = gwsetup
     _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
@@ -169,8 +167,6 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     assert _gw_dev_id(services) is None
     assert services.modes == ["--rekey"]
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
-    assert any(s[1].startswith("🛑 NASPi больше не шлюз · РФ-доступ выключен") for s in nav.sent
-               if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services, FakeState())
     _, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
@@ -178,15 +174,14 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     # повторное снятие — сообщение, а не падение
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_yes(cb, GwMarkCB(action="remove_yes"), services)
-    shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and "и так не назначен" in shown[-1][1]
-    back = shown[-1][2].inline_keyboard[-1][0]
-    assert back.text == "⬅️ Назад" and back.callback_data == SetCB(sec="rt").pack(), "назад — в «Шлюзы»"
+    assert [s for s in nav.sent if s[0] == "edit_text"], "повторное снятие ничего не ответило"
+    assert _gw_dev_id(services) is None and services.modes == ["--rekey"], "повторное снятие что-то тронуло"
 
 
 async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
     """Пересланный claim: помечает, когда шлюза нет, и отдаёт конфигурацию;
-    при назначенном другом шлюзе — отказ с отсылкой в настройки."""
+    при назначенном другом шлюзе — отказ (текст с отсылкой в карточку —
+    эталон adm.claim.foreign), шлюз прежний."""
     _, phone, pi = gwsetup
     msg = _amsg(fake_bot, "Перешли основному боту:\n" + gwsign.sign(PRIV, "claim", pi.public_key))
     await ah.gateway_claim_message(msg, services)
@@ -194,11 +189,8 @@ async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
     assert any(s[0] == "document" for s in msg.sent), "конфигурация сразу"
     msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", phone.public_key))
     await ah.gateway_claim_message(msg, services)
-    assert _gw_dev_id(services) == pi.id
-    assert any("не принято" in s[1] and "Заменить устройство" in s[1] for s in msg.sent if s[0] == "answer")
-    bad = _amsg(fake_bot, "GW1:abc.def")
-    await ah.gateway_claim_message(bad, services)
-    assert any("не принято" in s[1] for s in bad.sent if s[0] == "answer")
+    assert _gw_dev_id(services) == pi.id, "claim другого устройства сменил назначенный шлюз"
+    assert not any(s[0] == "document" for s in msg.sent), "на отказ выдан файл конфигурации"
     assert ah.has_gw_token("пояснение\n\n" + gwsign.sign(PRIV, "claim", "K=")) and not ah.has_gw_token(None)
 
 

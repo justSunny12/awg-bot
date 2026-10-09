@@ -177,14 +177,14 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
     сообщением — только если меню нет или его не отредактировать. False —
     такого экрана нет (чужой объект): вызывающий покажет главную."""
     from awgbot.bot import screens
+    try:
+        await message.delete()                         # служебная — и когда экрана нет
+    except Exception:                                  # noqa: BLE001
+        pass
     parts = await screens.render(kind, ref, services=services, role=role, client=client,
                                  chat_id=message.chat.id)
     if parts is None:
         return False
-    try:
-        await message.delete()
-    except Exception:                                  # noqa: BLE001
-        pass
     text, markup = parts
     nav_id = await call(services.db.get_nav_message_id, message.chat.id)
     if nav_id is not None:

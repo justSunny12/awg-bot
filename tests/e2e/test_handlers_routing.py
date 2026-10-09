@@ -326,10 +326,10 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
 
 # ── раздел маршрутизации в настройках админа: списки, бандл, подразделы ──────
 
-async def test_bundle_document_carries_menu_button_and_dims_settings(
+async def test_an_old_bundle_button_issues_the_file_and_dims_settings(
         services, make_active_client, fake_bot, monkeypatch):
-    """Бандл уходит с кнопкой «В меню», а экран настроек гаснет: живым остаётся
-    одно меню — на самом бандле."""
+    """Бандл уходит файлом, а экран настроек гаснет: живым остаётся одно меню —
+    на самом бандле (кнопки под файлом — эталон adm.gw.bundle.old)."""
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
@@ -343,7 +343,7 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
     msg.answer_document = answer_document
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
-    assert sent_docs and sent_docs[0][1] is not None, "у бандла нет кнопки «В меню»"
+    assert sent_docs, "бандл не выдан по кнопке прежней версии"
     assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "экран настроек не погашен"
     assert msg.message_id in services.db.pop_content_msg_ids(cfg.ADMIN_ID), \
         "инструкция не помечена как контент — «В меню» её не удалит"
@@ -352,7 +352,7 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
 async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):
     """«В меню» на бандле до 3.1.0 (`bundle_menu`) удаляет само сообщение с
     файлом (внутри ключ линка), а не снимает клавиатуру, как общая кнопка
-    обновлений; дальше — главная."""
+    обновлений; дальше — главная (эталон adm.gw.bundle.menu.old)."""
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
@@ -361,12 +361,12 @@ async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, m
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle_menu"), services)
     assert msg.deleted, "сообщение с бандлом не удалено"
-    assert any(r[0] == "answer" for r in fake_bot.records), "меню не показано"
 
 
 def test_routing_lists_info_reports_count_age_and_period(services, monkeypatch):
     """Сводка по спискам: записи, возраст обновления, период — то, чего в чате
-    не было вовсе, пока списки обновлялись молча."""
+    не было вовсе, пока списки обновлялись молча (строка в «⚙️ Параметрах» —
+    эталон adm.rt.params.lists_age)."""
     import time
     from awgbot.core import settings
     monkeypatch.setattr(services, "_routing_read_cache", lambda name: ["a.ru", "b.ru"])
@@ -375,11 +375,6 @@ def test_routing_lists_info_reports_count_age_and_period(services, monkeypatch):
     info = services.routing_lists_info()
     assert info["count"] == 2 and info["every_hours"] == 12
     assert 7000 <= info["age_seconds"] <= 7300
-    from awgbot.bot import texts
-    info["sources"] = 3
-    line = texts.routing_params_text({"probe_seconds": 30, "window": 10, "availability": 50, "need": 5,
-                                      "standby_minutes": 10, "interval_minutes": 30}, info).split("\n")[2]
-    assert line.startswith("Списки: 2 ") and " из 3 источников, 2 ч назад · раз в 12 ч" in line, line
 
 
 async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
@@ -407,52 +402,13 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     assert forced == [True], "«обновить сейчас» не форсирует обновление"
 
 
-def test_one_slot_at_the_ceiling_offers_no_reserve_button():
-    """«🛰 Шлюзы» с одним слотом, когда слотов больше не выпустить: без
-    «➕ Резерв» — иначе кнопка вела бы в отказ «слоты заняты»."""
-    from types import SimpleNamespace
-    from awgbot.bot import keyboards as kb
-    one = [{"gateway": SimpleNamespace(id=1), "device": SimpleNamespace(name="NASPi"),
-            "active": True, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 3}]
-    rows = [[b.text for b in row] for row in kb.gateways_kb(one, can_add=False).inline_keyboard]
-    assert rows[0] == ["NASPi"], "потолок слотов — без «➕ Резерв»"
-
-
-async def test_routing_subsections_render_and_are_empty_when_off(services, monkeypatch):
-    from awgbot.bot.handlers import settings as sh
-    from awgbot.core import settings, config
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True)
-    monkeypatch.setattr(services, "routing_lists_info",
-                        lambda: {"count": 3, "updated_at": None, "age_seconds": 7200,
-                                 "every_hours": 12, "sources": 2})
-    monkeypatch.setattr(services, "routing_grantable_clients", lambda: [])
-    monkeypatch.setattr(services, "routing_monitor_info", lambda: {
-        "probe_seconds": 30, "window": 10, "availability": 50, "need": 5,
-        "standby_minutes": 10, "interval_minutes": 30})
-    # старые подразделы «Списки» и «Мониторинг» ведут в «⚙️ Параметры»
-    for sec in ("rt_lists", "rt_mon", "rt_params"):
-        text, markup = await sh._screen(sec, services)
-        assert text.startswith("⚙️ <b>Параметры РФ-доступа</b>\n"), (sec, text)
-        assert "Списки: 3 записи из 2 источников, 2 ч назад · раз в 12 ч" in text.split("\n"), text
-    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
-    text, markup = await sh._screen("rt_lists", services)
-    assert text == "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён", text
-
-
-async def test_bundle_button_in_the_card_issues_the_file_without_an_intro_screen(services, fake_bot, monkeypatch):
+def test_the_intro_screen_before_the_bundle_has_no_keyboard_anymore():
     """Промежуточного экрана «что произойдёт» перед выпуском конфигурации
-    шлюза больше нет: раздел `rt_bundle` из старого сообщения его не рисует
-    (кнопка карточки слота ведёт прямо на выпуск — эталон adm.gw.card)."""
-    from awgbot.bot.handlers import settings as sh
+    шлюза больше нет: его клавиатура не вернулась (раздел `rt_bundle` из
+    старого сообщения — эталон adm.rt.bundle.old, кнопка карточки слота ведёт
+    прямо на выпуск — эталон adm.gw.card)."""
     from awgbot.bot import keyboards as kb
-    from awgbot.core import settings as st
-    import awgbot.core.config as cfg
-    monkeypatch.setattr(cfg, "ROUTING_ENABLED", True)
-    monkeypatch.setattr(st, "get_bool", lambda key, default=False: True)
     assert not hasattr(kb, "settings_routing_bundle"), "клавиатура упразднённого экрана вернулась"
-    text, _markup = await sh._screen("rt_bundle", services, "1")
-    assert "Что произойдёт" not in text, "промежуточный экран перед выпуском вернулся"
 
 
 # ── админ в ЧУЖОМ разделе: правки уходят тому профилю, чья панель открыта ────
@@ -679,7 +635,7 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     assert state["app.routing.enabled"] is True
     said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert said and said[-1].startswith("⚠️ шлюз РФ-доступа не отвечает при включении"), said
+    assert said, "шлюз лежит при включении, а админ не предупреждён (текст — эталон adm.rt.enable.down)"
 
     # шлюз отвечает — молчим
     await sh.routing_action(_cb(fake_bot, config.ADMIN_ID)[0],

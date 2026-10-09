@@ -1,11 +1,13 @@
 """Свои списки, общие для всех шлюзов: у агента — что правка кнопкой меняет
 на хосте, в очереди канала и в снимке панели («➖» — сразу, устаревшая кнопка
-ничего не трогает, правка уходит серверу тем же нажатием); у основного бота —
-строка числами в карточке слота и судьба канона на шлюзе отдельной строкой.
+ничего не трогает, правка уходит серверу тем же нажатием).
 Экраны агента (хвост «свои: …» панели, строка состояния и подсказки экрана
 «🔀 VPN-транзит», всплывашки «➖» и итоги ввода со всеми хвостами
 синхронизации, итог сообщением при опоздавшем нажатии) — в эталоне
-tests/screens/gateway.txt.
+tests/screens/gateway.txt; строка своих списков в карточке слота основного
+бота (числа канона, судьба на шлюзе: в пути, применён, отказ, поломка, старый
+агент; соседние строки без пустых) — в эталоне tests/screens/admin.txt
+(adm.gw.card.own.*, adm.gw.card.peers, adm.gw.card.overlap).
 
 Цена ошибки: правка, не ушедшая серверу сразу, — соседний шлюз получает домен
 минутами позже; «➖» по устаревшей кнопке убирает соседний домен; числа панели
@@ -17,22 +19,17 @@ from __future__ import annotations
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.bot.callbacks import GwCB, GwSlotCB
+from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
-from awgbot.bot.handlers import settings as sh
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
 from awgbot.runtime import linkclient
 from awgbot.util import gwlink
 from tests.conftest import FakeCallback, FakeMessage, FakeState
-from tests.e2e import test_gateway_slots_ui as _slots_ui
-from tests.e2e.test_gateway_router_peers_ui import _two_lan_slots
-from tests.e2e.test_gateway_slots_ui import _acb, _peer_conf, _screen
 from tests.unit.test_gwlink_idle import PRIV, SN, _Wire
 from tests.unit.test_gwownlists import _Host, _synced
 
 pytestmark = pytest.mark.e2e
-slots = _slots_ui.slots
 
 
 # ── агент ────────────────────────────────────────────────────────────────────
@@ -185,96 +182,7 @@ async def test_removing_by_button_sends_the_edit_at_once(gw, host, fake_bot, mon
     assert [e[1:3] for m in msgs for e in m["ev"]] == [["a.com", "del"]], msgs
 
 
-# ── основной бот: карточка слота ─────────────────────────────────────────────
-
-def _lan_on_index(lines: list[str]) -> int | None:
-    """Строка подсетей с включённым VPN-транзитом: «🗺 … · 🔀 VPN-транзит ✅»."""
-    return next((k for k, ln in enumerate(lines)
-                 if ln.startswith("🗺 ") and ln.endswith(" · 🔀 VPN-транзит ✅")), None)
-
-
-async def _card(services, fake_bot, slot: int):
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
-    return _screen(nav)
-
-
-def _own_block(text: str) -> tuple[str | None, str | None]:
-    """(строка 📋 сразу после строки подсетей с «🔀 VPN-транзит ✅», строка
-    судьбы сразу под ней — без пустой, вычитка 3.1.0)."""
-    lines = text.splitlines()
-    i = _lan_on_index(lines)
-    if i is None:
-        return None, None
-    head = lines[i + 1] if i + 1 < len(lines) and lines[i + 1].startswith("📋") else None
-    note = (lines[i + 2] if head and i + 2 < len(lines)
-            and lines[i + 2].startswith(("⏳", "⚠️")) else None)
-    return head, note
-
-
-@pytest.fixture()
-def lan_slots(services, slots, monkeypatch):
-    _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-
-
-async def test_the_slot_card_counts_the_lists_and_follows_the_canon(services, lan_slots, fake_bot):
-    """Карточка: только числа канона (домены на экран ВПС не идут) и что с ним
-    на шлюзе — уйдёт, отправлен, применён, отказ. Кнопок столько же."""
-    services.gwlink_own_in(1, "rx", [[i + 1, f"d{i}.com", "vpn", False] for i in range(5)]
-                           + [[6, "shop.ru", "ru", False]])
-    services.gwlink_session_opened(2, "3.1.0", 2)
-    services.gwlink_own_hello_in(2, True)
-    text, labels = await _card(services, fake_bot, 2)
-    head, note = _own_block(text)
-    assert head == "📋 Свои списки: 5 в туннель, 1 напрямую", text
-    assert note == "⏳ Синхронизация с другими шлюзами…", text
-    assert "d0.com" not in text and "shop.ru" not in text, "домены на экране ВПС"
-    digest = services.gwlink_own_for(services.db.gateway(2))[0]
-    services.gwlink_own_ack_in(2, {"ok": True, "hash": digest, "n": 6})
-    text, labels_applied = await _card(services, fake_bot, 2)
-    assert _own_block(text) == ("📋 Свои списки: 5 в туннель, 1 напрямую", None), text
-    assert labels_applied == labels, "строка своих списков добавила или убрала кнопки"
-    services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": "<b>dnsmasq</b> & rc=1"})
-    _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Шлюз Pi2 не смог принять списки: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", note
-    services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": ""})
-    _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Шлюз Pi2 не смог принять списки", "висящее двоеточие без ошибки"
-
-
-async def _failed_with(services, fake_bot, error: str) -> str | None:
-    """Канон отправлен на слот 2, шлюз ответил отказом с этим текстом — строка
-    судьбы в карточке."""
-    services.gwlink_own_in(1, "rx", [[1, "d0.com", "vpn", False]])
-    services.gwlink_session_opened(2, "3.1.0", 2)
-    services.gwlink_own_hello_in(2, True)
-    digest = services.gwlink_own_for(services.db.gateway(2))[0]
-    services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": error})
-    return _own_block((await _card(services, fake_bot, 2))[0])[1]
-
-
-async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, lan_slots, fake_bot):
-    """Файл своих списков не записался на малине — поломка, не отказ: «Шлюз
-    «X»: ошибка записи файла: …» без «не смог принять». Иначе человек ищет
-    плохой домен в списке, а чинить нужно диск шлюза."""
-    note = await _failed_with(services, fake_bot, "ошибка записи файла: нет места на диске")
-    assert note == "⚠️ Шлюз Pi2: ошибка записи файла: нет места на диске", note
-
-
-async def test_a_real_refusal_of_the_lists_keeps_its_wording(services, lan_slots, fake_bot):
-    """Отказ скрипта (не поломка) — «не смог принять списки: …»."""
-    note = await _failed_with(services, fake_bot, "скрипт не ответил за 150 с")
-    assert note == "⚠️ Шлюз Pi2 не смог принять списки: скрипт не ответил за 150 с", note
-
-
-async def test_a_breakage_text_of_the_lists_is_escaped(services, lan_slots, fake_bot, slots):
-    """Текст с малины и имя устройства — в разметке ВПС экранированы ровно раз."""
-    _, _, pi2 = slots
-    services.rename_device(pi2.id, "Pi & <2>")
-    note = await _failed_with(services, fake_bot, "ошибка записи файла: <i>&")
-    assert note == "⚠️ Шлюз Pi &amp; &lt;2&gt;: ошибка записи файла: &lt;i&gt;&amp;", note
-
+# ── основной бот: строка своих списков без имени шлюза ──────────────────────
 
 def test_the_lists_breakage_branch_without_a_name_reads_whole():
     from awgbot.bot.texts.routing import own_lists_line
@@ -282,90 +190,6 @@ def test_the_lists_breakage_branch_without_a_name_reads_whole():
                            "error": "ошибка записи файла: диск только для чтения"})
     assert line == ("📋 Свои списки: 1 в туннель\n⚠️ Шлюз: ошибка записи файла: "
                     "диск только для чтения"), line
-
-
-async def test_an_agent_that_does_not_know_sync_is_told_to_update_with_a_bot_link(services, lan_slots, fake_bot):
-    services.gwlink_session_opened(2, "3.0.2", 2)
-    services.gwlink_own_hello_in(2, False)
-    services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
-    _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == ('⚠️ Для синхронизации необходимо обновить шлюз Pi2 (бот: '
-                    '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), note
-
-
-def _after_note(text: str) -> str:
-    """Строка сразу под строкой судьбы своих списков."""
-    lines = text.splitlines()
-    i = _lan_on_index(lines) + 2
-    assert lines[i].startswith(("⏳", "⚠️")), text
-    return lines[i + 1]
-
-
-@pytest.mark.parametrize("peer_access", [True, False])
-async def test_the_own_lists_note_is_followed_by_the_next_block_without_a_gap(services, slots, fake_bot,
-                                                                              monkeypatch, peer_access):
-    """Карточка — плотный список строк без пустых: под строкой судьбы своих
-    списков сразу «↔️ Связь подсетей ✅» (связь включена) или «подробнее».
-    Пустая строка посреди карточки — дыра на экране."""
-    store = _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    store["app.routing.peer_nets.enabled"] = peer_access
-    text, _ = await _card(services, fake_bot, 2)
-    assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
-    assert "" not in text.splitlines(), f"пустая строка посреди карточки:\n{text}"
-    after = _after_note(text)
-    if peer_access:
-        assert after == "↔️ Связь подсетей ✅", text
-    else:
-        assert after.startswith("<blockquote"), text
-
-
-async def test_the_overlap_warning_follows_the_own_lists_note_on_its_own_line(services, slots, fake_bot,
-                                                                              monkeypatch):
-    """Подсети слотов пересекаются, связи подсетей нет: под строкой судьбы
-    своих списков сразу своей строкой «⚠️ … пересекается…» — два
-    предупреждения не слипаются в одно."""
-    store = _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    services.gateway_set_home_subnets(2, "192.168.1.0/24")
-    store["app.routing.peer_nets.enabled"] = False
-    text, _ = await _card(services, fake_bot, 2)
-    assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
-    after = _after_note(text)
-    assert after.startswith("⚠️ <code>192.168.1.0/24</code> пересекается с подсетью «NASPi»: "), text
-
-
-async def test_the_own_lists_line_is_not_drawn_when_sync_is_off(services, slots, fake_bot, monkeypatch):
-    """Карточка отдала «off» (синхронизация у слота не действует): строки
-    «📋 Свои списки» с нулями нет."""
-    store = _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    store["app.routing.peer_nets.enabled"] = True
-    monkeypatch.setattr(services, "gwlink_own_card", lambda gw: {"vpn": 0, "ru": 0, "state": "off", "error": ""})
-    text, _ = await _card(services, fake_bot, 2)
-    assert "📋" not in text, text
-    lines = text.splitlines()
-    assert lines[_lan_on_index(lines) + 1] == "↔️ Связь подсетей ✅", f"под подсетями лишняя строка:\n{text}"
-
-
-async def test_applied_own_lists_are_followed_by_peer_access_without_a_gap(services, slots, fake_bot,
-                                                                          monkeypatch):
-    """Канон на шлюзе применён — строки судьбы нет, и «↔️ Связь подсетей ✅»
-    идёт сразу под «📋 Свои списки»."""
-    store = _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    store["app.routing.peer_nets.enabled"] = True
-    services.gwlink_own_in(1, "rx", [[1, "d0.com", "vpn", False]])
-    services.gwlink_session_opened(2, "3.1.0", 2)
-    services.gwlink_own_hello_in(2, True)
-    digest = services.gwlink_own_for(services.db.gateway(2))[0]
-    services.gwlink_own_ack_in(2, {"ok": True, "hash": digest, "n": 1})
-    text, _ = await _card(services, fake_bot, 2)
-    lines = text.splitlines()
-    i = _lan_on_index(lines)
-    assert lines[i + 1] == "📋 Свои списки: 1 в туннель", text
-    assert lines[i + 2] == "↔️ Связь подсетей ✅", \
-        f"между применёнными списками и связью подсетей лишняя строка:\n{text}"
 
 
 # ── панель агента после правки своих списков (вычитка 3.1.0) ─────────────────

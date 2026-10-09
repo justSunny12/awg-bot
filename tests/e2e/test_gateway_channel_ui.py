@@ -2,10 +2,14 @@
 Экраны канала до шлюза: строка «🔗 Упр. канал …» в карточке слота и
 предупреждения открытыми строками под ней — вместе со сверкой выданного с
 установленным. Спрашивать шлюз по кнопке (свежий снимок, диагностика) карточка
-больше не умеет — показывает то, что шлюз прислал сам. Карточка канала, который
-ещё не поднимался, и строка канала в панели агента — в эталонах экранов
-(tests/screens/admin.txt, gateway.txt); здесь — состояния канала, которых в
-эталонах нет.
+больше не умеет — показывает то, что шлюз прислал сам. Карточка слота во всех
+состояниях канала (жив, лежит с возрастом снимка, расхождения, отказ шлюза,
+обвязка, поколение, связь подсетей, часы, выход наружу, подсети соседей) и
+диалоги тумблеров при живом и лежащем канале — в эталоне
+tests/screens/admin.txt (adm.gw.card.ch.*, adm.gw.lan_*.ch.*,
+adm.gw.peer_*.ch.*), строка канала в панели агента — в gateway.txt; здесь —
+что меняется в слоте и настройках, напоминания о перевыпуске и строки канала
+на входе функций.
 
 Экрана «Конфигурация шлюза» перед выпуском файла больше нет (вычитка 3.1.0):
 файл выпускается из карточки сразу. Всё, что человеку нужно для решения,
@@ -106,202 +110,15 @@ async def _card(services, fake_bot):
 
 # ── карточка слота ───────────────────────────────────────────────────────────
 
-async def test_a_live_channel_shows_one_line_and_no_request_buttons(services, slot, fake_bot):
-    """Вся видимая польза канала: человек открывает карточку и видит не догадку,
-    а ответ — одной строкой «🔗 Упр. канал 🟢 · v3.1.0 · 🟢 конфиг актуален»;
-    выход наружу — под «подробнее». Кнопок «Обновить с шлюза» и «Диагностика»
-    нет: сервер ничего не спрашивает у шлюза по нажатию."""
+async def test_a_live_channel_does_not_replace_the_link_ping(services, slot, fake_bot):
+    """Канал жив, а пинг в карточке меряется по линку, как и без канала. Сама
+    карточка с живым каналом (одна строка, выход наружу под «подробнее», без
+    кнопок запроса к шлюзу) — эталон adm.gw.card.ch.live."""
     _snap(services)
-    text, labels = await _card(services, fake_bot)
-    lines = text.split("\n")
-    assert "🔗 Упр. канал 🟢 · v3.1.0 · 🟢 конфиг актуален" in lines, text
-    assert "Версия агента" not in text and "Канал до шлюза" not in text, "прежние три строки вернулись"
-    assert lines[-1].startswith("<blockquote") and "выход наружу: сервер — есть, шлюз — есть" in lines[-1]
-    assert not [b for b in labels if "Обновить с шлюза" in b or "Диагностика" in b], (
-        f"снятые кнопки запроса к шлюзу вернулись в карточку: {labels}")
-    assert lines[1].endswith(" · 61 мс") and services.pings == [1], (
+    await _card(services, fake_bot)
+    assert services.pings == [1], (
         "пинг меряет путь ядро ↔ ядро, отклик канала — занятость процесса агента; "
         "подменить первое вторым значило бы врать в карточке")
-
-
-async def test_a_dead_channel_shows_the_last_known_picture_with_its_age(services, slot, fake_bot):
-    """Снимок при падении канала не выбрасываем — последнее известное полезнее
-    пустого экрана. Но возраст обязан стоять рядом: иначе старое читается как
-    настоящее."""
-    _snap(services, online=False)
-    services.gwlink_session_closed(1)
-    services.db.set_state("gwlink_snap_at_1", "2026-09-22T18:00:00+03:00")
-    text, labels = await _card(services, fake_bot)
-    line = next(ln for ln in text.split("\n") if ln.startswith("🔗 Упр. канал"))
-    assert line.startswith("🔗 Упр. канал ⚪ нет связи"), line
-    assert " · v3.1.0 · " in line, "версию агента из последнего снимка показываем и при лежащем канале"
-    assert "🟢 конфиг актуален (по снимку" in line and line.endswith("назад)"), (
-        "возраст снимка не показан — старое рисуется как настоящее")
-
-
-def _snap_age(services, hours: int) -> None:
-    """Снимок принят `hours` часов назад по часам ВПС."""
-    import datetime
-    from awgbot.util import timeutil
-    at = timeutil.now() - datetime.timedelta(hours=hours, minutes=5)
-    services.db.set_state("gwlink_snap_at_1", timeutil.to_iso(at))
-
-
-async def test_a_drifted_configuration_is_listed_on_the_card_with_the_snapshot_age(
-        services, slot, fake_bot):
-    """Главный ответ канала: что реально стоит на шлюзе. Разошлось, а канал
-    молчит — доставить сейчас некому, файл остаётся первым путём, и карточка
-    (единственное место, где это видно) перечисляет пункты. Возраст снимка —
-    в тех же скобках: выпустить файл по устаревшей сверке значит гадать."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
-                            "resolver": ""}, online=False)
-    services.gwlink_session_closed(1)
-    _snap_age(services, 2)
-    text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Конфигурация на шлюзе расходится с выданной (2 пункта, по снимку 2 ч назад):\n"
-            "   • локальные подсети: у сервера <code>192.168.68.0/24</code>, на шлюзе <code>192.168.1.0/24</code>\n"
-            "   • резолвер: у сервера <code>10.9.1.1</code>, на шлюзе «—»") in text, text
-    assert "уходят каналом" not in text, "канал лежит, а карточка обещает доставку"
-    assert "подробности в «Конфигурация шлюза»" not in text, "ссылка на упразднённый экран"
-
-
-async def test_the_drift_items_from_the_gateway_are_escaped_on_the_card(services, slot, fake_bot):
-    """Значение «на шлюзе» приехало с чужой машины: разметка в нём обязана
-    лечь текстом, иначе Telegram отвергнет карточку целиком."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "<b>x</b> & y"}, online=False)
-    services.gwlink_session_closed(1)
-    text, _ = await _card(services, fake_bot)
-    assert "на шлюзе <code>&lt;b&gt;x&lt;/b&gt; &amp; y</code>" in text, text
-    assert "<b>x</b>" not in text
-
-
-async def test_a_drift_with_a_live_channel_is_shown_as_on_its_way(services, slot, fake_bot):
-    """Канал жив — расхождение уедет само ближайшим сообщением. Гнать человека
-    перевыпускать файл значит заставить его делать руками то, что канал сделает
-    за секунды, а после — разбираться, какое из двух применений победило."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
-                            "resolver": ""})
-    text, _ = await _card(services, fake_bot)
-    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят "
-            "каналом и применятся сами") in text
-    assert "⚠️ Конфигурация на шлюзе расходится" not in text
-
-
-async def test_a_refused_delivery_is_said_plainly_on_the_card(services, slot, fake_bot):
-    """Шлюз получил настройки и не смог применить — откатился. «Уходят каналом»
-    здесь было бы ложью навсегда: этот набор в сессии больше не пошлют. Человек
-    должен увидеть причину, а она пришла с чужой машины — только текстом."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"})
-    services.gwlink_ack_in(1, {"ok": False, "error": "<b>LAN-интерфейс</b> не найден"})
-    text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Шлюз не применил настройки с сервера: &lt;b&gt;LAN-интерфейс&lt;/b&gt; не найден "
-            "— вернул прежние") in text
-    assert "<b>LAN-интерфейс</b>" not in text, "разметка с малины легла в карточку как есть"
-    assert "уходят каналом" not in text
-
-
-async def test_an_old_refusal_does_not_hide_a_dead_channel(services, slot, fake_bot):
-    """Отказ из прошлой сессии, а канал уже лежит: главное сейчас — что доставить
-    нечем. Строка возвращается к «расходится» с пунктами и возрастом снимка."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"},
-          online=False)
-    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1"})
-    services.gwlink_session_closed(1)
-    text, _ = await _card(services, fake_bot)
-    assert "⚠️ Конфигурация на шлюзе расходится с выданной (1 пункт, по снимку " in text, text
-    assert "не применил настройки" not in text
-
-
-async def test_a_successful_delivery_leaves_no_trace_of_the_refusal(services, slot, fake_bot):
-    """Следующее применение прошло — прежний отказ больше не висит в карточке."""
-    _snap(services)
-    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1"})
-    services.gwlink_ack_in(1, {"ok": True, "error": ""})
-    text, _ = await _card(services, fake_bot)
-    assert "🔗 Упр. канал 🟢 · v3.1.0 · 🟢 конфиг актуален" in text.split("\n")
-    assert "не применил" not in text
-
-
-OLD_PLUMBING = "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации"
-NO_PLUMBING = "⚠️ Обвязка шлюза не развёрнута — перевыпусти файл конфигурации"
-
-
-async def test_old_plumbing_on_the_gateway_is_called_out_on_the_card(services, slot, fake_bot):
-    """Обвязка старого образца или снятая таблица — ответ на вопрос, который ВПС
-    до канала задавал наугад. Экрана выпуска больше нет — человек читает это в
-    карточке, откуда и выпускает файл; строка идёт после строки конфигурации."""
-    _snap(services, plumbing_gen="old", link_contract="")
-    text, _ = await _card(services, fake_bot)
-    assert "🔗 Упр. канал 🟢 · v3.1.0 · 🟢 конфиг актуален\n" + OLD_PLUMBING in text, \
-        "предупреждение — открытой строкой сразу под строкой канала"
-    assert NO_PLUMBING not in text
-
-    _snap(services, plumbing_gen="none")
-    text, _ = await _card(services, fake_bot)
-    assert NO_PLUMBING in text and OLD_PLUMBING not in text, text
-
-
-async def test_new_plumbing_draws_no_plumbing_line(services, slot, fake_bot):
-    """Обвязка нового образца — строки нет: предупреждение без повода учит
-    пропускать предупреждения."""
-    for gen in ("new", ""):
-        _snap(services, plumbing_gen=gen)
-        text, _ = await _card(services, fake_bot)
-        assert "Обвязка шлюза" not in text, (gen, text)
-
-
-async def test_a_snapshot_without_the_installed_configuration_is_not_a_green_tick(
-        services, slot, fake_bot):
-    """Снимок пришёл, а блока «что применено из конфигурации» в нём нет — так
-    выглядит и старый агент, и урезанный чужой снимок. Пустой список расхождений
-    здесь значит «шлюз не сообщал, что у него стоит», а не «всё сошлось»: ровно
-    об этом говорит докстринг gwlink_config_drift и прежний вариант строки
-    «⚙️ Конфигурация: шлюз ещё не сообщал».
-
-    Цена ошибки — зелёная галочка там, где сверки не было: человек видит
-    «конфигурация совпадает» и не перевыпускает файл, хотя на шлюзе может стоять
-    что угодно. Напоминание о перевыпуске при этом продолжает приходить, то есть
-    экраны бота противоречат друг другу."""
-    services.gwlink_snapshot_in(1, {"agent_version": "3.0.0", "egress_ok": True,
-                                    "ts": "2026-09-22T20:00:00+03:00", "rev": 1}, 1, True)
-    services.gwlink_session_opened(1, "3.0.0", 1)
-    text, _ = await _card(services, fake_bot)
-    assert "🔗 Упр. канал 🟢 · v3.0.0 · ⚙️ конфиг: шлюз ещё не сообщал" in text.split("\n"), (
-        "версию показать можно; сверки не было — и сказано почему, без зелёной галочки")
-    assert "конфиг актуален" not in text
-
-    services.gwlink_snapshot_in(1, {"plumbing_gen": "old", "rev": 2}, 2, False)
-    text, _ = await _card(services, fake_bot)
-    assert "Обвязка шлюза" not in text, (
-        "снимок без сведений об установленном — и строку об обвязке рисовать не на чем")
-
-
-async def test_a_mismatched_awg_generation_is_called_out(services, slot, fake_bot):
-    """Поколение ядра разъехалось между концами линка — это про «что стоит на
-    той стороне», и заметить это должен человек, а не пользователь, у которого
-    перестал ходить трафик."""
-    from awgbot.infra import awglock
-    _snap(services, awg_generation=7)
-    text, _ = await _card(services, fake_bot)
-    assert f"⚠️ Поколение AWG на шлюзе 7, у сервера {awglock.generation()}" in text.split("\n"), text
-
-
-async def test_html_from_the_gateway_is_escaped_on_the_screen(services, slot, fake_bot):
-    """Снимок приходит с малины, а она может быть скомпрометирована. Разметка в
-    значении обязана доехать до экрана текстом, иначе карточка ломается или
-    показывает чужую ссылку как свою."""
-    _snap(services, agent_version="<b>3.1.0</b>")
-    text, _ = await _card(services, fake_bot)
-    assert "&lt;b&gt;3.1.0&lt;/b&gt;" in text and "<b>3.1.0</b>" not in text
-
-
-async def test_a_long_agent_version_from_the_gateway_is_cut(services, slot, fake_bot):
-    """Версия агента — строка с чужой машины: без предела она раздувает
-    строку канала до лимита сообщения."""
-    _snap(services, agent_version="3.1.0-" + "x" * 200)
-    text, _ = await _card(services, fake_bot)
-    line = next(ln for ln in text.split("\n") if ln.startswith("🔗 Упр. канал"))
-    assert "x" * 26 in line and "x" * 27 not in line, "версия агента длиннее 32 знаков"
 
 
 # ── напоминания о перевыпуске ────────────────────────────────────────────────
@@ -365,30 +182,28 @@ def test_a_channel_that_never_came_up_does_not_silence_the_reminder(services, sl
 
 # ── этап 4: тумблеры при живом канале ────────────────────────────────────────
 
-async def test_the_lan_mode_dialog_does_not_ask_for_a_reissue_while_the_channel_is_up(
+async def test_the_lan_mode_turns_off_with_a_live_channel(
         services, slot, fake_bot):
     """Канал доставит смену режима сам — гнать человека перевыпускать файл значит
-    заставить его делать руками то, что уже едет."""
+    заставить его делать руками то, что уже едет (вопрос и всплывашка —
+    эталоны adm.gw.lan_ask.ch.live, adm.gw.lan_yes.ch.live). Режим снят."""
     _snap(services)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
-    text, _ = _screen(nav)
-    assert "перевыпустить" not in text.lower(), "канал доставит сам, а диалог гонит перевыпускать"
+    assert services.db.gateway(1).lan_mode == 1, "вопрос уже выключил режим"
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
-    assert services.db.gateway(1).lan_mode == 0
-    assert cb.answers[-1] == ("VPN-транзит выключен: применится автоматически по управляющему каналу", True)
+    assert services.db.gateway(1).lan_mode == 0, "режим не выключен"
 
 
-async def test_the_lan_mode_dialog_asks_for_a_reissue_when_the_channel_is_down(
+async def test_the_lan_mode_turns_off_without_a_channel(
         services, slot, fake_bot):
+    """Канала нет — режим всё равно снимается, а вопрос и всплывашка говорят
+    о перевыпуске (эталоны adm.gw.lan_ask.ch.dead, adm.gw.lan_yes.ch.dead)."""
     _snap(services, online=False)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
-    text, _ = _screen(nav)
-    assert "Выключение потребует перевыпуска конфигурации шлюза" in text
-    assert "по каналу" not in text
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
-    assert cb.answers[-1] == ("VPN-транзит выключен: перевыпусти конфигурацию шлюза", True)
+    assert services.db.gateway(1).lan_mode == 0, "режим не выключен"
 
 
 def _peer_store(monkeypatch, on=False):
@@ -399,33 +214,19 @@ def _peer_store(monkeypatch, on=False):
     return store
 
 
-async def test_the_peer_toggle_always_asks_for_a_reissue_even_with_a_live_channel(
+async def test_the_peer_toggle_turns_on_with_a_live_channel(
         services, slot, fake_bot, monkeypatch):
     """Подсети соседей живут на шлюзе ещё и в конфиге линка, а его везёт только
     файл. Пообещай диалог «применят сами» — человек не перевыпустит, и доступ
-    между подсетями не заработает при зелёном канале."""
+    между подсетями не заработает при зелёном канале (вопрос и всплывашка —
+    эталоны adm.gw.peer_ask.ch.live, adm.gw.peer_yes.ch.live)."""
     store = _peer_store(monkeypatch)
     _snap(services)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_peer_ask(cb, services)
-    text = _screen(nav)[0]
-    assert "перевыпусти" in text and "по каналу" not in text
+    assert store["app.routing.peer_nets.enabled"] is False, "вопрос уже включил связь"
     await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes"), services)
-    assert store["app.routing.peer_nets.enabled"] is True
-    assert cb.answers[-1] == ("Подсети связаны: перевыпусти конфигурацию каждого шлюза", True)
-
-
-async def test_the_lan_mode_answer_still_asks_for_a_reissue_for_the_neighbour_subnets(
-        services, slot, fake_bot, monkeypatch):
-    """Режим доедет каналом, а подсети соседей при включённом доступе между
-    подсетями меняются у обоих шлюзов и живут в конфиге линка — это файлом."""
-    _peer_store(monkeypatch, on=True)
-    _snap(services)
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
-    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
-    assert cb.answers[-1] == ("VPN-транзит выключен: применится автоматически по управляющему каналу; "
-                              "для связи подсетей перевыпусти конфигурацию каждого шлюза", True)
+    assert store["app.routing.peer_nets.enabled"] is True, "связь подсетей не включена"
 
 
 def _neighbour(services, monkeypatch):
@@ -440,43 +241,15 @@ def _neighbour(services, monkeypatch):
     assert services.gateway_peer_nets(1) == ["192.168.70.0/24"], "сценарий собран не так"
 
 
-async def test_neighbour_subnets_out_of_date_are_not_promised_to_the_channel(
-        services, slot, fake_bot, monkeypatch):
+def test_neighbour_subnets_are_not_sent_over_the_channel(services, slot, monkeypatch):
     """Включили доступ между подсетями, канал жив, конфигурацию не перевыпустили.
-    Канал подсети соседей не везёт (они живут и в конфиге линка), значит
-    карточка не вправе говорить «уходят каналом и применятся
-    сами» — иначе человек ждёт того, что не приедет никогда."""
+    Канал подсети соседей не везёт (они живут и в конфиге линка) — доставлять
+    ему нечего; карточка поэтому не обещает «уходят каналом» (эталоны
+    adm.gw.card.ch.neighbour.*)."""
     _neighbour(services, monkeypatch)
     _snap(services)                                     # на шлюзе подсетей соседей ещё нет
     assert services.gwlink_settings_due(services.db.gateway(1)) is None, (
-        "канал их и не везёт — сценарий про экран")
-    text, _ = await _card(services, fake_bot)
-    assert "уходят каналом и применятся сами" not in text, (
-        "карточка обещает доставку каналом того, что канал не везёт")
-    assert ("⚠️ Локальные подсети других шлюзов неактуальны — перевыпусти "
-            "конфигурацию шлюза") in text
-
-
-async def test_neighbour_subnets_out_of_date_are_listed_when_the_channel_is_down(
-        services, slot, fake_bot, monkeypatch):
-    """Канал лежит, подсетей соседа на шлюзе нет — карточка называет пункт
-    (подробности экрана выпуска переехали сюда)."""
-    _neighbour(services, monkeypatch)
-    _snap(services, online=False)
-    services.gwlink_session_closed(1)
-    text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Конфигурация на шлюзе расходится с выданной (1 пункт, по снимку только что):\n"
-            "   • локальные подсети других шлюзов: у сервера <code>192.168.70.0/24</code>, на шлюзе «—»"
-            ) in text, text
-
-
-async def test_a_mixed_drift_says_what_the_channel_brings_and_what_needs_the_file(
-        services, slot, fake_bot, monkeypatch):
-    _neighbour(services, monkeypatch)
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"})
-    text, _ = await _card(services, fake_bot)
-    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят каналом "
-            "и применятся сами; для подсетей других шлюзов перевыпусти конфигурацию шлюза") in text
+        "подсети соседей ушли бы каналом, а их везёт только файл")
 
 
 def test_a_live_channel_does_not_silence_the_reminder_about_neighbour_subnets(
@@ -492,26 +265,7 @@ def test_a_live_channel_does_not_silence_the_reminder_about_neighbour_subnets(
     assert services.gw_bundle_drift_notes() == [], "одно напоминание на расхождение"
 
 
-# ── вердикт подсетей соседей на карточке ─────────────────────────────────────
-
-async def test_missing_neighbour_subnets_on_the_gateway_are_named_on_the_card(services, slot, fake_bot):
-    """Доступ между подсетями включают тумблером на ВПС. Шлюз сообщил, что в
-    его таблице нет подсетей соседа, — это единственный вердикт, который едет с
-    малины, и едет ради этой строки: без неё отказ функции беспричинен."""
-    _snap(services, peer_nets={"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]})
-    text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Связь подсетей: на шлюзе нет <code>192.168.70.0/24</code>, <code>192.168.71.0/24</code>"
-            " — перевыпусти конфигурацию шлюза") in text.split("\n"), text
-
-
-async def test_a_healthy_neighbour_subnets_verdict_draws_nothing(services, slot, fake_bot):
-    _snap(services, peer_nets={"ok": True, "missing": []})
-    text, _ = await _card(services, fake_bot)
-    assert "⚠️ Связь подсетей" not in text, "исправная функция нарисована как отказ"
-    _snap(services)                                  # функции на шлюзе нет — поля нет
-    text, _ = await _card(services, fake_bot)
-    assert "⚠️ Связь подсетей" not in text
-
+# ── строки канала на входе функций: экранирование и пределы ──────────────────
 
 def test_the_neighbour_subnets_line_escapes_what_the_gateway_sent():
     """Имена подсетей приехали с чужой машины: разметка в них ломает сообщение

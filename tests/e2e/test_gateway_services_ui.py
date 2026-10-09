@@ -1,175 +1,22 @@
-"""Сервисы соседних сетей на экранах:
-строка в карточке слота основного бота — «🗂 SMB: свои — N, извне — M»
-(нулевая часть не выводится), а состояние на шлюзе — строкой сразу под ней;
-строка про SMB в диалоге «↔️ Связь подсетей». Раскладка экранов, диалог
-включения связи подсетей и строка SMB агента в панели и на экране
-«🔀 VPN-транзит» во всех состояниях — в эталонах экранов
-(tests/screens/admin.txt, gateway.txt); здесь — судьба записей в карточке
-слота, выключение и строка SMB без нулей.
+"""Сервисы соседних сетей на экранах: строка «🗂 SMB: свои — N, извне — M»
+(нулевая часть не выводится) и состояние записей на шлюзе строкой сразу под
+ней — функциями текстов, без имени шлюза и в краевых случаях. Строка в
+карточке слота основного бота во всех состояниях (в пути, доступны, отказ с
+экранированной ошибкой и без неё, поломка, перевыпуск, экранированное имя,
+«не найдены», связь подсетей выключена) и диалог выключения связи подсетей —
+в эталоне tests/screens/admin.txt (adm.gw.card.smb.*, adm.gw.card.peers,
+adm.gw.peer_ask.off); раскладка экранов агента — в tests/screens/gateway.txt.
 
-Цена ошибки: имя с малины на экране ВПС — чужой текст в разметке сервера;
-неэкранированная ошибка шлюза ломает всю карточку (Telegram отвергает
-сообщение с битой разметкой); «доступны», когда шлюз отверг записи, —
-человек ищет серверы в Finder, которых там нет.
+Цена ошибки: «шлюза шлюза» и двойной пробел в строке без имени; «свои — 0»
+читается как поломка там, где серверов просто нет; поломка диска на малине,
+названная отказом, отправляет человека искать ошибку в записях.
 """
 from __future__ import annotations
 
 import pytest
 
-from awgbot.bot.callbacks import GwSlotCB
-from awgbot.bot.handlers import settings as sh
-from awgbot.domain import gwservices
-from tests.conftest import FakeState
-from tests.e2e import test_gateway_slots_ui as _slots_ui
-from tests.e2e.test_gateway_router_peers_ui import _two_lan_slots
-from tests.e2e.test_gateway_slots_ui import _acb, _peer_conf, _screen
-
 pytestmark = pytest.mark.e2e
-slots = _slots_ui.slots
-NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"}
-H_NAS = gwservices.feed_hash([NAS])
-
-
-def _snap(peers: str, version: str = "3.1.0") -> dict:
-    return {"bundle": {"lan_mode": "1", "home_subnets": "192.168.68.0/24", "resolver": "10.9.1.1",
-                       "peer_home_nets": peers, "admin_ips": "10.8.1.2"},
-            "agent_version": version, "link_contract": "1", "rev": 1}
-
-
-@pytest.fixture()
-def peers(services, slots, monkeypatch):
-    """Два слота с доступом между подсетями: 1 — 192.168.1.0/24, 2 — 192.168.68.0/24."""
-    store = _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    store["app.routing.peer_nets.enabled"] = True
-    return store
-
-
-def _svc_line(text: str) -> str | None:
-    return next((ln for ln in text.splitlines() if ln.startswith("🗂")), None)
-
-
-async def _card(services, fake_bot, slot: int):
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
-    return _screen(nav)
-
-
-def _publish(services, peers: str = "192.168.1.0/24", version: str = "3.1.0") -> None:
-    """Слот 1 назвал сервер, был на связи; слот 2 — снимок с тем, что у него стоит."""
-    services.gwlink_services_in(1, [NAS])
-    services.gwlink_session_closed(1)
-    services.gwlink_snapshot_in(2, _snap(peers, version), 1, True)
-
-
 HEAD = "🗂 SMB: извне — 1"
-
-
-def _svc_note(text: str) -> str | None:
-    """Строка о судьбе записей на шлюзе: сразу под строкой 🗂, без пустой
-    (вычитка 3.1.0), с ⏳ или ⚠️ в начале; дальше в карточке другие блоки —
-    они не в счёт."""
-    lines = text.splitlines()
-    i = next((k for k, ln in enumerate(lines) if ln.startswith("🗂")), None)
-    if i is None or i + 1 >= len(lines):
-        return None
-    return lines[i + 1] if lines[i + 1].startswith(("⏳", "⚠️")) else None
-
-
-async def test_the_slot_card_counts_services_and_follows_their_fate(services, peers, fake_bot):
-    """Карточка получателя: сколько SMB у него и сколько пришло от соседей, и
-    что с ними — отправлены, доступны, не приняты. Имена на экран ВПС не идут."""
-    _, labels_before = await _card(services, fake_bot, 2)
-    _publish(services)
-    text, labels = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD, text
-    assert _svc_note(text) == "⏳ Синхронизация с другими шлюзами…", (
-        f"записи ушли на шлюз, а карточка молчит, где они: {text}")
-    assert "NASPi5" not in text and "naspi5" not in text, "имя с малины на экране ВПС"
-    assert labels == labels_before, "строка сервисов добавила или убрала кнопки"
-    services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": H_NAS, "n": 1})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD + " · 🟢 доступны", _svc_line(text)
-    assert "⏳ Синхронизация с другими шлюзами" not in text and "⚠️ Шлюз" not in text, (
-        f"записи на шлюзе, а карточка всё ещё пишет про их путь: {text}")
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
-        f"ошибка шлюза не экранирована или потерялась: {_svc_note(text)}")
-    text1, _ = await _card(services, fake_bot, 1)
-    assert _svc_line(text1) == "🗂 SMB: свои — 1", "нулевая часть «извне» не выводится"
-    assert _svc_note(text1) is None, f"от соседей ничего — сообщать о судьбе нечего: {text1}"
-
-
-async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, fake_bot):
-    """Шлюз отказал, не объяснив, — «не смог принять записи» без двоеточия в
-    конце: висящее «: » читалось бы как обрезанное сообщение."""
-    _publish(services)
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи", text
-
-
-@pytest.mark.parametrize("peers_applied,version,note", [
-    ("", "3.1.0", "⚠️ Необходим перевыпуск конфигурации шлюза Pi2"),
-])
-async def test_the_slot_card_says_why_services_are_not_there_yet(services, peers, fake_bot,
-                                                                 peers_applied, version, note):
-    """Подсети соседей на шлюзе ещё не применены — «необходим перевыпуск», а не
-    «отправлены», которые не дойдут никогда. Агента ниже минимума 3.2.0 на
-    связи не бывает — по версии из снимка карточка больше не судит."""
-    _publish(services, peers=peers_applied, version=version)
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD, text
-    assert _svc_note(text) == note, (
-        f"у соседа сервер есть, а карточка не говорит, почему его нет на шлюзе: {text}")
-
-
-async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fake_bot, slots):
-    """Имя устройства шлюза — свободный текст админа. В заголовке карточки оно
-    экранировано; в строке о судьбе записей должно быть тем же, а не
-    «&amp;amp;» — иначе человек видит в чате мусор вместо имени."""
-    _, _, pi2 = slots
-    services.rename_device(pi2.id, "Pi & <2>")
-    _publish(services)
-    # «в пути» имени больше не называет — имя остаётся в отказе шлюза
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
-    text, _ = await _card(services, fake_bot, 2)
-    assert text.splitlines()[0].startswith("🛰 <b>Pi &amp; &lt;2&gt;</b> — "), text.splitlines()[0]
-    assert _svc_note(text) == "⚠️ Шлюз Pi &amp; &lt;2&gt; не смог принять записи", (
-        f"имя шлюза экранировано дважды: {_svc_note(text)}")
-
-
-async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, peers, fake_bot):
-    """Файл записей не записался на малине (диск полон) — это поломка на
-    шлюзе, а не отказ принять записи: карточка пишет «Шлюз «X»: ошибка записи
-    файла: …», без «не смог принять», иначе человек ищет, что не так с
-    записями, а чинить нужно диск. Настоящий отказ (dnsmasq) — прежней фразой."""
-    _publish(services)
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
-                                             "ошибка записи файла: нет места на диске"})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == "⚠️ Шлюз Pi2: ошибка записи файла: нет места на диске", _svc_note(text)
-    assert "не смог принять" not in text, f"поломка на шлюзе названа отказом: {text}"
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "не пройдена проверка строк"})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи: не пройдена проверка строк", (
-        f"отказ проверки строк потерял «не смог принять записи»: {_svc_note(text)}")
-
-
-async def test_a_breakage_text_from_the_gateway_is_escaped(services, peers, fake_bot, slots):
-    """Текст поломки пришёл с малины — чужая строка в разметке ВПС: и она, и
-    имя шлюза экранированы ровно один раз, иначе Telegram отвергнет карточку."""
-    _, _, pi2 = slots
-    services.rename_device(pi2.id, "Pi & <2>")
-    _publish(services)
-    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
-                                             "ошибка записи файла: <b>&</b>"})
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз Pi &amp; &lt;2&gt;: ошибка записи файла: &lt;b&gt;&amp;&lt;/b&gt;", (
-        _svc_note(text))
 
 
 @pytest.mark.parametrize("error,note", [
@@ -197,21 +44,6 @@ def test_without_a_name_the_note_does_not_repeat_the_word_gateway(state, note):
     assert services_line({"own": 0, "peer": 1, "state": state}) == HEAD + "\n" + note
 
 
-async def test_no_services_anywhere_is_one_short_line(services, peers, fake_bot):
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == "🗂 SMB: не найдены", text
-    assert _svc_note(text) is None, f"записей нет — сообщать о судьбе нечего: {text}"
-
-
-async def test_without_peer_access_the_card_has_no_services_line(services, slots, fake_bot, monkeypatch):
-    """Функция живёт там, где связь подсетей: выключена — строки нет."""
-    _peer_conf(monkeypatch)
-    _two_lan_slots(services, slots)
-    _publish(services)
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) is None, text
-
-
 @pytest.mark.parametrize("own, peer, line", [
     (1, 2, "🗂 SMB: свои — 1, извне — 2"), (1, 0, "🗂 SMB: свои — 1"), (0, 2, "🗂 SMB: извне — 2"),
     (0, 0, "🗂 SMB: не найдены"),
@@ -222,17 +54,6 @@ def test_smb_line_does_not_print_zeros(own, peer, line):
     from awgbot.bot.texts.routing import services_line
     assert services_line({"own": own, "peer": peer, "state": "applied"}) == (
         line + (" · 🟢 доступны" if peer else ""))
-
-
-async def test_turning_peer_access_off_does_not_mention_finder(services, peers, fake_bot):
-    """При выключении про Finder говорить нечего — диалог говорит, что
-    подсети перестанут видеть друг друга сразу."""
-    cb, nav = _acb(fake_bot)
-    peers["app.routing.peer_nets.enabled"] = True
-    await sh.gw_slot_peer_ask(cb, services)
-    off = _screen(nav)[0]
-    assert "awg.internal" not in off, "при выключении про Finder говорить нечего"
-    assert "Подсети шлюзов перестанут видеть друг друга сразу" in off, off
 
 
 # ── агент ────────────────────────────────────────────────────────────────────

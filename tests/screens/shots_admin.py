@@ -2440,3 +2440,715 @@ SHOTS += [
     Shot("adm.rf.dev.last", role="admin", press=[RoutingCB(action="dev", ref=LAPTOP)], data=_ks_laptop_off,
          title="включили вручную последнее — «✅ Выбрать все»"),
 ]
+
+
+# ── шаг 5: карточки слотов и «Шлюзы» — ветки, которые держали e2e ──────────
+# Сцены — как в tests/e2e/test_gateway_*_ui.py: два слота с VPN-транзитом
+# (у NASPi 192.168.1.0/24, у Pi4 192.168.68.0/24), события канала линка —
+# через services.gwlink_* в построителе, как их принял бы канал.
+
+LAN1, LAN2 = "192.168.1.0/24", "192.168.68.0/24"
+
+
+def _gw(n: int = 2, *then, lan2: bool = False, peers: bool | None = None, **kw):
+    """_slots(n, **kw) и поверх — lan2 (VPN-транзит и подсети у обоих
+    слотов), peers (тумблер связи подсетей) и шаги then(services, mp) по
+    порядку."""
+    def build(services, mp):
+        from awgbot.core import settings
+        who = _slots(n, **kw)(services, mp)
+        if lan2:
+            services.db.gateway_update(1, home_subnets=[LAN1], lan_mode=1)
+            services.db.gateway_update(2, home_subnets=[LAN2], lan_mode=1)
+        if peers is not None:
+            settings.set_value("app.routing.peer_nets.enabled", peers)
+        for step in then:
+            step(services, mp)
+        return who
+    return build
+
+
+# свои списки: слот 1 прислал 5 доменов в туннель и один напрямую, слот 2
+# на связи и умеет синхронизацию — канон уходит ему
+
+def _own_sent(services, mp):
+    services.gwlink_own_in(1, "rx", [[i + 1, f"d{i}.com", "vpn", False] for i in range(5)]
+                           + [[6, "shop.ru", "ru", False]])
+    services.gwlink_session_opened(2, "3.1.0", 2)
+    services.gwlink_own_hello_in(2, True)
+
+
+def _own_ack(ok: bool = True, error: str = ""):
+    def step(services, mp):
+        digest = services.gwlink_own_for(services.db.gateway(2))[0]
+        body = {"ok": True, "hash": digest, "n": 6} if ok else {"ok": False, "hash": digest, "error": error}
+        services.gwlink_own_ack_in(2, body)
+    return step
+
+
+def _rename_pi4(services, mp):
+    services.rename_device(PI4, "Pi & <2>")
+
+
+def _own_old_agent(services, mp):
+    services.gwlink_session_opened(2, "3.0.2", 2)
+    services.gwlink_own_hello_in(2, False)
+    services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
+
+
+def _overlap(services, mp):
+    services.db.gateway_update(2, home_subnets=[LAN1])
+
+
+def _own_off(services, mp):
+    services.gwlink_own_card = lambda gw: {"vpn": 0, "ru": 0, "state": "off", "error": ""}
+
+
+# SMB соседей: слот 1 назвал сервер и ушёл со связи; слот 2 прислал снимок
+# с тем, что у него стоит (peers — подсети соседей, уже применённые)
+
+_NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"}
+
+
+def _smb_sent(peers: str = LAN1):
+    def step(services, mp):
+        services.gwlink_services_in(1, [_NAS])
+        services.gwlink_session_closed(1)
+        services.gwlink_snapshot_in(2, {"bundle": {"lan_mode": "1", "home_subnets": LAN2, "resolver": "10.9.1.1",
+                                                   "peer_home_nets": peers, "admin_ips": "10.8.1.2"},
+                                        "agent_version": "3.1.0", "link_contract": "1", "rev": 1}, 1, True)
+    return step
+
+
+def _smb_ack(ok: bool = True, error: str = ""):
+    def step(services, mp):
+        from awgbot.domain import gwservices
+        h = gwservices.feed_hash([_NAS])
+        services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": h, "n": 1} if ok
+                                             else {"ok": False, "hash": h, "error": error})
+    return step
+
+
+def _card(slot: int, data, title: str, sid: str):
+    return Shot(sid, role="admin", press=[GwSlotCB(action="card", slot=slot)], data=data, title=title)
+
+
+SHOTS += [
+    # ── свои списки в карточке слота ─────────────────────────────────────
+    _card(2, _gw(2, _own_sent, lan2=True), "свои списки: канон уходит на шлюз (домены — только числом)",
+          "adm.gw.card.own.pending"),
+    _card(2, _gw(2, _own_sent, _own_ack(), lan2=True, peers=True),
+          "свои списки применены — строки судьбы нет, под ними связь подсетей", "adm.gw.card.own.applied"),
+    _card(2, _gw(2, _own_sent, _own_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True),
+          "свои списки: отказ шлюза, ошибка экранирована", "adm.gw.card.own.refused"),
+    _card(2, _gw(2, _own_sent, _own_ack(False, ""), lan2=True),
+          "свои списки: отказ без объяснения — без двоеточия", "adm.gw.card.own.refused.bare"),
+    _card(2, _gw(2, _own_sent, _own_ack(False, "ошибка записи файла: нет места на диске"), lan2=True),
+          "свои списки: поломка на шлюзе — не «не смог принять»", "adm.gw.card.own.broken"),
+    _card(2, _gw(2, _rename_pi4, _own_sent, _own_ack(False, "ошибка записи файла: <i>&"), lan2=True),
+          "свои списки: имя шлюза и текст поломки экранированы ровно раз", "adm.gw.card.own.broken.escaped"),
+    _card(2, _gw(2, _own_old_agent, lan2=True),
+          "свои списки: агент без синхронизации — обновить, ссылка на бота", "adm.gw.card.own.old_agent"),
+    _card(2, _gw(2, lan2=True, peers=True),
+          "связь подсетей включена: под строкой судьбы списков — «↔️ Связь подсетей ✅», SMB не найдены",
+          "adm.gw.card.peers"),
+    _card(2, _gw(2, _overlap, lan2=True, peers=False),
+          "подсети слотов пересекаются: предупреждение своей строкой под строкой судьбы", "adm.gw.card.overlap"),
+    _card(2, _gw(2, _own_off, lan2=True, peers=True),
+          "синхронизация у слота не действует — строки «📋» нет", "adm.gw.card.own.off"),
+    # ── SMB соседей в карточке слота ─────────────────────────────────────
+    _card(2, _gw(2, _smb_sent(), lan2=True, peers=True), "SMB извне: записи уходят на шлюз",
+          "adm.gw.card.smb.pending"),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(), lan2=True, peers=True), "SMB извне: на шлюзе, доступны",
+          "adm.gw.card.smb.ok"),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True, peers=True),
+          "SMB извне: отказ шлюза, ошибка экранирована", "adm.gw.card.smb.refused"),
+    _card(1, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True, peers=True),
+          "SMB у публикующего: только «свои», о судьбе — ничего", "adm.gw.card.smb.own"),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, ""), lan2=True, peers=True),
+          "SMB извне: отказ без объяснения — без двоеточия", "adm.gw.card.smb.refused.bare"),
+    _card(2, _gw(2, _smb_sent(""), lan2=True, peers=True),
+          "SMB извне: подсети соседей на шлюзе не применены — нужен перевыпуск", "adm.gw.card.smb.reissue"),
+    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, ""), lan2=True, peers=True),
+          "SMB извне: имя шлюза в заголовке и в отказе экранировано ровно раз", "adm.gw.card.smb.escaped"),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "ошибка записи файла: нет места на диске"), lan2=True,
+                 peers=True), "SMB извне: поломка на шлюзе — не «не смог принять»", "adm.gw.card.smb.broken"),
+    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, "ошибка записи файла: <b>&</b>"), lan2=True,
+                 peers=True), "SMB извне: имя и текст поломки экранированы", "adm.gw.card.smb.broken.escaped"),
+    _card(2, _gw(2, _smb_sent(), lan2=True, peers=False), "связь подсетей выключена — строки SMB нет",
+          "adm.gw.card.smb.off"),
+    # ── рецепт роутера при связанных подсетях ────────────────────────────
+    Shot("adm.gw.router.peers", role="admin", press=[GwSlotCB(action="router", slot=1)],
+         data=_gw(2, lan2=True, peers=True), title="рецепт роутера: маршрут к подсети другого шлюза"),
+    Shot("adm.gw.router.peers.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
+         data=_gw(2, lan2=True, peers=True), title="рецепт роутера OpenWrt: маршрут к подсети другого шлюза"),
+    Shot("adm.gw.router.peers.two", role="admin", press=[GwSlotCB(action="router", slot=2)],
+         data=_gw(2, lan2=True, peers=True), title="рецепт роутера резерва: маршрут к подсети первого"),
+    Shot("adm.gw.router.nopeers", role="admin", press=[GwSlotCB(action="router", slot=1)],
+         data=_gw(2, lan2=True, peers=False), title="связь подсетей выключена — маршрута к соседу нет"),
+    Shot("adm.gw.router.nopeers.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
+         data=_gw(2, lan2=True, peers=False), title="OpenWrt: связь подсетей выключена — маршрута к соседу нет"),
+    # ── связь подсетей: строка «Шлюзов», выключение ──────────────────────
+    Shot("adm.gw.peer_ask.off", role="admin", press=[GwSlotCB(action="peer_ask")],
+         data=_gw(2, lan2=True, peers=True), title="выключить связь подсетей?"),
+    Shot("adm.gw.peer_yes.off", role="admin", press=[GwSlotCB(action="peer_yes")],
+         data=_gw(2, lan2=True, peers=True), title="связь подсетей выключена — всплывашка о перевыпуске"),
+]
+
+
+# ── шаг 5: «Шлюзы», слоты и назначение — ветки из e2e ───────────────────────
+
+TOKEN2 = "2222222222:DUMMYDUMMYDUMMYDUMMYDUMMY"
+
+
+def _label(slot: int, label: str):
+    def step(services, mp):
+        services.db.gateway_update(slot, label=label)
+    return step
+
+
+def _token2(services, mp):
+    """Бот второго слота уже известен серверу — токен спрашивать не нужно."""
+    services._shot_tokens[2] = TOKEN2
+
+
+def _active1(services, mp):
+    """Активный слот записан (холодный старт его записывает): «⭐ При старте»
+    без записи двигало бы и «активного» на экране."""
+    services.db.set_state(services._RT_ACTIVE_KEY, "1")
+
+
+def _pref2(services, mp):
+    services.db.gateway_set_preferred(2)
+
+
+def _standby_fails(services, mp):
+    """Окно замеров резерва — сплошные отказы."""
+    for _ in range(10):
+        services._rt_window_push(2, False)
+
+
+def _link_down(services, mp):
+    services.routing_link_ok = lambda: False
+
+
+def _no_streak(services, mp):
+    services.db.set_state("routing_gw_2_up_streak", "")
+
+
+def _switched(services, mp):
+    services.gateway_switch(2, manual=True)
+
+
+def _long_dead(services, mp):
+    _standby_fails(services, mp)
+    services.db.set_state("routing_gw_2_down_since",
+                          str(int(NOW.timestamp()) - 13 * 86400 - 4 * 3600))
+
+
+def _lan_standby(services, mp):
+    services.db.gateway_update(2, home_subnets=[LAN2], lan_mode=1)
+
+
+def _peer_no_lan(services, mp):
+    services.db.gateway_update(2, lan_mode=0)
+
+
+def _peer_no_nets(services, mp):
+    services.db.gateway_update(2, home_subnets=[])
+
+
+def _peer_overlap(services, mp):
+    services.db.gateway_update(2, home_subnets=["192.168.1.0/25"])
+
+
+def _token_kept(services, mp):
+    """Запись env не удалась: токен снятого слота остался."""
+    services.forget_gw_bot_token = lambda slot=None: None
+
+
+def _slot7(services, mp):
+    services.gateway_next_slot = lambda: (7, "awglink7", 9443, "10.99.99.24/30")
+
+
+def _no_free_slot(services, mp):
+    services.gateway_next_slot = _raise("service", "свободных слотов нет")
+
+
+def _fresh_gw(services, mp):
+    """Шлюз только что назначен: линк ещё ни разу не ответил."""
+    services.routing_link_ok = lambda: False
+    services._probe_slot = lambda g, active=False: "down"
+
+
+def _allow_all(services, mp):
+    for c in services.routing_grantable_clients():
+        services.set_routing_allowed(c.id, True)
+
+
+def _ceiling(services, mp):
+    mp.setattr(config, "ROUTING_GATEWAYS_MAX", 1)
+
+
+def _lists_aged(services, mp):
+    """Списки: две записи из трёх источников, обновлены 2 ч назад, период 12 ч."""
+    from awgbot.core import settings
+    services._routing_read_cache = lambda name: ["a.ru", "b.ru"]
+    services.db.set_state(services._RT_LISTS_KEY, str(int(NOW.timestamp()) - 7200))
+    settings.set_value("app.routing.lists_refresh_hours", 12)
+    mp.setattr(config, "ROUTING_LISTS_HOME_URLS", ["https://a.example", "https://b.example", "https://c.example"])
+
+
+def _rt_none_token(services, mp):
+    """Шлюза нет, токен бота первого слота уже известен."""
+    who = _rt_none(services, mp)
+    services._shot_tokens[1] = TOKEN
+    return who
+
+
+def _probe_down(services, mp):
+    from awgbot.infra import routing as rt
+    services.routing_probe = lambda: rt.PROBE_DOWN
+
+
+async def _drop_slot2(services, bot):
+    services.db.gateway_delete(2)
+
+
+_PIN = "RERERERERERERERERERERERERERERERERERERERERERE="   # ключ аплинка Ксюшиного телефона — заглушка
+_CLAIM_PRIV = "REREREREREREREREREREREREREREREREREREREREREQ="   # ключ линка, которым подписан claim (32 байта)
+
+
+def _iphone_key(services, mp):
+    services.db.update_device_fields(IPHONE, public_key=_PIN)
+    services._link_privkey = lambda gw=None: _CLAIM_PRIV
+
+
+def _claim_key(services, mp):
+    services._link_privkey = lambda gw=None: _CLAIM_PRIV
+
+
+def _claim_text(pub: str) -> str:
+    """Токен claim, как его подписал бы агент, — с постоянными ts и nonce
+    (gwsign.sign берёт случайный nonce, а эталону нужен один и тот же текст)."""
+    import hashlib
+    import hmac
+    from awgbot.util import gwsign
+    payload = json.dumps({"act": "claim", "pub": pub, "ts": int(NOW.timestamp()), "nonce": "00" * 8, "host": ""},
+                         separators=(",", ":"), ensure_ascii=False).encode()
+    mac = hmac.new(gwsign._key(_CLAIM_PRIV), payload, hashlib.sha256).digest()[:20]
+    return gwsign.PREFIX + gwsign.b64u(payload) + "." + gwsign.b64u(mac)
+
+
+_FW_UNRESOLVED = [f"h{i}.example" for i in range(15)]
+
+
+SHOTS += [
+    # ── подпись слота, пинг резерва, «⭐ При старте» ───────────────────────
+    Shot("adm.rt.two.label", role="admin", press=[SetCB(sec="rt")], data=_gw(2, _label(2, "дача")),
+         title="«Шлюзы»: подпись слота в скобках"),
+    _card(2, _gw(2, _label(2, "дача")), "карточка: подпись слота в заголовке", "adm.gw.card.label"),
+    _card(2, _gw(2, _lan_standby), "карточка резерва с VPN-транзитом — самый полный набор кнопок",
+          "adm.gw.card.standby.lan"),
+    Shot("adm.gw.ping.standby", role="admin", press=[GwSlotCB(action="ping", slot=2)], data=_slots(2),
+         title="пинг резерва — свой линк"),
+    Shot("adm.gw.pref.clear", role="admin", press=[GwSlotCB(action="pref", slot=2)], data=_gw(2, _active1, _pref2),
+         title="«⭐ При старте» на предпочтительном — снять"),
+    Shot("adm.gw.name", role="admin", press=[GwSlotCB(action="name", slot=1)], data=_slots(1),
+         title="имя устройства слота: приглашение"),
+    # ── переключение со списка и активного ──────────────────────────────
+    Shot("adm.gw.switch_ask.list", role="admin", press=[GwSlotCB(action="switch_ask", slot=2, val="l")],
+         data=_slots(2), title="переключить со списка — «Отмена» обратно в «Шлюзы»"),
+    Shot("adm.gw.switch_yes.list", role="admin", press=[GwSlotCB(action="switch_yes", slot=2, val="l")],
+         data=_slots(2), title="переключено со списка — снова «Шлюзы»"),
+    Shot("adm.gw.switch_ask.active", role="admin", press=[GwSlotCB(action="switch_ask", slot=1)],
+         data=_slots(2), title="переключить на активный — «уже идёт», без вопроса"),
+    # ── ввод подсетей и подписи ──────────────────────────────────────────
+    Shot("adm.gw.home.partial", role="admin", press=[GwSlotCB(action="home", slot=1)],
+         text="192.168.1.0/24 мусор", data=_slots(2), title="подсети: часть не принята — названа в итоге"),
+    Shot("adm.gw.label.clear", role="admin", press=[GwSlotCB(action="label", slot=2)], text="—",
+         data=_gw(2, _label(2, "дача")), title="подпись: «—» убирает"),
+    Shot("adm.gw.label.gone", role="admin",
+         steps=[("press", GwSlotCB(action="label", slot=2)), ("call", _drop_slot2, "слот снят"),
+                ("text", "дом 2")], data=_slots(2), title="подпись: слот исчез, пока висело приглашение"),
+    # ── второй слот: новая машина и из моих ──────────────────────────────
+    Shot("adm.rt.new_ask", role="admin", press=[GwMarkCB(action="new_ask")], data=_rt_none,
+         title="новая машина — сразу токен, без подтверждения"),
+    Shot("adm.rt.new_ask.standby", role="admin", press=[GwMarkCB(action="new_ask", slot=0)], data=_slots(1),
+         title="резерв новой машиной — токен бота шлюза 2"),
+    Shot("adm.rt.new_ask.full", role="admin", press=[GwMarkCB(action="new_ask", slot=0)],
+         data=_gw(1, _no_free_slot), title="свободных слотов нет — отказ всплывашкой"),
+    Shot("adm.rt.new_yes.slot7", role="admin", press=[GwMarkCB(action="new_yes", slot=0)],
+         data=_gw(1, _slot7), title="номер нового слота — от сервиса (7)"),
+    Shot("adm.rt.new_yes.known", role="admin", press=[GwMarkCB(action="new_yes")],
+         data=_rt_none_token, title="новая машина при известном токене — не спрашивает"),
+    Shot("adm.rt.new_yes.standby", role="admin", press=[GwMarkCB(action="new_yes", slot=0)],
+         data=_gw(1, _token2), title="резерв новой машиной при известном токене — файл «Шлюз 2»"),
+    Shot("adm.rt.token.done.standby", role="admin", press=[GwMarkCB(action="new_ask", slot=0)], text=TOKEN2,
+         data=_slots(1), title="токен второго слота принят — файл и скрипт слота 2"),
+    Shot("adm.rt.pick_list.standby", role="admin", press=[GwMarkCB(action="pick_list", slot=0)],
+         data=_slots(1), title="резерв из моих — без назначенного"),
+    Shot("adm.rt.pick.standby", role="admin", press=[GwMarkCB(action="pick", device_id=PI4, slot=0)],
+         data=_slots(1), title="резерв из моих: станет резервным?"),
+    Shot("adm.rt.mark_yes.standby", role="admin", press=[GwMarkCB(action="mark_yes", device_id=PI4, slot=0)],
+         data=_gw(1, _token2), title="резерв из моих при известном токене — инструкция и файл"),
+    Shot("adm.rt.mark_yes.standby.menu", role="admin",
+         press=[GwMarkCB(action="mark_yes", device_id=PI4, slot=0),
+                SetCB(sec="rt", act="do", key="bundle_cancel", val="2")],
+         data=_gw(1, _token2), title="«🛰 В карточку» под файлом первого применения — карточка слота 2"),
+    # ── снятие ───────────────────────────────────────────────────────────
+    Shot("adm.gw.remove_ask.old", role="admin", press=[GwMarkCB(action="remove_ask", device_id=NASPI)],
+         data=_slots(1), title="снять последний шлюз старой кнопкой — РФ-доступ выключится"),
+    Shot("adm.gw.remove_yes.last", role="admin", press=[GwSlotCB(action="remove_yes", slot=1)],
+         data=_slots(1), title="последний шлюз снят — РФ-доступ выключен до назначения"),
+    Shot("adm.gw.remove_yes.old", role="admin", press=[GwMarkCB(action="remove_yes")], data=_slots(1),
+         title="снять единственный старой кнопкой устройства"),
+    Shot("adm.gw.remove_yes.none", role="admin", press=[GwMarkCB(action="remove_yes")], data=_rt_none,
+         title="снять, когда шлюза нет, — «и так не назначен»"),
+    Shot("adm.gw.remove_yes.token_kept", role="admin", press=[GwSlotCB(action="remove_yes", slot=2)],
+         data=_gw(2, _token_kept), title="резерв снят, токен его бота остался в env"),
+    # ── конфигурация файлом ──────────────────────────────────────────────
+    Shot("adm.gw.bundle.label", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
+         data=_gw(2, _label(2, "дача"), token=False), title="файл слота 2: подпись слота, бот неизвестен"),
+    # ── параметры циклами ────────────────────────────────────────────────
+    Shot("adm.rt.params.cycle.window", role="admin",
+         press=[SetCB(sec="rt_params", act="cycle", key="app.routing.failover.window_samples")],
+         data=_slots(1), title="окно циклом — порог пересчитан от окна"),
+    Shot("adm.rt.params.cycle.threshold", role="admin",
+         press=[SetCB(sec="rt_params", act="cycle", key="app.routing.failover.min_availability")],
+         data=_slots(1), title="порог циклом"),
+    Shot("adm.rt.params.cycle.lists", role="admin",
+         press=[SetCB(sec="rt_params", act="cycle", key="app.routing.lists_refresh_hours")],
+         data=_slots(1), title="период списков циклом"),
+    Shot("adm.rt.params.lists_age", role="admin", press=[SetCB(sec="rt_params")], data=_gw(1, _lists_aged),
+         title="параметры: списки — записи, источники, возраст, период"),
+    Shot("adm.rt.lists.old", role="admin", press=[SetCB(sec="rt_lists")], data=_slots(1),
+         title="старый подраздел «Списки» — «⚙️ Параметры»"),
+    Shot("adm.rt.mon.old", role="admin", press=[SetCB(sec="rt_mon")], data=_slots(1),
+         title="старый подраздел «Мониторинг» — «⚙️ Параметры»"),
+    Shot("adm.rt.lists.off", role="admin", press=[SetCB(sec="rt_lists")], data=_rt_off,
+         title="старый подраздел при выключенном РФ-доступе — раздел пуст"),
+    Shot("adm.rt.bundle.old", role="admin", press=[SetCB(sec="rt_bundle", key="1")], data=_slots(1),
+         title="старый экран перед выпуском файла — его больше нет"),
+    # ── строка РФ-доступа на главной ─────────────────────────────────────
+    Shot("adm.main.gw.label", role="admin", start="", data=_gw(1, _label(1, "дом 1")),
+         title="главная: один шлюз с подписью"),
+    Shot("adm.main.gw.checking", role="admin", start="", data=_gw(2, _no_streak),
+         title="главная: резерв ещё проверяется"),
+    Shot("adm.main.gw.standby_dead", role="admin", start="", data=_gw(2, _standby_fails),
+         title="главная: резерв не отвечает (🟠)"),
+    Shot("adm.main.gw.both_down", role="admin", start="", data=_gw(2, _standby_fails, _link_down),
+         title="главная: оба шлюза не отвечают"),
+    Shot("adm.main.gw.down.standby_alive", role="admin", start="", data=_gw(2, _link_down),
+         title="главная: активный не отвечает, резерв жив"),
+    Shot("adm.main.gw.slot2", role="admin", start="", data=_gw(2, _switched),
+         title="главная: активен слот 2 — ссылки в свои карточки"),
+    # ── VPN-транзит ──────────────────────────────────────────────────────
+    Shot("adm.gw.lan_yes.off", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
+         data=_slots(1, lan=True), title="VPN-транзит выключен — «❓ Роутер» ушёл"),
+    Shot("adm.gw.lan_yes.again", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="1")],
+         data=_slots(1, lan=True), title="повтор «Включить» при включённом — «Уже включено»"),
+    # ── связь подсетей в «Шлюзах» ────────────────────────────────────────
+    Shot("adm.rt.peers.ok", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _label(2, "дача"), lan2=True, peers=True), title="связь подсетей работает — парами"),
+    Shot("adm.rt.peers.no_lan", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_no_lan, lan2=True, peers=True), title="связь подсетей: у слота нет VPN-транзита"),
+    Shot("adm.rt.peers.no_nets", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_no_nets, lan2=True, peers=True), title="связь подсетей: у слота нет подсетей"),
+    Shot("adm.rt.peers.overlap", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_overlap, lan2=True, peers=True), title="связь подсетей: подсети пересекаются"),
+    # ── автопереключение ─────────────────────────────────────────────────
+    Shot("adm.gw.failover.off", role="admin", press=[GwSlotCB(action="failover")], data=_slots(2),
+         title="автопереключение выключено — тумблер ☑️ и последствия строкой"),
+    Shot("adm.rt.mon.failover", role="admin",
+         press=[SetCB(sec="rt_mon", act="toggle", key="app.routing.failover.enabled")], data=_slots(2),
+         title="тумблер автопереключения из старого «Мониторинга» — «Шлюзы»"),
+    Shot("adm.rt.two.down.long", role="admin", press=[SetCB(sec="rt")], data=_gw(2, _long_dead),
+         title="резерв лежит вторую неделю — сколько"),
+    Shot("adm.rt.one.ceiling", role="admin", press=[SetCB(sec="rt")], data=_gw(1, _ceiling),
+         title="один слот у потолка — без «➕ Резерв»"),
+    Shot("adm.rt.one.fresh", role="admin", press=[SetCB(sec="rt")], data=_gw(1, _fresh_gw),
+         title="только что назначенный шлюз — не зелёный"),
+    Shot("adm.rt.enable.down", role="admin", press=[SetCB(sec="rt", act="toggle", key="app.routing.enabled")],
+         data=_gw(1, _probe_down, enabled=False), title="включить РФ-доступ при лежащем шлюзе"),
+    # ── «👥 Кому доступен»: выбрать все ──────────────────────────────────
+    Shot("adm.rt.users.all", role="admin", press=[SetCB(sec="rt", act="do", key="allow_all")], data=_slots(1),
+         title="«Выбрать все» — разрешено всем"),
+    Shot("adm.rt.users.all.off", role="admin", press=[SetCB(sec="rt", act="do", key="allow_all")],
+         data=_gw(1, _allow_all), title="«Выбрать все» при всех разрешённых — снято со всех"),
+    # ── старые кнопки файла ──────────────────────────────────────────────
+    Shot("adm.gw.bundle.old", role="admin", press=[SetCB(sec="rt", act="do", key="bundle")], data=_slots(1),
+         title="«📤 Выпустить файл» прежней версии — тот же выпуск"),
+    Shot("adm.gw.bundle.old.two", role="admin", press=[SetCB(sec="rt", act="do", key="bundle", val="2")],
+         data=_slots(2), title="«📤 Выпустить файл» прежней версии для слота 2"),
+    Shot("adm.gw.bundle.menu.old", role="admin", press=[SetCB(sec="rt", act="do", key="bundle_menu", val="2")],
+         data=_slots(2), title="«В меню» под файлом до 3.1.0 — убирает сообщение, главная"),
+    # ── пересланное сообщение агента ─────────────────────────────────────
+    Shot("adm.claim.foreign", role="admin", text=_claim_text(_PIN), data=_gw(1, _iphone_key),
+         title="claim другого устройства при назначенном шлюзе — не принято"),
+    Shot("adm.claim.garbage", role="admin", text="GW1:abc.def", data=_gw(1, _claim_key), title="мусор вместо токена"),
+    # ── файервол ВПС ─────────────────────────────────────────────────────
+    Shot("adm.set.fw.unresolved", role="admin", press=[SetCB(sec="fw")],
+         data=_fw(enabled=True, present=True, allow=[], raw_allow=_FW_UNRESOLVED, unresolved=_FW_UNRESOLVED,
+                  admin_ips=["x"]), title="15 имён не резолвятся — блок предупреждений"),
+]
+
+
+# ── шаг 5: канал до шлюза в карточке слота — ветки из e2e ───────────────────
+# Слот NASPi с VPN-транзитом, хендшейк линка свежий (сессия канала — «на
+# связи»), резолвер слота — 10.9.1.1. Снимок кладётся так, как его принял бы
+# канал; возраст снимка и часы малины — от NOW.
+
+def _ch_base(services, mp):
+    mp.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    services.gateway_resolver_addr = lambda g: "10.9.1.1" if g.lan_mode else ""
+
+
+def _installed(services) -> dict:
+    """Что стоит на шлюзе, когда всё доехало: ровно то, из чего ВПС соберёт файл."""
+    addrs = " ".join(sorted(set(services.db.admin_device_addresses(config.ADMIN_ID))))
+    return {"lan_mode": "1", "home_subnets": LAN1, "resolver": "10.9.1.1", "peer_home_nets": "", "admin_ips": addrs}
+
+
+def _ch(bundle: dict | None = None, *, online: bool = True, closed: bool = False, age_h: float = 0,
+        skew_min: int = 0, **kw):
+    """Снимок слота 1: bundle — поверх установленного (None — всё доехало);
+    online — сессия канала открыта; closed — закрыта после снимка; age_h —
+    снимок принят столько часов назад; skew_min — часы малины спешат."""
+    def step(services, mp):
+        at = NOW - _dt.timedelta(hours=age_h)
+        snap = {"bundle": {**_installed(services), **(bundle or {})}, "link_contract": "1", "plumbing_gen": "new",
+                "mark_status": "confirmed", "agent_version": "3.1.0", "awg_generation": 1, "egress_ok": True,
+                "boot_id": "b" * 36, "ts": _iso(at + _dt.timedelta(minutes=skew_min)), "rev": 1}
+        snap.update(kw)
+        services.gwlink_snapshot_in(1, snap, 1, True)
+        services.db.set_state(services._gwlink_key(services._GWLINK_SNAP_AT_KEY, 1), _iso(at))
+        if online:
+            services.gwlink_session_opened(1, "3.1.0", 1)
+        if closed:
+            services.gwlink_session_closed(1)
+    return step
+
+
+def _ch_ack(ok: bool, error: str = ""):
+    def step(services, mp):
+        services.gwlink_ack_in(1, {"ok": ok, "error": error})
+    return step
+
+
+def _ch_old_agent(delta: bool = False):
+    """Снимок агента, который не сообщает установленную конфигурацию."""
+    def step(services, mp):
+        services.gwlink_snapshot_in(1, {"agent_version": "3.0.0", "egress_ok": True, "ts": _iso(NOW), "rev": 1},
+                                    1, True)
+        services.gwlink_session_opened(1, "3.0.0", 1)
+        if delta:
+            services.gwlink_snapshot_in(1, {"plumbing_gen": "old", "rev": 2}, 2, False)
+    return step
+
+
+def _neighbour(services, mp):
+    """Слот 2 с VPN-транзитом и подсетью 192.168.70.0/24, связь подсетей
+    включена: у слота 1 появляются подсети соседа, которых на нём ещё нет."""
+    services.db.gateway_update(2, home_subnets=["192.168.70.0/24"], lan_mode=1)
+
+
+def _chan(n: int = 1, *steps, peers: bool | None = None):
+    return _gw(n, _ch_base, *steps, lan=True, peers=peers)
+
+
+_PEER_MISSING = {"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]}
+
+
+# ── шаг 5: бот шлюза и ссылки /start gw-N — ветки из e2e ────────────────────
+
+def _bot(slot: int, username: str, name: str, token: str = TOKEN2):
+    """Бот слота известен: токен есть, ответ getMe в кэше."""
+    def step(services, mp):
+        services._shot_tokens[slot] = token
+        services.set_gw_bot_identity(slot, username, name)
+    return step
+
+
+def _token_replaced(services, mp):
+    """Токен слота 2 сменили — прежний бот уже не тот."""
+    services._shot_tokens[2] = "2222222222:DUMMYANOTHERDUMMYANOTHER"
+
+
+def _snap_bot(username: str, name: str, rev: int = 1, full: bool = True):
+    """Агент слота 2 прислал себя снимком канала (токена на сервере нет)."""
+    def step(services, mp):
+        body = {"agent_bot": {"username": username, "name": name}, "rev": rev}
+        if full:
+            body.update(agent_version="3.1.0", mark_status="confirmed", egress_ok=True)
+        services.gwlink_snapshot_in(2, body, rev, full)
+    return step
+
+
+def _nav_live(services, mp):
+    """В чате уже живое меню (#1) — карточка встанет на его место."""
+    services.db.set_nav_message_id(config.ADMIN_ID, 1)
+
+
+# ── шаг 5: файл конфигурации слота 2 в чате и итоги с шлюза ─────────────────
+
+def _file2(plain: bool):
+    """В чате админа лежит файл слота 2 (#40) под карточкой или инструкцией (#39)."""
+    def step(services, mp):
+        services.gw_bundle_msg_set(2, config.ADMIN_ID, 40, 39, "DUMMYFP", plain)
+    return step
+
+
+def _applied2(ok: bool, reason: str = ""):
+    async def ev(services, bot):
+        from awgbot.bot.handlers.settings import bundle_applied
+        await bundle_applied(bot, services, 2, ok, reason, "DUMMYFP")
+    return ev
+
+
+async def _installed2(services, bot):
+    from awgbot.bot.handlers.settings import bundle_installed
+    await bundle_installed(bot, services, 2)
+
+
+def _drop2(services, mp):
+    services.db.gateway_delete(2)
+
+
+_LABEL_CANCEL = CancelCB(kind="gwedit", ref=2)
+_CARD2 = GwSlotCB(action="card", slot=2)
+
+SHOTS += [
+    # ── канал: связь, возраст, сверка ────────────────────────────────────
+    _card(1, _chan(1, _ch()), "канал жив, конфигурация актуальна — одной строкой", "adm.gw.card.ch.live"),
+    _card(1, _chan(1, _ch(online=False, closed=True, age_h=13 * 24)),
+          "канал лежит — последнее известное с возрастом снимка", "adm.gw.card.ch.dead"),
+    _card(1, _chan(1, _ch({"home_subnets": LAN2, "resolver": ""}, online=False, closed=True, age_h=2)),
+          "канал лежит, конфигурация разошлась — пункты и возраст", "adm.gw.card.ch.drift.dead"),
+    _card(1, _chan(1, _ch({"home_subnets": "<b>x</b> & y"}, online=False, closed=True)),
+          "пункт расхождения с малины экранирован", "adm.gw.card.ch.drift.escaped"),
+    _card(1, _chan(1, _ch({"home_subnets": LAN2, "resolver": ""})),
+          "канал жив, расхождение уходит каналом", "adm.gw.card.ch.drift.live"),
+    _card(1, _chan(1, _ch({"home_subnets": LAN2}), _ch_ack(False, "<b>LAN-интерфейс</b> не найден")),
+          "шлюз не применил настройки — причина текстом", "adm.gw.card.ch.refused"),
+    _card(1, _chan(1, _ch({"home_subnets": LAN2}, online=False), _ch_ack(False, "exit 1"), _ch(
+        {"home_subnets": LAN2}, online=False, closed=True)),
+          "старый отказ при лежащем канале — снова «расходится»", "adm.gw.card.ch.refused.dead"),
+    _card(1, _chan(1, _ch(), _ch_ack(False, "exit 1"), _ch_ack(True)),
+          "следующее применение прошло — отказа нет", "adm.gw.card.ch.refused.cleared"),
+    _card(1, _chan(1, _ch(plumbing_gen="old", link_contract="")),
+          "обвязка старого образца — строкой под каналом", "adm.gw.card.ch.plumbing.old"),
+    _card(1, _chan(1, _ch(plumbing_gen="none")), "обвязка не развёрнута", "adm.gw.card.ch.plumbing.none"),
+    _card(1, _chan(1, _ch(plumbing_gen="")), "образец обвязки не сообщён — строки нет",
+          "adm.gw.card.ch.plumbing.unknown"),
+    _card(1, _chan(1, _ch_old_agent()), "снимок без установленной конфигурации — не галочка",
+          "adm.gw.card.ch.old_agent"),
+    _card(1, _chan(1, _ch_old_agent(delta=True)), "снимок без установленного — и об обвязке не судим",
+          "adm.gw.card.ch.old_agent.plumbing"),
+    _card(1, _chan(1, _ch(awg_generation=7)), "поколение AWG на шлюзе другое", "adm.gw.card.ch.generation"),
+    _card(1, _chan(1, _ch(agent_version="<b>3.1.0</b>")), "версия агента с разметкой — текстом",
+          "adm.gw.card.ch.html"),
+    _card(1, _chan(1, _ch(agent_version="3.1.0-" + "x" * 200)), "длинная версия агента обрезана",
+          "adm.gw.card.ch.long_version"),
+    _card(1, _chan(1, _ch(skew_min=10)), "часы шлюза спешат на 10 мин", "adm.gw.card.ch.clock"),
+    _card(1, _chan(1, _ch(peer_nets=_PEER_MISSING)), "на шлюзе нет подсетей соседа — названы",
+          "adm.gw.card.ch.peer_missing"),
+    _card(1, _chan(1, _ch(peer_nets={"ok": True, "missing": []})), "вердикт связи подсетей исправен — строки нет",
+          "adm.gw.card.ch.peer_ok"),
+    _card(1, _chan(2, _neighbour, _ch(), peers=True),
+          "подсети соседа не применены, канал жив — только файлом", "adm.gw.card.ch.neighbour.live"),
+    _card(1, _chan(2, _neighbour, _ch(online=False, closed=True), peers=True),
+          "подсети соседа не применены, канал лежит — пункт", "adm.gw.card.ch.neighbour.dead"),
+    _card(1, _chan(2, _neighbour, _ch({"home_subnets": LAN2}), peers=True),
+          "смешанное расхождение: что везёт канал, что — файл", "adm.gw.card.ch.neighbour.mixed"),
+    # ── тумблеры при живом и лежащем канале ──────────────────────────────
+    Shot("adm.gw.lan_ask.ch.live", role="admin", press=[GwSlotCB(action="lan_ask", slot=1)],
+         data=_chan(1, _ch()), title="выключить VPN-транзит при живом канале — без перевыпуска"),
+    Shot("adm.gw.lan_yes.ch.live", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
+         data=_chan(1, _ch()), title="VPN-транзит выключен — доедет каналом"),
+    Shot("adm.gw.lan_ask.ch.dead", role="admin", press=[GwSlotCB(action="lan_ask", slot=1)],
+         data=_chan(1, _ch(online=False)), title="выключить VPN-транзит без канала — перевыпуск"),
+    Shot("adm.gw.lan_yes.ch.dead", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
+         data=_chan(1, _ch(online=False)), title="VPN-транзит выключен без канала — перевыпусти"),
+    Shot("adm.gw.lan_yes.ch.peers", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
+         data=_chan(1, _ch(), peers=True), title="VPN-транзит выключен каналом, но подсети соседей — файлом"),
+    Shot("adm.gw.peer_ask.ch.live", role="admin", press=[GwSlotCB(action="peer_ask")],
+         data=_chan(1, _ch(), peers=False), title="связать подсети при живом канале — всё равно перевыпуск"),
+    Shot("adm.gw.peer_yes.ch.live", role="admin", press=[GwSlotCB(action="peer_yes", val="1")],
+         data=_chan(1, _ch(), peers=False), title="подсети связаны при живом канале — перевыпусти"),
+    # ── бот шлюза в карточках и подписях файла ───────────────────────────
+    _card(2, _gw(2, _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), token=False),
+          "бот слота известен — ссылка последней строкой, имя экранировано", "adm.gw.card.bot"),
+    _card(1, _gw(2, _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), token=False),
+          "бот известен только у соседнего слота — здесь строки нет", "adm.gw.card.nobot"),
+    _card(2, _gw(2, _bot(2, "pi2_gw_bot", "")), "у бота нет имени — ссылка подписана username",
+          "adm.gw.card.bot.username"),
+    _card(2, _gw(2, _token_replaced), "токен слота сменили — ссылки на прежнего бота нет",
+          "adm.gw.card.token_replaced"),
+    _card(2, _gw(2, _snap_bot("pi2_gw_bot", "Шлюз <Pi2>"), token=False),
+          "бот из снимка канала (токена на сервере нет)", "adm.gw.card.snapbot"),
+    _card(2, _gw(2, _snap_bot("pi2_gw_bot", "Шлюз <Pi2>"), _snap_bot("pi2_gw_bot", "Новое имя", 2, False),
+                 token=False), "бот из снимка переименован — дельтой", "adm.gw.card.snapbot.renamed"),
+    _card(2, _gw(2, _snap_bot("pi2_gw_bot", "Шлюз <Pi2>"), _snap_bot("", "", 2, False), token=False),
+          "в снимке пустой username — строки нет", "adm.gw.card.snapbot.gone"),
+    _card(2, _gw(2, _snap_bot("snap_bot", "Из снимка"), _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), token=False),
+          "ответ getMe по токену важнее снимка", "adm.gw.card.snapbot.token"),
+    Shot("adm.gw.dev.nobot", role="admin", press=[DeviceCB(action="open", device_id=NASPI)],
+         data=_slots(1, token=False), title="устройство-шлюз, бот неизвестен — без строки бота"),
+    Shot("adm.gw.bundle.escaped", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
+         data=_gw(2, _label(2, "дом <2>"), _bot(2, "pi2_gw_bot", "Шлюз <Pi2>")),
+         title="подпись файла: подпись слота и имя бота экранированы"),
+    Shot("adm.gw.bundle.username", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
+         data=_gw(2, _bot(2, "pi2_gw_bot", "")), title="подпись файла: у бота нет имени — username"),
+    Shot("adm.gw.bundle.token_replaced", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
+         data=_gw(2, _token_replaced), title="подпись файла после смены токена — без ссылки"),
+    Shot("adm.gw.bundle.snapbot", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
+         data=_gw(2, _snap_bot("pi2_gw_bot", "Шлюз <Pi2>"), token=False),
+         title="подпись файла: бот из снимка канала"),
+    # ── /start gw-N ──────────────────────────────────────────────────────
+    Shot("adm.link.gw.nav", role="admin", steps=[("start", ""), ("start", "gw-2")], data=_slots(2),
+         title="карточка по ссылке — на место живого меню"),
+    Shot("adm.link.gw.standby", role="admin", start="gw-2", data=_slots(2),
+         title="карточка резерва по ссылке — пинг не меряется, но и «не отвечает» нет"),
+    Shot("adm.link.gw.zero", role="admin", start="gw-0", data=_slots(1), title="gw-0 — слот снят"),
+    Shot("adm.link.gw.garbage", role="admin", start="gw-abc", data=_slots(1), title="gw-abc — обычный /start"),
+    Shot("adm.link.gw.one", role="admin", start="gw-1", data=_slots(1),
+         title="один шлюз по ссылке — «Назад» на главную"),
+    Shot("adm.link.gw.ping", role="admin", steps=[("start", "gw-2"), ("press", GwSlotCB(action="ping", slot=2))],
+         data=_slots(2), title="карточка с главной после пинга — «Назад» на главную"),
+    Shot("adm.link.gw.pref", role="admin",
+         steps=[("start", "gw-2"), ("press", GwSlotCB(action="edit", slot=2)),
+                ("press", GwSlotCB(action="pref", slot=2)), ("press", _CARD2)],
+         data=_gw(2, _active1), title="карточка с главной после галочки «При старте» — «Назад» на главную"),
+    Shot("adm.link.gw.label", role="admin",
+         steps=[("start", "gw-2"), ("press", GwSlotCB(action="label", slot=2)), ("text", "дача"),
+                ("press", _CARD2)],
+         data=_slots(2), title="карточка с главной после ввода подписи — «Назад» на главную"),
+    Shot("adm.link.gw.label_cancel", role="admin",
+         steps=[("start", "gw-2"), ("press", GwSlotCB(action="label", slot=2)), ("press", _LABEL_CANCEL),
+                ("press", _CARD2)],
+         data=_slots(2), title="карточка с главной после отмены подписи — «Назад» на главную"),
+    # ── файл слота 2: «В меню» и итоги с шлюза ───────────────────────────
+    Shot("adm.gw.bundle.card.gone", role="admin",
+         steps=[("press", GwSlotCB(action="bundle", slot=2)), ("call", _drop_slot2, "слот снят"),
+                ("press", SetCB(sec="rt", act="do", key="bundle_cancel", val="2"))],
+         data=_slots(2), title="«🛰 В карточку» под файлом снятого слота — главная"),
+    Shot("adm.ev.gw_applied.label", role="admin", call=("bundle_applied", _applied2(True)),
+         data=_gw(2, _label(2, "дом 2"), _file2(False)), title="файл слота 2 применён — имя с подписью"),
+    Shot("adm.ev.gw_applied.gone", role="admin", call=("bundle_applied", _applied2(True)),
+         data=_gw(2, _file2(False), _drop2), title="итог по снятому слоту — уведомление и главная"),
+    Shot("adm.ev.gw_applied.fail.escaped", role="admin", call=("bundle_applied", _applied2(False, "нет <места> & прав")),
+         data=_gw(2, _file2(False)), title="отказ шлюза — причина экранирована"),
+    Shot("adm.ev.gw_applied.fail.bare", role="admin", call=("bundle_applied", _applied2(False)),
+         data=_gw(2, _file2(False)), title="отказ шлюза без причины — без двоеточия"),
+    Shot("adm.ev.gw_installed.label", role="admin", call=("bundle_installed", _installed2),
+         data=_gw(2, _label(2, "дом 2"), _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), _file2(True)),
+         title="шлюз слота 2 настроен — подпись слота и экранированное имя бота"),
+    Shot("adm.ev.gw_installed.nobot", role="admin", call=("bundle_installed", _installed2),
+         data=_gw(2, _file2(True), token=False), title="шлюз настроен, бот неизвестен — без строки бота"),
+    Shot("adm.ev.gw_installed.nofile", role="admin", call=("bundle_installed", _installed2),
+         data=_gw(2, _nav_live, token=False), title="шлюз настроен, файла в чате нет — одно уведомление"),
+    Shot("adm.ev.gw_installed.enc", role="admin", call=("bundle_installed", _installed2),
+         data=_gw(2, _file2(False), token=False),
+         title="шлюз настроен, а в чате уже шифрованный файл — файл остаётся"),
+]

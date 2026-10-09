@@ -1,12 +1,13 @@
-"""E2E: раскладка настроек и значки — кнопки правок, порядок фильтров роутера
-настроек, галочки против кружков, значок шлюза.
+"""E2E: раскладка настроек — кнопки правок и порядок фильтров роутера
+настроек.
 
 Корень настроек, «🔧 Сервис» по состояниям переезда, выход из разделов в
 корень, список сайтов РФ-доступа — в эталоне (adm.set.root, adm.set.svc*,
 adm.set.mig.cancel.yes, adm.set.*, adm.rf.sites), значки списков
 (adm.clients.icons, adm.devices.gw), тихие часы с границами
-(adm.set.notify.quiet); здесь — ветки, которых в снимках нет, и проверки, не
-сводящиеся к одному экрану."""
+(adm.set.notify.quiet), выключенное автопереключение тумблером ☑️, а не
+кружком (adm.gw.failover.off); здесь — проверки, не сводящиеся к одному
+экрану."""
 import pytest
 
 from awgbot.bot.callbacks import SetCB
@@ -42,24 +43,6 @@ def test_every_edit_button_points_at_a_known_setting():
                 checked += 1
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"
-
-# ── значки состояния: где кружок, где галочка ────────────────────────────────
-
-def test_gateway_switches_off_are_ticks_not_circles():
-    """Кружок читается как «жив или лежит» — состояние объекта. Выключенное
-    автопереключение в «🛰 Шлюзах» — тумблер ☑️, а не 🔴: иначе админ примет
-    настройку за упавший шлюз. Включённые тумблеры, списки «кому доступен» и
-    «о чём сообщать» — в эталоне (adm.rt.users, adm.set.ncl, adm.gw.peer_yes);
-    выключенного автопереключения в снимках нет. Значки списка профилей и
-    «Моих устройств» — снимки adm.clients.icons и adm.devices.gw."""
-    from awgbot.bot import keyboards as kb
-    from types import SimpleNamespace as NS
-    states = [{"gateway": NS(id=i), "device": NS(name=n), "active": i == 1, "preferred": i == 1}
-              for i, n in ((1, "NASPi"), (2, "Pi4"))]
-    rt = [b.text for row in kb.gateways_kb(states, failover_on=False, peer_nets_on=True).inline_keyboard
-          for b in row]
-    assert "☑️ Автопереключение" in rt and "✅ Связь подсетей" in rt, rt
-    assert not any(t.startswith(("🟢", "🔴")) for t in rt), rt
 
 
 # ── порядок фильтров в роутере настроек ──────────────────────────────────────

@@ -1,8 +1,9 @@
 """Ссылки в текстах про шлюзы: строка «Бот шлюза» (чат бота слота по его
 username) и имена шлюзов в строке РФ-доступа шапки админа — deep-link
-«/start gw-<слот>» в карточку слота. Обычные формы обеих строк — в эталонах
-экранов (tests/screens/admin.txt); здесь — экранирование, пустые значения и
-состояния, которых в эталонах нет."""
+«/start gw-<слот>» в карточку слота. Формы обеих строк на экранах — в эталоне
+tests/screens/admin.txt: подпись бота по username (adm.gw.card.bot.username),
+шапка во всех состояниях резерва и активного (adm.main.gw.*); здесь —
+экранирование и пустые значения на входе функций."""
 from __future__ import annotations
 
 import re
@@ -39,52 +40,10 @@ def test_agent_bot_line_without_username_is_empty():
     assert texts.agent_bot_line(None) == ""
 
 
-def test_agent_bot_line_falls_back_to_username_for_the_label():
-    line = texts.agent_bot_line({"agent_bot": {"username": "naspi_gw_bot", "name": ""}})
-    assert line == 'Бот шлюза: <a href="https://t.me/naspi_gw_bot">naspi_gw_bot</a>'
-
-
 # ── строка РФ-доступа в шапке админа ─────────────────────────────────────────
 
 def _info(ok=True, active="NASPi", active_slot=1, standby=()):
     return {"ok": ok, "active": active, "active_slot": active_slot, "standby": list(standby)}
-
-
-def _plain(line: str) -> str:
-    return re.sub(r"</?a[^>]*>", "", line)
-
-
-def test_standby_word_links_to_the_standby_slot_not_the_active_one():
-    """Слово «резерв» ведёт в карточку РЕЗЕРВА (ссылка в карточку активного
-    здесь показала бы не тот шлюз); состояние (не отвечает / проверяется;
-    «жив» — в эталоне главной) остаётся текстом, и строка без разметки
-    читается как прежде."""
-    for state, tail, dot in (("dead", "не отвечает", "🟠"), ("unknown", "проверяется", "🟢")):
-        line = texts.routing_admin_status_line(
-            _info(standby=[{"name": "Pi2", "slot": 2, "state": state}]), BOT)
-        assert _hrefs(line) == [(_card(1), "NASPi"), (_card(2), "резерв")], (state, line)
-        assert _plain(line) == f"🇷🇺 РФ-доступ: {dot} работает · NASPi · резерв {tail}", (state, line)
-
-
-def test_active_on_slot_two_links_to_slot_two():
-    """После переключения активен слот 2 — ссылка имени ведёт в его карточку,
-    резерв — в карточку слота 1."""
-    line = texts.routing_admin_status_line(
-        _info(active="Pi2", active_slot=2, standby=[{"name": "NASPi", "slot": 1, "state": "alive"}]), BOT)
-    assert _hrefs(line) == [(_card(2), "Pi2"), (_card(1), "резерв")], line
-
-
-def test_off_line_links_every_named_gateway():
-    """«выключен» — имена тех, кто не отвечает, тоже ссылки: именно туда и
-    идут разбираться."""
-    both = texts.routing_admin_status_line(
-        _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "dead"}]), BOT)
-    assert both.startswith("🇷🇺 РФ-доступ: 🔴 недоступен — ") and both.endswith(" не отвечают"), both
-    assert _hrefs(both) == [(_card(1), "NASPi"), (_card(2), "Pi2")], both
-    one = texts.routing_admin_status_line(
-        _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "alive"}]), BOT)
-    assert one == (f'🇷🇺 РФ-доступ: 🔴 недоступен, <a href="{_card(1)}">NASPi</a> не отвечает, '
-                   f'<a href="{_card(2)}">резерв</a> жив'), one
 
 
 def test_link_labels_are_escaped():

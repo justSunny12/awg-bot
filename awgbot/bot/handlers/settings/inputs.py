@@ -135,7 +135,9 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
         res = await call(services.migration_prepare,
                          int(want_port) if str(want_port).isdigit() else None)
     except Exception as e:                                # noqa: BLE001
-        await cb.message.answer(texts.migration_prepare_failed(str(e)))
+        # живое меню уже заменено строкой «поднимаю…» — отказ приходит новым
+        # живым меню с выходом в раздел, иначе из чата некуда нажать
+        await send_menu(cb.message, services, texts.migration_prepare_failed(str(e)), kb.settings_back("srv"))
         return
     # перезапуск — по кнопке: бот читает интерфейсы при старте, а момент
     # выбирает человек («⬅️ Позже» — раздел напомнит)

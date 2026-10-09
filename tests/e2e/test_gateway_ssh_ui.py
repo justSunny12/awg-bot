@@ -237,18 +237,6 @@ def test_the_address_list_pages_through_the_whole_list():
     assert seen == many, "листанием доступен не весь список или не по порядку"
 
 
-def test_warnings_go_into_their_own_block_in_the_main_firewall_too():
-    """У файервола ВПС «Не резолвятся» — тем же блоком «Предупреждения», что у
-    шлюза, ограничены так же, а список адресов — кнопками."""
-    from awgbot.bot.texts.settings import settings_firewall_text
-    t = settings_firewall_text({"enabled": True, "ssh_port": 22, "raw_allow": [f"h{i}.example" for i in range(15)],
-                                "unresolved": [f"h{i}.example" for i in range(15)], "admin_ips": ["x"]})
-    assert "🟢 Снаружи: фильтр включён — только адреса из списка" in t
-    assert "15 адресов — редактируемый список ниже" in t and t.count("и ещё 3") == 1, \
-        "«Не резолвятся» у ВПС ограничены, как у шлюза; список — кнопками"
-    assert "<b>Предупреждения:</b>\n⚠️ Не резолвятся:" in t
-
-
 async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry(svc, fake_bot, monkeypatch):
     """Адресов больше, чем влезает на экран: список листается, а номер в кнопке
     «➖» — по ПОЛНОМУ списку. Считай его от начала страницы — со второй страницы
