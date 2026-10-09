@@ -3520,7 +3520,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 ✉️ <b>E-mail</b> 🟢 <i>только что</i>
 <code>admin@gmail.com</code> · IMAP <code>imap.gmail.com:993</code> · SMTP <code>smtp.gmail.com:587</code>
-🆘 Аварийный выход из паузы: код на <code>box@icloud.com</code>
+🆘 Аварийный выход из паузы: код на <code>admin@gmail.com</code>
   [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
   [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
   [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
@@ -3571,7 +3571,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 ✉️ <b>E-mail</b> 🟢 <i>только что</i>
 <code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
-🆘 Аварийный выход из паузы: код на <code>box@icloud.com</code>
+🆘 Аварийный выход из паузы: код на <code>admin@example.org</code>
   [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
   [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
   [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
