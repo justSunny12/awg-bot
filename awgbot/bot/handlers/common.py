@@ -188,15 +188,18 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
     text, markup = parts
     nav_id = await call(services.db.get_nav_message_id, message.chat.id)
     if nav_id is not None:
+        edited = True
         try:
             await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
                                                 reply_markup=markup, link_preview_options=NO_PREVIEW)
+        except Exception:                             # noqa: BLE001
+            edited = False                            # сообщение старое или без изменений — новым
+        if edited:
             # приглашение к вводу было служебным — теперь это экран, уборка
-            # при возврате в меню его не трогает
+            # при возврате в меню его не трогает; запись в БД — вне try: её
+            # сбой не повод слать второе меню поверх уже отредактированного
             await call(services.db.remove_content_msg_id, message.chat.id, nav_id)
             return True
-        except Exception:                             # noqa: BLE001
-            pass
     await send_menu(message, services, text, markup)
     return True
 
