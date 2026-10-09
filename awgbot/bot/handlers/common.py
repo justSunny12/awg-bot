@@ -282,15 +282,15 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
 # неё и со всех её подэкранов — на главную, откуда пришли. Пометка живёт до
 # возврата на главную: любой другой вход в карточку (список, раздел, карточка
 # устройства) начинается с главной, и выход снова обычный.
-_card_home: set[int] = set()
+_card_from_main: set[int] = set()
 
 
 def card_from_main(chat_id: int | None, yes: bool) -> None:
-    (_card_home.add if yes else _card_home.discard)(chat_id)
+    (_card_from_main.add if yes else _card_from_main.discard)(chat_id)
 
 
 def card_is_from_main(chat_id: int | None) -> bool:
-    return chat_id in _card_home
+    return chat_id in _card_from_main
 
 
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:

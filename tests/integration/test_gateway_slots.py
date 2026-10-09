@@ -50,8 +50,8 @@ def test_slot_table_replaces_the_flag(services, make_active_client):
     assert services.db.gateway_by_device(a.device_id).id == 1
     g2 = services.db.gateway_add(b.device_id, "awglink2", 8443, "10.99.99.4/30")
     assert g2.id == 2 and g2.preferred == 0
-    services.db.gateway_update(2, home_subnets=["192.168.2.0/24"], label="дом 2")
-    assert services.db.gateway(2).home_subnets == ["192.168.2.0/24"]
+    services.db.gateway_update(2, lan_subnets=["192.168.2.0/24"], label="дом 2")
+    assert services.db.gateway(2).lan_subnets == ["192.168.2.0/24"]
     assert services.db.gateway(2).label == "дом 2"
     services.db.gateway_set_preferred(2)
     assert [x.id for x in services.db.gateways()] == [2, 1]
@@ -281,16 +281,16 @@ def test_startup_warnings_name_the_slot(two, services):
     assert len(warns) == 1 and warns[0].startswith("Шлюз РФ-доступа") and "NASPi" in warns[0]
 
 
-def test_home_subnets_are_parsed_and_conflicts_reported(two, services):
+def test_lan_subnets_are_parsed_and_conflicts_reported(two, services):
     admin, g1, g2 = two
-    res = services.gateway_set_home_subnets(1, "192.168.1.0/24, мусор 10.8.1.0/24 10.99.99.0/30 2001:db8::/64")
+    res = services.gateway_set_lan_subnets(1, "192.168.1.0/24, мусор 10.8.1.0/24 10.99.99.0/30 2001:db8::/64")
     assert res["kept"] == ["192.168.1.0/24"] and res["conflict"] is None
     reasons = dict(res["rejected"])
     assert "мусор" in reasons and "10.8.1.0/24" in reasons and "10.99.99.0/30" in reasons
-    res = services.gateway_set_home_subnets(2, "192.168.1.1/24")
+    res = services.gateway_set_lan_subnets(2, "192.168.1.1/24")
     assert res["kept"] == ["192.168.1.0/24"] and res["conflict"].id == 1
     assert services.gateway_slots_policy() == [(1, "awglink", ["192.168.1.0/24"]), (2, "awglink2", [])]
-    assert services.gateway_set_home_subnets(2, "—")["kept"] == []
+    assert services.gateway_set_lan_subnets(2, "—")["kept"] == []
     services.gateway_set_label(2, "  дом   2  очень длинная подпись сверх меры")
     assert services.db.gateway(2).label == "дом 2 очень длинная"
 
@@ -825,5 +825,5 @@ def test_chat_edits_of_channel_data_request_delivery_at_once(two, services):
     calls = []
     services.channel_touch = lambda: calls.append(1)
     services.set_peer_nets(True)
-    services.gateway_set_home_subnets(1, "192.168.50.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.50.0/24")
     assert len(calls) == 2, "правка из чата не запросила доставку каналом"

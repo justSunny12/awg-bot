@@ -28,7 +28,7 @@ class PeerNetsMixin:
         (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER,
         PEER_HOME_NETS (подсети за другими шлюзами — в AllowedIPs и файервол)."""
         return {"LAN_MODE": "1" if gw.lan_mode else "0",
-                "HOME_SUBNETS": " ".join(gw.home_subnets),
+                "HOME_SUBNETS": " ".join(gw.lan_subnets),
                 "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
                 "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
 
@@ -52,8 +52,8 @@ class PeerNetsMixin:
         for g in self.db.gateways():
             if g.id == me.id or not g.lan_mode:
                 continue
-            bad = set(nets.overlap(g.home_subnets, me.home_subnets))
-            for n in g.home_subnets:
+            bad = set(nets.overlap(g.lan_subnets, me.lan_subnets))
+            for n in g.lan_subnets:
                 if n not in bad and n not in out:
                     out.append(n)
         return out
@@ -72,22 +72,22 @@ class PeerNetsMixin:
             info["who"] = [self._gw_display(g) for g in no_lan]
             return info
         lan = [g for g in slots if g.lan_mode]
-        no_nets = [g for g in lan if not g.home_subnets]
+        no_nets = [g for g in lan if not g.lan_subnets]
         if no_nets:
             info["state"] = "no_nets"
             info["who"] = [self._gw_display(g) for g in no_nets]
             return info
         for i, a in enumerate(lan):
             for b in lan[i + 1:]:
-                ov = nets.overlap(a.home_subnets, b.home_subnets)
+                ov = nets.overlap(a.lan_subnets, b.lan_subnets)
                 if ov:
                     info["state"] = "overlap"
                     info["who"] = [self._gw_display(a), self._gw_display(b)]
                     info["nets"] = ov
                     return info
         info["state"] = "ok"
-        info["pairs"] = [(self._gw_display(g), list(g.home_subnets)) for g in lan]
-        info["pairs_named"] = [(self._gw_name(g), g.label, list(g.home_subnets)) for g in lan]
+        info["pairs"] = [(self._gw_display(g), list(g.lan_subnets)) for g in lan]
+        info["pairs_named"] = [(self._gw_name(g), g.label, list(g.lan_subnets)) for g in lan]
         return info
 
     def set_peer_nets(self, on: bool) -> None:
@@ -102,7 +102,7 @@ class PeerNetsMixin:
         локальной подсети: по ней шлюз находит свой адрес. Возвращает
         {'gateway', 'resolver': адрес или '' (запасной апстрим)}."""
         gw = self._gw_slot(slot_id)
-        if on and not gw.home_subnets:
+        if on and not gw.lan_subnets:
             raise ServiceError("сначала задай локальную подсеть шлюза: по ней шлюз находит свой адрес")
         if on and (not gw.device_id or self.db.get_device(gw.device_id) is None):
             raise ServiceError("у слота нет устройства — без аплинка режим без VPN не работает")

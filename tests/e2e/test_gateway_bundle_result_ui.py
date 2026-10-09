@@ -46,10 +46,10 @@ TOKEN2 = "222222222:BB-second-token-value-long-enough"
 
 
 @pytest.fixture(autouse=True)
-def _fresh_card_home(monkeypatch):
+def _fresh_card_from_main(monkeypatch):
     """Пометка «карточку открыли с главной» — модульная, по чату админа."""
     from awgbot.bot.handlers import common as _common
-    monkeypatch.setattr(_common, "_card_home", set())
+    monkeypatch.setattr(_common, "_card_from_main", set())
 
 
 class _Bot(FakeBot):

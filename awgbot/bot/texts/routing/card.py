@@ -165,7 +165,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     if ch_head:
         lines.append(ch_head)
     lines += ch_warns
-    nets = gw.home_subnets
+    nets = gw.lan_subnets
     nets_s = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
         if nets else "подсети не заданы"
     lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
@@ -178,9 +178,9 @@ def gateway_card_text(state: dict, states: list) -> str:
         if state.get("services"):
             lines.append(services_line(state["services"], name, state.get("agent_bot")))
     others = [s for s in states if s["gateway"].id != gw.id]
-    conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].home_subnets)), None)
+    conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].lan_subnets)), None)
     if conflict is not None:
-        ov_nets = nets_util.overlap(nets, conflict["gateway"].home_subnets)
+        ov_nets = nets_util.overlap(nets, conflict["gateway"].lan_subnets)
         ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets)
         verb = "пересекается" if len(ov_nets) == 1 else "пересекаются"
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))

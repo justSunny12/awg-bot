@@ -105,7 +105,7 @@ def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> Inlin
         ("▶️ Сделать активным", GwSlotCB(action="switch_ask", slot=gw.id)) if not state.get("active") else None,
         [("📤 Конфигурация", GwSlotCB(action="bundle", slot=gw.id)), ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id))],
         [(f"{_tick(bool(gw.lan_mode))} VPN-транзит", GwSlotCB(action="lan_ask", slot=gw.id)),
-         ("🗺 Подсети", GwSlotCB(action="home", slot=gw.id))],
+         ("🗺 Подсети", GwSlotCB(action="lan_nets", slot=gw.id))],
         [("❓ Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
          ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id))],
         ui.back(back))

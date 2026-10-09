@@ -2456,7 +2456,7 @@ Pi4 — 🟡 Резерв, проверка связи
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -2472,7 +2472,7 @@ Pi4 — 🟡 Резерв, проверка связи
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -2490,7 +2490,7 @@ Pi4 — 🟡 Резерв, проверка связи
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -2509,7 +2509,7 @@ Pi4 — 🟡 Резерв, проверка связи
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -2553,7 +2553,7 @@ Pi4 — 🟡 Резерв, проверка связи
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ Пинг с pi: 61 мс
@@ -2584,7 +2584,7 @@ Pi4 — 🟡 Резерв, проверка связи
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ Трафик идёт через Pi4
@@ -2627,7 +2627,7 @@ Pi4 — 🟡 Резерв, проверка связи
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~! VPN-транзит включён: перевыпусти конфигурацию шлюза
@@ -2707,7 +2707,7 @@ uci commit</pre>
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 
@@ -2731,8 +2731,8 @@ uci commit</pre>
   [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
   [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
 
-### adm.gw.home — локальные подсети: приглашение
-> press gws:home:1:
+### adm.gw.lan_nets — локальные подсети: приглашение
+> press gws:lan_nets:1:
 = edit #1
 🗺 <b>Подсети NASPi</b> · сейчас: не заданы
 
@@ -2740,7 +2740,7 @@ uci commit</pre>
   [✖️ Отмена | x:gw:1]
 ~ (пустой ответ)
 
-### adm.gw.home.done — локальные подсети: итог
+### adm.gw.lan_nets.done — локальные подсети: итог
 > text «192.168.1.0/24»
 - delete #1
 - delete #2
@@ -2755,9 +2755,18 @@ uci commit</pre>
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
+
+### adm.gw.lan_nets.legacy — локальные подсети: прежний колбэк из старого сообщения
+> press gws:home:1:
+= edit #1
+🗺 <b>Подсети NASPi</b> · сейчас: не заданы
+
+Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. Доступ через туннель — только твоим устройствам
+  [✖️ Отмена | x:gw:1]
+~ (пустой ответ)
 
 ### adm.gw.label — подпись: приглашение
 > press gws:label:1:
@@ -3217,7 +3226,7 @@ Pi4 — 🟢 Резерв
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | m:main]
 
@@ -3651,7 +3660,7 @@ IMAP и SMTP отвечают, вход выполнен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 
@@ -3669,7 +3678,7 @@ IMAP и SMTP отвечают, вход выполнен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 
@@ -3688,7 +3697,7 @@ IMAP и SMTP отвечают, вход выполнен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 
@@ -6025,7 +6034,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6045,7 +6054,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6064,7 +6073,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6083,7 +6092,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6102,7 +6111,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6121,7 +6130,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6140,7 +6149,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6161,7 +6170,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6181,7 +6190,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6200,7 +6209,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6225,7 +6234,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6249,7 +6258,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6274,7 +6283,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6294,7 +6303,7 @@ IP, подсеть или имя DynDNS; можно несколько
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк · предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6319,7 +6328,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6345,7 +6354,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6370,7 +6379,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6395,7 +6404,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6420,7 +6429,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6443,7 +6452,7 @@ IP, подсеть или имя DynDNS; можно несколько
 <blockquote expandable>выход наружу: сервер — есть, шлюз — не знает (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6634,7 +6643,7 @@ Pi4 (дача) — 🟢 Резерв
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6653,7 +6662,7 @@ Pi4 (дача) — 🟢 Резерв
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [❓ Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -6669,7 +6678,7 @@ Pi4 (дача) — 🟢 Резерв
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ Пинг с pi: 43 мс
@@ -6720,7 +6729,7 @@ Pi4 — 🟢 Активен
 > press gws:switch_ask:1:
 ~ Трафик уже идёт через этот шлюз
 
-### adm.gw.home.partial — подсети: часть не принята — названа в итоге
+### adm.gw.lan_nets.partial — подсети: часть не принята — названа в итоге
 > text «192.168.1.0/24 мусор»
 - delete #1
 - delete #2
@@ -6736,7 +6745,7 @@ Pi4 — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк · предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 
@@ -6910,7 +6919,7 @@ Pi4 — 🟢 Активен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 
@@ -7184,7 +7193,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~! VPN-транзит выключен: перевыпусти конфигурацию шлюза
@@ -7203,7 +7212,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 
@@ -7493,7 +7502,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7511,7 +7520,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку 13 дн назад) · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7532,7 +7541,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку 2 ч назад) · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7552,7 +7561,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7571,7 +7580,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7590,7 +7599,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7610,7 +7619,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7628,7 +7637,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7647,7 +7656,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7666,7 +7675,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7684,7 +7693,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7702,7 +7711,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7720,7 +7729,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7739,7 +7748,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7757,7 +7766,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7775,7 +7784,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7794,7 +7803,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7813,7 +7822,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7831,7 +7840,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -7852,7 +7861,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк · предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -7874,7 +7883,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что) · устройства админа достают до подсети через линк · предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -7895,7 +7904,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк · предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [❓ Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -7921,7 +7930,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~! VPN-транзит выключен: применится автоматически по управляющему каналу
@@ -7949,7 +7958,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что) · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~! VPN-транзит выключен: перевыпусти конфигурацию шлюза
@@ -7966,7 +7975,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть · устройства админа достают до подсети через линк</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~! VPN-транзит выключен: применится автоматически по управляющему каналу; для связи подсетей перевыпусти конфигурацию каждого шлюза
@@ -8005,7 +8014,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8020,7 +8029,7 @@ NASPi — 🟢 Активен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 <blockquote expandable>предпочтительный при холодном старте</blockquote>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8036,7 +8045,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">pi2_gw_bot</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8051,7 +8060,7 @@ NASPi — 🟢 Активен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8068,7 +8077,7 @@ NASPi — 🟢 Активен
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что)</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8085,7 +8094,7 @@ NASPi — 🟢 Активен
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что)</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8101,7 +8110,7 @@ NASPi — 🟢 Активен
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что)</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8118,7 +8127,7 @@ NASPi — 🟢 Активен
 <blockquote expandable>выход наружу: сервер — есть, шлюз — есть (по снимку только что)</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
@@ -8132,7 +8141,7 @@ NASPi — 🟢 Активен
 🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
@@ -8193,7 +8202,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 
@@ -8209,7 +8218,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 
@@ -8247,7 +8256,7 @@ NASPi — 🟢 Активен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
   [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [✏️ Изменить | gws:edit:1:]
   [⬅️ Назад | m:main]
 
@@ -8262,7 +8271,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 ~ Пинг с pi: 43 мс
@@ -8279,7 +8288,7 @@ NASPi — 🟢 Активен
 <blockquote expandable>предпочтительный при холодном старте</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 ~ (пустой ответ)
@@ -8295,7 +8304,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 ~ (пустой ответ)
@@ -8311,7 +8320,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | m:main]
 ~ (пустой ответ)
@@ -8351,7 +8360,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 
@@ -8390,7 +8399,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 
@@ -8409,7 +8418,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 
@@ -8429,7 +8438,7 @@ NASPi — 🟢 Активен
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 
@@ -8447,7 +8456,7 @@ NASPi — 🟢 Активен
 🗺 подсети не заданы · 🔀 VPN-транзит ☑️
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📤 Конфигурация | gws:bundle:2:] [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:home:2:]
+  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
 

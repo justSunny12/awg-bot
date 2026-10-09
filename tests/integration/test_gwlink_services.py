@@ -65,8 +65,8 @@ async def pair(services, make_active_client, monkeypatch):
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
-    services.gateway_set_home_subnets(1, X_NETS)
-    services.gateway_set_home_subnets(2, Y_NETS)
+    services.gateway_set_lan_subnets(1, X_NETS)
+    services.gateway_set_lan_subnets(2, Y_NETS)
     services.db.gateway_update(1, lan_mode=1)
     services.db.gateway_update(2, lan_mode=1)
     flag = {"on": True}
@@ -224,7 +224,7 @@ async def test_overlapping_subnets_share_nothing(pair):
     """Подсети пересеклись — доступа между ними нет, и сервисов тоже."""
     s = pair.services
     _x_known(s)
-    s.gateway_set_home_subnets(2, "192.168.0.0/16")
+    s.gateway_set_lan_subnets(2, "192.168.0.0/16")
     assert s.gateway_peer_nets(2) == []
     _y_snap(s)
     y = await _hello(pair, 2)

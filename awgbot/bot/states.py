@@ -74,8 +74,8 @@ class GatewayToken(StatesGroup):
     value = State()
 
 
-class GatewayHome(StatesGroup):
-    """Домашние подсети слота шлюза. В данных — gw_slot."""
+class GatewayLanSubnets(StatesGroup):
+    """Локальные подсети слота шлюза. В данных — gw_slot."""
     value = State()
 
 

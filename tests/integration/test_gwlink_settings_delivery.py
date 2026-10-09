@@ -65,7 +65,7 @@ async def link(services, make_active_client, monkeypatch):
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "127.0.0.0/30", slot_id=1)
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     port = _free_port()
@@ -157,7 +157,7 @@ async def test_a_new_edit_on_the_server_goes_out_in_the_same_session(services, l
     и такт живости обязан его отвезти, не дожидаясь переподключения."""
     gw = await _connect(link, _drifted(services))
     assert (await _settings(gw))["values"]["HOME_SUBNETS"] == "192.168.68.0/24"
-    services.gateway_set_home_subnets(1, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     await link.deliver_all()
     again = await _settings(gw)
     assert again is not None and again["values"]["HOME_SUBNETS"] == "192.168.70.0/24"
@@ -187,7 +187,7 @@ async def test_changes_made_while_the_channel_is_down_arrive_when_it_comes_back(
 
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
                           services._gw_bundle_deps(services.db.gateway(1)))
-    services.gateway_set_home_subnets(1, "192.168.70.0/24 192.168.71.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24 192.168.71.0/24")
     assert await link.deliver(1) is False, "без сессии доставлять некому"
     await link.deliver_all()
     assert services.gw_bundle_drift_notes() == [], "канал лёг минуту назад, а бот уже гонит перевыпускать"
@@ -339,7 +339,7 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
                           services._gw_bundle_deps(services.db.gateway(1)))
 
-    services.gateway_set_home_subnets(1, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     await link.deliver_all()
     await _until(lambda: services.gwlink_snapshot(1)["bundle"]["home_subnets"] == "192.168.70.0/24")
 
@@ -367,7 +367,7 @@ async def test_a_refused_delivery_rolls_back_and_says_so_on_both_ends(services, 
     перезапускается по кругу."""
     unit, client, chat = pi["unit"], pi["client"], pi["chat"]
     unit.restart = [_cp(1, err=b"LAN-interface for 192.168.70.0/24 not found"), _cp(0)]
-    services.gateway_set_home_subnets(1, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     await link.deliver_all()
     await _until(lambda: services.gwlink_ack(1))
 
@@ -423,7 +423,7 @@ async def test_a_hanging_restart_does_not_break_the_channel(services, link, pi):
     unit, client = pi["unit"], pi["client"]
     writer = client._writer
     unit.restart = [subprocess.TimeoutExpired(["systemctl", "restart"], 90), _cp(0)]
-    services.gateway_set_home_subnets(1, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     await link.deliver_all()
     await _until(lambda: services.gwlink_ack(1) or client._writer is not writer)
     assert client._writer is writer, "зависший рестарт обвязки порвал сессию канала"
@@ -438,7 +438,7 @@ def test_the_reminder_returns_after_a_day_of_silence(services, link):
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
                           services._gw_bundle_deps(gw))
     services.gwlink_snapshot_in(1, _snap(_installed(services)), 1, True)
-    services.gateway_set_home_subnets(1, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     services.db.set_state("gwlink_seen_1", timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=25)))
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1 and "Перевыпусти" in notes[0].text

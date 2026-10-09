@@ -121,7 +121,7 @@ async def test_card_never_has_more_than_eight_buttons(services, slots, fake_bot)
     VPN-транзитом (у него и «Сделать активным», и «❓ Роутер»)."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     services.db.gateway_update(2, lan_mode=1)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
@@ -188,7 +188,7 @@ async def test_manual_switch_both_ways_with_confirmation(services, slots, fake_b
     assert services.active_gateway().id == 1, "нажатие на активный что-то переключило"
 
 
-async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
+async def test_lan_subnets_and_label_inputs(services, slots, fake_bot):
     """«🗺 Подсети»: принятое сохраняется, мусор — нет; «✏️ Подпись»
     сохраняется, «—» её убирает. Итоги («⚠️ Не принято: …» первыми строками
     карточки, «✅ Подпись: дача → —») — эталоны adm.gw.home.partial и
@@ -197,10 +197,10 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     _slot1(services, pi); _slot2(services, pi2)
     st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gw_slot_home(cb, GwSlotCB(action="home", slot=1), services, st)
+    await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
     msg = _amsg(fake_bot, "192.168.1.0/24 мусор")
-    await sh.gateway_home_received(msg, st, services)
-    assert services.db.gateway(1).home_subnets == ["192.168.1.0/24"], "мусор записан в подсети или принятое потеряно"
+    await sh.gateway_lan_received(msg, st, services)
+    assert services.db.gateway(1).lan_subnets == ["192.168.1.0/24"], "мусор записан в подсети или принятое потеряно"
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
@@ -374,7 +374,7 @@ async def test_lan_mode_toggles_and_the_router_button_follows_it(services, slots
     сломал бы сеть): эталоны adm.gw.lan_yes и adm.gw.lan_yes.off."""
     _, pi, _ = slots
     _slot1(services, pi)
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda gw: "")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
@@ -391,7 +391,7 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     из них после выпуска — напоминание о перевыпуске своим текстом, один раз."""
     _, pi, _ = slots
     _slot1(services, pi)
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
     env, _ = services._gw_bundle_env(services.db.gateway(1))
     assert env["LAN_MODE"] == "0" and env["HOME_SUBNETS"] == "192.168.68.0/24" and env["RESOLVER"] == ""
@@ -402,7 +402,7 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
                           services._gw_bundle_deps(services.db.gateway(1)))
     assert services.gw_bundle_drift_notes() == []
-    services.gateway_set_home_subnets(1, "192.168.1.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24")
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1 and "локальные подсети" in notes[0].text and "неактуальна" in notes[0].text
     assert services.gw_bundle_drift_notes() == [], "один раз на расхождение"
@@ -429,8 +429,8 @@ def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monk
     store = _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    services.gateway_set_home_subnets(1, "192.168.1.0/24")
-    services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24")
+    services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets_info()["state"] == "off"
     store["app.routing.peer_nets.enabled"] = True
     info = services.gateway_peer_nets_info()
@@ -441,20 +441,20 @@ def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monk
     info = services.gateway_peer_nets_info()
     assert info["state"] == "ok" and [n for _, n in info["pairs"]] == [["192.168.1.0/24"], ["192.168.68.0/24"]]
     # вложенность — тоже пересечение; ввод принят, пара выпала
-    res = services.gateway_set_home_subnets(2, "192.168.0.0/16")
+    res = services.gateway_set_lan_subnets(2, "192.168.0.0/16")
     assert res["conflict"] is not None and res["conflict"].id == 1
     assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets(2) == []
     assert services.gateway_peer_nets_info()["state"] == "overlap"
-    res = services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    res = services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     assert res["conflict"] is None and res["peer_others"] == ["NASPi"], "кому перевыпускать"
     assert services.gateway_peer_nets(1) == ["192.168.68.0/24"]
     env, _ = services._gw_bundle_env(services.db.gateway(1))
     assert env["PEER_HOME_NETS"] == "192.168.68.0/24"
     import pytest as _pt
     with _pt.raises(Exception, match="сначала выключи"):
-        services.gateway_set_home_subnets(2, "")             # при включённом режиме без VPN подсети не убрать
+        services.gateway_set_lan_subnets(2, "")             # при включённом режиме без VPN подсети не убрать
     services.db.gateway_update(2, lan_mode=0)
-    services.gateway_set_home_subnets(2, "")
+    services.gateway_set_lan_subnets(2, "")
     services.db.gateway_update(2, lan_mode=1)
     assert services.gateway_peer_nets_info()["state"] == "no_nets"
 
@@ -483,15 +483,15 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
 def _peer_line_state(services, state):
     """Слоты под одно из пяти состояний связи подсетей."""
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
-    services.gateway_set_home_subnets(1, "192.168.1.0/24"); services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     if state == "no_lan":
         services.db.gateway_update(2, lan_mode=0)
     elif state == "no_nets":
         services.db.gateway_update(2, lan_mode=0)
-        services.gateway_set_home_subnets(2, "-")
+        services.gateway_set_lan_subnets(2, "-")
         services.db.gateway_update(2, lan_mode=1)
     elif state == "overlap":
-        services.gateway_set_home_subnets(2, "192.168.1.0/25")
+        services.gateway_set_lan_subnets(2, "192.168.1.0/25")
 
 
 @pytest.mark.parametrize("state, enabled", [
@@ -542,7 +542,7 @@ def test_peer_nets_change_reminds_about_reissue(services, slots, monkeypatch):
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
-    services.gateway_set_home_subnets(1, "192.168.1.0/24"); services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "")
     for sid in (1, 2):
         services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, sid),
@@ -597,7 +597,7 @@ async def test_transit_confirmation_carries_the_target_state(services, slots, fa
     _slot1(services, pi)
     calls = []
     monkeypatch.setattr(services, "gateway_set_lan_mode", lambda slot, on: calls.append((slot, on)) or {})
-    services.gateway_set_home_subnets(1, "192.168.1.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
     assert calls == [(1, True)]

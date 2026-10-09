@@ -230,7 +230,7 @@ class MarkMixin:
     _PRIVATE_NETS = tuple(__import__("ipaddress").ip_network(n)
                           for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
-    def gateway_set_home_subnets(self, slot_id: int, raw: str) -> dict:
+    def gateway_set_lan_subnets(self, slot_id: int, raw: str) -> dict:
         """Разбор пачки подсетей: IPv4, не клиентская, не подсеть линка.
         Возвращает {'kept': [...], 'rejected': [(строка, причина)], 'conflict':
         слот, у которого та же подсеть, или None}. Пусто или «—» — убрать все."""
@@ -284,39 +284,39 @@ class MarkMixin:
                 # стирала бы список и обходила запрет при VPN-транзите
                 why = "; ".join(f"{raw[:40]} — {reason}" for raw, reason in rejected[:3])
                 raise ServiceError(f"не принято: {why}")
-        gone = [s for s in (gw.home_subnets or []) if s not in kept]
-        self.db.gateway_update(gw.id, home_subnets=kept)
+        gone = [s for s in (gw.lan_subnets or []) if s not in kept]
+        self.db.gateway_update(gw.id, lan_subnets=kept)
         self._channel_touch()                              # HOME_SUBNETS — шлюзам сразу
         if gone and config.ROUTING_GW_INTERFACE:
             # убранная подсеть иначе остаётся в ядре до ребута
             try:
-                routing.drop_home_routes([(s, gw.link_if) for s in gone])
+                routing.drop_lan_routes([(s, gw.link_if) for s in gone])
             except routing.RoutingError as e:
-                log.warning("gateway_set_home_subnets: старые маршруты не сняты: %s", e)
+                log.warning("gateway_set_lan_subnets: старые маршруты не сняты: %s", e)
         conflict = None
         for g in self.db.gateways():
-            if g.id != gw.id and nets.overlap(kept, g.home_subnets):   # и вложенность
+            if g.id != gw.id and nets.overlap(kept, g.lan_subnets):   # и вложенность
                 conflict = g
                 break
         try:
             self._ensure_gateway_policy()
         except routing.RoutingError as e:
-            log.warning("gateway_set_home_subnets: маршруты не доведены: %s", e)
+            log.warning("gateway_set_lan_subnets: маршруты не доведены: %s", e)
         # кому перевыпускать конфигурацию из-за этих подсетей (функция B)
         others = [self._gw_display(g) for g in self.db.gateways()
-                  if g.id != gw.id and kept and kept != list(gw.home_subnets)
+                  if g.id != gw.id and kept and kept != list(gw.lan_subnets)
                   and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
         return {"kept": kept, "rejected": rejected, "conflict": conflict,
                 "conflict_name": self._gw_display(conflict) if conflict is not None else "",
                 "peer_others": others}
 
     def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:
-        """[(слот, интерфейс, подсети)] для ensure_policy: домашняя подсеть,
+        """[(слот, интерфейс, подсети)] для ensure_policy: подсеть,
         заданная двум слотам, достаётся первому по порядку."""
         seen: set[str] = set()
         out = []
         for g in self.db.gateways():
-            nets = [n for n in g.home_subnets if n not in seen]
+            nets = [n for n in g.lan_subnets if n not in seen]
             seen.update(nets)
             out.append((g.id, g.link_if, nets))
         return out

@@ -91,7 +91,7 @@ class MonitorMixin:
             "✅ Линк до сервера AWG ожил, хендшейк свежий",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
-        # Лежащий домашний канал для РФ-доступа равносилен лежащему линку —
+        # Лежащий локальный канал для РФ-доступа равносилен лежащему линку —
         # тот же короткий стрик, а не общий на пять тиков.
         host = html.escape(socket.gethostname(), quote=False)
         notes += self._streak_alert(

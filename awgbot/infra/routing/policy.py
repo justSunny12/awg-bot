@@ -69,8 +69,8 @@ def ensure_mss_clamp(iface: str = "") -> None:
     своего туннеля. Крупные сегменты упираются в лимит уже за ВПС.
 
     Само по себе это лечится PMTU Discovery, но он держится на ICMP «fragmentation
-    needed», который должен пройти обратно через оба туннеля и домашний
-    провайдер. На практике эти ICMP теряются, и получается худший вид поломки:
+    needed», который должен пройти обратно через оба туннеля и провайдера
+    шлюза. На практике эти ICMP теряются, и получается худший вид поломки:
     хендшейк и DNS проходят (пакеты мелкие), а страницы не открываются — со
     стороны «интернет отвалился», хотя связь есть.
 
@@ -103,9 +103,9 @@ def ensure_policy(active_iface: str = "", slots=()) -> None:
     служит ХУК в PREROUTING.
 
     active_iface — линк, который несёт трафик; slots — [(slot_id, iface,
-    home_subnets)] всех слотов: у каждого своя таблица для зонда, MSS-кламп на
-    своём линке и маршруты в свои домашние подсети. Без слотов (до первого
-    назначения) — как раньше, по интерфейсу конфига.
+    lan_subnets)] всех слотов: у каждого своя таблица для зонда, MSS-кламп на
+    своём линке и маршруты в свои локальные подсети. Без слотов (до первого
+    назначения) — только маршрут и кламп по интерфейсу конфига.
     """
     active_iface = active_iface or base._active_if()
     if not active_iface:
@@ -113,12 +113,11 @@ def ensure_policy(active_iface: str = "", slots=()) -> None:
     marking.ensure_route(active_iface)
     if slots:
         pairs = [(net, iface) for _sid, iface, nets in slots for net in nets]
-        marking.ensure_home_routes(pairs)
+        marking.ensure_lan_routes(pairs)
         for sid, iface, _nets in slots:
             slotpolicy.ensure_slot_policy(sid, iface)
             ensure_mss_clamp(iface)
     else:
-        marking.ensure_home_routes()
         ensure_mss_clamp(active_iface)
     if not marking._rule_present():
         base._host(["ip", "rule", "add", *marking._RULE])

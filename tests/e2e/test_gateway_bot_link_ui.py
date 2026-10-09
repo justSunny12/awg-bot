@@ -44,11 +44,11 @@ def _no_retry_pause(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_card_home(monkeypatch):
+def _fresh_card_from_main(monkeypatch):
     """Пометка «карточку открыли с главной» живёт на уровне модуля и по чату
     админа — у каждого теста своя, иначе тесты видели бы чужие пометки."""
     from awgbot.bot.handlers import common as _common
-    monkeypatch.setattr(_common, "_card_home", set())
+    monkeypatch.setattr(_common, "_card_from_main", set())
 
 
 def _cmd(args):
@@ -169,7 +169,7 @@ async def test_card_opened_from_the_list_goes_back_to_the_list(services, slots, 
     assert _back(_last_markup(nav, ("edit_text",))) == LIST, "пометка «с главной» вернулась после пинга"
 
 
-async def test_card_home_exit_is_per_chat(services, slots, fake_bot):
+async def test_card_from_main_exit_is_per_chat(services, slots, fake_bot):
     """Ссылку открыли в одном чате — в другом карточка ведёт себя как обычно:
     пометка не должна утекать между чатами."""
     _, pi, pi2 = slots

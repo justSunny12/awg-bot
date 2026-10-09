@@ -93,7 +93,7 @@ def last_probe_latency_ms(mark: Optional[int] = None) -> Optional[int]:
 def ping_peer(iface: str = "", count: int = 3, timeout: float = 2.0) -> Optional[int]:
     """«Пинг до шлюза»: ICMP с ВПС на адрес шлюза в линке, медиана RTT в мс.
     Файервол шлюза пускает ICMP с ВПС по линку. None — не отвечает или
-    линка нет. Локальная команда, наружу с домашнего адреса ничего не уходит."""
+    линка нет. Локальная команда, наружу с адреса шлюза ничего не уходит."""
     import re as _re
     peer = link_peer_address(iface)
     if not peer:
@@ -109,7 +109,7 @@ def ping_peer(iface: str = "", count: int = 3, timeout: float = 2.0) -> Optional
 
 def link_peer_endpoint(iface: str = "") -> Optional[str]:
     """Внешний адрес шлюза — из эндпоинта пира линка: ВПС видит его с каждым
-    хендшейком, спрашивать сторонние сервисы «мой IP» с домашнего адреса
+    хендшейком, спрашивать сторонние сервисы «мой IP» с адреса шлюза
     незачем. None — пира нет или хендшейка ещё не было."""
     proc = base._host(["awg", "show", iface or base._active_if(), "dump"], check=False,
                  timeout=base._PROBE_TIMEOUT)

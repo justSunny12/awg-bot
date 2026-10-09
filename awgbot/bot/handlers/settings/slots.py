@@ -11,7 +11,7 @@ from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, GwSlotCB
-from awgbot.bot.states import GatewayHome, GatewayLabel
+from awgbot.bot.states import GatewayLanSubnets, GatewayLabel
 from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers.common import call, edit, send_menu, card_from_main, ask_here, ask_tracked, cleanup_content
 
@@ -188,7 +188,7 @@ async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
         return
     gw = st["gateway"]
     on = not gw.lan_mode
-    if on and not gw.home_subnets:
+    if on and not gw.lan_subnets:
         await cb.answer(texts.GATEWAY_LAN_NO_SUBNET, show_alert=True)
         return
     resolver = await call(services.gateway_resolver_addr, gw) if on else ""
@@ -230,7 +230,7 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     tab = callback_data.val or "mt"
     dev = st.get("device")
     title = (dev.name if dev is not None else f"слот {gw.id}") + (f" ({gw.label})" if gw.label else "")
-    await edit(cb, texts.gateway_router_text(title, gw.home_subnets[0] if gw.home_subnets else "",
+    await edit(cb, texts.gateway_router_text(title, gw.lan_subnets[0] if gw.lan_subnets else "",
                                              peer_nets=st.get("peer_nets") or [], tab=tab),
                kb.gateway_router_kb(gw.id, tab))
     await cb.answer()
@@ -255,25 +255,27 @@ async def _issue_bundle_here(cb: CallbackQuery, services, slot: int) -> None:
     await send_gw_bundle(cb.message, services, slot, instr_id=cb.message.message_id)
 
 
-@router.callback_query(GwSlotCB.filter(F.action == "home"))
-async def gw_slot_home(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+# «home» — имя этого действия до 3.3.0: кнопка «🗺 Подсети» в сообщении,
+# оставшемся в чате с прежней версии; снимается следующим выпуском
+@router.callback_query(GwSlotCB.filter(F.action.in_({"lan_nets", "home"})))
+async def gw_slot_lan(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
         return
-    await state.set_state(GatewayHome.value)
+    await state.set_state(GatewayLanSubnets.value)
     await state.update_data(gw_slot=st["gateway"].id)
     # приглашение — в служебные (ask_here): после ответа оно отслужило и
     # убирается вместе с вводом; «✖️ Отмена» возвращает карточку слота на место
-    await ask_here(cb, services, state, texts.gateway_home_text(st), "gw", st["gateway"].id)
+    await ask_here(cb, services, state, texts.gateway_lan_text(st), "gw", st["gateway"].id)
     await cb.answer()
 
 
-@router.message(GatewayHome.value)
-async def gateway_home_received(message: Message, state: FSMContext, services):
+@router.message(GatewayLanSubnets.value)
+async def gateway_lan_received(message: Message, state: FSMContext, services):
     slot = int((await state.get_data()).get("gw_slot") or 0)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     try:
-        res = await call(services.gateway_set_home_subnets, slot, message.text or "")
+        res = await call(services.gateway_set_lan_subnets, slot, message.text or "")
         st = await call(services.gateway_screen_state, slot, lazy_ping=False)
     except ServiceError as e:
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")   # ввод открыт, «Отмена» на месте
@@ -282,7 +284,7 @@ async def gateway_home_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)
     from awgbot.bot import screens
     await send_menu(message, services,
-                    screens.with_note(texts.gateway_card_text(st, st["states"]), texts.gateway_home_report(res, st)),
+                    screens.with_note(texts.gateway_card_text(st, st["states"]), texts.gateway_lan_report(res, st)),
                     card_kb(st, message.chat.id))
 
 

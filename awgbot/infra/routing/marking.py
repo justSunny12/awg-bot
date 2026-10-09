@@ -39,7 +39,7 @@ def rebuild_chain(client_ids) -> None:
     сервисы, всё прочее выходит зарубежным адресом обычным путём.
 
     Обратная модель («метим то, чего в наборе нет») существовала и упразднена:
-    через домашний канал шёл почти весь трафик по объёму. Отсюда же следует, что
+    через канал шлюза шёл почти весь трафик по объёму. Отсюда же следует, что
     пустой набор безопасен — он равносилен выключенной функции, а не аварии.
     """
     chain = config.ROUTING_CHAIN
@@ -150,25 +150,23 @@ def switch_active(iface: str) -> None:
     log.info("routing: трафик РФ-доступа — через %s", iface)
 
 
-def ensure_home_routes(pairs=None) -> None:
-    """Домашние подсети за шлюзом — в ЕГО линк, в ОСНОВНОЙ таблице: без маршрута
+def ensure_lan_routes(pairs) -> None:
+    """Локальные подсети за шлюзом — в ЕГО линк, в ОСНОВНОЙ таблице: без маршрута
     пакет устройства админа на 192.168.x.x ушёл бы в интернет ВПС и умер.
     Кому туда можно, решает файервол шлюза (устройствам админа), здесь только
-    путь. pairs — [(подсеть, интерфейс)]; по умолчанию — из конфига в линк
-    конфига. Убранная подсеть остаётся в ядре до ребута — осознанно."""
+    путь. pairs — [(подсеть, интерфейс)] из слотов шлюзов. Убранная подсеть
+    остаётся в ядре до ребута — осознанно."""
     import ipaddress
-    if pairs is None:
-        pairs = [(n, base._active_if()) for n in config.ROUTING_HOME_SUBNETS]
     for net, iface in pairs:
         try:
             ipaddress.ip_network(net, strict=False)
         except ValueError:
-            log.warning("routing.home_subnets: %r не похоже на подсеть — пропущено", net)
+            log.warning("routing: подсеть слота %r не похожа на подсеть — пропущена", net)
             continue
         base._host(["ip", "route", "replace", net, "dev", iface])
 
 
-def drop_home_routes(pairs) -> None:
+def drop_lan_routes(pairs) -> None:
     """Снять маршруты убранных подсетей: [(подсеть, интерфейс)]. Нет маршрута —
     не ошибка (ip route del на отсутствующем даёт код 2)."""
     for net, iface in pairs:

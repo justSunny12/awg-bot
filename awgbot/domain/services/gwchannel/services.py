@@ -21,7 +21,7 @@ class ServicesMixin:
         gw = self.db.gateway(slot_id)
         if gw is None:
             return False
-        cleaned = gwservices.clean(items, gw.home_subnets, gwservices.MAX_OWN)
+        cleaned = gwservices.clean(items, gw.lan_subnets, gwservices.MAX_OWN)
         raw = json.dumps(cleaned, ensure_ascii=False)
         key = self._gwlink_key(self._GWLINK_SVC_KEY, slot_id)
         if (self.db.get_state(key) or "[]") == raw:

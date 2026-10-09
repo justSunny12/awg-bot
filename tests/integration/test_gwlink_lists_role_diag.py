@@ -100,7 +100,7 @@ async def link(services, make_active_client, monkeypatch):
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "127.0.0.0/30", slot_id=1)
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     services.gateway_set_lan_mode(1, True)
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)

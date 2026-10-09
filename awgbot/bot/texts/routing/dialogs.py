@@ -151,9 +151,9 @@ def gateway_peer_ask(on: bool) -> str:
             "каждого шлюза")
 
 
-def gateway_home_text(state: dict) -> str:
+def gateway_lan_text(state: dict) -> str:
     gw = state["gateway"]
-    nets = gw.home_subnets
+    nets = gw.lan_subnets
     cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
     lines = [ui.head(f"🗺 Подсети {slot_ref(state)}", meta=[f"сейчас: {cur}"]), "",
              "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
@@ -165,7 +165,7 @@ def gateway_home_text(state: dict) -> str:
     return "\n".join(lines)
 
 
-def gateway_home_report(res: dict, state: dict) -> str:
+def gateway_lan_report(res: dict, state: dict) -> str:
     """Итог правки подсетей — первыми строками карточки."""
     parts = []
     kept = res.get("kept") or []
@@ -178,7 +178,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
         parts.append(f"⚠️ Не принято: {shown}{more}")
     conflict = res.get("conflict")
     if conflict is not None:
-        ov_nets = nets_util.overlap(kept, conflict.home_subnets)
+        ov_nets = nets_util.overlap(kept, conflict.lan_subnets)
         ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets) or "подсеть"
         verb = "пересекаются" if len(ov_nets) > 1 else "пересекается"
         who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"

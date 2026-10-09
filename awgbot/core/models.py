@@ -195,7 +195,7 @@ class Gateway:
     link_port: int                  # 443, 8443
     link_cidr: str                  # 10.99.99.0/30
     preferred: int = 0              # берёт трафик при холодном старте (не более одного)
-    home_subnets: list[str] = field(default_factory=list)
+    lan_subnets: list[str] = field(default_factory=list)   # локальные подсети за шлюзом
     label: str = ""                 # «дом 1» — подпись места, необязательна
     created_at: str = ""
     lan_mode: int = 0               # 0/1: «за шлюзом — без VPN»

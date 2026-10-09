@@ -294,9 +294,6 @@ def routing_client_subnets() -> list[tuple[str, str]]:
     if MIGRATION_INTERFACE and MIGRATION_SUBNET_PREFIX:
         pairs.append((f"{MIGRATION_SUBNET_PREFIX}.0/24", MIGRATION_INTERFACE))
     return pairs
-# Домашние подсети за шлюзом: маршрут в линк держит бот (ensure_policy),
-# доступ туда с туннеля решает файервол шлюза — только устройствам админа.
-ROUTING_HOME_SUBNETS: list[str] = [str(n).strip() for n in (_rt.get("home_subnets") or []) if str(n).strip()]
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 # Слоты шлюзов: порты и /30 линков по номеру слота.
@@ -330,7 +327,7 @@ _ITDOG = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
 # зарубежным адресом обычным путём.
 #
 # Обратная модель («на шлюз всё, чего нет в наборе») существовала и упразднена:
-# через домашний канал шёл почти весь трафик по объёму, и его полоса становилась
+# через канал шлюза шёл почти весь трафик по объёму, и его полоса становилась
 # общим потолком для всех пользователей. Плюс промах списка там ломал
 # ЗАГРАНИЧНЫЙ сервис — молча, потому что связать «сайт не открывается» с
 # маршрутизацией почти невозможно. Здесь промах ломает российский сервис, и он

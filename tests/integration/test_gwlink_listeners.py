@@ -267,7 +267,7 @@ async def test_the_first_word_after_hello_is_the_role_even_with_feeds_due(servic
     сессия, оборванная посреди них, оставляла бы клиента с растущим шагом."""
     from tests.integration.test_gwlink_lists_role_diag import _Net
     srv, binds, port = two
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     services.gateway_set_lan_mode(1, True)
     _Net(monkeypatch)
     assert services.gwlink_lan_feeds_update(force=True) is True

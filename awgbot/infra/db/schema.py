@@ -2,7 +2,9 @@
 
 Здесь всё, что описывает ФОРМУ данных: DDL (SCHEMA), выборки, собирающие
 нормализованные таблицы в одну строку, builder'ы доменных моделей из строк и
-SchemaMixin с init_schema. Миграций нет: минимальная поддерживаемая версия —
+SchemaMixin с init_schema. Единственная миграция — переименование колонки
+gateways.home_subnets → lan_subnets (3.3.0, снимается со сдвигом минимума на
+3.3.0); прочих нет: минимальная поддерживаемая версия —
 3.2.0, её схема полная, и хост ниже проходит через неё (README-bot §9a);
 копия с более старой схемой не разворачивается — schema_gap.
 """
@@ -138,7 +140,7 @@ def _gateway_from_row(row) -> Optional["models.Gateway"]:
         id=int(row["id"]), device_id=int(row["device_id"]), link_if=row["link_if"],
         link_port=int(row["link_port"]), link_cidr=row["link_cidr"],
         preferred=int(row["preferred"]),
-        home_subnets=[n for n in (row["home_subnets"] or "").split() if n],
+        lan_subnets=[n for n in (row["lan_subnets"] or "").split() if n],
         label=row["label"] or "", created_at=row["created_at"] or "",
         lan_mode=int(row["lan_mode"] or 0) if "lan_mode" in row.keys() else 0)
 
@@ -404,7 +406,7 @@ CREATE TABLE IF NOT EXISTS gateways (
     link_port     INTEGER NOT NULL UNIQUE,               -- 443, 8443
     link_cidr     TEXT    NOT NULL UNIQUE,               -- 10.99.99.0/30
     preferred     INTEGER NOT NULL DEFAULT 0,            -- 0/1: берёт трафик при холодном старте
-    home_subnets  TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
+    lan_subnets  TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
     label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дом 1»)
     lan_mode      INTEGER NOT NULL DEFAULT 0,            -- 0/1: «за шлюзом — без VPN»
     created_at    TEXT    NOT NULL,
@@ -624,8 +626,22 @@ class SchemaMixin:
         3.2.0 и получает это там, копия старше не разворачивается (schema_gap).
         """
         with self._tx() as cur:
+            self._rename_lan_subnets(cur)
             cur.executescript(SCHEMA)
         self._ensure_service_client()
+
+    @staticmethod
+    def _rename_lan_subnets(cur) -> None:
+        """3.2.x → 3.3.0: колонка `gateways.home_subnets` переименована в
+        `lan_subnets` — на месте, данные те же. База 3.2.x приходит и накатом,
+        и восстановлением копии; SCHEMA ниже таблицу не тронет (IF NOT
+        EXISTS), поэтому переименование — до неё. Снять при минимуме 3.3.0."""
+        tables = {r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "gateways" not in tables:
+            return
+        cols = {r[1] for r in cur.execute("PRAGMA table_info(gateways)")}
+        if "home_subnets" in cols and "lan_subnets" not in cols:
+            cur.execute("ALTER TABLE gateways RENAME COLUMN home_subnets TO lan_subnets")
 
     def _ensure_service_client(self) -> None:
         """Служебный клиент «Устройства без клиента» — ровно один, создаётся один раз.

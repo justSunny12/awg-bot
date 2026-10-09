@@ -240,7 +240,8 @@ class GwSlotCB(CallbackData, prefix="gws"):
       list — список слотов; card — карточка слота; add — новый слот;
       switch_ask|switch_yes — переложить трафик на слот; ping — замер;
       pref — тумблер «предпочтительный при холодном старте»;
-      home|label — ввод домашних подсетей / подписи (FSM);
+      lan_nets|label — ввод локальных подсетей / подписи (FSM); «home» —
+      прежнее имя lan_nets в кнопках старых сообщений, принимается один выпуск;
       remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
       failover — тумблер автопереключения;
       lan_ask|lan_yes — «🔀 VPN-транзит» с подтверждением;

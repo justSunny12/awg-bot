@@ -294,7 +294,7 @@ class DevicesMixin:
 
     # ── слоты шлюзов условной маршрутизации ───────
     # Порядок везде один: предпочтительный первым, затем по номеру слота. Он же
-    # решает споры — кандидат на переключение, домашняя подсеть у двух слотов.
+    # решает споры — кандидат на переключение, одна подсеть у двух слотов.
     _GW_ORDER = " ORDER BY preferred DESC, id"
 
     def gateways(self) -> list:
@@ -325,22 +325,22 @@ class DevicesMixin:
                 cur.execute("UPDATE gateways SET preferred = 0 WHERE preferred = 1")
             cur.execute(
                 "INSERT INTO gateways(id, device_id, link_if, link_port, link_cidr, preferred, "
-                "home_subnets, label, created_at) VALUES (?, ?, ?, ?, ?, ?, '', '', ?)",
+                "lan_subnets, label, created_at) VALUES (?, ?, ?, ?, ?, ?, '', '', ?)",
                 (int(slot_id), int(device_id), link_if, int(link_port), link_cidr,
                  1 if (preferred or first) else 0, _now_iso()))
         return self.gateway(slot_id)
 
     def gateway_update(self, slot_id: int, **fields) -> None:
-        """Точечное обновление: device_id (финал переезда), home_subnets (список
+        """Точечное обновление: device_id (финал переезда), lan_subnets (список
         или строка), label."""
-        allowed = {"device_id", "home_subnets", "label", "link_port", "lan_mode"}
+        allowed = {"device_id", "lan_subnets", "label", "link_port", "lan_mode"}
         bad = set(fields) - allowed
         if bad:
             raise ValueError(f"gateway_update: неизвестные поля {sorted(bad)}")
         if not fields:
             return
-        if "home_subnets" in fields and not isinstance(fields["home_subnets"], str):
-            fields["home_subnets"] = " ".join(str(n) for n in fields["home_subnets"])
+        if "lan_subnets" in fields and not isinstance(fields["lan_subnets"], str):
+            fields["lan_subnets"] = " ".join(str(n) for n in fields["lan_subnets"])
         sets = ", ".join(f"{k} = ?" for k in fields)
         with self._tx() as cur:
             cur.execute(f"UPDATE gateways SET {sets} WHERE id = ?",

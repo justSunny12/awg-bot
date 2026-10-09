@@ -404,18 +404,18 @@ def test_subdomain_contract_holds_both_ways():
     assert normalize("https://www.ozon.ru/product/123") == "ozon.ru"
 
 
-def test_home_subnets_are_routed_into_the_link(monkeypatch):
-    """Домашние подсети за шлюзом — маршрут в линк в основной таблице; мусор в
-    conf пропускается, а не роняет обвязку."""
+def test_lan_subnets_are_routed_into_the_link(monkeypatch):
+    """Локальные подсети за шлюзом — маршрут в линк в основной таблице; подсети
+    приходят из слотов парами (подсеть, интерфейс) — conf их больше не держит;
+    мусор в паре пропускается, а не роняет обвязку."""
     from awgbot.core import config
     from awgbot.infra import routing
     calls = []
-    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(config, "ROUTING_HOME_SUBNETS", ["192.168.1.0/24", "junk", "10.20.0.0/16"])
+    assert not hasattr(config, "ROUTING_HOME_SUBNETS"), "чтение routing.home_subnets из conf снято"
     monkeypatch.setattr(routing.base, "_host", lambda a, **k: calls.append(a))
-    routing.ensure_home_routes()
+    routing.ensure_lan_routes([("192.168.1.0/24", "awglink"), ("junk", "awglink"), ("10.20.0.0/16", "awglink2")])
     assert calls == [["ip", "route", "replace", "192.168.1.0/24", "dev", "awglink"],
-                     ["ip", "route", "replace", "10.20.0.0/16", "dev", "awglink"]]
+                     ["ip", "route", "replace", "10.20.0.0/16", "dev", "awglink2"]]
 
 
 def test_ping_peer_takes_the_median_and_survives_loss(monkeypatch):
@@ -464,7 +464,7 @@ def test_ensure_policy_with_slots_sets_each_slot_policy(monkeypatch):
     monkeypatch.setattr(routing.base, "_host_ok", lambda args: False)
     monkeypatch.setattr(routing.marking, "_rule_present", lambda: True)
     monkeypatch.setattr(routing.marking, "ensure_route", lambda iface="": None)
-    monkeypatch.setattr(routing.marking, "ensure_home_routes", lambda pairs=None: None)
+    monkeypatch.setattr(routing.marking, "ensure_lan_routes", lambda pairs=None: None)
     monkeypatch.setattr(routing.policy, "ensure_mss_clamp", lambda iface="": None)
     routing.ensure_policy("awglink", slots=[(1, "awglink", []), (2, "awglink2", ["192.168.68.0/24"])])
     tables = [a[a.index("table") + 1] for a in calls if a[:3] == ["ip", "route", "replace"] and "table" in a]

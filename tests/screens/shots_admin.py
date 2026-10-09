@@ -437,7 +437,7 @@ def _slots(n: int = 1, *, standby: str = "alive", lan: bool = False, subnets: bo
         if n >= 1:
             services.db.gateway_add(NASPI, "awglink", 443, "10.99.99.0/30", slot_id=1)
             if lan or subnets:
-                services.db.gateway_update(1, home_subnets=["192.168.1.0/24"], lan_mode=int(lan))
+                services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"], lan_mode=int(lan))
         if n >= 2:
             services.db.gateway_add(PI4, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
             if standby == "alive":
@@ -1072,10 +1072,14 @@ _GATEWAYS = [
     Shot("adm.gw.bundle.home", role="admin",
          press=[GwSlotCB(action="bundle", slot=1), SetCB(sec="rt", act="do", key="bundle_home", val="1")],
          data=_slots(1), title="«⬅️ На главную» под файлом"),
-    Shot("adm.gw.home", role="admin", press=[GwSlotCB(action="home", slot=1)], data=_slots(1),
+    Shot("adm.gw.lan_nets", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], data=_slots(1),
          title="локальные подсети: приглашение"),
-    Shot("adm.gw.home.done", role="admin", press=[GwSlotCB(action="home", slot=1)], text="192.168.1.0/24",
+    Shot("adm.gw.lan_nets.done", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], text="192.168.1.0/24",
          data=_slots(1), title="локальные подсети: итог"),
+    # кнопка «🗺 Подсети» в сообщении, оставшемся в чате с версии до 3.3.0:
+    # прежнее имя действия ведёт в тот же ввод (один выпуск)
+    Shot("adm.gw.lan_nets.legacy", role="admin", press=[GwSlotCB(action="home", slot=1)], data=_slots(1),
+         title="локальные подсети: прежний колбэк из старого сообщения"),
     Shot("adm.gw.label", role="admin", press=[GwSlotCB(action="label", slot=1)], data=_slots(1),
          title="подпись: приглашение"),
     Shot("adm.gw.label.done", role="admin", press=[GwSlotCB(action="label", slot=1)], text="дача",
@@ -2460,8 +2464,8 @@ def _gw(n: int = 2, *then, lan2: bool = False, peers: bool | None = None, **kw):
         from awgbot.core import settings
         who = _slots(n, **kw)(services, mp)
         if lan2:
-            services.db.gateway_update(1, home_subnets=[LAN1], lan_mode=1)
-            services.db.gateway_update(2, home_subnets=[LAN2], lan_mode=1)
+            services.db.gateway_update(1, lan_subnets=[LAN1], lan_mode=1)
+            services.db.gateway_update(2, lan_subnets=[LAN2], lan_mode=1)
         if peers is not None:
             settings.set_value("app.routing.peer_nets.enabled", peers)
         for step in then:
@@ -2499,7 +2503,7 @@ def _own_old_agent(services, mp):
 
 
 def _overlap(services, mp):
-    services.db.gateway_update(2, home_subnets=[LAN1])
+    services.db.gateway_update(2, lan_subnets=[LAN1])
 
 
 def _own_off(services, mp):
@@ -2649,7 +2653,7 @@ def _long_dead(services, mp):
 
 
 def _lan_standby(services, mp):
-    services.db.gateway_update(2, home_subnets=[LAN2], lan_mode=1)
+    services.db.gateway_update(2, lan_subnets=[LAN2], lan_mode=1)
 
 
 def _peer_no_lan(services, mp):
@@ -2657,11 +2661,11 @@ def _peer_no_lan(services, mp):
 
 
 def _peer_no_nets(services, mp):
-    services.db.gateway_update(2, home_subnets=[])
+    services.db.gateway_update(2, lan_subnets=[])
 
 
 def _peer_overlap(services, mp):
-    services.db.gateway_update(2, home_subnets=["192.168.1.0/25"])
+    services.db.gateway_update(2, lan_subnets=["192.168.1.0/25"])
 
 
 def _token_kept(services, mp):
@@ -2766,7 +2770,7 @@ SHOTS += [
     Shot("adm.gw.switch_ask.active", role="admin", press=[GwSlotCB(action="switch_ask", slot=1)],
          data=_slots(2), title="переключить на активный — «уже идёт», без вопроса"),
     # ── ввод подсетей и подписи ──────────────────────────────────────────
-    Shot("adm.gw.home.partial", role="admin", press=[GwSlotCB(action="home", slot=1)],
+    Shot("adm.gw.lan_nets.partial", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)],
          text="192.168.1.0/24 мусор", data=_slots(2), title="подсети: часть не принята — названа в итоге"),
     Shot("adm.gw.label.clear", role="admin", press=[GwSlotCB(action="label", slot=2)], text="—",
          data=_gw(2, _label(2, "дача")), title="подпись: «—» убирает"),
@@ -2952,7 +2956,7 @@ def _ch_old_agent(delta: bool = False):
 def _neighbour(services, mp):
     """Слот 2 с VPN-транзитом и подсетью 192.168.70.0/24, связь подсетей
     включена: у слота 1 появляются подсети соседа, которых на нём ещё нет."""
-    services.db.gateway_update(2, home_subnets=["192.168.70.0/24"], lan_mode=1)
+    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
 
 
 def _chan(n: int = 1, *steps, peers: bool | None = None):

@@ -414,7 +414,7 @@ def _reset_module_state(mp) -> None:
     from awgbot.infra.routing import probes, selfcheck
     from awgbot.runtime import linkclient
     paging._pages.clear()
-    common._card_home.clear()
+    common._card_from_main.clear()
     access_cache.invalidate_all()
     broadcast._last_broadcast_at.clear()
     broadcast._bc_locks.clear()

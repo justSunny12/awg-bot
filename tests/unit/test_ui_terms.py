@@ -214,7 +214,8 @@ def test_terminal_strings_of_scripts_follow_the_terms():
 
 def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
     """«Малина» — железо конкретной установки, а не термин проекта: шлюзом может
-    быть любая машина; «квартира» — та же история про локальную сеть. В живой
+    быть любая машина; «квартира» и «домашний» — та же история про локальную
+    сеть (термины: «локальная сеть», «локальные подсети», «канал шлюза»). В живой
     документации, в коде и в скриптах их нет (комментарии тоже); журнал
     изменений — история, его не правим; README называет запрещённые слова в
     описании этого сторожа."""
@@ -224,5 +225,5 @@ def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
     files += sorted((repo / "install").glob("*.sh")) + [repo / "awg-bot.sh"]
     found = [f"{p.relative_to(repo)}:{i}" for p in files
              for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
-             if "малин" in line.lower() or "квартир" in line.lower()]
+             if any(root in line.lower() for root in ("малин", "квартир", "домашн"))]
     assert found == [], found

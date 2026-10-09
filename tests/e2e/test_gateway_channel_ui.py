@@ -60,7 +60,7 @@ def slot(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
-    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     services.gateway_set_lan_mode(1, True)
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
@@ -236,7 +236,7 @@ def _neighbour(services, monkeypatch):
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
-    services.gateway_set_home_subnets(2, "192.168.70.0/24")
+    services.gateway_set_lan_subnets(2, "192.168.70.0/24")
     services.gateway_set_lan_mode(2, True)
     assert services.gateway_peer_nets(1) == ["192.168.70.0/24"], "сценарий собран не так"
 
