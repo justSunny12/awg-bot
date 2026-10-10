@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import fake_cmd
 from awgbot.core import config
 from awgbot.domain import gwsnapshot
 from awgbot.domain.gateway import GatewayServices
@@ -444,8 +445,7 @@ class _Host:
                            ("dnsmasq", f'echo "dnsmasq $*" >> {self.log}\n'),
                            ("nft", f'echo "nft $*" >> {self.log}\n'),
                            ("dig", ""), ("sleep", ""), ("id", "echo 0\n")):
-            (bin_dir / name).write_text("#!/bin/sh\n" + body, encoding="utf-8")
-            (bin_dir / name).chmod(0o755)
+            fake_cmd(bin_dir / name, body)
         self.tool = tmp_path / "awg-lan-domain.sh"
         self.fresh = _heredoc("DOMEOF", "LAN_DOMAIN")
         self.tool.write_text(self.fresh, encoding="utf-8"); self.tool.chmod(0o755)
@@ -736,8 +736,8 @@ async def test_the_answer_goes_at_once_and_the_set_fills_in_the_background(pair,
     s = pair.services
     _seed(s, {"news.org": "vpn", "shop.ru": "ru"})
     dig = pi.host.bin / "dig"
-    dig.write_text('#!/bin/sh\ncase "$*" in *" news.org "*) /bin/sleep 1; echo 10.3.3.3 ;; '
-                   '*" shop.ru "*) echo 10.1.1.1 ;; esac\n', encoding="utf-8")
+    fake_cmd(dig, '#!/bin/sh\ncase "$*" in *" news.org "*) /bin/sleep 1; echo 10.3.3.3 ;; '
+                   '*" shop.ru "*) echo 10.1.1.1 ;; esac\n')
     a = pi.agent()
     c = await pi.up(a)
     assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), (_card(s, 1), pair.acks)

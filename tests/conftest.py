@@ -7,6 +7,7 @@ enum.StrEnum для Python < 3.11 (проект боево работает на
 """
 import enum
 import os
+from pathlib import Path
 import sys
 
 # ── шим StrEnum (py3.10) — до любого импорта awgbot ──────────────────────────
@@ -582,3 +583,72 @@ def _no_telegram_network(monkeypatch):
         raise TelegramNetworkError(method=method, message="сеть в тестах закрыта")
 
     monkeypatch.setattr(AiohttpSession, "make_request", _closed)
+
+
+# ── подмены команд и скрипты поставки: без проверки первого запуска ──────────
+#
+# macOS проверяет каждый НОВЫЙ исполняемый файл при первом запуске (~0,4 с на
+# файл). Тест, который заводит шесть подмен (systemctl, nft, dig…) и извлекает
+# скрипт поставки, тратил на это секунды с разбросом — отсюда плавающие
+# таймауты ожиданий. Ссылка на уже проверенный файл и запуск через `sh`
+# проверку не проходят вовсе — на этом и построено.
+
+_FAKE_RUNNER_TEXT = '#!/bin/sh\n# подмена команды в тестах: тело — рядом с именем вызова\n. "$0.body"\n'
+
+
+def _fake_runner() -> Path:
+    """Один прогретый исполняемый файл на пользователя — тела подмен он
+    подключает через `.`, так что `$0`, `$@` и `exit` ведут себя как у
+    обычного скрипта."""
+    import tempfile
+    d = Path(tempfile.gettempdir()) / f"awgbot-tests-{os.getuid()}"
+    runner = d / "fake-run.sh"
+    if not (runner.is_file() and runner.read_text(encoding="utf-8") == _FAKE_RUNNER_TEXT):
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f"fake-run.{os.getpid()}.tmp"
+        tmp.write_text(_FAKE_RUNNER_TEXT, encoding="utf-8"); tmp.chmod(0o755)
+        (d / "fake-run.sh.body").write_text("exit 0\n", encoding="utf-8")
+        os.replace(tmp, runner)
+    import subprocess
+    subprocess.run([str(runner)], capture_output=True)             # прогрев — проверка один раз
+    return runner
+
+
+def fake_cmd(path, body: str) -> Path:
+    """Подмена команды для прогона: `path` — ссылка на прогретый файл, тело —
+    в `<path>.body` (ведущий `#!/bin/sh` отбрасывается). Повторный вызов на то
+    же имя переписывает тело. Возвращает путь тела."""
+    path = Path(path)
+    if body.startswith("#!"):
+        body = body.split("\n", 1)[1] if "\n" in body else ""
+    bodyf = path.with_name(path.name + ".body")
+    bodyf.write_text(body, encoding="utf-8")
+    if not path.is_symlink():
+        path.symlink_to(_fake_runner())
+    return bodyf
+
+
+@pytest.fixture(autouse=True)
+def _sh_scripts_via_interpreter(monkeypatch):
+    """Скрипты поставки, извлечённые тестом в файл (`*.sh`), код запускает
+    напрямую — на macOS каждый такой новый файл проходит проверку первого
+    запуска. Здесь прямой запуск заменяется `sh <файл>`: `$0` тот же, проверки
+    нет. Только для macOS; подмены `subprocess.run` самих тестов это не трогает."""
+    import subprocess
+    import sys
+    if sys.platform != "darwin":
+        return
+    real = subprocess.run
+
+    def run(*args, **kw):
+        argv = args[0] if args else kw.get("args")
+        if (isinstance(argv, (list, tuple)) and argv and isinstance(argv[0], str)
+                and argv[0].endswith(".sh") and "/" in argv[0] and os.path.isfile(argv[0])
+                and not os.path.islink(argv[0])):
+            argv = ["/bin/sh", *argv]
+            if args:
+                args = (argv, *args[1:])
+            else:
+                kw["args"] = argv
+        return real(*args, **kw)
+    monkeypatch.setattr(subprocess, "run", run)

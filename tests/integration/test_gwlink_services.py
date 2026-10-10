@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import fake_cmd
 from awgbot.core import config
 from awgbot.domain import gwservices, gwsnapshot
 from awgbot.domain.gateway import GatewayServices
@@ -349,8 +350,7 @@ class _Host:
         for name, body in (("systemctl", f'echo "systemctl $*" >> {self.log}\n'),
                            ("dnsmasq", f'echo "dnsmasq $*" >> {self.log}\n'),
                            ("id", "echo 0\n")):
-            (bin_dir / name).write_text("#!/bin/sh\n" + body, encoding="utf-8")
-            (bin_dir / name).chmod(0o755)
+            fake_cmd(bin_dir / name, body)
         script = SCRIPT.read_text(encoding="utf-8")
         helper = tmp_path / "awg-lan-services.sh"
         helper.write_text(script.split("cat > \"$LAN_SERVICES.new\" <<'SVCEOF'\n", 1)[1]
