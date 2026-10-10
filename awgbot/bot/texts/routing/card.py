@@ -15,7 +15,7 @@ from .slots import _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_
 
 # ── карточка слота ───────────────────────────────────────────────────────────
 
-def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
+def services_line(svc: dict, agent_bot: dict | None = None) -> str:
     """«🗂 SMB: свои — 1, извне — 2 · 🟢 доступны»; нулевая часть не выводится,
     обе нулевые — «🗂 SMB: не найдены»; что с ними на шлюзе — строкой под ней."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
@@ -26,30 +26,28 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
     if not peer:
         return head
     state = svc.get("state", "")
-    gw = f" {name}" if name else ""
     if state == "applied":
         return head + " · 🟢 доступны"
     if state == "reissue":
-        note = f"⚠️ Необходим перевыпуск конфигурации шлюза{gw}"
+        note = "⚠️ Необходим перевыпуск конфигурации шлюза"
     else:
-        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Необходимо", "записи")
+        note = _slot_note(state, agent_bot, svc.get("error") or "", "Необходимо", "записи")
     return head + "\n" + note
 
 
-def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> str:
+def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     """«📋 Свои списки: 5 в туннель, 1 напрямую» / «пусто»; что с ними на
     шлюзе — строкой сразу под ней, только если не «применены»."""
     vpn, ru = int(own.get("vpn") or 0), int(own.get("ru") or 0)
     parts = ([f"{vpn} в туннель"] if vpn else []) + ([f"{ru} напрямую"] if ru else [])
     head = "📋 Свои списки: " + (", ".join(parts) if parts else "пусто")   # нулевая часть не выводится
     state = own.get("state", "")
-    gw = f" {name}" if name else ""
     if state == "applied":
         return head
     if state == "offline":
-        note = f"⏳ Синхронизируется со шлюзом{gw}, когда он выйдет на связь"
+        note = "⏳ Синхронизируется, когда шлюз выйдет на связь"
     else:
-        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации необходимо", "списки")
+        note = _slot_note(state, agent_bot, own.get("error") or "", "Для синхронизации необходимо", "списки")
     return head + "\n" + note
 
 
@@ -60,7 +58,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     if not ch:
         return "", [], ""
     if not ch.get("ever"):
-        return ("🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза", [], "")
+        # канал обязателен: перевыпуск тут не лечит — либо линк не поднят, либо агент не запущен
+        return ("🔗 Упр. канал: ещё не поднимался — линк не поднят или агент шлюза не запущен", [], "")
     if ch.get("online"):
         head = "🔗 Упр. канал 🟢"
     else:
@@ -88,7 +87,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             ack = ch.get("ack") or {}
             n = len(drift)
             n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
-            if ch.get("online") and ack and not ack.get("ok"):
+            if ch.get("online") and ack and not ack.get("ok") and ch.get("ack_current"):
                 warns.append("⚠️ Шлюз не применил настройки с сервера: "
                              f"{_e(ack.get('error') or 'ошибка')} — вернул прежние")
             elif ch.get("online") and ch.get("drift_bundle") and not ch.get("drift_channel"):
@@ -100,7 +99,12 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                 warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
                              f"изменения уходят каналом и применятся сами{tail}")
             else:
-                items = "\n".join(f"   • {d}" for d in drift_lines(ch.get("drift_items") or [], html=True))
+                raw = ch.get("drift_items") or []
+                # устройства админа — одним именем: адреса всех устройств в карточке не нужны,
+                # разница по устройствам приходит уведомлением
+                shown = [_e(it[1]) if it[0] == "ADMIN_IPS" else line
+                         for it, line in zip(raw, drift_lines(raw, html=True))]
+                items = "\n".join(f"   • {d}" for d in shown)
                 warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
                              f"{timeutil.age_ago(ch.get('age'))}):\n{items}")
         else:
@@ -147,7 +151,6 @@ def gateway_card_text(state: dict, states: list) -> str:
     свои списки, связь подсетей, SMB, бот шлюза; предупреждения открытыми
     строками; редкое — под «подробнее»."""
     gw, dev = state["gateway"], state.get("device")
-    name = _e(dev.name) if dev is not None else f"слот {gw.id}"     # без кавычек, как в уведомлениях
     two = len(states) > 1
     lines = [ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}") + f" — {slot_status(state)}"]
     age = state.get("handshake_age")
@@ -172,11 +175,11 @@ def gateway_card_text(state: dict, states: list) -> str:
     if gw.lan_mode:
         own = state.get("own_lists") or {}
         if own and own.get("state") != "off":
-            lines.append(own_lists_line(own, name, state.get("agent_bot")))
+            lines.append(own_lists_line(own, state.get("agent_bot")))
     if state.get("peer_nets"):
         lines.append("↔️ Связь подсетей ✅")
         if state.get("services"):
-            lines.append(services_line(state["services"], name, state.get("agent_bot")))
+            lines.append(services_line(state["services"], state.get("agent_bot")))
     others = [s for s in states if s["gateway"].id != gw.id]
     conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].lan_subnets)), None)
     if conflict is not None:

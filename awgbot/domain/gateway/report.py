@@ -75,13 +75,21 @@ class ReportMixin:
     _LINK_STANDBY_KEY = "gwlink_standby"
     _LINK_SLOT_NAME_KEY = "gwlink_slot_name"
 
-    def set_link_role(self, active: bool, standby=None, name=None) -> None:
+    _LINK_SERVER_CAPS_KEY = "gwlink_server_caps"
+
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None) -> None:
         """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве;
         standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
         РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
         Сам агент узнать это не может — решает автомат переключения на ВПС.
-        Старый сервер шлёт только active — тогда прочее не трогаем."""
+        caps — возможности сервера (список имён): по ним подсказки говорят, что
+        сервер пришлёт сам, а что едет файлом. Старый сервер шлёт только active —
+        тогда прочее не трогаем."""
         self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
+        if caps is not None:
+            good = [c for c in (caps if isinstance(caps, list) else []) if isinstance(c, str)]
+            self.db.set_state(self._LINK_SERVER_CAPS_KEY,
+                              " ".join("".join(ch for ch in c if ch.isalnum())[:16] for c in good[:16]))
         if standby is not None:
             self.db.set_state(self._LINK_STANDBY_KEY, "1" if standby else "0")
         if name is not None:
@@ -95,6 +103,10 @@ class ReportMixin:
         """True — другой шлюз есть, False — нет, None — сервер не говорил."""
         raw = self.db.get_state(self._LINK_STANDBY_KEY)
         return None if raw is None or raw == "" else raw == "1"
+
+    def link_server_caps(self) -> list[str]:
+        """Возможности сервера из его первого `role`; пусто — сервер прежний или не говорил."""
+        return (self.db.get_state(self._LINK_SERVER_CAPS_KEY) or "").split()
 
     def link_slot_name(self) -> str:
         return (self.db.get_state(self._LINK_SLOT_NAME_KEY) or "").strip()

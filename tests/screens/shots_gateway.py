@@ -140,7 +140,7 @@ def _ssh(**kw) -> dict:
 
 
 _OWN_ITEMS = [("vpn", "example.com"), ("vpn", "example.net"), ("ru", "sber.ru")]
-_OWN_OFF = {"active": False, "state": "off", "no_channel": False}
+_OWN_OFF = {"active": False, "state": "off"}
 _OWN_SYNCED = {"active": True, "state": "synced", "pending": 0, "err": "", "rej": [], "synced": True}
 
 _RELEASE = updates.Release(
@@ -211,7 +211,7 @@ class _Host:
     live: GwStatus = field(default_factory=_status)        # живой замер (status)
     tick: GwStatus | None = None                           # снимок тика в БД, tick_age с назад
     tick_age: int = 120
-    channel: str = ""                                      # "" — канала нет; active | standby | offline
+    channel: str = ""                                      # "" — клиента канала нет (нет связи); active | standby | offline
     slot_name: str = "NASPi"                               # имя слота по слову сервера
     standby: bool | None = None                            # есть ли другой шлюз (по слову сервера)
     carries: bool = False                                  # несёт трафик и линк жив
@@ -702,9 +702,6 @@ SHOTS = [
           op=(False, "routing-gw-setup.sh: не уложилось в 120 с"), title="отказ: хвост вывода"),
 
     # ── W10–W14 VPN-транзит и свои списки ───────────────────────────────────
-    _shot("gw.lan.empty", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
-          own={"active": False, "state": "off", "no_channel": True},
-          title="своих доменов нет, упр. канала нет — списки только этого шлюза"),
     _shot("gw.lan.empty.shared", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
           own=_OWN_SYNCED, title="своих доменов нет, списки общие — обе подсказки первыми под «подробнее»"),
     _shot("gw.lan.bare", press=[GwCB(action="lan")], own_items=[("vpn", "a.com")],
@@ -742,8 +739,7 @@ SHOTS = [
           title="приглашение «➕ Напрямую»"),
     _shot("gw.lan.add.done", press=[GwCB(action="lan"), GwCB(action="lan_add")],
           text="example.org example.com localhost", tick=_TICK_LAN, own_items=_OWN_ITEMS,
-          own={"active": False, "state": "off", "no_channel": True},
-          title="итог первой строкой: добавлен / уже в списке / не домен; канала нет"),
+          title="итог первой строкой: добавлен / уже в списке / не домен"),
     _shot("gw.lan.add.online", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.org",
           tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=True,
           title="итог с хвостом «синхронизируются» — канал на связи"),
@@ -753,12 +749,6 @@ SHOTS = [
     _shot("gw.lan.add.already", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.com",
           tick=_TICK_LAN, own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=True,
           title="«уже в списке» при живом канале — ничего не изменилось, хвоста нет"),
-    _shot("gw.lan.add.already.local", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.com",
-          tick=_TICK_LAN, own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
-          title="«уже в списке» без канала — «применено только здесь» не к месту"),
-    _shot("gw.lan.add.solo.local", press=[GwCB(action="lan"), GwCB(action="lan_add")], text="example.org",
-          tick=_TICK_LAN, own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
-          standby=False, title="без канала, сервер сказал, что другого шлюза нет, — хвоста нет"),
     _shot("gw.lan.add.huge", press=[GwCB(action="lan"), GwCB(action="lan_add")], text=" ".join(_HUGE),
           tick=_TICK_LAN, title="вставили 80 длинных доменов — итог обрезан, экран под ним в том же сообщении"),
     _shot("gw.lan.ru.solo", press=[GwCB(action="lan"), GwCB(action="lan_ru")], text="gosuslugi.ru",
@@ -777,14 +767,11 @@ SHOTS = [
     _shot("gw.lan.rm.later", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
           own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="offline",
           title="«➖» при канале без связи — «будут синхронизированы»"),
-    _shot("gw.lan.rm.local", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
-          own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True},
-          title="«➖» без канала — «применено только здесь»"),
     _shot("gw.lan.rm.solo", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
           own_items=_OWN_ITEMS, own=_OWN_SYNCED, channel="active", standby=False,
           title="«➖», другого шлюза нет — итог без хвоста"),
     _shot("gw.lan.rm.late", press=[GwCB(action="lan"), _lan_rm(_OWN_ITEMS, "example.net")], tick=_TICK_LAN,
-          own_items=_OWN_ITEMS, own={"active": False, "state": "off", "no_channel": True}, late_answer=True,
+          own_items=_OWN_ITEMS, late_answer=True,
           title="скрипт ответил дольше, чем Telegram держит нажатие, — итог сообщением, экран перерисован"),
     _shot("gw.lan.rm.stale", press=[GwCB(action="lan"), GwCB(action="lan_rm", val="0.deadbeef")],
           tick=_TICK_LAN, own_items=_OWN_ITEMS, title="список изменился — переспрос, экран заново"),

@@ -54,18 +54,16 @@ def _channel_view(chan: dict | None) -> dict:
 
 
 def channel_panel_line(chan: dict | None = None) -> str:
-    """Хвост строки линка про упр. канал: «🔗 упр. канал 🟢»; канал не включён
-    бандлом — пусто: сказать о нём нечего, а «выключено» читалось бы как поломка."""
+    """Хвост строки линка про упр. канал: «🔗 упр. канал 🟢» / «⚪ нет связи» —
+    канал обязателен, строка есть всегда."""
     chan = _channel_view(chan)
-    if not chan["enabled"]:
-        return ""
     return "🔗 упр. канал " + ("🟢" if chan["online"] else "⚪ нет связи")
 
 
 def _gw_role(st, chan: dict) -> str:
     """Роль по каналу: «несёт трафик» / «в резерве»; канала или связи нет —
     состояние линка."""
-    role = chan["role"] if chan["enabled"] and chan["online"] else ""
+    role = chan["role"] if chan["online"] else ""
     if role == "active":
         return "🟢 несёт трафик"
     if role:
@@ -249,8 +247,6 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
         line = own_lists_state_line(own)
         if line:
             lines.append(line)
-    elif own.get("no_channel"):
-        lines.append(LAN_ONLY_HERE)
     lines.append(details(about))
     return "\n".join(lines)
 
@@ -300,11 +296,7 @@ def own_lists_state_line(own: dict) -> str:
 SYNC_TAILS = {
     "online": "Изменения синхронизируются с другими шлюзами",
     "offline": "Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG",
-    "no_channel": "Применено только здесь: канала до сервера AWG нет",
 }
-# строка экрана без канала — объяснение целиком (итог ввода его не повторяет)
-LAN_ONLY_HERE = ("Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера "
-                 "AWG — перевыпусти конфигурацию шлюза")
 
 
 def gateway_transit_removed_toast(domain: str, shared: bool = False, sync: str = "") -> str:

@@ -10,7 +10,7 @@ from awgbot.core import config
 from awgbot.util import gwlink
 from awgbot.runtime import linkclient as pkg          # адрес, порт, крючок и задержки — на пакете: их подменяют тесты
 
-from .common import log
+from .common import CAPS, log
 
 
 class SessionMixin:
@@ -87,6 +87,7 @@ class SessionMixin:
             # отпечаток применённого канона своих списков: само поле говорит
             # серверу, что агент синхронизацию знает (без него канон не шлётся)
             hello_body["own_hash"] = await asyncio.to_thread(self.services.own_applied_hash)
+            hello_body["caps"] = list(CAPS)             # контракт: возможности, не версия
             hello = gwlink.pack(self._channel_key(), "hello", hello_body,
                                 seq=self._seq, pad=gwlink.PAD_DELTA)
             writer.write(hello)

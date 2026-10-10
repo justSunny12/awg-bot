@@ -230,6 +230,46 @@ async def test_the_session_closes_when_the_gateway_goes_away_but_the_snapshot_st
     assert link.online(1) is False
 
 
+async def test_the_session_remembers_what_the_agent_can_and_forgets_it_on_close(services, link):
+    """Возможности агента из hello — то, по чему сервер решает, что можно ему
+    слать. Агент назвал их — они в сессии; прежний агент поля не шлёт — пусто,
+    а не «всё умеет». Всё, что пришло, — с чужой машины: не строки, знаки вне
+    букв и цифр и длинные хвосты в state не попадают. Разрыв уносит их вместе
+    с сессией — следующая начнётся со своего hello."""
+    gw = await _connect(link)
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.3.0",
+                            "caps": ["cfg1", "<b>x</b>", 5, "", "y" * 40, "!!"]})
+    await _until(lambda: services.gwlink_session(1))
+    assert services.gwlink_session(1)["caps"] == ["cfg1", "bxb", "y" * 16], services.gwlink_session(1)
+    await gw.close()
+    await _until(lambda: not services.gwlink_session(1))
+    assert services.gwlink_session(1) == {}, "возможности агента пережили его сессию"
+
+    old = await _connect(link)
+    await old.send("hello", {"proto": gwlink.PROTO, "agent": "3.2.0"})
+    await _until(lambda: services.gwlink_session(1))
+    assert services.gwlink_session(1)["caps"] == [], "агент без поля caps получил чужие возможности"
+    await old.close()
+
+
+def test_caps_are_stored_with_the_session_and_read_back_as_a_list(services):
+    """Сессия на стороне сервиса: список возможностей пишется и читается без
+    потерь; без них — пустой список (у агентов без поля); запятая или пробел в
+    имени сломали бы строку state — такие имена не пишутся вовсе."""
+    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
+    assert services.gwlink_session(1)["caps"] == ["cfg1"]
+    assert services.gwlink_session(1)["agent"] == "3.3.0", "строка сессии разъехалась от нового поля"
+    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "a,b", "c d", "", "own2"])
+    assert services.gwlink_session(1)["caps"] == ["cfg1", "own2"]
+    services.gwlink_session_opened(1, "3.2.0", 2)
+    assert services.gwlink_session(1)["caps"] == []
+    services.gwlink_session_closed(1)
+    assert services.gwlink_session(1) == {}, "закрытая сессия отдаёт возможности"
+    # строка прежнего формата (до поля caps) — сессия жива, возможностей нет
+    services.db.set_state("gwlink_session_1", "since=2026-10-10T10:00:00+03:00 agent=3.2.0 proto=2")
+    assert services.gwlink_session(1)["caps"] == []
+
+
 # ── дельты и починка ─────────────────────────────────────────────────────────
 
 async def test_a_delta_lands_on_top_of_the_stored_snapshot(services, link):

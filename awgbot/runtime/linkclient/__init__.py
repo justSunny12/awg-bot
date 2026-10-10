@@ -24,8 +24,9 @@ dispatch — разбор входящих).
 (бандл, мастер восстановления) снимок уходит сразу (`poke`). Байты канала
 копятся в `services.channel`: зонд выхода наружу вычитает их из счётчиков линка.
 
-Канал включается тем, что привёз бандл (`LINK_CHANNEL=1` в юните обвязки): без
-перевыпуска конфигурации агент никуда не ходит — это и есть рубильник.
+Канал обязателен: агент держит его, пока на шлюзе есть конфиг линка (без него
+каналу не по чему ехать — ключ подписи выводится из ключа линка). Рубильника в
+юните нет: строка `LINK_CHANNEL` там держится только для агентов прежних версий.
 
 С ВПС по той же сессии приходят только данные из закрытого списка: `settings`
 — четыре настройки обвязки (применяет `apply_link_settings`, ответ `ack`,
@@ -70,8 +71,9 @@ log = logging.getLogger(__name__)
 
 
 def enabled() -> bool:
-    from awgbot.infra import gwguard
-    return gwguard.unit_env("LINK_CHANNEL") == "1"
+    """Каналу есть по чему ехать: конфиг линка на месте (из него — ключ подписи)."""
+    import os
+    return os.path.isfile(config.GW_LINK_CONF)
 
 
 def server_port() -> int:
@@ -119,17 +121,13 @@ def set_notify(fn) -> None:
 
 
 def ensure(services) -> LinkClient | None:
-    """Поднять клиента, если канал включён бандлом. Роль client сюда не ходит.
-    Бандл с LINK_CHANNEL=0 гасит уже запущенного клиента на ближайшем тике —
-    рубильник не должен ждать перезапуска агента."""
+    """Поднять клиента, когда есть конфиг линка. Роль client сюда не ходит.
+    Юнит обвязки канал не выключает: запущенный клиент живёт до конца процесса,
+    а без конфига линка новый не заводится — подписать hello ему нечем."""
     global _client
     if config.ROLE != "gateway":
         return None
     if not enabled():
-        if _client is not None and _client._task is not None:
-            _client._task.cancel()
-            _client._task = None
-            _client._set_online(False)
         return None
     if _client is None:
         _client = LinkClient(services)
@@ -153,10 +151,10 @@ def online() -> bool:
 
 
 def view() -> dict:
-    """Состояние канала для текстов панели одним словарём: включён ли бандлом,
-    открыта ли сессия, роль по последнему слову сервера."""
-    en, on = enabled(), online()
-    return {"enabled": en, "online": on, "role": role() if en and on else ""}
+    """Состояние канала для текстов панели одним словарём: открыта ли сессия,
+    роль по последнему слову сервера."""
+    on = online()
+    return {"online": on, "role": role() if on else ""}
 
 
 async def on_tick(services) -> None:

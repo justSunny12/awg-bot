@@ -20,11 +20,12 @@ class SessionMixin:
 
     # ── сессия ───────────────────────────────────────────────────────────────
 
-    def gwlink_session_opened(self, slot_id: int, agent: str, proto: int) -> None:
+    def gwlink_session_opened(self, slot_id: int, agent: str, proto: int, caps=()) -> None:
         agent = " ".join(str(agent or "").split())[:32]     # одна строка: state и журнал по строкам
+        caps_s = ",".join(c for c in caps if c and "," not in c and " " not in c)
         now = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id),
-                          f"since={now} agent={agent} proto={int(proto)}")
+                          f"since={now} agent={agent} proto={int(proto)} caps={caps_s}")
         self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id), now)
         self.db.set_state(self._gwlink_key(self._GWLINK_ERROR_KEY, slot_id), "")
         log.info("канал линка: слот %s на связи (агент %s, proto %s)", slot_id, agent, proto)
@@ -56,11 +57,15 @@ class SessionMixin:
                           f"{timeutil.to_iso(timeutil.now())} {reason[:200]}")
 
     def gwlink_session(self, slot_id: int) -> dict:
-        """{'since', 'agent', 'proto'} или пусто — не на связи."""
+        """{'since', 'agent', 'proto', 'caps': [...]} или пусто — не на связи."""
         raw = self.db.get_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id)) or ""
-        out = {}
+        out: dict = {}
         for part in raw.split():
             name, _, val = part.partition("=")
             if name in ("since", "agent", "proto"):
                 out[name] = val
+            elif name == "caps":
+                out["caps"] = [c for c in val.split(",") if c]
+        if out and "caps" not in out:
+            out["caps"] = []
         return out

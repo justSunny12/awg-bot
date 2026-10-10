@@ -6,7 +6,7 @@ import json
 
 from awgbot.util import gwlink
 
-from .common import log
+from .common import SERVER_CAPS, log
 
 
 class DeliverMixin:
@@ -177,7 +177,8 @@ class DeliverMixin:
         is_active = active is not None and active.id == slot_id
         # вместе с ролью — есть ли другой шлюз и как слот назван у сервера:
         # агенту это нужно для честных хвостов и заголовка рецепта роутера
-        payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id)}
+        payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id),
+                   "caps": list(SERVER_CAPS)}
         if sess.role_sent == payload:
             return False
         sess.role_sent = payload

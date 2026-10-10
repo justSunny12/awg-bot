@@ -35,8 +35,12 @@ class InboundMixin:
         if kind == "hello":
             proto = int(msg.get("proto") or 0)
             sess.hello = True
+            raw_caps = msg.get("caps")
+            sess.caps = ["".join(ch for ch in c if ch.isalnum())[:16]
+                         for c in (raw_caps if isinstance(raw_caps, list) else [])[:16]
+                         if isinstance(c, str) and c]
             await asyncio.to_thread(self.services.gwlink_session_opened, gw.id,
-                                    str(msg.get("agent") or "")[:32], proto)
+                                    str(msg.get("agent") or "")[:32], proto, sess.caps)
             sess.lists_have = str(msg.get("lists_hash") or "")[:64]
             sess.svc_have = str(msg.get("svc_hash") or "")[:64]
             sess.own_have = str(msg.get("own_hash") or "")[:64] if "own_hash" in msg else None
@@ -74,7 +78,9 @@ class InboundMixin:
             await asyncio.to_thread(self.services.gwlink_lists_ack_in, gw.id, msg)
             return
         if kind == "ack":
-            await asyncio.to_thread(self.services.gwlink_ack_in, gw.id, msg)
+            # отпечаток набора, на который это ответ, — свой (что ушло в сессии), не
+            # из сообщения: по нему отказ на текущее отличается от отказа на прежнее
+            await asyncio.to_thread(self.services.gwlink_ack_in, gw.id, {**msg, "hash": sess.sent_hash})
             if not msg.get("ok") and msg.get("retry"):
                 # временный отказ агента (юнит обвязки ещё работал): тот же
                 # набор можно слать снова — по расхождению снимка, как обычно

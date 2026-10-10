@@ -241,6 +241,15 @@ class DevicesMixin:
             "WHERE c.tg_id = ? AND c.is_service = 0", (admin_tg_id,)).fetchall()
         return [r["address"] for r in rows]
 
+    def device_names_by_address(self, addresses) -> dict[str, str]:
+        """{адрес: имя} живых устройств по списку адресов (как в ADMIN_IPS)."""
+        addrs = [str(a) for a in addresses][:64]
+        if not addrs:
+            return {}
+        rows = self._connection().execute(
+            f"SELECT address, name FROM devices WHERE address IN ({','.join('?' * len(addrs))})", addrs).fetchall()
+        return {r["address"]: r["name"] or "" for r in rows}
+
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",

@@ -32,7 +32,7 @@ class OwnListsMixin:
 
     def own_active(self) -> bool:
         from awgbot.infra import gwguard
-        return gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") == "1"
+        return gwguard.lan_mode()
 
     def own_base(self) -> dict:
         return self.db.get_state_json(self._OWN_BASE_KEY, {})
@@ -327,8 +327,6 @@ class OwnListsMixin:
         checks: list[GwCheck] = []
         if not info["active"]:
             info["state"] = "off"
-            # режим есть, канала нет — экран списков скажет, почему они только этого шлюза
-            info["no_channel"] = gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") != "1"
             return info, checks
         p = self._own_pending_raw()
         info["pending"] = len(p.get("ev") or [])

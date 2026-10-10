@@ -120,8 +120,8 @@ def test_no_side_parses_a_kind_nobody_sends():
 _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "ask": ({"what": "snap"}, gwlink.PAD_DELTA,
             "379e649f69e82043c3c3d0db258bd3fc7460e19d6c79a5b8096bb35eeaf331cc"),
-    "role": ({"active": True, "standby": False, "name": "Шлюз 1"}, gwlink.PAD_DELTA,
-             "5741f17f097065a6231ca1fd974f65fc511f68d1600f9355bbbb1993985809f7"),
+    "role": ({"active": True, "standby": False, "name": "Шлюз 1", "caps": []}, gwlink.PAD_DELTA,
+             "4b5f920f72ed93727d82bb8f6d2ef51e7933562d18ce993e04d9821982769621"),
     "settings": ({"values": {"ADMIN_IPS": "10.8.0.2", "HOME_SUBNETS": "192.168.1.0/24",
                              "LAN_MODE": "1", "RESOLVER": ""}}, gwlink.PAD_SNAP, "79007f081a634f85f1449f22ad80407bd9a2a5747099723ee693b84045c87fd9"),
     "lists_ok": ({"hash": "ab" * 32}, gwlink.PAD_DELTA, "d50f7b8b9d204aacf66d8e7a267fffaeb9355235118044be51357b74b3f6c09c"),
@@ -135,10 +135,10 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "hello": ({"proto": gwlink.PROTO, "agent": "3.2.1", "lists_hash": "", "svc_hash": "",
-               "nonce": gwlink.nonce_b64(NONCE), "own_hash": ""}, gwlink.PAD_DELTA, "3721e807a97a58bc1a582f38d1be1f7e58e48e8c61a7d3bbfddbadfd6dd09fb9"),
+               "nonce": gwlink.nonce_b64(NONCE), "own_hash": "", "caps": []}, gwlink.PAD_DELTA, "040f0e6ac15a2634244fbc9ee6e20b33293715ee4e5416e70966b3366050e9cf"),
     "snap": ({"rev": 1, "agent_version": "3.2.1", "egress_ok": True}, gwlink.PAD_SNAP, "9902519eb44d9e20907ddaad47005413d666618eb56c828a34715c7c6ea6f61b"),
     "delta": ({"rev": 2, "egress_ok": False}, gwlink.PAD_DELTA, "f811a683952aa1667c5d71f340422647472e4733dcabe668dedd48a1c25ec3c4"),
-    "ack": ({"ok": True, "hash": "34" * 32, "error": ""}, gwlink.PAD_DELTA, "32abe6fdc26cece36076c97231cfc748ef1a13d5d43333c26e9b37fdbb17b70d"),
+    "ack": ({"ok": True, "changed": ["LAN_MODE"], "error": ""}, gwlink.PAD_DELTA, "39ad4cf7070ce3114eb3bb7e0b7d365c5cb252e629d21d52272dc0251ca121e7"),
     "applied": ({"ok": True, "error": "", "fp": "12" * 32, "at": "2026-10-10T00:00:00"},
                 gwlink.PAD_DELTA, "a765178dac034ff05b8d40ec3e1076551f49da95fc2451c27924e3f198b95747"),
     "svc": ({"items": [{"name": "nas", "ip": "192.168.1.10"}]}, gwlink.PAD_SNAP, "eacf61762c4d78d57c3e9e58eca4a699fa1b81625ac70acac32958bd43bbe50c"),

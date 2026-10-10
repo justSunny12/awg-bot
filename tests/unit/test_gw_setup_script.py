@@ -529,13 +529,13 @@ def test_unit_gets_no_new_environment_lines_for_ssh(script):
     assert "SSH_" not in unit and "EnvironmentFile=-$FW_ENV" in unit
 
 
-# ── канал до ВПС: рубильник в юните ──────────────────
+# ── канал до ВПС: строки в юните ─────────────────
 
 def _channel_vars(script: str, **env) -> tuple[str, str]:
-    """Прогнать настоящие строки скрипта, которые разбирают значения канала."""
+    """Прогнать настоящие строки скрипта, которые задают значения канала."""
     lines = [ln for ln in script.splitlines()
              if ln.startswith("LINK_CHANNEL") or ln.startswith('case "$LINK_CHANNEL_PORT"')]
-    assert len(lines) == 3, f"строки разбора канала изменились: {lines}"
+    assert len(lines) == 3, f"строки канала изменились: {lines}"
     prog = "\n".join(lines) + '\nprintf "%s|%s" "$LINK_CHANNEL" "$LINK_CHANNEL_PORT"'
     out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                          env={"PATH": "/usr/bin:/bin", **env})
@@ -543,29 +543,31 @@ def _channel_vars(script: str, **env) -> tuple[str, str]:
     return tuple(out.stdout.split("|"))
 
 
-def test_a_bundle_without_the_channel_lines_leaves_the_channel_off(script):
-    """Старые бандлы этих строк не несут вовсе. Молчаливое «включено по
-    умолчанию» означало бы, что агент после обновления сам пошёл бы на ВПС —
-    функцию включает перевыпуск конфигурации, и только он."""
-    assert _channel_vars(script) == ("0", "8787")
+@pytest.mark.parametrize("env", [{}, {"LINK_CHANNEL": "0"}, {"LINK_CHANNEL": ""},
+                                 {"LINK_CHANNEL": "да"}, {"LINK_CHANNEL": "1; rm -rf /"}])
+def test_the_channel_line_is_always_on_whatever_the_bundle_says(script, env):
+    """Канал обязателен: в юнит всегда уходит LINK_CHANNEL=1. Агенты прежних
+    версий без этой строки (или с «0» из старого файла конфигурации) канал
+    гасят — шлюз замолчал бы для ВПС до следующего обновления агента."""
+    assert _channel_vars(script, **env)[0] == "1", f"окружение {env} повлияло на строку канала"
 
 
-def test_the_channel_switch_and_port_are_sanitised_before_they_reach_the_unit(script):
-    """Значения приезжают из бандла, то есть из окружения. Мусор, доехавший до
-    юнита, сломал бы разбор у агента (порт читается как число) или подменил бы
-    команду в строке Environment=."""
-    assert _channel_vars(script, LINK_CHANNEL="1", LINK_CHANNEL_PORT="9099") == ("1", "9099")
-    assert _channel_vars(script, LINK_CHANNEL="1; rm -rf /")[0] == "1"
-    assert _channel_vars(script, LINK_CHANNEL="да") == ("", "8787"), "непонятное — не «включено»"
+def test_the_channel_port_is_sanitised_before_it_reaches_the_unit(script):
+    """Порт приезжает из файла конфигурации, то есть из окружения. Мусор,
+    доехавший до юнита, сломал бы разбор у агента (порт читается как число)
+    или подменил бы команду в строке Environment=."""
+    assert _channel_vars(script) == ("1", "8787"), "без порта в файле конфигурации — порт по умолчанию"
+    assert _channel_vars(script, LINK_CHANNEL_PORT="9099") == ("1", "9099")
     assert _channel_vars(script, LINK_CHANNEL_PORT="порт")[1] == "8787"
     assert _channel_vars(script, LINK_CHANNEL_PORT="0")[1] == "8787", "нулевой порт — не порт"
     assert _channel_vars(script, LINK_CHANNEL_PORT="123456789")[1] == "12345", "порт не длиннее пяти цифр"
+    assert _channel_vars(script, LINK_CHANNEL_PORT="90$(reboot)99")[1] == "9099", "в порт проходит не только цифра"
 
 
 def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
-    """Единственный канал настроек на малину — бандл: агент читает рубильник из
-    юнита обвязки, а не угадывает его. Пропадут строки — канал не поднимется
-    ни на одном шлюзе, и понять это будет неоткуда."""
+    """Порт канала агент читает из юнита обвязки, а строку LINK_CHANNEL —
+    агенты прежних версий: пропадёт она, и каждый не обновлённый шлюз
+    погасит канал, а понять это будет неоткуда."""
     unit = script.split('cat > "$UNIT" <<UNITEOF', 1)[1].split("UNITEOF", 1)[0]
     assert "Environment=LINK_CHANNEL=$LINK_CHANNEL\n" in unit
     assert "Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT\n" in unit
@@ -611,15 +613,15 @@ def _peer_block(script: str) -> str:
 
 
 def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False, apt_rc="0",
-                    link_channel="1", apt_update_rc="0"):
+                    link_channel="", apt_update_rc="0"):
     bin_dir, log, fake, dns_d = _svc_host(tmp_path)
     if browse:
         fake("avahi-browse", "exit 0\n")
     conf = dns_d / "awg-gw-peer-services.conf"
     conf.write_text("local=/awg.internal/\n", encoding="utf-8")
     prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_HOME_NETS="{peers}"\n'
-            f'LINK_CHANNEL="{link_channel}"\n'
-            "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
+            + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
+            + "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc,
                             "APT_UPDATE_RC": apt_update_rc})
@@ -657,14 +659,16 @@ def test_avahi_utils_is_not_installed_without_the_daemon_or_when_present(script,
     assert "apt-get" not in log, log
 
 
-def test_avahi_utils_is_not_installed_without_the_link_channel(script, tmp_path):
-    """Без канала линка записи SMB никуда не уедут: пакет на малину ставить
-    незачем, и apt под OMV лишний раз не трогаем (ни update, ни install)."""
-    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", link_channel="0")
+@pytest.mark.parametrize("link_channel", ["0", "1"])
+def test_avahi_utils_does_not_depend_on_the_channel_line(script, tmp_path, link_channel):
+    """Канал обязателен, и установка утилиты обзора от строки канала не
+    зависит: оставшийся от прежних версий LINK_CHANNEL=0 не должен лишать
+    соседние сети SMB-серверов этой подсети."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", link_channel=link_channel)
     assert r.returncode == 0, r.stderr
-    assert "apt-get" not in log, f"apt без канала линка: {log!r}"
-    assert "ставлю avahi-utils" not in r.stdout, r.stdout
-    assert conf.exists(), "при соседях файл записей не снимается и без канала"
+    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
+    assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"LINK_CHANNEL={link_channel}: apt {apt}"
+    assert conf.exists()
 
 
 def test_a_failed_apt_update_still_tries_the_install(script, tmp_path):
@@ -725,15 +729,16 @@ def _plan_line(script: str, **env) -> str:
 
 
 @pytest.mark.parametrize("env,state", [
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "1"}, "включены"),
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "нет"),
-    ({"PEER_HOME_NETS": "", "LAN_MODE": "1", "LINK_CHANNEL": "1"}, "нет"),
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "0", "LINK_CHANNEL": "1"}, "нет"),
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1"}, "включены"),
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "включены"),
+    ({"PEER_HOME_NETS": "", "LAN_MODE": "1"}, "нет"),
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "0"}, "нет"),
 ])
 def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
-    """Показ плана до применения: записи SMB соседей возможны только при всех
-    трёх условиях (соседи, режим локальной сети, канал) — иначе «нет», чтобы
-    человек не искал в Finder то, что эта конфигурация не даст."""
+    """Показ плана до применения: записи SMB соседей возможны при соседях и
+    режиме локальной сети — иначе «нет», чтобы человек не искал в Finder то,
+    что эта конфигурация не даст. Строка канала на ответ не влияет: канал
+    обязателен."""
     assert _plan_line(script, **env) == f"SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): {state}"
 
 

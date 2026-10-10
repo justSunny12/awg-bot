@@ -300,8 +300,10 @@ def test_panel_renders_on_a_dead_gateway():
     """Панель обязана рисоваться и на полумёртвом шлюзе — именно тогда она
     нужнее всего."""
     from awgbot.bot import texts
-    out = texts.gateway_panel(GwStatus())
-    assert out.splitlines()[:3] == ["🛰 <b>шлюз</b> 🔴 линк лежит", "", "📡 Линк до сервера AWG 🔴 интерфейс лежит"], out
+    out = texts.gateway_panel(GwStatus(), chan={"online": False, "role": ""})
+    # канал обязателен: строка о нём есть всегда, и без связи тоже
+    assert out.splitlines()[:3] == ["🛰 <b>шлюз</b> 🔴 линк лежит", "",
+                                    "📡 Линк до сервера AWG 🔴 интерфейс лежит · 🔗 упр. канал ⚪ нет связи"], out
     # трафика нет — «📊 0» не выводится (нули не выводим)
     assert "📊" not in out, out
 

@@ -1,6 +1,6 @@
 """
 Клиент канала на шлюзе (runtime/linkclient): жизнь сессии — бэкофф, ключ,
-таймаут коннекта, рубильник, переподключение по восстановлению линка, снимок
+таймаут коннекта, когда клиент заводится, переподключение по восстановлению линка, снимок
 сразу после операции из чата агента.
 
 Сети нет: ВПС на том конце — `_Vps`, подставленный вместо
@@ -43,6 +43,7 @@ class _Agent(AgentStub):
     def __init__(self):
         self.snap = {"bundle": {"lan_mode": "1"}, "egress_ok": True, "agent_version": "3.1.0"}
         self.roles: list[bool] = []
+        self.caps: list = []                      # что сервер сказал о своих возможностях
         self.link_up = True
         self.touched = 0
         self.channel = ChannelState()
@@ -59,8 +60,9 @@ class _Agent(AgentStub):
     def lan_feeds_touch(self, digest: str = "") -> None:
         self.touched += 1
 
-    def set_link_role(self, active: bool, standby=None, name=None) -> None:
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None) -> None:
         self.roles.append(active)
+        self.caps.append(caps)
 
     # для on_tick: что показал последний тик монитора
     def cached_status(self, max_age):
@@ -148,9 +150,11 @@ class _Vps:
         self.sessions.append(c)
         return c
 
-    def answers(self, key: bytes = KEY, active: bool = True, **kw) -> _Conn:
-        """Настоящая сессия: сервер сказал роль (первое, что он говорит после hello)."""
-        c = _Conn([_reply(key, "role", {"active": active})], **kw)
+    def answers(self, key: bytes = KEY, active: bool = True, caps=None, **kw) -> _Conn:
+        """Настоящая сессия: сервер сказал роль (первое, что он говорит после hello);
+        caps — возможности сервера в этом слове (None — сервер прежний, поля нет)."""
+        body = {"active": active} if caps is None else {"active": active, "caps": caps}
+        c = _Conn([_reply(key, "role", body)], **kw)
         self.sessions.append(c)
         return c
 
@@ -290,48 +294,127 @@ async def test_the_session_mark_follows_the_session(vps):
     assert agent.touched == 1, "конец сессии не отметил запас на своё скачивание фидов"
 
 
-# ── рубильник ────────────────────────────────────────────────────────────────
+# ── когда клиент заводится ──────────────────────────────────────────────────
 
 @pytest.fixture()
 def gateway_role(monkeypatch):
-    env = {"LINK_CHANNEL": "1"}
+    """Шлюз с юнитом обвязки без единой строки канала: канал обязателен, и
+    держится он конфигом линка, а не переключателем в юните."""
     monkeypatch.setattr(config, "ROLE", "gateway")
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     monkeypatch.setattr(linkclient, "_client", None)
-    yield env
+    yield
     c = linkclient._client
     if c is not None and c._task is not None:
         c._task.cancel()
 
 
-async def test_a_bundle_that_turns_the_channel_off_stops_a_running_client(vps, gateway_role):
-    """Рубильник канала — перевыпуск конфигурации с LINK_CHANNEL=0. Раньше
-    клиент, раз поднявшись, жил до перезапуска агента: человек выключил
-    функцию, а малина продолжала держать сессию до ВПС."""
+async def _until_online(timeout: float = 0.5) -> None:
+    for _ in range(int(timeout / 0.01)):
+        if linkclient.online():
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_a_unit_without_the_channel_line_still_keeps_the_channel(vps, gateway_role):
+    """Юнит обвязки, где строки LINK_CHANNEL нет вовсе (собран до того, как
+    канал стал обязательным, или потерял её): канал всё равно держится. Раньше
+    такой шлюз молчал — карточка слота на ВПС не получала ни снимка, ни
+    списков, а человек не видел, что дело в старой строке юнита."""
     agent = _Agent()
     conn = vps.answers(hang=True)
     client = linkclient.ensure(agent)
-    assert client is not None
-    for _ in range(50):
-        if linkclient.online():
-            break
-        await asyncio.sleep(0.01)
+    assert client is not None, "конфиг линка на месте, а клиент канала не заведён"
+    await _until_online()
+    assert linkclient.online(), "канал не открылся при юните без строки LINK_CHANNEL"
+    assert linkclient.ensure(agent) is client, "повторный ensure завёл второго клиента"
+    assert vps.connects == 1, "повторный ensure открыл вторую сессию"
+    assert not conn.closed
+
+
+async def test_losing_the_link_conf_does_not_tear_down_a_running_client(vps, conf, gateway_role):
+    """Конфиг линка пропал на ходу (бандл переписывает его, SD моргнула): новый
+    клиент без ключа не заводится, но живую сессию тик гасить не должен —
+    иначе каждый перевыпуск конфигурации рвал бы канал на полуслове."""
+    agent = _Agent()
+    conn = vps.answers(hang=True)
+    client = linkclient.ensure(agent)
+    await _until_online()
     assert linkclient.online(), "сессия не открылась — сценарий собран не так"
     task = client._task
-
-    gateway_role["LINK_CHANNEL"] = "0"
+    conf.unlink()
     assert linkclient.ensure(agent) is None
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, 2)           # не погашена — TimeoutError, а не вечное ожидание
-    assert conn.closed, "сессия до ВПС осталась открытой после выключения канала"
-    assert not linkclient.online() and client._task is None
-    assert agent.channel.online is False
+    await asyncio.sleep(0.05)
+    assert not task.done(), "пропажа конфига линка погасила работающего клиента"
+    assert linkclient.online() and not conn.closed, "сессия до ВПС закрыта без причины"
+    assert linkclient._client is client
 
 
-async def test_the_channel_off_from_the_start_starts_nothing(gateway_role):
-    gateway_role["LINK_CHANNEL"] = "0"
+async def test_without_the_link_conf_nothing_starts(gateway_role, monkeypatch, tmp_path):
+    """Шлюз без конфига линка (обвязка ещё не применена): подписать hello нечем,
+    и клиент не заводится вовсе — без стука в никуда каждые пять секунд."""
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(tmp_path / "нет-такого.conf"))
+    assert linkclient.enabled() is False
     assert linkclient.ensure(_Agent()) is None
-    assert linkclient._client is None, "клиент заведён при выключенном канале"
+    assert linkclient._client is None, "клиент заведён без конфига линка"
+
+
+async def test_the_channel_view_has_no_switch_left(gateway_role, conf):
+    """Панель агента рисует строку канала всегда: в состоянии канала нет поля
+    «включён», только «на связи» и роль, и роль без сессии пустая."""
+    assert linkclient.view() == {"online": False, "role": ""}
+
+
+# ── возможности сторон ──────────────────────────────────────────────────────
+
+async def test_hello_names_the_agents_capabilities_as_a_list(vps):
+    """Сервер решает, что слать агенту, одним `in` по списку возможностей из
+    hello. Нет поля — сервер примет агента за прежнего и не пришлёт ничего
+    нового; не список — проверка на ВПС упадёт на первом же подключении."""
+    conn = vps.answers()
+    await linkclient.LinkClient(_Agent())._connect_once()
+    hello = conn.hello()
+    assert "caps" in hello, f"hello без возможностей агента: {sorted(hello)}"
+    assert hello["caps"] == list(linkclient.common.CAPS), hello["caps"]
+    assert isinstance(hello["caps"], list) and all(isinstance(c, str) for c in hello["caps"])
+
+
+async def test_the_servers_capabilities_from_its_role_reach_the_agent(vps):
+    """Первое слово сервера — роль — несёт его возможности: по ним подсказки
+    агента говорят, что сервер пришлёт сам. Прежний сервер поля не шлёт —
+    до агента доходит None, и сказанное раньше не стирается."""
+    vps.answers(caps=["cfg1"])
+    vps.answers()
+    agent = _Agent()
+    client = linkclient.LinkClient(agent)
+    await client._connect_once()
+    await client._connect_once()
+    assert agent.caps == [["cfg1"], None], f"возможности сервера не переданы агенту: {agent.caps}"
+
+
+def test_the_agent_keeps_the_servers_capabilities_and_drops_junk(tmp_path):
+    """Возможности сервера лежат в базе агента до следующей роли. Прежний
+    сервер (поля нет) их не стирает; мусор с ВПС — не список, не строки —
+    не превращается в возможность, которой у сервера нет."""
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
+    d = Database(tmp_path / "gw.db")
+    d.init_schema()
+    try:
+        svc = GatewayServices(d)
+        assert svc.link_server_caps() == [], "сервер ничего не говорил — возможностей нет"
+        svc.set_link_role(True, caps=["cfg1", "lists2"])
+        assert svc.link_server_caps() == ["cfg1", "lists2"]
+        svc.set_link_role(False)
+        assert svc.link_server_caps() == ["cfg1", "lists2"], "роль прежнего сервера стёрла возможности"
+        svc.set_link_role(True, caps=["cfg1", 7, None, {"x": 1}, ["y"]])
+        assert svc.link_server_caps() == ["cfg1"], f"мусор принят за возможность: {svc.link_server_caps()}"
+        svc.set_link_role(True, caps="cfg1 lists2")
+        assert svc.link_server_caps() == [], "строка вместо списка разобрана как возможности"
+        svc.set_link_role(True, caps=[])
+        assert svc.link_server_caps() == [], "пустой список не сбросил прежние возможности"
+    finally:
+        d.close()
 
 
 # ── переподключение по восстановлению линка ─────────────────────────────────
@@ -416,15 +499,15 @@ async def test_poke_sends_the_change_right_away(gateway_role, conf):
     assert len(client._writer.written) == 2, "повторный poke без изменений что-то отправил"
 
 
-async def test_poke_without_the_channel_is_quiet(monkeypatch):
-    """Канал не включён бандлом (или это не шлюз) — операция из чата не должна
+async def test_poke_without_the_channel_is_quiet(monkeypatch, tmp_path):
+    """Конфига линка нет (или это не шлюз) — операция из чата не должна
     ни падать, ни поднимать клиента."""
     monkeypatch.setattr(linkclient, "_client", None)
     monkeypatch.setattr(config, "ROLE", "client")
     await linkclient.poke(_Agent())
     assert linkclient._client is None
     monkeypatch.setattr(config, "ROLE", "gateway")
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(tmp_path / "нет-такого.conf"))
     await linkclient.poke(_Agent())
     assert linkclient._client is None
 

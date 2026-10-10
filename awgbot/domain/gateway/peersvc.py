@@ -24,8 +24,7 @@ class PeerServicesMixin:
 
     def services_active(self) -> bool:
         from awgbot.infra import gwguard
-        return (gwguard.lan_mode() and bool(gwguard.unit_env("PEER_HOME_NETS").split())
-                and gwguard.unit_env("LINK_CHANNEL") == "1")
+        return gwguard.lan_mode() and bool(gwguard.unit_env("PEER_HOME_NETS").split())
 
     def services_local(self) -> list[dict]:
         """SMB-серверы этой сети, найденные обзором (после чистки)."""

@@ -2937,8 +2937,12 @@ def _ch(bundle: dict | None = None, *, online: bool = True, closed: bool = False
 
 
 def _ch_ack(ok: bool, error: str = ""):
+    """Ответ шлюза на текущий набор настроек: отпечаток — как его ставит слушатель
+    (набор, ушедший в сессии); отказ на прежний набор карточка не показывает."""
     def step(services, mp):
-        services.gwlink_ack_in(1, {"ok": ok, "error": error})
+        from awgbot.util import gwlink
+        digest = gwlink.settings_hash(services.gwlink_settings_want(services.db.gateway(1)))
+        services.gwlink_ack_in(1, {"ok": ok, "error": error, "hash": digest})
     return step
 
 

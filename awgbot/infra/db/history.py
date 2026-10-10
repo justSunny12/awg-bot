@@ -200,6 +200,17 @@ class HistoryMixin:
              row["public_key"], row["address"], row["block_reason"],
              row["t_limit"], row["created_at"], _now_iso(), reason))
 
+    def archived_device_names_by_address(self, addresses) -> dict[str, str]:
+        """{адрес: имя} удалённых устройств по адресу — последняя запись истории
+        на адрес; адрес без записи в ответ не попадает."""
+        addrs = [str(a) for a in addresses][:64]
+        if not addrs:
+            return {}
+        rows = self._connection().execute(
+            f"SELECT address, name FROM devices_histories WHERE address IN ({','.join('?' * len(addrs))}) "
+            "ORDER BY archived_at, id", addrs).fetchall()
+        return {r["address"]: r["name"] or "" for r in rows if r["name"]}
+
     def snapshot_monthly_traffic(self, month: str, cur=None) -> None:
         """Снять помесячный снимок потребления ВСЕХ устройств (перед сбросом 1-го
         числа). month = 'YYYY-MM' завершившегося месяца. Метрика, не эпизод —

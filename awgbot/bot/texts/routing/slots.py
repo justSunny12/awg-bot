@@ -111,17 +111,19 @@ def _bot_link(agent_bot: dict | None) -> str:
     return f'<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>'
 
 
-def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose: str, what: str) -> str:
+def _slot_note(state: str, agent_bot: dict | None, error: str, purpose: str, what: str) -> str:
     """Строка состояния под записями SMB / своими списками в карточке слота —
     общие ветки: обновить шлюз (со ссылкой на бота), отказ шлюза, ожидание.
+    Имя слота не повторяется: строка стоит в его же карточке.
     purpose — «Необходимо» / «Для синхронизации необходимо», what — «записи» / «списки»."""
     if state == "old_agent":
         bot = _bot_link(agent_bot)
-        return f"⚠️ {purpose} обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
+        return f"⚠️ {purpose} обновить шлюз" + (f" (бот: {bot})" if bot else "")
     if state == "failed":
-        if error.startswith(WRITE_ERROR):
-            return f"⚠️ Шлюз{gw}: {_e(error)}"          # поломка на шлюзе, не отказ
-        return f"⚠️ Шлюз{gw} не смог принять {what}" + (f": {_e(error)}" if error else "")
+        if error.startswith(WRITE_ERROR):           # поломка на шлюзе, не отказ
+            detail = error[len(WRITE_ERROR):].lstrip(": ")
+            return "⚠️ Ошибка записи файла на шлюзе" + (f": {_e(detail)}" if detail else "")
+        return f"⚠️ Шлюз не смог принять {what}" + (f": {_e(error)}" if error else "")
     return "⏳ Синхронизация с другими шлюзами…"
 
 

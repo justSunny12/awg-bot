@@ -8,7 +8,7 @@
 диалоги тумблеров при живом и лежащем канале — в эталоне
 tests/screens/admin.txt (adm.gw.card.ch.*, adm.gw.lan_*.ch.*,
 adm.gw.peer_*.ch.*), строка канала в панели агента — в gateway.txt; здесь —
-что меняется в слоте и настройках, напоминания о перевыпуске и строки канала
+что меняется в слоте и настройках, уведомления о расхождении и строки канала
 на входе функций.
 
 Экрана «Конфигурация шлюза» перед выпуском файла больше нет (вычитка 3.1.0):
@@ -121,63 +121,71 @@ async def test_a_live_channel_does_not_replace_the_link_ping(services, slot, fak
         "подменить первое вторым значило бы врать в карточке")
 
 
-# ── напоминания о перевыпуске ────────────────────────────────────────────────
+# ── уведомления о расхождении ────────────────────────────────────────────────
 
-def test_a_matching_installed_configuration_silences_the_reissue_reminder(services, slot):
-    """Раньше ВПС сравнивал своё со своим — что выдал тогда с тем, что выдал бы
-    сейчас, — и напоминал о перевыпуске даже тогда, когда человек уже применил
-    файл другим путём. С каналом напоминание перестаёт быть догадкой: на шлюзе
-    стоит то же самое — молчим."""
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, 1), "")
-    assert services.gw_bundle_drift_notes(), "без снимка напоминание работает как раньше"
+def _refuse(services):
+    """Шлюз на связи отверг набор, который ВПС хочет сейчас."""
+    from awgbot.util import gwlink
+    want = services.gwlink_settings_want(services.db.gateway(1))
+    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1", "hash": gwlink.settings_hash(want)})
 
+
+def test_a_matching_installed_configuration_notifies_nothing(services, slot):
+    """На шлюзе стоит ровно выдаваемое — даже отказ шлюза (на тот же набор,
+    который уже стоит) не повод для уведомления: расходиться нечему."""
+    services.add_device(services.db.get_client_by_tg(ADMIN).id, "Ноутбук")
     _snap(services)
+    _refuse(services)
     assert services.gw_bundle_drift_notes() == [], (
-        "на шлюзе стоит ровно выдаваемое, а бот всё равно гонит перевыпускать")
+        "на шлюзе стоит ровно выдаваемое, а бот всё равно шлёт уведомление")
 
 
-def test_a_drifted_installed_configuration_still_asks_for_a_reissue(services, slot):
-    """Обратная сторона: снимок есть, установленное не совпадает, а канал молчит
-    дольше суток — ждать его больше нечего. Возвращается прежний путь: одно
-    тихое напоминание перевыпустить файл, и не больше одного на расхождение."""
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"}, online=False)
-    services.gwlink_session_closed(1)
+async def test_a_silent_gateway_shows_its_drift_in_the_card_not_in_the_chat(services, slot, fake_bot):
+    """Шлюз не на связи, по снимку на нём другие подсети и прежние устройства
+    админа. Уведомления нет — канал довезёт, когда шлюз вернётся; расхождение
+    видно в карточке по пунктам. Устройства админа там — одним именем, без
+    адресов: список адресов всех устройств карточку только раздувал бы."""
+    stale = _installed(services)["admin_ips"]
+    dev = services.add_device(services.db.get_client_by_tg(ADMIN).id, "Ноутбук")
+    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
+                            "admin_ips": stale}, online=False)
     services.db.set_state("gwlink_seen_1", "2026-01-01T00:00:00+03:00")
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "Перевыпусти" in notes[0].text
-    assert services.gw_bundle_drift_notes() == [], "напоминание повторилось на то же расхождение"
+    assert services.gw_bundle_drift_notes() == [], "шлюз не на связи, а бот шлёт уведомление"
+    text, _ = await _card(services, fake_bot)
+    assert "Конфигурация на шлюзе расходится с выданной (2 пункта" in text, text
+    assert "   • устройства админа\n" in text + "\n", text
+    assert dev.address not in text, "адреса устройств админа в карточке"
+    assert "   • локальные подсети: у сервера <code>192.168.68.0/24</code>" in text, text
 
 
-def test_a_live_channel_silences_the_reissue_reminder_it_will_deliver_itself(services, slot):
-    """Канал жив — он довезёт расхождение сам. Напоминание «перевыпусти» тогда
-    шум: человек перевыпустит, а канал довёз бы то же самое."""
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, 1), "")
+def test_a_live_channel_silences_what_it_will_deliver_itself(services, slot):
+    """Канал жив, ответа на доставку ещё нет — он довезёт расхождение сам.
+    Уведомление тогда шум: человек полезет делать то, что уже едет."""
     _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"})
     assert services.gw_bundle_drift_notes() == []
 
 
-def test_a_briefly_silent_channel_still_covers_the_delivery(services, slot):
-    """Канал лёг пару часов назад (ребут малины, линк моргнул) — он поднимется и
-    довезёт. Напоминать о перевыпуске после каждого моргания линка — шум."""
+def test_a_silent_gateway_is_not_notified_however_long_it_is_silent(services, slot):
+    """Шлюз лёг пару часов, сутки, месяц назад — уведомления нет ни в один из
+    моментов: канал обязателен и довезёт, а возраст молчания видно в карточке.
+    Даже о том, что едет только файлом (подсети соседей), и после отказа шлюза:
+    шлюза нет — и сказать ему нечего."""
     import datetime
     from awgbot.util import timeutil
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"}, online=False)
-    services.gwlink_session_closed(1)
-    services.db.set_state("gwlink_seen_1", timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=2)))
-    assert services.gw_bundle_drift_notes() == [], "канал молчит два часа, а бот уже гонит перевыпускать"
-    services.db.set_state("gwlink_seen_1", timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=25)))
-    assert len(services.gw_bundle_drift_notes()) == 1, "канал молчит сутки — напоминание обязано вернуться"
+    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
+                            "peer_home_nets": "192.168.2.0/24"}, online=False)
+    _refuse(services)
+    for hours in (2, 25, 24 * 30):
+        services.db.set_state("gwlink_seen_1",
+                              timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=hours)))
+        assert services.gw_bundle_drift_notes() == [], f"шлюз молчит {hours} ч — и бот прислал уведомление"
 
 
-def test_a_channel_that_never_came_up_does_not_silence_the_reminder(services, slot):
-    """Канал не поднимался ни разу (старый агент, выключен бандлом) — доставлять
-    нечем, и напоминание работает как до канала."""
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1), "lan=0;nets=;resolver=;peer=")
-    assert len(services.gw_bundle_drift_notes()) == 1
+def test_a_channel_that_never_came_up_notifies_nothing(services, slot):
+    """Канал не поднимался ни разу — снимка нет, судить не по чему. Об этом
+    говорит карточка («ещё не поднимался»), а не уведомление по догадке."""
+    services.add_device(services.db.get_client_by_tg(ADMIN).id, "Ноутбук")
+    assert services.gw_bundle_drift_notes() == []
 
 
 # ── этап 4: тумблеры при живом канале ────────────────────────────────────────
@@ -252,17 +260,17 @@ def test_neighbour_subnets_are_not_sent_over_the_channel(services, slot, monkeyp
         "подсети соседей ушли бы каналом, а их везёт только файл")
 
 
-def test_a_live_channel_does_not_silence_the_reminder_about_neighbour_subnets(
+def test_a_live_channel_does_not_silence_the_notification_about_neighbour_subnets(
         services, slot, monkeypatch):
-    """Напоминание перевыпустить файл молчит, пока канал довезёт всё сам. Подсети
-    соседей он не довезёт — значит напоминание о них обязано прийти, один раз."""
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
-                          services._gw_bundle_deps(services.db.gateway(1)))
+    """Подсети соседей канал не довезёт — значит уведомление о них обязано
+    прийти и при живом канале, один раз, с кнопкой выпуска файла."""
     _snap(services)
     _neighbour(services, monkeypatch)
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "Перевыпусти" in notes[0].text, "канал жив — и о подсетях соседей молчок"
-    assert services.gw_bundle_drift_notes() == [], "одно напоминание на расхождение"
+    assert len(notes) == 1, "канал жив — и о подсетях соседей молчок"
+    assert "конфигурация неактуальна — локальные подсети других шлюзов" in notes[0].text, notes[0].text
+    assert notes[0].action == ("gwcfg", 1)
+    assert services.gw_bundle_drift_notes() == [], "одно уведомление на расхождение"
 
 
 # ── строки канала на входе функций: экранирование и пределы ──────────────────

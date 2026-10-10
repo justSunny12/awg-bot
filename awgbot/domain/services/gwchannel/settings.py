@@ -73,7 +73,8 @@ class SettingsMixin:
         return self.gwlink_settings_want(gw)
 
     def gwlink_ack_in(self, slot_id: int, body: dict) -> None:
-        """Итог применения настроек на шлюзе — тем же форматом, что прочие ответы."""
+        """Итог применения настроек на шлюзе — тем же форматом, что прочие ответы;
+        hash — отпечаток набора, ушедшего в сессии (ставит слушатель, не агент)."""
         ack = self._gwlink_ack_put(self._GWLINK_ACK_KEY, slot_id, body)
         if not ack["ok"]:
             log.warning("канал линка: слот %s не применил настройки: %s", slot_id, ack["error"])

@@ -250,7 +250,7 @@ async def test_an_ordinary_schedule_is_left_alone_at_agent_start(tmp_path, monke
 
 # ── мелочи, которые люди видят каждый день ───────────────────────────────────
 
-@pytest.mark.parametrize("sync", ["online", "offline", "no_channel"])
+@pytest.mark.parametrize("sync", ["online", "offline"])
 def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast(sync):
     """Домен длиной в сотню знаков обрезается сам, а хвост синхронизации
     остаётся целиком: всплывашка — до 200 знаков, и Telegram режет хвост

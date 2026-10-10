@@ -6,7 +6,6 @@ import re
 import time
 from typing import Optional
 from awgbot.core import config
-from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.infra import routing
 from awgbot.domain import configgen
@@ -325,149 +324,130 @@ class SlotsMixin:
         cfg = self.generate_config(dev.id, for_bundle=True)
         return configgen.gateway_uplink_conf(cfg["conf"])
 
-    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
-    _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"
-    # Прочие зависимости бандла: режим без VPN,
-    # локальные подсети, резолвер. Устройства админа — отдельным ключом выше:
-    # у них своё напоминание.
-    _GW_BUNDLE_DEPS_KEY = "gw_bundle_deps"
-    _GW_BUNDLE_DEPS_NOTIFIED_KEY = "gw_bundle_deps_notified"
-
-    def _gw_bundle_deps(self, gw) -> str:
-        env = self._lan_env(gw)
-        return (f"lan={env['LAN_MODE']};nets={env['HOME_SUBNETS']};resolver={env['RESOLVER']};"
-                f"peer={env['PEER_HOME_NETS']}")
-
-    @staticmethod
-    def _gw_deps_changed(before: str, after: str) -> list[str]:
-        """Что именно разошлось — для напоминания; имена — те же, что у
-        расхождения по снимку канала (gwlink.KEY_HUMAN)."""
-        from awgbot.util import gwlink
-        names = {"lan": gwlink.KEY_HUMAN["LAN_MODE"], "nets": gwlink.KEY_HUMAN["HOME_SUBNETS"],
-                 "resolver": gwlink.KEY_HUMAN["RESOLVER"], "peer": gwlink.KEY_HUMAN["PEER_HOME_NETS"]}
-        b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
-        a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)
-        return [names[k] for k in ("lan", "nets", "resolver", "peer") if b.get(k, "") != a.get(k, "")]
+    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"   # адреса админа, вшитые в последний файл слота
 
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
 
-    def _gw_channel_covers(self, gw) -> bool:
-        """Доставкой настроек занимается канал: сессия жива, либо канал замолчал
-        меньше `routing.link_channel.stale_hours` назад (по умолчанию сутки) —
-        он поднимется и довезёт сам. Напоминание «перевыпусти» тогда только
-        шум: человек перевыпустит, а канал довёз бы то же самое. Канал молчит
-        дольше — возвращается прежний путь, одним тихим напоминанием."""
-        if not getattr(gw, "id", None):
-            return False
-        if self.gwlink_session(gw.id):
-            return True
-        seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
-        if not seen:
-            return False
-        try:
-            age = (timeutil.now() - timeutil.parse_iso(seen)).total_seconds()
-        except ValueError:
-            return False
-        return age < 3600 * settings.get_int("app.routing.link_channel.stale_hours", 24)
-
+    # ── расхождение конфигурации по снимку канала ────────────────────────────
     _GW_DRIFT_NOTIFIED_KEY = "gw_drift_notified"
 
-    def _gw_snapshot_drift_note(self, g) -> tuple[bool, Notification | None]:
-        """Напоминание по СНИМКУ: (решено ли по снимку, уведомление или None).
+    def _gw_drift_pending(self, g, items: list) -> list:
+        """Что из расхождения по снимку канал сам не закроет.
 
-        Со снимком напоминание перестаёт быть памятью о выдаче: оно и глушится,
-        и будится тем, что реально стоит на шлюзе. Раньше снимок умел только
-        глушить: выпустил бандл, но не применил — «выдано то же, что надо»,
-        и напоминания не было ни одного, хотя на шлюзе стоит прежнее.
-
-        Из расхождения вычитается то, что довезёт канал (он жив или замолчал
-        недавно), — остаётся то, что едет только файлом (подсети соседей), или
-        всё, если канала нет. Одно напоминание на набор расхождений; сошлось
-        после напоминания — один тихий отбой.
-        """
+        Канал обязателен, и о доставке решает он: ключи обвязки (SETTINGS_KEYS)
+        уходят слоту при каждом подключении. Поэтому пока шлюз не на связи —
+        молчим, сколько бы он ни молчал (расхождение всё это время видно в
+        карточке), а на связи ждём итога доставки. Остаются два случая: шлюз
+        ответил отказом на текущий набор (ответ несёт отпечаток набора — иначе
+        старый отказ сошёл бы за отказ на новое) и то, что канал не везёт
+        вовсе — подсети других шлюзов (BUNDLE_ONLY_KEYS: они и в конфиге линка)."""
         from awgbot.util import gwlink
-        snap = self.gwlink_snapshot(g.id) if getattr(g, "id", None) else {}
-        if not isinstance(snap.get("bundle"), dict):
-            return False, None
+        if not self.gwlink_session(g.id):
+            return []
+        ack = self.gwlink_ack(g.id)
+        refused = (bool(ack) and not ack.get("ok")
+                   and ack.get("hash") == gwlink.settings_hash(self.gwlink_settings_want(g)))
+        return [it for it in items
+                if it[0] in gwlink.BUNDLE_ONLY_KEYS or (refused and it[0] in gwlink.SETTINGS_KEYS)]
+
+    def _gw_drift_note(self, g) -> Optional[Notification]:
+        """Одно уведомление на набор расхождений, которые канал сам не закроет;
+        сошлось после уведомления — один тихий отбой. Снимка нет — молчим:
+        судить не по чему."""
         from awgbot.domain.services.gwchannel import drift_lines
+        snap = self.gwlink_snapshot(g.id)
+        if not isinstance(snap.get("bundle"), dict):
+            return None
         items = self.gwlink_config_drift_items(g)
-        covers = self._gw_channel_covers(g)
-        pending = [it for it in items if not (covers and it[0] in gwlink.SETTINGS_KEYS)]
         key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
         told = self.db.get_state(key) or ""
-        if not pending:
+        if not items:
             if told:
                 self.db.set_state(key, "")
-                return True, Notification(
-                    config.ADMIN_ID,
-                    f"✅ {self._gw_link(g)}: конфигурация актуализирована")
-            return True, None
+                return Notification(config.ADMIN_ID, f"✅ {self._gw_link(g)}: конфигурация актуализирована")
+            return None
+        pending = self._gw_drift_pending(g, items)
+        if not pending:
+            return None
         # подпись — по самим строкам: settings_hash знает только ключи канала, и
-        # смена подсетей соседей (едут файлом) не давала бы нового напоминания
+        # смена подсетей соседей (едут файлом) не давала бы нового уведомления
         import hashlib
         sig = hashlib.sha256("\n".join(drift_lines(pending, html=False)).encode()).hexdigest()
         if told == sig:
-            return True, None
+            return None
         self.db.set_state(key, sig)
-        what = "; ".join(drift_lines(pending, html=True))
-        return True, Notification(
-            config.ADMIN_ID,
-            f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {what}. "
-            f"{self._gw_reissue_link(g)} конфигурацию шлюза", action=("gwcfg", int(g.id)))
+        # кнопка «📤 Конфигурация» — файл довезёт и то, что канал не везёт
+        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending), action=("gwcfg", int(g.id)))
+
+    def _gw_drift_text(self, g, pending: list) -> str:
+        """Текст уведомления: что разошлось — именами; отказ шлюза — второй
+        строкой; устройства админа — группами по именам, прочее — «у сервера …,
+        на шлюзе …». Без хвоста «перевыпусти»: канал обязателен."""
+        import html
+        from awgbot.util import gwlink
+        from awgbot.domain.services.gwchannel import drift_lines
+        names = ", ".join(html.escape(human, quote=False) for _k, human, _m, _t in pending)
+        lines = [f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {names}"]
+        ack = self.gwlink_ack(g.id)
+        if ack and not ack.get("ok") and any(k in gwlink.SETTINGS_KEYS for k, _h, _m, _t in pending):
+            lines.append(f"Шлюз не применил: {html.escape(ack.get('error') or 'ошибка', quote=False)}")
+        for key, human, mine, theirs in pending:
+            if key == "ADMIN_IPS":
+                lines += self._gw_admin_drift_lines(g)
+            else:
+                lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
+        return "\n".join(lines)
+
+    def _gw_admin_drift_lines(self, g) -> list[str]:
+        """Разница по устройствам админа — строка на устройство: «у сервера, нет на
+        шлюзе» — имена из devices по адресу; «на шлюзе, нет у сервера» — имя
+        удалённого устройства из истории, нет имени — только адрес. Адреса — из
+        самого снимка, не из обрезанной строки расхождения."""
+        import html
+        from awgbot.util import gwlink
+        snap = self.gwlink_snapshot(g.id)
+        got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else {}
+        want = set(self.gwlink_issued_env(g)["ADMIN_IPS"].split())
+        have = {t for t in str(got.get(gwlink.snap_field("ADMIN_IPS"), "")).split()[:64] if gwlink._ipv4(t.split("/")[0])}
+
+        def ip_key(a: str) -> tuple:
+            import ipaddress
+            try:
+                return (0, int(ipaddress.ip_address(a.split("/")[0])))
+            except ValueError:
+                return (1, 0)
+
+        def line(addr: str, name: str) -> str:
+            code = f"<code>{html.escape(addr, quote=False)}</code>"
+            return f" · {html.escape(name, quote=False)} ({code})" if name else f" · {code}"
+
+        out: list[str] = []
+        missing = sorted(want - have, key=ip_key)
+        if missing:
+            names = self.db.device_names_by_address(missing)
+            out.append("На шлюзе не помечено админским устройство:" if len(missing) == 1
+                       else "На шлюзе не помечены админскими устройства:")
+            out += [line(a, names.get(a, "")) for a in missing]
+        extra = sorted(have - want, key=ip_key)
+        if extra:
+            names = self.db.archived_device_names_by_address(extra)
+            out.append("На шлюзе помечено админским удалённое устройство:" if len(extra) == 1
+                       else "На шлюзе помечены админскими удалённые устройства:")
+            out += [line(a, names.get(a, "")) for a in extra]
+        return out
 
     def gw_bundle_drift_notes(self) -> list[Notification]:
-        """Напоминания о перевыпуске конфигурации шлюзов. Есть снимок канала —
-        решает он (что реально стоит на шлюзе); нет — по памяти о выдаче: один
-        раз на каждое новое расхождение, по слоту. Пока бандл слота не собирали
-        и снимка нет — молчим: напоминать не о чем."""
+        """Уведомления о расхождении конфигурации шлюзов — только по снимку канала:
+        что реально стоит на шлюзе против того, что ВПС выдал бы сейчас. Памяти о
+        выдаче больше нет: канал обязателен, и настройки обвязки он довозит сам."""
         if not config.ROUTING_ENABLED:
             return []
-        cur = " ".join(self._gw_ssh_allow())
         notes = []
-        by_snapshot: set = set()
         for g in self.db.gateways():
-            decided, note = self._gw_snapshot_drift_note(g)
-            if decided:
-                by_snapshot.add(g.id)
-                if note is not None:
-                    notes.append(note)
-        # без слотов — слот-заглушка линка обвязки, но только при включённой
-        # функции: после снятия последнего шлюза напоминать некому
-        for g in self.db.gateways() or ([self._gw_slot(None)]
-                                        if settings.get_bool("app.routing.enabled", False) else []):
-            if g.id in by_snapshot:
-                continue
-            sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id))
-            if sent is None:                    # бандл слота не собирали — напоминать не о чем
-                continue
-            if self._gw_channel_covers(g):
-                continue
-            if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id)) == cur:
-                continue
-            self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
-            notes.append(Notification(
-                config.ADMIN_ID,
-                f"🛰 {self._gw_link(g)}: список твоих устройств изменился, а файервол шлюза "
-                "не в курсе — новые устройства не достанут до шлюза и его локальной сети "
-                f"через туннель. {self._gw_reissue_link(g, 'Перевыпусти конфигурацию шлюза')}",
-                action=("gwcfg", int(g.id))))
-        # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
-        for g in self.db.gateways():
-            if g.id in by_snapshot:
-                continue
-            sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, g.id))
-            if sent is None:
-                continue
-            cur = self._gw_bundle_deps(g)
-            if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id)) == cur:
-                continue
-            self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id), cur)
-            what = ", ".join(self._gw_deps_changed(sent, cur)) or "настройки шлюза"
-            notes.append(Notification(
-                config.ADMIN_ID,
-                f"🛰 {self._gw_link(g)}: конфигурация неактуальна — изменились {what}. "
-                f"{self._gw_reissue_link(g)} конфигурацию шлюза", action=("gwcfg", int(g.id))))
+            note = self._gw_drift_note(g)
+            if note is not None:
+                notes.append(note)
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и

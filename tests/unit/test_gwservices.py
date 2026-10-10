@@ -273,7 +273,7 @@ class _Lan:
 
     def __init__(self, monkeypatch):
         self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "PEER_HOME_NETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
+                    "PEER_HOME_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
         self.out: str | None = ""
         self.browses = 0
         monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
@@ -367,8 +367,9 @@ def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(ag
     assert agent.services_scan() is True and _local(agent) == []
     assert agent.services_scan() is False, "пустой список «изменился» второй раз"
     assert lan.browses == n, "обзор mDNS без доступа между подсетями"
-    lan.env.update(PEER_HOME_NETS="192.168.1.0/24", LINK_CHANNEL="")
-    assert agent.services_scan() is False and lan.browses == n, "без канала обзор не нужен"
+    lan.env.update(PEER_HOME_NETS="192.168.1.0/24", LINK_CHANNEL="0")
+    agent.services_scan()
+    assert lan.browses > n, "старая строка LINK_CHANNEL=0 в юните выключила обзор при доступе между подсетями"
 
 
 # ── отложенное применение записей соседей (помощника ещё нет) ───────────────
@@ -386,7 +387,7 @@ class _Peer:
 
     def __init__(self, tmp_path, monkeypatch):
         self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "PEER_HOME_NETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
+                    "PEER_HOME_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
         self.helper = tmp_path / "awg-lan-services.sh"
         self.conf = tmp_path / "dnsmasq.d" / gs.CONF_NAME
         self.conf.parent.mkdir()

@@ -259,7 +259,7 @@ class _Host:
     шапке скрипта (`has_sync`), реассерт обвязки (`reasserts`)."""
 
     def __init__(self, tmp_path: Path, monkeypatch):
-        self.env = {"LAN_MODE": "1", "LINK_CHANNEL": "1"}
+        self.env = {"LAN_MODE": "1"}                 # строки канала нет: канал обязателен
         self.dns_d = tmp_path / "dnsmasq.d"; self.dns_d.mkdir()
         self.new = tmp_path / "lib" / "own-lists.new"
         self.calls: list[str] = []
@@ -355,12 +355,15 @@ def _pending(agent) -> list:
 
 # ── сверка ───────────────────────────────────────────────────────────────────
 
-def test_sync_works_only_with_lan_mode_and_the_channel(agent, host):
-    assert agent.own_active() is True
+def test_sync_follows_lan_mode_alone(agent, host):
+    """Синхронизация своих списков держится одним режимом без VPN: канал
+    обязателен, и строка LINK_CHANNEL в юните (нет её или «0» от прежних
+    версий) не должна оставлять правки на одном шлюзе."""
+    assert agent.own_active() is True, "режим есть, строки канала нет — синхронизация выключена"
     host.env["LINK_CHANNEL"] = "0"
-    assert agent.own_active() is False, "без канала списки только этого шлюза"
-    host.env.update(LINK_CHANNEL="1", LAN_MODE="0")
-    assert agent.own_active() is False
+    assert agent.own_active() is True, "старая строка LINK_CHANNEL=0 выключила синхронизацию"
+    host.env["LAN_MODE"] = "0"
+    assert agent.own_active() is False, "без режима без VPN сверять нечего"
 
 
 def test_an_edit_past_the_agent_becomes_one_event(agent, host):
@@ -439,7 +442,7 @@ def test_without_a_base_the_files_are_not_compared(agent, host):
 def test_nothing_is_compared_when_sync_is_off(agent, host):
     _synced(agent, host, {"a.com": "vpn"})
     host.write(vpn=["b.com"])
-    host.env["LINK_CHANNEL"] = ""
+    host.env["LAN_MODE"] = "0"
     host.calls.clear()
     assert agent.own_reconcile() is False and _pending(agent) == [] and host.calls == []
 
@@ -879,18 +882,21 @@ def _checks(agent):
     return info, checks[0]
 
 
-def test_status_is_off_without_the_channel(agent, host):
-    """Режим без VPN есть, канала нет — «off» с пометкой no_channel: экран
-    списков скажет, что они только этого шлюза и почему."""
+def test_a_leftover_channel_line_does_not_turn_the_status_off(agent, host):
+    """Строка LINK_CHANNEL=0 от прежних версий в юните — не повод показывать
+    списки «выключенными»: канал обязателен, статус считается как обычно."""
     host.env["LINK_CHANNEL"] = "0"
-    assert agent.own_status() == ({"active": False, "state": "off", "no_channel": True}, [])
+    info, checks = agent.own_status()
+    assert info["active"] is True and info["state"] != "off", info
+    assert len(checks) == 1, checks
 
 
 def test_status_is_off_without_lan_mode_and_says_nothing_about_the_channel(agent, host):
-    """Режим выключен — про канал говорить нечего: no_channel ложно даже без канала."""
-    host.env.update(LINK_CHANNEL="0", LAN_MODE="0")
-    info, checks = agent.own_status()
-    assert info["state"] == "off" and not info["no_channel"] and checks == [], info
+    """Режим выключен — «off» без проверок и без пометок про канал: экрану
+    объяснять нечего, канал есть всегда."""
+    host.env["LAN_MODE"] = "0"
+    assert agent.own_status() == ({"active": False, "state": "off"}, []), (
+        "у выключенных списков лишние поля или проверки")
 
 
 def test_status_before_and_after_the_first_sync(agent, host):

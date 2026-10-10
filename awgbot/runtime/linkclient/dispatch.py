@@ -33,7 +33,7 @@ class DispatchMixin:
             return
         if msg.get("t") == "role":
             await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")),
-                                    msg.get("standby"), msg.get("name"))
+                                    msg.get("standby"), msg.get("name"), msg.get("caps"))
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него

@@ -304,7 +304,7 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
         assert not dest.exists(), "каталог распаковки с ключом линка остался"
 
 
-# ── канал ВПС ↔ шлюз: рубильник едет бандлом ─────────
+# ── канал ВПС ↔ шлюз: строки едут бандлом ─────────
 
 def _channel(text: str) -> tuple[str, str]:
     on = re.search(r'^LINK_CHANNEL="([^"]*)"$', text, re.M)
@@ -314,20 +314,22 @@ def _channel(text: str) -> tuple[str, str]:
 
 
 def test_bundle_turns_the_channel_on_and_exports_it(bundle):
-    """Перевыпуск конфигурации — единственный рубильник канала: агент читает эти
-    строки из юнита обвязки. Не доедут — канал не поднимется, и человек будет
-    гадать, почему карточка слота молчит."""
+    """Строки канала доезжают до юнита обвязки: порт читает агент, а
+    LINK_CHANNEL=1 — агенты прежних версий, которые без него канал гасят. Не
+    доедут — карточка слота молчит, и человек гадает почему."""
     assert _channel(bundle) == ("1", "8787")
     assert "\nexport LINK_CHANNEL\n" in bundle and "\nexport LINK_CHANNEL_PORT\n" in bundle
     assert bundle.index("export LINK_CHANNEL") < bundle.index(
         '"$DEST/routing-gw-setup.sh" "${1:---apply}"'), "переменные встают до запуска обвязки"
 
 
-def test_a_bundle_can_be_built_without_the_channel(tmp_path):
-    """Откат функции — сборка конфигурации с выключенным каналом, а не правка
-    кода на малине: агент, получивший 0, никуда не ходит."""
-    out = _emit_bundle(tmp_path, env={"LINK_CHANNEL": "0"})
-    assert _channel(out)[0] == "0"
+@pytest.mark.parametrize("value", ["0", "", "да"])
+def test_the_channel_cannot_be_turned_off_from_the_environment(tmp_path, value):
+    """Канал обязателен: файл конфигурации несёт LINK_CHANNEL="1" при любом
+    окружении. Старый скрипт сборки или ручной запуск с LINK_CHANNEL=0 не
+    должны выпускать шлюзу конфигурацию, на которой прежний агент замолчит."""
+    out = _emit_bundle(tmp_path, env={"LINK_CHANNEL": value})
+    assert _channel(out)[0] == "1", f"окружение LINK_CHANNEL={value!r} выключило канал в бандле"
 
 
 def test_the_channel_port_comes_from_the_same_key_the_server_listens_on(tmp_path):
@@ -365,7 +367,8 @@ def test_junk_in_the_channel_port_does_not_reach_the_gateway(tmp_path):
     out = _emit_bundle(tmp_path, env={"LINK_CHANNEL_PORT": "9 0 9 9; rm -rf /",
                                       "LINK_CHANNEL": "да"})
     on, port = _channel(out)
-    assert port == "9099" and on == "", "в бандл уехало непроверенное значение"
+    assert port == "9099", f"в бандл уехал непроверенный порт: {port!r}"
+    assert on == "1", f"мусор в окружении попал в строку канала: {on!r}"
 
 
 def test_bundle_stamps_the_issue_time(bundle):

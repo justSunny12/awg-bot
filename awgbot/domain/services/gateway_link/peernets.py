@@ -138,9 +138,6 @@ class PeerNetsMixin:
             plain = self._bundle_with_mail(plain)
         plain = self._bundle_with_agent(plain, gw.id)
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
-        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, gw.id), "")
-        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, gw.id), self._gw_bundle_deps(gw))
-        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, gw.id), "")
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, gw.id),
                           timeutil.to_iso(timeutil.now()))
         return plain, priv

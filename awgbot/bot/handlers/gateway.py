@@ -540,9 +540,7 @@ async def _own_sync_tail(services, ok: bool, out: str) -> str:
         return ""
     info = await _own_info(services)
     if not info.get("active"):
-        # без канала сверки с сервером нет — об изменении говорит сам скрипт
-        changed = any(r.rstrip().endswith((": добавлен", ": убран")) for r in out.splitlines())
-        return "no_channel" if info.get("no_channel") and changed else ""
+        return ""
     if not await linkclient.own_changed(services):
         return ""
     return "online" if linkclient.online() else "offline"

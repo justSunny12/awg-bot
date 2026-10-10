@@ -1,14 +1,16 @@
 """
-Напоминания о перевыпуске конфигурации шлюза по снимку канала
-(domain/services/gateway_link: gw_bundle_drift_notes, _gw_snapshot_drift_note)
-и окружение сборки бандла (LINK_KEEPALIVE).
+Уведомления о расхождении конфигурации шлюза по снимку канала
+(domain/services/gateway_link: gw_bundle_drift_notes, _gw_drift_note,
+_gw_drift_pending, _gw_drift_text, _gw_admin_drift_lines) и окружение сборки
+бандла (LINK_KEEPALIVE).
 
-Со снимком напоминание перестаёт быть памятью о выдаче: его и глушит, и будит
-то, что реально стоит на шлюзе. Раньше снимок умел только глушить: выпустил
-файл, но не применил — «выдано то же, что надо», и напоминания не было ни
-одного, хотя на шлюзе стоит прежнее. Цена ошибок: человек месяцами живёт с
-файерволом шлюза, не знающим его новых устройств, — или получает напоминание
-за напоминанием о том, что канал довезёт сам.
+Канал обязателен, и настройки обвязки он довозит сам: памяти о выдаче больше
+нет, судит только снимок — что реально стоит на шлюзе против того, что ВПС
+выдал бы сейчас. Человеку пишем лишь о том, что канал не закроет: подсети
+других шлюзов (едут только файлом) и отказ шлюза применить ТЕКУЩИЙ набор.
+Цена ошибок: уведомление за уведомлением о том, что канал довезёт сам (и
+привычка их не читать), — или месяцы с файерволом шлюза, который не знает
+новых устройств админа, потому что шлюз молча отверг набор.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import datetime
 import pytest
 
 from awgbot.core import config, settings
-from awgbot.util import timeutil
+from awgbot.util import gwlink, timeutil
 from tests.conftest import SH
 
 pytestmark = pytest.mark.integration
@@ -27,7 +29,7 @@ ADMIN = config.ADMIN_ID
 
 @pytest.fixture()
 def slot(services, fake_awg, fake_routing, make_active_client, monkeypatch):
-    """Слот шлюза с режимом без VPN; маршрутизация включена."""
+    """Слот шлюза с режимом без VPN; маршрутизация включена; снимка и сессии нет."""
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
@@ -39,53 +41,145 @@ def slot(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     real = settings.get_bool
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False:
                         True if k == "app.routing.enabled" else real(k, d))
-    # файл слота выдан ровно под текущее состояние: по памяти о выдаче
-    # напоминать не о чем — всё, что ниже, решает только снимок
-    g = services.db.gateway(1)
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
-                          services._gw_bundle_deps(g))
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, 1),
-                          " ".join(services._gw_ssh_allow()))
-    return g
+    return services.db.gateway(1)
+
+
+def _admin(services):
+    return services.db.get_client_by_tg(ADMIN)
 
 
 def _installed(services, **over) -> dict:
     """То, что стоит на шлюзе, когда всё доехало, — с правками по сценарию."""
     env = services.gwlink_issued_env(services.db.gateway(1))
-    got = {k.lower(): v for k, v in env.items()}
+    got = {gwlink.snap_field(k): v for k, v in env.items()}
     got.update(over)
     return got
 
 
 def _snap(services, bundle: dict) -> None:
-    services.gwlink_snapshot_in(1, {"bundle": bundle, "agent_version": "3.1.0", "rev": 1}, 1, True)
+    services.gwlink_snapshot_in(1, {"bundle": bundle, "agent_version": "3.3.0", "rev": 1}, 1, True)
 
 
-def _channel_silent_for(services, hours: float) -> None:
+def _online(services) -> None:
+    services.gwlink_session_opened(1, "3.3.0", 2)
+
+
+def _refuse(services, error: str = "exit 1") -> None:
+    """Шлюз ответил отказом на набор, который ВПС хочет сейчас: отпечаток в
+    ответе ставит слушатель из того, что ушло в сессии."""
+    want = services.gwlink_settings_want(services.db.gateway(1))
+    services.gwlink_ack_in(1, {"ok": False, "error": error, "hash": gwlink.settings_hash(want)})
+
+
+def _offline_for(services, days: float) -> None:
+    """Канал лёг давно: сессии нет, последний раз на связи и снимок — дни назад."""
     services.gwlink_session_closed(1)
-    services.db.set_state("gwlink_seen_1",
-                          timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=hours)))
+    old = timeutil.to_iso(timeutil.now() - datetime.timedelta(days=days))
+    services.db.set_state("gwlink_seen_1", old)
+    services.db.set_state("gwlink_snap_at_1", old)
 
 
-def test_a_bundle_issued_but_never_applied_is_reminded_by_the_snapshot(services, slot):
-    """Человек перевыпустил файл и не применил его на шлюзе. По памяти о выдаче
-    всё сошлось («выдано то же, что надо») — раньше это была тишина. Снимок
-    показывает прежние подсети на шлюзе, канала давно нет: одно напоминание."""
+# ── когда молчим ─────────────────────────────────────────────────────────────
+
+def test_a_gateway_off_the_channel_is_never_notified_however_long_it_is_silent(services, slot):
+    """Шлюз не на связи месяц, на нём другие подсети, чужие подсети соседей и
+    прежний список устройств админа. Канал довезёт ключи обвязки, как только
+    шлюз вернётся, а расхождение всё это время видно в карточке; уведомление
+    по возрасту молчания — тот самый шум «перевыпусти», от которого ушли."""
+    services.add_device(_admin(services).id, "Ноутбук")
+    _snap(services, _installed(services, home_subnets="192.168.1.0/24",
+                               peer_home_nets="192.168.2.0/24", admin_ips="10.8.1.250"))
+    _refuse(services)
+    _offline_for(services, 30)
+    assert services.gwlink_config_drift_items(slot), "сценарий без расхождения ничего не проверяет"
+    assert services.gw_bundle_drift_notes() == [], "шлюз не на связи, а бот шлёт уведомление"
+    _offline_for(services, 400)
+    assert services.gw_bundle_drift_notes() == [], "молчание дольше — и уведомление пришло"
+
+
+def test_a_delivery_in_flight_is_not_notified(services, slot):
+    """Шлюз на связи, свои подсети на нём прежние: канал их уже везёт (ответа
+    нет) или шлюз применил и снимок ещё не догнал (ответ «ок»). Уведомление
+    здесь сообщило бы о том, что вот-вот закроется само."""
+    _snap(services, _installed(services, home_subnets="192.168.1.0/24", resolver="1.1.1.1"))
+    _online(services)
+    assert services.gw_bundle_drift_notes() == [], "доставка в пути, а бот уже шлёт уведомление"
+    want = services.gwlink_settings_want(slot)
+    services.gwlink_ack_in(1, {"ok": True, "error": "", "hash": gwlink.settings_hash(want)})
+    assert services.gw_bundle_drift_notes() == [], "шлюз ответил «ок», а бот шлёт уведомление"
+
+
+def test_without_a_snapshot_there_is_nothing_to_notify_about(services, slot):
+    """Шлюз ещё не сообщал, что у него стоит: судить не по чему. Ни смена
+    устройств админа, ни открытая сессия, ни отказ шлюза уведомления без
+    снимка не порождают — иначе вернулась бы догадка по памяти о выдаче."""
+    services.add_device(_admin(services).id, "Ноутбук")
+    _online(services)
+    _refuse(services)
+    assert services.gwlink_snapshot(1) == {}, "сценарий — без снимка"
+    assert services.gw_bundle_drift_notes() == []
+    # снимок без блока конфигурации (агент его не прислал) — то же «не по чему»
+    services.gwlink_snapshot_in(1, {"agent_version": "3.3.0", "rev": 1}, 1, True)
+    assert services.gw_bundle_drift_notes() == [], "снимок без bundle сошёл за расхождение"
+
+
+def test_nothing_is_notified_while_routing_is_off(services, slot, monkeypatch):
+    """Маршрутизация выключена — шлюзы не несут трафик, и уведомлять о их
+    конфигурации незачем, даже при живом отказе."""
     _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
-    _channel_silent_for(services, 30)
+    _online(services)
+    _refuse(services)
+    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
+    assert services.gw_bundle_drift_notes() == []
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    assert len(services.gw_bundle_drift_notes()) == 1, "проверка выше ничего не доказывала"
+
+
+# ── отказ шлюза ──────────────────────────────────────────────────────────────
+
+def test_a_refusal_of_the_current_set_is_notified_once(services, slot):
+    """Шлюз на связи и отказался применить именно то, что ВПС хочет сейчас:
+    канал этого сам не закроет. Одно уведомление: что разошлось, почему шлюз
+    не применил (экранировано — причина с чужой машины), кнопка выпуска файла.
+    Хвоста «Перевыпусти» нет: канал обязателен, ссылка — кнопкой."""
+    services.bot_username = "awgtestbot"
+    _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
+    _online(services)
+    _refuse(services, "dnsmasq <b>не</b> поднялся & всё")
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1, f"напоминаний {len(notes)}: {[n.text for n in notes]}"
-    text = notes[0].text
-    assert "неактуальна" in text and "локальные подсети" in text
-    assert "<code>192.168.68.0/24</code>" in text and "<code>192.168.1.0/24</code>" in text, (
-        "не сказано, что с чем разошлось")
-    assert "Перевыпусти" in text
-    assert services.gw_bundle_drift_notes() == [], "то же расхождение напомнено дважды"
+    assert len(notes) == 1, [n.text for n in notes]
+    note = notes[0]
+    lines = note.text.splitlines()
+    assert lines[0] == ('🛰 <a href="https://t.me/awgtestbot?start=gw-1">NASPi</a>: '
+                        "конфигурация неактуальна — локальные подсети"), lines[0]
+    assert lines[1] == "Шлюз не применил: dnsmasq &lt;b&gt;не&lt;/b&gt; поднялся &amp; всё", lines[1]
+    assert ("локальные подсети: у сервера <code>192.168.68.0/24</code>, "
+            "на шлюзе <code>192.168.1.0/24</code>") in lines, "не сказано, что с чем разошлось"
+    assert "Перевыпусти" not in note.text
+    assert note.action == ("gwcfg", 1) and note.tg_id == ADMIN
+    assert services.gw_bundle_drift_notes() == [], "то же расхождение — второе уведомление"
 
 
-def test_a_new_drift_is_reminded_again_once(services, slot):
+def test_a_refusal_of_a_previous_set_is_not_taken_for_a_refusal_of_this_one(services, slot):
+    """Шлюз отверг прежний набор, человек поправил подсети на ВПС — новый набор
+    ещё в пути. Старый отказ не про него: уведомление «шлюз не применил»
+    сейчас было бы ложью, и человек полез бы чинить то, что уже исправил."""
+    _refuse(services)                                    # отказ на набор до правки
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
+    _snap(services, _installed(services, home_subnets="192.168.68.0/24"))
+    _online(services)
+    assert services.gwlink_ack(1)["ok"] is False
+    assert services.gw_bundle_drift_notes() == [], "отказ на прежний набор сошёл за отказ на текущий"
+    _refuse(services)                                    # а вот на текущий — уже повод
+    assert len(services.gw_bundle_drift_notes()) == 1, "проверка выше ничего не доказывала"
+
+
+def test_a_new_set_of_differences_is_notified_again_once(services, slot):
+    """Уведомление — одно на набор расхождений: добавилось новое — ещё одно,
+    и снова одно."""
     _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
-    _channel_silent_for(services, 30)
+    _online(services)
+    _refuse(services)
     assert len(services.gw_bundle_drift_notes()) == 1
     _snap(services, _installed(services, home_subnets="192.168.1.0/24", resolver="1.1.1.1"))
     notes = services.gw_bundle_drift_notes()
@@ -93,79 +187,144 @@ def test_a_new_drift_is_reminded_again_once(services, slot):
     assert services.gw_bundle_drift_notes() == []
 
 
-def test_a_drift_that_went_away_gets_one_quiet_all_clear(services, slot):
-    """Человек применил файл — на шлюзе то же, что выдаёт сервер. После
-    напоминания — один отбой, чтобы было видно, что дело закрыто; дальше
-    тишина."""
-    _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
-    _channel_silent_for(services, 30)
-    assert len(services.gw_bundle_drift_notes()) == 1
-    _snap(services, _installed(services))
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "актуализирована" in notes[0].text, [n.text for n in notes]
-    assert services.gw_bundle_drift_notes() == [], "отбой повторился"
+# ── подсети других шлюзов ────────────────────────────────────────────────────
 
-
-def test_no_all_clear_without_a_reminder_before_it(services, slot):
-    """Отбой без напоминания — шум: человеку не о чем было беспокоиться."""
-    _snap(services, _installed(services))
-    assert services.gw_bundle_drift_notes() == []
-
-
-def test_what_the_live_channel_will_deliver_is_not_reminded(services, slot):
-    """Канал жив — локальные подсети он довезёт сам. Напоминать перевыпустить
-    файл ради них — шум: человек перевыпустит, а канал довёз бы то же самое."""
-    _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
-    services.gwlink_session_opened(1, "3.1.0", 1)
-    assert services.gw_bundle_drift_notes() == []
-
-
-def test_what_only_the_file_carries_is_reminded_even_with_a_live_channel(services, slot):
+def test_neighbour_subnets_are_notified_even_with_a_live_channel(services, slot):
     """Подсети соседей канал не везёт — они живут и в конфиге линка. Живой
-    канал не повод молчать о них."""
-    _snap(services, _installed(services, peer_home_nets="192.168.2.0/24"))
-    services.gwlink_session_opened(1, "3.1.0", 1)
+    канал не повод молчать: без файла доступ между подсетями не заработает.
+    Свои подсети, расходящиеся тут же, канал довезёт — их в тексте нет."""
+    _snap(services, _installed(services, peer_home_nets="192.168.2.0/24",
+                               home_subnets="192.168.1.0/24"))
+    _online(services)
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "локальные подсети других шлюзов" in notes[0].text, (
-        [n.text for n in notes])
-    # свои подсети канал довезёт — в напоминании их быть не должно
-    assert "локальные подсети: у сервера" not in notes[0].text, notes[0].text
-
-
-def test_a_reminder_does_not_carry_markup_from_the_gateway(services, slot):
-    """Значения на шлюзе приехали с чужой машины. `<` в них без экранирования
-    Telegram отвергает целиком — напоминание не дошло бы вовсе."""
-    _snap(services, _installed(services, home_subnets="<b>x</b>&"))
-    _channel_silent_for(services, 30)
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1
-    assert "<b>x</b>" not in notes[0].text and "&lt;b&gt;x&lt;/b&gt;&amp;" in notes[0].text
-
-
-def test_the_ssh_path_is_skipped_while_the_channel_covers_the_slot(services, slot, make_active_client):
-    """Снимка ещё нет, но сессия канала открыта: список устройств админа он
-    довезёт сам. Напоминание по памяти о выдаче («список устройств изменился»)
-    здесь шум; канал замолчал больше суток — оно возвращается, один раз."""
-    admin = services.db.get_client_by_tg(ADMIN)
-    services.add_device(admin.id, "Ноутбук")              # устройств админа стало больше
-    services.gwlink_session_opened(1, "3.1.0", 1)
-    assert services.gwlink_snapshot(1) == {}, "сценарий — без снимка"
-    assert services.gw_bundle_drift_notes() == [], "канал на связи, а бот гонит перевыпускать"
-    _channel_silent_for(services, 30)
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "список твоих устройств изменился" in notes[0].text
+    assert len(notes) == 1, [n.text for n in notes]
+    text = notes[0].text
+    assert text.splitlines()[0].endswith("конфигурация неактуальна — локальные подсети других шлюзов"), text
+    assert ("локальные подсети других шлюзов: у сервера «—», на шлюзе <code>192.168.2.0/24</code>"
+            in text.splitlines()), text
+    assert "локальные подсети: у сервера" not in text, "в уведомлении то, что канал довезёт сам"
+    assert "Шлюз не применил" not in text, "отказа не было, а он назван"
     assert notes[0].action == ("gwcfg", 1)
     assert services.gw_bundle_drift_notes() == []
 
 
-def test_with_a_snapshot_the_memory_path_says_nothing(services, slot):
-    """Снимок есть — решает он, и напоминание по памяти о выдаче не дублирует
-    его вторым сообщением о том же."""
-    admin = services.db.get_client_by_tg(ADMIN)
-    services.add_device(admin.id, "Ноутбук")
-    _snap(services, _installed(services))                  # на шлюзе ровно выдаваемое сейчас
-    _channel_silent_for(services, 30)
-    assert services.gw_bundle_drift_notes() == [], "снимок совпал, а напоминание по памяти пришло"
+def test_markup_from_the_gateway_does_not_reach_the_message(services, slot):
+    """Значения на шлюзе приехали с чужой машины. `<` без экранирования
+    Telegram отвергает целиком — уведомление не дошло бы вовсе."""
+    _snap(services, _installed(services, peer_home_nets="<b>x</b>&"))
+    _online(services)
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1
+    assert "<b>x</b>" not in notes[0].text and "&lt;b&gt;x&lt;/b&gt;&amp;" in notes[0].text, notes[0].text
+
+
+# ── устройства админа ────────────────────────────────────────────────────────
+
+def _admin_note(services) -> str:
+    _online(services)
+    _refuse(services)
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1, [n.text for n in notes]
+    assert notes[0].text.splitlines()[0].endswith("конфигурация неактуальна — устройства админа"), notes[0].text
+    return notes[0].text
+
+
+def test_admin_devices_missing_on_the_gateway_are_named(services, slot):
+    """Человек завёл два устройства, шлюз отверг новый список. Адреса без имён
+    ему ничего не говорят — строка на устройство с именем и адресом, по
+    порядку адресов; заголовок группы во множественном числе."""
+    before = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    a = services.add_device(_admin(services).id, "Ноутбук")
+    b = services.add_device(_admin(services).id, "Телефон")
+    _snap(services, _installed(services, admin_ips=before))
+    lines = _admin_note(services).splitlines()
+    i = lines.index("На шлюзе не помечены админскими устройства:")
+    assert lines[i + 1:i + 3] == [f" · Ноутбук (<code>{a.address}</code>)",
+                                  f" · Телефон (<code>{b.address}</code>)"], lines
+    assert not any("удалённ" in x for x in lines), "лишних адресов на шлюзе нет, а группа есть"
+
+
+def test_a_single_missing_admin_device_reads_in_singular(services, slot):
+    before = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    a = services.add_device(_admin(services).id, "<i>Ноут</i>")
+    _snap(services, _installed(services, admin_ips=before))
+    lines = _admin_note(services).splitlines()
+    i = lines.index("На шлюзе не помечено админским устройство:")
+    assert lines[i + 1] == f" · &lt;i&gt;Ноут&lt;/i&gt; (<code>{a.address}</code>)", (
+        "имя устройства задаёт человек: без экранирования Telegram отверг бы сообщение")
+
+
+def test_a_removed_admin_device_left_on_the_gateway_is_named_from_history(services, slot):
+    """Устройство удалено, а шлюз всё ещё пускает его адрес как админский —
+    это дыра: адрес достанется следующему устройству любого клиента. Имя
+    удалённого берётся из истории, чтобы человек понял, о чём речь."""
+    old = services.add_device(_admin(services).id, "Старый планшет")
+    with_old = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    services.remove_device(old.device_id)
+    _snap(services, _installed(services, admin_ips=with_old))
+    lines = _admin_note(services).splitlines()
+    i = lines.index("На шлюзе помечено админским удалённое устройство:")
+    assert lines[i + 1] == f" · Старый планшет (<code>{old.address}</code>)", lines
+    assert not any("не помечен" in x for x in lines), "недостающих нет, а группа есть"
+
+
+def test_a_reused_address_is_named_by_its_latest_history_record(services, slot):
+    """Адрес освобождался дважды: сначала его держал «Первый», потом —
+    «Второй». На шлюзе он остался от последнего — назвать надо его."""
+    admin = _admin(services)
+    first = services.add_device(admin.id, "Первый")
+    services.remove_device(first.device_id)
+    second = services.add_device(admin.id, "Второй")
+    assert second.address == first.address, "аллокатор не отдал адрес повторно — сценарий не тот"
+    with_second = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    services.remove_device(second.device_id)
+    # первая запись — на час раньше: в одну секунду порядок записей не различить
+    services.db._connection().execute(
+        "UPDATE devices_histories SET archived_at = ? WHERE name = 'Первый'",
+        (timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=1)),))
+    _snap(services, _installed(services, admin_ips=with_second))
+    assert f" · Второй (<code>{second.address}</code>)" in _admin_note(services).splitlines()
+
+
+def test_unknown_and_many_addresses_are_listed_whole_from_the_snapshot(services, slot):
+    """Адреса, которых нет ни у живых устройств, ни в истории, — строкой с
+    одним адресом. Их много: строка расхождения обрезана до 160 знаков, но
+    группы строятся по самому снимку — ни один адрес не теряется. Разметка в
+    списке со шлюза до сообщения не доходит."""
+    mine = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    extra = [f"10.8.1.{n}" for n in range(200, 216)]
+    _snap(services, _installed(services, admin_ips=" ".join([mine, *extra, "<b>x</b>"])))
+    assert services.gwlink_config_drift_items(slot)[0][3].endswith("…"), "строка не обрезана — сценарий не тот"
+    text = _admin_note(services)
+    lines = text.splitlines()
+    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra], lines[i:]
+    assert "<b>x</b>" not in text, "разметка со шлюза дошла до сообщения"
+
+
+# ── отбой ────────────────────────────────────────────────────────────────────
+
+def test_a_difference_that_went_away_gets_one_quiet_all_clear(services, slot):
+    """Шлюз применил — на нём то же, что выдаёт сервер. После уведомления —
+    один отбой, чтобы было видно, что дело закрыто; дальше тишина."""
+    _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
+    _online(services)
+    _refuse(services)
+    assert len(services.gw_bundle_drift_notes()) == 1
+    _snap(services, _installed(services))
+    notes = services.gw_bundle_drift_notes()
+    assert [n.text for n in notes] == ["✅ NASPi: конфигурация актуализирована"]
+    assert services.gw_bundle_drift_notes() == [], "отбой повторился"
+
+
+def test_no_all_clear_without_a_notification_before_it(services, slot):
+    """Расхождение было, но о нём не уведомляли (канал вёз его сам). Сошлось —
+    отбой о том, о чём человек не слышал, был бы шумом."""
+    _snap(services, _installed(services, home_subnets="192.168.1.0/24"))
+    _online(services)
+    assert services.gw_bundle_drift_notes() == []
+    _snap(services, _installed(services))
+    assert services.gw_bundle_drift_notes() == [], "отбой без уведомления"
 
 
 # ── окружение сборки бандла ──────────────────────────────────────────────────

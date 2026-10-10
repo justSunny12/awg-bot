@@ -311,16 +311,19 @@ async def test_without_a_session_nothing_is_even_collected(agent, monkeypatch):
 
 # ── рубильник и адреса ───────────────────────────────────────────────────────
 
-def test_the_channel_is_switched_on_only_by_the_bundle(monkeypatch):
-    """Канал включается тем, что привёз бандл, и только им: без перевыпуска
-    конфигурации агент никуда не ходит. Это и есть рубильник функции."""
+def test_the_channel_is_switched_on_by_the_link_conf_not_by_the_unit(monkeypatch, tmp_path):
+    """Канал обязателен: он есть, пока на шлюзе лежит конфиг линка (из него
+    ключ подписи), и строка LINK_CHANNEL в юните на это не влияет — ни её
+    отсутствие у старого бандла, ни «0», оставшийся от прежних версий."""
     env = {}
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
-    assert linkclient.enabled() is False, "старый бандл без строки канала — канала нет"
-    env["LINK_CHANNEL"] = "1"
-    assert linkclient.enabled() is True
+    link = tmp_path / "awglink.conf"
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(link))
+    assert linkclient.enabled() is False, "конфига линка нет — каналу не по чему ехать"
+    link.write_text("[Interface]\nPrivateKey = DUMMY\n", encoding="utf-8")
+    assert linkclient.enabled() is True, "конфиг линка на месте, а канал не включён"
     env["LINK_CHANNEL"] = "0"
-    assert linkclient.enabled() is False
+    assert linkclient.enabled() is True, "старая строка LINK_CHANNEL=0 в юните выключила канал"
 
 
 def test_the_channel_port_falls_back_to_the_default_on_junk(monkeypatch):

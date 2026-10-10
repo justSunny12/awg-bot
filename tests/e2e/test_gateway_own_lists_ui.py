@@ -185,11 +185,41 @@ async def test_removing_by_button_sends_the_edit_at_once(gw, host, fake_bot, mon
 # ── основной бот: строка своих списков без имени шлюза ──────────────────────
 
 def test_the_lists_breakage_branch_without_a_name_reads_whole():
+    """Строка стоит в карточке самого слота: имя шлюза в ней не повторяется,
+    а поломка записи читается целой фразой — без «Шлюз: ошибка записи
+    файла», где префикс причины дублирует смысл заголовка."""
     from awgbot.bot.texts.routing import own_lists_line
     line = own_lists_line({"vpn": 1, "ru": 0, "state": "failed",
                            "error": "ошибка записи файла: диск только для чтения"})
-    assert line == ("📋 Свои списки: 1 в туннель\n⚠️ Шлюз: ошибка записи файла: "
+    assert line == ("📋 Свои списки: 1 в туннель\n⚠️ Ошибка записи файла на шлюзе: "
                     "диск только для чтения"), line
+
+
+@pytest.mark.parametrize("own, note", [
+    ({"state": "offline"}, "⏳ Синхронизируется, когда шлюз выйдет на связь"),
+    ({"state": "failed", "error": "dnsmasq: bad option"},
+     "⚠️ Шлюз не смог принять списки: dnsmasq: bad option"),
+    ({"state": "failed"}, "⚠️ Шлюз не смог принять списки"),
+    ({"state": "failed", "error": "ошибка записи файла"}, "⚠️ Ошибка записи файла на шлюзе"),
+    ({"state": "old_agent"}, "⚠️ Для синхронизации необходимо обновить шлюз"),
+    ({"state": "pending"}, "⏳ Синхронизация с другими шлюзами…"),
+])
+def test_the_lists_note_never_names_the_slot(own, note):
+    """Под своими списками в карточке слота — одна строка состояния, и имени
+    слота в ней нет: карточка и так его. Пустая причина не оставляет висящего
+    двоеточия."""
+    from awgbot.bot.texts.routing import own_lists_line
+    line = own_lists_line({"vpn": 2, "ru": 1, **own})
+    assert line == "📋 Свои списки: 2 в туннель, 1 напрямую\n" + note, line
+
+
+def test_the_old_agent_note_links_the_gateway_bot():
+    """Обновлять шлюз человек идёт в чат его бота: ссылка в строке, имя бота
+    экранировано — оно приходит со шлюза."""
+    from awgbot.bot.texts.routing import own_lists_line
+    line = own_lists_line({"vpn": 1, "state": "old_agent"}, {"username": "pi_gw_bot", "name": "Шлюз <1>"})
+    assert line.endswith('\n⚠️ Для синхронизации необходимо обновить шлюз '
+                         '(бот: <a href="https://t.me/pi_gw_bot">Шлюз &lt;1&gt;</a>)'), line
 
 
 # ── панель агента после правки своих списков (вычитка 3.1.0) ─────────────────

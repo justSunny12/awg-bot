@@ -1626,7 +1626,7 @@ cmd_lan() {
     local dom="/usr/local/sbin/awg-lan-domain.sh" lists="/usr/local/sbin/awg-lan-lists.sh"
     case "${1:-}" in
         add|ru|del|list)
-            [[ -x "$dom" ]] || die "VPN-транзит на этом шлюзе не включён (нет $dom) — включи его в боте сервера AWG: «🛰 Шлюзы» → карточка шлюза → «☑️ VPN-транзит» (без канала — перевыпусти конфигурацию шлюза)"
+            [[ -x "$dom" ]] || die "VPN-транзит на этом шлюзе не включён (нет $dom) — включи его в боте сервера AWG: «🛰 Шлюзы» → карточка шлюза → «☑️ VPN-транзит»"
             exec "$dom" "$@" ;;
         update)
             [[ -x "$lists" ]] || die "VPN-транзит на этом шлюзе не включён (нет $lists)"

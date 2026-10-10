@@ -30,6 +30,7 @@ class CardMixin:
         except Exception:                                 # noqa: BLE001
             mine_gen = None
         drift, drift_keys = self.gwlink_config_drift(gw, with_keys=True) if snap else ([], [])
+        ack = self.gwlink_ack(gw.id)
         return {
             "online": bool(sess) and fresh,
             "ever": bool(seen or snap),
@@ -53,7 +54,11 @@ class CardMixin:
             # не «совпадает» — экран обязан это различать.
             "has_bundle": isinstance(snap.get("bundle"), dict) if snap else False,
             "clock_skew": self._gwlink_clock_skew(gw.id),
-            "ack": self.gwlink_ack(gw.id),
+            "ack": ack,
+            # отказ шлюза — на текущий набор (отпечаток ответа = отпечаток желаемого):
+            # старый отказ после правки настройки карточка не показывает как свежий
+            "ack_current": bool(snap) and bool(ack)
+            and ack.get("hash") == gwlink.settings_hash(self.gwlink_settings_want(gw)),
             "lists": self.gwlink_lists(gw.id) if gw.lan_mode else {},
             "error": (self.db.get_state(self._gwlink_key(self._GWLINK_ERROR_KEY, gw.id)) or ""
                       ).partition(" ")[2],

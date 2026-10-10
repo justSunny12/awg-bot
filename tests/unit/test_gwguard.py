@@ -104,21 +104,6 @@ def test_forward_policy_from_foreign_chain(monkeypatch):
     assert gwguard.iptables_forward_policy() is None
 
 
-# ── ВПС: напоминание о перевыпуске при смене устройств админа ────────────────
-
-def test_gw_bundle_drift_notifies_once_per_change(services, make_active_client, monkeypatch):
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID)
-    assert services.gw_bundle_drift_notes() == [], "бандл ещё не собирали — молчим"
-    services.db.set_state(services._GW_BUNDLE_SSH_KEY + "_1", "")   # бандл слота 1 собран с пустым списком
-    services.add_device(admin.id, "phone")
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "Перевыпусти" in notes[0].text
-    assert services.gw_bundle_drift_notes() == [], "то же расхождение второй раз не шлём"
-    services.add_device(admin.id, "laptop")
-    assert len(services.gw_bundle_drift_notes()) == 1, "новое расхождение — новое напоминание"
-
-
 # ── firewall.env целиком: порт, фильтр, адреса снаружи ───────────────────────
 
 def test_env_keeps_unknown_lines_and_validates_values(tmp_path, monkeypatch):

@@ -159,8 +159,7 @@ class MarkMixin:
         хвосты: ложное «снова отвечает», «лежит» до 5 минут, ложное
         «конфигурация актуализирована»."""
         sid = int(slot_id)
-        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY,
-                    self._GW_BUNDLE_DEPS_KEY, self._GW_BUNDLE_DEPS_NOTIFIED_KEY,
+        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY,
                     self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY):
             self.db.set_state(self._gw_slot_key(key, sid), "")
         for key in self._rt_keys(sid):                     # стрик и «объявлен»

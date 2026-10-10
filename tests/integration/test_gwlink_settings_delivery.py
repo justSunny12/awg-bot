@@ -178,19 +178,18 @@ async def test_a_new_session_is_a_new_attempt(services, link):
 
 async def test_changes_made_while_the_channel_is_down_arrive_when_it_comes_back(services, link):
     """канал лежит — ничего не копится очередью и никуда не шлётся.
-    Поднялся — последнее желаемое уходит одним сообщением. Пока канал молчит
-    меньше суток, бот не гонит человека перевыпускать файл."""
+    Поднялся — последнее желаемое уходит одним сообщением. Пока шлюза нет на
+    связи, бот не шлёт уведомлений о расхождении: довезёт канал."""
     gw = await _connect(link, _installed(services))
     await _until(lambda: services.gwlink_snapshot(1))
     await gw.close()
     await _until(lambda: not services.gwlink_session(1))
 
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
-                          services._gw_bundle_deps(services.db.gateway(1)))
     services.gateway_set_lan_subnets(1, "192.168.70.0/24 192.168.71.0/24")
     assert await link.deliver(1) is False, "без сессии доставлять некому"
     await link.deliver_all()
-    assert services.gw_bundle_drift_notes() == [], "канал лёг минуту назад, а бот уже гонит перевыпускать"
+    assert services.gwlink_config_drift(services.db.gateway(1)), "сценарий без расхождения ничего не проверяет"
+    assert services.gw_bundle_drift_notes() == [], "шлюз не на связи, а бот уже шлёт уведомление"
 
     # малина вернулась с тем, что стояло до правки
     gw2 = await _connect(link, {**_installed(services), "home_subnets": "192.168.68.0/24"})
@@ -330,14 +329,12 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
     """Вся польза этапа одним сценарием: человек поменял подсети на ВПС — через
     секунды они в юните малины, обвязка перезапущена один раз, агент сказал об
     этом в своём чате, сервер получил «ок» и новый снимок, расхождения нет, и
-    напоминания перевыпустить файл нет. Сессия канала при этом та же самая —
+    уведомления о расхождении нет. Сессия канала при этом та же самая —
     применение не рвёт канал, который его принёс."""
     unit, client, chat = pi["unit"], pi["client"], pi["chat"]
     assert unit.restarts == 0, "первое подключение на неизменённой системе перезапустило обвязку"
     since = services.gwlink_session(1)["since"]
     writer = client._writer
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
-                          services._gw_bundle_deps(services.db.gateway(1)))
 
     services.gateway_set_lan_subnets(1, "192.168.70.0/24")
     await link.deliver_all()
@@ -348,7 +345,7 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
     await _until(lambda: services.gwlink_ack(1))
     assert services.gwlink_ack(1)["ok"] is True
     assert services.gwlink_config_drift(services.db.gateway(1)) == []
-    assert services.gw_bundle_drift_notes() == [], "доставлено каналом, а бот всё равно гонит перевыпускать"
+    assert services.gw_bundle_drift_notes() == [], "доставлено каналом, а бот всё равно шлёт уведомление"
     assert chat == ["⚙️ Сервер AWG прислал новые настройки шлюза — применены: локальные подсети"]
     assert client._writer is writer and services.gwlink_session(1)["since"] == since, (
         "применение настроек порвало сессию канала")
@@ -431,15 +428,37 @@ async def test_a_hanging_restart_does_not_break_the_channel(services, link, pi):
     assert unit.env()["HOME_SUBNETS"] == "192.168.68.0/24"
 
 
-def test_the_reminder_returns_after_a_day_of_silence(services, link):
-    """Канал молчит больше суток — ждать его больше нечего: одно тихое
-    напоминание перевыпустить файл."""
-    gw = services.db.gateway(1)
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
-                          services._gw_bundle_deps(gw))
+def test_a_day_of_silence_brings_no_notification(services, link):
+    """Шлюза нет на связи больше суток, на ВПС поменяли подсети. Канал
+    обязателен: вернётся шлюз — уйдут и подсети, а до того расхождение видно в
+    карточке. Уведомление «по возрасту молчания» — шум, от которого ушли."""
     services.gwlink_snapshot_in(1, _snap(_installed(services)), 1, True)
     services.gateway_set_lan_subnets(1, "192.168.70.0/24")
+    # и последнее, что шлюз успел сказать, — отказ на этот набор
+    want = services.gwlink_settings_want(services.db.gateway(1))
+    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1", "hash": gwlink.settings_hash(want)})
     services.db.set_state("gwlink_seen_1", timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=25)))
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "Перевыпусти" in notes[0].text
+    assert not services.gwlink_session(1)
+    assert services.gwlink_config_drift(services.db.gateway(1)), "сценарий без расхождения ничего не проверяет"
+    assert services.gw_bundle_drift_notes() == [], "шлюз молчит сутки — и бот прислал уведомление"
+    services.db.set_state("gwlink_seen_1", timeutil.to_iso(timeutil.now() - datetime.timedelta(days=60)))
     assert services.gw_bundle_drift_notes() == []
+
+
+async def test_a_refusal_is_tied_to_the_set_the_server_sent_not_to_what_the_agent_says(services, link):
+    """Отпечаток набора в ответе ставит слушатель — по тому, что ушло в этой
+    сессии, а не по полю из сообщения шлюза. Иначе ответ с чужим или пустым
+    отпечатком делал бы отказ невидимым: шлюз молча не применил новые
+    устройства админа, а уведомления нет. Отказ на текущий набор — одно
+    уведомление с причиной."""
+    gw = await _connect(link, _drifted(services))
+    assert await _settings(gw) is not None
+    await gw.send("ack", {"ok": False, "changed": ["HOME_SUBNETS"], "error": "exit 1", "hash": "ab" * 32})
+    await _until(lambda: services.gwlink_ack(1))
+    want = services.gwlink_settings_want(services.db.gateway(1))
+    assert services.gwlink_ack(1)["hash"] == gwlink.settings_hash(want), (
+        "отпечаток ответа взят из сообщения шлюза, а не из отправленного набора")
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1 and "Шлюз не применил: exit 1" in notes[0].text, [n.text for n in notes]
+    assert services.gw_bundle_drift_notes() == [], "отказ на тот же набор — второе уведомление"
+    await gw.close()
