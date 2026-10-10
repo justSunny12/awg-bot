@@ -19,7 +19,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 pytestmark = pytest.mark.unit
 
@@ -120,14 +120,12 @@ class _Machine:
         self.log.write_text("", encoding="utf-8")
         self.uplink = uplink
         awg = tmp_path / "awg-quick"
-        awg.write_text(f'#!/bin/sh\necho "awg-quick $*" >> "{self.log}"\n', encoding="utf-8")
-        awg.chmod(0o755)
+        fake_cmd(awg, f'#!/bin/sh\necho "awg-quick $*" >> "{self.log}"\n')
         self.awg = awg
         # аплинк поднимается юнитом: systemctl — такая же подставка с журналом
         self.bin = tmp_path / "bin"; self.bin.mkdir()
         sc = self.bin / "systemctl"
-        sc.write_text(f'#!/bin/sh\necho "systemctl $*" >> "{self.log}"\n', encoding="utf-8")
-        sc.chmod(0o755)
+        fake_cmd(sc, f'#!/bin/sh\necho "systemctl $*" >> "{self.log}"\n')
         if uplink:
             (self.conf_dir / f"{uplink}.conf").write_text("[Interface]\nPrivateKey = OLD==\n", encoding="utf-8")
 

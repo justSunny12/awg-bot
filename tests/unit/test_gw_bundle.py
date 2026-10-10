@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 LINK = ROOT / "install" / "routing-link-setup.sh"
@@ -209,7 +209,7 @@ def test_bundle_defaults_to_apply_and_passes_rollback_through(bundle, tmp_path, 
                    if line.startswith('"$DEST/routing-gw-setup.sh"'))
     dest = tmp_path / "dest"; dest.mkdir()
     fake = dest / "routing-gw-setup.sh"
-    fake.write_text('#!/bin/sh\necho "$1"\n', encoding="utf-8"); fake.chmod(0o755)
+    fake_cmd(fake, '#!/bin/sh\necho "$1"\n')
     r = subprocess.run([SH, "-c", f'DEST="{dest}"; {handoff}', "bundle", *argv],
                        capture_output=True, text=True)
     assert r.returncode == 0 and r.stdout.strip() == expect
@@ -295,7 +295,7 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
     fake = dest / "routing-gw-setup.sh"
     for rc, kept in ((0, False), (1, True)):
         dest.mkdir(exist_ok=True)
-        fake.write_text(f"#!/bin/sh\nexit {rc}\n", encoding="utf-8"); fake.chmod(0o755)
+        fake_cmd(fake, f"#!/bin/sh\nexit {rc}\n")
         me = tmp_path / f"bundle{rc}.sh"
         me.write_text(f'#!/bin/sh\nDEST="{dest}"\n{tail}\necho НЕ_ИСПОЛНЯЕТСЯ\n', encoding="utf-8")
         r = subprocess.run([SH, str(me)], capture_output=True, text=True)

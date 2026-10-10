@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 
 def _sh(prog: str, *, stdin: str = "", path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
@@ -77,8 +77,7 @@ def test_empty_peer_list_is_reported(migrate, tmp_path, peers, warned):
     """
     block = _block(migrate, 'PEERS="$(awg show', "    fi\n")
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
-    (bin_dir / "awg").write_text(f'#!/bin/sh\nprintf "%s" "{peers}"\n', encoding="utf-8")
-    (bin_dir / "awg").chmod(0o755)
+    fake_cmd(bin_dir / "awg", f'#!/bin/sh\nprintf "%s" "{peers}"\n')
     r = _sh('say(){ printf "%s\\n" "$*"; }\nAWG_IF=awg0\n' + block,
             path=f"{bin_dir}:/usr/bin:/bin")
     assert r.returncode == 0, r.stderr

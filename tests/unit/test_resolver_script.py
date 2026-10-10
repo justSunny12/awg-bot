@@ -10,8 +10,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import fake_cmd
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT =Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "install" / "awg-resolver-setup.sh"
 
 
@@ -20,23 +21,17 @@ def host(tmp_path):
     """Подставной хост: systemctl/apt-get пишут в журнал; sed понимает `-i` по-GNU."""
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
     journal = tmp_path / "journal"
-    (bin_dir / "systemctl").write_text(
+    fake_cmd(bin_dir / "systemctl",
         '#!/bin/sh\necho "systemctl $*" >> "$JOURNAL"\n'
-        'case "$1" in list-unit-files) cat "$UNITS" 2>/dev/null ;; is-active) [ -f "$ACTIVE" ] ;; esac\n',
-        encoding="utf-8")
-    (bin_dir / "apt-get").write_text(
-        '#!/bin/sh\necho "apt-get $*" >> "$JOURNAL"\necho "dnsmasq.service enabled" >> "$UNITS"\n',
-        encoding="utf-8")
+        'case "$1" in list-unit-files) cat "$UNITS" 2>/dev/null ;; is-active) [ -f "$ACTIVE" ] ;; esac\n')
+    fake_cmd(bin_dir / "apt-get",
+        '#!/bin/sh\necho "apt-get $*" >> "$JOURNAL"\necho "dnsmasq.service enabled" >> "$UNITS"\n')
     # verify зовёт dig @адрес: настоящий слал UDP в 10.8.1.1 с машины
     # разработчика и ждал 3 с на каждый тест
-    (bin_dir / "dig").write_text('#!/bin/sh\necho "dig $*" >> "$JOURNAL"\necho 93.184.216.34\n',
-                                 encoding="utf-8")
-    (bin_dir / "sed").write_text(
+    fake_cmd(bin_dir / "dig", '#!/bin/sh\necho "dig $*" >> "$JOURNAL"\necho 93.184.216.34\n')
+    fake_cmd(bin_dir / "sed",
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
-        'if [ "$1" = "-i" ]; then shift; exec /usr/bin/sed -i "" "$@"; fi\nexec /usr/bin/sed "$@"\n',
-        encoding="utf-8")
-    for f in bin_dir.iterdir():
-        f.chmod(0o755)
+        'if [ "$1" = "-i" ]; then shift; exec /usr/bin/sed -i "" "$@"; fi\nexec /usr/bin/sed "$@"\n')
     confd = tmp_path / "dnsmasq.d"; confd.mkdir()
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "JOURNAL": str(journal),
            "UNITS": str(tmp_path / "units"), "ACTIVE": str(tmp_path / "active"),
@@ -163,8 +158,7 @@ def test_syntax_is_checked_before_restart_and_a_bad_config_is_rolled_back(host):
     assert host.run("install", "10.8.1.1").returncode == 0
     before = host.conf()
     dnsmasq = host.dir / "bin" / "dnsmasq"
-    dnsmasq.write_text('#!/bin/sh\necho "illegal repeated keyword at line 25" >&2; exit 1\n',
-                       encoding="utf-8"); dnsmasq.chmod(0o755)
+    fake_cmd(dnsmasq, '#!/bin/sh\necho "illegal repeated keyword at line 25" >&2; exit 1\n')
     r = host.run("add", "10.9.1.1")
     assert r.returncode == 1 and "illegal repeated keyword" in r.stdout + r.stderr
     assert host.conf() == before

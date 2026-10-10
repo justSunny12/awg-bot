@@ -11,6 +11,7 @@ import pytest
 
 from awgbot.core import config
 from awgbot.infra import gwguard
+from tests.conftest import fake_cmd
 
 
 def _cp(rc=0, out=""):
@@ -336,7 +337,7 @@ def test_both_list_scripts_wait_longer_than_the_lock(monkeypatch):
 def test_avahi_browse_available_follows_the_path(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(tmp_path))
     assert gwguard.avahi_browse_available() is False
-    tool = tmp_path / "avahi-browse"; tool.write_text("#!/bin/sh\n", encoding="utf-8"); tool.chmod(0o755)
+    fake_cmd(tmp_path / "avahi-browse", "#!/bin/sh\n")
     assert gwguard.avahi_browse_available() is True
 
 

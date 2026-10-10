@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
 
@@ -214,13 +214,12 @@ def _fake_awg(tmp_path, ifaces: str, keys: dict) -> Path:
     keys_file = tmp_path / "keys.txt"
     keys_file.write_text("".join(f"{k} {v}\n" for k, v in keys.items()), encoding="utf-8")
     awg = bin_dir / "awg"
-    awg.write_text(
+    fake_cmd(awg,
         "#!/bin/sh\n"
         "[ \"$1\" = pubkey ] && { sed 's/^PRIV/PUB/'; exit 0; }\n"
         f"[ \"$1\" = show ] && [ \"$2\" = interfaces ] && {{ printf '%s\\n' '{ifaces}'; exit 0; }}\n"
         f"[ \"$1\" = show ] && [ \"$3\" = public-key ] && {{ grep \"^$2 \" '{keys_file}' | cut -d' ' -f2; exit 0; }}\n"
-        "exit 1\n", encoding="utf-8")
-    awg.chmod(0o755)
+        "exit 1\n")
     return awg
 
 
@@ -487,9 +486,8 @@ def test_server_ipv4_takes_endpoint_host_and_resolves_names(script, tmp_path):
     out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 {conf}")
     assert out.stdout.strip() == "203.0.113.10"
     conf.write_text("[Peer]\nEndpoint=vpn.example.org:51820\n")
-    fake = tmp_path / "getent"
-    fake.write_text("#!/bin/sh\n[ \"$1\" = ahostsv4 ] && echo '198.51.100.7 STREAM vpn.example.org'\n")
-    fake.chmod(0o755)
+    fake_cmd(tmp_path / "getent",
+             "#!/bin/sh\n[ \"$1\" = ahostsv4 ] && echo '198.51.100.7 STREAM vpn.example.org'\n")
     out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 {conf}", path=f"{tmp_path}:/usr/bin:/bin")
     assert out.stdout.strip() == "198.51.100.7"
     out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 /nonexistent")
@@ -501,12 +499,11 @@ def test_server_ipv4_takes_endpoint_host_and_resolves_names(script, tmp_path):
 
 def test_lan_ipv4_takes_link_routes_of_the_lan_interface(script, tmp_path):
     fns = script.split("lan_ipv4() {", 1)[1].split("\n}\n", 1)[0]
-    fake = tmp_path / "ip"
-    fake.write_text("#!/bin/sh\n[ \"$5\" = end0 ] && printf '%s\\n' "
-                    "'192.168.1.0/24 proto kernel scope link src 192.168.1.111' "
-                    "'192.168.50.0/24 proto kernel scope link src 192.168.50.2' "
-                    "'192.168.1.0/24 proto kernel scope link src 192.168.1.111'\nexit 0\n")
-    fake.chmod(0o755)
+    fake_cmd(tmp_path / "ip",
+             "#!/bin/sh\n[ \"$5\" = end0 ] && printf '%s\\n' "
+             "'192.168.1.0/24 proto kernel scope link src 192.168.1.111' "
+             "'192.168.50.0/24 proto kernel scope link src 192.168.50.2' "
+             "'192.168.1.0/24 proto kernel scope link src 192.168.1.111'\nexit 0\n")
     out = _sh(f"lan_ipv4() {{{fns}\n}}\nlan_ipv4 end0", path=f"{tmp_path}:/usr/bin:/bin")
     assert out.stdout.strip() == "192.168.1.0/24, 192.168.50.0/24"
     out = _sh(f"lan_ipv4() {{{fns}\n}}\nlan_ipv4 nope", path=f"{tmp_path}:/usr/bin:/bin")
@@ -590,8 +587,7 @@ def _svc_host(tmp_path):
             (bin_dir / tool).symlink_to(real)
 
     def fake(name, body):
-        f = bin_dir / name
-        f.write_text("#!/bin/sh\n" + body, encoding="utf-8"); f.chmod(0o755)
+        fake_cmd(bin_dir / name, body)
     fake("systemctl", f'echo "systemctl $*" >> {log}\n'
                       'case "$*" in *avahi-daemon*) exit "${AVAHI_RC:-0}" ;; esac\nexit 0\n')
     fake("apt-get", f'echo "apt-get $*" >> {log}\n'
@@ -757,8 +753,7 @@ def test_wan_interface_is_the_token_after_dev(script, tmp_path):
     for line in ("default via 192.168.1.1 dev br0 proto dhcp metric 100",
                  "default dev ppp0 scope link",
                  "default nhid 12 via 10.0.0.1 dev bond0 proto static"):
-        (bin_dir / "ip").write_text(f'#!/bin/sh\necho "{line}"\n', encoding="utf-8")
-        (bin_dir / "ip").chmod(0o755)
+        fake_cmd(bin_dir / "ip", f'#!/bin/sh\necho "{line}"\n')
         r = subprocess.run([SH, "-c", "detect_wan() {" + fn + "\n}\ndetect_wan"], capture_output=True,
                            text=True, env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
         assert r.stdout.strip() == line.split(" dev ")[1].split()[0], (line, r.stdout)

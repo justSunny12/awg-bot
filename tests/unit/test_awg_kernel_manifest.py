@@ -12,8 +12,9 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.conftest import fake_cmd
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT =Path(__file__).resolve().parents[2]
 LOCK = ROOT / "install" / "awg.lock"
 KERNEL = ROOT / "install" / "awg-kernel-install.sh"
 SERVER = ROOT / "install" / "awg-server-init.sh"
@@ -136,15 +137,12 @@ def test_prune_removes_every_other_dkms_version(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     calls = tmp_path / "calls.log"
-    (bin_dir / "dkms").write_text(
+    fake_cmd(bin_dir / "dkms",
         '#!/bin/sh\n'
         f'echo "dkms $*" >> "{calls}"\n'
         'if [ "$1" = status ]; then printf "amneziawg/1.0.0, 5.15.0, x86_64: installed\\n'
-        'amneziawg/3.1.20260906, 5.15.0, x86_64: installed\\n"; fi\n', encoding="utf-8")
-    (bin_dir / "depmod").write_text('#!/bin/sh\necho "depmod $*" >> "' + str(calls) + '"\n',
-                                    encoding="utf-8")
-    for f in ("dkms", "depmod"):
-        (bin_dir / f).chmod(0o755)
+        'amneziawg/3.1.20260906, 5.15.0, x86_64: installed\\n"; fi\n')
+    fake_cmd(bin_dir / "depmod", '#!/bin/sh\necho "depmod $*" >> "' + str(calls) + '"\n')
     src_root = tmp_path / "usr_src"
     (src_root / "amneziawg-1.0.0").mkdir(parents=True)
     (src_root / "amneziawg-3.1.20260906").mkdir(parents=True)
@@ -194,16 +192,13 @@ def _run_kernel(tmp_path, mode, *, module="", loaded="", tools="", lock=None,
     import subprocess
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "modinfo").write_text(
+    fake_cmd(bin_dir / "modinfo",
         '#!/bin/sh\n'
         f'[ -n "{module}" ] || exit 1\n'
         f'case "$2" in srcversion) printf "%s\\n" "{src_disk}" ;; '
-        f'*) printf "%s\\n" "{module}" ;; esac\n', encoding="utf-8")
-    (bin_dir / "awg").write_text(
-        f'#!/bin/sh\n[ -n "{tools}" ] || exit 1\nprintf "amneziawg-tools v{tools} - x\\n"\n',
-        encoding="utf-8")
-    for f in ("modinfo", "awg"):
-        (bin_dir / f).chmod(0o755)
+        f'*) printf "%s\\n" "{module}" ;; esac\n')
+    fake_cmd(bin_dir / "awg",
+        f'#!/bin/sh\n[ -n "{tools}" ] || exit 1\nprintf "amneziawg-tools v{tools} - x\\n"\n')
     sysver = tmp_path / "loaded"
     sysver.write_text(loaded, encoding="utf-8")
     syssrc = tmp_path / "loaded_src"
@@ -302,9 +297,7 @@ def _run_module_check(tmp_path, *, disk_src, loaded_src, reload_rc=0):
     body = body.replace("/sys/module/amneziawg/srcversion", str(syssrc))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "modinfo").write_text(f'#!/bin/sh\nprintf "%s\\n" "{disk_src}"\n',
-                                     encoding="utf-8")
-    (bin_dir / "modinfo").chmod(0o755)
+    fake_cmd(bin_dir / "modinfo", f'#!/bin/sh\nprintf "%s\\n" "{disk_src}"\n')
     inst = tmp_path / "install"
     inst.mkdir(exist_ok=True)
     (inst / "awg-kernel-install.sh").write_text(
@@ -399,11 +392,10 @@ def _run_bot_func(tmp_path, name, *, lock_gen="2", applied="", target="",
         state.write_text("\n".join(lines) + "\n", encoding="utf-8")
     # BSD sed не понимает `-i -E` в том виде, как пишет скрипт под GNU
     bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "sed").write_text(
+    fake_cmd(bin_dir / "sed",
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
         'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
-        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
-    (bin_dir / "sed").chmod(0o755)
+        'exec /usr/bin/sed "$@"\n')
     prog = "\n".join([
         "set -e",
         'log(){ printf "[log] %s\\n" "$*"; }', 'warn(){ printf "[warn] %s\\n" "$*"; }',
@@ -559,13 +551,11 @@ def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_e
     if resolver_conf_exists:
         rconf.write_text("bind-interfaces\nlisten-address=10.8.1.1\n", encoding="utf-8")
     bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
-    (bin_dir / "sed").write_text(
+    fake_cmd(bin_dir / "sed",
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
         'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
-        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
-    (bin_dir / "sed").chmod(0o755)
-    (bin_dir / "systemctl").write_text(f'#!/bin/sh\nexit {0 if dnsmasq_active else 3}\n', encoding="utf-8")
-    (bin_dir / "systemctl").chmod(0o755)
+        'exec /usr/bin/sed "$@"\n')
+    fake_cmd(bin_dir / "systemctl", f'#!/bin/sh\nexit {0 if dnsmasq_active else 3}\n')
     body = _bot_func(script, name).replace("/etc/dnsmasq.d/awgbot-resolver.conf", str(rconf))
     prog = "\n".join([
         "set -e",

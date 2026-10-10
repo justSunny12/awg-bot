@@ -24,7 +24,7 @@ import pytest
 
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 pytestmark = pytest.mark.unit
 
@@ -130,9 +130,8 @@ class _Pi:
         (self.dnsmasq / "awg-gw-base.conf").write_text("listen-address=192.168.68.2\n")
 
     def restore(self) -> subprocess.CompletedProcess:
-        (self.bin / "systemctl").write_text(
-            f'#!/bin/sh\necho "$*" >> "{self.log}"\nexit {self.restart_rc}\n', encoding="utf-8")
-        (self.bin / "systemctl").chmod(0o755)
+        fake_cmd(self.bin / "systemctl",
+                 f'#!/bin/sh\necho "$*" >> "{self.log}"\nexit {self.restart_rc}\n')
         frag = (_restore_fragment()
                 .replace("/etc/dnsmasq.d", str(self.dnsmasq))
                 .replace("/var/lib/awg-gw", str(self.state)))

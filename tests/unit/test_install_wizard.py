@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -375,11 +376,9 @@ def test_bundle_trusted_checks_owner_and_mode(script, tmp_path):
     fn = "bundle_trusted() {" + body + "\n}\n"
     # GNU stat -c нет на macOS: подставка с той же семантикой на python
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
-    (bin_dir / "stat").write_text(
+    fake_cmd(bin_dir / "stat",
         "#!/bin/sh\nexec python3 -c 'import os, sys\nst = os.stat(sys.argv[2])\n"
-        "print(st.st_uid if sys.argv[1] == \"%u\" else oct(st.st_mode & 0o777)[2:])' \"$2\" \"$3\"\n",
-        encoding="utf-8")
-    (bin_dir / "stat").chmod(0o755)
+        "print(st.st_uid if sys.argv[1] == \"%u\" else oct(st.st_mode & 0o777)[2:])' \"$2\" \"$3\"\n")
     f = tmp_path / "awg-gw-bundle.sh"; f.write_text("#!/bin/sh\n", encoding="utf-8")
 
     def check(mode: int, sudo_user: str | None) -> int:

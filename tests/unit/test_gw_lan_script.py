@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
 
@@ -29,9 +29,7 @@ def _heredoc(script: str, var: str, tag: str) -> str:
 
 
 def _fake(bin_dir: Path, name: str, body: str) -> None:
-    f = bin_dir / name
-    f.write_text("#!/bin/sh\n" + body, encoding="utf-8")
-    f.chmod(0o755)
+    fake_cmd(bin_dir / name, body)
 
 
 def _sh(prog: str, *, env: dict, cwd=None) -> subprocess.CompletedProcess:

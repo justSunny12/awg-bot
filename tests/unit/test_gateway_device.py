@@ -15,7 +15,7 @@ from awgbot.core import config
 from awgbot.domain import configgen
 from awgbot.infra import gwguard
 from awgbot.util import gwsign
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIV = base64.b64encode(os.urandom(32)).decode()
@@ -193,11 +193,10 @@ def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path
     app = conf / "app.yaml"
     app.write_text((ROOT / "conf" / "app.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
-    (bin_dir / "sed").write_text(          # BSD sed не понимает `-i -E`, как пишет скрипт под GNU
+    fake_cmd(bin_dir / "sed",          # BSD sed не понимает `-i -E`, как пишет скрипт под GNU
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
         'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
-        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
-    (bin_dir / "sed").chmod(0o755)
+        'exec /usr/bin/sed "$@"\n')
     prog = "\n".join([
         "set -e", 'ok(){ :; }', 'die(){ echo "$*" >&2; exit 1; }',
         f'CONF_DIR="{conf}"', fn("yaml_set"), fn("configure_gateway"), "configure_gateway",

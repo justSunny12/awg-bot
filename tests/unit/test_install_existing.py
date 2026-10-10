@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "install" / "awg-bot-install.sh"
@@ -130,9 +131,7 @@ class _Host:
                 '  czf) : > "$2"; exit 0 ;;\n'
                 'esac\nexit 2'),
         }.items():
-            p = self.bin / name
-            p.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
-            p.chmod(0o755)
+            fake_cmd(self.bin / name, body + "\n")
 
     # ── состояние ──
 
@@ -489,7 +488,7 @@ def test_wipe_survives_missing_pieces_and_failing_commands(host):
     host.installed("2.25.2", "client", container="amnezia-awg")
     host.unit.unlink(); host.guard.unlink(); host.resolver_dropin.unlink()
     for name in ("systemctl", "nft", "awg-quick", "docker"):
-        (host.bin / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "$CALLS"\nexit 1\n')
+        fake_cmd(host.bin / name, f'#!/bin/sh\necho "{name} $*" >> "$CALLS"\nexit 1\n')
     for s in ("routing-link-setup.sh", "routing-host-setup.sh"):
         (host.sbin / s).write_text(f'#!/bin/sh\necho "{s} $*" >> "$CALLS"\nexit 3\n')
     r = host.run(["2", "y", "УДАЛИТЬ"], tgz=host.archive("3.0.0"))
@@ -644,8 +643,7 @@ class _PostUpdate:
         self.tmp = tmp_path
         self.log = tmp_path / "calls.log"; self.log.write_text("")
         self.self_path = tmp_path / "awg-bot.sh"
-        self.self_path.write_text('#!/bin/sh\necho "self $*" >> "$CALLS"\n')
-        self.self_path.chmod(0o755)
+        fake_cmd(self.self_path, '#!/bin/sh\necho "self $*" >> "$CALLS"\n')
 
     def run(self, bundle: str | None, wipe: str = "0") -> subprocess.CompletedProcess:
         src = BOT_SCRIPT.read_text(encoding="utf-8")
