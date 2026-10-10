@@ -64,10 +64,10 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
                     break
                 await pkg.asyncio.sleep(0.5)
             if linkclient.online():
-                await cb.message.answer(texts.gateway_claim_via_channel_text(outcome["status"]),
+                await cb.message.answer(texts.gateway_claim_via_channel_text(outcome["status"], await call(services.server_cfg1)),
                                         reply_markup=kb.hide_only())
             else:
-                await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]),
+                await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"], await call(services.server_cfg1)),
                                         reply_markup=kb.hide_only())
     await pkg._panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 

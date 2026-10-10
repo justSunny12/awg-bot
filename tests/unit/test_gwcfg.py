@@ -52,7 +52,7 @@ def test_a_proper_env_passes_normalized():
     ("CLIENT_SUBNET", "10.8.1.1/24"), ("CLIENT_SUBNET", ""),
     ("ADMIN_IPS", "10.8.1.2 not-an-ip"), ("ADMIN_IPS", " ".join(f"10.8.1.{n}" for n in range(2, 67))),
     ("LAN_MODE", "yes"), ("RESOLVER", "dns.example.org"), ("LAN_SUBNETS", "192.168.68.0"),
-    ("PEER_LAN_NETS", "10.0.0.0/8"), ("PEER_LAN_NETS", "192.168.5.0/31"), ("PEER_LAN_NETS", "8.8.8.0/24"),
+    ("PEER_LAN_NETS", "192.168.5.0/31"), ("PEER_LAN_NETS", "8.8.8.0/24"),
     ("PEER_LAN_NETS", "192.168.5.0/24 192.168.5.0/25"), ("PEER_LAN_NETS", "192.168.5.1/24"),
     ("LINK_CHANNEL_PORT", "0"), ("LINK_CHANNEL_PORT", "70000"), ("LINK_CHANNEL_PORT", "порт"),
 ])

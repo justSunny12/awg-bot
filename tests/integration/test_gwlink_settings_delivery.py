@@ -14,6 +14,13 @@
 
 Слот здесь без режима «за шлюзом — без VPN»: фиды локальной сети — отдельный
 этап и отдельные тесты, этим сценариям они только мешали бы.
+
+Это путь совместимости: `settings` получает только агент без возможности `cfg1`
+(3.2.x под сервером 3.3.0). Агент текущей поставки называет `cfg1` и получает
+документ конфигурации (`tests/integration/test_gwcfg_delivery.py`), поэтому в
+сквозных сценариях фикстура `pi` делает его агентом 3.2.x — пустой список
+возможностей в hello. Иначе прежний путь, по которому ещё работают шлюзы до
+обновления, остался бы без единой проверки двух концов.
 """
 from __future__ import annotations
 
@@ -292,8 +299,11 @@ class _Pi(GatewayServices):
 
 @pytest.fixture()
 async def pi(services, link, tmp_path, monkeypatch):
-    """Малина на том конце: юнит с теми значениями, что сейчас выдаёт ВПС,
-    боевой клиент канала, чат агента — списком."""
+    """Шлюз на том конце: юнит с теми значениями, что сейчас выдаёт ВПС,
+    боевой клиент канала, чат агента — списком. Агент 3.2.x — без возможностей
+    в hello: проверяется доставка `settings`, а не документа."""
+    from awgbot.runtime.linkclient import session as client_session
+    monkeypatch.setattr(client_session, "CAPS", ())
     want = services.gwlink_settings_want(services.db.gateway(1))
     text = (UNIT_TEXT.replace("Environment=LAN_MODE=1", f"Environment=LAN_MODE={want['LAN_MODE']}")
             .replace("Environment=RESOLVER=10.9.1.1", f"Environment=RESOLVER={want['RESOLVER']}")

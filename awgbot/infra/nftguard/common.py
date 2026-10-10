@@ -57,6 +57,7 @@ class GuardSpec:
     link_peers4: list[str] = field(default_factory=list)      # адреса шлюзов в /30 линков
     link_ifs: list[str] = field(default_factory=list)         # интерфейсы линков — вход канала только с них
     link_channel_port: int = 0                                # порт канала; 0 — канала нет
+    link_channel_extra: list[int] = field(default_factory=list)   # прежний порт канала после смены — неделю открыт тоже
 
 
 def enabled() -> bool:

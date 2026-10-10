@@ -60,6 +60,7 @@ class LinkMixin:
             if info is None:
                 checks.append(GwCheck(
                     "таблица awg_gw_guard", False,
+                    "нет — обвязка снята; «🔧 Восстановить»" if self.server_cfg1() else
                     "нет — обвязка старого образца или снята; перевыпусти "
                     "конфигурацию шлюза с сервера AWG"))
         self._guard_info = info
@@ -70,8 +71,10 @@ class LinkMixin:
                 ok = client_subnet in nets
                 checks.append(GwCheck(
                     "MASQUERADE/изоляция", ok,
-                    "" if ok else f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
-                    "выпущена под другую подсеть, перевыпусти её с сервера AWG"))
+                    "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
+                                   "не приходит — проверь «🔗 упр. канал»" if self.server_cfg1() else
+                                   f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
+                                   "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
             else:
                 checks.append(GwCheck("MASQUERADE/изоляция", None,
                                       "подсеть клиентов неизвестна (нет конфигурации с сервера AWG) — "
@@ -120,8 +123,9 @@ class LinkMixin:
                 masq = uplink in info.get("masq_ifaces", set())
                 checks.append(GwCheck("маскарад в аплинк", masq,
                                       "" if masq else f"нет masquerade в {uplink}: пакеты агента "
-                                      "уходят в туннель с локальным адресом — перевыпусти "
-                                      "конфигурацию шлюза с сервера AWG"))
+                                      "уходят в туннель с локальным адресом — "
+                                      + ("«🔧 Восстановить»" if self.server_cfg1() else
+                                         "перевыпусти конфигурацию шлюза с сервера AWG")))
         else:
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         # Маскарад клиентов привязан к интерфейсу маршрута по умолчанию на

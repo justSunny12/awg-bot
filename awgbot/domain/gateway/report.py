@@ -108,6 +108,12 @@ class ReportMixin:
         """Возможности сервера из его первого `role`; пусто — сервер прежний или не говорил."""
         return (self.db.get_state(self._LINK_SERVER_CAPS_KEY) or "").split()
 
+    def server_cfg1(self) -> bool:
+        """Сервер присылает документ конфигурации сам (возможность cfg1): подсказки
+        проверок говорят «🔧 Восстановить», а не «перевыпусти» — новый файл с ВПС
+        такому шлюзу не нужен, значения приезжают каналом."""
+        return "cfg1" in self.link_server_caps()
+
     def link_slot_name(self) -> str:
         return (self.db.get_state(self._LINK_SLOT_NAME_KEY) or "").strip()
 

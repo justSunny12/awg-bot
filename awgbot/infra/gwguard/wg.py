@@ -149,13 +149,27 @@ def handshake_age(iface: str) -> int | None:
     return max(0, int(time.time()) - best)
 
 
-def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT) -> tuple[bool, str]:
+def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=()) -> tuple[bool, str]:
     """Поставить конфиг линка из файла режимом обвязки `--link-apply`: скрипт
     сам проверяет его белым списком и правилом AllowedIPs (второй рубеж), а
     дальше — syncconf без перезапуска или down/up. (ok, вывод): в выводе строка
     `link: unchanged|syncconf|restarted`."""
+    # Скрипт читает значения из окружения — его обычно даёт юнит обвязки. Агент
+    # зовёт режим напрямую, поэтому окружение собирается из строк того же юнита:
+    # к этому моменту транзакция уже переписала их под документ, и проверка
+    # AllowedIPs сверяет конфиг ровно с тем, с чем стартует обвязка.
+    import os
+    env = dict(os.environ)
+    for key in ("CLIENT_SUBNET", "LINK_IF", "ADMIN_IPS", "LAN_MODE", "HOME_SUBNETS", "RESOLVER",
+                "PEER_HOME_NETS", "LINK_CHANNEL_PORT"):
+        val = pkg.unit_env(key)
+        if val or key not in env:
+            env[key] = val
+    env["LINK_IF"] = env.get("LINK_IF") or config.GW_LINK_IF
+    env["IFACE_NETS"] = " ".join(str(n) for n in iface_nets)   # подсети интерфейсов — те же, что сверял агент
+    env.setdefault("HOST_CONF_DIR", config.GW_CONF_DIR)
     try:
-        proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout)
+        proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
         return False, "отсутствует скрипт обвязки — «🔧 Восстановить»"
     except pkg.subprocess.TimeoutExpired:

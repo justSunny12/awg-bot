@@ -93,7 +93,9 @@ class ServicesMixin:
         if acked and digest:
             state = "applied" if ack.get("ok") else "failed"
         elif issued and not applied:
-            state = "reissue"
+            # подсети соседей ещё не на шлюзе: агенту с документом их довезёт
+            # канал (ожидание), агенту 3.2.x — только файл (перевыпуск)
+            state = "pending" if "cfg1" in self.gwlink_agent_caps(gw.id) else "reissue"
         elif acked:
             # пустое к пустому: шлюз подтвердил снятие записей
             state = "applied" if ack.get("ok") else "failed"

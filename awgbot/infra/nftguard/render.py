@@ -93,8 +93,9 @@ def render(spec: pkg.GuardSpec) -> str:
         # только из интерфейса линка: адрес /30 снаружи подделать можно, а
         # пакет, пришедший с публичного интерфейса, линком быть не может.
         # Клиентам туннеля сюда хода нет — их подсеть в другом наборе.
+        ports = [int(spec.link_channel_port), *[int(p) for p in spec.link_channel_extra]]
         out.append(f"        iifname {nftjson.ifs(spec.link_ifs)} ip saddr @{pkg.SET_LINK_PEERS} "
-                   f"tcp dport {int(spec.link_channel_port)} accept")
+                   f"tcp dport {pkg._ports(ports)} accept")
     if spec.open_tcp:
         out.append(f"        tcp dport {pkg._ports(spec.open_tcp)} accept")
     if spec.open_udp:

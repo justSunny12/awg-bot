@@ -87,8 +87,11 @@ def check_env(env: dict) -> dict:
                 net = _net4(t)
                 if net is None or not _private(net):
                     raise CfgError(f"PEER_LAN_NETS: {t} — не частная IPv4-подсеть")
-                if net.prefixlen < 16 or net.prefixlen > 30:
-                    raise CfgError(f"PEER_LAN_NETS: {t} — префикс вне /16–/30")
+                # шире /16 юнит ещё принимает (подсети, заведённые до 3.3.0): такую подсеть
+                # не пропустит правило AllowedIPs конфига линка — сервер его тогда не
+                # собирает и показывает причину, остальные разделы доезжают
+                if net.prefixlen > 30:
+                    raise CfgError(f"PEER_LAN_NETS: {t} — не подсеть")
                 if any(net.overlaps(o) for o in nets):
                     raise CfgError(f"PEER_LAN_NETS: {t} пересекается с другой подсетью")
                 nets.append(net)
@@ -180,7 +183,8 @@ def check_link(conf_text: str, env: dict, *, link_cidr: str, address: str = "", 
     for section, key in (("Interface", "PrivateKey"), ("Peer", "PublicKey"), ("Peer", "PresharedKey"),
                          *(("Interface", k) for k in ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
                                                      "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"))):
-        if fixed and key in fixed and norm(conf.get(section, key)) != norm(fixed[key]):
+        # в обе стороны: ключ, которого нет в стоящем конфиге, документ добавить не вправе
+        if fixed is not None and norm(conf.get(section, key)) != norm(fixed.get(key, "")):
             raise CfgError("конфиг линка: ключи, PSK и обфускация меняются только переходом ключей")
     if not conf.get("Peer", "Endpoint"):
         raise CfgError("конфиг линка: нет Endpoint")
@@ -192,13 +196,14 @@ def check_link(conf_text: str, env: dict, *, link_cidr: str, address: str = "", 
     if ka and not re.fullmatch(r"\d{1,5}(-\d{1,5})?", ka):
         raise CfgError("конфиг линка: PersistentKeepalive — число или диапазон")
     try:
-        wgconf.check_allowed_ips(conf.get("Peer", "AllowedIPs"),
-                                 client_subnet=env.get("CLIENT_SUBNET", ""), link_cidr=link_cidr,
-                                 peer_nets=norm(env.get("PEER_LAN_NETS")).split(),
-                                 resolver=norm(env.get("RESOLVER")),
-                                 lan_subnets=norm(env.get("LAN_SUBNETS")).split(), iface_nets=iface_nets)
+        allowed = wgconf.check_allowed_ips(conf.get("Peer", "AllowedIPs"),
+                                           client_subnet=env.get("CLIENT_SUBNET", ""), link_cidr=link_cidr,
+                                           peer_nets=norm(env.get("PEER_LAN_NETS")).split(),
+                                           resolver=norm(env.get("RESOLVER")),
+                                           lan_subnets=norm(env.get("LAN_SUBNETS")).split(), iface_nets=iface_nets)
     except wgconf.WgConfError as e:
         raise CfgError(f"конфиг линка: {e}") from None
+    wgconf.set_value(conf, "Peer", "AllowedIPs", ", ".join(allowed))   # на диск — в нормализованном виде
     return conf
 
 

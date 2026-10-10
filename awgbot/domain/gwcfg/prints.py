@@ -76,6 +76,8 @@ def token_print(token: str) -> str:
 def link_print(conf_text: str) -> str:
     """Отпечаток конфига линка: канонический текст без штампа и комментариев;
     конфиг не разбирается — пустой отпечаток (на шлюзе — «стоит не наш»)."""
+    if not str(conf_text or "").strip():
+        return ""
     try:
         return section_print("link", wgconf.canonical(wgconf.parse(conf_text), "link"))
     except wgconf.WgConfError:

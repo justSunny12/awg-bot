@@ -69,9 +69,12 @@ class CfgApplyMixin:
         # 3–4. почта и фраза — молча или вопрос
         for section in ("mail", "backup"):
             if section not in checked:
+                self.cfg_release(section)                 # раздела у сервера больше нет — вопрос потерял смысл
                 continue
             value = checked[section]
             verdict, server_print = self.cfg_decide(section, value)
+            if verdict != "ask":
+                self.cfg_release(section)                 # совпало, применяется молча или отклонено ранее
             if verdict == "apply":
                 try:
                     note = self.cfg_apply_mail(value) if section == "mail" else self.cfg_apply_backup(value)
@@ -102,7 +105,7 @@ class CfgApplyMixin:
             head = f"⚙️ Сервер AWG прислал конфигурацию шлюза — применено: {self._cfg_names(changed)}"
         text = "\n".join([x for x in (head, *notes) if x])
         return {"ack": gwcfg.ack_build(gen, digest, applied=applied, wait=wait, declined=declined, failed=failed),
-                "note": text, "ask": asks}
+                "note": text, "ask": asks, "changed": changed}
 
     @staticmethod
     def _cfg_names(keys) -> str:
@@ -118,26 +121,28 @@ class CfgApplyMixin:
             lines.append("💾 Бэкапы теперь будут приходить на e-mail")
         return lines
 
-    def _cfg_iface_nets(self) -> list[str]:
-        """Подсети интерфейса шлюза по умолчанию — с ними AllowedIPs линка
-        пересекаться не вправе."""
-        from awgbot.infra import gwguard
-        try:
-            return list(gwguard.lan_nets())
-        except Exception:                                  # noqa: BLE001 — нет ip, нет интерфейса: правило без этой части
-            return []
-
     # ── очередь ответа: линк перезапускался, сессия умерла ───────────────────
 
+    def _cfg_ack_queue(self) -> list:
+        raw = self.db.get_state_json(self._CFG_ACK_PENDING_KEY, [])
+        if isinstance(raw, dict):
+            raw = [raw] if raw else []
+        return [a for a in (raw or []) if isinstance(a, dict)]
+
     def cfg_ack_pending_put(self, ack: dict) -> None:
-        self.db.set_state(self._CFG_ACK_PENDING_KEY, json.dumps({**ack, "at": timeutil.to_iso(timeutil.now())},
-                                                                ensure_ascii=False))
+        """В очередь, в конец: ответ на документ и ответ человека на вопрос не
+        перетирают друг друга — уходят по порядку."""
+        queue = self._cfg_ack_queue() + [{**ack, "at": timeutil.to_iso(timeutil.now())}]
+        self.db.set_state(self._CFG_ACK_PENDING_KEY, json.dumps(queue[-8:], ensure_ascii=False))
 
     def cfg_ack_pending_get(self) -> dict:
-        return self.db.get_state_json(self._CFG_ACK_PENDING_KEY, {}) or {}
+        queue = self._cfg_ack_queue()
+        return queue[0] if queue else {}
 
     def cfg_ack_pending_clear(self) -> None:
-        self.db.set_state(self._CFG_ACK_PENDING_KEY, "")
+        """Первый из очереди ушёл."""
+        queue = self._cfg_ack_queue()[1:]
+        self.db.set_state(self._CFG_ACK_PENDING_KEY, json.dumps(queue, ensure_ascii=False) if queue else "")
 
     def cfg_answer_ack(self, answer: dict) -> dict | None:
         """Ответ серверу после решения человека: раздел — в applied или
@@ -145,6 +150,8 @@ class CfgApplyMixin:
         if not answer.get("ok"):
             return None
         section = answer["section"]
+        if answer.get("failed"):
+            return gwcfg.ack_build(answer["gen"], answer["hash"], failed={section: str(answer["failed"])})
         if answer["accepted"]:
             return gwcfg.ack_build(answer["gen"], answer["hash"], applied=[section])
         return gwcfg.ack_build(answer["gen"], answer["hash"], declined={section: answer["print"]})

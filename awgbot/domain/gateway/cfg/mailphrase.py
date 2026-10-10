@@ -60,9 +60,10 @@ class CfgMailPhraseMixin:
         серверное значение заменяет прежний вопрос."""
         mine, _ = self._cfg_section_prints(section, value)
         pending = self.cfg_pending(); pending[section] = value
-        self._cfg_json_set(self._CFG_PENDING_KEY, pending)
         wait = self.cfg_wait(); wait[section] = {"mine": mine, "server": server_print, "gen": int(gen), "hash": digest}
-        self._cfg_json_set(self._CFG_WAIT_KEY, wait)
+        with self.db.transaction():                       # значение и отпечатки — одной записью
+            self._cfg_json_set(self._CFG_PENDING_KEY, pending)
+            self._cfg_json_set(self._CFG_WAIT_KEY, wait)
 
     def cfg_release(self, section: str) -> None:
         """Снять вопрос: pending и wait раздела стираются."""
@@ -132,7 +133,10 @@ class CfgMailPhraseMixin:
             try:
                 note = self.cfg_apply_mail(value) if section == "mail" else self.cfg_apply_backup(value)
             except (ValueError, OSError) as e:
-                note = {"state": "fail", "why": str(e)}
+                # не применилось (диск, значение): вопрос остаётся, серверу — отказ с причиной
+                return {"ok": True, "section": section, "accepted": True, "note": {"state": "fail", "why": str(e)},
+                        "failed": str(e), "gen": int(wait.get("gen") or 0), "hash": str(wait.get("hash") or ""),
+                        "print": wait.get("server", "")}
             keep.pop(section, None)
         else:
             keep[section] = wait.get("server", "")

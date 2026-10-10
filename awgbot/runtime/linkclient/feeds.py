@@ -157,17 +157,23 @@ class FeedsMixin:
                     await pkg._ask(section)
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: вопрос о разделе %s не показан: %s", section, e)
+        if "LINK_CHANNEL_PORT" in (result.get("changed") or []) and self._writer is not None:
+            # порт канала сменился документом: ответ ушёл по прежнему, дальше —
+            # новая сессия на новом порту (сервер неделю слушает оба)
+            log.info("канал линка: порт канала сменился — переподключаюсь")
+            self._writer.close()
 
     async def flush_cfg_ack(self) -> bool:
-        """Отправить отложенный cfg_ack; ушёл — очередь пуста."""
-        if self._writer is None:
-            return False
-        pending = await asyncio.to_thread(self.services.cfg_ack_pending_get)
-        if not pending:
-            return False
-        body = {k: v for k, v in pending.items() if k != "at"}
-        if not await self._send("cfg_ack", body, pad=gwlink.PAD_DELTA):
-            return False
-        await asyncio.to_thread(self.services.cfg_ack_pending_clear)
-        return True
+        """Отправить отложенные cfg_ack по порядку; ушли — очередь пуста."""
+        sent = False
+        while self._writer is not None:
+            pending = await asyncio.to_thread(self.services.cfg_ack_pending_get)
+            if not pending:
+                break
+            body = {k: v for k, v in pending.items() if k != "at"}
+            if not await self._send("cfg_ack", body, pad=gwlink.PAD_DELTA):
+                break
+            await asyncio.to_thread(self.services.cfg_ack_pending_clear)
+            sent = True
+        return sent
 

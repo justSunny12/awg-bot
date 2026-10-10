@@ -31,12 +31,14 @@ GW_BUNDLE_PASSPHRASE_QUESTION = (
     "всё остальное из файла применится как обычно.")
 
 
-def gateway_claim_via_channel_text(status: str) -> str:
-    """Токен пометки ушёл серверу по каналу — пересылать ничего не нужно."""
+def gateway_claim_via_channel_text(status: str, by_channel: bool = False) -> str:
+    """Токен пометки ушёл серверу по каналу — пересылать ничего не нужно.
+    by_channel — сервер присылает документ конфигурации сам: файла не будет."""
     head = pkg._claim_head(status)
+    tail = ("назначит его шлюзом — конфигурация придёт по упр. каналу сама" if by_channel else
+            "перевыпустит файл конфигурации — отправь его сюда")
     return (head + "\n\nЗапрос на назначение отправлен серверу AWG по управляющему каналу: "
-            "бот сервера AWG найдёт это устройство по ключу и перевыпустит файл конфигурации — "
-            "отправь его сюда")
+            f"бот сервера AWG найдёт это устройство по ключу и {tail}")
 
 
 def _claim_head(status: str) -> str:
@@ -50,11 +52,13 @@ def _claim_head(status: str) -> str:
                          "«🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить»")
 
 
-def gateway_claim_forward_text(token: str, status: str) -> str:
+def gateway_claim_forward_text(token: str, status: str, by_channel: bool = False) -> str:
     head = pkg._claim_head(status)
+    tail = ("конфигурация придёт по упр. каналу сама" if by_channel else
+            "перевыпустит файл конфигурации — отправь его сюда")
     return (head + "\n\nКанал конфигурации сервера AWG недоступен. Перешли это сообщение "
             "боту сервера AWG как есть: он найдёт это устройство по ключу, назначит его шлюзом "
-            f"и перевыпустит файл конфигурации — отправь его сюда\n\n<code>{_e(token)}</code>")
+            f"и {tail}\n\n<code>{_e(token)}</code>")
 
 
 def gateway_apply_report(st: dict) -> str:

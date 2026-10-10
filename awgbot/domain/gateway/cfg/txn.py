@@ -36,6 +36,15 @@ class CfgTxnMixin:
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         write_private(path, text)
 
+    def _cfg_iface_nets(self) -> list[str]:
+        """Подсети интерфейса шлюза по умолчанию — с ними AllowedIPs линка
+        пересекаться не вправе; тот же список уходит второму рубежу (скрипту)."""
+        from awgbot.infra import gwguard
+        try:
+            return list(gwguard.lan_nets())
+        except Exception:                                  # noqa: BLE001 — нет ip, нет интерфейса: правило без этой части
+            return []
+
     def cfg_env_changes(self, env: dict) -> dict:
         """Какие строки юнита (в именах юнита) отличаются от желаемых."""
         current = self.cfg_env_current()
@@ -65,24 +74,36 @@ class CfgTxnMixin:
                     return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})", "retry": False, "how": ""}
             how = "unchanged"
             prev_saved = False
+            iface_nets = self._cfg_iface_nets()
             if link_new:
                 try:
-                    prev = self.cfg_link_text()
-                    if prev:
-                        self._cfg_write_private(self.cfg_link_prev_path(), prev)
+                    prev = self.cfg_link_conf()
+                    if prev is not None:
+                        # прежний конфиг — чистым текстом: установленный несёт пояснения из файла
+                        # первого применения, а второй рубеж принимает только штамп
+                        self._cfg_write_private(self.cfg_link_prev_path(),
+                                                wgconf.render(prev, "link", stamp=prev.stamp or gwcfg.LINK_CONTRACT))
                         prev_saved = True
                     conf = wgconf.parse(link_text)
-                    self._cfg_write_private(self.cfg_link_next_path(), wgconf.render(conf, "link", stamp=conf.stamp or "1"))
+                    self._cfg_write_private(self.cfg_link_next_path(), wgconf.render(conf, "link", stamp=conf.stamp or gwcfg.LINK_CONTRACT))
                 except (OSError, wgconf.WgConfError) as e:
-                    self._cfg_rollback(before_unit, False)
+                    self._cfg_rollback(before_unit, False, iface_nets)
                     return {"ok": False, "changed": changed, "error": f"конфиг линка не записан ({e})", "retry": False, "how": ""}
-                ok, out = gwguard.link_apply(self.cfg_link_next_path())
+                ok, out = gwguard.link_apply(self.cfg_link_next_path(), iface_nets=iface_nets)
                 how = gwguard.link_applied_how(out) or ("syncconf" if ok else "")
                 if not ok:
                     log.warning("gateway: конфиг линка с сервера не применился: %s", out[-300:])
-                    self._cfg_rollback(before_unit, prev_saved)
+                    self._cfg_rollback(before_unit, prev_saved, iface_nets)
                     return {"ok": False, "changed": changed, "error": "конфиг линка: " + (out.splitlines()[-1] if out else "скрипт отказал"),
                             "retry": False, "how": ""}
+                if how == "restarted":
+                    # проба — сразу после перезапуска линка, до ожидания юнита: конфиг линка —
+                    # не юнит, и его откат не «рестарт поверх идущего задания»
+                    ok, err = self._cfg_probe_link()
+                    if not ok:
+                        log.warning("gateway: линк на новом конфиге не поднялся (%s) — откатываю", err)
+                        self._cfg_rollback(before_unit, prev_saved, iface_nets)
+                        return {"ok": False, "changed": changed, "error": err, "retry": False, "how": how}
             self._last_reassert = time.monotonic()
             ok, err = gwguard.reassert(timeout=600)
             if not ok and gwguard.is_timeout(err):
@@ -92,13 +113,12 @@ class CfgTxnMixin:
                     return {"ok": False, "changed": changed, "error": self.STILL_APPLYING, "retry": True, "how": how}
                 ok = state == "active"
                 err = err if not ok else ""
-            if ok and how == "restarted":
-                ok, err = self._cfg_probe_link()
             if ok:
                 self.invalidate_static()
+                self._cfg_tidy()
                 return {"ok": True, "changed": changed, "error": "", "retry": False, "how": how}
             log.warning("gateway: конфигурация с сервера не применилась (%s) — откатываю", err)
-            self._cfg_rollback(before_unit, prev_saved)
+            self._cfg_rollback(before_unit, prev_saved, iface_nets)
             return {"ok": False, "changed": changed, "error": err or "обвязка не применилась", "retry": False, "how": how}
 
     def _cfg_probe_link(self) -> tuple[bool, str]:
@@ -113,17 +133,28 @@ class CfgTxnMixin:
             time.sleep(3)
         return False, f"линк не поднялся за {PROBE_SECONDS} с — вернул прежний конфиг"
 
-    def _cfg_rollback(self, before_unit: str | None, link_prev: bool) -> None:
-        """Откат транзакции: юнит прежним текстом, прежний конфиг линка, реассерт."""
+    def _cfg_rollback(self, before_unit: str | None, link_prev: bool, iface_nets=()) -> None:
+        """Откат транзакции: сначала юнит прежним текстом (второй рубеж сверяет
+        прежний конфиг линка с окружением юнита — оно обязано быть прежним),
+        затем прежний конфиг линка, затем реассерт."""
         from awgbot.infra import gwguard
         try:
-            if link_prev:
-                ok, out = gwguard.link_apply(self.cfg_link_prev_path())
-                if not ok:
-                    log.warning("gateway: прежний конфиг линка не вернулся: %s", out[-200:])
             if before_unit is not None:
                 gwguard.unit_restore(before_unit)
+            if link_prev:
+                ok, out = gwguard.link_apply(self.cfg_link_prev_path(), iface_nets=iface_nets)
+                if not ok:
+                    log.warning("gateway: прежний конфиг линка не вернулся: %s", out[-200:])
             if before_unit is not None or link_prev:
                 gwguard.reassert(timeout=600)
         except (OSError, gwguard.GwGuardError) as e:
             log.warning("gateway: откат конфигурации не удался: %s", e)
+        self._cfg_tidy()
+
+    def _cfg_tidy(self) -> None:
+        """Файлы транзакции (внутри ключ линка и PSK) после фиксации или отката не нужны."""
+        for path in (self.cfg_link_next_path(), self.cfg_link_prev_path()):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass

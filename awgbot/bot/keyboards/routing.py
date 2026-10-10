@@ -101,15 +101,18 @@ def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> Inlin
         back = Menu(action="main")
     else:
         back = GwSlotCB(action="list") if back_to_list else SetCB(sec="rt")
+    cfg1 = bool(((state.get("channel") or {}).get("cfg") or {}).get("cfg1"))
     return ui.rows(
         ("▶️ Сделать активным", GwSlotCB(action="switch_ask", slot=gw.id)) if not state.get("active") else None,
-        # файл — агентам без документа конфигурации: остальным всё привозит канал
-        [("📤 Конфигурация", GwSlotCB(action="bundle", slot=gw.id)) if not ((state.get("channel") or {}).get("cfg") or {}).get("cfg1") else None,
-         ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id))],
+        # файл — агентам без документа конфигурации: остальным всё привозит канал, и на
+        # его месте в первом ряду — «✏️ Изменить»
+        [("📤 Конфигурация", GwSlotCB(action="bundle", slot=gw.id)) if not cfg1 else None,
+         ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id)),
+         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if cfg1 else None],
         [(f"{_tick(bool(gw.lan_mode))} VPN-транзит", GwSlotCB(action="lan_ask", slot=gw.id)),
          ("🗺 Подсети", GwSlotCB(action="lan_nets", slot=gw.id))],
         [("❓ Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
-         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id))],
+         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if not cfg1 else None],
         ui.back(back))
 
 

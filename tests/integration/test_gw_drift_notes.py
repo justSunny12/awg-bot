@@ -447,3 +447,132 @@ def test_the_notification_signature_sees_the_whole_list_not_its_first_160_charac
     _refuse(services)                                    # отказ и на новый набор
     assert services.gwlink_config_drift_items(slot)[0][2].endswith("…"), "строка не обрезана — сценарий не тот"
     assert len(services.gw_bundle_drift_notes()) == 1, "новый список устройств сошёл за прежний"
+
+
+# ── агент с документом конфигурации (cfg1) ───────────────────────────────────
+# Документ везёт и подсети соседей, и конфиг линка: человеку пишем только об
+# отказе шлюза применить ТЕКУЩИЙ документ. Конфиг линка здесь не собирается
+# (источника на тестовой машине нет) — его сборка проверена отдельно.
+
+@pytest.fixture()
+def cfg1(services, slot, monkeypatch):
+    """Шлюз на связи с агентом, который принимает документ; конфиг линка —
+    подменён пустым."""
+    monkeypatch.setattr(services, "gwcfg_link_conf", lambda gw, env: "")
+    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
+    return slot
+
+
+def _snap_cfg(services, bundle: dict, **over) -> None:
+    """Снимок агента с полем cfg: отпечатки — как у желаемого, с правками."""
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwlink_snapshot_in(1, {"bundle": bundle, "cfg": {"gen": doc["gen"], **doc["prints"], **over},
+                                    "agent_version": "3.3.0", "rev": 1}, 1, True)
+
+
+def _cfg_refuse(services, failed: dict, *, digest: str | None = None, **extra) -> None:
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"] if digest is None else digest,
+                              "applied": [], "failed": failed, **extra})
+
+
+def test_a_cfg1_refusal_of_the_current_document_is_notified_once(services, cfg1):
+    """Шлюз с документом отверг текущий документ — расхождение пережило
+    доставку, и канал его сам не закроет. Одно уведомление: что разошлось и
+    почему шлюз не применил (экранировано — причина с чужой машины)."""
+    _snap_cfg(services, _installed(services, home_subnets="192.168.1.0/24"), env="0" * 16)
+    _cfg_refuse(services, {"env": "dnsmasq <b>не</b> поднялся", "link": "dnsmasq <b>не</b> поднялся"})
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1, [n.text for n in notes]
+    lines = notes[0].text.splitlines()
+    assert lines[0].endswith("конфигурация неактуальна — локальные подсети, конфиг линка"), lines[0]
+    assert lines[1].startswith("Шлюз не применил: dnsmasq &lt;b&gt;не&lt;/b&gt; поднялся"), lines[1]
+    assert ("локальные подсети: у сервера <code>192.168.68.0/24</code>, "
+            "на шлюзе <code>192.168.1.0/24</code>") in lines, lines
+    assert services.gw_bundle_drift_notes() == [], "тот же отказ — второе уведомление"
+
+
+def test_a_cfg1_gateway_without_a_refusal_is_silent_whatever_drifts(services, cfg1):
+    """Без отказа молчим даже при расхождении — и подсетей соседей тоже: агенту
+    с документом их везёт канал, а не файл. Ответ «применено» — тоже тишина:
+    снимок вот-вот догонит."""
+    _snap_cfg(services, _installed(services, home_subnets="192.168.1.0/24", peer_home_nets="192.168.2.0/24",
+                                   admin_ips="10.8.1.250"), env="0" * 16)
+    assert services.gwlink_config_drift_items(cfg1), "сценарий без расхождения ничего не проверяет"
+    assert services.gw_bundle_drift_notes() == [], "агенту с документом пришло уведомление без отказа"
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "applied": ["env"]})
+    assert services.gw_bundle_drift_notes() == [], "шлюз ответил «применено», а бот шлёт уведомление"
+
+
+def test_a_cfg1_refusal_of_a_previous_document_is_not_notified(services, cfg1):
+    """Шлюз отверг прежний документ, человек уже поправил подсети на ВПС.
+    Старый отказ — не про новый документ: «не применил» сейчас было бы ложью."""
+    _cfg_refuse(services, {"env": "exit 1"})
+    services.gateway_set_lan_subnets(1, "192.168.70.0/24")
+    _snap_cfg(services, _installed(services, home_subnets="192.168.68.0/24"), env="0" * 16)
+    assert services.gw_bundle_drift_notes() == [], "отказ на прежний документ сошёл за отказ на текущий"
+    _cfg_refuse(services, {"env": "exit 1"})
+    assert len(services.gw_bundle_drift_notes()) == 1, "проверка выше ничего не доказывала"
+
+
+def test_a_refused_link_is_named_in_the_head_without_values(services, cfg1):
+    """Шлюз отверг только конфиг линка. У конфига нет «значений у сервера и на
+    шлюзе» — он назван в заголовке, а строк расхождения подсетей нет: их
+    шлюз не отвергал."""
+    _snap_cfg(services, _installed(services, home_subnets="192.168.1.0/24"), link="0" * 16)
+    _cfg_refuse(services, {"link": "AllowedIPs: 172.16.0.0/12 шире /16"})
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1, [n.text for n in notes]
+    lines = notes[0].text.splitlines()
+    assert lines[0].endswith("конфигурация неактуальна — конфиг линка"), lines[0]
+    assert lines[1] == "Шлюз не применил: AllowedIPs: 172.16.0.0/12 шире /16", lines
+    assert len(lines) == 2, f"лишние строки у конфига линка: {lines}"
+
+
+def test_a_whole_document_refused_names_what_drifts(services, cfg1):
+    """Документ не прошёл проверку целиком (`*`): расходящиеся значения названы
+    все, причина — второй строкой."""
+    _snap_cfg(services, _installed(services, resolver="1.1.1.1"), env="0" * 16)
+    _cfg_refuse(services, {"*": "PEER_LAN_NETS: 172.16.0.0/12 — префикс вне /16–/30"})
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1 and "резолвер" in notes[0].text.splitlines()[0], [n.text for n in notes]
+    assert "Шлюз не применил: PEER_LAN_NETS" in notes[0].text
+
+
+def test_a_cfg1_temporary_refusal_is_not_a_refusal(services, cfg1):
+    """Агент отвечает «повтори» (юнит обвязки ещё работал) с причиной в
+    failed — так его собирает сам агент. Сервер повторит документ сам; ни
+    уведомления «не применил», ни отказа в карточке: отката не было."""
+    from awgbot.domain import gwcfg
+    _snap_cfg(services, _installed(services, home_subnets="192.168.1.0/24"), env="0" * 16)
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwcfg_ack_in(1, gwcfg.ack_build(doc["gen"], doc["hash"], retry=True,
+                                             failed={"env": "юнит обвязки ещё работает"}))
+    assert services.gw_bundle_drift_notes() == [], "временный отказ агента принят за настоящий"
+    card = services.gwcfg_card(services.db.gateway(1), services.gwlink_snapshot(1))
+    assert card["failed"] == {}, "карточка покажет «не применил — вернул прежнюю» на «повтори»"
+
+
+def test_a_cfg1_notification_carries_no_file_button(services, cfg1):
+    """Агенту с документом файл не нужен: кнопка «📤 Конфигурация» под
+    уведомлением — только агентам 3.2, у которых часть едет файлом. Кнопка
+    звала бы перевыпускать то, что канал уже пытался довезти."""
+    _snap_cfg(services, _installed(services, home_subnets="192.168.1.0/24"), env="0" * 16)
+    _cfg_refuse(services, {"env": "exit 1"})
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1
+    assert notes[0].action is None, f"кнопка файла под уведомлением агенту с документом: {notes[0].action}"
+
+
+def test_a_refused_link_alone_is_notified_too(services, cfg1, monkeypatch):
+    """Сменили keepalive клиентов — меняется только конфиг линка, окружение
+    обвязки совпадает. Шлюз отверг конфиг линка: это отказ на текущий
+    документ, и о нём должно прийти уведомление, как об отказе в env, —
+    иначе человек узнает о нём, только открыв карточку."""
+    _snap_cfg(services, _installed(services), link="0" * 16)
+    assert not services.gwlink_config_drift_items(cfg1), "сценарий — без расхождения окружения"
+    _cfg_refuse(services, {"link": "проба линка не прошла — вернул прежний"})
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1, "отказ применить конфиг линка прошёл без уведомления"
+    assert "Шлюз не применил: проба линка не прошла" in notes[0].text

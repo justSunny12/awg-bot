@@ -151,7 +151,8 @@ class FirewallMixin:
 
     def _firewall_apply(self, rollback: bool) -> None:
         from awgbot.infra import nftguard
-        spec = nftguard.build_spec(self.db.admin_device_addresses(config.ADMIN_ID))
+        spec = nftguard.build_spec(self.db.admin_device_addresses(config.ADMIN_ID),
+                                   channel_extra=self.gwcfg_channel_ports()[1:])
         for line in nftguard.ensure_persistence():
             log.info("firewall: %s", line)
         nftguard.apply_text(nftguard.render(spec))

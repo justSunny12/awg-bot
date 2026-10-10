@@ -350,8 +350,8 @@ class SlotsMixin:
             # агент принимает документ: подсети соседей тоже едут каналом; остаётся
             # только то, что шлюз отверг в ответе на текущий документ
             ack = self.gwcfg_ack(g.id)
-            if not ack or ack.get("hash") != self.gwcfg_doc(g)["hash"] or not ack.get("failed"):
-                return []
+            if not ack or ack.get("retry") or ack.get("hash") != self.gwcfg_doc(g)["hash"] or not ack.get("failed"):
+                return []                             # нет ответа, временный отказ или ответ на прежний документ
             failed = ack["failed"]
             out = [it for it in items if "env" in failed or "*" in failed]
             if "link" in failed:
@@ -373,13 +373,12 @@ class SlotsMixin:
         items = self.gwlink_config_drift_items(g)
         key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
         told = self.db.get_state(key) or ""
-        if not items:
-            if told:
-                self.db.set_state(key, "")
-                return Notification(config.ADMIN_ID, f"✅ {self._gw_link(g)}: конфигурация актуализирована")
-            return None
+        # у агента с документом отказ бывает и без расхождения в bundle (конфиг линка)
         pending = self._gw_drift_pending(g, items)
         if not pending:
+            if not items and told:
+                self.db.set_state(key, "")
+                return Notification(config.ADMIN_ID, f"✅ {self._gw_link(g)}: конфигурация актуализирована")
             return None
         # подпись — по полным значениям обеих сторон и итогу отказа: settings_hash
         # знает только ключи канала (смена подсетей соседей не дала бы нового
@@ -393,8 +392,10 @@ class SlotsMixin:
         if told == sig:
             return None
         self.db.set_state(key, sig)
-        # кнопка «📤 Конфигурация» — файл довезёт и то, что канал не везёт
-        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending), action=("gwcfg", int(g.id)))
+        # кнопка «📤 Конфигурация» — агентам без документа: файл довезёт и то, что канал
+        # им не везёт; агенту с документом файл не нужен
+        action = None if "cfg1" in self.gwlink_agent_caps(g.id) else ("gwcfg", int(g.id))
+        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending), action=action)
 
     def _gw_drift_text(self, g, pending: list) -> str:
         """Текст уведомления: что разошлось — именами; отказ шлюза — второй

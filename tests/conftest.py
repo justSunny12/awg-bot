@@ -157,7 +157,7 @@ def fake_awg(monkeypatch):
     # с какими адресами админа его сверяли
     from awgbot.infra import nftguard
 
-    def _fw_reconcile(admin_ips):
+    def _fw_reconcile(admin_ips, **_kw):
         state.fw_admin_ips = sorted(admin_ips)
         state.fw_calls += 1
         return "ok"

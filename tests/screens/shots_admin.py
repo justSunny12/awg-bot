@@ -3162,3 +3162,83 @@ SHOTS += [
          data=_gw(2, _file2(False), token=False),
          title="шлюз настроен, а в чате уже шифрованный файл — файл остаётся"),
 ]
+
+
+# ── документ конфигурации (cfg1) в карточке слота — ветки из e2e ────────────
+# Агент слота 1 принимает документ: сессия открыта с возможностью cfg1,
+# снимок несёт поле cfg — отпечатки желаемого ВПС с правками по сценарию.
+# Конфиг линка в снимках не собирается (источника /root/gw-awglink.conf нет);
+# почта и фраза ВПС — подстановкой там, где о них сценарий.
+
+_CFG_MAIL = {"login": "box@example.org", "password": "DUMMY", "imap_host": "imap.example.org",
+             "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "telegram"}
+
+
+def _cfg_base(services, mp):
+    services.gwcfg_link_conf = lambda gw, env: ""
+
+
+def _cfg_mail(services, mp):
+    """На ВПС есть почта и фраза бэкапов."""
+    services.gwcfg_mail = lambda: dict(_CFG_MAIL)
+    services.gwcfg_backup = lambda: {"phrase": "DUMMY phrase long enough"}
+
+
+def _cfg(*, online: bool = True, closed: bool = False, age_h: float = 0, **over):
+    """Снимок агента с документом: установленное — как выдаёт ВПС, поле cfg —
+    отпечатки желаемого с правками over; online — сессия с cfg1 открыта;
+    closed — закрыта после снимка; age_h — снимок принят столько часов назад."""
+    def step(services, mp):
+        at = NOW - _dt.timedelta(hours=age_h)
+        doc = services.gwcfg_doc(services.db.gateway(1))
+        snap = {"bundle": _installed(services), "link_contract": "1", "plumbing_gen": "new",
+                "mark_status": "confirmed", "agent_version": "3.3.0", "awg_generation": 1, "egress_ok": True,
+                "boot_id": "b" * 36, "ts": _iso(at), "rev": 1,
+                "cfg": {"gen": doc["gen"], **doc["prints"], **over}}
+        services.gwlink_snapshot_in(1, snap, 1, True)
+        services.db.set_state(services._gwlink_key(services._GWLINK_SNAP_AT_KEY, 1), _iso(at))
+        if online or closed:
+            services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
+        if closed:
+            services.gwlink_session_closed(1)
+    return step
+
+
+def _cfg_ack(*, applied=(), wait=(), declined=(), failed=None):
+    """Ответ шлюза на текущий документ: wait и declined — разделы, отпечатки
+    берутся у желаемого ВПС (о каком значении спросили)."""
+    def step(services, mp):
+        doc = services.gwcfg_doc(services.db.gateway(1))
+        services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "applied": list(applied),
+                                  "wait": {s: doc["prints"][s] for s in wait},
+                                  "declined": {s: doc["prints"][s] for s in declined},
+                                  "failed": dict(failed or {})})
+    return step
+
+
+def _cfg_chan(*steps):
+    return _chan(1, _cfg_base, *steps)
+
+
+SHOTS += [
+    _card(1, _cfg_chan(_cfg(), _cfg_ack(applied=("server", "env"))),
+          "агент с документом, всё совпадает — «актуален», без «📤» и без строки агента 3.2",
+          "adm.gw.card.cfg.actual"),
+    _card(1, _cfg_chan(_cfg(env="0" * 16, server="0" * 16)),
+          "агент с документом на связи, расходится — изменения уходят каналом", "adm.gw.card.cfg.delivering"),
+    _card(1, _cfg_chan(_cfg(env="0" * 16), _cfg_ack(failed={"env": "юнит обвязки <b>не</b> отработал за 600 с"})),
+          "шлюз не применил документ — причина экранирована, вернул прежнюю", "adm.gw.card.cfg.refused"),
+    _card(1, _cfg_chan(_cfg(online=False, closed=True, age_h=11 * 24, env="0" * 16, server="0" * 16)),
+          "агент с документом не на связи, расходится — разделы по именам", "adm.gw.card.cfg.drift.dead"),
+    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8, backup="cd" * 8),
+                       _cfg_ack(applied=("server", "env"), wait=("mail", "backup"))),
+          "почта и фраза ждут решения в чате бота шлюза", "adm.gw.card.cfg.wait"),
+    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env", "backup"),
+                                                                declined=("mail",))),
+          "«подробнее»: номер применённого документа и оставленная своя почта", "adm.gw.card.cfg.more"),
+    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8, backup="cd" * 8),
+                       _cfg_ack(applied=("server", "env"), declined=("mail", "backup"))),
+          "«подробнее»: почта и фраза оставлены своими", "adm.gw.card.cfg.more.both"),
+    _card(1, _chan(1, _ch(agent_version="3.2.1")), "агент 3.2 со снимком — обнови агента, «📤» на месте",
+          "adm.gw.card.cfg.agent32"),
+]

@@ -279,8 +279,8 @@ class GwSshMixin:
             except gwguard.GwGuardError as e:
                 raise ServiceError(str(e))
             if not info or "ssh_in" not in info["chains"]:
-                raise ServiceError("обвязка шлюза старого образца: перевыпусти конфигурацию "
-                                   "шлюза с сервера AWG")
+                raise ServiceError("обвязка шлюза старого образца — «🔧 Восстановить»" if self.server_cfg1() else
+                                   "обвязка шлюза старого образца: перевыпусти конфигурацию шлюза с сервера AWG")
             gwguard.write_env(SSH_FILTER="1")
             ok, err = self.reassert_guarded("фильтр SSH снаружи")
             if not ok and gwguard.is_timeout(err):
@@ -440,8 +440,9 @@ class GwSshMixin:
         if gwguard.read_env().get("SSH_FILTER") == "1" and info is not None:
             if "ssh_in" not in info["chains"]:
                 checks.append(GwCheck("фильтр SSH снаружи", False,
-                                      "включён, а цепочки ssh_in в таблице нет: перевыпусти "
-                                      "конфигурацию шлюза с сервера AWG"))
+                                      "включён, а цепочки ssh_in в таблице нет — "
+                                      + ("«🔧 Восстановить»" if self.server_cfg1() else
+                                         "перевыпусти конфигурацию шлюза с сервера AWG")))
             else:
                 ok = table_ports.get("input") == (port if port is not None else held)
                 checks.append(GwCheck("фильтр SSH снаружи", ok, "" if ok else

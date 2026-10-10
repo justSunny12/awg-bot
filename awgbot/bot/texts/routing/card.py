@@ -5,6 +5,7 @@ from __future__ import annotations
 from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.util import nets as nets_util
+from awgbot.domain import gwcfg
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
 
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
@@ -51,19 +52,33 @@ def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     return head + "\n" + note
 
 
+def _agent_at_least(version, floor: str) -> bool:
+    """Версия агента из снимка не ниже floor; мусор или пусто — ложь."""
+    from awgbot.domain import gwservices
+    try:
+        return bool(version) and gwservices.version_at_least(str(version), floor)
+    except Exception:                                      # noqa: BLE001 — строка со шлюза
+        return False
+
+
 def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[str]]:
     """Строки документа конфигурации у агента, который его принимает: отказ
     шлюза (К5), доставка в пути (К6), расхождение не на связи (К9 по разделам),
     вопросы человеку (К14), не собранный конфиг линка."""
-    from awgbot.domain import gwcfg
     warns: list[str] = []
     due = list(cfg.get("due") or [])
     failed = cfg.get("failed") or {}
     if cfg.get("link_err"):
         warns.append(f"⚠️ Конфиг линка для шлюза не собран: {_e(cfg['link_err'])}")
     if failed:
-        why = "; ".join(_e(v) for v in failed.values()) or "ошибка"
-        warns.append(f"⚠️ Шлюз не применил конфигурацию: {why} — вернул прежнюю")
+        why = "; ".join(_e(v) for v in dict.fromkeys(failed.values())) or "ошибка"   # одна причина на env и link — один раз
+        if "*" in failed:
+            warns.append(f"⚠️ Шлюз отверг конфигурацию: {why} — ничего не менял")
+        elif not {"env", "link"} & set(failed):
+            what = ", ".join(_e(gwcfg.human(s)) for s in failed)
+            warns.append(f"⚠️ Шлюз не применил {what}: {why}")
+        else:
+            warns.append(f"⚠️ Шлюз не применил конфигурацию: {why} — вернул прежнюю")
     elif due:
         n = len(due)
         n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
@@ -258,7 +273,7 @@ def gateway_card_text(state: dict, states: list) -> str:
                      "этими шлюзами не работает, пока они пересекаются")
     ch = state.get("channel") or {}
     cfg = ch.get("cfg") or {}
-    if ch.get("has_snap") and not cfg.get("cfg1"):
+    if ch.get("has_snap") and not cfg.get("cfg1") and not _agent_at_least(ch.get("agent"), "3.3.0"):
         bot = _bot_link(state.get("agent_bot"))
         lines.append("⚠️ Агент шлюза 3.2 получает каналом не всё — подсети других шлюзов, конфиг линка и "
                      "аплинка едут только файлом. Обнови агента" + (f" (бот: {bot})" if bot else ""))

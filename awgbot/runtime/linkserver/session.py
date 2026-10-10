@@ -32,9 +32,12 @@ class SessionMixin:
     # ── жизненный цикл ───────────────────────────────────────────────────────
 
     def _wanted(self) -> set[tuple[str, int]]:
-        port = pkg.channel_port()
+        # прежний порт после смены слушаем ещё неделю: шлюзы переезжают по документу
+        cur = pkg.channel_port()
+        self.services.gwcfg_channel_port_tick(cur)
+        ports = self.services.gwcfg_channel_ports(cur) or [cur]
         return {(pkg.vps_address(g.link_cidr), port) for g in self.services.db.gateways()
-                if pkg.vps_address(g.link_cidr)}
+                for port in ports if pkg.vps_address(g.link_cidr)}
 
     async def ensure(self) -> None:
         """Поднять недостающие слушатели и снять лишние — по адресу, не трогая

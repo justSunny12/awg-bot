@@ -157,7 +157,7 @@ def tunnel_nets() -> list[str]:
     return nets
 
 
-def build_spec(admin_ips) -> pkg.GuardSpec:
+def build_spec(admin_ips, channel_extra=()) -> pkg.GuardSpec:
     from awgbot.infra.awg import in_container
     host_mode = not in_container()
     v4, v6, bad = pkg.resolve_allow(settings.get("app.firewall.ssh_allow", []) or [])
@@ -180,6 +180,8 @@ def build_spec(admin_ips) -> pkg.GuardSpec:
         link_peers4=pkg.link_peer_addrs() if host_mode else [],
         link_ifs=pkg.link_ifaces() if host_mode else [],
         link_channel_port=pkg.link_channel_port() if host_mode else 0,
+        # прежний порт канала после смены — неделю открыт тоже (gwcfg_channel_ports)
+        link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()] if host_mode else [],
     )
 
 

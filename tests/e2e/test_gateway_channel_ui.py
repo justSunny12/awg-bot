@@ -337,3 +337,210 @@ def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
     ch["online"] = True
     _, _, egress = channel_lines(ch, False)
     assert "по снимку" not in egress, egress
+
+
+# ── агент с документом конфигурации (cfg1) ───────────────────────────────────
+# Карточка такого агента говорит о документе: актуален, уходит каналом,
+# расходится по разделам, отказан, ждёт решения человека. Сами экраны — в
+# эталоне (adm.gw.card.cfg.*); здесь — какие строки и кнопки появляются в
+# каком состоянии. Конфиг линка не собирается (источника на тестовой машине
+# нет), почта и фраза ВПС — подстановкой.
+
+MAIL = {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
+        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "telegram"}
+
+
+@pytest.fixture()
+def cfg1(services, slot, monkeypatch):
+    monkeypatch.setattr(services, "gwcfg_link_conf", lambda gw, env: "")
+    monkeypatch.setattr(services, "gwcfg_mail", lambda: dict(MAIL))
+    monkeypatch.setattr(services, "gwcfg_backup", lambda: {"phrase": "DUMMY phrase long enough"})
+    return slot
+
+
+def _doc(services):
+    return services.gwcfg_doc(services.db.gateway(1))
+
+
+def _cfg_snap(services, *, online=True, caps=("cfg1",), snap=None, **over):
+    """Снимок агента с полем cfg (отпечатки желаемого с правками over, прочие
+    поля снимка — snap) и сессия с возможностями caps; online=False — сессия
+    была и закрылась."""
+    doc = _doc(services)
+    _snap(services, online=False, **{"agent_version": "3.3.0", **(snap or {})},
+          cfg={"gen": doc["gen"], **doc["prints"], **over})
+    services.gwlink_session_opened(1, "3.3.0", 2, list(caps))
+    if not online:
+        services.gwlink_session_closed(1)
+
+
+def _cfg_ack(services, **body):
+    doc = _doc(services)
+    services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], **body})
+
+
+async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_bot):
+    """Всё совпадает — «🟢 конфиг актуален» в строке канала, ни строки про
+    агента 3.2, ни кнопки файла: агенту с документом файл не нужен, а кнопка
+    звала бы перевыпускать то, что везёт канал."""
+    _cfg_snap(services)
+    text, labels = await _card(services, fake_bot)
+    assert "🔗 Упр. канал 🟢 · v3.3.0 · 🟢 конфиг актуален" in text, text
+    assert "Агент шлюза 3.2" not in text and "перевыпусти" not in text, text
+    assert "📤 Конфигурация" not in labels, labels
+
+
+async def test_a_cfg1_drift_on_a_live_channel_goes_by_itself(services, cfg1, fake_bot):
+    """Шлюз на связи, документ расходится — уходит каналом (К6): число
+    пунктов, без хвоста про перевыпуск и без галочки «актуален»."""
+    _cfg_snap(services, env="0" * 16, server="0" * 16)
+    text, _ = await _card(services, fake_bot)
+    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят каналом "
+            "и применятся сами") in text.splitlines(), text
+    assert "конфиг актуален" not in text and "перевыпусти" not in text, text
+
+
+async def test_a_cfg1_drift_off_the_channel_is_listed_by_section(services, cfg1, fake_bot):
+    """Шлюз не на связи — расходящиеся разделы по именам, с возрастом снимка
+    (К9): человек видит, что доедет, когда шлюз вернётся."""
+    _cfg_snap(services, online=False, env="0" * 16, server="0" * 16)
+    text, labels = await _card(services, fake_bot)
+    assert "⚠️ Конфигурация на шлюзе расходится с выданной (2 пункта, по снимку" in text, text
+    assert "   • имя сервера\n   • настройки обвязки" in text, text
+    assert "📤 Конфигурация" not in labels, "агент с документом не на связи выглядит агентом 3.2"
+
+
+async def test_a_cfg1_refusal_says_what_and_that_the_old_one_stays(services, cfg1, fake_bot):
+    """Шлюз не применил документ (К5): причина текстом, экранирована, и что
+    стоит прежнее; «уходят каналом» при этом не обещаем."""
+    _cfg_snap(services, env="0" * 16)
+    _cfg_ack(services, failed={"env": "<b>dnsmasq</b> не поднялся"})
+    text, _ = await _card(services, fake_bot)
+    assert ("⚠️ Шлюз не применил конфигурацию: &lt;b&gt;dnsmasq&lt;/b&gt; не поднялся — вернул прежнюю"
+            in text.splitlines()), text
+    assert "уходят каналом" not in text and "конфиг актуален" not in text, text
+
+
+async def test_waiting_mail_and_phrase_are_named_on_the_card(services, cfg1, fake_bot):
+    """Вопрос о почте и фразе висит в чате бота шлюза (К14): карточка говорит,
+    где решать, и не обещает доставку того, что ждёт человека."""
+    doc = _doc(services)
+    _cfg_snap(services, mail="ab" * 8, backup="cd" * 8)
+    _cfg_ack(services, applied=["env", "server"], wait={"mail": doc["prints"]["mail"],
+                                                        "backup": doc["prints"]["backup"]})
+    text, _ = await _card(services, fake_bot)
+    lines = text.splitlines()
+    assert "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик" in lines, text
+    assert "⏳ Фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя" in lines, text
+    assert "расходится с выданной" not in text, "ожидание решения выдано за доставку"
+
+
+@pytest.mark.parametrize("declined, line", [
+    (("mail",), "почта на шлюзе своя — оставлена в чате бота шлюза"),
+    (("backup",), "фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза"),
+    (("mail", "backup"), "почта и фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза"),
+])
+async def test_details_name_the_applied_generation_and_what_was_kept(services, cfg1, fake_bot, declined, line):
+    """«подробнее» (К13): номер применённого документа и дата; что человек
+    оставил своим — без вопроса и без «расходится»."""
+    doc = _doc(services)
+    _cfg_snap(services, **{s: "ab" * 8 for s in declined})
+    _cfg_ack(services, applied=["server", "env"], declined={s: doc["prints"][s] for s in declined})
+    text, _ = await _card(services, fake_bot)
+    details = text.split("<blockquote expandable>", 1)[1]
+    assert f"конфигурация №{doc['gen']} применена " in details, details
+    assert line in details, details
+    assert "🟢 конфиг актуален" in text, "оставленное своим выдано за расхождение"
+
+
+async def test_no_applied_line_before_an_answer_to_the_current_document(services, cfg1, fake_bot):
+    """Ответа на текущий документ нет (или он об отказе) — «применена» не пишем."""
+    _cfg_snap(services)
+    text, _ = await _card(services, fake_bot)
+    assert "применена" not in text, text
+    _cfg_ack(services, failed={"env": "exit 1"})
+    text, _ = await _card(services, fake_bot)
+    assert "применена" not in text, text
+
+
+async def test_a_link_conf_the_server_could_not_build_is_said(services, cfg1, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "gwcfg_link_error",
+                        lambda slot_id: "конфиг линка: AllowedIPs: 172.16.0.0/12 шире /16")
+    _cfg_snap(services)
+    text, _ = await _card(services, fake_bot)
+    assert "⚠️ Конфиг линка для шлюза не собран: конфиг линка: AllowedIPs: 172.16.0.0/12 шире /16" in text, text
+
+
+async def test_cfg1_hints_point_to_restore_not_to_reissue(services, cfg1, fake_bot):
+    """Обвязка старого образца у агента с документом лечится «🔧 Восстановить»
+    в чате бота шлюза, а не новым файлом; то же у не применившейся связи
+    подсетей."""
+    _cfg_snap(services, snap={"plumbing_gen": "old", "peer_nets": {"ok": False, "missing": ["192.168.70.0/24"]}})
+    text, _ = await _card(services, fake_bot)
+    assert "⚠️ Обвязка шлюза старого образца — «🔧 Восстановить» в чате бота шлюза" in text, text
+    assert ("⚠️ Связь подсетей: на шлюзе нет <code>192.168.70.0/24</code> — сервер повторит доставку; "
+            "не поможет — «🔧 Восстановить» в чате бота шлюза") in text, text
+    assert "перевыпусти" not in text, text
+
+
+async def test_an_agent_32_card_asks_to_update_and_keeps_the_file_button(services, slot, fake_bot):
+    """Агент без cfg1 со снимком (К7): каналом едет не всё — обнови агента;
+    кнопка файла остаётся, ею пока и довозится остальное."""
+    _snap(services, agent_version="3.2.1")
+    text, labels = await _card(services, fake_bot)
+    assert "⚠️ Агент шлюза 3.2 получает каналом не всё — подсети других шлюзов, конфиг линка и аплинка " \
+           "едут только файлом. Обнови агента" in text, text
+    assert "📤 Конфигурация" in labels, labels
+
+
+async def test_without_a_snapshot_there_is_no_agent_32_line(services, slot, fake_bot):
+    """Снимка ещё нет — о версии агента судить не по чему, строки К7 нет."""
+    text, _ = await _card(services, fake_bot)
+    assert "Агент шлюза 3.2" not in text, text
+
+
+@pytest.mark.parametrize("online", [True, False])
+async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, cfg1, fake_bot, online):
+    """VPN-транзит у агента с документом доезжает каналом — и не на связи
+    тоже, как только шлюз вернётся: всплывашка не зовёт перевыпускать."""
+    _cfg_snap(services, online=online)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
+    assert services.db.gateway(1).lan_mode == 0
+    assert ("VPN-транзит выключен: применится сам по упр. каналу", True) in cb.answers, cb.answers
+
+
+async def test_the_peer_toggle_with_all_cfg1_agents_needs_no_reissue(services, cfg1, fake_bot, monkeypatch):
+    """Все слоты принимают документ — подсети соседей уедут каналом:
+    диалог и всплывашка не просят перевыпуска."""
+    store = _peer_store(monkeypatch)
+    _cfg_snap(services)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_peer_ask(cb, services)
+    text, _ = _screen(nav)
+    assert "Подсети шлюзов уйдут в их конфигурацию по упр. каналу — перевыпуск не нужен" in text, text
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
+    assert store["app.routing.peer_nets.enabled"] is True
+    assert ("Подсети связаны: шлюзы получат их по упр. каналу", True) in cb.answers, cb.answers
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_peer_ask(cb, services)
+    assert "Подсети шлюзов перестанут видеть друг друга сразу" in _screen(nav)[0]
+    assert "перевыпуск" not in _screen(nav)[0], _screen(nav)[0]
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="0"), services)
+    assert ("Связь подсетей выключена: шлюзы получат это по упр. каналу", True) in cb.answers, cb.answers
+
+
+async def test_the_peer_toggle_with_one_agent_32_asks_for_a_reissue(services, cfg1, fake_bot, monkeypatch):
+    """Хотя бы один слот с агентом 3.2 — его подсети соседей довезёт только
+    файл: «по упр. каналу» было бы обещанием, которое не выполнится."""
+    _peer_store(monkeypatch)
+    _cfg_snap(services)
+    admin = services.db.get_client_by_tg(ADMIN)
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.gwlink_session_opened(2, "3.2.1", 2)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_peer_ask(cb, services)
+    assert "перевыпусти конфигурацию каждого шлюза" in _screen(nav)[0], _screen(nav)[0]
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
+    assert ("Подсети связаны: перевыпусти конфигурацию каждого шлюза", True) in cb.answers, cb.answers

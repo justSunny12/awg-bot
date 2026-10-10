@@ -114,7 +114,7 @@ def live_set(name: str) -> Optional[set[str]]:
 
 # ── сверка по тику ───────────────────────────────────────────────────────────
 
-def reconcile(admin_ips) -> str:
+def reconcile(admin_ips, channel_extra=()) -> str:
     """Привести таблицу к желаемой. Возвращает, что сделано:
     'disabled' | 'ok' | 'applied' (текст изменился) | 'restored' (таблицу
     снесли) | 'resynced' (set устройств разошёлся с файлом)."""
@@ -124,7 +124,7 @@ def reconcile(admin_ips) -> str:
             return "disabled"           # docker: NAT — дело контейнера
         # host: NAT-only форма, без фильтра. Файл ещё не существовал — первое
         # появление таблицы на хосте: закрепить загрузку с ребута.
-        text = pkg.render(pkg.build_spec([]))
+        text = pkg.render(pkg.build_spec([], channel_extra))
         first = not pkg.read_file()
         if text != pkg.read_file() or not pkg.table_present():
             pkg.apply_text(text)
@@ -135,7 +135,7 @@ def reconcile(admin_ips) -> str:
                     pkg.log.warning("nat: персистентность не закреплена: %s", e)
             return "nat"
         return "ok"
-    spec = pkg.build_spec(admin_ips)
+    spec = pkg.build_spec(admin_ips, channel_extra)
     text = pkg.render(spec)
     if text != pkg.read_file():
         pkg.apply_text(text)

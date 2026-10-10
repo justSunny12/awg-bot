@@ -227,7 +227,7 @@ class ReconcileMixin:
         from awgbot.infra import nftguard
         try:
             admin_ips = self.db.admin_device_addresses(config.ADMIN_ID)
-            res = nftguard.reconcile(admin_ips)
+            res = nftguard.reconcile(admin_ips, channel_extra=self.gwcfg_channel_ports()[1:])
         except nftguard.GuardError as e:
             log.warning("firewall: %s", e)
             return

@@ -57,6 +57,7 @@ class CfgMixin:
         try:
             with open(f"/root/gw-{gw.link_if}.conf", encoding="utf-8") as f:
                 conf = wgconf.parse(f.read())
+            conf.comments = []                      # источник начинается с пояснений — в документ они не идут
             wgconf.check_keys(conf, "link")
         except (OSError, wgconf.WgConfError) as e:
             self._gwcfg_link_error_set(gw.id, f"конфиг линка не прочитан: {e}")
@@ -73,7 +74,7 @@ class CfgMixin:
         if not re.fullmatch(r"\d{1,5}(-\d{1,5})?", ka):
             ka = "25-35"
         wgconf.set_value(conf, "Peer", "PersistentKeepalive", ka)
-        text = wgconf.render(conf, "link", stamp=conf.stamp or "1")
+        text = wgconf.render(conf, "link", stamp=gwcfg.LINK_CONTRACT)
         try:
             # то же правило, что проверяет шлюз: желаемого, которое он заведомо
             # отвергнет, сервер не шлёт — показывает отказом в карточке
@@ -116,8 +117,15 @@ class CfgMixin:
 
     def gwcfg_desired(self, gw) -> dict:
         """Разделы документа слота: None — у сервера раздела нет (своё на шлюзе
-        не трогается). Аплинк и токен — отдельные возможности, пока не едут."""
+        не трогается). Аплинк и токен — отдельные возможности, пока не едут.
+        Раздел env не прошёл ту же проверку, что делает шлюз, — документа нет
+        вовсе (без env агент отверг бы его целиком), причина — в карточке."""
         env = self.gwcfg_env(gw)
+        try:
+            gwcfg.check_env(env)
+        except gwcfg.CfgError as e:
+            self._gwcfg_link_error_set(gw.id, f"раздел env: {e}")
+            return {name: None for name in gwcfg.SECTIONS}
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": None,
                 "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": None,
@@ -181,6 +189,18 @@ class CfgMixin:
         человека (раздел → отпечаток серверного значения), что отклонено, что
         не применилось и почему, временный ли отказ."""
         ack = gwcfg.ack_parse(body)
+        old = self.gwcfg_ack(slot_id)
+        if old and old.get("hash") == ack["hash"] and not ack["retry"]:
+            # ответ человека по одному разделу (или повторный ответ на тот же документ)
+            # дополняет сохранённый, а не стирает ответы по остальным разделам
+            done = set(ack["applied"]) | set(ack["declined"]) | set(ack["failed"])
+            ack["applied"] = [s for s in gwcfg.SECTIONS if s in set(old.get("applied") or []) | set(ack["applied"])
+                              and s not in set(ack["declined"]) | set(ack["failed"])]
+            ack["wait"] = {s: p for s, p in {**(old.get("wait") or {}), **ack["wait"]}.items() if s not in done}
+            ack["declined"] = {s: p for s, p in {**(old.get("declined") or {}), **ack["declined"]}.items()
+                               if s not in set(ack["applied"]) | set(ack["failed"])}
+            ack["failed"] = {s: w for s, w in {**(old.get("failed") or {}), **ack["failed"]}.items()
+                             if s not in set(ack["applied"]) | set(ack["declined"])}
         ack["at"] = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._gwlink_key(self._GWCFG_ACK_KEY, slot_id), json.dumps(ack, ensure_ascii=False))
         if ack["failed"]:
@@ -206,6 +226,11 @@ class CfgMixin:
         шлюз не держит в wait/declined с тем же отпечатком."""
         ack = self.gwcfg_ack(gw.id)
         held = {**(ack.get("wait") or {}), **(ack.get("declined") or {})}
+        # отказ на этот же документ (не временный) держится до смены отпечатка: повтор
+        # того же документа дал бы тот же отказ, ещё один прогон обвязки и уведомление
+        failed = set(ack.get("failed") or {}) if ack.get("hash") == doc["hash"] and not ack.get("retry") else set()
+        if "*" in failed:
+            return []
         out = []
         for name in gwcfg.SECTIONS:
             want = doc["prints"].get(name, "")
@@ -213,8 +238,8 @@ class CfgMixin:
                 continue                                  # у сервера раздела нет — своё на шлюзе не трогаем
             if want == str(have.get(name) or ""):
                 continue
-            if held.get(name) == want:
-                continue                                  # ждёт человека или отклонено — тот же отпечаток
+            if held.get(name) == want or name in failed:
+                continue                                  # ждёт человека, отклонено или отвергнуто — тот же документ
             out.append(name)
         return out
 
@@ -231,7 +256,8 @@ class CfgMixin:
             return out
         doc = self.gwcfg_doc(gw)
         ack = self.gwcfg_ack(gw.id)
-        current = bool(ack) and ack.get("hash") == doc["hash"]
+        # временный отказ («повтори») — не отказ: ни строки «не применил», ни даты применения
+        current = bool(ack) and ack.get("hash") == doc["hash"] and not ack.get("retry")
         out["due"] = self.gwcfg_diff(gw, doc, have) if have else []
         out["failed"] = dict(ack.get("failed") or {}) if current else {}
         out["wait"] = [s for s, p in (ack.get("wait") or {}).items() if p == doc["prints"].get(s)] if current else []
@@ -245,6 +271,41 @@ class CfgMixin:
         конфиг линка доедут каналом, файл не нужен. Без слотов — ложь."""
         slots = [g for g in self.db.gateways() if g.device_id]
         return bool(slots) and all("cfg1" in self.gwlink_agent_caps(g.id) for g in slots)
+
+    # ── порт канала: смена без обрыва ─────────────────────────────────────────
+    _CHPORT_CUR_KEY = "gw_chport_cur"
+    _CHPORT_PREV_KEY = "gw_chport_prev"            # «порт|когда»: прежний порт слушаем ещё неделю
+    CHPORT_PREV_DAYS = 7
+
+    def gwcfg_channel_port_tick(self, cur: int | None = None) -> None:
+        """Заметить смену routing.link_channel_port: прежний порт остаётся в
+        слушателях и файерволе, пока шлюзы не переедут на новый (документ
+        везёт порт в env), но не дольше недели."""
+        cur = int(gwlink.channel_port() if cur is None else cur)
+        known = self.db.get_state(self._CHPORT_CUR_KEY) or ""
+        if known == str(cur):
+            return
+        with self.db.transaction():
+            if known.isdigit() and int(known) != cur:
+                self.db.set_state(self._CHPORT_PREV_KEY, f"{known}|{timeutil.to_iso(timeutil.now())}")
+                log.info("канал линка: порт сменился %s → %s, прежний слушаем ещё %s дн", known, cur, self.CHPORT_PREV_DAYS)
+            self.db.set_state(self._CHPORT_CUR_KEY, str(cur))
+
+    def gwcfg_channel_ports(self, cur: int | None = None) -> list[int]:
+        """Порты канала для слушателя и файервола: текущий и прежний, пока тот
+        не отслужил неделю."""
+        cur = int(gwlink.channel_port() if cur is None else cur)
+        raw = self.db.get_state(self._CHPORT_PREV_KEY) or ""
+        port, _, since = raw.partition("|")
+        if port.isdigit() and int(port) != cur and since:
+            try:
+                age = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
+            except ValueError:
+                age = None
+            if age is not None and age < self.CHPORT_PREV_DAYS * 86400:
+                return [cur, int(port)]
+            self.db.set_state(self._CHPORT_PREV_KEY, "")
+        return [cur]
 
     def gwcfg_forget(self, slot_id: int) -> None:
         for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY):

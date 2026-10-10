@@ -140,7 +140,8 @@ def parse(text: str) -> Conf:
             conf.sections.append((name, cur))
             continue
         if cur is None or "=" not in line:
-            raise WgConfError(f"строка вне секции или без «=»: «{line[:40]}»")
+            # в причину — только имя, не значение: строка могла быть ключом
+            raise WgConfError(f"строка вне секции или без «=»: «{line.partition('=')[0].split()[0][:20] if line.split() else ''}»")
         key, _, val = line.partition("=")
         key, val = key.strip(), val.strip()
         if not _KEY_RE.match(key):

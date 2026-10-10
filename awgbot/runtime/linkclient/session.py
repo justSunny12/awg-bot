@@ -107,10 +107,12 @@ class SessionMixin:
             self._writer = writer
             self._set_online(True)
             await self._handle(msg)
+            # ответ на документ — первым: сервер узнаёт итог раньше, чем снимок с прежними
+            # отпечатками после отката, и не повторяет доставку вслепую
+            await self.flush_cfg_ack()
             await self.push(full=True)
             await self.push_services()
             await self.flush_applied()
-            await self.flush_cfg_ack()
             await self._maybe_installed()
             await self.push_own()
             await self._maybe_claim()

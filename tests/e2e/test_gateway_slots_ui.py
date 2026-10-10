@@ -663,3 +663,83 @@ async def test_a_dead_standby_remembers_when_it_went_down_and_forgets_on_recover
     for _ in range(services._rt_window_size()):           # окно замеров очистилось от отказов
         services.routing_liveness_tick()
     assert not services.db.get_state("routing_gw_2_down_since"), "ожил — момент падения должен стереться"
+
+
+# ── подсети шире /16 и кому подсети едут файлом ─────────────────────────────
+
+def _shown(msg, bot) -> str:
+    """Всё, что после ввода ушло в чат: меню могло встать новым сообщением
+    или правкой прежнего."""
+    out = [str(s[1]) for s in msg.sent]
+    out += [str(r[2]) for r in bot.records if r[0] in ("send_message", "edit_message_text") and len(r) > 2]
+    return "\n".join(out)
+
+
+async def test_a_subnet_wider_than_16_is_refused_at_input(services, slots, fake_bot):
+    """Подсеть слота уходит соседям в AllowedIPs конфига линка, а там правило
+    не пропускает префиксы короче /16. Принять её сейчас — значит получить
+    молчаливый отказ применения у соседа потом. Отказ — при вводе, с причиной;
+    ровно /16 — принимается."""
+    _, pi, _ = slots
+    _slot1(services, pi)
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
+    msg = _amsg(fake_bot, "172.16.0.0/15 172.18.0.0/16 192.168.1.0/24")
+    await sh.gateway_lan_received(msg, st, services)
+    assert services.db.gateway(1).lan_subnets == ["172.18.0.0/16", "192.168.1.0/24"], (
+        "подсеть шире /16 записана или /16 отвергнута")
+    text = _shown(msg, fake_bot)
+    assert "<code>172.16.0.0/15</code> — шире /16 — не пройдёт в конфиг линка соседних шлюзов, сузь подсеть" \
+        in text, text
+
+
+def _lan_pair(services, slots, monkeypatch, caps2=("cfg1",)):
+    """Два слота с VPN-транзитом и связью подсетей; агент слота 2 — с
+    возможностями caps2."""
+    _peer_conf(monkeypatch)["app.routing.peer_nets.enabled"] = True
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"], lan_mode=1)
+    services.db.gateway_update(2, lan_subnets=["192.168.68.0/24"], lan_mode=1)
+    services.gwlink_session_opened(2, "3.3.0" if caps2 else "3.2.1", 2, list(caps2))
+
+
+async def test_new_subnets_go_to_cfg1_neighbours_by_channel(services, slots, fake_bot, monkeypatch):
+    """Соседи принимают документ — новые подсети уедут им каналом: итог правки
+    не просит перевыпуска."""
+    _lan_pair(services, slots, monkeypatch)
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
+    msg = _amsg(fake_bot, "192.168.2.0/24")
+    await sh.gateway_lan_received(msg, st, services)
+    text = _shown(msg, fake_bot)
+    assert "Подсети уйдут остальным шлюзам по упр. каналу" in text, text
+    assert "перевыпуск" not in text, text
+
+
+async def test_new_subnets_for_an_agent_32_neighbour_still_need_a_file(services, slots, fake_bot, monkeypatch):
+    """Сосед с агентом 3.2 получит подсети только файлом — итог правки
+    называет его и просит перевыпуск."""
+    _lan_pair(services, slots, monkeypatch, caps2=())
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
+    msg = _amsg(fake_bot, "192.168.2.0/24")
+    await sh.gateway_lan_received(msg, st, services)
+    text = _shown(msg, fake_bot)
+    assert "Подсети попадут в конфигурацию остальных шлюзов: необходим перевыпуск для Pi2" in text, text
+
+
+def test_the_lan_report_names_agent_32_neighbours_among_cfg1_ones():
+    """Смешанный набор соседей: каналом — всем, кто умеет, файлом — агентам 3.2
+    по именам."""
+    from awgbot.bot import texts
+    from types import SimpleNamespace
+    st = {"gateway": SimpleNamespace(id=1, label="", lan_subnets=["192.168.2.0/24"]),
+          "device": SimpleNamespace(name="NASPi")}
+    res = {"kept": ["192.168.2.0/24"], "rejected": [], "conflict": None,
+           "peer_others": ["Pi2", "Pi3"], "peer_others_file": ["Pi3"]}
+    text = texts.gateway_lan_report(res, st)
+    assert "Подсети уйдут остальным шлюзам по упр. каналу; Pi3 (агент 3.2) — только файлом" in text, text

@@ -63,6 +63,10 @@ class InboundMixin:
             ok = await asyncio.to_thread(self.services.gwlink_snapshot_in, gw.id, patch,
                                          rev, kind == "snap")
             if ok:
+                if kind == "snap" or "cfg" in msg:
+                    # отпечатки стоящего изменились (в том числе старым файлом, применённым
+                    # руками): документ с тем же отпечатком можно слать снова
+                    sess.cfg_sent = ""
                 # снимок показал, что стоит на шлюзе, — самое время доставить
                 await self.deliver(gw.id)
                 # подсети соседей применены — теперь есть куда вести записи
@@ -89,6 +93,8 @@ class InboundMixin:
                 sess.lists_sent = ""
                 await self.deliver_lists(gw.id)
                 await self.deliver_peer_services(gw.id)
+                sess.own_sent = None
+                await self.deliver_own(gw.id)
             return
         if kind == "ack":
             # отпечаток набора, на который это ответ, — свой (первый из ушедших в
