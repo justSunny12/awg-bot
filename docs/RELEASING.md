@@ -50,7 +50,7 @@ GitHub `vX.Y.Z.P — …`.
   настроек основного бота, `handlers/admin/`, тексты и клавиатуры основного
   бота, скрипт линка) —
   одна строка `main`. Только агент
-  (`handlers/gateway.py`, `domain/gateway/`, `domain/gwchecks.py`,
+  (`handlers/gateway/`, `domain/gateway/`, `domain/gwchecks.py`,
   `infra/gwguard/`, тексты и
   клавиатуры агента, `runtime/scheduler.py` в части роли gateway) — одна
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
