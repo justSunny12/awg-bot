@@ -71,6 +71,7 @@ build_bot() {
     # Манифест версии AmneziaWG — не скрипт, но без него установщику нечего
     # ставить: версия ядра прибита к поставке (docs/ROADMAP.md, п.8).
     install -m 0644 "$ROOT/install/awg.lock" "$s/install/"
+    install -m 0644 "$ROOT/install/gw-wg-allow.list" "$s/install/"   # белые списки конфигов канала: читают wgconf и скрипт обвязки
     install -m 0755 "$ROOT/awg-bot.sh" "$s/"                        # единый инструмент — в корне
     install -m 0755 "$ROOT/run.sh" "$s/"                            # форграунд-запуск, документирован как ./run.sh
     cp "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"         # юнит пишет install_unit, файла в поставке нет

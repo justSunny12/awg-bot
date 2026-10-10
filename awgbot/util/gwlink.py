@@ -242,8 +242,7 @@ def _cidr4(tok: str) -> bool:
         return False
 
 
-def _norm(val) -> str:
-    return " ".join(str(val if val is not None else "").split())
+from awgbot.util.wgconf import norm as _norm   # noqa: E402 — нормализация общая с документом конфигурации
 
 
 def validate_settings(raw: dict) -> dict:

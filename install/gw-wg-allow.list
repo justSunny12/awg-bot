@@ -1,0 +1,65 @@
+# gw-wg-allow.list — что из конфигов WireGuard принимается каналом ВПС ↔ шлюз.
+#
+# Один источник для трёх читателей: awgbot/util/wgconf.py (сборка желаемого
+# конфига на ВПС и проверка документа на агенте) и wg_conf_check в
+# install/routing-gw-setup.sh (второй рубеж на шлюзе, awk). Нет файла — скрипт
+# отказывает: закрыто по умолчанию.
+#
+# Строки:
+#   <конфиг> <секция> <ключ>     ключ, который принимается в этой секции
+#   allowed_max <N>              записей AllowedIPs у линка — не больше
+#   allowed_min_prefix <N>       префикс каждой записи — не короче /N
+#   allowed_nets <a/b> …         записи — только внутри этих подсетей (RFC 1918)
+# Чего здесь нет — не принимается: PreUp/PostUp/PreDown/PostDown исполняются
+# от root, DNS перепишет резолвер системы, Table у линка увёл бы трафик шлюза.
+link Interface Address
+link Interface PrivateKey
+link Interface Jc
+link Interface Jmin
+link Interface Jmax
+link Interface S1
+link Interface S2
+link Interface S3
+link Interface S4
+link Interface H1
+link Interface H2
+link Interface H3
+link Interface H4
+link Interface I1
+link Interface I2
+link Interface I3
+link Interface I4
+link Interface I5
+link Peer PublicKey
+link Peer PresharedKey
+link Peer Endpoint
+link Peer AllowedIPs
+link Peer PersistentKeepalive
+uplink Interface PrivateKey
+uplink Interface Address
+uplink Interface MTU
+uplink Interface Table
+uplink Interface Jc
+uplink Interface Jmin
+uplink Interface Jmax
+uplink Interface S1
+uplink Interface S2
+uplink Interface S3
+uplink Interface S4
+uplink Interface H1
+uplink Interface H2
+uplink Interface H3
+uplink Interface H4
+uplink Interface I1
+uplink Interface I2
+uplink Interface I3
+uplink Interface I4
+uplink Interface I5
+uplink Peer PublicKey
+uplink Peer PresharedKey
+uplink Peer Endpoint
+uplink Peer AllowedIPs
+uplink Peer PersistentKeepalive
+allowed_max 16
+allowed_min_prefix 16
+allowed_nets 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
