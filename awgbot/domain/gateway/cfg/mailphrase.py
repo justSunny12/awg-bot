@@ -1,0 +1,142 @@
+"""mailphrase.py — почта и фраза бэкапов с сервера: молча или вопрос, памятка «оставить своё»."""
+from __future__ import annotations
+
+import json
+
+from awgbot.core import settings
+from awgbot.domain import gwcfg
+
+from ..base import log
+
+QUESTION_SECTIONS = ("mail", "backup")      # порядок очереди вопросов
+
+
+class CfgMailPhraseMixin:
+    """Правило: стоящее — заглушка (ящик не задан, шифрование не задано) или
+    совпадает с серверным — применяется молча; стоящее своё и отличается —
+    вопрос человеку; «оставить своё» запоминается по отпечатку серверного
+    значения: тот же отпечаток не спрашивается снова, новое — новый вопрос.
+    Признака «своё / с сервера» нет, и «сервер всегда прав» — тоже."""
+    _CFG_KEEP_KEY = "gwcfg_keep"          # {раздел: отпечаток серверного значения, от которого отказались}
+    _CFG_PENDING_KEY = "gwcfg_pending"    # {раздел: серверное значение}, пока вопрос висит
+    _CFG_WAIT_KEY = "gwcfg_wait"          # {раздел: {"mine": отпечаток стоящего, "server": отпечаток, "gen", "hash"}}
+
+    def _cfg_json(self, key: str) -> dict:
+        return self.db.get_state_json(key, {}) or {}
+
+    def _cfg_json_set(self, key: str, value: dict) -> None:
+        self.db.set_state(key, json.dumps(value, ensure_ascii=False) if value else "")
+
+    def cfg_keep(self) -> dict:
+        return self._cfg_json(self._CFG_KEEP_KEY)
+
+    def cfg_wait(self) -> dict:
+        return self._cfg_json(self._CFG_WAIT_KEY)
+
+    def cfg_pending(self) -> dict:
+        return self._cfg_json(self._CFG_PENDING_KEY)
+
+    def _cfg_section_prints(self, section: str, value: dict) -> tuple[str, str]:
+        """(отпечаток стоящего, отпечаток серверного) для раздела."""
+        if section == "mail":
+            return self.cfg_mail_print(), gwcfg.mail_print(value)
+        return self.cfg_backup_print(), gwcfg.backup_print(value.get("phrase", ""))
+
+    def cfg_decide(self, section: str, value: dict) -> tuple[str, str]:
+        """Что делать с разделом: ("apply" — молча, "same" — ничего, "ask" —
+        вопрос, "declined" — отказались от этого же серверного значения),
+        и отпечаток серверного значения."""
+        mine, server = self._cfg_section_prints(section, value)
+        if not mine:
+            return "apply", server                       # заглушка: применяем молча
+        if mine == server:
+            return "same", server
+        if self.cfg_keep().get(section) == server:
+            return "declined", server
+        return "ask", server
+
+    def cfg_hold(self, section: str, value: dict, server_print: str, gen: int, digest: str) -> None:
+        """Вопрос повис: серверное значение — в pending, отпечатки — в wait; новое
+        серверное значение заменяет прежний вопрос."""
+        mine, _ = self._cfg_section_prints(section, value)
+        pending = self.cfg_pending(); pending[section] = value
+        self._cfg_json_set(self._CFG_PENDING_KEY, pending)
+        wait = self.cfg_wait(); wait[section] = {"mine": mine, "server": server_print, "gen": int(gen), "hash": digest}
+        self._cfg_json_set(self._CFG_WAIT_KEY, wait)
+
+    def cfg_release(self, section: str) -> None:
+        """Снять вопрос: pending и wait раздела стираются."""
+        for key, getter in ((self._CFG_PENDING_KEY, self.cfg_pending), (self._CFG_WAIT_KEY, self.cfg_wait)):
+            data = getter()
+            if section in data:
+                del data[section]
+                self._cfg_json_set(key, data)
+
+    def cfg_question_stale(self, section: str) -> bool:
+        """Стоящее поменяли руками, пока вопрос висел: отпечаток стоящего не тот,
+        что был при вопросе — вопрос снимается без памятки."""
+        wait = self.cfg_wait().get(section)
+        if not wait:
+            return False
+        mine, _ = self._cfg_section_prints(section, self.cfg_pending().get(section) or {})
+        return mine != wait.get("mine", "")
+
+    def cfg_drop_stale_questions(self) -> list[str]:
+        """Снять вопросы, потерявшие смысл; вернуть снятые разделы."""
+        dropped = []
+        for section in list(self.cfg_wait()):
+            if self.cfg_question_stale(section):
+                self.cfg_release(section)
+                dropped.append(section)
+        return dropped
+
+    # ── применение ───────────────────────────────────────────────────────────
+
+    def cfg_apply_mail(self, mail: dict) -> dict:
+        """Сохранить почту с сервера, проверить вход IMAP и SMTP, переключить
+        бэкапы на e-mail вслед за сервером по прежним условиям. Проверка не
+        прошла — почта всё равно сохранена, итог — в note."""
+        self.email_save(mail["login"], mail["password"], mail["imap_host"], int(mail["imap_port"]),
+                        mail["smtp_host"], int(mail["smtp_port"]))
+        try:
+            ok, why = self.email_check()
+        except Exception as e:                           # noqa: BLE001 — таймаут IMAP, сеть
+            ok, why = False, str(e)
+        note = {"state": "ok" if ok else "fail", "why": "" if ok else why, "backup": False}
+        if (ok and mail.get(gwcfg.MAIL_HINT) == "email" and self.backup_encryption_enabled()
+                and settings.get_bool("app.scheduler.backup_enabled", True)
+                and str(settings.get("app.scheduler.backup_channel", "telegram") or "").lower() != "email"):
+            try:
+                settings.set_value("app.scheduler.backup_channel", "email")
+                note["backup"] = True
+            except Exception as e:                       # noqa: BLE001
+                log.warning("gateway: канал бэкапов не переключён на почту: %s", e)
+        return note
+
+    def cfg_apply_backup(self, backup: dict) -> dict:
+        self.backup_set_passphrase(backup["phrase"])
+        return {"state": "ok"}
+
+    def cfg_answer(self, section: str, accept: bool) -> dict:
+        """Ответ человека на вопрос: принять с сервера — применить отложенное
+        значение (памятка стирается); оставить своё — памятка с серверным
+        отпечатком. Возвращает {"ok", "section", "accepted", "note", "gen", "hash",
+        "print"} — для ответа серверу и итога в чате; вопроса нет — ok False."""
+        wait = self.cfg_wait().get(section)
+        value = self.cfg_pending().get(section)
+        if not wait or value is None:
+            return {"ok": False, "section": section, "accepted": accept, "note": {}, "gen": 0, "hash": "", "print": ""}
+        keep = self.cfg_keep()
+        note: dict = {}
+        if accept:
+            try:
+                note = self.cfg_apply_mail(value) if section == "mail" else self.cfg_apply_backup(value)
+            except (ValueError, OSError) as e:
+                note = {"state": "fail", "why": str(e)}
+            keep.pop(section, None)
+        else:
+            keep[section] = wait.get("server", "")
+        self._cfg_json_set(self._CFG_KEEP_KEY, keep)
+        self.cfg_release(section)
+        return {"ok": True, "section": section, "accepted": accept, "note": note,
+                "gen": int(wait.get("gen") or 0), "hash": str(wait.get("hash") or ""), "print": wait.get("server", "")}

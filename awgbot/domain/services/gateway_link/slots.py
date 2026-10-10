@@ -346,6 +346,17 @@ class SlotsMixin:
         from awgbot.util import gwlink
         if not self.gwlink_session(g.id):
             return []
+        if "cfg1" in self.gwlink_agent_caps(g.id):
+            # агент принимает документ: подсети соседей тоже едут каналом; остаётся
+            # только то, что шлюз отверг в ответе на текущий документ
+            ack = self.gwcfg_ack(g.id)
+            if not ack or ack.get("hash") != self.gwcfg_doc(g)["hash"] or not ack.get("failed"):
+                return []
+            failed = ack["failed"]
+            out = [it for it in items if "env" in failed or "*" in failed]
+            if "link" in failed:
+                out.append(("link", "конфиг линка", "", ""))
+            return out
         ack = self.gwlink_ack(g.id)
         refused = (bool(ack) and not ack.get("ok")
                    and ack.get("hash") == gwlink.settings_hash(self.gwlink_settings_want(g)))
@@ -394,12 +405,20 @@ class SlotsMixin:
         from awgbot.domain.services.gwchannel import drift_lines
         names = ", ".join(html.escape(human, quote=False) for _k, human, _m, _t in pending)
         lines = [f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {names}"]
-        ack = self.gwlink_ack(g.id)
-        if ack and not ack.get("ok") and any(k in gwlink.SETTINGS_KEYS for k, _h, _m, _t in pending):
-            lines.append(f"Шлюз не применил: {html.escape(ack.get('error') or 'ошибка', quote=False)}")
+        if "cfg1" in self.gwlink_agent_caps(g.id):
+            failed = self.gwcfg_ack(g.id).get("failed") or {}
+            why = "; ".join(failed.values())
+        else:
+            ack = self.gwlink_ack(g.id)
+            why = (ack.get("error") or "ошибка") if ack and not ack.get("ok") and any(
+                k in gwlink.SETTINGS_KEYS for k, _h, _m, _t in pending) else ""
+        if why:
+            lines.append(f"Шлюз не применил: {html.escape(why, quote=False)}")
         for key, human, mine, theirs in pending:
             if key == "ADMIN_IPS":
                 lines += self._gw_admin_drift_lines(g)
+            elif key == "link":
+                continue                                  # конфиг линка назван в заголовке, значений у него нет
             else:
                 lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
         return "\n".join(lines)

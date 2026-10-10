@@ -130,6 +130,11 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "peer_svc": ({"hash": "cd" * 32, "items": [{"name": "nas", "ip": "192.168.2.10"}]},
                  gwlink.PAD_SNAP, "7b4622830f7e047c137512658198d211dbd95e08bb3ce6fd9c4f883fa1b7c238"),
     "own_set": ({"run": "r1", "hash": "ef" * 32, "sites": [], "nets": []}, gwlink.PAD_SNAP, "87980df107f4a2e2d088b8d1919e53ffc1a092703ad1345b877f9d2aa0b9ce04"),
+    "cfg": ({"gen": 18, "hash": "9c41" * 4, "env": {"CLIENT_SUBNET": "10.8.1.0/24", "ADMIN_IPS": "10.8.1.2",
+                                                   "LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24", "RESOLVER": "",
+                                                   "PEER_LAN_NETS": "", "LINK_CHANNEL_PORT": "8787"},
+             "link": {"conf": "# awg-bot: контракт линка 1\n[Interface]\nAddress = 10.99.99.2/30\n"},
+             "server": {"name": "awg-srv"}}, gwlink.PAD_SNAP, "eed290d8bcf18ad9a6967d681f3da8964239d29955406d65d2813c2cd8d14102"),
     "applied_ack": ({"fp": "12" * 32, "at": "2026-10-10T00:00:00"}, gwlink.PAD_DELTA, "bef24a2ec608e0986ffcb0d73a22f8aeefbc9ca917fcbb8254d038675fa2298c"),
 }
 
@@ -147,6 +152,8 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "lists_ack": ({"ok": True, "hash": "ab" * 32, "n": 3, "error": ""}, gwlink.PAD_DELTA, "7abd7f399ee12b0259c1e88874f7c565a5102b94c6761ee47ca72dba4c02d931"),
     "own_ev": ({"run": "r1", "ev": [{"op": "add", "site": "example.org"}]}, gwlink.PAD_SNAP, "7cf5ee60be1de7af98e7e7e17f2d5ac55c88b590189f42e9a4d1ea94315a64ab"),
     "own_ack": ({"ok": True, "hash": "ef" * 32, "n": 1, "error": ""}, gwlink.PAD_DELTA, "4a924daad721094f8ec95990bff48c238f7ec6f5011c02aa39ffc85bb279de00"),
+    "cfg_ack": ({"gen": 18, "hash": "9c41" * 4, "applied": ["server", "env", "link"], "wait": {"mail": "ab12" * 4},
+                 "declined": {}, "failed": {}}, gwlink.PAD_DELTA, "b4969fc23ac0c99ea28d4df78c5904b90219aab034fb330242536c1391ca1c95"),
     "peer_svc_ack": ({"ok": True, "hash": "cd" * 32, "n": 1, "error": ""}, gwlink.PAD_DELTA, "dc96a6446ba8e581278e95a66b06626191ca47f4e24a4b14d8b5349a47158137"),
 }
 

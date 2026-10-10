@@ -1,0 +1,251 @@
+"""cfg.py — документ конфигурации слота: желаемое, поколение, что доставить, ответ шлюза."""
+from __future__ import annotations
+
+import json
+import re
+import socket
+
+from awgbot.core import config, settings
+from awgbot.domain import gwcfg
+from awgbot.util import gwlink, timeutil, wgconf
+
+from .common import log
+
+_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+class CfgMixin:
+    """Сервер — источник желаемого: документ каждый раз вычисляется из тех же
+    источников, из которых собирается файл первого применения. Второй схемы
+    нет — расходиться ей не с чем."""
+    _GWCFG_GEN_KEY = "gwcfg_gen"
+    _GWCFG_HASH_KEY = "gwcfg_hash"
+    _GWCFG_ACK_KEY = "gwcfg_ack"
+    _GWCFG_LINK_ERR_KEY = "gwcfg_link_err"     # почему желаемый конфиг линка не собран (К5)
+
+    # ── желаемое ─────────────────────────────────────────────────────────────
+
+    def gwcfg_env(self, gw) -> dict:
+        """Раздел env — в именах документа."""
+        lan = self._lan_env(gw)
+        return {"CLIENT_SUBNET": str(settings.get("app.network.subnet_cidr", f"{config.SUBNET_PREFIX}.0/24") or ""),
+                "ADMIN_IPS": " ".join(self._gw_ssh_allow()),
+                "LAN_MODE": lan["LAN_MODE"],
+                "LAN_SUBNETS": lan["HOME_SUBNETS"],
+                "RESOLVER": lan["RESOLVER"],
+                "PEER_LAN_NETS": lan["PEER_HOME_NETS"],
+                "LINK_CHANNEL_PORT": str(gwlink.channel_port())}
+
+    def _gwcfg_live_port(self, gw) -> int:
+        """Порт линка — факт из живого конфига ВПС, как при сборке файла."""
+        try:
+            with open(f"{config.AWG_DIR}/{gw.link_if}.conf", encoding="utf-8") as f:
+                m = re.search(r"^ListenPort\s*=\s*(\d+)", f.read(), re.M)
+            if m:
+                return int(m.group(1))
+        except OSError:
+            pass
+        return int(gw.link_port)
+
+    def gwcfg_link_conf(self, gw, env: dict) -> str:
+        """Желаемый конфиг линка шлюзовой стороны: источник `/root/gw-<линк>.conf`
+        с теми же поправками, что делает сборка файла (порт Endpoint — из живого
+        ListenPort, хост — network.server_host, AllowedIPs — по правилу документа,
+        PersistentKeepalive — из настроек клиентов). Текст канонический, со
+        штампом контракта. Не собрался (нет источника, правило AllowedIPs не
+        пропускает подсеть соседа) — пусто, причина — в gwcfg_link_error."""
+        try:
+            with open(f"/root/gw-{gw.link_if}.conf", encoding="utf-8") as f:
+                conf = wgconf.parse(f.read())
+            wgconf.check_keys(conf, "link")
+        except (OSError, wgconf.WgConfError) as e:
+            self._gwcfg_link_error_set(gw.id, f"конфиг линка не прочитан: {e}")
+            return ""
+        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
+        old_host = conf.get("Peer", "Endpoint").rpartition(":")[0]
+        if not (host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host)):
+            host = old_host
+        wgconf.set_value(conf, "Peer", "Endpoint", f"{host}:{self._gwcfg_live_port(gw)}")
+        want = wgconf.allowed_ips_want(client_subnet=env["CLIENT_SUBNET"], link_cidr=gw.link_cidr,
+                                       peer_nets=env["PEER_LAN_NETS"].split())
+        wgconf.set_value(conf, "Peer", "AllowedIPs", ", ".join(want))
+        ka = str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS) or "25-35")
+        if not re.fullmatch(r"\d{1,5}(-\d{1,5})?", ka):
+            ka = "25-35"
+        wgconf.set_value(conf, "Peer", "PersistentKeepalive", ka)
+        text = wgconf.render(conf, "link", stamp=conf.stamp or "1")
+        try:
+            # то же правило, что проверяет шлюз: желаемого, которое он заведомо
+            # отвергнет, сервер не шлёт — показывает отказом в карточке
+            gwcfg.check_link(text, env, link_cidr=gw.link_cidr)
+        except gwcfg.CfgError as e:
+            self._gwcfg_link_error_set(gw.id, str(e))
+            return ""
+        self._gwcfg_link_error_set(gw.id, "")
+        return text
+
+    def _gwcfg_link_error_set(self, slot_id: int, text: str) -> None:
+        key = self._gwlink_key(self._GWCFG_LINK_ERR_KEY, slot_id)
+        if (self.db.get_state(key) or "") != text:
+            self.db.set_state(key, text)
+
+    def gwcfg_link_error(self, slot_id: int) -> str:
+        return self.db.get_state(self._gwlink_key(self._GWCFG_LINK_ERR_KEY, slot_id)) or ""
+
+    def gwcfg_mail(self) -> dict | None:
+        acc = self.email_account()
+        if acc is None:
+            return None
+        return {"login": acc.login, "password": acc.password, "imap_host": acc.imap_host,
+                "imap_port": acc.imap_port, "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port,
+                gwcfg.MAIL_HINT: self.backup_channel()}
+
+    def gwcfg_backup(self) -> dict | None:
+        if self.backup_encryption_mode() != "passphrase":
+            return None
+        return {"phrase": self.db.get_state(self._BK_PASSPHRASE_KEY) or ""}
+
+    @staticmethod
+    def gwcfg_server() -> dict | None:
+        try:
+            name = socket.gethostname().strip()
+        except OSError:
+            name = ""
+        m = _NAME_RE.match(name)
+        return {"name": m.group(0)} if m else None
+
+    def gwcfg_desired(self, gw) -> dict:
+        """Разделы документа слота: None — у сервера раздела нет (своё на шлюзе
+        не трогается). Аплинк и токен — отдельные возможности, пока не едут."""
+        env = self.gwcfg_env(gw)
+        link = self.gwcfg_link_conf(gw, env)
+        return {"env": env, "link": {"conf": link} if link else None, "uplink": None,
+                "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": None,
+                "server": self.gwcfg_server()}
+
+    @staticmethod
+    def gwcfg_prints(sections: dict) -> dict:
+        """Отпечатки разделов желаемого — пусто у отсутствующего раздела."""
+        out = {}
+        for name in gwcfg.SECTIONS:
+            sec = sections.get(name)
+            if sec is None:
+                out[name] = ""
+            elif name == "env":
+                out[name] = gwcfg.env_print(sec)
+            elif name == "link":
+                out[name] = gwcfg.link_print(sec.get("conf", ""))
+            elif name == "uplink":
+                out[name] = gwcfg.uplink_print(sec.get("conf", ""), sec.get("pubkey", ""), sec.get("prev_pubkey", ""))
+            elif name == "mail":
+                out[name] = gwcfg.mail_print(sec)
+            elif name == "backup":
+                out[name] = gwcfg.backup_print(sec.get("phrase", ""))
+            elif name == "token":
+                out[name] = gwcfg.token_print(sec.get("value", ""))
+            elif name == "server":
+                out[name] = gwcfg.server_print(sec.get("name", ""))
+        return out
+
+    # ── поколение и документ ─────────────────────────────────────────────────
+
+    def gwcfg_doc(self, gw) -> dict:
+        """Документ слота с поколением: {gen, hash, sections, prints}. Поколение
+        растёт, когда отпечаток документа отличается от запомненного; само по
+        себе оно ничего не решает — шлюз применяет по отпечаткам."""
+        sections = self.gwcfg_desired(gw)
+        prints = self.gwcfg_prints(sections)
+        digest = gwcfg.doc_print(prints)
+        gen_key = self._gwlink_key(self._GWCFG_GEN_KEY, gw.id)
+        hash_key = self._gwlink_key(self._GWCFG_HASH_KEY, gw.id)
+        gen = int(self.db.get_state(gen_key) or 0)
+        if (self.db.get_state(hash_key) or "") != digest or not gen:
+            gen += 1
+            with self.db.transaction():
+                self.db.set_state(gen_key, str(gen))
+                self.db.set_state(hash_key, digest)
+            log.info("документ конфигурации: слот %s — поколение %s", gw.id, gen)
+        return {"gen": gen, "hash": digest, "sections": sections, "prints": prints}
+
+    def gwcfg_ack(self, slot_id: int) -> dict:
+        raw = self.db.get_state(self._gwlink_key(self._GWCFG_ACK_KEY, slot_id)) or ""
+        if not raw.startswith("{"):
+            return {}
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return {}
+
+    def gwcfg_ack_in(self, slot_id: int, body: dict) -> dict:
+        """Ответ шлюза на документ — одним JSON в state: что применено, что ждёт
+        человека (раздел → отпечаток серверного значения), что отклонено, что
+        не применилось и почему, временный ли отказ."""
+        ack = gwcfg.ack_parse(body)
+        ack["at"] = timeutil.to_iso(timeutil.now())
+        self.db.set_state(self._gwlink_key(self._GWCFG_ACK_KEY, slot_id), json.dumps(ack, ensure_ascii=False))
+        if ack["failed"]:
+            log.warning("документ конфигурации: слот %s не применил %s", slot_id,
+                        "; ".join(f"{k}: {v}" for k, v in ack["failed"].items()))
+        return ack
+
+    def gwcfg_due(self, gw) -> dict | None:
+        """Что отправить слоту сейчас, или None. Решает расхождение отпечатков
+        снимка с желаемым, не событие на ВПС; раздел, который шлюз в последнем
+        ответе назвал wait или declined с тем же отпечатком, повторно не шлётся —
+        у почты и фразы это и есть «оставить своё». Снимка с cfg нет — молчим."""
+        snap = self.gwlink_snapshot(gw.id)
+        if not isinstance(snap.get("cfg"), dict):
+            return None
+        doc = self.gwcfg_doc(gw)
+        if not self.gwcfg_diff(gw, doc, snap["cfg"]):
+            return None
+        return gwcfg.build(doc["gen"], doc["hash"], doc["sections"])
+
+    def gwcfg_diff(self, gw, doc: dict, have: dict) -> list[str]:
+        """Разделы, в которых желаемое расходится с отпечатками снимка и которые
+        шлюз не держит в wait/declined с тем же отпечатком."""
+        ack = self.gwcfg_ack(gw.id)
+        held = {**(ack.get("wait") or {}), **(ack.get("declined") or {})}
+        out = []
+        for name in gwcfg.SECTIONS:
+            want = doc["prints"].get(name, "")
+            if not want:
+                continue                                  # у сервера раздела нет — своё на шлюзе не трогаем
+            if want == str(have.get(name) or ""):
+                continue
+            if held.get(name) == want:
+                continue                                  # ждёт человека или отклонено — тот же отпечаток
+            out.append(name)
+        return out
+
+    def gwcfg_card(self, gw, snap: dict) -> dict:
+        """Что карточка слота знает о документе: агент принимает ли документ
+        (cfg1), поколение на шлюзе, что расходится, что отказано, что ждёт
+        человека, что отклонено, когда применён текущий документ, почему не
+        собран конфиг линка. Без запросов к шлюзу — только state."""
+        cfg1 = "cfg1" in self.gwlink_agent_caps(gw.id)
+        have = snap.get("cfg") if isinstance(snap.get("cfg"), dict) else {}
+        out = {"cfg1": cfg1, "gen": int(have.get("gen") or 0) if have else 0, "due": [], "failed": {},
+               "wait": [], "declined": [], "applied_at": "", "link_err": ""}
+        if not cfg1 or not snap:
+            return out
+        doc = self.gwcfg_doc(gw)
+        ack = self.gwcfg_ack(gw.id)
+        current = bool(ack) and ack.get("hash") == doc["hash"]
+        out["due"] = self.gwcfg_diff(gw, doc, have) if have else []
+        out["failed"] = dict(ack.get("failed") or {}) if current else {}
+        out["wait"] = [s for s, p in (ack.get("wait") or {}).items() if p == doc["prints"].get(s)] if current else []
+        out["declined"] = [s for s, p in (ack.get("declined") or {}).items() if p == doc["prints"].get(s)]
+        out["applied_at"] = str(ack.get("at") or "") if current and not out["failed"] else ""
+        out["link_err"] = self.gwcfg_link_error(gw.id)
+        return out
+
+    def gwcfg_all_capable(self) -> bool:
+        """Все слоты с устройством принимают документ (cfg1): подсети соседей и
+        конфиг линка доедут каналом, файл не нужен. Без слотов — ложь."""
+        slots = [g for g in self.db.gateways() if g.device_id]
+        return bool(slots) and all("cfg1" in self.gwlink_agent_caps(g.id) for g in slots)
+
+    def gwcfg_forget(self, slot_id: int) -> None:
+        for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY):
+            self.db.set_state(self._gwlink_key(key, slot_id), "")

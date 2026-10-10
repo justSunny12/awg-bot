@@ -49,6 +49,8 @@ class DeliverMixin:
         sess = self._sessions.get(slot_id)
         if sess is None or not sess.hello:
             return False
+        if "cfg1" in sess.caps:
+            return await self.deliver_cfg(slot_id)      # агент с документом: settings ему не нужны
         gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
         if gw is None:
             return False
@@ -167,6 +169,25 @@ class DeliverMixin:
             elif dev is not None:
                 standby = True
         return {"standby": standby, "name": name}
+
+    async def deliver_cfg(self, slot_id: int) -> bool:
+        """Документ конфигурации слоту с возможностью cfg1: по расхождению
+        отпечатков снимка с желаемым, один раз за сессию на отпечаток документа
+        (временный отказ агента снимает метку — см. cfg_ack)."""
+        sess = self._sessions.get(slot_id)
+        if sess is None or not sess.hello or "cfg1" not in sess.caps:
+            return False
+        gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
+        if gw is None:
+            return False
+        doc = await asyncio.to_thread(self.services.gwcfg_due, gw)
+        if not doc:
+            return False
+        if sess.cfg_sent == doc["hash"]:
+            return False
+        sess.cfg_sent = doc["hash"]
+        log.info("канал линка: слоту %s уходит документ конфигурации №%s", slot_id, doc["gen"])
+        return await self.send(slot_id, "cfg", doc, pad=gwlink.PAD_SNAP)
 
     async def send_role(self, slot_id: int) -> bool:
         """Сказать агенту, активный он или резерв, — только при смене. Сам он

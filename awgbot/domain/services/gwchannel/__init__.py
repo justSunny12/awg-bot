@@ -1,6 +1,6 @@
 """
 gwchannel/ — сторона ВПС: приём того, что привёз канал линка (части: session, snapshot,
-own, bundle, services, settings, feeds, card, claim — по смыслу сообщений).
+own, bundle, services, settings, feeds, card, claim, cfg — по смыслу сообщений).
 
 Здесь хранение, сверка и решение, что доставить шлюзу. Снимок рисуется на
 экранах и сравнивается с тем, что ВПС сам же выдал в конфигурации; расхождение
@@ -25,10 +25,11 @@ from .settings import SettingsMixin
 from .feeds import FeedsMixin
 from .card import CardMixin
 from .claim import ClaimMixin
+from .cfg import CfgMixin
 
 
 class GwChannelMixin(SessionMixin, SnapshotMixin, OwnListsMixin, BundleMixin, ServicesMixin,
-                     SettingsMixin, FeedsMixin, CardMixin, ClaimMixin):
+                     SettingsMixin, FeedsMixin, CardMixin, ClaimMixin, CfgMixin):
     """Сторона ВПС канала линка — собирается из частей пакета (см. шапку)."""
 
 

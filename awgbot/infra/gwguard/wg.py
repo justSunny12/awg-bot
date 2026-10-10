@@ -7,6 +7,7 @@ import re
 from awgbot.core import config
 from awgbot.util import kvfile
 from awgbot.infra import gwguard as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
+from .common import LINK_APPLY_TIMEOUT
 
 
 
@@ -131,3 +132,43 @@ def client_subnet() -> str:
         return ""
     m = re.search(r'^Environment="?CLIENT_SUBNET=([0-9./]+)"?', text, re.M)
     return m.group(1) if m else ""
+
+
+def handshake_age(iface: str) -> int | None:
+    """Секунд с последнего хендшейка пира интерфейса (`awg show <if>
+    latest-handshakes`); None — хендшейка не было или интерфейса нет."""
+    import time
+    out = pkg._awg(["show", iface, "latest-handshakes"])
+    best = 0
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            best = max(best, int(parts[1]))
+    if not best:
+        return None
+    return max(0, int(time.time()) - best)
+
+
+def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT) -> tuple[bool, str]:
+    """Поставить конфиг линка из файла режимом обвязки `--link-apply`: скрипт
+    сам проверяет его белым списком и правилом AllowedIPs (второй рубеж), а
+    дальше — syncconf без перезапуска или down/up. (ok, вывод): в выводе строка
+    `link: unchanged|syncconf|restarted`."""
+    try:
+        proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        return False, "отсутствует скрипт обвязки — «🔧 Восстановить»"
+    except pkg.subprocess.TimeoutExpired:
+        return False, f"скрипт обвязки не ответил за {timeout} с"
+    except (OSError, pkg.subprocess.SubprocessError) as e:
+        return False, str(e)
+    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
+    return proc.returncode == 0, out
+
+
+def link_applied_how(out: str) -> str:
+    """Что сделал --link-apply по его выводу: unchanged | syncconf | restarted | пусто."""
+    for line in reversed(out.splitlines()):
+        if line.startswith("link: "):
+            return line[6:].strip()
+    return ""

@@ -110,6 +110,7 @@ class SessionMixin:
             await self.push(full=True)
             await self.push_services()
             await self.flush_applied()
+            await self.flush_cfg_ack()
             await self._maybe_installed()
             await self.push_own()
             await self._maybe_claim()

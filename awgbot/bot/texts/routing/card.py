@@ -10,7 +10,7 @@ from awgbot.domain.services.gwchannel import drift_lines   # строки рас
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
-from .slots import _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_ref, slot_status
+from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_ref, slot_status
 
 
 # ── карточка слота ───────────────────────────────────────────────────────────
@@ -51,6 +51,55 @@ def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     return head + "\n" + note
 
 
+def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[str]]:
+    """Строки документа конфигурации у агента, который его принимает: отказ
+    шлюза (К5), доставка в пути (К6), расхождение не на связи (К9 по разделам),
+    вопросы человеку (К14), не собранный конфиг линка."""
+    from awgbot.domain import gwcfg
+    warns: list[str] = []
+    due = list(cfg.get("due") or [])
+    failed = cfg.get("failed") or {}
+    if cfg.get("link_err"):
+        warns.append(f"⚠️ Конфиг линка для шлюза не собран: {_e(cfg['link_err'])}")
+    if failed:
+        why = "; ".join(_e(v) for v in failed.values()) or "ошибка"
+        warns.append(f"⚠️ Шлюз не применил конфигурацию: {why} — вернул прежнюю")
+    elif due:
+        n = len(due)
+        n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
+        if ch.get("online"):
+            warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
+                         "изменения уходят каналом и применятся сами")
+        else:
+            items = "\n".join(f"   • {_e(gwcfg.human(s))}" for s in due)
+            warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
+                         f"{timeutil.age_ago(ch.get('age'))}):\n{items}")
+    else:
+        head += f" · 🟢 конфиг актуален{stale}"
+    wait_text = {"mail": "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик",
+                 "backup": "⏳ Фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя"}
+    warns += [wait_text[s] for s in cfg.get("wait") or [] if s in wait_text]
+    return head, warns
+
+
+def cfg_more_lines(cfg: dict) -> list[str]:
+    """«подробнее»: поколение и дата применения (К13), что оставлено своим."""
+    out = []
+    if cfg.get("gen") and cfg.get("applied_at"):
+        try:
+            out.append(f"конфигурация №{int(cfg['gen'])} применена {timeutil.fmt_dt_ui(timeutil.parse_iso(cfg['applied_at']))}")
+        except ValueError:
+            pass
+    declined = set(cfg.get("declined") or [])
+    if {"mail", "backup"} <= declined:
+        out.append("почта и фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза")
+    elif "mail" in declined:
+        out.append("почта на шлюзе своя — оставлена в чате бота шлюза")
+    elif "backup" in declined:
+        out.append("фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза")
+    return out
+
+
 def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     """Канал в карточке: (строка «🔗 Упр. канал …», предупреждения открытыми
     строками, «выход наружу» для «подробнее»). Всё, что пришло со шлюза, —
@@ -85,7 +134,11 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             warns.append(f"⚠️ Поколение AWG на шлюзе {gen}, у сервера {mine}")
         drift = ch.get("drift") or []
         stale = "" if ch.get("online") else f" (по снимку {timeutil.age_ago(ch.get('age'))})"
-        if not ch.get("has_bundle"):
+        cfg = ch.get("cfg") or {}
+        if cfg.get("cfg1"):
+            head, cfg_warns = _cfg_lines(head, cfg, ch, stale)
+            warns += cfg_warns
+        elif not ch.get("has_bundle"):
             head += " · ⚙️ конфиг: шлюз ещё не сообщал"
         elif drift:
             ack = ch.get("ack") or {}
@@ -115,6 +168,11 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             head += f" · 🟢 конфиг актуален{stale}"
         gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации",
                     "none": "⚠️ Обвязка шлюза не развёрнута — перевыпусти файл конфигурации"}
+        if cfg.get("cfg1"):
+            # обвязку освежает обновление агента, значения приезжают каналом: «новый файл» не лечит
+            gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — «🔧 Восстановить» в чате бота шлюза",
+                        "none": "⚠️ Обвязка шлюза не развёрнута — «🔧 Восстановить» в чате бота шлюза; "
+                                "не поможет — файл первого применения"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
             warns.append(gen_hint[ch["plumbing_gen"]])
         gw_ok = ch.get("egress_gw")
@@ -130,7 +188,11 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in (pn.get("missing") or [])[:8]) or "подсетей"
-        warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
+        if (ch.get("cfg") or {}).get("cfg1"):
+            warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — сервер повторит доставку; "
+                         "не поможет — «🔧 Восстановить» в чате бота шлюза")
+        else:
+            warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
         warns.append(f"⚠️ Шлюз не принял фиды локальной сети: {_e(lists.get('error') or 'ошибка')}"
@@ -194,16 +256,24 @@ def gateway_card_text(state: dict, states: list) -> str:
         route = "маршрут достаётся ему, " if first["gateway"].id != gw.id else ""
         lines.append(f"⚠️ {ov} {verb} с подсетью «{slot_ref(conflict)}»: {route}связь подсетей между "
                      "этими шлюзами не работает, пока они пересекаются")
+    ch = state.get("channel") or {}
+    cfg = ch.get("cfg") or {}
+    if ch.get("has_snap") and not cfg.get("cfg1"):
+        bot = _bot_link(state.get("agent_bot"))
+        lines.append("⚠️ Агент шлюза 3.2 получает каналом не всё — подсети других шлюзов, конфиг линка и "
+                     "аплинка едут только файлом. Обнови агента" + (f" (бот: {bot})" if bot else ""))
     agent = agent_bot_line(state)
     if agent:
         lines.append(agent)
     more = []
     if egress:
         more.append(egress)
+    more += cfg_more_lines(cfg)
     issued = state.get("issued_at") or ""
     if issued:
         try:
-            more.append(f"конфигурация выпущена {timeutil.fmt_dt_ui(timeutil.parse_iso(issued))}")
+            when = timeutil.fmt_dt_ui(timeutil.parse_iso(issued))
+            more.append(f"файл первого применения выпущен {when}" if cfg.get("cfg1") else f"конфигурация выпущена {when}")
         except ValueError:
             pass
     if nets:

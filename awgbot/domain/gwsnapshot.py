@@ -36,7 +36,10 @@ log = logging.getLogger(__name__)
 # Закрытый список полей. Тест падает на появлении нового: без сторожа в снимок
 # со временем натечёт всё, что «и так снимается».
 FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
-               "agent_version", "awg_generation", "agent_bot")
+               "agent_version", "awg_generation", "agent_bot", "cfg")
+# cfg — отпечатки разделов документа конфигурации, которые стоят на шлюзе
+# (domain/gwcfg): по ним ВПС решает, что доставить; gen — поколение последнего
+# применённого документа. Всё из локального: юнит, конфиги, БД агента.
 # Поля блока bundle — те же ключи, что везёт бандл в юнит, одной таблицей в
 # util/gwlink: разойдись списки, сверка на ВПС молча не видела бы расхождения.
 from awgbot.util import gwlink as _gwlink  # noqa: E402
@@ -75,10 +78,12 @@ def boot_id() -> str:
 
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку
+_CFG_SECTIONS = ("env", "link", "uplink", "mail", "backup", "token", "server")   # = gwcfg.SECTIONS, сверяет тест
 
 
 def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None,
-            peer_nets: tuple[bool, list[str]] | None, agent_bot: dict | None = None) -> dict:
+            peer_nets: tuple[bool, list[str]] | None, agent_bot: dict | None = None,
+            cfg: dict | None = None) -> dict:
     """Собрать снимок. Всё чтение — локальное: юнит обвязки, конфиг линка,
     install/awg.lock, константа версии. Ни одного сетевого вызова.
 
@@ -107,6 +112,10 @@ def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None
         "ts": "",
         "boot_id": boot_id(),
     }
+    # поле всегда на месте — закрытый список полей не зависит от того, что
+    # агент сумел снять; не передали — нули и пустые отпечатки
+    cfg = cfg or {}
+    snap["cfg"] = {"gen": int(cfg.get("gen") or 0), **{s: str(cfg.get(s) or "") for s in _CFG_SECTIONS}}
     # Единственный вердикт, который едет, и едет по исключению: он объясняет
     # отказ функции, включённой кнопкой на ВПС («доступ между подсетями»).
     # Пусто — функции на этом шлюзе нет, и поля в снимке просто не будет.
@@ -194,6 +203,17 @@ def sanitize(raw: dict) -> dict:
             out["rev"] = int(src["rev"])
         except (TypeError, ValueError):
             pass
+    cfg = src.get("cfg")
+    if isinstance(cfg, dict):
+        # отпечатки — только hex по 16 знаков, поколение — целое: экран и сверка
+        # не получат ничего, кроме того, что сами умеют сравнивать
+        try:
+            gen = int(cfg.get("gen") or 0)
+        except (TypeError, ValueError):
+            gen = 0
+        out["cfg"] = {"gen": gen, **{s: _gwlink.clean_hex(cfg.get(s), 16) for s in _CFG_SECTIONS}}
+    elif "cfg" in src and src["cfg"] is None:
+        out["cfg"] = None
     return out
 
 

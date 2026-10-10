@@ -121,6 +121,7 @@ from .broadcast import (
     extension_reserve, broadcast_prompt, broadcast_preview, broadcast_preview_photos,
     broadcast_too_many_photos, broadcast_too_long, broadcast_report)
 from .gateway import (
+    QUESTION_STALE, cfg_question_text, cfg_answer_text, cfg_pending_line,
     gateway_panel, gateway_health, gateway_transit_text, gateway_transit_ask_domain,
     gateway_transit_result, gateway_transit_removed_toast, gateway_claim_via_channel_text, short_name,
     smb_line, own_lists_short,
@@ -184,7 +185,7 @@ __all__ = [
     "BROADCAST_DAYS_BAD", "subscription_mark", "broadcast_days_prompt",
     "extension_header", "announcement_text", "extension_reserve", "broadcast_prompt",
     "broadcast_preview", "broadcast_preview_photos", "broadcast_too_many_photos",
-    "broadcast_too_long", "broadcast_report", "gateway_panel", "gateway_health",
+    "broadcast_too_long", "broadcast_report", "QUESTION_STALE", "cfg_question_text", "cfg_answer_text", "cfg_pending_line", "gateway_panel", "gateway_health",
     "gateway_transit_text", "gateway_transit_ask_domain", "gateway_transit_result", "gateway_transit_removed_toast", "smb_line", "own_lists_short", "GW_SSH_FILTER_ON_ALERT",
     "gateway_claim_via_channel_text",
     "short_name", "GW_BACKUP_NO_KEY",

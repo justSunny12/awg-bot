@@ -339,7 +339,8 @@ class MonitorMixin:
             guard_info=self._guard_info,
             peer_nets=None if missing is None else (not missing, missing),
             agent_bot={"username": getattr(self, "bot_username", ""),
-                       "name": getattr(self, "bot_name", "")})
+                       "name": getattr(self, "bot_name", "")},
+            cfg=self.cfg_fingerprints())
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:
         """Снимок последнего тика, если он не старше max_age; иначе None —

@@ -276,6 +276,8 @@ class GwCB(CallbackData, prefix="gw"):
       action="раздел/действие", val="ключ|значение";
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
+      cfg_ask — первый вопрос очереди («⏳ Решить»), cfg_no|cfg_ok! (val — раздел
+      mail|backup) — «Оставить своё» / «Принять с сервера AWG»;
       lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
       с листанием), lan_rm|lan_rm! (val — номер) — убрать домен с подтверждения.

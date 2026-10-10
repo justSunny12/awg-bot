@@ -64,6 +64,7 @@ class CardMixin:
             "error": (self.db.get_state(self._gwlink_key(self._GWLINK_ERROR_KEY, gw.id)) or ""
                       ).partition(" ")[2],
             "peer_nets": snap.get("peer_nets") if snap else None,
+            "cfg": self.gwcfg_card(gw, snap),
         }
 
     def _gwlink_clock_skew(self, slot_id: int) -> int | None:

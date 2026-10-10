@@ -71,6 +71,9 @@ LAN_FEED_DIR = "/var/lib/awg-gw/feed"
 
 # ── сервисы соседних сетей ─────────────────
 LAN_SERVICES_SCRIPT = "/usr/local/sbin/awg-lan-services.sh"
+SETUP_SCRIPT = "/usr/local/sbin/routing-gw-setup.sh"      # скрипт обвязки: режим --link-apply зовёт агент
+LINK_APPLY_TIMEOUT = 180                                    # с — установка конфига линка (syncconf или down/up)
+GW_ETC = "/etc/awg-gw"                                      # link.prev / link.next — точки отката документа
 PEER_SERVICES_CONF_NAME = "awg-gw-peer-services.conf"   # файл в /etc/dnsmasq.d на получателе
 PEER_SERVICES_CONF = f"{DNSMASQ_D}/{PEER_SERVICES_CONF_NAME}"
 PEER_SERVICES_NEW = "/var/lib/awg-gw/peer-services.conf.new"

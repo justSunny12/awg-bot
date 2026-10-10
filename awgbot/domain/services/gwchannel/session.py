@@ -26,6 +26,7 @@ class SessionMixin:
         now = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id),
                           f"since={now} agent={agent} proto={int(proto)} caps={caps_s}")
+        self.db.set_state(self._gwlink_key(self._GWLINK_CAPS_KEY, slot_id), caps_s)   # и после разрыва
         self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id), now)
         self.db.set_state(self._gwlink_key(self._GWLINK_ERROR_KEY, slot_id), "")
         log.info("канал линка: слот %s на связи (агент %s, proto %s)", slot_id, agent, proto)
@@ -38,6 +39,15 @@ class SessionMixin:
         self.db.set_state(self._gwlink_key(self._GWLINK_SNAP_REV_KEY, slot_id), "")
 
     _GWLINK_ERROR_KEY = "gwlink_error"
+    _GWLINK_CAPS_KEY = "gwlink_caps"
+
+    def gwlink_agent_caps(self, slot_id: int) -> list[str]:
+        """Возможности агента слота — из сессии, а без неё из последнего hello:
+        экраны и подсказки решают по ним и для шлюза не на связи."""
+        sess = self.gwlink_session(slot_id)
+        if sess:
+            return list(sess.get("caps") or [])
+        return [c for c in (self.db.get_state(self._gwlink_key(self._GWLINK_CAPS_KEY, slot_id)) or "").split(",") if c]
 
     def gwlink_sessions_reset(self) -> None:
         """Старт процесса: ни одной живой сессии быть не может — сокеты умерли

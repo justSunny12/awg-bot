@@ -77,6 +77,19 @@ class InboundMixin:
                 sess.lists_have = str(msg.get("hash") or "")[:64]
             await asyncio.to_thread(self.services.gwlink_lists_ack_in, gw.id, msg)
             return
+        if kind == "cfg_ack":
+            ack = await asyncio.to_thread(self.services.gwcfg_ack_in, gw.id, msg)
+            if ack.get("retry"):
+                # временный отказ (юнит обвязки ещё работал): тот же документ
+                # уйдёт снова по следующему расхождению снимка
+                sess.cfg_sent = ""
+            if "env" in ack.get("applied", []):
+                # режим без VPN мог включиться документом: фиды и записи соседей —
+                # заново, как после ack с LAN_MODE
+                sess.lists_sent = ""
+                await self.deliver_lists(gw.id)
+                await self.deliver_peer_services(gw.id)
+            return
         if kind == "ack":
             # отпечаток набора, на который это ответ, — свой (первый из ушедших в
             # сессии и ещё не отвеченных: агент отвечает по одному на каждый, по

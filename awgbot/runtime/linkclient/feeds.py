@@ -7,6 +7,7 @@ import contextlib
 from awgbot.domain import gwownlists, gwservices
 from awgbot.util import gwlink
 
+from awgbot.runtime import linkclient as pkg          # крючки уведомления и вопроса — на пакете
 from .common import log
 
 
@@ -130,3 +131,43 @@ class FeedsMixin:
             return
         if token:
             await self._send("claim", {"token": token}, pad=gwlink.PAD_SNAP)
+
+    # ── документ конфигурации ──
+
+    async def _apply_cfg(self, msg: dict) -> None:
+        """Документ с сервера: проверить, применить по разделам, ответить cfg_ack,
+        сказать человеку; вопросы о почте и фразе — живым меню.
+
+        Применение — в потоке (рестарт юнита и линка идут секунды). Ответ
+        сначала в очередь: транзакция могла перезапустить линк, и сессия, по
+        которой пришёл документ, умерла — тогда ответ уйдёт первым сообщением
+        новой; ушёл сейчас — очередь пуста."""
+        result = await asyncio.to_thread(self.services.apply_cfg, msg)
+        ack = result["ack"]
+        await asyncio.to_thread(self.services.cfg_ack_pending_put, ack)
+        await self.flush_cfg_ack()
+        if result.get("note") and pkg._notify is not None:
+            try:
+                await pkg._notify(result["note"])
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: уведомление о документе не ушло: %s", e)
+        for section in result.get("ask") or []:
+            if pkg._ask is not None:
+                try:
+                    await pkg._ask(section)
+                except Exception as e:                    # noqa: BLE001
+                    log.warning("канал линка: вопрос о разделе %s не показан: %s", section, e)
+
+    async def flush_cfg_ack(self) -> bool:
+        """Отправить отложенный cfg_ack; ушёл — очередь пуста."""
+        if self._writer is None:
+            return False
+        pending = await asyncio.to_thread(self.services.cfg_ack_pending_get)
+        if not pending:
+            return False
+        body = {k: v for k, v in pending.items() if k != "at"}
+        if not await self._send("cfg_ack", body, pad=gwlink.PAD_DELTA):
+            return False
+        await asyncio.to_thread(self.services.cfg_ack_pending_clear)
+        return True
+

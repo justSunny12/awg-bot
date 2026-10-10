@@ -51,6 +51,9 @@ class DispatchMixin:
         if msg.get("t") == "own_set":
             await self._apply_own(msg)
             return
+        if msg.get("t") == "cfg":
+            await self._apply_cfg(msg)
+            return
         if msg.get("t") == "applied_ack":
             await self._applied_acked(msg)
             return

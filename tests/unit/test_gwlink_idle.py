@@ -241,7 +241,8 @@ async def test_a_changed_fact_wakes_the_channel_up_exactly_once(client, agent):
     delta = msgs[1]
     assert delta["t"] == "delta" and delta["rev"] == 2 and delta["seq"] == 2
     assert delta["bundle"]["home_subnets"] == "192.168.1.0/24"
-    assert set(delta) - {"t", "seq", "ts", "rev"} == {"bundle"}, (
+    # подсети стоят и в юните (bundle), и в отпечатке раздела env (cfg): оба факта изменились
+    assert set(delta) - {"t", "seq", "ts", "rev"} == {"bundle", "cfg"}, (
         "в дельте поехало больше, чем изменилось")
     assert len(_wire(client).lines[1]) % gwlink.PAD_DELTA == 0, "дельта не добита до кратности"
 

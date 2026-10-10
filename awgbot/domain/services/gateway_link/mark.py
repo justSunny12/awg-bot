@@ -262,6 +262,12 @@ class MarkMixin:
                     # служебные (198.18/15, 192.0.2/24), а им в маршрутах не место.
                     rejected.append((tok, "нужна частная подсеть: 10.0.0.0/8, 172.16.0.0/12 или 192.168.0.0/16"))
                     continue
+                if net.prefixlen < 16:
+                    # подсеть соседа уходит в AllowedIPs конфига линка другого шлюза, а
+                    # строгое правило там не пропускает префиксы короче /16: отказ сейчас,
+                    # а не молчаливый отказ применения у соседа
+                    rejected.append((tok, "шире /16 — не пройдёт в конфиг линка соседних шлюзов, сузь подсеть"))
+                    continue
                 if net.prefixlen > 30:
                     rejected.append((tok, "это один адрес, а нужна подсеть"))
                     continue
@@ -304,12 +310,15 @@ class MarkMixin:
         except routing.RoutingError as e:
             log.warning("gateway_set_lan_subnets: маршруты не доведены: %s", e)
         # кому перевыпускать конфигурацию из-за этих подсетей (функция B)
-        others = [self._gw_display(g) for g in self.db.gateways()
-                  if g.id != gw.id and kept and kept != list(gw.lan_subnets)
-                  and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
+        affected = [g for g in self.db.gateways()
+                    if g.id != gw.id and kept and kept != list(gw.lan_subnets)
+                    and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
         return {"kept": kept, "rejected": rejected, "conflict": conflict,
                 "conflict_name": self._gw_display(conflict) if conflict is not None else "",
-                "peer_others": others}
+                "peer_others": [self._gw_display(g) for g in affected],
+                # кому подсети доедут только файлом — агенты без документа конфигурации
+                "peer_others_file": [self._gw_display(g) for g in affected
+                                     if "cfg1" not in self.gwlink_agent_caps(g.id)]}
 
     def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:
         """[(слот, интерфейс, подсети)] для ensure_policy: подсеть,

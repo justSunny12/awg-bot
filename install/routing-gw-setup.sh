@@ -922,6 +922,9 @@ detect_wan() {
 MODE="plan"; SRC_CONF=""
 case "${1:-}" in
     --apply)    MODE="apply"; SRC_CONF="${2:-}" ;;
+    # конфиг линка из упр. канала: проверка белым списком и правилом AllowedIPs
+    # (gw-wg-allow.list), затем syncconf без перезапуска или down/up — зовёт агент
+    --link-apply) MODE="link-apply"; SRC_CONF="${2:-}" ;;
     --rollback) MODE="rollback" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
@@ -982,6 +985,154 @@ say "  конфиг на хосте    : $HOST_CONF_DIR/$LINK_IF.conf"
 say "  клиенты сервера AWG: $CLIENT_SUBNET"
 say "  выход в интернет   : $WAN_IF"
 say "  локальные сети     : будут ЗАКРЫТЫ для клиентов (все приватные диапазоны)"
+
+# ── конфиг линка из упр. канала ──────────────────────────────────────────────
+# Второй рубеж после агента, из того же источника: белые списки ключей и
+# пределы правила AllowedIPs читаются из gw-wg-allow.list поставки (его же
+# читает awgbot/util/wgconf.py на ВПС и на агенте). Нет файла — отказ: закрыто
+# по умолчанию. Правило строго: записи AllowedIPs — только подсеть клиентов,
+# /30 линка (по Address конфига), подсети других шлюзов и /32 резолвера из
+# юнита; все — частные, не шире allowed_min_prefix, не больше allowed_max, без
+# пересечений с локальными подсетями и подсетями интерфейсов шлюза.
+allow_list_path() {
+    _d="$(dirname "$(readlink -f "$0")")"
+    for _p in "$_d/gw-wg-allow.list" "$_d/../install/gw-wg-allow.list" /opt/awg-bot/install/gw-wg-allow.list; do
+        [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
+    done
+    return 1
+}
+wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink; 0 — принят, 1 — отказ (причина в stderr)
+    _allow="$(allow_list_path)" || { echo "нет gw-wg-allow.list в поставке — конфиги каналом не принимаются" >&2; return 1; }
+    awk -v kind="$2" -v client="${CLIENT_SUBNET:-}" -v peers="${PEER_HOME_NETS:-}" -v resolver="${RESOLVER:-}" \
+        -v lan="${HOME_SUBNETS:-} ${IFACE_NETS:-}" '
+    function lc(s) { return tolower(s) }
+    function fail(m) { print m > "/dev/stderr"; bad = 1; exit 1 }
+    function ip2n(a,  p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+    function ntoa(n) { return int(n / 16777216) "." int(n / 65536) % 256 "." int(n / 256) % 256 "." n % 256 }
+    function base(a, n) { return int(a / (2 ^ (32 - n))) * (2 ^ (32 - n)) }
+    function net_parse(c,  q, o, i) {           # a.b.c.d/n → NET_A, NET_P; 0 — не подсеть
+        if (c !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+$/) return 0
+        split(c, q, "/"); if (q[2] + 0 > 32) return 0
+        split(q[1], o, "."); for (i = 1; i <= 4; i++) if (o[i] + 0 > 255) return 0
+        NET_A = ip2n(q[1]); NET_P = q[2] + 0; return 1
+    }
+    function net_ok(c) { if (!net_parse(c)) return 0; return base(NET_A, NET_P) == NET_A }
+    function inside(a, n, A, N) { return n >= N && base(a, N) == A }
+    function overlap(a1, n1, a2, n2,  m) { m = (n1 < n2) ? n1 : n2; return base(a1, m) == base(a2, m) }
+    FNR == NR {                                  # gw-wg-allow.list
+        sub(/#.*/, ""); if (NF == 0) next
+        if ($1 == "allowed_max") { amax = $2 + 0; next }
+        if ($1 == "allowed_min_prefix") { aminp = $2 + 0; next }
+        if ($1 == "allowed_nets") { for (i = 2; i <= NF; i++) if (net_parse($i)) { nn++; anet_a[nn] = NET_A; anet_p[nn] = NET_P }; next }
+        if (NF == 3 && $1 == kind) ok[$2 "\t" lc($3)] = $3
+        next
+    }
+    { line = $0; sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line) }
+    line == "" { next }
+    line ~ /^#/ { if (kind == "link" && line !~ /^#[ \t]*awg-bot:[ \t]*контракт линка[ \t]+[0-9]+$/) fail("в конфиге линка допустим только штамп контракта"); next }
+    line ~ /^\[.*\]$/ { sec = substr(line, 2, length(line) - 2); if (sec != "Interface" && sec != "Peer") fail("неизвестная секция " sec); cnt[sec]++; next }
+    sec == "" { fail("строка вне секции") }
+    index(line, "=") == 0 { fail("строка без «=»: " line) }
+    {
+        key = line; sub(/[ \t]*=.*$/, "", key); val = line; sub(/^[^=]*=[ \t]*/, "", val)
+        k = sec "\t" lc(key)
+        if (!(k in ok)) fail("[" sec "] " key ": ключ вне белого списка")
+        if (seen[k]++) fail("[" sec "] " key ": ключ повторяется")
+        if (sec == "Peer" && lc(key) == "allowedips") allowed = val
+        if (sec == "Interface" && lc(key) == "address") address = val
+    }
+    END {
+        if (bad) exit 1
+        if (!amax || !aminp || !nn) fail("gw-wg-allow.list: не заданы пределы правила AllowedIPs")
+        if (cnt["Interface"] != 1 || cnt["Peer"] != 1) fail("нужны ровно одна секция [Interface] и один [Peer]")
+        if (kind != "link") exit 0
+        if (!net_parse(address) || NET_P != 30) fail("Address линка — не /30")
+        link_c = ntoa(base(NET_A, 30)) "/30"
+        nw = 0; want[++nw] = client; want[++nw] = link_c
+        np = split(peers, pl, /[ ,]+/); for (i = 1; i <= np; i++) if (pl[i] != "") want[++nw] = pl[i]
+        if (resolver != "") want[++nw] = resolver "/32"
+        ne = split(allowed, el, /[ ,]+/); n = 0
+        for (i = 1; i <= ne; i++) if (el[i] != "") e[++n] = el[i]
+        if (n > amax) fail("AllowedIPs: записей " n ", предел " amax)
+        for (i = 1; i <= n; i++) {
+            if (!net_ok(e[i])) fail("AllowedIPs: " e[i] " — не подсеть")
+            ea[i] = NET_A; ep[i] = NET_P
+            if (ep[i] < aminp) fail("AllowedIPs: " e[i] " шире /" aminp)
+            inpriv = 0; for (j = 1; j <= nn; j++) if (inside(ea[i], ep[i], anet_a[j], anet_p[j])) inpriv = 1
+            if (!inpriv) fail("AllowedIPs: " e[i] " вне частных диапазонов")
+            found = 0; for (j = 1; j <= nw; j++) if (e[i] == want[j]) found = 1
+            if (!found) fail("AllowedIPs: " e[i] " — записи нет в документе")
+        }
+        for (j = 1; j <= 2; j++) { found = 0; for (i = 1; i <= n; i++) if (e[i] == want[j]) found = 1
+            if (!found) fail("AllowedIPs: нет обязательной записи " want[j]) }
+        nl = split(lan, ll, /[ ,]+/)
+        for (j = 1; j <= nl; j++) { if (ll[j] == "" || !net_parse(ll[j])) continue; la = NET_A; lp = NET_P
+            for (i = 1; i <= n; i++) if (overlap(ea[i], ep[i], la, lp)) fail("AllowedIPs: " e[i] " пересекается с подсетью шлюза " ll[j]) }
+        exit 0
+    }' "$_allow" "$1"
+}
+conf_allowed_ips() {  # записи AllowedIPs конфига — по одной на строку
+    awk -F'=' 'tolower($1) ~ /^[ \t]*allowedips[ \t]*$/ { print $2 }' "$1" 2>/dev/null | tr ', ' '\n\n' | grep . || true
+}
+conf_core() {         # конфиг без AllowedIPs, PersistentKeepalive, комментариев и пробелов — для сравнения «только лёгкие правки»
+    grep -vE '^[ \t]*(AllowedIPs|PersistentKeepalive)[ \t]*=|^[ \t]*#|^[ \t]*$' "$1" 2>/dev/null | sed 's/[ \t]*=[ \t]*/ = /; s/^[ \t]*//; s/[ \t]*$//'
+}
+if [ "$MODE" = "link-apply" ]; then
+    step "Конфиг линка из упр. канала → $HOST_CONF_DIR/$LINK_IF.conf"
+    [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || { say "ОШИБКА: нужен файл: $0 --link-apply <конфиг>"; exit 2; }
+    # подсети интерфейсов шлюза (кроме туннелей): с ними AllowedIPs пересекаться не вправе
+    IFACE_NETS="$(ip -4 route show scope link 2>/dev/null | awk -v l="$LINK_IF" '$1 ~ /\// && $3 != l && $3 !~ /^awg/ { print $1 }' | paste -sd' ' - 2>/dev/null || true)"
+    if ! wg_conf_check "$SRC_CONF" link; then
+        say "ОШИБКА: конфиг линка не прошёл проверку — не установлен"
+        exit 1
+    fi
+    _dst="$HOST_CONF_DIR/$LINK_IF.conf"
+    if [ -f "$_dst" ] && cmp -s "$SRC_CONF" "$_dst"; then
+        say "link: unchanged"
+        exit 0
+    fi
+    _light=0
+    if [ -f "$_dst" ] && ip link show "$LINK_IF" >/dev/null 2>&1 \
+        && [ "$(conf_core "$SRC_CONF")" = "$(conf_core "$_dst")" ]; then
+        _light=1                               # разница только в AllowedIPs и PersistentKeepalive
+    fi
+    _old_allowed="$(conf_allowed_ips "$_dst")"
+    _new_allowed="$(conf_allowed_ips "$SRC_CONF")"
+    mkdir -p "$HOST_CONF_DIR"
+    run "install -m 600 '$SRC_CONF' $_dst"
+    if [ "$_light" = "1" ]; then
+        # syncconf: ключи и Endpoint те же — линк не перезапускается, сессия
+        # канала переживает применение; маршруты AllowedIPs ставит/снимает сам
+        _strip="$(mktemp)"
+        if "$AWG_QUICK" strip "$LINK_IF" > "$_strip" 2>/dev/null && "$AWG_BIN" syncconf "$LINK_IF" "$_strip"; then
+            rm -f "$_strip"
+        else
+            rm -f "$_strip"
+            say "ОШИБКА: awg syncconf отказал"
+            exit 1
+        fi
+        for _n in $_new_allowed; do run "ip route replace $_n dev $LINK_IF 2>/dev/null || true"; done
+        for _n in $_old_allowed; do
+            case " $(printf '%s' "$_new_allowed" | tr '\n' ' ') " in
+                *" $_n "*) ;;
+                *) run "ip route del $_n dev $LINK_IF 2>/dev/null || true" ;;
+            esac
+        done
+        say "link: syncconf"
+    else
+        # Endpoint или обфускация: только down/up; таблица защиты — до подъёма,
+        # как при применении файла (окно между up и nft -f закрыто прежней)
+        if ip link show "$LINK_IF" >/dev/null 2>&1; then
+            run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
+        fi
+        if [ -f "$GUARD_FILE" ]; then
+            run "nft -f $GUARD_FILE || echo '  прежняя таблица защиты не загрузилась'"
+        fi
+        run "$AWG_QUICK up ${LINK_IF}"
+        say "link: restarted"
+    fi
+    exit 0
+fi
 
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then

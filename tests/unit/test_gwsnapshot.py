@@ -25,7 +25,8 @@ from awgbot.infra.db import Database
 # Имена полей — ЯВНЫМ списком, а не импортом из модуля: сторож границы обязан
 # падать от правки кода, а не переезжать вместе с ней.
 FACTS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
-         "agent_version", "awg_generation", "agent_bot")   # agent_bot — кто бот шлюза, для ссылки в его чат
+         "agent_version", "awg_generation", "agent_bot",   # agent_bot — кто бот шлюза, для ссылки в его чат
+         "cfg")                                            # cfg — отпечатки разделов документа конфигурации
 BUNDLE = ("lan_mode", "home_subnets", "resolver", "peer_home_nets", "admin_ips")
 SERVICE = ("rev", "ts", "boot_id")
 VERDICTS = ("peer_nets", "egress_ok")
@@ -349,9 +350,12 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
            "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00", "rev": "4",
            "peer_nets": {"ok": True, "missing": ["10.0.0.0/8"] * 500},
            "agent_bot": {"username": "Some_Bot", "name": "Имя " * 100, "id": 5},
+           "cfg": {"gen": "7", "env": "ZZ", "link": "a" * 100, "evil": 1},
            "temp": 51.2, "ssh": {"port": 2222}, "checks": [1, 2, 3], "exec": "rm -rf /"}
     out = gwsnapshot.sanitize(raw)
     assert set(out) == set(FACTS + VERDICTS + ("boot_id", "ts", "rev"))
+    assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "", "backup": "",
+                          "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["home_subnets"]) == 512, "длина значения не ограничена"

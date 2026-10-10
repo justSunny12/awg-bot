@@ -10,14 +10,23 @@ from awgbot.bot.callbacks import GwCB
 from .common import entry_tag, confirm
 
 
-def gateway_panel_kb(lan: bool = False) -> InlineKeyboardMarkup:
-    """Панель шлюза: [🩺 Здоровье] [🔧 Восстановить] / [🔀 VPN-транзит] (когда
-    включён) / [🔄 Обновить] [⚙️ Настройки]. Восстановление — через
-    подтверждение: обрыв РФ у всех, пусть на секунды, не от промаха пальцем."""
+def gateway_panel_kb(lan: bool = False, pending: bool = False) -> InlineKeyboardMarkup:
+    """Панель шлюза: [⏳ Решить] (ждут вопросы с сервера AWG) / [🩺 Здоровье]
+    [🔧 Восстановить] / [🔀 VPN-транзит] (когда включён) / [🔄 Обновить]
+    [⚙️ Настройки]. Восстановление — через подтверждение: обрыв РФ у всех,
+    пусть на секунды, не от промаха пальцем."""
     return ui.rows(
+        ("⏳ Решить", GwCB(action="cfg_ask")) if pending else None,
         [("🩺 Здоровье", GwCB(action="health")), ("🔧 Восстановить", GwCB(action="reassert"))],
         ("🔀 VPN-транзит", GwCB(action="lan")) if lan else None,
         [("🔄 Обновить", GwCB(action="refresh")), ("⚙️ Настройки", GwCB(action="settings"))])
+
+
+def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:
+    """Вопрос о почте или фразе с сервера AWG: безопасный выбор первым, каждая
+    кнопка своим рядом — подпись «Принять с сервера AWG» в ряду из двух не влезает."""
+    return ui.rows(("Оставить своё", GwCB(action="cfg_no", val=section)),
+                   ("Принять с сервера AWG", GwCB(action="cfg_ok!", val=section)))
 
 
 def gateway_health_kb() -> InlineKeyboardMarkup:

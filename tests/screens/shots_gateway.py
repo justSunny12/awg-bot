@@ -44,6 +44,7 @@ from awgbot.util import bundlecrypt, secrets_util
 from awgbot.bot.callbacks import CancelCB, GwCB, HideCB, PageCB, UpdateCB
 from awgbot.core import config
 from awgbot.domain.backupcrypto import BackupKeyMissing
+from awgbot.domain import gwcfg
 from awgbot.domain.gateway import GatewayServices, GwCheck, GwStatus
 from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
@@ -243,6 +244,7 @@ class _Host:
     apply_status: dict = field(default_factory=lambda: dict(_APPLY_STATUS))   # файл статуса скрипта
     bundle_mail: dict = field(default_factory=dict)        # проверка почты из файла
     mark: dict = field(default_factory=lambda: {"status": "confirmed", "claim": None})
+    cfg_ask: tuple = ()                                    # висящие вопросы документа: mail | backup, по порядку
     # резервные копии и старт процесса
     backup_key: bool = False                               # ключ шифрования копий задан
     restore_done: dict | None = None                       # маркер awg-bot restore
@@ -522,6 +524,16 @@ def _agent(**opts):
             services.mute_updates()
         if h.backup_key:
             services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_BACKUP_KEY).decode())
+        for section in h.cfg_ask:
+            # сервер прислал своё, отличное от стоящего: вопрос повис (как после документа)
+            if section == "mail":
+                value = {"login": "box@example.org", "password": "DUMMY-server", "imap_host": "imap.example.org",
+                         "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "email"}
+                server_print = gwcfg.mail_print(value)
+            else:
+                value = {"phrase": "DUMMY-server-phrase"}
+                server_print = gwcfg.backup_print(value["phrase"])
+            services.cfg_hold(section, value, server_print, 18, "9c41" * 4)
         if h.update_pending:
             services.db.set_state("update_pending", h.update_pending)
         if h.update_wait:
@@ -701,6 +713,29 @@ SHOTS = [
     _shot("gw.reassert.failed", press=[GwCB(action="reassert"), GwCB(action="reassert!")],
           op=(False, "routing-gw-setup.sh: не уложилось в 120 с"), title="отказ: хвост вывода"),
 
+    # ── документ с сервера AWG: вопросы о почте и фразе ─────────────────────
+    _shot("gw.cfg.pending", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail", "backup"),
+          passphrase=True, title="панель: «⏳ Ждут решения: почта, фраза бэкапов» и кнопка «⏳ Решить»"),
+    _shot("gw.cfg.ask.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(), mail=True,
+          cfg_ask=("mail",), title="вопрос о почте: отличается ящик"),
+    _shot("gw.cfg.ask.backup", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          passphrase=True, cfg_ask=("backup",), title="вопрос о фразе: своя фраза"),
+    _shot("gw.cfg.ask.backup.key", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          backup_key=True, cfg_ask=("backup",), title="вопрос о фразе: шлюз на случайном ключе"),
+    _shot("gw.cfg.ask.none", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          title="«⏳ Решить» без вопросов — всплывашка и панель"),
+    _shot("gw.cfg.keep.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="mail")],
+          tick=_status(), mail=True, cfg_ask=("mail",), title="«Оставить своё»: итог правкой вопроса, панель следом"),
+    _shot("gw.cfg.accept.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="mail")],
+          tick=_status(), mail=True, cfg_ask=("mail",), title="«Принять с сервера AWG»: почта проверена"),
+    _shot("gw.cfg.accept.mail.fail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="mail")],
+          tick=_status(), mail=True, mail_error="SMTP: авторизация отклонена", cfg_ask=("mail",),
+          title="«Принять с сервера AWG»: почта сохранена, проверка не прошла"),
+    _shot("gw.cfg.accept.backup", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="backup")],
+          tick=_status(), passphrase=True, cfg_ask=("backup",), title="«Принять с сервера AWG»: фраза принята"),
+    _shot("gw.cfg.queue", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="mail")],
+          tick=_status(), mail=True, passphrase=True, cfg_ask=("mail", "backup"),
+          title="очередь: после ответа о почте открывается вопрос о фразе"),
     # ── W10–W14 VPN-транзит и свои списки ───────────────────────────────────
     _shot("gw.lan.empty.shared", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
           own=_OWN_SYNCED, title="своих доменов нет, списки общие — обе подсказки первыми под «подробнее»"),

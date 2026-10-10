@@ -111,6 +111,14 @@ class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin):
 
 _client: LinkClient | None = None
 _notify = None
+_ask = None
+
+
+def set_ask(fn) -> None:
+    """Крючок вопроса человеку (async fn(section)): документ с сервера принёс
+    почту или фразу, отличные от стоящих, — показать вопрос живым меню."""
+    global _ask
+    _ask = fn
 
 
 def set_notify(fn) -> None:
@@ -261,5 +269,17 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "set_notify", "set_ask", "report_cfg_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
+
+
+async def report_cfg_answer(services, answer: dict) -> None:
+    """Человек ответил на вопрос документа: ответ серверу — сразу, если сессия
+    открыта, иначе из очереди первым сообщением новой сессии."""
+    ack = await asyncio.to_thread(services.cfg_answer_ack, answer)
+    if not ack:
+        return
+    await asyncio.to_thread(services.cfg_ack_pending_put, ack)
+    if _client is not None and _client._writer is not None:
+        await _client.flush_cfg_ack()
+

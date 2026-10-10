@@ -33,7 +33,7 @@ def _gw_role(st, chan: dict) -> str:
     return "🟢 линк поднят" if st.link_up else "🔴 линк лежит"
 
 
-def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
+def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()) -> str:
     """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк и канал, предупреждения,
     SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть.
     chan — состояние канала (linkclient.view()); None — спросить самим."""
@@ -89,6 +89,8 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
         svc = lan.get("svc") or {}
         if svc.get("active"):
             parts.append(pkg.smb_line(svc))
+    if pending:
+        parts.append(pkg.cfg_pending_line(pending))     # вопросы с сервера AWG ждут человека
     traffic = st.month_rx + st.month_tx
     health = f"🩺 Здоровье {pkg._gw_health_summary(st.checks)}"
     if traffic:

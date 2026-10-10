@@ -60,3 +60,21 @@ class AgentStub:
 
     def installed_report_done(self) -> None:
         pass
+
+    # документ конфигурации с сервера: заглушке нечего ни сообщать, ни применять
+    def cfg_ack_pending_get(self) -> dict:
+        return {}
+
+    def cfg_ack_pending_put(self, ack: dict) -> None:
+        pass
+
+    def cfg_ack_pending_clear(self) -> None:
+        pass
+
+    def cfg_fingerprints(self) -> dict:
+        return {}
+
+    def apply_cfg(self, msg: dict) -> dict:
+        return {"ack": {"gen": int(msg.get("gen") or 0), "hash": str(msg.get("hash") or ""), "applied": [],
+                        "wait": {}, "declined": {}, "failed": {}}, "note": "", "ask": []}
+
