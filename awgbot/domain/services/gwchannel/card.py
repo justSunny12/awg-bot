@@ -34,6 +34,7 @@ class CardMixin:
         return {
             "online": bool(sess) and fresh,
             "ever": bool(seen or snap),
+            "link_fresh": fresh,            # линк жив: канала нет по вине агента, а не линка
             "seen": seen,
             "age": self.gwlink_snapshot_age(gw.id),
             "agent": snap.get("agent_version", ""),

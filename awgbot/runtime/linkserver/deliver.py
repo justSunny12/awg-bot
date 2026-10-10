@@ -61,6 +61,7 @@ class DeliverMixin:
         # метка ДО отправки: такт живости и пришедший снимок иначе могли бы
         # отправить один и тот же набор дважды — между проверкой и меткой await
         sess.sent_hash = digest
+        sess.sent_queue.append(digest)
         log.info("канал линка: слоту %s уходят настройки", slot_id)
         return await self.send(slot_id, "settings", {"values": want}, pad=gwlink.PAD_SNAP)
 

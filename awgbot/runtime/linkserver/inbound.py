@@ -78,10 +78,15 @@ class InboundMixin:
             await asyncio.to_thread(self.services.gwlink_lists_ack_in, gw.id, msg)
             return
         if kind == "ack":
-            # отпечаток набора, на который это ответ, — свой (что ушло в сессии), не
-            # из сообщения: по нему отказ на текущее отличается от отказа на прежнее
-            await asyncio.to_thread(self.services.gwlink_ack_in, gw.id, {**msg, "hash": sess.sent_hash})
-            if not msg.get("ok") and msg.get("retry"):
+            # отпечаток набора, на который это ответ, — свой (первый из ушедших в
+            # сессии и ещё не отвеченных: агент отвечает по одному на каждый, по
+            # порядку), не из сообщения: по нему отказ на текущее отличается от
+            # отказа на прежнее. Временный отказ (retry) — не отказ: без отпечатка
+            answered = sess.sent_queue.pop(0) if sess.sent_queue else sess.sent_hash
+            retry = bool(not msg.get("ok") and msg.get("retry"))
+            await asyncio.to_thread(self.services.gwlink_ack_in, gw.id,
+                                    {**msg, "hash": "" if retry else answered})
+            if retry and answered == sess.sent_hash:
                 # временный отказ агента (юнит обвязки ещё работал): тот же
                 # набор можно слать снова — по расхождению снимка, как обычно
                 sess.sent_hash = ""

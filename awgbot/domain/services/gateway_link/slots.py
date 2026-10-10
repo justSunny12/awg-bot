@@ -331,6 +331,7 @@ class SlotsMixin:
 
     # ── расхождение конфигурации по снимку канала ────────────────────────────
     _GW_DRIFT_NOTIFIED_KEY = "gw_drift_notified"
+    _GW_DRIFT_MAX_LINES = 20                  # строк на группу устройств в уведомлении; дальше «…и ещё N»
 
     def _gw_drift_pending(self, g, items: list) -> list:
         """Что из расхождения по снимку канал сам не закроет.
@@ -355,7 +356,6 @@ class SlotsMixin:
         """Одно уведомление на набор расхождений, которые канал сам не закроет;
         сошлось после уведомления — один тихий отбой. Снимка нет — молчим:
         судить не по чему."""
-        from awgbot.domain.services.gwchannel import drift_lines
         snap = self.gwlink_snapshot(g.id)
         if not isinstance(snap.get("bundle"), dict):
             return None
@@ -370,10 +370,15 @@ class SlotsMixin:
         pending = self._gw_drift_pending(g, items)
         if not pending:
             return None
-        # подпись — по самим строкам: settings_hash знает только ключи канала, и
-        # смена подсетей соседей (едут файлом) не давала бы нового уведомления
+        # подпись — по полным значениям обеих сторон и итогу отказа: settings_hash
+        # знает только ключи канала (смена подсетей соседей не дала бы нового
+        # уведомления), а строки расхождения обрезаны и слились бы у длинных списков
         import hashlib
-        sig = hashlib.sha256("\n".join(drift_lines(pending, html=False)).encode()).hexdigest()
+        from awgbot.util import gwlink
+        env, got = self.gwlink_issued_env(g), snap["bundle"]
+        src = [f"{k}={env.get(k, '')}|{' '.join(str(got.get(gwlink.snap_field(k), '')).split())}"
+               for k, _h, _m, _t in pending] + [str(self.gwlink_ack(g.id).get("hash") or "")]
+        sig = hashlib.sha256("\n".join(src).encode()).hexdigest()
         if told == sig:
             return None
         self.db.set_state(key, sig)
@@ -401,9 +406,10 @@ class SlotsMixin:
 
     def _gw_admin_drift_lines(self, g) -> list[str]:
         """Разница по устройствам админа — строка на устройство: «у сервера, нет на
-        шлюзе» — имена из devices по адресу; «на шлюзе, нет у сервера» — имя
-        удалённого устройства из истории, нет имени — только адрес. Адреса — из
-        самого снимка, не из обрезанной строки расхождения."""
+        шлюзе» — имена из devices по адресу; «на шлюзе, нет у сервера» — либо
+        живое устройство другого профиля (адрес передан), либо удалённое — имя из
+        истории, нет имени — только адрес. Адреса — из самого снимка, не из
+        обрезанной строки расхождения; группа длиннее предела — «…и ещё N»."""
         import html
         from awgbot.util import gwlink
         snap = self.gwlink_snapshot(g.id)
@@ -422,19 +428,27 @@ class SlotsMixin:
             code = f"<code>{html.escape(addr, quote=False)}</code>"
             return f" · {html.escape(name, quote=False)} ({code})" if name else f" · {code}"
 
-        out: list[str] = []
+        def group(addrs: list[str], names: dict, one: str, many: str) -> list[str]:
+            if not addrs:
+                return []
+            rows = [one if len(addrs) == 1 else many]
+            rows += [line(a, names.get(a, "")) for a in addrs[:self._GW_DRIFT_MAX_LINES]]
+            if len(addrs) > self._GW_DRIFT_MAX_LINES:
+                rows.append(f" · …и ещё {len(addrs) - self._GW_DRIFT_MAX_LINES}")
+            return rows
+
         missing = sorted(want - have, key=ip_key)
-        if missing:
-            names = self.db.device_names_by_address(missing)
-            out.append("На шлюзе не помечено админским устройство:" if len(missing) == 1
-                       else "На шлюзе не помечены админскими устройства:")
-            out += [line(a, names.get(a, "")) for a in missing]
+        out = group(missing, self.db.device_names_by_address(missing),
+                    "На шлюзе не помечено админским устройство:", "На шлюзе не помечены админскими устройства:")
         extra = sorted(have - want, key=ip_key)
-        if extra:
-            names = self.db.archived_device_names_by_address(extra)
-            out.append("На шлюзе помечено админским удалённое устройство:" if len(extra) == 1
-                       else "На шлюзе помечены админскими удалённые устройства:")
-            out += [line(a, names.get(a, "")) for a in extra]
+        alive = self.db.device_names_by_address(extra)      # адрес живёт у устройства другого профиля
+        out += group([a for a in extra if a in alive], alive,
+                     "На шлюзе помечено админским устройство другого профиля:",
+                     "На шлюзе помечены админскими устройства других профилей:")
+        gone = [a for a in extra if a not in alive]
+        out += group(gone, self.db.archived_device_names_by_address(gone),
+                     "На шлюзе помечено админским удалённое устройство:",
+                     "На шлюзе помечены админскими удалённые устройства:")
         return out
 
     def gw_bundle_drift_notes(self) -> list[Notification]:

@@ -462,3 +462,40 @@ async def test_a_refusal_is_tied_to_the_set_the_server_sent_not_to_what_the_agen
     assert len(notes) == 1 and "Шлюз не применил: exit 1" in notes[0].text, [n.text for n in notes]
     assert services.gw_bundle_drift_notes() == [], "отказ на тот же набор — второе уведомление"
     await gw.close()
+
+
+async def test_a_temporary_refusal_carries_no_fingerprint_and_the_set_is_sent_again(services, link):
+    """Агент ответил «повтори»: юнит обвязки ещё стартует. Это не отказ —
+    слушатель пишет ответ без отпечатка (уведомления нет, карточка не говорит
+    «вернул прежние»), а набор уходит снова на следующей сверке."""
+    gw = await _connect(link, _drifted(services))
+    assert await _settings(gw) is not None
+    await gw.send("ack", {"ok": False, "retry": True, "changed": [], "error": "юнит обвязки ещё стартует"})
+    await _until(lambda: services.gwlink_ack(1))
+    assert services.gwlink_ack(1)["hash"] == "", "временный отказ записан с отпечатком набора"
+    assert services.gw_bundle_drift_notes() == [], "временный отказ принят за настоящий"
+    await link.deliver_all()
+    assert await _settings(gw) is not None, "после «повтори» набор не ушёл снова"
+    await gw.close()
+
+
+async def test_an_answer_is_matched_to_the_set_it_answers_not_to_the_last_one_sent(services, link):
+    """Два набора в пути: человек поправил подсети, пока шлюз ещё применял
+    прежний набор. Отказ на первый обязан лечь с отпечатком первого — иначе
+    карточка и уведомление приписали бы причину старого отказа новому
+    набору, а настоящий ответ на него ещё впереди."""
+    gw = await _connect(link, _drifted(services))
+    assert await _settings(gw) is not None
+    first = gwlink.settings_hash(services.gwlink_settings_want(services.db.gateway(1)))
+    services.gateway_set_lan_subnets(1, "192.168.71.0/24")
+    await link.deliver_all()
+    assert await _settings(gw) is not None, "второй набор не ушёл"
+    await gw.send("ack", {"ok": False, "changed": [], "error": "exit 1"})
+    await _until(lambda: services.gwlink_ack(1))
+    assert services.gwlink_ack(1)["hash"] == first, "ответ на первый набор записан с отпечатком второго"
+    assert services.gw_bundle_drift_notes() == [], "отказ на прежний набор выдан за отказ на текущий"
+    await gw.send("ack", {"ok": False, "changed": [], "error": "exit 2"})
+    await _until(lambda: services.gwlink_ack(1).get("error") == "exit 2")
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1 and "Шлюз не применил: exit 2" in notes[0].text, [n.text for n in notes]
+    await gw.close()

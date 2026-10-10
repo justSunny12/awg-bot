@@ -381,15 +381,16 @@ async def test_hello_names_the_agents_capabilities_as_a_list(vps):
 
 async def test_the_servers_capabilities_from_its_role_reach_the_agent(vps):
     """Первое слово сервера — роль — несёт его возможности: по ним подсказки
-    агента говорят, что сервер пришлёт сам. Прежний сервер поля не шлёт —
-    до агента доходит None, и сказанное раньше не стирается."""
+    агента говорят, что сервер пришлёт сам. Прежний сервер поля не шлёт — до
+    агента доходит пустой список: возможностей у такого сервера нет (откат или
+    копия), и сказанное прежним сервером 3.3.0 стирается."""
     vps.answers(caps=["cfg1"])
     vps.answers()
     agent = _Agent()
     client = linkclient.LinkClient(agent)
     await client._connect_once()
     await client._connect_once()
-    assert agent.caps == [["cfg1"], None], f"возможности сервера не переданы агенту: {agent.caps}"
+    assert agent.caps == [["cfg1"], []], f"возможности сервера не переданы агенту: {agent.caps}"
 
 
 def test_the_agent_keeps_the_servers_capabilities_and_drops_junk(tmp_path):

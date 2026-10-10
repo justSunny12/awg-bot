@@ -389,3 +389,60 @@ def test_lan_subnets_take_only_the_three_private_ranges(services, fake_awg, fake
     monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: None)
     services.gateway_set_lan_subnets(1, "172.16.5.0/24")
     assert dropped == [("192.168.1.0/24", "awglink")], dropped
+
+
+# ── временный отказ, устройства других профилей, предел строк ────────────────
+
+def test_a_temporary_refusal_is_not_a_refusal(services, slot):
+    """Юнит обвязки ещё стартовал — агент ответил «повтори через минуту».
+    Слушатель такой ответ записывает без отпечатка набора: сервер повторит
+    набор сам, а уведомление и строка «не применил» в карточке были бы ложью
+    про откат, которого не было."""
+    services.add_device(_admin(services).id, "Ноутбук")
+    _snap(services, _installed(services, admin_ips="10.8.1.250"))
+    _online(services)
+    services.gwlink_ack_in(1, {"ok": False, "error": "юнит обвязки ещё стартует", "hash": ""})
+    assert services.gw_bundle_drift_notes() == [], "временный отказ принят за настоящий"
+    assert services.gwlink_card(slot, 10)["ack_current"] is False, "карточка покажет «не применил» на retry"
+
+
+def test_an_address_handed_to_another_profile_is_named_as_such_not_as_removed(services, slot, make_active_client):
+    """Адрес устройства админа передан другому профилю, а шлюз всё ещё пускает
+    его как админский. Это не «удалённое устройство» — оно живо и чужое,
+    и подпись обязана сказать именно это."""
+    other = make_active_client(name="Гость", tg_id=ADMIN + 1, device_limit=0)
+    dev = services.add_device(other.id, "Чужой ноутбук")
+    _snap(services, _installed(services, admin_ips=services.gwlink_issued_env(slot)["ADMIN_IPS"] + f" {dev.address}"))
+    lines = _admin_note(services).splitlines()
+    i = lines.index("На шлюзе помечено админским устройство другого профиля:")
+    assert lines[i + 1] == f" · Чужой ноутбук (<code>{dev.address}</code>)", lines
+    assert not any("удалённ" in x for x in lines), "живое устройство подписано как удалённое"
+
+
+def test_a_long_group_is_cut_with_a_tail_count(services, slot):
+    """Сорок устройств в группе — сорок строк уведомления, и у больших парков
+    текст перерос бы предел сообщения, а подпись набора уже записана: второго
+    шанса не было бы. Группа режется, хвост называет остаток."""
+    mine = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    extra = [f"10.8.1.{n}" for n in range(100, 125)]
+    _snap(services, _installed(services, admin_ips=" ".join([mine, *extra])))
+    lines = _admin_note(services).splitlines()
+    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra[:20]] + [" · …и ещё 5"], lines[i:]
+
+
+def test_the_notification_signature_sees_the_whole_list_not_its_first_160_characters(services, slot):
+    """Двадцать устройств: строка расхождения обрезана, и два разных списка
+    совпадали бы в первых 160 знаках. Подпись набора считается по полным
+    значениям — новое устройство после отказа даёт новое уведомление."""
+    admin = _admin(services)
+    for n in range(19):
+        services.add_device(admin.id, f"Устройство {n}")
+    _snap(services, _installed(services, admin_ips="10.8.1.250"))
+    _online(services)
+    _refuse(services)
+    assert len(services.gw_bundle_drift_notes()) == 1
+    services.add_device(admin.id, "Ещё одно")
+    _refuse(services)                                    # отказ и на новый набор
+    assert services.gwlink_config_drift_items(slot)[0][2].endswith("…"), "строка не обрезана — сценарий не тот"
+    assert len(services.gw_bundle_drift_notes()) == 1, "новый список устройств сошёл за прежний"

@@ -33,7 +33,10 @@ class DispatchMixin:
             return
         if msg.get("t") == "role":
             await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")),
-                                    msg.get("standby"), msg.get("name"), msg.get("caps"))
+                                    msg.get("standby"), msg.get("name"),
+                                    # сервер 3.3.0 шлёт caps в каждом role; нет поля — сервер прежний,
+                                    # возможностей нет (откат или копия): сохранённое стирается
+                                    msg.get("caps") if isinstance(msg.get("caps"), list) else [])
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него
