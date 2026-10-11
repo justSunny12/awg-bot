@@ -87,7 +87,6 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
                          (f"{_tick(peer_nets_on)} Связь подсетей", GwSlotCB(action="peer_ask"))
                          if peer_nets_on is not None else None])
     if smb_on is not None:
-        # и без слотов, пока включён: снятый последний шлюз не должен запирать тумблер
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
     return ui.rows(
         *body,

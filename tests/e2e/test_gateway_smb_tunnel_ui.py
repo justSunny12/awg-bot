@@ -88,14 +88,14 @@ async def test_the_toggle_sits_below_failover_and_peer_nets_with_two_slots(servi
     assert rows[i_pair + 1] == ["✅ SMB в туннеле"], rows
 
 
-async def test_without_slots_there_is_no_toggle_unless_it_is_on(services, slots, smb):
-    """Слотов нет — включать незачем; но включённый тумблер обязан остаться
-    видимым: иначе его не выключить."""
+async def test_without_slots_there_is_no_toggle_at_all(services, slots, smb):
+    """Слотов нет — тумблера нет, даже если настройка включена: снятие
+    последнего шлюза выключает «SMB в туннеле» само (gateway_remove)."""
     _, markup = await gateways_screen(services)
     assert _smb_row(markup) == []
     smb["store"]["app.routing.smb_tunnel"] = True
     _, markup = await gateways_screen(services)
-    assert _smb_row(markup) == [["✅ SMB в туннеле"]], _rows(markup)
+    assert _smb_row(markup) == [], _rows(markup)
 
 
 async def test_in_docker_there_is_no_toggle_at_all(services, slots, smb, monkeypatch):

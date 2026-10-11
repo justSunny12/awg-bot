@@ -177,6 +177,21 @@ class MarkMixin:
         # бы его в файл первого применения — два агента на одном токене
         self.forget_gw_bot_token(sid)
 
+    def _smb_tunnel_after_remove(self, last: bool) -> None:
+        """Снятый шлюз уносит свои SMB из резолвера админа сразу; снят
+        последний — «SMB в туннеле» выключается молча: показывать нечего, и
+        включённый тумблер без шлюзов только путал бы."""
+        sync = getattr(self, "smb_tunnel_sync", None)
+        if sync is None:
+            return
+        try:
+            if last and settings.get_bool("app.routing.smb_tunnel", False):
+                settings.set_value("app.routing.smb_tunnel", False)
+                log.info("gateway_remove: снят последний шлюз — «SMB в туннеле» выключен")
+            sync(force=True)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_remove: записи резолвера админа не подтянуты: %s", e)
+
     def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
         """Убрать слот: активный при живом другом слоте — трафик на него;
         последний — условную маршрутизацию выключить. Линк слота: первый —
@@ -202,6 +217,7 @@ class MarkMixin:
                 settings.set_value("app.routing.enabled", False)
             except Exception as e:                            # noqa: BLE001
                 log.warning("gateway_remove: маршрутизация не выключена: %s", e)
+        self._smb_tunnel_after_remove(last=not others)
         try:
             if gw.id == 1:
                 self._run_link_script("--rekey", self._slot_env(gw))

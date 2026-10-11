@@ -474,3 +474,63 @@ async def test_a_changed_svc_from_a_gateway_reaches_the_admin_resolver_once(pair
     assert await _until(lambda: adm.records and "media.awg.internal" in adm.records)
     assert len(adm.calls) == n + 1, f"тот же список дёрнул скрипт: {adm.calls[n:]}"
     await x.close()
+
+
+# ── снятие шлюза ─────────────────────────────────────────────────────────────
+
+@pytest.fixture()
+def removal(services, two_slots, adm, monkeypatch):
+    """Снятие слота без хоста: скрипт линка — пустышка; все записи настроек —
+    в словарь (снятие последнего выключает маршрутизацию, в conf писать нельзя)."""
+    store = {"app.routing.smb_tunnel": True}
+    real_get, real_bool = settings.get, settings.get_bool
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store[k] if k in store else real_get(k, d))
+    monkeypatch.setattr(settings, "get_bool",
+                        lambda k, d=False: bool(store[k]) if k in store else real_bool(k, d))
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
+    monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: None)
+    services.gwlink_services_in(1, [NAS]); _seen(services, 1, 1)
+    services.gwlink_services_in(2, [NAS2]); _seen(services, 2, 1)
+    services.smb_tunnel_sync()
+    assert "naspi5" in adm.records and "backup" in adm.records, "сцена собрана не так"
+    return store
+
+
+def test_removing_one_of_two_slots_takes_its_smb_out_at_once(services, removal, adm):
+    """Снятый шлюз уносит свои имена сразу, а не через сутки молчания: Finder
+    иначе вёл бы на машину, до которой маршрута больше нет. Тумблер остаётся —
+    второй шлюз на месте."""
+    n = len(adm.calls)
+    services.gateway_remove(2)
+    assert removal["app.routing.smb_tunnel"] is True, "снятие одного из двух выключило SMB в туннеле"
+    assert len(adm.calls) > n and adm.calls[-1][0] == "records"
+    assert adm.records and "naspi5.awg.internal" in adm.records and "backup" not in adm.records, adm.records
+
+
+def test_removing_the_last_slot_switches_the_toggle_off_silently(services, removal, adm):
+    """Шлюзов нет — показывать нечего: тумблер выключается молча, записи
+    снимаются, уведомлений нет (монитор после этого тоже молчит о записях)."""
+    services.gateway_remove(2)
+    out = services.gateway_remove(1)
+    assert out is not None
+    assert removal["app.routing.smb_tunnel"] is False, "без шлюзов «SMB в туннеле» остался включённым"
+    assert adm.calls[-1] == ("records", "-") and adm.records is None
+    assert services.admin_dns_health_tick() == [], "снятие шлюза породило уведомление"
+
+
+def test_a_failing_records_script_does_not_break_the_removal(services, removal, adm):
+    """Скрипт резолвера админа отказал — шлюз всё равно снят (иначе слот не
+    убрать вовсе из-за побочной функции)."""
+    adm.fail = "records"
+    services.gateway_remove(2)
+    assert services.db.gateway(2) is None
+    assert [g.id for g in services.db.gateways()] == [1]
+
+
+def test_an_exception_in_sync_does_not_break_the_removal(services, removal, monkeypatch):
+    def boom(force=False):
+        raise RuntimeError("подставной сбой")
+    monkeypatch.setattr(services, "smb_tunnel_sync", boom)
+    services.gateway_remove(1)
+    assert services.db.gateway(1) is None
