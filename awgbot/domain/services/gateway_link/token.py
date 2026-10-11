@@ -1,4 +1,4 @@
-"""token.py — аварийная смена токена бота шлюза на ВПС: кому можно, проверка «тот же бот», запись; на шлюз токен уезжает разделом token документа."""
+"""token.py — аварийная смена токена бота шлюза на ВПС: кому можно, проверка «бот не сервера и не другого шлюза», запись; на шлюз токен уезжает разделом token документа."""
 from __future__ import annotations
 
 from awgbot.domain.services.types import ServiceError
@@ -9,8 +9,9 @@ class TokenMixin:
     Старый токен к этому моменту мёртв, бот шлюза из Telegram пропал и сам
     ничего принять не может, поэтому смена живёт на сервере («⚙️ Настройки →
     🔧 Сервис → 🤖 Токен бота»), а на шлюз токен везёт управляющий
-    канал (возможность агента token1). Только токен ТОГО ЖЕ бота: другой бот
-    увёл бы чат админа со шлюзом к чужому."""
+    канал (возможность агента token1). Токен может быть и другого бота (тот же
+    утёк целиком, завели нового) — вся прежняя настройка шлюза остаётся; нельзя
+    только бот сервера AWG и бот, уже занятый другим шлюзом."""
 
     _TOKEN_PUSH_KEY = "gw_token_push"     # отпечаток токена, введённого кнопкой: только такой едет шлюзу
 
@@ -33,25 +34,31 @@ class TokenMixin:
         return [(gw.id, self._gw_display(gw)) for gw in self.db.gateways()
                 if gw.device_id and "token1" in self.gwlink_agent_caps(gw.id)]
 
-    def gateway_token_bot_hint(self, slot_id: int) -> dict:
-        """Что известно о прежнем боте слота: {"id": id из прежнего токена или
-        "", "username": из getMe или снимка канала}. По ним проверяется, что
-        новый токен — того же бота."""
-        old = self.gw_bot_token(slot_id)
-        me = self.gw_bot_identity(slot_id)
-        return {"id": old.split(":", 1)[0] if old else "", "username": str(me.get("username") or "")}
-
-    def gateway_token_check(self, slot_id: int, token: str, bot_id: int, username: str) -> None:
-        """Новый токен (getMe уже ответил: bot_id, username) — того же бота,
-        что был у слота. Нет — ServiceError с причиной словами."""
-        hint = self.gateway_token_bot_hint(slot_id)
-        if str(token).split(":", 1)[0] != str(bot_id):
+    def gateway_token_check(self, slot_id: int, token: str, bot_id: int, username: str) -> dict:
+        """Новый токен (getMe уже ответил — токен живой: bot_id, username)
+        годится этому слоту: бот не сервера AWG и не занят другим шлюзом (два
+        агента на одном боте перехватывали бы апдейты друг у друга). Бот может
+        быть и новым — тогда шлюз продолжит со всей прежней настройкой под
+        другим ботом. Нет — ServiceError с причиной словами. Возвращает
+        {"new_bot": бот сменился, "username"}."""
+        bot = str(bot_id)
+        if str(token).split(":", 1)[0] != bot:
             raise ServiceError("Telegram назвал другого бота, чем в токене")
-        if hint["id"]:
-            if hint["id"] != str(bot_id):
-                raise ServiceError("это токен другого бота — нужен токен того же бота шлюза")
-            return
-        if not hint["username"]:
-            raise ServiceError("не знаю, какой бот у этого шлюза: он ещё ни разу не был на связи")
-        if hint["username"].lower() != str(username or "").lower():
-            raise ServiceError(f"это токен другого бота — у шлюза @{hint['username']}")
+        from awgbot.core import config
+        if config.BOT_TOKEN and config.BOT_TOKEN.split(":", 1)[0] == bot:
+            raise ServiceError("это токен бота сервера AWG — шлюзу нужен свой бот")
+        name = str(username or "").lower()
+        for gw in self.db.gateways():
+            if gw.id == int(slot_id):
+                continue
+            other_token = self.gw_bot_token(gw.id)
+            other_name = str(self.gw_bot_identity(gw.id).get("username") or "").lower()
+            if (other_token and other_token.split(":", 1)[0] == bot) or (name and other_name == name):
+                raise ServiceError(f"этот бот уже у шлюза {self._gw_display(gw)} — нужен свой бот для каждого шлюза")
+        old = self.gw_bot_token(slot_id)
+        old_name = str(self.gw_bot_identity(slot_id).get("username") or "").lower()
+        if old:
+            new_bot = old.split(":", 1)[0] != bot
+        else:
+            new_bot = bool(old_name) and old_name != name
+        return {"new_bot": new_bot, "username": str(username or "")}

@@ -2,13 +2,14 @@
 меняют: «⚙️ Настройки → 🔧 Сервис → 🤖 Токен бота» (кнопка — только при
 агенте с token1; один шлюз — сразу приглашение, несколько — выбор, ни
 одного — всплывашка) → ввод токена (сообщение с токеном удаляется, getMe
-новым токеном, проверка «тот же бот», запись в env ВПС) → «🔧 Сервис» с итогом
-первой строкой и документ с разделом token в канал при живой сессии; отказ —
+новым токеном, бот не сервера и не другого шлюза, запись в env ВПС) →
+«🔧 Сервис» с итогом первой строкой (новый бот — и строкой про «Старт») и документ с разделом token в канал при живой сессии; отказ —
 переспрос, ввод не сброшен; «✖️ Отмена» — обратно в «🔧 Сервис».
 
 Цена ошибки: токен в чате после ввода — секрет у всех, кто видит переписку;
-токен другого бота, записанный в env, уводит чат админа со шлюзом к чужому
-боту; ошибка ввода, сбросившая состояние, — следующий токен человек шлёт
+бот сервера или бот другого шлюза, записанный в env, — два процесса на
+одном боте перехватывают апдейты друг у друга; новый бот без напоминания
+про «Старт» — бот шлюза не может написать человеку первым; ошибка ввода, сбросившая состояние, — следующий токен человек шлёт
 в никуда (он уйдёт обычным сообщением в чат); документ, не ушедший при
 живой сессии, — шлюз ждёт такта сверки, пока бот шлюза мёртв. Сами экраны —
 в эталоне tests/screens/admin.txt (adm.set.svc.token*, adm.gtk.*).
@@ -27,6 +28,7 @@ import pytest
 from awgbot.bot.callbacks import CancelCB, SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.handlers.reply_commands import on_cancel_inline
+from awgbot.bot import texts
 from awgbot.bot.texts import GATEWAY_TOKEN_QUEUED, GATEWAY_TOKEN_SENT
 from awgbot.core import config
 from awgbot.domain import gwcfg
@@ -44,7 +46,9 @@ listener = _rekey.listener
 
 OLD = "123456789:AA-dummy-token-for-tests"
 NEW = "123456789:AA-new-dummy-token-tests"
-OTHER = "987654321:BB-other-bot-token-dummy"
+OTHER = "987654321:BB-other-bot-token-dummy"         # новый бот (прежнего удалили)
+SERVER = "111111111:AA-server-dummy-token"          # бот сервера AWG
+TAKEN = "222222222:BB-taken-bot-token-dummy"         # бот второго шлюза
 DEAD = "123456789:AA-dead-dummy-token-tests"
 TOKEN1 = ("cfg1", "confirm1", "token1")
 
@@ -55,7 +59,8 @@ class _Telegram:
 
     def __init__(self):
         self.bots = {OLD: (123456789, "naspi_gw_bot"), NEW: (123456789, "naspi_gw_bot"),
-                     OTHER: (987654321, "other_gw_bot")}
+                     OTHER: (987654321, "other_gw_bot"), SERVER: (111111111, "awg_srv_bot"),
+                     TAKEN: (222222222, "pi2_gw_bot")}
         self.calls: list[str] = []
         self.during = None          # корутина, которая выполняется, пока Telegram «думает»
         self.fail: BaseException | None = None   # чем getMe упадёт вместо ответа
@@ -92,6 +97,7 @@ def tg(monkeypatch):
 
 @pytest.fixture()
 def env(services, slots, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BOT_TOKEN", SERVER)
     """env ВПС — настоящий файл: токены слотов читает и пишет боевой код
     (подмены фикстуры слотов сняты)."""
     path = tmp_path / "env"
@@ -193,6 +199,7 @@ async def test_pick_with_one_agent_opens_the_prompt_at_once(services, slots, env
     _, nav = await _gtk(fake_bot, services, state, "pick")
     text, markup = _edits(nav)[-1]
     assert "Новый токен бота NASPi" in text and "сразу удалю" in text, text
+    assert "не бота сервера и не бота другого шлюза" in text, text
     assert _rows(markup) == [["✖️ Отмена"]], _rows(markup)
     assert markup.inline_keyboard[0][0].callback_data == CancelCB(kind="set_svc", ref=0).pack()
     assert await state.get_state() == "GatewayBotToken:value"
@@ -281,17 +288,19 @@ async def test_offline_gateway_gets_the_queued_note(services, slots, env, tg, fa
 
 
 @pytest.mark.parametrize("token, why", [
-    (OTHER, "это токен другого бота"),
+    (SERVER, "это токен бота сервера AWG — шлюзу нужен свой бот"),
+    (TAKEN, "этот бот уже у шлюза Pi2 — нужен свой бот для каждого шлюза"),
     (DEAD, "Telegram не принял этот токен"),
     ("привет", "не похоже на токен бота"),
 ])
 async def test_a_wrong_token_is_asked_again_and_the_input_stays(services, slots, env, tg, fake_bot, token, why):
-    """Другой бот, отозванный токен, не токен вовсе — сообщение всё равно
-    удалено, env не тронут, переспрос с причиной, ввод открыт: следующий
-    токен человек шлёт в тот же диалог."""
-    _, pi, _ = slots
-    _slot1(services, pi)
+    """Бот сервера, бот другого шлюза, отозванный токен, не токен вовсе —
+    сообщение всё равно удалено, env не тронут, переспрос с причиной, ввод
+    открыт: следующий токен человек шлёт в тот же диалог."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
     _caps(services)
+    services.set_gw_bot_token(TAKEN, 2)
     before = env.read_text(encoding="utf-8")
     state = await _asked(fake_bot, services)
     msg = await _send(fake_bot, services, state, token)
@@ -299,22 +308,58 @@ async def test_a_wrong_token_is_asked_again_and_the_input_stays(services, slots,
     assert env.read_text(encoding="utf-8") == before, "env тронут отвергнутым токеном"
     answers = [t for k, t, _ in msg.sent if k == "answer"]
     assert len(answers) == 1 and answers[0].startswith("⚠️ Токен не принят:") and why in answers[0], answers
+    assert answers[0].endswith("Пришли другой токен или нажми «✖️ Отмена»"), answers[0]
     assert await state.get_state() == "GatewayBotToken:value", "ошибка сбросила ввод"
     msg = await _send(fake_bot, services, state, NEW)
     assert f"GW_BOT_TOKEN={NEW}" in env.read_text(encoding="utf-8"), "после переспроса верный токен не принят"
 
 
+async def test_a_new_bot_is_taken_and_the_result_asks_to_press_start(services, slots, env, tg, fake_bot):
+    """Токен нового бота (прежнего удалили вовсе) — принят: в env ВПС он,
+    итог второй строкой просит открыть @нового бота и нажать «Старт» — без
+    этого бот шлюза не сможет написать человеку первым."""
+    _, pi, _ = slots
+    _slot1(services, pi)
+    _caps(services)
+    services.gwlink_session_closed(1)
+    state = await _asked(fake_bot, services)
+    msg = await _send(fake_bot, services, state, OTHER)
+    assert f"GW_BOT_TOKEN={OTHER}" in env.read_text(encoding="utf-8")
+    text = [t for k, t, _ in msg.sent if k == "answer"][-1]
+    head = text.split("\n\n", 1)[0].splitlines()
+    assert head == [GATEWAY_TOKEN_QUEUED, texts.gateway_token_new_bot("other_gw_bot")], head
+    assert "@other_gw_bot" in head[1] and "«Старт»" in head[1], head[1]
+
+
+async def test_the_same_bot_has_no_start_line(services, slots, env, tg, fake_bot):
+    """Тот же бот — итог одной строкой: «Старт» у него уже нажат."""
+    _, pi, _ = slots
+    _slot1(services, pi)
+    _caps(services)
+    state = await _asked(fake_bot, services)
+    msg = await _send(fake_bot, services, state, NEW)
+    text = [t for k, t, _ in msg.sent if k == "answer"][-1]
+    assert "«Старт»" not in text and text.split("\n\n", 1)[0] == GATEWAY_TOKEN_QUEUED, text.splitlines()[:2]
+
+
+def test_the_new_bot_line_without_a_name():
+    """Telegram не дал username — «нового бота», а не «@» в пустоту."""
+    assert texts.gateway_token_new_bot("").startswith("Бот шлюза теперь нового бота:")
+    assert texts.gateway_token_new_bot("a<b").startswith("Бот шлюза теперь @a&lt;b:")
+
+
 async def test_without_the_old_token_the_snapshot_name_decides(services, slots, env, tg, fake_bot):
     """Токена слота на ВПС нет (слот старше вопроса о токене) — тот же бот
-    узнаётся по имени из снимка канала."""
+    узнаётся по имени из снимка канала: строки про «Старт» нет."""
     _, pi, _ = slots
     _slot1(services, pi)
     _caps(services)
     env.write_text("BOT_TOKEN=12345:main-bot\n", encoding="utf-8")
     services.gwlink_snapshot_in(1, {"agent_bot": {"username": "naspi_gw_bot", "name": "NASPi"}, "rev": 2}, 2, True)
     state = await _asked(fake_bot, services)
-    await _send(fake_bot, services, state, NEW)
+    msg = await _send(fake_bot, services, state, NEW)
     assert f"GW_BOT_TOKEN={NEW}" in env.read_text(encoding="utf-8")
+    assert "«Старт»" not in [t for k, t, _ in msg.sent if k == "answer"][-1]
 
 
 async def test_cancel_returns_to_service(services, slots, env, fake_bot):

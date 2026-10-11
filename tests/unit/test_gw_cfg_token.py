@@ -99,12 +99,23 @@ def test_the_same_token_is_same_and_asks_nobody(svc, env, tg):
     assert svc.cfg_token_note_take() is False, "заметка «на новом токене» без смены"
 
 
-def test_a_token_of_another_bot_is_refused_before_telegram(svc, env, tg):
-    """id до двоеточия не тот — отказ сразу, Telegram не спрашиваем: чужой
-    бот увёл бы чат админа со шлюзом. env не тронут."""
+def test_a_token_of_another_bot_is_taken_when_telegram_knows_it(svc, env, tg):
+    """Токен нового бота (прежнего удалили вовсе) — принимается: годность
+    бота шлюзу проверил сервер при вводе; агенту важно, что токен живой."""
+    tg.answer = ("ok", 987654321)
     res = svc.cfg_token_apply({"value": OTHER})
-    assert res == {"state": "failed", "error": "токен другого бота — не применяю"}, res
-    assert tg.calls == [], "токен другого бота отправили в getMe"
+    assert res == {"state": "applied", "error": ""}, res
+    assert tg.calls == [OTHER], "новый бот не проверен в Telegram"
+    lines = env.read_text(encoding="utf-8").splitlines()
+    assert f"BOT_TOKEN={OTHER}" in lines and "ADMIN_ID=42" in lines, lines
+
+
+def test_a_token_whose_id_telegram_denies_is_refused(svc, env, tg):
+    """Новый бот, но getMe назвал другой id, чем в токене, — токен склеен или
+    подделан: не пишем."""
+    tg.answer = ("ok", 123456789)
+    res = svc.cfg_token_apply({"value": OTHER})
+    assert res == {"state": "failed", "error": "Telegram не принял новый токен"}, res
     assert env.read_text(encoding="utf-8") == ENV_TEXT
 
 
@@ -285,13 +296,22 @@ def test_a_silent_telegram_makes_the_document_retry_without_saving_gen(svc, host
     assert not svc.db.get_state(svc._CFG_GEN_KEY), "поколение записано при временном отказе"
 
 
-def test_a_token_of_another_bot_fails_the_section(svc, host, env, tg):
-    """Другой бот — failed без retry: повтор того же документа дал бы тот же
-    отказ; env и поколение не тронуты."""
+def test_a_token_of_another_bot_in_the_document_restarts_the_agent(svc, host, env, tg):
+    """Документ с токеном нового бота — applied и перезапуск, как у того же."""
+    tg.answer = ("ok", 987654321)
     res = svc.apply_cfg(_apply._doc(token={"value": OTHER}))
-    assert res["ack"]["failed"] == {"token": "токен другого бота — не применяю"}, res["ack"]
+    assert "token" in res["ack"]["applied"] and res["restart"] is True, res
+    assert f"BOT_TOKEN={OTHER}" in env.read_text(encoding="utf-8")
+
+
+def test_a_dead_token_fails_the_section(svc, host, env, tg):
+    """Telegram токен не знает — failed без retry: повтор того же документа
+    дал бы тот же отказ; env и поколение не тронуты."""
+    tg.answer = ("bad", 0)
+    res = svc.apply_cfg(_apply._doc(token={"value": OTHER}))
+    assert res["ack"]["failed"] == {"token": "Telegram не принял новый токен"}, res["ack"]
     # бот на прежнем токене может быть жив — человеку строка с причиной
-    assert res["note"] == "⚠️ Токен бота с сервера AWG не применён: токен другого бота — не применяю", res["note"]
+    assert res["note"] == "⚠️ Токен бота с сервера AWG не применён: Telegram не принял новый токен", res["note"]
     assert not res["ack"].get("retry") and res["restart"] is False
     assert env.read_text(encoding="utf-8") == ENV_TEXT
     assert not svc.db.get_state(svc._CFG_GEN_KEY)

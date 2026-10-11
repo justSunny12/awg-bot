@@ -3432,7 +3432,9 @@ SHOTS += [
 # токен другого бота — живой, но чужой.
 
 TOKEN_NEW = "1234567890:DUMMYNEWDUMMYNEWDUMMYNEW"        # тот же бот, что TOKEN
-TOKEN_OTHER = "9876543210:DUMMYOTHERDUMMYOTHERDUMMY"     # другой бот
+TOKEN_OTHER = "9876543210:DUMMYOTHERDUMMYOTHERDUMMY"     # новый бот (прежнего удалили)
+TOKEN_SERVER = "1111111111:DUMMYSERVERDUMMYSERVERDU"    # бот сервера AWG
+TOKEN_TAKEN = "2222222222:DUMMYTAKENDUMMYTAKENDUMMY"    # бот второго шлюза
 
 
 def _token1(slot: int = 1, confirm: bool = True):
@@ -3448,7 +3450,9 @@ def _tg_getme(services, mp):
     import types
     import aiogram
     bots = {TOKEN: (1234567890, "naspi_gw_bot"), TOKEN_NEW: (1234567890, "naspi_gw_bot"),
-            TOKEN_OTHER: (9876543210, "other_gw_bot")}
+            TOKEN_OTHER: (9876543210, "other_gw_bot"), TOKEN_SERVER: (1111111111, "awg_srv_bot"),
+            TOKEN_TAKEN: (2222222222, "pi4_gw_bot")}
+    mp.setattr(config, "BOT_TOKEN", TOKEN_SERVER)
 
     def factory(token, *a, **k):
         async def get_me():
@@ -3476,6 +3480,11 @@ def _token_online(services, mp):
     mp.setattr(linkserver, "current", lambda: _TokenListener())
 
 
+def _taken2(services, mp):
+    """У второго шлюза — свой бот (TOKEN_TAKEN)."""
+    services._shot_tokens[2] = TOKEN_TAKEN
+
+
 _GTK_PICK = SetCB(sec="gtk", act="do", key="pick")
 _GTK_ASK = SetCB(sec="gtk", act="do", key="ask", val="1")
 
@@ -3496,8 +3505,14 @@ SHOTS += [
          title="приглашение к вводу токена слота"),
     Shot("adm.gtk.cancel", role="admin", press=[_GTK_ASK, CancelCB(kind="set_svc")], data=_keys(_token1()),
          title="«✖️ Отмена» под приглашением — «🔧 Сервис»"),
-    Shot("adm.gtk.refused", role="admin", press=[_GTK_ASK], text=TOKEN_OTHER, data=_keys(_token1(), _tg_getme),
-         title="токен другого бота — сообщение удалено, переспрос, ввод открыт"),
+    Shot("adm.gtk.refused", role="admin", press=[_GTK_ASK], text=TOKEN_SERVER, data=_keys(_token1(), _tg_getme),
+         title="токен бота сервера — сообщение удалено, переспрос, ввод открыт"),
+    Shot("adm.gtk.refused.taken", role="admin", press=[_GTK_ASK], text=TOKEN_TAKEN,
+         data=_keys(_token1(), _tg_getme, _taken2, n=2),
+         title="бот уже у другого шлюза — переспрос с его именем"),
+    Shot("adm.gtk.done.newbot", role="admin", press=[_GTK_ASK], text=TOKEN_OTHER,
+         data=_keys(_token1(), _tg_getme, _token_online),
+         title="новый бот, шлюз на связи — итог и строка «открой @бота и нажми «Старт»»"),
     Shot("adm.gtk.done", role="admin", press=[_GTK_ASK], text=TOKEN_NEW,
          data=_keys(_token1(), _tg_getme, _token_online),
          title="тот же бот, шлюз на связи — «🔧 Сервис» с итогом «ушёл шлюзу»"),

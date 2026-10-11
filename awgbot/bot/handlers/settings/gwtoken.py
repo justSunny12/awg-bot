@@ -1,4 +1,4 @@
-"""gwtoken.py — «🤖 Токен бота» в «⚙️ Настройки → 🔧 Сервис»: выбор шлюза, ввод нового токена того же бота, отправка шлюзу каналом.
+"""gwtoken.py — «🤖 Токен бота» в «⚙️ Настройки → 🔧 Сервис»: выбор шлюза, ввод нового токена (прежнего или нового бота), отправка шлюзу каналом.
 
 Смена аварийная (токен утёк и отозван в BotFather): бот шлюза на мёртвом
 токене сам ничего не примет, поэтому кнопка — на сервере, а на шлюз токен
@@ -56,9 +56,10 @@ async def _ask(cb: CallbackQuery, services, state: FSMContext, slot: int, name: 
 
 @router.message(GatewayBotToken.value)
 async def gwtoken_received(message: Message, state: FSMContext, services):
-    """Новый токен: сообщение сразу прочь (секрет), getMe новым токеном с ВПС,
-    тот же бот — запись в env ВПС; шлюзу — каналом документом, сейчас или при
-    подключении. Ошибка — переспрос, ввод остаётся."""
+    """Новый токен: сообщение сразу прочь (секрет), getMe новым токеном с ВПС
+    (токен живой), бот не сервера и не другого шлюза — запись в env ВПС;
+    шлюзу — каналом документом, сейчас или при подключении. Бот новый —
+    напомнить нажать у него «Старт». Ошибка — переспрос, ввод остаётся."""
     token = (message.text or "").strip()
     try:
         await message.delete()
@@ -68,7 +69,7 @@ async def gwtoken_received(message: Message, state: FSMContext, services):
     slot = int(data.get("gw_slot") or 0)
     try:
         bot_id, username = await _getme(token)
-        await call(services.gateway_token_check, slot, token, bot_id, username)
+        check = await call(services.gateway_token_check, slot, token, bot_id, username)
         if await state.get_state() != GatewayBotToken.value.state:
             return                                        # «✖️ Отмена», пока ждали Telegram, — не записываем
         await call(services.gateway_token_replace, slot, token)
@@ -82,8 +83,10 @@ async def gwtoken_received(message: Message, state: FSMContext, services):
     online = bool(srv is not None and srv.online(slot))
     if srv is not None:
         srv.deliver_soon()                                # документ с новым токеном — без ожидания такта
-    await back_to_context(message, services, data, "admin",
-                          note=texts.GATEWAY_TOKEN_SENT if online else texts.GATEWAY_TOKEN_QUEUED)
+    note = texts.GATEWAY_TOKEN_SENT if online else texts.GATEWAY_TOKEN_QUEUED
+    if check.get("new_bot"):
+        note += "\n" + texts.gateway_token_new_bot(check.get("username") or "")
+    await back_to_context(message, services, data, "admin", note=note)
 
 
 async def _getme(token: str) -> tuple[int, str]:

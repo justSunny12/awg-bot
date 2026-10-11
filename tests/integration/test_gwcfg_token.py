@@ -1,12 +1,14 @@
 """
 Токен бота шлюза на стороне ВПС: кому его можно довезти каналом
-(gateway_token_slots), проверка «тот же бот» (gateway_token_check) и раздел
+(gateway_token_slots), годность бота шлюзу (gateway_token_check: не бот
+сервера, не бот другого шлюза; новый бот своего слота — можно) и раздел
 token документа конфигурации (gwcfg_token, отпечаток, сверка со снимком).
 
 Цена ошибки: раздел token агенту без token1 — агент прежней версии отвергнет
 документ целиком (неизвестный раздел), и env с подсетями тоже не доедет;
-токен другого бота, пропущенный проверкой, уводит чат админа со шлюзом к
-чужому боту; раздел, который едет при совпавшем отпечатке, — бесконечная
+бот сервера или бот другого шлюза, пропущенный проверкой, — два процесса
+на одном боте перехватывают апдейты друг у друга, и один из ботов глохнет;
+отказ новому боту своего слота — шлюз с удалённым ботом не поднять; раздел, который едет при совпавшем отпечатке, — бесконечная
 доставка и перезапуск агента на каждом снимке.
 
 Токены — в настоящем env-файле во временном каталоге (AWG_BOT_ENV), как
@@ -140,37 +142,93 @@ def test_token_slots_are_only_agents_with_token1(services, slot, env):
     assert services.gateway_token_slots() == [(1, "NASPi (север)")]
 
 
-# ── тот же бот ───────────────────────────────────────────────────────────────
+# ── годность бота шлюзу ──────────────────────────────────────────────────────
 
-def test_check_by_the_old_token_id(services, slot, env):
-    """Прежний токен на ВПС есть — сверка по id до двоеточия."""
+SERVER = "111111111:AA-server-dummy-token"
+
+
+@pytest.fixture()
+def server_bot(monkeypatch):
+    from awgbot.core import config
+    monkeypatch.setattr(config, "BOT_TOKEN", SERVER)
+
+
+def _second(services) -> None:
+    """Второй слот (Pi2) — со своим ботом."""
+    admin = services.db.get_client_by_tg(_d.ADMIN)
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+
+
+def test_the_same_bot_is_not_a_new_bot(services, slot, env, server_bot):
+    """Прежний токен слота на ВПС, новый токен того же бота — годится, без
+    строки про «Старт»."""
     services.set_gw_bot_token(OLD, 1)
-    services.gateway_token_check(1, NEW, 123456789, "whatever_bot")   # тот же бот — без отказа
-    with pytest.raises(ServiceError, match="токен другого бота"):
-        services.gateway_token_check(1, OTHER, 987654321, "other_bot")
+    got = services.gateway_token_check(1, NEW, 123456789, "naspi_gw_bot")
+    assert got == {"new_bot": False, "username": "naspi_gw_bot"}, got
 
 
-def test_getme_must_name_the_bot_of_the_token(services, slot, env):
+def test_a_new_bot_for_the_own_slot_is_taken(services, slot, env, server_bot):
+    """Прежнего бота удалили — токен нового принимается (вся настройка шлюза
+    остаётся), new_bot=True и его имя: человеку нажать у него «Старт»."""
+    services.set_gw_bot_token(OLD, 1)
+    got = services.gateway_token_check(1, OTHER, 987654321, "other_gw_bot")
+    assert got == {"new_bot": True, "username": "other_gw_bot"}, got
+
+
+def test_without_the_old_token_the_name_tells_a_new_bot(services, slot, env, server_bot):
+    """Токена слота на ВПС нет — новый ли бот, решает имя из снимка канала
+    (без учёта регистра)."""
+    services.gwlink_snapshot_in(1, {"agent_bot": {"username": "NASPi_gw_bot", "name": "NASPi"}, "rev": 1}, 1, True)
+    assert services.gateway_token_check(1, NEW, 123456789, "naspi_gw_bot")["new_bot"] is False
+    assert services.gateway_token_check(1, OTHER, 987654321, "other_gw_bot")["new_bot"] is True
+
+
+def test_nothing_to_compare_with_is_not_a_refusal(services, slot, env, server_bot):
+    """Ни прежнего токена, ни имени бота — токен живой, бот ничей: годится;
+    «новый бот» не утверждаем — не с чем сравнить."""
+    got = services.gateway_token_check(1, NEW, 123456789, "naspi_gw_bot")
+    assert got == {"new_bot": False, "username": "naspi_gw_bot"}, got
+
+
+def test_getme_must_name_the_bot_of_the_token(services, slot, env, server_bot):
     """getMe назвал не тот id, что в токене, — отказ до любых сверок."""
     services.set_gw_bot_token(OLD, 1)
-    with pytest.raises(ServiceError, match="Telegram назвал другого бота"):
+    with pytest.raises(ServiceError, match="Telegram назвал другого бота, чем в токене"):
         services.gateway_token_check(1, NEW, 555555555, "x_bot")
 
 
-def test_without_the_old_token_the_bot_is_known_by_its_username(services, slot, env):
-    """Токена на ВПС нет (слот до вопроса о токене) — сверка по username из
-    снимка канала, без учёта регистра."""
-    services.gwlink_snapshot_in(1, {"agent_bot": {"username": "NASPi_gw_bot", "name": "NASPi"}, "rev": 1}, 1, True)
-    services.gateway_token_check(1, NEW, 123456789, "naspi_gw_bot")
-    with pytest.raises(ServiceError, match="@NASPi_gw_bot"):
-        services.gateway_token_check(1, OTHER, 987654321, "other_bot")
+def test_the_server_bot_is_refused(services, slot, env, server_bot):
+    """Токен бота сервера AWG — отказ: два процесса на одном боте."""
+    with pytest.raises(ServiceError, match="это токен бота сервера AWG — шлюзу нужен свой бот"):
+        services.gateway_token_check(1, SERVER, 111111111, "awg_srv_bot")
 
 
-def test_nothing_to_compare_with_is_a_refusal(services, slot, env):
-    """Ни прежнего токена, ни имени бота — не знаем, тот ли это бот:
-    отказ, а не «на веру»."""
-    with pytest.raises(ServiceError, match="не знаю, какой бот"):
-        services.gateway_token_check(1, NEW, 123456789, "naspi_gw_bot")
+def test_a_bot_of_another_gateway_is_refused_by_its_token(services, slot, env, server_bot):
+    """id совпал с токеном другого слота в env ВПС — отказ с именем того шлюза."""
+    _second(services)
+    services.set_gw_bot_token(OTHER, 2)
+    services.gateway_set_label(2, "север")
+    with pytest.raises(ServiceError, match=r"этот бот уже у шлюза Pi2 \(север\) — нужен свой бот для каждого шлюза"):
+        services.gateway_token_check(1, "987654321:BB-another-dummy-token", 987654321, "other_gw_bot")
+
+
+def test_a_bot_of_another_gateway_is_refused_by_its_name(services, slot, env, server_bot):
+    """Токена другого слота на ВПС нет, но его бот известен по снимку —
+    совпадение имени (без учёта регистра) — тоже отказ."""
+    _second(services)
+    services.gwlink_snapshot_in(2, {"agent_bot": {"username": "Other_GW_bot", "name": "Pi2"}, "rev": 1}, 1, True)
+    with pytest.raises(ServiceError, match="этот бот уже у шлюза Pi2"):
+        services.gateway_token_check(1, OTHER, 987654321, "other_gw_bot")
+
+
+def test_the_own_slot_is_not_another_gateway(services, slot, env, server_bot):
+    """Свой слот в сверке «занят другим шлюзом» не участвует: тот же бот и
+    тот же токен — годятся."""
+    _second(services)
+    services.set_gw_bot_token(OLD, 1)
+    services.set_gw_bot_identity(1, "naspi_gw_bot", "NASPi")
+    assert services.gateway_token_check(1, OLD, 123456789, "naspi_gw_bot")["new_bot"] is False
 
 
 # ── отказ шлюза: уведомление ─────────────────────────────────────────────────
