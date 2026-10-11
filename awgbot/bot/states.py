@@ -74,6 +74,12 @@ class GatewayToken(StatesGroup):
     value = State()
 
 
+class GatewayBotToken(StatesGroup):
+    """Аварийная смена токена бота шлюза («🔧 Сервис → 🤖 Токен бота»): новый
+    токен того же бота; уедет шлюзу каналом. В данных — gw_slot, gw_name."""
+    value = State()
+
+
 class GatewayLanSubnets(StatesGroup):
     """Локальные подсети слота шлюза. В данных — gw_slot."""
     value = State()

@@ -1,6 +1,7 @@
 """cfg.py — документ конфигурации слота: желаемое, поколение, что доставить, ответ шлюза."""
 from __future__ import annotations
 
+import html
 import json
 import re
 import socket
@@ -140,6 +141,24 @@ class CfgMixin:
                 out.append((self._gw_display(gw), self.gw_bot_identity(gw.id)))
         return out
 
+    def gwcfg_token(self, gw) -> dict | None:
+        """Раздел token — только агентам с token1 и только токен, введённый
+        аварийной кнопкой («🔧 Сервис → 🤖 Токен бота»): токен в env ВПС с
+        настройки мог устареть (меняли на шлюзе руками), и слать его — значит
+        получить вечный отказ «Telegram не принял». Значение не прошло ту же проверку, что
+        сделает агент, — раздела нет (отказ одного раздела агент считает
+        отказом всего документа)."""
+        if "token1" not in self.gwlink_agent_caps(gw.id):
+            return None
+        token = self.gw_bot_token(gw.id)
+        if not token or not self.gateway_token_pushed(gw.id, token):
+            return None                                   # не вводили кнопкой — env с настройки мог устареть
+        try:
+            return gwcfg.check_token({"value": token})
+        except gwcfg.CfgError as e:
+            log.warning("документ конфигурации: слот %s, токен не едет: %s", gw.id, e)
+            return None
+
     def gwcfg_mail(self) -> dict | None:
         acc = self.email_account()
         if acc is None:
@@ -164,7 +183,7 @@ class CfgMixin:
 
     def gwcfg_desired(self, gw) -> dict:
         """Разделы документа слота: None — у сервера раздела нет (своё на шлюзе
-        не трогается). Аплинк и токен — отдельные возможности, пока не едут.
+        не трогается). Аплинк — агентам с confirm1, токен — с token1.
         Раздел env не прошёл ту же проверку, что делает шлюз, — документа нет
         вовсе (без env агент отверг бы его целиком), причина — в карточке."""
         env = self.gwcfg_env(gw)
@@ -175,7 +194,7 @@ class CfgMixin:
             return {name: None for name in gwcfg.SECTIONS}
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
-                "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": None,
+                "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": self.gwcfg_token(gw),
                 "server": self.gwcfg_server()}
 
     @staticmethod
@@ -271,6 +290,14 @@ class CfgMixin:
             if gw is not None:
                 notes.append(Notification(config.ADMIN_ID,
                                           f"🔐 {self._gw_link(gw)}: новый конфиг аплинка отклонили в чате бота шлюза"))
+        failed_token = (ack.get("failed") or {}).get("token")
+        tok_key = self._gwlink_key("gwcfg_token_failed_told", slot_id)
+        if failed_token and not ack.get("retry") and (self.db.get_state(tok_key) or "") != ack["hash"]:
+            self.db.set_state(tok_key, ack["hash"])
+            gw = self.db.gateway(slot_id)
+            if gw is not None:
+                notes.append(Notification(config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: новый токен бота не применён: "
+                                                            f"{html.escape(str(failed_token), quote=False)}"))
         return ack, notes
 
     def gwcfg_due(self, gw) -> dict | None:
@@ -384,5 +411,5 @@ class CfgMixin:
 
     def gwcfg_forget(self, slot_id: int) -> None:
         for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY,
-                    self._GWCFG_UPLINK_ERR_KEY, "gwcfg_uplink_declined_told"):
+                    self._GWCFG_UPLINK_ERR_KEY, "gwcfg_uplink_declined_told", "gwcfg_token_failed_told"):
             self.db.set_state(self._gwlink_key(key, slot_id), "")

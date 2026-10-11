@@ -3424,3 +3424,84 @@ SHOTS += [
     Shot("adm.lk.ask.label", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],
          data=_keys(_label(1, "север")), title="смена ключей слота с подписью — имя с подписью в вопросе"),
 ]
+
+
+# ── аварийная смена токена бота шлюза: «🔧 Сервис → 🤖 Токен бота» ──────────
+# Агент слота умеет принимать токен каналом (token1); getMe — двойник
+# Telegram вместо aiogram.Bot: свой токен слота и новый того же бота живые,
+# токен другого бота — живой, но чужой.
+
+TOKEN_NEW = "1234567890:DUMMYNEWDUMMYNEWDUMMYNEW"        # тот же бот, что TOKEN
+TOKEN_OTHER = "9876543210:DUMMYOTHERDUMMYOTHERDUMMY"     # другой бот
+
+
+def _token1(slot: int = 1, confirm: bool = True):
+    """Сессия слота открыта агентом с token1 (и confirm1, если confirm)."""
+    def step(services, mp):
+        caps = ["cfg1", "confirm1", "token1"] if confirm else ["cfg1", "token1"]
+        services.gwlink_session_opened(slot, "3.3.0", 2, caps)
+    return step
+
+
+def _tg_getme(services, mp):
+    """getMe новым токеном и обновление имени бота — без сети."""
+    import types
+    import aiogram
+    bots = {TOKEN: (1234567890, "naspi_gw_bot"), TOKEN_NEW: (1234567890, "naspi_gw_bot"),
+            TOKEN_OTHER: (9876543210, "other_gw_bot")}
+
+    def factory(token, *a, **k):
+        async def get_me():
+            bot_id, username = bots[token]
+            return types.SimpleNamespace(id=bot_id, username=username, first_name="NASPi", is_bot=True)
+
+        async def close():
+            pass
+        return types.SimpleNamespace(get_me=get_me, session=types.SimpleNamespace(close=close))
+    mp.setattr(aiogram, "Bot", factory)
+
+
+class _TokenListener:
+    """Слушатель канала с открытой сессией слота: документ уйдёт сразу."""
+
+    def online(self, slot_id: int) -> bool:
+        return True
+
+    def deliver_soon(self) -> None:
+        pass
+
+
+def _token_online(services, mp):
+    from awgbot.runtime import linkserver
+    mp.setattr(linkserver, "current", lambda: _TokenListener())
+
+
+_GTK_PICK = SetCB(sec="gtk", act="do", key="pick")
+_GTK_ASK = SetCB(sec="gtk", act="do", key="ask", val="1")
+
+SHOTS += [
+    Shot("adm.set.svc.token", role="admin", press=[SetCB(sec="svc")], data=_keys(_token1()),
+         title="«🔧 Сервис», агент умеет и ключи, и токен — «🔑 Ключи линка» и «🤖 Токен бота» одним рядом"),
+    Shot("adm.set.svc.token.only", role="admin", press=[SetCB(sec="svc")],
+         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env")), _token1(confirm=False)),
+         title="«🔧 Сервис», агент с token1 без подтверждения — только «🤖 Токен бота»"),
+    Shot("adm.gtk.pick.none", role="admin", press=[_GTK_PICK], data=_keys(),
+         title="устаревшая «🤖 Токен бота», агента с token1 нет — всплывашка"),
+    Shot("adm.gtk.pick.one", role="admin", press=[SetCB(sec="svc"), _GTK_PICK], data=_keys(_token1()),
+         title="один шлюз с token1 — сразу приглашение к вводу токена"),
+    Shot("adm.gtk.pick.two", role="admin", press=[SetCB(sec="svc"), _GTK_PICK],
+         data=_keys(_token1(), _token1(2), _label(2, "север"), n=2),
+         title="два шлюза с token1 — экран выбора, имена с подписью"),
+    Shot("adm.gtk.ask", role="admin", press=[_GTK_ASK], data=_keys(_token1()),
+         title="приглашение к вводу токена слота"),
+    Shot("adm.gtk.cancel", role="admin", press=[_GTK_ASK, CancelCB(kind="set_svc")], data=_keys(_token1()),
+         title="«✖️ Отмена» под приглашением — «🔧 Сервис»"),
+    Shot("adm.gtk.refused", role="admin", press=[_GTK_ASK], text=TOKEN_OTHER, data=_keys(_token1(), _tg_getme),
+         title="токен другого бота — сообщение удалено, переспрос, ввод открыт"),
+    Shot("adm.gtk.done", role="admin", press=[_GTK_ASK], text=TOKEN_NEW,
+         data=_keys(_token1(), _tg_getme, _token_online),
+         title="тот же бот, шлюз на связи — «🔧 Сервис» с итогом «ушёл шлюзу»"),
+    Shot("adm.gtk.done.offline", role="admin", press=[_GTK_ASK], text=TOKEN_NEW,
+         data=_keys(_token1(), _tg_getme),
+         title="тот же бот, шлюза нет на связи — итог «получит при подключении»"),
+]

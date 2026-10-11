@@ -176,7 +176,8 @@ class FriendCB(CallbackData, prefix="fr"):
 class SetCB(CallbackData, prefix="set"):
     """Экран настроек. sec — раздел: root/notify/srv/fw/rt (+ rt_gw/rt_lists/
     rt_users)/email/subs/svc/mon/backup/upd/mig/mig_prep/ncl/lk («🔑 Ключи линка»
-    в «🔧 Сервис»: act=do, key pick|ask|yes, val — слот);
+    в «🔧 Сервис»: act=do, key pick|ask|yes, val — слот)/gtk («🤖 Токен бота»
+    в «🔧 Сервис»: act=do, key pick|ask, val — слот);
     act — действие (open/toggle/edit/pick/do); key — dotted-ключ настройки или
     id действия; val — необязательное значение (для pick-выбора enum)."""
     sec: str

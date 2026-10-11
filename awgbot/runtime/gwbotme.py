@@ -46,10 +46,11 @@ async def refresh(services, slot_id: int) -> bool:
         if isinstance(e, TelegramUnauthorizedError):
             # токен отозван: сеть тут ни при чём, повтор бесполезен до нового
             # токена (set_gw_bot_token зовёт refresh явно)
-            log.warning("бот шлюза слота %s: токен не принят Telegram (%s) — до смены токена не спрашиваю", slot_id, e)
+            log.warning("бот шлюза слота %s: токен не принят Telegram (%s) — до смены токена не спрашиваю",
+                        slot_id, _no_token(str(e)))
             _next_try[int(slot_id)] = float("inf")
             return False
-        log.info("бот шлюза слота %s: getMe не прошёл (%s)", slot_id, e)
+        log.info("бот шлюза слота %s: getMe не прошёл (%s)", slot_id, _no_token(str(e)))
         _next_try[int(slot_id)] = time.monotonic() + RETRY_SECONDS
         return False
     finally:
@@ -69,3 +70,9 @@ async def ensure_all(services) -> None:
         if _next_try.get(int(slot_id), 0.0) > now:
             continue
         await refresh(services, slot_id)
+
+
+def _no_token(text: str) -> str:
+    """Текст ошибки aiohttp/aiogram может нести URL запроса с токеном — вырезать."""
+    import re
+    return re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot<токен>", text)

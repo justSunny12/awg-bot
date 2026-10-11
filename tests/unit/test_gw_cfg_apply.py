@@ -177,7 +177,11 @@ def test_fingerprints_describe_what_stands_on_the_gateway(svc, host):
     assert fp["link"] == gwcfg.link_print(LINK), "link снимка — не по установленному конфигу"
     assert svc.cfg_env_current()["LAN_SUBNETS"] == "192.168.68.0/24"
     assert svc.cfg_env_current()["PEER_LAN_NETS"] == ""
-    assert fp["gen"] == 0 and fp["uplink"] == "" and fp["token"] == ""
+    assert fp["gen"] == 0 and fp["uplink"] == ""
+    # токен — отпечаток того, на чём агент работает сейчас, не сам токен:
+    # пустой отпечаток сервер принял бы за «токена нет» и вёз бы раздел вечно
+    assert fp["token"] == gwcfg.token_print(config.BOT_TOKEN) and fp["token"], fp["token"]
+    assert config.BOT_TOKEN not in str(fp), "в снимок ушёл сам токен бота"
 
 
 def test_fingerprints_of_stubs_are_empty(svc, host):

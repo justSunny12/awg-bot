@@ -169,6 +169,13 @@ def gateway_keys_pick(slots) -> InlineKeyboardMarkup:
                    ui.back(SetCB(sec="svc")))
 
 
+def gateway_token_pick(slots) -> InlineKeyboardMarkup:
+    """«🤖 Токен бота» в «🔧 Сервис»: шлюзы, которым токен довезёт канал
+    (имя с подписью), «Назад» — в «Сервис»."""
+    return ui.rows(*[(name, SetCB(sec="gtk", act="do", key="ask", val=str(slot))) for slot, name in slots],
+                   ui.back(SetCB(sec="svc")))
+
+
 def gateway_keys_confirm(slot: int) -> InlineKeyboardMarkup:
     """Смена ключей линка: «Отмена» первой — назад в «🔧 Сервис»."""
     return confirm(SetCB(sec="svc"), "🔑 Сменить", SetCB(sec="lk", act="do", key="yes", val=str(slot)),

@@ -9,7 +9,9 @@ log = logging.getLogger(__name__)
 
 # Возможности агента — контракт канала списком имён, не номером версии: сервер
 # проверяет одним `in`. Пустой список — агент прежних версий.
-CAPS: tuple[str, ...] = ("cfg1", "confirm1")            # документ конфигурации cfg / cfg_ack
+# cfg1 — документ cfg / cfg_ack; confirm1 — подтверждение в чате (ключи линка,
+# аплинк); token1 — раздел token (токен бота шлюза)
+CAPS: tuple[str, ...] = ("cfg1", "confirm1", "token1")
 
 DEFAULT_PORT = gwlink.DEFAULT_PORT
 # 5 с → 15 → 45 → 135 → 300, каждый шаг × uniform(0.6, 1.4). Потолок пять минут:

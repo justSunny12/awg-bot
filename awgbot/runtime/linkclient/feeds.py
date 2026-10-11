@@ -1,4 +1,5 @@
-"""feeds.py — свои списки, общие для всех шлюзов, записи соседей, фиды локальной сети, installed и claim."""
+"""feeds.py — свои списки, общие для всех шлюзов, записи соседей, фиды локальной сети, installed и claim;
+документ конфигурации: применение, cfg_ack, вопросы человеку, перезапуск агента после смены токена бота."""
 from __future__ import annotations
 
 import asyncio
@@ -146,17 +147,29 @@ class FeedsMixin:
         ack = result["ack"]
         await asyncio.to_thread(self.services.cfg_ack_pending_put, ack)
         await self.flush_cfg_ack()
-        if result.get("note") and pkg._notify is not None:
+        # только токен сменён — итог слал бы ещё прежний, отозванный бот: его
+        # заменит сообщение после перезапуска на новом токене
+        quiet = bool(result.get("restart")) and set(result.get("changed") or []) <= {"token"}
+        if result.get("note") and pkg._notify is not None and not quiet:
             try:
                 await pkg._notify(result["note"])
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: уведомление о документе не ушло: %s", e)
-        for section in result.get("ask") or []:
+        for section in ([] if result.get("restart") else result.get("ask") or []):
+            # при перезапуске на новом токене вопрос показал бы прежний, отозванный
+            # бот — их покажет агент после старта
             if pkg._ask is not None:
                 try:
                     await pkg._ask(section)
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: вопрос о разделе %s не показан: %s", section, e)
+        if result.get("restart"):
+            # новый токен бота в env: ответ серверу уже ушёл или лежит в очереди
+            # (уйдёт первым словом новой сессии) — перезапуск вне своего cgroup
+            log.info("канал линка: токен бота сменён — перезапускаю агента")
+            await asyncio.sleep(2)
+            await asyncio.to_thread(self.services.restart_bot)
+            return
         if "LINK_CHANNEL_PORT" in (result.get("changed") or []) and self._writer is not None:
             # порт канала сменился документом: ответ ушёл по прежнему, дальше —
             # новая сессия на новом порту (сервер неделю слушает оба)

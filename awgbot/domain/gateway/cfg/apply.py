@@ -96,9 +96,26 @@ class CfgApplyMixin:
                 wait[section] = server_print
                 if not held or held.get("server") != server_print:
                     asks.append(section)
+        retry = False
+        # 5. токен бота — только тот же бот; перезапуск агента — после ответа
+        # серверу (клиент канала), иначе ответ ушёл бы в никуда
+        restart = False
+        if "token" in checked:
+            res = self.cfg_token_apply(checked["token"])
+            if res["state"] == "same":
+                applied.append("token")
+            elif res["state"] == "applied":
+                applied.append("token")
+                changed.append("token")
+                restart = True
+            else:
+                failed["token"] = res["error"]
+                retry = retry or res["state"] == "retry"
+                if res["state"] == "failed":
+                    # бот на прежнем токене может быть жив (токен другого бота) — сказать
+                    notes.append(f"⚠️ Токен бота с сервера AWG не применён: {html.escape(res['error'], quote=False)}")
         # 6. аплинк — с подтверждением человека; молча — только ключи признания
         # и аварийно (аплинк мёртв, конфиг того же устройства)
-        retry = False
         if "uplink" in checked:
             # прерванная перезапуском транзакция — назад до сравнения: иначе
             # полуновое на диске сравнилось бы как «то же»
@@ -155,7 +172,7 @@ class CfgApplyMixin:
         text = "\n".join([x for x in (head, *notes) if x])
         return {"ack": gwcfg.ack_build(gen, digest, applied=applied, wait=wait, declined=declined, failed=failed,
                                        retry=retry),
-                "note": text, "ask": asks, "changed": changed}
+                "note": text, "ask": asks, "changed": changed, "restart": restart}
 
     @staticmethod
     def _cfg_names(keys) -> str:

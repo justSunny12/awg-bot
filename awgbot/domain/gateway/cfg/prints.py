@@ -92,6 +92,6 @@ class CfgPrintsMixin:
             "uplink": self.cfg_uplink_print(cached=True),   # без команд: снимок только из локального
             "mail": self.cfg_mail_print(),
             "backup": self.cfg_backup_print(),
-            "token": "",                                  # токен каналом — отдельная возможность
+            "token": self.cfg_token_print(),              # отпечаток, не сам токен
             "server": gwcfg.server_print(self.db.get_state(self._SERVER_NAME_KEY) or ""),
         }

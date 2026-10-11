@@ -19,7 +19,7 @@ from awgbot.core import config
 from awgbot.domain import gateway as gateway_mod
 from awgbot.domain import gwsnapshot
 from awgbot.infra import awglock, gwguard
-from awgbot.runtime import main, preflight
+from awgbot.runtime import main
 
 
 class _Stop(Exception):
@@ -143,14 +143,13 @@ async def test_bot_without_username_gives_empty_fields_not_none(agent):
     assert agent.snapshot()["agent_bot"] == {"username": "", "name": ""}
 
 
-async def test_revoked_token_still_stops_the_agent(agent):
-    """Сохранение имени бота не проглотило отказ Telegram по токену: агент с
-    отозванным токеном обязан остановиться с понятной причиной, а не молча
-    работать без чата."""
+async def test_revoked_token_does_not_stop_the_agent(agent):
+    """Токен отозван (утёк — отозвали в BotFather): агент не останавливается —
+    новый токен довезёт только канал до сервера AWG, а он поднимается дальше
+    по сборке. Имени бота в снимке нет: выдумывать его нельзя."""
     agent.me = TelegramUnauthorizedError(method=GetMe(), message="Unauthorized")
-    with pytest.raises(preflight.PreflightError):
-        await main.run_gateway()
-    assert getattr(agent.services, "bot_username", "") == "", "отказ по токену оставил имя бота"
+    svc = await agent.start()
+    assert getattr(svc, "bot_username", "") == "", "отказ по токену оставил имя бота"
 
 
 # ── первый запуск после установки: база или метка установщика ────────────────

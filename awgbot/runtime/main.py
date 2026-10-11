@@ -222,16 +222,21 @@ async def run_gateway() -> None:
     bot = Bot(config.BOT_TOKEN, session=session,
               default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                            link_preview_is_disabled=True))
+    token_dead = False
     try:
         me = await bot.get_me()
         # кто этот бот — в снимок канала: сервер ведёт в его чат ссылкой, и
         # токен агента ему для этого не нужен
         services.bot_username = me.username or ""
         services.bot_name = me.first_name or me.username or ""
-    except TelegramUnauthorizedError as e:
-        raise preflight.PreflightError(
-            f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "
-            f"/etc/awg-bot/env и перезапустите.") from e
+    except TelegramUnauthorizedError:
+        # Токен отозван (утёк — отозвали в BotFather). Падать нельзя: новый
+        # токен довезёт только канал до сервера AWG («🔧 Сервис → 🤖 Токен
+        # бота»), а он поднимается ниже. Работаем без Telegram: канал, монитор,
+        # обвязка; токен приедет — агент перезапустится сам.
+        token_dead = True
+        log.error("Bot API отверг токен бота шлюза — работаю без Telegram и жду новый токен по "
+                  "упр. каналу от сервера AWG (или BOT_TOKEN в /etc/awg-bot/env руками и перезапуск)")
     except Exception as e:                               # noqa: BLE001
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)
@@ -291,6 +296,17 @@ async def run_gateway() -> None:
 
     await _announce_reboot(bot, services.db, "агента")
     try:
+        if not token_dead and await asyncio.to_thread(services.cfg_token_note_pending):
+            from awgbot.bot.notifier import notify_one
+            from awgbot.bot import texts as _texts
+            if await notify_one(bot, config.ADMIN_ID, _texts.GW_TOKEN_SWITCHED):
+                await asyncio.to_thread(services.cfg_token_note_clear)   # не дошло — скажем при следующем старте
+                # вопросы из того же документа показывал бы прежний, мёртвый бот
+                from awgbot.bot.handlers import gateway as gateway_handlers
+                await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("итог смены токена не ушёл: %s", e)
+    try:
         from awgbot.bot.handlers.restore import report_restore_result
         await report_restore_result(bot, services)
     except Exception as e:                               # noqa: BLE001
@@ -333,6 +349,9 @@ async def run_gateway() -> None:
 
     log.info("Агент шлюза запущен (роль gateway)")
     try:
+        if token_dead:
+            # без Telegram: поллинг упал бы на первом же getMe; живут канал и планировщик
+            await asyncio.Event().wait()
         await dp.start_polling(bot, polling_timeout=50,
                                allowed_updates=dp.resolve_used_update_types())
     finally:

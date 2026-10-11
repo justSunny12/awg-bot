@@ -6,7 +6,8 @@ gateway/cfg/ — документ конфигурации с сервера AWG
 очередь вопросов человеку; uplink — конфиг аплинка: решение, ключи
 признания, наблюдение «аплинк мёртв»; uplinktxn — его транзакция под замком
 обвязки, восстановление после перезапуска, аварийное правило на тике; rekey — смена ключей линка: приглашение, переключение,
-отсчёт, поиск рабочего конфига).
+отсчёт, поиск рабочего конфига; token — токен бота шлюза: тот же бот,
+getMe, env, перезапуск после ответа серверу).
 
 Сервер — источник желаемого, шлюз — источник фактов: агент сообщает в снимке
 отпечатки стоящего (prints), получает документ целиком, проверяет его до
@@ -23,12 +24,13 @@ from .apply import CfgApplyMixin
 from .uplink import CfgUplinkMixin
 from .uplinktxn import CfgUplinkTxnMixin
 from .rekey import CfgRekeyMixin
+from .token import CfgTokenMixin
 
 
 class CfgMixin(CfgPrintsMixin, CfgMailPhraseMixin, CfgAskMixin, CfgTxnMixin, CfgApplyMixin, CfgUplinkMixin,
-               CfgUplinkTxnMixin, CfgRekeyMixin):
+               CfgUplinkTxnMixin, CfgRekeyMixin, CfgTokenMixin):
     """Документ конфигурации на агенте — одним миксином в GatewayServices."""
 
 
 __all__ = ["CfgMixin", "CfgPrintsMixin", "CfgMailPhraseMixin", "CfgAskMixin", "CfgTxnMixin", "CfgApplyMixin",
-           "CfgUplinkMixin", "CfgUplinkTxnMixin", "CfgRekeyMixin"]
+           "CfgUplinkMixin", "CfgUplinkTxnMixin", "CfgRekeyMixin", "CfgTokenMixin"]
