@@ -33,3 +33,17 @@ def test_liveness_tick_is_light_and_the_monitor_tick_delivers():
     body = ls.split("async def liveness_tick", 1)[1].split("async def monitor_tick", 1)[0]
     assert "sweep_dead()" in body and "send_roles()" in body and "deliver_soon()" in body
     assert "await _server.deliver_all()" not in body
+
+
+def test_the_admin_resolver_is_ensured_on_start_and_watched_on_the_monitor_tick():
+    """Живые хосты установщик заново не проходят: без вызова на старте
+    резолвер админа на них не появился бы никогда; без такта монитора
+    замолчавший слот не выпал бы из записей, а упавший резолвер — без слова."""
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+    assert "services.admin_dns_ensure" in main
+    assert main.index("services.resolver_ensure_dropin") < main.index("services.admin_dns_ensure"), \
+        "резолвер админа ставится раньше, чем подтянут override резолвера клиентов"
+    sched = (ROOT / "scheduler.py").read_text(encoding="utf-8")
+    body = sched.split("services.admin_dns_health_tick", 1)
+    assert len(body) == 2 and "send_notifications(bot, adm_notes)" in body[1].split("except", 1)[0], \
+        "уведомления монитора резолвера админа никуда не уходят"

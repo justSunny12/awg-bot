@@ -24,11 +24,13 @@ def services_line(svc: dict, agent_bot: dict | None = None) -> str:
         return "🗂 SMB: не найдены"
     parts = ([f"свои — {own}"] if own else []) + ([f"извне — {peer}"] if peer else [])
     head = "🗂 SMB: " + ", ".join(parts)
+    tunnel = " · в туннеле ✅" if svc.get("tunnel") and own else ""   # «SMB в туннеле»: свои видны устройствам админа
     if not peer:
-        return head
+        return head + tunnel
     state = svc.get("state", "")
     if state == "applied":
-        return head + " · 🟢 доступны"
+        return head + " · 🟢 доступны" + tunnel
+    head += tunnel
     if state == "reissue":
         note = "⚠️ Необходим перевыпуск конфигурации шлюза"
     else:
@@ -272,10 +274,14 @@ def gateway_card_text(state: dict, states: list) -> str:
         own = state.get("own_lists") or {}
         if own and own.get("state") != "off":
             lines.append(own_lists_line(own, state.get("agent_bot")))
+    svc = state.get("services") or {}
     if state.get("peer_nets"):
         lines.append("↔️ Связь подсетей ✅")
-        if state.get("services"):
-            lines.append(services_line(state["services"], state.get("agent_bot")))
+        if svc:
+            lines.append(services_line(svc, state.get("agent_bot")))
+    elif svc.get("tunnel") and svc.get("own"):
+        # без связи подсетей «извне» не бывает — только свои и «в туннеле»
+        lines.append(services_line({**svc, "peer": 0}, state.get("agent_bot")))
     others = [s for s in states if s["gateway"].id != gw.id]
     conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].lan_subnets)), None)
     if conflict is not None:

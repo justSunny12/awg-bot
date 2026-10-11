@@ -147,6 +147,8 @@ class InboundMixin:
                 for other in list(self._sessions):
                     if other != gw.id:
                         await self.deliver_peer_services(other)
+                # «SMB в туннеле»: записи резолвера админа — тем же списком
+                await asyncio.to_thread(self.services.smb_tunnel_sync)
             # прошлые записи этот слот не принял (поломка на шлюзе) — его
             # список приходит и как просьба повторить их
             ack = await asyncio.to_thread(self.services.gwlink_peer_services_ack, gw.id)

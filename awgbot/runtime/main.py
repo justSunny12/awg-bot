@@ -570,6 +570,12 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("resolver_ensure_dropin на старте: %s", e)
         try:
+            # резолвер админа («SMB в туннеле»): живые хосты установщик заново не
+            # проходят — ставит бот; записи — тумблер мог быть включён до рестарта
+            await asyncio.to_thread(services.admin_dns_ensure)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("admin_dns_ensure на старте: %s", e)
+        try:
             # Слоты шлюзов: юнит первого линка —
             # на шаблон, активный на холодном старте — предпочтительный.
             await asyncio.to_thread(services.gateway_units_migrate)

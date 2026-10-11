@@ -101,4 +101,5 @@ class ServicesMixin:
             state = "applied" if ack.get("ok") else "failed"
         else:
             state = "pending"
-        return {"own": len(own), "peer": len(peer), "state": state, "error": (ack.get("error") or "") if ack else ""}
+        return {"own": len(own), "peer": len(peer), "state": state, "error": (ack.get("error") or "") if ack else "",
+                "tunnel": self.smb_tunnel_slot(gw)}

@@ -53,10 +53,11 @@
 #      наборы чистятся) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
-#      в Finder через домен обзора awg.internal; при PEER_HOME_NETS
-#      и живом avahi-daemon ставится avahi-utils для обзора
-#      своей сети — после apt-get update; PEER_HOME_NETS пуст — файл
-#      awg-gw-peer-services.conf снимается).
+#      в Finder через домен обзора awg.internal; PEER_HOME_NETS пуст — файл
+#      awg-gw-peer-services.conf снимается). Обзор своей сети — вне режима:
+#      при своих подсетях (HOME_SUBNETS) и живом avahi-daemon ставится
+#      avahi-utils (после apt-get update) — имена этой сети нужны и соседним
+#      шлюзам, и устройствам админа в туннеле («SMB в туннеле» на ВПС).
 #      awg-lan-services.sh <файл> ставит записи, собранные агентом из данных
 #      канала: каждая строка — по белому списку шаблонов (LINE_RES в
 #      awgbot/domain/gwservices.py), dnsmasq --test, рестарт с откатом, та же
@@ -143,8 +144,8 @@
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
 # работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
 # остаётся accept. avahi-daemon не ставит (он начал бы объявлять шлюз) —
-# только avahi-utils рядом с уже запущенным демоном и только при подсетях других
-# шлюзов (PEER_HOME_NETS).
+# только avahi-utils рядом с уже запущенным демоном и только при заданных своих
+# подсетях (HOME_SUBNETS).
 # /etc/default/dnsmasq не трогает: DNSMASQ_EXCEPT init-скрипт Debian превращает
 # в except-interface, а тот перекрывает listen-address; файл, созданный до
 # пакета, ронял бы dpkg.
@@ -2123,16 +2124,8 @@ HOMEEOF
     # ── сервисы соседних сетей: обзор своей
     # сети — avahi-browse при живом avahi-daemon (сам демон не ставим: он начал
     # бы объявлять шлюз); соседей нет — записи соседей снять
-    if [ -n "${PEER_HOME_NETS:-}" ]; then
-        # списки apt на шлюзе могут быть старыми (404 на зеркале) — сначала update
-        if systemctl is-active --quiet avahi-daemon 2>/dev/null \
-                && ! command -v avahi-browse >/dev/null 2>&1; then
-            say "  ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)"
-            run "apt-get update -q >/dev/null 2>&1 || true"
-            run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
-                || say "  avahi-utils не установился — SMB-серверы этой подсети не видны из подсетей других шлюзов, остальное работает"
-        fi
-    elif [ -f "$PEER_SVC_CONF" ]; then
+    # (обзор своей сети ставится ниже, вне режима: условие — свои подсети)
+    if [ -z "${PEER_HOME_NETS:-}" ] && [ -f "$PEER_SVC_CONF" ]; then
         run "rm -f $PEER_SVC_CONF"; _dn_changed=1
     fi
     if [ "$_dn_changed" = "1" ] || ! systemctl is-active --quiet dnsmasq; then
@@ -2158,6 +2151,19 @@ else
     else
         say "  выключено"
     fi
+fi
+
+# ── обзор SMB своей сети: имена уходят серверу AWG — соседним шлюзам (связь
+# подсетей) и устройствам админа в туннеле («SMB в туннеле»); условие — свои
+# подсети заданы. Сам avahi-daemon не ставим (он начал бы объявлять шлюз) —
+# только avahi-utils рядом с уже запущенным демоном; списки apt на шлюзе могут
+# быть старыми (404 на зеркале) — сначала update
+if [ -n "${HOME_SUBNETS:-}" ] && systemctl is-active --quiet avahi-daemon 2>/dev/null \
+        && ! command -v avahi-browse >/dev/null 2>&1; then
+    say "  ставлю avahi-utils (обзор SMB-серверов этой подсети: соседние шлюзы и устройства админа в туннеле)"
+    run "apt-get update -q >/dev/null 2>&1 || true"
+    run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
+        || say "  avahi-utils не установился — SMB-серверы этой подсети по именам не видны, остальное работает"
 fi
 
 write_status "up"

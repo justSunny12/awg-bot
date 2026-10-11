@@ -16,7 +16,11 @@
 #      (апстримы, защиты) ведёт резолвер; иначе полный, слушать ТОЛЬКО на
 #      своём адресе (0.0.0.0 перекрыл бы 127.0.0.53 systemd-resolved);
 #   3) DNAT :53 клиентской подсети на dnsmasq — чтобы выданные конфиги с
-#      DNS=1.1.1.1 продолжали работать без перевыпуска ссылок;
+#      DNS=1.1.1.1 продолжали работать без перевыпуска ссылок; адрес резолвера
+#      админа (ADMIN_DNS, из app.client_config.admin_dns, умолчание
+#      10.255.53.53) — мимо перехвата: RETURN выше DNAT, ставится заново на
+#      каждом прогоне. На живых хостах то же правило ставит бот на старте
+#      (infra/admindns.py, nat_exempt), не дожидаясь прогона обвязки;
 #   4) разрешения FORWARD для клиентской подсети; MASQUERADE — только если его
 #      не ведёт бот (nft-таблица awg_bot_guard, см. README §6b): на новых
 #      установках NAT клиентов живёт там, здесь остаётся для прежней схемы;
@@ -75,6 +79,11 @@ fi
 # значит оставить людей с мёртвым DNS до перевыпуска конфигов. Их перепишет
 # только переезд профилей — он же и уронит dummy.
 _cfg_dns2="$(awk -F'"' '/^  dns2:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
+# Резолвер админа («SMB в туннеле», install/awg-admin-dns-setup.sh): его адрес
+# выводится из-под перехвата :53 (шаг 3) — иначе запросы устройств админа к
+# нему DNAT уводил бы на резолвер клиентов, где записей awg.internal нет.
+ADMIN_DNS="${ADMIN_DNS:-$(awk -F'"' '/^  admin_dns:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)}"
+ADMIN_DNS="${ADMIN_DNS:-10.255.53.53}"
 DUMMY_REFERENCED=""
 for _d in "$_cfg_dns1" "$_cfg_dns2"; do
     [ -n "$_d" ] || continue
@@ -259,6 +268,8 @@ fi
 
 if [ "$MODE" = "rollback" ]; then
     step "Откат"
+    drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -d "$ADMIN_DNS" -p udp --dport 53 -j RETURN
+    drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -d "$ADMIN_DNS" -p tcp --dport 53 -j RETURN
     drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -p udp --dport 53 \
               -j DNAT --to-destination "$DNS_ADDR:53"
     drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
@@ -450,6 +461,13 @@ ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p udp --dport 53 \
             -j DNAT --to-destination "$DNS_ADDR:53"
 ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
             -j DNAT --to-destination "$DNS_ADDR:53"
+# Адрес резолвера админа — мимо перехвата: RETURN строго ВЫШЕ DNAT. ensure_rule
+# вставляет в начало цепочки, и DNAT, добавленный позже, встал бы выше RETURN —
+# поэтому RETURN каждый раз снимается и ставится заново, последним, то есть первым.
+for _p in udp tcp; do
+    drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -d "$ADMIN_DNS" -p "$_p" --dport 53 -j RETURN
+    run "iptables -t nat -I PREROUTING -s $CLIENT_SUBNET -d $ADMIN_DNS -p $_p --dport 53 -j RETURN"
+done
 
 # 3a) DNAT ведёт на ЛОКАЛЬНЫЙ адрес — значит пакет попадает в INPUT
 # Это не тонкость, а отдельный отказ. После DNAT назначение становится нашим

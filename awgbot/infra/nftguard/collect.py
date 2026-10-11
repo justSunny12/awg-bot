@@ -182,7 +182,15 @@ def build_spec(admin_ips, channel_extra=()) -> pkg.GuardSpec:
         link_channel_port=pkg.link_channel_port() if host_mode else 0,
         # прежний порт канала после смены — неделю открыт тоже (gwcfg_channel_ports)
         link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()] if host_mode else [],
+        admin_dns4=_admin_dns_addr() if host_mode else "",
     )
+
+
+def _admin_dns_addr() -> str:
+    """Адрес резолвера админа, если он поставлен: его :53 — только устройствам
+    админа (имена SMB локальных сетей шлюзов прочие клиенты видеть не должны)."""
+    from awgbot.infra import admindns
+    return admindns.addr() if admindns.installed() else ""
 
 
 def _peer_link_ifs(enabled: bool) -> list[str]:

@@ -13,8 +13,9 @@ from awgbot.domain.gateway.base import GwCheck, log
 class PeerServicesMixin:
     """Сервисы соседних сетей."""
     # ── сервисы соседних сетей ────────────
-    # Не настраивается: работает там и тогда, где работает доступ между
-    # подсетями (PEER_HOME_NETS в юните) при режиме без VPN и канале линка.
+    # Не настраивается. Обзор своей сети — при заданных своих подсетях
+    # (HOME_SUBNETS в юните): имена нужны и соседним шлюзам (связь подсетей), и
+    # устройствам админа в туннеле («SMB в туннеле» на сервере AWG).
     _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
     _SVC_PEER_KEY = "gw_peer_svc"            # применённый чужой: {"hash", "items"}
     _SVC_PEER_ERR_KEY = "gw_peer_svc_err"    # последняя ошибка применения
@@ -24,7 +25,7 @@ class PeerServicesMixin:
 
     def services_active(self) -> bool:
         from awgbot.infra import gwguard
-        return gwguard.lan_mode() and bool(gwguard.unit_env("PEER_HOME_NETS").split())
+        return bool(gwguard.unit_env("HOME_SUBNETS").split())
 
     def services_local(self) -> list[dict]:
         """SMB-серверы этой сети, найденные обзором (после чистки)."""
@@ -168,8 +169,8 @@ class PeerServicesMixin:
         # мастер восстановления на шлюзе без NAS был бы пустым
         if info["avahi"] is False:
             checks.append(GwCheck("SMB этой подсети", None,
-                                  "avahi-daemon не запущен: SMB-серверы этой подсети не видны из подсетей "
-                                  "других шлюзов"))
+                                  "avahi-daemon не запущен: SMB-серверы этой подсети по именам не видны ни "
+                                  "соседним шлюзам, ни устройствам админа в туннеле"))
         elif not info["browse"]:
             checks.append(GwCheck("SMB этой подсети", None,
                                   "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)"))
@@ -178,7 +179,8 @@ class PeerServicesMixin:
         peer = self.services_peer()
         items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
         info["peer"] = [r.get("n", "") for r in items]
-        info["ever"] = bool(peer)
+        # без подсетей соседей ждать от сервера нечего: «не найдены», а не «обновляю…»
+        info["ever"] = bool(peer) or not gwguard.unit_env("PEER_HOME_NETS").split()
         info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
         if info["err"]:
             checks.append(GwCheck("SMB подсетей других шлюзов", False,

@@ -72,8 +72,11 @@ def _conf_text(
     port: int,
     include_mtu: bool,
     iface: str = "",
+    admin_dns: str = "",
 ) -> str:
-    """Текст клиентского конфига.
+    """Текст клиентского конфига. admin_dns — адрес резолвера админа: устройству
+    админа он идёт в оба поля DNS и, при раздельном туннеле, в AllowedIPs
+    (allowed_ips_for).
 
     include_mtu выбирает ВАРИАНТ, а не одну строку: True — отдельный .conf для
     файлового импорта, False — встроенный в vpn:// (точный эталон приложения).
@@ -89,7 +92,7 @@ def _conf_text(
     смыслу. Во встроенный конфиг они по-прежнему идут: формат vpn:// заморожен
     и обязан воспроизводить эталон байт в байт.
     """
-    dns1, dns2 = dns_for(iface)
+    dns1, dns2 = (admin_dns, admin_dns) if admin_dns else dns_for(iface)
     lines = [
         "[Interface]",
         f"Address = {address}/32",
@@ -109,7 +112,7 @@ def _conf_text(
         "[Peer]",
         f"PublicKey = {server_pubkey}",
         f"PresharedKey = {psk}",
-        f"AllowedIPs = {config.CLIENT_ALLOWED_IPS}",
+        f"AllowedIPs = {allowed_ips_for(admin_dns)}",
         f"Endpoint = {host}:{port}",
         f'PersistentKeepalive = {_live("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS)}',
         "",
@@ -176,6 +179,30 @@ def _subnet_of(address: str) -> str:
     return address.rsplit(".", 1)[0] + ".0"
 
 
+def allowed_ips_for(admin_dns: str = "") -> str:
+    """Строка AllowedIPs клиентского конфига. Устройству админа при раздельном
+    туннеле дописывается /32 резолвера админа — иначе запрос DNS к нему не
+    ушёл бы в туннель: адрес лежит вне подсети клиентов. Полный туннель
+    (0.0.0.0/0) его и так покрывает — тогда строка прежняя, байт в байт."""
+    base = str(config.CLIENT_ALLOWED_IPS)
+    if not admin_dns:
+        return base
+    base = ", ".join(t.strip() for t in base.split(",") if t.strip())   # «a, » и «a,b» — к одному виду
+    import ipaddress
+    try:
+        ip = ipaddress.IPv4Address(admin_dns)
+    except ValueError:
+        return base
+    for tok in base.split(","):
+        try:
+            net = ipaddress.ip_network(tok.strip(), strict=False)
+        except ValueError:
+            continue
+        if net.version == 4 and ip in net:
+            return base
+    return f"{base}, {ip}/32"
+
+
 def dns_for(iface: str = "") -> tuple[str, str]:
     """DNS клиентского конфига — по ИНТЕРФЕЙСУ пира, как и протокол.
 
@@ -210,11 +237,11 @@ def app_container_for(iface: str = "") -> str:
 def _build_vpn_json(
     private_key: str, public_key: str, address: str,
     obf: dict, server_pubkey: str, psk: str, host: str, port: int,
-    iface: str = "",
+    iface: str = "", admin_dns: str = "",
 ) -> dict:
     embedded_conf = _conf_text(
         private_key, address, obf, server_pubkey, psk, host, port,
-        include_mtu=False, iface=iface,
+        include_mtu=False, iface=iface, admin_dns=admin_dns,
     )
     last_config = _build_last_config(
         private_key, public_key, address, obf, server_pubkey, psk,
@@ -239,7 +266,7 @@ def _build_vpn_json(
     # значение обязано остаться прежним, иначе приложение перестанет опознавать
     # профили у всех разом. В окне смены поколения у второго интерфейса он свой.
     app_container = app_container_for(iface)
-    dns1, dns2 = dns_for(iface)
+    dns1, dns2 = (admin_dns, admin_dns) if admin_dns else dns_for(iface)
     return {
         "containers": [{"awg": awg_block, "container": app_container}],
         "defaultContainer": app_container,
@@ -283,12 +310,15 @@ def generate(
     address: str,
     server_params: dict,
     iface: str = "",
+    admin_dns: str = "",
 ) -> dict:
     """Собирает клиентский конфиг устройства.
 
     address — IP без маски (например «10.8.1.4»).
     iface — интерфейс пира: от него зависит идентификатор протокола в vpn://
     (в окне смены поколения интерфейсов два, и протокол у них разный).
+    admin_dns — адрес резолвера админа для устройства админа (не шлюзового):
+    DNS в оба поля и /32 в AllowedIPs при раздельном туннеле; пусто — как всем.
     server_params — из awg.read_server_params():
         {obfuscation: {...}, listen_port: int, server_pubkey: str, psk: str}
 
@@ -302,9 +332,10 @@ def generate(
 
     conf_standalone = _conf_text(
         private_key, address, obf, spub, psk, host, port, include_mtu=True, iface=iface,
+        admin_dns=admin_dns,
     )
     vpn_obj = _build_vpn_json(
-        private_key, public_key, address, obf, spub, psk, host, port, iface,
+        private_key, public_key, address, obf, spub, psk, host, port, iface, admin_dns,
     )
     return {"conf": conf_standalone, "vpn": encode_vpn(vpn_obj)}
 

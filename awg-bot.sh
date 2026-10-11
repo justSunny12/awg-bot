@@ -1431,8 +1431,9 @@ cmd_post_uninstall() {
         # остаются: VPN как таковой бот не ставил, только управлял им.
         local f name had=""
         for f in /etc/amnezia/amneziawg/awglink*.conf; do [[ -f "$f" ]] && had=1; done
-        if [[ -n "$had" || -x /usr/local/sbin/routing-host-setup.sh || -f /etc/dnsmasq.d/awgbot-resolver.conf ]]; then
-            warn "Найдена обвязка РФ-доступа (линки до шлюзов, таблицы маршрутизации, резолвер клиентов)."
+        if [[ -n "$had" || -x /usr/local/sbin/routing-host-setup.sh || -f /etc/dnsmasq.d/awgbot-resolver.conf \
+              || -f /etc/systemd/system/awgbot-admin-dns.service ]]; then
+            warn "Найдена обвязка РФ-доступа (линки до шлюзов, таблицы маршрутизации, резолвер клиентов и резолвер админа)."
             if confirm "Снять её? (РФ-доступ у клиентов перестанет работать; интерфейсы awg с клиентами остаются)" y; then
                 for f in /etc/amnezia/amneziawg/awglink*.conf; do
                     [[ -f "$f" ]] || continue
@@ -1444,6 +1445,12 @@ cmd_post_uninstall() {
                     && sh /usr/local/sbin/routing-host-setup.sh --rollback >/dev/null 2>&1 || true
                 rm -f /usr/local/sbin/routing-link-setup.sh /usr/local/sbin/routing-host-setup.sh
                 rm -f /etc/dnsmasq.d/awgbot-resolver.conf /etc/systemd/system/dnsmasq.service.d/awgbot-resolver.conf
+                # резолвер админа — здесь же, без скрипта поставки: каталог
+                # приложения к этому моменту может быть уже снят
+                systemctl disable --now awgbot-admin-dns 2>/dev/null || true
+                rm -f /etc/systemd/system/awgbot-admin-dns.service
+                ip link del awgadmdns 2>/dev/null || true
+                rm -rf /etc/awgbot-admin-dns
                 systemctl daemon-reload 2>/dev/null || true
                 systemctl try-restart dnsmasq 2>/dev/null || true
                 ok "обвязка РФ-доступа снята"
@@ -1557,6 +1564,22 @@ resolver_addr() {  # <подсеть>.1 по app.yaml — собственный
     printf '%s.1' "$prefix"
 }
 
+admin_dns_addr() {  # адрес резолвера админа — тот же ключ и та же проверка, что у бота (infra/admindns.addr)
+    local a o1 o2 prefix
+    a="$(yaml_get "$CONF_DIR/app.yaml" admin_dns 2>/dev/null || true)"
+    prefix="$(yaml_get "$CONF_DIR/app.yaml" subnet_prefix 2>/dev/null || true)"
+    if [[ "$a" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        o1="${BASH_REMATCH[1]}"; o2="${BASH_REMATCH[2]}"
+        # только частный и вне подсети клиентов — иначе умолчание, как у бота
+        if { [[ "$o1" == 10 ]] || { [[ "$o1" == 172 ]] && (( o2 >= 16 && o2 <= 31 )); } \
+                || { [[ "$o1" == 192 ]] && [[ "$o2" == 168 ]]; }; } \
+                && { [[ -z "$prefix" ]] || [[ "${a%.*}" != "$prefix" ]]; }; then
+            printf '%s' "$a"; return
+        fi
+    fi
+    printf '10.255.53.53'
+}
+
 ensure_resolver() {  # первая установка клиентской роли: dnsmasq на <подсеть>.1
     # Публичный адрес в поле DNS — это Chrome/Edge, молча уходящие на DoH мимо
     # любого перехвата: условная маршрутизация у такого человека работает
@@ -1570,6 +1593,10 @@ ensure_resolver() {  # первая установка клиентской ро
         yaml_set "$app" dns1 "\"$addr\""
         yaml_set "$app" dns2 "\"$addr\""
         ok "DNS клиентов — свой резолвер $addr (оба поля)."
+        # резолвер админа (имена SMB локальных сетей шлюзов для устройств
+        # админа в туннеле); не поднялся — поставит бот на старте
+        ADMIN_ADDR="$(admin_dns_addr)" bash "$INSTALL_DIR/install/awg-admin-dns-setup.sh" install "$addr" \
+            || warn "резолвер админа не поднят — бот попробует на старте; awg-bot resolver admin status"
     else
         warn "резолвер не поднят — DNS клиентов остаётся публичным; позже: awg-bot resolver install"
     fi
@@ -1600,9 +1627,20 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
         || warn "резолвер не взят под опеку — позже: awg-bot resolver install $addr"
 }
 
-cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR]
+cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR] | admin status|plan|install|remove
     require_installed
     local mode="${1:-status}" addr="${2:-}"
+    if [[ "$mode" == "admin" ]]; then
+        # резолвер админа: отдаёт остальное резолверу клиентов на <подсеть>.1
+        local sub="${2:-status}"
+        [[ "$sub" == "status" || "$sub" == "plan" ]] || require_root
+        if [[ "$sub" == "install" || "$sub" == "plan" ]]; then
+            ADMIN_ADDR="$(admin_dns_addr)" bash "$INSTALL_DIR/install/awg-admin-dns-setup.sh" "$sub" "$(resolver_addr)"
+        else
+            ADMIN_ADDR="$(admin_dns_addr)" bash "$INSTALL_DIR/install/awg-admin-dns-setup.sh" "$sub"
+        fi
+        return
+    fi
     [[ "$mode" == "status" || "$mode" == "plan" ]] || require_root
     [[ -n "$addr" ]] || addr="$(resolver_addr || true)"
     bash "$INSTALL_DIR/install/awg-resolver-setup.sh" "$mode" "$addr"
@@ -1699,7 +1737,9 @@ awg-bot — управление установленным ботом.
                              (ссылка, QR и файл — когда Telegram недоступен)
   awg-bot resolver <cmd>     свой DNS-резолвер клиентов (dnsmasq на <подсеть>.1):
                              status | install [addr] | add <addr> | remove <addr> | plan |
-                             dropin — обновить override юнита dnsmasq (зовёт бот на старте)
+                             dropin — обновить override юнита dnsmasq (зовёт бот на старте);
+                             admin status|plan|install|remove — резолвер админа (client_config.admin_dns;
+                             имена SMB локальных сетей шлюзов, «SMB в туннеле»)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }

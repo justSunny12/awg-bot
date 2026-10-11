@@ -634,54 +634,97 @@ def test_without_peer_subnets_the_services_file_is_removed_and_dnsmasq_restarted
     assert "apt-get" not in log, "без соседей avahi-utils не нужен"
 
 
-def test_avahi_utils_is_installed_only_next_to_a_running_avahi_daemon(script, tmp_path):
+def test_with_peer_subnets_the_services_file_stays_and_the_block_installs_nothing(script, tmp_path):
+    """Подсети соседей есть — записи соседей не трогаются и dnsmasq не
+    перезапускается; avahi-utils этот блок больше не ставит (он — ниже, по
+    своим подсетям)."""
     r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24")
     assert r.returncode == 0, r.stderr
-    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
-    # списки apt на малине бывают старыми (404 на зеркале) — сначала update, потом install
+    assert conf.exists() and "dn_changed=0" in r.stdout
+    assert "apt-get" not in log, log
+
+
+def _avahi_tail(script: str) -> str:
+    """Хвост раздела 5: ветка режима (VPN-транзит включён/выключен) и обзор
+    своей сети после неё — до записи статуса."""
+    start = script.index('\nif [ "$LAN_MODE" = "1" ]; then\n') + 1
+    return script[start:script.index('\nwrite_status "up"\n', start)]
+
+
+def _run_avahi(script, tmp_path, *, home: str, lan_mode="0", peers="", avahi_rc="0", browse=False,
+               apt_rc="0", link_channel="", apt_update_rc="0"):
+    """Ветка режима с подставными lan_apply/lan_remove и блок avahi-utils;
+    последней строкой — «tail=ok»: раздел дошёл до конца."""
+    bin_dir, log, fake, dns_d = _svc_host(tmp_path)
+    if browse:
+        fake("avahi-browse", "exit 0\n")
+    prog = (_helpers(script)
+            + f'\nMODE=apply\nLAN_MODE="{lan_mode}"\nHOME_SUBNETS="{home}"\nPEER_HOME_NETS="{peers}"\n'
+            + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
+            + f'HOME_FILE="{tmp_path}/none.nft"\nDNSMASQ_D="{dns_d}"\n'
+            + 'lan_apply() { echo "lan_apply"; return 0; }\nlan_remove() { echo "lan_remove"; }\n'
+            + _avahi_tail(script) + '\necho "tail=ok"\n')
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
+                       env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc,
+                            "APT_UPDATE_RC": apt_update_rc})
+    return r, [ln for ln in log.read_text().splitlines() if ln.startswith("apt-get")]
+
+
+@pytest.mark.parametrize("lan_mode", ["0", "1"])
+def test_avahi_utils_is_installed_with_own_subnets_in_either_mode(script, tmp_path, lan_mode):
+    """Обзор своей сети — при заданных своих подсетях, с VPN-транзитом и без:
+    имена SMB уходят серверу и для устройств админа в туннеле («SMB в
+    туннеле»), а не только соседним шлюзам."""
+    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", lan_mode=lan_mode)
+    assert r.returncode == 0 and "tail=ok" in r.stdout, r.stdout + r.stderr
+    # списки apt на шлюзе бывают старыми (404 на зеркале) — сначала update, потом install
     assert len(apt) == 2 and apt[0].startswith("apt-get update") and apt[1].endswith(" avahi-utils"), apt
-    assert "avahi-daemon" not in apt[1], "демон не ставим: он начал бы объявлять саму малину"
-    assert conf.exists(), "при соседях файл записей снят обвязкой"
-    assert "ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)" in r.stdout, r.stdout
-    assert "dn_changed=0" in r.stdout
+    assert "avahi-daemon" not in apt[1], "демон не ставим: он начал бы объявлять сам шлюз"
+    assert ("ставлю avahi-utils (обзор SMB-серверов этой подсети: соседние шлюзы и устройства админа "
+            "в туннеле)") in r.stdout, r.stdout
+
+
+def test_without_own_subnets_avahi_utils_is_not_installed_even_with_peers(script, tmp_path):
+    """Обзирать нечего — свои подсети не заданы; подсети соседей без своих
+    сами по себе обзора не требуют."""
+    r, apt = _run_avahi(script, tmp_path, home="", lan_mode="1", peers="192.168.68.0/24")
+    assert r.returncode == 0 and "tail=ok" in r.stdout, r.stderr
+    assert apt == [], apt
 
 
 @pytest.mark.parametrize("avahi_rc,browse", [("3", False), ("0", True)])
 def test_avahi_utils_is_not_installed_without_the_daemon_or_when_present(script, tmp_path, avahi_rc, browse):
     """Демона нет — ставить утилиту незачем (в мониторе ⚪); утилита уже есть —
     apt не трогаем: OMV держит свой apt, и лишний вызов ждёт его блокировку."""
-    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
+    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
     assert r.returncode == 0, r.stderr
-    assert "apt-get" not in log, log
+    assert apt == [], apt
 
 
 @pytest.mark.parametrize("link_channel", ["0", "1"])
 def test_avahi_utils_does_not_depend_on_the_channel_line(script, tmp_path, link_channel):
     """Канал обязателен, и установка утилиты обзора от строки канала не
     зависит: оставшийся от прежних версий LINK_CHANNEL=0 не должен лишать
-    соседние сети SMB-серверов этой подсети."""
-    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", link_channel=link_channel)
+    админа и соседние сети SMB-серверов этой подсети."""
+    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", link_channel=link_channel)
     assert r.returncode == 0, r.stderr
-    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
     assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"LINK_CHANNEL={link_channel}: apt {apt}"
-    assert conf.exists()
 
 
 def test_a_failed_apt_update_still_tries_the_install(script, tmp_path):
     """update упал (зеркало недоступно, сети нет) — install всё равно
     пробуется: пакет может найтись и по старым спискам, а раздел не падает."""
-    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", apt_update_rc="100")
-    assert r.returncode == 0 and "dn_changed=0" in r.stdout, (r.returncode, r.stdout, r.stderr)
-    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
+    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", apt_update_rc="100")
+    assert r.returncode == 0 and "tail=ok" in r.stdout, (r.returncode, r.stdout, r.stderr)
     assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"после отказа update install не пробовался: {apt}"
     assert "avahi-utils не установился" not in r.stdout, "отказ update выдан за отказ установки"
 
 
 def test_a_failed_avahi_utils_install_does_not_fail_the_section(script, tmp_path):
     """apt упал — остальное работает: раздел 5 не роняет юнит в цикл рестартов."""
-    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", apt_rc="100")
-    assert r.returncode == 0 and "dn_changed=0" in r.stdout, (r.returncode, r.stdout, r.stderr)
-    assert ("avahi-utils не установился — SMB-серверы этой подсети не видны из подсетей других шлюзов, "
+    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", apt_rc="100")
+    assert r.returncode == 0 and "tail=ok" in r.stdout, (r.returncode, r.stdout, r.stderr)
+    assert ("avahi-utils не установился — SMB-серверы этой подсети по именам не видны, "
             "остальное работает") in r.stdout, r.stdout
 
 

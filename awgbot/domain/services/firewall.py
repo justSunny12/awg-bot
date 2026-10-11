@@ -182,6 +182,7 @@ class FirewallMixin:
             with self._own_settings_change():
                 settings.set_value("app.firewall.enabled", False)
             raise ServiceError(str(e))
+        self._smb_tunnel_follow()
 
     def firewall_confirm(self) -> bool:
         from awgbot.infra import nftguard
@@ -195,7 +196,19 @@ class FirewallMixin:
         done = nftguard.remove()
         with self._own_settings_change():
             settings.set_value("app.firewall.enabled", False)
+        self._smb_tunnel_follow()
         return done
+
+    def _smb_tunnel_follow(self) -> None:
+        """«SMB в туннеле» держит записи только при фильтре снаружи: без него
+        имена увидели бы все клиенты — снять или вернуть сразу, не тактом."""
+        sync = getattr(self, "smb_tunnel_sync", None)
+        if sync is None:
+            return
+        try:
+            sync()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("SMB в туннеле: записи за фильтром не подтянуты: %s", e)
 
     # ── порт как факт на сервере: сверка, не следование ──────────────────────
     # Владелец конфига здесь — бот; расхождение порта sshd с conf почти всегда

@@ -355,21 +355,31 @@ def test_a_server_back_before_the_third_miss_starts_the_count_over(agent, monkey
     assert _local(agent) == ["192.168.68.10", "192.168.68.11"]
 
 
-def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(agent, monkeypatch):
-    """Функция работает там, где работает доступ между подсетями:
-    соседей в юните нет — mDNS не трогаем, а прежний список один раз уходит
-    пустым, чтобы сервер перестал раздавать его соседям."""
+def test_without_own_subnets_the_scan_does_not_touch_mdns_and_clears_the_list(agent, monkeypatch):
+    """Обзор работает там, где заданы свои подсети: их нет — mDNS не трогаем,
+    а прежний список один раз уходит пустым, чтобы сервер перестал раздавать
+    его соседям и снял записи резолвера админа."""
     lan = _Lan(monkeypatch)
     lan.see("192.168.68.10")
     agent.services_scan()
-    lan.env["PEER_HOME_NETS"] = ""
+    lan.env["HOME_SUBNETS"] = ""
     n = lan.browses
     assert agent.services_scan() is True and _local(agent) == []
     assert agent.services_scan() is False, "пустой список «изменился» второй раз"
-    assert lan.browses == n, "обзор mDNS без доступа между подсетями"
-    lan.env.update(PEER_HOME_NETS="192.168.1.0/24", LINK_CHANNEL="0")
+    assert lan.browses == n, "обзор mDNS без своих подсетей"
+    lan.env.update(HOME_SUBNETS="192.168.68.0/24", LINK_CHANNEL="0")
     agent.services_scan()
-    assert lan.browses > n, "старая строка LINK_CHANNEL=0 в юните выключила обзор при доступе между подсетями"
+    assert lan.browses > n, "старая строка LINK_CHANNEL=0 в юните выключила обзор"
+
+
+def test_the_scan_needs_neither_lan_mode_nor_peer_subnets(agent, monkeypatch):
+    """«SMB в туннеле»: шлюз без VPN-транзита и без связи подсетей тоже
+    называет серверу свои SMB-серверы — их имена нужны устройствам админа."""
+    lan = _Lan(monkeypatch)
+    lan.env.update(LAN_MODE="0", PEER_HOME_NETS="")
+    lan.see("192.168.68.10")
+    assert agent.services_scan() is True and _local(agent) == ["192.168.68.10"]
+    assert lan.browses == 1
 
 
 # ── отложенное применение записей соседей (помощника ещё нет) ───────────────

@@ -105,6 +105,40 @@ async def gw_slot_peer_yes(cb: CallbackQuery, callback_data: GwSlotCB, services)
                         + ": перевыпусти конфигурацию каждого шлюза", show_alert=True)
 
 
+@router.callback_query(GwSlotCB.filter(F.action == "smb_ask"))
+async def gw_slot_smb_ask(cb: CallbackQuery, services):
+    """«🗂 SMB в туннеле»: диалог на месте списка; включить без резолвера
+    админа или файервола нельзя — всплывашка с причиной, не диалог."""
+    on = not await call(services.smb_tunnel_on)
+    if on:
+        why = await call(services.smb_tunnel_unavailable)   # отказ — до диалога
+        if why:
+            await cb.answer(ui.toast(why), show_alert=True)
+            return
+    await edit(cb, texts.gateway_smb_ask(on), kb.gateway_smb_confirm(on))
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "smb_yes"))
+async def gw_slot_smb_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    on = callback_data.val == "1"
+    if on == await call(services.smb_tunnel_on):
+        await cb.answer(texts.already_state(on))          # старый диалог: цель уже стоит
+        await _render_list(cb, services)
+        return
+    await cb.answer()                                     # скрипт резолвера админа идёт секунды
+    try:
+        ok = await call(services.smb_tunnel_set, on)
+    except (ServiceError, settings.SettingsWriteError) as e:
+        await cb.message.answer(ui.fail("SMB в туннеле не переключён", str(e)))
+        await _render_list(cb, services)
+        return
+    from awgbot.bot import screens
+    note = (texts.SMB_TUNNEL_ON if on else texts.SMB_TUNNEL_OFF) if ok else texts.smb_tunnel_records_failed(on)
+    text, markup = await gateways_screen(services)
+    await edit(cb, screens.with_note(text, note), markup)
+
+
 @router.callback_query(GwSlotCB.filter(F.action == "edit"))
 async def gw_slot_edit(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
     await state.clear()

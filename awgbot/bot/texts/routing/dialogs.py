@@ -132,6 +132,28 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
             "РФ-сервисы у всех перестанут работать, пока он не оживёт")
 
 
+SMB_TUNNEL_ON = "✅ SMB в туннеле включён"
+SMB_TUNNEL_OFF = "☑️ SMB в туннеле выключен"
+
+
+def smb_tunnel_records_failed(on: bool) -> str:
+    """Тумблер переставлен, а записи резолвера админа поставить или снять не вышло."""
+    return ("⚠️ SMB в туннеле включён, но имена не поставлены" if on else
+            "⚠️ SMB в туннеле выключен, но имена ещё не сняты") + " — на сервере: awg-bot resolver admin status"
+
+
+def gateway_smb_ask(on: bool) -> str:
+    """Диалог тумблера «🗂 SMB в туннеле»."""
+    if on:
+        return ui.confirm("🗂 SMB в туннеле — включить?",
+                          "SMB-серверы локальных сетей шлюзов станут видны по именам на твоих устройствах в туннеле: "
+                          "macOS — Finder, «Сеть» → awg.internal; Windows — <code>\\\\имя.awg.internal</code>. "
+                          "Имена видят только устройства админа; конфиг устройства, выданный до 3.3.0, — после "
+                          "повторной выдачи")
+    return ui.confirm("🗂 SMB в туннеле — выключить?",
+                      "Имена SMB-серверов пропадут с твоих устройств; доступ по адресам останется")
+
+
 def gateway_peer_ask(on: bool, by_channel: bool = False) -> str:
     """Диалог тумблера «↔️ Связь подсетей»."""
     if on:

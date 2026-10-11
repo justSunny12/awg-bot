@@ -406,19 +406,34 @@ def test_no_avahi_is_grey_not_red(svc, monkeypatch):
     """Малина без NAS и без avahi — нормальное состояние: ⚪, не 🔴."""
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
-    assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети не видны "
-                                         "из подсетей других шлюзов"), c.detail
+    assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети по именам не "
+                                         "видны ни соседним шлюзам, ни устройствам админа в туннеле"), c.detail
     _svc_on(monkeypatch, browse=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", c.detail
 
 
 def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):
-    """Без соседей в юните функции нет: ни блока, ни проверок, ни обзора."""
+    """Без своих подсетей в юните обзора нет: ни блока, ни проверок, ни dig."""
     env = _svc_on(monkeypatch)
-    env["PEER_HOME_NETS"] = ""
+    env["HOME_SUBNETS"] = ""
     monkeypatch.setattr(gwguard, "dns_local", lambda *a, **k: pytest.fail("dig без функции"))
     assert svc.services_status() == ({"active": False}, [])
+
+
+def test_services_work_with_own_subnets_alone(svc, monkeypatch):
+    """Обзор своей сети нужен и устройствам админа в туннеле («SMB в туннеле»
+    на сервере): условие — свои подсети заданы, без VPN-транзита и без
+    подсетей соседей. Иначе шлюз без связи подсетей молчал бы, и имена его
+    SMB-серверов админу не доехали бы никогда."""
+    env = _svc_on(monkeypatch)
+    env.update(LAN_MODE="0", PEER_HOME_NETS="")
+    monkeypatch.setattr(gwguard, "lan_mode", lambda: False)
+    assert svc.services_active() is True
+    info, checks = svc.services_status()
+    assert info["active"] is True
+    assert [c.name for c in checks] == ["SMB этой подсети"], "проверка записей соседей без соседей"
+    assert info["ever"] is True, "без подсетей соседей ждать от сервера нечего — не «обновляю…»"
 
 
 def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):

@@ -201,6 +201,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     await send_notifications(bot, dns_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("resolver_health_tick: %s", e)
+            # резолвер админа («SMB в туннеле»): проба и файл записей
+            try:
+                adm_notes = await asyncio.to_thread(services.admin_dns_health_tick)
+                if adm_notes:
+                    await send_notifications(bot, adm_notes)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("admin_dns_health_tick: %s", e)
             # статус сервиса awg → уведомления админу (единый notifier-путь).
             # Вся работа с БД этого блока — в одном потоке и одной транзакции:
             # раньше часть шла синхронно в event loop и могла встать на

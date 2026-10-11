@@ -617,3 +617,64 @@ def test_ufw_status_is_asked_without_a_locale(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     assert nftguard.ufw_active() is True
     assert seen["env"]["LC_ALL"] == "C"
+
+
+# ── резолвер админа («SMB в туннеле») ───────────────────────────────────────
+
+def _admin_dns(monkeypatch, tmp_path, installed: bool):
+    from awgbot.infra import admindns
+    conf = tmp_path / "admin-dns.conf"
+    if installed:
+        conf.write_text("listen-address=10.255.53.53\nserver=10.9.1.1\n", encoding="utf-8")
+    monkeypatch.setattr(admindns, "CONF_PATH", conf)
+
+
+def test_the_admin_resolver_answers_only_admin_devices(host_mode, monkeypatch, tmp_path):
+    """Имена SMB локальных сетей шлюзов — только устройствам админа: :53 адреса
+    резолвера админа открыт набору admin4, прочим — drop. И раньше общего
+    «:53 из туннеля»: правило ниже него не действовало бы — первый accept
+    пустил бы любого клиента."""
+    _admin_dns(monkeypatch, tmp_path, installed=True)
+    _conf(monkeypatch)
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.admin_dns4 == "10.255.53.53"
+    lines = [ln.strip() for ln in nftguard.render(spec).splitlines()]
+    i_udp = lines.index("ip daddr 10.255.53.53 udp dport 53 ip saddr @admin4 accept")
+    i_tcp = lines.index("ip daddr 10.255.53.53 tcp dport 53 ip saddr @admin4 accept")
+    i_drop = lines.index("ip daddr 10.255.53.53 drop")
+    i_all = lines.index("ip saddr @tunnel_nets4 udp dport 53 accept")
+    assert i_udp < i_drop and i_tcp < i_drop, "drop раньше разрешения — админ без имён"
+    assert i_drop < i_all, "общее «:53 из туннеля» раньше правила резолвера админа — имена видят все"
+    # forward: адрес только локальный — пропади он с хоста, запрос админа не
+    # уходит маршрутом по умолчанию к провайдеру
+    fwd = lines[lines.index("type filter hook forward priority filter; policy drop;"):]
+    assert fwd.index("ip daddr 10.255.53.53 drop") == fwd.index("ct state invalid drop") + 1, \
+        "в forward адрес резолвера админа не закрыт первым правилом после ct state"
+
+
+def test_the_admin_resolver_rule_follows_the_address_setting(host_mode, monkeypatch, tmp_path):
+    _admin_dns(monkeypatch, tmp_path, installed=True)
+    _conf(monkeypatch, **{"app.client_config.admin_dns": "10.255.9.9"})
+    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    assert "ip daddr 10.255.9.9 drop" in text and "10.255.53.53" not in text
+
+
+def test_without_the_admin_resolver_there_is_no_rule(host_mode, monkeypatch, tmp_path):
+    _admin_dns(monkeypatch, tmp_path, installed=False)
+    _conf(monkeypatch)
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.admin_dns4 == ""
+    assert "10.255.53.53" not in nftguard.render(spec)
+
+
+def test_docker_mode_has_no_admin_resolver_rule(monkeypatch, tmp_path):
+    """В docker-режиме своего резолвера нет вовсе — и набора admin4 тоже: правило
+    с пустым набором закрыло бы адрес всем, включая админа."""
+    _admin_dns(monkeypatch, tmp_path, installed=True)
+    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
+    monkeypatch.setattr(nftguard, "listen_ports", lambda: [])
+    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.29.172.0/24"])
+    _conf(monkeypatch)
+    spec = nftguard.build_spec(["10.8.1.5"])
+    assert spec.admin_dns4 == ""
+    assert "10.255.53.53" not in nftguard.render(spec)

@@ -249,7 +249,8 @@ class GwSlotCB(CallbackData, prefix="gws"):
       lan_ask|lan_yes — «🔀 VPN-транзит» с подтверждением;
       router — рецепт роутера (val — вкладка: mt|ow);
       edit — подэкран «✏️ Изменить»;
-      peer_ask|peer_yes — связь подсетей с подтверждением."""
+      peer_ask|peer_yes — связь подсетей с подтверждением;
+      smb_ask|smb_yes (val 1|0) — «SMB в туннеле» с подтверждением."""
     action: str
     slot: int = 0
     val: str = ""

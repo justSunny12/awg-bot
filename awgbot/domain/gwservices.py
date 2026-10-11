@@ -166,14 +166,15 @@ def reverse_zone(net: str) -> str:
     return ".".join(reversed(str(n.network_address).split("."))) + ".in-addr.arpa"
 
 
-def render_dnsmasq(items, own_nets, digest: str = "") -> str:
+def render_dnsmasq(items, own_nets, digest: str = "", owner: str = "") -> str:
     """Файл записей для dnsmasq получателя. Пустой список —
-    пустая строка: файл снимается, а не пишется пустым."""
+    пустая строка: файл снимается, а не пишется пустым. owner — первая строка
+    (комментарий): у шлюза-получателя и у резолвера админа на сервере своя."""
     items = clean(items, ["0.0.0.0/0"], MAX_PEER) if items else []
     if not items:
         return ""
     d = BROWSE_DOMAIN
-    lines = ["# awg-bot (шлюз): сервисы соседних сетей. Владелец — awg-lan-services.sh.",
+    lines = [owner or "# awg-bot (шлюз): сервисы соседних сетей. Владелец — awg-lan-services.sh.",
              f"# hash={digest or feed_hash(items)}",
              f"local=/{d}/"]
     zones = []

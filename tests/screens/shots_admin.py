@@ -3520,3 +3520,78 @@ SHOTS += [
          data=_keys(_token1(), _tg_getme),
          title="тот же бот, шлюза нет на связи — итог «получит при подключении»"),
 ]
+
+
+# ── «🗂 SMB в туннеле»: тумблер в «🛰 Шлюзы», диалоги, итоги, отказ, карточка ──
+# Резолвер админа «поставлен» подменой admindns.installed, его скрипт — пустышка;
+# файервол включён фейком conftest. Тумблер включён — conf снимка.
+
+_SMB_ON = {"app.routing.smb_tunnel": True}
+_NAS2 = {"t": "_smb._tcp", "n": "Backup", "h": "backup", "p": 445, "a": "192.168.68.20"}
+
+
+def _smb_host(resolver: bool = True, firewall: bool = True):
+    def step(services, mp):
+        from awgbot.infra import admindns, nftguard
+        from awgbot.infra import resolver as client_resolver
+        mp.setattr(client_resolver, "installed", lambda: True)
+        mp.setattr(admindns, "installed", lambda: resolver)
+        mp.setattr(admindns, "service_active", lambda: True)
+        mp.setattr(admindns, "run", lambda mode, arg="": "")
+        if not firewall:
+            mp.setattr(nftguard, "enabled", lambda: False)
+    return step
+
+
+def _svc2(services, mp):
+    """Слот 2 на связи назвал свой SMB-сервер."""
+    services.gwlink_services_in(2, [_NAS2])
+    services.gwlink_session_opened(2, "3.1.0", 2)
+
+
+SHOTS += [
+    Shot("adm.gw.smb_ask", role="admin", press=[GwSlotCB(action="smb_ask")], data=_gw(1, _smb_host()),
+         title="SMB в туннеле — включить?"),
+    Shot("adm.gw.smb_yes", role="admin", press=[GwSlotCB(action="smb_yes", val="1")], data=_gw(1, _smb_host()),
+         title="SMB в туннеле включён — итог первой строкой, тумблер ✅ (один слот)"),
+    Shot("adm.gw.smb_ask.off", role="admin", press=[GwSlotCB(action="smb_ask")], data=_gw(1, _smb_host()),
+         conf=_SMB_ON, title="SMB в туннеле — выключить?"),
+    Shot("adm.gw.smb_yes.off", role="admin", press=[GwSlotCB(action="smb_yes", val="0")],
+         data=_gw(1, _smb_host()), conf=_SMB_ON, title="SMB в туннеле выключен — итог первой строкой"),
+    Shot("adm.gw.smb_ask.noresolver", role="admin", press=[GwSlotCB(action="smb_ask")],
+         data=_gw(1, _smb_host(resolver=False)), title="включить без резолвера админа — всплывашка"),
+    Shot("adm.gw.smb_ask.nofw", role="admin", press=[GwSlotCB(action="smb_ask")],
+         data=_gw(1, _smb_host(firewall=False)), title="включить без фильтра снаружи — всплывашка"),
+    Shot("adm.gw.list.smb.two", role="admin", press=[GwSlotCB(action="list")], data=_gw(2, _smb_host()),
+         conf=_SMB_ON, title="два слота: ✅ SMB в туннеле под автопереключением и связью подсетей"),
+    Shot("adm.gw.card.smb.tunnel", role="admin", press=[GwSlotCB(action="card", slot=1)],
+         data=_gw(2, _smb_host(), _smb_sent(), lan2=True, peers=True), conf=_SMB_ON,
+         title="карточка: свои SMB — «в туннеле ✅»"),
+    Shot("adm.gw.card.smb.tunnel.peers", role="admin", press=[GwSlotCB(action="card", slot=2)],
+         data=_gw(2, _smb_host(), _smb_sent(), _smb_ack(), _svc2, lan2=True, peers=True), conf=_SMB_ON,
+         title="карточка: свои и извне, доступны — «в туннеле ✅» в конце строки"),
+]
+
+
+def _svc1(services, mp):
+    """Слот 1 (192.168.1.0/24) на связи назвал свой SMB-сервер."""
+    services.gateway_set_lan_subnets(1, LAN1)
+    services.gwlink_services_in(1, [_NAS])
+    services.gwlink_session_opened(1, "3.1.0", 2)
+
+
+def _smb_records_fail(services, mp):
+    from awgbot.infra import admindns
+
+    def run(mode, arg=""):
+        raise admindns.AdminDnsError("подставной отказ")
+    mp.setattr(admindns, "run", run)
+
+
+SHOTS += [
+    Shot("adm.gw.card.smb.tunnel.one", role="admin", press=[GwSlotCB(action="card", slot=1)],
+         data=_gw(1, _smb_host(), _svc1), conf=_SMB_ON,
+         title="один шлюз, без связи подсетей: «🗂 SMB: свои — 1 · в туннеле ✅»"),
+    Shot("adm.gw.smb_yes.records_failed", role="admin", press=[GwSlotCB(action="smb_yes", val="1")],
+         data=_gw(1, _smb_host(), _smb_records_fail), title="включён, но записи не встали — итог об этом"),
+]

@@ -373,3 +373,30 @@ def test_a_stale_iptables_masquerade_is_dropped_when_the_bot_leads_nat():
     src = (pathlib.Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh").read_text(encoding="utf-8")
     branch = src.split("if guard_masquerades; then", 1)[1].split("else", 1)[0]
     assert 'drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE' in branch
+
+
+# ── резолвер админа мимо перехвата :53 ───────────────────────────────────────
+
+def test_the_admin_resolver_is_inserted_above_the_dns_interception(script):
+    """DNAT всего :53 клиентов увёл бы запросы устройств админа к резолверу
+    админа на резолвер клиентов — без записей awg.internal, то есть «SMB в
+    туннеле» молча не работал бы. RETURN обязан стоять в цепочке ВЫШЕ DNAT:
+    -I кладёт в начало, значит в файле — после DNAT, и каждый прогон заново."""
+    step3 = script[script.index('step "3. Перехват DNS'):script.index('step "3a.')]
+    dnat = step3.index("-j DNAT --to-destination")
+    ins = step3.index("iptables -t nat -I PREROUTING -s $CLIENT_SUBNET -d $ADMIN_DNS -p $_p --dport 53 -j RETURN")
+    drop = step3.index('drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -d "$ADMIN_DNS" -p "$_p" --dport 53 -j RETURN')
+    assert dnat < drop < ins, "RETURN ставится раньше DNAT — окажется ниже него и не сработает"
+    assert "for _p in udp tcp; do" in step3
+
+
+def test_the_admin_resolver_exception_is_rolled_back(script):
+    rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1].split("exit 0", 1)[0]
+    for p in ("udp", "tcp"):
+        assert (f'drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -d "$ADMIN_DNS" -p {p} --dport 53 -j RETURN'
+                in rollback), f"откат оставляет RETURN {p}"
+
+
+def test_the_admin_resolver_address_comes_from_the_bot_setting(script):
+    """Обвязка и бот обязаны говорить об одном адресе: ключ client_config.admin_dns."""
+    assert "/^  admin_dns:/" in script and 'ADMIN_DNS="${ADMIN_DNS:-10.255.53.53}"' in script

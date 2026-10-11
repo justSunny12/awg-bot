@@ -85,6 +85,12 @@ def render(spec: pkg.GuardSpec) -> str:
     ]
     if spec.udp_ports:
         out.append(f"        udp dport {pkg._ports(spec.udp_ports)} accept")
+    if spec.admin_dns4:
+        # резолвер админа: имена SMB локальных сетей шлюзов — только устройствам
+        # админа; правило раньше общего «:53 из туннеля», иначе то пустило бы всех
+        out.append(f"        ip daddr {spec.admin_dns4} udp dport 53 ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
+        out.append(f"        ip daddr {spec.admin_dns4} tcp dport 53 ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
+        out.append(f"        ip daddr {spec.admin_dns4} drop")
     if spec.tunnel_nets4:
         out.append(f"        ip saddr @{pkg.SET_TUNNEL_NETS} udp dport 53 accept")
         out.append(f"        ip saddr @{pkg.SET_TUNNEL_NETS} tcp dport 53 accept")
@@ -122,6 +128,10 @@ def render(spec: pkg.GuardSpec) -> str:
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
+        if spec.admin_dns4:
+            # адрес резолвера админа — только локальный: пропади он с хоста,
+            # запрос устройства админа не уходит маршрутом по умолчанию к провайдеру
+            out.append(f"        ip daddr {spec.admin_dns4} drop")
         if spec.peer_link_ifs:
             # линк ↔ линк: локальные сети за шлюзами друг до друга (функция B);
             # что именно едет, ограничивает AllowedIPs на стороне шлюза

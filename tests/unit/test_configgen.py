@@ -272,3 +272,74 @@ def test_mtu_is_read_at_issue_time(monkeypatch):
                         lambda k, d=None: 1280 if k == "app.client_config.mtu" else d)
     res = cg.generate("PRIV", "PUB", "10.8.1.5", _params())
     assert "MTU = 1280" in res["conf"]
+
+
+# ── резолвер админа («SMB в туннеле») ───────────────────────────────────────
+
+ADMIN_DNS = "10.255.53.53"
+SPLIT = "10.8.1.0/24, 192.168.1.0/24"
+
+
+def _lines(conf: str, key: str) -> list[str]:
+    return [ln.split("=", 1)[1].strip() for ln in conf.splitlines() if ln.startswith(f"{key} =")]
+
+
+def _both_forms(res) -> tuple[str, str, dict]:
+    """(.conf, embedded conf из vpn://, JSON ссылки) — человек импортирует любое."""
+    doc = cg.decode_vpn(res["vpn"])
+    lc = json.loads(doc["containers"][0]["awg"]["last_config"])
+    return res["conf"], lc["config"], doc
+
+
+def test_admin_dns_goes_to_both_dns_fields_of_every_form(monkeypatch):
+    """Оба поля — резолвер админа: публичный вторым номером возвращал бы часть
+    запросов мимо него, и Finder видел бы имена через раз."""
+    res = cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS)
+    conf, embedded, doc = _both_forms(res)
+    assert _lines(conf, "DNS") == [f"{ADMIN_DNS}, {ADMIN_DNS}"]
+    assert _lines(embedded, "DNS") == [f"{ADMIN_DNS}, {ADMIN_DNS}"], "ссылка vpn:// несёт прежний DNS"
+    assert doc["dns1"] == ADMIN_DNS and doc["dns2"] == ADMIN_DNS
+
+
+def test_split_tunnel_admin_config_carries_the_admin_resolver_32(monkeypatch):
+    """Раздельный туннель: адрес резолвера админа вне подсети клиентов, без /32
+    в AllowedIPs запрос DNS ушёл бы мимо туннеля — у устройства нет DNS."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    conf, embedded, _ = _both_forms(cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS))
+    assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, {ADMIN_DNS}/32"]
+    assert _lines(embedded, "AllowedIPs") == [f"{SPLIT}, {ADMIN_DNS}/32"], "в ссылке vpn:// /32 нет"
+
+
+@pytest.mark.parametrize("allowed", ["0.0.0.0/0, ::/0", "0.0.0.0/0", "10.0.0.0/8, ::/0"])
+def test_a_covering_allowed_ips_line_stays_byte_for_byte(monkeypatch, allowed):
+    """Полный туннель (и любой список, уже покрывающий адрес) — строка прежняя:
+    лишний /32 менял бы конфиг админа без смысла."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
+    conf, embedded, _ = _both_forms(cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS))
+    assert _lines(conf, "AllowedIPs") == [allowed] and _lines(embedded, "AllowedIPs") == [allowed]
+
+
+def test_without_admin_dns_the_config_is_exactly_the_old_one(monkeypatch):
+    """Клиенту, шлюзовому устройству и админу без резолвера админа (docker) —
+    конфиг байт в байт тот же, что до «SMB в туннеле»."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    plain = cg.generate("PRIV", "PUB", "10.8.1.2", _params())
+    empty = cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns="")
+    assert plain == empty
+    conf, embedded, doc = _both_forms(plain)
+    assert _lines(conf, "AllowedIPs") == [SPLIT] and ADMIN_DNS not in conf and ADMIN_DNS not in embedded
+    assert doc["dns1"] == cg.dns_for()[0] and doc["dns2"] == cg.dns_for()[1]
+
+
+def test_a_garbage_admin_dns_does_not_reach_allowed_ips(monkeypatch):
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    assert cg.allowed_ips_for("10.255.53") == SPLIT
+    assert cg.allowed_ips_for("") == SPLIT
+
+
+def test_a_sloppy_split_list_is_tidied_only_for_the_admin(monkeypatch):
+    """«a, » в app.yaml: админу — ровная строка с /32 (пустой элемент сломал бы
+    импорт), остальным — байт в байт как всегда."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "10.8.1.0/24 ,192.168.1.0/24, ")
+    assert cg.allowed_ips_for(ADMIN_DNS) == f"10.8.1.0/24, 192.168.1.0/24, {ADMIN_DNS}/32"
+    assert cg.allowed_ips_for("") == "10.8.1.0/24 ,192.168.1.0/24, "

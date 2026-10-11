@@ -48,12 +48,12 @@ def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
 
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
-                peer_nets_on: bool | None = None) -> InlineKeyboardMarkup:
+                peer_nets_on: bool | None = None, smb_on: bool | None = None) -> InlineKeyboardMarkup:
     """Экран «🛰 Шлюзы» с главной: не развёрнуто — «🚀 Развернуть»; спит до
     перезапуска — только выход; выключено — «✅ Включить»; включено — слоты
     кнопками (⭐ у предпочтительного), переключение на резерв, тумблеры
-    автопереключения и связи подсетей (при двух слотах), «Кому доступен» и
-    «Параметры»."""
+    автопереключения и связи подсетей (при двух слотах), ниже «SMB в туннеле»
+    (smb_on не None — есть слоты), «Кому доступен» и «Параметры»."""
     menu = ui.to_menu(Menu(action="main"))
     if not provisioned:
         return ui.rows(("🚀 Развернуть", SetCB(sec="rt", act="do", key="provision")), menu)
@@ -86,6 +86,9 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
             body.append([(f"{_tick(failover_on)} Автопереключение", GwSlotCB(action="failover")),
                          (f"{_tick(peer_nets_on)} Связь подсетей", GwSlotCB(action="peer_ask"))
                          if peer_nets_on is not None else None])
+    if smb_on is not None:
+        # и без слотов, пока включён: снятый последний шлюз не должен запирать тумблер
+        body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
     return ui.rows(
         *body,
         [("👥 Кому доступен", SetCB(sec="rt_users", act="open")), ("⚙️ Параметры", SetCB(sec="rt_params", act="open"))],
@@ -187,6 +190,12 @@ def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:
     # цель — в колбэке: «не текущее» на втором нажатии выключало только что включённое
     return confirm(GwSlotCB(action="card", slot=slot), "✅ Включить" if on else "☑️ Выключить",
                    GwSlotCB(action="lan_yes", slot=slot, val="1" if on else "0"), danger=False)
+
+
+def gateway_smb_confirm(on: bool) -> InlineKeyboardMarkup:
+    """Подтверждение «🗂 SMB в туннеле»: «Отмена» первой, назад — в «Шлюзы»."""
+    return confirm(GwSlotCB(action="list"), "✅ Включить" if on else "☑️ Выключить",
+                   GwSlotCB(action="smb_yes", val="1" if on else "0"), danger=False)
 
 
 def gateway_peer_confirm(on: bool) -> InlineKeyboardMarkup:

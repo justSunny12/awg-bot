@@ -107,6 +107,14 @@ class PrivateDnsMixin:
                 resolver.remove(old)
             except resolver.ResolverError as e:
                 log.warning("финал переезда: старый адрес резолвера %s не снят: %s", old, e)
+        # резолвер админа отдаёт остальное резолверу клиентов — на новый адрес
+        # сразу, не при следующем старте бота (у устройств админа иначе нет DNS)
+        ensure = getattr(self, "admin_dns_ensure", None)
+        if ensure is not None:
+            try:
+                ensure()
+            except Exception as e:                        # noqa: BLE001
+                log.warning("финал переезда: резолвер админа не подтянут: %s", e)
         return addr
 
     def private_dns_on_cancel(self) -> None:
