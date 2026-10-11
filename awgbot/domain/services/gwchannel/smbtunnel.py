@@ -30,6 +30,21 @@ class SmbTunnelMixin:
         return bool(settings.get(SETTING, False))
 
     @staticmethod
+    def smb_tunnel_split() -> bool:
+        """Конфиги сервера с раздельным туннелем: client_config.allowed_ips не
+        покрывает весь IPv4 — настоящие адреса локальных сетей шлюзов мимо
+        туннеля (имена при этом видны: /32 резолвера админа дописывается)."""
+        import ipaddress
+        for tok in str(config.CLIENT_ALLOWED_IPS).split(","):
+            try:
+                net = ipaddress.ip_network(tok.strip(), strict=False)
+            except ValueError:
+                continue
+            if net.version == 4 and net.prefixlen == 0:
+                return False
+        return True
+
+    @staticmethod
     def smb_tunnel_possible() -> bool:
         """Режим host — только там свой резолвер клиентов и резолвер админа;
         в docker тумблера на экране нет вовсе."""
