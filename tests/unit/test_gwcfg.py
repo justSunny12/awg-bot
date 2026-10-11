@@ -93,7 +93,7 @@ def test_token_rules(token):
 
 
 def test_token_and_server_name_accepted():
-    assert gwcfg.check_token({"value": "123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})["value"].startswith("123456789:")
+    assert gwcfg.check_token({"value": "123456789:AA-dummy-token-for-tests"})["value"].startswith("123456789:")
     assert gwcfg.check_server({"name": " awg-srv.example "})["name"] == "awg-srv.example"
     with pytest.raises(CfgError):
         gwcfg.check_server({"name": "a b"})
@@ -116,8 +116,8 @@ def test_the_link_conf_of_the_same_document_passes():
 @pytest.mark.parametrize("old,new,why", [
     ("Address = 10.99.99.2/30", "Address = 10.99.99.1/30", "адрес линка"),
     ("Address = 10.99.99.2/30", "Address = 10.99.98.2/30", "/30 линка"),
-    ("PrivateKey = DUMMYPRIVKEYDUMMYPRIVKEYDUMMYPRIVKEYDUMMY00=", "PrivateKey = OTHERPRIVKEYOTHERPRIVKEYOTHERPRIVKEYOTHER00=", "переходом"),
-    ("PresharedKey = DUMMYPSKDUMMYPSKDUMMYPSKDUMMYPSKDUMMYPSK00=", "PresharedKey = OTHERPSKOTHERPSKOTHERPSKOTHERPSKOTHERPSK00=", "переходом"),
+    ("PrivateKey = DUMMY-LINK-PRIVATE-KEY=", "PrivateKey = DUMMY-OTHER-PRIVATE-KEY=", "переходом"),
+    ("PresharedKey = DUMMY-LINK-PSK=", "PresharedKey = DUMMY-OTHER-PSK=", "переходом"),
     ("Jc = 4", "Jc = 5", "переходом"),
     ("AllowedIPs = 10.8.1.0/24, 10.99.99.0/30", "AllowedIPs = 0.0.0.0/0", "AllowedIPs"),
     ("Endpoint = vps.example.org:51821", "Endpoint = vps.example.org:0", "Endpoint"),

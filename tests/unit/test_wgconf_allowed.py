@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 LINK = """# awg-bot: контракт линка 1
 [Interface]
 Address = 10.99.99.2/30
-PrivateKey = DUMMYPRIVKEYDUMMYPRIVKEYDUMMYPRIVKEYDUMMY00=
+PrivateKey = DUMMY-LINK-PRIVATE-KEY=
 Jc = 4
 Jmin = 40
 Jmax = 70
@@ -31,8 +31,8 @@ H3 = 3
 H4 = 4
 
 [Peer]
-PublicKey = DUMMYPUBKEYDUMMYPUBKEYDUMMYPUBKEYDUMMYPUB00=
-PresharedKey = DUMMYPSKDUMMYPSKDUMMYPSKDUMMYPSKDUMMYPSK00=
+PublicKey = DUMMY-VPS-PUBLIC-KEY=
+PresharedKey = DUMMY-LINK-PSK=
 Endpoint = vps.example.org:51821
 AllowedIPs = 10.8.1.0/24, 10.99.99.0/30
 PersistentKeepalive = 25-35
