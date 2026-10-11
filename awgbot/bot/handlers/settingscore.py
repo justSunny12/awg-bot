@@ -77,13 +77,16 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
                      key: str, sec: str) -> bool:
     """Открыть ввод значения key; False — ключ неизвестен (старая клавиатура)."""
     from awgbot.bot import sections
-    if sections.bounds(key) is None and key not in texts.SETTINGS_TEXT and key != "backup_when":
+    from awgbot.domain.services.traffic import bonus
+    if sections.bounds(key) is None and key not in texts.SETTINGS_TEXT and key not in ("backup_when", bonus.SETTING):
         await cb.answer(ui.Toast.stale, show_alert=True)
         return False
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=sec)
     if key == "email.resume_address":
         prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
+    elif key == bonus.SETTING:
+        prompt = texts.bonus_prompt(bonus.screen_text(bonus.current(settings)))
     elif key == "backup_when":
         prompt = texts.backup_when_prompt(settings.get_int("app.scheduler.backup_day", 1),
                                           settings.get_int("app.scheduler.backup_hour", 12))
@@ -220,6 +223,25 @@ async def _receive_backup_when(message: Message, state: FSMContext, services, ho
                       f"✅ Автобэкап: {old[0]}-е, {old[1]:02d}:00 → {day}-е, {hour:02d}:00")
 
 
+async def _receive_bonus(message: Message, state: FSMContext, services, hooks: Hooks, sec: str) -> None:
+    """Бонус при исчерпании: «50», «10%», «10% 50» или «0» (выкл.)."""
+    from awgbot.domain.services.traffic import bonus
+    try:
+        spec = bonus.parse(message.text or "")
+    except ValueError:
+        await ask_tracked(message, services, texts.BONUS_BAD)
+        return
+    old = bonus.screen_text(bonus.current(settings))
+    try:
+        await call(settings.set_value, bonus.SETTING, spec.stored())
+    except settings.SettingsWriteError as e:
+        await state.clear()
+        await after_input(message, services, hooks, sec, ui.fail("Не сохранено", str(e)))
+        return
+    await state.clear()
+    await after_input(message, services, hooks, sec, texts.bonus_changed(old, bonus.screen_text(spec)))
+
+
 async def receive_value(message: Message, state: FSMContext, services, hooks: Hooks,
                         default_sec: str) -> None:
     data = await state.get_data()
@@ -230,6 +252,10 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
         return
     if key == "backup_when":
         await _receive_backup_when(message, state, services, hooks, sec)
+        return
+    from awgbot.domain.services.traffic import bonus
+    if key == bonus.SETTING:
+        await _receive_bonus(message, state, services, hooks, sec)
         return
     from awgbot.bot import sections
     bounds = sections.bounds(key)

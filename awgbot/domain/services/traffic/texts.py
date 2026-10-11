@@ -76,13 +76,25 @@ def _cli_warn_text(pct: int) -> str:
     return f"⚠️ Израсходовано ~{pct}% месячного лимита профиля (суммарный на все устройства)"
 
 
-def _cli_bonus_text(bonus_gb: int, until: str) -> str:
-    return (f"📈 Месячный лимит исчерпан. Добавлено {bonus_gb} ГБ до конца месяца — "
-            f"разово, больше в этом месяце квота не вырастет. Лимит обновится {until}")
+def _cli_bonus_text(amount: str, until: str) -> str:
+    """amount — «10 ГБ» / «0,5 ГБ» (bonus.gb_text)."""
+    return (f"📈 Месячный лимит исчерпан. Добавлено {amount} до конца месяца — "
+            f"разово, больше в этом месяце квота не вырастет. Лимит сбросится {until}")
 
 
-def _cli_bonus_admin_text(name: str, bonus_gb: int) -> str:
-    return f"📈 {name}: лимит исчерпан — выдано {bonus_gb} ГБ до конца месяца (разово)"
+def _cli_bonus_admin_text(name: str, amount: str, note: str = "") -> str:
+    """note — откуда число у процентного бонуса («10% лимита»), пусто — без скобок."""
+    tail = f" ({note})" if note else ""
+    return f"📈 {name}: лимит исчерпан — выдано {amount}{tail} до конца месяца"
+
+
+def _cli_limit_off_text(until: str) -> str:
+    """Бонус выключен (0): лимит исчерпан — доступ сразу приостановлен."""
+    return f"🔴 Месячный лимит исчерпан. Доступ всех устройств приостановлен до {until}"
+
+
+def _cli_limit_off_admin_text(name: str) -> str:
+    return f"🔴 {name}: лимит исчерпан — доступ приостановлен"
 
 
 def _cli_over_text(until: str) -> str:

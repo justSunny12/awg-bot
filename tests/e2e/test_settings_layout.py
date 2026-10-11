@@ -38,8 +38,9 @@ def test_every_edit_button_points_at_a_known_setting():
                 cb = SetCB.unpack(b.callback_data)
                 if cb.act != "edit":
                     continue
-                if (cb.sec, cb.key) in (("fw", "port"), ("backup", "backup_when")):
-                    continue                       # свои ветки ввода (порт SSH, день и час бэкапа)
+                if (cb.sec, cb.key) in (("fw", "port"), ("backup", "backup_when"),
+                                        ("subs", "limits.traffic_bonus_gb")):
+                    continue                       # свои ветки ввода (порт SSH, день и час бэкапа, бонус)
                 checked += 1
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"

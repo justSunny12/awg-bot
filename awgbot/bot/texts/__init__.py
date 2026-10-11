@@ -111,7 +111,7 @@ from .settings import (
     PRIVATE_DNS_LATER, PRIVATE_DNS_DISMISSED, settings_server_text,
     settings_firewall_text, firewall_confirmed, firewall_rolled_back,
     ssh_port_busy, ssh_port_same, ssh_port_changed, ssh_owner_refusal,
-    settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value,
+    settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value, bonus_prompt, BONUS_BAD, bonus_changed,
     settings_root_text, settings_notify_text, settings_subs_text, settings_mon_text,
     settings_backup_text, EMAIL_ASK_IMAP, EMAIL_ASK_SMTP, EMAIL_CHECK_OK, backup_when_prompt, BACKUP_WHEN_BAD, ssh_port_ask, FIREWALL_ON_ALERT, cycle_toast)
 from .broadcast import (
@@ -179,7 +179,7 @@ __all__ = [
     "PRIVATE_DNS_DISMISSED", "settings_server_text", "settings_firewall_text",
     "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
     "ssh_port_busy", "ssh_port_same", "ssh_port_changed", "ssh_owner_refusal",
-    "settings_changed", "settings_ssh_allow_added", "settings_bad_value",
+    "settings_changed", "settings_ssh_allow_added", "settings_bad_value", "bonus_prompt", "BONUS_BAD", "bonus_changed",
     "settings_root_text", "settings_notify_text", "settings_subs_text", "settings_mon_text", "settings_backup_text", "EMAIL_ASK_IMAP", "EMAIL_ASK_SMTP", "EMAIL_CHECK_OK", "backup_when_prompt", "BACKUP_WHEN_BAD", "ssh_port_ask", "FIREWALL_ON_ALERT", "cycle_toast",
     "BROADCAST_EMPTY", "broadcast_targets_text", "BROADCAST_NO_TARGETS", "BROADCAST_ALL_UNLIMITED",
     "BROADCAST_DAYS_BAD", "subscription_mark", "broadcast_days_prompt",

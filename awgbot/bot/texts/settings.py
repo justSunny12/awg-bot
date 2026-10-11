@@ -49,16 +49,19 @@ def settings_notify_text(br) -> str:
 
 def settings_subs_text() -> str:
     from awgbot.core import settings as s
-    bonus = s.get_int("limits.traffic_bonus_gb", 100)
+    from awgbot.domain.services.traffic import bonus as _bonus
+    spec = _bonus.current(s)
     grace = s.get_int("grace.grace_days", 14)
     year = s.get_int("pause.pause_max_total_days", 28)
     month = s.get_int("pause.monthly_pause_days", 2)
     return "\n".join([
         ui.head("💳 Подписки", meta=["правила для всех"]),
-        f"Бонус {bonus} ГБ при исчерпании · отсрочка {grace} дн.",
+        f"Бонус при исчерпании: {_bonus.screen_text(spec)}",
+        f"Отсрочка {grace} дн.",
         f"Пауза: год +{year} (до {2 * year}), месяц +{month} (до {12 * month})",
         details("Действуют с момента правки и на уже выданные подписки тоже.\n"
-                "• Бонус — сколько трафика добавляется профилю разово, когда он упёрся в лимит.\n"
+                "• Бонус — сколько трафика добавляется профилю разово, когда он упёрся в лимит; "
+                "0 — без бонуса, доступ приостанавливается сразу.\n"
                 "• Отсрочка — сколько дней после окончания подписки профиль ещё работает: "
                 "истёкший в отпуске или ночью не отваливается молча.\n"
                 "• Пауза останавливает срок подписки; неиспользованные дни возвращаются в конце. "
@@ -307,7 +310,6 @@ UPDATE_SCHEDULE_LABELS = {"day": "день", "week": "неделя", "month": "�
 # единица). Ключи общих разделов — в BOUNDS их модулей (bot/sections); единая
 # точка чтения — sections.bounds(key).
 SETTINGS_BOUNDS = {
-    "limits.traffic_bonus_gb": (1, 100000, "Бонус", "ГБ"),
     "pause.pause_max_total_days": (1, 365, "Дней паузы за год", "дн."),
     "pause.monthly_pause_days": (0, 31, "Дней паузы за месяц", "дн."),
     "grace.grace_days": (1, 365, "Отсрочка", "дн."),
@@ -553,6 +555,24 @@ def settings_prompt(key: str, current=None) -> str:
     lo, hi, label, unit = _bounds(key)
     u = unit_suffix(unit)
     return ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else "", f"{lo}–{hi}"])
+
+
+def bonus_prompt(current: str) -> str:
+    """Приглашение к вводу бонуса при исчерпании: три формата и выключение."""
+    return (ui.head("✏️ Бонус при исчерпании", meta=[f"сейчас {_e(current)}"]) + "\n"
+            "Сколько добавить профилю разово, когда он упёрся в месячный лимит:\n"
+            "• <code>50</code> — 50 ГБ\n"
+            "• <code>10%</code> — 10% лимита профиля, окр. вверх до целых ГБ (но не более половины лимита)\n"
+            "• <code>10% 50</code> — 10% лимита, вверх до целых ГБ, но не более 50 ГБ\n"
+            "• <code>0</code> — без бонуса: доступ отключится сразу по достижении лимита, и уведомление "
+            "об этом хозяин профиля может не получить")
+
+
+BONUS_BAD = "⚠️ Не понял — жду целое число, число со знаком процента либо их комбинацию"
+
+
+def bonus_changed(old: str, new: str) -> str:
+    return ui.changed("Бонус при исчерпании", _e(old), _e(new))
 
 
 def unit_suffix(unit: str) -> str:

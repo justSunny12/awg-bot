@@ -298,7 +298,8 @@ awgbot/
                         миксинов по областям: blocks, clients, devices, subscription,
                         traffic, reconcile, firewall, gateway_link, routing, status;
                         routing/ (common, access, reconcile, liveness, coldstart, notes) и
-                        gateway_link/ (common, link, slots, peernets, mark, agentbot) —
+                        gateway_link/ (common, link, slots, peernets, mark, agentbot),
+                        traffic/ (texts, poll, limits, expiry, resets, bonus) —
                         сами пакеты, составной миксин собирается в __init__
              gateway/   механика агента шлюза: base, link, monitor, tgmark, transit,
                         report, ownlists, peersvc, bundle, egress, cfg/ (документ

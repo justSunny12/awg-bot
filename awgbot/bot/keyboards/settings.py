@@ -113,13 +113,18 @@ def ssh_port_finisher() -> InlineKeyboardMarkup:
 
 # ── 💳 Подписки ──────────────────────────────────────────────────────────────
 
+def _bonus_button() -> str:
+    from awgbot.domain.services.traffic import bonus
+    return bonus.button_text(bonus.current(settings))
+
+
 def settings_subs() -> InlineKeyboardMarkup:
     s = settings
     return ui.rows(
-        [(f"📈 Бонус: {s.get_int('limits.traffic_bonus_gb', 100)} ГБ",
-          SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb")),
-         (f"🙏 Отсрочка: {s.get_int('grace.grace_days', 14)} дн.",
-          SetCB(sec="subs", act="edit", key="grace.grace_days"))],
+        # бонус — своим рядом: «📈 Бонус: 10%, ≤ 50 ГБ» в ряду из двух обрезался бы
+        (f"📈 Бонус: {_bonus_button()}", SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb")),
+        (f"🙏 Отсрочка: {s.get_int('grace.grace_days', 14)} дн.",
+         SetCB(sec="subs", act="edit", key="grace.grace_days")),
         [(f"⏸️ Год: {s.get_int('pause.pause_max_total_days', 28)} дн.",
           SetCB(sec="subs", act="edit", key="pause.pause_max_total_days")),
          (f"⏸️ Месяц: {s.get_int('pause.monthly_pause_days', 2)} дн.",

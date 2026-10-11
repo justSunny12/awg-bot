@@ -8,9 +8,10 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.core.blocks import DeviceBlock, ClientBlock
 from awgbot.core.enums import ActivationStatus, FriendStatus
-from awgbot.domain.services.types import BYTES_PER_GB, Notification
+from awgbot.domain.services.types import Notification
 
-from .texts import _admin_dev_over_text, _admin_self_over_text, _cli_bonus_admin_text, _cli_bonus_text, _cli_over_admin_text, _cli_over_text, _cli_warn_text, _dev_over_text, _dev_warn_text, _friend_dev_over_host_text
+from . import bonus
+from .texts import _cli_limit_off_text, _cli_limit_off_admin_text, _admin_dev_over_text, _admin_self_over_text, _cli_bonus_admin_text, _cli_bonus_text, _cli_over_admin_text, _cli_over_text, _cli_warn_text, _dev_over_text, _dev_warn_text, _friend_dev_over_host_text
 
 log = logging.getLogger("awgbot.services")
 
@@ -110,37 +111,48 @@ class LimitsMixin:
                           notes.append(Notification(admin_id, _admin_self_over_text()))
                           self.db.add_traffic_notified(client.id, "cli_over")
                       continue
-                  if not client.bonus_granted_month:
-                      # первая доп.квота этого месяца
-                      bonus = settings.get_int("limits.traffic_bonus_gb", 100) * BYTES_PER_GB
+                  spec = bonus.current(settings)
+                  # «cli_over» в этом месяце — профиль уже приостановлен (бонус был
+                  # выключен): включённый позже бонус его не разблокировал бы, а
+                  # «Добавлено N ГБ» пообещало бы трафик заблокированному
+                  if not client.bonus_granted_month and spec.kind != "off" and "cli_over" not in sent:
+                      # первая доп.квота этого месяца — по правилу «💳 Подписки → 📈 Бонус»
+                      given = bonus.bytes_for(spec, climit)
                       # аудит: снимок квоты до выдачи разовой доп.квоты
                       self.db.archive_quota(client.id, "bonus_granted")
                       self.db.update_client_fields(
                           client.id,
-                          bonus_bytes=int(client.bonus_bytes) + bonus,
+                          bonus_bytes=int(client.bonus_bytes) + given,
                           bonus_granted_month=1)
-                      notes.append(Notification(
-                          client.tg_id,
-                          _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
+                      amount = bonus.gb_text(given)
+                      notes.append(Notification(client.tg_id, _cli_bonus_text(amount, until)))
                       if settings.get_bool("notifications.client_events.bonus", True):
                           notes.append(Notification(
-                              admin_id, _cli_bonus_admin_text(self.cl_link(client), settings.get_int("limits.traffic_bonus_gb", 100))))
+                              admin_id, _cli_bonus_admin_text(self.cl_link(client), amount,
+                                                              bonus.admin_note(spec, given, climit))))
                       self.db.add_traffic_notified(client.id, "bonus")
+                      # «израсходовано ~80%» — уже от нового потолка: следующий тик
+                      # иначе прислал бы его сразу за «Добавлено…»
+                      self.db.add_traffic_notified(client.id, "cli80")
                   else:
-                      # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
-                      # КАСКАДНЫМ битом (TRAFFIC_CLIENT), не собственным TRAFFIC:
-                      # так поднятие лимита устройства не снимет блок «по клиенту».
+                      # доп.квота уже выдавалась и тоже исчерпана (или бонус выключен) →
+                      # блок всех устройств КАСКАДНЫМ битом (TRAFFIC_CLIENT), не
+                      # собственным TRAFFIC: так поднятие лимита устройства не снимет
+                      # блок «по клиенту».
                       if "cli_over" not in sent:
+                          off = not client.bonus_granted_month    # бонуса не было: выключен
                           self._client_set_block(client.id, ClientBlock.TRAFFIC_CLIENT)
                           for dev in devices:
                               self._device_set_block(dev.id, DeviceBlock.TRAFFIC_CLIENT, twins)
                               if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                                   notes.append(Notification(
                                       dev.friend_tg_id, _dev_over_text(self.dev_link(dev), until)))
-                          notes.append(Notification(client.tg_id, _cli_over_text(until)))
+                          notes.append(Notification(client.tg_id,
+                                                    _cli_limit_off_text(until) if off else _cli_over_text(until)))
                           if settings.get_bool("notifications.client_events.over_limit", True):
                               notes.append(Notification(
-                                  admin_id, _cli_over_admin_text(self.cl_link(client))))
+                                  admin_id, _cli_limit_off_admin_text(self.cl_link(client)) if off
+                                  else _cli_over_admin_text(self.cl_link(client))))
                           self.db.add_traffic_notified(client.id, "cli_over")
               elif total >= effective * warn_pct // 100:
                   if "cli80" not in sent and not is_admin_client:

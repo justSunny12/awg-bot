@@ -29,8 +29,8 @@ def conf(tmp_path):
 
 def test_quiet_hours_bounds_are_defined():
     from awgbot.bot import sections
-    for key in ("quiet_hours.quiet_hours_start", "limits.traffic_bonus_gb",
-                "app.scheduler.backup_hour"):
+    # бонус при исчерпании — свой разбор (N | N% | N% M | 0), числовых границ у него нет
+    for key in ("quiet_hours.quiet_hours_start", "app.scheduler.backup_hour"):
         lo, hi, label, unit = sections.bounds(key)
         assert lo <= hi and label and unit
 
