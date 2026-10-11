@@ -51,6 +51,15 @@ class DispatchMixin:
         if msg.get("t") == "own_set":
             await self._apply_own(msg)
             return
+        if msg.get("t") == "link_next":
+            await self._rekey_next(msg)
+            return
+        if msg.get("t") == "link_go":
+            await self._rekey_go(msg)
+            return
+        if msg.get("t") == "link_cancel":
+            await self._rekey_cancel(msg)
+            return
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
             return

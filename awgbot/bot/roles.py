@@ -130,6 +130,7 @@ class Has:
     """Какие блоки общих разделов есть у роли."""
     email_resume: bool           # аварийный выход из паузы в «E-mail»
     migration: bool              # переезд профилей в «Сервисе»
+    link_keys: bool = False      # «🔑 Ключи линка» шлюзов в «Сервисе»
 
 
 @dataclass(frozen=True)
@@ -186,7 +187,7 @@ MAIN = BotRole(
               outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
-    has=Has(email_resume=True, migration=True),
+    has=Has(email_resume=True, migration=True, link_keys=True),
     cb=_MainCB("main"),
 )
 

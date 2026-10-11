@@ -70,6 +70,8 @@ def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[st
     failed = cfg.get("failed") or {}
     if cfg.get("link_err"):
         warns.append(f"⚠️ Конфиг линка для шлюза не собран: {_e(cfg['link_err'])}")
+    if cfg.get("uplink_err"):
+        warns.append(f"⚠️ Конфиг аплинка для шлюза не едет: {_e(cfg['uplink_err'])}")
     if failed:
         why = "; ".join(_e(v) for v in dict.fromkeys(failed.values())) or "ошибка"   # одна причина на env и link — один раз
         if "*" in failed:
@@ -91,6 +93,11 @@ def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[st
                          f"{timeutil.age_ago(ch.get('age'))}):\n{items}")
     else:
         head += f" · 🟢 конфиг актуален{stale}"
+    if "uplink" in (cfg.get("wait") or []):
+        fp = f" · <code>{_e(cfg['uplink_fp'])}</code>" if cfg.get("uplink_fp") else ""
+        warns.append(f"🔐 Конфиг аплинка ждёт подтверждения в чате бота шлюза{fp}")
+    elif "uplink" in (cfg.get("declined") or []):
+        warns.append("⚠️ Шлюз отклонил новый конфиг аплинка — аплинк прежний")
     wait_text = {"mail": "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик",
                  "backup": "⏳ Фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя"}
     warns += [wait_text[s] for s in cfg.get("wait") or [] if s in wait_text]
@@ -248,6 +255,14 @@ def gateway_card_text(state: dict, states: list) -> str:
     ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"))
     if ch_head:
         lines.append(ch_head)
+    rk = state.get("rekey") or {}
+    if rk.get("state") in ("staged", "asked"):
+        fp = f" · <code>{_e(rk['fp'])}</code>" if rk.get("fp") else ""
+        lines.append(f"🔑 Ключи линка ждут подтверждения в чате бота шлюза{fp}")
+    elif rk.get("state") == "switched":
+        lines.append("🔑 Ключи линка: переключение…")
+    elif rk.get("state") == "declined":
+        lines.append("⚠️ Шлюз отклонил новые ключи линка — линк на прежних")
     lines += ch_warns
     nets = gw.lan_subnets
     nets_s = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \

@@ -215,6 +215,7 @@ class DeliverMixin:
                 await self.deliver_lists(slot_id)
                 await self.deliver_peer_services(slot_id)
                 await self.deliver_own(slot_id)
+                await self.deliver_rekey(slot_id)
                 await self.send_role(slot_id)
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: доставка слоту %s: %s", slot_id, e)

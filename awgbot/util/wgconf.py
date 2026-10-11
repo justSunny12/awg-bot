@@ -283,3 +283,30 @@ def check_allowed_ips(entries, *, client_subnet: str, link_cidr: str, peer_nets,
 def is_pubkey(val: str) -> bool:
     """Ключ WireGuard: base64 от 32 байт."""
     return bool(_B64_32_RE.match(str(val or "")))
+
+
+def drop_keys(conf: Conf, keys) -> Conf:
+    """Конфиг без названных ключей (во всех секциях): строки PostUp/PostDown
+    политики аплинка дописывает скрипт обвязки на шлюзе — в сравнение с
+    желаемым и в отпечаток они не идут."""
+    low = {k.lower() for k in keys}
+    out = Conf()
+    out.stamp, out.comments = conf.stamp, list(conf.comments)
+    for name, items in conf.sections:
+        out.sections.append((name, [(k, v) for k, v in items if k.lower() not in low]))
+    return out
+
+
+def pubkey_of(private_b64: str) -> str:
+    """Публичный ключ WireGuard из приватного (X25519, как `awg pubkey`); не
+    ключ — пусто. Без вызова awg: на ВПС и в тестах его может не быть."""
+    import base64
+    try:
+        raw = base64.b64decode(str(private_b64 or "").strip(), validate=True)
+        if len(raw) != 32:
+            return ""
+        from nacl.public import PrivateKey
+        return base64.b64encode(bytes(PrivateKey(raw).public_key)).decode()
+    except Exception:                                      # noqa: BLE001 — мусор на входе: «не ключ»
+        return ""
+

@@ -1,7 +1,9 @@
 """
 linkclient/ — сторона шлюза для канала ВПС ↔ шлюз (части: common — задержки и пределы;
 session — подключение и hello; outbox — отправка; feeds — свои списки, сервисы, фиды;
-dispatch — разбор входящих).
+dispatch — разбор входящих; rekey — смена ключей линка: приглашение, переключение,
+частый такт перехода; uplink — такт аплинка: откат прерванной транзакции и
+аварийное правило).
 
 Коннект устанавливает ТОЛЬКО шлюз: на нём не появляется ни одного слушающего
 сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
@@ -43,6 +45,12 @@ dispatch — разбор входящих).
 списков (`own_ev`: после кнопки в чате сразу, `own_changed`; правки мимо агента
 находит сверка файлов на тике монитора, `own_tick`), итог применения файла из
 чата (`applied`) и «установлен» в первый час после установки (`installed`).
+Агенту с документом конфигурации (`cfg1`) приходит ещё `cfg` — документ
+целиком (ответ `cfg_ack`, `domain/gateway/cfg`); с подтверждением (`confirm1`)
+— смена ключей линка: `link_next` (приглашение, ответ `link_ack`), `link_go`
+(переключение), `link_cancel` (сервер вернулся на прежние или снял переход —
+«согласие» снимается); итог перехода шлюз сообщает `link_done` (часть
+`rekey`).
 Неизвестный вид пропускается с записью в журнал: новый ВПС со старым агентом
 не рвёт сессию.
 Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
@@ -66,6 +74,8 @@ from .session import SessionMixin
 from .outbox import OutboxMixin
 from .feeds import FeedsMixin
 from .dispatch import DispatchMixin
+from .rekey import RekeyMixin
+from .uplink import UplinkMixin
 
 log = logging.getLogger(__name__)
 
@@ -105,13 +115,21 @@ def server_address() -> str:
 
 
 
-class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin):
+class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin):
     """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
 
 
 _client: LinkClient | None = None
 _notify = None
 _ask = None
+_edit = None
+
+
+def set_edit(fn) -> None:
+    """Крючок правки (async fn(chat_id, message_id, text) -> bool): итог смены
+    ключей и отзыв правят само сообщение приглашения. Ставит main."""
+    global _edit
+    _edit = fn
 
 
 def set_ask(fn) -> None:
@@ -139,6 +157,7 @@ def ensure(services) -> LinkClient | None:
         return None
     if _client is None:
         _client = LinkClient(services)
+        _client.rekey_kick()                              # перезапуск посреди перехода — частый такт сразу
     _client.start()
     return _client
 
@@ -194,7 +213,7 @@ async def on_tick(services) -> None:
                 return
             client._wake.set()                            # бэкофф спит — будим, шаг с нуля
     await client.push()
-    for step in (client.retry_peer_services, client.own_tick):
+    for step in (client.retry_peer_services, client.own_tick, client.rekey_tick_monitor, client.uplink_tick):
         try:
             await step()
         except Exception as e:                            # noqa: BLE001
@@ -264,12 +283,13 @@ async def services_changed(services) -> None:
 async def shutdown() -> None:
     global _client
     if _client is not None:
+        _client.rekey_stop()                              # частый такт перехода — вместе с клиентом
         await _client.stop()
         _client = None
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_ask", "report_cfg_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "set_notify", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 
@@ -282,4 +302,14 @@ async def report_cfg_answer(services, answer: dict) -> None:
     await asyncio.to_thread(services.cfg_ack_pending_put, ack)
     if _client is not None and _client._writer is not None:
         await _client.flush_cfg_ack()
+
+
+async def report_rekey_answer(services, accept: bool) -> dict | None:
+    """Человек ответил на приглашение о ключах линка: состояние перехода и ответ
+    серверу (если сессия открыта; иначе сервер повторит link_next с тем же id
+    при переподключении, и шлюз ответит своим состоянием)."""
+    reply = await asyncio.to_thread(services.rekey_answer, accept)
+    if reply and _client is not None:
+        await _client.send_rekey_answer(reply)
+    return reply
 

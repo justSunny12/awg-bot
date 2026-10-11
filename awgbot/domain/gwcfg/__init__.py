@@ -19,17 +19,17 @@ from __future__ import annotations
 from .doc import (SECTIONS, ENV_KEYS, ENV_REQUIRED, UNIT_NAMES, MAIL_KEYS, MAIL_HINT, HUMAN, CAP, LINK_CONTRACT,
                   unit_name, doc_name, human, build, parse, ack_build, ack_parse, CfgError)
 from .check import (check_env, check_mail, check_backup, check_token, check_server, check_link,
-                    check_uplink, check_doc, MIN_PHRASE)
+                    check_uplink, check_doc, check_link_rekey, merge_link_keys, MIN_PHRASE)
 from .prints import (env_text, mail_text, section_print, doc_print, env_print, mail_print,
                      backup_print, backup_key_print, server_print, token_print, link_print,
-                     uplink_print, PRINT_LEN)
+                     uplink_print, key_fp, PRINT_LEN)
 
 __all__ = [
     "SECTIONS", "ENV_KEYS", "ENV_REQUIRED", "UNIT_NAMES", "MAIL_KEYS", "MAIL_HINT", "HUMAN", "CAP", "LINK_CONTRACT",
     "unit_name", "doc_name", "human", "build", "parse", "ack_build", "ack_parse", "CfgError",
     "check_env", "check_mail", "check_backup", "check_token", "check_server", "check_link",
-    "check_uplink", "check_doc", "MIN_PHRASE",
+    "check_uplink", "check_doc", "check_link_rekey", "merge_link_keys", "MIN_PHRASE",
     "env_text", "mail_text", "section_print", "doc_print", "env_print", "mail_print",
     "backup_print", "backup_key_print", "server_print", "token_print", "link_print",
-    "uplink_print", "PRINT_LEN",
+    "uplink_print", "key_fp", "PRINT_LEN",
 ]

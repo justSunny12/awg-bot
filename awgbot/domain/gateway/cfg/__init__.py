@@ -3,7 +3,10 @@ gateway/cfg/ — документ конфигурации с сервера AWG
 отпечатки того, что стоит на шлюзе, для снимка; apply — порядок разделов и
 ответ cfg_ack; txn — транзакция env+link с пробой и откатом; mailphrase —
 правило «молча или вопрос» для почты и фразы, памятка «оставить своё»; ask —
-очередь вопросов человеку).
+очередь вопросов человеку; uplink — конфиг аплинка: решение, ключи
+признания, наблюдение «аплинк мёртв»; uplinktxn — его транзакция под замком
+обвязки, восстановление после перезапуска, аварийное правило на тике; rekey — смена ключей линка: приглашение, переключение,
+отсчёт, поиск рабочего конфига).
 
 Сервер — источник желаемого, шлюз — источник фактов: агент сообщает в снимке
 отпечатки стоящего (prints), получает документ целиком, проверяет его до
@@ -17,10 +20,15 @@ from .mailphrase import CfgMailPhraseMixin
 from .ask import CfgAskMixin
 from .txn import CfgTxnMixin
 from .apply import CfgApplyMixin
+from .uplink import CfgUplinkMixin
+from .uplinktxn import CfgUplinkTxnMixin
+from .rekey import CfgRekeyMixin
 
 
-class CfgMixin(CfgPrintsMixin, CfgMailPhraseMixin, CfgAskMixin, CfgTxnMixin, CfgApplyMixin):
+class CfgMixin(CfgPrintsMixin, CfgMailPhraseMixin, CfgAskMixin, CfgTxnMixin, CfgApplyMixin, CfgUplinkMixin,
+               CfgUplinkTxnMixin, CfgRekeyMixin):
     """Документ конфигурации на агенте — одним миксином в GatewayServices."""
 
 
-__all__ = ["CfgMixin", "CfgPrintsMixin", "CfgMailPhraseMixin", "CfgAskMixin", "CfgTxnMixin", "CfgApplyMixin"]
+__all__ = ["CfgMixin", "CfgPrintsMixin", "CfgMailPhraseMixin", "CfgAskMixin", "CfgTxnMixin", "CfgApplyMixin",
+           "CfgUplinkMixin", "CfgUplinkTxnMixin", "CfgRekeyMixin"]

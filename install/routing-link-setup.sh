@@ -55,7 +55,8 @@
 # GW_CONF_OUT (/root/gw-<линк>.conf) — источник и для документа конфигурации,
 # который основной бот шлёт агенту по упр. каналу (domain/services/gwchannel/
 # cfg.py): бот читает его сам и делает те же поправки Endpoint, AllowedIPs и
-# PersistentKeepalive, что --bundle, — этот скрипт для документа не зовётся.
+# PersistentKeepalive, что --bundle, — этот скрипт для документа не зовётся
+# (зовётся только для смены ключей линка, режимы --rekey-* ниже).
 #
 # ЗАПУСК:
 #   sudo sh routing-link-setup.sh              # показать план
@@ -66,6 +67,22 @@
 # Два режима зовёт юнит awg-link@<if>, руками они не нужны:
 #   --reassert   довести обвязку и переподнять линк после загрузки (ExecStart)
 #   --down       опустить линк (ExecStop; через скрипт, а не путём к awg-quick)
+# Четыре режима зовёт основной бот при смене ключей линка тем же устройством
+# по упр. каналу («🔑 Ключи линка», domain/services/gateway_link/rekey.py),
+# руками они не нужны. Меняются ключи обеих сторон, PSK и обфускация; порт
+# (живой ListenPort из $CONF) и адреса /30 — те же; хост Endpoint — из
+# ENDPOINT_HOST (network.server_host), без него — из $GW_CONF_OUT.
+# Окружение — как у --bundle (AllowedIPs шлюзовой стороны собираются заново).
+# Шлюз из $GW_CONF_OUT.next сверяет только Address и берёт ключи, PSK и
+# обфускацию; Endpoint, AllowedIPs и keepalive при переключении остаются из
+# стоящего у него конфига (их ведёт документ конфигурации).
+# Итог — последней строкой «rekey: staged|committed|reverted|dropped»:
+#   --rekey-stage   новые конфиги в $CONF.next и $GW_CONF_OUT.next, живые не тронуты
+#   --rekey-commit  исключение из MASQUERADE (отказ — ключи не тронуты, код 1),
+#                   живые → .prev, .next → живые, awg-quick down/up линка;
+#                   не поднялся — .prev назад, код 1
+#   --rekey-revert  .next снять; был коммит — .prev назад и переподнять линк
+#   --rekey-drop    убрать .next и .prev (переход зафиксирован или снят)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e
@@ -158,6 +175,15 @@ case "${1:-}" in
     --down)     MODE="down" ;;
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
+    # Смена ключей линка каналом (бот на ВПС ведёт переход, шлюз подтверждает):
+    # stage — новые ключи и обфускация в .next обеих сторон, живые не тронуты;
+    # commit — живые → .prev, .next → живые, линк переподнят; revert — .prev
+    # назад (или просто снять .next, если коммита не было); drop — убрать .prev
+    # и .next после фиксации.
+    --rekey-stage)  MODE="rekey-stage" ;;
+    --rekey-commit) MODE="rekey-commit" ;;
+    --rekey-revert) MODE="rekey-revert" ;;
+    --rekey-drop)   MODE="rekey-drop" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
@@ -249,6 +275,167 @@ assert_nat_exempt() {
         run "iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     fi
 }
+
+# ── ключи, обфускация и конфиги обеих сторон: общее для --apply и перехода ────
+rnd() {   # $1=min $2=max
+    _r="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
+    echo $(( _r % ($2 - $1 + 1) + $1 ))
+}
+# H1..H4 берём из НЕПЕРЕСЕКАЮЩИХСЯ полос: одинаковые или пересекающиеся
+# значения ломают распознавание типов пакетов, а близкие к штатным 1..4 сводят
+# смысл обфускации на нет.
+#
+# ДИАПАЗОНЫ, а не одиночные числа (умеет amneziawg v3+). Одно фиксированное
+# значение на тип пакета — это стабильная сигнатура: DPI достаточно заметить,
+# что первые четыре байта у потока всегда одни и те же. С диапазоном заголовок
+# выбирается заново для каждого пакета, и такой признак пропадает.
+h_range() {   # $1=нижняя граница полосы, $2=верхняя
+    _lo=$(rnd "$1" $(( $2 - 200000 )))
+    printf '%s-%s' "$_lo" "$(( _lo + $(rnd 50000 150000) ))"
+}
+gen_keys() {   # новые ключи обеих сторон, PSK и обфускация — в переменные
+    VPS_PRIV="$(awg genkey)"
+    VPS_PUB="$(printf '%s' "$VPS_PRIV" | awg pubkey)"
+    GW_PRIV="$(awg genkey)"
+    GW_PUB="$(printf '%s' "$GW_PRIV" | awg pubkey)"
+    PSK="$(awg genpsk)"
+    JC=$(rnd 3 10);    JMIN=$(rnd 8 15);   JMAX=$(rnd 40 70)
+    S1=$(rnd 15 150);  S2=$(rnd 15 150);   S3=$(rnd 15 150);  S4=$(rnd 15 150)
+    # S1 + 56 == S2 ломает разбор рукопожатия (длина init совпадает с response) —
+    # переизбираем S2, как делает awg-server-init.sh; иначе ~0,4 % линков не встают
+    while [ $((S1 + 56)) -eq "$S2" ]; do S2=$(rnd 15 150); done
+    H1=$(h_range 5 500000000)
+    H2=$(h_range 500000001 1000000000)
+    H3=$(h_range 1000000001 1500000000)
+    H4=$(h_range 1500000001 2000000000)
+}
+write_vps_conf() {   # $1 = куда: конфиг стороны ВПС, 0600
+    cat > "$1" <<CONFEOF
+# Линк ВПС ↔ шлюз для условной маршрутизации. Сгенерировано routing-link-setup.sh.
+# Маршрутами занимается бот (таблица $(printf '%s' "${ROUTING_TABLE:-100}")), поэтому Table = off.
+[Interface]
+Address = $LINK_VPS_ADDR/30
+ListenPort = $LINK_PORT
+PrivateKey = $VPS_PRIV
+Table = off
+Jc = $JC
+Jmin = $JMIN
+Jmax = $JMAX
+S1 = $S1
+S2 = $S2
+S3 = $S3
+S4 = $S4
+H1 = $H1
+H2 = $H2
+H3 = $H3
+H4 = $H4
+
+[Peer]
+PublicKey = $GW_PUB
+PresharedKey = $PSK
+AllowedIPs = 0.0.0.0/0
+CONFEOF
+    chmod 600 "$1"
+}
+write_gw_conf() {   # $1 = куда, $2 = Endpoint (хост:порт): конфиг стороны шлюза, 0600
+    cat > "$1" <<GWEOF
+# Линк до ВПС под условную маршрутизацию. Положить на шлюз как ОТДЕЛЬНЫЙ
+# интерфейс (например /etc/amnezia/amneziawg/awglink.conf) — существующий awg0
+# с прежней ручной схемой НЕ трогать.
+#
+# AllowedIPs узкие намеренно: 0.0.0.0/0 увёл бы весь трафик шлюза в туннель.
+# Нужны только клиентская подсеть (обратный трафик) и сам линк.
+[Interface]
+Address = $LINK_GW_ADDR/30
+PrivateKey = $GW_PRIV
+Jc = $JC
+Jmin = $JMIN
+Jmax = $JMAX
+S1 = $S1
+S2 = $S2
+S3 = $S3
+S4 = $S4
+H1 = $H1
+H2 = $H2
+H3 = $H3
+H4 = $H4
+
+[Peer]
+PublicKey = $VPS_PUB
+PresharedKey = $PSK
+Endpoint = $2
+AllowedIPs = $(gw_allowed_ips)
+PersistentKeepalive = $LINK_KEEPALIVE
+GWEOF
+    chmod 600 "$1"
+}
+link_restart() {   # переподнять линк ВПС на том, что лежит в $CONF; 0 — поднялся
+    ip link show "$LINK_IF" >/dev/null 2>&1 && { awg-quick down "$LINK_IF" >/dev/null 2>&1 || true; }
+    awg-quick up "$LINK_IF"
+}
+
+# ── смена ключей линка: режимы перехода ──────────────────────────────────────
+# Порт, адреса /30 и Endpoint — те же: меняются ключи обеих сторон, PSK и
+# обфускация. Строка «rekey: …» последней — итог для бота.
+if [ "$MODE" = "rekey-stage" ]; then
+    [ -f "$CONF" ] && [ -f "$GW_CONF_OUT" ] || { say "ОШИБКА: линк $LINK_IF не настроен — менять нечего"; exit 1; }
+    umask 077
+    _port="$(awk '/^ListenPort/{print $3; exit}' "$CONF")"
+    # хост — из настроек бота (ENDPOINT_HOST), как у --bundle и документа:
+    # /root/gw-*.conf после «✏️ Домен» помнит прежний
+    if [ -n "${ENDPOINT_HOST:-}" ] && [ -n "$_port" ]; then
+        _ep="$ENDPOINT_HOST:$_port"
+    else
+        _ep="$(awk '/^Endpoint/{print $3; exit}' "$GW_CONF_OUT")"
+    fi
+    [ -n "$_ep" ] && [ -n "$_port" ] || { say "ОШИБКА: в конфигах линка нет Endpoint или ListenPort"; exit 1; }
+    LINK_PORT="$_port"
+    gen_keys
+    write_vps_conf "$CONF.next"
+    write_gw_conf "$GW_CONF_OUT.next" "$_ep"
+    say "rekey: staged"
+    exit 0
+fi
+if [ "$MODE" = "rekey-commit" ]; then
+    [ -f "$CONF.next" ] && [ -f "$GW_CONF_OUT.next" ] || { say "ОШИБКА: новых ключей ($CONF.next) нет — сначала --rekey-stage"; exit 1; }
+    umask 077
+    # исключение из MASQUERADE — до подмены: его отказ не должен случиться
+    # после того, как новые ключи уже живые (бот счёл бы это возвратом)
+    assert_nat_exempt || { say "ОШИБКА: исключение линка из MASQUERADE не поставлено — ключи не тронуты"; exit 1; }
+    cp -p "$CONF" "$CONF.prev"
+    cp -p "$GW_CONF_OUT" "$GW_CONF_OUT.prev"
+    install -m 600 "$CONF.next" "$CONF"
+    install -m 600 "$GW_CONF_OUT.next" "$GW_CONF_OUT"
+    rm -f "$CONF.next" "$GW_CONF_OUT.next"
+    if ! link_restart; then
+        # новые ключи не подняли интерфейс — прежние назад, интерфейс на них
+        install -m 600 "$CONF.prev" "$CONF"; install -m 600 "$GW_CONF_OUT.prev" "$GW_CONF_OUT"
+        rm -f "$CONF.prev" "$GW_CONF_OUT.prev"
+        link_restart || true
+        say "ОШИБКА: линк на новых ключах не поднялся — прежние ключи на месте"
+        exit 1
+    fi
+    say "rekey: committed"
+    exit 0
+fi
+if [ "$MODE" = "rekey-revert" ]; then
+    umask 077
+    rm -f "$CONF.next" "$GW_CONF_OUT.next"
+    if [ -f "$CONF.prev" ]; then
+        install -m 600 "$CONF.prev" "$CONF"
+        [ -f "$GW_CONF_OUT.prev" ] && install -m 600 "$GW_CONF_OUT.prev" "$GW_CONF_OUT"
+        rm -f "$CONF.prev" "$GW_CONF_OUT.prev"
+        link_restart || { say "ОШИБКА: линк на прежних ключах не поднялся"; exit 1; }
+        assert_nat_exempt || say "ВНИМАНИЕ: исключение линка из MASQUERADE не поставлено — поставит --reassert"
+    fi
+    say "rekey: reverted"
+    exit 0
+fi
+if [ "$MODE" = "rekey-drop" ]; then
+    rm -f "$CONF.next" "$GW_CONF_OUT.next" "$CONF.prev" "$GW_CONF_OUT.prev"
+    say "rekey: dropped"
+    exit 0
+fi
 
 # ── файл конфигурации для шлюза: скрипт настройки + конфиг линка одним файлом ────────────
 # Оператор несёт на шлюз ОДИН файл вместо двух. Два — это лишний способ
@@ -565,37 +752,7 @@ fi
 # ── 1. ключи и обфускация ────────────────────────────────────────────────────
 step "1. Ключи и обфускация"
 umask 077
-VPS_PRIV="$(awg genkey)"
-VPS_PUB="$(printf '%s' "$VPS_PRIV" | awg pubkey)"
-GW_PRIV="$(awg genkey)"
-GW_PUB="$(printf '%s' "$GW_PRIV" | awg pubkey)"
-PSK="$(awg genpsk)"
-
-rnd() {   # $1=min $2=max
-    _r="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
-    echo $(( _r % ($2 - $1 + 1) + $1 ))
-}
-JC=$(rnd 3 10);    JMIN=$(rnd 8 15);   JMAX=$(rnd 40 70)
-S1=$(rnd 15 150);  S2=$(rnd 15 150);   S3=$(rnd 15 150);  S4=$(rnd 15 150)
-# S1 + 56 == S2 ломает разбор рукопожатия (длина init совпадает с response) —
-# переизбираем S2, как делает awg-server-init.sh; иначе ~0,4 % линков не встают
-while [ $((S1 + 56)) -eq "$S2" ]; do S2=$(rnd 15 150); done
-# H1..H4 берём из НЕПЕРЕСЕКАЮЩИХСЯ полос: одинаковые или пересекающиеся
-# значения ломают распознавание типов пакетов, а близкие к штатным 1..4 сводят
-# смысл обфускации на нет.
-#
-# ДИАПАЗОНЫ, а не одиночные числа (умеет amneziawg v3+). Одно фиксированное
-# значение на тип пакета — это стабильная сигнатура: DPI достаточно заметить,
-# что первые четыре байта у потока всегда одни и те же. С диапазоном заголовок
-# выбирается заново для каждого пакета, и такой признак пропадает.
-h_range() {   # $1=нижняя граница полосы, $2=верхняя
-    _lo=$(rnd "$1" $(( $2 - 200000 )))
-    printf '%s-%s' "$_lo" "$(( _lo + $(rnd 50000 150000) ))"
-}
-H1=$(h_range 5 500000000)
-H2=$(h_range 500000001 1000000000)
-H3=$(h_range 1000000001 1500000000)
-H4=$(h_range 1500000001 2000000000)
+gen_keys
 say "  ключи сгенерированы, обфускация своя (не совпадает с клиентским профилем)"
 
 # ── 2. конфиг и подъём ───────────────────────────────────────────────────────
@@ -603,32 +760,7 @@ step "2. Конфиг $CONF и подъём интерфейса"
 say "  Table = off — иначе AllowedIPs=0.0.0.0/0 у пира увёл бы весь трафик сервера AWG"
 say "  в шлюз вместе с этой SSH-сессией"
 mkdir -p "$CONF_DIR"
-cat > "$CONF" <<CONFEOF
-# Линк ВПС ↔ шлюз для условной маршрутизации. Сгенерировано routing-link-setup.sh.
-# Маршрутами занимается бот (таблица $(printf '%s' "${ROUTING_TABLE:-100}")), поэтому Table = off.
-[Interface]
-Address = $LINK_VPS_ADDR/30
-ListenPort = $LINK_PORT
-PrivateKey = $VPS_PRIV
-Table = off
-Jc = $JC
-Jmin = $JMIN
-Jmax = $JMAX
-S1 = $S1
-S2 = $S2
-S3 = $S3
-S4 = $S4
-H1 = $H1
-H2 = $H2
-H3 = $H3
-H4 = $H4
-
-[Peer]
-PublicKey = $GW_PUB
-PresharedKey = $PSK
-AllowedIPs = 0.0.0.0/0
-CONFEOF
-chmod 600 "$CONF"
+write_vps_conf "$CONF"
 run "awg-quick up $LINK_IF"
 
 # ── 3. вывести линк из-под MASQUERADE ────────────────────────────────────────
@@ -650,36 +782,7 @@ run "systemctl enable $UNIT_INSTANCE"
 
 # ── 5. конфиг для шлюза ────────────────────────────────────────────────────
 step "5. Конфиг для шлюза → $GW_CONF_OUT"
-cat > "$GW_CONF_OUT" <<GWEOF
-# Линк до ВПС под условную маршрутизацию. Положить на шлюз как ОТДЕЛЬНЫЙ
-# интерфейс (например /etc/amnezia/amneziawg/awglink.conf) — существующий awg0
-# с прежней ручной схемой НЕ трогать.
-#
-# AllowedIPs узкие намеренно: 0.0.0.0/0 увёл бы весь трафик шлюза в туннель.
-# Нужны только клиентская подсеть (обратный трафик) и сам линк.
-[Interface]
-Address = $LINK_GW_ADDR/30
-PrivateKey = $GW_PRIV
-Jc = $JC
-Jmin = $JMIN
-Jmax = $JMAX
-S1 = $S1
-S2 = $S2
-S3 = $S3
-S4 = $S4
-H1 = $H1
-H2 = $H2
-H3 = $H3
-H4 = $H4
-
-[Peer]
-PublicKey = $VPS_PUB
-PresharedKey = $PSK
-Endpoint = $ENDPOINT_HOST:$LINK_PORT
-AllowedIPs = $(gw_allowed_ips)
-PersistentKeepalive = $LINK_KEEPALIVE
-GWEOF
-chmod 600 "$GW_CONF_OUT"
+write_gw_conf "$GW_CONF_OUT" "$ENDPOINT_HOST:$LINK_PORT"
 say "  записан (права 600 — внутри приватный ключ и psk)"
 
 step "Проверка"

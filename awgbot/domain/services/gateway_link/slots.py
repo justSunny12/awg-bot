@@ -254,6 +254,7 @@ class SlotsMixin:
                 "down_since": int(self.db.get_state(f"routing_gw_{g.id}_down_since") or 0),
                 "issued_at": self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, g.id)) or "",
                 "display": self._gw_display(g),
+                "rekey": self.gateway_rekey(g.id),
                 "ping": self.gateway_ping_cached(g.id),
             })
         return out
@@ -316,6 +317,7 @@ class SlotsMixin:
         # сервисы соседних сетей — числами, без имён
         st["services"] = self.gwlink_services_card(st["gateway"])
         st["own_lists"] = self.gwlink_own_card(st["gateway"])
+        st["rekey"] = self.gateway_rekey(int(slot_id))   # смена ключей линка: строка карточки и кнопка
         return st
 
     def gateway_uplink_conf(self, dev) -> str:

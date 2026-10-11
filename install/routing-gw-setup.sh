@@ -111,6 +111,33 @@
 #      маршрутов в линк; иначе down/up с прежней таблицей защиты до подъёма.
 #      Итог — последней строкой «link: unchanged|syncconf|restarted». Таблицы и
 #      юнит этот режим не трогает: реассерт, пробу хендшейком и откат делает агент.
+#      Тем же режимом агент ставит новые ключи линка при смене ключей каналом
+#      (domain/gateway/cfg/rekey.py: /etc/awg-gw/rekey.next и rekey.prev).
+#   7) --uplink <конфиг> — конфиг аплинка из документа конфигурации (зовёт
+#      агент, domain/gateway/cfg/uplinktxn.py: человек нажал «Применить» в чате
+#      бота шлюза или сработало аварийное правило — агент сам 10 минут подряд
+#      видит аплинк без хендшейка, а ключ устройства в конфиге — ключ признания).
+#      Аплинк называет окружение UPLINK_IF (агент
+#      его знает; пусто — отказ, код 2). Проверка — wg_conf_check по разделу
+#      uplink того же gw-wg-allow.list и обязательный Table = off; затем то же,
+#      что при применении файла с UPLINK_B64 (ниже): PostUp/PostDown политики
+#      «метка → таблица» дописываются в [Interface], подъём юнитом awg-quick@<аплинк>,
+#      не поднялся — прежний конфиг назад, код 1. Итог — последней строкой
+#      «uplink: unchanged|installed»; отказ до установки — «uplink: refused»
+#      (проверка не прошла, копию прежнего не снять или новый не записать —
+#      cp/install; прежний на месте). Копия прежнего — одна, <аплинк>.conf.before:
+#      после пробы хендшейком (60 с, делает агент) --uplink-commit её убирает,
+#      --uplink-revert ставит прежний назад байт в байт (без белого списка —
+#      это файл с этого же диска) и поднимает аплинк; итог «uplink: committed|
+#      reverted|unchanged». Новый не поднялся, и прежний при этом не вернулся
+#      (запись) — копия .before остаётся для --uplink-revert. Оба режима итога
+#      идут до определения WAN_IF: откату выход не нужен, и без маршрута по
+#      умолчанию (аренда DHCP потеряна) они не отказывают. Порядок у агента:
+#      журнал /etc/awg-gw/uplink.txn → uplink.next → ключи признания
+#      (GATEWAY_PUBKEY, GATEWAY_PREV_PUBKEY) в юнит → --uplink → проба →
+#      журнал прочь → --uplink-commit; прерванную транзакцию агент откатывает
+#      сам. Всю транзакцию он держит замок обвязки (ниже) и зовёт режимы с
+#      AWG_GW_LOCK_HELD=1.
 #
 # ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы, прежнюю ручную схему
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
@@ -171,7 +198,8 @@
 # В юните их нет — дефолт в скрипте, переопределяются окружением при ручном
 # запуске: TG_MARK (метка трафика в туннель, 0x1), UPLINK_TABLE (таблица
 # политики «метка → аплинк», 100), UPLINK_IF (имя аплинка на чистой машине,
-# пока его не найти по ключу, awg0), WAN_IF, HOST_CONF_DIR.
+# пока его не найти по ключу, awg0; в режиме --uplink обязателен), WAN_IF,
+# HOST_CONF_DIR.
 # Вторую группу юнит читает строкой EnvironmentFile=-/etc/awg-gw/firewall.env —
 # это локальное состояние шлюза, его пишут агент и awg-bot (разделы файервола и
 # доступа по SSH), перевыпуск файла конфигурации его не трогает: ADMIN_IPS_EXTRA
@@ -187,15 +215,28 @@
 #   sudo sh routing-gw-setup.sh                    # показать план
 #   sudo sh routing-gw-setup.sh --apply gw-awglink.conf
 #   sudo sh routing-gw-setup.sh --link-apply link.next   # только конфиг линка (п.6)
+#   sudo UPLINK_IF=awg0 sh routing-gw-setup.sh --uplink uplink.next   # только аплинк (п.7)
+#   sudo UPLINK_IF=awg0 sh routing-gw-setup.sh --uplink-commit|--uplink-revert  # итог пробы (п.7)
 #   sudo sh routing-gw-setup.sh --rollback
 # --rollback снимает и ACCEPT п.3a — со всех интерфейсов, кроме lo: имя
 # интерфейса со времён применения могло смениться (br0, bond после OMV).
-# Один прогон за раз: --apply, --link-apply и --rollback (из юнита, из файла
+# Один прогон за раз: --apply, --link-apply, --uplink* и --rollback (из юнита, из файла
 # конфигурации под systemd-run, от агента, руками) берут flock на /run/awg-gw-apply.lock и ждут соседа до
 # 5 минут; не дождался — код 75. План (без аргументов) блокировку не берёт.
+# AWG_GW_LOCK_HELD=1 — замок уже держит вызывающий (агент на транзакцию аплинка).
+# Прогон юнита (AWG_GW_UNIT_RUN=1) после замка сверяет строки, с которыми его
+# запустил systemd, с юнитом на диске: разошлись — перезапускается с ними.
+# Строку AWG_GW_UNIT_RUN=1 пишет в юнит и этот скрипт, и агент сам (юниту
+# прежнего образца — не дожидаясь первого полного прогона после обновления).
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e
+
+# Строки юнита, которые переписывает агент (ключи признания, подсети, порт
+# канала), — как их дал systemd при старте процесса: после замка ниже они
+# сверяются с юнитом на диске (агент мог переписать его, пока прогон ждал).
+UNIT_ENV_KEYS="CLIENT_SUBNET LINK_IF ADMIN_IPS LAN_MODE HOME_SUBNETS RESOLVER PEER_HOME_NETS LINK_CHANNEL_PORT GATEWAY_PUBKEY GATEWAY_PREV_PUBKEY"
+UNIT_ENV0="$(for _k in $UNIT_ENV_KEYS; do eval "printf '%s=%s\n' \"\$_k\" \"\${$_k-}\""; done)"
 
 LINK_IF="$(printf '%s' "${LINK_IF:-awglink}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)"
 # Боевое значение приезжает из ФАЙЛА КОНФИГУРАЦИИ (export перед запуском) и закрепляется в
@@ -204,7 +245,7 @@ LINK_IF="$(printf '%s' "${LINK_IF:-awglink}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-1
 CLIENT_SUBNET="$(printf '%s' "${CLIENT_SUBNET:-10.8.1.0/24}" | tr -cd '0-9./')"
 case "$CLIENT_SUBNET" in
     [0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) ;;
-    *) say "ОШИБКА: CLIENT_SUBNET не подсеть: $CLIENT_SUBNET"; exit 1 ;;
+    *) printf '%s\n' "ОШИБКА: CLIENT_SUBNET не подсеть: $CLIENT_SUBNET"; exit 1 ;;
 esac
 FWD_CHAIN="AWGLINK_FWD"                  # прежняя цепочка iptables — только снятие
 UNIT="/etc/systemd/system/awg-link-gw.service"
@@ -946,6 +987,12 @@ case "${1:-}" in
     # конфиг линка из упр. канала: проверка белым списком и правилом AllowedIPs
     # (gw-wg-allow.list), затем syncconf без перезапуска или down/up — зовёт агент
     --link-apply) MODE="link-apply"; SRC_CONF="${2:-}" ;;
+    # конфиг аплинка из упр. канала (человек подтвердил в чате агента или
+    # аварийное правило): белый список, PostUp политики, подъём юнитом, откат
+    --uplink)   MODE="uplink"; SRC_CONF="${2:-}" ;;
+    # итог пробы аплинка (агент): прежний конфиг назад байт в байт / копию прочь
+    --uplink-revert) MODE="uplink-revert" ;;
+    --uplink-commit) MODE="uplink-commit" ;;
     --rollback) MODE="rollback" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
@@ -957,9 +1004,35 @@ esac
 # Один прогон за раз: файл конфигурации из чата, юнит (реассерт с тика, порт и
 # фильтр SSH, восстановление) делят одни временные файлы и одну таблицу —
 # второй ждёт первого, а не переписывает его .tmp и не побеждает последним nft -f.
-if [ "$MODE" != "plan" ] && command -v flock >/dev/null 2>&1; then
+# AWG_GW_LOCK_HELD=1 — замок уже держит вызывающий (агент держит его на всю
+# транзакцию аплинка: юнит, конфиг, проба, откат) или этот же прогон перед
+# перезапуском себя; второй раз не берём — иначе ждали бы сами себя.
+unit_file_env() {    # $1 = ключ: значение строки Environment юнита на диске
+    sed -n "s/^Environment=\"\{0,1\}$1=\([^\"]*\)\"\{0,1\}\$/\1/p" "$UNIT" 2>/dev/null | head -n 1
+}
+if [ "$MODE" != "plan" ] && command -v flock >/dev/null 2>&1 && [ "${AWG_GW_LOCK_HELD:-}" != "1" ]; then
     exec 7>/run/awg-gw-apply.lock
     flock -w 300 7 || { echo "обвязка уже применяется другим процессом — не дождался за 5 минут" >&2; exit 75; }
+    # Прогон юнита стартовал со строками, прочитанными ДО замка. Пока он ждал,
+    # агент мог переписать юнит (новые ключи признания, подсети) — тогда в
+    # конце этот прогон записал бы юнит со старыми значениями поверх новых.
+    # Разошлись — перезапуск себя со строками с диска, замок остаётся у нас.
+    if [ "${AWG_GW_UNIT_RUN:-}" = "1" ] && [ -f "$UNIT" ]; then
+        _stale=""
+        for _k in $UNIT_ENV_KEYS; do
+            _was="$(printf '%s\n' "$UNIT_ENV0" | sed -n "s/^$_k=//p" | head -n 1)"
+            _now="$(unit_file_env "$_k")"
+            [ "$_was" = "$_now" ] || _stale="$_stale $_k"
+        done
+        if [ -n "$_stale" ]; then
+            echo "юнит переписан, пока прогон ждал замка (${_stale# }) — перезапускаюсь со строками юнита" >&2
+            for _k in $UNIT_ENV_KEYS; do
+                eval "$_k=\"\$(unit_file_env $_k)\""; export "$_k"
+            done
+            AWG_GW_LOCK_HELD=1; export AWG_GW_LOCK_HELD
+            exec sh "$0" "$@"
+        fi
+    fi
 fi
 
 say()  { printf '%s\n' "$*"; }
@@ -996,9 +1069,36 @@ install_self() {
 # раз модуль есть). Контейнер для линка не нужен: там были только бинарники.
 AWG_QUICK="$(command -v awg-quick || true)"
 AWG_BIN="$(command -v awg || true)"
+HOST_CONF_DIR="${HOST_CONF_DIR:-/etc/amnezia/amneziawg}"
+
+# Итог пробы аплинка — до определения выхода: откату WAN не нужен, а без
+# маршрута по умолчанию (аренда DHCP потеряна) он не должен отказывать.
+if [ "$MODE" = "uplink-revert" ] || [ "$MODE" = "uplink-commit" ]; then
+    [ -n "${UPLINK_IF:-}" ] || { say "ОШИБКА: не назван аплинк (UPLINK_IF)"; exit 2; }
+    _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
+    _before="$_dst.before"
+    if [ "$MODE" = "uplink-commit" ]; then
+        rm -f "$_before"
+        say "uplink: committed"
+        exit 0
+    fi
+    # Прежний конфиг — файл с этого же диска, а не данные из канала: назад
+    # без проверки белым списком (стоящий мог её и не проходить), байт в байт.
+    if [ ! -f "$_before" ]; then
+        say "uplink: unchanged"
+        exit 0
+    fi
+    run "install -m 600 $_before $_dst" || { say "ОШИБКА: прежний конфиг аплинка не вернулся (запись)"; exit 1; }
+    run "rm -f $_before"
+    run "systemctl stop awg-quick@$UPLINK_IF 2>/dev/null || true"
+    run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
+    systemctl start "awg-quick@$UPLINK_IF" || { say "ОШИБКА: аплинк на прежнем конфиге не поднялся"; exit 1; }
+    say "uplink: reverted"
+    exit 0
+fi
+
 WAN_IF="$(detect_wan)"
 [ -n "$WAN_IF" ] || { say "ОШИБКА: не определил интерфейс выхода. Укажи: WAN_IF=eth0 $0 ..."; exit 1; }
-HOST_CONF_DIR="${HOST_CONF_DIR:-/etc/amnezia/amneziawg}"
 
 say "Параметры (определены автоматически, переопределяются переменными):"
 say "  интерфейс линка    : $LINK_IF"
@@ -1015,6 +1115,71 @@ say "  локальные сети     : будут ЗАКРЫТЫ для кли
 # /30 линка (по Address конфига), подсети других шлюзов и /32 резолвера из
 # юнита; все — частные, не шире allowed_min_prefix, не больше allowed_max, без
 # пересечений с локальными подсетями и подсетями интерфейсов шлюза.
+uplink_render() {     # $1 = конфиг аплинка (клиентский, Table = off), $2 = куда: с PostUp политики
+    # PostUp/PostDown — ВНУТРИ [Interface], сразу за Table = off:
+    # awg-quick вырезает их только из этой секции, в [Peer] они
+    # уходят в setconf и роняют подъём («Line unrecognized»)
+    awk -v mark="$TG_MARK" -v tbl="$UPLINK_TABLE" '
+        { print }
+        /^Table = off$/ {
+            printf "PostUp = ip rule list | grep -q \"fwmark %s lookup %s\" || ip rule add fwmark %s lookup %s\n", mark, tbl, mark, tbl
+            printf "PostUp = ip route replace default dev %%i table %s\n", tbl
+            printf "PostUp = sysctl -qw net.ipv4.conf.%%i.rp_filter=2\n"
+            printf "PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n", tbl
+        }' "$1" > "$2"
+}
+uplink_install() {    # $1 = готовый конфиг (uplink_render), $2 = куда копию прежнего (пусто — .bak-<время>); 1 — не установлен, прежний на месте
+    # Зовётся из `if !`: там set -e внутри функции не действует (POSIX), поэтому
+    # каждый шаг проверяется явно — молча проглоченный отказ записи дал бы
+    # «installed» при старом конфиге на диске.
+    _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
+    if [ -f "$_dst" ] && cmp -s "$1" "$_dst"; then
+        say "  конфиг аплинка не изменился"
+        UPLINK_STATE="unchanged"
+        return 0
+    fi
+    _bak=""
+    if [ -f "$_dst" ]; then
+        _bak="${2:-$_dst.bak-$(date +%Y%m%d%H%M%S)}"
+        if ! run "cp -p $_dst $_bak"; then
+            say "ОШИБКА: копия прежнего конфига аплинка не снята — не установлен"
+            UPLINK_STATE="refused"
+            return 1
+        fi
+    fi
+    if ! run "install -m 600 $1 $_dst"; then
+        say "ОШИБКА: конфиг аплинка не записан — не установлен"
+        [ -n "$_bak" ] && { run "cp -p $_bak $_dst" || true; [ -n "${2:-}" ] && run "rm -f $_bak"; }
+        UPLINK_STATE="refused"
+        return 1
+    fi
+    UPLINK_STATE="installed"
+    say "  конфиг аплинка обновлён (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
+    run "systemctl stop awg-quick@$UPLINK_IF 2>/dev/null || true"
+    run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
+    # Поднимаем ЮНИТОМ, а не голым awg-quick: иначе юнит на
+    # старте (Wants у обвязки) натыкался на «already exists»
+    # и с Restart=on-failure перезапускался каждые 10 с без предела.
+    # Аплинк — связь самого агента с Telegram. Не поднялся —
+    # немедленно назад на прежний конфиг, иначе шлюз режет себе
+    # связь и чинить его придётся руками.
+    if ! systemctl start "awg-quick@$UPLINK_IF"; then
+        say "  ОШИБКА: аплинк с новым конфигом не поднялся — откатываю на прежний"
+        if [ -n "$_bak" ]; then
+            if run "cp -p $_bak $_dst"; then
+                run "systemctl start awg-quick@$UPLINK_IF || true"
+                [ -n "${2:-}" ] && run "rm -f $_bak"
+            else
+                # копию не трогаем: --uplink-revert вернёт её позже
+                say "  ОШИБКА: прежний конфиг аплинка не вернулся — копия: $_bak"
+            fi
+        fi
+        UPLINK_STATE="failed"
+        return 1
+    fi
+    run "systemctl enable awg-quick@$UPLINK_IF 2>/dev/null || true"
+    return 0
+}
 allow_list_path() {
     _d="$(dirname "$(readlink -f "$0")")"
     for _p in "$_d/gw-wg-allow.list" "$_d/../install/gw-wg-allow.list" /opt/awg-bot/install/gw-wg-allow.list; do
@@ -1181,6 +1346,36 @@ if [ "$MODE" = "link-apply" ]; then
     exit 0
 fi
 
+if [ "$MODE" = "uplink" ]; then
+    step "Конфиг аплинка из упр. канала"
+    # отказ до установки — итог «uplink: refused»: на диске ничего не менялось
+    [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || { say "ОШИБКА: нужен файл: $0 --uplink <конфиг>"; say "uplink: refused"; exit 2; }
+    [ -n "${UPLINK_IF:-}" ] || { say "ОШИБКА: не назван аплинк (UPLINK_IF)"; say "uplink: refused"; exit 2; }
+    if ! wg_conf_check "$SRC_CONF" uplink; then
+        say "ОШИБКА: конфиг аплинка не прошёл проверку — не установлен"
+        say "uplink: refused"
+        exit 1
+    fi
+    grep -q '^Table = off$' "$SRC_CONF" || { say "ОШИБКА: в конфиге аплинка нет Table = off — не установлен"; say "uplink: refused"; exit 1; }
+    _um="$(umask)"; umask 077
+    _tmp="$GW_ETC/uplink.render"
+    mkdir -p "$GW_ETC"
+    trap 'rm -f "$_tmp"' EXIT
+    uplink_render "$SRC_CONF" "$_tmp"
+    # копия прежнего — одна, .before: живёт до итога пробы агента
+    # (--uplink-commit убирает, --uplink-revert ставит назад байт в байт)
+    _before="$HOST_CONF_DIR/$UPLINK_IF.conf.before"
+    rm -f "$_before"
+    if ! uplink_install "$_tmp" "$_before"; then
+        [ "$UPLINK_STATE" = "refused" ] && say "uplink: refused"
+        exit 1
+    fi
+    rm -f "$_tmp"; trap - EXIT; umask "$_um"
+    say "uplink: $UPLINK_STATE"
+    exit 0
+fi
+
+
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
     step "Снятие"
@@ -1288,48 +1483,10 @@ else
             trap 'rm -f "$_tmp" "$_tmp.conf"' EXIT
             printf '%s' "$UPLINK_B64" | base64 -d > "$_tmp" 2>/dev/null || : > "$_tmp"
             if grep -q '^PrivateKey' "$_tmp"; then
-                # PostUp/PostDown — ВНУТРИ [Interface], сразу за Table = off:
-                # awg-quick вырезает их только из этой секции, в [Peer] они
-                # уходят в setconf и роняют подъём («Line unrecognized»)
-                awk -v mark="$TG_MARK" -v tbl="$UPLINK_TABLE" '
-                    { print }
-                    /^Table = off$/ {
-                        printf "PostUp = ip rule list | grep -q \"fwmark %s lookup %s\" || ip rule add fwmark %s lookup %s\n", mark, tbl, mark, tbl
-                        printf "PostUp = ip route replace default dev %%i table %s\n", tbl
-                        printf "PostUp = sysctl -qw net.ipv4.conf.%%i.rp_filter=2\n"
-                        printf "PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n", tbl
-                    }' "$_tmp" > "$_tmp.conf"
-                _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
-                if [ -f "$_dst" ] && cmp -s "$_tmp.conf" "$_dst"; then
-                    say "  конфиг аплинка не изменился"
-                    UPLINK_STATE="unchanged"
-                else
-                    UPLINK_STATE="installed"
-                    say "  конфиг аплинка обновлён из файла конфигурации (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
-                    _bak=""
-                    if [ -f "$_dst" ]; then
-                        _bak="$_dst.bak-$(date +%Y%m%d%H%M%S)"
-                        run "cp -p $_dst $_bak"
-                    fi
-                    run "install -m 600 $_tmp.conf $_dst"
-                    run "systemctl stop awg-quick@$UPLINK_IF 2>/dev/null || true"
-                    run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
-                    # Поднимаем ЮНИТОМ, а не голым awg-quick: иначе юнит на
-                    # старте (Wants у обвязки) натыкался на «already exists»
-                    # и с Restart=on-failure перезапускался каждые 10 с без предела.
-                    # Аплинк — связь самого агента с Telegram. Не поднялся —
-                    # немедленно назад на прежний конфиг, иначе шлюз режет себе
-                    # связь и чинить его придётся руками.
-                    if ! systemctl start "awg-quick@$UPLINK_IF"; then
-                        say "  ОШИБКА: аплинк с новым конфигом не поднялся — откатываю на прежний"
-                        if [ -n "$_bak" ]; then
-                            run "cp -p $_bak $_dst"
-                            run "systemctl start awg-quick@$UPLINK_IF || true"
-                        fi
-                        rm -f "$_tmp" "$_tmp.conf"
-                        exit 1
-                    fi
-                    run "systemctl enable awg-quick@$UPLINK_IF 2>/dev/null || true"
+                uplink_render "$_tmp" "$_tmp.conf"
+                if ! uplink_install "$_tmp.conf"; then
+                    rm -f "$_tmp" "$_tmp.conf"
+                    exit 1
                 fi
             else
                 say "  конфиг аплинка в файле конфигурации не разобрался — не трогаю"
@@ -1734,6 +1891,8 @@ Environment="PEER_HOME_NETS=$PEER_HOME_NETS"
 # читают агенты прежних версий), порт канала агент берёт отсюда.
 Environment=LINK_CHANNEL=$LINK_CHANNEL
 Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT
+# прогон самого юнита: после замка сверяет строки выше с юнитом на диске
+Environment=AWG_GW_UNIT_RUN=1
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf

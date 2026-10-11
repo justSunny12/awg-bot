@@ -10,6 +10,7 @@ gateway_link/ — шлюзы условной маршрутизации: сло
   peernets  VPN-транзит слота и доступ между подсетями за шлюзами
   mark      пометка устройства шлюзом: запасной путь через пересланный токен
   agentbot  токен и имя бота агента по слотам
+  rekey     смена ключей линка тем же устройством каналом: стадия, переход, сроки
 
 GatewayLinkMixin — составной миксин частей под прежним именем.
 """
@@ -19,7 +20,8 @@ from .slots import SlotsMixin
 from .peernets import PeerNetsMixin
 from .mark import MarkMixin
 from .agentbot import AgentBotMixin
+from .rekey import RekeyMixin
 
 
-class GatewayLinkMixin(LinkScriptMixin, SlotsMixin, PeerNetsMixin, MarkMixin, AgentBotMixin):
+class GatewayLinkMixin(LinkScriptMixin, SlotsMixin, PeerNetsMixin, MarkMixin, AgentBotMixin, RekeyMixin):
     pass

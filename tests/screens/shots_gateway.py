@@ -56,6 +56,25 @@ from tests.screens.base import NOW, Shot
 
 # ── состояние хоста ──────────────────────────────────────────────────────────
 
+def _x25519(seed: bytes) -> tuple[str, str]:
+    """Пара X25519 из постоянного зерна (снимок детерминирован): (приватный, публичный).
+    Зёрна — те же, что у раздела uplink в снимках карточки слота (shots_admin):
+    отпечаток в приглашении совпадает с отпечатком строки К3."""
+    import hashlib
+    from nacl.public import PrivateKey
+    key = PrivateKey(hashlib.sha256(seed).digest())
+    return base64.b64encode(bytes(key)).decode(), base64.b64encode(bytes(key.public_key)).decode()
+
+
+_UP_DEV_PRIV, _UP_DEV_PUB = _x25519(b"DUMMY-uplink-device")
+_UP_SRV_PRIV, _UP_SRV_PUB = _x25519(b"DUMMY-uplink-server")
+_UPLINK_VALUE = {
+    "conf": (f"[Interface]\nPrivateKey = {_UP_DEV_PRIV}\nAddress = 10.8.1.7/32\nTable = off\n\n"
+             f"[Peer]\nPublicKey = {_UP_SRV_PUB}\nPresharedKey = DUMMY-PSK=\n"
+             "Endpoint = vpn.example.org:43125\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n"),
+    "pubkey": _UP_DEV_PUB, "prev_pubkey": "DUMMY-PREV-PUB="}
+_REKEY_ASKED = {"id": "0a1b2c3d4e5f", "state": "asked", "fp": "ab12 cd34"}
+
 _CHECKS_OK = [
     GwCheck("линк", True, "хендшейк 40 с назад"),
     GwCheck("таблица awg_gw_guard", True),
@@ -244,7 +263,13 @@ class _Host:
     apply_status: dict = field(default_factory=lambda: dict(_APPLY_STATUS))   # файл статуса скрипта
     bundle_mail: dict = field(default_factory=dict)        # проверка почты из файла
     mark: dict = field(default_factory=lambda: {"status": "confirmed", "claim": None})
-    cfg_ask: tuple = ()                                    # висящие вопросы документа: mail | backup, по порядку
+    cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail | backup, по порядку
+    rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
+    uplink_mine: str = "f00d" * 4                          # отпечаток стоящего аплинка (свой, не серверный)
+    uplink_after: str = ""                                 # аплинк поправили руками, пока висит вопрос
+    uplink_ok: bool = True                                 # новый конфиг аплинка поднялся (проба прошла)
+    uplink_fail: tuple = ("reverted", "аплинк не поднялся за 60 с")   # как не вышло: состояние и причина
+    uplink_pending: str = ""                               # конфиг ожидающего аплинка (uplink.pending)
     # резервные копии и старт процесса
     backup_key: bool = False                               # ключ шифрования копий задан
     restore_done: dict | None = None                       # маркер awg-bot restore
@@ -273,6 +298,9 @@ class _Channel:
 
     async def flush_applied(self):
         pass
+
+    async def send_rekey_answer(self, reply):
+        return True
 
 
 def _channel_on() -> bool:
@@ -449,6 +477,36 @@ class _Agent(GatewayServices):
         if self.h.update_error:
             raise updates.UpdateError(self.h.update_error)
 
+    # ── документ: ключи линка и аплинк ──────────────────────────────────────
+    def rekey_state(self):
+        """link.txn — память хоста снимка, а не файл в /etc/awg-gw."""
+        return dict(self.h.rekey)
+
+    def _rk_save(self, st):
+        self.h.rekey = dict(st or {})
+
+    def cfg_uplink_print(self, cached=False):
+        """Отпечаток стоящего аплинка — свой, отличается от серверного."""
+        return self.h.uplink_mine
+
+    def cfg_uplink_apply(self, value):
+        """Итог транзакции: applied | reverted | revert_failed | refused | busy."""
+        if self.h.uplink_ok:
+            return {"ok": True, "error": "", "state": "applied"}
+        state, why = self.h.uplink_fail
+        return {"ok": False, "error": why, "state": state}
+
+    def _cfg_uplink_pending_put(self, value):
+        """Ожидающий конфиг аплинка — в памяти хоста снимка, а не в /etc/awg-gw."""
+        self.h.uplink_pending = str(value.get("conf") or "")
+        return {k: v for k, v in value.items() if k != "conf"}
+
+    def _cfg_uplink_pending_fill(self, value):
+        return value if "conf" in value else {**value, "conf": self.h.uplink_pending}
+
+    def _cfg_uplink_pending_drop(self):
+        self.h.uplink_pending = ""
+
     # ── файл конфигурации шлюза ─────────────────────────────────────────────
     def inspect_bundle(self, blob):
         return dict(self.h.bundle)
@@ -526,7 +584,10 @@ def _agent(**opts):
             services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_BACKUP_KEY).decode())
         for section in h.cfg_ask:
             # сервер прислал своё, отличное от стоящего: вопрос повис (как после документа)
-            if section == "mail":
+            if section == "uplink":
+                value = dict(_UPLINK_VALUE)
+                server_print = gwcfg.uplink_print(value["conf"], value["pubkey"], value["prev_pubkey"])
+            elif section == "mail":
                 value = {"login": "box@example.org", "password": "DUMMY-server", "imap_host": "imap.example.org",
                          "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "email"}
                 server_print = gwcfg.mail_print(value)
@@ -534,6 +595,8 @@ def _agent(**opts):
                 value = {"phrase": "DUMMY-server-phrase"}
                 server_print = gwcfg.backup_print(value["phrase"])
             services.cfg_hold(section, value, server_print, 18, "9c41" * 4)
+        if h.uplink_after:
+            h.uplink_mine = h.uplink_after
         if h.update_pending:
             services.db.set_state("update_pending", h.update_pending)
         if h.update_wait:
@@ -585,6 +648,39 @@ def _p(cb) -> tuple:
 
 def _t(text: str) -> tuple:
     return ("text", text)
+
+
+async def _invite(services, bot):
+    """Крючок канала после link_next: первое в очереди — новым живым меню."""
+    from awgbot.bot.handlers.gateway import ask
+    await ask.show_cfg_question(bot, services, config.ADMIN_ID)
+
+
+def _withdraw(kind: str):
+    """Приглашение показано крючком канала, затем сервер отозвал запрос
+    (cancel) или прислал новый (replaced): прежнее приглашение правится
+    крючком правки так же, как его ставит main — текст без клавиатуры."""
+    async def run(services, bot):
+        from awgbot.bot.handlers.gateway import ask
+        from awgbot.runtime import linkclient
+        await ask.show_cfg_question(bot, services, config.ADMIN_ID)
+
+        async def edit(chat_id, message_id, text):
+            await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=None)
+            return True
+        prev = linkclient._edit, linkclient._ask
+        linkclient._edit, linkclient._ask = edit, None
+        try:
+            client = linkclient.LinkClient(services)
+            if kind == "cancel":
+                await client._rekey_cancel({"id": _REKEY_ASKED["id"]})
+            else:
+                services.rekey_next_in = lambda msg: {"reply": None, "ask": False,
+                                                      "replaced": services.rekey_state().get("msg")}
+                await client._rekey_next({"id": "1b2c3d4e5f6a"})
+        finally:
+            linkclient._edit, linkclient._ask = prev
+    return run
 
 
 async def _first_panel(services, bot):
@@ -736,6 +832,58 @@ SHOTS = [
     _shot("gw.cfg.queue", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="mail")],
           tick=_status(), mail=True, passphrase=True, cfg_ask=("mail", "backup"),
           title="очередь: после ответа о почте открывается вопрос о фразе"),
+    # ── документ с сервера AWG: приглашения — ключи линка и конфиг аплинка ──
+    _shot("gw.cfg.pending.all", press=[GwCB(action="panel")], tick=_status(), mail=True, rekey=_REKEY_ASKED,
+          cfg_ask=("uplink", "mail"),
+          title="панель: «⏳ Ждут решения: ключи линка, конфиг аплинка, почта» — в порядке очереди"),
+    _shot("gw.cfg.invite.link", call=("приглашение с сервера", _invite), tick=_status(), rekey=_REKEY_ASKED,
+          title="link_next принят — приглашение новым живым меню, шлюз трафик не несёт"),
+    _shot("gw.cfg.invite.withdrawn", call=("приглашение показано, сервер отозвал запрос", _withdraw("cancel")),
+          tick=_status(), rekey=_REKEY_ASKED,
+          title="link_cancel — правится само приглашение, кнопки сняты"),
+    _shot("gw.cfg.invite.replaced", call=("приглашение показано, сервер прислал новое", _withdraw("replaced")),
+          tick=_status(), rekey=_REKEY_ASKED,
+          title="новый link_next поверх висящего — прежнее приглашение «заменено более новым»"),
+    _shot("gw.cfg.ask.link", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          rekey=_REKEY_ASKED, title="приглашение «🔑 Новые ключи линка»: шлюз трафик не несёт — без «РФ-доступ прервётся»"),
+    _shot("gw.cfg.ask.link.carries", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          rekey=_REKEY_ASKED, carries=True, title="приглашение о ключах линка: шлюз несёт трафик — цена с обрывом"),
+    _shot("gw.cfg.ask.uplink", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
+          cfg_ask=("uplink",), title="приглашение «🔐 Новый конфиг аплинка»: ключ устройства и отпечаток пары"),
+    _shot("gw.cfg.accept.link", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="link")],
+          tick=_status(), rekey=_REKEY_ASKED, title="«🔑 Применить»: согласие ушло серверу, переключит он — панель следом"),
+    _shot("gw.cfg.cancel.link", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="link")],
+          tick=_status(), rekey=_REKEY_ASKED, title="«⬅️ Отмена» ключей: итог правкой, панель следом"),
+    _shot("gw.cfg.answered.link", press=[GwCB(action="cfg_ok!", val="link")], tick=_status(),
+          title="«🔑 Применить» со старого приглашения, запрос уже решён или отозван — всплывашка и панель"),
+    _shot("gw.cfg.accept.uplink", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",),
+          title="«🔐 Применить»: сначала «⏳ Применяю…», итог правкой, панель следом"),
+    _shot("gw.cfg.accept.uplink.fail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",), uplink_ok=False, title="новый аплинк не поднялся — вернул прежний"),
+    _shot("gw.cfg.accept.uplink.revert_failed",
+          press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",), uplink_ok=False,
+          uplink_fail=("revert_failed", "прежний конфиг аплинка не встал"),
+          title="новый аплинк не поднялся, и прежний не вернулся — с причиной"),
+    _shot("gw.cfg.accept.uplink.refused",
+          press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",), uplink_ok=False,
+          uplink_fail=("refused", "аплинк этого устройства не найден"),
+          title="скрипт обвязки отказал — новый конфиг не применён, ничего не тронуто"),
+    _shot("gw.cfg.accept.uplink.busy",
+          press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",), uplink_ok=False, uplink_fail=("busy", "обвязка занята"),
+          title="обвязка занята прогоном юнита — снова вопрос со строкой «нажми через минуту»"),
+    _shot("gw.cfg.answered.uplink", press=[GwCB(action="cfg_ok!", val="uplink")], tick=_status(),
+          title="«🔐 Применить» со старого приглашения, вопрос уже решён — всплывашка и панель"),
+    _shot("gw.cfg.cancel.uplink", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="uplink")],
+          tick=_status(), cfg_ask=("uplink",), title="«⬅️ Отмена» аплинка: аплинк остался прежним"),
+    _shot("gw.cfg.stale.uplink", press=[GwCB(action="cfg_ok!", val="uplink")], tick=_status(), cfg_ask=("uplink",),
+          uplink_after="beef" * 4, title="аплинк поправили руками, пока висело приглашение — вопрос снят"),
+    _shot("gw.cfg.queue.link", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="link")],
+          tick=_status(), rekey=_REKEY_ASKED, cfg_ask=("uplink",),
+          title="очередь: после ответа о ключах линка открывается приглашение об аплинке"),
     # ── W10–W14 VPN-транзит и свои списки ───────────────────────────────────
     _shot("gw.lan.empty.shared", press=[GwCB(action="lan")], tick=_status_lan(lan=_lan(own_vpn=0, own_ru=0)),
           own=_OWN_SYNCED, title="своих доменов нет, списки общие — обе подсказки первыми под «подробнее»"),

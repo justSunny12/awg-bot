@@ -216,10 +216,13 @@ def check_uplink(uplink: dict) -> wgconf.Conf:
         wgconf.check_keys(conf, "uplink")
     except wgconf.WgConfError as e:
         raise CfgError(f"конфиг аплинка: {e}") from None
-    if norm(conf.get("Interface", "Table")).lower() != "off":
+    if norm(conf.get("Interface", "Table")) != "off":       # ровно как сверяет скрипт обвязки
         raise CfgError("конфиг аплинка: нужен Table = off")
     if not wgconf.is_pubkey(uplink.get("pubkey")):
         raise CfgError("конфиг аплинка: pubkey — не ключ")
+    if wgconf.pubkey_of(conf.get("Interface", "PrivateKey")) != uplink.get("pubkey"):
+        # конфиг другого устройства шлюзом не станет: обвязка признаёт аплинк по ключу
+        raise CfgError("конфиг аплинка: ключ устройства не совпадает с pubkey")
     if uplink.get("prev_pubkey") and not wgconf.is_pubkey(uplink.get("prev_pubkey")):
         raise CfgError("конфиг аплинка: prev_pubkey — не ключ")
     return conf
@@ -248,3 +251,50 @@ def check_doc(parsed: dict, *, link_cidr: str, address: str = "", fixed: dict | 
     if "uplink" in sections:
         out["uplink"] = check_uplink(sections["uplink"])
     return out
+
+
+def check_link_rekey(conf_text: str, standing_text: str) -> wgconf.Conf:
+    """Конфиг линка при смене ключей: белый список, только штамп в
+    комментариях; Address — тот же, что стоит; ключ сервера и свой приватный
+    — другие. Endpoint, AllowedIPs и keepalive не сверяются: при переключении
+    шлюз берёт их из стоящего конфига (merge_link_keys) — документ мог сменить
+    их, пока шлюз был не на связи, и это не повод отказывать в ключах.
+    Возвращает разобранный конфиг."""
+    try:
+        conf = wgconf.parse(conf_text)
+        wgconf.check_keys(conf, "link")
+        standing = wgconf.parse(standing_text)
+    except wgconf.WgConfError as e:
+        raise CfgError(f"новые ключи линка: {e}") from None
+    if norm(conf.get("Interface", "Address")) != norm(standing.get("Interface", "Address")):
+        raise CfgError("новые ключи линка: Address другой — меняются только ключи и обфускация")
+    if not wgconf.pubkey_of(conf.get("Interface", "PrivateKey")) or not wgconf.is_pubkey(conf.get("Peer", "PublicKey")):
+        raise CfgError("новые ключи линка: ключи не разобрались")
+    if norm(conf.get("Interface", "PrivateKey")) == norm(standing.get("Interface", "PrivateKey")):
+        raise CfgError("новые ключи линка: ключ тот же — менять нечего")
+    if norm(conf.get("Peer", "PublicKey")) == norm(standing.get("Peer", "PublicKey")):
+        raise CfgError("новые ключи линка: ключ сервера тот же — менять нечего")
+    return conf
+
+
+def merge_link_keys(standing_text: str, new: wgconf.Conf) -> wgconf.Conf:
+    """Конфиг для переключения: стоящий сейчас (Endpoint, AllowedIPs, keepalive
+    — как их держит документ на этот момент) с ключами, PSK и обфускацией
+    нового. [Interface] — из нового целиком (Address проверка сверила), в
+    [Peer] — новые PublicKey и PresharedKey. Между приглашением и «Применить»
+    документ мог поменять Endpoint или подсети соседей — переключение их не
+    откатывает."""
+    try:
+        standing = wgconf.parse(standing_text)
+    except wgconf.WgConfError as e:
+        raise CfgError(f"стоящий конфиг линка: {e}") from None
+    out = wgconf.Conf()
+    out.stamp = new.stamp or standing.stamp
+    out.sections.append(("Interface", list(new.section("Interface"))))
+    peer = [(k, v) for k, v in standing.section("Peer") if k.lower() not in ("publickey", "presharedkey")]
+    peer = [("PublicKey", new.get("Peer", "PublicKey"))] + peer
+    if new.get("Peer", "PresharedKey"):
+        peer.insert(1, ("PresharedKey", new.get("Peer", "PresharedKey")))
+    out.sections.append(("Peer", peer))
+    return out
+

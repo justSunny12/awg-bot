@@ -190,6 +190,8 @@ async def _traffic_deep_link(message: Message, services, payload: str,
     kind, ref = link
     if kind == "extend" and state is not None:
         await state.update_data(return_to="expiring")
+    if kind == "gwcfg" and "cfg1" in await call(services.gwlink_agent_caps, ref):
+        kind = "gw"                                   # агент с документом: файла нет — карточка слота
     if kind == "gwcfg":
         # «Перевыпусти» из уведомления — файл конфигурации слота сразу
         from awgbot.bot.handlers.settings import send_gw_bundle

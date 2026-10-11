@@ -45,12 +45,19 @@ class InboundMixin:
             sess.svc_have = str(msg.get("svc_hash") or "")[:64]
             sess.own_have = str(msg.get("own_hash") or "")[:64] if "own_hash" in msg else None
             await asyncio.to_thread(self.services.gwlink_own_hello_in, gw.id, sess.own_have is not None)
+            # смена ключей — до первого слова сервера: hello новым ключом
+            # фиксирует переход, а шлюз закрепляет выбор по первому слову
+            if not await self.rekey_hello(gw.id, sess.key):
+                log.info("канал линка: слот %s пришёл посреди переключения ключей — закрываю, придёт снова", gw.id)
+                await self._drop(gw.id, record=True)
+                return
             # роль — первым сообщением сервера: по нему клиент понимает, что
             # сессия настоящая, и только тогда сбрасывает свой бэкофф
             await self.send_role(gw.id)
             await self.deliver_lists(gw.id)
             await self.deliver_peer_services(gw.id)
             await self.deliver_own(gw.id)
+            await self.deliver_rekey(gw.id)
             if proto != gwlink.PROTO:
                 log.info("канал линка: слот %s говорит proto=%s, у нас %s",
                          gw.id, proto, gwlink.PROTO)
@@ -81,8 +88,15 @@ class InboundMixin:
                 sess.lists_have = str(msg.get("hash") or "")[:64]
             await asyncio.to_thread(self.services.gwlink_lists_ack_in, gw.id, msg)
             return
+        if kind == "link_ack":
+            await self.rekey_ack_in(gw.id, msg)
+            return
+        if kind == "link_done":
+            await self.rekey_done_in(gw.id, msg)
+            return
         if kind == "cfg_ack":
-            ack = await asyncio.to_thread(self.services.gwcfg_ack_in, gw.id, msg)
+            ack, notes = await asyncio.to_thread(self.services.gwcfg_ack_take, gw.id, msg)
+            await self.notes(notes)                       # Н5: аплинк отклонили в чате шлюза
             if ack.get("retry"):
                 # временный отказ (юнит обвязки ещё работал): тот же документ
                 # уйдёт снова по следующему расхождению снимка

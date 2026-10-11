@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import time
 
 from awgbot.domain import gwcfg
 from awgbot.domain.gwcfg import CfgError
@@ -95,6 +96,54 @@ class CfgApplyMixin:
                 wait[section] = server_print
                 if not held or held.get("server") != server_print:
                     asks.append(section)
+        # 6. аплинк — с подтверждением человека; молча — только ключи признания
+        # и аварийно (аплинк мёртв, конфиг того же устройства)
+        retry = False
+        if "uplink" in checked:
+            # прерванная перезапуском транзакция — назад до сравнения: иначе
+            # полуновое на диске сравнилось бы как «то же»
+            recovered = self.cfg_uplink_recover()
+            if recovered:
+                notes.append(recovered)
+            value = dict((parsed.get("sections") or {}).get("uplink") or {})
+            verdict, server_print = self.cfg_uplink_decide(value)
+            if verdict != "ask":
+                self.cfg_release("uplink")
+            if verdict == "same":
+                applied.append("uplink")
+            elif verdict == "keys":
+                res = self.cfg_uplink_keys_only(value)
+                if res["ok"]:
+                    applied.append("uplink")
+                    changed.append("uplink")
+                else:
+                    failed["uplink"] = res["error"]
+                    retry = retry or bool(res.get("busy"))   # обвязка занята — сервер повторит
+            elif verdict == "declined":
+                declined["uplink"] = server_print
+            elif verdict == "emergency":
+                same = self.cfg_uplink_same_device(value)
+                res = self.cfg_uplink_apply(value)
+                if res.get("state") != "busy":
+                    self.__dict__["_uplink_emergency_at"] = time.monotonic()
+                if res["ok"]:
+                    applied.append("uplink")
+                    notes.append(self.cfg_uplink_emergency_note(same))
+                else:
+                    # не «отвергнуто»: временная причина (пир ещё не поднят, DNS) —
+                    # раздел ждёт как вопрос, тик повторит аварийную попытку
+                    notes.append(self.cfg_uplink_fail_note(res))
+                    self.cfg_hold("uplink", value, server_print, gen, digest)
+                    wait["uplink"] = server_print
+                    asks.insert(0, "uplink")
+            else:
+                held = self.cfg_wait().get("uplink")
+                self.cfg_hold("uplink", value, server_print, gen, digest)
+                wait["uplink"] = server_print
+                if not held or held.get("server") != server_print:
+                    asks.insert(0, "uplink")              # аплинк — первым в очереди
+        else:
+            self.cfg_release("uplink")
         if not failed:
             with self.db.transaction():
                 self.db.set_state(self._CFG_GEN_KEY, str(gen))
@@ -104,7 +153,8 @@ class CfgApplyMixin:
         if changed and not failed:
             head = f"⚙️ Сервер AWG прислал конфигурацию шлюза — применено: {self._cfg_names(changed)}"
         text = "\n".join([x for x in (head, *notes) if x])
-        return {"ack": gwcfg.ack_build(gen, digest, applied=applied, wait=wait, declined=declined, failed=failed),
+        return {"ack": gwcfg.ack_build(gen, digest, applied=applied, wait=wait, declined=declined, failed=failed,
+                                       retry=retry),
                 "note": text, "ask": asks, "changed": changed}
 
     @staticmethod

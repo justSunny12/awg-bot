@@ -110,6 +110,7 @@ class SessionMixin:
             # ответ на документ — первым: сервер узнаёт итог раньше, чем снимок с прежними
             # отпечатками после отката, и не повторяет доставку вслепую
             await self.flush_cfg_ack()
+            await self._rekey_answered()        # ответ на новых или прежних ключах закрепляет выбор
             await self.push(full=True)
             await self.push_services()
             await self.flush_applied()

@@ -7,7 +7,7 @@ from awgbot.util import nets as nets_util
 
 from ..fmt import _e, details
 
-from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, slot_ref
+from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, slot_name, slot_ref
 
 
 # ── диалоги слота ────────────────────────────────────────────────────────────
@@ -224,3 +224,26 @@ def gateway_removed(dev, now_active=None) -> str:
     if now_active is not None:
         return f"🛑 {_e(dev.name)} больше не шлюз · трафик идёт через {slot_ref(now_active)}, резерва нет"
     return f"🛑 {_e(dev.name)} больше не шлюз · РФ-доступ выключен до назначения нового"
+
+
+def gateway_keys_ask(state: dict, live_standby: bool) -> str:
+    """Диалог «🔑 Ключи линка» (по правилу подтверждений: вопрос и цена)."""
+    lines = [f"🔑 Сменить ключи линка {slot_name(state)}?"]     # с подписью: два шлюза с одним именем различимы
+    if state.get("active"):
+        lines.append("Новые ключи уйдут шлюзу по упр. каналу, применит их человек в чате бота шлюза. "
+                     "РФ-доступ прервётся на секунды; не поднимется за 3 мин — обе стороны вернут прежние")
+        if live_standby:
+            lines.append("Есть живой резерв: сначала сделай его активным — смена пройдёт без обрыва")
+    else:
+        lines.append("Новые ключи уйдут шлюзу по упр. каналу, применит их человек в чате бота шлюза. "
+                     "Не поднимется за 3 мин — обе стороны вернут прежние")
+    return "\n".join(lines)
+
+
+GATEWAY_KEYS_PICK = "\n".join([
+    "🔑 Ключи линка",
+    "Новые ключи, PSK и обфускация линка того же устройства — при утечке файла первого применения или "
+    "засвеченной обфускации. Шлюз применит их после подтверждения в чате своего бота"])
+GATEWAY_KEYS_SENT = "🔑 Новые ключи ушли шлюзу — подтверди их в чате бота шлюза"
+GATEWAY_KEYS_OFFLINE = "Шлюз не на связи — новые ключи едут по упр. каналу"
+

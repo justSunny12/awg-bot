@@ -135,6 +135,10 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
                                                    "PEER_LAN_NETS": "", "LINK_CHANNEL_PORT": "8787"},
              "link": {"conf": "# awg-bot: контракт линка 1\n[Interface]\nAddress = 10.99.99.2/30\n"},
              "server": {"name": "awg-srv"}}, gwlink.PAD_SNAP, "eed290d8bcf18ad9a6967d681f3da8964239d29955406d65d2813c2cd8d14102"),
+    "link_next": ({"id": "a1b2c3d4e5f6", "conf": "# awg-bot: контракт линка 1\n[Interface]\nAddress = 10.99.99.2/30\n",
+                   "fp": "ab12 cd34"}, gwlink.PAD_SNAP, "15f5775e30a55a37fe891444d779f82ad30ff4e8150a877c8def3c09801d2f99"),
+    "link_go": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "45bc646bb865fcf1b4231e575c066573073ac6228cc1fa0ade758184c99a4d80"),
+    "link_cancel": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "51024cb9d3a4c07b6189ecada0bc9e763b69653501cc51019bbfcb4f85578153"),
     "applied_ack": ({"fp": "12" * 32, "at": "2026-10-10T00:00:00"}, gwlink.PAD_DELTA, "bef24a2ec608e0986ffcb0d73a22f8aeefbc9ca917fcbb8254d038675fa2298c"),
 }
 
@@ -154,6 +158,8 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "own_ack": ({"ok": True, "hash": "ef" * 32, "n": 1, "error": ""}, gwlink.PAD_DELTA, "4a924daad721094f8ec95990bff48c238f7ec6f5011c02aa39ffc85bb279de00"),
     "cfg_ack": ({"gen": 18, "hash": "9c41" * 4, "applied": ["server", "env", "link"], "wait": {"mail": "ab12" * 4},
                  "declined": {}, "failed": {}}, gwlink.PAD_DELTA, "b4969fc23ac0c99ea28d4df78c5904b90219aab034fb330242536c1391ca1c95"),
+    "link_ack": ({"id": "a1b2c3d4e5f6", "state": "ready", "error": ""}, gwlink.PAD_DELTA, "5470dfb609542e23645daa1d31040b8042e04a5bccc5e2fd4b390609b7742b57"),
+    "link_done": ({"id": "a1b2c3d4e5f6", "ok": True, "keys": "new"}, gwlink.PAD_DELTA, "d8f443962ff9fe6133b81c9fc175597be909763e94be6a78254f58a5c2b7d7a9"),
     "peer_svc_ack": ({"ok": True, "hash": "cd" * 32, "n": 1, "error": ""}, gwlink.PAD_DELTA, "dc96a6446ba8e581278e95a66b06626191ca47f4e24a4b14d8b5349a47158137"),
 }
 

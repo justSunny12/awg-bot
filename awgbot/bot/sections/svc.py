@@ -1,6 +1,7 @@
 """«🔧 Сервис»: перезапуск AWG и бота с подтверждением и ценой словами роли,
-итог первой строкой раздела; переезд профилей — у роли с has.migration
-(кнопки ведут в обработчики переезда основного бота)."""
+итог первой строкой раздела; переезд профилей — у роли с has.migration,
+«🔑 Ключи линка» шлюзов — у роли с has.link_keys (кнопки ведут в обработчики
+основного бота: переезд — sec="mig", ключи — sec="lk")."""
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
@@ -20,10 +21,12 @@ CYCLES: dict = {}
 BOT_RESTARTING = "🔁 Бот перезапускается — вернётся через несколько секунд"
 
 
-def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0) -> InlineKeyboardMarkup:
+def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0,
+             link_keys: bool = False) -> InlineKeyboardMarkup:
     """Перезапуски парой; переезд — по состоянию: идёт — кто не переехал,
     завершить и отменить; нет — начать (если настроен) и переехавшие после
-    отмены (если есть)."""
+    отмены (если есть). Последним — «🔑 Ключи линка», если есть шлюз, который
+    умеет смену каналом: кнопка редкая и аварийная, на рабочих экранах ей не место."""
     mig: list = []
     if br.has.migration and available:
         if migration:
@@ -35,6 +38,7 @@ def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0)
     return ui.rows(
         [("🔁 Перезапуск AWG", br.cb.pack(ID, "do", "awg")), ("🔁 Перезапуск бота", br.cb.pack(ID, "do", "bot"))],
         *mig,
+        ("🔑 Ключи линка", br.cb.pack("lk", "do", "pick")) if br.has.link_keys and link_keys else None,
         back_button(br))
 
 
@@ -43,8 +47,9 @@ async def screen(br, services, key: str = ""):
         d = await call(services.svc_screen_data)          # один хоп вместо четырёх
     else:
         d = {"state": "", "progress": None, "available": False, "orphans": 0}
+    link_keys = bool(await call(services.gateway_rekey_slots)) if br.has.link_keys else False
     return (texts.settings_svc_text(br, d["state"], d["progress"], d["available"]),
-            keyboard(br, d["state"], available=d["available"], orphans=d["orphans"]))
+            keyboard(br, d["state"], available=d["available"], orphans=d["orphans"], link_keys=link_keys))
 
 
 async def _awg_question(ctx) -> str:

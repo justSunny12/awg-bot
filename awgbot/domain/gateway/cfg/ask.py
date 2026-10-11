@@ -13,15 +13,24 @@ class CfgAskMixin:
         смысл после ручной правки, по дороге снимаются."""
         self.cfg_drop_stale_questions()
         wait = self.cfg_wait()
-        return [s for s in QUESTION_SECTIONS if s in wait]
+        return self.rekey_pending_section() + [s for s in QUESTION_SECTIONS if s in wait]
 
     def cfg_question(self, section: str) -> dict | None:
         """Что показать: раздел и чем отличается (без значений секретов)."""
         if section not in self.cfg_questions():
             return None
+        if section == "link":
+            return self.rekey_question()
         value = self.cfg_pending().get(section) or {}
         if section == "mail":
             return {"section": "mail", "differs": self._cfg_mail_differs(value)}
+        if section == "uplink":
+            from awgbot.util import wgconf
+            try:
+                device = wgconf.pubkey_of(wgconf.parse(value.get("conf", "")).get("Interface", "PrivateKey"))
+            except wgconf.WgConfError:
+                device = ""
+            return {"section": "uplink", "fp": self.cfg_uplink_fp(value), "device": device[:4]}
         return {"section": "backup", "random_key": self.backup_encryption_mode() == "key"}
 
     def _cfg_mail_differs(self, value: dict) -> list[str]:

@@ -137,16 +137,27 @@ def client_subnet() -> str:
 def handshake_age(iface: str) -> int | None:
     """Секунд с последнего хендшейка пира интерфейса (`awg show <if>
     latest-handshakes`); None — хендшейка не было или интерфейса нет."""
+    state, age = pkg.handshake_state(iface)
+    return age if state == "ok" else None
+
+
+def handshake_state(iface: str) -> tuple[str, int | None]:
+    """("ok", секунд с хендшейка) | ("never", None) — интерфейс есть, пир ни
+    разу не отвечал | ("absent", None) — интерфейса нет | ("unknown", None) —
+    `awg show` не ответил. «unknown» — не «мёртв»: разовый сбой команды под
+    нагрузкой не должен решать за линк и аплинк."""
     import time
-    out = pkg._awg(["show", iface, "latest-handshakes"])
+    proc_out = pkg._awg(["show", iface, "latest-handshakes"])
+    if not proc_out:
+        return ("unknown" if pkg._ip_json(["link", "show", "dev", iface]) else "absent"), None
     best = 0
-    for line in out.splitlines():
+    for line in proc_out.splitlines():
         parts = line.split()
         if len(parts) >= 2 and parts[1].isdigit():
             best = max(best, int(parts[1]))
     if not best:
-        return None
-    return max(0, int(time.time()) - best)
+        return "never", None
+    return "ok", max(0, int(time.time()) - best)
 
 
 def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=()) -> tuple[bool, str]:
@@ -154,20 +165,8 @@ def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=()) -> t
     сам проверяет его белым списком и правилом AllowedIPs (второй рубеж), а
     дальше — syncconf без перезапуска или down/up. (ok, вывод): в выводе строка
     `link: unchanged|syncconf|restarted`."""
-    # Скрипт читает значения из окружения — его обычно даёт юнит обвязки. Агент
-    # зовёт режим напрямую, поэтому окружение собирается из строк того же юнита:
-    # к этому моменту транзакция уже переписала их под документ, и проверка
-    # AllowedIPs сверяет конфиг ровно с тем, с чем стартует обвязка.
-    import os
-    env = dict(os.environ)
-    for key in ("CLIENT_SUBNET", "LINK_IF", "ADMIN_IPS", "LAN_MODE", "HOME_SUBNETS", "RESOLVER",
-                "PEER_HOME_NETS", "LINK_CHANNEL_PORT"):
-        val = pkg.unit_env(key)
-        if val or key not in env:
-            env[key] = val
-    env["LINK_IF"] = env.get("LINK_IF") or config.GW_LINK_IF
+    env = pkg._setup_env()
     env["IFACE_NETS"] = " ".join(str(n) for n in iface_nets)   # подсети интерфейсов — те же, что сверял агент
-    env.setdefault("HOST_CONF_DIR", config.GW_CONF_DIR)
     try:
         proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
@@ -186,3 +185,25 @@ def link_applied_how(out: str) -> str:
         if line.startswith("link: "):
             return line[6:].strip()
     return ""
+
+
+def _setup_env() -> dict:
+    """Окружение для режимов скрипта обвязки, которые агент зовёт напрямую.
+    Скрипт читает значения из окружения — его обычно даёт юнит обвязки; здесь
+    оно собирается из строк того же юнита: к этому моменту транзакция уже
+    переписала их под документ, и проверки скрипта сверяют ровно то, с чем
+    стартует обвязка."""
+    import os
+    env = dict(os.environ)
+    for key in ("CLIENT_SUBNET", "LINK_IF", "ADMIN_IPS", "LAN_MODE", "HOME_SUBNETS", "RESOLVER",
+                "PEER_HOME_NETS", "LINK_CHANNEL_PORT", "GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY",
+                "TG_MARK", "UPLINK_TABLE"):
+        val = pkg.unit_env(key)
+        if val or key not in env:
+            env[key] = val
+    env["LINK_IF"] = env.get("LINK_IF") or config.GW_LINK_IF
+    env.setdefault("HOST_CONF_DIR", config.GW_CONF_DIR)
+    for key in ("TG_MARK", "UPLINK_TABLE"):
+        if not env.get(key):
+            env.pop(key, None)                     # пусто — пусть скрипт возьмёт своё умолчание
+    return env

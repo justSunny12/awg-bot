@@ -89,7 +89,7 @@ class CfgPrintsMixin:
             "gen": int(self.db.get_state(self._CFG_GEN_KEY) or 0),
             "env": gwcfg.env_print(self.cfg_env_current()),
             "link": gwcfg.link_print(self.cfg_link_text()),
-            "uplink": "",                                 # аплинк каналом — следующая возможность
+            "uplink": self.cfg_uplink_print(cached=True),   # без команд: снимок только из локального
             "mail": self.cfg_mail_print(),
             "backup": self.cfg_backup_print(),
             "token": "",                                  # токен каналом — отдельная возможность

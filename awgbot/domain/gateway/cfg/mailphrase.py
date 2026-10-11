@@ -8,7 +8,9 @@ from awgbot.domain import gwcfg
 
 from ..base import log
 
-QUESTION_SECTIONS = ("mail", "backup")      # порядок очереди вопросов
+# порядок очереди: аплинк (дорога агента в Telegram) — первым, затем почта и фраза;
+# ключи линка стоят ещё раньше, но живут в своём состоянии перехода (rekey)
+QUESTION_SECTIONS = ("uplink", "mail", "backup")
 
 
 class CfgMailPhraseMixin:
@@ -34,12 +36,18 @@ class CfgMailPhraseMixin:
         return self._cfg_json(self._CFG_WAIT_KEY)
 
     def cfg_pending(self) -> dict:
-        return self._cfg_json(self._CFG_PENDING_KEY)
+        data = self._cfg_json(self._CFG_PENDING_KEY)
+        if isinstance(data.get("uplink"), dict):
+            data["uplink"] = self._cfg_uplink_pending_fill(data["uplink"])   # конфиг аплинка — из файла
+        return data
 
     def _cfg_section_prints(self, section: str, value: dict) -> tuple[str, str]:
         """(отпечаток стоящего, отпечаток серверного) для раздела."""
         if section == "mail":
             return self.cfg_mail_print(), gwcfg.mail_print(value)
+        if section == "uplink":
+            return self.cfg_uplink_print(), gwcfg.uplink_print(value.get("conf", ""), value.get("pubkey", ""),
+                                                               value.get("prev_pubkey", ""))
         return self.cfg_backup_print(), gwcfg.backup_print(value.get("phrase", ""))
 
     def cfg_decide(self, section: str, value: dict) -> tuple[str, str]:
@@ -59,7 +67,8 @@ class CfgMailPhraseMixin:
         """Вопрос повис: серверное значение — в pending, отпечатки — в wait; новое
         серверное значение заменяет прежний вопрос."""
         mine, _ = self._cfg_section_prints(section, value)
-        pending = self.cfg_pending(); pending[section] = value
+        pending = self._cfg_json(self._CFG_PENDING_KEY)
+        pending[section] = self._cfg_uplink_pending_put(value) if section == "uplink" else value
         wait = self.cfg_wait(); wait[section] = {"mine": mine, "server": server_print, "gen": int(gen), "hash": digest}
         with self.db.transaction():                       # значение и отпечатки — одной записью
             self._cfg_json_set(self._CFG_PENDING_KEY, pending)
@@ -67,11 +76,13 @@ class CfgMailPhraseMixin:
 
     def cfg_release(self, section: str) -> None:
         """Снять вопрос: pending и wait раздела стираются."""
-        for key, getter in ((self._CFG_PENDING_KEY, self.cfg_pending), (self._CFG_WAIT_KEY, self.cfg_wait)):
-            data = getter()
+        for key in (self._CFG_PENDING_KEY, self._CFG_WAIT_KEY):
+            data = self._cfg_json(key)
             if section in data:
                 del data[section]
                 self._cfg_json_set(key, data)
+        if section == "uplink":
+            self._cfg_uplink_pending_drop()
 
     def cfg_question_stale(self, section: str) -> bool:
         """Стоящее поменяли руками, пока вопрос висел: отпечаток стоящего не тот,
@@ -129,6 +140,22 @@ class CfgMailPhraseMixin:
             return {"ok": False, "section": section, "accepted": accept, "note": {}, "gen": 0, "hash": "", "print": ""}
         keep = self.cfg_keep()
         note: dict = {}
+        if accept and section == "uplink":
+            res = self.cfg_uplink_apply(value)
+            if res.get("state") == "busy":
+                # обвязка занята прогоном юнита — ничего не тронуто, вопрос остаётся
+                return {"ok": True, "section": section, "accepted": True, "busy": True,
+                        "note": {"state": "busy", "why": res["error"]}, "gen": 0, "hash": "", "print": ""}
+            self.cfg_release(section)                     # прежний на месте или новый стоит — вопрос отслужил
+            if not res["ok"]:
+                return {"ok": True, "section": section, "accepted": True,
+                        "note": {"state": "fail", "why": res["error"], "how": res.get("state", "")},
+                        "failed": res["error"], "gen": int(wait.get("gen") or 0), "hash": str(wait.get("hash") or ""),
+                        "print": wait.get("server", "")}
+            keep.pop(section, None)
+            self._cfg_json_set(self._CFG_KEEP_KEY, keep)
+            return {"ok": True, "section": section, "accepted": True, "note": {"state": "ok"},
+                    "gen": int(wait.get("gen") or 0), "hash": str(wait.get("hash") or ""), "print": wait.get("server", "")}
         if accept:
             try:
                 note = self.cfg_apply_mail(value) if section == "mail" else self.cfg_apply_backup(value)

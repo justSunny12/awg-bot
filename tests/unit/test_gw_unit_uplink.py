@@ -43,9 +43,11 @@ def _unit_block(script: str) -> str:
 
 
 def _step0(script: str) -> str:
-    """Шаг «0. Шлюзовое устройство» целиком, до записи статуса."""
+    """Шаг «0. Шлюзовое устройство» целиком, до записи статуса, — с общими
+    функциями установки аплинка (их же зовёт режим --uplink)."""
+    funcs = script[script.index("uplink_render() {"):script.index("allow_list_path() {")]
     start = script.index('step "0. Шлюзовое устройство"')
-    return script[start:script.index("write_status() {", start)]
+    return funcs + "\n" + script[start:script.index("write_status() {", start)]
 
 
 def _sh(prog: str, env: dict) -> subprocess.CompletedProcess:

@@ -23,8 +23,13 @@ def gateway_panel_kb(lan: bool = False, pending: bool = False) -> InlineKeyboard
 
 
 def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:
-    """Вопрос о почте или фразе с сервера AWG: безопасный выбор первым, каждая
-    кнопка своим рядом — подпись «Принять с сервера AWG» в ряду из двух не влезает."""
+    """Приглашение (ключи линка, аплинк) — «⬅️ Отмена» и «Применить» одним рядом.
+    Вопрос о почте или фразе: безопасный выбор первым, каждая кнопка своим
+    рядом — подпись «Принять с сервера AWG» в ряду из двух не влезает."""
+    if section in ("link", "uplink"):
+        icon = "🔑" if section == "link" else "🔐"
+        return ui.rows([("⬅️ Отмена", GwCB(action="cfg_no", val=section)),
+                        (f"{icon} Применить", GwCB(action="cfg_ok!", val=section))])
     return ui.rows(("Оставить своё", GwCB(action="cfg_no", val=section)),
                    ("Принять с сервера AWG", GwCB(action="cfg_ok!", val=section)))
 

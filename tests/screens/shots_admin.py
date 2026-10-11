@@ -3242,3 +3242,185 @@ SHOTS += [
     _card(1, _chan(1, _ch(agent_version="3.2.1")), "агент 3.2 со снимком — обнови агента, «📤» на месте",
           "adm.gw.card.cfg.agent32"),
 ]
+
+
+# ── подтверждение: ключи линка и конфиг аплинка (К1–К4), диалог смены ключей,
+# финал переезда с шлюзом на прежнем аплинке ─────────────────────────────────
+# Агент слота умеет подтверждение (confirm1): сессия открыта с cfg1 и confirm1.
+# Состояние перехода ключей — то, что пишет стадия на ВПС (gwlink_rekey_<слот>);
+# сами режимы скрипта линка в снимках не выполняются.
+
+_REKEY_FP = "ab12 cd34"
+
+
+def _x25519_pub(seed: bytes) -> tuple[str, str]:
+    """Пара X25519 из постоянного зерна (снимок детерминирован): (приватный, публичный)."""
+    import hashlib
+    from nacl.public import PrivateKey
+    key = PrivateKey(hashlib.sha256(seed).digest())
+    return base64.b64encode(bytes(key)).decode(), base64.b64encode(bytes(key.public_key)).decode()
+
+
+_UP_DEV_PRIV, _UP_DEV_PUB = _x25519_pub(b"DUMMY-uplink-device")
+_UP_SRV_PRIV, _UP_SRV_PUB = _x25519_pub(b"DUMMY-uplink-server")
+
+
+def _confirm1(slot: int = 1):
+    """Сессия слота открыта агентом с документом и подтверждением."""
+    def step(services, mp):
+        services.gwlink_session_opened(slot, "3.3.0", 2, ["cfg1", "confirm1"])
+    return step
+
+
+def _real_uplink_keys(services, mp):
+    """Устройства-шлюзы — с настоящими ключами X25519 (из постоянного зерна;
+    слот 1 — те же, что у приглашения в снимках агента): сервер прогоняет
+    раздел uplink через ту же проверку, что сделает шлюз, а ключи фейка awg —
+    не ключи (раздел не поехал бы, карточка показала бы «не едет»). Отпечаток
+    пары в строке К3 считается от публичных ключей."""
+    import re
+    privs = {}
+    for gw in services.db.gateways():
+        if not gw.device_id:
+            continue
+        seed = b"DUMMY-uplink-device" if gw.id == 1 else b"DUMMY-uplink-device-%d" % gw.id
+        priv, pub = _x25519_pub(seed)
+        privs[pub] = priv
+        with services.db._tx() as cur:
+            cur.execute("UPDATE devices SET public_key = ? WHERE id = ?", (pub, gw.device_id))
+    orig = services.gateway_uplink_conf
+
+    def uplink_conf(dev):
+        conf = orig(dev)
+        conf = re.sub(r"(?m)^PrivateKey = .*$", f"PrivateKey = {privs.get(dev.public_key, '')}", conf)
+        return re.sub(r"(?m)^PublicKey = .*$", f"PublicKey = {_UP_SRV_PUB}", conf)
+    services.gateway_uplink_conf = uplink_conf
+
+
+def _rekey(state: str, slot: int = 1, fp: str = _REKEY_FP):
+    """Переход ключей линка слота в состоянии state (staged | asked | switched)."""
+    def step(services, mp):
+        services._rekey_save(slot, {"id": "0a1b2c3d4e5f", "state": state, "fp": fp, "at": _iso(NOW)})
+    return step
+
+
+def _keys(*steps, n: int = 1, **kw):
+    """Слоты с документом и подтверждением у слота 1, всё доехало (раздел
+    uplink — тоже: сессия с confirm1 открыта раньше, чем считается желаемое);
+    поверх — шаги."""
+    return _gw(n, _ch_base, _cfg_base, _confirm1(), _real_uplink_keys, _cfg(online=False),
+               _cfg_ack(applied=("server", "env", "uplink")), *steps, lan=True, **kw)
+
+
+def _uplink(*, wait=(), declined=()):
+    """Аплинк двойника расходится со стоящим: документ несёт раздел uplink,
+    шлюз держит его в wait или declined."""
+    return _chan(1, _cfg_base, _confirm1(), _real_uplink_keys, _cfg(online=False, uplink="0" * 16),
+                 _cfg_ack(applied=("server", "env"), wait=wait, declined=declined))
+
+
+def _stage_ok(services, mp):
+    """Стадия на ВПС удалась: новые ключи в .next, переход staged."""
+    services.gateway_rekey_stage = lambda slot: services._rekey_save(
+        slot, {"id": "0a1b2c3d4e5f", "state": "staged", "fp": _REKEY_FP, "at": _iso(NOW)})
+
+
+class _Listener:
+    """Слушатель канала с открытой сессией: link_next уходит."""
+
+    async def deliver_rekey(self, slot_id: int) -> bool:
+        return True
+
+
+def _online_listener(services, mp):
+    from awgbot.runtime import linkserver
+    mp.setattr(linkserver, "current", lambda: _Listener())
+
+
+def _old_uplink(token: bool):
+    """Переезд идёт; слот NASPi с агентом, умеющим подтверждение, — двойник
+    его устройства ещё не поднимался (новый аплинк ждёт «Применить»)."""
+    def build(services, mp):
+        from awgbot.infra import awglock
+        who = _slots(1, token=token)(services, mp)
+        mp.setattr(config, "AWG_INTERFACE", "awg0")
+        mp.setattr(config, "MIGRATION_INTERFACE", "awg1")
+        mp.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+        mp.setattr(config, "SERVER_PORT", 43125)
+        mp.setattr(awglock, "applied_generation", lambda: 1)
+        mp.setattr(awglock, "target_generation", lambda: 1)
+        services.migration_start()
+        services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "confirm1"])
+        return who
+    return build
+
+
+SHOTS += [
+    _card(1, _keys(_rekey("asked")), "К1: ключи линка ждут подтверждения в чате бота шлюза — с отпечатком",
+          "adm.gw.card.rekey.asked"),
+    _card(1, _keys(_rekey("staged", fp="")), "К1 без отпечатка: стадия есть, отпечаток не прочитан",
+          "adm.gw.card.rekey.staged"),
+    _card(1, _keys(_rekey("switched")), "К2: ключи линка — переключение идёт", "adm.gw.card.rekey.switched"),
+    _card(1, _uplink(wait=("uplink",)), "К3: конфиг аплинка ждёт подтверждения — с отпечатком пары",
+          "adm.gw.card.uplink.wait"),
+    _card(1, _uplink(declined=("uplink",)), "К4: шлюз отклонил новый конфиг аплинка", "adm.gw.card.uplink.declined"),
+    Shot("adm.gw.edit.confirm1", role="admin", press=[GwSlotCB(action="edit", slot=1)], data=_keys(),
+         title="«✏️ Изменить» агента с подтверждением — без «🔑»: смена ключей только из «🔧 Сервис»"),
+    Shot("adm.set.svc.keys", role="admin", press=[SetCB(sec="svc")], data=_keys(),
+         title="«🔧 Сервис» при шлюзе, умеющем смену каналом — «🔑 Ключи линка» последним рядом"),
+    Shot("adm.set.svc.nokeys", role="admin", press=[SetCB(sec="svc")],
+         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
+         title="«🔧 Сервис», агент без подтверждения — кнопки ключей нет"),
+    Shot("adm.lk.pick.none", role="admin", press=[SetCB(sec="lk", act="do", key="pick")],
+         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
+         title="устаревшая «🔑 Ключи линка», шлюза с подтверждением нет — всплывашка"),
+    Shot("adm.lk.pick.one", role="admin", press=[SetCB(sec="svc"), SetCB(sec="lk", act="do", key="pick")], data=_keys(n=2),
+         title="один шлюз с подтверждением — сразу диалог; активный при живом резерве — совет"),
+    Shot("adm.lk.pick.two", role="admin", press=[SetCB(sec="svc"), SetCB(sec="lk", act="do", key="pick")],
+         data=_keys(_confirm1(2), _label(2, "север"), n=2),
+         title="два шлюза с подтверждением — экран выбора, имена с подписью"),
+    Shot("adm.lk.pick.two.back", role="admin", press=[SetCB(sec="svc"), SetCB(sec="lk", act="do", key="pick"), SetCB(sec="svc")],
+         data=_keys(_confirm1(2), n=2), title="«⬅️ Назад» с выбора — в «🔧 Сервис»"),
+    Shot("adm.lk.ask", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")], data=_keys(),
+         title="смена ключей активного слота без резерва — РФ-доступ прервётся"),
+    Shot("adm.lk.ask.standby_down", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],
+         data=_keys(n=2, standby="down"), title="активный слот, резерв лежит — совета нет"),
+    Shot("adm.lk.ask.reserve", role="admin", press=[SetCB(sec="lk", act="do", key="pick"), SetCB(sec="lk", act="do", key="ask", val="2")],
+         data=_keys(_confirm1(2), n=2), title="резервный слот с экрана выбора — без «РФ-доступ прервётся»"),
+    Shot("adm.lk.ask.busy", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],
+         data=_keys(_rekey("asked")), title="смена ключей уже идёт у этого слота — всплывашка, не диалог"),
+    Shot("adm.lk.ask.other", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="2")],
+         data=_keys(_confirm1(2), _rekey("switched"), n=2), title="идёт смена ключей у другого слота — всплывашка"),
+    Shot("adm.lk.ask.cancel", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1"), SetCB(sec="svc")],
+         data=_keys(), title="«⬅️ Отмена» диалога — назад в «🔧 Сервис»"),
+    Shot("adm.lk.yes", role="admin", press=[SetCB(sec="lk", act="do", key="yes", val="1")],
+         data=_keys(_stage_ok, _online_listener), title="«🔑 Сменить», шлюз на связи — «🔧 Сервис» с итогом первой строкой"),
+    Shot("adm.lk.yes.offline", role="admin", press=[SetCB(sec="lk", act="do", key="yes", val="1")],
+         data=_keys(_stage_ok), title="«🔑 Сменить», канала нет — итог и всплывашка «едут по упр. каналу»"),
+    Shot("adm.lk.yes.refused", role="admin", press=[SetCB(sec="lk", act="do", key="yes", val="1")],
+         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
+         title="агент без подтверждения — отказ стадии всплывашкой"),
+    Shot("adm.set.mig.finish.old_uplink", role="admin", press=[SetCB(sec="mig", act="do", key="finish")],
+         data=_old_uplink(True), title="завершить переезд? шлюз на прежнем аплинке — со ссылкой на бота"),
+    Shot("adm.set.mig.finish.old_uplink.nobot", role="admin", press=[SetCB(sec="mig", act="do", key="finish")],
+         data=_old_uplink(False), title="шлюз на прежнем аплинке, бот неизвестен — без ссылки"),
+    Shot("adm.note.gwcfg.cfg1", role="admin", press=[NoteCB(kind="gwcfg", ref=1)], data=_keys(),
+         title="«Перевыпустить» на напоминании, агент с документом — карточка слота вместо файла"),
+    Shot("adm.link.gwcfg.cfg1", role="admin", start="gwcfg-1", data=_keys(),
+         title="/start gwcfg-1, агент с документом — карточка слота вместо файла"),
+]
+
+
+def _rekey_declined(services, mp):
+    """Шлюз отклонил новые ключи (link_ack declined): переход снят, отказ — строкой сутки."""
+    services._rekey_save(1, {"state": "declined", "at": _iso(NOW), "error": ""})
+
+
+SHOTS += [
+    _card(1, _keys(_rekey_declined), "К4 ключей: шлюз отклонил новые ключи линка — линк на прежних",
+          "adm.gw.card.rekey.declined"),
+    _card(1, _chan(1, _cfg_base, _confirm1(), _cfg(online=False), _cfg_ack(applied=("server", "env"))),
+          "раздел uplink не прошёл проверку на сервере — не едет, причина в карточке", "adm.gw.card.uplink.err"),
+    Shot("adm.lk.ask.label", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],
+         data=_keys(_label(1, "север")), title="смена ключей слота с подписью — имя с подписью в вопросе"),
+]

@@ -656,6 +656,65 @@ def test_slot_port_follows_the_live_link_config(services, make_active_client, mo
     assert services.gateway_sync_link_ports() == [], "второй раз — тишина"
 
 
+def test_a_hand_changed_port_of_a_channel_managed_link_asks_to_put_it_back(
+        services, make_active_client, monkeypatch, tmp_path, fake_routing):
+    """Агент с документом конфигурации (cfg1): конфиг линка ведёт бот, файла
+    перевыпуска нет, а новый порт шлюз не узнает — линк мёртв, канал тоже.
+    Слот держит согласованный порт (его знают шлюз и документ — подхвати
+    слот ручной, документ увёз бы его шлюзу как «правду»), файервол не
+    трогается; уведомление Н8 просит вернуть прежний ListenPort, без кнопки
+    перевыпуска. Один раз на ручной порт; другой ручной порт — снова Н8."""
+    from awgbot.util import gwlink
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 47231, "10.99.99.0/30", slot_id=1)
+    services.gwlink_session_opened(1, "3.3.0", gwlink.PROTO, caps=("cfg1", "confirm1"))
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(config, "AWG_DIR", str(tmp_path))
+    refreshed = []
+    monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: refreshed.append(1))
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\n")
+    notes = services.gateway_sync_link_ports()
+    assert services.db.gateway(1).link_port == 47231, "слот подхватил ручной порт агента с документом"
+    assert refreshed == [], "файервол перерисован под ручной порт"
+    assert len(notes) == 1, [n.text for n in notes]
+    text = notes[0].text
+    assert "изменён руками на 443 (был 47231)" in text, text
+    assert "верни <code>ListenPort = 47231</code> в <code>awglink.conf</code>" in text, text
+    assert "Перевыпусти" not in text and "перевыпусти" not in text, "агенту с документом — совет перевыпуска"
+    assert not notes[0].action, "под Н8 кнопка перевыпуска — она ничего не довезёт"
+    assert services.gateway_sync_link_ports() == [], "второй раз — тишина"
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 8443\n")
+    again = services.gateway_sync_link_ports()
+    assert len(again) == 1 and "изменён руками на 8443 (был 47231)" in again[0].text, [n.text for n in again]
+    assert services.db.gateway(1).link_port == 47231 and refreshed == []
+
+
+def test_putting_the_port_back_as_asked_does_not_ask_to_undo_it(
+        services, make_active_client, monkeypatch, tmp_path, fake_routing):
+    """Н8 просит вернуть прежний ListenPort. Человек вернул — линк ожил
+    сам, слот так и стоял на прежнем порту. Новое Н8 «изменён руками
+    на прежний — верни ListenPort = <ошибочный>» в этот момент толкало бы
+    человека отменить собственное исправление и снова положить линк. Метка
+    стёрта: тот же ручной порт ещё раз — снова Н8."""
+    from awgbot.util import gwlink
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 47231, "10.99.99.0/30", slot_id=1)
+    services.gwlink_session_opened(1, "3.3.0", gwlink.PROTO, caps=("cfg1", "confirm1"))
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(config, "AWG_DIR", str(tmp_path))
+    monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: None)
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\n")
+    services.gateway_sync_link_ports()
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 47231\n")
+    back = services.gateway_sync_link_ports()
+    assert services.db.gateway(1).link_port == 47231, "слот не на прежнем порту"
+    assert back == [], f"после возврата порта ушло: {[n.text for n in back]}"
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\n")
+    assert len(services.gateway_sync_link_ports()) == 1, "метка ручного порта не стёрта после возврата"
+
+
 def test_link_unit_is_refreshed_when_the_template_is_from_an_older_version(services, monkeypatch, tmp_path):
     """Шаблон юнита прежней версии останавливал линк абсолютным путём к
     awg-quick и не применял смену порта: бот на старте зовёт реассерт и при

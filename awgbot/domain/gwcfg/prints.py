@@ -84,10 +84,23 @@ def link_print(conf_text: str) -> str:
         return ""
 
 
+def key_fp(*pubkeys: str) -> str:
+    """Отпечаток пары ключей для человека: первые 8 знаков sha256 от
+    публичных ключей по порядку, двумя группами — «ab12 cd34». Одинаково
+    считают ВПС (строка карточки) и шлюз (приглашение): сверка глазами.
+    Ключа нет — пусто."""
+    if not all(pubkeys):
+        return ""
+    h = hashlib.sha256("\n".join(pubkeys).encode()).hexdigest()[:8]
+    return f"{h[:4]} {h[4:]}"
+
+
 def uplink_print(conf_text: str, pubkey: str = "", prev_pubkey: str = "") -> str:
-    """Отпечаток аплинка: канонический конфиг и ключи признания."""
+    """Отпечаток аплинка: канонический конфиг (без PostUp/PostDown политики,
+    их дописывает скрипт на шлюзе) и ключи признания."""
     try:
-        canon = wgconf.canonical(wgconf.parse(conf_text), "uplink") if conf_text else ""
+        canon = (wgconf.canonical(wgconf.drop_keys(wgconf.parse(conf_text), ("PostUp", "PostDown")), "uplink")
+                 if conf_text else "")
     except wgconf.WgConfError:
         return ""
     if not canon:

@@ -289,7 +289,7 @@ def test_answer_texts_say_what_happened():
     assert "проверка не прошла: таймаут" in cfg_answer_text("mail", True, {"state": "fail", "why": "таймаут"})
     assert "💾" in cfg_answer_text("mail", True, {"state": "ok", "backup": True})
     assert cfg_answer_text("backup", True, {"state": "fail", "why": "коротко"}).startswith("⚠️ Фраза с сервера AWG не принята")
-    assert set(QUESTION_STALE) == {"mail", "backup"}
+    assert set(QUESTION_STALE) == {"mail", "backup", "uplink"}
 
 
 def test_the_pending_line_lists_the_queue_in_order():

@@ -313,6 +313,15 @@ async def run_gateway() -> None:
             await _notify_one(bot, config.ADMIN_ID, text)
         linkclient.set_notify(_chan_notify)
 
+        async def _chan_edit(chat_id: int, message_id: int, text: str) -> bool:
+            # итог смены ключей и отзыв — правкой самого приглашения
+            try:
+                await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=None)
+                return True
+            except Exception:                            # noqa: BLE001 — сообщение удалено или старое
+                return False
+        linkclient.set_edit(_chan_edit)
+
         async def _chan_ask(section: str) -> None:
             # вопрос о почте или фразе с сервера AWG — живым меню (первый в очереди)
             from awgbot.bot.handlers import gateway as gateway_handlers
@@ -503,6 +512,17 @@ async def main() -> None:
             await bundle_installed(bot, services, slot_id)
         _linkserver.set_on_applied(_on_applied)
         _linkserver.set_on_installed(_on_installed)
+
+        async def _on_notes(notes) -> None:
+            # события смены ключей линка: «сменены», «отклонили», «вернул прежние»
+            await send_notifications(bot, notes)
+        _linkserver.set_on_notes(_on_notes)
+
+        async def _on_rekeyed(slot_id: int) -> None:
+            # прежний файл конфигурации слота несёт старые ключи линка — из чата прочь
+            from awgbot.bot.handlers.settings.render import _drop_bundle_msgs
+            await _drop_bundle_msgs(bot, services, slot_id)
+        _linkserver.set_on_rekeyed(_on_rekeyed)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: крючки не поставлены: %s", e)
 

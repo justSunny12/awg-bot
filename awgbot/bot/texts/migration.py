@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from .fmt import _e, plural_ru
+from .routing.slots import _bot_link
 
 
 def migration_started(res) -> str:
@@ -128,15 +129,23 @@ def migration_start_confirm(clients: int, devices: int, to_birth: int) -> str:
                       "до окончания переезда")
 
 
-def migration_finish_confirm(dropped) -> str:
-    """Уронённых называем поимённо, а не числом."""
+def migration_finish_confirm(dropped, old_uplink=()) -> str:
+    """Уронённых называем поимённо, а не числом. Шлюз, не подтвердивший новый
+    аплинк, — отдельной строкой: после финала его бот потеряет Telegram."""
     if not dropped:
-        return ui.confirm("🚚 Завершить переезд?", "Все живые устройства уже на новом интерфейсе. "
+        text = ui.confirm("🚚 Завершить переезд?", "Все живые устройства уже на новом интерфейсе. "
                           "Старые пиры снимутся, история объединится")
-    names = _names_capped(dropped)
-    return ui.confirm("🚚 Завершить переезд?",
-                      f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть — перенастроить "
-                      "устройство с новой конфигурацией. Старые пиры снимутся, история объединится")
+    else:
+        names = _names_capped(dropped)
+        text = ui.confirm("🚚 Завершить переезд?",
+                          f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть — перенастроить "
+                          "устройство с новой конфигурацией. Старые пиры снимутся, история объединится")
+    for name, bot in old_uplink:
+        link = _bot_link(bot)
+        where = f"в его чате (бот: {link})" if link else "в его чате"
+        text += (f"\n⚠️ {_e(name)} ещё на прежнем аплинке: после финала бот шлюза потеряет Telegram. "
+                 f"Подтверди новый аплинк {where}, затем заверши переезд")
+    return text
 
 
 def migration_cancel_confirm(moved: int) -> str:

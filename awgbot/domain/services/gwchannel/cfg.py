@@ -7,6 +7,7 @@ import socket
 
 from awgbot.core import config, settings
 from awgbot.domain import gwcfg
+from awgbot.domain.services.types import Notification
 from awgbot.util import gwlink, timeutil, wgconf
 
 from .common import log
@@ -22,6 +23,7 @@ class CfgMixin:
     _GWCFG_HASH_KEY = "gwcfg_hash"
     _GWCFG_ACK_KEY = "gwcfg_ack"
     _GWCFG_LINK_ERR_KEY = "gwcfg_link_err"     # почему желаемый конфиг линка не собран (К5)
+    _GWCFG_UPLINK_ERR_KEY = "gwcfg_uplink_err"  # почему раздел uplink не едет: не прошёл проверку агента
 
     # ── желаемое ─────────────────────────────────────────────────────────────
 
@@ -93,6 +95,51 @@ class CfgMixin:
     def gwcfg_link_error(self, slot_id: int) -> str:
         return self.db.get_state(self._gwlink_key(self._GWCFG_LINK_ERR_KEY, slot_id)) or ""
 
+    def gwcfg_uplink(self, gw) -> dict | None:
+        """Раздел uplink — только агентам с confirm1 (подтверждение в чате): конфиг
+        устройства-шлюза в форме для шлюза и ключи признания; в окне переезда —
+        двойник, прежний ключ отдельно (как в файле первого применения). Нет
+        устройства или конфиг не собран — None."""
+        if "confirm1" not in self.gwlink_agent_caps(gw.id) or not gw.device_id:
+            return None
+        dev = self.db.get_device(gw.device_id)
+        if dev is None:
+            return None
+        twin = self.db.twin_of_device(dev.id)
+        target = twin or dev
+        try:
+            conf = self.gateway_uplink_conf(target)
+        except Exception as e:                            # noqa: BLE001 — устройство без конфига: раздела нет
+            log.warning("документ конфигурации: слот %s, аплинк не собран: %s", gw.id, e)
+            return None
+        value = {"conf": conf, "pubkey": target.public_key, "prev_pubkey": dev.public_key if twin else ""}
+        # та же проверка, что сделает агент: отказ одного раздела агент
+        # считает отказом документа целиком — env, линк, почта встали бы тоже
+        key = self._gwlink_key(self._GWCFG_UPLINK_ERR_KEY, gw.id)
+        try:
+            gwcfg.check_uplink(value)
+        except gwcfg.CfgError as e:
+            if (self.db.get_state(key) or "") != str(e):
+                self.db.set_state(key, str(e))
+                log.warning("документ конфигурации: слот %s, аплинк не едет: %s", gw.id, e)
+            return None
+        if self.db.get_state(key):
+            self.db.set_state(key, "")
+        return value
+
+    def gwcfg_old_uplink(self) -> list[tuple[str, dict]]:
+        """Финал переезда: слоты с confirm1, чей шлюз ещё не поднимал аплинк
+        двойника (новый конфиг ждёт «Применить» в его чате) — после финала
+        прежний пир снимется, и бот шлюза потеряет Telegram. [(имя, бот)]."""
+        out = []
+        for gw in self.db.gateways():
+            if not gw.device_id or "confirm1" not in self.gwlink_agent_caps(gw.id):
+                continue
+            twin = self.db.twin_of_device(gw.device_id)
+            if twin is not None and not twin.last_handshake:
+                out.append((self._gw_display(gw), self.gw_bot_identity(gw.id)))
+        return out
+
     def gwcfg_mail(self) -> dict | None:
         acc = self.email_account()
         if acc is None:
@@ -127,7 +174,7 @@ class CfgMixin:
             self._gwcfg_link_error_set(gw.id, f"раздел env: {e}")
             return {name: None for name in gwcfg.SECTIONS}
         link = self.gwcfg_link_conf(gw, env)
-        return {"env": env, "link": {"conf": link} if link else None, "uplink": None,
+        return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
                 "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": None,
                 "server": self.gwcfg_server()}
 
@@ -208,6 +255,24 @@ class CfgMixin:
                         "; ".join(f"{k}: {v}" for k, v in ack["failed"].items()))
         return ack
 
+    def gwcfg_ack_take(self, slot_id: int, body: dict) -> tuple[dict, list[Notification]]:
+        """cfg_ack от слушателя: ответ сохранён (gwcfg_ack_in) и уведомления о
+        нём — Н5, когда в отказах впервые появился аплинк с этим отпечатком
+        (повторный ответ с тем же отказом молчит). О каком отпечатке уже
+        сказали — своим ключом: сохранённый ответ заменяется ответами с retry и
+        ответами на другой документ, и по нему «впервые» не определить."""
+        ack = self.gwcfg_ack_in(slot_id, body)
+        notes = []
+        told_key = self._gwlink_key("gwcfg_uplink_declined_told", slot_id)
+        declined = ack["declined"].get("uplink")
+        if declined and declined != (self.db.get_state(told_key) or ""):
+            self.db.set_state(told_key, declined)
+            gw = self.db.gateway(slot_id)
+            if gw is not None:
+                notes.append(Notification(config.ADMIN_ID,
+                                          f"🔐 {self._gw_link(gw)}: новый конфиг аплинка отклонили в чате бота шлюза"))
+        return ack, notes
+
     def gwcfg_due(self, gw) -> dict | None:
         """Что отправить слоту сейчас, или None. Решает расхождение отпечатков
         снимка с желаемым, не событие на ВПС; раздел, который шлюз в последнем
@@ -248,10 +313,11 @@ class CfgMixin:
         (cfg1), поколение на шлюзе, что расходится, что отказано, что ждёт
         человека, что отклонено, когда применён текущий документ, почему не
         собран конфиг линка. Без запросов к шлюзу — только state."""
-        cfg1 = "cfg1" in self.gwlink_agent_caps(gw.id)
+        caps = self.gwlink_agent_caps(gw.id)
+        cfg1 = "cfg1" in caps
         have = snap.get("cfg") if isinstance(snap.get("cfg"), dict) else {}
-        out = {"cfg1": cfg1, "gen": int(have.get("gen") or 0) if have else 0, "due": [], "failed": {},
-               "wait": [], "declined": [], "applied_at": "", "link_err": ""}
+        out = {"cfg1": cfg1, "confirm1": "confirm1" in caps, "gen": int(have.get("gen") or 0) if have else 0,
+               "due": [], "failed": {}, "wait": [], "declined": [], "applied_at": "", "link_err": "", "uplink_err": "", "uplink_fp": ""}
         if not cfg1 or not snap:
             return out
         doc = self.gwcfg_doc(gw)
@@ -264,6 +330,15 @@ class CfgMixin:
         out["declined"] = [s for s, p in (ack.get("declined") or {}).items() if p == doc["prints"].get(s)]
         out["applied_at"] = str(ack.get("at") or "") if current and not out["failed"] else ""
         out["link_err"] = self.gwcfg_link_error(gw.id)
+        out["uplink_err"] = self.db.get_state(self._gwlink_key(self._GWCFG_UPLINK_ERR_KEY, gw.id)) or ""
+        if "uplink" in out["wait"] or "uplink" in out["declined"]:
+            up = doc["sections"].get("uplink") or {}
+            try:
+                conf = wgconf.parse(up.get("conf", ""))
+                out["uplink_fp"] = gwcfg.key_fp(wgconf.pubkey_of(conf.get("Interface", "PrivateKey")),
+                                                conf.get("Peer", "PublicKey"))
+            except wgconf.WgConfError:
+                pass
         return out
 
     def gwcfg_all_capable(self) -> bool:
@@ -308,5 +383,6 @@ class CfgMixin:
         return [cur]
 
     def gwcfg_forget(self, slot_id: int) -> None:
-        for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY):
+        for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY,
+                    self._GWCFG_UPLINK_ERR_KEY, "gwcfg_uplink_declined_told"):
             self.db.set_state(self._gwlink_key(key, slot_id), "")

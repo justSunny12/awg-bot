@@ -118,7 +118,8 @@ def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> Inlin
 
 def gateway_edit_kb(state, *, two_slots: bool) -> InlineKeyboardMarkup:
     """«✏️ Изменить» слота: имя устройства и подпись, предпочтительный (при
-    двух слотах), замена и снятие."""
+    двух слотах), замена и снятие. Ключи линка — не здесь: редкая аварийная
+    кнопка живёт в «⚙️ Настройки → 🔧 Сервис»."""
     gw, dev = state["gateway"], state.get("device")
     return ui.rows(
         [("✏️ Имя", GwSlotCB(action="name", slot=gw.id)) if dev is not None else None,
@@ -159,6 +160,19 @@ def gateway_new_confirm(slot: int = 0) -> InlineKeyboardMarkup:
 def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     cancel = GwSlotCB(action="edit", slot=slot) if slot else SetCB(sec="rt", act="open")
     return confirm(cancel, "🛑 Снять", GwSlotCB(action="remove_yes", slot=slot))
+
+
+def gateway_keys_pick(slots) -> InlineKeyboardMarkup:
+    """«🔑 Ключи линка» в «🔧 Сервис»: шлюзы, которые умеют смену каналом
+    (имя с подписью), «Назад» — в «Сервис»."""
+    return ui.rows(*[(name, SetCB(sec="lk", act="do", key="ask", val=str(slot))) for slot, name in slots],
+                   ui.back(SetCB(sec="svc")))
+
+
+def gateway_keys_confirm(slot: int) -> InlineKeyboardMarkup:
+    """Смена ключей линка: «Отмена» первой — назад в «🔧 Сервис»."""
+    return confirm(SetCB(sec="svc"), "🔑 Сменить", SetCB(sec="lk", act="do", key="yes", val=str(slot)),
+                   danger=False)
 
 
 def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:

@@ -197,7 +197,10 @@ def unit_set_env(values: dict[str, str]) -> str:
     text = path.read_text(encoding="utf-8")
     new = text
     for key, val in values.items():
-        if not re.fullmatch(r"[0-9./ ]*", val):
+        # ключи признания аплинка — base64 (32 байта), прочее — цифры, точки, косые, пробелы:
+        # кавычек и переводов строк нет ни там, ни там — вывести из строки нечем
+        pattern = r"(?:[A-Za-z0-9+/]{43}=)?" if key in ("GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY") else r"[0-9./ ]*"
+        if not re.fullmatch(pattern, val):
             raise pkg.GwGuardError(f"{key}: недопустимые символы в значении")
         line = f'Environment="{key}={val}"'
         pat = re.compile(rf'^Environment="?{re.escape(key)}=[^\n]*$', re.M)

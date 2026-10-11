@@ -1,6 +1,7 @@
 """
 linkserver/ — сторона ВПС для канала ВПС ↔ шлюз (части: common — сессия и предел hello;
-session — слушатели и сессии; inbound — разбор входящих; deliver — доставки).
+session — слушатели и сессии; inbound — разбор входящих; deliver — доставки; rekey — смена ключей линка: link_next,
+link_go, переключение ВПС, фиксация первым шагом hello, сроки).
 
 Слушатель живёт ТОЛЬКО на адресах линков: публичный адрес сервера порт канала
 не показывает даже при снятом файерволе. Коннект всегда устанавливает шлюз —
@@ -41,7 +42,10 @@ state слота (`_handle_safe`), а не падение задачи слуш�
 и по сети уходит только это — настройки (`deliver`), фиды локальной сети
 (`deliver_lists`), записи SMB соседних сетей (`deliver_peer_services`), канон
 своих списков (`deliver_own`), роль слота (`send_role`: активен ли, есть ли
-другой слот с устройством, имя слота; её такт говорит каждый раз). Один и тот же набор
+другой слот с устройством, имя слота; её такт говорит каждый раз), документ
+конфигурации агентам с `cfg1` (`deliver_cfg`), смена ключей линка агентам с
+`confirm1` (`deliver_rekey`: сначала отзыв `link_cancel`, ждущий сессии после
+возврата ВПС на прежние ключи, затем `link_next`). Один и тот же набор
 за сессию повторно не уходит — кроме временного отказа агента (`ack` с
 `retry`): тогда набор снова ждёт расхождения снимка. Полный снимок сервер просит сам (`ask snap`) —
 только при разрыве нумерации дельт; по запросу человека ничего у шлюза не
@@ -60,6 +64,7 @@ from .common import HELLO_TIMEOUT, _Session
 from .session import SessionMixin
 from .inbound import InboundMixin
 from .deliver import DeliverMixin
+from .rekey import RekeyMixin
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +90,7 @@ def gw_address(link_cidr: str) -> str:
 
 
 
-class LinkServer(SessionMixin, InboundMixin, DeliverMixin):
+class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin):
     """По серверу на адрес линка, по сессии на слот — собирается из частей пакета."""
 
 
@@ -96,6 +101,21 @@ _server: LinkServer | None = None
 
 _on_applied = None
 _on_installed = None
+_on_notes = None
+_on_rekeyed = None
+
+
+def set_on_rekeyed(fn) -> None:
+    """Ключи линка слота сменены (async fn(slot_id)): прежний файл конфигурации
+    слота в чате админа больше не годится — его убирает main."""
+    global _on_rekeyed
+    _on_rekeyed = fn
+
+
+def set_on_notes(fn) -> None:
+    """Уведомления админу о событиях канала (смена ключей линка): async fn(notes)."""
+    global _on_notes
+    _on_notes = fn
 
 
 def set_on_installed(fn) -> None:
@@ -123,6 +143,9 @@ async def ensure(services) -> LinkServer | None:
     if _server is None:
         _server = LinkServer(services)
     _server._loop = asyncio.get_running_loop()
+    # до слушателей: посреди переключения ключей сервер не знает, что стало со
+    # шлюзом, — прежние ключи на место (шлюз найдёт их поиском)
+    await _server.rekey_boot()
     await _server.ensure()
     await _server.deliver_all()
     return _server
@@ -137,9 +160,11 @@ async def liveness_tick(services) -> None:
         return
     if _server is None:
         _server = LinkServer(services)
+    await _server.rekey_boot()                            # такт может опередить старт слушателя
     await _server.ensure()
     await _server.sweep_dead()
     await _server.send_roles()
+    await _server.rekey_tick()
     n = _server.__dict__.get("_ticks", 0) + 1
     _server.__dict__["_ticks"] = n
     if n % 4 == 0:
@@ -164,5 +189,5 @@ async def shutdown() -> None:
         _server = None
 
 
-__all__ = ["LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+__all__ = ["set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

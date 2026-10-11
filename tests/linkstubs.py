@@ -78,3 +78,28 @@ class AgentStub:
         return {"ack": {"gen": int(msg.get("gen") or 0), "hash": str(msg.get("hash") or ""), "applied": [],
                         "wait": {}, "declined": {}, "failed": {}}, "note": "", "ask": []}
 
+    # смена ключей линка: заглушке переходить нечего
+    def rekey_server_answered(self) -> dict:
+        return {"done": None, "note": "", "msg": None}
+
+    def rekey_tick(self) -> dict:
+        return {"note": "", "msg": None}
+
+    def rekey_tick_every(self) -> int:
+        return 0
+
+    def rekey_next_in(self, msg: dict) -> dict:
+        return {"reply": None, "ask": False, "replaced": None}
+
+    def rekey_go(self, msg: dict) -> dict:
+        return {"ok": False, "error": "заглушка", "msg": None}
+
+    def rekey_cancel(self, msg: dict):
+        return None
+
+    def rekey_answer(self, accept: bool):
+        return None
+
+    def cfg_uplink_tick(self) -> dict:
+        return {"answer": None, "notes": []}
+

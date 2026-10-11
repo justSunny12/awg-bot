@@ -175,7 +175,8 @@ class FriendCB(CallbackData, prefix="fr"):
 
 class SetCB(CallbackData, prefix="set"):
     """Экран настроек. sec — раздел: root/notify/srv/fw/rt (+ rt_gw/rt_lists/
-    rt_users)/email/subs/svc/mon/backup/upd/mig/mig_prep/ncl;
+    rt_users)/email/subs/svc/mon/backup/upd/mig/mig_prep/ncl/lk («🔑 Ключи линка»
+    в «🔧 Сервис»: act=do, key pick|ask|yes, val — слот);
     act — действие (open/toggle/edit/pick/do); key — dotted-ключ настройки или
     id действия; val — необязательное значение (для pick-выбора enum)."""
     sec: str
@@ -277,7 +278,8 @@ class GwCB(CallbackData, prefix="gw"):
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
       cfg_ask — первый вопрос очереди («⏳ Решить»), cfg_no|cfg_ok! (val — раздел
-      mail|backup) — «Оставить своё» / «Принять с сервера AWG»;
+      link|uplink|mail|backup) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
+      у вопросов «Оставить своё» / «Принять с сервера AWG»;
       lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
       с листанием), lan_rm|lan_rm! (val — номер) — убрать домен с подтверждения.

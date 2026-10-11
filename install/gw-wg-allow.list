@@ -6,7 +6,12 @@
 # отказывает: закрыто по умолчанию.
 #
 # Строки:
-#   <конфиг> <секция> <ключ>     ключ, который принимается в этой секции
+#   <конфиг> <секция> <ключ>     ключ, который принимается в этой секции;
+#                                <конфиг> — link (конфиг линка: документ и
+#                                смена ключей линка, --link-apply) или uplink
+#                                (конфиг аплинка: раздел uplink документа,
+#                                --uplink; Table принимается только как off —
+#                                это проверяют агент и скрипт отдельно)
 #   allowed_max <N>              записей AllowedIPs у линка — не больше
 #   allowed_min_prefix <N>       префикс каждой записи — не короче /N
 #   allowed_nets <a/b> …         записи — только внутри этих подсетей (RFC 1918)
@@ -55,6 +60,16 @@ uplink Interface I2
 uplink Interface I3
 uplink Interface I4
 uplink Interface I5
+# обфускация AWG нового поколения — в клиентском конфиге аплинка бывает (configgen._OBF_ORDER)
+uplink Interface HeaderProtectionKey
+uplink Interface ContentPaddingAddition
+uplink Interface RekeyAfterTime
+uplink Interface RekeyTimeout
+uplink Interface RejectAfterTime
+uplink Interface KeepaliveTimeout
+uplink Interface MaxHandshakeAttempts
+uplink Interface RandomTrailers
+uplink Interface DisableCookies
 uplink Peer PublicKey
 uplink Peer PresharedKey
 uplink Peer Endpoint

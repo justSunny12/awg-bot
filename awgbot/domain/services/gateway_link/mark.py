@@ -142,6 +142,7 @@ class MarkMixin:
                 # шлюзом, и линка у него нет по построению.
                 rekey = True
             if rekey:
+                self.gateway_rekey_abort(gw)          # смена ключей каналом, если шла, — снята
                 self._run_link_script("--rekey", self._slot_env(gw))
         gw = self.db.gateway(gw.id)
         if rekey or new_slot:
@@ -160,9 +161,9 @@ class MarkMixin:
         «конфигурация актуализирована»."""
         sid = int(slot_id)
         for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY,
-                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY,
+                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY, self._REKEY_KEY,
                     # ключи памяти о выдаче прежних версий — чистим до сдвига минимума на 3.3.0
-                    "gw_bundle_ssh_allow_notified", "gw_bundle_deps", "gw_bundle_deps_notified"):
+                    "gw_bundle_ssh_allow_notified", "gw_bundle_deps", "gw_bundle_deps_notified", "gw_link_port_hand", "gwlink_rekey_cancel"):
             self.db.set_state(self._gw_slot_key(key, sid), "")
         for key in self._rt_keys(sid):                     # стрик и «объявлен»
             self.db.set_state(key, "")
@@ -193,6 +194,7 @@ class MarkMixin:
         if others and active is not None and active.id == gw.id:
             target = next((g for g in others if not self._rt_unavailable(g.id)), others[0])
             self.gateway_switch(target.id, manual=True)
+        self.gateway_rekey_abort(gw)                  # .next/.prev смены ключей — прочь вместе со слотом
         self.db.gateway_delete(gw.id)
         self._slot_forget(gw.id)
         if not others:

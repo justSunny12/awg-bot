@@ -49,7 +49,7 @@ from .routing import (
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
     gateway_remove_confirm, routing_disable_confirm, settings_routing_users, bundle_menu_kb, gateway_card,
     gateway_switch_confirm,
-    gateway_lan_confirm, gateway_peer_confirm)
+    gateway_lan_confirm, gateway_keys_confirm, gateway_keys_pick, gateway_peer_confirm)
 from .broadcast import (
     broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
@@ -80,7 +80,7 @@ __all__ = [
     "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing_users",
-    "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_peer_confirm",
+    "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_keys_confirm", "gateway_keys_pick", "gateway_peer_confirm",
  "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_cfg_question_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_health_kb", "gateway_transit_router_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",

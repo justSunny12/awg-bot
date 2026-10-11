@@ -218,15 +218,24 @@ def script() -> str:
     return (ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
 
 
+def _uplink_funcs(script: str) -> str:
+    """Установка аплинка — общие функции шага 0 и режима --uplink."""
+    start = script.index("uplink_render() {")
+    return script[start:script.index("allow_list_path() {", start)]
+
+
 def test_script_installs_uplink_only_to_the_machine_with_that_key(script):
     step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split('# ── 1. конфиг и подъём', 1)[0]
+    funcs = _uplink_funcs(script)
+    assert 'uplink_render "$_tmp" "$_tmp.conf"' in step0 and 'uplink_install "$_tmp.conf"' in step0, (
+        "шаг 0 ставит аплинк не общими функциями")
     assert 'iface_by_pubkey "$GATEWAY_PUBKEY"' in step0 and 'iface_by_pubkey "$GATEWAY_PREV_PUBKEY"' in step0
     assert "GW_FOREIGN=1" in step0, "чужой шлюз → линк не поднимаем"
-    assert '/^Table = off$/ {' in step0, "PostUp вставляется в [Interface], а не в конец файла"
-    assert "ip route replace default dev %%i table" in step0
-    assert 'if ! systemctl start "awg-quick@$UPLINK_IF"' in step0 and "откатываю на прежний" in step0
-    assert '"$AWG_QUICK" up "$UPLINK_IF"' not in step0, "аплинк снова поднимается мимо юнита awg-quick@"
-    assert "cmp -s" in step0, "неизменившийся конфиг аплинка не переподнимаем"
+    assert '/^Table = off$/ {' in funcs, "PostUp вставляется в [Interface], а не в конец файла"
+    assert "ip route replace default dev %%i table" in funcs
+    assert 'if ! systemctl start "awg-quick@$UPLINK_IF"' in funcs and "откатываю на прежний" in funcs
+    assert '"$AWG_QUICK" up "$UPLINK_IF"' not in funcs + step0, "аплинк снова поднимается мимо юнита awg-quick@"
+    assert "cmp -s" in funcs, "неизменившийся конфиг аплинка не переподнимаем"
     assert 'printf \'GW_STATUS=%s' in step0, "решение пишется для агента"
 
 
@@ -275,7 +284,7 @@ def test_uplink_postup_lands_inside_interface_section(tmp_path):
     """Прогоняем сам awk из скрипта: PostUp обязан стоять до [Peer]."""
     import subprocess as sp
     src = (ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
-    awk = src.split("awk -v mark=\"$TG_MARK\" -v tbl=\"$UPLINK_TABLE\" '", 1)[1].split("' \"$_tmp\"", 1)[0]
+    awk = src.split("awk -v mark=\"$TG_MARK\" -v tbl=\"$UPLINK_TABLE\" '", 1)[1].split("' \"$1\" > \"$2\"", 1)[0]
     conf = tmp_path / "u.conf"
     conf.write_text("[Interface]\nTable = off\nAddress = 10.9.1.15/32\nPrivateKey = K==\n\n[Peer]\nPublicKey = S==\n", encoding="utf-8")
     out = sp.run(["awk", "-v", "mark=0x1", "-v", "tbl=100", awk, str(conf)], capture_output=True, text=True).stdout
