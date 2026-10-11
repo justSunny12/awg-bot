@@ -129,9 +129,12 @@ def collect_warnings_gateway(services=None) -> list[str]:
                              "awg_gw_guard нет: шлюз открыт клиентам туннеля; включи его "
                              "(systemctl enable --now awg-link-gw)")
             else:
+                cfg1 = bool(services is not None and getattr(services, "server_cfg1", None)
+                            and services.server_cfg1())
                 warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
-                             "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
-                             "шлюза с сервера AWG")
+                             "шлюз открыт клиентам туннеля; "
+                             + ("«🔧 Восстановить» в панели агента" if cfg1 else
+                                "перевыпусти конфигурацию шлюза с сервера AWG"))
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): таблица: %s", e)
     return warns

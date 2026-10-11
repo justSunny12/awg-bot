@@ -60,9 +60,9 @@
 # ТРЕБОВАНИЕ К ХОСТУ, КОТОРОЕ ЗДЕСЬ НЕ ПРОВЕРЯЕТСЯ: синхронизированные часы
 # (systemd-timesyncd или chrony; `timedatectl show -p NTPSynchronized --value`
 # → yes). Оба бота верят часам своего хоста: TLS к GitHub, PyPI и Telegram,
-# расписания, сроки подписок. Особенно шлюз — часов реального времени у него может не быть.
-# нет. Канал ВПС ↔ шлюз от часов не зависит и показывает их расхождение в
-# карточке слота. Подробности — README §2, «Время хоста».
+# расписания, сроки подписок. Особенно шлюз — часов реального времени у него
+# может не быть. Канал ВПС ↔ шлюз от часов не зависит и показывает их
+# расхождение в карточке слота. Подробности — README §2, «Время хоста».
 #
 # ВАЖНОЕ СЛЕДСТВИЕ: при запуске из трубы stdin занят самим скриптом, поэтому
 # ВСЕ вопросы задаются в /dev/tty (здесь и дальше, в awg-bot.sh). Иначе визард
@@ -262,6 +262,11 @@ wipe_previous() {
             && sh /usr/local/sbin/routing-host-setup.sh --rollback >/dev/null 2>&1 || true
         rm -f /usr/local/sbin/routing-link-setup.sh /usr/local/sbin/routing-host-setup.sh
         rm -f /etc/dnsmasq.d/awgbot-resolver.conf /etc/systemd/system/dnsmasq.service.d/awgbot-resolver.conf
+        # резолвер админа («SMB в туннеле») — второй dnsmasq со своим юнитом
+        systemctl disable --now awgbot-admin-dns 2>/dev/null || true
+        rm -f /etc/systemd/system/awgbot-admin-dns.service
+        ip link del awgadmdns 2>/dev/null || true
+        rm -rf /etc/awgbot-admin-dns
         systemctl daemon-reload 2>/dev/null || true
         systemctl try-restart dnsmasq 2>/dev/null || true
         for f in /etc/amnezia/amneziawg/*.conf; do

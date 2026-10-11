@@ -63,12 +63,18 @@ class SlotsMixin:
         не сменится — иначе чужой клиент получит доступ к шлюзу и его сети."""
         out: set[str] = set()
         for g in self.db.gateways():
-            raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
-            out.update(x for x in raw.split() if x)
+            # последний выданный файл — только агентам без документа: агенту с
+            # cfg1 список везёт канал, и стоящее у него видно по снимку ниже —
+            # иначе адреса из давнего файла держались бы в карантине вечно
+            if "cfg1" not in self.gwlink_agent_caps(g.id):
+                raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
+                out.update(x for x in raw.split() if x)
             # и то, что реально стоит в обвязке по снимку канала: файл мог быть
             # выдан и не применён, а канал — доставить список без файла
             snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
-            out.update(x for x in str(snap.get("admin_ips") or "").split() if x)
+            from awgbot.util import gwlink as _gwlink
+            stands = (snap.get("bundle") or {}) if isinstance(snap.get("bundle"), dict) else {}
+            out.update(x for x in str(stands.get(_gwlink.snap_field("ADMIN_IPS")) or "").split() if x)
         return out
 
     def _gw_name(self, gw) -> str:

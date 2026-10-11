@@ -179,6 +179,7 @@ class GwSshMixin:
             "lan": sorted((info or {}).get("sets", {}).get("lan4", set())),
             "peer_nets": sorted((info or {}).get("sets", {}).get("peer_nets4", set())),
             "new_plumbing": bool(info) and "ssh_in" in chains,
+            "server_cfg1": self.server_cfg1(),    # подсказка «🔧 Восстановить», а не «перевыпусти»
             "table_ports": dict((info or {}).get("ssh_ports", {})),
             "ufw": ufw,
             "omv_rules": omv_rules,

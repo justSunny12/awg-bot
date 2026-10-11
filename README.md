@@ -14,7 +14,8 @@
 Этот файл — обзор проекта и архитектуры. Дальше:
 
 - **[docs/README-bot.md](docs/README-bot.md)** — установка, конфигурация, эксплуатация
-- **[концепт «условная маршрутизация»](концепт «условная маршрутизация»)** — условная маршрутизация целиком
+- **[docs/README-bot.md](docs/README-bot.md) §6c–6d** — условная маршрутизация и агент шлюза целиком
+- **[docs/RELEASING.md](docs/RELEASING.md)** — нумерация версий и порядок выпуска
 - **[docs/CHANGELOG.md](docs/CHANGELOG.md)** — журнал изменений
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — что впереди и почему
 
@@ -78,9 +79,9 @@ MASQUERADE. Перенос — `install/awg-host-migrate.sh`, с проверк�
 - **admin** (из конфига) — полный доступ ко всему.
 - **client** — свой профиль: свои устройства (выдача конфигов, переименование,
   лимиты), передача устройства другу. Не может трогать чужое.
-- **invited** (друг) — управляет только устройствами, которые ему расшарили
-  (мультидружба: один tg_id → устройства от разных владельцев); переименование
-  недоступно.
+- **guest** (гость) — держатель переданных ему устройств без своей подписки:
+  управляет только ими, принимает устройства от одного владельца;
+  переименование недоступно (README-bot §6e).
 
 **Имена живут только в БД бота** — сервер про них не знает, в конфиге пира их
 нет. Синхронизировать не с чем и не с кем.
@@ -110,8 +111,21 @@ MASQUERADE. Перенос — `install/awg-host-migrate.sh`, с проверк�
 
 Флаг двухслойный: админ разрешает функцию профилю, пользователь включает её у
 себя. Базовый список бот качает сам; сверх него у каждого профиля свой личный.
-Живость шлюза меряется проходимостью (TCP-зонд через линк), а не возрастом
-хендшейка, с порогом в три замера в обе стороны.
+Живость шлюза меряется проходимостью — уликами счётчиков линка и TCP-зондом
+через него, — а не возрастом хендшейка; решает скользящее окно замеров
+(`routing.failover.window_samples`, порог `min_availability`). Шлюзов может
+быть два: второй ждёт в резерве, автомат переключения решает по зонду с ВПС.
+
+**Агент шлюза.** На шлюзе работает тот же код в роли `gateway` — свой бот со
+своим токеном: монитор здоровья, обвязка nft, линк и аплинк, VPN-транзит для
+локальной сети за шлюзом. С ВПС его связывает **управляющий канал** внутри
+линка — канал состояния, не исполнения: соединение ставит шлюз, он отдаёт
+снимок фактов, а сервер шлёт ему данные — документ конфигурации слота
+(настройки обвязки, конфиг линка и аплинка, почта, фраза бэкапов, токен бота),
+фиды, роль слота. Конфиги WireGuard из канала принимаются белым списком
+ключей, новые ключи линка и аплинк ставятся только после «Применить» человека
+в чате бота шлюза. Код по каналу не ездит: он приходит файлом первого
+применения и дальше обновлением агента.
 
 Пока `routing.gw_interface` пуст, функция спит целиком: UI её не показывает,
 реконсиляция не трогает систему. Это же и аварийный рубильник.
@@ -142,16 +156,21 @@ curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install
 ```
 reconfigure  update  backup  restore  uninstall
 status  start  stop  restart  logs
+firewall …              файервол хоста (таблица awg_bot_guard)
+ssh …                   шлюз: порт SSH и фильтр снаружи
 routing-doctor          диагностика условной маршрутизации по слоям
-gw-bundle               пересобрать бандл для шлюза, не меняя ключей
-awg status|install|reload|plan   ядро AmneziaWG версии, прибитой к поставке
+lan …                   шлюз: свои списки VPN-транзита, обновление фидов
+gw-bundle               пересобрать файл конфигурации шлюза, не меняя ключей
+awg status|install|reload|prune|plan   ядро AmneziaWG версии, прибитой к поставке
 first-device            конфигурация первого устройства админа в терминал
+resolver …              свой резолвер клиентов; resolver admin … — резолвер админа
 ```
+Полный список — `awg-bot` без аргументов.
 
 Топология не спрашивается: внешний адрес определяется сам (`ip route get`, а за
 NAT — внешним запросом), порт и подсеть берутся у созданного сервера либо у
 живого, если он уже стоял. Файервол — один вопрос в конце установки, дальше он
-живёт в боте (⚙️ Настройки → 🛡 Файервол).
+живёт в боте (⚙️ Настройки → 🛡 SSH-доступ).
 
 **Самообновление.** Бот раз в сутки и при старте смотрит релизы репозитория,
 находит следующую версию за установленной и предлагает обновиться кнопкой:
@@ -207,12 +226,11 @@ NAT — внешним запросом), порт и подсеть берут�
    `From` не является аутентификацией (спуфится) — секрет только код; тело
    письма не читается вообще; невалидный код игнорируется молча (письмо
    помечается прочитанным, ответа нет); код одноразовый и живёт только пока
-   активна пауза. Настройка — целиком через визард
-   (`awg-bot reconfigure` → «Настроить аварийный email-выход»): адрес ящика
-   (для `@icloud.com` IMAP/SMTP подставляются сами, иначе ручной ввод),
-   app-specific пароль, опциональный алиас (Enter — сам адрес ящика), интервал
-   опроса (не менее 60 сек). Секреты — в env, остальное — `conf/email.yaml`; пустые
-   поля = фича спит.
+   активна пауза. Настройка — из чата: «⚙️ Настройки → ✉️ E-mail →
+   ✉️ Подключить ящик» (для gmail.com, icloud.com и yandex.ru серверы
+   подставляются сами), затем тумблер «Аварийный выход», адрес для кода и
+   интервал опроса (не менее 60 сек). Логин и пароль ящика — в БД, серверы —
+   `conf/email.yaml`; ящик не подключён — фича спит.
 
 Авто-выход по истечении зарезервированного срока делает watchdog
 (`check_pauses`); бессрочную админскую паузу (admin_open) снимает только админ.
@@ -278,12 +296,16 @@ awgbot/
              qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
              nets       подсети: нормализация, разбор, пересечение
              kvfile     файлы KEY=VALUE (env, состояние)
+             gwlink     конверт и подпись сообщений канала ВПС ↔ шлюз (обе роли)
              wgconf     конфиги WireGuard из канала шлюза: разбор, белые списки ключей
                         и правило AllowedIPs — данными install/gw-wg-allow.list
   infra/     db/        SQLite (per-thread): ядро, схема (миграций нет: схема минимума
                         3.2.0 полная; schema_gap — сторож старой копии), миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
              nftguard/  файервол хоста — таблица awg_bot_guard: common, collect, render, apply
+             gwguard/   агент: таблицы nft шлюза, юнит обвязки, конфиги линка и аплинка
+                        (common, nft, unit, wg, lan, uplinktxn)
+             admindns   резолвер админа на ВПС («SMB в туннеле»): юнит, записи, правило NAT
              routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq — пакет
                         по разделам: base, selfcheck, slots, sets, marking, policy,
                         probes, feeds (шапка «два плеча» — в __init__)
@@ -296,17 +318,22 @@ awgbot/
              bootid     boot_id ядра (перезагрузка хоста, холодный старт)
   domain/    services/  бизнес-логика (склейка db+awg+configgen+routing) — пакет
                         миксинов по областям: blocks, clients, devices, subscription,
-                        traffic, reconcile, firewall, gateway_link, routing, status;
-                        routing/ (common, access, reconcile, liveness, coldstart, notes) и
-                        gateway_link/ (common, link, slots, peernets, mark, agentbot),
-                        traffic/ (texts, poll, limits, expiry, resets, bonus) —
-                        сами пакеты, составной миксин собирается в __init__
+                        traffic, reconcile, firewall, gateway_link, gwchannel, routing,
+                        status; routing/ (common, access, reconcile, liveness, coldstart,
+                        notes), gateway_link/ (common, link, slots, peernets, mark,
+                        agentbot, rekey, token), gwchannel/ (канал на ВПС: session,
+                        snapshot, settings, cfg, feeds, own, services, smbtunnel, bundle,
+                        claim, card) и traffic/ (texts, poll, limits, expiry, resets,
+                        bonus) — сами пакеты, составной миксин собирается в __init__
              gateway/   механика агента шлюза: base, link, monitor, tgmark, transit,
                         report, ownlists, peersvc, bundle, egress, cfg/ (документ
-                        конфигурации с сервера: prints, txn, mailphrase, ask, apply);
+                        конфигурации с сервера: prints, txn, mailphrase, ask, apply,
+                        uplink, uplinktxn, rekey, token);
                         GatewayServices в __init__
              gwcfg/     документ конфигурации шлюза по каналу — общий для обеих ролей:
                         doc (разделы, cfg/cfg_ack), check (проверки), prints (отпечатки)
+             gwsnapshot, gwservices, gwownlists   общие данные канала: снимок шлюза,
+                        записи сервисов соседних сетей, свои списки (обе роли)
              configgen  генерация vpn:// и .conf (кодек формата приложения)
              routing    чистая логика: нормализация доменов, генерация dnsmasq
              evidence   улики живости: активный слот на ВПС, выход наружу у агента
@@ -337,13 +364,18 @@ awgbot/
              handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
                         selfops, blocks, broadcast) + friend + routing + settings/ (пакет
                         ролевых разделов основного бота: render, gwmark, slots, sections,
-                        inputs, cycles, actions; роутер один — _router) + gateway/ (пакет
+                        inputs, cycles, actions, linkkeys, gwtoken; роутер один —
+                        _router) + gateway/ (пакет
                         агента: panel, sections, dialogs, bundle, access, transit, apply,
                         ask) + settingscore (шаги ввода настроек,
                         общие для ролей) + updates_flow + …
   runtime/   main         сборка и запуск (диспетчер роли — из bot/routers)
              preflight    самопроверка окружения на старте (fatal / warning)
              scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)
+             linkserver/  канал на ВПС: слушатели на адресах линков, сессии, доставка,
+                          смена ключей линка
+             linkclient/  канал на шлюзе: сессия, приём документа и фидов, очередь
+                          ответов, смена ключей линка, транзакция аплинка
              watcher      inotify-вотчдог awg0.conf (дебаунс)
              conf_watcher горячая перечитка conf/*.yaml
              routing_doctor  диагностика маршрутизации по слоям
@@ -359,10 +391,13 @@ install/     awg-bot-install.sh      установщик (он же качае�
              awg.lock                версия AmneziaWG, прибитая к поставке
              awg-kernel-install.sh   сборка ядра и тулз по манифесту
              awg-server-init.sh      сервер awg с нуля на чистом хосте
+             awg-resolver-setup.sh   свой резолвер клиентов (dnsmasq на <подсеть>.1)
+             awg-admin-dns-setup.sh  резолвер админа («SMB в туннеле»)
              awg-host-migrate.sh     переезд с контейнера на хост
              routing-host-setup.sh   обвяз ВПС под маршрутизацию
              routing-link-setup.sh   линк до шлюза + бандл для второй стороны
-             routing-gw-setup.sh     сторона шлюза
+             routing-gw-setup.sh     сторона шлюза (обвязка, --link-apply, --uplink)
+             gw-wg-allow.list        белые списки конфигов WireGuard из канала
 conf/        *.yaml — конфигурация; run.sh — форграунд-запуск
 ```
 
