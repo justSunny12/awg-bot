@@ -74,20 +74,22 @@ def _e(s) -> str:
 
 def _num(value, unit_bytes: int) -> str:
     """Число в единицах unit_bytes: арифметическое округление до сотых,
-    незначащие нули долой — «8.99», «50», «0.5», «0»."""
+    незначащие нули долой, дробная часть — через запятую, как в русском:
+    «8,99», «50», «0,5», «0»."""
     from decimal import Decimal, ROUND_HALF_UP
     d = (Decimal(int(value or 0)) / Decimal(unit_bytes)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP)
     s = f"{d:f}"
-    return s.rstrip("0").rstrip(".") if "." in s else s
+    s = s.rstrip("0").rstrip(".") if "." in s else s
+    return s.replace(".", ",")
 
 
 def gb(num_bytes: int) -> str:
     """Гигабайты числом, без единицы. Одна шкала на все экраны: ноль — «0»,
-    любая ненулевая мелочь — «0.01», дальше — до сотых."""
+    любая ненулевая мелочь — «0,01», дальше — до сотых."""
     n = int(num_bytes or 0)
     if 0 < n < _BYTES_PER_GB // 100:
-        return "0.01"
+        return "0,01"
     return _num(n, _BYTES_PER_GB)
 
 
@@ -103,15 +105,15 @@ def unit_for(*values: int) -> tuple[str, int]:
 
 
 def amount(num_bytes: int, unit_bytes: int) -> str:
-    """Число в единице без подписи: ноль — «0», ненулевая мелочь — «0.01»."""
+    """Число в единице без подписи: ноль — «0», ненулевая мелочь — «0,01»."""
     n = int(num_bytes or 0)
     if 0 < n < unit_bytes // 100:
-        return "0.01"
+        return "0,01"
     return _num(n, unit_bytes)
 
 
 def volume(num_bytes: int) -> str:
-    """Объём с единицей: «0 ГБ», «0.01 ГБ», «8.99 ГБ», «1.5 ТБ»."""
+    """Объём с единицей: «0 ГБ», «0,01 ГБ», «8,99 ГБ», «1,5 ТБ»."""
     unit, ub = unit_for(num_bytes)
     return f"{amount(num_bytes, ub)} {unit}"
 
@@ -122,8 +124,8 @@ def human_bytes(n: int) -> str:
 
 
 def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
-    """«8.99 из 50 ГБ» (единица одна — не повторяем, от терабайта — «ТБ»);
-    без лимита — «8.99 ГБ». note — чей лимит, в скобках: «… (лимит
+    """«8,99 из 50 ГБ» (единица одна — не повторяем, от терабайта — «ТБ»);
+    без лимита — «8,99 ГБ». note — чей лимит, в скобках: «… (лимит
     устройства)»; лимит профиля — без пометки."""
     if not limit_bytes:
         return volume(used)

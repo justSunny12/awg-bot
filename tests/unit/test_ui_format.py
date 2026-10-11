@@ -210,9 +210,9 @@ def test_volumes_switch_to_terabytes_from_a_terabyte():
     from awgbot.bot.texts import client as tc
     TB, GB = 1024 ** 4, 1024 ** 3
     assert texts.human_bytes(2 * TB) == "2 ТБ" and texts.human_bytes(500 * GB) == "500 ГБ"
-    assert texts.gb_str(int(1.5 * TB)) == "1.5 ТБ"
-    assert texts.used_of_limit(TB // 2, 2 * TB) == "0.5 из 2 ТБ"
-    assert texts.used_of_limit(3 * GB, 2 * TB) == "0 из 2 ТБ" or texts.used_of_limit(3 * GB, 2 * TB) == "0.01 из 2 ТБ"
+    assert texts.gb_str(int(1.5 * TB)) == "1,5 ТБ"
+    assert texts.used_of_limit(TB // 2, 2 * TB) == "0,5 из 2 ТБ"
+    assert texts.used_of_limit(3 * GB, 2 * TB) == "0 из 2 ТБ" or texts.used_of_limit(3 * GB, 2 * TB) == "0,01 из 2 ТБ"
     assert texts.used_of_limit(3 * GB, 50 * GB) == "3 из 50 ГБ"
     assert tc.traffic_short(0, 0, 0) == "📊 0 ГБ (безлимит)"
     assert tc.traffic_short(TB, TB, 4 * TB) == "📊 2 из 4 ТБ"

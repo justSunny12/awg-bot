@@ -101,7 +101,7 @@ def test_more_lists_up_to_twelve_then_counts_the_rest():
 
 def test_unlimited_shows_zero_and_terabytes():
     assert fmt.unlimited(0) == "0 ГБ (безлимит)"
-    assert fmt.unlimited(1024 ** 4 + 1024 ** 3 * 512) == "1.5 ТБ (безлимит)"
+    assert fmt.unlimited(1024 ** 4 + 1024 ** 3 * 512) == "1,5 ТБ (безлимит)"
 
 
 # ── словарь роли ─────────────────────────────────────────────────────────────

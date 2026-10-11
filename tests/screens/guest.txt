@@ -94,7 +94,7 @@
 
 🟢 VPN работает
 💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
-📊 <a href="https://t.me/test_bot?start=dev-1">Телефон Артёма</a>: 24.1 из 50 ГБ
+📊 <a href="https://t.me/test_bot?start=dev-1">Телефон Артёма</a>: 24,1 из 50 ГБ
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
@@ -106,7 +106,7 @@
 
 🟢 VPN работает
 💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
-📊 <a href="https://t.me/test_bot?start=dev-1">Телефон Артёма</a>: 24.1 из 30 ГБ
+📊 <a href="https://t.me/test_bot?start=dev-1">Телефон Артёма</a>: 24,1 из 30 ГБ
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]

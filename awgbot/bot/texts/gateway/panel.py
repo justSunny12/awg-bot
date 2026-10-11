@@ -116,7 +116,7 @@ def gateway_health(st) -> str:
     if st.ram_free_mb is not None:
         hw.append(f"RAM свободно {num(st.ram_free_mb)} МБ")
     if st.disk_free_gb is not None:
-        free = f"{st.disk_free_gb:.1f}" if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
+        free = f"{st.disk_free_gb:.1f}".replace(".", ",") if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
         hw.append(f"диск свободно {free} ГБ" + (f", SMART {st.smart}" if st.smart else ""))
     if st.throttled is not None:
         now = st.throttled.get("now") or []

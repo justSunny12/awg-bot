@@ -21,8 +21,8 @@
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -38,8 +38,8 @@
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -88,15 +88,15 @@
 ### adm.traffic — трафик по профилям
 > press m:traffic
 = edit #1
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -216,7 +216,7 @@
 > press d:open:1
 = edit #1
 🟢 <b>iPhone</b> · <code>10.8.1.2</code> · Администратор
-Был в сети только что · 📊 2.2 ГБ (↑2 ↓0.2)
+Был в сети только что · 📊 2,2 ГБ (↑2 ↓0,2)
   [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
   [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
   [🔀 Передать | d:reassign:1] [🛑 Блок | bl:dev:menu_block:1::-1]
@@ -227,8 +227,8 @@
 > press d:open:3
 = edit #1
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -239,8 +239,8 @@
 > press d:open:3
 = edit #1
 ⛔ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 ⛔ Заблокировано: администратором
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
@@ -276,8 +276,8 @@
 ✅ Имя устройства: Телефон → Телефон Ксюши
 
 🟢 <b>Телефон Ксюши</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -299,8 +299,8 @@
 ✅ Лимит: ∞ → 50 ГБ
 
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 из 50 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 из 50 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -322,8 +322,8 @@
 ✅ Лимит: ∞ → 30 ГБ
 
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 из 30 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 из 30 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -398,8 +398,8 @@
   [Скрыть | hd]
 = edit #1
 ⛔ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 ⛔ Заблокировано: администратором
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
@@ -415,8 +415,8 @@
   [Скрыть | hd]
 = edit #1
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -460,8 +460,8 @@
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 1 из 3 · 🇷🇺 вкл на всех
-📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -635,8 +635,8 @@ https://www.ozon.ru/catalog
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -668,7 +668,7 @@ https://www.ozon.ru/catalog
 💳 🟢 до 17.09 12:00 · 2 дн. · месяц, с 18.08
 ⏸️ Пауза: 2 из 24 дн.
 📱 1 из 1
-📊 0.3 ГБ (↑0.25 ↓0.05)
+📊 0,3 ГБ (↑0,25 ↓0,05)
   [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
@@ -683,7 +683,7 @@ https://www.ozon.ru/catalog
 💳 🔴 истекла 14.09 · месяц, с 15.08
 ⏸️ Пауза: 2 из 24 дн.
 📱 1 из 1
-📊 0.3 ГБ (↑0.25 ↓0.05)
+📊 0,3 ГБ (↑0,25 ↓0,05)
   [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
@@ -699,8 +699,8 @@ https://www.ozon.ru/catalog
 💳 ⏸️ на паузе до 22.09
 ⏸️ Пауза: 21 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [▶️ Снять паузу | c:resume_pause:3]
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
@@ -718,8 +718,8 @@ https://www.ozon.ru/catalog
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
   [⛔ Телефон | d:open:3]
@@ -735,8 +735,8 @@ https://www.ozon.ru/catalog
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 9 из 10 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [📱 Устройства: 9 | c:devices:3]
@@ -944,8 +944,8 @@ https://www.ozon.ru/catalog
 💳 🟢 до 15.10.27 · 395 дн. · месяц, с 15.09
 ⏸️ Пауза: 28 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -980,7 +980,7 @@ https://www.ozon.ru/catalog
 💳 🟢 до 17.10 · 32 дн. · месяц, с 15.09
 ⏸️ Пауза: 4 из 24 дн.
 📱 1 из 1
-📊 0.3 ГБ (↑0.25 ↓0.05)
+📊 0,3 ГБ (↑0,25 ↓0,05)
   [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
@@ -997,8 +997,8 @@ https://www.ozon.ru/catalog
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -1067,8 +1067,8 @@ https://t.me/test_bot?start=CDUMMY000005
 🟡 доступ приостановлен
 💳 ⏸️ приостановлена администратором
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
   [⛔ Телефон | d:open:3]
@@ -1112,8 +1112,8 @@ https://t.me/test_bot?start=CDUMMY000005
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 3 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -1165,8 +1165,8 @@ https://t.me/test_bot?start=CDUMMY000005
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -1286,8 +1286,8 @@ https://t.me/test_bot?start=CDUMMY000005
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -1991,7 +1991,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 ### adm.set.subs.bonus.bad — бонус при исчерпании: непонятный ввод — переспрос
 > text «10 ГБ»
 + send #3
-⚠️ Не понял — жду целое число, число со знаком процента либо их комбинацию
+⚠️ Не понял — жду целое число, число со знаком процента либо их корректную комбинацию
 
 ### adm.set.subs.bonus.done — бонус при исчерпании: итог
 > text «10% 50»
@@ -2233,8 +2233,8 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -2822,8 +2822,8 @@ uci commit</pre>
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -2992,8 +2992,8 @@ Pi4 — 🟢 Резерв
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3007,8 +3007,8 @@ Pi4 — 🟢 Резерв
 
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3152,8 +3152,8 @@ Pi4 — 🟢 Резерв
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (3 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
@@ -3195,56 +3195,56 @@ Pi4 — 🟢 Резерв
 > /start traffic
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 
 ### adm.link.traffic_dev — трафик профиля по устройствам
 > /start traffic-3
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+⚪ Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
   [⬅️ Назад | m:traffic]
 
 ### adm.link.traffic_local — прежняя ссылка «РФ-доступ» — трафик
 > /start traffic_local
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 
 ### adm.link.traffic_local_dev — прежняя ссылка «РФ-доступ профиля»
 > /start traffic_local-3-t
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+⚪ Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
   [⬅️ Назад | m:traffic]
 
 ### adm.link.extend — продление по ссылке из «Истекают»
@@ -3268,8 +3268,8 @@ Pi4 — 🟢 Резерв
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -3281,8 +3281,8 @@ Pi4 — 🟢 Резерв
 - delete #1
 + send #2
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -3297,8 +3297,8 @@ Pi4 — 🟢 Резерв
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3377,8 +3377,8 @@ Pi4 — 🟢 Резерв
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3572,8 +3572,8 @@ https://t.me/test_bot?start=CDUMMY000005
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3611,8 +3611,8 @@ https://t.me/test_bot?start=CDUMMY000005
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3840,8 +3840,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3905,7 +3905,7 @@ IMAP и SMTP отвечают, вход выполнен
 > press d:open:7
 = edit #1
 🔴 🛰 <b>NASPi</b> (<code>10.8.1.7</code>), последний коннект: никогда
-Потребление: 11.78 ГБ (↑ 10.95 ГБ | ↓ 0.83 ГБ)
+Потребление: 11,78 ГБ (↑ 10,95 ГБ | ↓ 0,83 ГБ)
 
 <b>Это устройство — шлюз РФ-доступа, через него идёт трафик на РФ-домены.</b>
   [⬅️ Назад | m:devices]
@@ -3986,8 +3986,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (3 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
@@ -4018,8 +4018,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0 · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4034,8 +4034,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (3 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
@@ -4053,8 +4053,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🔴 недоступен, <a href="https://t.me/test_bot?start=gw-1">NASPi</a> не отвечает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4070,8 +4070,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4168,7 +4168,7 @@ IMAP и SMTP отвечают, вход выполнен
 > press m:traffic
 = edit #1
 📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
-└ 🇷🇺 РФ-доступ (все): 2.01 ГБ (↑1 ↓1.01)
+└ 🇷🇺 РФ-доступ (все): 2,01 ГБ (↑1 ↓1,01)
 
 👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
 └ 🇷🇺 РФ-доступ: 2 ГБ
@@ -4179,8 +4179,8 @@ IMAP и SMTP отвечают, вход выполнен
 > press m:traffic
 = edit #1
 📊 <b>Трафик за 09.26:</b> 2 ГБ (↑1 ↓1)
-└ 🇷🇺 РФ-доступ (все): 2.01 ГБ (↑1 ↓1.01)
-└ 🧐 Вне профилей: 0.01 ГБ — удалённые устройства и первые минуты новых
+└ 🇷🇺 РФ-доступ (все): 2,01 ГБ (↑1 ↓1,01)
+└ 🧐 Вне профилей: 0,01 ГБ — удалённые устройства и первые минуты новых
 
 👤 <a href="https://t.me/test_bot?start=traffic-4">Ксюша</a>: 2 ГБ (↑1 ↓1)
 └ 🇷🇺 РФ-доступ: 2 ГБ
@@ -4202,15 +4202,15 @@ IMAP и SMTP отвечают, вход выполнен
 ### adm.traffic.old_back — «Назад» прежнего экрана РФ — дерево трафика
 > press m:traffic_local
 = edit #1
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -4227,25 +4227,25 @@ IMAP и SMTP отвечают, вход выполнен
 > /start traffic-3
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+⚪ Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
   [⬅️ Назад | m:traffic]
 
 ### adm.link.traffic_dev.gw — трафик профиля со шлюзом: у шлюза нет РФ-ветки
 > /start traffic-2
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 2.2 ГБ (↑2 ↓0.2) · профиль Администратор
+📊 <b>Трафик за 09.26:</b> 2,2 ГБ (↑2 ↓0,2) · профиль Администратор
 └ 🇷🇺 РФ-доступ (все): 2 ГБ (↑1 ↓1)
 
 🛰 NASPi: 6 ГБ (↑3 ↓3)
 
-🟢 iPhone: 2.2 ГБ (↑2 ↓0.2)
+🟢 iPhone: 2,2 ГБ (↑2 ↓0,2)
 └ 🇷🇺 РФ-доступ: 2 ГБ
   [⬅️ Назад | m:traffic]
 
@@ -4267,8 +4267,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4279,56 +4279,56 @@ IMAP и SMTP отвечают, вход выполнен
 > /start traffic_local-3
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+⚪ Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
   [⬅️ Назад | m:traffic]
 
 ### adm.link.traffic_dev.t — ссылка «traffic-<id>-t»
 > /start traffic-3-t
 - delete #1
 + send #2
-📊 <b>Трафик за 09.26:</b> 4.2 ГБ (↑3.5 ↓0.7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-🟢 Телефон: 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-⚪ Ноутбук: 0.6 ГБ (↑0.5 ↓0.1)
+⚪ Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
   [⬅️ Назад | m:traffic]
 
 ### adm.link.traffic.live — /start traffic при живой главной — правка меню, команда убрана
 > /start traffic
 - delete #3
 = edit #2
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 
 ### adm.link.traffic_local.live — прежняя /start traffic_local при живой главной — то же дерево
 > /start traffic_local
 - delete #3
 = edit #2
-📊 <b>Трафик за 09.26:</b> 6.7 ГБ (↑5.75 ↓0.95)
-└ 🇷🇺 РФ-доступ (все): 0.6 ГБ (↑0.5 ↓0.1)
+📊 <b>Трафик за 09.26:</b> 6,7 ГБ (↑5,75 ↓0,95)
+└ 🇷🇺 РФ-доступ (все): 0,6 ГБ (↑0,5 ↓0,1)
 
-👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+👤 <a href="https://t.me/test_bot?start=traffic-3">Ксюша</a>: 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2.2 ГБ (↑2 ↓0.2)
+👤 <a href="https://t.me/test_bot?start=traffic-2">Администратор</a>: 2,2 ГБ (↑2 ↓0,2)
 
-👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0.3 ГБ (↑0.25 ↓0.05)
+👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 
 ### adm.cl.admin — карточка своего профиля — главная
@@ -4339,8 +4339,8 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5099,8 +5099,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 из 100 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5118,8 +5118,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 из 100 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5136,8 +5136,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 из 100 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 из 100 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5168,7 +5168,7 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🔴 истекла 14.09 · месяц, с 15.08
 ⏸️ Пауза: 2 из 24 дн.
 📱 1 из 1
-📊 0.3 ГБ (↑0.25 ↓0.05)
+📊 0,3 ГБ (↑0,25 ↓0,05)
   [⏱ Продлить | c:extend:4] [✏️ Изменить | c:edit:4]
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
@@ -5184,8 +5184,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 ⏸️ на паузе до 22.09
 ⏸️ Пауза: 21 из 56 дн.
 📱 9 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [▶️ Снять паузу | c:resume_pause:3]
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
@@ -5217,8 +5217,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 🚚 Переезд: 1 из 2 живых устройств
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
@@ -5275,8 +5275,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5292,8 +5292,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5304,7 +5304,7 @@ IP, подсеть или имя DynDNS; можно несколько
 > press d:open:4
 = edit #1
 ⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Не подключался · 📊 0.6 из 100 ГБ (↑0.5 ↓0.1), лимит профиля
+Не подключался · 📊 0,6 из 100 ГБ (↑0,5 ↓0,1), лимит профиля
   [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
   [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
   [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
@@ -5315,7 +5315,7 @@ IP, подсеть или имя DynDNS; можно несколько
 > press d:open:4
 = edit #1
 ⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Не подключался · 📊 0.6 из 50 ГБ (↑0.5 ↓0.1)
+Не подключался · 📊 0,6 из 50 ГБ (↑0,5 ↓0,1)
   [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
   [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
   [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
@@ -5354,7 +5354,7 @@ IP, подсеть или имя DynDNS; можно несколько
 ✅ устройство «Ноутбук» перенесено: <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> → <a href="https://t.me/test_bot?start=cl-5">Петя</a>
 
 ⚪ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-5">Петя</a>
-Не подключался · 📊 0.6 ГБ (↑0.5 ↓0.1)
+Не подключался · 📊 0,6 ГБ (↑0,5 ↓0,1)
   [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
   [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
   [🔀 Передать | d:reassign:4] [🛑 Блок | bl:dev:menu_block:4::-1]
@@ -5364,8 +5364,8 @@ IP, подсеть или имя DynDNS; можно несколько
 > press bl:dev:block:3:silent:-1
 = edit #1
 ⛔ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
 
 ⛔ Заблокировано: администратором (тихо)
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
@@ -5383,8 +5383,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5422,8 +5422,8 @@ IP, подсеть или имя DynDNS; можно несколько
 
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5438,8 +5438,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5470,8 +5470,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 2 (2 устройства) · ⏳ Истекают: 1 · 📦 Без профиля: 1
-📊 Трафик за 09.26: 6.7 ГБ
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: 6,7 ГБ
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5539,8 +5539,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5564,8 +5564,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 3 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5577,7 +5577,7 @@ IP, подсеть или имя DynDNS; можно несколько
 > press d:open:4
 = edit #1
 ⏳ <b>Ноутбук</b> · <code>10.8.1.5</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Не подключался · 📊 0.6 ГБ (↑0.5 ↓0.1)
+Не подключался · 📊 0,6 ГБ (↑0,5 ↓0,1)
 
 ⏳ приглашение другу ждёт активации
   [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
@@ -5646,8 +5646,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5669,8 +5669,8 @@ IP, подсеть или имя DynDNS; можно несколько
 > press d:connect_menu:3
 = edit #1
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-Был в сети только что · 📊 3.6 ГБ (↑3 ↓0.6)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+Был в сети только что · 📊 3,6 ГБ (↑3 ↓0,6)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | d:gen_link:3] [🔳 QR | d:gen_qr:3] [📄 Файл | d:gen_file:3]
   [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
   [🔀 Передать | d:reassign:3] [🛑 Блок | bl:dev:menu_block:3::-1]
@@ -5713,8 +5713,8 @@ IP, подсеть или имя DynDNS; можно несколько
 
 💳 бессрочная
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5767,8 +5767,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [✅ Разблок | bl:cli:menu_unblock:3::-1]
   [⛔ Телефон | d:open:3]
@@ -5784,8 +5784,8 @@ IP, подсеть или имя DynDNS; можно несколько
 💳 🟢 до 15.09.27 · 365 дн. · год, с 15.09
 ⏸️ Пауза: 28 из 56 дн.
 📱 2 из 3 · 🇷🇺 вкл на всех
-📊 4.2 ГБ (↑3.5 ↓0.7)
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 4,2 ГБ (↑3,5 ↓0,7)
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [⏱ Продлить | c:extend:3] [✏️ Изменить | c:edit:3]
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [🟢 Телефон | d:open:3]
@@ -5891,8 +5891,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5921,8 +5921,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5952,8 +5952,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6044,8 +6044,8 @@ IP, подсеть или имя DynDNS; можно несколько
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7209,8 +7209,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi (дом 1)</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7225,8 +7225,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> проверяется
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7241,8 +7241,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟠 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> не отвечает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7257,8 +7257,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🔴 недоступен — <a href="https://t.me/test_bot?start=gw-1">NASPi</a>, <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не отвечают
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7273,8 +7273,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🔴 недоступен, <a href="https://t.me/test_bot?start=gw-1">NASPi</a> не отвечает, <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7289,8 +7289,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-2">Pi4</a> · <a href="https://t.me/test_bot?start=gw-1">резерв</a> проверяется
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7568,8 +7568,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8392,8 +8392,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8492,8 +8492,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8531,8 +8531,8 @@ NASPi — 🟢 Активен
 📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
-📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
-└ 🇷🇺 РФ-доступ: 0.6 ГБ
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
