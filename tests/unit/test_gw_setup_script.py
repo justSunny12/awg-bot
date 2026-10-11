@@ -859,7 +859,7 @@ def _link_apply_block(script: str) -> tuple[str, str]:
     return script[start:mode], script[mode:end]
 
 
-def _link_host(tmp_path, *, up: bool = True, syncconf_rc: int = 0):
+def _link_host(tmp_path, *, up: bool = True, syncconf_rc: int = 0, up_rc: int = 0):
     """Шлюз для --link-apply: awg, awg-quick, ip и nft записывают вызовы в
     журнал; `up` — поднят ли интерфейс линка (ip link show). install и cmp —
     настоящие: что легло на место конфига, видно по файлу."""
@@ -867,8 +867,11 @@ def _link_host(tmp_path, *, up: bool = True, syncconf_rc: int = 0):
     log = tmp_path / "calls.log"; log.write_text("", encoding="utf-8")
     fake_cmd(bin_dir / "awg", f'echo "awg $*" >> {log}\n'
                               f'[ "$1" = syncconf ] && exit {syncconf_rc}\nexit 0\n')
+    # up_rc — чем кончается `awg-quick up` (первый вызов; повторный — возврат прежнего — успешен)
     fake_cmd(bin_dir / "awg-quick", f'echo "awg-quick $*" >> {log}\n'
-                                    '[ "$1" = strip ] && echo "[Interface]"\nexit 0\n')
+                                    '[ "$1" = strip ] && echo "[Interface]"\n'
+                                    f'if [ "$1" = up ] && [ ! -f {tmp_path}/up.done ]; then : > {tmp_path}/up.done; exit {up_rc}; fi\n'
+                                    'exit 0\n')
     fake_cmd(bin_dir / "ip", f'echo "ip $*" >> {log}\n'
                              f'[ "$1" = link ] && exit {0 if up else 1}\nexit 0\n')
     fake_cmd(bin_dir / "nft", f'echo "nft $*" >> {log}\nexit 0\n')
@@ -879,11 +882,11 @@ def _link_host(tmp_path, *, up: bool = True, syncconf_rc: int = 0):
 
 def _link_apply(script, tmp_path, new_text: str, *, installed: str | None, up: bool = True,
                 allow: Path | None = None, syncconf_rc: int = 0, env: dict | None = None,
-                src_missing: bool = False):
+                src_missing: bool = False, up_rc: int = 0):
     """Прогнать режим --link-apply под sh: (CompletedProcess, журнал вызовов,
     файл установленного конфига)."""
     from awgbot.util import wgconf
-    bin_dir, log, conf_dir, guard = _link_host(tmp_path, up=up, syncconf_rc=syncconf_rc)
+    bin_dir, log, conf_dir, guard = _link_host(tmp_path, up=up, syncconf_rc=syncconf_rc, up_rc=up_rc)
     dst = conf_dir / "awglink.conf"
     if installed is not None:
         dst.write_text(installed, encoding="utf-8")
@@ -1012,3 +1015,43 @@ def test_link_apply_reports_a_failed_syncconf(script, tmp_path):
     r, calls, _ = _link_apply(script, tmp_path, new, installed=LINK, syncconf_rc=1)
     assert r.returncode == 1 and "awg syncconf отказал" in r.stdout, r.stdout
     assert "link: " not in r.stdout
+
+
+def test_link_apply_puts_the_previous_conf_back_when_the_link_does_not_come_up(script, tmp_path):
+    """Новый Endpoint не поднялся (`awg-quick up` упал): прежний конфиг
+    возвращается на место и поднимается — шлюз не остаётся без линка и без
+    канала, по которому пришла бы правка; код 1, строки итога нет."""
+    from tests.unit.test_wgconf_allowed import LINK
+    new = LINK.replace("Endpoint = vps.example.org:51821", "Endpoint = vps2.example.org:51821")
+    r, calls, dst = _link_apply(script, tmp_path, new, installed=LINK, up_rc=1)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert dst.read_text(encoding="utf-8") == LINK, "на месте остался не поднявшийся конфиг"
+    assert oct(dst.stat().st_mode & 0o777) == "0o600"
+    assert calls.count("awg-quick up awglink") == 2, f"прежний конфиг не подняли: {calls}"
+    assert "link: " not in r.stdout and "прежний конфиг линка возвращён" in r.stdout
+    assert not (dst.parent / "awglink.conf.before").exists(), "копия прежнего конфига осталась"
+
+
+def test_link_apply_puts_the_previous_conf_back_when_syncconf_fails(script, tmp_path):
+    """syncconf отказал: интерфейс жив на прежних значениях — файл на диске
+    обязан совпасть с ними, иначе следующий реассерт поднял бы непроверенное."""
+    from tests.unit.test_wgconf_allowed import LINK
+    new = LINK.replace("PersistentKeepalive = 25-35", "PersistentKeepalive = 25")
+    r, calls, dst = _link_apply(script, tmp_path, new, installed=LINK, syncconf_rc=1)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert dst.read_text(encoding="utf-8") == LINK, "после отказа syncconf на месте новый конфиг"
+    assert not [c for c in calls if c.startswith("awg-quick up")], "интерфейс жив — поднимать нечего"
+
+
+def test_link_apply_uses_the_interface_subnets_the_agent_passed(script, tmp_path):
+    """Подсети интерфейсов агент передаёт скрипту тем же списком, по которому
+    судил сам: оба рубежа решают одинаково. Пересечение с переданной подсетью —
+    отказ, даже если маршрутов такой подсети на хосте не видно."""
+    from tests.unit.test_wgconf_allowed import LINK
+    bad = LINK.replace("AllowedIPs = 10.8.1.0/24, 10.99.99.0/30",
+                       "AllowedIPs = 10.8.1.0/24, 10.99.99.0/30, 192.168.70.0/24")
+    r, calls, dst = _link_apply(script, tmp_path, bad, installed=LINK,
+                                env={"PEER_HOME_NETS": "192.168.70.0/24", "IFACE_NETS": "192.168.70.0/25"})
+    assert r.returncode == 1 and "пересекается" in r.stderr, r.stdout + r.stderr
+    assert dst.read_text(encoding="utf-8") == LINK
+

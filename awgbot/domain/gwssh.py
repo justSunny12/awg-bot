@@ -78,7 +78,7 @@ class GwSshMixin:
     _SSH_STATIC_TTL = 10 * 60
     _SSH_REASSERT_RETRY = 10 * 60          # повтор реассерта, пока таблица не на порту sshd
     _ssh_lock = threading.Lock()
-    _ssh_last_reassert = 0.0
+    _ssh_last_reassert = float("-inf")   # monotonic: 0.0 на свежезагруженном шлюзе откладывал бы первый повтор
 
     def _ssh_static(self) -> tuple:
         from awgbot.infra import nftguard, sshd

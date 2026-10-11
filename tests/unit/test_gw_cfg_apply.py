@@ -91,6 +91,7 @@ class _Host(_Unit):
         self.how = "syncconf"
         self.link_rc = 0
         self.link_runs: list[tuple[str, str]] = []      # (имя файла, текст) — что подали скрипту
+        self.etc_seen: list[dict] = []                  # каталог транзакции в момент каждого --link-apply: имя → (текст, права)
         self.handshake = int(time.time())
         self.events: list[str] = []                     # последовательность действий на хосте
 
@@ -104,6 +105,8 @@ class _Host(_Unit):
             src = Path(argv[2])
             text = src.read_text(encoding="utf-8")
             self.link_runs.append((src.name, text))
+            self.etc_seen.append({f.name: (f.read_text(encoding="utf-8"), f.stat().st_mode)
+                                  for f in self.etc.iterdir() if f.is_file()})
             self.events.append(f"link:{src.name}")
             if self.link_rc:
                 return _cp(self.link_rc, b"", "ОШИБКА: конфиг линка не прошёл проверку — не установлен\n".encode())
@@ -314,8 +317,11 @@ def test_keepalive_change_goes_by_syncconf_without_the_unit(svc, host):
     assert host.text() == UNIT_TEXT, "юнит переписан, хотя env не менялся"
     assert not [c for c in host.calls if c[:2] == ["systemctl", "daemon-reload"]]
     assert host.link_applies == ["link.next"]
-    assert gwcfg.link_print((host.etc / "link.prev").read_text(encoding="utf-8")) == gwcfg.link_print(LINK)
-    assert gwcfg.link_print((host.etc / "link.next").read_text(encoding="utf-8")) == gwcfg.link_print(LINK_NEW_KA)
+    seen = host.etc_seen[0]                             # в момент применения: прежний — для отката
+    assert gwcfg.link_print(seen["link.prev"][0]) == gwcfg.link_print(LINK)
+    assert gwcfg.link_print(seen["link.next"][0]) == gwcfg.link_print(LINK_NEW_KA)
+    assert not (host.etc / "link.next").exists() and not (host.etc / "link.prev").exists(), (
+        "после фиксации файлы транзакции с ключом линка остались на диске")
     assert host.installed_link_print() == gwcfg.link_print(LINK_NEW_KA)
     assert host.restarts == 1
     assert res["ack"]["applied"] == ["env", "link"] and res["note"].endswith("применено: конфиг линка"), res["note"]
@@ -323,10 +329,13 @@ def test_keepalive_change_goes_by_syncconf_without_the_unit(svc, host):
 
 
 def test_link_files_are_private(svc, host):
-    """В link.next и link.prev — приватный ключ и PSK линка."""
+    """В link.next и link.prev — приватный ключ и PSK линка: пока они на диске,
+    читает их только root; после фиксации их нет вовсе."""
     svc.apply_cfg(_doc(link=LINK_NEW_KA))
+    seen = host.etc_seen[0]
     for name in ("link.next", "link.prev"):
-        assert (host.etc / name).stat().st_mode & 0o077 == 0, f"{name} читается не только root"
+        assert seen[name][1] & 0o077 == 0, f"{name} читается не только root"
+        assert not (host.etc / name).exists(), f"{name} остался после фиксации"
 
 
 def test_restarted_link_with_a_fresh_handshake_is_kept(svc, host, monkeypatch):
@@ -352,7 +361,9 @@ def test_restarted_link_that_did_not_come_up_is_rolled_back(svc, host, monkeypat
     assert host.link_applies == ["link.next", "link.prev"], host.link_applies
     assert host.installed_link_print() == gwcfg.link_print(LINK), "прежний конфиг линка не вернулся"
     assert host.text() == UNIT_TEXT, "юнит не вернулся к прежнему тексту"
-    assert host.restarts == 2, "после отката обвязку не перевыставили"
+    # проба линка — до реассерта: не поднялся — сразу откат, реассерт один (уже
+    # с прежним юнитом и прежним конфигом), не «новый, потом прежний»
+    assert host.restarts == 1, "после отката обвязку не перевыставили (или перевыставили дважды)"
     assert clock.slept >= txn.PROBE_SECONDS - 3, f"пробовали линк {clock.slept} с — меньше обещанного"
     failed = res["ack"]["failed"]
     assert set(failed) == {"env", "link"} and "не поднялся" in failed["link"], failed
@@ -456,6 +467,6 @@ def test_link_next_is_rendered_canonically(svc, host):
     """На диск уходит канонический текст со штампом контракта: снимок читает
     штамп, а лишние комментарии в конфиг для awg-quick не попадают."""
     svc.apply_cfg(_doc(link=LINK_NEW_KA))
-    text = (host.etc / "link.next").read_text(encoding="utf-8")
+    text = host.etc_seen[0]["link.next"][0]
     assert text.startswith("# awg-bot: контракт линка 1\n")
     assert text == wgconf.render(wgconf.parse(LINK_NEW_KA), "link", stamp="1")

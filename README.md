@@ -278,9 +278,12 @@ awgbot/
              qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
              nets       подсети: нормализация, разбор, пересечение
              kvfile     файлы KEY=VALUE (env, состояние)
+             wgconf     конфиги WireGuard из канала шлюза: разбор, белые списки ключей
+                        и правило AllowedIPs — данными install/gw-wg-allow.list
   infra/     db/        SQLite (per-thread): ядро, схема (миграций нет: схема минимума
                         3.2.0 полная; schema_gap — сторож старой копии), миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
+             nftguard/  файервол хоста — таблица awg_bot_guard: common, collect, render, apply
              routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq — пакет
                         по разделам: base, selfcheck, slots, sets, marking, policy,
                         probes, feeds (шапка «два плеча» — в __init__)
@@ -298,12 +301,17 @@ awgbot/
                         gateway_link/ (common, link, slots, peernets, mark, agentbot) —
                         сами пакеты, составной миксин собирается в __init__
              gateway/   механика агента шлюза: base, link, monitor, tgmark, transit,
-                        report, ownlists, peersvc, bundle, egress; GatewayServices в __init__
+                        report, ownlists, peersvc, bundle, egress, cfg/ (документ
+                        конфигурации с сервера: prints, txn, mailphrase, ask, apply);
+                        GatewayServices в __init__
+             gwcfg/     документ конфигурации шлюза по каналу — общий для обеих ролей:
+                        doc (разделы, cfg/cfg_ack), check (проверки), prints (отпечатки)
              configgen  генерация vpn:// и .conf (кодек формата приложения)
              routing    чистая логика: нормализация доменов, генерация dnsmasq
              evidence   улики живости: активный слот на ВПС, выход наружу у агента
   bot/       texts, keyboards, guides   презентация; texts/routing/ — пакет
-                        (slots, card, dialogs, assign, access)
+                        (slots, card, dialogs, assign, access), texts/gateway/ — пакет
+                        (common, panel, transit, bundle, access, ask)
              filters, middleware, callbacks, states   glue aiogram
              roles      словарь роли установки (BotRole: MAIN, GATEWAY) — слова роли,
                         ключи настроек, блоки, корень настроек, переводчик колбэков
@@ -328,8 +336,9 @@ awgbot/
              handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
                         selfops, blocks, broadcast) + friend + routing + settings/ (пакет
                         ролевых разделов основного бота: render, gwmark, slots, sections,
-                        inputs, cycles, actions; роутер один — _router) + gateway (панель
-                        и ролевые разделы агента) + settingscore (шаги ввода настроек,
+                        inputs, cycles, actions; роутер один — _router) + gateway/ (пакет
+                        агента: panel, sections, dialogs, bundle, access, transit, apply,
+                        ask) + settingscore (шаги ввода настроек,
                         общие для ролей) + updates_flow + …
   runtime/   main         сборка и запуск (диспетчер роли — из bot/routers)
              preflight    самопроверка окружения на старте (fatal / warning)

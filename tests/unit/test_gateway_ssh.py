@@ -255,7 +255,7 @@ def test_failed_reassert_is_reported_and_retried(svc, host, monkeypatch):
     host.acts.clear()
     svc.ssh_reconcile(host.info())                        # таблица всё ещё на 22
     assert ("reassert",) not in host.acts, "повтор не чаще раза в 10 минут"
-    svc._ssh_last_reassert = 0.0
+    svc._ssh_last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     svc.ssh_reconcile(host.info())
     assert ("reassert",) in host.acts, "троттлинг истёк — повтор"
 

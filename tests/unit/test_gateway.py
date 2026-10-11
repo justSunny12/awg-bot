@@ -355,7 +355,7 @@ def test_tg_mark_ensure_reasserts_the_table_once_per_interval(svc, monkeypatch):
     monkeypatch.setattr(gwguard, "reassert", lambda: (calls.append(1), (True, ""))[1])
     # реассерт смотрит, не запущен ли юнит уже, — без настоящего systemctl
     monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
-    svc._last_reassert = 0.0
+    svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 1
     assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 0, "второй раз подряд — ждём интервал"
     assert calls == [1]
@@ -621,7 +621,7 @@ def _reassert_host(svc, monkeypatch, state="active"):
     unit = {"ActiveState": state}
     monkeypatch.setattr(gwguard, "reassert", lambda: (calls.append(1), (True, ""))[1])
     monkeypatch.setattr(gwguard, "unit_state", lambda: dict(unit))
-    svc._last_reassert = 0.0
+    svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     return calls, unit
 
 
@@ -662,7 +662,7 @@ def test_a_reassert_does_not_hold_the_apply_lock(svc, monkeypatch):
     assert gw._APPLY_LOCK.acquire(blocking=False), "замок применения остался занят"
     gw._APPLY_LOCK.release()
     from awgbot.infra import gwguard
-    svc._last_reassert = 0.0
+    svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     monkeypatch.setattr(gwguard, "reassert", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     with pytest.raises(RuntimeError):
         svc._reassert_throttled("x")

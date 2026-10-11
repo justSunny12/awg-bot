@@ -197,11 +197,12 @@ def test_set_subscription_dates_heals_never_deadlock(services, fake_awg):
     правку дат; status пересчитывается, period_kind сохраняется."""
     from awgbot.core.enums import SubStatus
     from awgbot.util import timeutil
-    from datetime import datetime
+    from datetime import timedelta
     cid = services.db.create_client("p", 1, timeutil.now_iso(), None, "c", period_kind="never")
     services.db.activate_client("c", 900)
-    ns = datetime(2025, 10, 10, 15, 33, 21, tzinfo=timeutil.TZ)
-    ne = datetime(2026, 10, 10, 15, 33, 21, tzinfo=timeutil.TZ)
+    # «будущая» дата — от сегодняшней, а не строкой: зашитая дата однажды становится прошлым
+    ne = (timeutil.now() + timedelta(days=365)).replace(microsecond=0)
+    ns = ne - timedelta(days=365)
     s, e, _ = services.set_subscription_dates(cid, ns, ne)
     c = services.db.get_client(cid)
     assert c.period_end is not None                 # дедлок вылечен

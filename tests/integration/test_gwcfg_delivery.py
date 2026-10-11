@@ -216,8 +216,10 @@ def test_the_link_conf_gets_the_server_host_and_the_live_listen_port(services, s
     for section, key in (("Interface", "PrivateKey"), ("Peer", "PublicKey"), ("Peer", "PresharedKey"),
                          ("Interface", "Jc"), ("Interface", "H4"), ("Interface", "Address")):
         assert conf.get(section, key) == src.get(section, key), f"{key} не тот, что в источнике"
-    fixed = {k: src.get(s, k) for s, k in (("Interface", "PrivateKey"), ("Peer", "PublicKey"),
-                                            ("Peer", "PresharedKey"))}
+    # стоящее на шлюзе — целиком, как его собирает агент (cfg_link_fixed): ключи, PSK и
+    # обфускация; проверка двусторонняя — недостающий в стоящем ключ документ добавить не вправе
+    fixed = {k: v for _s, items in src.sections for k, v in items
+             if k in ("PrivateKey", "PublicKey", "PresharedKey") or (k[:1] in "JSHI" and k[1:].isalnum())}
     gwcfg.check_link(text, services.gwcfg_env(slot), link_cidr=slot.link_cidr, address="10.99.99.2/30",
                      fixed=fixed)
     assert services.gwcfg_link_error(1) == ""

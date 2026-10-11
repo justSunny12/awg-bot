@@ -95,7 +95,7 @@ def test_missing_table_is_reasserted_not_reissued(svc, monkeypatch):
     calls = []
     _lan_on(monkeypatch, home=None, active=False, up=None)
     monkeypatch.setattr(gwguard, "reassert", lambda: calls.append(1) or (True, ""))
-    svc._last_reassert = 0.0
+    svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
     assert by["таблица локальной сети"].ok is False and "перевыставляю" in by["таблица локальной сети"].detail
@@ -124,7 +124,7 @@ def test_moved_lan_interface_triggers_a_reassert(svc, monkeypatch):
     calls = []
     _lan_on(monkeypatch, home=_home(), live=("br0", "192.168.68.222"))
     monkeypatch.setattr(gwguard, "reassert", lambda: calls.append(1) or (True, ""))
-    svc._last_reassert = 0.0
+    svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
     assert calls == [1] and "br0" in by["применение локальной сети"].detail

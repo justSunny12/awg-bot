@@ -1101,8 +1101,12 @@ conf_core() {         # конфиг без AllowedIPs, PersistentKeepalive, к�
 if [ "$MODE" = "link-apply" ]; then
     step "Конфиг линка из упр. канала → $HOST_CONF_DIR/$LINK_IF.conf"
     [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || { say "ОШИБКА: нужен файл: $0 --link-apply <конфиг>"; exit 2; }
-    # подсети интерфейсов шлюза (кроме туннелей): с ними AllowedIPs пересекаться не вправе
-    IFACE_NETS="$(ip -4 route show scope link 2>/dev/null | awk -v l="$LINK_IF" '$1 ~ /\// && $3 != l && $3 !~ /^awg/ { print $1 }' | paste -sd' ' - 2>/dev/null || true)"
+    # подсети интерфейсов шлюза: с ними AllowedIPs пересекаться не вправе. Агент
+    # передаёт тот же список, по которому судил сам (IFACE_NETS, пусть и пустой), —
+    # оба рубежа решают по одному; вручную без него — маршруты scope link кроме туннелей
+    if [ -z "${IFACE_NETS+x}" ]; then
+        IFACE_NETS="$(ip -4 route show scope link 2>/dev/null | awk -v l="$LINK_IF" '$1 ~ /\// && $3 != l && $3 !~ /^awg/ { print $1 }' | paste -sd' ' - 2>/dev/null || true)"
+    fi
     if ! wg_conf_check "$SRC_CONF" link; then
         say "ОШИБКА: конфиг линка не прошёл проверку — не установлен"
         exit 1
@@ -1120,6 +1124,22 @@ if [ "$MODE" = "link-apply" ]; then
     _old_allowed="$(conf_allowed_ips "$_dst")"
     _new_allowed="$(conf_allowed_ips "$SRC_CONF")"
     mkdir -p "$HOST_CONF_DIR"
+    # прежний конфиг — рядом, 0600: не поднялся новый — он возвращается на место
+    # и поднимается, а не остаётся на диске до ручной правки
+    _before="$_dst.before"
+    _has_before=0
+    if [ -f "$_dst" ]; then
+        _um="$(umask)"; umask 077
+        cp "$_dst" "$_before"; _has_before=1
+        umask "$_um"
+    fi
+    link_restore() {   # $1 — поднять ли прежний после возврата
+        if [ "$_has_before" = "1" ]; then
+            install -m 600 "$_before" "$_dst"; rm -f "$_before"
+            if [ "${1:-0}" = "1" ]; then "$AWG_QUICK" up "$LINK_IF" >/dev/null 2>&1 || true; fi
+            say "  прежний конфиг линка возвращён"
+        fi
+    }
     run "install -m 600 '$SRC_CONF' $_dst"
     if [ "$_light" = "1" ]; then
         # syncconf: ключи и Endpoint те же — линк не перезапускается, сессия
@@ -1130,6 +1150,7 @@ if [ "$MODE" = "link-apply" ]; then
         else
             rm -f "$_strip"
             say "ОШИБКА: awg syncconf отказал"
+            link_restore 0          # интерфейс жив на прежних значениях — вернуть только файл
             exit 1
         fi
         for _n in $_new_allowed; do run "ip route replace $_n dev $LINK_IF 2>/dev/null || true"; done
@@ -1149,9 +1170,14 @@ if [ "$MODE" = "link-apply" ]; then
         if [ -f "$GUARD_FILE" ]; then
             run "nft -f $GUARD_FILE || echo '  прежняя таблица защиты не загрузилась'"
         fi
-        run "$AWG_QUICK up ${LINK_IF}"
+        if ! "$AWG_QUICK" up "${LINK_IF}"; then
+            say "ОШИБКА: линк на новом конфиге не поднялся"
+            link_restore 1
+            exit 1
+        fi
         say "link: restarted"
     fi
+    rm -f "$_before"
     exit 0
 fi
 
