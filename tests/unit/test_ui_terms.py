@@ -217,14 +217,17 @@ def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
     быть любая машина; «квартира» и «домашний» — та же история про локальную
     сеть (термины: «локальная сеть», «локальные подсети», «канал шлюза»). В живой
     документации (включая README и комментарии conf), в коде и в скриптах их
-    нет (комментарии тоже); журнал
-    изменений — история, его не правим; README называет запрещённые слова в
-    описании этого сторожа."""
+    нет (комментарии тоже); в тестах и эталонах экранов — тоже (данные
+    фикстур рисуются на экранах); журнал изменений — история, его не правим;
+    README называет запрещённые слова в описании этого сторожа, а сам этот
+    файл — в своих шаблонах."""
     repo = REPO
     files = [p for p in (repo / "docs").glob("*.md") if p.name != "CHANGELOG.md"]
     files += [repo / "README.md"] + sorted((repo / "conf").glob("*.yaml"))
     files += sorted((repo / "awgbot").rglob("*.py")) + sorted((repo / "tools").glob("*.py"))
     files += sorted((repo / "install").glob("*.sh")) + [repo / "awg-bot.sh"]
+    files += [p for p in sorted((repo / "tests").rglob("*.py")) if p.resolve() != pathlib.Path(__file__).resolve()]
+    files += sorted((repo / "tests" / "screens").glob("*.txt"))
     found = [f"{p.relative_to(repo)}:{i}" for p in files
              for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
              if any(root in line.lower() for root in ("малин", "квартир", "домашн"))]

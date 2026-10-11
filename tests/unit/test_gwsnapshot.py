@@ -3,11 +3,11 @@
 запрещённые имена, инвариант «в сеть не ходим», дельта, приём недоверенных
 данных.
 
-Снимок — не описание машины в квартире, а ответ на три вопроса, которые задаёт
+Снимок — не описание машины в локальной сети, а ответ на три вопроса, которые задаёт
 сам ВПС. Два сторожа здесь важнее остальных тестов файла: список имён (без него
 в снимок со временем натечёт всё, что «и так снимается») и запрет сетевых
 вызовов (без него сборка снимка каждым тиком превратится в периодический поход
-наружу с адреса квартиры — ровно тот маячок, ради избавления от которого
+наружу с адреса локальной сети — ровно тот маячок, ради избавления от которого
 переписывали keepalive линка и зонд живости).
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ FORBIDDEN = ("temp", "cpu", "ram", "disk", "throttled", "smart", "uptime_seconds
 
 
 class _Pi:
-    """Малина под снимком: что стоит в юните обвязки, что в таблице, какой
+    """Шлюз под снимком: что стоит в юните обвязки, что в таблице, какой
     конфиг линка и какое поколение поставки. Ни одного настоящего чтения с
     хоста — всё берётся отсюда."""
 
@@ -170,7 +170,7 @@ def _no_network(monkeypatch):
 def test_collecting_a_snapshot_touches_neither_the_network_nor_a_subprocess(pi, monkeypatch):
     """Инвариант этапа, а не оговорка в скобках. Снимок снимается каждым тиком
     монитора; поле, требующее запроса наружу, превратило бы отрисовку чужого
-    экрана в периодический поход с адреса квартиры. Этот тест и должен
+    экрана в периодический поход с адреса локальной сети. Этот тест и должен
     сломаться у того, кто добавит поле «ну это же всего один запрос»."""
     _no_network(monkeypatch)
     snap = pi.snap()
@@ -181,7 +181,7 @@ def test_collecting_a_snapshot_touches_neither_the_network_nor_a_subprocess(pi, 
 def test_the_agent_snapshot_of_a_whole_service_stays_local_too(tmp_path, pi, monkeypatch):
     """Тот же инвариант на боевой точке входа: gw_snapshot() берёт то, что тик
     уже снял, и своего nft не зовёт. Ходит в сеть здесь — значит ходит на живой
-    малине каждые три минуты."""
+    шлюзе каждые три минуты."""
     db = Database(tmp_path / "gw.db")
     db.init_schema()
     svc = GatewayServices(db)
@@ -197,7 +197,7 @@ def test_the_agent_snapshot_of_a_whole_service_stays_local_too(tmp_path, pi, mon
 
 def test_a_new_release_on_github_does_not_change_the_snapshot_by_a_byte(pi, monkeypatch):
     """Информации об обновлениях в снимке нет вовсе. Иначе релиз — событие,
-    никак не связанное ни с квартирой, ни с сервером, — породил бы дельту у всех
+    никак не связанное ни с локальной сетью, ни с сервером, — породил бы дельту у всех
     слотов почти одновременно, а синхронный всплеск на нескольких линках сам по
     себе рисунок."""
     from awgbot.infra import updates
@@ -341,7 +341,7 @@ def test_plumbing_generation_tells_new_old_and_missing():
 # ── приём недоверенных данных ────────────────────────────────────────────────
 
 def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
-    """Снимок приходит с малины, а она может быть скомпрометирована: для ВПС это
+    """Снимок приходит со шлюза, а она может быть скомпрометирована: для ВПС это
     недоверенные данные для отрисовки, и ничего больше. Поле на мегабайт не
     должно ни лечь в БД, ни доехать до экрана."""
     raw = {"bundle": {"lan_mode": "1", "home_subnets": "Я" * 5000, "чужое": "x"},
@@ -410,8 +410,8 @@ def test_collect_carries_the_agent_bot_as_two_strings(pi):
     """Агент знает своего бота по getMe на старте. Поле — всегда две строки:
     без getMe пустые, а не выдуманные и не None (сервер хранит строки и по
     пустому username ссылку не рисует)."""
-    snap = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Шлюз квартиры", "id": 7})
-    assert snap["agent_bot"] == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}, \
+    snap = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Шлюз локальной сети", "id": 7})
+    assert snap["agent_bot"] == {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}, \
         "в снимок ушло лишнее или не то из ответа getMe"
     for missing in ({}, None, {"username": None, "name": None}):
         assert pi.snap(agent_bot=missing)["agent_bot"] == {"username": "", "name": ""}, missing
@@ -445,7 +445,7 @@ def test_sanitize_keeps_a_real_telegram_username(username):
     "naspi_bot\n", "naspi_bot\nx", "", "a\"onclick=\"x", "bot.example.com",
 ])
 def test_sanitize_blanks_anything_that_is_not_a_username(username):
-    """username уходит в адрес ссылки `https://t.me/<username>`. Малина может
+    """username уходит в адрес ссылки `https://t.me/<username>`. Шлюз может
     быть скомпрометирована: всё, кроме того, что выдаёт Telegram, — пусто, и
     ссылки нет вовсе, а не ссылка на чужой адрес или разорванная разметка."""
     out = gwsnapshot.sanitize({"agent_bot": {"username": username, "name": "Шлюз"}})

@@ -11,7 +11,7 @@ LinkClient и настоящий `GatewayServices`, а у получателя �
 id подменены в PATH).
 
 Цена ошибки: записи, которые ездят по кругу, — рестарт dnsmasq соседней сети
-на каждом такте (кэш DNS всей квартиры); записи, которые не снимаются, —
+на каждом такте (кэш DNS всей локальной сети); записи, которые не снимаются, —
 серверы соседа в Finder после выключения доступа; запись на адрес вне
 маршрута — Finder ведёт в никуда; незнакомый вид, рвущий сессию, — канал в
 петле переподключений у всех, кто не обновился.
@@ -144,7 +144,7 @@ async def test_services_of_one_gateway_reach_the_neighbour_exactly_once(pair):
     """Главный путь: X назвал свой SMB-сервер — Y получает его одним `peer_svc`
     сразу, как только снимок показал, что подсети X у него применены. Тот же
     список от X повторно и такты живости не шлют ничего: каждый лишний
-    `peer_svc` на малине — рестарт dnsmasq."""
+    `peer_svc` на шлюзе — рестарт dnsmasq."""
     s = pair.services
     x = await _hello(pair, 1)
     await x.send("svc", {"items": [NAS]})
@@ -255,7 +255,7 @@ async def test_a_neighbour_silent_for_over_a_day_is_not_served(pair, hours, serv
 
 
 async def test_the_server_drops_what_is_not_in_the_senders_subnet(pair):
-    """С малины приходят недоверенные данные: адрес вне подсети слота (из БД,
+    """Со шлюза приходят недоверенные данные: адрес вне подсети слота (из БД,
     не из снимка), грязное имя, чужой тип — выброшены на ВПС и никуда не едут."""
     s = pair.services
     _y_snap(s)
@@ -337,7 +337,7 @@ class _Pi(GatewayServices):
 
 
 class _Host:
-    """Малина под агентом: юнит обвязки (`env`), avahi-browse (`browse`) и
+    """Шлюз под агентом: юнит обвязки (`env`), avahi-browse (`browse`) и
     настоящий помощник awg-lan-services.sh с подменёнными dnsmasq/systemctl/id."""
 
     def __init__(self, tmp_path, monkeypatch, env: dict):
@@ -458,13 +458,13 @@ async def test_the_receiver_drops_addresses_outside_its_own_peer_subnets(pair, r
     text = host.conf.read_text(encoding="utf-8")
     assert "192.168.1.10" in text
     for leak in ("192.168.68.7", "203.0.113.9", "192.168.1.30", "server="):
-        assert leak not in text, f"в конфиг dnsmasq малины попало «{leak}»"
+        assert leak not in text, f"в конфиг dnsmasq шлюза попало «{leak}»"
 
 
 async def test_the_source_sends_on_connect_and_a_day_of_unchanged_scans_is_silent(pair, real_agent):
     """Источник: свой список уходит при подключении, изменение — сразу. Сутки
     обзоров без изменений (96 по 15 минут) и тактов живости — ни байта в канал
-    ни с малины, ни с ВПС: периодический обмен внутри туннеля — маячок."""
+    ни со шлюза, ни с ВПС: периодический обмен внутри туннеля — маячок."""
     s = pair.services
     _y_snap(s)
     y = await _hello(pair, 2)
@@ -577,7 +577,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     assert services_line(card) == "🗂 SMB: извне — 1 · 🟢 доступны", services_line(card)
     assert agent.services_applied_hash() == H_NAS
 
-    # дальше тишина: ни повторной доставки с ВПС, ни повторного ack с малины
+    # дальше тишина: ни повторной доставки с ВПС, ни повторного ack со шлюза
     for _ in range(3):
         await pair.srv.deliver_all()
         await linkclient.on_tick(agent)
@@ -598,7 +598,7 @@ class _Clock:
 
 
 def _full_disk(monkeypatch, path) -> dict:
-    """Запись файла path() на малине падает ENOSPC, пока state["full"]."""
+    """Запись файла path() на шлюзе падает ENOSPC, пока state["full"]."""
     import builtins
     import errno
     from awgbot.domain import gateway as gw_mod
@@ -683,7 +683,7 @@ async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair,
 async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real_agent, monkeypatch):
     """Своих списков на шлюзе нет («файлов своих списков нет — раздел не
     применился») — отказ не поломка, повтор его не вылечит. Сутки тиков
-    (480 по три минуты, часы идут) — ни байта с малины и ни одного own_set с
+    (480 по три минуты, часы идут) — ни байта со шлюза и ни одного own_set с
     ВПС сверх первого: иначе раз в 10 минут пакет в туннеле, вечно."""
     s = pair.services
     monkeypatch.setattr(config, "ROLE", "gateway")         # иначе on_tick не видит клиента
@@ -717,7 +717,7 @@ async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real
 
 async def test_a_services_list_after_an_accepted_delivery_does_not_resend_the_records(pair):
     """`svc` от слота, который прошлые записи принял, — просто его список:
-    повторять ему записи соседей незачем (лишний рестарт dnsmasq квартиры).
+    повторять ему записи соседей незачем (лишний рестарт dnsmasq локальной сети).
     Ветка отказа — в сквозном сценарии с полным диском выше."""
     s = pair.services
     _x_known(s)

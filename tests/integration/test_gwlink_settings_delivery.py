@@ -9,8 +9,8 @@
 `_Unit` из юнит-тестов применения) — подменён только systemctl.
 
 Цена ошибки: сервер, который шлёт настройки в каждом такте, перезапускает
-обвязку малины (dnsmasq, файервол) без конца; сервер, который не шлёт, молча
-оставляет квартиру со старыми подсетями, пока бот уверяет, что «доставлено».
+обвязку шлюза (dnsmasq, файервол) без конца; сервер, который не шлёт, молча
+оставляет локальную сеть со старыми подсетями, пока бот уверяет, что «доставлено».
 
 Слот здесь без режима «за шлюзом — без VPN»: фиды локальной сети — отдельный
 этап и отдельные тесты, этим сценариям они только мешали бы.
@@ -147,7 +147,7 @@ async def test_a_drifted_gateway_gets_the_settings_right_after_its_snapshot(serv
 async def test_the_same_set_is_not_sent_twice_in_one_session(services, link):
     """Шлюз не применил (или ещё применяет) — сервер не долбит его тем же набором
     каждым тактом живости: иначе неудачное применение перезапускало бы обвязку
-    малины раз в минуту."""
+    шлюза раз в минуту."""
     gw = await _connect(link, _drifted(services))
     assert await _settings(gw) is not None
     await gw.send("ack", {"ok": False, "changed": ["HOME_SUBNETS"], "error": "exit 1", "hash": ""})
@@ -172,7 +172,7 @@ async def test_a_new_edit_on_the_server_goes_out_in_the_same_session(services, l
 
 
 async def test_a_new_session_is_a_new_attempt(services, link):
-    """Малина перезагрузилась и переподключилась со старыми значениями. Память
+    """Шлюз перезагрузилась и переподключилась со старыми значениями. Память
     «уже слали» принадлежит сессии — иначе расхождение осталось бы навсегда."""
     gw = await _connect(link, _drifted(services))
     assert await _settings(gw) is not None
@@ -198,7 +198,7 @@ async def test_changes_made_while_the_channel_is_down_arrive_when_it_comes_back(
     assert services.gwlink_config_drift(services.db.gateway(1)), "сценарий без расхождения ничего не проверяет"
     assert services.gw_bundle_drift_notes() == [], "шлюз не на связи, а бот уже шлёт уведомление"
 
-    # малина вернулась с тем, что стояло до правки
+    # шлюз вернулась с тем, что стояло до правки
     gw2 = await _connect(link, {**_installed(services), "home_subnets": "192.168.68.0/24"})
     msg = await _settings(gw2)
     assert msg is not None, "канал поднялся, а отложенное не доехало"
@@ -254,13 +254,13 @@ def test_nothing_is_due_without_a_snapshot_or_its_configuration_block(services, 
     assert services.gwlink_settings_due(gw) == services.gwlink_settings_want(gw)
 
 
-# ── время отправки снимка и часы малины ─────────────────────────────────────
+# ── время отправки снимка и часы шлюза ─────────────────────────────────────
 
 async def test_clock_skew_is_measured_from_the_send_time_on_the_wire(services, link):
     """Время снимка приезжает в конверте unix-числом. Храни его как есть — сверка
-    часов никогда бы не срабатывала, и разошедшиеся часы малины (TLS к Telegram,
+    часов никогда бы не срабатывала, и разошедшиеся часы шлюза (TLS к Telegram,
     расписания) не видел бы никто: канал их не проверяет, но он единственный,
-    кто может о них сказать. Здесь часы малины на 200 с впереди."""
+    кто может о них сказать. Здесь часы шлюза на 200 с впереди."""
     host, port = link._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.2.0"})
@@ -327,7 +327,7 @@ async def pi(services, link, tmp_path, monkeypatch):
     client.start()
     await _until(lambda: services.gwlink_snapshot(1) and client._writer is not None)
     assert services.gwlink_config_drift(services.db.gateway(1)) == [], (
-        "стартовый юнит малины разошёлся с выдаваемым — сценарий начат не с того")
+        "стартовый юнит шлюза разошёлся с выдаваемым — сценарий начат не с того")
     try:
         yield {"unit": unit, "client": client, "chat": chat}
     finally:
@@ -337,7 +337,7 @@ async def pi(services, link, tmp_path, monkeypatch):
 
 async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(services, link, pi):
     """Вся польза этапа одним сценарием: человек поменял подсети на ВПС — через
-    секунды они в юните малины, обвязка перезапущена один раз, агент сказал об
+    секунды они в юните шлюза, обвязка перезапущена один раз, агент сказал об
     этом в своём чате, сервер получил «ок» и новый снимок, расхождения нет, и
     уведомления о расхождении нет. Сессия канала при этом та же самая —
     применение не рвёт канал, который его принёс."""
@@ -350,7 +350,7 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
     await link.deliver_all()
     await _until(lambda: services.gwlink_snapshot(1)["bundle"]["home_subnets"] == "192.168.70.0/24")
 
-    assert unit.env()["HOME_SUBNETS"] == "192.168.70.0/24", "юнит малины не переписан"
+    assert unit.env()["HOME_SUBNETS"] == "192.168.70.0/24", "юнит шлюза не переписан"
     assert unit.restarts == 1, f"обвязку перезапустили {unit.restarts} раз"
     await _until(lambda: services.gwlink_ack(1))
     assert services.gwlink_ack(1)["ok"] is True
@@ -368,7 +368,7 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
 
 
 async def test_a_refused_delivery_rolls_back_and_says_so_on_both_ends(services, link, pi):
-    """Скрипт обвязки новых значений не принял. Малина возвращает прежний юнит,
+    """Скрипт обвязки новых значений не принял. Шлюз возвращает прежний юнит,
     человек в чате агента узнаёт, что не применилось и почему; карточка на ВПС
     показывает отказ; тот же набор в этой сессии больше не шлётся — обвязка не
     перезапускается по кругу."""
@@ -425,7 +425,7 @@ async def test_a_compromised_server_cannot_smuggle_a_line_into_the_unit(services
 async def test_a_hanging_restart_does_not_break_the_channel(services, link, pi):
     """Скрипт обвязки завис дольше таймаута. Канал обязан пережить это: шлюз
     откатывает юнит и отвечает отказом. Если вместо этого исключение уронит
-    сессию, новая сессия пришлёт тот же набор, малина увидит его в юните (запись
+    сессию, новая сессия пришлёт тот же набор, шлюз увидит его в юните (запись
     прошла, отката не было) и ответит «ок» — отказ превратится в ложный успех."""
     unit, client = pi["unit"], pi["client"]
     writer = client._writer

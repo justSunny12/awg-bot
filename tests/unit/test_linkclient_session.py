@@ -282,7 +282,7 @@ async def test_a_connect_that_hangs_is_given_up_in_bounded_time(monkeypatch, con
 async def test_the_session_mark_follows_the_session(vps):
     """Признак «сессия открыта» живёт у домена агента: пока канал на связи, своё
     скачивание фидов молчит. Сессия кончилась — признак снят, иначе после
-    обрыва малина не пошла бы за фидами никогда."""
+    обрыва шлюз не пошла бы за фидами никогда."""
     agent = _Agent()
     client = linkclient.LinkClient(agent)
     seen: list = []
@@ -552,7 +552,7 @@ async def test_hello_names_our_nonce_and_everything_after_is_signed_with_the_ser
     """Повтор отсекают нонсы: hello несёт нонс шлюза, дальше шлюз подписывает
     нонсом сервера. Подпиши клиент снимок чем-то другим — слушатель на ВПС
     оборвёт каждую сессию на первом же снимке, и канал не поднимется ни на
-    одной малине."""
+    одной шлюзе."""
     conn = vps.answers()
     await linkclient.LinkClient(_Agent())._connect_once()
     hello = conn.hello()
@@ -642,7 +642,7 @@ async def test_nothing_goes_out_before_the_server_named_its_nonce(vps):
 
 @pytest.mark.parametrize("shift", [3600, -3600])
 async def test_server_clock_an_hour_off_does_not_break_the_session(vps, monkeypatch, shift):
-    """Малина без RTC поднялась раньше NTP и ушла на час. Раньше канал молча
+    """Шлюз без RTC поднялась раньше NTP и ушла на час. Раньше канал молча
     умирал ровно тогда, когда должен был сказать «часы разошлись»; теперь часы
     в проверку не входят, и сессия живёт."""
     real_pack = gwlink.pack

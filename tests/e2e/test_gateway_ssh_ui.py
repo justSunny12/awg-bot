@@ -212,7 +212,7 @@ async def test_filter_on_and_off_are_immediate(svc, fake_bot):
 
 
 async def test_owner_refusal_comes_right_on_the_button(svc, fake_bot):
-    """На малине с OMV «Изменить порт» сразу показывает отказ — без приглашения
+    """На шлюзе с OMV «Изменить порт» сразу показывает отказ — без приглашения
     и ввода: лишний шаг у целевых пользователей ни к чему."""
     svc.screen = _scr(owner="omv", owner_port=22)
     cb, nav = _cb(fake_bot)

@@ -341,7 +341,7 @@ def test_uplink_policy_survives_foreign_rules_with_masked_fwmark(monkeypatch):
 
 def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypatch):
     """systemd-networkd при перезапуске сносит чужие ip rule и маршруты: аплинк
-    жив, метка стоит, а Telegram агента уходит домашнему провайдеру. Агент
+    жив, метка стоит, а Telegram агента уходит локальному провайдеру. Агент
     должен увидеть пропажу и перевыставить оба — idempotent-командами ip."""
     import subprocess
     calls: list = []

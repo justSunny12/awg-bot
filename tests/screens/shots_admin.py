@@ -2918,7 +2918,7 @@ SHOTS += [
 # ── шаг 5: канал до шлюза в карточке слота — ветки из e2e ───────────────────
 # Слот NASPi с VPN-транзитом, хендшейк линка свежий (сессия канала — «на
 # связи»), резолвер слота — 10.9.1.1. Снимок кладётся так, как его принял бы
-# канал; возраст снимка и часы малины — от NOW.
+# канал; возраст снимка и часы шлюза — от NOW.
 
 def _ch_base(services, mp):
     mp.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
@@ -2935,7 +2935,7 @@ def _ch(bundle: dict | None = None, *, online: bool = True, closed: bool = False
         skew_min: int = 0, **kw):
     """Снимок слота 1: bundle — поверх установленного (None — всё доехало);
     online — сессия канала открыта; closed — закрыта после снимка; age_h —
-    снимок принят столько часов назад; skew_min — часы малины спешат."""
+    снимок принят столько часов назад; skew_min — часы шлюза спешат."""
     def step(services, mp):
         at = NOW - _dt.timedelta(hours=age_h)
         snap = {"bundle": {**_installed(services), **(bundle or {})}, "link_contract": "1", "plumbing_gen": "new",
@@ -3015,7 +3015,7 @@ def _nav_live(services, mp):
     services.db.set_nav_message_id(config.ADMIN_ID, 1)
 
 
-# ── шаг 5: файл конфигурации слота 2 в чате и итоги с шлюза ─────────────────
+# ── шаг 5: файл конфигурации слота 2 в чате и итоги со шлюза ─────────────────
 
 def _file2(plain: bool):
     """В чате админа лежит файл слота 2 (#40) под карточкой или инструкцией (#39)."""
@@ -3051,7 +3051,7 @@ SHOTS += [
     _card(1, _chan(1, _ch({"home_subnets": LAN2, "resolver": ""}, online=False, closed=True, age_h=2)),
           "канал лежит, конфигурация разошлась — пункты и возраст", "adm.gw.card.ch.drift.dead"),
     _card(1, _chan(1, _ch({"home_subnets": "<b>x</b> & y"}, online=False, closed=True)),
-          "пункт расхождения с малины экранирован", "adm.gw.card.ch.drift.escaped"),
+          "пункт расхождения со шлюза экранирован", "adm.gw.card.ch.drift.escaped"),
     _card(1, _chan(1, _ch({"home_subnets": LAN2, "resolver": ""})),
           "канал жив, расхождение уходит каналом", "adm.gw.card.ch.drift.live"),
     _card(1, _chan(1, _ch({"home_subnets": LAN2}), _ch_ack(False, "<b>LAN-интерфейс</b> не найден")),
@@ -3153,7 +3153,7 @@ SHOTS += [
          steps=[("start", "gw-2"), ("press", GwSlotCB(action="label", slot=2)), ("press", _LABEL_CANCEL),
                 ("press", _CARD2)],
          data=_slots(2), title="карточка с главной после отмены подписи — «Назад» на главную"),
-    # ── файл слота 2: «В меню» и итоги с шлюза ───────────────────────────
+    # ── файл слота 2: «В меню» и итоги со шлюза ───────────────────────────
     Shot("adm.gw.bundle.card.gone", role="admin",
          steps=[("press", GwSlotCB(action="bundle", slot=2)), ("call", _drop_slot2, "слот снят"),
                 ("press", SetCB(sec="rt", act="do", key="bundle_cancel", val="2"))],
@@ -3260,7 +3260,7 @@ SHOTS += [
 
 
 # ── подтверждение: ключи линка и конфиг аплинка (К1–К4), диалог смены ключей,
-# финал переезда с шлюзом на прежнем аплинке ─────────────────────────────────
+# финал переезда со шлюзом на прежнем аплинке ─────────────────────────────────
 # Агент слота умеет подтверждение (confirm1): сессия открыта с cfg1 и confirm1.
 # Состояние перехода ключей — то, что пишет стадия на ВПС (gwlink_rekey_<слот>);
 # сами режимы скрипта линка в снимках не выполняются.

@@ -172,7 +172,7 @@ def _gw_warns(monkeypatch, unit_state: dict) -> list[str]:
     import subprocess
     from types import SimpleNamespace
     from awgbot.infra import gwguard
-    monkeypatch.setattr(subprocess, "run",                     # systemctl вне малины нет
+    monkeypatch.setattr(subprocess, "run",                     # systemctl вне шлюза нет
                         lambda *a, **k: SimpleNamespace(returncode=0, stdout=b"", stderr=b""))
     monkeypatch.setattr(gwguard, "table_info", lambda: None)
     monkeypatch.setattr(gwguard, "unit_state", lambda: unit_state)

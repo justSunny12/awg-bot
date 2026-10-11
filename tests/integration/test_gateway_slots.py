@@ -296,7 +296,7 @@ def test_lan_subnets_are_parsed_and_conflicts_reported(two, services):
 
 
 def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, services, monkeypatch):
-    """Маячок наружу с домашнего адреса каждые полминуты — сигнатура: резерв
+    """Маячок наружу с локального адреса каждые полминуты — сигнатура: резерв
     зондируется редко, с джиттером; между зондами живость — по хендшейку."""
     admin, g1, g2 = two
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 5)

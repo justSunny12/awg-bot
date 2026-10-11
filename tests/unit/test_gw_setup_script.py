@@ -1,5 +1,5 @@
 """
-Проверки routing-gw-setup.sh — обвяза шлюза (малины).
+Проверки routing-gw-setup.sh — обвяза шлюза (шлюза).
 
 Шлюз стоит в чужом доме, за NAT, и попасть на него сложнее, чем на ВПС. Его
 отказы видны только со стороны сервера и выглядят одинаково — «интернета за
@@ -144,11 +144,11 @@ def test_gateway_itself_is_closed_to_tunnel_clients(script):
     assert "ip saddr @admin4 accept" in tin
     assert "ip saddr $LINK_PEER tcp dport $SSH_PORT accept" in tin
     assert tin.strip().endswith("drop")
-    assert "policy accept" in body.split("chain input", 1)[1].split("}", 1)[0], "домашняя сеть не запирается"
+    assert "policy accept" in body.split("chain input", 1)[1].split("}", 1)[0], "локальная сеть не запирается"
 
 
 def test_admin_devices_reach_the_home_lan_others_do_not(script):
-    """Устройствам админа с туннеля открыта домашняя сеть, прочим — изоляция:
+    """Устройствам админа с туннеля открыта локальная сеть, прочим — изоляция:
     исключение стоит ВЫШЕ drop по приватным диапазонам."""
     fwd = script.split("chain forward", 1)[1].split("}", 1)[0]
     assert fwd.index('ip saddr @admin4 accept') < fwd.index("@private4 drop")
@@ -190,8 +190,8 @@ def test_networkd_is_told_to_keep_foreign_rules_and_policy_is_reasserted(script)
 
 def test_guard_masquerades_the_agent_into_the_uplink(script):
     """Локальный пакет агента выбирает исходный адрес до метки в output и без
-    маскарада улетает в аплинк с домашним адресом — ВПС его отбрасывает. Маскарад
-    в аплинк ставит сам скрипт, а не чужое правило домашней схемы."""
+    маскарада улетает в аплинк с локальным адресом — ВПС его отбрасывает. Маскарад
+    в аплинк ставит сам скрипт, а не чужое правило локальной схемы."""
     assert 'UPLINK_MASQ="        oifname \\"$UPLINK_IF\\" masquerade"' in script
     body = script.split("GUARDEOF", 1)[1]
     post = body.split("chain postrouting", 1)[1].split("}", 1)[0]
@@ -307,7 +307,7 @@ def test_github_goes_into_the_uplink_like_telegram(script):
 
 def test_uplink_unit_retries_until_it_wins(script):
     """awg-quick@<аплинк> на загрузке падает, пока DNS не резолвит Endpoint; пять
-    отказов за десять секунд — и systemd сдаётся навсегда: малина без Telegram и
+    отказов за десять секунд — и systemd сдаётся навсегда: шлюз без Telegram и
     без списков. Лимит снимаем, перезапускаем до победы."""
     step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split("# ── 1. конфиг", 1)[0]
     assert "awg-quick@$UPLINK_IF.service.d" in step0
@@ -331,7 +331,7 @@ def test_networkd_leaves_awg_interfaces_alone(script):
 
 def test_rp_filter_is_loose_everywhere_the_uplink_answers(script):
     """Ответы из интернета приходят в аплинк, а обратный путь до источника по
-    main лежит через домашний интерфейс — строгий rp_filter такое роняет.
+    main лежит через локальный интерфейс — строгий rp_filter такое роняет.
     Loose (2), не 0: проверка остаётся, выключать её незачем. Аплинк — из PostUp:
     в sysctl-файл его не вписать, интерфейса на момент применения ещё нет."""
     apply_part = script.split('step "1a.', 1)[1]
@@ -343,7 +343,7 @@ def test_rp_filter_is_loose_everywhere_the_uplink_answers(script):
 
 def test_uplink_gets_mss_clamp_next_to_its_masquerade(script):
     """Транзитный TCP из локальной сети в туннель без клампа виснет на больших
-    ответах. Свойство аплинка, не домашнего слоя."""
+    ответах. Свойство аплинка, не локального слоя."""
     assert 'UPLINK_MSS="        oifname \\"$UPLINK_IF\\" tcp flags syn / syn,rst tcp option maxseg size set rt mtu"' in script
     body = script.split("GUARDEOF", 1)[1]
     fwd = body.split("chain forward", 1)[1].split("}", 1)[0]
@@ -366,7 +366,7 @@ def test_peer_subnets_are_let_in_from_the_link_above_the_private_drop(script):
 
 def test_foreign_forward_drop_gets_accepts_for_our_interfaces(script):
     """docker ставит политику FORWARD DROP в ip filter; accept в нашей inet-таблице
-    её не отменяет — транзит квартиры умирал бы молча. Правила в его цепочке,
+    её не отменяет — транзит локальной сети умирал бы молча. Правила в его цепочке,
     только когда политика DROP, снимаются при откате."""
     sec = script.split('step "3a. Чужая политика FORWARD"', 1)[1].split('step "4.', 1)[0]
     assert "grep -q '^-P FORWARD DROP'" in sec
@@ -385,12 +385,12 @@ def test_ssh_filter_chain_is_always_there_but_jumped_only_when_enabled(script):
     body = script.split("GUARDEOF", 1)[1]
     assert "chain ssh_in {" in body and "set ssh_allow4 {" in body and "set server4 {" in body
     assert '[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        meta nfproto ipv4 tcp dport $SSH_PORT jump ssh_in"' \
-        in script, "без nfproto v6-пакет из квартиры доходил бы до drop"
+        in script, "без nfproto v6-пакет из локальной сети доходил бы до drop"
     inp = body.split("chain input", 1)[1].split("}", 1)[0]
     assert "$SSH_JUMP" in inp and inp.index("jump tunnel_in") < inp.index("$SSH_JUMP"), \
         "туннель разбирается своей цепочкой раньше"
     sin = body.split("chain ssh_in", 1)[1].split("}", 1)[0]
-    assert "ip saddr @lan4 accept" in sin, "локальная сеть открыта всегда — запереться из квартиры нельзя"
+    assert "ip saddr @lan4 accept" in sin, "локальная сеть открыта всегда — запереться из локальной сети нельзя"
     assert "@private4" not in sin, "RFC1918 целиком пускал бы соседей по CGNAT (100.64/10) как своих"
     assert "set lan4 {" in body and "elements = { $LAN_ELEMS }" in body
     assert "ip saddr @server4 accept" in sin and "ip saddr @ssh_allow4 accept" in sin
@@ -428,7 +428,7 @@ def _chain(table: str, name: str) -> list[str]:
 @pytest.mark.parametrize("peer", ["192.168.50.0/24", ""])
 def test_ssh_in_lets_in_the_lan_behind_the_other_gateway(script, peer):
     """Доступ между подсетями за шлюзами включён — админ из локальной сети
-    другого шлюза заходит на эту малину по SSH, как из своей. Правило стоит
+    другого шлюза заходит на эту шлюз по SSH, как из своей. Правило стоит
     после established и своей сети и до drop: ниже drop оно не работало бы,
     а человек, для которого фильтр SSH включён, терял бы вход, ради которого
     подсети соединяли. Набор пуст (доступ выключен) — правило то же и ничего
@@ -575,7 +575,7 @@ def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
 # ── сервисы соседних сетей ───────────
 
 def _svc_host(tmp_path):
-    """Малина для кусков раздела 5: каталоги во временной папке, systemctl и
+    """Шлюз для кусков раздела 5: каталоги во временной папке, systemctl и
     apt-get записывают вызовы. PATH — только подставной каталог (с sh и rm),
     чтобы настоящий avahi-browse хоста не решал за тест."""
     import os

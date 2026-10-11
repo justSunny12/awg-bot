@@ -7674,7 +7674,7 @@ NASPi — 🟢 Активен
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
 
-### adm.gw.card.ch.drift.escaped — пункт расхождения с малины экранирован
+### adm.gw.card.ch.drift.escaped — пункт расхождения со шлюза экранирован
 > press gws:card:1:
 = edit #1
 🛰 <b>NASPi</b> — 🟢 Активен

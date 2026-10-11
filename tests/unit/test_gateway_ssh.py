@@ -20,7 +20,7 @@ def svc(tmp_path):
 
 
 class _Host:
-    """Состояние малины: что слушает sshd, кто владеет конфигом, что в
+    """Состояние шлюза: что слушает sshd, кто владеет конфигом, что в
     таблице; и журнал действий агента."""
 
     def __init__(self, listening=(22,), owner=None, chains=("input", "tunnel_in", "forward", "ssh_in"),

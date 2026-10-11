@@ -94,8 +94,8 @@ def test_cache_returns_what_was_written_for_the_current_token(two_slots):
     токена, а не сам токен (state попадает в резервные копии)."""
     s = two_slots
     s.set_gw_bot_token(TOKEN1, 1)
-    s.set_gw_bot_identity(1, "naspi_gw_bot", "Шлюз квартиры")
-    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+    s.set_gw_bot_identity(1, "naspi_gw_bot", "Шлюз локальной сети")
+    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}
     raw = s.db.get_state("gw_bot_me_1")
     assert TOKEN1 not in raw, "токен бота шлюза не должен лежать в state открытым"
     assert json.loads(raw)["token_id"] == hashlib.sha256(TOKEN1.encode()).hexdigest()[:12]
@@ -180,10 +180,10 @@ def test_screen_state_carries_the_agent_bot(two_slots, monkeypatch):
 async def test_refresh_stores_username_and_first_name(two_slots, tg):
     s = two_slots
     s.set_gw_bot_token(TOKEN1, 1)
-    tg.bots[TOKEN1] = ("naspi_gw_bot", "Шлюз квартиры")
+    tg.bots[TOKEN1] = ("naspi_gw_bot", "Шлюз локальной сети")
     assert await gwbotme.refresh(s, 1) is True
     assert tg.calls == [TOKEN1], "getMe должен идти токеном ЭТОГО слота"
-    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}
     assert tg.closed == 1, "сессия временного Bot не закрыта — утечка соединений на каждый getMe"
 
 
@@ -361,9 +361,9 @@ def test_replaced_token_falls_back_to_the_snapshot(two_slots):
     s = two_slots
     s.set_gw_bot_token(TOKEN1, 1)
     s.set_gw_bot_identity(1, "old_gw_bot", "Старый")
-    _snap_in(s, 1, {"username": "naspi_gw_bot", "name": "Шлюз квартиры"})
+    _snap_in(s, 1, {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"})
     s.set_gw_bot_token(TOKEN1_NEW, 1)
-    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}
 
 
 def test_snapshot_with_empty_username_gives_no_link(two_slots):

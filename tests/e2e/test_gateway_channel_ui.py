@@ -293,7 +293,7 @@ def test_the_neighbour_subnets_line_names_at_most_eight_and_survives_an_empty_li
     assert "192.168.7.0/24" in out and "192.168.8.0/24" not in out, "список не ограничен восемью"
     ch["peer_nets"] = {"ok": False, "missing": ["1" * 40]}
     assert "1" * 18 in _channel_block(ch, True) and "1" * 19 not in _channel_block(ch, True), \
-        "элемент списка с малины не ограничен"
+        "элемент списка со шлюза не ограничен"
     ch["peer_nets"] = {"ok": False, "missing": []}
     assert "⚠️ Связь подсетей: на шлюзе нет подсетей — " in _channel_block(ch, True), (
         "пустой список отказа — строка без предмета")

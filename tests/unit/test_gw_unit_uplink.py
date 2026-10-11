@@ -1,9 +1,9 @@
 """
 Конфиг аплинка шлюза (UPLINK_B64) — только на время применения бандла.
 
-Внутри UPLINK_B64 — конфиг клиентского туннеля малины с приватным ключом.
+Внутри UPLINK_B64 — конфиг клиентского туннеля шлюза с приватным ключом.
 Прежние выпуски закрепляли его в юните awg-link-gw.service строкой
-Environment и оставляли юнит 0644: любой локальный пользователь малины (OMV,
+Environment и оставляли юнит 0644: любой локальный пользователь шлюза (OMV,
 шары) читал ключ. Теперь переменная живёт только в окружении применения, юнит
 пишется без неё и с правами 0600, а реассерт из юнита (загрузка, рестарт)
 аплинк не переставляет — ему нечем.
@@ -103,7 +103,7 @@ def test_the_unit_is_readable_only_by_root_even_over_an_old_0644_one(script, tmp
     unit.path.chmod(0o644)
     r = unit.write(script)
     assert r.returncode == 0, r.stderr
-    assert unit.mode() == 0o600, f"права юнита {oct(unit.mode())} — читает любой пользователь малины"
+    assert unit.mode() == 0o600, f"права юнита {oct(unit.mode())} — читает любой пользователь шлюза"
     assert SECRET not in unit.text() and UPLINK_B64 not in unit.text(), "секрет прежнего юнита пережил перезапись"
     r = unit.write(script)                        # повторное применение ничего не портит
     assert r.returncode == 0 and unit.mode() == 0o600
@@ -112,7 +112,7 @@ def test_the_unit_is_readable_only_by_root_even_over_an_old_0644_one(script, tmp
 # ── шаг 0: аплинк ставится только из бандла ──────────────────────────────────
 
 class _Machine:
-    """Малина для шага 0: каталог конфигов, аплинк по ключу, журнал команд."""
+    """Шлюз для шага 0: каталог конфигов, аплинк по ключу, журнал команд."""
 
     def __init__(self, tmp_path: Path, *, uplink: str = "awg0"):
         self.conf_dir = tmp_path / "amneziawg"
@@ -157,7 +157,7 @@ def _touches_uplink(calls: list[str]) -> list[str]:
 
 
 def test_a_reassert_without_the_uplink_config_leaves_the_uplink_alone(script, tmp_path):
-    """Загрузка малины: юнит зовёт скрипт с тем, что в нём закреплено, —
+    """Загрузка шлюза: юнит зовёт скрипт с тем, что в нём закреплено, —
     UPLINK_B64 там больше нет. Аплинк — связь агента с Telegram; реассерт не
     должен ни переставлять его конфиг, ни дёргать интерфейс."""
     pi = _Machine(tmp_path)

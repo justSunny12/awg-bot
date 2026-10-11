@@ -55,7 +55,7 @@ def test_an_empty_mode_is_a_dash_not_an_empty_word():
 
 
 def test_markup_from_the_gateway_is_escaped_in_html():
-    """Значение с малины с `<b>` и `&` доезжает текстом внутри <code>."""
+    """Значение со шлюза с `<b>` и `&` доезжает текстом внутри <code>."""
     out = drift_lines([("HOME_SUBNETS", H["HOME_SUBNETS"], "192.168.68.0/24", "<b>x</b>&")], html=True)
     assert out == ["локальные подсети: у сервера <code>192.168.68.0/24</code>, "
                    "на шлюзе <code>&lt;b&gt;x&lt;/b&gt;&amp;</code>"], out
@@ -64,11 +64,11 @@ def test_markup_from_the_gateway_is_escaped_in_html():
 @pytest.mark.parametrize("junk", ["<b>1</b>", "1<", "a&b"])
 def test_an_unknown_mode_value_from_the_gateway_is_escaped_too(junk):
     """Режим — единственное поле, которое печатается без <code>: известные
-    значения словами, а неизвестное — как пришло. «Как пришло» с малины в HTML
+    значения словами, а неизвестное — как пришло. «Как пришло» со шлюза в HTML
     без экранирования — ровно та дыра, от которой экранируют остальные поля:
     Telegram отвергнет напоминание целиком."""
     out = drift_lines([("LAN_MODE", H["LAN_MODE"], "1", junk)], html=True)[0]
-    assert junk not in out, f"значение с малины легло в HTML как есть: {out}"
+    assert junk not in out, f"значение со шлюза легло в HTML как есть: {out}"
     assert junk.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") in out, out
 
 

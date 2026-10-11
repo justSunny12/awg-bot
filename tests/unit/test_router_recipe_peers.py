@@ -125,7 +125,7 @@ def svc(tmp_path):
 
 def _unit(monkeypatch, tmp_path, body: str):
     """Настоящий юнит обвязки во временном каталоге — чтение идёт через
-    gwguard.unit_env, как на малине."""
+    gwguard.unit_env, как на шлюзе."""
     unit = tmp_path / "awg-link-gw.service"
     unit.write_text("[Service]\n" + body, encoding="utf-8")
     monkeypatch.setattr(gwguard.config, "GW_UNIT", unit.name)

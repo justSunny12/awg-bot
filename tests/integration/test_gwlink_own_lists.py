@@ -11,7 +11,7 @@ test_gwlink_services). Второй шлюз — сырой клиент `_Gw`; 
 id подменены в PATH).
 
 Цена ошибки: канон, который ездит по кругу, — рестарт dnsmasq на каждом
-такте у каждой квартиры и маячок в туннеле; правка, слитая дважды, —
+такте у каждой локальной сети и маячок в туннеле; правка, слитая дважды, —
 воскресший удалённый домен; канон старому агенту — вечное «отправлены»;
 правка, которую сервер счёл повтором, — домен есть на одном шлюзе и нет на
 остальных, а агент шлёт её на каждом тике.
@@ -431,7 +431,7 @@ def _heredoc(tag: str, var: str) -> str:
 
 
 class _Host:
-    """Малина под агентом: юнит обвязки (`env`), dnsmasq.d и настоящий
+    """Шлюз под агентом: юнит обвязки (`env`), dnsmasq.d и настоящий
     awg-lan-domain.sh; systemctl/dnsmasq/nft/dig/id подменены и пишут в лог.
     `old_script()` — обвязка старого образца (скрипт без sync), `reasserts` —
     сколько раз агент перевыставлял обвязку."""
@@ -499,7 +499,7 @@ ENV = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
 
 @pytest.fixture()
 async def pi(pair, tmp_path, monkeypatch):
-    """Малина слота 1: `host` и фабрика `up()` — агент (на той же БД после
+    """Шлюз слота 1: `host` и фабрика `up()` — агент (на той же БД после
     «перезапуска») с клиентом канала, уже на связи."""
     conf = tmp_path / "awglink.conf"
     conf.write_text(f"# awg-bot: контракт линка 1\n[Interface]\nPrivateKey = {PRIV}\n", encoding="utf-8")
@@ -620,7 +620,7 @@ async def test_the_first_sync_merges_the_gateways_list_and_restarts_dnsmasq_once
 
 
 async def test_an_offline_edit_and_a_restart_reach_the_canon_on_connect(pair, pi, monkeypatch):
-    """Канала нет: `awg-bot lan add` на малине ложится в очередь сразу (тик
+    """Канала нет: `awg-bot lan add` на шлюзе ложится в очередь сразу (тик
     монитора), монитор честно пишет «нет связи». Агент перезапустился —
     правка уходит под новой меткой при подключении, канон применяется без
     лишнего рестарта dnsmasq."""
@@ -777,7 +777,7 @@ async def test_a_failing_fill_leaves_the_answer_and_the_base_alone(pair, pi, cap
 @pytest.mark.parametrize("seeded", [False, True])
 async def test_a_day_of_ticks_without_edits_sends_not_a_byte(pair, pi, seeded):
     """Простой — ноль пакетов от синхронизации: сутки тиков монитора (480 по
-    три минуты) и тактов живости без правок — ни байта с малины, ни с ВПС.
+    три минуты) и тактов живости без правок — ни байта со шлюза, ни с ВПС.
     В том числе на свежем сервере, где канона ещё не было: поколение,
     созданное при первом чтении, обязано сохраниться, иначе каждый такт — новый
     отпечаток и новый канон."""
@@ -850,7 +850,7 @@ class _Clock:
 
 
 def _full_disk(monkeypatch, path) -> dict:
-    """Запись файла path() на малине падает ENOSPC, пока state["full"]."""
+    """Запись файла path() на шлюзе падает ENOSPC, пока state["full"]."""
     import builtins
     import errno
     from awgbot.domain import gateway as gw_mod
@@ -867,7 +867,7 @@ def _full_disk(monkeypatch, path) -> dict:
 
 
 async def test_a_canon_refused_for_a_full_disk_lands_after_the_fix_without_a_reconnect(pair, pi, monkeypatch):
-    """Диск малины полон — канон не записан, сервер видит «ошибка записи
+    """Диск шлюза полон — канон не записан, сервер видит «ошибка записи
     файла». Первые десять минут агент молчит; потом (диск уже почищен) на
     тике просит канон пустым own_ev, сервер присылает его снова в той же
     сессии, настоящий sync применяет, ответ ok. Дальше — ни байта.

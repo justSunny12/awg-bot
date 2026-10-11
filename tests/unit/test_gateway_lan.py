@@ -60,7 +60,7 @@ def test_lan_status_block_and_checks_when_healthy(svc, monkeypatch):
     assert by["резолвер"].ok is True and by["апстрим через аплинк"].ok is True
     assert by["таблица локальной сети"].ok is True and by["списки"].ok is True
     assert all(c.group == "lan" for c in checks), "свой стрик, не критичный"
-    assert "IPv6 на LAN" not in by, "IPv6 у клиентов режет резолвер (filter-AAAA), не sysctl на малине"
+    assert "IPv6 на LAN" not in by, "IPv6 у клиентов режет резолвер (filter-AAAA), не sysctl на шлюзе"
     assert by["трафик с роутера"].ok is None and by["DNS с роутера"].ok is None, "первый замер — не с чем сравнить"
 
 
@@ -214,7 +214,7 @@ def test_unit_env_reads_quoted_and_bare_values(tmp_path, monkeypatch):
 # ── апстрим по статистике dnsmasq, без запроса наружу ───────────────────────
 
 class _Stats:
-    """dnsmasq на малине: «отправлено / отказов» по апстримам; None — dig нет."""
+    """dnsmasq на шлюзе: «отправлено / отказов» по апстримам; None — dig нет."""
 
     def __init__(self, monkeypatch, sent=0, failed=0):
         self.value: dict | None = {"10.9.1.1#53": (sent, failed)}
@@ -235,7 +235,7 @@ def test_the_first_look_judges_by_what_dnsmasq_accumulated(svc, monkeypatch):
 
 
 def test_a_fresh_dnsmasq_that_sent_nothing_yet_is_not_an_unreadable_statistic(svc, monkeypatch):
-    """dnsmasq только что запустился, квартира спит — отправок ноль. Сказать
+    """dnsmasq только что запустился, локальная сеть спит — отправок ноль. Сказать
     «статистика не прочиталась» (серый вердикт) здесь неправда: прочиталась, и
     отказов в ней нет. Прошлого вердикта нет — значит считаем, что всё хорошо,
     как и в простое после первого взгляда."""
@@ -346,7 +346,7 @@ def test_lan_block_carries_the_first_local_subnet_for_the_recovery_note(svc, mon
 ], ids=["named", "unknown", "escaped"])
 def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, status, shown):
     """Строка DNS на экране локальной сети — через какой интерфейс идёт
-    апстрим, по UPLINK_IF из статуса скрипта: с двумя интерфейсами на малине
+    апстрим, по UPLINK_IF из статуса скрипта: с двумя интерфейсами на шлюзе
     «через аплинк» не говорит, куда смотреть. Скрипт не назвал — слово
     «аплинк»; имя экранировано (статус пишет скрипт, не бот)."""
     from awgbot.bot import texts
@@ -403,7 +403,7 @@ def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
 
 
 def test_no_avahi_is_grey_not_red(svc, monkeypatch):
-    """Малина без NAS и без avahi — нормальное состояние: ⚪, не 🔴."""
+    """Шлюз без NAS и без avahi — нормальное состояние: ⚪, не 🔴."""
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети по именам не "
@@ -462,7 +462,7 @@ def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeyp
 
 def test_a_red_own_lists_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):
     """Свои списки не применились (dnsmasq отверг канон) — 🔴 в мониторе, но
-    не авария: доступ квартиры держат прежние файлы. Ни «Обвязка шлюза
+    не авария: доступ локальной сети держат прежние файлы. Ни «Обвязка шлюза
     неисправна», ни «Локальная сеть без VPN» — сколько бы тиков ни держалось."""
     from awgbot.bot import texts
     from tests.unit.test_gateway import _quiet_status

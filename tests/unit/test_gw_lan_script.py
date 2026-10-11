@@ -3,7 +3,7 @@
 routing-gw-setup.sh и два вшитых в него скрипта: списки и персональные домены.
 
 Гоняем настоящий код скриптов с подменёнными ip/curl/nft/systemctl/dig: то,
-что уедет на малину, а не грепаем исходник там, где можно исполнить.
+что уедет на шлюз, а не грепаем исходник там, где можно исполнить.
 """
 from __future__ import annotations
 
@@ -36,10 +36,10 @@ def _sh(prog: str, *, env: dict, cwd=None) -> subprocess.CompletedProcess:
     return subprocess.run([SH, "-c", prog], capture_output=True, text=True, env=env, cwd=cwd)
 
 
-# ── интерфейс и адрес малины — из локальной подсети ──────────────────────────
+# ── интерфейс и адрес шлюза — из локальной подсети ──────────────────────────
 
 def test_lan_interface_is_found_by_home_subnet(script, tmp_path):
-    """По подсети из бота малина находит свой LAN-интерфейс и адрес: их не
+    """По подсети из бота шлюз находит свой LAN-интерфейс и адрес: их не
     спрашивают и не вшивают — они выводятся из того, что уже задано."""
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
     _fake(bin_dir, "ip", "cat <<'EOF'\n"
@@ -170,7 +170,7 @@ def test_lists_convert_feed_subtract_exceptions_and_load_subnets(lists_env):
 
 def test_lists_roll_back_a_feed_that_dnsmasq_rejects(lists_env):
     """dnsmasq --test отверг новый фид — прежний файл на месте, рестарта нет,
-    квартира не остаётся без DNS."""
+    локальная сеть не остаётся без DNS."""
     tool, dns_d, dump, log, env = lists_env
     (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
@@ -210,7 +210,7 @@ def test_lists_report_a_failed_feed_but_keep_going(lists_env):
 @pytest.fixture()
 def channel_env(lists_env, tmp_path):
     """Те же списки, но фиды привёз канал: каталог с domains.lst и nets.lst, а
-    curl записывает каждый вызов — адрес квартиры не должен ходить за фидами."""
+    curl записывает каждый вызов — адрес локальной сети не должен ходить за фидами."""
     tool, dns_d, dump, log, env = lists_env
     bin_dir = Path(env["PATH"].split(":", 1)[0])
     _fake(bin_dir, "curl", f'echo "curl $*" >> {log}\nexit 22\n')
@@ -223,7 +223,7 @@ def channel_env(lists_env, tmp_path):
 
 
 def test_channel_feeds_are_used_without_a_single_download(channel_env):
-    """Смысл этапа 3: фиды привёз сервер, и адрес квартиры за ними не ходит ни
+    """Смысл этапа 3: фиды привёз сервер, и адрес локальной сети за ними не ходит ни
     на GitHub, ни в Google. Проверки те же, что для скачанного."""
     tool, dns_d, dump, log, env, _feed = channel_env
     (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
@@ -240,7 +240,7 @@ def test_channel_feeds_are_used_without_a_single_download(channel_env):
 
 
 def test_a_broken_channel_feed_is_refused_like_a_downloaded_one(channel_env):
-    """Сервер прислал заглушку вместо фида (или его подменили). dnsmasq квартиры
+    """Сервер прислал заглушку вместо фида (или его подменили). dnsmasq локальной сети
     получает её не больше, чем получил бы скачанную: короткий фид отвергнут,
     прежний файл на месте."""
     tool, dns_d, dump, log, env, feed = channel_env
@@ -263,7 +263,7 @@ def test_a_channel_feed_that_dnsmasq_rejects_is_rolled_back(channel_env):
 
 def test_a_missing_channel_feed_is_named_as_such(channel_env):
     """Каталог пуст — сообщение говорит про канал, а не «фид не скачался»:
-    иначе человек пошёл бы чинить сеть малины, которая тут ни при чём."""
+    иначе человек пошёл бы чинить сеть шлюза, которая тут ни при чём."""
     tool, dns_d, dump, log, env, feed = channel_env
     (feed / "domains.lst").unlink()
     (feed / "nets.lst").unlink()
@@ -295,7 +295,7 @@ def test_home_table_keeps_its_sets_across_reasserts(script):
     rules = [ln for ln in home.splitlines() if ln.startswith("add rule $HOME_TABLE prerouting")]
     assert rules[0].endswith('iifname != "$LAN_IF" accept'), "из линка и аплинка — мимо маркировки"
     assert "meta pkttype host" in rules[1] and "!= $_net counter" in rules[1], \
-        "счётчик заворота — только unicast на MAC малины, до вердиктов: бродкасты фонят всегда"
+        "счётчик заворота — только unicast на MAC шлюза, до вердиктов: бродкасты фонят всегда"
     assert "@lan_ru4 accept" in rules[2], "исключения ВЫШЕ метки"
     assert "@lan_vpn_nets4 meta mark set $TG_MARK" in rules[3] and "@lan_vpn4 meta mark set $TG_MARK" in rules[4], \
         "та же метка, что у агента — правило и маршрут уже есть"
@@ -311,7 +311,7 @@ def test_resolver_goes_upstream_through_the_uplink(script):
     assert "bind-dynamic" in sec and "listen-address=127.0.0.1,%s" in sec and "no-hosts" in sec
     assert "Restart=on-failure" in sec and "AmbientCapabilities" not in sec, "ambient-набор ядро чистит при setuid"
     assert "address=/use-application-dns.net/" in sec and "address=/dns.google/" in sec
-    assert "filter-AAAA" in sec, "IPv6 у клиентов режется ответами резолвера, не sysctl на малине"
+    assert "filter-AAAA" in sec, "IPv6 у клиентов режется ответами резолвера, не sysctl на шлюзе"
     assert "disable_ipv6" not in sec and "rp_filter = 2" in sec
     # DNSMASQ_EXCEPT=lo init-скрипт Debian превращает в except-interface=lo, а тот
     # глушит listen-address=127.0.0.1: скрипт эту строку больше не пишет, только
@@ -435,7 +435,7 @@ def test_lists_run_normally_once_the_lock_is_taken(lists_env):
 def test_lists_check_the_feed_with_the_same_conf_dir_as_debian(lists_env):
     """init-скрипт Debian подключает conf-dir ключом, а не строкой в
     dnsmasq.conf: голый `dnsmasq --test` наш фид не видел вовсе и одобрял
-    любой мусор, после которого рестарт оставлял квартиру без DNS."""
+    любой мусор, после которого рестарт оставлял локальную сеть без DNS."""
     tool, dns_d, dump, log, env = lists_env
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
@@ -455,7 +455,7 @@ def _failing_restart(bin_dir: Path, log: Path, fails: int = 1) -> None:
 
 def test_a_feed_dnsmasq_cannot_start_with_is_rolled_back(lists_env):
     """--test пропустил, а демон с новым фидом не поднялся (память, дубли с
-    чужим файлом). Раньше код был 0 и файл оставался — dnsmasq лежал, квартира
+    чужим файлом). Раньше код был 0 и файл оставался — dnsmasq лежал, локальная сеть
     без DNS, агент думал, что всё применено. Теперь прежний фид возвращается,
     демон поднимается с ним, код 1."""
     tool, dns_d, dump, log, env = lists_env
@@ -497,7 +497,7 @@ def test_the_rollback_copy_is_removed_only_after_a_successful_restart(lists_env)
 
 def _ovr_fragment(script: str) -> str:
     """Кусок lan_apply от уборки /etc/default/dnsmasq до сборки оверрайда
-    включительно — то, что уедет на малину, без правки."""
+    включительно — то, что уедет на шлюз, без правки."""
     sec = script.split('step "5. VPN-транзит"', 1)[1]
     start = sec.index("    # /etc/default/dnsmasq НЕ трогаем: DNSMASQ_EXCEPT init-скрипт Debian")
     end = sec.index('    rm -f "$_ovr_want"\n', start) + len('    rm -f "$_ovr_want"\n')
@@ -554,7 +554,7 @@ def test_the_resolvconf_hook_is_cleared_only_where_it_exists(ovr_env):
 
 def test_an_unchanged_override_is_not_rewritten_and_does_not_reload(ovr_env):
     """Оверрайд собирается при каждом старте юнита обвязки: переписывать его и
-    дёргать daemon-reload без изменений — рестарт dnsmasq всей квартиры на
+    дёргать daemon-reload без изменений — рестарт dnsmasq всей локальной сети на
     ровном месте."""
     go, ovr, default, unit, log = ovr_env
     go(UPLINK_IF="awg0")
@@ -567,7 +567,7 @@ def test_an_unchanged_override_is_not_rewritten_and_does_not_reload(ovr_env):
 
 
 def test_a_missing_default_file_is_not_created(ovr_env):
-    """На чистой малине файл, созданный до установки пакета, становится его
+    """На чистой шлюзе файл, созданный до установки пакета, становится его
     conffile: dpkg без терминала падает на вопросе о нём."""
     go, ovr, default, unit, log = ovr_env
     assert go(UPLINK_IF="awg0").returncode == 0
@@ -576,7 +576,7 @@ def test_a_missing_default_file_is_not_created(ovr_env):
 
 # ── сервисы соседних сетей: awg-lan-services.sh ─────────────────────────────
 # файл записей собирает агент из
-# данных, пришедших каналом с ВПС; помощник — последний рубеж на малине.
+# данных, пришедших каналом с ВПС; помощник — последний рубеж на шлюзе.
 
 def _svc_file() -> str:
     """Файл так, как его соберёт агент-получатель: из общего модуля."""
@@ -734,7 +734,7 @@ _EDGE_OK_LINES = [
 @pytest.mark.parametrize("locale", ["C", "C.UTF-8", "en_US.UTF-8"])
 def test_shell_whitelist_and_python_line_res_agree(svc_env, locale):
     """Белый список живёт в двух местах: LINE_RES в Python (агент) и grep в
-    помощнике на малине. Разойдись они — либо агент соберёт файл, который
+    помощнике на шлюзе. Разойдись они — либо агент соберёт файл, который
     помощник отвергнет навсегда (записи соседей не лягут), либо помощник
     пропустит строку, которую Python считает запрещённой. Гоняем каждую строку
     собранного Python-ом файла и каждую подмешанную запрещённую через оба и
@@ -832,7 +832,7 @@ def _fill(sets: Path, name: str, ips) -> None:
 @pytest.fixture()
 def own_env(domain_env):
     """domain_env с dig по таблице и nft с памятью; dump — каталог блокировки,
-    исходника фида и слепка lan_vpn4 (тот же, что у скрипта фидов на малине)."""
+    исходника фида и слепка lan_vpn4 (тот же, что у скрипта фидов на шлюзе)."""
     tool, dns_d, log, env = domain_env
     _mapped_dig(env)
     dump = Path(env["AWG_LAN_DUMP"]); dump.mkdir(exist_ok=True)
@@ -1101,7 +1101,7 @@ def test_a_tunnel_only_change_does_not_touch_the_feed(own_env):
 
 def test_a_rejected_config_rolls_back_the_lists_and_the_feed(own_env):
     """dnsmasq --test отверг: оба своих списка и фид возвращаются как были,
-    наборы не трогаются, код 1 — квартира не остаётся без DNS."""
+    наборы не трогаются, код 1 — локальная сеть не остаётся без DNS."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["shop.ru"])
     _with_src(dns_d, dump)
@@ -1223,7 +1223,7 @@ def test_a_failing_element_delete_does_not_break_the_run(own_env):
 
 def test_the_lan_vpn4_snapshot_forgets_removed_addresses(own_env):
     """Слепок lan_vpn4 грузится при старте: не перепиши его после удаления —
-    снятый адрес вернётся в набор с первой же перезагрузкой малины."""
+    снятый адрес вернётся в набор с первой же перезагрузкой шлюза."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"])
     _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
@@ -1286,7 +1286,7 @@ def _fill_run(tool, env, tmp_path, text: str, name="fill.txt"):
 
 
 def test_the_script_announces_sync_in_its_header(script):
-    """По метке агент узнаёт, что скрипт на малине уже понимает sync: без неё
+    """По метке агент узнаёт, что скрипт на шлюзе уже понимает sync: без неё
     он не пошлёт полный список в скрипт, который его отвергнет."""
     assert "\n# awg-lan-domain: sync\n" in _heredoc(script, "LAN_DOMAIN", "DOMEOF")
 
@@ -1320,7 +1320,7 @@ def test_sync_writes_both_lists_one_domain_per_line_in_order(own_env, tmp_path):
 def test_sync_of_the_same_lists_in_another_order_does_not_restart(own_env, tmp_path):
     """Кнопка дописывает строку в конец файла, sync пишет по алфавиту, а
     мигрированный ручной слой держит несколько доменов в строке. Сравнение — по
-    составу: иначе первая же чужая правка роняла бы кэш DNS всей квартиры ради
+    составу: иначе первая же чужая правка роняла бы кэш DNS всей локальной сети ради
     порядка строк."""
     tool, dns_d, dump, log, env = own_env
     (dns_d / VPN_USER).write_text("nftset=/zeta.com/alpha.com/inet#awg_home#lan_vpn4\n", encoding="utf-8")
@@ -1409,7 +1409,7 @@ def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
 def test_sync_that_only_removes_rewrites_the_snapshot(own_env, tmp_path):
     """Канон только убрал домен «в туннель»: новых доменов нет, fill агент не
     зовёт. Слепок lan_vpn4 грузится при старте — не перепиши его sync, снятый
-    адрес вернётся в набор с первой же перезагрузкой малины (как у кнопки del)."""
+    адрес вернётся в набор с первой же перезагрузкой шлюза (как у кнопки del)."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"])
     _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
@@ -1655,7 +1655,7 @@ def test_sync_of_an_empty_list_clears_both(own_env, tmp_path):
 
 def test_sync_of_fifty_domains_restarts_dnsmasq_once(own_env, tmp_path):
     """Пакет от сервера — один рестарт dnsmasq, а не рестарт на домен: каждый
-    рестарт роняет кэш DNS всей квартиры."""
+    рестарт роняет кэш DNS всей локальной сети."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d)
     _with_src(dns_d, dump)
@@ -1722,7 +1722,7 @@ def test_channel_feed_source_is_kept_before_subtraction(channel_env):
 
 def _domain_tool_beside(script, lists_env_tuple, tmp_path) -> tuple[Path, dict]:
     """Скрипт своих списков рядом со скриптом фидов: тот же dnsmasq.d, тот же
-    каталог исходника и блокировки — как на малине."""
+    каталог исходника и блокировки — как на шлюзе."""
     tool, dns_d, dump, log, env = lists_env_tuple[:5]
     bin_dir = _bin(env)
     _fake(bin_dir, "id", "echo 0\n")

@@ -297,7 +297,7 @@ def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypa
 def test_os_error_text_names_the_cause_without_errno_noise(err, text):
     """Отказ записи файла на шлюзе уходит в карточку слота на ВПС: там нужна
     причина словами («нет места на диске»), а не «[Errno 28] No space left on
-    device: '/var/lib/…'» с путём малины. Незнакомый код — имя кода, без кода —
+    device: '/var/lib/…'» с путём шлюза. Незнакомый код — имя кода, без кода —
     просто «ошибка записи», без висящих скобок."""
     e = (OSError(err, os.strerror(err), "/var/lib/awg-gw/own-lists.new") if err is not None
          else OSError("что-то"))

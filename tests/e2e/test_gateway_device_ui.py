@@ -229,7 +229,7 @@ async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fak
 
 def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     """Шлюзу РФ-доступ не нужен никогда: его российский трафик на ВПС вернулся
-    бы по линку на ту же малину. Назначение снимает флаг, а список
+    бы по линку на ту же шлюз. Назначение снимает флаг, а список
     переключателей, счётчики и набор маркировки шлюз не видят — даже если флаг
     остался от прежней версии, где шлюз в списке был (и первым)."""
     admin, phone, pi = gwsetup

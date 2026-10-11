@@ -3,14 +3,14 @@
 привезённые каналом; роль слота, сказанная сервером.
 
 Фиды приходят с ВПС, который может быть взломан. Цена ошибки: сжатая «бомба»
-съедает память малины, чужой фид под видом нашего ложится в dnsmasq всей
-квартиры.
-И обратная сторона: пока канал возит фиды, адрес квартиры не должен сам ходить
+съедает память шлюза, чужой фид под видом нашего ложится в dnsmasq всей
+локальной сети.
+И обратная сторона: пока канал возит фиды, адрес локальной сети не должен сам ходить
 за ними на GitHub и в Google — ради этого этап и затевался.
 
 Хост подменён: скрипт списков — функцией, которая записывает, откуда её
 попросили брать фиды; юнит обвязки — классом `_Unit` из тестов применения
-настроек (режим без VPN читается из него, как на малине).
+настроек (режим без VPN читается из него, как на шлюзе).
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _pack(domains: str = DOMAINS, nets: str = NETS, **extra) -> str:
 
 
 class _Lists:
-    """Скрипт списков на малине: что ему велели и чем он ответил."""
+    """Скрипт списков на шлюзе: что ему велели и чем он ответил."""
 
     def __init__(self, tmp_path, monkeypatch):
         self.calls: list[str] = []                 # from_dir каждого запуска; "" — качать самому
@@ -80,7 +80,7 @@ def svc(tmp_path):
 
 @pytest.fixture()
 def lan(tmp_path, monkeypatch):
-    """Малина с включённым режимом без VPN и скриптом списков."""
+    """Шлюз с включённым режимом без VPN и скриптом списков."""
     _Unit(tmp_path, monkeypatch)                          # в UNIT_TEXT стоит LAN_MODE=1
     return _Lists(tmp_path, monkeypatch)
 
@@ -126,7 +126,7 @@ def test_a_broken_feed_is_refused_and_nothing_is_written(svc, lan, packed, why):
 
 def test_a_feed_that_does_not_match_its_fingerprint_is_refused(svc, lan):
     """Отпечаток — единственное, что связывает присланное с тем, что ВПС
-    объявил. Не сошёлся — это не наш фид, и в dnsmasq квартиры он не ложится."""
+    объявил. Не сошёлся — это не наш фид, и в dnsmasq локальной сети он не ложится."""
     res = svc.apply_lan_feeds(_digest(DOMAINS, NETS), _pack(domains=DOMAINS + "ipset=/evil.org/vpn_domains\n"))
     assert res["ok"] is False and "отпечаток" in res["error"]
     assert lan.calls == [] and svc.lan_feeds_applied_hash() == ""
@@ -134,7 +134,7 @@ def test_a_feed_that_does_not_match_its_fingerprint_is_refused(svc, lan):
 
 def test_a_compressed_bomb_is_refused_without_unpacking_it_whole(svc, lan):
     """Двадцать мегабайт нулей сжимаются в десятки килобайт. Распаковка без
-    потолка съела бы память малины — отказ обязан случиться на потолке."""
+    потолка съела бы память шлюза — отказ обязан случиться на потолке."""
     bomb = json.dumps({"domains": "0" * (20 * 1024 * 1024), "nets": ""}).encode()
     packed = base64.b64encode(zlib.compress(bomb, 9)).decode()
     assert len(packed) < 100_000, "бомба получилась не бомбой — тест ничего не проверит"
@@ -149,7 +149,7 @@ def test_an_oversized_message_is_refused_before_decoding(svc, lan):
 
 
 def test_feeds_are_refused_when_the_gateway_has_no_local_network_mode(svc, tmp_path, monkeypatch):
-    """Режим без VPN выключен — dnsmasq квартиры не наш, и класть в него фиды
+    """Режим без VPN выключен — dnsmasq локальной сети не наш, и класть в него фиды
     нельзя, что бы ни прислал сервер."""
     _Unit(tmp_path, monkeypatch, text=UNIT_TEXT.replace("LAN_MODE=1", "LAN_MODE=0"))
     lists = _Lists(tmp_path, monkeypatch)
@@ -177,7 +177,7 @@ def test_a_feed_the_script_rejected_is_not_remembered_as_applied(svc, lan):
 
 
 def test_the_scheduled_download_stays_home_while_the_channel_brings_feeds(svc, lan):
-    """Смысл этапа 3: пока фиды привозит канал, адрес квартиры за ними никуда
+    """Смысл этапа 3: пока фиды привозит канал, адрес локальной сети за ними никуда
     не ходит. Канал замолчал на полсуток — задача сама возвращается к сети."""
     svc.apply_lan_feeds(_digest(DOMAINS, NETS), _pack())
     assert svc.lan_lists_update() == []
@@ -253,7 +253,7 @@ def test_a_role_from_an_old_server_keeps_what_was_said_before(svc):
 
 def test_a_very_long_slot_name_is_cut_before_it_lands_in_the_state(svc):
     """Имя слота приходит с ВПС и рисуется заголовком: сотня килобайт в нём —
-    не повод раздувать базу малины и ронять экран о лимит Telegram."""
+    не повод раздувать базу шлюза и ронять экран о лимит Telegram."""
     svc.set_link_role(True, standby=False, name="Я" * 10_000)
     assert 0 < len(svc.link_slot_name()) <= 80, len(svc.link_slot_name())
 

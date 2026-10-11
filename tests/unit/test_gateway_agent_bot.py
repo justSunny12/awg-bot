@@ -41,7 +41,7 @@ class _Agent:
     падает; services — экземпляр GatewayServices, собранный run_gateway."""
 
     def __init__(self, monkeypatch, tmp_path):
-        self.me: object = ("naspi_gw_bot", "Шлюз квартиры")
+        self.me: object = ("naspi_gw_bot", "Шлюз локальной сети")
         self.services = None
         self.getme_calls = 0
         agent = self
@@ -108,9 +108,9 @@ async def test_agent_puts_its_own_bot_into_the_channel_snapshot(agent):
     положи агент ответ getMe в снимок — у слота без токена на сервере ссылки
     нет вовсе, и человек ищет бота шлюза в Telegram по памяти."""
     svc = await agent.start()
-    assert (svc.bot_username, svc.bot_name) == ("naspi_gw_bot", "Шлюз квартиры"), \
+    assert (svc.bot_username, svc.bot_name) == ("naspi_gw_bot", "Шлюз локальной сети"), \
         "ответ getMe не сохранён в сервисах агента"
-    assert agent.snapshot()["agent_bot"] == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}, \
+    assert agent.snapshot()["agent_bot"] == {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}, \
         "снимок канала не везёт бота шлюза"
 
 

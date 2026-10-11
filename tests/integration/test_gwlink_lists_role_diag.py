@@ -1,7 +1,7 @@
 """
 Канал линка, этапы 3 и 4: фиды локальной сети
 качает ВПС и возит каналом; роль слота доезжает до агентов; просьба о диагностике
-на малине ничего не запускает; автомат переключения снимку шлюза не верит.
+на шлюзе ничего не запускает; автомат переключения снимку шлюза не верит.
 
 Сокеты настоящие (петля), сервер — боевой LinkServer поверх временной БД, в
 сквозных сценариях на той стороне — боевой LinkClient и настоящий
@@ -9,9 +9,9 @@
 `routing.fetch` отдаёт фиды из словаря и записывает, куда за ними ходили.
 
 Цена ошибки: фид, который рвёт сессию, превращает канал в петлю
-переподключений; фиды, которые перестали доезжать, возвращают адрес квартиры
+переподключений; фиды, которые перестали доезжать, возвращают адрес локальной сети
 на GitHub; роль, которая не доехала, — панель агента врёт «несёт трафик» о
-резерве; просьба диагностики, исполненная малиной, — чтение с неё того, что
+резерве; просьба диагностики, исполненная шлюзом, — чтение с неё того, что
 ВПС не положено.
 """
 from __future__ import annotations
@@ -165,7 +165,7 @@ def test_the_server_fetches_lan_feeds_only_when_a_slot_needs_them(services, link
 def test_the_server_goes_for_feeds_exactly_where_the_gateway_script_would(services, link, monkeypatch):
     """ВПС качает фиды вместо шлюза. Каждый адрес, куда он ходит, — тот же, что
     в скрипте списков шлюза (константы берём прогоном его строк). Разойдись
-    они — состав списков в квартире тихо поменяется при переходе на канал."""
+    они — состав списков в локальной сети тихо поменяется при переходе на канал."""
     from pathlib import Path
     script = (Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
     lists = script.split("cat > \"$LAN_LISTS.new\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
@@ -202,7 +202,7 @@ def test_the_next_feeds_download_is_jittered_not_a_metronome(services, link, mon
 @pytest.mark.parametrize("breakage", ["short_domains", "no_nets"])
 def test_a_bad_download_keeps_the_previous_feeds(services, link, monkeypatch, breakage):
     """Источник отдал заглушку провайдера или пустоту. Застывший фид лучше
-    пустого: ни одна малина не должна получить «ноль доменов» каналом."""
+    пустого: ни одна шлюз не должна получить «ноль доменов» каналом."""
     net = _Net(monkeypatch)
     services.gwlink_lan_feeds_update(force=True)
     before = services.gwlink_lan_feeds()
@@ -286,7 +286,7 @@ class _Pi(GatewayServices):
 
 @pytest.fixture()
 async def pi(services, link, tmp_path, monkeypatch):
-    """Малина: юнит совпадает с выдаваемым (настройки не едут), скрипт списков
+    """Шлюз: юнит совпадает с выдаваемым (настройки не едут), скрипт списков
     записывает, откуда его попросили брать фиды, journalctl/nft подменены."""
     want = services.gwlink_settings_want(services.db.gateway(1))
     assert want["LAN_MODE"] == "1" and want["RESOLVER"] == "10.9.1.1"
@@ -348,7 +348,7 @@ async def test_a_live_channel_with_unchanged_feeds_keeps_the_agent_off_the_netwo
     """Фиды на ВПС не менялись полсуток — бывает (источник обновляется не каждый
     день). Канал всё это время жив и при каждом подключении слышит от агента тот
     же отпечаток. Агент не должен решить, что канал «замолчал», и вернуться к
-    скачиванию сам: иначе адрес квартиры снова ходит на GitHub и в Google при
+    скачиванию сам: иначе адрес локальной сети снова ходит на GitHub и в Google при
     живом канале, ради которого всё затевалось."""
     _Net(monkeypatch)
     services.gwlink_lan_feeds_update(force=True)
@@ -374,7 +374,7 @@ async def test_after_the_session_ends_the_agent_waits_half_a_day_then_downloads(
         services, link, pi, monkeypatch):
     """Канал оборвался — запас на своё скачивание отсчитывается от конца сессии:
     линк моргнул — агент не бежит на GitHub; канал молчит полсуток — бежит, иначе
-    квартира так и жила бы с застывшими фидами."""
+    локальная сеть так и жила бы с застывшими фидами."""
     _Net(monkeypatch)
     services.gwlink_lan_feeds_update(force=True)
     agent = pi["agent"]
@@ -534,14 +534,14 @@ def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch
 
 async def test_a_server_asking_for_a_diagnostic_gets_nothing_run_and_no_answer(services, link, pi):
     """Диагностику по каналу сняли. Старый или взломанный ВПС всё ещё может
-    прислать «ask tail» — малина обязана ничего не запустить, ничего не
+    прислать «ask tail» — шлюз обязана ничего не запустить, ничего не
     прочесть и не оборвать сессию: неизвестная просьба пропускается."""
     await _up(services, pi)
     before = list(pi["ran"])
     for name in ("unit", "table", "../../etc/shadow"):
         assert await link.send(1, "ask", {"what": "tail", "name": name}), "сессия есть — отправка должна пройти"
     await asyncio.sleep(0.5)
-    assert pi["ran"] == before, f"по просьбе диагностики на малине что-то запустилось: {pi['ran']}"
+    assert pi["ran"] == before, f"по просьбе диагностики на шлюзе что-то запустилось: {pi['ran']}"
     assert pi["client"]._writer is not None and link.online(1), "просьба диагностики оборвала сессию"
 
 

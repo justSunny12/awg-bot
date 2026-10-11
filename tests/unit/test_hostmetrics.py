@@ -126,7 +126,7 @@ def model(tmp_path, monkeypatch):
     (b"\xff\xfe\x00", False),
 ])
 def test_a_raspberry_pi_is_told_by_the_device_tree_model(model, raw, pi):
-    """Модель из device-tree — единственный признак малины: vcgencmd бывает
+    """Модель из device-tree — единственный признак шлюза: vcgencmd бывает
     и на других платах, а sysfs троттлинга — не на всех прошивках."""
     model.write_bytes(raw)
     assert hm.is_raspberry_pi() is pi

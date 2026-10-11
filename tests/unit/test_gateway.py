@@ -482,7 +482,7 @@ def test_unit_enabled_is_cached_until_invalidated(svc, monkeypatch):
 
 def test_monitor_tick_is_a_single_commit(svc, monkeypatch):
     """Снимок панели, месячный трафик и стрики — один коммит за тик, а не три
-    fsync на флеш малины."""
+    fsync на флеш шлюза."""
     monkeypatch.setattr(svc, "status", lambda: _quiet_status(rx=100, tx=50))
     monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
@@ -522,7 +522,7 @@ def test_egress_probe_targets_in_parallel(svc, monkeypatch):
 
 
 def test_egress_alert_has_its_own_short_streak(svc, monkeypatch):
-    """Лежащий канал квартиры равносилен лежащему линку — алерт на втором тике,
+    """Лежащий канал локальной сети равносилен лежащему линку — алерт на втором тике,
     а не на пятом."""
     monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
@@ -550,7 +550,7 @@ def test_peer_nets_check_exists_only_when_the_bundle_brought_subnets(svc, monkey
 
 
 def test_lan_checks_alert_separately_and_quietly(svc, monkeypatch):
-    """Тишина в пустой квартире или упавший резолвер — не «обвязка неисправна»
+    """Тишина в пустой локальной сети или упавший резолвер — не «обвязка неисправна»
     с критичным звуком: у локальной сети свой стрик, не критичный."""
     from awgbot.domain.gateway import GwCheck
     lan = [GwCheck("трафик с роутера", False, "пакетов нет", group="lan")]

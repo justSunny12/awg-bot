@@ -449,7 +449,7 @@ def test_wipe_on_vps_needs_the_typed_word(host, word):
 
 def test_gateway_wipe_needs_only_one_confirmation(host):
     """Шлюзу слово не нужно: снос агента клиентов ВПС не трогает, а лишний
-    вопрос на малине только мешает переустановке."""
+    вопрос на шлюзе только мешает переустановке."""
     host.installed("2.25.2", "gateway")
     r = host.run(["2", "y"], role="gateway", tgz=host.archive("3.0.0"))
     assert r.returncode == 0, r.stderr
@@ -458,7 +458,7 @@ def test_gateway_wipe_needs_only_one_confirmation(host):
 
 def test_vps_wipe_asks_for_the_word_even_when_run_as_gateway(host):
     """На ВПС запустили установщик с --role gateway (скопировали команду для
-    малины). Снос всё равно ВПС-ный — по роли из app.yaml: интерфейсы со
+    шлюза). Снос всё равно ВПС-ный — по роли из app.yaml: интерфейсы со
     всеми пирами клиентов. Значит и подтверждение — ВПС-ное: одного «y» под
     текстом «Аплинк остаётся» мало."""
     host.installed("2.25.2", "client")
@@ -470,7 +470,7 @@ def test_vps_wipe_asks_for_the_word_even_when_run_as_gateway(host):
 
 
 def test_wipe_follows_the_installed_role_not_the_flag(host):
-    """На малине запустили установщик без --role gateway (скопировали команду
+    """На шлюзе запустили установщик без --role gateway (скопировали команду
     ВПС) — сносить нужно то, что стоит: обвязку шлюза, а не таблицу ВПС."""
     host.installed("2.25.2", "gateway")
     r = host.run(["2", "y", "УДАЛИТЬ"], role="client", tgz=host.archive("3.0.0"))

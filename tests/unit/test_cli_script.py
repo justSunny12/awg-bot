@@ -328,7 +328,7 @@ def test_update_on_the_gateway_refreshes_the_plumbing_copy(tmp_path, script):
     """Копию routing-gw-setup.sh в /usr/local/sbin выполняет awg-link-gw.service
     при каждой загрузке, а кладёт её бандл с ВПС. Пока обновление агента её не
     трогало, исправление обвязки, приехавшее в поставке, доезжало до шлюза
-    только перевыпуском конфигурации — то есть походом к малине.
+    только перевыпуском конфигурации — то есть походом к шлюзе.
     """
     out, sbin = _run_autostart(tmp_path, script, role="gateway",
                                gw_copy="#!/bin/sh\n# версия времён бандла\n")

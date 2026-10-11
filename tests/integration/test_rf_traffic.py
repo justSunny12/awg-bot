@@ -280,7 +280,7 @@ def test_gateway_device_gets_no_counters_and_its_link_is_counted(services, kerne
     """Устройство-шлюз РФ-трафиком не является — в карты не попадает; его линк
     из БД — в правилах рядом с линком из конфига."""
     c = make_active_client(tg_id=9107)
-    gw = _dev(services, c, "Малина")
+    gw = _dev(services, c, "Шлюз")
     d = _dev(services, c, "Тел")
     services.db.gateway_add(gw.id, "awglink2", 443, "10.99.99.4/30")
     services.poll_traffic()

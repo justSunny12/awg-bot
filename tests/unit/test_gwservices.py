@@ -5,7 +5,7 @@
 
 Цена ошибки: разбор, пропустивший строку «+» или IPv6, публикует у соседа
 сервер без адреса; чистка, пропустившая кавычку или запятую, — строку конфига
-dnsmasq малины из данных с чужой машины; обратная зона не той маски — Mac не
+dnsmasq шлюза из данных с чужой машины; обратная зона не той маски — Mac не
 находит домен обзора и Finder пуст; гистерезис без порога — уснувший NAS
 роняет кэш DNS соседней сети рестартом dnsmasq каждые 15 минут.
 """
@@ -178,7 +178,7 @@ def test_render_publishes_the_browse_domain_in_every_own_subnet():
 
 def test_every_rendered_line_passes_the_whitelist():
     """Файл, собранный Python-ом, обязан целиком проходить белый список —
-    иначе помощник на малине отвергнет его, и записи не лягут никогда."""
+    иначе помощник на шлюзе отвергнет его, и записи не лягут никогда."""
     items = [_rec(n=f"NAS {i}", h="naspi5", a=f"192.168.1.{i}") for i in range(1, 6)]
     items.append(_rec(n="Time_Machine-2", h="tm", a="192.168.2.7", p=10445))
     text = gs.render_dnsmasq(items, ["192.168.68.0/23", "10.0.0.0/8"], "ab" * 32)
@@ -558,7 +558,7 @@ def test_an_unwritable_services_file_refuses_with_a_reason(agent, peer, monkeypa
 
 
 def test_a_full_disk_for_the_services_file_is_named_in_words(agent, peer, monkeypatch):
-    """Диск полон при записи файла SMB: причина словами, без пути малины и
+    """Диск полон при записи файла SMB: причина словами, без пути шлюза и
     «[Errno 28]»; помощник не зовётся — ставить нечего."""
     import builtins
     import errno

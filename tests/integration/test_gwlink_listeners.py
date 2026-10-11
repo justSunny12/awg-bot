@@ -124,7 +124,7 @@ async def _hello(srv, key=KEY, agent: str = "3.1.0") -> _Gw:
 # ── слушатели по адресам ─────────────────────────────────────────────────────
 
 async def test_a_link_that_is_down_does_not_take_the_other_slots_channel_with_it(services, two):
-    """Резервный линк лежит (малина выключена, линк не встал после ребута ВПС).
+    """Резервный линк лежит (шлюз выключена, линк не встал после ребута ВПС).
     Раньше bind списка адресов падал целиком, и без канала оставался и
     здоровый активный слот — до тех пор, пока не поднимется второй."""
     srv, binds, port = two
@@ -177,7 +177,7 @@ async def test_removing_a_slot_closes_only_its_listener_and_its_sessions(service
 # ── сессия начинается с hello ────────────────────────────────────────────────
 
 async def test_a_connection_rejected_before_hello_does_not_count_as_contact(services, two):
-    """На том конце не ключ этого слота (малину заменили, а бандл не
+    """На том конце не ключ этого слота (шлюз заменили, а бандл не
     перевыпустили): hello не проходит подпись. Раньше даже такой коннект
     освежал «последний раз на связи» — и напоминание перевыпустить файл молчало
     сутки за сутками, хотя канал не доставил ни разу. Причина разрыва при этом
@@ -209,7 +209,7 @@ async def test_a_session_that_did_say_hello_is_remembered_as_contact(services, t
 
 
 async def test_a_rejected_newcomer_does_not_displace_the_live_session(services, two):
-    """Коннект с чужой подписью (любой процесс на малине, контейнер за
+    """Коннект с чужой подписью (любой процесс на шлюзе, контейнер за
     маскарадом) раньше вытеснял настоящую сессию до проверки hello и рвал
     канал живому шлюзу. Теперь вытесняет только прошедший hello: чужой
     коннект закрывается, живая сессия и её запись в БД — на месте; уходит
@@ -286,7 +286,7 @@ async def test_the_first_word_after_hello_is_the_role_even_with_feeds_due(servic
 # ── ключ слота — на каждую сессию ────────────────────────────────────────────
 
 async def test_a_replaced_machine_in_the_slot_is_heard_without_a_restart(services, two):
-    """В слот поставили другую малину — ключ линка новый, номер слота тот же.
+    """В слот поставили другую шлюз — ключ линка новый, номер слота тот же.
     Ключ, закешированный по номеру слота, держал бы канал мёртвым до
     перезапуска бота: каждое сообщение новой машины — «чужая подпись»."""
     srv, binds, port = two
@@ -309,7 +309,7 @@ async def test_a_replaced_machine_in_the_slot_is_heard_without_a_restart(service
 # ── полный снимок сервер просит только при разрыве нумерации ─────────────────
 
 async def test_consecutive_deltas_never_make_the_server_ask_for_a_full_snapshot(services, two):
-    """Кнопки «Обновить с шлюза» больше нет: сам сервер просит полный снимок
+    """Кнопки «Обновить со шлюза» больше нет: сам сервер просит полный снимок
     только при разрыве нумерации дельт. Проси он его и без разрыва — канал
     гонял бы полные снимки по кругу, а зонд живости путал бы их с трафиком."""
     srv, binds, port = two
@@ -334,7 +334,7 @@ async def test_consecutive_deltas_never_make_the_server_ask_for_a_full_snapshot(
 
 
 async def test_a_dead_link_takes_its_session_down_on_the_liveness_tick(services, two, monkeypatch):
-    """Малина пропала молча (питание): сокет без keepalive жил бы до TCP-таймаута,
+    """Шлюз пропала молча (питание): сокет без keepalive жил бы до TCP-таймаута,
     карточка «на связи», напоминания глушатся. Хендшейк линка старше двойного
     порога — сессию снимаем и запись закрываем."""
     from awgbot.infra import routing

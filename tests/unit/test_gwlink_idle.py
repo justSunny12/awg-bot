@@ -52,7 +52,7 @@ class _Wire:
 class _Agent:
     """Агент шлюза со снятым хостом: железо, счётчики линка, зонд наружу,
     таблица обвязки и юнит — под рукой. Каждый тик двигает всё, что на живой
-    малине двигается само."""
+    шлюзе двигается само."""
 
     def __init__(self, svc, monkeypatch, tmp_path):
         self.svc = svc
@@ -80,7 +80,7 @@ class _Agent:
         monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")
         monkeypatch.setattr(gwsnapshot, "boot_id", lambda: "b" * 36)
         monkeypatch.setattr(awglock, "generation", lambda: self.generation)
-        # ── линк, зонд, статика: как на живой малине, только без хоста ───────
+        # ── линк, зонд, статика: как на живой шлюзе, только без хоста ───────
         monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, self.rx, self.tx))
         monkeypatch.setattr(svc, "plumbing_checks", self._plumbing)
         monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])
@@ -176,7 +176,7 @@ def _wire(client) -> _Wire:
 def test_a_tick_that_only_moves_hardware_produces_no_delta(agent):
     """Главный сторож правила «нет периодического обмена». Между двумя тиками
     изменились температура, счётчики линка, миллисекунды зонда наружу и пакеты
-    с роутера — то есть всё, что на живой малине меняется само каждые три
+    с роутера — то есть всё, что на живой шлюзе меняется само каждые три
     минуты. Дельта обязана быть пустой: иначе канал начнёт говорить ровно по
     расписанию тика, и наблюдателю внутри туннеля останется считать интервалы."""
     def _moving(st):
@@ -248,7 +248,7 @@ async def test_a_changed_fact_wakes_the_channel_up_exactly_once(client, agent):
 
 
 async def test_a_failed_probe_outside_sends_the_verdict_and_not_the_milliseconds(client, agent):
-    """Канал квартиры лёг: агент видит это своим зондом, и ВПС складывает его
+    """Канал локальной сети лёг: агент видит это своим зондом, и ВПС складывает его
     наблюдение со своим — совпали оба «нет», значит отказ точно у шлюза. Едет
     при этом только булево."""
     agent.tick()
@@ -365,7 +365,7 @@ def test_an_unusable_link_address_yields_no_server_address(monkeypatch, broken):
 
 
 def test_a_missing_ip_binary_is_not_an_exception(monkeypatch):
-    """На малине без iproute2 (и в контейнере теста) вызов просто не удаётся:
+    """На шлюзе без iproute2 (и в контейнере теста) вызов просто не удаётся:
     клиент обязан пережить это бэкоффом, а не падением задачи."""
     import subprocess
 
@@ -445,7 +445,7 @@ async def test_without_an_uplink_key_there_is_nothing_to_claim(client, agent, mo
 
 
 async def test_a_changed_mark_takes_the_claim_with_the_delta(client, agent, monkeypatch):
-    """Применили бандл нового слота — пометка на малине сменилась. Токен уходит
+    """Применили бандл нового слота — пометка на шлюзе сменилась. Токен уходит
     следом за дельтой, чтобы человек не возвращался к ручной пересылке ровно в
     тот момент, когда канал уже жив."""
     _uplink(monkeypatch)

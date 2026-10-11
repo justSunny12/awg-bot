@@ -4,7 +4,7 @@
 скрипт обвязки подхватывает отложенные при первом включении режима.
 
 Списки набраны руками в чате агента («в туннель», «напрямую») — бандл их не
-везёт, и замена малины без копии теряла бы их молча: квартира снова ходит
+везёт, и замена шлюза без копии теряла бы их молча: локальная сеть снова ходит
 «как было», а человек не помнит, что туда добавлял.
 
 Копия — боевой make_backup агента с подменённым путём /etc/dnsmasq.d;
@@ -108,7 +108,7 @@ def _restore_fragment() -> str:
 
 
 class _Pi:
-    """Малина для восстановления: распакованная копия, conf-dir dnsmasq,
+    """Шлюз для восстановления: распакованная копия, conf-dir dnsmasq,
     каталог отложенного, systemctl, который записывает вызовы."""
 
     def __init__(self, tmp_path: Path):
@@ -166,7 +166,7 @@ def test_restore_puts_the_lists_in_place_and_restarts_dnsmasq_once(tmp_path):
 
 
 def test_restore_before_the_mode_is_applied_parks_the_lists_and_leaves_dnsmasq_alone(tmp_path):
-    """Малина новая, режим без VPN ещё не включали: dnsmasq может быть чужим
+    """Шлюз новая, режим без VPN ещё не включали: dnsmasq может быть чужим
     (OMV) или не стоять вовсе. Списки откладываются, dnsmasq не трогается."""
     pi = _Pi(tmp_path)
     pi.backup_has(**{"awg-gw-vpn-user.conf": VPN})
@@ -224,7 +224,7 @@ def _enable(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path, Path]:
 
 
 def test_first_enable_takes_the_parked_lists_instead_of_empty_ones(tmp_path):
-    """Восстановили копию на новую малину, потом включили режим без VPN:
+    """Восстановили копию на новую шлюз, потом включили режим без VPN:
     личные списки обязаны встать из копии, а не пустыми заготовками — иначе
     восстановление было бы видимостью."""
     parked = tmp_path / "var-lib-awg-gw" / "restore"; parked.mkdir(parents=True)

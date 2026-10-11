@@ -5,7 +5,7 @@
 
 Настройки приходят без кнопки человека, поэтому цена ошибки здесь выше, чем у
 бандла: лишний перезапуск обвязки — это рестарт dnsmasq и перевыставление
-файервола в квартире посреди дня; пропущенная в юнит кавычка или перевод строки
+файервола в локальной сети посреди дня; пропущенная в юнит кавычка или перевод строки
 — чужая строка в окружении скрипта, который исполняется от root; недокаченный
 откат — «половина новых настроек», с которой шлюз живёт до следующего бандла.
 
@@ -160,7 +160,7 @@ def test_the_list_of_keys_is_closed_and_changes_only_on_purpose():
 
 
 def test_neighbour_subnets_stay_bundle_only():
-    """Подсети за другими шлюзами живут на малине ещё и в AllowedIPs пира ВПС в
+    """Подсети за другими шлюзами живут на шлюзе ещё и в AllowedIPs пира ВПС в
     конфиге линка, а его правит только бандл. Доставь их канал в юнит — карточка
     показала бы «совпадает», а доступ между подсетями не работал бы."""
     assert "PEER_HOME_NETS" in gwlink.BUNDLE_ONLY_KEYS
@@ -182,7 +182,7 @@ def test_no_secret_and_no_port_ever_rides_the_channel():
 
 def test_a_secret_slipped_into_the_message_is_dropped_not_applied():
     """Незнакомый ключ игнорируется (новый ВПС, старый агент), а не кладётся в
-    юнит: скомпрометированный ВПС не должен подменить аплинк малины сообщением."""
+    юнит: скомпрометированный ВПС не должен подменить аплинк шлюза сообщением."""
     got = gwlink.validate_settings({**SAME, "UPLINK_B64": "QUJD", "ExecStart": "/bin/sh"})
     assert set(got) == set(gwlink.SETTINGS_KEYS), f"в разобранное попало лишнее: {sorted(got)}"
 
@@ -283,7 +283,7 @@ def test_rewriting_the_unit_touches_only_the_named_lines(unit):
 def test_a_unit_rewritten_by_the_channel_stays_readable_only_by_root(unit):
     """Скрипт обвязки ставит юниту 0600, канал переписывает его через
     временный файл. Вернись права к 0644 после первой доставки подсетей —
-    любой локальный пользователь малины (OMV, шары) читал бы юнит, в том числе
+    любой локальный пользователь шлюза (OMV, шары) читал бы юнит, в том числе
     юнит прежнего выпуска, где ещё лежит конфиг аплинка с приватным ключом."""
     unit.path.chmod(0o644)                        # юнит прежнего выпуска
     gwguard.unit_set_env({"HOME_SUBNETS": "192.168.70.0/24"})
@@ -361,7 +361,7 @@ def test_new_settings_rewrite_the_unit_and_restart_it_exactly_once(svc, unit):
 def test_settings_matching_the_unit_touch_nothing(svc, unit):
     """Миграция: первое сообщение после включения канала несёт те же
     значения, что последний бандл. Ни записи, ни перезапуска — dnsmasq не
-    рестартует, квартира ничего не замечает."""
+    рестартует, локальная сеть ничего не замечает."""
     res = svc.apply_link_settings(dict(SAME))
     assert res == {"ok": True, "changed": [], "error": ""}
     assert unit.calls == [], f"при совпадении дёрнули systemctl: {unit.calls}"

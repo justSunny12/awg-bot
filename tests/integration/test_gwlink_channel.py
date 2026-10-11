@@ -193,7 +193,7 @@ async def _until(cond, timeout: float = 3.0):
 # ── сессия и первый снимок ───────────────────────────────────────────────────
 
 async def test_a_connecting_gateway_gets_a_session_and_its_snapshot_is_stored(services, link):
-    """Подключение — самая важная точка канала: после ребута малины, обновления
+    """Подключение — самая важная точка канала: после ребута шлюза, обновления
     агента или восстановления линка сессия открывается заново и приносит полный
     снимок. Не сохранись он — карточка слота осталась бы с догадкой вместо
     ответа."""
@@ -439,7 +439,7 @@ async def test_every_session_gets_its_own_server_nonce(services, link):
 
 @pytest.mark.parametrize("shift", [3600, -3600])
 async def test_gateway_clock_an_hour_off_does_not_break_the_session(services, link, shift):
-    """Малина без RTC ушла на час в любую сторону. Канал её не отвергает:
+    """Шлюз без RTC ушла на час в любую сторону. Канал её не отвергает:
     снимок ложится, сессия живёт, а расхождение видно в карточке."""
     import time
     gw = await _connect(link)
@@ -486,7 +486,7 @@ async def test_an_oversized_line_ends_the_session_without_being_parsed(services,
 
 
 async def test_a_snapshot_full_of_junk_is_trimmed_and_the_bot_keeps_serving(services, link):
-    """Малина может быть скомпрометирована: поле на мегабайт, разметка в
+    """Шлюз может быть скомпрометирована: поле на мегабайт, разметка в
     значении и незнакомые ключи не должны ни лечь в БД, ни уронить бота."""
     gw = await _connect(link)
     await gw.send("hello", {"proto": 1, "agent": "3.1.0"})
@@ -522,7 +522,7 @@ async def test_an_unknown_kind_of_message_is_ignored_and_the_session_lives(servi
 async def test_a_gateway_speaking_another_protocol_version_is_still_heard(services, link):
     """Старый агент, новый ВПС: расхождение `proto` пишем в сессию и работаем
     дальше. Отказ здесь означал бы, что обновление сервера обрывает канал до
-    перевыпуска конфигурации на каждой малине."""
+    перевыпуска конфигурации на каждой шлюзе."""
     gw = await _connect(link)
     await gw.send("hello", {"proto": 99, "agent": "9.9.9"})
     await gw.send("snap", {**SNAP, "rev": 1})
@@ -548,7 +548,7 @@ async def test_a_garbage_claim_does_not_break_the_session(services, link):
 # ── слоты ────────────────────────────────────────────────────────────────────
 
 async def test_the_second_session_of_a_slot_evicts_the_first(services, link):
-    """Малина перезагрузилась, старая сессия висит полуоткрытой. Вторая обязана
+    """Шлюз перезагрузилась, старая сессия висит полуоткрытой. Вторая обязана
     вытеснить первую: иначе снимки поехали бы в закрытый сокет, а канал
     считался бы живым."""
     first = await _connect(link)
@@ -607,7 +607,7 @@ async def test_the_listener_follows_the_slots(services, link):
 
 async def test_removing_the_slot_forgets_everything_the_channel_left(services, link, monkeypatch):
     """Снятие слота уносит снимок и сессию вместе с ключами бандла: чужая
-    квартира не должна проступать в карточке следующего шлюза."""
+    локальная сеть не должна проступать в карточке следующего шлюза."""
     gw = await _connect(link)
     await gw.send("hello", {"proto": 1, "agent": "3.1.0"})
     await gw.send("snap", {**SNAP, "rev": 1})
@@ -674,9 +674,9 @@ def test_age_is_counted_by_the_server_clock_not_by_the_clock_of_the_raspberry(se
     ahead = timeutil.to_iso(timeutil.now() + datetime.timedelta(hours=1))
     services.gwlink_snapshot_in(1, {**SNAP, "ts": ahead}, 1, True)
     age = services.gwlink_snapshot_age(1)
-    assert age is not None and age < 60, f"возраст поехал за часами малины: {age} с"
+    assert age is not None and age < 60, f"возраст поехал за часами шлюза: {age} с"
     assert services.db.get_state("gwlink_snap_ts_1") == ahead, (
-        "часы малины хранятся справочно — по ним и видно, что они разошлись")
+        "часы шлюза хранятся справочно — по ним и видно, что они разошлись")
 
 
 def test_without_a_snapshot_there_is_no_age_and_no_verdict(services):
@@ -768,7 +768,7 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         services, link, tmp_path, monkeypatch):
     """Конверт и состав снимка живут в общем коде, но исполняются на разных
     хостах и обновляются порознь. Разойдись формат на концах — канал молча не
-    поднимется, и увидят это на живой малине, куда ещё надо дойти.
+    поднимется, и увидят это на живой шлюзе, куда ещё надо дойти.
 
     Здесь оба конца настоящие: боевой клиент коннектится к боевому слушателю
     через петлю и проходит весь сценарий этапа — подключение, снимок, дельта по
@@ -790,7 +790,7 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         assert services.gwlink_session(1)["agent"] == config.INSTALLED_VERSION
         sent_after_hello = client._sent_bytes
 
-        # событие на малине: шлюз потерял выход наружу. Событие — не из
+        # событие на шлюзе: шлюз потерял выход наружу. Событие — не из
         # настроек: смена подсетей на шлюзе с этапа 2 вызывает ответ сервера
         # настройками, это проверяет test_gwlink_settings_delivery.py.
         agent.snap["egress_ok"] = False
@@ -824,7 +824,7 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
 
 async def test_the_agent_bot_rides_the_wire_and_its_rename_arrives_as_a_delta(
         services, link, tmp_path, monkeypatch):
-    """Бот шлюза едет с малины снимком по настоящему каналу и доходит до
+    """Бот шлюза едет со шлюза снимком по настоящему каналу и доходит до
     ссылки в карточке слота без токена на сервере; переименовали бота —
     дельта, и ссылка уже с новым именем."""
     from awgbot.runtime import linkclient
@@ -843,9 +843,9 @@ async def test_the_agent_bot_rides_the_wire_and_its_rename_arrives_as_a_delta(
         assert services.gw_bot_token(1) == "", "сцена теста — слот без токена на сервере"
         assert services.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз"}, \
             "бот из снимка канала не дошёл до сервера"
-        agent.snap["agent_bot"] = {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+        agent.snap["agent_bot"] = {"username": "naspi_gw_bot", "name": "Шлюз локальной сети"}
         assert await client.push() is True, "смена имени бота не ушла дельтой"
-        await _until(lambda: services.gw_bot_identity(1).get("name") == "Шлюз квартиры")
+        await _until(lambda: services.gw_bot_identity(1).get("name") == "Шлюз локальной сети")
     finally:
         await client.stop()
 
