@@ -16,6 +16,13 @@ log = logging.getLogger("awgbot.routing")
 # хендлера могут прийти одновременно, а пересборка цепочки — read-modify-write.
 mutation_lock = threading.RLock()
 
+# Адрес перехвата DNS прежней схемы — dummy-интерфейс awgdns0, куда обвязка
+# хоста ведёт DNAT :53 клиентов без резолвера бота: умолчание DNS_ADDR в
+# install/routing-host-setup.sh (скрипт берёт его не из конфига бота, поэтому
+# здесь — зеркало; расхождение ловит тест). Нужен проверке служебного
+# пространства адресов в туннеле (util/lanspace.space_problem).
+DNS_INTERCEPT_ADDR = "10.255.53.1"
+
 
 class RoutingError(Exception):
     """Ошибка взаимодействия с ipset/iptables/ip."""

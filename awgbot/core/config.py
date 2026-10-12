@@ -302,6 +302,11 @@ ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 ROUTING_LINK_PORTS: list[int] = [int(p) for p in (_rt.get("link_ports") or [443, 8443])]
 ROUTING_LINK_CIDRS: list[str] = [str(c) for c in (_rt.get("link_cidrs") or ["10.99.99.0/30", "10.99.99.4/30"])]
 ROUTING_GATEWAYS_MAX = int(_rt.get("gateways_max", 2))
+# Служебное пространство адресов в туннеле для локальных сетей шлюзов (/12, по
+# /16 на слот). Холодное и без экрана: смена меняет адреса всех сетей во всех
+# конфигах. Здесь — строка как есть; разбор, проверка и умолчание —
+# util/lanspace.space().
+ROUTING_LAN_SPACE: str = str(_rt.get("lan_space") or "").strip()
 
 # Имена наборов и цепочек — КОНСТАНТЫ, а не настройка. Админу менять их незачем,
 # а сама возможность менять создаёт рассинхрон при обновлении: боевой yaml не

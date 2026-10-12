@@ -12,6 +12,7 @@ gateway_link/ — шлюзы условной маршрутизации: сло
   agentbot  токен и имя бота агента по слотам
   rekey     смена ключей линка тем же устройством каналом: стадия, переход, сроки
   token     аварийная смена токена бота шлюза: кому можно, проверка «тот же бот»
+  lanmap    адреса в туннеле для локальных сетей шлюзов: проверка пространства
 
 GatewayLinkMixin — составной миксин частей под прежним именем.
 """
@@ -23,8 +24,9 @@ from .mark import MarkMixin
 from .agentbot import AgentBotMixin
 from .rekey import RekeyMixin
 from .token import TokenMixin
+from .lanmap import LanMapMixin
 
 
 class GatewayLinkMixin(LinkScriptMixin, SlotsMixin, PeerNetsMixin, MarkMixin, AgentBotMixin, RekeyMixin,
-                       TokenMixin):
+                       TokenMixin, LanMapMixin):
     pass
