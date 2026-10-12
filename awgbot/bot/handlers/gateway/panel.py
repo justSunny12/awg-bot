@@ -69,6 +69,11 @@ async def _panel_parts(services, *, fresh: bool = False):
             kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=bool(pending)))
 
 
+async def panel_main_parts(services, chat_id: int):
+    """Панель агента — главный экран роли (BotRole.main_screen)."""
+    return await _panel_parts(services)
+
+
 async def restore_panel_after_restart(bot, services) -> None:
     """Исполнить обещание «вернётся через несколько секунд» — как у основного:
     обещание подменяется отчётом и остаётся в чате, панель — следующим

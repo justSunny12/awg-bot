@@ -223,3 +223,41 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     assert launched and launched[0].endswith("restore-pending.tgz")
     assert (tmp_path / "restore-pending.tgz").read_bytes() == blob
     assert await state.get_data() == {}
+
+
+async def test_restore_offer_is_the_live_menu_and_cancel_brings_the_main_back(services, fake_bot, monkeypatch, tmp_path):
+    """Вопрос о восстановлении — живым меню: прежнее меню гаснет. «Отмена»
+    ставит на место вопроса главный экран — в чате одно живое меню, а не
+    погасший вопрос под живой, но уехавшей вверх панелью."""
+    import io, json, tarfile
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        raw = json.dumps({"role": "main", "created_at": "2026-09-09T10:30:00+03:00"}).encode()
+        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
+    blob = buf.getvalue()
+
+    class DlBot(FakeBot):
+        async def download(self, doc, destination=None):
+            destination.write(blob)
+    bot = DlBot()
+    services.db.set_nav_message_id(cfg.ADMIN_ID, 777)               # живая панель выше
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    msg.document = type("D", (), {"file_name": "awg-bot-backup-main-x.tgz", "file_size": len(blob), "file_id": "F"})()
+    state = FakeState()
+    await ah.admin_document(msg, services, state)
+    assert ("edit_markup", cfg.ADMIN_ID, 777) in bot.records, "прежнее меню осталось живым рядом с вопросом"
+    offer_id = services.db.get_nav_message_id(cfg.ADMIN_ID)
+    assert offer_id not in (None, 777), "вопрос не стал живым меню"
+    nav = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot, message_id=offer_id)
+    cb = FakeCallback(message=nav, user_id=cfg.ADMIN_ID, bot=bot)
+    await sh.backup_restore_action(cb, SetCB(sec="backup", act="do", key="restore_drop"), services, state)
+    edits = [m for kind, _t, m in nav.sent if kind == "edit_text"]
+    labels = [b.text for row in (edits[-1].inline_keyboard if edits else []) for b in row]
+    assert "⚙️ Настройки" in labels and "♻️ Восстановить" not in labels, nav.sent
+    assert services.db.get_nav_message_id(cfg.ADMIN_ID) == offer_id, "главная встала не на месте вопроса"
+    assert await state.get_data() == {}

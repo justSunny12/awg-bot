@@ -3736,8 +3736,20 @@ IMAP и SMTP отвечают, вход выполнен
 
 ### adm.restore.drop — файл отброшен
 > press set:backup:do:restore_drop:
-- markup off #2
 ~ Файл отброшен
+= edit #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
 
 ### adm.restore.junk — не резервная копия
 > file awg-bot-backup-2026-09-01.tgz

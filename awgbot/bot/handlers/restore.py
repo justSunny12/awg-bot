@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import texts, roles
 from awgbot.bot import ui
-from awgbot.bot.handlers.common import call, forget_secret
+from awgbot.bot.handlers.common import call, edit_nav, forget_secret, send_menu
 
 _MAX_BYTES = 64 * 1024 * 1024
 _SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -43,8 +43,9 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
     br = roles.pick(gateway)
     warning = texts.restore_warning(br, carries) if info.get("ifaces_changed") else ""
     from awgbot.bot.sections import backup as _backup
-    await message.answer(texts.restore_offer(info["created_at"], br, warning),
-                         reply_markup=_backup.restore_confirm_kb(br))
+    # вопрос — живым меню: прежнее гаснет, «Отмена» вернёт на его место главную
+    await send_menu(message, services, texts.restore_offer(info["created_at"], br, warning),
+                    _backup.restore_confirm_kb(br))
     return True
 
 
@@ -65,13 +66,18 @@ async def run_restore(cb: CallbackQuery, services, state) -> None:
     await call(services.launch_restore, path)
 
 
-async def drop_restore(cb: CallbackQuery, state) -> None:
+async def drop_restore(cb: CallbackQuery, services, state, hooks) -> None:
+    """Отказ: на месте вопроса — главный экран роли, одно живое меню в чате."""
     await state.clear()
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:                                  # noqa: BLE001
-        pass
     await cb.answer(ui.Toast.file_dropped)
+    parts = await hooks.main(services, cb.message.chat.id)
+    if parts is None:
+        try:
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception:                              # noqa: BLE001
+            pass
+        return
+    await edit_nav(cb, services, *parts)
 
 
 async def report_restore_result(bot, services) -> None:

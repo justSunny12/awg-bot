@@ -155,6 +155,7 @@ class BotRole:
     subsections: tuple[str, ...]     # вложенные разделы («ncl» — «👥 События»)
     root_labels: dict            # подписи ролевых разделов корня (не из sections/): {id: «подпись»}
     role_screens: str            # «модуль:функция» — экраны ролевых разделов: async fn(sec, services, key) -> (text, markup)
+    main_screen: str             # «модуль:функция» — главный экран роли: async fn(services, chat_id) -> (text, markup)
     keys: Keys
     has: Has
     cb: RoleCB = field(compare=False)   # переводчик колбэков роли
@@ -183,6 +184,7 @@ MAIN = BotRole(
     subsections=("ncl",),
     root_labels={"srv": "🖥 Сервер AWG", "fw": "🛡 SSH-доступ", "subs": "💳 Подписки"},
     role_screens="awgbot.bot.handlers.settings.render:_screen",
+    main_screen="awgbot.bot.handlers.common:admin_main_parts",
     keys=Keys(monitor_minutes="app.scheduler.monitor_minutes",
               outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
@@ -212,6 +214,7 @@ GATEWAY = BotRole(
     subsections=(),
     root_labels={"ssh": "🛡 SSH-доступ"},
     role_screens="awgbot.bot.handlers.gateway:_section",
+    main_screen="awgbot.bot.handlers.gateway.panel:panel_main_parts",
     keys=Keys(monitor_minutes="app.gateway.monitor_minutes",
               outage="app.gateway.handshake_max_age",
               outage_loud="app.gateway.link_alert_loud",

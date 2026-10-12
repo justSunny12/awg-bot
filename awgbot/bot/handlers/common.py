@@ -294,6 +294,14 @@ def card_is_from_main(chat_id: int | None) -> bool:
     return chat_id in _card_from_main
 
 
+async def admin_main_parts(services, chat_id: int):
+    """Главный экран админа — (text, markup) для показа на месте сообщения
+    (BotRole.main_screen основного бота)."""
+    from awgbot.bot import screens
+    card_from_main(chat_id, False)
+    return await screens.render("main", services=services, role="admin", client=None, chat_id=chat_id)
+
+
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
     """Показать главное меню роли новым сообщением (через send_menu — трекается,
     гасит прежнее активное). Экран — из реестра: у клиента с теми же кнопками

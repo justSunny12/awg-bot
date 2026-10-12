@@ -96,7 +96,7 @@ async def _restore(ctx):
 
 async def _restore_drop(ctx):
     from awgbot.bot.handlers import restore as rs
-    await rs.drop_restore(ctx.cb, ctx.state)
+    await rs.drop_restore(ctx.cb, ctx.services, ctx.state, ctx.hooks)
 
 
 ACTIONS = {"enc": _enc, "enc_set": _enc_set, "now": _now, "restore!": _restore, "restore_drop": _restore_drop}

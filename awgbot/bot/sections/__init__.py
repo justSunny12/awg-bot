@@ -107,6 +107,12 @@ def _role_screen_fn(br):
     return getattr(importlib.import_module(mod), fn)
 
 
+async def main_screen(br, services, chat_id: int):
+    """(text, markup) главного экрана роли — br.main_screen."""
+    mod, _, fn = br.main_screen.partition(":")
+    return await getattr(importlib.import_module(mod), fn)(services, chat_id)
+
+
 async def screen(sec: str, br, services, key: str = ""):
     """(text, markup) раздела: модульный — его screen(br, …), ролевой — экраны роли."""
     if available(br, sec):
@@ -127,6 +133,7 @@ def hooks_for(br):
         email_offer_kb=lambda sec: email.offer_kb(br, sec),
         render=lambda cb, services, sec: render(cb, br, services, sec),
         screen=lambda services, sec: screen(sec, br, services),
+        main=lambda services, chat_id: main_screen(br, services, chat_id),
         br=br,
     )
 

@@ -39,11 +39,13 @@ class Hooks:
     email_offer_kb(sec)   — «почта не настроена»: назад в sec / настроить;
     render(cb, services, sec) — перерисовать раздел на месте кнопки;
     screen(services, sec) — (text, markup) раздела, для показа новым сообщением;
+    main(services, chat_id) — (text, markup) главного экрана роли;
     br                    — словарь роли: тексты про почту и шифрование.
     """
     email_offer_kb: Callable[[str], object]
     render: Callable[[CallbackQuery, object, str], Awaitable[None]]
     screen: Callable[[object, str], Awaitable[tuple]]
+    main: Callable[[object, int], Awaitable[tuple]]
     br: object
 
 
