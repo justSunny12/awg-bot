@@ -68,6 +68,7 @@ import ipaddress
 import logging
 import random          # noqa: F401 — тесты подменяют random.uniform через пакет
 import subprocess
+import time
 
 from awgbot.core import config
 from awgbot.util import gwlink
@@ -123,6 +124,8 @@ class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixi
 
 
 _client: LinkClient | None = None
+_conf_gone_since: float | None = None   # с какого момента (monotonic) нет конфига линка при живом клиенте
+CONF_GONE_STOP = 600                    # столько без конфига линка — снятие, а не перезапись: клиента гасим
 _notify = None
 _ask = None
 _edit = None
@@ -197,6 +200,8 @@ async def on_tick(services) -> None:
     сессия висела бы «открытой» днями, подавляя своё скачивание фидов. Линк
     лёг и поднялся — значит, прежней сессии на той стороне нет наверняка;
     рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт."""
+    if await _retire_without_conf():
+        return
     client = ensure(services)
     if client is None:
         return
@@ -221,6 +226,31 @@ async def on_tick(services) -> None:
             await step()
         except Exception as e:                            # noqa: BLE001
             log.warning("канал линка: %s на тике не прошёл: %s", step.__name__, e)
+
+
+async def _retire_without_conf() -> bool:
+    """Конфиг линка пропал при живом клиенте. Мгновение — это перезапись
+    (файл конфигурации, документ с сервера): сессию не трогаем. Дольше
+    CONF_GONE_STOP — обвязку сняли (--rollback, снятие шлюза): клиент гасится
+    и не стучится в несуществующий линк до конца процесса. True — погашен."""
+    global _client, _conf_gone_since
+    if config.ROLE != "gateway" or enabled() or _client is None:
+        _conf_gone_since = None
+        return False
+    now = time.monotonic()
+    if _conf_gone_since is None:
+        _conf_gone_since = now
+        return False
+    if now - _conf_gone_since < CONF_GONE_STOP:
+        return False
+    log.info("канал линка: конфига линка нет %d мин — обвязку сняли, клиент канала гашу",
+             int((now - _conf_gone_since) // 60))
+    client, _client, _conf_gone_since = _client, None, None
+    if client._writer is not None:
+        with contextlib.suppress(Exception):
+            client._writer.close()
+    await client.stop()
+    return True
 
 
 async def poke(services) -> None:

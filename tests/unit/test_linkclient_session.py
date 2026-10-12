@@ -303,6 +303,7 @@ def gateway_role(monkeypatch):
     monkeypatch.setattr(config, "ROLE", "gateway")
     monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     monkeypatch.setattr(linkclient, "_client", None)
+    monkeypatch.setattr(linkclient, "_conf_gone_since", None)
     yield
     c = linkclient._client
     if c is not None and c._task is not None:
@@ -348,6 +349,33 @@ async def test_losing_the_link_conf_does_not_tear_down_a_running_client(vps, con
     assert not task.done(), "пропажа конфига линка погасила работающего клиента"
     assert linkclient.online() and not conn.closed, "сессия до ВПС закрыта без причины"
     assert linkclient._client is client
+
+
+async def test_a_link_conf_gone_for_good_retires_the_client(vps, conf, gateway_role, monkeypatch):
+    """Перезапись конфига — мгновение, снятие обвязки — насовсем: тик гасит
+    клиента, только когда конфига нет дольше CONF_GONE_STOP, и сессия до ВПС
+    закрывается — без стука в несуществующий линк до конца процесса."""
+    import time as _time
+    agent = _Agent()
+    conn = vps.answers(hang=True)
+    client = linkclient.ensure(agent)
+    await _until_online()
+    clock = [_time.monotonic()]
+    monkeypatch.setattr(linkclient.time, "monotonic", lambda: clock[0])
+    conf.unlink()
+    await linkclient.on_tick(agent)
+    clock[0] += linkclient.CONF_GONE_STOP - 1
+    await linkclient.on_tick(agent)
+    assert linkclient._client is client and not client._task.done(), "клиент погашен раньше срока"
+    clock[0] += 2
+    await linkclient.on_tick(agent)
+    assert linkclient._client is None, "клиент жив без конфига линка дольше срока"
+    assert client._task is None and not linkclient.online()
+    for _ in range(50):
+        if conn.closed:
+            break
+        await asyncio.sleep(0.01)
+    assert conn.closed, "сессия до ВПС не закрыта"
 
 
 async def test_without_the_link_conf_nothing_starts(gateway_role, monkeypatch, tmp_path):
