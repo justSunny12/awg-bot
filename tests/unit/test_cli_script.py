@@ -399,6 +399,7 @@ def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; UPDATE_PREV="{prev}"; UPDATE_TMP="{upd_tmp}"\n'
         'warn() { echo "WARN $*"; }\n'
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}\n'
+        + _extract_func(script, "restore_prev_code") + "\n"
         + _extract_func(script, "update_rescue")
         + "\nfalse; update_rescue; echo RC=$?\n"
     )
@@ -413,3 +414,101 @@ def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script
     r = subprocess.run(["bash", "-c", prog.replace("\nfalse; update_rescue", "\ntrue; update_rescue")],
                        capture_output=True, text=True, timeout=10, env={"PATH": "/usr/bin:/bin"})
     assert "WARN" not in r.stdout
+
+
+# ── окружение рядом с рабочим и откат обновления целиком ─────────────────────
+
+def _venv_prog(script: str, inst, body: str) -> str:
+    """Функции окружения из НАСТОЯЩЕГО awg-bot.sh; python — заглушка: «создать
+    venv» — каталог с bin/python, «pip» — запись в журнал или отказ по FAIL_PIP."""
+    return "\n".join([
+        "set -euo pipefail",
+        f'INSTALL_DIR="{inst}"; PYBIN="$INSTALL_DIR/sys-python"',
+        "log() { :; }; warn() { :; }; die() { echo \"DIE $*\"; exit 1; }",
+        _extract_func(script, "venv_build_next"), _extract_func(script, "venv_switch"),
+        _extract_func(script, "venv_rollback"), _extract_func(script, "venv_prune"),
+        _extract_func(script, "build_venv"),
+        body,
+    ])
+
+
+def _fake_python(path, log):
+    """Интерпретатор-заглушка: -m venv DIR создаёт каталог с собой же внутри,
+    -m pip пишет в журнал (или падает, если есть FAIL_PIP), -c — версия."""
+    path.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "-m" && "$2" == "venv" ]]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; exit 0; fi\n'
+        'if [[ "$1" == "-m" && "$2" == "pip" ]]; then [[ -e "${FAIL_PIP:-/nonexistent}" ]] && exit 1; '
+        f'echo "pip $(dirname $(dirname $0))" >> "{log}"; exit 0; fi\n'
+        'if [[ "$1" == "-c" ]]; then echo "(3, 12)"; exit 0; fi\n', encoding="utf-8")
+    path.chmod(0o755)
+
+
+def test_a_failed_pip_leaves_the_working_environment_untouched(script, tmp_path):
+    """pip отказал — рабочее окружение как было: ссылка не тронута, новый
+    каталог убран. Раньше pip апгрейдил живой venv на месте."""
+    import subprocess
+    inst = tmp_path / "opt"; inst.mkdir(); log = tmp_path / "pip.log"
+    _fake_python(inst / "sys-python", log)
+    (inst / "venv" / "bin").mkdir(parents=True); _fake_python(inst / "venv" / "bin" / "python", log)
+    (inst / "venv" / "marker").write_text("old", encoding="utf-8")
+    flag = tmp_path / "fail"; flag.write_text("", encoding="utf-8")
+    r = subprocess.run(["bash", "-c", _venv_prog(script, inst, "build_venv")], capture_output=True, text=True,
+                       timeout=20, env={"PATH": "/usr/bin:/bin", "FAIL_PIP": str(flag)})
+    assert "DIE" in r.stdout and r.returncode != 0
+    assert (inst / "venv").is_dir() and not (inst / "venv").is_symlink(), "рабочее окружение отодвинуто при отказе"
+    assert (inst / "venv" / "marker").read_text(encoding="utf-8") == "old"
+    assert not any((inst / ".venvs").glob("2*")), "полусобранный каталог остался"
+
+
+def test_an_update_switches_by_link_and_rolls_back_to_the_old_directory(script, tmp_path):
+    """Обновление: прежний каталог venv отодвигается, ссылка — на новый
+    рядом; откат возвращает прежний каталог на место; доведённое
+    обновление оставляет одно окружение."""
+    import subprocess
+    inst = tmp_path / "opt"; inst.mkdir(); log = tmp_path / "pip.log"
+    _fake_python(inst / "sys-python", log)
+    (inst / "venv" / "bin").mkdir(parents=True); _fake_python(inst / "venv" / "bin" / "python", log)
+    (inst / "venv" / "marker").write_text("old", encoding="utf-8")
+    env = {"PATH": "/usr/bin:/bin", "AWG_IN_UPDATE": "1"}
+    r = subprocess.run(["bash", "-c", _venv_prog(script, inst, "build_venv; venv_rollback")],
+                       capture_output=True, text=True, timeout=20, env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (inst / "venv").is_dir() and not (inst / "venv").is_symlink(), "откат не вернул прежний каталог"
+    assert (inst / "venv" / "marker").read_text(encoding="utf-8") == "old"
+    assert "pip " + str(inst / ".venvs") in log.read_text(encoding="utf-8"), "pip шёл не в новый каталог"
+    r = subprocess.run(["bash", "-c", _venv_prog(script, inst, "build_venv; venv_prune")],
+                       capture_output=True, text=True, timeout=20, env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (inst / "venv").is_symlink() and (inst / "venv" / "marker").exists(), "копия рабочего окружения не та"
+    left = [d for d in (inst / ".venvs").iterdir()]
+    assert left == [(inst / "venv").resolve()], left
+
+
+def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp_path):
+    """Отказ во второй половине: прежний код из .prev-code и прежнее
+    окружение — на место, сервис поднят."""
+    import subprocess
+    inst = tmp_path / "opt"; inst.mkdir()
+    old_env = inst / ".venvs" / "A"; old_env.mkdir(parents=True)
+    new_env = inst / ".venvs" / "B"; new_env.mkdir()
+    (inst / "venv").symlink_to(new_env)
+    (inst / ".venvs" / ".prev").write_text(str(old_env) + "\n", encoding="utf-8")
+    prev = inst / ".prev-code"; prev.mkdir(); (prev / "awg-bot.sh").write_text("old", encoding="utf-8")
+    (inst / "awg-bot.sh").write_text("new", encoding="utf-8")
+    log = tmp_path / "log"
+    prog = "\n".join([
+        f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; AWG_UPDATE_PREV="{prev}"',
+        'ENV_FILE=/x; CONF_DIR=/x; DATA_DIR=/x',
+        'warn() { echo "WARN $*"; }',
+        f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
+        _extract_func(script, "venv_rollback"), _extract_func(script, "restore_prev_code"),
+        _extract_func(script, "post_update_rescue"),
+        "false; post_update_rescue",
+    ])
+    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert "возвращаю прежнюю версию" in r.stdout, r.stdout + r.stderr
+    assert (inst / "awg-bot.sh").read_text(encoding="utf-8") == "old" and not prev.exists()
+    assert (inst / "venv").resolve() == old_env.resolve(), "окружение не вернулось"
+    assert log.read_text(encoding="utf-8").strip() == "systemctl start awg-bot"

@@ -258,19 +258,75 @@ ensure_venv_ready() {
 }
 
 # ── apply-runtime: venv + юнит + валидация (общее для first-run и update) ─────
+# venv — ссылка на каталог в .venvs/. Окружение собирается РЯДОМ с рабочим
+# (копия рабочего, если оно есть, — тогда pip докачивает только изменившееся),
+# ссылка переключается на него, прежнее живёт до конца обновления: отказ
+# pip ничего не трогает, поздний отказ обновления возвращает и код, и
+# окружение (venv_rollback). Раньше pip апгрейдил живой venv на месте, и
+# упавшая сборка оставляла его полусобранным под новым кодом.
+venv_build_next() {  # → VENV_NEXT: каталог собранного окружения; 1 — не собралось (прежнее не тронуто)
+    VENV_NEXT="$INSTALL_DIR/.venvs/$(date +%Y%m%d-%H%M%S)-$$"
+    mkdir -p "$INSTALL_DIR/.venvs"
+    local cur=""; cur="$(readlink -f "$INSTALL_DIR/venv" 2>/dev/null)" || cur=""
+    if [[ -n "$cur" && -x "$cur/bin/python" && "$("$cur/bin/python" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)" \
+          == "$("$PYBIN" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)" ]]; then
+        log "копирую рабочее окружение рядом…"
+        cp -a "$cur" "$VENV_NEXT" || { rm -rf "$VENV_NEXT"; return 1; }
+    else
+        log "создаю окружение ($PYBIN)…"
+        "$PYBIN" -m venv "$VENV_NEXT" || { rm -rf "$VENV_NEXT"; return 1; }
+    fi
+    log "ставлю зависимости (pip install --upgrade -r requirements.txt)…"
+    # --upgrade: без него pip оставляет то, что стояло при первой установке, и
+    # окружение на хосте застывает во времени — данные таймзон, исправления в
+    # библиотеках. Верхние границы в requirements.txt держат мажоры на месте.
+    # Через python -m pip: консольные скрипты копии смотрят в прежний каталог.
+    if ! { "$VENV_NEXT/bin/python" -m pip install --quiet --no-cache-dir --upgrade pip \
+           && "$VENV_NEXT/bin/python" -m pip install --quiet --no-cache-dir --upgrade -r "$INSTALL_DIR/requirements.txt"; }; then
+        rm -rf "$VENV_NEXT"; return 1
+    fi
+}
+venv_switch() {  # venv_switch DIR — ссылка venv на DIR; прежняя цель записана в .venvs/.prev
+    local dir="$1" link="$INSTALL_DIR/venv" prev=""
+    if [[ -L "$link" ]]; then
+        prev="$(readlink -f "$link")"
+    elif [[ -d "$link" ]]; then
+        # установка до 3.3.0: venv — каталог. Отодвигается как есть: интерпретатор
+        # и пакеты работают и с нового места, откат вернёт его обратно
+        prev="$INSTALL_DIR/.venvs/legacy"; rm -rf "$prev"; mv "$link" "$prev"
+    fi
+    printf '%s\n' "$prev" > "$INSTALL_DIR/.venvs/.prev"
+    ln -sfn "$dir" "$link"                 # сервис в этот момент стоит: атомарность не нужна
+}
+venv_rollback() {  # ссылка venv — обратно на прежнее окружение (.venvs/.prev)
+    local prev="" link="$INSTALL_DIR/venv"
+    prev="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null)" || return 0
+    if [[ -n "$prev" && -d "$prev" ]]; then
+        if [[ "$prev" == "$INSTALL_DIR/.venvs/legacy" ]]; then
+            rm -f "$link"; mv "$prev" "$link"
+        else
+            ln -sfn "$prev" "$link"
+        fi
+    fi
+    rm -f "$INSTALL_DIR/.venvs/.prev"
+}
+venv_prune() {  # оставить одно окружение — то, на которое смотрит ссылка
+    local cur="" d
+    cur="$(readlink -f "$INSTALL_DIR/venv" 2>/dev/null)" || return 0
+    for d in "$INSTALL_DIR/.venvs"/*; do
+        [[ -d "$d" && "$d" != "$cur" ]] && rm -rf "$d"
+    done
+    rm -f "$INSTALL_DIR/.venvs/.prev"
+}
 build_venv() {
     if [[ "${AWG_VENV_FRESH:-}" == "1" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
         log "venv только что собран обновлением — пропускаю"; return 0   # slogic-9: не дважды
     fi
-    if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
-        log "создаю venv ($PYBIN)…"; "$PYBIN" -m venv "$INSTALL_DIR/venv"
-    fi
-    log "ставлю зависимости (pip install --upgrade -r requirements.txt)…"
-    "$INSTALL_DIR/venv/bin/pip" install --quiet --no-cache-dir --upgrade pip
-    # --upgrade: без него pip оставляет то, что стояло при первой установке, и
-    # venv на хосте застывает во времени — данные таймзон, исправления в
-    # библиотеках. Верхние границы в requirements.txt держат мажоры на месте.
-    "$INSTALL_DIR/venv/bin/pip" install --quiet --no-cache-dir --upgrade -r "$INSTALL_DIR/requirements.txt"
+    venv_build_next || die "окружение Python не собралось (pip) — рабочее не тронуто"
+    venv_switch "$VENV_NEXT"
+    # вне обновления откатывать некуда и незачем: прежнее — сразу долой;
+    # обновление чистит его само, когда довело дело до конца
+    [[ "${AWG_IN_UPDATE:-}" == "1" ]] || venv_prune
 }
 validate_config() {
     log "проверяю конфигурацию (config.validate)…"
@@ -850,13 +906,16 @@ cmd_update() {
     UPDATE_PREV="$INSTALL_DIR/.prev-code"; UPDATE_TMP="$tmp"
     rm -rf "$UPDATE_PREV"; mkdir -p "$UPDATE_PREV"
     trap update_rescue EXIT
-    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .prev-code -exec mv -t "$UPDATE_PREV" {} + \
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code -exec mv -t "$UPDATE_PREV" {} + \
         || die "прежний код не отодвинулся — обновление отменено"
     cp -a "$src"/. "$INSTALL_DIR"/ || die "новый код не лёг целиком — возвращаю прежний"
     chmod +x "$INSTALL_DIR/awg-bot.sh" 2>/dev/null || true
     [[ -x "$INSTALL_DIR/awg-bot.sh" && -f "$INSTALL_DIR/awgbot/__main__.py" ]] || die "новый код лёг не полностью — возвращаю прежний"
     trap - EXIT
-    rm -rf "$UPDATE_PREV" "$tmp"
+    # прежний код остаётся в .prev-code до конца второй половины: её отказ
+    # вернёт и его, и окружение (post_update_rescue)
+    rm -rf "$tmp"
+    export AWG_UPDATE_PREV="$UPDATE_PREV"
 
     # Дальше — руками НОВОГО скрипта, а не этого.
     #
@@ -878,12 +937,16 @@ update_rescue() {  # ловушка первой половины обновле
     [[ "$rc" -eq 0 ]] && return 0
     warn "обновление прервалось (код $rc) — возвращаю прежний код и поднимаю сервис"
     if [[ -n "${UPDATE_PREV:-}" && -d "$UPDATE_PREV" ]]; then
-        find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .prev-code -exec rm -rf {} + 2>/dev/null || true
-        ( shopt -s dotglob; mv "$UPDATE_PREV"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
-        rm -rf "$UPDATE_PREV"
+        restore_prev_code "$UPDATE_PREV"
     fi
     [[ -n "${UPDATE_TMP:-}" ]] && rm -rf "$UPDATE_TMP"
     systemctl start "$SERVICE" 2>/dev/null || true
+}
+restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает)
+    local prev="$1"
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code -exec rm -rf {} + 2>/dev/null || true
+    ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
+    rm -rf "$prev"
 }
 
 # ── host-режим: интерфейс на автозагрузке, мусор прежних версий — долой ───────
@@ -1054,19 +1117,31 @@ post_update_rescue() {  # ловушка второй половины обно�
     # на диске и ОСТАНОВЛЕННЫЙ сервис, причём молча: апдейтер запущен из
     # systemd-run с выводом в /dev/null. Поэтому: поднять сервис на том, что
     # есть, и сказать админу в чат.
-    local rc=$?
+    local rc=$? back=0
     [[ "$rc" -eq 0 ]] && return 0
-    warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
+    venv_rollback
+    if [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]]; then
+        warn "обновление прервалось (код $rc) — возвращаю прежнюю версию и поднимаю сервис"
+        restore_prev_code "$AWG_UPDATE_PREV"; back=1
+    else
+        warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
+    fi
     systemctl start "$SERVICE" 2>/dev/null || true
+    local what='Код уже подменён, но довести установку не удалось. Сервис поднят на том, что есть.'
+    [[ "$back" -eq 1 ]] && what='Довести установку не удалось — вернул прежнюю версию: и код, и окружение. Сервис поднят.'
     ( cd "$INSTALL_DIR" 2>/dev/null \
-        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" AWG_WHAT="$what" \
         && ./venv/bin/python -c "
+import os
 from awgbot.infra import tgsend
-tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\nКод уже подменён, '
-            'но довести установку не удалось. Сервис поднят на том, что есть.\n\n'
+tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\n' + os.environ['AWG_WHAT'] + '\n\n'
             'Посмотреть причину: <code>journalctl -u awg-bot -e</code>, '
             'повторить: <code>sudo awg-bot update &lt;архив&gt;</code>.')
 " >/dev/null 2>&1 ) || true
+}
+update_done() {  # обновление доведено: прежние код и окружение больше не нужны
+    [[ -n "${AWG_UPDATE_PREV:-}" ]] && rm -rf "$AWG_UPDATE_PREV"
+    venv_prune
 }
 
 cmd_post_update() {
@@ -1074,6 +1149,7 @@ cmd_post_update() {
     require_root
     trap post_update_rescue EXIT
     local wipe="${1:-0}"
+    export AWG_IN_UPDATE=1                 # build_venv держит прежнее окружение до конца
     ensure_python
     ensure_ping
     build_venv
@@ -1092,6 +1168,7 @@ cmd_post_update() {
         rm -f "$ENV_FILE" 2>/dev/null || true
         rm -rf "$CONF_DIR" 2>/dev/null || true
         warn "данные удалены — потребуется reconfigure перед стартом."
+        update_done
         trap - EXIT                            # это итог по запросу, не отказ: ловушке нечего спасать
         die "запусти: sudo awg-bot reconfigure"
     fi
@@ -1110,6 +1187,8 @@ cmd_post_update() {
             warn "$SERVICE не активен — journalctl -u $SERVICE -e"
         fi
     fi
+    # сервис стартовал — назад дороги нет: новый код мог уже тронуть базу
+    update_done
     trap - EXIT
     ok "Обновление завершено."
     # временный каталог с архивом от установщика — только из /tmp, чужое не трогаем

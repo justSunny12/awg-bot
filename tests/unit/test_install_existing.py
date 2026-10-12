@@ -651,7 +651,7 @@ class _PostUpdate:
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
             "install_unit", "ensure_host_autostart", "ensure_awg_module_loaded",
             "ensure_awg_generation", "adopt_resolver", "seed_conf", "validate_config",
-            "prune_old_kernel_builds", "sleep"))
+            "prune_old_kernel_builds", "update_done", "sleep"))
         prog = (
             "set -euo pipefail\n"
             f'SELF_PATH="{self.self_path}"; SERVICE=awg-bot\n'
