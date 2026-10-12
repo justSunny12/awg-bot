@@ -49,7 +49,7 @@ class LinkMixin:
             checks.append(GwCheck("ip_forward", None, "не прочитался"))
 
         # Вся обвязка — одна nft-таблица (gwguard): MASQUERADE, изоляция,
-        # метки Telegram, защита машины от туннеля. Одним `nft -j list table`.
+        # метки Telegram, защита самого устройства от туннеля. Одним `nft -j list table`.
         from awgbot.infra import gwguard
         try:
             info = gwguard.table_info()
