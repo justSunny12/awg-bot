@@ -213,6 +213,10 @@ def _peer_no_lan(services, mp):
     services.db.gateway_update(2, lan_mode=0)
 
 
+def _peer_space_off(services, mp):
+    mp.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
+
+
 def _peer_same(services, mp):
     services.db.gateway_update(2, lan_subnets=["192.168.1.0/24"])
 
@@ -404,6 +408,8 @@ SLOTS = [
          data=_gw(2, _label(2, "дача"), lan2=True), title="связь подсетей работает — парами"),
     Shot("adm.rt.peers.few", role="admin", press=[SetCB(sec="rt")],
          data=_gw(2, _peer_no_lan, lan2=True), title="связь подсетей: VPN-транзит только у одного слота — появится со вторым"),
+    Shot("adm.rt.peers.off", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_space_off, lan2=True), title="связь подсетей: адреса в туннеле выключены — к карточке"),
     Shot("adm.rt.peers.same", role="admin", press=[SetCB(sec="rt")],
          data=_gw(2, _peer_same, lan2=True), title="связь подсетей: одинаковые подсети — разные адреса в туннеле"),
     # ── автопереключение ─────────────────────────────────────────────────

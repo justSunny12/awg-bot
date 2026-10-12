@@ -55,7 +55,7 @@ def _sets(text: str) -> dict[str, list]:
 
 
 def _zone_rules(text: str) -> list[str]:
-    body = text.split("chain zone {", 1)[1].split("}", 1)[0]
+    body = text.split("chain zone {", 1)[1].split("\n    }", 1)[0]
     return [ln.strip() for ln in body.splitlines()[2:] if ln.strip()]
 
 
@@ -64,6 +64,12 @@ def classify(iif: str, saddr: str, daddr: str) -> int:
     sets = _sets(TEXT)
     s, d = ipaddress.ip_address(saddr), ipaddress.ip_address(daddr)
     for rule in _zone_rules(TEXT):
+        pre = re.fullmatch(r'iifname != \{ (.*) \} ip daddr != (\S+) accept', rule)
+        if pre:
+            links = [x.strip().strip('"') for x in pre.group(1).split(",")]
+            if iif not in links and d not in ipaddress.ip_network(pre.group(2)):
+                return 0
+            continue
         if rule == "fib daddr type local accept":
             if daddr in LOCAL:
                 return 0
@@ -126,8 +132,10 @@ def test_pairs_come_before_single_sides_in_the_chain():
     """Каждое правило завершает цепочку: одиночное «из сети слота» выше пары
     перезаписало бы зону пары."""
     rules = _zone_rules(TEXT)
-    assert rules[0] == "fib daddr type local accept"
+    assert rules[0] == 'iifname != { "awglink", "awglink2", "awglink3" } ip daddr != 10.240.0.0/12 accept', \
+        "прочий трафик хоста — первым правилом, без разбора пар"
+    assert rules[1] == "fib daddr type local accept"
     kinds = ["pair" if "ip saddr" in r and "ip daddr" in r else "src" if "ip saddr" in r else "dst"
-             for r in rules[1:]]
+             for r in rules[2:]]
     assert kinds == sorted(kinds, key=["pair", "src", "dst"].index)
     assert kinds.count("pair") == 6 and kinds.count("src") == 3 and kinds.count("dst") == 3

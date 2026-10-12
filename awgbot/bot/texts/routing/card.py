@@ -6,7 +6,7 @@ from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain import gwcfg
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
-from awgbot.domain.notices.lanmap import lan_space_off_line
+from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
@@ -238,24 +238,28 @@ def _gw_traffic(dev) -> str:
 
 
 def lan_space_lines(info: dict | None) -> list[str]:
-    """Карточка слота: адреса в туннеле выключены целиком (пространство
-    неисправно) или подсети слота, не попавшие в таблицу, — данные до 3.3.0,
-    которые ввод теперь не примет."""
+    """Карточка слота: адреса в туннеле выключены целиком (пространство или
+    метка), таблица не поставилась, или подсети слота, не попавшие в таблицу,
+    — данные до 3.3.0, которые ввод теперь не примет."""
     info = info or {}
     if info.get("problem"):
-        return [lan_space_off_line(info["problem"])]
-    out = []
+        return [lan_space_off_line(info["problem"], info.get("key") or "routing.lan_space")]
+    out = [lan_map_failed_line(info["error"])] if info.get("error") else []
     for it in info.get("issues") or []:
         net = f"<code>{_e(it.get('net', ''))}</code>"
+        # подсеть накрывает префикс соседа в туннеле: на шлюзе она пересеклась
+        # бы с его AllowedIPs — конфиг линка не соберётся
+        link = ", и конфиг линка не соберётся (пересекается с адресами в туннеле соседа)" \
+            if it.get("blocks_link") else ""
         if it.get("kind") == "space":
-            out.append(f"⚠️ {net} — в служебных адресах сервера AWG, в туннеле не видна: смени подсеть "
+            out.append(f"⚠️ {net} — в служебных адресах сервера AWG, в туннеле не видна{link}: смени подсеть "
                        "в «🗺 Подсети»")
         elif it.get("kind") == "clash":
             out.append(f"⚠️ {net} в туннеле (<code>{_e(it.get('twin', ''))}</code>) пересекается с "
                        f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>), "
                        "видна только первая: убери одну в «🗺 Подсети»")
         elif it.get("kind") == "wide":
-            out.append(f"⚠️ {net} шире /16, в туннеле не видна: сузь подсеть в «🗺 Подсети»")
+            out.append(f"⚠️ {net} шире /16, в туннеле не видна{link}: сузь подсеть в «🗺 Подсети»")
     return out
 
 

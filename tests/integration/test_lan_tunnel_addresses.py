@@ -116,8 +116,97 @@ def test_startup_drops_the_real_routes_and_puts_the_table(two, fake_routing, mon
     уборки настоящие адреса у полного туннеля работали бы до него."""
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     two.lan_map_startup()
-    assert fake_routing.dropped_routes == [("192.168.1.0/24", "awglink"), ("192.168.1.0/24", "awglink2")]
     assert fake_routing.lanmap and two.db.get_state("lanmap_text") == fake_routing.lanmap
+    assert fake_routing.dropped_routes == [("192.168.1.0/24", "awglink"), ("192.168.1.0/24", "awglink2")]
+
+
+def test_a_table_that_did_not_go_in_keeps_the_real_routes_and_is_said(two, fake_routing, monkeypatch):
+    """nft отказал — прежние маршруты настоящих подсетей не трогаем (иначе
+    админ остался бы без сетей вовсе), причина — в state, карточке слота и
+    замечании при запуске; поставилась на следующей сверке — строки уходят."""
+    from awgbot.bot.texts.routing.card import lan_space_lines
+    from awgbot.runtime import preflight
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+
+    def refuse(text):
+        raise routing.RoutingError("nft -c -f -: Error: Could not process rule: No such file or directory")
+    monkeypatch.setattr(routing.lanmap, "apply", refuse)
+    two.lan_map_startup()
+    assert fake_routing.lanmap is None and fake_routing.dropped_routes == []
+    card = two.lan_space_card(two.db.gateway(1))
+    assert card["error"].startswith("nft -c -f -: Error")
+    assert lan_space_lines(card) == [
+        "⚠️ Адреса в туннеле не работают: таблица awg_lan_map не поставлена (nft -c -f -: Error: Could not "
+        "process rule: No such file or directory) — журнал: <code>journalctl -u awg-bot | grep 'адреса в "
+        "туннеле'</code>"]
+    warns = preflight.collect_warnings(two, server_ok=True)
+    assert ("адреса в туннеле не работают: таблица awg_lan_map не поставлена (nft -c -f -: Error: Could not "
+            "process rule: No such file or directory) — журнал: journalctl -u awg-bot | grep 'адреса в "
+            "туннеле'") in warns, warns
+    monkeypatch.setattr(routing.lanmap, "apply", lambda text: setattr(fake_routing, "lanmap", text))
+    two.lan_map_ensure()
+    assert two.lan_space_card(two.db.gateway(1))["error"] == "" and two.lan_map_up()
+
+
+def test_an_empty_table_is_taken_down_when_it_is_still_there(two, fake_routing):
+    """Подсетей не осталось, а таблица в ядре стоит (state потерян, восстановлен
+    из копии) — снимается, а не остаётся половиной механизма."""
+    fake_routing.lanmap = "старая таблица"
+    two.db.gateway_update(1, lan_subnets=[]); two.db.gateway_update(2, lan_subnets=[])
+    two.lan_map_ensure()
+    assert fake_routing.lanmap is None and fake_routing.lanmap_applies == []
+
+
+def test_a_fwmark_on_the_slot_bits_turns_the_addresses_off(two, fake_routing, monkeypatch):
+    """Метка РФ-доступа на битах слотов увела бы помеченное в чужой линк:
+    адреса в туннеле выключены, причина и ключ для починки — в карточке."""
+    from awgbot.bot.texts.routing.card import lan_space_lines
+    two.lan_map_ensure()
+    monkeypatch.setattr(config, "ROUTING_FWMARK", 4)
+    two.lan_map_ensure()
+    assert fake_routing.lanmap is None
+    card = two.lan_space_card(two.db.gateway(1))
+    assert card["key"] == "routing.fwmark"
+    assert lan_space_lines(card) == [
+        "⚠️ Адреса в туннеле выключены: метка РФ-доступа routing.fwmark 0x4 задевает биты меток слотов 0x6 — "
+        "поправь <code>routing.fwmark</code> в app.yaml"]
+
+
+def test_slot_policy_is_not_asserted_twice_in_one_tick(two, fake_routing, monkeypatch):
+    """Задействован РФ-доступ — политику слотов утверждает он (ensure_policy);
+    сверка адресов в туннеле в тот же такт её не повторяет. Не задействован —
+    ставит сама."""
+    monkeypatch.setattr(two, "routing_engaged", lambda: True)
+    monkeypatch.setattr(two, "_ensure_gateway_policy", lambda: two.policy.append("rf"))
+    two.routing_liveness_tick()
+    assert two.policy == ["rf"], two.policy
+    assert fake_routing.lanmap, "таблица в первый такт — всё равно"
+
+
+def test_a_broken_space_keeps_quiet_about_the_linked_networks(two, monkeypatch):
+    """Пока адреса в туннеле выключены, связи подсетей нет — хвост не шлётся
+    и ключ не взводится: скажется, когда пространство починят."""
+    _legacy_toggle(monkeypatch, False)
+    two.db.gateway_update(1, lan_mode=1); two.db.gateway_update(2, lan_mode=1)
+    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
+    assert two.lan_space_announce() == [] and not two.db.get_state("lan_peers_announced")
+    assert two.gateway_peer_nets_info() == {"state": "off"}
+    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
+    assert len(two.lan_space_announce()) == 1
+
+
+def test_an_old_subnet_over_a_neighbours_prefix_says_the_link_will_not_build(two):
+    """Подсеть до 3.3.0 в пространстве, накрывающая префикс соседа с
+    VPN-транзитом: на шлюзе она пересеклась бы с его AllowedIPs — конфиг
+    линка не соберётся, пока её не сменят; это надо сказать."""
+    from awgbot.bot.texts.routing.card import lan_space_lines
+    two.db.gateway_update(1, lan_subnets=["192.168.1.0/24", "10.241.0.0/24"], lan_mode=1)
+    two.db.gateway_update(2, lan_mode=1)
+    lines = lan_space_lines(two.lan_space_card(two.db.gateway(1)))
+    assert lines == ["⚠️ <code>10.241.0.0/24</code> — в служебных адресах сервера AWG, в туннеле не видна, и конфиг "
+                     "линка не соберётся (пересекается с адресами в туннеле соседа): смени подсеть в «🗺 Подсети»"]
+    two.db.gateway_update(2, lan_mode=0)
+    assert "конфиг линка" not in lan_space_lines(two.lan_space_card(two.db.gateway(1)))[0]
 
 
 def _legacy_toggle(monkeypatch, on: bool):
@@ -139,7 +228,8 @@ def test_the_announcement_says_once_that_the_networks_are_now_linked(two, monkey
     notes = two.lan_space_announce()
     if not told:
         assert notes == [] and two.lan_space_announce() == []
-        assert two.db.get_state("lan_space_announced") == "1"
+        assert two.db.get_state("lan_peers_announced") == "1"
+        assert not two.db.get_state("lan_space_announced"), "ключ полного уведомления — не этого хвоста"
         return
     assert len(notes) == 1
     assert ("Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 "

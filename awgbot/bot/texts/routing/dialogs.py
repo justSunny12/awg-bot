@@ -28,8 +28,10 @@ GW_TOKEN_NOT_FORGOTTEN = ("⚠️ Токен бота этого устройс�
                           "номером получит его в файле первого применения")
 
 
-def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
-    """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит."""
+def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
+    """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит.
+    reissue — кому подсети соседей после включения доедут только файлом
+    (агенты 3.2.x этого и соседних слотов с VPN-транзитом)."""
     name = slot_ref(state)
     chan = state.get("channel") or {}
     # агент с документом получит режим каналом и не на связи — как только появится
@@ -42,10 +44,13 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
                  "⚠️ Шлюз станет точкой отказа: упадёт — подсеть без интернета, резерв не поможет"]
         peers = [slot_ref(x) for x in state.get("states") or []
                  if x["gateway"].id != state["gateway"].id and x["gateway"].lan_mode]
-        if peers:
+        if peers and not (state.get("lan_space") or {}).get("problem"):
             lines.append(f"Сеть свяжется с сетями других шлюзов с VPN-транзитом ({', '.join(peers)}): их "
                          "устройства смогут ходить сюда по адресам в туннеле, а здешние — к ним. Только твои "
                          "локальные сети")
+            if reissue:
+                lines.append("Агентам v3.2 подсети соседей доедут только файлом — после включения перевыпусти "
+                             "конфигурацию: " + ", ".join(_e(n) for n in reissue))
         if not resolver:
             lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на <code>1.1.1.1</code> через туннель, без "
                          "защиты от DoH — рекомендуется настроить (⚙️ → 🖥 Сервер AWG)")

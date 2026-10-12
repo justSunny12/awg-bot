@@ -1,43 +1,60 @@
-"""lanmap.py — адреса в туннеле для локальных сетей шлюзов: записи таблицы
-`inet awg_lan_map` из слотов, её сверка вместе с таблицами и правилами слотов,
-перевод адресов в записях SMB, проверка пространства, разовая уборка прежних
-маршрутов и уведомление после обновления (схема и формулы — util/lanspace,
-таблица — infra/routing/lanmap)."""
+"""lanmap.py — адреса в туннеле для локальных сетей шлюзов: почему выключены
+(пространство, метка), записи таблицы `inet awg_lan_map` из слотов, пары для
+экранов, перевод адресов в записях SMB (схема и формулы — util/lanspace,
+таблица — infra/routing/lanmap, сверка и старт — lanmap_sync).
+
+Адреса в туннеле — доступ устройств админа и соседних сетей к локальным
+сетям шлюзов, а не РФ-доступ: ни выключатель РФ-доступа (app.routing.enabled),
+ни его рубильник (хук маркировки) их не выключают — они действуют, пока у
+слотов есть подсети. Решение 12.10.2026, концепт «адреса в туннеле»."""
 
 from __future__ import annotations
 
 import ipaddress
 
-from awgbot.core import config, settings
-from awgbot.domain.services.types import Notification
+from awgbot.core import config
 from awgbot.infra import routing
 from awgbot.util import lanspace
-
-from .common import log
 
 
 class LanMapMixin:
     """Адреса в туннеле для локальных сетей шлюзов."""
 
     _LANMAP_TEXT_KEY = "lanmap_text"                 # текст последней поставленной таблицы
-    _LAN_ANNOUNCED_KEY = "lan_space_announced"       # уведомление после обновления отправлено
-    # Тумблер связи подсетей до 3.3.0. Связь подсетей теперь часть VPN-транзита,
-    # ключ в conf мёртвый; читается один раз — для уведомления после обновления.
-    _PEER_NETS_LEGACY_KEY = "app.routing.peer_nets.enabled"
+    _LANMAP_ERROR_KEY = "lanmap_error"               # таблица не поставилась: причина (карточка, preflight)
 
-    def lan_space_problem(self) -> str:
-        """Причина, по которой адреса в туннеле включать нельзя, или "": служебное
-        пространство задевает подсети клиентов (с подсетью переезда) или /30
-        линков, либо резолвер админа или адрес перехвата DNS стоят внутри него
-        вне служебной /16. Линки — и из настроек слотов, и заведённые в БД."""
+    def lan_off(self) -> tuple[str, str]:
+        """(причина, ключ conf, которым её чинить), почему адреса в туннеле
+        выключены целиком; ("", "") — включены. Служебное пространство
+        задевает подсети клиентов (с подсетью переезда) или /30 линков, либо
+        резолвер админа или адрес перехвата DNS стоят внутри него вне служебной
+        /16 (routing.lan_space); или метка РФ-доступа задевает биты меток
+        слотов (routing.fwmark) — пакет ушёл бы не в тот линк. Линки — и из
+        настроек слотов, и заведённые в БД."""
         from awgbot.infra import admindns
+        slots = self.db.gateways()
         clients = [net for net, _iface in config.routing_client_subnets()]
         links = list(config.ROUTING_LINK_CIDRS)
-        for gw in self.db.gateways():
+        for gw in slots:
             if gw.link_cidr and gw.link_cidr not in links:
                 links.append(gw.link_cidr)
-        return lanspace.space_problem(lanspace.space(), clients, links,
-                                      admindns.addr(), routing.DNS_INTERCEPT_ADDR)
+        why = lanspace.space_problem(lanspace.space(), clients, links,
+                                     admindns.addr(), routing.DNS_INTERCEPT_ADDR)
+        if why:
+            return why, "routing.lan_space"
+        mark = int(config.ROUTING_FWMARK)
+        bits = 0
+        for gw in slots:
+            if 1 <= int(gw.id) <= lanspace.MAX_SLOTS:
+                bits |= routing.slot_mark(gw.id)
+        if mark & bits:
+            return (f"метка РФ-доступа routing.fwmark 0x{mark:x} задевает биты меток слотов "
+                    f"0x{bits:x}"), "routing.fwmark"
+        return "", ""
+
+    def lan_space_problem(self) -> str:
+        """Причина, по которой адреса в туннеле выключены целиком, или "" (lan_off)."""
+        return self.lan_off()[0]
 
     # ── записи таблицы ───────────────────────────────────────────────────────
 
@@ -92,10 +109,23 @@ class LanMapMixin:
         return self._lan_split(gw)[0]
 
     def lan_space_card(self, gw) -> dict:
-        """Для карточки слота: {'problem': причина неисправного пространства
-        или '', 'issues': отброшенные подсети слота}."""
-        problem = self.lan_space_problem()
-        return {"problem": problem, "issues": [] if problem or gw is None else self._lan_split(gw)[1]}
+        """Для карточки слота: {'problem': почему адреса в туннеле выключены
+        или '', 'key': ключ conf для починки, 'error': отказ установки
+        таблицы или '', 'issues': отброшенные подсети слота}. У отброшенной
+        подсети шире /16 или в пространстве, накрывающей префикс соседа, —
+        'blocks_link': на шлюзе она пересеклась бы с его AllowedIPs, и конфиг
+        линка не соберётся, пока её не сменят."""
+        problem, key = self.lan_off()
+        error = self.db.get_state(self._LANMAP_ERROR_KEY) or ""
+        if problem or gw is None:
+            return {"problem": problem, "key": key, "error": "", "issues": []}
+        issues = self._lan_split(gw)[1]
+        peers = [ipaddress.IPv4Network(p) for p in self.gateway_peer_nets(gw.id)]
+        for it in issues:
+            if it["kind"] in ("space", "wide"):
+                net = ipaddress.IPv4Network(it["net"])
+                it["blocks_link"] = any(net.overlaps(p) for p in peers)
+        return {"problem": "", "key": "", "error": error, "issues": issues}
 
     def lan_items_twinned(self, gw, items) -> list[dict]:
         """Записи SMB слота (настоящие адреса его сети, после чистки) — с
@@ -110,94 +140,3 @@ class LanMapMixin:
             if any(a in real for real, _t in pairs):
                 out.append({**it, "a": str(lanspace.twin_addr(gw.id, a))})
         return out
-
-    # ── сверка таблицы ───────────────────────────────────────────────────────
-
-    def lan_map_ensure(self) -> bool:
-        """Таблицы и правила слотов с подсетями — независимо от РФ-доступа
-        (доступ админа к сетям от него не зависит), MSS-кламп в их линки и
-        таблица awg_lan_map. Таблицу перевыставляет, только если текст
-        разошёлся с поставленным или её нет в ядре. False — что-то не
-        поставлено (причина — в журнале)."""
-        entries = self.lan_map_entries()
-        ok = True
-        for sid, link in sorted({(e.slot, e.link) for e in entries}):
-            try:
-                routing.ensure_slot_policy(sid, link)
-                routing.ensure_mss_clamp(link)
-            except routing.RoutingError as e:
-                ok = False
-                log.warning("адреса в туннеле: политика слота %s (%s) не поставлена: %s", sid, link, e)
-        sp = lanspace.space()
-        prefixes = {e.slot: str(lanspace.slot_prefix(e.slot, sp)) for e in entries}
-        text = routing.lanmap.render(entries, str(sp), prefixes)
-        try:
-            if text == (self.db.get_state(self._LANMAP_TEXT_KEY) or "") and (not text or routing.lanmap.present()):
-                return ok
-            if text:
-                routing.lanmap.apply(text)
-            else:
-                routing.lanmap.remove()
-        except routing.RoutingError as e:
-            # тот же отказ каждые 10 тактов — в журнал один раз, до смены причины
-            if getattr(self, "_lanmap_err", "") != str(e):
-                log.warning("адреса в туннеле: таблица %s не поставлена: %s", routing.lanmap.TABLE, e)
-            self._lanmap_err = str(e)
-            return False
-        self._lanmap_err = ""
-        self.db.set_state(self._LANMAP_TEXT_KEY, text)
-        log.info("адреса в туннеле: таблица %s — %s", routing.lanmap.TABLE,
-                 f"подсетей {len(entries)}" if text else "снята")
-        return ok
-
-    def lan_map_tick(self) -> None:
-        """Такт живости: первый и каждый 10-й — сверка таблицы (дешёвая: текст
-        против state и список таблиц ядра); события — правка подсетей, снятие
-        слота, старт — сверяют сами."""
-        n = getattr(self, "_lanmap_tick", -1) + 1
-        self._lanmap_tick = n
-        if n % 10:
-            return
-        try:
-            self.lan_map_ensure()
-        except Exception as e:                            # noqa: BLE001
-            log.warning("адреса в туннеле: сверка на такте: %s", e)
-
-    def lan_real_routes_drop(self) -> None:
-        """Уборка маршрутов настоящих подсетей слотов в основной таблице,
-        поставленных 3.2.x: они живы до ребута, и без уборки настоящие адреса
-        у полного туннеля работали бы до него — полупереход. Снимается со
-        сдвигом минимума на 3.3.0."""
-        if not config.ROUTING_GW_INTERFACE:
-            return
-        pairs = [(n, g.link_if) for g in self.db.gateways() for n in g.lan_subnets or []]
-        if not pairs:
-            return
-        try:
-            routing.drop_lan_routes(pairs)
-        except routing.RoutingError as e:
-            log.warning("адреса в туннеле: прежние маршруты подсетей не сняты: %s", e)
-
-    def lan_map_startup(self) -> list[Notification]:
-        """Старт бота: прежние маршруты настоящих подсетей — прочь, таблицы
-        слотов и awg_lan_map — на место до первого такта, затем разовое
-        уведомление после обновления."""
-        self.lan_real_routes_drop()
-        self.lan_map_ensure()
-        return self.lan_space_announce()
-
-    def lan_space_announce(self) -> list[Notification]:
-        """Один раз после обновления: прежний тумблер связи подсетей был
-        выключен, а слотов с VPN-транзитом два и больше — их сети теперь
-        связаны без вопроса, и это надо сказать прямо."""
-        from awgbot.domain.alerts import armer
-        from awgbot.domain.notices.lanmap import lan_peers_joined
-        if self.db.get_state(self._LAN_ANNOUNCED_KEY) == "1":
-            return []
-        transit = [g for g in self.db.gateways() if g.lan_mode and g.lan_subnets]
-        was_off = not settings.get_bool(self._PEER_NETS_LEGACY_KEY, False)
-        if not (was_off and len(transit) >= 2):
-            self.db.set_state(self._LAN_ANNOUNCED_KEY, "1")
-            return []
-        return [Notification(config.ADMIN_ID, lan_peers_joined([self._gw_link(g) for g in transit]),
-                             on_sent=armer(self.db, self._LAN_ANNOUNCED_KEY, "1"))]

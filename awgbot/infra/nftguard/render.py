@@ -50,14 +50,18 @@ def render(spec: pkg.GuardSpec) -> str:
         # исключение: транзит линк ↔ линк — только между линками слотов с
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
-        block: list[str] = []
+        # Второе — частные адреса назначения не уходят к провайдеру (ниже).
+        rules = _wan_private_drop(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
-            rules = [f"        iifname {links} oifname {links} drop"]
             if spec.peer_link_ifs:
                 transit = nftjson.ifs(spec.peer_link_ifs)
-                rules = [f"        iifname {links} oifname {links} iifname != {transit} drop",
-                         f"        iifname {links} oifname {links} oifname != {transit} drop"]
+                rules += [f"        iifname {links} oifname {links} iifname != {transit} drop",
+                          f"        iifname {links} oifname {links} oifname != {transit} drop"]
+            else:
+                rules.append(f"        iifname {links} oifname {links} drop")
+        block: list[str] = []
+        if rules:
             block = ["", "    chain forward {",
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
@@ -137,6 +141,7 @@ def render(spec: pkg.GuardSpec) -> str:
             # адрес резолвера админа — только локальный: пропади он с хоста,
             # запрос устройства админа не уходит маршрутом по умолчанию к провайдеру
             out.append(f"        ip daddr {spec.admin_dns4} drop")
+        out += _wan_private_drop(spec)
         if spec.peer_link_ifs:
             # линк ↔ линк: связь подсетей между слотами с VPN-транзитом;
             # что именно едет, ограничивает AllowedIPs на стороне шлюза
@@ -162,3 +167,16 @@ def render(spec: pkg.GuardSpec) -> str:
     out.append("}")
     return "\n".join(out) + "\n"
 
+
+def _wan_private_drop(spec) -> list[str]:
+    """Частные адреса назначения (RFC 1918, с ними и пространство адресов в
+    туннеле) не уходят во внешний интерфейс — ни у кого. Без правила такой
+    пакет шёл бы маршрутом по умолчанию к провайдеру: адрес в туннеле в окно,
+    когда таблицы awg_lan_map нет (ребут до старта бота, адреса выключены,
+    у слотов нет подсетей), и старые закладки на настоящие адреса сетей
+    шлюзов. Резолвер и перехват DNS — локальные (input), РФ-доступ —
+    публичные адреса, линки и awg-интерфейсы — не внешние: их это не касается."""
+    if not spec.wan_ifs:
+        return []
+    nets = "{ " + ", ".join(pkg.PRIVATE4) + " }"
+    return [f"        oifname {nftjson.ifs(spec.wan_ifs)} ip daddr {nets} drop"]

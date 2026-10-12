@@ -53,6 +53,11 @@ def _lan_old(slot: int, nets: list):
     return step
 
 
+def _table_failed(services, mp):
+    """nft не принял таблицу адресов в туннеле — причина в state."""
+    services.db.set_state("lanmap_error", "nft -c -f -: Error: Could not process rule: No such file or directory")
+
+
 def _space_off(services, mp):
     """Служебное пространство адресов в туннеле задевает подсеть клиентов."""
     mp.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
@@ -116,6 +121,11 @@ CARDS = [
           "адреса в туннеле двух подсетей слота пересекаются — видна первая", "adm.gw.card.lan.clash"),
     _card(2, _gw(2, _space_off, lan2=True),
           "служебное пространство неисправно — адреса в туннеле выключены", "adm.gw.card.lan.off"),
+    _card(1, _gw(2, _lan_old(1, [LAN1, "10.241.0.0/24"]), lan2=True),
+          "подсеть в служебных адресах накрывает префикс соседа — конфиг линка не соберётся",
+          "adm.gw.card.lan.blocks_link"),
+    _card(2, _gw(2, _table_failed, lan2=True),
+          "таблица адресов в туннеле не поставилась — причина строкой", "adm.gw.card.lan.failed"),
     _card(2, _gw(2, _own_off, lan2=True),
           "синхронизация у слота не действует — строки «📋» нет", "adm.gw.card.own.off"),
     # ── SMB соседей в карточке слота ─────────────────────────────────────

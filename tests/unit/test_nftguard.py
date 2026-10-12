@@ -21,6 +21,7 @@ def host_mode(monkeypatch):
     monkeypatch.setattr(config, "SSH_PORT", 2222)
     monkeypatch.setattr(nftguard, "listen_ports", lambda: [42755, 443])
     monkeypatch.setattr(nftguard, "_tunnel_ifs", lambda: ["awg1"])
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])       # внешний интерфейс — в своих тестах
     monkeypatch.setattr(nftguard, "_resolve", lambda h: {"home.example.org": ["203.0.113.9"]}.get(h, []))
 
 
@@ -717,3 +718,51 @@ def test_docker_mode_has_no_admin_resolver_rule(monkeypatch, tmp_path):
     spec = nftguard.build_spec(["10.8.1.5"])
     assert spec.admin_dns4 == ""
     assert "10.255.53.53" not in nftguard.render(spec)
+
+
+# ── частные адреса не уходят к провайдеру ────────────────────────────────────
+
+_WAN_RULE = 'oifname { "eth0" } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } drop'
+
+
+def test_private_destinations_never_leave_through_the_wan(host_mode, monkeypatch):
+    """Адрес в туннеле в окно без таблицы awg_lan_map (ребут до старта бота,
+    адреса выключены) и старая закладка на настоящий адрес сети шлюза ушли бы
+    маршрутом по умолчанию к провайдеру. Правило — для всех, раньше любых
+    accept по подсетям туннеля; и в форме с фильтром, и в NAT-only."""
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    lines = [ln.strip() for ln in nftguard.render(nftguard.build_spec(["10.9.1.5"])).splitlines()]
+    fwd = lines[lines.index("chain forward {"):]
+    assert fwd.index("ct state invalid drop") < fwd.index(_WAN_RULE) < fwd.index("ip saddr @tunnel_nets4 accept")
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    text = nftguard.render(nftguard.build_spec([]))
+    assert _WAN_RULE in [ln.strip() for ln in text.splitlines()]
+    assert "policy accept" in text.split("chain forward", 1)[1], "NAT-only: политика хоста остаётся его"
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])
+    assert "ip daddr { 10.0.0.0/8" not in nftguard.render(nftguard.build_spec([])), "внешний не найден — правила нет"
+
+
+def test_the_wan_is_the_default_route_device_but_never_a_tunnel(monkeypatch):
+    """Внешний — устройство маршрута по умолчанию основной таблицы; awg и
+    линки внешними не бывают; мусор в имени и нечитаемый вывод — мимо."""
+    import subprocess as sp
+    monkeypatch.setattr(nftguard, "_nat_exclude_ifs", lambda: ["awg1", "awglink"])
+    out = json.dumps([{"dst": "default", "gateway": "203.0.113.1", "dev": "eth0"},
+                      {"dst": "default", "dev": "awglink"}, {"dst": "default", "dev": "bad name;"},
+                      {"dst": "default", "dev": "eth0"}]).encode()
+    monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(a, 0, out, b""))
+    assert nftguard.wan_ifaces() == ["eth0"]
+    monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(a, 0, b"not json", b""))
+    assert nftguard.wan_ifaces() == []
+
+
+def test_docker_mode_has_no_wan_rule(host_mode, monkeypatch):
+    """В docker-режиме FORWARD — дело docker, своей цепочки нет."""
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
+    monkeypatch.setattr(awg, "in_container", lambda: True)
+    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.17.0.0/16"])
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.wan_ifs == [] and "ip daddr { 10.0.0.0/8" not in nftguard.render(spec)
+

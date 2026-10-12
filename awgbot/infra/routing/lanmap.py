@@ -3,8 +3,9 @@
 
 Из записей «слот, линк, настоящая подсеть, двойник» собирается одна таблица:
 
-  zone    prerouting, raw — зона conntrack по неупорядоченной паре сторон
-          пакета: из сети какого слота он пришёл и в адреса какого слота идёт
+  zone    prerouting, raw — прочий трафик (не из линков слотов и не в
+          пространство) уходит первым правилом; зона conntrack по
+          неупорядоченной паре сторон пакета: из сети какого слота он пришёл и в адреса какого слота идёт
           (z = 1 + 16·min + max; обе стороны 0 — зона 0, как у всего прочего).
           Без зон одинаковые настоящие адреса за разными шлюзами спорили бы
           не за маршрут, а за запись conntrack: после перевода ответные
@@ -88,8 +89,12 @@ def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> st
     for sid in ids:
         nets = ", ".join(e.real for e in slots[sid][1])
         out.append(f"    set real{sid} {{ type ipv4_addr; flags interval; elements = {{ {nets} }} }}")
+    links = "{ " + ", ".join(f'"{slots[sid][0]}"' for sid in ids) + " }"
     out += ["", "    chain zone {",
             "        type filter hook prerouting priority raw; policy accept;",
+            # весь прочий трафик — не из линков слотов и не в пространство —
+            # уходит первым же правилом: цепочка стоит на каждом пакете хоста
+            f"        iifname != {links} ip daddr != {space} accept",
             "        fib daddr type local accept"]
     for a in ids:
         for b in ids:

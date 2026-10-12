@@ -206,7 +206,8 @@ async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer(texts.GATEWAY_LAN_NO_SUBNET, show_alert=True)
         return
     resolver = await call(services.gateway_resolver_addr, gw) if on else ""
-    await edit(cb, texts.gateway_lan_ask(st, on, resolver), kb.gateway_lan_confirm(gw.id, on))
+    reissue = await call(services.gateway_transit_reissue, gw.id) if on else []
+    await edit(cb, texts.gateway_lan_ask(st, on, resolver, reissue), kb.gateway_lan_confirm(gw.id, on))
     await cb.answer()
 
 
@@ -227,18 +228,16 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
         return
     await _render_card(cb, services, callback_data.slot)
     chan = st.get("channel") or {}
-    if (chan.get("cfg") or {}).get("cfg1"):
-        # документ везёт и режим, и подсети соседей — всё применится само
-        tail = "применится автоматически по упр. каналу"
-    else:
-        online = bool(chan.get("online"))
-        tail = "применится автоматически по упр. каналу" if online else "перевыпусти конфигурацию шлюза"
-        others = [x for x in st["states"] if x["gateway"].id != st["gateway"].id and x["gateway"].lan_mode]
-        if online and others:
-            # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
-            # живут в конфиге линка — агенту без документа это только файлом
-            tail += "; для связи подсетей перевыпусти конфигурацию каждого шлюза"
-    await cb.answer(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail, show_alert=True)
+    # документ везёт режим всегда; агенту 3.2.x — каналом, только пока он на связи
+    by_file = not (chan.get("cfg") or {}).get("cfg1") and not chan.get("online")
+    tail = "перевыпусти конфигурацию шлюза" if by_file else "применится автоматически по упр. каналу"
+    # подсети соседей меняются у этого слота и у других слотов с VPN-транзитом
+    # и живут в конфиге линка: агентам без документа — только файлом, поимённо
+    names = [n for n in await call(services.gateway_transit_reissue, callback_data.slot)
+             if not (by_file and n == st.get("display"))]
+    if names:
+        tail += "; для связи подсетей перевыпусти конфигурацию: " + ", ".join(names)
+    await cb.answer(ui.toast(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail), show_alert=True)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "router"))

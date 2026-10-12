@@ -335,9 +335,7 @@ class MarkMixin:
             self.lan_map_ensure()                          # адреса в туннеле: убранные — прочь, новые — в таблицу
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_set_lan_subnets: адреса в туннеле не доведены: %s", e)
-        return {"kept": kept, "rejected": rejected,
-                "twins": [(n, str(lanspace.twin_net(gw.id, n, space))) for n in kept]
-                if gw.id <= lanspace.MAX_SLOTS else []}
+        return {"kept": kept, "rejected": rejected, "twins": self.lan_twins(self.db.gateway(gw.id))}
 
     @staticmethod
     def _lan_clash_reason(slot_id: int, net, other: str, space) -> str:

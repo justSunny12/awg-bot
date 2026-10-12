@@ -449,10 +449,10 @@ def test_peer_nets_are_prefixes_of_the_other_transit_slots(services, slots, monk
     services.gateway_set_lan_subnets(1, "192.168.1.0/24")
     services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     info = services.gateway_peer_nets_info()
-    assert services.gateway_peer_nets(1) == [] and info["state"] == "few" and info["who"] == ["NASPi", "Pi2"]
+    assert services.gateway_peer_nets(1) == [] and info == {"state": "few"}
     services.db.gateway_update(1, lan_mode=1)
     info = services.gateway_peer_nets_info()
-    assert services.gateway_peer_nets(1) == [] and info["state"] == "few" and info["who"] == ["Pi2"]
+    assert services.gateway_peer_nets(1) == [] and info == {"state": "few"}
     services.db.gateway_update(2, lan_mode=1)
     for dead in (False, True):
         store["app.routing.peer_nets.enabled"] = dead

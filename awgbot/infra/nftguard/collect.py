@@ -189,6 +189,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()] if host_mode else [],
         admin_dns4=_admin_dns_addr() if host_mode else "",
         lan_space4=_lan_space() if host_mode else "",
+        wan_ifs=pkg.wan_ifaces() if host_mode else [],
     )
 
 
@@ -214,6 +215,29 @@ def _peer_link_ifs(links: list[str], transit) -> list[str]:
     want = [str(t) for t in (transit or ()) if str(t) in links]
     out = list(dict.fromkeys(want))
     return out if len(out) >= 2 else []
+
+
+_IFNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,15}")
+
+
+def wan_ifaces() -> list[str]:
+    """Внешние интерфейсы хоста — устройства маршрутов по умолчанию основной
+    таблицы, кроме awg-интерфейсов и линков. В них частным адресам назначения
+    из туннеля не место (render: «частное — не в WAN»). Не прочиталось — пусто,
+    правила нет: таблица собирается и из CLI, и до подъёма сети."""
+    import json
+    try:
+        out = subprocess.run(["ip", "-j", "route", "show", "default"], capture_output=True, timeout=5).stdout
+        routes = json.loads(out.decode(errors="replace") or "[]")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    skip = set(pkg._nat_exclude_ifs())
+    devs: list[str] = []
+    for r in routes if isinstance(routes, list) else []:
+        dev = str((r or {}).get("dev") or "")
+        if dev and dev not in skip and dev not in devs and _IFNAME_RE.fullmatch(dev):
+            devs.append(dev)
+    return devs
 
 
 def _tunnel_ifs() -> list[str]:

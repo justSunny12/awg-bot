@@ -114,10 +114,13 @@ class RoutingLivenessMixin:
         кандидата → гашение, три хороших подряд → возврат; 5) объявления — в
         том же такте, что и действие. Липкость — следствие шага 3.
         """
-        self.lan_map_tick()                    # адреса в туннеле — от РФ-доступа не зависят
         if not routing.available():
+            self.lan_map_tick()                # адреса в туннеле — от РФ-доступа не зависят
             return []
         engaged = self.routing_engaged()
+        # задействован РФ-доступ — политику слотов утверждает он сам (ниже, по
+        # тому же ритму), второй раз за такт не надо
+        self.lan_map_tick(slot_policy=not engaged)
         slots = self.db.gateways()
         active = self.active_gateway()
         # Зонды СНАРУЖИ замка и до транзакции: они длятся секунды (сеть), и

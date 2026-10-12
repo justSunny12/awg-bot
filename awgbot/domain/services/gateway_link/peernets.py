@@ -60,18 +60,28 @@ class PeerNetsMixin:
 
     def gateway_peer_nets_info(self) -> dict:
         """Строка «↔️ Связь подсетей» экрана «Шлюзы»: {'state', …}.
-        state: few — слотов с VPN-транзитом меньше двух (who — слоты без
-        него); ok — pairs_named: [(имя, подпись, адреса в туннеле)]."""
-        slots = self.db.gateways()
+        state: off — адреса в туннеле выключены (пространство или метка, см.
+        карточку); few — слотов с VPN-транзитом меньше двух; ok — pairs_named:
+        [(имя, подпись, адреса в туннеле)]."""
+        if self.lan_space_problem():
+            return {"state": "off"}
         transit = self.gateway_transit_slots()
-        info: dict = {"state": "few", "slots": len(slots)}
         if len(transit) < 2:
-            info["who"] = [self._gw_display(g) for g in slots if not g.lan_mode] if len(slots) > 1 else []
-            return info
-        info["state"] = "ok"
-        info["pairs_named"] = [(self._gw_name(g), g.label, [t for _r, t in self.lan_twins(g)])
-                               for g in transit]
-        return info
+            return {"state": "few"}
+        return {"state": "ok",
+                "pairs_named": [(self._gw_name(g), g.label, [t for _r, t in self.lan_twins(g)]) for g in transit]}
+
+    def gateway_transit_reissue(self, slot_id: int) -> list[str]:
+        """Кому подсети соседей после включения или выключения VPN-транзита
+        слота доедут только файлом: менялись они у самого слота и у других
+        слотов с VPN-транзитом — из них агенты без документа конфигурации
+        (3.2.x). Других слотов с транзитом нет или адреса в туннеле выключены —
+        связь не меняется, пусто. Имена — для экранов, сырые."""
+        me = self.db.gateway(slot_id)
+        others = [g for g in self.gateway_transit_slots() if g.id != int(slot_id)]
+        if me is None or not others or self.lan_space_problem():
+            return []
+        return [self._gw_display(g) for g in [me] + others if "cfg1" not in self.gwlink_agent_caps(g.id)]
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует

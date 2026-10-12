@@ -36,6 +36,7 @@ table inet awg_lan_map {
 
     chain zone {
         type filter hook prerouting priority raw; policy accept;
+        iifname != { "awglink", "awglink2" } ip daddr != 10.240.0.0/12 accept
         fib daddr type local accept
         iifname "awglink" ip saddr @real1 ip daddr 10.241.0.0/16 ct zone set 19 accept
         iifname "awglink2" ip saddr @real2 ip daddr 10.240.0.0/16 ct zone set 19 accept

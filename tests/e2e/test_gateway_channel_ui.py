@@ -7,7 +7,7 @@
 обвязка, поколение, связь подсетей, часы, выход наружу, подсети соседей) и
 диалоги тумблеров при живом и лежащем канале — в эталоне
 tests/screens/admin.txt (adm.gw.card.ch.*, adm.gw.lan_*.ch.*,
-adm.gw.peer_*.ch.*), строка канала в панели агента — в gateway.txt; здесь —
+adm.gw.lan_ask.peers), строка канала в панели агента — в gateway.txt; здесь —
 что меняется в слоте и настройках, уведомления о расхождении и строки канала
 на входе функций.
 
@@ -515,23 +515,41 @@ async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, c
     assert ("VPN-транзит выключен: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
 
 
-async def test_transit_of_a_slot_with_an_agent_32_neighbour_asks_for_a_reissue(services, cfg1, fake_bot,
-                                                                                monkeypatch):
-    """Агенту 3.2 подсети соседей довезёт только файл: всплывашка включения
-    VPN-транзита просит перевыпуск каждого шлюза, если есть другой слот с
-    транзитом (их сети свяжутся); без такого слота — нет."""
+@pytest.mark.parametrize("me, caps2, tail", [
+    ("cfg1", [], "VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей "
+                 "перевыпусти конфигурацию: Pi2"),
+    ("cfg1", ["cfg1"], "VPN-транзит включён: применится автоматически по упр. каналу"),
+    ("v32-online", ["cfg1"], "VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей "
+                             "перевыпусти конфигурацию: NASPi"),
+    ("v32-offline", [], "VPN-транзит включён: перевыпусти конфигурацию шлюза; для связи подсетей перевыпусти "
+                        "конфигурацию: Pi2"),
+])
+async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services, cfg1, fake_bot, monkeypatch,
+                                                                        me, caps2, tail):
+    """Подсети соседей меняются у этого слота и у других слотов с VPN-транзитом
+    и живут в конфиге линка: агентам 3.2 — только файлом. Диалог (до нажатия)
+    и всплывашка называют их поимённо; сам слот без канала уже попросили
+    перевыпустить — второй раз не называется; агенты с документом — тишина."""
     _peer_store(monkeypatch)
-    services.gwlink_session_opened(1, "3.2.1", 2)
-    services.gateway_set_lan_mode(1, False)
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
-    assert ("VPN-транзит включён: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
+    services.gwlink_session_opened(2, "3.3.0" if caps2 else "3.2.1", 2, caps2)
     services.gateway_set_lan_mode(1, False)
+    if me == "cfg1":
+        _cfg_snap(services)
+    elif me == "v32-online":
+        _snap(services)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    dialog = _screen(nav)[0]
+    names = tail.split("конфигурацию: ")[-1] if "связи подсетей" in tail else ""
+    if names:
+        assert ("Агентам v3.2 подсети соседей доедут только файлом — после включения перевыпусти конфигурацию: "
+                + ("NASPi, Pi2" if me == "v32-offline" else names)) in dialog, dialog
+    else:
+        assert "Агентам v3.2" not in dialog, dialog
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
-    assert ("VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей перевыпусти "
-            "конфигурацию каждого шлюза", True) in cb.answers, cb.answers
+    assert cb.answers == [(tail, True)], cb.answers

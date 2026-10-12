@@ -284,13 +284,17 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
             log.warning("preflight: проверка маршрутизации не удалась: %s", e)
 
     # адреса в туннеле локальных сетей шлюзов: служебное пространство не
-    # задевает подсети клиентов, линки и служебные адреса — иначе выключены
+    # задевает подсети клиентов, линки и служебные адреса, метка РФ-доступа —
+    # биты слотов (иначе выключены); таблица встала (иначе — причина отказа)
     try:
         if _gateway_assigned(services):
-            problem = services.lan_space_problem()
+            from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
+            problem, key = services.lan_off()
+            error = services.db.get_state(services._LANMAP_ERROR_KEY) or ""
             if problem:
-                from awgbot.domain.notices.lanmap import lan_space_off_line
-                warns.append(lan_space_off_line(problem, markup=False))
+                warns.append(lan_space_off_line(problem, key, markup=False))
+            elif error:
+                warns.append(lan_map_failed_line(error, markup=False))
     except Exception as e:                           # noqa: BLE001
         log.warning("preflight: проверка адресов в туннеле: %s", e)
 
