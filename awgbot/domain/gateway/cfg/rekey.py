@@ -197,7 +197,7 @@ class CfgRekeyMixin:
                 merged = gwcfg.merge_link_keys(self.cfg_link_text(), new)
                 prev = self.cfg_link_conf()
                 if prev is None:
-                    raise gwcfg.CfgError("стоящий конфиг линка не прочитан")
+                    raise gwcfg.CfgError("текущий конфиг линка не прочитан")
                 self._cfg_write_private(self._rk_path("rekey.prev"),
                                         wgconf.render(prev, "link", stamp=prev.stamp or gwcfg.LINK_CONTRACT))
                 self._cfg_write_private(self._rk_path("rekey.next"),

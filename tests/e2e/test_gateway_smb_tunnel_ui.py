@@ -29,7 +29,7 @@ WHY = {
     "docker": "SMB в туннеле — только при VPN прямо на хосте, без docker",
     "no_client_resolver": "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»",
     "no_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
-    "no_firewall": "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «Фильтр снаружи» — без него имена увидят все клиенты",
+    "no_firewall": "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все клиенты",
 }
 
 
@@ -203,7 +203,7 @@ async def test_records_that_did_not_land_are_said_instead_of_the_usual_result(se
     first = _screen(nav)[0].splitlines()[0]
     assert first == ("⚠️ SMB в туннеле включён, но имена не поставлены" if on else
                      "⚠️ SMB в туннеле выключен, но имена ещё не сняты") + \
-        " — на сервере: awg-bot resolver admin status", first
+        " — диагностика на сервере: <code>awg-bot resolver admin status</code>", first
 
 
 async def _card(services, fake_bot, slot=1) -> str:

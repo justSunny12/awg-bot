@@ -310,6 +310,29 @@ def test_a_wide_neighbour_subnet_does_not_block_the_rest_of_the_document(service
     gwcfg.check_doc(parsed, link_cidr=gw.link_cidr, address="10.99.99.2/30")
 
 
+
+def test_a_bad_env_is_shown_as_the_whole_document_not_the_link(services, slot, monkeypatch):
+    """Раздел env не прошёл проверку — документа нет вовсе, не одного конфига
+    линка: карточка говорит «Конфигурация не собрана», а прошлая причина линка
+    рядом не всплывает. Починили env — строка уходит."""
+    from awgbot.bot.texts.routing.card import _cfg_lines
+    gw = _gw(services)
+    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
+    _snap(services, _have(services))
+    services._gwcfg_link_error_set(1, "прошлая причина")
+    real = services.gwcfg_env
+    monkeypatch.setattr(services, "gwcfg_env", lambda g: {**real(g), "CLIENT_SUBNET": "10.8.1.1/24"})
+    assert all(v is None for v in services.gwcfg_desired(gw).values())
+    card = services.gwcfg_card(gw, services.gwlink_snapshot(1))
+    assert card["env_err"] and card["link_err"] == "", card
+    _, warns = _cfg_lines("", card, {}, "")
+    assert any(w.startswith("⚠️ Конфигурация для шлюза не собрана: ") for w in warns), warns
+    assert not any("Конфиг линка" in w for w in warns), warns
+    monkeypatch.setattr(services, "gwcfg_env", real)
+    services.gwcfg_desired(gw)
+    assert services.gwcfg_card(gw, services.gwlink_snapshot(1))["env_err"] == "", "причина пережила починку"
+
+
 # ── желаемое: почта, фраза, имя сервера, аплинк, токен ───────────────────────
 
 def test_mail_is_absent_without_a_mailbox_and_carries_the_backup_hint_with_one(services, slot, host):

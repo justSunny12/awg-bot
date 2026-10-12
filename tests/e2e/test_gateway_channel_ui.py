@@ -386,7 +386,7 @@ async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_b
     _cfg_snap(services)
     text, labels = await _card(services, fake_bot)
     assert "🔗 Упр. канал 🟢 · v3.3.0 · 🟢 конфиг актуален" in text, text
-    assert "Агент шлюза 3.2" not in text and "перевыпусти" not in text, text
+    assert "Агент шлюза v3.2" not in text and "перевыпусти" not in text, text
     assert "📤 Конфигурация" not in labels, labels
 
 
@@ -431,14 +431,14 @@ async def test_waiting_mail_and_phrase_are_named_on_the_card(services, cfg1, fak
     text, _ = await _card(services, fake_bot)
     lines = text.splitlines()
     assert "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик" in lines, text
-    assert "⏳ Фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя" in lines, text
+    assert "⏳ Ключевая фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя" in lines, text
     assert "расходится с выданной" not in text, "ожидание решения выдано за доставку"
 
 
 @pytest.mark.parametrize("declined, line", [
     (("mail",), "почта на шлюзе своя — оставлена в чате бота шлюза"),
-    (("backup",), "фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза"),
-    (("mail", "backup"), "почта и фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза"),
+    (("backup",), "ключевая фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза"),
+    (("mail", "backup"), "почта и ключевая фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза"),
 ])
 async def test_details_name_the_applied_generation_and_what_was_kept(services, cfg1, fake_bot, declined, line):
     """«подробнее» (К13): номер применённого документа и дата; что человек
@@ -488,15 +488,15 @@ async def test_an_agent_32_card_asks_to_update_and_keeps_the_file_button(service
     кнопка файла остаётся, ею пока и довозится остальное."""
     _snap(services, agent_version="3.2.1")
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент шлюза 3.2 получает каналом не всё — подсети других шлюзов, конфиг линка и аплинка " \
-           "едут только файлом. Обнови агента" in text, text
+    assert "⚠️ Агент шлюза v3.2 получает по упр. каналу не всё — подсети других шлюзов, конфиг линка и аплинка " \
+           "доходят только с перевыпуском конфигурации. Обнови агента" in text, text
     assert "📤 Конфигурация" in labels, labels
 
 
 async def test_without_a_snapshot_there_is_no_agent_32_line(services, slot, fake_bot):
     """Снимка ещё нет — о версии агента судить не по чему, строки К7 нет."""
     text, _ = await _card(services, fake_bot)
-    assert "Агент шлюза 3.2" not in text, text
+    assert "Агент шлюза v3.2" not in text, text
 
 
 @pytest.mark.parametrize("online", [True, False])
@@ -507,7 +507,7 @@ async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, c
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
     assert services.db.gateway(1).lan_mode == 0
-    assert ("VPN-транзит выключен: применится сам по упр. каналу", True) in cb.answers, cb.answers
+    assert ("VPN-транзит выключен: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
 
 
 async def test_the_peer_toggle_with_all_cfg1_agents_needs_no_reissue(services, cfg1, fake_bot, monkeypatch):
@@ -527,7 +527,7 @@ async def test_the_peer_toggle_with_all_cfg1_agents_needs_no_reissue(services, c
     assert "Подсети шлюзов перестанут видеть друг друга сразу" in _screen(nav)[0]
     assert "перевыпуск" not in _screen(nav)[0], _screen(nav)[0]
     await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="0"), services)
-    assert ("Связь подсетей выключена: шлюзы получат это по упр. каналу", True) in cb.answers, cb.answers
+    assert ("Связь подсетей выключена: шлюзы узнают об этом по упр. каналу", True) in cb.answers, cb.answers
 
 
 async def test_the_peer_toggle_with_one_agent_32_asks_for_a_reissue(services, cfg1, fake_bot, monkeypatch):

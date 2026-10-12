@@ -27,7 +27,7 @@ async def gwtoken_action(cb: CallbackQuery, callback_data: SetCB, services, stat
     if key == "pick":
         slots = await call(services.gateway_token_slots)
         if not slots:
-            await cb.answer(ui.toast("Довезти токен каналом некому: нужен агент шлюза 3.3.0"), show_alert=True)
+            await cb.answer(ui.toast("Отправить токен по упр. каналу некому: нужен агент шлюза v3.3.0"), show_alert=True)
             return
         if len(slots) > 1:
             await edit(cb, texts.GATEWAY_TOKEN_PICK, kb.gateway_token_pick(slots))
@@ -103,7 +103,7 @@ async def _getme(token: str) -> tuple[int, str]:
     except TelegramUnauthorizedError:
         raise ServiceError("Telegram не принял этот токен") from None
     except Exception:                                     # noqa: BLE001 — текст ошибки aiohttp несёт URL с токеном
-        raise ServiceError("Telegram не ответил — пришли токен ещё раз") from None
+        raise ServiceError("Telegram не ответил на проверку") from None
     finally:
         try:
             await bot.session.close()

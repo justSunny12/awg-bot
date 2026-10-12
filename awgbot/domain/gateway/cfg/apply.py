@@ -85,7 +85,7 @@ class CfgApplyMixin:
                 applied.append(section)
                 changed.append(section)
                 notes += self._cfg_mail_lines(note) if section == "mail" else [
-                    "🔐 Фраза с сервера AWG принята — новые копии шлюза шифруются ею"]
+                    "🔐 Ключевая фраза бэкапов с сервера AWG принята — новые копии шлюза шифруются ею"]
             elif verdict == "same":
                 applied.append(section)
             elif verdict == "declined":

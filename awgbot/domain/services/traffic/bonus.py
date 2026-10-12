@@ -90,9 +90,9 @@ def gb_text(num_bytes: int) -> str:
 
 
 def screen_text(spec: BonusSpec) -> str:
-    """Строка экрана «💳 Подписки»: «выкл.» / «50 ГБ» / «10% лимита» / «10% лимита, не более 50 ГБ»."""
+    """Строка экрана «💳 Подписки»: «выкл» / «50 ГБ» / «10% лимита» / «10% лимита, не более 50 ГБ»."""
     if spec.kind == "off":
-        return "выкл."
+        return "выкл"
     if spec.kind == "gb":
         return f"{spec.gb} ГБ"
     if spec.kind == "pct":
@@ -101,9 +101,9 @@ def screen_text(spec: BonusSpec) -> str:
 
 
 def button_text(spec: BonusSpec) -> str:
-    """Подпись кнопки: «выкл.» / «50 ГБ» / «10%» / «10%, ≤ 50 ГБ»."""
+    """Подпись кнопки: «выкл» / «50 ГБ» / «10%» / «10%, ≤ 50 ГБ»."""
     if spec.kind == "off":
-        return "выкл."
+        return "выкл"
     if spec.kind == "gb":
         return f"{spec.gb} ГБ"
     if spec.kind == "pct":

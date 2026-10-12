@@ -348,8 +348,8 @@ def test_multiline_copy_text_stays_on_one_line():
 # ── снимок целиком через настоящий диспетчер ─────────────────────────────────
 
 @pytest.mark.parametrize("blob, answer", [
-    (b"#!/bin/sh\n# awg-gw-bundle installer\n", "GW_FIRST_RUN_FILE"),
-    (b"DUMMY", "GW_BUNDLE_NOT_OURS"),
+    (b"#!/bin/sh\n# awg-gw-bundle installer\n", lambda t: t.GW_FIRST_RUN_FILE),
+    (b"DUMMY", lambda t: t.gw_bundle_not_ours(False)),
 ])
 async def test_file_step_hands_the_bytes_to_the_handler(blob, answer, tmp_path, frozen, fakes):
     """Шаг «файл»: документ с подписью уходит агенту, обработчик скачивает
@@ -362,7 +362,7 @@ async def test_file_step_hands_the_bytes_to_the_handler(blob, answer, tmp_path, 
     rec = await harness.take(shot, tmp_path, fakes)
     assert rec.action == "> file conf.bin «подпись»", rec.action
     sent = [c for c in rec.calls if c.head.startswith("+ send")]
-    assert sent and sent[-1].body == getattr(texts, answer), [(c.head, c.body) for c in rec.calls]
+    assert sent and sent[-1].body == answer(texts), [(c.head, c.body) for c in rec.calls]
 
 
 async def test_call_step_records_a_notification_without_a_human_action(tmp_path, frozen, fakes):

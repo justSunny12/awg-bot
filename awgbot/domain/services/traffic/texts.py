@@ -85,7 +85,7 @@ def _cli_bonus_text(amount: str, until: str) -> str:
 def _cli_bonus_admin_text(name: str, amount: str, note: str = "") -> str:
     """note — откуда число у процентного бонуса («10% лимита»), пусто — без скобок."""
     tail = f" ({note})" if note else ""
-    return f"📈 {name}: лимит исчерпан — выдано {amount}{tail} до конца месяца"
+    return f"📈 Профиль {name}: лимит исчерпан — выдано {amount}{tail} до конца месяца"
 
 
 def _cli_limit_off_text(until: str) -> str:
@@ -94,7 +94,7 @@ def _cli_limit_off_text(until: str) -> str:
 
 
 def _cli_limit_off_admin_text(name: str) -> str:
-    return f"🔴 {name}: лимит исчерпан — доступ приостановлен"
+    return f"🔴 Профиль {name}: лимит исчерпан — доступ приостановлен"
 
 
 def _cli_over_text(until: str) -> str:
@@ -102,7 +102,7 @@ def _cli_over_text(until: str) -> str:
 
 
 def _cli_over_admin_text(name: str) -> str:
-    return f"🔴 {name}: исчерпан лимит и доп. квота — доступ приостановлен"
+    return f"🔴 Профиль {name}: исчерпан лимит и доп. квота — доступ приостановлен"
 
 
 def _admin_self_over_text() -> str:

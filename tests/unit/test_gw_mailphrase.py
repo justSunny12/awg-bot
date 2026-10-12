@@ -89,7 +89,7 @@ def test_a_phrase_over_no_encryption_is_applied_silently(svc, host):
     assert svc.backup_encryption_mode() == "passphrase"
     assert svc.cfg_backup_print() == gwcfg.backup_print(PHRASE)
     assert "backup" in res["ack"]["applied"] and res["ask"] == []
-    assert "🔐 Фраза с сервера AWG принята" in res["note"]
+    assert "🔐 Ключевая фраза бэкапов с сервера AWG принята" in res["note"]
 
 
 def test_a_failed_login_still_keeps_the_mail_and_says_why(svc, host, checks):
@@ -285,14 +285,14 @@ def test_questions_and_answers_carry_no_secret(svc, host, checks):
 
 def test_answer_texts_say_what_happened():
     assert cfg_answer_text("mail", False, None).startswith("Почта шлюза осталась своей")
-    assert cfg_answer_text("backup", False, None).startswith("Фраза шлюза осталась своей")
+    assert cfg_answer_text("backup", False, None).startswith("Ключевая фраза бэкапов шлюза осталась своей")
     assert "проверка не прошла: таймаут" in cfg_answer_text("mail", True, {"state": "fail", "why": "таймаут"})
     assert "💾" in cfg_answer_text("mail", True, {"state": "ok", "backup": True})
-    assert cfg_answer_text("backup", True, {"state": "fail", "why": "коротко"}).startswith("⚠️ Фраза с сервера AWG не принята")
+    assert cfg_answer_text("backup", True, {"state": "fail", "why": "коротко"}).startswith("⚠️ Ключевая фраза бэкапов с сервера AWG не принята")
     assert set(QUESTION_STALE) == {"mail", "backup", "uplink"}
 
 
 def test_the_pending_line_lists_the_queue_in_order():
-    assert cfg_pending_line(["mail", "backup"]) == "⏳ Ждут решения: почта, фраза бэкапов"
-    assert cfg_pending_line(["backup"]) == "⏳ Ждут решения: фраза бэкапов"
+    assert cfg_pending_line(["mail", "backup"]) == "⏳ Ждут решения: почта, ключевая фраза бэкапов"
+    assert cfg_pending_line(["backup"]) == "⏳ Ждут решения: ключевая фраза бэкапов"
     assert cfg_pending_line([]) == "", "нечего решать — строки нет"

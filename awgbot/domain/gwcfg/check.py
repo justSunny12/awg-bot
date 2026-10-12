@@ -110,7 +110,7 @@ def check_mail(mail: dict) -> dict:
         raise CfgError("mail — не словарь")
     login = str(mail.get("login") or "")
     if not 1 <= len(login) <= 254 or "\n" in login:
-        raise CfgError("почта: логин пуст или длиннее 254 знаков")
+        raise CfgError("почта: логин пуст или длиннее 254 символов")
     password = str(mail.get("password") or "")
     if not password or "\n" in password or len(password) > 512:
         raise CfgError("почта: пароль пуст")
@@ -133,9 +133,9 @@ def check_backup(backup: dict) -> dict:
         raise CfgError("backup — не словарь")
     phrase = str(backup.get("phrase") or "").strip()
     if len(phrase) < MIN_PHRASE:
-        raise CfgError(f"фраза шифрования короче {MIN_PHRASE} знаков")
+        raise CfgError(f"ключевая фраза бэкапов короче {MIN_PHRASE} символов")
     if "\n" in phrase or len(phrase) > 512:
-        raise CfgError("фраза шифрования: недопустимое значение")
+        raise CfgError("ключевая фраза бэкапов: недопустимое значение")
     return {"phrase": phrase}
 
 
@@ -154,7 +154,7 @@ def check_server(server: dict) -> dict:
         raise CfgError("server — не словарь")
     name = norm(server.get("name"))
     if not _NAME_RE.match(name):
-        raise CfgError("имя сервера: только [A-Za-z0-9._-], до 64 знаков")
+        raise CfgError("имя сервера: только [A-Za-z0-9._-], до 64 символов")
     return {"name": name}
 
 
@@ -287,7 +287,7 @@ def merge_link_keys(standing_text: str, new: wgconf.Conf) -> wgconf.Conf:
     try:
         standing = wgconf.parse(standing_text)
     except wgconf.WgConfError as e:
-        raise CfgError(f"стоящий конфиг линка: {e}") from None
+        raise CfgError(f"текущий конфиг линка: {e}") from None
     out = wgconf.Conf()
     out.stamp = new.stamp or standing.stamp
     out.sections.append(("Interface", list(new.section("Interface"))))

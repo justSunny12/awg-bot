@@ -76,7 +76,7 @@ async def test_edit_button_opens_the_bonus_prompt_not_a_stale_alert(services, fa
     ("10%", "10%", "10% лимита", "10%", "✅ Бонус при исчерпании: 100 ГБ → 10% лимита"),
     (" 10%  50 ", "10% 50", "10% лимита, не более 50 ГБ", "10%, ≤ 50 ГБ",
      "✅ Бонус при исчерпании: 100 ГБ → 10% лимита, не более 50 ГБ"),
-    ("0", 0, "выкл.", "выкл.", "✅ Бонус при исчерпании: 100 ГБ → выкл."),
+    ("0", 0, "выкл", "выкл", "✅ Бонус при исчерпании: 100 ГБ → выкл"),
 ])
 async def test_each_format_is_saved_and_shown(services, fake_bot, conf, typed, stored, screen, button, note):
     """Ввод → значение в conf (переживает перечитывание с диска), итог первой
@@ -116,7 +116,7 @@ async def test_garbage_then_a_valid_value_still_saves(services, fake_bot, conf):
 
 @pytest.mark.parametrize("value, line, button", [
     (100, "Бонус при исчерпании: 100 ГБ", "📈 Бонус: 100 ГБ"),
-    (0, "Бонус при исчерпании: выкл.", "📈 Бонус: выкл."),
+    (0, "Бонус при исчерпании: выкл", "📈 Бонус: выкл"),
     ("10%", "Бонус при исчерпании: 10% лимита", "📈 Бонус: 10%"),
     ("10% 50", "Бонус при исчерпании: 10% лимита, не более 50 ГБ", "📈 Бонус: 10%, ≤ 50 ГБ"),
     ("испорчено", "Бонус при исчерпании: 100 ГБ", "📈 Бонус: 100 ГБ"),
@@ -127,5 +127,5 @@ def test_subs_screen_line_and_button_per_kind(conf, value, line, button):
     settings.set_value(KEY, value)
     lines = texts.settings_subs_text().splitlines()
     assert line in lines, lines
-    assert "Отсрочка 14 дн." in lines, "отсрочка — своей строкой"
+    assert "Отсрочка: 14 дн." in lines, "отсрочка — своей строкой"
     assert _subs_button() == button

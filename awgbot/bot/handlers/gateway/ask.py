@@ -55,7 +55,7 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "backup") else ""
     accept = callback_data.action == "cfg_ok!"
     if not section:
-        await cb.answer(ui.toast("Вопрос не найден"))
+        await cb.answer(ui.toast("Кнопка устарела — открой раздел заново"))
         return
     if section == "link":
         await _rekey_answer(cb, services, accept)
@@ -96,7 +96,7 @@ async def _rekey_answer(cb: CallbackQuery, services, accept: bool) -> None:
         log.warning("gateway: ответ серверу о ключах линка не ушёл: %s", e)
         reply = {"state": "ready" if accept else "declined"}
     if not reply:
-        await cb.answer(ui.toast("Запрос уже решён"))
+        await cb.answer(ui.toast("Вопрос уже решён"))
         await pkg._panel(cb.message, services, cb)
         return
     await edit_nav(cb, services, texts.cfg_answer_text("link", accept, None), None)

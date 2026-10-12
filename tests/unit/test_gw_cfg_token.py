@@ -204,7 +204,7 @@ def test_an_unwritable_env_fails_without_the_note(svc, env, tg, tmp_path, monkey
     blocker.write_text("", encoding="utf-8")
     monkeypatch.setenv("AWG_BOT_ENV", str(blocker / "env"))
     res = svc.cfg_token_apply({"value": NEW})
-    assert res["state"] == "failed" and res["error"].startswith("env не переписан"), res
+    assert res["state"] == "failed" and res["error"].startswith("файл настроек агента не переписан"), res
     assert svc.cfg_token_note_take() is False
 
 

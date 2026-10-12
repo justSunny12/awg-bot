@@ -278,7 +278,7 @@ def test_a_failing_stage_leaves_no_transition(services, slot, vps):
     """Скрипт отказал (нет awg, диск) — ошибка с причиной, состояния нет:
     следующая попытка начнётся с нуля."""
     vps.fail["--rekey-stage"] = "awg: команда не найдена"
-    with pytest.raises(ServiceError, match="новые ключи не сгенерированы"):
+    with pytest.raises(ServiceError, match="Новые ключи не сгенерированы"):
         services.gateway_rekey_stage(1)
     assert services.gateway_rekey(1) == {} and not services.gateway_rekey_active(1)
 

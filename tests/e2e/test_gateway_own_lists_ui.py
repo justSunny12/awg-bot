@@ -196,7 +196,7 @@ def test_the_lists_breakage_branch_without_a_name_reads_whole():
 
 
 @pytest.mark.parametrize("own, note", [
-    ({"state": "offline"}, "⏳ Синхронизируется, когда шлюз выйдет на связь"),
+    ({"state": "offline"}, "⏳ Синхронизируются, когда шлюз выйдет на связь"),
     ({"state": "failed", "error": "dnsmasq: bad option"},
      "⚠️ Шлюз не смог принять списки: dnsmasq: bad option"),
     ({"state": "failed"}, "⚠️ Шлюз не смог принять списки"),

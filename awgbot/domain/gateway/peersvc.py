@@ -169,8 +169,8 @@ class PeerServicesMixin:
         # мастер восстановления на шлюзе без NAS был бы пустым
         if info["avahi"] is False:
             checks.append(GwCheck("SMB этой подсети", None,
-                                  "avahi-daemon не запущен: SMB-серверы этой подсети по именам не видны ни "
-                                  "соседним шлюзам, ни устройствам админа в туннеле"))
+                                  "avahi-daemon не запущен: SMB-серверы этой подсети по именам не видны ни в подсетях "
+                                  "других шлюзов, ни на устройствах админа в туннеле"))
         elif not info["browse"]:
             checks.append(GwCheck("SMB этой подсети", None,
                                   "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)"))

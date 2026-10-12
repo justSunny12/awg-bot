@@ -99,7 +99,7 @@ async def gw_slot_peer_yes(cb: CallbackQuery, callback_data: GwSlotCB, services)
     await _render_list(cb, services)
     if await call(services.gwcfg_all_capable):
         await cb.answer("Подсети связаны: шлюзы получат их по упр. каналу" if on
-                        else "Связь подсетей выключена: шлюзы получат это по упр. каналу", show_alert=True)
+                        else "Связь подсетей выключена: шлюзы узнают об этом по упр. каналу", show_alert=True)
     else:
         await cb.answer(("Подсети связаны" if on else "Связь подсетей выключена")
                         + ": перевыпусти конфигурацию каждого шлюза", show_alert=True)
@@ -254,10 +254,10 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     chan = st.get("channel") or {}
     if (chan.get("cfg") or {}).get("cfg1"):
         # документ везёт и режим, и подсети соседей — всё применится само
-        tail = "применится сам по упр. каналу"
+        tail = "применится автоматически по упр. каналу"
     else:
         online = bool(chan.get("online"))
-        tail = "применится автоматически по управляющему каналу" if online else "перевыпусти конфигурацию шлюза"
+        tail = "применится автоматически по упр. каналу" if online else "перевыпусти конфигурацию шлюза"
         if online and await call(services.peer_nets_enabled):
             # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
             # живут в конфиге линка — агенту без документа это только файлом

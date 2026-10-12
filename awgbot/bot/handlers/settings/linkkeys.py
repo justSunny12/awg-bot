@@ -30,7 +30,7 @@ async def linkkeys_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "pick":
         slots = await call(services.gateway_rekey_slots)
         if not slots:
-            await cb.answer(ui.toast("Сменить ключи линка каналом не у кого: нужен агент шлюза 3.3.0"),
+            await cb.answer(ui.toast("Сменить ключи линка по упр. каналу не у кого: нужен агент шлюза v3.3.0"),
                             show_alert=True)
             return
         if len(slots) > 1:

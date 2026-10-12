@@ -25,6 +25,7 @@ class CfgMixin:
     _GWCFG_ACK_KEY = "gwcfg_ack"
     _GWCFG_LINK_ERR_KEY = "gwcfg_link_err"     # почему желаемый конфиг линка не собран (К5)
     _GWCFG_UPLINK_ERR_KEY = "gwcfg_uplink_err"  # почему раздел uplink не едет: не прошёл проверку агента
+    _GWCFG_ENV_ERR_KEY = "gwcfg_env_err"        # раздел env не прошёл проверку — документа нет вовсе
 
     # ── желаемое ─────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ class CfgMixin:
             conf.comments = []                      # источник начинается с пояснений — в документ они не идут
             wgconf.check_keys(conf, "link")
         except (OSError, wgconf.WgConfError) as e:
-            self._gwcfg_link_error_set(gw.id, f"конфиг линка не прочитан: {e}")
+            self._gwcfg_link_error_set(gw.id, f"исходный файл не прочитан: {e}")
             return ""
         host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         old_host = conf.get("Peer", "Endpoint").rpartition(":")[0]
@@ -89,7 +90,10 @@ class CfgMixin:
         return text
 
     def _gwcfg_link_error_set(self, slot_id: int, text: str) -> None:
-        key = self._gwlink_key(self._GWCFG_LINK_ERR_KEY, slot_id)
+        self._gwcfg_error_set(self._GWCFG_LINK_ERR_KEY, slot_id, text)
+
+    def _gwcfg_error_set(self, name: str, slot_id: int, text: str) -> None:
+        key = self._gwlink_key(name, slot_id)
         if (self.db.get_state(key) or "") != text:
             self.db.set_state(key, text)
 
@@ -190,8 +194,9 @@ class CfgMixin:
         try:
             gwcfg.check_env(env)
         except gwcfg.CfgError as e:
-            self._gwcfg_link_error_set(gw.id, f"раздел env: {e}")
+            self._gwcfg_error_set(self._GWCFG_ENV_ERR_KEY, gw.id, str(e))
             return {name: None for name in gwcfg.SECTIONS}
+        self._gwcfg_error_set(self._GWCFG_ENV_ERR_KEY, gw.id, "")
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
                 "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": self.gwcfg_token(gw),
@@ -344,7 +349,7 @@ class CfgMixin:
         cfg1 = "cfg1" in caps
         have = snap.get("cfg") if isinstance(snap.get("cfg"), dict) else {}
         out = {"cfg1": cfg1, "confirm1": "confirm1" in caps, "gen": int(have.get("gen") or 0) if have else 0,
-               "due": [], "failed": {}, "wait": [], "declined": [], "applied_at": "", "link_err": "", "uplink_err": "", "uplink_fp": ""}
+               "due": [], "failed": {}, "wait": [], "declined": [], "applied_at": "", "env_err": "", "link_err": "", "uplink_err": "", "uplink_fp": ""}
         if not cfg1 or not snap:
             return out
         doc = self.gwcfg_doc(gw)
@@ -356,7 +361,9 @@ class CfgMixin:
         out["wait"] = [s for s, p in (ack.get("wait") or {}).items() if p == doc["prints"].get(s)] if current else []
         out["declined"] = [s for s, p in (ack.get("declined") or {}).items() if p == doc["prints"].get(s)]
         out["applied_at"] = str(ack.get("at") or "") if current and not out["failed"] else ""
-        out["link_err"] = self.gwcfg_link_error(gw.id)
+        out["env_err"] = self.db.get_state(self._gwlink_key(self._GWCFG_ENV_ERR_KEY, gw.id)) or ""
+        # документа нет вовсе — причина линка тогда прошлая, не показывается
+        out["link_err"] = "" if out["env_err"] else self.gwcfg_link_error(gw.id)
         out["uplink_err"] = self.db.get_state(self._gwlink_key(self._GWCFG_UPLINK_ERR_KEY, gw.id)) or ""
         if "uplink" in out["wait"] or "uplink" in out["declined"]:
             up = doc["sections"].get("uplink") or {}

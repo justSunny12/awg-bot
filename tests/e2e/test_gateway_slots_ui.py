@@ -690,7 +690,7 @@ async def test_a_subnet_wider_than_16_is_refused_at_input(services, slots, fake_
     assert services.db.gateway(1).lan_subnets == ["172.18.0.0/16", "192.168.1.0/24"], (
         "подсеть шире /16 записана или /16 отвергнута")
     text = _shown(msg, fake_bot)
-    assert "<code>172.16.0.0/15</code> — шире /16 — не пройдёт в конфиг линка соседних шлюзов, сузь подсеть" \
+    assert "<code>172.16.0.0/15</code> — шире /16 — не пройдёт в конфиг линка других шлюзов, сузь подсеть" \
         in text, text
 
 
@@ -742,4 +742,4 @@ def test_the_lan_report_names_agent_32_neighbours_among_cfg1_ones():
     res = {"kept": ["192.168.2.0/24"], "rejected": [], "conflict": None,
            "peer_others": ["Pi2", "Pi3"], "peer_others_file": ["Pi3"]}
     text = texts.gateway_lan_report(res, st)
-    assert "Подсети уйдут остальным шлюзам по упр. каналу; Pi3 (агент 3.2) — только файлом" in text, text
+    assert "Подсети уйдут остальным шлюзам по упр. каналу; для Pi3 (агент v3.2) необходим перевыпуск конфигурации" in text, text

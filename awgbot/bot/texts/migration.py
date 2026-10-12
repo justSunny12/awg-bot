@@ -142,7 +142,7 @@ def migration_finish_confirm(dropped, old_uplink=()) -> str:
                           "устройство с новой конфигурацией. Старые пиры снимутся, история объединится")
     for name, bot in old_uplink:
         link = _bot_link(bot)
-        where = f"в его чате (бот: {link})" if link else "в его чате"
+        where = f"в чате бота шлюза ({link})" if link else "в чате бота шлюза"
         text += (f"\n⚠️ {_e(name)} ещё на прежнем аплинке: после финала бот шлюза потеряет Telegram. "
                  f"Подтверди новый аплинк {where}, затем заверши переезд")
     return text

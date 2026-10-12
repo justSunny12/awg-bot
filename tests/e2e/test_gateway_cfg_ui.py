@@ -144,7 +144,7 @@ async def test_keep_own_answers_the_server_and_opens_the_next_question(svc, fake
     assert len(reported) == 1 and reported[0]["section"] == "mail" and reported[0]["accepted"] is False
     assert reported[0]["gen"] == 7 and reported[0]["print"] == gwcfg.mail_print(MAIL)
     sent = _sent_texts(fake_bot)
-    assert sent and "Фраза шифрования бэкапов на шлюзе отличается" in sent[-1], sent
+    assert sent and "Ключевая фраза бэкапов на шлюзе отличается" in sent[-1], sent
 
 
 async def test_the_last_answer_returns_to_the_panel(svc, fake_bot, reported, login_ok):
@@ -207,7 +207,7 @@ async def test_a_second_tap_on_an_answered_question_changes_nothing(svc, fake_bo
 async def test_an_unknown_section_is_refused(svc, fake_bot, reported):
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="token"), svc, FakeState())
-    assert reported == [] and cb.answers and "не найден" in cb.answers[-1][0]
+    assert reported == [] and cb.answers and "Кнопка устарела" in cb.answers[-1][0]
 
 
 # ── крючок канала ────────────────────────────────────────────────────────────

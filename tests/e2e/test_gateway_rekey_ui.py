@@ -176,7 +176,7 @@ async def test_service_offers_keys_only_when_some_agent_can_take_them(services, 
     assert "🔑 Ключи линка" not in _labels(markup), "кнопка при агенте без подтверждения"
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "pick")
-    assert cb.answers[-1] == ("Сменить ключи линка каналом не у кого: нужен агент шлюза 3.3.0", True), cb.answers
+    assert cb.answers[-1] == ("Сменить ключи линка по упр. каналу не у кого: нужен агент шлюза v3.3.0", True), cb.answers
     assert not _edits(nav)
     _confirm(services)
     _, markup = await _service(fake_bot, services)
@@ -215,7 +215,7 @@ async def test_two_gateways_get_a_pick_screen(services, slots, stage, fake_bot):
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "pick")
     text, markup = _edits(nav)[-1]
-    assert text.startswith("🔑 Ключи линка"), text
+    assert text.startswith("🔑 <b>Ключи линка</b>"), text
     rows = [[(b.text, b.callback_data) for b in r] for r in markup.inline_keyboard]
     assert rows == [[("NASPi", SetCB(sec="lk", act="do", key="ask", val="1").pack())],
                     [("Pi2 (север)", SetCB(sec="lk", act="do", key="ask", val="2").pack())],
@@ -386,13 +386,13 @@ async def test_change_refused_by_the_service_is_an_alert_and_changes_nothing(
     listener.open(1, caps=("cfg1",))
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "yes", 1)
-    assert cb.answers[-1] == ("Агенту шлюза нужна версия 3.3.0", True), cb.answers
+    assert cb.answers[-1] == ("Нужен агент шлюза v3.3.0", True), cb.answers
     assert stage.modes == [] and services.gateway_rekey(1) == {} and not _edits(nav)
     _confirm(services)
     stage.fail = "awg genkey: нет бинаря"
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "yes", 1)
-    assert cb.answers[-1][1] is True and "новые ключи не сгенерированы" in cb.answers[-1][0], cb.answers
+    assert cb.answers[-1][1] is True and "Новые ключи не сгенерированы" in cb.answers[-1][0], cb.answers
     assert "awg genkey: нет бинаря" in cb.answers[-1][0], "причина отказа скрипта потеряна"
     assert services.gateway_rekey(1) == {} and not _edits(nav) and listener.sent(1) == []
 

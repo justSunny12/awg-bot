@@ -680,8 +680,8 @@ def test_avahi_utils_is_installed_with_own_subnets_in_either_mode(script, tmp_pa
     # списки apt на шлюзе бывают старыми (404 на зеркале) — сначала update, потом install
     assert len(apt) == 2 and apt[0].startswith("apt-get update") and apt[1].endswith(" avahi-utils"), apt
     assert "avahi-daemon" not in apt[1], "демон не ставим: он начал бы объявлять сам шлюз"
-    assert ("ставлю avahi-utils (обзор SMB-серверов этой подсети: соседние шлюзы и устройства админа "
-            "в туннеле)") in r.stdout, r.stdout
+    assert ("ставлю avahi-utils (обзор SMB-серверов этой подсети: для подсетей других шлюзов и устройств "
+            "админа в туннеле)") in r.stdout, r.stdout
 
 
 def test_without_own_subnets_avahi_utils_is_not_installed_even_with_peers(script, tmp_path):

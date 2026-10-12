@@ -48,7 +48,7 @@ def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     if state == "applied":
         return head
     if state == "offline":
-        note = "⏳ Синхронизируется, когда шлюз выйдет на связь"
+        note = "⏳ Синхронизируются, когда шлюз выйдет на связь"
     else:
         note = _slot_note(state, agent_bot, own.get("error") or "", "Для синхронизации необходимо", "списки")
     return head + "\n" + note
@@ -66,10 +66,12 @@ def _agent_at_least(version, floor: str) -> bool:
 def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[str]]:
     """Строки документа конфигурации у агента, который его принимает: отказ
     шлюза (К5), доставка в пути (К6), расхождение не на связи (К9 по разделам),
-    вопросы человеку (К14), не собранный конфиг линка."""
+    вопросы человеку (К14), не собранные документ и конфиг линка."""
     warns: list[str] = []
     due = list(cfg.get("due") or [])
     failed = cfg.get("failed") or {}
+    if cfg.get("env_err"):
+        warns.append(f"⚠️ Конфигурация для шлюза не собрана: {_e(cfg['env_err'])}")
     if cfg.get("link_err"):
         warns.append(f"⚠️ Конфиг линка для шлюза не собран: {_e(cfg['link_err'])}")
     if cfg.get("uplink_err"):
@@ -101,7 +103,7 @@ def _cfg_lines(head: str, cfg: dict, ch: dict, stale: str) -> tuple[str, list[st
     elif "uplink" in (cfg.get("declined") or []):
         warns.append("⚠️ Шлюз отклонил новый конфиг аплинка — аплинк прежний")
     wait_text = {"mail": "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик",
-                 "backup": "⏳ Фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя"}
+                 "backup": "⏳ Ключевая фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя"}
     warns += [wait_text[s] for s in cfg.get("wait") or [] if s in wait_text]
     return head, warns
 
@@ -116,11 +118,11 @@ def cfg_more_lines(cfg: dict) -> list[str]:
             pass
     declined = set(cfg.get("declined") or [])
     if {"mail", "backup"} <= declined:
-        out.append("почта и фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза")
+        out.append("почта и ключевая фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза")
     elif "mail" in declined:
         out.append("почта на шлюзе своя — оставлена в чате бота шлюза")
     elif "backup" in declined:
-        out.append("фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза")
+        out.append("ключевая фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза")
     return out
 
 
@@ -134,8 +136,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         # канал обязателен: перевыпуск тут не лечит. Линк жив — канал не держит агент
         # (не запущен или прежней версии: тем канал включала свежая конфигурация)
         if ch.get("link_fresh"):
-            return ("🔗 Упр. канал: ещё не поднимался — линк поднят, канал не держит агент шлюза: "
-                    "не запущен или прежней версии, обнови его", [], "")
+            return ("🔗 Упр. канал: ещё не поднимался — линк поднят, а агент шлюза канал не держит: "
+                    "не запущен или устаревшей версии — обнови его", [], "")
         return ("🔗 Упр. канал: ещё не поднимался — линк не поднят или агент шлюза не запущен", [], "")
     if ch.get("online"):
         head = "🔗 Упр. канал 🟢"
@@ -196,7 +198,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             # обвязку освежает обновление агента, значения приезжают каналом: «новый файл» не лечит
             gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — «🔧 Восстановить» в чате бота шлюза",
                         "none": "⚠️ Обвязка шлюза не развёрнута — «🔧 Восстановить» в чате бота шлюза; "
-                                "не поможет — файл первого применения"}
+                                "не поможет — причина в «🩺 Здоровье» там же"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
             warns.append(gen_hint[ch["plumbing_gen"]])
         gw_ok = ch.get("egress_gw")
@@ -296,8 +298,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     cfg = ch.get("cfg") or {}
     if ch.get("has_snap") and not cfg.get("cfg1") and not _agent_at_least(ch.get("agent"), "3.3.0"):
         bot = _bot_link(state.get("agent_bot"))
-        lines.append("⚠️ Агент шлюза 3.2 получает каналом не всё — подсети других шлюзов, конфиг линка и "
-                     "аплинка едут только файлом. Обнови агента" + (f" (бот: {bot})" if bot else ""))
+        lines.append("⚠️ Агент шлюза v3.2 получает по упр. каналу не всё — подсети других шлюзов, конфиг линка и "
+                     "аплинка доходят только с перевыпуском конфигурации. Обнови агента" + (f" (бот: {bot})" if bot else ""))
     agent = agent_bot_line(state)
     if agent:
         lines.append(agent)

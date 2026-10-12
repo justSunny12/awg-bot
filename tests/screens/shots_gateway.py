@@ -264,6 +264,7 @@ class _Host:
     bundle_mail: dict = field(default_factory=dict)        # проверка почты из файла
     mark: dict = field(default_factory=lambda: {"status": "confirmed", "claim": None})
     cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail | backup, по порядку
+    server_caps: tuple = ()                                # возможности сервера из его role (cfg1 — шлёт документ сам)
     rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
     uplink_mine: str = "f00d" * 4                          # отпечаток стоящего аплинка (свой, не серверный)
     uplink_after: str = ""                                 # аплинк поправили руками, пока висит вопрос
@@ -563,6 +564,8 @@ def _agent(**opts):
             services.set_link_role(h.channel == "active", standby=h.standby, name=h.slot_name)
         elif h.standby is not None:
             services.db.set_state(services._LINK_STANDBY_KEY, "1" if h.standby else "0")
+        if h.server_caps:
+            services.db.set_state(services._LINK_SERVER_CAPS_KEY, " ".join(h.server_caps))
         if h.channel:
             mp.setattr(linkclient, "enabled", _channel_on)
         mp.setattr(linkclient, "_client", _Channel(services) if h.channel in ("active", "standby") else None)
@@ -811,7 +814,7 @@ SHOTS = [
 
     # ── документ с сервера AWG: вопросы о почте и фразе ─────────────────────
     _shot("gw.cfg.pending", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail", "backup"),
-          passphrase=True, title="панель: «⏳ Ждут решения: почта, фраза бэкапов» и кнопка «⏳ Решить»"),
+          passphrase=True, title="панель: «⏳ Ждут решения: почта, ключевая фраза бэкапов» и кнопка «⏳ Решить»"),
     _shot("gw.cfg.ask.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(), mail=True,
           cfg_ask=("mail",), title="вопрос о почте: отличается ящик"),
     _shot("gw.cfg.ask.backup", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
@@ -1292,6 +1295,8 @@ SHOTS = [
     _shot("gw.bundle.first_run.renamed", steps=[_file("setup.sh", b"#!/bin/sh\n# awg-gw-bundle DUMMY\n")],
           title="файл первого применения по содержимому"),
     _shot("gw.bundle.not_ours", steps=[_file("photo.bin", b"DUMMY")], title="не конфигурация шлюза"),
+    _shot("gw.bundle.not_ours.cfg1", steps=[_file("photo.bin", b"DUMMY")], server_caps=("cfg1",),
+          title="не конфигурация шлюза — сервер шлёт документ сам, кнопки файла в карточке нет"),
     _shot("gw.bundle.too_big", steps=[_file("video.bin", b"\0" * (600 * 1024))],
           title="крупнее любого файла конфигурации — не скачивается"),
     _shot("gw.bundle.passphrase", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],

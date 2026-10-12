@@ -31,7 +31,7 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         await message.answer(texts.GW_FIRST_RUN_FILE)
         return
     if doc.file_size and doc.file_size > pkg._BUNDLE_MAX_BYTES:
-        await message.answer(texts.GW_BUNDLE_NOT_OURS)
+        await message.answer(texts.gw_bundle_not_ours(await call(services.server_cfg1)))
         return
     buf = io.BytesIO()
     await message.bot.download(doc, destination=buf)
@@ -43,7 +43,7 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
             await forget_secret(message)
             await message.answer(texts.GW_FIRST_RUN_FILE)
             return
-        await message.answer(texts.GW_BUNDLE_NOT_OURS)
+        await message.answer(texts.gw_bundle_not_ours(await call(services.server_cfg1)))
         return
     # Файл у нас в памяти — в чате ему делать нечего. Основной бот свою копию
     # убирает по «В меню», а пересланная жила в переписке с агентом вечно:

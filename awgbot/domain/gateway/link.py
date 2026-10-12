@@ -72,7 +72,7 @@ class LinkMixin:
                 checks.append(GwCheck(
                     "MASQUERADE/изоляция", ok,
                     "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
-                                   "не приходит — проверь «🔗 упр. канал»" if self.server_cfg1() else
+                                   "не приходит — проверь 🔗 упр. канал в карточке шлюза" if self.server_cfg1() else
                                    f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
                                    "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
             else:

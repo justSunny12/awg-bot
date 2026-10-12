@@ -115,7 +115,7 @@ class RekeyMixin:
     def _rekey_stage(self, slot_id: int) -> dict:
         gw = self._gw_slot(slot_id)
         if "confirm1" not in self.gwlink_agent_caps(gw.id):
-            raise ServiceError("Агенту шлюза нужна версия 3.3.0")
+            raise ServiceError("Нужен агент шлюза v3.3.0")
         if self.gateway_rekey_active(gw.id):
             raise ServiceError("Смена ключей уже идёт")
         for other in self.db.gateways():
@@ -123,11 +123,11 @@ class RekeyMixin:
                 raise ServiceError(f"Идёт смена ключей у {self._gw_display(other)} — дождись итога")
         err = self._rekey_run(gw, "--rekey-stage")
         if err:
-            raise ServiceError(f"новые ключи не сгенерированы: {err}")
+            raise ServiceError(f"Новые ключи не сгенерированы: {err}")
         body = self.gateway_rekey_next_body(gw.id, stage=True)
         if body is None:
             self._rekey_run(gw, "--rekey-drop")
-            raise ServiceError("новые ключи не прочитаны")
+            raise ServiceError("Новые ключи не прочитаны")
         st = {"id": secrets.token_hex(6), "state": "staged", "fp": body["fp"],
               "at": timeutil.to_iso(timeutil.now())}
         self._rekey_save(gw.id, st)

@@ -204,7 +204,7 @@ async def test_a_decided_link_invitation_answers_with_a_toast(svc, host, fake_bo
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="link"), svc, FakeState())
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_no", val="link"), svc, FakeState())
-    assert cb.answers and cb.answers[-1][0] == "Запрос уже решён", cb.answers
+    assert cb.answers and cb.answers[-1][0] == "Вопрос уже решён", cb.answers
     assert len(channel.rekey) == 1, f"второй ответ ушёл серверу: {channel.rekey}"
     assert svc.rekey_state()["state"] == "ready", "второе нажатие «Отмена» сняло уже согласованный переход"
     assert LINK_KEYS_ACCEPTED not in _edits(msg) and "Ключи линка остались прежними" not in _edits(msg)

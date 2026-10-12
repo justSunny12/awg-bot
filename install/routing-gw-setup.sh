@@ -2162,7 +2162,7 @@ fi
 # быть старыми (404 на зеркале) — сначала update
 if [ -n "${HOME_SUBNETS:-}" ] && systemctl is-active --quiet avahi-daemon 2>/dev/null \
         && ! command -v avahi-browse >/dev/null 2>&1; then
-    say "  ставлю avahi-utils (обзор SMB-серверов этой подсети: соседние шлюзы и устройства админа в туннеле)"
+    say "  ставлю avahi-utils (обзор SMB-серверов этой подсети: для подсетей других шлюзов и устройств админа в туннеле)"
     run "apt-get update -q >/dev/null 2>&1 || true"
     run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
         || say "  avahi-utils не установился — SMB-серверы этой подсети по именам не видны, остальное работает"

@@ -65,7 +65,7 @@ class CfgTokenMixin:
         try:
             self._cfg_token_write(new)
         except OSError as e:
-            return {"state": "failed", "error": f"env не переписан ({e})"}
+            return {"state": "failed", "error": f"файл настроек агента не переписан ({e})"}
         self.db.set_state(_NOTE_KEY, "1")
         log.info("gateway: токен бота сменён с сервера AWG — агент перезапустится")
         return {"state": "applied", "error": ""}

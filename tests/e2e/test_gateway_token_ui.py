@@ -185,7 +185,7 @@ async def test_pick_without_agents_is_an_alert(services, slots, env, fake_bot):
     _caps(services, 1, ("cfg1", "confirm1"))
     state = FakeState()
     cb, nav = await _gtk(fake_bot, services, state, "pick")
-    assert cb.answers[-1] == ("Довезти токен каналом некому: нужен агент шлюза 3.3.0", True), cb.answers
+    assert cb.answers[-1] == ("Отправить токен по упр. каналу некому: нужен агент шлюза v3.3.0", True), cb.answers
     assert not _edits(nav) and await state.get_state() is None
 
 
@@ -199,7 +199,7 @@ async def test_pick_with_one_agent_opens_the_prompt_at_once(services, slots, env
     _, nav = await _gtk(fake_bot, services, state, "pick")
     text, markup = _edits(nav)[-1]
     assert "Новый токен бота NASPi" in text and "сразу удалю" in text, text
-    assert "не бота сервера и не бота другого шлюза" in text, text
+    assert "прежнего бота или нового. " in text, text
     assert _rows(markup) == [["✖️ Отмена"]], _rows(markup)
     assert markup.inline_keyboard[0][0].callback_data == CancelCB(kind="set_svc", ref=0).pack()
     assert await state.get_state() == "GatewayBotToken:value"
@@ -216,7 +216,7 @@ async def test_pick_with_two_agents_shows_a_choice(services, slots, env, fake_bo
     state = FakeState()
     _, nav = await _gtk(fake_bot, services, state, "pick")
     text, markup = _edits(nav)[-1]
-    assert text.startswith("🤖 Токен бота шлюза"), text
+    assert text.startswith("🤖 <b>Токен бота шлюза</b>"), text
     rows = [[(b.text, b.callback_data) for b in r] for r in markup.inline_keyboard]
     assert rows == [[("NASPi", SetCB(sec="gtk", act="do", key="ask", val="1").pack())],
                     [("Pi2 (север)", SetCB(sec="gtk", act="do", key="ask", val="2").pack())],
@@ -308,7 +308,7 @@ async def test_a_wrong_token_is_asked_again_and_the_input_stays(services, slots,
     assert env.read_text(encoding="utf-8") == before, "env тронут отвергнутым токеном"
     answers = [t for k, t, _ in msg.sent if k == "answer"]
     assert len(answers) == 1 and answers[0].startswith("⚠️ Токен не принят:") and why in answers[0], answers
-    assert answers[0].endswith("Пришли другой токен или нажми «✖️ Отмена»"), answers[0]
+    assert answers[0].endswith("Пришли токен ещё раз или нажми «✖️ Отмена»"), answers[0]
     assert await state.get_state() == "GatewayBotToken:value", "ошибка сбросила ввод"
     msg = await _send(fake_bot, services, state, NEW)
     assert f"GW_BOT_TOKEN={NEW}" in env.read_text(encoding="utf-8"), "после переспроса верный токен не принят"
@@ -328,7 +328,7 @@ async def test_a_new_bot_is_taken_and_the_result_asks_to_press_start(services, s
     text = [t for k, t, _ in msg.sent if k == "answer"][-1]
     head = text.split("\n\n", 1)[0].splitlines()
     assert head == [GATEWAY_TOKEN_QUEUED, texts.gateway_token_new_bot("other_gw_bot")], head
-    assert "@other_gw_bot" in head[1] and "«Старт»" in head[1], head[1]
+    assert "@other_gw_bot" in head[1] and "«Запустить»" in head[1], head[1]
 
 
 async def test_the_same_bot_has_no_start_line(services, slots, env, tg, fake_bot):
@@ -339,12 +339,12 @@ async def test_the_same_bot_has_no_start_line(services, slots, env, tg, fake_bot
     state = await _asked(fake_bot, services)
     msg = await _send(fake_bot, services, state, NEW)
     text = [t for k, t, _ in msg.sent if k == "answer"][-1]
-    assert "«Старт»" not in text and text.split("\n\n", 1)[0] == GATEWAY_TOKEN_QUEUED, text.splitlines()[:2]
+    assert "«Запустить»" not in text and text.split("\n\n", 1)[0] == GATEWAY_TOKEN_QUEUED, text.splitlines()[:2]
 
 
 def test_the_new_bot_line_without_a_name():
     """Telegram не дал username — «нового бота», а не «@» в пустоту."""
-    assert texts.gateway_token_new_bot("").startswith("Бот шлюза теперь нового бота:")
+    assert texts.gateway_token_new_bot("").startswith("Бот шлюза изменился:")
     assert texts.gateway_token_new_bot("a<b").startswith("Бот шлюза теперь @a&lt;b:")
 
 
@@ -359,7 +359,7 @@ async def test_without_the_old_token_the_snapshot_name_decides(services, slots, 
     state = await _asked(fake_bot, services)
     msg = await _send(fake_bot, services, state, NEW)
     assert f"GW_BOT_TOKEN={NEW}" in env.read_text(encoding="utf-8")
-    assert "«Старт»" not in [t for k, t, _ in msg.sent if k == "answer"][-1]
+    assert "«Запустить»" not in [t for k, t, _ in msg.sent if k == "answer"][-1]
 
 
 async def test_cancel_returns_to_service(services, slots, env, fake_bot):
@@ -414,5 +414,5 @@ async def test_a_network_error_does_not_echo_the_token(services, slots, env, tg,
     answers = [t for k, t, _ in msg.sent if k == "answer"]
     assert len(answers) == 1, answers
     assert NEW not in answers[0] and NEW.split(":", 1)[1] not in answers[0], "токен в переспросе"
-    assert "Telegram не ответил — пришли токен ещё раз" in answers[0], answers[0]
+    assert "Telegram не ответил на проверку" in answers[0], answers[0]
     assert await state.get_state() == "GatewayBotToken:value"

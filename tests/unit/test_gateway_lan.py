@@ -407,7 +407,7 @@ def test_no_avahi_is_grey_not_red(svc, monkeypatch):
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети по именам не "
-                                         "видны ни соседним шлюзам, ни устройствам админа в туннеле"), c.detail
+                                         "видны ни в подсетях других шлюзов, ни на устройствах админа в туннеле"), c.detail
     _svc_on(monkeypatch, browse=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", c.detail
