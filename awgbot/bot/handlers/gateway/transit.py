@@ -27,7 +27,8 @@ async def _transit_screen(services, chat_id: int):
     from awgbot.bot import paging
     st = await pkg._status(services, fresh=False)
     items = await call(services.lan_own_lists)
-    return (texts.gateway_transit_text(st, items, await pkg._own_info(services)),
+    return (texts.gateway_transit_text(st, items, await pkg._own_info(services),
+                                       virtual=await call(services.lan_virtual)),
             kb.gateway_transit_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 
@@ -119,11 +120,11 @@ async def gw_transit_router(cb: CallbackQuery, callback_data: GwCB, services):
     """Рецепт роутера вкладками — тот же текст, что у основного бота, с
     подсетью и настоящим адресом этого шлюза."""
     import socket
-    net, addr, peers = await call(services.lan_router_params)
+    net, addr = await call(services.lan_router_params)
     tab = callback_data.val if callback_data.val in ("mt", "ow") else "mt"
     await edit_nav(cb, services,
                    texts.gateway_router_text(await call(services.link_slot_name) or socket.gethostname(),
-                                             net, addr, peer_nets=peers, tab=tab),
+                                             net, addr, tab=tab),
                    kb.gateway_transit_router_kb(tab))
     await cb.answer()
 

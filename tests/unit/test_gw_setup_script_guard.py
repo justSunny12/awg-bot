@@ -382,3 +382,131 @@ def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
     assert "Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT\n" in unit
     assert unit.index("Environment=LINK_CHANNEL=") < unit.index("EnvironmentFile=-$FW_ENV"), (
         "локальный файл читается после строк бандла — иначе он не перекроет их")
+
+
+# ── маскарад соседей к роутеру (VPN-транзит) ─────────────────
+
+ROUTER_RULE = 'iifname "awglink2" ip saddr @peer_nets4 ip daddr 192.168.1.1 masquerade'
+
+
+def _router4(script: str, tmp_path, route_out: str) -> str:
+    """ROUTER4 настоящей detect_router при подставном `ip route show default`."""
+    fn = script[script.index("detect_router() {"):]
+    fn = fn[:fn.index("\n}\n") + 3]
+    fake_cmd(tmp_path / "ip", "#!/bin/sh\ncat <<'IPEOF'\n" + route_out + "\nIPEOF\n")
+    r = _sh(fn + 'printf "[%s]" "$(detect_router)"', path=f"{tmp_path}:/usr/bin:/bin")
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip()[1:-1]
+
+
+def _guard_with_router(script: str, *, lan_mode="1", peers="10.241.0.0/16", router="192.168.1.1") -> str:
+    """Таблица обвязки с настоящим блоком, который решает о правиле маскарада к
+    роутеру: say — заглушка, остальное — как в _guard_table."""
+    start = script.index('ROUTER_MASQ=""')
+    block = script[start:script.index("\nfi\n", start) + 4]
+    prog = (f"say() {{ :; }}\nLAN_MODE='{lan_mode}'\nPEER_ELEMS='{peers}'\nROUTER4='{router}'\n"
+            "LINK_IF='awglink2'\n" + block + 'printf "%s" "$ROUTER_MASQ"')
+    r = _sh(prog)
+    assert r.returncode == 0, r.stderr
+    return _guard_table(script, PEER_ELEMS=peers, ROUTER_MASQ=r.stdout)
+
+
+def _nft_check(table: str, tmp_path) -> None:
+    """Таблица проходит `nft -c`: на машине с nft и правами — настоящей
+    проверкой, иначе — по форме: каждое правило postrouting ссылается только
+    на объявленные наборы, скобки сходятся, пустых адресов нет."""
+    import os
+    import shutil
+    nft = shutil.which("nft")
+    if nft and hasattr(os, "geteuid") and os.geteuid() == 0:
+        f = tmp_path / "guard.nft"
+        f.write_text(table, encoding="utf-8")
+        r = subprocess.run([nft, "-c", "-f", str(f)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return
+    assert table.count("{") == table.count("}"), table
+    body = table.split("table inet awg_gw_guard {", 1)[1]
+    declared = set(re.findall(r"^\s*set (\w+) \{", body, re.M))
+    for ln in _chain(table, "postrouting"):
+        assert set(re.findall(r"@(\w+)", ln)) <= declared, ln
+        assert not re.search(r"daddr\s*(masquerade|$)", ln), f"правило без адреса: {ln}"
+
+
+def test_router_masquerade_is_one_rule_in_postrouting(script, tmp_path):
+    """VPN-транзит, соседи есть, маршрут по умолчанию через адрес — ровно одно
+    правило: трафик соседей из линка к адресу роутера уходит с адресом шлюза,
+    и роутер отвечает шлюзу, а не мимо заворота провайдеру. Стоит в nat-цепочке
+    таблицы обвязки, после маскарада клиентов."""
+    table = _guard_with_router(script)
+    post = _chain(table, "postrouting")
+    assert post.count(ROUTER_RULE) == 1, post
+    assert post.index(ROUTER_RULE) > post.index('ip saddr @tunnel_nets4 oifname "eth0" masquerade')
+    assert sum("masquerade" in ln for ln in post) == 2, "второго маскарада для соседей нет"
+    assert not any(ROUTER_RULE in ln for c in ("forward", "input", "output") for ln in _chain(table, c))
+    _nft_check(table, tmp_path)
+
+
+@pytest.mark.parametrize("env", [{"lan_mode": "0"}, {"peers": ""}, {"router": ""}],
+                         ids=["no-transit", "no-peers", "no-router"])
+def test_no_router_masquerade_without_transit_peers_or_router(script, tmp_path, env):
+    """Без VPN-транзита, без соседей или без адреса роутера правила нет, а
+    таблица остаётся годной: пустой адрес в правиле уронил бы `nft -c` всю
+    обвязку — и маскарад клиентов, и защиту шлюза."""
+    table = _guard_with_router(script, **env)
+    post = _chain(table, "postrouting")
+    assert not any("@peer_nets4" in ln for ln in post), post
+    assert post[1:] == ['ip saddr @tunnel_nets4 oifname "eth0" masquerade'], post
+    _nft_check(table, tmp_path)
+
+
+@pytest.mark.parametrize("out, want", [
+    ("default via 192.168.1.1 dev eth0 proto dhcp src 192.168.1.10 metric 100", "192.168.1.1"),
+    ("default via 10.0.0.254 dev br0 proto static\ndefault via 10.0.0.1 dev wlan0 metric 600", "10.0.0.254"),
+    ("default proto static metric 100\n\tnexthop via 172.16.0.1 dev eth0 weight 1", "172.16.0.1"),
+    ("default dev ppp0 scope link", ""),
+    ("default via inet6 fe80::1 dev eth0", ""),
+    ("default via 192.168.1.256 dev eth0", ""),
+    ("default via 192.168.01.1 dev eth0", ""),
+    ("default via 192.168.1.1;reboot dev eth0", ""),
+    ("", ""),
+])
+def test_router_address_is_the_ipv4_via_of_the_default_route(script, tmp_path, out, want):
+    """Адрес роутера — первый `via` маршрута по умолчанию, только форма IPv4
+    с октетами до 255: значение уходит в nft, кривое уронило бы таблицу.
+    Не IPv4 (via inet6, маршрут без via, мусор) — пусто, правила нет."""
+    assert _router4(script, tmp_path, out) == want
+
+
+def test_router_address_is_taken_once_next_to_the_wan_interface(script):
+    """ROUTER4 считается один раз за прогон, рядом с WAN_IF, — до таблицы,
+    файла статуса и dnsmasq, которые его берут."""
+    at = script.index('ROUTER4="$(detect_router)"')
+    assert script.index('WAN_IF="$(detect_wan)"') < at < script.index('ROUTER_MASQ=""')
+    assert at < script.index("write_status() {") and at < script.index('_ep_dns="$ROUTER4"')
+    assert script.count('ROUTER4="') == 1, "адрес роутера берётся в одном месте"
+
+
+def test_router_address_is_in_the_status_file(script, tmp_path):
+    """ROUTER= в файле статуса — по нему агент отличает обвязку, которая знает
+    маскарад к роутеру, от поставленной прежним скриптом."""
+    fn = script[script.index("write_status() {"):]
+    fn = fn[:fn.index("\n}\n") + 3]
+    status = tmp_path / "gateway.status"
+    prog = (f"MODE=apply; GW_STATUS_FILE='{status}'; GW_STATUS=confirmed; GATEWAY_PUBKEY=k; "
+            "UPLINK_STATE=ok; UPLINK_IF=awg0; LAN_MODE=1; SSH_PORT=22; SSH_FILTER=0; SSH_ALLOW=''\n")
+    for router, want in (("192.168.1.1", "ROUTER=192.168.1.1"), ("", "ROUTER=")):
+        r = _sh(prog + f"ROUTER4='{router}'\n" + fn + "write_status up")
+        assert r.returncode == 0, r.stderr
+        lines = status.read_text(encoding="utf-8").splitlines()
+        assert want in lines and "LINK=up" in lines and "SSH_ALLOW_COUNT=0" in lines, lines
+
+
+def test_the_plan_names_the_router_masquerade(script):
+    """План (без аргументов) и шаг 2 говорят о маскараде к роутеру; шапка
+    описывает его у PEER_HOME_NETS."""
+    plan = script.split('say "Будет сделано:"', 1)[1].split("exit 0", 1)[0]
+    assert "маскарад к адресу роутера" in plan and "$ROUTER4" in plan
+    step2 = script.split('step "2. Таблица $GUARD_TABLE"', 1)[1].split("cat <<GUARDEOF", 1)[0]
+    assert "роутер $ROUTER4: маскарад адресом шлюза" in step2
+    head = script.split("set -e", 1)[0]
+    assert "маскарад их трафика к роутеру" in head and "ROUTER=" in head

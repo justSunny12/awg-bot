@@ -8,7 +8,7 @@ from awgbot.bot.handlers import restore as restore_handlers
 from awgbot.bot.callbacks import GwCB, HideCB
 from awgbot.domain.gateway import GwCheck, GwStatus
 
-from tests.screens.shots_gateway_common import _CHECKS_OK, _TICK_LAN, _lan, _ssh_panel, _status, _status_lan
+from tests.screens.shots_gateway_common import _CHECKS_LAN, _CHECKS_OK, _TICK_LAN, _lan, _ssh_panel, _status, _status_lan
 from tests.screens.shots_gateway_agent import _shot
 
 
@@ -126,6 +126,11 @@ PANEL = [
           title="всё в порядке, просадка питания с загрузки"),
     _shot("gw.health.broken", press=[GwCB(action="health")], live=_status_bad(),
           title="проблемы, «не проверено», питание сейчас"),
+    _shot("gw.health.router_masq", press=[GwCB(action="health")],
+          live=_status_lan(checks=copy.deepcopy(_CHECKS_OK + _CHECKS_LAN) + [GwCheck(
+              "маскарад к роутеру", False, "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент "
+              "перевыставит обвязку", group="svc")]),
+          title="адрес роутера сменился — маскарад соседей к роутеру разошёлся, починка сама"),
     _shot("gw.health.no_host", press=[GwCB(action="health")], live=_status(hostname="", disk_free_gb=1234.4),
           title="имени хоста в замере нет — «Здоровье шлюза»; терабайтный диск — «1 234 ГБ»"),
     _shot("gw.health.escaped", press=[GwCB(action="health")],

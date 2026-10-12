@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 
@@ -17,6 +18,32 @@ def _server_version(raw) -> str:
     from awgbot.domain.selfupdate import SERVER_OLD
     val = raw.strip() if isinstance(raw, str) else ""
     return val if len(val) <= 32 and _SERVER_VERSION_RE.match(val) else SERVER_OLD
+
+
+_LAN_VIRTUAL_MAX = 16
+_LAN_VIRTUAL_SPACE = ipaddress.IPv4Network("10.0.0.0/8")
+
+
+def _lan_virtual(raw) -> list[str]:
+    """Адреса в туннеле своей сети из `role` — данные с чужой машины, только
+    для показа: список не длиннее 16, каждая запись — сеть (без битов хоста)
+    внутри 10.0.0.0/8 с префиксом /16–/30. Что-то не так — поле целиком
+    отбрасывается (пусто): показывать половину чужого списка незачем."""
+    if not isinstance(raw, list) or len(raw) > _LAN_VIRTUAL_MAX:
+        return []
+    out: list[str] = []
+    for item in raw:
+        if not isinstance(item, str) or len(item) > 18:
+            return []
+        try:
+            net = ipaddress.IPv4Network(item)
+        except ValueError:
+            return []
+        if not 16 <= net.prefixlen <= 30 or not net.subnet_of(_LAN_VIRTUAL_SPACE):
+            return []
+        if str(net) not in out:
+            out.append(str(net))
+    return out
 
 
 class ReportMixin:
@@ -91,7 +118,10 @@ class ReportMixin:
 
     _LINK_SERVER_VERSION_KEY = "gwlink_server_version"
 
-    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...) -> None:
+    _LINK_LAN_VIRTUAL_KEY = "gwlink_lan_virtual"
+
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...,
+                      lan_virtual=...) -> None:
         """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве;
         standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
         РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
@@ -100,12 +130,16 @@ class ReportMixin:
         сервер пришлёт сам, а что едет файлом. Старый сервер шлёт только active —
         тогда прочее не трогаем. server — версия сервера AWG из `role` (с 3.3.0):
         по ней агент выбирает цель обновления (`roles.gw.needs_main`); `role` без
-        версии или с чужой формой — сервер старше 3.3.0 («old»). Не передан
-        вовсе (...) — сохранённое не трогаем."""
+        версии или с чужой формой — сервер старше 3.3.0 («old»). lan_virtual —
+        адреса в туннеле своей сети (с 3.3.0, только для показа): нет поля
+        (None) или мусор — пусто. server и lan_virtual не переданы вовсе (...) —
+        сохранённое не трогаем."""
         self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
         self.__dict__["_role_since_start"] = True          # окно после старта: сервер сказал о себе
         if server is not ...:
             self.db.set_state(self._LINK_SERVER_VERSION_KEY, _server_version(server))
+        if lan_virtual is not ...:
+            self.db.set_state(self._LINK_LAN_VIRTUAL_KEY, " ".join(_lan_virtual(lan_virtual)))
         if caps is not None:
             good = [c for c in (caps if isinstance(caps, list) else []) if isinstance(c, str)]
             self.db.set_state(self._LINK_SERVER_CAPS_KEY,
@@ -138,6 +172,12 @@ class ReportMixin:
         """Версия сервера AWG из последнего `role`: «3.3.0»; «old» — сервер
         старше 3.3.0 (версию не шлёт); "" — `role` с версией ещё не приходил."""
         return (self.db.get_state(self._LINK_SERVER_VERSION_KEY) or "").strip()
+
+    def lan_virtual(self) -> list[str]:
+        """Адреса в туннеле своей сети по последнему `role`: как сеть видна
+        снаружи шлюза — устройствам админа и подсетям других шлюзов. Пусто —
+        сервер старше 3.3.0, подсетей нет или адреса в туннеле выключены."""
+        return (self.db.get_state(self._LINK_LAN_VIRTUAL_KEY) or "").split()
 
     def update_peers(self) -> list:
         """Другая сторона агента для условия обновления (`roles.gw.needs_main`) —

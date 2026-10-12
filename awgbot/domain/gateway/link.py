@@ -142,7 +142,43 @@ class LinkMixin:
             checks.append(GwCheck("маскарад клиентов", ok,
                                   "" if ok else f"маршрут по умолчанию через {wan}, а masquerade "
                                   "клиентов стоит в другом интерфейсе — агент перевыставит обвязку"))
+        router = self._router_masq_check(info)
+        if router is not None:
+            checks.append(router)
         return checks
+
+    def _router_masq_check(self, info: dict | None) -> GwCheck | None:
+        """Маскарад соседей к роутеру (VPN-транзит и подсети других шлюзов):
+        адрес в правиле таблицы против `via` маршрута по умолчанию сейчас.
+        Адрес роутера сменился (DHCP шлюза) или маршрут ушёл — правило стоит к
+        прежнему, и сам роутер соседям молчит; перевыставляем обвязку (скрипт
+        возьмёт адрес заново) — флаг для тика. Обвязка без ROUTER= в файле
+        статуса поставлена прежним скриптом: правила там и не будет, реассерт
+        ничего не даст. Без VPN-транзита или соседей проверки нет. Группа
+        «svc» — без уведомлений: соседи — не авария обвязки."""
+        from awgbot.infra import gwguard
+        self.__dict__["_router_masq_stale"] = False
+        if info is None or not gwguard.lan_mode() or not gwguard.unit_env("PEER_HOME_NETS").split():
+            return None
+        name = "маскарад к роутеру"
+        if "ROUTER" not in gwguard.script_status():
+            return GwCheck(name, None, "обвязка поставлена прежним скриптом — сам роутер подсетям других "
+                           "шлюзов не открыт; «🔧 Восстановить»", group="svc")
+        have = sorted(info.get("router_masq", set()))
+        router = gwguard.default_route_via()
+        if not router:
+            if have:
+                self.__dict__["_router_masq_stale"] = True
+                return GwCheck(name, False, f"маршрута по умолчанию через роутер нет, а правило к {have[0]} "
+                               "стоит — агент перевыставит обвязку", group="svc")
+            return GwCheck(name, None, "адрес роутера не определён: маршрута по умолчанию через адрес нет — "
+                           "сам роутер подсетям других шлюзов не открыт", group="svc")
+        if have == [router]:
+            return GwCheck(name, True, f"роутер {router}", group="svc")
+        self.__dict__["_router_masq_stale"] = True
+        return GwCheck(name, False, (f"правило к {have[0]}, а роутер теперь {router}" if have else
+                                     f"правила нет — сам роутер {router} подсетям других шлюзов не открыт")
+                       + " — агент перевыставит обвязку", group="svc")
 
     def _unit_enabled(self) -> bool:
         c = self.__dict__.get("_unit_enabled_cache")

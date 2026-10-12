@@ -56,11 +56,12 @@ def lan_about(shared: bool) -> str:
             "«в туннель»;\nсначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)")
 
 
-def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
+def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list | None = None) -> str:
     """Экран «🔀 VPN-транзит»: состояние, факты, списки, свои списки, SMB,
     объяснение под «подробнее», состояние синхронизации открыто. items —
     свои домены (для «пока пусто»), own — состояние синхронизации
-    (services.own_status)."""
+    (services.own_status), virtual — адреса в туннеле своей сети из `role`
+    (сервер старше 3.3.0 их не шлёт — строки нет)."""
     from ..fmt import details
     lan = getattr(st, "lan", None) or {}
     own = own or lan.get("own") or {}
@@ -69,6 +70,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     lines = [ui.head("🔀 VPN-транзит", state),
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{pkg._packets(lan.get('lan_pkts'))} с роутера",
+             *([lan_virtual_line(virtual)] if virtual else []),
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
              f"<code>{_e(lan.get('uplink', '') or 'аплинк')}</code>",
              f"📋 Списки: {pkg._lists_counts(lan)} ({pkg._lists_updated_short(lan.get('updated_at') or '')})",
@@ -85,6 +87,13 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
             lines.append(line)
     lines.append(details(about))
     return "\n".join(lines)
+
+
+def lan_virtual_line(virtual: list) -> str:
+    """«в туннеле — 10.240.1.0/24»: как сеть видна снаружи шлюза; больше
+    шести — «и ещё N»."""
+    shown = ", ".join(f"<code>{_e(str(n))}</code>" for n in virtual[:6])
+    return f"в туннеле — {shown}" + (f" и ещё {len(virtual) - 6}" if len(virtual) > 6 else "")
 
 
 def gateway_transit_ask_domain(kind: str) -> str:

@@ -69,7 +69,8 @@ class _Host:
     own_items: list = field(default_factory=list)          # свои домены (vpn|ru, домен)
     own: dict = field(default_factory=lambda: dict(_OWN_OFF))
     lan_fail: str = ""                                     # скрипт своих списков отказал
-    router: tuple = ("192.168.1.0/24", "192.168.1.10", ["192.168.2.0/24"])   # подсеть, адрес, соседи
+    router: tuple = ("192.168.1.0/24", "192.168.1.10")    # подсеть, адрес шлюза
+    lan_virtual: tuple = ()                                # адреса в туннеле своей сети из role
     late_answer: bool = False                              # итог «➖» дольше, чем Telegram держит нажатие
     mail: bool = False                                     # ящик подключён
     mail_last: str = ""                                    # ok | fail — последняя проверка
@@ -268,8 +269,8 @@ class _Agent(GatewayServices):
         return False
 
     def lan_router_params(self):
-        net, addr, peers = self.h.router
-        return net, addr, list(peers)
+        net, addr = self.h.router
+        return net, addr
 
     # ── почта и бэкапы ──────────────────────────────────────────────────────
     def email_check(self, acc=None):
@@ -412,6 +413,8 @@ def _agent(**opts):
             services.mute_updates()
         if h.server_version:
             services.db.set_state(services._LINK_SERVER_VERSION_KEY, h.server_version)
+        if h.lan_virtual:
+            services.db.set_state(services._LINK_LAN_VIRTUAL_KEY, " ".join(h.lan_virtual))
         if h.hold:
             services.update_hold_start()
         if h.waiting:

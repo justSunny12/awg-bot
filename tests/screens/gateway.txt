@@ -407,6 +407,28 @@ RAM свободно 312 МБ · диск свободно 3,2 ГБ, SMART FAIL 
 «🔧 Восстановить» переставит правила и переподнимет линк
   [🔧 Восстановить | gw:reassert:health] [⬅️ В меню | gw:panel:]
 
+### gw.health.router_masq — адрес роутера сменился — маскарад соседей к роутеру разошёлся, починка сама
+> press gw:health:
+~ Проверяю…
+= edit #1
+🩺 <b>Здоровье pi</b> 🔴 проблем: 1
+✅ линк — хендшейк 40 с назад
+✅ таблица awg_gw_guard
+✅ ip_forward
+✅ маршрут к Telegram
+✅ выход наружу — 35 мс через канал
+✅ ядра — модуль собран для 2 из 2
+✅ применение локальной сети
+✅ резолвер
+✅ списки — обновлены 15.09 06:00
+✅ SMB этой подсети — nas
+⚪ SMB подсетей других шлюзов — avahi не установлен
+🔴 маскарад к роутеру — правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент перевыставит обвязку
+RAM свободно 2 345 МБ · диск свободно 87 ГБ, SMART OK · питание ОК
+Модуль awg 1.0.20260901 · srcversion ABCDEF01… · ядер 2
+«🔧 Восстановить» переставит правила и переподнимет линк
+  [🔧 Восстановить | gw:reassert:health] [⬅️ В меню | gw:panel:]
+
 ### gw.health.no_host — имени хоста в замере нет — «Здоровье шлюза»; терабайтный диск — «1 234 ГБ»
 > press gw:health:
 ~ Проверяю…
@@ -927,6 +949,27 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 = edit #1
 🔀 <b>VPN-транзит</b> 🟢 работает
 <code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
+Свои списки: 2 в туннель, 1 напрямую
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и подсети из списков — в туннель, остальное — напрямую;
+свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт остальным — сразу, если они на связи, иначе при подключении;
+введённый домен накрывает и все поддомены; правила «напрямую» приоритетнее правил «в туннель»;
+сначала показаны домены напрямую (🇷🇺), затем в туннель (🌍)</blockquote>
+  [➕ В туннель | gw:lan_add:] [➕ Напрямую | gw:lan_ru:]
+  [➖ 🇷🇺 sber.ru | gw:lan_rm:0.4ff84ad4]
+  [➖ 🌍 example.com | gw:lan_rm:1.e2ddf131]
+  [➖ 🌍 example.net | gw:lan_rm:2.f138607b]
+  [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
+### gw.lan.virtual — сервер назвал в role адреса в туннеле своей сети — строка под интерфейсом
+> press gw:lan:
+= edit #1
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+в туннеле — <code>10.240.1.0/24</code>, <code>10.240.2.0/24</code>
 DNS — <code>10.8.0.1</code> через <code>awg0</code>
 📋 Списки: 1 234 домена, 56 подсетей (обн. 15.09 06:00)
 Свои списки: 2 в туннель, 1 напрямую
@@ -1492,10 +1535,8 @@ add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
 /ip route add dst-address=0.0.0.0/0 gateway=192.168.1.10 routing-table=antiblock
 /ip firewall filter
 add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=192.168.2.0/24 gateway=192.168.1.10
 /ip dhcp-server network set [find] dns-server=192.168.1.10</pre>
 Правило asym-via-gw — выше drop invalid; fasttrack выключить
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
   [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
   [⬅️ Назад | gw:lan:]
 ~ (пустой ответ)
@@ -1519,11 +1560,9 @@ ip rule add from 192.168.1.0/24 priority 120 lookup vpn
 iptables -I FORWARD 1 -s 192.168.1.0/24 ! -d 192.168.1.0/24 -j ACCEPT
 uci set firewall.@defaults[0].flow_offloading_hw='0'
 uci set firewall.@defaults[0].flow_offloading='0'
-ip route add 192.168.2.0/24 via 192.168.1.10
 uci add_list dhcp.lan.dhcp_option='6,192.168.1.10'
 uci commit</pre>
 Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, iptables — в /etc/firewall.user
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
   [MikroTik | gw:lan_router:mt] [✅ OpenWrt | gw:lan_router:ow]
   [⬅️ Назад | gw:lan:]
 ~ (пустой ответ)
@@ -1547,91 +1586,7 @@ add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
 /ip route add dst-address=0.0.0.0/0 gateway=192.168.1.10 routing-table=antiblock
 /ip firewall filter
 add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=192.168.2.0/24 gateway=192.168.1.10
 /ip dhcp-server network set [find] dns-server=192.168.1.10</pre>
-Правило asym-via-gw — выше drop invalid; fasttrack выключить
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
-  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
-  [⬅️ Назад | gw:lan:]
-~ (пустой ответ)
-
-### gw.lan.router.peers — два соседа — маршрут до каждого через адрес шлюза (MikroTik)
-> press gw:lan_router:
-= edit #1
-❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
-Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
-<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
-• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
-• аппаратное ускорение (fasttrack, flow offloading) выключено;
-• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
-• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
-<b>MikroTik RouterOS 7</b>
-<pre>/routing table add disabled=no fib name=antiblock
-/ip firewall mangle
-add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.2
-add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
-    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock
-/ip firewall filter
-add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=192.168.68.0/24 gateway=192.168.1.2
-/ip route add dst-address=10.20.0.0/16 gateway=192.168.1.2
-/ip dhcp-server network set [find] dns-server=192.168.1.2</pre>
-Правило asym-via-gw — выше drop invalid; fasttrack выключить
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.68.0/24</code>, <code>10.20.0.0/16</code>). Устройствам за роутером это не нужно
-  [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
-  [⬅️ Назад | gw:lan:]
-~ (пустой ответ)
-
-### gw.lan.router.peers.ow — два соседа — вкладка OpenWrt своими командами
-> press gw:lan_router:ow
-= edit #1
-❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
-Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
-<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
-• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
-• аппаратное ускорение (fasttrack, flow offloading) выключено;
-• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
-• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
-<b>OpenWrt</b>
-<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables
-ip route add default via 192.168.1.2 table vpn
-ip rule add from 192.168.1.2 priority 100 lookup main
-ip rule add from 192.168.1.0/24 to 192.168.1.0/24 priority 110 lookup main
-ip rule add from 192.168.1.0/24 priority 120 lookup vpn
-iptables -I FORWARD 1 -s 192.168.1.0/24 ! -d 192.168.1.0/24 -j ACCEPT
-uci set firewall.@defaults[0].flow_offloading_hw='0'
-uci set firewall.@defaults[0].flow_offloading='0'
-ip route add 192.168.68.0/24 via 192.168.1.2
-ip route add 10.20.0.0/16 via 192.168.1.2
-uci add_list dhcp.lan.dhcp_option='6,192.168.1.2'
-uci commit</pre>
-Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, iptables — в /etc/firewall.user
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.68.0/24</code>, <code>10.20.0.0/16</code>). Устройствам за роутером это не нужно
-  [MikroTik | gw:lan_router:mt] [✅ OpenWrt | gw:lan_router:ow]
-  [⬅️ Назад | gw:lan:]
-~ (пустой ответ)
-
-### gw.lan.router.no_peers — соседей нет — без маршрутов до них и абзаца
-> press gw:lan_router:
-= edit #1
-❓ <b>Роутер для pi</b> · <code>192.168.1.0/24</code> · шлюз <code>192.168.1.2</code>
-Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; ускорение и IPv6 — выключить; асимметричный путь — разрешить
-<blockquote expandable>• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
-• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше drop invalid;
-• аппаратное ускорение (fasttrack, flow offloading) выключено;
-• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;
-• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но адрес v6 от роутера увёл бы трафик мимо туннеля</blockquote>
-<b>MikroTik RouterOS 7</b>
-<pre>/routing table add disabled=no fib name=antiblock
-/ip firewall mangle
-add action=accept chain=prerouting comment=anti-loop src-address=192.168.1.2
-add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
-    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock
-/ip firewall filter
-add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip dhcp-server network set [find] dns-server=192.168.1.2</pre>
 Правило asym-via-gw — выше drop invalid; fasttrack выключить
   [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
   [⬅️ Назад | gw:lan:]
@@ -1656,10 +1611,8 @@ add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
 /ip route add dst-address=0.0.0.0/0 gateway=192.168.1.10 routing-table=antiblock
 /ip firewall filter
 add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=192.168.2.0/24 gateway=192.168.1.10
 /ip dhcp-server network set [find] dns-server=192.168.1.10</pre>
 Правило asym-via-gw — выше drop invalid; fasttrack выключить
-Связь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до них через шлюз (строки с <code>192.168.2.0/24</code>). Устройствам за роутером это не нужно
   [✅ MikroTik | gw:lan_router:mt] [OpenWrt | gw:lan_router:ow]
   [⬅️ Назад | gw:lan:]
 ~ (пустой ответ)

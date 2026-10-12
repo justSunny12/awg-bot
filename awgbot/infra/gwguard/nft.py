@@ -14,10 +14,12 @@ from awgbot.infra import gwguard as pkg       # имена пакета — че
 
 def table_info() -> Optional[dict]:
     """{'sets': {имя: set(str)}, 'chains': set(имя), 'masq_ifaces': set(str),
-    'ssh_ports': {цепочка: порт}} или None — таблицы нет. masq_ifaces — в
-    какие интерфейсы стоит masquerade (по oifname); ssh_ports — какой tcp
-    dport держат правила про SSH (tunnel_in: сервер по линку; input: переход
-    на ssh_in). Один exec: `nft -j list table`."""
+    'router_masq': set(str), 'ssh_ports': {цепочка: порт}} или None — таблицы
+    нет. masq_ifaces — в какие интерфейсы стоит masquerade (по oifname);
+    router_masq — к каким адресам стоит маскарад соседей (`ip saddr
+    @peer_nets4 ip daddr <роутер> masquerade`); ssh_ports — какой tcp dport
+    держат правила про SSH (tunnel_in: сервер по линку; input: переход на
+    ssh_in). Один exec: `nft -j list table`."""
     proc = pkg._nft(["-j", "list", "table", pkg.TABLE_FAMILY, pkg.TABLE_NAME])
     if proc.returncode != 0:
         return None
@@ -28,6 +30,7 @@ def table_info() -> Optional[dict]:
     sets: dict[str, set[str]] = {}
     chains: set[str] = set()
     masq: set[str] = set()
+    router: set[str] = set()
     ssh_ports: dict[str, int] = {}
     for item in doc.get("nftables", []):
         if "set" in item:
@@ -38,17 +41,23 @@ def table_info() -> Optional[dict]:
         elif "rule" in item:
             expr = item["rule"].get("expr") or []
             if any("masquerade" in e for e in expr if isinstance(e, dict)):
+                ip = {}
                 for e in expr:
                     m = e.get("match") if isinstance(e, dict) else None
                     if m and (m.get("left") or {}).get("meta", {}).get("key") == "oifname":
                         masq.add(str(m.get("right")))
+                    pl = ((m or {}).get("left") or {}).get("payload") or {}
+                    if m and pl.get("protocol") == "ip" and isinstance(m.get("right"), str):
+                        ip[pl.get("field")] = m["right"]
+                if ip.get("saddr") == "@peer_nets4" and ip.get("daddr"):
+                    router.add(ip["daddr"])
             for e in expr:
                 m = e.get("match") if isinstance(e, dict) else None
                 left = (m or {}).get("left") or {}
                 if m and left.get("payload", {}).get("field") == "dport" \
                         and left["payload"].get("protocol") == "tcp" and isinstance(m.get("right"), int):
                     ssh_ports[str(item["rule"].get("chain"))] = int(m["right"])
-    return {"sets": sets, "chains": chains, "masq_ifaces": masq, "ssh_ports": ssh_ports}
+    return {"sets": sets, "chains": chains, "masq_ifaces": masq, "router_masq": router, "ssh_ports": ssh_ports}
 
 
 def iptables_forward_policy() -> Optional[str]:

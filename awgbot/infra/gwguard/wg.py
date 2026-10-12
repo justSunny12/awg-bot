@@ -1,6 +1,7 @@
 """wg.py — аплинк этой машины, политика «Telegram → аплинк», подсеть клиентов."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 
@@ -82,6 +83,24 @@ def default_route_dev() -> str:
         dev = str(r.get("dev") or "")
         if dev:
             return dev
+    return ""
+
+
+def default_route_via() -> str:
+    """Адрес роутера — шлюз маршрута по умолчанию основной таблицы, как его
+    берёт скрипт обвязки (ROUTER4): первый `via`, в том числе у первого
+    nexthop; только IPv4. Нет via, via не IPv4 или не узнать — пусто."""
+    for r in pkg._ip_json(["route", "show", "default"]):
+        hops = [r, *(h for h in (r.get("nexthops") or []) if isinstance(h, dict))]
+        for h in hops:
+            via = h.get("gateway")
+            if not via and isinstance(h.get("via"), dict):       # via inet6 в маршруте v4
+                via = h["via"].get("host")
+            if via:
+                try:
+                    return str(ipaddress.IPv4Address(str(via)))
+                except ValueError:
+                    return ""
     return ""
 
 

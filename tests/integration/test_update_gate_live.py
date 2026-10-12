@@ -223,7 +223,9 @@ def test_seen_is_touched_only_for_live_sessions_with_a_fresh_handshake(vps, make
     for slot in (1, 2):
         vps.db.set_state(f"gwlink_seen_{slot}", _ago(days=3))
     ages = {"awglink": 30, "awglink2": GWLINK_FRESH_HANDSHAKE_S + 1}
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
+    # подмена — в части пакета: на самом пакете откат оставил бы имя в его
+    # globals, и оно заслонило бы подмены probes в следующих тестах процесса
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": ages.get(iface))
     vps.gwlink_seen_touch([1, 2])
     assert vps.db.get_state("gwlink_seen_2") < vps.db.get_state("gwlink_seen_1"), \
         "полуоткрытая сессия (хендшейк протух) время связи не двигает"

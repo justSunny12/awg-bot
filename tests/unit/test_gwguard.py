@@ -70,6 +70,29 @@ def test_table_info_lists_masqueraded_interfaces(monkeypatch):
     assert gwguard.table_info()["masq_ifaces"] == {"end0", "awg0"}
 
 
+def test_table_info_lists_the_router_masquerade_addresses(monkeypatch):
+    """Маскарад соседей к роутеру — правило с `ip saddr @peer_nets4` и
+    `ip daddr <роутер>`: адрес идёт в router_masq; маскарад клиентов (без
+    peer_nets4) и прочие правила с daddr — нет."""
+    def m(left, right):
+        return {"match": {"op": "==", "left": left, "right": right}}
+    ip = lambda f: {"payload": {"protocol": "ip", "field": f}}           # noqa: E731
+    doc = {"nftables": [
+        {"rule": {"chain": "postrouting", "expr": [
+            m({"meta": {"key": "iifname"}}, "awglink"), m(ip("saddr"), "@peer_nets4"),
+            m(ip("daddr"), "192.168.1.1"), {"masquerade": None}]}},
+        {"rule": {"chain": "postrouting", "expr": [
+            m(ip("saddr"), "@tunnel_nets4"), m({"meta": {"key": "oifname"}}, "end0"), {"masquerade": None}]}},
+        {"rule": {"chain": "forward", "expr": [
+            m(ip("saddr"), "@peer_nets4"), m(ip("daddr"), "192.168.1.9"), {"accept": None}]}},
+    ]}
+    monkeypatch.setattr(gwguard, "_nft", lambda a, timeout=10: _cp(0, json.dumps(doc)))
+    info = gwguard.table_info()
+    assert info["router_masq"] == {"192.168.1.1"} and info["masq_ifaces"] == {"end0"}, info
+    doc["nftables"] = doc["nftables"][1:]
+    assert gwguard.table_info()["router_masq"] == set(), "правила нет — пусто"
+
+
 def test_table_info_none_when_absent(monkeypatch):
     monkeypatch.setattr(gwguard, "_nft", lambda a, timeout=10: _cp(1))
     assert gwguard.table_info() is None
@@ -389,6 +412,24 @@ def test_default_route_dev_reads_ip_json(monkeypatch):
     assert gwguard.default_route_dev() == "br0"
     monkeypatch.setattr(gwguard, "_ip_json", lambda args: [])
     assert gwguard.default_route_dev() == ""
+
+
+@pytest.mark.parametrize("routes, want", [
+    ([{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0"}], "192.168.1.1"),
+    ([{"dst": "default", "gateway": "10.0.0.254", "dev": "br0"},
+      {"dst": "default", "gateway": "10.0.0.1", "dev": "wlan0", "metric": 600}], "10.0.0.254"),
+    ([{"dst": "default", "nexthops": [{"gateway": "172.16.0.1", "dev": "eth0"}]}], "172.16.0.1"),
+    ([{"dst": "default", "dev": "ppp0", "scope": "link"}], ""),
+    ([{"dst": "default", "via": {"family": "inet6", "host": "fe80::1"}, "dev": "eth0"}], ""),
+    ([{"dst": "default", "gateway": "192.168.1.256", "dev": "eth0"}], ""),
+    ([], ""),
+], ids=["via", "first-of-two", "nexthop", "no-via", "via-inet6", "bad", "none"])
+def test_default_route_via_is_the_router_like_the_script_takes_it(monkeypatch, routes, want):
+    """Адрес роутера агент берёт так же, как скрипт обвязки (ROUTER4): первый
+    via маршрута по умолчанию, только IPv4 — иначе сверка с правилом всегда
+    расходилась бы и тик дёргал обвязку зря."""
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: routes if args == ["route", "show", "default"] else [])
+    assert gwguard.default_route_via() == want
 
 
 def test_is_timeout_recognises_only_the_timeout_refusal():

@@ -266,9 +266,37 @@ def test_endpoint_names_resolve_through_the_router_not_the_tunnel(script):
     аплинк: имя Endpoint резолвилось бы только через ещё не поднятый туннель —
     взаимная блокировка на загрузке. Имена — через DNS роутера."""
     body = script.split("_lan_apply_locked() {", 1)[1].split("filter-AAAA", 1)[0]
-    assert "_ep_dns=" in body and 'if($i=="via")' in body
+    assert '_ep_dns="$ROUTER4"' in body, "адрес роутера — тот же, что у маскарада к роутеру"
     assert "_ep_names=" in body and "Endpoint" in body
     assert "printf 'server=/%s/%s\\n' \"$_n\" \"$_ep_dns\"" in body
+
+
+# прежний разбор адреса DNS роутера — до ROUTER4 (строка из _lan_apply_locked)
+_EP_DNS_OLD = ("ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) "
+               "if($i==\"via\"){print $(i+1); exit}}'")
+
+
+@pytest.mark.parametrize("route", [
+    "default via 192.168.1.1 dev eth0 proto dhcp src 192.168.1.10 metric 100",
+    "default via 10.0.0.254 dev br0\ndefault via 10.0.0.1 dev wlan0 metric 600",
+    "default proto static metric 100\n\tnexthop via 172.16.0.1 dev eth0 weight 1",
+    "default dev ppp0 scope link",
+])
+def test_endpoint_dns_lines_are_the_same_with_router4(script, tmp_path, route):
+    """_ep_dns берёт ROUTER4 (detect_router) — строки server=/<имя>/<адрес>
+    для IPv4-адреса роутера те же, что давал прежний разбор `via`; маршрут без
+    via — строк нет, как и раньше."""
+    fn = script[script.index("detect_router() {"):]
+    fn = fn[:fn.index("\n}\n") + 3]
+    loop = ("for _n in vpn.example.org link.example.org; do "
+            "[ -n \"$_ep_dns\" ] && printf 'server=/%s/%s\\n' \"$_n\" \"$_ep_dns\"; done; :")
+    fake_cmd(tmp_path / "ip", "#!/bin/sh\nprintf '%b\\n' '" + route + "'\n")
+    path = f"{tmp_path}:/usr/bin:/bin"
+    new = _sh(fn + 'ROUTER4="$(detect_router)"\n_ep_dns="$ROUTER4"\n' + loop, path=path)
+    old = _sh(f'_ep_dns="$({_EP_DNS_OLD})"\n' + loop, path=path)
+    assert new.returncode == 0 and old.returncode == 0, (new.stderr, old.stderr)
+    assert new.stdout == old.stdout, (new.stdout, old.stdout)
+    assert ("server=/vpn.example.org/" in new.stdout) == ("via" in route)
 
 
 def test_subnet_feeds_are_only_added_when_one_source_failed(script):

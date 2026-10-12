@@ -62,7 +62,8 @@ class _Agent(AgentStub):
     def lan_feeds_touch(self, digest: str = "") -> None:
         self.touched += 1
 
-    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...) -> None:
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...,
+                      lan_virtual=...) -> None:
         self.roles.append(active)
         self.caps.append(caps)
 

@@ -232,14 +232,13 @@ class TransitMixin:
         self.db.set_state(self._LAN_FAILS_KEY, str(fails))
         return ok, tail
 
-    def lan_router_params(self) -> tuple[str, str, list[str]]:
-        """(подсеть, адрес шлюза, локальные подсети других шлюзов) для рецепта
-        роутера — их знает только шлюз: подсети из юнита обвязки, адрес из
-        статуса скрипта."""
+    def lan_router_params(self) -> tuple[str, str]:
+        """(подсеть, адрес шлюза) для рецепта роутера — их знает только шлюз:
+        подсеть из юнита обвязки, адрес из статуса скрипта. Подсетей соседей
+        рецепт не берёт: сам роутер открывает им маскарад шлюза."""
         from awgbot.infra import gwguard
         nets = gwguard.unit_env("HOME_SUBNETS").split()
-        peers = gwguard.unit_env("PEER_HOME_NETS").split()
-        return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", ""), peers
+        return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", "")
 
 
     # ── фиды локальной сети по каналу ────────

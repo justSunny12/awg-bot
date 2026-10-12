@@ -1,7 +1,8 @@
 """E2E: агент шлюза — то, чего нет в эталонах экранов (tests/screens/gateway.txt):
 живая проба здоровья, реассерт только после подтверждения, порог линка в
 секундах, «никогда» из старого конфига при старте агента, найденная версия
-переживает сбой проверки, обрезка всплывашки «➖». Тексты и раскладки экранов
+переживает сбой проверки, обрезка всплывашки «➖», адреса в туннеле из `role`
+на экране «🔀 VPN-транзит» и отбрасывание мусора в этом поле. Тексты и раскладки экранов
 (панель в редких состояниях, подтверждения без угрозы РФ-доступу, переспрос
 порога, рецепт роутера, огромный ввод доменов) — в эталоне.
 
@@ -112,6 +113,60 @@ def _carrying(svc, role: str = "active", link_up: bool = True) -> None:
     svc.set_link_role(role == "active", standby=False, name="NASPi")
     svc.cached_status = lambda max_age: GwStatus(link_up=link_up, handshake_age=40.0 if link_up else None,
                                                  hostname="naspi")
+
+
+# ── «🔀 VPN-транзит»: адреса в туннеле своей сети из role ───────────────────
+
+def _transit_status():
+    return GwStatus(link_up=True, handshake_age=5.0, hostname="naspi",
+                    lan={"iface": "end0", "addr": "192.168.1.2", "resolver": "10.9.1.1", "domains": 3,
+                         "nets": 4, "updated_at": "", "own_vpn": 0, "own_ru": 0, "lan_pkts": 9})
+
+
+async def _role(svc, monkeypatch, **fields) -> None:
+    """`role` от сервера через настоящий разбор канала агента."""
+    async def no_regate(services, **kw):
+        return None
+    monkeypatch.setattr(linkclient, "update_regate", no_regate)
+    await linkclient.LinkClient(svc)._dispatch({"t": "role", "active": True, "standby": False,
+                                                "name": "NASPi", **fields})
+
+
+async def _transit_text(svc, fake_bot, monkeypatch) -> str:
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: _transit_status())
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
+    cb, nav = _acb(fake_bot)
+    await gh.gw_transit(cb, svc, FakeState())
+    return nav.sent[-1][1]
+
+
+async def test_the_transit_screen_shows_the_tunnel_addresses_from_the_role(svc, fake_bot, monkeypatch):
+    """Сервер 3.3.0 называет в `role` адреса в туннеле сети слота — строка
+    «в туннеле — …» под строкой интерфейса; сервер старше (поля нет) — строки нет."""
+    await _role(svc, monkeypatch, server="3.3.0", lan_virtual=["10.240.1.0/24", "10.240.2.0/24"])
+    text = await _transit_text(svc, fake_bot, monkeypatch)
+    lines = text.split("\n")
+    at = next(i for i, ln in enumerate(lines) if ln.startswith("<code>end0</code>"))
+    assert lines[at + 1] == "в туннеле — <code>10.240.1.0/24</code>, <code>10.240.2.0/24</code>", lines
+    await _role(svc, monkeypatch)                                  # сервер старше 3.3.0
+    assert svc.lan_virtual() == []
+    assert "в туннеле —" not in await _transit_text(svc, fake_bot, monkeypatch)
+
+
+@pytest.mark.parametrize("junk", [
+    "10.240.1.0/24", ["10.240.1.0/24", 7], ["192.168.1.0/24"], ["10.240.1.5/24"], ["10.0.0.0/8"],
+    ["10.240.1.0/31"], ["10.240.1.0/24<b>"], [f"10.240.{i}.0/24" for i in range(17)], [None], {"x": 1},
+], ids=["str", "not-str", "outside-10/8", "host-bits", "wider-16", "narrower-30", "markup", "17",
+        "none", "dict"])
+async def test_the_dispatch_drops_junk_in_the_tunnel_addresses(svc, fake_bot, monkeypatch, junk):
+    """`role` — данные с чужой машины: не список, больше 16 записей, запись не
+    сеть внутри 10.0.0.0/8 с префиксом /16–/30 — поле отбрасывается целиком,
+    строки нет; прежнее значение не остаётся висеть."""
+    await _role(svc, monkeypatch, lan_virtual=["10.240.1.0/24"])
+    assert svc.lan_virtual() == ["10.240.1.0/24"]
+    await _role(svc, monkeypatch, lan_virtual=junk)
+    assert svc.lan_virtual() == []
+    assert "в туннеле —" not in await _transit_text(svc, fake_bot, monkeypatch)
 
 
 # ── настройки ────────────────────────────────────────────────────────────────

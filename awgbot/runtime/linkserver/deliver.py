@@ -159,17 +159,23 @@ class DeliverMixin:
         return await self.send(slot_id, "own_set", body, pad=gwlink.PAD_SNAP)
 
     def _slot_words(self, slot_id: int) -> dict:
-        """(standby, name) по базе, без опроса интерфейсов: приветствие не
-        должно ждать exec на каждый слот."""
-        standby, name = False, ""
+        """(standby, name, lan_virtual) по базе, без опроса интерфейсов:
+        приветствие не должно ждать exec на каждый слот. lan_virtual — адреса в
+        туннеле сети слота (агент только показывает); пространство неисправно
+        или подсетей нет — пусто."""
+        standby, name, virtual = False, "", []
         for g in self.services.db.gateways():
             dev = self.services.db.get_device(g.device_id) if g.device_id else None
             if g.id == slot_id:
                 if dev is not None:
                     name = dev.name + (f" ({g.label})" if getattr(g, "label", "") else "")
+                try:
+                    virtual = [twin for _real, twin in self.services.lan_twins(g)]
+                except Exception as e:                    # noqa: BLE001 — роль важнее показа
+                    log.warning("канал линка: адреса в туннеле слота %s: %s", slot_id, e)
             elif dev is not None:
                 standby = True
-        return {"standby": standby, "name": name}
+        return {"standby": standby, "name": name, "lan_virtual": virtual}
 
     async def deliver_cfg(self, slot_id: int) -> bool:
         """Документ конфигурации слоту с возможностью cfg1: по расхождению
@@ -200,7 +206,8 @@ class DeliverMixin:
         is_active = active is not None and active.id == slot_id
         # вместе с ролью — есть ли другой шлюз и как слот назван у сервера:
         # агенту это нужно для честных хвостов и заголовка рецепта роутера
-        # и версию сервера: по ней агент выбирает цель обновления (roles.gw.needs_main)
+        # и версию сервера: по ней агент выбирает цель обновления (roles.gw.needs_main);
+        # адреса в туннеле сети слота меняются с подсетями — role уходит заново сам
         payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id),
                    "caps": list(SERVER_CAPS), "server": config.INSTALLED_VERSION}
         if sess.role_sent == payload:

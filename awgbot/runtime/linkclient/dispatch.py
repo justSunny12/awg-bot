@@ -46,7 +46,9 @@ class DispatchMixin:
                                     # возможностей нет (откат или копия): сохранённое стирается
                                     msg.get("caps") if isinstance(msg.get("caps"), list) else [],
                                     # и версию: нет поля — сервер старше 3.3.0
-                                    msg.get("server"))
+                                    msg.get("server"),
+                                    # адреса в туннеле своей сети — для показа; форму проверяет домен
+                                    msg.get("lan_virtual"))
             await self._update_regate()
             return
         if msg.get("t") == "lists_ok":

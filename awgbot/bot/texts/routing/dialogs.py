@@ -75,14 +75,14 @@ GATEWAY_LAN_NO_SUBNET = "Сначала задай подсеть шлюза («
 ROUTER_TABS = (("mt", "MikroTik"), ("ow", "OpenWrt"))
 
 
-def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list | None = None,
-                        tab: str = "mt") -> str:
+def gateway_router_text(title: str, net: str, gw_ip: str = "", tab: str = "mt") -> str:
     """❓ Роутер — вкладками: требования одной строкой, подробно — под
     «подробнее», рецепт выбранной вкладки. Адрес шлюза в подсети знает
-    только он сам: основной бот показывает плейсхолдер."""
+    только он сам: основной бот показывает плейсхолдер. О связи подсетей
+    рецепт не говорит: устройства сети отвечают соседям заворотом на шлюз, а
+    сам роутер — шлюзу, который маскарадит к нему трафик соседей."""
     net = net or "ПОДСЕТЬ"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
-    peers = [str(p) for p in (peer_nets or []) if p]
     head = (ui.head(f"❓ Роутер для {_e(title)}", meta=[f"<code>{_e(net)}</code>", f"шлюз <code>{gw_ip}</code>"]) + "\n"
             "Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; "
             "ускорение и IPv6 — выключить; асимметричный путь — разрешить")
@@ -96,7 +96,6 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
                   "но адрес v6 от роутера увёл бы трафик мимо туннеля")
     recipes = []
     if tab in ("ow", "all"):
-        ow_peer = "".join(f"ip route add {_e(p)} via {gw_ip}\n" for p in peers)
         recipes.append(ui.sub("OpenWrt") + "\n"
                   "<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables\n"
                   f"ip route add default via {gw_ip} table vpn\n"
@@ -106,14 +105,12 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
                   f"iptables -I FORWARD 1 -s {_e(net)} ! -d {_e(net)} -j ACCEPT\n"
                   "uci set firewall.@defaults[0].flow_offloading_hw='0'\n"
                   "uci set firewall.@defaults[0].flow_offloading='0'\n"
-                  f"{ow_peer}"
                   f"uci add_list dhcp.lan.dhcp_option='6,{gw_ip}'\n"
                   "uci commit</pre>\n"
                   "Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё "
                   "остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, "
                   "iptables — в /etc/firewall.user")
     if tab in ("mt", "all"):
-        mt_peer = "".join(f"/ip route add dst-address={_e(p)} gateway={gw_ip}\n" for p in peers)
         recipes.insert(0, ui.sub("MikroTik RouterOS 7") + "\n"
                   "<pre>/routing table add disabled=no fib name=antiblock\n"
                   "/ip firewall mangle\n"
@@ -123,16 +120,10 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
                   f"/ip route add dst-address=0.0.0.0/0 gateway={gw_ip} routing-table=antiblock\n"
                   "/ip firewall filter\n"
                   f"add action=accept chain=forward comment=asym-via-gw src-address={_e(net)} dst-address=!{_e(net)}\n"
-                  f"{mt_peer}"
                   f"/ip dhcp-server network set [find] dns-server={gw_ip}</pre>\n"
                   "Правило asym-via-gw — выше drop invalid; fasttrack выключить")
     recipe = "\n\n".join(recipes)
-    peer_note = ("" if not peers else
-                 "\nСвязь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо "
-                 "заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до "
-                 "них через шлюз (строки с " + ", ".join(f"<code>{_e(p)}</code>" for p in peers)
-                 + "). Устройствам за роутером это не нужно")
-    return f"{head}\n{req}\n{recipe}{peer_note}"
+    return f"{head}\n{req}\n{recipe}"
 
 
 def gateway_switch_ask(target: dict, current, healthy: bool) -> str:

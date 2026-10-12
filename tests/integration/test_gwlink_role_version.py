@@ -74,6 +74,7 @@ async def test_an_old_agent_skips_the_server_version_in_the_role(services, link)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.2.1"})
     role = await _next(gw, "role")
     assert role is not None and role["server"] == config.INSTALLED_VERSION and "caps" in role
+    assert role["lan_virtual"] == ["10.240.68.0/24"], "и адреса в туннеле — агент 3.2.x их тоже пропускает"
     old = _Agent321()
     await old._dispatch(role)
     assert old.state == {"gwlink_role": "active", "gwlink_standby": "0", "gwlink_slot_name": "NASPi"}
@@ -107,3 +108,37 @@ async def test_a_hello_with_a_new_agent_version_opens_the_server_update(services
     await gw.send("snap", {"rev": 1, "agent_version": "3.4.0"})
     await asyncio.sleep(0.2)
     assert got == ["v3.3.1"], "уведомление — один раз на тег"
+
+
+# ── адреса в туннеле сети слота в role ───────────────────────────────────────
+
+async def test_the_role_carries_the_tunnel_addresses_of_the_slot_net(services, link, pi):
+    """Сервер называет в `role` адреса в туннеле сети этого слота (двойники
+    его подсетей, LanMapMixin.lan_twins); агент хранит их для экрана
+    «🔀 VPN-транзит»."""
+    assert services.lan_twins(services.db.gateway(1)) == [("192.168.68.0/24", "10.240.68.0/24")]
+    await _up(services, pi)
+    await _until(lambda: pi["agent"].lan_virtual())
+    assert pi["agent"].lan_virtual() == ["10.240.68.0/24"]
+
+
+async def test_new_subnets_reach_the_agent_with_the_next_role(services, link, pi):
+    """`role` сравнивается целиком: подсети слота сменились — адреса в туннеле
+    уходят агенту следующим тактом доставки сами."""
+    await _up(services, pi)
+    await _until(lambda: pi["agent"].lan_virtual())
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24 192.168.2.0/24")
+    await link.deliver_all()
+    await _until(lambda: pi["agent"].lan_virtual() != ["10.240.68.0/24"])
+    assert pi["agent"].lan_virtual() == ["10.240.1.0/24", "10.240.2.0/24"]
+
+
+async def test_a_broken_space_sends_no_tunnel_addresses(services, link, monkeypatch):
+    """Служебное пространство неисправно — адресов в туннеле нет ни у кого:
+    поле пустое, а не настоящие подсети."""
+    monkeypatch.setattr(services, "lan_off", lambda: ("пересекается с подсетью клиентов", "routing.lan_space"))
+    host, port = link._bound[0]
+    gw = _Gw(*await asyncio.open_connection(host, port, limit=8 * gwlink.MAX_LINE), key=KEY)
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0"})
+    role = await _next(gw, "role")
+    assert role is not None and role["lan_virtual"] == [], role
