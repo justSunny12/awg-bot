@@ -63,6 +63,15 @@ async def test_quiet_hours_silences_normal_but_not_force_sound(monkeypatch):
     assert by_id[222]["silent"] is False                   # force_sound пробивает тишину
 
 
+async def test_a_quiet_notice_is_silent_outside_quiet_hours_too(monkeypatch):
+    """Разовая сводка (silent) — без звука и днём; прочие — как раньше."""
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    bot = RecordingBot()
+    await notifier.send_notifications(bot, [Notification(111, "x", silent=True), Notification(222, "y")])
+    by_id = {c["chat_id"]: c for c in bot.calls}
+    assert by_id[111]["silent"] is True and by_id[222]["silent"] is False
+
+
 async def test_quiet_hours_disabled_never_silent(monkeypatch):
     settings.set_value("quiet_hours.quiet_hours_enabled", False)
     bot = RecordingBot()

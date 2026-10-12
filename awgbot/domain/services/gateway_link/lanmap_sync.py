@@ -19,6 +19,7 @@ from .common import log
 class LanMapSyncMixin:
     """Сверка таблицы адресов в туннеле, старт и уведомление."""
 
+    _LAN_SPACE_ANNOUNCED_KEY = "lan_space_announced"   # «сети теперь открываются по адресам в туннеле» сказано
     _LAN_PEERS_ANNOUNCED_KEY = "lan_peers_announced"   # хвост уведомления о связи подсетей сказан
     # Тумблер связи подсетей до 3.3.0. Связь подсетей теперь часть VPN-транзита,
     # ключ в conf мёртвый; читается один раз — для уведомления после обновления.
@@ -145,19 +146,41 @@ class LanMapSyncMixin:
         return self.lan_space_announce()
 
     def lan_space_announce(self) -> list[Notification]:
-        """Один раз после обновления: прежний тумблер связи подсетей был
-        выключен, а слотов с VPN-транзитом два и больше — их сети теперь
-        связаны без вопроса, и это надо сказать прямо. Пока адреса в туннеле
-        выключены — молчит и ключ не взводит: связи нет. Свой ключ — у
-        полного уведомления об адресах в туннеле он отдельный."""
-        from awgbot.domain.alerts import armer
-        from awgbot.domain.notices.lanmap import lan_peers_joined
-        if self.db.get_state(self._LAN_PEERS_ANNOUNCED_KEY) == "1" or self.lan_space_problem():
+        """Один раз после обновления, без звука, одним сообщением:
+        — локальные сети шлюзов теперь открываются по адресам в туннеле (если у
+          слотов есть подсети; хвост про раздельный туннель — только при нём),
+          ключ lan_space_announced;
+        — прежний тумблер связи подсетей был выключен, а слотов с VPN-транзитом
+          два и больше — их сети теперь связаны без вопроса, ключ
+          lan_peers_announced.
+        Ключ взводится по факту доставки; сказать нечего — сразу (новая
+        установка без слотов). Пока адреса в туннеле выключены — молчит и
+        ключей не взводит: сказать «открываются» нечего."""
+        from awgbot.domain import configgen
+        from awgbot.domain.notices.lanmap import lan_peers_joined, lan_space_moved
+        if self.lan_space_problem():
             return []
-        transit = self.gateway_transit_slots()
-        was_off = not settings.get_bool(self._PEER_NETS_LEGACY_KEY, False)
-        if not (was_off and len(transit) >= 2):
-            self.db.set_state(self._LAN_PEERS_ANNOUNCED_KEY, "1")
+        parts: list[str] = []
+        keys: list[str] = []
+        if self.db.get_state(self._LAN_SPACE_ANNOUNCED_KEY) != "1":
+            rows = [(self._gw_link(g), twins) for g in self.db.gateways() if (twins := self.lan_twins(g))]
+            if rows:
+                parts.append(lan_space_moved(rows, configgen.split_tunnel()))
+                keys.append(self._LAN_SPACE_ANNOUNCED_KEY)
+            else:
+                self.db.set_state(self._LAN_SPACE_ANNOUNCED_KEY, "1")
+        if self.db.get_state(self._LAN_PEERS_ANNOUNCED_KEY) != "1":
+            transit = self.gateway_transit_slots()
+            was_off = not settings.get_bool(self._PEER_NETS_LEGACY_KEY, False)
+            if was_off and len(transit) >= 2:
+                parts.append(lan_peers_joined([self._gw_link(g) for g in transit]))
+                keys.append(self._LAN_PEERS_ANNOUNCED_KEY)
+            else:
+                self.db.set_state(self._LAN_PEERS_ANNOUNCED_KEY, "1")
+        if not parts:
             return []
-        return [Notification(config.ADMIN_ID, lan_peers_joined([self._gw_link(g) for g in transit]),
-                             on_sent=armer(self.db, self._LAN_PEERS_ANNOUNCED_KEY, "1"))]
+
+        def told() -> None:
+            for key in keys:
+                self.db.set_state(key, "1")
+        return [Notification(config.ADMIN_ID, "\n\n".join(parts), on_sent=told, silent=True)]

@@ -90,8 +90,7 @@ async def gw_slot_smb_ask(cb: CallbackQuery, services):
         if why:
             await cb.answer(ui.toast(why), show_alert=True)
             return
-    split = on and await call(services.smb_tunnel_split)
-    await edit(cb, texts.gateway_smb_ask(on, split), kb.gateway_smb_confirm(on))
+    await edit(cb, texts.gateway_smb_ask(on), kb.gateway_smb_confirm(on))
     await cb.answer()
 
 

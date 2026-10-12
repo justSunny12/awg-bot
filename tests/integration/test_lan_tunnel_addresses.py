@@ -190,6 +190,7 @@ def test_a_broken_space_keeps_quiet_about_the_linked_networks(two, monkeypatch):
     two.db.gateway_update(1, lan_mode=1); two.db.gateway_update(2, lan_mode=1)
     monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
     assert two.lan_space_announce() == [] and not two.db.get_state("lan_peers_announced")
+    assert not two.db.get_state("lan_space_announced")
     assert two.gateway_peer_nets_info() == {"state": "off"}
     monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
     assert len(two.lan_space_announce()) == 1
@@ -215,28 +216,44 @@ def _legacy_toggle(monkeypatch, on: bool):
                         lambda k, d=False: on if k == "app.routing.peer_nets.enabled" else real(k, d))
 
 
-@pytest.mark.parametrize("was_on, transit, told", [
-    (False, (1, 1), True),       # тумблер был выключен, два транзита — сети связались без вопроса
-    (True, (1, 1), False),       # был включён — для человека ничего не изменилось
-    (False, (1, 0), False),      # транзит у одного — связывать не с кем
+MOVED = ("🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:\n"
+         " · NASPi: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>\n"
+         " · Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
+         "Прежние адреса через туннель больше не работают; имена SMB (<code>awg.internal</code>) уже ведут на новые")
+SPLIT_TAIL = (". На устройствах с раздельным туннелем, выданных раньше, — выдай их заново, чтобы адреса в туннеле "
+              "работали и там")
+LINKED = "Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
+
+
+@pytest.mark.parametrize("allowed, was_on, transit, text", [
+    ("0.0.0.0/0, ::/0", True, (1, 1), MOVED),                       # полный туннель, тумблер был включён
+    ("10.8.1.0/24", True, (1, 0), MOVED + SPLIT_TAIL),              # раздельный — хвост про повторную выдачу
+    ("0.0.0.0/0, ::/0", False, (1, 1), MOVED + "\n\n" + LINKED),    # тумблер был выключен, два транзита
+    ("0.0.0.0/0, ::/0", False, (1, 0), MOVED),                      # транзит у одного — связывать не с кем
 ])
-def test_the_announcement_says_once_that_the_networks_are_now_linked(two, monkeypatch, was_on, transit, told):
-    """Связь подсетей стала частью VPN-транзита; мёртвый ключ прежнего тумблера
-    читается ровно здесь, один раз."""
+def test_the_announcement_after_the_update_is_said_once_and_quietly(two, monkeypatch, allowed, was_on, transit,
+                                                                     text):
+    """Одно сообщение без звука: сети шлюзов теперь открываются по адресам в
+    туннеле (хвост про раздельный туннель — только при нём) и, если прежний
+    тумблер был выключен, а транзитов два, — что их сети связаны (мёртвый ключ
+    читается ровно здесь). Не доставлено — скажется на следующем старте;
+    доставлено — больше никогда."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
     _legacy_toggle(monkeypatch, was_on)
     two.db.gateway_update(1, lan_mode=transit[0]); two.db.gateway_update(2, lan_mode=transit[1])
     notes = two.lan_space_announce()
-    if not told:
-        assert notes == [] and two.lan_space_announce() == []
-        assert two.db.get_state("lan_peers_announced") == "1"
-        assert not two.db.get_state("lan_space_announced"), "ключ полного уведомления — не этого хвоста"
-        return
-    assert len(notes) == 1
-    assert ("Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 "
-            "связаны") == notes[0].text
+    assert len(notes) == 1 and notes[0].text == text and notes[0].silent, notes
     assert two.lan_space_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.lan_space_announce() == []
+    assert two.db.get_state("lan_space_announced") == "1" and two.db.get_state("lan_peers_announced") == "1"
+
+
+def test_nothing_to_announce_on_a_fresh_install_arms_both_keys(services, fake_routing):
+    """Слотов с подсетями нет (новая установка) — сказать нечего, ключи
+    взводятся сразу: подсети, заведённые потом, «после обновления» не повод."""
+    assert services.lan_space_announce() == []
+    assert services.db.get_state("lan_space_announced") == "1" and services.db.get_state("lan_peers_announced") == "1"
 
 
 def test_a_stale_error_goes_away_when_the_table_is_already_right(two, fake_routing):

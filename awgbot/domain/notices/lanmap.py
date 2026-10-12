@@ -47,4 +47,21 @@ def lan_peers_joined(names: list[str]) -> str:
             f"сети {_and(names)} связаны")
 
 
-__all__ = ["lan_space_off_line", "lan_map_failed_line", "lan_peers_joined"]
+def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], split: bool) -> str:
+    """Уведомление после обновления: локальные сети шлюзов теперь открываются
+    по адресам в туннеле. rows — [(имя шлюза готовой разметкой, [(настоящая,
+    в туннеле)])]; split — конфиги сервера с раздельным туннелем: выданным
+    раньше устройствам строки пространства не хватает."""
+    lines = ["🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:"]
+    for name, pairs in rows:
+        shown = ", ".join(f"<code>{html.escape(r)}</code> → <code>{html.escape(t)}</code>" for r, t in pairs)
+        lines.append(f" · {name}: {shown}")
+    tail = "Прежние адреса через туннель больше не работают; имена SMB (<code>awg.internal</code>) уже ведут на новые"
+    if split:
+        tail += (". На устройствах с раздельным туннелем, выданных раньше, — выдай их заново, чтобы адреса в "
+                 "туннеле работали и там")
+    lines.append(tail)
+    return "\n".join(lines)
+
+
+__all__ = ["lan_space_off_line", "lan_map_failed_line", "lan_peers_joined", "lan_space_moved"]

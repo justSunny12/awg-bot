@@ -54,6 +54,7 @@ class Notification:
     # «update_done» — «⬅️ В меню» итога обновления. reply_markup главнее;
     # имена разбирает notifier (KEYBOARDS, note_markup).
     keyboard: str = ""
+    silent: bool = False               # без звука всегда, не только в тихие часы (разовые сводки)
 
 
 @dataclass

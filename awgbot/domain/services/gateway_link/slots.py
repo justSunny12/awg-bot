@@ -318,6 +318,7 @@ class SlotsMixin:
         # связь подсетей (часть VPN-транзита) и адреса в туннеле сети слота
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
         st["lan_space"] = self.lan_space_card(st["gateway"])
+        st["lan_twins"] = self.lan_twins(st["gateway"])
         # канал линка: только из state, без запросов
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe

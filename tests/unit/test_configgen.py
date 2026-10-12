@@ -302,12 +302,55 @@ def test_admin_dns_goes_to_both_dns_fields_of_every_form(monkeypatch):
 
 
 def test_split_tunnel_admin_config_carries_the_admin_resolver_32(monkeypatch):
-    """Раздельный туннель: адрес резолвера админа вне подсети клиентов, без /32
-    в AllowedIPs запрос DNS ушёл бы мимо туннеля — у устройства нет DNS."""
+    """Раздельный туннель без пространства: адрес резолвера админа вне подсети
+    клиентов, без /32 в AllowedIPs запрос DNS ушёл бы мимо туннеля."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     conf, embedded, _ = _both_forms(cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS))
     assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, {ADMIN_DNS}/32"]
     assert _lines(embedded, "AllowedIPs") == [f"{SPLIT}, {ADMIN_DNS}/32"], "в ссылке vpn:// /32 нет"
+
+
+SPACE = "10.240.0.0/12"
+
+
+def test_split_tunnel_admin_config_carries_the_space_and_no_resolver_32_inside_it(monkeypatch):
+    """Адреса в туннеле локальных сетей шлюзов — одной строкой пространства;
+    резолвер админа в служебной /16 пространства ею покрыт, /32 не нужен."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    conf, embedded, _ = _both_forms(cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS,
+                                                extra_nets=[SPACE]))
+    assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, {SPACE}"]
+    assert _lines(embedded, "AllowedIPs") == [f"{SPLIT}, {SPACE}"], "в ссылке vpn:// пространства нет"
+
+
+def test_a_resolver_outside_the_space_keeps_its_32(monkeypatch):
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    assert cg.allowed_ips_for("10.53.0.53", [SPACE]) == f"{SPLIT}, {SPACE}, 10.53.0.53/32"
+    assert cg.allowed_ips_for("", [SPACE]) == f"{SPLIT}, {SPACE}", "без резолвера админа — только пространство"
+
+
+@pytest.mark.parametrize("allowed", ["0.0.0.0/0, ::/0", "0.0.0.0/0", "10.0.0.0/8, ::/0"])
+def test_a_covering_line_stays_byte_for_byte_with_the_space_too(monkeypatch, allowed):
+    """Полный туннель (и любая база, уже покрывающая пространство) — строка
+    прежняя: конфиг байт в байт тот же, что до адресов в туннеле."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
+    before = cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS)
+    after = cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS, extra_nets=[SPACE])
+    assert before == after
+
+
+@pytest.mark.parametrize("allowed, split", [
+    ("0.0.0.0/0, ::/0", False),
+    ("0.0.0.0/0", False),
+    ("::/0, 0.0.0.0/0", False),
+    ("10.8.1.0/24", True),
+    ("10.8.1.0/24, 192.168.1.0/24", True),
+    ("0.0.0.0/1, 128.0.0.0/1", True),   # покрывает всё, но не одной строкой — честно «раздельный»
+    ("::/0", True),
+])
+def test_split_is_told_by_the_allowed_ips_line(monkeypatch, allowed, split):
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
+    assert cg.split_tunnel() is split
 
 
 @pytest.mark.parametrize("allowed", ["0.0.0.0/0, ::/0", "0.0.0.0/0", "10.0.0.0/8, ::/0"])

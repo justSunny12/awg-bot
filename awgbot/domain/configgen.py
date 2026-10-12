@@ -73,10 +73,12 @@ def _conf_text(
     include_mtu: bool,
     iface: str = "",
     admin_dns: str = "",
+    extra_nets=(),
 ) -> str:
     """Текст клиентского конфига. admin_dns — адрес резолвера админа: устройству
-    админа он идёт в оба поля DNS и, при раздельном туннеле, в AllowedIPs
-    (allowed_ips_for).
+    админа он идёт в оба поля DNS и, при раздельном туннеле, в AllowedIPs;
+    extra_nets — пространство адресов в туннеле, тоже в AllowedIPs при
+    раздельном туннеле (allowed_ips_for).
 
     include_mtu выбирает ВАРИАНТ, а не одну строку: True — отдельный .conf для
     файлового импорта, False — встроенный в vpn:// (точный эталон приложения).
@@ -112,7 +114,7 @@ def _conf_text(
         "[Peer]",
         f"PublicKey = {server_pubkey}",
         f"PresharedKey = {psk}",
-        f"AllowedIPs = {allowed_ips_for(admin_dns)}",
+        f"AllowedIPs = {allowed_ips_for(admin_dns, extra_nets)}",
         f"Endpoint = {host}:{port}",
         f'PersistentKeepalive = {_live("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS)}',
         "",
@@ -179,28 +181,58 @@ def _subnet_of(address: str) -> str:
     return address.rsplit(".", 1)[0] + ".0"
 
 
-def allowed_ips_for(admin_dns: str = "") -> str:
-    """Строка AllowedIPs клиентского конфига. Устройству админа при раздельном
-    туннеле дописывается /32 резолвера админа — иначе запрос DNS к нему не
-    ушёл бы в туннель: адрес лежит вне подсети клиентов. Полный туннель
-    (0.0.0.0/0) его и так покрывает — тогда строка прежняя, байт в байт."""
-    base = str(config.CLIENT_ALLOWED_IPS)
-    if not admin_dns:
-        return base
-    base = ", ".join(t.strip() for t in base.split(",") if t.strip())   # «a, » и «a,b» — к одному виду
+def split_tunnel() -> bool:
+    """Конфиги сервера с раздельным туннелем: client_config.allowed_ips не
+    покрывает весь IPv4 одной строкой (0.0.0.0/0). Полный туннель адреса в
+    туннеле и резолвер админа покрывает и так."""
     import ipaddress
-    try:
-        ip = ipaddress.IPv4Address(admin_dns)
-    except ValueError:
-        return base
-    for tok in base.split(","):
+    for tok in str(config.CLIENT_ALLOWED_IPS).split(","):
         try:
             net = ipaddress.ip_network(tok.strip(), strict=False)
         except ValueError:
             continue
-        if net.version == 4 and ip in net:
-            return base
-    return f"{base}, {ip}/32"
+        if net.version == 4 and net.prefixlen == 0:
+            return False
+    return True
+
+
+def allowed_ips_for(admin_dns: str = "", extra_nets=()) -> str:
+    """Строка AllowedIPs клиентского конфига. Устройству админа при раздельном
+    туннеле дописываются extra_nets (пространство адресов в туннеле локальных
+    сетей шлюзов, 10.240.0.0/12) и /32 резолвера админа, если их не покрывает
+    база (с extra_nets): иначе запросы к ним не ушли бы в туннель — адреса
+    лежат вне подсети клиентов. Резолвер админа в служебной /16 пространства —
+    /32 не нужен. Полный туннель (0.0.0.0/0) покрывает всё — тогда строка
+    прежняя, байт в байт."""
+    import ipaddress
+    base = str(config.CLIENT_ALLOWED_IPS)
+    if not admin_dns and not extra_nets:
+        return base
+    toks = [t.strip() for t in base.split(",") if t.strip()]   # «a, » и «a,b» — к одному виду
+    nets = []
+    for tok in toks:
+        try:
+            net = ipaddress.ip_network(tok, strict=False)
+        except ValueError:
+            continue
+        if net.version == 4:
+            nets.append(net)
+    for raw in extra_nets or ():
+        try:
+            net = ipaddress.IPv4Network(str(raw), strict=False)
+        except ValueError:
+            continue
+        if not any(net.subnet_of(n) for n in nets):
+            toks.append(str(net))
+            nets.append(net)
+    if admin_dns:
+        try:
+            ip = ipaddress.IPv4Address(admin_dns)
+        except ValueError:
+            ip = None
+        if ip is not None and not any(ip in n for n in nets):
+            toks.append(f"{ip}/32")
+    return ", ".join(toks)
 
 
 def dns_for(iface: str = "") -> tuple[str, str]:
@@ -237,11 +269,11 @@ def app_container_for(iface: str = "") -> str:
 def _build_vpn_json(
     private_key: str, public_key: str, address: str,
     obf: dict, server_pubkey: str, psk: str, host: str, port: int,
-    iface: str = "", admin_dns: str = "",
+    iface: str = "", admin_dns: str = "", extra_nets=(),
 ) -> dict:
     embedded_conf = _conf_text(
         private_key, address, obf, server_pubkey, psk, host, port,
-        include_mtu=False, iface=iface, admin_dns=admin_dns,
+        include_mtu=False, iface=iface, admin_dns=admin_dns, extra_nets=extra_nets,
     )
     last_config = _build_last_config(
         private_key, public_key, address, obf, server_pubkey, psk,
@@ -311,6 +343,7 @@ def generate(
     server_params: dict,
     iface: str = "",
     admin_dns: str = "",
+    extra_nets=(),
 ) -> dict:
     """Собирает клиентский конфиг устройства.
 
@@ -319,6 +352,8 @@ def generate(
     (в окне смены поколения интерфейсов два, и протокол у них разный).
     admin_dns — адрес резолвера админа для устройства админа (не шлюзового):
     DNS в оба поля и /32 в AllowedIPs при раздельном туннеле; пусто — как всем.
+    extra_nets — сети, которые устройство админа при раздельном туннеле
+    обязано вести в туннель (пространство адресов в туннеле); пусто — как всем.
     server_params — из awg.read_server_params():
         {obfuscation: {...}, listen_port: int, server_pubkey: str, psk: str}
 
@@ -332,10 +367,10 @@ def generate(
 
     conf_standalone = _conf_text(
         private_key, address, obf, spub, psk, host, port, include_mtu=True, iface=iface,
-        admin_dns=admin_dns,
+        admin_dns=admin_dns, extra_nets=extra_nets,
     )
     vpn_obj = _build_vpn_json(
-        private_key, public_key, address, obf, spub, psk, host, port, iface, admin_dns,
+        private_key, public_key, address, obf, spub, psk, host, port, iface, admin_dns, extra_nets,
     )
     return {"conf": conf_standalone, "vpn": encode_vpn(vpn_obj)}
 

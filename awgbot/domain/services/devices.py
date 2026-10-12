@@ -109,7 +109,8 @@ class DevicesMixin:
                                      vpn=cfg["vpn"], conf=cfg["conf"])
 
         cfg = configgen.generate(priv, pub, ip, server_params, iface=config.AWG_INTERFACE,
-                                 admin_dns=self._admin_dns_for(client.tg_id, False))
+                                 admin_dns=self._admin_dns_for(client.tg_id, False),
+                                 extra_nets=self._admin_extra_nets(client.tg_id, False))
         # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
         if client.tg_id == config.ADMIN_ID:
             self.reconcile_ssh_access()
@@ -170,9 +171,11 @@ class DevicesMixin:
         iface = awg.iface_of(dev.iface)
         server_params = awg.read_server_params(iface=iface)
         owner = self.db.get_client(dev.client_id)
+        tg = owner.tg_id if owner else None
         return configgen.generate(dev.private_key, dev.public_key, dev.address,
                                   server_params, iface=iface,
-                                  admin_dns=self._admin_dns_for(owner.tg_id if owner else None, dev.is_gateway))
+                                  admin_dns=self._admin_dns_for(tg, dev.is_gateway),
+                                  extra_nets=self._admin_extra_nets(tg, dev.is_gateway))
 
     @staticmethod
     def _admin_dns_for(tg_id, is_gateway: bool) -> str:
@@ -186,6 +189,21 @@ class DevicesMixin:
             return ""
         from awgbot.infra import admindns
         return admindns.addr() if admindns.serving() else ""
+
+    def _admin_extra_nets(self, tg_id, is_gateway: bool) -> list[str]:
+        """Сети, которые устройство админа при раздельном туннеле ведёт в
+        туннель: пространство адресов в туннеле локальных сетей шлюзов
+        (10.240.0.0/12) — всегда, от слотов и резолвера админа не зависит:
+        конфиг на руках переживёт и новые шлюзы, и включение резолвера (он в
+        служебной /16 пространства). Шлюзу и чужому профилю — ничего;
+        пространство неисправно — тоже (адреса в туннеле выключены)."""
+        if is_gateway or not tg_id or int(tg_id) != int(config.ADMIN_ID or 0):
+            return []
+        problem, key = self.lan_off()
+        if problem and key == "routing.lan_space":
+            return []
+        from awgbot.util import lanspace
+        return [str(lanspace.space())]
 
     def rename_device(self, device_id: int, new_name: str) -> None:
         """Переименование устройства. Имя живёт только в нашей БД: сервер про

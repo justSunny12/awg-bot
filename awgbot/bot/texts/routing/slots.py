@@ -9,6 +9,39 @@ from awgbot.domain.gwchecks import WRITE_ERROR
 from ..fmt import _e, human_bytes, _updown, plain_ip, details, num
 
 
+# ── адреса в туннеле: пары «настоящая → в туннеле» ──────────────────────────
+
+def lan_pairs(nets, twins, limit: int = 6) -> str:
+    """«<code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>, …» по порядку
+    подсетей слота; подсеть без адреса в туннеле (не в таблице) — одна;
+    больше limit — «и ещё N». twins — [(настоящая, в туннеле)]."""
+    tw = dict(twins or [])
+    items = [f"<code>{_e(n)}</code>" + (f" → <code>{_e(tw[n])}</code>" if n in tw else "")
+             for n in list(nets or [])[:limit]]
+    more = len(nets or []) - limit
+    return ", ".join(items) + (f" и ещё {more}" if more > 0 else "")
+
+
+def lan_example(twins) -> str:
+    """Пример перевода для подсказки: «192.168.1.10 → 10.240.1.10» по первой
+    паре; хост 10 сети (в узкой — первый); пар нет — пусто."""
+    import ipaddress
+    if not twins:
+        return ""
+    real, twin = (ipaddress.IPv4Network(x) for x in twins[0])
+    off = 10 if real.num_addresses > 12 else 1
+    return f"{real.network_address + off} → {twin.network_address + off}"
+
+
+def lan_space_range() -> str:
+    """Пространство адресов в туннеле словами для подсказки: «10.240–10.255»."""
+    from awgbot.util import lanspace
+    sp = lanspace.space()
+    a, b = str(sp.network_address).split(".")[:2]
+    last = str(sp.broadcast_address).split(".")[1]
+    return f"{a}.{b}–{a}.{last}"
+
+
 # ── шлюз условной маршрутизации ──────────────────────────────────────────────
 
 def vps_hostname() -> str:

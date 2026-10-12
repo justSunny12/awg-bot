@@ -196,7 +196,7 @@ async def send_notifications(bot, notifications) -> None:
     quiet_silent = _silent_now(False)
 
     async def one(n):
-        silent = False if getattr(n, "force_sound", False) else quiet_silent
+        silent = False if getattr(n, "force_sound", False) else (quiet_silent or bool(getattr(n, "silent", False)))
         markup = action_markup(getattr(n, "action", ()), note_markup(n))
         await _send(bot, n.tg_id, n.text, markup, silent,
                     critical=bool(getattr(n, "critical", False)),

@@ -6,7 +6,7 @@ from awgbot.bot import ui
 
 from ..fmt import _e, details
 
-from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, slot_name, slot_ref
+from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, lan_pairs, lan_space_range, slot_name, slot_ref
 
 
 # ── диалоги слота ────────────────────────────────────────────────────────────
@@ -154,30 +154,33 @@ def smb_tunnel_records_failed(on: bool) -> str:
             "⚠️ SMB в туннеле выключен, но имена ещё не сняты") + " — диагностика на сервере: <code>awg-bot resolver admin status</code>"
 
 
-def gateway_smb_ask(on: bool, split_tunnel: bool = False) -> str:
-    """Диалог тумблера «🗂 SMB в туннеле». split_tunnel — конфиги сервера с
-    раздельным туннелем: имена устройство админа увидит, а подключение к диску
-    пойдёт мимо туннеля (настоящих адресов локальных сетей в его AllowedIPs нет)."""
+def gateway_smb_ask(on: bool) -> str:
+    """Диалог тумблера «🗂 SMB в туннеле». Предупреждения о раздельном туннеле
+    больше нет: имена ведут на адреса в туннеле, а их пространство устройства
+    админа ведут в туннель и при раздельном (configgen.allowed_ips_for)."""
     if on:
-        warn = ("\n⚠️ Туннель у конфигов раздельный (client_config.allowed_ips): имена будут видны, "
-                "но подключиться к дискам получится только с устройства с полным туннелем") if split_tunnel else ""
         return ui.confirm("🗂 SMB в туннеле — включить?",
                           "SMB-серверы локальных сетей шлюзов станут видны по именам на твоих устройствах в туннеле: "
                           "macOS — Finder, «Сеть» → awg.internal; Windows — <code>\\\\имя.awg.internal</code>. "
-                          "Ресурсы доступны только с устройств админа") + warn
+                          "Ресурсы доступны только с устройств админа")
     return ui.confirm("🗂 SMB в туннеле — выключить?",
                       "Имена SMB-серверов пропадут с твоих устройств; по адресам серверы останутся доступны тебе")
 
 
 def gateway_lan_text(state: dict) -> str:
+    """Приглашение «🗺 Подсети»: текущие пары «настоящая → в туннеле» и
+    правило двух последних чисел адреса."""
     gw = state["gateway"]
     nets = gw.lan_subnets
-    cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
+    cur = lan_pairs(nets, state.get("lan_twins"), limit=len(nets)) if nets else "не заданы"
     lines = [ui.head(f"🗺 Подсети {slot_ref(state)}", meta=[f"сейчас: {cur}"]), "",
-             "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
-             "Доступ через туннель — только твоим устройствам"]
+             "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. С твоих устройств "
+             "в туннеле и из подсетей других шлюзов сеть видна по адресам в туннеле: последние два числа те же, "
+             "что в настоящем адресе. Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
         lines.append("VPN-транзит будет работать для первой подсети в списке")
+    lines.append(details(f"если сеть, где сейчас твоё устройство, сама в {lan_space_range()}, адреса в "
+                         "туннеле с неё не откроются"))
     return "\n".join(lines)
 
 
@@ -185,7 +188,7 @@ def gateway_lan_report(res: dict, state: dict) -> str:
     """Итог правки подсетей — первыми строками карточки."""
     parts = []
     kept = res.get("kept") or []
-    shown = ", ".join(f"<code>{_e(n)}</code>" for n in kept[:8]) + (f" и ещё {len(kept) - 8}" if len(kept) > 8 else "")
+    shown = lan_pairs(kept, res.get("twins"), limit=8)
     parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
     rejected = res.get("rejected") or []
     if rejected:

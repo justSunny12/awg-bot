@@ -11,7 +11,7 @@ from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
-from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_status
+from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, lan_example, lan_pairs, slot_name, slot_status
 
 
 # ── карточка слота ───────────────────────────────────────────────────────────
@@ -295,8 +295,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append("⚠️ Шлюз отклонил новые ключи линка — линк на прежних")
     lines += ch_warns
     nets = gw.lan_subnets
-    nets_s = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
-        if nets else "подсети не заданы"
+    nets_s = lan_pairs(nets, state.get("lan_twins")) if nets else "подсети не заданы"
     lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
     lines += lan_space_lines(state.get("lan_space"))
     if gw.lan_mode:
@@ -332,7 +331,10 @@ def gateway_card_text(state: dict, states: list) -> str:
         except ValueError:
             pass
     if nets:
-        more.append("устройства админа достают до подсети через линк")
+        example = lan_example(state.get("lan_twins"))
+        if example:
+            more.append("с твоих устройств в туннеле и из подсетей других шлюзов сеть открывается по адресам "
+                        f"в туннеле: {example}")
     if state.get("preferred") and two:
         more.append("предпочтительный при холодном старте")
     if more:

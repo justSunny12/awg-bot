@@ -321,6 +321,11 @@ SLOTS = [
     # ── ввод подсетей и подписи ──────────────────────────────────────────
     Shot("adm.gw.lan_nets.partial", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)],
          text="192.168.1.0/24 мусор", data=_slots(2), title="подсети: часть не принята — названа в итоге"),
+    Shot("adm.gw.lan_nets.pairs", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)],
+         data=_slots(1, lan=True), title="подсети: приглашение с текущими парами «настоящая → в туннеле»"),
+    Shot("adm.gw.lan_nets.refused", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)],
+         text="192.168.0.0/22 10.0.2.0/24 10.241.0.0/24 172.16.0.0/15", data=_slots(1),
+         title="подсети: пары в итоге, отказы адресов в туннеле с причинами"),
     Shot("adm.gw.label.clear", role="admin", press=[GwSlotCB(action="label", slot=2)], text="—",
          data=_gw(2, _label(2, "дача")), title="подпись: «—» убирает"),
     Shot("adm.gw.label.gone", role="admin",

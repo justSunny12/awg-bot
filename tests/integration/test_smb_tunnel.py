@@ -131,17 +131,30 @@ def _lines(conf: str, key: str) -> list[str]:
 
 # ── конфиги устройств ────────────────────────────────────────────────────────
 
-def test_a_new_admin_device_gets_the_admin_resolver_and_its_32(services, make_active_client, adm, host,
-                                                                monkeypatch):
-    """Раздельный туннель: DNS — резолвер админа в оба поля, /32 — в AllowedIPs
-    (иначе запрос к нему не уйдёт в туннель). Тумблер выключен — всё равно:
-    конфиг, выданный до включения, увидит имена сразу после него."""
+def test_a_new_admin_device_gets_the_admin_resolver_and_the_space(services, make_active_client, adm, host,
+                                                                   monkeypatch):
+    """Раздельный туннель: DNS — резолвер админа в оба поля, в AllowedIPs —
+    пространство адресов в туннеле (10.240.0.0/12): оно ведёт в туннель и
+    адреса сетей шлюзов, и резолвер админа (он в служебной /16 пространства) —
+    отдельный /32 не нужен. Тумблер выключен — всё равно: конфиг, выданный до
+    включения, увидит имена сразу после него."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     created = services.add_device(admin.id, "MacBook")
     for conf in (created.conf, services.generate_config(created.device_id)["conf"]):
         assert _lines(conf, "DNS") == [f"{ADDR}, {ADDR}"], conf
-        assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, {ADDR}/32"], conf
+        assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, 10.240.0.0/12"], conf
+
+
+def test_a_broken_space_leaves_the_admin_device_only_the_resolver_32(services, make_active_client, adm, host,
+                                                                       monkeypatch):
+    """Адреса в туннеле выключены неисправным пространством — строки
+    пространства в конфиге нет, резолверу админа — свой /32."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
+    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    created = services.add_device(admin.id, "MacBook")
+    assert _lines(created.conf, "AllowedIPs") == [f"{SPLIT}, {ADDR}/32"], created.conf
 
 
 def test_a_client_device_keeps_the_common_dns(services, make_active_client, adm, host, monkeypatch):
@@ -166,15 +179,16 @@ def test_the_gateway_device_of_the_admin_keeps_the_common_dns(services, two_slot
     assert _lines(conf, "AllowedIPs") == [SPLIT]
 
 
-def test_without_the_admin_resolver_the_admin_config_is_unchanged(services, make_active_client, host,
+def test_without_the_admin_resolver_the_admin_device_still_gets_the_space(services, make_active_client, host,
                                                                   monkeypatch, tmp_path):
-    """docker-режим или резолвер клиентов не свой — резолвера админа нет, и
-    конфиг админа тот же, что выдавался всегда."""
+    """docker-режим или резолвер клиентов не свой — резолвера админа нет:
+    DNS прежний, а строка пространства адресов в туннеле от резолвера не
+    зависит — она есть."""
     _AdminDns(monkeypatch, tmp_path, installed=False)
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     created = services.add_device(admin.id, "MacBook")
-    assert ADDR not in created.conf and _lines(created.conf, "AllowedIPs") == [SPLIT]
+    assert ADDR not in created.conf and _lines(created.conf, "AllowedIPs") == [f"{SPLIT}, 10.240.0.0/12"]
 
 
 # ── файл записей ─────────────────────────────────────────────────────────────
