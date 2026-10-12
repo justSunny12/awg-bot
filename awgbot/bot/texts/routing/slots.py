@@ -77,10 +77,13 @@ def gateway_device_card(dev, state=None) -> str:
     return head + tail + (f"\n{role}" if role else "") + (f"\n\n{agent}" if agent else "")
 
 
-def gateway_claim_marked(dev) -> str:
-    return (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) назначено шлюзом. "
-            "Конфигурация ниже — перешли её боту шлюза и примени: без этого он себя "
-            "шлюзом не считает.")
+def gateway_claim_marked(dev, by_channel: bool = False) -> str:
+    """by_channel — агент принимает документ конфигурации: файла не будет."""
+    head = f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) назначено шлюзом. "
+    if by_channel:
+        return (head + "Конфигурация уйдёт ему по упр. каналу, когда шлюз подключится; не подключится — "
+                "«🛰 Шлюзы» → карточка шлюза → «📤 Конфигурация»")
+    return head + "Конфигурация ниже — перешли её боту шлюза и примени: без этого он себя шлюзом не считает."
 
 
 def gateway_claim_already(dev) -> str:

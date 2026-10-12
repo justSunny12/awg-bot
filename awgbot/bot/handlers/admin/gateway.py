@@ -27,7 +27,9 @@ def has_gw_token(text) -> bool:
 @router.message(F.text.func(has_gw_token), StateFilter(None))
 async def gateway_claim_message(message: Message, services):
     """Запасной путь: пересланный от агента токен. Основной — «Назначить шлюз»
-    в настройках. Назначен другой шлюз — отказ, менять его через настройки."""
+    в настройках. Назначен другой шлюз — отказ, менять его через настройки.
+    Агенту с документом конфигурации файл не шлётся: её привезёт канал, как
+    только слот заведён и шлюз подключится."""
     try:
         res = await call(services.gateway_claim, message.text or "")
     except (ServiceError, ValueError) as e:
@@ -36,6 +38,9 @@ async def gateway_claim_message(message: Message, services):
     if res["status"] == "already":
         await message.answer(texts.gateway_claim_already(res["device"]))
         return
-    await message.answer(texts.gateway_claim_marked(res["device"]))
+    by_channel = bool(res.get("cfg1"))
+    await message.answer(texts.gateway_claim_marked(res["device"], by_channel))
+    if by_channel:
+        return
     from awgbot.bot.handlers.settings import send_gw_bundle
     await send_gw_bundle(message, services, res["gateway"].id)   # без отдельного нажатия

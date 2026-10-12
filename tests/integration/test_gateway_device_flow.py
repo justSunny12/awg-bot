@@ -40,6 +40,17 @@ def _claim(services, pub):
     return services.gateway_claim("перешли: " + gwsign.sign(PRIV, "claim", pub, host="NASPi"))
 
 
+def test_the_claim_tells_whether_the_agent_takes_the_document(gw, services):
+    """caps в токене подписаны вместе с остальным: cfg1 — файл не нужен;
+    токен прежнего агента (без caps) и мусор в caps — файл, как раньше."""
+    _admin, _phone, pi = gw
+    pub = services.db.get_device(pi.device_id).public_key
+    assert _claim(services, pub)["cfg1"] is False, "токен без caps принят за агента с документом"
+    got = services.gateway_claim(gwsign.sign(PRIV, "claim", pub, caps=("cfg1", "token1")))
+    assert got["status"] == "already" and got["cfg1"] is True
+    assert gwsign.verify(PRIV, gwsign.sign(PRIV, "claim", pub))["caps"] == []
+
+
 def test_claim_marks_only_admin_device_and_only_once(gw, services, make_active_client):
     admin, phone, pi = gw
     dev = services.db.get_device(pi.device_id)

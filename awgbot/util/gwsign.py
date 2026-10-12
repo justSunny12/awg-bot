@@ -11,7 +11,9 @@ HMAC, отличный от ключа шифрования бандла.
 Формат одной строкой, чтобы пережить пересылку и копирование:
     GW1:<base64url(JSON)>.<base64url(HMAC-SHA256[:20])>
 JSON: {"act": "claim", "pub": <ключ аплинка>, "ts": <unix>, "nonce": <hex>,
-       "host": <имя машины>}
+       "host": <имя машины>[, "caps": [<возможность>, …]]}
+caps — что агент умеет по каналу (с 3.3.0): агенту с документом (cfg1)
+сервер файл в ответ на пересылку не шлёт, конфигурацию везёт канал.
 Единственное действие — claim: агент просит пометить своё устройство шлюзом.
 Лишние поля в JSON (прежние агенты подписывали ещё и "addr") проверке не
 мешают — подпись покрывает весь payload, а читаются только нужные ключи.
@@ -45,10 +47,11 @@ def unb64u(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
-def sign(link_privkey_b64: str, act: str, pub: str, host: str = "") -> str:
-    payload = json.dumps({"act": act, "pub": pub, "ts": int(time.time()),
-                          "nonce": os.urandom(8).hex(), "host": host[:64]},
-                         separators=(",", ":"), ensure_ascii=False).encode()
+def sign(link_privkey_b64: str, act: str, pub: str, host: str = "", caps: tuple[str, ...] = ()) -> str:
+    body = {"act": act, "pub": pub, "ts": int(time.time()), "nonce": os.urandom(8).hex(), "host": host[:64]}
+    if caps:
+        body["caps"] = list(caps)
+    payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
     mac = hmac.new(_key(link_privkey_b64), payload, hashlib.sha256).digest()[:20]
     return PREFIX + b64u(payload) + "." + b64u(mac)
 
@@ -78,6 +81,8 @@ def verify(link_privkey_b64: str, text: str, now: float | None = None) -> dict:
         raise ValueError("токен повреждён") from e
     if data.get("act") != "claim" or not data.get("pub") or not data.get("nonce"):
         raise ValueError("токен неполный")
+    caps = data.get("caps")
+    data["caps"] = [c for c in caps if isinstance(c, str)] if isinstance(caps, list) else []
     ts = int(data.get("ts") or 0)
     now = time.time() if now is None else now
     if not (now - MAX_AGE_SECONDS <= ts <= now + 3600):

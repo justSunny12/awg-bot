@@ -28,8 +28,10 @@ class MarkMixin:
         """Пересланное от агента сообщение с токеном `claim`. Подпись — ключом
         линка одного из слотов (перебираем все: по ключу и находится слот),
         устройство — по ключу аплинка. Возвращает {'status': 'marked'|'already',
-        'device', 'gateway'}. Слот занят другим устройством — ServiceError:
-        менять машину — через карточку шлюза."""
+        'device', 'gateway', 'cfg1'}; cfg1 — агент принимает документ
+        конфигурации по каналу (подписал это в токене), файл ему не нужен.
+        Слот занят другим устройством — ServiceError: менять машину — через
+        карточку шлюза."""
         from awgbot.util import gwsign
         slots = self.db.gateways()
         data = None
@@ -55,7 +57,7 @@ class MarkMixin:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
         mine = self.db.gateway_by_device(dev.id)
         if mine is not None:
-            return {"status": "already", "device": dev, "gateway": mine}
+            return {"status": "already", "device": dev, "gateway": mine, "cfg1": "cfg1" in data["caps"]}
         if slot is not None and slot.device_id != dev.id:
             raise ServiceError(f"в слоте этого линка уже назначен {self._gw_display(slot)}. "
                                "Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»")
@@ -64,7 +66,8 @@ class MarkMixin:
             # заводим первый слот на этом устройстве, ключи линка уже общие
             n, iface, port, cidr = self.gateway_next_slot()
             slot = self.db.gateway_add(dev.id, iface, port, cidr, slot_id=n)
-        return {"status": "marked", "device": self.db.get_device(dev.id), "gateway": slot}
+        return {"status": "marked", "device": self.db.get_device(dev.id), "gateway": slot,
+                "cfg1": "cfg1" in data["caps"]}
 
     def gateway_candidates(self) -> list:
         """Устройства админа, выпущенные ботом и не занятые слотами."""

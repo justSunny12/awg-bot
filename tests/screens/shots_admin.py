@@ -498,6 +498,15 @@ def _claim(services, mp):
     return who
 
 
+def _claim_cfg1(services, mp):
+    """Пересланное сообщение агента с документом: назначено, файла нет."""
+    who = _slots(1)(services, mp)
+    dev = services.db.get_device(NASPI)
+    gw = services.db.gateways()[0]
+    services.gateway_claim = lambda text: {"status": "marked", "device": dev, "gateway": gw, "cfg1": True}
+    return who
+
+
 def _claim_already(services, mp):
     who = _slots(1)(services, mp)
     dev = services.db.get_device(NASPI)
@@ -1178,6 +1187,8 @@ _LINKS = [
 _OUTSIDE = [
     # ── 1.7 вне меню ────────────────────────────────────────────────────────
     Shot("adm.claim", role="admin", text=CLAIM, data=_claim, title="пересланное сообщение агента"),
+    Shot("adm.claim.cfg1", role="admin", text=CLAIM, data=_claim_cfg1,
+         title="пересланное сообщение агента с документом — без файла, конфигурацию везёт канал"),
     Shot("adm.claim.already", role="admin", text=CLAIM, data=_claim_already, title="этот шлюз уже назначен"),
     Shot("adm.claim.bad", role="admin", text=CLAIM, data=_claim_bad, title="подпись не сошлась"),
     Shot("adm.note.extend", role="admin", press=[NoteCB(kind="extend", ref=BR)], data=_people,

@@ -308,10 +308,12 @@ class BundleMixin:
             return None
 
     def gateway_claim_message(self, pubkey: str) -> str:
-        """Подписанный ключом линка токен «я шлюз с таким аплинком»."""
+        """Подписанный ключом линка токен «я шлюз с таким аплинком» — с
+        возможностями канала агента: по ним сервер решает, слать ли файл."""
+        from awgbot.runtime.linkclient.common import CAPS
         from awgbot.util import bundlecrypt, gwsign
         priv = bundlecrypt.read_privkey(base.pathlib_read(config.GW_LINK_CONF))
-        return gwsign.sign(priv, "claim", pubkey, host=socket.gethostname())
+        return gwsign.sign(priv, "claim", pubkey, host=socket.gethostname(), caps=CAPS)
 
     def gateway_apply_report(self) -> str:
         """Человеческий отчёт после применения — из статуса скрипта."""

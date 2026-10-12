@@ -194,6 +194,19 @@ async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
     assert ah.has_gw_token("пояснение\n\n" + gwsign.sign(PRIV, "claim", "K=")) and not ah.has_gw_token(None)
 
 
+async def test_forwarded_claim_of_a_document_agent_gets_no_file(services, fake_bot, gwsetup):
+    """Агент 3.3.0 подписывает в токене, что принимает документ (cfg1):
+    сервер назначает шлюз без файла — конфигурацию везёт канал, и ответ
+    говорит то же, что агент обещал при пересылке."""
+    _, _phone, pi = gwsetup
+    msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", pi.public_key, caps=("cfg1", "confirm1", "token1")))
+    await ah.gateway_claim_message(msg, services)
+    assert _gw_dev_id(services) == pi.id
+    assert not any(s[0] == "document" for s in msg.sent), "агенту с документом выдан файл"
+    text = " ".join(s[1] or "" for s in msg.sent)
+    assert "уйдёт ему по упр. каналу" in text and "«📤 Конфигурация»" in text, text
+
+
 def test_gateway_mark_rules(services, gwsetup, make_active_client):
     from awgbot.domain.services import ServiceError as SE
     _, phone, pi = gwsetup
