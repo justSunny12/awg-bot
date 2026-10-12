@@ -126,7 +126,8 @@ def test_startup_messages_to_admin_are_dismissible():
     bot.send_message идёт мимо него — и предупреждения preflight приходили без
     единой кнопки и висели в чате навсегда.
     """
-    main = (SCRIPT.parent / "awgbot" / "runtime" / "main.py").read_text(encoding="utf-8")
+    main = "".join(p.read_text(encoding="utf-8")
+                   for p in sorted((SCRIPT.parent / "awgbot" / "runtime" / "main").glob("*.py")))
     calls = re.findall(r"bot\.send_message\((.*?)\)\n", main, re.S)
     naked = [c for c in calls if "reply_markup" not in c]
     assert not naked, (

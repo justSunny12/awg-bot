@@ -1,46 +1,21 @@
-"""
-scheduler.py — фоновые задачи (APScheduler 3.x, AsyncIOScheduler).
-
-Задачи из ТЗ 11:
-  • опрос трафика            — каждые TRAFFIC_POLL_MINUTES
-  • проверка сроков          — каждые EXPIRY_CHECK_MINUTES + рассылка порогов
-  • сброс месячного трафика  — 1-го числа 00:00 UTC+3 (день и час — из
-                               настроек; с защитой от двойного)
-  • автобэкап                — 1-го числа 12:00 UTC+3 и до получаса позже
-                               (почтой или админу файлами)
-  • мониторинг               — каждые MONITOR_MINUTES: детект рестарта →
-                               реконсиляция блокировок, ребайнд вотчдога,
-                               уведомление админа о смене статуса
-
-Сброс и копия — обязательные задания (MANDATORY: misfire_grace_time=None,
-coalesce): опоздавший запуск не выбрасывается. Догон на старте (`*_catchup`)
-идёт только после назначенного момента месяца (planned_moment_passed);
-собранная, но не доставленная копия повторяется через час (`backup_retry`,
-у агента — `gw_backup_retry`), пока не уйдёт. Планировщик агента шлюза —
-setup_gateway_scheduler, тело месячной копии у ролей общее (monthly_backup).
-
-services синхронны → зовём через asyncio.to_thread, чтобы не морозить loop.
-"""
+"""client.py — часть пакета scheduler (см. __init__): планировщик основной роли (setup_scheduler)."""
 
 from __future__ import annotations
 
 import asyncio
 import datetime
-import random
-import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from aiogram.types import FSInputFile
 
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
-from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import Notification
+from awgbot.runtime import scheduler as pkg          # подменяемое тестами — через пакет
 
-log = logging.getLogger("awgbot.scheduler")
+from .common import MANDATORY, log
 
 
 def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
@@ -53,9 +28,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             # poll_traffic возвращает поздравления тем, чьё устройство только
             # что подключилось на новых настройках (обычно их ловит более
             # частый job_migration_watch, см. миграцию).
-            await send_notifications(bot, await asyncio.to_thread(services.poll_traffic))
+            await pkg.send_notifications(bot, await asyncio.to_thread(services.poll_traffic))
             notifs = await asyncio.to_thread(services.check_traffic_limits)
-            await send_notifications(bot, notifs)
+            await pkg.send_notifications(bot, notifs)
         except Exception as e:                       # noqa: BLE001
             log.warning("poll_traffic: %s", e)
 
@@ -69,10 +44,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             for n in notifs:
                 if getattr(n, "grace_offer_client_id", 0):
                     n.reply_markup = kb.grace_offer(n.grace_offer_client_id, settings.get_int("grace.grace_days", 14))
-            await send_notifications(bot, notifs)
+            await pkg.send_notifications(bot, notifs)
             # авто-выход из приостановок по истечении зарезервированного срока
             pause_notes = await asyncio.to_thread(services.check_pauses)
-            await send_notifications(bot, pause_notes)
+            await pkg.send_notifications(bot, pause_notes)
         except Exception as e:                       # noqa: BLE001
             log.warning("check_expiry: %s", e)
 
@@ -87,7 +62,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         last = await asyncio.to_thread(db.get_state, "last_monthly_reset")
         if last == ym:
             return
-        if catchup and not planned_moment_passed(settings.get_int("app.scheduler.monthly_reset_day", 1),
+        if catchup and not pkg.planned_moment_passed(settings.get_int("app.scheduler.monthly_reset_day", 1),
                                                  settings.get_int("app.scheduler.monthly_reset_hour", 0)):
             return                                   # назначенный момент ещё впереди — крон своё сделает
         if last is None:
@@ -96,7 +71,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         try:
             reset_notes = await asyncio.to_thread(services.reset_monthly_traffic)
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)
-            await send_notifications(bot, reset_notes)
+            await pkg.send_notifications(bot, reset_notes)
             log.info("Месячный трафик сброшен (catch-up или cron) за %s", ym)
         except Exception as e:                       # noqa: BLE001
             log.warning("monthly_reset: %s", e)
@@ -111,10 +86,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                           id="backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
 
     async def job_backup():
-        await monthly_backup(services, bot, "backup", on_undelivered=_retry_backup)
+        await pkg.monthly_backup(services, bot, "backup", on_undelivered=_retry_backup)
 
     async def job_backup_catchup():
-        await monthly_backup(services, bot, "backup", catchup=True, on_undelivered=_retry_backup)
+        await pkg.monthly_backup(services, bot, "backup", catchup=True, on_undelivered=_retry_backup)
 
     async def job_purge_history():
         """Ежедневно: удалить историю старше ретеншна (батчами). Идемпотентно —
@@ -152,7 +127,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             try:
                 drift_notes = await asyncio.to_thread(services.ssh_port_drift_notes)
                 if drift_notes:
-                    await send_notifications(bot, drift_notes)
+                    await pkg.send_notifications(bot, drift_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("ssh_port_drift_notes: %s", e)
             # ребайнд вотчдога: PID меняется ТОЛЬКО при рестарте (который мы
@@ -187,7 +162,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # устройства админа сменились после сборки бандла шлюза → напомнить
                 rt_src_notes += await asyncio.to_thread(services.gw_bundle_drift_notes)
                 if rt_src_notes:
-                    await send_notifications(bot, rt_src_notes)
+                    await pkg.send_notifications(bot, rt_src_notes)
                 # полная сверка доставки по каналу — на тике монитора, фоном
                 from awgbot.runtime import linkserver
                 await linkserver.monitor_tick(services)
@@ -198,14 +173,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             try:
                 dns_notes = await asyncio.to_thread(services.resolver_health_tick)
                 if dns_notes:
-                    await send_notifications(bot, dns_notes)
+                    await pkg.send_notifications(bot, dns_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("resolver_health_tick: %s", e)
             # резолвер админа («SMB в туннеле»): проба и файл записей
             try:
                 adm_notes = await asyncio.to_thread(services.admin_dns_health_tick)
                 if adm_notes:
-                    await send_notifications(bot, adm_notes)
+                    await pkg.send_notifications(bot, adm_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("admin_dns_health_tick: %s", e)
             # статус сервиса awg → уведомления админу (единый notifier-путь).
@@ -245,7 +220,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             #     интернета» и трёх минут не хватало. Сейчас он означает «не тот
             #     адрес», но замер дёшев, а быстрый возврат из деградации полезен
             #     сам по себе — см. routing_liveness_tick.
-            await send_notifications(bot, alert_notes)
+            await pkg.send_notifications(bot, alert_notes)
         except Exception as e:                       # noqa: BLE001
             log.warning("monitor: %s", e)
 
@@ -309,8 +284,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.migration_watch_seconds": ("migration_watch", _trig_migration_watch),
         "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
         "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
-        "app.scheduler.backup_day": ("backup", backup_trigger),
-        "app.scheduler.backup_hour": ("backup", backup_trigger),
+        "app.scheduler.backup_day": ("backup", pkg.backup_trigger),
+        "app.scheduler.backup_hour": ("backup", pkg.backup_trigger),
         "app.history.purge_hour": ("purge_history", _trig_purge),
     }
 
@@ -325,7 +300,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # после назначенного момента месяца
     scheduler.add_job(job_monthly, _trig_monthly(), id="monthly", max_instances=1, **MANDATORY)
     scheduler.add_job(job_monthly_catchup, "date", run_date=now, id="monthly_catchup", **MANDATORY)
-    scheduler.add_job(job_backup, backup_trigger(), id="backup", max_instances=1, **MANDATORY)
+    scheduler.add_job(job_backup, pkg.backup_trigger(), id="backup", max_instances=1, **MANDATORY)
     scheduler.add_job(job_backup_catchup, "date", run_date=now, id="backup_catchup", **MANDATORY)
     # ── опрос IMAP: аварийный email-выход из приостановки ────────────────────
     async def job_email_resume():
@@ -350,7 +325,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             acc = await asyncio.to_thread(services.email_account)
             await asyncio.to_thread(email_resume.poll_once, acc, on_code)
             if _pending_notes:
-                await send_notifications(bot, _pending_notes)
+                await pkg.send_notifications(bot, _pending_notes)
         except Exception as e:                        # noqa: BLE001
             log.warning("email_resume poll: %s", e)
 
@@ -360,7 +335,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         это минуты без интернета у всех, кто включил режим."""
         try:
             notes = await asyncio.to_thread(services.routing_liveness_tick)
-            await send_notifications(bot, notes)
+            await pkg.send_notifications(bot, notes)
         except Exception as e:                        # noqa: BLE001
             log.warning("routing_liveness: %s", e)
         try:
@@ -392,7 +367,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         некого. Поэтому висит всегда, без флага и без перерегистрации.
         """
         try:
-            await send_notifications(bot, await asyncio.to_thread(services.migration_watch))
+            await pkg.send_notifications(bot, await asyncio.to_thread(services.migration_watch))
         except Exception as e:                       # noqa: BLE001
             log.warning("migration_watch: %s", e)
 
@@ -434,13 +409,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             log.warning("email_resume reschedule: %s", e)
     settings.on_change("email.poll_interval_sec", _email_hook)
 
-    add_update_check(scheduler, services, bot, run_date=now, tag="update_check")
+    pkg.add_update_check(scheduler, services, bot, run_date=now, tag="update_check")
 
     # имена Telegram-аккаунтов: разово на старте (после обновления они пусты у
     # всех) и раз в сутки для тех, кто давно не писал; в сеть — с джиттером
     async def job_tg_names():
         try:
-            n = await refresh_tg_names(bot, db)
+            n = await pkg.refresh_tg_names(bot, db)
             if n:
                 log.info("имена Telegram-аккаунтов обновлены: %d", n)
         except Exception as e:                        # noqa: BLE001
@@ -485,305 +460,4 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # доступ между подсетями за шлюзами: форвардинг линк ↔ линк — в той же таблице
     settings.on_change("app.routing.peer_nets", _hook_firewall)
 
-    return scheduler
-
-
-__all__ = ["setup_scheduler"]
-
-
-async def notify_update_available(bot, services, nxt) -> None:
-    """Уведомление «доступна следующая версия» — общее для обеих ролей.
-
-    Перед отправкой снимаем «В меню» у всех прошлых окон обновления: после
-    ступени в чате висит финишер «обновлён до…» с живой кнопкой, а следующее
-    сообщение — это уведомление; две живые кнопки в двух соседних окнах ведут
-    в одно место. Тексты финишеров не трогаем."""
-    from awgbot.bot import texts
-    from awgbot.bot import keyboards as kb
-    from awgbot.bot.notifier import send_notifications
-    from awgbot.bot.handlers.common import dismiss_update_reports
-    from awgbot.domain.services import Notification
-    await dismiss_update_reports(bot, services)
-    await send_notifications(bot, [Notification(
-        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
-        reply_markup=kb.update_notify())])
-
-
-TG_NAME_MAX_AGE_DAYS = 7      # имя аккаунта старше — переспросить у Telegram
-
-
-async def refresh_tg_names(bot, db, max_age_days: int = TG_NAME_MAX_AGE_DAYS) -> int:
-    """Имена Telegram-аккаунтов на профилях — для ссылок на людей в текстах.
-
-    Кто пишет боту, у того имя обновляет middleware по каждому сообщению без
-    единого запроса к API. Здесь — молчуны: у кого имени нет (после
-    обновления — у всех) или оно старше max_age_days, спрашиваем get_chat —
-    по одному, раз в сутки, десятки профилей. Экраны API не трогают никогда.
-    Отказ API (заблокировал бота, удалил аккаунт) — молча, остаётся прежнее.
-    Возвращает, скольким обновили."""
-    cutoff = timeutil.to_iso(timeutil.now() - datetime.timedelta(days=max_age_days))
-    rows = await asyncio.to_thread(db.clients_needing_tg_name, cutoff)
-    done = 0
-    for c in rows:
-        try:
-            chat = await bot.get_chat(c.tg_id)
-        except Exception as e:                        # noqa: BLE001
-            log.info("tg_name %s: %s", c.tg_id, e)
-            continue
-        name = (getattr(chat, "full_name", None) or " ".join(
-            x for x in (getattr(chat, "first_name", "") or "", getattr(chat, "last_name", "") or "") if x)
-            or getattr(chat, "username", "") or "").strip()[:128]
-        if not name:
-            continue
-        uname = (getattr(chat, "username", "") or "").strip()[:64]
-        await asyncio.to_thread(db.set_tg_identity, c.id, name, uname)
-        done += 1
-    return done
-
-
-# Обязательные задания: без допуска по опозданию — APScheduler выполнит их,
-# сколько бы они ни ждали (misfire_grace_time=None), а не выбросит как
-# просроченные; накопившиеся запуски схлопываются в один.
-MANDATORY = {"misfire_grace_time": None, "coalesce": True}
-
-
-def planned_moment_passed(day: int, hour: int, ref=None) -> bool:
-    """Назначенный момент этого месяца (день, час; день короче месяца —
-    последний день) уже прошёл? Догон на старте работает только тогда: копия
-    15-го не должна уходить 3-го после рестарта, а крон 15-го — пропускаться."""
-    import calendar
-    now = (ref or timeutil.now()).astimezone(config.TZ)
-    last = calendar.monthrange(now.year, now.month)[1]
-    planned = now.replace(day=max(1, min(int(day), last)), hour=max(0, min(int(hour), 23)),
-                          minute=0, second=0, microsecond=0)
-    return now >= planned
-
-
-async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
-                         on_undelivered=None) -> None:
-    """Автобэкап раз в месяц — одно тело на обе роли. Guard по «году-месяцу»:
-    защита от двойного запуска и catch-up после даунтайма через границу месяца
-    (задача дополнительно прогоняется на старте; catchup=True — только после
-    назначенного момента месяца). Первый запуск (state пуст) только фиксирует
-    месяц. Канал — почта, если задан и ушло; иначе файлами админу в чат.
-    Не доставлено — on_undelivered() ставит повтор. Вся синхронщина — в
-    потоке, event loop не ждёт ни БД, ни SMTP."""
-    if not settings.get_bool("app.scheduler.backup_enabled", True):
-        return
-    db = services.db
-    ym = timeutil.now().strftime("%Y-%m")
-    last = await asyncio.to_thread(db.get_state, "last_backup")
-    if last == ym:
-        return
-    if catchup and not planned_moment_passed(settings.get_int("app.scheduler.backup_day", 1),
-                                             settings.get_int("app.scheduler.backup_hour", 12)):
-        return                                   # назначенный момент ещё впереди — крон своё сделает
-    if last is None:
-        await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
-        return
-    try:
-        paths = await asyncio.to_thread(services.make_backup)
-        sent_by_mail = False
-        if await asyncio.to_thread(services.backup_channel) == "email":
-            try:
-                await asyncio.to_thread(services.email_send_backup, paths)
-                sent_by_mail = True
-            except Exception as e:               # noqa: BLE001
-                log.warning("%s: на почту не ушёл, шлю в Telegram: %s", log_tag, e)
-        delivered = sent_by_mail
-        if not sent_by_mail:
-            for p in paths:
-                try:
-                    await bot.send_document(config.ADMIN_ID, FSInputFile(p))
-                    delivered = True
-                except Exception as e:               # noqa: BLE001
-                    log.warning("%s: отправка %s: %s", log_tag, p, e)
-        if delivered:
-            await asyncio.to_thread(db.set_state, "last_backup", ym)
-        else:
-            # архив собран, наружу не ушёл (Telegram через лежащий линк):
-            # «сделан» не ставим — повтор через час, пока не уйдёт
-            log.warning("%s: копия %s собрана, но не доставлена — повторю через час", log_tag, ym)
-            if on_undelivered is not None:
-                on_undelivered()
-    except Exception as e:                       # noqa: BLE001
-        log.warning("%s: %s", log_tag, e)
-
-
-_UPDATE_JITTER = 1800          # до получаса позже к проверке обновлений (джиттер APScheduler — только вперёд): не ровно в 10:00
-BACKUP_JITTER = 1800           # до получаса позже к месячной копии — по той же причине
-
-
-def update_check_trigger():
-    """Триггер проверки обновлений по updates.poll_schedule (day|week|month).
-    Время — poll_hour:minute, неизвестное расписание — как day; прежнее never
-    планировщик читает как month (нормализует старт и раздел — домен,
-    normalize_update_schedule): проверка идёт всегда ради «⬆️ Доступна vX».
-    Одна фабрика на обе роли: у основного бота была своя копия без джиттера, и
-    он ходил на GitHub ровно в назначенную секунду — маячок по расписанию."""
-    sch = str(settings.get("updates.poll_schedule", "day")).lower()
-    h = settings.get_int("updates.poll_hour", 10)
-    m = settings.get_int("updates.poll_minute", 0)
-    if sch == "never":
-        sch = "month"
-    if sch == "week":
-        return CronTrigger(day_of_week=0, hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
-    if sch == "month":
-        return CronTrigger(day=1, hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
-    return CronTrigger(hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
-
-
-def update_check_hook(scheduler):
-    """Хук settings.on_change для задачи update_check: перевесить на новый
-    триггер (три ключа ведут сюда; расписания «никогда» нет). Модульная
-    функция, а не замыкание, чтобы её можно было проверить фейковым
-    планировщиком."""
-    def _hook(key, value):
-        try:
-            scheduler.reschedule_job("update_check", trigger=update_check_trigger())
-            log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("reschedule update_check (%s): %s", key, e)
-    return _hook
-
-
-def add_update_check(scheduler, services, bot, *, run_date, tag: str) -> None:
-    """Проверка обновлений — одна на обе роли: по расписанию (update_check_trigger,
-    с джиттером) и разово на старте (сразу после апдейта увидим следующую
-    ступень, не дожидаясь утра); смена расписания из чата или руками в conf —
-    перевешивание без рестарта. update_to_notify сам учитывает mute и «ровно
-    один раз на версию». tag — префикс записи журнала."""
-    async def job_update_check():
-        try:
-            found = await asyncio.to_thread(services.update_scan)   # шапка: «⬆️ Доступна vX»
-            nxt = await asyncio.to_thread(services.update_to_notify, found)
-            if nxt is not None:
-                await notify_update_available(bot, services, nxt)
-        except Exception as e:                        # noqa: BLE001
-            log.warning("%s: %s", tag, e)
-
-    scheduler.add_job(job_update_check, update_check_trigger(),
-                      id="update_check", max_instances=1, coalesce=True,
-                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    scheduler.add_job(job_update_check, "date", run_date=run_date, id="update_check_startup",
-                      max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    hook = update_check_hook(scheduler)
-    for key in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
-        settings.on_change(key, hook)
-
-
-def backup_trigger():
-    """Месячная копия обеих ролей: день/час из настроек, джиттер — почта и файл
-    в чат ровно в 12:00:00 первого числа были бы маячком."""
-    return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
-                       hour=settings.get_int("app.scheduler.backup_hour", 12),
-                       minute=0, jitter=BACKUP_JITTER, timezone=config.TZ)
-
-
-def setup_gateway_scheduler(services, bot):
-    """Планировщик роли gateway: тик монитора, задачи канала линка, месячная
-    копия и проверка обновлений — сетевые с джиттером.
-
-    Нарочно не переиспользует setup_scheduler: задачи основной роли шлюзу не
-    нужны, а «фабрика с ветками по роли» хуже двух честных функций.
-    """
-    from awgbot.bot.notifier import send_notifications
-
-    scheduler = AsyncIOScheduler(timezone=config.TZ)
-
-    async def job_gw_monitor():
-        try:
-            notes = await asyncio.to_thread(services.monitor_tick)
-            await send_notifications(bot, notes)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("gw_monitor: %s", e)
-        try:
-            # Дельта снимка в канал — здесь, а не своим расписанием: у канала
-            # его нет по замыслу. Ничего не изменилось — не уходит ничего.
-            from awgbot.runtime import linkclient
-            await linkclient.on_tick(services)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("канал линка: дельта не ушла: %s", e)
-
-    def _trig_gw_monitor():
-        # тик ходит в сеть (проба наружу) — джиттер, чтобы не быть маячком
-        mins = settings.get_int("app.gateway.monitor_minutes", 3)
-        return IntervalTrigger(minutes=mins, jitter=max(1, int(mins * 60 * 0.4)),
-                               timezone=config.TZ)
-
-    scheduler.add_job(
-        job_gw_monitor, _trig_gw_monitor(),
-        id="gw_monitor", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now(),
-        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-
-    def _gw_monitor_hook(_key=None, _val=None):
-        try:
-            scheduler.reschedule_job("gw_monitor", trigger=_trig_gw_monitor())
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gw_monitor reschedule: %s", e)
-    settings.on_change("app.gateway.monitor_minutes", _gw_monitor_hook)
-
-    # Списки локальной сети без VPN: фиды через
-    # аплинк, раз в 6 ч с джиттером (строго периодический запрос — маячок),
-    # первый раз через 3 мин после старта. Без LAN_MODE в юните — холостая.
-    async def job_gw_lan_lists():
-        try:
-            notes = await asyncio.to_thread(services.lan_lists_update)
-            await send_notifications(bot, notes)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("gw_lan_lists: %s", e)
-
-    scheduler.add_job(
-        job_gw_lan_lists, IntervalTrigger(hours=6, jitter=int(6 * 3600 * 0.4), timezone=config.TZ),
-        id="gw_lan_lists", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
-        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-
-    # Сервисы соседних сетей: обзор mDNS
-    # своей сети раз в 15 мин с джиттером (запрос не покидает сегмент, но пусть
-    # не совпадает с тиком монитора), первый — через 2–5 мин; изменился список —
-    # уходит серверу каналом. Без доступа между подсетями в юните — холостая.
-    async def job_gw_lan_services():
-        try:
-            from awgbot.runtime import linkclient
-            await linkclient.services_changed(services)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("gw_lan_services: %s", e)
-
-    scheduler.add_job(
-        job_gw_lan_services,
-        IntervalTrigger(minutes=15, jitter=int(15 * 60 * 0.4), timezone=config.TZ),
-        id="gw_lan_services", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
-        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-
-    def _retry_gw_backup():
-        scheduler.add_job(job_gw_backup, "date", run_date=timeutil.now() + datetime.timedelta(hours=1),
-                          id="gw_backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
-
-    async def job_gw_backup():
-        await monthly_backup(services, bot, "gw backup", on_undelivered=_retry_gw_backup)
-
-    async def job_gw_backup_catchup():
-        await monthly_backup(services, bot, "gw backup", catchup=True, on_undelivered=_retry_gw_backup)
-
-    scheduler.add_job(job_gw_backup, backup_trigger(), id="gw_backup", max_instances=1, **MANDATORY)
-    # E7: догон на старте, как у основного бота — устройство, выключенное 1-го
-    # в 12:00, иначе теряло месячную копию (первый прогон только помечает
-    # месяц, копии не делает). Через минуты, не сразу: линк и почта ещё поднимаются.
-    scheduler.add_job(job_gw_backup_catchup, "date",
-                      run_date=timeutil.now() + datetime.timedelta(seconds=random.randint(60, 300)),
-                      id="gw_backup_catchup", max_instances=1, **MANDATORY)
-
-    def _gw_backup_hook(_key=None, _val=None):
-        try:
-            scheduler.reschedule_job("gw_backup", trigger=backup_trigger())
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gw_backup reschedule: %s", e)
-    for key in ("app.scheduler.backup_day", "app.scheduler.backup_hour"):
-        settings.on_change(key, _gw_backup_hook)
-
-    add_update_check(scheduler, services, bot, run_date=timeutil.now(), tag="gw update_check")
-    scheduler.start()
     return scheduler
