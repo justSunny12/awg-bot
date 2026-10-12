@@ -23,7 +23,7 @@ class LanMapMixin:
     _LANMAP_TEXT_KEY = "lanmap_text"                 # текст последней поставленной таблицы
     _LANMAP_ERROR_KEY = "lanmap_error"               # таблица не поставилась: причина (карточка, preflight)
 
-    def lan_off(self) -> tuple[str, str]:
+    def lan_off(self, slots=None) -> tuple[str, str]:
         """(причина, ключ conf, которым её чинить), почему адреса в туннеле
         выключены целиком; ("", "") — включены. Служебное пространство
         задевает подсети клиентов (с подсетью переезда) или /30 линков, либо
@@ -32,7 +32,7 @@ class LanMapMixin:
         слотов (routing.fwmark) — пакет ушёл бы не в тот линк. Линки — и из
         настроек слотов, и заведённые в БД."""
         from awgbot.infra import admindns
-        slots = self.db.gateways()
+        slots = self.db.gateways() if slots is None else list(slots)   # уже загруженные — без второго запроса
         clients = [net for net, _iface in config.routing_client_subnets()]
         links = list(config.ROUTING_LINK_CIDRS)
         for gw in slots:
@@ -100,10 +100,11 @@ class LanMapMixin:
                 out.append(routing.lanmap.Entry(int(gw.id), gw.link_if, real, twin))
         return out
 
-    def lan_twins(self, gw) -> list[tuple[str, str]]:
+    def lan_twins(self, gw, slots=None) -> list[tuple[str, str]]:
         """[(настоящая, в туннеле)] подсетей слота, которые стоят в таблице —
-        для экранов; пространство неисправно — пусто."""
-        if gw is None or self.lan_space_problem():
+        для экранов и роли канала; пространство неисправно — пусто. slots —
+        уже загруженные слоты: пространство проверяется по ним."""
+        if gw is None or self.lan_off(slots)[0]:
             return []
         return self._lan_split(gw)[0]
 

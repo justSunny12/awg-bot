@@ -134,7 +134,8 @@ class LinkMixin:
         # с адреса устройства проходит. Ловим по факту и перевыставляем обвязку
         # (скрипт берёт интерфейс заново).
         info = self.__dict__.get("_guard_info")
-        wan = gwguard.default_route_dev()
+        route = gwguard.default_route()       # один `ip -j` на тик: интерфейс и шлюз вместе
+        wan = route["dev"]
         if info is not None and wan and wan not in (uplink, config.GW_LINK_IF):
             masq_ifaces = info.get("masq_ifaces", set())
             ok = not masq_ifaces or wan in masq_ifaces
@@ -142,43 +143,78 @@ class LinkMixin:
             checks.append(GwCheck("маскарад клиентов", ok,
                                   "" if ok else f"маршрут по умолчанию через {wan}, а masquerade "
                                   "клиентов стоит в другом интерфейсе — агент перевыставит обвязку"))
-        router = self._router_masq_check(info)
+        router = self._router_masq_check(info, route)
         if router is not None:
             checks.append(router)
         return checks
 
-    def _router_masq_check(self, info: dict | None) -> GwCheck | None:
+    _ROUTER_MARK = "ROUTER=%s"       # строка файла статуса в скрипте обвязки, который ставит правило
+
+    def _router_masq_check(self, info: dict | None, route: dict) -> GwCheck | None:
         """Маскарад соседей к роутеру (VPN-транзит и подсети других шлюзов):
-        адрес в правиле таблицы против `via` маршрута по умолчанию сейчас.
-        Адрес роутера сменился (DHCP шлюза) или маршрут ушёл — правило стоит к
-        прежнему, и сам роутер соседям молчит; перевыставляем обвязку (скрипт
-        возьмёт адрес заново) — флаг для тика. Обвязка без ROUTER= в файле
-        статуса поставлена прежним скриптом: правила там и не будет, реассерт
-        ничего не даст. Без VPN-транзита или соседей проверки нет. Группа
-        «svc» — без уведомлений: соседи — не авария обвязки."""
+        адрес в правиле таблицы против роутера сейчас — шлюза маршрута по
+        умолчанию внутри своих подсетей, как его берёт скрипт (ROUTER4).
+        Разошлись (DHCP шлюза сменил адрес роутера, роутер ушёл из сети) —
+        флаг для тика: перевыставить обвязку, скрипт возьмёт адрес заново.
+        Обвязка без ROUTER= в файле статуса поставлена до 3.3.0: копия скрипта
+        уже новая (awg-bot update юнит не перезапускает) — тот же флаг, иначе
+        реассерт поставил бы ту же старую таблицу — без флага. Шлюз слота не
+        подтверждён или маршрута по умолчанию нет — «не проверено». Без
+        VPN-транзита или соседей проверки нет. Группа «svc» — без уведомлений:
+        соседи — не авария обвязки."""
         from awgbot.infra import gwguard
         self.__dict__["_router_masq_stale"] = False
         if info is None or not gwguard.lan_mode() or not gwguard.unit_env("PEER_HOME_NETS").split():
             return None
-        name = "маскарад к роутеру"
-        if "ROUTER" not in gwguard.script_status():
-            return GwCheck(name, None, "обвязка поставлена прежним скриптом — сам роутер подсетям других "
-                           "шлюзов не открыт; «🔧 Восстановить»", group="svc")
+
+        def check(ok, detail, stale=False):
+            self.__dict__["_router_masq_stale"] = stale
+            return GwCheck("маскарад к роутеру", ok, detail, group="svc")
+        closed = "сам роутер подсетям других шлюзов не открыт"
+        status = gwguard.script_status()
+        if status.get("GW_STATUS") in ("foreign", "unconfirmed"):
+            return check(None, "шлюз слота не подтверждён: обвязку скрипт не ставил")
+        if "ROUTER" not in status:
+            if gwguard.setup_script_has(self._ROUTER_MARK):
+                return check(False, f"обвязка от прежней версии: {closed} — агент перевыставит её", True)
+            return check(None, f"скрипт обвязки на шлюзе прежней версии: {closed}")
+        if not route.get("present"):
+            return check(None, "маршрута по умолчанию нет: адрес роутера не узнать")
         have = sorted(info.get("router_masq", set()))
-        router = gwguard.default_route_via()
-        if not router:
+        via = route.get("via") or ""
+        if not via:
             if have:
-                self.__dict__["_router_masq_stale"] = True
-                return GwCheck(name, False, f"маршрута по умолчанию через роутер нет, а правило к {have[0]} "
-                               "стоит — агент перевыставит обвязку", group="svc")
-            return GwCheck(name, None, "адрес роутера не определён: маршрута по умолчанию через адрес нет — "
-                           "сам роутер подсетям других шлюзов не открыт", group="svc")
-        if have == [router]:
-            return GwCheck(name, True, f"роутер {router}", group="svc")
-        self.__dict__["_router_masq_stale"] = True
-        return GwCheck(name, False, (f"правило к {have[0]}, а роутер теперь {router}" if have else
-                                     f"правила нет — сам роутер {router} подсетям других шлюзов не открыт")
-                       + " — агент перевыставит обвязку", group="svc")
+                return check(False, f"у маршрута по умолчанию нет шлюза: правило к {have[0]} лишнее — "
+                             "агент перевыставит обвязку", True)
+            return check(None, f"адрес роутера не определён: у маршрута по умолчанию нет шлюза — {closed}")
+        if not self._in_own_nets(via):
+            if have:
+                return check(False, f"роутер вне локальной сети шлюза: правило к {have[0]} лишнее — "
+                             "агент перевыставит обвязку", True)
+            return check(None, f"роутер вне локальной сети шлюза: {via} — {closed}")
+        if have == [via]:
+            return check(True, f"роутер {via}")
+        if have:
+            return check(False, f"правило к {have[0]}, а роутер теперь {via} — агент перевыставит обвязку", True)
+        return check(False, f"правила нет: сам роутер {via} подсетям других шлюзов не открыт — "
+                     "агент перевыставит обвязку", True)
+
+    @staticmethod
+    def _in_own_nets(addr: str) -> bool:
+        """Адрес внутри одной из своих подсетей (HOME_SUBNETS юнита)."""
+        import ipaddress
+        from awgbot.infra import gwguard
+        try:
+            ip = ipaddress.IPv4Address(addr)
+        except ValueError:
+            return False
+        for raw in gwguard.unit_env("HOME_SUBNETS").split():
+            try:
+                if ip in ipaddress.IPv4Network(raw, strict=False):
+                    return True
+            except ValueError:
+                continue
+        return False
 
     def _unit_enabled(self) -> bool:
         c = self.__dict__.get("_unit_enabled_cache")

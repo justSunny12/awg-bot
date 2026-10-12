@@ -153,15 +153,26 @@ async def test_the_transit_screen_shows_the_tunnel_addresses_from_the_role(svc, 
     assert "в туннеле —" not in await _transit_text(svc, fake_bot, monkeypatch)
 
 
+async def test_tunnel_addresses_may_live_in_any_private_space(svc, monkeypatch):
+    """Пространство — любая частная /12 (routing.lan_space): 172.16/12 так же
+    годится, как 10/8; до 64 записей — столько подсетей у слота бывает."""
+    many = [f"172.17.{i}.0/24" for i in range(64)]
+    await _role(svc, monkeypatch, lan_virtual=["172.17.1.0/24"])
+    assert svc.lan_virtual() == ["172.17.1.0/24"]
+    await _role(svc, monkeypatch, lan_virtual=many)
+    assert svc.lan_virtual() == many
+
+
 @pytest.mark.parametrize("junk", [
     "10.240.1.0/24", ["10.240.1.0/24", 7], ["192.168.1.0/24"], ["10.240.1.5/24"], ["10.0.0.0/8"],
-    ["10.240.1.0/31"], ["10.240.1.0/24<b>"], [f"10.240.{i}.0/24" for i in range(17)], [None], {"x": 1},
-], ids=["str", "not-str", "outside-10/8", "host-bits", "wider-16", "narrower-30", "markup", "17",
-        "none", "dict"])
+    ["10.240.1.0/31"], ["10.240.1.0/24<b>"], [f"10.240.{i}.0/24" for i in range(65)], [None], {"x": 1},
+    ["172.32.0.0/16"],
+], ids=["str", "not-str", "192.168", "host-bits", "wider-16", "narrower-30", "markup", "65",
+        "none", "dict", "outside-172.16/12"])
 async def test_the_dispatch_drops_junk_in_the_tunnel_addresses(svc, fake_bot, monkeypatch, junk):
-    """`role` — данные с чужой машины: не список, больше 16 записей, запись не
-    сеть внутри 10.0.0.0/8 с префиксом /16–/30 — поле отбрасывается целиком,
-    строки нет; прежнее значение не остаётся висеть."""
+    """`role` — данные с чужой машины: не список, больше 64 записей, запись не
+    сеть с префиксом /16–/30 внутри 10/8 или 172.16/12 — поле отбрасывается
+    целиком, строки нет; прежнее значение не остаётся висеть."""
     await _role(svc, monkeypatch, lan_virtual=["10.240.1.0/24"])
     assert svc.lan_virtual() == ["10.240.1.0/24"]
     await _role(svc, monkeypatch, lan_virtual=junk)

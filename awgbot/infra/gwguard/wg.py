@@ -77,31 +77,54 @@ def _ip_json(args: list[str]) -> list:
         return []
 
 
+def _via_of(hop: dict) -> str | None:
+    """Шлюз записи маршрута: None — шлюза нет; "" — шлюз не IPv4 (via inet6)."""
+    via = hop.get("gateway")
+    if not via and isinstance(hop.get("via"), dict):       # via inet6 в маршруте v4
+        via = hop["via"].get("host")
+    if not via:
+        return None
+    try:
+        return str(ipaddress.IPv4Address(str(via)))
+    except ValueError:
+        return ""
+
+
+def default_route() -> dict:
+    """Маршрут по умолчанию основной таблицы одним `ip -j route show default`:
+    {'present': есть ли он вообще, 'dev': интерфейс, 'via': шлюз}. via — как
+    VIA4 скрипта обвязки: первый шлюз, в том числе у первого nexthop, только
+    IPv4; нет шлюза или он не IPv4 — пусто. Пусто во всём — не узнать."""
+    routes = [r for r in pkg._ip_json(["route", "show", "default"]) if isinstance(r, dict)]
+    dev = next((str(r.get("dev")) for r in routes if r.get("dev")), "")
+    via = ""
+    for r in routes:
+        found = next((v for v in (_via_of(h) for h in
+                                  [r, *(h for h in (r.get("nexthops") or []) if isinstance(h, dict))])
+                      if v is not None), None)
+        if found is not None:
+            via = found
+            break
+    return {"present": bool(routes), "dev": dev, "via": via}
+
+
 def default_route_dev() -> str:
     """Интерфейс маршрута по умолчанию основной таблицы; пусто — не узнать."""
-    for r in pkg._ip_json(["route", "show", "default"]):
-        dev = str(r.get("dev") or "")
-        if dev:
-            return dev
-    return ""
+    return pkg.default_route()["dev"]
 
 
 def default_route_via() -> str:
-    """Адрес роутера — шлюз маршрута по умолчанию основной таблицы, как его
-    берёт скрипт обвязки (ROUTER4): первый `via`, в том числе у первого
-    nexthop; только IPv4. Нет via, via не IPv4 или не узнать — пусто."""
-    for r in pkg._ip_json(["route", "show", "default"]):
-        hops = [r, *(h for h in (r.get("nexthops") or []) if isinstance(h, dict))]
-        for h in hops:
-            via = h.get("gateway")
-            if not via and isinstance(h.get("via"), dict):       # via inet6 в маршруте v4
-                via = h["via"].get("host")
-            if via:
-                try:
-                    return str(ipaddress.IPv4Address(str(via)))
-                except ValueError:
-                    return ""
-    return ""
+    """Шлюз маршрута по умолчанию (IPv4, как VIA4 скрипта обвязки); пусто — нет."""
+    return pkg.default_route()["via"]
+
+
+def setup_script_has(marker: str) -> bool:
+    """Есть ли строка в копии скрипта обвязки на шлюзе (/usr/local/sbin): по
+    ней видно, умеет ли установленный скрипт то, чего нет в файле статуса."""
+    try:
+        return marker.encode() in pkg.Path(pkg.SETUP_SCRIPT).read_bytes()
+    except OSError:
+        return False
 
 
 def _fwmark_of(rule: dict) -> int:

@@ -164,15 +164,20 @@ class DeliverMixin:
         туннеле сети слота (агент только показывает); пространство неисправно
         или подсетей нет — пусто."""
         standby, name, virtual = False, "", []
-        for g in self.services.db.gateways():
+        slots = self.services.db.gateways()
+        for g in slots:
             dev = self.services.db.get_device(g.device_id) if g.device_id else None
             if g.id == slot_id:
                 if dev is not None:
                     name = dev.name + (f" ({g.label})" if getattr(g, "label", "") else "")
                 try:
-                    virtual = [twin for _real, twin in self.services.lan_twins(g)]
+                    # пространство — по уже загруженным слотам, один раз на вызов
+                    virtual = [twin for _real, twin in self.services.lan_twins(g, slots)]
                 except Exception as e:                    # noqa: BLE001 — роль важнее показа
-                    log.warning("канал линка: адреса в туннеле слота %s: %s", slot_id, e)
+                    # такт живости зовёт это каждые две минуты: одно предупреждение на текст
+                    if self.__dict__.get("_twins_warned") != str(e):
+                        self.__dict__["_twins_warned"] = str(e)
+                        log.warning("канал линка: адреса в туннеле слота %s: %s", slot_id, e)
             elif dev is not None:
                 standby = True
         return {"standby": standby, "name": name, "lan_virtual": virtual}

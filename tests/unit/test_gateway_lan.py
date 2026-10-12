@@ -489,104 +489,158 @@ def test_a_red_own_lists_check_sends_neither_plumbing_nor_lan_alerts(svc, monkey
 # ── маскарад соседей к роутеру: сверка с маршрутом по умолчанию и самопочинка ──
 
 ROUTER_CHECK = "маскарад к роутеру"
+CLOSED = "сам роутер подсетям других шлюзов не открыт"
 
 
-def _router_env(monkeypatch, *, lan=True, peers="10.241.0.0/16", via="192.168.1.1",
-                status=None):
-    """VPN-транзит и соседи из юнита, статус скрипта, маршрут по умолчанию сейчас."""
-    env = {"PEER_HOME_NETS": peers, "LAN_MODE": "1" if lan else "0"}
+def _router_env(monkeypatch, *, lan=True, peers="10.241.0.0/16", home="192.168.1.0/24",
+                status=None, script_new=True):
+    """VPN-транзит, соседи и свои подсети из юнита, статус скрипта, копия скрипта."""
+    env = {"PEER_HOME_NETS": peers, "LAN_MODE": "1" if lan else "0", "HOME_SUBNETS": home}
     monkeypatch.setattr(gwguard, "lan_mode", lambda: lan)
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
-    monkeypatch.setattr(gwguard, "script_status", lambda: {"ROUTER": "192.168.1.1"} if status is None else status)
-    monkeypatch.setattr(gwguard, "default_route_via", lambda: via)
+    monkeypatch.setattr(gwguard, "script_status",
+                        lambda: {"GW_STATUS": "confirmed", "ROUTER": "192.168.1.1"} if status is None else status)
+    monkeypatch.setattr(gwguard, "setup_script_has", lambda marker: script_new and marker == "ROUTER=%s")
+
+
+def _route(via="192.168.1.1", present=True):
+    return {"present": present, "dev": "end0" if present else "", "via": via}
 
 
 def _info(*router):
     return {"sets": {}, "chains": set(), "masq_ifaces": {"end0"}, "router_masq": set(router)}
 
 
+def _stale(svc):
+    return svc.__dict__.get("_router_masq_stale")
+
+
 def test_router_masquerade_matches_the_default_route(svc, monkeypatch):
     """Правило к адресу роутера, роутер тот же — зелёная, без реассерта;
     группа «svc»: уведомлений нет, как у прочих проверок соседей."""
     _router_env(monkeypatch)
-    c = svc._router_masq_check(_info("192.168.1.1"))
-    assert (c.name, c.ok, c.group) == (ROUTER_CHECK, True, "svc") and "192.168.1.1" in c.detail
-    assert svc.__dict__.get("_router_masq_stale") is False
+    c = svc._router_masq_check(_info("192.168.1.1"), _route())
+    assert (c.name, c.ok, c.group, c.detail) == (ROUTER_CHECK, True, "svc", "роутер 192.168.1.1")
+    assert _stale(svc) is False
 
 
-@pytest.mark.parametrize("have, via, why", [
-    (("192.168.1.1",), "192.168.1.254", "правило к 192.168.1.1, а роутер теперь 192.168.1.254"),
-    ((), "192.168.1.1", "правила нет"),
-    (("192.168.1.1",), "", "маршрута по умолчанию через роутер нет"),
-], ids=["moved", "missing", "no-route"])
-def test_router_masquerade_diverged_is_red_and_flags_a_reassert(svc, monkeypatch, have, via, why):
-    """Адрес роутера сменился (DHCP шлюза), правила нет или маршрут ушёл, а
-    правило стоит — красная, флаг перевыставить обвязку."""
-    _router_env(monkeypatch, via=via)
-    c = svc._router_masq_check(_info(*have))
-    assert c.ok is False and why in c.detail and "агент перевыставит обвязку" in c.detail, c.detail
-    assert svc.__dict__.get("_router_masq_stale") is True
+@pytest.mark.parametrize("have, route, detail", [
+    (("192.168.1.1",), _route("192.168.1.254"),
+     "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент перевыставит обвязку"),
+    ((), _route(), "правила нет: сам роутер 192.168.1.1 подсетям других шлюзов не открыт — "
+                   "агент перевыставит обвязку"),
+    (("192.168.1.1",), _route(""),
+     "у маршрута по умолчанию нет шлюза: правило к 192.168.1.1 лишнее — агент перевыставит обвязку"),
+    (("192.168.1.1",), _route("10.0.0.1"),
+     "роутер вне локальной сети шлюза: правило к 192.168.1.1 лишнее — агент перевыставит обвязку"),
+], ids=["moved", "missing", "default-without-via", "router-left-the-lan"])
+def test_router_masquerade_diverged_is_red_and_flags_a_reassert(svc, monkeypatch, have, route, detail):
+    """Адрес роутера сменился (DHCP шлюза), правила нет, у маршрута по
+    умолчанию пропал шлюз или роутер ушёл из своей сети, а правило стоит, —
+    красная, флаг перевыставить обвязку."""
+    _router_env(monkeypatch)
+    c = svc._router_masq_check(_info(*have), route)
+    assert (c.ok, c.detail) == (False, detail)
+    assert _stale(svc) is True
 
 
-def test_router_masquerade_without_a_router_address_is_unknown(svc, monkeypatch):
-    """Маршрута по умолчанию через адрес нет и правила нет — «не проверено»:
-    сам роутер соседям не открыт, остальное работает; перевыставлять нечего."""
-    _router_env(monkeypatch, via="")
-    c = svc._router_masq_check(_info())
-    assert c.ok is None and "адрес роутера не определён" in c.detail
-    assert svc.__dict__.get("_router_masq_stale") is False
+@pytest.mark.parametrize("route, home, detail", [
+    (_route(""), "192.168.1.0/24",
+     f"адрес роутера не определён: у маршрута по умолчанию нет шлюза — {CLOSED}"),
+    (_route("10.0.0.1"), "192.168.1.0/24", f"роутер вне локальной сети шлюза: 10.0.0.1 — {CLOSED}"),
+    (_route("192.168.1.1"), "", f"роутер вне локальной сети шлюза: 192.168.1.1 — {CLOSED}"),
+], ids=["no-via", "router-outside-the-lan", "no-own-subnets"])
+def test_no_router_address_without_a_rule_is_unknown(svc, monkeypatch, route, home, detail):
+    """Шлюза у маршрута по умолчанию нет или он вне своих подсетей, правила
+    нет — скрипт его и не поставит: «не проверено», перевыставлять нечего."""
+    _router_env(monkeypatch, home=home)
+    c = svc._router_masq_check(_info(), route)
+    assert (c.ok, c.detail) == (None, detail)
+    assert _stale(svc) is False
 
 
-def test_router_masquerade_under_an_old_script_is_unknown_and_not_reasserted(svc, monkeypatch):
-    """Файл статуса без ROUTER= — обвязку поставил прежний скрипт: правила там
-    не будет, и реассерт раз в 10 минут ничего бы не дал."""
-    _router_env(monkeypatch, status={"LAN_ADDR": "192.168.1.2"})
-    c = svc._router_masq_check(_info())
-    assert c.ok is None and "прежним скриптом" in c.detail and "«🔧 Восстановить»" in c.detail
-    assert svc.__dict__.get("_router_masq_stale") is False
+@pytest.mark.parametrize("have", [(), ("192.168.1.1",)], ids=["no-rule", "rule"])
+def test_no_default_route_at_all_is_unknown(svc, monkeypatch, have):
+    """Маршрута по умолчанию нет вовсе (или `ip -j` пуст): адрес роутера не
+    узнать, и стоящее правило — не повод перевыставлять обвязку вслепую."""
+    _router_env(monkeypatch)
+    c = svc._router_masq_check(_info(*have), _route("", present=False))
+    assert (c.ok, c.detail) == (None, "маршрута по умолчанию нет: адрес роутера не узнать")
+    assert _stale(svc) is False
+
+
+def test_plumbing_from_the_previous_script_is_reasserted_once_the_new_copy_is_there(svc, monkeypatch):
+    """Файл статуса без ROUTER= — обвязку поставил прежний скрипт, а копия на
+    шлюзе уже новая (awg-bot update юнит не перезапускает): правило встанет
+    только после прогона — флаг, агент перевыставит."""
+    _router_env(monkeypatch, status={"GW_STATUS": "confirmed", "LAN_ADDR": "192.168.1.2"})
+    c = svc._router_masq_check(_info(), _route())
+    assert (c.ok, c.detail) == (False, f"обвязка от прежней версии: {CLOSED} — агент перевыставит её")
+    assert _stale(svc) is True
+
+
+def test_an_old_script_copy_is_unknown_and_not_reasserted(svc, monkeypatch):
+    """Копия скрипта на шлюзе сама прежняя: реассерт поставил бы ту же
+    таблицу без правила — «не проверено», без флага."""
+    _router_env(monkeypatch, status={"GW_STATUS": "confirmed"}, script_new=False)
+    c = svc._router_masq_check(_info(), _route())
+    assert (c.ok, c.detail) == (None, f"скрипт обвязки на шлюзе прежней версии: {CLOSED}")
+    assert _stale(svc) is False
+
+
+@pytest.mark.parametrize("gw_status", ["foreign", "unconfirmed"])
+def test_an_unconfirmed_gateway_is_unknown_and_not_reasserted(svc, monkeypatch, gw_status):
+    """Слот помечен другому устройству или аплинка не видно — скрипт выходит
+    до таблицы, и реассерт ничего не поставит: «не проверено», без флага."""
+    _router_env(monkeypatch, status={"GW_STATUS": gw_status, "ROUTER": "192.168.1.1"})
+    c = svc._router_masq_check(_info(), _route())
+    assert (c.ok, c.detail) == (None, "шлюз слота не подтверждён: обвязку скрипт не ставил")
+    assert _stale(svc) is False
 
 
 @pytest.mark.parametrize("env", [{"lan": False}, {"peers": ""}], ids=["no-transit", "no-peers"])
 def test_no_router_masquerade_check_without_transit_or_peers(svc, monkeypatch, env):
     """Без VPN-транзита или без соседей правила нет и быть не должно — проверки
     нет вовсе, флага тоже (даже если бы маршрут разошёлся)."""
-    _router_env(monkeypatch, via="192.168.1.254", **env)
-    assert svc._router_masq_check(_info("192.168.1.1")) is None
-    assert svc.__dict__.get("_router_masq_stale") is False
-    assert svc._router_masq_check(None) is None, "таблицы нет — о ней скажет своя проверка"
+    _router_env(monkeypatch, **env)
+    assert svc._router_masq_check(_info("192.168.1.1"), _route("192.168.1.254")) is None
+    assert _stale(svc) is False
+    assert svc._router_masq_check(None, _route()) is None, "таблицы нет — о ней скажет своя проверка"
 
 
 def test_router_masquerade_is_part_of_the_plumbing_checks(svc, monkeypatch):
-    """Проверка стоит в обвязке рядом с «маскарад клиентов» и берёт правило
-    из того же разбора таблицы (`nft -j`), что и остальные."""
+    """Проверка стоит в обвязке сразу после «маскарад клиентов» и берёт
+    маршрут по умолчанию из того же разбора — один `ip -j` на тик."""
     from awgbot.domain.gateway import base
-    _router_env(monkeypatch, via="192.168.1.254")
+    _router_env(monkeypatch)
+    calls = []
     monkeypatch.setattr(base, "pathlib_read", lambda p: "1\n")
     monkeypatch.setattr(gwguard, "table_info", lambda: _info("192.168.1.1"))
     monkeypatch.setattr(gwguard, "client_subnet", lambda: "")
     monkeypatch.setattr(gwguard, "iptables_forward_policy", lambda: None)
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
-    monkeypatch.setattr(gwguard, "default_route_dev", lambda: "end0")
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: calls.append(args) or (
+        [{"dst": "default", "gateway": "192.168.1.254", "dev": "end0"}] if args == ["route", "show", "default"] else []))
     monkeypatch.setattr(svc, "_unit_enabled", lambda: True)
     checks = svc.plumbing_checks()
     names = [c.name for c in checks]
     assert names.index(ROUTER_CHECK) == names.index("маскарад клиентов") + 1, names
-    assert {c.name: c for c in checks}[ROUTER_CHECK].ok is False
-    assert svc.__dict__.get("_router_masq_stale") is True
+    assert {c.name: c for c in checks}[ROUTER_CHECK].ok is False and _stale(svc) is True
+    assert calls.count(["route", "show", "default"]) == 1, calls
 
 
 def test_a_diverged_router_masquerade_is_reasserted_at_most_every_ten_minutes(svc, monkeypatch):
     """Тик перевыставляет обвязку по флагу — не чаще раза в 10 минут (общий
     троттлинг с прочими починками), без уведомления."""
     from tests.unit.test_gateway import _quiet_status
-    _router_env(monkeypatch, via="192.168.1.254")
+    _router_env(monkeypatch)
     calls = []
     monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
     monkeypatch.setattr(gwguard, "reassert", lambda **kw: calls.append(1) or (True, ""))
 
     def status():
         st = _quiet_status()
-        st.checks.append(svc._router_masq_check(_info("192.168.1.1")))
+        st.checks.append(svc._router_masq_check(_info("192.168.1.1"), _route("192.168.1.254")))
         return st
     monkeypatch.setattr(svc, "status", status)
     monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
@@ -600,3 +654,20 @@ def test_a_diverged_router_masquerade_is_reasserted_at_most_every_ten_minutes(sv
     svc._last_reassert -= 10 * 60 + 1
     svc.monitor_tick()
     assert calls == [1, 1], "через 10 минут — снова"
+
+
+def test_the_script_copy_marker_is_the_status_line_of_the_script():
+    """Признак новой копии скрипта — та самая строка файла статуса, которую
+    пишет write_status: переименуют — проверка перестанет её узнавать."""
+    import pathlib
+    script = (pathlib.Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    write_status = script.split("write_status() {", 1)[1].split("\n}\n", 1)[0]
+    assert "\\nROUTER=%s\\n" in write_status and GatewayServices._ROUTER_MARK == "ROUTER=%s"
+
+
+def test_setup_script_has_reads_the_installed_copy(tmp_path, monkeypatch):
+    copy = tmp_path / "routing-gw-setup.sh"
+    monkeypatch.setattr(gwguard, "SETUP_SCRIPT", str(copy))
+    assert gwguard.setup_script_has("ROUTER=%s") is False, "копии нет — не знает"
+    copy.write_text("printf 'GW_STATUS=%s\\nROUTER=%s\\n'\n", encoding="utf-8")
+    assert gwguard.setup_script_has("ROUTER=%s") is True

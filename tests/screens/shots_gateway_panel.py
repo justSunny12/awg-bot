@@ -21,6 +21,28 @@ _CHECKS_BAD = [
     GwCheck("ядра", True, "модуль собран для 2 из 2"),
 ]
 
+# Порядок — как в живом status(): обвязка (plumbing_checks: … «маскарад
+# клиентов», сразу за ним «маскарад к роутеру»), маршруты, линк, ядра,
+# локальная сеть, выход наружу.
+_ROUTER_MASQ_CHECKS = [
+    GwCheck("ip_forward", True),
+    GwCheck("MASQUERADE/изоляция", True),
+    GwCheck("цепочки таблицы", True),
+    GwCheck("политика FORWARD", True),
+    GwCheck("юнит реассерта", True),
+    GwCheck("политика аплинка", True),
+    GwCheck("маскарад в аплинк", True),
+    GwCheck("маскарад клиентов", True),
+    GwCheck("маскарад к роутеру", False, "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент "
+            "перевыставит обвязку", group="svc"),
+    GwCheck("маршрут к Telegram", True),
+    GwCheck("маршрут к GitHub", True),
+    GwCheck("линк", True, "хендшейк 40 с назад"),
+    GwCheck("ядра", True, "модуль собран для 2 из 2"),
+    *_CHECKS_LAN,
+    GwCheck("выход наружу", True, "35 мс через канал"),
+]
+
 
 def _status_bad(**kw) -> GwStatus:
     """Линк лежит, обвязка разошлась, питание проседает сейчас."""
@@ -126,11 +148,9 @@ PANEL = [
           title="всё в порядке, просадка питания с загрузки"),
     _shot("gw.health.broken", press=[GwCB(action="health")], live=_status_bad(),
           title="проблемы, «не проверено», питание сейчас"),
-    _shot("gw.health.router_masq", press=[GwCB(action="health")],
-          live=_status_lan(checks=copy.deepcopy(_CHECKS_OK + _CHECKS_LAN) + [GwCheck(
-              "маскарад к роутеру", False, "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент "
-              "перевыставит обвязку", group="svc")]),
-          title="адрес роутера сменился — маскарад соседей к роутеру разошёлся, починка сама"),
+    _shot("gw.health.router_masq", press=[GwCB(action="health")], live=_status_lan(checks=copy.deepcopy(_ROUTER_MASQ_CHECKS)),
+          title="адрес роутера сменился — маскарад соседей к роутеру разошёлся, починка сама "
+                "(порядок проверок — как в живом замере)"),
     _shot("gw.health.no_host", press=[GwCB(action="health")], live=_status(hostname="", disk_free_gb=1234.4),
           title="имени хоста в замере нет — «Здоровье шлюза»; терабайтный диск — «1 234 ГБ»"),
     _shot("gw.health.escaped", press=[GwCB(action="health")],

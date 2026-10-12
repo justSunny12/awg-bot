@@ -389,14 +389,20 @@ def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
 ROUTER_RULE = 'iifname "awglink2" ip saddr @peer_nets4 ip daddr 192.168.1.1 masquerade'
 
 
-def _router4(script: str, tmp_path, route_out: str) -> str:
-    """ROUTER4 настоящей detect_router при подставном `ip route show default`."""
-    fn = script[script.index("detect_router() {"):]
-    fn = fn[:fn.index("\n}\n") + 3]
+def _fn(script: str, name: str) -> str:
+    fn = script[script.index(f"{name}() {{"):]
+    return fn[:fn.index("\n}\n") + 3]
+
+
+def _router4(script: str, tmp_path, route_out: str, home: str = "192.168.0.0/16 10.0.0.0/8 172.16.0.0/12"):
+    """(VIA4, ROUTER4) настоящих detect_via/detect_router при подставном
+    `ip route show default` и своих подсетях HOME_SUBNETS."""
+    fns = "".join(_fn(script, n) for n in ("detect_via", "ip_in_nets", "detect_router"))
     fake_cmd(tmp_path / "ip", "#!/bin/sh\ncat <<'IPEOF'\n" + route_out + "\nIPEOF\n")
-    r = _sh(fn + 'printf "[%s]" "$(detect_router)"', path=f"{tmp_path}:/usr/bin:/bin")
+    r = _sh(fns + f"HOME_SUBNETS='{home}'\n" + 'VIA4="$(detect_via)"\nROUTER4="$(detect_router "$VIA4")"\n'
+            'printf "[%s|%s]" "$VIA4" "$ROUTER4"', path=f"{tmp_path}:/usr/bin:/bin")
     assert r.returncode == 0, r.stderr
-    return r.stdout.strip()[1:-1]
+    return tuple(r.stdout.strip()[1:-1].split("|"))
 
 
 def _guard_with_router(script: str, *, lan_mode="1", peers="10.241.0.0/16", router="192.168.1.1") -> str:
@@ -474,16 +480,48 @@ def test_router_address_is_the_ipv4_via_of_the_default_route(script, tmp_path, o
     """Адрес роутера — первый `via` маршрута по умолчанию, только форма IPv4
     с октетами до 255: значение уходит в nft, кривое уронило бы таблицу.
     Не IPv4 (via inet6, маршрут без via, мусор) — пусто, правила нет."""
-    assert _router4(script, tmp_path, out) == want
+    assert _router4(script, tmp_path, out) == (want, want)
+
+
+@pytest.mark.parametrize("home, router", [
+    ("192.168.1.0/24", "192.168.1.1"),
+    ("10.0.2.0/24 192.168.0.0/22", "192.168.1.1"),
+    ("192.168.1.128/25", ""),
+    ("192.168.1.0/32 192.168.1.1/32", "192.168.1.1"),
+    ("192.168.2.0/24", ""),
+    ("", ""),
+], ids=["own", "second-subnet", "other-half", "host-route", "outside", "no-subnets"])
+def test_router_address_must_be_inside_the_own_subnets(script, tmp_path, home, router):
+    """Роутер — только шлюз маршрута по умолчанию внутри своих подсетей
+    (HOME_SUBNETS): роутер вне локальной сети (нестандартная схема) маскарадом
+    к нему не открывается. DNS имён Endpoint берёт шлюз маршрута как есть."""
+    got = _router4(script, tmp_path, "default via 192.168.1.1 dev eth0", home=home)
+    assert got == ("192.168.1.1", router), got
+
+
+def test_awg_programs_use_no_interval_repeats():
+    """mawk 1.3.4 (Debian 12, Ubuntu 22.04 — awk по умолчанию) не знает
+    интервальных повторов `{n}` / `{n,m}` в регэкспах: выражение молча не
+    совпадает ни с чем, и адрес роутера пропадал бы вместе со строками DNS
+    роутера. В awk-программах скриптов поставки их нет."""
+    import pathlib
+    progs = []
+    for f in sorted((pathlib.Path(_c.SCRIPT).parent).glob("*.sh")):
+        text = f.read_text(encoding="utf-8")
+        progs += [(f.name, m.group(1)) for m in re.finditer(r"\bawk\b[^'\n]*'([^']*)'", text)]
+    assert len(progs) > 20, "awk-программы не нашлись — разбор сломан"
+    bad = [(name, prog[:80]) for name, prog in progs if re.search(r"\{[0-9]", prog)]
+    assert not bad, f"интервальный повтор в awk: {bad}"
 
 
 def test_router_address_is_taken_once_next_to_the_wan_interface(script):
-    """ROUTER4 считается один раз за прогон, рядом с WAN_IF, — до таблицы,
-    файла статуса и dnsmasq, которые его берут."""
-    at = script.index('ROUTER4="$(detect_router)"')
-    assert script.index('WAN_IF="$(detect_wan)"') < at < script.index('ROUTER_MASQ=""')
-    assert at < script.index("write_status() {") and at < script.index('_ep_dns="$ROUTER4"')
-    assert script.count('ROUTER4="') == 1, "адрес роутера берётся в одном месте"
+    """VIA4 и ROUTER4 считаются один раз за прогон, рядом с WAN_IF, — до
+    таблицы, файла статуса и dnsmasq, которые их берут."""
+    at = script.index('ROUTER4="$(detect_router "$VIA4")"')
+    assert script.index('WAN_IF="$(detect_wan)"') < script.index('VIA4="$(detect_via)"') < at
+    assert at < script.index('ROUTER_MASQ=""') and at < script.index("write_status() {")
+    assert at < script.index('_ep_dns="$VIA4"')
+    assert script.count('ROUTER4="') == 1 and script.count('VIA4="') == 1, "адрес берётся в одном месте"
 
 
 def test_router_address_is_in_the_status_file(script, tmp_path):

@@ -20,15 +20,16 @@ def _server_version(raw) -> str:
     return val if len(val) <= 32 and _SERVER_VERSION_RE.match(val) else SERVER_OLD
 
 
-_LAN_VIRTUAL_MAX = 16
-_LAN_VIRTUAL_SPACE = ipaddress.IPv4Network("10.0.0.0/8")
+_LAN_VIRTUAL_MAX = 64          # подсетей на слот у сервера (_LAN_SUBNETS_MAX) — двойников не больше
 
 
 def _lan_virtual(raw) -> list[str]:
     """Адреса в туннеле своей сети из `role` — данные с чужой машины, только
-    для показа: список не длиннее 16, каждая запись — сеть (без битов хоста)
-    внутри 10.0.0.0/8 с префиксом /16–/30. Что-то не так — поле целиком
+    для показа: список не длиннее 64, каждая запись — сеть (без битов хоста)
+    с префиксом /16–/30 внутри диапазона, где может лежать пространство
+    (lanspace.SPACE_RANGES: 10/8, 172.16/12). Что-то не так — поле целиком
     отбрасывается (пусто): показывать половину чужого списка незачем."""
+    from awgbot.util import lanspace
     if not isinstance(raw, list) or len(raw) > _LAN_VIRTUAL_MAX:
         return []
     out: list[str] = []
@@ -39,7 +40,7 @@ def _lan_virtual(raw) -> list[str]:
             net = ipaddress.IPv4Network(item)
         except ValueError:
             return []
-        if not 16 <= net.prefixlen <= 30 or not net.subnet_of(_LAN_VIRTUAL_SPACE):
+        if not 16 <= net.prefixlen <= 30 or not any(net.subnet_of(r) for r in lanspace.SPACE_RANGES):
             return []
         if str(net) not in out:
             out.append(str(net))

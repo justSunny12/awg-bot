@@ -38,6 +38,9 @@ _HOST_MASK = 0xFFFF             # хостовая часть /16 — она и 
 # Частные диапазоны — те же, что пускают правила AllowedIPs шлюза
 # (install/gw-wg-allow.list) и проверка документа конфигурации.
 _RFC1918 = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+# Где может лежать пространство (частная /12): 192.168/16 его не вместит. По
+# ним же агент принимает адреса в туннеле своей сети из роли канала.
+SPACE_RANGES = tuple(ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12"))
 
 Net = ipaddress.IPv4Network
 Addr = ipaddress.IPv4Address
@@ -62,7 +65,7 @@ def parse_space(raw) -> tuple[Net, str]:
         return default, f"«{text}» — не сеть IPv4 (или с хостовыми битами)"
     if net.prefixlen != SPACE_PREFIXLEN:
         return default, f"{net} — нужна /{SPACE_PREFIXLEN}: по /{SLOT_PREFIXLEN} на {MAX_SLOTS} слотов и служебная"
-    if not any(net.subnet_of(n) for n in _RFC1918):
+    if not any(net.subnet_of(n) for n in SPACE_RANGES):
         return default, f"{net} — нужна частная сеть (10/8 или 172.16/12)"
     return net, ""
 

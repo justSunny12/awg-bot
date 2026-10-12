@@ -432,6 +432,20 @@ def test_default_route_via_is_the_router_like_the_script_takes_it(monkeypatch, r
     assert gwguard.default_route_via() == want
 
 
+def test_default_route_is_one_parse_for_device_and_gateway(monkeypatch):
+    """Интерфейс и шлюз маршрута по умолчанию — одним `ip -j` (тик берёт
+    оба); маршрута нет вовсе — present False, это не «нет шлюза»."""
+    calls = []
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: calls.append(args) or (
+        [{"dst": "default", "gateway": "192.168.1.1", "dev": "br0"}] if args == ["route", "show", "default"] else []))
+    assert gwguard.default_route() == {"present": True, "dev": "br0", "via": "192.168.1.1"}
+    assert len(calls) == 1
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [{"dst": "default", "dev": "ppp0"}])
+    assert gwguard.default_route() == {"present": True, "dev": "ppp0", "via": ""}
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [])
+    assert gwguard.default_route() == {"present": False, "dev": "", "via": ""}
+
+
 def test_is_timeout_recognises_only_the_timeout_refusal():
     assert gwguard.is_timeout(f"юнит обвязки {gwguard.TIMEOUT_MARK} 90 с")
     assert not gwguard.is_timeout("systemctl не запустился: нет") and not gwguard.is_timeout("")

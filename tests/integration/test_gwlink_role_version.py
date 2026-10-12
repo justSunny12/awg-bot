@@ -136,9 +136,26 @@ async def test_new_subnets_reach_the_agent_with_the_next_role(services, link, pi
 async def test_a_broken_space_sends_no_tunnel_addresses(services, link, monkeypatch):
     """Служебное пространство неисправно — адресов в туннеле нет ни у кого:
     поле пустое, а не настоящие подсети."""
-    monkeypatch.setattr(services, "lan_off", lambda: ("пересекается с подсетью клиентов", "routing.lan_space"))
+    monkeypatch.setattr(services, "lan_off", lambda slots=None: ("пересекается с подсетью клиентов", "routing.lan_space"))
     host, port = link._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port, limit=8 * gwlink.MAX_LINE), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0"})
     role = await _next(gw, "role")
     assert role is not None and role["lan_virtual"] == [], role
+
+
+async def test_the_role_warns_once_per_error_and_still_goes(services, link, monkeypatch, caplog):
+    """Адреса в туннеле не посчитались — роль уходит без них, а предупреждение
+    в журнале одно на текст ошибки, а не каждый такт живости."""
+    import logging
+    calls = []
+
+    def boom(gw, slots=None):
+        calls.append(slots)
+        raise RuntimeError("сломалось")
+    monkeypatch.setattr(services, "lan_twins", boom)
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert link._slot_words(1)["lan_virtual"] == []
+    assert sum("адреса в туннеле слота 1" in r.getMessage() for r in caplog.records) == 1
+    assert calls and all(s is not None for s in calls), "пространство — по уже загруженным слотам"
