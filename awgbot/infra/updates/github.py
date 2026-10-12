@@ -1,6 +1,6 @@
 """github.py — часть пакета updates (см. __init__): запросы к GitHub (список
-релизов, тело релиза), скачивание поставки со сверкой sha256 и запуск апдейтера
-вне своего cgroup."""
+релизов с метаданными, тело релиза), скачивание поставки со сверкой sha256 и
+запуск апдейтера вне своего cgroup."""
 from __future__ import annotations
 
 import hashlib
@@ -13,6 +13,7 @@ from typing import Optional
 
 from awgbot.core import config
 
+from . import meta as _meta
 from .model import Release, UpdateError, parse_version
 
 _AWG_BOT_BIN = "/usr/local/bin/awg-bot"
@@ -48,15 +49,24 @@ def _digest_hex(asset: dict) -> Optional[str]:
     return d[7:].strip().lower() if d.startswith("sha256:") else None
 
 
-def list_releases() -> list[Release]:
+def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) -> list[Release]:
     """Все релизы репо, отсортированные по возрастанию версии. Нерелизные теги
-    (не semver) и черновики отбрасываются."""
+    (не semver) и черновики отбрасываются.
+
+    Метаданные (ассет config.UPDATES_META_ASSET_NAME) качаются только для
+    релизов новее установленного и только мимо кэша: meta_cache —
+    {тег: {"digest", "meta"}}, его даёт и хранит вызывающий (здесь БД не
+    знают); тот же digest — метаданные из кэша, другой — перечитать.
+    Выпущенный тег не меняется, поэтому обычно за проверку уходит ноль или
+    один лишний запрос. Битый ассет (нет digest, не совпал, не JSON, не та
+    схема или версия) — Release.meta_bad с причиной; сеть — UpdateError."""
     raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases",
                          "application/vnd.github+json")
     try:
         data = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as e:
         raise UpdateError(f"некорректный ответ GitHub: {e}")
+    installed = parse_version(config.INSTALLED_VERSION)
     out: list[Release] = []
     for r in data:
         if r.get("draft"):
@@ -65,17 +75,48 @@ def list_releases() -> list[Release]:
         if ver is None:
             continue
         asset_url = sha256 = None
+        meta_asset = None
         for a in r.get("assets", []):
             if a.get("name") == config.UPDATES_ASSET_NAME:
                 asset_url = a.get("url")
                 sha256 = _digest_hex(a)
-                break
+            elif a.get("name") == config.UPDATES_META_ASSET_NAME:
+                meta_asset = a
+        meta = bad = None
+        if fetch_meta and meta_asset is not None and installed is not None and ver > installed:
+            meta, bad = _read_meta(r["tag_name"], meta_asset, meta_cache)
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),
                            asset_url=asset_url, sha256=sha256,
-                           title=_strip_tag(r.get("name") or "", r["tag_name"])))
+                           title=_strip_tag(r.get("name") or "", r["tag_name"]),
+                           meta=meta, meta_bad=bad or ""))
     out.sort(key=lambda x: x.version)
     return out
+
+
+def _read_meta(tag: str, asset: dict, cache: Optional[dict]):
+    """(метаданные, None) или (None, причина) — ассет метаданных релиза."""
+    digest = _digest_hex(asset)
+    if not digest:
+        return None, "у метаданных релиза нет digest"
+    hit = (cache or {}).get(tag)
+    if isinstance(hit, dict) and hit.get("digest") == digest and isinstance(hit.get("meta"), dict):
+        return hit["meta"], None
+    url = asset.get("url")
+    if not url:
+        return None, "у метаданных релиза нет адреса"
+    if int(asset.get("size") or 0) > _meta.META_MAX:
+        return None, "метаданные релиза больше 16 КБ"
+    blob = _up()._request(url, "application/octet-stream")
+    if hashlib.sha256(blob).hexdigest() != digest:
+        return None, "sha256 метаданных релиза не совпал"
+    try:
+        meta = _meta.parse(blob, tag)
+    except _meta.MetaError as e:
+        return None, f"метаданные релиза: {e}"
+    if cache is not None:
+        cache[tag] = {"digest": digest, "meta": meta}
+    return meta, None
 
 
 def _strip_tag(name: str, tag: str) -> str:
@@ -136,7 +177,7 @@ def apply(blob: bytes) -> None:
 def release_body(tag: str) -> str:
     """Тело релиза по тегу (для итога после рестарта). Сеть/отсутствие → ''."""
     try:
-        for r in _up().list_releases():
+        for r in _up().list_releases(fetch_meta=False):
             if r.tag == tag:
                 return r.body
     except UpdateError:

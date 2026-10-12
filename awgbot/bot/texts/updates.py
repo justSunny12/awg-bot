@@ -67,7 +67,7 @@ def update_wait_line(w: dict, bot_username: str = "") -> str:
         if not server:
             return f"⏳ {tag} ждёт сервер AWG {need}: версия сервера неизвестна — он не на связи"
         now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
-        return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови основного бота"
+        return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бота сервера AWG"
     peers = w.get("peers") or []
     todo = ("обнови их агентов в чатах ботов шлюзов" if len(peers) > 1
             else "обнови агента в чате бота шлюза")
@@ -86,7 +86,7 @@ def update_wait_reason(w: dict) -> str:
 def _seen_date(seen: str) -> str:
     from awgbot.util import timeutil
     try:
-        return timeutil.parse_iso(seen).astimezone(timeutil.TZ).strftime("%d.%m.%y") if seen else ""
+        return timeutil.fmt_date_ui(timeutil.parse_iso(seen)) if seen else ""
     except ValueError:
         return ""
 
@@ -105,12 +105,14 @@ def update_silent_lines(s: dict | None, bot_username: str = "") -> list[str]:
         if p.version:
             what = f"({_e(_ver(p.version))}): {tag} эту версию агента не обслуживает"
         else:
-            what = f"(версия агента неизвестна): {tag} нужен агент не ниже {need}"
+            what = f"(версия агента неизвестна): для {tag} нужен агент не ниже {need}"
         out.append(f"⚠️ {name} не на связи{since} {what} — когда шлюз выйдет на связь, обнови его агента")
     return out
 
 
 UPDATE_NOTHING = "Обновлять не на что — версия актуальна"
+UPDATE_TARGET_CHANGED_TOAST = "Цель обновления изменилась — открой «⬆️ Обновления» заново"
+UPDATE_CHECK_FAILED_TOAST = "Не удалось проверить релизы на GitHub — попробуй позже"
 UPDATE_STARTING = "Запускаю обновление…"
 UPDATES_MUTED_TOAST = "Уведомления об обновлениях выключены"
 
@@ -137,4 +139,25 @@ __all__ = [
     "update_applied", "update_not_applied", "changelog_details", "update_available",
     "UPDATE_NOTHING", "UPDATE_STARTING", "UPDATES_MUTED_TOAST", "update_blocked_toast",
     "updates_notify_toast", "update_wait", "update_failed",
-    "update_gw_names", "update_wait_line", "update_wait_reason", "update_silent_lines"]
+    "update_gw_names", "update_wait_line", "update_wait_reason", "update_silent_lines",
+    "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST", "update_hold_line", "update_skipped_lines"]
+
+
+def update_hold_line(h: dict) -> str:
+    """Окно ожидания после старта (О9): раздел и всплывашка кнопки. Основной
+    бот — каких шлюзов ждёт, агент — сервер AWG; «до» — предел окна."""
+    from awgbot.util import timeutil
+    until = h["until"].astimezone(timeutil.TZ).strftime("%H:%M")
+    if h.get("role") == "gateway":
+        return f"⏳ Жду связи с сервером AWG после перезапуска — до {until}"
+    names = list(h.get("waiting") or [])
+    who = ", ".join(_e(n) for n in names[:_NAMES_SHOWN])
+    if len(names) > _NAMES_SHOWN:
+        who += f" и ещё {len(names) - _NAMES_SHOWN}"
+    return f"⏳ Проверяю шлюзы после перезапуска: жду {who} — до {until}"
+
+
+def update_skipped_lines(skipped) -> list[str]:
+    """Релизы, которые не рассматриваются: метаданные не прочитаны (О8)."""
+    return [f"⚠️ {_e(_ver(tag))} пропущен: метаданные релиза не прочитаны — "
+            "проверю ещё раз при следующей проверке" for tag, _why in list(skipped or [])[:_NAMES_SHOWN]]

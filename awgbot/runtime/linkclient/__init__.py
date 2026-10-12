@@ -140,6 +140,28 @@ def set_on_update(fn) -> None:
     _on_update = fn
 
 
+async def update_regate(services, *, force: bool = True) -> None:
+    """Пересчёт цели обновления без сети (domain/selfupdate/cache.py) и
+    уведомление крючком main, если появилась цель новее объявленной.
+    Исключение — в журнал здесь же: ни сессия канала, ни приём сообщения от
+    него не рвутся. force=False — только если закрылось окно ожидания после
+    старта."""
+    if not hasattr(services, "update_regate"):           # роль без самообновления (заглушки)
+        return
+    try:
+        if not force and not await asyncio.to_thread(services.update_hold_due):
+            return
+        nxt = await asyncio.to_thread(services.update_regate)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("канал линка: пересчёт цели обновления: %s", e)
+        return
+    if nxt is not None and _on_update is not None:
+        try:
+            await _on_update(nxt)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+
+
 def set_edit(fn) -> None:
     """Крючок правки (async fn(chat_id, message_id, text) -> bool): итог смены
     ключей и отзыв правят само сообщение приглашения. Ставит main."""
@@ -208,7 +230,12 @@ async def on_tick(services) -> None:
     шлёт FIN, а агент в простое сам ничего не отправляет и RST не получит:
     сессия висела бы «открытой» днями, подавляя своё скачивание фидов. Линк
     лёг и поднялся — значит, прежней сессии на той стороне нет наверняка;
-    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт."""
+    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт.
+
+    Здесь же — конец окна ожидания после старта: первого `role` не было, а
+    предел вышел — цель обновления считается по последней известной версии
+    сервера (без сети)."""
+    await update_regate(services, force=False)
     if await _retire_without_conf():
         return
     client = ensure(services)
@@ -331,7 +358,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "_on_update", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "set_notify", "set_on_update", "_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 

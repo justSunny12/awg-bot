@@ -115,6 +115,28 @@ def set_on_update(fn) -> None:
     _on_update = fn
 
 
+async def update_regate(services, *, force: bool = True) -> None:
+    """Пересчёт цели обновления без сети (domain/selfupdate/cache.py) и
+    уведомление крючком main, если появилась цель новее объявленной.
+    Исключение — в журнал здесь же: ни сессия канала, ни приём сообщения от
+    него не рвутся. force=False — только если закрылось окно ожидания после
+    старта."""
+    if not hasattr(services, "update_regate"):           # роль без самообновления (заглушки)
+        return
+    try:
+        if not force and not await asyncio.to_thread(services.update_hold_due):
+            return
+        nxt = await asyncio.to_thread(services.update_regate)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("канал линка: пересчёт цели обновления: %s", e)
+        return
+    if nxt is not None and _on_update is not None:
+        try:
+            await _on_update(nxt)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+
+
 def set_on_rekeyed(fn) -> None:
     """Ключи линка слота сменены (async fn(slot_id)): прежний файл конфигурации
     слота в чате админа больше не годится — его убирает main."""
@@ -164,7 +186,9 @@ async def ensure(services) -> LinkServer | None:
 async def liveness_tick(services) -> None:
     """Такт живости (30 с): слушатели по слотам, мёртвые сессии долой, роль —
     и только каждый четвёртый такт полная сверка доставки в отдельной задаче:
-    ~20 запросов к БД на сессию каждые 30 с ради редкого расхождения — лишнее."""
+    ~20 запросов к БД на сессию каждые 30 с ради редкого расхождения — лишнее.
+    На тех же тактах — время «последний раз на связи» живых сессий; раз в 20
+    тактов и по концу окна после старта — пересчёт цели обновления без сети."""
     global _server
     if config.ROLE == "gateway":
         return
@@ -179,6 +203,16 @@ async def liveness_tick(services) -> None:
     _server.__dict__["_ticks"] = n
     if n % 4 == 0:
         _server.deliver_soon()
+        # «последний раз на связи» — правда и для живой сессии (~2 минуты)
+        live = [sid for sid, s in _server._sessions.items() if s.hello]
+        if live and hasattr(services, "gwlink_seen_touch"):
+            try:
+                await asyncio.to_thread(services.gwlink_seen_touch, live)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: время связи не записано: %s", e)
+    # цель обновления: страховочно раз в ~10 минут (событие могло потеряться)
+    # и сразу, как закрылось окно ожидания после старта
+    await update_regate(services, force=n % 20 == 0)
 
 
 async def monitor_tick(services) -> None:
@@ -199,5 +233,5 @@ async def shutdown() -> None:
         _server = None
 
 
-__all__ = ["set_on_update", "_on_update", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+__all__ = ["set_on_update", "_on_update", "update_regate", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

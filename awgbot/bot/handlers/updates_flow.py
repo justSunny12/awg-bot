@@ -24,19 +24,40 @@ class CachedTarget:
         self.tag, self.body = tag, ""
 
 
-async def install(cb: CallbackQuery, services, *, return_panel) -> None:
+async def install(cb: CallbackQuery, services, *, return_panel, tag: str = "", rerender=None) -> None:
     """«Обновить» (из уведомления или раздела): стереть цепочку до этого шага
     ВКЛЮЧИТЕЛЬНО (контент + само сообщение с кнопкой), оставить единственное
     «дождись завершения» без кнопок, запомнить его для удаления после рестарта
     и запустить апдейтер вне cgroup. Итог («обновлено…» + changelog + «В меню»)
     пришлёт новый процесс (report_update_result на старте). Отказ ДО апдейтера
-    (сеть/sha256/запись) — прибраться и вернуть меню: под кнопкой его уже нет."""
+    (сеть/sha256/запись) — прибраться и вернуть меню: под кнопкой его уже нет.
+
+    tag — цель, показанная на кнопке: ставится только она. Цель пересчитана
+    другой (условие на другую роль закрылось, вышел новый релиз), кнопка
+    прежнего образца без тега, окно ожидания после старта, сеть не ответила —
+    всплывашка с причиной, установки нет. rerender — перерисовать раздел из
+    кэша, если кнопка была в живом меню: показанное там уже неправда."""
+    hold = await call(services.update_hold) if hasattr(services, "update_hold") else None
+    if hold is not None:
+        await cb.answer(ui.toast(texts.update_hold_line(hold), html=True), show_alert=True)
+        return
     nxt = await call(services.update_next)
-    if nxt is None:
-        # условие на другую сторону закрылось между проверкой и нажатием — с причиной
+    if getattr(services, "update_scan_failed", False):
+        await cb.answer(texts.UPDATE_CHECK_FAILED_TOAST, show_alert=True)
+        return
+    if nxt is not None and tag and nxt.tag == tag:
+        pass                                          # показанная цель — её и ставим
+    else:
         waiting = await call(services.update_waiting) if hasattr(services, "update_waiting") else None
-        await cb.answer(ui.toast(texts.update_blocked_toast(texts.update_wait_reason(waiting)))
-                        if waiting else texts.UPDATE_NOTHING, show_alert=True)
+        if nxt is None and not waiting:
+            await cb.answer(texts.UPDATE_NOTHING, show_alert=True)
+        elif nxt is None:
+            await cb.answer(ui.toast(texts.update_blocked_toast(texts.update_wait_reason(waiting))),
+                            show_alert=True)
+        else:
+            await cb.answer(texts.UPDATE_TARGET_CHANGED_TOAST, show_alert=True)
+        if rerender is not None and await _is_live_menu(cb, services):
+            await rerender()
         return
     blocked = await call(services.update_block_reason, nxt)
     if blocked:
@@ -62,6 +83,15 @@ async def install(cb: CallbackQuery, services, *, return_panel) -> None:
         await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
                                   reply_markup=kb.hide_only())
         await return_panel(cb.message, services)
+
+
+async def _is_live_menu(cb: CallbackQuery, services) -> bool:
+    """Кнопка нажата в живом меню чата (а не в уведомлении или старом окне)."""
+    try:
+        live = await call(services.db.get_nav_message_id, cb.message.chat.id)
+    except Exception:                                 # noqa: BLE001
+        return False
+    return live is not None and live == cb.message.message_id
 
 
 async def menu(cb: CallbackQuery, services, state: FSMContext, *, return_panel) -> None:

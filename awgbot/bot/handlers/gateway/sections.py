@@ -103,9 +103,10 @@ async def gw_updates_toggle(cb: CallbackQuery, services):
     await pkg._shared(cb, GwCB(action="upd_toggle"), services)
 
 
-async def gw_update_install(cb: CallbackQuery, services):
+async def gw_update_install(cb: CallbackQuery, services, callback_data=None):
+    from awgbot.bot import roles
     from awgbot.bot.sections import updates as _upd
-    await _upd.install(cb, services)
+    await _upd.install(cb, services, callback_data, roles.GATEWAY)
 
 
 async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):

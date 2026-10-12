@@ -102,7 +102,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}") + "</b> — "
                     + f'<a href="{release_url(tag)}">список изменений</a>')
     elif update_wait:
-        tag = _e(update_wait["tag"] if str(update_wait["tag"]).startswith("v") else f"v{update_wait['tag']}")
+        tag = update_wait["tag"] if str(update_wait["tag"]).startswith("v") else f"v{update_wait['tag']}"
         tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ {tag} ждёт шлюзы") + "</b>: "
                     + update_gw_names(update_wait.get("peers") or [], bot_username))
     mig = migration_line(migration, bot_username)

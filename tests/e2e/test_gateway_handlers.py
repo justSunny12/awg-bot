@@ -10,7 +10,7 @@ import pytest
 
 import awgbot.core.config as cfg
 from awgbot.runtime import linkclient
-from awgbot.bot.callbacks import GwCB, HideCB
+from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
@@ -156,7 +156,7 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_update_install(cb, svc)
+    await gh.gw_update_install(cb, svc, UpdateCB(action="install", tag="v9.9.9"))
     assert applied == ["v9.9.9"]
     assert svc.db.get_state("update_wait"), "«дождись» не запомнено для нового процесса"
 
@@ -182,7 +182,7 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     monkeypatch.setattr(fake_bot, "send_message", send_message)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_update_install(cb, svc)
+    await gh.gw_update_install(cb, svc, UpdateCB(action="install", tag="v9.9.9"))
     text, markup = [x for x in sent if "Не удалось обновить" in x[0]][0]
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert labels == ["Скрыть"]

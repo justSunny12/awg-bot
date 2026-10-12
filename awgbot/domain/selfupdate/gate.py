@@ -10,6 +10,9 @@
 UPDATE_PEER_FRESH_DAYS: молчащий дольше шлюз не держит сервер — о нём
 предупреждение, обновиться можно. У агента другая сторона одна, и она всегда
 «на связи» в этом смысле: без известной версии сервера релиз с условием ждёт.
+
+Здесь же — пропущенные релизы (метаданные не прочитаны, update_skipped) для
+строки раздела.
 """
 from __future__ import annotations
 
@@ -64,17 +67,12 @@ class SelfUpdateGateMixin:
         hard = [p for p in peers if p.fresh]
         return lambda need: all(p.meets(need) for p in hard)
 
-    def _update_note_waiting(self, releases: list, peers=...) -> None:
+    def _update_note_waiting(self, installed: tuple, releases: list, role: str,
+                             ceiling, gate) -> None:
         """Записать новейший релиз, который ждёт другую сторону, — по списку,
-        без сети. Пусто — ничего не ждёт."""
+        без сети (зовётся под замком выбора). Пусто — ничего не ждёт."""
         import json
-        installed = updates.parse_version(config.INSTALLED_VERSION)
-        gate = self._update_gate(peers)
-        if installed is None or gate is None:
-            self.db.set_state(self._WAITING_KEY, "")
-            return
-        role, ceiling = self._update_role(), self._generation_ceiling()
-        rel = updates.waiting_target(installed, releases, role, ceiling, gate)
+        rel = updates.waiting_target(installed, releases, role, ceiling, gate) if gate else None
         need = updates.chain_need(installed, releases, rel, role, ceiling) if rel else None
         self.db.set_state(self._WAITING_KEY, json.dumps(
             {"tag": rel.tag, "need": _need_str(need)}) if rel is not None and need else "")
@@ -85,6 +83,8 @@ class SelfUpdateGateMixin:
         ничего не ждёт. Без сети: запись последней проверки плюс версии
         другой стороны сейчас; кто успел догнать — уже не держит, а не
         держит никто — и ожидания нет (запись устарела до пересчёта)."""
+        if self.update_hold() is not None:
+            return None                                   # окно после старта: решение отложено
         raw = self.db.get_state_json(self._WAITING_KEY, {})
         if not isinstance(raw, dict) or not raw.get("tag"):
             return None
@@ -121,3 +121,13 @@ class SelfUpdateGateMixin:
         if not silent:
             return None
         return {"tag": rel.tag, "need": _need_str(need), "peers": silent}
+
+    def update_skipped(self) -> list:
+        """[(тег, причина)] релизов новее установленного, которые не
+        рассматриваются: метаданные не прочитаны (О8). По сохранённому списку
+        последней проверки, без сети."""
+        releases = self._update_cached_releases()
+        installed = updates.parse_version(config.INSTALLED_VERSION)
+        if releases is None or installed is None:
+            return []
+        return [(r.tag, r.skip_reason()) for r in updates.skipped(installed, releases)]

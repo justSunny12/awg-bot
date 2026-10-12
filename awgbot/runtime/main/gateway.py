@@ -39,6 +39,7 @@ async def run_gateway() -> None:
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
+    services.update_hold_start()            # цель обновления — после первого role сервера (≤ 15 мин)
     with contextlib.suppress(OSError):
         os.remove(marker)
 

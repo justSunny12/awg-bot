@@ -30,13 +30,14 @@ ACTIONS: dict = {}
 
 def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
     """target_tag — найденная цель (кнопка «⬆️ Обновить до vX», если не
-    заблокирована); «Уведомлять» — мьют в БД; «Проверка» — цикл."""
+    заблокирована; тег едет в кнопке — ставится только он); «Уведомлять» —
+    мьют в БД; «Проверка» — цикл."""
     sched = str(settings.get("updates.poll_schedule", "day")).lower()
     if sched not in UPDATE_SCHEDULE_LABELS:
         sched = "month"
     tag = target_tag if str(target_tag).startswith("v") else f"v{target_tag}"
     return ui.rows(
-        (f"⬆️ Обновить до {tag}", UpdateCB(action="install")) if target_tag and not blocked else None,
+        (f"⬆️ Обновить до {tag}", UpdateCB(action="install", tag=str(target_tag))) if target_tag and not blocked else None,
         [(f"{_chk(not muted)} Уведомлять", br.cb.pack(ID, "toggle", "notify")),
          (f"📅 Проверка: {UPDATE_SCHEDULE_LABELS[sched]}", br.cb.pack(ID, "cycle", "updates.poll_schedule"))],
         back_button(br))
@@ -54,13 +55,16 @@ async def screen(br, services, key: str = ""):
     else:
         found = await call(services.update_scan)
         blocked = await call(services.update_block_reason, found) if found is not None else ""
-    waiting = silent = None
+    waiting = silent = hold = None
+    skipped = []
     if hasattr(services, "update_waiting"):               # сверка с другой ролью — без сети
+        hold = await call(services.update_hold)
         waiting = await call(services.update_waiting)
         silent = await call(services.update_silent_peers, found) if found is not None else None
+        skipped = await call(services.update_skipped)
     text = texts.settings_upd_text(None, found, blocked,
                                    scan_failed=bool(getattr(services, "update_scan_failed", False)),
-                                   waiting=waiting, silent=silent,
+                                   waiting=waiting, silent=silent, skipped=skipped, hold=hold,
                                    bot_username=getattr(services, "bot_username", "") or "")
     return text, keyboard(br, await call(services.updates_muted),
                           target_tag=found.tag if found is not None else "", blocked=blocked)
@@ -93,8 +97,16 @@ async def _main_anew(message, services, keep_id=None) -> None:
         await send_menu(message, services, *parts, keep_id=keep_id)
 
 
-async def install(cb: CallbackQuery, services) -> None:
-    await updates_flow.install(cb, services, return_panel=_main_anew)
+async def install(cb: CallbackQuery, services, callback_data: UpdateCB | None = None, br=None) -> None:
+    """«⬆️ Обновить до vX» — ставится только тег кнопки; отказ — всплывашка,
+    а раздел, если кнопка была в нём, перерисовывается из кэша."""
+    from . import render
+
+    async def _rerender():
+        await render(cb, br, services, ID, "cached")
+    await updates_flow.install(cb, services, return_panel=_main_anew,
+                               tag=callback_data.tag if callback_data is not None else "",
+                               rerender=_rerender if br is not None else None)
 
 
 async def menu(cb: CallbackQuery, services, state: FSMContext) -> None:
@@ -107,9 +119,11 @@ async def mute(cb: CallbackQuery, services) -> None:
     await updates_flow.mute(cb, services)
 
 
-def register_update_buttons(router) -> None:
+def register_update_buttons(router, br=None) -> None:
     """UpdateCB: установка, «В меню» на итоге, «Не уведомлять» — на роутере
-    общих разделов, у обеих ролей."""
-    router.callback_query(UpdateCB.filter(F.action == "install"))(install)
+    общих разделов, у обеих ролей; br — словарь роли (перерисовка раздела)."""
+    async def _install(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
+        await install(cb, services, callback_data, br)
+    router.callback_query(UpdateCB.filter(F.action == "install"))(_install)
     router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
     router.callback_query(UpdateCB.filter(F.action == "mute"))(mute)

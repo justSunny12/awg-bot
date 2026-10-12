@@ -39,6 +39,8 @@ def _tar_filter(info: tarfile.TarInfo):
     parts = info.name.split("/")
     if "__pycache__" in parts or info.name.endswith(".pyc"):
         return None
+    if info.name.endswith("tools/release_meta.py"):      # инструмент выпуска — как в build_release.sh
+        return None
     # владелец — root: tar от root распаковывает с владельцем из архива, и код
     # в /opt получал бы uid машины, где собрали (там он был бы чужому доступен)
     info.uid = info.gid = 0

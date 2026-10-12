@@ -1,6 +1,6 @@
 """pick.py — часть пакета updates (см. __init__): выбор цели обновления роли
 по списку релизов — минимумы, потолок поколения, условие на версию другой
-роли, релизная ли сборка."""
+роли, релизная ли сборка, пропущенные релизы."""
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -16,26 +16,34 @@ from .github import _up
 Peer = Callable[[tuple], bool]
 
 
+# decide(installed, releases, role, max_generation) → цель: выбор целиком у
+# вызывающего — версии другой стороны он читает ПОСЛЕ ответа GitHub и решает
+# под своим замком вместе с записью результата (domain/selfupdate/cache.py).
+Decide = Callable[[tuple, list, str, Optional[int]], Optional[Release]]
+
+
 def next_release(role: Optional[str] = None,
                  max_generation: Optional[int] = None,
                  peer: Optional[Peer] = None,
-                 keep: Optional[Callable[[list], None]] = None) -> Optional[Release]:
+                 meta_cache: Optional[dict] = None,
+                 decide: Optional[Decide] = None) -> Optional[Release]:
     """Цель обновления для ЭТОЙ РОЛИ, или None.
 
-    Цель — последний релиз новее установленного, адресованный роли (хэштег
-    роли); чужие не в счёт: агент шлюза на 2.4.5 при релизах 2.4.6 (только
-    main) и 2.4.7 (gw) идёт на 2.4.7. Минимум роли (`#requires_<роль>_X`) у
-    любого из пропускаемых релизов, которого установленная версия не достигла,
-    опускает цель до ближайшего релиза роли не ниже него; у той ступени может
-    быть свой минимум — цепочка.
+    Цель — последний релиз новее установленного, адресованный роли; чужие не
+    в счёт: агент шлюза на 2.4.5 при релизах 2.4.6 (только main) и 2.4.7 (gw)
+    идёт на 2.4.7. Минимум роли у любого из пропускаемых релизов, которого
+    установленная версия не достигла, опускает цель до ближайшего релиза роли
+    не ниже него; у той ступени может быть свой минимум — цепочка. Релизы с
+    непрочитанными метаданными не рассматриваются вовсе (Release.usable).
 
     max_generation — потолок поколения AmneziaWG (идёт переезд: поставка дальше
     его цели недопустима, профили на трёх интерфейсах мигрировать нечем); релизы
     выше потолка не рассматриваются вовсе.
 
     peer — условие на версию другой роли (см. pick_target); без него условий
-    нет. keep(releases) — получить скачанный список (релизной сборке — весь,
-    нерелизной — пустой): по нему цель пересчитывают без нового похода в сеть.
+    нет. meta_cache — кэш метаданных вызывающего (list_releases). decide —
+    выбор у вызывающего (вместо pick_target): получает список релизной сборки,
+    у нерелизной — пустой.
 
     None означает «обновлять не на что / не от чего»:
       • установленная версия НЕ найдена среди тегов релизов → молчим навсегда
@@ -46,14 +54,13 @@ def next_release(role: Optional[str] = None,
     if installed is None:
         return None
     role = (role if role is not None else config.ROLE) or ""
-    releases = _up().list_releases()
+    releases = (_up().list_releases(meta_cache=meta_cache) if meta_cache is not None
+                else _up().list_releases())
     if not _is_release_build(installed, releases):
-        if keep is not None:
-            keep([])
-        return None                      # нерелизная сборка → не трогаем
-    if keep is not None:
-        keep(releases)
-    return pick_target(installed, releases, role, max_generation, peer)
+        releases = []                    # нерелизная сборка → не трогаем
+    if decide is not None:
+        return decide(installed, releases, role, max_generation)
+    return pick_target(installed, releases, role, max_generation, peer) if releases else None
 
 
 def _is_release_build(installed: tuple, releases: list) -> bool:
@@ -145,3 +152,10 @@ def chain_need(installed: tuple, releases: list, target: Release, role: str,
     """Какая версия другой стороны нужна, чтобы дойти до target: наибольшее
     условие по цепочке от установленного. None — условий нет."""
     return _chain_need(installed, _newer(installed, releases, role, max_generation), target, role)
+
+
+def skipped(installed: tuple, releases: list) -> list:
+    """Релизы новее установленного, которые не рассматриваются: метаданные не
+    прочитаны (битый ассет или его нет с META_ONLY_FROM). Чьи они — не знаем:
+    адресаты как раз в метаданных."""
+    return [r for r in releases if r.version > installed and not r.usable()]

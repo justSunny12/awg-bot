@@ -284,6 +284,32 @@ def _upd_silent(services):
     return who
 
 
+def _upd_skipped(services):
+    """Проверка нашла цель, а v1.4.0 пропущен: метаданные релиза не прочитаны."""
+    who = _upd_found(services)
+    services.update_skipped = lambda: [("v1.4.0", "sha256 метаданных релиза не совпал")]
+    return who
+
+
+def _upd_hold(services):
+    """Окно ожидания после старта: ждём Pi5 и Pi4 — до NOW + 15 минут."""
+    who = _people(services)
+    hold = {"until": NOW + _dt.timedelta(minutes=15), "waiting": ["Pi5", "Pi4"], "role": "client"}
+    services.update_hold = lambda: hold
+    services.update_next = lambda: None
+    return who
+
+
+def _upd_offline(services):
+    """Сеть не ответила на нажатии «⬆️ Обновить»."""
+    who = _upd_found(services)
+
+    def nxt():
+        services.update_scan_failed = True
+    services.update_next = nxt
+    return who
+
+
 def _bc_ready(services):
     """Для рассылки: кулдаун прошлых отправок того же процесса не мешает."""
     from awgbot.bot.handlers.admin import broadcast as bc

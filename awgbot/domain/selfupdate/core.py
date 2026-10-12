@@ -81,14 +81,19 @@ class SelfUpdateCoreMixin:
 
     def update_next(self):
         """Цель обновления (updates.Release) или None: последний релиз для роли
-        с учётом обязательных ступеней, потолка поколения при идущем переезде и
-        условия на версию другой роли (gate). Скачанный список релизов
-        сохраняется — по нему цель пересчитывают без сети (cache). Сетевые
-        ошибки гасим в None — фоновая задача/кнопка от них не падают."""
+        с учётом обязательных ступеней, потолка поколения при идущем переезде,
+        метаданных релизов и условия на версию другой роли. У роли с другой
+        стороной (update_peers) выбор и запись результата — под замком cache.py,
+        версии другой стороны — после ответа GitHub; список релизов и кэш
+        метаданных сохраняются для пересчёта без сети. В окно ожидания после
+        старта (hold.py) цель не считается — None. Сетевые ошибки гасим в None
+        — фоновая задача/кнопка от них не падают."""
+        tl = self._update_tl()
+        tl.decided = tl.held = False
         kw = {"max_generation": self._generation_ceiling()}
-        gate = self._update_gate()
-        if gate is not None:
-            kw.update(peer=gate, keep=self._update_keep)
+        if self._update_gated():
+            tl.meta_cache = self._update_meta_cache()
+            kw.update(meta_cache=tl.meta_cache, decide=self._update_decide)
         try:
             rel = updates.next_release(**kw)
         except updates.UpdateError:
@@ -104,30 +109,41 @@ class SelfUpdateCoreMixin:
         независимо от того, включены ли уведомления, — шапка панели читает
         ключ без сетевого запроса. Возвращает Release или None. Сетевой сбой
         прежний тег не стирает: «актуальна» и «не проверилось» — разное;
-        признак — update_scan_failed."""
+        признак — update_scan_failed. У роли с другой стороной тег записан
+        уже при выборе, под замком; в окно ожидания — не трогается."""
         self.update_scan_failed = False
+        tl = self._update_tl()
+        tl.decided = False
         nxt = self.update_next()
         if self.update_scan_failed:                       # сеть: прежний тег не трогаем
             return None
-        self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
+        if not getattr(tl, "decided", False):
+            self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
         return nxt
 
     update_scan_failed = False
 
     def update_available_tag(self) -> str:
         """Тег последней найденной версии (для строки «⬆️ Доступна vX»); пусто —
-        обновляться не на что или ещё не проверяли."""
+        обновляться не на что, ещё не проверяли или идёт окно ожидания после
+        старта (строку заменит результат пересчёта)."""
+        if self.update_hold() is not None:
+            return ""
         return self.db.get_state(self._AVAILABLE_KEY) or ""
 
     def update_to_notify(self, scanned=...):
         """Для планировщика/старта: вернуть Release, о котором НАДО уведомить, и
-        пометить его как уведомлённый (ровно один раз на версию). None, если
-        уведомления заглушены, расписание «никогда», обновлять не на что, или про
-        эту версию уже уведомляли. Проверка «никогда» здесь, а не только в UI —
-        инвариант держится и при ручной правке conf/updates.yaml. Помечаем ДО
-        отправки — «не более одного раза» важнее, чем «гарантированно доставить»
-        (миссы закрывает ручная кнопка). scanned — итог уже сделанного update_scan,
-        чтобы за такт не ходить к списку релизов дважды."""
+        пометить его как уведомлённый. Уведомляем только о цели НОВЕЕ уже
+        объявленной (сравнение версий): цель, опустившаяся по условию и
+        вернувшаяся, второй раз не объявляется. None, если уведомления
+        заглушены, расписание «никогда», обновлять не на что, идёт окно
+        ожидания после старта, или эту версию (или новее) уже объявляли.
+        Проверка «никогда» здесь, а не только в UI — инвариант держится и при
+        ручной правке conf/updates.yaml. Помечаем ДО отправки — «не более
+        одного раза» важнее, чем «гарантированно доставить» (миссы закрывает
+        ручная кнопка). scanned — итог уже сделанного update_scan, чтобы за
+        такт не ходить к списку релизов дважды. Проверка и отметка — под
+        замком выбора: два пересчёта подряд уведомят один раз."""
         from awgbot.core import settings
         if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
             return None
@@ -136,16 +152,21 @@ class SelfUpdateCoreMixin:
         nxt = self.update_scan() if scanned is ... else scanned   # планировщик уже сходил
         if nxt is None:
             return None
-        if self.db.get_state(self._NOTIFIED_KEY) == nxt.tag:
-            return None
-        if self.update_block_reason(nxt):
-            # Поставка ждёт конца переезда. Молчим и НЕ помечаем уведомлённой:
-            # иначе единственное уведомление о ней сгорело бы на кнопке, которая
-            # сейчас ведёт в отказ, и после финала переезда о нём никто не
-            # напомнил бы. Экран «Обновления» причину показывает.
-            return None
-        self.db.set_state(self._NOTIFIED_KEY, nxt.tag)
-        return nxt
+        with self._update_lock():
+            if self.update_hold() is not None:
+                return None
+            done = updates.parse_version(self.db.get_state(self._NOTIFIED_KEY) or "")
+            want = updates.parse_version(str(nxt.tag))
+            if done is not None and (want is None or want <= done):
+                return None
+            if self.update_block_reason(nxt):
+                # Поставка ждёт конца переезда. Молчим и НЕ помечаем уведомлённой:
+                # иначе единственное уведомление о ней сгорело бы на кнопке, которая
+                # сейчас ведёт в отказ, и после финала переезда о нём никто не
+                # напомнил бы. Экран «Обновления» причину показывает.
+                return None
+            self.db.set_state(self._NOTIFIED_KEY, nxt.tag)
+            return nxt
 
     def update_block_reason(self, release=None) -> str:
         """Почему обновляться нельзя прямо сейчас, или пустая строка.
@@ -162,9 +183,11 @@ class SelfUpdateCoreMixin:
         if release is None:
             if self.update_next() is not None:
                 return ""
-            gate = self._update_gate()
+            kw = {}
+            if self._update_gated():                      # кэш метаданных — тот же, сеть — ноль лишних
+                kw = {"peer": self._update_gate(), "meta_cache": self._update_meta_cache()}
             try:                                          # без потолка
-                release = updates.next_release(**({"peer": gate} if gate is not None else {}))
+                release = updates.next_release(**kw)
             except updates.UpdateError:
                 return ""
         if release is None:

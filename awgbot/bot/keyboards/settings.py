@@ -144,11 +144,12 @@ def migration_confirm(key: str) -> InlineKeyboardMarkup:
     return confirm(SetCB(sec="svc", act="open"), _MIG_CONFIRM_LABEL[key], SetCB(sec="mig", act="do", key=f"{key}!"))
 
 
-def update_notify() -> InlineKeyboardMarkup:
+def update_notify(tag: str = "") -> InlineKeyboardMarkup:
     """Кнопки уведомления о новой версии: Обновить / Скрыть / Не уведомлять.
-    «Скрыть» — универсальная HideCB (удаляет сообщение); «один раз на версию»
-    держит notified_tag в БД, не кнопка."""
-    return ui.rows([("⬆️ Обновить", UpdateCB(action="install")), ("Скрыть", HideCB())],
+    «Обновить» несёт объявленный тег — ставится только он. «Скрыть» —
+    универсальная HideCB (удаляет сообщение); «один раз на версию» держит
+    notified_tag в БД, не кнопка."""
+    return ui.rows([("⬆️ Обновить", UpdateCB(action="install", tag=tag)), ("Скрыть", HideCB())],
                    ("🔕 Не уведомлять об обновлениях", UpdateCB(action="mute")))
 
 

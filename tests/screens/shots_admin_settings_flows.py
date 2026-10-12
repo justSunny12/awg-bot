@@ -7,7 +7,8 @@ from awgbot.bot.callbacks import SetCB, UpdateCB
 
 from tests.screens.base import Shot
 from tests.screens.shots_admin_common import (_email_on, _fw, _people, _raise, _restarts, _upd_found,
-                                              _upd_silent, _upd_waits)
+                                              _upd_hold, _upd_offline, _upd_silent, _upd_skipped,
+                                              _upd_waits)
 
 
 # ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
@@ -238,8 +239,21 @@ SECTIONS = [
          title="обновления: ждёт четыре шлюза — три и «и ещё 1», версия неизвестна"),
     Shot("adm.set.upd.silent", role="admin", press=[SetCB(sec="upd")], data=_upd_silent,
          title="обновления: цель есть, выше ждёт шлюз, двое молчат — предупреждения"),
-    Shot("adm.upd.install.wait", role="admin", press=[UpdateCB(action="install")], data=_upd_waits("1.2.3"),
+    Shot("adm.upd.install.wait", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
+         data=_upd_waits("1.2.3"),
          title="«⬆️ Обновить»: условие закрылось между проверкой и нажатием — alert с причиной"),
+    Shot("adm.upd.install.changed", role="admin", press=[UpdateCB(action="install", tag="v1.2.9")],
+         data=_upd_found, title="«⬆️ Обновить»: цель пересчитана другой — alert, установки нет"),
+    Shot("adm.upd.install.old_button", role="admin", press=["upd:install"], data=_upd_found,
+         title="«⬆️ Обновить» прежнего образца без тега — alert, установки нет"),
+    Shot("adm.upd.install.offline", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
+         data=_upd_offline, title="«⬆️ Обновить»: GitHub не ответил — своя всплывашка"),
+    Shot("adm.upd.install.hold", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
+         data=_upd_hold, title="«⬆️ Обновить» в окно ожидания после старта"),
+    Shot("adm.set.upd.skipped", role="admin", press=[SetCB(sec="upd")], data=_upd_skipped,
+         title="обновления: цель есть, v1.4.0 пропущен — метаданные не прочитаны"),
+    Shot("adm.set.upd.hold", role="admin", press=[SetCB(sec="upd")], data=_upd_hold,
+         title="обновления: окно ожидания после старта — жду шлюзы"),
     Shot("adm.set.svc.awg.fail", role="admin", press=[SetCB(sec="svc", act="do", key="awg!")],
          data=_awg_restart_fails, title="AWG не перезапущен — первой строкой раздела"),
 ]

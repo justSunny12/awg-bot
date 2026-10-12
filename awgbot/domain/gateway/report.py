@@ -99,10 +99,11 @@ class ReportMixin:
         caps — возможности сервера (список имён): по ним подсказки говорят, что
         сервер пришлёт сам, а что едет файлом. Старый сервер шлёт только active —
         тогда прочее не трогаем. server — версия сервера AWG из `role` (с 3.3.0):
-        по ней агент выбирает цель обновления (#gw_needs_main_X); `role` без
+        по ней агент выбирает цель обновления (`roles.gw.needs_main`); `role` без
         версии или с чужой формой — сервер старше 3.3.0 («old»). Не передан
         вовсе (...) — сохранённое не трогаем."""
         self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
+        self.__dict__["_role_since_start"] = True          # окно после старта: сервер сказал о себе
         if server is not ...:
             self.db.set_state(self._LINK_SERVER_VERSION_KEY, _server_version(server))
         if caps is not None:
@@ -139,10 +140,18 @@ class ReportMixin:
         return (self.db.get_state(self._LINK_SERVER_VERSION_KEY) or "").strip()
 
     def update_peers(self) -> list:
-        """Другая сторона агента для условия обновления (#gw_needs_main_X) —
+        """Другая сторона агента для условия обновления (`roles.gw.needs_main`) —
         сервер AWG; держит всегда: без известной версии релиз с условием ждёт."""
         from awgbot.domain.selfupdate import UpdatePeer
         return [UpdatePeer(slot=0, name="", version=self.server_version(), fresh=True)]
+
+    def update_hold_peers(self) -> list:
+        """Кого ждать после старта процесса (окно domain/selfupdate/hold.py):
+        сервер AWG — до первого `role`, в котором он называет свою версию."""
+        return ["server"]
+
+    def update_hold_left(self, initial: list) -> list:
+        return [] if self.__dict__.get("_role_since_start") else ["сервер AWG"]
 
     def link_slot_name(self) -> str:
         return (self.db.get_state(self._LINK_SLOT_NAME_KEY) or "").strip()

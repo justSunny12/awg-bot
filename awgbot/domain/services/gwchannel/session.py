@@ -31,6 +31,17 @@ class SessionMixin:
         self.db.set_state(self._gwlink_key(self._GWLINK_ERROR_KEY, slot_id), "")
         log.info("канал линка: слот %s на связи (агент %s, proto %s)", slot_id, agent, proto)
 
+    def gwlink_seen_touch(self, slot_ids) -> None:
+        """«Последний раз на связи» — правда и для живой сессии: такт канала
+        (раз в ~2 минуты) переписывает время у слотов с открытой сессией.
+        Иначе сессия, длящаяся неделю, свежести не прибавляла бы, а после
+        рестарта ВПС время было бы временем её открытия, а не остановки.
+        Запись в БД ВПС, не сеть: канал в простое по-прежнему молчит."""
+        now = timeutil.to_iso(timeutil.now())
+        for slot_id in slot_ids:
+            if self.gwlink_session(slot_id):
+                self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id), now)
+
     def gwlink_session_closed(self, slot_id: int) -> None:
         self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id), "")
         self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id),

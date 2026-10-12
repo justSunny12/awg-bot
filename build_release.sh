@@ -12,6 +12,13 @@
 #   awg-bot.tgz          продукт целиком: код, установщик, скрипты обвязки
 #                        (файла юнита нет — его пишет install_unit в awg-bot.sh;
 #                        состав синхронно с _ENTRIES в awgbot/util/dist.py)
+#   awg-bot-release.json метаданные релиза (адресаты, минимумы, поколение ядра,
+#                        условия на версию другой роли) — второй ассет релиза:
+#                        копия docs/releases/v<версия>.json после проверки схемы
+#                        и совпадения версии; его пишет выпуск через
+#                        tools/release_meta.py (docs/RELEASING.md §4). Нет файла
+#                        у версии с 3.3.0 — сборка останавливается; локальной
+#                        сборке без выпуска — AWG_BUILD_LOCAL=1 (артефакта нет)
 #   awg-bot-project.tgz  полный проект для разработки (с тестами; без .git,
 #                        данных и локальных окружений)
 #
@@ -55,6 +62,7 @@ _count() { tar tzf "$1" | grep -vc '/$'; }
 build_bot() {
     local s; s="$(mktemp -d)"
     for p in awgbot tools conf; do _stage_copy "$p" "$s"; done
+    rm -f "$s/tools/release_meta.py"                                 # инструмент выпуска — не поставка
     mkdir -p "$s/install"
     # ВСЕ скрипты install, включая бутстрап: поставка — ОДИН архив, установщик
     # едет внутри него (docs/ROADMAP.md, п.8). Именно все, а не перечисление по
@@ -80,6 +88,26 @@ build_bot() {
     log "awg-bot.tgz: $(_count "$OUT/awg-bot.tgz") файлов (установщик внутри: install/awg-bot-install.sh)"
 }
 
+# ── метаданные релиза: второй ассет рядом с поставкой ───────────────────────
+build_meta() {
+    local ver src py
+    ver="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$ROOT/awgbot/__version__.py")"
+    src="$ROOT/docs/releases/v$ver.json"
+    if [ ! -f "$src" ]; then
+        # релизы до 3.3.0 метаданных не имеют; локальная сборка — по явному слову
+        if [ "${AWG_BUILD_LOCAL:-0}" = "1" ] || [ "$(printf '%s\n3.3.0\n' "$ver" | sort -V | head -1)" != "3.3.0" ]; then
+            log "awg-bot-release.json: нет docs/releases/v$ver.json — артефакт не собран"
+            return 0
+        fi
+        printf 'build_release.sh: нет docs/releases/v%s.json — его пишет tools/release_meta.py (docs/RELEASING.md §4)\n' "$ver" >&2
+        exit 1
+    fi
+    py="${PYTHON:-$ROOT/.venv/bin/python}"; [ -x "$py" ] || py=python3
+    ( cd "$ROOT" && "$py" -m tools.release_meta --check "$src" --expect-version "$ver" ) || exit 1
+    install -m 0644 "$src" "$OUT/awg-bot-release.json"
+    log "awg-bot-release.json: метаданные v$ver"
+}
+
 # ── полный проект (dev) ──────────────────────────────────────────────────────
 build_project() {
     # Ровно то, что в репозитории (git archive): окружения, кэши и служебные
@@ -89,5 +117,6 @@ build_project() {
 }
 
 build_bot
+build_meta
 build_project
 log "готово → $OUT"

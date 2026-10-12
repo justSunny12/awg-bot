@@ -210,7 +210,7 @@ SETTINGS = [
          data=_upd_found, title="уведомления об обновлениях выключены"),
     Shot("adm.set.upd.cycle", role="admin", press=[SetCB(sec="upd", act="cycle", key="updates.poll_schedule")],
          data=_people, title="расписание проверки"),
-    Shot("adm.upd.install", role="admin", press=[UpdateCB(action="install")], data=_upd_found,
+    Shot("adm.upd.install", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")], data=_upd_found,
          title="обновить: ожидание"),
     Shot("adm.upd.mute", role="admin", press=[UpdateCB(action="mute")], data=_people,
          title="«Не уведомлять» на уведомлении"),

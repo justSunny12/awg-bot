@@ -101,6 +101,9 @@ INSTALLED_VERSION = _version_mod.__version__
 _updates = _load_yaml("updates")
 UPDATES_REPO: str = _updates.get("repo", "justSunny12/awg-bot")
 UPDATES_ASSET_NAME: str = _updates.get("asset_name", "awg-bot.tgz")
+# Метаданные релиза (адресаты, минимумы, поколение, условия на другую роль) —
+# второй ассет рядом с поставкой: читается до скачивания (infra/updates/meta.py).
+UPDATES_META_ASSET_NAME: str = _updates.get("meta_asset_name", "awg-bot-release.json")
 # Расписание проверки (poll_schedule/poll_hour/poll_minute) — hot, читается в
 # scheduler через settings.get, не здесь.
 

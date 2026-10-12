@@ -40,7 +40,7 @@ async def notify_update_available(bot, services, nxt) -> None:
     await send_notifications(bot, [Notification(
         config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, silent=silent,
                                                 bot_username=getattr(services, "bot_username", "") or ""),
-        reply_markup=kb.update_notify())])
+        reply_markup=kb.update_notify(nxt.tag))])
 
 
 TG_NAME_MAX_AGE_DAYS = 7      # имя аккаунта старше — переспросить у Telegram

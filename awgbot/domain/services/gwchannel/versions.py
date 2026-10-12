@@ -1,5 +1,6 @@
 """versions.py — версии агентов слотов и свежесть связи: другая сторона
-основного бота для условия обновления (#main_needs_gw_X, domain/selfupdate)."""
+основного бота для условия обновления (`roles.main.needs_gw` в метаданных
+релиза, domain/selfupdate) и кого ждать после старта процесса."""
 from __future__ import annotations
 
 from awgbot.util import timeutil
@@ -33,4 +34,33 @@ class VersionsMixin:
             has_device = self.db.get_device(gw.device_id) is not None
             out.append(UpdatePeer(slot=gw.id, name=self._gw_name(gw), version=ver,
                                   fresh=fresh and has_device, seen=seen))
+        return out
+
+    def update_hold_peers(self) -> list:
+        """Кого ждать после старта процесса (окно domain/selfupdate/hold.py):
+        слоты с устройством, бывшие на связи за UPDATE_PEER_FRESH_DAYS перед
+        остановкой. `gwlink_seen` — правда (пишется и пока сессия жива), а не
+        отметка старта: лежавших дольше не ждём."""
+        from awgbot.domain.selfupdate import UPDATE_PEER_FRESH_DAYS
+        now = timeutil.now()
+        out = []
+        for gw in self.db.gateways():
+            seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
+            try:
+                recent = bool(seen) and (now - timeutil.parse_iso(seen)).total_seconds() \
+                    < UPDATE_PEER_FRESH_DAYS * 86400
+            except ValueError:
+                recent = False
+            if recent and self.db.get_device(gw.device_id) is not None:
+                out.append(gw.id)
+        return out
+
+    def update_hold_left(self, initial: list) -> list:
+        """Кто из ожидаемых ещё не переподключился — имена для экрана. Снятый
+        слот не ждём."""
+        out = []
+        for slot in initial:
+            gw = self.db.gateway(slot)
+            if gw is not None and not self.gwlink_session(slot):
+                out.append(self._gw_name(gw))
         return out

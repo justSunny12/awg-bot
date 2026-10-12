@@ -268,7 +268,7 @@ def make_router(br) -> Router:
         await handle(cb, resolve(br, cb.data), services, state, br)
 
     core.register(router, hooks_for(br), default_sec="root")
-    updates.register_update_buttons(router)
+    updates.register_update_buttons(router, br)
     router.on_section = on_section                    # для тестов
     return router
 

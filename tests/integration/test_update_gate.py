@@ -1,7 +1,7 @@
 """Сверка версий ролей на живой БД: основной бот держит релиз с
-`#main_needs_gw_X`, пока шлюз, бывший на связи за 2 дня, ниже X; молчащий
-дольше — не держит, о нём предупреждение. Агент держит релиз с
-`#gw_needs_main_X`, пока не знает сервер AWG не ниже X. Изменились версии
+`roles.main.needs_gw` = X, пока шлюз, бывший на связи за 2 дня, ниже X;
+молчащий дольше — не держит, о нём предупреждение. Агент держит релиз с
+`roles.gw.needs_main` = X, пока не знает сервер AWG не ниже X. Изменились версии
 другой стороны — цель пересчитывается по сохранённому списку, без GitHub, и
 о новой допустимой — одно уведомление на тег.
 """
@@ -21,32 +21,35 @@ from awgbot.util import timeutil
 pytestmark = pytest.mark.integration
 
 
-def _r(tag: str, body: str) -> updates.Release:
+def _r(tag: str, roles: dict, gen: int = 1, body: str = "") -> updates.Release:
+    """Релиз с метаданными (roles — как в awg-bot-release.json)."""
+    meta = {"schema": 1, "version": tag.lstrip("v"), "awg_gen": gen, "roles": roles}
     return updates.Release(tag=tag, version=updates.parse_version(tag), body=body,
-                           asset_url=f"https://api/assets/{tag}", sha256="a" * 64)
+                           asset_url=f"https://api/assets/{tag}", sha256="a" * 64,
+                           meta=updates.meta.check(meta, tag))
 
 
 MAIN_RELEASES = [
-    _r("v3.3.0", "#requires_main_3.2.0\n#requires_gw_3.2.0\n#awg_gen1"),
-    _r("v3.3.1", "#requires_main_3.3.0\n#main_needs_gw_3.3.0\n#awg_gen1\n\n- сервер без шимов"),
+    _r("v3.3.0", {"main": {"requires": "3.2.0"}, "gw": {"requires": "3.2.0"}}),
+    _r("v3.3.1", {"main": {"requires": "3.3.0", "needs_gw": "3.3.0"}}, body="- сервер без шимов"),
 ]
 
 GW_RELEASES = [
-    _r("v3.3.0", "#requires_main_3.2.0\n#requires_gw_3.2.0\n#awg_gen1"),
-    _r("v3.3.1", "#requires_main_3.3.0\n#awg_gen1"),
-    _r("v3.3.2", "#requires_gw_3.3.0\n#gw_needs_main_3.3.1\n#awg_gen1\n\n- агент без шимов"),
+    _r("v3.3.0", {"main": {"requires": "3.2.0"}, "gw": {"requires": "3.2.0"}}),
+    _r("v3.3.1", {"main": {"requires": "3.3.0"}}),
+    _r("v3.3.2", {"gw": {"requires": "3.3.0", "needs_main": "3.3.1"}}, body="- агент без шимов"),
 ]
 
 
 def _github(monkeypatch, releases):
     """Список релизов «с GitHub»; calls — сколько раз за ним ходили."""
     calls = []
-    monkeypatch.setattr(updates, "list_releases", lambda: calls.append(1) or list(releases))
+    monkeypatch.setattr(updates, "list_releases", lambda **_: calls.append(1) or list(releases))
     return calls
 
 
 def _no_github(monkeypatch):
-    def boom():
+    def boom(**_):
         raise AssertionError("пересчёт пошёл на GitHub — должен идти по сохранённому списку")
     monkeypatch.setattr(updates, "list_releases", boom)
 
@@ -181,7 +184,8 @@ def test_regate_respects_muted_notifications(vps, monkeypatch):
 
 def test_without_conditions_nothing_changes(vps, monkeypatch):
     """Релизы без строк условий — выбор как до сверки, ожидания нет."""
-    _github(monkeypatch, [_r("v3.3.0", "#requires_main_3.2.0"), _r("v3.3.1", "#requires_main_3.3.0")])
+    _github(monkeypatch, [_r("v3.3.0", {"main": {"requires": "3.2.0"}}),
+                          _r("v3.3.1", {"main": {"requires": "3.3.0"}})])
     vps.gwlink_session_opened(1, "3.2.1", 2, [])
     assert vps.update_scan().tag == "v3.3.1"
     assert vps.update_waiting() is None and vps.update_silent_peers(vps.update_next()) is None

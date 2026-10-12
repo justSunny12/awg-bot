@@ -47,3 +47,28 @@ def test_the_admin_resolver_is_ensured_on_start_and_watched_on_the_monitor_tick(
     body = sched.split("services.admin_dns_health_tick", 1)
     assert len(body) == 2 and "send_notifications(bot, adm_notes)" in body[1].split("except", 1)[0], \
         "уведомления монитора резолвера админа никуда не уходят"
+
+
+def test_the_update_hook_and_the_window_are_wired_before_the_channel_starts():
+    """Пересчёт цели по событиям канала уведомляет крючком main: без него
+    обновлённый шлюз открыл бы серверу цель молча (до плановой проверки — до
+    месяца). Окно ожидания после старта открывается до планировщика: иначе
+    стартовая проверка решила бы по старым версиям."""
+    main = (ROOT / "main" / "client.py").read_text(encoding="utf-8")
+    assert main.count("set_on_update(") == 1
+    assert main.index("set_on_update(") < main.index("scheduler.start()") < main.index("linkserver.ensure(services)")
+    assert main.index("services.update_hold_start()") < main.index("scheduler.start()")
+    assert "notify_update_available(bot, services, nxt)" in main.split("set_on_update(", 1)[0][-600:]
+    gw = (ROOT / "main" / "gateway.py").read_text(encoding="utf-8")
+    assert gw.count("linkclient.set_on_update(") == 1
+    assert gw.index("services.update_hold_start()") < gw.index("setup_gateway_scheduler(services, bot)")
+    assert gw.index("linkclient.set_on_update(") < gw.index("linkclient.ensure(services)")
+
+
+def test_the_liveness_tick_keeps_seen_true_and_regates():
+    ls = (ROOT / "linkserver" / "__init__.py").read_text(encoding="utf-8")
+    body = ls.split("async def liveness_tick", 1)[1].split("async def monitor_tick", 1)[0]
+    assert "gwlink_seen_touch" in body and "update_regate(services, force=n % 20 == 0)" in body
+    lc = (ROOT / "linkclient" / "__init__.py").read_text(encoding="utf-8")
+    tick = lc.split("async def on_tick", 1)[1].split("\nasync def ", 1)[0]
+    assert "update_regate(services, force=False)" in tick, "конец окна после старта у агента — без события"

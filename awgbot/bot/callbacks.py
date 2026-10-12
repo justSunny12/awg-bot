@@ -95,9 +95,24 @@ class UpdateCB(CallbackData, prefix="upd"):
       mute    — выключить автоуведомления/стартовую проверку об обновлениях;
       menu    — «В меню» с финишного сообщения об обновлении.
     Ручная проверка — не здесь: SetCB(sec="upd", act="do", key="check").
-    Тег в data не носим: «следующая ступень» детерминирована от установленной
-    версии, обработчик пересчитывает next_release() сам (нет протухания)."""
+    tag — цель, которую показали человеку (уведомление, раздел): ставится
+    только она. Обработчик пересчитывает цель; другая (условие на другую роль
+    закрылось, вышел новый релиз) — всплывашка, установки нет. Кнопки прежних
+    сообщений без тега — так же: что за ними обещано, уже не узнать.
+    Без тега данные кнопки — прежние («upd:menu», «upd:install»): кнопки
+    «В меню» и «Не уведомлять» не меняются, а старые разбираются."""
     action: str
+    tag: str = ""
+
+    def pack(self) -> str:
+        packed = super().pack()
+        return packed[:-1] if not self.tag and packed.endswith(self.__separator__) else packed
+
+    @classmethod
+    def unpack(cls, value: str):
+        if value.count(cls.__separator__) == 1:          # прежний образец: без тега
+            value += cls.__separator__
+        return super().unpack(value)
 
 
 class PauseCB(CallbackData, prefix="pz"):

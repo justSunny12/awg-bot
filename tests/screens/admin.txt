@@ -2190,7 +2190,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 ⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
-  [⬆️ Обновить до v1.3.0 | upd:install]
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
   [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
 
@@ -2199,7 +2199,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 ~ Уведомления выключены
 = edit #1
 ⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
-  [⬆️ Обновить до v1.3.0 | upd:install]
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
   [☑️ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
 
@@ -2212,7 +2212,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
   [⬅️ Назад | set:root:open::]
 
 ### adm.upd.install — обновить: ожидание
-> press upd:install
+> press upd:install:v1.3.0
 ~ Запускаю обновление…
 - delete #1
 + send #2
@@ -3283,7 +3283,7 @@ Pi4 — 🟢 Резерв
 ⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
-  [⬆️ Обновить до v1.3.0 | upd:install]
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
   [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
 
@@ -3800,7 +3800,7 @@ IMAP и SMTP отвечают, вход выполнен
 Список изменений:
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
-  [⬆️ Обновить | upd:install] [Скрыть | hd]
+  [⬆️ Обновить | upd:install:v1.3.0] [Скрыть | hd]
   [🔕 Не уведомлять об обновлениях | upd:mute]
 
 ### adm.ev.upd_available.silent — доступна новая версия: хвост о молчащих шлюзах
@@ -3812,9 +3812,9 @@ IMAP и SMTP отвечают, вход выполнен
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
 
-⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09.26 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
-⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
-  [⬆️ Обновить | upd:install] [Скрыть | hd]
+⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
+⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): для v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
+  [⬆️ Обновить | upd:install:v1.3.0] [Скрыть | hd]
   [🔕 Не уведомлять об обновлениях | upd:mute]
 
 ### adm.ev.upd_done — обновлён после рестарта
@@ -5115,7 +5115,7 @@ IP, подсеть или имя DynDNS; можно несколько
 - пункт номер 104 с подробным текстом
 …
 <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">Весь список изменений — на GitHub</a></blockquote>
-  [⬆️ Обновить до v1.3.0 | upd:install]
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
   [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
 
@@ -5143,17 +5143,54 @@ IP, подсеть или имя DynDNS; можно несколько
 = edit #1
 ⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
 ⏳ v1.4.0 ждёт шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.3.0) — обнови агента в чате бота шлюза
-⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09.26 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
-⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
+⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
+⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): для v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
-  [⬆️ Обновить до v1.3.0 | upd:install]
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
   [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
 
 ### adm.upd.install.wait — «⬆️ Обновить»: условие закрылось между проверкой и нажатием — alert с причиной
-> press upd:install
+> press upd:install:v1.3.0
 ~! Нельзя: v1.3.0 ждёт шлюзы: Pi5 (v1.2.3)
+
+### adm.upd.install.changed — «⬆️ Обновить»: цель пересчитана другой — alert, установки нет
+> press upd:install:v1.2.9
+~! Цель обновления изменилась — открой «⬆️ Обновления» заново
+
+### adm.upd.install.old_button — «⬆️ Обновить» прежнего образца без тега — alert, установки нет
+> press upd:install
+~! Цель обновления изменилась — открой «⬆️ Обновления» заново
+
+### adm.upd.install.offline — «⬆️ Обновить»: GitHub не ответил — своя всплывашка
+> press upd:install:v1.3.0
+~! Не удалось проверить релизы на GitHub — попробуй позже
+
+### adm.upd.install.hold — «⬆️ Обновить» в окно ожидания после старта
+> press upd:install:v1.3.0
+~! ⏳ Проверяю шлюзы после перезапуска: жду Pi5, Pi4 — до 12:15
+
+### adm.set.upd.skipped — обновления: цель есть, v1.4.0 пропущен — метаданные не прочитаны
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
+⚠️ v1.4.0 пропущен: метаданные релиза не прочитаны — проверю ещё раз при следующей проверке
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+  [⬆️ Обновить до v1.3.0 | upd:install:v1.3.0]
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.hold — обновления: окно ожидания после старта — жду шлюзы
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3
+⏳ Проверяю шлюзы после перезапуска: жду Pi5, Pi4 — до 12:15
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
 
 ### adm.set.svc.awg.fail — AWG не перезапущен — первой строкой раздела
 > press set:svc:do:awg!:

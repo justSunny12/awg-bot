@@ -35,15 +35,7 @@ class InboundMixin:
         """Версии шлюзов могли смениться — цель обновления сервера
         пересчитывается по сохранённому списку релизов, без сети; новая
         допустимая — уведомление крючком main (один раз на тег)."""
-        regate = getattr(self.services, "update_regate", None)
-        if regate is None:
-            return
-        nxt = await asyncio.to_thread(regate)
-        if nxt is not None and pkg._on_update is not None:
-            try:
-                await pkg._on_update(nxt)
-            except Exception as e:                        # noqa: BLE001
-                log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+        await pkg.update_regate(self.services)
 
     async def _handle(self, gw, sess: _Session, msg: dict) -> None:
         kind = msg.get("t")

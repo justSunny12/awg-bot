@@ -221,8 +221,10 @@ def test_blocked_release_is_not_marked_as_notified(tmp_path, monkeypatch):
         def set_state(self, k, v):
             state[k] = v
 
-    rel = updates.Release(tag="v9.0.0", version=(9, 0, 0), body="#awg_gen3",
-                          asset_url="u", sha256="x")
+    # релиз эпохи метаданных: поколение — из awg-bot-release.json, не из тела
+    rel = updates.Release(tag="v9.0.0", version=(9, 0, 0), body="", asset_url="u", sha256="x",
+                          meta={"schema": 1, "version": "9.0.0", "awg_gen": 3,
+                                "roles": {"main": {"requires": "1.0.0"}}})
 
     class Svc(SelfUpdateMixin):
         def __init__(self):

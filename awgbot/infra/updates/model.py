@@ -1,10 +1,12 @@
-"""model.py — часть пакета updates (см. __init__): релиз, разбор версий и
-хэштегов тела релиза."""
+"""model.py — часть пакета updates (см. __init__): релиз, разбор версий;
+условия релиза — из метаданных (meta.py), запасным путём из хэштегов тела."""
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from typing import Optional
+
+from . import meta as _meta
 
 # vMAJOR.MINOR.PATCH (ведущее «v» необязательно). Пре-релизные суффиксы не
 # поддерживаем сознательно — релизы строго числовые.
@@ -15,31 +17,23 @@ class UpdateError(Exception):
     """Сетевая/протокольная ошибка обновления (гасится вызывающим)."""
 
 
-# Адресаты релиза — хэштегами в теле, по строке на роль: «#requires_main_2.10.0»
-# (основной бот), «#requires_gw_2.10.0» (агент шлюза); версия в нём — минимум,
-# с которого на релиз прыгают напрямую. Прежний формат (#main_bot / #gw_bot /
-# #all_bots, без минимума) читается ради старых релизов; релиз без хэштегов
-# вовсе считается общим. У ролей разные установленные версии — это норма,
-# поставка едет целиком.
+# Запасной путь — хэштеги тела, как их пишут релизы до метаданных и читают
+# боты 3.2.x (meta.py, «переход»). Адресаты по строке на роль:
+# «#requires_main_2.10.0» (основной бот), «#requires_gw_2.10.0» (агент
+# шлюза); версия в нём — минимум, с которого на релиз прыгают напрямую.
+# Прежний формат (#main_bot / #gw_bot / #all_bots, без минимума) читается ради
+# старых релизов; релиз без хэштегов вовсе считается общим.
 _REQUIRES_RE = re.compile(r"#requires_(main|gw)_(v?\d+\.\d+\.\d+(?:\.\d+)?)\b")
 _AUDIENCE_RE = re.compile(r"#(main_bot|gw_bot|all_bots)\b")
 _ROLE_KEY = {"gateway": "gw"}              # любая другая роль — основной бот
 _ROLE_TAG = {"gateway": "gw_bot"}
 
-# Поколение AmneziaWG в поставке — тоже хэштегом в теле: «#awg_gen2». Его надо
-# знать ДО скачивания (обновление на поколение дальше цели идущего переезда
-# запрещено), а в ассете оно лежит внутри архива. Нет хэштега — поколение то
-# же, что у установленного: до v2.11.0 поколениями никто не управлял.
+# Поколение AmneziaWG в поставке — «#awg_gen2» в теле или `awg_gen` в
+# метаданных. Его надо знать ДО скачивания (обновление на поколение дальше
+# цели идущего переезда запрещено), а в архиве оно лежит внутри. Не объявлено
+# — поколение то же, что у установленного: до v2.11.0 поколениями никто не
+# управлял.
 _GENERATION_RE = re.compile(r"#awg_gen(\d+)\b")
-
-# Условие на версию ДРУГОЙ роли — тоже хэштегом в теле, читается слева
-# направо: «#gw_needs_main_3.3.0» — агенту этого релиза нужен сервер AWG не
-# ниже 3.3.0 (читает только агент); «#main_needs_gw_3.3.0» — основному боту
-# нужны шлюзы не ниже 3.3.0 (читает только основной бот). Версия — три цифры;
-# с четвёртой (хотфикс) строка не совпадает вовсе. Строка чужой роли не значит
-# ничего: агенту всё равно, что серверу нужно от шлюзов.
-_NEEDS_RE = re.compile(r"#(gw_needs_main|main_needs_gw)_(v?\d+\.\d+\.\d+)(?![.\d])")
-_NEEDS_KEY = {"gateway": "gw_needs_main"}  # любая другая роль — основной бот
 
 
 @dataclass(frozen=True)
@@ -50,15 +44,39 @@ class Release:
     asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
     title: str = ""             # заголовок релиза без тега
+    meta: Optional[dict] = None  # проверенные метаданные (meta.py) или None
+    meta_bad: str = ""          # ассет метаданных есть, но не прочитан — причина
+
+    def _by_body(self) -> bool:
+        """Читать ли условия из тела: метаданных нет, ассет не битый и релиз
+        моложе ступени «только метаданные»."""
+        return self.meta is None and not self.meta_bad and self.version[:3] < _meta.META_ONLY_FROM
+
+    def usable(self) -> bool:
+        """Рассматривается ли релиз вовсе — целью или звеном цепочки минимумов.
+        Нет — его минимум не учёлся бы, и хост перепрыгнул бы ступень."""
+        return self.meta is not None or self._by_body()
+
+    def skip_reason(self) -> str:
+        """Почему релиз не рассматривается ("" — рассматривается)."""
+        if self.usable():
+            return ""
+        return self.meta_bad or "нет метаданных релиза"
 
     def awg_generation(self) -> int:
         """Поколение AmneziaWG этой поставки; 0 — не объявлено."""
-        m = _GENERATION_RE.search(self.body or "")
+        if self.meta is not None:
+            return int(self.meta["awg_gen"])
+        m = _GENERATION_RE.search(self.body or "") if self._by_body() else None
         return int(m.group(1)) if m else 0
 
     def requirements(self) -> dict:
         """{'main': (2,10,0), 'gw': (2,10,0)} — роли, которым релиз адресован,
-        с минимумом для прямого прыжка. Пусто — хэштегов нового формата нет."""
+        с минимумом для прямого прыжка. Пусто — адресатов не названо."""
+        if self.meta is not None:
+            return _meta.requires(self.meta)
+        if not self._by_body():
+            return {}
         return {k: parse_version(v) for k, v in _REQUIRES_RE.findall(self.body or "")}
 
     def requires(self, role: str = "") -> Optional[tuple]:
@@ -68,26 +86,28 @@ class Release:
 
     def needs(self, role: str = "") -> Optional[tuple]:
         """Версия ДРУГОЙ стороны, нужная этой роли для релиза: агенту — сервера
-        AWG (#gw_needs_main_X), основному боту — шлюзов (#main_needs_gw_X).
-        None — условия нет. Хотфикс X.Y.Z.P условий не несёт: строки в его
-        теле не читаются (их и не ставят — docs/RELEASING.md §2)."""
-        if len(self.version) > 3:
+        AWG (`roles.gw.needs_main`), основному боту — шлюзов
+        (`roles.main.needs_gw`). Только из метаданных; None — условия нет.
+        Хотфикс X.Y.Z.P условий не несёт."""
+        if self.meta is None or len(self.version) > 3:
             return None
-        want = _NEEDS_KEY.get(role, "main_needs_gw")
-        found = [parse_version(v) for k, v in _NEEDS_RE.findall(self.body or "") if k == want]
-        return max(found) if found else None
+        return _meta.needs(self.meta, _ROLE_KEY.get(role, "main"))
 
     def audience(self) -> frozenset:
         """Адресаты в терминах прежних хэштегов (main_bot / gw_bot / all_bots);
-        пусто — релиз общий."""
+        пусто — релиз общий (только у тела без хэштегов)."""
         req = self.requirements()
-        if req:
+        if req or self.meta is not None:
             return frozenset({"main_bot" if k == "main" else "gw_bot" for k in req})
+        if not self._by_body():
+            return frozenset()
         return frozenset(_AUDIENCE_RE.findall(self.body or ""))
 
     def applies_to(self, role: str) -> bool:
+        if not self.usable():
+            return False
         tags = self.audience()
-        if not tags:
+        if not tags and self.meta is None:
             return True
         return "all_bots" in tags or _ROLE_TAG.get(role, "main_bot") in tags
 

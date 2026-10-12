@@ -1,12 +1,21 @@
-"""docs/CHANGELOG.md — источник тел релизов: первые строки записи читают боты.
-Запись без строки роли никому не уедет; запись с обеими строками уедет обеим
-ролям — и агент шлюза обновится ради кода, которого у него нет."""
+"""docs/CHANGELOG.md — источник тел релизов, docs/releases/vX.json — источник
+метаданных релиза (awg-bot-release.json). Боты 3.2.x читают первые строки
+записи; с 3.3.0 — метаданные. Запись без адресата никому не уедет; с обоими —
+уедет обеим ролям, и агент шлюза обновится ради кода, которого у него нет.
+Переход: у 3.3.0 и 3.3.1 машинные строки в теле обязательны и совпадают с
+метаданными; с 3.3.2 тело — только для людей. Перекрёстных условий в теле
+нет никогда."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
+from awgbot.infra.updates import meta as release_meta
+
 ROOT = Path(__file__).resolve().parents[2]
+RELEASES = ROOT / "docs" / "releases"
+META_FROM = (3, 3, 0)             # первая запись с метаданными
 _HEAD = re.compile(r"^## (v\d+\.\d+\.\d+(?:\.\d+)?) — .*$", re.M)
 
 
@@ -25,11 +34,21 @@ def _entries():
         yield m.group(1), tags
 
 
+def _ver(tag: str) -> tuple:
+    return tuple(int(x) for x in tag.lstrip("v").split("."))
+
+
+def _meta(tag: str):
+    """Метаданные записи из docs/releases (None — файла нет)."""
+    path = RELEASES / f"{tag}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
 def test_every_entry_since_the_jump_model_names_its_audience_with_a_floor():
     for tag, lines in _entries():
-        ver = tuple(int(x) for x in tag[1:].split("."))
-        if ver < (2, 18, 0):
-            continue
+        ver = _ver(tag)
+        if ver < (2, 18, 0) or ver[:3] >= release_meta.META_ONLY_FROM:
+            continue                      # с 3.3.2 адресаты — только в метаданных
         tags = [ln for ln in lines if ln.startswith("#")]
         roles = [ln for ln in tags if re.fullmatch(r"#requires_(main|gw)_\d+\.\d+\.\d+(\.\d+)?", ln)]
         assert roles, f"{tag}: нет строки роли — релиз никому не уедет"
@@ -64,6 +83,9 @@ def _audience_by_version() -> dict[str, set[str]]:
                 roles.add(m.group(1))
         if not any(ln.startswith("#") for ln in lines):
             roles = {"main", "gw"}            # релизы до хэштегов — общие
+        meta = _meta(tag)
+        if meta is not None:
+            roles = set(meta.get("roles") or {})
         out[tag[1:]] = roles
     return out
 
@@ -82,68 +104,90 @@ def test_required_floor_is_a_release_that_role_actually_received():
             assert floor in audience, f"{tag}: минимум {floor} — нет такого релиза в журнале"
             assert role in audience[floor], \
                 f"{tag}: минимум {floor} для роли {role} — тот релиз роли не адресовался"
+        meta = _meta(tag)
+        for role, data in ((meta or {}).get("roles") or {}).items():
+            floor = data["requires"]
+            assert floor in audience and role in audience[floor], \
+                f"{tag}: минимум {floor} для роли {role} в метаданных — тот релиз роли не адресовался"
 
 
-# ── перекрёстные строки: версия другой роли ──────────────────────────────────
-# «#gw_needs_main_X» — агенту релиза нужен сервер AWG не ниже X; «#main_needs_gw_X»
-# — основному боту нужны шлюзы не ниже X. Читаются слева направо; X — релиз,
-# который той роли был адресован. Хотфиксы X.Y.Z.P их не несут.
-
-_CROSS = re.compile(r"#(gw_needs_main|main_needs_gw)_(.*)")
-_CROSS_ROLE = {"gw_needs_main": ("gw", "main"), "main_needs_gw": ("main", "gw")}
 
 
-def _cross_problems(tag: str, lines: list[str], audience: dict[str, set[str]]) -> list[str]:
-    """Нарушения перекрёстных строк одной записи (пусто — запись в порядке)."""
-    out = []
-    tags = [ln for ln in lines if ln.startswith("#")]
-    for ln in tags:
-        if re.match(r"#needs_(main|gw)_", ln):
-            out.append(f"{tag}: «{ln}» — черновое имя, нужно #gw_needs_main_ / #main_needs_gw_")
-    cross = [(i, ln) for i, ln in enumerate(tags) if _CROSS.fullmatch(ln)]
-    if not cross:
+
+# ── метаданные релиза и переход с хэштегов ───────────────────────────────────
+
+_DRAFT = re.compile(r"#(gw_needs_main|main_needs_gw|needs_main|needs_gw)_")
+_MACHINE = re.compile(r"#(requires_(main|gw)_|awg_gen|main_bot|gw_bot|all_bots)")
+_OTHER = {"needs_gw": "gw", "needs_main": "main"}
+
+
+def _meta_problems(tag: str, lines: list[str], meta, audience: dict[str, set[str]]) -> list[str]:
+    """Нарушения одной записи журнала (пусто — запись в порядке)."""
+    out = [f"{tag}: «{ln}» — условие на другую роль пишется только в метаданных"
+           for ln in lines if _DRAFT.match(ln)]
+    ver = _ver(tag)
+    if ver < META_FROM:
         return out
-    if len(tag[1:].split(".")) > 3:
-        out.append(f"{tag}: у хотфикса строк условий не бывает")
-    req = [i for i, ln in enumerate(tags) if ln.startswith("#requires_")]
-    gen = [i for i, ln in enumerate(tags) if ln.startswith("#awg_gen")]
-    roles = {m.group(1) for ln in tags if (m := re.fullmatch(r"#requires_(main|gw)_.*", ln))}
-    for i, ln in cross:
-        kind, ver = _CROSS.fullmatch(ln).groups()
-        own, other = _CROSS_ROLE[kind]
-        if req and i < max(req) or gen and i > min(gen):
-            out.append(f"{tag}: «{ln}» — после #requires_*, перед #awg_gen")
-        if own not in roles:
-            out.append(f"{tag}: «{ln}» без #requires_{own}_ — роль его не прочтёт")
-        if not re.fullmatch(r"\d+\.\d+\.\d+", ver):
-            out.append(f"{tag}: «{ln}» — версия в три цифры")
-        elif other not in audience.get(ver, set()):
-            out.append(f"{tag}: «{ln}» — релиз {ver} роли {other} не адресовался")
+    if meta is None:
+        return out + [f"{tag}: нет docs/releases/{tag}.json"]
+    try:
+        release_meta.check(meta, tag)
+    except release_meta.MetaError as e:
+        return out + [f"{tag}: метаданные: {e}"]
+    machine = [ln for ln in lines if _MACHINE.match(ln)]
+    if ver[:3] >= release_meta.META_ONLY_FROM:
+        if machine:
+            out.append(f"{tag}: с 3.3.2 машинных строк в теле нет — только метаданные")
+    elif machine != release_meta.body_lines(meta):
+        out.append(f"{tag}: строки тела {machine} не совпадают с метаданными "
+                   f"{release_meta.body_lines(meta)}")
+    for role, data in meta["roles"].items():
+        for field, other in _OTHER.items():
+            need = data.get(field)
+            if need and other not in audience.get(need, set()):
+                out.append(f"{tag}: {field} {need} — релиз роли {other} с такой версией не адресовался")
     return out
 
 
-def test_cross_role_lines_in_the_changelog_are_well_formed():
+def test_metadata_and_bodies_agree_with_the_transition_rule():
     audience = _audience_by_version()
     for tag, lines in _entries():
-        assert not _cross_problems(tag, lines, audience), _cross_problems(tag, lines, audience)
+        problems = _meta_problems(tag, lines, _meta(tag), audience)
+        assert not problems, problems
 
 
-def test_the_cross_role_checker_catches_every_mistake():
-    """Строк условий в журнале пока нет (первым их несёт 3.3.1) — проверка
-    проверяется на образцах, чтобы первая запись с ними не прошла кривой."""
-    aud = {"3.3.0": {"main", "gw"}, "3.3.1": {"main"}, "3.2.1": {"gw"}}
-    good = ["#requires_main_3.3.0", "#requires_gw_3.3.0",
-            "#gw_needs_main_3.3.0", "#main_needs_gw_3.3.0", "#awg_gen2"]
-    assert _cross_problems("v3.3.2", good, aud) == []
+def test_every_metadata_file_is_valid_and_named_by_its_version():
+    """docs/releases/vX.json — то, что выпуск загрузит вторым ассетом: схема,
+    версия = имя файла. Файл опережает запись журнала (пишется до выпуска)."""
+    for path in sorted(RELEASES.glob("v*.json")):
+        meta = json.loads(path.read_text(encoding="utf-8"))
+        release_meta.check(meta, path.stem)
+
+
+def test_the_metadata_checker_catches_every_mistake():
+    """Записей с метаданными в журнале пока нет — проверка проверяется на
+    образцах, чтобы первая запись не прошла кривой."""
+    aud = {"3.2.0": {"main", "gw"}, "3.3.0": {"main", "gw"}, "3.3.1": {"main"}}
+
+    def meta(version, roles, gen=1):
+        return {"schema": 1, "version": version, "awg_gen": gen, "roles": roles}
+    m330 = meta("3.3.0", {"main": {"requires": "3.2.0"}, "gw": {"requires": "3.2.0"}})
+    body330 = ["#requires_main_3.2.0", "#requires_gw_3.2.0", "#awg_gen1"]
+    assert _meta_problems("v3.3.0", body330, m330, aud) == []
+    m332 = meta("3.3.2", {"main": {"requires": "3.3.0", "needs_gw": "3.3.0"},
+                          "gw": {"requires": "3.3.0", "needs_main": "3.3.0"}})
+    assert _meta_problems("v3.3.2", [], m332, aud) == []
     cases = {
-        "хотфикс": ("v3.3.2.1", ["#requires_gw_3.3.0", "#gw_needs_main_3.3.0", "#awg_gen2"]),
-        "до #requires": ("v3.3.2", ["#gw_needs_main_3.3.0", "#requires_gw_3.3.0", "#awg_gen2"]),
-        "после #awg_gen": ("v3.3.2", ["#requires_gw_3.3.0", "#awg_gen2", "#gw_needs_main_3.3.0"]),
-        "чужая роль": ("v3.3.2", ["#requires_main_3.3.0", "#gw_needs_main_3.3.0", "#awg_gen2"]),
-        "черновое имя": ("v3.3.2", ["#requires_gw_3.3.0", "#needs_main_3.3.0", "#awg_gen2"]),
-        "четыре цифры": ("v3.3.2", ["#requires_gw_3.3.0", "#gw_needs_main_3.3.0.1", "#awg_gen2"]),
-        "версия не той роли": ("v3.3.2", ["#requires_main_3.3.0", "#main_needs_gw_3.3.1", "#awg_gen2"]),
-        "нет такого релиза": ("v3.3.2", ["#requires_gw_3.3.0", "#gw_needs_main_3.2.9", "#awg_gen2"]),
+        "нет файла": ("v3.3.0", body330, None),
+        "строки тела у 3.3.0 не те": ("v3.3.0", ["#requires_main_3.2.0", "#awg_gen1"], m330),
+        "строки тела у 3.3.2": ("v3.3.2", ["#requires_main_3.3.0", "#awg_gen1"], m332),
+        "черновой хэштег в теле": ("v3.3.2", ["#gw_needs_main_3.3.0"], m332),
+        "черновое короткое имя": ("v3.2.9", ["#requires_gw_3.2.0", "#needs_main_3.3.0"], None),
+        "версия не той роли": ("v3.3.2", [], meta("3.3.2", {"main": {"requires": "3.3.0",
+                                                                       "needs_gw": "3.3.1"}})),
+        "версия не тег": ("v3.3.2", [], meta("3.3.3", {"main": {"requires": "3.3.0"}})),
+        "needs у хотфикса": ("v3.3.2.1", [], meta("3.3.2.1", {"gw": {"requires": "3.3.0",
+                                                                       "needs_main": "3.3.0"}})),
     }
-    for why, (tag, lines) in cases.items():
-        assert _cross_problems(tag, lines, aud), f"не поймано: {why}"
+    for why, (tag, lines, m) in cases.items():
+        assert _meta_problems(tag, lines, m, aud), f"не поймано: {why}"
