@@ -193,6 +193,7 @@ def test_a_broken_space_keeps_quiet_about_the_linked_networks(two, monkeypatch):
     assert not two.db.get_state("lan_space_announced")
     assert two.gateway_peer_nets_info() == {"state": "off"}
     monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
+    two.lan_map_ensure()
     assert len(two.lan_space_announce()) == 1
 
 
@@ -219,34 +220,57 @@ def _legacy_toggle(monkeypatch, on: bool):
 MOVED = ("🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:\n"
          " · NASPi: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>\n"
          " · Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
-         "Прежние адреса через туннель больше не работают; имена SMB (<code>awg.internal</code>) уже ведут на новые")
-SPLIT_TAIL = (". На устройствах с раздельным туннелем, выданных раньше, — выдай их заново, чтобы адреса в туннеле "
-              "работали и там")
+         "Прежние адреса через туннель больше не работают")
+SMB = "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
+REISSUE = (". На твоих устройствах с раздельным туннелем, выданных раньше, импортируй конфиг заново "
+           "(🔗 Ссылка, 🔳 QR или 📄 Файл в карточке устройства), чтобы адреса в туннеле работали и там")
 LINKED = "Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
 
 
-@pytest.mark.parametrize("allowed, was_on, transit, text", [
-    ("0.0.0.0/0, ::/0", True, (1, 1), MOVED),                       # полный туннель, тумблер был включён
-    ("10.8.1.0/24", True, (1, 0), MOVED + SPLIT_TAIL),              # раздельный — хвост про повторную выдачу
-    ("0.0.0.0/0, ::/0", False, (1, 1), MOVED + "\n\n" + LINKED),    # тумблер был выключен, два транзита
-    ("0.0.0.0/0, ::/0", False, (1, 0), MOVED),                      # транзит у одного — связывать не с кем
+@pytest.mark.parametrize("allowed, smb, was_on, transit, text", [
+    ("0.0.0.0/0, ::/0", False, True, (1, 1), MOVED),                 # полный туннель, записей SMB нет
+    ("10.8.1.0/24", True, True, (1, 0), MOVED + SMB + REISSUE),      # раздельный — строка пространства дописывается
+    ("10.0.0.0/8", False, True, (1, 0), MOVED),                      # раздельный, но пространство покрыто
+    ("0.0.0.0/0, ::/0", True, False, (1, 1), MOVED + SMB + "\n\n" + LINKED),   # тумблер был выключен, два транзита
+    ("0.0.0.0/0, ::/0", False, False, (1, 0), MOVED),                # транзит у одного — связывать не с кем
 ])
-def test_the_announcement_after_the_update_is_said_once_and_quietly(two, monkeypatch, allowed, was_on, transit,
-                                                                     text):
+def test_the_announcement_after_the_update_is_said_once_and_quietly(two, monkeypatch, allowed, smb, was_on,
+                                                                     transit, text):
     """Одно сообщение без звука: сети шлюзов теперь открываются по адресам в
-    туннеле (хвост про раздельный туннель — только при нём) и, если прежний
-    тумблер был выключен, а транзитов два, — что их сети связаны (мёртвый ключ
-    читается ровно здесь). Не доставлено — скажется на следующем старте;
-    доставлено — больше никогда."""
+    туннеле («имена SMB уже ведут на новые» — только при стоящих записях SMB,
+    «импортируй заново» — только если строка пространства реально
+    дописывается в конфиг админа) и, если прежний тумблер был выключен, а
+    транзитов два, — что их сети связаны (мёртвый ключ читается ровно здесь).
+    Не доставлено — скажется на следующем старте; доставлено — больше никогда."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
+    monkeypatch.setattr(two, "smb_tunnel_slot", lambda gw: smb)
     _legacy_toggle(monkeypatch, was_on)
     two.db.gateway_update(1, lan_mode=transit[0]); two.db.gateway_update(2, lan_mode=transit[1])
+    two.lan_map_ensure()
     notes = two.lan_space_announce()
     assert len(notes) == 1 and notes[0].text == text and notes[0].silent, notes
     assert two.lan_space_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.lan_space_announce() == []
     assert two.db.get_state("lan_space_announced") == "1" and two.db.get_state("lan_peers_announced") == "1"
+
+
+def test_the_announcement_waits_for_the_table(two, fake_routing, monkeypatch):
+    """Таблица не встала (отказ nft) — «теперь открываются» было бы неправдой:
+    молчим, ключей не взводим; встала — сводка уходит."""
+    _legacy_toggle(monkeypatch, False)
+    two.db.gateway_update(1, lan_mode=1); two.db.gateway_update(2, lan_mode=1)
+
+    def refuse(text):
+        raise routing.RoutingError("nft -c -f -: Error: syntax error")
+    monkeypatch.setattr(routing.lanmap, "apply", refuse)
+    two.lan_map_ensure()
+    assert two.lan_space_announce() == []
+    assert not two.db.get_state("lan_space_announced") and not two.db.get_state("lan_peers_announced")
+    monkeypatch.setattr(routing.lanmap, "apply", lambda text: setattr(fake_routing, "lanmap", text))
+    two.lan_map_ensure()
+    notes = two.lan_space_announce()
+    assert len(notes) == 1 and notes[0].text.endswith(LINKED)
 
 
 def test_nothing_to_announce_on_a_fresh_install_arms_both_keys(services, fake_routing):

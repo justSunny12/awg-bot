@@ -259,6 +259,7 @@ class MarkMixin:
         self._gw_slot(slot_id)
         self.db.gateway_update(slot_id, label=label)
 
+    _LAN_SUBNETS_MAX = 64                       # подсетей на слот — как _MAX_SUBNETS документа на шлюзе
     _PRIVATE_NETS = tuple(__import__("ipaddress").ip_network(n)
                           for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
@@ -284,6 +285,10 @@ class MarkMixin:
             for tok in re.split(r"[\s,;]+", text):
                 if not tok:
                     continue
+                if len(kept) >= self._LAN_SUBNETS_MAX:
+                    # тот же предел, что проверка документа на шлюзе (gwcfg/check.py)
+                    rejected.append((tok, f"у шлюза не больше {self._LAN_SUBNETS_MAX} подсетей"))
+                    continue
                 try:
                     net = ipaddress.ip_network(tok, strict=False)
                 except ValueError:
@@ -300,14 +305,14 @@ class MarkMixin:
                     continue
                 if lanspace.too_wide(net):
                     # на шлюз в туннеле приходится /16: шире двойник не влезет
-                    rejected.append((tok, "шире /16 — в туннеле на шлюз приходится /16, сузь подсеть"))
+                    rejected.append((tok, "шире /16: в туннеле на шлюз приходится /16, сузь подсеть"))
                     continue
                 if net.prefixlen > 30:
                     rejected.append((tok, "это один адрес, а нужна подсеть"))
                     continue
                 if lanspace.in_space(net, space):
                     # на шлюзе её адреса совпали бы с адресами соседей в его AllowedIPs
-                    rejected.append((tok, f"служебные адреса сервера AWG ({space}) — выбери другую подсеть"))
+                    rejected.append((tok, f"служебные адреса сервера AWG ({space}): выбери другую подсеть"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
                     # на шлюзе своя сеть одна: nft отвергает пересечения внутри
@@ -349,12 +354,12 @@ class MarkMixin:
         from awgbot.util import lanspace
         a, b = lanspace.twin_net(slot_id, net, space), lanspace.twin_net(slot_id, other, space)
         if a == b:
-            how = f"у обеих — {a}"
+            how = f"у обеих {a}"
         elif a.subnet_of(b):
             how = f"{a} внутри {b}"
         else:
             how = f"{b} внутри {a}"
-        return (f"в туннеле пересеклась бы с {other}: {how} — адреса в туннеле подсетей одного "
+        return (f"в туннеле пересеклась бы с {other}: {how}; адреса в туннеле подсетей одного "
                 "шлюза не должны пересекаться")
 
     def gateway_slots_policy(self) -> list[tuple[int, str]]:

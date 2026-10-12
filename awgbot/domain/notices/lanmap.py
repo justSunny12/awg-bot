@@ -5,13 +5,10 @@
 from __future__ import annotations
 
 import html
-import re
 
-_ADDR = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?")
+from awgbot.util.textfmt import addr_codes
 
-
-def _codes(text: str) -> str:
-    return _ADDR.sub(lambda m: f"<code>{m.group(0)}</code>", html.escape(text, quote=False))
+_codes = addr_codes
 
 
 def lan_space_off_line(problem: str, key: str = "routing.lan_space", *, markup: bool = True) -> str:
@@ -47,19 +44,31 @@ def lan_peers_joined(names: list[str]) -> str:
             f"сети {_and(names)} связаны")
 
 
-def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], split: bool) -> str:
+LAN_PAIRS_SHOWN = 6           # пар «настоящая → в туннеле» на шлюз в сводке — как в карточке
+LAN_PAIRS_SHOWN_MANY = 3      # шлюзов больше восьми — по три: 15 слотов с длинными именами влезают в 4096
+
+
+def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], *, smb: bool, reissue: bool) -> str:
     """Уведомление после обновления: локальные сети шлюзов теперь открываются
     по адресам в туннеле. rows — [(имя шлюза готовой разметкой, [(настоящая,
-    в туннеле)])]; split — конфиги сервера с раздельным туннелем: выданным
-    раньше устройствам строки пространства не хватает."""
+    в туннеле)])], до шести пар на шлюз (шлюзов больше восьми — до трёх), дальше
+    «и ещё N»; smb — записи SMB с
+    адресами в туннеле стоят (имена уже ведут на новые); reissue — конфигу
+    устройства админа при раздельном туннеле не хватает строки пространства:
+    выданные раньше надо импортировать заново."""
     lines = ["🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:"]
+    limit = LAN_PAIRS_SHOWN if len(rows) <= 8 else LAN_PAIRS_SHOWN_MANY
     for name, pairs in rows:
-        shown = ", ".join(f"<code>{html.escape(r)}</code> → <code>{html.escape(t)}</code>" for r, t in pairs)
-        lines.append(f" · {name}: {shown}")
-    tail = "Прежние адреса через туннель больше не работают; имена SMB (<code>awg.internal</code>) уже ведут на новые"
-    if split:
-        tail += (". На устройствах с раздельным туннелем, выданных раньше, — выдай их заново, чтобы адреса в "
-                 "туннеле работали и там")
+        shown = ", ".join(f"<code>{html.escape(r)}</code> → <code>{html.escape(t)}</code>"
+                          for r, t in pairs[:limit])
+        more = len(pairs) - limit
+        lines.append(f" · {name}: {shown}" + (f" и ещё {more}" if more > 0 else ""))
+    tail = "Прежние адреса через туннель больше не работают"
+    if smb:
+        tail += "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
+    if reissue:
+        tail += (". На твоих устройствах с раздельным туннелем, выданных раньше, импортируй конфиг заново "
+                 "(🔗 Ссылка, 🔳 QR или 📄 Файл в карточке устройства), чтобы адреса в туннеле работали и там")
     lines.append(tail)
     return "\n".join(lines)
 

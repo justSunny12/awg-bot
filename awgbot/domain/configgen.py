@@ -196,19 +196,10 @@ def split_tunnel() -> bool:
     return True
 
 
-def allowed_ips_for(admin_dns: str = "", extra_nets=()) -> str:
-    """Строка AllowedIPs клиентского конфига. Устройству админа при раздельном
-    туннеле дописываются extra_nets (пространство адресов в туннеле локальных
-    сетей шлюзов, 10.240.0.0/12) и /32 резолвера админа, если их не покрывает
-    база (с extra_nets): иначе запросы к ним не ушли бы в туннель — адреса
-    лежат вне подсети клиентов. Резолвер админа в служебной /16 пространства —
-    /32 не нужен. Полный туннель (0.0.0.0/0) покрывает всё — тогда строка
-    прежняя, байт в байт."""
+def _base_v4() -> tuple[list[str], list]:
+    """(записи client_config.allowed_ips к одному виду, их сети IPv4)."""
     import ipaddress
-    base = str(config.CLIENT_ALLOWED_IPS)
-    if not admin_dns and not extra_nets:
-        return base
-    toks = [t.strip() for t in base.split(",") if t.strip()]   # «a, » и «a,b» — к одному виду
+    toks = [t.strip() for t in str(config.CLIENT_ALLOWED_IPS).split(",") if t.strip()]
     nets = []
     for tok in toks:
         try:
@@ -217,14 +208,43 @@ def allowed_ips_for(admin_dns: str = "", extra_nets=()) -> str:
             continue
         if net.version == 4:
             nets.append(net)
+    return toks, nets
+
+
+def extra_needed(extra_nets) -> list[str]:
+    """Какие из extra_nets база client_config.allowed_ips не покрывает — их
+    allowed_ips_for и допишет. Пусто — конфиг устройства админа от них не
+    меняется (полный туннель)."""
+    import ipaddress
+    _toks, nets = _base_v4()
+    out: list[str] = []
     for raw in extra_nets or ():
         try:
             net = ipaddress.IPv4Network(str(raw), strict=False)
         except ValueError:
             continue
         if not any(net.subnet_of(n) for n in nets):
-            toks.append(str(net))
+            out.append(str(net))
             nets.append(net)
+    return out
+
+
+def allowed_ips_for(admin_dns: str = "", extra_nets=()) -> str:
+    """Строка AllowedIPs клиентского конфига. Устройству админа при раздельном
+    туннеле дописываются extra_nets (пространство адресов в туннеле локальных
+    сетей шлюзов, 10.240.0.0/12) и /32 резолвера админа, если их не покрывает
+    база (с extra_nets): иначе запросы к ним не ушли бы в туннель — адреса
+    лежат вне подсети клиентов. Резолвер админа в служебной /16 пространства —
+    /32 не нужен. Ничего не дописано и резолвера админа нет — строка из
+    настройки как есть, байт в байт (полный туннель покрывает всё)."""
+    import ipaddress
+    base = str(config.CLIENT_ALLOWED_IPS)
+    added = extra_needed(extra_nets)
+    if not admin_dns and not added:
+        return base
+    toks, nets = _base_v4()                      # «a, » и «a,b» — к одному виду
+    toks += added
+    nets += [ipaddress.IPv4Network(n) for n in added]
     if admin_dns:
         try:
             ip = ipaddress.IPv4Address(admin_dns)

@@ -333,8 +333,10 @@ def gateway_card_text(state: dict, states: list) -> str:
     if nets:
         example = lan_example(state.get("lan_twins"))
         if example:
-            more.append("с твоих устройств в туннеле и из подсетей других шлюзов сеть открывается по адресам "
-                        f"в туннеле: {example}")
+            # «из подсетей других шлюзов» — только при живой связи подсетей
+            who = "с твоих устройств в туннеле и из подсетей других шлюзов" if state.get("peer_nets") \
+                else "с твоих устройств в туннеле"
+            more.append(f"{who} сеть открывается по адресам в туннеле: {example}")
     if state.get("preferred") and two:
         more.append("предпочтительный при холодном старте")
     if more:

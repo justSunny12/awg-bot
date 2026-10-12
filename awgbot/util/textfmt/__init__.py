@@ -16,7 +16,7 @@ from .base import (
     deep_link, profile_link, admin_device_link, _SUB, tree, sub_line, access_status_line, _e,
     _num, gb, _BYTES_PER_TB, unit_for, amount, volume, human_bytes, used_of_limit, _updown,
     rf_value, updown_brief, _BYTES_PER_GB, gb_str, _limit_devices_str, device_state, details,
-    plain_ip, tg_link, client_link, owner_name, holder_name, owner_link, holder_link,
+    plain_ip, addr_codes, tg_link, client_link, owner_name, holder_name, owner_link, holder_link,
     _n_devices, num, more, unlimited, plural_ru, _days_word, _days)
 from .atoms import (
     STATUS, TOAST_MAX, TEXT_MAX, _TAG, st, tick, head, prompt, label, sub, screen, confirm,
@@ -26,7 +26,7 @@ __all__ = [
     "deep_link", "profile_link", "admin_device_link", "_SUB", "tree", "sub_line",
     "access_status_line", "_e", "_num", "gb", "_BYTES_PER_TB", "unit_for", "amount", "volume",
     "human_bytes", "used_of_limit", "_updown", "rf_value", "updown_brief", "_BYTES_PER_GB",
-    "gb_str", "_limit_devices_str", "device_state", "details", "plain_ip", "tg_link",
+    "gb_str", "_limit_devices_str", "device_state", "details", "plain_ip", "addr_codes", "tg_link",
     "client_link", "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices",
     "num", "more", "unlimited", "plural_ru", "_days_word", "_days",
     "STATUS", "TOAST_MAX", "TEXT_MAX", "_TAG", "st", "tick", "head", "prompt", "label", "sub",

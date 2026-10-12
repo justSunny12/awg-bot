@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 
+from awgbot.util.textfmt import addr_codes
+
 from ..fmt import _e, details
 
 from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, lan_pairs, lan_space_range, slot_name, slot_ref
@@ -172,11 +174,16 @@ def gateway_lan_text(state: dict) -> str:
     правило двух последних чисел адреса."""
     gw = state["gateway"]
     nets = gw.lan_subnets
-    cur = lan_pairs(nets, state.get("lan_twins"), limit=len(nets)) if nets else "не заданы"
+    cur = lan_pairs(nets, state.get("lan_twins"), limit=16) if nets else "не заданы"
+    # «из подсетей других шлюзов» — только при живой связи подсетей
+    linked = bool(state.get("peer_nets"))
+    who = "С твоих устройств в туннеле и из подсетей других шлюзов" if linked else "С твоих устройств в туннеле"
+    access = ("только твоим устройствам и сетям шлюзов с VPN-транзитом" if linked
+              else "только твоим устройствам")
     lines = [ui.head(f"🗺 Подсети {slot_ref(state)}", meta=[f"сейчас: {cur}"]), "",
-             "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. С твоих устройств "
-             "в туннеле и из подсетей других шлюзов сеть видна по адресам в туннеле: последние два числа те же, "
-             "что в настоящем адресе. Доступ через туннель — только твоим устройствам"]
+             "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
+             f"{who} сеть видна по адресам в туннеле: последние два числа те же, что в настоящем адресе. "
+             f"Доступ через туннель — {access}"]
     if gw.lan_mode:
         lines.append("VPN-транзит будет работать для первой подсети в списке")
     lines.append(details(f"если сеть, где сейчас твоё устройство, сама в {lan_space_range()}, адреса в "
@@ -192,7 +199,7 @@ def gateway_lan_report(res: dict, state: dict) -> str:
     parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
     rejected = res.get("rejected") or []
     if rejected:
-        shown = "; ".join(f"<code>{_e(raw[:40])}</code> — {_e(why)}" for raw, why in rejected[:3])
+        shown = "; ".join(f"<code>{_e(raw[:40])}</code> — {addr_codes(why)}" for raw, why in rejected[:3])
         more = f"; и ещё {len(rejected) - 3}" if len(rejected) > 3 else ""
         parts.append(f"⚠️ Не принято: {shown}{more}")
     return "\n".join(parts)

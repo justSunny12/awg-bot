@@ -78,3 +78,16 @@ def test_a_slot_without_its_channel_is_not_asked_twice_in_the_dialog():
     st["channel"] = {"online": True}
     assert "перевыпусти конфигурацию: Pi5, Pi4" in gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
 
+
+
+def test_the_announcement_with_fifteen_slots_fits_telegram():
+    """Сводка после обновления: 15 слотов с длинными именами и по 64 подсети —
+    при стольких шлюзах до трёх пар на слот («и ещё N»), сообщение в пределах
+    4096; два шлюза — до шести."""
+    from awgbot.domain.notices.lanmap import lan_space_moved
+    rows = [(f"<a href=\"https://t.me/b?start=gw-{sid}\">Шлюз-{sid:02d}-{'Ж' * 20} ({'Л' * 20})</a>",
+             [(f"192.168.{i}.0/24", f"10.{239 + sid}.{i}.0/24") for i in range(64)]) for sid in range(1, 16)]
+    text = lan_space_moved(rows, smb=True, reissue=True)
+    assert "и ещё 61" in text
+    assert len(plain_text(text)) <= TG_MAX, len(plain_text(text))
+    assert "и ещё 58" in lan_space_moved(rows[:2], smb=False, reissue=False)

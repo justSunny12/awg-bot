@@ -296,7 +296,8 @@ async def gateway_lan_received(message: Message, state: FSMContext, services):
         res = await call(services.gateway_set_lan_subnets, slot, message.text or "")
         st = await call(services.gateway_screen_state, slot, lazy_ping=False)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")   # ввод открыт, «Отмена» на месте
+        from awgbot.util.textfmt import addr_codes
+        await ask_tracked(message, services, f"⚠️ {addr_codes(str(e))}")   # ввод открыт, «Отмена» на месте
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)

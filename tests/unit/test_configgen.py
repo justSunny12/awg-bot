@@ -386,3 +386,14 @@ def test_a_sloppy_split_list_is_tidied_only_for_the_admin(monkeypatch):
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "10.8.1.0/24 ,192.168.1.0/24, ")
     assert cg.allowed_ips_for(ADMIN_DNS) == f"10.8.1.0/24, 192.168.1.0/24, {ADMIN_DNS}/32"
     assert cg.allowed_ips_for("") == "10.8.1.0/24 ,192.168.1.0/24, "
+
+
+@pytest.mark.parametrize("allowed", ["0.0.0.0/0,::/0", " 0.0.0.0/0 , ::/0", "10.0.0.0/8,  192.168.1.0/24"])
+def test_nothing_added_and_no_resolver_leaves_the_raw_line(monkeypatch, allowed):
+    """Пространство покрыто, резолвера админа нет — дописывать нечего, и строка
+    из настройки идёт как есть, байт в байт (даже неаккуратная)."""
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
+    assert cg.allowed_ips_for("", [SPACE]) == allowed
+    assert cg.extra_needed([SPACE]) == []
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "10.8.1.0/24")
+    assert cg.extra_needed([SPACE]) == [SPACE]

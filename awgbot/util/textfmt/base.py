@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import html
+import re
 from awgbot.util import timeutil
 
 
@@ -198,6 +199,15 @@ def plain_ip(addr: str) -> str:
     IP, а тап по нему копирует адрес в буфер — ровно то, что с адресом и
     делают. Невидимые соединители были хуже: копировались вместе с адресом."""
     return f"<code>{_e(str(addr or ''))}</code>"
+
+
+_ADDR4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?\b")
+
+
+def addr_codes(text: str) -> str:
+    """Текст с экранированием, адреса и подсети IPv4 в нём — моноширинным
+    (причины отказов и ошибок, собранные доменом без разметки)."""
+    return _ADDR4.sub(lambda m: f"<code>{m.group(0)}</code>", _e(str(text or "")))
 
 
 # ── Ссылки на людей ─────────────────────────────────────────────────────────

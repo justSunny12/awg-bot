@@ -148,24 +148,31 @@ class LanMapSyncMixin:
     def lan_space_announce(self) -> list[Notification]:
         """Один раз после обновления, без звука, одним сообщением:
         — локальные сети шлюзов теперь открываются по адресам в туннеле (если у
-          слотов есть подсети; хвост про раздельный туннель — только при нём),
-          ключ lan_space_announced;
+          слотов есть подсети; «имена SMB уже ведут на новые» — только при
+          стоящих записях SMB; «импортируй заново» — только если строка
+          пространства реально дописывается в конфиг админа), ключ
+          lan_space_announced;
         — прежний тумблер связи подсетей был выключен, а слотов с VPN-транзитом
           два и больше — их сети теперь связаны без вопроса, ключ
           lan_peers_announced.
         Ключ взводится по факту доставки; сказать нечего — сразу (новая
-        установка без слотов). Пока адреса в туннеле выключены — молчит и
-        ключей не взводит: сказать «открываются» нечего."""
+        установка без слотов). Пока адреса в туннеле выключены или таблица не
+        встала — молчит и ключей не взводит: сказать «открываются» нечего."""
         from awgbot.domain import configgen
         from awgbot.domain.notices.lanmap import lan_peers_joined, lan_space_moved
         if self.lan_space_problem():
             return []
         parts: list[str] = []
         keys: list[str] = []
+        gateways = self.db.gateways()
+        rows = [(self._gw_link(g), twins) for g in gateways if (twins := self.lan_twins(g))]
+        if rows and not self.lan_map_up():
+            return []                                  # таблица не встала — скажется, когда встанет
         if self.db.get_state(self._LAN_SPACE_ANNOUNCED_KEY) != "1":
-            rows = [(self._gw_link(g), twins) for g in self.db.gateways() if (twins := self.lan_twins(g))]
             if rows:
-                parts.append(lan_space_moved(rows, configgen.split_tunnel()))
+                smb = any(self.smb_tunnel_slot(g) for g in gateways)
+                reissue = bool(configgen.extra_needed([str(lanspace.space())]))
+                parts.append(lan_space_moved(rows, smb=smb, reissue=reissue))
                 keys.append(self._LAN_SPACE_ANNOUNCED_KEY)
             else:
                 self.db.set_state(self._LAN_SPACE_ANNOUNCED_KEY, "1")
