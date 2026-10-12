@@ -6,9 +6,11 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import ui
 from awgbot.core.enums import SubStatus
-from ..fmt import details, access_status_line, gb_str, _n_devices, _days
+from ..fmt import details, access_status_line, gb_str, _n_devices
 from ..routing import ROUTING_NAME
 from .common import _pause_visibility, _pause_until
+# строка о днях паузы — уведомление домена о продлении, текст общий
+from awgbot.domain.notices.subscription import _pause_kind_ru, pause_credit_line  # noqa: F401
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,31 +29,6 @@ _KIND_LABELS = {"day": "на день", "week": "на неделю", "month": "�
 
 def subscription_kind_label(kind) -> str:
     return _KIND_LABELS.get(str(kind or ""), str(kind or "—"))
-
-
-def _pause_kind_ru(kind: str) -> str:
-    return "годовой" if kind == "year" else "ежемесячной"
-
-
-def pause_credit_line(pc) -> str:
-    if pc is None or pc.kind not in ("year", "month"):
-        return ""
-    if pc.reason == "expired":
-        return ("⏸️ Дни паузы за этот период не начислены: подписка продлена после истечения. "
-                f"Доступно {_days(pc.after)}")
-    if pc.reason == "grace":
-        return ("⏸️ Дни паузы за этот период не начислены: в прошлом периоде использована "
-                f"отсрочка. Доступно {_days(pc.after)}")
-    if pc.reason == "cap":
-        return ("⏸️ Дни паузы не добавлены: достигнуто максимальное количество для "
-                f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap})")
-    full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
-            else settings.get_int("pause.monthly_pause_days", 2))
-    partial = pc.added < full
-    note = ("" if not partial
-            else " (максимум)" if pc.kind == "year"
-            else " (максимум для ежемесячной подписки)")
-    return f"⏸️ Дней паузы +{pc.added} → {pc.after}{note}"
 
 
 def pause_rules_details() -> str:
@@ -130,3 +107,9 @@ def subscription_status_only(client, *, expiring: bool = False) -> str:
         end = timeutil.parse_iso(client.period_end)
         return f"🟡 истекает {timeutil.fmt_end_ui(end)}"
     return "🟢 активна"
+
+
+__all__ = [
+    "_pause_kind_ru", "pause_credit_line", "_KIND_LABELS", "subscription_kind_label",
+    "pause_rules_details", "pause_balance_line", "_limits_line", "subscription_text",
+    "subscription_status_only"]

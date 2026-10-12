@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from awgbot.infra import routing
 from awgbot.infra import bootid
+from awgbot.domain.notices.routing import routing_gateway_warning
 from .common import log
 
 
@@ -82,10 +83,9 @@ class RoutingColdStartMixin:
     def routing_startup_warnings(self) -> list[str]:
         """Замечания preflight по слотам: активный — прежний текст, резерв —
         «резерва нет». Слотов нет — один замер линка обвязки."""
-        from awgbot.bot import texts as _texts
         slots = self.db.gateways()
         if not slots:
-            warn = _texts.routing_gateway_warning(self.routing_probe(), at_start=True)
+            warn = routing_gateway_warning(self.routing_probe(), at_start=True)
             return [warn] if warn else []
         active = self.active_gateway()
         verdicts = {g.id: self._probe_slot(g, active=(active is not None and active.id == g.id))
@@ -100,7 +100,7 @@ class RoutingColdStartMixin:
         out = []
         for g in dead:
             if active is not None and active.id == g.id:
-                warn = _texts.routing_gateway_warning(verdicts[g.id], at_start=True)
+                warn = routing_gateway_warning(verdicts[g.id], at_start=True)
                 if warn:
                     out.append(f"{warn[0].upper()}{warn[1:]} (шлюз {self._gw_display_h(g)})")
             else:

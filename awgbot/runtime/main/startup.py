@@ -97,8 +97,9 @@ async def report_update_result(bot, services) -> None:
     # между финишерами бывают «не применилось» и «не удалось» с той же кнопкой)
     from awgbot.bot.handlers.common import dismiss_update_reports
     await dismiss_update_reports(bot, services)
+    from awgbot.bot.notifier import note_markup
     sent = await pkg.notify_one(bot, note.tg_id, note.text,
-                            reply_markup=note.reply_markup)
+                            reply_markup=note_markup(note))
     if sent is not None:
         await asyncio.to_thread(services.remember_update_report,
                                 sent.chat.id, sent.message_id)

@@ -124,8 +124,8 @@ def _routing_svc(probed: list, verdict: str):
         def routing_status(self): return True, ""
         def routing_probe(self): probed.append(1); return verdict
         def routing_startup_warnings(self):
-            from awgbot.bot import texts as _texts
-            w = _texts.routing_gateway_warning(self.routing_probe(), at_start=True)
+            from awgbot.domain.notices.routing import routing_gateway_warning
+            w = routing_gateway_warning(self.routing_probe(), at_start=True)
             return [w] if w else []
     return Svc()
 

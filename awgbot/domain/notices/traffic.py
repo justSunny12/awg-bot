@@ -1,11 +1,8 @@
-"""texts.py — тексты уведомлений о трафике, сроках и месячных сбросах."""
+"""traffic.py — часть пакета notices (см. __init__): уведомления о трафике,
+сроках и месячных сбросах."""
 from __future__ import annotations
 
-import logging
-
-from awgbot.domain.services.types import BYTES_PER_GB
-
-log = logging.getLogger("awgbot.services")
+from awgbot.util.textfmt import plural_ru
 
 
 # Тексты уведомлений (сухие, без слов про оплату — ТЗ 6.5).
@@ -15,7 +12,6 @@ _TXT_EXPIRED_CLIENT = "🔴 Подписка истекла — доступ п�
 def _left_label(mins_left: int) -> str:
     """«3 дня» / «5 часов» / «меньше часа» — остаток словами для уведомления
     о сроке, когда ближайший порог уже позади."""
-    from awgbot.bot.texts.fmt import plural_ru
     days, hours = -(-mins_left // 1440), -(-mins_left // 60)      # вверх, как remaining_brief
     if mins_left >= 1440:
         return f"{days} {plural_ru(days, 'день', 'дня', 'дней')}"
@@ -33,6 +29,9 @@ _TXT_EXPIRED_ADMIN = "🔴 {name}: подписка истекла, доступ
 def _gb_limit(num_bytes: int) -> str:
     """Лимит в целых ГБ для уведомлений: «500 ГБ». 0 = безлимит (в перечислениях
     такие не показываем, но на всякий)."""
+    # лениво: сервисы берут эти тексты при своей загрузке — встречный импорт
+    # на уровне модуля замкнул бы цикл, если notices.traffic грузится первым
+    from awgbot.domain.services.types import BYTES_PER_GB
     return f"{int(round(num_bytes / BYTES_PER_GB))} ГБ"
 
 

@@ -291,7 +291,10 @@ def test_confirm_applied_update_success(services, monkeypatch):
     assert note is not None
     assert note.text.startswith("✅ Обновлено до v1.1.1\n"), note.text
     assert "<blockquote expandable>" in note.text          # changelog под катом
-    assert note.reply_markup is not None                   # кнопка «В меню»
+    assert note.keyboard == "update_done"                  # кнопка «В меню» — по имени
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot.notifier import note_markup
+    assert note_markup(note) == kb.update_done_menu()      # ту же клавиатуру собирает бот
     assert services.confirm_applied_update() is None       # флаг стёрт — однократно
 
 
@@ -309,6 +312,7 @@ def test_confirm_applied_update_failure(services, monkeypatch):
     note = services.confirm_applied_update()
     assert note is not None and "⚠️" in note.text
     assert "v1.1.1" in note.text and "1.1.0" in note.text
+    assert note.keyboard == "update_done", "и у неудачи — «В меню»"
 
 
 def test_confirm_applied_update_no_pending(services):

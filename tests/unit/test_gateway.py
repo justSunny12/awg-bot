@@ -373,7 +373,7 @@ def test_gateway_confirms_applied_update_like_the_client_role(svc, monkeypatch):
     svc.db.set_state("update_pending", "v2.4.2")
     note = svc.confirm_applied_update()
     assert note is not None and "2.4.2" in note.text
-    assert note.reply_markup is not None, "нет кнопки «В меню»"
+    assert note.keyboard == "update_done", "нет кнопки «В меню»"
     assert svc.confirm_applied_update() is None, "отчитался дважды"
 
 

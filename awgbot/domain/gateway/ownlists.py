@@ -341,7 +341,7 @@ class OwnListsMixin:
                 waited = (timeutil.now() - timeutil.parse_iso(p["sent_at"])).total_seconds()
             except ValueError:
                 waited = 0.0
-        from awgbot.bot.texts.fmt import plural_ru
+        from awgbot.util.textfmt import plural_ru
         n = info["pending"]
         n_word = f"{n} " + plural_ru(n, "правка", "правки", "правок")
         if not gwguard.lan_domain_has_sync():

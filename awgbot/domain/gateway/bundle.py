@@ -345,8 +345,8 @@ class BundleMixin:
     def gateway_apply_report(self) -> str:
         """Человеческий отчёт после применения — из статуса скрипта."""
         from awgbot.infra import gwguard
-        from awgbot.bot import texts
-        return texts.gateway_apply_report(gwguard.script_status())
+        from awgbot.domain.notices.gateway import gateway_apply_report
+        return gateway_apply_report(gwguard.script_status())
 
     def gateway_mark_status(self) -> str:
         return self.db.get_state(self._GW_MARK_KEY) or "?"

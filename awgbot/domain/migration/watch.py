@@ -31,7 +31,7 @@ class MigrationWatchMixin:
         требует немедленной реакции.
         """
         from awgbot.domain.services import Notification
-        from awgbot.bot import texts
+        from awgbot.domain.notices.migration import migration_hello
         if dev.twin_of is None or not self.migration_running():
             return None
         target = (dev.friend_tg_id
@@ -42,7 +42,7 @@ class MigrationWatchMixin:
             target = client.tg_id if client else None
         if not target:
             return None                       # профиль без Telegram — некому
-        return Notification(target, texts.migration_hello(dev.name))
+        return Notification(target, migration_hello(dev.name))
 
     def migration_watch(self) -> list:
         """Частый тик: кто из двойников подключился впервые прямо сейчас.
@@ -101,7 +101,7 @@ class MigrationWatchMixin:
         дефолт — решение админа, и принимать его за него нельзя.
         """
         from awgbot.domain.services import Notification
-        from awgbot.bot import texts
+        from awgbot.domain.notices.migration import migration_ready
         if not self.migration_running():
             if self.db.get_state(self._READY_ANNOUNCED):
                 self.db.set_state(self._READY_ANNOUNCED, "")
@@ -112,4 +112,4 @@ class MigrationWatchMixin:
         if self.db.get_state(self._READY_ANNOUNCED) == "1":
             return []
         self.db.set_state(self._READY_ANNOUNCED, "1")
-        return [Notification(config.ADMIN_ID, texts.migration_ready(p))]
+        return [Notification(config.ADMIN_ID, migration_ready(p))]

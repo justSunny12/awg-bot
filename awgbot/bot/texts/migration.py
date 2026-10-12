@@ -5,6 +5,8 @@ from __future__ import annotations
 from awgbot.bot import ui
 from .fmt import _e, plural_ru
 from .routing.slots import _bot_link
+# поздравление и доклад о готовности — уведомления домена, тексты общие
+from awgbot.domain.notices.migration import migration_hello, migration_ready  # noqa: F401
 
 
 def migration_started(res) -> str:
@@ -28,33 +30,6 @@ def migration_started(res) -> str:
                  "устройстве, прежде чем звать остальных: если не заработает — "
                  "«Отменить», и никто, кроме тебя, ничего не заметит.")
     return "\n".join(lines)
-
-
-def migration_hello(device_name: str) -> str:
-    """Поздравление ПОЛЬЗОВАТЕЛЮ, когда его устройство впервые подключилось по
-    новым настройкам. Шлётся один раз на устройство.
-
-    Вторая строка — единственное действие, которое от человека требуется: старый
-    профиль в приложении никуда не девается сам, а когда переезд завершат, он
-    просто перестанет работать. Сказать об этом надо в момент успеха, пока
-    человек ещё в приложении.
-    """
-    return (f"Всё получилось! Устройство «{_e(device_name)}» успешно подключено "
-            f"с новыми настройками и стало ещё защищённее от блокировок 💪🏻\n"
-            f"Прошлую ссылку для подключения можно удалить из приложения "
-            f"AmneziaVPN — она скоро перестанет работать.")
-
-
-def migration_ready(p) -> str:
-    """Все живые переехали. Сообщение НЕ завершает переезд — решение за админом,
-    и в тексте сразу сказано, что дальше, иначе «готово» повиснет фактом без
-    следствия."""
-    return (ui.head("🚚 Все живые устройства переехали") + "\n"
-            f"Клиентов: {p.clients_done}/{p.clients_total}, "
-            f"устройств: {p.devices_done}/{p.devices_total}.\n\n"
-            "Можно завершать: ⚙️ Настройки → 🔧 Сервис → «✅ Завершить». "
-            "До завершения старые пиры продолжают работать, а отмена по-прежнему "
-            "безопасна.")
 
 
 def migration_prepare_failed(reason: str) -> str:
@@ -226,3 +201,12 @@ def migration_prepared(res: dict) -> str:
     return (f"✅ Второй интерфейс поднят: {_e(res['iface'])}, <code>{_e(res['subnet'])}</code>"
             + (f", порт {_e(str(res['port']))}" if res.get("port") else "")
             + " · после перезапуска бота: 🔧 Сервис → 🚚 Начать переезд")
+
+
+__all__ = [
+    "migration_hello", "migration_ready", "migration_started", "migration_prepare_failed",
+    "migration_generation_pending", "migration_needed", "migration_promoted", "_LIST_CAP",
+    "_rows_capped", "_names_capped", "migration_pending_text", "migration_start_confirm",
+    "migration_finish_confirm", "migration_cancel_confirm", "migration_orphans_text",
+    "migration_cancelled", "migration_finished", "migration_prepare_intro", "MIGRATION_ASK_PORT",
+    "migration_prepared"]

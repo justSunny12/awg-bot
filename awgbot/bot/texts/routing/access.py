@@ -5,10 +5,14 @@ from __future__ import annotations
 from awgbot.bot import ui
 from awgbot.util import timeutil
 
-from ..fmt import _e, plain_ip, client_link, holder_link, plural_ru, details
+from ..fmt import _e, plain_ip, holder_link, plural_ru, details
 
 from .slots import ROUTING_NAME
 from ..fmt import num
+# замечание о шлюзе и уведомления о доступе — тексты уведомлений домена, общие с экранами
+from awgbot.domain.notices.routing import (  # noqa: F401
+    routing_gateway_warning, ROUTING_GRANTED_NOTICE, routing_granted_holder_notice,
+    routing_revoked_holder_notice, ROUTING_REVOKED_NOTICE)
 
 
 # ── параметры и доступ ───────────────────────────────────────────────────────
@@ -261,42 +265,16 @@ ROUTING_UNAVAILABLE = "РФ-доступ временно недоступен. 
 ROUTING_NOT_ALLOWED_ADMIN = "РФ-доступ этому профилю не разрешён"     # админу — причина, а не «попробуй позже»
 
 
-def routing_gateway_warning(verdict: str, *, at_start: bool) -> str:
-    """Замер шлюза не прошёл: одна формулировка для замечаний при запуске и для
-    момента включения функции в настройках. PROBE_OK — пусто."""
-    from awgbot.infra import routing as _rt
-    when = "на старте" if at_start else "при включении"
-    if verdict == _rt.PROBE_NO_PATH:
-        return ("шлюз РФ-доступа отвечает, но интернета за ним нет — "
-                "чинить на самом шлюзе (аплинк, ip_forward, MASQUERADE). Маркировка "
-                "снята, российские сервисы временно открываются с зарубежного адреса")
-    if verdict != _rt.PROBE_OK:
-        return (f"шлюз РФ-доступа не отвечает {when} — маркировка снята, "
-                "российские сервисы временно открываются с зарубежного адреса")
-    return ""
-
 # Подтверждение выключения фичи целиком (общая настройка, не профиль).
 
-# Владельцу профиля — админ выдал/отозвал разрешение на РФ-доступ.
-ROUTING_GRANTED_NOTICE = (
-    "🇷🇺 К твоей подписке добавлен РФ-доступ 🎉\n"
-    "РФ-приложения и сайты теперь будут работать со включённым VPN. Включён на всех "
-    "твоих устройствах; выключить и добавить свои сайты — в разделе «🇷🇺 РФ-доступ»"
-)
-def routing_granted_holder_notice(donor) -> str:
-    return (f"🇷🇺 К устройствам от профиля {client_link(donor)} добавлен РФ-доступ 🎉\n"
-            "РФ-приложения и сайты теперь будут работать со включённым VPN. Включён на всех "
-            "твоих устройствах; выключить и добавить свои сайты — в разделе «🇷🇺 РФ-доступ»")
 
-
-def routing_revoked_holder_notice(donor) -> str:
-    return (f"🇷🇺 РФ-доступ для устройств от профиля {client_link(donor)} больше недоступен 😔\n"
-            "Для доступа к ресурсам, которые ругаются на VPN, теперь придётся его выключать")
-
-
-ROUTING_REVOKED_NOTICE = (
-    "🇷🇺 РФ-доступ больше не входит в твою подписку 😔\n"
-    "Для доступа к ресурсам, которые ругаются на VPN, теперь придётся его выключать"
-)
-
-
+__all__ = [
+    "routing_gateway_warning", "ROUTING_GRANTED_NOTICE", "routing_granted_holder_notice",
+    "routing_revoked_holder_notice", "ROUTING_REVOKED_NOTICE", "routing_params_text",
+    "routing_users_text", "ROUTING_DISABLE_CONFIRM", "gateway_bundle_applied_text",
+    "gateway_installed_text", "gateway_bundle_caption", "gateway_plain_bundle_caption",
+    "routing_provision_failed", "gateway_install_instructions", "routing_status_line",
+    "GW_CARD_PAYLOAD", "routing_admin_status_line", "ROUTING_ABOUT", "ROUTING_ADD_PROMPT",
+    "ROUTING_APPLY_HINT", "ROUTING_SITES_ABOUT", "_short", "routing_domain_removed",
+    "_lent_out_lines", "routing_panel_text", "routing_sites_text", "routing_add_report",
+    "routing_clear_ask", "ROUTING_UNAVAILABLE", "ROUTING_NOT_ALLOWED_ADMIN"]

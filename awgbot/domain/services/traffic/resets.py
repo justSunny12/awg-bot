@@ -11,7 +11,7 @@ from awgbot.core.blocks import DeviceBlock, ClientBlock
 from awgbot.core.enums import FriendStatus
 from awgbot.domain.services.types import Notification
 
-from .texts import _gb_limit, _reset_client_text, _reset_friend_text
+from awgbot.domain.notices.traffic import _gb_limit, _reset_client_text, _reset_friend_text
 
 log = logging.getLogger("awgbot.services")
 

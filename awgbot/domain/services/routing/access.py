@@ -8,6 +8,8 @@ from awgbot.core import settings
 from awgbot.infra import routing
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification, RoutingAddResult, ServiceError
+from awgbot.domain.notices.routing import (ROUTING_GRANTED_NOTICE, ROUTING_REVOKED_NOTICE,
+                                           routing_granted_holder_notice, routing_revoked_holder_notice)
 from .common import log
 
 
@@ -232,11 +234,10 @@ class RoutingAccessMixin:
         self.reconcile_routing()
         if not changed:
             return []
-        from awgbot.bot import texts                   # ленивый, как в соседних миксинах
         notes: list[Notification] = []
         if client.tg_id:
-            notes.append(Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
-                                      else texts.ROUTING_REVOKED_NOTICE))
+            notes.append(Notification(client.tg_id, ROUTING_GRANTED_NOTICE if allowed
+                                      else ROUTING_REVOKED_NOTICE))
         # держателям переданных устройств — то же, с оговоркой, от кого
         seen: set[int] = set()
         for dev in self.db.list_lent_out_devices(client_id):
@@ -244,15 +245,14 @@ class RoutingAccessMixin:
                 seen.add(dev.holder_tg_id)
                 notes.append(Notification(
                     dev.holder_tg_id,
-                    texts.routing_granted_holder_notice(client) if allowed
-                    else texts.routing_revoked_holder_notice(client)))
+                    routing_granted_holder_notice(client) if allowed
+                    else routing_revoked_holder_notice(client)))
         return notes
 
     def set_routing_allowed_many(self, client_ids, allowed: bool) -> list["Notification"]:
         """«Выбрать все»: флаг у всех, одна реконсиляция (и один перезапуск
         dnsmasq) вместо полной реконсиляции на каждый профиль — 15 профилей
         давали 15 рестартов и сброс DNS-кэша всем."""
-        from awgbot.bot import texts                   # ленивый, как в соседних миксинах
         notes: list[Notification] = []
         changed_clients = []
         with self.db.transaction():
@@ -268,16 +268,16 @@ class RoutingAccessMixin:
             self.reconcile_routing()
         for client in changed_clients:
             if client.tg_id:
-                notes.append(Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
-                                          else texts.ROUTING_REVOKED_NOTICE))
+                notes.append(Notification(client.tg_id, ROUTING_GRANTED_NOTICE if allowed
+                                          else ROUTING_REVOKED_NOTICE))
             seen: set[int] = set()
             for dev in self.db.list_lent_out_devices(client.id):
                 if dev.holder_tg_id and dev.holder_tg_id not in seen:
                     seen.add(dev.holder_tg_id)
                     notes.append(Notification(
                         dev.holder_tg_id,
-                        texts.routing_granted_holder_notice(client) if allowed
-                        else texts.routing_revoked_holder_notice(client)))
+                        routing_granted_holder_notice(client) if allowed
+                        else routing_revoked_holder_notice(client)))
         return notes
 
     def set_routing_all(self, client_id: int, on: bool) -> int:

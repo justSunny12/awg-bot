@@ -10,7 +10,7 @@ from awgbot.core.enums import SubStatus, PeriodKind, FriendStatus
 from awgbot.domain.services.types import Notification
 from awgbot.domain.services.blocks import _friend_blocked_text
 
-from .texts import _MONTH_CUT_MINUTES, _TXT_EXPIRED_ADMIN, _TXT_EXPIRED_CLIENT, _TXT_EXPIRING_ADMIN, _TXT_EXPIRING_CLIENT, _left_label
+from awgbot.domain.notices.traffic import _MONTH_CUT_MINUTES, _TXT_EXPIRED_ADMIN, _TXT_EXPIRED_CLIENT, _TXT_EXPIRING_ADMIN, _TXT_EXPIRING_CLIENT, _left_label
 
 log = logging.getLogger("awgbot.services")
 

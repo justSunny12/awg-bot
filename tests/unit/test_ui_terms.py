@@ -1,6 +1,7 @@
 """Unit: термины в текстах интерфейса — по литералам texts/*, keyboards/*,
-sections/*, guides.py, ui.py и roles.py (строки, которые видит человек;
-докстринги и комментарии не в счёт).
+sections/*, guides.py, ui.py и roles.py, а также тексты уведомлений домена
+(domain/notices/*) и атомы текста (util/textfmt/*) — строки, которые видит
+человек; докстринги и комментарии не в счёт.
 
 Правила: «локальная сеть», а не «дом/домашняя/квартира»; VPN, а не «ВПН»;
 у клиента и гостя — «Трафик», а не «Потребление». Цена ошибки — разнобой
@@ -24,8 +25,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[2] / "awgbot" / "bot"
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = [REPO / "awg-bot.sh"] + sorted((REPO / "install").glob("*.sh"))
 _SAY = re.compile(r"^\s*(?:say|log|warn|die|ok|step|echo|printf|info|err)\b")
+# тексты уведомлений домена и атомы текста — те же строки, что на экранах бота
+SHARED = (sorted((ROOT.parent / "domain" / "notices").glob("*.py"))
+          + sorted((ROOT.parent / "util" / "textfmt").glob("*.py")))
 FILES = (sorted((ROOT / "texts").rglob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
-         + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "guides.py", ROOT / "ui.py", ROOT / "roles.py"])
+         + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "guides.py", ROOT / "ui.py", ROOT / "roles.py"]
+         + SHARED)
 
 TERMS = {
     "дом": re.compile(r"(?<![а-яё])дом(?![а-яё])", re.I),
@@ -66,7 +71,7 @@ MAIN_FILES = (sorted((ROOT / "texts").rglob("*.py")) + sorted((ROOT / "keyboards
               + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "ui.py", ROOT / "roles.py"]
               + sorted((ROOT / "handlers").rglob("*.py"))
               + [ROOT.parent / "domain" / n for n in ("gwssh.py", "gwchecks.py")]
-              + sorted((ROOT.parent / "domain" / "gateway").glob("*.py")))
+              + sorted((ROOT.parent / "domain" / "gateway").glob("*.py")) + SHARED)
 
 
 def _literals(path: pathlib.Path):
@@ -87,7 +92,7 @@ def _literals(path: pathlib.Path):
 def _hits():
     out = []
     for path in FILES:
-        rel = path.relative_to(ROOT).as_posix()
+        rel = (path.relative_to(ROOT) if path.is_relative_to(ROOT) else path.relative_to(ROOT.parent)).as_posix()
         for value, line in _literals(path):
             for term, rx in TERMS.items():
                 if rx.search(value):
@@ -196,6 +201,10 @@ def test_the_old_name_scan_sees_handlers_and_fstrings(tmp_path):
     assert any(OLD_NAMES["между подсетями"].search(v) for v, _ in _literals(tmp))
     assert any(p.name == "sections.py" and p.parent.name == "settings" for p in MAIN_FILES)
     assert any(p.name == "slots.py" and p.parent.name == "routing" for p in FILES)
+    # тексты уведомлений домена и атомы текста переехали из бота — скан идёт за ними
+    for files in (FILES, MAIN_FILES):
+        assert any(p.name == "routing.py" and p.parent.name == "notices" for p in files)
+        assert any(p.name == "atoms.py" and p.parent.name == "textfmt" for p in files)
 
 
 def test_terminal_strings_of_scripts_follow_the_terms():

@@ -11,7 +11,7 @@ from awgbot.core.enums import ActivationStatus, FriendStatus
 from awgbot.domain.services.types import Notification
 
 from . import bonus
-from .texts import _cli_limit_off_text, _cli_limit_off_admin_text, _admin_dev_over_text, _admin_self_over_text, _cli_bonus_admin_text, _cli_bonus_text, _cli_over_admin_text, _cli_over_text, _cli_warn_text, _dev_over_text, _dev_warn_text, _friend_dev_over_host_text
+from awgbot.domain.notices.traffic import _cli_limit_off_text, _cli_limit_off_admin_text, _admin_dev_over_text, _admin_self_over_text, _cli_bonus_admin_text, _cli_bonus_text, _cli_over_admin_text, _cli_over_text, _cli_warn_text, _dev_over_text, _dev_warn_text, _friend_dev_over_host_text
 
 log = logging.getLogger("awgbot.services")
 

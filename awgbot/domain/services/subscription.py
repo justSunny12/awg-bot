@@ -20,6 +20,7 @@ from awgbot.domain.services.types import (
 from awgbot.domain.services.base import _e
 from awgbot.domain.services.blocks import _friend_unblocked_text
 from awgbot.domain.services.traffic import _TXT_EXPIRED_CLIENT
+from awgbot.domain.notices.subscription import pause_credit_line
 
 
 log = logging.getLogger("awgbot.services")
@@ -123,8 +124,7 @@ class SubscriptionMixin:
         if client.tg_id:
             msg = (_TXT_EXTENDED_FOREVER if new_end is None
                    else _TXT_EXTENDED.format(end=timeutil.fmt_end_ui(new_end)))
-            from awgbot.bot import texts                   # ленивый, как в соседних миксинах
-            line = texts.pause_credit_line(pause_credit)   # что стало со счётом паузы
+            line = pause_credit_line(pause_credit)         # что стало со счётом паузы
             if line:
                 msg += f".\n{line}" if not msg.endswith(".") else f"\n{line}"
             notifications.append(Notification(client.tg_id, msg))

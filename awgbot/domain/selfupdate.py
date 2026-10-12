@@ -222,14 +222,14 @@ class SelfUpdateMixin:
         self.db.set_state("update_pending", "")
         want = updates.parse_version(pending)
         have = updates.parse_version(config.INSTALLED_VERSION)
-        from awgbot.bot import texts
-        from awgbot.bot import keyboards as kb
+        from awgbot.domain.notices.updates import update_applied, update_not_applied
+        # кнопка «В меню» — по имени клавиатуры: собирает её слой бота
         if want is not None and want == have:
             body = updates.release_body(pending)
-            return _notification(config.ADMIN_ID, texts.update_applied(pending, body),
-                                reply_markup=kb.update_done_menu())
-        return _notification(config.ADMIN_ID, texts.update_not_applied(
-            pending, config.INSTALLED_VERSION), reply_markup=kb.update_done_menu())
+            return _notification(config.ADMIN_ID, update_applied(pending, body),
+                                keyboard="update_done")
+        return _notification(config.ADMIN_ID, update_not_applied(
+            pending, config.INSTALLED_VERSION), keyboard="update_done")
 
     # ── перезапуск бота: обещание «вернётся через несколько секунд» и его
     # исполнение новым процессом — одинаково у обеих ролей ──────────────

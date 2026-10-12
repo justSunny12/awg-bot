@@ -10,7 +10,8 @@ Flood-контроль Telegram (~30 msg/с на бота): пачки (меся
 ошибки — ждём указанное время и повторяем один раз, иначе уведомление молча
 терялось бы именно тогда, когда рассылка большая.
 
-Кнопки под уведомлением: своя клавиатура уведомления, иначе — кнопка действия
+Кнопки под уведомлением: своя клавиатура уведомления (reply_markup или
+готовая по имени — Notification.keyboard, KEYBOARDS), иначе — кнопка действия
 по подсказке Notification.action («⏱ Продлить», «📤 Конфигурация», «📦 Без
 профиля», «💳 Подписка», ACTION_LABELS) над «Скрыть», иначе одна «Скрыть».
 Нажатие разбирает reply_commands.on_note_action.
@@ -150,6 +151,22 @@ async def _paced(items, fn) -> list:
     return await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
 
 
+# готовые клавиатуры по подсказке Notification.keyboard — домен называет
+# клавиатуру по имени, собирает её бот
+KEYBOARDS = {"update_done": kb.update_done_menu}
+
+
+def note_markup(n):
+    """Своя клавиатура уведомления: reply_markup, иначе готовая по имени
+    (Notification.keyboard), иначе None. Незнакомое имя — None: дальше решает
+    вызывающий («Скрыть» по умолчанию)."""
+    markup = getattr(n, "reply_markup", None)
+    if markup is not None:
+        return markup
+    build = KEYBOARDS.get(getattr(n, "keyboard", "") or "")
+    return build() if build is not None else None
+
+
 # подписи кнопок действия по подсказке Notification.action
 ACTION_LABELS = {"extend": "⏱ Продлить", "gwcfg": "📤 Конфигурация",
                  "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
@@ -180,7 +197,7 @@ async def send_notifications(bot, notifications) -> None:
 
     async def one(n):
         silent = False if getattr(n, "force_sound", False) else quiet_silent
-        markup = action_markup(getattr(n, "action", ()), getattr(n, "reply_markup", None))
+        markup = action_markup(getattr(n, "action", ()), note_markup(n))
         await _send(bot, n.tg_id, n.text, markup, silent,
                     critical=bool(getattr(n, "critical", False)),
                     on_sent=getattr(n, "on_sent", None))
