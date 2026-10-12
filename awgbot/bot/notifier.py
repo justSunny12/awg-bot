@@ -30,7 +30,7 @@ from awgbot.bot import keyboards as kb
 
 log = logging.getLogger("awgbot.notifier")
 
-_BATCH_PACING_SECONDS = 0.05         # ~20 msg/с — с запасом под лимит Telegram
+_BATCH_PACING_SECONDS = 0.05         # ~20 msg/с на пачку — с запасом под лимит Telegram
 
 # Запасной канал для КРИТИЧНЫХ алертов админу, когда Telegram не отвечает
 # (сеть/блокировка): main.py вешает сюда корутину, которая шлёт текст письмом.
@@ -115,15 +115,37 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
 _PARALLEL = 6                          # окно одновременно летящих отправок
 
 
+class _Pace:
+    """Общий темп пачки: старты отправок — не чаще одного за interval на все
+    слоты окна разом. Пауза на каждом слоте отдельно давала окно × темп:
+    при шести слотах — до 120 сообщений в секунду вместо заявленных 20."""
+
+    def __init__(self, interval: float):
+        self.interval = interval
+        self._next = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        if self.interval <= 0:
+            return
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            at = max(now, self._next)
+            self._next = at + self.interval
+        if at > now:
+            await asyncio.sleep(at - now)
+
+
 async def _paced(items, fn) -> list:
-    """Параллельно с окном _PARALLEL и пейсингом на слот: лимит Telegram
-    ограничивает ТЕМП, а не число одновременных запросов. Последовательная
-    рассылка на 50 адресатов занимала 15–25 с, теперь — в разы меньше."""
+    """Параллельно с окном _PARALLEL и общим темпом _BATCH_PACING_SECONDS:
+    лимит Telegram ограничивает ТЕМП, а не число одновременных запросов —
+    медленный ответ одного адресата не держит остальных."""
     sem = asyncio.Semaphore(_PARALLEL)
+    pace = _Pace(_BATCH_PACING_SECONDS)
 
     async def one(item):
         async with sem:
-            await asyncio.sleep(_BATCH_PACING_SECONDS)
+            await pace.wait()
             return await fn(item)
     return await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
 

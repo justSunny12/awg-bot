@@ -134,6 +134,23 @@ async def test_broadcast_runs_in_parallel_window(monkeypatch):
     assert 1 < peak[0] <= notifier._PARALLEL
 
 
+async def test_broadcast_pace_is_shared_by_the_whole_window(monkeypatch):
+    """Темп — на всю пачку, а не на каждый слот окна: старты отправок не
+    ближе интервала друг к другу, сколько бы слотов ни было."""
+    from awgbot.bot import notifier
+    starts = []
+
+    async def fake_send(bot, tg_id, text, photos):
+        starts.append(asyncio.get_running_loop().time())
+        await asyncio.sleep(0.03)
+    monkeypatch.setattr(notifier, "send_announcement", fake_send)
+    monkeypatch.setattr(notifier, "_BATCH_PACING_SECONDS", 0.02)
+    await notifier.broadcast(object(), list(range(1, 13)), "t", [])
+    starts.sort()
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert len(starts) == 12 and min(gaps) >= 0.018, gaps
+
+
 async def test_send_notifications_reads_quiet_hours_once(monkeypatch):
     from awgbot.bot import notifier
     from types import SimpleNamespace as N
