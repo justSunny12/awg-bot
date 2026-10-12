@@ -271,7 +271,7 @@ async def test_a_role_with_a_new_server_version_notifies_through_the_hook(agent,
 
     async def on_update(nxt):
         got.append(nxt.tag)
-    monkeypatch.setattr(linkclient, "_on_update", on_update)
+    monkeypatch.setattr(linkclient._update_hook, "fn", on_update)
     client = linkclient.LinkClient(agent)
     await client._dispatch({"t": "role", "active": True, "caps": ["cfg1"], "server": "3.3.1"})
     assert got == ["v3.3.2"] and agent.server_version() == "3.3.1"

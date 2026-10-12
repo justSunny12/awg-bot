@@ -185,15 +185,8 @@ def split_tunnel() -> bool:
     """Конфиги сервера с раздельным туннелем: client_config.allowed_ips не
     покрывает весь IPv4 одной строкой (0.0.0.0/0). Полный туннель адреса в
     туннеле и резолвер админа покрывает и так."""
-    import ipaddress
-    for tok in str(config.CLIENT_ALLOWED_IPS).split(","):
-        try:
-            net = ipaddress.ip_network(tok.strip(), strict=False)
-        except ValueError:
-            continue
-        if net.version == 4 and net.prefixlen == 0:
-            return False
-    return True
+    _toks, nets = _base_v4()
+    return not any(n.prefixlen == 0 for n in nets)
 
 
 def _base_v4() -> tuple[list[str], list]:

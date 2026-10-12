@@ -39,7 +39,8 @@ def _db_facts() -> tuple[list[str], list[str]]:
             return [], []
         db = Database(config.DB_PATH)
         try:
-            links = [g.link_if for g in db.gateways() if g.lan_mode and g.lan_subnets]
+            from awgbot.domain.services.gateway_link.peernets import transit_slots
+            links = [g.link_if for g in transit_slots(db.gateways())]
             return db.admin_device_addresses(config.ADMIN_ID), links
         finally:
             db.close()

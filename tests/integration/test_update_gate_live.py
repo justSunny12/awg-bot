@@ -185,7 +185,7 @@ async def test_the_liveness_tick_touches_live_sessions_and_regates_every_20th(vp
 
     async def on_update(nxt):
         got.append(nxt.tag)
-    monkeypatch.setattr(linkserver, "_on_update", on_update)
+    monkeypatch.setattr(linkserver._update_hook, "fn", on_update)
     vps.db.set_state("gwlink_seen_1", _ago(hours=1))
     sess = vps.db.get_state("gwlink_session_1")
     vps.db.set_state("gwlink_session_1", sess.replace("3.2.1", "3.3.1"))   # событие о версии потерялось

@@ -10,6 +10,14 @@ from awgbot.domain.services.types import ServiceError
 from .common import log
 
 
+
+def transit_slots(gateways) -> list:
+    """Кто считается шлюзом с VPN-транзитом: транзит включён и подсети заданы
+    (без них адресов в туннеле нет, а включение транзита их и так требует).
+    Одно правило на бота и CLI `awg-bot firewall` (tools/firewall.py) — иначе
+    форвардинг линк ↔ линк у них разошёлся бы."""
+    return [g for g in gateways if g.lan_mode and g.lan_subnets]
+
 class PeerNetsMixin:
     """VPN-транзит слота и связь подсетей за шлюзами."""
     # ── «за шлюзом — без VPN» ───────────────
@@ -36,9 +44,8 @@ class PeerNetsMixin:
 
     # ── связь подсетей: часть VPN-транзита ───
     def gateway_transit_slots(self) -> list:
-        """Слоты с VPN-транзитом (и подсетями: без них адресов в туннеле нет,
-        а включение транзита их и так требует) — по порядку номеров."""
-        return [g for g in self.db.gateways() if g.lan_mode and g.lan_subnets]
+        """Слоты с VPN-транзитом — по порядку номеров (правило — transit_slots)."""
+        return transit_slots(self.db.gateways())
 
     def gateway_transit_links(self) -> list[str]:
         """Линки слотов с VPN-транзитом — файерволу ВПС для форвардинга

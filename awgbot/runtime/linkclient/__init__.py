@@ -74,6 +74,7 @@ import subprocess
 import time
 
 from awgbot.core import config
+from awgbot.runtime.updatehooks import UpdateHook
 from awgbot.util import gwlink
 
 from .common import DEFAULT_PORT, SEND_TIMEOUT, _BACKOFF
@@ -132,37 +133,20 @@ CONF_GONE_STOP = 600                    # столько без конфига �
 _notify = None
 _ask = None
 _edit = None
-_on_update = None
+_update_hook = UpdateHook()             # пересчёт цели обновления — общий с другой ролью (runtime/updatehooks)
 
 
 def set_on_update(fn) -> None:
     """Крючок уведомления о версии (async fn(release)): версия сервера в
     `role` открыла новую цель обновления — то же «Доступна новая версия», что
     шлёт проверка по расписанию. Ставит main."""
-    global _on_update
-    _on_update = fn
+    _update_hook.fn = fn
 
 
 async def update_regate(services, *, force: bool = True) -> None:
-    """Пересчёт цели обновления без сети (domain/selfupdate/cache.py) и
-    уведомление крючком main, если появилась цель новее объявленной.
-    Исключение — в журнал здесь же: ни сессия канала, ни приём сообщения от
-    него не рвутся. force=False — только если закрылось окно ожидания после
-    старта."""
-    if not hasattr(services, "update_regate"):           # роль без самообновления (заглушки)
-        return
-    try:
-        if not force and not await asyncio.to_thread(services.update_hold_due):
-            return
-        nxt = await asyncio.to_thread(services.update_regate)
-    except Exception as e:                                # noqa: BLE001
-        log.warning("канал линка: пересчёт цели обновления: %s", e)
-        return
-    if nxt is not None and _on_update is not None:
-        try:
-            await _on_update(nxt)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+    """Пересчёт цели обновления без сети и уведомление крючком main
+    (runtime/updatehooks — одна реализация на обе роли)."""
+    await _update_hook.regate(services, force=force)
 
 
 def set_edit(fn) -> None:
@@ -361,7 +345,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 

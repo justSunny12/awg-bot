@@ -60,6 +60,7 @@ import asyncio
 import logging
 
 from awgbot.core import config
+from awgbot.runtime.updatehooks import UpdateHook
 from awgbot.util import gwlink
 
 from .common import HELLO_TIMEOUT, _Session
@@ -105,37 +106,20 @@ _on_applied = None
 _on_installed = None
 _on_notes = None
 _on_rekeyed = None
-_on_update = None
+_update_hook = UpdateHook()             # пересчёт цели обновления — общий с другой ролью (runtime/updatehooks)
 
 
 def set_on_update(fn) -> None:
     """Крючок уведомления о версии (async fn(release)): версии агентов из
     hello или снимка открыли серверу новую цель обновления — то же «Доступна
     новая версия», что шлёт проверка по расписанию. Ставит main."""
-    global _on_update
-    _on_update = fn
+    _update_hook.fn = fn
 
 
 async def update_regate(services, *, force: bool = True) -> None:
-    """Пересчёт цели обновления без сети (domain/selfupdate/cache.py) и
-    уведомление крючком main, если появилась цель новее объявленной.
-    Исключение — в журнал здесь же: ни сессия канала, ни приём сообщения от
-    него не рвутся. force=False — только если закрылось окно ожидания после
-    старта."""
-    if not hasattr(services, "update_regate"):           # роль без самообновления (заглушки)
-        return
-    try:
-        if not force and not await asyncio.to_thread(services.update_hold_due):
-            return
-        nxt = await asyncio.to_thread(services.update_regate)
-    except Exception as e:                                # noqa: BLE001
-        log.warning("канал линка: пересчёт цели обновления: %s", e)
-        return
-    if nxt is not None and _on_update is not None:
-        try:
-            await _on_update(nxt)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+    """Пересчёт цели обновления без сети и уведомление крючком main
+    (runtime/updatehooks — одна реализация на обе роли)."""
+    await _update_hook.regate(services, force=force)
 
 
 def set_on_rekeyed(fn) -> None:
@@ -234,5 +218,5 @@ async def shutdown() -> None:
         _server = None
 
 
-__all__ = ["set_on_update", "_on_update", "update_regate", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+__all__ = ["set_on_update", "update_regate", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

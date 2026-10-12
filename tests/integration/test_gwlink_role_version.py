@@ -101,7 +101,7 @@ async def test_a_hello_with_a_new_agent_version_opens_the_server_update(services
 
     async def on_update(nxt):
         got.append(nxt.tag)
-    monkeypatch.setattr(linkserver, "_on_update", on_update)
+    monkeypatch.setattr(linkserver._update_hook, "fn", on_update)
     gw = await _hello(link)                                   # агент 3.4.0
     await _until(lambda: got)
     assert got == ["v3.3.1"] and services.update_available_tag() == "v3.3.1"
