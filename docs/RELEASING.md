@@ -144,7 +144,8 @@ GitHub `vX.Y.Z.P — …`.
   `handlers/hide.py` — «Скрыть», `domain/evidence.py` — улики живости,
   `infra/hostmetrics.py`, `infra/detach.py`, `infra/nftjson.py`,
   `infra/systemd.py`, `infra/bootid.py`, `util/kvfile.py`, `util/nets.py`,
-  общие тексты) — обе. `handlers/devcore.py` (шаги диалогов устройства) —
+  `util/lanspace.py` — адреса в туннеле: вычисляет сервер, показывает агент,
+  и перевод с показом не должны разойтись, общие тексты) — обе. `handlers/devcore.py` (шаги диалогов устройства) —
   только `main`. `install/routing-link-setup.sh` живёт только на ВПС —
   строка `main` (его копию в `/usr/local/sbin`, которую выполняет юнит
   `awg-link@<if>` при загрузке, `awg-bot update` на ВПС тоже освежает).

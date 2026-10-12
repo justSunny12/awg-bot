@@ -35,7 +35,8 @@
 # LINK_CIDR — /30 линка, из него выводятся LINK_VPS_ADDR и LINK_GW_ADDR,
 # ENDPOINT_HOST (бот передаёт network.server_host в --apply и --bundle: адрес
 # ВПС сменился или на интерфейсе приватный адрес за 1:1 NAT — строка Endpoint
-# конфига шлюзовой стороны правится при сборке, как порт), PEER_HOME_NETS (подсети за другими шлюзами — в AllowedIPs
+# конфига шлюзовой стороны правится при сборке, как порт), PEER_HOME_NETS (подсети других шлюзов — их
+# префиксы в туннеле, /16 на слот, только слоту с VPN-транзитом — в AllowedIPs
 # пира ВПС), CONF_DIR, GW_CONF_OUT, GW_BUNDLE_OUT. Из конфига бота (_APP_YAML,
 # /etc/awg-bot/conf/app.yaml) и перечитываются при каждой сборке файла конфигурации:
 # CLIENT_SUBNET (network.subnet_cidr) и LINK_KEEPALIVE

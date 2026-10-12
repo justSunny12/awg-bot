@@ -1,9 +1,9 @@
 """
 services — бизнес-логика: склейка db + awg + configgen.
 
-Пакет из миксинов по областям (blocks, clients, devices, subscription, traffic,
-reconcile, firewall, gateway_link, routing, status); типы и исключения — в
-types.py. Снаружи импортируют по-прежнему из awgbot.domain.services.
+Пакет из миксинов по областям (модули blocks, clients, devices, subscription,
+reconcile, firewall, status; пакеты gateway_link, gwchannel, routing, traffic);
+общая основа — base.py, типы и исключения — types.py. Снаружи импортируют по-прежнему из awgbot.domain.services.
 
 Слой синхронный (db и awg блокирующие). Async-слой (хендлеры, планировщик)
 вызывает эти методы через asyncio.to_thread, чтобы docker exec не морозил loop.
