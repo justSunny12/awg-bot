@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import SH, fake_cmd
-from tests.unit.test_gw_setup_script import _helpers
+from tests.unit._gw_setup_common import _helpers
 
 pytestmark = pytest.mark.unit
 

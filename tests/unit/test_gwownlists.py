@@ -5,7 +5,7 @@
 поверх временной БД; шлюз под ним — `_Host`: каталог dnsmasq.d с двумя
 файлами своих списков, юнит обвязки и подставной `awg-lan-domain.sh` (list
 читает файлы, sync пишет их и считается). Настоящий скрипт гоняется в
-tests/unit/test_gw_lan_script.py и в интеграции.
+tests/unit/test_gw_lan_script_*.py и в интеграции.
 
 Цена ошибки: канон, который затирает свежую правку, — домен «вернулся» или
 пропал на всех шлюзах сразу; отсутствующий файл, принятый за удаление, —
@@ -242,7 +242,7 @@ def test_the_domain_rule_is_the_one_the_script_uses():
     """Правило домена на ВПС и в awg-lan-domain.sh — одно: общий список
     примеров из тестов скрипта даёт те же вердикты. Разойдись — домен,
     разосланный сервером, скрипт отвергал бы на каждом шлюзе."""
-    from tests.unit.test_gw_lan_script import _DOMAIN_EXAMPLES
+    from tests.unit._gw_lan_common import _DOMAIN_EXAMPLES
     wrong = [(d[:40], ok) for d, ok in _DOMAIN_EXAMPLES.items() if gwownlists.valid_domain(d) != ok]
     assert wrong == [], f"правило канона разошлось с примерами скрипта: {wrong}"
 

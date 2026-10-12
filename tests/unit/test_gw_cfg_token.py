@@ -35,7 +35,7 @@ from awgbot.core import config
 from awgbot.domain import gwcfg
 from awgbot.domain.gateway.cfg import token as tokenmod
 from tests.unit import test_gw_cfg_apply as _apply
-from tests.unit import test_linkclient_session as _ls
+from tests.unit import _linkclient_session_common as _ls
 
 pytestmark = pytest.mark.unit
 
