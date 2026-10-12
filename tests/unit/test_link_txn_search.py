@@ -683,7 +683,11 @@ def test_a_server_answer_after_the_switch_fixes_the_new_keys(svc, host, clock):
     res = svc.rekey_server_answered()
     assert res == {"done": {"id": "a1b2c3d4e5f6", "ok": True, "keys": "new"}, "note": "✅ Линк на новых ключах",
                    "msg": [555, 42]}
-    assert host.txn() == {} and host.etc_files() == set()
+    # файлы перехода стёрты; осталась метка выпуска — момент смены ключей:
+    # файл конфигурации, выпущенный раньше, несёт прежние ключи и получит отказ
+    assert host.txn() == {} and host.etc_files() == {"issued_at"}
+    assert int((host.etc / "issued_at").read_text(encoding="utf-8")) == int(clock.now)
+    assert svc.bundle_issued_applied() == int(clock.now)
     assert svc.rekey_server_answered() == NONE_ANSWERED, "итог повторился на следующей сессии"
 
 
@@ -1115,7 +1119,7 @@ async def test_a_clean_transition_ends_on_new_keys_on_both_sides(services, slot,
     assert vps.peer_pub() != old_gw_pub and vps.extra_files() == set()
     assert pair.server_notes == [pair.server_notes[0]] and "ключи линка сменены" in pair.server_notes[0]
     assert pair.c.notes == ["✅ Линк на новых ключах"]
-    assert services.gateway_rekey(1) == {} and host.txn() == {} and host.etc_files() == set()
+    assert services.gateway_rekey(1) == {} and host.txn() == {} and host.etc_files() == {"issued_at"}
 
 
 async def test_a_link_go_that_did_not_leave_is_repeated_in_the_next_session(services, slot, vps, svc, host, clock,
@@ -1231,7 +1235,7 @@ async def test_a_lost_server_answer_is_found_by_the_search(services, slot, vps, 
     assert pair.on_same_keys(), "поиск не нашёл новые ключи"
     assert vps.peer_pub() == new_gw_pub
     assert pair.c.notes[-1] == "✅ Линк на новых ключах"
-    assert host.txn() == {} and host.etc_files() == set()
+    assert host.txn() == {} and host.etc_files() == {"issued_at"}
 
 
 # ── контракт: настоящий скрипт стадии → проверка шлюза ───────────────────────

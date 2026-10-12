@@ -13,6 +13,7 @@ import json
 import re
 import socket
 import time
+from pathlib import Path
 from awgbot.core import config, settings
 from awgbot.util import timeutil
 from awgbot.domain.services import ServiceError
@@ -112,7 +113,7 @@ class BundleMixin:
         # выпуску старее уже применённого (метка ISSUED_AT в шапке; файлы прежних
         # выпусков без метки применяются как раньше)
         issued = self._bundle_issued_at(text)
-        applied = int(self.db.get_state(self._BUNDLE_ISSUED_KEY) or 0)
+        applied = self.bundle_issued_applied()
         if issued and applied and issued < applied:
             from datetime import datetime
             when = timeutil.fmt_dt_ui(datetime.fromtimestamp(issued, tz=timeutil.TZ))
@@ -131,7 +132,7 @@ class BundleMixin:
         with base._APPLY_LOCK:
             ok, out = self._apply_bundle_run(plain)
         if ok and issued:
-            self.db.set_state(self._BUNDLE_ISSUED_KEY, str(issued))
+            self.bundle_issued_raise(issued)
         # Почта приехала — проверяем сразу (вход по IMAP и SMTP), итог — строкой
         # в сообщении об итоге; иначе ящик висел бы «ещё не проверялось» до
         # ручной кнопки, а первый бэкап молча ушёл бы в чат. Бэкапы ВПС на
@@ -159,6 +160,32 @@ class BundleMixin:
         return ok, out
 
     _BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
+
+    def bundle_issued_applied(self) -> int:
+        """Метка выпуска применённого — старшая из базы агента и файла обвязки
+        (его пишет и скрипт обвязки, когда файл запускают руками)."""
+        from awgbot.infra import gwguard
+        try:
+            on_disk = int((base.pathlib_read(f"{gwguard.GW_ETC}/issued_at") or "").strip() or 0)
+        except (OSError, ValueError):
+            on_disk = 0
+        return max(int(self.db.get_state(self._BUNDLE_ISSUED_KEY) or 0), on_disk)
+
+    def bundle_issued_raise(self, ts: int) -> None:
+        """Применённое — не старее ts: файл, выпущенный раньше, отвергнут и
+        агентом, и скриптом обвязки при ручном запуске. Двигается после
+        применения файла и после смены ключей линка (прежние файлы несут
+        прежние ключи)."""
+        from awgbot.infra import gwguard
+        from awgbot.util.fsatomic import write_private
+        ts = int(ts)
+        if ts <= self.bundle_issued_applied():
+            return
+        self.db.set_state(self._BUNDLE_ISSUED_KEY, str(ts))
+        try:
+            write_private(Path(gwguard.GW_ETC) / "issued_at", f"{ts}\n")
+        except OSError as e:
+            log.warning("gateway: метка выпуска не записана в обвязку: %s", e)
     _BUNDLE_MAIL_KEY = "gw_bundle_mail"           # итог по почте из последнего файла: {state, why, backup} | пусто
 
     def bundle_mail_check(self) -> dict:

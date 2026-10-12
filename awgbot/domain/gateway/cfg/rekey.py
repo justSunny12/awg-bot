@@ -247,6 +247,7 @@ class CfgRekeyMixin:
             on_new = state == "switched" or st.get("current") == "next"
         if on_new:
             self._rk_save({})                              # сервер ответил на новых ключах — прежний не нужен
+            self.bundle_issued_raise(int(time.time()))     # файлы до смены несут прежние ключи — им отказ
             return {"done": {"id": st["id"], "ok": True, "keys": "new"}, "note": "✅ Линк на новых ключах", "msg": msg}
         if state in ("back", "switched"):
             self._rk_save({})

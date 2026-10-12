@@ -380,6 +380,48 @@ def test_bundle_stamps_the_issue_time(bundle):
     assert abs(int(m.group(1)) - time.time()) < 3600
 
 
+def test_bundle_passes_the_issue_time_to_the_plumbing_script(bundle):
+    """Та же метка — окружением: скрипт обвязки сверит её сам, когда файл
+    запускают руками мимо агента."""
+    head = re.search(r"^# ISSUED_AT: (\d{10})$", bundle, re.M).group(1)
+    env = re.search(r'^BUNDLE_ISSUED_AT="(\d{10})"\nexport BUNDLE_ISSUED_AT$', bundle, re.M)
+    assert env and env.group(1) == head, "метка окружением не та, что в шапке"
+
+
+def test_an_older_file_is_refused_by_the_plumbing_script_itself(tmp_path):
+    """Файл старее применённого — отказ скрипта обвязки до первого шага;
+    AWG_GW_ALLOW_OLD=1 — применяется; успешное применение двигает метку
+    только вперёд. Функции — из НАСТОЯЩЕГО routing-gw-setup.sh."""
+    import subprocess
+    src = (Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    start = src.index('ISSUED_FILE="$GW_ETC/issued_at"')
+    block = src[start:src.index("issued_check || exit 3", start)]
+    etc = tmp_path / "etc"; etc.mkdir()
+
+    def run(issued, have, *, allow="", record=False):
+        if have is None:
+            (etc / "issued_at").unlink(missing_ok=True)
+        else:
+            (etc / "issued_at").write_text(f"{have}\n", encoding="utf-8")
+        prog = (f'GW_ETC="{etc}"\nsay() {{ echo "$*"; }}\n' + block
+                + ("issued_record; echo RECORDED\n" if record else "issued_check && echo PASS || echo REFUSED\n"))
+        env = {"PATH": "/usr/bin:/bin", "BUNDLE_ISSUED_AT": str(issued)}
+        if allow:
+            env["AWG_GW_ALLOW_OLD"] = allow
+        r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, timeout=10, env=env)
+        return r.stdout
+
+    assert "PASS" in run(1_800_000_000, None), "чистая машина — сверять не с чем"
+    out = run(1_700_000_000, 1_800_000_000)
+    assert "REFUSED" in out and "старее применённого" in out, out
+    assert "PASS" in run(1_700_000_000, 1_800_000_000, allow="1")
+    assert "PASS" in run(1_800_000_001, 1_800_000_000)
+    run(1_800_000_005, 1_800_000_000, record=True)
+    assert (etc / "issued_at").read_text(encoding="utf-8").strip() == "1800000005"
+    run(1_700_000_000, 1_800_000_005, record=True)
+    assert (etc / "issued_at").read_text(encoding="utf-8").strip() == "1800000005", "метка ушла назад"
+
+
 def test_bundle_body_and_bundle_mode_write_secrets_under_umask_077(bundle):
     """Тело файла первого применения кладёт link.conf и скрипт обвязки: между
     cat > и chmod файл с ключом был 0644. И режим --bundle правит

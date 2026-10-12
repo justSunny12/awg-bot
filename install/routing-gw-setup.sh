@@ -1437,6 +1437,30 @@ fi
 # конфигом. Конфиг ставим ТОЛЬКО машине с тем же ключом (или со старым ключом
 # пары в окне переезда): чужая машина шлюзом не становится, пока основной бот
 # её не пометит, — она попросит переслать сообщение и линк не поднимет.
+# Файл конфигурации не старее применённого. Старый файл из загрузок, запущенный
+# руками мимо агента, вернул бы ключи линка до их смены — и линк лёг бы.
+# Метку выпуска файл передаёт окружением (BUNDLE_ISSUED_AT); применённую
+# хранит $ISSUED_FILE — её же сдвигает агент, когда линк закреплён на новых
+# ключах. Прогоны юнита и агента без файла метки не несут — сверять нечего.
+ISSUED_FILE="$GW_ETC/issued_at"
+_bundle_issued="$(printf '%s' "${BUNDLE_ISSUED_AT:-}" | tr -cd '0-9')"
+issued_when() { date -d "@$1" '+%d.%m.%y %H:%M' 2>/dev/null || printf '%s' "$1"; }
+issued_check() {     # 1 — файл старее применённого (и не велено применять всё равно)
+    [ -n "$_bundle_issued" ] && [ "${AWG_GW_ALLOW_OLD:-}" != "1" ] || return 0
+    _have="$(tr -cd '0-9' < "$ISSUED_FILE" 2>/dev/null || true)"
+    [ -n "$_have" ] && [ "$_bundle_issued" -lt "$_have" ] || return 0
+    say "ОТКАЗ: файл конфигурации выпущен $(issued_when "$_bundle_issued") — старее применённого ($(issued_when "$_have"))."
+    say "Выпусти новый в боте сервера AWG; применить этот всё равно: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
+    return 1
+}
+issued_record() {    # применённое — не старее метки этого файла
+    [ -n "$_bundle_issued" ] || return 0
+    _have="$(tr -cd '0-9' < "$ISSUED_FILE" 2>/dev/null || true)"
+    [ -n "$_have" ] && [ "$_have" -gt "$_bundle_issued" ] && return 0
+    printf '%s\n' "$_bundle_issued" > "$ISSUED_FILE"
+}
+issued_check || exit 3
+
 step "0. Шлюзовое устройство"
 mkdir -p "$GW_ETC"
 UPLINK_STATE="none"
@@ -2169,6 +2193,7 @@ if [ -n "${HOME_SUBNETS:-}" ] && systemctl is-active --quiet avahi-daemon 2>/dev
 fi
 
 write_status "up"
+issued_record
 step "Проверка"
 say "  awg show $LINK_IF                            # есть ли хендшейк"
 say "  ip -br addr show $LINK_IF"
