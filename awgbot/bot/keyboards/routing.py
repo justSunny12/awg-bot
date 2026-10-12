@@ -48,12 +48,13 @@ def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
 
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
-                peer_nets_on: bool | None = None, smb_on: bool | None = None) -> InlineKeyboardMarkup:
+                smb_on: bool | None = None) -> InlineKeyboardMarkup:
     """Экран «🛰 Шлюзы» с главной: не развёрнуто — «🚀 Развернуть»; спит до
     перезапуска — только выход; выключено — «✅ Включить»; включено — слоты
-    кнопками (⭐ у предпочтительного), переключение на резерв, тумблеры
-    автопереключения и связи подсетей (при двух слотах), ниже «SMB в туннеле»
-    (smb_on не None — есть слоты), «Кому доступен» и «Параметры»."""
+    кнопками (⭐ у предпочтительного), переключение на резерв, тумблер
+    автопереключения (при двух слотах), ниже «SMB в туннеле» (smb_on не None
+    — есть слоты), «Кому доступен» и «Параметры». Связь подсетей — часть
+    VPN-транзита, своей кнопки у неё нет."""
     menu = ui.to_menu(Menu(action="main"))
     if not provisioned:
         return ui.rows(("🚀 Развернуть", SetCB(sec="rt", act="do", key="provision")), menu)
@@ -83,9 +84,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
             body.append((f"▶️ Переключить на {name}",
                          GwSlotCB(action="switch_ask", slot=standby["gateway"].id, val="l")))
         if len(states) > 1:
-            body.append([(f"{_tick(failover_on)} Автопереключение", GwSlotCB(action="failover")),
-                         (f"{_tick(peer_nets_on)} Связь подсетей", GwSlotCB(action="peer_ask"))
-                         if peer_nets_on is not None else None])
+            body.append((f"{_tick(failover_on)} Автопереключение", GwSlotCB(action="failover")))
     if smb_on is not None:
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
     return ui.rows(
@@ -195,12 +194,6 @@ def gateway_smb_confirm(on: bool) -> InlineKeyboardMarkup:
     """Подтверждение «🗂 SMB в туннеле»: «Отмена» первой, назад — в «Шлюзы»."""
     return confirm(GwSlotCB(action="list"), "✅ Включить" if on else "☑️ Выключить",
                    GwSlotCB(action="smb_yes", val="1" if on else "0"), danger=False)
-
-
-def gateway_peer_confirm(on: bool) -> InlineKeyboardMarkup:
-    """Подтверждение «↔️ Связь подсетей»: «Отмена» первой, назад — в «Шлюзы»."""
-    return confirm(GwSlotCB(action="list"), "✅ Включить" if on else "☑️ Выключить",
-                   GwSlotCB(action="peer_yes", val="1" if on else "0"), danger=False)
 
 
 def gateway_router_kb(slot: int, tab: str = "mt") -> InlineKeyboardMarkup:

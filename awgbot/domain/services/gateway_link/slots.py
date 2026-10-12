@@ -6,7 +6,7 @@ import re
 import time
 from typing import Optional
 from awgbot.core import config
-from awgbot.util import timeutil
+from awgbot.util import lanspace, timeutil
 from awgbot.infra import routing
 from awgbot.domain import configgen
 from awgbot.domain.services.types import Notification, ServiceError
@@ -125,6 +125,8 @@ class SlotsMixin:
         for n in range(1, config.ROUTING_GATEWAYS_MAX + 1):
             if n in used_ids:
                 continue
+            if n > lanspace.MAX_SLOTS:                     # адреса в туннеле — по /16 на слот 1–15
+                raise ServiceError(f"слотов шлюзов не больше {lanspace.MAX_SLOTS}: на каждый — свои адреса в туннеле")
             iface = (config.ROUTING_GW_INTERFACE or "awglink") if n == 1 else f"awglink{n}"
             if n > len(config.ROUTING_LINK_PORTS) or n > len(config.ROUTING_LINK_CIDRS):
                 raise ServiceError(f"для слота {n} нет порта или подсети линка в routing.link_ports / link_cidrs")
@@ -313,9 +315,9 @@ class SlotsMixin:
         else:
             st["ping_ms"] = None
         st["ext_ip"] = self.gateway_external_ip(slot_id)
-        # функция B: пускают ли сюда из-за других шлюзов
-        st["peer_nets_enabled"] = self.peer_nets_enabled()
+        # связь подсетей (часть VPN-транзита) и адреса в туннеле сети слота
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
+        st["lan_space"] = self.lan_space_card(st["gateway"])
         # канал линка: только из state, без запросов
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe

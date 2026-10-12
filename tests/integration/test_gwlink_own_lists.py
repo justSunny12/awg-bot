@@ -63,7 +63,9 @@ async def pair(services, make_active_client, monkeypatch):
     services.db.gateway_update(1, lan_mode=1)
     services.db.gateway_update(2, lan_mode=1)
     monkeypatch.setattr(config, "SERVER_HOST", VPS)
-    monkeypatch.setattr(services, "peer_nets_enabled", lambda: False)
+    # связь подсетей (часть VPN-транзита) — не предмет этих тестов: без неё
+    # сервисы соседей в канал не едут
+    monkeypatch.setattr(services, "gateway_peer_nets", lambda slot_id: [])
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     # доставка настроек — не предмет этих тестов

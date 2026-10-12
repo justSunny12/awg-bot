@@ -104,18 +104,15 @@ def _gw_online(services, mp):
 LAN1, LAN2 = "192.168.1.0/24", "192.168.68.0/24"
 
 
-def _gw(n: int = 2, *then, lan2: bool = False, peers: bool | None = None, **kw):
+def _gw(n: int = 2, *then, lan2: bool = False, **kw):
     """_slots(n, **kw) и поверх — lan2 (VPN-транзит и подсети у обоих
-    слотов), peers (тумблер связи подсетей) и шаги then(services, mp) по
-    порядку."""
+    слотов: их сети связаны, связь подсетей — часть транзита) и шаги
+    then(services, mp) по порядку."""
     def build(services, mp):
-        from awgbot.core import settings
         who = _slots(n, **kw)(services, mp)
         if lan2:
             services.db.gateway_update(1, lan_subnets=[LAN1], lan_mode=1)
             services.db.gateway_update(2, lan_subnets=[LAN2], lan_mode=1)
-        if peers is not None:
-            settings.set_value("app.routing.peer_nets.enabled", peers)
         for step in then:
             step(services, mp)
         return who
@@ -183,5 +180,5 @@ def _ch(bundle: dict | None = None, *, online: bool = True, closed: bool = False
     return step
 
 
-def _chan(n: int = 1, *steps, peers: bool | None = None):
-    return _gw(n, _ch_base, *steps, lan=True, peers=peers)
+def _chan(n: int = 1, *steps):
+    return _gw(n, _ch_base, *steps, lan=True)

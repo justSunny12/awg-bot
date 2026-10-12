@@ -114,7 +114,7 @@ def live_set(name: str) -> Optional[set[str]]:
 
 # ── сверка по тику ───────────────────────────────────────────────────────────
 
-def reconcile(admin_ips, channel_extra=()) -> str:
+def reconcile(admin_ips, channel_extra=(), transit_links=()) -> str:
     """Привести таблицу к желаемой. Возвращает, что сделано:
     'disabled' | 'ok' | 'applied' (текст изменился) | 'restored' (таблицу
     снесли) | 'resynced' (set устройств разошёлся с файлом)."""
@@ -124,7 +124,7 @@ def reconcile(admin_ips, channel_extra=()) -> str:
             return "disabled"           # docker: NAT — дело контейнера
         # host: NAT-only форма, без фильтра. Файл ещё не существовал — первое
         # появление таблицы на хосте: закрепить загрузку с ребута.
-        text = pkg.render(pkg.build_spec([], channel_extra))
+        text = pkg.render(pkg.build_spec([], channel_extra, transit_links))
         first = not pkg.read_file()
         if text != pkg.read_file() or not pkg.table_present():
             pkg.apply_text(text)
@@ -135,7 +135,7 @@ def reconcile(admin_ips, channel_extra=()) -> str:
                     pkg.log.warning("nat: персистентность не закреплена: %s", e)
             return "nat"
         return "ok"
-    spec = pkg.build_spec(admin_ips, channel_extra)
+    spec = pkg.build_spec(admin_ips, channel_extra, transit_links)
     text = pkg.render(spec)
     if text != pkg.read_file():
         pkg.apply_text(text)
@@ -202,14 +202,14 @@ def disarm_rollback() -> bool:
     return was
 
 
-def remove() -> list[str]:
+def remove(transit_links=()) -> list[str]:
     """Снять фильтр; SSH становится открыт всем (доступ не теряется). В
     host-режиме таблица остаётся в NAT-only форме: без маскарада клиенты
     потеряли бы интернет — «выключить файервол» этого не обещает."""
     from awgbot.infra.awg import in_container
     done: list[str] = []
     if not in_container():
-        spec = pkg.build_spec([])
+        spec = pkg.build_spec([], transit_links=transit_links)
         spec.filter = False
         try:
             pkg.apply_text(pkg.render(spec))
@@ -244,8 +244,8 @@ def firewalld_active() -> bool:
     return systemd.is_active("firewalld") is True
 
 
-def status(admin_ips) -> dict:
-    spec = pkg.build_spec(admin_ips)
+def status(admin_ips, transit_links=()) -> dict:
+    spec = pkg.build_spec(admin_ips, transit_links=transit_links)
     text = pkg.render(spec)
     present = pkg.table_present()
     return {

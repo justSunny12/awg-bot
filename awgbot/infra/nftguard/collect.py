@@ -157,9 +157,14 @@ def tunnel_nets() -> list[str]:
     return nets
 
 
-def build_spec(admin_ips, channel_extra=()) -> pkg.GuardSpec:
+def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
+    """Спецификация таблицы. admin_ips — адреса устройств админа, transit_links —
+    линки слотов с VPN-транзитом (между ними открыт форвардинг линк ↔ линк):
+    оба списка — из БД вызывающего; без БД (CLI до старта бота) — пусто, то
+    есть транзит между линками закрыт."""
     from awgbot.infra.awg import in_container
     host_mode = not in_container()
+    links = pkg.link_ifaces() if host_mode else []
     v4, v6, bad = pkg.resolve_allow(settings.get("app.firewall.ssh_allow", []) or [])
     ssh_open = not v4 and not v6
     admin = sorted({str(ipaddress.ip_address(a)) for a in (admin_ips or [])
@@ -175,15 +180,23 @@ def build_spec(admin_ips, channel_extra=()) -> pkg.GuardSpec:
         own_forward=host_mode, unresolved=bad,
         nat=host_mode, nat_exclude_ifs=pkg._nat_exclude_ifs() if host_mode else [],
         filter=pkg.enabled(),
-        peer_link_ifs=pkg._peer_link_ifs(True) if host_mode else [],
-        peer_link_block=pkg._peer_link_ifs(False) if host_mode else [],
+        peer_link_ifs=pkg._peer_link_ifs(links, transit_links),
+        peer_link_block=links if len(links) >= 2 else [],
         link_peers4=pkg.link_peer_addrs() if host_mode else [],
-        link_ifs=pkg.link_ifaces() if host_mode else [],
+        link_ifs=links,
         link_channel_port=pkg.link_channel_port() if host_mode else 0,
         # прежний порт канала после смены — неделю открыт тоже (gwcfg_channel_ports)
         link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()] if host_mode else [],
         admin_dns4=_admin_dns_addr() if host_mode else "",
+        lan_space4=_lan_space() if host_mode else "",
     )
+
+
+def _lan_space() -> str:
+    """Служебное пространство адресов в туннеле локальных сетей шлюзов: в него
+    из туннеля — только устройствам админа. Из conf, без БД."""
+    from awgbot.util import lanspace
+    return str(lanspace.space())
 
 
 def _admin_dns_addr() -> str:
@@ -193,16 +206,14 @@ def _admin_dns_addr() -> str:
     return admindns.addr() if admindns.installed() else ""
 
 
-def _peer_link_ifs(enabled: bool) -> list[str]:
-    """Линки, между которыми транзит открыт (enabled=True: тумблер доступа
-    между подсетями включён) или должен быть закрыт (enabled=False: выключен) —
-    только при двух и больше линках. Без наборов подсетей — в линк со стороны
-    шлюза попадает только то, что пропустил его AllowedIPs, а таблица
-    собирается и из CLI без БД."""
-    if settings.get_bool("app.routing.peer_nets.enabled", False) != enabled:
-        return []
-    links = pkg.link_ifaces()
-    return links if len(links) >= 2 else []
+def _peer_link_ifs(links: list[str], transit) -> list[str]:
+    """Линки, между которыми открыт форвардинг линк ↔ линк: линки слотов с
+    VPN-транзитом (связь подсетей — его часть), которые есть на хосте, — только
+    при двух и больше. Без наборов подсетей: что едет, ограничивает AllowedIPs
+    на стороне шлюза."""
+    want = [str(t) for t in (transit or ()) if str(t) in links]
+    out = list(dict.fromkeys(want))
+    return out if len(out) >= 2 else []
 
 
 def _tunnel_ifs() -> list[str]:

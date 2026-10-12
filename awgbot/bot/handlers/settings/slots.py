@@ -76,33 +76,8 @@ async def gw_slot_failover(cb: CallbackQuery, services):
     await cb.answer("Автопереключение " + ("включено" if settings.get_bool(key, True) else "выключено"))
 
 
-@router.callback_query(GwSlotCB.filter(F.action == "peer_ask"))
-async def gw_slot_peer_ask(cb: CallbackQuery, services):
-    """«↔️ Связь подсетей»:
-    диалог на месте списка. Включить можно и до того, как слоты готовы —
-    инфобокс скажет, чего не хватает."""
-    on = not await call(services.peer_nets_enabled)
-    await edit(cb, texts.gateway_peer_ask(on, await call(services.gwcfg_all_capable)), kb.gateway_peer_confirm(on))
-    await cb.answer()
-
-
-@router.callback_query(GwSlotCB.filter(F.action == "peer_yes"))
-async def gw_slot_peer_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    # цель из кнопки; старая кнопка без цели (сообщение прежнего выпуска) — «не текущее»
-    on = (callback_data.val == "1") if callback_data.val in ("0", "1") \
-        else not await call(services.peer_nets_enabled)
-    try:
-        await call(services.set_peer_nets, on)
-    except settings.SettingsWriteError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
-        return
-    await _render_list(cb, services)
-    if await call(services.gwcfg_all_capable):
-        await cb.answer("Подсети связаны: шлюзы получат их по упр. каналу" if on
-                        else "Связь подсетей выключена: шлюзы узнают об этом по упр. каналу", show_alert=True)
-    else:
-        await cb.answer(("Подсети связаны" if on else "Связь подсетей выключена")
-                        + ": перевыпусти конфигурацию каждого шлюза", show_alert=True)
+# «↔️ Связь подсетей» (peer_ask, peer_yes) — снята: связь подсетей стала частью
+# VPN-транзита. Кнопки прежних сообщений падают в обработчик устаревших (stale).
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "smb_ask"))
@@ -258,7 +233,8 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     else:
         online = bool(chan.get("online"))
         tail = "применится автоматически по упр. каналу" if online else "перевыпусти конфигурацию шлюза"
-        if online and await call(services.peer_nets_enabled):
+        others = [x for x in st["states"] if x["gateway"].id != st["gateway"].id and x["gateway"].lan_mode]
+        if online and others:
             # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
             # живут в конфиге линка — агенту без документа это только файлом
             tail += "; для связи подсетей перевыпусти конфигурацию каждого шлюза"

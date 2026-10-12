@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from awgbot.bot.callbacks import GwSlotCB
+from awgbot.core import config
 
 from tests.screens.base import Shot
 from tests.screens.shots_admin_common_gw import LAN1, LAN2, PI4, _card, _gw
@@ -35,8 +36,26 @@ def _own_old_agent(services, mp):
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
 
 
-def _overlap(services, mp):
+def _same_lan(services, mp):
     services.db.gateway_update(2, lan_subnets=[LAN1])
+
+
+def _no_transit(slot: int):
+    def step(services, mp):
+        services.db.gateway_update(slot, lan_mode=0)
+    return step
+
+
+def _lan_old(slot: int, nets: list):
+    """Подсети слота, заведённые до 3.3.0, которые ввод теперь не примет."""
+    def step(services, mp):
+        services.db.gateway_update(slot, lan_subnets=nets)
+    return step
+
+
+def _space_off(services, mp):
+    """Служебное пространство адресов в туннеле задевает подсеть клиентов."""
+    mp.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
 
 
 def _own_off(services, mp):
@@ -44,12 +63,13 @@ def _own_off(services, mp):
 
 
 # SMB соседей: слот 1 назвал сервер и ушёл со связи; слот 2 прислал снимок
-# с тем, что у него стоит (peers — подсети соседей, уже применённые)
+# с тем, что у него стоит (peers — подсети соседей, уже применённые: префикс
+# слота 1 в туннеле)
 
 _NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"}
 
 
-def _smb_sent(peers: str = LAN1):
+def _smb_sent(peers: str = "10.240.0.0/16"):
     def step(services, mp):
         services.gwlink_services_in(1, [_NAS])
         services.gwlink_session_closed(1)
@@ -62,7 +82,7 @@ def _smb_sent(peers: str = LAN1):
 def _smb_ack(ok: bool = True, error: str = ""):
     def step(services, mp):
         from awgbot.domain import gwservices
-        h = gwservices.feed_hash([_NAS])
+        h = gwservices.feed_hash([{**_NAS, "a": "10.240.1.10"}])     # у получателя — адрес в туннеле
         services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": h, "n": 1} if ok
                                              else {"ok": False, "hash": h, "error": error})
     return step
@@ -72,7 +92,7 @@ CARDS = [
     # ── свои списки в карточке слота ─────────────────────────────────────
     _card(2, _gw(2, _own_sent, lan2=True), "свои списки: канон уходит на шлюз (домены — только числом)",
           "adm.gw.card.own.pending"),
-    _card(2, _gw(2, _own_sent, _own_ack(), lan2=True, peers=True),
+    _card(2, _gw(2, _own_sent, _own_ack(), lan2=True),
           "свои списки применены — строки судьбы нет, под ними связь подсетей", "adm.gw.card.own.applied"),
     _card(2, _gw(2, _own_sent, _own_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True),
           "свои списки: отказ шлюза, ошибка экранирована", "adm.gw.card.own.refused"),
@@ -84,50 +104,50 @@ CARDS = [
           "свои списки: имя шлюза и текст поломки экранированы ровно раз", "adm.gw.card.own.broken.escaped"),
     _card(2, _gw(2, _own_old_agent, lan2=True),
           "свои списки: агент без синхронизации — обновить, ссылка на бота", "adm.gw.card.own.old_agent"),
-    _card(2, _gw(2, lan2=True, peers=True),
+    _card(2, _gw(2, lan2=True),
           "связь подсетей включена: под строкой судьбы списков — «↔️ Связь подсетей ✅», SMB не найдены",
           "adm.gw.card.peers"),
-    _card(2, _gw(2, _overlap, lan2=True, peers=False),
-          "подсети слотов пересекаются: предупреждение своей строкой под строкой судьбы", "adm.gw.card.overlap"),
-    _card(2, _gw(2, _own_off, lan2=True, peers=True),
+    _card(2, _gw(2, _same_lan, lan2=True),
+          "одинаковые подсети у двух слотов — не пересечение: строки предупреждения нет", "adm.gw.card.same_lan"),
+    # ── адреса в туннеле: подсети, не попавшие в таблицу, и пространство ────
+    _card(2, _gw(2, _lan_old(2, [LAN2, "10.241.0.0/24"]), lan2=True),
+          "подсеть в служебных адресах сервера — в туннеле не видна", "adm.gw.card.lan.space"),
+    _card(2, _gw(2, _lan_old(2, ["192.168.0.0/22", "10.0.2.0/24"]), lan2=True),
+          "адреса в туннеле двух подсетей слота пересекаются — видна первая", "adm.gw.card.lan.clash"),
+    _card(2, _gw(2, _space_off, lan2=True),
+          "служебное пространство неисправно — адреса в туннеле выключены", "adm.gw.card.lan.off"),
+    _card(2, _gw(2, _own_off, lan2=True),
           "синхронизация у слота не действует — строки «📋» нет", "adm.gw.card.own.off"),
     # ── SMB соседей в карточке слота ─────────────────────────────────────
-    _card(2, _gw(2, _smb_sent(), lan2=True, peers=True), "SMB извне: записи уходят на шлюз",
+    _card(2, _gw(2, _smb_sent(), lan2=True), "SMB извне: записи уходят на шлюз",
           "adm.gw.card.smb.pending"),
-    _card(2, _gw(2, _smb_sent(), _smb_ack(), lan2=True, peers=True), "SMB извне: на шлюзе, доступны",
+    _card(2, _gw(2, _smb_sent(), _smb_ack(), lan2=True), "SMB извне: на шлюзе, доступны",
           "adm.gw.card.smb.ok"),
-    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True, peers=True),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True),
           "SMB извне: отказ шлюза, ошибка экранирована", "adm.gw.card.smb.refused"),
-    _card(1, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True, peers=True),
+    _card(1, _gw(2, _smb_sent(), _smb_ack(False, "<b>dnsmasq</b> & rc=1"), lan2=True),
           "SMB у публикующего: только «свои», о судьбе — ничего", "adm.gw.card.smb.own"),
-    _card(2, _gw(2, _smb_sent(), _smb_ack(False, ""), lan2=True, peers=True),
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, ""), lan2=True),
           "SMB извне: отказ без объяснения — без двоеточия", "adm.gw.card.smb.refused.bare"),
-    _card(2, _gw(2, _smb_sent(""), lan2=True, peers=True),
+    _card(2, _gw(2, _smb_sent(""), lan2=True),
           "SMB извне: подсети соседей на шлюзе не применены — нужен перевыпуск", "adm.gw.card.smb.reissue"),
-    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, ""), lan2=True, peers=True),
+    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, ""), lan2=True),
           "SMB извне: имя шлюза в заголовке и в отказе экранировано ровно раз", "adm.gw.card.smb.escaped"),
-    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "ошибка записи файла: нет места на диске"), lan2=True,
-                 peers=True), "SMB извне: поломка на шлюзе — не «не смог принять»", "adm.gw.card.smb.broken"),
-    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, "ошибка записи файла: <b>&</b>"), lan2=True,
-                 peers=True), "SMB извне: имя и текст поломки экранированы", "adm.gw.card.smb.broken.escaped"),
-    _card(2, _gw(2, _smb_sent(), lan2=True, peers=False), "связь подсетей выключена — строки SMB нет",
+    _card(2, _gw(2, _smb_sent(), _smb_ack(False, "ошибка записи файла: нет места на диске"), lan2=True), "SMB извне: поломка на шлюзе — не «не смог принять»", "adm.gw.card.smb.broken"),
+    _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, "ошибка записи файла: <b>&</b>"), lan2=True), "SMB извне: имя и текст поломки экранированы", "adm.gw.card.smb.broken.escaped"),
+    _card(2, _gw(2, _smb_sent(), _no_transit(1), lan2=True), "у соседа нет VPN-транзита — связи подсетей и строки SMB нет",
           "adm.gw.card.smb.off"),
     # ── рецепт роутера при связанных подсетях ────────────────────────────
     Shot("adm.gw.router.peers", role="admin", press=[GwSlotCB(action="router", slot=1)],
-         data=_gw(2, lan2=True, peers=True), title="рецепт роутера: маршрут к подсети другого шлюза"),
+         data=_gw(2, lan2=True), title="рецепт роутера: маршрут к подсети другого шлюза"),
     Shot("adm.gw.router.peers.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
-         data=_gw(2, lan2=True, peers=True), title="рецепт роутера OpenWrt: маршрут к подсети другого шлюза"),
+         data=_gw(2, lan2=True), title="рецепт роутера OpenWrt: маршрут к подсети другого шлюза"),
     Shot("adm.gw.router.peers.two", role="admin", press=[GwSlotCB(action="router", slot=2)],
-         data=_gw(2, lan2=True, peers=True), title="рецепт роутера резерва: маршрут к подсети первого"),
+         data=_gw(2, lan2=True), title="рецепт роутера резерва: маршрут к подсети первого"),
     Shot("adm.gw.router.nopeers", role="admin", press=[GwSlotCB(action="router", slot=1)],
-         data=_gw(2, lan2=True, peers=False), title="связь подсетей выключена — маршрута к соседу нет"),
+         data=_gw(2, _no_transit(2), lan2=True), title="у соседа нет VPN-транзита — маршрута к нему нет"),
     Shot("adm.gw.router.nopeers.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
-         data=_gw(2, lan2=True, peers=False), title="OpenWrt: связь подсетей выключена — маршрута к соседу нет"),
-    # ── связь подсетей: строка «Шлюзов», выключение ──────────────────────
-    Shot("adm.gw.peer_ask.off", role="admin", press=[GwSlotCB(action="peer_ask")],
-         data=_gw(2, lan2=True, peers=True), title="выключить связь подсетей?"),
-    Shot("adm.gw.peer_yes.off", role="admin", press=[GwSlotCB(action="peer_yes")],
-         data=_gw(2, lan2=True, peers=True), title="связь подсетей выключена — всплывашка о перевыпуске"),
+         data=_gw(2, _no_transit(2), lan2=True), title="OpenWrt: у соседа нет VPN-транзита — маршрута к нему нет"),
 ]
 
 
@@ -174,10 +194,10 @@ SMB = [
     Shot("adm.gw.list.smb.two", role="admin", press=[GwSlotCB(action="list")], data=_gw(2, _smb_host()),
          conf=_SMB_ON, title="два слота: ✅ SMB в туннеле под автопереключением и связью подсетей"),
     Shot("adm.gw.card.smb.tunnel", role="admin", press=[GwSlotCB(action="card", slot=1)],
-         data=_gw(2, _smb_host(), _smb_sent(), lan2=True, peers=True), conf=_SMB_ON,
+         data=_gw(2, _smb_host(), _smb_sent(), lan2=True), conf=_SMB_ON,
          title="карточка: свои SMB — «в туннеле ✅»"),
     Shot("adm.gw.card.smb.tunnel.peers", role="admin", press=[GwSlotCB(action="card", slot=2)],
-         data=_gw(2, _smb_host(), _smb_sent(), _smb_ack(), _svc2, lan2=True, peers=True), conf=_SMB_ON,
+         data=_gw(2, _smb_host(), _smb_sent(), _smb_ack(), _svc2, lan2=True), conf=_SMB_ON,
          title="карточка: свои и извне, доступны — «в туннеле ✅» в конце строки"),
 ]
 

@@ -25,16 +25,16 @@ def cli(monkeypatch):
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: bool(store.get(k, d)))
     monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
-    monkeypatch.setattr(fw, "_admin_ips", lambda: ["10.8.1.2"])
+    monkeypatch.setattr(fw, "_db_facts", lambda: (["10.8.1.2"], []))
     monkeypatch.setattr(fw, "_ensure_nft", lambda: True)
-    monkeypatch.setattr(nftguard, "build_spec", lambda ips: nftguard.GuardSpec(ssh_port=22))
+    monkeypatch.setattr(nftguard, "build_spec", lambda ips, **_kw: nftguard.GuardSpec(ssh_port=22))
     monkeypatch.setattr(nftguard, "render", lambda spec: "TABLE")
     monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])
     monkeypatch.setattr(nftguard, "apply_text", lambda t: acts.append(("apply", t)))
     monkeypatch.setattr(nftguard, "arm_rollback",
                         lambda sec, cmd, env: acts.append(("arm", sec, cmd, env)))
     monkeypatch.setattr(nftguard, "disarm_rollback", lambda: acts.append(("disarm",)) or True)
-    monkeypatch.setattr(nftguard, "remove", lambda: acts.append(("remove",)) or ["снято"])
+    monkeypatch.setattr(nftguard, "remove", lambda **_kw: acts.append(("remove",)) or ["снято"])
     monkeypatch.setattr(nftguard, "ufw_active", lambda: False)
     # tgsend импортируется лениво внутри функций — подменяем сам модуль
     from awgbot.infra import tgsend

@@ -123,14 +123,14 @@ def _gw(services):
 
 
 def _neighbour(services, nets: list[str]) -> None:
-    """Второй слот с VPN-транзитом и связь подсетей включена: его подсети —
-    подсети соседа для слота 1. Пишется прямо в БД: ввод подсетей шире /16
-    теперь отказывает, а такие слоты остались от прежних версий."""
+    """Второй слот с VPN-транзитом — связь подсетей его часть: слоту 1 едет
+    префикс слота 2 в туннеле (10.241.0.0/16), какими бы ни были его
+    подсети. Пишется прямо в БД: ввод подсетей шире /16 отказывает, а такие
+    слоты остались от прежних версий."""
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.gateway_update(2, lan_subnets=nets, lan_mode=1)
-    services.flags["app.routing.peer_nets.enabled"] = True
 
 
 def _mail_on(services, host) -> None:
@@ -189,10 +189,10 @@ def test_the_client_subnet_follows_the_network_setting(services, slot, host):
 
 
 def test_a_neighbours_subnets_and_the_lan_mode_go_into_env(services, slot):
-    """Связь подсетей включена — подсети соседа в env слота; VPN-транзит снят —
-    режим и резолвер уходят вместе с ним."""
+    """Сосед с VPN-транзитом — его префикс в туннеле в env слота; VPN-транзит
+    снят — режим, резолвер и подсети соседей уходят вместе с ним."""
     _neighbour(services, ["192.168.70.0/24"])
-    assert services.gwcfg_env(_gw(services))["PEER_LAN_NETS"] == "192.168.70.0/24"
+    assert services.gwcfg_env(_gw(services))["PEER_LAN_NETS"] == "10.241.0.0/16"
     services.gateway_set_lan_mode(1, False)
     env = services.gwcfg_env(_gw(services))
     assert env["LAN_MODE"] == "0" and env["RESOLVER"] == "" and env["PEER_LAN_NETS"] == "", env
@@ -249,7 +249,7 @@ def test_allowed_ips_are_built_by_the_rule_not_copied_from_the_source(services, 
     _neighbour(services, ["192.168.70.0/24"])
     gw = _gw(services)
     text = services.gwcfg_link_conf(gw, services.gwcfg_env(gw))
-    assert _parsed(text).get("Peer", "AllowedIPs") == "10.8.1.0/24, 10.99.99.0/30, 192.168.70.0/24", text
+    assert _parsed(text).get("Peer", "AllowedIPs") == "10.8.1.0/24, 10.99.99.0/30, 10.241.0.0/16", text
 
 
 @pytest.mark.parametrize("value, want", [("20-30", "20-30"), (25, "25"), ("каждые 25", "25-35"), ("", "25-35")])
@@ -280,26 +280,41 @@ def test_a_source_with_a_root_command_is_not_passed_on(services, slot, host):
     assert services.gwcfg_link_error(1), "причина не записана"
 
 
-def test_a_neighbour_subnet_wider_than_16_leaves_the_link_out_with_a_reason(services, slot):
-    """Подсеть соседа шире /16 (заведена до нового правила) правило AllowedIPs
-    шлюза не пропустит. Сервер не шлёт такой конфиг линка — вечный отказ на
-    шлюзе — а показывает причину в карточке."""
+def test_the_document_carries_prefixes_and_the_link_passes_the_agents_check(services, slot, host):
+    """Подсети соседа в документ слота не идут вовсе — только префикс его слота
+    в туннеле: даже подсеть шире /16, оставшаяся от прежних версий, больше не
+    роняет конфиг линка. Конфиг линка с префиксом проходит ту же проверку,
+    что делает агент (общий модуль)."""
     _neighbour(services, ["172.16.0.0/12"])
     gw = _gw(services)
-    assert services.gwcfg_desired(gw)["link"] is None, "сервер собрал конфиг линка, который шлюз отвергнет"
-    assert "шире /16" in services.gwcfg_link_error(1), services.gwcfg_link_error(1)
-    card = services.gwcfg_card(gw, {})
-    assert card["link_err"] == "", "без снимка карточка не судит"
-    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
-    _snap(services, _have(services))
-    assert "шире /16" in services.gwcfg_card(gw, services.gwlink_snapshot(1))["link_err"]
+    env = services.gwcfg_env(gw)
+    assert env["PEER_LAN_NETS"] == "10.241.0.0/16"
+    link = services.gwcfg_desired(gw)["link"]
+    assert link is not None and services.gwcfg_link_error(1) == ""
+    src = _parsed(LINK)
+    fixed = {k: v for _s, items in src.sections for k, v in items
+             if k in ("PrivateKey", "PublicKey", "PresharedKey") or (k[:1] in "JSHI" and k[1:].isalnum())}
+    gwcfg.check_link(link["conf"], env, link_cidr=gw.link_cidr, address="10.99.99.2/30", fixed=fixed)
+
+
+def test_neighbour_subnets_do_not_touch_the_document_only_its_lan_mode_does(services, slot, host):
+    """Подсети соседей не зависят от подсетей соседей: правка подсетей слота 2
+    документ слота 1 не меняет (ему ничего не едет), выключение VPN-транзита у
+    слота 2 — меняет: связь подсетей с ним кончилась."""
+    _neighbour(services, ["192.168.70.0/24"])
+    before = services.gwcfg_doc(_gw(services))["hash"]
+    services.gateway_set_lan_subnets(2, "192.168.71.0/24")
+    assert services.gwcfg_doc(_gw(services))["hash"] == before
+    services.gateway_set_lan_mode(2, False)
+    assert services.gwcfg_env(_gw(services))["PEER_LAN_NETS"] == ""
+    assert services.gwcfg_doc(_gw(services))["hash"] != before
 
 
 def test_a_wide_neighbour_subnet_does_not_block_the_rest_of_the_document(services, slot):
     """Остальные разделы обязаны доехать: сервер не шлёт документ, который
-    шлюз заведомо отвергнет целиком. Подсеть соседа шире /16 в env слота
-    уронила бы проверку всего документа на шлюзе («не прошло одно — отвергается
-    всё») — и вместе с ней устройства админа и почту."""
+    шлюз заведомо отвергнет целиком. Подсеть соседа шире /16 (данные прежних
+    версий) в env слота больше не попадает — там префикс его слота, и
+    документ проходит проверку шлюза целиком."""
     _neighbour(services, ["172.16.0.0/12"])
     gw = _gw(services)
     services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])

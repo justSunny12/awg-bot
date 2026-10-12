@@ -114,6 +114,7 @@ class RoutingLivenessMixin:
         кандидата → гашение, три хороших подряд → возврат; 5) объявления — в
         том же такте, что и действие. Липкость — следствие шага 3.
         """
+        self.lan_map_tick()                    # адреса в туннеле — от РФ-доступа не зависят
         if not routing.available():
             return []
         engaged = self.routing_engaged()

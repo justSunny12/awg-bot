@@ -121,7 +121,7 @@ async def test_turning_on_asks_first_then_writes_the_records(services, slots, sm
     assert smb["store"]["app.routing.smb_tunnel"] is False and smb["calls"] == 0, "вопрос уже включил"
     await sh_slots.gw_slot_smb_yes(cb, GwSlotCB(action="smb_yes", val="1"), services)
     assert smb["store"]["app.routing.smb_tunnel"] is True
-    assert smb["records"] and "host-record=naspi5.awg.internal,192.168.1.10" in smb["records"]
+    assert smb["records"] and "host-record=naspi5.awg.internal,10.240.1.10" in smb["records"]
     text, labels = _screen(nav)
     assert text.splitlines()[0] == "✅ SMB в туннеле включён", text
     assert "✅ SMB в туннеле" in labels

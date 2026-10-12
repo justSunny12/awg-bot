@@ -102,19 +102,19 @@ def ensure_policy(active_iface: str = "", slots=()) -> None:
     никуда не уводят: в цепочку никто не прыгает, метить некому), а рубильником
     служит ХУК в PREROUTING.
 
-    active_iface — линк, который несёт трафик; slots — [(slot_id, iface,
-    lan_subnets)] всех слотов: у каждого своя таблица для зонда, MSS-кламп на
-    своём линке и маршруты в свои локальные подсети. Без слотов (до первого
-    назначения) — только маршрут и кламп по интерфейсу конфига.
+    active_iface — линк, который несёт трафик; slots — [(slot_id, iface)]
+    всех слотов: у каждого своя таблица (зонд резерва и адреса в туннеле его
+    локальных сетей) и MSS-кламп на своём линке. Маршрутов настоящих подсетей
+    в основной таблице больше нет: в сеть шлюза ведёт адрес в туннеле через
+    метку слота (таблица inet awg_lan_map, routing/lanmap). Без слотов (до
+    первого назначения) — только маршрут и кламп по интерфейсу конфига.
     """
     active_iface = active_iface or base._active_if()
     if not active_iface:
         return
     marking.ensure_route(active_iface)
     if slots:
-        pairs = [(net, iface) for _sid, iface, nets in slots for net in nets]
-        marking.ensure_lan_routes(pairs)
-        for sid, iface, _nets in slots:
+        for sid, iface in slots:
             slotpolicy.ensure_slot_policy(sid, iface)
             ensure_mss_clamp(iface)
     else:

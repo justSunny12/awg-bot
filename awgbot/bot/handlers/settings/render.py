@@ -111,7 +111,7 @@ async def gateways_screen(services):
     # тумблер — только при слотах (снятие последнего его выключает)
     smb = (await call(services.smb_tunnel_on)) if states and await call(services.smb_tunnel_possible) else None
     return text, kb.gateways_kb(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
-                                failover_on=auto, peer_nets_on=(peer["enabled"] if peer else None), smb_on=smb)
+                                failover_on=auto, smb_on=smb)
 
 
 async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.util import timeutil
-from awgbot.util import nets as nets_util
 from awgbot.domain import gwcfg
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
+from awgbot.domain.notices.lanmap import lan_space_off_line
 
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
-from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_ref, slot_status
+from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_status
 
 
 # ── карточка слота ───────────────────────────────────────────────────────────
@@ -237,6 +237,28 @@ def _gw_traffic(dev) -> str:
     return f" · 📊 {human_bytes(rx + tx)} {updown_brief(tx, rx)}"
 
 
+def lan_space_lines(info: dict | None) -> list[str]:
+    """Карточка слота: адреса в туннеле выключены целиком (пространство
+    неисправно) или подсети слота, не попавшие в таблицу, — данные до 3.3.0,
+    которые ввод теперь не примет."""
+    info = info or {}
+    if info.get("problem"):
+        return [lan_space_off_line(info["problem"])]
+    out = []
+    for it in info.get("issues") or []:
+        net = f"<code>{_e(it.get('net', ''))}</code>"
+        if it.get("kind") == "space":
+            out.append(f"⚠️ {net} — в служебных адресах сервера AWG, в туннеле не видна: смени подсеть "
+                       "в «🗺 Подсети»")
+        elif it.get("kind") == "clash":
+            out.append(f"⚠️ {net} в туннеле (<code>{_e(it.get('twin', ''))}</code>) пересекается с "
+                       f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>), "
+                       "видна только первая: убери одну в «🗺 Подсети»")
+        elif it.get("kind") == "wide":
+            out.append(f"⚠️ {net} шире /16, в туннеле не видна: сузь подсеть в «🗺 Подсети»")
+    return out
+
+
 def gateway_card_text(state: dict, states: list) -> str:
     """Карточка слота: заголовок со значком («⭐» у предпочтительного, «🛰» у
     остальных), линк, адрес и трафик, упр. канал, подсети и VPN-транзит,
@@ -272,6 +294,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     nets_s = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
         if nets else "подсети не заданы"
     lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
+    lines += lan_space_lines(state.get("lan_space"))
     if gw.lan_mode:
         own = state.get("own_lists") or {}
         if own and own.get("state") != "off":
@@ -284,16 +307,6 @@ def gateway_card_text(state: dict, states: list) -> str:
     elif svc.get("tunnel") and svc.get("own"):
         # без связи подсетей «извне» не бывает — только свои и «в туннеле»
         lines.append(services_line({**svc, "peer": 0}, state.get("agent_bot")))
-    others = [s for s in states if s["gateway"].id != gw.id]
-    conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].lan_subnets)), None)
-    if conflict is not None:
-        ov_nets = nets_util.overlap(nets, conflict["gateway"].lan_subnets)
-        ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets)
-        verb = "пересекается" if len(ov_nets) == 1 else "пересекаются"
-        first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
-        route = "маршрут достаётся ему, " if first["gateway"].id != gw.id else ""
-        lines.append(f"⚠️ {ov} {verb} с подсетью «{slot_ref(conflict)}»: {route}связь подсетей между "
-                     "этими шлюзами не работает, пока они пересекаются")
     ch = state.get("channel") or {}
     cfg = ch.get("cfg") or {}
     if ch.get("has_snap") and not cfg.get("cfg1") and not _agent_at_least(ch.get("agent"), "3.3.0"):

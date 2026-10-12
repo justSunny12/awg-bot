@@ -185,25 +185,15 @@ def slot_line(state, star: bool = True) -> str:
 
 
 def peer_nets_line(info: dict) -> str:
-    """Строка «↔️ Связь подсетей» на экране «Шлюзы» — во всех состояниях."""
-    st = info.get("state", "off")
-    if st == "off":
-        return "↔️ Связь подсетей: выключена"
-    def _plain(w: str) -> str:
-        return _e(str(w).replace("«", "").replace("»", ""))
-    who = ", ".join(_plain(w) for w in info.get("who") or [])
-    if st == "no_lan":
-        return (f"↔️ Связь подсетей не работает: у {who} выключен VPN-транзит — "
-                "без него ответы не найдут дорогу назад")
-    if st == "no_nets":
-        return f"↔️ Связь подсетей не работает: у {who} не заданы подсети — «🗺 Подсети» в карточке шлюза"
-    if st == "overlap":
-        nets = ", ".join(f"<code>{_e(n)}</code>" for n in info.get("nets") or [])
-        w = info.get("who") or ["?", "?"]
-        return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
-                f"({nets}) — смени подсеть одного из шлюзов")
-    pairs = " ↔️ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(f'<code>{_e(n)}</code>' for n in nets)}"
-                       for name, label, nets in info.get("pairs_named") or [])
+    """Строка «↔️ Связь подсетей» на экране «Шлюзы» — инфобокс без кнопки:
+    связь подсетей — часть VPN-транзита. Пары — в адресах в туннеле; слотов
+    с VPN-транзитом меньше двух — когда появится."""
+    if info.get("state") != "ok":
+        return ("↔️ Связь подсетей — между шлюзами с VPN-транзитом: появится, когда он будет включён "
+                "хотя бы у двух")
+    pairs = " ↔️ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}"
+                        + (": " + ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "")
+                        for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Связь подсетей: {pairs}"
 
 

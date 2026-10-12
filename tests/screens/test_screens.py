@@ -107,6 +107,24 @@ async def test_a_button_no_screen_takes_is_seen_as_stale(tmp_path, frozen, fakes
     assert any(h.startswith("+ send #") for h in heads), "главная не пришла новым сообщением"
 
 
+@pytest.mark.parametrize("press", ["peer_ask", "peer_yes:1", "peer_yes:0"])
+async def test_the_removed_peer_nets_buttons_land_on_stale(tmp_path, frozen, fakes, press):
+    """Тумблер «↔️ Связь подсетей» снят — связь подсетей стала частью
+    VPN-транзита. Кнопки прежних сообщений (диалог и подтверждение) не ловит
+    ни один экран: всплывашка «Кнопка устарела» и главная новым сообщением, а
+    не спиннер и не прежнее переключение."""
+    from awgbot.bot.callbacks import GwSlotCB
+    from awgbot.bot.handlers.stale import STALE_BUTTON
+    from tests.screens.shots_admin_common_gw import _gw
+    action, _, val = press.partition(":")
+    shot = catalog.Shot(f"adm.stale.{action}", role="admin", press=[GwSlotCB(action=action, val=val)],
+                        data=_gw(2, lan2=True))
+    rec = await take(shot, tmp_path, fakes)
+    heads = [c.head for c in rec.everything]
+    assert f"~ {STALE_BUTTON}" in heads, heads
+    assert any(h.startswith("+ send #") for h in heads), "главная не пришла новым сообщением"
+
+
 def test_every_keyboard_function_says_what_it_returns():
     """Построитель отличается от помощника аннотацией результата; без неё
     новая клавиатура выпала бы из сторожа полноты молча."""

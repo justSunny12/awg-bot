@@ -181,21 +181,36 @@ def test_without_the_admin_resolver_the_admin_config_is_unchanged(services, make
 
 def test_records_of_both_slots_reach_the_admin_resolver_through_the_line_whitelist(services, two_slots,
                                                                                    adm, toggle):
-    """Тумблер включён — записи SMB обеих сетей под awg.internal, обратная
-    зона — подсеть клиентов (по ней Mac находит домен обзора); каждая строка —
-    из белого списка шлюза."""
+    """Тумблер включён — записи SMB обеих сетей под awg.internal в адресах в
+    туннеле (слот 1 — 10.240.x.x, слот 2 — 10.241.x.x), обратная зона —
+    подсеть клиентов (по ней Mac находит домен обзора); каждая строка — из
+    белого списка шлюза."""
     services.gwlink_services_in(1, [NAS]); _seen(services, 1, 1)
     services.gwlink_services_in(2, [NAS2]); _seen(services, 2, 1)
     toggle["on"] = True
     assert services.smb_tunnel_sync() is True
     text = adm.records
     assert text and gwservices.lines_ok(text), text
-    assert "host-record=naspi5.awg.internal,192.168.1.10" in text
-    assert "host-record=backup.awg.internal,192.168.68.20" in text
+    assert "host-record=naspi5.awg.internal,10.240.1.10" in text
+    assert "host-record=backup.awg.internal,10.241.68.20" in text
+    assert "192.168." not in text, "настоящий адрес сети шлюза через туннель не открывается"
     assert "ptr-record=b._dns-sd._udp.0.1.8.10.in-addr.arpa,awg.internal" in text, \
         "нет обратной зоны подсети клиентов — Finder не найдёт домен обзора"
     assert text.splitlines()[0].startswith("# awg-bot (сервер AWG)")
     assert services.smb_tunnel_slot(services.db.gateway(1)) and services.smb_tunnel_slot(services.db.gateway(2))
+
+
+def test_the_same_address_behind_two_slots_gives_two_records(services, two_slots, adm, toggle):
+    """Одинаковые подсети и одинаковые адреса за двумя шлюзами больше не
+    сливаются при чистке: у каждого свой адрес в туннеле, видны оба."""
+    services.gateway_set_lan_subnets(2, LAN1)
+    services.gwlink_services_in(1, [NAS]); _seen(services, 1, 1)
+    services.gwlink_services_in(2, [{**NAS, "n": "Other", "h": "other"}]); _seen(services, 2, 1)
+    toggle["on"] = True
+    assert [(r["h"], r["a"]) for r in services.smb_tunnel_items()] == [
+        ("naspi5", "10.240.1.10"), ("other", "10.241.1.10")]
+    assert services.smb_tunnel_sync() is True
+    assert "host-record=other.awg.internal,10.241.1.10" in adm.records
 
 
 def test_the_same_list_again_does_not_touch_the_script(services, two_slots, adm, toggle):

@@ -158,7 +158,8 @@ def _firewall_warnings(services) -> list[str]:
                 "фильтруется по устройствам админа. Включить — ⚙️ Настройки → "
                 "🛡 SSH-доступ → «✅ Фильтр снаружи»"]
     out: list[str] = []
-    spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID))
+    spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID),
+                               transit_links=services.gateway_transit_links())
     if spec.ssh_open:
         out.append("список адресов для SSH пуст — хост открыт для всех адресов "
                    "(вход только по ключам). Добавить свои — ⚙️ Настройки → "
@@ -281,6 +282,17 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
                 warns.extend(services.routing_startup_warnings())
         except Exception as e:                           # noqa: BLE001
             log.warning("preflight: проверка маршрутизации не удалась: %s", e)
+
+    # адреса в туннеле локальных сетей шлюзов: служебное пространство не
+    # задевает подсети клиентов, линки и служебные адреса — иначе выключены
+    try:
+        if _gateway_assigned(services):
+            problem = services.lan_space_problem()
+            if problem:
+                from awgbot.domain.notices.lanmap import lan_space_off_line
+                warns.append(lan_space_off_line(problem, markup=False))
+    except Exception as e:                           # noqa: BLE001
+        log.warning("preflight: проверка адресов в туннеле: %s", e)
 
     # email-выход из приостановки: IMAP доступен и пускает по кредам. Проверяем
     # ТОЛЬКО если фича активна (заданы креды и хосты) — иначе она спит и мешать

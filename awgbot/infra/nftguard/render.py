@@ -47,15 +47,20 @@ def render(spec: pkg.GuardSpec) -> str:
     if not spec.filter:
         # NAT-only: файервол выключен, но клиентам нужен выход наружу.
         # Фильтрующих цепочек нет вовсе — политика хоста остаётся его. Одно
-        # исключение: выключенный тумблер доступа между подсетями обещает
-        # «закроется сразу» — при открытой политике хоста это единственное
-        # место, где транзит линк ↔ линк можно закрыть.
+        # исключение: транзит линк ↔ линк — только между линками слотов с
+        # VPN-транзитом (связь подсетей — его часть); при открытой политике
+        # хоста закрыть остальные пары можно только здесь.
         block: list[str] = []
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
+            rules = [f"        iifname {links} oifname {links} drop"]
+            if spec.peer_link_ifs:
+                transit = nftjson.ifs(spec.peer_link_ifs)
+                rules = [f"        iifname {links} oifname {links} iifname != {transit} drop",
+                         f"        iifname {links} oifname {links} oifname != {transit} drop"]
             block = ["", "    chain forward {",
                      "        type filter hook forward priority filter; policy accept;",
-                     f"        iifname {links} oifname {links} drop",
+                     *rules,
                      "    }"]
         out = head + [
             "# Форма NAT-only: firewall.enabled=false, фильтра нет, только NAT клиентов.",
@@ -133,7 +138,7 @@ def render(spec: pkg.GuardSpec) -> str:
             # запрос устройства админа не уходит маршрутом по умолчанию к провайдеру
             out.append(f"        ip daddr {spec.admin_dns4} drop")
         if spec.peer_link_ifs:
-            # линк ↔ линк: локальные сети за шлюзами друг до друга (функция B);
+            # линк ↔ линк: связь подсетей между слотами с VPN-транзитом;
             # что именно едет, ограничивает AllowedIPs на стороне шлюза
             links = nftjson.ifs(spec.peer_link_ifs)
             out.append(f"        iifname {links} oifname {links} accept")
@@ -144,6 +149,12 @@ def render(spec: pkg.GuardSpec) -> str:
             out.append(f"        iifname {ifs} oifname {ifs} ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
             out.append(f"        iifname {ifs} oifname {ifs} drop")
         if spec.tunnel_nets4:
+            if spec.lan_space4 and spec.per_peer:
+                # адреса в туннеле локальных сетей шлюзов — только устройствам
+                # админа; второй рубеж после шлюза. Назначение — исходное
+                # (ct original): к этому хуку адрес уже переведён в настоящий
+                out.append(f"        ip saddr @{pkg.SET_TUNNEL_NETS} ip saddr != @{pkg.SET_TUNNEL_ADMIN} "
+                           f"ct original ip daddr {spec.lan_space4} drop")
             out.append(f"        ip saddr @{pkg.SET_TUNNEL_NETS} accept")
             out.append(f"        ip daddr @{pkg.SET_TUNNEL_NETS} accept")
         out.append("    }")

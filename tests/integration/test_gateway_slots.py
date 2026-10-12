@@ -281,16 +281,23 @@ def test_startup_warnings_name_the_slot(two, services):
     assert len(warns) == 1 and warns[0].startswith("Шлюз РФ-доступа") and "NASPi" in warns[0]
 
 
-def test_lan_subnets_are_parsed_and_conflicts_reported(two, services):
+def test_lan_subnets_are_parsed_and_the_same_subnet_is_no_conflict(two, services, fake_routing):
+    """Одна и та же подсеть у двух слотов — не конфликт: снаружи шлюза сеть
+    видна по адресам в туннеле, у каждого слота свои; маршрута «достаётся
+    первому» больше нет, обе подсети — в таблице."""
     admin, g1, g2 = two
     res = services.gateway_set_lan_subnets(1, "192.168.1.0/24, мусор 10.8.1.0/24 10.99.99.0/30 2001:db8::/64")
-    assert res["kept"] == ["192.168.1.0/24"] and res["conflict"] is None
+    assert res["kept"] == ["192.168.1.0/24"] and "conflict" not in res
+    assert res["twins"] == [("192.168.1.0/24", "10.240.1.0/24")]
     reasons = dict(res["rejected"])
     assert "мусор" in reasons and "10.8.1.0/24" in reasons and "10.99.99.0/30" in reasons
     res = services.gateway_set_lan_subnets(2, "192.168.1.1/24")
-    assert res["kept"] == ["192.168.1.0/24"] and res["conflict"].id == 1
-    assert services.gateway_slots_policy() == [(1, "awglink", ["192.168.1.0/24"]), (2, "awglink2", [])]
+    assert res["kept"] == ["192.168.1.0/24"] and "conflict" not in res
+    assert res["twins"] == [("192.168.1.0/24", "10.241.1.0/24")]
+    assert services.gateway_slots_policy() == [(1, "awglink"), (2, "awglink2")]
+    assert "10.240.1.0/24 : 192.168.1.0/24, 10.241.1.0/24 : 192.168.1.0/24" in fake_routing.lanmap
     assert services.gateway_set_lan_subnets(2, "—")["kept"] == []
+    assert "10.241.1.0/24" not in fake_routing.lanmap
     services.gateway_set_label(2, "  дом   2  очень длинная подпись сверх меры")
     assert services.db.gateway(2).label == "дом 2 очень длинная"
 
@@ -879,10 +886,11 @@ def test_cold_start_puts_slot_policy_before_probing(two, services, monkeypatch):
 
 
 def test_chat_edits_of_channel_data_request_delivery_at_once(two, services):
-    """Подсети, режим без VPN, связь подсетей, адреса SSH уезжают шлюзам сразу,
-    а не на следующей сверке через минуты: сервис дёргает channel_touch."""
+    """Подсети, режим без VPN (с ним — подсети соседей), адреса SSH уезжают
+    шлюзам сразу, а не на следующей сверке через минуты: сервис дёргает
+    channel_touch."""
     calls = []
     services.channel_touch = lambda: calls.append(1)
-    services.set_peer_nets(True)
     services.gateway_set_lan_subnets(1, "192.168.50.0/24")
+    services.gateway_set_lan_mode(1, True)
     assert len(calls) == 2, "правка из чата не запросила доставку каналом"

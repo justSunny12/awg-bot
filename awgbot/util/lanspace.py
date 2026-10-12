@@ -231,7 +231,7 @@ def space_problem(space_net: NetLike, client_subnets: Iterable[str], link_nets: 
             except ValueError:
                 continue
             if n.overlaps(sp):
-                return f"пространство {sp} пересекается с {what} {n}"
+                return f"служебное пространство {sp} пересекается с {what} {n}"
     for what, raw in (("резолвер админа", admin_dns), ("адрес перехвата DNS", intercept_addr)):
         text = str(raw or "").strip()
         if not text:

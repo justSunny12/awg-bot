@@ -44,8 +44,9 @@ class ServicesMixin:
             return False
 
     def _gwlink_peer_nets_applied(self, gw) -> tuple[list[str], list[str]]:
-        """(что сервер выдаёт слоту по функции B, что из этого применено на
-        шлюзе по снимку): до перевыпуска маршрута к соседу нет."""
+        """(подсети соседей, которые сервер выдаёт слоту — префиксы в туннеле
+        других слотов с VPN-транзитом, что из этого применено на шлюзе по
+        снимку): пока не применено, маршрута к соседу нет."""
         issued = self.gateway_peer_nets(gw.id)
         snap = self.gwlink_snapshot(gw.id)
         applied = str((snap.get("bundle") or {}).get("peer_home_nets") or "").split()
@@ -62,15 +63,17 @@ class ServicesMixin:
         return gwservices.feed_hash(items), items
 
     def _gwlink_neighbour_services(self, gw, nets: list[str]) -> list[dict]:
-        """Сервисы других слотов на связи (не молчащих дольше суток) с адресами
-        в nets, после чистки."""
+        """Сервисы других слотов на связи (не молчащих дольше суток) — в
+        адресах в туннеле соседа, после чистки по nets (префиксам, применённым
+        на получателе): одинаковые адреса за разными шлюзами больше не
+        сливаются, а записи слота без VPN-транзита отсеивает чистка."""
         if not nets:
             return []
         out: list[dict] = []
         for other in self.db.gateways():
             if other.id == gw.id or not self._gwlink_seen_recent(other.id, self._SVC_NEIGHBOUR_STALE_S):
                 continue
-            out += self.gwlink_services(other.id)
+            out += self.lan_items_twinned(other, self.gwlink_services(other.id))
         return gwservices.clean(out, nets, gwservices.MAX_PEER)
 
     def gwlink_peer_services_ack_in(self, slot_id: int, body: dict) -> None:

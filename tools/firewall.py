@@ -29,19 +29,33 @@ from awgbot.infra import nftguard
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _admin_ips() -> list[str]:
+def _db_facts() -> tuple[list[str], list[str]]:
+    """(адреса устройств админа, линки слотов с VPN-транзитом) — из БД бота.
+    БД нет или не читается — оба пусты: set админа пуст до старта бота, а
+    форвардинг между линками закрыт (бот откроет его своей сверкой)."""
     try:
         from awgbot.infra.db import Database
         if not Path(config.DB_PATH).exists():
-            return []
+            return [], []
         db = Database(config.DB_PATH)
         try:
-            return db.admin_device_addresses(config.ADMIN_ID)
+            links = [g.link_if for g in db.gateways() if g.lan_mode and g.lan_subnets]
+            return db.admin_device_addresses(config.ADMIN_ID), links
         finally:
             db.close()
     except Exception as e:                            # noqa: BLE001
-        print(f"[!] адреса устройств админа не прочитаны ({e}) — set будет пуст до старта бота")
-        return []
+        print(f"[!] БД бота не прочитана ({e}) — set устройств админа пуст и транзит между "
+              "линками закрыт до старта бота")
+        return [], []
+
+
+def _admin_ips() -> list[str]:
+    return _db_facts()[0]
+
+
+def _spec():
+    admin, links = _db_facts()
+    return nftguard.build_spec(admin, transit_links=links)
 
 
 def _parse_entries(raw: str) -> list[str]:
@@ -140,7 +154,7 @@ def _arm(seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
 
 
 def _apply(with_rollback: bool, rollback_seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
-    spec = nftguard.build_spec(_admin_ips())
+    spec = _spec()
     text = nftguard.render(spec)
     for line in nftguard.ensure_persistence():
         print(f"  {line}")
@@ -153,7 +167,8 @@ def _apply(with_rollback: bool, rollback_seconds: int = nftguard.ROLLBACK_SECOND
 # ── команды ──────────────────────────────────────────────────────────────────
 
 def cmd_status(_args) -> int:
-    st = nftguard.status(_admin_ips())
+    admin, links = _db_facts()
+    st = nftguard.status(admin, transit_links=links)
     print(f"firewall.enabled : {'да' if st['enabled'] else 'НЕТ (бот таблицу не ведёт)'}")
     print(f"таблица в ядре   : {'есть' if st['present'] else 'НЕТ'}")
     print(f"файл = желаемому : {'да' if st['file'] else 'НЕТ (apply пересоберёт)'}")
@@ -208,7 +223,7 @@ def cmd_setup(_args) -> int:
             print(f"[ОШИБКА] {e}"); return 1
         settings.set_value("app.firewall.ssh_allow", allow)
         settings.set_value("app.firewall.enabled", True)
-        spec = nftguard.build_spec(_admin_ips())
+        spec = _spec()
         _print_spec(spec)
         if spec.unresolved:
             print(f"[!] не резолвятся: {', '.join(spec.unresolved)} — в таблицу не попадут")
@@ -257,7 +272,7 @@ def cmd_setup(_args) -> int:
     settings.set_value("app.firewall.open_tcp", open_tcp)
     settings.set_value("app.firewall.open_udp", open_udp)
 
-    spec = nftguard.build_spec(_admin_ips())
+    spec = _spec()
     print("\nБудет применено:")
     _print_spec(spec)
     print("\n" + nftguard.render(spec))
@@ -338,7 +353,7 @@ def cmd_deny(args) -> int:
 
 def cmd_off(_args) -> int:
     nftguard.disarm_rollback()
-    for line in nftguard.remove():
+    for line in nftguard.remove(transit_links=_db_facts()[1]):
         print(f"  {line}")
     settings.set_value("app.firewall.enabled", False)
     print("firewall.enabled: false — SSH открыт всем адресам (доступ не потерян).")
@@ -347,7 +362,7 @@ def cmd_off(_args) -> int:
 
 
 def cmd_rollback(_args) -> int:
-    for line in nftguard.remove():
+    for line in nftguard.remove(transit_links=_db_facts()[1]):
         print(f"  {line}")
     settings.set_value("app.firewall.enabled", False)
     print("ОТКАТ: таблица снята, firewall.enabled: false")

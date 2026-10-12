@@ -448,3 +448,23 @@ def test_bundle_mode_refreshes_the_endpoint_host_from_settings(bundle):
     fn = src.split("emit_gw_bundle() {", 1)[1]
     assert 'if [ -n "${ENDPOINT_HOST:-}" ]' in fn and "Endpoint = $ENDPOINT_HOST:" in fn
     assert fn.index('if [ -n "${ENDPOINT_HOST:-}" ]') < fn.index("AllowedIPs пира ВПС зависит")
+
+
+def test_a_file_for_an_agent_32_carries_the_neighbour_prefix(tmp_path, services, make_active_client):
+    """Агенту 3.2.x подсети соседей едут только файлом: в нём — префикс слота
+    соседа в туннеле (10.241.0.0/16), а не его настоящие подсети, и в
+    переменной для обвязки, и в AllowedIPs конфига линка."""
+    from awgbot.core import config
+    admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"], lan_mode=1)
+    services.db.gateway_update(2, lan_subnets=["192.168.68.0/24"], lan_mode=1)
+    env = services._lan_env(services.db.gateway(1))
+    assert env["PEER_HOME_NETS"] == "10.241.0.0/16"
+    text = _emit_bundle(tmp_path, env={k: v for k, v in env.items() if v})
+    assert 'PEER_HOME_NETS="10.241.0.0/16"' in text, "префикс соседа не вшит"
+    assert "AllowedIPs = 10.8.1.0/24, 10.99.99.0/30, 10.241.0.0/16" in text, "префикс соседа не в AllowedIPs линка"
+    assert "192.168.68.0/24" not in text, "настоящая подсеть соседа уехала в файл"

@@ -21,7 +21,10 @@ class SmbTunnelMixin:
     белым списком, что шлюз-получатель у связи подсетей. Резолвер админа
     отвечает только устройствам админа (nftguard: :53 его адреса — набору
     admin4), их новые конфиги получают его DNS (configgen.allowed_ips_for).
-    Обратная зона — подсети клиентов: по ней Mac находит домен обзора."""
+    Обратная зона — подсети клиентов: по ней Mac находит домен обзора.
+    Адреса записей — адреса в туннеле сети слота (lan_items_twinned):
+    настоящие через туннель не открываются, а одинаковые за разными шлюзами
+    так видны оба."""
 
     # ── доступность и тумблер ────────────────────────────────────────────────
 
@@ -82,12 +85,15 @@ class SmbTunnelMixin:
     # ── файл записей ─────────────────────────────────────────────────────────
 
     def smb_tunnel_items(self) -> list[dict]:
-        """SMB всех слотов на связи (не молчащих дольше суток), после чистки."""
+        """SMB всех слотов на связи (не молчащих дольше суток), после чистки по
+        подсетям слота — в адресах в туннеле его сети: одинаковые адреса за
+        разными шлюзами видны оба."""
         items: list[dict] = []
         for gw in self.db.gateways():
             if not self._gwlink_seen_recent(gw.id, self._SVC_NEIGHBOUR_STALE_S):
                 continue
-            items += gwservices.clean(self.gwlink_services(gw.id), gw.lan_subnets, gwservices.MAX_OWN)
+            own = gwservices.clean(self.gwlink_services(gw.id), gw.lan_subnets, gwservices.MAX_OWN)
+            items += self.lan_items_twinned(gw, own)
         return gwservices.clean(items, ["0.0.0.0/0"], gwservices.MAX_PEER)
 
     def smb_tunnel_text(self) -> str:

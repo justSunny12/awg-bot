@@ -222,35 +222,40 @@ def _peer_store(monkeypatch, on=False):
     return store
 
 
-async def test_the_peer_toggle_turns_on_with_a_live_channel(
-        services, slot, fake_bot, monkeypatch):
-    """Подсети соседей живут на шлюзе ещё и в конфиге линка, а его везёт только
-    файл. Пообещай диалог «применят сами» — человек не перевыпустит, и доступ
-    между подсетями не заработает при зелёном канале (вопрос и всплывашка —
-    эталоны adm.gw.peer_ask.ch.live, adm.gw.peer_yes.ch.live)."""
-    store = _peer_store(monkeypatch)
-    _snap(services)
+async def test_transit_on_names_the_networks_it_will_be_linked_with(services, slot, fake_bot, monkeypatch):
+    """Связь подсетей — часть VPN-транзита: включая его, человек соглашается и
+    на связь с сетями других шлюзов с транзитом — диалог называет их (эталон
+    adm.gw.lan_ask.peers); других нет — строки нет."""
+    _peer_store(monkeypatch)
+    admin = services.db.get_client_by_tg(ADMIN)
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.gateway_set_lan_subnets(2, "192.168.70.0/24")
+    line = ("Сеть свяжется с сетями других шлюзов с VPN-транзитом (NASPi): их устройства смогут ходить сюда "
+            "по адресам в туннеле, а здешние — к ним. Только твои локальные сети")
     cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    assert store["app.routing.peer_nets.enabled"] is False, "вопрос уже включил связь"
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes"), services)
-    assert store["app.routing.peer_nets.enabled"] is True, "связь подсетей не включена"
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
+    assert line in _screen(nav)[0], _screen(nav)[0]
+    services.gateway_set_lan_mode(1, False)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
+    assert "Сеть свяжется" not in _screen(nav)[0], _screen(nav)[0]
 
 
 def _neighbour(services, monkeypatch):
-    """Второй шлюз с режимом без VPN и включённый доступ между подсетями: у
-    слота 1 появляются подсети соседа, которых на нём ещё нет."""
-    _peer_store(monkeypatch, on=True)
+    """Второй шлюз с VPN-транзитом — связь подсетей его часть: у слота 1
+    появляется префикс соседа в туннеле, которого на нём ещё нет."""
+    _peer_store(monkeypatch)
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.gateway_set_lan_subnets(2, "192.168.70.0/24")
     services.gateway_set_lan_mode(2, True)
-    assert services.gateway_peer_nets(1) == ["192.168.70.0/24"], "сценарий собран не так"
+    assert services.gateway_peer_nets(1) == ["10.241.0.0/16"], "сценарий собран не так"
 
 
 def test_neighbour_subnets_are_not_sent_over_the_channel(services, slot, monkeypatch):
-    """Включили доступ между подсетями, канал жив, конфигурацию не перевыпустили.
+    """Сосед включил VPN-транзит, канал жив, конфигурацию не перевыпустили.
     Канал подсети соседей не везёт (они живут и в конфиге линка) — доставлять
     ему нечего; карточка поэтому не обещает «уходят каналом» (эталоны
     adm.gw.card.ch.neighbour.*)."""
@@ -510,37 +515,23 @@ async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, c
     assert ("VPN-транзит выключен: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
 
 
-async def test_the_peer_toggle_with_all_cfg1_agents_needs_no_reissue(services, cfg1, fake_bot, monkeypatch):
-    """Все слоты принимают документ — подсети соседей уедут каналом:
-    диалог и всплывашка не просят перевыпуска."""
-    store = _peer_store(monkeypatch)
-    _cfg_snap(services)
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    text, _ = _screen(nav)
-    assert "Подсети шлюзов уйдут в их конфигурацию по упр. каналу — перевыпуск не нужен" in text, text
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
-    assert store["app.routing.peer_nets.enabled"] is True
-    assert ("Подсети связаны: шлюзы получат их по упр. каналу", True) in cb.answers, cb.answers
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    assert "Подсети шлюзов перестанут видеть друг друга сразу" in _screen(nav)[0]
-    assert "перевыпуск" not in _screen(nav)[0], _screen(nav)[0]
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="0"), services)
-    assert ("Связь подсетей выключена: шлюзы узнают об этом по упр. каналу", True) in cb.answers, cb.answers
-
-
-async def test_the_peer_toggle_with_one_agent_32_asks_for_a_reissue(services, cfg1, fake_bot, monkeypatch):
-    """Хотя бы один слот с агентом 3.2 — его подсети соседей довезёт только
-    файл: «по упр. каналу» было бы обещанием, которое не выполнится."""
+async def test_transit_of_a_slot_with_an_agent_32_neighbour_asks_for_a_reissue(services, cfg1, fake_bot,
+                                                                                monkeypatch):
+    """Агенту 3.2 подсети соседей довезёт только файл: всплывашка включения
+    VPN-транзита просит перевыпуск каждого шлюза, если есть другой слот с
+    транзитом (их сети свяжутся); без такого слота — нет."""
     _peer_store(monkeypatch)
-    _cfg_snap(services)
+    services.gwlink_session_opened(1, "3.2.1", 2)
+    services.gateway_set_lan_mode(1, False)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
+    assert ("VPN-транзит включён: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
-    services.gwlink_session_opened(2, "3.2.1", 2)
+    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
+    services.gateway_set_lan_mode(1, False)
     cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    assert "перевыпусти конфигурацию каждого шлюза" in _screen(nav)[0], _screen(nav)[0]
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
-    assert ("Подсети связаны: перевыпусти конфигурацию каждого шлюза", True) in cb.answers, cb.answers
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
+    assert ("VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей перевыпусти "
+            "конфигурацию каждого шлюза", True) in cb.answers, cb.answers

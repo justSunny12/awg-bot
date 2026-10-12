@@ -5,10 +5,12 @@ routing/ — единственный слой команд условной м�
   selfcheck  самопроверка обвязки: инструменты хоста, статика, подсети, кэш вердикта с бэкоффом
   slots      слоты шлюзов: таблица и бит метки слота, политика слота
   sets       плечо контейнера — исключения из MASQUERADE; наборы ipset
-  marking    плечо хоста — цепочка маркировки, ip rule, маршруты линка и локальных подсетей
+  marking    плечо хоста — цепочка маркировки, ip rule, маршрут линка
   policy     наблюдение за состоянием и сборка политики: правило, маршрут таблицы, MSS-клэмп, включение маркировки
   probes     живость линка: адрес и состояние пира, зонды, пинг, возраст рукопожатия
   feeds      внешние списки и конфиг dnsmasq: загрузка, резолв, добавление сетей, запись конфига
+  lanmap     таблица inet awg_lan_map: адреса в туннеле локальных сетей шлюзов (своё
+             пространство имён: routing.lanmap.render и т. п., в общий список не входит)
 
 Отношение к domain/routing.py то же, что у infra/awg/ к configgen.py: там чистые
 преобразования, здесь всё, что дёргает систему.
@@ -49,6 +51,7 @@ from __future__ import annotations
 from . import base, selfcheck, slots, sets, marking, policy, probes, feeds
 
 _PARTS = (base, selfcheck, slots, sets, marking, policy, probes, feeds)
+from . import lanmap  # noqa: E402 — по имени модуля: render/apply/present не для общего списка
 
 
 def __getattr__(name: str):
@@ -86,4 +89,6 @@ __all__ = [
     "probe_source", "last_probe_latency_ms",
     # внешние списки и dnsmasq
     "fetch", "write_dnsmasq_conf",
+    # адреса в туннеле локальных сетей шлюзов — модулем
+    "lanmap",
 ]

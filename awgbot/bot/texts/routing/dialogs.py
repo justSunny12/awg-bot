@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from awgbot.bot import ui
-from awgbot.util import nets as nets_util
 
 from ..fmt import _e, details
 
@@ -41,6 +40,12 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
                  "остальное — напрямую. VPN на устройствах в сети становится не нужен",
                  "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
                  "⚠️ Шлюз станет точкой отказа: упадёт — подсеть без интернета, резерв не поможет"]
+        peers = [slot_ref(x) for x in state.get("states") or []
+                 if x["gateway"].id != state["gateway"].id and x["gateway"].lan_mode]
+        if peers:
+            lines.append(f"Сеть свяжется с сетями других шлюзов с VPN-транзитом ({', '.join(peers)}): их "
+                         "устройства смогут ходить сюда по адресам в туннеле, а здешние — к ним. Только твои "
+                         "локальные сети")
         if not resolver:
             lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на <code>1.1.1.1</code> через туннель, без "
                          "защиты от DoH — рекомендуется настроить (⚙️ → 🖥 Сервер AWG)")
@@ -157,29 +162,6 @@ def gateway_smb_ask(on: bool, split_tunnel: bool = False) -> str:
                       "Имена SMB-серверов пропадут с твоих устройств; по адресам серверы останутся доступны тебе")
 
 
-def gateway_peer_ask(on: bool, by_channel: bool = False) -> str:
-    """Диалог тумблера «↔️ Связь подсетей»."""
-    if on:
-        return "\n".join([
-            ui.head("↔️ Связь подсетей") + " — включить?",
-            "Устройства из подсети одного шлюза достанут до подсети другого по настоящим адресам, "
-            "через AWG. Только твои локальные сети и только между шлюзами с включённым VPN-транзитом",
-            "SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
-            "«Сеть» → awg.internal",
-            ("Подсети шлюзов уйдут в их конфигурацию по упр. каналу — перевыпуск не нужен" if by_channel else
-             "После включения перевыпусти конфигурацию каждого шлюза: подсети шлюзов живут в конфиге "
-             "линка, а его везёт только файл"),
-            details("«VPN-транзит» гарантирует, что весь трафик подсети идёт через шлюз с обеих сторон, "
-                    "иначе ответы не найдут дорогу назад · SMB-серверы видны только с тех подсетей, где на "
-                    "шлюзе запущен avahi-daemon · задержка складывается из задержек шлюзов до сервера AWG; "
-                    "связь живёт, пока подняты оба линка"),
-        ])
-    return (ui.head("↔️ Связь подсетей") + " — выключить?\n"
-            + ("Подсети шлюзов перестанут видеть друг друга сразу" if by_channel else
-               "Подсети шлюзов перестанут видеть друг друга сразу. Необходим перевыпуск конфигурации "
-               "каждого шлюза"))
-
-
 def gateway_lan_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.lan_subnets
@@ -189,8 +171,6 @@ def gateway_lan_text(state: dict) -> str:
              "Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
         lines.append("VPN-транзит будет работать для первой подсети в списке")
-    if state.get("peer_nets_enabled"):
-        lines.append("Связать можно только непересекающиеся подсети")
     return "\n".join(lines)
 
 
@@ -205,23 +185,6 @@ def gateway_lan_report(res: dict, state: dict) -> str:
         shown = "; ".join(f"<code>{_e(raw[:40])}</code> — {_e(why)}" for raw, why in rejected[:3])
         more = f"; и ещё {len(rejected) - 3}" if len(rejected) > 3 else ""
         parts.append(f"⚠️ Не принято: {shown}{more}")
-    conflict = res.get("conflict")
-    if conflict is not None:
-        ov_nets = nets_util.overlap(kept, conflict.lan_subnets)
-        ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets) or "подсеть"
-        verb = "пересекаются" if len(ov_nets) > 1 else "пересекается"
-        who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"
-        parts.append(f"⚠️ {ov} {verb} с подсетью {who}: маршрут достаётся предпочтительному "
-                     "(при равенстве — первому), связь подсетей между этими шлюзами не работает, пока "
-                     "они пересекаются")
-    elif res.get("peer_others"):
-        by_file = res.get("peer_others_file") or []
-        if by_file and len(by_file) == len(res["peer_others"]):
-            parts.append("Подсети попадут в конфигурацию остальных шлюзов: необходим перевыпуск для "
-                         + ", ".join(_e(w) for w in by_file))
-        else:
-            parts.append("Подсети уйдут остальным шлюзам по упр. каналу"
-                         + ("; для " + ", ".join(f"{_e(w)} (агент v3.2)" for w in by_file) + " необходим перевыпуск конфигурации" if by_file else ""))
     return "\n".join(parts)
 
 

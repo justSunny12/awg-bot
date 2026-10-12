@@ -50,15 +50,18 @@ class GuardSpec:
     nat: bool = True                  # host: MASQUERADE подсетей туннеля наружу
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)
-    peer_link_ifs: list[str] = field(default_factory=list)    # линки, между которыми открыт транзит
-                                                              #
-    peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
-                                                              # транзит ЗАКРЫТ (тумблер выключен)
+    peer_link_ifs: list[str] = field(default_factory=list)    # линки слотов с VPN-транзитом: между ними
+                                                              # открыт транзит (при двух и больше)
+    peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: все линки (при двух и
+                                                              # больше) — транзит между ними закрыт,
+                                                              # кроме пар из peer_link_ifs
     link_peers4: list[str] = field(default_factory=list)      # адреса шлюзов в /30 линков
     link_ifs: list[str] = field(default_factory=list)         # интерфейсы линков — вход канала только с них
     link_channel_port: int = 0                                # порт канала; 0 — канала нет
     link_channel_extra: list[int] = field(default_factory=list)   # прежний порт канала после смены — неделю открыт тоже
     admin_dns4: str = ""                                      # адрес резолвера админа (host): :53 — только admin4
+    lan_space4: str = ""                                      # пространство адресов в туннеле (host): туда —
+                                                              # только устройствам админа
 
 
 def enabled() -> bool:

@@ -457,7 +457,5 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             log.warning("firewall on_change(%s): %s", key, e)
     settings.on_change("app.firewall", _hook_firewall)
     settings.on_change("app.network.ssh_port", _hook_firewall)
-    # доступ между подсетями за шлюзами: форвардинг линк ↔ линк — в той же таблице
-    settings.on_change("app.routing.peer_nets", _hook_firewall)
 
     return scheduler

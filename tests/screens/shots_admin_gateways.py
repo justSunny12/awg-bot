@@ -166,10 +166,6 @@ GATEWAYS = [
          title="резервный снят"),
     Shot("adm.gw.failover", role="admin", press=[GwSlotCB(action="failover")],
          data=_slots(2, failover=False), title="автопереключение снова включено"),
-    Shot("adm.gw.peer_ask", role="admin", press=[GwSlotCB(action="peer_ask")], data=_slots(2),
-         title="связать подсети?"),
-    Shot("adm.gw.peer_yes", role="admin", press=[GwSlotCB(action="peer_yes", val="1")], data=_slots(2),
-         title="подсети связаны"),
     Shot("adm.main.gw", role="admin", start="", data=_slots(2), title="главная со шлюзами"),
     Shot("adm.main.rt_off", role="admin", start="", data=_rt_unavailable,
          title="главная: РФ-доступ админу не виден"),
@@ -217,12 +213,8 @@ def _peer_no_lan(services, mp):
     services.db.gateway_update(2, lan_mode=0)
 
 
-def _peer_no_nets(services, mp):
-    services.db.gateway_update(2, lan_subnets=[])
-
-
-def _peer_overlap(services, mp):
-    services.db.gateway_update(2, lan_subnets=["192.168.1.0/25"])
+def _peer_same(services, mp):
+    services.db.gateway_update(2, lan_subnets=["192.168.1.0/24"])
 
 
 def _token_kept(services, mp):
@@ -409,13 +401,11 @@ SLOTS = [
          data=_slots(1, lan=True), title="повтор «Включить» при включённом — «Уже включено»"),
     # ── связь подсетей в «Шлюзах» ────────────────────────────────────────
     Shot("adm.rt.peers.ok", role="admin", press=[SetCB(sec="rt")],
-         data=_gw(2, _label(2, "дача"), lan2=True, peers=True), title="связь подсетей работает — парами"),
-    Shot("adm.rt.peers.no_lan", role="admin", press=[SetCB(sec="rt")],
-         data=_gw(2, _peer_no_lan, lan2=True, peers=True), title="связь подсетей: у слота нет VPN-транзита"),
-    Shot("adm.rt.peers.no_nets", role="admin", press=[SetCB(sec="rt")],
-         data=_gw(2, _peer_no_nets, lan2=True, peers=True), title="связь подсетей: у слота нет подсетей"),
-    Shot("adm.rt.peers.overlap", role="admin", press=[SetCB(sec="rt")],
-         data=_gw(2, _peer_overlap, lan2=True, peers=True), title="связь подсетей: подсети пересекаются"),
+         data=_gw(2, _label(2, "дача"), lan2=True), title="связь подсетей работает — парами"),
+    Shot("adm.rt.peers.few", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_no_lan, lan2=True), title="связь подсетей: VPN-транзит только у одного слота — появится со вторым"),
+    Shot("adm.rt.peers.same", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _peer_same, lan2=True), title="связь подсетей: одинаковые подсети — разные адреса в туннеле"),
     # ── автопереключение ─────────────────────────────────────────────────
     Shot("adm.gw.failover.off", role="admin", press=[GwSlotCB(action="failover")], data=_slots(2),
          title="автопереключение выключено — тумблер ☑️ и последствия строкой"),

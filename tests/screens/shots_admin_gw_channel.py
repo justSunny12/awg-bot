@@ -32,12 +32,17 @@ def _ch_old_agent(delta: bool = False):
 
 
 def _neighbour(services, mp):
-    """Слот 2 с VPN-транзитом и подсетью 192.168.70.0/24, связь подсетей
-    включена: у слота 1 появляются подсети соседа, которых на нём ещё нет."""
+    """Слот 2 с VPN-транзитом и подсетью 192.168.70.0/24 — связь подсетей
+    его часть: у слота 1 появляется префикс соседа, которого на нём ещё нет."""
     services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
 
 
 _PEER_MISSING = {"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]}
+
+
+def _lan_off2(services, mp):
+    """Слот 2 с подсетью, но без VPN-транзита: включение его свяжет с сетью слота 1."""
+    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=0)
 
 
 # ── шаг 5: бот шлюза и ссылки /start gw-N — ветки из e2e ────────────────────
@@ -136,11 +141,11 @@ CHANNEL = [
           "adm.gw.card.ch.peer_missing"),
     _card(1, _chan(1, _ch(peer_nets={"ok": True, "missing": []})), "вердикт связи подсетей исправен — строки нет",
           "adm.gw.card.ch.peer_ok"),
-    _card(1, _chan(2, _neighbour, _ch(), peers=True),
+    _card(1, _chan(2, _neighbour, _ch()),
           "подсети соседа не применены, канал жив — только файлом", "adm.gw.card.ch.neighbour.live"),
-    _card(1, _chan(2, _neighbour, _ch(online=False, closed=True), peers=True),
+    _card(1, _chan(2, _neighbour, _ch(online=False, closed=True)),
           "подсети соседа не применены, канал лежит — пункт", "adm.gw.card.ch.neighbour.dead"),
-    _card(1, _chan(2, _neighbour, _ch({"home_subnets": LAN2}), peers=True),
+    _card(1, _chan(2, _neighbour, _ch({"home_subnets": LAN2})),
           "смешанное расхождение: что везёт канал, что — файл", "adm.gw.card.ch.neighbour.mixed"),
     # ── тумблеры при живом и лежащем канале ──────────────────────────────
     Shot("adm.gw.lan_ask.ch.live", role="admin", press=[GwSlotCB(action="lan_ask", slot=1)],
@@ -152,11 +157,9 @@ CHANNEL = [
     Shot("adm.gw.lan_yes.ch.dead", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
          data=_chan(1, _ch(online=False)), title="VPN-транзит выключен без канала — перевыпусти"),
     Shot("adm.gw.lan_yes.ch.peers", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
-         data=_chan(1, _ch(), peers=True), title="VPN-транзит выключен каналом, но подсети соседей — файлом"),
-    Shot("adm.gw.peer_ask.ch.live", role="admin", press=[GwSlotCB(action="peer_ask")],
-         data=_chan(1, _ch(), peers=False), title="связать подсети при живом канале — всё равно перевыпуск"),
-    Shot("adm.gw.peer_yes.ch.live", role="admin", press=[GwSlotCB(action="peer_yes", val="1")],
-         data=_chan(1, _ch(), peers=False), title="подсети связаны при живом канале — перевыпусти"),
+         data=_chan(2, _neighbour, _ch()), title="VPN-транзит выключен каналом, но подсети соседей — файлом"),
+    Shot("adm.gw.lan_ask.peers", role="admin", press=[GwSlotCB(action="lan_ask", slot=2)],
+         data=_chan(2, _ch(), _lan_off2), title="включить VPN-транзит рядом с другим — сети свяжутся, названы"),
     # ── бот шлюза в карточках и подписях файла ───────────────────────────
     _card(2, _gw(2, _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), token=False),
           "бот слота известен — ссылка последней строкой, имя экранировано", "adm.gw.card.bot"),

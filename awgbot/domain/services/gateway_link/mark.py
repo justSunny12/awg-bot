@@ -8,7 +8,6 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.infra import routing
 from awgbot.domain.services.types import ServiceError
-from awgbot.util import nets
 from .common import log
 
 
@@ -233,6 +232,10 @@ class MarkMixin:
         except (ServiceError, routing.RoutingError) as e:
             log.warning("gateway_remove: линк слота %s не снят: %s", gw.id, e)
         try:
+            self.lan_map_ensure()                          # адреса в туннеле слота — из таблицы
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_remove: адреса в туннеле: %s", e)
+        try:
             self.reconcile_routing()
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_remove: реконсиляция: %s", e)
@@ -254,10 +257,15 @@ class MarkMixin:
                           for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
     def gateway_set_lan_subnets(self, slot_id: int, raw: str) -> dict:
-        """Разбор пачки подсетей: IPv4, не клиентская, не подсеть линка.
-        Возвращает {'kept': [...], 'rejected': [(строка, причина)], 'conflict':
-        слот, у которого та же подсеть, или None}. Пусто или «—» — убрать все."""
+        """Разбор пачки подсетей: IPv4, частная, /16–/30, вне служебного
+        пространства адресов в туннеле, не пересекается с другой подсетью
+        списка ни сама, ни адресом в туннеле, не клиентская, не подсеть
+        линка. Возвращает {'kept': [...], 'rejected': [(строка, причина)],
+        'twins': [(настоящая, в туннеле)]}. Пусто или «—» — убрать все.
+        Подсети других шлюзов не задевают: снаружи шлюза сеть видна по
+        адресам в туннеле, и одинаковые подсети за разными шлюзами не спорят."""
         import ipaddress
+        from awgbot.util import lanspace
         gw = self._gw_slot(slot_id)
         text = (raw or "").strip()
         if gw.lan_mode and (not text or text in ("-", "—")):
@@ -265,6 +273,7 @@ class MarkMixin:
             raise ServiceError("включён VPN-транзит: сначала выключи его, потом убирай подсети")
         kept: list[str] = []
         rejected: list[tuple[str, str]] = []
+        space = lanspace.space()
         if text and text not in ("-", "—"):
             for tok in re.split(r"[\s,;]+", text):
                 if not tok:
@@ -278,28 +287,35 @@ class MarkMixin:
                     rejected.append((tok, "только IPv4"))
                     continue
                 if not any(net.subnet_of(p) for p in self._PRIVATE_NETS):
-                    # публичный адрес ушёл бы в ip route replace основной таблицы ВПС:
-                    # SSH и клиенты с этого адреса отвалились бы, UDP линка — в линк.
-                    # Ровно три частных диапазона: is_private считает частными и
-                    # служебные (198.18/15, 192.0.2/24), а им в маршрутах не место.
+                    # публичным адресам в локальной сети не место, и документ шлюза
+                    # их не примет. Ровно три частных диапазона: is_private считает
+                    # частными и служебные (198.18/15, 192.0.2/24).
                     rejected.append((tok, "нужна частная подсеть: 10.0.0.0/8, 172.16.0.0/12 или 192.168.0.0/16"))
                     continue
-                if net.prefixlen < 16:
-                    # подсеть соседа уходит в AllowedIPs конфига линка другого шлюза, а
-                    # строгое правило там не пропускает префиксы короче /16: отказ сейчас,
-                    # а не молчаливый отказ применения у соседа
-                    rejected.append((tok, "шире /16 — не пройдёт в конфиг линка других шлюзов, сузь подсеть"))
+                if lanspace.too_wide(net):
+                    # на шлюз в туннеле приходится /16: шире двойник не влезет
+                    rejected.append((tok, "шире /16 — в туннеле на шлюз приходится /16, сузь подсеть"))
                     continue
                 if net.prefixlen > 30:
                     rejected.append((tok, "это один адрес, а нужна подсеть"))
                     continue
+                if lanspace.in_space(net, space):
+                    # на шлюзе её адреса совпали бы с адресами соседей в его AllowedIPs
+                    rejected.append((tok, f"служебные адреса сервера AWG ({space}) — выбери другую подсеть"))
+                    continue
                 if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
-                    # nft отвергает пересечения внутри interval-набора: соседний
-                    # шлюз не принял бы guard.nft с такими PEER_HOME_NETS
+                    # на шлюзе своя сеть одна: nft отвергает пересечения внутри
+                    # interval-набора, обвязка не приняла бы такие HOME_SUBNETS
                     rejected.append((tok, "пересекается с другой подсетью в списке"))
+                    continue
+                other = lanspace.twin_clash(gw.id, net, kept, space)
+                if other:
+                    rejected.append((tok, self._lan_clash_reason(gw.id, net, other, space)))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(s, strict=False))
                        for s, _i in config.routing_client_subnets()):
+                    # подсеть клиентов — в AllowedIPs линка и tunnel_nets4 каждого
+                    # шлюза, аплинк шлюза — адрес из неё: адресный план сервера
                     rejected.append((tok, "это клиентская подсеть AWG"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(g.link_cidr, strict=False))
@@ -313,45 +329,35 @@ class MarkMixin:
                 # стирала бы список и обходила запрет при VPN-транзите
                 why = "; ".join(f"{raw[:40]} — {reason}" for raw, reason in rejected[:3])
                 raise ServiceError(f"не принято: {why}")
-        gone = [s for s in (gw.lan_subnets or []) if s not in kept]
         self.db.gateway_update(gw.id, lan_subnets=kept)
-        self._channel_touch()                              # HOME_SUBNETS — шлюзам сразу
-        if gone and config.ROUTING_GW_INTERFACE:
-            # убранная подсеть иначе остаётся в ядре до ребута
-            try:
-                routing.drop_lan_routes([(s, gw.link_if) for s in gone])
-            except routing.RoutingError as e:
-                log.warning("gateway_set_lan_subnets: старые маршруты не сняты: %s", e)
-        conflict = None
-        for g in self.db.gateways():
-            if g.id != gw.id and nets.overlap(kept, g.lan_subnets):   # и вложенность
-                conflict = g
-                break
+        self._channel_touch()                              # HOME_SUBNETS — шлюзу сразу
         try:
-            self._ensure_gateway_policy()
-        except routing.RoutingError as e:
-            log.warning("gateway_set_lan_subnets: маршруты не доведены: %s", e)
-        # кому перевыпускать конфигурацию из-за этих подсетей (функция B)
-        affected = [g for g in self.db.gateways()
-                    if g.id != gw.id and kept and kept != list(gw.lan_subnets)
-                    and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
-        return {"kept": kept, "rejected": rejected, "conflict": conflict,
-                "conflict_name": self._gw_display(conflict) if conflict is not None else "",
-                "peer_others": [self._gw_display(g) for g in affected],
-                # кому подсети доедут только файлом — агенты без документа конфигурации
-                "peer_others_file": [self._gw_display(g) for g in affected
-                                     if "cfg1" not in self.gwlink_agent_caps(g.id)]}
+            self.lan_map_ensure()                          # адреса в туннеле: убранные — прочь, новые — в таблицу
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_set_lan_subnets: адреса в туннеле не доведены: %s", e)
+        return {"kept": kept, "rejected": rejected,
+                "twins": [(n, str(lanspace.twin_net(gw.id, n, space))) for n in kept]
+                if gw.id <= lanspace.MAX_SLOTS else []}
 
-    def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:
-        """[(слот, интерфейс, подсети)] для ensure_policy: подсеть,
-        заданная двум слотам, достаётся первому по порядку."""
-        seen: set[str] = set()
-        out = []
-        for g in self.db.gateways():
-            nets = [n for n in g.lan_subnets if n not in seen]
-            seen.update(nets)
-            out.append((g.id, g.link_if, nets))
-        return out
+    @staticmethod
+    def _lan_clash_reason(slot_id: int, net, other: str, space) -> str:
+        """П4: адреса в туннеле двух подсетей одного шлюза пересеклись бы."""
+        from awgbot.util import lanspace
+        a, b = lanspace.twin_net(slot_id, net, space), lanspace.twin_net(slot_id, other, space)
+        if a == b:
+            how = f"у обеих — {a}"
+        elif a.subnet_of(b):
+            how = f"{a} внутри {b}"
+        else:
+            how = f"{b} внутри {a}"
+        return (f"в туннеле пересеклась бы с {other}: {how} — адреса в туннеле подсетей одного "
+                "шлюза не должны пересекаться")
+
+    def gateway_slots_policy(self) -> list[tuple[int, str]]:
+        """[(слот, интерфейс)] для ensure_policy: таблица и правило каждого
+        слота, MSS-кламп в его линк. Подсети сюда не идут — в сеть шлюза ведёт
+        адрес в туннеле (lan_map_ensure)."""
+        return [(g.id, g.link_if) for g in self.db.gateways()]
 
     def _ensure_gateway_policy(self) -> None:
         active = self.active_gateway()

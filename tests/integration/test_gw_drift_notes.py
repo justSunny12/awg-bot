@@ -363,19 +363,17 @@ def test_the_keepalive_the_bundle_carries_survives_the_link_script(services, slo
 
 def test_lan_subnets_take_only_the_three_private_ranges(services, fake_awg, fake_routing,
                                                           make_active_client, monkeypatch):
-    """Подсеть уходит в ip route replace основной таблицы ВПС: публичная или
-    служебная (198.18/15, 192.0.2/24 — для is_private они «частные») уронила
-    бы доступ к серверу с этих адресов. Плюс границы: не уже /30 (шире трёх
-    диапазонов не бывает), не шире /16 (подсеть соседа уходит в AllowedIPs конфига
-    линка другого шлюза, где строгое правило такой не пропустит), без пересечений
-    в одном списке; снятая подсеть убирается из маршрутов."""
-    from awgbot.infra import routing
+    """Публичным и служебным (198.18/15, 192.0.2/24 — для is_private они
+    «частные») адресам в локальной сети не место. Плюс границы: не уже /30, не
+    шире /16 (на шлюз в туннеле приходится /16), не в служебных адресах сервера
+    (10.240.0.0/12), без пересечений в одном списке; снятая подсеть уходит из
+    таблицы адресов в туннеле, маршрутов настоящих подсетей больше нет."""
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     bad = {"8.8.8.0/24": "частная", "198.18.0.0/15": "частная", "192.0.2.0/24": "частная",
            "100.64.0.0/10": "частная", "127.0.0.0/8": "частная", "192.168.1.5/32": "один адрес",
-           "10.0.0.0/7": "частная", "10.0.0.0/8": "шире /16"}
+           "10.0.0.0/7": "частная", "10.0.0.0/8": "шире /16", "10.241.3.0/24": "служебные адреса сервера AWG"}
     res = services.gateway_set_lan_subnets(1, "192.168.1.0/24 " + " ".join(bad))
     assert res["kept"] == ["192.168.1.0/24"]
     reasons = {tok: why for tok, why in res["rejected"]}
@@ -384,12 +382,10 @@ def test_lan_subnets_take_only_the_three_private_ranges(services, fake_awg, fake
     res = services.gateway_set_lan_subnets(1, "192.168.1.0/24 192.168.0.0/16 172.16.5.0/24")
     assert res["kept"] == ["192.168.1.0/24", "172.16.5.0/24"]
     assert any("пересекается" in why for _t, why in res["rejected"])
-    dropped = []
-    monkeypatch.setattr(routing.marking, "drop_lan_routes", lambda pairs: dropped.extend(pairs))
-    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: None)
+    assert "192.168.1.0/24" in fake_routing.lanmap
     services.gateway_set_lan_subnets(1, "172.16.5.0/24")
-    assert dropped == [("192.168.1.0/24", "awglink")], dropped
+    assert "192.168.1.0/24" not in fake_routing.lanmap and "172.16.5.0/24 : 10.240.5.0/24" in fake_routing.lanmap
+    assert fake_routing.dropped_routes == [], "правка подсетей маршрутов не трогает — их нет"
 
 
 # ── временный отказ, устройства других профилей, предел строк ────────────────

@@ -45,7 +45,11 @@ KEY = gwlink.channel_key(PRIV)
 X_NETS, Y_NETS = "192.168.1.0/24", "192.168.68.0/24"      # слот 1 — источник, слот 2 — получатель
 NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"}
 BACKUP = {"t": "_smb._tcp", "n": "backup", "h": "backup", "p": 445, "a": "192.168.1.20"}
-H_NAS = gwservices.feed_hash([NAS])
+# у получателя сеть соседа видна по адресам в туннеле: префикс слота 1 —
+# 10.240.0.0/16, слота 2 — 10.241.0.0/16; записи сервер переводит при раздаче
+X_PEER, Y_PEER = "10.240.0.0/16", "10.241.0.0/16"
+T_NAS = {**NAS, "a": "10.240.1.10"}
+H_NAS = gwservices.feed_hash([T_NAS])
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
 
 
@@ -59,8 +63,8 @@ def _snap(home: str, peers: str, version: str = "3.1.0", rev: int = 1) -> dict:
 
 @pytest.fixture()
 async def pair(services, make_active_client, monkeypatch):
-    """Два слота в режиме без VPN с доступом между подсетями; тумблер —
-    словарь `flag`. Слушатель один, слот коннекту — из очереди `queue`."""
+    """Два слота с VPN-транзитом — их сети связаны (связь подсетей — часть
+    транзита). Слушатель один, слот коннекту — из очереди `queue`."""
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     pi2 = services.add_device(admin.id, "Pi2")
@@ -70,14 +74,12 @@ async def pair(services, make_active_client, monkeypatch):
     services.gateway_set_lan_subnets(2, Y_NETS)
     services.db.gateway_update(1, lan_mode=1)
     services.db.gateway_update(2, lan_mode=1)
-    flag = {"on": True}
-    monkeypatch.setattr(services, "peer_nets_enabled", lambda: flag["on"])
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     # доставка настроек — не предмет этих тестов: снимки фикстур не совпадают
     # с выдаваемым, и сервер слал бы settings в каждую сессию
     monkeypatch.setattr(services, "gwlink_settings_due", lambda gw: None)
-    assert services.gateway_peer_nets(2) == [X_NETS] and services.gateway_peer_nets(1) == [Y_NETS]
+    assert services.gateway_peer_nets(2) == [X_PEER] and services.gateway_peer_nets(1) == [Y_PEER]
     port = _free_port()
     monkeypatch.setattr(linkserver, "channel_port", lambda: port)
     srv = linkserver.LinkServer(services)
@@ -95,7 +97,7 @@ async def pair(services, make_active_client, monkeypatch):
             sent.append((slot_id, kind))
         return ok
     monkeypatch.setattr(srv, "send", send)
-    p = types.SimpleNamespace(srv=srv, queue=queue, flag=flag, services=services, sent=sent, port=port)
+    p = types.SimpleNamespace(srv=srv, queue=queue, services=services, sent=sent, port=port)
     try:
         yield p
     finally:
@@ -133,7 +135,7 @@ def _x_known(services, items=(NAS,), seen_hours: float = 0.0) -> None:
     services.db.set_state(services._gwlink_key(services._GWLINK_SEEN_KEY, 1), timeutil.to_iso(at))
 
 
-def _y_snap(services, peers: str = X_NETS, version: str = "3.1.0") -> None:
+def _y_snap(services, peers: str = X_PEER, version: str = "3.1.0") -> None:
     """Снимок слота 2 с прошлой сессии: что стоит у него в юните."""
     assert services.gwlink_snapshot_in(2, _snap(Y_NETS, peers, version), 1, True)
 
@@ -151,10 +153,10 @@ async def test_services_of_one_gateway_reach_the_neighbour_exactly_once(pair):
     assert await _until(lambda: s.gwlink_services(1)) == [NAS]
     y = await _hello(pair, 2)
     assert await _next(y, "peer_svc", 0.4) is None, "без снимка получателя записи ушли вслепую"
-    await y.send("snap", _snap(Y_NETS, X_NETS))
+    await y.send("snap", _snap(Y_NETS, X_PEER))
     msg = await _next(y, "peer_svc")
     assert msg is not None, "сервисы соседа не дошли"
-    assert msg["items"] == [NAS] and msg["hash"] == H_NAS
+    assert msg["items"] == [T_NAS] and msg["hash"] == H_NAS
     await x.send("svc", {"items": [NAS]})
     for _ in range(3):
         await pair.srv.deliver_all()
@@ -163,7 +165,7 @@ async def test_services_of_one_gateway_reach_the_neighbour_exactly_once(pair):
     # новый сервер у X — к Y сразу, без такта живости
     await x.send("svc", {"items": [NAS, BACKUP]})
     msg = await _next(y, "peer_svc")
-    assert msg is not None and [r["a"] for r in msg["items"]] == ["192.168.1.10", "192.168.1.20"]
+    assert msg is not None and [r["a"] for r in msg["items"]] == ["10.240.1.10", "10.240.1.20"]
     assert [k for sl, k in pair.sent if sl == 2 and k == "peer_svc"] == ["peer_svc", "peer_svc"]
     await x.close(); await y.close()
 
@@ -185,8 +187,8 @@ async def test_the_hash_named_in_hello_decides_whether_anything_goes(pair, have,
 
 
 async def test_peer_access_turned_off_sends_an_empty_list_at_once(pair):
-    """Выключили доступ между подсетями на ВПС — записи у получателя
-    снимаются сразу каналом, не дожидаясь перевыпуска конфигурации."""
+    """У соседа выключили VPN-транзит — связь подсетей с ним кончилась, записи
+    у получателя снимаются сразу каналом, не дожидаясь перевыпуска."""
     s = pair.services
     _x_known(s)
     _y_snap(s)
@@ -194,7 +196,7 @@ async def test_peer_access_turned_off_sends_an_empty_list_at_once(pair):
     assert (await _next(y, "peer_svc"))["hash"] == H_NAS
     await y.send("peer_svc_ack", {"ok": True, "hash": H_NAS, "n": 1, "error": ""})
     await _until(lambda: s.gwlink_peer_services_ack(2))
-    pair.flag["on"] = False
+    s.db.gateway_update(1, lan_mode=0)                  # у соседа выключили VPN-транзит
     await pair.srv.deliver_all()
     msg = await _next(y, "peer_svc")
     assert msg is not None, "выключение доступа не сняло записи у получателя"
@@ -214,24 +216,30 @@ async def test_nothing_goes_until_the_subnets_are_applied_then_at_once_on_the_de
     await pair.srv.deliver_all()
     assert await _next(y, "peer_svc", 0.5) is None, "записи ушли шлюзу без маршрута к соседу"
     assert s.gwlink_services_card(s.db.gateway(2))["state"] == "reissue"
-    delta = {"bundle": _snap(Y_NETS, X_NETS)["bundle"], "rev": 2}
+    delta = {"bundle": _snap(Y_NETS, X_PEER)["bundle"], "rev": 2}
     await y.send("delta", delta)
     msg = await _next(y, "peer_svc")
-    assert msg is not None and msg["items"] == [NAS], "после дельты снимка записи не ушли"
+    assert msg is not None and msg["items"] == [T_NAS], "после дельты снимка записи не ушли"
     await y.close()
 
 
-async def test_overlapping_subnets_share_nothing(pair):
-    """Подсети пересеклись — доступа между ними нет, и сервисов тоже."""
+async def test_the_same_subnet_behind_two_gateways_shares_both_records(pair):
+    """Одинаковые подсети и одинаковые адреса за двумя шлюзами больше не
+    сливаются: каждый получает запись соседа в его адресах в туннеле —
+    10.240.1.10 за слотом 1, 10.241.1.10 за слотом 2."""
     s = pair.services
     _x_known(s)
-    s.gateway_set_lan_subnets(2, "192.168.0.0/16")
-    assert s.gateway_peer_nets(2) == []
+    s.gateway_set_lan_subnets(2, X_NETS)
+    assert s.gwlink_services_in(2, [NAS]) is True
+    s.db.set_state(s._gwlink_key(s._GWLINK_SEEN_KEY, 2), timeutil.to_iso(timeutil.now()))
+    assert s.gateway_peer_nets(2) == [X_PEER] and s.gateway_peer_nets(1) == [Y_PEER]
     _y_snap(s)
+    assert s.gwlink_snapshot_in(1, _snap(X_NETS, Y_PEER), 1, True)
+    assert s.gwlink_peer_services_for(s.db.gateway(2))[1] == [T_NAS]
+    assert s.gwlink_peer_services_for(s.db.gateway(1))[1] == [{**NAS, "a": "10.241.1.10"}]
     y = await _hello(pair, 2)
-    await pair.srv.deliver_all()
-    assert await _next(y, "peer_svc", 0.5) is None
-    assert s.gwlink_peer_services_for(s.db.gateway(2)) == ("", [])
+    msg = await _next(y, "peer_svc")
+    assert msg is not None and msg["items"] == [T_NAS], msg
     await y.close()
 
 
@@ -266,7 +274,7 @@ async def test_the_server_drops_what_is_not_in_the_senders_subnet(pair):
     await x.send("svc", {"items": bad + [NAS]})
     assert await _until(lambda: s.gwlink_services(1)) == [NAS]
     msg = await _next(y, "peer_svc")
-    assert msg is not None and msg["items"] == [NAS], msg
+    assert msg is not None and msg["items"] == [T_NAS], msg
     await x.close(); await y.close()
 
 
@@ -414,14 +422,14 @@ async def test_the_receiver_publishes_neighbour_services_through_the_real_helper
     real_ack = s.gwlink_peer_services_ack_in
     monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: (real_ack(slot, body), acks.append(body))[0])
     _x_known(s)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_PEER,
                                       "LINK_CHANNEL": "1"})
     await _up(pair, client, 2)
     assert await _until(lambda: s.gwlink_peer_services_ack(2).get("ok"), timeout=5), s.gwlink_peer_services_ack(2)
     ack = s.gwlink_peer_services_ack(2)
     assert ack["hash"] == H_NAS and ack["n"] == 1
     text = host.conf.read_text(encoding="utf-8")
-    assert "host-record=naspi5.awg.internal,192.168.1.10" in text
+    assert "host-record=naspi5.awg.internal,10.240.1.10" in text
     assert "ptr-record=lb._dns-sd._udp.0.68.168.192.in-addr.arpa,awg.internal" in text, \
         "обратная зона — своей подсети получателя, иначе Mac не найдёт домен обзора"
     assert host.restarts() == 1
@@ -429,7 +437,7 @@ async def test_the_receiver_publishes_neighbour_services_through_the_real_helper
     assert s.gwlink_services_card(s.db.gateway(2))["state"] == "applied"
     # тот же список ещё раз (скажем, после переподключения без hello-хэша) — без рестарта
     assert len(acks) == 1
-    assert await pair.srv.send(2, "peer_svc", {"hash": H_NAS, "items": [NAS]}, pad=gwlink.PAD_SNAP)
+    assert await pair.srv.send(2, "peer_svc", {"hash": H_NAS, "items": [T_NAS]}, pad=gwlink.PAD_SNAP)
     assert await _until(lambda: len(acks) == 2, timeout=5), "на повтор агент не ответил"
     assert acks[-1]["ok"] is True and host.restarts() == 1, "те же записи перезапустили dnsmasq соседней сети"
     # пустой список — файл снят, один рестарт
@@ -445,19 +453,20 @@ async def test_the_receiver_drops_addresses_outside_its_own_peer_subnets(pair, r
     ЮНИТА получателя (в свою сеть, в интернет) и с грязным именем — агент
     выбрасывает их до сборки файла, остальное публикует."""
     s = pair.services
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_PEER,
                                       "LINK_CHANNEL": "1"})
     await _up(pair, client, 2)
-    forged = [NAS, {**NAS, "a": "192.168.68.7", "h": "own"}, {**NAS, "a": "203.0.113.9", "h": "net"},
-              {**NAS, "n": 'x"\nserver=/awg.internal/203.0.113.9', "a": "192.168.1.30"}]
+    forged = [T_NAS, {**NAS, "a": "192.168.68.7", "h": "own"}, {**NAS, "a": "203.0.113.9", "h": "net"},
+              {**NAS, "a": "192.168.1.11", "h": "real"},
+              {**NAS, "n": 'x"\nserver=/awg.internal/203.0.113.9', "a": "10.240.1.30"}]
     digest = "f" * 64
     assert await pair.srv.send(2, "peer_svc", {"hash": digest, "items": forged}, pad=gwlink.PAD_SNAP)
     assert await _until(lambda: s.gwlink_peer_services_ack(2).get("hash") == digest, timeout=5)
     ack = s.gwlink_peer_services_ack(2)
     assert ack["ok"] is True and ack["n"] == 1, ack
     text = host.conf.read_text(encoding="utf-8")
-    assert "192.168.1.10" in text
-    for leak in ("192.168.68.7", "203.0.113.9", "192.168.1.30", "server="):
+    assert "10.240.1.10" in text
+    for leak in ("192.168.68.7", "203.0.113.9", "192.168.1.11", "10.240.1.30", "server="):
         assert leak not in text, f"в конфиг dnsmasq шлюза попало «{leak}»"
 
 
@@ -468,13 +477,13 @@ async def test_the_source_sends_on_connect_and_a_day_of_unchanged_scans_is_silen
     s = pair.services
     _y_snap(s)
     y = await _hello(pair, 2)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": X_NETS, "PEER_HOME_NETS": Y_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": X_NETS, "PEER_HOME_NETS": Y_PEER,
                                       "LINK_CHANNEL": "1"})
     host.browse = "=;end0;IPv4;NASPi5;_smb._tcp;local;NASPi5.local;192.168.1.10;445;"
     assert agent.services_scan() is True
     await _up(pair, client, 1)
     msg = await _next(y, "peer_svc")
-    assert msg is not None and msg["items"] == [NAS], f"список источника не доехал до соседа: {msg}"
+    assert msg is not None and msg["items"] == [T_NAS], f"список источника не доехал до соседа: {msg}"
     await pair.srv.deliver_all()
     await asyncio.sleep(0.3)
     before_agent, before_srv = client._sent_bytes, len(pair.sent)
@@ -507,7 +516,7 @@ async def test_an_old_server_skips_svc_and_the_session_lives_on(pair, real_agent
             msg = {**msg, "t": "незнакомое-3.0"}
         return await real(gw, sess, msg)
     monkeypatch.setattr(pair.srv, "_handle", old_handle)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": X_NETS, "PEER_HOME_NETS": Y_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": X_NETS, "PEER_HOME_NETS": Y_PEER,
                                       "LINK_CHANNEL": "1"})
     host.browse = "=;end0;IPv4;NASPi5;_smb._tcp;local;NASPi5.local;192.168.1.10;445;"
     agent.services_scan()
@@ -540,7 +549,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: (real_ack(slot, body), acks.append(body))[0])
     monkeypatch.setattr(config, "ROLE", "gateway")
     _x_known(s)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_PEER,
                                       "LINK_CHANNEL": "1"})
     agent._last_reassert = -1e9                        # троттлинг реассерта не держит
     helper = gwguard.LAN_SERVICES_SCRIPT
@@ -569,7 +578,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     await linkclient.on_tick(agent)
     assert await _until(lambda: len(acks) == 2, timeout=5), "после появления помощника итог не ушёл серверу"
     assert acks[1]["ok"] is True and acks[1]["hash"] == H_NAS and acks[1]["n"] == 1, acks[1]
-    assert "host-record=naspi5.awg.internal,192.168.1.10" in host.conf.read_text(encoding="utf-8")
+    assert "host-record=naspi5.awg.internal,10.240.1.10" in host.conf.read_text(encoding="utf-8")
     assert host.restarts() == 1
     assert pair.srv._sessions[2].svc_have == H_NAS, "сервер не признал записи применёнными"
     card = s.gwlink_services_card(s.db.gateway(2))
@@ -634,7 +643,7 @@ async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair,
     monkeypatch.setattr(config, "ROLE", "gateway")         # иначе on_tick не видит клиента
     clock = _Clock(monkeypatch)
     _x_known(s)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_PEER,
                                       "LINK_CHANNEL": "1"})
     disk = _full_disk(monkeypatch, lambda: gwguard.PEER_SERVICES_NEW)
     await _up(pair, client, 2)
@@ -663,7 +672,7 @@ async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair,
     assert await _until(lambda: len(acks) == 2, timeout=5), "сервер не повторил записи или агент не ответил"
     assert pair.sent.count((2, "peer_svc")) == delivered + 1, "записи повторены не один раз"
     assert acks[1]["ok"] is True and acks[1]["hash"] == H_NAS and acks[1]["n"] == 1, acks[1]
-    assert "host-record=naspi5.awg.internal,192.168.1.10" in host.conf.read_text(encoding="utf-8")
+    assert "host-record=naspi5.awg.internal,10.240.1.10" in host.conf.read_text(encoding="utf-8")
     assert host.restarts() == 1
     assert s.gwlink_services_card(s.db.gateway(2))["state"] == "applied"
     assert client._writer is not None, "просьба порвала сессию"
@@ -692,7 +701,7 @@ async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real
     real_own = s.gwlink_own_ack_in
     monkeypatch.setattr(s, "gwlink_own_ack_in", lambda slot, body: (real_own(slot, body), own_acks.append(dict(body)))[0])
     _x_known(s)
-    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_PEER,
                                       "LINK_CHANNEL": "1"})
     await _up(pair, client, 2)
     assert await _until(lambda: own_acks and s.gwlink_peer_services_ack(2).get("ok"), timeout=5), (

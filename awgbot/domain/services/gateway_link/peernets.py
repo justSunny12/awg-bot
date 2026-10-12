@@ -1,17 +1,17 @@
-"""peernets.py — VPN-транзит слота и доступ между подсетями за шлюзами."""
+"""peernets.py — VPN-транзит слота и связь подсетей за шлюзами (её часть: слоты с
+VPN-транзитом связаны всегда, подсети соседей — их префиксы в туннеле)."""
 
 from __future__ import annotations
 
 from typing import Optional
-from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.domain import configgen
 from awgbot.domain.services.types import ServiceError
-from awgbot.util import nets
+from .common import log
 
 
 class PeerNetsMixin:
-    """VPN-транзит слота и доступ между подсетями за шлюзами."""
+    """VPN-транзит слота и связь подсетей за шлюзами."""
     # ── «за шлюзом — без VPN» ───────────────
     def gateway_resolver_addr(self, gw) -> str:
         """Апстрим резолвера шлюза — свой резолвер ВПС из DNS устройства слота;
@@ -26,81 +26,59 @@ class PeerNetsMixin:
     def _lan_env(self, gw) -> dict:
         """Переменные функций A и B для скрипта обвязки: LAN_MODE, HOME_SUBNETS
         (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER,
-        PEER_HOME_NETS (подсети за другими шлюзами — в AllowedIPs и файервол)."""
+        PEER_HOME_NETS (префиксы в туннеле других слотов с VPN-транзитом — в
+        AllowedIPs и файервол)."""
         return {"LAN_MODE": "1" if gw.lan_mode else "0",
                 "HOME_SUBNETS": " ".join(gw.lan_subnets),
                 "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
                 "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
 
 
-    # ── доступ между подсетями за шлюзами ───
-    _PEER_NETS_KEY = "app.routing.peer_nets.enabled"
+    # ── связь подсетей: часть VPN-транзита ───
+    def gateway_transit_slots(self) -> list:
+        """Слоты с VPN-транзитом (и подсетями: без них адресов в туннеле нет,
+        а включение транзита их и так требует) — по порядку номеров."""
+        return [g for g in self.db.gateways() if g.lan_mode and g.lan_subnets]
 
-    def peer_nets_enabled(self) -> bool:
-        return settings.get_bool(self._PEER_NETS_KEY, False)
+    def gateway_transit_links(self) -> list[str]:
+        """Линки слотов с VPN-транзитом — файерволу ВПС для форвардинга
+        линк ↔ линк (открыт только между ними и только при двух и больше)."""
+        return [g.link_if for g in self.gateway_transit_slots()]
 
     def gateway_peer_nets(self, slot_id: int) -> list[str]:
-        """Подсети за другими шлюзами для слота: тумблер включён, у обоих слотов
-        включено «за шлюзом — без VPN» (ровно оно гарантирует, что ответ найдёт
-        дорогу назад), без дублей, без пересекающихся с собственными."""
-        if not self.peer_nets_enabled():
-            return []
+        """Подсети соседей для слота (PEER_LAN_NETS): у слота VPN-транзит —
+        префиксы в туннеле (/16) других слотов с VPN-транзитом; иначе пусто.
+        От подсетей соседей не зависят: правка подсетей слота документы
+        других не меняет, меняет только включение и выключение транзита.
+        Пространство неисправно — пусто (адреса в туннеле выключены)."""
+        from awgbot.util import lanspace
         me = self.db.gateway(slot_id)
-        if me is None or not me.lan_mode:
+        if me is None or not me.lan_mode or self.lan_space_problem():
             return []
-        out: list[str] = []
-        for g in self.db.gateways():
-            if g.id == me.id or not g.lan_mode:
-                continue
-            bad = set(nets.overlap(g.lan_subnets, me.lan_subnets))
-            for n in g.lan_subnets:
-                if n not in bad and n not in out:
-                    out.append(n)
-        return out
+        return [str(lanspace.slot_prefix(g.id)) for g in self.gateway_transit_slots()
+                if g.id != me.id and g.id <= lanspace.MAX_SLOTS]
 
     def gateway_peer_nets_info(self) -> dict:
-        """Состояние функции B для экрана «Шлюзы»: {'enabled', 'state', …}.
-        state: off | no_lan (слоты без режима без VPN) | no_nets (без подсетей) |
-        overlap (пересечение) | ok (pairs — [(display, nets, display, nets)])."""
+        """Строка «↔️ Связь подсетей» экрана «Шлюзы»: {'state', …}.
+        state: few — слотов с VPN-транзитом меньше двух (who — слоты без
+        него); ok — pairs_named: [(имя, подпись, адреса в туннеле)]."""
         slots = self.db.gateways()
-        info: dict = {"enabled": self.peer_nets_enabled(), "state": "off", "slots": len(slots)}
-        if not info["enabled"]:
+        transit = self.gateway_transit_slots()
+        info: dict = {"state": "few", "slots": len(slots)}
+        if len(transit) < 2:
+            info["who"] = [self._gw_display(g) for g in slots if not g.lan_mode] if len(slots) > 1 else []
             return info
-        no_lan = [g for g in slots if not g.lan_mode]
-        if len(slots) - len(no_lan) < 2:
-            info["state"] = "no_lan"
-            info["who"] = [self._gw_display(g) for g in no_lan]
-            return info
-        lan = [g for g in slots if g.lan_mode]
-        no_nets = [g for g in lan if not g.lan_subnets]
-        if no_nets:
-            info["state"] = "no_nets"
-            info["who"] = [self._gw_display(g) for g in no_nets]
-            return info
-        for i, a in enumerate(lan):
-            for b in lan[i + 1:]:
-                ov = nets.overlap(a.lan_subnets, b.lan_subnets)
-                if ov:
-                    info["state"] = "overlap"
-                    info["who"] = [self._gw_display(a), self._gw_display(b)]
-                    info["nets"] = ov
-                    return info
         info["state"] = "ok"
-        info["pairs"] = [(self._gw_display(g), list(g.lan_subnets)) for g in lan]
-        info["pairs_named"] = [(self._gw_name(g), g.label, list(g.lan_subnets)) for g in lan]
+        info["pairs_named"] = [(self._gw_name(g), g.label, [t for _r, t in self.lan_twins(g)])
+                               for g in transit]
         return info
-
-    def set_peer_nets(self, on: bool) -> None:
-        """Тумблер функции B. Таблицу ВПС перевыставит хук настроек (форвардинг
-        линк ↔ линк действует сразу); конфигурации шлюзов — перевыпуск, о нём
-        напомнит снимок зависимостей."""
-        settings.set_value(self._PEER_NETS_KEY, on)
-        self._channel_touch()                              # PEER_HOME_NETS — шлюзам сразу
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
         локальной подсети: по ней шлюз находит свой адрес. Возвращает
-        {'gateway', 'resolver': адрес или '' (запасной апстрим)}."""
+        {'gateway', 'resolver': адрес или '' (запасной апстрим)}. Связь
+        подсетей — часть транзита: меняются LAN_MODE слота и PEER_LAN_NETS
+        остальных слотов с транзитом (канал), и форвардинг линк ↔ линк на ВПС."""
         gw = self._gw_slot(slot_id)
         if on and not gw.lan_subnets:
             raise ServiceError("сначала задай локальную подсеть шлюза: по ней шлюз находит свой адрес")
@@ -108,7 +86,11 @@ class PeerNetsMixin:
             raise ServiceError("у слота нет устройства — без аплинка режим без VPN не работает")
         self.db.gateway_update(gw.id, lan_mode=1 if on else 0)
         gw = self.db.gateway(gw.id)
-        self._channel_touch()                              # LAN_MODE — шлюзу сразу
+        self._channel_touch()                              # LAN_MODE и подсети соседей — шлюзам сразу
+        try:
+            self.reconcile_ssh_access()                    # линки транзита — в таблицу файервола ВПС
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_set_lan_mode: файервол ВПС не перерисован: %s", e)
         return {"gateway": gw, "resolver": self.gateway_resolver_addr(gw) if on else ""}
 
     @staticmethod

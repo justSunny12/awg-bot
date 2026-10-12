@@ -26,7 +26,8 @@ class FirewallMixin:
 
     def firewall_screen(self) -> dict:
         from awgbot.infra import nftguard
-        st = nftguard.status(self.db.admin_device_addresses(config.ADMIN_ID))
+        st = nftguard.status(self.db.admin_device_addresses(config.ADMIN_ID),
+                             transit_links=self.gateway_transit_links())
         spec = st["spec"]
         drift = self.ssh_port_drift()
         owner = self.ssh_owner()
@@ -152,7 +153,8 @@ class FirewallMixin:
     def _firewall_apply(self, rollback: bool) -> None:
         from awgbot.infra import nftguard
         spec = nftguard.build_spec(self.db.admin_device_addresses(config.ADMIN_ID),
-                                   channel_extra=self.gwcfg_channel_ports()[1:])
+                                   channel_extra=self.gwcfg_channel_ports()[1:],
+                                   transit_links=self.gateway_transit_links())
         for line in nftguard.ensure_persistence():
             log.info("firewall: %s", line)
         nftguard.apply_text(nftguard.render(spec))
@@ -193,7 +195,7 @@ class FirewallMixin:
         файервол» не обещает «оставить клиентов без интернета»."""
         from awgbot.infra import nftguard
         nftguard.disarm_rollback()
-        done = nftguard.remove()
+        done = nftguard.remove(transit_links=self.gateway_transit_links())
         with self._own_settings_change():
             settings.set_value("app.firewall.enabled", False)
         self._smb_tunnel_follow()

@@ -484,38 +484,77 @@ def test_nat_only_form_needs_no_chains_without_tunnel_nets(host_mode, monkeypatc
     assert "hook input" not in text
 
 
-# ── доступ между подсетями за шлюзами ───────
+# ── связь подсетей: линк ↔ линк по слотам с VPN-транзитом ───────
 
-def test_forward_between_links_opens_only_with_the_toggle_and_two_links(host_mode, monkeypatch):
-    """Транзит линк ↔ линк — по тумблеру и только при двух линках; без наборов
-    подсетей: что едет, ограничивает AllowedIPs на стороне шлюза, а таблица
-    собирается и из CLI без БД. Стоит после invalid drop, до правил туннеля."""
-    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2"])
+_ALL = '{ "awglink", "awglink2", "awglink3" }'
+
+
+def test_forward_between_links_opens_only_between_transit_links(host_mode, monkeypatch):
+    """Транзит линк ↔ линк — только между линками слотов с VPN-транзитом (связь
+    подсетей — его часть) и только при двух таких; список приходит от
+    вызывающего из БД. Без наборов подсетей: что едет, ограничивает
+    AllowedIPs на стороне шлюза. Стоит после invalid drop, до правил туннеля.
+    Мёртвый ключ прежнего тумблера на результат не влияет."""
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2", "awglink3"])
     _conf(monkeypatch, **{"app.firewall.enabled": True})
-    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
-    assert 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } accept' not in text, "тумблер выключен"
-    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.peer_nets.enabled": True})
-    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    rule = 'iifname { "awglink", "awglink3" } oifname { "awglink", "awglink3" } accept'
+    text = nftguard.render(nftguard.build_spec(["10.9.1.5"], transit_links=["awglink", "awglink3"]))
     lines = [ln.strip() for ln in text.splitlines()]
-    rule = 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } accept'
     assert rule in lines
     fwd = lines[lines.index("chain forward {"):]
     assert fwd.index("ct state invalid drop") < fwd.index(rule) < fwd.index("ip saddr @tunnel_nets4 accept")
-    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])
-    assert "oifname { \"awglink\" } accept" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "один линк — не с кем"
+    for transit in (["awglink"], [], ["awglink", "awglink9"]):
+        text = nftguard.render(nftguard.build_spec(["10.9.1.5"], transit_links=transit))
+        assert "oifname {" not in text.replace('iifname { "awg1" } oifname { "awg1" }', ""), \
+            f"{transit}: меньше двух линков транзита на хосте — не с кем"
+    assert "awglink\", \"awglink2\" } oifname" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), \
+        "без списка (CLI без БД) — закрыто"
+    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.peer_nets.enabled": True})
+    assert rule not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "прежний тумблер ничего не открывает"
 
 
-def test_nat_only_form_closes_links_when_the_toggle_is_off(host_mode, monkeypatch):
-    """Файервол выключен, политика хоста открыта: единственное место, где
-    выключенный тумблер может закрыть транзит линк ↔ линк — и обещание
-    «закроется сразу» держится."""
-    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2"])
-    _conf(monkeypatch, **{"app.firewall.enabled": False})
-    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
-    assert 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } drop' in text
-    assert "policy accept" in text.split("chain forward", 1)[1], "политика хоста остаётся его"
+def test_nat_only_form_closes_every_link_pair_but_the_transit_ones(host_mode, monkeypatch):
+    """Файервол выключен, политика хоста открыта: только здесь можно закрыть
+    транзит линк ↔ линк. Транзитных два и больше — закрыто всё, кроме пар
+    между ними (две строки с исключением); один или ни одного — закрыто всё.
+    Без списка (CLI без БД) — тоже закрыто всё."""
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2", "awglink3"])
     _conf(monkeypatch, **{"app.firewall.enabled": False, "app.routing.peer_nets.enabled": True})
-    assert "chain forward" not in nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    text = nftguard.render(nftguard.build_spec([], transit_links=["awglink", "awglink2"]))
+    lines = [ln.strip() for ln in text.splitlines()]
+    assert f'iifname {_ALL} oifname {_ALL} iifname != {{ "awglink", "awglink2" }} drop' in lines
+    assert f'iifname {_ALL} oifname {_ALL} oifname != {{ "awglink", "awglink2" }} drop' in lines
+    assert "policy accept" in text.split("chain forward", 1)[1], "политика хоста остаётся его"
+    for transit in (["awglink"], [], None):
+        kw = {} if transit is None else {"transit_links": transit}
+        lines = [ln.strip() for ln in nftguard.render(nftguard.build_spec([], **kw)).splitlines()]
+        assert f"iifname {_ALL} oifname {_ALL} drop" in lines, transit
+        assert not [ln for ln in lines if "!=" in ln and ln.endswith("drop")], transit
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])
+    assert "chain forward" not in nftguard.render(nftguard.build_spec([], transit_links=["awglink"])), \
+        "один линк — закрывать нечего"
+
+
+def test_the_tunnel_addresses_of_gateway_networks_are_for_admin_devices_only(host_mode, monkeypatch):
+    """Второй рубеж на ВПС: в пространство адресов в туннеле (исходное
+    назначение — к forward оно уже переведено) прочим клиентам хода нет,
+    устройствам админа — есть; правило стоит до общего «клиенты — наружу».
+    Только host с фильтром: в NAT-only и docker решает шлюз."""
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    rule = "ip saddr @tunnel_nets4 ip saddr != @admin4 ct original ip daddr 10.240.0.0/12 drop"
+    lines = [ln.strip() for ln in nftguard.render(nftguard.build_spec(["10.9.1.5"])).splitlines()]
+    assert rule in lines
+    assert lines.index(rule) < lines.index("ip saddr @tunnel_nets4 accept")
+    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "10.32.0.0/12")
+    assert "ct original ip daddr 10.32.0.0/12 drop" in nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    assert "ct original" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "NAT-only — без фильтра"
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    monkeypatch.setattr(awg, "in_container", lambda: True)
+    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.17.0.0/16"])
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.lan_space4 == "" and "ct original" not in nftguard.render(spec), "docker — решает шлюз"
 
 
 # ── канал ВПС ↔ шлюз: одна строка и один набор ───────

@@ -1,8 +1,8 @@
 """Экран «🛰 Шлюзы» и слоты — что нажатия меняют в слотах, настройках, ключах
 линка и выданных файлах: переключение в обе стороны, «⭐ При старте», пинг,
 подсети, подпись, добавление второго слота с токеном, снятие резервного и
-активного, «⚙️ Параметры» циклами, «🔀 VPN-транзит», «↔️ Связь подсетей» во
-всех состояниях, уведомления о расхождении. Сами экраны (список, карточки,
+активного, «⚙️ Параметры» циклами, «🔀 VPN-транзит», «↔️ Связь подсетей» (часть
+VPN-транзита) в обоих состояниях, уведомления о расхождении. Сами экраны (список, карточки,
 вопросы, итоги, всплывашки) — в эталоне tests/screens/admin.txt (adm.rt.*,
 adm.gw.*, adm.main.gw*)."""
 from __future__ import annotations
@@ -438,91 +438,89 @@ def _peer_conf(monkeypatch):
     return store
 
 
-def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monkeypatch):
-    """Чужие подсети слота: тумблер, оба слота без VPN, без пересечений — иначе
-    пусто. Пересечение — предупреждение при вводе, не отказ; исчезло — пара
-    вернулась сама."""
+def test_peer_nets_are_prefixes_of_the_other_transit_slots(services, slots, monkeypatch):
+    """Подсети соседей слота — префиксы в туннеле других слотов с VPN-транзитом
+    (связь подсетей — его часть); без транзита — пусто. От подсетей соседей и
+    от мёртвого ключа прежнего тумблера не зависят; одинаковые подсети за
+    двумя шлюзами — не пересечение."""
     store = _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.gateway_set_lan_subnets(1, "192.168.1.0/24")
     services.gateway_set_lan_subnets(2, "192.168.68.0/24")
-    assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets_info()["state"] == "off"
-    store["app.routing.peer_nets.enabled"] = True
     info = services.gateway_peer_nets_info()
-    assert info["state"] == "no_lan" and len(info["who"]) == 2
-    assert services.gateway_peer_nets(1) == [], "без режима без VPN ответы не найдут дорогу назад"
-    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
-    assert services.gateway_peer_nets(1) == ["192.168.68.0/24"] and services.gateway_peer_nets(2) == ["192.168.1.0/24"]
+    assert services.gateway_peer_nets(1) == [] and info["state"] == "few" and info["who"] == ["NASPi", "Pi2"]
+    services.db.gateway_update(1, lan_mode=1)
     info = services.gateway_peer_nets_info()
-    assert info["state"] == "ok" and [n for _, n in info["pairs"]] == [["192.168.1.0/24"], ["192.168.68.0/24"]]
-    # вложенность — тоже пересечение; ввод принят, пара выпала
-    res = services.gateway_set_lan_subnets(2, "192.168.0.0/16")
-    assert res["conflict"] is not None and res["conflict"].id == 1
-    assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets(2) == []
-    assert services.gateway_peer_nets_info()["state"] == "overlap"
-    res = services.gateway_set_lan_subnets(2, "192.168.68.0/24")
-    assert res["conflict"] is None and res["peer_others"] == ["NASPi"], "кому перевыпускать"
-    assert services.gateway_peer_nets(1) == ["192.168.68.0/24"]
+    assert services.gateway_peer_nets(1) == [] and info["state"] == "few" and info["who"] == ["Pi2"]
+    services.db.gateway_update(2, lan_mode=1)
+    for dead in (False, True):
+        store["app.routing.peer_nets.enabled"] = dead
+        assert services.gateway_peer_nets(1) == ["10.241.0.0/16"] and services.gateway_peer_nets(2) == ["10.240.0.0/16"]
+        info = services.gateway_peer_nets_info()
+        assert info["state"] == "ok" and [n for _, _, n in info["pairs_named"]] == [["10.240.1.0/24"], ["10.241.68.0/24"]]
+    res = services.gateway_set_lan_subnets(2, "192.168.1.0/24")
+    assert res["kept"] == ["192.168.1.0/24"] and "conflict" not in res and "peer_others" not in res
+    assert services.gateway_peer_nets(1) == ["10.241.0.0/16"], "подсети соседа префиксу не указ"
+    assert [n for _, _, n in services.gateway_peer_nets_info()["pairs_named"]] == [["10.240.1.0/24"], ["10.241.1.0/24"]]
     env, _ = services._gw_bundle_env(services.db.gateway(1))
-    assert env["PEER_HOME_NETS"] == "192.168.68.0/24"
+    assert env["PEER_HOME_NETS"] == "10.241.0.0/16"
     import pytest as _pt
     with _pt.raises(Exception, match="сначала выключи"):
         services.gateway_set_lan_subnets(2, "")             # при включённом режиме без VPN подсети не убрать
-    services.db.gateway_update(2, lan_mode=0)
-    services.gateway_set_lan_subnets(2, "")
-    services.db.gateway_update(2, lan_mode=1)
-    assert services.gateway_peer_nets_info()["state"] == "no_nets"
 
 
-async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(services, slots, fake_bot, monkeypatch):
-    """Включение пишет настройку, выключение — снимает. Рабочая связь парами
-    «имя (подпись): подсеть» в «Шлюзах», «↔️ Связь подсетей ✅» в карточке,
-    вопрос и всплывашка выключения, карточка без строки связи — эталоны
-    adm.rt.peers.ok, adm.gw.card.peers, adm.gw.peer_ask.off,
-    adm.gw.peer_yes.off, adm.gw.card.own.pending."""
-    store = _peer_conf(monkeypatch)
+async def test_the_gateways_screen_has_no_peer_button_and_shows_the_line(services, slots, monkeypatch):
+    """Тумблера «Связь подсетей» больше нет: на экране «Шлюзы» — инфобокс.
+    Меньше двух слотов с VPN-транзитом — когда появится; два — пары в адресах в
+    туннеле (эталоны adm.rt.two, adm.rt.peers.*)."""
+    _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
-    assert store["app.routing.peer_nets.enabled"] is True, "связь подсетей не включена"
-    # выключение: вопрос ничего не меняет, подтверждение — выключает
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_peer_ask(cb, services)
-    assert store["app.routing.peer_nets.enabled"] is True, "вопрос о выключении уже выключил"
-    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes"), services)
-    assert store["app.routing.peer_nets.enabled"] is False, "связь подсетей не выключена"
-
-
-def _peer_line_state(services, state):
-    """Слоты под одно из пяти состояний связи подсетей."""
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24")
+    services.gateway_set_lan_subnets(2, "192.168.68.0/24")
+    text, markup = await sh.gateways_screen(services)
+    assert not [b for row in _rows(markup) for b in row if "Связь подсетей" in b]
+    assert ("↔️ Связь подсетей — между шлюзами с VPN-транзитом: появится, когда он будет включён хотя бы "
+            "у двух") in text, text
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
-    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
-    if state == "no_lan":
-        services.db.gateway_update(2, lan_mode=0)
-    elif state == "no_nets":
-        services.db.gateway_update(2, lan_mode=0)
-        services.gateway_set_lan_subnets(2, "-")
-        services.db.gateway_update(2, lan_mode=1)
-    elif state == "overlap":
-        services.gateway_set_lan_subnets(2, "192.168.1.0/25")
+    text, markup = await sh.gateways_screen(services)
+    assert ("↔️ Связь подсетей: NASPi: <code>10.240.1.0/24</code> ↔️ Pi2: <code>10.241.68.0/24</code>"
+            in text), text
+    assert not [b for row in _rows(markup) for b in row if "Связь подсетей" in b]
 
 
-@pytest.mark.parametrize("state, enabled", [
-    ("off", False), ("no_lan", True), ("no_nets", True), ("overlap", True), ("ok", True)])
-async def test_peer_nets_info_follows_the_slots_in_every_state(services, slots, monkeypatch, state, enabled):
-    """Состояние связи подсетей — из слотов: тумблер, VPN-транзит, подсети,
-    пересечение. Строка «Шлюзов» в каждом из пяти состояний — эталоны
-    adm.rt.two (выключена) и adm.rt.peers.*."""
-    store = _peer_conf(monkeypatch)
+@pytest.mark.parametrize("transit, state", [((0, 0), "few"), ((1, 0), "few"), ((0, 1), "few"), ((1, 1), "ok")])
+async def test_peer_nets_info_follows_the_transit_of_the_slots(services, slots, monkeypatch, transit, state):
+    """Состояний связи подсетей два: слотов с VPN-транзитом меньше двух — few,
+    два и больше — ok. «Выключена», «нет VPN-транзита у…», «пересекаются» —
+    сняты вместе с тумблером."""
+    _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    store["app.routing.peer_nets.enabled"] = enabled
-    _peer_line_state(services, state)
-    info = services.gateway_peer_nets_info()
-    assert info["state"] == state, info
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.1.0/25")
+    services.db.gateway_update(1, lan_mode=transit[0]); services.db.gateway_update(2, lan_mode=transit[1])
+    assert services.gateway_peer_nets_info()["state"] == state
+
+
+async def test_turning_transit_on_redraws_the_firewall_with_the_transit_links(services, slots, fake_awg,
+                                                                            monkeypatch):
+    """Форвардинг линк ↔ линк на ВПС — между линками слотов с VPN-транзитом:
+    включили или выключили транзит — таблица файервола перерисована сразу, с
+    новым списком (и в форме с фильтром, и в NAT-only — сверка одна)."""
+    from awgbot.infra import nftguard
+    _peer_conf(monkeypatch)
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
+    services.db.gateway_update(1, lan_mode=1)
+    for enabled in (True, False):
+        monkeypatch.setattr(nftguard, "enabled", lambda e=enabled: e)
+        before = fake_awg.fw_calls
+        services.gateway_set_lan_mode(2, True)
+        assert fake_awg.fw_calls == before + 1 and fake_awg.fw_transit == ["awglink", "awglink2"]
+        services.gateway_set_lan_mode(2, False)
+        assert fake_awg.fw_calls == before + 2 and fake_awg.fw_transit == ["awglink"]
 
 
 async def test_failover_toggle_lives_on_the_gateways_screen(services, slots, fake_bot, monkeypatch):
@@ -553,21 +551,21 @@ async def test_the_old_failover_toggle_from_monitoring_lands_on_the_gateways_scr
     assert store["app.routing.failover.enabled"] is False, "старый тумблер ничего не переключил"
 
 
-def test_peer_nets_change_notifies_both_live_slots_once(services, slots, monkeypatch):
-    """Включили доступ между подсетями: у каждого слота появились подсети
-    соседа, а их везёт только файл (они и в конфиге линка). Пока шлюзы не на
+def test_transit_of_a_second_slot_notifies_both_live_agents_32_once(services, slots, monkeypatch):
+    """Второй слот включил VPN-транзит: у обоих слотов появились подсети соседа,
+    а агенту 3.2 их везёт только файл (они и в конфиге линка). Пока шлюзы не на
     связи — тишина, расхождение в карточке; на связи — каждому слоту по одному
     уведомлению с кнопкой выпуска файла."""
-    store = _peer_conf(monkeypatch)
+    _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
     services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
+    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "")
+    services.db.gateway_update(2, lan_mode=0)
     for sid in (1, 2):
         _snap_installed(services, sid, online=False)
-    assert services.gw_bundle_drift_notes() == []
-    store["app.routing.peer_nets.enabled"] = True
+    services.db.gateway_update(2, lan_mode=1)
     assert services.gw_bundle_drift_notes() == [], "шлюзы не на связи, а бот шлёт уведомления"
     for sid in (1, 2):
         services.gwlink_session_opened(sid, "3.3.0", 2)
@@ -675,71 +673,56 @@ def _shown(msg, bot) -> str:
     return "\n".join(out)
 
 
-async def test_a_subnet_wider_than_16_is_refused_at_input(services, slots, fake_bot):
-    """Подсеть слота уходит соседям в AllowedIPs конфига линка, а там правило
-    не пропускает префиксы короче /16. Принять её сейчас — значит получить
-    молчаливый отказ применения у соседа потом. Отказ — при вводе, с причиной;
-    ровно /16 — принимается."""
+async def test_subnets_the_tunnel_cannot_carry_are_refused_at_input(services, slots, fake_bot):
+    """На шлюз в туннеле приходится /16, служебные адреса сервера в туннеле —
+    10.240.0.0/12, адреса в туннеле подсетей одного шлюза не пересекаются.
+    Отказ — при вводе, с причиной; ровно /16 — принимается."""
     _, pi, _ = slots
     _slot1(services, pi)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
-    msg = _amsg(fake_bot, "172.16.0.0/15 172.18.0.0/16 192.168.1.0/24")
+    msg = _amsg(fake_bot, "172.16.0.0/15 192.168.1.0/24 10.241.0.0/24 10.10.1.0/24")
     await sh.gateway_lan_received(msg, st, services)
-    assert services.db.gateway(1).lan_subnets == ["172.18.0.0/16", "192.168.1.0/24"], (
-        "подсеть шире /16 записана или /16 отвергнута")
+    assert services.db.gateway(1).lan_subnets == ["192.168.1.0/24"], "подсеть, которую туннель не повезёт, записана"
     text = _shown(msg, fake_bot)
-    assert "<code>172.16.0.0/15</code> — шире /16 — не пройдёт в конфиг линка других шлюзов, сузь подсеть" \
-        in text, text
+    assert "<code>172.16.0.0/15</code> — шире /16 — в туннеле на шлюз приходится /16, сузь подсеть" in text, text
+    assert ("<code>10.241.0.0/24</code> — служебные адреса сервера AWG (10.240.0.0/12) — выбери другую "
+            "подсеть") in text, text
+    assert ("<code>10.10.1.0/24</code> — в туннеле пересеклась бы с 192.168.1.0/24: у обеих — 10.240.1.0/24 — "
+            "адреса в туннеле подсетей одного шлюза не должны пересекаться") in text, text
+    for raw, kept, why in (("172.18.0.0/16", ["172.18.0.0/16"], ""),
+                           ("192.168.0.0/22 10.0.2.0/24", ["192.168.0.0/22"],
+                            "<code>10.0.2.0/24</code> — в туннеле пересеклась бы с 192.168.0.0/22: 10.240.2.0/24 "
+                            "внутри 10.240.0.0/22"),
+                           ("192.168.0.0/23 10.0.2.0/24", ["192.168.0.0/23", "10.0.2.0/24"], "")):
+        st = FakeState()
+        cb, nav = _acb(fake_bot)
+        await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
+        msg = _amsg(fake_bot, raw)
+        await sh.gateway_lan_received(msg, st, services)
+        assert services.db.gateway(1).lan_subnets == kept, raw
+        if why:
+            assert why in _shown(msg, fake_bot), _shown(msg, fake_bot)
 
 
-def _lan_pair(services, slots, monkeypatch, caps2=("cfg1",)):
-    """Два слота с VPN-транзитом и связью подсетей; агент слота 2 — с
-    возможностями caps2."""
-    _peer_conf(monkeypatch)["app.routing.peer_nets.enabled"] = True
+async def test_new_subnets_of_a_slot_go_to_nobody_else(services, slots, fake_bot, monkeypatch):
+    """Подсети соседям больше не едут: снаружи шлюза сеть видна по префиксу его
+    слота в туннеле. Итог правки не зовёт перевыпускать остальные шлюзы, их
+    документ не меняется."""
+    _peer_conf(monkeypatch)
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"], lan_mode=1)
     services.db.gateway_update(2, lan_subnets=["192.168.68.0/24"], lan_mode=1)
-    services.gwlink_session_opened(2, "3.3.0" if caps2 else "3.2.1", 2, list(caps2))
-
-
-async def test_new_subnets_go_to_cfg1_neighbours_by_channel(services, slots, fake_bot, monkeypatch):
-    """Соседи принимают документ — новые подсети уедут им каналом: итог правки
-    не просит перевыпуска."""
-    _lan_pair(services, slots, monkeypatch)
+    services.gwlink_session_opened(2, "3.2.1", 2, [])
+    before = services.gwcfg_env(services.db.gateway(2))
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
     msg = _amsg(fake_bot, "192.168.2.0/24")
     await sh.gateway_lan_received(msg, st, services)
     text = _shown(msg, fake_bot)
-    assert "Подсети уйдут остальным шлюзам по упр. каналу" in text, text
-    assert "перевыпуск" not in text, text
-
-
-async def test_new_subnets_for_an_agent_32_neighbour_still_need_a_file(services, slots, fake_bot, monkeypatch):
-    """Сосед с агентом 3.2 получит подсети только файлом — итог правки
-    называет его и просит перевыпуск."""
-    _lan_pair(services, slots, monkeypatch, caps2=())
-    st = FakeState()
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan(cb, GwSlotCB(action="lan_nets", slot=1), services, st)
-    msg = _amsg(fake_bot, "192.168.2.0/24")
-    await sh.gateway_lan_received(msg, st, services)
-    text = _shown(msg, fake_bot)
-    assert "Подсети попадут в конфигурацию остальных шлюзов: необходим перевыпуск для Pi2" in text, text
-
-
-def test_the_lan_report_names_agent_32_neighbours_among_cfg1_ones():
-    """Смешанный набор соседей: каналом — всем, кто умеет, файлом — агентам 3.2
-    по именам."""
-    from awgbot.bot import texts
-    from types import SimpleNamespace
-    st = {"gateway": SimpleNamespace(id=1, label="", lan_subnets=["192.168.2.0/24"]),
-          "device": SimpleNamespace(name="NASPi")}
-    res = {"kept": ["192.168.2.0/24"], "rejected": [], "conflict": None,
-           "peer_others": ["Pi2", "Pi3"], "peer_others_file": ["Pi3"]}
-    text = texts.gateway_lan_report(res, st)
-    assert "Подсети уйдут остальным шлюзам по упр. каналу; для Pi3 (агент v3.2) необходим перевыпуск конфигурации" in text, text
+    assert "✅ Подсети NASPi: <code>192.168.2.0/24</code>" in text, text
+    assert "остальным шлюзам" not in text and "перевыпуск" not in text, text
+    assert services.gwcfg_env(services.db.gateway(2)) == before

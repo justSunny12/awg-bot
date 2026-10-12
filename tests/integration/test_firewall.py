@@ -72,7 +72,7 @@ def fw(services, monkeypatch, tmp_path):
     monkeypatch.setattr(nftguard, "apply_text", lambda t: acts.append(("apply", t)))
     monkeypatch.setattr(nftguard, "arm_rollback", lambda s, c, e: acts.append(("arm", s, c)))
     monkeypatch.setattr(nftguard, "disarm_rollback", lambda: acts.append(("disarm",)) or True)
-    monkeypatch.setattr(nftguard, "remove", lambda: acts.append(("remove",)) or ["снято"])
+    monkeypatch.setattr(nftguard, "remove", lambda **_kw: acts.append(("remove",)) or ["снято"])
     return store, acts
 
 

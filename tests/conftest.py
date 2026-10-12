@@ -122,6 +122,7 @@ def fake_awg(monkeypatch):
         fw_admin_ips=None,          # чем бот кормил nftguard.reconcile (None — не звал)
         fw_applied=0,               # сколько раз просили перерисовать таблицу целиком
         fw_calls=0,
+        fw_transit=None,            # линки транзита, с которыми звали сверку таблицы
     )
     server_params = {
         "obfuscation": {k: str(i) for i, k in enumerate(configgen._OBF_ORDER)},
@@ -157,8 +158,9 @@ def fake_awg(monkeypatch):
     # с какими адресами админа его сверяли
     from awgbot.infra import nftguard
 
-    def _fw_reconcile(admin_ips, **_kw):
+    def _fw_reconcile(admin_ips, **kw):
         state.fw_admin_ips = sorted(admin_ips)
+        state.fw_transit = list(kw.get("transit_links") or [])   # линки слотов с VPN-транзитом
         state.fw_calls += 1
         return "ok"
     monkeypatch.setattr(nftguard, "enabled", lambda: True)
@@ -204,6 +206,8 @@ def fake_routing(monkeypatch, tmp_path):
         # зонд, как во всех тестах автомата. Тесты про простой ставят шаги
         # сами.
         link_rx=0, link_tx=0, link_rx_step=0, link_tx_step=1 << 20,
+        lanmap=None, lanmap_applies=[],   # таблица адресов в туннеле: текст в «ядре», история применений
+        dropped_routes=[],                # уборка маршрутов настоящих подсетей 3.2.x
     )
 
     def replace_members(name, kind, members, current=None):
@@ -289,6 +293,14 @@ def fake_routing(monkeypatch, tmp_path):
 
     _set("link_peer_state", link_peer_state)
     _set("drop_slot_policy", lambda slot_id, iface="": None)
+    _set("ensure_mss_clamp", lambda iface="": None)
+    _set("drop_lan_routes", lambda pairs: state.dropped_routes.extend(pairs))
+    # таблица адресов в туннеле (inet awg_lan_map): текст последнего применения;
+    # None — таблицы в «ядре» нет
+    monkeypatch.setattr(routing.lanmap, "apply", lambda text: (setattr(state, "lanmap", text),
+                                                               state.lanmap_applies.append(text)))
+    monkeypatch.setattr(routing.lanmap, "remove", lambda: setattr(state, "lanmap", None) or True)
+    monkeypatch.setattr(routing.lanmap, "present", lambda: state.lanmap is not None)
     _set("link_peer_endpoint", lambda iface="": None)    # внешний IP шлюза из эндпоинта пира
     _set("hook_present", lambda: bool(state.marking))
     _set("write_dnsmasq_conf", write_conf)
