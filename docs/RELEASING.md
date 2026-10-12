@@ -57,7 +57,7 @@ GitHub `vX.Y.Z.P — …`.
   (`handlers/gateway/`, `domain/gateway/` — с подпакетом `cfg/` (применение
   документа конфигурации на агенте), `domain/gwchecks.py`,
   `infra/gwguard/`, тексты и
-  клавиатуры агента, `runtime/scheduler.py` в части роли gateway) — одна
+  клавиатуры агента, `runtime/scheduler/gateway.py` — планировщик роли gateway) — одна
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
   `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
   `bot/routers.py` — роутеры и диспетчер обеих ролей, `bot/paging.py` —
@@ -67,11 +67,11 @@ GitHub `vX.Y.Z.P — …`.
   `bot/screens.py` — реестр экранов обеих ролей, `handlers/reply_commands.py`
   — «✖️ Отмена» под вводом у обеих ролей,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
-  `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
+  `util/timeutil.py`, `runtime/main/` — сборка и запуск обеих ролей, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
   снимок для `awg-bot backup` и `restore`, `tools/check_backup.py` — сторож
   схемы копии в `restore`, `handlers/updates_flow.py` и
-  `handlers/settingscore.py` — шаги обновления и настроек у обеих ролей,
+  `handlers/settingscore/` — шаги обновления и настроек у обеих ролей,
   `handlers/hide.py` — «Скрыть», `domain/evidence.py` — улики живости,
   `infra/hostmetrics.py`, `infra/detach.py`, `infra/nftjson.py`,
   `infra/systemd.py`, `infra/bootid.py`, `util/kvfile.py`, `util/nets.py`,

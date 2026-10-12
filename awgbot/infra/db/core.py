@@ -13,7 +13,7 @@ from typing import Iterator, Optional
 from awgbot.core import access_cache as _access_cache
 from awgbot.core import config
 
-# Состояние переезда профилей. Константы живут ЗДЕСЬ, а domain/migration.py их
+# Состояние переезда профилей. Константы живут ЗДЕСЬ, а domain/migration/ их
 # импортирует: фильтру видимости устройств состояние нужно прямо в запросе, а
 # infra не может тянуть domain. Дублирование строк уже успело разъехаться
 # однажды — потому и константы.

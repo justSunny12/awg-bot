@@ -289,97 +289,90 @@ NAT — внешним запросом), порт и подсеть берут�
 
 ```
 awgbot/
-  core/      config     чтение yaml + секреты из env, validate()
-             settings   горячий кэш conf/*.yaml (правки без рестарта)
-             enums, models, blocks   доменные типы, битмаски блокировок
-  util/      timeutil   время UTC+3, форматтеры, формат даты Amnezia
-             qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
-             nets       подсети: нормализация, разбор, пересечение
-             kvfile     файлы KEY=VALUE (env, состояние)
-             gwlink     конверт и подпись сообщений канала ВПС ↔ шлюз (обе роли)
-             wgconf     конфиги WireGuard из канала шлюза: разбор, белые списки ключей
-                        и правило AllowedIPs — данными install/gw-wg-allow.list
-  infra/     db/        SQLite (per-thread): ядро, схема (миграций нет: схема минимума
-                        3.2.0 полная; schema_gap — сторож старой копии), миксины по темам
-             awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
-             nftguard/  файервол хоста — таблица awg_bot_guard: common, collect, render, apply
-             gwguard/   агент: таблицы nft шлюза, юнит обвязки, конфиги линка и аплинка
-                        (common, nft, unit, wg, lan, uplinktxn)
-             admindns   резолвер админа на ВПС («SMB в туннеле»): юнит, записи, правило NAT
-             routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq — пакет
-                        по разделам: base, selfcheck, slots, sets, marking, policy,
-                        probes, feeds (шапка «два плеча» — в __init__)
-             updates    релизы репозитория, сверка sha256
-             email_resume  IMAP/SMTP аварийного email-выхода из паузы
-             hostmetrics  локальные метрики железа (/proc + statvfs)
-             nftjson    nft с таймаутом, разбор элементов наборов
-             systemd    systemctl is-active / is-enabled
-             detach     отсоединённый запуск (обновление, восстановление, перезапуск)
-             bootid     boot_id ядра (перезагрузка хоста, холодный старт)
-  domain/    services/  бизнес-логика (склейка db+awg+configgen+routing) — пакет
-                        миксинов по областям: blocks, clients, devices, subscription,
-                        traffic, reconcile, firewall, gateway_link, gwchannel, routing,
-                        status; routing/ (common, access, reconcile, liveness, coldstart,
-                        notes), gateway_link/ (common, link, slots, peernets, mark,
-                        agentbot, rekey, token), gwchannel/ (канал на ВПС: session,
-                        snapshot, settings, cfg, feeds, own, services, smbtunnel, bundle,
-                        claim, card) и traffic/ (texts, poll, limits, expiry, resets,
-                        bonus) — сами пакеты, составной миксин собирается в __init__
-             gateway/   механика агента шлюза: base, link, monitor, tgmark, transit,
-                        report, ownlists, peersvc, bundle, egress, cfg/ (документ
-                        конфигурации с сервера: prints, txn, mailphrase, ask, apply,
-                        uplink, uplinktxn, rekey, token);
-                        GatewayServices в __init__
-             gwcfg/     документ конфигурации шлюза по каналу — общий для обеих ролей:
-                        doc (разделы, cfg/cfg_ack), check (проверки), prints (отпечатки)
-             gwsnapshot, gwservices, gwownlists   общие данные канала: снимок шлюза,
-                        записи сервисов соседних сетей, свои списки (обе роли)
-             configgen  генерация vpn:// и .conf (кодек формата приложения)
-             routing    чистая логика: нормализация доменов, генерация dnsmasq
-             evidence   улики живости: активный слот на ВПС, выход наружу у агента
-  bot/       texts, keyboards, guides   презентация; texts/routing/ — пакет
-                        (slots, card, dialogs, assign, access), texts/gateway/ — пакет
-                        (common, panel, transit, bundle, access, ask)
-             filters, middleware, callbacks, states   glue aiogram
-             roles      словарь роли установки (BotRole: MAIN, GATEWAY) — слова роли,
-                        ключи настроек, блоки, корень настроек, переводчик колбэков
-                        (br.cb); общий текст пишется один раз с подстановкой слов роли
-             ui         сборщик экрана и атомы: head, screen, prompt, label, sub, st,
-                        toast, tick, confirm, result, fail, changed, таблица всплывашек
-                        Toast; клавиатуры описанием: rows (ряды как есть), btn, хвосты
-                        back/to_menu, сетка grid, листание paged; правила оформления
-                        живут здесь один раз
-             sections/  общие разделы настроек обеих ролей — модуль на раздел: root,
-                        notify, ncl, mon, email, backup, updates, svc; один диспетчер
-                        open/toggle/edit/cycle/do и фабрика роутера make_router(br)
-             routers    один источник роутеров роли: routers_for (порядок включения:
-                        листание → «Скрыть» → «✖️ Отмена» → [основной бот:
-                        reply-команды] → общие разделы → роутеры роли → устаревшая
-                        кнопка), make_dispatcher (FSM, middleware) — для запуска и тестов
-             paging     листание длинных списков; роутер — фабрика, как «Скрыть»,
-                        «✖️ Отмена», общие разделы и устаревшая кнопка
-             screens    реестр экранов обеих ролей для возврата после ввода, ссылок
-                        /start, уведомлений (set_<раздел> — через sections)
-             notifier   рассылка уведомлений (пейсинг + RetryAfter)
-             handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
-                        selfops, blocks, broadcast) + friend + routing + settings/ (пакет
-                        ролевых разделов основного бота: render, gwmark, slots, sections,
-                        inputs, cycles, actions, linkkeys, gwtoken; роутер один —
-                        _router) + gateway/ (пакет
-                        агента: panel, sections, dialogs, bundle, access, transit, apply,
-                        ask) + settingscore (шаги ввода настроек,
-                        общие для ролей) + updates_flow + …
-  runtime/   main         сборка и запуск (диспетчер роли — из bot/routers)
-             preflight    самопроверка окружения на старте (fatal / warning)
-             scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)
-             linkserver/  канал на ВПС: слушатели на адресах линков, сессии, доставка,
-                          смена ключей линка
-             linkclient/  канал на шлюзе: сессия, приём документа и фидов, очередь
-                          ответов, смена ключей линка, транзакция аплинка
-             watcher      inotify-вотчдог awg0.conf (дебаунс)
-             conf_watcher горячая перечитка conf/*.yaml
-             routing_doctor  диагностика маршрутизации по слоям
-  assets/    guides/      скриншоты пошаговых гайдов (смена региона App Store)
+  __main__   `python -m awgbot` → runtime/main/; __version__ — версия поставки
+  core/      доменные типы и конфигурация: config (yaml + секреты из env, validate()),
+             settings (горячий кэш conf/*.yaml), enums, models, blocks (битмаски
+             блокировок), access_cache (кто это — для middleware)
+  util/      чистые помощники: timeutil (UTC+3, форматтеры), nets (подсети), kvfile,
+             fsatomic (атомарная запись секретов), qrgen, secrets_util и bundlecrypt
+             (крипто бэкапов и бандла), gwlink и gwsign (конверт и подпись сообщений
+             ВПС ↔ шлюз), wgconf (конфиги WireGuard из канала; правило AllowedIPs —
+             данными install/gw-wg-allow.list), dist (поставка из своей установки)
+  infra/     команды хоста — грязный слой:
+    awg/       ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec): конфиг, пиры,
+               параметры, блокировки, разбор вывода
+    db/        SQLite (per-thread): ядро и миксины по темам; schema/ — схема, выборки,
+               конвертеры строк (миграций нет: схема минимума 3.2.0 полная;
+               schema_gap — сторож старой копии)
+    nftguard/  файервол ВПС — таблица awg_bot_guard: сбор, текст таблицы, применение
+    gwguard/   агент: таблицы nft шлюза, юнит обвязки, конфиги линка и аплинка
+    routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq (шапка
+               «два плеча» — в __init__)
+    модули     admindns (резолвер админа, «SMB в туннеле»), resolver (свой резолвер
+               клиентов), rfacct (учёт РФ-трафика), sshd (порт sshd), updates
+               (релизы, sha256), awglock (манифест AmneziaWG и поколение хоста), mail
+               и email_resume (почтовый канал, аварийный выход из паузы), tgsend
+               (сообщение админу из процесса без бота), hostmetrics, nftjson, systemd,
+               detach (запуск вне процесса бота), bootid
+  domain/    бизнес-логика (склейка db + awg + configgen + routing):
+    services/  Services — составной миксин по областям (blocks, clients, devices,
+               subscription, firewall, status, reconcile — модули); пакеты:
+      routing/       условная маршрутизация: доступ, живость, холодный старт;
+                     reconcile/ — реконсиляция таблиц и источники списков
+      gateway_link/  слоты шлюзов, назначение устройства, бандл и токен агента
+      gwchannel/     канал линка на ВПС: снимок, настройки, фиды, документ, карточка
+      traffic/       опрос трафика, лимиты, сроки, месячные сбросы
+    migration/ переезд профилей на второй интерфейс (MigrationMixin)
+    gateway/   механика агента шлюза: линк, монитор, транзит, свои списки, бандл;
+               cfg/ — документ конфигурации с сервера (применение, транзакции,
+               смена токена и ключей); GatewayServices в __init__
+    gwcfg/     документ конфигурации шлюза по каналу — общий для обеих ролей
+    модули     configgen (vpn:// и .conf), routing (чистая логика доменов и dnsmasq),
+               evidence (улики живости), alerts (гистерезис алертов), gwsnapshot,
+               gwservices, gwownlists, gwchecks, channelstate (общие данные канала
+               и проверок, обе роли), gwssh (SSH на шлюзе), privatedns (свой
+               резолвер клиентов), mailmix (почта в сервисах), selfupdate,
+               backupcrypto (секрет бэкапов)
+  bot/       презентация и glue aiogram:
+    handlers/  роутеры: client/ — клиент и активация; admin/ — панель админа
+               (clients/ — профили, broadcast/ — рассылки; panel, devices,
+               gateway, selfops, blocks — модули); settings/ — ролевые разделы настроек
+               основного бота; gateway/ — панель и операции агента шлюза;
+               settingscore/ — шаги ввода настроек, общие для ролей; модули friend,
+               routing, guide, restore, mailwizard, updates_flow, devcore,
+               reply_commands, hide, stale, common
+    texts/     шаблоны сообщений: admin/, client/, settings/, gateway/, routing/ —
+               пакеты по экранам; broadcast, migration, updates, common, fmt
+    keyboards/ инлайн-клавиатуры по ролям и экранам
+    sections/  общие разделы настроек обеих ролей — модуль на раздел: root, notify,
+               ncl, mon, email, backup, updates, svc; один диспетчер
+               open/toggle/edit/cycle/do и фабрика роутера make_router(br)
+    roles      словарь роли установки (BotRole: MAIN, GATEWAY) — слова роли, ключи
+               настроек, блоки, корень настроек, переводчик колбэков (br.cb); общий
+               текст пишется один раз с подстановкой слов роли
+    ui         сборщик экрана и атомы (head, screen, prompt, toast, confirm, result,
+               …); клавиатуры описанием: rows, btn, back/to_menu, grid, paged;
+               правила оформления живут здесь один раз
+    routers    один источник роутеров роли: routers_for (порядок включения:
+               листание → «Скрыть» → «✖️ Отмена» → [основной бот: reply-команды] →
+               общие разделы → роутеры роли → устаревшая кнопка), make_dispatcher
+               (FSM, middleware) — для запуска и тестов
+    модули     screens (реестр экранов для возврата после ввода, ссылок /start,
+               уведомлений), paging (листание), notifier (рассылка уведомлений:
+               пейсинг + RetryAfter), guides, filters, middleware, callbacks, states
+  runtime/   запуск и фон:
+    main/        сборка и запуск: старт, роль gateway, основная роль (диспетчер роли —
+                 из bot/routers)
+    scheduler/   APScheduler-задачи: общее расписание, роли client и gateway
+    linkserver/  канал на ВПС: слушатели на адресах линков, сессии, доставка, смена
+                 ключей линка
+    linkclient/  канал на шлюзе: сессия, приём документа и фидов, очередь ответов,
+                 смена ключей линка, транзакция аплинка
+    модули       preflight (самопроверка на старте), watcher (inotify awg0.conf),
+                 conf_watcher (горячая перечитка conf/*.yaml), routing_doctor
+                 (диагностика маршрутизации по слоям), gwbotme (getMe бота шлюза),
+                 hostboot (перезагружался ли хост), poolprobe (замер пула потоков)
+  assets/    guides/ — скриншоты пошаговых гайдов (смена региона App Store)
 
 tools/       restore_backup  расшифровка архива резервной копии на любой машине
              snapshot        снимок состояния для `awg-bot backup` и `restore`
@@ -428,7 +421,7 @@ conf/        *.yaml — конфигурация; run.sh — форграунд-
    `pytest tests/screens --update-screens`.
 
 Диспетчеры, `routers_for`, реестр экранов (`set_<id>` находится сам), отмена
-под вводом и ядро ввода `handlers/settingscore.py` не трогаются: роутер
+под вводом и ядро ввода `handlers/settingscore/` не трогаются: роутер
 разделов узнаёт колбэк через переводчик роли и доступность раздела, корень
 настроек рисуется из `br.settings_root`; границы, подпись, единицу, умолчание
 и множитель ключа с вводом числа ядро ввода берёт из модуля (`sections.bounds`,

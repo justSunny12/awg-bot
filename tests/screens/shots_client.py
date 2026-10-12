@@ -161,7 +161,7 @@ def with_mail(build):
 
 
 async def _expiry_tick(services, bot):
-    """Такт проверки сроков, как в планировщике (runtime/scheduler.py,
+    """Такт проверки сроков, как в планировщике (runtime/scheduler/client.py,
     job_expiry): уведомления сервиса и кнопка отсрочки к клиентскому."""
     notes = services.check_expiry()
     for n in notes:

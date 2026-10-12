@@ -1,4 +1,4 @@
-"""E2E: обёртки фоновых задач scheduler.py (замыкания job_*) и автомат простоя сервиса (services.service_failure_alerts).
+"""E2E: обёртки фоновых задач runtime/scheduler/ (замыкания job_*) и автомат простоя сервиса (services.service_failure_alerts).
 
 Замыкания достаём из собранного планировщика через get_job(id).func и зовём
 напрямую — без реального AsyncIOScheduler.start(). Проверяем guard-логику

@@ -255,7 +255,7 @@ class StubSession(BaseSession):
 
 
 def make_bot(session: StubSession) -> Bot:
-    """Бот, как в runtime/main.py: HTML по умолчанию, без превью ссылок."""
+    """Бот, как в runtime/main/: HTML по умолчанию, без превью ссылок."""
     return Bot(BOT_TOKEN, session=session,
                default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
 

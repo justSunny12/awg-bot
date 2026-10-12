@@ -10,7 +10,7 @@ pause, quiet_hours, monitoring). Этот модуль грузит «холод
 
 Секреты (BOT_TOKEN, ADMIN_ID) — только из окружения/env, НЕ из yaml (yaml в git).
 Крипто-материал сервера (обфускация, ключи, psk, порт) — не тут, его читает live
-из конфига интерфейса awg.py (единый источник истины).
+из конфига интерфейса infra/awg/ (единый источник истины).
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _resolve_dir(env_var: str, fhs: str, dev: Path) -> Path:
 # conf/*.yaml редактируются установщиком → живут в /etc (переживают обновление кода)
 CONF_DIR = _resolve_dir("AWG_BOT_CONF_DIR", "/etc/awg-bot/conf", BASE_DIR / "conf")
 # БД и бэкапы — состояние в /var/lib (каталог заводит установщик; для dev — ./data).
-# main.py создаёт подкаталоги при старте.
+# runtime/main/ создаёт подкаталоги при старте.
 DATA_DIR = _resolve_dir("AWG_BOT_DATA_DIR", "/var/lib/awg-bot", BASE_DIR / "data")
 DB_PATH = DATA_DIR / "bot.db"
 BACKUP_DIR = DATA_DIR / "backups"
@@ -106,7 +106,7 @@ UPDATES_ASSET_NAME: str = _updates.get("asset_name", "awg-bot.tgz")
 
 
 def validate() -> None:
-    """Проверка обязательных параметров. Зовётся из main.py при старте (импорт
+    """Проверка обязательных параметров. Зовётся из runtime/main/ при старте (импорт
     модуля тестами/скриптами не требует заполненного конфига).
 
     Секреты — из окружения/.env; топология — из yaml (/etc/awg-bot/conf, генерит

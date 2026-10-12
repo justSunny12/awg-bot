@@ -1,6 +1,6 @@
 """
 Запасной канал алертов агента шлюза: письмо, когда Telegram не отвечает
-(`_mail_fallback` в runtime/main.py, роль gateway).
+(`_mail_fallback` в runtime/main/gateway.py, роль gateway).
 
 Telegram агента ходит через туннель до сервера AWG. Лёг линк — Telegram нет,
 а прямой выход в интернет у шлюза есть: письмо уйдёт, и человек узнает, что

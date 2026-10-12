@@ -318,7 +318,7 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, servic
 
 async def apply_device_limit_typed(message: Message, services, state: FSMContext, data: dict,
                                    gb_value: int) -> None:
-    """Ввод «✏️ Другое» для лимита устройства (общий приёмник — в clients.py)."""
+    """Ввод «✏️ Другое» для лимита устройства (общий приёмник — в admin/clients/edit.py)."""
     dev = await call(services.db.get_device, data.get("dev_ref"))
     if dev is None:
         await state.clear()
