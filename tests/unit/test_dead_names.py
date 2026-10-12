@@ -107,7 +107,7 @@ def test_the_guard_notices_a_fresh_dead_name():
     assert dead_names({fmt: src}) == ["texts/fmt.py:ONLY_IN_TESTS"]
     init = BOT / "texts" / "__init__.py"
     reexported = init.read_text(encoding="utf-8") + "\nfrom .fmt import ONLY_IN_TESTS\n"
-    handler = BOT / "handlers" / "client.py"
+    handler = BOT / "handlers" / "client" / "main.py"
     doc = '"""Упоминание ONLY_IN_TESTS в докстринге — не ссылка."""\n' + handler.read_text(encoding="utf-8")
     assert dead_names({fmt: src, init: reexported, handler: doc}) == ["texts/fmt.py:ONLY_IN_TESTS"]
     slots = BOT / "texts" / "routing" / "slots.py"
