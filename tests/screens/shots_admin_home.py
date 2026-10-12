@@ -5,7 +5,7 @@ from awgbot.bot.callbacks import ClientCB, Menu, NoteCB
 
 from tests.screens.base import Shot
 from tests.screens.shots_admin_common import (BR, GB, IPHONE, KS, PHONE, _base, _mig_running, _people,
-                                              _quiet, _two_expiring, _upd_found)
+                                              _quiet, _two_expiring, _upd_found, _upd_waits)
 from tests.screens.shots_admin_common_gw import NASPI, _gw_online, _routing, _slots
 
 
@@ -152,6 +152,10 @@ BRANCHES = [
          title="главная: онлайн 0 без ссылки рядом с «Истекают» и «Без профиля»; аптайм в днях и часах"),
     Shot("adm.main.update", role="admin", start="", data=_update_and_migration,
          title="главная: доступна версия (тег без «v»), переезд — последней строкой"),
+    Shot("adm.main.upd_wait", role="admin", start="", data=_upd_waits("1.2.3"),
+         title="главная: допустимой версии нет, v1.3.0 ждёт шлюз — строка ожидания"),
+    Shot("adm.main.upd_wait.many", role="admin", start="", data=_upd_waits("1.2.3", "1.2.0", "1.2.1", "1.2.2"),
+         title="главная: ждёт четыре шлюза — три и «и ещё 1»"),
     Shot("adm.main.down", role="admin", start="", data=_down,
          title="главная: сервер не отвечает, шлюз РФ-доступа недоступен"),
     Shot("adm.link.dev.missing", role="admin", start="dev-99", data=_people,

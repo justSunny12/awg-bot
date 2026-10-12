@@ -16,7 +16,13 @@
   • пропущенные ступени едут в уведомление списком — changelog не теряется;
   • установленной версии нет среди тегов релизов — обновления выключены
     (next_release() → None); исключение — локальная сборка X.Y.Z.N при релизе
-    с той же базой X.Y.Z: она считается релизной и обновляется (_is_release_build).
+    с той же базой X.Y.Z: она считается релизной и обновляется (_is_release_build);
+  • сверка с другой ролью: `#gw_needs_main_X.Y.Z` (агенту нужен сервер AWG не
+    ниже X.Y.Z) и `#main_needs_gw_X.Y.Z` (основному боту нужны шлюзы не ниже).
+    Условие идёт по цепочке — цель допустима, если выполнены условия всех
+    адресованных роли релизов от установленного до неё; иначе берётся
+    допустимый ниже, а новейший недопустимый «ждёт» (waiting_target). Версии
+    другой стороны знает вызывающий (peer); без него условий нет вовсе.
 
 Репо публичный → анонимный GET, никаких токенов. Целостность поставки — сверкой
 sha256 с полем `assets[].digest` (GitHub считает его сам при загрузке ассета;
@@ -37,15 +43,16 @@ from awgbot.core import config
 
 from .model import (
     UpdateError, Release, parse_version, version_at_least,
-    _SEMVER_RE, _REQUIRES_RE, _AUDIENCE_RE, _ROLE_KEY, _ROLE_TAG, _GENERATION_RE)
+    _SEMVER_RE, _REQUIRES_RE, _AUDIENCE_RE, _ROLE_KEY, _ROLE_TAG, _GENERATION_RE, _NEEDS_RE, _NEEDS_KEY)
 from .github import (
     _AWG_BOT_BIN, _API, _TIMEOUT, _request, _digest_hex, list_releases, _strip_tag,
     download_asset, apply, release_body)
-from .pick import next_release, _is_release_build, pick_target
+from .pick import next_release, _is_release_build, pick_target, waiting_target, chain_need
 
 __all__ = [
     "config", "UpdateError", "Release", "parse_version", "version_at_least",
     "_SEMVER_RE", "_REQUIRES_RE", "_AUDIENCE_RE", "_ROLE_KEY", "_ROLE_TAG", "_GENERATION_RE",
+    "_NEEDS_RE", "_NEEDS_KEY",
     "_AWG_BOT_BIN", "_API", "_TIMEOUT", "_request", "_digest_hex", "list_releases",
     "_strip_tag", "download_asset", "apply", "release_body",
-    "next_release", "_is_release_build", "pick_target"]
+    "next_release", "_is_release_build", "pick_target", "waiting_target", "chain_need"]

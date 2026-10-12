@@ -251,6 +251,39 @@ def _upd_found(services):
     return who
 
 
+def _upd_peers(*vers, fresh: bool = True, seen: str = "") -> list:
+    """Шлюзы для сверки версий: Pi5, Pi4, NASPi, … с данными версиями агента."""
+    from awgbot.domain.selfupdate import UpdatePeer
+    names = ("Pi5", "Pi4", "NASPi", "Дача", "Офис")
+    return [UpdatePeer(slot=i + 1, name=names[i], version=v, fresh=fresh, seen=seen) for i, v in enumerate(vers)]
+
+
+def _upd_waits(*vers, tag: str = "v1.3.0", need: str = "1.3.0"):
+    """Допустимой цели нет: tag ждёт шлюзы с агентами vers."""
+    def data(services):
+        who = _people(services)
+        services.update_scan = lambda: None
+        services.update_next = lambda: None
+        services.update_available_tag = lambda: ""
+        services.update_waiting = lambda: {"tag": tag, "need": need, "role": "client",
+                                           "peers": _upd_peers(*vers)}
+        return who
+    return data
+
+
+def _upd_silent(services):
+    """Цель v1.3.0 есть; выше v1.4.0 ждёт Pi5; Pi4 молчит с 10.09 на старом
+    агенте, слот 3 — ни разу не выходил на связь."""
+    from awgbot.domain.selfupdate import UpdatePeer
+    who = _upd_found(services)
+    services.update_waiting = lambda: {"tag": "v1.4.0", "need": "1.4.0", "role": "client",
+                                       "peers": _upd_peers("1.3.0")}
+    services.update_silent_peers = lambda f: {"tag": "v1.3.0", "need": "1.3.0", "peers": [
+        UpdatePeer(slot=2, name="Pi4", version="1.2.0", fresh=False, seen="2026-09-10T12:00:00+03:00"),
+        UpdatePeer(slot=3, name="слот 3", version="", fresh=False, seen="")]}
+    return who
+
+
 def _bc_ready(services):
     """Для рассылки: кулдаун прошлых отправок того же процесса не мешает."""
     from awgbot.bot.handlers.admin import broadcast as bc

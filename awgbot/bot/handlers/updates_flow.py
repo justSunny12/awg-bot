@@ -33,7 +33,10 @@ async def install(cb: CallbackQuery, services, *, return_panel) -> None:
     (сеть/sha256/запись) — прибраться и вернуть меню: под кнопкой его уже нет."""
     nxt = await call(services.update_next)
     if nxt is None:
-        await cb.answer(texts.UPDATE_NOTHING, show_alert=True)
+        # условие на другую сторону закрылось между проверкой и нажатием — с причиной
+        waiting = await call(services.update_waiting) if hasattr(services, "update_waiting") else None
+        await cb.answer(ui.toast(texts.update_blocked_toast(texts.update_wait_reason(waiting)))
+                        if waiting else texts.UPDATE_NOTHING, show_alert=True)
         return
     blocked = await call(services.update_block_reason, nxt)
     if blocked:

@@ -82,3 +82,68 @@ def test_required_floor_is_a_release_that_role_actually_received():
             assert floor in audience, f"{tag}: минимум {floor} — нет такого релиза в журнале"
             assert role in audience[floor], \
                 f"{tag}: минимум {floor} для роли {role} — тот релиз роли не адресовался"
+
+
+# ── перекрёстные строки: версия другой роли ──────────────────────────────────
+# «#gw_needs_main_X» — агенту релиза нужен сервер AWG не ниже X; «#main_needs_gw_X»
+# — основному боту нужны шлюзы не ниже X. Читаются слева направо; X — релиз,
+# который той роли был адресован. Хотфиксы X.Y.Z.P их не несут.
+
+_CROSS = re.compile(r"#(gw_needs_main|main_needs_gw)_(.*)")
+_CROSS_ROLE = {"gw_needs_main": ("gw", "main"), "main_needs_gw": ("main", "gw")}
+
+
+def _cross_problems(tag: str, lines: list[str], audience: dict[str, set[str]]) -> list[str]:
+    """Нарушения перекрёстных строк одной записи (пусто — запись в порядке)."""
+    out = []
+    tags = [ln for ln in lines if ln.startswith("#")]
+    for ln in tags:
+        if re.match(r"#needs_(main|gw)_", ln):
+            out.append(f"{tag}: «{ln}» — черновое имя, нужно #gw_needs_main_ / #main_needs_gw_")
+    cross = [(i, ln) for i, ln in enumerate(tags) if _CROSS.fullmatch(ln)]
+    if not cross:
+        return out
+    if len(tag[1:].split(".")) > 3:
+        out.append(f"{tag}: у хотфикса строк условий не бывает")
+    req = [i for i, ln in enumerate(tags) if ln.startswith("#requires_")]
+    gen = [i for i, ln in enumerate(tags) if ln.startswith("#awg_gen")]
+    roles = {m.group(1) for ln in tags if (m := re.fullmatch(r"#requires_(main|gw)_.*", ln))}
+    for i, ln in cross:
+        kind, ver = _CROSS.fullmatch(ln).groups()
+        own, other = _CROSS_ROLE[kind]
+        if req and i < max(req) or gen and i > min(gen):
+            out.append(f"{tag}: «{ln}» — после #requires_*, перед #awg_gen")
+        if own not in roles:
+            out.append(f"{tag}: «{ln}» без #requires_{own}_ — роль его не прочтёт")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", ver):
+            out.append(f"{tag}: «{ln}» — версия в три цифры")
+        elif other not in audience.get(ver, set()):
+            out.append(f"{tag}: «{ln}» — релиз {ver} роли {other} не адресовался")
+    return out
+
+
+def test_cross_role_lines_in_the_changelog_are_well_formed():
+    audience = _audience_by_version()
+    for tag, lines in _entries():
+        assert not _cross_problems(tag, lines, audience), _cross_problems(tag, lines, audience)
+
+
+def test_the_cross_role_checker_catches_every_mistake():
+    """Строк условий в журнале пока нет (первым их несёт 3.3.1) — проверка
+    проверяется на образцах, чтобы первая запись с ними не прошла кривой."""
+    aud = {"3.3.0": {"main", "gw"}, "3.3.1": {"main"}, "3.2.1": {"gw"}}
+    good = ["#requires_main_3.3.0", "#requires_gw_3.3.0",
+            "#gw_needs_main_3.3.0", "#main_needs_gw_3.3.0", "#awg_gen2"]
+    assert _cross_problems("v3.3.2", good, aud) == []
+    cases = {
+        "хотфикс": ("v3.3.2.1", ["#requires_gw_3.3.0", "#gw_needs_main_3.3.0", "#awg_gen2"]),
+        "до #requires": ("v3.3.2", ["#gw_needs_main_3.3.0", "#requires_gw_3.3.0", "#awg_gen2"]),
+        "после #awg_gen": ("v3.3.2", ["#requires_gw_3.3.0", "#awg_gen2", "#gw_needs_main_3.3.0"]),
+        "чужая роль": ("v3.3.2", ["#requires_main_3.3.0", "#gw_needs_main_3.3.0", "#awg_gen2"]),
+        "черновое имя": ("v3.3.2", ["#requires_gw_3.3.0", "#needs_main_3.3.0", "#awg_gen2"]),
+        "четыре цифры": ("v3.3.2", ["#requires_gw_3.3.0", "#gw_needs_main_3.3.0.1", "#awg_gen2"]),
+        "версия не той роли": ("v3.3.2", ["#requires_main_3.3.0", "#main_needs_gw_3.3.1", "#awg_gen2"]),
+        "нет такого релиза": ("v3.3.2", ["#requires_gw_3.3.0", "#gw_needs_main_3.2.9", "#awg_gen2"]),
+    }
+    for why, (tag, lines) in cases.items():
+        assert _cross_problems(tag, lines, aud), f"не поймано: {why}"

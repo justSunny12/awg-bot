@@ -191,6 +191,13 @@ async def main() -> None:
             from awgbot.bot.handlers.settings.render import _drop_bundle_msgs
             await _drop_bundle_msgs(bot, services, slot_id)
         _linkserver.set_on_rekeyed(_on_rekeyed)
+
+        async def _on_update(nxt) -> None:
+            # версии шлюзов открыли новую цель обновления — то же уведомление,
+            # что у проверки по расписанию (один раз на тег решает домен)
+            from awgbot.runtime import scheduler as _scheduler
+            await _scheduler.notify_update_available(bot, services, nxt)
+        _linkserver.set_on_update(_on_update)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: крючки не поставлены: %s", e)
 

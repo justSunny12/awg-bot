@@ -81,10 +81,16 @@ class SelfUpdateCoreMixin:
 
     def update_next(self):
         """Цель обновления (updates.Release) или None: последний релиз для роли
-        с учётом обязательных ступеней и потолка поколения при идущем переезде.
-        Сетевые ошибки гасим в None — фоновая задача/кнопка от них не падают."""
+        с учётом обязательных ступеней, потолка поколения при идущем переезде и
+        условия на версию другой роли (gate). Скачанный список релизов
+        сохраняется — по нему цель пересчитывают без сети (cache). Сетевые
+        ошибки гасим в None — фоновая задача/кнопка от них не падают."""
+        kw = {"max_generation": self._generation_ceiling()}
+        gate = self._update_gate()
+        if gate is not None:
+            kw.update(peer=gate, keep=self._update_keep)
         try:
-            rel = updates.next_release(max_generation=self._generation_ceiling())
+            rel = updates.next_release(**kw)
         except updates.UpdateError:
             self.update_scan_failed = True
             return None
@@ -156,8 +162,9 @@ class SelfUpdateCoreMixin:
         if release is None:
             if self.update_next() is not None:
                 return ""
-            try:
-                release = updates.next_release()          # без потолка
+            gate = self._update_gate()
+            try:                                          # без потолка
+                release = updates.next_release(**({"peer": gate} if gate is not None else {}))
             except updates.UpdateError:
                 return ""
         if release is None:

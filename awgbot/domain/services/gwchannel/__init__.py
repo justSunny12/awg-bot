@@ -1,7 +1,8 @@
 """
 gwchannel/ — сторона ВПС: приём того, что привёз канал линка (части: session, snapshot,
 own, bundle, services, settings, feeds, card, claim, cfg — по смыслу сообщений;
-smbtunnel — «SMB в туннеле»: записи резолвера админа из SMB всех слотов).
+smbtunnel — «SMB в туннеле»: записи резолвера админа из SMB всех слотов;
+versions — версии агентов слотов для условия обновления сервера).
 
 Здесь хранение, сверка и решение, что доставить шлюзу. Снимок рисуется на
 экранах и сравнивается с тем, что ВПС сам же выдал в конфигурации; расхождение
@@ -28,10 +29,12 @@ from .card import CardMixin
 from .claim import ClaimMixin
 from .cfg import CfgMixin
 from .smbtunnel import SmbTunnelMixin
+from .versions import VersionsMixin
 
 
 class GwChannelMixin(SessionMixin, SnapshotMixin, OwnListsMixin, BundleMixin, ServicesMixin,
-                     SettingsMixin, FeedsMixin, CardMixin, ClaimMixin, CfgMixin, SmbTunnelMixin):
+                     SettingsMixin, FeedsMixin, CardMixin, ClaimMixin, CfgMixin, SmbTunnelMixin,
+                     VersionsMixin):
     """Сторона ВПС канала линка — собирается из частей пакета (см. шапку)."""
 
 

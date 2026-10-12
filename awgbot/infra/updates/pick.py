@@ -1,8 +1,9 @@
 """pick.py — часть пакета updates (см. __init__): выбор цели обновления роли
-по списку релизов — минимумы, потолок поколения, релизная ли сборка."""
+по списку релизов — минимумы, потолок поколения, условие на версию другой
+роли, релизная ли сборка."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from awgbot.core import config
 
@@ -10,8 +11,15 @@ from .model import Release, parse_version
 from .github import _up
 
 
+# peer(need) → выполнено ли условие «другая сторона не ниже need»: версии
+# другой роли знает вызывающий (домен), здесь — только выбор по списку.
+Peer = Callable[[tuple], bool]
+
+
 def next_release(role: Optional[str] = None,
-                 max_generation: Optional[int] = None) -> Optional[Release]:
+                 max_generation: Optional[int] = None,
+                 peer: Optional[Peer] = None,
+                 keep: Optional[Callable[[list], None]] = None) -> Optional[Release]:
     """Цель обновления для ЭТОЙ РОЛИ, или None.
 
     Цель — последний релиз новее установленного, адресованный роли (хэштег
@@ -25,6 +33,10 @@ def next_release(role: Optional[str] = None,
     его цели недопустима, профили на трёх интерфейсах мигрировать нечем); релизы
     выше потолка не рассматриваются вовсе.
 
+    peer — условие на версию другой роли (см. pick_target); без него условий
+    нет. keep(releases) — получить скачанный список (релизной сборке — весь,
+    нерелизной — пустой): по нему цель пересчитывают без нового похода в сеть.
+
     None означает «обновлять не на что / не от чего»:
       • установленная версия НЕ найдена среди тегов релизов → молчим навсегда
         (нерелизная сборка);
@@ -36,8 +48,12 @@ def next_release(role: Optional[str] = None,
     role = (role if role is not None else config.ROLE) or ""
     releases = _up().list_releases()
     if not _is_release_build(installed, releases):
+        if keep is not None:
+            keep([])
         return None                      # нерелизная сборка → не трогаем
-    return pick_target(installed, releases, role, max_generation)
+    if keep is not None:
+        keep(releases)
+    return pick_target(installed, releases, role, max_generation, peer)
 
 
 def _is_release_build(installed: tuple, releases: list) -> bool:
@@ -53,15 +69,54 @@ def _is_release_build(installed: tuple, releases: list) -> bool:
     return any(r.version[:3] == base and r.version != installed for r in releases)
 
 
-def pick_target(installed: tuple, releases: list, role: str,
-                max_generation: Optional[int] = None) -> Optional[Release]:
-    """Чистый выбор цели по списку (см. next_release). releases — по возрастанию."""
+def _newer(installed: tuple, releases: list, role: str,
+           max_generation: Optional[int]) -> list:
+    """Релизы новее установленного, адресованные роли, под потолком поколения."""
     newer = [r for r in releases if r.version > installed and r.applies_to(role)]
     if max_generation is not None:
         newer = [r for r in newer if r.awg_generation() <= max_generation]
+    return newer
+
+
+def _chain_need(installed: tuple, newer: list, target: Release, role: str) -> Optional[tuple]:
+    """Наибольшее условие на другую сторону по цепочке: все адресованные роли
+    релизы от установленного до target включительно. Хотфиксы условий не
+    несут (Release.needs) — но и не обходят условие своей базы: оно в цепочке."""
+    return max((r.needs(role) for r in newer
+                if installed < r.version <= target.version and r.needs(role)), default=None)
+
+
+def _gate(installed: tuple, newer: list, role: str, peer: Peer):
+    """(новейший допустимый, новейший ждущий) — от новейшего к старшему, первый
+    с выполненной цепочкой условий; первый невыполненный — тот, что ждёт."""
+    waiting = None
+    for target in reversed(newer):
+        need = _chain_need(installed, newer, target, role)
+        if need is None or peer(need):
+            return target, waiting
+        if waiting is None:
+            waiting = target
+    return None, waiting
+
+
+def pick_target(installed: tuple, releases: list, role: str,
+                max_generation: Optional[int] = None,
+                peer: Optional[Peer] = None) -> Optional[Release]:
+    """Чистый выбор цели по списку (см. next_release). releases — по возрастанию.
+
+    peer — условие на другую сторону: цель — новейший релиз, у которого
+    выполнены условия всей цепочки от установленного (§ «сверка» в шапке
+    пакета); затем — понижение по минимумам, как без условия. Понижение
+    условие не нарушает: цепочка пониженной цели — часть цепочки допустимой.
+    Без peer — выбор как до сверки, байт в байт."""
+    newer = _newer(installed, releases, role, max_generation)
     if not newer:
         return None
     target = newer[-1]
+    if peer is not None:
+        target, _ = _gate(installed, newer, role, peer)
+        if target is None:
+            return None
     while True:
         chain = [r for r in newer if r.version <= target.version]
         required = max((r.requires(role) for r in chain if r.requires(role)), default=None)
@@ -72,3 +127,21 @@ def pick_target(installed: tuple, releases: list, role: str,
             break
         target = lowered
     return target
+
+
+def waiting_target(installed: tuple, releases: list, role: str,
+                   max_generation: Optional[int] = None,
+                   peer: Optional[Peer] = None) -> Optional[Release]:
+    """Новейший релиз роли, который ждёт другую сторону (его цепочка условий
+    не выполнена), или None. Без peer — ничего не ждёт."""
+    if peer is None:
+        return None
+    newer = _newer(installed, releases, role, max_generation)
+    return _gate(installed, newer, role, peer)[1] if newer else None
+
+
+def chain_need(installed: tuple, releases: list, target: Release, role: str,
+               max_generation: Optional[int] = None) -> Optional[tuple]:
+    """Какая версия другой стороны нужна, чтобы дойти до target: наибольшее
+    условие по цепочке от установленного. None — условий нет."""
+    return _chain_need(installed, _newer(installed, releases, role, max_generation), target, role)

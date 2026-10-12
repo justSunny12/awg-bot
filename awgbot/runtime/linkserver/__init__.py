@@ -104,6 +104,15 @@ _on_applied = None
 _on_installed = None
 _on_notes = None
 _on_rekeyed = None
+_on_update = None
+
+
+def set_on_update(fn) -> None:
+    """Крючок уведомления о версии (async fn(release)): версии агентов из
+    hello или снимка открыли серверу новую цель обновления — то же «Доступна
+    новая версия», что шлёт проверка по расписанию. Ставит main."""
+    global _on_update
+    _on_update = fn
 
 
 def set_on_rekeyed(fn) -> None:
@@ -190,5 +199,5 @@ async def shutdown() -> None:
         _server = None
 
 
-__all__ = ["set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+__all__ = ["set_on_update", "_on_update", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

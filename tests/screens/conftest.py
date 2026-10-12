@@ -21,13 +21,16 @@ def fakes(fake_awg, fake_routing):
 
 
 @pytest.fixture()
-def frozen(monkeypatch):
+def frozen(monkeypatch, tmp_path):
     """Часы, версия и хост — константы каталога; имя хоста в шапке главной
-    админа кэшируется на процесс — закрепляем его тоже."""
+    админа кэшируется на процесс — закрепляем его тоже. Файл поколения
+    AmneziaWG — свой, пустой: тесты переезда того же процесса пишут общий, и
+    «gen1» в карточке сервера иначе зависел бы от порядка прогона."""
     import socket
     import time
     from awgbot.bot.texts import admin as admin_texts
-    from awgbot.infra import hostmetrics
+    from awgbot.infra import awglock, hostmetrics
+    monkeypatch.setattr(awglock, "STATE_PATH", tmp_path / "awg.state")
     monkeypatch.setattr(timeutil, "now", lambda: base.NOW)
     monkeypatch.setattr(time, "time", lambda: base.NOW.timestamp())
     monkeypatch.setattr(config, "INSTALLED_VERSION", base.VERSION)

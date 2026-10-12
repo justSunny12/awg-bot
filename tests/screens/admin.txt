@@ -3803,6 +3803,20 @@ IMAP и SMTP отвечают, вход выполнен
   [⬆️ Обновить | upd:install] [Скрыть | hd]
   [🔕 Не уведомлять об обновлениях | upd:mute]
 
+### adm.ev.upd_available.silent — доступна новая версия: хвост о молчащих шлюзах
+> call notify_update_available
++ send #2
+Текущая версия бота v1.2.3.
+Доступна новая версия: v1.3.0
+Список изменений:
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+
+⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09.26 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
+⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
+  [⬆️ Обновить | upd:install] [Скрыть | hd]
+  [🔕 Не уведомлять об обновлениях | upd:mute]
+
 ### adm.ev.upd_done — обновлён после рестарта
 > call report_update_result
 - delete #30
@@ -4028,6 +4042,42 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1/2 профилей, 1/2 устройств
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.upd_wait — главная: допустимой версии нет, v1.3.0 ждёт шлюз — строка ожидания
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
+
+<b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0 ждёт шлюзы</a></b>: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3)
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.main.upd_wait.many — главная: ждёт четыре шлюза — три и «и ещё 1»
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
+
+<b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0 ждёт шлюзы</a></b>: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3), <a href="https://t.me/test_bot?start=gw-2">Pi4</a> (v1.2.0), <a href="https://t.me/test_bot?start=gw-3">NASPi</a> (v1.2.1) и ещё 1
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5068,6 +5118,42 @@ IP, подсеть или имя DynDNS; можно несколько
   [⬆️ Обновить до v1.3.0 | upd:install]
   [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
   [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.wait — обновления: актуальна, v1.3.0 ждёт шлюз — строка ожидания
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 🟢 актуальна
+⏳ v1.3.0 ждёт шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3) — обнови агента в чате бота шлюза
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.wait.many — обновления: ждёт четыре шлюза — три и «и ещё 1», версия неизвестна
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 🟢 актуальна
+⏳ v1.3.0 ждёт шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3), <a href="https://t.me/test_bot?start=gw-2">Pi4</a> (v1.2.0), <a href="https://t.me/test_bot?start=gw-3">NASPi</a> (версия неизвестна) и ещё 1 — обнови их агентов в чатах ботов шлюзов
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.upd.silent — обновления: цель есть, выше ждёт шлюз, двое молчат — предупреждения
+> press set:upd:open::
+~ Проверяю…
+= edit #1
+⬆️ <b>Обновления</b> · v1.2.3 → v1.3.0
+⏳ v1.4.0 ждёт шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.3.0) — обнови агента в чате бота шлюза
+⚠️ <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не на связи с 10.09.26 (v1.2.0): v1.3.0 эту версию агента не обслуживает — когда шлюз выйдет на связь, обнови его агента
+⚠️ <a href="https://t.me/test_bot?start=gw-3">слот 3</a> не на связи (версия агента неизвестна): v1.3.0 нужен агент не ниже v1.3.0 — когда шлюз выйдет на связь, обнови его агента
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+  [⬆️ Обновить до v1.3.0 | upd:install]
+  [✅ Уведомлять | set:upd:toggle:notify:] [📅 Проверка: день | set:upd:cycle:updates.poll_schedule:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.upd.install.wait — «⬆️ Обновить»: условие закрылось между проверкой и нажатием — alert с причиной
+> press upd:install
+~! Нельзя: v1.3.0 ждёт шлюзы: Pi5 (v1.2.3)
 
 ### adm.set.svc.awg.fail — AWG не перезапущен — первой строкой раздела
 > press set:svc:do:awg!:

@@ -40,7 +40,7 @@ def _panel_text_from(services, snap: dict) -> str:
     return texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"], rf=snap.get("rf"),
                              bot_username=_bot(services), expiring=snap["expiring"],
                              routing_info=snap.get("routing_info"), unassigned=snap.get("unassigned", 0),
-                             update_tag=snap.get("update_tag", ""))
+                             update_tag=snap.get("update_tag", ""), update_wait=snap.get("update_wait"))
 
 
 async def _panel_parts(services):

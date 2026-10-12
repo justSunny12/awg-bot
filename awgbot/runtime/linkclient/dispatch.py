@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 
 
+from awgbot.runtime import linkclient as pkg          # крючки — на пакете: их ставит main
+
 from .common import log
 
 
@@ -18,6 +20,20 @@ class DispatchMixin:
             raise
         except Exception as e:                            # noqa: BLE001
             log.warning("канал линка: сообщение «%s» не обработано: %s", msg.get("t"), e)
+
+    async def _update_regate(self) -> None:
+        """Версия сервера могла смениться — цель обновления агента
+        пересчитывается по сохранённому списку релизов, без сети; новая
+        допустимая — уведомление крючком main (один раз на тег)."""
+        regate = getattr(self.services, "update_regate", None)
+        if regate is None:
+            return
+        nxt = await asyncio.to_thread(regate)
+        if nxt is not None and pkg._on_update is not None:
+            try:
+                await pkg._on_update(nxt)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
 
     async def _dispatch(self, msg: dict) -> None:
         if msg.get("t") == "lists_part":
@@ -36,7 +52,10 @@ class DispatchMixin:
                                     msg.get("standby"), msg.get("name"),
                                     # сервер 3.3.0 шлёт caps в каждом role; нет поля — сервер прежний,
                                     # возможностей нет (откат или копия): сохранённое стирается
-                                    msg.get("caps") if isinstance(msg.get("caps"), list) else [])
+                                    msg.get("caps") if isinstance(msg.get("caps"), list) else [],
+                                    # и версию: нет поля — сервер старше 3.3.0
+                                    msg.get("server"))
+            await self._update_regate()
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него

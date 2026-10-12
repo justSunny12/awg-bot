@@ -759,7 +759,7 @@ class _Agent(AgentStub):
     def lan_feeds_applied_hash(self) -> str:
         return ""                      # фидов локальной сети из канала не применяли
 
-    def set_link_role(self, active: bool, standby=None, name=None, caps=None) -> None:
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...) -> None:
         self.role = active
         self.role_words = (standby, name)
 

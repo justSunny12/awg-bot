@@ -32,6 +32,15 @@ _ROLE_TAG = {"gateway": "gw_bot"}
 # же, что у установленного: до v2.11.0 поколениями никто не управлял.
 _GENERATION_RE = re.compile(r"#awg_gen(\d+)\b")
 
+# Условие на версию ДРУГОЙ роли — тоже хэштегом в теле, читается слева
+# направо: «#gw_needs_main_3.3.0» — агенту этого релиза нужен сервер AWG не
+# ниже 3.3.0 (читает только агент); «#main_needs_gw_3.3.0» — основному боту
+# нужны шлюзы не ниже 3.3.0 (читает только основной бот). Версия — три цифры;
+# с четвёртой (хотфикс) строка не совпадает вовсе. Строка чужой роли не значит
+# ничего: агенту всё равно, что серверу нужно от шлюзов.
+_NEEDS_RE = re.compile(r"#(gw_needs_main|main_needs_gw)_(v?\d+\.\d+\.\d+)(?![.\d])")
+_NEEDS_KEY = {"gateway": "gw_needs_main"}  # любая другая роль — основной бот
+
 
 @dataclass(frozen=True)
 class Release:
@@ -56,6 +65,17 @@ class Release:
         """Минимальная версия, с которой ЭТА роль прыгает на релиз напрямую;
         None — ограничения нет (в т.ч. релизы прежнего формата)."""
         return self.requirements().get(_ROLE_KEY.get(role, "main"))
+
+    def needs(self, role: str = "") -> Optional[tuple]:
+        """Версия ДРУГОЙ стороны, нужная этой роли для релиза: агенту — сервера
+        AWG (#gw_needs_main_X), основному боту — шлюзов (#main_needs_gw_X).
+        None — условия нет. Хотфикс X.Y.Z.P условий не несёт: строки в его
+        теле не читаются (их и не ставят — docs/RELEASING.md §2)."""
+        if len(self.version) > 3:
+            return None
+        want = _NEEDS_KEY.get(role, "main_needs_gw")
+        found = [parse_version(v) for k, v in _NEEDS_RE.findall(self.body or "") if k == want]
+        return max(found) if found else None
 
     def audience(self) -> frozenset:
         """Адресаты в терминах прежних хэштегов (main_bot / gw_bot / all_bots);

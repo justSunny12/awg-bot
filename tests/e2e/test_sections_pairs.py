@@ -173,7 +173,7 @@ def upd(env, monkeypatch, store):
     from awgbot.infra import updates
     scene = {"next": _release("v3.3.1"), "fail": False, "calls": 0}
 
-    def _next(max_generation=None):
+    def _next(max_generation=None, **_):
         scene["calls"] += 1
         if scene["fail"]:
             raise updates.UpdateError("GitHub не ответил")

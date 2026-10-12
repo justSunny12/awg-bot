@@ -22,6 +22,16 @@ def channel_panel_line(chan: dict | None = None) -> str:
     return "🔗 упр. канал " + ("🟢" if chan["online"] else "⚪ нет связи")
 
 
+def gateway_wait_line(w: dict) -> str:
+    """«⬆️ v3.3.2 ждёт сервер AWG v3.3.1» (О6); версия сервера неизвестна —
+    «ждёт сервер AWG: он не на связи» (О7)."""
+    def v(x):
+        return x if str(x).startswith("v") else f"v{x}"
+    server = w["peers"][0].version if w.get("peers") else ""
+    tail = f" {_e(v(w['need']))}" if server else ": он не на связи"
+    return f"<b>⬆️ {_e(v(w['tag']))} ждёт сервер AWG{tail}</b>"
+
+
 def _gw_role(st, chan: dict) -> str:
     """Роль по каналу: «несёт трафик» / «в резерве»; канала или связи нет —
     состояние линка."""
@@ -33,10 +43,12 @@ def _gw_role(st, chan: dict) -> str:
     return "🟢 линк поднят" if st.link_up else "🔴 линк лежит"
 
 
-def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()) -> str:
+def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),
+                  update_wait: dict | None = None) -> str:
     """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк и канал, предупреждения,
     SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть.
-    chan — состояние канала (linkclient.view()); None — спросить самим."""
+    chan — состояние канала (linkclient.view()); None — спросить самим.
+    update_wait — допустимой цели нет, а новейшая ждёт сервер AWG (update_waiting)."""
     from awgbot.util import timeutil
     chan = pkg._channel_view(chan)
     host = _e(st.hostname) if st.hostname else "шлюз"
@@ -63,6 +75,8 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
     if update_tag:
         tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
         parts.append(f"<b>⬆️ Доступна {_e(tag)}</b>")
+    elif update_wait:
+        parts.append(pkg.gateway_wait_line(update_wait))
     ssh_line = pkg.gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
     if ssh_line:
         parts.append(ssh_line)

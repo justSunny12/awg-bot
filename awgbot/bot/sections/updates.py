@@ -54,8 +54,14 @@ async def screen(br, services, key: str = ""):
     else:
         found = await call(services.update_scan)
         blocked = await call(services.update_block_reason, found) if found is not None else ""
+    waiting = silent = None
+    if hasattr(services, "update_waiting"):               # сверка с другой ролью — без сети
+        waiting = await call(services.update_waiting)
+        silent = await call(services.update_silent_peers, found) if found is not None else None
     text = texts.settings_upd_text(None, found, blocked,
-                                   scan_failed=bool(getattr(services, "update_scan_failed", False)))
+                                   scan_failed=bool(getattr(services, "update_scan_failed", False)),
+                                   waiting=waiting, silent=silent,
+                                   bot_username=getattr(services, "bot_username", "") or "")
     return text, keyboard(br, await call(services.updates_muted),
                           target_tag=found.tag if found is not None else "", blocked=blocked)
 

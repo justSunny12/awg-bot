@@ -183,6 +183,13 @@ async def run_gateway() -> None:
             from awgbot.bot.handlers import gateway as gateway_handlers
             await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
         linkclient.set_ask(_chan_ask)
+
+        async def _chan_update(nxt) -> None:
+            # версия сервера в role открыла новую цель обновления — то же
+            # уведомление, что у проверки по расписанию (один раз на тег)
+            from awgbot.runtime import scheduler as _scheduler
+            await _scheduler.notify_update_available(bot, services, nxt)
+        linkclient.set_on_update(_chan_update)
         linkclient.ensure(services)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: клиент не поднят: %s", e)

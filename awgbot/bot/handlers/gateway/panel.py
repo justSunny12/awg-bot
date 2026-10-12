@@ -53,19 +53,28 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     st = await pkg._status(services, fresh)
     lan = bool(getattr(st, "lan", None))
     tag = await call(services.update_available_tag)
+    wait = await _update_wait(services, tag)
     pending = await call(services.cfg_questions)        # вопросы с сервера AWG ждут человека
     if cb is not None:
-        await edit_nav(cb, services, texts.gateway_panel(st, tag, linkclient.view(), pending), kb.gateway_panel_kb(pending=bool(pending), lan=lan))
+        await edit_nav(cb, services, texts.gateway_panel(st, tag, linkclient.view(), pending, wait), kb.gateway_panel_kb(pending=bool(pending), lan=lan))
     else:
-        await send_menu(target, services, texts.gateway_panel(st, tag, linkclient.view(), pending), kb.gateway_panel_kb(pending=bool(pending), lan=lan),
+        await send_menu(target, services, texts.gateway_panel(st, tag, linkclient.view(), pending, wait), kb.gateway_panel_kb(pending=bool(pending), lan=lan),
                         keep_id=keep_id)
+
+
+async def _update_wait(services, tag: str):
+    """Ожидание сервера AWG — строкой панели, только когда «⬆️ Доступна» нет."""
+    if tag or not hasattr(services, "update_waiting"):
+        return None
+    return await call(services.update_waiting)
 
 
 async def _panel_parts(services, *, fresh: bool = False):
     """Текст и клавиатура панели агента — для показа без входящего сообщения."""
     st = await pkg._status(services, fresh=fresh)
     pending = await call(services.cfg_questions)
-    return (texts.gateway_panel(st, await call(services.update_available_tag), linkclient.view(), pending),
+    tag = await call(services.update_available_tag)
+    return (texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag)),
             kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=bool(pending)))
 
 

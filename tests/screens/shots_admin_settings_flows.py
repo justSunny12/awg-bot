@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 
-from awgbot.bot.callbacks import SetCB
+from awgbot.bot.callbacks import SetCB, UpdateCB
 
 from tests.screens.base import Shot
-from tests.screens.shots_admin_common import _email_on, _fw, _people, _raise, _restarts, _upd_found
+from tests.screens.shots_admin_common import (_email_on, _fw, _people, _raise, _restarts, _upd_found,
+                                              _upd_silent, _upd_waits)
 
 
 # ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
@@ -230,6 +231,15 @@ SECTIONS = [
          title="обновления: новая есть, но сейчас недоступна — строка, а не кнопка"),
     Shot("adm.set.upd.huge", role="admin", press=[SetCB(sec="upd")], data=_upd_huge,
          title="обновления: список изменений обрезан со ссылкой на релиз"),
+    Shot("adm.set.upd.wait", role="admin", press=[SetCB(sec="upd")], data=_upd_waits("1.2.3"),
+         title="обновления: актуальна, v1.3.0 ждёт шлюз — строка ожидания"),
+    Shot("adm.set.upd.wait.many", role="admin", press=[SetCB(sec="upd")],
+         data=_upd_waits("1.2.3", "1.2.0", "", "1.2.1"),
+         title="обновления: ждёт четыре шлюза — три и «и ещё 1», версия неизвестна"),
+    Shot("adm.set.upd.silent", role="admin", press=[SetCB(sec="upd")], data=_upd_silent,
+         title="обновления: цель есть, выше ждёт шлюз, двое молчат — предупреждения"),
+    Shot("adm.upd.install.wait", role="admin", press=[UpdateCB(action="install")], data=_upd_waits("1.2.3"),
+         title="«⬆️ Обновить»: условие закрылось между проверкой и нажатием — alert с причиной"),
     Shot("adm.set.svc.awg.fail", role="admin", press=[SetCB(sec="svc", act="do", key="awg!")],
          data=_awg_restart_fails, title="AWG не перезапущен — первой строкой раздела"),
 ]

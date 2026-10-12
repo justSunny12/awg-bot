@@ -1,4 +1,5 @@
-"""inbound.py — разбор входящих: снимок и дельты, ответы на доставки, свои списки, сервисы, installed, claim, итог файла."""
+"""inbound.py — разбор входящих: снимок и дельты, ответы на доставки, свои списки, сервисы, installed, claim, итог файла;
+пересчёт цели обновления по версиям агентов."""
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +31,20 @@ class InboundMixin:
                                         f"сообщение {kind} не обработано")
             return False
 
+    async def _update_regate(self) -> None:
+        """Версии шлюзов могли смениться — цель обновления сервера
+        пересчитывается по сохранённому списку релизов, без сети; новая
+        допустимая — уведомление крючком main (один раз на тег)."""
+        regate = getattr(self.services, "update_regate", None)
+        if regate is None:
+            return
+        nxt = await asyncio.to_thread(regate)
+        if nxt is not None and pkg._on_update is not None:
+            try:
+                await pkg._on_update(nxt)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: уведомление об обновлении не ушло: %s", e)
+
     async def _handle(self, gw, sess: _Session, msg: dict) -> None:
         kind = msg.get("t")
         if kind == "hello":
@@ -58,6 +73,9 @@ class InboundMixin:
             await self.deliver_peer_services(gw.id)
             await self.deliver_own(gw.id)
             await self.deliver_rekey(gw.id)
+            # версия агента и свежесть связи — вход условия обновления сервера;
+            # после доставок: уведомление в Telegram не задерживает роль шлюзу
+            await self._update_regate()
             if proto != gwlink.PROTO:
                 log.info("канал линка: слот %s говорит proto=%s, у нас %s",
                          gw.id, proto, gwlink.PROTO)
@@ -78,6 +96,8 @@ class InboundMixin:
                 await self.deliver(gw.id)
                 # подсети соседей применены — теперь есть куда вести записи
                 await self.deliver_peer_services(gw.id)
+                if kind == "snap" or "agent_version" in patch:
+                    await self._update_regate()           # версия агента — вход условия обновления
             else:
                 # Разрыв нумерации: дельта потерялась или пришла не по порядку.
                 # Просим полный снимок и начинаем счёт заново.

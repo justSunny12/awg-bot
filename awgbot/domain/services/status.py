@@ -52,6 +52,7 @@ class StatusMixin:
         n_issuable = n_dev - n_gw
         rf = self.rf_month_total()
         rf["show"] = self.rf_line_visible()
+        update_tag = self.update_available_tag()
         return {
             "st": st, "ac": ac, "routing_ok": routing_ok, "routing_info": routing_info, "mig": mig,
             "rf": rf,
@@ -63,7 +64,9 @@ class StatusMixin:
             "rt_on": bool(ac and rt_visible and self.routing_profile_on(ac.id)),
             # «🛰 Шлюзы» на главной — когда шлюзы есть или их можно добавить
             "gateways": bool(self.db.gateways()) or settings.get_bool("app.routing.enabled", False),
-            "update_tag": self.update_available_tag(),
+            "update_tag": update_tag,
+            # цели нет, а новейшая ждёт шлюзы — строка ожидания вместо «Доступна»
+            "update_wait": None if update_tag else self.update_waiting(),
         }
 
     def online_ref(self) -> datetime.datetime:

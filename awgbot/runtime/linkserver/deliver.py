@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from awgbot.core import config
 from awgbot.util import gwlink
 
 from .common import SERVER_CAPS, log
@@ -199,8 +200,9 @@ class DeliverMixin:
         is_active = active is not None and active.id == slot_id
         # вместе с ролью — есть ли другой шлюз и как слот назван у сервера:
         # агенту это нужно для честных хвостов и заголовка рецепта роутера
+        # и версию сервера: по ней агент выбирает цель обновления (#gw_needs_main_X)
         payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id),
-                   "caps": list(SERVER_CAPS)}
+                   "caps": list(SERVER_CAPS), "server": config.INSTALLED_VERSION}
         if sess.role_sent == payload:
             return False
         sess.role_sent = payload

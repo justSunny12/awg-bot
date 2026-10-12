@@ -79,6 +79,8 @@ class _Host:
     scan_fails: bool = False                               # список релизов недоступен
     update_error: str = ""                                 # apply_update падает
     update_tag: str = ""                                   # «⬆️ Доступна vX» с прошлой проверки
+    waiting: tuple = ()                                    # (тег, нужная версия сервера): релиз ждёт сервер AWG
+    server_version: str = ""                               # версия сервера из role: "" | old | X.Y.Z
     muted: bool = False
     # файл конфигурации шлюза
     bundle: dict = field(default_factory=lambda: {"ok": True, "mail": False, "passphrase": False,
@@ -407,6 +409,11 @@ def _agent(**opts):
             services.db.set_state(services._AVAILABLE_KEY, h.update_tag)
         if h.muted:
             services.mute_updates()
+        if h.server_version:
+            services.db.set_state(services._LINK_SERVER_VERSION_KEY, h.server_version)
+        if h.waiting:
+            import json
+            services.db.set_state(services._WAITING_KEY, json.dumps({"tag": h.waiting[0], "need": h.waiting[1]}))
         if h.backup_key:
             services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_BACKUP_KEY).decode())
         for section in h.cfg_ask:

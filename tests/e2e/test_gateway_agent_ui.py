@@ -167,7 +167,7 @@ def upd(svc, monkeypatch, store):
     scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", title="", awg_generation=lambda: 0),
              "fail": False, "calls": 0}
 
-    def _next(max_generation=None):
+    def _next(max_generation=None, **_):
         scene["calls"] += 1
         if scene["fail"]:
             raise updates.UpdateError("GitHub не ответил")

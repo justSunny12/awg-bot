@@ -24,15 +24,22 @@ async def notify_update_available(bot, services, nxt) -> None:
     Перед отправкой снимаем «В меню» у всех прошлых окон обновления: после
     ступени в чате висит финишер «обновлён до…» с живой кнопкой, а следующее
     сообщение — это уведомление; две живые кнопки в двух соседних окнах ведут
-    в одно место. Тексты финишеров не трогаем."""
+    в одно место. Тексты финишеров не трогаем.
+
+    Хвост — молчащие шлюзы, чью версию агента цель уже не обслуживает
+    (сверка версий ролей, без сети): обновиться можно, но о них надо знать."""
     from awgbot.bot import texts
     from awgbot.bot import keyboards as kb
     from awgbot.bot.notifier import send_notifications
     from awgbot.bot.handlers.common import dismiss_update_reports
     from awgbot.domain.services import Notification
+    silent = None
+    if hasattr(services, "update_silent_peers"):
+        silent = await asyncio.to_thread(services.update_silent_peers, nxt)
     await dismiss_update_reports(bot, services)
     await send_notifications(bot, [Notification(
-        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
+        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, silent=silent,
+                                                bot_username=getattr(services, "bot_username", "") or ""),
         reply_markup=kb.update_notify())])
 
 

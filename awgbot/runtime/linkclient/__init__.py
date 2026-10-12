@@ -129,6 +129,15 @@ CONF_GONE_STOP = 600                    # столько без конфига �
 _notify = None
 _ask = None
 _edit = None
+_on_update = None
+
+
+def set_on_update(fn) -> None:
+    """Крючок уведомления о версии (async fn(release)): версия сервера в
+    `role` открыла новую цель обновления — то же «Доступна новая версия», что
+    шлёт проверка по расписанию. Ставит main."""
+    global _on_update
+    _on_update = fn
 
 
 def set_edit(fn) -> None:
@@ -322,7 +331,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
+           "set_notify", "set_on_update", "_on_update", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "report_applied", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 

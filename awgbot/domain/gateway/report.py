@@ -3,8 +3,20 @@
 from __future__ import annotations
 
 import json
+import re
+
 from awgbot.util import timeutil
 from awgbot.domain.gateway.base import log
+
+_SERVER_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(\.\d+)?$")
+
+
+def _server_version(raw) -> str:
+    """Версия сервера из `role` — данные с чужой машины: только форма X.Y.Z[.P],
+    иначе — «old» (сервер, не приславший версию, старше 3.3.0)."""
+    from awgbot.domain.selfupdate import SERVER_OLD
+    val = raw.strip() if isinstance(raw, str) else ""
+    return val if len(val) <= 32 and _SERVER_VERSION_RE.match(val) else SERVER_OLD
 
 
 class ReportMixin:
@@ -77,15 +89,22 @@ class ReportMixin:
 
     _LINK_SERVER_CAPS_KEY = "gwlink_server_caps"
 
-    def set_link_role(self, active: bool, standby=None, name=None, caps=None) -> None:
+    _LINK_SERVER_VERSION_KEY = "gwlink_server_version"
+
+    def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...) -> None:
         """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве;
         standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
         РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
         Сам агент узнать это не может — решает автомат переключения на ВПС.
         caps — возможности сервера (список имён): по ним подсказки говорят, что
         сервер пришлёт сам, а что едет файлом. Старый сервер шлёт только active —
-        тогда прочее не трогаем."""
+        тогда прочее не трогаем. server — версия сервера AWG из `role` (с 3.3.0):
+        по ней агент выбирает цель обновления (#gw_needs_main_X); `role` без
+        версии или с чужой формой — сервер старше 3.3.0 («old»). Не передан
+        вовсе (...) — сохранённое не трогаем."""
         self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
+        if server is not ...:
+            self.db.set_state(self._LINK_SERVER_VERSION_KEY, _server_version(server))
         if caps is not None:
             good = [c for c in (caps if isinstance(caps, list) else []) if isinstance(c, str)]
             self.db.set_state(self._LINK_SERVER_CAPS_KEY,
@@ -113,6 +132,17 @@ class ReportMixin:
         проверок говорят «🔧 Восстановить», а не «перевыпусти» — новый файл с ВПС
         такому шлюзу не нужен, значения приезжают каналом."""
         return "cfg1" in self.link_server_caps()
+
+    def server_version(self) -> str:
+        """Версия сервера AWG из последнего `role`: «3.3.0»; «old» — сервер
+        старше 3.3.0 (версию не шлёт); "" — `role` с версией ещё не приходил."""
+        return (self.db.get_state(self._LINK_SERVER_VERSION_KEY) or "").strip()
+
+    def update_peers(self) -> list:
+        """Другая сторона агента для условия обновления (#gw_needs_main_X) —
+        сервер AWG; держит всегда: без известной версии релиз с условием ждёт."""
+        from awgbot.domain.selfupdate import UpdatePeer
+        return [UpdatePeer(slot=0, name="", version=self.server_version(), fresh=True)]
 
     def link_slot_name(self) -> str:
         return (self.db.get_state(self._LINK_SLOT_NAME_KEY) or "").strip()
