@@ -187,7 +187,7 @@ def test_deleting_a_tunnel_domain_takes_its_addresses_out_of_lan_vpn4(own_env):
     уже попавшие в lan_vpn4, иначе жили бы там и в слепке навсегда."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"])
-    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    _fill(_sets_of(dump), "lan_vpn4", ["198.51.100.34", "198.51.100.35", "10.3.3.3"])
     r = _run(tool, env, "del", "example.com")
     assert r.returncode == 0, r.stderr
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}, "адреса убранного домена остались в lan_vpn4"
@@ -218,11 +218,11 @@ def test_the_lan_vpn4_snapshot_forgets_removed_addresses(own_env):
     снятый адрес вернётся в набор с первой же перезагрузкой шлюза."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"])
-    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
-    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 93.184.216.34, 93.184.216.35 }\n", encoding="utf-8")
+    _fill(_sets_of(dump), "lan_vpn4", ["198.51.100.34", "198.51.100.35", "10.3.3.3"])
+    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 198.51.100.34, 198.51.100.35 }\n", encoding="utf-8")
     assert _run(tool, env, "del", "example.com").returncode == 0
     snap = (dump / "lan_vpn4.nft").read_text()
-    assert "10.3.3.3" in snap and "93.184.216.34" not in snap, f"слепок хранит снятый адрес: {snap}"
+    assert "10.3.3.3" in snap and "198.51.100.34" not in snap, f"слепок хранит снятый адрес: {snap}"
     nft = _nft(log)
     assert nft.index("nft list set inet awg_home lan_vpn4") > max(
         i for i, ln in enumerate(nft) if "delete element" in ln), "слепок снят до удаления"

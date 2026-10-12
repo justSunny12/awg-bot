@@ -114,7 +114,7 @@ def test_sync_skips_the_server_host_with_a_note(own_env, tmp_path):
 def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"], ru=["shop.ru", "bank.ru"])
-    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    _fill(_sets_of(dump), "lan_vpn4", ["198.51.100.34", "198.51.100.35", "10.3.3.3"])
     _fill(_sets_of(dump), "lan_ru4", ["10.1.1.1", "10.2.2.2"])
     # example.com ушёл совсем, bank.ru переехал в туннель, news.org и shop.ru — на месте
     r = _sync(tool, env, tmp_path, "vpn news.org\nvpn bank.ru\nru shop.ru\n")
@@ -125,7 +125,7 @@ def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
     assert not any("news.org" in ln or "shop.ru" in ln for ln in lines), f"неизменное названо изменением: {lines}"
     assert lines[-1] == "свои списки: 2 в туннель, 1 напрямую"
     nft = _nft(log)
-    assert "nft delete element inet awg_home lan_vpn4 { 93.184.216.34 }" in nft
+    assert "nft delete element inet awg_home lan_vpn4 { 198.51.100.34 }" in nft
     assert "nft flush set inet awg_home lan_ru4" in nft
     assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
     assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft, "переехавший остался напрямую"
@@ -143,13 +143,13 @@ def test_sync_that_only_removes_rewrites_the_snapshot(own_env, tmp_path):
     адрес вернётся в набор с первой же перезагрузкой шлюза (как у кнопки del)."""
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["example.com", "news.org"])
-    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
-    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 93.184.216.34, 93.184.216.35 }\n", encoding="utf-8")
+    _fill(_sets_of(dump), "lan_vpn4", ["198.51.100.34", "198.51.100.35", "10.3.3.3"])
+    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 198.51.100.34, 198.51.100.35 }\n", encoding="utf-8")
     r = _sync(tool, env, tmp_path, "vpn news.org\n")
     assert r.returncode == 0, r.stderr
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}
     snap = (dump / "lan_vpn4.nft").read_text()
-    assert "93.184.216.34" not in snap, f"sync снял адреса из набора, а слепок хранит их: {snap}"
+    assert "198.51.100.34" not in snap, f"sync снял адреса из набора, а слепок хранит их: {snap}"
 
 
 def test_sync_of_an_empty_list_clears_both(own_env, tmp_path):

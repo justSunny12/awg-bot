@@ -27,14 +27,14 @@ def test_fill_puts_the_addresses_into_lan_vpn4_and_rewrites_the_snapshot(own_env
     _fill(_sets_of(dump), "lan_vpn4", ["10.3.3.3"])
     r = _fill_run(tool, env, tmp_path, "example.com\nalpha.com\n")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "93.184.216.34", "93.184.216.35", "10.4.4.4"}
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "198.51.100.34", "198.51.100.35", "10.4.4.4"}
     snap = (dump / "lan_vpn4.nft").read_text()
-    assert all(ip in snap for ip in ("10.3.3.3", "93.184.216.34", "93.184.216.35", "10.4.4.4")), snap
+    assert all(ip in snap for ip in ("10.3.3.3", "198.51.100.34", "198.51.100.35", "10.4.4.4")), snap
     nft = _nft(log)
     assert nft[-1] == "nft list set inet awg_home lan_vpn4", f"слепок снят не после наполнения: {nft}"
     # все адреса — одним вызовом nft, отсортированные: 500 доменов по вызову на адрес шли бы минуты
     assert [ln for ln in nft if "add element" in ln] == \
-        ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,93.184.216.34,93.184.216.35 }"], nft
+        ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,198.51.100.34,198.51.100.35 }"], nft
     assert r.stdout.strip() == "набор lan_vpn4: адреса 2 доменов взяты в обработку", r.stdout
     assert not any("lan_ru4" in ln for ln in nft), "fill тронул «напрямую»"
 
@@ -221,9 +221,9 @@ def test_sync_refills_lan_ru4_with_one_nft_call_after_the_flush(own_env, tmp_pat
     assert r.returncode == 0, r.stdout + r.stderr
     nft = _nft(log)
     adds = _adds(log, "lan_ru4")
-    assert adds == ["nft add element inet awg_home lan_ru4 { 10.1.1.1,10.2.2.2,93.184.216.34,93.184.216.35 }"], nft
+    assert adds == ["nft add element inet awg_home lan_ru4 { 10.1.1.1,10.2.2.2,198.51.100.34,198.51.100.35 }"], nft
     assert nft.index("nft flush set inet awg_home lan_ru4") < nft.index(adds[0]), "наполнение до сброса стёрто сбросом"
-    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1", "10.2.2.2", "93.184.216.34", "93.184.216.35"}, \
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1", "10.2.2.2", "198.51.100.34", "198.51.100.35"}, \
         "адрес не из списка пережил перезаполнение"
     assert not _adds(log, "lan_vpn4"), "sync наполнил «в туннель» — это работа fill"
 

@@ -50,7 +50,7 @@ def domain_env(script, tmp_path):
     _fake(bin_dir, "systemctl", f'echo "systemctl $*" >> {log}\n')
     _fake(bin_dir, "sleep", "")
     _fake(bin_dir, "id", "echo 0\n")
-    _fake(bin_dir, "dig", "case \"$*\" in *example.com*) echo 93.184.216.34; echo 93.184.216.35 ;; esac\n")
+    _fake(bin_dir, "dig", "case \"$*\" in *example.com*) echo 198.51.100.34; echo 198.51.100.35 ;; esac\n")
     _fake(bin_dir, "nft", f'echo "nft $*" >> {log}\n')
     # dnsmasq есть в PATH — скрипт проверяет свои списки `dnsmasq --test` до рестарта
     _fake(bin_dir, "dnsmasq", f'echo "dnsmasq $*" >> {log}; exit "${{DNSMASQ_TEST_RC:-0}}"\n')
@@ -169,7 +169,7 @@ RU_USER = "awg-gw-ru-user.conf"
 FEED = "awg-gw-vpn-feed.conf"
 
 # dig: у каждого домена свой адрес — по логу nft видно, чей адрес куда лёг
-_DIG_MAP = {"example.com": ["93.184.216.34", "93.184.216.35"], "shop.ru": ["10.1.1.1"],
+_DIG_MAP = {"example.com": ["198.51.100.34", "198.51.100.35"], "shop.ru": ["10.1.1.1"],
             "bank.ru": ["10.2.2.2"], "news.org": ["10.3.3.3"], "alpha.com": ["10.4.4.4"],
             "zeta.com": ["10.5.5.5"]}
 

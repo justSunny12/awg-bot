@@ -28,7 +28,7 @@ def host(tmp_path):
         '#!/bin/sh\necho "apt-get $*" >> "$JOURNAL"\necho "dnsmasq.service enabled" >> "$UNITS"\n')
     # verify зовёт dig @адрес: настоящий слал UDP в 10.8.1.1 с машины
     # разработчика и ждал 3 с на каждый тест
-    fake_cmd(bin_dir / "dig", '#!/bin/sh\necho "dig $*" >> "$JOURNAL"\necho 93.184.216.34\n')
+    fake_cmd(bin_dir / "dig", '#!/bin/sh\necho "dig $*" >> "$JOURNAL"\necho 198.51.100.34\n')
     fake_cmd(bin_dir / "sed",
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
         'if [ "$1" = "-i" ]; then shift; exec /usr/bin/sed -i "" "$@"; fi\nexec /usr/bin/sed "$@"\n')
