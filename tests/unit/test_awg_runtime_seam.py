@@ -80,7 +80,8 @@ def test_docker_exec_appears_only_in_the_seam():
     """
     import pathlib
 
-    src = pathlib.Path(awg.__file__).read_text(encoding="utf-8")
+    src = "\n".join(f.read_text(encoding="utf-8")
+                    for f in sorted(pathlib.Path(awg.__file__).parent.glob("*.py")))
     lines = [ln.strip() for ln in src.splitlines()
              if '"docker", "exec"' in ln]
     # _exec, _exec_i и detect_topology (её зовёт установщик до финализации
@@ -91,10 +92,11 @@ def test_docker_exec_appears_only_in_the_seam():
 def test_docker_exec_is_absent_from_the_rest_of_the_codebase():
     import pathlib
 
-    root = pathlib.Path(awg.__file__).resolve().parents[1]
+    pkg_dir = pathlib.Path(awg.__file__).resolve().parent
+    root = pkg_dir.parents[1]
     offenders = []
     for path in root.rglob("*.py"):
-        if path.name == "awg.py":
+        if pkg_dir in path.parents:
             continue
         text = path.read_text(encoding="utf-8")
         if '"docker", "exec"' in text or "'docker', 'exec'" in text:

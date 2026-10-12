@@ -255,7 +255,8 @@ def test_shell_scripts_quote_config_paths(monkeypatch):
     исполнение произвольной команды от root.
     """
     import pathlib
-    src = pathlib.Path(awg.__file__).read_text(encoding="utf-8")
+    src = "\n".join(f.read_text(encoding="utf-8")
+                    for f in sorted(pathlib.Path(awg.__file__).parent.glob("*.py")))
     for bad in ('cat > {path}', 'cat {config.CONF_PATH};',
                 'strip {config.CONF_PATH}'):
         assert bad not in src, f"незакавыченный путь в shell-строке: {bad}"
