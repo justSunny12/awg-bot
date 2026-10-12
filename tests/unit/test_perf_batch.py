@@ -145,10 +145,14 @@ async def test_broadcast_pace_is_shared_by_the_whole_window(monkeypatch):
         await asyncio.sleep(0.03)
     monkeypatch.setattr(notifier, "send_announcement", fake_send)
     monkeypatch.setattr(notifier, "_BATCH_PACING_SECONDS", 0.02)
+    t0 = asyncio.get_running_loop().time()
     await notifier.broadcast(object(), list(range(1, 13)), "t", [])
-    starts.sort()
-    gaps = [b - a for a, b in zip(starts, starts[1:])]
-    assert len(starts) == 12 and min(gaps) >= 0.018, gaps
+    # k-й по порядку старт — не раньше k интервалов от начала: проснуться
+    # раньше своего места задача не может, а поздно проснувшаяся (нагрузка
+    # на машине) порядок не ломает — проверяется темп, а не точность сна
+    starts = sorted(s - t0 for s in starts)
+    assert len(starts) == 12
+    assert all(s >= k * 0.02 - 0.002 for k, s in enumerate(starts)), starts
 
 
 async def test_send_notifications_reads_quiet_hours_once(monkeypatch):
