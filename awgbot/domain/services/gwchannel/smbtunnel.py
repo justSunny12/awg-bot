@@ -99,7 +99,6 @@ class SmbTunnelMixin:
         items = self.smb_tunnel_items()
         if not items:
             return ""
-        from awgbot.infra import nftguard
         return gwservices.render_dnsmasq(items, nftguard.tunnel_nets(),
                                          owner="# awg-bot (сервер AWG): SMB локальных сетей шлюзов для устройств админа.")
 

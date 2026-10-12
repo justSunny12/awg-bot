@@ -54,14 +54,18 @@ class CfgPrintsMixin:
 
     def cfg_link_fixed(self) -> dict:
         """Ключи, PSK и обфускация стоящего линка — то, что документ менять не
-        вправе (смена ключей — только переходом)."""
+        вправе (смена ключей — только переходом). Набор — из белого списка
+        линка (gw-wg-allow.list): всё [Interface], кроме Address, и ключи [Peer]."""
         conf = self.cfg_link_conf()
         if conf is None:
             return {}
+        keys = wgconf.allow().keys["link"]
+        fixed = {("Interface", k) for k in keys["Interface"] if k != "Address"}
+        fixed |= {("Peer", k) for k in ("PublicKey", "PresharedKey") if k in keys["Peer"]}
         out = {}
         for section, items in conf.sections:
             for key, val in items:
-                if key in ("PrivateKey", "PublicKey", "PresharedKey") or key[:1] in "JSHI" and key[1:].isalnum():
+                if (section, key) in fixed:
                     out[key] = val
         return out
 

@@ -218,6 +218,18 @@ def test_a_broken_link_conf_gives_an_empty_link_print(svc, host):
     assert svc.cfg_link_cidr() == "" and svc.cfg_link_fixed() == {}, "из мусора вынута /30 или ключи"
 
 
+def test_the_fixed_part_of_the_link_follows_the_allow_list(svc, host):
+    """Неизменяемое документом — по белому списку линка, а не по первой букве
+    имени: ключи, PSK и обфускация — да; Address, Endpoint, AllowedIPs и
+    посторонний ключ на ту же букву — нет."""
+    host.link.write_text(
+        "[Interface]\nAddress = 10.99.99.2/30\nPrivateKey = DUMMY-priv\nJc = 4\nS1 = 15\nH1 = 1\n"
+        "I1 = <b 0x01>\nSaveConfig = false\n\n[Peer]\nPublicKey = DUMMY-pub\nPresharedKey = DUMMY-psk\n"
+        "Endpoint = 203.0.113.1:443\nAllowedIPs = 10.8.1.0/24\n", encoding="utf-8")
+    assert svc.cfg_link_fixed() == {"PrivateKey": "DUMMY-priv", "Jc": "4", "S1": "15", "H1": "1",
+                                     "I1": "<b 0x01>", "PublicKey": "DUMMY-pub", "PresharedKey": "DUMMY-psk"}
+
+
 # ── документ целиком ─────────────────────────────────────────────────────────
 
 def test_one_bad_value_rejects_the_whole_document_and_touches_nothing(svc, host):

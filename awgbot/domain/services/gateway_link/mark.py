@@ -166,7 +166,8 @@ class MarkMixin:
         for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY,
                     self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY, self._REKEY_KEY,
                     # ключи памяти о выдаче прежних версий — чистим до сдвига минимума на 3.3.0
-                    "gw_bundle_ssh_allow_notified", "gw_bundle_deps", "gw_bundle_deps_notified", "gw_link_port_hand", "gwlink_rekey_cancel", "gw_token_push"):
+                    "gw_bundle_ssh_allow_notified", "gw_bundle_deps", "gw_bundle_deps_notified", "gw_link_port_hand",
+                    self._REKEY_CANCEL_KEY, self._TOKEN_PUSH_KEY):
             self.db.set_state(self._gw_slot_key(key, sid), "")
         for key in self._rt_keys(sid):                     # стрик и «объявлен»
             self.db.set_state(key, "")
