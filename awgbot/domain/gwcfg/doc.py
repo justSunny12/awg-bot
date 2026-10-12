@@ -20,7 +20,7 @@ SECTIONS = ("server", "env", "link", "mail", "backup", "token", "uplink")
 
 # Ключи раздела env — имена ДОКУМЕНТА. В юните обвязки 3.3.0 две из них ещё
 # прежние (их читают агенты 3.2.x и скрипт, приехавший к ним файлом): таблица
-# ниже — единственное место сопоставления, переименование юнита — в 3.4.0.
+# ниже — единственное место сопоставления, переименование юнита — в 3.3.1.
 ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
             "PEER_LAN_NETS", "LINK_CHANNEL_PORT")
 ENV_REQUIRED = ENV_KEYS
