@@ -417,7 +417,8 @@ conf/        *.yaml — конфигурация; run.sh — форграунд-
 3. `ID` — в `settings_root` словаря той роли, у которой раздел есть (у
    обеих — в оба экземпляра; вложенный раздел — в `subsections`); новое слово роли — поле `BotRole` без
    умолчания и значение в `MAIN` и `GATEWAY` (законно пустое — в `OPTIONAL`);
-4. снимки раздела в каталоге эталонов (`tests/screens/shots_<роль>.py`) и
+4. снимки раздела в каталоге эталонов (`tests/screens/shots_<роль>_<раздел>.py`,
+   порядок — списком в `tests/screens/shots_<роль>.py`) и
    `pytest tests/screens --update-screens`.
 
 Диспетчеры, `routers_for`, реестр экранов (`set_<id>` находится сам), отмена
@@ -476,7 +477,8 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements-dev.txt
 (`tests/unit/test_ui_layout.py`): `InlineKeyboardBuilder` в коде бота нет
 (раскладка — `ui.rows`), хвосты «⬅️ Назад» / «⬅️ В меню» — только из `ui`,
 «🏠» нет и в литералах клавиатур. Каталог
-снимков — `tests/screens/shots_<роль>.py`, сравнение — по файлу эталона
+снимков — `tests/screens/shots_<роль>_<раздел>.py` (порядок —
+`tests/screens/shots_<роль>.py`), сравнение — по файлу эталона
 целиком.
 
 Эталоны и остальные уровни не дублируют друг друга. Как выглядит экран —
