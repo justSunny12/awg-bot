@@ -58,7 +58,7 @@ GitHub `vX.Y.Z.P — …`.
   документа конфигурации на агенте), `domain/gwchecks.py`,
   `infra/gwguard/`, тексты и
   клавиатуры агента, `runtime/scheduler/gateway.py` — планировщик роли gateway) — одна
-  строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
+  строка `gw`. Общий код (`domain/selfupdate/`, `infra/updates/`, `common.py`,
   `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
   `bot/routers.py` — роутеры и диспетчер обеих ролей, `bot/paging.py` —
   листание списков, `bot/sections/` — общие разделы настроек обеих ролей,

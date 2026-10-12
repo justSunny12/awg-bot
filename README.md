@@ -308,9 +308,10 @@ awgbot/
     gwguard/   агент: таблицы nft шлюза, юнит обвязки, конфиги линка и аплинка
     routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq (шапка
                «два плеча» — в __init__)
+    updates/   самообновление из релизов GitHub: релиз и хэштеги тела, выбор цели,
+               запросы, sha256, запуск апдейтера
     модули     admindns (резолвер админа, «SMB в туннеле»), resolver (свой резолвер
-               клиентов), rfacct (учёт РФ-трафика), sshd (порт sshd), updates
-               (релизы, sha256), awglock (манифест AmneziaWG и поколение хоста), mail
+               клиентов), rfacct (учёт РФ-трафика), sshd (порт sshd), awglock (манифест AmneziaWG и поколение хоста), mail
                и email_resume (почтовый канал, аварийный выход из паузы), tgsend
                (сообщение админу из процесса без бота), hostmetrics, nftjson, systemd,
                detach (запуск вне процесса бота), bootid
@@ -327,11 +328,13 @@ awgbot/
                cfg/ — документ конфигурации с сервера (применение, транзакции,
                смена токена и ключей); GatewayServices в __init__
     gwcfg/     документ конфигурации шлюза по каналу — общий для обеих ролей
+    selfupdate/ самообновление обеих ролей (SelfUpdateMixin): цель, установка,
+               уведомление, итог после рестарта
     модули     configgen (vpn:// и .conf), routing (чистая логика доменов и dnsmasq),
                evidence (улики живости), alerts (гистерезис алертов), gwsnapshot,
                gwservices, gwownlists, gwchecks, channelstate (общие данные канала
                и проверок, обе роли), gwssh (SSH на шлюзе), privatedns (свой
-               резолвер клиентов), mailmix (почта в сервисах), selfupdate,
+               резолвер клиентов), mailmix (почта в сервисах),
                backupcrypto (секрет бэкапов)
   bot/       презентация и glue aiogram:
     handlers/  роутеры: client/ — клиент и активация; admin/ — панель админа
