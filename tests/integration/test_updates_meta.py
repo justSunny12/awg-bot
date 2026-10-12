@@ -93,16 +93,51 @@ def test_without_the_asset_before_332_the_body_is_read(gh, monkeypatch):
     assert updates.next_release("client", meta_cache={}).tag == "v3.3.0", "минимум 3.3.0 из тела 3.3.1 учтён"
 
 
-def test_without_the_asset_from_332_the_release_is_skipped_and_out_of_the_chain(gh, monkeypatch):
+def test_without_the_asset_from_332_the_release_is_a_barrier(gh, monkeypatch):
+    """Релиз с 3.3.2 без метаданных пропущен — и цель только ниже него: его
+    адресаты, минимум и условие неизвестны, перешагивать его нельзя."""
     monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.3.0")
     gh.add("v3.3.0", meta=_meta("3.3.0", BOTH_320))
     gh.add("v3.3.1", meta=_meta("3.3.1", BOTH_330))
     gh.add("v3.3.2", "#requires_main_3.3.1\n#awg_gen1")          # тело с 3.3.2 не читается
     gh.add("v3.3.3", meta=_meta("3.3.3", BOTH_330))
     releases = updates.list_releases(meta_cache={})
-    assert updates.pick_target((3, 3, 0), releases, "client").tag == "v3.3.3", \
-        "минимум пропущенного релиза не учитывается — его нет в цепочке"
+    for role in ("client", "gateway"):
+        assert updates.pick_target((3, 3, 0), releases, role).tag == "v3.3.1", role
     assert [r.tag for r in updates.skipped((3, 3, 0), releases)] == ["v3.3.2"]
+
+
+def test_a_broken_release_with_a_floor_behind_it_stops_the_host(gh, monkeypatch):
+    """(а) битый v3.4.0, за ним v3.4.1 с минимумом 3.4.0: хост 3.3.0 не идёт на
+    v3.4.1 — ступень 3.4.0 ему неизвестна."""
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.3.0")
+    gh.add("v3.3.0", meta=_meta("3.3.0", BOTH_320))
+    gh.add("v3.4.0", meta=b"{broken")
+    gh.add("v3.4.1", meta=_meta("3.4.1", {"main": {"requires": "3.4.0"}, "gw": {"requires": "3.4.0"}}))
+    for role in ("client", "gateway"):
+        assert updates.next_release(role, meta_cache={}) is None, role
+
+
+def test_a_broken_release_with_a_condition_behind_it_stops_the_host(gh, monkeypatch):
+    """(б) битый v3.3.2 (а в нём могло быть условие на другую роль), за ним
+    v3.3.3 без условий: хост не идёт на v3.3.3 — условие по цепочке не
+    проверить."""
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.3.1")
+    gh.add("v3.3.1", meta=_meta("3.3.1", BOTH_330))
+    blob = _meta("3.3.2", {"main": {"requires": "3.3.0", "needs_gw": "3.3.2"}})
+    gh.add("v3.3.2", meta=blob, digest="b" * 64)                  # digest не совпал
+    gh.add("v3.3.3", meta=_meta("3.3.3", BOTH_330))
+    assert updates.next_release("client", meta_cache={}, peer=lambda need: False) is None
+    assert updates.next_release("client", meta_cache={}) is None
+
+
+def test_a_non_release_build_fetches_no_metadata(gh, monkeypatch):
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.3.0.17")
+    gh.add("v3.2.1", "#requires_main_3.2.0")
+    gh.add("v3.3.1", meta=_meta("3.3.1", BOTH_330))
+    cache: dict = {}
+    assert updates.next_release("client", meta_cache=cache, decide=lambda *a: "решал") is None
+    assert gh.meta_hits == [] and cache == {}, "нерелизной сборке метаданные не нужны"
 
 
 @pytest.mark.parametrize("why, blob, digest", [

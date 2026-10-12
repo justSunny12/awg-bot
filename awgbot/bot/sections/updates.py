@@ -48,12 +48,21 @@ async def screen(br, services, key: str = ""):
     проверки; иначе — проверка при открытии. «никогда» из старого конфига —
     «месяц» и уведомления выкл."""
     await call(services.normalize_update_schedule)
+    failed = False
     if key == "cached":
         tag = await call(services.update_available_tag)
         found = updates_flow.CachedTarget(tag) if tag else None
         blocked = ""
+        if found is not None and hasattr(services, "update_cached_release"):
+            # переезд мог начаться после проверки: причина — по метаданным из кэша
+            rel = await call(services.update_cached_release, tag)
+            blocked = await call(services.update_block_reason, rel) if rel is not None else ""
     else:
-        found = await call(services.update_scan)
+        if hasattr(services, "update_scan_checked"):
+            found, failed = await call(services.update_scan_checked)
+        else:
+            found = await call(services.update_scan)
+            failed = bool(getattr(services, "update_scan_failed", False))
         blocked = await call(services.update_block_reason, found) if found is not None else ""
     waiting = silent = hold = None
     skipped = []
@@ -63,7 +72,7 @@ async def screen(br, services, key: str = ""):
         silent = await call(services.update_silent_peers, found) if found is not None else None
         skipped = await call(services.update_skipped)
     text = texts.settings_upd_text(None, found, blocked,
-                                   scan_failed=bool(getattr(services, "update_scan_failed", False)),
+                                   scan_failed=failed,
                                    waiting=waiting, silent=silent, skipped=skipped, hold=hold,
                                    bot_username=getattr(services, "bot_username", "") or "")
     return text, keyboard(br, await call(services.updates_muted),

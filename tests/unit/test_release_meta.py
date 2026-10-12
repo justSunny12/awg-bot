@@ -34,10 +34,12 @@ def test_a_valid_file_is_accepted_and_read():
     assert m.needs(meta, "main") == (3, 3, 0) and m.needs(meta, "gw") == (3, 3, 0)
 
 
-def test_unknown_keys_are_skipped_new_fields_come_with_the_same_schema():
+def test_unknown_keys_and_roles_are_skipped_new_fields_come_with_the_same_schema():
     meta = _meta(extra={"x": 1})
     meta["roles"]["main"]["later"] = "3.4.0"
+    meta["roles"]["guest"] = {"anything": True}                 # роль будущей версии
     assert m.check(meta, "v3.3.1") is meta
+    assert m.requires(meta) == {"main": (3, 3, 0), "gw": (3, 3, 0)}, "неизвестная роль — не адресат"
 
 
 @pytest.mark.parametrize("why, meta, tag", [
@@ -51,7 +53,7 @@ def test_unknown_keys_are_skipped_new_fields_come_with_the_same_schema():
     ("неизвестная схема", _meta(schema=2), "v3.3.1"),
     ("нет поколения", _meta(awg_gen=None), "v3.3.1"),
     ("пустые адресаты", _meta(roles={}), "v3.3.1"),
-    ("чужая роль", _meta(roles={"all": {"requires": "3.3.0"}}), "v3.3.1"),
+    ("ни одной известной роли", _meta(roles={"all": {"requires": "3.3.0"}}), "v3.3.1"),
     ("не объект", [1, 2], "v3.3.1"),
 ])
 def test_broken_metadata_is_refused(why, meta, tag):
@@ -107,6 +109,20 @@ def test_the_tool_prints_body_lines_and_checks_files(tmp_path):
     named.write_text(json.dumps(_meta()), encoding="utf-8")
     assert _run("--check", str(named)).returncode == 1, "версия в файле не равна имени файла"
     assert _run("--main").returncode == 2
+    assert _run("--check", str(good), "--hashtags", str(good)).returncode == 2, "режимы взаимоисключающие"
+    huge = tmp_path / "v3.3.3.json"
+    huge.write_text(json.dumps(_meta("3.3.3", pad="x" * m.META_MAX)), encoding="utf-8")
+    assert _run("--check", str(huge)).returncode == 1, "предел — как у бота"
+
+
+def test_the_check_compares_the_generation_with_the_lock(tmp_path):
+    ver, gen = tool.installed_version(), tool.awg_generation()
+    path = tmp_path / f"v{ver}.json"
+    path.write_text(json.dumps(_meta(ver, {"main": {"requires": "3.2.0"}}, awg_gen=gen)), encoding="utf-8")
+    assert _run("--check", str(path), "--expect-version", ver).returncode == 0
+    path.write_text(json.dumps(_meta(ver, {"main": {"requires": "3.2.0"}}, awg_gen=gen + 1)), encoding="utf-8")
+    bad = _run("--check", str(path), "--expect-version", ver)
+    assert bad.returncode == 1 and "awg.lock" in bad.stderr
 
 
 def test_the_tool_is_not_shipped():
@@ -114,6 +130,7 @@ def test_the_tool_is_not_shipped():
     установки (util/dist.py, тот же состав)."""
     build = (ROOT / "build_release.sh").read_text(encoding="utf-8")
     assert 'rm -f "$s/tools/release_meta.py"' in build
+    assert 'rm -f "$OUT/awg-bot-release.json"' in build, "пропуск артефакта убирает метаданные прошлой сборки"
     from awgbot.util import dist
     import tarfile
     info = tarfile.TarInfo("./tools/release_meta.py")

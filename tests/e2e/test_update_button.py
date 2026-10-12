@@ -101,3 +101,31 @@ async def test_the_window_after_start_answers_with_the_wait(svc, fake_bot, monke
     assert calls == [] and svc.applied == []
     text, alert = cb.answers[0]
     assert alert and text.startswith("⏳ Жду связи с сервером AWG после перезапуска — до ")
+
+
+async def test_a_changed_target_in_the_live_menu_redraws_the_section(svc, fake_bot, monkeypatch):
+    """«Цель изменилась» на кнопке раздела (живое меню): раздел тут же
+    перерисован из кэша — с той целью, что теперь правда."""
+    monkeypatch.setattr(svc, "update_next", lambda: _rel("v3.3.2"))
+    svc.db.set_state(svc._AVAILABLE_KEY, "v3.3.2")
+    cb, msg, run = _press(fake_bot, svc, "v3.3.1", live=True)
+    await run
+    assert svc.applied == [] and cb.answers == [(texts.UPDATE_TARGET_CHANGED_TOAST, True)]
+    kind, text, markup = msg.sent[-1]
+    assert kind == "edit_text" and "v3.3.0 → v3.3.2" in text
+    assert [b.callback_data for row in markup.inline_keyboard for b in row][0] == "upd:install:v3.3.2"
+
+
+async def test_the_cached_section_still_says_a_migration_blocks(svc, fake_bot, monkeypatch):
+    """Ветка «cached» (тумблер, цикл — без сети) не прячет блок переездом:
+    причина — по метаданным из сохранённого списка."""
+    from awgbot.bot import roles
+    from awgbot.bot.sections import updates as sec
+    rel = updates.Release(tag="v3.3.1", version=(3, 3, 1), body="", asset_url="u", sha256="x",
+                          meta={"schema": 1, "version": "3.3.1", "awg_gen": 2, "roles": {"gw": {"requires": "3.3.0"}}})
+    svc._update_store([rel], {})
+    svc.db.set_state(svc._AVAILABLE_KEY, "v3.3.1")
+    monkeypatch.setattr(svc, "update_block_reason", lambda r=None: "идёт переезд" if r is not None else "")
+    text, markup = await sec.screen(roles.GATEWAY, svc, "cached")
+    assert "⛔ Обновление до v3.3.1 сейчас недоступно: идёт переезд" in text
+    assert not any("upd:install" in (b.callback_data or "") for row in markup.inline_keyboard for b in row)

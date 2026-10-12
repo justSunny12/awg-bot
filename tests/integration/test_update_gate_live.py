@@ -212,17 +212,26 @@ async def test_an_exception_in_the_regate_stays_at_the_call_site(vps, monkeypatc
 
 # ── «последний раз на связи» ─────────────────────────────────────────────────
 
-def test_seen_is_touched_only_for_live_sessions(vps, make_active_client):
+def test_seen_is_touched_only_for_live_sessions_with_a_fresh_handshake(vps, make_active_client, monkeypatch):
+    from awgbot.infra import routing
+    from awgbot.domain.services.gwchannel.session import GWLINK_FRESH_HANDSHAKE_S
     other = make_active_client(name="Сосед", tg_id=777002, device_limit=0)
     dev = vps.add_device(other.id, "Pi4")
     vps.db.gateway_add(dev.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     vps.gwlink_session_opened(1, "3.3.0", 2, [])
-    vps.db.set_state("gwlink_seen_1", _ago(days=3))
-    vps.db.set_state("gwlink_seen_2", _ago(days=3))
+    vps.gwlink_session_opened(2, "3.3.0", 2, [])
+    for slot in (1, 2):
+        vps.db.set_state(f"gwlink_seen_{slot}", _ago(days=3))
+    ages = {"awglink": 30, "awglink2": GWLINK_FRESH_HANDSHAKE_S + 1}
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
     vps.gwlink_seen_touch([1, 2])
     assert vps.db.get_state("gwlink_seen_2") < vps.db.get_state("gwlink_seen_1"), \
-        "без сессии время не трогается — это была бы подделка"
-    assert vps._gwlink_seen_recent(2, 3600) is False and vps._gwlink_seen_recent(1, 3600) is True
+        "полуоткрытая сессия (хендшейк протух) время связи не двигает"
+    vps.gwlink_session_closed(2)
+    vps.db.set_state("gwlink_seen_2", _ago(days=3))
+    ages["awglink2"] = 10
+    vps.gwlink_seen_touch([2])
+    assert vps._gwlink_seen_recent(2, 3600) is False, "без сессии время не трогается — это была бы подделка"
 
 
 # ── окно ожидания после старта ───────────────────────────────────────────────
@@ -250,15 +259,49 @@ def test_the_server_waits_for_gateways_seen_before_the_stop(vps, monkeypatch, ma
     assert vps.update_hold() is None and nxt.tag == "v3.3.2"
 
 
-def test_the_window_closes_by_the_limit(vps, monkeypatch):
+def test_the_window_closes_by_the_limit_lazily_with_a_guaranteed_regate(vps, monkeypatch):
+    """Предел вышел: читатели видят окно закрытым, но не закрывают его сами —
+    закрывает пересчёт (такт по update_hold_due), и цель посчитана."""
+    _github(monkeypatch)
     vps.gwlink_snapshot_in(1, {"agent_version": "3.3.1"}, 1, True)
     vps.db.set_state("gwlink_seen_1", _ago(minutes=5))
     vps.update_hold_start()
+    assert vps.update_scan() is None, "в окно решение отложено"
     assert vps.update_hold() is not None and vps.update_hold_due() is False
     later = timeutil.now() + datetime.timedelta(minutes=UPDATE_HOLD_MINUTES + 1)
     monkeypatch.setattr(timeutil, "now", lambda: later)
-    assert vps.update_hold_due() is True and vps.update_hold() is None
-    assert vps.update_hold_due() is False, "закрытое окно больше не «пора»"
+    assert vps.update_hold() is None and vps.update_available_tag() == ""
+    assert vps.update_hold() is None and vps.update_hold_due() is True, \
+        "читатели окно не закрыли — пересчёт всё ещё нужен"
+    _offline(monkeypatch)
+    assert vps.update_regate().tag == "v3.3.2", "пересчёт по последней известной версии"
+    assert vps.update_hold_due() is False, "флаг снял тот, кто пересчитал"
+
+
+def test_a_window_closed_by_the_button_still_gets_its_regate(vps, monkeypatch):
+    """Окно закрыл выбор не пересчётом (кнопка, проверка): флаг due остаётся,
+    такт пересчитает и объявит."""
+    _github(monkeypatch)
+    vps.gwlink_snapshot_in(1, {"agent_version": "3.3.1"}, 1, True)
+    vps.db.set_state("gwlink_seen_1", _ago(minutes=5))
+    vps.update_hold_start()
+    vps.gwlink_session_opened(1, "3.3.1", 2, [])
+    assert vps.update_next().tag == "v3.3.2"                     # кнопка: выбор закрыл окно
+    assert vps.update_hold_due() is True
+    _offline(monkeypatch)
+    assert vps.update_regate().tag == "v3.3.2" and vps.update_hold_due() is False
+
+
+def test_a_gateway_that_came_and_went_after_the_start_is_not_awaited(vps, monkeypatch):
+    """Ждём тех, кто после начала окна ещё не выходил на связь, а не «у кого
+    сессия прямо сейчас»: переподключившийся и отвалившийся шлюз версию уже
+    сказал."""
+    vps.db.set_state("gwlink_seen_1", _ago(minutes=5))
+    vps.update_hold_start()
+    assert vps.update_hold()["waiting"] == ["Pi5"]
+    vps.gwlink_session_opened(1, "3.3.1", 2, [])
+    vps.gwlink_session_closed(1)
+    assert vps.update_hold() is None and vps.update_hold_due() is True
 
 
 def test_no_window_when_nobody_was_on_line(vps):
@@ -288,3 +331,48 @@ def test_the_agent_waits_for_the_first_role(agent, monkeypatch):
     _offline(monkeypatch)
     agent.set_link_role(True, server="3.3.0")
     assert agent.update_hold() is None and agent.update_regate().tag == "v3.3.1"
+
+
+def test_a_scan_result_already_replaced_by_a_regate_is_not_announced(vps, monkeypatch):
+    """Объявляется только текущая цель: проверка решила v3.3.1, а пересчёт до
+    её объявления уже поднял цель — итог проверки не объявляется."""
+    _github(monkeypatch)
+    _agent_version(vps, "3.3.0")
+    found = vps.update_scan()
+    assert found.tag == "v3.3.1"
+    _offline(monkeypatch)
+    _agent_version(vps, "3.3.1")
+    assert vps.update_regate(notify=False) is None and vps.update_available_tag() == "v3.3.2"
+    assert vps.update_to_notify(found) is None, "устаревший итог проверки"
+    assert vps.update_regate().tag == "v3.3.2"
+
+
+def test_a_network_failure_belongs_to_its_own_check(vps, monkeypatch):
+    """Признак сбоя — у вызова, не у экземпляра: сбой чужой проверки в
+    другом потоке не выдаёт себя за свой."""
+    _github(monkeypatch)
+    _agent_version(vps, "3.3.1")
+    assert vps.update_check() == (vps.update_check()[0], False)
+
+    def boom(**_):
+        raise updates.UpdateError("GitHub не ответил")
+    out = {}
+    monkeypatch.setattr(updates, "list_releases", boom)
+    t = threading.Thread(target=lambda: out.update(r=vps.update_check()))
+    t.start()
+    t.join(5)
+    assert out["r"] == (None, True)
+    _github(monkeypatch)
+    vps.update_scan_failed = True                                # след чужой проверки на экземпляре
+    nxt, failed = vps.update_check()
+    assert nxt.tag == "v3.3.2" and failed is False
+
+
+def test_a_tag_not_newer_than_the_installed_version_is_not_shown(vps, monkeypatch):
+    """Тег, записанный до обновления (прежний процесс нашёл v3.3.1, мы на нём
+    и стоим), строкой «⬆️ Доступна» не показывается до первой проверки."""
+    vps.db.set_state(vps._AVAILABLE_KEY, "v3.3.1")
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.3.1")
+    assert vps.update_available_tag() == ""
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.3.0")
+    assert vps.update_available_tag() == "v3.3.1"

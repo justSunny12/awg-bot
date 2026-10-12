@@ -373,6 +373,8 @@ async def test_update_check_job_records_the_tag_with_notifications_muted_and_ask
         asked.append(1)
         return SimpleNamespace(tag="v3.2.0", body="")
     monkeypatch.setattr(services, "update_next", update_next)
+    from awgbot.core import config
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")    # цель новее установленной
     services.mute_updates()
     bot = RecordingBot()
     job = setup_scheduler(services, bot, services.db).get_job("update_check_startup").func

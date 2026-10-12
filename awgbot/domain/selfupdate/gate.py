@@ -89,6 +89,9 @@ class SelfUpdateGateMixin:
         if not isinstance(raw, dict) or not raw.get("tag"):
             return None
         need = updates.parse_version(str(raw.get("need") or ""))
+        tag, have = updates.parse_version(str(raw["tag"])), updates.parse_version(config.INSTALLED_VERSION)
+        if tag is None or (have is not None and tag <= have):
+            return None                                   # запись до обновления — уже не про нас
         peers = self._update_peers()
         if need is None or peers is None:
             return None

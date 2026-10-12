@@ -14,6 +14,10 @@ build_release.sh кладёт вторым артефактом, выпуск з
     python -m tools.release_meta --hashtags docs/releases/v3.3.1.json
     python -m tools.release_meta --check docs/releases/v3.3.0.json --expect-version 3.3.0
 
+--check читает файл так же, как бот (предел 16 КБ, UTF-8, схема); с
+--expect-version сверяет ещё версию сборки и поколение ядра с
+install/awg.lock. --check и --hashtags — взаимоисключающие.
+
 --hashtags печатает машинные строки тела записи журнала — только для релизов
 моложе 3.3.2 (переход: их читают боты 3.2.x); перекрёстных условий в теле нет
 никогда. Код 0 — успех; 1 — метаданные не прошли проверку (причина в stderr);
@@ -84,14 +88,16 @@ def main(argv: list[str]) -> int:
     m = _schema()
     ap = argparse.ArgumentParser(prog="release_meta", description="метаданные релиза")
     ap.add_argument("--version", help="версия релиза (по умолчанию — awgbot/__version__.py)")
-    ap.add_argument("--main", help="минимум основного бота — релиз адресован ему")
+    ap.add_argument("--main", help="минимум основного бота — релиз адресован ему (хотя бы один адресат)")
     ap.add_argument("--gw", help="минимум агента шлюза — релиз адресован ему")
     ap.add_argument("--needs-gw", help="основному боту нужны шлюзы не ниже")
     ap.add_argument("--needs-main", help="агенту нужен сервер AWG не ниже")
     ap.add_argument("--write", action="store_true", help="записать docs/releases/vВЕРСИЯ.json")
-    ap.add_argument("--check", metavar="FILE", help="проверить готовый файл")
-    ap.add_argument("--expect-version", help="с --check: версия обязана совпасть")
-    ap.add_argument("--hashtags", metavar="FILE", help="строки тела записи журнала для файла")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--check", metavar="FILE", help="проверить готовый файл")
+    mode.add_argument("--hashtags", metavar="FILE", help="строки тела записи журнала для файла")
+    ap.add_argument("--expect-version",
+                    help="с --check: версия обязана совпасть, поколение — с install/awg.lock")
     try:
         args = ap.parse_args(argv[1:])
     except SystemExit:
@@ -99,10 +105,13 @@ def main(argv: list[str]) -> int:
     try:
         if args.check or args.hashtags:
             path = Path(args.check or args.hashtags)
-            meta = json.loads(path.read_text(encoding="utf-8"))
-            m.check(meta, path.stem)
-            if args.expect_version and meta["version"] != args.expect_version:
-                raise m.MetaError(f"версия {meta['version']}, а собирается {args.expect_version}")
+            meta = m.parse(path.read_bytes(), path.stem)  # как читает бот: предел, UTF-8, схема
+            if args.expect_version:
+                if meta["version"] != args.expect_version:
+                    raise m.MetaError(f"версия {meta['version']}, а собирается {args.expect_version}")
+                gen = awg_generation()
+                if meta["awg_gen"] != gen:
+                    raise m.MetaError(f"поколение ядра {meta['awg_gen']}, а в install/awg.lock — {gen}")
             if args.hashtags:
                 for line in m.body_lines(meta):
                     print(line)

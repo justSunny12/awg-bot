@@ -41,8 +41,12 @@ async def install(cb: CallbackQuery, services, *, return_panel, tag: str = "", r
     if hold is not None:
         await cb.answer(ui.toast(texts.update_hold_line(hold), html=True), show_alert=True)
         return
-    nxt = await call(services.update_next)
-    if getattr(services, "update_scan_failed", False):
+    if hasattr(services, "update_check"):            # признак сбоя — этой проверки, не чужой
+        nxt, failed = await call(services.update_check)
+    else:
+        nxt = await call(services.update_next)
+        failed = bool(getattr(services, "update_scan_failed", False))
+    if failed:
         await cb.answer(texts.UPDATE_CHECK_FAILED_TOAST, show_alert=True)
         return
     if nxt is not None and tag and nxt.tag == tag:

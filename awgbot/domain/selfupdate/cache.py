@@ -38,7 +38,7 @@ _BODY_MAX = 4096
 # уведомления.
 _LOCK = threading.RLock()
 # Итог последнего update_next этого потока: решал ли выбор под замком (тег
-# записан там) и не отложено ли решение окном после старта.
+# записан там) и был ли сбой сети (признак — потоку вызова, не экземпляру).
 _TL = threading.local()
 
 
@@ -99,11 +99,16 @@ class SelfUpdateCacheMixin:
         out.sort(key=lambda x: x.version)
         return out
 
-    def _update_choose(self, installed: tuple, releases: list, role: str, ceiling):
+    def _update_choose(self, installed: tuple, releases: list, role: str, ceiling,
+                       by_regate: bool = False):
         """(цель, отложено) — выбор и запись тега и ожидания; зовётся под
-        замком. Окно после старта открыто — решение отложено, записи нет."""
+        замком. Окно после старта открыто — решение отложено, записи нет.
+        Закрывает окно только выбор (читатели его не трогают): закрыл не
+        пересчёт — пересчёт всё равно нужен (флаг due, hold.py) — он и
+        объявит цель."""
         if self.update_hold() is not None:
             return None, True
+        self._update_hold_close(due=not by_regate)
         gate = self._update_gate(self._update_peers())     # версии — сейчас, после сети
         target = updates.pick_target(installed, releases, role, ceiling, gate)
         self.db.set_state(self._AVAILABLE_KEY, target.tag if target is not None else "")
@@ -116,8 +121,7 @@ class SelfUpdateCacheMixin:
         with _LOCK:
             _TL.decided = True
             self._update_store(releases, getattr(_TL, "meta_cache", None))
-            target, held = self._update_choose(installed, releases, role, ceiling)
-            _TL.held = held
+            target, _held = self._update_choose(installed, releases, role, ceiling)
             for r in updates.skipped(installed, releases):
                 log.warning("обновление: %s пропущен — %s", r.tag, r.skip_reason())
             return target
@@ -132,13 +136,14 @@ class SelfUpdateCacheMixin:
         if not self._update_gated():
             return None
         with _LOCK:
+            self.__dict__["_upd_hold_due"] = False            # пересчитываем — флаг снят
             releases = self._update_cached_releases()
             installed = updates.parse_version(config.INSTALLED_VERSION)
             if releases is None or installed is None:
                 return None
             before = self.db.get_state(self._AVAILABLE_KEY) or ""
             target, held = self._update_choose(installed, releases, self._update_role(),
-                                               self._generation_ceiling())
+                                               self._generation_ceiling(), by_regate=True)
             if held:
                 return None
             now = target.tag if target is not None else ""
@@ -147,3 +152,8 @@ class SelfUpdateCacheMixin:
             if not notify or target is None:
                 return None
             return self.update_to_notify(target)
+
+    def update_cached_release(self, tag: str):
+        """Release из сохранённого списка по тегу или None — для раздела без
+        сети (причина блокировки переездом по поколению из метаданных)."""
+        return next((r for r in self._update_cached_releases() or [] if r.tag == tag), None)

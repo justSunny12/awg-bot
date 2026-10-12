@@ -42,8 +42,8 @@ def next_release(role: Optional[str] = None,
 
     peer — условие на версию другой роли (см. pick_target); без него условий
     нет. meta_cache — кэш метаданных вызывающего (list_releases). decide —
-    выбор у вызывающего (вместо pick_target): получает список релизной сборки,
-    у нерелизной — пустой.
+    выбор у вызывающего (вместо pick_target): зовётся только у релизной
+    сборки — нерелизной решать не о чем, и её сохранённое не затирается.
 
     None означает «обновлять не на что / не от чего»:
       • установленная версия НЕ найдена среди тегов релизов → молчим навсегда
@@ -57,10 +57,10 @@ def next_release(role: Optional[str] = None,
     releases = (_up().list_releases(meta_cache=meta_cache) if meta_cache is not None
                 else _up().list_releases())
     if not _is_release_build(installed, releases):
-        releases = []                    # нерелизная сборка → не трогаем
+        return None                      # нерелизная сборка → не трогаем (и кэш вызывающего тоже)
     if decide is not None:
         return decide(installed, releases, role, max_generation)
-    return pick_target(installed, releases, role, max_generation, peer) if releases else None
+    return pick_target(installed, releases, role, max_generation, peer)
 
 
 def _is_release_build(installed: tuple, releases: list) -> bool:
@@ -69,17 +69,30 @@ def _is_release_build(installed: tuple, releases: list) -> bool:
     v2.19.0 с битым усыновлением резолвера) не должен глушить обновления у
     тех, кто его успел поставить, — иначе они застревают на нём навсегда,
     а именно им хотфикс и нужен. Кастомная сборка с чужим номером по-прежнему
-    молчит."""
-    if any(r.version == installed for r in releases):
+    молчит. releases — Release или кортежи версий."""
+    vers = [getattr(r, "version", r) for r in releases]
+    if any(v == installed for v in vers):
         return True
     base = installed[:3]
-    return any(r.version[:3] == base and r.version != installed for r in releases)
+    return any(v[:3] == base and v != installed for v in vers)
+
+
+def _barrier(installed: tuple, releases: list) -> Optional[tuple]:
+    """Версия первого пропущенного релиза новее установленного (метаданные не
+    прочитаны) или None. Это барьер для обеих ролей: адресаты, минимум и
+    условие на другую роль у него неизвестны — прыгать через него нельзя,
+    иначе хост перешагнул бы ступень, о которой ничего не знает."""
+    return next((r.version for r in sorted(releases, key=lambda x: x.version)
+                 if r.version > installed and not r.usable()), None)
 
 
 def _newer(installed: tuple, releases: list, role: str,
            max_generation: Optional[int]) -> list:
-    """Релизы новее установленного, адресованные роли, под потолком поколения."""
-    newer = [r for r in releases if r.version > installed and r.applies_to(role)]
+    """Релизы новее установленного, адресованные роли, под потолком поколения
+    и ниже первого пропущенного (_barrier)."""
+    barrier = _barrier(installed, releases)
+    newer = [r for r in releases if r.version > installed and r.applies_to(role)
+             and (barrier is None or r.version < barrier)]
     if max_generation is not None:
         newer = [r for r in newer if r.awg_generation() <= max_generation]
     return newer
@@ -157,5 +170,6 @@ def chain_need(installed: tuple, releases: list, target: Release, role: str,
 def skipped(installed: tuple, releases: list) -> list:
     """Релизы новее установленного, которые не рассматриваются: метаданные не
     прочитаны (битый ассет или его нет с META_ONLY_FROM). Чьи они — не знаем:
-    адресаты как раз в метаданных."""
+    адресаты как раз в метаданных; первый из них — барьер для выбора цели
+    (_barrier)."""
     return [r for r in releases if r.version > installed and not r.usable()]

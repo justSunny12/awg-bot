@@ -14,8 +14,8 @@
 #                        состав синхронно с _ENTRIES в awgbot/util/dist.py)
 #   awg-bot-release.json метаданные релиза (адресаты, минимумы, поколение ядра,
 #                        условия на версию другой роли) — второй ассет релиза:
-#                        копия docs/releases/v<версия>.json после проверки схемы
-#                        и совпадения версии; его пишет выпуск через
+#                        копия docs/releases/v<версия>.json после проверки схемы,
+#                        версии и поколения ядра (install/awg.lock); его пишет выпуск через
 #                        tools/release_meta.py (docs/RELEASING.md §4). Нет файла
 #                        у версии с 3.3.0 — сборка останавливается; локальной
 #                        сборке без выпуска — AWG_BUILD_LOCAL=1 (артефакта нет)
@@ -96,6 +96,7 @@ build_meta() {
     if [ ! -f "$src" ]; then
         # релизы до 3.3.0 метаданных не имеют; локальная сборка — по явному слову
         if [ "${AWG_BUILD_LOCAL:-0}" = "1" ] || [ "$(printf '%s\n3.3.0\n' "$ver" | sort -V | head -1)" != "3.3.0" ]; then
+            rm -f "$OUT/awg-bot-release.json"     # метаданные прошлой сборки в каталоге — не от этой версии
             log "awg-bot-release.json: нет docs/releases/v$ver.json — артефакт не собран"
             return 0
         fi
@@ -103,6 +104,7 @@ build_meta() {
         exit 1
     fi
     py="${PYTHON:-$ROOT/.venv/bin/python}"; [ -x "$py" ] || py=python3
+    # схема как у бота, версия — эта сборка, поколение — install/awg.lock
     ( cd "$ROOT" && "$py" -m tools.release_meta --check "$src" --expect-version "$ver" ) || exit 1
     install -m 0644 "$src" "$OUT/awg-bot-release.json"
     log "awg-bot-release.json: метаданные v$ver"

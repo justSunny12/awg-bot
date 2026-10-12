@@ -13,9 +13,10 @@ JSON-ассет `awg-bot-release.json` рядом с поставкой.
 Есть ключ роли — релиз ей адресован; `requires` обязателен (минимум для
 прямого прыжка); `needs_gw` — только у main (серверу нужны шлюзы не ниже),
 `needs_main` — только у gw (агенту нужен сервер не ниже); у хотфикса
-X.Y.Z.P условий на другую роль нет. Неизвестные ключи пропускаются: новые
-поля добавляются с тем же номером схемы, смена номера — только через релиз,
-который читает оба.
+X.Y.Z.P условий на другую роль нет. Неизвестные ключи и роли пропускаются
+(нужна хотя бы одна известная; опечатки ловят инструмент выпуска и сторож
+журнала): новые поля добавляются с тем же номером схемы, смена номера —
+только через релиз, который читает оба.
 
 Переход: релизы моложе META_ONLY_FROM без ассета читаются по телу (хэштеги
 `#requires_<роль>_X`, `#awg_genN` — их же читают боты 3.2.x); с
@@ -64,9 +65,11 @@ def check(meta, tag: str) -> dict:
     if not isinstance(roles, dict) or not roles:
         raise MetaError("нет адресатов")
     hotfix = len(version.split(".")) > 3
-    for role, data in roles.items():
-        if role not in ROLES:
-            raise MetaError(f"неизвестная роль {role!r}")
+    known = [r for r in roles if r in ROLES]
+    if not known:
+        raise MetaError("нет ни одной известной роли")
+    for role in known:                    # неизвестные роли — пропуск: вперёд-совместимость
+        data = roles[role]
         if not isinstance(data, dict):
             raise MetaError(f"роль {role}: не объект")
         req = data.get("requires")
@@ -97,7 +100,7 @@ def parse(raw: bytes, tag: str) -> dict:
 
 def requires(meta: dict) -> dict:
     """{'main': (3,3,0), …} — адресаты и их минимумы."""
-    return {r: _ver(d["requires"]) for r, d in meta["roles"].items()}
+    return {r: _ver(d["requires"]) for r, d in meta["roles"].items() if r in ROLES}
 
 
 def needs(meta: dict, role_key: str):

@@ -13,8 +13,12 @@ UPDATE_HOLD_MINUTES; затем — обычное правило по посл�
 
 Окно живёт в памяти процесса: новый процесс — новое окно. Кого ждать, роль
 говорит сама: update_hold_peers() — список при старте (пусто — ждать
-некого), update_hold_left(список) — кого из них ещё нет (имена для экрана).
-Без этих методов окна нет вовсе.
+некого), update_hold_left(список, начало окна) — кто из них ещё не сказал о
+себе после начала окна (имена для экрана). Без этих методов окна нет вовсе.
+
+Закрывает окно не читатель (экраны, кнопка), а выбор цели под замком —
+иначе экран, первым заметивший конец окна, закрыл бы его без пересчёта, и
+цель так и осталась бы не посчитанной до следующей проверки.
 """
 from __future__ import annotations
 
@@ -40,29 +44,53 @@ class SelfUpdateHoldMixin:
         initial = list(fn()) if callable(fn) else []
         if not initial:
             return
-        until = timeutil.now() + datetime.timedelta(minutes=UPDATE_HOLD_MINUTES)
-        self.__dict__["_upd_hold"] = {"until": until, "initial": initial}
+        start = timeutil.now().replace(microsecond=0)        # как пишется gwlink_seen — до секунды
+        until = start + datetime.timedelta(minutes=UPDATE_HOLD_MINUTES)
+        self.__dict__["_upd_hold"] = {"start": start, "until": until, "initial": initial}
         log.info("обновление: после старта жду другую сторону (%s) — до %s",
                  len(initial), until.strftime("%H:%M"))
 
-    def update_hold(self) -> Optional[dict]:
-        """Открыто ли окно: {"until": datetime, "waiting": [имена], "role"} или
-        None. Все дождались или предел вышел — окно закрывается здесь же."""
+    def _update_hold_state(self):
+        """(окно, кого ещё ждём) без изменения окна; окно None — закрыто."""
         hold = self.__dict__.get("_upd_hold")
         if not hold:
-            return None
+            return None, []
         left_fn = getattr(self, "update_hold_left", None)
-        left = list(left_fn(hold["initial"])) if callable(left_fn) else []
-        expired = timeutil.now() >= hold["until"]
-        if not left or expired:
-            self.__dict__["_upd_hold"] = None
-            log.info("обновление: окно после старта закрыто — %s",
-                     "предел вышел" if left else "другая сторона на связи")
+        left = list(left_fn(hold["initial"], hold["start"])) if callable(left_fn) else []
+        return hold, left
+
+    def _update_hold_satisfied(self, hold, left) -> bool:
+        return not left or timeutil.now() >= hold["until"]
+
+    def update_hold(self) -> Optional[dict]:
+        """Открыто ли окно: {"until": datetime, "waiting": [имена], "role"} или
+        None. Читатель окно не закрывает: дождались или предел вышел — здесь
+        только «не открыто»; закрывает выбор цели (cache._update_choose) и
+        такт канала через update_hold_due — с гарантированным пересчётом."""
+        hold, left = self._update_hold_state()
+        if hold is None or self._update_hold_satisfied(hold, left):
             return None
         from awgbot.core import config
         return {"until": hold["until"], "waiting": left, "role": config.ROLE or ""}
 
+    def _update_hold_close(self, due: bool) -> None:
+        """Закрыть окно, если оно открыто (зовёт выбор под замком). due —
+        закрыл не пересчёт: он всё равно нужен, такт канала его сделает."""
+        hold = self.__dict__.get("_upd_hold")
+        if not hold:
+            return
+        _, left = self._update_hold_state()
+        self.__dict__["_upd_hold"] = None
+        if due:
+            self.__dict__["_upd_hold_due"] = True
+        log.info("обновление: окно после старта закрыто — %s",
+                 "предел вышел" if left else "другая сторона на связи")
+
     def update_hold_due(self) -> bool:
-        """Окно было открыто и закрылось бы сейчас — пора пересчитать цель
-        (такт канала: предел вышел без события)."""
-        return bool(self.__dict__.get("_upd_hold")) and self.update_hold() is None
+        """Пора пересчитать цель (такт канала): окно ещё не закрыто, но ждать
+        уже некого или предел вышел; или его закрыл не пересчёт. Флаг снимает
+        тот, кто пересчитал (cache.update_regate)."""
+        if self.__dict__.get("_upd_hold_due"):
+            return True
+        hold, left = self._update_hold_state()
+        return hold is not None and self._update_hold_satisfied(hold, left)

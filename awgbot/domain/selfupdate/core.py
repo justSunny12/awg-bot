@@ -87,9 +87,11 @@ class SelfUpdateCoreMixin:
         версии другой стороны — после ответа GitHub; список релизов и кэш
         метаданных сохраняются для пересчёта без сети. В окно ожидания после
         старта (hold.py) цель не считается — None. Сетевые ошибки гасим в None
-        — фоновая задача/кнопка от них не падают."""
+        — фоновая задача/кнопка от них не падают; признак сбоя — в потоке
+        вызова (update_check), а не общим атрибутом: кнопка и плановая
+        проверка в разных потоках не путают чужой сбой со своим."""
         tl = self._update_tl()
-        tl.decided = tl.held = False
+        tl.decided, tl.failed = False, False
         kw = {"max_generation": self._generation_ceiling()}
         if self._update_gated():
             tl.meta_cache = self._update_meta_cache()
@@ -97,12 +99,31 @@ class SelfUpdateCoreMixin:
         try:
             rel = updates.next_release(**kw)
         except updates.UpdateError:
+            tl.failed = True
             self.update_scan_failed = True
             return None
         self.update_scan_failed = False
         return rel
 
+    def update_check(self):
+        """(цель, сбой сети) — update_next с признаком сбоя этого вызова.
+        Для кнопки и раздела: их обработчик читает итог в другом потоке, чем
+        шла проверка, и общий атрибут мог бы принадлежать чужой проверке."""
+        tl = self._update_tl()
+        tl.failed = None
+        nxt = self.update_next()
+        failed = tl.failed if tl.failed is not None else bool(getattr(self, "update_scan_failed", False))
+        return nxt, bool(failed)
+
     _AVAILABLE_KEY = "update_available_tag"
+
+    def update_scan_checked(self):
+        """(цель, сбой сети) — update_scan с признаком сбоя этого вызова."""
+        tl = self._update_tl()
+        tl.failed = None
+        nxt = self.update_scan()
+        failed = tl.failed if tl.failed is not None else bool(getattr(self, "update_scan_failed", False))
+        return nxt, bool(failed)
 
     def update_scan(self):
         """Периодическая проверка: запомнить цель обновления (тег или пусто)
@@ -114,22 +135,33 @@ class SelfUpdateCoreMixin:
         self.update_scan_failed = False
         tl = self._update_tl()
         tl.decided = False
+        tl.failed = None
         nxt = self.update_next()
-        if self.update_scan_failed:                       # сеть: прежний тег не трогаем
+        failed = tl.failed if tl.failed is not None else self.update_scan_failed
+        if failed:                                        # сеть: прежний тег не трогаем
             return None
         if not getattr(tl, "decided", False):
-            self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
+            # выбора под замком не было: роль без другой стороны или нерелизная
+            # сборка (её сохранённый список не затирается) — тег по итогу
+            with self._update_lock():
+                self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
         return nxt
 
     update_scan_failed = False
 
     def update_available_tag(self) -> str:
         """Тег последней найденной версии (для строки «⬆️ Доступна vX»); пусто —
-        обновляться не на что, ещё не проверяли или идёт окно ожидания после
-        старта (строку заменит результат пересчёта)."""
+        обновляться не на что, ещё не проверяли, идёт окно ожидания после
+        старта (строку заменит результат пересчёта) или тег не новее
+        установленной версии (записан до обновления, проверка ещё не прошла)."""
         if self.update_hold() is not None:
             return ""
-        return self.db.get_state(self._AVAILABLE_KEY) or ""
+        tag = self.db.get_state(self._AVAILABLE_KEY) or ""
+        have = updates.parse_version(config.INSTALLED_VERSION)
+        want = updates.parse_version(tag)
+        if tag and have is not None and want is not None and want <= have:
+            return ""
+        return tag
 
     def update_to_notify(self, scanned=...):
         """Для планировщика/старта: вернуть Release, о котором НАДО уведомить, и
@@ -143,7 +175,8 @@ class SelfUpdateCoreMixin:
         одного раза» важнее, чем «гарантированно доставить» (миссы закрывает
         ручная кнопка). scanned — итог уже сделанного update_scan, чтобы за
         такт не ходить к списку релизов дважды. Проверка и отметка — под
-        замком выбора: два пересчёта подряд уведомят один раз."""
+        замком выбора: два пересчёта подряд уведомят один раз, а итог
+        проверки, который пересчёт уже сменил, не объявляется вовсе."""
         from awgbot.core import settings
         if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
             return None
@@ -155,6 +188,8 @@ class SelfUpdateCoreMixin:
         with self._update_lock():
             if self.update_hold() is not None:
                 return None
+            if (self.db.get_state(self._AVAILABLE_KEY) or "") != str(nxt.tag):
+                return None                           # пока решали, цель пересчитали — объявит пересчёт
             done = updates.parse_version(self.db.get_state(self._NOTIFIED_KEY) or "")
             want = updates.parse_version(str(nxt.tag))
             if done is not None and (want is None or want <= done):

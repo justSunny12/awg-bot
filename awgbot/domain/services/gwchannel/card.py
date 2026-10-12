@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from awgbot.util import timeutil
 
+from .session import GWLINK_FRESH_HANDSHAKE_S
+
 
 
 class CardMixin:
@@ -22,7 +24,7 @@ class CardMixin:
         from awgbot.infra import awglock
         from awgbot.util import gwlink
         sess = self.gwlink_session(gw.id)
-        fresh = handshake_age is not None and handshake_age <= 180
+        fresh = handshake_age is not None and handshake_age <= GWLINK_FRESH_HANDSHAKE_S
         snap = self.gwlink_snapshot(gw.id)
         seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
         try:

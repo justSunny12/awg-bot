@@ -150,7 +150,7 @@ class ReportMixin:
         сервер AWG — до первого `role`, в котором он называет свою версию."""
         return ["server"]
 
-    def update_hold_left(self, initial: list) -> list:
+    def update_hold_left(self, initial: list, start=None) -> list:
         return [] if self.__dict__.get("_role_since_start") else ["сервер AWG"]
 
     def link_slot_name(self) -> str:

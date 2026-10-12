@@ -2,9 +2,10 @@
 метаданных релиза (awg-bot-release.json). Боты 3.2.x читают первые строки
 записи; с 3.3.0 — метаданные. Запись без адресата никому не уедет; с обоими —
 уедет обеим ролям, и агент шлюза обновится ради кода, которого у него нет.
-Переход: у 3.3.0 и 3.3.1 машинные строки в теле обязательны и совпадают с
-метаданными; с 3.3.2 тело — только для людей. Перекрёстных условий в теле
-нет никогда."""
+Переход: у 3.3.0 и 3.3.1 машинные строки в теле обязательны, стоят только в
+первом блоке и совпадают с метаданными; с 3.3.2 тело — только для людей, а
+ступень 3.3.x с минимумом 3.3.0 обязана быть у обеих ролей. Перекрёстных
+условий в теле нет никогда."""
 from __future__ import annotations
 
 import json
@@ -32,6 +33,19 @@ def _entries():
                 break
             tags.append(ln.strip())
         yield m.group(1), tags
+
+
+def _rests() -> dict[str, list[str]]:
+    """Тег → строки тела ПОСЛЕ первого блока (машинные строки там бот тоже
+    прочёл бы: разбор тела ищет хэштеги по всему тексту)."""
+    text = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    heads = list(_HEAD.finditer(text))
+    out = {}
+    for i, m in enumerate(heads):
+        body = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)].strip()
+        _, _, rest = body.partition("\n\n")
+        out[m.group(1)] = rest.splitlines()
+    return out
 
 
 def _ver(tag: str) -> tuple:
@@ -121,13 +135,20 @@ _MACHINE = re.compile(r"#(requires_(main|gw)_|awg_gen|main_bot|gw_bot|all_bots)"
 _OTHER = {"needs_gw": "gw", "needs_main": "main"}
 
 
-def _meta_problems(tag: str, lines: list[str], meta, audience: dict[str, set[str]]) -> list[str]:
-    """Нарушения одной записи журнала (пусто — запись в порядке)."""
+_MACHINE_ANY = re.compile(r"#(requires_(main|gw)_|awg_gen\d|main_bot\b|gw_bot\b|all_bots\b)")
+
+
+def _meta_problems(tag: str, lines: list[str], meta, audience: dict[str, set[str]],
+                   rest=()) -> list[str]:
+    """Нарушения одной записи журнала (пусто — запись в порядке). lines —
+    первый блок записи, rest — остальное тело."""
     out = [f"{tag}: «{ln}» — условие на другую роль пишется только в метаданных"
-           for ln in lines if _DRAFT.match(ln)]
+           for ln in list(lines) + list(rest) if _DRAFT.search(ln)]
     ver = _ver(tag)
     if ver < META_FROM:
         return out
+    out += [f"{tag}: «{ln.strip()}» — машинная строка вне первого блока записи"
+            for ln in rest if _MACHINE_ANY.search(ln)]
     if meta is None:
         return out + [f"{tag}: нет docs/releases/{tag}.json"]
     try:
@@ -150,10 +171,49 @@ def _meta_problems(tag: str, lines: list[str], meta, audience: dict[str, set[str
 
 
 def test_metadata_and_bodies_agree_with_the_transition_rule():
-    audience = _audience_by_version()
+    audience, rests = _audience_by_version(), _rests()
     for tag, lines in _entries():
-        problems = _meta_problems(tag, lines, _meta(tag), audience)
+        problems = _meta_problems(tag, lines, _meta(tag), audience, rests.get(tag, []))
         assert not problems, problems
+
+
+def _step_problems(entries) -> list[str]:
+    """Ступень перехода: если в журнале есть запись с META_ONLY_FROM, то для
+    КАЖДОЙ роли есть запись в [3.3.0, META_ONLY_FROM) со строкой тела
+    `#requires_<роль>_X`, X ≥ 3.3.0. Иначе хост 3.2.x этой роли увидел бы
+    релизы с 3.3.2 «общими без минимума» и перепрыгнул бы 3.3.0."""
+    entries = list(entries)
+    if not any(_ver(tag)[:3] >= release_meta.META_ONLY_FROM for tag, _ in entries):
+        return []
+    out = []
+    for role in ("main", "gw"):
+        held = False
+        for tag, lines in entries:
+            if not (META_FROM <= _ver(tag)[:3] < release_meta.META_ONLY_FROM):
+                continue
+            for ln in lines:
+                m = re.fullmatch(rf"#requires_{role}_(\d+\.\d+\.\d+(?:\.\d+)?)", ln)
+                if m and _ver(m.group(1)) >= META_FROM:
+                    held = True
+        if not held:
+            out.append(f"нет ступени для роли {role}: запись 3.3.x до 3.3.2 с #requires_{role}_3.3.0")
+    return out
+
+
+def test_the_transition_step_holds_32x_readers_of_both_roles():
+    assert not _step_problems(_entries()), _step_problems(_entries())
+
+
+def test_the_step_checker_catches_a_missing_role():
+    step = [("v3.3.0", ["#requires_main_3.2.0", "#requires_gw_3.2.0", "#awg_gen1"]),
+            ("v3.3.1", ["#requires_main_3.3.0", "#requires_gw_3.3.0", "#awg_gen1"]),
+            ("v3.3.2", [])]
+    assert _step_problems(step) == []
+    assert _step_problems(step[:1]) == [], "до 3.3.2 ступень не нужна"
+    no_gw = [step[0], ("v3.3.1", ["#requires_main_3.3.0", "#awg_gen1"]), step[2]]
+    assert _step_problems(no_gw) and "gw" in _step_problems(no_gw)[0]
+    hotfix = [step[0], ("v3.3.0.1", ["#requires_main_3.3.0", "#requires_gw_3.3.0", "#awg_gen1"]), step[2]]
+    assert _step_problems(hotfix) == [], "ступенью может быть и хотфикс 3.3.0.P"
 
 
 def test_every_metadata_file_is_valid_and_named_by_its_version():
@@ -191,3 +251,7 @@ def test_the_metadata_checker_catches_every_mistake():
     }
     for why, (tag, lines, m) in cases.items():
         assert _meta_problems(tag, lines, m, aud), f"не поймано: {why}"
+    assert _meta_problems("v3.3.0", body330, m330, aud, ["- текст", "см. #requires_gw_3.2.0"]), \
+        "машинная строка вне первого блока"
+    assert _meta_problems("v3.3.2", [], m332, aud, ["- про #gw_needs_main_3.3.0"]), "черновой хэштег в тексте"
+    assert _meta_problems("v3.3.0", body330, m330, aud, ["- обычный текст"]) == []

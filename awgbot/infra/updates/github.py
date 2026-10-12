@@ -53,8 +53,9 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
     """Все релизы репо, отсортированные по возрастанию версии. Нерелизные теги
     (не semver) и черновики отбрасываются.
 
-    Метаданные (ассет config.UPDATES_META_ASSET_NAME) качаются только для
-    релизов новее установленного и только мимо кэша: meta_cache —
+    Метаданные (ассет config.UPDATES_META_ASSET_NAME) качаются только
+    релизной сборке (_is_release_build), только для релизов новее
+    установленного и только мимо кэша: meta_cache —
     {тег: {"digest", "meta"}}, его даёт и хранит вызывающий (здесь БД не
     знают); тот же digest — метаданные из кэша, другой — перечитать.
     Выпущенный тег не меняется, поэтому обычно за проверку уходит ноль или
@@ -67,7 +68,7 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
     except (ValueError, UnicodeDecodeError) as e:
         raise UpdateError(f"некорректный ответ GitHub: {e}")
     installed = parse_version(config.INSTALLED_VERSION)
-    out: list[Release] = []
+    found = []
     for r in data:
         if r.get("draft"):
             continue
@@ -82,8 +83,14 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
                 sha256 = _digest_hex(a)
             elif a.get("name") == config.UPDATES_META_ASSET_NAME:
                 meta_asset = a
+        found.append((r, ver, asset_url, sha256, meta_asset))
+    # метаданные — только релизной сборке: нерелизная не обновляется вовсе, и
+    # ходить ей за ассетами незачем
+    release_build = installed is not None and _up()._is_release_build(installed, [f[1] for f in found])
+    out: list[Release] = []
+    for r, ver, asset_url, sha256, meta_asset in found:
         meta = bad = None
-        if fetch_meta and meta_asset is not None and installed is not None and ver > installed:
+        if fetch_meta and release_build and meta_asset is not None and ver > installed:
             meta, bad = _read_meta(r["tag_name"], meta_asset, meta_cache)
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),

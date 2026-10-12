@@ -6,6 +6,9 @@ from awgbot.util import timeutil
 
 from .common import log
 
+# Хендшейк линка не старше — шлюз «на связи» (карточка слота, время связи).
+GWLINK_FRESH_HANDSHAKE_S = 180
+
 
 class SessionMixin:
     _GWLINK_SESSION_KEY = "gwlink_session"
@@ -33,13 +36,25 @@ class SessionMixin:
 
     def gwlink_seen_touch(self, slot_ids) -> None:
         """«Последний раз на связи» — правда и для живой сессии: такт канала
-        (раз в ~2 минуты) переписывает время у слотов с открытой сессией.
-        Иначе сессия, длящаяся неделю, свежести не прибавляла бы, а после
-        рестарта ВПС время было бы временем её открытия, а не остановки.
-        Запись в БД ВПС, не сеть: канал в простое по-прежнему молчит."""
+        (раз в ~2 минуты) переписывает время у слотов с открытой сессией И
+        свежим хендшейком линка (тот же порог, что «на связи» в карточке —
+        GWLINK_FRESH_HANDSHAKE_S): полуоткрытая сессия (у шлюза выдернули
+        питание, RST не дошёл) живёт до снятия тактом, и без проверки
+        хендшейка время «на связи» шло бы и у мёртвого шлюза. Иначе сессия,
+        длящаяся неделю, свежести не прибавляла бы, а после рестарта ВПС время
+        было бы временем её открытия, а не остановки. Запись в БД ВПС, не
+        сеть: канал в простое по-прежнему молчит."""
+        from awgbot.infra import routing
         now = timeutil.to_iso(timeutil.now())
         for slot_id in slot_ids:
-            if self.gwlink_session(slot_id):
+            gw = self.db.gateway(slot_id)
+            if gw is None or not self.gwlink_session(slot_id):
+                continue
+            try:
+                age = routing.link_handshake_age(gw.link_if)
+            except Exception:                             # noqa: BLE001
+                continue
+            if age is not None and age <= GWLINK_FRESH_HANDSHAKE_S:
                 self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id), now)
 
     def gwlink_session_closed(self, slot_id: int) -> None:

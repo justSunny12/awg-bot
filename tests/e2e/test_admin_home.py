@@ -54,6 +54,8 @@ async def test_periodic_check_records_the_found_version_even_when_muted(services
     который пишет периодическая проверка (update_scan), а не из тега
     уведомления: он пишется и при выключенных уведомлениях. Нечего ставить —
     ключ пуст, и строка уходит."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")    # цель новее установленной
     monkeypatch.setattr(services, "update_next", lambda: SimpleNamespace(tag="v3.2.0"))
     monkeypatch.setattr(services, "updates_muted", lambda: True)
     assert services.update_scan().tag == "v3.2.0"

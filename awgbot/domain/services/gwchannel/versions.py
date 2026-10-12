@@ -55,12 +55,22 @@ class VersionsMixin:
                 out.append(gw.id)
         return out
 
-    def update_hold_left(self, initial: list) -> list:
-        """Кто из ожидаемых ещё не переподключился — имена для экрана. Снятый
-        слот не ждём."""
+    def update_hold_left(self, initial: list, start) -> list:
+        """Кто из ожидаемых ещё не выходил на связь после начала окна (start):
+        gwlink_seen раньше него — имена для экрана. «Выходил» — сессия
+        открывалась или жила (время пишут открытие и такт канала), а не «сессия
+        есть прямо сейчас»: шлюз, переподключившийся и снова отвалившийся,
+        уже сказал свою версию. Снятый слот не ждём."""
         out = []
         for slot in initial:
             gw = self.db.gateway(slot)
-            if gw is not None and not self.gwlink_session(slot):
+            if gw is None:
+                continue
+            seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot)) or ""
+            try:
+                fresh = bool(seen) and timeutil.parse_iso(seen) >= start
+            except ValueError:
+                fresh = False
+            if not fresh:
                 out.append(self._gw_name(gw))
         return out
