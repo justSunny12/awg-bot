@@ -57,26 +57,45 @@ class LanMapSyncMixin:
             prefixes = {e.slot: str(lanspace.slot_prefix(e.slot, sp)) for e in entries}
             text = routing.lanmap.render(entries, str(sp), prefixes)
             stored = self.db.get_state(self._LANMAP_TEXT_KEY) or ""
+            # пусто и было пусто — в ядро смотрим только первой сверкой процесса
+            # (таблица могла остаться от прошлой жизни), дальше — по state
+            first = not self.__dict__.get("_lanmap_checked")
+            self._lanmap_checked = True
             try:
                 if text:
                     if text == stored and routing.lanmap.present():
+                        self._lan_table_ok()
                         return ok
                     routing.lanmap.apply(text)
-                elif routing.lanmap.present():
-                    routing.lanmap.remove()
-                elif not stored:
-                    return ok
+                else:
+                    if not stored and not first:
+                        self._lan_table_ok()
+                        return ok
+                    try:
+                        up = routing.lanmap.present()
+                    except routing.RoutingUnavailable:
+                        up = False                     # nft нет — и таблицы нет: не ошибка
+                    if up:
+                        routing.lanmap.remove()
+                    elif not stored:
+                        self._lan_table_ok()
+                        return ok
             except routing.RoutingError as e:
                 self._lan_log_once("table", str(e), "адреса в туннеле: таблица %s не поставлена: %s",
                                    routing.lanmap.TABLE)
                 self.db.set_state(self._LANMAP_ERROR_KEY, str(e)[:300])
                 return False
-            self._lan_log_once("table", "", "")
-            self.db.set_state(self._LANMAP_ERROR_KEY, "")
+            self._lan_table_ok()
             self.db.set_state(self._LANMAP_TEXT_KEY, text)
             log.info("адреса в туннеле: таблица %s — %s", routing.lanmap.TABLE,
                      f"подсетей {len(entries)}" if text else "снята")
             return ok
+
+    def _lan_table_ok(self) -> None:
+        """Таблица в желаемом состоянии: прежний отказ — из state и журнала прочь."""
+        self._lan_log_once("table", "", "")
+        if self.db.get_state(self._LANMAP_ERROR_KEY):
+            self.db.set_state(self._LANMAP_ERROR_KEY, "")
 
     def lan_map_tick(self, slot_policy: bool = True) -> None:
         """Такт живости: первый и каждый 10-й — сверка таблицы (дешёвая: текст

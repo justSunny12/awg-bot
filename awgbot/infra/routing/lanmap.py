@@ -132,6 +132,11 @@ def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> st
 # ── nft: применить, снять, проверить ─────────────────────────────────────────
 
 def _nft(args: list[str], stdin: str = "") -> object:
+    """nft; бинарника нет — RoutingUnavailable (таблицы нет и быть не может:
+    docker-хост без nftables), прочие отказы — RoutingError."""
+    import shutil
+    if shutil.which("nft") is None:
+        raise base.RoutingUnavailable("nft не найден — поставь пакет nftables")
     return nftjson.run(args, timeout=15, stdin=stdin, error=base.RoutingError)
 
 

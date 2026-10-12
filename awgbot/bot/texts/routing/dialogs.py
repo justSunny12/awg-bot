@@ -48,9 +48,11 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
             lines.append(f"Сеть свяжется с сетями других шлюзов с VPN-транзитом ({', '.join(peers)}): их "
                          "устройства смогут ходить сюда по адресам в туннеле, а здешние — к ним. Только твои "
                          "локальные сети")
-            if reissue:
+            # сам слот без канала уже попросили перевыпустить — второй раз не называем
+            names = [n for n in reissue if online or n != state.get("display")]
+            if names:
                 lines.append("Агентам v3.2 подсети соседей доедут только файлом — после включения перевыпусти "
-                             "конфигурацию: " + ", ".join(_e(n) for n in reissue))
+                             "конфигурацию: " + ", ".join(_e(n) for n in names))
         if not resolver:
             lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на <code>1.1.1.1</code> через туннель, без "
                          "защиты от DoH — рекомендуется настроить (⚙️ → 🖥 Сервер AWG)")

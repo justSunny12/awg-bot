@@ -112,15 +112,29 @@ def ensure_policy(active_iface: str = "", slots=()) -> None:
     active_iface = active_iface or base._active_if()
     if not active_iface:
         return
-    marking.ensure_route(active_iface)
+    # Каждый шаг — в своём try: лежащий линк активного слота (маршрут таблицы
+    # фичи не ставится) не должен оставлять без таблиц и правил остальные
+    # слоты — на них держатся адреса в туннеле их сетей. Отказы — одной ошибкой
+    # в конце; нет инструментов — RoutingUnavailable, как раньше.
+    errors: list[base.RoutingError] = []
+
+    def step(fn, *args) -> None:
+        try:
+            fn(*args)
+        except base.RoutingError as e:
+            errors.append(e)
+    step(marking.ensure_route, active_iface)
     if slots:
         for sid, iface in slots:
-            slotpolicy.ensure_slot_policy(sid, iface)
-            ensure_mss_clamp(iface)
+            step(slotpolicy.ensure_slot_policy, sid, iface)
+            step(ensure_mss_clamp, iface)
     else:
-        ensure_mss_clamp(active_iface)
-    if not marking._rule_present():
-        base._host(["ip", "rule", "add", *marking._RULE])
+        step(ensure_mss_clamp, active_iface)
+    step(lambda: marking._rule_present() or base._host(["ip", "rule", "add", *marking._RULE]))
+    if errors:
+        cls = base.RoutingUnavailable if any(isinstance(e, base.RoutingUnavailable) for e in errors) \
+            else base.RoutingError
+        raise cls("; ".join(str(e) for e in errors))
 
 
 def set_marking_enabled(on: bool) -> None:

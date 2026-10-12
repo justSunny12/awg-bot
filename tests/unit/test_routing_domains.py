@@ -472,3 +472,31 @@ def test_ensure_policy_with_slots_sets_each_slot_policy(monkeypatch):
     assert tables == [str(routing.slot_table(1)), str(routing.slot_table(2))], calls
     assert not [a for a in calls if a[:3] == ["ip", "route", "replace"] and "table" not in a], \
         "маршрутов настоящих подсетей в основной таблице нет"
+
+
+def test_a_down_active_link_still_leaves_the_other_slots_their_tables(monkeypatch):
+    """Линк активного слота лежит — маршрут таблицы фичи не ставится; таблицы
+    и правила остальных слотов всё равно утверждаются (на них держатся адреса в
+    туннеле их сетей), а отказ — одной ошибкой в конце."""
+    from awgbot.infra import routing
+    calls = []
+
+    class _Proc:
+        stdout = b""
+
+    def host(args, **kw):
+        calls.append(list(args))
+        if args[:4] == ["ip", "route", "replace", "default"] and "awglink" in args:
+            raise routing.RoutingError("Cannot find device \"awglink\"")
+        return _Proc()
+    monkeypatch.setattr(routing.base, "_host", host)
+    monkeypatch.setattr(routing.base, "_host_ok", lambda args: False)
+    monkeypatch.setattr(routing.marking, "_rule_present", lambda: True)
+    monkeypatch.setattr(routing.policy, "ensure_mss_clamp", lambda iface="": None)
+    with pytest.raises(routing.RoutingError, match="awglink"):
+        routing.ensure_policy("awglink", slots=[(1, "awglink"), (2, "awglink2")])
+    replaced = [a for a in calls if a[:3] == ["ip", "route", "replace"]]
+    assert ["ip", "route", "replace", "default", "dev", "awglink2", "table", str(routing.slot_table(2))] in replaced
+    assert any(a[:3] == ["ip", "rule", "add"] and str(routing.slot_table(2)) in a for a in calls), \
+        "правило слота 2 не поставлено"
+

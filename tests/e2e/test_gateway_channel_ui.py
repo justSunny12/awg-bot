@@ -546,8 +546,9 @@ async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services
     dialog = _screen(nav)[0]
     names = tail.split("конфигурацию: ")[-1] if "связи подсетей" in tail else ""
     if names:
+        # сам слот без канала диалог уже просит перевыпустить — в список он не идёт
         assert ("Агентам v3.2 подсети соседей доедут только файлом — после включения перевыпусти конфигурацию: "
-                + ("NASPi, Pi2" if me == "v32-offline" else names)) in dialog, dialog
+                + names) in dialog, dialog
     else:
         assert "Агентам v3.2" not in dialog, dialog
     cb, nav = _acb(fake_bot)

@@ -67,6 +67,7 @@ def fw(services, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
     monkeypatch.setattr(nftguard, "enabled", lambda: bool(store["app.firewall.enabled"]))
     monkeypatch.setattr(nftguard, "build_spec", lambda ips, **_kw: "SPEC")
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])
     monkeypatch.setattr(nftguard, "render", lambda spec: "TEXT")
     monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])
     monkeypatch.setattr(nftguard, "apply_text", lambda t: acts.append(("apply", t)))

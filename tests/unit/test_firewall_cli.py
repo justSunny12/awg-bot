@@ -28,6 +28,7 @@ def cli(monkeypatch):
     monkeypatch.setattr(fw, "_db_facts", lambda: (["10.8.1.2"], []))
     monkeypatch.setattr(fw, "_ensure_nft", lambda: True)
     monkeypatch.setattr(nftguard, "build_spec", lambda ips, **_kw: nftguard.GuardSpec(ssh_port=22))
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])
     monkeypatch.setattr(nftguard, "render", lambda spec: "TABLE")
     monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])
     monkeypatch.setattr(nftguard, "apply_text", lambda t: acts.append(("apply", t)))

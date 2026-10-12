@@ -517,17 +517,20 @@ def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp
 
 # ── откат ниже 3.3.0: таблица адресов в туннеле ──────────────────────────────
 
-@pytest.mark.parametrize("target, dropped", [
-    ("3.2.1", True), ("3.2.1.4", True), ("2.24.0", True),
-    ("3.3.0", False), ("3.3.0.1", False), ("3.4.0", False), ("", False)])
-def test_an_update_below_330_drops_the_tunnel_address_table(script, tmp_path, target, dropped):
+@pytest.mark.parametrize("target, has_code, dropped", [
+    ("3.2.1", False, True), ("3.2.1.4", False, True), ("2.24.0", False, True),
+    ("3.2.1.7", True, False),                     # предрелизная сборка с кодом таблицы — та же функция
+    ("3.3.0", False, False), ("3.3.0.1", True, False), ("3.4.0", True, False), ("", False, False)])
+def test_an_update_below_330_drops_the_tunnel_address_table(script, tmp_path, target, has_code, dropped):
     """Бот старше 3.3.0 о таблице awg_lan_map не знает, а оставшись в ядре до
     ребута, она ломает его трафик (зоны conntrack, перевод источника).
     Первая половина обновления — её исполняет установленный скрипт 3.3.0 —
     снимает таблицу, если поставка ниже 3.3.0; версия не прочитана — не
     трогает. Таблицы и правила слотов прежний бот держит сам."""
     import subprocess
-    tree = tmp_path / "src"; (tree / "awgbot").mkdir(parents=True)
+    tree = tmp_path / "src"; (tree / "awgbot" / "infra" / "routing").mkdir(parents=True)
+    if has_code:
+        (tree / "awgbot" / "infra" / "routing" / "lanmap.py").write_text("", encoding="utf-8")
     if target:
         (tree / "awgbot" / "__version__.py").write_text(f'"""x"""\n\n__version__ = "{target}"\n', encoding="utf-8")
     log = tmp_path / "log"; log.write_text("", encoding="utf-8")
@@ -537,7 +540,7 @@ def test_an_update_below_330_drops_the_tunnel_address_table(script, tmp_path, ta
         _extract_func(script, "tree_version"), _extract_func(script, "version_lt"),
         _extract_func(script, "lanmap_drop_for_older"),
         f'test "$(tree_version "{tree}")" = "{target}" || exit 7',
-        f'lanmap_drop_for_older "$(tree_version "{tree}")"; echo RC=$?'])
+        f'lanmap_drop_for_older "{tree}"; echo RC=$?'])
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0 and "RC=0" in r.stdout, (r.stdout, r.stderr)
@@ -548,5 +551,5 @@ def test_an_update_below_330_drops_the_tunnel_address_table(script, tmp_path, ta
 def test_the_tunnel_address_table_goes_right_after_the_stop_and_on_uninstall(script):
     upd = _extract_func(script, "cmd_update")
     stop = upd.index('systemctl stop "$SERVICE"')
-    assert stop < upd.index('lanmap_drop_for_older "$(tree_version "$src")"') < upd.index("trap update_rescue EXIT")
+    assert stop < upd.index('lanmap_drop_for_older "$src"') < upd.index("trap update_rescue EXIT")
     assert "nft delete table inet awg_lan_map" in _extract_func(script, "cmd_post_uninstall")

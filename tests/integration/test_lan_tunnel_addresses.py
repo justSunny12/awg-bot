@@ -168,7 +168,7 @@ def test_a_fwmark_on_the_slot_bits_turns_the_addresses_off(two, fake_routing, mo
     card = two.lan_space_card(two.db.gateway(1))
     assert card["key"] == "routing.fwmark"
     assert lan_space_lines(card) == [
-        "⚠️ Адреса в туннеле выключены: метка РФ-доступа routing.fwmark 0x4 задевает биты меток слотов 0x6 — "
+        "⚠️ Адреса в туннеле выключены: метка РФ-доступа 0x4 задевает биты меток слотов 0x6 — "
         "поправь <code>routing.fwmark</code> в app.yaml"]
 
 
@@ -237,3 +237,34 @@ def test_the_announcement_says_once_that_the_networks_are_now_linked(two, monkey
     assert two.lan_space_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.lan_space_announce() == []
+
+
+def test_a_stale_error_goes_away_when_the_table_is_already_right(two, fake_routing):
+    """Отказ прошлой сверки, а таблица уже та, что нужно (поставили руками или
+    отказ был временным): ранний выход сверки тоже снимает строку отказа."""
+    two.lan_map_ensure()
+    two.db.set_state("lanmap_error", "временный отказ")
+    n = len(fake_routing.lanmap_applies)
+    two.lan_map_ensure()
+    assert len(fake_routing.lanmap_applies) == n and not two.db.get_state("lanmap_error")
+    two.db.gateway_update(1, lan_subnets=[]); two.db.gateway_update(2, lan_subnets=[])
+    two.lan_map_ensure()
+    two.db.set_state("lanmap_error", "временный отказ")
+    two.lan_map_ensure()
+    assert not two.db.get_state("lanmap_error"), "пусто к пустому — отказа нет"
+
+
+def test_an_empty_table_looks_into_the_kernel_only_once_and_a_missing_nft_is_no_error(two, monkeypatch):
+    """Подсетей нет и не было: в ядро смотрим только первой сверкой процесса
+    (таблица могла остаться от прошлой жизни); nft на хосте нет вовсе (docker
+    без nftables) — таблицы нет, это не отказ."""
+    looks = []
+
+    def present():
+        looks.append(1)
+        raise routing.RoutingUnavailable("nft не найден — поставь пакет nftables")
+    monkeypatch.setattr(routing.lanmap, "present", present)
+    two.db.gateway_update(1, lan_subnets=[]); two.db.gateway_update(2, lan_subnets=[])
+    assert two.lan_map_ensure() is True and not two.db.get_state("lanmap_error")
+    two.lan_map_ensure(); two.lan_map_ensure()
+    assert looks == [1], "в ядро смотрели не только на первой сверке"

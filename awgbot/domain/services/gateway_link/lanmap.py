@@ -48,8 +48,7 @@ class LanMapMixin:
             if 1 <= int(gw.id) <= lanspace.MAX_SLOTS:
                 bits |= routing.slot_mark(gw.id)
         if mark & bits:
-            return (f"метка РФ-доступа routing.fwmark 0x{mark:x} задевает биты меток слотов "
-                    f"0x{bits:x}"), "routing.fwmark"
+            return f"метка РФ-доступа 0x{mark:x} задевает биты меток слотов 0x{bits:x}", "routing.fwmark"
         return "", ""
 
     def lan_space_problem(self) -> str:

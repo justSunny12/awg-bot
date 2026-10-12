@@ -722,7 +722,8 @@ def test_docker_mode_has_no_admin_resolver_rule(monkeypatch, tmp_path):
 
 # ── частные адреса не уходят к провайдеру ────────────────────────────────────
 
-_WAN_RULE = 'oifname { "eth0" } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } drop'
+_WAN_RULE = ('iifname { "awg1", "awglink" } oifname { "eth0" } ip daddr { 10.0.0.0/8, 172.16.0.0/12, '
+             '192.168.0.0/16 } drop')
 
 
 def test_private_destinations_never_leave_through_the_wan(host_mode, monkeypatch):
@@ -731,6 +732,7 @@ def test_private_destinations_never_leave_through_the_wan(host_mode, monkeypatch
     маршрутом по умолчанию к провайдеру. Правило — для всех, раньше любых
     accept по подсетям туннеля; и в форме с фильтром, и в NAT-only."""
     monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])
     _conf(monkeypatch, **{"app.firewall.enabled": True})
     lines = [ln.strip() for ln in nftguard.render(nftguard.build_spec(["10.9.1.5"])).splitlines()]
     fwd = lines[lines.index("chain forward {"):]
@@ -765,4 +767,22 @@ def test_docker_mode_has_no_wan_rule(host_mode, monkeypatch):
     _conf(monkeypatch, **{"app.firewall.enabled": True})
     spec = nftguard.build_spec(["10.9.1.5"])
     assert spec.wan_ifs == [] and "ip daddr { 10.0.0.0/8" not in nftguard.render(spec)
+
+
+def test_the_private_rule_touches_only_traffic_from_the_tunnel_and_links(host_mode, monkeypatch):
+    """Проходящий трафик хоста не из туннеля (docker, VM, резолвер VPC
+    провайдера) правило не задевает — особенно в NAT-only, где политику держит
+    хост: источник — только awg-интерфейсы клиентов и линки; их нет — правила
+    нет вовсе."""
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: [])
+    for enabled in (True, False):
+        _conf(monkeypatch, **{"app.firewall.enabled": enabled})
+        rules = [ln.strip() for ln in nftguard.render(nftguard.build_spec([])).splitlines()
+                 if "ip daddr { 10.0.0.0/8" in ln]
+        assert rules == ['iifname { "awg1" } oifname { "eth0" } ip daddr { 10.0.0.0/8, 172.16.0.0/12, '
+                         '192.168.0.0/16 } drop'], (enabled, rules)
+    monkeypatch.setattr(nftguard, "_tunnel_ifs", lambda: [])
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    assert "ip daddr { 10.0.0.0/8" not in nftguard.render(nftguard.build_spec([]))
 

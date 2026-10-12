@@ -174,9 +174,14 @@ def _wan_private_drop(spec) -> list[str]:
     пакет шёл бы маршрутом по умолчанию к провайдеру: адрес в туннеле в окно,
     когда таблицы awg_lan_map нет (ребут до старта бота, адреса выключены,
     у слотов нет подсетей), и старые закладки на настоящие адреса сетей
-    шлюзов. Резолвер и перехват DNS — локальные (input), РФ-доступ —
-    публичные адреса, линки и awg-интерфейсы — не внешние: их это не касается."""
-    if not spec.wan_ifs:
+    шлюзов. Только из awg-интерфейсов клиентов и линков: проходящий трафик
+    хоста не из туннеля не задет. Резолвер и перехват DNS — локальные
+    (input), РФ-доступ — публичные адреса, линки и awg-интерфейсы — не
+    внешние: их это не касается."""
+    # Только из туннеля клиентов и линков: прочий проходящий трафик хоста
+    # (docker, VM, резолвер сети провайдера) — не наше, в NAT-only тем более.
+    src = list(dict.fromkeys([*spec.tunnel_ifs, *spec.link_ifs]))
+    if not spec.wan_ifs or not src:
         return []
     nets = "{ " + ", ".join(pkg.PRIVATE4) + " }"
-    return [f"        oifname {nftjson.ifs(spec.wan_ifs)} ip daddr {nets} drop"]
+    return [f"        iifname {nftjson.ifs(src)} oifname {nftjson.ifs(spec.wan_ifs)} ip daddr {nets} drop"]

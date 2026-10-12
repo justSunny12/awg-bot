@@ -165,6 +165,7 @@ def fake_awg(monkeypatch):
         return "ok"
     monkeypatch.setattr(nftguard, "enabled", lambda: True)
     monkeypatch.setattr(nftguard, "reconcile", _fw_reconcile)
+    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])          # маршруты хоста тесту не нужны
     # полная перерисовка (порт линка слота) — тоже в фейк: иначе тест под root
     # переписал бы /etc/nftables.conf хоста
     monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])

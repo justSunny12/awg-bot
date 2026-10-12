@@ -67,3 +67,14 @@ def test_the_transit_dialog_promises_no_link_while_the_addresses_are_off():
     off = gateway_lan_ask(_dialog_state("служебное пространство 10.0.0.0/12 пересекается с подсетью клиентов"),
                           True, "10.9.1.1", [])
     assert "Сеть свяжется" not in off and "Агентам v3.2" not in off
+
+
+def test_a_slot_without_its_channel_is_not_asked_twice_in_the_dialog():
+    """Сам слот без канала диалог уже просит перевыпустить («Потребуется
+    перевыпуск конфигурации шлюза») — в списке соседей второй раз его нет."""
+    st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": False}}
+    text = gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
+    assert "после включения перевыпусти конфигурацию: Pi4" in text and "конфигурацию: Pi5" not in text, text
+    st["channel"] = {"online": True}
+    assert "перевыпусти конфигурацию: Pi5, Pi4" in gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
+

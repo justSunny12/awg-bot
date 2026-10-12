@@ -149,7 +149,9 @@ def test_a_subnet_in_the_space_or_with_a_clashing_twin_stays_out(two, fake_routi
 # ── nft: применение, снятие, присутствие ────────────────────────────────────
 
 def _nft_log(monkeypatch, rc=0, out=b"", err=b""):
+    import shutil
     calls = []
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/usr/sbin/{name}")
 
     def run(args, *, timeout=10, stdin="", error=RuntimeError):
         calls.append((list(args), stdin))
@@ -178,3 +180,13 @@ def test_presence_is_read_from_the_list_of_tables(monkeypatch):
     assert lanmap.present() is False
     calls = _nft_log(monkeypatch, rc=1)
     assert lanmap.remove() is False and calls[0][0] == ["delete", "table", "inet", "awg_lan_map"]
+
+
+def test_no_nft_on_the_host_is_unavailable_not_a_failure(monkeypatch):
+    """docker-хост без nftables: таблицы нет и быть не может — RoutingUnavailable,
+    сверка с пустым текстом отказом это не считает."""
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
+    with pytest.raises(routing.RoutingUnavailable, match="nft не найден"):
+        lanmap.present()
+

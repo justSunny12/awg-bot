@@ -280,6 +280,7 @@ wipe_previous() {
         [[ -n "$name" ]] && command -v docker >/dev/null 2>&1 && docker rm -f "$name" >/dev/null 2>&1 || true
         nft delete table inet awg_bot_guard 2>/dev/null || true
         nft delete table inet awg_bot_acct 2>/dev/null || true
+        nft delete table inet awg_lan_map 2>/dev/null || true
         rm -f /etc/nftables.d/awg-bot-guard.nft
     fi
     rm -rf "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
