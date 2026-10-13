@@ -143,13 +143,24 @@ def _nft(args: list[str], stdin: str = "") -> object:
     return nftjson.run(args, timeout=15, stdin=stdin, error=base.RoutingError)
 
 
+_last_full_err = ""    # полный отказ nft уже в журнале — на каждом такте не повторяем
+
+
 def apply(text: str) -> None:
-    """Проверить (`nft -c`) и применить атомарно. RoutingError — не принято."""
+    """Проверить (`nft -c`) и применить атомарно. RoutingError — не принято:
+    в исключении (уведомление, карточка) — первые 300 знаков, полный stderr
+    nft со всеми строками ошибок — в журнал, один раз на текст отказа."""
+    global _last_full_err
     for args in (["-c", "-f", "-"], ["-f", "-"]):
         proc = _nft(args, stdin=text)
         if proc.returncode != 0:
             err = proc.stderr.decode(errors="replace").strip()
+            if len(err) > 300 and err != _last_full_err:
+                _last_full_err = err
+                base.log.warning("routing: таблица %s не принята, полный ответ nft %s:\n%s",
+                                 TABLE, " ".join(args), err)
             raise base.RoutingError(f"nft {' '.join(args)}: {err[:300]}")
+    _last_full_err = ""
     base.log.info("routing: таблица %s поставлена", TABLE)
 
 

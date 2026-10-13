@@ -173,6 +173,21 @@ def test_a_refused_text_is_an_error_and_is_not_loaded(monkeypatch):
     assert [a for a, _ in calls] == [["-c", "-f", "-"]]
 
 
+def test_a_long_refusal_goes_to_the_log_in_full_once(monkeypatch, caplog):
+    """Ошибка nft длиннее 300 знаков: уведомлению — начало, журналу — весь
+    ответ (по началу не понять, есть ли ошибки дальше), и один раз, а не на
+    каждом такте."""
+    monkeypatch.setattr(lanmap, "_last_full_err", "")
+    tail = "/dev/stdin:33:11-16: Error: syntax error, unexpected srcnat"
+    _nft_log(monkeypatch, rc=1, err=("/dev/stdin:22:11-14: Error: syntax error\n" + "x" * 400 + "\n" + tail).encode())
+    for _ in range(2):
+        with pytest.raises(routing.RoutingError) as e:
+            lanmap.apply(GOLDEN)
+        assert tail not in str(e.value)
+    full = [r for r in caplog.records if "полный ответ nft" in r.getMessage()]
+    assert len(full) == 1 and tail in full[0].getMessage()
+
+
 def test_presence_is_read_from_the_list_of_tables(monkeypatch):
     _nft_log(monkeypatch, out=b"table inet awg_bot_guard\ntable inet awg_lan_map\n")
     assert lanmap.present() is True
