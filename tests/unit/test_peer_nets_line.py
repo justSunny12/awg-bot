@@ -91,3 +91,29 @@ def test_the_announcement_with_fifteen_slots_fits_telegram():
     assert "и ещё 61" in text
     assert len(plain_text(text)) <= TG_MAX, len(plain_text(text))
     assert "и ещё 58" in lan_space_moved(rows[:2], smb=False, reissue=False)
+
+
+def test_nine_slots_and_more_show_up_to_three_addresses_each():
+    """При девяти слотах и больше — до трёх адресов на слот, как в сводке."""
+    many = {"state": "ok", "pairs_named": [(f"Pi{i}", "", _nets(i, 5)) for i in range(1, 10)]}
+    line = texts.peer_nets_line(many)
+    assert line.count("<code>") == 27 and line.count("и ещё 2") == 9, line
+    few = {"state": "ok", "pairs_named": many["pairs_named"][:8]}
+    assert texts.peer_nets_line(few).count("<code>") == 40
+
+
+def test_the_off_dialog_names_who_needs_a_file():
+    st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": True}}
+    text = gateway_lan_ask(st, False, "", ["Pi5", "Pi<4>"])
+    assert "после выключения перевыпусти её: Pi5, Pi&lt;4&gt;" in text, text
+    assert "Агенту шлюза v3.2" not in gateway_lan_ask(st, False, "", [])
+
+
+def test_the_card_caps_peer_names_and_subnet_warnings():
+    from awgbot.bot.texts.routing.card import lan_space_lines, peer_links_line
+    assert peer_links_line(["A", "B", "C"]) == "↔️ Связь подсетей: с A, B, C"
+    assert peer_links_line(["A", "B", "C", "D", "E"]) == "↔️ Связь подсетей: с A, B, C и ещё 2"
+    issues = [{"kind": "wide", "net": f"10.{i}.0.0/15"} for i in range(5)]
+    lines = lan_space_lines({"issues": issues})
+    assert len(lines) == 4 and lines[-1] == "⚠️ Ещё 2 подсети вне адресов в туннеле: проверь их в «🗺 Подсети»", lines
+    assert len(lan_space_lines({"issues": issues[:3]})) == 3

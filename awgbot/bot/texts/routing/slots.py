@@ -218,12 +218,14 @@ def slot_line(state, star: bool = True) -> str:
 
 
 PEER_NETS_SHOWN = 6           # адресов в туннеле на слот в строке «Связь подсетей» — как в карточке
+PEER_NETS_SHOWN_MANY = 3      # при PEER_MANY и больше слотах — меньше: строка не раздувает экран
+PEER_MANY = 9
 
 
 def peer_nets_line(info: dict) -> str:
     """Строка «↔️ Связь подсетей» на экране «Шлюзы» — инфобокс без кнопки:
     связь подсетей — часть VPN-транзита. Пары — в адресах в туннеле, до шести
-    на слот («и ещё N»); слотов с VPN-транзитом меньше двух — когда появится;
+    на слот, при девяти слотах и больше — до трёх («и ещё N»); слотов с VPN-транзитом меньше двух — когда появится;
     адреса в туннеле выключены — отсылка к карточке."""
     st = info.get("state")
     if st == "off":
@@ -232,14 +234,17 @@ def peer_nets_line(info: dict) -> str:
         return ("↔️ Связь подсетей — между шлюзами с VPN-транзитом: появится, когда он будет включён "
                 "хотя бы у двух")
 
+    named = info.get("pairs_named") or []
+    limit = PEER_NETS_SHOWN_MANY if len(named) >= PEER_MANY else PEER_NETS_SHOWN
+
     def _nets(nets: list) -> str:
         if not nets:
             return ""
-        shown = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:PEER_NETS_SHOWN])
-        more = len(nets) - PEER_NETS_SHOWN
+        shown = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:limit])
+        more = len(nets) - limit
         return ": " + shown + (f" и ещё {more}" if more > 0 else "")
     pairs = " ↔️ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}{_nets(nets)}"
-                        for name, label, nets in info.get("pairs_named") or [])
+                        for name, label, nets in named)
     return f"↔️ Связь подсетей: {pairs}"
 
 

@@ -237,6 +237,18 @@ def _gw_traffic(dev) -> str:
     return f" · 📊 {human_bytes(rx + tx)} {updown_brief(tx, rx)}"
 
 
+PEER_LINKS_SHOWN = 3         # соседей по имени в строке «Связь подсетей» карточки, дальше «и ещё N»
+LAN_ISSUES_SHOWN = 3         # строк ⚠️ о подсетях вне таблицы в карточке, дальше «и ещё N»
+
+
+def peer_links_line(links: list[str]) -> str:
+    """«↔️ Связь подсетей: с NASPi, Pi2» — соседи с VPN-транзитом, имена уже
+    ссылками на их карточки (HTML); больше трёх — «и ещё N»."""
+    more = len(links) - PEER_LINKS_SHOWN
+    return ("↔️ Связь подсетей: с " + ", ".join(links[:PEER_LINKS_SHOWN])
+            + (f" и ещё {more}" if more > 0 else ""))
+
+
 def lan_space_lines(info: dict | None) -> list[str]:
     """Карточка слота: адреса в туннеле выключены целиком (пространство или
     метка), таблица не поставилась, или подсети слота, не попавшие в таблицу,
@@ -245,7 +257,8 @@ def lan_space_lines(info: dict | None) -> list[str]:
     if info.get("problem"):
         return [lan_space_off_line(info["problem"], info.get("key") or "routing.lan_space")]
     out = [lan_map_failed_line(info["error"])] if info.get("error") else []
-    for it in info.get("issues") or []:
+    issues = info.get("issues") or []
+    for it in issues[:LAN_ISSUES_SHOWN]:
         net = f"<code>{_e(it.get('net', ''))}</code>"
         # подсеть накрывает префикс соседа в туннеле: на шлюзе она пересеклась
         # бы с его AllowedIPs — конфиг линка не соберётся
@@ -260,6 +273,10 @@ def lan_space_lines(info: dict | None) -> list[str]:
                        "и не видна: убери одну из них в «🗺 Подсети»")
         elif it.get("kind") == "wide":
             out.append(f"⚠️ {net} шире /16, в туннеле не видна{link}: сузь подсеть в «🗺 Подсети»")
+    if len(issues) > LAN_ISSUES_SHOWN:
+        n = len(issues) - LAN_ISSUES_SHOWN
+        out.append(f"⚠️ Ещё {n} " + plural_ru(n, "подсеть", "подсети", "подсетей") + " вне адресов в туннеле: "
+                   "проверь их в «🗺 Подсети»")
     return out
 
 
@@ -304,7 +321,7 @@ def gateway_card_text(state: dict, states: list) -> str:
             lines.append(own_lists_line(own, state.get("agent_bot")))
     svc = state.get("services") or {}
     if state.get("peer_nets"):
-        lines.append("↔️ Связь подсетей ✅")
+        lines.append(peer_links_line(state.get("peer_links") or []))
         if svc:
             lines.append(services_line(svc, state.get("agent_bot")))
     elif svc.get("tunnel") and svc.get("own"):

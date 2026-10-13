@@ -205,7 +205,7 @@ async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer(texts.GATEWAY_LAN_NO_SUBNET, show_alert=True)
         return
     resolver = await call(services.gateway_resolver_addr, gw) if on else ""
-    reissue = await call(services.gateway_transit_reissue, gw.id) if on else []
+    reissue = await call(services.gateway_transit_reissue, gw.id)
     await edit(cb, texts.gateway_lan_ask(st, on, resolver, reissue), kb.gateway_lan_confirm(gw.id, on))
     await cb.answer()
 
@@ -235,7 +235,8 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     names = [n for n in await call(services.gateway_transit_reissue, callback_data.slot)
              if not (by_file and n == st.get("display"))]
     if names:
-        tail += "; для связи подсетей перевыпусти конфигурацию: " + ", ".join(names)
+        tail += ("; для связи подсетей перевыпусти конфигурацию: " if on
+                 else "; чтобы снять связь подсетей, перевыпусти конфигурацию: ") + ", ".join(names)
     await cb.answer(ui.toast(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail), show_alert=True)
 
 

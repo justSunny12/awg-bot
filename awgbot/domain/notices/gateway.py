@@ -40,7 +40,7 @@ def gateway_apply_report(st: dict) -> str:
     if st.get("LAN") == "1":
         err = st.get("LAN_ERROR") or ""
         if err:
-            lines.append(f"VPN-транзит: не применён — {err}")
+            lines.append(f"VPN-транзит: не применён — {_e(err)}")
         else:
             lines.append("VPN-транзит: применён"
                          + (f" ({_e(st.get('LAN_IF'))}, <code>{_e(st.get('LAN_ADDR'))}</code>)"

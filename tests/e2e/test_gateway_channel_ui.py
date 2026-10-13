@@ -554,3 +554,40 @@ async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
     assert cb.answers == [(tail, True)], cb.answers
+
+
+async def test_transit_off_names_who_needs_a_file_to_drop_the_link(services, cfg1, fake_bot, monkeypatch):
+    """Выключение меняет подсети соседей так же, как включение: агентам 3.2
+    связь снимется только файлом — и диалог, и всплывашка говорят о снятии,
+    а не «для связи подсетей»."""
+    _peer_store(monkeypatch)
+    admin = services.db.get_client_by_tg(ADMIN)
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
+    services.gwlink_session_opened(2, "3.2.1", 2, [])
+    _cfg_snap(services)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    dialog = _screen(nav)[0]
+    assert ("Агенту шлюза v3.2 подсети других шлюзов снимаются только с перевыпуском конфигурации — "
+            "после выключения перевыпусти её: Pi2") in dialog, dialog
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
+    assert cb.answers == [("VPN-транзит выключен: применится автоматически по упр. каналу; чтобы снять связь "
+                           "подсетей, перевыпусти конфигурацию: Pi2", True)], cb.answers
+
+
+async def test_the_card_names_linked_neighbours_as_links(services, cfg1, fake_bot, monkeypatch):
+    """Карточка говорит, с кем связана сеть, — именами-ссылками на карточки
+    соседей; без второго слота с VPN-транзитом строки нет."""
+    _peer_store(monkeypatch)
+    text, _ = await _card(services, fake_bot)
+    assert "↔️ Связь подсетей" not in text, text
+    admin = services.db.get_client_by_tg(ADMIN)
+    pi2 = services.add_device(admin.id, "Pi2")
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
+    text, _ = await _card(services, fake_bot)
+    # без username бота имя — текстом; ссылкой (gw-<слот>) — в снимке экранов
+    assert "↔️ Связь подсетей: с Pi2\n" in text, text

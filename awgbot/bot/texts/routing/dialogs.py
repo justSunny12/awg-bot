@@ -32,8 +32,8 @@ GW_TOKEN_NOT_FORGOTTEN = ("⚠️ Токен бота этого устройс�
 
 def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
     """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит.
-    reissue — кому подсети соседей после включения доедут только файлом
-    (агенты 3.2.x этого и соседних слотов с VPN-транзитом)."""
+    reissue — кому подсети соседей после включения или выключения доедут
+    только файлом (агенты 3.2.x этого и соседних слотов с VPN-транзитом)."""
     name = slot_ref(state)
     chan = state.get("channel") or {}
     # агент с документом получит режим каналом и не на связи — как только появится
@@ -60,12 +60,17 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
         if not online:
             lines.append("Потребуется перевыпуск конфигурации шлюза")
         return "\n".join(lines)
-    return "\n".join([
+    lines = [
         ui.head(f"🔀 VPN-транзит на {name}") + " — выключить?",
         "⚠️ Сначала убери на роутере маршрутизацию всего трафика на шлюз — иначе сеть останется без интернета",
         f"Связь подсетей для {name} выключится; списки и резолвер снимутся, свои списки останутся"
         + ("" if online else ". " + _reissue_or_channel(False, "Выключение")),
-    ])
+    ]
+    names = [n for n in reissue if online or n != state.get("display")]
+    if names:
+        lines.append("Агенту шлюза v3.2 подсети других шлюзов снимаются только с перевыпуском конфигурации — "
+                     "после выключения перевыпусти её: " + ", ".join(_e(n) for n in names))
+    return "\n".join(lines)
 
 
 GATEWAY_LAN_NO_SUBNET = "Сначала задай подсеть шлюза («🗺 Подсети»): без неё работать не будет"

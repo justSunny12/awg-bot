@@ -317,6 +317,9 @@ class SlotsMixin:
         st["ext_ip"] = self.gateway_external_ip(slot_id)
         # связь подсетей (часть VPN-транзита) и адреса в туннеле сети слота
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
+        # с кем связана сеть — именами-ссылками на карточки соседей
+        st["peer_links"] = [self._link(f"gw-{g.id}", self._gw_name(g)) for g in self.gateway_transit_slots()
+                            if g.id != int(slot_id)] if st["peer_nets"] else []
         st["lan_space"] = self.lan_space_card(st["gateway"])
         st["lan_twins"] = self.lan_twins(st["gateway"])
         # канал линка: только из state, без запросов

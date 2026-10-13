@@ -153,6 +153,8 @@ def test_apply_report_names_the_local_network_result():
     bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
     assert "VPN-транзит: не применён — порт 53 занят: pihole-FTL" in bad, bad
     assert "применён (" not in bad
+    raw = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "<b>LAN</b> & co"})
+    assert "не применён — &lt;b&gt;LAN&lt;/b&gt; &amp; co" in raw, "текст отказа — от шлюза, экранируется"
     bare = texts.gateway_apply_report({**base, "LAN": "1"})
     assert bare.endswith("VPN-транзит: применён"), "без интерфейса — без пустых скобок"
     for off in ({**base, "LAN": "0"}, base):
