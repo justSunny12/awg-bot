@@ -12,6 +12,7 @@ from .common import log
 SETTING = "app.routing.smb_tunnel"
 _APPLIED_KEY = "smb_tunnel_applied"        # отпечаток поставленного файла записей
 _ALERT_KEY = "admin_dns_alert"             # «резолвер админа не отвечает» уже сказано
+_FAIL_KEY = "admin_dns_failed_once"        # прошлый тик резолвер админа молчал, тревоги ещё не было
 
 
 class SmbTunnelMixin:
@@ -155,7 +156,8 @@ class SmbTunnelMixin:
         """Резолвер админа поставлен — обязан отвечать: от него DNS всех
         устройств админа с конфигом, выданным после его установки, тумблер тут
         ни при чём. Обычным уведомлением, не критическим: ломает DNS только
-        админу. Отметка «сказано» — по факту доставки. Заодно — файл записей
+        админу. Тревога — только если молчал и прошлый тик. Отметка «сказано» —
+        по факту доставки. Заодно — файл записей
         (слоты, замолчавшие дольше суток, выпадают; фильтр выключили — снимается)."""
         from awgbot.domain.alerts import armer
         from awgbot.infra import admindns
@@ -164,6 +166,13 @@ class SmbTunnelMixin:
         self.smb_tunnel_sync()
         alive = admindns.probe()
         said = self.db.get_state(_ALERT_KEY) == "1"
+        if alive:
+            self.db.set_state(_FAIL_KEY, "0")
+        elif not said and self.db.get_state(_FAIL_KEY) != "1":
+            # первый тик отказа — ждём второго, как у резолвера клиентов
+            self.db.set_state(_FAIL_KEY, "1")
+            log.warning("резолвер админа не ответил — проверю на следующем тике")
+            return []
         if alive and said:
             return [Notification(config.ADMIN_ID, "✅ Резолвер админа снова отвечает",
                                  on_sent=armer(self.db, _ALERT_KEY, "0"))]

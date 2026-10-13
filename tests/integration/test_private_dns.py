@@ -223,11 +223,39 @@ def test_probe_talks_dns_and_times_out_on_silence(udp_dns):
     assert resolver.probe("", timeout=0.1) is False
 
 
+def test_probe_retries_a_lost_datagram():
+    """Первый запрос резолвер «потерял» — повтор получает ответ; при
+    tries=1 та же потеря — отказ."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sock.bind(("127.0.0.1", 0))
+    seen = {"n": 0}
+    stop = threading.Event()
+
+    def serve():
+        sock.settimeout(0.1)
+        while not stop.is_set():
+            try:
+                data, peer = sock.recvfrom(512)
+            except socket.timeout:
+                continue
+            seen["n"] += 1
+            if seen["n"] % 2:                            # каждый нечётный — молча теряем
+                continue
+            sock.sendto(data[:2] + bytes([data[2] | 0x80]) + data[3:], peer)
+    t = threading.Thread(target=serve, daemon=True); t.start()
+    try:
+        port = sock.getsockname()[1]
+        assert resolver.probe("127.0.0.1", timeout=0.3, port=port) is True
+        assert resolver.probe("127.0.0.1", timeout=0.3, port=port, tries=1) is False
+    finally:
+        stop.set(); t.join(timeout=1); sock.close()
+
+
 def test_health_tick_alerts_once_and_reports_recovery(services, monkeypatch):
     _set_dns(monkeypatch, "10.8.1.1", "10.8.1.1")
     alive = {"v": False}
     monkeypatch.setattr(resolver, "probe", lambda a, **k: alive["v"])
     monkeypatch.setattr(resolver, "service_active", lambda: False)
+    assert services.resolver_health_tick() == [], "первый тик отказа — ждём второго"
     notes = services.resolver_health_tick()
     assert len(notes) == 1 and "не отвечает" in notes[0].text and notes[0].critical
     assert services.resolver_health_tick() == [], "повторный отказ — не повторный алерт"
@@ -239,6 +267,23 @@ def test_health_tick_alerts_once_and_reports_recovery(services, monkeypatch):
     _set_dns(monkeypatch, "1.1.1.1", "1.0.0.1")
     alive["v"] = False
     assert services.resolver_health_tick() == [], "публичный DNS — не наша зона"
+
+
+def test_one_lost_probe_does_not_wake_the_admin(services, monkeypatch):
+    """Молчание одного тика, сменившееся ответом, — без тревоги; два тика
+    подряд — тревога (потерю датаграммы закрывает повтор в самой пробе)."""
+    _set_dns(monkeypatch, "10.8.1.1", "10.8.1.2")
+    state = {"v": False}
+    monkeypatch.setattr(resolver, "probe", lambda a, **k: state["v"])
+    monkeypatch.setattr(resolver, "service_active", lambda: True)
+    assert services.resolver_health_tick() == [], "тик молчания — ещё не тревога"
+    state["v"] = True
+    assert services.resolver_health_tick() == [], "ответил на следующем тике — тревоги не было, и «снова» нет"
+    state["v"] = False
+    assert services.resolver_health_tick() == []
+    notes = services.resolver_health_tick()
+    assert len(notes) == 1 and "<code>10.8.1.1</code>, <code>10.8.1.2</code>" in notes[0].text, notes
+    assert notes[0].text.endswith("<code>awg-bot resolver status</code>"), "без точки в конце"
 
 
 def test_preflight_warns_when_the_private_address_is_silent(services, monkeypatch):

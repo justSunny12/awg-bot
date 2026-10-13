@@ -103,11 +103,17 @@ def remove(addr: str) -> None:
         run("remove", addr)
 
 
-def probe(addr: str, timeout: float = 2.0, name: str = "example.com", port: int = 53) -> bool:
-    """Один UDP-запрос A-записи на addr:53. True — пришёл ответ с нашим id и
-    флагом QR (что в нём — неважно: NXDOMAIN тоже значит «резолвер жив»)."""
+def probe(addr: str, timeout: float = 2.0, name: str = "example.com", port: int = 53, tries: int = 3) -> bool:
+    """UDP-запрос A-записи на addr:53, до tries попыток. True — пришёл ответ с
+    нашим id и флагом QR (что в нём — неважно: NXDOMAIN тоже значит «резолвер
+    жив»). Повтор — от потерянной датаграммы и от апстрима дольше тайм-аута:
+    к повтору его ответ уже в кэше dnsmasq."""
     if not addr:
         return False
+    return any(_probe_once(addr, timeout, name, port) for _ in range(max(1, tries)))
+
+
+def _probe_once(addr: str, timeout: float, name: str, port: int) -> bool:
     qid = os.urandom(2)
     header = qid + struct.pack(">HHHHH", 0x0100, 1, 0, 0, 0)
     qname = b"".join(bytes([len(p)]) + p.encode("ascii") for p in name.split(".")) + b"\x00"

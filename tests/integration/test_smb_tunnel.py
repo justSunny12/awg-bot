@@ -392,10 +392,15 @@ def _deliver(notes):
 
 def test_the_monitor_says_once_when_the_admin_resolver_dies_and_once_when_back(services, two_slots, adm):
     """От резолвера админа — DNS всех новых конфигов админа, тумблер тут ни при
-    чём. Отметка «сказано» — по доставке: недоставленное повторяется,
-    доставленное — нет."""
+    чём. Тревога — со второго тика молчания подряд. Отметка «сказано» — по
+    доставке: недоставленное повторяется, доставленное — нет."""
     assert services.admin_dns_health_tick() == []
     adm.alive = False
+    assert services.admin_dns_health_tick() == [], "один тик молчания — ещё не тревога"
+    adm.alive = True
+    assert services.admin_dns_health_tick() == [], "ответил — тревоги не было"
+    adm.alive = False
+    assert services.admin_dns_health_tick() == []
     notes = services.admin_dns_health_tick()
     assert [n.text for n in notes] == [
         f"🔴 Резолвер админа <code>{ADDR}</code> не отвечает — у устройств админа нет DNS и имён SMB в туннеле"]

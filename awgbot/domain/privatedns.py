@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 DECISION_KEY = "private_dns_decision"       # "" | pending | dismissed
 _ALERT_KEY = "resolver_alerted"             # "1" — об отказе доложено
+_FAIL_KEY = "resolver_failed_once"          # "1" — прошлый тик резолвер молчал, тревоги ещё не было
 
 
 class PrivateDnsMixin:
@@ -146,25 +147,33 @@ class PrivateDnsMixin:
 
     def resolver_health_tick(self) -> list:
         """Приватный DNS у клиентов — значит резолвер обязан отвечать. Проба
-        UDP-запросом с хоста; отказ — одно уведомление, восстановление — одно."""
+        UDP-запросом с хоста, с повторами (resolver.probe). Отказ — тревога, только если молчал и прошлый тик: одна неудачная
+        проба людей без DNS не оставляет, а критичная тревога будит админа.
+        Отказ — одно уведомление, восстановление — одно."""
         from awgbot.domain.services import Notification
         info = self.private_dns_info()
         if info["mode"] != "private":
             return []
-        addrs = [a for a in {info["dns1"], info["dns2"]} if a]
+        addrs = [a for a in dict.fromkeys((info["dns1"], info["dns2"])) if a]
         alive = all(resolver.probe(a) for a in addrs)
         said = self.db.get_state(_ALERT_KEY) == "1"
+        if alive:
+            self.db.set_state(_FAIL_KEY, "0")
+        elif not said and self.db.get_state(_FAIL_KEY) != "1":
+            # первый тик отказа — ждём второго: тревога по факту, не по одной пробе
+            self.db.set_state(_FAIL_KEY, "1")
+            log.warning("резолвер клиентов не ответил (%s) — проверю на следующем тике", ", ".join(addrs))
+            return []
+        shown = ", ".join(f"<code>{a}</code>" for a in addrs)
         if alive and said:
             self.db.set_state(_ALERT_KEY, "0")
-            return [Notification(config.ADMIN_ID, "🟢 Резолвер клиентов снова отвечает "
-                                 f"({', '.join(addrs)}).")]
+            return [Notification(config.ADMIN_ID, f"🟢 Резолвер клиентов снова отвечает ({shown})")]
         if not alive and not said:
             self.db.set_state(_ALERT_KEY, "1")
             active = resolver.service_active()
-            hint = ("юнит dnsmasq не активен — journalctl -u dnsmasq -e"
-                    if active is False else "юнит жив, но на адресе не отвечает — awg-bot resolver status")
+            hint = ("юнит dnsmasq не активен — <code>journalctl -u dnsmasq -e</code>"
+                    if active is False else "юнит жив, но на адресе не отвечает — <code>awg-bot resolver status</code>")
             return [Notification(config.ADMIN_ID,
-                                 "🔴 <b>Резолвер клиентов не отвечает</b> "
-                                 f"({', '.join(addrs)}): у людей нет DNS. {hint}.",
+                                 f"🔴 <b>Резолвер клиентов не отвечает</b> ({shown}): у людей нет DNS. {hint}",
                                  force_sound=True, critical=True)]
         return []
