@@ -243,8 +243,8 @@ def peer_nets_line(info: dict) -> str:
         shown = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:limit])
         more = len(nets) - limit
         return ": " + shown + (f" и ещё {more}" if more > 0 else "")
-    pairs = " ↔️ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}{_nets(nets)}"
-                        for name, label, nets in named)
+    # подписи слотов — на кнопках карточек ниже, в строке только имена
+    pairs = " ↔️ ".join(f"{_e(name)}{_nets(nets)}" for name, _label, nets in named)
     return f"↔️ Связь подсетей: {pairs}"
 
 

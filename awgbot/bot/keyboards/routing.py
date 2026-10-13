@@ -46,6 +46,14 @@ def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
                    RoutingCB(action="clear_yes", ref=client_id))
 
 
+BTN_MAX = 18      # подпись кнопки в ряду из двух — до 18 знаков
+
+
+def _fit(label: str, limit: int = BTN_MAX) -> str:
+    """Подпись длиннее предела — обрезка с «…» (имя и подпись слота задаёт человек)."""
+    return label if len(label) <= limit else label[:limit - 1].rstrip() + "…"
+
+
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
                 smb_on: bool | None = None) -> InlineKeyboardMarkup:
@@ -53,7 +61,8 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     перезапуска — только выход; выключено — «✅ Включить»; включено — слоты
     кнопками (⭐ у предпочтительного), переключение на резерв, тумблер
     автопереключения (при двух слотах), ниже «SMB в туннеле» (smb_on не None
-    — есть слоты), «Кому доступен» и «Параметры». Связь подсетей — часть
+    — есть слоты), «Кому доступен» и «Параметры». Кнопка слота — имя и подпись
+    («Pi4 (ЕК-22П10)»), длиннее 18 знаков — с «…». Связь подсетей — часть
     VPN-транзита, своей кнопки у неё нет."""
     menu = ui.to_menu(Menu(action="main"))
     if not provisioned:
@@ -70,10 +79,11 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     else:
         slots = []
         for st in states:
-            dev = st.get("device")
-            name = dev.name if dev is not None else f"шлюз {st['gateway'].id}"
+            dev, gw = st.get("device"), st["gateway"]
+            name = dev.name if dev is not None else f"шлюз {gw.id}"
             star = "⭐ " if st.get("preferred") and len(states) > 1 else ""
-            slots.append((f"{star}{name}", GwSlotCB(action="card", slot=st["gateway"].id)))
+            slots.append((_fit(f"{star}{name}" + (f" ({gw.label})" if gw.label else "")),
+                           GwSlotCB(action="card", slot=gw.id)))
         if len(states) == 1 and can_add:
             slots.append(("➕ Резерв", GwSlotCB(action="add")))
         body.append(slots)
