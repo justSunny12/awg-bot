@@ -84,14 +84,20 @@ class SmbTunnelMixin:
 
     def smb_tunnel_text(self) -> str:
         """Файл записей резолвера админа; тумблер выключен, фильтр снаружи
-        выключен (без него имена увидели бы все клиенты) или записей нет — пусто."""
+        выключен (без него имена увидели бы все клиенты) или записей нет — пусто.
+        Домены обзора — в обратных зонах подсетей туннеля и каждого адреса
+        устройства админа (/32)."""
         from awgbot.infra import nftguard
         if not self.smb_tunnel_on() or not nftguard.enabled():
             return ""
         items = self.smb_tunnel_items()
         if not items:
             return ""
-        return gwservices.render_dnsmasq(items, nftguard.tunnel_nets(),
+        # домен обзора Mac ищет в обратной зоне своего адреса с маской: клиент
+        # AmneziaVPN на macOS ставит туннелю /32 — зона подсети клиентов его не
+        # находит, нужна зона каждого адреса устройства админа
+        own = list(nftguard.tunnel_nets()) + [f"{a}/32" for a in self._gw_ssh_allow()]
+        return gwservices.render_dnsmasq(items, own,
                                          owner="# awg-bot (сервер AWG): SMB локальных сетей шлюзов для устройств админа.")
 
     def smb_tunnel_sync(self, force: bool = False) -> bool:

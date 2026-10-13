@@ -211,6 +211,12 @@ def test_records_of_both_slots_reach_the_admin_resolver_through_the_line_whiteli
     assert "ptr-record=b._dns-sd._udp.0.1.8.10.in-addr.arpa,awg.internal" in text, \
         "нет обратной зоны подсети клиентов — Finder не найдёт домен обзора"
     assert text.splitlines()[0].startswith("# awg-bot (сервер AWG)")
+    # клиент на macOS ставит туннелю /32 — Mac ищет домен обзора в зоне своего адреса
+    mac = services.add_device(services.db.get_client_by_tg(ADMIN).id, "MacBook")
+    assert services.smb_tunnel_sync() is True
+    zone = ".".join(reversed(mac.address.split("/")[0].split("."))) + ".in-addr.arpa"
+    assert f"ptr-record=b._dns-sd._udp.{zone},awg.internal" in adm.records, adm.records
+    assert gwservices.lines_ok(adm.records)
     assert services.smb_tunnel_slot(services.db.gateway(1)) and services.smb_tunnel_slot(services.db.gateway(2))
 
 
