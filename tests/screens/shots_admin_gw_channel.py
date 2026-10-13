@@ -156,6 +156,8 @@ CHANNEL = [
          data=_chan(1, _ch(online=False)), title="выключить VPN-транзит без канала — перевыпуск"),
     Shot("adm.gw.lan_yes.ch.dead", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
          data=_chan(1, _ch(online=False)), title="VPN-транзит выключен без канала — перевыпусти"),
+    Shot("adm.gw.lan_ask.ch.peers", role="admin", press=[GwSlotCB(action="lan_ask", slot=1)],
+         data=_chan(2, _neighbour, _ch()), title="выключить VPN-транзит: кому снять связь подсетей файлом"),
     Shot("adm.gw.lan_yes.ch.peers", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
          data=_chan(2, _neighbour, _ch()), title="VPN-транзит выключен каналом, но подсети соседей — файлом"),
     Shot("adm.gw.lan_ask.peers", role="admin", press=[GwSlotCB(action="lan_ask", slot=2)],

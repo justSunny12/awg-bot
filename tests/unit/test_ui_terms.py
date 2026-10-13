@@ -70,8 +70,10 @@ OLD_NAMES_ALLOWED: dict = {}
 MAIN_FILES = (sorted((ROOT / "texts").rglob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
               + sorted((ROOT / "sections").glob("*.py")) + [ROOT / "ui.py", ROOT / "roles.py"]
               + sorted((ROOT / "handlers").rglob("*.py"))
-              + [ROOT.parent / "domain" / n for n in ("gwssh.py", "gwchecks.py")]
-              + sorted((ROOT.parent / "domain" / "gateway").glob("*.py")) + SHARED)
+              + [ROOT.parent / "domain" / n for n in ("gwssh.py", "gwchecks.py", "privatedns.py")]
+              + sorted((ROOT.parent / "domain" / "gateway").glob("*.py"))
+              # сервисы: ServiceError — всплывашки, Notification — уведомления
+              + sorted((ROOT.parent / "domain" / "services").rglob("*.py")) + SHARED)
 
 
 def _literals(path: pathlib.Path):

@@ -298,10 +298,19 @@ def _claim_text(pub: str) -> str:
 _FW_UNRESOLVED = [f"h{i}.example" for i in range(15)]
 
 
+def _rename(device_id: int, name: str):
+    def step(services, mp):
+        services.rename_device(device_id, name)
+    return step
+
+
 SLOTS = [
     # ── подпись слота, пинг резерва, «⭐ При старте» ───────────────────────
     Shot("adm.rt.two.label", role="admin", press=[SetCB(sec="rt")], data=_gw(2, _label(2, "дача")),
          title="«Шлюзы»: подпись слота в скобках"),
+    Shot("adm.rt.two.label.long", role="admin", press=[SetCB(sec="rt")],
+         data=_gw(2, _label(2, "дача"), _rename(PI4, "Raspberry Pi 5 NAS"), _rename(NASPI, "Raspberry Pi 4 NAS")),
+         title="«Шлюзы»: длинные имена — режется имя, подпись на кнопке остаётся"),
     _card(2, _gw(2, _label(2, "дача")), "карточка: подпись слота в заголовке", "adm.gw.card.label"),
     _card(2, _gw(2, _lan_standby), "карточка резерва с VPN-транзитом — самый полный набор кнопок",
           "adm.gw.card.standby.lan"),

@@ -1,5 +1,5 @@
 """Зоны conntrack по неупорядоченной паре сторон пакета (таблица awg_lan_map,
-цепочка zone): одинаковые настоящие адреса за разными шлюзами спорят не за
+цепочка slot_zone): одинаковые настоящие адреса за разными шлюзами спорят не за
 маршрут, а за запись conntrack — после перевода ответные кортежи двух
 соединений совпадают. Пара сторон разводит их по зонам.
 
@@ -45,7 +45,7 @@ def test_the_zone_is_a_function_of_the_unordered_pair():
     assert lanmap.zone(0, 1) == 2 and lanmap.zone(0, 2) == 3 and lanmap.zone(2, 1) == 19
 
 
-# ── цепочка zone как её исполнит ядро ────────────────────────────────────────
+# ── цепочка slot_zone как её исполнит ядро ────────────────────────────────────────
 
 def _sets(text: str) -> dict[str, list]:
     out = {}
@@ -60,7 +60,7 @@ def _zone_rules(text: str) -> list[str]:
 
 
 def classify(iif: str, saddr: str, daddr: str) -> int:
-    """Зона пакета на входе ВПС по тексту цепочки zone; без правила — 0."""
+    """Зона пакета на входе ВПС по тексту цепочки slot_zone; без правила — 0."""
     sets = _sets(TEXT)
     s, d = ipaddress.ip_address(saddr), ipaddress.ip_address(daddr)
     for rule in _zone_rules(TEXT):

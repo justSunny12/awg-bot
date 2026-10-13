@@ -100,7 +100,7 @@ class PeerNetsMixin:
         if on and not gw.lan_subnets:
             raise ServiceError("сначала задай локальную подсеть шлюза: по ней шлюз находит свой адрес")
         if on and (not gw.device_id or self.db.get_device(gw.device_id) is None):
-            raise ServiceError("у слота нет устройства — без аплинка режим без VPN не работает")
+            raise ServiceError("у слота нет устройства — без аплинка VPN-транзит не работает")
         self.db.gateway_update(gw.id, lan_mode=1 if on else 0)
         gw = self.db.gateway(gw.id)
         self._channel_touch()                              # LAN_MODE и подсети соседей — шлюзам сразу

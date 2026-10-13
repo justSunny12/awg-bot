@@ -230,10 +230,17 @@ def test_chain_names_are_not_nft_keywords():
     проверенных живьём, либо с «_» (ключевых слов с подчёркиванием у nft нет)."""
     import pathlib
     import re
+    from awgbot.infra import gwguard, rfacct
     root = pathlib.Path(__file__).resolve().parents[2]
     files = [*root.joinpath("awgbot").rglob("*.py"), *root.joinpath("install").glob("*.sh"), root / "awg-bot.sh"]
-    names = {(f.name, m) for f in files
-             for m in re.findall(r"\bchain ([A-Za-z][\w-]*) \{", f.read_text(encoding="utf-8"))}
-    assert ("lanmap.py", "slot_mark") in names, "генератор awg_lan_map не найден — тест ничего не проверяет"
+    # «chain NAME {» с любыми пробелами и «add chain <family> <table> NAME» (императивная форма)
+    decl = re.compile(r"\bchain\s+([A-Za-z][\w-]*)\s*\{")
+    imp = re.compile(r"\badd chain\s+(?:inet|ip6?|arp|bridge|netdev)\s+\S+\s+([A-Za-z][\w-]*)")
+    names = {(f.name, m) for f in files for rx in (decl, imp)
+             for m in rx.findall(f.read_text(encoding="utf-8"))}
+    # имена из констант (f-строки сторож по тексту не видит)
+    names |= {("rfacct.py", rfacct.CHAIN)} | {("gwguard", c) for c in gwguard.CHAINS}
+    for must in (("lanmap.py", "slot_mark"), ("routing-gw-setup.sh", "prerouting"), ("rfacct.py", rfacct.CHAIN)):
+        assert must in names, f"{must} не найден — сторож ослеп"
     bad = sorted((f, n) for f, n in names if n not in _KNOWN_CHAINS and "_" not in n)
     assert not bad, bad

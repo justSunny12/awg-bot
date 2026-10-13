@@ -53,6 +53,18 @@ def _lan_old(slot: int, nets: list):
     return step
 
 
+def _many_transit(n: int):
+    """Слоты 3..n с VPN-транзитом и своими подсетями: соседей у слота 2 больше трёх."""
+    def step(services, mp):
+        from tests.screens.shots_admin_common import ADM
+        for slot in range(3, n + 1):
+            created = services.add_device(ADM, f"Pi{slot}")
+            services.db.gateway_add(created.device_id, f"awglink{slot}", 9000 + slot,
+                                    f"10.99.99.{4 * (slot - 1)}/30", slot_id=slot)
+            services.db.gateway_update(slot, lan_subnets=[f"192.168.{slot}.0/24"], lan_mode=1)
+    return step
+
+
 def _table_failed(services, mp):
     """nft не принял таблицу адресов в туннеле — причина в state."""
     services.db.set_state("lanmap_error", "nft -c -f -: Error: Could not process rule: No such file or directory")
@@ -126,6 +138,11 @@ CARDS = [
           "adm.gw.card.lan.blocks_link"),
     _card(2, _gw(2, _table_failed, lan2=True),
           "таблица адресов в туннеле не поставилась — причина строкой", "adm.gw.card.lan.failed"),
+    _card(2, _gw(2, _lan_old(2, [LAN2, "10.241.0.0/24", "10.241.1.0/24", "10.242.0.0/24", "10.243.0.0/24",
+                                 "10.244.0.0/24"]), lan2=True),
+          "больше трёх подсетей вне таблицы — три строки и «Ещё N»", "adm.gw.card.lan.issues.more"),
+    _card(2, _gw(2, _many_transit(5), lan2=True),
+          "соседей с VPN-транзитом больше трёх — «и ещё N»", "adm.gw.card.peers.more"),
     _card(2, _gw(2, _own_off, lan2=True),
           "синхронизация у слота не действует — строки «📋» нет", "adm.gw.card.own.off"),
     # ── SMB соседей в карточке слота ─────────────────────────────────────
