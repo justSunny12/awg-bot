@@ -687,14 +687,14 @@ async def test_subnets_the_tunnel_cannot_carry_are_refused_at_input(services, sl
     assert services.db.gateway(1).lan_subnets == ["192.168.1.0/24"], "подсеть, которую туннель не повезёт, записана"
     text = _shown(msg, fake_bot)
     assert "<code>172.16.0.0/15</code> — шире /16: в туннеле на шлюз приходится /16, сузь подсеть" in text, text
-    assert ("<code>10.241.0.0/24</code> — служебные адреса сервера AWG (<code>10.240.0.0/12</code>): выбери "
+    assert ("<code>10.241.0.0/24</code> — в служебном пространстве сервера AWG (<code>10.240.0.0/12</code>): выбери "
             "другую подсеть") in text, text
-    assert ("<code>10.10.1.0/24</code> — в туннеле пересеклась бы с <code>192.168.1.0/24</code>: у обеих "
-            "<code>10.240.1.0/24</code>; адреса в туннеле подсетей одного шлюза не должны пересекаться") in text, text
+    assert ("<code>10.10.1.0/24</code> — в туннеле пересеклась бы с <code>192.168.1.0/24</code> (у обеих "
+            "<code>10.240.1.0/24</code>): адреса в туннеле подсетей одного шлюза не должны пересекаться") in text, text
     for raw, kept, why in (("172.18.0.0/16", ["172.18.0.0/16"], ""),
                            ("192.168.0.0/22 10.0.2.0/24", ["192.168.0.0/22"],
-                            "<code>10.0.2.0/24</code> — в туннеле пересеклась бы с <code>192.168.0.0/22</code>: "
-                            "<code>10.240.2.0/24</code> внутри <code>10.240.0.0/22</code>"),
+                            "<code>10.0.2.0/24</code> — в туннеле пересеклась бы с <code>192.168.0.0/22</code> "
+                            "(<code>10.240.2.0/24</code> внутри <code>10.240.0.0/22</code>)"),
                            ("192.168.0.0/23 10.0.2.0/24", ["192.168.0.0/23", "10.0.2.0/24"], "")):
         st = FakeState()
         cb, nav = _acb(fake_bot)
@@ -753,12 +753,12 @@ async def test_the_lan_prompt_says_neighbours_only_when_the_networks_are_linked(
     from awgbot.bot import texts
     st = services.gateway_screen_state(1, lazy_ping=False)
     prompt, card = texts.gateway_lan_text(st), texts.gateway_card_text(st, st["states"])
-    assert "С твоих устройств в туннеле сеть видна" in prompt and "только твоим устройствам\n" in prompt + "\n"
+    assert "С твоих устройств в туннеле сеть открывается" in prompt and "только твоим устройствам\n" in prompt + "\n"
     assert "с твоих устройств в туннеле сеть открывается по адресам в туннеле: 192.168.1.10 → 10.240.1.10" in card
     services.db.gateway_update(2, lan_mode=1)
     st = services.gateway_screen_state(1, lazy_ping=False)
     prompt, card = texts.gateway_lan_text(st), texts.gateway_card_text(st, st["states"])
-    assert "С твоих устройств в туннеле и из подсетей других шлюзов сеть видна" in prompt
-    assert "Доступ через туннель — только твоим устройствам и сетям шлюзов с VPN-транзитом" in prompt
+    assert "С твоих устройств в туннеле и из подсетей других шлюзов сеть открывается" in prompt
+    assert "Доступ через туннель — только твоим устройствам и подсетям других шлюзов" in prompt
     assert "с твоих устройств в туннеле и из подсетей других шлюзов сеть открывается" in card
 

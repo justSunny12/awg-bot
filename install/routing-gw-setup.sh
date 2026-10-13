@@ -1503,7 +1503,7 @@ issued_check() {     # 1 — файл старее применённого (и 
     _have="$(tr -cd '0-9' < "$ISSUED_FILE" 2>/dev/null || true)"
     [ -n "$_have" ] && [ "$_bundle_issued" -lt "$_have" ] || return 0
     say "ОТКАЗ: файл конфигурации выпущен $(issued_when "$_bundle_issued") — старее применённого ($(issued_when "$_have"))."
-    say "Выпусти новый в боте сервера AWG; применить этот всё равно: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
+    say "Перевыпусти конфигурацию шлюза с сервера AWG; всё равно применить этот: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
     return 1
 }
 issued_record() {    # применённое — не старее метки этого файла

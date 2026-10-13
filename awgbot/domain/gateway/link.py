@@ -72,7 +72,7 @@ class LinkMixin:
                 checks.append(GwCheck(
                     "MASQUERADE/изоляция", ok,
                     "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
-                                   "не приходит — проверь 🔗 упр. канал в «🩺 Здоровье»" if self.server_cfg1() else
+                                   "не приходит — проверь «🔗 упр. канал» на главном экране бота шлюза" if self.server_cfg1() else
                                    f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
                                    "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
             else:
@@ -173,31 +173,33 @@ class LinkMixin:
         closed = "сам роутер подсетям других шлюзов не открыт"
         status = gwguard.script_status()
         if status.get("GW_STATUS") in ("foreign", "unconfirmed"):
-            return check(None, "шлюз слота не подтверждён: обвязку скрипт не ставил")
+            return check(None, "шлюз слота не подтверждён, обвязка не установлена")
         if "ROUTER" not in status:
             if gwguard.setup_script_has(self._ROUTER_MARK):
-                return check(False, f"обвязка от прежней версии: {closed} — агент перевыставит её", True)
-            return check(None, f"скрипт обвязки на шлюзе прежней версии: {closed}")
+                return check(False, "обвязка старого образца: сам роутер из подсетей других шлюзов недоступен; "
+                             "обвязка перевыставится в ближайшие минуты", True)
+            return check(None, "скрипт обвязки старого образца: сам роутер из подсетей других шлюзов не открыт — "
+                         "перевыпусти конфигурацию шлюза с сервера AWG")
         if not route.get("present"):
             return check(None, "маршрута по умолчанию нет: адрес роутера не узнать")
         have = sorted(info.get("router_masq", set()))
         via = route.get("via") or ""
         if not via:
             if have:
-                return check(False, f"у маршрута по умолчанию нет шлюза: правило к {have[0]} лишнее — "
-                             "агент перевыставит обвязку", True)
+                return check(False, f"у маршрута по умолчанию нет шлюза: правило к {have[0]} лишнее; "
+                             "обвязка перевыставится в ближайшие минуты", True)
             return check(None, f"адрес роутера не определён: у маршрута по умолчанию нет шлюза — {closed}")
         if not self._in_own_nets(via):
             if have:
-                return check(False, f"роутер вне локальной сети шлюза: правило к {have[0]} лишнее — "
-                             "агент перевыставит обвязку", True)
+                return check(False, f"роутер вне локальной сети шлюза: правило к {have[0]} лишнее; "
+                             "обвязка перевыставится в ближайшие минуты", True)
             return check(None, f"роутер вне локальной сети шлюза: {via} — {closed}")
         if have == [via]:
             return check(True, f"роутер {via}")
         if have:
-            return check(False, f"правило к {have[0]}, а роутер теперь {via} — агент перевыставит обвязку", True)
-        return check(False, f"правила нет: сам роутер {via} подсетям других шлюзов не открыт — "
-                     "агент перевыставит обвязку", True)
+            return check(False, f"правило к {have[0]}, а роутер теперь {via}; обвязка перевыставится в ближайшие минуты", True)
+        return check(False, f"правила нет: сам роутер {via} подсетям других шлюзов не открыт; "
+                     "обвязка перевыставится в ближайшие минуты", True)
 
     @staticmethod
     def _in_own_nets(addr: str) -> bool:

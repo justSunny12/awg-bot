@@ -968,7 +968,7 @@ lanmap_drop_for_older() {  # lanmap_drop_for_older DIR — поставка бе
     [[ -f "$1/awgbot/infra/routing/lanmap.py" ]] && return 0
     command -v nft >/dev/null 2>&1 || return 0
     if nft delete table inet awg_lan_map 2>/dev/null; then
-        ok "поставка без адресов в туннеле ($ver): таблица awg_lan_map снята — этот код её не знает"
+        ok "поставка без адресов в туннеле (v$ver): таблица awg_lan_map снята — текущая версия её не поддерживает"
     fi
     return 0
 }

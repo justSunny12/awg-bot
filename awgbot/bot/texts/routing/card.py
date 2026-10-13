@@ -249,15 +249,15 @@ def lan_space_lines(info: dict | None) -> list[str]:
         net = f"<code>{_e(it.get('net', ''))}</code>"
         # подсеть накрывает префикс соседа в туннеле: на шлюзе она пересеклась
         # бы с его AllowedIPs — конфиг линка не соберётся
-        link = ", и конфиг линка не соберётся (пересекается с адресами в туннеле соседа)" \
+        link = ", и конфиг линка не соберётся (пересекается с адресами в туннеле другого шлюза)" \
             if it.get("blocks_link") else ""
         if it.get("kind") == "space":
-            out.append(f"⚠️ {net} — в служебных адресах сервера AWG, в туннеле не видна{link}: смени подсеть "
+            out.append(f"⚠️ {net} — в служебном пространстве сервера AWG, в туннеле не видна{link}: смени подсеть "
                        "в «🗺 Подсети»")
         elif it.get("kind") == "clash":
             out.append(f"⚠️ {net} в туннеле (<code>{_e(it.get('twin', ''))}</code>) пересекается с "
-                       f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>), "
-                       "видна только первая: убери одну в «🗺 Подсети»")
+                       f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>) "
+                       "и не видна: убери одну из них в «🗺 Подсети»")
         elif it.get("kind") == "wide":
             out.append(f"⚠️ {net} шире /16, в туннеле не видна{link}: сузь подсеть в «🗺 Подсети»")
     return out

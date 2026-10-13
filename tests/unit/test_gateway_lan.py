@@ -526,13 +526,13 @@ def test_router_masquerade_matches_the_default_route(svc, monkeypatch):
 
 @pytest.mark.parametrize("have, route, detail", [
     (("192.168.1.1",), _route("192.168.1.254"),
-     "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент перевыставит обвязку"),
-    ((), _route(), "правила нет: сам роутер 192.168.1.1 подсетям других шлюзов не открыт — "
-                   "агент перевыставит обвязку"),
+     "правило к 192.168.1.1, а роутер теперь 192.168.1.254; обвязка перевыставится в ближайшие минуты"),
+    ((), _route(), "правила нет: сам роутер 192.168.1.1 подсетям других шлюзов не открыт; "
+                   "обвязка перевыставится в ближайшие минуты"),
     (("192.168.1.1",), _route(""),
-     "у маршрута по умолчанию нет шлюза: правило к 192.168.1.1 лишнее — агент перевыставит обвязку"),
+     "у маршрута по умолчанию нет шлюза: правило к 192.168.1.1 лишнее; обвязка перевыставится в ближайшие минуты"),
     (("192.168.1.1",), _route("10.0.0.1"),
-     "роутер вне локальной сети шлюза: правило к 192.168.1.1 лишнее — агент перевыставит обвязку"),
+     "роутер вне локальной сети шлюза: правило к 192.168.1.1 лишнее; обвязка перевыставится в ближайшие минуты"),
 ], ids=["moved", "missing", "default-without-via", "router-left-the-lan"])
 def test_router_masquerade_diverged_is_red_and_flags_a_reassert(svc, monkeypatch, have, route, detail):
     """Адрес роутера сменился (DHCP шлюза), правила нет, у маршрута по
@@ -575,7 +575,8 @@ def test_plumbing_from_the_previous_script_is_reasserted_once_the_new_copy_is_th
     только после прогона — флаг, агент перевыставит."""
     _router_env(monkeypatch, status={"GW_STATUS": "confirmed", "LAN_ADDR": "192.168.1.2"})
     c = svc._router_masq_check(_info(), _route())
-    assert (c.ok, c.detail) == (False, f"обвязка от прежней версии: {CLOSED} — агент перевыставит её")
+    assert (c.ok, c.detail) == (False, "обвязка старого образца: сам роутер из подсетей других шлюзов недоступен; "
+                                   "обвязка перевыставится в ближайшие минуты")
     assert _stale(svc) is True
 
 
@@ -584,7 +585,8 @@ def test_an_old_script_copy_is_unknown_and_not_reasserted(svc, monkeypatch):
     таблицу без правила — «не проверено», без флага."""
     _router_env(monkeypatch, status={"GW_STATUS": "confirmed"}, script_new=False)
     c = svc._router_masq_check(_info(), _route())
-    assert (c.ok, c.detail) == (None, f"скрипт обвязки на шлюзе прежней версии: {CLOSED}")
+    assert (c.ok, c.detail) == (None, "скрипт обвязки старого образца: сам роутер из подсетей других шлюзов не "
+                                  "открыт — перевыпусти конфигурацию шлюза с сервера AWG")
     assert _stale(svc) is False
 
 
@@ -594,7 +596,7 @@ def test_an_unconfirmed_gateway_is_unknown_and_not_reasserted(svc, monkeypatch, 
     до таблицы, и реассерт ничего не поставит: «не проверено», без флага."""
     _router_env(monkeypatch, status={"GW_STATUS": gw_status, "ROUTER": "192.168.1.1"})
     c = svc._router_masq_check(_info(), _route())
-    assert (c.ok, c.detail) == (None, "шлюз слота не подтверждён: обвязку скрипт не ставил")
+    assert (c.ok, c.detail) == (None, "шлюз слота не подтверждён, обвязка не установлена")
     assert _stale(svc) is False
 
 

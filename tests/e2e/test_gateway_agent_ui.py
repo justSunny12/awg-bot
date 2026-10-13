@@ -147,7 +147,7 @@ async def test_the_transit_screen_shows_the_tunnel_addresses_from_the_role(svc, 
     text = await _transit_text(svc, fake_bot, monkeypatch)
     lines = text.split("\n")
     at = next(i for i, ln in enumerate(lines) if ln.startswith("<code>end0</code>"))
-    assert lines[at + 1] == "в туннеле — <code>10.240.1.0/24</code>, <code>10.240.2.0/24</code>", lines
+    assert lines[at + 1] == "Адреса в туннеле — <code>10.240.1.0/24</code>, <code>10.240.2.0/24</code>", lines
     await _role(svc, monkeypatch)                                  # сервер старше 3.3.0
     assert svc.lan_virtual() == []
     assert "в туннеле —" not in await _transit_text(svc, fake_bot, monkeypatch)

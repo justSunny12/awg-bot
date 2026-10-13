@@ -231,15 +231,15 @@ async def test_transit_on_names_the_networks_it_will_be_linked_with(services, sl
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.gateway_set_lan_subnets(2, "192.168.70.0/24")
-    line = ("Сеть свяжется с сетями других шлюзов с VPN-транзитом (NASPi): их устройства смогут ходить сюда "
-            "по адресам в туннеле, а здешние — к ним. Только твои локальные сети")
+    line = ("↔️ Связь подсетей: устройства локальных подсетей шлюзов станут доступны из подсетей других шлюзов "
+            "со включённым VPN-транзитом (NASPi)")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
     assert line in _screen(nav)[0], _screen(nav)[0]
     services.gateway_set_lan_mode(1, False)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
-    assert "Сеть свяжется" not in _screen(nav)[0], _screen(nav)[0]
+    assert "↔️ Связь подсетей:" not in _screen(nav)[0], _screen(nav)[0]
 
 
 def _neighbour(services, monkeypatch):
@@ -547,10 +547,10 @@ async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services
     names = tail.split("конфигурацию: ")[-1] if "связи подсетей" in tail else ""
     if names:
         # сам слот без канала диалог уже просит перевыпустить — в список он не идёт
-        assert ("Агентам v3.2 подсети соседей доедут только файлом — после включения перевыпусти конфигурацию: "
-                + names) in dialog, dialog
+        assert ("Агенту шлюза v3.2 подсети других шлюзов доходят только с перевыпуском конфигурации — "
+                "после включения перевыпусти её: " + names) in dialog, dialog
     else:
-        assert "Агентам v3.2" not in dialog, dialog
+        assert "Агенту шлюза v3.2" not in dialog, dialog
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
     assert cb.answers == [(tail, True)], cb.answers

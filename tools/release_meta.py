@@ -88,7 +88,7 @@ def main(argv: list[str]) -> int:
     m = _schema()
     ap = argparse.ArgumentParser(prog="release_meta", description="метаданные релиза")
     ap.add_argument("--version", help="версия релиза (по умолчанию — awgbot/__version__.py)")
-    ap.add_argument("--main", help="минимум основного бота — релиз адресован ему (хотя бы один адресат)")
+    ap.add_argument("--main", help="минимум основного бота — релиз адресован ему")
     ap.add_argument("--gw", help="минимум агента шлюза — релиз адресован ему")
     ap.add_argument("--needs-gw", help="основному боту нужны шлюзы не ниже")
     ap.add_argument("--needs-main", help="агенту нужен сервер AWG не ниже")

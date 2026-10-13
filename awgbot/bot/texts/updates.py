@@ -154,10 +154,10 @@ def update_hold_line(h: dict) -> str:
     who = ", ".join(_e(n) for n in names[:_NAMES_SHOWN])
     if len(names) > _NAMES_SHOWN:
         who += f" и ещё {len(names) - _NAMES_SHOWN}"
-    return f"⏳ Проверяю шлюзы после перезапуска: жду {who} — до {until}"
+    return f"⏳ Жду связи со шлюзами после перезапуска: {who} — до {until}"
 
 
 def update_skipped_lines(skipped) -> list[str]:
     """Релизы, которые не рассматриваются: метаданные не прочитаны (О8)."""
     return [f"⚠️ {_e(_ver(tag))} пропущен: метаданные релиза не прочитаны — "
-            "проверю ещё раз при следующей проверке" for tag, _why in list(skipped or [])[:_NAMES_SHOWN]]
+            "попробую снова при следующей проверке обновлений" for tag, _why in list(skipped or [])[:_NAMES_SHOWN]]

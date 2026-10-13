@@ -312,7 +312,7 @@ class MarkMixin:
                     continue
                 if lanspace.in_space(net, space):
                     # на шлюзе её адреса совпали бы с адресами соседей в его AllowedIPs
-                    rejected.append((tok, f"служебные адреса сервера AWG ({space}): выбери другую подсеть"))
+                    rejected.append((tok, f"в служебном пространстве сервера AWG ({space}): выбери другую подсеть"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
                     # на шлюзе своя сеть одна: nft отвергает пересечения внутри
@@ -359,7 +359,7 @@ class MarkMixin:
             how = f"{a} внутри {b}"
         else:
             how = f"{b} внутри {a}"
-        return (f"в туннеле пересеклась бы с {other}: {how}; адреса в туннеле подсетей одного "
+        return (f"в туннеле пересеклась бы с {other} ({how}): адреса в туннеле подсетей одного "
                 "шлюза не должны пересекаться")
 
     def gateway_slots_policy(self) -> list[tuple[int, str]]:

@@ -93,7 +93,7 @@ def lan_virtual_line(virtual: list) -> str:
     """«в туннеле — 10.240.1.0/24»: как сеть видна снаружи шлюза; больше
     шести — «и ещё N»."""
     shown = ", ".join(f"<code>{_e(str(n))}</code>" for n in virtual[:6])
-    return f"в туннеле — {shown}" + (f" и ещё {len(virtual) - 6}" if len(virtual) > 6 else "")
+    return f"Адреса в туннеле — {shown}" + (f" и ещё {len(virtual) - 6}" if len(virtual) > 6 else "")
 
 
 def gateway_transit_ask_domain(kind: str) -> str:

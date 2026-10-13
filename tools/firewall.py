@@ -45,7 +45,7 @@ def _db_facts() -> tuple[list[str], list[str]]:
         finally:
             db.close()
     except Exception as e:                            # noqa: BLE001
-        print(f"[!] БД бота не прочитана ({e}) — set устройств админа пуст и транзит между "
+        print(f"[!] БД бота не прочитана ({e}) — список устройств админа пуст и транзит между "
               "линками закрыт до старта бота")
         return [], []
 

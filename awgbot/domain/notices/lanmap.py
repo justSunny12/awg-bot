@@ -63,7 +63,7 @@ def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], *, smb: bool,
                           for r, t in pairs[:limit])
         more = len(pairs) - limit
         lines.append(f" · {name}: {shown}" + (f" и ещё {more}" if more > 0 else ""))
-    tail = "Прежние адреса через туннель больше не работают"
+    tail = "Реальные адреса сетей через туннель больше не доступны, актуальные см. в «🛰 Шлюзы» → карточка шлюза"
     if smb:
         tail += "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
     if reissue:

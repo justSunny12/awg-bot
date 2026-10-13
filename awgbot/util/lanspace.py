@@ -244,7 +244,7 @@ def space_problem(space_net: NetLike, client_subnets: Iterable[str], link_nets: 
         except ValueError:
             continue
         if a in sp and a not in svc:
-            return f"{what} {a} внутри пространства {sp}, но вне служебных адресов {svc}"
+            return f"{what} {a} внутри служебного пространства {sp}, но вне служебных адресов {svc}"
     return ""
 
 

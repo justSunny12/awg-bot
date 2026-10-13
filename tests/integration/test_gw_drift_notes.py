@@ -373,7 +373,7 @@ def test_lan_subnets_take_only_the_three_private_ranges(services, fake_awg, fake
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     bad = {"8.8.8.0/24": "частная", "198.18.0.0/15": "частная", "192.0.2.0/24": "частная",
            "100.64.0.0/10": "частная", "127.0.0.0/8": "частная", "192.168.1.5/32": "один адрес",
-           "10.0.0.0/7": "частная", "10.0.0.0/8": "шире /16", "10.241.3.0/24": "служебные адреса сервера AWG"}
+           "10.0.0.0/7": "частная", "10.0.0.0/8": "шире /16", "10.241.3.0/24": "в служебном пространстве сервера AWG"}
     res = services.gateway_set_lan_subnets(1, "192.168.1.0/24 " + " ".join(bad))
     assert res["kept"] == ["192.168.1.0/24"]
     reasons = {tok: why for tok, why in res["rejected"]}
