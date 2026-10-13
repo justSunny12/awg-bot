@@ -22,8 +22,8 @@ SPACE = "10.240.0.0/12"
 PREFIXES = {1: "10.240.0.0/16", 2: "10.241.0.0/16"}
 SAME = [E(1, "awglink", "192.168.1.0/24", "10.240.1.0/24"), E(2, "awglink2", "192.168.1.0/24", "10.241.1.0/24")]
 
-# Эталон для двух слотов с одной и той же подсетью (концепт «адреса в туннеле»,
-# §4.2): пары в цепочке zone раньше одиночных, метка до перевода, перевод —
+# Эталон для двух слотов с одной и той же подсетью: пары в цепочке slot_zone
+# раньше одиночных, метка до перевода, перевод —
 # префиксом, guard — пространство и линк по метке.
 GOLDEN = """#!/usr/sbin/nft -f
 # awg-bot: адреса в туннеле для локальных сетей шлюзов (таблица awg_lan_map).
@@ -34,7 +34,7 @@ table inet awg_lan_map {
     set real1 { type ipv4_addr; flags interval; elements = { 192.168.1.0/24 } }
     set real2 { type ipv4_addr; flags interval; elements = { 192.168.1.0/24 } }
 
-    chain zone {
+    chain slot_zone {
         type filter hook prerouting priority raw; policy accept;
         iifname != { "awglink", "awglink2" } ip daddr != 10.240.0.0/12 accept
         fib daddr type local accept
@@ -46,24 +46,24 @@ table inet awg_lan_map {
         ip daddr 10.241.0.0/16 ct zone set 3 accept
     }
 
-    chain mark {
+    chain slot_mark {
         type filter hook prerouting priority mangle; policy accept;
         ip daddr 10.240.0.0/16 meta mark set meta mark or 0x2
         ip daddr 10.241.0.0/16 meta mark set meta mark or 0x4
     }
 
-    chain dstnat {
+    chain twin_dnat {
         type nat hook prerouting priority dstnat - 10; policy accept;
         dnat ip prefix to ip daddr map { 10.240.1.0/24 : 192.168.1.0/24, 10.241.1.0/24 : 192.168.1.0/24 }
     }
 
-    chain srcnat {
+    chain twin_snat {
         type nat hook postrouting priority srcnat - 10; policy accept;
         iifname "awglink" snat ip prefix to ip saddr map { 192.168.1.0/24 : 10.240.1.0/24 }
         iifname "awglink2" snat ip prefix to ip saddr map { 192.168.1.0/24 : 10.241.1.0/24 }
     }
 
-    chain guard {
+    chain twin_guard {
         type filter hook forward priority filter - 10; policy accept;
         ip daddr 10.240.0.0/12 drop
         meta mark and 0x2 == 0x2 oifname != "awglink" drop
@@ -190,3 +190,24 @@ def test_no_nft_on_the_host_is_unavailable_not_a_failure(monkeypatch):
     with pytest.raises(routing.RoutingUnavailable, match="nft не найден"):
         lanmap.present()
 
+
+
+# имена цепочек, проверенные живым nft старых выпусков (таблица awg_bot_guard с 3.2.1)
+_KNOWN_CHAINS = {"input", "forward", "postrouting", "prerouting", "output"}
+
+
+def test_chain_names_are_not_nft_keywords():
+    """«chain mark {» nft 1.0.2 (Ubuntu 22.04) отвергает синтаксической
+    ошибкой — «mark», «dstnat», «srcnat» у него ключевые слова, и таблица не
+    ставится вовсе. Локально nft нет, поэтому правило — формой, по всем
+    генераторам nft (код и скрипты поставки): имя цепочки либо из
+    проверенных живьём, либо с «_» (ключевых слов с подчёркиванием у nft нет)."""
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[2]
+    files = [*root.joinpath("awgbot").rglob("*.py"), *root.joinpath("install").glob("*.sh"), root / "awg-bot.sh"]
+    names = {(f.name, m) for f in files
+             for m in re.findall(r"\bchain ([A-Za-z][\w-]*) \{", f.read_text(encoding="utf-8"))}
+    assert ("lanmap.py", "slot_mark") in names, "генератор awg_lan_map не найден — тест ничего не проверяет"
+    bad = sorted((f, n) for f, n in names if n not in _KNOWN_CHAINS and "_" not in n)
+    assert not bad, bad

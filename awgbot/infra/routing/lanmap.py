@@ -71,7 +71,10 @@ def _by_slot(entries: Iterable[Entry]) -> dict[int, tuple[str, list[Entry]]]:
 def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> str:
     """Полный текст таблицы; записей нет — пусто (таблицы быть не должно).
     prefixes — {слот: его /16 в туннеле}, space — всё пространство (guard).
-    Порядок правил цепочки zone важен: каждое завершает цепочку (accept),
+    Имена цепочек — не ключевые слова nft: «mark» (и «dstnat»/«srcnat») nft
+    1.0.x (Ubuntu 22.04) не принимает именем цепочки — синтаксическая ошибка,
+    таблица не ставится.
+    Порядок правил цепочки slot_zone важен: каждое завершает цепочку (accept),
     поэтому сначала пары «сеть слота A → адреса слота B», потом «из сети
     слота», потом «в адреса слота»."""
     slots = _by_slot(entries)
@@ -90,7 +93,7 @@ def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> st
         nets = ", ".join(e.real for e in slots[sid][1])
         out.append(f"    set real{sid} {{ type ipv4_addr; flags interval; elements = {{ {nets} }} }}")
     links = "{ " + ", ".join(f'"{slots[sid][0]}"' for sid in ids) + " }"
-    out += ["", "    chain zone {",
+    out += ["", "    chain slot_zone {",
             "        type filter hook prerouting priority raw; policy accept;",
             # весь прочий трафик — не из линков слотов и не в пространство —
             # уходит первым же правилом: цепочка стоит на каждом пакете хоста
@@ -105,21 +108,21 @@ def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> st
         out.append(f'        iifname "{slots[a][0]}" ip saddr @real{a} ct zone set {zone(a, 0)} accept')
     for b in ids:
         out.append(f"        ip daddr {prefixes[b]} ct zone set {zone(0, b)} accept")
-    out += ["    }", "", "    chain mark {",
+    out += ["    }", "", "    chain slot_mark {",
             "        type filter hook prerouting priority mangle; policy accept;"]
     for sid in ids:
         out.append(f"        ip daddr {prefixes[sid]} meta mark set meta mark or 0x{slot_mark(sid):x}")
     pairs = ", ".join(f"{e.twin} : {e.real}" for sid in ids for e in slots[sid][1])
-    out += ["    }", "", "    chain dstnat {",
+    out += ["    }", "", "    chain twin_dnat {",
             "        type nat hook prerouting priority dstnat - 10; policy accept;",
             f"        dnat ip prefix to ip daddr map {{ {pairs} }}",
-            "    }", "", "    chain srcnat {",
+            "    }", "", "    chain twin_snat {",
             "        type nat hook postrouting priority srcnat - 10; policy accept;"]
     for sid in ids:
         link, items = slots[sid]
         back = ", ".join(f"{e.real} : {e.twin}" for e in items)
         out.append(f'        iifname "{link}" snat ip prefix to ip saddr map {{ {back} }}')
-    out += ["    }", "", "    chain guard {",
+    out += ["    }", "", "    chain twin_guard {",
             "        type filter hook forward priority filter - 10; policy accept;",
             f"        ip daddr {space} drop"]
     for sid in ids:

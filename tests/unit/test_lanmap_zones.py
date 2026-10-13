@@ -55,7 +55,7 @@ def _sets(text: str) -> dict[str, list]:
 
 
 def _zone_rules(text: str) -> list[str]:
-    body = text.split("chain zone {", 1)[1].split("\n    }", 1)[0]
+    body = text.split("chain slot_zone {", 1)[1].split("\n    }", 1)[0]
     return [ln.strip() for ln in body.splitlines()[2:] if ln.strip()]
 
 
