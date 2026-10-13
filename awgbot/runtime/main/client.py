@@ -251,6 +251,11 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("адреса в туннеле на старте: %s", e)
         try:
+            # разово после обновления: перевыпуск конфигов устройств админа
+            await pkg.send_notifications(bot, await asyncio.to_thread(services.admin_reissue_announce))
+        except Exception as e:                           # noqa: BLE001
+            log.warning("совет о перевыпуске конфигов админа: %s", e)
+        try:
             scheduler.start()
         except Exception as e:                           # noqa: BLE001
             log.warning("планировщик не запущен: %s", e)

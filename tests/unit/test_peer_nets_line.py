@@ -87,10 +87,10 @@ def test_the_announcement_with_fifteen_slots_fits_telegram():
     from awgbot.domain.notices.lanmap import lan_space_moved
     rows = [(f"<a href=\"https://t.me/b?start=gw-{sid}\">Шлюз-{sid:02d}-{'Ж' * 20} ({'Л' * 20})</a>",
              [(f"192.168.{i}.0/24", f"10.{239 + sid}.{i}.0/24") for i in range(64)]) for sid in range(1, 16)]
-    text = lan_space_moved(rows, smb=True, reissue=True)
+    text = lan_space_moved(rows, smb=True)
     assert "и ещё 61" in text
     assert len(plain_text(text)) <= TG_MAX, len(plain_text(text))
-    assert "и ещё 58" in lan_space_moved(rows[:2], smb=False, reissue=False)
+    assert "и ещё 58" in lan_space_moved(rows[:2], smb=False)
 
 
 def test_nine_slots_and_more_show_up_to_three_addresses_each():

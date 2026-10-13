@@ -135,6 +135,25 @@ class LanMapSyncMixin:
         except routing.RoutingError as e:
             log.warning("адреса в туннеле: прежние маршруты подсетей не сняты: %s", e)
 
+    _ADMIN_REISSUE_KEY = "admin_reissue_announced"   # «перевыпусти конфиги устройств админа» сказано
+
+    def admin_reissue_announce(self) -> list[Notification]:
+        """Разово на старте после обновления на 3.3.0: конфиги устройств админа,
+        выданные раньше, не знают резолвера админа (имена SMB) и — при
+        раздельном туннеле — пространства адресов в туннеле; какие именно,
+        бот не помнит, поэтому совет — всем. Ключ — по доставке; у админа нет
+        устройств (новая установка) — сказать некому, ключ сразу."""
+        from awgbot.domain.notices.updates import admin_reissue_advice
+        if self.db.get_state(self._ADMIN_REISSUE_KEY) == "1":
+            return []
+        admin = self.db.get_client_by_tg(config.ADMIN_ID) if config.ADMIN_ID else None
+        devices = [d for d in self.db.list_devices(admin.id) if not d.is_gateway] if admin else []
+        if not devices:
+            self.db.set_state(self._ADMIN_REISSUE_KEY, "1")
+            return []
+        return [Notification(config.ADMIN_ID, admin_reissue_advice(),
+                             on_sent=lambda: self.db.set_state(self._ADMIN_REISSUE_KEY, "1"))]
+
     def lan_map_startup(self) -> list[Notification]:
         """Старт бота: таблицы слотов и awg_lan_map — на место до первого такта;
         прежние маршруты настоящих подсетей — прочь только при стоящей
@@ -149,8 +168,8 @@ class LanMapSyncMixin:
         """Один раз после обновления, без звука, одним сообщением:
         — локальные сети шлюзов теперь открываются по адресам в туннеле (если у
           слотов есть подсети; «имена SMB уже ведут на новые» — только при
-          стоящих записях SMB; «импортируй заново» — только если строка
-          пространства реально дописывается в конфиг админа), ключ
+          стоящих записях SMB; о перевыпуске конфигов админа — отдельное
+          разовое уведомление, admin_reissue_announce), ключ
           lan_space_announced;
         — прежний тумблер связи подсетей был выключен, а слотов с VPN-транзитом
           два и больше — их сети теперь связаны без вопроса, ключ
@@ -158,7 +177,6 @@ class LanMapSyncMixin:
         Ключ взводится по факту доставки; сказать нечего — сразу (новая
         установка без слотов). Пока адреса в туннеле выключены или таблица не
         встала — молчит и ключей не взводит: сказать «открываются» нечего."""
-        from awgbot.domain import configgen
         from awgbot.domain.notices.lanmap import lan_peers_joined, lan_space_moved
         if self.lan_space_problem():
             return []
@@ -171,8 +189,7 @@ class LanMapSyncMixin:
         if self.db.get_state(self._LAN_SPACE_ANNOUNCED_KEY) != "1":
             if rows:
                 smb = any(self.smb_tunnel_slot(g) for g in gateways)
-                reissue = bool(configgen.extra_needed([str(lanspace.space())]))
-                parts.append(lan_space_moved(rows, smb=smb, reissue=reissue))
+                parts.append(lan_space_moved(rows, smb=smb))
                 keys.append(self._LAN_SPACE_ANNOUNCED_KEY)
             else:
                 self.db.set_state(self._LAN_SPACE_ANNOUNCED_KEY, "1")

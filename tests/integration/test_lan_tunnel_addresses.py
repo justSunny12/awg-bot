@@ -222,14 +222,12 @@ MOVED = ("🗺 Локальные сети шлюзов теперь откры�
          " · Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
          "Реальные адреса сетей через туннель больше не доступны")
 SMB = "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
-REISSUE = (". На твоих устройствах с раздельным туннелем, выданных раньше, импортируй конфиг заново "
-           "(🔗 Ссылка, 🔳 QR или 📄 Файл в карточке устройства), чтобы адреса в туннеле работали и там")
 LINKED = "Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
 
 
 @pytest.mark.parametrize("allowed, smb, was_on, transit, text", [
     ("0.0.0.0/0, ::/0", False, True, (1, 1), MOVED),                 # полный туннель, записей SMB нет
-    ("10.8.1.0/24", True, True, (1, 0), MOVED + SMB + REISSUE),      # раздельный — строка пространства дописывается
+    ("10.8.1.0/24", True, True, (1, 0), MOVED + SMB),                # раздельный — о перевыпуске отдельным уведомлением
     ("10.0.0.0/8", False, True, (1, 0), MOVED),                      # раздельный, но пространство покрыто
     ("0.0.0.0/0, ::/0", True, False, (1, 1), MOVED + SMB + "\n\n" + LINKED),   # тумблер был выключен, два транзита
     ("0.0.0.0/0, ::/0", False, False, (1, 0), MOVED),                # транзит у одного — связывать не с кем
@@ -237,9 +235,8 @@ LINKED = "Связь подсетей теперь часть VPN-транзит
 def test_the_announcement_after_the_update_is_said_once_and_quietly(two, monkeypatch, allowed, smb, was_on,
                                                                      transit, text):
     """Одно сообщение без звука: сети шлюзов теперь открываются по адресам в
-    туннеле («имена SMB уже ведут на новые» — только при стоящих записях SMB,
-    «импортируй заново» — только если строка пространства реально
-    дописывается в конфиг админа) и, если прежний тумблер был выключен, а
+    туннеле («имена SMB уже ведут на новые» — только при стоящих записях SMB)
+    и, если прежний тумблер был выключен, а
     транзитов два, — что их сети связаны (мёртвый ключ читается ровно здесь).
     Не доставлено — скажется на следующем старте; доставлено — больше никогда."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
@@ -309,3 +306,24 @@ def test_an_empty_table_looks_into_the_kernel_only_once_and_a_missing_nft_is_no_
     assert two.lan_map_ensure() is True and not two.db.get_state("lanmap_error")
     two.lan_map_ensure(); two.lan_map_ensure()
     assert looks == [1], "в ядро смотрели не только на первой сверке"
+
+
+def test_the_admin_is_advised_once_to_reissue_their_device_configs(two):
+    """Конфиги устройств админа, выданные до обновления, не знают резолвера
+    админа и пространства адресов в туннеле — совет перевыпустить один раз,
+    ключ по доставке. Шлюзовые устройства не в счёт: у админа только они —
+    совета нет, ключ сразу (как и на новой установке)."""
+    assert two.admin_reissue_announce() == []
+    assert two.db.get_state("admin_reissue_announced") == "1"
+    two.db.set_state("admin_reissue_announced", "")
+    admin = two.db.get_client_by_tg(ADMIN)
+    two.add_device(admin.id, "Mac")
+    notes = two.admin_reissue_announce()
+    assert len(notes) == 1 and notes[0].tg_id == ADMIN, notes
+    assert notes[0].text == (
+        "Для корректной работы нового функционала (доступ к SMB-шарам в туннеле, зеркала локальных подсетей — см. "
+        '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">список изменений</a>) рекомендуется '
+        "перевыпуск конфигов устройств администратора (🔗 Ссылка, 🔳 QR или 📄 Файл)")
+    assert two.admin_reissue_announce() != [], "не доставлено — скажется на следующем старте"
+    notes[0].on_sent()
+    assert two.admin_reissue_announce() == []
