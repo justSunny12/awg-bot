@@ -333,7 +333,7 @@ class StatusMixin:
                 return [Notification(
                     config.ADMIN_ID,
                     f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
-                    "Требуется вмешательство.",
+                    "Требуется вмешательство",
                     force_sound=True, critical=True)]
         return []
 
@@ -403,8 +403,8 @@ class StatusMixin:
                 self.db, (f"res_hi_{key}", f"res_lo_{key}", f"res_alert_{key}"),
                 bad=value >= threshold, streak=streak_n,
                 on_text=(f"⚠️ {icon} Высокая загрузка: {label} {value:.0f}% "
-                         f"(порог {threshold}%, держится ≥{streak_n} замеров)."),
-                off_text=f"✅ {icon} {label} вернулся в норму: {value:.0f}% (ниже порога {threshold}%).",
+                         f"(порог {threshold}%, держится ≥{streak_n} замеров)"),
+                off_text=f"✅ {icon} {label} вернулся в норму: {value:.0f}% (ниже порога {threshold}%)",
                 critical=True)
         return notes
 

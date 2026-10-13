@@ -253,13 +253,13 @@ class FirewallMixin:
             settings.set_value("app.network.ssh_port", int(d["listening"]))
             who = "OMV" if owner.kind == "omv" else "другой процесс"
             return [Notification(config.ADMIN_ID,
-                                 f"🛡 Порт SSH на сервере изменился: {d['conf']} → {d['listening']} "
+                                 f"🛡 Порт SSH на сервере изменился: <code>{d['conf']}</code> → <code>{d['listening']}</code> "
                                  f"(задал {who}). Фильтр переведён на новый порт. Если снаружи стоит "
-                                 "файервол провайдера — открой в нём новый порт.", critical=False)]
+                                 "файервол провайдера — открой в нём новый порт", critical=False)]
         return [Notification(config.ADMIN_ID,
-                             f"⚠️ sshd слушает порт {d['listening']}, а фильтр держит {d['conf']} — вход "
-                             f"снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {d['listening']} "
-                             f"или верни sshd на {d['conf']}.", critical=True)]
+                             f"⚠️ <code>sshd</code> слушает порт <code>{d['listening']}</code>, а фильтр держит "
+                             f"<code>{d['conf']}</code> — вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → "
+                             f"<code>{d['listening']}</code> или верни <code>sshd</code> на <code>{d['conf']}</code>", critical=True)]
 
     def retire_legacy_ssh_gate(self) -> None:
         """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —

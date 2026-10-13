@@ -392,14 +392,14 @@ class GwSshMixin:
                             self.invalidate_ssh_static()  # порт сменил, возможно, новый владелец
                             owner = sshd.owner()
                             who = (f" (задал {'OMV' if owner.kind == 'omv' else 'другой процесс'})"
-                                   if owner else " — sshd_config правили мимо бота")
+                                   if owner else " — <code>sshd_config</code> правили мимо бота")
                             tail = ("Фильтр переведён на новый порт: из туннеля, из локальной сети "
-                                    "и снаружи." if ok else
+                                    "и снаружи" if ok else
                                     "Таблицу перевыставить не удалось — повторю через несколько минут; "
-                                    "пока сервер по линку стучится в старый порт.")
+                                    "пока сервер по линку стучится в старый порт")
                             notes.append(Notification(
                                 config.ADMIN_ID,
-                                f"🛡 Порт SSH на шлюзе изменился: {cur} → {port}{who}. {tail}",
+                                f"🛡 Порт SSH на шлюзе изменился: <code>{cur}</code> → <code>{port}</code>{who}. {tail}",
                                 critical=False))
                         self.db.set_state(self._SSH_PORT_SEEN_KEY, str(port))
                 else:

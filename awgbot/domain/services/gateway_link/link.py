@@ -89,8 +89,9 @@ class LinkScriptMixin:
                 log.info("gateway: порт линка слота %s изменён руками на %s (согласован %s)", g.id, port, g.link_port)
                 notes.append(Notification(
                     config.ADMIN_ID,
-                    f"🛰 {self._gw_link(g)}: порт линка изменён руками на {port} (был {g.link_port}) — шлюз о нём "
-                    "не узнает, линк не поднимется. Конфиг линка ведёт бот, ручная правка не поддерживается: "
+                    f"🛰 {self._gw_link(g)}: порт линка изменён руками на <code>{port}</code> "
+                    f"(был <code>{g.link_port}</code>) — шлюз о нём не узнает, линк не поднимется. "
+                    "Конфиг линка ведёт бот, ручная правка не поддерживается: "
                     f"верни <code>ListenPort = {g.link_port}</code> в <code>{g.link_if}.conf</code>"))
                 continue
             self.db.gateway_update(g.id, link_port=port)
@@ -98,7 +99,7 @@ class LinkScriptMixin:
             log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 {self._gw_link(g)}: порт линка изменён на {port} (был {g.link_port}) — "
+                f"🛰 {self._gw_link(g)}: порт линка изменён на <code>{port}</code> (был <code>{g.link_port}</code>) — "
                 f"шлюз не знает. {self._gw_reissue_link(g)} конфигурацию шлюза, "
                 "иначе линк не поднимется", action=("gwcfg", int(g.id))))
         if changed:

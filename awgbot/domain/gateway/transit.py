@@ -363,5 +363,5 @@ class TransitMixin:
                                  "⚠️ Списки локальной сети не обновились дважды подряд: "
                                  + (html.escape(tail, quote=False) or "без подробностей")
                                  + "\nФиды — через аплинк; проверь "
-                                 "🩺 Здоровье.", critical=False)]
+                                 "🩺 Здоровье", critical=False)]
         return []

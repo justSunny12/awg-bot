@@ -18,21 +18,21 @@ from awgbot.domain.services.base import _e
 
 def _friend_blocked_text(device_name: str) -> str:
     return (f"🔴 Доступ к устройству «{_e(device_name)}» приостановлен: "
-            "у владельца доступа закончилась подписка.")
+            "у владельца доступа закончилась подписка")
 
 
 def _friend_unblocked_text(device_name: str) -> str:
-    return f"🟢 Доступ к устройству «{_e(device_name)}» снова активен."
+    return f"🟢 Доступ к устройству «{_e(device_name)}» снова активен"
 
 
 # Держателю при РУЧНОЙ блокировке — кто и что: не «закончилась подписка»
 def _friend_manual_blocked_text(device_name: str, by_admin: bool = False) -> str:
     who = "администратором" if by_admin else "владельцем"
-    return f"🛑 Доступ к устройству «{_e(device_name)}» приостановлен {who}."
+    return f"🛑 Доступ к устройству «{_e(device_name)}» приостановлен {who}"
 
 
 def _friend_manual_unblocked_text(device_name: str) -> str:
-    return f"🟢 Доступ к устройству «{_e(device_name)}» восстановлен."
+    return f"🟢 Доступ к устройству «{_e(device_name)}» восстановлен"
 
 
 def _skip_actor(notes: list, actor_tg) -> list:
@@ -43,21 +43,21 @@ def _skip_actor(notes: list, actor_tg) -> list:
 # ── Тексты ручных блокировок (админ/клиент) ──────────────────────────────────
 
 def _manual_device_blocked_client(name: str) -> str:
-    return f"🛑 Устройство «{_e(name)}» заблокировано."
+    return f"🛑 Устройство «{_e(name)}» заблокировано"
 
 
 def _manual_device_unblocked_client(name: str) -> str:
-    return f"🟢 Устройство «{_e(name)}» разблокировано."
+    return f"🟢 Устройство «{_e(name)}» разблокировано"
 
 
 # Клиенту сообщаем о его же блокировке — имя не подставляем (адресат и есть
 # субъект), поэтому текст без параметров.
 def _manual_client_blocked() -> str:
-    return "🛑 Твой доступ приостановлен администратором."
+    return "🛑 Твой доступ приостановлен администратором"
 
 
 def _manual_client_unblocked() -> str:
-    return "🟢 Твой доступ восстановлен."
+    return "🟢 Твой доступ восстановлен"
 
 log = logging.getLogger("awgbot.services")
 

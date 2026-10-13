@@ -394,7 +394,7 @@
 ### adm.dev.block.do — блок с уведомлением
 > press bl:dev:block:3:notified:-1
 + send #1 → чат tg 2001
-🛑 Устройство «Телефон» заблокировано.
+🛑 Устройство «Телефон» заблокировано
   [Скрыть | hd]
 = edit #1
 ⛔ <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
@@ -411,7 +411,7 @@
 ### adm.dev.unblock — разблок одной причины — сразу
 > press bl:dev:menu_unblock:3::-1
 + send #1 → чат tg 2001
-🟢 Устройство «Телефон» разблокировано.
+🟢 Устройство «Телефон» разблокировано
   [Скрыть | hd]
 = edit #1
 🟢 <b>Телефон</b> · <code>10.8.1.4</code> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
@@ -1058,7 +1058,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.cl.block.do — профиль заблокирован с паузой
 > press bl:cli:block:3:notified:0
 + send #1 → чат tg 2001
-🛑 Твой доступ приостановлен администратором.
+🛑 Твой доступ приостановлен администратором
   [Скрыть | hd]
 = edit #1
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
@@ -3832,7 +3832,7 @@ IMAP и SMTP отвечают, вход выполнен
 > call report_update_result
 - delete #30
 + send #2
-⚠️ Обновление до v1.3.0 не применилось — версия осталась v1.2.3. Смотри журнал: journalctl -u awg-bot-selfupdate*
+⚠️ Обновление до v1.3.0 не применилось — версия осталась v1.2.3. Смотри журнал: <code>journalctl -u awg-bot-selfupdate*</code>
   [⬅️ В меню | upd:menu]
 
 ### adm.ev.restarted — бот вернулся после перезапуска

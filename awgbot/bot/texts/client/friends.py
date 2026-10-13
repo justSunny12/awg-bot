@@ -43,22 +43,22 @@ def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
     now = (f"Теперь у тебя {used} из {limit} устройств" if limit
            else f"Теперь у тебя {_n_devices(used)}")
     return (f"Устройство «{_e(dev.name)}», ранее переданное "
-            f"{holder_link(dev)}, удалено по его запросу.\n{now}.")
+            f"{holder_link(dev)}, удалено по его запросу.\n{now}")
 
 
 def lent_device_deleted_by_admin_notice(dev) -> str:
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено администратором — "
-            "доступ по нему больше не работает.")
+            "доступ по нему больше не работает")
 
 
 def lent_device_reassigned_notice(name: str) -> str:
     return (f"Устройство «{_e(name)}», которым ты управлял, перенесено в другой профиль "
-            "администратором — доступ по нему у тебя больше не работает.")
+            "администратором — доступ по нему у тебя больше не работает")
 
 
 def lent_device_deleted_by_owner_notice(dev) -> str:
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено владельцем "
-            f"({owner_link(dev)}) — доступ по нему больше не работает.")
+            f"({owner_link(dev)}) — доступ по нему больше не работает")
 
 
 def _names_list(names: list) -> str:
@@ -110,12 +110,12 @@ def guest_upgraded_donor_notice(moved: list, holder, used: int, limit: int) -> s
     return (f"📤 {'Устройство' if one else 'Устройства'} {_names_list(names)} "
             f"{'перешло' if one else 'перешли'} к {client_link(holder)} — он активировал "
             f"собственную подписку, и {'устройство переехало' if one else 'устройства переехали'} "
-            f"в его профиль. {now}.")
+            f"в его профиль. {now}")
 
 
 def guest_upgraded_admin_tail(donor, moved: list, limit: int) -> str:
     return (f"\nПеренесено переданных устройств: {len(moved)} (от {_e(donor.name)}), "
-            f"лимит подписки {limit if limit else 'без ограничения'}.")
+            f"лимит подписки {limit if limit else 'без ограничения'}")
 
 
 FRIEND_ALREADY_USER = (
@@ -129,7 +129,7 @@ def friend_activated(device_name: str) -> str:
 
 
 def friend_activated_host_notice(device_name: str, who: str) -> str:
-    return f"👤 Друг ({_e(who)}) активировал устройство «{_e(device_name)}»."
+    return f"👤 Друг ({_e(who)}) активировал устройство «{_e(device_name)}»"
 
 
 # ── пояснения к выдаче (в одном сообщении с содержимым) ──────────────────────

@@ -39,11 +39,11 @@ def _pause_auto_ended_client(actual_days: int, new_end) -> str:
 
 def _pause_friend_started(device_name: str) -> str:
     return (f"⏸ Доступ к устройству «{_e(device_name)}» приостановлен владельцем "
-            "(подписка на паузе).")
+            "(подписка на паузе)")
 
 
 def _pause_friend_ended(device_name: str) -> str:
-    return f"▶️ Доступ к устройству «{_e(device_name)}» снова активен."
+    return f"▶️ Доступ к устройству «{_e(device_name)}» снова активен"
 
 
 class SubscriptionMixin:

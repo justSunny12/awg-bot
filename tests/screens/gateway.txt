@@ -3586,7 +3586,7 @@ routing-gw-setup.sh: аплинк &lt;awg1&gt; не поднялся — отк�
 > call report_update_result
 - delete #1
 + send #2
-⚠️ Обновление до v1.2.4 не применилось — версия осталась v1.2.3. Смотри журнал: journalctl -u awg-bot-selfupdate*
+⚠️ Обновление до v1.2.4 не применилось — версия осталась v1.2.3. Смотри журнал: <code>journalctl -u awg-bot-selfupdate*</code>
   [⬅️ В меню | upd:menu]
 
 ### gw.event.restored — восстановлено из копии

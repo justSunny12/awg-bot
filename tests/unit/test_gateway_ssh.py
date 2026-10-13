@@ -92,7 +92,7 @@ def test_port_changed_by_omv_moves_the_table_and_notifies_once(svc, host):
     assert gwguard.read_env()["SSH_PORT"] == "2222"
     assert ("reassert",) in host.acts
     assert host.table_ports == {"tunnel_in": 2222, "input": 2222}, "все правила про SSH на новом порту"
-    assert len(notes) == 1 and "22 → 2222" in notes[0].text and "OMV" in notes[0].text
+    assert len(notes) == 1 and "<code>22</code> → <code>2222</code>" in notes[0].text and "OMV" in notes[0].text
     assert notes[0].critical is False
     host.acts.clear()
     assert svc.ssh_reconcile(host.info()) == [] and ("reassert",) not in host.acts

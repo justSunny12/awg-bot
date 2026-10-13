@@ -67,7 +67,7 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
                                    guest, services)
     owner_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 8106]
     assert owner_msgs == ['Устройство «A», ранее переданное <a href="tg://user?id=98106">Артём</a>, '
-                          'удалено по его запросу.\nТеперь у тебя 1 из 3 устройств.']
+                          'удалено по его запросу.\nТеперь у тебя 1 из 3 устройств']
     # последнее — профиль остаётся
     cb, nav = _cb(fake_bot, 98106)
     await fh.friend_delete_confirm(cb, DelDeviceCB(device_id=b.device_id, stage="confirm"),

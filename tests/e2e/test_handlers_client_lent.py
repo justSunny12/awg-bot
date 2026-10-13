@@ -34,7 +34,7 @@ async def test_owner_delete_of_lent_device_notifies_holder(services, fake_bot, m
                                    owner, services)
     holder_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 97101]
     assert holder_msgs == ['Устройство «Ноут», которым ты управлял, удалено владельцем '
-                           '(<a href="tg://user?id=7101">Вася</a>) — доступ по нему больше не работает.']
+                           '(<a href="tg://user?id=7101">Вася</a>) — доступ по нему больше не работает']
     assert services.db.get_client_by_tg(97101) is not None, "профиль гостя не терминируется"
 
 

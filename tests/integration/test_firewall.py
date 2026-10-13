@@ -263,7 +263,7 @@ def test_port_drift_warns_once_when_the_bot_owns_the_config(services, fw, sshd_o
     assert services.ssh_port_drift_notes() == [], "фильтр выключен — никакой порт не заперт, тревога ложная"
     store["app.firewall.enabled"] = True
     notes = services.ssh_port_drift_notes()
-    assert len(notes) == 1 and "слушает порт 2222" in notes[0].text and "держит 22" in notes[0].text
+    assert len(notes) == 1 and "слушает порт <code>2222</code>" in notes[0].text and "держит <code>22</code>" in notes[0].text
     assert notes[0].critical is True
     assert store["app.network.ssh_port"] == 22, "не следуем"
     assert services.ssh_port_drift_notes() == [], "второй тик молчит"
@@ -283,7 +283,7 @@ def test_port_drift_is_followed_when_a_foreign_owner_sets_it(services, fw, sshd_
     sshd_owner_fake["owner"] = sshd.SshdOwner("generator", "", None, "managed by ansible", ["/etc/ssh/sshd_config"])
     sshd_owner_fake["listening"] = [2222]
     notes = services.ssh_port_drift_notes()
-    assert len(notes) == 1 and "22 → 2222" in notes[0].text and "другой процесс" in notes[0].text
+    assert len(notes) == 1 and "<code>22</code> → <code>2222</code>" in notes[0].text and "другой процесс" in notes[0].text
     assert store["app.network.ssh_port"] == 2222, "чужой владелец — следуем, как агент"
     assert notes[0].critical is False
 

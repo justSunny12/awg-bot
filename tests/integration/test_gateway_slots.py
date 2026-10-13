@@ -686,14 +686,14 @@ def test_a_hand_changed_port_of_a_channel_managed_link_asks_to_put_it_back(
     assert refreshed == [], "файервол перерисован под ручной порт"
     assert len(notes) == 1, [n.text for n in notes]
     text = notes[0].text
-    assert "изменён руками на 443 (был 47231)" in text, text
+    assert "изменён руками на <code>443</code> (был <code>47231</code>)" in text, text
     assert "верни <code>ListenPort = 47231</code> в <code>awglink.conf</code>" in text, text
     assert "Перевыпусти" not in text and "перевыпусти" not in text, "агенту с документом — совет перевыпуска"
     assert not notes[0].action, "под Н8 кнопка перевыпуска — она ничего не довезёт"
     assert services.gateway_sync_link_ports() == [], "второй раз — тишина"
     (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 8443\n")
     again = services.gateway_sync_link_ports()
-    assert len(again) == 1 and "изменён руками на 8443 (был 47231)" in again[0].text, [n.text for n in again]
+    assert len(again) == 1 and "изменён руками на <code>8443</code> (был <code>47231</code>)" in again[0].text, [n.text for n in again]
     assert services.db.gateway(1).link_port == 47231 and refreshed == []
 
 
