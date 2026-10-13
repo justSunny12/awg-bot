@@ -660,20 +660,30 @@ def test_a_diverged_router_masquerade_is_reasserted_at_most_every_ten_minutes(sv
     assert calls == [1, 1], "через 10 минут — снова"
 
 
-@pytest.mark.parametrize("state, fresh_have", [
-    ("active", "192.168.1.254"),     # прогон после обновления уже всё поправил
-    ("activating", "192.168.1.1"),   # прогон идёт — итог увидит следующий тик
+@pytest.mark.parametrize("state, fresh", [
+    ("active", "fixed"),        # прогон после обновления уже всё поправил
+    ("activating", "stale"),    # прогон идёт — свежий снимок даже не читается
+    ("active", "error"),        # nft не ответил — тик не падает, реассерта нет
+    ("active", "throttled"),    # окно троттлинга — свежий снимок не читается зря
 ])
-def test_a_stale_snapshot_does_not_reassert_twice(svc, monkeypatch, state, fresh_have):
+def test_a_stale_snapshot_does_not_reassert_twice(svc, monkeypatch, state, fresh):
     """Флаг ставился по снимку начала тика; к реассерту обвязка уже
     перевыставлена (или перевыставляется) прогоном после обновления — второго
-    прогона нет: решение — по свежему состоянию."""
+    прогона нет: решение — по свежему состоянию. Свежий снимок — exec'ы nft и
+    ip: читается только когда реассерт не под троттлингом и юнит не activating;
+    отказ nft не роняет тик."""
     from tests.unit.test_gateway import _quiet_status
     _router_env(monkeypatch)
-    calls = []
+    calls, reads = [], []
     monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": state})
     monkeypatch.setattr(gwguard, "reassert", lambda **kw: calls.append(1) or (True, ""))
-    monkeypatch.setattr(gwguard, "table_info", lambda: _info(fresh_have))
+
+    def table_info():
+        reads.append(1)
+        if fresh == "error":
+            raise gwguard.GwGuardError("nft: timeout")
+        return _info("192.168.1.254" if fresh == "fixed" else "192.168.1.1")
+    monkeypatch.setattr(gwguard, "table_info", table_info)
     monkeypatch.setattr(gwguard, "default_route", lambda: _route("192.168.1.254"))
 
     def status():
@@ -683,9 +693,12 @@ def test_a_stale_snapshot_does_not_reassert_twice(svc, monkeypatch, state, fresh
     monkeypatch.setattr(svc, "status", status)
     monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
-    svc._last_reassert = float("-inf")
-    svc.monitor_tick()
+    svc._last_reassert = float("-inf") if fresh != "throttled" else __import__("time").monotonic()
+    notes = svc.monitor_tick()
     assert calls == [], "реассерт по устаревшему снимку"
+    assert bool(reads) == (fresh in ("fixed", "error")), reads
+    assert svc.__dict__.get("_router_masq_stale") is None, "флаг не должен пережить тик"
+    assert isinstance(notes, list)
 
 
 def test_the_script_copy_marker_is_the_status_line_of_the_script():

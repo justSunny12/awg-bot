@@ -24,8 +24,9 @@ def lan_space_off_line(problem: str, key: str = "routing.lan_space", *, markup: 
 def lan_map_failed_line(error: str, *, markup: bool = True) -> str:
     """Таблица адресов в туннеле не поставилась (отказ nft): адреса в туннеле
     не работают, прежние маршруты настоящих подсетей бот не снимал."""
+    from awgbot.infra.routing.lanmap import LOG_PREFIX
     err = " ".join(str(error).split())[:160]
-    cmd = "journalctl -u awg-bot | grep 'адреса в туннеле'"
+    cmd = f"journalctl -u awg-bot | grep '{LOG_PREFIX.rstrip(':')}'"
     if not markup:
         return f"адреса в туннеле не работают: таблица awg_lan_map не поставлена ({err}) — журнал: {cmd}"
     return (f"⚠️ Адреса в туннеле не работают: таблица awg_lan_map не поставлена "

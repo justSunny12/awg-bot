@@ -281,6 +281,11 @@ def test_one_lost_probe_does_not_wake_the_admin(services, monkeypatch):
     assert services.resolver_health_tick() == [], "ответил на следующем тике — тревоги не было, и «снова» нет"
     state["v"] = False
     assert services.resolver_health_tick() == []
+    # DNS переключили с приватного и обратно — счёт молчания с нуля
+    _set_dns(monkeypatch, "1.1.1.1", "1.0.0.1")
+    assert services.resolver_health_tick() == [] and services.db.get_state("resolver_failed_once") == "0"
+    _set_dns(monkeypatch, "10.8.1.1", "10.8.1.2")
+    assert services.resolver_health_tick() == [], "первый отказ после возврата в private — не тревога"
     notes = services.resolver_health_tick()
     assert len(notes) == 1 and "<code>10.8.1.1</code>, <code>10.8.1.2</code>" in notes[0].text, notes
     assert notes[0].text.endswith("<code>awg-bot resolver status</code>"), "без точки в конце"

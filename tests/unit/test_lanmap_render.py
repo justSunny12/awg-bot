@@ -186,6 +186,17 @@ def test_a_long_refusal_goes_to_the_log_in_full_once(monkeypatch, caplog):
         assert tail not in str(e.value)
     full = [r for r in caplog.records if "полный ответ nft" in r.getMessage()]
     assert len(full) == 1 and tail in full[0].getMessage()
+    # journald кладёт запись построчно: каждую строку находит подсказка карточки
+    from awgbot.domain.notices.lanmap import lan_map_failed_line
+    needle = lan_map_failed_line("x", markup=False).split("grep '")[1].split("'")[0]
+    assert all(needle in ln for ln in full[0].getMessage().splitlines()), full[0].getMessage()
+    # успех сбрасывает память: тот же отказ после него — снова целиком
+    _nft_log(monkeypatch)
+    lanmap.apply(GOLDEN)
+    _nft_log(monkeypatch, rc=1, err=("/dev/stdin:22:11-14: Error: syntax error\n" + "x" * 400 + "\n" + tail).encode())
+    with pytest.raises(routing.RoutingError):
+        lanmap.apply(GOLDEN)
+    assert len([r for r in caplog.records if "полный ответ nft" in r.getMessage()]) == 2
 
 
 def test_presence_is_read_from_the_list_of_tables(monkeypatch):

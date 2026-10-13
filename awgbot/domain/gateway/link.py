@@ -206,11 +206,17 @@ class LinkMixin:
         ставился по снимку начала тика, а прогон обвязки (после обновления,
         применения документа) мог закончиться посреди тика и уже всё
         поправить — реассерт по устаревшему снимку дал бы лишний второй
-        прогон. Прогон идёт сейчас — его итог увидит следующий тик."""
+        прогон. Прогон идёт сейчас (activating — его отсекает и reassert_guarded)
+        или nft не ответил — не реассертим: итог увидит следующий тик."""
         from awgbot.infra import gwguard
-        if gwguard.unit_state().get("ActiveState") == "activating":
+        try:
+            if gwguard.unit_state().get("ActiveState") == "activating":
+                return False
+            self._router_masq_check(gwguard.table_info(), gwguard.default_route())
+        except gwguard.GwGuardError as e:
+            log.warning("gateway: перепроверка маскарада к роутеру не удалась: %s", e)
+            self.__dict__.pop("_router_masq_stale", None)
             return False
-        self._router_masq_check(gwguard.table_info(), gwguard.default_route())
         return bool(self.__dict__.pop("_router_masq_stale", False))
 
     @staticmethod

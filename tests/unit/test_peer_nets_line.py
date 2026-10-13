@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from awgbot.bot import texts
 from awgbot.bot.texts.routing.dialogs import gateway_lan_ask
 from tests.screens.harness import plain as plain_text
@@ -117,3 +119,22 @@ def test_the_card_caps_peer_names_and_subnet_warnings():
     lines = lan_space_lines({"issues": issues})
     assert len(lines) == 4 and lines[-1] == "⚠️ Ещё 2 подсети вне адресов в туннеле: проверь их в «🗺 Подсети»", lines
     assert len(lan_space_lines({"issues": issues[:3]})) == 3
+
+
+@pytest.mark.parametrize("name, label, star, fit, want", [
+    ("Pi4", "ЕК-22П10", False, True, "Pi4 (ЕК-22П10)"),
+    ("Raspberry Pi 5 NAS", "дача", False, True, "Raspberry… (дача)"),       # режется имя, подпись цела
+    ("Raspberry Pi 5 NAS", "дача", True, True, "⭐ Raspberr… (дача)"),        # звезда в счёте
+    ("Raspberry Pi 5 NAS", "дача", False, False, "Raspberry Pi 5 NAS (дача)"),  # одна в ряду — не режем
+    ("Raspberry Pi 5 NAS2", "", False, True, "Raspberry Pi 5 NA…"),
+    ("Pi5", "очень длинная подпись", False, True, "Pi5 (очень длинна…"),   # подпись длиннее половины — целиком
+    ("Шлюз-01-ЖЖЖЖЖЖЖЖЖЖ", "", False, True, "Шлюз-01-ЖЖЖЖЖЖЖЖЖЖ"),         # ровно 18 — без «…»
+    ("Шлюз-01-ЖЖЖЖЖЖЖЖЖЖЖ", "", False, True, "Шлюз-01-ЖЖЖЖЖЖЖЖЖ…"),        # 19 — с «…»
+])
+def test_the_slot_button_keeps_the_label_when_cutting(name, label, star, fit, want):
+    """Подпись слота — то, чем различают шлюзы с похожими именами: при обрезке
+    режется имя, подпись остаётся; предел 18 знаков считается со звездой."""
+    from awgbot.bot.keyboards.routing import slot_button_label
+    got = slot_button_label(name, label, star=star, fit=fit)
+    assert got == want, got
+    assert not fit or len(got) <= 18

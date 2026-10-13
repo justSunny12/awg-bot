@@ -141,14 +141,22 @@ class LanMapSyncMixin:
         """Разово на старте после обновления на 3.3.0: конфиги устройств админа,
         выданные раньше, не знают резолвера админа (имена SMB) и — при
         раздельном туннеле — пространства адресов в туннеле; какие именно,
-        бот не помнит, поэтому совет — всем. Ключ — по доставке; у админа нет
-        устройств (новая установка) — сказать некому, ключ сразу."""
+        бот не помнит, поэтому совет — всем. Но только если перевыпуск что-то
+        даст: резолвер админа работает (его адрес идёт в DNS конфига) или
+        строка пространства реально дописывается в AllowedIPs (раздельный
+        туннель, адреса в туннеле исправны); иначе новый конфиг — байт в байт
+        прежний, совет пустой. Ключ — по доставке; сказать нечего или некому
+        (новая установка) — ключ сразу."""
+        from awgbot.domain import configgen
         from awgbot.domain.notices.updates import admin_reissue_advice
+        from awgbot.infra import admindns
         if self.db.get_state(self._ADMIN_REISSUE_KEY) == "1":
             return []
         admin = self.db.get_client_by_tg(config.ADMIN_ID) if config.ADMIN_ID else None
         devices = [d for d in self.db.list_devices(admin.id) if not d.is_gateway] if admin else []
-        if not devices:
+        useful = admindns.serving() or (not self.lan_space_problem()
+                                        and bool(configgen.extra_needed([str(lanspace.space())])))
+        if not devices or not useful:
             self.db.set_state(self._ADMIN_REISSUE_KEY, "1")
             return []
         return [Notification(config.ADMIN_ID, admin_reissue_advice(),

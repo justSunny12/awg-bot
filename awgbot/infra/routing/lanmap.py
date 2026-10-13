@@ -143,13 +143,17 @@ def _nft(args: list[str], stdin: str = "") -> object:
     return nftjson.run(args, timeout=15, stdin=stdin, error=base.RoutingError)
 
 
+LOG_PREFIX = "адреса в туннеле:"   # метка строк журнала, по ней ищет подсказка карточки
 _last_full_err = ""    # полный отказ nft уже в журнале — на каждом такте не повторяем
 
 
 def apply(text: str) -> None:
     """Проверить (`nft -c`) и применить атомарно. RoutingError — не принято:
     в исключении (уведомление, карточка) — первые 300 знаков, полный stderr
-    nft со всеми строками ошибок — в журнал, один раз на текст отказа."""
+    nft со всеми строками ошибок — в журнал, один раз на текст отказа. journald
+    кладёт многострочную запись построчно, поэтому каждая строка — со своим
+    префиксом LOG_PREFIX: его ищет подсказка в карточке
+    (notices.lanmap.lan_map_failed_line, `grep 'адреса в туннеле'`)."""
     global _last_full_err
     for args in (["-c", "-f", "-"], ["-f", "-"]):
         proc = _nft(args, stdin=text)
@@ -157,8 +161,9 @@ def apply(text: str) -> None:
             err = proc.stderr.decode(errors="replace").strip()
             if len(err) > 300 and err != _last_full_err:
                 _last_full_err = err
-                base.log.warning("routing: таблица %s не принята, полный ответ nft %s:\n%s",
-                                 TABLE, " ".join(args), err)
+                body = "\n".join(f"{LOG_PREFIX} nft: {ln}" for ln in err.splitlines())
+                base.log.warning("%s таблица %s не принята, полный ответ nft %s:\n%s",
+                                 LOG_PREFIX, TABLE, " ".join(args), body)
             raise base.RoutingError(f"nft {' '.join(args)}: {err[:300]}")
     _last_full_err = ""
     base.log.info("routing: таблица %s поставлена", TABLE)

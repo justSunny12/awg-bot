@@ -102,7 +102,7 @@ class DevicesMixin:
                 log.warning("add_device: двойник для %s не создан: %s", name, e)
             else:
                 if client.tg_id == config.ADMIN_ID:
-                    self.reconcile_ssh_access()
+                    self._admin_device_added()
                 twin = self.db.get_device(twin_id)
                 cfg = self.generate_config(twin_id)
                 return DeviceCreated(device_id=twin_id, address=twin.address,
@@ -113,8 +113,19 @@ class DevicesMixin:
                                  extra_nets=self._admin_extra_nets(client.tg_id, False))
         # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
         if client.tg_id == config.ADMIN_ID:
-            self.reconcile_ssh_access()
+            self._admin_device_added()
         return DeviceCreated(device_id=device_id, address=ip, vpn=cfg["vpn"], conf=cfg["conf"])
+
+    def _admin_device_added(self) -> None:
+        """Новое устройство админа: набор admin4 в файерволе и обратная зона его
+        адреса в записях резолвера админа (по ней macOS ищет домен обзора SMB)
+        — сразу, а не с ближайшего такта: человек импортирует конфиг и
+        подключается в ту же минуту."""
+        self.reconcile_ssh_access()
+        try:
+            self.smb_tunnel_sync()
+        except Exception as e:                           # noqa: BLE001
+            log.warning("SMB в туннеле: записи после добавления устройства админа не обновлены: %s", e)
 
     def remove_device(self, device_id: int) -> Optional[int]:
         """Удаление устройства: сервер → БД (в таком порядке, чтобы не осталось

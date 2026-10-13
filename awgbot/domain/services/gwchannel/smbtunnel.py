@@ -168,6 +168,7 @@ class SmbTunnelMixin:
         from awgbot.domain.alerts import armer
         from awgbot.infra import admindns
         if not admindns.installed():
+            self.db.set_state(_FAIL_KEY, "0")        # снят и поставлен заново — счёт молчания с нуля
             return []
         self.smb_tunnel_sync()
         alive = admindns.probe()

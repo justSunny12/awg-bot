@@ -54,6 +54,23 @@ def _fit(label: str, limit: int = BTN_MAX) -> str:
     return label if len(label) <= limit else label[:limit - 1].rstrip() + "…"
 
 
+def slot_button_label(name: str, label: str = "", *, star: bool = False, fit: bool = True,
+                      limit: int = BTN_MAX) -> str:
+    """Кнопка слота: «⭐ Имя (подпись)». Длиннее предела — режется имя, подпись
+    остаётся («Raspberr… (дача)»): подпись и есть то, чем слоты с похожими
+    именами различают; подпись длиннее половины предела — режется всё целиком.
+    fit=False — кнопка одна в ряду, места хватает, не режем."""
+    head = "⭐ " if star else ""
+    tail = f" ({label})" if label else ""
+    full = f"{head}{name}{tail}"
+    if not fit or len(full) <= limit:
+        return full
+    if label and len(label) <= limit // 2:
+        room = limit - len(head) - len(tail) - 1
+        return f"{head}{name[:room].rstrip()}…{tail}"
+    return _fit(full, limit)
+
+
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
                 smb_on: bool | None = None) -> InlineKeyboardMarkup:
@@ -62,7 +79,8 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     кнопками (⭐ у предпочтительного), переключение на резерв, тумблер
     автопереключения (при двух слотах), ниже «SMB в туннеле» (smb_on не None
     — есть слоты), «Кому доступен» и «Параметры». Кнопка слота — имя и подпись
-    («Pi4 (ЕК-22П10)»), длиннее 18 знаков — с «…». Связь подсетей — часть
+    («Pi4 (ЕК-22П10)»), в ряду из двух длиннее 18 знаков — режется имя, подпись
+    остаётся (slot_button_label). Связь подсетей — часть
     VPN-транзита, своей кнопки у неё нет."""
     menu = ui.to_menu(Menu(action="main"))
     if not provisioned:
@@ -78,12 +96,13 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
         body.append(("🛰 Назначить", SetCB(sec="rt_gw", act="open")))
     else:
         slots = []
+        two_up = len(states) > 1 or can_add       # ряд из двух и больше — подписи режутся
         for st in states:
             dev, gw = st.get("device"), st["gateway"]
             name = dev.name if dev is not None else f"шлюз {gw.id}"
-            star = "⭐ " if st.get("preferred") and len(states) > 1 else ""
-            slots.append((_fit(f"{star}{name}" + (f" ({gw.label})" if gw.label else "")),
-                           GwSlotCB(action="card", slot=gw.id)))
+            slots.append((slot_button_label(name, gw.label or "", star=bool(st.get("preferred")) and len(states) > 1,
+                                            fit=two_up),
+                          GwSlotCB(action="card", slot=gw.id)))
         if len(states) == 1 and can_add:
             slots.append(("➕ Резерв", GwSlotCB(action="add")))
         body.append(slots)

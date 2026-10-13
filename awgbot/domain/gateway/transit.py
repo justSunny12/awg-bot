@@ -50,10 +50,14 @@ class TransitMixin:
             log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
         return ok, err
 
+    def _reassert_due(self) -> bool:
+        """Прошло ли окно троттлинга с последнего реассерта."""
+        return time.monotonic() - self._last_reassert >= self._REASSERT_MIN_INTERVAL
+
     def _reassert_throttled(self, why: str) -> bool:
         """Рестарт юнита обвязки не чаще раза в 10 минут (общий троттлинг с
         tg_mark_ensure): скрипт идемпотентен, вернёт и guard, и awg_home."""
-        if time.monotonic() - self._last_reassert < self._REASSERT_MIN_INTERVAL:
+        if not self._reassert_due():
             return False
         ok, _err = self.reassert_guarded(why)
         if ok:

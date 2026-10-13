@@ -211,9 +211,9 @@ def test_records_of_both_slots_reach_the_admin_resolver_through_the_line_whiteli
     assert "ptr-record=b._dns-sd._udp.0.1.8.10.in-addr.arpa,awg.internal" in text, \
         "нет обратной зоны подсети клиентов — Finder не найдёт домен обзора"
     assert text.splitlines()[0].startswith("# awg-bot (сервер AWG)")
-    # клиент на macOS ставит туннелю /32 — Mac ищет домен обзора в зоне своего адреса
+    # клиент на macOS ставит туннелю /32 — Mac ищет домен обзора в зоне своего
+    # адреса; зона встаёт сразу при добавлении устройства, не с ближайшего такта
     mac = services.add_device(services.db.get_client_by_tg(ADMIN).id, "MacBook")
-    assert services.smb_tunnel_sync() is True
     zone = ".".join(reversed(mac.address.split("/")[0].split("."))) + ".in-addr.arpa"
     assert f"ptr-record=b._dns-sd._udp.{zone},awg.internal" in adm.records, adm.records
     assert gwservices.lines_ok(adm.records)
@@ -396,7 +396,7 @@ def _deliver(notes):
     return notes
 
 
-def test_the_monitor_says_once_when_the_admin_resolver_dies_and_once_when_back(services, two_slots, adm):
+def test_the_monitor_says_once_when_the_admin_resolver_dies_and_once_when_back(services, two_slots, adm, monkeypatch):
     """От резолвера админа — DNS всех новых конфигов админа, тумблер тут ни при
     чём. Тревога — со второго тика молчания подряд. Отметка «сказано» — по
     доставке: недоставленное повторяется, доставленное — нет."""
@@ -407,6 +407,14 @@ def test_the_monitor_says_once_when_the_admin_resolver_dies_and_once_when_back(s
     assert services.admin_dns_health_tick() == [], "ответил — тревоги не было"
     adm.alive = False
     assert services.admin_dns_health_tick() == []
+    # резолвер сняли и поставили заново — счёт молчания с нуля
+    services.db.set_state("admin_dns_failed_once", "1")
+    from awgbot.infra import admindns
+    with monkeypatch.context() as m:
+        m.setattr(admindns, "installed", lambda: False)
+        assert services.admin_dns_health_tick() == []
+    assert services.db.get_state("admin_dns_failed_once") == "0"
+    assert services.admin_dns_health_tick() == [], "после переустановки первый отказ — не тревога"
     notes = services.admin_dns_health_tick()
     assert [n.text for n in notes] == [
         f"🔴 Резолвер админа <code>{ADDR}</code> не отвечает — у устройств админа нет DNS и имён SMB в туннеле"]

@@ -64,7 +64,8 @@ class MonitorMixin:
             fixed = []
         if self.__dict__.pop("_masq_stale", False):
             self._reassert_throttled("маскарад клиентов не на интерфейсе маршрута по умолчанию")
-        if self.__dict__.pop("_router_masq_stale", False) and self._router_masq_stale_now():
+        # перепроверка — exec'ы nft и ip: только когда реассерт вообще не под троттлингом
+        if self.__dict__.pop("_router_masq_stale", False) and self._reassert_due() and self._router_masq_stale_now():
             self._reassert_throttled("маскарад подсетей других шлюзов к роутеру разошёлся с маршрутом по умолчанию")
         # Реконсайл SSH прошёл внутри status() — до проверок, чтобы снимок не
         # называл «реассерт не прошёл» то, что ещё не пробовали; уведомления

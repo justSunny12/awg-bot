@@ -308,16 +308,29 @@ def test_an_empty_table_looks_into_the_kernel_only_once_and_a_missing_nft_is_no_
     assert looks == [1], "в ядро смотрели не только на первой сверке"
 
 
-def test_the_admin_is_advised_once_to_reissue_their_device_configs(two):
+def test_the_admin_is_advised_once_to_reissue_their_device_configs(two, monkeypatch):
     """Конфиги устройств админа, выданные до обновления, не знают резолвера
     админа и пространства адресов в туннеле — совет перевыпустить один раз,
     ключ по доставке. Шлюзовые устройства не в счёт: у админа только они —
-    совета нет, ключ сразу (как и на новой установке)."""
+    совета нет, ключ сразу (как и на новой установке). Совет — только когда
+    перевыпуск что-то даст: резолвер админа работает или строка пространства
+    дописывается (раздельный туннель); полный туннель без резолвера — новый
+    конфиг прежний, совета нет."""
+    from awgbot.infra import admindns
+    monkeypatch.setattr(admindns, "serving", lambda: False)
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "0.0.0.0/0, ::/0")
     assert two.admin_reissue_announce() == []
     assert two.db.get_state("admin_reissue_announced") == "1"
     two.db.set_state("admin_reissue_announced", "")
     admin = two.db.get_client_by_tg(ADMIN)
     two.add_device(admin.id, "Mac")
+    assert two.admin_reissue_announce() == [], "полный туннель без резолвера админа — перевыпуск ничего не даст"
+    assert two.db.get_state("admin_reissue_announced") == "1"
+    two.db.set_state("admin_reissue_announced", "")
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "10.8.1.0/24")       # раздельный — строка пространства
+    assert len(two.admin_reissue_announce()) == 1
+    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "0.0.0.0/0, ::/0")
+    monkeypatch.setattr(admindns, "serving", lambda: True)                 # резолвер админа — DNS конфига
     notes = two.admin_reissue_announce()
     assert len(notes) == 1 and notes[0].tg_id == ADMIN, notes
     assert notes[0].text == (
@@ -327,3 +340,6 @@ def test_the_admin_is_advised_once_to_reissue_their_device_configs(two):
     assert two.admin_reissue_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.admin_reissue_announce() == []
+    two.db.set_state("admin_reissue_announced", "")
+    monkeypatch.setattr(config, "ADMIN_ID", 0)
+    assert two.admin_reissue_announce() == [] and two.db.get_state("admin_reissue_announced") == "1"

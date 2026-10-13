@@ -153,6 +153,7 @@ class PrivateDnsMixin:
         from awgbot.domain.services import Notification
         info = self.private_dns_info()
         if info["mode"] != "private":
+            self.db.set_state(_FAIL_KEY, "0")        # иначе первый отказ после возврата в private — сразу тревога
             return []
         addrs = [a for a in dict.fromkeys((info["dns1"], info["dns2"])) if a]
         alive = all(resolver.probe(a) for a in addrs)
