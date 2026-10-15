@@ -52,16 +52,19 @@ def sub_line(text: str) -> str:
 
 def access_status_line(client) -> str:
     """Строка состояния доступа над строкой подписки — у админа в карточке
-    профиля, у клиента на главной и в «💳 Подписка»: истечение и пауза —
-    «🟡 доступ приостановлен», исчерпанный лимит трафика (после доп. квоты) —
-    «🟡 исчерпан лимит трафика за месяц»; ручная блокировка — не здесь."""
+    профиля, у клиента на главной и в «💳 Подписка». Только когда доступа
+    нет, со значком по причине (система значков): исчерпанный лимит трафика
+    (после доп. квоты) — ⛔, пауза — ⏸️, истёкшая подписка — 🔴; каждая
+    строка говорит, почему не работает. Ручная блокировка — не здесь."""
     from awgbot.core import blocks
     from awgbot.core.enums import SubStatus
     mask = int(getattr(client, "block_reason", 0) or 0)
     if mask & int(blocks.ClientBlock.TRAFFIC_CLIENT):
-        return "🟡 исчерпан лимит трафика за месяц"
-    if mask & int(blocks.ClientBlock.PAUSED) or getattr(client, "status", None) != SubStatus.ACTIVE:
-        return "🟡 доступ приостановлен"
+        return "⛔ Лимит трафика за месяц исчерпан — доступ приостановлен"
+    if mask & int(blocks.ClientBlock.PAUSED):
+        return "⏸️ Подписка на паузе — доступ приостановлен"
+    if getattr(client, "status", None) != SubStatus.ACTIVE:
+        return "🔴 Подписка истекла — доступ приостановлен"
     return ""
 
 
@@ -176,7 +179,8 @@ def _limit_devices_str(limit: int) -> str:
 def device_state(dev, *, for_admin: bool = False) -> str:
     """Один значок состояния устройства, по приоритету: ⛔ заблокировано
     (видимой для роли причиной) → ⏳ приглашение другу не принято → 🟢 онлайн
-    → ⚪ офлайн. Для строк списков и кнопок."""
+    → 🔴 офлайн (решение 15.10.2026: кружок онлайна — зелёный/красный, как
+    везде; ⚪ — «нет данных»). Для строк списков и кнопок."""
     from awgbot.core import blocks
     if getattr(dev, "is_gateway", 0):
         return "🛰"
@@ -185,7 +189,7 @@ def device_state(dev, *, for_admin: bool = False) -> str:
     friend = getattr(dev, "friend", None)
     if friend is not None and getattr(friend, "status", None) == "pending":
         return "⏳"
-    return "🟢" if timeutil.handshake_is_online(getattr(dev, "last_handshake", None)) else "⚪"
+    return "🟢" if timeutil.handshake_is_online(getattr(dev, "last_handshake", None)) else "🔴"
 
 
 def details(text: str) -> str:

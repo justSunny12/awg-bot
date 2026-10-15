@@ -33,7 +33,10 @@ def _link(bot_username: str, payload: str, label: str) -> str:
 
 
 def vpn_status_line(server_ok: bool) -> str:
-    return "🟢 VPN работает" if server_ok else "🔴 VPN не отвечает"
+    """Первая строка главной клиента и гостя — про сервер, не про доступ
+    человека: его состояние — отдельной строкой ниже (access_status_line),
+    чтобы свои проблемы отличались от проблем сервера."""
+    return "🟢 Сервер доступен" if server_ok else "🔴 Сервер не отвечает"
 
 
 def rf_status_short(routing_ok, routing_on: bool, bot_username: str = "") -> str:

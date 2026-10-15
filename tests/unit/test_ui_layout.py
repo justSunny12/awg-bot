@@ -210,7 +210,7 @@ def test_profile_card_fits_ten_rows_with_every_conditional_row(n):
                 rows = [[b.text for b in r] for r in m.inline_keyboard]
                 labels = [t for r in rows for t in r]
                 assert len(rows) <= kbm.MAX_ROWS, rows
-                listed = [l for l in labels if l.startswith("⚪ Устройство")]
+                listed = [l for l in labels if l.startswith("🔴 Устройство")]
                 if listed:
                     assert len(listed) == n, rows
                 else:
@@ -225,7 +225,7 @@ def test_profile_card_rows():
     [➕ Устройство] [⬅️ Назад]; условные ряды — сверху."""
     rows = [[b.text for b in r] for r in _card(1, routing_visible=True).inline_keyboard]
     assert rows == [["⏱ Продлить", "✏️ Изменить"], ["🇷🇺 РФ-доступ", "🛑 Блок"],
-                    ["⚪ Устройство 1"], ["➕ Устройство", "⬅️ Назад"]], rows
+                    ["🔴 Устройство 1"], ["➕ Устройство", "⬅️ Назад"]], rows
     rows = [[b.text for b in r] for r in _card(1, paused=True, pending=True).inline_keyboard]
     assert rows[:3] == [["▶️ Снять паузу"], ["🔁 Новое приглашение"], ["⏱ Продлить", "✏️ Изменить"]], rows
     assert rows[3] == ["🛑 Блок"], "без РФ-доступа «Блок» один в ряду"
@@ -234,7 +234,7 @@ def test_profile_card_rows():
     assert len(rows) == 10 and ["📱 Устройства: 5"] not in rows, rows
     # шестое уже не влезает — сворачиваются все
     rows = [[b.text for b in r] for r in _card(6, routing_visible=True, paused=True, pending=True).inline_keyboard]
-    assert ["📱 Устройства: 6"] in rows and not any(r[0].startswith("⚪ Устройство") for r in rows), rows
+    assert ["📱 Устройства: 6"] in rows and not any(r[0].startswith("🔴 Устройство") for r in rows), rows
 
 
 @pytest.mark.parametrize("n, shown", [(0, 0), (1, 1), (17, 17), (18, 18), (19, 18), (40, 18)])
