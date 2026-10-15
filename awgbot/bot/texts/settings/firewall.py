@@ -63,24 +63,28 @@ def settings_firewall_text(st: dict) -> str:
     return "\n".join(lines + warnings_block(warns))
 
 
-def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
+def ssh_owner_refusal(st: dict, listening: int | None, br, pressed: bool = False) -> str:
     """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
-    текст длинный и нужен целиком. Где файл — словами роли (host_loc)."""
+    текст длинный и нужен целиком. Где файл — словами роли (host_loc).
+    pressed — человек только нажал «🅿️ Порт», ничего не менял: заголовок не
+    «не выполнена», а «здесь не меняется»."""
     place = br.host_loc
+    head = "⛔ Порт SSH здесь не меняется" if pressed else "⛔ Смена порта SSH не выполнена"
     if st.get("owner") == "omv":
-        now = f"sshd слушает {listening}" if listening else "sshd не запущен"
-        if st.get("owner_port"):
-            now += f", в OMV задан {st['owner_port']}"
-        return (ui.head("⛔ Смена порта SSH не выполнена",
-                        value=f"файлом sshd_config на этом {place} управляет OMV") + "\n\n"
+        if listening and st.get("owner_port") and int(st["owner_port"]) == int(listening):
+            now = f"порт {listening} — и в OMV, и у sshd"
+        else:
+            now = f"sshd слушает {listening}" if listening else "sshd не запущен"
+            if st.get("owner_port"):
+                now += f", в OMV задан {st['owner_port']}"
+        return (ui.head(head, value=f"файлом sshd_config на этом {place} управляет OMV") + "\n\n"
                 "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
-                "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
-                "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
-                "Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт "
-                "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
-                f"(при наличии) поправь сам.\n\nСейчас: {now}.")
+                "Здесь менять бесполезно: при первом же «Применить» OMV перепишет sshd_config и вернёт свой порт.\n\n"
+                "Бот сам увидит новый порт (сверяет каждые несколько минут) и переведёт на него фильтр — "
+                "из туннеля, из локальной сети и снаружи. Проброс порта на роутере (при наличии) поправь сам."
+                f"\n\nСейчас: {now}.")
     f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
-    return (ui.head("⛔ Смена порта SSH не выполнена",
+    return (ui.head(head,
                     value=f"файлом sshd_config на этом {place} управляет другой процесс")
             + f"\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
             "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "

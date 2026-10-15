@@ -166,7 +166,7 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
     """Та же строка в шапке админа — с тем, кто несёт трафик, и состоянием
     резерва (services.routing_admin_status): один шлюз — «работает · имя»;
     два — «… · резерв жив / не отвечает / проверяется», мёртвый резерв красит
-    строку в 🟠; выключен — кто именно не отвечает. Имя шлюза и слово
+    строку в 🟡; выключен — кто именно не отвечает. Имя шлюза и слово
     «резерв» — ссылки в карточку слота (deep-link на себя), когда username
     известен; состояние резерва остаётся текстом."""
     from ..fmt import deep_link
@@ -177,7 +177,7 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
 
     if info.get("ok"):
         dead = [s for s in standby if s["state"] == "dead"]
-        dot = "🟠" if dead else "🟢"
+        dot = "🟡" if dead else "🟢"
         line = f"🇷🇺 {ROUTING_NAME}: {dot} работает"
         if active:
             line += f" · {_link(active, info.get('active_slot'))}"

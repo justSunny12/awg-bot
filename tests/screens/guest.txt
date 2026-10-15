@@ -1,8 +1,17 @@
 ### gst.start.activate — незнакомец: код друга — гость
 > /start FTEST0000002
 + send #2
-🎉 Тебе передали устройство «Телефон Артёма»
-+ send #3
+🎉 Тебе передали устройство «Телефон Артёма». Какое у тебя устройство?
+  [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
+  [🪟 Windows | h:windows] [🍏 Mac | h:mac]
+  [✅ Настрою сам | fr:refresh:0]
++ send #1 → чат клиент
+👤 <a href="tg://user?id=5000">Гена</a> принял приглашение — устройство «Телефон Артёма» теперь у него
+  [Скрыть | hd]
+
+### gst.start.activate.skip — после активации: «✅ Настрою сам» — главная гостя
+> press fr:refresh:0
+= edit #2
 👋 <b>Гена</b>
 
 🟢 Сервер доступен
@@ -10,9 +19,7 @@
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
-+ send #1 → чат клиент
-👤 Друг (Гена) активировал устройство «Телефон Артёма»
-  [Скрыть | hd]
+~ (пустой ответ)
 
 ### gst.main.one — главная гостя: одно устройство
 > /start
@@ -50,7 +57,8 @@
 ### gst.main.none — главная гостя: устройств нет
 > /start
 + send #2
-👋 <b>Артём</b> · устройств нет — попроси у друга новый код
+👋 <b>Артём</b> · устройств нет
+Попроси у друга новое приглашение и открой ссылку из него
   [❓ Как подключить | fr:help:0]
 
 ### gst.main.owner_expired — главная гостя: у владельца подписка истекла
@@ -59,6 +67,7 @@
 👋 <b>Артём</b>
 
 🟢 Сервер доступен
+🔴 У профиля <a href="tg://user?id=1000">Вася</a> истекла подписка — доступ приостановлен
 💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🔴 истекла
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
@@ -70,7 +79,55 @@
 👋 <b>Артём</b>
 
 🟢 Сервер доступен
+⏸️ Подписка профиля <a href="tg://user?id=1000">Вася</a> на паузе — доступ приостановлен
 💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: ⏸️ на паузе
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_admin_paused — главная гостя: владельца поставил на паузу администратор
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 Сервер доступен
+⏸️ Подписка профиля <a href="tg://user?id=1000">Вася</a> на паузе — доступ приостановлен
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: ⏸️ на паузе (поставил администратор)
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_admin_silent — главная гостя: тихая пауза администратора у владельца не видна
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 Сервер доступен
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_traffic_blocked — главная гостя: у владельца исчерпан лимит трафика
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 Сервер доступен
+⛔ У профиля <a href="tg://user?id=1000">Вася</a> исчерпан лимит трафика — доступ приостановлен
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_blocked — главная гостя: владелец заблокирован администратором
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 Сервер доступен
+⛔ Профиль <a href="tg://user?id=1000">Вася</a> заблокирован — доступ приостановлен
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
@@ -126,8 +183,8 @@
 ### gst.code.more — ещё одно устройство от того же владельца
 > /start FTEST0000003
 + send #2
-✅ Устройство «Приставка» от <a href="tg://user?id=1000">Вася</a> успешно добавлено.
-Теперь у тебя 2 устройства.
+✅ Устройство «Приставка» от профиля <a href="tg://user?id=1000">Вася</a> добавлено.
+Теперь у тебя 2 устройства
 + send #3
 👋 <b>Артём</b>
 
@@ -137,22 +194,20 @@
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
 + send #1 → чат клиент
-👤 Друг (Артём) активировал устройство «Приставка»
+👤 <a href="tg://user?id=2000">Артём</a> принял приглашение — устройство «Приставка» теперь у него
   [Скрыть | hd]
 
 ### gst.code.other_donor — код от другого владельца — отказ
 > /start FTEST0000004
 + send #2
-У тебя уже есть устройство «Телефон Артёма», переданное <a href="tg://user?id=1000">Вася</a>.
-Владеть устройствами от разных друзей одновременно не получится 😔
-Ты можешь либо удалить устройство от <a href="tg://user?id=1000">Вася</a> и отправить мне этот код повторно, либо оставить всё как есть — решать тебе 🤷‍♂️
+⛔ Это приглашение от другого профиля, а у тебя уже есть устройство «Телефон Артёма» от профиля <a href="tg://user?id=1000">Вася</a>. Устройства можно получать только от одного профиля.
+Хочешь принять новое — удали устройство от профиля <a href="tg://user?id=1000">Вася</a> и открой приглашение ещё раз
 
 ### gst.code.other_donor.many — код от другого владельца у гостя с двумя устройствами — отказ
 > /start FTEST0000005
 + send #2
-У тебя уже есть устройства «Телефон Артёма» и «Ноутбук Артёма», переданные <a href="tg://user?id=1000">Вася</a>.
-Владеть устройствами от разных друзей одновременно не получится 😔
-Ты можешь либо удалить все устройства от <a href="tg://user?id=1000">Вася</a> и отправить мне этот код повторно, либо оставить всё как есть — решать тебе 🤷‍♂️
+⛔ Это приглашение от другого профиля, а у тебя уже есть устройства «Телефон Артёма» и «Ноутбук Артёма» от профиля <a href="tg://user?id=1000">Вася</a>. Устройства можно получать только от одного профиля.
+Хочешь принять новое — удали все устройства от профиля <a href="tg://user?id=1000">Вася</a> и открой приглашение ещё раз
 
 ### gst.code.upgrade — код клиента — гость становится владельцем
 > /start CTEST0000003
@@ -162,14 +217,14 @@
 Переданные тебе устройства от профиля <a href="tg://user?id=1000">Вася</a> перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:
 • Телефон Артёма
 + send #1 → чат клиент
-📤 Устройство «Телефон Артёма» перешло к <a href="tg://user?id=2000">Артём</a> — он активировал собственную подписку, и устройство переехало в его профиль. У тебя теперь 0 из 5 устройств
+📤 У профиля <a href="tg://user?id=2000">Артём</a> теперь своя подписка — устройство «Телефон Артёма» перешло в его профиль. У тебя теперь 0 из 5 устройств
   [Скрыть | hd]
 + send #3
 👋 <b>Артём</b>
 
 🟢 Сервер доступен
 <a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
-📱 Устройств 1 из 3
+📱 Устройства: 1 из 3
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
   [💳 Подписка | m:info] [❓ Как подключить | h:root]
@@ -188,16 +243,16 @@
 • Ноутбук Артёма
 • Планшет Артёма
 
-В твою подписку входит 2 устройства, а перенесено 3 — все они продолжают работать. Добавить новое получится, когда освободится место в рамках лимита.
+В твою подписку входит 2 устройства, а перенесено 3 — работают все. Чтобы добавить новое, удали 2
 + send #1 → чат клиент
-📤 Устройства «Телефон Артёма», «Ноутбук Артёма» и «Планшет Артёма» перешли к <a href="tg://user?id=2000">Артём</a> — он активировал собственную подписку, и устройства переехали в его профиль. У тебя теперь 0 из 5 устройств
+📤 У профиля <a href="tg://user?id=2000">Артём</a> теперь своя подписка — устройства «Телефон Артёма», «Ноутбук Артёма» и «Планшет Артёма» перешли в его профиль. У тебя теперь 0 из 5 устройств
   [Скрыть | hd]
 + send #3
 👋 <b>Артём</b>
 
 🟢 Сервер доступен
 <a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
-📱 Устройств 3 из 2
+📱 Устройства: 3 из 2
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Устройства | m:devices]
   [💳 Подписка | m:info] [❓ Как подключить | h:root]
@@ -214,16 +269,16 @@
 ### gst.code.invalid — /code с неверным кодом
 > text «/code FNOSUCHCODE1»
 + send #2
-🤔 Такого кода нет — проверь и пришли ещё раз
+🤔 Такого кода нет — проверь его и отправь <code>/code КОД</code>
 
 ### gst.link.rf — ссылка на РФ-доступ
 > /start rf
 - delete #1
 + send #2
-🇷🇺 <b>РФ-доступ:</b> вкл на всех
-  [✅ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
-  [✅ Выбрать все | rt:all:3:-1:]
-  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+🇷🇺 <b>РФ-доступ</b> · от профиля <a href="tg://user?id=1000">Вася</a>: вкл на всех
+  [✅ Телефон Артёма | rt:dev:1:-1:]
+  [✅ Все устройства | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Свои сайты | rt:sites:3:-1:]
   [⬅️ Назад | fr:refresh:0]
 
 ### gst.link.dev — ссылка на устройство
@@ -233,7 +288,7 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 
 ### gst.link.dev.foreign — ссылка на устройство владельца, не переданное гостю — главная
@@ -283,7 +338,7 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
@@ -293,7 +348,7 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 из 100 ГБ (лимит профиля Вася)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
@@ -303,7 +358,7 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
@@ -312,9 +367,9 @@
 = edit #1
 ⛔ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
-⛔ Заблокировано: владельцем
+⛔ Заблокировано: тобой
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [✅ Разблок | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔓 Разблокировать | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
@@ -332,7 +387,7 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
@@ -342,7 +397,7 @@
 + send #2
 <code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
 
-☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+☝️ Ссылка для устройства «Телефон Артёма» — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -368,19 +423,19 @@
 > press fr:gen_qr:2
 - delete #1
 + animation #2
-🔳 Для Ноутбук Артёма — в AmneziaVPN «＋» → «Создать из QR-кода», наведи камеру
+🔳 QR для устройства «Ноутбук Артёма» — в AmneziaVPN «＋» → «Создать из QR-кода» и наведи камеру на этот код
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
 ### gst.gen.none — выдача без устройств — отказ
 > press fr:gen_link:0
-~! Устройств пока нет
+~! Устройств нет — попроси у друга новое приглашение
 
 ### gst.gen.fail — сервер не выдал конфиг — отказ и главная
 > press fr:gen_link:1
 - delete #1
 + send #2
-Не удалось выдать конфиг: сервер не отвечает
+⚠️ Не удалось получить настройки: сервер не отвечает — попробуй через минуту
 + send #3
 👋 <b>Артём</b>
 
@@ -397,7 +452,7 @@
 + send #2
 <code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
 
-☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+☝️ Ссылка для устройства «Телефон Артёма» — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -405,7 +460,7 @@
 > press fr:gen_file:1
 - delete #1
 + document #2
-📄 Для Телефон Артёма — импортируй файл в AmneziaVPN
+📄 Файл для устройства «Телефон Артёма» — открой его в AmneziaVPN
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -424,22 +479,23 @@
 ### gst.block.ask — 🛑 Заблокировать — подтверждение
 > press bl:dev:menu_block:1:user:-1
 = edit #1
-🛑 Заблокировать Телефон Артёма?
-Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя только через этот VPN — до бота не достучаться
-  [⬅️ Отмена | fr:open:1] [🛑 Заблокировать | bl:dev:block:1:user:-1 | красная]
+🔒 Заблокировать устройство «Телефон Артёма»?
+VPN на нём перестанет работать, пока не разблокируешь. Профиль <a href="tg://user?id=1000">Вася</a> получит уведомление
+⚠️ Если Telegram у тебя открывается только через этот VPN — бот станет недоступен, и разблокировать будет нечем
+  [⬅️ Отмена | fr:open:1] [🔒 Заблокировать | bl:dev:block:1:user:-1 | красная]
 ~ (пустой ответ)
 
 ### gst.block.do — 🛑 Заблокировать — итог
 > press bl:dev:block:1:user:-1
 + send #1 → чат клиент
-🛑 Устройство «Телефон Артёма» заблокировано
+🔒 Профиль <a href="tg://user?id=2000">Артём</a> заблокировал устройство «Телефон Артёма»
   [Скрыть | hd]
 = edit #1
 ⛔ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
-⛔ Заблокировано: владельцем
+⛔ Заблокировано: тобой
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [✅ Разблок | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔓 Разблокировать | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ Заблокировано
 
@@ -449,69 +505,73 @@
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ (пустой ответ)
 
 ### gst.unblock — разблокировать
 > press bl:dev:menu_unblock:1:user:-1
 + send #1 → чат клиент
-🟢 Устройство «Телефон Артёма» разблокировано
+🔓 Профиль <a href="tg://user?id=2000">Артём</a> разблокировал устройство «Телефон Артёма»
   [Скрыть | hd]
 = edit #1
 🔴 <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
 Не подключался · 📊 0 ГБ (безлимит)
   [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
-  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [🔒 Заблокировать | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
   [⬅️ Назад | fr:list:0]
 ~ Разблокировано
 
-### gst.delete.ask — 🗑 Удалить — подтверждение
+### gst.delete.ask — 🗑 Удалить — единственное: предупреждение
 > press dd:1:ask
 = edit #1
-🗑 Удалить Телефон Артёма?
-Новое устройство можно будет создать только по коду от друга
+⚠️ Удалить устройство «Телефон Артёма»? Оно у тебя единственное — новое только по новому приглашению от профиля <a href="tg://user?id=1000">Вася</a>
   [⬅️ Отмена | fr:open:1] [🗑 Удалить | dd:1:confirm | красная]
+~ (пустой ответ)
+
+### gst.delete.ask.many — 🗑 Удалить — одно из двух
+> press dd:2:ask
+= edit #1
+🗑 Удалить устройство «Ноутбук Артёма»?
+Вернуть его можно будет только по новому приглашению от профиля <a href="tg://user?id=1000">Вася</a>
+  [⬅️ Отмена | fr:open:2] [🗑 Удалить | dd:2:confirm | красная]
 ~ (пустой ответ)
 
 ### gst.delete.yes — 🗑 удалено последнее — главная без устройств
 > press dd:1:confirm
 ~ (пустой ответ)
 + send #1 → чат клиент
-Устройство «Телефон Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
-Теперь у тебя 0 из 5 устройств
+🗑 Профиль <a href="tg://user?id=2000">Артём</a> удалил у себя устройство «Телефон Артёма», которое ты ему передал
+Место освободилось: можно добавить ещё 5
   [Скрыть | hd]
 = edit #1
-🗑 Телефон Артёма удалено
+🗑 Устройство «Телефон Артёма» удалено
 
-👋 <b>Артём</b> · устройств нет — попроси у друга новый код
+👋 <b>Артём</b> · устройств нет
+Попроси у друга новое приглашение и открой ссылку из него
   [❓ Как подключить | fr:help:0]
 
 ### gst.delete.yes.many — 🗑 удалено одно из двух
 > press dd:2:confirm
 ~ (пустой ответ)
 + send #1 → чат клиент
-Устройство «Ноутбук Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
-Теперь у тебя 1 из 5 устройств
+🗑 Профиль <a href="tg://user?id=2000">Артём</a> удалил у себя устройство «Ноутбук Артёма», которое ты ему передал
+Место освободилось: можно добавить ещё 4
   [Скрыть | hd]
 = edit #1
-🗑 Ноутбук Артёма удалено
+🗑 Устройство «Ноутбук Артёма» удалено
 
-👋 <b>Артём</b>
-
-🟢 Сервер доступен
-💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
-  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
-  [📱 Устройства | fr:list:0]
-  [❓ Как подключить | fr:help:0]
+📱 <b>Устройства</b> · 1 · от профиля <a href="tg://user?id=1000">Вася</a>
+  [🔴 Телефон Артёма | fr:open:1]
+  [⬅️ Назад | fr:refresh:0]
 
 ### gst.help — ❓ Как подключить
 > press fr:help:0
 = edit #1
-❓ <b>Помощь</b> — какое устройство?
+❓ <b>Как подключить</b> — какое у тебя устройство?
   [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
   [🪟 Windows | h:windows] [🍏 Mac | h:mac]
-  [✅ Настрою сам | fr:refresh:0]
+  [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
 ### gst.guide.android.0 — гайд Android у гостя, шаг 1
@@ -524,7 +584,7 @@
 1. Открой Play Маркет.
 2. Найди <b>AmneziaVPN</b>.
 3. Нажми «Установить».
-  [Далее ➡️ | g:android:1:0:]
+  [✅ Установил | g:connect:0:0:] [Нет Google Play ➡️ | g:android:1:0:]
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -561,10 +621,20 @@
 = edit #1
 📶 <b>Получаем настройки</b>
 
-Для подключения тебе будет нужна ссылка — для каждого устройства своя.
-Выбери устройство ниже или добавь новое 👇
-  [🔗 Телефон Артёма | d:gen_guide:1]
-  [🔗 Ноутбук Артёма | d:gen_guide:2]
+Для подключения нужна ссылка — у каждого устройства своя.
+Выбери устройство, которое настраиваешь 👇
+  [🔴 Телефон Артёма | d:gen_guide:1]
+  [🔴 Ноутбук Артёма | d:gen_guide:2]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.connect.0.none — подключение у гостя без устройств
+> press g:connect:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения нужна ссылка — у каждого устройства своя.
+Устройств нет — попроси у друга новое приглашение
   [⬅️ В меню | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -572,10 +642,10 @@
 > press d:gen_guide:2
 - delete #1
 + send #2
-📶 <b>Настраиваем подключение</b>
+📶 <b>Настраиваем «Ноутбук Артёма»</b>
 
 Настраиваешь устройство, с которого пишешь — нужна 🔗 ссылка, другое устройство — 🔳 QR, можно и 📄 файлом.
-Затем открой AmneziaVPN и вставь ссылку/файл или отсканируй код
+Открой AmneziaVPN и вставь ссылку/файл или отсканируй QR-код
   [🔗 Ссылка | g:connect:1:2:link] [🔳 QR | g:connect:1:2:qr] [📄 Файл | g:connect:1:2:file]
   [⬅️ Назад | g:connect:0:0:]
   [⬅️ В меню | fr:refresh:0]
@@ -586,6 +656,8 @@
 - delete #1
 + send #2
 <code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
+
+☝️ Ссылка для устройства «Телефон Артёма» — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
 + send #3
 <b>Подключаемся</b>
 
@@ -600,11 +672,11 @@
 ### gst.rf.panel — 🇷🇺 РФ-доступ гостя
 > press rt:panel:3:-1:
 = edit #1
-🇷🇺 <b>РФ-доступ:</b> вкл на всех
-  [✅ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
-  [✅ Ноутбук Артёма · от профиля Вася | rt:dev:2:-1:]
-  [✅ Выбрать все | rt:all:3:-1:]
-  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+🇷🇺 <b>РФ-доступ</b> · от профиля <a href="tg://user?id=1000">Вася</a>: вкл на всех
+  [✅ Телефон Артёма | rt:dev:1:-1:]
+  [✅ Ноутбук Артёма | rt:dev:2:-1:]
+  [✅ Все устройства | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Свои сайты | rt:sites:3:-1:]
   [⬅️ Назад | fr:refresh:0]
 ~ (пустой ответ)
 
@@ -615,19 +687,19 @@
 ### gst.rf.dev — переключить устройство
 > press rt:dev:1:-1:
 = edit #1
-🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2
-  [☑️ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
-  [✅ Ноутбук Артёма · от профиля Вася | rt:dev:2:-1:]
-  [☑️ Выбрать все | rt:all:3:-1:]
-  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
-  [⬅️ Назад | fr:refresh:0]
-~ выключено
+🇷🇺 <b>РФ-доступ</b> · от профиля <a href="tg://user?id=1000">Вася</a>: вкл на всех
+  [☑️ Телефон Артёма | rt:dev:1:-1:]
+  [✅ Ноутбук Артёма | rt:dev:2:-1:]
+  [☑️ Все устройства | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Свои сайты | rt:sites:3:-1:]
+  [✅ Применить | rt:apply:3:-1:] [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
 
 ### gst.rf.sites — 📋 Сайты гостя
 > press rt:sites:3:-1:
 = edit #1
 📋 <b>Свои сайты</b>
-Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй то, что пишет «вы не из России»
+Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй те, что пишут «вы не из России»
   [➕ Сайт | rt:add:3:-1:]
   [⬅️ Назад | rt:panel:3:-1:]
 ~ (пустой ответ)
@@ -637,10 +709,11 @@
 - delete #1
 - delete #2
 + send #3
-✅ Добавлено: <code>sber.ru</code> · применится в теч. минуты, не сработало — переподключись
+✅ Добавлено: <code>sber.ru</code>
+Заработает в течение минуты; не сработало — переподключи VPN
 
 📋 <b>Свои сайты</b> · 1
-Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+Открываются с российского адреса
   [➖ sber.ru | rt:del:3:0:8960d643]
   [➕ Сайт | rt:add:3:-1:] [🗑 Очистить | rt:clear:3:-1:]
   [⬅️ Назад | rt:panel:3:-1:]

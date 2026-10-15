@@ -90,13 +90,15 @@ def device_limit_presets(profile_limit_bytes: int) -> list[int]:
 
 
 def device_limit_kb(ref: int, profile_limit_bytes: int, cancel_cb) -> InlineKeyboardMarkup:
-    """Пресеты лимита устройства по три в ряд, последним рядом — «✏️ Другое» и
-    «⬅️ Отмена» (одна раскладка с пресетами профиля). ref — id устройства
-    (карточка) или 0 (новое устройство другу)."""
-    presets = [("∞" if g == 0 else f"{g} ГБ", PresetCB(kind="devlimit", ref=ref, val=g))
-               for g in device_limit_presets(profile_limit_bytes)]
+    """Пресеты лимита устройства (админ) — та же раскладка, что у клиента:
+    числа по три в ряд, затем «∞ Без лимита» (у профиля с лимитом — «∞ Как у
+    профиля») и «✏️ Другое», выход — «⬅️ Назад». ref — id устройства."""
+    presets = [(f"{g} ГБ", PresetCB(kind="devlimit", ref=ref, val=g))
+               for g in device_limit_presets(profile_limit_bytes) if g]
     return ui.rows(*ui.grid(presets, 3),
-                   [("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1)), ("⬅️ Отмена", cancel_cb)])
+                   [("∞ Как у профиля" if profile_limit_bytes else "∞ Без лимита", PresetCB(kind="devlimit", ref=ref, val=0)),
+                    ("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1))],
+                   ui.back(cancel_cb))
 
 
 def _tick(on: bool) -> str:

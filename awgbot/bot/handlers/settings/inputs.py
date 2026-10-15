@@ -74,7 +74,7 @@ async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
     if st.get("owner"):
         # Конфигом sshd владеет другая программа — отказ сразу по кнопке.
         await state.clear()
-        await edit(cb, texts.ssh_owner_refusal(st, st.get("listening"), MAIN), kb.settings_back("fw"))
+        await edit(cb, texts.ssh_owner_refusal(st, st.get("listening"), MAIN, pressed=True), kb.settings_back("fw"))
         await cb.answer()
         return
     await state.set_state(SshPort.value)

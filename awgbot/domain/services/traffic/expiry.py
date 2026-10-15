@@ -31,7 +31,7 @@ class ExpiryMixin:
             self._device_set_block(dev.id, DeviceBlock.EXPIRY, twins)
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 notes.append(Notification(dev.friend_tg_id,
-                             _friend_blocked_text(dev.name)))
+                             _friend_blocked_text(dev.name, self.cl_link(client))))
         return notes
 
     # ── истекающие подписки (панель админа) ──────────────────────────────────

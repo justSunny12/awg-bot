@@ -130,8 +130,9 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     assert sections.resolve(env.br, when) == ("backup", "edit", "backup_when", "")
     st = FakeState()
     cb, nav = await _press(env, fake_bot, when, st)
-    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-го в 12:00 · пришли два числа: "
-                                  "<code>1 12</code>")
+    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-е, 12:00\n\n"
+                                  "Пришли день месяца (1–28) и час (0–23) через пробел, например <code>5 3</code> — "
+                                  "5-е число, 03:00")
     bad = await _type(env, fake_bot, "31 12", st)
     assert [s[1] for s in bad.sent if s[0] == "answer"] == [texts.BACKUP_WHEN_BAD]
     assert store["app.scheduler.backup_day"] == 1 and await st.get_state() is not None

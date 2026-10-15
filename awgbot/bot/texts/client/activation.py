@@ -26,9 +26,6 @@ COLD_START_GREETING = ("👋 Не узнаю тебя. Пришёл по при�
 CODE_NO_ARG = "Отправь код после команды: <code>/code КОД</code>"
 
 
-UNMANAGED_DEVICE_DIALOG = (
-    "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
-)
 
 
 def issue_failed(error) -> str:

@@ -28,7 +28,8 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram", br
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
         lines.append(f"Каждое {day}-е число в {hour:02d}:00 → {where}")
-    lines.append("Восстановить — пришли боту файл бэкапа (.tgz.enc)")
+    ext = ".tgz.enc" if (encryption or only_enc) else ".tgz"
+    lines.append(f"Восстановить — пришли боту файл бэкапа ({ext})")
     return "\n".join(lines)
 
 
@@ -37,7 +38,7 @@ def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
     перезапуска AWG (restore_warning), только если восстановление затронет
     интерфейсы."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = ui.prompt(f"♻️ Бэкап от {when}", "восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}"
+    text = ui.prompt(f"♻️ Бэкап от {when}", "восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}. Изменения после этого момента пропадут"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
 
 
@@ -50,8 +51,7 @@ def restore_rejected(error: str) -> str:
     return f"⚠️ Файл не принят: {_e(error)}"
 
 
-RESTORE_STARTED = ("♻️ Восстанавливаю из бэкапа: бот остановится, подменит данные и вернётся "
-                   "через несколько секунд — отчёт пришлёт уже новый процесс")
+RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа: бот перезапустится и через несколько секунд пришлёт отчёт"
 
 
 def restore_done(created_at_iso: str) -> str:
@@ -95,8 +95,8 @@ BACKUP_PASSPHRASE_SET = "✅ Фраза задана — следующие ко
 
 
 def backup_when_prompt(day: int, hour: int) -> str:
-    return ui.head("✏️ День и час автобэкапа", meta=[f"сейчас {day}-го в {hour:02d}:00",
-                                                      "пришли два числа: <code>1 12</code>"])
+    return (ui.head("✏️ День и час автобэкапа", meta=[f"сейчас {day}-е, {hour:02d}:00"])
+            + "\n\nПришли день месяца (1–28) и час (0–23) через пробел, например <code>5 3</code> — 5-е число, 03:00")
 
 
 BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>"

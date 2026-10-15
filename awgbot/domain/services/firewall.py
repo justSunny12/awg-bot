@@ -122,7 +122,7 @@ class FirewallMixin:
             try:
                 nftguard.classify(tok)
             except ValueError as e:
-                raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя: {e}")
+                raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя ({e}). Попробуй ещё раз")
             if tok not in entries:
                 entries.append(tok)
         if not entries:

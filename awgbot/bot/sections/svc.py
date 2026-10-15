@@ -36,7 +36,7 @@ def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0,
                    [("✅ Завершить", br.cb.pack("mig", "do", "finish")), ("↩️ Отменить", br.cb.pack("mig", "do", "cancel"))]]
         else:
             mig = [("🚚 Начать переезд", br.cb.pack("mig", "do", "start")),
-                   (f"⚠️ Переехавшие после отмены: {orphans}", br.cb.pack("mig", "do", "orphans")) if orphans else None]
+                   (f"⚠️ Переехали до отмены: {orphans}", br.cb.pack("mig", "do", "orphans")) if orphans else None]
     return ui.rows(
         [("🔁 Перезапуск AWG", br.cb.pack(ID, "do", "awg")), ("🔁 Перезапуск бота", br.cb.pack(ID, "do", "bot"))],
         *mig,

@@ -16,9 +16,11 @@ from awgbot.domain.services.types import Notification, ServiceError
 from awgbot.domain.services.base import _e
 
 
-def _friend_blocked_text(device_name: str) -> str:
-    return (f"🔴 Доступ к устройству «{_e(device_name)}» приостановлен: "
-            "у владельца доступа закончилась подписка")
+def _friend_blocked_text(device_name: str, owner_link: str = "") -> str:
+    """Держателю: подписка владельца кончилась. owner_link — имя владельца
+    готовой разметкой (ссылка на профиль); без него — «у владельца»."""
+    who = f"у профиля {owner_link}" if owner_link else "у владельца доступа"
+    return f"🔴 Доступ к устройству «{_e(device_name)}» приостановлен: {who} закончилась подписка"
 
 
 def _friend_unblocked_text(device_name: str) -> str:

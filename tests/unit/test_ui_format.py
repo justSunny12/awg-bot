@@ -181,11 +181,11 @@ def test_device_limit_keyboard_labels_and_exit():
     from awgbot.bot.callbacks import DeviceCB, PresetCB
     mk = kb.device_limit_kb(7, 100 * G, DeviceCB(action="open", device_id=7))
     rows = [[b.text for b in r] for r in mk.inline_keyboard]
-    assert rows == [["10 ГБ", "50 ГБ", "100 ГБ"], ["✏️ Другое", "⬅️ Отмена"]], rows
+    assert rows == [["10 ГБ", "50 ГБ", "100 ГБ"], ["∞ Как у профиля", "✏️ Другое"], ["⬅️ Назад"]], rows
     unlimited = [[b.text for b in r] for r in kb.device_limit_kb(7, 0, "m:main").inline_keyboard]
-    assert unlimited == [["10 ГБ", "50 ГБ", "100 ГБ"], ["∞"], ["✏️ Другое", "⬅️ Отмена"]], unlimited
-    vals = [PresetCB.unpack(b.callback_data).val for b in [*mk.inline_keyboard[0], mk.inline_keyboard[1][0]]]
-    assert vals == [10, 50, 100, -1], "«✏️ Другое» — val=-1"
+    assert unlimited == [["10 ГБ", "50 ГБ", "100 ГБ"], ["∞ Без лимита", "✏️ Другое"], ["⬅️ Назад"]], unlimited
+    vals = [PresetCB.unpack(b.callback_data).val for b in [*mk.inline_keyboard[0], *mk.inline_keyboard[1]]]
+    assert vals == [10, 50, 100, 0, -1], "«∞» — val=0, «✏️ Другое» — val=-1"
 
 
 # ── ссылки /start клиента и гостя ────────────────────────────────────────────

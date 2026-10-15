@@ -29,7 +29,7 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
         # (OMV) это основной случай, лишний шаг ни к чему.
         await state.clear()
         await edit_nav(cb, services,
-                       texts.ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"], GATEWAY),
+                       texts.ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"], GATEWAY, pressed=True),
                        kb.gateway_back_kb("ssh"))
         await cb.answer()
         return

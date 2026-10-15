@@ -206,7 +206,7 @@ async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     if not dev.private_key:
-        await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
+        await edit(cb, texts.unmanaged_device_dialog(dev.name), kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
     await drop_message(cb, services)

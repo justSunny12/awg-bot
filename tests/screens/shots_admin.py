@@ -87,4 +87,7 @@ assert all(sh.data is not None for sh in SHOTS), [sh.id for sh in SHOTS if sh.da
 
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
 # длина считается без селектора варианта («☑️ Аварии на e-mail» — 18).
-LABEL_EXCEPTIONS: dict[str, set[str]] = {}
+LABEL_EXCEPTIONS: dict[str, set[str]] = {   # «Простой со звуком» — 19 знаков, принято пользователем
+    "adm.set.mon": {"✅ Простой со звуком"}, "adm.set.mon.edit.done": {"✅ Простой со звуком"},
+    "adm.set.mon.quiet": {"☑️ Простой со звуком"},
+}
