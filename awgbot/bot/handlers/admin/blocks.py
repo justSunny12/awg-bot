@@ -1,9 +1,12 @@
 """
 handlers/admin/blocks.py — ручные блокировки (админ): устройство и профиль.
 
-Профиль: «Приостановить подписку на время блокировки?» [⏸️ Да] [▶️ Нет] →
-«Уведомить владельца профиля?» [🔔 Да] [🔕 Нет]; пауза — всегда до снятия
-блокировки, выбора срока нет. Устройство: [🔔 С уведомлением] [🔕 Тихо].
+Один экран на блокировку: «🔒 Блокировка профиля Ксюша» с тумблерами
+«⏸️ Пауза: вкл» (подписка со сроком; пауза — до снятия блокировки) и
+«✅ Уведомить» / «☑️ Не уведомлять», затем «✖️ Отмена» и «🔒 Заблокировать»;
+у устройства — тот же экран без паузы. Состояние тумблеров — в колбэках
+(kind, days), не в FSM. Снятие: одна ручная причина — сразу; несколько —
+«🔓 Разблокировка …» с выбором причины.
 """
 
 from __future__ import annotations
@@ -40,15 +43,26 @@ async def _rerender_after_block(cb, services, target: str, ref: int):
             await edit(cb, *await device_card_parts(services, dev))
 
 
+async def _owner_name(services, dev) -> str:
+    oc = await call(services.db.get_client, dev.client_id)
+    return oc.name if oc is not None and not oc.is_service else ""
+
+
 @router.callback_query(BlockCB.filter(F.action == "menu_block"))
 async def admin_block_menu(cb: CallbackQuery, callback_data: BlockCB, services):
-    """Профиль — сперва про паузу подписки; устройство — сразу как."""
+    """Экран блокировки; первое открытие (kind пуст) — тумблеры по умолчанию:
+    пауза и уведомление включены; нажатие тумблера приходит сюда же с новым
+    состоянием в kind и days."""
+    first = not callback_data.kind
+    notify = True if first else callback_data.kind == "notified"
     if callback_data.target == "cli":
         client = await call(services.db.get_client, callback_data.ref)
         if client is None:
             await cb.answer(ui.Toast.no_profile, show_alert=True)
             return
-        await edit(cb, texts.block_client_ask(client, _bot(services)), kb.block_pause_kb(client.id))
+        pause = (True if first else callback_data.days >= 0) if client.period_end else None
+        await edit(cb, texts.block_client_ask(client, _bot(services), pause=bool(pause)),
+                   kb.block_kb("cli", client.id, pause=pause, notify=notify))
     else:
         dev = await call(services.db.get_device, callback_data.ref)
         if dev is None:
@@ -57,20 +71,7 @@ async def admin_block_menu(cb: CallbackQuery, callback_data: BlockCB, services):
         owner = await call(services.db.get_client, dev.client_id)
         await edit(cb, texts.block_device_ask_admin(dev.name, None if owner is None or owner.is_service else owner,
                                                    _bot(services)),
-                   kb.block_notify_kb("dev", dev.id))
-    await cb.answer()
-
-
-@router.callback_query(BlockCB.filter(F.action == "pause_no"))
-async def admin_block_pause_no(cb: CallbackQuery, callback_data: BlockCB):
-    await edit(cb, texts.BLOCK_NOTIFY_ASK, kb.block_notify_kb("cli", callback_data.ref, pause_days=-1))
-    await cb.answer()
-
-
-@router.callback_query(BlockCB.filter(F.action == "pause_yes"))
-async def admin_block_pause_yes(cb: CallbackQuery, callback_data: BlockCB):
-    """Пауза — до снятия блокировки (0 = бессрочно)."""
-    await edit(cb, texts.BLOCK_NOTIFY_ASK, kb.block_notify_kb("cli", callback_data.ref, pause_days=0))
+                   kb.block_kb("dev", dev.id, pause=None, notify=notify))
     await cb.answer()
 
 
@@ -80,7 +81,7 @@ async def admin_unblock_menu(cb: CallbackQuery, callback_data: BlockCB, services
     target, ref = callback_data.target, callback_data.ref
     if target == "cli":
         obj = await call(services.db.get_client, ref)
-        kind_map = _KIND_TO_CLI
+        kind_map = {k: v for k, v in _KIND_TO_CLI.items() if k != "user"}   # профиль сам себя не блокирует
     else:
         obj = await call(services.db.get_device, ref)
         kind_map = _KIND_TO_DEV
@@ -89,12 +90,14 @@ async def admin_unblock_menu(cb: CallbackQuery, callback_data: BlockCB, services
         return
     mask = int(obj.block_reason)
     active_kinds = [k for k, bit in kind_map.items() if mask & int(bit)]
+    owner = "" if target == "cli" else await _owner_name(services, obj)
     if len(active_kinds) <= 1:
         kind = active_kinds[0] if active_kinds else "all"
         await _do_unblock(cb, services, target, ref, kind)
-        await cb.answer(ui.Toast.unblocked)
+        await cb.answer(ui.toast(texts.unblocked_toast(obj.name, profile=target == "cli", owner=owner)))
         return
-    await edit(cb, "Какую блокировку снять?", kb.block_unblock_reasons(target, ref, mask))
+    await edit(cb, texts.unblock_ask(obj.name, profile=target == "cli", owner=texts._e(owner)),
+               kb.block_unblock_reasons(target, ref, mask))
     await cb.answer()
 
 
@@ -114,8 +117,7 @@ async def admin_block_do(cb: CallbackQuery, callback_data: BlockCB, services):
         obj = await call(services.db.get_device, callback_data.ref)
     owner = ""
     if callback_data.target != "cli" and obj is not None:
-        oc = await call(services.db.get_client, obj.client_id)
-        owner = oc.name if oc is not None and not oc.is_service else ""
+        owner = await _owner_name(services, obj)
     await send_notifications(cb.bot, notes)
     await _rerender_after_block(cb, services, callback_data.target, callback_data.ref)
     await cb.answer(ui.toast(texts.blocked_toast(obj.name if obj else "", silent=not notify,
@@ -148,8 +150,11 @@ async def _do_unblock(cb, services, target: str, ref: int, kind: str):
 
 @router.callback_query(BlockCB.filter(F.action == "unblock"))
 async def admin_unblock_do(cb: CallbackQuery, callback_data: BlockCB, services):
-    await _do_unblock(cb, services, callback_data.target, callback_data.ref, callback_data.kind)
-    await cb.answer(ui.Toast.unblocked)
+    target, ref = callback_data.target, callback_data.ref
+    obj = await call(services.db.get_client if target == "cli" else services.db.get_device, ref)
+    owner = "" if target == "cli" or obj is None else await _owner_name(services, obj)
+    await _do_unblock(cb, services, target, ref, callback_data.kind)
+    await cb.answer(ui.toast(texts.unblocked_toast(obj.name if obj else "", profile=target == "cli", owner=owner)))
 
 
 @router.callback_query(BlockCB.filter(F.action == "cancel"))

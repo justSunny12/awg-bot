@@ -69,8 +69,8 @@ def test_static_keyboards_build():
     assert _is_markup(kb.help_menu(is_initial=True))
     assert _is_markup(kb.period_kb("extend", ref=1, min_days=7))
     assert _is_markup(kb.grace_offer(1, 14))
-    assert _is_markup(kb.block_pause_kb(1))
-    assert _is_markup(kb.block_notify_kb("cli", 1, pause_days=0))
+    assert _is_markup(kb.block_kb("cli", 1, pause=True, notify=True))
+    assert _is_markup(kb.block_kb("dev", 1, pause=None, notify=False))
     assert _is_markup(kb.help_menu(guest=True))
     assert _is_markup(kb.guest_main()) and _is_markup(kb.guest_main(routing_visible=True, client_id=1))
 

@@ -6,7 +6,7 @@ from awgbot.util import timeutil
 from awgbot.bot import ui
 from ..fmt import (
     _e, human_bytes, device_state, plain_ip, rf_value, tree, sub_line, profile_link,
-    admin_device_link, _n_devices, _BYTES_PER_GB)
+    admin_device_link, _n_devices, _BYTES_PER_GB, plural_ru)
 from ..fmt import deep_link as _deep_link
 from ..routing import ROUTING_NAME
 from .common import TRAFFIC_PAYLOAD, month_label, _total, _LIST_SEP, _LIST_CAP, _more
@@ -17,15 +17,23 @@ from .common import TRAFFIC_PAYLOAD, month_label, _total, _LIST_SEP, _LIST_CAP, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def online_devices_text(rows, bot_username: str = "") -> str:
-    """«📶 Онлайн: 3 (7 устройств)» — профили и устройства, как на главной;
+def online_value(profiles: int, devices: int) -> str:
+    """«2 профиля, 2 устройства» — значение счётчика онлайн; никого — «0»."""
+    if not devices:
+        return "0"
+    return f"{profiles} {plural_ru(profiles, 'профиль', 'профиля', 'профилей')}, {_n_devices(devices)}"
+
+
+def online_devices_text(rows, bot_username: str = "", refreshed: str = "") -> str:
+    """«📶 Онлайн: 2 профиля, 2 устройства» — профили и устройства, как на главной;
     записи через пустую строку, шлюзы — вверху, имя устройства — ссылка на
     карточку, имя профиля — на карточку профиля; устройства без профиля (и
     служебного) — «без профиля». rows — [(устройство, профиль или None)]."""
     profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
-    head = ui.head("📶 Онлайн", value=f"{profiles} ({_n_devices(len(rows))})" if rows else "0")
+    head = ui.head("📶 Онлайн", value=online_value(profiles, len(rows)))
+    tail = f"{_LIST_SEP}{refreshed}" if refreshed else ""
     if not rows:
-        return head + _LIST_SEP + "Сейчас никто не подключён"
+        return head + _LIST_SEP + "Сейчас никто не подключён" + tail
     items = []
     for d, c in rows[:_LIST_CAP]:
         if getattr(d, "is_gateway", 0):
@@ -35,7 +43,7 @@ def online_devices_text(rows, bot_username: str = "") -> str:
                else profile_link(c, bot_username))
         items.append(f"{device_state(d, for_admin=True)} {admin_device_link(d, bot_username)} · "
                      f"{who} · {plain_ip(d.address)}")
-    return head + _LIST_SEP + _LIST_SEP.join(items) + _more(len(rows))
+    return head + _LIST_SEP + _LIST_SEP.join(items) + _more(len(rows)) + tail
 
 
 def expiring_text(rows, bot_username: str = "") -> str:
@@ -54,14 +62,14 @@ def expiring_text(rows, bot_username: str = "") -> str:
 def unassigned_text(n: int) -> str:
     if not n:
         return ui.head("📦 Без профиля", value="никого")
-    return ui.head("📦 Без профиля", value=f"{n} — {'пир создан' if n == 1 else 'пиры созданы'} мимо бота")
+    return ui.head("📦 Без профиля", value=f"{n} — {'устройство добавлено' if n == 1 else 'устройства добавлены'} не ботом")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Трафик списком (общий трафик ведущий, РФ — вложенной строкой под записью)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_OUTSIDE = "🧐 Вне профилей: {v} — удалённые устройства и первые минуты новых"
+_OUTSIDE = "🧐 Из них вне профилей: {v} — удалённые устройства и первые минуты новых"
 
 
 def _rf_sub(rf) -> list[str]:
@@ -73,12 +81,12 @@ def _rf_sub(rf) -> list[str]:
 
 def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] = (0, 0),
                           rf_total: tuple[int, int] | None = None, outside: int = 0) -> str:
-    """«📊 Трафик за 09.26: <итог>», под шапкой — РФ-итог и «🧐 Вне профилей»
+    """«📊 Трафик за сентябрь: <итог>», под шапкой — РФ-итог и «🧐 Вне профилей»
     (только при ненулевых значениях), затем профили по убыванию общего трафика
     (нулевые не выводятся) со своей РФ-строкой."""
     head = [ui.head(f"📊 Трафик за {month_label()}", value=_total(*total))]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
         # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
         # новых), поэтому под шапкой, а не записью среди профилей
         if int(outside or 0) >= _BYTES_PER_GB // 100:
@@ -95,11 +103,11 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
 
 def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
                          rf_total: tuple[int, int] | None = None, bot_username: str = "") -> str:
-    """«📊 Трафик за 09.26: <итог> · профиль [Ксюша]» — то же по устройствам профиля."""
+    """«📊 Трафик за сентябрь: <итог> · профиль [Ксюша]» — то же по устройствам профиля."""
     head = [ui.head(f"📊 Трафик за {month_label()}", value=_total(*total),
                     meta=[f"профиль {profile_link(client, bot_username)}"])]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
     branches = []
     live = [r for r in sorted(rows, key=lambda r: -(int(r[1]) + int(r[2]))) if int(r[1]) + int(r[2]) > 0]
     for d, rx, tx, rf in live[:_LIST_CAP]:

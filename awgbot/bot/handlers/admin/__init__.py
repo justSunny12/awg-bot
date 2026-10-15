@@ -40,7 +40,8 @@ from awgbot.bot.handlers.admin.clients import (
     edit_client_traffic_start, edit_traffic_preset, edit_traffic_apply, regen_invite,
     client_delete_confirm, client_delete_apply, extend_start, extend_keep_toggle,
     extend_period_chosen, edit_period_start, edit_period_start_apply, edit_period_end_apply,
-    admin_resume_pause, client_card_parts, client_edit_parts, clients_screen)
+    edit_period_button, admin_resume_pause, admin_resume_pause_yes, notify_toggle,
+    client_card_parts, client_edit_parts, clients_screen)
 from awgbot.bot.handlers.admin.devices import (
     admin_menu_devices, admin_add_device_start, admin_add_device_name, admin_gen_for,
     admin_client_devices, admin_dev_gen, admin_device_open, admin_device_connect_menu,
@@ -52,8 +53,7 @@ from awgbot.bot.handlers.admin.gateway import has_gw_token, gateway_claim_messag
 from awgbot.bot.handlers.admin.selfops import self_devices, self_gen_pick, self_add_start, self_add_name
 from awgbot.bot.sections.updates import install as update_install, menu as update_menu, mute as update_mute  # для тестов
 from awgbot.bot.handlers.admin.blocks import (
-    admin_block_menu, admin_block_pause_no, admin_block_pause_yes,
-    admin_unblock_menu, admin_block_do, admin_unblock_do, admin_block_cancel)
+    admin_block_menu, admin_unblock_menu, admin_block_do, admin_unblock_do, admin_block_cancel)
 from awgbot.bot.handlers.admin.broadcast import (
     broadcast_pick, broadcast_mode, broadcast_extend_toggle, broadcast_toggle, broadcast_toggle_all,
     broadcast_next, broadcast_days, broadcast_days_preset, broadcast_receive, broadcast_cancel_h,
@@ -83,7 +83,8 @@ __all__ = [
     "edit_limit_preset", "edit_limit_apply", "edit_client_traffic_start", "edit_traffic_preset",
     "edit_traffic_apply", "regen_invite", "client_delete_confirm", "client_delete_apply",
     "extend_start", "extend_keep_toggle", "extend_period_chosen", "edit_period_start",
-    "edit_period_start_apply", "edit_period_end_apply", "admin_resume_pause",
+    "edit_period_start_apply", "edit_period_end_apply", "edit_period_button", "admin_resume_pause",
+    "admin_resume_pause_yes", "notify_toggle",
     "client_card_parts", "client_edit_parts", "clients_screen",
     "admin_menu_devices", "admin_add_device_start", "admin_add_device_name", "admin_gen_for",
     "admin_client_devices", "admin_dev_gen", "admin_device_open", "admin_device_connect_menu",
@@ -94,8 +95,7 @@ __all__ = [
     "has_gw_token", "gateway_claim_message",
     
     "self_devices", "self_gen_pick", "self_add_start", "self_add_name",
-    "admin_block_menu", "admin_block_pause_no", "admin_block_pause_yes",
-    "admin_unblock_menu", "admin_block_do", "admin_unblock_do", "admin_block_cancel",
+    "admin_block_menu", "admin_unblock_menu", "admin_block_do", "admin_unblock_do", "admin_block_cancel",
     "broadcast_pick", "broadcast_mode", "broadcast_extend_toggle", "broadcast_toggle",
     "broadcast_toggle_all", "broadcast_next", "broadcast_days", "broadcast_days_preset",
     "broadcast_receive", "broadcast_cancel_h", "broadcast_send",

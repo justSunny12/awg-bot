@@ -76,7 +76,7 @@ async def test_offers_to_prepare_when_the_second_interface_is_missing(gen, sent)
     await rt._notify_migration_needed(None, _Svc(available=False))
     assert len(sent) == 1
     _tg, text, markup = sent[0]
-    assert "ядро нового поколения" in text.lower()
+    assert "новое ядро" in text.lower() and "ждёт переезда" in text.lower()
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert any("Подготовить переезд" in l for l in labels)
 
@@ -101,7 +101,7 @@ async def test_private_dns_offer_comes_with_three_decisions(sent):
     assert tg_id == config.ADMIN_ID
     assert "10.8.1.1" in text and "через раз" in text and "переезд" in text.lower()
     labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert any("сейчас" in l for l in labels) and any("При переезде" in l for l in labels) \
+    assert any("сейчас" in l for l in labels) and any("С переездом" in l for l in labels) \
         and any("Не нужно" in l for l in labels)
 
 

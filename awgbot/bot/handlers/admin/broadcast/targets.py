@@ -8,7 +8,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import BroadcastCB, PresetCB
-from awgbot.bot.handlers.common import edit, ask_here, ask_tracked, cleanup_content, send_menu
+from awgbot.bot.handlers.common import edit, ask_tracked, cleanup_content, send_menu
 from awgbot.bot.states import Broadcast
 from awgbot.bot.handlers.admin import broadcast as pkg       # имена пакета — через него: их подменяют тесты
 
@@ -170,7 +170,10 @@ async def _days_chosen(message: Message, state: FSMContext, services, days: int,
 @router.callback_query(PresetCB.filter(F.kind == "bc_days"), Broadcast.days)
 async def broadcast_days_preset(cb: CallbackQuery, callback_data: PresetCB, state: FSMContext, services):
     if callback_data.val < 0:
-        await ask_here(cb, services, state, "✏️ Дней, 1–365", "main")
+        # приглашение — на месте, «✖️ Отмена» — та же отмена объявления, что у
+        # остальных шагов (bc:cancel), а не возврат на главную
+        await edit(cb, texts.BROADCAST_DAYS_OTHER, kb.broadcast_cancel())
+        await pkg.call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
         await cb.answer()
         return
     await _days_chosen(cb.message, state, services, int(callback_data.val), via_cb=cb)
@@ -182,6 +185,6 @@ async def broadcast_days(message: Message, state: FSMContext, services):
     await pkg.call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     raw = (message.text or "").strip()
     if not raw.isdigit() or not 1 <= int(raw) <= 365:
-        await ask_tracked(message, services, texts.BROADCAST_DAYS_BAD)
+        await ask_tracked(message, services, texts.BROADCAST_DAYS_BAD, reply_markup=kb.broadcast_cancel())
         return
     await _days_chosen(message, state, services, int(raw))

@@ -98,8 +98,8 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
         extension = (days, plan)
         by_tg = {e.client.tg_id: texts.announcement_text(texts.extension_header(days, e), text)
                  for e in plan if e.client.tg_id}
-        first = next((e for e in plan if not e.unlimited), None)
-        shown = texts.announcement_text(texts.extension_header(days, first), text)
+        # копия в чате админа — с масками вместо чисел первого адресата
+        shown = texts.announcement_text(texts.EXTENSION_HEADER_MASK, text)
     ok, failed = await pkg.broadcast(cb.message.bot, tg_ids, text, photos, by_tg)
     clients = await _bc_selected(services, data)
     friends = (False if extend

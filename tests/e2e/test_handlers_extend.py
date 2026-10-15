@@ -60,15 +60,16 @@ async def test_period_applies_at_once_leaves_a_two_line_note_and_returns_to_the_
     assert await state.get_data() == {}
 
 
-async def test_never_ignores_keep_and_makes_it_unlimited(services, fake_bot, make_active_client):
-    """«∞» делает подписку бессрочной независимо от тумблера: остаток тут
-    некуда сохранять (след — снимок adm.cl.extend.never)."""
+async def test_never_is_not_an_extension(services, fake_bot, make_active_client):
+    """«∞» в продлении больше нет: кнопка прежнего сообщения — «устарела»,
+    подписка не меняется; бессрочной делает «✏️ Изменить» → период."""
     client = make_active_client(tg_id=7204, period_kind="year")
     cb, nav = _admin_cb(fake_bot)
     await admin_h.extend_period_chosen(
         cb, PeriodCB(kind="never", ctx="extend", ref=client.id, keep=1), services, FakeState())
     fresh = services.db.get_client(client.id)
-    assert fresh.period_kind == "never" and fresh.period_end is None, "подписка не стала бессрочной"
+    assert fresh.period_kind == "year" and fresh.period_end, "«∞» из старого сообщения сделал бессрочной"
+    assert cb.answers and cb.answers[0][1] is True
 
 
 async def test_extend_from_expired_reactivates(services, fake_bot, make_active_client):

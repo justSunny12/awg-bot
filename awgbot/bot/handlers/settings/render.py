@@ -43,7 +43,7 @@ async def _screen(sec: str, services, key: str = ""):
     if sec == "dns":
         info = await call(services.private_dns_info)
         blocked = bool(await call(services.migration_blocked_reason))
-        return texts.private_dns_offer(info["target"]), kb.private_dns_choices(blocked)
+        return texts.private_dns_offer(info["target"], blocked), kb.private_dns_choices(blocked)
     if sec == "mig_prep":
         d = await call(services.migration_prepare_data)
         if d["blocked"]:

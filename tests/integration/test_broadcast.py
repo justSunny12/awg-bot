@@ -26,7 +26,7 @@ async def test_broadcast_counts_ok_and_failed():
             sent.append(tg_id)
 
     ok, failed = await notifier.broadcast(Bot(), [1, 2, 99, 3], "привет")
-    assert ok == 3 and failed == 1
+    assert ok == 3 and failed == [99]
     assert sent == [1, 2, 3]
 
 
@@ -34,7 +34,7 @@ async def test_broadcast_empty_list():
     class Bot:
         async def send_message(self, *a, **k): raise AssertionError("не должно зваться")
     ok, failed = await notifier.broadcast(Bot(), [], "x")
-    assert ok == 0 and failed == 0
+    assert ok == 0 and failed == []
 
 
 async def test_broadcast_pacing_and_order_preserved():
@@ -47,7 +47,7 @@ async def test_broadcast_pacing_and_order_preserved():
 
     ok, failed = await notifier.broadcast(Bot(), [5, 0, 7, None, 9], "x")
     assert seen == [5, 7, 9]          # 0/None пропущены
-    assert ok == 3 and failed == 0
+    assert ok == 3 and failed == []
 
 
 # ── адресаты объявления по набору профилей ───────────────────────────────────────
@@ -148,7 +148,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     solo = make_active_client(name="Один", tg_id=6001)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
     preview = texts.broadcast_preview("текст", 1, [solo], False)
-    assert preview.startswith("👆 <b>Так увидят получатели</b> · 1 адресат: профиль Один\n\n"), preview
+    assert preview.startswith("👇 <b>Так увидят получатели</b> · 1 адресат: профиль Один\n\n"), preview
     assert "делится" not in preview
 
     dc = services.add_device(solo.id, "Телефон")

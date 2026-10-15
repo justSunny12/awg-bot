@@ -8,7 +8,7 @@ from awgbot.util.textfmt import _days
 
 
 def _pause_kind_ru(kind: str) -> str:
-    return "годовой" if kind == "year" else "ежемесячной"
+    return "годовой" if kind == "year" else "месячной"
 
 
 def pause_credit_line(pc) -> str:
@@ -21,12 +21,11 @@ def pause_credit_line(pc) -> str:
         return ("⏸️ Дни паузы за этот период не начислены: в прошлом периоде использована "
                 f"отсрочка. Доступно {_days(pc.after)}")
     if pc.reason == "cap":
-        return ("⏸️ Дни паузы не добавлены: достигнуто максимальное количество для "
-                f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap})")
+        return f"⏸️ Дни паузы не добавлены: у {_pause_kind_ru(pc.kind)} подписки их максимум {pc.cap}"
     full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
             else settings.get_int("pause.monthly_pause_days", 2))
     partial = pc.added < full
     note = ("" if not partial
             else " (максимум)" if pc.kind == "year"
-            else " (максимум для ежемесячной подписки)")
+            else " (максимум для месячной подписки)")
     return f"⏸️ Дней паузы +{pc.added} → {pc.after}{note}"

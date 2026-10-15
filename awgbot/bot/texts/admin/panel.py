@@ -6,13 +6,14 @@ import datetime
 
 from awgbot.util import timeutil
 from awgbot.bot import ui
-from ..fmt import _e, human_bytes, rf_line, profile_link, _n_devices
+from ..fmt import _e, human_bytes, rf_line, profile_link, plural_ru
 from ..fmt import deep_link as _deep_link
 from ..routing import routing_status_line, routing_admin_status_line
 from ..updates import release_url, update_gw_names
 from .common import (
     TRAFFIC_PAYLOAD, UPD_PAYLOAD, ONLINE_PAYLOAD, EXPIRING_PAYLOAD, UNASSIGNED_PAYLOAD,
-    month_label, _LIST_SEP)
+    REFRESH_PAYLOAD, month_label, refreshed_line, _LIST_SEP)
+from .lists import online_value
 from awgbot.bot.texts import admin as pkg       # _HOSTNAME — через пакет: его подменяют тесты
 
 
@@ -51,19 +52,15 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if st.get("ok") is None:
         dot = "…"
     elif st["ok"]:
-        dot = "🟢" + (f" · {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
+        dot = "🟢 работает" + (f" · {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
     else:
-        dot = "🔴 не отвечает"
+        dot = "🔴 AWG не отвечает"
     host = _e(_hostname() or "AWG")
     lines = [ui.head(f"🛠 {host}", dot)]
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
-        metrics = f"📈 CPU {_p(st.get('cpu'))} · RAM {_p(st.get('ram'))} · диск {_p(st.get('disk'))}"
-        age = timeutil.age_ago(st.get("age_seconds"))
-        if age:
-            metrics += f" · <i>{age}</i>"
-        lines.append(metrics)
+        lines.append(f"📈 CPU {_p(st.get('cpu'))} · RAM {_p(st.get('ram'))} · диск {_p(st.get('disk'))}")
     elif st.get("age_seconds") is None:
         lines.append("📈 Метрики: ещё нет замера")
     if routing_info is not None:
@@ -79,8 +76,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     counters = []
     if st.get("online_count") is not None:
         n = int(st["online_count"])
-        # «3 (7 устройств)» — профили онлайн и их устройства; ноль — просто «0»
-        value = f"{int(st.get('online_profiles') or 0)} ({_n_devices(n)})" if n else "0"
+        # «2 профиля, 7 устройств» — профили онлайн и их устройства; ноль — просто «0»
+        value = online_value(int(st.get("online_profiles") or 0), n)
         counters.append(_counter(ONLINE_PAYLOAD, "📶 Онлайн", value, n))
     if expiring:
         counters.append(_counter(EXPIRING_PAYLOAD, "⏳ Истекают", str(expiring), expiring))
@@ -103,8 +100,10 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                     + f'<a href="{release_url(tag)}">список изменений</a>')
     elif update_wait:
         tag = update_wait["tag"] if str(update_wait["tag"]).startswith("v") else f"v{update_wait['tag']}"
-        tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ {tag} ждёт шлюзы") + "</b>: "
-                    + update_gw_names(update_wait.get("peers") or [], bot_username))
+        peers = update_wait.get("peers") or []
+        what = "сначала обнови шлюзы:" if len(peers) != 1 else "сначала обнови шлюз"
+        tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ {tag}") + "</b> — "
+                    + f"{what} {update_gw_names(peers, bot_username)}")
     mig = migration_line(migration, bot_username)
     if mig:
         tail.append(mig)
@@ -113,6 +112,11 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         lines.extend(tail)
     if len(lines) > 1:                                # шапка — отдельной строкой от остального
         lines.insert(1, "")
+    # возраст снимка — последней строкой, ссылкой «перечитать» (кнопки «🔄
+    # Обновить» на главной больше нет)
+    age = st.get("age_seconds")
+    at = None if age is None or int(age) < 60 else timeutil.now() - datetime.timedelta(seconds=int(age))
+    lines += ["", refreshed_line(bot_username, REFRESH_PAYLOAD, at)]
     return "\n".join(lines)
 
 
@@ -120,13 +124,18 @@ MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор пе�
 
 
 def migration_line(p, bot_username: str = "") -> str:
-    """«🚚 Переезд: 11/12 профилей, 18/20 устройств» — пока идёт переезд;
-    «🚚 Переезд» — ссылка на обзор."""
+    """«🚚 Переезд: 11 из 12 профилей · 18 из 20 устройств» — пока идёт
+    переезд; «🚚 Переезд» — ссылка на обзор."""
     if p is None or getattr(p, "clients_total", 0) == 0:
         return ""
     label = _deep_link(bot_username, MIGRATION_PAYLOAD, "🚚 Переезд")
-    return (f"{label}: {p.clients_done}/{p.clients_total} профилей, "
-            f"{p.devices_done}/{p.devices_total} устройств")
+    return f"{label}: {migration_counts(p)}"
+
+
+def migration_counts(p) -> str:
+    """«1 из 2 профилей · 1 из 2 устройств» — ход переезда (главная, «🔧 Сервис»)."""
+    return (f"{p.clients_done} из {p.clients_total} {plural_ru(p.clients_total, 'профиля', 'профилей', 'профилей')} · "
+            f"{p.devices_done} из {p.devices_total} {plural_ru(p.devices_total, 'устройства', 'устройств', 'устройств')}")
 
 
 def _mig_dot(done: int, total: int) -> str:
@@ -138,12 +147,12 @@ def migration_overview_text(d: dict, bot_username: str = "") -> str:
     профили — не переехавшие целиком сверху, по убыванию оставшегося; имя не
     переехавшего — ссылка на его экран переезда."""
     params = []
-    for key, label in (("port", "порт"), ("subnet", "подсеть"), ("generation", "awg")):
+    for key, label in (("port", "порт"), ("subnet", "подсеть"), ("generation", "поколение AWG")):
         old, new = d.get(key) or ("", "")
         if old and new and str(old) != str(new):
             fmt_ = ((lambda v: f"gen{v}") if key == "generation"
                     else (lambda v: f"<code>{_e(str(v))}</code>") if key == "subnet" else str)
-            params.append(f"{label}: {fmt_(old)} → {fmt_(new)}")
+            params.append(f"{label} {fmt_(old)} → {fmt_(new)}")
     head = ui.head("🚚 Переезд", meta=params)
     rows = sorted(d.get("rows") or [], key=lambda r: -(int(r[2]) - int(r[1])))
     if not rows:
@@ -152,19 +161,25 @@ def migration_overview_text(d: dict, bot_username: str = "") -> str:
     for c, done, total in rows:
         name = (_e(c.name) if done >= total
                 else _deep_link(bot_username, f"{MIGRATION_PAYLOAD}-{int(c.id)}", c.name))
-        items.append(f"{_mig_dot(done, total)} {name}: {done}/{total} устройств")
-    return head + _LIST_SEP + _LIST_SEP.join(items)
+        items.append(f"{_mig_dot(done, total)} {name}: {done} из {total} "
+                     f"{plural_ru(total, 'устройства', 'устройств', 'устройств')}")
+    return head + _LIST_SEP + "\n".join(items)
 
 
 def migration_client_text(client, rows, bot_username: str = "") -> str:
-    """Переезд одного профиля: «🚚 Переезд: [Ксюша], 1/3 устройств» и устройства
-    с датой последнего подключения. rows — [(устройство, переехало, unix-время
-    последнего подключения)]."""
+    """Переезд одного профиля: «🚚 Переезд: [Ксюша], 1 из 3 устройств» и
+    устройства с датой последнего подключения. rows — [(устройство,
+    переехало, unix-время последнего подключения)]."""
     done = sum(1 for _d, moved, _t in rows if moved)
-    head = ui.head("🚚 Переезд", value=f"{profile_link(client, bot_username)}, {done}/{len(rows)} устройств")
+    total = len(rows)
+    head = ui.head("🚚 Переезд", value=f"{profile_link(client, bot_username)}, {done} из {total} "
+                   f"{plural_ru(total, 'устройства', 'устройств', 'устройств')}")
     items = []
     for dev, moved, ts in rows:
-        seen = (timeutil.fmt_dt_ui(datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc))
-                if ts else "не подключалось")
-        items.append(f"{'🟢' if moved else '🔴'} {_e(dev.name)} — последний коннект: {seen}")
+        if ts:
+            seen = "последнее подключение: " + timeutil.fmt_dt_ui(
+                datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc))
+        else:
+            seen = "ещё не подключалось"
+        items.append(f"{'🟢' if moved else '🔴'} {_e(dev.name)} — {seen}")
     return head + (_LIST_SEP + "\n".join(items) if items else "")

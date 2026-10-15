@@ -15,7 +15,7 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
     resume_on=None — строка не рисуется)."""
     if acc is None:
         return (ui.head("✉️ E-mail", "ящик не подключён") + "\n"
-                f"Почта нужна {br.email_purpose}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
+                f"Почта нужна {br.email_purpose}. Портов на {br.host_loc} бот не открывает — сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
         when = timeutil.age_ago((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
@@ -34,16 +34,18 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
     return "\n".join(lines)
 
 
-EMAIL_ASK_ADDRESS = ui.prompt("✉️ Подключение ящика", "пришли адрес, от имени которого бот будет читать и "
-                              "слать почту: <code>box@icloud.com</code>")
-EMAIL_ASK_IMAP = ("Домен незнакомый — укажи серверы сам.\n"
-                  "IMAP-сервер и порт: <code>imap.example.com:993</code>")
-EMAIL_ASK_SMTP = "SMTP-сервер и порт: <code>smtp.example.com:587</code>"
-EMAIL_ASK_IMAP_PORT = "Порт IMAP (SSL/TLS), обычно 993:"
-EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
+EMAIL_ASK_ADDRESS = (ui.head("✉️ Подключение ящика") + "\n\n"
+                     "Пришли адрес ящика — с него бот будет читать и слать почту. "
+                     "Например: <code>box@icloud.com</code>")
+EMAIL_ASK_IMAP = ("Домен незнакомый — укажи серверы сам\n"
+                  "Пришли IMAP-сервер и порт, например <code>imap.example.com:993</code>")
+EMAIL_ASK_SMTP = "Пришли SMTP-сервер и порт, например <code>smtp.example.com:587</code>"
+EMAIL_ASK_IMAP_PORT = "Пришли порт IMAP (SSL/TLS) — обычно 993"
+EMAIL_ASK_SMTP_PORT = "Пришли порт SMTP (STARTTLS) — обычно 587"
 EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида <code>box@example.com</code>"
-EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
-EMAIL_BAD_HOST = "⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>"
+EMAIL_BAD_PORT = "⚠️ Порт — число от 1 до 65535, попробуй ещё раз"
+EMAIL_BAD_HOST = ("⚠️ Порт — число от 1 до 65535. Пришли сервер и порт, например "
+                  "<code>imap.example.com:993</code>")
 def email_forget_confirm(br) -> str:
     """Что перестанет работать без почты — у роли своё (email_forget_tail)."""
     return ui.confirm("🗑 Отключить почту?", f"Логин, пароль и серверы будут стёрты; {br.email_forget_tail}")
@@ -66,9 +68,10 @@ def email_ask_address_change(current: str) -> str:
 
 
 def email_ask_resume_address(current: str) -> str:
-    return (ui.head("✉️ Адрес для писем с кодом", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n"
-            "На него клиент, заперевшийся на паузе, шлёт письмо с кодом. Обычно это сам "
-            "ящик; у ящика есть алиас — можно его. Пришли адрес, «-» — сам ящик")
+    return (ui.head("✉️ Адрес для писем с кодом", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n\n"
+            "Сюда клиент на паузе, оставшийся без доступа к Telegram, присылает письмо с кодом. "
+            "Обычно это сам ящик или его алиас.\n"
+            "Пришли адрес; «-» — вернуть сам ящик")
 
 
 def email_provider_line(address: str, provider) -> str:
@@ -82,7 +85,7 @@ def email_ask_password(address: str) -> str:
     from awgbot.infra import mail
     hint = mail.PASSWORD_HINTS.get(mail.domain_of(address), "")
     tail = f"\n⚠️ {_e(hint)}" if hint else ""
-    return ("Пароль ящика — сообщение с ним удалю сразу после приёма; вход по IMAP и SMTP "
+    return ("Пришли пароль ящика — сообщение с ним удалю сразу; вход по IMAP и SMTP "
             "проверю до сохранения" + tail)
 
 
@@ -91,4 +94,5 @@ def email_saved(address: str, detail: str) -> str:
 
 
 def email_check_failed(detail: str) -> str:
-    return f"🔴 Не подключено: {_e(detail)}\nНичего не сохранено — попробуй ещё раз"
+    return (f"🔴 Ящик не подключён — вход не прошёл: {_e(detail)}\n"
+            "Ничего не сохранено — проверь пароль и подключи ещё раз")

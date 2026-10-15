@@ -30,11 +30,12 @@ def _bounds(key: str):
 # Текстовые настройки (не числа): ключ → (подпись, подсказка). Ввод проверяется
 # валидатором в обработчике.
 SETTINGS_TEXT = {
-    "email.resume_address": ("Адрес для кода", "адрес почты; «-» — сам ящик"),
-    "app.network.server_host": ("Домен", "домен или IP — попадёт в новые ссылки"),
-    "app.client_config.server_name": ("Имя сервера", "видно клиенту в приложении"),
-    "app.client_config.dns1": ("DNS клиентов", "один или два адреса через запятую"),
-    "app.firewall.ssh_allow": ("Адреса для SSH-доступа", "IP, подсеть или имя DynDNS; можно несколько"),
+    "email.resume_address": ("Адрес для кода", "Пришли адрес почты; «-» — сам ящик"),
+    "app.network.server_host": ("Домен", "Пришли домен или IP — попадёт в новые ссылки"),
+    "app.client_config.server_name": ("Имя сервера", "Пришли имя — его видно клиенту в приложении"),
+    "app.client_config.dns1": ("DNS клиентов", "Пришли один или два адреса через запятую"),
+    "app.firewall.ssh_allow": ("Адреса для SSH-доступа",
+                               "Пришли IP, подсеть или доменное имя через пробел; имя буду резолвить сам"),
 }
 
 
@@ -54,8 +55,8 @@ def _setting_value(key: str, value) -> str:
 
 
 def settings_prompt(key: str, current=None) -> str:
-    """«✏️ Частота опроса · сейчас 3 мин · 1–1440» — приглашение к вводу с
-    текущим значением и границами; текстовые — с подсказкой."""
+    """Диалог ввода: «✏️ <b>Частота опроса</b> · сейчас 3 мин» ⏎⏎ «Пришли число от
+    1 до 1440 (мин)»; текстовые — со своей подсказкой."""
     if key in SETTINGS_TEXT:
         label, hint = SETTINGS_TEXT[key]
         if isinstance(current, (list, tuple)):
@@ -63,24 +64,25 @@ def settings_prompt(key: str, current=None) -> str:
         else:
             shown = _setting_value(key, current) if current not in (None, "", []) else ""
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
-        return ui.head(f"{icon} {_e(label)}", meta=[f"сейчас {shown}" if shown else ""]) + f"\n{_e(hint)}"
+        return ui.head(f"{icon} {_e(label)}", meta=[f"сейчас {shown}" if shown else ""]) + f"\n\n{_e(hint)}"
     lo, hi, label, unit = _bounds(key)
     u = unit_suffix(unit)
-    return ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else "", f"{lo}–{hi}"])
+    return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else ""])
+            + f"\n\nПришли число от {lo} до {hi}" + (f" ({unit})" if unit else ""))
 
 
 def bonus_prompt(current: str) -> str:
     """Приглашение к вводу бонуса при исчерпании: три формата и выключение."""
-    return (ui.head("✏️ Бонус при исчерпании", meta=[f"сейчас {_e(current)}"]) + "\n"
+    return (ui.head("✏️ Бонус при исчерпании", meta=[f"сейчас {_e(current)}"]) + "\n\n"
             "Сколько добавить профилю разово, когда он упёрся в месячный лимит:\n"
             "• <code>50</code> — 50 ГБ\n"
-            "• <code>10%</code> — 10% лимита профиля, окр. вверх до целых ГБ (но не более половины лимита)\n"
-            "• <code>10% 50</code> — 10% лимита, вверх до целых ГБ, но не более 50 ГБ\n"
-            "• <code>0</code> — без бонуса: доступ отключится сразу по достижении лимита, и уведомление "
-            "об этом хозяин профиля может не получить")
+            "• <code>10%</code> — 10% лимита профиля, с округлением вверх до целых ГБ, но не больше половины лимита\n"
+            "• <code>10% 50</code> — то же, но не больше 50 ГБ\n"
+            "• <code>0</code> — без бонуса: доступ отключится сразу, как только лимит исчерпан, и владелец "
+            "профиля может не узнать об этом: без доступа уведомление до него может не дойти")
 
 
-BONUS_BAD = "⚠️ Не понял — жду целое число, число со знаком процента либо их корректную комбинацию"
+BONUS_BAD = "⚠️ Не понял. Пришли число ГБ (<code>50</code>), процент (<code>10%</code>) или оба (<code>10% 50</code>)"
 
 
 def bonus_changed(old: str, new: str) -> str:
@@ -113,8 +115,33 @@ def settings_ssh_allow_added(entries: list) -> str:
 
 
 def settings_bad_value(key: str) -> str:
-    lo, hi, _label, unit = _bounds(key)
-    return f"⚠️ Нужно целое число {lo}–{hi}{unit_suffix(unit)}"
+    """Переспрос: «⚠️ Частота опроса — число от 1 до 1440 мин, попробуй ещё раз»."""
+    lo, hi, label, unit = _bounds(key)
+    return f"⚠️ {_e(label)} — число от {lo} до {hi}{unit_suffix(unit)}, попробуй ещё раз"
+
+
+# подписи тумблеров общих разделов — для всплывашки итога «Тихие часы: вкл»
+_TOGGLE_LABELS = {
+    "quiet_hours.quiet_hours_enabled": "Тихие часы",
+    "resource_alerts.enabled": "Алерты хоста",
+    "notifications.email_fallback": "Аварии на e-mail",
+    "app.scheduler.backup_enabled": "Автобэкапы",
+    "email.resume_enabled": "Аварийный выход",
+    "app.monitoring.service_failure_alert_loud": "Звук 24/7",
+    "app.gateway.link_alert_loud": "Звук 24/7",
+    "notifications.client_events.activation": "Активация",
+    "notifications.client_events.grace": "Отсрочка",
+    "notifications.client_events.over_limit": "Лимит исчерпан",
+    "notifications.client_events.bonus": "Бонус",
+}
+
+
+def toggle_toast(key: str, on: bool) -> str:
+    """Всплывашка итога тумблера: «Тихие часы: вкл», «Аварии на e-mail: выкл»;
+    ключ без подписи — «Включено» / «Выключено»."""
+    label = _TOGGLE_LABELS.get(key)
+    state = "вкл" if on else "выкл"
+    return f"{label}: {state}" if label else ("Включено" if on else "Выключено")
 
 
 def cycle_toast(key: str, value) -> str:

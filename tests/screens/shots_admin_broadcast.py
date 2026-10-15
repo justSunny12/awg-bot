@@ -85,7 +85,7 @@ def _bc_undelivered(services, mp):
 
     async def broadcast(bot, tg_ids, text, photos=(), by_tg=None):
         ok, failed = await real(bot, [t for t in tg_ids if t != 2002], text, photos, by_tg)
-        return ok, failed + (2002 in tg_ids)
+        return ok, failed + ([2002] if 2002 in tg_ids else [])
     mp.setattr(bc, "broadcast", broadcast)
     return who
 

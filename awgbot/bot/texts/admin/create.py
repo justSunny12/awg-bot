@@ -19,7 +19,19 @@ def new_profile_devs(name: str) -> str:
 
 
 def new_profile_traffic(name: str, devs: int) -> str:
-    return ui.head(f"➕ {_e(name)}", meta=[_n_devices(devs) if devs else "∞ устройств"]) + " — трафик в месяц? Общий на все устройства"
+    return (ui.head(f"➕ {_e(name)}", meta=[_n_devices(devs) if devs else "∞ устройств"])
+            + " — сколько трафика в месяц?\nЛимит общий на все устройства")
+
+
+def new_profile_devs_other(name: str) -> str:
+    """«✏️ Другое» на шаге устройств нового профиля."""
+    return ui.head(f"✏️ {_e(name)} — сколько устройств?") + "\n\nПришли число; 0 — без лимита"
+
+
+def new_profile_traffic_other(name: str, devs: int) -> str:
+    """«✏️ Другое» на шаге трафика нового профиля."""
+    return (ui.head(f"✏️ {_e(name)}", meta=[_n_devices(devs) if devs else "∞ устройств"])
+            + " — трафик в месяц\n\nПришли число ГБ; 0 — без лимита")
 
 
 def new_profile_period(name: str, devs: int, gb_limit: int) -> str:
@@ -30,7 +42,7 @@ def new_profile_period(name: str, devs: int, gb_limit: int) -> str:
 
 INVITE_FORWARD_TEMPLATE = (
     "Привет! Тебе открыт доступ в свободный интернет 🎉\n"
-    "Жми ссылку и «Старт» — дальше подскажу\n"
+    "Жми ссылку и «Запустить» — дальше подскажу\n"
     "{link}"
 )
 
@@ -46,10 +58,11 @@ def invite_screen(link: str, client, *, new: bool = True) -> str:
     d = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
     t = f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
     end = client.effective_period_end
-    till = f"→ {timeutil.fmt_date_ui(timeutil.parse_iso(end))}" if end else "бессрочно"
-    head = ("☝️ Приглашение с индивидуальным кодом для нового профиля:" if new
-            else "☝️ Новое приглашение с индивидуальным кодом для профиля:")
-    return f"{invite_plain(link)}\n—\n{head}\n{_e(client.name)} — {d} · {t} · {till}"
+    till = f"до {timeutil.fmt_date_ui(timeutil.parse_iso(end))}" if end else "бессрочно"
+    name = _e(client.name)
+    head = (f"☝️ Отправь приглашение владельцу профиля {name} — по нему откроется профиль:" if new
+            else f"☝️ Новое приглашение для профиля {name} — отправь его владельцу, прежнее больше не работает:")
+    return f"{invite_plain(link)}\n—\n{head}\n{d} · {t} · {till}"
 
 
 def add_device_prompt_admin(client, used: int, limit: int) -> str:
@@ -58,13 +71,13 @@ def add_device_prompt_admin(client, used: int, limit: int) -> str:
 
 
 def device_created_admin(name: str, client, bot_username: str = "") -> str:
-    return f"✅ {_e(name)} создано для профиля {profile_link(client, bot_username)}"
+    return f"✅ Устройство «{_e(name)}» создано для профиля {profile_link(client, bot_username)}"
 
 
 def admin_bootstrap_device(address: str) -> str:
     """Сообщение о первом устройстве админа, заведённом ботом самостоятельно."""
     return ("🔑 Завёл тебе первое устройство «Админ» (<code>" + _e(address) + "</code>).\n\n"
-            "Пиры, созданные в обход бота, теперь попадают в карантин и поднимают "
+            "Устройства, добавленные не ботом, попадают в карантин и поднимают "
             "тревогу — значит взять себе доступ «снаружи» больше нельзя, и первое "
             "устройство бот обязан выдать сам. Ссылка ниже: импортируй её в "
             "AmneziaVPN.\n\n"

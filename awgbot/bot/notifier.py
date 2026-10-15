@@ -246,10 +246,10 @@ async def send_announcement(bot, tg_id, text: str, photos=()):
     return await bot.send_media_group(tg_id, media=media)
 
 
-async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int, int]:
+async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int, list[int]]:
     """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
-    не удалось). Ошибки отправки (заблокировали бота, удалён аккаунт) считаем в
-    «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
+    tg_id недоставленных — отчёт называет их поимённо). Ошибки отправки
+    (заблокировали бота, удалён аккаунт) считаем в «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
     (флуд-контроль Telegram); RetryAfter внутри _send пережидается один раз.
     parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
     объявлениям НЕ применяем — это осознанная явная отправка админом."""
@@ -271,6 +271,7 @@ async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int
         except Exception as e:                       # noqa: BLE001
             log.warning("broadcast: не доставлено %s: %s", tg_id, e)
             return False
-    results = await _paced([t for t in tg_ids if t], one)
+    ids = [t for t in tg_ids if t]
+    results = await _paced(ids, one)
     ok = sum(1 for r in results if r is True)
-    return ok, len(results) - ok
+    return ok, [t for t, r in zip(ids, results) if r is not True]

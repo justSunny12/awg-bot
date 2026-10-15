@@ -45,7 +45,7 @@ async def add_client_devs_preset(cb: CallbackQuery, callback_data: PresetCB, ser
     data = await state.get_data()
     name = data.get("name") or ""
     if callback_data.val < 0:
-        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "main")
+        await ask_here(cb, services, state, texts.new_profile_devs_other(name), "main")
         await cb.answer()
         return
     await _devs_chosen(cb.message, services, state, name, int(callback_data.val), via_cb=cb)
@@ -79,7 +79,8 @@ async def add_client_limit(message: Message, services, state: FSMContext):
 async def add_client_traffic_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
     data = await state.get_data()
     if callback_data.val < 0:
-        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "main")
+        await ask_here(cb, services, state,
+                       texts.new_profile_traffic_other(data.get("name") or "", int(data.get("limit") or 0)), "main")
         await cb.answer()
         return
     await _traffic_chosen(cb.message, services, state, data, int(callback_data.val), via_cb=cb)
@@ -104,7 +105,7 @@ async def add_client_traffic(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
+        await ask_tracked(message, services, texts.NUMBER_BAD_TRAFFIC)
         return
     await _traffic_chosen(message, services, state, await state.get_data(), int(raw))
 

@@ -50,7 +50,7 @@ def settings_server(blocked: str = "", private_dns_offer: bool = False) -> Inlin
         [("✏️ DNS", SetCB(sec="srv", act="edit", key="app.client_config.dns1")),
          ("✏️ MTU", SetCB(sec="srv", act="edit", key="app.client_config.mtu"))],
         [("🔒 Свой резолвер", SetCB(sec="dns", act="open")) if private_dns_offer else None,
-         ("🚚 Порт, подсеть", SetCB(sec="mig_prep", act="open")) if not blocked else None],
+         ("🚚 Порт или подсеть", SetCB(sec="mig_prep", act="open")) if not blocked else None],
         _back())
 
 
@@ -59,8 +59,8 @@ def private_dns_choices(migration_blocked: bool = False) -> InlineKeyboardMarkup
     возможен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")) if not migration_blocked else None,
-        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
-         ("Не нужно", SetCB(sec="dns", act="do", key="never"))],
+        [("⏳ С переездом", SetCB(sec="dns", act="do", key="later")),
+         ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))],
         ui.back(SetCB(sec="srv", act="open")))
 
 
@@ -68,8 +68,8 @@ def private_dns_offer_kb() -> InlineKeyboardMarkup:
     """Инфобокс при старте: те же три решения, «Назад» не нужен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")),
-        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
-         ("Не нужно", SetCB(sec="dns", act="do", key="never"))])
+        [("⏳ С переездом", SetCB(sec="dns", act="do", key="later")),
+         ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))])
 
 
 def migration_prepare_confirm(want_port: int = 0) -> InlineKeyboardMarkup:
@@ -125,9 +125,9 @@ def settings_subs() -> InlineKeyboardMarkup:
         (f"📈 Бонус: {_bonus_button()}", SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb")),
         (f"🙏 Отсрочка: {s.get_int('grace.grace_days', 14)} дн.",
          SetCB(sec="subs", act="edit", key="grace.grace_days")),
-        [(f"⏸️ Год: {s.get_int('pause.pause_max_total_days', 28)} дн.",
+        [(f"⏸️ Годовым: {s.get_int('pause.pause_max_total_days', 28)} дн.",
           SetCB(sec="subs", act="edit", key="pause.pause_max_total_days")),
-         (f"⏸️ Месяц: {s.get_int('pause.monthly_pause_days', 2)} дн.",
+         (f"⏸️ Месячным: {s.get_int('pause.monthly_pause_days', 2)} дн.",
           SetCB(sec="subs", act="edit", key="pause.monthly_pause_days"))],
         _back())
 
@@ -145,12 +145,12 @@ def migration_confirm(key: str) -> InlineKeyboardMarkup:
 
 
 def update_notify(tag: str = "") -> InlineKeyboardMarkup:
-    """Кнопки уведомления о новой версии: Обновить / Скрыть / Не уведомлять.
+    """Кнопки уведомления о новой версии: Обновить / Не уведомлять, «Скрыть» последней.
     «Обновить» несёт объявленный тег — ставится только он. «Скрыть» —
     универсальная HideCB (удаляет сообщение); «один раз на версию» держит
     notified_tag в БД, не кнопка."""
-    return ui.rows([("⬆️ Обновить", UpdateCB(action="install", tag=tag)), ("Скрыть", HideCB())],
-                   ("🔕 Не уведомлять об обновлениях", UpdateCB(action="mute")))
+    return ui.rows([("⬆️ Обновить", UpdateCB(action="install", tag=tag)), ("🔕 Не уведомлять", UpdateCB(action="mute"))],
+                   ("Скрыть", HideCB()))
 
 
 def migration_needed() -> InlineKeyboardMarkup:

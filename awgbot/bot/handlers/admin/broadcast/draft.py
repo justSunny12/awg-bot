@@ -165,16 +165,15 @@ async def _bc_preview(message: Message, state: FSMContext, services):
         clients = await _bc_selected(services, data)
         friends = (False if extend
                    else await pkg.call(services.db.broadcast_has_friends, sel, config.ADMIN_ID))
-        # С продлением: в превью — шапка с датами первого продлеваемого (у
-        # каждого адресата она своя), в подвале — все даты.
+        # С продлением: в превью — шапка с масками вместо чисел (у каждого
+        # адресата они свои), в подвале — все даты.
         extension = None
         shown = text
         if extend:
             days = int(data.get("days") or 0)
             plan = await pkg.call(services.extension_plan, sel, days)
             extension = (days, plan)
-            first = next((e for e in plan if not e.unlimited), None)
-            shown = texts.announcement_text(texts.extension_header(days, first), text)
+            shown = texts.announcement_text(texts.EXTENSION_HEADER_MASK, text)
         # Экран-приглашение тоже в уборку. Сам он не исчезнет: при переходе на
         # превью навигация лишь СНИМАЕТ с него кнопки (_dismiss_previous_nav), и
         # текст «пришли объявление» остаётся висеть над перепиской.

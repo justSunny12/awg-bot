@@ -157,12 +157,12 @@ async def test_the_input_asks_with_cancel_writes_the_number_and_puts_the_result_
     heads = [c.head for c in rec.calls]
     assert not any(h.startswith("~!") for h in heads), f"ввод отказан: {heads}"
     text, labels, datas = _screens(rec)[-1]
-    assert text.startswith("✏️ <b>Час запуска</b> · сейчас 4 ч · 0–23"), text
+    assert text.startswith("✏️ <b>Час запуска</b> · сейчас 4 ч\n\nПришли число от 0 до 23"), text
     assert labels == ["✖️ Отмена"] and CancelCB.unpack(datas[0]) == CancelCB(kind=f"set_{ID}", ref=0), datas
     rec = await _take(tmp_path, role, ("press", br.cb.pack(ID)), ("press", br.cb.pack(ID, "edit", HOUR)),
                       ("text", "24"), conf=conf)
     assert settings.get(HOUR) is None, "значение вне границ записано"
-    assert any("0–23" in (c.body or "") for c in rec.calls), [c.head for c in rec.calls]
+    assert any("от 0 до 23" in (c.body or "") for c in rec.calls), [c.head for c in rec.calls]
     rec = await _take(tmp_path, role, ("press", br.cb.pack(ID)), ("press", br.cb.pack(ID, "edit", HOUR)),
                       ("text", "5"), conf=conf)
     assert settings.get_int(HOUR, 4) == 5, "ввод не записал ключ"

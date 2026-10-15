@@ -10,9 +10,10 @@ def address_list_line(n: int, tail: str = "") -> str:
     """Список адресов в инфобокс не выносится — он редактируется кнопками
     под ним; здесь только число и отсылка."""
     if not n:
-        return "Адреса для SSH-доступа (фильтр): не заданы" + tail
+        return ("Адреса для SSH-доступа (фильтр): не заданы — добавь «➕ Адрес», чтобы включить "
+                "фильтр снаружи" + tail)
     return (f"Адреса для SSH-доступа (фильтр): {n} "
-            + plural_ru(n, "адрес", "адреса", "адресов") + " — редактируемый список ниже")
+            + plural_ru(n, "адрес", "адреса", "адресов") + " — убрать: «➖» ниже")
 
 
 def warnings_block(items: list[str]) -> list[str]:
@@ -33,7 +34,11 @@ def settings_firewall_text(st: dict) -> str:
     lines = [ui.head("🛡 SSH-доступ"), "", port_line, ""]
     if st.get("admin_ips"):
         lines += [f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])})", ""]
-    if st.get("enabled"):
+    if st.get("enabled") and not allow:
+        # фильтр без адресов: снаружи не войти никому — «только адреса из
+        # списка» при пустом списке вводило бы в заблуждение
+        lines.append("🔴 Снаружи: фильтр включён, список пуст — снаружи SSH закрыт, вход только из туннеля")
+    elif st.get("enabled"):
         lines.append("🟢 Снаружи: фильтр включён — только адреса из списка")
     else:
         lines.append("Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)")
@@ -83,9 +88,9 @@ def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
 
 
 def ssh_port_ask(current: int | None, br) -> str:
-    return (ui.head("🅿️ Порт SSH", meta=[f"сейчас {current}" if current else "",
-                                         "1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
-                                         f"проверь вход новым подключением{br.ssh_port_tail}"]))
+    return (ui.head("🅿️ Порт SSH", meta=[f"сейчас {current}" if current else ""]) + "\n\n"
+            "Пришли номер порта 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
+            f"проверь вход новым подключением{br.ssh_port_tail}")
 
 
 def ssh_port_busy(port: int, proc: str = "") -> str:
@@ -107,7 +112,7 @@ def firewall_confirmed() -> str:
 
 
 def firewall_rolled_back() -> str:
-    return "↩️ Правила сняты, SSH снова открыт всем адресам. NAT клиентов на месте"
+    return "↩️ Фильтр снят: снаружи SSH снова открыт всем. VPN у клиентов работает как прежде"
 
 
 FIREWALL_ON_ALERT = ("Фильтр включён: снаружи — только адреса из списка, из туннеля — устройства "

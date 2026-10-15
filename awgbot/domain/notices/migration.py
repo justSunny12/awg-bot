@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from awgbot.util.textfmt import _e, head
+from awgbot.util.textfmt import _e
 
 
 def migration_hello(device_name: str) -> str:
@@ -26,9 +26,9 @@ def migration_ready(p) -> str:
     """Все живые переехали. Сообщение НЕ завершает переезд — решение за админом,
     и в тексте сразу сказано, что дальше, иначе «готово» повиснет фактом без
     следствия."""
-    return (head("🚚 Все живые устройства переехали") + "\n"
-            f"Клиентов: {p.clients_done}/{p.clients_total}, "
-            f"устройств: {p.devices_done}/{p.devices_total}.\n\n"
-            "Можно завершать: ⚙️ Настройки → 🔧 Сервис → «✅ Завершить». "
-            "До завершения старые пиры продолжают работать, а отмена по-прежнему "
+    return ("🚚 Все недавно активные устройства переехали\n"
+            f"Профилей: {p.clients_done} из {p.clients_total}, "
+            f"устройств: {p.devices_done} из {p.devices_total}\n\n"
+            "Можно завершать: «⚙️ Настройки» → «🔧 Сервис» → «✅ Завершить». "
+            "До завершения прежние конфигурации продолжают работать, а отмена по-прежнему "
             "безопасна")

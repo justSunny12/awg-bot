@@ -42,7 +42,7 @@ async def toggle_bool(cb: CallbackQuery, services, hooks: Hooks, key: str, sec: 
     if after_set is not None:
         await after_set(key)
     await hooks.render(cb, services, sec)
-    await cb.answer()
+    await cb.answer(texts.toggle_toast(key, not cur))      # итог — всплывашкой: «Тихие часы: вкл»
 
 
 # ── резервные копии ──────────────────────────────────────────────────────────
@@ -107,7 +107,8 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
         await send_menu(message, services, *spec.owner_refusal(st, e.listening))
         return
     except ServiceError as e:
-        await after_input(message, services, hooks, spec.sec, ui.fail("Порт не изменён", str(e)))
+        # действие не выполнено, ничего не изменилось — ⚠️ (🔴 — состояние объекта)
+        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {texts._e(str(e))}")
     else:
         await after_input(message, services, hooks, spec.sec, spec.changed_text(old, port))
 

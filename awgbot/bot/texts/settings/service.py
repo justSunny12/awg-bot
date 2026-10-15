@@ -22,12 +22,13 @@ def svc_confirm_bot(br) -> str:
 def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:
     """«🔧 Сервис»: цена перезапусков одной строкой роли; переезд — только у
     роли с has.migration и только когда идёт."""
+    from ..admin import migration_counts
     lines = [ui.head("🔧 Сервис"), br.svc_about]
     if br.has.migration and state:
         p = progress
-        nums = (f" {p.clients_done}/{p.clients_total} профилей, {p.devices_done}/{p.devices_total} устройств"
+        nums = (f" переехали {migration_counts(p)}"
                 if p is not None and getattr(p, "clients_total", 0) else "")
-        lines.append(f"🚚 Переезд идёт:{nums} · выдаются только новые конфиги, отмена безопасна")
+        lines.append(f"🚚 Переезд идёт:{nums} · выдаются только новые конфиги")
     return "\n".join(lines)
 
 

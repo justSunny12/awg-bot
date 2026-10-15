@@ -78,7 +78,7 @@ async def test_a_closed_condition_says_what_waits(svc, fake_bot, monkeypatch):
         "peers": [UpdatePeer(slot=0, name="", version="3.3.0", fresh=True)]})
     cb, msg, run = _press(fake_bot, svc, "v3.3.2", live=True)
     await run
-    assert svc.applied == [] and cb.answers[0] == ("Нельзя: v3.3.2 ждёт сервер AWG v3.3.1", True)
+    assert svc.applied == [] and cb.answers[0] == ("⛔ Обновление сейчас недоступно: v3.3.2 ждёт сервер AWG v3.3.1", True)
     assert msg.sent and msg.sent[-1][0] == "edit_text" and "Обновления" in msg.sent[-1][1], \
         "в живом меню раздел перерисован из кэша"
 

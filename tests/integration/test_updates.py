@@ -251,7 +251,7 @@ def test_skipped_steps_are_not_listed_and_the_tail_links_the_release():
     целиком и не на diff кода — админ читает релиз, а не исходники."""
     text = texts.update_available("v1.3.0", "- x", installed="1.1.0")
     assert "v1.2.0" not in text and "Вместе с ней" not in text and "/compare/" not in text
-    assert "Список изменений" in text and "- x" in text
+    assert "⬆️ <b>Доступна v1.3.0</b> · сейчас v1.1.0" in text and "- x" in text
     assert 'href' not in text, "короткий список — без ссылок"
 
     many = texts.update_available("v1.20.0", "- y\n" * 2000, installed="1.1.0")

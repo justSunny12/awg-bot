@@ -106,31 +106,32 @@ async def test_unblock_do_removes_specific_bit(services, fake_bot, make_active_c
 
 # ── блокировка профиля: пауза до снятия, без выбора срока ───────────────────
 
-async def _pick(services, bot, client_id, pause: str):
-    """«🛑 Блок» профиля → «⏸️ Да» / «▶️ Нет» → экран «Уведомить владельца?»
-    (снимки adm.cl.block.pause_yes, adm.cl.block.pause_no): возвращает
-    колбэки кнопок второго шага — «🔔 Да», «🔕 Нет», «⬅️ Отмена»."""
+async def _pick(services, bot, client_id, *, pause: bool, notify: bool):
+    """«🔒 Заблокировать» профиля — один экран с тумблерами «⏸️ Пауза» и
+    «Уведомить» (снимок adm.cl.block): открыть с нужным состоянием тумблеров
+    (их нажатие приходит в тот же обработчик с kind и days) и вернуть кнопки
+    экрана по подписям."""
     cb, nav = _admin_cb(bot)
-    await admin_h.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client_id), services)
-    step = admin_h.admin_block_pause_yes if pause == "yes" else admin_h.admin_block_pause_no
-    cb2, nav2 = _admin_cb(bot)
-    await step(cb2, BlockCB(target="cli", action=f"pause_{pause}", ref=client_id))
-    markup = [s for s in nav2.sent if s[0] == "edit_text"][-1][2]
-    return [b.callback_data for row in markup.inline_keyboard for b in row]
+    await admin_h.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client_id,
+                                               kind="notified" if notify else "silent",
+                                               days=0 if pause else -1), services)
+    markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
+    return {b.text: b.callback_data for row in markup.inline_keyboard for b in row}
 
 
 async def test_block_profile_with_pause_pauses_until_unblocked(services, fake_bot, make_active_client):
-    """«⏸️ Да» → «🔔 Да»: профиль заблокирован и подписка приостановлена до
-    снятия блокировки (бессрочная админская пауза) — ни шага ввода дней, ни
-    выбора срока. Снятие блокировки закрывает паузу, срок подписки
-    возвращается. Пауза «на 7 дней» вместо «до снятия» оживила бы подписку
-    посреди блокировки."""
+    """«⏸️ Пауза: вкл» и «✅ Уведомить» → «🔒 Заблокировать»: профиль
+    заблокирован и подписка приостановлена до снятия блокировки (бессрочная
+    админская пауза) — ни шага ввода дней, ни выбора срока. Снятие блокировки
+    закрывает паузу, срок подписки возвращается. Пауза «на 7 дней» вместо
+    «до снятия» оживила бы подписку посреди блокировки."""
     from awgbot.core.enums import PauseMode
     client = make_active_client(tg_id=7110, period_kind="year")
     dc = services.add_device(client.id, "d")
-    notify_yes, _, _ = await _pick(services, fake_bot, client.id, "yes")
+    buttons = await _pick(services, fake_bot, client.id, pause=True, notify=True)
+    assert "⏸️ Пауза: вкл" in buttons and "✅ Уведомить" in buttons, buttons
     cb, nav = _admin_cb(fake_bot)
-    await admin_h.admin_block_do(cb, BlockCB.unpack(notify_yes), services)
+    await admin_h.admin_block_do(cb, BlockCB.unpack(buttons["🔒 Заблокировать"]), services)
     fresh = services.db.get_client(client.id)
     assert int(fresh.block_reason) & int(ClientBlock.ADMIN_NOTIFIED)
     assert fresh.is_paused and fresh.pause_mode == PauseMode.ADMIN_OPEN, fresh.pause_mode
@@ -145,23 +146,24 @@ async def test_block_profile_with_pause_pauses_until_unblocked(services, fake_bo
 
 
 async def test_block_profile_without_pause_and_silently(services, fake_bot, make_active_client):
-    """«▶️ Нет» → «🔕 Нет»: блок без паузы и без уведомления владельцу
-    (карточка и всплывашка «(тихо)» — снимок adm.cl.block.silent)."""
+    """«⏸️ Пауза: выкл» и «☑️ Не уведомлять»: блок без паузы и без уведомления
+    владельцу (карточка и всплывашка «без уведомления» — снимок adm.cl.block.silent)."""
     client = make_active_client(tg_id=7111, period_kind="year")
-    _, notify_no, cancel = await _pick(services, fake_bot, client.id, "no")
+    buttons = await _pick(services, fake_bot, client.id, pause=False, notify=False)
+    assert "⏸️ Пауза: выкл" in buttons and "☑️ Не уведомлять" in buttons, buttons
     cb, _ = _admin_cb(fake_bot)
-    await admin_h.admin_block_do(cb, BlockCB.unpack(notify_no), services)
+    await admin_h.admin_block_do(cb, BlockCB.unpack(buttons["🔒 Заблокировать"]), services)
     fresh = services.db.get_client(client.id)
     assert int(fresh.block_reason) & int(ClientBlock.ADMIN_SILENT)
     assert not fresh.is_paused, "пауза без просьбы"
     assert not any(r[0] == "send_message" and r[1] == 7111 for r in fake_bot.records), "тихий блок уведомил"
-    assert BlockCB.unpack(cancel).action == "cancel"
+    assert BlockCB.unpack(buttons["✖️ Отмена"]).action == "cancel"
 
 
 async def test_block_profile_cancel_changes_nothing(services, fake_bot, make_active_client):
     """Отмена ничего не блокирует (возврат в карточку — снимок adm.cl.block.cancel)."""
     client = make_active_client(tg_id=7112)
-    _, _, cancel = await _pick(services, fake_bot, client.id, "yes")
+    buttons = await _pick(services, fake_bot, client.id, pause=True, notify=True)
     cb, nav = _admin_cb(fake_bot)
-    await admin_h.admin_block_cancel(cb, BlockCB.unpack(cancel), services)
+    await admin_h.admin_block_cancel(cb, BlockCB.unpack(buttons["✖️ Отмена"]), services)
     assert int(services.db.get_client(client.id).block_reason) == 0, "отмена заблокировала профиль"

@@ -36,10 +36,10 @@ def test_pause_counter_shows_balance_of_type_max(services, fake_awg):
     cid = services.db.create_client("X", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
     services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
-    assert _pause_of(services.db.get_client(cid)) == "⏸️ Пауза: 28 из 56 дн."
+    assert _pause_of(services.db.get_client(cid)) == "⏸️ Дней паузы: 28 из 56"
     services.db.set_pause_balance(cid, 21)
     services.db.update_client_fields(cid, period_kind="month")
-    assert _pause_of(services.db.get_client(cid)) == "⏸️ Пауза: 21 из 24 дн."
+    assert _pause_of(services.db.get_client(cid)) == "⏸️ Дней паузы: 21 из 24"
     services.db.update_client_fields(cid, period_kind="week")
     assert _pause_of(services.db.get_client(cid)) == "", "у недели максимума нет — строки нет"
 

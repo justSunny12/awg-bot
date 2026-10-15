@@ -30,7 +30,7 @@ async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
     except ServiceError as e:
         await cb.answer(ui.toast(e), show_alert=True)
         return
-    await cb.answer("Новое приглашение")
+    await cb.answer("Приглашение перевыпущено")
     await drop_message(cb, services)
     await _invite_menu(cb.message, services, client, code, new=False)
 
@@ -61,10 +61,8 @@ async def client_delete_apply(cb: CallbackQuery, callback_data: ClientCB, servic
         if holder_tg:
             await notify_one(cb.bot, holder_tg, texts.lent_device_deleted_by_admin_notice(d))
     if res["failed"]:
-        await edit(cb, texts.CLIENT_DELETE_PARTIAL.format(
-            name=texts._e(target.name), devices=texts._e(", ".join(res["failed"]))),
-            kb.admin_client_back(target.id))
-        await cb.answer("Сервер не ответил — профиль не удалён", show_alert=True)
+        await edit(cb, texts.client_delete_partial(target.name, res["failed"]), kb.client_delete_retry(target.id))
+        await cb.answer(texts.CLIENT_DELETE_PARTIAL_TOAST, show_alert=True)
         return
     await cb.answer()
     await edit(cb, texts.client_deleted_note(target.name, res["n"]), None)

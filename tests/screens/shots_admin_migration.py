@@ -60,7 +60,7 @@ OVERVIEW = [
     Shot("adm.migration.empty", role="admin", press=[Menu(action="migration")], data=_people,
          title="обзор переезда: переезд не настроен — переезжать некому"),
     Shot("adm.link.migration_cl.spread", role="admin", start=f"migration-{ADM}", data=_mig_spread,
-         title="переезд профиля: коннект старого пира, не подключалось"),
+         title="переезд профиля: последнее подключение прежней конфигурации, ещё не подключалось"),
     Shot("adm.link.migration_cl.missing", role="admin", start="migration-99", data=_mig_running,
          title="переезд профиля, которого нет — главная"),
 ]

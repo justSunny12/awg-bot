@@ -275,12 +275,12 @@ def test_invite_screen_variants(make_active_client):
     end = timeutil.fmt_date_ui(timeutil.parse_iso(c.effective_period_end))
     r = texts.invite_screen("https://t.me/b?start=K1", c)
     assert r == (texts.invite_plain("https://t.me/b?start=K1") + "\n—\n"
-                 "☝️ Приглашение с индивидуальным кодом для нового профиля:\n"
-                 f"X — 3 устройства · 50 ГБ в месяц · → {end}"), r
+                 "☝️ Отправь приглашение владельцу профиля X — по нему откроется профиль:\n"
+                 f"3 устройства · 50 ГБ в месяц · до {end}"), r
     c2 = make_active_client(name="Y <&>", tg_id=6311, period_kind="never", device_limit=0, traffic_limit=0)
     r2 = texts.invite_screen("https://t.me/b?start=K2", c2, new=False)
-    assert r2.endswith("\n—\n☝️ Новое приглашение с индивидуальным кодом для профиля:\n"
-                       "Y &lt;&amp;&gt; — ∞ устройств · ∞ ГБ в месяц · бессрочно"), r2
+    assert r2.endswith("\n—\n☝️ Новое приглашение для профиля Y &lt;&amp;&gt; — отправь его владельцу, "
+                       "прежнее больше не работает:\n∞ устройств · ∞ ГБ в месяц · бессрочно"), r2
 
 
 def test_server_screen_reads_live_settings_not_startup_constants(services, monkeypatch):

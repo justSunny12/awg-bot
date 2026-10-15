@@ -116,9 +116,9 @@ async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
 
     said = [s for s in nav.sent if s[0] == "answer"]
-    assert any("основным интерфейсом стал" in s[1] for s in said), said
+    assert any("Основным интерфейсом стал" in s[1] for s in said), said
     assert calls == [], "перезапуск — только по кнопке"
-    last = [s for s in said if "основным интерфейсом стал" in s[1]][-1]
+    last = [s for s in said if "Основным интерфейсом стал" in s[1]][-1]
     assert [[b.text for b in row] for row in last[2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
 

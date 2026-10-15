@@ -334,9 +334,9 @@ def test_the_admin_is_advised_once_to_reissue_their_device_configs(two, monkeypa
     notes = two.admin_reissue_announce()
     assert len(notes) == 1 and notes[0].tg_id == ADMIN, notes
     assert notes[0].text == (
-        "Для корректной работы нового функционала (доступ к SMB-шарам в туннеле, зеркала локальных подсетей — см. "
-        '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">список изменений</a>) рекомендуется '
-        "перевыпуск конфигов устройств администратора (🔗 Ссылка, 🔳 QR или 📄 Файл)")
+        "🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса "
+        'локальных сетей в туннеле (<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">'
+        "что нового в v3.3.0</a>)")
     assert two.admin_reissue_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.admin_reissue_announce() == []

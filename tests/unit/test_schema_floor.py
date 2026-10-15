@@ -68,7 +68,8 @@ def test_bot_refuses_a_copy_with_a_pre_floor_schema(services, tmp_path):
     p = tmp_path / "old.db"
     _old_db(str(p))
     res = services.inspect_backup(_archive(p.read_bytes()), "awg-bot_old.tgz")
-    assert res["ok"] is False and "ниже 3.2.0" in res["error"] and "clients" in res["error"], res
+    # подробность схемы (колонка) — в журнал, человеку — версия и шаг
+    assert res["ok"] is False and "до v3.2.0" in res["error"] and "clients" not in res["error"], res
 
 
 def test_bot_accepts_a_copy_with_a_current_schema(services, tmp_path):

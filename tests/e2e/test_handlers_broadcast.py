@@ -318,7 +318,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     msg2 = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
                        bot=fake_bot)
     await admin_h.broadcast_receive(msg2, state2, services)
-    assert any(t.startswith("👆 <b>Так увидят получатели</b>") for _, t, _ in msg2.sent)
+    assert any(t.startswith("👇 <b>Так увидят получатели</b>") for _, t, _ in msg2.sent)
 
 
 async def test_broadcast_send_revalidates_the_limit(services, make_active_client,

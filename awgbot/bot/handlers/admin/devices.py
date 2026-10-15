@@ -132,8 +132,7 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
     try:
         created = await call(services.add_device, client.id, name, 0)
     except LimitReached:
-        used, limit = await call(services.device_quota, client.id)
-        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.limit_reached_line(used, limit))
+        await back_to_context(message, services, data, "admin", note=texts.LIMIT_REACHED_RACE)
         return
     except ServiceError as e:
         await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
@@ -403,7 +402,7 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
                          texts.reassign_donor_notice(info["name"], donor["count"], donor["limit"]))
     if info.get("holder_tg"):
         await notify_one(cb.bot, info["holder_tg"], texts.lent_device_reassigned_notice(info["name"]))
-    await cb.answer("Перенесено")
+    await cb.answer("Перенесено")      # итог — первой строкой карточки ниже
     # итог первой строкой карточки устройства на новом месте
     from awgbot.bot import screens
     dev = await call(services.db.get_device, device_id)
@@ -439,7 +438,6 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
     if dev is None:
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
-    client = await call(services.db.get_client, dev.client_id)
     back = await _back_target(services, dev)
     try:
         await remove_device_and_notify(cb.bot, services, dev.id)
@@ -450,7 +448,7 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
     # итог — первой строкой экрана, откуда пришли (как у владельца и гостя):
     # свои устройства, профиль или «без профиля»
     from awgbot.bot import screens
-    note = texts.device_deleted_note(dev, client, _bot(services))
+    note = texts.device_deleted_note(dev)
     kind, ref = ("devices", 0)
     if back.startswith(Menu.__prefix__ + ":unassigned"):
         kind = "unassigned"

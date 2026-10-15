@@ -238,11 +238,11 @@ class BackupCryptoMixin:
         if not encrypted and config.ROLE == "gateway":
             # копия шлюза всегда шифрованная (make_backup): открытый архив здесь
             # ничему легитимному не служит, а restore раскладывает его от root
-            return {"ok": False, "error": "на шлюзе принимаются только шифрованные копии (.tgz.enc)"}
+            return {"ok": False, "error": "на шлюзе принимаются только шифрованные бэкапы (.tgz.enc)"}
         if encrypted:
             kw = self.backup_enc_kwargs()
             if kw is None:
-                return {"ok": False, "error": "копия шифрованная, а парольная фраза здесь не задана"}
+                return {"ok": False, "error": "бэкап шифрованный, а парольная фраза здесь не задана"}
             try:
                 plain = secrets_util.decrypt(blob, **kw)
             except Exception:                              # noqa: BLE001
@@ -252,18 +252,23 @@ class BackupCryptoMixin:
                 f = tar.extractfile(self.META_NAME)
                 meta = json.loads(f.read().decode()) if f else {}
         except Exception:                                  # noqa: BLE001
-            return {"ok": False, "error": "это не резервная копия awg-bot"}
+            return {"ok": False, "error": "это не бэкап awg-bot"}
         role, created = str(meta.get("role") or ""), str(meta.get("created_at") or "")
         if not role or not created:
-            return {"ok": False, "error": "в копии нет метки — она снята до версии 2.5.5"}
+            return {"ok": False, "error": "в бэкапе нет метки — он снят до v2.5.5"}
         if role != self.backup_role():
-            who = "агента шлюза" if role == "gw" else "основного бота"
-            return {"ok": False, "error": f"это копия {who}, а здесь {'агент шлюза' if self.backup_role() == 'gw' else 'основной бот'}"}
+            # отказ говорит, куда нести файл: бэкап другой роли — в чат её бота
+            if role == "gw":
+                return {"ok": False, "error": "это бэкап шлюза — восстанови его в чате бота шлюза"}
+            return {"ok": False, "error": "это бэкап сервера AWG — восстанови его в чате бота сервера AWG"}
         gap = self._db_schema_gap(plain)
         if gap:
-            # миграций ниже минимума в коде нет: такую базу нечем довести
-            return {"ok": False, "error": f"копия снята версией ниже 3.2.0 ({gap}) — "
-                                          "восстанови её на хосте с 3.2.0, потом обновись"}
+            # миграций ниже минимума в коде нет: такую базу нечем довести;
+            # подробность схемы (gap) — в журнал, не человеку
+            log.info("бэкап отвергнут: схема ниже 3.2.0 (%s)", gap)
+            where = "на шлюзе" if self.backup_role() == "gw" else "на сервере"
+            return {"ok": False, "error": f"бэкап снят версией до v3.2.0 — восстанови его {where} "
+                                          "с v3.2.0, затем обнови бота"}
         return {"ok": True, "role": role, "created_at": created, "plain": plain,
                 "ifaces_changed": self._ifaces_changed(plain)}
 

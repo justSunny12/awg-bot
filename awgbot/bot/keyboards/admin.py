@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
     ReassignCB, RoutingCB, SetCB, BroadcastCB)
 from awgbot.bot import texts as _texts
 
-from .common import (_btn_suffix, _manual_block_button, confirm, to_menu, MAX_ROWS)
+from .common import (BTN_CANCEL, _btn_suffix, _manual_block_button, confirm, notify_toggle, to_menu, MAX_ROWS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,18 +20,19 @@ from .common import (_btn_suffix, _manual_block_button, confirm, to_menu, MAX_RO
 # ─────────────────────────────────────────────────────────────────────────────
 
 def admin_main(*, routing_visible: bool = False, self_client_id: int = 0) -> InlineKeyboardMarkup:
-    """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
-    новый профиль, шлюзы и настройки, объявление и обновление."""
+    """Семь кнопок: свои устройства и свой РФ-доступ (когда выдан), профили и
+    новый профиль, шлюзы и настройки, объявление. Перечитать статус — ссылкой
+    «🔄 обновлено в …» в тексте главной, кнопки нет."""
     from .client import menu_issue_row
     # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
     # включению, других входов у функции нет
     return ui.rows(
         menu_issue_row(),                     # выдача своим устройствам — первой строкой, как у клиента
         [("📱 Мои устройства", Menu(action="devices")),
-         (f"🇷🇺 {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=self_client_id)) if routing_visible else None],
+         (f"🇷🇺 Мой {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=self_client_id)) if routing_visible else None],
         [("👥 Профили", Menu(action="clients")), ("➕ Профиль", Menu(action="add_client"))],
         [("🛰 Шлюзы", SetCB(sec="rt")), ("⚙️ Настройки", SetCB(sec="root"))],
-        [("📢 Объявление", BroadcastCB(action="pick")), ("🔄 Обновить", Menu(action="refresh"))])
+        ("📢 Объявление", BroadcastCB(action="pick")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,11 +56,11 @@ def _dev_button(_i, d) -> tuple:
 
 
 def admin_devices(devices, page: int = 0, *, can_add: bool = True) -> InlineKeyboardMarkup:
-    """«📱 Мои устройства» админа: список (шлюзы вверху), добавить, назад."""
+    """«📱 Мои устройства» админа: список (шлюзы вверху), добавить, в меню."""
     return ui.rows(
         *ui.paged(_sorted_devices(devices), page, static=1, screen="devices", ref=0,
                   back=Menu(action="devices").pack(), button=_dev_button),
-        [("➕ Устройство", AdminSelfCB(action="add")) if can_add else None, ui.back(Menu(action="main"))])
+        [("➕ Устройство", AdminSelfCB(action="add")) if can_add else None, ui.to_menu(Menu(action="main"))])
 
 
 def admin_client_device_list(devices, client_id: int, page: int = 0) -> InlineKeyboardMarkup:
@@ -74,12 +75,12 @@ def admin_client_device_list(devices, client_id: int, page: int = 0) -> InlineKe
 def unassigned_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     return ui.rows(
         *ui.paged(devices, page, static=1, screen="unassigned", ref=0, back=Menu(action="unassigned").pack(),
-                  button=lambda _i, d: (f"{d.name}{_btn_suffix(d)} · {d.address}", DeviceCB(action="open", device_id=d.id))),
+                  button=lambda _i, d: (f"{'' if d.is_managed else '✳️ '}{d.name} · {d.address}", DeviceCB(action="open", device_id=d.id))),
         ui.to_menu(Menu(action="main")))
 
 
 def reassign_targets(device_id: int, clients, page: int = 0) -> InlineKeyboardMarkup:
-    """«🔀 iPhone — в какой профиль?»; «Назад» — в карточку устройства."""
+    """«↪️ Перенос устройства «iPhone» — в какой профиль?»; «Назад» — в карточку устройства."""
     return ui.rows(
         *ui.paged(clients, page, static=1, screen="reassign", ref=device_id,
                   back=DeviceCB(action="reassign", device_id=device_id).pack(),
@@ -115,12 +116,12 @@ def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup
     return ui.rows(
         *ui.paged(clients, page, static=1, screen="clients", ref=0, back=Menu(action="clients").pack(),
                   button=lambda _i, c: (f"{client_state_icon(c, online)} {c.name}", ClientCB(action="open", client_id=c.id))),
-        ui.back(Menu(action="main")))
+        ui.to_menu(Menu(action="main")))
 
 
 def admin_client_actions(client, devices=(), *, routing_visible: bool = False) -> InlineKeyboardMarkup:
     """Карточка профиля: условные ряды (снять паузу, новое приглашение), затем
-    [⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🛑 Блок] / устройства по
+    [⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🔒 Заблокировать] / устройства по
     одному, пока влезают в десятку, иначе [📱 Устройства: N] / [➕ Устройство]
     [⬅️ Назад]. У профиля админа карточки нет."""
     devices = _sorted_devices(devices)
@@ -150,14 +151,16 @@ def client_edit_kb(client_id: int) -> InlineKeyboardMarkup:
     return ui.rows(
         [("✏️ Имя", ClientCB(action="edit_name", client_id=client_id)),
          ("✏️ Период", ClientCB(action="edit_period", client_id=client_id))],
-        [("✏️ Лимит устр-в", ClientCB(action="edit_limit", client_id=client_id)),
+        [("✏️ Устройства", ClientCB(action="edit_limit", client_id=client_id)),
          ("✏️ Трафик", ClientCB(action="edit_traffic", client_id=client_id))],
         ("🗑 Удалить профиль", ClientCB(action="delete", client_id=client_id)),
         ui.back(ClientCB(action="open", client_id=client_id)))
 
 
-def admin_client_back(client_id: int) -> InlineKeyboardMarkup:
-    return ui.rows(ui.back(ClientCB(action="open", client_id=client_id)))
+def client_delete_retry(client_id: int) -> InlineKeyboardMarkup:
+    """Профиль не удалён (AWG не снял устройства): повторить или назад в карточку."""
+    return ui.rows([("🔁 Повторить", ClientCB(action="delete_yes", client_id=client_id)),
+                    ui.back(ClientCB(action="open", client_id=client_id))])
 
 
 def client_delete_confirm(client_id: int) -> InlineKeyboardMarkup:
@@ -183,25 +186,41 @@ def _cancel_button(cancel_cb) -> tuple:
     return ("✖️ Отмена" if packed.startswith(CancelCB.__prefix__ + ":") else "⬅️ Отмена", packed)
 
 
-def presets_kb(kind: str, ref: int, values, cancel_cb) -> InlineKeyboardMarkup:
-    """Пресеты по три в ряд вместе с «✏️ Другое»; отмена — в последний ряд,
-    если там есть место, иначе своим рядом. kind — из PresetCB."""
-    rows = ui.grid([*[(_preset_label(kind, v), PresetCB(kind=kind, ref=ref, val=v)) for v in values],
-                    ("✏️ Другое", PresetCB(kind=kind, ref=ref, val=-1))], 3)
-    cancel = _cancel_button(cancel_cb)
-    if len(rows[-1]) < 3:
-        rows[-1].append(cancel)
-    else:
-        rows.append([cancel])
-    return ui.rows(*rows)
+def presets_kb(kind: str, ref: int, values, cancel_cb, notify=None) -> InlineKeyboardMarkup:
+    """Пресеты по три в ряд («∞» последним среди чисел), последним рядом —
+    «✏️ Другое» и отмена; одна раскладка у устройств и трафика. kind — из
+    PresetCB. notify — тумблер «уведомить клиента» первым рядом (правка
+    условий профиля админом); None — без него."""
+    rows = ui.grid([(_preset_label(kind, v), PresetCB(kind=kind, ref=ref, val=v)) for v in values], 3)
+    rows.append([("✏️ Другое", PresetCB(kind=kind, ref=ref, val=-1)), _cancel_button(cancel_cb)])
+    head = notify_toggle(bool(notify), ClientCB(action=f"ntf_{kind}", client_id=ref)) if notify is not None else None
+    return ui.rows(head, *rows)
 
 
-def devs_limit_kb(client_id: int) -> InlineKeyboardMarkup:
-    return presets_kb("cli_devs", client_id, DEVS_PRESETS, ClientCB(action="edit", client_id=client_id))
+def devs_limit_kb(client_id: int, notify: bool = True) -> InlineKeyboardMarkup:
+    return presets_kb("cli_devs", client_id, DEVS_PRESETS, ClientCB(action="edit", client_id=client_id), notify)
 
 
-def traffic_limit_kb(client_id: int) -> InlineKeyboardMarkup:
-    return presets_kb("cli_traffic", client_id, TRAFFIC_PRESETS, ClientCB(action="edit", client_id=client_id))
+def traffic_limit_kb(client_id: int, notify: bool = True) -> InlineKeyboardMarkup:
+    return presets_kb("cli_traffic", client_id, TRAFFIC_PRESETS, ClientCB(action="edit", client_id=client_id), notify)
+
+
+def period_input_kb(client_id: int, *, end: bool, notify: bool = True) -> InlineKeyboardMarkup:
+    """Под приглашением даты периода: тумблер уведомления, «➡️ Не менять» (и
+    «∞ Бессрочно» у окончания) вместо магических «-» и «0», «✖️ Отмена»."""
+    return ui.rows(
+        notify_toggle(notify, ClientCB(action="ntf_period", client_id=client_id)),
+        [("➡️ Не менять", ClientCB(action="period_keep", client_id=client_id)),
+         ("∞ Бессрочно", ClientCB(action="period_never", client_id=client_id)) if end else None],
+        (BTN_CANCEL, CancelCB(kind="edit", ref=client_id)))
+
+
+def resume_pause_kb(client_id: int, notify: bool = True) -> InlineKeyboardMarkup:
+    """Снятие паузы админом: тумблер уведомления и подтверждение."""
+    return ui.rows(
+        notify_toggle(notify, ClientCB(action="ntf_resume", client_id=client_id)),
+        [("⬅️ Отмена", ClientCB(action="open", client_id=client_id)),
+         ("▶️ Снять паузу", ClientCB(action="resume_pause_yes", client_id=client_id))])
 
 
 def new_profile_devs_kb() -> InlineKeyboardMarkup:
@@ -216,36 +235,50 @@ PERIOD_SHORT = {"day": "День", "week": "Неделя", "month": "Месяц"
 
 
 def period_kb(ctx: str, ref: int = 0, *, min_days: int = 0, keep: bool = True,
-              has_remainder: bool = False, cancel_cb=None) -> InlineKeyboardMarkup:
-    """Сроки по два в ряд, «∞», тумблер «сохранить остаток» (только при остатке)
-    и отмена. Пресеты короче отсрочки не показываем."""
+              has_remainder: bool = False, cancel_cb=None, notify=None) -> InlineKeyboardMarkup:
+    """Сроки по два в ряд и отмена. У нового профиля — ещё «∞»; у продления
+    тумблеры первыми рядами: «✅ Остаток: сохранить» / «☑️ Остаток: сжечь»
+    (только при остатке) и «уведомить клиента» — сроки срабатывают сразу,
+    тумблеры должны стоять выше них. Бессрочной продление не делают: «∞» в
+    продлении нет. Пресеты короче отсрочки не показываем."""
     _MIN_DAYS = {"day": 1, "week": 7, "month": 28, "year": 365}
     kinds = [k for k in config.PERIOD_CHOICES if k != "never" and _MIN_DAYS.get(k, 0) > min_days]
     cancel = cancel_cb or (ClientCB(action="open", client_id=ref) if ctx == "extend" else CancelCB(kind="main"))
+    extend = ctx == "extend"
     return ui.rows(
+        (("✅ Остаток: сохранить" if keep else "☑️ Остаток: сжечь"),
+         PeriodCB(kind="keep_tgl", ctx=ctx, ref=ref, keep=int(not keep))) if extend and has_remainder else None,
+        notify_toggle(bool(notify), ClientCB(action="ntf_extend", client_id=ref)) if extend and notify is not None else None,
         *ui.grid([(PERIOD_SHORT.get(k, config.PERIOD_LABELS.get(k, k)), PeriodCB(kind=k, ctx=ctx, ref=ref, keep=int(keep)))
                   for k in kinds], 2),
-        ("∞", PeriodCB(kind="never", ctx=ctx, ref=ref, keep=0)) if "never" in config.PERIOD_CHOICES else None,
-        (("✅" if keep else "☑️") + " Сохранить остаток", PeriodCB(kind="keep_tgl", ctx=ctx, ref=ref, keep=int(not keep)))
-        if ctx == "extend" and has_remainder else None,
+        ("∞", PeriodCB(kind="never", ctx=ctx, ref=ref, keep=0)) if not extend and "never" in config.PERIOD_CHOICES else None,
         _cancel_button(cancel))
+
+
+def extend_forever_kb(client_id: int) -> InlineKeyboardMarkup:
+    """Продление бессрочной: срок задаётся в «✏️ Изменить» — туда и назад."""
+    return ui.rows([("✏️ Изменить", ClientCB(action="edit", client_id=client_id)),
+                    ui.back(ClientCB(action="open", client_id=client_id))])
 
 
 # ── блокировка профиля и устройства ─────────────────────────────────────────
 
-def block_pause_kb(client_id: int) -> InlineKeyboardMarkup:
-    return ui.rows([("⏸️ Да", BlockCB(target="cli", action="pause_yes", ref=client_id)),
-                    ("▶️ Нет", BlockCB(target="cli", action="pause_no", ref=client_id))],
-                   ("⬅️ Отмена", BlockCB(target="cli", action="cancel", ref=client_id)))
+def block_kb(target: str, ref: int, *, pause: bool | None, notify: bool) -> InlineKeyboardMarkup:
+    """Один экран блокировки профиля или устройства: тумблеры «⏸️ Пауза: вкл»
+    (только у профиля со сроком; None — без ряда) и «уведомить», затем
+    «✖️ Отмена» и «🔒 Заблокировать». Состояние тумблеров живёт в колбэках
+    (kind — уведомление, days — пауза: 0 до снятия, -1 без паузы), как у
+    тумблера остатка в продлении: переживает рестарт."""
+    kind = "notified" if notify else "silent"
+    days = 0 if pause else -1
 
-
-def block_notify_kb(target: str, ref: int, pause_days: int = -1) -> InlineKeyboardMarkup:
-    """Профиль: «Уведомить владельца?» [🔔 Да] [🔕 Нет]; устройство: [🔔 С
-    уведомлением] [🔕 Тихо]. pause_days: -1 без паузы, 0 — до снятия."""
-    yes, no = ("🔔 Да", "🔕 Нет") if target == "cli" else ("🔔 С уведомлением", "🔕 Тихо")
-    return ui.rows([(yes, BlockCB(target=target, action="block", ref=ref, kind="notified", days=pause_days)),
-                    (no, BlockCB(target=target, action="block", ref=ref, kind="silent", days=pause_days))],
-                   ("⬅️ Отмена", BlockCB(target=target, action="cancel", ref=ref)))
+    def _menu(k, d):
+        return BlockCB(target=target, action="menu_block", ref=ref, kind=k, days=d)
+    return ui.rows(
+        (f"⏸️ Пауза: {'вкл' if pause else 'выкл'}", _menu(kind, -1 if pause else 0)) if pause is not None else None,
+        notify_toggle(notify, _menu("silent" if notify else "notified", days)),
+        [(BTN_CANCEL, BlockCB(target=target, action="cancel", ref=ref)),
+         ("🔒 Заблокировать", BlockCB(target=target, action="block", ref=ref, kind=kind, days=days))])
 
 
 # ── списки главной ───────────────────────────────────────────────────────────
@@ -271,15 +304,15 @@ def expiring_kb(rows=()) -> InlineKeyboardMarkup:
 def invite_menu(plain_text: str, link: str, client_id: int) -> InlineKeyboardMarkup:
     """Под приглашением профиля одним сообщением: «📤 Отправить» и «📋 Скопировать»
     несут только текст приглашения (не сводку под чертой), ниже — «👤 В карточку»
-    и «⬅️ На главную»."""
+    и «⬅️ В меню»."""
     from .client import invite_kb
     return ui.rows(*invite_kb(plain_text, link).inline_keyboard, *to_client_card(client_id).inline_keyboard)
 
 
 def to_client_card(client_id: int) -> InlineKeyboardMarkup:
-    """«👤 В карточку» и «⬅️ На главную» — завершитель под приглашением профиля."""
+    """«👤 В карточку» и «⬅️ В меню» — завершитель под приглашением профиля."""
     return ui.rows([("👤 В карточку", ClientCB(action="open", client_id=client_id)),
-                    ("⬅️ На главную", Menu(action="main"))])
+                    ui.to_menu(Menu(action="main"))])
 
 
 def migration_back_kb() -> InlineKeyboardMarkup:

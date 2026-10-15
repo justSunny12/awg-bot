@@ -29,9 +29,8 @@ def admin_reissue_advice() -> str:
     раньше, не знают ни резолвера админа (имена SMB в туннеле), ни — при
     раздельном туннеле — пространства адресов в туннеле."""
     url = release_url(ADMIN_REISSUE_TAG)
-    return ("Для корректной работы нового функционала (доступ к SMB-шарам в туннеле, зеркала локальных подсетей — "
-            f'см. <a href="{_e(url)}">список изменений</a>) рекомендуется перевыпуск конфигов устройств '
-            "администратора (🔗 Ссылка, 🔳 QR или 📄 Файл)")
+    return ("🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса "
+            f'локальных сетей в туннеле (<a href="{_e(url)}">что нового в {ADMIN_REISSUE_TAG}</a>)')
 
 
 def changelog_link(tag: str = "") -> str:
@@ -86,5 +85,5 @@ def update_applied(tag: str, body: str) -> str:
 
 
 def update_not_applied(tag: str, installed: str) -> str:
-    return (f"⚠️ Обновление до {_e(_ver(tag))} не применилось — версия осталась "
-            f"{_e(_ver(installed))}. Смотри журнал: <code>journalctl -u awg-bot-selfupdate*</code>")
+    return (f"⚠️ Обновление до {_e(_ver(tag))} не применилось, работает "
+            f"{_e(_ver(installed))} — журнал: <code>journalctl -u awg-bot-selfupdate*</code>")

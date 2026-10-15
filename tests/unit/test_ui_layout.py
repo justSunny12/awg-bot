@@ -185,17 +185,18 @@ def _card(n_devices, **kw):
     return kba.admin_client_actions(_cli(**extra), MANY[:n_devices], **kw)
 
 
-def test_admin_main_is_eight_buttons_with_gateways_always():
-    """Главная админа — восемь кнопок; «🛰 Шлюзы» — всегда: это единственный
-    вход и к развёртыванию РФ-доступа, и к его включению — спрячь её, и
-    функцию на новом сервере не найти."""
-    full = [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
-            ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]]
+def test_admin_main_is_seven_buttons_with_gateways_always():
+    """Главная админа — семь кнопок (перечитать статус — ссылкой в тексте, не
+    кнопкой); «🛰 Шлюзы» — всегда: это единственный вход и к развёртыванию
+    РФ-доступа, и к его включению — спрячь её, и функцию на новом сервере не
+    найти."""
+    full = [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства", "🇷🇺 Мой РФ-доступ"], ["👥 Профили", "➕ Профиль"],
+            ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление"]]
     rows = [[b.text for b in r] for r in kba.admin_main(routing_visible=True, self_client_id=1).inline_keyboard]
     assert rows == full, rows
     rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
-                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
+                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление"]], rows
 
 
 @pytest.mark.parametrize("n", [1, 3, 5, 6, 8, 14])
@@ -223,14 +224,14 @@ def test_profile_card_fits_ten_rows_with_every_conditional_row(n):
 
 
 def test_profile_card_rows():
-    """[⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🛑 Блок] / устройства /
+    """[⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🔒 Заблокировать] / устройства /
     [➕ Устройство] [⬅️ Назад]; условные ряды — сверху."""
     rows = [[b.text for b in r] for r in _card(1, routing_visible=True).inline_keyboard]
-    assert rows == [["⏱ Продлить", "✏️ Изменить"], ["🇷🇺 РФ-доступ", "🛑 Блок"],
+    assert rows == [["⏱ Продлить", "✏️ Изменить"], ["🇷🇺 РФ-доступ", "🔒 Заблокировать"],
                     ["🔴 Устройство 1"], ["➕ Устройство", "⬅️ Назад"]], rows
     rows = [[b.text for b in r] for r in _card(1, paused=True, pending=True).inline_keyboard]
     assert rows[:3] == [["▶️ Снять паузу"], ["🔁 Новое приглашение"], ["⏱ Продлить", "✏️ Изменить"]], rows
-    assert rows[3] == ["🛑 Блок"], "без РФ-доступа «Блок» один в ряду"
+    assert rows[3] == ["🔒 Заблокировать"], "без РФ-доступа «Заблокировать» один в ряду"
     # счёт по рядам: пять устройств при всех условных рядах — ровно десять рядов
     rows = [[b.text for b in r] for r in _card(5, routing_visible=True, paused=True, pending=True).inline_keyboard]
     assert len(rows) == 10 and ["📱 Устройства: 5"] not in rows, rows
@@ -253,7 +254,7 @@ def test_expiring_list_takes_up_to_nine_rows_of_two(n, shown):
 
 def test_edit_submenu_rows():
     rows = [[b.text for b in r] for r in kba.client_edit_kb(1).inline_keyboard]
-    assert rows == [["✏️ Имя", "✏️ Период"], ["✏️ Лимит устр-в", "✏️ Трафик"],
+    assert rows == [["✏️ Имя", "✏️ Период"], ["✏️ Устройства", "✏️ Трафик"],
                     ["🗑 Удалить профиль"], ["⬅️ Назад"]], rows
 
 

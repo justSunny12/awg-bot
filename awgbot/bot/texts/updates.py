@@ -25,9 +25,7 @@ def update_available(tag: str, body: str, installed: str | None = None,
     обслуживает (update_silent_peers): хвостом предупреждения."""
     from awgbot.core import config
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
-    header = (f"Текущая версия бота {_e(cur)}.\n"
-              f"Доступна новая версия: {_e(_ver(tag))}\n"
-              "Список изменений:\n")
+    header = f"⬆️ <b>Доступна {_e(_ver(tag))}</b> · сейчас {_e(cur)}\n"
     tail = "\n".join(update_silent_lines(silent, bot_username)) if silent else ""
     if not tail:
         return header + _changelog_block(body, header, tag)
@@ -40,7 +38,7 @@ def update_available(tag: str, body: str, installed: str | None = None,
 # версия, нужная версия. Имя шлюза без подписи, версия в скобках; имя — ссылка
 # на карточку слота (gw-<слот>).
 
-_NAMES_SHOWN = 3            # шлюзов в строке ожидания; дальше — «и ещё N»
+_NAMES_SHOWN = 3            # шлюзов в строке ожидания; дальше — «[+N]»
 
 
 def _peer_ver(p) -> str:
@@ -48,14 +46,21 @@ def _peer_ver(p) -> str:
 
 
 def update_gw_names(peers, bot_username: str = "", *, links: bool = True) -> str:
-    """«Pi5 (v3.2.1), Pi4 (v3.2.0) и ещё 2» — шлюзы, которые держат или молчат;
-    links=False — простым текстом (всплывашка)."""
+    """«Pi5 (v3.2.1), Pi4 (v3.2.0) [+2]» — шлюзы, которые держат или молчат
+    (строка-сводка: хвост в квадратных скобках); links=False — простым
+    текстом (всплывашка)."""
     items = [(deep_link(bot_username, f"gw-{p.slot}", p.name) if links else p.name)
              + f" ({_peer_ver(p)})" for p in peers]
     out = ", ".join(items[:_NAMES_SHOWN])
     if len(items) > _NAMES_SHOWN:
-        out += f" и ещё {len(items) - _NAMES_SHOWN}"
+        out += f" [+{len(items) - _NAMES_SHOWN}]"
     return out
+
+
+def _gw_todo(peers, bot_username: str = "", *, links: bool = True) -> str:
+    """«сначала обнови шлюз Pi5 (v1.2.3)» / «сначала обнови шлюзы: Pi5 (…), Pi4 (…)»."""
+    names = update_gw_names(peers, bot_username, links=links)
+    return f"сначала обнови шлюз {names}" if len(peers) == 1 else f"сначала обнови шлюзы: {names}"
 
 
 def update_wait_line(w: dict, bot_username: str = "") -> str:
@@ -69,9 +74,8 @@ def update_wait_line(w: dict, bot_username: str = "") -> str:
         now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
         return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бота сервера AWG"
     peers = w.get("peers") or []
-    todo = ("обнови их агентов в чатах ботов шлюзов" if len(peers) > 1
-            else "обнови агента в чате бота шлюза")
-    return f"⏳ {tag} ждёт шлюзы: {update_gw_names(peers, bot_username)} — {todo}"
+    where = "агентов в чатах ботов шлюзов" if len(peers) > 1 else "агента в чате бота шлюза"
+    return f"⏳ {tag} — {_gw_todo(peers, bot_username)} — {where}"
 
 
 def update_wait_reason(w: dict) -> str:
@@ -80,7 +84,7 @@ def update_wait_reason(w: dict) -> str:
     tag = _ver(w["tag"])
     if w.get("role") == "gateway":
         return f"{tag} ждёт сервер AWG {_ver(w['need'])}"
-    return f"{tag} ждёт шлюзы: {update_gw_names(w.get('peers') or [], links=False)}"
+    return f"{tag} — {_gw_todo(w.get('peers') or [], links=False)}"
 
 
 def _seen_date(seen: str) -> str:
@@ -102,11 +106,9 @@ def update_silent_lines(s: dict | None, bot_username: str = "") -> list[str]:
         name = deep_link(bot_username, f"gw-{p.slot}", p.name)
         date = _seen_date(p.seen)
         since = f" с {date}" if date else ""
-        if p.version:
-            what = f"({_e(_ver(p.version))}): {tag} эту версию агента не обслуживает"
-        else:
-            what = f"(версия агента неизвестна): для {tag} нужен агент не ниже {need}"
-        out.append(f"⚠️ {name} не на связи{since} {what} — когда шлюз выйдет на связь, обнови его агента")
+        ver = f"агент {_e(_ver(p.version))}" if p.version else "версия агента неизвестна"
+        out.append(f"⚠️ {name} не на связи{since} ({ver}): {tag} работает с агентом не ниже {need} — "
+                   "когда шлюз выйдет на связь, обнови его агента")
     return out
 
 
@@ -118,16 +120,16 @@ UPDATES_MUTED_TOAST = "Уведомления об обновлениях вык
 
 
 def update_blocked_toast(reason: str) -> str:
-    return f"Нельзя: {reason}"
+    return f"⛔ Обновление сейчас недоступно: {reason}"
 
 
 def updates_notify_toast(*, enabled: bool) -> str:
-    return "Уведомления " + ("включены" if enabled else "выключены")
+    return "Уведомления об обновлениях " + ("включены" if enabled else "выключены")
 
 
 def update_wait(tag: str) -> str:
     """Единственное сообщение на время обновления (цепочка до него стёрта)."""
-    return f"⏳ Обновление до {_e(tag)}, дождись завершения"
+    return f"⏳ Обновляюсь до {_e(tag)} — бот перезапустится и пришлёт итог"
 
 
 def update_failed(reason: str) -> str:

@@ -210,7 +210,7 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
     toggle = _button(markup, "✅ Уведомлять").callback_data
     cyc = _button(markup, "📅 Проверка: день").callback_data
     cb, nav = await _press(env, fake_bot, toggle)
-    assert env.services.updates_muted() and cb.answers[0][0] == "Уведомления выключены", cb.answers
+    assert env.services.updates_muted() and cb.answers[0][0] == "Уведомления об обновлениях выключены", cb.answers
     text, markup = _last_edit(nav)
     assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1", text
     assert _rows(markup)[0] == ["⬆️ Обновить до v3.3.1"], "кнопка обновления пропала без сети"
@@ -251,7 +251,7 @@ async def test_the_outage_threshold_is_minutes_on_screen_and_the_role_scale_in_t
     label = sections.bounds(br.keys.outage)[2]
     st = FakeState()
     cb, nav = await _press(env, fake_bot, btn, st)
-    assert _last_edit(nav)[0] == f"✏️ <b>{label}</b> · сейчас 5 мин · 1–1440", _last_edit(nav)[0]
+    assert _last_edit(nav)[0] == f"✏️ <b>{label}</b> · сейчас 5 мин\n\nПришли число от 1 до 1440 (мин)", _last_edit(nav)[0]
     msg = await _type(env, fake_bot, "7", st)
     assert store[br.keys.outage] == 7 * k, store[br.keys.outage]
     answers = [s for s in msg.sent if s[0] == "answer"]

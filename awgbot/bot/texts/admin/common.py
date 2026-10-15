@@ -14,9 +14,14 @@ ONLINE_PAYLOAD = "online"
 EXPIRING_PAYLOAD = "expiring"
 
 
+_MONTHS_ACC = ("январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август",
+               "сентябрь", "октябрь", "ноябрь", "декабрь")
+
+
 def month_label() -> str:
-    """«09.26» — текущий месяц в заголовках трафика (год — всегда)."""
-    return timeutil.now().strftime("%m.%y")
+    """«сентябрь» — текущий месяц в заголовках трафика («Трафик за сентябрь»):
+    месяц всегда текущий, а текущий год не пишем (прошлый был бы «09.25»)."""
+    return _MONTHS_ACC[timeutil.now().month - 1]
 
 
 def _total(rx: int, tx: int) -> str:
@@ -38,3 +43,19 @@ def _more(n: int) -> str:
 
 
 LIMIT_REACHED = "Достигнут лимит устройств"
+
+
+def refreshed_line(bot_username: str, payload: str, at=None) -> str:
+    """Последняя строка живого экрана: «🔄 <i>обновлено в 15:43</i>» / «🔄
+    <i>только что</i>» — ссылка на самого бота (/start payload): нажатие
+    перерисовывает экран, команда из чата убирается. at — момент снимка
+    (None — свежее минуты)."""
+    from ..fmt import deep_link
+    if at is None:
+        label = "только что"
+    else:
+        label = "обновлено в " + at.astimezone(timeutil.TZ).strftime("%H:%M")
+    return f"🔄 <i>{deep_link(bot_username, payload, label)}</i>"
+
+
+REFRESH_PAYLOAD = "refresh"      # /start refresh — перечитать статус и перерисовать главную

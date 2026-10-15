@@ -1,4 +1,8 @@
-"""edit.py — часть пакета clients (см. __init__): имя, лимиты устройств и трафика, период вручную."""
+"""edit.py — часть пакета clients (см. __init__): имя, лимиты устройств и трафика, период вручную.
+
+Правка условий профиля (лимиты, период) — с тумблером «уведомить клиента»
+(notify.py): уведомление уходит клиенту с кнопкой «💳 Подписка», когда тумблер
+включён."""
 from __future__ import annotations
 
 from awgbot.core import config
@@ -11,10 +15,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import ClientCB, PresetCB
 from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, back_to_context
-from awgbot.bot.notifier import notify_one, send_notifications
+from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
 from awgbot.bot.states import EditLimit, EditName, EditPeriod, EditTrafficLimit
 from .card import router, client_edit_parts
+from .notify import client_notes, notify_on, reset_notify
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,20 +68,21 @@ async def edit_limit_start(cb: CallbackQuery, callback_data: ClientCB, services,
     if client is None:
         return
     await state.clear()
+    await reset_notify(state)
     used = await call(services.db.count_devices, client.id)
     await edit(cb, texts.devs_limit_prompt(client, used), kb.devs_limit_kb(client.id))
     await cb.answer()
 
 
 async def _apply_devs_limit(cb_or_msg, services, client, new_limit: int, *, via_cb: CallbackQuery | None,
-                            data: dict | None = None) -> None:
+                            data: dict | None = None, notify: bool = True) -> None:
     """Применить лимит устройств: без подтверждения, итог первой строкой
-    «✏️ Изменить», клиенту — уведомление."""
+    «✏️ Изменить», клиенту — уведомление по тумблеру."""
     old_limit = int(client.device_limit)
     used = await call(services.set_device_limit, client.id, new_limit)
     note = texts.devs_limit_note(old_limit, new_limit, used)
-    if client.tg_id and old_limit != new_limit and client.tg_id != config.ADMIN_ID:
-        await notify_one(cb_or_msg.bot, client.tg_id, texts.limit_changed_notice(old_limit, new_limit))
+    if old_limit != new_limit:
+        await send_notifications(cb_or_msg.bot, client_notes(client, notify, texts.limit_changed_notice(old_limit, new_limit)))
     if via_cb is not None:
         from awgbot.bot import screens
         text, markup = await client_edit_parts(services, client.id)
@@ -92,13 +98,14 @@ async def edit_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services
     client = await _client_or_alert(cb, services, callback_data.ref)
     if client is None:
         return
+    notify = await notify_on(state)
     if callback_data.val < 0:
         await state.set_state(EditLimit.value)
-        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "edit", client.id,
-                       client_id=client.id)
+        await ask_here(cb, services, state, texts.devs_limit_other_prompt(client), "edit", client.id,
+                       client_id=client.id, notify=notify)
         await cb.answer()
         return
-    await _apply_devs_limit(cb, services, client, int(callback_data.val), via_cb=cb)
+    await _apply_devs_limit(cb, services, client, int(callback_data.val), via_cb=cb, notify=notify)
 
 
 @router.message(EditLimit.value)
@@ -114,7 +121,8 @@ async def edit_limit_apply(message: Message, services, state: FSMContext):
     if client is None:
         await back_to_context(message, services, {}, "admin")
         return
-    await _apply_devs_limit(message, services, client, int(raw), via_cb=None, data=data)
+    await _apply_devs_limit(message, services, client, int(raw), via_cb=None, data=data,
+                            notify=bool(data.get("notify", True)))
 
 
 @router.callback_query(ClientCB.filter(F.action == "edit_traffic"))
@@ -123,16 +131,19 @@ async def edit_client_traffic_start(cb: CallbackQuery, callback_data: ClientCB, 
     if client is None:
         return
     await state.clear()
+    await reset_notify(state)
     await edit(cb, texts.traffic_limit_prompt(client), kb.traffic_limit_kb(client.id))
     await cb.answer()
 
 
 async def _apply_traffic_limit(cb_or_msg, services, client, gb_value: int, *, via_cb: CallbackQuery | None,
-                               data: dict | None = None) -> None:
+                               data: dict | None = None, notify: bool = True) -> None:
     old_b = int(client.traffic_limit)
     new_b = gb_value * BYTES_PER_GB
     await call(services.set_client_traffic_limit, client.id, new_b)
     note = texts.traffic_limit_note(old_b, new_b)
+    if old_b != new_b:
+        await send_notifications(cb_or_msg.bot, client_notes(client, notify, texts.traffic_limit_changed_notice(old_b, new_b)))
     if via_cb is not None:
         from awgbot.bot import screens
         text, markup = await client_edit_parts(services, client.id)
@@ -148,13 +159,14 @@ async def edit_traffic_preset(cb: CallbackQuery, callback_data: PresetCB, servic
     client = await _client_or_alert(cb, services, callback_data.ref)
     if client is None:
         return
+    notify = await notify_on(state)
     if callback_data.val < 0:
         await state.set_state(EditTrafficLimit.value)
-        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "edit", client.id,
-                       target="client", client_id=client.id)
+        await ask_here(cb, services, state, texts.traffic_limit_other_prompt(client), "edit", client.id,
+                       target="client", client_id=client.id, notify=notify)
         await cb.answer()
         return
-    await _apply_traffic_limit(cb, services, client, int(callback_data.val), via_cb=cb)
+    await _apply_traffic_limit(cb, services, client, int(callback_data.val), via_cb=cb, notify=notify)
 
 
 @router.message(EditTrafficLimit.value)
@@ -162,10 +174,11 @@ async def edit_traffic_apply(message: Message, services, state: FSMContext):
     """Ввод лимита профиля или устройства («✏️ Другое»)."""
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
-        return
     data = await state.get_data()
+    if not raw.isdigit():
+        await ask_tracked(message, services,
+                          texts.NUMBER_BAD if data.get("target") == "device" else texts.NUMBER_BAD_TRAFFIC)
+        return
     if data.get("target") == "device":
         from awgbot.bot.handlers.admin.devices import apply_device_limit_typed
         await apply_device_limit_typed(message, services, state, data, int(raw))
@@ -175,10 +188,13 @@ async def edit_traffic_apply(message: Message, services, state: FSMContext):
     if client is None:
         await back_to_context(message, services, {}, "admin")
         return
-    await _apply_traffic_limit(message, services, client, int(raw), via_cb=None, data=data)
+    await _apply_traffic_limit(message, services, client, int(raw), via_cb=None, data=data,
+                               notify=bool(data.get("notify", True)))
 
 
 # ── период вручную ───────────────────────────────────────────────────────────
+# Магических значений ввода нет: «➡️ Не менять» и «∞ Бессрочно» — кнопки под
+# приглашением; «-» и «0» текстом принимаются молча (прежняя привычка).
 
 @router.callback_query(ClientCB.filter(F.action == "edit_period"))
 async def edit_period_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
@@ -186,17 +202,56 @@ async def edit_period_start(cb: CallbackQuery, callback_data: ClientCB, services
     if client is None:
         return
     await state.set_state(EditPeriod.start)
-    await ask_here(cb, services, state, texts.period_start_prompt(client), "edit", client.id,
-                   client_id=client.id)
+    await state.update_data(ctx_kind="edit", ctx_ref=client.id, client_id=client.id, notify=True)
+    await edit(cb, texts.period_start_prompt(client), kb.period_input_kb(client.id, end=False))
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await cb.answer()
+
+
+async def _period_start_chosen(message: Message, services, state: FSMContext, client, new_start,
+                               via_cb: CallbackQuery | None = None) -> None:
+    """Начало принято — приглашение к окончанию: на месте кнопки или новым
+    сообщением после ввода."""
+    await state.update_data(new_start=timeutil.to_iso(new_start))
+    await state.set_state(EditPeriod.end)
+    prompt, markup = texts.period_end_prompt(client), kb.period_input_kb(client.id, end=True,
+                                                                          notify=await notify_on(state))
+    if via_cb is not None:
+        await edit(via_cb, prompt, markup)
+        return
+    await ask_tracked(message, services, prompt, reply_markup=markup)
+
+
+async def _period_end_chosen(message: Message, services, state: FSMContext, client, new_end) -> None:
+    data = await state.get_data()
+    await state.clear()
+    saved_start = data.get("new_start")
+    new_start = timeutil.parse_iso(saved_start) if saved_start else None
+    if new_start is None:
+        await back_to_context(message, services, data, "admin", note=texts.PERIOD_NO_START)
+        return
+    try:
+        s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
+    except ServiceError as ex:
+        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(ex))}")
+        return
+    # клиенту — по тумблеру: уведомления домена (истекла / продлена), а без них
+    # — «Срок подписки изменён»; держателям его устройств — всегда
+    await send_notifications(message.bot, client_notes(client, bool(data.get("notify", True)),
+                                                       texts.period_changed_notice(e), notes))
+    await back_to_context(message, services, data, "admin", note=texts.period_changed_note(s, e))
+
+
+async def _period_client(state: FSMContext, services):
+    data = await state.get_data()
+    return await call(services.db.get_client, data.get("client_id"))
 
 
 @router.message(EditPeriod.start)
 async def edit_period_start_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    data = await state.get_data()
-    client = await call(services.db.get_client, data.get("client_id"))
+    client = await _period_client(state, services)
     if client is None:
         await state.clear()
         await back_to_context(message, services, {}, "admin")
@@ -212,17 +267,14 @@ async def edit_period_start_apply(message: Message, services, state: FSMContext)
         except ValueError:
             await ask_tracked(message, services, texts.PERIOD_BAD)
             return
-    await state.update_data(new_start=timeutil.to_iso(new_start))
-    await state.set_state(EditPeriod.end)
-    await ask_tracked(message, services, texts.period_end_prompt(client))
+    await _period_start_chosen(message, services, state, client, new_start)
 
 
 @router.message(EditPeriod.end)
 async def edit_period_end_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    data = await state.get_data()
-    client = await call(services.db.get_client, data.get("client_id"))
+    client = await _period_client(state, services)
     if client is None:
         await state.clear()
         await back_to_context(message, services, {}, "admin")
@@ -237,16 +289,31 @@ async def edit_period_end_apply(message: Message, services, state: FSMContext):
         except ValueError:
             await ask_tracked(message, services, texts.PERIOD_BAD)
             return
-    await state.clear()
-    saved_start = data.get("new_start")
-    new_start = timeutil.parse_iso(saved_start) if saved_start else None
-    if new_start is None:
-        await back_to_context(message, services, data, "admin", note=texts.PERIOD_NO_START)
+    await _period_end_chosen(message, services, state, client, new_end)
+
+
+@router.callback_query(ClientCB.filter(F.action.in_(("period_keep", "period_never"))))
+async def edit_period_button(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    """«➡️ Не менять» / «∞ Бессрочно» под приглашением даты — вместо ввода."""
+    current = await state.get_state()
+    if current not in (EditPeriod.start.state, EditPeriod.end.state):
+        await cb.answer(ui.Toast.stale, show_alert=True)
         return
-    try:
-        s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
-    except ServiceError as ex:
-        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(ex))}")
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        await state.clear()
         return
-    await send_notifications(message.bot, notes)
-    await back_to_context(message, services, data, "admin", note=texts.period_changed_note(s, e))
+    if current == EditPeriod.start.state:
+        new_start = client.period_start and timeutil.parse_iso(client.period_start)
+        if new_start is None:
+            await cb.answer(ui.toast(texts.PERIOD_NO_START), show_alert=True)
+            return
+        await _period_start_chosen(cb.message, services, state, client, new_start, via_cb=cb)
+        await cb.answer()
+        return
+    if callback_data.action == "period_never":
+        new_end = None
+    else:
+        new_end = client.period_end and timeutil.parse_iso(client.period_end)
+    await cb.answer()
+    await _period_end_chosen(cb.message, services, state, client, new_end)

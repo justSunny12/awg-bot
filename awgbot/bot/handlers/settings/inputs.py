@@ -32,22 +32,24 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
         await call(services.set_private_dns_decision, "pending")
         blocked = await call(services.migration_blocked_reason)
         if blocked:
-            await cb.answer(f"Сейчас переезд невозможен: {blocked}", show_alert=True)
+            await cb.answer(texts.PRIVATE_DNS_BLOCKED_TOAST, show_alert=True)
             await _render(cb, "srv", services)
             return
         await state.clear()
         await _render(cb, "mig_prep", services)
-        await cb.answer("Записал: следующий переезд — со своим резолвером")
+        await cb.answer(texts.PRIVATE_DNS_LATER)
         return
+    # «⏳ С переездом» и «☑️ Не нужно» — не подтверждение: итог всплывашкой,
+    # на месте — «🖥 Сервер AWG», где решение видно строкой DNS
     if key == "later":
         await call(services.set_private_dns_decision, "pending")
-        await edit(cb, texts.PRIVATE_DNS_LATER, kb.settings_back("srv"))
-        await cb.answer()
+        await _render(cb, "srv", services)
+        await cb.answer(texts.PRIVATE_DNS_LATER)
         return
     if key == "never":
         await call(services.set_private_dns_decision, "dismissed")
-        await edit(cb, texts.PRIVATE_DNS_DISMISSED, kb.settings_back("srv"))
-        await cb.answer()
+        await _render(cb, "srv", services)
+        await cb.answer(texts.PRIVATE_DNS_DISMISSED)
         return
     await cb.answer(ui.Toast.stale, show_alert=True)
 
@@ -126,11 +128,10 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
 
 
 async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -> None:
-    """Поднять второй интерфейс под переезд и перезапустить бота: имя
-    интерфейса читается при старте, без рестарта рычаг не появится."""
+    """Поднять новый интерфейс под переезд и перезапустить бота: имя
+    интерфейса читается при старте, без рестарта функция не появится."""
     await cb.answer("Поднимаю интерфейс…")
-    await edit(cb, "🚚 Поднимаю второй интерфейс: ключи, порт, обфускация, "
-                   "автозагрузка. Это несколько секунд", None)
+    await edit(cb, texts.MIGRATION_PREPARING, None)
     try:
         res = await call(services.migration_prepare,
                          int(want_port) if str(want_port).isdigit() else None)

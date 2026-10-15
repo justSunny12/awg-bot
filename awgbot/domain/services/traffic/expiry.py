@@ -10,7 +10,9 @@ from awgbot.core.enums import SubStatus, PeriodKind, FriendStatus
 from awgbot.domain.services.types import Notification
 from awgbot.domain.services.blocks import _friend_blocked_text
 
-from awgbot.domain.notices.traffic import _MONTH_CUT_MINUTES, _TXT_EXPIRED_ADMIN, _TXT_EXPIRED_CLIENT, _TXT_EXPIRING_ADMIN, _TXT_EXPIRING_CLIENT, _left_label
+from awgbot.domain.notices.traffic import (_MONTH_CUT_MINUTES, _TXT_EXPIRED_ADMIN, _TXT_EXPIRED_CLIENT,
+                                            _TXT_EXPIRING_ADMIN, _TXT_EXPIRING_CLIENT,
+                                            _TXT_EXPIRING_CLIENT_GRACE, _left_label)
 
 log = logging.getLogger("awgbot.services")
 
@@ -109,8 +111,15 @@ class ExpiryMixin:
                       # путём), только на ГОДОВОМ периоде и один раз за период.
                       grace_offer = (client.period_kind == PeriodKind.YEAR
                                      and not client.grace_used)
+                      if grace_offer:
+                          from awgbot.core import settings
+                          from awgbot.util.textfmt import _days
+                          text = _TXT_EXPIRING_CLIENT_GRACE.format(
+                              label=tightest_label, days=_days(settings.get_int("grace.grace_days", 14)))
+                      else:
+                          text = _TXT_EXPIRING_CLIENT.format(label=tightest_label)
                       notifications.append(Notification(
-                          client.tg_id, _TXT_EXPIRING_CLIENT.format(label=tightest_label),
+                          client.tg_id, text,
                           grace_offer_client_id=client.id if grace_offer else 0,
                           action=("sub", 0)))
                   notifications.append(Notification(

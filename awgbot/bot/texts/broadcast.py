@@ -10,25 +10,26 @@ from .fmt import plural_ru, _days, profile_link
 
 
 # ── Броадкаст ────────────────────────────────────────────────────────────────
-BROADCAST_EMPTY = ("Так не пойдёт: жду текст объявления или картинку. "
-                   "Пришли что-нибудь из этого или нажми «Отмена».")
+BROADCAST_EMPTY = "⚠️ Пустое объявление — пришли текст или картинку"
 
 
 def broadcast_targets_text(selected: int, extend: bool) -> str:
-    """Экран адресатов: «📢 Объявление · отмечено 2»; с продлением — кто
-    получит и что значат ∞ и 🟡 у имён."""
+    """Экран адресатов: «📢 Объявление · отмечено 2» (ноль — без хвоста); с
+    продлением — кто получит и что значат ∞ и 🟡 у имён."""
+    marked = [f"отмечено {selected}"] if selected else []
     if extend:
-        return (ui.head("📢 Объявление с продлением", meta=[f"отмечено {selected}"]) + "\n"
+        return (ui.head("📢 Объявление с продлением", meta=marked) + "\n"
                 "Получат только владельцы профилей с подпиской\n"
-                "∞ — бессрочная (не продлится), 🟡 — истекла (продлится от текущего времени)")
-    return (ui.head("📢 Объявление", meta=[f"отмечено {selected}"]) + "\n"
+                "∞ — бессрочная, не продлится · 🟡 — истекла, продлится с сегодняшнего дня")
+    return (ui.head("📢 Объявление", meta=marked) + "\n"
             "Получат владельцы и те, с кем они делятся устройствами")
 
 
 BROADCAST_NO_TARGETS = "Никого не отметил — выбери хотя бы один профиль"
-BROADCAST_ALL_UNLIMITED = ("Все отмеченные — с бессрочной подпиской, продлевать некого. "
-                           "Для них — объявление без продления")
-BROADCAST_DAYS_BAD = "⚠️ Нужно целое число от 1 до 365"
+BROADCAST_ALL_UNLIMITED = ("Продлевать некого: у всех отмеченных подписка бессрочная. "
+                           "Сними «✅ С продлением подписки» — уйдёт обычное объявление")
+BROADCAST_DAYS_BAD = "⚠️ Дней — число от 1 до 365, попробуй ещё раз"
+BROADCAST_DAYS_OTHER = ui.head("✏️ Продление, дней", meta=["1–365"]) + "\n\nПришли число"
 
 
 def subscription_mark(c) -> str:
@@ -48,11 +49,15 @@ def _names(clients, bot_username: str) -> str:
 
 
 def broadcast_days_prompt(plan, bot_username: str = "") -> str:
-    """Шаг дней: «📢 Профили для продления подписки: [Ксюша], [Петя]» ⏎ «На
-    сколько дней продлеваем?»; бессрочные — с оговоркой."""
-    names = ", ".join(profile_link(e.client, bot_username) + (" (∞, без продления)" if e.unlimited else "")
-                      for e in plan)
-    return ui.head("📢 Профили для продления подписки", value=names) + "\nНа сколько дней продлеваем?"
+    """Шаг дней: «📢 Продление подписки: [Ксюша], [Петя]» ⏎ «Без продления (∞):
+    [Вечный]» ⏎ «На сколько дней продлеваем?»."""
+    names = ", ".join(profile_link(e.client, bot_username) for e in plan if not e.unlimited)
+    unl = ", ".join(profile_link(e.client, bot_username) for e in plan if e.unlimited)
+    lines = [ui.head("📢 Продление подписки", value=names)]
+    if unl:
+        lines.append(f"Без продления (∞): {unl}")
+    lines.append("На сколько дней продлеваем?")
+    return "\n".join(lines)
 
 
 def extension_header(days: int, ext) -> str:
@@ -62,10 +67,14 @@ def extension_header(days: int, ext) -> str:
         return ""
     new = timeutil.fmt_date_ui(ext.new_end)
     if ext.from_now:
-        return (f"<b>К твоей подписке добавлено {_days(days)} с текущей даты 🙂\n"
-                f"Теперь срок подписки: до {new}</b>")
+        return f"<b>Подписка продлена на {_days(days)} 🙂\nс сегодняшнего дня — до {new}</b>"
     return (f"<b>Подписка продлена на {_days(days)} 🙂\n"
             f"{timeutil.fmt_date_ui(ext.old_end)} → {new}</b>")
+
+
+EXTENSION_HEADER_MASK = "<b>Подписка продлена на {дней} 🙂\n{период подписки}</b>"
+"""Шапка объявления в чате админа (превью и копия после рассылки): у каждого
+адресата числа свои, админу — маски вместо чисел первого адресата."""
 
 
 def announcement_text(header: str, text: str) -> str:
@@ -114,8 +123,7 @@ def _bc_audience(clients: list, with_friends: bool, bot_username: str = "") -> s
 
 def _how_to(text_max: int, caption_max: int) -> str:
     from .fmt import details
-    return ("Форматирование Telegram сохранится; можно вложить до "
-            f"{config.TG_ALBUM_MAX} изображений.\n"
+    return (f"Пришли текст или картинки — форматирование Telegram сохранится, картинок до {config.TG_ALBUM_MAX}\n"
             + details(f"без картинок — до {text_max} символов, с картинками — до {caption_max}"))
 
 
@@ -139,7 +147,7 @@ def broadcast_preview(text: str, n: int, clients: list = (),
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
         foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
-    return ui.head("👆 Так увидят получатели", meta=[foot]) + f"\n\n{text}"
+    return ui.head("👇 Так увидят получатели", meta=[foot]) + f"\n\n{text}"
 
 
 def broadcast_preview_photos(n: int, clients: list = (),
@@ -175,12 +183,27 @@ def broadcast_too_long(actual: int, limit: int, with_photos: bool) -> str:
             "картинки и адресаты сохранены.")
 
 
+_UNDELIVERED_SHOWN = 3
+
+
+def _undelivered_names(failed, clients: list, bot_username: str) -> str:
+    """«[Петя], [Вася]» — недоставленные по tg_id поимённо (ссылками); больше
+    трёх или чужие tg (гости) — «и ещё N»."""
+    by_tg = {c.tg_id: c for c in clients if getattr(c, "tg_id", 0)}
+    named = [profile_link(by_tg[t], bot_username) for t in failed if t in by_tg]
+    rest = len(failed) - min(len(named), _UNDELIVERED_SHOWN)
+    out = ", ".join(named[:_UNDELIVERED_SHOWN])
+    if rest > 0:
+        out += f" и ещё {rest}" if out else f"{rest}"
+    return out
+
+
 def broadcast_report(clients: list, with_friends: bool, delivered: int,
-                    failed: int, extension=None, bot_username: str = "") -> str:
+                    failed, extension=None, bot_username: str = "") -> str:
     """Отчёт: только факт доставки. Само объявление остаётся в чате строкой
     выше. «✅ Доставлено: профили [Ксюша], [Петя] и те, с кем они делятся
-    устройствами — 3 адресата · продлено на 7 дн.» ⏎ «⚠️ не доставлено 1 —
-    бот заблокирован»."""
+    устройствами — 3 адресата · продлено на 7 дн.» ⏎ «⚠️ Не доставлено: [Петя] —
+    бот заблокирован или аккаунт удалён». failed — tg_id недоставленных."""
     w = plural_ru(delivered, "адресат", "адресата", "адресатов")
     line = f"✅ Доставлено: {_bc_audience(clients, with_friends, bot_username)} — {delivered} {w}"
     if extension is not None:
@@ -189,8 +212,10 @@ def broadcast_report(clients: list, with_friends: bool, delivered: int,
         line += f" · продлено на {_days(days)}"
         if unl:
             line += f" ({', '.join(unl)} — без продления)"
+    failed = list(failed) if not isinstance(failed, int) else [0] * failed
     if failed:
         # молчать о недоставленных нельзя: «доставлено» стало бы неправдой
-        line += (f"\n⚠️ не доставлено {failed} — бот заблокирован или аккаунт удалён"
+        line += (f"\n⚠️ Не доставлено: {_undelivered_names(failed, clients, bot_username)} — "
+                 "бот заблокирован или аккаунт удалён"
                  + ("; подписка всё равно продлена" if extension is not None else ""))
     return line

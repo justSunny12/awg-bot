@@ -576,7 +576,7 @@ async def test_finish_dialog_names_the_gateway_still_on_the_old_uplink(services,
     cb, nav = _acb(fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish"), services)
     text = _edits(nav)[-1][0]
-    assert "⚠️ NASPi ещё на прежнем аплинке: после финала бот шлюза потеряет Telegram" in text, text
+    assert "⚠️ NASPi ещё на прежнем аплинке: после завершения бот шлюза потеряет Telegram" in text, text
     assert 'href="https://t.me/naspi_gw_bot"' in text, text
     monkeypatch.setattr(services, "gwcfg_old_uplink", lambda: [])
     cb, nav = _acb(fake_bot)

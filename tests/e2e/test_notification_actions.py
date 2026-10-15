@@ -128,7 +128,7 @@ async def test_unassigned_button_opens_the_quarantine_list(services, fake_bot):
     services.db.create_device(svc, "чужой", "PUBQ", "PSK", "10.8.0.77")
     _, note = await _press(services, fake_bot, "unassigned", 0)
     shown = [t for kind, t, _ in note.sent if kind == "answer"]
-    assert shown == ["📦 <b>Без профиля:</b> 1 — пир создан мимо бота"], shown
+    assert shown == ["📦 <b>Без профиля:</b> 1 — устройство добавлено не ботом"], shown
 
 
 async def test_extend_for_a_deleted_profile_falls_back_to_home(services, fake_bot):
@@ -198,9 +198,9 @@ def test_expiring_and_expired_notes_link_the_profile_and_offer_extend(services, 
     notes = services.check_expiry()
     admin = {n.action: n for n in notes if n.tg_id == ADMIN}
     exp = admin[("extend", soon.id)]
-    assert exp.text.startswith(f"⏳ {_link(f'cl-{soon.id}', 'Скоро')}: подписка истекает через "), exp.text
+    assert exp.text.startswith(f"⏳ Профиль {_link(f'cl-{soon.id}', 'Скоро')}: подписка истекает через "), exp.text
     dead = admin[("extend", gone.id)]
-    assert dead.text == f"🔴 {_link(f'cl-{gone.id}', 'Истёк')}: подписка истекла, доступ приостановлен", dead.text
+    assert dead.text == f"🔴 Профиль {_link(f'cl-{gone.id}', 'Истёк')}: подписка истекла — доступ приостановлен", dead.text
     client = [n for n in notes if n.tg_id == 5201]
     assert len(client) == 1 and client[0].text.startswith("⏳ Подписка истекает через ")
     assert client[0].action == ("sub", 0)
@@ -214,7 +214,7 @@ def test_without_bot_name_profile_names_stay_plain_text(services, make_active_cl
     c = make_active_client("<Скоро>", tg_id=5203)
     _period(services, c, now - datetime.timedelta(days=25), now + datetime.timedelta(hours=20), "month")
     admin = [n for n in services.check_expiry() if n.tg_id == ADMIN]
-    assert admin and admin[0].text.startswith("⏳ &lt;Скоро&gt;: подписка истекает"), admin[0].text
+    assert admin and admin[0].text.startswith("⏳ Профиль &lt;Скоро&gt;: подписка истекает"), admin[0].text
 
 
 async def test_year_client_expiring_note_keeps_subscription_button_next_to_grace(

@@ -46,6 +46,13 @@ def confirm(cancel_cb, do_text: str, do_cb, *, danger: bool = True) -> InlineKey
     return ui.rows([("⬅️ Отмена", cancel_cb), (do_text, do_cb, "danger") if danger else (do_text, do_cb)])
 
 
+def notify_toggle(on: bool, cb) -> tuple:
+    """Тумблер «уведомить клиента» на экранах правки условий админом (лимиты,
+    период, продление, блокировка, снятие паузы): «✅ Уведомить» /
+    «☑️ Не уведомлять» — нажатие переключает и перерисовывает экран."""
+    return ("✅ Уведомить" if on else "☑️ Не уведомлять", cb)
+
+
 def select_all_button(selected: int, total: int, cb) -> InlineKeyboardButton:
     """Массовый выбор: ☑️, пока выбраны не все; ✅, когда все (и когда их
     отметили по одному) — нажатие на ✅ снимает всё."""
@@ -71,13 +78,13 @@ def device_limit_presets(profile_limit_bytes: int) -> list[int]:
 
 
 def device_limit_kb(ref: int, profile_limit_bytes: int, cancel_cb) -> InlineKeyboardMarkup:
-    """Пресеты лимита устройства по три в ряд, затем «✏️ Другое» и «⬅️ Отмена».
-    ref — id устройства (карточка) или 0 (новое устройство другу)."""
+    """Пресеты лимита устройства по три в ряд, последним рядом — «✏️ Другое» и
+    «⬅️ Отмена» (одна раскладка с пресетами профиля). ref — id устройства
+    (карточка) или 0 (новое устройство другу)."""
     presets = [("∞" if g == 0 else f"{g} ГБ", PresetCB(kind="devlimit", ref=ref, val=g))
                for g in device_limit_presets(profile_limit_bytes)]
     return ui.rows(*ui.grid(presets, 3),
-                   ("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1)),
-                   ("⬅️ Отмена", cancel_cb))
+                   [("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1)), ("⬅️ Отмена", cancel_cb)])
 
 
 def _tick(on: bool) -> str:
@@ -146,9 +153,10 @@ def issuable(devices) -> list:
 
 
 def _btn_suffix(dev) -> str:
-    """Суффикс имени устройства для КНОПОК (HTML не рендерится): звёздочка у
-    устройств, которые бот не создавал. Единый источник для всех списков."""
-    return "" if dev.is_managed else " *"
+    """Суффикс имени устройства для КНОПОК (HTML не рендерится): «✳️» у
+    устройств, которые бот не создавал, — тот же значок, что в карточке
+    («✳️ Добавлено не ботом»). Единый источник для всех списков."""
+    return "" if dev.is_managed else " ✳️"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,24 +197,24 @@ def _manual_block_button(target: str, ref: int, mask: int, *, for_admin: bool):
                     else _blocks.ClientBlock.USER)
         has_manual = int(mask) & int(user_bit)
     if has_manual:
-        return ("✅ Разблок", BlockCB(target=target, action="menu_unblock", ref=ref))
-    return ("🛑 Блок", BlockCB(target=target, action="menu_block", ref=ref))
+        return ("🔓 Разблокировать", BlockCB(target=target, action="menu_unblock", ref=ref))
+    return ("🔒 Заблокировать", BlockCB(target=target, action="menu_block", ref=ref))
 
 
 def block_unblock_reasons(target: str, ref: int, mask: int) -> InlineKeyboardMarkup:
-    """Админ снимает блок: перечислить активные РУЧНЫЕ причины + «Снять всё»
+    """Админ снимает блок: перечислить активные РУЧНЫЕ причины + «🔓 Снять все»
     (если больше одной). Если причина ровно одна — этот экран не показываем
-    вовсе (см. admin_unblock_menu), снимаем сразу."""
+    вовсе (см. admin_unblock_menu), снимаем сразу. Блок владельца — только у
+    устройства: профиль сам себя не блокирует."""
     if target == "dev":
-        items = [("silent", _blocks.DeviceBlock.ADMIN_SILENT, "Тихий админ-блок"),
-                 ("notified", _blocks.DeviceBlock.ADMIN_NOTIFIED, "Админ-блок"),
-                 ("user", _blocks.DeviceBlock.USER, "Блок владельца")]
+        items = [("silent", _blocks.DeviceBlock.ADMIN_SILENT, "🔒 Невидимая блокировка"),
+                 ("notified", _blocks.DeviceBlock.ADMIN_NOTIFIED, "🔔 Блокировка с уведомлением"),
+                 ("user", _blocks.DeviceBlock.USER, "👤 Блок владельца")]
     else:
-        items = [("silent", _blocks.ClientBlock.ADMIN_SILENT, "Тихий админ-блок"),
-                 ("notified", _blocks.ClientBlock.ADMIN_NOTIFIED, "Админ-блок"),
-                 ("user", _blocks.ClientBlock.USER, "Блок владельца")]
+        items = [("silent", _blocks.ClientBlock.ADMIN_SILENT, "🔒 Невидимая блокировка"),
+                 ("notified", _blocks.ClientBlock.ADMIN_NOTIFIED, "🔔 Блокировка с уведомлением")]
     active = [(kind, lbl) for kind, bit, lbl in items if int(mask) & int(bit)]
     return ui.rows(
         *[(lbl, BlockCB(target=target, action="unblock", ref=ref, kind=kind)) for kind, lbl in active],
-        ("Снять всё", BlockCB(target=target, action="unblock", ref=ref, kind="all")) if len(active) > 1 else None,
+        ("🔓 Снять все", BlockCB(target=target, action="unblock", ref=ref, kind="all")) if len(active) > 1 else None,
         ("⬅️ Отмена", BlockCB(target=target, action="cancel", ref=ref)))

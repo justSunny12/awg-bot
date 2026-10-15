@@ -28,11 +28,11 @@ def _friend_unblocked_text(device_name: str) -> str:
 # Держателю при РУЧНОЙ блокировке — кто и что: не «закончилась подписка»
 def _friend_manual_blocked_text(device_name: str, by_admin: bool = False) -> str:
     who = "администратором" if by_admin else "владельцем"
-    return f"🛑 Доступ к устройству «{_e(device_name)}» приостановлен {who}"
+    return f"🔒 Доступ к устройству «{_e(device_name)}» приостановлен {who}"
 
 
 def _friend_manual_unblocked_text(device_name: str) -> str:
-    return f"🟢 Доступ к устройству «{_e(device_name)}» восстановлен"
+    return f"🔓 Доступ к устройству «{_e(device_name)}» восстановлен"
 
 
 def _skip_actor(notes: list, actor_tg) -> list:
@@ -42,12 +42,13 @@ def _skip_actor(notes: list, actor_tg) -> list:
 
 # ── Тексты ручных блокировок (админ/клиент) ──────────────────────────────────
 
-def _manual_device_blocked_client(name: str) -> str:
-    return f"🛑 Устройство «{_e(name)}» заблокировано"
+def _manual_device_blocked_client(name: str, by_admin: bool = False) -> str:
+    """Владельцу: кто заблокировал — из карточки через неделю не узнать."""
+    return f"🔒 Устройство «{_e(name)}» заблокировано" + (" администратором" if by_admin else "")
 
 
 def _manual_device_unblocked_client(name: str) -> str:
-    return f"🟢 Устройство «{_e(name)}» разблокировано"
+    return f"🔓 Устройство «{_e(name)}» разблокировано"
 
 
 # Владельцу — кто из держателей заблокировал его переданное устройство:
@@ -70,11 +71,11 @@ def _by_holder(dev, actor_tg) -> bool:
 # Клиенту сообщаем о его же блокировке — имя не подставляем (адресат и есть
 # субъект), поэтому текст без параметров.
 def _manual_client_blocked() -> str:
-    return "🛑 Твой доступ приостановлен администратором"
+    return "🔒 Твой доступ приостановлен администратором"
 
 
 def _manual_client_unblocked() -> str:
-    return "🟢 Твой доступ восстановлен"
+    return "🔓 Твой доступ восстановлен"
 
 log = logging.getLogger("awgbot.services")
 
@@ -179,12 +180,12 @@ class BlocksMixin:
         notes: list[Notification] = []
         if notify:
             owner = self.db.get_client(dev.client_id)
+            by_admin = bool(actor_tg) and actor_tg == config.ADMIN_ID and actor_tg != (owner.tg_id if owner else None)
             if owner and owner.tg_id:
                 notes.append(Notification(owner.tg_id,
                              _holder_blocked_owner_text(dev) if _by_holder(dev, actor_tg)
-                             else _manual_device_blocked_client(dev.name)))
+                             else _manual_device_blocked_client(dev.name, by_admin=by_admin)))
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
-                by_admin = bool(actor_tg) and actor_tg == config.ADMIN_ID and actor_tg != (owner.tg_id if owner else None)
                 notes.append(Notification(dev.friend_tg_id,
                              _friend_manual_blocked_text(dev.name, by_admin=by_admin)))
         return _skip_actor(notes, actor_tg)

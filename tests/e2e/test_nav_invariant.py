@@ -92,7 +92,7 @@ async def test_lower_limit_preset_result_in_place(services, fake_bot, make_activ
     fake_bot.records.clear()
     await ah.edit_limit_preset(cb, PresetCB(kind="cli_devs", ref=client.id, val=1), services, FakeState())
     assert [s[0] for s in screen.sent] == ["edit_text"], "итог ушёл новым сообщением"
-    assert screen.sent[-1][1].startswith("✅ Устройств: 5 → 1 · ⚠️ сейчас 2 из 1"), screen.sent[-1][1]
+    assert screen.sent[-1][1].startswith("✅ Лимит устройств: 5 → 1 · ⚠️ занято 2"), screen.sent[-1][1]
     assert screen.sent[-1][2] is not None, "после итога нет меню"
     assert services.db.get_nav_message_id(ADMIN) == screen.message_id
     assert not [r for r in fake_bot.records if r[0] == "send_message" and r[1] == ADMIN]
@@ -101,12 +101,13 @@ async def test_lower_limit_preset_result_in_place(services, fake_bot, make_activ
 # ── блокировка с приостановкой: шаги на месте экрана, без ввода ─────────────
 
 async def test_block_pause_dialog_keeps_one_live_menu(services, fake_bot, make_active_client):
-    """«⏸️ Да» → «Уведомить владельца?» на месте того же экрана; ввода дней нет —
-    ни состояния FSM, ни служебных сообщений."""
+    """Тумблер «⏸️ Пауза» перерисовывает экран блокировки на месте; ввода
+    дней нет — ни состояния FSM, ни служебных сообщений."""
     client = make_active_client(tg_id=6402, device_limit=5)
     cb, screen = _cb(fake_bot, ADMIN)
     services.db.nav_touch(ADMIN, screen.message_id)
-    await ah.admin_block_pause_yes(cb, BlockCB(target="cli", action="pause_yes", ref=client.id))
+    await ah.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client.id,
+                                          kind="notified", days=-1), services)
     assert [s[0] for s in screen.sent] == ["edit_text"], "шаг ушёл новым сообщением"
     assert services.db.get_nav_message_id(ADMIN) == screen.message_id
     assert services.db.pop_content_msg_ids(ADMIN) == [], "появились служебные сообщения ввода"
@@ -173,9 +174,9 @@ async def test_admin_resume_pause_result_then_card(services, fake_bot, make_acti
     assert ok
     cb, card = _cb(fake_bot, ADMIN)
     services.db.nav_touch(ADMIN, card.message_id)
-    await ah.admin_resume_pause(cb, ClientCB(action="resume_pause", client_id=cl.id), services)
+    await ah.admin_resume_pause_yes(cb, ClientCB(action="resume_pause_yes", client_id=cl.id), services, FakeState())
     edits = [s for s in card.sent if s[0] == "edit_text"]
-    assert edits and edits[-1][1].startswith(f"▶️ {cl.name}: пауза снята · ") and edits[-1][2] is None
+    assert edits and edits[-1][1].startswith(f"▶️ {cl.name}: пауза снята") and edits[-1][2] is None
     answers = [s for s in card.sent if s[0] == "answer"]
     assert answers and answers[-1][2] is not None, "карточка не пришла следом"
     assert services.db.get_nav_message_id(ADMIN) != card.message_id

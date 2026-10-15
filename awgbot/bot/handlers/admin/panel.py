@@ -83,8 +83,12 @@ async def expiring_screen(services):
 
 
 async def online_screen(services):
+    """Живой экран: последней строкой — «🔄 обновлено в …» ссылкой на самого
+    себя (/start online перерисовывает экран на месте)."""
+    from awgbot.util import timeutil
     devs = await call(services.online_devices)
-    return texts.online_devices_text(devs, _bot(services)), kb.online_devices_kb()
+    refreshed = texts.refreshed_line(_bot(services), texts.ONLINE_PAYLOAD, timeutil.now())
+    return texts.online_devices_text(devs, _bot(services), refreshed=refreshed), kb.online_devices_kb()
 
 
 async def unassigned_screen(services, chat_id: int = 0):
@@ -184,6 +188,14 @@ async def _traffic_deep_link(message: Message, services, payload: str,
                              state: FSMContext | None = None) -> bool:
     """Переход по ссылке из шапки, экрана или уведомления: экран — на месте
     живого меню, команда убирается из чата."""
+    if payload == texts.REFRESH_PAYLOAD:
+        # «🔄 обновлено в …» на главной: разово дёрнуть сервер и /proc,
+        # главную перерисовать на месте (команду из чата убирает show_screen)
+        notes = await call(services.refresh_status_now)
+        if not await show_screen(message, services, "admin", None, "main"):
+            await _return_panel(message, services)
+        await send_notifications(message.bot, notes)
+        return True
     link = parse_link(payload)
     if link is None:
         return False
@@ -277,8 +289,8 @@ async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(Menu.filter(F.action == "refresh"))
 async def refresh_status(cb: CallbackQuery, services):
-    """Внеплановое обновление статуса и метрик по кнопке: разово дёргает
-    сервер и /proc, пишет в state, перерисовывает главную."""
+    """Кнопка «🔄 Обновить» прежних сообщений: разово дёргает сервер и /proc,
+    пишет в state, перерисовывает главную (теперь — ссылка в тексте)."""
     await cb.answer("Обновляю…")
     notes = await call(services.refresh_status_now)
     await edit_nav(cb, services, *await _panel_parts(services))

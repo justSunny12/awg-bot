@@ -130,7 +130,7 @@ async def test_broadcast_runs_in_parallel_window(monkeypatch):
     monkeypatch.setattr(notifier, "send_announcement", fake_send)
     monkeypatch.setattr(notifier, "_BATCH_PACING_SECONDS", 0)
     ok, failed = await notifier.broadcast(object(), list(range(1, 13)), "t", [])
-    assert (ok, failed) == (11, 1)
+    assert (ok, failed) == (11, [3])
     assert 1 < peak[0] <= notifier._PARALLEL
 
 

@@ -25,10 +25,11 @@ def _ks_blocked(services):
 
 
 def _ks_blocked_twice(services):
+    """Две ручные причины админа: невидимая и с уведомлением."""
     from awgbot.core.blocks import ClientBlock
     who = _people(services)
     services.block_client_manual(KS, ClientBlock.ADMIN_SILENT, False)
-    services.block_client_manual(KS, ClientBlock.USER, False)
+    services.block_client_manual(KS, ClientBlock.ADMIN_NOTIFIED, False)
     return who
 
 
@@ -86,16 +87,29 @@ PROFILES = [
          title="лимит устройств пресетом"),
     Shot("adm.cl.limit.other", role="admin", press=[PresetCB(kind="cli_devs", ref=KS, val=-1)], data=_people,
          title="лимит устройств: «✏️ Другое»"),
+    Shot("adm.cl.limit.notify_off", role="admin",
+         press=[ClientCB(action="edit_limit", client_id=KS), ClientCB(action="ntf_cli_devs", client_id=KS),
+                PresetCB(kind="cli_devs", ref=KS, val=5)],
+         data=_people, title="лимит устройств с «☑️ Не уведомлять» — клиенту ничего"),
     Shot("adm.cl.limit.other.done", role="admin", press=[PresetCB(kind="cli_devs", ref=KS, val=-1)], text="7",
          data=_people, title="лимит устройств своим числом"),
     Shot("adm.cl.traffic", role="admin", press=[ClientCB(action="edit_traffic", client_id=KS)], data=_people,
          title="лимит трафика: пресеты"),
     Shot("adm.cl.traffic.preset", role="admin", press=[PresetCB(kind="cli_traffic", ref=KS, val=100)],
-         data=_people, title="лимит трафика пресетом"),
+         data=_people, title="лимит трафика пресетом — клиенту уведомление с «💳 Подписка»"),
+    Shot("adm.cl.traffic.notify_tgl", role="admin",
+         press=[ClientCB(action="edit_traffic", client_id=KS), ClientCB(action="ntf_cli_traffic", client_id=KS)],
+         data=_people, title="лимит трафика: тумблер уведомления переключён"),
     Shot("adm.cl.period", role="admin", press=[ClientCB(action="edit_period", client_id=KS)], data=_people,
-         title="период: дата начала"),
+         title="период: дата начала — с «➡️ Не менять» и тумблером уведомления"),
     Shot("adm.cl.period.start", role="admin", press=[ClientCB(action="edit_period", client_id=KS)], text="-",
-         data=_people, title="период: дата окончания"),
+         data=_people, title="период: дата окончания (начало — текстом «-»)"),
+    Shot("adm.cl.period.keep", role="admin",
+         press=[ClientCB(action="edit_period", client_id=KS), ClientCB(action="period_keep", client_id=KS)],
+         data=_people, title="период: «➡️ Не менять» начало — окончание на месте, с «∞ Бессрочно»"),
+    Shot("adm.cl.period.notify_off", role="admin",
+         press=[ClientCB(action="edit_period", client_id=KS), ClientCB(action="ntf_period", client_id=KS)],
+         data=_people, title="период: тумблер «☑️ Не уведомлять» на приглашении"),
     Shot("adm.cl.extend", role="admin", press=[ClientCB(action="extend", client_id=KS)], data=_people,
          title="продление с остатком"),
     Shot("adm.cl.extend.keep_off", role="admin",
@@ -113,7 +127,10 @@ PROFILES = [
          press=[ClientCB(action="extend_exp", client_id=BR), PeriodCB(kind="month", ctx="extend", ref=BR)],
          data=_people, title="продлено из «Истекают» — список опустел, карточка"),
     Shot("adm.cl.resume", role="admin", press=[ClientCB(action="resume_pause", client_id=KS)],
-         data=_ks_paused, title="снять паузу"),
+         data=_ks_paused, title="снять паузу: подтверждение с тумблером уведомления"),
+    Shot("adm.cl.resume.yes", role="admin",
+         press=[ClientCB(action="resume_pause", client_id=KS), ClientCB(action="resume_pause_yes", client_id=KS)],
+         data=_ks_paused, title="пауза снята — след, карточка, клиенту уведомление"),
     Shot("adm.cl.regen", role="admin", press=[ClientCB(action="regen_invite", client_id=PT)], data=_people,
          title="новое приглашение"),
     Shot("adm.cl.delete", role="admin", press=[ClientCB(action="delete", client_id=KS)], data=_people,
@@ -121,14 +138,17 @@ PROFILES = [
     Shot("adm.cl.delete.yes", role="admin", press=[ClientCB(action="delete_yes", client_id=KS)], data=_people,
          title="профиль удалён — список"),
     Shot("adm.cl.block", role="admin", press=[BlockCB(target="cli", action="menu_block", ref=KS)], data=_people,
-         title="блок профиля: пауза подписки?"),
-    Shot("adm.cl.block.pause_yes", role="admin", press=[BlockCB(target="cli", action="pause_yes", ref=KS)],
-         data=_people, title="блок профиля: уведомить? (с паузой)"),
+         title="блок профиля: один экран, тумблеры паузы и уведомления"),
+    Shot("adm.cl.block.pause_off", role="admin",
+         press=[BlockCB(target="cli", action="menu_block", ref=KS, kind="notified", days=-1)],
+         data=_people, title="блок профиля: «⏸️ Пауза: выкл» — строка про паузу пропадает"),
     Shot("adm.cl.block.do", role="admin",
          press=[BlockCB(target="cli", action="block", ref=KS, kind="notified", days=0)], data=_people,
          title="профиль заблокирован с паузой"),
     Shot("adm.cl.unblock.reasons", role="admin", press=[BlockCB(target="cli", action="menu_unblock", ref=KS)],
          data=_ks_blocked_twice, title="разблок профиля: какую причину"),
+    Shot("adm.cl.unblock.one", role="admin", press=[BlockCB(target="cli", action="menu_unblock", ref=KS)],
+         data=_ks_blocked, title="разблок профиля с одной причиной — сразу, всплывашка парой к блоку"),
     Shot("adm.cl.add_device", role="admin", press=[ClientCB(action="add_device", client_id=KS)], data=_people,
          title="устройство профилю: имя"),
     Shot("adm.cl.add_device.done", role="admin", press=[ClientCB(action="add_device", client_id=KS)],
@@ -199,7 +219,7 @@ def _delete_partial(services):
 
 DELETE_PARTIAL = [
     Shot("adm.cl.delete.partial", role="admin", press=[ClientCB(action="delete_yes", client_id=KS)],
-         data=_delete_partial, title="удаление профиля: сервер не снял часть устройств"),
+         data=_delete_partial, title="удаление профиля: AWG не снял часть устройств — «🔁 Повторить»"),
 ]
 
 
@@ -375,9 +395,12 @@ EXTEND = [
                 PeriodCB(kind="keep_tgl", ctx="extend", ref=KS, keep=1)],
          data=_people, title="продление: тумблер остатка включён обратно"),
     Shot("adm.cl.extend.forever", role="admin", press=[ClientCB(action="extend", client_id=FOREVER)],
-         data=_forever, title="продление бессрочной — без тумблера остатка"),
+         data=_forever, title="продление бессрочной — кнопок срока нет, срок задаётся в «✏️ Изменить»"),
     Shot("adm.cl.extend.never", role="admin", press=[PeriodCB(kind="never", ctx="extend", ref=KS, keep=1)],
-         data=_people, title="продление «∞» — подписка бессрочная"),
+         data=_people, title="«∞» из прежнего сообщения — кнопка устарела, подписка не тронута"),
+    Shot("adm.cl.extend.notify_off", role="admin",
+         press=[ClientCB(action="extend", client_id=KS), ClientCB(action="ntf_extend", client_id=KS)],
+         data=_people, title="продление: «☑️ Не уведомлять» под тумблером остатка"),
     Shot("adm.cl.extend.grace_week", role="admin", press=[ClientCB(action="extend", client_id=BR)],
          data=_br_grace_week, title="продление при долге отсрочки в неделю — «Недели» нет"),
     Shot("adm.cl.extend_exp.more", role="admin",
@@ -388,11 +411,12 @@ EXTEND = [
 
 # ── шаг 5: блок профиля без паузы и отмена ──────────────────────────────────
 BLOCK = [
-    Shot("adm.cl.block.pause_no", role="admin", press=[BlockCB(target="cli", action="pause_no", ref=KS)],
-         data=_people, title="блок профиля: уведомить? (без паузы)"),
+    Shot("adm.cl.block.notify_off", role="admin",
+         press=[BlockCB(target="cli", action="menu_block", ref=KS, kind="silent", days=0)],
+         data=_people, title="блок профиля: «☑️ Не уведомлять»"),
     Shot("adm.cl.block.silent", role="admin",
          press=[BlockCB(target="cli", action="block", ref=KS, kind="silent", days=-1)], data=_people,
          title="профиль заблокирован тихо, без паузы"),
     Shot("adm.cl.block.cancel", role="admin", press=[BlockCB(target="cli", action="cancel", ref=KS)],
-         data=_people, title="блок профиля: «⬅️ Отмена» — карточка"),
+         data=_people, title="блок профиля: «✖️ Отмена» — карточка"),
 ]

@@ -60,7 +60,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     if key == "start!":
-        await cb.answer("Создаю новые профили…")
+        await cb.answer("Создаю новые конфигурации…")
         res = await call(services.migration_start)
         await _record(cb, texts.migration_started(res), services)
         return
