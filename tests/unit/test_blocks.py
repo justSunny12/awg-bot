@@ -50,8 +50,8 @@ def test_device_reasons_admin_vs_user():
     mask = int(DeviceBlock.ADMIN_SILENT | DeviceBlock.EXPIRY)
     admin = blocks.device_reasons_ru(mask, for_admin=True)
     user = blocks.device_reasons_ru(mask, for_admin=False)
-    assert any("тихо" in r for r in admin)          # админ видит тихий блок
-    assert all("тихо" not in r for r in user)       # пользователь — нет
+    assert any("без уведомления" in r for r in admin)   # админ видит блок без уведомления
+    assert all("без уведомления" not in r for r in user)  # пользователь — нет
     assert any("истек" in r.lower() for r in user)  # видимую причину видят оба
 
 
