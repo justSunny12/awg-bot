@@ -152,7 +152,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     devs = await _held(services, client)
     if not callback_data.device_id:
         if not devs:
-            await cb.answer(ui.Toast.no_devices_yet, show_alert=True)
+            await cb.answer(texts.GUEST_NO_DEVICES_TOAST, show_alert=True)
             return
         if len(devs) > 1:
             from awgbot.bot import paging
@@ -172,7 +172,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.friend_finisher())
     except ServiceError as e:
-        await cb.message.answer(f"Не удалось выдать конфиг: {texts._e(str(e))}")
+        await cb.message.answer(texts.issue_failed(e))
         await show_guest_main(cb.message, services, client)
     await cb.answer()
 
@@ -185,7 +185,8 @@ async def friend_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
     if dev is None:
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
-    await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id, guest=True))
+    await edit(cb, texts.block_device_ask(dev.name, owner=texts.owner_link(dev)),
+               kb.block_device_confirm(dev.id, guest=True))
     await cb.answer()
 
 
@@ -211,11 +212,13 @@ async def friend_unblock(cb: CallbackQuery, callback_data: BlockCB, client, serv
 
 @router.callback_query(DelDeviceCB.filter(F.stage == "ask"))
 async def friend_delete_ask(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
-    dev = await _held(services, client, callback_data.device_id)
+    devs = await _held(services, client)
+    dev = next((d for d in devs if d.id == callback_data.device_id), None)
     if dev is None:
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
-    await edit(cb, texts.device_delete_ask(dev, held=True),
+    # единственное — предупреждение: новое гостю только по новому приглашению
+    await edit(cb, texts.device_delete_ask(dev, held=True, only=len(devs) == 1),
                kb.confirm_delete_device(dev.id, guest=True))
     await cb.answer()
 
@@ -229,7 +232,11 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     if not await devcore.delete_by_holder(cb, services, dev):
         return
     from awgbot.bot import screens
-    text, markup = await guest_main_payload(services, client)
+    # итог первой строкой: «📱 Устройства», как у клиента; удалили последнее — главная
+    if await _held(services, client):
+        text, markup = await devices_payload(services, client, cb.message.chat.id)
+    else:
+        text, markup = await guest_main_payload(services, client)
     await edit(cb, screens.with_note(text, texts.device_removed(dev.name)), markup)
 
 
@@ -237,6 +244,7 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
 
 @router.callback_query(FriendCB.filter(F.action == "help"))
 async def friend_help(cb: CallbackQuery):
+    """С главной — выход «⬅️ В меню»; «✅ Настрою сам» — только сразу после активации."""
     await edit(cb, texts.HELP_INTRO, kb.help_menu(guest=True))
     await cb.answer()
 

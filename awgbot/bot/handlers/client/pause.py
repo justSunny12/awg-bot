@@ -9,13 +9,14 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import keyboards as kb
+from awgbot.bot import screens
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, GraceCB, HelpCB, PauseCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.bot.handlers.common import (
-    call, cleanup_content, edit, ask_here, ask_tracked, back_to_context, mine_or_held, send_menu)
+    call, cleanup_content, edit, ask_here, ask_tracked, back_to_context, mine_or_held)
 from awgbot.bot.states import PauseDays
 from awgbot.core.enums import PauseMode, PeriodKind
 from awgbot.bot.handlers import devcore
@@ -57,7 +58,7 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     if settings.get_bool("notifications.client_events.grace", True):
         await notify_one(cb.message.bot, config.ADMIN_ID,
                          texts.grace_activated_admin(texts.profile_link(client, _bot_username(services)), grace_days))
-    await cb.answer(ui.Toast.extended)
+    await cb.answer(texts.grace_taken_toast(grace_days))
 
 
 # ── ручная блокировка своего устройства ──────────────────────────────────────
@@ -81,7 +82,9 @@ async def client_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
     if dev is None:
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
-    await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id))
+    held = dev.holder_client_id == client.id          # чужое в держании: владелец узнает
+    await edit(cb, texts.block_device_ask(dev.name, owner=texts.owner_link(dev) if held else ""),
+               kb.block_device_confirm(dev.id))
     await cb.answer()
 
 
@@ -128,8 +131,9 @@ async def pause_ask(cb: CallbackQuery, callback_data: PauseCB, client, services,
 
 
 async def _enter_pause(cb_or_msg, services, client, days: int, *, via_cb: CallbackQuery | None) -> None:
-    """Поставить паузу и показать итог: сообщение-след, аварийный код (если
-    почтовый выход включён), экран подписки следом."""
+    """Поставить паузу и показать итог первой строкой экрана «💳 Подписка»
+    (там же «▶️ Снять паузу»); аварийный код (если почтовый выход включён) —
+    отдельным сообщением: его надо сохранить."""
     ok, reserved, notes, code = await call(services.enter_pause, client.id, days or None)
     if not ok:
         if via_cb is not None:
@@ -146,19 +150,16 @@ async def _enter_pause(cb_or_msg, services, client, days: int, *, via_cb: Callba
         + datetime.timedelta(days=int(fresh.pause_reserved_days)))
     summary = texts.pause_entered_summary(until)
     message = via_cb.message if via_cb is not None else cb_or_msg
-    await cleanup_content(message.bot, services, message.chat.id)
     if via_cb is not None:
         await via_cb.answer(f"Пауза: {reserved} дн.")
-        await edit(via_cb, summary, None)
-        keep = message.message_id
+        await cleanup_content(message.bot, services, message.chat.id, keep=message.message_id)
+        parts = await sub_parts(services, client.id)
+        if parts is not None:
+            await edit(via_cb, screens.with_note(parts[0], summary), parts[1])
     else:
-        sent = await message.answer(summary)
-        keep = sent.message_id
+        await back_to_context(message, services, {"ctx_kind": "sub"}, "client", client, note=summary)
     if code and await call(services.email_resume_enabled):
         await message.answer(texts.pause_emergency_code(code, await call(services.email_resume_address)))
-    parts = await sub_parts(services, client.id)
-    if parts is not None:
-        await send_menu(message, services, *parts, keep_id=keep)
 
 
 @router.callback_query(PauseCB.filter(F.action == "pick"))
@@ -217,10 +218,9 @@ async def pause_resume(cb: CallbackQuery, callback_data: PauseCB, client, servic
         return
     await send_notifications(cb.bot, notes)     # друзьям — о снятии
     await cb.answer(ui.Toast.pause_lifted)
-    await edit(cb, texts.pause_resumed_self(actual, new_end), None)
-    parts = await sub_parts(services, client.id)
+    parts = await sub_parts(services, client.id)   # итог — первой строкой того же экрана
     if parts is not None:
-        await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)
+        await edit(cb, screens.with_note(parts[0], texts.pause_resumed_self(actual, new_end)), parts[1])
 
 
 @router.callback_query(PauseCB.filter(F.action == "cancel"))

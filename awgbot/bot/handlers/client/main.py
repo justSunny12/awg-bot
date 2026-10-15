@@ -116,9 +116,11 @@ async def _activate_friend(message: Message, services, code: str):
         else:
             await message.answer(texts.ACTIVATION_INVALID)
         return
-    await message.answer(texts.friend_activated(res.device_name))
-    from awgbot.bot.handlers.friend import show_guest_main
-    await show_guest_main(message, services, res.holder)
+    # одно сообщение: «тебе передали» и сразу выбор устройства для гайда, как у
+    # клиента; «✅ Настрою сам» — на главную гостя
+    await purge_menus(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.friend_activated(res.device_name),
+                    kb.help_menu(is_initial=True, guest=True))
     await _notify_owner_activated(message, services, res)
 
 
@@ -126,10 +128,10 @@ async def _notify_owner_activated(message: Message, services, res) -> None:
     dev = await call(services.db.get_device, res.device_id)
     host = await call(services.db.get_client, dev.client_id) if dev else None
     u = message.from_user
-    handle = f"@{u.username}" if u.username else (u.full_name or str(u.id))
+    who = texts.tg_link(u.full_name or u.username or str(u.id), u.id, u.username or "")
     if host and host.tg_id:
         await notify_one(message.bot, host.tg_id,
-                         texts.friend_activated_host_notice(dev.name, handle))
+                         texts.friend_activated_host_notice(dev.name, who))
 
 
 async def take_code_as_member(message: Message, services, client, code: str) -> None:
@@ -147,14 +149,14 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
             if res.reason == "other_donor":
                 await message.answer(texts.friend_other_donor_refusal(res.held, res.donor))
             elif res.reason == "own_device":
-                await message.answer("Это твоё собственное устройство — держать его незачем 🙂")
+                await message.answer(texts.OWN_DEVICE_CODE)
             else:
                 await message.answer(texts.ACTIVATION_INVALID)
             return
         holder = res.holder
-        own_slots = None if holder.is_guest else await call(services.device_quota, holder.id)
         dev = await call(services.db.get_device, res.device_id)
-        await message.answer(texts.friend_device_added(dev, res.donor, len(res.held), own_slots))
+        await message.answer(texts.friend_device_added(dev, res.donor, len(res.held),
+                                                       guest=bool(holder.is_guest)))
         if holder.is_guest:
             from awgbot.bot.handlers.friend import show_guest_main
             await show_guest_main(message, services, holder)
@@ -164,6 +166,7 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
         return
     if not client.is_guest:
         await message.answer(texts.ACTIVATION_ALREADY)
+        await _show_main(message, services, client)
         return
     res = await call(services.activate_client, code, u.id)
     if not res.ok:

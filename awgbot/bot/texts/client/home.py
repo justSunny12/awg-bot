@@ -57,16 +57,47 @@ def _guest_traffic_lines(held, donor, bot_username: str = "") -> list[str]:
     return rows
 
 
+GUEST_NO_DEVICES_HINT = "Попроси у друга новое приглашение и открой ссылку из него"
+
+
+def guest_access_line(donor) -> str:
+    """Строка состояния доступа гостя — по подписке и блокировкам владельца:
+    только когда VPN на переданных устройствах не работает, со значком по
+    причине и именем профиля. Что реально режет доступ гостю: исчерпанный
+    лимит трафика профиля (каскад TRAFFIC_CLIENT), пауза (каскад PAUSED,
+    тихая пауза администратора не видна, как и клиенту), истёкшая подписка
+    (EXPIRY), блокировка профиля администратором с уведомлением
+    (ADMIN_NOTIFIED; тихая — не видна)."""
+    from awgbot.core import blocks
+    from awgbot.core.enums import SubStatus
+    mask = int(donor.block_reason or 0)
+    paused, _, pause_visible = _pause_visibility(donor)
+    who = client_link(donor)
+    if mask & int(blocks.ClientBlock.TRAFFIC_CLIENT):
+        return f"⛔ У профиля {who} исчерпан лимит трафика — доступ приостановлен"
+    if paused and pause_visible:
+        return f"⏸️ Подписка профиля {who} на паузе — доступ приостановлен"
+    if donor.status != SubStatus.ACTIVE:
+        return f"🔴 У профиля {who} истекла подписка — доступ приостановлен"
+    if mask & int(blocks.ClientBlock.ADMIN_NOTIFIED):
+        return f"⛔ Профиль {who} заблокирован — доступ приостановлен"
+    return ""
+
+
 def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = None,
                    *, routing_on: bool = False, bot_username: str = "") -> str:
-    """Главная гостя: имя; VPN и РФ-доступ; подписка владельца (только статус —
-    срок его дело); трафик по устройствам. name — имя из Telegram."""
+    """Главная гостя: имя; сервер и РФ-доступ; под ними — почему доступа нет
+    (только негативная строка, по владельцу); подписка владельца (только
+    статус — срок его дело); трафик по устройствам. name — имя из Telegram."""
     held = list(held)
     if donor is None or not held:
-        return ui.head(f"👋 {_e(name)}", meta=["устройств нет — попроси у друга новый код"])
+        return ui.head(f"👋 {_e(name)}", meta=["устройств нет"]) + "\n" + GUEST_NO_DEVICES_HINT
     lines = [ui.head(f"👋 {_e(name)}"), "",
-             status_line(server_ok, routing_ok, routing_on, bot_username),
-             f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
+             status_line(server_ok, routing_ok, routing_on, bot_username)]
+    access = guest_access_line(donor)
+    if access:
+        lines.append(access)
+    lines.append(f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}")
     lines += _guest_traffic_lines(held, donor, bot_username)
     return "\n".join(lines)
 

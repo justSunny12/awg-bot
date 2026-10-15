@@ -128,7 +128,9 @@ async def test_client_pause_other_keeps_one_live_menu(services, fake_bot, make_a
     assert services.db.get_nav_message_id(cl.tg_id) != screen.message_id
     assert {screen.message_id, typed.message_id} <= _deleted(fake_bot), "приглашение или ввод остались"
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert answers[-1][1].startswith("⏸️ Подписка на паузе — доступ приостановлен\n💳 <b>Подписка:</b> годовая\n") and answers[-1][2] is not None
+    # итог — первой строкой экрана подписки, экран — новым живым меню
+    assert answers[-1][1].startswith("✅ Подписка на паузе до ") and answers[-1][2] is not None
+    assert "\n\n⏸️ Подписка на паузе — доступ приостановлен\n💳 <b>Подписка:</b> годовая · ⏸️ на паузе до " in answers[-1][1]
 
 
 async def test_add_device_for_friend_shows_slots_in_place(services, fake_bot, make_active_client):
@@ -180,6 +182,8 @@ async def test_admin_resume_pause_result_then_card(services, fake_bot, make_acti
 
 
 async def test_client_resume_pause_result_then_info(services, fake_bot, make_active_client):
+    """Снятие паузы — итог первой строкой экрана «💳 Подписка» на месте, без
+    второго сообщения: в чате остаётся одно живое меню."""
     cl = make_active_client(tg_id=6407, period_kind="year")
     ok, *_ = services.enter_pause(cl.id, 5)
     assert ok
@@ -187,9 +191,9 @@ async def test_client_resume_pause_result_then_info(services, fake_bot, make_act
     cb, screen = _cb(fake_bot, cl.tg_id)
     await ch.pause_resume(cb, PauseCB(action="resume", ref=cl.id), cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits and edits[-1][2] is None
-    answers = [s for s in screen.sent if s[0] == "answer"]
-    assert answers and answers[-1][2] is not None
+    assert edits and edits[-1][1].startswith("▶️ Пауза снята · прошло ") and edits[-1][2] is not None
+    assert "\n\n💳 <b>Подписка:</b> годовая · 🟢 активна" in edits[-1][1]
+    assert not any(s[0] == "answer" for s in screen.sent), "итог ушёл отдельным сообщением"
 
 
 # ── токен агента: сообщение удаляется и при отказе ───────────────────────────
@@ -224,7 +228,7 @@ async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_a
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1].startswith("🗑 Телефон удалено · можно добавить ещё 2\n\n👋 "), \
+    assert edits[-1][1].startswith("🗑 Устройство «Телефон» удалено · можно добавить ещё 2\n\n👋 "), \
         "после последнего — итог первой строкой главной, а не пустой список"
     assert edits[-1][2] is not None
     assert not any(s[0] == "answer" for s in screen.sent), "итог удаления остался в чате отдельным сообщением"
@@ -239,7 +243,7 @@ async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bo
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2\n\n📱 <b>Устройства</b> · 1 из 3"
+    assert edits[-1][1] == "🗑 Устройство «A» удалено · можно добавить ещё 2\n\n📱 <b>Устройства</b> · 1 из 3"
     labels = [b.text for row in edits[-1][2].inline_keyboard for b in row]
     assert labels[0] == "🔴 B", labels
 

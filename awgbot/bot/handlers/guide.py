@@ -2,9 +2,10 @@
 handlers/guide.py — роутер визарда-гайдов.
 
 Состояние (какой гайд, какой шаг) целиком в GuideCB — переживает рестарт бота.
-Шаг 0 гайда «connect» интерактивный: кнопки устройств/добавления. Выбор или
-создание устройства ведёт на шаг 1 «Настраиваем подключение» с выбором способа
-(ссылка/QR/файл); по выбору бот выдаёт артефакт и показывает шаг 2 «Подключаемся»
+Шаг 0 гайда «connect» интерактивный: кнопки устройств/добавления, текст — по
+состоянию (guides.connect_intro). Выбор или
+создание устройства ведёт на шаг 1 «Настраиваем «Имя»» с выбором способа
+(ссылка/QR/файл); по выбору бот выдаёт артефакт с подписью выдачи и показывает шаг 2 «Подключаемся»
 (поднятие туннеля). Отдельной «Далее» на шаге 0 нет — навигацию несут кнопки.
 """
 
@@ -24,7 +25,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import DeviceCB, GuideCB, HelpCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, own_device, held_device,
-                                        send_device_config, ask_here, ask_tracked,
+                                        send_link, send_conf, send_qr, ask_here, ask_tracked,
                                         back_to_context)
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AddDeviceGuide
@@ -46,8 +47,9 @@ GUIDE_BY_REF = {v: k for k, v in GUIDE_REF.items()}
 
 
 async def connect_step0_payload(services, client, ref: int = 0, chat_id: int = 0):
-    """(текст, клавиатура) шага 0 подключения — для реестра экранов."""
-    guide = GUIDE_BY_REF.get(int(ref or 0), "connect")
+    """(текст, клавиатура) шага 0 подключения — для реестра экранов и рендера:
+    текст по состоянию (есть ли устройства, есть ли место), кнопки устройств."""
+    guide = GUIDE_BY_REF.get(int(ref or 0), "connect") if isinstance(ref, int) else ref
     guest = _guest(client)
     if guest:
         devices = await call(services.db.list_held_devices, client.id)
@@ -55,10 +57,12 @@ async def connect_step0_payload(services, client, ref: int = 0, chat_id: int = 0
     else:
         devices = await call(services.db.list_devices, client.id)
         slots = await call(services.device_quota, client.id)
+    used, limit = slots
     from awgbot.bot import paging
-    return (guides.step_text(guide, 0),
-            kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
-                                     page=paging.page_of(chat_id or client.tg_id, "guidedev")))
+    text = guides.connect_intro(guest=guest, has_devices=bool(kb.issuable(devices)),
+                                can_add=(not guest) and (limit == 0 or used < limit))
+    return (text, kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
+                                           page=paging.page_of(chat_id or client.tg_id, "guidedev")))
 
 
 def _guest(client) -> bool:
@@ -85,22 +89,17 @@ async def _render(cb: CallbackQuery, services, client, guide: str, step: int):
 
     guest = _guest(client)
     if guides.base_guide(guide) == "connect" and step == 0:
-        if guest:
-            devices = await call(services.db.list_held_devices, client.id)
-            slots = (len(devices), 0)
-        else:
-            devices = await call(services.db.list_devices, client.id)
-            slots = await call(services.device_quota, client.id)
-        from awgbot.bot import paging
-        await _render_screen(cb, services, text, None,
-                             kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
-                                                      page=paging.page_of(cb.message.chat.id, "guidedev")))
+        text, markup = await connect_step0_payload(services, client, guide, cb.message.chat.id)
+        await _render_screen(cb, services, text, None, markup)
         return
 
     next_guide = guides.NEXT_GUIDE.get(guide) if step == last else None
     apple_connect_end = (guides.is_apple_connect(guide) and step == last)
+    # «✅ Установил» на первом экране Android — сразу к подключению
+    installed_next = guides.NEXT_GUIDE.get(guide) if guides.INSTALLED_SHORTCUT.get(guide) == step else None
     markup = kb.guide_nav(guide, step, last, next_guide=next_guide,
-                          apple_connect_end=apple_connect_end, guest=guest)
+                          apple_connect_end=apple_connect_end, guest=guest,
+                          installed_next=installed_next)
     img = guides.step_image(guide, step)
     path = (_GUIDE_ASSETS / img) if img else None
     await _render_screen(cb, services, text, path if (path and path.exists()) else None, markup)
@@ -142,10 +141,23 @@ async def _deliver_and_advance(message: Message, services, client, dev, guide: s
     устройства. Содержимое выдаёт выбранная кнопка (guide_connect_deliver),
     затем шаг 2 «Подключаемся»."""
     variant = guide if guides.base_guide(guide) == "connect" else "connect"
-    sent = await message.answer(guides.step_text(variant, 1),
+    sent = await message.answer(guides.step_text(variant, 1, name=dev.name),
                                 reply_markup=kb.guide_connect_method(dev.id, variant,
                                                                      guest=_guest(client)))
     await call(services.db.nav_touch, sent.chat.id, sent.message_id)
+
+
+async def _send_captioned(target: Message, services, dev, kind: str) -> None:
+    """Содержимое в гайде — с той же подписью, что при выдаче с главной
+    («☝️ Ссылка для устройства «X» — …»): шаг «Подключаемся» ниже начинается
+    уже с кнопки в приложении. Без завершителя: дальше ведёт сам гайд."""
+    cfg = await call(services.generate_config, dev.id)
+    if kind == "link":
+        await send_link(target, cfg["vpn"], services, name=dev.name)
+    elif kind == "file":
+        await send_conf(target, dev.name, cfg["conf"], services, caption=texts.finish_file(dev.name))
+    else:
+        await send_qr(target, cfg["vpn"], services, caption=texts.finish_qr(dev.name))
 
 
 @router.callback_query(GuideCB.filter(F.kind.in_(("link", "qr", "file"))))
@@ -158,9 +170,9 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
         return
     await drop_message(cb, services)             # убрать сообщение с выбором способа
     try:
-        await send_device_config(cb.message, services, dev, callback_data.kind)
+        await _send_captioned(cb.message, services, dev, callback_data.kind)
     except ServiceError as e:
-        await cb.message.answer(f"Не удалось выдать конфиг: {texts._e(str(e))}")
+        await cb.message.answer(texts.issue_failed(e))
         await cb.answer()
         return
     variant = callback_data.guide
@@ -182,10 +194,11 @@ async def guide_connect_methods(cb: CallbackQuery, callback_data: GuideCB, servi
         await cb.answer(ui.Toast.no_device, show_alert=True)
         return
     markup = kb.guide_connect_method(dev.id, callback_data.guide, guest=_guest(client))
+    text = guides.step_text(callback_data.guide, 1, name=dev.name)
     try:
-        await cb.message.edit_text(guides.step_text(callback_data.guide, 1), reply_markup=markup)
+        await cb.message.edit_text(text, reply_markup=markup)
     except TelegramBadRequest:
-        await cb.message.answer(guides.step_text(callback_data.guide, 1), reply_markup=markup)
+        await cb.message.answer(text, reply_markup=markup)
     await cb.answer()
 
 

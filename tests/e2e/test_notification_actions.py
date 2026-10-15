@@ -76,7 +76,7 @@ async def test_send_notifications_uses_the_action_and_keeps_own_markup_first():
         Notification(333, "c")])
     by = {c[0]: c[2] for c in bot.calls}
     assert _rows(by[111])[0] == [("⏱ Продлить", NoteCB(kind="extend", ref=3).pack())]
-    assert _rows(by[222]) == [[("Продли чуток? 🙏 (+14 дн.)", GraceCB(action="take", ref=5).pack())],
+    assert _rows(by[222]) == [[("⏱ Отсрочка +14 дн.", GraceCB(action="take", ref=5).pack())],
                               [("💳 Подписка", NoteCB(kind="sub", ref=0).pack())],
                               [("Скрыть", HideCB().pack())]], _rows(by[222])
     assert _rows(by[333]) == [[("Скрыть", HideCB().pack())]]
@@ -219,7 +219,7 @@ def test_without_bot_name_profile_names_stay_plain_text(services, make_active_cl
 
 async def test_year_client_expiring_note_keeps_subscription_button_next_to_grace(
         services, make_active_client):
-    """Годовому клиенту «подписка истекает» — «💳 Подписка» и «Продли чуток?»
+    """Годовому клиенту «подписка истекает» — «💳 Подписка» и «⏱ Отсрочка»
     вместе: отсрочка не отменяет входа в подписку."""
     from awgbot.runtime.scheduler import setup_scheduler
     now = timeutil.now()
@@ -231,7 +231,7 @@ async def test_year_client_expiring_note_keeps_subscription_button_next_to_grace
     mine = [m for chat, _, m in bot.calls if chat == 5204]
     assert len(mine) == 1
     labels = [b.text for r in mine[0].inline_keyboard for b in r]
-    assert any(l.startswith("Продли чуток?") for l in labels), labels
+    assert any(l.startswith("⏱ Отсрочка") for l in labels), labels
     assert "💳 Подписка" in labels, f"годовому клиенту пропала кнопка подписки: {labels}"
 
 

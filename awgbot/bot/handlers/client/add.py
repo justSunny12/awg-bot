@@ -75,7 +75,7 @@ async def device_add_name(message: Message, client, services, state: FSMContext)
         plimit = await call(services.profile_traffic_limit, client.id)
         await cleanup_content(message.bot, services, message.chat.id)
         await send_menu(message, services, texts.device_limit_prompt(name, plimit),
-                        kb.device_limit_kb(0, plimit, CancelCB(kind=data.get("ctx_kind") or "main")))
+                        kb.client_device_limit_kb(0, plimit, CancelCB(kind=data.get("ctx_kind") or "main")))
         return
     await state.clear()
     await _create_own(message, services, client, name)

@@ -35,10 +35,17 @@ def _seen(dev) -> str:
     return "Не подключался" if ago == "никогда" else f"Был в сети {ago}"
 
 
-def _blocked_line(dev) -> str:
-    """«⛔ Заблокировано: владельцем», «⛔ Заблокировано: подписка истекла»."""
+def _blocked_line(dev, *, user_as: str = "") -> str:
+    """«⛔ Заблокировано: владельцем», «⛔ Заблокировано: подписка истекла».
+    user_as — кем подписать блок своей кнопкой (бит USER) глазами зрителя:
+    у держателя переданного — «тобой», у владельца — «держателем [Артём]»;
+    пусто — подпись причины как есть («владельцем»)."""
     from awgbot.core import blocks
-    reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=False)
+    mask = int(dev.block_reason)
+    reasons = blocks.device_reasons_ru(mask, for_admin=False)
+    if user_as and blocks.has(mask, blocks.DeviceBlock.USER):
+        own = blocks.device_reasons_ru(int(blocks.DeviceBlock.USER), for_admin=False)[0]
+        reasons = [user_as if r == own else r for r in reasons]
     return "⛔ Заблокировано: " + ", ".join(reasons) if reasons else ""
 
 
@@ -59,20 +66,22 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
 
 
 def device_card_lent(dev, profile_limit_bytes: int) -> str:
-    """Своё переданное — у владельца: кто управляет, чей лимит."""
+    """Своё переданное — у владельца: кто управляет, чей лимит; блок своей
+    кнопкой здесь ставит только держатель — так и подписан."""
     parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}", meta=[f"управляется профилем {holder_link(dev)}"]),
-             f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит твоего профиля')}"]
-    blocked = _blocked_line(dev)
+             f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
+    blocked = _blocked_line(dev, user_as=f"держателем {holder_link(dev)}")
     if blocked:
         parts.append(blocked)
     return "\n".join(parts)
 
 
 def device_card_held(dev, owner_limit_bytes: int) -> str:
-    """Удерживаемое (от друга) — у держателя: от кого, чей лимит."""
+    """Удерживаемое (от друга) — у держателя: от кого, чей лимит; свой блок —
+    «тобой» (владелец у устройства — друг, и «владельцем» читалось бы как о нём)."""
     parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}", meta=[f"от профиля {owner_link(dev)}"]),
              f"{_seen(dev)} · {_usage(dev, owner_limit_bytes, f'лимит профиля {_e(owner_name(dev))}')}"]
-    blocked = _blocked_line(dev)
+    blocked = _blocked_line(dev, user_as="тобой")
     if blocked:
         parts.append(blocked)
     return "\n".join(parts)
@@ -81,51 +90,66 @@ def device_card_held(dev, owner_limit_bytes: int) -> str:
 UNMANAGED_DEVICE_LINE = "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
 
 
+def unmanaged_device_dialog(name: str) -> str:
+    """Диалог «удали» на выдаче устройству без ключа с главной — с именем:
+    карточки на экране нет, без имени непонятно, о чём речь."""
+    return f"✳️ Устройство «{_e(name)}» добавлено не ботом — ссылки нет: удали и добавь заново"
+
+
 # ── удаление, блокировка, передача ───────────────────────────────────────────
 
 def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool = False) -> str:
     """Вопрос удаления: своё / единственное / переданное (у владельца) /
-    удерживаемое (у держателя)."""
+    удерживаемое (у держателя; only — единственное у гостя: новое — только по
+    новому приглашению)."""
     name = _e(dev.name)
     if held:
-        return (f"🗑 Удалить {name}?\n"
-                "Новое устройство можно будет создать только по коду от друга")
+        if only:
+            return (f"⚠️ Удалить устройство «{name}»? Оно у тебя единственное — "
+                    f"новое только по новому приглашению от профиля {owner_link(dev)}")
+        return (f"🗑 Удалить устройство «{name}»?\n"
+                f"Вернуть его можно будет только по новому приглашению от профиля {owner_link(dev)}")
     if lent:
-        return (f"🗑 Удалить {name}?\n"
+        return (f"🗑 Удалить устройство «{name}»?\n"
                 f"У профиля {holder_link(dev)} пропадёт доступ; новое устройство он получит "
                 "только с новым приглашением от тебя")
     if only:
-        return (f"⚠️ Удалить {name} — единственное устройство?\n"
-                "VPN выключится сразу. " + TELEGRAM_RISK)
-    return (f"🗑 Удалить {name}?\n"
-            "Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится")
+        return (f"⚠️ Удалить устройство «{name}»? Оно у тебя единственное\n"
+                f"{TELEGRAM_RISK}")
+    return (f"🗑 Удалить устройство «{name}»?\n"
+            "VPN на нём перестанет работать. Добавишь снова — понадобится новая ссылка")
 
 
 def device_removed(name: str) -> str:
-    """«🗑 Ноут удалено» — итог держателя первой строкой его экрана."""
-    return f"🗑 {_e(name)} удалено"
+    """«🗑 Устройство «Ноут» удалено» — итог держателя первой строкой его экрана."""
+    return f"🗑 Устройство «{_e(name)}» удалено"
 
 
 def device_deleted(name: str, used: int, limit: int) -> str:
-    """«🗑 MacBook удалено · можно добавить ещё 2» — первой строкой экрана."""
-    head = f"🗑 {_e(name)} удалено"
+    """«🗑 Устройство «MacBook» удалено · можно добавить ещё 2» — первой строкой экрана."""
+    head = device_removed(name)
     free = limit - used
     if limit == 0 or free <= 0:
         return head
     return f"{head} · можно добавить ещё {free}"
 
 
-def block_device_ask(name: str) -> str:
-    return (f"🛑 Заблокировать {_e(name)}?\n"
-            "Перестанет подключаться, пока не разблокируешь. " + TELEGRAM_RISK)
+def block_device_ask(name: str, *, owner: str = "") -> str:
+    """Подтверждение блокировки своей кнопкой. owner — ссылка на владельца
+    переданного устройства (у держателя): он получит уведомление."""
+    lines = [f"🔒 Заблокировать устройство «{_e(name)}»?",
+             "VPN на нём перестанет работать, пока не разблокируешь"
+             + (f". Профиль {owner} получит уведомление" if owner else ""),
+             f"{TELEGRAM_RISK}, и разблокировать будет нечем"]
+    return "\n".join(lines)
 
 
 def transfer_ask(name: str) -> str:
     n = _e(name)
-    return (f"👤 Передать {n} другу?\n"
-            "Друг получит это подключение; одно подключение на двух устройствах "
-            "работать не будет\n"
-            f"Если устройство «{n}» твоё — сначала заведи себе новое")
+    return (f"👤 Передать устройство «{n}» другу?\n"
+            "Друг получит приглашение и подключится по этому устройству; на твоём "
+            f"«{n}» VPN после этого работать не будет — заведи себе новое. "
+            "Устройство останется в твоём лимите")
 
 
 # ── добавление устройства ────────────────────────────────────────────────────
@@ -133,30 +157,36 @@ def transfer_ask(name: str) -> str:
 def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
     slots = f" · {used} из {limit}" if limit else ""
     if for_friend:
-        return (f"{ui.head('👤 Устройство для друга')}{slots}{' · займёт твой слот.' if limit else ''}\n"
+        return (f"{ui.head('👤 Устройство для друга')}{slots}{' · займёт твой слот' if limit else ''}\n"
                 "Как назвать? Имя увидит друг")
     return f"{ui.head('➕ Новое устройство')}{slots}\nКак назвать? Например: «iPhone»"
 
 
 def device_created(name: str, profile_limit_bytes: int) -> str:
-    """«✅ iPhone создано · трафик в пределах 100 ГБ профиля»."""
-    head = f"✅ {_e(name)} создано"
+    """«✅ Устройство «iPhone» создано · трафик в пределах 100 ГБ профиля»."""
+    head = f"✅ Устройство «{_e(name)}» создано"
     if profile_limit_bytes:
         return f"{head} · трафик в пределах {gb_str(profile_limit_bytes)} профиля"
     return head
 
 
-def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
-    head = ui.head(f"📊 Лимит трафика устройства «{_e(name)}»")
+def device_limit_prompt(name: str, profile_limit_bytes: int, current_bytes: int | None = None) -> str:
+    """«📊 Лимит трафика «Телефон» · сейчас ∞ · не больше 100 ГБ профиля»;
+    current_bytes=None — устройство ещё создаётся, текущего значения нет."""
+    head = f"{ui.head('📊 Лимит трафика')} «{_e(name)}»"
+    if current_bytes is not None:
+        head += f" · сейчас {gb_str(current_bytes) if current_bytes else '∞'}"
     if profile_limit_bytes:
         return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
     return head
 
 
 def device_limit_other_prompt(profile_limit_bytes: int) -> str:
+    """Приглашение «✏️ Другое»: заголовок, пустая строка, подсказка."""
     if profile_limit_bytes:
-        return f"✏️ Число ГБ, не больше {gb(profile_limit_bytes)} (лимит профиля); 0 — без ограничений в рамках лимита"
-    return "✏️ Число ГБ, 0 — без лимита"
+        return (f"{ui.head('✏️ Лимит трафика')} · не больше {gb(profile_limit_bytes)} ГБ (лимит профиля)\n\n"
+                "Пришли число ГБ; 0 — без ограничений в рамках лимита")
+    return f"{ui.head('✏️ Лимит трафика')}\n\nПришли число ГБ; 0 — без лимита"
 
 
 def device_limit_over(profile_limit_bytes: int) -> str:
@@ -183,4 +213,5 @@ def name_note(old: str, new: str) -> str:
 
 
 def device_name_prompt(name: str) -> str:
-    return ui.head(f"✏️ Новое имя для устройства «{_e(name)}»")
+    """«✏️ Имя устройства · сейчас «Телефон»», пустая строка, подсказка."""
+    return f"{ui.head('✏️ Имя устройства')} · сейчас «{_e(name)}»\n\nПришли новое имя"

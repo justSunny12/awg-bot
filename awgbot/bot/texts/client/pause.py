@@ -13,21 +13,24 @@ from .common import TELEGRAM_RISK
 # Пауза
 # ─────────────────────────────────────────────────────────────────────────────
 
-PAUSE_WARNING_LINE = f"⚠️ На паузе VPN выключен. {TELEGRAM_RISK}, снять паузу будет нечем"
+PAUSE_WARNING_LINE = f"{TELEGRAM_RISK}, и снять паузу будет нечем"
 
 
 def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
-    """Экран паузы: сколько доступно, что происходит, предупреждение — только
-    когда аварийного выхода по почте нет."""
-    lines = [ui.head("⏸️ Пауза", meta=[f"до {available_days} дн."]),
-             "Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся"]
+    """Экран паузы — вопрос «на сколько дней?», сколько доступно, что
+    происходит; предупреждение — только когда аварийного выхода по почте нет."""
+    lines = [f"{ui.head('⏸️ Пауза')} — на сколько дней? · доступно {available_days}",
+             "VPN выключится, а срок подписки сдвинется на дни паузы. "
+             "Снимешь раньше — неизрасходованные дни вернутся"]
     if not email_resume:
         lines.append(PAUSE_WARNING_LINE)
     return "\n".join(lines)
 
 
 def pause_other_prompt(available_days: int) -> str:
-    return f"✏️ Дней, 1–{available_days}"
+    """Приглашение «✏️ Другое»: заголовок, пустая строка, подсказка."""
+    return (f"{ui.head('✏️ Пауза')} · доступно {available_days} дн.\n\n"
+            f"Пришли число дней, от 1 до {available_days}")
 
 
 def pause_days_bad(available_days: int) -> str:
@@ -41,9 +44,9 @@ def pause_emergency_code(code: str, address: str) -> str:
 
 
 def pause_entered_summary(until: str) -> str:
-    """Итог входа в паузу — остаётся в чате. until — дата авто-возобновления
-    (уже в формате экрана)."""
-    return f"⏸️ Подписка на паузе до {until} — снять раньше можно в разделе «💳 Подписка»"
+    """Итог входа в паузу — первой строкой экрана «💳 Подписка», где и кнопка
+    «▶️ Снять паузу». until — дата авто-возобновления (уже в формате экрана)."""
+    return f"✅ Подписка на паузе до {until}"
 
 
 def pause_unavailable() -> str:
@@ -54,9 +57,10 @@ def pause_unavailable() -> str:
 
 
 def pause_limit_exhausted() -> str:
-    return "Дни паузы на счету закончились — пополнится при продлении подписки"
+    return "Дней паузы нет — счёт пополнится при продлении подписки"
 
 
 def pause_resumed_self(actual_days: int, new_end) -> str:
-    return (f"▶️ Пауза снята · {actual_days} дн. израсходовано · "
+    """Итог снятия паузы — первой строкой экрана «💳 Подписка»."""
+    return (f"▶️ Пауза снята · прошло {actual_days} дн. · "
             f"подписка до {timeutil.fmt_end_ui(new_end)}")

@@ -33,8 +33,8 @@ async def test_owner_delete_of_lent_device_notifies_holder(services, fake_bot, m
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
                                    owner, services)
     holder_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 97101]
-    assert holder_msgs == ['Устройство «Ноут», которым ты управлял, удалено владельцем '
-                           '(<a href="tg://user?id=7101">Вася</a>) — доступ по нему больше не работает']
+    assert holder_msgs == ['🗑 Профиль <a href="tg://user?id=7101">Вася</a> удалил устройство «Ноут», '
+                           'которым ты пользовался, — VPN на нём больше не работает']
     assert services.db.get_client_by_tg(97101) is not None, "профиль гостя не терминируется"
 
 
@@ -52,7 +52,8 @@ async def test_client_holder_delete_of_foreign_device_notifies_owner(services, f
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
                                    holder, services)
     owner_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 7102]
-    assert owner_msgs and "удалено по его запросу" in owner_msgs[0] and "0 из 3" in owner_msgs[0]
+    assert owner_msgs and "удалил у себя устройство «Чужое»" in owner_msgs[0] \
+        and "можно добавить ещё 3" in owner_msgs[0]
     assert services.db.get_client(holder.id) is not None
     assert services.db.get_device(dc.device_id) is None, "чужое устройство осталось в БД"
 

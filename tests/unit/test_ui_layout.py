@@ -139,21 +139,23 @@ def test_guest_main_rows():
 
 
 def test_card_rows_follow_the_device_kind():
-    """Карточки: своё — ряд выдачи, имя/лимит, другу/блок, удалить/назад;
-    переданное — имя/лимит, удалить/назад; от друга — выдача, блок/удалить,
-    назад; добавленное не ботом — без ряда выдачи и без «Другу»."""
+    """Карточки: своё — ряд выдачи, имя/лимит, передать/заблокировать,
+    удалить, назад (выход — отдельным последним рядом); переданное —
+    имя/лимит, удалить, назад; от друга — выдача, заблокировать/удалить,
+    назад; добавленное не ботом — без ряда выдачи и без «Передать другу»."""
     def rows(m):
         return [[b.text for b in r] for r in m.inline_keyboard]
     assert rows(kbc.device_actions(DEVS[0], is_admin=False, back_target="m:devices")) == [
-        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["✏️ Имя", "✏️ Лимит"], ["👤 Другу", "🛑 Блок"],
-        ["🗑 Удалить", "⬅️ Назад"]]
-    assert rows(kbc.device_actions(PENDING, is_admin=False, back_target="x"))[2] == ["🔁 Приглашение", "🛑 Блок"]
-    assert rows(kbc.device_actions(BLOCKED, is_admin=False, back_target="x"))[2] == ["👤 Другу", "✅ Разблок"]
+        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["✏️ Имя", "✏️ Лимит трафика"],
+        ["👤 Передать другу", "🔒 Заблокировать"], ["🗑 Удалить"], ["⬅️ Назад"]]
+    assert rows(kbc.device_actions(PENDING, is_admin=False, back_target="x"))[2] == ["🔁 Приглашение", "🔒 Заблокировать"]
+    assert rows(kbc.device_actions(BLOCKED, is_admin=False, back_target="x"))[2] == ["👤 Передать другу", "🔓 Разблокировать"]
     assert rows(kbc.device_actions(UNMANAGED, is_admin=False, back_target="x")) == [
-        ["✏️ Имя", "✏️ Лимит"], ["🛑 Блок"], ["🗑 Удалить", "⬅️ Назад"]]
-    assert rows(kbc.lent_out_device_actions(DEVS[2], "x")) == [["✏️ Имя", "✏️ Лимит"], ["🗑 Удалить", "⬅️ Назад"]]
+        ["✏️ Имя", "✏️ Лимит трафика"], ["🔒 Заблокировать"], ["🗑 Удалить"], ["⬅️ Назад"]]
+    assert rows(kbc.lent_out_device_actions(DEVS[2], "x")) == [
+        ["✏️ Имя", "✏️ Лимит трафика"], ["🗑 Удалить"], ["⬅️ Назад"]]
     assert rows(kbc.held_device_actions(HELD[0], "x")) == [
-        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["🛑 Блок", "🗑 Удалить"], ["⬅️ Назад"]]
+        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["🔒 Заблокировать", "🗑 Удалить"], ["⬅️ Назад"]]
     gen = [b.callback_data for b in _buttons(kbc.held_device_actions(HELD[0], "x", cb_cls=FriendCB))][:3]
     assert gen == [FriendCB(action=a, device_id=4).pack() for a in ("gen_link", "gen_qr", "gen_file")]
     deleted = [b.callback_data for b in _buttons(kbc.held_device_actions(HELD[0], "x"))]

@@ -105,14 +105,14 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
 async def _issue(cb: CallbackQuery, services, client, dev, kind: str) -> None:
     """Выдать ссылку/QR/файл одним сообщением с пояснением и «⬅️ В меню»."""
     if not dev.private_key:
-        await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
+        await edit(cb, texts.unmanaged_device_dialog(dev.name), kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
     await drop_message(cb, services)                 # меню не должно висеть над ссылкой
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.to_menu())
     except ServiceError as e:
-        await cb.message.answer(texts._e(str(e)))
+        await cb.message.answer(texts.issue_failed(e))
         await _show_main(cb.message, services, client)
     await cb.answer()
 
@@ -203,8 +203,8 @@ async def client_edit_device_traffic(cb: CallbackQuery, callback_data: DeviceCB,
         return
     await state.clear()
     plimit = await call(services.profile_traffic_limit, dev.client_id)
-    await edit(cb, texts.device_limit_prompt(dev.name, plimit),
-               kb.device_limit_kb(dev.id, plimit, DeviceCB(action="open", device_id=dev.id)))
+    await edit(cb, texts.device_limit_prompt(dev.name, plimit, int(dev.traffic_limit)),
+               kb.client_device_limit_kb(dev.id, plimit, DeviceCB(action="open", device_id=dev.id)))
     await cb.answer()
 
 

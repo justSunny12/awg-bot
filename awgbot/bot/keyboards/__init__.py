@@ -30,7 +30,7 @@ from .client import (
     GEN_ACTIONS, gen_kind, pick_device, issuable, confirm_transfer, help_menu,
     friend_finisher, guest_pick_device, confirm_delete_device,
     added_by_admin, unmanaged_device_dialog, guide_nav, guide_connect_method,
-    guide_connect_done, guide_connect_devices, grace_offer, subscription_kb, pause_kb,
+    guide_connect_done, guide_connect_devices, grace_offer, subscription_kb, pause_kb, client_device_limit_kb,
     add_device_kb, device_created_kb, invite_kb, issue_row, ADD_FROM_DEVICES)
 from .admin import (
     admin_main, admin_devices, admin_clients, admin_client_actions, admin_client_back,
@@ -66,7 +66,7 @@ __all__ = [
     "device_actions", "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
     "added_by_admin", "unmanaged_device_dialog", "guide_nav",
     "guide_connect_method", "guide_connect_done", "guide_connect_devices",
-    "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES",
+    "grace_offer", "subscription_kb", "pause_kb", "client_device_limit_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES",
     "admin_main", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "gateway_card_button", "to_client_card", "invite_menu", "migration_back_kb", "add_device_addslot", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",

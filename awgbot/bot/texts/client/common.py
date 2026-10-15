@@ -6,13 +6,14 @@ import datetime
 
 from awgbot.util import timeutil
 from awgbot.core.enums import SubStatus
-from ..fmt import deep_link, unit_for, amount, volume, owner_link, plural_ru
+from ..fmt import deep_link, unit_for, amount, volume, owner_link
 from ..routing import ROUTING_NAME
 
 
-# Одна формулировка риска «без VPN не будет Telegram»: блокировка, удаление
-# единственного устройства, пауза
-TELEGRAM_RISK = "Если Telegram у тебя только через этот VPN — до бота не достучаться"
+# Одна формулировка риска «без VPN не будет Telegram» — отдельной строкой с ⚠️:
+# блокировка, удаление единственного устройства, пауза; хвост по месту
+# («, и снять паузу будет нечем») дописывает экран
+TELEGRAM_RISK = "⚠️ Если Telegram у тебя открывается только через этот VPN — бот станет недоступен"
 
 # payload deep-link'ов клиента и гостя (/start <payload>): экран реестра
 SUB_PAYLOAD = "sub"
@@ -66,32 +67,38 @@ def _pause_until(client) -> str:
 
 
 def subscription_short(client, bot_username: str = "") -> str:
-    """Строка подписки на главной клиента — вся ссылкой на «💳 Подписка»:
-    «💳 Подписка до 12.10», «💳 🟡 истекает 12.10 18:00», «💳 ⏸️ на паузе до
-    01.10», «💳 ⏸️ приостановлена администратором», «💳 🔴 истекла»,
-    «💳 бессрочная». Год — только не текущий."""
+    """Строка подписки на главной клиента — вся ссылкой на «💳 Подписка», одно
+    начало во всех ветках: «💳 Подписка до 12.10», «💳 Подписка 🟡 истекает
+    12.10 18:00», «💳 Подписка ⏸️ на паузе до 01.10», «💳 Подписка ⏸️ на паузе
+    (поставил администратор)», «💳 Подписка 🔴 истекла», «💳 Подписка
+    бессрочная». Год — только не текущий."""
     _, mode, pause_visible = _pause_visibility(client)
     if pause_visible:
         if mode == "user":
             until = _pause_until(client)
-            text = f"💳 ⏸️ на паузе до {until}" if until else "💳 ⏸️ на паузе"
+            text = f"⏸️ на паузе до {until}" if until else "⏸️ на паузе"
         else:
-            text = "💳 ⏸️ приостановлена администратором"
+            text = ADMIN_PAUSE_STATUS
     elif client.status != SubStatus.ACTIVE or (
             client.period_end and timeutil.remaining_seconds(timeutil.parse_iso(client.period_end)) <= 0):
         end = timeutil.parse_iso(client.period_end) if client.period_end else None
-        text = f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}" if end else "💳 🔴 истекла"
+        text = f"🔴 истекла {timeutil.fmt_date_ui(end)}" if end else "🔴 истекла"
     elif not client.effective_period_end:
-        text = "💳 бессрочная"
+        text = "бессрочная"
     else:
         # срок — эффективный: тихая пауза администратора обнуляет period_end,
         # а выдавать себя не должна (экран «💳 Подписка» считает так же)
         end = timeutil.parse_iso(client.effective_period_end)
         if client.notified_thresholds:
-            text = f"💳 🟡 истекает {timeutil.fmt_end_ui(end)}"
+            text = f"🟡 истекает {timeutil.fmt_end_ui(end)}"
         else:
-            text = f"💳 Подписка до {timeutil.fmt_date_ui(end)}"
-    return _link(bot_username, SUB_PAYLOAD, text)
+            text = f"до {timeutil.fmt_date_ui(end)}"
+    return _link(bot_username, SUB_PAYLOAD, f"💳 Подписка {text}")
+
+
+# статус паузы, которую поставил администратор, — на главной, в «💳 Подписка»
+# и у гостя о владельце (канон «пауза, не приостановка»)
+ADMIN_PAUSE_STATUS = "⏸️ на паузе (поставил администратор)"
 
 
 def traffic_short(rx: int, tx: int, limit_bytes: int, bonus_bytes: int = 0) -> str:
@@ -114,18 +121,18 @@ def held_devices_tail(held) -> str:
 
 
 def devices_short(slots, held=()) -> str:
-    """Строка устройств на главной: «📱 Устройств 2 из 3 (+1 от профиля
-    Вася)»; без лимита — «📱 Устройств: 2»; пока нет — «📱 Можно добавить до 3
-    устройств»."""
+    """Строка устройств на главной — одна форма счётчика, как в заголовке
+    «📱 Устройства»: «📱 Устройства: 2 из 3 (+1 от профиля Вася)»; без лимита —
+    «📱 Устройства: 2»; пока нет — «📱 Устройств пока нет · можно добавить до 3»."""
     used, limit = slots
     tail = held_devices_tail(held)
-    if limit == 0:
-        if not used and not tail:
-            return "📱 Устройств пока нет"
-        return f"📱 Устройств: {used}{tail}"
     if used == 0 and not tail:
-        return f"📱 Можно добавить до {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}"
-    return f"📱 Устройств {used} из {limit}{tail}"
+        if limit == 0:
+            return "📱 Устройств пока нет"
+        return f"📱 Устройств пока нет · можно добавить до {limit}"
+    if limit == 0:
+        return f"📱 Устройства: {used}{tail}"
+    return f"📱 Устройства: {used} из {limit}{tail}"
 
 
 def limit_exhausted_line(used: int, limit: int) -> str:

@@ -47,7 +47,7 @@ def test_pause_counter_shows_balance_of_type_max(services, fake_awg):
 def test_pause_limit_exhausted_text():
     from awgbot.bot import texts
     assert texts.pause_limit_exhausted() == \
-        "Дни паузы на счету закончились — пополнится при продлении подписки"
+        "Дней паузы нет — счёт пополнится при продлении подписки"
 
 
 def test_pause_not_capped_by_subscription_remainder(services, fake_awg):

@@ -50,6 +50,23 @@ def _manual_device_unblocked_client(name: str) -> str:
     return f"🟢 Устройство «{_e(name)}» разблокировано"
 
 
+# Владельцу — кто из держателей заблокировал его переданное устройство:
+# «владелец» у устройства один, а блок своей кнопкой на переданном ставит держатель
+def _holder_blocked_owner_text(dev) -> str:
+    from awgbot.util.textfmt.base import holder_link
+    return f"🔒 Профиль {holder_link(dev)} заблокировал устройство «{_e(dev.name)}»"
+
+
+def _holder_unblocked_owner_text(dev) -> str:
+    from awgbot.util.textfmt.base import holder_link
+    return f"🔓 Профиль {holder_link(dev)} разблокировал устройство «{_e(dev.name)}»"
+
+
+def _by_holder(dev, actor_tg) -> bool:
+    """Нажал держатель переданного устройства (не владелец и не админ)."""
+    return bool(actor_tg) and dev.friend_status == FriendStatus.ACTIVE and actor_tg == dev.friend_tg_id
+
+
 # Клиенту сообщаем о его же блокировке — имя не подставляем (адресат и есть
 # субъект), поэтому текст без параметров.
 def _manual_client_blocked() -> str:
@@ -164,7 +181,8 @@ class BlocksMixin:
             owner = self.db.get_client(dev.client_id)
             if owner and owner.tg_id:
                 notes.append(Notification(owner.tg_id,
-                             _manual_device_blocked_client(dev.name)))
+                             _holder_blocked_owner_text(dev) if _by_holder(dev, actor_tg)
+                             else _manual_device_blocked_client(dev.name)))
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 by_admin = bool(actor_tg) and actor_tg == config.ADMIN_ID and actor_tg != (owner.tg_id if owner else None)
                 notes.append(Notification(dev.friend_tg_id,
@@ -186,7 +204,8 @@ class BlocksMixin:
             owner = self.db.get_client(dev.client_id)
             if owner and owner.tg_id:
                 notes.append(Notification(owner.tg_id,
-                             _manual_device_unblocked_client(dev.name)))
+                             _holder_unblocked_owner_text(dev) if _by_holder(dev, actor_tg)
+                             else _manual_device_unblocked_client(dev.name)))
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 notes.append(Notification(dev.friend_tg_id,
                              _friend_manual_unblocked_text(dev.name)))

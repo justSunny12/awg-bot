@@ -233,6 +233,22 @@ def guest(n=1, *, rf=False, drop=False, owner_after=None, more=False, other=Fals
     return build
 
 
+def _client_gen_fails(services, mp):
+    """Клиент с одним устройством; сервер не выдаёт конфиг (ServiceError)."""
+    from awgbot.domain.services import ServiceError
+
+    def boom(device_id, **kw):
+        raise ServiceError("сервер не отвечает")
+    who = ONE(services)
+    mp.setattr(services, "generate_config", boom)
+    return who
+
+
+def _owner_blocked(services, cid):
+    """Профиль заблокирован администратором с уведомлением (без паузы)."""
+    services.block_client_manual(cid, ClientBlock.ADMIN_NOTIFIED, True)
+
+
 def _guest_gen_fails(services, mp):
     """Гость с одним устройством; сервер не выдаёт конфиг (ServiceError)."""
     from awgbot.domain.services import ServiceError
@@ -474,6 +490,12 @@ CLIENT_SHOTS = [
     Shot("cl.dev.lent.capped", role="client", press=[dev("open")],
          data=vasya(["Ноут"], traffic=100 * G, lend=(1,)), title="карточка переданного: лимит профиля"),
     Shot("cl.dev.held", role="client", press=[dev("open", 5)], data=MIXED, title="карточка чужого в держании"),
+    Shot("cl.dev.held.blocked", role="client", press=[dev("open")],
+         data=vasya(holds=True, after=lambda s, c: s.block_device_manual(1, DeviceBlock.USER, True, actor_tg=CLIENT_TG)),
+         title="карточка чужого в держании: заблокировано мной — «тобой»"),
+    Shot("cl.dev.lent.blocked", role="client", press=[dev("open")],
+         data=vasya(["Ноут"], lend=(1,), after=lambda s, c: s.block_device_manual(1, DeviceBlock.USER, True, actor_tg=GUEST_TG)),
+         title="карточка переданного: заблокировал держатель"),
     Shot("cl.dev.held.rf_bytes", role="client", press=[dev("open")],
          data=vasya(holds=True, after=lambda s, c: (s.set_routing_allowed(3, True), _rf_bytes(s, 3))),
          title="карточка чужого в держании: РФ-байты владельца не видны"),
@@ -553,6 +575,8 @@ CLIENT_SHOTS = [
          title="📄 выбор → файл"),
     Shot("cl.gen.none", role="client", press=[Menu(action="gen_link")], data=owner,
          title="выдача без устройств — отказ"),
+    Shot("cl.gen.fail", role="client", press=[Menu(action="gen_link")], data=_client_gen_fails,
+         title="сервер не выдал настройки — отказ и главная"),
     Shot("cl.gen.unmanaged", role="client", press=[Menu(action="gen_link"), dev("gen_link", 2)],
          data=vasya(["Телефон"], unmanaged=True), title="выдача пира без ключа — «удали»"),
     Shot("cl.gen.unmanaged.qr", role="client", press=[dev("gen_qr", 2)],
@@ -578,6 +602,10 @@ CLIENT_SHOTS = [
     Shot("cl.dev.block.held", role="client",
          press=[dev("open", 5), BlockCB(target="dev", action="menu_block", ref=5, kind="user")], data=MIXED,
          title="🛑 чужое в держании — подтверждение"),
+    Shot("cl.dev.block.held.do", role="client",
+         press=[dev("open", 5), BlockCB(target="dev", action="menu_block", ref=5, kind="user"),
+                BlockCB(target="dev", action="block", ref=5, kind="user")], data=MIXED,
+         title="🔒 чужое в держании — итог, владельцу уведомление"),
     Shot("cl.dev.block.lent", role="client",
          press=[BlockCB(target="dev", action="menu_block", ref=3, kind="user")], data=MIXED,
          title="🛑 переданное — не моё управление, отказ"),
@@ -766,6 +794,8 @@ G2 = guest(2)
 GUEST_SHOTS = [
     Shot("gst.start.activate", role="guest", start="FTEST0000002", data=stranger(_guest_code_wait),
          title="незнакомец: код друга — гость"),
+    Shot("gst.start.activate.skip", role="guest", start="FTEST0000002", press=[fr("refresh")],
+         data=stranger(_guest_code_wait), title="после активации: «✅ Настрою сам» — главная гостя"),
     Shot("gst.main.one", role="guest", start="", data=G1, title="главная гостя: одно устройство"),
     Shot("gst.main.many", role="guest", start="", data=G2, title="главная гостя: несколько"),
     Shot("gst.main.rf", role="guest", start="", data=guest(1, rf=True), title="главная гостя: РФ-доступ"),
@@ -774,6 +804,14 @@ GUEST_SHOTS = [
          title="главная гостя: у владельца подписка истекла"),
     Shot("gst.main.owner_paused", role="guest", start="", data=guest(1, owner_after=_paused),
          title="главная гостя: владелец на паузе"),
+    Shot("gst.main.owner_admin_paused", role="guest", start="", data=guest(1, owner_after=_admin_paused),
+         title="главная гостя: владельца поставил на паузу администратор"),
+    Shot("gst.main.owner_admin_silent", role="guest", start="", data=guest(1, owner_after=_admin_silent),
+         title="главная гостя: тихая пауза администратора у владельца не видна"),
+    Shot("gst.main.owner_traffic_blocked", role="guest", start="",
+         data=guest(1, owner_after=_traffic_blocked), title="главная гостя: у владельца исчерпан лимит трафика"),
+    Shot("gst.main.owner_blocked", role="guest", start="", data=guest(1, owner_after=_owner_blocked),
+         title="главная гостя: владелец заблокирован администратором"),
     Shot("gst.main.usage", role="guest", start="",
          data=guest(1, owner_after=lambda s, c: s.db.add_traffic_bulk([(1, 3 * G, G)])),
          title="главная гостя: потребление"),
@@ -860,7 +898,9 @@ GUEST_SHOTS = [
          data=guest(1, owner_after=lambda s, c: s.block_device_manual(1, DeviceBlock.USER, True)),
          title="разблокировать"),
     Shot("gst.delete.ask", role="guest", press=[fr("open", 1), DelDeviceCB(device_id=1)], data=G1,
-         title="🗑 Удалить — подтверждение"),
+         title="🗑 Удалить — единственное: предупреждение"),
+    Shot("gst.delete.ask.many", role="guest", press=[fr("open", 2), DelDeviceCB(device_id=2)], data=G2,
+         title="🗑 Удалить — одно из двух"),
     Shot("gst.delete.yes", role="guest",
          press=[fr("open", 1), DelDeviceCB(device_id=1), DelDeviceCB(device_id=1, stage="confirm")], data=G1,
          title="🗑 удалено последнее — главная без устройств"),
@@ -878,6 +918,8 @@ GUEST_SHOTS = [
          title="гайд Apple у гостя, шаг 1 (скриншот)"),
     Shot("gst.guide.connect.0", role="guest", press=[GuideCB(guide="connect", step=0)], data=G2,
          title="подключение у гостя: устройства без ➕"),
+    Shot("gst.guide.connect.0.none", role="guest", press=[GuideCB(guide="connect", step=0)],
+         data=guest(1, drop=True), title="подключение у гостя без устройств"),
     Shot("gst.guide.connect.pick", role="guest", press=[GuideCB(guide="connect", step=0), dev("gen_guide", 2)],
          data=G2, title="подключение у гостя: способ"),
     Shot("gst.guide.connect.link", role="guest", press=[GuideCB(guide="connect", step=1, dev=1, kind="link")],

@@ -39,7 +39,8 @@ async def test_guest_takes_second_code_from_the_same_owner(services, fake_bot, m
     fake_bot.records.clear()
     await ch.take_code_as_member(msg, services, guest, code)
     assert services.db.get_device(d2.device_id).holder_client_id == guest.id
-    assert any("активировал устройство «Ноутбук»" in t for t in _sent_to(fake_bot, 6200))
+    assert any("принял приглашение — устройство «Ноутбук» теперь у него" in t
+               for t in _sent_to(fake_bot, 6200))
 
 
 async def test_guest_refused_code_from_another_owner_code_survives(services, fake_bot,
@@ -87,4 +88,4 @@ async def test_guest_upgrade_within_limit_notifies_owner_once(services, fake_bot
     fake_bot.records.clear()
     await ch.take_code_as_member(msg, services, guest, created.invite_code)
     sent = _sent_to(fake_bot, 6207)
-    assert len(sent) == 1 and sent[0].startswith('📤 Устройство «Телефон» перешло к'), sent
+    assert len(sent) == 1 and "устройство «Телефон» перешло в его профиль" in sent[0], sent
