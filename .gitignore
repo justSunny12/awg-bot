@@ -38,7 +38,7 @@ dist/
 .DS_Store
 Thumbs.db
 .idea/
-# .vscode/ — раскомментируй, если не хочешь коммитить настройки VS Code
+.vscode/
 
 # локальный рабочий документ аудита
 docs/PERF-AUDIT.md
