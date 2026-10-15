@@ -264,7 +264,7 @@ class BundleMixin:
             try:
                 before = gwguard.unit_set_env({k: want[k] for k in changed})
             except (OSError, gwguard.GwGuardError) as e:
-                return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})"}
+                return {"ok": False, "changed": changed, "error": f"обвязка не переписана ({e})"}
             # Запас на включение режима без VPN: скрипт ставит dnsmasq через apt,
             # а на шлюзе это минуты, не секунды.
             self._last_reassert = time.monotonic()

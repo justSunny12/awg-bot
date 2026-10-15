@@ -10,6 +10,7 @@ from awgbot.core import config
 from awgbot.util import timeutil
 from awgbot.domain.gateway import base
 from awgbot.domain.gateway.base import GwCheck, log
+from awgbot.domain import gwchecks as gc
 
 
 class LinkMixin:
@@ -43,10 +44,10 @@ class LinkMixin:
         checks: list[GwCheck] = []
         try:
             fwd = base.pathlib_read("/proc/sys/net/ipv4/ip_forward").strip() == "1"
-            checks.append(GwCheck("ip_forward", fwd,
+            checks.append(GwCheck(gc.CHECK_IP_FORWARD, fwd,
                                   "" if fwd else "выключен — транзита клиентов нет"))
         except Exception:                                # noqa: BLE001
-            checks.append(GwCheck("ip_forward", None, "не прочитался"))
+            checks.append(GwCheck(gc.CHECK_IP_FORWARD, None, "не прочитался"))
 
         # Вся обвязка — одна nft-таблица (gwguard): MASQUERADE, изоляция,
         # метки Telegram, защита самого устройства от туннеля. Одним `nft -j list table`.
@@ -55,11 +56,11 @@ class LinkMixin:
             info = gwguard.table_info()
         except gwguard.GwGuardError as e:
             info = None
-            checks.append(GwCheck("таблица awg_gw_guard", None, str(e)))
+            checks.append(GwCheck(gc.CHECK_GUARD, None, str(e)))
         else:
             if info is None:
                 checks.append(GwCheck(
-                    "таблица awg_gw_guard", False,
+                    gc.CHECK_GUARD, False,
                     "нет — обвязка снята; «🔧 Восстановить»" if self.server_cfg1() else
                     "нет — обвязка старого образца или снята; перевыпусти "
                     "конфигурацию шлюза с сервера AWG"))
@@ -70,17 +71,17 @@ class LinkMixin:
             if client_subnet:
                 ok = client_subnet in nets
                 checks.append(GwCheck(
-                    "MASQUERADE/изоляция", ok,
+                    gc.CHECK_MASQ_ISOLATION, ok,
                     "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
-                                   "не приходит — проверь «🔗 упр. канал» на главном экране бота шлюза" if self.server_cfg1() else
+                                   "не приходит — проверь «🔗 Канал конфигурации» на главном экране бота шлюза" if self.server_cfg1() else
                                    f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
                                    "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
             else:
-                checks.append(GwCheck("MASQUERADE/изоляция", None,
+                checks.append(GwCheck(gc.CHECK_MASQ_ISOLATION, None,
                                       "подсеть клиентов неизвестна (нет конфигурации с сервера AWG) — "
                                       "проверка выключена"))
             missing_chains = [c for c in gwguard.CHAINS if c not in info["chains"]]
-            checks.append(GwCheck("цепочки таблицы", not missing_chains,
+            checks.append(GwCheck(gc.CHECK_CHAINS, not missing_chains,
                                   "" if not missing_chains else
                                   "нет: " + ", ".join(missing_chains)))
             pol = gwguard.iptables_forward_policy()
@@ -91,16 +92,16 @@ class LinkMixin:
                 # транзит идёт, и красная проверка была бы ложной тревогой.
                 acc = gwguard.forward_accepts()
                 ok_fwd = {f"i:{config.GW_LINK_IF}", f"o:{config.GW_LINK_IF}"} <= acc
-            checks.append(GwCheck("политика FORWARD", ok_fwd,
+            checks.append(GwCheck(gc.CHECK_FORWARD_POLICY, ok_fwd,
                                   "" if ok_fwd else
                                   f"ip filter FORWARD: {pol} — drop чужой таблицы "
                                   "перекрывает транзит клиентов"))
         # Включённость юнита меняется только руками — статический ярус (45
         # мин, кнопки «Статус»/«Монитор здоровья» сбрасывают), а не exec на тик.
         enabled = self._unit_enabled()
-        checks.append(GwCheck("юнит реассерта", enabled,
+        checks.append(GwCheck(gc.CHECK_UNIT, enabled,
                               "" if enabled else
-                              f"{config.GW_UNIT} не включён — ребут не восстановит обвязку"))
+                              f"{config.GW_UNIT} не включён — перезапуск сервера не восстановит обвязку"))
         # Политика «Telegram → аплинк»: без неё метка стоит, а пакеты агента
         # уходят провайдеру локальной сети — Telegram недоступен, агент молчит.
         # Аплинк (автодетект — три exec) и состояние политики запоминаем на
@@ -112,8 +113,8 @@ class LinkMixin:
             ok = pol["rule"] and pol["route"]
             lack = [n for n, v in (("правило по метке", pol["rule"]),
                                    (f"маршрут в {uplink}", pol["route"])) if not v]
-            checks.append(GwCheck("политика аплинка", ok,
-                                  "" if ok else "нет: " + ", ".join(lack) + " — агент перевыставит"))
+            checks.append(GwCheck(gc.CHECK_UPLINK_POLICY, ok,
+                                  "" if ok else "нет: " + ", ".join(lack) + f"; {gc.SELF_HEAL_TAIL}"))
             # Маскарад в аплинк: без него локальный пакет уходит в туннель с
             # адресом локальной сети, и ВПС его отбрасывает — Telegram через ВПС
             # не проходит. На прежнем шлюзе это делало чужое правило прежней
@@ -121,13 +122,13 @@ class LinkMixin:
             info = self.__dict__.get("_guard_info")
             if info is not None:
                 masq = uplink in info.get("masq_ifaces", set())
-                checks.append(GwCheck("маскарад в аплинк", masq,
+                checks.append(GwCheck(gc.CHECK_UPLINK_MASQ, masq,
                                       "" if masq else f"нет masquerade в {uplink}: пакеты агента "
                                       "уходят в туннель с локальным адресом — "
                                       + ("«🔧 Восстановить»" if self.server_cfg1() else
                                          "перевыпусти конфигурацию шлюза с сервера AWG")))
         else:
-            checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
+            checks.append(GwCheck(gc.CHECK_UPLINK_POLICY, None, "аплинк не найден"))
         # Маскарад клиентов привязан к интерфейсу маршрута по умолчанию на
         # момент применения. Переехал маршрут (OMV собрал bridge или bond) —
         # правило стоит на прежнем интерфейсе, РФ-доступ у всех молчит, а зонд
@@ -140,9 +141,9 @@ class LinkMixin:
             masq_ifaces = info.get("masq_ifaces", set())
             ok = not masq_ifaces or wan in masq_ifaces
             self.__dict__["_masq_stale"] = not ok
-            checks.append(GwCheck("маскарад клиентов", ok,
+            checks.append(GwCheck(gc.CHECK_CLIENT_MASQ, ok,
                                   "" if ok else f"маршрут по умолчанию через {wan}, а masquerade "
-                                  "клиентов стоит в другом интерфейсе — агент перевыставит обвязку"))
+                                  f"клиентов стоит в другом интерфейсе; {gc.SELF_HEAL_TAIL}"))
         router = self._router_masq_check(info, route)
         if router is not None:
             checks.append(router)
@@ -169,7 +170,7 @@ class LinkMixin:
 
         def check(ok, detail, stale=False):
             self.__dict__["_router_masq_stale"] = stale
-            return GwCheck("маскарад к роутеру", ok, detail, group="svc")
+            return GwCheck(gc.CHECK_ROUTER_MASQ, ok, detail, group="svc")
         closed = "сам роутер подсетям других шлюзов не открыт"
         status = gwguard.script_status()
         if status.get("GW_STATUS") in ("foreign", "unconfirmed"):

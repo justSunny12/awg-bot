@@ -10,34 +10,42 @@ from awgbot.bot.callbacks import GwCB
 from .common import entry_tag, confirm
 
 
-def gateway_panel_kb(lan: bool = False, pending: bool = False) -> InlineKeyboardMarkup:
-    """Панель шлюза: [⏳ Решить] (ждут вопросы с сервера AWG) / [🩺 Здоровье]
-    [🔧 Восстановить] / [🔀 VPN-транзит] (когда включён) / [🔄 Обновить]
-    [⚙️ Настройки]. Восстановление — через подтверждение: обрыв РФ у всех,
-    пусть на секунды, не от промаха пальцем."""
+def gateway_panel_kb(lan: bool = False, pending: int = 0, update_tag: str = "") -> InlineKeyboardMarkup:
+    """Панель шлюза: [⏳ Ответить (N)] (ждут вопросы с сервера AWG) / [🩺 Здоровье]
+    [🔧 Восстановить] / [🔀 VPN-транзит] (когда включён) / [⬆️ vX] (доступно
+    обновление — ведёт в «⬆️ Обновления») [⚙️ Настройки]. Перечитать панель
+    живьём — ссылкой «🔄 обновлено …» в тексте, кнопки нет. Восстановление —
+    через подтверждение: обрыв РФ у всех, пусть на секунды, не от промаха пальцем."""
+    n = int(pending or 0)
+    tag = (update_tag if str(update_tag).startswith("v") else f"v{update_tag}") if update_tag else ""
     return ui.rows(
-        ("⏳ Решить", GwCB(action="cfg_ask")) if pending else None,
+        (f"⏳ Ответить ({n})", GwCB(action="cfg_ask")) if n else None,
         [("🩺 Здоровье", GwCB(action="health")), ("🔧 Восстановить", GwCB(action="reassert"))],
         ("🔀 VPN-транзит", GwCB(action="lan")) if lan else None,
-        [("🔄 Обновить", GwCB(action="refresh")), ("⚙️ Настройки", GwCB(action="settings"))])
+        [(f"⬆️ {tag}", GwCB(action="updates")) if tag else None, ("⚙️ Настройки", GwCB(action="settings"))])
 
 
 def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:
     """Приглашение (ключи линка, аплинк) — «⬅️ Отмена» и «Применить» одним рядом.
-    Вопрос о почте или фразе: безопасный выбор первым, каждая кнопка своим
-    рядом — подпись «Принять с сервера AWG» в ряду из двух не влезает."""
+    Вопрос о почте или фразе — одна пара на все вопросы «своё или с сервера»:
+    «⬅️ Оставить своё» и «✅ Принять». «⬅️ В меню» последним рядом: не готов
+    решать — вопрос остаётся в «⏳ Ждут решения»."""
+    from awgbot.bot.texts.gateway.ask import KEEP_LABEL, ACCEPT_LABEL
     if section in ("link", "uplink"):
         icon = "🔑" if section == "link" else "🔐"
-        return ui.rows([("⬅️ Отмена", GwCB(action="cfg_no", val=section)),
-                        (f"{icon} Применить", GwCB(action="cfg_ok!", val=section))])
-    return ui.rows(("Оставить своё", GwCB(action="cfg_no", val=section)),
-                   ("Принять с сервера AWG", GwCB(action="cfg_ok!", val=section)))
+        pair = [("⬅️ Отмена", GwCB(action="cfg_no", val=section)),
+                (f"{icon} Применить", GwCB(action="cfg_ok!", val=section))]
+    else:
+        pair = [(KEEP_LABEL, GwCB(action="cfg_no", val=section)),
+                (ACCEPT_LABEL, GwCB(action="cfg_ok!", val=section))]
+    return ui.rows(pair, ui.to_menu(GwCB(action="panel")))
 
 
 def gateway_health_kb() -> InlineKeyboardMarkup:
-    """Экран здоровья: восстановить и в меню."""
-    return ui.rows([("🔧 Восстановить", GwCB(action="reassert", val="health")),
-                    ui.to_menu(GwCB(action="panel"))])
+    """Экран здоровья: проверить заново (живьём), восстановить; в меню."""
+    return ui.rows([("🔄 Проверить", GwCB(action="health")),
+                    ("🔧 Восстановить", GwCB(action="reassert", val="health"))],
+                   ui.to_menu(GwCB(action="panel")))
 
 
 def lan_own_sorted(items) -> list[tuple[str, str]]:
@@ -55,16 +63,17 @@ def lan_own_tag(kind: str, dom: str) -> str:
 
 
 def gateway_transit_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
-    """Экран «🔀 VPN-транзит»: добавить в туннель / напрямую, свои домены
-    кнопками «➖ 🇷🇺|🌍 домен» (листание, не больше десяти рядов на экране), рецепт
-    роутера и в меню. val — номер в отсортированном списке, не домен (64 байта)."""
+    """Экран «🔀 VPN-транзит»: добавить в туннель (🌍) / напрямую (🇷🇺) — значки
+    те же, что у кнопок «➖ 🇷🇺|🌍 домен» (листание, не больше десяти рядов на
+    экране), настройка роутера и в меню. val — номер в отсортированном списке,
+    не домен (64 байта)."""
     return ui.rows(
-        [("➕ В туннель", GwCB(action="lan_add")), ("➕ Напрямую", GwCB(action="lan_ru"))],
+        [("➕ 🌍 В туннель", GwCB(action="lan_add")), ("➕ 🇷🇺 Напрямую", GwCB(action="lan_ru"))],
         *ui.paged(lan_own_sorted(list(items)), page, static=2, screen="lanlist", ref=0,
                   back=GwCB(action="lan").pack(),
                   button=lambda i, kd: (f"➖ {'🇷🇺' if kd[0] == 'ru' else '🌍'} {kd[1]}",
                                         GwCB(action="lan_rm", val=f"{i}.{lan_own_tag(kd[0], kd[1])}"))),
-        [("❓ Роутер", GwCB(action="lan_router")), ui.to_menu(GwCB(action="panel"))])
+        [("🛜 Роутер", GwCB(action="lan_router")), ui.to_menu(GwCB(action="panel"))])
 
 
 def _gw_back(sec: str = "settings") -> tuple:
@@ -105,8 +114,10 @@ def gateway_bundle_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_bundle_passphrase_kb() -> InlineKeyboardMarkup:
-    return ui.rows([("Оставить свою", GwCB(action="apply_keep!")),
-                    ("🔐 Перезаписать", GwCB(action="apply_ow!"))])
+    """Та же пара, что у вопросов с сервера: «⬅️ Оставить своё» / «✅ Принять»."""
+    from awgbot.bot.texts.gateway.ask import KEEP_LABEL, ACCEPT_LABEL
+    return ui.rows([(KEEP_LABEL, GwCB(action="apply_keep!")),
+                    (ACCEPT_LABEL, GwCB(action="apply_ow!"))])
 
 
 def gateway_back_kb(sec: str = "") -> InlineKeyboardMarkup:
@@ -116,7 +127,7 @@ def gateway_back_kb(sec: str = "") -> InlineKeyboardMarkup:
 
 
 def gateway_transit_router_kb(tab: str = "mt") -> InlineKeyboardMarkup:
-    """Рецепт роутера вкладками; назад — на экран «🔀 VPN-транзит»."""
+    """Настройка роутера вкладками; назад — на экран «🔀 VPN-транзит»."""
     from awgbot.bot.texts.routing import ROUTER_TABS
     return ui.rows(
         [(f"✅ {label}" if key == tab else label, GwCB(action="lan_router", val=key)) for key, label in ROUTER_TABS],

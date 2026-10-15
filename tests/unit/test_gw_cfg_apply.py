@@ -440,7 +440,7 @@ def test_a_unit_that_cannot_be_rewritten_fails_without_touching_the_link(svc, ho
     host.reload = [_cp(1, err=b"Access denied")]
     res = svc.apply_cfg(_doc(env={"ADMIN_IPS": "10.8.1.2 10.8.1.7"}, link=LINK_NEW_KA))
     assert host.link_runs == [] and host.text() == UNIT_TEXT
-    assert res["ack"]["failed"]["env"].startswith("юнит не переписан"), res["ack"]
+    assert res["ack"]["failed"]["env"].startswith("обвязка не переписана"), res["ack"]
 
 
 # ── имя сервера ──────────────────────────────────────────────────────────────

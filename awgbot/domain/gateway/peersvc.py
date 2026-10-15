@@ -7,6 +7,7 @@ import os
 from awgbot.domain import gwservices
 from awgbot.domain.gwchecks import WRITE_ERROR, failure_detail
 from awgbot.util import gwlink  # noqa: E402
+from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway.base import GwCheck, log
 
 
@@ -168,14 +169,14 @@ class PeerServicesMixin:
         # сначала демон: без него обвязка avahi-utils не ставит, и совет про
         # мастер восстановления на шлюзе без NAS был бы пустым
         if info["avahi"] is False:
-            checks.append(GwCheck("SMB этой подсети", None,
+            checks.append(GwCheck(gc.CHECK_SMB_OWN, None,
                                   "avahi-daemon не запущен: SMB-серверы этой подсети по именам не видны ни в подсетях "
                                   "других шлюзов, ни на устройствах админа в туннеле"))
         elif not info["browse"]:
-            checks.append(GwCheck("SMB этой подсети", None,
+            checks.append(GwCheck(gc.CHECK_SMB_OWN, None,
                                   "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)"))
         else:
-            checks.append(GwCheck("SMB этой подсети", True, f"{len(own)} SMB"))
+            checks.append(GwCheck(gc.CHECK_SMB_OWN, True, f"{len(own)} SMB"))
         peer = self.services_peer()
         items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
         info["peer"] = [r.get("n", "") for r in items]
@@ -183,12 +184,12 @@ class PeerServicesMixin:
         info["ever"] = bool(peer) or not gwguard.unit_env("PEER_HOME_NETS").split()
         info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
         if info["err"]:
-            checks.append(GwCheck("SMB подсетей других шлюзов", False,
+            checks.append(GwCheck(gc.CHECK_SMB_PEERS, False,
                                   failure_detail("записи не применились", info["err"])))
         elif items:
             got = gwguard.dns_local(f"_smb._tcp.{gwservices.BROWSE_DOMAIN}", "PTR")
             ok = None if got is None else bool(got)
-            checks.append(GwCheck("SMB подсетей других шлюзов", ok,
+            checks.append(GwCheck(gc.CHECK_SMB_PEERS, ok,
                                   f"{len(items)} SMB доступны" if ok else
                                   ("резолвер не отдаёт записи: journalctl -u dnsmasq -e"
                                    if ok is False else "не проверено: dig не ответил")))

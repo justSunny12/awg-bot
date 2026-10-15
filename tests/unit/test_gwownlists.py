@@ -940,14 +940,14 @@ def test_status_names_what_the_server_refused_and_the_monitor_escapes_it(agent, 
     assert info["state"] == "rejected" and c.ok is None
     assert c.detail == "сервер AWG не принял 1 домен: <b>x</b>.com — максимум 500 доменов", c.detail
     health = texts.gateway_health(GwStatus(checks=[c]))
-    assert "⚪ свои списки — сервер AWG не принял 1 домен: &lt;b&gt;x&lt;/b&gt;.com — максимум 500 доменов" in health, health
+    assert "🟡 свои списки — сервер AWG не принял 1 домен: &lt;b&gt;x&lt;/b&gt;.com — максимум 500 доменов" in health, health
     agent.own_rejected_in([["a.com", "не домен"], ["b.com", "не домен"]])
     assert _checks(agent)[1].detail.startswith("сервер AWG не принял 2 домена: a.com — не домен")
 
 
 def test_waiting_lists_do_not_reach_the_panel_summary(agent, host):
-    """«Ждут синхронизации» — штатное ожидание, не повод для «⚪ не проверено»
-    в сводке панели; на экране монитора строка остаётся."""
+    """«Ждут синхронизации» — штатное ожидание, не проблема в сводке панели;
+    на экране монитора строка остаётся жёлтой (ожидание)."""
     from awgbot.bot import texts
     from awgbot.domain.gateway import GwCheck, GwStatus
     _synced(agent, host, {"a.com": "vpn"})
@@ -957,7 +957,7 @@ def test_waiting_lists_do_not_reach_the_panel_summary(agent, host):
     _, checks = agent.own_status()
     st = GwStatus(link_up=True, handshake_age=5.0, checks=[GwCheck("MASQUERADE", True)] + checks)
     assert "🩺 Здоровье ✅" in texts.gateway_panel(st).splitlines(), texts.gateway_panel(st)
-    assert "⚪ свои списки — ждут синхронизации (1 правка): нет связи с сервером AWG" in texts.gateway_health(st)
+    assert "🟡 свои списки — ждут синхронизации (1 правка): нет связи с сервером AWG" in texts.gateway_health(st)
 
 
 def test_status_of_an_old_script(agent, host):

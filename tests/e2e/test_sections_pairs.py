@@ -105,7 +105,7 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot,
     assert sections.resolve(env.br, cyc) == ("backup", "cycle", key, "")
     cb, nav = await _press(env, fake_bot, cyc)
     text, offer = _last_edit(nav)
-    assert store[key] == "telegram" and text == texts.EMAIL_NOT_CONFIGURED
+    assert store[key] == "telegram" and text == texts.email_not_configured("backup")
     assert offer.inline_keyboard[0][0].callback_data == env.br.cb.pack("backup").pack(), "отказ увёл не в «Бэкапы»"
     env.services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     cb, nav = await _press(env, fake_bot, cyc)
@@ -142,7 +142,10 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     lines = answers[0][1].split("\n")
     assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00", lines
     assert lines[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
-    assert "Каждое 5-е число в 09:00 → в этот чат" in lines
+    if env.br.has.backup_encrypted_only:        # агент без фразы: вместо расписания — предупреждение
+        assert texts.BACKUP_NO_KEY_LINE in lines, lines
+    else:
+        assert "Каждое 5-е число в 09:00 → в этот чат" in lines
     assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
     assert await st.get_state() is None
 

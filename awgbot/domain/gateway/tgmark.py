@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awgbot.domain.gateway.base import GwCheck
+from awgbot.domain import gwchecks as gc
 
 
 class TgMarkMixin:
@@ -45,7 +46,7 @@ class TgMarkMixin:
         обвязки набора gh_nets4 не знает, нужен новый файл конфигурации с ВПС."""
         present = (info or {}).get("sets", {}).get("gh_nets4", set())
         missing = [n for n in self.GH_RANGES if n not in present]
-        return GwCheck("маршрут к GitHub", not missing,
+        return GwCheck(gc.CHECK_GH_ROUTE, not missing,
                        "" if not missing else
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
                        + ("«🔧 Восстановить»" if self.server_cfg1() else "перевыпусти конфигурацию шлюза с сервера AWG"))
@@ -70,7 +71,7 @@ class TgMarkMixin:
         missing = self.peer_nets_missing(info)
         if missing is None:
             return None
-        return GwCheck("локальные подсети других шлюзов", not missing,
+        return GwCheck(gc.CHECK_PEER_NETS, not missing,
                        "" if not missing else
                        f"в таблице нет {', '.join(missing)}; " + ("«🔧 Восстановить»" if self.server_cfg1() else
                                                                 "перевыпусти конфигурацию шлюза с сервера AWG"))

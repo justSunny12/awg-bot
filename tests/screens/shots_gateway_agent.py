@@ -176,7 +176,7 @@ class _Agent(GatewayServices):
         allow = list(self.h.ssh["allow"])
         for tok in raw.split():
             if ":" in tok:
-                raise ServiceError(f"{tok} — IPv6, на шлюзе фильтр только по IPv4")
+                raise ServiceError(f"{tok} — IPv6, а фильтр на шлюзе только IPv4")
             if "." not in tok:
                 raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя")
             if "/" in tok:

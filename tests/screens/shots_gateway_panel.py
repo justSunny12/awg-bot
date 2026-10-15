@@ -6,6 +6,7 @@ import copy
 from awgbot.bot.handlers import gateway as gateway_handlers
 from awgbot.bot.handlers import restore as restore_handlers
 from awgbot.bot.callbacks import GwCB, HideCB
+from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway import GwCheck, GwStatus
 
 from tests.screens.shots_gateway_common import _CHECKS_LAN, _CHECKS_OK, _TICK_LAN, _lan, _ssh_panel, _status, _status_lan
@@ -13,34 +14,47 @@ from tests.screens.shots_gateway_agent import _shot
 
 
 _CHECKS_BAD = [
-    GwCheck("линк", False, "хендшейка нет 14 мин"),
-    GwCheck("таблица awg_gw_guard", False, "нет цепочки ssh_in"),
-    GwCheck("ip_forward", True),
-    GwCheck("маршрут к Telegram", None, "нечем проверить: нет dig"),
-    GwCheck("выход наружу", False, "таймаут 5 с <проба>"),
-    GwCheck("ядра", True, "модуль собран для 2 из 2"),
+    GwCheck(gc.CHECK_LINK, False, "хендшейка нет 14 мин"),
+    GwCheck(gc.CHECK_GUARD, False, "нет цепочки ssh_in"),
+    GwCheck(gc.CHECK_IP_FORWARD, True),
+    GwCheck(gc.CHECK_TG_ROUTE, None, "нечем проверить: нет dig (пакет bind9-dnsutils)"),
+    GwCheck(gc.CHECK_EGRESS, False, "таймаут 5 с <проба>"),
+    GwCheck(gc.CHECK_MODULE, True, "собран для всех ядер (2)"),
+]
+
+# самопочинка (🟡, не в счёте), первый замер счётчиков (🟡), модуль не для всех ядер (🔴)
+_CHECKS_WAITING = [
+    GwCheck(gc.CHECK_LINK, True, "хендшейк 40 с назад"),
+    GwCheck(gc.CHECK_GUARD, True),
+    GwCheck(gc.CHECK_CLIENT_MASQ, False, f"маршрут по умолчанию через br0, а masquerade клиентов стоит в другом интерфейсе; {gc.SELF_HEAL_TAIL}"),
+    GwCheck(gc.CHECK_TG_ROUTE, True),
+    GwCheck(gc.CHECK_MODULE, False, "нет для 1 из 2 ядер (6.12.1-v8): перезагрузка в такое ядро оставит шлюз без туннелей"),
+    GwCheck(gc.CHECK_TRANSIT, True, group="lan"),
+    GwCheck(gc.CHECK_LAN_TRAFFIC, None, gc.FIRST_TICK_DETAIL, group="lan"),
+    GwCheck(gc.CHECK_LAN_DNS, None, gc.FIRST_TICK_DETAIL, group="lan"),
+    GwCheck(gc.CHECK_EGRESS, True, "35 мс через провайдера"),
 ]
 
 # Порядок — как в живом status(): обвязка (plumbing_checks: … «маскарад
 # клиентов», сразу за ним «маскарад к роутеру»), маршруты, линк, ядра,
 # локальная сеть, выход наружу.
 _ROUTER_MASQ_CHECKS = [
-    GwCheck("ip_forward", True),
-    GwCheck("MASQUERADE/изоляция", True),
-    GwCheck("цепочки таблицы", True),
-    GwCheck("политика FORWARD", True),
-    GwCheck("юнит реассерта", True),
-    GwCheck("политика аплинка", True),
-    GwCheck("маскарад в аплинк", True),
-    GwCheck("маскарад клиентов", True),
-    GwCheck("маскарад к роутеру", False, "правило к 192.168.1.1, а роутер теперь 192.168.1.254 — агент "
-            "перевыставит обвязку", group="svc"),
-    GwCheck("маршрут к Telegram", True),
-    GwCheck("маршрут к GitHub", True),
-    GwCheck("линк", True, "хендшейк 40 с назад"),
-    GwCheck("ядра", True, "модуль собран для 2 из 2"),
+    GwCheck(gc.CHECK_IP_FORWARD, True),
+    GwCheck(gc.CHECK_MASQ_ISOLATION, True),
+    GwCheck(gc.CHECK_CHAINS, True),
+    GwCheck(gc.CHECK_FORWARD_POLICY, True),
+    GwCheck(gc.CHECK_UNIT, True),
+    GwCheck(gc.CHECK_UPLINK_POLICY, True),
+    GwCheck(gc.CHECK_UPLINK_MASQ, True),
+    GwCheck(gc.CHECK_CLIENT_MASQ, True),
+    GwCheck(gc.CHECK_ROUTER_MASQ, False, f"правило к 192.168.1.1, а роутер теперь 192.168.1.254; {gc.SELF_HEAL_TAIL}",
+            group="svc"),
+    GwCheck(gc.CHECK_TG_ROUTE, True),
+    GwCheck(gc.CHECK_GH_ROUTE, True),
+    GwCheck(gc.CHECK_LINK, True, "хендшейк 40 с назад"),
+    GwCheck(gc.CHECK_MODULE, True, "собран для всех ядер (2)"),
     *_CHECKS_LAN,
-    GwCheck("выход наружу", True, "35 мс через канал"),
+    GwCheck(gc.CHECK_EGRESS, True, "35 мс через провайдера"),
 ]
 
 
@@ -85,7 +99,9 @@ PANEL = [
     _shot("gw.panel", press=[GwCB(action="panel")], tick=_TICK_LAN, update_tag="v1.2.4",
           title="«В меню»: снимок тика 2 мин назад, VPN-транзит, SMB, доступно обновление"),
     _shot("gw.panel.refresh", press=[GwCB(action="refresh")], tick=_TICK_LAN,
-          live=_status_lan(month_rx=0), title="«🔄 Обновить» — живой замер поверх снимка тика"),
+          live=_status_lan(month_rx=0), title="прежняя кнопка «🔄 Обновить» из старого меню — живой замер поверх снимка тика"),
+    _shot("gw.panel.refresh.link", start="refresh", tick=_TICK_LAN, live=_status_lan(month_rx=0),
+          title="ссылка «🔄 обновлено …» в тексте: /start refresh убран из чата, панель живьём на месте меню"),
     _shot("gw.panel.channel.active", press=[GwCB(action="panel")], channel="active", standby=True,
           tick=_status_lan(), title="упр. канал на связи, шлюз несёт трафик"),
     _shot("gw.panel.channel.standby", press=[GwCB(action="panel")], channel="standby", standby=True,
@@ -100,7 +116,10 @@ PANEL = [
           tick=_status(mark_status="unconfirmed", ssh=_ssh_panel(owner="omv", new_plumbing=False)),
           title="аплинк не найден; SSH под OMV, обвязка старого образца"),
     _shot("gw.panel.broken", press=[GwCB(action="panel")], tick=_status_bad(),
-          title="конфигурация расходится: чужой слот, линк лежит, проблемы, sshd не запущен"),
+          title="конфигурация расходится: чужое устройство, линк лежит, проблемы, sshd не запущен"),
+    _shot("gw.panel.waiting", press=[GwCB(action="panel")],
+          tick=_status_lan(checks=copy.deepcopy(_CHECKS_WAITING), kernels_missing=["6.12.1-v8"]),
+          title="самопочинка и первый замер — не проблемы; модуль не для всех ядер — одна проблема в сводке"),
     _shot("gw.panel.own_pending", press=[GwCB(action="panel")],
           tick=_status_lan(lan=_lan(own={"active": True, "state": "no_link"},
                                     svc={"active": True, "own": [], "peer": [], "ever": False}),
@@ -156,6 +175,11 @@ PANEL = [
     _shot("gw.health.escaped", press=[GwCB(action="health")],
           live=_status(checks=[GwCheck("<b>x</b>", False, "rc=1 & <i>")]),
           title="имя проверки и подробность с хоста экранированы"),
+    _shot("gw.health.waiting", press=[GwCB(action="health")],
+          live=_status_lan(checks=copy.deepcopy(_CHECKS_WAITING), kernels_missing=["6.12.1-v8"]),
+          title="🟡 самопочинка и первый замер не в счёте; 🔴 модуль не для всех ядер — «Проблемы: 1»; ✅-строк нет"),
+    _shot("gw.health.check", press=[GwCB(action="health"), GwCB(action="health")], live=_status_lan(),
+          title="«🔄 Проверить» — замер заново, экран на месте"),
 ]
 
 
@@ -171,7 +195,7 @@ EVENTS = [
           update_wait=True, title="обновление не применилось"),
     _shot("gw.event.restored", call=("report_restore_result", _restore_result),
           restore_done={"created_at": "2026-09-14T03:00:00+03:00"}, title="восстановлено из копии"),
-    _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="хост перезагружен, агент запущен"),
+    _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="шлюз перезагрузился — бот снова на связи"),
 
     # ── общее: «Скрыть» на итоге ────────────────────────────────────────────
     _shot("gw.hide", press=[HideCB()], title="«Скрыть» убирает сообщение"),

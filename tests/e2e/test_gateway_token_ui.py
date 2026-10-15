@@ -157,21 +157,21 @@ async def _asked(fake_bot, services, slot: int = 1) -> FakeState:
 async def test_service_shows_the_token_button_only_for_an_agent_with_token1(services, slots, env, fake_bot):
     """Агент без token1 — кнопки нет (довезти токен нечем); с confirm1, но
     без token1 — только «🔑 Ключи линка»; с token1, но без confirm1 — только
-    «🤖 Токен бота»; с обеими — рядом одним рядом перед «Назад»."""
+    «🤖 Токен шлюза»; с обеими — рядом одним рядом перед «Назад»."""
     _, pi, _ = slots
     _slot1(services, pi)
     _, markup = await _service(fake_bot, services)
-    assert "🤖 Токен бота" not in sum(_rows(markup), []), _rows(markup)
+    assert "🤖 Токен шлюза" not in sum(_rows(markup), []), _rows(markup)
     _caps(services, 1, ("cfg1", "confirm1"))
     _, markup = await _service(fake_bot, services)
     assert _rows(markup)[-2:] == [["🔑 Ключи линка"], ["⬅️ Назад"]], _rows(markup)
     _caps(services, 1, ("cfg1", "token1"))
     _, markup = await _service(fake_bot, services)
-    assert _rows(markup)[-2:] == [["🤖 Токен бота"], ["⬅️ Назад"]], _rows(markup)
+    assert _rows(markup)[-2:] == [["🤖 Токен шлюза"], ["⬅️ Назад"]], _rows(markup)
     _caps(services)
     _, markup = await _service(fake_bot, services)
-    assert _rows(markup)[-2:] == [["🔑 Ключи линка", "🤖 Токен бота"], ["⬅️ Назад"]], _rows(markup)
-    data = [b.callback_data for r in markup.inline_keyboard for b in r if b.text == "🤖 Токен бота"]
+    assert _rows(markup)[-2:] == [["🔑 Ключи линка", "🤖 Токен шлюза"], ["⬅️ Назад"]], _rows(markup)
+    data = [b.callback_data for r in markup.inline_keyboard for b in r if b.text == "🤖 Токен шлюза"]
     assert data == [SetCB(sec="gtk", act="do", key="pick").pack()], data
 
 
@@ -374,7 +374,7 @@ async def test_cancel_returns_to_service(services, slots, env, fake_bot):
     await on_cancel_inline(cb, CancelCB(kind="set_svc", ref=0), state, services, role="admin")
     text, markup = _edits(nav)[-1]
     assert text.startswith("🔧 <b>Сервис</b>"), text.splitlines()[0]
-    assert "🤖 Токен бота" in sum(_rows(markup), [])
+    assert "🤖 Токен шлюза" in sum(_rows(markup), [])
     assert await state.get_state() is None and env.read_text(encoding="utf-8") == before
 
 

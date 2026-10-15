@@ -64,7 +64,16 @@ def _port_dialog(services) -> core.PortDialog:
         screen=services.ssh_screen, port_key="port", sec="ssh",
         owner_refusal=lambda st, listening: (texts.ssh_owner_refusal(st, listening, GATEWAY),
                                              kb.gateway_back_kb("ssh")),
-        finisher_kb=kb.gateway_ssh_port_finisher_kb, changed_text=texts.gateway_ssh_port_changed)
+        finisher_kb=kb.gateway_ssh_port_finisher_kb,
+        # адрес шлюза в локальной сети — в хвост про проброс на роутере
+        changed_text=lambda old, new: texts.gateway_ssh_port_changed(old, new, _lan_addr(services)))
+
+
+def _lan_addr(services) -> str:
+    try:
+        return services.lan_router_params()[1] or ""
+    except Exception:                                     # noqa: BLE001
+        return ""
 
 
 @router.message(SshPort.value)
@@ -87,7 +96,7 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     try:
         after = await call(services.ssh_allow_add, raw)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))} — попробуй ещё раз")
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}. Попробуй ещё раз")
         return
     await state.clear()
     new = [x for x in after if x not in before]
@@ -150,6 +159,6 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     await linkclient.poke(services)
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
-    await edit_nav(cb, services, texts.gateway_op_result("Восстановление", ok, detail), None)
+    await edit_nav(cb, services, texts.gateway_op_result("Восстановление", ok, detail, texts.REASSERT_FAIL_HINT), None)
     await pkg._panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 

@@ -40,10 +40,11 @@ def gateway_ssh_text(st: dict) -> str:
     # между подсетями: отдельного действия и списка адресов не нужно
     peers = st.get("peer_nets") or []
     if peers:
-        lines.append("Из локальных сетей других шлюзов: открыт для "
-                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]))
+        lines.append("Из подсетей других шлюзов: открыт ("
+                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3])
+                     + (f" и ещё {len(peers) - 3}" if len(peers) > 3 else "") + ")")
     else:
-        lines.append("Когда подсети связаны, SSH доступен и из подсетей других шлюзов")
+        lines.append("При включённой связи подсетей SSH открыт и из подсетей других шлюзов")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):
@@ -51,8 +52,12 @@ def gateway_ssh_text(st: dict) -> str:
                      if st.get("server_cfg1") else
                      "⚠️ Обвязка шлюза старого образца: фильтр снаружи появится после "
                      "перевыпуска конфигурации шлюза с сервера AWG")
+    elif st.get("filter") and not allow:
+        # список пуст: снаружи не войти никому — не «только адреса из списка»
+        lines.append("🔴 Снаружи: фильтр включён, список пуст — снаружи SSH открыт только серверу AWG; "
+                     "тебе — из туннеля и локальной сети")
     elif st.get("filter"):
-        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка и сервер")
+        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка и сервер AWG")
     else:
         lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным")
     lines.append("")
@@ -79,20 +84,23 @@ def gateway_ssh_text(st: dict) -> str:
         warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("omv_rules"):
-        warns.append(f"⚠️ В OMV заданы правила файервола ({st['omv_rules']}): они действуют рядом "
-                     "с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол)")
+        warns.append(f"⚠️ В OMV свои правила файервола ({st['omv_rules']}) — они работают вместе "
+                     "с фильтром бота; при смене порта поправь и их (OMV: Сеть → Файервол)")
     if st.get("ufw"):
         warns.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw")
     return "\n".join(lines + warnings_block(warns))
 
 
-def gateway_ssh_port_changed(old: int, new: int) -> str:
+def gateway_ssh_port_changed(old: int, new: int, lan_addr: str = "") -> str:
+    """lan_addr — адрес шлюза в локальной сети (статус обвязки): его человек
+    вписывает в проброс на роутере; неизвестен — «шлюз:порт»."""
+    target = f"<code>{_e(lan_addr)}:{new}</code>" if lan_addr else f"шлюз:{new}"
     return (f"✅ Порт SSH: {old} → {new}. Текущие сеансы не рвутся — проверь вход новым подключением "
-            f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
+            f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → {target}")
 
 
 GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\nПришли IP, подсеть или доменное имя через пробел. "
-                    "Только IPv4: проброса IPv6 через роутер нет; имя буду резолвить сам")
+                    "Только IPv4 — фильтр на шлюзе работает по IPv4; адрес по имени буду обновлять сам")
 
 
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None) -> str:
@@ -102,12 +110,12 @@ def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None)
     text = "✅ Адреса для SSH-доступа: добавлено " + more(entries) \
         if entries else "✅ Адреса для SSH-доступа"
     if merged:
-        text += "; объединено с новой подсетью: " + more(merged)
+        text += "; вошли в неё и убраны из списка: " + more(merged)
     return text
 
 
 GW_SSH_ALLOW_ALREADY = "ℹ️ Всё из введённого уже в списке — ничего не менял"
-GW_SSH_FILTER_ON_ALERT = ("Фильтр включён: снаружи — только список и сервер. Проверь вход новым "
+GW_SSH_FILTER_ON_ALERT = ("Фильтр включён: снаружи — только адреса из списка и сервер AWG. Проверь вход новым "
                           "подключением; если роутер подменяет адрес при пробросе, фильтр по адресам "
                           "не сработает")
 
@@ -130,5 +138,5 @@ def gateway_ssh_panel_line(ssh: dict) -> str:
         outside = (f"фильтр: {n} " + plural_ru(n, "адрес", "адреса", "адресов")) if n \
             else "фильтр: только сервер AWG"
     else:
-        outside = "открыт"
+        outside = "без фильтра"
     return f"🛡 SSH :{port}{who}, {outside}"

@@ -98,7 +98,7 @@ def test_a_failed_login_still_keeps_the_mail_and_says_why(svc, host, checks):
     checks["fail"] = "IMAP отверг логин/пароль"
     res = svc.apply_cfg(_doc(mail=MAIL))
     assert _login(svc) == MAIL["login"]
-    assert "проверка не прошла: IMAP отверг логин/пароль" in res["note"], res["note"]
+    assert "но не работает: IMAP отверг логин/пароль. Проверь логин и пароль" in res["note"], res["note"]
 
 
 def test_backups_follow_the_server_to_email_only_when_they_can(svc, host, checks):
@@ -112,7 +112,7 @@ def test_backups_follow_the_server_to_email_only_when_they_can(svc, host, checks
     svc.backup_set_passphrase(OWN_PHRASE)
     res = svc.apply_cfg(_doc(gen=8, mail={**MAIL, "backup": "email"}))
     assert settings.get("app.scheduler.backup_channel") == "email"
-    assert "💾 Бэкапы теперь будут приходить на e-mail" in res["note"], res["note"]
+    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
 
 
 # ── совпало — ничего ─────────────────────────────────────────────────────────
@@ -279,14 +279,15 @@ def test_questions_and_answers_carry_no_secret(svc, host, checks):
     for text in shown:
         for secret in _SECRETS:
             assert secret not in text, f"в чат ушло значение {secret!r}: {text}"
-    assert "Отличается: ящик, серверы IMAP/SMTP" in shown[0]
+    assert "Различия: ящик, серверы IMAP/SMTP" in shown[0]
     assert "случайным ключом" in shown[2] and "случайным ключом" not in shown[1]
 
 
 def test_answer_texts_say_what_happened():
-    assert cfg_answer_text("mail", False, None).startswith("Почта шлюза осталась своей")
-    assert cfg_answer_text("backup", False, None).startswith("Ключевая фраза бэкапов шлюза осталась своей")
-    assert "проверка не прошла: таймаут" in cfg_answer_text("mail", True, {"state": "fail", "why": "таймаут"})
+    assert cfg_answer_text("mail", False, None).startswith("ℹ️ Почта шлюза осталась прежней")
+    assert cfg_answer_text("backup", False, None).startswith("ℹ️ Ключевая фраза бэкапов шлюза осталась прежней")
+    assert "но не работает: таймаут. Проверь логин и пароль" in cfg_answer_text("mail", True, {"state": "fail", "why": "таймаут"})
+    assert "SMTP — авторизация отклонена" in cfg_answer_text("mail", True, {"state": "fail", "why": "SMTP: авторизация отклонена"})
     assert "💾" in cfg_answer_text("mail", True, {"state": "ok", "backup": True})
     assert cfg_answer_text("backup", True, {"state": "fail", "why": "коротко"}).startswith("⚠️ Ключевая фраза бэкапов с сервера AWG не принята")
     assert set(QUESTION_STALE) == {"mail", "backup", "uplink"}

@@ -26,7 +26,7 @@ async def toggle_bool(cb: CallbackQuery, services, hooks: Hooks, key: str, sec: 
     if key == "notifications.email_fallback" and not settings.get_bool(key, False) \
             and not await call(services.email_configured):
         from awgbot.bot.handlers.common import edit
-        await edit(cb, texts.EMAIL_NOT_CONFIGURED, hooks.email_offer_kb(sec))
+        await edit(cb, texts.email_not_configured(sec), hooks.email_offer_kb(sec))
         await cb.answer()
         return
     # дефолт тумблера — по ключу: у большинства «включено», но у ключей с
@@ -116,12 +116,16 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
 async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     """«Бэкап сейчас»: в почту, если канал — почта, иначе файлами в чат."""
     from awgbot.infra import mail
-    await cb.answer("Готовлю резервную копию…")
     from awgbot.domain.backupcrypto import BackupKeyMissing
+    if hooks.br.has.backup_encrypted_only and not await call(services.backup_encryption_enabled):
+        # копия только шифрованная, фразы нет — отказ всплывашкой, без «Готовлю…»
+        await cb.answer(texts.GW_BACKUP_NO_KEY, show_alert=True)
+        return
+    await cb.answer("Готовлю резервную копию…")
     try:
         paths = await call(services.make_backup)
     except BackupKeyMissing:
-        await cb.message.answer(texts.GW_BACKUP_NO_KEY)
+        await cb.message.answer(texts.GW_BACKUP_NO_KEY, reply_markup=kb.hide_only())
         return
     except Exception as e:                            # noqa: BLE001
         await cb.message.answer(f"⚠️ {texts._e(str(e))}")
@@ -152,7 +156,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
     if val == "email":
         if not await call(services.email_configured):
             from awgbot.bot.handlers.common import edit
-            await edit(cb, texts.EMAIL_NOT_CONFIGURED, hooks.email_offer_kb("backup"))
+            await edit(cb, texts.email_not_configured("backup"), hooks.email_offer_kb("backup"))
             await cb.answer()
             return
         if not await call(services.backup_encryption_enabled):

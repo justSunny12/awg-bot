@@ -33,6 +33,15 @@ MAX_DOMAIN_LEN = 253
 REJ_KEEP = 20                           # отвергнутых в ответе слоту
 
 
+# Причины отказа сервера (ключи протокола в rej) — словами для человека в
+# экране агента и в «🩺 Здоровье»
+REJECT_HUMAN = {"хост сервера": "это адрес самого сервера AWG, в туннель его не направить"}
+
+
+def reject_human(why: str) -> str:
+    return REJECT_HUMAN.get(why, why)
+
+
 def valid_domain(d) -> bool:
     return (isinstance(d, str) and 4 <= len(d) <= MAX_DOMAIN_LEN and "\n" not in d
             and DOMAIN_RE.fullmatch(d) is not None)

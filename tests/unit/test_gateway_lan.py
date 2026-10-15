@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from awgbot.domain import gwchecks as gc
+
 import datetime
 import json
 
@@ -98,14 +100,14 @@ def test_missing_table_is_reasserted_not_reissued(svc, monkeypatch):
     svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
-    assert by["таблица локальной сети"].ok is False and "перевыставляю" in by["таблица локальной сети"].detail
+    assert by[gc.CHECK_LAN_TABLE].ok is False and gc.SELF_HEAL_TAIL in by[gc.CHECK_LAN_TABLE].detail
     assert calls == [1]
     assert by["резолвер"].ok is False and "journalctl -u dnsmasq" in by["резолвер"].detail
     assert by["апстрим через аплинк"].ok is None and "не запущен" in by["апстрим через аплинк"].detail
     assert by["списки"].ok is False
     assert "трафик с роутера" not in by, "без таблицы счётчиков нет"
     _, checks = svc.lan_status()                              # второй такт — троттлинг
-    assert calls == [1] and "в ближайший такт" in {c.name: c for c in checks}["таблица локальной сети"].detail
+    assert calls == [1] and gc.SELF_HEAL_TAIL in {c.name: c for c in checks}[gc.CHECK_LAN_TABLE].detail
 
 
 def test_script_error_is_shown_instead_of_a_reissue_advice(svc, monkeypatch):
@@ -114,7 +116,7 @@ def test_script_error_is_shown_instead_of_a_reissue_advice(svc, monkeypatch):
     monkeypatch.setattr(gwguard, "reassert", lambda: calls.append(1) or (True, ""))
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
-    assert by["применение локальной сети"].ok is False and "pihole-FTL" in by["применение локальной сети"].detail
+    assert by[gc.CHECK_TRANSIT].ok is False and "pihole-FTL" in by[gc.CHECK_TRANSIT].detail
     assert calls == [], "скрипт сам сказал, что не так — реассерт не поможет"
 
 
@@ -127,7 +129,7 @@ def test_moved_lan_interface_triggers_a_reassert(svc, monkeypatch):
     svc._last_reassert = float("-inf")   # «давно»: monotonic после перезагрузки меньше интервала
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
-    assert calls == [1] and "br0" in by["применение локальной сети"].detail
+    assert calls == [1] and "br0" in by[gc.CHECK_TRANSIT].detail
 
 
 def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
@@ -159,7 +161,7 @@ def test_without_vpn_transit_the_panel_has_no_transit_lists_or_smb_lines():
     lines = texts.gateway_panel(st).splitlines()
     assert not any(ln.startswith(("🔀", "📋", "🗂")) for ln in lines), lines
     labels = [b.text for row in kb.gateway_panel_kb(bool(st.lan)).inline_keyboard for b in row]
-    assert "🔀 VPN-транзит" not in labels and len(labels) == 4, labels
+    assert "🔀 VPN-транзит" not in labels and len(labels) == 3, labels
 
 
 def test_lists_job_warns_after_two_failures_only(svc, monkeypatch):
@@ -354,7 +356,8 @@ def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, s
     info, _ = svc.lan_status()
     assert info["uplink"] == status.get("UPLINK_IF", ""), info
     out = texts.gateway_transit_text(GwStatus(link_up=True, lan=info))
-    assert f"DNS — <code>10.9.1.1</code> через <code>{shown}</code>" in out.splitlines(), out
+    shown = f"<code>{shown}</code>" if status.get("UPLINK_IF") else shown     # имя интерфейса моноширинным, подпись — нет
+    assert f"DNS — <code>10.9.1.1</code> через {shown}" in out.splitlines(), out
 
 
 # ── сервисы соседних сетей: проверки группы «svc» ──

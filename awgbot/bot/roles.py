@@ -130,7 +130,8 @@ class Has:
     """Какие блоки общих разделов есть у роли."""
     email_resume: bool           # аварийный выход из паузы в «E-mail»
     migration: bool              # переезд профилей в «Сервисе»
-    gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен бота
+    gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен шлюза
+    backup_encrypted_only: bool = False   # копия только шифрованная: без фразы автобэкап не делается (агент)
 
 
 @dataclass(frozen=True)
@@ -142,7 +143,9 @@ class BotRole:
     awg_restart_cost: str        # цена перезапуска AWG, когда роль трафик не несёт
     awg_restart_cost_carrying: str   # то же, когда несёт (у основного — та же фраза)
     bot_restart_cost: str
-    svc_about: str               # строка раздела «🔧 Сервис»
+    svc_about: str               # строка раздела «🔧 Сервис», когда роль трафик не несёт
+    svc_about_carrying: str      # то же, когда несёт (у основного — та же фраза)
+    awg_restart_fail_hint: str   # следующий шаг при отказе «🔴 AWG не перезапущен: …» (OPTIONAL)
     mail_alarms: str             # что считается аварией для писем
     email_purpose: str           # зачем роли почта
     email_forget_tail: str       # что перестанет работать без почты
@@ -162,7 +165,7 @@ class BotRole:
 
 
 # Поля, которые у одной из ролей законно пусты — сторож заполненности их пропускает.
-OPTIONAL = frozenset({"keys.temp_alert", "ssh_port_tail", "subsections"})
+OPTIONAL = frozenset({"keys.temp_alert", "ssh_port_tail", "subsections", "awg_restart_fail_hint"})
 
 
 MAIN = BotRole(
@@ -172,8 +175,10 @@ MAIN = BotRole(
     awg_restart_cost_carrying="Все соединения оборвутся на несколько секунд и поднимутся сами",
     bot_restart_cost="Вернётся через несколько секунд; сервер и соединения не трогаются",
     svc_about="Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей",
-    mail_alarms="падение VPN-сервиса, шлюз, перегруз хоста",
-    email_purpose="для аварийного выхода из паузы по коду в письме, бэкапов и критичных алертов",
+    svc_about_carrying="Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей",
+    awg_restart_fail_hint="",
+    mail_alarms="простой AWG, сбой шлюза, перегрузка сервера",
+    email_purpose="для аварийного выхода из паузы по коду в письме, бэкапов и аварийных алертов",
     email_forget_tail="аварийный выход из паузы перестанет работать",
     backup_contents="профили, устройства, подписки, ключи шифрования",
     backup_keys="в базе приватные ключи устройств",
@@ -199,18 +204,19 @@ GATEWAY = BotRole(
     awg_restart_cost="Линк опустится и поднимется",
     awg_restart_cost_carrying="Линк опустится и поднимется — РФ-доступ у всех прервётся на секунды",
     bot_restart_cost="Вернётся через несколько секунд; без влияния на пользователей",
-    svc_about=("Перезапуск AWG переподнимает линк до сервера AWG — РФ-доступ у всех прервётся на секунды; "
-               "перезапуск бота на трафик не влияет"),
+    svc_about="Перезапуск AWG переподнимает линк до сервера AWG; перезапуск бота на пользователей не влияет",
+    svc_about_carrying=("Перезапуск AWG переподнимает линк до сервера AWG — РФ-доступ прервётся на секунды, "
+                        "если шлюз несёт трафик; перезапуск бота на пользователей не влияет"),
+    awg_restart_fail_hint="причина в «🩺 Здоровье»",
     mail_alarms="линк, выход наружу, обвязка, питание, перегрев, перегруз",
-    email_purpose=("для бэкапов и критичных алертов, когда Telegram недоступен; настройки почты "
-                   "приезжают в конфигурации шлюза"),
+    email_purpose="для бэкапов и аварийных алертов, когда Telegram недоступен",
     email_forget_tail="бэкапы и аварийные алерты по почте перестанут уходить",
     backup_contents="конфиги линка и туннеля, настройки, свои списки",
     backup_keys="в копии приватные ключи линка и туннеля",
     mon_outage="линк молчит дольше",
     mon_outage_button="⏳ Линк",
     ssh_port_tail=". Проброс порта на роутере (при наличии) поправь сам",
-    settings_root=("notify", "email", "ssh", "mon", "backup", "svc", "upd"),
+    settings_root=("notify", "ssh", "email", "backup", "mon", "svc", "upd"),    # порядок — как у основного бота
     subsections=(),
     root_labels={"ssh": "🛡 SSH-доступ"},
     role_screens="awgbot.bot.handlers.gateway:_section",
@@ -219,7 +225,7 @@ GATEWAY = BotRole(
               outage="app.gateway.handshake_max_age",
               outage_loud="app.gateway.link_alert_loud",
               temp_alert="app.gateway.temp_alert_c"),
-    has=Has(email_resume=False, migration=False),
+    has=Has(email_resume=False, migration=False, backup_encrypted_only=True),
     cb=_GatewayCB("gateway"),
 )
 

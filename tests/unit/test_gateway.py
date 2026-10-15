@@ -1,6 +1,8 @@
 """Роль gateway: пробы, гистерезис, панель (docs/ROADMAP.md, п.7, этап 1)."""
 from __future__ import annotations
 
+from awgbot.domain import gwchecks as gc
+
 import subprocess
 
 import pytest
@@ -202,11 +204,11 @@ def test_plumbing_reads_the_guard_table(svc, monkeypatch):
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["MASQUERADE/изоляция"].ok is True
-    assert checks["цепочки таблицы"].ok is True
-    assert checks["политика FORWARD"].ok is True
-    assert checks["ip_forward"].ok is True
-    assert "таблица awg_gw_guard" not in checks
+    assert checks[gc.CHECK_MASQ_ISOLATION].ok is True
+    assert checks[gc.CHECK_CHAINS].ok is True
+    assert checks[gc.CHECK_FORWARD_POLICY].ok is True
+    assert checks[gc.CHECK_IP_FORWARD].ok is True
+    assert gc.CHECK_GUARD not in checks
     assert svc.tg_mark_missing(svc._guard_info) == []
 
 
@@ -218,12 +220,12 @@ def test_plumbing_flags_foreign_subnet_and_missing_table(svc, monkeypatch):
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["MASQUERADE/изоляция"].ok is False, "бандл под другую подсеть"
-    assert checks["цепочки таблицы"].ok is False
+    assert checks[gc.CHECK_MASQ_ISOLATION].ok is False, "бандл под другую подсеть"
+    assert checks[gc.CHECK_CHAINS].ok is False
     # таблицы нет вовсе
     monkeypatch.setattr(sp, "run", lambda argv, **kw: _cp(1))
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["таблица awg_gw_guard"].ok is False
+    assert checks[gc.CHECK_GUARD].ok is False
     assert svc.tg_mark_missing(None) == list(GatewayServices.TG_RANGES)
 
 
@@ -236,7 +238,7 @@ def test_masquerade_check_disabled_without_subnet_is_unknown_not_ok(svc, monkeyp
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["MASQUERADE/изоляция"].ok is None
+    assert checks[gc.CHECK_MASQ_ISOLATION].ok is None
 
 
 def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
@@ -249,7 +251,7 @@ def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["политика FORWARD"].ok is False
+    assert checks[gc.CHECK_FORWARD_POLICY].ok is False
 
 
 def test_github_route_is_a_plumbing_check(svc):
@@ -302,8 +304,8 @@ def test_panel_renders_on_a_dead_gateway():
     from awgbot.bot import texts
     out = texts.gateway_panel(GwStatus(), chan={"online": False, "role": ""})
     # канал обязателен: строка о нём есть всегда, и без связи тоже
-    assert out.splitlines()[:3] == ["🛰 <b>шлюз</b> 🔴 линк лежит", "",
-                                    "📡 Линк до сервера AWG 🔴 интерфейс лежит · 🔗 упр. канал ⚪ нет связи"], out
+    assert out.splitlines()[:4] == ["🛰 <b>шлюз</b> 🔴 линк лежит", "",
+                                    "📡 Линк до сервера AWG 🔴 интерфейс лежит", "🔗 Канал конфигурации 🔴 нет связи"], out
     # трафика нет — «📊 0» не выводится (нули не выводим)
     assert "📊" not in out, out
 
@@ -582,7 +584,7 @@ def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
     monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
-    return {c.name: c for c in svc.plumbing_checks()}["политика FORWARD"]
+    return {c.name: c for c in svc.plumbing_checks()}[gc.CHECK_FORWARD_POLICY]
 
 
 def test_docker_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatch):

@@ -777,11 +777,11 @@ if [ "$cmd" = "sync" ]; then
         echo "в файле есть строка не вида «vpn <домен>» / «ru <домен>» — не применяю" >&2; exit 2
     fi
     sed -n 's/^ru //p' "$1" | sort -u > "$TMPD/want_ru"
-    # домен в обоих видах — «напрямую», как решает nft; хост сервера — пропущен с пометкой
+    # домен в обоих видах — «напрямую», как решает nft; адрес сервера AWG — пропущен с пометкой
     sed -n 's/^vpn //p' "$1" | sort -u | grep -vxF -f "$TMPD/want_ru" > "$TMPD/want_vpn" || true
     if [ -n "$deny" ]; then
         for f in want_vpn want_ru; do
-            if grep -qxF "$deny" "$TMPD/$f"; then echo "$deny: это хост сервера — пропущен"; drop_from "$deny" "${f#want_}"; fi
+            if grep -qxF "$deny" "$TMPD/$f"; then echo "$deny: это адрес самого сервера AWG — пропущен"; drop_from "$deny" "${f#want_}"; fi
         done
     fi
 else
@@ -796,7 +796,7 @@ else
             fi
             continue
         fi
-        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$(tag "$d"): это хост сервера — его добавить нельзя"; continue; }
+        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$(tag "$d"): это адрес самого сервера AWG — в туннель его не направить"; continue; }
         if [ "$cmd" = "add" ]; then k=vpn; other=ru; set_="lan_vpn4"; else k=ru; other=vpn; set_="lan_ru4"; fi
         in_list "$d" "$k" && { echo "$(tag "$d"): уже в списке"; continue; }
         drop_from "$d" "$other"; add_to "$d" "$k"

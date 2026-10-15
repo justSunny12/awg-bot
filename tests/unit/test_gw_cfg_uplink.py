@@ -415,7 +415,8 @@ def test_a_previous_uplink_that_does_not_come_back_is_reported_as_such(svc, host
     res = svc.cfg_uplink_apply(svc.cfg_pending()["uplink"])
     assert res["state"] == "revert_failed" and res["ok"] is False, res
     note = svc.cfg_uplink_fail_note(res)
-    assert note.startswith("⚠️ Новый конфиг аплинка не поднялся, и прежний не вернулся:"), note
+    assert note.startswith("🔴 Новый конфиг аплинка не поднялся, прежний вернуть не удалось: ОШИБКА"), note
+    assert res.get("back_why", "").startswith("ОШИБКА"), "причина отказа отката — настоящая, из вывода скрипта"
     assert host.text() == host.unit_before, "юнит не вернули, хотя аплинк не встал"
 
 

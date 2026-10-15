@@ -144,7 +144,7 @@ async def test_link_invitation_shows_the_fingerprint_and_the_price(svc, host, fa
     assert kind == "edit_text" and "Новые ключи линка с сервера AWG" in text, text
     assert f"Отпечаток <code>{fp}</code>" in text, text
     assert "РФ-доступ прервётся" not in text, "шлюз трафик не несёт, а цена — с обрывом"
-    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔑 Применить"]]
+    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔑 Применить"], ["⬅️ В меню"]]
     assert [b.callback_data for b in markup.inline_keyboard[0]] == [
         GwCB(action="cfg_no", val="link").pack(), GwCB(action="cfg_ok!", val="link").pack()]
     svc.set_link_role(True, standby=False, name="NASPi")
@@ -185,7 +185,7 @@ async def test_cancel_link_keys_drops_the_transition_and_tells_the_server(svc, h
         "после отмены новый конфиг линка остался на диске"
     priv = wgconf.parse(body["conf"]).get("Interface", "PrivateKey")
     assert priv not in (host.etc / "link.txn").read_text(encoding="utf-8"), "в метке отказа — приватный ключ"
-    assert _edits(msg)[0] == "Ключи линка остались прежними", _edits(msg)
+    assert _edits(msg)[0] == "ℹ️ Ключи линка остались прежними", _edits(msg)
     panels = [t for k, t, _ in msg.sent if k == "answer"] + _sent(fake_bot)
     assert panels and panels[-1].startswith("🛰 "), panels
     # тот же link_next после переподключения: отказ без второго приглашения
@@ -207,7 +207,7 @@ async def test_a_decided_link_invitation_answers_with_a_toast(svc, host, fake_bo
     assert cb.answers and cb.answers[-1][0] == "Вопрос уже решён", cb.answers
     assert len(channel.rekey) == 1, f"второй ответ ушёл серверу: {channel.rekey}"
     assert svc.rekey_state()["state"] == "ready", "второе нажатие «Отмена» сняло уже согласованный переход"
-    assert LINK_KEYS_ACCEPTED not in _edits(msg) and "Ключи линка остались прежними" not in _edits(msg)
+    assert LINK_KEYS_ACCEPTED not in _edits(msg) and "ℹ️ Ключи линка остались прежними" not in _edits(msg)
 
 
 async def test_the_same_link_next_after_reconnect_is_not_asked_twice(svc, host, fake_bot):
@@ -272,13 +272,13 @@ async def test_uplink_invitation_names_the_device_key_and_the_fingerprint(svc, h
     assert f"Ключ устройства <code>{value['pubkey'][:4]}…</code>" in text, text
     assert f"отпечаток <code>{value['_fp']}</code>" in text, text
     assert value["_priv"] not in text and value["_priv"][:8] not in text, "приватный ключ аплинка в чате"
-    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔐 Применить"]]
+    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔐 Применить"], ["⬅️ В меню"]]
 
 
 async def test_apply_uplink_warns_first_then_shows_the_result(svc, host, fake_bot, reported, monkeypatch):
     """«🔐 Применить»: сначала сообщение правится на «⏳ Применяю конфиг
     аплинка…» (бот пропадёт из Telegram на время пробы), и только потом
-    применение; итог — «✅ Аплинк на новом конфиге» правкой того же
+    применение; итог — «✅ Новый конфиг аплинка применён» правкой того же
     сообщения; серверу — принято; вопрос и памятка стёрты."""
     value = _uplink_value()
     msg, cb = _nav(fake_bot)
@@ -287,7 +287,7 @@ async def test_apply_uplink_warns_first_then_shows_the_result(svc, host, fake_bo
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
     assert len(up.calls) == 1 and up.calls[0][0] == value["conf"], up.calls
     assert up.calls[0][1] == UPLINK_APPLYING, f"применение началось до предупреждения: человек видел {up.calls[0][1]!r}"
-    assert _edits(msg)[:2] == [UPLINK_APPLYING, "✅ Аплинк на новом конфиге"], _edits(msg)
+    assert _edits(msg)[:2] == [UPLINK_APPLYING, "✅ Новый конфиг аплинка применён"], _edits(msg)
     assert len(reported) == 1 and reported[0]["section"] == "uplink" and reported[0]["accepted"] is True
     assert reported[0]["print"] == server and not reported[0].get("failed"), reported[0]
     assert svc.cfg_questions() == [] and "uplink" not in svc.cfg_keep()
@@ -296,7 +296,8 @@ async def test_apply_uplink_warns_first_then_shows_the_result(svc, host, fake_bo
 @pytest.mark.parametrize("how,error,want", [
     ("reverted", "аплинк не поднялся за 60 с", "⚠️ Новый конфиг аплинка не поднялся — вернул прежний"),
     ("revert_failed", "прежний конфиг не встал",
-     "⚠️ Новый конфиг аплинка не поднялся, и прежний не вернулся: прежний конфиг не встал"),
+     "🔴 Новый конфиг аплинка не поднялся, прежний вернуть не удалось: прежний конфиг не встал. "
+     "Загляни в «🩺 Здоровье»; связь с сервером AWG может пропасть"),
     ("refused", "Table = off не задан", "⚠️ Новый конфиг аплинка не применён: Table = off не задан"),
 ])
 async def test_apply_uplink_that_failed_says_what_stands_now(svc, host, fake_bot, reported, monkeypatch,
@@ -334,20 +335,20 @@ async def test_apply_uplink_while_the_unit_runs_keeps_the_question(svc, host, fa
     kind, text, markup = msg.sent[-1]
     assert kind == "edit_text" and "Новый конфиг аплинка с сервера AWG" in text, text
     assert text.endswith("\n" + UPLINK_BUSY), text
-    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔐 Применить"]], \
+    assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔐 Применить"], ["⬅️ В меню"]], \
         "после «занято» нечем нажать ещё раз"
     assert reported == [], f"серверу ушёл ответ на неприменённый аплинк: {reported}"
     assert svc.cfg_questions() == ["uplink"] and svc.cfg_keep() == {}
     # через минуту — то же нажатие применяет
     up.result = {"ok": True, "error": "", "state": "applied"}
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
-    assert "✅ Аплинк на новом конфиге" in _edits(msg), _edits(msg)
+    assert "✅ Новый конфиг аплинка применён" in _edits(msg), _edits(msg)
     assert len(up.calls) == 2 and len(reported) == 1
 
 
 async def test_apply_uplink_twice_answers_that_the_question_is_decided(svc, host, fake_bot, reported, monkeypatch):
     """Второе нажатие «🔐 Применить» (двойное, или со старого сообщения после
-    итога): всплывашка и сообщение «Вопрос уже решён», второго применения нет —
+    итога): всплывашка «Вопрос уже решён» и панель, второго применения нет —
     иначе бот шлюза снова пропал бы из Telegram на минуту пробы, а
     «⏳ Применяю…» обещало бы то, чего не будет."""
     value = _uplink_value()
@@ -359,7 +360,7 @@ async def test_apply_uplink_twice_answers_that_the_question_is_decided(svc, host
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
     assert len(up.calls) == 1, f"аплинк применён второй раз: {len(up.calls)}"
     assert cb.answers and cb.answers[-1][0] == QUESTION_ANSWERED, cb.answers
-    assert _edits(msg)[:1] == [QUESTION_ANSWERED], _edits(msg)
+    assert _edits(msg)[:1] and _edits(msg)[0].startswith("🛰 "), _edits(msg)   # как у ключей линка: всплывашка и панель
     assert UPLINK_APPLYING not in _edits(msg), "второе нажатие пообещало «пропаду из Telegram»"
     assert len(reported) == 1
 
@@ -381,7 +382,7 @@ async def test_the_result_comes_as_a_new_message_when_the_edit_dies(svc, host, f
     msg.edit_text = edit_text
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
     assert _edits(msg) == [UPLINK_APPLYING], _edits(msg)
-    assert "✅ Аплинк на новом конфиге" in _sent(fake_bot), f"итог потерян: {_sent(fake_bot)}"
+    assert "✅ Новый конфиг аплинка применён" in _sent(fake_bot), f"итог потерян: {_sent(fake_bot)}"
     assert len(reported) == 1 and reported[0]["accepted"] is True
 
 
@@ -402,7 +403,7 @@ async def test_a_dead_warning_edit_does_not_send_a_second_message(svc, host, fak
     msg.edit_text = edit_text
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
     assert UPLINK_APPLYING not in _sent(fake_bot), "предупреждение пришло отдельным сообщением"
-    assert len(up.calls) == 1 and _edits(msg)[0] == "✅ Аплинк на новом конфиге", _edits(msg)
+    assert len(up.calls) == 1 and _edits(msg)[0] == "✅ Новый конфиг аплинка применён", _edits(msg)
 
 
 async def test_a_failing_next_screen_does_not_break_the_answer(svc, host, fake_bot, reported, monkeypatch):
@@ -419,7 +420,7 @@ async def test_a_failing_next_screen_does_not_break_the_answer(svc, host, fake_b
         raise TimeoutError("Telegram не ответил")
     monkeypatch.setattr(ask, "show_cfg_question", broken)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="uplink"), svc, FakeState())
-    assert _edits(msg)[-1] == "✅ Аплинк на новом конфиге", _edits(msg)
+    assert _edits(msg)[-1] == "✅ Новый конфиг аплинка применён", _edits(msg)
     assert len(reported) == 1
 
 
@@ -434,7 +435,7 @@ async def test_cancel_uplink_keeps_the_old_one_and_remembers_the_refusal(svc, ho
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_no", val="uplink"), svc, FakeState())
     assert up.calls == [], "«Отмена» применила аплинк"
     assert svc.cfg_keep() == {"uplink": server}, svc.cfg_keep()
-    assert _edits(msg)[0] == "Аплинк остался прежним", _edits(msg)
+    assert _edits(msg)[0] == "ℹ️ Аплинк остался прежним", _edits(msg)
     assert UPLINK_APPLYING not in _edits(msg), "при отмене обещано «пропаду из Telegram»"
     assert len(reported) == 1 and reported[0]["accepted"] is False
 

@@ -312,7 +312,7 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
         and "Свои списки: 1 в туннель" in text, text
     labels = [b.text for row in markup.inline_keyboard for b in row]
     # обновления списков кнопкой нет: фиды привозит сервер или агент качает сам
-    assert labels == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"], labels
+    assert labels == ["➕ 🌍 В туннель", "➕ 🇷🇺 Напрямую", "🛜 Роутер", "⬅️ В меню"], labels
 
 
 async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fake_bot, monkeypatch):
@@ -351,9 +351,9 @@ async def test_own_lists_screen_shows_domains_as_buttons_direct_first(svc, fake_
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_transit(cb, svc, FakeState())
     assert _own_lists_labels(msg) == [
-        "➕ В туннель", "➕ Напрямую",
+        "➕ 🌍 В туннель", "➕ 🇷🇺 Напрямую",
         "➖ 🇷🇺 bank.ru", "➖ 🇷🇺 shop.ru", "➖ 🌍 alpha.com", "➖ 🌍 zeta.com",
-        "❓ Роутер", "⬅️ В меню"], _own_lists_labels(msg)
+        "🛜 Роутер", "⬅️ В меню"], _own_lists_labels(msg)
     assert "Пока пусто" not in msg.sent[-1][1]
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
     await gh.gw_transit(cb, svc, FakeState())
@@ -361,8 +361,8 @@ async def test_own_lists_screen_shows_domains_as_buttons_direct_first(svc, fake_
     # подсказка пустого списка — под «подробнее», открытой строки «Пока пусто» нет
     assert "Пока пусто" not in empty, empty
     about = empty[empty.index("<blockquote expandable>"):]
-    assert "добавь домены кнопками «➕ В туннель» и «➕ Напрямую»" in about, empty
-    assert _own_lists_labels(msg) == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"]
+    assert "добавь домены кнопками «➕ 🌍 В туннель» и «➕ 🇷🇺 Напрямую»" in about, empty
+    assert _own_lists_labels(msg) == ["➕ 🌍 В туннель", "➕ 🇷🇺 Напрямую", "🛜 Роутер", "⬅️ В меню"]
 
 
 async def test_removing_an_own_domain_is_immediate_and_removes_exactly_that_one(svc, fake_bot, monkeypatch):
@@ -386,7 +386,7 @@ async def test_removing_an_own_domain_is_immediate_and_removes_exactly_that_one(
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), svc)
     assert calls == [("del", ["alpha.com"])], f"убран не тот домен: {calls}"
-    assert cb.answers == [("alpha.com: убран", False)], cb.answers
+    assert cb.answers == [("✅ alpha.com: убран", False)], cb.answers
     labels = _own_lists_labels(msg)
     assert "➖ 🌍 alpha.com" not in labels and "➖ 🌍 zeta.com" in labels, labels
     assert msg.sent[-1][1].startswith("🔀 <b>VPN-транзит"), "после удаления — снова экран VPN-транзита"
@@ -446,7 +446,7 @@ async def test_a_failed_removal_is_an_alert_and_the_domain_stays(svc, fake_bot, 
     btn = next(b for row in msg.sent[-1][2].inline_keyboard for b in row if b.text == "➖ 🇷🇺 shop.ru")
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), svc)
-    assert cb.answers == [("⚠️ awg-lan-domain.sh: занято <lock>", True)], cb.answers
+    assert cb.answers == [("⚠️ shop.ru не убран: занято <lock>", True)], cb.answers
     assert "➖ 🇷🇺 shop.ru" in _own_lists_labels(msg)
 
 
@@ -703,7 +703,7 @@ async def test_a_claim_goes_through_the_channel_when_it_comes_up_in_time(tmp_pat
     answers, waited = await _apply_with_claim(tmp_path, monkeypatch, online)
     claim = [a for a in answers if "не назначен" in a]
     assert len(claim) == 1, answers
-    assert "отправлен серверу AWG по управляющему каналу" in claim[0], claim[0]
+    assert "ушёл по каналу конфигурации" in claim[0], claim[0]
     assert "AWGGW-DUMMY-TOKEN" not in claim[0] and "Перешли" not in claim[0], "токен в чате при живом канале"
     assert waited <= 3.0, f"ждали канал {waited} с — дольше обещанных трёх"
 

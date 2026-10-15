@@ -149,7 +149,8 @@ class CfgMailPhraseMixin:
             self.cfg_release(section)                     # прежний на месте или новый стоит — вопрос отслужил
             if not res["ok"]:
                 return {"ok": True, "section": section, "accepted": True,
-                        "note": {"state": "fail", "why": res["error"], "how": res.get("state", "")},
+                        "note": {"state": "fail", "why": res["error"], "how": res.get("state", ""),
+                                 "back_why": res.get("back_why", "")},
                         "failed": res["error"], "gen": int(wait.get("gen") or 0), "hash": str(wait.get("hash") or ""),
                         "print": wait.get("server", "")}
             keep.pop(section, None)

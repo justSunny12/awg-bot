@@ -519,7 +519,7 @@ def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert head() == "🛰 <b>pi</b> 🟢 несёт трафик" and channel_panel_line() == "🔗 упр. канал 🟢"
+    assert head() == "🛰 <b>pi</b> 🟢 несёт трафик" and channel_panel_line() == "🔗 Канал конфигурации 🟢"
     monkeypatch.setattr(linkclient, "role", lambda: "standby")
     assert head() == "🛰 <b>pi</b> 🟢 в резерве"
     monkeypatch.setattr(linkclient, "role", lambda: "")
@@ -527,7 +527,7 @@ def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch
     monkeypatch.setattr(linkclient, "online", lambda: False)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
     assert head() == "🛰 <b>pi</b> 🟢 линк поднят", "связи нет — роль прошлой сессии не показывается"
-    assert channel_panel_line() == "🔗 упр. канал ⚪ нет связи"
+    assert channel_panel_line() == "🔗 Канал конфигурации 🔴 нет связи"
 
 
 # ── диагностики по каналу нет ────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""ask.py — приглашения и вопросы человеку о документе с сервера AWG: «⏳ Решить», «Применить» / «⬅️ Отмена», «Принять с сервера AWG» / «Оставить своё»."""
+"""ask.py — приглашения и вопросы человеку о документе с сервера AWG: «⏳ Ответить (N)», «Применить» / «⬅️ Отмена», «✅ Принять» / «⬅️ Оставить своё»."""
 from __future__ import annotations
 
 from aiogram import F
@@ -32,12 +32,12 @@ async def show_cfg_question(bot, services, chat_id: int) -> bool:
 
 @router.callback_query(GwCB.filter(F.action == "cfg_ask"))
 async def gw_cfg_ask(cb: CallbackQuery, services, state: FSMContext):
-    """«⏳ Решить» на панели: первый вопрос очереди — правкой панели."""
+    """«⏳ Ответить (N)» на панели: первый вопрос очереди — правкой панели."""
     await state.clear()
     queue = await call(services.cfg_questions)
     q = await call(services.cfg_question, queue[0]) if queue else None
     if q is None:
-        await cb.answer(ui.toast("Решать нечего — вопросов нет"))
+        await cb.answer(ui.toast(texts.QUESTIONS_NONE))
         await pkg._panel(cb.message, services, cb)
         return
     await edit_nav(cb, services, texts.cfg_question_text(q), kb.gateway_cfg_question_kb(q["section"]))
@@ -48,8 +48,8 @@ async def gw_cfg_ask(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(GwCB.filter(F.action.in_({"cfg_no", "cfg_ok!"})))
 async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
-    """Ответ: у приглашения — «⬅️ Отмена» / «Применить», у вопроса — «Оставить
-    своё» (памятка по отпечатку серверного значения) / «Принять с сервера AWG».
+    """Ответ: у приглашения — «⬅️ Отмена» / «Применить», у вопроса — «⬅️ Оставить
+    своё» (памятка по отпечатку серверного значения) / «✅ Принять».
     Итог — правкой сообщения; ответ серверу — сразу или из очереди; следующее
     в очереди — новым меню."""
     section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "backup") else ""
@@ -109,9 +109,9 @@ async def _uplink_accept(cb: CallbackQuery, services) -> None:
     потом применять (до минуты пробы); итог — правкой, а не вышло (сессия
     Telegram умерла вместе с прежним аплинком) — новым сообщением."""
     if "uplink" not in await call(services.cfg_questions):
+        # как у ключей линка: всплывашка и панель, без правки сообщения тем же текстом
         await cb.answer(ui.toast(texts.QUESTION_ANSWERED))
-        await _show(cb, services, texts.QUESTION_ANSWERED)
-        await _next_or_panel(cb, services)
+        await pkg._panel(cb.message, services, cb)
         return
     await cb.answer()
     await _show(cb, services, texts.UPLINK_APPLYING, new_on_fail=False)

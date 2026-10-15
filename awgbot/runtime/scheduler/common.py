@@ -115,8 +115,15 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
     if last is None:
         await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
         return
+    from awgbot.domain.backupcrypto import BackupKeyMissing
     try:
-        paths = await asyncio.to_thread(services.make_backup)
+        try:
+            paths = await asyncio.to_thread(services.make_backup)
+        except BackupKeyMissing:
+            # копия только шифрованная, а фразы нет (агент): молчать нельзя —
+            # человек ждёт копию по расписанию; уведомление один раз за месяц
+            await _backup_key_missing_notice(services, bot, db, ym, log_tag)
+            return
         sent_by_mail = False
         if await asyncio.to_thread(services.backup_channel) == "email":
             try:
@@ -142,6 +149,23 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
                 on_undelivered()
     except Exception as e:                       # noqa: BLE001
         log.warning("%s: %s", log_tag, e)
+
+
+BACKUP_NO_KEY_NOTICED_KEY = "backup_nokey_noticed"      # «год-месяц» пропущенной копии, о которой сказали
+
+
+async def _backup_key_missing_notice(services, bot, db, ym: str, log_tag: str) -> None:
+    from awgbot.bot.notifier import send_notifications
+    from awgbot.bot import roles
+    from awgbot.domain.services import Notification
+    log.warning("%s: копия %s не сделана — фраза шифрования не задана", log_tag, ym)
+    if await asyncio.to_thread(db.get_state, BACKUP_NO_KEY_NOTICED_KEY) == ym:
+        return
+    br = roles.current()
+    text = (f"⚠️ Плановый бэкап {br.host_gen} не сделан: фраза шифрования не задана, а {br.backup_keys}. "
+            "Задай фразу в «💾 Бэкапы» → «🔐 Шифрование» — копия уйдёт при следующем запуске по расписанию")
+    await send_notifications(bot, [Notification(config.ADMIN_ID, text)])
+    await asyncio.to_thread(db.set_state, BACKUP_NO_KEY_NOTICED_KEY, ym)
 
 
 _UPDATE_JITTER = 1800          # до получаса позже к проверке обновлений (джиттер APScheduler — только вперёд): не ровно в 10:00

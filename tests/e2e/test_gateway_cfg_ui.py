@@ -96,7 +96,7 @@ async def test_the_panel_shows_the_queue_and_the_decide_button(svc, fake_bot):
     await gh.gw_panel(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
     assert "⏳ Ждут решения: почта" in text, text
-    assert "⏳ Решить" in _labels(markup), _labels(markup)
+    assert "⏳ Ответить (1)" in _labels(markup), _labels(markup)
 
 
 async def test_decide_without_questions_says_so_and_shows_the_panel(svc, fake_bot):
@@ -104,7 +104,7 @@ async def test_decide_without_questions_says_so_and_shows_the_panel(svc, fake_bo
     свежая панель — а не пустой экран вопроса."""
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_ask(cb, svc, FakeState())
-    assert cb.answers and "Решать нечего" in cb.answers[-1][0], cb.answers
+    assert cb.answers and "Вопросы уже решены" in cb.answers[-1][0], cb.answers
     kind, text, markup = msg.sent[-1]
     assert kind == "edit_text" and text.startswith("🛰 "), text
     assert "⏳ Решить" not in _labels(markup)
@@ -118,10 +118,11 @@ async def test_decide_opens_the_first_question(svc, fake_bot):
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_ask(cb, svc, FakeState())
     kind, text, markup = msg.sent[-1]
-    assert kind == "edit_text" and "Почта на шлюзе отличается" in text and "Отличается: ящик" in text, text
-    assert _labels(markup) == ["Оставить своё", "Принять с сервера AWG"]
+    assert kind == "edit_text" and "Почта на шлюзе отличается" in text and "Различия: ящик" in text, text
+    assert _labels(markup) == ["⬅️ Оставить своё", "✅ Принять", "⬅️ В меню"]
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert datas == [GwCB(action="cfg_no", val="mail").pack(), GwCB(action="cfg_ok!", val="mail").pack()]
+    assert datas == [GwCB(action="cfg_no", val="mail").pack(), GwCB(action="cfg_ok!", val="mail").pack(),
+                     GwCB(action="panel").pack()]
     for secret in (MAIL["login"], MAIL["password"], MAIL["imap_host"], OWN["login"], OWN["password"]):
         assert secret not in text
 
@@ -138,13 +139,13 @@ async def test_keep_own_answers_the_server_and_opens_the_next_question(svc, fake
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_no", val="mail"), svc, FakeState())
     edits = [t for k, t, _ in msg.sent if k == "edit_text"]
-    assert edits[-1].startswith("Почта шлюза осталась своей"), edits
+    assert edits[-1].startswith("ℹ️ Почта шлюза осталась прежней"), edits
     assert svc.cfg_keep() == {"mail": gwcfg.mail_print(MAIL)}
     assert svc.email_account().login == OWN["login"]
     assert len(reported) == 1 and reported[0]["section"] == "mail" and reported[0]["accepted"] is False
     assert reported[0]["gen"] == 7 and reported[0]["print"] == gwcfg.mail_print(MAIL)
     sent = _sent_texts(fake_bot)
-    assert sent and "Ключевая фраза бэкапов на шлюзе отличается" in sent[-1], sent
+    assert sent and "Ключевая фраза бэкапов в конфигурации отличается" in sent[-1], sent
 
 
 async def test_the_last_answer_returns_to_the_panel(svc, fake_bot, reported, login_ok):
@@ -171,7 +172,7 @@ async def test_accepting_mail_with_a_failed_login_says_why(svc, fake_bot, report
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="mail"), svc, FakeState())
     edits = [t for k, t, _ in msg.sent if k == "edit_text"]
-    assert "проверка не прошла: IMAP отверг пароль" in edits[-1], edits
+    assert "но не работает: IMAP отверг пароль. Проверь логин и пароль" in edits[-1], edits
     assert MAIL["password"] not in edits[-1]
 
 

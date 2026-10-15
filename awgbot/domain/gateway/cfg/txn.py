@@ -71,7 +71,7 @@ class CfgTxnMixin:
                 try:
                     before_unit = gwguard.unit_set_env(env_changes)
                 except (OSError, gwguard.GwGuardError) as e:
-                    return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})", "retry": False, "how": ""}
+                    return {"ok": False, "changed": changed, "error": f"обвязка не переписана ({e})", "retry": False, "how": ""}
             how = "unchanged"
             prev_saved = False
             iface_nets = self._cfg_iface_nets()

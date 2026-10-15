@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from awgbot.bot import ui
-from ..fmt import _e, human_bytes, updown_brief, num
+from awgbot.domain import gwchecks
+from ..fmt import _e, human_bytes, updown_brief, num, deep_link
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
+
+
+REFRESH_PAYLOAD = "refresh"      # /start refresh — перечитать панель живьём; то же слово, что у главной основного бота
 
 
 def _channel_view(chan: dict | None) -> dict:
@@ -16,20 +20,21 @@ def _channel_view(chan: dict | None) -> dict:
 
 
 def channel_panel_line(chan: dict | None = None) -> str:
-    """Хвост строки линка про упр. канал: «🔗 упр. канал 🟢» / «⚪ нет связи» —
-    канал обязателен, строка есть всегда."""
+    """Строка канала конфигурации: «🔗 Канал конфигурации 🟢» / «🔴 нет связи» —
+    канал обязателен, строка есть всегда, отдельной строкой под линком."""
     chan = pkg._channel_view(chan)
-    return "🔗 упр. канал " + ("🟢" if chan["online"] else "⚪ нет связи")
+    return "🔗 Канал конфигурации " + ("🟢" if chan["online"] else "🔴 нет связи")
 
 
 def gateway_wait_line(w: dict) -> str:
-    """«⬆️ v3.3.2 ждёт сервер AWG v3.3.1» (О6); версия сервера неизвестна —
-    «ждёт сервер AWG: он не на связи» (О7)."""
+    """«⬆️ v3.3.2 — сначала обнови сервер AWG до v3.3.1» (О6); версия сервера
+    неизвестна — «⬆️ v3.3.2 — версию сервера AWG не проверить: он не на связи» (О7)."""
     def v(x):
         return x if str(x).startswith("v") else f"v{x}"
     server = w["peers"][0].version if w.get("peers") else ""
-    tail = f" {_e(v(w['need']))}" if server else ": он не на связи"
-    return f"<b>⬆️ {_e(v(w['tag']))} ждёт сервер AWG{tail}</b>"
+    tail = (f"сначала обнови сервер AWG до {_e(v(w['need']))}" if server
+            else "версию сервера AWG не проверить: он не на связи")
+    return f"<b>⬆️ {_e(v(w['tag']))} — {tail}</b>"
 
 
 def _gw_role(st, chan: dict) -> str:
@@ -43,10 +48,27 @@ def _gw_role(st, chan: dict) -> str:
     return "🟢 линк поднят" if st.link_up else "🔴 линк лежит"
 
 
+def refreshed_line(st, bot_username: str = "") -> str:
+    """Последняя строка панели: «🔄 <i>обновлено в 15:43</i>» / «<i>только
+    что</i>» — ссылкой на /start refresh (перечитать живьём); без имени бота —
+    просто текст."""
+    from awgbot.util import timeutil
+    age = st.age_seconds()
+    if age is None or age < 60:
+        label = "только что"
+    else:
+        at = timeutil.parse_iso(st.ts)
+        now = timeutil.now()
+        when = at.strftime("%H:%M") if at.date() == now.date() else timeutil.fmt_dt_ui(at)
+        label = f"обновлено в {when}" if at.date() == now.date() else f"обновлено {when}"
+    return "🔄 <i>" + deep_link(bot_username, REFRESH_PAYLOAD, label) + "</i>"
+
+
 def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),
-                  update_wait: dict | None = None) -> str:
-    """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк и канал, предупреждения,
-    SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть.
+                  update_wait: dict | None = None, bot_username: str = "") -> str:
+    """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк, канал
+    конфигурации, предупреждения, SSH, железо, VPN-транзит и списки, SMB,
+    здоровье и трафик, пустая строка, свежесть ссылкой.
     chan — состояние канала (linkclient.view()); None — спросить самим.
     update_wait — допустимой цели нет, а новейшая ждёт сервер AWG (update_waiting)."""
     from awgbot.util import timeutil
@@ -55,21 +77,20 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
     parts = [ui.head(f"🛰 {host}", pkg._gw_role(st, chan)) + up, ""]      # шапка — отдельно от остального
-    chan_line = pkg.channel_panel_line(chan)
     link = pkg._gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
-    link = link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}", 1)
-    parts.append(link + (f" · {chan_line}" if chan_line else ""))
+    parts.append(link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}", 1))
+    parts.append(pkg.channel_panel_line(chan))
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
         # unmarked | confirmed | foreign | unconfirmed. Токен пометки при живом
         # канале агент отправляет сам — просить переслать сообщение незачем.
-        unmarked = ("⚠️ Шлюз в боте сервера AWG не назначен — запрос ушёл по упр. каналу"
+        unmarked = ("⚠️ Шлюз в боте сервера AWG не назначен — запрос ушёл по каналу конфигурации"
                     if chan["online"] else
-                    "⚠️ Шлюз в боте сервера AWG не назначен, упр. канала нет — перешли ему сообщение из отчёта")
+                    "⚠️ Шлюз в боте сервера AWG не назначен, канала конфигурации нет — перешли ему сообщение из отчёта")
         parts.append({"unmarked": unmarked,
-                      "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",
+                      "foreign": "⚠️ Шлюз указывает на устройство, отличное от выбранного; линк лежит",
                       "unconfirmed": "⚠️ Аплинк этого устройства не найден — шлюз не подтверждён"}
                      .get(mark, f"⚠️ Пометка: {_e(mark)}"))
     if update_tag:
@@ -96,7 +117,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
     lan = getattr(st, "lan", None) or {}
     if lan:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
-        state = "🔴 " + ", ".join(pkg._uniq(c.name for c in bad)[:3]) if bad else "🟢"
+        state = "🔴 " + ", ".join(pkg._uniq(_lan_fault(c) for c in bad)[:3]) if bad else "🟢"
         parts.append(f"🔀 VPN-транзит {state} · {pkg._packets(lan.get('lan_pkts'))} с роутера")
         own = pkg.own_lists_short(lan)                     # своих нет — хвоста нет
         parts.append(f"📋 Списки: {pkg._lists_counts(lan)}" + (f" · {own}" if own else ""))
@@ -110,41 +131,63 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
     if traffic:
         health += f" · 📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}"
     parts.append(health)
-    age = st.age_seconds()
-    fresh = timeutil.age_ago(age) if age is not None else "только что"
-    parts.append(f"<i>обновлено {fresh}</i>")
+    parts.append("")
+    parts.append(pkg.refreshed_line(st, bot_username))
     return "\n".join(parts)
 
 
+def _lan_fault(c) -> str:
+    """Проблема VPN-транзита в строке панели: одно имя после 🔴 не говорит,
+    что с ним — «резолвер не отвечает», «списки не загружены»."""
+    name = c.name
+    if name == gwchecks.CHECK_RESOLVER:
+        return "резолвер не отвечает"
+    if name == gwchecks.CHECK_LISTS:
+        return "списки не загружены"
+    if name == gwchecks.CHECK_UPSTREAM:
+        return "апстрим не отвечает"
+    return name
+
+
 def gateway_health(st) -> str:
-    """Здоровье по строкам: чинить будут по ним, а не по вердикту; железо и
-    модуль awg — справкой внизу."""
+    """Здоровье: «🩺 Здоровье pi ✅ Проблем не выявлено» и ниже железо и модуль;
+    проблемы — «🔴 Проблемы: N» и построчно только проблемные строки (🔴) и
+    ожидания (🟡 — самопочинка, первый замер, штатное «не проверено»);
+    ✅-строки на экран не идут. Чинить будут по строкам, а не по вердикту."""
     host = _e(st.hostname) if st.hostname else "шлюза"
-    bad = sum(1 for c in st.checks if c.ok is False)
-    lines = [ui.head(f"🩺 Здоровье {host}", "✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
+    problems = gwchecks.health_problems(st.checks)
+    lines = [ui.head(f"🩺 Здоровье {host}",
+                     "✅ Проблем не выявлено" if not problems else f"🔴 Проблемы: {len(problems)}")]
     for c in st.checks:
-        mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
+        mark = gwchecks.check_mark(c)
+        if mark == "✅":
+            continue
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
+    if st.smart and st.smart != "OK":
+        lines.append("🔴 Диск: SMART сообщает о сбое — сделай бэкап и замени носитель")
     hw = []
     if st.ram_free_mb is not None:
-        hw.append(f"RAM свободно {num(st.ram_free_mb)} МБ")
+        hw.append(f"RAM {num(st.ram_free_mb)} МБ")
     if st.disk_free_gb is not None:
         free = f"{st.disk_free_gb:.1f}".replace(".", ",") if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
-        hw.append(f"диск свободно {free} ГБ" + (f", SMART {st.smart}" if st.smart else ""))
+        hw.append(f"диск {free} ГБ")
+    if st.smart == "OK":
+        hw.append("SMART OK")
     if st.throttled is not None:
         now = st.throttled.get("now") or []
         ever = st.throttled.get("ever") or []
-        power = ("⚠️ " + "; ".join(now)) if now else "ОК"
+        power = ("⚠️ " + "; ".join(now) + " — проверь блок питания") if now else "ОК"
         if not now and ever:
             power += " (с загрузки: " + "; ".join(ever) + ")"
         hw.append(f"питание {power}")
     if hw:
-        lines.append(" · ".join(hw))
+        lines.append("Свободно: " + " · ".join(hw))
     ver = st.module_version or "?"
     src = f" · srcversion {st.srcversion[:8]}…" if st.srcversion else ""
-    lines.append(f"Модуль awg {_e(ver)}{_e(src)} · ядер {st.kernels_total}")
-    if bad:
+    kernels = (f" · собран для всех ядер ({st.kernels_total})"
+               if st.kernels_total and not st.kernels_missing else "")
+    lines.append(f"Модуль awg {_e(ver)}{_e(src)}{kernels}")
+    if problems:
         lines.append("«🔧 Восстановить» переставит правила и переподнимет линк")
     return "\n".join(lines)
-

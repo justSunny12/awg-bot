@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import copy
 
+from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway import GwCheck, GwStatus
 from awgbot.infra import updates
 
@@ -32,20 +33,20 @@ _UPLINK_VALUE = {
 
 
 _CHECKS_OK = [
-    GwCheck("линк", True, "хендшейк 40 с назад"),
-    GwCheck("таблица awg_gw_guard", True),
-    GwCheck("ip_forward", True),
-    GwCheck("маршрут к Telegram", True),
-    GwCheck("выход наружу", True, "35 мс через канал"),
-    GwCheck("ядра", True, "модуль собран для 2 из 2"),
+    GwCheck(gc.CHECK_LINK, True, "хендшейк 40 с назад"),
+    GwCheck(gc.CHECK_GUARD, True),
+    GwCheck(gc.CHECK_IP_FORWARD, True),
+    GwCheck(gc.CHECK_TG_ROUTE, True),
+    GwCheck(gc.CHECK_EGRESS, True, "35 мс через провайдера"),
+    GwCheck(gc.CHECK_MODULE, True, "собран для всех ядер (2)"),
 ]
 
 _CHECKS_LAN = [
-    GwCheck("применение локальной сети", True, group="lan"),
-    GwCheck("резолвер", True, group="lan"),
-    GwCheck("списки", True, "обновлены 15.09 06:00", group="lan"),
-    GwCheck("SMB этой подсети", True, "nas", group="lan"),
-    GwCheck("SMB подсетей других шлюзов", None, "avahi не установлен", group="lan"),
+    GwCheck(gc.CHECK_TRANSIT, True, group="lan"),
+    GwCheck(gc.CHECK_RESOLVER, True, group="lan"),
+    GwCheck(gc.CHECK_LISTS, True, "обновлены 15.09 06:00", group="lan"),
+    GwCheck(gc.CHECK_SMB_OWN, True, "nas", group="svc"),
+    GwCheck(gc.CHECK_SMB_PEERS, None, "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", group="svc"),
 ]
 
 

@@ -19,11 +19,13 @@ def svc_confirm_bot(br) -> str:
     return ui.confirm("🔁 Перезапустить бота?", br.bot_restart_cost)
 
 
-def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:
-    """«🔧 Сервис»: цена перезапусков одной строкой роли; переезд — только у
-    роли с has.migration и только когда идёт."""
+def settings_svc_text(br, state: str = "", progress=None, available: bool = False,
+                      carries: bool = True) -> str:
+    """«🔧 Сервис»: цена перезапусков одной строкой роли — та же развилка, что
+    в подтверждении (carries — роль несёт трафик); переезд — только у роли с
+    has.migration и только когда идёт."""
     from ..admin import migration_counts
-    lines = [ui.head("🔧 Сервис"), br.svc_about]
+    lines = [ui.head("🔧 Сервис"), br.svc_about_carrying if carries else br.svc_about]
     if br.has.migration and state:
         p = progress
         nums = (f" переехали {migration_counts(p)}"

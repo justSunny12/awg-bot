@@ -52,8 +52,9 @@ def keyboard(br, configured: bool) -> InlineKeyboardMarkup:
 
 
 def offer_kb(br, back_sec: str) -> InlineKeyboardMarkup:
-    """«Почта не настроена» — назад в раздел или настроить сейчас."""
-    return ui.rows([back_button(br, back_sec), ("✉️ Настроить почту", br.cb.pack(ID, "do", "setup"))])
+    """«Почта не настроена» — вопрос: «⬅️ Отмена» (назад в раздел) первой,
+    «✉️ Подключить ящик» — та же подпись, что на экране e-mail."""
+    return ui.rows([("⬅️ Отмена", br.cb.pack(back_sec)), ("✉️ Подключить ящик", br.cb.pack(ID, "do", "setup"))])
 
 
 async def screen(br, services, key: str = ""):

@@ -105,7 +105,7 @@ MONITOR = [
           conf={"app.gateway.link_alert_loud": False, "app.gateway.handshake_max_age": 90},
           title="звук по тихим часам; 90 с — «2 мин»"),
     _shot("gw.set.mon.toggle", press=[GwCB(action="mon"), GwCB(action="tgl", val="app.gateway.link_alert_loud")],
-          title="тумблер «Звук 24/7»"),
+          title="тумблер «Простой со звуком»"),
     _shot("gw.set.mon.edit.ask", press=[GwCB(action="mon"),
                                         GwCB(action="edit", val="app.gateway.handshake_max_age")],
           title="приглашение: порог линка в минутах"),
@@ -134,7 +134,8 @@ MONITOR = [
 
 SERVICE = [
     # ── W34 сервис: перезапуски ─────────────────────────────────────────────
-    _shot("gw.set.svc", press=[GwCB(action="svc")], title="🔧 Сервис"),
+    _shot("gw.set.svc", press=[GwCB(action="svc")], title="🔧 Сервис: шлюз трафик не несёт — без РФ-хвоста"),
+    _shot("gw.set.svc.carries", press=[GwCB(action="svc")], carries=True, title="🔧 Сервис: шлюз несёт трафик"),
     _shot("gw.svc.restart.ask", press=[GwCB(action="svc"), GwCB(action="restart")], carries=True,
           title="перезапустить AWG? шлюз несёт трафик"),
     _shot("gw.svc.restart.ask.idle", press=[GwCB(action="svc"), GwCB(action="restart")],

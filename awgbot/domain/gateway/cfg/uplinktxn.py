@@ -123,11 +123,12 @@ class CfgUplinkTxnMixin:
             refused = gwguard.uplink_applied_how(out) == "refused"
             back_ok = self._cfg_uplink_back(iface, txn, finish=not refused)
             log.warning("gateway: конфиг аплинка с сервера не применился: %s", reason)
-            return {"ok": False, "error": reason,
+            return {"ok": False, "error": reason, "back_why": self.__dict__.get("_uplink_back_why", ""),
                     "state": "refused" if refused else ("reverted" if back_ok else "revert_failed")}
         if gwguard.uplink_applied_how(out) == "installed" and not self._cfg_uplink_probe(iface):
             back_ok = self._cfg_uplink_back(iface, txn, finish=True)
             return {"ok": False, "error": f"аплинк не поднялся за {UPLINK_PROBE_SECONDS} с",
+                    "back_why": self.__dict__.get("_uplink_back_why", ""),
                     "state": "reverted" if back_ok else "revert_failed"}
         # сначала журнал прочь, потом копию: сбой между ними оставит лишь
         # .before (её уберёт следующий --uplink), а не откат юнита при новом конфиге
@@ -145,10 +146,13 @@ class CfgUplinkTxnMixin:
         прежнее на месте."""
         from awgbot.infra import gwguard
         ok = True
+        self.__dict__["_uplink_back_why"] = ""
         if finish and iface:
             back_ok, out = gwguard.uplink_finish(iface, commit=False)
             if not back_ok:
                 ok = False
+                # настоящая причина — в итог для человека, а не только в журнал
+                self.__dict__["_uplink_back_why"] = _reason(out)
                 log.warning("gateway: прежний конфиг аплинка не вернулся: %s", _reason(out))
         try:
             with open(txn, encoding="utf-8") as f:
@@ -160,7 +164,8 @@ class CfgUplinkTxnMixin:
                 gwguard.unit_restore(unit_before)
             except (OSError, gwguard.GwGuardError) as e:
                 ok = False
-                log.warning("gateway: юнит после отказа аплинка не вернулся: %s", e)
+                self.__dict__["_uplink_back_why"] = self.__dict__.get("_uplink_back_why") or f"обвязка не переписана ({e})"
+                log.warning("gateway: обвязка после отказа аплинка не вернулась: %s", e)
         self._cfg_uplink_tidy()
         return ok
 
@@ -273,7 +278,9 @@ class CfgUplinkTxnMixin:
         if state == "reverted":
             return "⚠️ Новый конфиг аплинка не поднялся — вернул прежний"
         if state == "revert_failed":
-            return f"⚠️ Новый конфиг аплинка не поднялся, и прежний не вернулся: {why}"
+            back = html.escape(str(res.get("back_why") or res.get("error") or "ошибка"), quote=False)
+            return (f"🔴 Новый конфиг аплинка не поднялся, прежний вернуть не удалось: {back}. "
+                    "Загляни в «🩺 Здоровье»; связь с сервером AWG может пропасть")
         return f"⚠️ Новый конфиг аплинка не применён: {why}"
 
 

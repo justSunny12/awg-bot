@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot import keyboards as kb
@@ -55,11 +55,17 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     tag = await call(services.update_available_tag)
     wait = await _update_wait(services, tag)
     pending = await call(services.cfg_questions)        # вопросы с сервера AWG ждут человека
+    text = texts.gateway_panel(st, tag, linkclient.view(), pending, wait, _bot_username(services))
+    markup = kb.gateway_panel_kb(pending=len(pending), lan=lan, update_tag=tag)
     if cb is not None:
-        await edit_nav(cb, services, texts.gateway_panel(st, tag, linkclient.view(), pending, wait), kb.gateway_panel_kb(pending=bool(pending), lan=lan))
+        await edit_nav(cb, services, text, markup)
     else:
-        await send_menu(target, services, texts.gateway_panel(st, tag, linkclient.view(), pending, wait), kb.gateway_panel_kb(pending=bool(pending), lan=lan),
-                        keep_id=keep_id)
+        await send_menu(target, services, text, markup, keep_id=keep_id)
+
+
+def _bot_username(services) -> str:
+    """Имя бота для ссылок «/start …» в тексте панели; до get_me — пусто, текст без ссылки."""
+    return getattr(services, "bot_username", "") or ""
 
 
 async def _update_wait(services, tag: str):
@@ -74,8 +80,9 @@ async def _panel_parts(services, *, fresh: bool = False):
     st = await pkg._status(services, fresh=fresh)
     pending = await call(services.cfg_questions)
     tag = await call(services.update_available_tag)
-    return (texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag)),
-            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=bool(pending)))
+    return (texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
+                                _bot_username(services)),
+            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag))
 
 
 async def panel_main_parts(services, chat_id: int):
@@ -119,11 +126,40 @@ async def send_first_panel(bot, services) -> None:
 
 
 @router.message(CommandStart())
-async def gw_start(message: Message, services, state: FSMContext):
+async def gw_start(message: Message, services, state: FSMContext, command: CommandObject | None = None):
     await state.clear()
     await call(services.db.set_state, pkg._FIRST_PANEL_KEY, "1")   # диалог есть — первая панель не нужна
+    payload = ((command.args if command is not None else "") or "").strip()
+    if payload == texts.REFRESH_PAYLOAD:
+        await pkg._refresh_by_link(message, services)
+        return
     await purge_menus(message.bot, services, message.chat.id)
     await pkg._panel(message, services)
+
+
+async def _refresh_by_link(message: Message, services) -> None:
+    """«🔄 обновлено …» в тексте панели — ссылка /start refresh: Telegram шлёт
+    команду новым сообщением, бот её сразу убирает (как у экрана трафика
+    основного бота) и перечитывает панель живьём на месте живого меню."""
+    try:
+        await message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    st = await pkg._status(services, fresh=True)
+    tag = await call(services.update_available_tag)
+    pending = await call(services.cfg_questions)
+    text = texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
+                               _bot_username(services))
+    markup = kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag)
+    nav_id = await call(services.db.get_nav_message_id, message.chat.id)
+    if nav_id is not None:
+        try:
+            await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
+                                                reply_markup=markup)
+            return
+        except Exception:                              # noqa: BLE001
+            pass                                       # меню старое или уже такое — новым
+    await send_menu(message, services, text, markup)
 
 
 @router.callback_query(GwCB.filter(F.action == "panel"))
@@ -135,7 +171,7 @@ async def gw_panel(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(GwCB.filter(F.action == "refresh"))
 async def gw_refresh(cb: CallbackQuery, services, state: FSMContext):
-    """«Обновить» — единственная кнопка, которая всегда ходит по пробам живьём."""
+    """Прежняя кнопка «🔄 Обновить» из старых меню в чатах: панель живьём."""
     await state.clear()
     await cb.answer("Снимаю показания…")
     await pkg._panel(cb.message, services, cb, fresh=True)

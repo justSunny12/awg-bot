@@ -70,9 +70,10 @@ def update_wait_line(w: dict, bot_username: str = "") -> str:
     if w.get("role") == "gateway":
         server = w["peers"][0].version if w.get("peers") else ""
         if not server:
-            return f"⏳ {tag} ждёт сервер AWG {need}: версия сервера неизвестна — он не на связи"
-        now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
-        return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бота сервера AWG"
+            return (f"⏳ {tag} ждёт сервер AWG {need}: сервер не на связи, его версия неизвестна — "
+                    "когда выйдет на связь, обнови бот сервера AWG")
+        now = "" if server == "old" else f" ({_e(_ver(server))})"
+        return f"⏳ {tag} ждёт сервер AWG{now} — сначала обнови бот сервера AWG"
     peers = w.get("peers") or []
     where = "агентов в чатах ботов шлюзов" if len(peers) > 1 else "агента в чате бота шлюза"
     return f"⏳ {tag} — {_gw_todo(peers, bot_username)} — {where}"
@@ -83,7 +84,7 @@ def update_wait_reason(w: dict) -> str:
     (О5, после «Нельзя: »). Простой текст — для всплывашки."""
     tag = _ver(w["tag"])
     if w.get("role") == "gateway":
-        return f"{tag} ждёт сервер AWG {_ver(w['need'])}"
+        return f"{tag} ждёт сервер AWG {_ver(w['need'])} — сначала обнови бот сервера AWG"
     return f"{tag} — {_gw_todo(w.get('peers') or [], links=False)}"
 
 
@@ -112,7 +113,7 @@ def update_silent_lines(s: dict | None, bot_username: str = "") -> list[str]:
     return out
 
 
-UPDATE_NOTHING = "Обновлять не на что — версия актуальна"
+UPDATE_NOTHING = "Текущая версия актуальна"
 UPDATE_TARGET_CHANGED_TOAST = "Цель обновления изменилась — открой «⬆️ Обновления» заново"
 UPDATE_CHECK_FAILED_TOAST = "Не удалось проверить релизы на GitHub — попробуй позже"
 UPDATE_STARTING = "Запускаю обновление…"
@@ -120,7 +121,8 @@ UPDATES_MUTED_TOAST = "Уведомления об обновлениях вык
 
 
 def update_blocked_toast(reason: str) -> str:
-    return f"⛔ Обновление сейчас недоступно: {reason}"
+    """Ожидание другой стороны — не окончательный отказ: «Пока нельзя: …»."""
+    return f"Пока нельзя: {reason}"
 
 
 def updates_notify_toast(*, enabled: bool) -> str:

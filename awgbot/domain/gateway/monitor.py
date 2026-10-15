@@ -11,6 +11,7 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.domain.services import Notification
 from awgbot.domain.gwchecks import CHECK_GROUPS_SOFT
+from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway.base import GwCheck, GwStatus, log
 
 
@@ -237,10 +238,9 @@ class MonitorMixin:
         checks = list(self.plumbing_checks())
         missing = self.tg_mark_missing(self._guard_info)      # без второго nft
         st.tg_missing = list(missing)
-        checks.append(GwCheck("маршрут к Telegram", not missing,
+        checks.append(GwCheck(gc.CHECK_TG_ROUTE, not missing,
                               "" if not missing else
-                              f"нет в таблице {len(missing)} диапазонов — "
-                              f"агент перевыставит таблицу"))
+                              f"нет в таблице {len(missing)} диапазонов; {gc.SELF_HEAL_TAIL}"))
         checks.append(self.gh_route_check(self._guard_info))
         peer_check = self.peer_nets_check(self._guard_info)
         if peer_check is not None:
@@ -269,16 +269,17 @@ class MonitorMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway: ssh status: %s", e)
         ok_link = st.link_up and st.handshake_age is not None
-        checks.append(GwCheck("линк", ok_link, f"хендшейк {timeutil.age_short(st.handshake_age)}" if ok_link else
+        checks.append(GwCheck(gc.CHECK_LINK, ok_link, f"хендшейк {timeutil.age_short(st.handshake_age)}" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.
         (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total), smart = \
             self._static()
         st.module_version = self.module_label(st.module_version)
-        checks.append(GwCheck("ядра", not st.kernels_missing,
-                              "" if not st.kernels_missing else
-                              "без модуля awg: " + ", ".join(st.kernels_missing)))
+        checks.append(GwCheck(gc.CHECK_MODULE, not st.kernels_missing,
+                              f"собран для всех ядер ({st.kernels_total})" if not st.kernels_missing else
+                              f"нет для {len(st.kernels_missing)} из {st.kernels_total} ядер "
+                              f"({', '.join(st.kernels_missing)}): перезагрузка в такое ядро оставит шлюз без туннелей"))
         st.lan, lan_checks = self.lan_status()
         checks += lan_checks
         if st.lan:
@@ -291,11 +292,11 @@ class MonitorMixin:
             st.lan["own"] = own
             checks += own_checks
         st.egress_ok, st.egress_ms, st.egress_src = self._egress_verdict(st.rx, st.tx)
-        checks.append(GwCheck("выход наружу", st.egress_ok,
+        checks.append(GwCheck(gc.CHECK_EGRESS, st.egress_ok,
                               ("по обратному трафику клиентов" if st.egress_src == "трафик" else
-                               f"{st.egress_ms:.0f} мс" if st.egress_ok and st.egress_ms is not None
+                               f"{st.egress_ms:.0f} мс через провайдера" if st.egress_ok and st.egress_ms is not None
                                else "" if st.egress_ok else
-                               "канал не отвечает — РФ-доступ через шлюз не работает")))
+                               "провайдер не отвечает — РФ-доступ через шлюз не работает")))
         st.checks = checks
         st.temp = hostmetrics.read_soc_temp()
         st.throttled = hostmetrics.read_pi_throttled()
@@ -335,9 +336,10 @@ class MonitorMixin:
         `install/awg.lock`, оба локальные и оба по несколько сотен байт.
         """
         from awgbot.domain import gwsnapshot
+        from awgbot.infra import gwguard
         st = self.cached_status(24 * 3600)
         missing = self.peer_nets_missing(self._guard_info)
-        return gwsnapshot.collect(
+        snap = gwsnapshot.collect(
             mark_status=self.gateway_mark_status(),
             egress_ok=st.egress_ok if st is not None else None,
             guard_info=self._guard_info,
@@ -345,6 +347,11 @@ class MonitorMixin:
             agent_bot={"username": getattr(self, "bot_username", ""),
                        "name": getattr(self, "bot_name", "")},
             cfg=self.cfg_fingerprints())
+        # адрес шлюза в локальной сети — его знает только агент (LAN_ADDR из
+        # статуса обвязки): сервер подставляет его в настройку роутера; транзит
+        # выключен — пусто. Ключ верхнего уровня снимка, сервер разбирает его сам.
+        snap["lan_addr"] = (gwguard.script_status().get("LAN_ADDR", "") or "") if gwguard.lan_mode() else ""
+        return snap
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:
         """Снимок последнего тика, если он не старше max_age; иначе None —

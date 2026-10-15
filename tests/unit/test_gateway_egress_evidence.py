@@ -144,7 +144,7 @@ def test_idle_link_is_probed_rarely_and_lives_by_the_cached_verdict(agent):
         c = agent.tick()
         assert agent.status.egress_src == "кэш" and c.ok is True, (
             "между зондами вердикт обязан держаться прошлым, а не переворачиваться")
-        assert c.detail == "42 мс", "деталь несёт мс последнего замера"
+        assert c.detail == "42 мс через провайдера", "деталь несёт мс последнего замера"
     assert len(agent.probes) == 1, "первые девять минут простоя — ни одного пакета наружу"
 
     c = agent.tick()                              # +720: такт вышел

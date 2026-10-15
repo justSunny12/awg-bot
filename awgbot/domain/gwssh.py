@@ -33,6 +33,7 @@ import time
 from awgbot.core import config
 from awgbot.infra import gwguard
 from awgbot.domain.services import Notification, ServiceError
+from awgbot.domain import gwchecks as gc
 
 log = logging.getLogger("awgbot.gateway")
 
@@ -248,7 +249,7 @@ class GwSshMixin:
             except ValueError:
                 raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя")
             if kind == "6":
-                raise ServiceError(f"{tok} — IPv6, на шлюзе фильтр только по IPv4")
+                raise ServiceError(f"{tok} — IPv6, а фильтр на шлюзе только IPv4")
             norm = _no32(norm)
             if norm not in entries:
                 entries.append(norm)
@@ -280,8 +281,8 @@ class GwSshMixin:
             except gwguard.GwGuardError as e:
                 raise ServiceError(str(e))
             if not info or "ssh_in" not in info["chains"]:
-                raise ServiceError("обвязка шлюза старого образца — «🔧 Восстановить»" if self.server_cfg1() else
-                                   "обвязка шлюза старого образца: перевыпусти конфигурацию шлюза с сервера AWG")
+                raise ServiceError("Обвязка шлюза старого образца — «🔧 Восстановить»" if self.server_cfg1() else
+                                   "Обвязка шлюза старого образца: перевыпусти конфигурацию шлюза с сервера AWG")
             gwguard.write_env(SSH_FILTER="1")
             ok, err = self.reassert_guarded("фильтр SSH снаружи")
             if not ok and gwguard.is_timeout(err):
@@ -430,23 +431,23 @@ class GwSshMixin:
         if port is None:
             # sshd выключен (в OMV — штатно): строка SSH панели это показывает,
             # в сводку «⚪ не проверено» не идёт (группа ssh — тихая)
-            checks.append(GwCheck("порт SSH", None, "sshd не запущен", group="ssh"))
+            checks.append(GwCheck(gc.CHECK_SSH_PORT, None, "sshd не запущен", group="ssh"))
         elif info is None:
             pass                                           # таблицы нет — своя проверка выше
         else:
             ok = held == port
-            checks.append(GwCheck("порт SSH", ok, "" if ok else
+            checks.append(GwCheck(gc.CHECK_SSH_PORT, ok, "" if ok else
                                   f"sshd слушает {port}, таблица держит {held or '?'}: "
                                   "реассерт не прошёл (🔧 Восстановить)"))
         if gwguard.read_env().get("SSH_FILTER") == "1" and info is not None:
             if "ssh_in" not in info["chains"]:
-                checks.append(GwCheck("фильтр SSH снаружи", False,
+                checks.append(GwCheck(gc.CHECK_SSH_FILTER, False,
                                       "включён, а цепочки ssh_in в таблице нет — "
                                       + ("«🔧 Восстановить»" if self.server_cfg1() else
                                          "перевыпусти конфигурацию шлюза с сервера AWG")))
             else:
                 ok = table_ports.get("input") == (port if port is not None else held)
-                checks.append(GwCheck("фильтр SSH снаружи", ok, "" if ok else
+                checks.append(GwCheck(gc.CHECK_SSH_FILTER, ok, "" if ok else
                                       "включён, а перехода на цепочку ssh_in в таблице нет "
                                       "(🔧 Восстановить)"))
         return checks

@@ -326,8 +326,8 @@ def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast(sync):
     assert len(toast) <= 200, len(toast)
     assert toast.endswith("\n" + texts.SYNC_TAILS[sync]), toast
     assert "Убран на всех шлюзах" not in toast, "первая строка «Убран на всех шлюзах» снята"
-    assert texts.gateway_transit_removed_toast("sber.ru") == "sber.ru: убран"
-    assert texts.gateway_transit_removed_toast("sber.ru", True, "") == "sber.ru: убран", (
+    assert texts.gateway_transit_removed_toast("sber.ru") == "✅ sber.ru: убран"
+    assert texts.gateway_transit_removed_toast("sber.ru", True, "") == "✅ sber.ru: убран", (
         "shared больше ничего не добавляет — хвост решает только sync")
 
 

@@ -51,7 +51,7 @@ def keyboard(br) -> InlineKeyboardMarkup:
           br.cb.pack(ID, "edit", br.keys.monitor_minutes)),
          (f"🔢 Замеров: {streak}", br.cb.pack(ID, "edit", "app.monitoring.alert_streak"))],
         [(f"{br.mon_outage_button}: {outage_minutes(br)} мин", br.cb.pack(ID, "edit", br.keys.outage)),
-         (f"{_chk(loud)} Звук 24/7", br.cb.pack(ID, "toggle", br.keys.outage_loud))],
+         (f"{_chk(loud)} Простой со звуком", br.cb.pack(ID, "toggle", br.keys.outage_loud))],
         back_button(br))
 
 

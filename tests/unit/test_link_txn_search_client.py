@@ -146,7 +146,7 @@ async def test_a_replaced_invitation_is_edited_to_say_so(svc, host, monkeypatch)
     svc.rekey_mark_msg(555, 42)
     newer, _, _ = _next_conf(host)
     await c.client._handle(_msg(newer, "dddd66667777"))
-    assert c.edits == [(555, 42, "Запрос заменён более новым")] and c.notes == [], (c.edits, c.notes)
+    assert c.edits == [(555, 42, "🔑 Новые ключи линка: пришёл более новый запрос — он ниже")] and c.notes == [], (c.edits, c.notes)
     assert c.asks == ["link", "link"]
 
 
@@ -196,14 +196,14 @@ async def test_link_cancel_tells_the_human_once(svc, host, monkeypatch):
     await c.client._handle(_msg(conf))
     await c.client._handle({"t": "link_cancel", "id": "a1b2c3d4e5f6"})
     await c.client._handle({"t": "link_cancel", "id": "a1b2c3d4e5f6"})
-    assert c.notes == ["Запрос отозван сервером AWG"] and c.edits == [], (c.notes, c.edits)
+    assert c.notes == ["🔑 Новые ключи линка: запрос отозван сервером AWG"] and c.edits == [], (c.notes, c.edits)
     newer, _, _ = _next_conf(host)
     await c.client._handle(_msg(newer, "eeee88889999"))
     svc.rekey_mark_msg(555, 43)
     c.edit_ok = False
     await c.client._handle({"t": "link_cancel", "id": "eeee88889999"})
-    assert c.edits == [(555, 43, "Запрос отозван сервером AWG")]
-    assert c.notes == ["Запрос отозван сервером AWG"] * 2, "правка не прошла — человек не узнал"
+    assert c.edits == [(555, 43, "🔑 Новые ключи линка: запрос отозван сервером AWG")]
+    assert c.notes == ["🔑 Новые ключи линка: запрос отозван сервером AWG"] * 2, "правка не прошла — человек не узнал"
 
 
 async def test_the_first_server_word_after_the_switch_sends_link_done(svc, host, clock, monkeypatch):

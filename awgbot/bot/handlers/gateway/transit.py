@@ -66,7 +66,7 @@ async def gw_transit_domain_received(message: Message, state: FSMContext, servic
     from awgbot.bot import screens
     text, markup = await pkg._transit_screen(services, message.chat.id)
     note = texts.gateway_transit_result(ok, out, await pkg._own_sync_tail(services, ok, out),
-                                    budget=ui.note_budget(text))
+                                        budget=ui.note_budget(text), domains=domains, cmd=kind)
     await send_menu(message, services, screens.with_note(text, note), markup)
 
 
@@ -109,15 +109,16 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
         if ok:
             await cb.answer(texts.gateway_transit_removed_toast(dom, sync=tail))
         else:
-            await cb.answer(ui.toast(texts.gateway_transit_result(ok, out, tail), html=True), show_alert=True)
+            await cb.answer(ui.toast(texts.gateway_transit_result(ok, out, tail, domains=[dom], cmd="del"), html=True),
+                            show_alert=True)
     except TelegramBadRequest:
-        await ask_tracked(cb.message, services, texts.gateway_transit_result(ok, out, tail))
+        await ask_tracked(cb.message, services, texts.gateway_transit_result(ok, out, tail, domains=[dom], cmd="del"))
     await edit_nav(cb, services, *await pkg._transit_screen(services, cb.message.chat.id))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
 async def gw_transit_router(cb: CallbackQuery, callback_data: GwCB, services):
-    """Рецепт роутера вкладками — тот же текст, что у основного бота, с
+    """Настройка роутера вкладками — тот же текст, что у основного бота, с
     подсетью и настоящим адресом этого шлюза."""
     import socket
     net, addr = await call(services.lan_router_params)

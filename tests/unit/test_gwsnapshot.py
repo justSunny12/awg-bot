@@ -193,6 +193,11 @@ def test_the_agent_snapshot_of_a_whole_service_stays_local_too(tmp_path, pi, mon
     assert snap["mark_status"] == "confirmed"
     assert snap["egress_ok"] is None and snap["ts"] == "", (
         "тика ещё не было — снимок честно говорит «не знаем», а не идёт мерить сам")
+    assert snap["lan_addr"] == "", "VPN-транзит выключен — адреса шлюза в локальной сети в снимке нет"
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
+    monkeypatch.setattr(gwguard, "script_status", lambda: {"LAN_ADDR": "192.168.1.10"})
+    assert svc.gw_snapshot()["lan_addr"] == "192.168.1.10", "адрес шлюза в локальной сети — из статуса обвязки"
     db.close()
 
 

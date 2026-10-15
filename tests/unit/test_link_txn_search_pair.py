@@ -209,7 +209,7 @@ async def test_a_lost_link_go_ends_on_the_old_keys_on_both_sides(services, slot,
     assert len(pair.server_notes) == 1 and "вернул прежние" in pair.server_notes[0], pair.server_notes
     assert pair.to_gateway.count("link_cancel") == 1, pair.to_gateway
     assert host.txn() == {} and host.etc_files() == set(), "согласие на шлюзе не снято отзывом"
-    assert pair.c.notes == ["Запрос отозван сервером AWG"], f"агенту ушло: {pair.c.notes}"
+    assert pair.c.notes == ["🔑 Новые ключи линка: запрос отозван сервером AWG"], f"агенту ушло: {pair.c.notes}"
     assert services.gateway_rekey(1) == {} and vps.extra_files() == set()
     assert services.gateway_rekey_cancel_take(1) == "", "отзыв остался в очереди после доставки"
     assert "link" not in svc.cfg_questions() and rid

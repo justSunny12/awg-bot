@@ -9,8 +9,8 @@ from awgbot.util import gwlink
 from awgbot.runtime import linkclient as pkg          # крючки уведомления, правки и вопроса — на пакете
 from .common import log
 
-REPLACED = "Запрос заменён более новым"
-WITHDRAWN = "Запрос отозван сервером AWG"
+REPLACED = "🔑 Новые ключи линка: пришёл более новый запрос — он ниже"
+WITHDRAWN = "🔑 Новые ключи линка: запрос отозван сервером AWG"
 GO_FAILED = "⚠️ Новые ключи линка не поднялись — вернул прежние"
 
 

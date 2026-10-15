@@ -9,13 +9,22 @@ from ..fmt import _e, details
 
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
-def settings_backup_text(encryption: bool = False, channel: str = "telegram") -> str:
+BACKUP_NO_KEY_LINE = ("⚠️ Без фразы автобэкап не делается: в копии приватные ключи — задай фразу "
+                      "в «🔐 Шифрование»")
+
+
+def settings_backup_text(encryption: bool = False, channel: str = "telegram", br=None) -> str:
+    """br.has.backup_encrypted_only (агент) и фразы нет — вместо расписания
+    предупреждение: копия без фразы не делается вовсе."""
     from awgbot.core import settings as s
     on = s.get_bool("app.scheduler.backup_enabled", True)
+    only_enc = bool(br is not None and br.has.backup_encrypted_only)
     head = ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"),
-                   meta=["🔐 фраза задана" if encryption else "🔓 без шифрования"])
+                   meta=["🔐 фраза задана" if encryption else ("🔓 фраза не задана" if only_enc else "🔓 без шифрования")])
     lines = [head]
-    if on:
+    if on and only_enc and not encryption:
+        lines.append(BACKUP_NO_KEY_LINE)
+    elif on:
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
         lines.append(f"Каждое {day}-е число в {hour:02d}:00 → {where}")
@@ -50,8 +59,14 @@ def restore_done(created_at_iso: str) -> str:
     return f"✅ Восстановлено из бэкапа от {when}"
 
 
-EMAIL_NOT_CONFIGURED = ("✉️ Почта не настроена — нужен подключённый ящик: ⚙️ Настройки → ✉️ E-mail. "
-                        "Настроить сейчас?")
+def email_not_configured(sec: str = "notify") -> str:
+    """Ящика нет, а он нужен: вопрос называет, зачем; кнопка «✉️ Подключить
+    ящик» стоит рядом — путь по меню не нужен."""
+    if sec == "backup":
+        return "✉️ Чтобы бэкапы уходили на e-mail, нужен подключённый ящик. Подключить сейчас?"
+    return "✉️ Для аварий на e-mail нужен подключённый ящик. Подключить сейчас?"
+
+
 def backup_needs_encryption(br) -> str:
     return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу — 🔐 Шифрование"
 
@@ -62,6 +77,8 @@ def backup_encryption_text(mode: str, br) -> str:
         state = "🔐 фраза задана"
     elif mode == "key":
         state = "🔐 случайный ключ (перенесён из env)"
+    elif br.has.backup_encrypted_only:
+        state = f"🔓 фраза не задана — бэкапы {br.host_gen} не делаются"
     else:
         state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
     return (ui.head("🔐 Шифрование бэкапов", state) + "\n"

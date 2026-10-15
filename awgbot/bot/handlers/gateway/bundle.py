@@ -28,7 +28,7 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         # открытый файл первого применения: внутри ключи линка и аплинка,
         # токен агента — в чате ему не место, а применяют его на устройстве
         await forget_secret(message)
-        await message.answer(texts.GW_FIRST_RUN_FILE)
+        await message.answer(texts.gw_first_run_file(doc.file_name or ""))
         return
     if doc.file_size and doc.file_size > pkg._BUNDLE_MAX_BYTES:
         await message.answer(texts.gw_bundle_not_ours(await call(services.server_cfg1)))
@@ -41,7 +41,7 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     if not blob.startswith(bundlecrypt.MAGIC):
         if blob.startswith(b"#!/bin/sh") and b"awg-gw-bundle" in blob[:4096]:
             await forget_secret(message)
-            await message.answer(texts.GW_FIRST_RUN_FILE)
+            await message.answer(texts.gw_first_run_file(doc.file_name or ""))
             return
         await message.answer(texts.gw_bundle_not_ours(await call(services.server_cfg1)))
         return

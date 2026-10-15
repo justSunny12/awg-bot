@@ -250,8 +250,8 @@ def test_the_vpn_transit_screen_lists_seven_domains_per_page():
         minus = [b.text for r in rows for b in r if b.text.startswith("➖")]
         per_page.append(len(minus))
         seen += minus
-        assert [b.text for b in rows[0]] == ["➕ В туннель", "➕ Напрямую"], rows[0]
-        assert [b.text for b in rows[-1]] == ["❓ Роутер", "⬅️ В меню"], rows[-1]
+        assert [b.text for b in rows[0]] == ["➕ 🌍 В туннель", "➕ 🇷🇺 Напрямую"], rows[0]
+        assert [b.text for b in rows[-1]] == ["🛜 Роутер", "⬅️ В меню"], rows[-1]
     assert per_page == [7, 7, 7, 2], f"доменов по страницам: {per_page}"
     assert len(set(seen)) == 23, "домены повторяются или потеряны между страницами"
     # без листания ряд стрелок не нужен — целиком влезают восемь

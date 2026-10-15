@@ -106,7 +106,7 @@ def test_sync_skips_the_server_host_with_a_note(own_env, tmp_path):
     for kind in ("vpn", "ru"):
         r = _sync(tool, env, tmp_path, f"{kind} vps.example.net\nvpn news.org\n", name=f"{kind}.txt")
         assert r.returncode == 0, r.stderr
-        assert "vps.example.net: это хост сервера — пропущен" in r.stdout, r.stdout
+        assert "vps.example.net: это адрес самого сервера AWG — пропущен" in r.stdout, r.stdout
         assert "vps.example.net" not in (dns_d / VPN_USER).read_text() + (dns_d / RU_USER).read_text()
         assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n"
 

@@ -10,6 +10,7 @@ from awgbot.util import timeutil
 from awgbot.domain import gwownlists
 from awgbot.domain.gwchecks import WRITE_ERROR, failure_detail
 from awgbot.util import gwlink  # noqa: E402
+from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway.base import GwCheck, log
 
 
@@ -346,30 +347,30 @@ class OwnListsMixin:
         n_word = f"{n} " + plural_ru(n, "правка", "правки", "правок")
         if not gwguard.lan_domain_has_sync():
             info["state"] = "old_script"
-            checks.append(GwCheck("свои списки", None, "скрипт старого образца — обвязка перевыставляется"))
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, None, "скрипт старого образца — обвязка перевыставляется"))
         elif info["err"]:
             info["state"] = "failed"
-            checks.append(GwCheck("свои списки", False, failure_detail("не применились", info["err"])))
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, False, failure_detail("не применились", info["err"])))
         elif n and online is False:
             info["state"] = "no_link"
-            checks.append(GwCheck("свои списки", None, f"ждут синхронизации ({n_word}): нет связи с сервером AWG"))
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, None, f"ждут синхронизации ({n_word}): нет связи с сервером AWG"))
         elif n and waited > self._OWN_STALE_SERVER_S:
             info["state"] = "stale_server"
-            checks.append(GwCheck("свои списки", None,
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, None,
                                   f"сервер AWG не отвечает на правки {int(waited // 60)} мин: обнови бот сервера AWG"))
         elif n:
             info["state"] = "pending"
-            checks.append(GwCheck("свои списки", None, f"ждут синхронизации ({n_word}): сервер AWG ещё не ответил"))
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, None, f"ждут синхронизации ({n_word}): сервер AWG ещё не ответил"))
         elif info["rej"]:
             info["state"] = "rejected"
             k = len(info["rej"])
             d, why = info["rej"][0]
-            checks.append(GwCheck("свои списки", None,
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, None,
                                   f"сервер AWG не принял {k} " + plural_ru(k, "домен", "домена", "доменов")
-                                  + f": {d} — {why}"))
+                                  + f": {d} — {gwownlists.reject_human(why)}"))
         else:
             info["state"] = "synced"
-            checks.append(GwCheck("свои списки", True, "синхронизированы с сервером AWG"
+            checks.append(GwCheck(gc.CHECK_OWN_LISTS, True, "синхронизированы с сервером AWG"
                                   if info["synced"] else "ждут первой синхронизации с сервером AWG"))
         for c in checks:
             c.group = "own"

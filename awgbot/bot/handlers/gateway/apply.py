@@ -21,7 +21,7 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     raw = (await state.get_data()).get("bundle")
     if not raw:
         await state.clear()
-        await cb.answer(ui.Toast.no_file, show_alert=True)
+        await cb.answer(texts.GW_NO_FILE, show_alert=True)
         return
     blob = base64.b64decode(raw)
     if callback_data.action == "apply!":

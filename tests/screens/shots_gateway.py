@@ -37,4 +37,9 @@ SHOTS = [
 
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
 # длина считается без селектора варианта («☑️ Аварии на e-mail» — 18).
-LABEL_EXCEPTIONS: dict[str, set[str]] = {}
+# «✅/☑️ Простой со звуком» — подпись тумблера по решению пользователя (15.10.2026): 19 в ряду из двух
+_LOUD_ON, _LOUD_OFF = {"✅ Простой со звуком"}, {"☑️ Простой со звуком"}
+LABEL_EXCEPTIONS: dict[str, set[str]] = {
+    "gw.set.mon": _LOUD_ON, "gw.set.mon.quiet": _LOUD_OFF, "gw.set.mon.toggle": _LOUD_OFF,
+    "gw.set.mon.edit.done": _LOUD_ON, "gw.set.mon.minutes.done": _LOUD_ON, "gw.set.mon.streak_one": _LOUD_ON,
+}

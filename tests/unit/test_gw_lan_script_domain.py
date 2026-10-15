@@ -47,7 +47,7 @@ def test_domain_tool_refuses_the_vps_host(domain_env):
     """Увести хост ВПС в туннель — запереть себя: Endpoint аплинка под запретом."""
     tool, dns_d, log, env = domain_env
     r = _run(tool, env, "add", "VPS.example.net")
-    assert "это хост сервера" in r.stdout
+    assert "это адрес самого сервера AWG" in r.stdout
     assert "vps.example.net" not in (dns_d / "awg-gw-vpn-user.conf").read_text()
 
 

@@ -56,15 +56,17 @@ def keyboard(br) -> InlineKeyboardMarkup:
     temp = (f"{_int(br.keys.temp_alert)} °C", br.cb.pack(ID, "edit", br.keys.temp_alert)) if br.keys.temp_alert else None
     mail = (f"{_chk(_bool('notifications.email_fallback'))} Аварии на e-mail",
             br.cb.pack(ID, "toggle", "notifications.email_fallback"))
-    events = available(br, "ncl")           # подраздел событий — рядом с тумблером, «Назад» своим рядом
+    events = available(br, "ncl")           # подраздел событий — рядом с тумблером; «Назад» всегда своим рядом
+    tail = ("👥 События", br.cb.pack("ncl")) if events else None
     return ui.rows(
         (f"{_chk(qh)} Тихие часы", br.cb.pack(ID, "toggle", "quiet_hours.quiet_hours_enabled")),
         [(f"С {_int('quiet_hours.quiet_hours_start'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_start")),
          (f"До {_int('quiet_hours.quiet_hours_end'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_end"))] if qh else None,
         (f"{_chk(ra)} Алерты хоста", br.cb.pack(ID, "toggle", "resource_alerts.enabled")),
-        *(([cpu, ram], [disk, temp]) if temp else ([cpu, ram, disk],)) if ra else (),
-        [mail, ("👥 События", br.cb.pack("ncl")) if events else back_button(br)],
-        back_button(br) if events else None)
+        [cpu, ram, disk] if ra else None,
+        # порог температуры (у агента) — рядом с тумблером почты, как пороги у основного бота
+        [temp, mail, tail] if (ra and temp) else [mail, tail],
+        back_button(br))
 
 
 async def screen(br, services, key: str = ""):

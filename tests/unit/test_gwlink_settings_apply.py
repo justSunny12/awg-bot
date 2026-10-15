@@ -459,7 +459,7 @@ def test_a_missing_unit_is_reported_and_nothing_is_restarted(svc, tmp_path, monk
     «применено» нельзя."""
     host = _Unit(tmp_path, monkeypatch, text=None)
     res = svc.apply_link_settings({**SAME, "HOME_SUBNETS": "192.168.70.0/24"})
-    assert res["ok"] is False and "юнит" in res["error"]
+    assert res["ok"] is False and "обвязка не переписана" in res["error"]
     assert host.restarts == 0
 
 

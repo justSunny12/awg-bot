@@ -12,6 +12,7 @@ from awgbot.domain.services import Notification
 from awgbot.domain import gwownlists
 from awgbot.domain.gateway import base
 from awgbot.domain.gateway.base import GwCheck, GwStatus, log
+from awgbot.domain import gwchecks as gc
 
 
 class TransitMixin:
@@ -23,7 +24,7 @@ class TransitMixin:
 
     BUSY_APPLYING = ("обвязка сейчас применяется (конфигурация или настройки с сервера AWG) — "
                      "повтори через минуту")
-    BUSY_ACTIVATING = "юнит обвязки ещё стартует — повтори через минуту"
+    BUSY_ACTIVATING = "обвязка ещё запускается — повтори через минуту"
     STILL_APPLYING = "обвязка всё ещё применяет настройки — итог в 🩺 Здоровье через несколько минут"
 
     def reassert_guarded(self, why: str, *, timeout: int | None = None) -> tuple[bool, str]:
@@ -110,14 +111,14 @@ class TransitMixin:
         checks: list[GwCheck] = []
         # скрипта списков нет — фиды применить нечем, ни свои, ни из канала
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
-            checks.append(GwCheck("скрипт списков", False,
+            checks.append(GwCheck(gc.CHECK_LISTS_SCRIPT, False,
                                   "скрипт обновления списков РФ-доступа не найден — "
                                   + ("«🔧 Восстановить»" if self.server_cfg1() else
                                      "перевыпусти конфигурацию шлюза с сервера AWG")))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")
         if err:
-            checks.append(GwCheck("применение локальной сети", False, err))
+            checks.append(GwCheck(gc.CHECK_TRANSIT, False, err))
         # интерфейс переехал (OMV собрал bridge/bond — адрес теперь на br0): правила
         # остались на старом имени, весь LAN идёт мимо маркировки. Перевыставить.
         nets = gwguard.unit_env("HOME_SUBNETS").split()
@@ -125,15 +126,15 @@ class TransitMixin:
             live = gwguard.iface_for_subnet(nets[0])
             if live and live[0] != iface:
                 self._reassert_throttled(f"локальная сеть переехала {iface} → {live[0]}")
-                checks.append(GwCheck("применение локальной сети", False,
-                                      f"адрес подсети теперь на {live[0]}, правила стоят на {iface} — перевыставляю"))
+                checks.append(GwCheck(gc.CHECK_TRANSIT, False,
+                                      f"адрес подсети теперь на {live[0]}, правила стоят на {iface}; {gc.SELF_HEAL_TAIL}"))
         # резолвер
         active = gwguard.dnsmasq_active()
-        checks.append(GwCheck("резолвер", active, "" if active else
+        checks.append(GwCheck(gc.CHECK_RESOLVER, active, "" if active else
                               ("dnsmasq не запущен: journalctl -u dnsmasq -e" if active is False
                                else "systemctl не ответил")))
         up = self._upstream_verdict() if active else None
-        checks.append(GwCheck("апстрим через аплинк", up,
+        checks.append(GwCheck(gc.CHECK_UPSTREAM, up,
                               "" if up else
                               (f"{info['resolver']} не отвечает через аплинк: аплинк или резолвер сервера"
                                if up is False else ("резолвер не запущен — не проверяли" if not active
@@ -147,35 +148,33 @@ class TransitMixin:
         if not table_ok and not err:
             # таблицу снёс кто-то посторонний (nftables.service с flush ruleset,
             # ручной nft) — вернёт юнит; перевыпуск тут ни при чём
-            fixed = self._reassert_throttled("таблицы awg_home нет")
-            checks.append(GwCheck("таблица локальной сети", False,
-                                  "таблицы awg_home нет — перевыставляю обвязку" if fixed
-                                  else "таблицы awg_home нет — перевыставлю обвязку в ближайший такт"))
+            self._reassert_throttled("таблицы awg_home нет")
+            checks.append(GwCheck(gc.CHECK_LAN_TABLE, False, f"таблицы awg_home нет; {gc.SELF_HEAL_TAIL}"))
         else:
-            checks.append(GwCheck("таблица локальной сети", table_ok, "" if table_ok else err))
+            checks.append(GwCheck(gc.CHECK_LAN_TABLE, table_ok, "" if table_ok else err))
         ls = gwguard.lists_status()
         info["domains"] = int(ls.get("domains") or 0)
         info["nets"] = int(ls.get("nets") or 0)
         info["updated_at"] = ls.get("updated_at", "")
         info["own_vpn"], info["own_ru"] = gwguard.lan_own_lists()
         lists_ok = table_ok and (info["nets"] > 0 or info["domains"] > 0)
-        checks.append(GwCheck("списки", lists_ok, "" if lists_ok else
+        checks.append(GwCheck(gc.CHECK_LISTS, lists_ok, "" if lists_ok else
                               "списки не загружены: обновление не прошло"))
         # заворот и DNS с роутера — по росту счётчиков
         if home is not None:
             last = self.db.get_state_json(self._LAN_LAST_KEY, {})
             now = timeutil.now()
             cur = {"lan": home["lan_pkts"], "dns": home["dns_pkts"]}
-            for key, name, why in (("lan", "трафик с роутера",
-                                     "роутер не маршрутизирует трафик на шлюз (❓ Роутер)"),
-                                    ("dns", "DNS с роутера",
+            for key, name, why in (("lan", gc.CHECK_LAN_TRAFFIC,
+                                     "роутер не отправляет трафик на шлюз (🛜 Роутер)"),
+                                    ("dns", gc.CHECK_LAN_DNS,
                                      "DHCP роутера раздаёт не адрес шлюза")):
                 prev = int(last.get(key, -1))
                 at = last.get(f"{key}_at") or ""
                 if prev < 0 or cur[key] > prev or cur[key] < prev:      # первый тик / рост / сброс
                     at = timeutil.to_iso(now)
                     ok: bool | None = True if prev >= 0 else None
-                    detail = "" if prev >= 0 else "первый замер"
+                    detail = "" if prev >= 0 else gc.FIRST_TICK_DETAIL
                 else:
                     try:
                         quiet = (now - timeutil.parse_iso(at)).total_seconds() if at else 0.0

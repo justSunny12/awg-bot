@@ -183,9 +183,10 @@ class CfgApplyMixin:
         if note.get("state") == "ok":
             lines = ["✉️ Почта с сервера AWG принята: IMAP и SMTP отвечают, вход выполнен"]
         else:
-            lines = [f"✉️ Почта с сервера AWG принята, но проверка не прошла: {html.escape(str(note.get('why') or 'ошибка'), quote=False)}"]
+            from awgbot.domain.notices.gateway import mail_why, MAIL_FIX_TAIL
+            lines = [f"⚠️ Почта с сервера AWG принята, но не работает: {mail_why(note.get('why') or '')}. {MAIL_FIX_TAIL}"]
         if note.get("backup"):
-            lines.append("💾 Бэкапы теперь будут приходить на e-mail")
+            lines.append("💾 Бэкапы теперь уходят на почту")
         return lines
 
     # ── очередь ответа: линк перезапускался, сессия умерла ───────────────────

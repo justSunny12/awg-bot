@@ -1,6 +1,6 @@
 """«🔧 Сервис»: перезапуск AWG и бота с подтверждением и ценой словами роли,
 итог первой строкой раздела; переезд профилей — у роли с has.migration,
-«🔑 Ключи линка» и «🤖 Токен бота» шлюзов — у роли с has.gw_emergency
+«🔑 Ключи линка» и «🤖 Токен шлюза» шлюзов — у роли с has.gw_emergency
 (кнопки ведут в обработчики основного бота: переезд — sec="mig", ключи —
 sec="lk", токен — sec="gtk")."""
 from __future__ import annotations
@@ -26,7 +26,7 @@ def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0,
              link_keys: bool = False, bot_token: bool = False) -> InlineKeyboardMarkup:
     """Перезапуски парой; переезд — по состоянию: идёт — кто не переехал,
     завершить и отменить; нет — начать (если настроен) и переехавшие после
-    отмены (если есть). Последним рядом — «🔑 Ключи линка» и «🤖 Токен бота»,
+    отмены (если есть). Последним рядом — «🔑 Ключи линка» и «🤖 Токен шлюза»,
     каждая — если есть шлюз, который умеет такую смену каналом: кнопки редкие
     и аварийные, на рабочих экранах им не место."""
     mig: list = []
@@ -41,7 +41,7 @@ def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0,
         [("🔁 Перезапуск AWG", br.cb.pack(ID, "do", "awg")), ("🔁 Перезапуск бота", br.cb.pack(ID, "do", "bot"))],
         *mig,
         [("🔑 Ключи линка", br.cb.pack("lk", "do", "pick")) if br.has.gw_emergency and link_keys else None,
-         ("🤖 Токен бота", br.cb.pack("gtk", "do", "pick")) if br.has.gw_emergency and bot_token else None],
+         ("🤖 Токен шлюза", br.cb.pack("gtk", "do", "pick")) if br.has.gw_emergency and bot_token else None],
         back_button(br))
 
 
@@ -52,7 +52,8 @@ async def screen(br, services, key: str = ""):
         d = {"state": "", "progress": None, "available": False, "orphans": 0}
     link_keys = bool(await call(services.gateway_rekey_slots)) if br.has.gw_emergency else False
     bot_token = bool(await call(services.gateway_token_slots)) if br.has.gw_emergency else False
-    return (texts.settings_svc_text(br, d["state"], d["progress"], d["available"]),
+    carries = await call(services.carries_traffic) if hasattr(services, "carries_traffic") else True
+    return (texts.settings_svc_text(br, d["state"], d["progress"], d["available"], carries=carries),
             keyboard(br, d["state"], available=d["available"], orphans=d["orphans"], link_keys=link_keys,
                      bot_token=bot_token))
 
@@ -66,7 +67,9 @@ async def _awg_restart(ctx) -> str:
     «🔴 AWG не перезапущен: причина»."""
     await ctx.cb.answer("Перезапускаю AWG…")           # ответ сразу: рестарт может идти долго
     ok, detail = await call(ctx.services.restart_awg)
-    return ui.result(ok, "AWG перезапущен", "AWG не перезапущен", detail)
+    # хвост роли — следующий шаг при отказе (агент: «причина в «🩺 Здоровье»»)
+    hint = ctx.br.awg_restart_fail_hint
+    return ui.result(ok, "AWG перезапущен", "AWG не перезапущен", detail) + (f" — {hint}" if hint and not ok else "")
 
 
 async def _bot_question(ctx) -> str:

@@ -59,7 +59,7 @@ def restore_confirm_kb(br) -> InlineKeyboardMarkup:
 async def screen(br, services, key: str = ""):
     enc = await call(services.backup_encryption_enabled)
     channel = str(settings.get("app.scheduler.backup_channel", "telegram") or "")
-    return texts.settings_backup_text(enc, channel), keyboard(br, enc)
+    return texts.settings_backup_text(enc, channel, br), keyboard(br, enc)
 
 
 async def cycle(ctx) -> bool:

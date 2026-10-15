@@ -25,7 +25,8 @@ def test_reboot_detected_only_on_boot_id_change(db):
 
 def test_host_rebooted_text():
     from awgbot.bot import texts
-    assert texts.host_rebooted("NASPi", "агента") == "⚠️ Хост NASPi был перезагружен.\n✅ Запуск агента успешен"
+    assert texts.host_rebooted("NASPi", "агента") == "⚠️ Шлюз NASPi перезагрузился — бот снова на связи"
+    assert texts.host_rebooted("vps", "бота") == "⚠️ Сервер AWG перезагрузился — бот снова на связи"
 
 
 def test_egress_check_in_snapshot(db, monkeypatch):
