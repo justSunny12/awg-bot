@@ -23,6 +23,11 @@ class AgentBotMixin:
     def _env_path() -> str:
         return os.environ.get("AWG_BOT_ENV", "/etc/awg-bot/env")
 
+    def gw_token_env_info(self, slot_id: Optional[int]) -> tuple[str, str]:
+        """(имя переменной, путь к env) токена бота слота — для строки о том,
+        что убрать руками, когда запись env не удалась."""
+        return self._gw_token_env(slot_id), self._env_path()
+
     def gw_bot_token(self, slot_id: Optional[int] = None) -> str:
         """Токен бота шлюза слота из env. Пусто — ещё не спрашивали."""
         key = self._gw_token_env(slot_id)

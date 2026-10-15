@@ -68,7 +68,7 @@ def normalize(raw: str) -> str:
 
     labels = s.split(".")
     if len(labels) < 2:
-        raise DomainRejected("нужно полное имя с зоной, например sberbank.ru")
+        raise DomainRejected("нужен адрес вида sberbank.ru")
     for lab in labels:
         if not lab or len(lab) > MAX_LABEL_LEN or not _RE_LABEL.match(lab):
             raise DomainRejected("недопустимые символы в имени")

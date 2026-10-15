@@ -136,9 +136,8 @@ def test_a_table_that_did_not_go_in_keeps_the_real_routes_and_is_said(two, fake_
     card = two.lan_space_card(two.db.gateway(1))
     assert card["error"].startswith("nft -c -f -: Error")
     assert lan_space_lines(card) == [
-        "⚠️ Адреса в туннеле не работают: таблица awg_lan_map не поставлена (nft -c -f -: Error: Could not "
-        "process rule: No such file or directory) — журнал: <code>journalctl -u awg-bot | grep 'адреса в "
-        "туннеле'</code>"]
+        "⚠️ Адреса в туннеле не работают: nft не принял таблицу <code>awg_lan_map</code> — подробности: "
+        "<code>journalctl -u awg-bot | grep 'адреса в туннеле'</code>"]
     warns = preflight.collect_warnings(two, server_ok=True)
     assert ("адреса в туннеле не работают: таблица awg_lan_map не поставлена (nft -c -f -: Error: Could not "
             "process rule: No such file or directory) — журнал: journalctl -u awg-bot | grep 'адреса в "
@@ -169,7 +168,7 @@ def test_a_fwmark_on_the_slot_bits_turns_the_addresses_off(two, fake_routing, mo
     assert card["key"] == "routing.fwmark"
     assert lan_space_lines(card) == [
         "⚠️ Адреса в туннеле выключены: метка РФ-доступа 0x4 задевает биты меток слотов 0x6 — "
-        "поправь <code>routing.fwmark</code> в app.yaml"]
+        "поправь <code>routing.fwmark</code> в <code>app.yaml</code>"]
 
 
 def test_slot_policy_is_not_asserted_twice_in_one_tick(two, fake_routing, monkeypatch):
@@ -218,11 +217,11 @@ def _legacy_toggle(monkeypatch, on: bool):
 
 
 MOVED = ("🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:\n"
-         " · NASPi: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>\n"
-         " · Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
-         "Реальные адреса сетей через туннель больше не доступны")
+         "• NASPi: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>\n"
+         "• Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
+         "Реальные адреса сетей через туннель больше не открываются")
 SMB = "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
-LINKED = "Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
+LINKED = "🔗 Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
 
 
 @pytest.mark.parametrize("allowed, smb, was_on, transit, text", [
@@ -334,9 +333,8 @@ def test_the_admin_is_advised_once_to_reissue_their_device_configs(two, monkeypa
     notes = two.admin_reissue_announce()
     assert len(notes) == 1 and notes[0].tg_id == ADMIN, notes
     assert notes[0].text == (
-        "🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса "
-        'локальных сетей в туннеле (<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">'
-        "что нового в v3.3.0</a>)")
+        "🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса локальных "
+        'сетей в туннеле (<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">что нового в v3.3.0</a>)')
     assert two.admin_reissue_announce() != [], "не доставлено — скажется на следующем старте"
     notes[0].on_sent()
     assert two.admin_reissue_announce() == []

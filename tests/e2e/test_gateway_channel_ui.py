@@ -231,15 +231,15 @@ async def test_transit_on_names_the_networks_it_will_be_linked_with(services, sl
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.gateway_set_lan_subnets(2, "192.168.70.0/24")
-    line = ("↔️ Связь подсетей: устройства локальных подсетей шлюзов станут доступны из подсетей других шлюзов "
-            "со включённым VPN-транзитом (NASPi)")
+    line = ("🔗 Связь подсетей: устройства локальных подсетей шлюзов станут доступны из подсетей других шлюзов "
+            "с включённым VPN-транзитом (NASPi)")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
     assert line in _screen(nav)[0], _screen(nav)[0]
     services.gateway_set_lan_mode(1, False)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=2), services)
-    assert "↔️ Связь подсетей:" not in _screen(nav)[0], _screen(nav)[0]
+    assert "🔗 Связь подсетей:" not in _screen(nav)[0], _screen(nav)[0]
 
 
 def _neighbour(services, monkeypatch):
@@ -311,7 +311,7 @@ def test_the_clock_line_warns_about_the_clock_not_about_the_channel(skew, side):
     сломается, и промолчала бы о том, что сломается — TLS и расписания."""
     ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True, "clock_skew": skew}
     out = _channel_block(ch, True)
-    line = next((x for x in out.splitlines() if x.startswith("⏱ Часы шлюза")), "")
+    line = next((x for x in out.splitlines() if x.startswith("⚠️ Часы шлюза")), "")
     assert line, f"расхождение {skew} с не показано"
     assert f"{side} на {abs(skew) // 60} мин" in line
     assert "синхронизацию" in line, "не сказано, что делать"
@@ -385,13 +385,13 @@ def _cfg_ack(services, **body):
 
 
 async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_bot):
-    """Всё совпадает — «🟢 конфиг актуален» в строке канала, ни строки про
-    агента 3.2, ни кнопки файла: агенту с документом файл не нужен, а кнопка
-    звала бы перевыпускать то, что везёт канал."""
+    """Всё совпадает — строка канала без «актуальна» (только негативные
+    исходы), ни строки про старого агента, ни кнопки файла: агенту с документом
+    файл не нужен, а кнопка звала бы перевыпускать то, что везёт канал."""
     _cfg_snap(services)
     text, labels = await _card(services, fake_bot)
-    assert "🔗 Упр. канал 🟢 · v3.3.0 · 🟢 конфиг актуален" in text, text
-    assert "Агент шлюза v3.2" not in text and "перевыпусти" not in text, text
+    assert "🔗 Канал конфигурации 🟢 · v3.3.0\n" in text and "актуальн" not in text, text
+    assert "устарел" not in text and "перевыпусти" not in text, text
     assert "📤 Конфигурация" not in labels, labels
 
 
@@ -400,9 +400,9 @@ async def test_a_cfg1_drift_on_a_live_channel_goes_by_itself(services, cfg1, fak
     пунктов, без хвоста про перевыпуск и без галочки «актуален»."""
     _cfg_snap(services, env="0" * 16, server="0" * 16)
     text, _ = await _card(services, fake_bot)
-    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят каналом "
-            "и применятся сами") in text.splitlines(), text
-    assert "конфиг актуален" not in text and "перевыпусти" not in text, text
+    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят по каналу "
+            "конфигурации и применятся сами") in text.splitlines(), text
+    assert "актуальн" not in text and "перевыпусти" not in text, text
 
 
 async def test_a_cfg1_drift_off_the_channel_is_listed_by_section(services, cfg1, fake_bot):
@@ -421,9 +421,9 @@ async def test_a_cfg1_refusal_says_what_and_that_the_old_one_stays(services, cfg
     _cfg_snap(services, env="0" * 16)
     _cfg_ack(services, failed={"env": "<b>dnsmasq</b> не поднялся"})
     text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Шлюз не применил конфигурацию: &lt;b&gt;dnsmasq&lt;/b&gt; не поднялся — вернул прежнюю"
-            in text.splitlines()), text
-    assert "уходят каналом" not in text and "конфиг актуален" not in text, text
+    assert ("⚠️ Шлюз не применил конфигурацию: &lt;b&gt;dnsmasq&lt;/b&gt; не поднялся — оставил прежнюю; "
+            "подробности в чате бота шлюза" in text.splitlines()), text
+    assert "уходят по каналу" not in text and "актуальн" not in text, text
 
 
 async def test_waiting_mail_and_phrase_are_named_on_the_card(services, cfg1, fake_bot):
@@ -455,7 +455,7 @@ async def test_details_name_the_applied_generation_and_what_was_kept(services, c
     details = text.split("<blockquote expandable>", 1)[1]
     assert f"конфигурация №{doc['gen']} применена " in details, details
     assert line in details, details
-    assert "🟢 конфиг актуален" in text, "оставленное своим выдано за расхождение"
+    assert "расходится" not in text, "оставленное своим выдано за расхождение"
 
 
 async def test_no_applied_line_before_an_answer_to_the_current_document(services, cfg1, fake_bot):
@@ -493,15 +493,15 @@ async def test_an_agent_32_card_asks_to_update_and_keeps_the_file_button(service
     кнопка файла остаётся, ею пока и довозится остальное."""
     _snap(services, agent_version="3.2.1")
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент шлюза v3.2 получает по упр. каналу не всё — подсети других шлюзов, конфиг линка и аплинка " \
-           "доходят только с перевыпуском конфигурации. Обнови агента" in text, text
+    assert "⚠️ Агент v3.2.1 устарел: подсети других шлюзов, ключи линка и аплинк по каналу конфигурации " \
+           "до него не доходят — только перевыпуском конфигурации. Обнови агента" in text, text
     assert "📤 Конфигурация" in labels, labels
 
 
 async def test_without_a_snapshot_there_is_no_agent_32_line(services, slot, fake_bot):
     """Снимка ещё нет — о версии агента судить не по чему, строки К7 нет."""
     text, _ = await _card(services, fake_bot)
-    assert "Агент шлюза v3.2" not in text, text
+    assert "устарел" not in text, text
 
 
 @pytest.mark.parametrize("online", [True, False])
@@ -512,14 +512,14 @@ async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, c
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
     assert services.db.gateway(1).lan_mode == 0
-    assert ("VPN-транзит выключен: применится автоматически по упр. каналу", True) in cb.answers, cb.answers
+    assert ("VPN-транзит выключен: применится автоматически по каналу конфигурации", True) in cb.answers, cb.answers
 
 
 @pytest.mark.parametrize("me, caps2, tail", [
-    ("cfg1", [], "VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей "
+    ("cfg1", [], "VPN-транзит включён: применится автоматически по каналу конфигурации; для связи подсетей "
                  "перевыпусти конфигурацию: Pi2"),
-    ("cfg1", ["cfg1"], "VPN-транзит включён: применится автоматически по упр. каналу"),
-    ("v32-online", ["cfg1"], "VPN-транзит включён: применится автоматически по упр. каналу; для связи подсетей "
+    ("cfg1", ["cfg1"], "VPN-транзит включён: применится автоматически по каналу конфигурации"),
+    ("v32-online", ["cfg1"], "VPN-транзит включён: применится автоматически по каналу конфигурации; для связи подсетей "
                              "перевыпусти конфигурацию: NASPi"),
     ("v32-offline", [], "VPN-транзит включён: перевыпусти конфигурацию шлюза; для связи подсетей перевыпусти "
                         "конфигурацию: Pi2"),
@@ -546,11 +546,13 @@ async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services
     dialog = _screen(nav)[0]
     names = tail.split("конфигурацию: ")[-1] if "связи подсетей" in tail else ""
     if names:
-        # сам слот без канала диалог уже просит перевыпустить — в список он не идёт
-        assert ("Агенту шлюза v3.2 подсети других шлюзов доходят только с перевыпуском конфигурации — "
-                "после включения перевыпусти её: " + names) in dialog, dialog
+        # одна строка с именами; сам слот без канала — в ней первым; только он — без имени
+        line = next((x for x in dialog.splitlines() if x.startswith("Потребуется перевыпуск конфигурации шлюза")), "")
+        listed = "NASPi, " + names if me == "v32-offline" else names
+        assert line == ("Потребуется перевыпуск конфигурации шлюза" if listed == "NASPi"
+                        else "Потребуется перевыпуск конфигурации шлюза: " + listed), dialog
     else:
-        assert "Агенту шлюза v3.2" not in dialog, dialog
+        assert "Потребуется перевыпуск" not in dialog, dialog
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
     assert cb.answers == [(tail, True)], cb.answers
@@ -570,12 +572,11 @@ async def test_transit_off_names_who_needs_a_file_to_drop_the_link(services, cfg
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
     dialog = _screen(nav)[0]
-    assert ("Агенту шлюза v3.2 подсети других шлюзов снимаются только с перевыпуском конфигурации — "
-            "после выключения перевыпусти её: Pi2") in dialog, dialog
+    assert "Потребуется перевыпуск конфигурации шлюза: Pi2" in dialog.splitlines(), dialog
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
-    assert cb.answers == [("VPN-транзит выключен: применится автоматически по упр. каналу; чтобы снять связь "
-                           "подсетей, перевыпусти конфигурацию: Pi2", True)], cb.answers
+    assert cb.answers == [("VPN-транзит выключен: применится автоматически по каналу конфигурации; чтобы снять "
+                           "связь подсетей, перевыпусти конфигурацию: Pi2", True)], cb.answers
 
 
 async def test_the_card_names_linked_neighbours_as_links(services, cfg1, fake_bot, monkeypatch):
@@ -583,11 +584,11 @@ async def test_the_card_names_linked_neighbours_as_links(services, cfg1, fake_bo
     соседей; без второго слота с VPN-транзитом строки нет."""
     _peer_store(monkeypatch)
     text, _ = await _card(services, fake_bot)
-    assert "↔️ Связь подсетей" not in text, text
+    assert "🔗 Связь подсетей" not in text, text
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
     text, _ = await _card(services, fake_bot)
     # без username бота имя — текстом; ссылкой (gw-<слот>) — в снимке экранов
-    assert "↔️ Связь подсетей: с Pi2\n" in text, text
+    assert "🔗 Связь подсетей: с Pi2\n" in text, text

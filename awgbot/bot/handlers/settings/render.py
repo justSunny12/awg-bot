@@ -66,11 +66,11 @@ async def _screen(sec: str, services, key: str = ""):
         if slot:
             st = next((x for x in states if x["gateway"].id == slot), None)
             if st is None:
-                return "Такого слота шлюза нет", kb.settings_back("rt")
+                return f"⚠️ {texts.GATEWAY_GONE}", kb.settings_back("rt")
             return texts.gateway_replace_intro(st), kb.gateway_choose_kind(bool(cands), slot)
         if states:
             if len(states) >= config.ROUTING_GATEWAYS_MAX:
-                return "Слоты шлюзов заняты: убери один, чтобы добавить другой", kb.settings_back("rt")
+                return f"⛔ {texts.gateways_full(len(states), config.ROUTING_GATEWAYS_MAX)}", kb.settings_back("rt")
             return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
         return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
     if sec in ("rt_lists", "rt_users", "rt_mon", "rt_params"):
@@ -82,10 +82,8 @@ async def _screen(sec: str, services, key: str = ""):
             info = await call(services.routing_monitor_info)
             lists = await call(services.routing_lists_info)
             return texts.routing_params_text(info, lists), kb.routing_params_kb(info, lists["every_hours"])
-        clients = await call(services.routing_grantable_clients)
-        from awgbot.bot import paging
-        return texts.routing_users_text(), kb.settings_routing_users(
-            clients, page=paging.page_of(config.ADMIN_ID, "rtusers"))
+        from .sections import _users_screen
+        return await _users_screen(services)
     return await sections.screen("root", MAIN, services)
 
 
@@ -189,11 +187,11 @@ def _bundle_chat(where: dict) -> int:
 
 
 async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
-    """(«имя» слота для подписи, бот шлюза); слота уже нет — «слот N»."""
+    """(«имя» слота для подписи, бот шлюза); слота уже нет — «шлюз N»."""
     try:
         return await call(services.gw_bundle_target, slot_id)
     except (ServiceError, OSError):
-        return f"слот {slot_id}", {}
+        return f"шлюз {slot_id}", {}
 
 
 async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "", where: dict | None = None) -> bool:

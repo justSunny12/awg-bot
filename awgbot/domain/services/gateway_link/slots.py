@@ -46,7 +46,7 @@ class SlotsMixin:
         gw = self.db.gateway(slot_id) if slot_id else self.gateway_first_slot()
         if gw is None:
             if slot_id:
-                raise ServiceError("такого слота шлюза нет")
+                raise ServiceError("такого шлюза нет")
             from awgbot.core.models import Gateway
             return Gateway(id=1, device_id=0, link_if=config.ROUTING_GW_INTERFACE or "awglink",
                            link_port=config.ROUTING_LINK_PORTS[0], link_cidr=config.ROUTING_LINK_CIDRS[0],
@@ -79,7 +79,7 @@ class SlotsMixin:
 
     def _gw_name(self, gw) -> str:
         dev = self.db.get_device(gw.device_id)
-        return dev.name if dev is not None else f"слот {gw.id}"
+        return dev.name if dev is not None else f"шлюз {gw.id}"
 
     def _gw_display(self, gw) -> str:
         """«Pi4 (ЕК-22П10)» — имя и подпись, сырое: экранирует слой текстов."""
@@ -117,7 +117,8 @@ class SlotsMixin:
         или когда конфиг не знает порта/подсети для такого номера."""
         slots = self.db.gateways()
         if len(slots) >= config.ROUTING_GATEWAYS_MAX:
-            raise ServiceError(f"слотов шлюзов уже {len(slots)} — потолок routing.gateways_max")
+            from awgbot.domain.notices.routing import gateways_full
+            raise ServiceError(gateways_full(len(slots), config.ROUTING_GATEWAYS_MAX))
         used_ids = {g.id for g in slots}
         used_if = {g.link_if for g in slots}
         used_port = {g.link_port for g in slots}
@@ -126,15 +127,15 @@ class SlotsMixin:
             if n in used_ids:
                 continue
             if n > lanspace.MAX_SLOTS:                     # адреса в туннеле — по /16 на слот 1–15
-                raise ServiceError(f"слотов шлюзов не больше {lanspace.MAX_SLOTS}: на каждый — свои адреса в туннеле")
+                raise ServiceError(f"шлюзов не больше {lanspace.MAX_SLOTS}: на каждый — свои адреса в туннеле")
             iface = (config.ROUTING_GW_INTERFACE or "awglink") if n == 1 else f"awglink{n}"
             if n > len(config.ROUTING_LINK_PORTS) or n > len(config.ROUTING_LINK_CIDRS):
-                raise ServiceError(f"для слота {n} нет порта или подсети линка в routing.link_ports / link_cidrs")
+                raise ServiceError(f"для шлюза {n} нет порта или подсети линка в routing.link_ports / link_cidrs")
             port, cidr = config.ROUTING_LINK_PORTS[n - 1], config.ROUTING_LINK_CIDRS[n - 1]
             if iface in used_if or port in used_port or cidr in used_cidr:
-                raise ServiceError(f"слот {n}: интерфейс, порт или подсеть линка уже заняты")
+                raise ServiceError(f"шлюз {n}: интерфейс, порт или подсеть линка уже заняты")
             return n, iface, port, cidr
-        raise ServiceError("свободного слота нет")
+        raise ServiceError("свободного места для шлюза нет")
 
 
     # ── переключение трафика ─────────────────────────────────────────────────
@@ -279,7 +280,7 @@ class SlotsMixin:
 
         def _name(g) -> str:
             dev = self.db.get_device(g.device_id)
-            name = dev.name if dev is not None else f"слот {g.id}"
+            name = dev.name if dev is not None else f"шлюз {g.id}"
             return f"{name} ({g.label})" if g.label else name
 
         standby = []
@@ -303,7 +304,7 @@ class SlotsMixin:
         states = self.gateway_states()
         st = next((x for x in states if x["gateway"].id == int(slot_id)), None)
         if st is None:
-            raise ServiceError("такого слота шлюза нет")
+            raise ServiceError("такого шлюза нет")
         active = next((x for x in states if x.get("active")), None)
         st["active_display"] = active["display"] if active else ""
         st["states"] = states

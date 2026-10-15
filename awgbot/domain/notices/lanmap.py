@@ -18,19 +18,22 @@ def lan_space_off_line(problem: str, key: str = "routing.lan_space", *, markup: 
     текст сами."""
     if not markup:
         return f"адреса в туннеле выключены: {problem} — поправь {key} в app.yaml"
-    return f"⚠️ Адреса в туннеле выключены: {_codes(problem)} — поправь <code>{html.escape(key)}</code> в app.yaml"
+    return (f"⚠️ Адреса в туннеле выключены: {_codes(problem)} — поправь <code>{html.escape(key)}</code> "
+            "в <code>app.yaml</code>")
 
 
 def lan_map_failed_line(error: str, *, markup: bool = True) -> str:
     """Таблица адресов в туннеле не поставилась (отказ nft): адреса в туннеле
-    не работают, прежние маршруты настоящих подсетей бот не снимал."""
+    не работают, прежние маршруты настоящих подсетей бот не снимал. В карточке
+    (markup) сырой ответ nft не показывается — он в журнале, на который
+    строка и ведёт; замечание при запуске (без разметки) несёт его целиком."""
     from awgbot.infra.routing.lanmap import LOG_PREFIX
     err = " ".join(str(error).split())[:160]
     cmd = f"journalctl -u awg-bot | grep '{LOG_PREFIX.rstrip(':')}'"
     if not markup:
         return f"адреса в туннеле не работают: таблица awg_lan_map не поставлена ({err}) — журнал: {cmd}"
-    return (f"⚠️ Адреса в туннеле не работают: таблица awg_lan_map не поставлена "
-            f"({html.escape(err, quote=False)}) — журнал: <code>{html.escape(cmd, quote=False)}</code>")
+    return (f"⚠️ Адреса в туннеле не работают: nft не принял таблицу <code>awg_lan_map</code> — "
+            f"подробности: <code>{html.escape(cmd, quote=False)}</code>")
 
 
 def _and(names: list[str]) -> str:
@@ -38,10 +41,10 @@ def _and(names: list[str]) -> str:
 
 
 def lan_peers_joined(names: list[str]) -> str:
-    """Хвост уведомления после обновления: прежний тумблер связи подсетей был
+    """Блок сводки после обновления: прежний тумблер связи подсетей был
     выключен, а шлюзов с VPN-транзитом два и больше — их сети теперь связаны.
     names — имена шлюзов готовой разметкой (ссылки на карточки)."""
-    return ("Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: "
+    return ("🔗 Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: "
             f"сети {_and(names)} связаны")
 
 
@@ -54,17 +57,17 @@ def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], *, smb: bool)
     по адресам в туннеле. rows — [(имя шлюза готовой разметкой, [(настоящая,
     в туннеле)])], до шести пар на шлюз (шлюзов больше восьми — до трёх), дальше
     «и ещё N»; smb — записи SMB с
-    адресами в туннеле стоят (имена уже ведут на новые). О перевыпуске
-    конфигов админа — отдельное разовое уведомление (notices.updates
-    admin_reissue_advice)."""
+    адресами в туннеле стоят (имена уже ведут на новые). Совет о перевыпуске
+    конфигов админа — следующим блоком той же сводки (notices.updates
+    admin_reissue_advice, собирает lanmap_sync.lan_space_announce)."""
     lines = ["🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:"]
     limit = LAN_PAIRS_SHOWN if len(rows) <= 8 else LAN_PAIRS_SHOWN_MANY
     for name, pairs in rows:
         shown = ", ".join(f"<code>{html.escape(r)}</code> → <code>{html.escape(t)}</code>"
                           for r, t in pairs[:limit])
         more = len(pairs) - limit
-        lines.append(f" · {name}: {shown}" + (f" и ещё {more}" if more > 0 else ""))
-    tail = "Реальные адреса сетей через туннель больше не доступны"
+        lines.append(f"• {name}: {shown}" + (f" и ещё {more}" if more > 0 else ""))
+    tail = "Реальные адреса сетей через туннель больше не открываются"
     if smb:
         tail += "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
     lines.append(tail)

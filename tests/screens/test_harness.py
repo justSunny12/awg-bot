@@ -110,15 +110,16 @@ def test_confirmation_rule_catches_a_reversed_or_red_cancel_and_leaves_presets_a
 
 def test_layout_rules_catch_the_house_icon_and_circles_on_toggles():
     """«🏠» нигде; кружок 🟢/🔴 — только состоянию объекта (колбэк открытия
-    устройства или профиля) и действию «🔴 Выключить…», не тумблерам."""
+    устройства или профиля), не тумблерам и не действиям («☑️ Выключить…»)."""
     rec = _rec(
         Call("= edit #1", "ok", markup=_kb([("🏠 В меню", "m:main")])),
         Call("= edit #1", "ok", markup=_kb([("🟢 Уведомления", "set:notify")])),
         Call("= edit #1", "ok", markup=_kb([("🟢 iPhone", "d:open:1")], [("🔴 Выключить РФ-доступ", "set:rt:toggle")])),
     )
     found = harness.problems("adm.x", rec, {})
-    assert len(found) == 2, found
+    assert len(found) == 3, found
     assert "«🏠»" in found[0] and "кружок вместо ✅/☑️ на кнопке «🟢 Уведомления»" in found[1]
+    assert "кружок вместо ✅/☑️ на кнопке «🔴 Выключить РФ-доступ»" in found[2]
 
 
 def test_toast_length_is_counted_in_utf16_units():

@@ -66,6 +66,8 @@ class CardMixin:
             "error": (self.db.get_state(self._gwlink_key(self._GWLINK_ERROR_KEY, gw.id)) or ""
                       ).partition(" ")[2],
             "peer_nets": snap.get("peer_nets") if snap else None,
+            # адрес шлюза в локальной сети — в настройку роутера вместо плейсхолдера
+            "lan_addr": str(snap.get("lan_addr") or "") if snap else "",
             "cfg": self.gwcfg_card(gw, snap),
         }
 

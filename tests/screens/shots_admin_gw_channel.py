@@ -40,6 +40,11 @@ def _neighbour(services, mp):
 _PEER_MISSING = {"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]}
 
 
+def _lan_off1(services, mp):
+    """Слот 1 с подсетью, но VPN-транзит выключен: включение покажет настройку роутера."""
+    services.db.gateway_update(1, lan_mode=0)
+
+
 def _lan_off2(services, mp):
     """Слот 2 с подсетью, но без VPN-транзита: включение его свяжет с сетью слота 1."""
     services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=0)
@@ -137,6 +142,12 @@ CHANNEL = [
     _card(1, _chan(1, _ch(agent_version="3.1.0-" + "x" * 200)), "длинная версия агента обрезана",
           "adm.gw.card.ch.long_version"),
     _card(1, _chan(1, _ch(skew_min=10)), "часы шлюза спешат на 10 мин", "adm.gw.card.ch.clock"),
+    Shot("adm.gw.router.addr", role="admin", press=[GwSlotCB(action="router", slot=1)],
+         data=_chan(1, _ch(lan_addr="192.168.1.10")),
+         title="настройка роутера: адрес шлюза из снимка канала — без плейсхолдера и подсказки"),
+    Shot("adm.gw.lan_yes.router", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="1")],
+         data=_chan(1, _ch(lan_addr="192.168.1.10"), _lan_off1),
+         title="VPN-транзит включён — сразу «🛜 Настройка роутера» с адресом шлюза"),
     _card(1, _chan(1, _ch(peer_nets=_PEER_MISSING)), "на шлюзе нет подсетей соседа — названы",
           "adm.gw.card.ch.peer_missing"),
     _card(1, _chan(1, _ch(peer_nets={"ok": True, "missing": []})), "вердикт связи подсетей исправен — строки нет",

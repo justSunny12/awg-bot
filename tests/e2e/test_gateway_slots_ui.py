@@ -127,7 +127,7 @@ async def test_card_never_has_more_than_eight_buttons(services, slots, fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
     assert _rows(markup) == [["▶️ Сделать активным"], ["📤 Конфигурация", "📡 Пинг"],
-                             ["✅ VPN-транзит", "🗺 Подсети"], ["❓ Роутер", "✏️ Изменить"], ["⬅️ Назад"]]
+                             ["✅ VPN-транзит", "🗺 Подсети"], ["🛜 Роутер", "✏️ Изменить"], ["⬅️ Назад"]]
     assert sum(len(r) for r in markup.inline_keyboard) <= 8
 
 
@@ -218,19 +218,20 @@ async def test_lan_subnets_and_label_inputs(services, slots, fake_bot):
 
 
 async def test_failed_label_input_reasks_and_keeps_the_input_open(services, slots, fake_bot):
-    """Отказ сервиса (слот исчез, пока приглашение висело): ввод не закрыт —
-    можно ответить ещё раз — и ничего не убираем. Ответ «⚠️ …» — эталон
-    adm.gw.label.gone."""
+    """Слот исчез, пока приглашение висело: отвечать больше некуда — ввод
+    закрыт, «⚠️ Такого шлюза нет» с выходом «⬅️ В меню», не тупик (эталон
+    adm.gw.label.gone)."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
     services.db.gateway_delete(2)
-    msg = _amsg(fake_bot, "дом 2")
+    msg = _amsg(fake_bot, "подпись 2")
     await sh.gateway_label_received(msg, st, services)
-    assert await st.get_state() is not None, "ввод открыт — можно ответить ещё раз"
-    assert not [r for r in fake_bot.records if r[0] == "delete_message"], "до успеха ничего не убираем"
+    assert await st.get_state() is None, "ввод остался открытым, а слота уже нет"
+    shown = [s for s in msg.sent if s[0] == "answer"][-1]
+    assert shown[1] == "⚠️ Такого шлюза нет" and [b.text for r in shown[2].inline_keyboard for b in r] == ["⬅️ В меню"]
 
 
 async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots, fake_bot):
@@ -340,7 +341,7 @@ async def test_params_turn_off_asks_first_and_returns_to_params(services, slots,
     cb, nav = _acb(fake_bot)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     text, labels = _screen(nav)
-    assert text.startswith("🔴 Выключить РФ-доступ для всех?") and labels == ["⬅️ Отмена", "🔴 Выключить"]
+    assert text.startswith("☑️ Выключить РФ-доступ для всех?") and labels == ["⬅️ Отмена", "☑️ Выключить"]
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
     assert markup.inline_keyboard[0][0].callback_data == SetCB(sec="rt_params", act="open").pack()
 
@@ -352,7 +353,7 @@ async def test_params_turn_off_asks_first_and_returns_to_params(services, slots,
 async def test_client_status_line_has_two_states_only():
     from awgbot.bot import texts
     assert texts.routing_status_line(True) == "🇷🇺 РФ-доступ: 🟢 работает"
-    assert texts.routing_status_line(False) == "🇷🇺 РФ-доступ: 🔴 не работает"
+    assert texts.routing_status_line(False) == "🇷🇺 РФ-доступ: 🔴 временно недоступен"
 
 
 async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
@@ -481,11 +482,10 @@ async def test_the_gateways_screen_has_no_peer_button_and_shows_the_line(service
     services.gateway_set_lan_subnets(2, "192.168.68.0/24")
     text, markup = await sh.gateways_screen(services)
     assert not [b for row in _rows(markup) for b in row if "Связь подсетей" in b]
-    assert ("↔️ Связь подсетей — между шлюзами с VPN-транзитом: появится, когда он будет включён хотя бы "
-            "у двух") in text, text
+    assert "🔗 Связь подсетей появится, когда VPN-транзит будет включён хотя бы у двух шлюзов" in text, text
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
     text, markup = await sh.gateways_screen(services)
-    assert ("↔️ Связь подсетей: NASPi: <code>10.240.1.0/24</code> ↔️ Pi2: <code>10.241.68.0/24</code>"
+    assert ("🔗 Связь подсетей: NASPi: <code>10.240.1.0/24</code> ↔️ Pi2: <code>10.241.68.0/24</code>"
             in text), text
     assert not [b for row in _rows(markup) for b in row if "Связь подсетей" in b]
 
@@ -579,20 +579,34 @@ def test_transit_of_a_second_slot_notifies_both_live_agents_32_once(services, sl
 # ── «👥 Кому доступен» ───────────────────────────────────────────────────────
 
 async def test_who_has_access_uses_select_all_both_ways(services, slots, fake_bot, make_active_client):
-    """«Выбрать все» по правилу массового выбора — ☑️ выдаёт всем, ✅
-    снимает со всех; каждый, кому выдали, получает уведомление один раз.
-    Экран и всплывашки — эталоны adm.rt.users.all и adm.rt.users.all.off."""
+    """«Все профили» по правилу массового выбора — ☑️ отмечает всех, ✅
+    снимает отметки со всех; применяет «✅ Применить»: каждый, кому выдали,
+    получает уведомление один раз. Экран и всплывашки — эталоны
+    adm.rt.users.all и adm.rt.users.all.off."""
     a = make_active_client(name="Аня", tg_id=4101)
     b = make_active_client(name="Боря", tg_id=4102)
     before = len([r for r in fake_bot.records if r[0] == "send_message"])
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services, st)
+    assert not services.db.get_client(a.id).routing_allowed, "отметка применилась без «Применить»"
+    assert [r for r in fake_bot.records if r[0] == "send_message"][before:] == []
+    cb, nav = _acb(fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert services.db.get_client(a.id).routing_allowed and services.db.get_client(b.id).routing_allowed
+    assert cb.answers[-1] == ("РФ-доступ: разрешён 2", False), cb.answers
     notified = [r for r in fake_bot.records if r[0] == "send_message"][before:]
     assert sorted(r[1] for r in notified) == [4101, 4102], "уведомление — каждому, по одному"
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services, st)
+    cb, nav = _acb(fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert not services.db.get_client(a.id).routing_allowed and not services.db.get_client(b.id).routing_allowed
+    # «Применить» без отметок своего экрана (кнопка из старого сообщения) — отказ
+    cb, nav = _acb(fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, FakeState())
+    assert cb.answers[-1] == ("Кнопка устарела — открой раздел заново", True), cb.answers
 
 
 async def test_allow_all_reconciles_once_and_answers_first(services, slots, fake_bot, make_active_client, monkeypatch):
@@ -603,8 +617,11 @@ async def test_allow_all_reconciles_once_and_answers_first(services, slots, fake
     b = make_active_client("Боря", tg_id=4112, device_limit=1)
     n = {"reconcile": 0}
     monkeypatch.setattr(services, "reconcile_routing", lambda: n.__setitem__("reconcile", n["reconcile"] + 1))
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services, st)
+    cb, nav = _acb(fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert services.db.get_client(a.id).routing_allowed and services.db.get_client(b.id).routing_allowed
     assert n["reconcile"] == 1, f"реконсиляций на два профиля: {n['reconcile']}"
     assert len(cb.answers) == 1, f"колбэку ответили не один раз: {cb.answers}"
@@ -753,12 +770,11 @@ async def test_the_lan_prompt_says_neighbours_only_when_the_networks_are_linked(
     from awgbot.bot import texts
     st = services.gateway_screen_state(1, lazy_ping=False)
     prompt, card = texts.gateway_lan_text(st), texts.gateway_card_text(st, st["states"])
-    assert "С твоих устройств в туннеле сеть открывается" in prompt and "только твоим устройствам\n" in prompt + "\n"
-    assert "с твоих устройств в туннеле сеть открывается по адресам в туннеле: 192.168.1.10 → 10.240.1.10" in card
+    assert "Доступ через туннель — только твоим устройствам\n" in prompt + "\n"
+    assert "через туннель сеть открывается по адресам в туннеле: 192.168.1.10 → 10.240.1.10" in card
     services.db.gateway_update(2, lan_mode=1)
     st = services.gateway_screen_state(1, lazy_ping=False)
     prompt, card = texts.gateway_lan_text(st), texts.gateway_card_text(st, st["states"])
-    assert "С твоих устройств в туннеле и из подсетей других шлюзов сеть открывается" in prompt
     assert "Доступ через туннель — только твоим устройствам и подсетям других шлюзов" in prompt
-    assert "с твоих устройств в туннеле и из подсетей других шлюзов сеть открывается" in card
+    assert "через туннель и из подсетей других шлюзов сеть открывается" in card
 

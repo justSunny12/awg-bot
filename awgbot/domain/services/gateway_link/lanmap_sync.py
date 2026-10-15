@@ -137,29 +137,38 @@ class LanMapSyncMixin:
 
     _ADMIN_REISSUE_KEY = "admin_reissue_announced"   # «перевыпусти конфиги устройств админа» сказано
 
-    def admin_reissue_announce(self) -> list[Notification]:
-        """Разово на старте после обновления на 3.3.0: конфиги устройств админа,
-        выданные раньше, не знают резолвера админа (имена SMB) и — при
-        раздельном туннеле — пространства адресов в туннеле; какие именно,
-        бот не помнит, поэтому совет — всем. Но только если перевыпуск что-то
-        даст: резолвер админа работает (его адрес идёт в DNS конфига) или
-        строка пространства реально дописывается в AllowedIPs (раздельный
-        туннель, адреса в туннеле исправны); иначе новый конфиг — байт в байт
-        прежний, совет пустой. Ключ — по доставке; сказать нечего или некому
-        (новая установка) — ключ сразу."""
+    def _admin_reissue_part(self) -> str:
+        """Совет о перевыпуске конфигов устройств админа — разово после
+        обновления на 3.3.0: выданные раньше конфиги не знают резолвера
+        админа (имена SMB) и — при раздельном туннеле — пространства адресов
+        в туннеле; какие именно, бот не помнит, поэтому совет — всем. Но
+        только если перевыпуск что-то даст: резолвер админа работает (его
+        адрес идёт в DNS конфига) или строка пространства реально дописывается
+        в AllowedIPs (раздельный туннель, адреса в туннеле исправны); иначе
+        новый конфиг — байт в байт прежний, совет пустой. Сказать нечего или
+        некому (новая установка) — ключ сразу, текст пустой."""
         from awgbot.domain import configgen
         from awgbot.domain.notices.updates import admin_reissue_advice
         from awgbot.infra import admindns
         if self.db.get_state(self._ADMIN_REISSUE_KEY) == "1":
-            return []
+            return ""
         admin = self.db.get_client_by_tg(config.ADMIN_ID) if config.ADMIN_ID else None
         devices = [d for d in self.db.list_devices(admin.id) if not d.is_gateway] if admin else []
         useful = admindns.serving() or (not self.lan_space_problem()
                                         and bool(configgen.extra_needed([str(lanspace.space())])))
         if not devices or not useful:
             self.db.set_state(self._ADMIN_REISSUE_KEY, "1")
+            return ""
+        return admin_reissue_advice()
+
+    def admin_reissue_announce(self) -> list[Notification]:
+        """Совет о перевыпуске отдельным сообщением — только если сводка после
+        обновления (lan_space_announce) его не унесла: адреса в туннеле
+        выключены или таблица не встала. Ключ — по доставке."""
+        text = self._admin_reissue_part()
+        if not text:
             return []
-        return [Notification(config.ADMIN_ID, admin_reissue_advice(),
+        return [Notification(config.ADMIN_ID, text,
                              on_sent=lambda: self.db.set_state(self._ADMIN_REISSUE_KEY, "1"))]
 
     def lan_map_startup(self) -> list[Notification]:
@@ -173,18 +182,20 @@ class LanMapSyncMixin:
         return self.lan_space_announce()
 
     def lan_space_announce(self) -> list[Notification]:
-        """Один раз после обновления, без звука, одним сообщением:
+        """Один раз после обновления, без звука, одним сообщением — блоками
+        через пустую строку:
         — локальные сети шлюзов теперь открываются по адресам в туннеле (если у
           слотов есть подсети; «имена SMB уже ведут на новые» — только при
-          стоящих записях SMB; о перевыпуске конфигов админа — отдельное
-          разовое уведомление, admin_reissue_announce), ключ
-          lan_space_announced;
+          стоящих записях SMB), ключ lan_space_announced;
         — прежний тумблер связи подсетей был выключен, а слотов с VPN-транзитом
           два и больше — их сети теперь связаны без вопроса, ключ
-          lan_peers_announced.
-        Ключ взводится по факту доставки; сказать нечего — сразу (новая
+          lan_peers_announced;
+        — совет о перевыпуске конфигов устройств админа (_admin_reissue_part),
+          ключ admin_reissue_announced.
+        Ключи взводятся по факту доставки; сказать нечего — сразу (новая
         установка без слотов). Пока адреса в туннеле выключены или таблица не
-        встала — молчит и ключей не взводит: сказать «открываются» нечего."""
+        встала — молчит и ключей не взводит: сказать «открываются» нечего
+        (совет тогда уходит отдельно, admin_reissue_announce)."""
         from awgbot.domain.notices.lanmap import lan_peers_joined, lan_space_moved
         if self.lan_space_problem():
             return []
@@ -209,6 +220,10 @@ class LanMapSyncMixin:
                 keys.append(self._LAN_PEERS_ANNOUNCED_KEY)
             else:
                 self.db.set_state(self._LAN_PEERS_ANNOUNCED_KEY, "1")
+        advice = self._admin_reissue_part()
+        if advice:
+            parts.append(advice)
+            keys.append(self._ADMIN_REISSUE_KEY)
         if not parts:
             return []
 

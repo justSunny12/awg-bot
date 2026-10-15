@@ -5,28 +5,31 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup
 from awgbot.bot import ui
 from awgbot.bot.callbacks import RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
-from awgbot.bot import texts as _texts
 
-from .common import _tick, _btn_suffix, select_all_button, confirm, entry_tag
+from .common import _tick, _btn_suffix, select_all_button, apply_row, confirm, entry_tag
 from .settings import _cycle
 
 
-def routing_panel(client_id: int, devices, *, enabled: int = 0, total: int = 0,
+def routing_panel(client_id: int, devices, *, marks: dict, dirty: bool = False,
                   n_domains: int = 0, back_target: str, page: int = 0) -> InlineKeyboardMarkup:
-    """Раздел «🇷🇺 РФ-доступ» одним экраном: переключатели устройств (свои и
-    удерживаемые), «Выбрать все» по правилу массового выбора, добавление
-    сайтов и вход в их список. Переданные — строкой в тексте, без кнопки."""
+    """Раздел «🇷🇺 РФ-доступ» одним экраном: отметки устройств (свои и
+    удерживаемые) — из marks {id: отмечено}, это выбор, а не состояние; «Все
+    устройства» по правилу массового выбора; добавление сайтов и вход в их
+    список; последним рядом — «✅ Применить» (только при отличии от
+    сохранённого, dirty) и выход. Переданные — строкой в тексте, без кнопки;
+    у гостя хвоста «от профиля» на кнопках нет — профиль в заголовке."""
     def _entry(_i, d):
-        mark = "✅" if d.routing_on else "☑️"
-        held = f" · от профиля {_texts.owner_name(d)}" if d.is_lent else ""
-        return (f"{mark} {d.name}{_btn_suffix(d)}{held}", RoutingCB(action="dev", ref=d.id))
+        mark = "✅" if marks.get(d.id, bool(d.routing_on)) else "☑️"
+        return (f"{mark} {d.name}{_btn_suffix(d)}", RoutingCB(action="dev", ref=d.id))
+    devices = list(devices)
     return ui.rows(
-        *ui.paged(list(devices), page, static=3 if devices else 2, screen="rtpanel", ref=client_id,
-                  back=RoutingCB(action="panel", ref=client_id).pack(), button=_entry),
-        select_all_button(enabled, total, RoutingCB(action="all", ref=client_id)) if devices else None,
+        *ui.paged(devices, page, static=3 if devices else 2, screen="rtpanel", ref=client_id,
+                  back=RoutingCB(action="page", ref=client_id).pack(), button=_entry),
+        select_all_button(sum(1 for v in marks.values() if v), len(marks),
+                          RoutingCB(action="all", ref=client_id), "Все устройства") if devices else None,
         [("➕ Сайт", RoutingCB(action="add", ref=client_id, tag="panel")),
-         (f"📋 Сайты: {n_domains}" if n_domains else "📋 Сайты", RoutingCB(action="sites", ref=client_id))],
-        ui.back(back_target))
+         (f"📋 Свои сайты: {n_domains}" if n_domains else "📋 Свои сайты", RoutingCB(action="sites", ref=client_id))],
+        apply_row(dirty, RoutingCB(action="apply", ref=client_id), back_target))
 
 
 def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboardMarkup:
@@ -47,6 +50,7 @@ def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
 
 
 BTN_MAX = 18      # подпись кнопки в ряду из двух — до 18 знаков
+SWITCH_NAME_MAX = 14   # имя на «▶️ Переключить на …» (одна в ряду, ориентир 30 знаков)
 
 
 def _fit(label: str, limit: int = BTN_MAX) -> str:
@@ -107,10 +111,11 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
             slots.append(("➕ Резерв", GwSlotCB(action="add")))
         body.append(slots)
         standby = next((st for st in states if not st.get("active")), None)
-        if standby is not None:
+        # лежащий резерв (🔴) не предлагаем: переключение на него — РФ-доступ без шлюза
+        if standby is not None and not standby.get("unavailable"):
             dev = standby.get("device")
             name = dev.name if dev is not None else "резерв"
-            body.append((f"▶️ Переключить на {name}",
+            body.append((f"▶️ Переключить на {_fit(name, SWITCH_NAME_MAX)}",
                          GwSlotCB(action="switch_ask", slot=standby["gateway"].id, val="l")))
         if len(states) > 1:
             body.append((f"{_tick(failover_on)} Автопереключение", GwSlotCB(action="failover")))
@@ -124,8 +129,8 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
 
 def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> InlineKeyboardMarkup:
     """Карточка слота: у резервного — «▶️ Сделать активным» первым рядом;
-    [📤 Конфигурация] [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [❓ Роутер]
-    [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «❓ Роутер»."""
+    [📤 Конфигурация] [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [🛜 Роутер]
+    [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «🛜 Роутер»."""
     gw = state["gateway"]
     if back_main:
         back = Menu(action="main")
@@ -141,21 +146,22 @@ def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> Inlin
          ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if cfg1 else None],
         [(f"{_tick(bool(gw.lan_mode))} VPN-транзит", GwSlotCB(action="lan_ask", slot=gw.id)),
          ("🗺 Подсети", GwSlotCB(action="lan_nets", slot=gw.id))],
-        [("❓ Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
+        [("🛜 Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
          ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if not cfg1 else None],
         ui.back(back))
 
 
 def gateway_edit_kb(state, *, two_slots: bool) -> InlineKeyboardMarkup:
-    """«✏️ Изменить» слота: имя устройства и подпись, предпочтительный (при
-    двух слотах), замена и снятие. Ключи линка — не здесь: редкая аварийная
-    кнопка живёт в «⚙️ Настройки → 🔧 Сервис»."""
+    """«✏️ Изменить» слота: имя устройства и подпись, тумблер «⭐ По
+    умолчанию» — по умолчанию при холодном старте (при двух слотах), замена и
+    снятие. Ключи линка — не здесь: редкая аварийная кнопка живёт в
+    «⚙️ Настройки → 🔧 Сервис»."""
     gw, dev = state["gateway"], state.get("device")
     return ui.rows(
         [("✏️ Имя", GwSlotCB(action="name", slot=gw.id)) if dev is not None else None,
          ("✏️ Подпись", GwSlotCB(action="label", slot=gw.id))],
-        (f"⭐ При старте: {_tick(bool(state.get('preferred')))}", GwSlotCB(action="pref", slot=gw.id)) if two_slots else None,
-        [("🔁 Заменить", SetCB(sec="rt_gw", act="open", key=str(gw.id))), ("🛑 Снять", GwSlotCB(action="remove_ask", slot=gw.id))],
+        (f"{_tick(bool(state.get('preferred')))} ⭐ По умолчанию", GwSlotCB(action="pref", slot=gw.id)) if two_slots else None,
+        [("🔁 Заменить", SetCB(sec="rt_gw", act="open", key=str(gw.id))), ("➖ Снять", GwSlotCB(action="remove_ask", slot=gw.id))],
         ui.back(GwSlotCB(action="card", slot=gw.id)))
 
 
@@ -189,7 +195,7 @@ def gateway_new_confirm(slot: int = 0) -> InlineKeyboardMarkup:
 
 def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     cancel = GwSlotCB(action="edit", slot=slot) if slot else SetCB(sec="rt", act="open")
-    return confirm(cancel, "🛑 Снять", GwSlotCB(action="remove_yes", slot=slot))
+    return confirm(cancel, "➖ Снять", GwSlotCB(action="remove_yes", slot=slot))
 
 
 def gateway_keys_pick(slots) -> InlineKeyboardMarkup:
@@ -235,17 +241,16 @@ def gateway_router_kb(slot: int, tab: str = "mt") -> InlineKeyboardMarkup:
 
 def gateway_switch_confirm(slot: int, healthy: bool, from_list: bool = False) -> InlineKeyboardMarkup:
     """Ручное переключение: «Отмена» первой — туда, откуда пришли (список или
-    карточка); у лежащего резерва — «Всё равно»."""
+    карточка); у лежащего резерва та же подпись, но красная."""
     src = "l" if from_list else ""
     return confirm(GwSlotCB(action="list") if from_list else GwSlotCB(action="card", slot=slot),
-                   "▶️ Переключить" if healthy else "▶️ Всё равно",
-                   GwSlotCB(action="switch_yes", slot=slot, val=src), danger=not healthy)
+                   "▶️ Переключить", GwSlotCB(action="switch_yes", slot=slot, val=src), danger=not healthy)
 
 
 
 def routing_disable_confirm() -> InlineKeyboardMarkup:
     """Выключить функцию целиком — с подтверждением; назад — в «Параметры»."""
-    return confirm(SetCB(sec="rt_params", act="open"), "🔴 Выключить",
+    return confirm(SetCB(sec="rt_params", act="open"), "☑️ Выключить",
                    SetCB(sec="rt", act="do", key="off!"))
 
 
@@ -256,30 +261,35 @@ def routing_params_kb(info: dict, lists_every: int) -> InlineKeyboardMarkup:
         [_cycle("rt_params", "app.routing.probe_seconds", f"⏱ Такт: {info['probe_seconds']} с"),
          _cycle("rt_params", "app.routing.failover.window_samples", f"🪟 Окно: {info['window']}")],
         [_cycle("rt_params", "app.routing.failover.min_availability", f"📉 Порог: {info['availability']}%"),
-         _cycle("rt_params", "app.routing.lists_refresh_hours", f"🔄 Списки: {lists_every} ч")],
-        ("⬇️ Обновить списки", SetCB(sec="rt", act="do", key="lists_refresh")),
-        ("🔴 Выключить РФ-доступ", SetCB(sec="rt", act="toggle", key="app.routing.enabled")),
+         _cycle("rt_params", "app.routing.lists_refresh_hours", f"⏱ Списки: {lists_every} ч")],
+        ("🔄 Обновить списки", SetCB(sec="rt", act="do", key="lists_refresh")),
+        ("☑️ Выключить РФ-доступ", SetCB(sec="rt", act="toggle", key="app.routing.enabled")),
         ui.back(SetCB(sec="rt")))
 
 
-def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
-    """«👥 Кому доступен»: отметки профилей и «Выбрать все» по правилу
-    массового выбора; назад — в «Шлюзы»."""
+def settings_routing_users(clients=(), marks: dict | None = None, *, dirty: bool = False,
+                           page: int = 0) -> InlineKeyboardMarkup:
+    """«👥 Кому доступен»: отметки профилей — выбор (marks {id: отмечен}), не
+    состояние; «Все профили» по правилу массового выбора; последним рядом
+    «✅ Применить» (при отличии от сохранённого) и «⬅️ Назад» в «Шлюзы»."""
     clients = list(clients)
+    marks = marks if marks is not None else {c.id: bool(c.routing_allowed) for c in clients}
     return ui.rows(
         *ui.paged(clients, page, static=2 if clients else 1, screen="rtusers", ref=0,
-                  back=SetCB(sec="rt_users", act="open").pack(),
-                  button=lambda _i, c: (f"{_tick(c.routing_allowed)} {c.name}",
+                  back=SetCB(sec="rt_users", act="page").pack(),
+                  button=lambda _i, c: (f"{_tick(marks.get(c.id, bool(c.routing_allowed)))} {c.name}",
                                         SetCB(sec="rt", act="do", key="allow", val=str(c.id)))),
-        select_all_button(sum(1 for c in clients if c.routing_allowed), len(clients),
-                          SetCB(sec="rt", act="do", key="allow_all")) if clients else None,
-        ui.back(SetCB(sec="rt")))
+        select_all_button(sum(1 for v in marks.values() if v), len(marks),
+                          SetCB(sec="rt", act="do", key="allow_all"), "Все профили") if clients else None,
+        apply_row(dirty, SetCB(sec="rt", act="do", key="allow_apply"), SetCB(sec="rt")))
 
 
-def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
-    """Под файлом конфигурации (шифрованным или первого применения): «🛰 В
-    карточку» и «⬅️ На главную» — обе убирают файл и сообщение над ним из чата
-    (внутри ключ линка) и открывают карточку слота или главную (`bundle_cancel`,
-    `bundle_home`). Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
-    return ui.rows([("🛰 В карточку", SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or ""))),
-                    ("⬅️ На главную", SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))])
+def bundle_menu_kb(slot: int = 0, *, plain: bool = False) -> InlineKeyboardMarkup:
+    """Под файлом конфигурации: обе кнопки убирают файл и сообщение над ним
+    из чата (внутри ключ линка) и открывают карточку слота или главную
+    (`bundle_cancel`, `bundle_home`). Из карточки — «⬅️ Назад» (в неё) и
+    «⬅️ В меню»; файл нового шлюза (plain) — «🛰 Карточка шлюза» и «⬅️ В
+    меню». Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
+    return ui.rows([("🛰 Карточка шлюза" if plain else ui.BACK_LABEL,
+                     SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or ""))),
+                    (ui.MENU_LABEL, SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))])

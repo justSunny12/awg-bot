@@ -100,9 +100,9 @@ class RoutingColdStartMixin:
         out = []
         for g in dead:
             if active is not None and active.id == g.id:
-                warn = routing_gateway_warning(verdicts[g.id], at_start=True)
+                warn = routing_gateway_warning(verdicts[g.id], at_start=True, gw=self._gw_link(g))
                 if warn:
-                    out.append(f"{warn[0].upper()}{warn[1:]} (шлюз {self._gw_display_h(g)})")
+                    out.append(warn)
             else:
                 out.append(f"Резервный шлюз {self._gw_display_h(g)} не отвечает на старте — "
                            "резерва сейчас нет, трафик идёт через "

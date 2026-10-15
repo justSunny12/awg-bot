@@ -58,7 +58,7 @@ class MarkMixin:
         if mine is not None:
             return {"status": "already", "device": dev, "gateway": mine, "cfg1": "cfg1" in data["caps"]}
         if slot is not None and slot.device_id != dev.id:
-            raise ServiceError(f"в слоте этого линка уже назначен {self._gw_display(slot)}. "
+            raise ServiceError(f"на этом линке уже назначен шлюз {self._gw_display(slot)}. "
                                "Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»")
         if slot is None:
             # слотов нет вовсе (линк поднят обвязкой, шлюз ещё не назначали):
@@ -91,7 +91,7 @@ class MarkMixin:
             raise ServiceError("профиль админа ещё не создан")
         gw = self.db.gateway(slot_id) if slot_id else None
         if slot_id and gw is None:
-            raise ServiceError("такого слота шлюза нет")
+            raise ServiceError("такого шлюза нет")
         new_slot = gw is None
         if new_slot:
             n, iface, port, cidr = self.gateway_next_slot()
@@ -114,7 +114,7 @@ class MarkMixin:
             raise ServiceError("это устройство создавал не бот — его конфиг в бандл не собрать")
         other = self.db.gateway_by_device(dev.id)
         if other is not None and (gw is None or other.id != gw.id):
-            raise ServiceError(f"это устройство уже шлюз в слоте {other.id}")
+            raise ServiceError(f"это устройство уже шлюз {other.id}")
         # Шлюзу РФ-доступ не нужен никогда: его российский трафик на ВПС
         # вернулся бы по линку на тот же шлюз. Снимаем при назначении (парно,
         # с двойником) — дальше устройство в списке РФ-доступа не показывается.
@@ -249,7 +249,7 @@ class MarkMixin:
 
     def gateway_set_preferred(self, slot_id: Optional[int]) -> None:
         if slot_id is not None and self.db.gateway(slot_id) is None:
-            raise ServiceError("такого слота шлюза нет")
+            raise ServiceError("такого шлюза нет")
         self.db.gateway_set_preferred(slot_id)
 
     def gateway_set_label(self, slot_id: int, label: str) -> None:

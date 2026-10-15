@@ -232,7 +232,7 @@ async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot)
     msg = await _enter_second_token(services, fake_bot)
     assert [g.id for g in services.db.gateways()] == [1, 2]
     docs = [s for s in msg.sent if s[0] == "document"]
-    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n"), \
+    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза «"), \
         f"бандл не выдан после отказа getMe: {docs}"
     assert any(s[0] == "answer" and "--install" in s[1] for s in msg.sent), "инструкции нет"
     text, _ = await _card_text(services, fake_bot, 2)
@@ -246,7 +246,7 @@ def test_bundle_caption_without_known_bot_has_no_link():
     for bot in ({}, None, {"username": "", "name": "x"}):
         got = texts.gateway_bundle_caption("Pi2", bot)
         assert got == ("📤 <b>Конфигурация шлюза Pi2</b>\nПерешли это сообщение боту шлюза — "
-                       "он проверит и применит сам\n" "\nℹ️ Возврат в меню удалит это сообщение"), (bot, got)
+                       "он проверит и применит сам\n" "\nℹ️ Сначала перешли его: любая кнопка ниже удалит это сообщение"), (bot, got)
 
 
 def test_bundle_caption_escapes_names():

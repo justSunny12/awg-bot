@@ -204,7 +204,7 @@ async def test_forwarded_claim_of_a_document_agent_gets_no_file(services, fake_b
     assert _gw_dev_id(services) == pi.id
     assert not any(s[0] == "document" for s in msg.sent), "агенту с документом выдан файл"
     text = " ".join(s[1] or "" for s in msg.sent)
-    assert "уйдёт ему по упр. каналу" in text and "«📤 Конфигурация»" in text, text
+    assert "уйдёт ему по каналу конфигурации" in text and "«📤 Конфигурация»" in text, text
 
 
 def test_gateway_mark_rules(services, gwsetup, make_active_client):

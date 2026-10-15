@@ -183,7 +183,7 @@ SCREENS = {
         {"enabled": True, "raw_allow": [f"u{i:04d}.example" for i in range(n)]}, page=p),
     "fw (фильтр выключен)": lambda n, p: kbs.settings_firewall(
         {"enabled": False, "raw_allow": [f"u{i:04d}.example" for i in range(n)]}, page=p),
-    "rtpanel": lambda n, p: kbr.routing_panel(BIG, _devs(n), enabled=n // 2, total=n,
+    "rtpanel": lambda n, p: kbr.routing_panel(BIG, _devs(n), marks={d.id: i % 2 == 0 for i, d in enumerate(_devs(n))},
                                               n_domains=5, back_target=_BACK, page=p),
     "rtsites": lambda n, p: kbr.routing_sites(BIG, _doms(n), page=p),
     "gwpick": lambda n, p: kbr.gateway_pick(_devs(n), slot=2, page=p),

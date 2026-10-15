@@ -119,7 +119,7 @@ def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
     admin, phone, pi = gw
     from awgbot.bot import texts
     assert services.gateway_states() == []
-    assert texts.gateways_text([]).endswith("\nШлюз не назначен")
+    assert "🇷🇺 РФ-доступ 🔴 шлюз не назначен\n" in texts.gateways_text([])
     _slot1(services, pi.device_id)
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)

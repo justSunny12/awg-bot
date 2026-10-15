@@ -1,10 +1,13 @@
 """
 handlers/routing.py — роутер условной маршрутизации: раздел профиля.
 
-Один экран «🇷🇺 РФ-доступ»: переключатели устройств (свои и удерживаемые),
-«Выбрать все», свои сайты — счётчиком и отдельным экраном «📋 Сайты». Для
+Один экран «🇷🇺 РФ-доступ»: отметки устройств (свои и удерживаемые), «Все
+устройства», свои сайты — счётчиком и отдельным экраном «📋 Свои сайты». Для
 клиента и гостя — над СВОИМ профилем, для админа — над любым: своим (вход с
 главной) или чужим (из карточки профиля). Админское разрешение — в settings/sections.py.
+
+Тумблеры ничего не применяют: отметки живут в FSM-данных (handlers/pick),
+применяет «✅ Применить» одной операцией; «⬅️ Назад» уводит без сохранения.
 
 Профиль для действия берётся в ОДНОМ месте (_profile): клиент — из контекста,
 чужой id в кнопке он получить не может; админ — из ref кнопки (middleware
@@ -27,6 +30,7 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import ClientCB, FriendCB, Menu, RoutingCB
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.handlers import pick
 from awgbot.bot.handlers.common import (call, ask_here, back_to_context, edit, role_of)
 from awgbot.bot.states import RoutingDomains
 
@@ -67,18 +71,51 @@ def _back_target(client, speaker) -> str:
     return Menu(action="main").pack()
 
 
-async def panel_view(services, client, back_target: str, viewer_chat: int | None = None):
-    """(text, markup) раздела РФ-доступа."""
+def _foreign(client, speaker) -> bool:
+    """Админ открыл чужой раздел: имя профиля — в заголовок, переподключается владелец."""
+    return speaker is None and client.tg_id != config.ADMIN_ID
+
+
+def _scope(client) -> str:
+    return f"rf:{client.id}"
+
+
+def _saved(devices) -> dict:
+    """Сохранённое состояние отметок — по устройствам экрана."""
+    return {d.id: bool(d.routing_on) for d in devices}
+
+
+async def _donors(services, client) -> str:
+    """У гостя — «от профиля X» в заголовок (хвост с кнопок ушёл сюда)."""
+    if not getattr(client, "is_guest", False):
+        return ""
+    from awgbot.util.textfmt import client_link
+    names: dict = {}
+    for d in await call(services.routing_devices, client.id):
+        if d.is_lent:
+            owner = await call(services.db.get_client, d.client_id)
+            if owner is not None:
+                names[owner.id] = client_link(owner)
+    return ("от профиля " + ", ".join(names.values())) if names else ""
+
+
+async def panel_view(services, client, back_target: str, viewer_chat: int | None = None,
+                     *, state=None, profile: str = ""):
+    """(text, markup) раздела РФ-доступа. state — FSM смотрящего: отметки
+    экрана из него (без state — сохранённые, ряда «Применить» нет)."""
     devices = await call(services.routing_devices, client.id)
     enabled, total = await call(services.routing_device_counts, client.id)
     lent_out = await call(services.routing_lent_out, client.id)
     domains = await call(services.routing_domains, client.id)
     link_ok = await call(services.routing_link_ok)
+    saved = _saved(devices)
+    marks = await pick.load(state, _scope(client), saved) if state is not None else dict(saved)
     from awgbot.bot import paging
     text = texts.routing_panel_text(enabled=enabled, total=total, domains=domains,
-                                    lent_out=lent_out, link_ok=link_ok)
+                                    lent_out=lent_out, link_ok=link_ok, profile=profile,
+                                    donors=await _donors(services, client))
     return text, kb.routing_panel(
-        client.id, devices, enabled=enabled, total=total,
+        client.id, devices, marks=marks, dirty=bool(pick.changed(marks, saved)),
         n_domains=len(domains), back_target=back_target,
         page=paging.page_of(viewer_chat or client.tg_id, "rtpanel", client.id))
 
@@ -102,23 +139,37 @@ async def screen_for(services, client, ref: int, kind: str):
     viewer = client.tg_id if client is not None else config.ADMIN_ID   # страницу помнит смотрящий
     if kind == "sites":
         return await sites_view(services, profile, viewer)
-    return await panel_view(services, profile, _back_target(profile, client), viewer)
+    return await panel_view(services, profile, _back_target(profile, client), viewer,
+                            profile=profile.name if _foreign(profile, client) else "")
 
 
-async def show_panel(cb: CallbackQuery, services, client, speaker):
+async def show_panel(cb: CallbackQuery, services, client, speaker, state=None):
     viewer = speaker.tg_id if speaker is not None else config.ADMIN_ID   # страницу помнит смотрящий
-    text, markup = await panel_view(services, client, _back_target(client, speaker), viewer)
+    text, markup = await panel_view(services, client, _back_target(client, speaker), viewer, state=state,
+                                    profile=client.name if _foreign(client, speaker) else "")
     await edit(cb, text, markup)
 
 
 @router.callback_query(RoutingCB.filter(F.action.in_(("panel", "devs"))))
 async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, services,
                         state: FSMContext):
+    """Вход в раздел: отметки — с сохранённого (прежний выбор, если был, сброшен)."""
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
     await state.clear()
-    await show_panel(cb, services, profile, client)
+    await show_panel(cb, services, profile, client, state)
+    await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "page"))
+async def routing_panel_page(cb: CallbackQuery, callback_data: RoutingCB, client, services,
+                             state: FSMContext):
+    """Листание раздела: тот же экран с отметками как есть."""
+    profile = await _profile(services, client, callback_data.ref)
+    if not await _guard(cb, services, profile):
+        return
+    await show_panel(cb, services, profile, client, state)
     await cb.answer()
 
 
@@ -129,9 +180,9 @@ async def routing_lent_row(cb: CallbackQuery):
 
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
 async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
-                                client, services):
-    """Переключить режим на одном устройстве. В ref — device_id; профиль
-    достаём через устройство. Экран перерисовывается на месте."""
+                                client, services, state: FSMContext):
+    """Отметить одно устройство — только на экране; применит «✅ Применить».
+    В ref — device_id; профиль достаём через устройство."""
     dev = await call(services.db.get_device, callback_data.ref)
     if dev is None:
         await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
@@ -146,25 +197,54 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
     profile = await _profile(services, client, subject_id)
     if not await _guard(cb, services, profile):
         return
-    new_state = await call(services.toggle_routing_device, dev.id)
-    await show_panel(cb, services, profile, client)
-    await cb.answer("включено" if new_state else "выключено")
+    saved = _saved(await call(services.routing_devices, profile.id))
+    marks = await pick.load(state, _scope(profile), saved)
+    if dev.id in marks:
+        marks[dev.id] = not marks[dev.id]
+    await pick.store(state, _scope(profile), marks)
+    await show_panel(cb, services, profile, client, state)
+    await cb.answer()
 
 
 @router.callback_query(RoutingCB.filter(F.action == "all"))
-async def routing_all_toggle(cb: CallbackQuery, callback_data: RoutingCB, client, services):
-    """Массовый выбор: ☑️ — довести до всех; ✅ (включены все) — снять все."""
+async def routing_all_toggle(cb: CallbackQuery, callback_data: RoutingCB, client, services,
+                             state: FSMContext):
+    """«Все устройства»: ☑️ — отметить все; ✅ (отмечены все) — снять все.
+    Только отметки — применит «✅ Применить»."""
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
-    enabled, total = await call(services.routing_device_counts, profile.id)
-    if not total:
+    saved = _saved(await call(services.routing_devices, profile.id))
+    if not saved:
         await cb.answer(ui.Toast.no_devices_yet, show_alert=True)
         return
-    turn_on = enabled < total
-    await call(services.set_routing_all, profile.id, turn_on)
-    await show_panel(cb, services, profile, client)
-    await cb.answer("Включено на всех" if turn_on else "Выключено на всех")
+    marks = pick.toggle_all(await pick.load(state, _scope(profile), saved))
+    await pick.store(state, _scope(profile), marks)
+    await show_panel(cb, services, profile, client, state)
+    await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "apply"))
+async def routing_apply(cb: CallbackQuery, callback_data: RoutingCB, client, services, state: FSMContext):
+    """«✅ Применить»: отличия отметок от сохранённого — одной операцией;
+    отметок своего экрана в FSM нет (кнопка из старого сообщения) — отказ."""
+    profile = await _profile(services, client, callback_data.ref)
+    if not await _guard(cb, services, profile):
+        return
+    devices = await call(services.routing_devices, profile.id)
+    saved = _saved(devices)
+    marks = await pick.pending(state, _scope(profile))
+    changes = pick.changed(marks, saved) if marks is not None else {}
+    if not changes:
+        await pick.drop(state)
+        await show_panel(cb, services, profile, client, state)
+        await cb.answer(ui.Toast.stale, show_alert=True)
+        return
+    await call(services.set_routing_devices, changes)
+    await pick.drop(state)
+    await show_panel(cb, services, profile, client, state)
+    names = {d.id: d.name for d in devices}
+    await cb.answer(ui.toast(texts.routing_devices_toast({names[i]: on for i, on in changes.items()})))
 
 
 # ── свои сайты ───────────────────────────────────────────────────────────────
@@ -219,7 +299,7 @@ async def routing_input_code(message: Message, command: CommandObject, client, s
 
 @router.message(RoutingDomains.value)
 async def routing_add_apply(message: Message, client, services, state: FSMContext):
-    """Приём пачки: итог — первой строкой экрана «Сайты», приглашение и
+    """Приём пачки: итог — первыми строками экрана, приглашение и
     вставленный список убираются."""
     data = await state.get_data()
     ref = int(data.get("rt_client") or 0)
@@ -232,7 +312,8 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
         await back_to_context(message, services, {}, role, client, note="⚠️ " + texts.ROUTING_UNAVAILABLE)
         return
     res = await call(services.routing_add_domains, profile.id, message.text or "")
-    report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit)
+    report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit,
+                                      owner=_foreign(profile, client))
     await back_to_context(message, services, data, role, client, note=report)
 
 
@@ -273,7 +354,7 @@ async def routing_clear_apply(cb: CallbackQuery, callback_data: RoutingCB, clien
         return
     n = await call(services.routing_clear_domains, profile.id)
     await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
-    await cb.answer(f"Удалено адресов: {n}" if n else "Список и так был пуст")
+    await cb.answer(f"Удалено сайтов: {n}" if n else "Список и так был пуст")
 
 
 __all__ = ["router", "panel_view", "sites_view", "screen_for"]

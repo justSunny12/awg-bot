@@ -340,7 +340,7 @@ def test_a_bad_env_is_shown_as_the_whole_document_not_the_link(services, slot, m
     assert all(v is None for v in services.gwcfg_desired(gw).values())
     card = services.gwcfg_card(gw, services.gwlink_snapshot(1))
     assert card["env_err"] and card["link_err"] == "", card
-    _, warns = _cfg_lines("", card, {}, "")
+    warns = _cfg_lines(card, {})
     assert any(w.startswith("⚠️ Конфигурация для шлюза не собрана: ") for w in warns), warns
     assert not any("Конфиг линка" in w for w in warns), warns
     monkeypatch.setattr(services, "gwcfg_env", real)

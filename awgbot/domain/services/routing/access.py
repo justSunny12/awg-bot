@@ -310,6 +310,24 @@ class RoutingAccessMixin:
             self.db.update_device_fields(peer.id, routing_on=1 if on else 0)
         self.reconcile_routing()
 
+    def set_routing_devices(self, changes: dict) -> int:
+        """«✅ Применить» в РФ-доступе профиля: {device_id: включить} одной
+        реконсиляцией на всех — тумблеры по одному давали бы её на каждое
+        устройство. Парность с двойником — как у set_routing_device. Шлюзу
+        РФ-доступ не включается. Возвращает число изменённых устройств."""
+        n = 0
+        with self.db.transaction():
+            for device_id, on in changes.items():
+                dev = self.db.get_device(int(device_id))
+                if dev is None or (on and dev.is_gateway) or bool(dev.routing_on) == bool(on):
+                    continue
+                for peer in self._device_pair(dev):
+                    self.db.update_device_fields(peer.id, routing_on=1 if on else 0)
+                n += 1
+        if n:
+            self.reconcile_routing()
+        return n
+
     def toggle_routing_device(self, device_id: int) -> Optional[bool]:
         """Инвертировать флаг устройства. Возвращает новое состояние, None —
         устройства нет (колбэк из старого сообщения в истории чата)."""

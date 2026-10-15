@@ -6,7 +6,7 @@ import logging
 from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
-from awgbot.core import settings
+from awgbot.core import config, settings
 from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
@@ -17,6 +17,7 @@ from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.roles import MAIN
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import ServiceError
+from awgbot.bot.handlers import pick
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, card_from_main, drop_message
 
 log = logging.getLogger("awgbot.handlers.settings")
@@ -40,6 +41,29 @@ async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state:
 
 
 
+USERS_SCOPE = "rt_users"          # область отметок «👥 Кому доступен» в FSM (handlers/pick)
+
+
+async def _users_screen(services, marks: dict | None = None):
+    """(текст, клавиатура) «👥 Кому доступен» с отметками marks (без них —
+    сохранённое, ряда «Применить» нет)."""
+    clients = await call(services.routing_grantable_clients)
+    saved = {c.id: bool(c.routing_allowed) for c in clients}
+    marks = marks if marks is not None else saved
+    from awgbot.bot import paging
+    return texts.routing_users_text(), kb.settings_routing_users(
+        clients, marks, dirty=bool(pick.changed(marks, saved)), page=paging.page_of(config.ADMIN_ID, "rtusers"))
+
+
+@router.callback_query(SetCB.filter((F.sec == "rt_users") & (F.act == "page")))
+async def routing_users_page(cb: CallbackQuery, services, state: FSMContext):
+    """Листание «Кому доступен»: отметки как есть."""
+    clients = await call(services.routing_grantable_clients)
+    marks = await pick.load(state, USERS_SCOPE, {c.id: bool(c.routing_allowed) for c in clients})
+    await edit(cb, *await _users_screen(services, marks))
+    await cb.answer()
+
+
 # ── тумблеры (bool в YAML или mute обновлений в БД) ───────────────────────────
 @router.callback_query(SetCB.filter(F.act == "toggle"))
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
@@ -51,6 +75,31 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         # подтверждение; включение — сразу.
         await edit(cb, texts.ROUTING_DISABLE_CONFIRM, kb.routing_disable_confirm())
         await cb.answer()
+        return
+    if key == "app.routing.enabled":
+        # включение — сразу, со всплывашкой итога; состояние системы меняется
+        # тут же, не дожидаясь тика монитора; шлюз лежит — уведомление с именем
+        # и кнопкой «🛰 Шлюзы»: пока фича была выключена, о нём молчали
+        try:
+            await call(settings.set_value, key, True)
+        except settings.SettingsWriteError as e:
+            await cb.answer(ui.toast(e), show_alert=True)
+            return
+        await call(services.reconcile_routing)
+        await _render(cb, "rt", services)
+        await cb.answer("РФ-доступ включён")
+        if await call(services.db.gateways):
+            ok, _reason = await call(services.routing_status)
+            if ok:
+                try:
+                    active = await call(services.active_gateway)
+                    link = services._gw_link(active) if active is not None else ""
+                except Exception:                      # noqa: BLE001 — имя шлюза не стоит молчания о нём
+                    link = ""
+                warn = texts.routing_gateway_warning(await call(services.routing_probe), at_start=False, gw=link)
+                if warn:
+                    await cb.message.answer(warn, reply_markup=kb.append_hide_row(
+                        ui.rows(("🛰 Шлюзы", SetCB(sec="rt")))))
         return
 
     if callback_data.sec == "rt_mon" and key == "app.routing.failover.enabled":
@@ -65,28 +114,15 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Автопереключение " + ("включено" if new else "выключено"))
         return
 
-    async def _after_set(k):
-        # выключатель условной маршрутизации меняет состояние системы, а не
-        # только значение в yaml: применяем сразу, не дожидаясь тика монитора
-        if k == "app.routing.enabled":
-            await call(services.reconcile_routing)
-            # Включили — тут же замер шлюза: пока фича была выключена, о его
-            # состоянии молчали (и на старте тоже), и узнать, что он лежит,
-            # админ должен сейчас, а не когда пожалуются люди.
-            if settings.get_bool(k, False) and await call(services.db.gateways):
-                ok, _reason = await call(services.routing_status)
-                if ok:
-                    warn = texts.routing_gateway_warning(await call(services.routing_probe),
-                                                         at_start=False)
-                    if warn:
-                        await cb.message.answer(f"⚠️ {warn}", reply_markup=kb.hide_only())
-    await core.toggle_bool(cb, services, secs.hooks_for(MAIN), key, callback_data.sec, after_set=_after_set)
+    await core.toggle_bool(cb, services, secs.hooks_for(MAIN), key, callback_data.sec)
 
 
 @router.callback_query(SetCB.filter((F.sec == "rt") & (F.act == "do")))
-async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
-    """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
-    эффект, но настройки самого клиента не разрушаем."""
+async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext | None = None):
+    """Разрешение профилю на РФ-доступ — отметками на экране, применяет «✅
+    Применить» одной операцией (set_routing_allowed_many) с уведомлениями
+    адресатам. Верхний слой флага: снимая его, гасим эффект, но настройки
+    самого клиента не разрушаем."""
     if callback_data.key == "provision":
         await _routing_provision(cb, services)
         return
@@ -153,26 +189,45 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await send_menu(cb.message, services, texts.gateway_card_text(st, st["states"]),
                         card_kb(st, cb.message.chat.id))
         return
-    if callback_data.key == "allow_all":
-        # правило массового выбора: ☑️ — выдать всем, ✅ — снять со всех;
-        # ответ колбэку — сразу (операция долгая: реконсиляция + dnsmasq),
-        # одной реконсиляцией на всех, а не по профилю
-        clients = await call(services.routing_grantable_clients)
-        target = not all(c.routing_allowed for c in clients)
-        await cb.answer("РФ-доступ " + ("разрешён всем" if target else "не разрешён никому"))
-        notes = await call(services.set_routing_allowed_many, [c.id for c in clients], target)
+    if callback_data.key in ("allow", "allow_all", "allow_apply"):
+        await _users_action(cb, callback_data, services, state)
+        return
+    await cb.answer(ui.Toast.stale, show_alert=True)
+
+
+async def _users_action(cb: CallbackQuery, callback_data: SetCB, services, state) -> None:
+    clients = await call(services.routing_grantable_clients)
+    saved = {c.id: bool(c.routing_allowed) for c in clients}
+    if callback_data.key == "allow_apply":
+        marks = await pick.pending(state, USERS_SCOPE)
+        changes = pick.changed(marks, saved) if marks is not None else {}
+        if not changes:
+            await pick.drop(state)
+            await edit(cb, *await _users_screen(services))
+            await cb.answer(ui.Toast.stale, show_alert=True)
+            return
+        # ответ колбэку — сразу (операция долгая: реконсиляция + dnsmasq);
+        # реконсиляция одна на всех разрешённых и одна на всех запрещённых
+        names = {c.id: c.name for c in clients}
+        await cb.answer(ui.toast(texts.routing_allowed_toast({names[i]: on for i, on in changes.items()})))
+        notes = []
+        for target in (True, False):
+            ids = [i for i, on in changes.items() if on is target]
+            if ids:
+                notes += await call(services.set_routing_allowed_many, ids, target)
         await send_notifications(cb.bot, notes)
-        await _render(cb, "rt_users", services)
+        await pick.drop(state)
+        await edit(cb, *await _users_screen(services))
         return
-    if callback_data.key != "allow":
-        await cb.answer(ui.Toast.stale, show_alert=True)
-        return
-    client = await call(services.db.get_client, int(callback_data.val or 0))
-    if client is None:
-        await cb.answer(ui.Toast.no_profile, show_alert=True)
-        return
-    new_state = not client.routing_allowed
-    notes = await call(services.set_routing_allowed, client.id, new_state)
-    await send_notifications(cb.bot, notes)
-    await _render(cb, "rt_users", services)
-    await cb.answer(ui.toast(f"{client.name}: РФ-доступ " + ("разрешён" if new_state else "запрещён")))
+    marks = await pick.load(state, USERS_SCOPE, saved)
+    if callback_data.key == "allow_all":
+        marks = pick.toggle_all(marks)
+    else:
+        cid = int(callback_data.val or 0)
+        if cid not in marks:
+            await cb.answer(ui.Toast.no_profile, show_alert=True)
+            return
+        marks[cid] = not marks[cid]
+    await pick.store(state, USERS_SCOPE, marks)
+    await edit(cb, *await _users_screen(services, marks))
+    await cb.answer()

@@ -176,7 +176,7 @@ async def test_service_offers_keys_only_when_some_agent_can_take_them(services, 
     assert "🔑 Ключи линка" not in _labels(markup), "кнопка при агенте без подтверждения"
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "pick")
-    assert cb.answers[-1] == ("Сменить ключи линка по упр. каналу не у кого: нужен агент шлюза v3.3.0", True), cb.answers
+    assert cb.answers[-1] == ("Сменить ключи линка по каналу конфигурации не у кого: нужен агент шлюза v3.3.0", True), cb.answers
     assert not _edits(nav)
     _confirm(services)
     _, markup = await _service(fake_bot, services)
@@ -320,7 +320,7 @@ async def test_change_stages_keys_sends_link_next_and_shows_the_result_first(
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     card = _edits(nav)[-1][0]
-    assert f"🔑 Ключи линка ждут подтверждения в чате бота шлюза · <code>{stage.fp}</code>" in card, card
+    assert f"⏳ Ключи линка ждут подтверждения в чате бота шлюза · отпечаток <code>{stage.fp}</code>" in card, card
 
 
 async def test_a_second_change_neither_restages_nor_resends(services, slots, stage, listener, fake_bot):
@@ -432,7 +432,7 @@ async def test_gateway_answers_move_the_card_and_a_refusal_notifies_once(
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     card = _edits(nav)[-1][0]
     assert "Ключи линка ждут подтверждения" not in card, card
-    assert "⚠️ Шлюз отклонил новые ключи линка — линк на прежних" in card, card
+    assert "⚠️ Шлюз отклонил новые ключи линка — линк работает на прежних" in card, card
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "ask", 1)
     assert _edits(nav) and _edits(nav)[-1][0].startswith("🔑 Сменить ключи линка"), \
@@ -522,7 +522,7 @@ async def test_ready_from_the_gateway_switches_and_the_card_says_so(services, sl
     assert services.gateway_rekey(1)["state"] == "switched"
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
-    assert "🔑 Ключи линка: переключение…" in _edits(nav)[-1][0], _edits(nav)[-1][0]
+    assert "⏳ Ключи линка: переключение…" in _edits(nav)[-1][0], _edits(nav)[-1][0]
     cb, _ = _acb(fake_bot)
     await _lk(cb, services, "ask", 1)
     assert cb.answers[-1] == ("Смена ключей уже идёт", True)

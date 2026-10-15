@@ -142,7 +142,7 @@ async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
     try:
         st = await call(services.gateway_screen_state, slot)
     except ServiceError:
-        return "🛰 Такого шлюза больше нет — слот снят", kb.settings_back("rt")
+        return "🛰 Выбранный шлюз снят", kb.settings_back("rt")
     # пометку «с главной» ставит переход по ссылке (ниже), а не сам экран: его
     # рисует и «✖️ Отмена» диалогов карточки, и пометка залипала бы навсегда
     return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)

@@ -53,11 +53,23 @@ def notify_toggle(on: bool, cb) -> tuple:
     return ("✅ Уведомить" if on else "☑️ Не уведомлять", cb)
 
 
-def select_all_button(selected: int, total: int, cb) -> InlineKeyboardButton:
+def select_all_button(selected: int, total: int, cb, label: str = "Выбрать все") -> InlineKeyboardButton:
     """Массовый выбор: ☑️, пока выбраны не все; ✅, когда все (и когда их
-    отметили по одному) — нажатие на ✅ снимает всё."""
+    отметили по одному) — нажатие на ✅ снимает всё. label — что отмечается
+    («Все устройства», «Все профили»): галочка — состояние, подпись — объект."""
     mark = "✅" if total and selected >= total else "☑️"
-    return ui.btn(f"{mark} Выбрать все", cb)
+    return ui.btn(f"{mark} {label}", cb)
+
+
+APPLY_LABEL = "✅ Применить"
+
+
+def apply_row(dirty: bool, apply_cb, back_cb, back_label: str = ui.BACK_LABEL) -> list:
+    """Последний ряд экрана выбора с отложенным применением: отметки отличаются
+    от сохранённого — «✅ Применить» и выход справа (уход без сохранения,
+    подпись не меняется); совпадают — один выход."""
+    back = (back_label, back_cb)
+    return [(APPLY_LABEL, apply_cb), back] if dirty else [back]
 
 
 # Пресеты лимита трафика устройства, ГБ: не выше лимита профиля; «∞» — только

@@ -29,6 +29,39 @@ def _cb(bot, uid, data=""):
     return FakeCallback(data=data, message=nav, user_id=uid, bot=bot), nav
 
 
+async def _all_apply(bot, uid, ref, client, services):
+    """«Все устройства» и «✅ Применить» — два нажатия с одним FSM: тумблер
+    только отмечает, применяет вторая кнопка."""
+    st = FakeState()
+    cb, _ = _cb(bot, uid)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=ref), client, services, st)
+    cb, nav = _cb(bot, uid)
+    await routing_h.routing_apply(cb, RoutingCB(action="apply", ref=ref), client, services, st)
+    return cb, nav
+
+
+async def _dev_apply(bot, uid, dev_id, ref, client, services):
+    """Отметить устройство и применить."""
+    st = FakeState()
+    cb, _ = _cb(bot, uid)
+    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=dev_id), client, services, st)
+    cb, nav = _cb(bot, uid)
+    await routing_h.routing_apply(cb, RoutingCB(action="apply", ref=ref), client, services, st)
+    return cb, nav
+
+
+async def _allow_apply(bot, sh, client_id, services):
+    """«Кому доступен»: отметить профиль и применить."""
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.core import config
+    st = FakeState()
+    cb, _ = _cb(bot, config.ADMIN_ID)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(client_id)), services, st)
+    cb, _ = _cb(bot, config.ADMIN_ID)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
+    return cb
+
+
 def _allowed_client(services, make_active_client, tg_id):
     """Клиент с выданным разрешением админа (верхний слой флага)."""
     c = make_active_client(tg_id=tg_id)
@@ -47,7 +80,7 @@ async def test_revoked_permission_blocks_stale_button(
     services.set_routing_allowed(c.id, False)
     c = services.db.get_client(c.id)
     cb, _ = _cb(fake_bot, 72)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services, FakeState())
     assert services.routing_profile_on(c.id) is False, "старая кнопка сработала после отзыва"
 
 
@@ -58,13 +91,16 @@ async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake
     выключено — включаем всё, включено хоть что-то — выключаем всё."""
     c = _allowed_client(services, make_active_client, 73)
     services.add_device(c.id, "Телефон")                  # включено с рождения
+    # сам тумблер ничего не применяет
     cb, _ = _cb(fake_bot, 73)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services, FakeState())
+    assert services.routing_profile_on(c.id) is True, "тумблер применил без «Применить»"
+    cb, _ = await _all_apply(fake_bot, 73, c.id, c, services)
     assert services.routing_profile_on(c.id) is False
+    assert cb.answers[-1][0] == "Телефон: РФ-доступ выключен", cb.answers
 
     c = services.db.get_client(c.id)
-    cb2, _ = _cb(fake_bot, 73)
-    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
+    await _all_apply(fake_bot, 73, c.id, c, services)
     assert services.routing_profile_on(c.id) is True
 
 
@@ -126,14 +162,21 @@ async def test_grant_from_settings_screen(services, make_active_client, fake_bot
     from awgbot.core import config
 
     c = make_active_client(tg_id=91)
+    st = FakeState()
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
     await settings_h.routing_action(
-        cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+        cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services, st)
+    assert services.db.get_client(c.id).routing_allowed == 0, "отметка применилась без «Применить»"
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    await settings_h.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert services.db.get_client(c.id).routing_allowed == 1
 
+    st = FakeState()
     cb2, _ = _cb(fake_bot, config.ADMIN_ID)
     await settings_h.routing_action(
-        cb2, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+        cb2, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services, st)
+    cb2, _ = _cb(fake_bot, config.ADMIN_ID)
+    await settings_h.routing_action(cb2, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert services.db.get_client(c.id).routing_allowed == 0
 
 
@@ -162,8 +205,7 @@ async def test_admin_can_enable_feature_for_himself(services, make_active_client
     dc = services.add_device(c.id, "Телефон")
 
     # client=None — ровно то, что придёт из middleware для админа
-    cb, _ = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services)
+    await _all_apply(fake_bot, config.ADMIN_ID, 0, None, services)
 
     assert services.routing_profile_on(c.id) is True
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {c.id: [dc.address]}
@@ -193,12 +235,10 @@ async def test_admin_toggles_client_master(services, make_active_client, fake_bo
     упирался бы в «включи у себя и перезайди»."""
     c = _allowed_client(services, make_active_client, 96)
     services.add_device(c.id, "Телефон")                  # включено с рождения
-    cb, _ = _cb(fake_bot, 1)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), None, services)
+    await _all_apply(fake_bot, 1, c.id, None, services)
     assert services.routing_profile_on(c.id) is False
 
-    cb2, _ = _cb(fake_bot, 1)
-    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), None, services)
+    await _all_apply(fake_bot, 1, c.id, None, services)
     assert services.routing_profile_on(c.id) is True
 
 
@@ -207,7 +247,7 @@ async def test_admin_master_refused_without_grant(services, make_active_client, 
     adm.rf.all.denied)."""
     c = make_active_client(tg_id=97)                      # разрешения нет
     cb, _ = _cb(fake_bot, 1)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services, FakeState())
     assert services.routing_profile_on(c.id) is False, "режим включён без разрешения"
 
 
@@ -262,9 +302,7 @@ async def test_device_toggle_touches_only_that_device(
     gw = services.add_device(c.id, "Шлюз")
     services.set_routing_all(c.id, True)
 
-    cb, _ = _cb(fake_bot, 120)
-    await routing_h.routing_device_toggle(
-        cb, RoutingCB(action="dev", ref=gw.device_id), c, services)
+    await _dev_apply(fake_bot, 120, gw.device_id, c.id, c, services)
 
     assert services.db.get_device(gw.device_id).routing_on == 0
     assert services.db.get_device(phone.device_id).routing_on == 1
@@ -296,7 +334,7 @@ async def test_device_toggle_rejects_foreign_device(
 
     cb, _ = _cb(fake_bot, 122)
     await routing_h.routing_device_toggle(
-        cb, RoutingCB(action="dev", ref=victim.device_id), a, services)
+        cb, RoutingCB(action="dev", ref=victim.device_id), a, services, FakeState())
 
     assert cb.answers[0][1] is True
     assert services.db.get_device(victim.device_id).routing_on == 1
@@ -314,13 +352,13 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
     services.set_routing_device(d2.device_id, False)      # одно выключили руками
     assert services.routing_device_counts(c.id) == (1, 2)
 
-    cb, _ = _cb(fake_bot, 130)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
+    cb, _ = await _all_apply(fake_bot, 130, c.id, c, services)
     assert services.routing_device_counts(c.id) == (2, 2)
+    assert cb.answers[-1][0] == "Ноутбук: РФ-доступ включён", cb.answers
 
-    cb2, _ = _cb(fake_bot, 130)
-    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
+    cb2, _ = await _all_apply(fake_bot, 130, c.id, c, services)
     assert services.routing_device_counts(c.id) == (0, 2)
+    assert cb2.answers[-1][0] == "РФ-доступ: выключен 2", cb2.answers
     assert d2 is not None
 
 
@@ -505,9 +543,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     assert labels(nav_a) == labels(nav_c), "админ и клиент видят разное"
 
     # админ включил второе — клиент видит; клиент выключил первое — админ видит
-    cb, _ = _admin_cb(fake_bot)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=d2.device_id),
-                                          None, services)
+    await _dev_apply(fake_bot, config.ADMIN_ID, d2.device_id, other.id, None, services)
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
@@ -518,9 +554,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     assert services.routing_device_counts(other.id) == (2, 2), "правка админа не дошла до профиля"
 
     first = [d for d in services.db.list_devices(other.id) if d.name == "Чужой"][0]
-    cb, _ = _cb(fake_bot, other.tg_id)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=first.id),
-                                          other, services)
+    await _dev_apply(fake_bot, other.tg_id, first.id, other.id, other, services)
     cb_a, nav_a = _admin_cb(fake_bot)
     await routing_h.routing_panel(cb_a, RoutingCB(action="devs", ref=other.id),
                                   None, services, FakeState())
@@ -559,7 +593,6 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
     уведомлении), владельцу приходит уведомление. Отзыв — уведомление, флаги
     устройств не трогаются; повторное нажатие того же — без уведомления."""
     from awgbot.bot.handlers import settings as sh
-    from awgbot.bot.callbacks import SetCB
     from awgbot.bot import texts
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
@@ -567,17 +600,15 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
     services.add_device(c.id, "Тел"); services.add_device(c.id, "Ноут")
     assert services.routing_device_counts(c.id) == (0, 0), "без разрешения устройств в режиме нет"
 
-    cb, _ = _cb(fake_bot, config.ADMIN_ID)
     fake_bot.records.clear()
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    await _allow_apply(fake_bot, sh, c.id, services)
     assert services.routing_device_counts(c.id) == (2, 2)
     sent = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 150]
     assert sent and sent[0][2] == texts.ROUTING_GRANTED_NOTICE
 
     services.set_routing_device([d for d in services.db.list_devices(c.id)][0].id, False)
-    cb, _ = _cb(fake_bot, config.ADMIN_ID)
     fake_bot.records.clear()
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    await _allow_apply(fake_bot, sh, c.id, services)
     assert services.db.get_client(c.id).routing_allowed == 0
     assert services.routing_device_counts(c.id) == (0, 0), "без разрешения — ничего не в режиме"
     assert sum(d.routing_on for d in services.db.list_devices(c.id)) == 1, "отзыв стёр флаги устройств"
@@ -656,16 +687,13 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
     a = services.add_device(c.id, "iPhone")
     b = services.add_device(c.id, "MacBook")
     c = services.db.get_client(c.id)
-    cb, nav = _cb(fake_bot, 160)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
+    await _dev_apply(fake_bot, 160, b.device_id, c.id, c, services)
     assert services.routing_device_counts(c.id) == (1, 2)
 
-    cb, nav = _cb(fake_bot, 160)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
+    await _dev_apply(fake_bot, 160, b.device_id, c.id, c, services)
     assert services.routing_device_counts(c.id) == (2, 2)
 
-    cb, nav = _cb(fake_bot, 160)
-    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
+    await _all_apply(fake_bot, 160, c.id, c, services)
     assert services.routing_device_counts(c.id) == (0, 2) and a is not None
 
 
@@ -746,7 +774,7 @@ async def test_admin_paging_in_a_foreign_profile_section_remembers_the_viewer(se
     from types import SimpleNamespace
     seen = {}
 
-    async def fake_panel_view(services_, client, back, viewer_chat=None):
+    async def fake_panel_view(services_, client, back, viewer_chat=None, **kw):
         seen["viewer"] = viewer_chat
         return "x", None
 

@@ -619,9 +619,9 @@ def serialize(shot_id: str, title: str, rec: Record) -> str:
 TEXT_MAX, CAPTION_MAX, TOAST_MAX, CB_MAX, ROWS_MAX, LABEL_MAX = 4096, 1024, 200, 64, 10, 18
 CANCELS = ("⬅️ Отмена", "\u2716\ufe0f Отмена")       # под подтверждением и под приглашением
 # кружок 🟢/🔴 на кнопке — состояние объекта (устройство или профиль онлайн),
-# тумблеры — ✅/☑️; «🔴 Выключить…» — действие, не тумблер (макет «Параметров»)
+# тумблеры — ✅/☑️; действий с кружком больше нет («☑️ Выключить РФ-доступ»)
 CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_", "c:open:")
-CIRCLE_ACTIONS = ("🔴 Выключить", "🔴 Выключить РФ-доступ")
+CIRCLE_ACTIONS: tuple = ()
 
 
 def label_len(text: str) -> int:

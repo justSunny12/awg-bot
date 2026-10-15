@@ -45,7 +45,11 @@ FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
 from awgbot.util import gwlink as _gwlink  # noqa: E402
 from awgbot.infra import bootid
 BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
-FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "rev", "ts", "boot_id")
+# lan_addr — адрес шлюза в его локальной сети (интерфейс VPN-транзита): ВПС
+# подставляет его в настройку роутера вместо плейсхолдера. Локальное чтение,
+# как и всё остальное; агент без транзита шлёт пустую строку.
+FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "lan_addr", "rev", "ts", "boot_id")
+_LAN_ADDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 _CONTRACT_RE = re.compile(r"^#\s*awg-bot:\s*контракт линка\s+(\d+)", re.M)
 
@@ -83,7 +87,7 @@ _CFG_SECTIONS = ("env", "link", "uplink", "mail", "backup", "token", "server")  
 
 def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None,
             peer_nets: tuple[bool, list[str]] | None, agent_bot: dict | None = None,
-            cfg: dict | None = None) -> dict:
+            cfg: dict | None = None, lan_addr: str = "") -> dict:
     """Собрать снимок. Всё чтение — локальное: юнит обвязки, конфиг линка,
     install/awg.lock, константа версии. Ни одного сетевого вызова.
 
@@ -106,6 +110,7 @@ def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None
         "agent_bot": {"username": str((agent_bot or {}).get("username") or ""),
                       "name": str((agent_bot or {}).get("name") or "")},
         "egress_ok": egress_ok,
+        "lan_addr": str(lan_addr or "").strip(),
         # rev ставит клиент по месту в сессии, ts — конверт (время отправки):
         # их значения здесь всё равно перезаписались бы
         "rev": 1,
@@ -188,6 +193,10 @@ def sanitize(raw: dict) -> dict:
     if "egress_ok" in src:
         val = src["egress_ok"]
         out["egress_ok"] = bool(val) if isinstance(val, bool) else None
+    if "lan_addr" in src:
+        # адрес уходит в команды для роутера: только IPv4 как есть, иначе пусто
+        addr = _clean_str(src["lan_addr"]).strip()
+        out["lan_addr"] = addr if _LAN_ADDR_RE.match(addr) else ""
     pn = src.get("peer_nets")
     if isinstance(pn, dict):
         missing = pn.get("missing")

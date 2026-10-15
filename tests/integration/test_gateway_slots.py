@@ -278,7 +278,7 @@ def test_startup_warnings_name_the_slot(two, services):
     assert len(warns) == 1 and "NASPi и Pi2 не отвечают" in warns[0], "оба лежат — одной строкой"
     services.probe[2] = "ok"
     warns = services.routing_startup_warnings()
-    assert len(warns) == 1 and warns[0].startswith("Шлюз РФ-доступа") and "NASPi" in warns[0]
+    assert len(warns) == 1 and warns[0].startswith("Шлюз ") and "NASPi" in warns[0] and "на старте" in warns[0]
 
 
 def test_lan_subnets_are_parsed_and_the_same_subnet_is_no_conflict(two, services, fake_routing):

@@ -185,7 +185,7 @@ async def test_pick_without_agents_is_an_alert(services, slots, env, fake_bot):
     _caps(services, 1, ("cfg1", "confirm1"))
     state = FakeState()
     cb, nav = await _gtk(fake_bot, services, state, "pick")
-    assert cb.answers[-1] == ("Отправить токен по упр. каналу некому: нужен агент шлюза v3.3.0", True), cb.answers
+    assert cb.answers[-1] == ("Отправить токен по каналу конфигурации некому: нужен агент шлюза v3.3.0", True), cb.answers
     assert not _edits(nav) and await state.get_state() is None
 
 

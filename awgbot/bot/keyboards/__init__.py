@@ -21,7 +21,7 @@ from __future__ import annotations
 from .common import (
     BTN_CANCEL, entry_tag, reply_hide, to_menu,
     append_hide_row, hide_only,
-    block_unblock_reasons, cancel_input, confirm, select_all_button, notify_toggle,
+    block_unblock_reasons, cancel_input, confirm, select_all_button, notify_toggle, apply_row,
     device_limit_presets, device_limit_kb)
 from .client import (
     client_main, client_devices, held_device_actions, lent_out_device_actions,
@@ -61,7 +61,7 @@ from .gateway import (
 __all__ = [
     "BTN_CANCEL", "entry_tag", "reply_hide", "to_menu",
     "append_hide_row", "hide_only",
-    "block_unblock_reasons", "cancel_input", "confirm", "select_all_button", "notify_toggle",
+    "block_unblock_reasons", "cancel_input", "confirm", "select_all_button", "apply_row", "notify_toggle",
     "device_limit_presets", "device_limit_kb", "client_main", "client_devices", "held_device_actions",
     "lent_out_device_actions", "block_device_confirm", "guest_main", "guest_devices",
     "device_actions", "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
@@ -73,7 +73,7 @@ __all__ = [
     "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "extend_forever_kb", "block_kb",
     "gateway_card_button", "to_client_card", "invite_menu", "migration_back_kb", "add_device_addslot",
     "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients",
-    "admin_client_actions", "client_device_limit_kb", "block_pause_kb", "block_notify_kb", "admin_client_back",
+    "admin_client_actions", "client_device_limit_kb",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb",

@@ -27,7 +27,7 @@ async def gwtoken_action(cb: CallbackQuery, callback_data: SetCB, services, stat
     if key == "pick":
         slots = await call(services.gateway_token_slots)
         if not slots:
-            await cb.answer(ui.toast("Отправить токен по упр. каналу некому: нужен агент шлюза v3.3.0"), show_alert=True)
+            await cb.answer(ui.toast("Отправить токен по каналу конфигурации некому: нужен агент шлюза v3.3.0"), show_alert=True)
             return
         if len(slots) > 1:
             await edit(cb, texts.GATEWAY_TOKEN_PICK, kb.gateway_token_pick(slots))

@@ -90,15 +90,18 @@ async def test_holder_toggles_held_device_owner_cannot(services, fake_bot, make_
     services.set_routing_allowed(owner.id, True)
     dc, guest = _lend(services, owner, 98120, "Тел")
     assert services.db.get_device(dc.device_id).routing_on == 1
+    st = FakeState()
     cb, _ = _cb(fake_bot, 98120)
-    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), guest, services)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), guest, services, st)
+    cb, _ = _cb(fake_bot, 98120)
+    await rh.routing_apply(cb, RoutingCB(action="apply", ref=guest.id), guest, services, st)
     assert services.db.get_device(dc.device_id).routing_on == 0
     owner = services.db.get_client(owner.id)
     cb, _ = _cb(fake_bot, 8120)
-    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), owner, services)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), owner, services, FakeState())
     assert services.db.get_device(dc.device_id).routing_on == 0, "владелец переключил переданное"
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
-    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), None, services)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), None, services, FakeState())
     assert cb.answers[-1][1] is True and services.db.get_device(dc.device_id).routing_on == 0
 
 

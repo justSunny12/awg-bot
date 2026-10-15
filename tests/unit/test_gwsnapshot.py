@@ -29,7 +29,8 @@ FACTS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
          "cfg")                                            # cfg — отпечатки разделов документа конфигурации
 BUNDLE = ("lan_mode", "home_subnets", "resolver", "peer_home_nets", "admin_ips")
 SERVICE = ("rev", "ts", "boot_id")
-VERDICTS = ("peer_nets", "egress_ok")
+VERDICTS = ("peer_nets", "egress_ok",
+            "lan_addr")                     # lan_addr — адрес шлюза в локальной сети: в настройку роутера
 
 # Всё, что решает сам агент и о чём он говорит в своём чате. Появление любого
 # из этих имён в снимке означает, что на ВПС завели второй источник правды.
@@ -113,7 +114,7 @@ def test_the_snapshot_carries_exactly_the_agreed_fields_and_nothing_else(pi):
         f"лишние {sorted(set(snap) - set(FACTS + VERDICTS + SERVICE))}, "
         f"пропали {sorted(set(FACTS + VERDICTS + SERVICE) - set(snap))}")
     assert set(snap["bundle"]) == set(BUNDLE), "блок «что применено из конфигурации» изменился"
-    assert set(gwsnapshot.FIELDS) == set(FACTS + ("peer_nets", "egress_ok") + SERVICE)
+    assert set(gwsnapshot.FIELDS) == set(FACTS + VERDICTS + SERVICE)
     assert set(gwsnapshot.BUNDLE_FIELDS) == set(BUNDLE)
 
 
@@ -351,9 +352,12 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
            "peer_nets": {"ok": True, "missing": ["10.0.0.0/8"] * 500},
            "agent_bot": {"username": "Some_Bot", "name": "Имя " * 100, "id": 5},
            "cfg": {"gen": "7", "env": "ZZ", "link": "a" * 100, "evil": 1},
+           "lan_addr": "192.168.1.10",
            "temp": 51.2, "ssh": {"port": 2222}, "checks": [1, 2, 3], "exec": "rm -rf /"}
     out = gwsnapshot.sanitize(raw)
     assert set(out) == set(FACTS + VERDICTS + ("boot_id", "ts", "rev"))
+    assert out["lan_addr"] == "192.168.1.10"
+    assert gwsnapshot.sanitize({"lan_addr": "ШЛЮЗ; rm -rf /"})["lan_addr"] == "", "в команды роутера — только IPv4"
     assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "", "backup": "",
                           "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64

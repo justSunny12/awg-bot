@@ -34,7 +34,7 @@ def test_up_to_six_addresses_per_slot_then_and_n_more():
 
 def test_the_off_state_points_to_the_card():
     assert texts.peer_nets_line({"state": "off"}) == (
-        "↔️ Связь подсетей: выключена вместе с адресами в туннеле — см. карточку шлюза")
+        "🔗 Связь подсетей: выключена вместе с адресами в туннеле — см. карточку шлюза")
 
 
 def test_the_gateways_screen_with_fifteen_slots_fits_telegram():
@@ -64,21 +64,22 @@ def _dialog_state(problem: str) -> dict:
 
 def test_the_transit_dialog_promises_no_link_while_the_addresses_are_off():
     on = gateway_lan_ask(_dialog_state(""), True, "10.9.1.1", ["Pi4"])
-    assert "из подсетей других шлюзов со включённым VPN-транзитом (Pi4)" in on
-    assert "после включения перевыпусти её: Pi4" in on
+    assert "из подсетей других шлюзов с включённым VPN-транзитом (Pi4)" in on
+    assert "Потребуется перевыпуск конфигурации шлюза: Pi4" in on
     off = gateway_lan_ask(_dialog_state("служебное пространство 10.0.0.0/12 пересекается с подсетью клиентов"),
                           True, "10.9.1.1", [])
-    assert "↔️ Связь подсетей:" not in off and "Агенту шлюза v3.2" not in off
+    assert "🔗 Связь подсетей:" not in off and "Потребуется перевыпуск" not in off
 
 
 def test_a_slot_without_its_channel_is_not_asked_twice_in_the_dialog():
-    """Сам слот без канала диалог уже просит перевыпустить («Потребуется
-    перевыпуск конфигурации шлюза») — в списке соседей второй раз его нет."""
+    """О перевыпуске — одна строка с именами: сам слот без канала в ней
+    первым и один раз, даже если сервис назвал его среди соседей."""
     st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": False}}
     text = gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
-    assert "после включения перевыпусти её: Pi4" in text and "её: Pi5" not in text, text
+    assert text.count("Потребуется перевыпуск") == 1 and "конфигурации шлюза: Pi5, Pi4" in text, text
     st["channel"] = {"online": True}
-    assert "перевыпусти её: Pi5, Pi4" in gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
+    assert "конфигурации шлюза: Pi5, Pi4" in gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
+    assert "Потребуется перевыпуск" not in gateway_lan_ask(st, True, "10.9.1.1", [])
 
 
 
@@ -107,14 +108,14 @@ def test_nine_slots_and_more_show_up_to_three_addresses_each():
 def test_the_off_dialog_names_who_needs_a_file():
     st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": True}}
     text = gateway_lan_ask(st, False, "", ["Pi5", "Pi<4>"])
-    assert "после выключения перевыпусти её: Pi5, Pi&lt;4&gt;" in text, text
-    assert "Агенту шлюза v3.2" not in gateway_lan_ask(st, False, "", [])
+    assert "Потребуется перевыпуск конфигурации шлюза: Pi5, Pi&lt;4&gt;" in text, text
+    assert "Потребуется перевыпуск" not in gateway_lan_ask(st, False, "", [])
 
 
 def test_the_card_caps_peer_names_and_subnet_warnings():
     from awgbot.bot.texts.routing.card import lan_space_lines, peer_links_line
-    assert peer_links_line(["A", "B", "C"]) == "↔️ Связь подсетей: с A, B, C"
-    assert peer_links_line(["A", "B", "C", "D", "E"]) == "↔️ Связь подсетей: с A, B, C и ещё 2"
+    assert peer_links_line(["A", "B", "C"]) == "🔗 Связь подсетей: с A, B, C"
+    assert peer_links_line(["A", "B", "C", "D", "E"]) == "🔗 Связь подсетей: с A, B, C и ещё 2"
     issues = [{"kind": "wide", "net": f"10.{i}.0.0/15"} for i in range(5)]
     lines = lan_space_lines({"issues": issues})
     assert len(lines) == 4 and lines[-1] == "⚠️ Ещё 2 подсети вне адресов в туннеле: проверь их в «🗺 Подсети»", lines

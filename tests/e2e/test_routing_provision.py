@@ -29,7 +29,7 @@ async def test_section_offers_provisioning_before_anything_exists(services, fake
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: False)
     text, markup = await sh._screen("rt", services)
-    assert text.startswith("🇷🇺 РФ-доступ не развёрнут\n"), text
+    assert text.startswith("🛰 <b>Шлюзы</b> · 🇷🇺 РФ-доступ не развёрнут\n"), text
     assert "dnsmasq" in text and "линк" in text, "сказано, что именно сделает кнопка"
     rows = [[b.text for b in row] for row in markup.inline_keyboard]
     assert rows == [["🚀 Развернуть"], ["⬅️ В меню"]], "одно действие и выход — больше тут делать нечего"
@@ -43,7 +43,8 @@ async def test_provisioned_but_asleep_says_how_to_wake_and_offers_only_the_exit(
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: True)
     text, markup = await sh._screen("rt", services)
-    assert text == "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
+    assert text == ("🛰 <b>Шлюзы</b> · 🇷🇺 РФ-доступ ждёт перезапуска бота\n"
+                    "Обвязка развёрнута — РФ-доступ заработает после перезапуска")
     assert [[b.text for b in row] for row in markup.inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
     assert SetCB.unpack(markup.inline_keyboard[0][0].callback_data) == SetCB(sec="svc", act="do", key="bot!")
 

@@ -120,7 +120,7 @@ def test_a_slot_without_a_device_is_a_warning_not_a_block(vps, monkeypatch):
     found = vps.update_scan()
     assert found is not None and found.tag == "v3.3.1"
     silent = vps.update_silent_peers(found)
-    assert [p.name for p in silent["peers"]] == ["слот 1"]
+    assert [p.name for p in silent["peers"]] == ["шлюз 1"]
 
 
 def test_a_gateway_never_seen_is_a_warning_with_an_unknown_version(vps, monkeypatch):

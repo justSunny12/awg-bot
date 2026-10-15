@@ -1,4 +1,4 @@
-"""gwmark.py — назначение шлюза: выбор устройства, новое устройство, токен агента, файл первого применения."""
+"""gwmark.py — назначение шлюза: выбор устройства, новое устройство, токен агента, файл конфигурации шлюза."""
 
 from __future__ import annotations
 
@@ -75,7 +75,9 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_device_id=callback_data.device_id, gw_slot=slot)
-        await ask_here(cb, services, state, texts.gateway_ask_token(token_slot), "set_rt_gw", slot or 0)
+        dev = await call(services.db.get_device, callback_data.device_id)
+        name = dev.name if dev is not None else texts.gateway_new_name(token_slot)
+        await ask_here(cb, services, state, texts.gateway_ask_token(name), "set_rt_gw", slot or 0)
         return
     await cb.answer("Назначаю…")
     await edit(cb, "🛰 Назначаю шлюз…", None)
@@ -115,7 +117,8 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_slot=slot)
-        await ask_here(cb, services, state, texts.gateway_ask_token(token_slot), "set_rt_gw", slot or 0)
+        await ask_here(cb, services, state, texts.gateway_ask_token(texts.gateway_new_name(token_slot)),
+                       "set_rt_gw", slot or 0)
         return
     await cb.answer("Создаю устройство и ключи…")
     await edit(cb, "🛰 Создаю устройство и ключи…", None)       # экран выбора отслужил
@@ -177,11 +180,11 @@ async def _gateway_setup_go(message: Message, services, device_id: int | None = 
 
 
 async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id: int | None = None) -> None:
-    """Открытый файл первого применения: внутри ключи и токен агента."""
+    """Открытый файл конфигурации нового шлюза: внутри ключи и токен агента."""
     try:
         blob, name = await call(services.gw_bundle_plain, slot or None)
     except (ServiceError, OSError) as e:
-        await message.answer(ui.fail("Файл первого применения не собран", str(e)))
+        await message.answer(ui.fail("Файл конфигурации шлюза не собран", str(e)))
         return
     from aiogram.types import BufferedInputFile
     if slot:
@@ -190,7 +193,7 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
         caption=texts.gateway_plain_bundle_caption(display),
-        reply_markup=kb.bundle_menu_kb(slot))
+        reply_markup=kb.bundle_menu_kb(slot, plain=True))
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
                    bundlecrypt.fingerprint(blob), True)

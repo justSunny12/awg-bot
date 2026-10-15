@@ -138,13 +138,12 @@ def test_routing_panel_turns_select_all_green_when_every_device_is_ticked_by_han
     from types import SimpleNamespace
     devs = [SimpleNamespace(id=i, name=f"D{i}", routing_on=on, is_managed=True, is_lent=False)
             for i, on in ((1, 1), (2, 1))]
-    labels = [b.text for r in kb.routing_panel(1, devs, enabled=2, total=2,
+    labels = [b.text for r in kb.routing_panel(1, devs, marks={1: True, 2: True},
                                                back_target="m:main").inline_keyboard for b in r]
-    assert labels[:3] == ["✅ D1", "✅ D2", "✅ Выбрать все"], labels
-    devs[1].routing_on = 0
-    labels = [b.text for r in kb.routing_panel(1, devs, enabled=1, total=2,
+    assert labels[:3] == ["✅ D1", "✅ D2", "✅ Все устройства"], labels
+    labels = [b.text for r in kb.routing_panel(1, devs, marks={1: True, 2: False},
                                                back_target="m:main").inline_keyboard for b in r]
-    assert labels[:3] == ["✅ D1", "☑️ D2", "☑️ Выбрать все"], labels
+    assert labels[:3] == ["✅ D1", "☑️ D2", "☑️ Все устройства"], labels
 
 
 # ── «Лимит исчерпан: удали N» ────────────────────────────────────────────────

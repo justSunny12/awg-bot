@@ -12,14 +12,14 @@ from ..fmt import _e, human_bytes, _updown, plain_ip, details, num
 # ── адреса в туннеле: пары «настоящая → в туннеле» ──────────────────────────
 
 def lan_pairs(nets, twins, limit: int = 6) -> str:
-    """«<code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>, …» по порядку
-    подсетей слота; подсеть без адреса в туннеле (не в таблице) — одна;
-    больше limit — «и ещё N». twins — [(настоящая, в туннеле)]."""
+    """«<code>192.168.1.0/24</code> · в туннеле <code>10.240.1.0/24</code>; …»
+    по порядку подсетей слота; подсеть без адреса в туннеле (не в таблице) —
+    одна; больше limit — «и ещё N». twins — [(реальная, в туннеле)]."""
     tw = dict(twins or [])
-    items = [f"<code>{_e(n)}</code>" + (f" → <code>{_e(tw[n])}</code>" if n in tw else "")
+    items = [f"<code>{_e(n)}</code>" + (f" · в туннеле <code>{_e(tw[n])}</code>" if n in tw else "")
              for n in list(nets or [])[:limit]]
     more = len(nets or []) - limit
-    return ", ".join(items) + (f" и ещё {more}" if more > 0 else "")
+    return "; ".join(items) + (f"; и ещё {more}" if more > 0 else "")
 
 
 def lan_example(twins) -> str:
@@ -94,17 +94,26 @@ def gateway_role_line(state) -> str:
 
 
 def gateway_device_card(dev, state=None) -> str:
-    last = timeutil.fmt_handshake(dev.last_handshake)
-    online = timeutil.handshake_is_online(dev.last_handshake)
-    dot = "🟢" if online else "🔴"
+    """Карточка устройства-шлюза без слота (у слота — карточка слота): один
+    значок состояния в заголовке, трафик, роль; жирная фраза о трафике —
+    только когда слот активен (без слота через устройство ничего не идёт)."""
+    if not dev.last_handshake:
+        status = "🔴 ещё не подключалось"
+    elif timeutil.handshake_is_online(dev.last_handshake):
+        status = "🟢 онлайн"
+    else:
+        status = f"🔴 офлайн · последнее подключение: {timeutil.fmt_handshake(dev.last_handshake)}"
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
-    head = (f"{dot} " + ui.head(f"🛰 {_e(dev.name)}") + f" ({plain_ip(dev.address)}), последний коннект: {last}\n"
+    head = (ui.head(f"🛰 {_e(dev.name)}", status=f"({plain_ip(dev.address)}) {status}") + "\n"
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
-            f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}")
+            f"Трафик: {human_bytes(rx + tx)} {_updown(tx, rx)}")
     if state is not None:
         head += "\n\n" + ext_ip_line(state.get("ext_ip")) + "\n" + ping_line(state.get("ping_ms"))
-    tail = ("\n\n<b>Это устройство — шлюз РФ-доступа, через него идёт "
-            "трафик на РФ-домены.</b>")
+    if state is not None and state.get("active"):
+        tail = ("\n\n<b>Это устройство — шлюз РФ-доступа, через него идёт "
+                "трафик на российские сервисы.</b>")
+    else:
+        tail = "\n\nЭто устройство — шлюз РФ-доступа"
     role = gateway_role_line(state)
     agent = agent_bot_line(state)
     return head + tail + (f"\n{role}" if role else "") + (f"\n\n{agent}" if agent else "")
@@ -114,7 +123,7 @@ def gateway_claim_marked(dev, by_channel: bool = False) -> str:
     """by_channel — агент принимает документ конфигурации: файла не будет."""
     head = f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) назначено шлюзом. "
     if by_channel:
-        return (head + "Конфигурация уйдёт ему по упр. каналу, когда шлюз подключится; не подключится — "
+        return (head + "Конфигурация уйдёт ему по каналу конфигурации, когда шлюз подключится; не подключится — "
                 "перевыпусти конфигурацию шлюза: «🛰 Шлюзы» → карточка шлюза → «📤 Конфигурация»")
     return head + "Конфигурация ниже — перешли её боту шлюза и примени: без этого он себя шлюзом не считает."
 
@@ -151,19 +160,21 @@ def _slot_note(state: str, agent_bot: dict | None, error: str, purpose: str, wha
     """Строка состояния под записями SMB / своими списками в карточке слота —
     общие ветки: обновить шлюз (со ссылкой на бота), отказ шлюза, ожидание.
     Имя слота не повторяется: строка стоит в его же карточке.
-    purpose — «Необходимо» / «Для синхронизации необходимо», what — «записи» / «списки»."""
+    purpose — «Для доступа к SMB» / «Для синхронизации», what — «записи SMB» / «списки»."""
     if state == "old_agent":
         bot = _bot_link(agent_bot)
-        return f"⚠️ {purpose} обновить шлюз" + (f" (бот: {bot})" if bot else "")
+        return f"⚠️ {purpose} обнови агента шлюза" + (f" (бот: {bot})" if bot else "")
     if state == "failed":
         if error.startswith(WRITE_ERROR):           # поломка на шлюзе, не отказ
             detail = error[len(WRITE_ERROR):].lstrip(": ")
             return "⚠️ Ошибка записи файла на шлюзе" + (f": {_e(detail)}" if detail else "")
-        return f"⚠️ Шлюз не смог принять {what}" + (f": {_e(error)}" if error else "")
+        return (f"⚠️ Шлюз не смог принять {what}" + (f": {_e(error)}" if error else "")
+                + " — подробности в «🩺 Здоровье» бота шлюза")
     return "⏳ Синхронизация с другими шлюзами…"
 
 
 ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
+GATEWAY_GONE = "Такого шлюза нет"            # всплывашка на кнопку снятого слота
 
 
 # ── Условная маршрутизация ─────────────────────
@@ -178,7 +189,7 @@ def slot_name(state, star: bool = False) -> str:
     предпочтительного, «🛰» у остальных не рисуется здесь (заголовок карточки
     ставит его сам)."""
     dev, gw = state.get("device"), state.get("gateway")
-    name = _e(dev.name) if dev is not None else f"слот {gw.id}"
+    name = _e(dev.name) if dev is not None else f"шлюз {gw.id}"
     pre = "⭐ " if star and state.get("preferred") else ""
     return pre + name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
 
@@ -200,7 +211,7 @@ def slot_ref(state) -> str:
     """Имя шлюза для фраз («упадёт NASPi», «останется в резерве»): только имя
     устройства, без подписи и адреса."""
     dev, gw = state.get("device"), state.get("gateway")
-    return _e(dev.name) if dev is not None else f"слот {gw.id}"
+    return _e(dev.name) if dev is not None else f"шлюз {gw.id}"
 
 
 def _slot_ping_tail(state) -> str:
@@ -223,16 +234,15 @@ PEER_MANY = 9
 
 
 def peer_nets_line(info: dict) -> str:
-    """Строка «↔️ Связь подсетей» на экране «Шлюзы» — инфобокс без кнопки:
+    """Строка «🔗 Связь подсетей» на экране «Шлюзы» — инфобокс без кнопки:
     связь подсетей — часть VPN-транзита. Пары — в адресах в туннеле, до шести
     на слот, при девяти слотах и больше — до трёх («и ещё N»); слотов с VPN-транзитом меньше двух — когда появится;
     адреса в туннеле выключены — отсылка к карточке."""
     st = info.get("state")
     if st == "off":
-        return "↔️ Связь подсетей: выключена вместе с адресами в туннеле — см. карточку шлюза"
+        return "🔗 Связь подсетей: выключена вместе с адресами в туннеле — см. карточку шлюза"
     if st != "ok":
-        return ("↔️ Связь подсетей — между шлюзами с VPN-транзитом: появится, когда он будет включён "
-                "хотя бы у двух")
+        return "🔗 Связь подсетей появится, когда VPN-транзит будет включён хотя бы у двух шлюзов"
 
     named = info.get("pairs_named") or []
     limit = PEER_NETS_SHOWN_MANY if len(named) >= PEER_MANY else PEER_NETS_SHOWN
@@ -245,19 +255,27 @@ def peer_nets_line(info: dict) -> str:
         return ": " + shown + (f" и ещё {more}" if more > 0 else "")
     # подписи слотов — на кнопках карточек ниже, в строке только имена
     pairs = " ↔️ ".join(f"{_e(name)}{_nets(nets)}" for name, _label, nets in named)
-    return f"↔️ Связь подсетей: {pairs}"
+    return f"🔗 Связь подсетей: {pairs}"
 
 
-GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй ждёт в резерве;\nактивный перестал отвечать, а "
-                  "резерв жив — бот перекладывает трафик на резерв и остаётся на нём, вернуть можно кнопкой")
-ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n"
-                           "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
-                           "будущего шлюза — до минуты. Шлюз назначается следующим шагом")
-SETTINGS_ROUTING_ABSENT = "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
+GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй ждёт в резерве;\n"
+                  "перестал отвечать активный, а резерв жив — бот переключит трафик на резерв и останется на нём;\n"
+                  "вернуть — кнопкой «▶️ Переключить на …»")
+# автопереключение выключено: «подробнее» не обещает переключения
+GATEWAYS_ABOUT_MANUAL = ("трафик несёт один шлюз, второй ждёт в резерве;\n"
+                         "автопереключение выключено: перестал отвечать активный — трафик не переключится, "
+                         "только вручную кнопкой «▶️ Переключить на …»")
+ROUTING_PROVISION_INTRO = (ui.head("🛰 Шлюзы", meta=["🇷🇺 РФ-доступ не развёрнут"]) + "\n"
+                           "«🚀 Развернуть» поставит на сервер AWG dnsmasq, перехват DNS клиентов, NAT, маршруты и "
+                           "линк до будущего шлюза — займёт до минуты. Шлюз назначишь следующим шагом")
+SETTINGS_ROUTING_ABSENT = (ui.head("🛰 Шлюзы", meta=["🇷🇺 РФ-доступ ждёт перезапуска бота"]) + "\n"
+                           "Обвязка развёрнута — РФ-доступ заработает после перезапуска")
 GATEWAYS_OFF = ui.head("🛰 Шлюзы", meta=["🇷🇺 РФ-доступ выключен", "разрешения и списки сохранены"])
 SETTINGS_ROUTING_SUBOFF = "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён"
 GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено: при падении активного шлюза РФ-доступ "
                      "выключится, а не перейдёт на резерв")
+GATEWAYS_NO_SLOT = ("Шлюз — устройство в локальной сети, через которое российские сервисы открываются с "
+                    "российского адреса. Назначь своё устройство или создай новое")
 
 
 def _lists_tail(info: dict | None) -> str:
@@ -274,16 +292,20 @@ def _lists_tail(info: dict | None) -> str:
 def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str = "",
                   auto_on: bool = True, peer_info: dict | None = None,
                   lists: dict | None = None) -> str:
-    """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием,
-    строки слотов, переключение и списки, «подробнее», связь подсетей,
-    предупреждение об автопереключении, свёрнутая сноска про ⭐."""
+    """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием (слотов
+    нет — «🔴 шлюз не назначен» и что такое шлюз), строки слотов, под ними
+    предупреждение о выключенном автопереключении, переключение и списки,
+    «подробнее» (без обещания переключения, когда оно выключено), связь
+    подсетей. Что значит ⭐ — в README, не на экране."""
     ok, reason = status
+    if not states:
+        return "\n".join([ui.head("🛰 Шлюзы", meta=[f"🇷🇺 {ROUTING_NAME} " + ui.st("bad", "шлюз не назначен")]),
+                          GATEWAYS_NO_SLOT])
     head = ui.head("🛰 Шлюзы", meta=[f"🇷🇺 {ROUTING_NAME} " + (ui.st("ok") if ok else ui.st("bad", f"не работает: {_e(reason)}"))])
     lines = [head]
-    if not states:
-        lines.append("Шлюз не назначен")
-        return "\n".join(lines)
     lines += [slot_line(st, star=len(states) > 1) for st in states]
+    if len(states) > 1 and not auto_on:
+        lines.append(GATEWAYS_AUTO_OFF)
     tail = []
     if len(states) > 1 and switched_at:
         try:
@@ -297,14 +319,12 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
         line = " · ".join(tail)
         lines.append(line[0].upper() + line[1:])
     if len(states) == 1:
-        lines.append(f"Резерва нет: упадёт {slot_ref(states[0])} — РФ-сервисы станут открываться "
+        lines.append(f"Резерва нет: упадёт {slot_ref(states[0])} — российские сервисы станут открываться "
                      "с зарубежного адреса")
     else:
-        lines.append(details(GATEWAYS_ABOUT))
+        lines.append(details(GATEWAYS_ABOUT if auto_on else GATEWAYS_ABOUT_MANUAL))
         if peer_info is not None:
             lines.append(peer_nets_line(peer_info))
-        if not auto_on:
-            lines.append(GATEWAYS_AUTO_OFF)
     return "\n".join(lines)
 
 

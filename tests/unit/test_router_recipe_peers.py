@@ -66,8 +66,8 @@ def test_the_recipe_does_not_take_neighbour_subnets_at_all():
 
 def test_the_recipe_ends_with_the_tab_hint():
     """Абзаца после рецепта нет: последняя строка — подсказка своей вкладки."""
-    assert _recipe("mt").endswith("Правило asym-via-gw — выше drop invalid; fasttrack выключить")
-    assert _recipe("ow").endswith("iptables — в /etc/firewall.user")
+    assert _recipe("mt").endswith("Правило <code>asym-via-gw</code> — выше <code>drop invalid</code>; fasttrack выключить")
+    assert _recipe("ow").endswith("<code>iptables</code> — в <code>/etc/firewall.user</code>")
 
 
 def test_a_tab_shows_only_its_own_recipe():
@@ -80,11 +80,13 @@ def test_a_tab_shows_only_its_own_recipe():
 
 
 def test_recipe_head_names_the_gateway_net_and_address_and_drops_the_panel_hint():
-    """Шапка — имя, подсеть и адрес шлюза одной строкой; строки «адрес шлюза —
-    в панели бота шлюза» больше нет (основной бот показывает плейсхолдер)."""
+    """Шапка — имя, подсеть и адрес шлюза одной строкой; без адреса — плейсхолдер
+    и строка, где его взять (экран «🔀 VPN-транзит» бота шлюза); с адресом —
+    строки нет."""
     got = _recipe("mt", gw="")
-    assert got.startswith(f"❓ <b>Роутер для NASPi</b> · <code>{NET}</code> · шлюз <code>{ROUTER_IP_PLACEHOLDER}</code>\n"), got
-    assert "панели" not in got, got
+    assert got.startswith(f"🛜 <b>Настройка роутера для NASPi</b> · <code>{NET}</code> · шлюз <code>{ROUTER_IP_PLACEHOLDER}</code>\n"), got
+    assert f"<code>{ROUTER_IP_PLACEHOLDER}</code> — адрес шлюза в локальной сети: он на экране «🔀 VPN-транзит»" in got, got
+    assert ROUTER_IP_PLACEHOLDER not in _recipe("mt") and "адрес шлюза в локальной сети" not in _recipe("mt")
 
 
 # ── основной бот: «❓ Роутер» в карточке слота ───────────────────────────────
@@ -105,7 +107,7 @@ async def test_the_main_bot_recipe_has_no_neighbour_lines(fake_bot, tab):
     cb = FakeCallback(message=msg, user_id=1, bot=fake_bot)
     await slots.gw_slot_router(cb, GwSlotCB(action="router", slot=1, val=tab), _MainServices())
     text = msg.sent[-1][1]
-    assert text.startswith("❓ <b>Роутер для Pi4</b>"), text
+    assert text.startswith("🛜 <b>Настройка роутера для Pi4</b>"), text
     _no_peers(text)
     assert text == texts.gateway_router_text("Pi4", NET, tab=tab)
 

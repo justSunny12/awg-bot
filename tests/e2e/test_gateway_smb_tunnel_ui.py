@@ -201,7 +201,7 @@ async def test_records_that_did_not_land_are_said_instead_of_the_usual_result(se
     await sh_slots.gw_slot_smb_yes(cb, GwSlotCB(action="smb_yes", val="1" if on else "0"), services)
     assert smb["store"]["app.routing.smb_tunnel"] is on
     first = _screen(nav)[0].splitlines()[0]
-    assert first == ("⚠️ SMB в туннеле включён, но имена не поставлены" if on else
+    assert first == ("⚠️ SMB в туннеле включён, но имена не применились" if on else
                      "⚠️ SMB в туннеле выключен, но имена ещё не сняты") + \
         " — диагностика на сервере: <code>awg-bot resolver admin status</code>", first
 

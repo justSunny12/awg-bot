@@ -129,35 +129,32 @@ async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
     """Галочка на месте: у ☑️ — перенести на этот слот, у ✅ — снять вовсе."""
     gw = await call(services.db.gateway, callback_data.slot)
     if gw is None:
-        await cb.answer(ui.Toast.no_slot, show_alert=True)
+        await cb.answer(texts.GATEWAY_GONE, show_alert=True)
         return
     await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
     st = await _slot_state(cb, services, gw.id, lazy_ping=False)
     if st is not None:
         await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
     dev = await call(services.db.get_device, gw.device_id)
-    await cb.answer(ui.toast("Предпочтительный: " + ("снят" if gw.preferred else (dev.name if dev else "этот шлюз"))))
+    # ⭐ снята — холодный старт оставляет трафик на прежнем активном (routing_cold_start)
+    await cb.answer(ui.toast("⭐ Снято: при холодном старте трафик останется на прежнем активном шлюзе"
+                             if gw.preferred else
+                             f"⭐ {dev.name if dev else 'Этот шлюз'} — по умолчанию при холодном старте"))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "ping"))
 async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """Замер сейчас; карточка перерисовывается той, откуда нажали: из карточки
-    устройства — она, из карточки слота — она."""
+    """Замер сейчас; на месте — карточка слота: кнопка «📡 Пинг» есть только на
+    ней (карточка устройства-шлюза со слотом и есть карточка слота,
+    device_card_parts; без слота пинга нет). Экран по тексту не узнаём."""
     gw = await call(services.db.gateway, callback_data.slot)
     if gw is None:
-        await cb.answer(ui.Toast.no_slot, show_alert=True)
+        await cb.answer(texts.GATEWAY_GONE, show_alert=True)
         return
     ms = await call(services.gateway_ping, gw.id)
     st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
     st["ping_ms"] = ms
-    text = cb.message.text or cb.message.caption or ""
-    if "Это устройство — шлюз" in text or "последний коннект" in text:
-        from awgbot.bot.handlers.admin.devices import device_card_parts
-        dev = await call(services.db.get_device, gw.device_id)
-        if dev is not None:
-            await edit(cb, *await device_card_parts(services, dev))
-    else:
-        await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
+    await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
                     else f"Шлюз {st['display']} не отвечает", show_alert=ms is None)
 
@@ -225,11 +222,17 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     except ServiceError as e:
         await cb.answer(ui.toast(e), show_alert=True)
         return
-    await _render_card(cb, services, callback_data.slot)
+    if on:
+        # диалог обещал: после включения — что настроить на роутере
+        fresh = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+        if fresh is not None:
+            await _show_router(cb, fresh, "mt")
+    else:
+        await _render_card(cb, services, callback_data.slot)
     chan = st.get("channel") or {}
     # документ везёт режим всегда; агенту 3.2.x — каналом, только пока он на связи
     by_file = not (chan.get("cfg") or {}).get("cfg1") and not chan.get("online")
-    tail = "перевыпусти конфигурацию шлюза" if by_file else "применится автоматически по упр. каналу"
+    tail = "перевыпусти конфигурацию шлюза" if by_file else "применится автоматически по каналу конфигурации"
     # подсети соседей меняются у этого слота и у других слотов с VPN-транзитом
     # и живут в конфиге линка: агентам без документа — только файлом, поимённо
     names = [n for n in await call(services.gateway_transit_reissue, callback_data.slot)
@@ -240,17 +243,23 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer(ui.toast(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail), show_alert=True)
 
 
+async def _show_router(cb: CallbackQuery, st: dict, tab: str) -> None:
+    """«🛜 Настройка роутера» слота: адрес шлюза в локальной сети — из снимка
+    канала конфигурации (lan_addr), пока его нет — плейсхолдер с подсказкой."""
+    gw = st["gateway"]
+    dev = st.get("device")
+    title = (dev.name if dev is not None else f"шлюз {gw.id}") + (f" ({gw.label})" if gw.label else "")
+    addr = str((st.get("channel") or {}).get("lan_addr") or "")
+    await edit(cb, texts.gateway_router_text(title, gw.lan_subnets[0] if gw.lan_subnets else "", addr, tab=tab),
+               kb.gateway_router_kb(gw.id, tab))
+
+
 @router.callback_query(GwSlotCB.filter(F.action == "router"))
 async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
         return
-    gw = st["gateway"]
-    tab = callback_data.val or "mt"
-    dev = st.get("device")
-    title = (dev.name if dev is not None else f"слот {gw.id}") + (f" ({gw.label})" if gw.label else "")
-    await edit(cb, texts.gateway_router_text(title, gw.lan_subnets[0] if gw.lan_subnets else "", tab=tab),
-               kb.gateway_router_kb(gw.id, tab))
+    await _show_router(cb, st, callback_data.val or "mt")
     await cb.answer()
 
 
@@ -354,7 +363,12 @@ async def gateway_label_received(message: Message, state: FSMContext, services):
     slot = int(data.get("gw_slot") or 0)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     gw = await call(services.db.gateway, slot)
-    old = gw.label if gw is not None else ""
+    if gw is None:
+        # слот сняли, пока висело приглашение: ввод закрыт, выход — в меню
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, f"⚠️ {texts.GATEWAY_GONE}", kb.to_menu())
+        return
     try:
         await call(services.gateway_set_label, slot, message.text or "")
         gw = await call(services.db.gateway, slot)
@@ -362,9 +376,8 @@ async def gateway_label_received(message: Message, state: FSMContext, services):
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
         return
     await state.clear()
-    new = gw.label if gw is not None else ""
-    note = f"✅ Подпись: {texts._e(old) or '—'} → {texts._e(new) or '—'}"
-    await back_to_context(message, services, data, "admin", note=note)
+    await back_to_context(message, services, data, "admin",
+                          note=texts.gateway_label_done(gw.label if gw is not None else ""))
 
 
 async def _remove_ask(cb: CallbackQuery, services, slot: int) -> None:
@@ -416,7 +429,9 @@ async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     text, markup = await gateways_screen(services)
     note = texts.gateway_removed(prev, now_active)
     if await call(services.gw_bot_token, callback_data.slot or None):
-        note += "\n" + texts.GW_TOKEN_NOT_FORGOTTEN        # запись env не удалась — журнал молчать не должен
+        # запись env не удалась — журнал молчать не должен: что и где убрать руками
+        var, path = await call(services.gw_token_env_info, callback_data.slot or None)
+        note += "\n" + texts.gw_token_not_forgotten(prev.name, var, path)
     await edit(cb, screens.with_note(text, note), markup)
 
 
