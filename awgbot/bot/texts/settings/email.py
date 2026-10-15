@@ -23,7 +23,7 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
     elif state == "fail":
         status = f"🔴 {_e(detail)}"
     else:
-        status = "⚪ ещё не проверялось"
+        status = "🟡 ещё не проверялось"
     lines = [ui.head("✉️ E-mail", status),
              f"<code>{_e(acc.login)}</code> · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
     if br.has.email_resume and resume_on is not None:

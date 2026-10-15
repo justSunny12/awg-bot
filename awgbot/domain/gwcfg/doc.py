@@ -36,7 +36,7 @@ HUMAN = {
     "LAN_SUBNETS": gwlink.KEY_HUMAN["HOME_SUBNETS"],
     "PEER_LAN_NETS": gwlink.KEY_HUMAN["PEER_HOME_NETS"],
     "CLIENT_SUBNET": "подсеть клиентов",
-    "LINK_CHANNEL_PORT": "порт упр. канала",
+    "LINK_CHANNEL_PORT": "порт канала конфигурации",
     "env": "настройки обвязки",
     "link": "конфиг линка",
     "uplink": "конфиг аплинка",

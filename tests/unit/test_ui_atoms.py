@@ -22,8 +22,8 @@ def test_head_puts_the_icon_outside_bold_and_the_status_next_to_the_name():
 
 
 def test_status_table_is_icons_only():
-    assert ui.STATUS == {"ok": "🟢", "warn": "🟡", "bad": "🔴", "wait": "⏳", "off": "⚪"}
-    assert ui.st("off", "нет связи") == "⚪ нет связи" and ui.st("wait") == "⏳"
+    assert ui.STATUS == {"ok": "🟢", "warn": "🟡", "bad": "🔴", "wait": "⏳"}
+    assert ui.st("bad", "нет связи") == "🔴 нет связи" and ui.st("wait") == "⏳"
     with pytest.raises(KeyError):
         ui.st("unknown")
 

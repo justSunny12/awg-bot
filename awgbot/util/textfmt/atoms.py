@@ -8,7 +8,7 @@ import re as _re
 
 from .base import details as _details
 
-STATUS = {"ok": "🟢", "warn": "🟡", "bad": "🔴", "wait": "⏳", "off": "⚪"}
+STATUS = {"ok": "🟢", "warn": "🟡", "bad": "🔴", "wait": "⏳"}   # ⚪ снят 15.10.2026: нет данных — 🔴, ждём первый тик — 🟡
 TOAST_MAX = 200                  # предел всплывашки Telegram
 TEXT_MAX = 4096                  # предел текста сообщения
 
@@ -16,7 +16,7 @@ _TAG = _re.compile(r"<[^>]+>")
 
 
 def st(kind: str, word: str = "") -> str:
-    """«🟢 работает», «⚪ нет связи», «⏳» — значок состояния и его слово."""
+    """«🟢 работает», «🔴 нет связи», «⏳» — значок состояния и его слово."""
     icon = STATUS[kind]
     return f"{icon} {word}" if word else icon
 

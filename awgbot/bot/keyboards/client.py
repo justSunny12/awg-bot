@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
 from awgbot.bot import texts as _texts
 from awgbot.core import blocks as _blocks
 
-from .common import _btn_suffix, append_hide_row, confirm, device_limit_presets, issuable
+from .common import _btn_suffix, _manual_block_button, append_hide_row, confirm, device_limit_presets, issuable
 
 
 ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1): «➕ Устройство» из списка — отмена туда же
@@ -86,7 +86,7 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
                    back=None, add: bool = True) -> InlineKeyboardMarkup:
     """Список своих устройств (переданное другу — с «[имя держателя]»);
     следом — чужие, которые профиль держит, с пометкой «от профиля …».
-    Значок — состояние (⛔ ⏳ 🟢 ⚪). add — есть место в лимите."""
+    Значок — состояние (⛔ ⏳ 🟢 🔴). add — есть место в лимите."""
     def _entry(_i, item):
         d, is_held = item
         if is_held:
@@ -134,7 +134,8 @@ def device_actions(dev, *, is_admin: bool, back_target: str) -> InlineKeyboardMa
         issue_row(DeviceCB, dev.id) if dev.is_managed else None,
         [("✏️ Имя", DeviceCB(action="edit_name", device_id=dev.id)),
          ("✏️ Лимит трафика", DeviceCB(action="edit_traffic", device_id=dev.id))],
-        [pass_on, _block_button(dev)],
+        [pass_on, _block_button(dev) if not is_admin
+         else _manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=True)],
         ("🗑 Удалить", DelDeviceCB(device_id=dev.id, stage="ask")),
         ui.back(back_target))
 

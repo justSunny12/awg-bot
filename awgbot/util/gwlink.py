@@ -301,7 +301,7 @@ KEY_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "
 
 
 def channel_port() -> int:
-    """Порт упр. канала линка из настроек ВПС (одно место для сторожа,
+    """Порт канала конфигурации линка из настроек ВПС (одно место для сторожа,
     сервера канала и бандла)."""
     from awgbot.core import settings
     return settings.get_int("app.routing.link_channel_port", DEFAULT_PORT)

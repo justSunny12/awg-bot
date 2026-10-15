@@ -6,12 +6,16 @@ from awgbot.bot import ui
 from ..fmt import _e, plural_ru, more
 
 
-def address_list_line(n: int, tail: str = "") -> str:
+def address_list_line(n: int, enabled: bool = False) -> str:
     """Список адресов в инфобокс не выносится — он редактируется кнопками
-    под ним; здесь только число и отсылка."""
+    под ним; здесь только число и отсылка. enabled — фильтр уже включён:
+    звать «включить фильтр» нечего, адрес нужен, чтобы снаружи вошёл ты."""
+    if not n and enabled:
+        return ("Адреса для SSH-доступа (фильтр): не заданы — добавь «➕ Адрес», "
+                "чтобы входить снаружи со своих адресов")
     if not n:
         return ("Адреса для SSH-доступа (фильтр): не заданы — добавь «➕ Адрес», чтобы включить "
-                "фильтр снаружи" + tail)
+                "фильтр снаружи")
     return (f"Адреса для SSH-доступа (фильтр): {n} "
             + plural_ru(n, "адрес", "адреса", "адресов") + " — убрать: «➖» ниже")
 
@@ -43,7 +47,7 @@ def settings_firewall_text(st: dict) -> str:
     else:
         lines.append("Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)")
     lines.append("")
-    lines.append(address_list_line(len(allow)))
+    lines.append(address_list_line(len(allow), bool(st.get("enabled"))))
     warns: list[str] = []
     if st.get("unresolved"):
         warns.append("⚠️ Не резолвятся: " + more(st["unresolved"]))
@@ -52,7 +56,7 @@ def settings_firewall_text(st: dict) -> str:
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → {st['listening']} "
                      f"или верни sshd на {st.get('ssh_port')}")
     elif st.get("sshd_down"):
-        warns.append("⚪ sshd не запущен")
+        warns.append("🔴 sshd не запущен")
     if st.get("owner") == "generator" and st.get("owner_detail"):
         warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")

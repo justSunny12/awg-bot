@@ -156,15 +156,17 @@ def gateway_health(st) -> str:
     ✅-строки на экран не идут. Чинить будут по строкам, а не по вердикту."""
     host = _e(st.hostname) if st.hostname else "шлюза"
     problems = gwchecks.health_problems(st.checks)
+    smart_bad = bool(st.smart and st.smart != "OK")
+    n_problems = len(problems) + (1 if smart_bad else 0)
     lines = [ui.head(f"🩺 Здоровье {host}",
-                     "✅ Проблем не выявлено" if not problems else f"🔴 Проблемы: {len(problems)}")]
+                     "✅ Проблем не выявлено" if not n_problems else f"🔴 Проблемы: {n_problems}")]
     for c in st.checks:
         mark = gwchecks.check_mark(c)
         if mark == "✅":
             continue
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
-    if st.smart and st.smart != "OK":
+    if smart_bad:
         lines.append("🔴 Диск: SMART сообщает о сбое — сделай бэкап и замени носитель")
     hw = []
     if st.ram_free_mb is not None:

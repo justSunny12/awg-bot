@@ -99,7 +99,7 @@ def reassign_addslot(device_id: int, client_id: int) -> InlineKeyboardMarkup:
 
 def client_state_icon(c, online_ids) -> str:
     """Один значок по приоритету: ⛔ блок → ⏸️ пауза → ⏳ не активирован →
-    🟢 онлайн → ⚪ нет."""
+    🟢 онлайн → 🔴 офлайн."""
     mask = int(c.block_reason)
     paused = int(_blocks.ClientBlock.PAUSED)
     if mask & ~paused:
@@ -108,7 +108,7 @@ def client_state_icon(c, online_ids) -> str:
         return "⏸️"
     if c.activation_status == ActivationStatus.PENDING:
         return "⏳"
-    return "🟢" if c.id in online_ids else "⚪"
+    return "🟢" if c.id in online_ids else "🔴"
 
 
 def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup:

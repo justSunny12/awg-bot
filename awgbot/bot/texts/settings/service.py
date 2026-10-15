@@ -54,7 +54,7 @@ def settings_upd_text(installed: str | None = None, target=None, blocked: str = 
     if hold:
         return "\n".join([ui.head("⬆️ Обновления", meta=[_e(cur)]), update_hold_line(hold)] + tail)
     if target is None:
-        head = ui.head("⬆️ Обновления", meta=[f"{_e(cur)} " + (ui.st("off", "проверка не удалась") if scan_failed else ui.st("ok", "актуальна"))])
+        head = ui.head("⬆️ Обновления", meta=[f"{_e(cur)} " + (ui.st("bad", "проверка не удалась") if scan_failed else ui.st("ok", "актуальна"))])
         return "\n".join([head] + ([update_wait_line(waiting, bot_username)] if waiting else []) + tail)
     lines = [ui.head("⬆️ Обновления", meta=[f"{_e(cur)} → {_e(_ver(target.tag))}"])]
     if blocked:

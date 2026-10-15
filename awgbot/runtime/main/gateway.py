@@ -77,7 +77,7 @@ async def run_gateway() -> None:
         # обвязка; токен приедет — агент перезапустится сам.
         token_dead = True
         log.error("Bot API отверг токен бота шлюза — работаю без Telegram и жду новый токен по "
-                  "упр. каналу от сервера AWG (или BOT_TOKEN в /etc/awg-bot/env руками и перезапуск)")
+                  "каналу конфигурации от сервера AWG (или BOT_TOKEN в /etc/awg-bot/env руками и перезапуск)")
     except Exception as e:                               # noqa: BLE001
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)

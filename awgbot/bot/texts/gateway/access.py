@@ -20,7 +20,7 @@ def gateway_ssh_text(st: dict) -> str:
     port = st.get("port")
     lines = [ui.head("🛡 SSH-доступ"), ""]
     if st.get("sshd_down"):
-        lines.append(f"⚪ sshd не запущен. Порт в таблице: {port}")
+        lines.append(f"🔴 sshd не запущен. Порт в таблице: {port}")
     elif st.get("owner") == "omv":
         lines.append(f"Порт SSH: {port} — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>. "
                      "Бот следит за портом и держит фильтр на нём.")
@@ -61,8 +61,7 @@ def gateway_ssh_text(st: dict) -> str:
     else:
         lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным")
     lines.append("")
-    lines.append(address_list_line(len(allow),
-                                   " — снаружи доступ только с сервера AWG" if st.get("filter") else ""))
+    lines.append(address_list_line(len(allow), bool(st.get("filter"))))
     warns: list[str] = []
     unresolved = st.get("unresolved") or []
     if unresolved:
