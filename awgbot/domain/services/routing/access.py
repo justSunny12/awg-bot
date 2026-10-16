@@ -37,24 +37,6 @@ class RoutingAccessMixin:
     # делает две попытки к двум целям с таймаутом 4 с.
     _RT_ANNOUNCED_KEY = "routing_link_announced"
     _RT_LISTS_NEXT_KEY = "routing_lists_next"       # момент следующего похода за списками (с джиттером)
-    # Подсказка про бандл — не украшение. Обфускация линка симметрична: не сойдись
-    # H1..H4/S1..S4 у сторон, хендшейка не будет вовсе. Отказ громкий (вот эта
-    # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
-    # ищут в аплинке и NAT, где её нет.
-    def _txt_rt_bundle_hint(self, gw=None) -> str:
-        """Обе команды — всегда: выпустить файл на сервере AWG и применить его
-        на шлюзе (агент стоит — без --install). Слот известен — его интерфейс
-        линка и имя файла, нет — заглушки."""
-        import html
-        if gw is not None and getattr(gw, "link_if", ""):
-            link, name = html.escape(gw.link_if), html.escape(self.bundle_name(gw))
-        else:
-            link, name = "&lt;интерфейс&gt;", "&lt;файл&gt;"
-        return ("\n\n<i>Если проблема возникла сразу после обновления — выпусти свежий файл конфигурации "
-                f"шлюза на сервере AWG (<code>awg-bot gw-bundle --link {link}</code>) и примени его на шлюзе "
-                f"(<code>sudo sh {name}</code>): набор обфускации линка обязан совпадать, иначе хендшейк не "
-                "проходит, а без линка нет и канала конфигурации</i>")
-
     @staticmethod
     def _rt_effect_line() -> str:
         """Что именно почувствуют пользователи, пока маркировка снята.
@@ -69,11 +51,13 @@ class RoutingAccessMixin:
 
     def _txt_rt_gw_down(self, active=None, also=()) -> str:
         """also — резервные слоты, которые тоже лежат: их строка идёт сразу за
-        первой фразой, до объяснения эффекта и подсказки про бандл."""
+        первой фразой, до объяснения эффекта. Подсказки про файл конфигурации нет
+        (решение пользователя 17.10.2026): параметры линка меняются только по
+        каналу, разъехаться они могут лишь нештатно — аварийный путь в README."""
         who = f" {self._gw_link(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз{who} не отвечает.{tail}\n"
-                + self._rt_effect_line() + self._txt_rt_bundle_hint(active))
+                + self._rt_effect_line())
 
     def _txt_rt_gw_no_path(self, active=None, also=()) -> str:
         who = f" {self._gw_link(active)}" if active is not None else ""

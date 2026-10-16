@@ -23,8 +23,6 @@ class RoutingNotesMixin:
                 f"обратно можно {self._gw_card_link(new)}.")
         if verdict == routing.PROBE_NO_PATH:
             head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе"
-        else:
-            head += self._txt_rt_bundle_hint(prev)
         return head
 
     def _txt_rt_switch_refused(self, active) -> str:
