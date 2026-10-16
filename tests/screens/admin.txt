@@ -8,7 +8,7 @@
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -26,7 +26,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -45,14 +45,14 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
 
-### adm.main.refresh.link — ссылка «🔄 обновлено в …» — /start refresh: команда стёрта, главная на месте
+### adm.main.refresh.link — ссылка «обновлено в … 🔄» — /start refresh: команда стёрта, главная на месте
 > /start refresh
 - delete #1
 + send #2
@@ -64,7 +64,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -80,7 +80,7 @@
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -91,7 +91,7 @@
 
 Сейчас никто не подключён
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -1383,7 +1383,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -1509,7 +1509,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -2559,7 +2559,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3200,7 +3200,7 @@ uci commit</pre>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3350,7 +3350,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3367,7 +3367,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3515,7 +3515,7 @@ Pi4 — 🟢 Резерв
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3532,7 +3532,7 @@ Pi4 — 🟢 Резерв
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00 🔄</a></i>
   [⬅️ В меню | m:main]
 
 ### adm.link.expiring — /start expiring
@@ -3663,7 +3663,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3743,7 +3743,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3962,7 +3962,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4003,7 +4003,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4135,7 +4135,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4279,7 +4279,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4425,7 +4425,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4441,7 +4441,7 @@ IMAP и SMTP отвечают, вход выполнен
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4459,7 +4459,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4480,7 +4480,7 @@ IMAP и SMTP отвечают, вход выполнен
 <b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4500,7 +4500,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюз <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3)
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4520,7 +4520,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3), <a href="https://t.me/test_bot?start=gw-2">Pi4</a> (v1.2.0), <a href="https://t.me/test_bot?start=gw-3">NASPi</a> (v1.2.1) [+1]
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4538,7 +4538,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4557,7 +4557,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4573,7 +4573,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -4758,7 +4758,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4832,7 +4832,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5891,7 +5891,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5910,7 +5910,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6008,7 +6008,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6034,7 +6034,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 0 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6051,7 +6051,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6069,7 +6069,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6087,7 +6087,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 1 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6105,7 +6105,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 6,7 ГБ
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в 12:00:00</i>
+<i>обновлено в 12:00:00 🔄</i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6177,7 +6177,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6534,7 +6534,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6566,7 +6566,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6599,7 +6599,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6697,7 +6697,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8000,7 +8000,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8018,7 +8018,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8036,7 +8036,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8054,7 +8054,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8072,7 +8072,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8090,7 +8090,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8418,7 +8418,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -9302,7 +9302,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -9403,7 +9403,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -9444,7 +9444,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
+<i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]

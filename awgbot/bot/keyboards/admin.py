@@ -22,7 +22,7 @@ from .common import (BTN_CANCEL, _btn_suffix, _manual_block_button, confirm, not
 def admin_main(*, routing_visible: bool = False, self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Семь кнопок: свои устройства и свой РФ-доступ (когда выдан), профили и
     новый профиль, объявление и шлюзы, настройки. Перечитать статус — ссылкой
-    «🔄 обновлено в …» в тексте главной, кнопки нет."""
+    «обновлено в … 🔄» в тексте главной, кнопки нет."""
     from .client import menu_issue_row
     # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
     # включению, других входов у функции нет

@@ -146,7 +146,7 @@ async def gw_start(message: Message, services, state: FSMContext, command: Comma
 
 
 async def _refresh_by_link(message: Message, services) -> None:
-    """«🔄 обновлено …» в тексте панели — ссылка /start refresh: Telegram шлёт
+    """«обновлено … 🔄» в тексте панели — ссылка /start refresh: Telegram шлёт
     команду новым сообщением, бот её сразу убирает (как у экрана трафика
     основного бота) и перечитывает панель живьём на месте живого меню."""
     try:

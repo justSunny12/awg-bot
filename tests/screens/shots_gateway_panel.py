@@ -103,7 +103,7 @@ PANEL = [
     _shot("gw.panel.refresh", press=[GwCB(action="refresh")], tick=_TICK_LAN,
           live=_status_lan(month_rx=0), title="прежняя кнопка «🔄 Обновить» из старого меню — живой замер поверх снимка тика"),
     _shot("gw.panel.refresh.link", start="refresh", tick=_TICK_LAN, live=_status_lan(month_rx=0),
-          title="ссылка «🔄 обновлено …» в тексте: /start refresh убран из чата, панель живьём на месте меню"),
+          title="ссылка «обновлено … 🔄» в тексте: /start refresh убран из чата, панель живьём на месте меню"),
     _shot("gw.panel.channel.active", press=[GwCB(action="panel")], channel="active", standby=True,
           tick=_status_lan(), title="упр. канал на связи, шлюз несёт трафик"),
     _shot("gw.panel.channel.standby", press=[GwCB(action="panel")], channel="standby", standby=True,

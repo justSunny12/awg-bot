@@ -83,7 +83,7 @@ async def expiring_screen(services):
 
 
 async def online_screen(services):
-    """Живой экран: последней строкой — «🔄 обновлено в …» ссылкой на самого
+    """Живой экран: последней строкой — «обновлено в … 🔄» ссылкой на самого
     себя (/start online перерисовывает экран на месте)."""
     from awgbot.util import timeutil
     devs = await call(services.online_devices)
@@ -189,7 +189,7 @@ async def _traffic_deep_link(message: Message, services, payload: str,
     """Переход по ссылке из шапки, экрана или уведомления: экран — на месте
     живого меню, команда убирается из чата."""
     if payload == texts.REFRESH_PAYLOAD:
-        # «🔄 обновлено в …» на главной: разово дёрнуть сервер и /proc,
+        # «обновлено в … 🔄» на главной: разово дёрнуть сервер и /proc,
         # главную перерисовать на месте (команду из чата убирает show_screen)
         notes = await call(services.refresh_status_now)
         if not await show_screen(message, services, "admin", None, "main"):

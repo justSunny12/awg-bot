@@ -53,8 +53,8 @@ def _gw_role(st, chan: dict) -> str:
 
 
 def refreshed_line(st, bot_username: str = "") -> str:
-    """Последняя строка панели: «🔄 <i>обновлено в 15:43:07</i>» (другой день —
-    «обновлено 15.10 14:03») — ссылкой на /start refresh (перечитать живьём);
+    """Последняя строка панели: «<i>обновлено в 15:43:07 🔄</i>» (другой день —
+    «обновлено 15.10 14:03:07 🔄») — ссылкой на /start refresh (перечитать живьём);
     без имени бота — просто текст. Всегда время с секундами, «только что» не
     пишем: оно верно лишь в момент получения (решение 16.10.2026)."""
     from awgbot.util import timeutil
@@ -65,7 +65,7 @@ def refreshed_line(st, bot_username: str = "") -> str:
         lead, when = "обновлено в ", at.strftime("%H:%M:%S")
     else:
         lead, when = "обновлено ", timeutil.fmt_dt_ui(at, seconds=True)
-    return "🔄 <i>" + lead + deep_link(bot_username, REFRESH_PAYLOAD, when) + "</i>"
+    return "<i>" + lead + deep_link(bot_username, REFRESH_PAYLOAD, when + " 🔄") + "</i>"
 
 
 def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),

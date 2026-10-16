@@ -54,7 +54,7 @@ MAIN = [
     Shot("adm.main.refresh", role="admin", press=[Menu(action="refresh")], data=_people,
          title="«🔄 Обновить» прежнего сообщения"),
     Shot("adm.main.refresh.link", role="admin", start="refresh", data=_people,
-         title="ссылка «🔄 обновлено в …» — /start refresh: команда стёрта, главная на месте"),
+         title="ссылка «обновлено в … 🔄» — /start refresh: команда стёрта, главная на месте"),
     Shot("adm.online", role="admin", press=[Menu(action="online")], data=_people, title="онлайн"),
     Shot("adm.online.empty", role="admin", press=[Menu(action="online")], data=_quiet, title="онлайн, никого"),
     Shot("adm.expiring", role="admin", press=[Menu(action="expiring")], data=_people, title="истекают"),
