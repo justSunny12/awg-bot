@@ -49,18 +49,17 @@ def _gw_role(st, chan: dict) -> str:
 
 
 def refreshed_line(st, bot_username: str = "") -> str:
-    """Последняя строка панели: «🔄 <i>обновлено в 15:43</i>» / «<i>только
-    что</i>» — ссылкой на /start refresh (перечитать живьём); без имени бота —
-    просто текст."""
+    """Последняя строка панели: «🔄 <i>обновлено в 15:43:07</i>» (другой день —
+    «обновлено 15.10 14:03») — ссылкой на /start refresh (перечитать живьём);
+    без имени бота — просто текст. Всегда время с секундами, «только что» не
+    пишем: оно верно лишь в момент получения (решение 16.10.2026)."""
     from awgbot.util import timeutil
-    age = st.age_seconds()
-    if age is None or age < 60:
-        label = "только что"
+    now = timeutil.now()
+    at = timeutil.parse_iso(st.ts).astimezone(timeutil.TZ) if st.ts else now
+    if at.date() == now.date():
+        label = "обновлено в " + at.strftime("%H:%M:%S")
     else:
-        at = timeutil.parse_iso(st.ts)
-        now = timeutil.now()
-        when = at.strftime("%H:%M") if at.date() == now.date() else timeutil.fmt_dt_ui(at)
-        label = f"обновлено в {when}" if at.date() == now.date() else f"обновлено {when}"
+        label = "обновлено " + timeutil.fmt_dt_ui(at, seconds=True)
     return "🔄 <i>" + deep_link(bot_username, REFRESH_PAYLOAD, label) + "</i>"
 
 

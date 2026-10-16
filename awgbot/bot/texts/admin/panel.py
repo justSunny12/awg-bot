@@ -115,7 +115,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     # возраст снимка — последней строкой, ссылкой «перечитать» (кнопки «🔄
     # Обновить» на главной больше нет)
     age = st.get("age_seconds")
-    at = None if age is None or int(age) < 60 else timeutil.now() - datetime.timedelta(seconds=int(age))
+    at = None if age is None else timeutil.now() - datetime.timedelta(seconds=int(age))   # None — живой замер: сейчас
     lines += ["", refreshed_line(bot_username, REFRESH_PAYLOAD, at)]
     return "\n".join(lines)
 
