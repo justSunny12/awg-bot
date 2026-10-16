@@ -155,7 +155,7 @@ class TransitMixin:
         ls = gwguard.lists_status()
         info["domains"] = int(ls.get("domains") or 0)
         info["nets"] = int(ls.get("nets") or 0)
-        info["updated_at"] = ls.get("updated_at", "")
+        info["updated_at"] = self._lists_seen_at(ls.get("updated_at", ""))
         info["own_vpn"], info["own_ru"] = gwguard.lan_own_lists()
         lists_ok = table_ok and (info["nets"] > 0 or info["domains"] > 0)
         checks.append(GwCheck(gc.CHECK_LISTS, lists_ok, "" if lists_ok else
@@ -247,11 +247,33 @@ class TransitMixin:
     # ── фиды локальной сети по каналу ────────
     _LAN_CHANNEL_HASH_KEY = "gwlink_lists_hash"
     _LAN_CHANNEL_AT_KEY = "gwlink_lists_at"
+    # момент, когда сервер подтвердил: фиды шлюза совпадают с его свежей сверкой
+    # (lists_ok или повторная доставка тех же); строка «📋 Списки · обн. …» берёт
+    # позднее из него и времени последней записи списков. Отдельно от запаса
+    # выше: тот отмечается и при закрытии сессии, а это не сверка
+    _LAN_CHANNEL_CONFIRMED_KEY = "gwlink_lists_confirmed"
     # Своё скачивание молчит, пока канал привозит фиды: сервер обновляет их раз
     # в шесть часов, запас вдвое — чтобы одна пропущенная доставка не вернула
     # локальный адрес на GitHub раньше, чем канал успеет исправиться.
     _LAN_CHANNEL_FRESH_S = 12 * 3600
     _LAN_FEED_MAX = 8 * 1024 * 1024
+
+    def _lists_seen_at(self, written: str) -> str:
+        """Дата для «📋 Списки · обн. …»: позднее из записи списков скриптом и
+        подтверждения сервера, что фиды шлюза совпадают с его свежей сверкой.
+        Без второго шлюз с каналом показывал дату последнего ИЗМЕНЕНИЯ фидов —
+        неизменные источники выглядели как застывшее обновление."""
+        raw = self.db.get_state(self._LAN_CHANNEL_CONFIRMED_KEY) or ""
+        if not (raw.isdigit() and self.lan_feeds_applied_hash()):
+            return written
+        import datetime as _dt
+        confirmed = _dt.datetime.fromtimestamp(int(raw), tz=_dt.timezone.utc)
+        try:
+            if written and timeutil.parse_iso(written) >= confirmed:
+                return written
+        except ValueError:
+            pass
+        return timeutil.to_iso(confirmed)
 
     def lan_feeds_applied_hash(self) -> str:
         """Отпечаток фидов, применённых из канала; пусто — не применяли."""
@@ -281,6 +303,8 @@ class TransitMixin:
             return
         if self.lan_feeds_applied_hash():
             self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
+            if digest:
+                self.db.set_state(self._LAN_CHANNEL_CONFIRMED_KEY, str(int(time.time())))
 
     def apply_lan_feeds(self, digest: str, packed_b64: str) -> dict:
         """Применить фиды, привезённые каналом: {ok, error}.
@@ -317,6 +341,7 @@ class TransitMixin:
             return {"ok": False, "error": "отпечаток фидов не сошёлся"}
         if digest == self.lan_feeds_applied_hash():
             self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
+            self.db.set_state(self._LAN_CHANNEL_CONFIRMED_KEY, str(int(time.time())))
             return {"ok": True, "error": ""}
         os.makedirs(gwguard.LAN_FEED_DIR, mode=0o700, exist_ok=True)
         for name, text in (("domains.lst", domains), ("nets.lst", nets)):

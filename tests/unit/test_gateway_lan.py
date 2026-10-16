@@ -161,7 +161,7 @@ def test_without_vpn_transit_the_panel_has_no_transit_lists_or_smb_lines():
     lines = texts.gateway_panel(st).splitlines()
     assert not any(ln.startswith(("🔀", "📋", "🗂")) for ln in lines), lines
     labels = [b.text for row in kb.gateway_panel_kb(bool(st.lan)).inline_keyboard for b in row]
-    assert "🔀 VPN-транзит" not in labels and len(labels) == 3, labels
+    assert "🔀 VPN-транзит" not in labels and labels == ["🩺 Здоровье", "⚙️ Настройки"], labels   # без проблем «🚑 Восстановить» нет
 
 
 def test_lists_job_warns_after_two_failures_only(svc, monkeypatch):
@@ -724,3 +724,32 @@ def test_setup_script_has_reads_the_installed_copy(tmp_path, monkeypatch):
     assert gwguard.setup_script_has("ROUTER=%s") is False, "копии нет — не знает"
     copy.write_text("printf 'GW_STATUS=%s\\nROUTER=%s\\n'\n", encoding="utf-8")
     assert gwguard.setup_script_has("ROUTER=%s") is True
+
+
+def test_lists_date_is_the_latest_server_confirmation_on_a_channel_fed_gateway(tmp_path):
+    """Шлюз с каналом: «📋 Списки · обн. …» — позднее из записи списков и
+    подтверждения сервера, что фиды совпадают с его свежей сверкой; без
+    подтверждения (или без применённых из канала фидов) — дата записи."""
+    import time as _time
+    from awgbot.domain.gateway.transit import TransitMixin as _T
+
+    class _DB:
+        def __init__(self):
+            self.state = {}
+
+        def get_state(self, k):
+            return self.state.get(k)
+
+        def set_state(self, k, v):
+            self.state[k] = v
+
+    agent = _T.__new__(_T)
+    agent.db = _DB()
+    written = "2026-10-13T03:27:44+05:00"
+    assert agent._lists_seen_at(written) == written                  # подтверждений не было
+    agent.db.set_state(_T._LAN_CHANNEL_CONFIRMED_KEY, str(int(_time.time())))
+    assert agent._lists_seen_at(written) == written, "без применённых из канала фидов подтверждение не в счёт"
+    agent.db.set_state(_T._LAN_CHANNEL_HASH_KEY, "ab" * 32)
+    assert agent._lists_seen_at(written) != written, "свежее подтверждение сервера не показано"
+    agent.db.set_state(_T._LAN_CHANNEL_CONFIRMED_KEY, "1")         # подтверждение старше записи
+    assert agent._lists_seen_at(written) == written

@@ -19,6 +19,9 @@ class FeedsMixin:
     _LAN_SERVICES = ("telegram", "meta", "twitter", "cloudflare", "discord")
     _LAN_GOOG_URL = "https://www.gstatic.com/ipranges/goog.json"
     _LAN_FEEDS_AT_KEY = "gwlink_lan_feeds_at"
+    # момент последней удачной сверки с источниками — и когда фиды не изменились:
+    # по нему канал заново подтверждает шлюзам «у тебя актуальные» (deliver_lists)
+    _LAN_FEEDS_CHECKED_KEY = "gwlink_lan_feeds_checked"
     _GWLINK_LISTS_KEY = "gwlink_lists"
 
     def _lan_feeds_path(self):
@@ -103,6 +106,8 @@ class FeedsMixin:
         from awgbot.util import gwlink
         digest = gwlink.feeds_hash(body, nets_text)
         if digest == self.gwlink_lan_feeds_digest():
+            # источники ответили, фиды те же — сверка всё равно состоялась
+            self.db.set_state(self._LAN_FEEDS_CHECKED_KEY, str(now))
             return False
         path = self._lan_feeds_path()
         tmp = path.with_suffix(".tmp")
@@ -116,8 +121,14 @@ class FeedsMixin:
             log.warning("канал линка: фиды локальной сети не записаны: %s", e)
             retry_soon()
             return False
+        self.db.set_state(self._LAN_FEEDS_CHECKED_KEY, str(now))
         log.info("канал линка: фиды локальной сети обновлены")
         return True
+
+    def gwlink_lan_feeds_checked(self) -> str:
+        """Когда сервер последний раз удачно сверил фиды с источниками (epoch);
+        пусто — ещё не сверял с этой версии."""
+        return (self.db.get_state(self._LAN_FEEDS_CHECKED_KEY) or "").strip()
 
     def gwlink_lists_ack_in(self, slot_id: int, body: dict) -> None:
         self._gwlink_ack_put(self._GWLINK_LISTS_KEY, slot_id, body)

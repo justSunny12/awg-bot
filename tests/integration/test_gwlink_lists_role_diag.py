@@ -412,6 +412,26 @@ async def test_the_same_feeds_are_confirmed_once_per_session_not_by_the_clock(se
     await gw2.close()
 
 
+async def test_a_fresh_server_check_reconfirms_unchanged_feeds_in_a_long_session(services, link, monkeypatch):
+    """Сервер сверил фиды с источниками, а они не изменились: шлюзу в той же
+    сессии снова уходит «у тебя те же» — иначе в многодневной сессии шлюз
+    показывал «обн.» трёхдневной давности, будто списки застыли."""
+    _Net(monkeypatch)
+    services.gwlink_lan_feeds_update(force=True)
+    digest = services.gwlink_lan_feeds()["hash"]
+    services.db.set_state(services._LAN_FEEDS_CHECKED_KEY, "1")     # прошлая сверка — давно
+    gw = await _hello(link, lists_hash=digest)
+    assert await _next(gw, "lists_ok") is not None
+    assert services.gwlink_lan_feeds_update(force=True) is False, "фиды те же — файл не переписывается"
+    assert services.gwlink_lan_feeds_checked(), "удачная сверка без изменений не отмечена"
+    await link.deliver_all()
+    ok = await _next(gw, "lists_ok")
+    assert ok is not None and ok["hash"] == digest, "свежая сверка не подтверждена шлюзу"
+    await link.deliver_all()
+    assert await _next(gw, "lists_ok", 0.4) is None, "одна сверка — одно подтверждение"
+    await gw.close()
+
+
 async def test_a_large_feed_does_not_break_the_session(services, link, pi, monkeypatch):
     """Доменный фид растёт. Пока сообщение в пределах того, что агент готов
     принять (8 МБ), оно обязано дойти и получить ответ — отказ или «ок», — а

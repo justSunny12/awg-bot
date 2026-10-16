@@ -81,14 +81,23 @@ class DeliverMixin:
         if gw is None or not gw.lan_mode:
             return False
         digest = await asyncio.to_thread(self.services.gwlink_lan_feeds_digest)
-        if not digest or sess.lists_sent == digest:
+        if not digest:
+            return False
+        if sess.lists_have == digest:
+            # У шлюза те же фиды. Подтверждаем при подключении и после каждой
+            # удачной сверки сервера с источниками (метка — отпечаток и момент
+            # сверки): иначе в долгой сессии шлюз показывал бы дату последнего
+            # изменения фидов как «обновлены», будто списки застыли, а его запас
+            # на своё скачивание протухал бы через 12 часов неизменных фидов.
+            checked = await asyncio.to_thread(self.services.gwlink_lan_feeds_checked)
+            mark = f"{digest}@{checked}"
+            if sess.lists_sent == mark:
+                return False
+            sess.lists_sent = mark                # метка ДО отправки — см. deliver()
+            return await self.send(slot_id, "lists_ok", {"hash": digest})
+        if sess.lists_sent == digest:
             return False
         sess.lists_sent = digest                  # метка ДО отправки — см. deliver()
-        if sess.lists_have == digest:
-            # У шлюза те же фиды. Подтверждаем один раз за сессию — по событию
-            # подключения, а не по часам: иначе его запас на своё скачивание
-            # протухал бы через 12 часов неизменных фидов.
-            return await self.send(slot_id, "lists_ok", {"hash": digest})
         feeds = await asyncio.to_thread(self.services.gwlink_lan_feeds)
         if feeds.get("hash") != digest:
             return False
