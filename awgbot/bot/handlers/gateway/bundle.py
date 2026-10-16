@@ -16,9 +16,11 @@ from awgbot.bot.handlers import gateway as pkg       # имена пакета �
 @router.message(F.document)
 async def gw_bundle_document(message: Message, services, state: FSMContext):
     """Конфигурацию агент получает только документом по каналу конфигурации;
-    файл в чате — резервная копия (предложить восстановление) или отказ
-    словами. Файл первого применения и шифрованный файл перевыпуска прежних
-    выпусков из чата убираются: внутри ключи линка и аплинка."""
+    файл в чате — резервная копия (предложить восстановление), файл
+    конфигурации шлюза — любой: первого применения или шифрованный перевыпуск
+    прежних выпусков, по имени или по началу — один ответ и убрать из чата
+    (внутри ключи), прочие файлы — молча игнорировать: отвечать «не примем»
+    незачем, раз конфигурацию тоже не принимаем (решения пользователя 17.10.2026)."""
     doc = message.document
     from awgbot.bot.handlers import restore as rs
     if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
@@ -26,27 +28,22 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         return
     name = (getattr(doc, "file_name", "") or "").lower()
     if name.startswith("awg-gw-bundle") and name.endswith(".sh"):
-        # открытый файл первого применения: применяют его на устройстве
         await forget_secret(message)
-        await message.answer(texts.gw_first_run_file(doc.file_name or ""))
+        await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
     if doc.file_size and doc.file_size > pkg._BUNDLE_MAX_BYTES:
-        await message.answer(texts.gw_bundle_not_ours())
-        return
+        return                                         # крупнее предела Bot API — заведомо не наш
+
     import io
     buf = io.BytesIO()
     await message.bot.download(doc, destination=buf)
     head = buf.getvalue()[:4096]
-    if head.startswith(bundlecrypt.MAGIC):
-        # шифрованный файл перевыпуска (выпуски до 3.3.1): больше не применяется
+    if head.startswith(bundlecrypt.MAGIC) or (head.startswith(b"#!/bin/sh") and b"awg-gw-bundle" in head):
+        # файл конфигурации шлюза под любым именем — что внутри, не важно
         await forget_secret(message)
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
-    if head.startswith(b"#!/bin/sh") and b"awg-gw-bundle" in head:
-        await forget_secret(message)
-        await message.answer(texts.gw_first_run_file(doc.file_name or ""))
-        return
-    await message.answer(texts.gw_bundle_not_ours())
+    # прочий файл — не наш: молча
 
 
 # Ввод значения, парольная фраза и мастер почты регистрирует роутер общих

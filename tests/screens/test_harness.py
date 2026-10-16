@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import pytest
+
+from awgbot.util import bundlecrypt
 from aiogram.methods import GetChat
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -349,8 +351,8 @@ def test_multiline_copy_text_stays_on_one_line():
 # ── снимок целиком через настоящий диспетчер ─────────────────────────────────
 
 @pytest.mark.parametrize("blob, answer", [
-    (b"#!/bin/sh\n# awg-gw-bundle installer\n", lambda t: t.gw_first_run_file("conf.bin")),
-    (b"DUMMY", lambda t: t.gw_bundle_not_ours()),
+    (b"#!/bin/sh\n# awg-gw-bundle installer\n", lambda t: t.GW_REISSUE_FILE_REFUSED),
+    (bytes(bundlecrypt.MAGIC) + b"DUMMY", lambda t: t.GW_REISSUE_FILE_REFUSED),
 ])
 async def test_file_step_hands_the_bytes_to_the_handler(blob, answer, tmp_path, frozen, fakes):
     """Шаг «файл»: документ с подписью уходит агенту, обработчик скачивает

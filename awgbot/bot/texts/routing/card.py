@@ -281,7 +281,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         # рядом с каналом, о котором оно; версия — из снимка, если он есть;
         # ссылка на бота — строкой «Бот шлюза» внизу карточки, второй раз не нужна
         ver = _ver(_e(str(ch.get("agent") or "?")[:32])) if ch.get("has_snap") else ""
-        lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: конфигурацию по каналу не принимает — "
+        lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: настройки по каналу конфигурации не принимает — "
                      "обнови агента шлюза")
     rk = state.get("rekey") or {}
     if rk.get("state") in ("staged", "asked"):

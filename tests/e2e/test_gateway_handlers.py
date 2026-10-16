@@ -75,13 +75,15 @@ async def test_restart_needs_confirmation(svc, fake_bot):
     assert not [s for s in msg.sent if s[0] == "answer"], "итог перезапуска ушёл отдельным сообщением"
 
 
-async def test_foreign_document_is_refused_before_anything(svc):
+async def test_a_foreign_document_is_silently_ignored(svc):
+    """Файл, который не конфигурация и не резервная копия, бот молча
+    игнорирует: «не примем» говорить незачем — конфигурацию тоже не принимаем."""
     bot = _DlBot(b"#!/bin/sh\nrm -rf /\n")
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     msg.document = _Doc(100)
     state = FakeState()
     await gh.gw_bundle_document(msg, svc, state)
-    assert "не принят" in msg.sent[-1][1]
+    assert msg.sent == [], msg.sent
     assert "bundle" not in (await state.get_data())
     assert not msg.deleted, "чужой файл не наш секрет — сообщение админа не трогаем"
 
@@ -125,14 +127,14 @@ def test_old_apply_buttons_are_left_to_the_stale_handler():
 async def test_a_big_first_run_file_under_a_foreign_name_leaves_the_chat(svc):
     """Файл первого применения с поставкой внутри весит мегабайты: под чужим
     именем его узнают по началу — и убирают из чата (внутри ключи линка),
-    а не отвечают «не принят», оставив ключи в истории."""
+    а не игнорируют, оставив ключи в истории."""
     blob = b"#!/bin/sh\n# awg-gw-bundle.sh \xe2\x80\x94 x\n" + b"x" * (3 * 1024 * 1024)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=_DlBot(blob))
     msg.document = _Doc(len(blob))
     msg.document.file_name = "conf.txt"
     await gh.gw_bundle_document(msg, svc, FakeState())
     assert msg.deleted, "файл с ключами остался в чате"
-    assert msg.sent[-1][1] == texts.gw_first_run_file("conf.txt"), msg.sent[-1]
+    assert msg.sent[-1][1] == texts.GW_REISSUE_FILE_REFUSED, msg.sent[-1]
 
 
 async def test_oversized_document_is_not_downloaded(svc):
@@ -142,7 +144,7 @@ async def test_oversized_document_is_not_downloaded(svc):
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=NoDl())
     msg.document = _Doc(50 * 1024 * 1024)
     await gh.gw_bundle_document(msg, svc, FakeState())
-    assert "не принят" in msg.sent[-1][1]
+    assert msg.sent == [] and not msg.deleted, "на заведомо чужой файл бот ответил или его убрал"
 
 
 async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, monkeypatch):

@@ -45,15 +45,12 @@ def test_lan_line_shows_the_cut_tail():
     assert "<code>10.0.2.0/24</code> и ещё 2)" in out, out
 
 
-def test_reissue_file_refusal_points_at_restore_and_the_channel():
-    """Шифрованный файл перевыпуска выпусков до 3.3.1 в чате агента — отказ
-    словами: что делать вместо («🚑 Восстановить» или канал), файл убран."""
+def test_a_configuration_file_in_the_agent_chat_gets_one_answer():
+    """Файл конфигурации шлюза в чате агента — один ответ: настройки идут по
+    каналу конфигурации, файл убран (внутри ключи)."""
     t = texts.GW_REISSUE_FILE_REFUSED
-    assert t.startswith("⚠️ Файл конфигурации не применён") and "«🚑 Восстановить»" in t
-    assert "«🔧 Канал конфигурации»" in t and t.endswith("Из чата убрал: внутри ключи")
+    assert t.startswith("⚠️ Файл конфигурации не применён") and "по каналу конфигурации" in t
+    assert t.endswith("Сообщение с файлом из чата убрал: внутри ключи")
     assert "перевыпус" not in t and "📤" not in t
 
 
-def test_a_foreign_file_answer_points_at_the_channel_only():
-    t = texts.gw_bundle_not_ours()
-    assert "по каналу конфигурации" in t and "📤" not in t, t

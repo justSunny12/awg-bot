@@ -33,7 +33,7 @@ def slot(services, fake_awg, fake_routing, make_active_client, monkeypatch):
 
 @pytest.mark.parametrize("version, caps, tail", [
     ("3.3.1", ("cfg1",), "применится автоматически по каналу конфигурации"),
-    ("3.2.1", (), "агент шлюза устарел и конфигурацию по каналу не принимает — обнови агента шлюза"),
+    ("3.2.1", (), "агент шлюза устарел и настройки по каналу конфигурации не принимает — обнови агента шлюза"),
 ])
 async def test_the_transit_toast_names_what_will_actually_happen(services, slot, fake_bot, version, caps, tail):
     services.gwlink_session_opened(slot, version, gwlink.PROTO, caps=caps)

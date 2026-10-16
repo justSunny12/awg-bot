@@ -457,7 +457,7 @@ async def test_an_agent_32_card_asks_to_update_and_has_no_file_button(services, 
     принимает, файла перевыпуска больше нет — только «обнови агента шлюза»."""
     _snap(services, agent_version="3.2.1", caps=[])
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент v3.2.1 устарел: конфигурацию по каналу не принимает — обнови агента шлюза" in text, text
+    assert "⚠️ Агент v3.2.1 устарел: настройки по каналу конфигурации не принимает — обнови агента шлюза" in text, text
     assert "📤 Конфигурация" not in labels, labels
 
 

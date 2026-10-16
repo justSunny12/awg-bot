@@ -145,9 +145,6 @@ FILES = [
           title="файл первого применения по имени — убран из чата"),
     _shot("gw.bundle.first_run.renamed", steps=[_file("setup.sh", b"#!/bin/sh\n# awg-gw-bundle DUMMY\n")],
           title="файл первого применения по содержимому"),
-    _shot("gw.bundle.not_ours", steps=[_file("photo.bin", b"DUMMY")], title="не конфигурация шлюза"),
-    _shot("gw.bundle.too_big", steps=[_file("video.bin", b"\0" * (600 * 1024))],
-          title="крупнее любого файла конфигурации — не скачивается"),
 
     # ── W60 восстановление из копии ─────────────────────────────────────────
     _shot("gw.restore.offer", steps=[_file(_COPY_NAME, _COPY)], backup_key=True,
