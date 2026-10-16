@@ -93,7 +93,7 @@ SETTINGS = [
          title="свой DNS-резолвер"),
     Shot("adm.set.dns.later", role="admin", press=[SetCB(sec="dns", act="do", key="later")],
          data=_srv(dns="1.1.1.1, 1.0.0.1"),
-         title="резолвер «⏳ При переезде» — всплывашка и «🖥 Сервер AWG»"),
+         title="резолвер «📥 При переезде» — всплывашка и «🖥 Сервер AWG»"),
     Shot("adm.set.dns.never", role="admin", press=[SetCB(sec="dns", act="do", key="never")],
          data=_srv(dns="1.1.1.1, 1.0.0.1"),
          title="резолвер «☑️ Не нужно» — всплывашка и «🖥 Сервер AWG»"),

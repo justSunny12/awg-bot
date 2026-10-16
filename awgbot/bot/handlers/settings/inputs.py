@@ -39,7 +39,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
         await _render(cb, "mig_prep", services)
         await cb.answer(texts.PRIVATE_DNS_LATER)
         return
-    # «⏳ При переезде» и «☑️ Не нужно» — не подтверждение: итог всплывашкой,
+    # «📥 При переезде» и «☑️ Не нужно» — не подтверждение: итог всплывашкой,
     # на месте — «🖥 Сервер AWG», где решение видно строкой DNS
     if key == "later":
         await call(services.set_private_dns_decision, "pending")

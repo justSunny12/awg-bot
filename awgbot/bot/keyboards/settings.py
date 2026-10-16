@@ -59,7 +59,7 @@ def private_dns_choices(migration_blocked: bool = False) -> InlineKeyboardMarkup
     возможен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")) if not migration_blocked else None,
-        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
+        [("📥 При переезде", SetCB(sec="dns", act="do", key="later")),
          ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))],
         ui.back(SetCB(sec="srv", act="open")))
 
@@ -68,7 +68,7 @@ def private_dns_offer_kb() -> InlineKeyboardMarkup:
     """Инфобокс при старте: те же три решения, «Назад» не нужен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")),
-        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
+        [("📥 При переезде", SetCB(sec="dns", act="do", key="later")),
          ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))])
 
 
