@@ -297,3 +297,37 @@ def test_the_pending_line_lists_the_queue_in_order():
     assert cfg_pending_line(["mail", "backup"]) == "⏳ Ждут решения: почта, ключевая фраза бэкапов"
     assert cfg_pending_line(["backup"]) == "⏳ Ждут решения: ключевая фраза бэкапов"
     assert cfg_pending_line([]) == "", "нечего решать — строки нет"
+
+
+# ── бэкапы вслед за сервером: почта и фраза одним документом, смена подсказки ─
+
+def test_mail_and_phrase_in_one_document_switch_backups_to_email(svc, host, checks):
+    """Почта и фраза пришли одним документом: почта применяется первой, когда
+    фразы ещё нет, — переключение пересматривается после всех разделов, и
+    бэкапы уходят на почту сразу (раньше проверка внутри раздела почты видела
+    шлюз без фразы, а следующие документы с «тем же» ящиком её не повторяли)."""
+    res = svc.apply_cfg(_doc(mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
+    assert settings.get("app.scheduler.backup_channel") == "email", res["note"]
+    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
+
+
+def test_a_changed_hint_with_the_same_mailbox_still_switches_backups(svc, host, checks):
+    """Ящик тот же, сервер позже перевёл свои бэкапы на почту: подсказка в
+    отпечаток не входит, раздел почты «совпал» — шлюз всё равно идёт вслед."""
+    svc.backup_set_passphrase(OWN_PHRASE)
+    svc.apply_cfg(_doc(mail={**MAIL, "backup": "telegram"}))
+    assert settings.get("app.scheduler.backup_channel") == "telegram"
+    res = svc.apply_cfg(_doc(gen=8, mail={**MAIL, "backup": "email"}))
+    assert settings.get("app.scheduler.backup_channel") == "email", res["note"]
+    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
+
+
+def test_a_manual_return_to_telegram_is_not_overridden_by_the_next_document(svc, host, checks):
+    """Шлюз уже переключился по подсказке, человек вернул Telegram кнопкой —
+    следующий документ с той же подсказкой выбор человека не перебивает."""
+    svc.apply_cfg(_doc(mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
+    assert settings.get("app.scheduler.backup_channel") == "email"
+    settings.set_value("app.scheduler.backup_channel", "telegram")
+    res = svc.apply_cfg(_doc(gen=9, mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
+    assert settings.get("app.scheduler.backup_channel") == "telegram", res["note"]
+    assert "💾" not in res["note"]

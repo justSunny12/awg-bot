@@ -68,6 +68,7 @@ class CfgApplyMixin:
             notes.append(f"⚠️ Сервер AWG прислал конфигурацию шлюза ({self._cfg_names(res['changed'])}), "
                          f"но она не применилась: {html.escape(res['error'], quote=False)}. Вернул прежнюю")
         # 3–4. почта и фраза — молча или вопрос
+        self.cfg_note_mail_hint(checked.get("mail"))
         for section in ("mail", "backup"):
             if section not in checked:
                 self.cfg_release(section)                 # раздела у сервера больше нет — вопрос потерял смысл
@@ -96,6 +97,10 @@ class CfgApplyMixin:
                 wait[section] = server_print
                 if not held or held.get("server") != server_print:
                     asks.append(section)
+        # бэкапы вслед за сервером — когда почта и фраза уже на месте (обе пришли
+        # одним документом или подсказка сменилась при том же ящике)
+        if self.cfg_follow_backup_hint():
+            notes.append("💾 Бэкапы теперь уходят на почту")
         retry = False
         # 5. токен бота — только тот же бот; перезапуск агента — после ответа
         # серверу (клиент канала), иначе ответ ушёл бы в никуда
