@@ -127,14 +127,9 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
         return
     if callback_data.key == "bundle":
         # «📤 Выпустить файл» в старом сообщении: файла перевыпуска больше нет —
-        # кнопка устаревшая, как в обработчике устаревших кнопок
-        from awgbot.bot.handlers.stale import STALE_BUTTON
-        await cb.answer(STALE_BUTTON)
-        try:
-            await cb.message.edit_reply_markup(reply_markup=None)
-        except Exception:                                  # noqa: BLE001
-            pass
-        await show_main_menu(cb.message, services, "admin")
+        # кнопка устаревшая (снимается со следующим сдвигом минимума)
+        from awgbot.bot.handlers.stale import answer_stale
+        await answer_stale(cb, services, "admin")
         return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.

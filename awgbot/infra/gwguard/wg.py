@@ -120,15 +120,6 @@ def default_route_via() -> str:
     return pkg.default_route()["via"]
 
 
-def setup_script_has(marker: str) -> bool:
-    """Есть ли строка в копии скрипта обвязки на шлюзе (/usr/local/sbin): по
-    ней видно, умеет ли установленный скрипт то, чего нет в файле статуса."""
-    try:
-        return marker.encode() in pkg.Path(pkg.SETUP_SCRIPT).read_bytes()
-    except OSError:
-        return False
-
-
 def _fwmark_of(rule: dict) -> int:
     """Метка правила из `ip -j rule`: «0x1», с маской — «0x1/0xff» (чужие
     правила на той же машине); нечитаемое — 0, а не исключение на весь тик."""

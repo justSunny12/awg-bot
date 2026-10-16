@@ -1,23 +1,20 @@
 """
-bundlecrypt.py — шифрование бандла шлюза для доставки через Telegram.
+bundlecrypt.py — ключ из приватного ключа линка и распознавание прежнего файла.
 
-У ботов Telegram нет E2E: чат видят серверы и любой, кто получит доступ к
-аккаунту. Внутри бандла — приватный ключ линка, кража которого делает
-атакующего шлюзом (MITM всего RF-трафика). Поэтому файл в чате — шифртекст.
+derive_key выводит 32-байтовый ключ из ТЕКУЩЕГО приватного ключа линка
+шлюза: его знают обе стороны (ВПС сгенерировал и хранит в конфиге шлюза,
+шлюз — в своём awglink.conf), и он никогда не ездил через чат. На нём стоят
+ключ канала (gwlink.channel_key) и подписи заявок (gwsign); строка
+персонализации — прежняя, иначе ключи разошлись бы с уже выданными.
 
-Пароль через Telegram не ходит: ключ выводится из ТЕКУЩЕГО приватного ключа
-линка шлюза. Его знают обе стороны — ВПС сгенерировал и хранит в конфиге
-шлюза, шлюз хранит в своём awglink.conf — и он никогда не ездил через чат
-(первый бандл едет ногами, как и вся первая установка). Наблюдатель чата
-видит только шифртекст; атакующий без старого ключа не расшифрует новый.
+MAGIC — подпись шифрованного файла перевыпуска выпусков до 3.3.1: агент
+узнаёт такой файл, пересланный из истории чата, и отказывает ему словами.
 
-Примитивы — libsodium (PyNaCl уже в зависимостях ради бэкапов):
-BLAKE2b как KDF, SecretBox (XSalsa20-Poly1305) как AEAD.
+Примитив — libsodium (PyNaCl уже в зависимостях ради бэкапов): BLAKE2b как KDF.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
 import re
 
 MAGIC = b"AWGGWB1\n"
@@ -34,35 +31,9 @@ def derive_key(privkey_b64: str) -> bytes:
     return blake2b(raw, digest_size=32, person=_PERSON, encoder=RawEncoder)
 
 
-def encrypt(data: bytes, privkey_b64: str) -> bytes:
-    from nacl.secret import SecretBox
-    box = SecretBox(derive_key(privkey_b64))
-    return MAGIC + box.encrypt(data)          # nonce внутри, случайный
-
-
-def decrypt(blob: bytes, privkey_b64: str) -> bytes:
-    """Открытый текст либо ValueError: не наш файл или не тот ключ. Различать
-    эти два случая наружу незачем — ответ админу один: «пересобери бандл на
-    ВПС», а детали ушли бы в чат, где им не место."""
-    from nacl.secret import SecretBox
-    from nacl.exceptions import CryptoError
-    if not blob.startswith(MAGIC):
-        raise ValueError("это не шифрованный бандл шлюза")
-    try:
-        return SecretBox(derive_key(privkey_b64)).decrypt(blob[len(MAGIC):])
-    except CryptoError as e:
-        raise ValueError("не удалось расшифровать файл — ключ линка не совпадает") from e
-
-
 def read_privkey(conf_text: str) -> str:
     """PrivateKey из текста awg-конфига (первое вхождение, [Interface])."""
     m = re.search(r"^\s*PrivateKey\s*=\s*(\S+)", conf_text, re.M)
     if not m:
         raise ValueError("в конфиге нет PrivateKey")
     return m.group(1)
-
-
-def fingerprint(blob: bytes) -> str:
-    """Отпечаток файла конфигурации (первые 16 знаков sha256): по нему агент и
-    сервер понимают, что говорят об одном файле."""
-    return hashlib.sha256(blob).hexdigest()[:16]

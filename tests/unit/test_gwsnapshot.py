@@ -189,7 +189,8 @@ def test_the_agent_snapshot_of_a_whole_service_stays_local_too(tmp_path, pi, mon
     db.init_schema()
     svc = GatewayServices(db)
     svc._guard_info = pi.info()
-    svc.db.set_state(svc._GW_MARK_KEY, "confirmed")
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "script_status", lambda: {"GW_STATUS": "confirmed"})
     _no_network(monkeypatch)
     snap = svc.gw_snapshot()
     assert snap["mark_status"] == "confirmed"
@@ -343,7 +344,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     должно ни лечь в БД, ни доехать до экрана."""
     raw = {"bundle": {"lan_mode": "1", "lan_subnets": "Я" * 5000, "чужое": "x"},
            "agent_version": "3.1.0", "awg_generation": "2", "egress_ok": True,
-           "link_contract": 1, "plumbing_gen": "new", "mark_status": "confirmed",   # plumbing_gen — от агента 3.3.0
+           "link_contract": 1, "mark_status": "confirmed",
            "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00", "rev": "4",
            "peer_nets": {"ok": True, "missing": ["10.0.0.0/8"] * 500},
            "agent_bot": {"username": "Some_Bot", "name": "Имя " * 100, "id": 5},
@@ -357,7 +358,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "", "backup": "",
                           "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
-    assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
+    assert set(out["bundle"]) == set(BUNDLE + BUNDLE_OLD), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["lan_subnets"]) == 512, "длина значения не ограничена"
     assert out["bundle"]["peer_lan_nets"] == "", "недосланное поле стало пустым, а не пропало"
     assert len(out["peer_nets"]["missing"]) == 64, "список в вердикте не ограничен"
@@ -472,30 +473,3 @@ def test_sanitize_cuts_the_bot_name_to_64():
     подделка, и строка карточки не должна растягиваться на экран."""
     out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Я" * 1000}})
     assert out["agent_bot"]["name"] == "Я" * 64
-
-
-# ── прежние имена полей bundle (снимается со следующим сдвигом минимума) ────
-
-def test_the_agent_writes_the_old_field_names_next_to_the_new_ones(pi):
-    """Сервер 3.3.0 читает только home_subnets / peer_home_nets: без них агент
-    3.3.1 под ним выглядел бы без подсетей, а SMB соседей не раздавались бы."""
-    pi.env["LAN_SUBNETS"] = "192.168.1.0/24"
-    pi.env["PEER_LAN_NETS"] = "10.242.0.0/16"
-    b = pi.snap()["bundle"]
-    assert (b["lan_subnets"], b["peer_lan_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
-    assert (b["home_subnets"], b["peer_home_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
-
-
-def test_the_server_reads_the_old_names_from_an_agent_330():
-    """Агент 3.3.0 шлёт только прежние имена: сервер кладёт их под новыми;
-    новые, если есть, берутся первыми."""
-    out = gwsnapshot.sanitize({"bundle": {"home_subnets": "192.168.1.0/24", "peer_home_nets": "10.242.0.0/16"}})
-    assert set(out["bundle"]) == set(BUNDLE)
-    assert (out["bundle"]["lan_subnets"], out["bundle"]["peer_lan_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
-    out = gwsnapshot.sanitize({"bundle": {"lan_subnets": "10.0.0.0/24", "home_subnets": "192.168.1.0/24"}})
-    assert out["bundle"]["lan_subnets"] == "10.0.0.0/24"
-
-
-def test_the_snapshot_no_longer_carries_the_plumbing_generation(pi):
-    assert "plumbing_gen" not in pi.snap()
-    assert "plumbing_gen" not in gwsnapshot.sanitize({"plumbing_gen": "old"})

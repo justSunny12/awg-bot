@@ -176,9 +176,3 @@ class ReportMixin:
         if self.link_role() == "active" and self.link_standby_known() is not True:
             return text
         return ""
-
-
-    # ── шлюзовое устройство: пометка в основном боте ─────────────────────────
-    # последнее решение скрипта обвязки о пометке (его записывал итог применения
-    # файла из чата прежних выпусков): по нему канал шлёт токен пометки серверу
-    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | unconfirmed | ?

@@ -61,19 +61,32 @@ class SlotsMixin:
         доверяют адресу, а не устройству. Освободившийся адрес админа нельзя
         отдать следующему устройству любого клиента, пока список у шлюзов не
         сменится — иначе чужой клиент получит доступ к шлюзу и его сети.
-        Источник — снимок канала (что реально стоит в обвязке); пока снимка
-        нет (файл первого применения выдан, агент ещё не на связи) — адреса,
-        вшитые в этот файл."""
+        Источник — снимок канала (что реально стоит в обвязке) и адреса,
+        вшитые в файл первого применения, пока снимок не новее файла: файл
+        выдан, а агент с ним ещё не на связи (новое устройство, замена)."""
         from awgbot.util import gwlink as _gwlink
         out: set[str] = set()
         for g in self.db.gateways():
             snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
             if isinstance(snap.get("bundle"), dict):
                 out.update(x for x in str(snap["bundle"].get(_gwlink.snap_field("ADMIN_IPS")) or "").split() if x)
-            else:
+            if not isinstance(snap.get("bundle"), dict) or self._gw_bundle_newer_than_snapshot(g.id):
                 raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
                 out.update(x for x in raw.split() if x)
         return out
+
+    def _gw_bundle_newer_than_snapshot(self, slot_id: int) -> bool:
+        """Файл первого применения выдан после последнего снимка канала: в
+        обвязке может стоять уже он. Метка не читается — считаем, что новее."""
+        issued = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, slot_id)) or ""
+        if not issued:
+            return False
+        snap_at = self.db.get_state(
+            self._gw_slot_key(getattr(self, "_GWLINK_SNAP_AT_KEY", "gwlink_snap_at"), slot_id)) or ""
+        try:
+            return not snap_at or timeutil.parse_iso(issued) >= timeutil.parse_iso(snap_at)
+        except ValueError:
+            return True
 
     def _gw_name(self, gw) -> str:
         dev = self.db.get_device(gw.device_id)

@@ -230,6 +230,6 @@ def test_the_reserve_is_what_stands_and_the_file_only_until_the_first_snapshot(
     monkeypatch.setattr(services, "gwlink_snapshot", lambda slot_id: snaps.get(slot_id, {}))
     assert services.gateway_trusted_ips() == {"10.8.1.7", "10.8.1.8"}, "до первого снимка — адреса файла"
     snaps[1] = {"bundle": {"admin_ips": "10.8.1.3"}}
-    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "давний файл держит адреса в карантине"
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "давний файл адреса в карантине не держит"
     services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=())
     assert services.gateway_trusted_ips() == {"10.8.1.3"}, "и у агента ниже 3.3.0 — тоже по снимку"

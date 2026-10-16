@@ -228,8 +228,10 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
             await _show_router(cb, fresh, "mt")
     else:
         await _render_card(cb, services, callback_data.slot)
-    # режим и подсети соседей других слотов с VPN-транзитом везёт документ конфигурации
-    tail = "применится автоматически по каналу конфигурации"
+    # режим и подсети соседей других слотов с VPN-транзитом везёт документ
+    # конфигурации; агент, который его не принимает, сначала обновить
+    tail = ("агент шлюза устарел и конфигурацию по каналу не принимает — обнови агента шлюза"
+            if (st.get("channel") or {}).get("outdated") else "применится автоматически по каналу конфигурации")
     await cb.answer(ui.toast(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail), show_alert=True)
 
 

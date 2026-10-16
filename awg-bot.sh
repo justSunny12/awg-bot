@@ -985,10 +985,24 @@ update_rescue() {  # ловушка первой половины обновле
     systemctl start "$SERVICE" 2>/dev/null || true
 }
 restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает)
-    local prev="$1"
+    local prev="$1" _rc=0
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code -exec rm -rf {} + 2>/dev/null || true
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
     rm -rf "$prev"
+    # Копия обвязки шлюза — тоже код: ensure_host_autostart уже могла положить
+    # скрипт новой версии, и прежний агент остался бы при чужой обвязке
+    gw_plumbing_sync || _rc=$?
+    [[ "$_rc" -eq 1 ]] && warn "не удалось вернуть прежнюю копию обвязки в /usr/local/sbin/routing-gw-setup.sh"
+    return 0
+}
+# Копия routing-gw-setup.sh в /usr/local/sbin — по поставке в $INSTALL_DIR,
+# если копия уже есть (нет — обвязку тут не разворачивали, класть нечего).
+# 0 — копия переписана, 1 — не удалось, 2 — менять нечего.
+gw_plumbing_sync() {
+    local _rgs="/usr/local/sbin/routing-gw-setup.sh" _src="$INSTALL_DIR/install/routing-gw-setup.sh"
+    [[ -f "$_rgs" && -f "$_src" ]] || return 2
+    cmp -s "$_src" "$_rgs" && return 2
+    install -m 0755 "$_src" "$_rgs" || return 1
 }
 
 # ── host-режим: интерфейс на автозагрузке, мусор прежних версий — долой ───────
@@ -1012,14 +1026,14 @@ ensure_host_autostart() {
         # шлюза только новым файлом конфигурации с ВПС. Обновляем, если копия уже есть:
         # нет — значит обвязку тут не разворачивали, и класть нечего.
         # Применится со следующим запуском юнита (реассерт агента или ребут):
-        # дёргать обвязку из обновления значит рвать линк без спроса.
-        local _rgs="/usr/local/sbin/routing-gw-setup.sh"
-        if [[ -f "$_rgs" && -f "$INSTALL_DIR/install/routing-gw-setup.sh" ]] \
-           && ! cmp -s "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs"; then
-            install -m 0755 "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs" \
-                && ok "обновлена копия обвязки в $_rgs (её выполняет юнит при загрузке)" \
-                || warn "не удалось обновить $_rgs — обвязка останется по версии времён файла конфигурации"
-        fi
+        # дёргать обвязку из обновления значит рвать линк без спроса. Откат
+        # обновления возвращает и её (restore_prev_code).
+        local _rc=0
+        gw_plumbing_sync || _rc=$?
+        case "$_rc" in
+            0) ok "обновлена копия обвязки в /usr/local/sbin/routing-gw-setup.sh (её выполняет юнит при загрузке)" ;;
+            1) warn "не удалось обновить /usr/local/sbin/routing-gw-setup.sh — обвязка останется по версии времён файла конфигурации" ;;
+        esac
         return 0
     fi
     [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" == "host" ]] || return 0

@@ -496,6 +496,9 @@ emit_gw_bundle() {
             && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
     fi
     _issued="$(date +%s)"
+    # Версия поставки сервера — с ней файл сверяет агента на шлюзе (тело ниже)
+    _bver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$(dirname "$_gwsrc")/../awgbot/__version__.py" 2>/dev/null \
+        | head -n 1 | tr -cd '0-9.')"
     {
         cat <<HDREOF
 #!/bin/sh
@@ -509,9 +512,11 @@ emit_gw_bundle() {
 # ВНУТРИ ПРИВАТНЫЙ КЛЮЧ И PSK. Файл секретный: права 600, после установки удалить.
 #
 # ЗАПУСК НА ШЛЮЗЕ:
-#   sudo sh awg-gw-bundle.sh --install    # чистая машина: поставить агента из
+#   sudo sh awg-gw-bundle.sh --install    # чистая машина или агент старше файла:
+#                                         # поставить (обновить) агента из
 #                                         # поставки внутри файла и применить
-#   sudo sh awg-gw-bundle.sh              # применить (обвязка, линк, аплинк)
+#   sudo sh awg-gw-bundle.sh              # агент уже стоит: применить (обвязка,
+#                                         # линк, аплинк)
 #   sudo sh awg-gw-bundle.sh --rollback   # снять всё, что поставил
 # ─────────────────────────────────────────────────────────────────────────────
 HDREOF
@@ -521,6 +526,7 @@ HDREOF
         # Метка выпуска — и окружением: скрипт обвязки на шлюзе откажет файлу
         # старее применённого, даже запущенному руками мимо агента.
         printf 'BUNDLE_ISSUED_AT="%s"\nexport BUNDLE_ISSUED_AT\n' "$_issued"
+        printf 'BUNDLE_VERSION="%s"\n' "$_bver"
         # Устройства админа — им с туннеля открыт сам шлюз и локальная сеть за
         # ним. Список знает только бот ВПС: он передаёт его окружением при
         # сборке, файл конфигурации вшивает, юнит на шлюзе закрепляет. Сменился состав —
@@ -581,6 +587,32 @@ sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.
 # исполнился бы «успешно», а юнит реассерта остался бы с пустым файлом.
 [ -s "$DEST/routing-gw-setup.sh" ] || { echo "файл конфигурации повреждён: скрипт обвязки не извлёкся"; exit 1; }
 chmod 0755 "$DEST/routing-gw-setup.sh"
+
+# Скрипт обвязки — той же версии, что агент на шлюзе: агент другой версии
+# реассертил бы чужую обвязку (имена таблицы и строк юнита у версий разные).
+# Агент новее файла — скрипт из поставки агента; старше — сначала обновить
+# агента из этого же файла (--install). Агента нет или версия файла не
+# известна — как есть.
+_agent_dir="/opt/awg-bot"
+_agent_ver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$_agent_dir/awgbot/__version__.py" 2>/dev/null | head -n 1)"
+if [ -n "${BUNDLE_VERSION:-}" ] && [ -n "$_agent_ver" ] && [ "${1:-}" != "--rollback" ]; then
+    _cmp="$(awk -v a="$_agent_ver" -v b="$BUNDLE_VERSION" 'BEGIN {
+        n = split(a, x, "."); m = split(b, y, "."); k = n > m ? n : m
+        for (i = 1; i <= k; i++) {
+            if (x[i] + 0 < y[i] + 0) { print "<"; exit }
+            if (x[i] + 0 > y[i] + 0) { print ">"; exit }
+        }
+        print "=" }')"
+    if [ "$_cmp" = ">" ] && [ -s "$_agent_dir/install/routing-gw-setup.sh" ]; then
+        echo "агент на шлюзе ($_agent_ver) новее файла ($BUNDLE_VERSION): скрипт обвязки — из поставки агента"
+        cp "$_agent_dir/install/routing-gw-setup.sh" "$DEST/routing-gw-setup.sh"
+        chmod 0755 "$DEST/routing-gw-setup.sh"
+    elif [ "$_cmp" = "<" ]; then
+        rm -rf "$DEST"
+        echo "агент на шлюзе ($_agent_ver) старше файла ($BUNDLE_VERSION) — сначала обнови агента из этого же файла: sudo sh $0 --install"
+        exit 1
+    fi
+fi
 
 BODYEOF
         printf '%s\n' "cat > \"\$DEST/link.conf\" <<'__LINK_CONF_EOF__'"

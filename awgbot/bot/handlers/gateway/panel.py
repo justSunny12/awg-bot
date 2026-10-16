@@ -23,9 +23,10 @@ router = Router(name="gateway")
 router.message.filter(RoleFilter("admin"))
 router.callback_query.filter(RoleFilter("admin"))
 
-# Бандл ~25 КБ; всё, что заметно крупнее, — не наш файл. Лимит спасает от
-# скачивания случайно пересланного видео.
-_BUNDLE_MAX_BYTES = 512 * 1024
+# Файл первого применения с поставкой внутри — несколько МБ, и под чужим
+# именем его узнают только по началу: качаем до предела скачивания Bot API
+# (20 МБ), крупнее — заведомо не наш файл (случайно пересланное видео).
+_BUNDLE_MAX_BYTES = 20 * 1024 * 1024
 
 
 def _snapshot_max_age() -> float:

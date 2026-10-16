@@ -46,14 +46,13 @@ def _peer_block(script: str) -> str:
 
 
 def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False, apt_rc="0",
-                    link_channel="", apt_update_rc="0"):
+                    apt_update_rc="0"):
     bin_dir, log, fake, dns_d = _svc_host(tmp_path)
     if browse:
         fake("avahi-browse", "exit 0\n")
     conf = dns_d / "awg-gw-peer-services.conf"
     conf.write_text("local=/awg.internal/\n", encoding="utf-8")
     prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_LAN_NETS="{peers}"\n'
-            + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
             + "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc,
@@ -88,17 +87,16 @@ def _avahi_tail(script: str) -> str:
     return script[start:script.index('\nwrite_status "up"\n', start)]
 
 
-def _run_avahi(script, tmp_path, *, home: str, lan_mode="0", peers="", avahi_rc="0", browse=False,
-               apt_rc="0", link_channel="", apt_update_rc="0"):
+def _run_avahi(script, tmp_path, *, lan: str, lan_mode="0", peers="", avahi_rc="0", browse=False,
+               apt_rc="0", apt_update_rc="0"):
     """Ветка режима с подставными lan_apply/lan_remove и блок avahi-utils;
     последней строкой — «tail=ok»: раздел дошёл до конца."""
     bin_dir, log, fake, dns_d = _svc_host(tmp_path)
     if browse:
         fake("avahi-browse", "exit 0\n")
     prog = (_helpers(script)
-            + f'\nMODE=apply\nLAN_MODE="{lan_mode}"\nLAN_SUBNETS="{home}"\nPEER_LAN_NETS="{peers}"\n'
-            + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
-            + f'HOME_FILE="{tmp_path}/none.nft"\nDNSMASQ_D="{dns_d}"\n'
+            + f'\nMODE=apply\nLAN_MODE="{lan_mode}"\nLAN_SUBNETS="{lan}"\nPEER_LAN_NETS="{peers}"\n'
+            + f'LAN_FILE="{tmp_path}/none.nft"\nDNSMASQ_D="{dns_d}"\n'
             + 'lan_apply() { echo "lan_apply"; return 0; }\nlan_remove() { echo "lan_remove"; }\n'
             + _avahi_tail(script) + '\necho "tail=ok"\n')
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
@@ -112,7 +110,7 @@ def test_avahi_utils_is_installed_with_own_subnets_in_either_mode(script, tmp_pa
     """Обзор своей сети — при заданных своих подсетях, с VPN-транзитом и без:
     имена SMB уходят серверу и для устройств админа в туннеле («SMB в
     туннеле»), а не только соседним шлюзам."""
-    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", lan_mode=lan_mode)
+    r, apt = _run_avahi(script, tmp_path, lan="192.168.1.0/24", lan_mode=lan_mode)
     assert r.returncode == 0 and "tail=ok" in r.stdout, r.stdout + r.stderr
     # списки apt на шлюзе бывают старыми (404 на зеркале) — сначала update, потом install
     assert len(apt) == 2 and apt[0].startswith("apt-get update") and apt[1].endswith(" avahi-utils"), apt
@@ -124,7 +122,7 @@ def test_avahi_utils_is_installed_with_own_subnets_in_either_mode(script, tmp_pa
 def test_without_own_subnets_avahi_utils_is_not_installed_even_with_peers(script, tmp_path):
     """Обзирать нечего — свои подсети не заданы; подсети соседей без своих
     сами по себе обзора не требуют."""
-    r, apt = _run_avahi(script, tmp_path, home="", lan_mode="1", peers="192.168.68.0/24")
+    r, apt = _run_avahi(script, tmp_path, lan="", lan_mode="1", peers="192.168.68.0/24")
     assert r.returncode == 0 and "tail=ok" in r.stdout, r.stderr
     assert apt == [], apt
 
@@ -133,25 +131,15 @@ def test_without_own_subnets_avahi_utils_is_not_installed_even_with_peers(script
 def test_avahi_utils_is_not_installed_without_the_daemon_or_when_present(script, tmp_path, avahi_rc, browse):
     """Демона нет — ставить утилиту незачем (в мониторе ⚪); утилита уже есть —
     apt не трогаем: OMV держит свой apt, и лишний вызов ждёт его блокировку."""
-    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
+    r, apt = _run_avahi(script, tmp_path, lan="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
     assert r.returncode == 0, r.stderr
     assert apt == [], apt
-
-
-@pytest.mark.parametrize("link_channel", ["0", "1"])
-def test_avahi_utils_does_not_depend_on_the_channel_line(script, tmp_path, link_channel):
-    """Канал обязателен, и установка утилиты обзора от строки канала не
-    зависит: оставшийся от прежних версий LINK_CHANNEL=0 не должен лишать
-    админа и соседние сети SMB-серверов этой подсети."""
-    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", link_channel=link_channel)
-    assert r.returncode == 0, r.stderr
-    assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"LINK_CHANNEL={link_channel}: apt {apt}"
 
 
 def test_a_failed_apt_update_still_tries_the_install(script, tmp_path):
     """update упал (зеркало недоступно, сети нет) — install всё равно
     пробуется: пакет может найтись и по старым спискам, а раздел не падает."""
-    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", apt_update_rc="100")
+    r, apt = _run_avahi(script, tmp_path, lan="192.168.1.0/24", apt_update_rc="100")
     assert r.returncode == 0 and "tail=ok" in r.stdout, (r.returncode, r.stdout, r.stderr)
     assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"после отказа update install не пробовался: {apt}"
     assert "avahi-utils не установился" not in r.stdout, "отказ update выдан за отказ установки"
@@ -159,7 +147,7 @@ def test_a_failed_apt_update_still_tries_the_install(script, tmp_path):
 
 def test_a_failed_avahi_utils_install_does_not_fail_the_section(script, tmp_path):
     """apt упал — остальное работает: раздел 5 не роняет юнит в цикл рестартов."""
-    r, apt = _run_avahi(script, tmp_path, home="192.168.1.0/24", apt_rc="100")
+    r, apt = _run_avahi(script, tmp_path, lan="192.168.1.0/24", apt_rc="100")
     assert r.returncode == 0 and "tail=ok" in r.stdout, (r.returncode, r.stdout, r.stderr)
     assert ("avahi-utils не установился — SMB-серверы этой подсети по именам не видны, "
             "остальное работает") in r.stdout, r.stdout
@@ -179,11 +167,12 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
     sbin = tmp_path / "sbin"; sbin.mkdir()
     helper = sbin / "awg-lan-services.sh"; helper.write_text("#!/bin/sh\n", encoding="utf-8")
     fn = "\n".join(re.search(rf"^{name}\(\) \{{.*?^\}}$", script, re.S | re.M).group(0)
-                   for name in ("lan_remove", "_lan_remove_locked"))
+                   for name in ("lan_remove", "_lan_remove_locked", "lan_table_old_drop"))
     t = tmp_path
     prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
-            f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_lan"\n'
-            f'HOME_FILE="{t}/home.nft"\nLAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
+            f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nLAN_TABLE="inet awg_lan"\n'
+            f'LAN_FILE="{t}/lan.nft"\nLAN_TABLE_OLD="inet awg_home"\nLAN_FILE_OLD="{t}/home.nft"\n'
+            f'LAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
             f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n'
             f'PEER_SVC_CONF="{dns_d}/awg-gw-peer-services.conf"\n' + fn + "\nlan_remove\n")
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, env={"PATH": str(bin_dir)})
@@ -206,15 +195,13 @@ def _plan_line(script: str, **env) -> str:
 
 @pytest.mark.parametrize("env,state", [
     ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "1"}, "включены"),
-    ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "включены"),
     ({"PEER_LAN_NETS": "", "LAN_MODE": "1"}, "нет"),
     ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "0"}, "нет"),
 ])
 def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
     """Показ плана до применения: записи SMB соседей возможны при соседях и
     режиме локальной сети — иначе «нет», чтобы человек не искал в Finder то,
-    что эта конфигурация не даст. Строка канала на ответ не влияет: канал
-    обязателен."""
+    что эта конфигурация не даст."""
     assert _plan_line(script, **env) == f"SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): {state}"
 
 

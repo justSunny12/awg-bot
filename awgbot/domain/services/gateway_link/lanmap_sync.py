@@ -1,6 +1,5 @@
 """lanmap_sync.py — адреса в туннеле: сверка таблицы `inet awg_lan_map` вместе
-с таблицами и правилами слотов, такт живости, старт (таблица) и разовое
-уведомление после обновления.
+с таблицами и правилами слотов, такт живости и старт (таблица).
 
 Адресам в туннеле РФ-доступ не указ (шапка lanmap): таблица и политика слотов
 ставятся, пока у слотов есть подсети, при любом состоянии выключателя
@@ -8,8 +7,6 @@
 
 from __future__ import annotations
 
-from awgbot.core import config, settings
-from awgbot.domain.services.types import Notification
 from awgbot.infra import routing
 from awgbot.util import lanspace
 
@@ -17,13 +14,7 @@ from .common import log
 
 
 class LanMapSyncMixin:
-    """Сверка таблицы адресов в туннеле, старт и уведомление."""
-
-    _LAN_SPACE_ANNOUNCED_KEY = "lan_space_announced"   # «сети теперь открываются по адресам в туннеле» сказано
-    _LAN_PEERS_ANNOUNCED_KEY = "lan_peers_announced"   # хвост уведомления о связи подсетей сказан
-    # Тумблер связи подсетей до 3.3.0. Связь подсетей теперь часть VPN-транзита,
-    # ключ в conf мёртвый; читается один раз — для уведомления после обновления.
-    _PEER_NETS_LEGACY_KEY = "app.routing.peer_nets.enabled"
+    """Сверка таблицы адресов в туннеле и старт."""
 
     def _lan_log_once(self, key: str, err: str, fmt: str, *args) -> None:
         """Тот же отказ каждые 10 тактов — в журнал один раз, до смены причины."""
@@ -120,95 +111,6 @@ class LanMapSyncMixin:
         except routing.RoutingError:
             return False
 
-    _ADMIN_REISSUE_KEY = "admin_reissue_announced"   # «перевыпусти конфиги устройств админа» сказано
-
-    def _admin_reissue_part(self) -> str:
-        """Совет о перевыпуске конфигов устройств админа — разово после
-        обновления на 3.3.0: выданные раньше конфиги не знают резолвера
-        админа (имена SMB) и — при раздельном туннеле — пространства адресов
-        в туннеле; какие именно, бот не помнит, поэтому совет — всем. Но
-        только если перевыпуск что-то даст: резолвер админа работает (его
-        адрес идёт в DNS конфига) или строка пространства реально дописывается
-        в AllowedIPs (раздельный туннель, адреса в туннеле исправны); иначе
-        новый конфиг — байт в байт прежний, совет пустой. Сказать нечего или
-        некому (новая установка) — ключ сразу, текст пустой."""
-        from awgbot.domain import configgen
-        from awgbot.domain.notices.updates import admin_reissue_advice
-        from awgbot.infra import admindns
-        if self.db.get_state(self._ADMIN_REISSUE_KEY) == "1":
-            return ""
-        admin = self.db.get_client_by_tg(config.ADMIN_ID) if config.ADMIN_ID else None
-        devices = [d for d in self.db.list_devices(admin.id) if not d.is_gateway] if admin else []
-        useful = admindns.serving() or (not self.lan_space_problem()
-                                        and bool(configgen.extra_needed([str(lanspace.space())])))
-        if not devices or not useful:
-            self.db.set_state(self._ADMIN_REISSUE_KEY, "1")
-            return ""
-        return admin_reissue_advice()
-
-    def admin_reissue_announce(self) -> list[Notification]:
-        """Совет о перевыпуске отдельным сообщением — только если сводка после
-        обновления (lan_space_announce) его не унесла: адреса в туннеле
-        выключены или таблица не встала. Ключ — по доставке."""
-        text = self._admin_reissue_part()
-        if not text:
-            return []
-        return [Notification(config.ADMIN_ID, text,
-                             on_sent=lambda: self.db.set_state(self._ADMIN_REISSUE_KEY, "1"))]
-
-    def lan_map_startup(self) -> list[Notification]:
-        """Старт бота: таблицы слотов и awg_lan_map — на место до первого такта,
-        затем — разовое уведомление."""
+    def lan_map_startup(self) -> None:
+        """Старт бота: таблицы слотов и awg_lan_map — на место до первого такта."""
         self.lan_map_ensure()
-        return self.lan_space_announce()
-
-    def lan_space_announce(self) -> list[Notification]:
-        """Один раз после обновления, без звука, одним сообщением — блоками
-        через пустую строку:
-        — локальные сети шлюзов теперь открываются по адресам в туннеле (если у
-          слотов есть подсети; «имена SMB уже ведут на новые» — только при
-          стоящих записях SMB), ключ lan_space_announced;
-        — прежний тумблер связи подсетей был выключен, а слотов с VPN-транзитом
-          два и больше — их сети теперь связаны без вопроса, ключ
-          lan_peers_announced;
-        — совет о перевыпуске конфигов устройств админа (_admin_reissue_part),
-          ключ admin_reissue_announced.
-        Ключи взводятся по факту доставки; сказать нечего — сразу (новая
-        установка без слотов). Пока адреса в туннеле выключены или таблица не
-        встала — молчит и ключей не взводит: сказать «открываются» нечего
-        (совет тогда уходит отдельно, admin_reissue_announce)."""
-        from awgbot.domain.notices.lanmap import lan_peers_joined, lan_space_moved
-        if self.lan_space_problem():
-            return []
-        parts: list[str] = []
-        keys: list[str] = []
-        gateways = self.db.gateways()
-        rows = [(self._gw_link(g), twins) for g in gateways if (twins := self.lan_twins(g))]
-        if rows and not self.lan_map_up():
-            return []                                  # таблица не встала — скажется, когда встанет
-        if self.db.get_state(self._LAN_SPACE_ANNOUNCED_KEY) != "1":
-            if rows:
-                smb = any(self.smb_tunnel_slot(g) for g in gateways)
-                parts.append(lan_space_moved(rows, smb=smb))
-                keys.append(self._LAN_SPACE_ANNOUNCED_KEY)
-            else:
-                self.db.set_state(self._LAN_SPACE_ANNOUNCED_KEY, "1")
-        if self.db.get_state(self._LAN_PEERS_ANNOUNCED_KEY) != "1":
-            transit = self.gateway_transit_slots()
-            was_off = not settings.get_bool(self._PEER_NETS_LEGACY_KEY, False)
-            if was_off and len(transit) >= 2:
-                parts.append(lan_peers_joined([self._gw_link(g) for g in transit]))
-                keys.append(self._LAN_PEERS_ANNOUNCED_KEY)
-            else:
-                self.db.set_state(self._LAN_PEERS_ANNOUNCED_KEY, "1")
-        advice = self._admin_reissue_part()
-        if advice:
-            parts.append(advice)
-            keys.append(self._ADMIN_REISSUE_KEY)
-        if not parts:
-            return []
-
-        def told() -> None:
-            for key in keys:
-                self.db.set_state(key, "1")
-        return [Notification(config.ADMIN_ID, "\n\n".join(parts), on_sent=told, silent=True)]

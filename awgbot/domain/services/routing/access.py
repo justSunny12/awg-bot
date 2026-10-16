@@ -42,9 +42,17 @@ class RoutingAccessMixin:
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
     # ищут в аплинке и NAT, где её нет.
     def _txt_rt_bundle_hint(self, gw=None) -> str:
-        where = "" if gw is not None else " (<code>awg-bot gw-bundle</code>)"
-        return ("\n\n<i>Если проблема возникла сразу после обновления — примени на шлюзе свежий файл "
-                f"конфигурации шлюза{where}: набор обфускации линка обязан совпадать, иначе хендшейк не "
+        """Обе команды — всегда: выпустить файл на сервере AWG и применить его
+        на шлюзе (агент стоит — без --install). Слот известен — его интерфейс
+        линка и имя файла, нет — заглушки."""
+        import html
+        if gw is not None and getattr(gw, "link_if", ""):
+            link, name = html.escape(gw.link_if), html.escape(self.bundle_name(gw))
+        else:
+            link, name = "&lt;интерфейс&gt;", "&lt;файл&gt;"
+        return ("\n\n<i>Если проблема возникла сразу после обновления — выпусти свежий файл конфигурации "
+                f"шлюза на сервере AWG (<code>awg-bot gw-bundle --link {link}</code>) и примени его на шлюзе "
+                f"(<code>sudo sh {name}</code>): набор обфускации линка обязан совпадать, иначе хендшейк не "
                 "проходит, а без линка нет и канала конфигурации</i>")
 
     @staticmethod

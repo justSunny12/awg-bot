@@ -1,11 +1,10 @@
 """Адреса в туннеле на ВПС (сервис LanMapMixin): сверка таблицы awg_lan_map с
-таблицами и правилами слотов, независимо от РФ-доступа; старт — уборка
-маршрутов настоящих подсетей 3.2.x и разовое уведомление; неисправное
-пространство; снятие слота; потолок слотов; замечание при запуске.
+таблицами и правилами слотов, независимо от РФ-доступа; старт — таблица до
+первого такта; неисправное пространство; снятие слота; потолок слотов;
+замечание при запуске.
 
 Цена ошибки: таблица стоит только при задействованном РФ-доступе — админ без
-РФ-доступа теряет сети шлюзов; маршруты 3.2.x не убраны — настоящие адреса
-работают до ребута (полупереход); пространство поверх подсети клиентов —
+РФ-доступа теряет сети шлюзов; пространство поверх подсети клиентов —
 сервер переводит адреса собственных клиентов.
 """
 from __future__ import annotations
@@ -14,7 +13,7 @@ import types
 
 import pytest
 
-from awgbot.core import config, settings
+from awgbot.core import config
 from awgbot.domain.services import ServiceError
 from awgbot.infra import routing
 
@@ -109,7 +108,7 @@ def test_more_than_fifteen_slots_is_refused(services, monkeypatch):
         services.gateway_next_slot()
 
 
-# ── старт: таблица и уведомление ─────────────────────────────────────────────
+# ── старт: таблица ───────────────────────────────────────────────────────────
 
 def test_startup_puts_the_table(two, fake_routing, monkeypatch):
     """Старт: таблица адресов в туннеле — на место до первого такта (разовая
@@ -180,20 +179,6 @@ def test_slot_policy_is_not_asserted_twice_in_one_tick(two, fake_routing, monkey
     assert fake_routing.lanmap, "таблица в первый такт — всё равно"
 
 
-def test_a_broken_space_keeps_quiet_about_the_linked_networks(two, monkeypatch):
-    """Пока адреса в туннеле выключены, связи подсетей нет — хвост не шлётся
-    и ключ не взводится: скажется, когда пространство починят."""
-    _legacy_toggle(monkeypatch, False)
-    two.db.gateway_update(1, lan_mode=1); two.db.gateway_update(2, lan_mode=1)
-    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
-    assert two.lan_space_announce() == [] and not two.db.get_state("lan_peers_announced")
-    assert not two.db.get_state("lan_space_announced")
-    assert two.gateway_peer_nets_info() == {"state": "off"}
-    monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
-    two.lan_map_ensure()
-    assert len(two.lan_space_announce()) == 1
-
-
 def test_an_old_subnet_over_a_neighbours_prefix_says_the_link_will_not_build(two):
     """Подсеть до 3.3.0 в пространстве, накрывающая префикс соседа с
     VPN-транзитом: на шлюзе она пересеклась бы с его AllowedIPs — конфиг
@@ -206,72 +191,6 @@ def test_an_old_subnet_over_a_neighbours_prefix_says_the_link_will_not_build(two
                      "линка не соберётся (пересекается с адресами в туннеле другого шлюза): смени подсеть в «🗺 Подсети»"]
     two.db.gateway_update(2, lan_mode=0)
     assert "конфиг линка" not in lan_space_lines(two.lan_space_card(two.db.gateway(1)))[0]
-
-
-def _legacy_toggle(monkeypatch, on: bool):
-    real = settings.get_bool
-    monkeypatch.setattr(settings, "get_bool",
-                        lambda k, d=False: on if k == "app.routing.peer_nets.enabled" else real(k, d))
-
-
-MOVED = ("🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:\n"
-         "• NASPi: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>\n"
-         "• Pi2: <code>192.168.1.0/24</code> → <code>10.241.1.0/24</code>\n"
-         "Реальные адреса сетей через туннель больше не открываются")
-SMB = "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
-LINKED = "🔗 Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети NASPi и Pi2 связаны"
-
-
-@pytest.mark.parametrize("allowed, smb, was_on, transit, text", [
-    ("0.0.0.0/0, ::/0", False, True, (1, 1), MOVED),                 # полный туннель, записей SMB нет
-    ("10.8.1.0/24", True, True, (1, 0), MOVED + SMB),                # раздельный — о перевыпуске отдельным уведомлением
-    ("10.0.0.0/8", False, True, (1, 0), MOVED),                      # раздельный, но пространство покрыто
-    ("0.0.0.0/0, ::/0", True, False, (1, 1), MOVED + SMB + "\n\n" + LINKED),   # тумблер был выключен, два транзита
-    ("0.0.0.0/0, ::/0", False, False, (1, 0), MOVED),                # транзит у одного — связывать не с кем
-])
-def test_the_announcement_after_the_update_is_said_once_and_quietly(two, monkeypatch, allowed, smb, was_on,
-                                                                     transit, text):
-    """Одно сообщение без звука: сети шлюзов теперь открываются по адресам в
-    туннеле («имена SMB уже ведут на новые» — только при стоящих записях SMB)
-    и, если прежний тумблер был выключен, а
-    транзитов два, — что их сети связаны (мёртвый ключ читается ровно здесь).
-    Не доставлено — скажется на следующем старте; доставлено — больше никогда."""
-    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", allowed)
-    monkeypatch.setattr(two, "smb_tunnel_slot", lambda gw: smb)
-    _legacy_toggle(monkeypatch, was_on)
-    two.db.gateway_update(1, lan_mode=transit[0]); two.db.gateway_update(2, lan_mode=transit[1])
-    two.lan_map_ensure()
-    notes = two.lan_space_announce()
-    assert len(notes) == 1 and notes[0].text == text and notes[0].silent, notes
-    assert two.lan_space_announce() != [], "не доставлено — скажется на следующем старте"
-    notes[0].on_sent()
-    assert two.lan_space_announce() == []
-    assert two.db.get_state("lan_space_announced") == "1" and two.db.get_state("lan_peers_announced") == "1"
-
-
-def test_the_announcement_waits_for_the_table(two, fake_routing, monkeypatch):
-    """Таблица не встала (отказ nft) — «теперь открываются» было бы неправдой:
-    молчим, ключей не взводим; встала — сводка уходит."""
-    _legacy_toggle(monkeypatch, False)
-    two.db.gateway_update(1, lan_mode=1); two.db.gateway_update(2, lan_mode=1)
-
-    def refuse(text):
-        raise routing.RoutingError("nft -c -f -: Error: syntax error")
-    monkeypatch.setattr(routing.lanmap, "apply", refuse)
-    two.lan_map_ensure()
-    assert two.lan_space_announce() == []
-    assert not two.db.get_state("lan_space_announced") and not two.db.get_state("lan_peers_announced")
-    monkeypatch.setattr(routing.lanmap, "apply", lambda text: setattr(fake_routing, "lanmap", text))
-    two.lan_map_ensure()
-    notes = two.lan_space_announce()
-    assert len(notes) == 1 and notes[0].text.endswith(LINKED)
-
-
-def test_nothing_to_announce_on_a_fresh_install_arms_both_keys(services, fake_routing):
-    """Слотов с подсетями нет (новая установка) — сказать нечего, ключи
-    взводятся сразу: подсети, заведённые потом, «после обновления» не повод."""
-    assert services.lan_space_announce() == []
-    assert services.db.get_state("lan_space_announced") == "1" and services.db.get_state("lan_peers_announced") == "1"
 
 
 def test_a_stale_error_goes_away_when_the_table_is_already_right(two, fake_routing):
@@ -303,39 +222,3 @@ def test_an_empty_table_looks_into_the_kernel_only_once_and_a_missing_nft_is_no_
     assert two.lan_map_ensure() is True and not two.db.get_state("lanmap_error")
     two.lan_map_ensure(); two.lan_map_ensure()
     assert looks == [1], "в ядро смотрели не только на первой сверке"
-
-
-def test_the_admin_is_advised_once_to_reissue_their_device_configs(two, monkeypatch):
-    """Конфиги устройств админа, выданные до обновления, не знают резолвера
-    админа и пространства адресов в туннеле — совет перевыпустить один раз,
-    ключ по доставке. Шлюзовые устройства не в счёт: у админа только они —
-    совета нет, ключ сразу (как и на новой установке). Совет — только когда
-    перевыпуск что-то даст: резолвер админа работает или строка пространства
-    дописывается (раздельный туннель); полный туннель без резолвера — новый
-    конфиг прежний, совета нет."""
-    from awgbot.infra import admindns
-    monkeypatch.setattr(admindns, "serving", lambda: False)
-    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "0.0.0.0/0, ::/0")
-    assert two.admin_reissue_announce() == []
-    assert two.db.get_state("admin_reissue_announced") == "1"
-    two.db.set_state("admin_reissue_announced", "")
-    admin = two.db.get_client_by_tg(ADMIN)
-    two.add_device(admin.id, "Mac")
-    assert two.admin_reissue_announce() == [], "полный туннель без резолвера админа — перевыпуск ничего не даст"
-    assert two.db.get_state("admin_reissue_announced") == "1"
-    two.db.set_state("admin_reissue_announced", "")
-    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "10.8.1.0/24")       # раздельный — строка пространства
-    assert len(two.admin_reissue_announce()) == 1
-    monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", "0.0.0.0/0, ::/0")
-    monkeypatch.setattr(admindns, "serving", lambda: True)                 # резолвер админа — DNS конфига
-    notes = two.admin_reissue_announce()
-    assert len(notes) == 1 and notes[0].tg_id == ADMIN, notes
-    assert notes[0].text == (
-        "🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса локальных "
-        'сетей в туннеле (<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">что нового в v3.3.0</a>)')
-    assert two.admin_reissue_announce() != [], "не доставлено — скажется на следующем старте"
-    notes[0].on_sent()
-    assert two.admin_reissue_announce() == []
-    two.db.set_state("admin_reissue_announced", "")
-    monkeypatch.setattr(config, "ADMIN_ID", 0)
-    assert two.admin_reissue_announce() == [] and two.db.get_state("admin_reissue_announced") == "1"

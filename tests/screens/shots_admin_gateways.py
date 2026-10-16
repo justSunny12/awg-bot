@@ -15,7 +15,7 @@ from tests.screens.shots_admin_common_gw import (LAN2, NASPI, PI4, TOKEN, TOKEN2
 
 def _first_run_file1(services, mp):
     """В чате лежит файл первого применения слота 1 (#40) под инструкцией (#39)."""
-    services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39, "DUMMYFP", True)
+    services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39)
 
 
 def _rt_off(services, mp):

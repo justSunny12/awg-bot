@@ -24,7 +24,7 @@ def _gw_file_in_chat(plain: bool):
     погасшей карточкой (#39); plain — файл первого применения."""
     def build(services, mp):
         who = _slots(1)(services, mp)
-        services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39, "DUMMYFP", plain)
+        services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39)
         return who
     return build
 
@@ -106,41 +106,7 @@ async def _ev_added_by_admin(services, bot):
                      reply_markup=kb.added_by_admin(LAPTOP))
 
 
-def _admin_mac(services, mp):
-    """У админа есть устройство, резолвер админа работает: совет о перевыпуске уместен."""
-    from awgbot.infra import admindns
-    who = _slots(2, lan=True)(services, mp)
-    services.add_device(config.ADMIN_ID, "MacBook")
-    mp.setattr(admindns, "serving", lambda: True)
-    return who
-
-
-async def _ev_admin_reissue(services, bot):
-    from awgbot.bot.notifier import send_notifications
-    await send_notifications(bot, services.admin_reissue_announce())
-
-
-def _lan_moved(services, mp):
-    """Два слота с VPN-транзитом и подсетями, таблица адресов в туннеле встала,
-    прежний тумблер связи был выключен: сводка после обновления целиком."""
-    from awgbot.core import settings
-    who = _slots(2, lan=True)(services, mp)
-    services.db.gateway_update(2, lan_subnets=["192.168.68.0/24"], lan_mode=1)
-    settings.set_value("app.routing.peer_nets.enabled", False)
-    services.lan_map_ensure()
-    return who
-
-
-async def _ev_lan_moved(services, bot):
-    from awgbot.bot.notifier import send_notifications
-    await send_notifications(bot, services.lan_space_announce())
-
-
 EVENTS = [
-    Shot("adm.ev.admin_reissue", role="admin", call=("admin_reissue_announce", _ev_admin_reissue),
-         data=_admin_mac, title="после обновления: совет перевыпустить конфиги устройств админа"),
-    Shot("adm.ev.lan_space_moved", role="admin", call=("lan_space_announce", _ev_lan_moved),
-         data=_lan_moved, title="после обновления: сети шлюзов открываются по адресам в туннеле"),
     # ── события без действия человека ───────────────────────────────────────
     Shot("adm.ev.gw_installed", role="admin", call=("bundle_installed", _ev_installed),
          data=_gw_file_in_chat(True), title="A146: шлюз настроен"),

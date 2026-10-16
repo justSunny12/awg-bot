@@ -278,8 +278,9 @@ def test_helpers_are_replaced_by_mv_not_rewritten_in_place(script, tmp_path):
 # ── переход таблицы awg_home → awg_lan (снимается со следующим сдвигом минимума) ──
 
 def _move_env(script, tmp_path, *, old_table: bool):
-    """Шлюз после обновления до 3.3.1: прежняя таблица есть (или нет), свои
-    списки, фид, слепки и копии для отката — со строками под прежним именем."""
+    """Шлюз после обновления до 3.3.1: прежняя таблица в ядре есть (или нет —
+    перезагрузка, выключенный режим, откат), свои списки, фид, слепки и копии
+    для отката — со строками под прежним именем."""
     from tests.unit._gw_setup_common import _helpers
     bin_dir = tmp_path / "bin"; bin_dir.mkdir()
     log = tmp_path / "nft.log"
@@ -288,6 +289,7 @@ def _move_env(script, tmp_path, *, old_table: bool):
         f'[ "$5" = "{name}" ] && {{ printf \'table inet awg_home {{\\n\\tset {name} {{\\n\\t\\telements = {{ {el} }}\\n\\t}}\\n}}\\n\'; exit 0; }}'
         for name, el in sets.items())
     _fake(bin_dir, "nft", f'echo "nft $*" >> {log}\n'
+          f'[ "$1" = "-f" ] && {{ cat "$2" >> {log}; exit 0; }}\n'
           f'if [ "$1 $2 $3 $4" = "list table inet awg_home" ]; then exit {0 if old_table else 1}; fi\n'
           f'if [ "$1 $2 $3" = "list set inet" ]; then {listing}\n exit 1; fi\n'
           'exit 0\n')
@@ -308,14 +310,18 @@ def _move_env(script, tmp_path, *, old_table: bool):
     return {"bin": bin_dir, "log": log, "files": files, "dump": dump, "gw_etc": gw_etc, "head": head}
 
 
-def test_the_old_table_moves_with_its_sets_and_own_lists(script, tmp_path):
-    """Первый прогон 3.3.1 на шлюзе 3.3.0: наборы прежней таблицы — слепками
-    под новым именем, все строки nftset= и слепки — на awg_lan, dnsmasq будет
-    перезапущен (_dn_changed), прежняя таблица и её файл сняты после новой."""
-    env = _move_env(script, tmp_path, old_table=True)
-    r = _sh(env["head"] + 'lan_table_move_prepare\necho "changed=$_dn_changed"\nlan_table_move_finish\n',
-            env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
+def _move(env, body):
+    r = _sh(env["head"] + body, env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
+    return r
+
+
+def test_the_old_table_moves_with_its_sets_and_own_lists(script, tmp_path):
+    """Первый прогон 3.3.1 на шлюзе 3.3.0: все строки nftset= и слепки — на
+    awg_lan, dnsmasq будет перезапущен (_dn_changed), наборы прежней таблицы —
+    слепками под новым именем, прежняя таблица и её файл сняты после них."""
+    env = _move_env(script, tmp_path, old_table=True)
+    r = _move(env, 'lan_table_move_prepare\necho "changed=$_dn_changed"\nlan_table_move_finish\n')
     assert "changed=1" in r.stdout and "переезжает" in r.stdout
     for f in env["files"]:
         text = f.read_text(encoding="utf-8")
@@ -323,32 +329,75 @@ def test_the_old_table_moves_with_its_sets_and_own_lists(script, tmp_path):
     log = env["log"].read_text(encoding="utf-8")
     loads = [ln for ln in log.splitlines() if ln.startswith("nft -f ") and ".move.nft" in ln]
     assert len(loads) == 3, f"наборы прежней таблицы не загружены в новую: {log}"
+    assert "table inet awg_lan {" in log and "7.7.7.7" in log and "table inet awg_home {" not in log, log
     assert "nft delete table inet awg_home" in log
     assert log.index("nft -f") < log.index("nft delete table inet awg_home"), "прежняя снята раньше, чем легли наборы"
     assert not list(env["dump"].glob("*.move.nft")), "слепки переезда остались"
     assert not (env["gw_etc"] / "home.nft").exists(), "файл прежней таблицы остался"
 
 
-def test_the_moved_set_dump_names_the_new_table(script, tmp_path):
-    env = _move_env(script, tmp_path, old_table=True)
-    r = _sh(env["head"] + "lan_table_move_prepare\n", env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
-    assert r.returncode == 0, r.stderr
-    dumped = (env["dump"] / "lan_ru4.move.nft").read_text(encoding="utf-8")
-    assert dumped.startswith("table inet awg_lan {") and "7.7.7.7" in dumped, dumped
-
-
-def test_without_the_old_table_nothing_moves(script, tmp_path):
-    """Шлюз уже на 3.3.1 (или режим впервые): переписывать и перезапускать нечего."""
+def test_files_move_even_without_the_old_table_in_the_kernel(script, tmp_path):
+    """Прежней таблицы в ядре нет (перезагрузка до перехода, режим был выключен
+    на 3.3.0, откат), а строки с ней в файлах есть: файлы переписываются всё
+    равно — иначе свои списки пишут в несуществующую таблицу, а слепок с
+    прежним заголовком создал бы её заново."""
     env = _move_env(script, tmp_path, old_table=False)
-    r = _sh(env["head"] + 'lan_table_move_prepare\necho "changed=$_dn_changed"\n',
-            env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
-    assert r.returncode == 0, r.stderr
+    r = _move(env, 'lan_table_move_prepare\necho "changed=$_dn_changed"\nlan_table_move_finish\n')
+    assert "changed=1" in r.stdout and "переезжает" not in r.stdout
+    for f in env["files"]:
+        text = f.read_text(encoding="utf-8")
+        assert "awg_home" not in text and "awg_lan" in text, f"{f.name}: {text!r}"
+    log = env["log"].read_text(encoding="utf-8")
+    assert "list set" not in log and "delete table" not in log, log
+
+
+def test_already_moved_files_are_left_alone(script, tmp_path):
+    """Шлюз уже на новом имени: переписывать и перезапускать нечего."""
+    env = _move_env(script, tmp_path, old_table=False)
+    for f, text in env["files"].items():
+        f.write_text(f.read_text(encoding="utf-8").replace("awg_home", "awg_lan"), encoding="utf-8")
+    inodes = {f: f.stat().st_ino for f in env["files"]}
+    r = _move(env, 'lan_table_move_prepare\necho "changed=$_dn_changed"\n')
     assert "changed=0" in r.stdout
-    assert all("awg_home" in f.read_text(encoding="utf-8") for f in env["files"]), "файлы тронуты без перехода"
+    assert all(f.stat().st_ino == ino for f, ino in inodes.items()), "файлы без прежнего имени тронуты"
 
 
-def test_the_move_runs_inside_the_locked_apply_before_the_table(script):
+def test_the_rewrite_replaces_the_file_whole_and_keeps_its_mode(script, tmp_path):
+    """Запись — во временный файл рядом с суффиксом, который conf-dir не
+    читает, и mv: dnsmasq не увидит полузаписанный файл; права — прежние."""
+    env = _move_env(script, tmp_path, old_table=False)
+    own = next(f for f in env["files"] if f.name == "awg-gw-vpn-user.conf" and f.parent.name == "dnsmasq.d")
+    own.chmod(0o640)
+    ino = own.stat().st_ino
+    _move(env, "lan_table_move_prepare\n")
+    assert own.stat().st_ino != ino, "файл переписан на месте"
+    assert own.stat().st_mode & 0o777 == 0o640
+    leftovers = [p for p in env["dump"].rglob("*") if p.name.endswith(".dpkg-new")]
+    leftovers += [p for p in own.parent.iterdir() if p.name.endswith(".dpkg-new")]
+    assert not leftovers, leftovers
+
+
+def test_the_move_runs_inside_the_locked_apply_around_the_dnsmasq_restart(script):
+    """Строки — до конфигов dnsmasq; наборы прежней таблицы и её снятие —
+    после перезапуска dnsmasq: до него демон пишет адреса в прежнюю."""
     # тело с heredoc таблицы (в нём «}» с начала строки) — до развилки режима
     fn = script.split("_lan_apply_locked() {", 1)[1].split('\nif [ "$LAN_MODE" = "1" ]; then', 1)[0]
     assert fn.index("_dn_changed=0") < fn.index("lan_table_move_prepare") < fn.index('nft -f $LAN_FILE"')
-    assert fn.index('nft -f $LAN_FILE"') < fn.index("lan_table_move_finish")
+    assert fn.index('run "systemctl restart dnsmasq"') < fn.index("lan_table_move_finish")
+
+
+@pytest.mark.parametrize("env_line, want", [
+    ('HOME_SUBNETS="192.168.1.0/24"', "192.168.1.0/24"),
+    ('LAN_SUBNETS="" HOME_SUBNETS="192.168.1.0/24"', ""),
+    ('LAN_SUBNETS="10.0.0.0/24" HOME_SUBNETS="192.168.1.0/24"', "10.0.0.0/24"),
+])
+def test_the_old_subnet_name_is_read_only_when_the_new_one_is_absent(script, env_line, want):
+    """Юнит 3.3.0 (только прежнее имя) — прежнее значение; намеренно пустое
+    новое прежним не подменяется. Снимается со следующим сдвигом минимума."""
+    lines = [ln for ln in script.splitlines()
+             if ln.startswith(('[ -n "${LAN_SUBNETS+x}" ]', '[ -n "${PEER_LAN_NETS+x}" ]'))]
+    assert len(lines) == 2, lines
+    prog = env_line.replace("HOME_SUBNETS", "PEER_HOME_NETS").replace("LAN_SUBNETS", "PEER_LAN_NETS")
+    for var, extra in (("LAN_SUBNETS", env_line), ("PEER_LAN_NETS", prog)):
+        r = _sh(f"{extra}\n" + "\n".join(lines) + f'\nprintf "%s" "${var}"\n', env={"PATH": "/usr/bin:/bin"})
+        assert r.returncode == 0 and r.stdout == want, (var, extra, r.stdout)

@@ -162,8 +162,7 @@ async def test_the_first_install_file_offers_menu_and_is_remembered(services, sl
     services.token[2] = TOKEN2
     nav, instr, (_caption, _markup, doc) = await _issue_plain(services, _Bot(), pi2)
     where = services.gw_bundle_msg_get(2)
-    assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
-    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id, "plain": True}, \
+    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id}, \
         "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
 
 
@@ -181,8 +180,7 @@ async def test_the_first_install_file_of_a_new_machine_is_remembered_too(service
     _caption, _markup, doc = nav.docs[0]
     instr = next(s[3] for s in nav.sent if s[0] == "answer" and "--install" in s[1])
     where = services.gw_bundle_msg_get(2)
-    assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
-    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id, "plain": True}, \
+    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id}, \
         "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
 
 

@@ -20,7 +20,6 @@ class _Svc(GatewayServices):
     def __init__(self, db):
         super().__init__(db)
         self.restarted = 0
-        self.applied: list[bytes] = []
 
     def status(self):
         return GwStatus(link_up=True, handshake_age=5.0)
@@ -29,9 +28,6 @@ class _Svc(GatewayServices):
         self.restarted += 1
         return True, "поднят"
 
-    def apply_bundle(self, blob, overwrite_passphrase=False):
-        self.applied.append(blob)
-        return True, "Готово"
 
 
 @pytest.fixture()
@@ -95,8 +91,7 @@ async def test_a_reissue_file_from_the_chat_history_is_refused_in_words(svc):
     истории чата: не применяется, в памяти диалога не остаётся, из чата
     убирается (внутри ключ линка), ответ — что делать вместо: «🚑
     Восстановить» или канал конфигурации."""
-    priv = base64.b64encode(os.urandom(32)).decode()
-    blob = bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", priv)
+    blob = bc.MAGIC + b"DUMMY-reissue-file"           # формат узнаётся по подписи
     bot = _DlBot(blob)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     msg.document = _Doc(len(blob))
@@ -125,6 +120,19 @@ def test_old_apply_buttons_are_left_to_the_stale_handler():
     for action in ("apply!", "apply_ow!", "apply_keep!", "drop"):
         hit = [(r.name, _first_matching_handler(r, GwCB(action=action))) for r in routers]
         assert not [h for h in hit if h[1]], f"снятую кнопку {action} кто-то обрабатывает: {hit}"
+
+
+async def test_a_big_first_run_file_under_a_foreign_name_leaves_the_chat(svc):
+    """Файл первого применения с поставкой внутри весит мегабайты: под чужим
+    именем его узнают по началу — и убирают из чата (внутри ключи линка),
+    а не отвечают «не принят», оставив ключи в истории."""
+    blob = b"#!/bin/sh\n# awg-gw-bundle.sh \xe2\x80\x94 x\n" + b"x" * (3 * 1024 * 1024)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=_DlBot(blob))
+    msg.document = _Doc(len(blob))
+    msg.document.file_name = "conf.txt"
+    await gh.gw_bundle_document(msg, svc, FakeState())
+    assert msg.deleted, "файл с ключами остался в чате"
+    assert msg.sent[-1][1] == texts.gw_first_run_file("conf.txt"), msg.sent[-1]
 
 
 async def test_oversized_document_is_not_downloaded(svc):
@@ -448,7 +456,7 @@ class _ChanSvc(_Svc):
 
     def __init__(self, db):
         super().__init__(db)
-        self.snap = {"bundle": {"lan_mode": "0"}, "plumbing_gen": "old", "egress_ok": True}
+        self.snap = {"bundle": {"lan_mode": "0"}, "mark_status": "old", "egress_ok": True}
 
     def gw_snapshot(self):
         return {k: (dict(v) if isinstance(v, dict) else v) for k, v in self.snap.items()}
@@ -457,22 +465,8 @@ class _ChanSvc(_Svc):
         return None
 
     def reassert(self):
-        self.snap["plumbing_gen"] = "new"            # мастер перевыставил обвязку
+        self.snap["mark_status"] = "new"             # мастер перевыставил обвязку — решение скрипта другое
         return True, "перевыставлено"
-
-    def apply_bundle(self, blob, overwrite_passphrase=False):
-        self.applied.append(blob)
-        self.snap["bundle"] = {"lan_mode": "1"}      # бандл включил режим без VPN
-        return True, "Готово"
-
-    def inspect_bundle(self, blob):
-        return {"ok": True}
-
-    def gateway_apply_report(self):
-        return ""
-
-    def gateway_mark_outcome(self):
-        return {}
 
 
 class _Wire:
@@ -501,7 +495,7 @@ async def chan(tmp_path, monkeypatch):
     conf.write_text(f"[Interface]\nPrivateKey = {priv}\n", encoding="utf-8")
     monkeypatch.setattr(cfg, "GW_LINK_CONF", str(conf))
     monkeypatch.setattr(cfg, "ROLE", "gateway")
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: "1" if k == "LINK_CHANNEL" else "")
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     d = Database(tmp_path / "gw.db"); d.init_schema()
     svc = _ChanSvc(d)
     client = linkclient.LinkClient(svc)
@@ -525,10 +519,10 @@ async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(cha
     await gh.gw_execute(cb, GwCB(action="reassert!"), svc)
     msgs = sent()
     assert [m["t"] for m in msgs] == ["snap", "delta"], f"после мастера на ВПС ушло {msgs}"
-    assert msgs[-1]["plumbing_gen"] == "new"
+    assert msgs[-1]["mark_status"] == "new"
 
 
-# ── заявка на назначение шлюза после применения: канал или пересылка ─────────
+# ── резервная копия агента и планировщик ─────────────────────────────────────
 
 @pytest.mark.parametrize("carries, tail", [(True, " — РФ-доступ у всех прервётся на секунды"), (False, "")])
 async def test_a_gateway_backup_that_touches_the_link_warns_about_rf_access_only_when_carrying(

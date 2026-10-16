@@ -377,7 +377,7 @@ def test_the_unit_carries_the_channel_port_and_no_channel_switch(script):
 def _subnets(script: str, **env) -> tuple[str, str]:
     """Прогнать настоящие строки скрипта, которые задают локальные подсети и
     подсети соседей (с запасным чтением прежних имён юнита 3.3.0)."""
-    keep = ("LAN_SUBNETS=", "PEER_LAN_NETS=", "    | grep -E")
+    keep = ("LAN_SUBNETS=", "PEER_LAN_NETS=", "    | grep -E", '[ -n "${LAN_SUBNETS+x}" ]', '[ -n "${PEER_LAN_NETS+x}" ]')
     lines = [ln for ln in script.splitlines() if ln.startswith(keep)]
     prog = "\n".join(lines) + '\nprintf "%s|%s" "$LAN_SUBNETS" "$PEER_LAN_NETS"'
     out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,

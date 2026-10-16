@@ -1,6 +1,6 @@
 """lanmap.py — часть пакета notices (см. __init__): адреса в туннеле локальных
 сетей шлюзов — строка «выключены» (карточки слотов и замечания при запуске)
-и разовое уведомление после обновления."""
+и строка отказа таблицы."""
 
 from __future__ import annotations
 
@@ -36,42 +36,4 @@ def lan_map_failed_line(error: str, *, markup: bool = True) -> str:
             f"подробности: <code>{html.escape(cmd, quote=False)}</code>")
 
 
-def _and(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " и " + names[-1]
-
-
-def lan_peers_joined(names: list[str]) -> str:
-    """Блок сводки после обновления: прежний тумблер связи подсетей был
-    выключен, а шлюзов с VPN-транзитом два и больше — их сети теперь связаны.
-    names — имена шлюзов готовой разметкой (ссылки на карточки)."""
-    return ("🔗 Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: "
-            f"сети {_and(names)} связаны")
-
-
-LAN_PAIRS_SHOWN = 6           # пар «настоящая → в туннеле» на шлюз в сводке — как в карточке
-LAN_PAIRS_SHOWN_MANY = 3      # шлюзов больше восьми — по три: 15 слотов с длинными именами влезают в 4096
-
-
-def lan_space_moved(rows: list[tuple[str, list[tuple[str, str]]]], *, smb: bool) -> str:
-    """Уведомление после обновления: локальные сети шлюзов теперь открываются
-    по адресам в туннеле. rows — [(имя шлюза готовой разметкой, [(настоящая,
-    в туннеле)])], до шести пар на шлюз (шлюзов больше восьми — до трёх), дальше
-    «и ещё N»; smb — записи SMB с
-    адресами в туннеле стоят (имена уже ведут на новые). Совет о перевыпуске
-    конфигов админа — следующим блоком той же сводки (notices.updates
-    admin_reissue_advice, собирает lanmap_sync.lan_space_announce)."""
-    lines = ["🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:"]
-    limit = LAN_PAIRS_SHOWN if len(rows) <= 8 else LAN_PAIRS_SHOWN_MANY
-    for name, pairs in rows:
-        shown = ", ".join(f"<code>{html.escape(r)}</code> → <code>{html.escape(t)}</code>"
-                          for r, t in pairs[:limit])
-        more = len(pairs) - limit
-        lines.append(f"• {name}: {shown}" + (f" и ещё {more}" if more > 0 else ""))
-    tail = "Реальные адреса сетей через туннель больше не открываются"
-    if smb:
-        tail += "; имена SMB (<code>awg.internal</code>) уже ведут на новые"
-    lines.append(tail)
-    return "\n".join(lines)
-
-
-__all__ = ["lan_space_off_line", "lan_map_failed_line", "lan_peers_joined", "lan_space_moved"]
+__all__ = ["lan_space_off_line", "lan_map_failed_line"]

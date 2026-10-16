@@ -4115,23 +4115,6 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 ⚠️ Файл не принят: бэкап снят версией до v3.3.0 — восстанови его на сервере с v3.3.0, затем обнови бота
 
-### adm.ev.admin_reissue — после обновления: совет перевыпустить конфиги устройств админа
-> call admin_reissue_announce
-+ send #2
-🔁 Перевыпусти конфигурации своих устройств — так на них заработают SMB в туннеле и адреса локальных сетей в туннеле (<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.3.0">что нового в v3.3.0</a>)
-  [Скрыть | hd]
-
-### adm.ev.lan_space_moved — после обновления: сети шлюзов открываются по адресам в туннеле
-> call lan_space_announce
-+ send #2
-🗺 Локальные сети шлюзов теперь открываются по адресам в туннеле:
-• <a href="https://t.me/test_bot?start=gw-1">NASPi</a>: <code>192.168.1.0/24</code> → <code>10.240.1.0/24</code>
-• <a href="https://t.me/test_bot?start=gw-2">Pi4</a>: <code>192.168.68.0/24</code> → <code>10.241.68.0/24</code>
-Реальные адреса сетей через туннель больше не открываются
-
-🔗 Связь подсетей теперь часть VPN-транзита, отдельного выключателя больше нет: сети <a href="https://t.me/test_bot?start=gw-1">NASPi</a> и <a href="https://t.me/test_bot?start=gw-2">Pi4</a> связаны
-  [Скрыть | hd]
-
 ### adm.ev.gw_installed — A146: шлюз настроен
 > call bundle_installed
 - delete #39

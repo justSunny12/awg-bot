@@ -13,12 +13,6 @@ class AgentStub:
     def own_applied_hash(self) -> str:
         return ""
 
-    def applied_pending_get(self):
-        return None
-
-    def applied_pending_set(self, ok, error, fp) -> None:
-        pass
-
     def services_local(self) -> list:
         return []
 

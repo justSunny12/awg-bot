@@ -61,7 +61,12 @@ class SnapshotMixin:
         return raw[:40]
 
     def gwlink_snapshot(self, slot_id: int) -> dict:
-        return self.db.get_state_json(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id), {})
+        snap = self.db.get_state_json(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id), {})
+        if isinstance(snap, dict) and isinstance(snap.get("bundle"), dict):
+            # снимок, сохранённый сервером 3.3.0, — с прежними именами полей
+            # (снимается со следующим сдвигом минимума)
+            snap["bundle"] = gwsnapshot.bundle_both_names(snap["bundle"])
+        return snap
 
     def gwlink_snapshot_age(self, slot_id: int) -> int | None:
         """Секунд с приёма ПО ЧАСАМ ВПС; None — снимка не было."""
@@ -82,5 +87,9 @@ class SnapshotMixin:
                     self._GWLINK_SVC_KEY, self._GWLINK_PEER_SVC_KEY, self._GWLINK_BUNDLE_MSG_KEY,
                     self._GWLINK_OWN_UPTO_KEY, self._GWLINK_OWN_ACK_KEY, self._GWLINK_OWN_REJ_KEY,
                     self._GWLINK_OWN_CAP_KEY):
+            self.db.set_state(self._gwlink_key(key, slot_id), "")
+        # подтверждение настроек и итог применения файла — доставки, снятой в
+        # 3.3.1: у слотов, заведённых раньше, ключи ещё лежат
+        for key in ("gwlink_ack", "gwlink_applied"):
             self.db.set_state(self._gwlink_key(key, slot_id), "")
         # канон своих списков не трогается: он общий, вернувшийся шлюз его получит

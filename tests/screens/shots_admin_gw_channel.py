@@ -57,7 +57,7 @@ def _nav_live(services, mp):
 def _file2(plain: bool):
     """В чате админа лежит файл слота 2 (#40) под карточкой или инструкцией (#39)."""
     def step(services, mp):
-        services.gw_bundle_msg_set(2, config.ADMIN_ID, 40, 39, "DUMMYFP", plain)
+        services.gw_bundle_msg_set(2, config.ADMIN_ID, 40, 39)
     return step
 
 

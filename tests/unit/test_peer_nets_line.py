@@ -79,21 +79,8 @@ def test_the_transit_dialog_never_asks_for_a_reissue():
             assert "перевыпуск" not in gateway_lan_ask(st, on, "10.9.1.1")
 
 
-def test_the_announcement_with_fifteen_slots_fits_telegram():
-    """Сводка после обновления: 15 слотов с длинными именами и по 64 подсети —
-    при стольких шлюзах до трёх пар на слот («и ещё N»), сообщение в пределах
-    4096; два шлюза — до шести."""
-    from awgbot.domain.notices.lanmap import lan_space_moved
-    rows = [(f"<a href=\"https://t.me/b?start=gw-{sid}\">Шлюз-{sid:02d}-{'Ж' * 20} ({'Л' * 20})</a>",
-             [(f"192.168.{i}.0/24", f"10.{239 + sid}.{i}.0/24") for i in range(64)]) for sid in range(1, 16)]
-    text = lan_space_moved(rows, smb=True)
-    assert "и ещё 61" in text
-    assert len(plain_text(text)) <= TG_MAX, len(plain_text(text))
-    assert "и ещё 58" in lan_space_moved(rows[:2], smb=False)
-
-
 def test_nine_slots_and_more_show_up_to_three_addresses_each():
-    """При девяти слотах и больше — до трёх адресов на слот, как в сводке."""
+    """При девяти слотах и больше — до трёх адресов на слот."""
     many = {"state": "ok", "pairs_named": [(f"Pi{i}", "", _nets(i, 5)) for i in range(1, 10)]}
     line = texts.peer_nets_line(many)
     assert line.count("<code>") == 27 and line.count("и ещё 2") == 9, line

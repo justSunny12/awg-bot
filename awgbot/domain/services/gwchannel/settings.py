@@ -1,31 +1,18 @@
 """settings.py — сверка выдаваемого с установленным по снимку канала."""
 from __future__ import annotations
 
-
-
-from .common import _cut, drift_lines
+from .common import _cut
 
 
 class SettingsMixin:
     # ── сверка выданного с установленным ─────────────────────────────────────
 
-    def gwlink_config_drift(self, gw, with_keys: bool = False):
-        """Чем установленное на шлюзе расходится с тем, что ВПС выдал.
-
-        Сравниваем своим же набором значений, из которых собирается документ, —
-        второй схемы сериализации для этого не нужно. Снимка нет — расхождений
-        не выдумываем: пустой список значит «сказать нечего», а не «всё сошлось».
-        """
-        items = self.gwlink_config_drift_items(gw)
-        keys = [k for k, _h, _m, _t in items]
-        out = drift_lines(items, html=False)
-        return (out, keys) if with_keys else out
-
     def gwlink_config_drift_items(self, gw) -> list[tuple[str, str, str, str]]:
-        """То же расхождение структурой: (ключ, человеческое имя, у сервера, на
-        шлюзе) — тексты рисуют его по-своему (подсети в <code>, режим словами).
+        """Чем установленное на шлюзе расходится с тем, что ВПС выдал: (ключ,
+        человеческое имя, у сервера, на шлюзе) — тексты рисуют его по-своему (подсети в <code>, режим словами).
         До 64 значений с каждой стороны — значение обрезается, иначе экран с
-        несколькими расхождениями перерос бы лимит сообщения."""
+        несколькими расхождениями перерос бы лимит сообщения. Снимка нет —
+        расхождений не выдумываем: пустой список значит «сказать нечего»."""
         from awgbot.util import gwlink
         snap = self.gwlink_snapshot(gw.id)
         got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else None

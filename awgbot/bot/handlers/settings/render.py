@@ -165,15 +165,12 @@ async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
         return f"шлюз {slot_id}", {}
 
 
-async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "", where: dict | None = None) -> bool:
+async def _drop_bundle_msgs(bot, services, slot_id: int, where: dict | None = None) -> bool:
     """Убрать из чата выданный файл слота с его инструкцией и забыть о них.
-    fp задан — только если это тот самый файл: итог о другом (чужом или
-    прежнем) файле новый не трогает. Вернуть, было ли что убирать."""
+    Вернуть, было ли что убирать."""
     if where is None:
         where = await call(services.gw_bundle_msg_get, slot_id)
     if not where:
-        return False
-    if fp and where.get("fp") and where.get("fp") != fp:
         return False
     chat_id = _bundle_chat(where)
     for mid in (where.get("instr"), where.get("file")):
@@ -210,9 +207,7 @@ async def bundle_installed(bot, services, slot_id: int) -> None:
     второго не нужно."""
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = _bundle_chat(where)
-    dropped = False
-    if where.get("plain"):
-        dropped = await _drop_bundle_msgs(bot, services, slot_id, where=where)
+    dropped = await _drop_bundle_msgs(bot, services, slot_id, where=where)
     display, agent_bot = await _bundle_display(services, slot_id)
     sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))
     await call(services.db.add_content_msg_id, chat_id, sent.message_id)

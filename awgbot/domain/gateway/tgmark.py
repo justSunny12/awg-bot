@@ -42,8 +42,8 @@ class TgMarkMixin:
         return [n for n in self.TG_RANGES if n not in present]
 
     def gh_route_check(self, info: dict | None) -> GwCheck:
-        """Отдельно от Telegram: реассерт тут не поможет — старый скрипт
-        обвязки набора gh_nets4 не знает, нужен новый файл конфигурации с ВПС."""
+        """Отдельно от Telegram: набор gh_nets4 ставит скрипт обвязки — его
+        копию кладёт обновление агента, а «🚑 Восстановить» прогоняет её."""
         present = (info or {}).get("sets", {}).get("gh_nets4", set())
         missing = [n for n in self.GH_RANGES if n not in present]
         return GwCheck(gc.CHECK_GH_ROUTE, not missing,

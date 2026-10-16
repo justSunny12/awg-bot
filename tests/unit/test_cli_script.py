@@ -306,7 +306,7 @@ def _run_autostart(tmp_path, script: str, *, role: str,
     (conf / "app.yaml").write_text(
         f'role: "{role}"\ndocker:\n  runtime: "host"\ninterface: "awg0"\n', encoding="utf-8")
 
-    body = (_extract_func(script, "ensure_host_autostart")
+    body = ((_extract_func(script, "gw_plumbing_sync") + "\n" + _extract_func(script, "ensure_host_autostart"))
             .replace("/usr/local/sbin", str(sbin))
             .replace("/etc/systemd/system", str(units)))
     harness = "\n".join([

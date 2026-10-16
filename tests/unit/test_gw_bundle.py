@@ -342,8 +342,8 @@ def test_junk_in_the_channel_port_does_not_reach_the_gateway(tmp_path):
 
 
 def test_bundle_stamps_the_issue_time(bundle):
-    """Метка выпуска — по ней агент отличит свежий файл от старого из истории
-    чата: ключ у обоих один, расшифруются оба."""
+    """Метка выпуска — по ней скрипт обвязки отличит свежий файл от старого:
+    файл старее применённого он не применит."""
     m = re.search(r"^# ISSUED_AT: (\d{10})$", bundle, re.M)
     assert m, "нет метки ISSUED_AT в шапке"
     import time

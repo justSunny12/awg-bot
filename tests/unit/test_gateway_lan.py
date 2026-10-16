@@ -501,14 +501,13 @@ CLOSED = "сам роутер подсетям других шлюзов не о
 
 
 def _router_env(monkeypatch, *, lan=True, peers="10.241.0.0/16", home="192.168.1.0/24",
-                status=None, script_new=True):
-    """VPN-транзит, соседи и свои подсети из юнита, статус скрипта, копия скрипта."""
+                status=None):
+    """VPN-транзит, соседи и свои подсети из юнита, статус скрипта."""
     env = {"PEER_LAN_NETS": peers, "LAN_MODE": "1" if lan else "0", "LAN_SUBNETS": home}
     monkeypatch.setattr(gwguard, "lan_mode", lambda: lan)
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
     monkeypatch.setattr(gwguard, "script_status",
                         lambda: {"GW_STATUS": "confirmed", "ROUTER": "192.168.1.1"} if status is None else status)
-    monkeypatch.setattr(gwguard, "setup_script_has", lambda marker: script_new and marker == "ROUTER=%s")
 
 
 def _route(via="192.168.1.1", present=True):
@@ -577,25 +576,24 @@ def test_no_default_route_at_all_is_unknown(svc, monkeypatch, have):
     assert _stale(svc) is False
 
 
-def test_plumbing_from_the_previous_script_is_reasserted_once_the_new_copy_is_there(svc, monkeypatch):
+def test_the_script_writes_the_router_line_the_check_reads():
+    """Проверка читает ROUTER из файла статуса — ту строку, что пишет
+    write_status: переименуют — каждая обвязка сошла бы за старую."""
+    import pathlib
+    script = (pathlib.Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    write_status = script.split("write_status() {", 1)[1].split("\n}\n", 1)[0]
+    assert "\\nROUTER=%s\\n" in write_status
+
+
+def test_plumbing_from_the_previous_script_is_reasserted(svc, monkeypatch):
     """Файл статуса без ROUTER= — обвязку поставил прежний скрипт, а копия на
-    шлюзе уже новая (awg-bot update юнит не перезапускает): правило встанет
-    только после прогона — флаг, агент перевыставит."""
+    шлюзе уже новая (её кладёт обновление агента): правило встанет только
+    после прогона — флаг, агент перевыставит."""
     _router_env(monkeypatch, status={"GW_STATUS": "confirmed", "LAN_ADDR": "192.168.1.2"})
     c = svc._router_masq_check(_info(), _route())
     assert (c.ok, c.detail) == (False, "обвязка старого образца: сам роутер из подсетей других шлюзов недоступен; "
                                    "обвязка перевыставится в ближайшие минуты")
     assert _stale(svc) is True
-
-
-def test_an_old_script_copy_is_unknown_and_not_reasserted(svc, monkeypatch):
-    """Копия скрипта на шлюзе сама прежняя: реассерт поставил бы ту же
-    таблицу без правила — «не проверено», без флага."""
-    _router_env(monkeypatch, status={"GW_STATUS": "confirmed"}, script_new=False)
-    c = svc._router_masq_check(_info(), _route())
-    assert (c.ok, c.detail) == (None, "скрипт обвязки старого образца: сам роутер из подсетей других шлюзов не "
-                                  "открыт — обнови агента шлюза: скрипт обвязки приезжает с ним")
-    assert _stale(svc) is False
 
 
 @pytest.mark.parametrize("gw_status", ["foreign", "unconfirmed"])
@@ -707,23 +705,6 @@ def test_a_stale_snapshot_does_not_reassert_twice(svc, monkeypatch, state, fresh
     assert bool(reads) == (fresh in ("fixed", "error")), reads
     assert svc.__dict__.get("_router_masq_stale") is None, "флаг не должен пережить тик"
     assert isinstance(notes, list)
-
-
-def test_the_script_copy_marker_is_the_status_line_of_the_script():
-    """Признак новой копии скрипта — та самая строка файла статуса, которую
-    пишет write_status: переименуют — проверка перестанет её узнавать."""
-    import pathlib
-    script = (pathlib.Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
-    write_status = script.split("write_status() {", 1)[1].split("\n}\n", 1)[0]
-    assert "\\nROUTER=%s\\n" in write_status and GatewayServices._ROUTER_MARK == "ROUTER=%s"
-
-
-def test_setup_script_has_reads_the_installed_copy(tmp_path, monkeypatch):
-    copy = tmp_path / "routing-gw-setup.sh"
-    monkeypatch.setattr(gwguard, "SETUP_SCRIPT", str(copy))
-    assert gwguard.setup_script_has("ROUTER=%s") is False, "копии нет — не знает"
-    copy.write_text("printf 'GW_STATUS=%s\\nROUTER=%s\\n'\n", encoding="utf-8")
-    assert gwguard.setup_script_has("ROUTER=%s") is True
 
 
 def test_lists_date_is_the_latest_server_confirmation_on_a_channel_fed_gateway(tmp_path):

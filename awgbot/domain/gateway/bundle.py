@@ -106,15 +106,12 @@ class BundleMixin:
 
     def gateway_mark_status(self) -> str:
         """Помечен ли шлюз: решение скрипта обвязки при последнем прогоне
-        (gateway.status — пишется каждым применением и реассертом). Раньше
-        значение в базу клал только итог применения файла перевыпуска из чата;
-        с его снятием запись застыла бы — у нового шлюза навсегда «?», и claim
-        по каналу не уходил бы. Запись в базе — запасная, пока файла нет."""
+        (gateway.status — пишется каждым применением и реассертом). Файла нет
+        или значение непонятное — честный «?»: запись в базе клал только итог
+        применения снятого файла перевыпуска, и она застыла."""
         from awgbot.infra import gwguard
         live = (gwguard.script_status().get("GW_STATUS") or "").strip()
-        if live in ("unmarked", "confirmed", "foreign", "unconfirmed"):
-            return live
-        return self.db.get_state(self._GW_MARK_KEY) or "?"
+        return live if live in ("unmarked", "confirmed", "foreign", "unconfirmed") else "?"
 
 
     # ── резервная копия ──────────────────────────────────────────────────────

@@ -12,7 +12,6 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB
 from awgbot.bot.states import GatewayToken
 from awgbot.domain.services import ServiceError
-from awgbot.util import bundlecrypt
 from awgbot.bot.handlers.common import call, edit, send_menu, ask_here, ask_tracked, cleanup_content
 
 log = logging.getLogger("awgbot.handlers.settings")
@@ -195,5 +194,4 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
         caption=texts.gateway_plain_bundle_caption(display),
         reply_markup=kb.bundle_menu_kb(slot))
     if slot:
-        await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
-                   bundlecrypt.fingerprint(blob), True)
+        await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id)

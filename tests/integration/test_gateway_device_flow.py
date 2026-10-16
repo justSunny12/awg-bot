@@ -342,3 +342,57 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
     head = texts.online_devices_text(rows)
     assert head.startswith("📶 <b>Онлайн:</b> ") and f"профиль, {len(rows)} устройства\n\n" in head, head
     assert len([d for d, _ in rows]) == 2
+
+
+def test_replacing_the_device_drops_the_channel_state_and_quarantines_the_file(gw, services):
+    """Замена устройства слота: снимок, сессия и возможности прежнего уходят —
+    иначе новое их наследует, а доверенные адреса шлюзов считаются по обвязке
+    прежнего. Адреса админа из нового файла в карантине, пока снимок канала
+    не новее файла."""
+    import json
+    from awgbot.util import gwlink, timeutil
+    _admin, phone, pi = gw
+    services.gateway_setup(pi.device_id)
+    sid = services.active_gateway().id
+    services.gwlink_session_opened(sid, "3.3.0", gwlink.PROTO, caps=("cfg1",))
+    services.db.set_state(f"gwlink_snap_{sid}", json.dumps({"bundle": {"admin_ips": "10.8.1.3"}}))
+    services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(timeutil.now()))
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}
+    services.gateway_setup(phone.device_id, slot_id=sid)               # замена устройства
+    assert services.gwlink_snapshot(sid) == {}, "снимок прежнего устройства пережил замену"
+    assert not services.db.get_state(f"gwlink_caps_{sid}"), "возможности прежнего агента пережили замену"
+    # новое устройство получило файл первого применения: его адреса — в карантине
+    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, sid), "10.8.1.7")
+    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_ISSUED_KEY, sid),
+                          timeutil.to_iso(timeutil.now()))
+    assert services.gateway_trusted_ips() == {"10.8.1.7"}
+
+
+def test_a_file_issued_after_the_snapshot_keeps_its_addresses_in_quarantine(gw, services):
+    """Снимок есть, но файл первого применения выдан позже: в обвязке может
+    встать уже он — адреса и снимка, и файла не выдаются; снимок новее
+    файла — только он."""
+    import json
+    from datetime import timedelta
+    from awgbot.util import timeutil
+    _admin, _phone, pi = gw
+    services.gateway_setup(pi.device_id)
+    sid = services.active_gateway().id
+    now = timeutil.now()
+    services.db.set_state(f"gwlink_snap_{sid}", json.dumps({"bundle": {"admin_ips": "10.8.1.3"}}))
+    services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(now - timedelta(minutes=5)))
+    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, sid), "10.8.1.7")
+    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_ISSUED_KEY, sid), timeutil.to_iso(now))
+    assert services.gateway_trusted_ips() == {"10.8.1.3", "10.8.1.7"}
+    services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(now + timedelta(minutes=1)))
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}
+
+
+def test_forgetting_a_slot_clears_the_keys_of_the_removed_delivery(services):
+    """Подтверждение настроек и итог применения файла — доставки, снятой в
+    3.3.1: у слотов, заведённых раньше, ключи лежат, и снятие слота их чистит
+    вместе с остальным канальным состоянием."""
+    for key in ("gwlink_ack_2", "gwlink_applied_2"):
+        services.db.set_state(key, '{"ok": true}')
+    services.gwlink_forget(2)
+    assert not services.db.get_state("gwlink_ack_2") and not services.db.get_state("gwlink_applied_2")

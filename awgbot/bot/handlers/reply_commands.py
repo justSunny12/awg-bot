@@ -71,14 +71,9 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     kind, ref = callback_data.kind, callback_data.ref
     if kind == "gwcfg":
         # «📤 Конфигурация» на уведомлении выпусков до 3.3.1: файла перевыпуска
-        # больше нет — кнопка устаревшая, как любая снятая
-        from awgbot.bot.handlers.stale import STALE_BUTTON
-        await cb.answer(STALE_BUTTON)
-        parts = await screens.render("main", services=services, role=role, client=client,
-                                     chat_id=cb.message.chat.id)
-        if parts is not None:
-            await cleanup_content(cb.bot, services, cb.message.chat.id)
-            await send_menu(cb.message, services, *parts)
+        # больше нет — кнопка устаревшая (снимается со следующим сдвигом минимума)
+        from awgbot.bot.handlers.stale import answer_stale
+        await answer_stale(cb, services, role, client)
         return
     screen_kind = {"extend": "extend", "unassigned": "unassigned", "sub": "sub", "gw": "gw"}.get(kind, "main")
     if role != "admin" and screen_kind in ("extend", "unassigned", "gw"):

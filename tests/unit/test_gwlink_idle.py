@@ -106,8 +106,9 @@ class _Agent:
         monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
         monkeypatch.setattr(gwguard, "unit_admin_ips", lambda: list(self.admin_ips))
         monkeypatch.setattr(gwguard, "lan_mode", lambda: self.env.get("LAN_MODE") == "1")
-        monkeypatch.setattr(gwguard, "script_status",
-                            lambda: {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
+        # пометка — решение скрипта обвязки в файле статуса (GW_STATUS)
+        self.status = {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222", "GW_STATUS": "confirmed"}
+        monkeypatch.setattr(gwguard, "script_status", lambda: dict(self.status))
         monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: True)
         # апстрим — по статистике dnsmasq, без запроса наружу
         monkeypatch.setattr(gwguard, "upstream_stats", lambda: {"10.9.1.1#53": (10, 0)})
@@ -117,7 +118,6 @@ class _Agent:
         monkeypatch.setattr(gwguard, "lan_own_lists", lambda: (2, 1))
         monkeypatch.setattr(gwguard, "iface_for_subnet", lambda net: ("end0", "192.168.68.222"))
         monkeypatch.setattr(gwguard, "reassert", lambda: (True, ""))
-        svc.db.set_state(svc._GW_MARK_KEY, "confirmed")
 
     # ── то, что снимает тик ──────────────────────────────────────────────────
 
@@ -407,7 +407,7 @@ async def test_an_unmarked_gateway_sends_its_claim_token_over_the_channel(
     сообщение незачем. Токен подписан ключом claim (не ключом канала) и
     проверяется на ВПС тем же кодом, что пересланный руками."""
     from awgbot.util import gwsign
-    agent.svc.db.set_state(agent.svc._GW_MARK_KEY, "unmarked")
+    agent.status["GW_STATUS"] = "unmarked"
     _uplink(monkeypatch)
     agent.tick()
     await client.push(full=True)
@@ -435,7 +435,7 @@ async def test_a_gateway_that_is_already_marked_says_nothing(client, agent, monk
 async def test_without_an_uplink_key_there_is_nothing_to_claim(client, agent, monkeypatch):
     """Аплинк ещё не поднят (первая установка, ребут) — ключа нет, и выдумывать
     его нельзя: неподписываемый токен всё равно не примут."""
-    agent.svc.db.set_state(agent.svc._GW_MARK_KEY, "unmarked")
+    agent.status["GW_STATUS"] = "unmarked"
     _uplink(monkeypatch, pub="")
     agent.tick()
     await client.push(full=True)
@@ -450,7 +450,7 @@ async def test_a_changed_mark_takes_the_claim_with_the_delta(client, agent, monk
     _uplink(monkeypatch)
     agent.tick()
     await client.push(full=True)
-    agent.svc.db.set_state(agent.svc._GW_MARK_KEY, "unconfirmed")
+    agent.status["GW_STATUS"] = "unconfirmed"
     agent.tick()
     assert await client.push() is True
 
