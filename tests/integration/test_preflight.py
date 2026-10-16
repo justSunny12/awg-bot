@@ -190,7 +190,7 @@ def test_plumbing_still_starting_is_not_reported_as_missing(monkeypatch):
 def test_failed_plumbing_unit_is_named_as_the_reason(monkeypatch):
     warns = _gw_warns(monkeypatch, {"ActiveState": "failed", "UnitFileState": "enabled",
                                     "Result": "exit-code"})
-    assert warns and "awg-link-gw не отработал" in warns[0] and "journalctl" in warns[0]
+    assert warns and "скрипт обвязки (awg-link-gw) не отработал" in warns[0] and "journalctl" in warns[0]
 
 
 def test_stopped_plumbing_unit_is_told_apart_from_old_style(monkeypatch):

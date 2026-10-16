@@ -211,7 +211,7 @@ def unit_set_env(values: dict[str, str]) -> str:
             # EnvironmentFile или ExecStart, туда, где его и ставит скрипт
             anchor = re.search(r"^(EnvironmentFile=|ExecStart=)", new, re.M)
             if anchor is None:
-                raise pkg.GwGuardError("юнит обвязки без ExecStart — не трогаю")
+                raise pkg.GwGuardError("скрипт обвязки без ExecStart — не трогаю")
             new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
     if new != text:
         tmp = path.with_suffix(".tmp")

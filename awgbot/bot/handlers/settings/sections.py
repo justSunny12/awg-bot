@@ -178,11 +178,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
                 await cb.bot.delete_message(cb.message.chat.id, cb.message.message_id)
             except Exception:                              # noqa: BLE001
                 pass
-        await cb.answer()
         try:
             st = await call(services.gateway_screen_state, slot) if slot else None
         except ServiceError:
             st = None
+        if st is None and slot and callback_data.key == "bundle_cancel":
+            # «🛰 Карточка шлюза» под файлом снятого шлюза: сказать, а не молча на главную
+            await cb.answer(texts.GATEWAY_GONE, show_alert=True)
+        else:
+            await cb.answer()
         if st is None or callback_data.key == "bundle_home":
             await show_main_menu(cb.message, services, "admin")
             return

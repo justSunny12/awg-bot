@@ -45,7 +45,8 @@ def _routing(services, mp, *, enabled: bool = True, awake: bool = True) -> None:
     services._run_link_script = lambda mode, env=None: None
     services.gw_bundle_encrypted = lambda slot=None: (b"DUMMY-ENC", "awg-gw-bundle.enc")
     services.gw_bundle_plain = lambda slot=None: (b"DUMMY-PLAIN", "awg-gw-bundle.sh")
-    services.routing_update_lists = lambda force=False: 12345
+    import time as _time
+    services.routing_update_lists = lambda force=False: (services.db.set_state(services._RT_LISTS_KEY, str(int(_time.time()))), 12345)[1]
     services.routing_provision = lambda: "dnsmasq: ok\nlink: awglink up"
     tokens: dict[int, str] = {}
     services.gw_bot_token = lambda slot=None: tokens.get(int(slot or 1), "")

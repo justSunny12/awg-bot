@@ -97,7 +97,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
                      f"шлюз ставится файлом конфигурации с сервера AWG (routing-link-setup.sh --bundle)")
     if _unit_enabled(_c.GW_UNIT) != "enabled":
-        warns.append(f"юнит {_c.GW_UNIT} не включён — после ребута обвязка "
+        warns.append(f"автозапуск обвязки ({_c.GW_UNIT}) выключен — после перезагрузки обвязка "
                      f"шлюза не восстановится")
     # Спрашиваем gwguard, а не конфиг: подсеть клиентов приезжает в бандле и
     # закрепляется в юните обвязки, а в conf агента её сознательно не просят.
@@ -122,10 +122,10 @@ def collect_warnings_gateway(services=None) -> list[str]:
             if active in ("activating", "reloading", "deactivating"):
                 pass
             elif active == "failed" or st.get("Result", "success") not in ("success", ""):
-                warns.append("юнит обвязки awg-link-gw не отработал, таблицы awg_gw_guard нет: "
+                warns.append("скрипт обвязки (awg-link-gw) не отработал, таблицы awg_gw_guard нет: "
                              "шлюз открыт клиентам туннеля; смотри journalctl -u awg-link-gw -b")
             elif active == "inactive" or filestate in ("disabled", "masked"):
-                warns.append("обвязка не выставлена — юнит awg-link-gw не запущен, таблицы "
+                warns.append("обвязка не выставлена — автозапуск обвязки (awg-link-gw) не запущен, таблицы "
                              "awg_gw_guard нет: шлюз открыт клиентам туннеля; включи его "
                              "(systemctl enable --now awg-link-gw)")
             else:

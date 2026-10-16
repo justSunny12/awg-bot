@@ -175,7 +175,7 @@ async def send_gw_bundle(message: Message, services, slot: int = 0, instr_id: in
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
         caption=texts.gateway_bundle_caption(display, agent_bot),
-        reply_markup=kb.bundle_menu_kb(slot_id))
+        reply_markup=kb.bundle_menu_kb(slot_id, from_card=instr_id is not None))
     if slot_id:
         await call(services.gw_bundle_msg_set, slot_id, message.chat.id, sent.message_id, instr_id,
                    bundlecrypt.fingerprint(blob))

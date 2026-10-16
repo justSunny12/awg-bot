@@ -239,7 +239,7 @@ def routing_domain_removed(domain: str) -> str:
 
 
 def _lent_out_lines(lent_out) -> list[str]:
-    return [f"{_e(d.name)} — у профиля {holder_link(d)}, РФ-доступом на нём управляет он" for d in lent_out]
+    return [f"Устройство «{_e(d.name)}» — у профиля {holder_link(d)}, РФ-доступом на нём управляет он" for d in lent_out]
 
 
 def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
