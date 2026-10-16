@@ -132,10 +132,10 @@ def _unit(monkeypatch, tmp_path, body: str):
 
 
 def test_lan_router_params_do_not_carry_neighbours(svc, tmp_path, monkeypatch):
-    """Подсеть — первая из юнита, адрес — из статуса скрипта; PEER_HOME_NETS
+    """Подсеть — первая из юнита, адрес — из статуса скрипта; PEER_LAN_NETS
     в юните есть, но в рецепт не идёт."""
-    _unit(monkeypatch, tmp_path, 'Environment="HOME_SUBNETS=192.168.1.0/24 10.0.0.0/24"\n'
-                                 f'Environment="PEER_HOME_NETS={" ".join(PEERS)}"\n')
+    _unit(monkeypatch, tmp_path, 'Environment="LAN_SUBNETS=192.168.1.0/24 10.0.0.0/24"\n'
+                                 f'Environment="PEER_LAN_NETS={" ".join(PEERS)}"\n')
     monkeypatch.setattr(gwguard, "script_status", lambda: {"LAN_ADDR": GW})
     assert svc.lan_router_params() == (NET, GW)
 
@@ -151,8 +151,8 @@ def test_lan_router_params_without_the_unit(svc, monkeypatch):
 async def test_the_agent_recipe_has_no_neighbour_lines(svc, fake_bot, tmp_path, monkeypatch, tab):
     from awgbot.bot.handlers import gateway as gh
     from awgbot.core import config
-    _unit(monkeypatch, tmp_path, 'Environment="HOME_SUBNETS=192.168.1.0/24"\n'
-                                 f'Environment="PEER_HOME_NETS={" ".join(PEERS)}"\n')
+    _unit(monkeypatch, tmp_path, 'Environment="LAN_SUBNETS=192.168.1.0/24"\n'
+                                 f'Environment="PEER_LAN_NETS={" ".join(PEERS)}"\n')
     monkeypatch.setattr(gwguard, "script_status", lambda: {"LAN_ADDR": GW})
     svc.set_link_role(True, standby=True, name="NASPi")
     msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)

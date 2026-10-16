@@ -1,15 +1,13 @@
 """Хендлеры агента шлюза: подтверждения и приём бандла."""
 from __future__ import annotations
 
-import asyncio
 import base64
-import hashlib
 import os
 
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.runtime import linkclient
+from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.domain.gateway import GatewayServices, GwStatus
@@ -92,7 +90,11 @@ async def test_foreign_document_is_refused_before_anything(svc):
     assert not msg.deleted, "чужой файл не наш секрет — сообщение админа не трогаем"
 
 
-async def test_our_bundle_waits_for_confirmation_then_applies(svc):
+async def test_a_reissue_file_from_the_chat_history_is_refused_in_words(svc):
+    """Шифрованный файл перевыпуска выпусков до 3.3.1, пересланный из
+    истории чата: не применяется, в памяти диалога не остаётся, из чата
+    убирается (внутри ключ линка), ответ — что делать вместо: «🚑
+    Восстановить» или канал конфигурации."""
     priv = base64.b64encode(os.urandom(32)).decode()
     blob = bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", priv)
     bot = _DlBot(blob)
@@ -101,39 +103,28 @@ async def test_our_bundle_waits_for_confirmation_then_applies(svc):
     state = FakeState()
     svc.db.nav_touch(cfg.ADMIN_ID, 777)                      # прежняя панель
     await gh.gw_bundle_document(msg, svc, state)
-    assert svc.applied == [], "применили без подтверждения"
-    assert msg.sent[-1][2] is not None, "нет кнопок подтверждения"
-    # внутри ключ линка, токен агента, фраза шифрования копий и пароль почты
-    assert msg.deleted, "пересланная конфигурация осталась в чате"
-    # прежняя панель удалена целиком: без кнопок над итогом применения она —
-    # мусор; вопрос «применить?» — теперь живое меню
-    assert ("delete_message", cfg.ADMIN_ID, 777) in bot.records, bot.records
-    assert svc.db.get_nav_message_id(cfg.ADMIN_ID) not in (None, 777)
-
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    assert svc.applied == [blob]
-    assert (await state.get_data()) == {}, "бандл остался в памяти после применения"
+    assert msg.deleted, "файл с ключом линка остался в чате"
+    assert msg.sent[-1][1] == texts.GW_REISSUE_FILE_REFUSED, msg.sent[-1]
+    assert msg.sent[-1][2] is None, "под отказом кнопки применения"
+    assert (await state.get_data()) == {}, "файл остался в памяти диалога"
+    assert ("delete_message", cfg.ADMIN_ID, 777) not in bot.records, "живое меню снято без замены"
 
 
-@pytest.mark.parametrize("carries, second", [
-    (True, "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся"),
-    (False, "Линк перезапустится; правила переставятся"),
-])
-async def test_the_bundle_question_warns_about_rf_access_only_on_the_carrying_gateway(svc, carries, second):
-    """Вопрос «применить?» перед сменой конфига линка: у шлюза, который несёт
-    трафик, — цена для всех клиентов; у резерва прерываться нечему, и
-    громкое «РФ-доступ у всех прервётся» только пугает."""
-    priv = base64.b64encode(os.urandom(32)).decode()
-    blob = bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", priv)
-    bot = _DlBot(blob)
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
-    msg.document = _Doc(len(blob))
-    _carrying(svc, carries)
-    await gh.gw_bundle_document(msg, svc, FakeState())
-    question = msg.sent[-1][1]
-    assert question.splitlines() == ["📦 <b>Конфигурация с сервера AWG</b>", second], question
-    assert svc.applied == []
+def test_old_apply_buttons_are_left_to_the_stale_handler():
+    """«📦 Применить», «⬅️ Оставить своё» / «✅ Принять» и «Отмена» под файлом
+    прежних выпусков — снятые действия: ни один роутер агента их не
+    разбирает, и до них доходит обработчик устаревших кнопок."""
+    from tests.e2e.test_settings_layout import _first_matching_handler
+    routers, todo = [], [gh.router]
+    while todo:
+        r = todo.pop(0)
+        if r not in routers:
+            routers.append(r)
+            todo.extend(r.sub_routers)
+    assert any(_first_matching_handler(r, GwCB(action="panel")) for r in routers), "сверка ничего не находит"
+    for action in ("apply!", "apply_ow!", "apply_keep!", "drop"):
+        hit = [(r.name, _first_matching_handler(r, GwCB(action=action))) for r in routers]
+        assert not [h for h in hit if h[1]], f"снятую кнопку {action} кто-то обрабатывает: {hit}"
 
 
 async def test_oversized_document_is_not_downloaded(svc):
@@ -537,187 +528,7 @@ async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(cha
     assert msgs[-1]["plumbing_gen"] == "new"
 
 
-async def test_an_applied_bundle_is_on_the_server_before_the_next_tick(chan):
-    """Бандл применён — итог и снимок с новым уходят сразу. Без итога файл
-    конфигурации так и висел бы в чате ВПС без ответа (а внутри ключ линка);
-    без дельты карточка слота минуты показывала бы «конфигурация расходится»
-    и звала перевыпускать то, что уже стоит."""
-    svc, sent = chan
-    bot = FakeBot()
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
-    state = FakeState()
-    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    assert svc.applied == [b"BUNDLE"]
-    msgs = sent()
-    assert [m["t"] for m in msgs] == ["snap", "applied", "delta"], f"после применения бандла на ВПС ушло {msgs}"
-    assert (msgs[1]["ok"], msgs[1]["error"]) == (True, ""), f"итог успеха пришёл с ошибкой: {msgs[1]}"
-    assert msgs[-1]["bundle"] == {"lan_mode": "1"}
-    assert msgs[1]["fp"] == hashlib.sha256(b"BUNDLE").hexdigest()[:16], "итог без отпечатка файла"
-    # подтверждения от сервера в этой сцене нет — итог ждёт в очереди: строка в
-    # буфере сессии, которую бандл тут же перезапустил, дошла бы не всегда
-    assert svc.applied_pending_get().get("ok") is True, "итог выбыл из очереди до подтверждения сервера"
-    await linkclient._client._dispatch({"t": "applied_ack", "fp": msgs[1]["fp"], "at": msgs[1]["at"]})
-    assert svc.applied_pending_get() == {}, "подтверждённый итог остался в очереди — уйдёт второй раз"
-
-
-async def test_a_failed_bundle_sends_its_error_and_nothing_else(chan):
-    """Не применилось — на ВПС уходит итог с причиной, чтобы человек у файла
-    узнал об отказе, не открывая чат агента. Снимка сверх этого нет: сообщать
-    о состоянии нечего сверх того, что скажет тик."""
-    svc, sent = chan
-    svc.apply_bundle = lambda blob, overwrite_passphrase=False: (False, "скрипт упал")
-    bot = FakeBot()
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
-    state = FakeState()
-    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
-    svc.snap["egress_ok"] = False                    # что-то сменилось само, до тика
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    msgs = sent()
-    assert [m["t"] for m in msgs] == ["snap", "applied"], f"после отказа на ВПС ушло {msgs}"
-    assert (msgs[1]["ok"], msgs[1]["error"]) == (False, "скрипт упал"), msgs[1]
-    # подтверждение о другом файле или другом времени очередь не трогает
-    await linkclient._client._dispatch({"t": "applied_ack", "fp": "0" * 16, "at": msgs[1]["at"]})
-    assert svc.applied_pending_get().get("error") == "скрипт упал", "чужое подтверждение опустошило очередь"
-    await linkclient._client._dispatch({"t": "applied_ack", "fp": msgs[1]["fp"], "at": msgs[1]["at"]})
-    assert svc.applied_pending_get() == {}, "подтверждённый итог остался в очереди"
-
-
-async def test_an_apply_without_a_channel_keeps_the_result_for_the_next_session(tmp_path, monkeypatch):
-    """Канала нет (линк ещё не поднят или LINK_CHANNEL выключен): итог не
-    теряется, а ждёт в state — уйдёт первым делом при подключении. Причина
-    отказа — одной строкой: многострочный хвост скрипта иначе ломал бы
-    строку итога в чате ВПС."""
-    from awgbot.runtime import linkclient
-    monkeypatch.setattr(linkclient, "_client", None)
-    d = Database(tmp_path / "gw.db"); d.init_schema()
-    svc = _ChanSvc(d)
-    svc.apply_bundle = lambda blob, overwrite_passphrase=False: (False, "скрипт\n   упал:\tнет  места")
-    bot = FakeBot()
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
-    state = FakeState()
-    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    pending = svc.applied_pending_get()
-    assert (pending.get("ok"), pending.get("error")) == (False, "скрипт упал: нет места"), pending
-    # следующее применение, уже удачное, заменяет итог, а не копит второй
-    svc.apply_bundle = lambda blob, overwrite_passphrase=False: (True, "Готово")
-    monkeypatch.setattr(linkclient, "poke", lambda services: asyncio.sleep(0))
-    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    pending = svc.applied_pending_get()
-    assert (pending.get("ok"), pending.get("error")) == (True, ""), f"в очереди остался прежний отказ: {pending}"
-
-
-def test_a_broken_pending_record_reads_as_nothing(svc):
-    """Запись очереди испорчена (обрыв записи на SD) — читается как «итога
-    нет», а не роняет подключение канала на каждом заходе."""
-    for raw in ("{", "[1, 2]", '{"error": "x"}', ""):
-        svc.db.set_state(svc._APPLIED_PENDING_KEY, raw)
-        assert svc.applied_pending_get() == {}, raw
-    svc.applied_pending_set(True, "")
-    svc.applied_pending_clear()
-    assert svc.applied_pending_get() == {}
-
-
-def test_a_pending_result_older_than_a_day_is_not_sent(svc):
-    """Канала не было больше суток — итог в очереди считается пустым: у файла
-    на сервере столько никто не ждёт, а поздний «применено» пришёл бы к
-    давно выданному заново файлу. Итог моложе суток — живой."""
-    import datetime
-    import json
-    from awgbot.util import timeutil
-    svc.applied_pending_set(False, "скрипт упал", "a" * 16)
-
-    def aged(hours):
-        data = json.loads(svc.db.get_state(svc._APPLIED_PENDING_KEY))
-        data["at"] = timeutil.to_iso(timeutil.now() - datetime.timedelta(hours=hours))
-        svc.db.set_state(svc._APPLIED_PENDING_KEY, json.dumps(data))
-    aged(23)
-    got = svc.applied_pending_get()
-    assert (got.get("ok"), got.get("fp")) == (False, "a" * 16), f"итог моложе суток потерян: {got}"
-    aged(25)
-    assert svc.applied_pending_get() == {}, "просроченный итог уйдёт на сервер"
-
-
 # ── заявка на назначение шлюза после применения: канал или пересылка ─────────
-
-class _ClaimSvc(_Svc):
-    """Бандл применился, а шлюз в основном боте не назначен: есть токен заявки."""
-
-    def inspect_bundle(self, blob):
-        return {"ok": True}
-
-    def gateway_apply_report(self):
-        return ""
-
-    def lan_lists_needed(self):
-        return False
-
-    def gateway_mark_outcome(self):
-        return {"claim": "AWGGW-DUMMY-TOKEN", "status": "unmarked"}
-
-
-async def _apply_with_claim(tmp_path, monkeypatch, online):
-    """Применить бандл при заданном поведении канала; вернуть (ответы в чат,
-    сколько секунд агент ждал канал)."""
-    from awgbot.runtime import linkclient
-    d = Database(tmp_path / "gw.db"); d.init_schema()
-    svc = _ClaimSvc(d)
-    waited = []
-    real_sleep = asyncio.sleep
-
-    async def fake_sleep(sec, *a, **k):
-        waited.append(sec)
-        await real_sleep(0)
-
-    async def no_poke(services):
-        return None
-
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(linkclient, "poke", no_poke)
-    monkeypatch.setattr(linkclient, "online", online)
-    bot = FakeBot()
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    state = FakeState()
-    await state.update_data(bundle=base64.b64encode(b"bundle").decode())
-    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
-    answers = [s[1] for s in msg.sent if s[0] == "answer"]
-    return answers, sum(waited)
-
-
-async def test_a_claim_goes_through_the_channel_when_it_comes_up_in_time(tmp_path, monkeypatch):
-    """Бандл только что поднял канал; клиент канала подключается не мгновенно.
-    Агент ждёт до трёх секунд и, дождавшись, говорит «отправлено по каналу» —
-    без токена в чате: пересылать нечего, а токен в истории — лишний след."""
-    calls = {"n": 0}
-
-    def online():
-        calls["n"] += 1
-        return calls["n"] > 2                          # поднялся на третьей проверке
-
-    answers, waited = await _apply_with_claim(tmp_path, monkeypatch, online)
-    claim = [a for a in answers if "не назначен" in a]
-    assert len(claim) == 1, answers
-    assert "ушёл по каналу конфигурации" in claim[0], claim[0]
-    assert "AWGGW-DUMMY-TOKEN" not in claim[0] and "Перешли" not in claim[0], "токен в чате при живом канале"
-    assert waited <= 3.0, f"ждали канал {waited} с — дольше обещанных трёх"
-
-
-async def test_a_claim_falls_back_to_forwarding_when_the_channel_stays_down(tmp_path, monkeypatch):
-    """Канал так и не поднялся за три секунды — единственный путь заявки —
-    переслать сообщение основному боту; без токена человеку нечего пересылать."""
-    answers, waited = await _apply_with_claim(tmp_path, monkeypatch, lambda: False)
-    claim = [a for a in answers if "не назначен" in a]
-    assert len(claim) == 1, answers
-    assert "Перешли это сообщение боту сервера AWG" in claim[0] and "AWGGW-DUMMY-TOKEN" in claim[0], claim[0]
-    assert "по управляющему каналу:" not in claim[0]
-    assert 2.5 <= waited <= 3.0, f"канал ждали {waited} с вместо трёх"
-
 
 @pytest.mark.parametrize("carries, tail", [(True, " — РФ-доступ у всех прервётся на секунды"), (False, "")])
 async def test_a_gateway_backup_that_touches_the_link_warns_about_rf_access_only_when_carrying(

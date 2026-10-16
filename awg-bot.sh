@@ -81,7 +81,7 @@
 #   restore [<tgz>]        восстановить состояние из снимка (по умолчанию — свежий).
 #                          До остановки сервиса — отказ, если копия чужой роли
 #                          (метка backup-meta.json) или схема её базы ниже
-#                          минимума 3.2.0 (python -m tools.check_backup).
+#                          минимума 3.3.0 (python -m tools.check_backup).
 #                          Перед подменой — снимок текущего тем же сборщиком (не
 #                          снялся — отказ). База ложится через временный файл и
 #                          mv: не легла — восстановление прерывается без маркера
@@ -298,8 +298,9 @@ venv_switch() {  # venv_switch DIR — ссылка venv на DIR; прежня�
     if [[ -L "$link" ]]; then
         prev="$(readlink -f "$link")"
     elif [[ -d "$link" ]]; then
-        # установка до 3.3.0: venv — каталог. Отодвигается как есть: интерпретатор
-        # и пакеты работают и с нового места, откат вернёт его обратно
+        # venv — каталог (ручная установка, README §12, или установка до 3.3.0).
+        # Отодвигается как есть: интерпретатор и пакеты работают и с нового
+        # места, откат вернёт его обратно
         prev="$INSTALL_DIR/.venvs/legacy"; rm -rf "$prev"; mv "$link" "$prev"
     fi
     printf '%s\n' "$prev" > "$INSTALL_DIR/.venvs/.prev"
@@ -1339,13 +1340,13 @@ cmd_restore() {
         bk_at="$(grep -o '"created_at": *"[^"]*"' "$meta" | sed 's/.*"\([^"]*\)"$/\1/')"
         [[ -z "$bk_role" || "$bk_role" == "$my_role" ]] || { rm -rf "$tmp"; die "это копия роли «$bk_role», а здесь «$my_role» — не разворачиваю"; }
     fi
-    # Схема базы в копии не ниже минимума 3.2.0: миграций старше в коде нет,
+    # Схема базы в копии не ниже минимума 3.3.0: миграций старше в коде нет,
     # такую базу нечем довести — бот упал бы на первом запросе
     local dbf
     for dbf in "$src"/*.db; do
         [[ -f "$dbf" ]] || continue
         ( cd "$INSTALL_DIR" && ./venv/bin/python -m tools.check_backup "$dbf" ) \
-            || { rm -rf "$tmp"; die "копия снята версией ниже 3.2.0 — восстанови её на хосте с 3.2.0, потом обновись"; }
+            || { rm -rf "$tmp"; die "копия снята версией ниже 3.3.0 — восстанови её на хосте с 3.3.0, потом обновись"; }
     done
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
@@ -1465,6 +1466,13 @@ cmd_restore() {
     # conf-dir и перечитываем демон; ещё нет — откладываем в /var/lib/awg-gw/restore,
     # скрипт обвязки подхватит их при первом включении режима.
     if compgen -G "$tmp/awg-gw/lan/*-user.conf" >/dev/null && lan_lists_sane "$tmp"/awg-gw/lan/*-user.conf; then
+        # копия шлюза 3.3.0 и раньше — наборы под прежним именем таблицы:
+        # на новое, как скрипт обвязки при переходе (снимается со следующим
+        # сдвигом минимума)
+        _uf=""
+        for _uf in "$tmp"/awg-gw/lan/*-user.conf; do
+            sed 's|inet#awg_home#|inet#awg_lan#|g' "$_uf" > "$_uf.new" && mv -f "$_uf.new" "$_uf"
+        done
         if [[ -f /etc/dnsmasq.d/awg-gw-base.conf ]]; then
             cp -a "$tmp"/awg-gw/lan/*-user.conf /etc/dnsmasq.d/ && chmod 644 /etc/dnsmasq.d/awg-gw-*-user.conf
             systemctl restart dnsmasq >/dev/null 2>&1 \
@@ -1490,8 +1498,10 @@ cmd_restore() {
 lan_lists_sane() {  # lan_lists_sane FILE… → 0, если в файлах только строки личных списков
     # Файлы уходят в conf-dir dnsmasq, а там строка conf-file=/dhcp-script= —
     # исполнение от root. В личном списке допустимы только nftset= наших
-    # наборов (как пишет awg-lan-domain sync) и комментарии.
-    local f re='^(#.*|nftset=/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})/(4#)?inet#awg_home#lan_(vpn|ru)4)?$'
+    # наборов (как пишет awg-lan-domain sync) и комментарии; таблица —
+    # awg_lan или прежняя awg_home (копия шлюза 3.3.0 и раньше — снимается со
+    # следующим сдвигом минимума).
+    local f re='^(#.*|nftset=/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})/(4#)?inet#awg_(lan|home)#lan_(vpn|ru)4)?$'
     for f in "$@"; do
         if grep -Ev "$re" "$f" | grep -q .; then
             warn "$(basename "$f"): в копии строка не вида nftset=/домен/… — личные списки не восстановлены"

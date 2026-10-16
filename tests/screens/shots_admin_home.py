@@ -18,15 +18,6 @@ def _claim(services, mp):
     return who
 
 
-def _claim_cfg1(services, mp):
-    """Пересланное сообщение агента с документом: назначено, файла нет."""
-    who = _slots(1)(services, mp)
-    dev = services.db.get_device(NASPI)
-    gw = services.db.gateways()[0]
-    services.gateway_claim = lambda text: {"status": "marked", "device": dev, "gateway": gw, "cfg1": True}
-    return who
-
-
 def _claim_already(services, mp):
     who = _slots(1)(services, mp)
     dev = services.db.get_device(NASPI)
@@ -90,7 +81,7 @@ LINKS = [
     Shot("adm.link.gw", role="admin", start="gw-1", data=_slots(2), title="карточка слота с главной"),
     Shot("adm.link.gw.missing", role="admin", start="gw-9", data=_slots(1), title="слота нет"),
     Shot("adm.link.gwcfg", role="admin", start="gwcfg-1", data=_slots(1),
-         title="«Перевыпусти» из уведомления — файл сразу"),
+         title="«Перевыпусти» из уведомления до 3.3.1 — устаревшая ссылка, главная"),
     Shot("adm.link.migration", role="admin", start="migration", data=_mig_running, title="/start migration"),
     Shot("adm.link.migration_cl", role="admin", start=f"migration-{KS}", data=_mig_running,
          title="переезд профиля"),
@@ -100,17 +91,14 @@ LINKS = [
 
 OUTSIDE = [
     # ── 1.7 вне меню ────────────────────────────────────────────────────────
-    Shot("adm.claim", role="admin", text=CLAIM, data=_claim, title="пересланное сообщение агента"),
-    Shot("adm.claim.cfg1", role="admin", text=CLAIM, data=_claim_cfg1,
-         title="пересланное сообщение агента с документом — без файла, конфигурацию везёт канал"),
+    Shot("adm.claim", role="admin", text=CLAIM, data=_claim,
+         title="пересланное сообщение агента — назначено, конфигурацию везёт канал, файла нет"),
     Shot("adm.claim.already", role="admin", text=CLAIM, data=_claim_already, title="этот шлюз уже назначен"),
     Shot("adm.claim.bad", role="admin", text=CLAIM, data=_claim_bad, title="подпись не сошлась"),
     Shot("adm.note.extend", role="admin", press=[NoteCB(kind="extend", ref=BR)], data=_people,
          title="«Продлить» на уведомлении об истечении"),
     Shot("adm.note.unassigned", role="admin", press=[NoteCB(kind="unassigned")], data=_people,
          title="кнопка уведомления о пире без профиля"),
-    Shot("adm.note.gwcfg", role="admin", press=[NoteCB(kind="gwcfg", ref=1)], data=_slots(1),
-         title="«Перевыпустить» на напоминании о конфигурации шлюза"),
 ]
 
 

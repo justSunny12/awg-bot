@@ -13,7 +13,7 @@ restore_backup.py на другом хосте снимает шифровани
 Здесь же сборка копии (состав по роли) и разбор присланной в чат
 (inspect_backup): не принимается открытая копия на шлюзе, не расшифрованная,
 не копия awg-bot или без метки, копия чужой роли и копия со схемой базы ниже
-минимума 3.2.0 (schema_gap — та же проверка, что tools/check_backup.py в
+минимума 3.3.0 (schema_gap — та же проверка, что tools/check_backup.py в
 `awg-bot restore`).
 """
 from __future__ import annotations
@@ -266,10 +266,10 @@ class BackupCryptoMixin:
         if gap:
             # миграций ниже минимума в коде нет: такую базу нечем довести;
             # подробность схемы (gap) — в журнал, не человеку
-            log.info("бэкап отвергнут: схема ниже 3.2.0 (%s)", gap)
+            log.info("бэкап отвергнут: схема ниже 3.3.0 (%s)", gap)
             where = "на шлюзе" if self.backup_role() == "gw" else "на сервере"
-            return {"ok": False, "error": f"бэкап снят версией до v3.2.0 — восстанови его {where} "
-                                          "с v3.2.0, затем обнови бота"}
+            return {"ok": False, "error": f"бэкап снят версией до v3.3.0 — восстанови его {where} "
+                                          "с v3.3.0, затем обнови бота"}
         return {"ok": True, "role": role, "created_at": created, "plain": plain,
                 "ifaces_changed": self._ifaces_changed(plain)}
 

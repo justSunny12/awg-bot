@@ -66,8 +66,8 @@ class _Unit:
             "UNIT": str(self.path), "SELF": "/usr/local/sbin/routing-gw-setup.sh",
             "CLIENT_SUBNET": "10.8.1.0/24", "LINK_IF": "awglink", "ADMIN_IPS": "10.8.1.2",
             "GATEWAY_PUBKEY": PUB, "GATEWAY_PREV_PUBKEY": "", "UPLINK_B64": UPLINK_B64,
-            "UPLINK_IF": "awg0", "LAN_MODE": "0", "HOME_SUBNETS": "", "RESOLVER": "",
-            "PEER_HOME_NETS": "", "LINK_CHANNEL": "1", "LINK_CHANNEL_PORT": "8787",
+            "UPLINK_IF": "awg0", "LAN_MODE": "0", "LAN_SUBNETS": "", "RESOLVER": "",
+            "PEER_LAN_NETS": "", "LINK_CHANNEL": "1", "LINK_CHANNEL_PORT": "8787",
             "FW_ENV": "/etc/awg-gw/firewall.env", "HOST_CONF_DIR": "/etc/amnezia/amneziawg",
         }
 

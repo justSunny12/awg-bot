@@ -1,4 +1,4 @@
-"""inbound.py — разбор входящих: снимок и дельты, ответы на доставки, свои списки, сервисы, installed, claim, итог файла;
+"""inbound.py — разбор входящих: снимок и дельты, ответы на доставки, свои списки, сервисы, installed, claim;
 пересчёт цели обновления по версиям агентов."""
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class InboundMixin:
                                          rev, kind == "snap")
             if ok:
                 if kind == "snap" or "cfg" in msg:
-                    # отпечатки стоящего изменились (в том числе старым файлом, применённым
+                    # отпечатки стоящего изменились (в том числе файлом, применённым
                     # руками): документ с тем же отпечатком можно слать снова
                     sess.cfg_sent = ""
                 # снимок показал, что стоит на шлюзе, — самое время доставить
@@ -114,34 +114,11 @@ class InboundMixin:
                 # уйдёт снова по следующему расхождению снимка
                 sess.cfg_sent = ""
             if "env" in ack.get("applied", []):
-                # режим без VPN мог включиться документом: фиды и записи соседей —
-                # заново, как после ack с LAN_MODE
+                # режим без VPN мог включиться документом: фиды, отправленные при
+                # hello, шлюз отверг («режим выключен») — теперь есть кому принять
                 sess.lists_sent = ""
                 await self.deliver_lists(gw.id)
                 await self.deliver_peer_services(gw.id)
-                sess.own_sent = None
-                await self.deliver_own(gw.id)
-            return
-        if kind == "ack":
-            # отпечаток набора, на который это ответ, — свой (первый из ушедших в
-            # сессии и ещё не отвеченных: агент отвечает по одному на каждый, по
-            # порядку), не из сообщения: по нему отказ на текущее отличается от
-            # отказа на прежнее. Временный отказ (retry) — не отказ: без отпечатка
-            answered = sess.sent_queue.pop(0) if sess.sent_queue else sess.sent_hash
-            retry = bool(not msg.get("ok") and msg.get("retry"))
-            await asyncio.to_thread(self.services.gwlink_ack_in, gw.id,
-                                    {**msg, "hash": "" if retry else answered})
-            if retry and answered == sess.sent_hash:
-                # временный отказ агента (юнит обвязки ещё работал): тот же
-                # набор можно слать снова — по расхождению снимка, как обычно
-                sess.sent_hash = ""
-            if msg.get("ok") and "LAN_MODE" in (msg.get("changed") or []):
-                # Режим без VPN только что включился каналом: фиды, отправленные
-                # при hello, шлюз отверг («режим выключен»), а повторно за сессию
-                # они не уходят. Теперь есть кому их принять — шлём заново, иначе
-                # локальная сеть ждала бы своих фидов до следующего скачивания агента.
-                sess.lists_sent = ""
-                await self.deliver_lists(gw.id)
                 sess.own_sent = None
                 await self.deliver_own(gw.id)
             return
@@ -200,20 +177,5 @@ class InboundMixin:
                     await pkg._on_installed(gw.id)
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: уведомление о настройке слота %s не показано: %s", gw.id, e)
-            return
-        if kind == "applied":
-            # шлюз применил файл конфигурации из своего чата (или не смог) —
-            # сразу, не дожидаясь снимка: человек ждёт итог у файла на сервере
-            res = await asyncio.to_thread(self.services.gwlink_applied_in, gw.id, msg)
-            # подтверждение — первым: агент держит итог в очереди до него, и
-            # повтор того же итога (сессия умерла с буфером) сервер узнаёт сам
-            await self.send(gw.id, "applied_ack", {"fp": str(res.get("fp") or ""),
-                                                   "at": str(res.get("at") or "")})
-            if pkg._on_applied is not None and not res.get("dup"):
-                try:
-                    await pkg._on_applied(gw.id, bool(res.get("ok")), str(res.get("error") or ""),
-                                      str(res.get("fp") or ""))
-                except Exception as e:                    # noqa: BLE001
-                    log.warning("канал линка: итог применения слота %s не показан: %s", gw.id, e)
             return
         log.info("канал линка: слот %s прислал неизвестное %s — игнорирую", gw.id, repr(str(kind)[:32]))

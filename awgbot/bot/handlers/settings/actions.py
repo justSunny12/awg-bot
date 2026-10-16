@@ -17,7 +17,7 @@ from awgbot.bot.handlers.common import call, edit, send_menu
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _firewall_action, _migration_prepare, _routing_provision
-from .render import _record, _shared, send_gw_bundle
+from .render import _record, _shared
 
 # ── действия (бэкап сейчас, рестарты, проверка обновлений) ────────────────────
 # ── переезд профилей (docs/ROADMAP.md, п.3) ──────────────────────────────────
@@ -96,12 +96,6 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Завершаю…")
         removed, dropped, failed = await call(services.migration_finish)
         await _record(cb, texts.migration_finished(removed, dropped, failed), services)
-        if not failed:
-            # шлюзы получили двойников с новыми ключами — файлы сразу, по слоту;
-            # агентам с документом (cfg1) подсеть и AllowedIPs доедут каналом
-            for g in await call(services.db.gateways):
-                if "cfg1" not in await call(services.gwlink_agent_caps, g.id):
-                    await send_gw_bundle(cb.message, services, g.id)
         # Смена поколения могла ждать финала этого переезда (установщик её не
         # начинал, чтобы не подменить цель). Теперь очередь дошла.
         if not failed:

@@ -33,7 +33,7 @@ class RekeyMixin:
         ещё не уходил: сессия упала между asked и ready — шлюз узнает тот же id и
         второй раз не спросит."""
         sess = self._sessions.get(slot_id)
-        if sess is None or not sess.hello or "confirm1" not in sess.caps:
+        if sess is None or not sess.hello:
             return False
         # отзыв, ждавший сессии (сервер вернул прежние, а шлюз мог остаться в «согласии»)
         rid = await asyncio.to_thread(self.services.gateway_rekey_cancel_peek, slot_id)

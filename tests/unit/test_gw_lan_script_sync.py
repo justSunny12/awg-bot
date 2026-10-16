@@ -34,17 +34,17 @@ def test_sync_writes_both_lists_one_domain_per_line_in_order(own_env, tmp_path):
     assert r.stdout.rstrip().endswith("свои списки: 2 в туннель, 2 напрямую"), r.stdout
     assert "адрес" not in r.stdout and "→" not in r.stdout, f"sync печатает адреса: {r.stdout}"
     nft = _nft(log)
-    assert not any("add element inet awg_home lan_vpn4" in ln for ln in nft), \
+    assert not any("add element inet awg_lan lan_vpn4" in ln for ln in nft), \
         f"sync сам резолвит новые «в туннель» — это работа fill: {nft}"
     # слепок sync снимает (после своих удалений), но адресов новых «в туннель»
     # в нём ещё нет — они появятся в наборе и слепке только после fill
-    assert "nft list set inet awg_home lan_vpn4" in nft, "sync не переписал слепок"
+    assert "nft list set inet awg_lan lan_vpn4" in nft, "sync не переписал слепок"
     assert "10.4.4.4" not in (dump / "lan_vpn4.nft").read_text(), "адрес нового домена в слепке до fill"
     assert _fill_run(tool, env, tmp_path, "alpha.com\nzeta.com\n").returncode == 0
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.5.5.5"}, "fill не наполнил набор"
     snap = (dump / "lan_vpn4.nft").read_text()
     assert "10.4.4.4" in snap and "10.5.5.5" in snap, f"fill не обновил слепок: {snap}"
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1,10.2.2.2 }" in nft, "«напрямую» наполняется в sync"
+    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1,10.2.2.2 }" in nft, "«напрямую» наполняется в sync"
     assert _log(log).count("systemctl restart dnsmasq") == 1
 
 
@@ -54,7 +54,7 @@ def test_sync_of_the_same_lists_in_another_order_does_not_restart(own_env, tmp_p
     составу: иначе первая же чужая правка роняла бы кэш DNS всей локальной сети ради
     порядка строк."""
     tool, dns_d, dump, log, env = own_env
-    (dns_d / VPN_USER).write_text("nftset=/zeta.com/alpha.com/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / VPN_USER).write_text("nftset=/zeta.com/alpha.com/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n" + _ru_line("bank.ru") + "\n", encoding="utf-8")
     before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER)}
     r = _sync(tool, env, tmp_path, "ru bank.ru\nvpn alpha.com\nru shop.ru\nvpn zeta.com\nvpn alpha.com\n")
@@ -70,7 +70,7 @@ def test_sync_refuses_the_whole_file_for_one_foreign_line(own_env, tmp_path):
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
     before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER)}
-    for bad in ("add alpha.com", "vpn alpha.com extra", "vpn Alpha.com", "nftset=/evil.com/inet#awg_home#lan_ru4",
+    for bad in ("add alpha.com", "vpn alpha.com extra", "vpn Alpha.com", "nftset=/evil.com/inet#awg_lan#lan_ru4",
                 "vpn -x.com", "ru a..b.com", " vpn alpha.com", "vpn alpha.com ", "del news.org"):
         r = _sync(tool, env, tmp_path, f"vpn alpha.com\n{bad}\nru bank.ru\n")
         assert r.returncode == 2, f"{bad!r}: rc={r.returncode} {r.stdout}{r.stderr}"
@@ -125,11 +125,11 @@ def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
     assert not any("news.org" in ln or "shop.ru" in ln for ln in lines), f"неизменное названо изменением: {lines}"
     assert lines[-1] == "свои списки: 2 в туннель, 1 напрямую"
     nft = _nft(log)
-    assert "nft delete element inet awg_home lan_vpn4 { 198.51.100.34 }" in nft
-    assert "nft flush set inet awg_home lan_ru4" in nft
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
-    assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft, "переехавший остался напрямую"
-    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" not in nft, "переехавшего в туннель резолвит sync, а не fill"
+    assert "nft delete element inet awg_lan lan_vpn4 { 198.51.100.34 }" in nft
+    assert "nft flush set inet awg_lan lan_ru4" in nft
+    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }" in nft
+    assert "nft add element inet awg_lan lan_ru4 { 10.2.2.2 }" not in nft, "переехавший остался напрямую"
+    assert "nft add element inet awg_lan lan_vpn4 { 10.2.2.2 }" not in nft, "переехавшего в туннель резолвит sync, а не fill"
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}, "адреса ушедшего не сняты синхронно"
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}
     # переехавший в туннель — через fill, как его позовёт агент

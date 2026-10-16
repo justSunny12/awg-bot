@@ -85,20 +85,24 @@ def _installed(services) -> dict:
     """Что стоит на шлюзе, когда всё доехало: ровно те значения, из которых ВПС
     собирает бандл."""
     addrs = " ".join(sorted(set(services.db.admin_device_addresses(ADMIN))))
-    return {"lan_mode": "1", "home_subnets": "192.168.68.0/24", "resolver": "10.9.1.1",
-            "peer_home_nets": "", "admin_ips": addrs}
+    return {"lan_mode": "1", "lan_subnets": "192.168.68.0/24", "resolver": "10.9.1.1",
+            "peer_lan_nets": "", "admin_ips": addrs}
 
 
-def _snap(services, *, bundle=None, online=True, **kw):
-    """Положить снимок так, как его принял бы канал, и при желании открыть сессию."""
+CAPS = ["cfg1", "confirm1", "token1"]
+
+
+def _snap(services, *, bundle=None, online=True, caps=CAPS, **kw):
+    """Положить снимок так, как его принял бы канал, и при желании открыть
+    сессию (по умолчанию — агента не ниже 3.3.0)."""
     snap = {"bundle": bundle if bundle is not None else _installed(services),
-            "link_contract": "1", "plumbing_gen": "new", "mark_status": "confirmed",
-            "agent_version": "3.1.0", "awg_generation": 1, "egress_ok": True,
+            "link_contract": "1", "mark_status": "confirmed",
+            "agent_version": "3.3.0", "awg_generation": 1, "egress_ok": True,
             "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00", "rev": 1}
     snap.update(kw)
     services.gwlink_snapshot_in(1, snap, 1, True)
     if online:
-        services.gwlink_session_opened(1, "3.1.0", 1)
+        services.gwlink_session_opened(1, snap["agent_version"], 2, list(caps))
     return snap
 
 
@@ -124,10 +128,10 @@ async def test_a_live_channel_does_not_replace_the_link_ping(services, slot, fak
 # ── уведомления о расхождении ────────────────────────────────────────────────
 
 def _refuse(services):
-    """Шлюз на связи отверг набор, который ВПС хочет сейчас."""
-    from awgbot.util import gwlink
-    want = services.gwlink_settings_want(services.db.gateway(1))
-    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1", "hash": gwlink.settings_hash(want)})
+    """Шлюз на связи отверг раздел env документа, который ВПС хочет сейчас."""
+    from awgbot.domain import gwcfg
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwcfg_ack_in(1, gwcfg.ack_build(doc["gen"], doc["hash"], failed={"env": "exit 1"}))
 
 
 def test_a_matching_installed_configuration_notifies_nothing(services, slot):
@@ -140,40 +144,21 @@ def test_a_matching_installed_configuration_notifies_nothing(services, slot):
         "на шлюзе стоит ровно выдаваемое, а бот всё равно шлёт уведомление")
 
 
-async def test_a_silent_gateway_shows_its_drift_in_the_card_not_in_the_chat(services, slot, fake_bot):
-    """Шлюз не на связи, по снимку на нём другие подсети и прежние устройства
-    админа. Уведомления нет — канал довезёт, когда шлюз вернётся; расхождение
-    видно в карточке по пунктам. Устройства админа там — одним именем, без
-    адресов: список адресов всех устройств карточку только раздувал бы."""
-    stale = _installed(services)["admin_ips"]
-    dev = services.add_device(services.db.get_client_by_tg(ADMIN).id, "Ноутбук")
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
-                            "admin_ips": stale}, online=False)
-    services.db.set_state("gwlink_seen_1", "2026-01-01T00:00:00+03:00")
-    assert services.gw_bundle_drift_notes() == [], "шлюз не на связи, а бот шлёт уведомление"
-    text, _ = await _card(services, fake_bot)
-    assert "Конфигурация на шлюзе расходится с выданной (2 пункта" in text, text
-    assert "   • устройства админа\n" in text + "\n", text
-    assert dev.address not in text, "адреса устройств админа в карточке"
-    assert "   • локальные подсети: у сервера <code>192.168.68.0/24</code>" in text, text
-
-
 def test_a_live_channel_silences_what_it_will_deliver_itself(services, slot):
     """Канал жив, ответа на доставку ещё нет — он довезёт расхождение сам.
     Уведомление тогда шум: человек полезет делать то, что уже едет."""
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24"})
+    _snap(services, bundle={**_installed(services), "lan_subnets": "192.168.1.0/24"})
     assert services.gw_bundle_drift_notes() == []
 
 
 def test_a_silent_gateway_is_not_notified_however_long_it_is_silent(services, slot):
     """Шлюз лёг пару часов, сутки, месяц назад — уведомления нет ни в один из
     моментов: канал обязателен и довезёт, а возраст молчания видно в карточке.
-    Даже о том, что едет только файлом (подсети соседей), и после отказа шлюза:
-    шлюза нет — и сказать ему нечего."""
+    Даже после отказа шлюза: шлюза нет — и сказать ему нечего."""
     import datetime
     from awgbot.util import timeutil
-    _snap(services, bundle={**_installed(services), "home_subnets": "192.168.1.0/24",
-                            "peer_home_nets": "192.168.2.0/24"}, online=False)
+    _snap(services, bundle={**_installed(services), "lan_subnets": "192.168.1.0/24",
+                            "peer_lan_nets": "192.168.2.0/24"}, online=False)
     _refuse(services)
     for hours in (2, 25, 24 * 30):
         services.db.set_state("gwlink_seen_1",
@@ -252,30 +237,6 @@ def _neighbour(services, monkeypatch):
     services.gateway_set_lan_subnets(2, "192.168.70.0/24")
     services.gateway_set_lan_mode(2, True)
     assert services.gateway_peer_nets(1) == ["10.241.0.0/16"], "сценарий собран не так"
-
-
-def test_neighbour_subnets_are_not_sent_over_the_channel(services, slot, monkeypatch):
-    """Сосед включил VPN-транзит, канал жив, конфигурацию не перевыпустили.
-    Канал подсети соседей не везёт (они живут и в конфиге линка) — доставлять
-    ему нечего; карточка поэтому не обещает «уходят каналом» (эталоны
-    adm.gw.card.ch.neighbour.*)."""
-    _neighbour(services, monkeypatch)
-    _snap(services)                                     # на шлюзе подсетей соседей ещё нет
-    assert services.gwlink_settings_due(services.db.gateway(1)) is None, (
-        "подсети соседей ушли бы каналом, а их везёт только файл")
-
-
-def test_a_live_channel_does_not_silence_the_notification_about_neighbour_subnets(
-        services, slot, monkeypatch):
-    """Подсети соседей канал не довезёт — значит уведомление о них обязано
-    прийти и при живом канале, один раз, с кнопкой выпуска файла."""
-    _snap(services)
-    _neighbour(services, monkeypatch)
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1, "канал жив — и о подсетях соседей молчок"
-    assert "конфигурация неактуальна — локальные подсети других шлюзов" in notes[0].text, notes[0].text
-    assert notes[0].action == ("gwcfg", 1)
-    assert services.gw_bundle_drift_notes() == [], "одно уведомление на расхождение"
 
 
 # ── строки канала на входе функций: экранирование и пределы ──────────────────
@@ -479,25 +440,24 @@ async def test_a_link_conf_the_server_could_not_build_is_said(services, cfg1, fa
 
 
 async def test_cfg1_hints_point_to_restore_not_to_reissue(services, cfg1, fake_bot):
-    """Обвязка старого образца у агента с документом лечится «🚑 Восстановить»
-    в чате бота шлюза, а не новым файлом; то же у не применившейся связи
-    подсетей."""
+    """Не применившаяся связь подсетей лечится повтором доставки и «🚑
+    Восстановить» в чате бота шлюза, а не новым файлом; строк об образце
+    обвязки в карточке больше нет (поле снимка снято)."""
     _cfg_snap(services, snap={"plumbing_gen": "old", "peer_nets": {"ok": False, "missing": ["192.168.70.0/24"]}})
     text, _ = await _card(services, fake_bot)
-    assert "⚠️ Обвязка шлюза старого образца — «🚑 Восстановить» в чате бота шлюза" in text, text
+    assert "Обвязка шлюза" not in text, text
     assert ("⚠️ Связь подсетей: на шлюзе нет <code>192.168.70.0/24</code> — сервер повторит доставку; "
             "не поможет — «🚑 Восстановить» в чате бота шлюза") in text, text
     assert "перевыпусти" not in text, text
 
 
-async def test_an_agent_32_card_asks_to_update_and_keeps_the_file_button(services, slot, fake_bot):
-    """Агент без cfg1 со снимком (К7): каналом едет не всё — обнови агента;
-    кнопка файла остаётся, ею пока и довозится остальное."""
-    _snap(services, agent_version="3.2.1")
+async def test_an_agent_32_card_asks_to_update_and_has_no_file_button(services, slot, fake_bot):
+    """Агент ниже 3.3.0 вернулся после молчания (К7): документа он не
+    принимает, файла перевыпуска больше нет — только «обнови агента шлюза»."""
+    _snap(services, agent_version="3.2.1", caps=[])
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент v3.2.1 устарел: подсети других шлюзов, ключи линка и конфиг аплинка доходят до него " \
-           "только с перевыпуском конфигурации, не по каналу. Обнови агента" in text, text
-    assert "📤 Конфигурация" in labels, labels
+    assert "⚠️ Агент v3.2.1 устарел: конфигурацию по каналу не принимает — обнови агента шлюза" in text, text
+    assert "📤 Конфигурация" not in labels, labels
 
 
 async def test_without_a_snapshot_there_is_no_agent_32_line(services, slot, fake_bot):
@@ -517,68 +477,28 @@ async def test_the_lan_mode_toast_for_cfg1_says_it_applies_by_itself(services, c
     assert ("VPN-транзит выключен: применится автоматически по каналу конфигурации", True) in cb.answers, cb.answers
 
 
-@pytest.mark.parametrize("me, caps2, tail", [
-    ("cfg1", [], "VPN-транзит включён: применится автоматически по каналу конфигурации; для связи подсетей "
-                 "перевыпусти конфигурацию: Pi2"),
-    ("cfg1", ["cfg1"], "VPN-транзит включён: применится автоматически по каналу конфигурации"),
-    ("v32-online", ["cfg1"], "VPN-транзит включён: применится автоматически по каналу конфигурации; для связи подсетей "
-                             "перевыпусти конфигурацию: NASPi"),
-    ("v32-offline", [], "VPN-транзит включён: перевыпусти конфигурацию шлюза; для связи подсетей перевыпусти "
-                        "конфигурацию: Pi2"),
-])
-async def test_transit_names_who_needs_a_file_for_the_neighbour_subnets(services, cfg1, fake_bot, monkeypatch,
-                                                                        me, caps2, tail):
+@pytest.mark.parametrize("caps2", [[], CAPS])
+@pytest.mark.parametrize("on", ["1", "0"])
+async def test_transit_never_asks_for_a_reissue(services, cfg1, fake_bot, monkeypatch, caps2, on):
     """Подсети соседей меняются у этого слота и у других слотов с VPN-транзитом
-    и живут в конфиге линка: агентам 3.2 — только файлом. Диалог (до нажатия)
-    и всплывашка называют их поимённо; сам слот без канала уже попросили
-    перевыпустить — второй раз не называется; агенты с документом — тишина."""
+    — их везёт документ: ни диалог, ни всплывашка не зовут перевыпускать,
+    какой бы ни был агент соседа."""
     _peer_store(monkeypatch)
     admin = services.db.get_client_by_tg(ADMIN)
     pi2 = services.add_device(admin.id, "Pi2")
     services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
     services.gwlink_session_opened(2, "3.3.0" if caps2 else "3.2.1", 2, caps2)
-    services.gateway_set_lan_mode(1, False)
-    if me == "cfg1":
-        _cfg_snap(services)
-    elif me == "v32-online":
-        _snap(services)
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
-    dialog = _screen(nav)[0]
-    names = tail.split("конфигурацию: ")[-1] if "связи подсетей" in tail else ""
-    if names:
-        # одна строка с именами; сам слот без канала — в ней первым; только он — без имени
-        line = next((x for x in dialog.splitlines() if x.startswith("Потребуется перевыпуск конфигурации шлюза")), "")
-        listed = "NASPi, " + names if me == "v32-offline" else names
-        assert line == ("Потребуется перевыпуск конфигурации шлюза" if listed == "NASPi"
-                        else "Потребуется перевыпуск конфигурации шлюза: " + listed), dialog
-    else:
-        assert "Потребуется перевыпуск" not in dialog, dialog
-    cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
-    assert cb.answers == [(tail, True)], cb.answers
-
-
-async def test_transit_off_names_who_needs_a_file_to_drop_the_link(services, cfg1, fake_bot, monkeypatch):
-    """Выключение меняет подсети соседей так же, как включение: агентам 3.2
-    связь снимется только файлом — и диалог, и всплывашка говорят о снятии,
-    а не «для связи подсетей»."""
-    _peer_store(monkeypatch)
-    admin = services.db.get_client_by_tg(ADMIN)
-    pi2 = services.add_device(admin.id, "Pi2")
-    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
-    services.db.gateway_update(2, lan_subnets=["192.168.70.0/24"], lan_mode=1)
-    services.gwlink_session_opened(2, "3.2.1", 2, [])
+    services.gateway_set_lan_mode(1, on == "0")
     _cfg_snap(services)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
-    dialog = _screen(nav)[0]
-    assert "Потребуется перевыпуск конфигурации шлюза: Pi2" in dialog.splitlines(), dialog
+    assert "перевыпуск" not in _screen(nav)[0]
     cb, nav = _acb(fake_bot)
-    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="0"), services)
-    assert cb.answers == [("VPN-транзит выключен: применится автоматически по каналу конфигурации; чтобы снять "
-                           "связь подсетей, перевыпусти конфигурацию: Pi2", True)], cb.answers
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val=on), services)
+    word = "включён" if on == "1" else "выключен"
+    assert cb.answers == [(f"VPN-транзит {word}: применится автоматически по каналу конфигурации", True)], \
+        cb.answers
 
 
 async def test_the_card_names_linked_neighbours_as_links(services, cfg1, fake_bot, monkeypatch):

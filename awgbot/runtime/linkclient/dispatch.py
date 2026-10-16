@@ -36,9 +36,6 @@ class DispatchMixin:
         if msg.get("t") == "ask" and msg.get("what") == "snap":
             await self.push(full=True)
             return
-        if msg.get("t") == "settings":
-            await self._apply_settings(msg.get("values"))
-            return
         if msg.get("t") == "role":
             await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")),
                                     msg.get("standby"), msg.get("name"),
@@ -75,8 +72,5 @@ class DispatchMixin:
             return
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
-            return
-        if msg.get("t") == "applied_ack":
-            await self._applied_acked(msg)
             return
         log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))

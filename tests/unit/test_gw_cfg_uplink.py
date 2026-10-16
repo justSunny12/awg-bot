@@ -815,12 +815,10 @@ def _caps(services, *caps):
     services.gwlink_session_opened(1, "3.3.0", gwlink.PROTO, caps=caps)
 
 
-def test_the_server_sends_the_uplink_only_to_agents_that_can_confirm(services, uslot):
-    """Агенту без confirm1 раздела нет: он не спросил бы человека, а молча
-    ставить аплинк нельзя. С confirm1 — конфиг устройства в форме для шлюза
-    и ключ признания; прежнего ключа вне переезда нет."""
-    _caps(services, "cfg1")
-    assert services.gwcfg_uplink(uslot) is None
+def test_the_server_sends_the_uplink_section(services, uslot):
+    """Раздел аплинка едет всегда (агенты не ниже 3.3.0 подтверждают его в
+    чате): конфиг устройства в форме для шлюза и ключ признания; прежнего
+    ключа вне переезда нет."""
     _caps(services, "cfg1", "confirm1")
     up = services.gwcfg_uplink(uslot)
     dev = services.db.get_device(uslot.device_id)
@@ -848,12 +846,6 @@ def test_during_the_move_the_slot_gets_the_twin_uplink_and_the_old_key(services,
     assert services.gwcfg_old_uplink() == [], "шлюз уже на двойнике, а финал его пугает"
 
 
-def test_old_uplink_warning_skips_agents_that_cannot_confirm(services, uslot, mig):
-    _caps(services, "cfg1")
-    services.migration_start()
-    assert services.gwcfg_old_uplink() == []
-
-
 def test_the_slot_card_shows_the_fingerprint_of_the_waiting_uplink(services, uslot):
     """Карточка слота показывает отпечаток пары ключей аплинка, который ждёт
     «Применить» в чате агента, — тот же, что агент пишет в приглашении."""
@@ -865,7 +857,7 @@ def test_the_slot_card_shows_the_fingerprint_of_the_waiting_uplink(services, usl
     card = services.gwcfg_card(uslot, snap)
     conf = wgconf.parse(doc["sections"]["uplink"]["conf"])
     dev = services.db.get_device(uslot.device_id)
-    assert card["confirm1"] is True and card["wait"] == ["uplink"]
+    assert card["wait"] == ["uplink"]
     assert card["uplink_fp"] == gwcfg.key_fp(dev.public_key, conf.get("Peer", "PublicKey")) != "", card
 
 

@@ -272,8 +272,8 @@ class _Lan:
     avahi-browse. `out` = None — обзор не удался (таймаут, нет утилиты)."""
 
     def __init__(self, monkeypatch):
-        self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "PEER_HOME_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
+        self.env = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24",
+                    "PEER_LAN_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
         self.out: str | None = ""
         self.browses = 0
         monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
@@ -362,12 +362,12 @@ def test_without_own_subnets_the_scan_does_not_touch_mdns_and_clears_the_list(ag
     lan = _Lan(monkeypatch)
     lan.see("192.168.68.10")
     agent.services_scan()
-    lan.env["HOME_SUBNETS"] = ""
+    lan.env["LAN_SUBNETS"] = ""
     n = lan.browses
     assert agent.services_scan() is True and _local(agent) == []
     assert agent.services_scan() is False, "пустой список «изменился» второй раз"
     assert lan.browses == n, "обзор mDNS без своих подсетей"
-    lan.env.update(HOME_SUBNETS="192.168.68.0/24", LINK_CHANNEL="0")
+    lan.env.update(LAN_SUBNETS="192.168.68.0/24", LINK_CHANNEL="0")
     agent.services_scan()
     assert lan.browses > n, "старая строка LINK_CHANNEL=0 в юните выключила обзор"
 
@@ -376,7 +376,7 @@ def test_the_scan_needs_neither_lan_mode_nor_peer_subnets(agent, monkeypatch):
     """«SMB в туннеле»: шлюз без VPN-транзита и без связи подсетей тоже
     называет серверу свои SMB-серверы — их имена нужны устройствам админа."""
     lan = _Lan(monkeypatch)
-    lan.env.update(LAN_MODE="0", PEER_HOME_NETS="")
+    lan.env.update(LAN_MODE="0", PEER_LAN_NETS="")
     lan.see("192.168.68.10")
     assert agent.services_scan() is True and _local(agent) == ["192.168.68.10"]
     assert lan.browses == 1
@@ -396,8 +396,8 @@ class _Peer:
     обвязки. Помощник «ставит» файл: копирует присланный в dnsmasq.d."""
 
     def __init__(self, tmp_path, monkeypatch):
-        self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "PEER_HOME_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
+        self.env = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24",
+                    "PEER_LAN_NETS": "192.168.1.0/24"}       # строки канала нет: канал обязателен
         self.helper = tmp_path / "awg-lan-services.sh"
         self.conf = tmp_path / "dnsmasq.d" / gs.CONF_NAME
         self.conf.parent.mkdir()

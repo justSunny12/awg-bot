@@ -5,7 +5,6 @@ from __future__ import annotations
 from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain import gwcfg
-from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
 from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
@@ -32,11 +31,8 @@ def services_line(svc: dict, agent_bot: dict | None = None, online: bool | None 
     if state == "applied":
         return head + " · 🟢 доступны" + tunnel
     head += tunnel
-    if state == "reissue":
-        note = "⚠️ Для доступа к SMB перевыпусти конфигурацию шлюза"
-    else:
-        note = _slot_note(state, agent_bot, svc.get("error") or "", "Для доступа к SMB", "записи SMB",
-                          offline=online is False)
+    note = _slot_note(state, agent_bot, svc.get("error") or "", "Для доступа к SMB", "записи SMB",
+                      offline=online is False)
     return head + "\n" + note
 
 
@@ -58,15 +54,6 @@ def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     return head + "\n" + note
 
 
-def _agent_at_least(version, floor: str) -> bool:
-    """Версия агента из снимка не ниже floor; мусор или пусто — ложь."""
-    from awgbot.domain import gwservices
-    try:
-        return bool(version) and gwservices.version_at_least(str(version), floor)
-    except Exception:                                      # noqa: BLE001 — строка со шлюза
-        return False
-
-
 CHANNEL_HEAD = "🔧 Канал конфигурации"
 NOT_APPLIED_TAIL = " — оставил прежнюю; подробности в чате бота шлюза"
 UPLINK_ERR_PREFIX = "конфиг аплинка: "        # префикс проверки раздела — в строке карточки лишний
@@ -85,8 +72,7 @@ def _snap_at(ch: dict) -> str:
 
 
 def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
-    """Строки документа конфигурации у агента, который его принимает: отказ
-    шлюза (К5), доставка в пути (К6), расхождение не на связи (К9 по разделам,
+    """Строки документа конфигурации: отказ шлюза (К5), доставка в пути (К6), расхождение не на связи (К9 по разделам,
     с действием — доедет само, когда шлюз выйдет на связь), вопросы человеку
     (К14), не собранные документ и конфиг линка. «Актуальна» не пишется:
     только негативные исходы."""
@@ -159,8 +145,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     if not ch:
         return "", [], ""
     if not ch.get("ever"):
-        # канал обязателен: перевыпуск тут не лечит. Линк жив — канал не держит агент
-        # (не запущен или прежней версии: тем канал включала свежая конфигурация)
+        # канал обязателен. Линк жив — канал не держит агент (не запущен или упал)
         if ch.get("link_fresh"):
             return (f"{CHANNEL_HEAD} 🔴 ещё не подключался — линк есть, агент шлюза не отвечает: "
                     "запусти или обнови его", [], "")
@@ -187,49 +172,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             # разных поколений не поднимется, пока отстающая не обновится
             warns.append(f"⚠️ Поколение AWG на шлюзе {gen}, у сервера {mine} — линк работает только на одном "
                          "поколении: обнови отстающую сторону — агента шлюза или сервера AWG")
-        drift = ch.get("drift") or []
-        cfg = ch.get("cfg") or {}
-        if cfg.get("cfg1"):
-            warns += _cfg_lines(cfg, ch)
-        elif not ch.get("has_bundle"):
-            if ch.get("online"):                 # канал лежит — второй 🔴 в строке ничего не добавит
-                head += " · 🔴 шлюз не сообщает свою конфигурацию"
-        elif drift:
-            ack = ch.get("ack") or {}
-            n = len(drift)
-            n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
-            if ch.get("online") and ack and not ack.get("ok") and ch.get("ack_current"):
-                warns.append("⚠️ Шлюз не применил конфигурацию: "
-                             f"{_e(ack.get('error') or 'ошибка')}{NOT_APPLIED_TAIL}")
-            elif ch.get("online") and ch.get("drift_bundle") and not ch.get("drift_channel"):
-                warns.append("⚠️ Локальные подсети других шлюзов неактуальны — перевыпусти "
-                             "конфигурацию шлюза")
-            elif ch.get("online") and ch.get("drift_bundle"):
-                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}): остальное уйдёт "
-                             "по каналу конфигурации само, а подсети других шлюзов — только с перевыпуском: "
-                             "перевыпусти конфигурацию шлюза")
-            elif ch.get("online"):
-                warns.append(f"🟡 Конфигурация на шлюзе расходится с выданной ({n_items}) — "
-                             "изменения уходят по каналу конфигурации и применятся сами")
-            else:
-                raw = ch.get("drift_items") or []
-                # устройства админа — одним именем: адреса всех устройств в карточке не нужны;
-                # разница по устройствам — в уведомлении, когда шлюз на связи отверг набор
-                shown = [_e(it[1]) if it[0] == "ADMIN_IPS" else line
-                         for it, line in zip(raw, drift_lines(raw, html=True))]
-                items = "\n".join(f"   • {d}" for d in shown)
-                # агент без документа получает изменения только файлом
-                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{_snap_at(ch)}):\n{items}\n"
-                             "└ перевыпусти конфигурацию шлюза — «📤 Конфигурация»")
-        gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации",
-                    "none": "⚠️ Обвязка шлюза не развёрнута — перевыпусти файл конфигурации"}
-        if cfg.get("cfg1"):
-            # обвязку освежает обновление агента, значения приезжают каналом: «новый файл» не лечит
-            gen_hint = {"old": f"⚠️ Обвязка шлюза старого образца — {RESTORE_BTN} в чате бота шлюза",
-                        "none": f"⚠️ Обвязка шлюза не развёрнута — {RESTORE_BTN} в чате бота шлюза; "
-                                "не поможет — причина в «🩺 Здоровье» там же"}
-        if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
-            warns.append(gen_hint[ch["plumbing_gen"]])
+        if not ch.get("outdated"):
+            warns += _cfg_lines(ch.get("cfg") or {}, ch)
         # «проверка с сервера» — зонд живости сервера через шлюз (link_ok);
         # «проверка шлюза» — его собственная проверка выхода через провайдера (egress_ok)
         gw_ok = ch.get("egress_gw")
@@ -245,11 +189,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in (pn.get("missing") or [])[:8]) or "подсетей"
-        if (ch.get("cfg") or {}).get("cfg1"):
-            warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — сервер повторит доставку; "
-                         f"не поможет — {RESTORE_BTN} в чате бота шлюза")
-        else:
-            warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
+        warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — сервер повторит доставку; "
+                     f"не поможет — {RESTORE_BTN} в чате бота шлюза")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
         warns.append(f"⚠️ Шлюз не принял списки доменов: {_e(lists.get('error') or 'ошибка')}"
@@ -335,12 +276,13 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append(ch_head)
     ch = state.get("channel") or {}
     cfg = ch.get("cfg") or {}
-    if ch.get("has_snap") and not cfg.get("cfg1") and not _agent_at_least(ch.get("agent"), "3.3.0"):
-        # предупреждение — рядом с каналом, о котором оно; версия — настоящая, из снимка;
+    if ch.get("outdated"):
+        # агент ниже 3.3.0 (молчавший шлюз вернулся): документа не принимает —
+        # рядом с каналом, о котором оно; версия — из снимка, если он есть;
         # ссылка на бота — строкой «Бот шлюза» внизу карточки, второй раз не нужна
-        ver = _ver(_e(str(ch.get("agent") or "?")[:32]))
-        lines.append(f"⚠️ Агент {ver} устарел: подсети других шлюзов, ключи линка и конфиг аплинка доходят до "
-                     "него только с перевыпуском конфигурации, не по каналу. Обнови агента")
+        ver = _ver(_e(str(ch.get("agent") or "?")[:32])) if ch.get("has_snap") else ""
+        lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: конфигурацию по каналу не принимает — "
+                     "обнови агента шлюза")
     rk = state.get("rekey") or {}
     if rk.get("state") in ("staged", "asked"):
         fp = f" · отпечаток <code>{_e(rk['fp'])}</code>" if rk.get("fp") else ""
@@ -386,7 +328,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     issued = state.get("issued_at") or ""
     if issued:
         try:
-            more.append(f"конфигурация выпущена {timeutil.fmt_dt_ui(timeutil.parse_iso(issued))}")
+            more.append(f"файл конфигурации шлюза выпущен {timeutil.fmt_dt_ui(timeutil.parse_iso(issued))}")
         except ValueError:
             pass
     if more:

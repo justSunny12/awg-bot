@@ -1,9 +1,8 @@
 """Снимки агента шлюза: файлы в чат — мастер восстановления, бэкапы и шифрование,
-файл конфигурации шлюза, восстановление из копии.
+файлы конфигурации шлюза (отказ), восстановление из копии.
 
-Файл конфигурации шлюза — заглушка с подписью формата (bundlecrypt.MAGIC):
-расшифровку и прогон скрипта отвечает `_Host` (inspect_bundle, apply_bundle,
-статус скрипта, итог почты, пометка). Резервные копии — настоящие архивы,
+Шифрованный файл перевыпуска прежних выпусков — заглушка с подписью формата
+(bundlecrypt.MAGIC): с 3.3.1 агент отказывает ему словами. Резервные копии — настоящие архивы,
 зашифрованные случайным ключом (`backup_key` в БД): их разбирает настоящий
 inspect_backup — метка роли, схема базы, конфиги интерфейсов.
 """
@@ -47,7 +46,7 @@ def _archive(role: str = "gw", *, db: bytes | None = None, iface: bool = False) 
 
 
 def _old_db() -> bytes:
-    """База схемы ниже 3.2.0: в clients нет колонки kind."""
+    """База схемы ниже минимума: в clients нет колонки kind."""
     con = sqlite3.connect(":memory:")
     con.executescript("CREATE TABLE clients(id INTEGER PRIMARY KEY, tg_name TEXT);"
                       "CREATE TABLE devices(id INTEGER PRIMARY KEY, holder_client_id INTEGER);")
@@ -132,76 +131,23 @@ BACKUPS = [
 
 
 FILES = [
-    # ── W50–W60 файл конфигурации и восстановление: кнопки без файла ────────
-    _shot("gw.bundle.apply.nofile", press=[GwCB(action="apply!")], title="«📦 Применить», файла в памяти нет"),
-    _shot("gw.bundle.keep.nofile", press=[GwCB(action="apply_keep!")],
-          title="«⬅️ Оставить своё», файла в памяти нет"),
-    _shot("gw.bundle.drop", press=[GwCB(action="drop")], title="«⬅️ Отмена» — файл отброшен, панель"),
+    # ── W60 восстановление: кнопки без файла ────────────────────────────────
+    # (кнопки файла перевыпуска прежних выпусков — устаревшие: их проверяют e2e)
     _shot("gw.restore.nofile", press=[GwCB(action="restore!")], title="восстановить — файла в памяти нет"),
     _shot("gw.restore.drop", press=[GwCB(action="restore_drop")], title="отказ от восстановления"),
 
-    # ── W50–W52 файл конфигурации шлюза ─────────────────────────────────────
-    _shot("gw.bundle.received", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
-          title="файл принят: линк перезапустится, трафик шлюз не несёт"),
-    _shot("gw.bundle.received.carries", steps=[("start", ""), _file(_BUNDLE_NAME, _BUNDLE)], carries=True,
-          tick=_status(), title="шлюз несёт трафик — прежняя панель удалена, предупреждение об обрыве"),
-    _shot("gw.bundle.received.same_link", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
-          bundle={"ok": True, "link_changed": False}, title="конфиг линка тот же — без обрыва"),
-    _shot("gw.bundle.received.same_link.carries", steps=[("start", ""), _file(_BUNDLE_NAME, _BUNDLE)],
-          carries=True, tick=_status(), bundle={"ok": True, "link_changed": False},
-          title="конфиг линка тот же у шлюза, несущего трафик, — без угрозы РФ-доступу"),
+    # ── W50–W52 файлы конфигурации в чате ────────────────────────────────────
+    _shot("gw.bundle.reissue", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
+          title="шифрованный файл перевыпуска из истории чата — отказ словами, файл убран"),
+    _shot("gw.bundle.reissue.carries", steps=[("start", ""), _file(_BUNDLE_NAME, _BUNDLE)], carries=True,
+          tick=_status(), title="то же у шлюза, несущего трафик: панель выше остаётся живой"),
     _shot("gw.bundle.first_run", steps=[_file("awg-gw-bundle.sh", b"#!/bin/sh\n# DUMMY\n")],
           title="файл первого применения по имени — убран из чата"),
     _shot("gw.bundle.first_run.renamed", steps=[_file("setup.sh", b"#!/bin/sh\n# awg-gw-bundle DUMMY\n")],
           title="файл первого применения по содержимому"),
     _shot("gw.bundle.not_ours", steps=[_file("photo.bin", b"DUMMY")], title="не конфигурация шлюза"),
-    _shot("gw.bundle.not_ours.cfg1", steps=[_file("photo.bin", b"DUMMY")], server_caps=("cfg1",),
-          title="не конфигурация шлюза — сервер шлёт документ сам, кнопки файла в карточке нет"),
     _shot("gw.bundle.too_big", steps=[_file("video.bin", b"\0" * (600 * 1024))],
           title="крупнее любого файла конфигурации — не скачивается"),
-    _shot("gw.bundle.passphrase", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
-          title="фраза бэкапов в файле отличается — вопрос"),
-    _shot("gw.bundle.applied", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          title="применено: отчёт строками, адреса моноширинным, панель следом"),
-    _shot("gw.bundle.applied.keep", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!")),
-                                           _p(GwCB(action="apply_keep!"))],
-          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
-          apply_status={"UPLINK": "unchanged", "LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "0"},
-          title="«⬅️ Оставить своё»: аплинк без изменений, фильтр SSH выключен"),
-    _shot("gw.bundle.applied.overwrite", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!")),
-                                                _p(GwCB(action="apply_ow!"))],
-          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
-          apply_status={"LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "1", "SSH_ALLOW_COUNT": "0",
-                        "LAN": "1", "LAN_ERROR": "dnsmasq не установлен"},
-          title="«✅ Принять»: фильтр только для сервера, VPN-транзит не применён — применена не полностью"),
-    _shot("gw.bundle.applied.mail_ok", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          bundle_mail={"state": "ok", "backup": True},
-          title="почта из файла проверена, бэкапы переключены на e-mail"),
-    _shot("gw.bundle.applied.mail_fail", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          bundle_mail={"state": "fail", "why": "IMAP imap.example.org:993: вход отклонён"},
-          title="почта из файла не прошла проверку"),
-    _shot("gw.bundle.failed", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          apply=(False, "routing-gw-setup.sh: аплинк <awg1> не поднялся — откатываю"),
-          title="не применено: общая маска и причина"),
-    _shot("gw.bundle.claim.channel", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          channel="active", mark={"status": "unmarked", "claim": "DUMMY-claim-token"},
-          apply_status={"UPLINK": "installed", "LINK": "up", "GW_STATUS": "unmarked"},
-          title="шлюз не назначен, канал на связи — запрос ушёл сам"),
-    _shot("gw.bundle.claim.unmarked", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          mark={"status": "unmarked", "claim": "DUMMY-claim-token"},
-          apply_status={"UPLINK": "installed", "LINK": "up", "GW_STATUS": "unmarked"},
-          title="шлюз не назначен, канала нет — переслать сообщение"),
-    _shot("gw.bundle.claim.forward", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          mark={"status": "foreign", "claim": "DUMMY-claim-token"},
-          apply_status={"UPLINK": "installed", "LINK": "foreign", "GW_STATUS": "foreign"},
-          title="шлюз указывает на другое устройство, канала нет — переслать сообщение"),
-    _shot("gw.bundle.claim.unconfirmed", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
-          mark={"status": "unconfirmed", "claim": "DUMMY-claim-token"},
-          apply_status={"UPLINK": "unchanged", "LINK": "unconfirmed", "GW_STATUS": "unconfirmed"},
-          title="аплинк не найден, канала нет — переслать сообщение"),
-    _shot("gw.bundle.dropped", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="drop"))],
-          title="«⬅️ Отмена» после файла — панель"),
 
     # ── W60 восстановление из копии ─────────────────────────────────────────
     _shot("gw.restore.offer", steps=[_file(_COPY_NAME, _COPY)], backup_key=True,

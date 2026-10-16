@@ -13,6 +13,11 @@ from tests.screens.shots_admin_common_gw import (LAN2, NASPI, PI4, TOKEN, TOKEN2
                                                  _drop_slot2, _gw, _label, _routing, _slots)
 
 
+def _first_run_file1(services, mp):
+    """В чате лежит файл первого применения слота 1 (#40) под инструкцией (#39)."""
+    services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39, "DUMMYFP", True)
+
+
 def _rt_off(services, mp):
     """РФ-доступ развёрнут, но выключен."""
     who = _people(services)
@@ -139,22 +144,16 @@ GATEWAYS = [
          title="рецепт роутера: MikroTik"),
     Shot("adm.gw.router.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
          data=_slots(1, lan=True), title="рецепт роутера: OpenWrt"),
-    Shot("adm.gw.bundle", role="admin", press=[GwSlotCB(action="bundle", slot=1)], data=_slots(1),
-         title="конфигурация шлюза файлом"),
     Shot("adm.gw.bundle.card", role="admin",
-         press=[GwSlotCB(action="bundle", slot=1), SetCB(sec="rt", act="do", key="bundle_cancel", val="1")],
-         data=_slots(1), title="«🛰 В карточку» под файлом"),
+         press=[SetCB(sec="rt", act="do", key="bundle_cancel", val="1")],
+         data=_gw(1, _first_run_file1), title="«🛰 Карточка шлюза» под файлом первого применения"),
     Shot("adm.gw.bundle.home", role="admin",
-         press=[GwSlotCB(action="bundle", slot=1), SetCB(sec="rt", act="do", key="bundle_home", val="1")],
-         data=_slots(1), title="«⬅️ На главную» под файлом"),
+         press=[SetCB(sec="rt", act="do", key="bundle_home", val="1")],
+         data=_gw(1, _first_run_file1), title="«⬅️ В меню» под файлом первого применения"),
     Shot("adm.gw.lan_nets", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], data=_slots(1),
          title="локальные подсети: приглашение"),
     Shot("adm.gw.lan_nets.done", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], text="192.168.1.0/24",
          data=_slots(1), title="локальные подсети: итог"),
-    # кнопка «🗺 Подсети» в сообщении, оставшемся в чате с версии до 3.3.0:
-    # прежнее имя действия ведёт в тот же ввод (один выпуск)
-    Shot("adm.gw.lan_nets.legacy", role="admin", press=[GwSlotCB(action="home", slot=1)], data=_slots(1),
-         title="локальные подсети: прежний колбэк из старого сообщения"),
     Shot("adm.gw.label", role="admin", press=[GwSlotCB(action="label", slot=1)], data=_slots(1),
          title="подпись: приглашение"),
     Shot("adm.gw.label.done", role="admin", press=[GwSlotCB(action="label", slot=1)], text="дача",
@@ -382,8 +381,6 @@ SLOTS = [
     Shot("adm.gw.remove_yes.token_kept", role="admin", press=[GwSlotCB(action="remove_yes", slot=2)],
          data=_gw(2, _token_kept), title="резерв снят, токен его бота остался в env"),
     # ── конфигурация файлом ──────────────────────────────────────────────
-    Shot("adm.gw.bundle.label", role="admin", press=[GwSlotCB(action="bundle", slot=2)],
-         data=_gw(2, _label(2, "дача"), token=False), title="файл слота 2: подпись слота, бот неизвестен"),
     # ── параметры циклами ────────────────────────────────────────────────
     Shot("adm.rt.params.cycle.window", role="admin",
          press=[SetCB(sec="rt_params", act="cycle", key="app.routing.failover.window_samples")],
@@ -460,10 +457,6 @@ SLOTS = [
          press=[SetCB(sec="rt", act="do", key="allow_all"), SetCB(sec="rt", act="do", key="allow_apply")],
          data=_gw(1, _allow_all), title="снятие отметок применено — запрещено всем"),
     # ── старые кнопки файла ──────────────────────────────────────────────
-    Shot("adm.gw.bundle.old", role="admin", press=[SetCB(sec="rt", act="do", key="bundle")], data=_slots(1),
-         title="«📤 Выпустить файл» прежней версии — тот же выпуск"),
-    Shot("adm.gw.bundle.old.two", role="admin", press=[SetCB(sec="rt", act="do", key="bundle", val="2")],
-         data=_slots(2), title="«📤 Выпустить файл» прежней версии для слота 2"),
     Shot("adm.gw.bundle.menu.old", role="admin", press=[SetCB(sec="rt", act="do", key="bundle_menu", val="2")],
          data=_slots(2), title="«В меню» под файлом до 3.1.0 — убирает сообщение, главная"),
     # ── пересланное сообщение агента ─────────────────────────────────────

@@ -105,10 +105,6 @@ _RELEASE = updates.Release(
          "### Исправлено\n- итог применения конфигурации не терял строку почты\n\n#requires_gw_1.2.0")
 
 
-_APPLY_STATUS = {"UPLINK": "installed", "LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "1",
-                 "SSH_ALLOW_COUNT": "2", "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.1.10"}
-
-
 _BACKUP_KEY = b"DUMMY-backup-key-0123456789abcdef"[:32]
 
 

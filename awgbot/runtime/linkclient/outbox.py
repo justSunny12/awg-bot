@@ -1,4 +1,4 @@
-"""outbox.py — отправка: снимок и дельты, настройки с ВПС, итоги применения через перезапуск линка, сервисы."""
+"""outbox.py — отправка: снимок и дельты, сборка фидов по частям, сервисы, ответы на доставки."""
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +6,6 @@ import contextlib
 
 from awgbot.domain import gwsnapshot
 from awgbot.util import gwlink
-from awgbot.runtime import linkclient as pkg          # адрес, порт, крючок и задержки — на пакете: их подменяют тесты
 
 from .common import SEND_TIMEOUT, log
 
@@ -61,37 +60,10 @@ class OutboxMixin:
         self._prev = snap
         sent = await self._send("delta", {**patch, "rev": self._rev}, pad=gwlink.PAD_DELTA)
         if sent and "mark_status" in patch:
-            # Пометка сменилась (применили бандл нового слота) — не заставляем
-            # человека пересылать токен руками, если канал уже жив.
+            # Пометка сменилась — не заставляем человека пересылать токен
+            # руками, если канал уже жив.
             await self._maybe_claim()
         return sent
-
-    async def _apply_settings(self, values) -> None:
-        """Настройки с сервера: проверить, применить, ответить, сказать человеку.
-
-        Применение — в потоке: рестарт юнита обвязки идёт секунды, и держать на
-        это время цикл событий агента (его Telegram) незачем. Ответ `ack` несёт
-        итог применения; что доставка завершена, сервер видит
-        завершена по снимку, который уходит следом."""
-        result = await asyncio.to_thread(self.services.apply_link_settings, values or {})
-        body = {"ok": bool(result.get("ok")), "changed": list(result.get("changed") or []),
-                "error": str(result.get("error") or "")[:300]}
-        if result.get("retry"):
-            # временный отказ (юнит ещё работает): пусть сервер повторит набор в
-            # этой же сессии — с keepalive сессии живут днями, и «отправлено
-            # один раз за сессию» превращало бы отказ в долгий
-            body["retry"] = True
-        await self._send("ack", body, pad=gwlink.PAD_DELTA)
-        if (result.get("changed") or not result.get("ok")) and not result.get("retry"):
-            # Человек узнаёт о факте в чате агента: применено без его кнопки,
-            # значит сказать обязательно. Пустое применение — тишина; временный
-            # отказ с повтором — тоже: сервер повторит, итог придёт один раз.
-            if pkg._notify is not None:
-                try:
-                    await pkg._notify(self.services.link_settings_note(result))
-                except Exception as e:                    # noqa: BLE001
-                    log.info("канал линка: уведомление не ушло: %s", e)
-            await self.push()                             # снимок с новыми значениями — сразу
 
     def _collect_part(self, msg: dict) -> str | None:
         """Сложить часть фидов; вернуть целое, когда пришли все. Части другого
@@ -111,31 +83,6 @@ class OutboxMixin:
         whole = "".join(self._parts["got"][k] for k in range(n))
         self._parts = {}
         return whole
-
-    async def flush_applied(self) -> bool:
-        """Отправить серверу отложенный итог применения файла. Из очереди он
-        уходит по подтверждению сервера (applied_ack), а не по записи в сокет:
-        бандл тут же перезапускает линк, и строка в буфере умершей сессии
-        пропала бы вместе с ней. Повтор сервер отличает по отпечатку и времени."""
-        if self._writer is None:
-            return False
-        pending = await asyncio.to_thread(self.services.applied_pending_get)
-        if not pending:
-            return False
-        return await self._send("applied", {"ok": bool(pending.get("ok")), "error": pending.get("error") or "",
-                                            "fp": pending.get("fp") or "", "at": pending.get("at") or ""},
-                                pad=gwlink.PAD_DELTA)
-
-    async def _applied_acked(self, msg: dict) -> None:
-        """Сервер принял итог: очередь пуста. Подтверждение на другой файл
-        (очередь успели перезаписать) очередь не трогает."""
-        pending = await asyncio.to_thread(self.services.applied_pending_get)
-        if not pending:
-            return
-        if str(pending.get("fp") or "") != str(msg.get("fp") or "") or \
-                str(pending.get("at") or "") != str(msg.get("at") or ""):
-            return
-        await asyncio.to_thread(self.services.applied_pending_clear)
 
     async def push_services(self) -> bool:
         """Сервисы этой сети — серверу: при

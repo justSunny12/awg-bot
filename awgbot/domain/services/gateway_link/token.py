@@ -29,10 +29,10 @@ class TokenMixin:
         return bool(token) and mark == gwcfg.token_print(token.strip())
 
     def gateway_token_slots(self) -> list[tuple[int, str]]:
-        """Шлюзы, которым токен можно довезти каналом (агент с token1):
+        """Шлюзы, которым токен можно довезти каналом (агент не ниже 3.3.0):
         [(слот, «имя (подпись)»)]."""
         return [(gw.id, self._gw_display(gw)) for gw in self.db.gateways()
-                if gw.device_id and "token1" in self.gwlink_agent_caps(gw.id)]
+                if gw.device_id and not self.gwlink_agent_outdated(gw.id)]
 
     def gateway_token_check(self, slot_id: int, token: str, bot_id: int, username: str) -> dict:
         """Новый токен (getMe уже ответил — токен живой: bot_id, username)

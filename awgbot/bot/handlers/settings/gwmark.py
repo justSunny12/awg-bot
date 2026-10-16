@@ -193,7 +193,7 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
         caption=texts.gateway_plain_bundle_caption(display),
-        reply_markup=kb.bundle_menu_kb(slot, plain=True))
+        reply_markup=kb.bundle_menu_kb(slot))
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
                    bundlecrypt.fingerprint(blob), True)

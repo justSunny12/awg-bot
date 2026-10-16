@@ -115,15 +115,15 @@ def test_every_bundle_key_has_a_human_name():
         f"без имени: {sorted(set(gwlink.BUNDLE_KEYS) - set(gwlink.KEY_HUMAN))}, "
         f"лишние: {sorted(set(gwlink.KEY_HUMAN) - set(gwlink.BUNDLE_KEYS))}")
     assert all(gwlink.KEY_HUMAN[k].strip() for k in gwlink.BUNDLE_KEYS)
-    assert set(gwlink.BUNDLE_KEYS) == set(gwlink.SETTINGS_KEYS) | set(gwlink.BUNDLE_ONLY_KEYS)
+    assert not hasattr(gwlink, "SETTINGS_KEYS") and not hasattr(gwlink, "BUNDLE_ONLY_KEYS"), "путь settings снят"
 
 
 def test_the_snapshot_bundle_block_is_the_bundle_keys_in_their_order():
     """Блок bundle снимка и сверка на ВПС берут поля из одной таблицы. Поле,
     которого нет в снимке, сверка молча считала бы совпавшим."""
     assert gwsnapshot.BUNDLE_FIELDS == tuple(k.lower() for k in gwlink.BUNDLE_KEYS)
-    assert gwsnapshot.BUNDLE_FIELDS == ("admin_ips", "home_subnets", "lan_mode", "resolver",
-                                        "peer_home_nets")
+    assert gwsnapshot.BUNDLE_FIELDS == ("admin_ips", "lan_subnets", "lan_mode", "resolver",
+                                        "peer_lan_nets")
     assert [gwlink.snap_field(k) for k in gwlink.BUNDLE_KEYS] == list(gwsnapshot.BUNDLE_FIELDS)
 
 

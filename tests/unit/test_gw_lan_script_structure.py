@@ -1,7 +1,7 @@
 """
 routing-gw-setup.sh, раздел 5 как текст и как функции: интерфейс шлюза по
-локальной подсети, таблица awg_home, резолвер, снятие режима, оверрайд dnsmasq,
-перенос ручного слоя, подмена помощников через mv, ожидание агента.
+локальной подсети, таблица awg_lan и переход с прежней awg_home, резолвер,
+снятие режима, оверрайд dnsmasq, подмена помощников через mv, ожидание агента.
 """
 from __future__ import annotations
 
@@ -38,15 +38,15 @@ def test_lan_interface_is_found_by_home_subnet(script, tmp_path):
 # ── раздел 5 скрипта: структура ──────────────────────────────────────────────
 
 def test_home_table_keeps_its_sets_across_reasserts(script):
-    """awg_gw_guard перевыставляется через delete table, а наборы awg_home
+    """awg_gw_guard перевыставляется через delete table, а наборы awg_lan
     наполняет dnsmasq на лету — их терять нельзя: таблица без delete, цепочки
     flush + add."""
-    home = script.split("cat <<HOMEEOF", 1)[1].split("HOMEEOF", 1)[0]
+    home = script.split("cat <<LANEOF", 1)[1].split("LANEOF", 1)[0]
     assert not any("delete table" in ln for ln in home.splitlines() if not ln.lstrip().startswith("#"))
     assert 'set lan_vpn4' in home and "set lan_vpn_nets4" in home and "set lan_ru4" in home
     for ch in ("prerouting", "input", "forward", "postrouting"):
-        assert f"flush chain $HOME_TABLE {ch}" in home
-    rules = [ln for ln in home.splitlines() if ln.startswith("add rule $HOME_TABLE prerouting")]
+        assert f"flush chain $LAN_TABLE {ch}" in home
+    rules = [ln for ln in home.splitlines() if ln.startswith("add rule $LAN_TABLE prerouting")]
     assert rules[0].endswith('iifname != "$LAN_IF" accept'), "из линка и аплинка — мимо маркировки"
     assert "meta pkttype host" in rules[1] and "!= $_net counter" in rules[1], \
         "счётчик заворота — только unicast на MAC шлюза, до вердиктов: бродкасты фонят всегда"
@@ -104,25 +104,16 @@ def test_lan_mode_off_removes_its_own_and_rollback_too(script):
     assert "for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf" in fn \
         and 'mv -f $DNSMASQ_D/$_f $LAN_DUMP/restore/$_f' in fn, \
         "личные списки — данные человека: в restore/, откуда их вернёт следующее включение, не rm"
-    assert "nft delete table $HOME_TABLE" in fn
+    assert "nft delete table $LAN_TABLE" in fn
+    assert "lan_table_old_drop" in fn, "снятие режима сразу после обновления оставило бы прежнюю таблицу"
     assert "systemctl disable --now dnsmasq" in fn and "$DNSMASQ_MARK" in fn, "ставили сами — снимаем"
     # dnsmasq читает в conf-dir всё, кроме .dpkg-*: .bak рядом класть нельзя
     assert ".bak" not in fn and 'mv -f $_f $_f.bak' not in script
-    park = script.split("park() {", 1)[1].split("\n}", 1)[0]
-    assert "$LAN_OLD" in park and "mv -f" in park
-
-
-def test_manual_layer_is_migrated_not_broken(script):
-    fn = script.split("lan_migrate_manual() {", 1)[1].split("\n}", 1)[0]
-    for what in ("home-split.service", "awg-lists.timer", "fwmark 0x10 lookup 100", "inet home_split",
-                 "/etc/home-split.nft", "/usr/local/bin/awg-add", "ru-force.conf", "user-managed.conf"):
-        assert what in fn, what
-    assert "inet#home_split#ru4|inet#awg_home#lan_ru4" in fn and "inet#home_split#vpn4|inet#awg_home#lan_vpn4" in fn
 
 
 def test_unit_and_status_carry_the_lan_variables(script):
     unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
-    for line in ("Environment=LAN_MODE=$LAN_MODE", 'Environment="HOME_SUBNETS=$HOME_SUBNETS"', "Environment=RESOLVER=$RESOLVER"):
+    for line in ("Environment=LAN_MODE=$LAN_MODE", 'Environment="LAN_SUBNETS=$LAN_SUBNETS"', "Environment=RESOLVER=$RESOLVER"):
         assert line in unit, line
     assert "LAN=%s\\nLAN_IF=%s\\nLAN_ADDR=%s" in script
     plan = script.split('if [ "$MODE" = "plan" ]; then\n    say ""', 1)[1].split("exit 0", 1)[0]
@@ -137,12 +128,12 @@ def test_embedded_scripts_parse(script, tmp_path):
 
 
 def test_paths_resolve_after_their_prefixes(script):
-    """HOME_FILE вычислялся до GW_ETC и раскрывался в /home.nft — таблица ложилась
+    """Файл таблицы вычислялся до GW_ETC и раскрывался в /home.nft — таблица ложилась
     в корень ФС. Шапку скрипта исполняем до первой функции и смотрим на значения."""
     head = script.split("\niface_pubkey()", 1)[0].split("set -e\n", 1)[1]
-    r = _sh(head + '\necho "$HOME_FILE|$GUARD_FILE|$LAN_OLD"', env={"PATH": "/usr/bin:/bin"})
+    r = _sh(head + '\necho "$LAN_FILE|$GUARD_FILE|$LAN_TABLE"', env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "/etc/awg-gw/home.nft|/etc/awg-gw/guard.nft|/var/lib/awg-gw/migrated"
+    assert r.stdout.strip() == "/etc/awg-gw/lan.nft|/etc/awg-gw/guard.nft|inet awg_lan"
 
 
 def test_port53_check_ignores_dnsmasq_and_the_resolved_stub(script, tmp_path):
@@ -260,30 +251,6 @@ def test_the_busy_answer_reaches_the_agent_as_a_refusal(monkeypatch, tmp_path):
     assert gwguard.run_lan_domain("ru", ["shop.ru"]) == (False, "обновление списков ещё идёт")
 
 
-def test_a_leftover_prev_copy_in_the_conf_dir_is_parked(script, tmp_path):
-    """Прежняя версия могла оставить `*.prev.awg` в conf-dir (упавший запуск):
-    dnsmasq читает его вместе с настоящим файлом. Перенос ручного слоя
-    убирает его в архив вместе с .bak/.tmp."""
-    from tests.unit._gw_setup_common import _helpers
-    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
-    for tool in ("ip", "nft", "systemctl"):
-        _fake(bin_dir, tool, "exit 1\n")
-    dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
-    for f in ("awg-gw-vpn-feed.conf.prev.awg", "awg-gw-ru-user.conf.prev.awg", "x.bak", "awg-gw-base.conf"):
-        (dns_d / f).write_text("x\n", encoding="utf-8")
-    old = tmp_path / "old"
-    park = re.search(r"^park\(\) \{.*?^\}$", script, re.S | re.M).group(0)
-    fn = re.search(r"^lan_migrate_manual\(\) \{.*?^\}$", script, re.S | re.M).group(0)
-    prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_OLD="{old}"\n'
-            + park + "\n" + fn + "\nlan_migrate_manual\n")
-    r = _sh(prog, env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
-    assert r.returncode == 0, r.stderr
-    assert sorted(p.name for p in dns_d.iterdir()) == ["awg-gw-base.conf"], list(dns_d.iterdir())
-    parked = sorted(p.name.rsplit(".", 1)[0] for p in old.iterdir())
-    assert parked == ["awg-gw-ru-user.conf.prev.awg", "awg-gw-vpn-feed.conf.prev.awg", "x.bak"], parked
-    assert "awg-gw-vpn-feed.conf.prev.awg" in r.stdout, "перенос не назван в выводе"
-
-
 def test_helpers_are_replaced_by_mv_not_rewritten_in_place(script, tmp_path):
     """Работающий экземпляр (dash читает скрипт кусками) должен дочитать свой
     прежний inode: write_lan_scripts пишет во временный файл и подменяет mv."""
@@ -306,3 +273,82 @@ def test_helpers_are_replaced_by_mv_not_rewritten_in_place(script, tmp_path):
         f = sbin / name
         assert f.stat().st_ino != ino, f"{name} переписан на месте — работающий экземпляр дочитает новый текст"
         assert f.stat().st_mode & 0o777 == 0o755 and "# старый" not in f.read_text(), name
+
+
+# ── переход таблицы awg_home → awg_lan (снимается со следующим сдвигом минимума) ──
+
+def _move_env(script, tmp_path, *, old_table: bool):
+    """Шлюз после обновления до 3.3.1: прежняя таблица есть (или нет), свои
+    списки, фид, слепки и копии для отката — со строками под прежним именем."""
+    from tests.unit._gw_setup_common import _helpers
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    log = tmp_path / "nft.log"
+    sets = {"lan_vpn4": "1.2.3.4", "lan_vpn_nets4": "5.6.0.0/16", "lan_ru4": "7.7.7.7"}
+    listing = "\n".join(
+        f'[ "$5" = "{name}" ] && {{ printf \'table inet awg_home {{\\n\\tset {name} {{\\n\\t\\telements = {{ {el} }}\\n\\t}}\\n}}\\n\'; exit 0; }}'
+        for name, el in sets.items())
+    _fake(bin_dir, "nft", f'echo "nft $*" >> {log}\n'
+          f'if [ "$1 $2 $3 $4" = "list table inet awg_home" ]; then exit {0 if old_table else 1}; fi\n'
+          f'if [ "$1 $2 $3" = "list set inet" ]; then {listing}\n exit 1; fi\n'
+          'exit 0\n')
+    dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
+    dump = tmp_path / "dump"; (dump / "restore").mkdir(parents=True); (dump / "rollback").mkdir()
+    gw_etc = tmp_path / "etc"; gw_etc.mkdir()
+    (gw_etc / "home.nft").write_text("table inet awg_home {}\n", encoding="utf-8")
+    old_line = "nftset=/example.org/inet#awg_home#lan_vpn4\n"
+    files = {dns_d / "awg-gw-vpn-user.conf": old_line, dns_d / "awg-gw-ru-user.conf": old_line.replace("vpn4", "ru4"),
+             dns_d / "awg-gw-vpn-feed.conf": old_line, dump / "restore" / "awg-gw-vpn-user.conf": old_line,
+             dump / "rollback" / "vpn-feed.conf.prev": old_line, dump / "vpn-feed.src": old_line,
+             dump / "lan_vpn4.nft": "table inet awg_home {\n\tset lan_vpn4 {\n\t}\n}\n"}
+    for f, text in files.items():
+        f.write_text(text, encoding="utf-8")
+    move = re.search(r'^LAN_TABLE_OLD=.*?^lan_table_old_drop\(\) \{.*?^\}$', script, re.S | re.M).group(0)
+    head = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{dump}"\nGW_ETC="{gw_etc}"\n'
+            'LAN_TABLE="inet awg_lan"\n_dn_changed=0\n' + move + "\n")
+    return {"bin": bin_dir, "log": log, "files": files, "dump": dump, "gw_etc": gw_etc, "head": head}
+
+
+def test_the_old_table_moves_with_its_sets_and_own_lists(script, tmp_path):
+    """Первый прогон 3.3.1 на шлюзе 3.3.0: наборы прежней таблицы — слепками
+    под новым именем, все строки nftset= и слепки — на awg_lan, dnsmasq будет
+    перезапущен (_dn_changed), прежняя таблица и её файл сняты после новой."""
+    env = _move_env(script, tmp_path, old_table=True)
+    r = _sh(env["head"] + 'lan_table_move_prepare\necho "changed=$_dn_changed"\nlan_table_move_finish\n',
+            env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert "changed=1" in r.stdout and "переезжает" in r.stdout
+    for f in env["files"]:
+        text = f.read_text(encoding="utf-8")
+        assert "awg_home" not in text and "awg_lan" in text, f"{f.name}: {text!r}"
+    log = env["log"].read_text(encoding="utf-8")
+    loads = [ln for ln in log.splitlines() if ln.startswith("nft -f ") and ".move.nft" in ln]
+    assert len(loads) == 3, f"наборы прежней таблицы не загружены в новую: {log}"
+    assert "nft delete table inet awg_home" in log
+    assert log.index("nft -f") < log.index("nft delete table inet awg_home"), "прежняя снята раньше, чем легли наборы"
+    assert not list(env["dump"].glob("*.move.nft")), "слепки переезда остались"
+    assert not (env["gw_etc"] / "home.nft").exists(), "файл прежней таблицы остался"
+
+
+def test_the_moved_set_dump_names_the_new_table(script, tmp_path):
+    env = _move_env(script, tmp_path, old_table=True)
+    r = _sh(env["head"] + "lan_table_move_prepare\n", env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    dumped = (env["dump"] / "lan_ru4.move.nft").read_text(encoding="utf-8")
+    assert dumped.startswith("table inet awg_lan {") and "7.7.7.7" in dumped, dumped
+
+
+def test_without_the_old_table_nothing_moves(script, tmp_path):
+    """Шлюз уже на 3.3.1 (или режим впервые): переписывать и перезапускать нечего."""
+    env = _move_env(script, tmp_path, old_table=False)
+    r = _sh(env["head"] + 'lan_table_move_prepare\necho "changed=$_dn_changed"\n',
+            env={"PATH": f"{env['bin']}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert "changed=0" in r.stdout
+    assert all("awg_home" in f.read_text(encoding="utf-8") for f in env["files"]), "файлы тронуты без перехода"
+
+
+def test_the_move_runs_inside_the_locked_apply_before_the_table(script):
+    # тело с heredoc таблицы (в нём «}» с начала строки) — до развилки режима
+    fn = script.split("_lan_apply_locked() {", 1)[1].split('\nif [ "$LAN_MODE" = "1" ]; then', 1)[0]
+    assert fn.index("_dn_changed=0") < fn.index("lan_table_move_prepare") < fn.index('nft -f $LAN_FILE"')
+    assert fn.index('nft -f $LAN_FILE"') < fn.index("lan_table_move_finish")

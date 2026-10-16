@@ -28,7 +28,8 @@ def test_overview_head_drops_equal_values():
 
 @pytest.mark.parametrize("payload, link", [
     ("migration", ("migration", 0)), ("migration-12", ("migration_cl", 12)),
-    ("migration-", None), ("migration-x", None), ("gwcfg-2", ("gwcfg", 2)), ("gwcfg-", None),
+    ("migration-", None), ("migration-x", None),
+    ("gwcfg-2", None), ("gwcfg-", None),          # ссылка «Перевыпусти» до 3.3.1 — устаревшая: главная
 ])
-def test_parse_link_knows_migration_and_gateway_configuration(payload, link):
+def test_parse_link_knows_migration_and_drops_the_reissue_link(payload, link):
     assert panel.parse_link(payload) == link

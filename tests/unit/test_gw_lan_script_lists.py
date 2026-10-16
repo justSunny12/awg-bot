@@ -22,19 +22,19 @@ script, lists_env, channel_env = _c.script, _c.lists_env, _c.channel_env
 
 def test_lists_convert_feed_subtract_exceptions_and_load_subnets(lists_env):
     tool, dns_d, dump, log, env = lists_env
-    (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
+    (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_lan#lan_ru4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     feed = (dns_d / "awg-gw-vpn-feed.conf").read_text()
-    assert "nftset=/youtube.com/googlevideo.com/inet#awg_home#lan_vpn4" in feed, "ipset= → nftset= в наш набор"
+    assert "nftset=/youtube.com/googlevideo.com/inet#awg_lan#lan_vpn4" in feed, "ipset= → nftset= в наш набор"
     assert "shop.ru" not in feed, "исключение вычтено: dnsmasq применяет одну директиву на домен"
-    assert "nftset=/x.com/inet#awg_home#lan_vpn4" in feed
+    assert "nftset=/x.com/inet#awg_lan#lan_vpn4" in feed
     assert "<html>" not in feed, "мусор HTTP 200 в conf-dir не попадает"
     text = log.read_text()
     assert "dnsmasq --test" in text and text.index("dnsmasq --test") < text.index("systemctl restart dnsmasq"), \
         "конфиг проверен до рестарта"
     assert "systemctl restart dnsmasq" in text
-    assert "flush set inet awg_home lan_vpn_nets4" in text and "8.8.8.0/24" in text and "91.108.4.0/22" in text
+    assert "flush set inet awg_lan lan_vpn_nets4" in text and "8.8.8.0/24" in text and "91.108.4.0/22" in text
     assert text.index("flush set") < text.index("add element"), "одной транзакцией: flush, затем add"
     assert (dump / "lan_vpn4.nft").exists() and (dump / "lan_vpn_nets4.nft").exists(), "слепки для старта"
     status = (dump / "lists.status").read_text()
@@ -45,10 +45,10 @@ def test_lists_roll_back_a_feed_that_dnsmasq_rejects(lists_env):
     """dnsmasq --test отверг новый фид — прежний файл на месте, рестарта нет,
     локальная сеть не остаётся без DNS."""
     tool, dns_d, dump, log, env = lists_env
-    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
     assert r.returncode == 1 and "откатываю" in r.stderr
-    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n"
     assert "systemctl restart dnsmasq" not in log.read_text()
 
 
@@ -84,13 +84,13 @@ def test_channel_feeds_are_used_without_a_single_download(channel_env):
     """Смысл этапа 3: фиды привёз сервер, и адрес локальной сети за ними не ходит ни
     на GitHub, ни в Google. Проверки те же, что для скачанного."""
     tool, dns_d, dump, log, env, _feed = channel_env
-    (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
+    (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_lan#lan_ru4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     text = log.read_text()
     assert "curl" not in text, f"при фидах из канала скрипт ходил в сеть: {text}"
     feed = (dns_d / "awg-gw-vpn-feed.conf").read_text()
-    assert "nftset=/chan0.org/inet#awg_home#lan_vpn4" in feed
+    assert "nftset=/chan0.org/inet#awg_lan#lan_vpn4" in feed
     assert "shop.ru" not in feed and "<html>" not in feed, "исключения и мусор — как у скачанного"
     assert "91.108.4.0/22" in text and "8.8.8.0/24" in text and "не подсеть" not in text
     status = (dump / "lists.status").read_text()
@@ -102,20 +102,20 @@ def test_a_broken_channel_feed_is_refused_like_a_downloaded_one(channel_env):
     получает её не больше, чем получил бы скачанную: короткий фид отвергнут,
     прежний файл на месте."""
     tool, dns_d, dump, log, env, feed = channel_env
-    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     (feed / "domains.lst").write_text("<html>blocked</html>\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "подозрительно короткий" in r.stderr
-    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n"
     assert "curl" not in log.read_text(), "отказ фида из канала не повод идти за ним в сеть"
 
 
 def test_a_channel_feed_that_dnsmasq_rejects_is_rolled_back(channel_env):
     tool, dns_d, dump, log, env, _feed = channel_env
-    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
     assert r.returncode == 1 and "откатываю" in r.stderr
-    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n"
     assert "systemctl restart dnsmasq" not in log.read_text()
 
 
@@ -149,14 +149,14 @@ def test_lists_wait_for_the_lock_and_say_busy_with_code_75(lists_env):
     tool, dns_d, dump, log, env = lists_env
     bin_dir = Path(env["PATH"].split(":", 1)[0])
     _fake(bin_dir, "flock", f'echo "flock $*" >> {log}\nexit 1\n')       # блокировку держит другой
-    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 75, f"занятая блокировка выдана за {r.returncode}: {r.stderr}"
     assert "обновление уже идёт" in r.stderr
     text = log.read_text()
     assert "flock -w 120 9" in text, f"ждать блокировку надо до двух минут, а не сдаваться сразу: {text}"
     assert "systemctl" not in text and "nft" not in text, "без блокировки скрипт что-то применил"
-    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n"
     assert not (dump / "lists.status").exists(), "статус переписан запуском, который ничего не сделал"
 
 
@@ -188,12 +188,12 @@ def test_a_feed_dnsmasq_cannot_start_with_is_rolled_back(lists_env):
     демон поднимается с ним, код 1."""
     tool, dns_d, dump, log, env = lists_env
     feed = dns_d / "awg-gw-vpn-feed.conf"
-    feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    feed.write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     _failing_restart(Path(env["PATH"].split(":", 1)[0]), log)
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1, f"отказ рестарта выдан за успех: rc={r.returncode}"
     assert "не поднялся с новым фидом" in r.stderr and "откатываю" in r.stderr
-    assert feed.read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n", "прежний фид не вернулся"
+    assert feed.read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n", "прежний фид не вернулся"
     assert not (dns_d / "awg-gw-vpn-feed.conf.prev.awg").exists(), "копия отката осталась в conf-dir"
     assert log.read_text().count("systemctl restart dnsmasq") == 2, (
         "после отката демон надо поднять с прежним фидом")
@@ -213,10 +213,10 @@ def test_a_first_feed_dnsmasq_cannot_start_with_is_removed(lists_env):
 def test_the_rollback_copy_is_removed_only_after_a_successful_restart(lists_env):
     tool, dns_d, dump, log, env = lists_env
     feed = dns_d / "awg-gw-vpn-feed.conf"
-    feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    feed.write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
-    assert "nftset=/x.com/inet#awg_home#lan_vpn4" in feed.read_text()
+    assert "nftset=/x.com/inet#awg_lan#lan_vpn4" in feed.read_text()
     assert not (dns_d / "awg-gw-vpn-feed.conf.prev.awg").exists(), (
         "копия отката осталась в conf-dir: dnsmasq читает там всё, кроме .dpkg-*")
 
@@ -300,7 +300,7 @@ def test_a_refused_short_feed_is_not_applied_later_by_an_exception_change(script
 
 def test_the_feed_rollback_copy_is_outside_the_conf_dir_during_the_restart(lists_env):
     tool, dns_d, dump, log, env = lists_env
-    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     snap = _snapshot_restart(env, log)
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
@@ -313,7 +313,7 @@ def test_the_feed_rollback_copy_is_outside_the_conf_dir_during_the_restart(lists
 
 def test_a_failed_feed_restart_restores_the_feed_from_rollback(lists_env):
     tool, dns_d, dump, log, env = lists_env
-    old = "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    old = "nftset=/old.org/inet#awg_lan#lan_vpn4\n"
     (dns_d / FEED).write_text(old, encoding="utf-8")
     snap = _snapshot_restart(env, log, fails=1)
     r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)

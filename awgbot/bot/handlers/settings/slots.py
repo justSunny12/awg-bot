@@ -18,7 +18,7 @@ from awgbot.bot.handlers.common import call, edit, send_menu, card_from_main, as
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .gwmark import _slot_of
-from .render import _render, card_kb, gateways_screen, send_gw_bundle
+from .render import _render, card_kb, gateways_screen
 
 # ── слоты шлюзов ───────────────────────────────
 
@@ -202,8 +202,7 @@ async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer(texts.GATEWAY_LAN_NO_SUBNET, show_alert=True)
         return
     resolver = await call(services.gateway_resolver_addr, gw) if on else ""
-    reissue = await call(services.gateway_transit_reissue, gw.id)
-    await edit(cb, texts.gateway_lan_ask(st, on, resolver, reissue), kb.gateway_lan_confirm(gw.id, on))
+    await edit(cb, texts.gateway_lan_ask(st, on, resolver), kb.gateway_lan_confirm(gw.id, on))
     await cb.answer()
 
 
@@ -229,17 +228,8 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
             await _show_router(cb, fresh, "mt")
     else:
         await _render_card(cb, services, callback_data.slot)
-    chan = st.get("channel") or {}
-    # документ везёт режим всегда; агенту 3.2.x — каналом, только пока он на связи
-    by_file = not (chan.get("cfg") or {}).get("cfg1") and not chan.get("online")
-    tail = "перевыпусти конфигурацию шлюза" if by_file else "применится автоматически по каналу конфигурации"
-    # подсети соседей меняются у этого слота и у других слотов с VPN-транзитом
-    # и живут в конфиге линка: агентам без документа — только файлом, поимённо
-    names = [n for n in await call(services.gateway_transit_reissue, callback_data.slot)
-             if not (by_file and n == st.get("display"))]
-    if names:
-        tail += ("; для связи подсетей перевыпусти конфигурацию: " if on
-                 else "; чтобы снять связь подсетей, перевыпусти конфигурацию: ") + ", ".join(names)
+    # режим и подсети соседей других слотов с VPN-транзитом везёт документ конфигурации
+    tail = "применится автоматически по каналу конфигурации"
     await cb.answer(ui.toast(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail), show_alert=True)
 
 
@@ -263,28 +253,7 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer()
 
 
-@router.callback_query(GwSlotCB.filter(F.action == "bundle"))
-async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """«📤 Конфигурация» в карточке: файл сразу, без экрана «что
-    произойдёт». Карточка гаснет и помечается как контент: живым остаётся
-    «В меню» на файле, а «В меню» и итог применения с шлюза уберут её вместе
-    с файлом (send_gw_bundle запоминает обе)."""
-    await cb.answer(ui.Toast.packing)
-    await _issue_bundle_here(cb, services, int(callback_data.slot or 0))
-
-
-async def _issue_bundle_here(cb: CallbackQuery, services, slot: int) -> None:
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:                                      # noqa: BLE001
-        pass
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await send_gw_bundle(cb.message, services, slot, instr_id=cb.message.message_id)
-
-
-# «home» — имя этого действия до 3.3.0: кнопка «🗺 Подсети» в сообщении,
-# оставшемся в чате с прежней версии; снимается следующим выпуском
-@router.callback_query(GwSlotCB.filter(F.action.in_({"lan_nets", "home"})))
+@router.callback_query(GwSlotCB.filter(F.action == "lan_nets"))
 async def gw_slot_lan(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:

@@ -1,9 +1,9 @@
 """
-3.2.x → 3.3.0: колонка `gateways.home_subnets` стала `lan_subnets`.
+Минимум схемы — 3.3.0: колонка подсетей слота `gateways.lan_subnets`.
 
-База прежней версии приходит двумя путями — накатом поверх хоста и
-восстановлением копии; оба проходят через init_schema. Переименование — на
-месте, данные те же; копия 3.2.x по-прежнему проходит сторож минимума.
+Переименование `home_subnets` → `lan_subnets` на старте снято вместе со
+сдвигом минимума: хост ниже 3.3.0 сначала едет на 3.3.0, копия, снятая до
+неё, не разворачивается — сторож минимума называет причину.
 """
 import sqlite3
 
@@ -28,18 +28,22 @@ def _old_db(path: str) -> None:
     con.close()
 
 
-def test_an_old_database_gets_the_column_renamed_with_its_data(tmp_path):
+def test_a_database_below_the_floor_is_refused_by_the_floor_check(tmp_path):
     path = str(tmp_path / "old.db")
     _old_db(path)
-    assert schema_gap(path) == "", "копия 3.2.x обязана проходить сторож минимума"
+    assert schema_gap(path) == "в таблице gateways нет колонки lan_subnets", (
+        "копия 3.2.x обязана отбиваться сторожем минимума: переименования на старте больше нет")
+
+
+def test_init_schema_no_longer_renames_the_old_column(tmp_path):
+    """Шаг доводки снят: база с прежним именем не переписывается молча."""
+    path = str(tmp_path / "old.db")
+    _old_db(path)
     db = Database(path)
     try:
         db.init_schema()
         cols = {r[1] for r in db._connection().execute("PRAGMA table_info(gateways)")}
-        assert "lan_subnets" in cols and "home_subnets" not in cols
-        assert db.gateway(1).lan_subnets == ["192.168.1.0/24", "10.20.0.0/16"], "подсети слота потеряны"
-        db.init_schema()                                     # повторный старт — без ошибки и без изменений
-        assert db.gateway(1).lan_subnets == ["192.168.1.0/24", "10.20.0.0/16"]
+        assert "home_subnets" in cols and "lan_subnets" not in cols
     finally:
         db.close()
 
@@ -54,9 +58,8 @@ def test_a_fresh_database_is_created_under_the_new_name(tmp_path):
         db.close()
 
 
-def test_the_renamed_database_still_passes_the_floor_check(tmp_path):
-    """Копия, снятая на 3.3.0, разворачивается: сторож минимума не требует
-    прежнего имени колонки."""
+def test_a_fresh_database_passes_the_floor_check(tmp_path):
+    """Копия, снятая на 3.3.0, разворачивается."""
     path = str(tmp_path / "new.db")
     db = Database(path)
     db.init_schema()

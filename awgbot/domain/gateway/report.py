@@ -1,16 +1,14 @@
 """report.py — что агент докладывает серверу каналом и что знает о сервере из
-`role`: первый выход, итог применения, роль слота и возможности сервера,
+`role`: первый выход, роль слота и возможности сервера,
 версия сервера (сверка версий: ожидание после старта и условие обновления
 агента), адреса в туннеле своей сети (только показ), пометка."""
 
 from __future__ import annotations
 
 import ipaddress
-import json
 import re
 
 from awgbot.util import timeutil
-from awgbot.domain.gateway.base import log
 
 _SERVER_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(\.\d+)?$")
 
@@ -82,36 +80,6 @@ class ReportMixin:
         self.db.set_state(self._INSTALLED_SENT_KEY, timeutil.to_iso(timeutil.now()))
 
 
-    # ── итог применения файла из чата — серверу каналом ──────────────────────
-    _APPLIED_PENDING_KEY = "gwlink_applied_pending"
-
-    _APPLIED_PENDING_TTL_S = 24 * 3600
-
-    def applied_pending_set(self, ok: bool, error: str, fp: str = "") -> None:
-        """Итог ждёт отправки: канал после применения бандла обычно
-        переподключается, а сказать серверу надо ровно один раз. fp — отпечаток
-        применённого файла: сервер по нему узнаёт, о каком файле речь."""
-        self.db.set_state(self._APPLIED_PENDING_KEY,
-                          json.dumps({"ok": bool(ok), "error": " ".join((error or "").split())[:300],
-                                      "fp": str(fp or "")[:32],
-                                      "at": timeutil.to_iso(timeutil.now())}, ensure_ascii=False))
-
-    def applied_pending_get(self) -> dict:
-        """Итог в очереди; просроченный (сутки без канала) — как пустой: столько
-        у файла на сервере никто не ждёт, а сервер без ответа его и не убрал бы."""
-        data = self.db.get_state_json(self._APPLIED_PENDING_KEY, {})
-        if "ok" not in data:
-            return {}
-        try:
-            age = (timeutil.now() - timeutil.parse_iso(str(data.get("at") or ""))).total_seconds()
-        except ValueError:
-            return {}                                 # без времени — как просроченный
-        return {} if age > self._APPLIED_PENDING_TTL_S else data
-
-    def applied_pending_clear(self) -> None:
-        self.db.set_state(self._APPLIED_PENDING_KEY, "")
-
-
     # ── роль слота и диагностика по каналу ──
     _LINK_ROLE_KEY = "gwlink_role"
 
@@ -130,9 +98,8 @@ class ReportMixin:
         standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
         РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
         Сам агент узнать это не может — решает автомат переключения на ВПС.
-        caps — возможности сервера (список имён): по ним подсказки говорят, что
-        сервер пришлёт сам, а что едет файлом. Старый сервер шлёт только active —
-        тогда прочее не трогаем. server — версия сервера AWG из `role` (с 3.3.0):
+        caps — возможности сервера (список имён, контракт канала). Старый сервер
+        шлёт только active — тогда прочее не трогаем. server — версия сервера AWG из `role` (с 3.3.0):
         по ней агент выбирает цель обновления (`roles.gw.needs_main`); `role` без
         версии или с чужой формой — сервер старше 3.3.0 («old»). lan_virtual —
         адреса в туннеле своей сети (с 3.3.0, только для показа): нет поля
@@ -165,12 +132,6 @@ class ReportMixin:
     def link_server_caps(self) -> list[str]:
         """Возможности сервера из его первого `role`; пусто — сервер прежний или не говорил."""
         return (self.db.get_state(self._LINK_SERVER_CAPS_KEY) or "").split()
-
-    def server_cfg1(self) -> bool:
-        """Сервер присылает документ конфигурации сам (возможность cfg1): подсказки
-        проверок говорят «🚑 Восстановить», а не «перевыпусти» — новый файл с ВПС
-        такому шлюзу не нужен, значения приезжают каналом."""
-        return "cfg1" in self.link_server_caps()
 
     def server_version(self) -> str:
         """Версия сервера AWG из последнего `role`: «3.3.0»; «old» — сервер
@@ -218,21 +179,6 @@ class ReportMixin:
 
 
     # ── шлюзовое устройство: пометка в основном боте ─────────────────────────
+    # последнее решение скрипта обвязки о пометке (его записывал итог применения
+    # файла из чата прежних выпусков): по нему канал шлёт токен пометки серверу
     _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | unconfirmed | ?
-
-    def gateway_mark_outcome(self) -> dict:
-        """После применения бандла: он ли помеченный шлюз. Решение принял
-        скрипт обвязки (файл статуса), здесь — перевод в действие: unmarked,
-        foreign и unconfirmed означают «переслать claim основному боту»."""
-        from awgbot.infra import gwguard
-        st = gwguard.script_status()
-        status = st.get("GW_STATUS", "?")
-        iface, pub = gwguard.uplink_pubkey()
-        self.db.set_state(self._GW_MARK_KEY, status)
-        out = {"status": status, "uplink": iface, "pubkey": pub, "claim": None}
-        if status in ("unmarked", "foreign", "unconfirmed") and pub:
-            try:
-                out["claim"] = self.gateway_claim_message(pub)
-            except (OSError, ValueError) as e:
-                log.warning("gateway: claim не собран: %s", e)
-        return out

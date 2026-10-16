@@ -1,4 +1,4 @@
-"""Минимум 3.2.0: миграций ниже в коде нет, копия со старой схемой не
+"""Минимум 3.3.0: миграций ниже в коде нет, копия со старой схемой не
 разворачивается — ни у бота (check_backup), ни у CLI (tools.check_backup)."""
 import io
 import json
@@ -14,7 +14,7 @@ def _old_db(path, *, missing: str = "clients.kind") -> None:
     con.executescript("""
         CREATE TABLE clients(id INTEGER PRIMARY KEY, kind TEXT, tg_name TEXT, tg_name_at TEXT, tg_username TEXT);
         CREATE TABLE devices(id INTEGER PRIMARY KEY, holder_client_id INTEGER, is_gateway INTEGER DEFAULT 0);
-        CREATE TABLE gateways(id INTEGER PRIMARY KEY, lan_mode INTEGER);
+        CREATE TABLE gateways(id INTEGER PRIMARY KEY, lan_mode INTEGER, lan_subnets TEXT);
         CREATE TABLE device_traffic(device_id INTEGER, rf_rx_month INTEGER, rf_tx_month INTEGER);
     """)
     cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})") if r[1] != col]
@@ -69,7 +69,7 @@ def test_bot_refuses_a_copy_with_a_pre_floor_schema(services, tmp_path):
     _old_db(str(p))
     res = services.inspect_backup(_archive(p.read_bytes()), "awg-bot_old.tgz")
     # подробность схемы (колонка) — в журнал, человеку — версия и шаг
-    assert res["ok"] is False and "до v3.2.0" in res["error"] and "clients" not in res["error"], res
+    assert res["ok"] is False and "до v3.3.0" in res["error"] and "clients" not in res["error"], res
 
 
 def test_bot_accepts_a_copy_with_a_current_schema(services, tmp_path):
@@ -82,7 +82,7 @@ def test_cli_check_backup_exit_codes(tmp_path, capsys):
     p = str(tmp_path / "old.db")
     _old_db(p)
     assert check_backup.main(["x", p]) == 1
-    assert "ниже минимума 3.2.0" in capsys.readouterr().err
+    assert "ниже минимума 3.3.0" in capsys.readouterr().err
     good = str(tmp_path / "good.db")
     con = sqlite3.connect(good); con.executescript("CREATE TABLE clients(id INTEGER, kind TEXT, tg_name TEXT, tg_name_at TEXT, tg_username TEXT);"); con.close()
     assert check_backup.main(["x", good]) == 0

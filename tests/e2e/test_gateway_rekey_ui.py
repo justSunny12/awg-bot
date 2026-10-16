@@ -1,13 +1,11 @@
 """Смена ключей линка и переезд профилей на стороне основного бота — что
 нажатия меняют: «⚙️ Настройки → 🔧 Сервис → 🔑 Ключи линка» (кнопка — только
-при шлюзе с подтверждением; один шлюз — сразу диалог, несколько — выбор) →
+при шлюзе с агентом не ниже 3.3.0; один шлюз — сразу диалог, несколько — выбор) →
 диалог → «🔑 Сменить» (стадия скрипта линка, состояние перехода слота,
 link_next по каналу, итог первой строкой «Сервиса»), отказы всплывашкой;
 ответы шлюза на приглашение (строки К1/К4 карточки, отказ — уведомление
 один раз, Н5 по аплинку); финал переезда — строка про шлюз на прежнем
-аплинке в диалоге и файл конфигурации только тем слотам, чей агент не
-принимает документ; ссылка и кнопка «Перевыпустить» для агента с документом
-ведут в карточку, а не в файл.
+аплинке в диалоге и ни одного файла конфигурации.
 
 Цена ошибки: стадия, запущенная дважды, затирает .next первой и шлюз
 получает ключи, которых у ВПС уже нет, — линк не поднимется ни на новых, ни
@@ -29,13 +27,10 @@ from __future__ import annotations
 import base64
 
 import pytest
-from aiogram.filters import CommandObject
 from nacl.public import PrivateKey
 
-from awgbot.bot.callbacks import GwSlotCB, NoteCB, SetCB
+from awgbot.bot.callbacks import GwSlotCB, SetCB
 from awgbot.bot.handlers import settings as sh
-from awgbot.bot.handlers.admin.panel import admin_start
-from awgbot.bot.handlers.reply_commands import on_note_action
 from awgbot.bot.texts import GATEWAY_KEYS_QUEUED, GATEWAY_KEYS_SENT
 from awgbot.core import config
 from awgbot.domain import gwcfg
@@ -167,11 +162,12 @@ async def _service(fake_bot, services):
 
 async def test_service_offers_keys_only_when_some_agent_can_take_them(services, slots, stage, fake_bot):
     """Кнопка редкая и аварийная — живёт в «🔧 Сервис», последним рядом перед
-    «Назад», и только если есть шлюз с агентом, умеющим подтверждение: агенту
-    3.2 она вела бы в отказ. Нажатие по устаревшей кнопке без таких шлюзов —
+    «Назад», и только если есть шлюз с агентом не ниже 3.3.0: агенту ниже она
+    вела бы в отказ. Нажатие по устаревшей кнопке без таких шлюзов —
     всплывашка-объяснение, а не пустой экран."""
     _, pi, _ = slots
     _slot1(services, pi)
+    services.gwlink_session_opened(1, "3.2.1", 2, [])
     _, markup = await _service(fake_bot, services)
     assert "🔑 Ключи линка" not in _labels(markup), "кнопка при агенте без подтверждения"
     cb, nav = _acb(fake_bot)
@@ -181,7 +177,7 @@ async def test_service_offers_keys_only_when_some_agent_can_take_them(services, 
     _confirm(services)
     _, markup = await _service(fake_bot, services)
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
-    assert rows[-2:] == [["🔑 Ключи линка"], ["⬅️ Назад"]], rows
+    assert rows[-2:] == [["🔑 Ключи линка", "🤖 Токен шлюза"], ["⬅️ Назад"]], rows
     lk = [b.callback_data for r in markup.inline_keyboard for b in r if b.text == "🔑 Ключи линка"]
     assert lk == [SetCB(sec="lk", act="do", key="pick").pack()], lk
 
@@ -194,6 +190,7 @@ async def test_one_gateway_opens_the_dialog_with_cancel_back_to_service(services
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     _confirm(services)
+    services.gwlink_session_opened(2, "3.2.1", 2, [])     # второй — агент ниже 3.3.0
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "pick")
     text, markup = _edits(nav)[-1]
@@ -360,30 +357,15 @@ async def test_change_offline_keeps_the_transition_and_says_keys_go_by_channel(
     assert text.startswith(GATEWAY_KEYS_QUEUED), text
 
 
-async def test_change_with_a_session_but_no_confirm_does_not_send(services, slots, stage, listener, fake_bot):
-    """Сессия открыта агентом без подтверждения (сессия прежней версии висит,
-    пока новая не подключилась): link_next ему не шлётся — он его не поймёт;
-    человек видит «не на связи», переход ждёт новой сессии."""
-    _, pi, _ = slots
-    _slot1(services, pi)
-    _confirm(services)
-    listener.open(1, caps=("cfg1",))
-    cb, nav = _acb(fake_bot)
-    await _lk(cb, services, "yes", 1)
-    assert listener.sent(1) == [], "link_next ушёл агенту без confirm1"
-    text, _ = _edits(nav)[-1]
-    assert text.startswith(GATEWAY_KEYS_QUEUED), text
-
-
 async def test_change_refused_by_the_service_is_an_alert_and_changes_nothing(
         services, slots, stage, listener, fake_bot):
-    """Агент без подтверждения (3.2) — «Агенту шлюза нужна версия 3.3.0»;
+    """Агент ниже 3.3.0 — «Нужен агент шлюза v3.3.0»;
     скрипт стадии отказал — причина. Оба раза: всплывашка-алерт, переход не
     записан, канал молчит, экран не перерисован."""
     _, pi, _ = slots
     _slot1(services, pi)
-    services.gwlink_session_opened(1, "3.2.1", 2, ["cfg1"])
-    listener.open(1, caps=("cfg1",))
+    services.gwlink_session_opened(1, "3.2.1", 2, [])
+    listener.open(1, caps=())
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "yes", 1)
     assert cb.answers[-1] == ("Нужен агент шлюза v3.3.0", True), cb.answers
@@ -559,7 +541,6 @@ def _bundles(services, monkeypatch) -> list:
     def enc(slot=None):
         got.append(slot)
         return b"DUMMY-ENC", f"b{slot}.enc"
-    monkeypatch.setattr(services, "gw_bundle_encrypted", enc)
     return got
 
 
@@ -584,10 +565,10 @@ async def test_finish_dialog_names_the_gateway_still_on_the_old_uplink(services,
     assert "прежнем аплинке" not in _edits(nav)[-1][0]
 
 
-async def test_finish_sends_the_file_only_to_slots_without_the_document(services, slots, fake_bot, monkeypatch):
-    """После финала подсеть клиентов сменилась: агенту 3.2 нужен файл, агенту с
-    документом (cfg1) — нет, ему подсеть и AllowedIPs доедут каналом, а файл —
-    лишний секрет в чате (ключ линка внутри)."""
+async def test_finish_sends_no_file_to_any_slot(services, slots, fake_bot, monkeypatch):
+    """После финала подсеть клиентов сменилась: подсеть и AllowedIPs доедут
+    каналом документом — файл был бы лишним секретом в чате (ключ линка
+    внутри), и его не шлют ни одному слоту."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "confirm1"])
@@ -597,67 +578,8 @@ async def test_finish_sends_the_file_only_to_slots_without_the_document(services
     monkeypatch.setattr(services, "migration_running", lambda: True)
     cb, nav = _acb(fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
-    assert got == [2], f"файлы ушли слотам {got}, ждали только слоту 2 (агент без документа)"
-    assert sum(1 for s in nav.sent if s[0] == "document") == 1
+    assert got == [], f"файлы ушли слотам {got}"
+    assert not any(s[0] == "document" for s in nav.sent)
 
 
 # ── «Перевыпустить» и /start gwcfg-N ─────────────────────────────────────────
-
-async def test_reissue_button_opens_the_card_for_an_agent_with_the_document(services, slots, fake_bot, monkeypatch):
-    """Кнопка «Перевыпустить» на старом напоминании: агенту с документом файл
-    не нужен — открывается карточка слота; агенту без него — файл, как раньше."""
-    _, pi, _ = slots
-    _slot1(services, pi)
-    got = _bundles(services, monkeypatch)
-    cb, nav = _acb(fake_bot)
-    await on_note_action(cb, NoteCB(kind="gwcfg", ref=1), FakeState(), services, role="admin")
-    assert got == [1] and any(s[0] == "document" for s in nav.sent), "агенту без документа — не файл"
-    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "confirm1"])
-    got.clear()
-    cb, nav = _acb(fake_bot)
-    await on_note_action(cb, NoteCB(kind="gwcfg", ref=1), FakeState(), services, role="admin")
-    assert got == [] and not any(s[0] == "document" for s in nav.sent), "агенту с документом ушёл файл"
-    shown = [t for k, t, _ in nav.sent if k in ("answer", "edit_text")] + \
-        [r[2] for r in fake_bot.records if r[0] == "send_message"]
-    assert any(t.startswith("🛰 <b>NASPi</b>") for t in shown), shown
-
-
-async def test_reissue_button_card_goes_back_to_the_main_screen(services, slots, fake_bot, monkeypatch):
-    """Карточка, открытая кнопкой с уведомления, — как карточка по ссылке
-    gw-<слот>: «⬅️ Назад» ведёт на главную, откуда человек пришёл, а не в
-    раздел маршрутизации, которого он не открывал; и подэкраны карточки
-    возвращают туда же."""
-    from awgbot.bot.callbacks import Menu
-    from awgbot.bot.handlers.common import card_from_main, card_is_from_main
-    _, pi, _ = slots
-    _slot1(services, pi)
-    _bundles(services, monkeypatch)
-    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "confirm1"])
-    card_from_main(ADMIN, False)
-    cb, nav = _acb(fake_bot)
-    await on_note_action(cb, NoteCB(kind="gwcfg", ref=1), FakeState(), services, role="admin")
-    assert card_is_from_main(ADMIN), "карточка с уведомления не помечена «пришли с главной»"
-    card_from_main(ADMIN, False)
-    markups = [m for k, t, m in nav.sent if k in ("answer", "edit_text") and t.startswith("🛰 <b>NASPi</b>")]
-    assert markups, nav.sent
-    back = [b.callback_data for row in markups[-1].inline_keyboard for b in row if b.text == "⬅️ В меню"]
-    assert back == [Menu(action="main").pack()], f"«В меню» с карточки ведёт в {back}"
-
-
-async def test_gwcfg_link_opens_the_card_for_an_agent_with_the_document(services, slots, fake_bot, monkeypatch):
-    """/start gwcfg-1 из уведомления: агенту с документом — карточка слота
-    вместо файла; агенту без документа — файл."""
-    _, pi, _ = slots
-    _slot1(services, pi)
-    got = _bundles(services, monkeypatch)
-    msg = FakeMessage(text="/start gwcfg-1", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    await admin_start(msg, services, FakeState(), command=CommandObject(prefix="/", command="start", args="gwcfg-1"))
-    assert got == [1], "агенту без документа файл не выдан"
-    services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1", "confirm1"])
-    got.clear()
-    msg = FakeMessage(text="/start gwcfg-1", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    await admin_start(msg, services, FakeState(), command=CommandObject(prefix="/", command="start", args="gwcfg-1"))
-    assert got == [], "агенту с документом ушёл файл"
-    shown = [t for k, t, _ in msg.sent if k in ("answer", "edit_text")] + \
-        [r[2] for r in fake_bot.records if r[0] in ("send_message", "edit_message_text")]
-    assert any(t.startswith("🛰 <b>NASPi</b>") for t in shown), shown

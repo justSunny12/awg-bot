@@ -90,8 +90,8 @@ def _smb_sent(peers: str = "10.240.0.0/16"):
     def step(services, mp):
         services.gwlink_services_in(1, [_NAS])
         services.gwlink_session_closed(1)
-        services.gwlink_snapshot_in(2, {"bundle": {"lan_mode": "1", "home_subnets": LAN2, "resolver": "10.9.1.1",
-                                                   "peer_home_nets": peers, "admin_ips": "10.8.1.2"},
+        services.gwlink_snapshot_in(2, {"bundle": {"lan_mode": "1", "lan_subnets": LAN2, "resolver": "10.9.1.1",
+                                                   "peer_lan_nets": peers, "admin_ips": "10.8.1.2"},
                                         "agent_version": "3.1.0", "link_contract": "1", "rev": 1}, 1, True)
     return step
 

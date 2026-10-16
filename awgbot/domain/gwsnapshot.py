@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 # Закрытый список полей. Тест падает на появлении нового: без сторожа в снимок
 # со временем натечёт всё, что «и так снимается».
-FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
+FACT_FIELDS = ("bundle", "link_contract", "mark_status",
                "agent_version", "awg_generation", "agent_bot", "cfg")
 # cfg — отпечатки разделов документа конфигурации, которые стоят на шлюзе
 # (domain/gwcfg): по ним ВПС решает, что доставить; gen — поколение последнего
@@ -45,6 +45,10 @@ FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
 from awgbot.util import gwlink as _gwlink  # noqa: E402
 from awgbot.infra import bootid
 BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
+# Прежние имена двух полей блока bundle — сервер 3.3.0 читает только их: агент
+# пишет их рядом с новыми, сервер берёт их, когда новых нет (агент 3.3.0).
+# Снимается со следующим сдвигом минимума.
+BUNDLE_OLD_FIELDS = {"lan_subnets": "home_subnets", "peer_lan_nets": "peer_home_nets"}
 # lan_addr — адрес шлюза в его локальной сети (интерфейс VPN-транзита): ВПС
 # подставляет его в настройку роутера вместо плейсхолдера. Локальное чтение,
 # как и всё остальное; агент без транзита шлёт пустую строку.
@@ -66,15 +70,6 @@ def link_contract(conf_path: str) -> str:
     return m.group(1) if m else ""
 
 
-def plumbing_gen(info: dict | None) -> str:
-    """Поколение обвязки: new — таблица с цепочкой ssh_in, old — таблица без
-    неё, none — таблицы нет (обвязку не разворачивали или сняли)."""
-    if not info:
-        return "none"
-    chains = info.get("chains") or ()
-    return "new" if "ssh_in" in chains else "old"
-
-
 def boot_id() -> str:
     """Разный после перезагрузки: ВПС отличает «агент перезапустился» от
     «шлюз перезагрузился», не спрашивая аптайм."""
@@ -85,7 +80,7 @@ _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и т
 _CFG_SECTIONS = ("env", "link", "uplink", "mail", "backup", "token", "server")   # = gwcfg.SECTIONS, сверяет тест
 
 
-def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None,
+def collect(*, mark_status: str, egress_ok: bool | None,
             peer_nets: tuple[bool, list[str]] | None, agent_bot: dict | None = None,
             cfg: dict | None = None, lan_addr: str = "") -> dict:
     """Собрать снимок. Всё чтение — локальное: юнит обвязки, конфиг линка,
@@ -97,11 +92,11 @@ def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None
     """
     from awgbot.core import config
     from awgbot.infra import awglock, gwguard
+    bundle = {_gwlink.snap_field(k): " ".join(gwguard.unit_env(k).split()) for k in _gwlink.BUNDLE_KEYS}
+    bundle.update({old: bundle[new] for new, old in BUNDLE_OLD_FIELDS.items()})
     snap = {
-        "bundle": {_gwlink.snap_field(k): " ".join(gwguard.unit_env(k).split())
-                   for k in _gwlink.BUNDLE_KEYS},
+        "bundle": bundle,
         "link_contract": link_contract(config.GW_LINK_CONF),
-        "plumbing_gen": plumbing_gen(guard_info),
         "mark_status": mark_status or "",
         "agent_version": config.INSTALLED_VERSION,
         "awg_generation": awglock.generation(),
@@ -175,8 +170,9 @@ def sanitize(raw: dict) -> dict:
     src = raw if isinstance(raw, dict) else {}
     bundle = src.get("bundle")
     if isinstance(bundle, dict):
-        out["bundle"] = {k: _clean_str(bundle.get(k, "")) for k in BUNDLE_FIELDS}
-    for key in ("link_contract", "plumbing_gen", "mark_status", "agent_version", "boot_id", "ts"):
+        out["bundle"] = {k: _clean_str(bundle[k] if k in bundle else bundle.get(BUNDLE_OLD_FIELDS.get(k, ""), ""))
+                         for k in BUNDLE_FIELDS}
+    for key in ("link_contract", "mark_status", "agent_version", "boot_id", "ts"):
         if key in src:
             out[key] = _clean_str(src[key])
     if "awg_generation" in src:

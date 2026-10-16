@@ -35,9 +35,9 @@ class CfgMixin:
         return {"CLIENT_SUBNET": str(settings.get("app.network.subnet_cidr", f"{config.SUBNET_PREFIX}.0/24") or ""),
                 "ADMIN_IPS": " ".join(self._gw_ssh_allow()),
                 "LAN_MODE": lan["LAN_MODE"],
-                "LAN_SUBNETS": lan["HOME_SUBNETS"],
+                "LAN_SUBNETS": lan["LAN_SUBNETS"],
                 "RESOLVER": lan["RESOLVER"],
-                "PEER_LAN_NETS": lan["PEER_HOME_NETS"],
+                "PEER_LAN_NETS": lan["PEER_LAN_NETS"],
                 "LINK_CHANNEL_PORT": str(gwlink.channel_port())}
 
     def _gwcfg_live_port(self, gw) -> int:
@@ -101,11 +101,11 @@ class CfgMixin:
         return self.db.get_state(self._gwlink_key(self._GWCFG_LINK_ERR_KEY, slot_id)) or ""
 
     def gwcfg_uplink(self, gw) -> dict | None:
-        """Раздел uplink — только агентам с confirm1 (подтверждение в чате): конфиг
-        устройства-шлюза в форме для шлюза и ключи признания; в окне переезда —
-        двойник, прежний ключ отдельно (как в файле первого применения). Нет
-        устройства или конфиг не собран — None."""
-        if "confirm1" not in self.gwlink_agent_caps(gw.id) or not gw.device_id:
+        """Раздел uplink (подтверждение в чате агента): конфиг устройства-шлюза
+        в форме для шлюза и ключи признания; в окне переезда — двойник, прежний
+        ключ отдельно (как в файле первого применения). Нет устройства или
+        конфиг не собран — None."""
+        if not gw.device_id:
             return None
         dev = self.db.get_device(gw.device_id)
         if dev is None:
@@ -133,12 +133,12 @@ class CfgMixin:
         return value
 
     def gwcfg_old_uplink(self) -> list[tuple[str, dict]]:
-        """Финал переезда: слоты с confirm1, чей шлюз ещё не поднимал аплинк
-        двойника (новый конфиг ждёт «Применить» в его чате) — после финала
-        прежний пир снимется, и бот шлюза потеряет Telegram. [(имя, бот)]."""
+        """Финал переезда: слоты, чей шлюз ещё не поднимал аплинк двойника
+        (новый конфиг ждёт «Применить» в его чате) — после финала прежний пир
+        снимется, и бот шлюза потеряет Telegram. [(имя, бот)]."""
         out = []
         for gw in self.db.gateways():
-            if not gw.device_id or "confirm1" not in self.gwlink_agent_caps(gw.id):
+            if not gw.device_id:
                 continue
             twin = self.db.twin_of_device(gw.device_id)
             if twin is not None and not twin.last_handshake:
@@ -146,14 +146,11 @@ class CfgMixin:
         return out
 
     def gwcfg_token(self, gw) -> dict | None:
-        """Раздел token — только агентам с token1 и только токен, введённый
-        аварийной кнопкой («🔧 Сервис → 🤖 Токен бота»): токен в env ВПС с
+        """Раздел token — только токен, введённый аварийной кнопкой («🔧 Сервис → 🤖 Токен бота»): токен в env ВПС с
         настройки мог устареть (меняли на шлюзе руками), и слать его — значит
         получить вечный отказ «Telegram не принял». Значение не прошло ту же проверку, что
         сделает агент, — раздела нет (отказ одного раздела агент считает
         отказом всего документа)."""
-        if "token1" not in self.gwlink_agent_caps(gw.id):
-            return None
         token = self.gw_bot_token(gw.id)
         if not token or not self.gateway_token_pushed(gw.id, token):
             return None                                   # не вводили кнопкой — env с настройки мог устареть
@@ -187,8 +184,7 @@ class CfgMixin:
 
     def gwcfg_desired(self, gw) -> dict:
         """Разделы документа слота: None — у сервера раздела нет (своё на шлюзе
-        не трогается). Аплинк — агентам с confirm1, токен — с token1.
-        Раздел env не прошёл ту же проверку, что делает шлюз, — документа нет
+        не трогается). Раздел env не прошёл ту же проверку, что делает шлюз, — документа нет
         вовсе (без env агент отверг бы его целиком), причина — в карточке."""
         env = self.gwcfg_env(gw)
         try:
@@ -341,16 +337,14 @@ class CfgMixin:
         return out
 
     def gwcfg_card(self, gw, snap: dict) -> dict:
-        """Что карточка слота знает о документе: агент принимает ли документ
-        (cfg1), поколение на шлюзе, что расходится, что отказано, что ждёт
-        человека, что отклонено, когда применён текущий документ, почему не
-        собран конфиг линка. Без запросов к шлюзу — только state."""
-        caps = self.gwlink_agent_caps(gw.id)
-        cfg1 = "cfg1" in caps
+        """Что карточка слота знает о документе: поколение на шлюзе, что
+        расходится, что отказано, что ждёт человека, что отклонено, когда
+        применён текущий документ, почему не собран конфиг линка. Без
+        запросов к шлюзу — только state; агент ниже 3.3.0 — пусто."""
         have = snap.get("cfg") if isinstance(snap.get("cfg"), dict) else {}
-        out = {"cfg1": cfg1, "confirm1": "confirm1" in caps, "gen": int(have.get("gen") or 0) if have else 0,
+        out = {"gen": int(have.get("gen") or 0) if have else 0,
                "due": [], "failed": {}, "wait": [], "declined": [], "applied_at": "", "env_err": "", "link_err": "", "uplink_err": "", "uplink_fp": ""}
-        if not cfg1 or not snap:
+        if not snap or self.gwlink_agent_outdated(gw.id):
             return out
         doc = self.gwcfg_doc(gw)
         ack = self.gwcfg_ack(gw.id)
@@ -374,12 +368,6 @@ class CfgMixin:
             except wgconf.WgConfError:
                 pass
         return out
-
-    def gwcfg_all_capable(self) -> bool:
-        """Все слоты с устройством принимают документ (cfg1): подсети соседей и
-        конфиг линка доедут каналом, файл не нужен. Без слотов — ложь."""
-        slots = [g for g in self.db.gateways() if g.device_id]
-        return bool(slots) and all("cfg1" in self.gwlink_agent_caps(g.id) for g in slots)
 
     # ── порт канала: смена без обрыва ─────────────────────────────────────────
     _CHPORT_CUR_KEY = "gw_chport_cur"

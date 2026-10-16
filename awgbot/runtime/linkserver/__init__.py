@@ -39,17 +39,16 @@ state слота (`_handle_safe`), а не падение задачи слуш�
 (`monitor_tick`) — отдельной задачей `deliver_soon`, такт её не ждёт; правка
 из чата основного бота будит её сразу (`touch`, он же `services.channel_touch`:
 сервисы работают в потоке) — сверяется локально, что разошлось,
-и по сети уходит только это — настройки (`deliver`), фиды локальной сети
+и по сети уходит только это — документ конфигурации (`deliver` →
+`deliver_cfg`), фиды локальной сети
 (`deliver_lists`), записи SMB соседних сетей (`deliver_peer_services`), канон
 своих списков (`deliver_own`), роль слота (`send_role`: активен ли, есть ли
 другой слот с устройством, имя слота, возможности и версия сервера, адреса в
-туннеле сети слота; её такт говорит каждый раз), документ
-конфигурации агентам с `cfg1` (`deliver_cfg`; раздел `token` — только агентам
-с `token1`), смена ключей линка агентам с
-`confirm1` (`deliver_rekey`: сначала отзыв `link_cancel`, ждущий сессии после
-возврата ВПС на прежние ключи, затем `link_next`). Один и тот же набор
-за сессию повторно не уходит — кроме временного отказа агента (`ack` с
-`retry`): тогда набор снова ждёт расхождения снимка. Полный снимок сервер просит сам (`ask snap`) —
+туннеле сети слота; её такт говорит каждый раз), смена ключей линка
+(`deliver_rekey`: сначала отзыв `link_cancel`, ждущий сессии после возврата
+ВПС на прежние ключи, затем `link_next`). Один и тот же документ за сессию
+повторно не уходит — кроме временного отказа агента (`cfg_ack` с `retry`):
+тогда документ снова ждёт расхождения снимка. Полный снимок сервер просит сам (`ask snap`) —
 только при разрыве нумерации дельт; по запросу человека ничего у шлюза не
 спрашивается, диагностики по каналу нет.
 
@@ -102,7 +101,6 @@ class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin):
 _server: LinkServer | None = None
 
 
-_on_applied = None
 _on_installed = None
 _on_notes = None
 _on_rekeyed = None
@@ -141,14 +139,6 @@ def set_on_installed(fn) -> None:
     бота нет."""
     global _on_installed
     _on_installed = fn
-
-
-def set_on_applied(fn) -> None:
-    """Корутина `fn(slot_id, ok, error, fp)` — показать итог применения в чате
-    админа (fp — отпечаток применённого файла, "" у старого агента). Ставит
-    main: у слушателя канала своего бота нет."""
-    global _on_applied
-    _on_applied = fn
 
 
 async def ensure(services) -> LinkServer | None:
@@ -219,4 +209,4 @@ async def shutdown() -> None:
 
 
 __all__ = ["set_on_update", "update_regate", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
-           "set_on_installed", "set_on_applied", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]
+           "set_on_installed", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

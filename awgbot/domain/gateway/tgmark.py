@@ -48,17 +48,16 @@ class TgMarkMixin:
         missing = [n for n in self.GH_RANGES if n not in present]
         return GwCheck(gc.CHECK_GH_ROUTE, not missing,
                        "" if not missing else
-                       "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
-                       + ("«🚑 Восстановить»" if self.server_cfg1() else "перевыпусти конфигурацию шлюза с сервера AWG"))
+                       "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; «🚑 Восстановить»")
 
     @staticmethod
     def peer_nets_missing(info: dict | None) -> list[str] | None:
-        """Чего из PEER_HOME_NETS нет в наборе peer_nets4. None — переменная
+        """Чего из PEER_LAN_NETS нет в наборе peer_nets4. None — переменная
         пуста, функции на этом шлюзе нет. Отдельно от проверки, потому что тот
         же ответ нужен снимку для канала — но строкой для человека, собранной
         здесь, там делать нечего."""
         from awgbot.infra import gwguard
-        want = gwguard.unit_env("PEER_HOME_NETS").split()
+        want = gwguard.unit_env("PEER_LAN_NETS").split()
         if not want:
             return None
         present = (info or {}).get("sets", {}).get("peer_nets4", set())
@@ -66,15 +65,14 @@ class TgMarkMixin:
 
     def peer_nets_check(self, info: dict | None) -> GwCheck | None:
         """Подсети за другими шлюзами: набор
-        peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
+        peer_nets4 против PEER_LAN_NETS из юнита. Переменная пустая — проверки
         нет: функции на этом шлюзе нет."""
         missing = self.peer_nets_missing(info)
         if missing is None:
             return None
         return GwCheck(gc.CHECK_PEER_NETS, not missing,
                        "" if not missing else
-                       f"в таблице нет {', '.join(missing)}; " + ("«🚑 Восстановить»" if self.server_cfg1() else
-                                                                "перевыпусти конфигурацию шлюза с сервера AWG"))
+                       f"в таблице нет {', '.join(missing)}; «🚑 Восстановить»")
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
         """Таблицу правит только скрипт: недостающее восстанавливаем рестартом

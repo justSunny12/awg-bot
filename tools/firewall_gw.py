@@ -29,7 +29,7 @@ GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard став
 def gw_status(_args) -> int:
     from awgbot.infra import gwguard
     info = gwguard.table_info()
-    print(f"таблица {gwguard.TABLE}: {'есть' if info else 'НЕТ — обвязка старого образца, перевыпусти конфигурацию шлюза'}")
+    print(f"таблица {gwguard.TABLE}: {'есть' if info else 'НЕТ — обвязка снята или не развёрнута: «🚑 Восстановить» в чате бота шлюза'}")
     if info:
         sets = info["sets"]
         print(f"  подсети туннеля  : {', '.join(sorted(sets.get('tunnel_nets4', ()))) or '—'}")

@@ -25,7 +25,6 @@ import ipaddress
 import types
 from dataclasses import dataclass, field
 
-from awgbot.bot import texts
 from awgbot.bot.handlers import gateway as gateway_handlers
 from awgbot.runtime import hostboot, linkclient
 from awgbot.core import config
@@ -38,7 +37,7 @@ from awgbot.infra import mail, sshd, updates
 from awgbot.util import timeutil
 
 from tests.screens.base import NOW, Shot
-from tests.screens.shots_gateway_common import (_APPLY_STATUS, _BACKUP_KEY, _OWN_OFF, _RELEASE,
+from tests.screens.shots_gateway_common import (_BACKUP_KEY, _OWN_OFF, _RELEASE,
                                                 _UPLINK_VALUE, _ssh, _status)
 
 
@@ -84,15 +83,7 @@ class _Host:
     server_version: str = ""                               # версия сервера из role: "" | old | X.Y.Z
     hold: bool = False                                     # окно ожидания после старта: role ещё не было
     muted: bool = False
-    # файл конфигурации шлюза
-    bundle: dict = field(default_factory=lambda: {"ok": True, "mail": False, "passphrase": False,
-                                                  "passphrase_differs": False, "link_changed": True})
-    apply: tuple = (True, "")                              # итог скрипта применения
-    apply_status: dict = field(default_factory=lambda: dict(_APPLY_STATUS))   # файл статуса скрипта
-    bundle_mail: dict = field(default_factory=dict)        # проверка почты из файла
-    mark: dict = field(default_factory=lambda: {"status": "confirmed", "claim": None})
     cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail | backup, по порядку
-    server_caps: tuple = ()                                # возможности сервера из его role (cfg1 — шлёт документ сам)
     rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
     uplink_mine: str = "f00d" * 4                          # отпечаток стоящего аплинка (свой, не серверный)
     uplink_after: str = ""                                 # аплинк поправили руками, пока висит вопрос
@@ -123,9 +114,6 @@ class _Channel:
         pass
 
     async def push_own(self):
-        pass
-
-    async def flush_applied(self):
         pass
 
     async def send_rekey_answer(self, reply):
@@ -338,27 +326,6 @@ class _Agent(GatewayServices):
     def _cfg_uplink_pending_drop(self):
         self.h.uplink_pending = ""
 
-    # ── файл конфигурации шлюза ─────────────────────────────────────────────
-    def inspect_bundle(self, blob):
-        return dict(self.h.bundle)
-
-    def apply_bundle(self, blob, overwrite_passphrase=False):
-        return self.h.apply
-
-    def gateway_apply_report(self):
-        return texts.gateway_apply_report(self.h.apply_status)
-
-    def bundle_mail_check(self):
-        return dict(self.h.bundle_mail)
-
-    def gateway_mark_outcome(self):
-        out = {"uplink": "awg1", "pubkey": "DUMMYPUB=", **self.h.mark}
-        self.db.set_state(self._GW_MARK_KEY, out["status"])
-        return out
-
-    def lan_lists_needed(self):
-        return False
-
     # ── восстановление ──────────────────────────────────────────────────────
     def prepare_restore(self, plain):
         return "/var/lib/awg-bot/backups/restore-pending.tgz"
@@ -394,8 +361,6 @@ def _agent(**opts):
             services.set_link_role(h.channel == "active", standby=h.standby, name=h.slot_name)
         elif h.standby is not None:
             services.db.set_state(services._LINK_STANDBY_KEY, "1" if h.standby else "0")
-        if h.server_caps:
-            services.db.set_state(services._LINK_SERVER_CAPS_KEY, " ".join(h.server_caps))
         if h.channel:
             mp.setattr(linkclient, "enabled", _channel_on)
         mp.setattr(linkclient, "_client", _Channel(services) if h.channel in ("active", "standby") else None)

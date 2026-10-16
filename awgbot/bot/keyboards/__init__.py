@@ -55,8 +55,7 @@ from .broadcast import (
     broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
     gateway_panel_kb, gateway_cfg_question_kb, gateway_health_kb, gateway_transit_router_kb,
-    gateway_confirm_kb, gateway_bundle_kb,
-    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_transit_kb, lan_own_sorted, lan_own_tag, gateway_ssh_kb, gateway_ssh_port_finisher_kb)
+    gateway_confirm_kb, gateway_back_kb, gateway_transit_kb, lan_own_sorted, lan_own_tag, gateway_ssh_kb, gateway_ssh_port_finisher_kb)
 
 __all__ = [
     "BTN_CANCEL", "entry_tag", "reply_hide", "to_menu",
@@ -89,6 +88,6 @@ __all__ = [
     "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_keys_confirm", "gateway_keys_pick", "gateway_token_pick", "gateway_smb_confirm",
  "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_cfg_question_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_health_kb", "gateway_transit_router_kb",
-    "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
+    "gateway_confirm_kb",
     "gateway_back_kb", "gateway_transit_kb",
     "lan_own_sorted", "lan_own_tag", ]

@@ -1,5 +1,4 @@
-"""Развилки текстов агента шлюза, которые одной строкой не выразить: итог
-применения при лежащем линке, шапка панели при неподтверждённой пометке,
+"""Развилки текстов агента шлюза, которые одной строкой не выразить: шапка панели при неподтверждённой пометке,
 всплывашки фильтра SSH по состоянию списка, отказ IPv6 моноширинным, итог
 восстановления и отказ невыполненного действия — ⚠️, а не 🔴."""
 from __future__ import annotations
@@ -7,30 +6,6 @@ from __future__ import annotations
 from awgbot.bot import texts, ui
 from awgbot.bot.texts import gateway as gwt
 from awgbot.domain.gateway import GwStatus
-from awgbot.domain.notices.gateway import gateway_apply_report
-
-
-def test_config_result_is_partial_when_the_link_is_down_or_untouched():
-    for link in ("foreign", "unconfirmed"):
-        detail = gateway_apply_report({"UPLINK": "installed", "LINK": link, "GW_STATUS": "unconfirmed"})
-        out = texts.gateway_config_result(True, detail)
-        assert out.startswith("⚠️ <b>Конфигурация шлюза применена не полностью</b>"), out
-    up = gateway_apply_report({"UPLINK": "installed", "LINK": "up", "GW_STATUS": "confirmed"})
-    assert texts.gateway_config_result(True, up).startswith("✅ <b>Конфигурация шлюза применена</b>")
-
-
-def test_apply_report_does_not_call_a_missing_uplink_unchanged():
-    out = gateway_apply_report({"UPLINK": "unchanged", "LINK": "unconfirmed", "GW_STATUS": "unconfirmed"})
-    assert "без изменений" not in out and out.startswith("Линк не тронут: аплинк этого устройства не найден"), out
-    out = gateway_apply_report({"UPLINK": "unchanged", "LINK": "up"})
-    assert out.startswith("Аплинк без изменений"), out
-
-
-def test_config_failure_is_a_warning_with_a_capitalised_reason():
-    out = texts.gateway_config_result(False, "routing-gw-setup.sh: аплинк <awg1> не поднялся — откатываю")
-    lines = out.splitlines()
-    assert lines[0] == "⚠️ <b>Конфигурация шлюза не применена — прежняя осталась</b>", out
-    assert lines[1] == "Аплинк <code>awg1</code> не поднялся", out
 
 
 def test_panel_head_does_not_claim_traffic_for_an_unconfirmed_mark():
@@ -68,3 +43,17 @@ def test_lan_line_shows_the_cut_tail():
           "new_plumbing": True}
     out = texts.gateway_ssh_text(st)
     assert "<code>10.0.2.0/24</code> и ещё 2)" in out, out
+
+
+def test_reissue_file_refusal_points_at_restore_and_the_channel():
+    """Шифрованный файл перевыпуска выпусков до 3.3.1 в чате агента — отказ
+    словами: что делать вместо («🚑 Восстановить» или канал), файл убран."""
+    t = texts.GW_REISSUE_FILE_REFUSED
+    assert t.startswith("⚠️ Файл конфигурации не применён") and "«🚑 Восстановить»" in t
+    assert "«🔧 Канал конфигурации»" in t and t.endswith("Из чата убрал: внутри ключи")
+    assert "перевыпус" not in t and "📤" not in t
+
+
+def test_a_foreign_file_answer_points_at_the_channel_only():
+    t = texts.gw_bundle_not_ours()
+    assert "по каналу конфигурации" in t and "📤" not in t, t

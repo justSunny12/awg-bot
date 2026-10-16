@@ -90,10 +90,10 @@ CLIENT_PARSES = _parsed_kinds(CLIENT)
 def test_the_lists_came_off_the_code_and_are_not_empty():
     """Сам сборщик жив: регресс разбора AST дал бы пустые множества и
     «полноту» даром."""
-    assert {"ask", "role", "settings"} <= SERVER_SENDS
+    assert {"ask", "role", "cfg"} <= SERVER_SENDS
     assert {"hello", "snap", "delta"} <= CLIENT_SENDS
     assert {"hello", "snap", "delta"} <= SERVER_PARSES
-    assert {"ask", "role", "settings"} <= CLIENT_PARSES
+    assert {"ask", "role", "cfg"} <= CLIENT_PARSES
 
 
 def test_every_kind_the_server_sends_the_client_parses():
@@ -122,8 +122,6 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
             "379e649f69e82043c3c3d0db258bd3fc7460e19d6c79a5b8096bb35eeaf331cc"),
     "role": ({"active": True, "standby": False, "name": "Шлюз 1", "caps": []}, gwlink.PAD_DELTA,
              "4b5f920f72ed93727d82bb8f6d2ef51e7933562d18ce993e04d9821982769621"),
-    "settings": ({"values": {"ADMIN_IPS": "10.8.0.2", "HOME_SUBNETS": "192.168.1.0/24",
-                             "LAN_MODE": "1", "RESOLVER": ""}}, gwlink.PAD_SNAP, "79007f081a634f85f1449f22ad80407bd9a2a5747099723ee693b84045c87fd9"),
     "lists_ok": ({"hash": "ab" * 32}, gwlink.PAD_DELTA, "d50f7b8b9d204aacf66d8e7a267fffaeb9355235118044be51357b74b3f6c09c"),
     "lists": ({"hash": "ab" * 32, "z": "eJwDAAAAAAE="}, gwlink.PAD_DELTA, "6e76d9522e2d960f656a6822209c411a86ff273f827ff4ecfd62a7199f39ed15"),
     "lists_part": ({"hash": "ab" * 32, "i": 0, "n": 2, "z": "eJwDAAAAAAE="}, gwlink.PAD_DELTA, "71392f5a1d415cee37869bf40e2c63582e446d9d16d02b382b2f07765d6a4435"),
@@ -139,7 +137,6 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
                    "fp": "ab12 cd34"}, gwlink.PAD_SNAP, "15f5775e30a55a37fe891444d779f82ad30ff4e8150a877c8def3c09801d2f99"),
     "link_go": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "45bc646bb865fcf1b4231e575c066573073ac6228cc1fa0ade758184c99a4d80"),
     "link_cancel": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "51024cb9d3a4c07b6189ecada0bc9e763b69653501cc51019bbfcb4f85578153"),
-    "applied_ack": ({"fp": "12" * 32, "at": "2026-10-10T00:00:00"}, gwlink.PAD_DELTA, "bef24a2ec608e0986ffcb0d73a22f8aeefbc9ca917fcbb8254d038675fa2298c"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
@@ -147,9 +144,6 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
                "nonce": gwlink.nonce_b64(NONCE), "own_hash": "", "caps": []}, gwlink.PAD_DELTA, "040f0e6ac15a2634244fbc9ee6e20b33293715ee4e5416e70966b3366050e9cf"),
     "snap": ({"rev": 1, "agent_version": "3.2.1", "egress_ok": True}, gwlink.PAD_SNAP, "9902519eb44d9e20907ddaad47005413d666618eb56c828a34715c7c6ea6f61b"),
     "delta": ({"rev": 2, "egress_ok": False}, gwlink.PAD_DELTA, "f811a683952aa1667c5d71f340422647472e4733dcabe668dedd48a1c25ec3c4"),
-    "ack": ({"ok": True, "changed": ["LAN_MODE"], "error": ""}, gwlink.PAD_DELTA, "39ad4cf7070ce3114eb3bb7e0b7d365c5cb252e629d21d52272dc0251ca121e7"),
-    "applied": ({"ok": True, "error": "", "fp": "12" * 32, "at": "2026-10-10T00:00:00"},
-                gwlink.PAD_DELTA, "a765178dac034ff05b8d40ec3e1076551f49da95fc2451c27924e3f198b95747"),
     "svc": ({"items": [{"name": "nas", "ip": "192.168.1.10"}]}, gwlink.PAD_SNAP, "eacf61762c4d78d57c3e9e58eca4a699fa1b81625ac70acac32958bd43bbe50c"),
     "claim": ({"token": "DUMMY-CLAIM-TOKEN"}, gwlink.PAD_SNAP, "6a806f3c3570886086bf437d368d7ded94dfea295bc1b27254ff805558f7e64a"),
     "installed": ({}, gwlink.PAD_DELTA, "83b8edee8ca6d867a055c4a65fb050378b38a3ab7dcdc367e95b282e0e7807b8"),

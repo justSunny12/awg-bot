@@ -58,18 +58,14 @@ class LinkScriptMixin:
 
     def gateway_sync_link_ports(self) -> list[Notification]:
         """Порт линка слота — по живому конфигу на ВПС. Порт меняют руками
-        (ListenPort в awglink.conf, перезапуск линка), и строка слота обязана
-        это заметить сама: она даёт порт скрипту линка и бандлу, а бандл везёт
-        Endpoint на шлюз. Сменился — правим слот, файервол хоста и напоминаем
-        перевыпустить конфигурацию шлюза: у той стороны Endpoint старый.
-        Агенту с cfg1 перевыпуска нет: конфиг линка ведёт бот, ручная смена
-        порта не поддерживается — слот держит согласованный порт, просим
-        вернуть его (по разу на каждый ручной порт; вернули — молча)."""
+        (ListenPort в awglink.conf, перезапуск линка): конфиг линка ведёт бот,
+        ручная смена порта не поддерживается — слот держит согласованный порт
+        (его знают шлюз и документ конфигурации), просим вернуть его (по разу
+        на каждый ручной порт; вернули — молча)."""
         from awgbot.infra.db.schema import _link_conf_params
         if not config.ROUTING_GW_INTERFACE:
             return []
         notes = []
-        changed = False
         for g in self.db.gateways():
             if not os.path.exists(os.path.join(config.AWG_DIR, f"{g.link_if}.conf")):
                 continue
@@ -79,31 +75,16 @@ class LinkScriptMixin:
                 if self.db.get_state(hand_key):
                     self.db.set_state(hand_key, "")       # порт вернули — молча
                 continue
-            if "cfg1" in self.gwlink_agent_caps(g.id):
-                # Конфиг линка ведёт бот: согласованный порт в слоте не трогаем
-                # (его знает шлюз и документ), ручной — только просим вернуть,
-                # по разу на каждый новый ручной порт
-                if (self.db.get_state(hand_key) or "") == str(port):
-                    continue
-                self.db.set_state(hand_key, str(port))
-                log.info("gateway: порт линка слота %s изменён руками на %s (согласован %s)", g.id, port, g.link_port)
-                notes.append(Notification(
-                    config.ADMIN_ID,
-                    f"🛰 {self._gw_link(g)}: порт линка изменён руками на <code>{port}</code> "
-                    f"(был <code>{g.link_port}</code>) — шлюз о нём не узнает, линк не поднимется. "
-                    "Конфиг линка ведёт бот, ручная правка не поддерживается: "
-                    f"верни <code>ListenPort = {g.link_port}</code> в <code>{g.link_if}.conf</code>"))
+            if (self.db.get_state(hand_key) or "") == str(port):
                 continue
-            self.db.gateway_update(g.id, link_port=port)
-            changed = True
-            log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
+            self.db.set_state(hand_key, str(port))
+            log.info("gateway: порт линка слота %s изменён руками на %s (согласован %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 {self._gw_link(g)}: порт линка изменён на <code>{port}</code> (был <code>{g.link_port}</code>) — "
-                f"шлюз не знает. {self._gw_reissue_link(g)} конфигурацию шлюза, "
-                "иначе линк не поднимется", action=("gwcfg", int(g.id))))
-        if changed:
-            self._gw_firewall_refresh()
+                f"🛰 {self._gw_link(g)}: порт линка изменён руками на <code>{port}</code> "
+                f"(был <code>{g.link_port}</code>) — шлюз о нём не узнает, линк не поднимется. "
+                "Конфиг линка ведёт бот, ручная правка не поддерживается: "
+                f"верни <code>ListenPort = {g.link_port}</code> в <code>{g.link_if}.conf</code>"))
         return notes
 
     def _gw_firewall_refresh(self) -> None:

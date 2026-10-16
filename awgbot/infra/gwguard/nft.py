@@ -136,14 +136,14 @@ def overlaps(entry: str, others) -> str:
     return ""
 
 
-def home_table_info() -> Optional[dict]:
+def lan_table_info() -> Optional[dict]:
     """{'sets': {имя: число элементов}, 'chains': set, 'lan_pkts': int, 'dns_pkts': int}
     или None — таблицы нет. lan_pkts — счётчик «из локальной сети наружу»
     (первое правило со счётчиком в prerouting), dns_pkts — «DNS с роутера»
     (input). Один exec, терсный (-t): без элементов наборов — lan_vpn4 растёт
     без конца, выгружать его каждые три минуты ради двух счётчиков незачем;
     число элементов поэтому всегда 0, счёты — из lists.status."""
-    proc = pkg._nft(["-j", "-t", "list", "table", pkg.TABLE_FAMILY, pkg.HOME_TABLE_NAME])
+    proc = pkg._nft(["-j", "-t", "list", "table", pkg.TABLE_FAMILY, pkg.LAN_TABLE_NAME])
     if proc.returncode != 0:
         return None
     try:
@@ -170,6 +170,13 @@ def home_table_info() -> Optional[dict]:
                     break
     return {"sets": sets, "chains": chains,
             "lan_pkts": counters.get("prerouting", 0), "dns_pkts": counters.get("input", 0)}
+
+
+def lan_table_old() -> bool:
+    """Таблица локальной сети ещё под прежним именем (обвязка 3.3.0 и раньше):
+    скрипт обвязки 3.3.1 переносит её на первом прогоне. Снимается со
+    следующим сдвигом минимума."""
+    return pkg._nft(["-t", "list", "table", pkg.TABLE_FAMILY, pkg.LAN_TABLE_OLD]).returncode == 0
 
 
 def forward_accepts() -> set[str]:

@@ -404,20 +404,15 @@ def test_subdomain_contract_holds_both_ways():
     assert normalize("https://www.ozon.ru/product/123") == "ozon.ru"
 
 
-def test_real_lan_routes_are_only_dropped_now(monkeypatch):
+def test_real_lan_routes_are_gone_and_so_is_their_cleanup():
     """Маршрутов настоящих локальных подсетей в линк больше нет — сеть шлюза
-    видна по адресам в туннеле (таблица awg_lan_map); остаётся только уборка
-    прежних, поставленных 3.2.x: `ip route del` без проверки кода — нет
-    маршрута, и ладно."""
+    видна по адресам в туннеле (таблица awg_lan_map); разовая уборка
+    маршрутов 3.2.x снята со сдвигом минимума на 3.3.0."""
     from awgbot.core import config
     from awgbot.infra import routing
-    calls = []
-    assert not hasattr(config, "ROUTING_HOME_SUBNETS"), "чтение routing.home_subnets из conf снято"
+    assert not hasattr(config, "ROUTING_LAN_SUBNETS"), "чтение routing.lan_subnets из conf снято"
     assert not hasattr(routing.marking, "ensure_lan_routes"), "маршруты настоящих подсетей сняты"
-    monkeypatch.setattr(routing.base, "_host", lambda a, **k: calls.append((a, k.get("check", True))))
-    routing.drop_lan_routes([("192.168.1.0/24", "awglink"), ("10.20.0.0/16", "awglink2")])
-    assert calls == [(["ip", "route", "del", "192.168.1.0/24", "dev", "awglink"], False),
-                     (["ip", "route", "del", "10.20.0.0/16", "dev", "awglink2"], False)]
+    assert not hasattr(routing, "drop_lan_routes") and not hasattr(routing.marking, "drop_lan_routes")
 
 
 def test_ping_peer_takes_the_median_and_survives_loss(monkeypatch):

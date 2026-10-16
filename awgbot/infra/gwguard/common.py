@@ -52,7 +52,10 @@ TG_MARK = 1
 
 
 # ── локальная сеть без VPN ──────────────────
-HOME_TABLE_NAME = "awg_home"
+LAN_TABLE_NAME = "awg_lan"
+# прежнее имя таблицы (агенты 3.3.0 и раньше): скрипт обвязки переносит наборы
+# в новую на первом прогоне после обновления — снимается со следующим сдвигом минимума
+LAN_TABLE_OLD = "awg_home"
 DNSMASQ_D = "/etc/dnsmasq.d"
 LAN_STATUS_FILE = "/var/lib/awg-gw/lists.status"
 LAN_LISTS_SCRIPT = "/usr/local/sbin/awg-lan-lists.sh"

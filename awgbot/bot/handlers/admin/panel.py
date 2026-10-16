@@ -158,9 +158,6 @@ def _payload_id(payload: str, head: str) -> int | None:
     return int(rest) if rest.isdigit() else None
 
 
-GWCFG_PAYLOAD = "gwcfg"          # /start gwcfg-<слот> — перевыпуск конфигурации слота
-
-
 def parse_link(payload: str) -> tuple[str, int] | None:
     """Ссылка шапки и уведомлений → (вид экрана реестра, ref) или None."""
     if payload == texts.ONLINE_PAYLOAD:
@@ -177,7 +174,7 @@ def parse_link(payload: str) -> tuple[str, int] | None:
         return "migration", 0
     for head, kind in ((texts.TRAFFIC_PAYLOAD, "traffic_dev"), (texts.RF_PAYLOAD, "traffic_dev"),
                        ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev"),
-                       (texts.MIGRATION_PAYLOAD, "migration_cl"), (GWCFG_PAYLOAD, "gwcfg")):
+                       (texts.MIGRATION_PAYLOAD, "migration_cl")):
         ref = _payload_id(payload, head)
         if ref is not None:
             return kind, ref
@@ -202,17 +199,6 @@ async def _traffic_deep_link(message: Message, services, payload: str,
     kind, ref = link
     if kind == "extend" and state is not None:
         await state.update_data(return_to="expiring")
-    if kind == "gwcfg" and "cfg1" in await call(services.gwlink_agent_caps, ref):
-        kind = "gw"                                   # агент с документом: файла нет — карточка слота
-    if kind == "gwcfg":
-        # «Перевыпусти» из уведомления — файл конфигурации слота сразу
-        from awgbot.bot.handlers.settings import send_gw_bundle
-        try:
-            await message.delete()
-        except Exception:                             # noqa: BLE001
-            pass
-        await send_gw_bundle(message, services, ref)
-        return True
     if kind == "gw":
         card_from_main(message.chat.id, True)         # «Назад» с карточки — на главную
     if not await show_screen(message, services, "admin", None, kind, ref):

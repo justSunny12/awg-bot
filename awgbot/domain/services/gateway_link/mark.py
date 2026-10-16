@@ -27,8 +27,7 @@ class MarkMixin:
         """Пересланное от агента сообщение с токеном `claim`. Подпись — ключом
         линка одного из слотов (перебираем все: по ключу и находится слот),
         устройство — по ключу аплинка. Возвращает {'status': 'marked'|'already',
-        'device', 'gateway', 'cfg1'}; cfg1 — агент принимает документ
-        конфигурации по каналу (подписал это в токене), файл ему не нужен.
+        'device', 'gateway'}: конфигурацию слоту везёт документ по каналу.
         Слот занят другим устройством — ServiceError: менять машину — через
         карточку шлюза."""
         from awgbot.util import gwsign
@@ -56,7 +55,7 @@ class MarkMixin:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
         mine = self.db.gateway_by_device(dev.id)
         if mine is not None:
-            return {"status": "already", "device": dev, "gateway": mine, "cfg1": "cfg1" in data["caps"]}
+            return {"status": "already", "device": dev, "gateway": mine}
         if slot is not None and slot.device_id != dev.id:
             raise ServiceError(f"на этом линке уже назначен шлюз {self._gw_display(slot)}. "
                                "Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»")
@@ -65,8 +64,7 @@ class MarkMixin:
             # заводим первый слот на этом устройстве, ключи линка уже общие
             n, iface, port, cidr = self.gateway_next_slot()
             slot = self.db.gateway_add(dev.id, iface, port, cidr, slot_id=n)
-        return {"status": "marked", "device": self.db.get_device(dev.id), "gateway": slot,
-                "cfg1": "cfg1" in data["caps"]}
+        return {"status": "marked", "device": self.db.get_device(dev.id), "gateway": slot}
 
     def gateway_candidates(self) -> list:
         """Устройства админа, выпущенные ботом и не занятые слотами."""
@@ -163,9 +161,7 @@ class MarkMixin:
         «конфигурация актуализирована»."""
         sid = int(slot_id)
         for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY,
-                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY, self._REKEY_KEY,
-                    # ключи памяти о выдаче прежних версий — чистим до сдвига минимума на 3.3.0
-                    "gw_bundle_ssh_allow_notified", "gw_bundle_deps", "gw_bundle_deps_notified", "gw_link_port_hand",
+                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY, self._REKEY_KEY, "gw_link_port_hand",
                     self._REKEY_CANCEL_KEY, self._TOKEN_PUSH_KEY):
             self.db.set_state(self._gw_slot_key(key, sid), "")
         for key in self._rt_keys(sid):                     # стрик и «объявлен»
@@ -316,7 +312,7 @@ class MarkMixin:
                     continue
                 if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
                     # на шлюзе своя сеть одна: nft отвергает пересечения внутри
-                    # interval-набора, обвязка не приняла бы такие HOME_SUBNETS
+                    # interval-набора, обвязка не приняла бы такие LAN_SUBNETS
                     rejected.append((tok, "пересекается с другой подсетью в списке"))
                     continue
                 other = lanspace.twin_clash(gw.id, net, kept, space)
@@ -341,7 +337,7 @@ class MarkMixin:
                 why = "; ".join(f"{raw[:40]} — {reason}" for raw, reason in rejected[:3])
                 raise ServiceError(f"не принято: {why}")
         self.db.gateway_update(gw.id, lan_subnets=kept)
-        self._channel_touch()                              # HOME_SUBNETS — шлюзу сразу
+        self._channel_touch()                              # LAN_SUBNETS — шлюзу сразу
         try:
             self.lan_map_ensure()                          # адреса в туннеле: убранные — прочь, новые — в таблицу
         except Exception as e:                            # noqa: BLE001

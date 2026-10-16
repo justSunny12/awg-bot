@@ -113,7 +113,6 @@ class SessionMixin:
             await self._rekey_answered()        # ответ на новых или прежних ключах закрепляет выбор
             await self.push(full=True)
             await self.push_services()
-            await self.flush_applied()
             await self._maybe_installed()
             await self.push_own()
             await self._maybe_claim()

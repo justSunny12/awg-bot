@@ -1,6 +1,6 @@
 """
 Агент шлюза: локальная сеть без VPN — блок панели,
-проверки монитора здоровья по счётчикам таблицы awg_home, задача списков.
+проверки монитора здоровья по счётчикам таблицы awg_lan, задача списков.
 """
 from __future__ import annotations
 
@@ -26,13 +26,13 @@ def svc(tmp_path):
 def _lan_on(monkeypatch, *, home=None, active=True, up=True, status=None, own=(2, 1),
             lists=None, live=("end0", "192.168.68.222")):
     monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: {"RESOLVER": "10.9.1.1", "HOME_SUBNETS": "192.168.68.0/24"}.get(k, ""))
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: {"RESOLVER": "10.9.1.1", "LAN_SUBNETS": "192.168.68.0/24"}.get(k, ""))
     monkeypatch.setattr(gwguard, "script_status", lambda: status or {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
     monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: active)
     # апстрим — по статистике dnsmasq: отвечает / все запросы без ответа / dig нет
     monkeypatch.setattr(gwguard, "upstream_stats",
                         lambda: None if up is None else {"10.9.1.1#53": (10, 0 if up else 10)})
-    monkeypatch.setattr(gwguard, "home_table_info", lambda: home)
+    monkeypatch.setattr(gwguard, "lan_table_info", lambda: home)
     monkeypatch.setattr(gwguard, "lists_status", lambda: lists or {"domains": "1180", "nets": "412",
                                                                     "updated_at": "2026-09-20T10:00:00+05:00", "rc": "0"})
     monkeypatch.setattr(gwguard, "lan_own_lists", lambda: own)
@@ -180,7 +180,7 @@ def test_lists_job_warns_after_two_failures_only(svc, monkeypatch):
     assert svc.lan_lists_update() == []
 
 
-def test_home_table_info_parses_counters_and_sets(monkeypatch):
+def test_lan_table_info_parses_counters_and_sets(monkeypatch):
     doc = {"nftables": [
         {"set": {"name": "lan_vpn4", "elem": ["1.1.1.1", {"prefix": {"addr": "8.8.8.0", "len": 24}}]}},
         {"set": {"name": "lan_vpn_nets4", "elem": []}},
@@ -193,23 +193,23 @@ def test_home_table_info_parses_counters_and_sets(monkeypatch):
     import subprocess
     monkeypatch.setattr(gwguard, "_nft", lambda args, timeout=10, check=True:
                         subprocess.CompletedProcess([], 0, stdout=json.dumps(doc).encode(), stderr=b""))
-    info = gwguard.home_table_info()
+    info = gwguard.lan_table_info()
     assert set(info["sets"]) == {"lan_vpn4", "lan_vpn_nets4"}
     assert info["lan_pkts"] == 777 and info["dns_pkts"] == 42, "первый счётчик цепочки, не последний"
     monkeypatch.setattr(gwguard, "_nft", lambda args, timeout=10, check=True:
                         subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"no such table"))
-    assert gwguard.home_table_info() is None
+    assert gwguard.lan_table_info() is None
 
 
 def test_unit_env_reads_quoted_and_bare_values(tmp_path, monkeypatch):
     unit = tmp_path / "awg-link-gw.service"
-    unit.write_text('[Service]\nEnvironment=LAN_MODE=1\nEnvironment="HOME_SUBNETS=192.168.68.0/24 10.0.0.0/24"\n'
+    unit.write_text('[Service]\nEnvironment=LAN_MODE=1\nEnvironment="LAN_SUBNETS=192.168.68.0/24 10.0.0.0/24"\n'
                     "Environment=RESOLVER=10.9.1.1\n", encoding="utf-8")
     monkeypatch.setattr(gwguard.config, "GW_UNIT", unit.name)
     real = gwguard.Path
     monkeypatch.setattr(gwguard, "Path", lambda p: real(str(p).replace("/etc/systemd/system", str(tmp_path))))
     assert gwguard.unit_env("LAN_MODE") == "1" and gwguard.lan_mode()
-    assert gwguard.unit_env("HOME_SUBNETS") == "192.168.68.0/24 10.0.0.0/24"
+    assert gwguard.unit_env("LAN_SUBNETS") == "192.168.68.0/24 10.0.0.0/24"
     assert gwguard.unit_env("RESOLVER") == "10.9.1.1" and gwguard.unit_env("NOPE") == ""
 
 
@@ -314,7 +314,7 @@ def test_missing_lists_script_is_a_failed_check_with_a_reissue_advice(svc, monke
     _, checks = svc.lan_status()
     by = {c.name: c for c in checks}
     assert "скрипт списков" in by, [c.name for c in checks]
-    assert by["скрипт списков"].ok is False and "перевыпусти конфигурацию шлюза" in by["скрипт списков"].detail
+    assert by["скрипт списков"].ok is False and "«🚑 Восстановить»" in by["скрипт списков"].detail
     assert by["скрипт списков"].group == "lan", "своим стриком, не критичным"
 
 
@@ -364,7 +364,7 @@ def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, s
 
 def _svc_on(monkeypatch, *, avahi=True, dig=("naspi5._smb._tcp.awg.internal.",), browse=True):
     import shutil
-    env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "PEER_HOME_NETS": "192.168.1.0/24",
+    env = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24", "PEER_LAN_NETS": "192.168.1.0/24",
            "LINK_CHANNEL": "1", "RESOLVER": "10.9.1.1"}
     monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
@@ -424,7 +424,7 @@ def test_no_avahi_is_off_but_missing_browse_is_red(svc, monkeypatch):
 def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):
     """Без своих подсетей в юните обзора нет: ни блока, ни проверок, ни dig."""
     env = _svc_on(monkeypatch)
-    env["HOME_SUBNETS"] = ""
+    env["LAN_SUBNETS"] = ""
     monkeypatch.setattr(gwguard, "dns_local", lambda *a, **k: pytest.fail("dig без функции"))
     assert svc.services_status() == ({"active": False}, [])
 
@@ -435,7 +435,7 @@ def test_services_work_with_own_subnets_alone(svc, monkeypatch):
     подсетей соседей. Иначе шлюз без связи подсетей молчал бы, и имена его
     SMB-серверов админу не доехали бы никогда."""
     env = _svc_on(monkeypatch)
-    env.update(LAN_MODE="0", PEER_HOME_NETS="")
+    env.update(LAN_MODE="0", PEER_LAN_NETS="")
     monkeypatch.setattr(gwguard, "lan_mode", lambda: False)
     assert svc.services_active() is True
     info, checks = svc.services_status()
@@ -503,7 +503,7 @@ CLOSED = "сам роутер подсетям других шлюзов не о
 def _router_env(monkeypatch, *, lan=True, peers="10.241.0.0/16", home="192.168.1.0/24",
                 status=None, script_new=True):
     """VPN-транзит, соседи и свои подсети из юнита, статус скрипта, копия скрипта."""
-    env = {"PEER_HOME_NETS": peers, "LAN_MODE": "1" if lan else "0", "HOME_SUBNETS": home}
+    env = {"PEER_LAN_NETS": peers, "LAN_MODE": "1" if lan else "0", "LAN_SUBNETS": home}
     monkeypatch.setattr(gwguard, "lan_mode", lambda: lan)
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
     monkeypatch.setattr(gwguard, "script_status",
@@ -594,7 +594,7 @@ def test_an_old_script_copy_is_unknown_and_not_reasserted(svc, monkeypatch):
     _router_env(monkeypatch, status={"GW_STATUS": "confirmed"}, script_new=False)
     c = svc._router_masq_check(_info(), _route())
     assert (c.ok, c.detail) == (None, "скрипт обвязки старого образца: сам роутер из подсетей других шлюзов не "
-                                  "открыт — перевыпусти конфигурацию шлюза с сервера AWG")
+                                  "открыт — обнови агента шлюза: скрипт обвязки приезжает с ним")
     assert _stale(svc) is False
 
 

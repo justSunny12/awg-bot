@@ -9,7 +9,7 @@
 Сокеты настоящие (петля), сервер — боевой LinkServer поверх временной БД
 (сцена `link` из test_gwlink_channel); на том конце то подписывающий руками
 `_Gw`, то боевой LinkClient поверх настоящего `GatewayServices` (сцена
-`agent` из test_gwlink_applied).
+`agent` ниже).
 
 Цена ошибки: уведомление не приходит — файл с ключами и токеном агента
 висит в чате, а человек не знает, встал ли шлюз; приходит на каждое
@@ -24,17 +24,63 @@ import datetime
 
 import pytest
 
-from awgbot.runtime import linkserver
+from awgbot.core import config
+from awgbot.domain.gateway import GatewayServices
+from awgbot.infra import gwguard
+from awgbot.infra.db import Database
+from awgbot.runtime import linkclient, linkserver
 from awgbot.util import timeutil
-from tests.integration import test_gwlink_applied as _applied
 from tests.integration import test_gwlink_channel as _chan
 from tests.integration.test_gwlink_channel import SNAP, _connect, _until
 
 pytestmark = pytest.mark.integration
 
-# один слот на петле — сцена канала; настоящий агент с клиентом — сцена итога
+# один слот на петле — сцена канала
 link = _chan.link
-agent = _applied.agent
+
+
+class _Pi(GatewayServices):
+    """Агент шлюза: снимок ровно тот, что ВПС выдаёт слоту, — сервер не шлёт
+    настроек, и в канале только то, что относится к делу."""
+
+    def gw_snapshot(self) -> dict:
+        return {k: (dict(v) if isinstance(v, dict) else v) for k, v in SNAP.items()}
+
+    def gateway_claim_if_needed(self):
+        return None
+
+    def services_local(self):
+        return []
+
+
+@pytest.fixture()
+async def agent(link, tmp_path, monkeypatch):
+    """Настоящий агент с клиентом канала; `kinds` — что сервер получил от
+    него по порядку, через все сессии."""
+    conf = tmp_path / "awglink.conf"
+    conf.write_text(f"# awg-bot: контракт линка 1\n[Interface]\nPrivateKey = {_chan.PRIV}\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")
+    monkeypatch.setattr(linkclient, "server_address", lambda: link._bound[0][0])
+    monkeypatch.setattr(linkclient, "server_port", lambda: link._bound[0][1])
+    monkeypatch.setattr(linkclient, "_notify", None)
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
+    kinds: list[str] = []
+    real = link._handle
+
+    async def spy(gw, sess, msg):
+        kinds.append(str(msg.get("t")))
+        return await real(gw, sess, msg)
+    monkeypatch.setattr(link, "_handle", spy)
+    db = Database(str(tmp_path / "pi.db")); db.init_schema()
+    pi = _Pi(db)
+    client = linkclient.LinkClient(pi)
+    monkeypatch.setattr(linkclient, "_client", client)
+    try:
+        yield pi, client, kinds
+    finally:
+        await client.stop()
+        db.close()
 
 
 @pytest.fixture()

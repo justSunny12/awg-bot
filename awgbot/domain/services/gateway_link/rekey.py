@@ -114,7 +114,7 @@ class RekeyMixin:
 
     def _rekey_stage(self, slot_id: int) -> dict:
         gw = self._gw_slot(slot_id)
-        if "confirm1" not in self.gwlink_agent_caps(gw.id):
+        if self.gwlink_agent_outdated(gw.id):
             raise ServiceError("Нужен агент шлюза v3.3.0")
         if self.gateway_rekey_active(gw.id):
             raise ServiceError("Смена ключей уже идёт")
@@ -320,10 +320,10 @@ class RekeyMixin:
         return notes
 
     def gateway_rekey_slots(self) -> list[tuple[int, str]]:
-        """Шлюзы, которым смену ключей можно предложить каналом (агент с
-        confirm1): [(слот, «имя (подпись)»)] — для «🔧 Сервис → 🔑 Ключи линка»."""
+        """Шлюзы, которым смену ключей можно предложить каналом (агент не ниже
+        3.3.0): [(слот, «имя (подпись)»)] — для «🔧 Сервис → 🔑 Ключи линка»."""
         return [(gw.id, self._gw_display(gw)) for gw in self.db.gateways()
-                if gw.device_id and "confirm1" in self.gwlink_agent_caps(gw.id)]
+                if gw.device_id and not self.gwlink_agent_outdated(gw.id)]
 
     def gateway_rekey_forget(self, slot_id: int) -> None:
         self._rekey_save(slot_id, {})

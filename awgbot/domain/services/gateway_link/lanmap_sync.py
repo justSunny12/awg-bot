@@ -1,6 +1,6 @@
 """lanmap_sync.py — адреса в туннеле: сверка таблицы `inet awg_lan_map` вместе
-с таблицами и правилами слотов, такт живости, старт (таблица, затем уборка
-маршрутов настоящих подсетей 3.2.x) и разовое уведомление после обновления.
+с таблицами и правилами слотов, такт живости, старт (таблица) и разовое
+уведомление после обновления.
 
 Адресам в туннеле РФ-доступ не указ (шапка lanmap): таблица и политика слотов
 ставятся, пока у слотов есть подсети, при любом состоянии выключателя
@@ -120,21 +120,6 @@ class LanMapSyncMixin:
         except routing.RoutingError:
             return False
 
-    def lan_real_routes_drop(self) -> None:
-        """Уборка маршрутов настоящих подсетей слотов в основной таблице,
-        поставленных 3.2.x: они живы до ребута, и без уборки настоящие адреса
-        у полного туннеля работали бы до него — полупереход. Снимается со
-        сдвигом минимума на 3.3.0."""
-        if not config.ROUTING_GW_INTERFACE:
-            return
-        pairs = [(n, g.link_if) for g in self.db.gateways() for n in g.lan_subnets or []]
-        if not pairs:
-            return
-        try:
-            routing.drop_lan_routes(pairs)
-        except routing.RoutingError as e:
-            log.warning("адреса в туннеле: прежние маршруты подсетей не сняты: %s", e)
-
     _ADMIN_REISSUE_KEY = "admin_reissue_announced"   # «перевыпусти конфиги устройств админа» сказано
 
     def _admin_reissue_part(self) -> str:
@@ -172,13 +157,9 @@ class LanMapSyncMixin:
                              on_sent=lambda: self.db.set_state(self._ADMIN_REISSUE_KEY, "1"))]
 
     def lan_map_startup(self) -> list[Notification]:
-        """Старт бота: таблицы слотов и awg_lan_map — на место до первого такта;
-        прежние маршруты настоящих подсетей — прочь только при стоящей
-        таблице: не встала (отказ nft, пространство неисправно) — настоящие
-        адреса пусть работают, пока не починят. Затем — разовое уведомление."""
+        """Старт бота: таблицы слотов и awg_lan_map — на место до первого такта,
+        затем — разовое уведомление."""
         self.lan_map_ensure()
-        if self.lan_map_up():
-            self.lan_real_routes_drop()
         return self.lan_space_announce()
 
     def lan_space_announce(self) -> list[Notification]:

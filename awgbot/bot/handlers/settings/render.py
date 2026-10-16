@@ -1,19 +1,17 @@
 """render.py — экраны ролевых разделов основного бота (_screen — его
 br.role_screens; общие разделы рисует bot/sections) и сообщения о файле
-конфигурации шлюза."""
+первого применения шлюза."""
 
 from __future__ import annotations
 
 import logging
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
-from awgbot.bot import ui
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.domain.services import ServiceError
-from awgbot.util import bundlecrypt
 from awgbot.bot.handlers.common import send_menu_to
 from awgbot.bot.handlers.common import call, edit, send_menu, card_is_from_main, edit_nav
 
@@ -155,33 +153,6 @@ async def _record(cb: CallbackQuery, text: str, services):
                     keep_id=cb.message.message_id)
 
 
-async def send_gw_bundle(message: Message, services, slot: int = 0, instr_id: int | None = None) -> bool:
-    """Собрать, зашифровать и отдать конфигурацию слота файлом с кнопкой
-    «В меню». Одна точка для карточки, назначения шлюза и приёма токена.
-    instr_id — сообщение над файлом (погасшая карточка): «В меню» и итог
-    применения с шлюза уберут оба."""
-    try:
-        blob, name = await call(services.gw_bundle_encrypted, slot or None)
-    except (ServiceError, OSError) as e:
-        await message.answer(ui.fail("Конфигурация шлюза не собрана", str(e)))
-        return False
-    from aiogram.types import BufferedInputFile
-    display, agent_bot = await call(services.gw_bundle_target, slot or None)
-    slot_id = await call(services.gw_slot_id, slot or None)
-    if slot_id:
-        # прежний файл этого слота, если ещё в чате, — вон: ключ линка в нём
-        # тот же, а итог придёт только на новый
-        await _drop_bundle_msgs(message.bot, services, slot_id)
-    sent = await message.answer_document(
-        BufferedInputFile(blob, filename=name),
-        caption=texts.gateway_bundle_caption(display, agent_bot),
-        reply_markup=kb.bundle_menu_kb(slot_id, from_card=instr_id is not None))
-    if slot_id:
-        await call(services.gw_bundle_msg_set, slot_id, message.chat.id, sent.message_id, instr_id,
-                   bundlecrypt.fingerprint(blob))
-    return True
-
-
 def _bundle_chat(where: dict) -> int:
     return int(where.get("chat") or config.ADMIN_ID)
 
@@ -215,23 +186,6 @@ async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "", where: di
     return True
 
 
-async def bundle_applied(bot, services, slot_id: int, ok: bool, error: str, fp: str = "") -> None:
-    """Итог применения пришёл каналом. При любом исходе файл отслужил (внутри
-    ключ линка): он и сообщение над ним уходят из чата; следом уведомление об
-    итоге и карточка слота, как по «В меню» — после отказа файл перевыпускают
-    оттуда же. Итог о другом файле (fp не сошёлся) или без файла в чате —
-    только запись, без уведомления."""
-    where = await call(services.gw_bundle_msg_get, slot_id)
-    chat_id = _bundle_chat(where)
-    if not await _drop_bundle_msgs(bot, services, slot_id, fp, where):
-        return
-    # уведомление об итоге — раз чат админа затронут; следом карточка слота
-    display, _bot = await _bundle_display(services, slot_id)
-    sent = await bot.send_message(chat_id, texts.gateway_bundle_applied_text(display, ok, error))
-    await call(services.db.add_content_msg_id, chat_id, sent.message_id)
-    await _show_card_anew(bot, services, chat_id, slot_id)
-
-
 async def _show_card_anew(bot, services, chat_id: int, slot_id: int) -> None:
     """Карточка слота новым сообщением как живое меню чата — без входящего
     сообщения (по событию канала). Слота уже нет — главная."""
@@ -258,8 +212,6 @@ async def bundle_installed(bot, services, slot_id: int) -> None:
     chat_id = _bundle_chat(where)
     dropped = False
     if where.get("plain"):
-        # шифрованный файл, выпущенный после файла первого применения, — не
-        # этого события: его уберёт итог применения
         dropped = await _drop_bundle_msgs(bot, services, slot_id, where=where)
     display, agent_bot = await _bundle_display(services, slot_id)
     sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))

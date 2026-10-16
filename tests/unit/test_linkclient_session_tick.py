@@ -64,25 +64,6 @@ async def test_poke_survives_a_dead_socket(gateway_role, conf):
     await linkclient.poke(agent)                     # не бросает
 
 
-async def test_the_settings_answer_carries_the_outcome_and_no_fingerprint(gateway_role, conf):
-    """Ответ на настройки — только итог применения. Что доставка завершена,
-    сервер видит по снимку, который уходит следом: отпечаток в ответе был
-    вторым источником правды, расходившимся со снимком после отката."""
-    agent = _Agent()
-    agent.apply_link_settings = lambda values: {"ok": True, "changed": ["HOME_SUBNETS"], "error": ""}
-    agent.link_settings_note = lambda result: "применены"
-    client = _live_client(agent)
-    await client.push(full=True)
-    agent.snap["bundle"] = {"home_subnets": "192.168.70.0/24"}
-    await client._apply_settings({"HOME_SUBNETS": "192.168.70.0/24"})
-    msgs = [gwlink.unpack(KEY, x, nonce=SN) for x in client._writer.written]
-    ack = next(m for m in msgs if m["t"] == "ack")
-    assert set(ack) - {"t", "seq", "ts"} == {"ok", "changed", "error"}, f"в ответе лишнее: {sorted(ack)}"
-    assert ack["ok"] is True and ack["changed"] == ["HOME_SUBNETS"]
-    assert msgs[-1]["t"] == "delta" and msgs[-1]["bundle"] == {"home_subnets": "192.168.70.0/24"}, (
-        "снимок с новыми значениями не ушёл следом за ответом")
-
-
 # ── тик и внеочередной обзор: отказ шага — в журнал, не молча ───────────────
 
 async def test_a_failing_tick_step_is_logged_and_the_next_step_still_runs(gateway_role, conf, caplog):

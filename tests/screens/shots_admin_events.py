@@ -29,16 +29,6 @@ def _gw_file_in_chat(plain: bool):
     return build
 
 
-async def _ev_applied(services, bot):
-    from awgbot.bot.handlers.settings import bundle_applied
-    await bundle_applied(bot, services, 1, True, "", "DUMMYFP")
-
-
-async def _ev_applied_fail(services, bot):
-    from awgbot.bot.handlers.settings import bundle_applied
-    await bundle_applied(bot, services, 1, False, "routing-gw-setup.sh: nft: syntax error", "DUMMYFP")
-
-
 async def _ev_installed(services, bot):
     from awgbot.bot.handlers.settings import bundle_installed
     await bundle_installed(bot, services, 1)
@@ -152,10 +142,6 @@ EVENTS = [
     Shot("adm.ev.lan_space_moved", role="admin", call=("lan_space_announce", _ev_lan_moved),
          data=_lan_moved, title="после обновления: сети шлюзов открываются по адресам в туннеле"),
     # ── события без действия человека ───────────────────────────────────────
-    Shot("adm.ev.gw_applied", role="admin", call=("bundle_applied", _ev_applied),
-         data=_gw_file_in_chat(False), title="A134c: конфигурация шлюза применена"),
-    Shot("adm.ev.gw_applied.fail", role="admin", call=("bundle_applied", _ev_applied_fail),
-         data=_gw_file_in_chat(False), title="A134c: конфигурация шлюза не применилась"),
     Shot("adm.ev.gw_installed", role="admin", call=("bundle_installed", _ev_installed),
          data=_gw_file_in_chat(True), title="A146: шлюз настроен"),
     Shot("adm.ev.upd_available", role="admin", call=("notify_update_available", _ev_update_available),

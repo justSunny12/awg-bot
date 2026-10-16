@@ -31,10 +31,10 @@ def test_fill_puts_the_addresses_into_lan_vpn4_and_rewrites_the_snapshot(own_env
     snap = (dump / "lan_vpn4.nft").read_text()
     assert all(ip in snap for ip in ("10.3.3.3", "198.51.100.34", "198.51.100.35", "10.4.4.4")), snap
     nft = _nft(log)
-    assert nft[-1] == "nft list set inet awg_home lan_vpn4", f"слепок снят не после наполнения: {nft}"
+    assert nft[-1] == "nft list set inet awg_lan lan_vpn4", f"слепок снят не после наполнения: {nft}"
     # все адреса — одним вызовом nft, отсортированные: 500 доменов по вызову на адрес шли бы минуты
     assert [ln for ln in nft if "add element" in ln] == \
-        ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,198.51.100.34,198.51.100.35 }"], nft
+        ["nft add element inet awg_lan lan_vpn4 { 10.4.4.4,198.51.100.34,198.51.100.35 }"], nft
     assert r.stdout.strip() == "набор lan_vpn4: адреса 2 доменов взяты в обработку", r.stdout
     assert not any("lan_ru4" in ln for ln in nft), "fill тронул «напрямую»"
 
@@ -53,7 +53,7 @@ def test_fill_skips_a_foreign_line_and_fills_the_rest(own_env, tmp_path):
     """Файл пишет агент, но скрипт на root не верит ему на слово: строка не
     домен — пропуск (ни dig, ни nft по ней), остальные — в набор."""
     tool, dns_d, dump, log, env = own_env
-    bad = ["bad name.com", "-x.com", "nftset=/evil.com/inet#awg_home#lan_ru4", "a..b.com", "Alpha.com",
+    bad = ["bad name.com", "-x.com", "nftset=/evil.com/inet#awg_lan#lan_ru4", "a..b.com", "Alpha.com",
            "vpn news.org", "; rm -rf /"]
     dig_log = tmp_path / "dig.log"
     body = f'echo "$*" >> {dig_log}\n' + 'case "$*" in\n' + "".join(
@@ -65,7 +65,7 @@ def test_fill_skips_a_foreign_line_and_fills_the_rest(own_env, tmp_path):
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.5.5.5"}
     assert "адреса 2 доменов взяты в обработку" in r.stdout, f"чужие строки посчитаны: {r.stdout}"
     assert [ln for ln in _nft(log) if "add element" in ln] == \
-        ["nft add element inet awg_home lan_vpn4 { 10.3.3.3,10.5.5.5 }"], _nft(log)
+        ["nft add element inet awg_lan lan_vpn4 { 10.3.3.3,10.5.5.5 }"], _nft(log)
     asked = dig_log.read_text().splitlines()
     assert len(asked) == 2 and all(" news.org " in a or " zeta.com " in a for a in asked), \
         f"dig спрошен по чужой строке: {asked}"
@@ -125,7 +125,7 @@ def _dig_by(env: dict, table: dict[str, list[str]], extra: str = "") -> None:
 
 
 def _adds(log: Path, name: str) -> list[str]:
-    return [ln for ln in _nft(log) if f"add element inet awg_home {name} " in ln]
+    return [ln for ln in _nft(log) if f"add element inet awg_lan {name} " in ln]
 
 
 def test_fill_puts_an_address_shared_by_two_domains_once(own_env, tmp_path):
@@ -138,7 +138,7 @@ def test_fill_puts_an_address_shared_by_two_domains_once(own_env, tmp_path):
     r = _fill_run(tool, env, tmp_path, "alpha.com\nbeta.com\ngamma.com\n")
     assert r.returncode == 0, r.stdout + r.stderr
     adds = _adds(log, "lan_vpn4")
-    assert adds == ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,10.7.7.7 }"], \
+    assert adds == ["nft add element inet awg_lan lan_vpn4 { 10.4.4.4,10.7.7.7 }"], \
         f"общий адрес не схлопнут или CNAME попал в nft: {adds}"
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.7.7.7"}
     assert "адреса 3 доменов взяты в обработку" in r.stdout, r.stdout
@@ -156,7 +156,7 @@ def test_fill_goes_on_when_one_domain_gets_no_answer(own_env, tmp_path):
                   'exit 9 ;; esac\n')
     r = _fill_run(tool, env, tmp_path, "alpha.com\nsilent.com\nzeta.com\n")
     assert r.returncode == 0, f"молчащий домен уронил fill: {r.stdout} {r.stderr}"
-    assert _adds(log, "lan_vpn4") == ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,10.5.5.5 }"], _nft(log)
+    assert _adds(log, "lan_vpn4") == ["nft add element inet awg_lan lan_vpn4 { 10.4.4.4,10.5.5.5 }"], _nft(log)
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.5.5.5"}
     assert "connection timed out" not in r.stdout + r.stderr, "текст dig вылез наружу"
     assert "адреса 3 доменов взяты в обработку" in r.stdout, "счётчик — по отобранным строкам, а не по ответившим"
@@ -193,7 +193,7 @@ def test_fill_with_nothing_selected_does_not_call_nft_add_but_takes_the_snapshot
     assert r.stdout.strip() == "набор lan_vpn4: адреса 0 доменов взяты в обработку", r.stdout
     assert not any("add element" in ln for ln in _nft(log)), f"nft add вызван без адресов: {_nft(log)}"
     assert not dig_log.exists(), "dig спрошен по чужой строке"
-    assert "nft list set inet awg_home lan_vpn4" in _nft(log), "слепок не снят"
+    assert "nft list set inet awg_lan lan_vpn4" in _nft(log), "слепок не снят"
     assert "10.3.3.3" in (dump / "lan_vpn4.nft").read_text()
 
 
@@ -206,7 +206,7 @@ def test_fill_survives_a_failing_nft_add_and_still_takes_the_snapshot(own_env, t
     r = _fill_run(tool, env, tmp_path, "news.org\nalpha.com\n")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Error" not in r.stderr, "ошибка nft вылезла человеку"
-    assert _nft(log)[-1] == "nft list set inet awg_home lan_vpn4", _nft(log)
+    assert _nft(log)[-1] == "nft list set inet awg_lan lan_vpn4", _nft(log)
     assert "адреса 2 доменов взяты в обработку" in r.stdout
 
 
@@ -221,8 +221,8 @@ def test_sync_refills_lan_ru4_with_one_nft_call_after_the_flush(own_env, tmp_pat
     assert r.returncode == 0, r.stdout + r.stderr
     nft = _nft(log)
     adds = _adds(log, "lan_ru4")
-    assert adds == ["nft add element inet awg_home lan_ru4 { 10.1.1.1,10.2.2.2,198.51.100.34,198.51.100.35 }"], nft
-    assert nft.index("nft flush set inet awg_home lan_ru4") < nft.index(adds[0]), "наполнение до сброса стёрто сбросом"
+    assert adds == ["nft add element inet awg_lan lan_ru4 { 10.1.1.1,10.2.2.2,198.51.100.34,198.51.100.35 }"], nft
+    assert nft.index("nft flush set inet awg_lan lan_ru4") < nft.index(adds[0]), "наполнение до сброса стёрто сбросом"
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1", "10.2.2.2", "198.51.100.34", "198.51.100.35"}, \
         "адрес не из списка пережил перезаполнение"
     assert not _adds(log, "lan_vpn4"), "sync наполнил «в туннель» — это работа fill"

@@ -84,15 +84,6 @@ def routing_devices_toast(changes: dict) -> str:
     return _counted(("включён", on), ("выключен", off), ("устройстве", "устройствах", "устройствах"), "на ")
 
 
-def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
-    """Уведомление в чате админа по итогу применения файла на шлюзе (каналом):
-    файл и карточка над ним уходят, следом — карточка слота."""
-    if ok:
-        return f"✅ Конфигурация шлюза <b>{_e(display)}</b> успешно обновлена"
-    return (f"⚠️ Конфигурация шлюза <b>{_e(display)}</b> не обновлена"
-            + (f": {_e(error)}" if error else ""))
-
-
 def gateway_installed_text(display: str, agent_bot: dict | None) -> str:
     """Шлюз, поставленный файлом первого применения, вышел на связь: агент
     стоит, канал поднят. Ссылка на бота — из снимка канала (агент знает
@@ -103,19 +94,6 @@ def gateway_installed_text(display: str, agent_bot: dict | None) -> str:
         text += (f'\n{ui.label("Бот шлюза")} <a href="https://t.me/{_e(me["username"])}">'
                  f'{_e(me.get("name") or me["username"])}</a>')
     return text
-
-
-def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
-    """Подпись под файлом конфигурации: какому шлюзу и какому боту его
-    пересылать — ссылкой в чат, как в карточке. Бота ещё не спросили —
-    без ссылки."""
-    me = agent_bot or {}
-    who = "боту шлюза"
-    if me.get("username"):
-        who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return (ui.head(f"📤 Конфигурация шлюза «{_e(display)}»") + "\n"
-            f"Перешли это сообщение {who} — он проверит и применит сам\n\n"
-            "⚠️ Сначала перешли его: любая кнопка ниже удалит это сообщение")
 
 
 def gateway_plain_bundle_caption(display: str) -> str:
@@ -335,8 +313,7 @@ __all__ = [
     "routing_gateway_warning", "ROUTING_GRANTED_NOTICE", "routing_granted_holder_notice",
     "routing_revoked_holder_notice", "ROUTING_REVOKED_NOTICE", "routing_params_text",
     "routing_users_text", "ROUTING_DISABLE_CONFIRM", "routing_allowed_toast", "routing_devices_toast",
-    "gateway_bundle_applied_text",
-    "gateway_installed_text", "gateway_bundle_caption", "gateway_plain_bundle_caption",
+    "gateway_installed_text", "gateway_plain_bundle_caption",
     "routing_provision_failed", "gateway_install_instructions", "routing_status_line",
     "GW_CARD_PAYLOAD", "routing_admin_status_line", "ROUTING_ABOUT", "ROUTING_ADD_PROMPT",
     "ROUTING_APPLY_HINT", "ROUTING_APPLY_HINT_OWNER", "ROUTING_SITES_ABOUT", "_short", "routing_domain_removed",

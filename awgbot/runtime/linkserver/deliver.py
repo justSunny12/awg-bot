@@ -1,4 +1,4 @@
-"""deliver.py — доставки на шлюз по расхождению: настройки, фиды, записи соседей, канон своих списков, роль."""
+"""deliver.py — доставки на шлюз по расхождению: документ конфигурации, фиды, записи соседей, канон своих списков, роль."""
 from __future__ import annotations
 
 import asyncio
@@ -45,28 +45,9 @@ class DeliverMixin:
         return slot_id in self._sessions
 
     async def deliver(self, slot_id: int) -> bool:
-        """Отправить настройки слоту, если снимок расходится с выдаваемым и этот
-        набор в сессии ещё не отправляли. Возвращает, ушло ли сообщение."""
-        sess = self._sessions.get(slot_id)
-        if sess is None or not sess.hello:
-            return False
-        if "cfg1" in sess.caps:
-            return await self.deliver_cfg(slot_id)      # агент с документом: settings ему не нужны
-        gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
-        if gw is None:
-            return False
-        want = await asyncio.to_thread(self.services.gwlink_settings_due, gw)
-        if not want:
-            return False
-        digest = gwlink.settings_hash(want)
-        if sess.sent_hash == digest:
-            return False
-        # метка ДО отправки: такт живости и пришедший снимок иначе могли бы
-        # отправить один и тот же набор дважды — между проверкой и меткой await
-        sess.sent_hash = digest
-        sess.sent_queue.append(digest)
-        log.info("канал линка: слоту %s уходят настройки", slot_id)
-        return await self.send(slot_id, "settings", {"values": want}, pad=gwlink.PAD_SNAP)
+        """Отправить слоту то, чем снимок расходится с желаемым: документ
+        конфигурации (deliver_cfg). Возвращает, ушло ли сообщение."""
+        return await self.deliver_cfg(slot_id)
 
     async def deliver_lists(self, slot_id: int) -> bool:
         """Отвезти фиды локальной сети, если у шлюза включён режим без VPN, а
@@ -96,11 +77,11 @@ class DeliverMixin:
             # на своё скачивание протухал бы через 12 часов неизменных фидов.
             if sess.lists_sent == mark:
                 return False
-            sess.lists_sent = mark                # метка ДО отправки — см. deliver()
+            sess.lists_sent = mark                # метка ДО отправки: такт и снимок не шлют дважды
             return await self.send(slot_id, "lists_ok", {"hash": digest})
         if sess.lists_sent.split("@", 1)[0] == digest:
             return False
-        sess.lists_sent = mark                    # метка ДО отправки — см. deliver()
+        sess.lists_sent = mark                    # метка ДО отправки
         feeds = await asyncio.to_thread(self.services.gwlink_lan_feeds)
         if feeds.get("hash") != digest:
             return False
@@ -144,7 +125,7 @@ class DeliverMixin:
             return False
         if digest == sess.svc_have or digest == sess.svc_sent:
             return False
-        sess.svc_sent = digest                     # метка ДО отправки — см. deliver()
+        sess.svc_sent = digest                     # метка ДО отправки
         log.info("канал линка: слоту %s уходят сервисы соседей (%s)", slot_id, len(items))
         return await self.send(slot_id, "peer_svc", {"hash": digest, "items": items},
                                pad=gwlink.PAD_SNAP)
@@ -195,11 +176,12 @@ class DeliverMixin:
         return {"standby": standby, "name": name, "lan_virtual": virtual}
 
     async def deliver_cfg(self, slot_id: int) -> bool:
-        """Документ конфигурации слоту с возможностью cfg1: по расхождению
-        отпечатков снимка с желаемым, один раз за сессию на отпечаток документа
-        (временный отказ агента снимает метку — см. cfg_ack)."""
+        """Документ конфигурации слоту: по расхождению отпечатков снимка с
+        желаемым, один раз за сессию на отпечаток документа (временный отказ
+        агента снимает метку — см. cfg_ack). Снимка с отпечатками нет (агент
+        до 3.3.0) — нечего сверять, документ не уходит."""
         sess = self._sessions.get(slot_id)
-        if sess is None or not sess.hello or "cfg1" not in sess.caps:
+        if sess is None or not sess.hello:
             return False
         gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
         if gw is None:

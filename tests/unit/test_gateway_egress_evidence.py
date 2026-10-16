@@ -38,7 +38,7 @@ class _Agent:
         self.probe_ms: float | None = 42.0
         self.probes: list[float | None] = []
         self.forbidden = False          # зонд запрещён — вызов обязан упасть
-        monkeypatch.setattr(gw.base.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(__import__("time"), "monotonic", lambda: self.now)
         monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, self.rx, self.tx))
         monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
         monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])

@@ -24,10 +24,13 @@ from awgbot.infra.db import Database
 
 # Имена полей — ЯВНЫМ списком, а не импортом из модуля: сторож границы обязан
 # падать от правки кода, а не переезжать вместе с ней.
-FACTS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
+FACTS = ("bundle", "link_contract", "mark_status",
          "agent_version", "awg_generation", "agent_bot",   # agent_bot — кто бот шлюза, для ссылки в его чат
          "cfg")                                            # cfg — отпечатки разделов документа конфигурации
-BUNDLE = ("lan_mode", "home_subnets", "resolver", "peer_home_nets", "admin_ips")
+BUNDLE = ("lan_mode", "lan_subnets", "resolver", "peer_lan_nets", "admin_ips")
+# прежние имена двух полей — их агент пишет рядом с новыми для сервера 3.3.0
+# (снимается со следующим сдвигом минимума)
+BUNDLE_OLD = ("home_subnets", "peer_home_nets")
 SERVICE = ("rev", "ts", "boot_id")
 VERDICTS = ("peer_nets", "egress_ok",
             "lan_addr")                     # lan_addr — адрес шлюза в локальной сети: в настройку роутера
@@ -45,8 +48,8 @@ class _Pi:
     хоста — всё берётся отсюда."""
 
     def __init__(self, tmp_path, monkeypatch):
-        self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "RESOLVER": "10.9.1.1", "PEER_HOME_NETS": "192.168.2.0/24"}
+        self.env = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24",
+                    "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "192.168.2.0/24"}
         self.admin_ips = ["10.9.1.2", "10.9.1.3"]
         self.chains = {"input", "tunnel_in", "forward", "ssh_in"}
         self.peer_nets4 = {"192.168.2.0/24"}
@@ -70,14 +73,13 @@ class _Pi:
                 "masq_ifaces": set(), "ssh_ports": {}}
 
     def snap(self, **kw) -> dict:
-        missing = [n for n in self.env.get("PEER_HOME_NETS", "").split()
+        missing = [n for n in self.env.get("PEER_LAN_NETS", "").split()
                    if n not in self.peer_nets4]
-        peer = None if not self.env.get("PEER_HOME_NETS") else (not missing, missing)
+        peer = None if not self.env.get("PEER_LAN_NETS") else (not missing, missing)
         # rev и ts снимок не выбирает: их ставит клиент по месту в сессии и
         # конверт по времени отправки — здесь делаем то же поверх собранного
         stamp = {k: kw.pop(k) for k in ("rev", "ts") if k in kw}
-        args = {"mark_status": "confirmed", "egress_ok": True, "guard_info": self.info(),
-                "peer_nets": peer}
+        args = {"mark_status": "confirmed", "egress_ok": True, "peer_nets": peer}
         args.update(kw)
         snap = gwsnapshot.collect(**args)
         snap.update(stamp)
@@ -113,7 +115,7 @@ def test_the_snapshot_carries_exactly_the_agreed_fields_and_nothing_else(pi):
         "состав снимка разошёлся с утверждённым списком: "
         f"лишние {sorted(set(snap) - set(FACTS + VERDICTS + SERVICE))}, "
         f"пропали {sorted(set(FACTS + VERDICTS + SERVICE) - set(snap))}")
-    assert set(snap["bundle"]) == set(BUNDLE), "блок «что применено из конфигурации» изменился"
+    assert set(snap["bundle"]) == set(BUNDLE + BUNDLE_OLD), "блок «что применено из конфигурации» изменился"
     assert set(gwsnapshot.FIELDS) == set(FACTS + VERDICTS + SERVICE)
     assert set(gwsnapshot.BUNDLE_FIELDS) == set(BUNDLE)
 
@@ -136,7 +138,7 @@ def test_the_single_verdict_travels_and_disappears_with_its_function(pi):
     snap = pi.snap()
     assert snap["peer_nets"] == {"ok": False, "missing": ["192.168.2.0/24"]}, (
         "вердикт обязан ехать структурой — текст для человека рисует ВПС")
-    pi.env["PEER_HOME_NETS"] = ""
+    pi.env["PEER_LAN_NETS"] = ""
     assert "peer_nets" not in pi.snap(), "функции на шлюзе нет, а поле осталось"
 
 
@@ -231,10 +233,9 @@ def test_delta_is_empty_when_only_rev_and_ts_moved(pi):
 
 
 @pytest.mark.parametrize("change, field", [
-    (lambda pi: pi.env.__setitem__("HOME_SUBNETS", "192.168.1.0/24"), "bundle"),
+    (lambda pi: pi.env.__setitem__("LAN_SUBNETS", "192.168.1.0/24"), "bundle"),
     (lambda pi: pi.env.__setitem__("LAN_MODE", "0"), "bundle"),
     (lambda pi: pi.admin_ips.append("10.9.1.9"), "bundle"),
-    (lambda pi: pi.chains.discard("ssh_in"), "plumbing_gen"),
     (lambda pi: pi.__setattr__("generation", 2), "awg_generation"),
     (lambda pi: pi.conf.write_text("# awg-bot: контракт линка 2\n", encoding="utf-8"), "link_contract"),
 ])
@@ -268,11 +269,11 @@ def test_delta_carries_the_verdict_when_peer_nets_break_and_its_loss_when_the_fu
     assert gwsnapshot.delta(before, pi.snap()) == {
         "peer_nets": {"ok": False, "missing": ["192.168.2.0/24"]}}
     before = pi.snap()
-    pi.env["PEER_HOME_NETS"] = ""          # функцию выключили перевыпуском конфигурации
+    pi.env["PEER_LAN_NETS"] = ""          # функцию выключили перевыпуском конфигурации
     d = gwsnapshot.delta(before, pi.snap())
     assert d["peer_nets"] is None, (
         "исчезнувшее поле — тоже новость: функцию выключили, и вердикта больше нет")
-    assert d["bundle"]["peer_home_nets"] == "" and set(d) == {"peer_nets", "bundle"}
+    assert d["bundle"]["peer_lan_nets"] == "" and set(d) == {"peer_nets", "bundle"}
 
 
 def test_delta_speaks_on_the_egress_verdict_but_not_on_its_measurements(pi):
@@ -297,7 +298,7 @@ def test_three_deltas_add_up_to_the_full_snapshot(pi):
     иначе карточка слота показывала бы смесь старого и нового, и человек чинил
     бы несуществующее расхождение."""
     stored = pi.snap(rev=1)
-    steps = [lambda: pi.env.__setitem__("HOME_SUBNETS", "192.168.1.0/24"),
+    steps = [lambda: pi.env.__setitem__("LAN_SUBNETS", "192.168.1.0/24"),
              lambda: pi.__setattr__("generation", 2),
              lambda: pi.peer_nets4.clear()]
     prev = stored
@@ -334,25 +335,15 @@ def test_link_contract_is_read_from_the_comment_the_bundle_wrote(tmp_path):
     assert gwsnapshot.link_contract(str(tmp_path / "нет.conf")) == ""
 
 
-def test_plumbing_generation_tells_new_old_and_missing():
-    """Поколение обвязки — ответ на «старого образца или нового»: сегодня это
-    видно только в чате агента, а решение о перевыпуске принимает человек на
-    ВПС."""
-    assert gwsnapshot.plumbing_gen({"chains": {"input", "ssh_in"}}) == "new"
-    assert gwsnapshot.plumbing_gen({"chains": {"input", "tunnel_in"}}) == "old"
-    assert gwsnapshot.plumbing_gen(None) == "none"
-    assert gwsnapshot.plumbing_gen({}) == "none"
-
-
 # ── приём недоверенных данных ────────────────────────────────────────────────
 
 def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     """Снимок приходит со шлюза, а она может быть скомпрометирована: для ВПС это
     недоверенные данные для отрисовки, и ничего больше. Поле на мегабайт не
     должно ни лечь в БД, ни доехать до экрана."""
-    raw = {"bundle": {"lan_mode": "1", "home_subnets": "Я" * 5000, "чужое": "x"},
+    raw = {"bundle": {"lan_mode": "1", "lan_subnets": "Я" * 5000, "чужое": "x"},
            "agent_version": "3.1.0", "awg_generation": "2", "egress_ok": True,
-           "link_contract": 1, "plumbing_gen": "new", "mark_status": "confirmed",
+           "link_contract": 1, "plumbing_gen": "new", "mark_status": "confirmed",   # plumbing_gen — от агента 3.3.0
            "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00", "rev": "4",
            "peer_nets": {"ok": True, "missing": ["10.0.0.0/8"] * 500},
            "agent_bot": {"username": "Some_Bot", "name": "Имя " * 100, "id": 5},
@@ -367,8 +358,8 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
                           "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
-    assert len(out["bundle"]["home_subnets"]) == 512, "длина значения не ограничена"
-    assert out["bundle"]["peer_home_nets"] == "", "недосланное поле стало пустым, а не пропало"
+    assert len(out["bundle"]["lan_subnets"]) == 512, "длина значения не ограничена"
+    assert out["bundle"]["peer_lan_nets"] == "", "недосланное поле стало пустым, а не пропало"
     assert len(out["peer_nets"]["missing"]) == 64, "список в вердикте не ограничен"
     assert out["awg_generation"] == 2 and out["rev"] == 4, "числа приводятся к числам"
     assert not set(out) & set(FORBIDDEN)
@@ -392,8 +383,8 @@ def test_sanitize_survives_lies_about_types_without_raising():
 def test_html_in_a_value_is_kept_verbatim_for_the_screen_to_escape():
     """Экранирование — забота текстов (они это делают через _e). Снимок хранит
     то, что прислали, иначе разметка ломалась бы дважды."""
-    out = gwsnapshot.sanitize({"bundle": {"home_subnets": "<b>10.0.0.0/8</b>"}})
-    assert out["bundle"]["home_subnets"] == "<b>10.0.0.0/8</b>"
+    out = gwsnapshot.sanitize({"bundle": {"lan_subnets": "<b>10.0.0.0/8</b>"}})
+    assert out["bundle"]["lan_subnets"] == "<b>10.0.0.0/8</b>"
 
 
 def test_an_unknown_field_from_a_newer_agent_is_simply_ignored():
@@ -481,3 +472,30 @@ def test_sanitize_cuts_the_bot_name_to_64():
     подделка, и строка карточки не должна растягиваться на экран."""
     out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Я" * 1000}})
     assert out["agent_bot"]["name"] == "Я" * 64
+
+
+# ── прежние имена полей bundle (снимается со следующим сдвигом минимума) ────
+
+def test_the_agent_writes_the_old_field_names_next_to_the_new_ones(pi):
+    """Сервер 3.3.0 читает только home_subnets / peer_home_nets: без них агент
+    3.3.1 под ним выглядел бы без подсетей, а SMB соседей не раздавались бы."""
+    pi.env["LAN_SUBNETS"] = "192.168.1.0/24"
+    pi.env["PEER_LAN_NETS"] = "10.242.0.0/16"
+    b = pi.snap()["bundle"]
+    assert (b["lan_subnets"], b["peer_lan_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
+    assert (b["home_subnets"], b["peer_home_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
+
+
+def test_the_server_reads_the_old_names_from_an_agent_330():
+    """Агент 3.3.0 шлёт только прежние имена: сервер кладёт их под новыми;
+    новые, если есть, берутся первыми."""
+    out = gwsnapshot.sanitize({"bundle": {"home_subnets": "192.168.1.0/24", "peer_home_nets": "10.242.0.0/16"}})
+    assert set(out["bundle"]) == set(BUNDLE)
+    assert (out["bundle"]["lan_subnets"], out["bundle"]["peer_lan_nets"]) == ("192.168.1.0/24", "10.242.0.0/16")
+    out = gwsnapshot.sanitize({"bundle": {"lan_subnets": "10.0.0.0/24", "home_subnets": "192.168.1.0/24"}})
+    assert out["bundle"]["lan_subnets"] == "10.0.0.0/24"
+
+
+def test_the_snapshot_no_longer_carries_the_plumbing_generation(pi):
+    assert "plumbing_gen" not in pi.snap()
+    assert "plumbing_gen" not in gwsnapshot.sanitize({"plumbing_gen": "old"})

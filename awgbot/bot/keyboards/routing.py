@@ -131,22 +131,18 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
 
 def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> InlineKeyboardMarkup:
     """Карточка слота: у резервного — «▶️ Сделать активным» первым рядом;
-    [📤 Конфигурация] [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [🛜 Роутер]
-    [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «🛜 Роутер»; агенту с
-    документом конфигурации файл не нужен — без «📤 Конфигурация», а
-    «✏️ Изменить» на том же месте, что у остальных. Открыта
-    ссылкой с главной (back_main) — выход «⬅️ В меню»."""
+    [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [🛜 Роутер] [✏️ Изменить] /
+    [⬅️ Назад]. Без VPN-транзита — без «🛜 Роутер». Конфигурацию слоту везёт
+    канал — кнопки файла нет. Открыта ссылкой с главной (back_main) — выход
+    «⬅️ В меню»."""
     gw = state["gateway"]
     if back_main:
         exit_row = ui.to_menu(Menu(action="main"))
     else:
         exit_row = ui.back(GwSlotCB(action="list") if back_to_list else SetCB(sec="rt"))
-    cfg1 = bool(((state.get("channel") or {}).get("cfg") or {}).get("cfg1"))
     return ui.rows(
         ("▶️ Сделать активным", GwSlotCB(action="switch_ask", slot=gw.id)) if not state.get("active") else None,
-        # файл — агентам без документа конфигурации: остальным всё привозит канал
-        [("📤 Конфигурация", GwSlotCB(action="bundle", slot=gw.id)) if not cfg1 else None,
-         ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id))],
+        ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id)),
         [(f"{_tick(bool(gw.lan_mode))} VPN-транзит", GwSlotCB(action="lan_ask", slot=gw.id)),
          ("🗺 Подсети", GwSlotCB(action="lan_nets", slot=gw.id))],
         [("🛜 Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
@@ -287,13 +283,11 @@ def settings_routing_users(clients=(), marks: dict | None = None, *, dirty: bool
         apply_row(dirty, SetCB(sec="rt", act="do", key="allow_apply"), SetCB(sec="rt")))
 
 
-def bundle_menu_kb(slot: int = 0, *, plain: bool = False, from_card: bool = False) -> InlineKeyboardMarkup:
-    """Под файлом конфигурации: обе кнопки убирают файл и сообщение над ним
-    из чата (внутри ключ линка) и открывают карточку слота или главную
-    (`bundle_cancel`, `bundle_home`). Выпущен из карточки (from_card) —
-    «⬅️ Назад» (в неё) и «⬅️ В меню»; иначе (ссылка из уведомления, файл
-    нового шлюза — plain) карточки человек не видел: «🛰 Карточка шлюза» и
-    «⬅️ В меню». Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
-    return ui.rows([(ui.BACK_LABEL if from_card and not plain else "🛰 Карточка шлюза",
+def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
+    """Под файлом первого применения: обе кнопки убирают файл и сообщение над
+    ним из чата (внутри ключ линка) и открывают карточку слота или главную
+    (`bundle_cancel`, `bundle_home`): «🛰 Карточка шлюза» и «⬅️ В меню».
+    Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
+    return ui.rows([("🛰 Карточка шлюза",
                      SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or ""))),
                     (ui.MENU_LABEL, SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))])

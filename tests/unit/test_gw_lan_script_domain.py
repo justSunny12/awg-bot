@@ -22,10 +22,10 @@ def test_domain_tool_adds_resolves_and_fills_the_set(domain_env):
     r = _run(tool, env, "add", "https://www.Example.com/path", "not a domain")
     assert r.returncode == 0, r.stderr
     assert "<code>example.com</code>: добавлен" in r.stdout and "не похоже на домен" in r.stdout
-    assert (dns_d / "awg-gw-vpn-user.conf").read_text() == "nftset=/example.com/inet#awg_home#lan_vpn4\n"
+    assert (dns_d / "awg-gw-vpn-user.conf").read_text() == "nftset=/example.com/inet#awg_lan#lan_vpn4\n"
     text = log.read_text()
     assert "systemctl restart dnsmasq" in text, "именно restart: SIGHUP конфиги не перечитывает"
-    assert "nft add element inet awg_home lan_vpn4 { 198.51.100.34 }" in text
+    assert "nft add element inet awg_lan lan_vpn4 { 198.51.100.34 }" in text
     assert "2 адрес(а) в наборе lan_vpn4" in r.stdout
     assert "<code>example.com</code>: уже в списке" in _run(tool, env, "add", "example.com").stdout
 
@@ -36,7 +36,7 @@ def test_domain_tool_moves_between_lists_and_deletes(domain_env):
     r = _run(tool, env, "ru", "shop.ru")                      # напрямую → уходит из туннельного
     assert "<code>shop.ru</code>: добавлен" in r.stdout
     assert "shop.ru" not in (dns_d / "awg-gw-vpn-user.conf").read_text()
-    assert (dns_d / "awg-gw-ru-user.conf").read_text().strip() == "nftset=/shop.ru/inet#awg_home#lan_ru4"
+    assert (dns_d / "awg-gw-ru-user.conf").read_text().strip() == "nftset=/shop.ru/inet#awg_lan#lan_ru4"
     assert _run(tool, env, "list").stdout.strip() == "ru shop.ru"
     assert "<code>shop.ru</code>: убран" in _run(tool, env, "del", "shop.ru").stdout
     assert _run(tool, env, "list").stdout.strip() == ""

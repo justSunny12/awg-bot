@@ -47,7 +47,6 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     runs = []
     monkeypatch.setattr(services, "_link_privkey", lambda gw=None: PRIV)
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append((mode, dict(env or {}))))
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: (b"ENC", f"b{slot}.enc"))
     monkeypatch.setattr(services, "gw_bundle_plain", lambda slot=None: (b"PLAIN", f"awg-gw-bundle{slot}.sh"))
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
     token = {}
@@ -126,7 +125,7 @@ async def test_card_never_has_more_than_eight_buttons(services, slots, fake_bot)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
-    assert _rows(markup) == [["▶️ Сделать активным"], ["📤 Конфигурация", "📡 Пинг"],
+    assert _rows(markup) == [["▶️ Сделать активным"], ["📡 Пинг"],
                              ["✅ VPN-транзит", "🗺 Подсети"], ["🛜 Роутер", "✏️ Изменить"], ["⬅️ Назад"]]
     assert sum(len(r) for r in markup.inline_keyboard) <= 8
 
@@ -394,22 +393,22 @@ def _snap_installed(services, sid: int, online: bool = True) -> None:
     services.gwlink_snapshot_in(sid, {"bundle": {gwlink.snap_field(k): v for k, v in env.items()},
                                       "agent_version": "3.3.0", "rev": 1}, 1, True)
     if online:
-        services.gwlink_session_opened(sid, "3.3.0", 2)
+        services.gwlink_session_opened(sid, "3.3.0", 2, ["cfg1", "confirm1", "token1"])
 
 
 async def test_lan_mode_travels_in_the_bundle_and_the_channel_without_a_notification(
         services, slots, monkeypatch):
-    """LAN_MODE, HOME_SUBNETS и RESOLVER едут в окружении сборки — и каналом:
+    """LAN_MODE, LAN_SUBNETS и RESOLVER едут в окружении сборки — и каналом:
     смена подсетей или режима при живом канале уведомления не даёт, канал
-    довезёт сам. Шлюз отверг текущий набор — одно уведомление, режим назван
-    словами, а не «без VPN»."""
-    from awgbot.util import gwlink
+    довезёт сам. Шлюз отверг текущий документ — одно уведомление, режим
+    назван словами, а не «без VPN»."""
+    from awgbot.domain import gwcfg
     _, pi, _ = slots
     _slot1(services, pi)
     services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
     env, _ = services._gw_bundle_env(services.db.gateway(1))
-    assert env["LAN_MODE"] == "0" and env["HOME_SUBNETS"] == "192.168.68.0/24" and env["RESOLVER"] == ""
+    assert env["LAN_MODE"] == "0" and env["LAN_SUBNETS"] == "192.168.68.0/24" and env["RESOLVER"] == ""
     services.gateway_set_lan_mode(1, True)
     env, _ = services._gw_bundle_env(services.db.gateway(1))
     assert env["LAN_MODE"] == "1" and env["RESOLVER"] == "10.9.1.1"
@@ -419,8 +418,9 @@ async def test_lan_mode_travels_in_the_bundle_and_the_channel_without_a_notifica
     assert services.gw_bundle_drift_notes() == [], "подсети едут каналом, а бот шлёт уведомление"
     services.gateway_set_lan_mode(1, False)
     assert services.gw_bundle_drift_notes() == [], "режим едет каналом, а бот шлёт уведомление"
-    want = services.gwlink_settings_want(services.db.gateway(1))
-    services.gwlink_ack_in(1, {"ok": False, "error": "exit 1", "hash": gwlink.settings_hash(want)})
+    monkeypatch.setattr(services, "gwcfg_link_conf", lambda gw, env: "")
+    doc = services.gwcfg_doc(services.db.gateway(1))
+    services.gwcfg_ack_in(1, gwcfg.ack_build(doc["gen"], doc["hash"], failed={"env": "exit 1"}))
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1, [n.text for n in notes]
     text = notes[0].text
@@ -465,7 +465,7 @@ def test_peer_nets_are_prefixes_of_the_other_transit_slots(services, slots, monk
     assert services.gateway_peer_nets(1) == ["10.241.0.0/16"], "подсети соседа префиксу не указ"
     assert [n for _, _, n in services.gateway_peer_nets_info()["pairs_named"]] == [["10.240.1.0/24"], ["10.241.1.0/24"]]
     env, _ = services._gw_bundle_env(services.db.gateway(1))
-    assert env["PEER_HOME_NETS"] == "10.241.0.0/16"
+    assert env["PEER_LAN_NETS"] == "10.241.0.0/16"
     import pytest as _pt
     with _pt.raises(Exception, match="сначала выключи"):
         services.gateway_set_lan_subnets(2, "")             # при включённом режиме без VPN подсети не убрать
@@ -549,31 +549,6 @@ async def test_the_old_failover_toggle_from_monitoring_lands_on_the_gateways_scr
     cb, nav = _acb(fake_bot)
     await sh.toggle(cb, SetCB(sec="rt_mon", act="toggle", key="app.routing.failover.enabled"), services)
     assert store["app.routing.failover.enabled"] is False, "старый тумблер ничего не переключил"
-
-
-def test_transit_of_a_second_slot_notifies_both_live_agents_32_once(services, slots, monkeypatch):
-    """Второй слот включил VPN-транзит: у обоих слотов появились подсети соседа,
-    а агенту 3.2 их везёт только файл (они и в конфиге линка). Пока шлюзы не на
-    связи — тишина, расхождение в карточке; на связи — каждому слоту по одному
-    уведомлению с кнопкой выпуска файла."""
-    _peer_conf(monkeypatch)
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    services.gateway_set_lan_subnets(1, "192.168.1.0/24"); services.gateway_set_lan_subnets(2, "192.168.68.0/24")
-    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
-    monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "")
-    services.db.gateway_update(2, lan_mode=0)
-    for sid in (1, 2):
-        _snap_installed(services, sid, online=False)
-    services.db.gateway_update(2, lan_mode=1)
-    assert services.gw_bundle_drift_notes() == [], "шлюзы не на связи, а бот шлёт уведомления"
-    for sid in (1, 2):
-        services.gwlink_session_opened(sid, "3.3.0", 2)
-    notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 2 and all("локальные подсети других шлюзов" in n.text for n in notes), (
-        "обоим слотам, один раз")
-    assert sorted(n.action for n in notes) == [("gwcfg", 1), ("gwcfg", 2)]
-    assert services.gw_bundle_drift_notes() == []
 
 
 # ── «👥 Кому доступен» ───────────────────────────────────────────────────────
@@ -777,4 +752,3 @@ async def test_the_lan_prompt_says_neighbours_only_when_the_networks_are_linked(
     prompt, card = texts.gateway_lan_text(st), texts.gateway_card_text(st, st["states"])
     assert "Доступ через туннель — только твоим устройствам и подсетям других шлюзов" in prompt
     assert "через туннель и из подсетей других шлюзов сеть открывается" in card
-

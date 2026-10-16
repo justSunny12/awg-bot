@@ -208,7 +208,6 @@ def fake_routing(monkeypatch, tmp_path):
         # сами.
         link_rx=0, link_tx=0, link_rx_step=0, link_tx_step=1 << 20,
         lanmap=None, lanmap_applies=[],   # таблица адресов в туннеле: текст в «ядре», история применений
-        dropped_routes=[],                # уборка маршрутов настоящих подсетей 3.2.x
     )
 
     def replace_members(name, kind, members, current=None):
@@ -295,7 +294,6 @@ def fake_routing(monkeypatch, tmp_path):
     _set("link_peer_state", link_peer_state)
     _set("drop_slot_policy", lambda slot_id, iface="": None)
     _set("ensure_mss_clamp", lambda iface="": None)
-    _set("drop_lan_routes", lambda pairs: state.dropped_routes.extend(pairs))
     # таблица адресов в туннеле (inet awg_lan_map): текст последнего применения;
     # None — таблицы в «ядре» нет
     monkeypatch.setattr(routing.lanmap, "apply", lambda text: (setattr(state, "lanmap", text),

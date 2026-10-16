@@ -67,7 +67,7 @@ def _link_apply(script, tmp_path, new_text: str, *, installed: str | None, up: b
             + fns + f'\nallow_list_path() {{ printf "%s" "{allow}"; [ -f "{allow}" ]; }}\n' + mode)
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "CLIENT_SUBNET": "10.8.1.0/24",
-                            "RESOLVER": "10.9.1.1", "HOME_SUBNETS": "192.168.68.0/24", **(env or {})})
+                            "RESOLVER": "10.9.1.1", "LAN_SUBNETS": "192.168.68.0/24", **(env or {})})
     return r, log.read_text(encoding="utf-8").splitlines(), dst
 
 
@@ -98,7 +98,7 @@ def test_link_apply_with_new_allowed_ips_goes_by_syncconf(script, tmp_path):
     new = LINK.replace("AllowedIPs = 10.8.1.0/24, 10.99.99.0/30",
                        "AllowedIPs = 10.8.1.0/24, 10.99.99.0/30, 192.168.70.0/24").replace(
         "PersistentKeepalive = 25-35", "PersistentKeepalive = 25")
-    r, calls, dst = _link_apply(script, tmp_path, new, installed=old, env={"PEER_HOME_NETS": "192.168.70.0/24"})
+    r, calls, dst = _link_apply(script, tmp_path, new, installed=old, env={"PEER_LAN_NETS": "192.168.70.0/24"})
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout.rstrip().endswith("link: syncconf"), r.stdout
     assert dst.read_text(encoding="utf-8") == new, "новый конфиг не лёг на место"
@@ -217,6 +217,6 @@ def test_link_apply_uses_the_interface_subnets_the_agent_passed(script, tmp_path
     bad = LINK.replace("AllowedIPs = 10.8.1.0/24, 10.99.99.0/30",
                        "AllowedIPs = 10.8.1.0/24, 10.99.99.0/30, 192.168.70.0/24")
     r, calls, dst = _link_apply(script, tmp_path, bad, installed=LINK,
-                                env={"PEER_HOME_NETS": "192.168.70.0/24", "IFACE_NETS": "192.168.70.0/25"})
+                                env={"PEER_LAN_NETS": "192.168.70.0/24", "IFACE_NETS": "192.168.70.0/25"})
     assert r.returncode == 1 and "пересекается" in r.stderr, r.stdout + r.stderr
     assert dst.read_text(encoding="utf-8") == LINK

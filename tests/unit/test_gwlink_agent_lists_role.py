@@ -26,7 +26,7 @@ import pytest
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
-from tests.unit.test_gwlink_settings_apply import UNIT_TEXT, _Unit
+from tests.unit._gw_unit_common import UNIT_TEXT, _Unit
 
 pytestmark = pytest.mark.unit
 

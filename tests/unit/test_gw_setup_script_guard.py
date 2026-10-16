@@ -340,48 +340,66 @@ def test_unit_gets_no_new_environment_lines_for_ssh(script):
 
 # ── канал до ВПС: строки в юните ─────────────────
 
-def _channel_vars(script: str, **env) -> tuple[str, str]:
-    """Прогнать настоящие строки скрипта, которые задают значения канала."""
+def _channel_port(script: str, **env) -> str:
+    """Прогнать настоящие строки скрипта, которые задают порт канала."""
     lines = [ln for ln in script.splitlines()
              if ln.startswith("LINK_CHANNEL") or ln.startswith('case "$LINK_CHANNEL_PORT"')]
-    assert len(lines) == 3, f"строки канала изменились: {lines}"
-    prog = "\n".join(lines) + '\nprintf "%s|%s" "$LINK_CHANNEL" "$LINK_CHANNEL_PORT"'
+    assert len(lines) == 2, f"строки канала изменились: {lines}"
+    prog = "\n".join(lines) + '\nprintf "%s" "$LINK_CHANNEL_PORT"'
     out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                          env={"PATH": "/usr/bin:/bin", **env})
     assert out.returncode == 0, out.stderr
-    return tuple(out.stdout.split("|"))
-
-
-@pytest.mark.parametrize("env", [{}, {"LINK_CHANNEL": "0"}, {"LINK_CHANNEL": ""},
-                                 {"LINK_CHANNEL": "да"}, {"LINK_CHANNEL": "1; rm -rf /"}])
-def test_the_channel_line_is_always_on_whatever_the_bundle_says(script, env):
-    """Канал обязателен: в юнит всегда уходит LINK_CHANNEL=1. Агенты прежних
-    версий без этой строки (или с «0» из старого файла конфигурации) канал
-    гасят — шлюз замолчал бы для ВПС до следующего обновления агента."""
-    assert _channel_vars(script, **env)[0] == "1", f"окружение {env} повлияло на строку канала"
+    return out.stdout
 
 
 def test_the_channel_port_is_sanitised_before_it_reaches_the_unit(script):
     """Порт приезжает из файла конфигурации, то есть из окружения. Мусор,
     доехавший до юнита, сломал бы разбор у агента (порт читается как число)
     или подменил бы команду в строке Environment=."""
-    assert _channel_vars(script) == ("1", "8787"), "без порта в файле конфигурации — порт по умолчанию"
-    assert _channel_vars(script, LINK_CHANNEL_PORT="9099") == ("1", "9099")
-    assert _channel_vars(script, LINK_CHANNEL_PORT="порт")[1] == "8787"
-    assert _channel_vars(script, LINK_CHANNEL_PORT="0")[1] == "8787", "нулевой порт — не порт"
-    assert _channel_vars(script, LINK_CHANNEL_PORT="123456789")[1] == "12345", "порт не длиннее пяти цифр"
-    assert _channel_vars(script, LINK_CHANNEL_PORT="90$(reboot)99")[1] == "9099", "в порт проходит не только цифра"
+    assert _channel_port(script) == "8787", "без порта в файле конфигурации — порт по умолчанию"
+    assert _channel_port(script, LINK_CHANNEL_PORT="9099") == "9099"
+    assert _channel_port(script, LINK_CHANNEL_PORT="порт") == "8787"
+    assert _channel_port(script, LINK_CHANNEL_PORT="0") == "8787", "нулевой порт — не порт"
+    assert _channel_port(script, LINK_CHANNEL_PORT="123456789") == "12345", "порт не длиннее пяти цифр"
+    assert _channel_port(script, LINK_CHANNEL_PORT="90$(reboot)99") == "9099", "в порт проходит не только цифра"
 
 
-def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
-    """Порт канала агент читает из юнита обвязки, а строку LINK_CHANNEL —
-    агенты прежних версий: пропадёт она, и каждый не обновлённый шлюз
-    погасит канал, а понять это будет неоткуда."""
+def test_the_unit_carries_the_channel_port_and_no_channel_switch(script):
+    """Порт канала агент читает из юнита обвязки; строки LINK_CHANNEL=1 с
+    3.3.1 в юните нет — канал обязателен."""
     unit = script.split('cat > "$UNIT" <<UNITEOF', 1)[1].split("UNITEOF", 1)[0]
-    assert "Environment=LINK_CHANNEL=$LINK_CHANNEL\n" in unit
     assert "Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT\n" in unit
-    assert unit.index("Environment=LINK_CHANNEL=") < unit.index("EnvironmentFile=-$FW_ENV"), (
+    assert "Environment=LINK_CHANNEL=" not in unit
+    assert unit.index("Environment=LINK_CHANNEL_PORT=") < unit.index("EnvironmentFile=-$FW_ENV"), (
         "локальный файл читается после строк бандла — иначе он не перекроет их")
+
+
+def _subnets(script: str, **env) -> tuple[str, str]:
+    """Прогнать настоящие строки скрипта, которые задают локальные подсети и
+    подсети соседей (с запасным чтением прежних имён юнита 3.3.0)."""
+    keep = ("LAN_SUBNETS=", "PEER_LAN_NETS=", "    | grep -E")
+    lines = [ln for ln in script.splitlines() if ln.startswith(keep)]
+    prog = "\n".join(lines) + '\nprintf "%s|%s" "$LAN_SUBNETS" "$PEER_LAN_NETS"'
+    out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
+                         env={"PATH": "/usr/bin:/bin", **env})
+    assert out.returncode == 0, out.stderr
+    return tuple(out.stdout.split("|"))
+
+
+def test_the_script_reads_the_old_unit_names_until_the_unit_is_rewritten(script):
+    """Перезагрузка шлюза между обновлением агента и его правкой юнита: юнит
+    3.3.0 ещё отдаёт HOME_SUBNETS / PEER_HOME_NETS — скрипт 3.3.1 обязан их
+    увидеть, иначе снимет VPN-транзит и связь подсетей. Новые имена — главнее."""
+    assert _subnets(script, HOME_SUBNETS="192.168.1.0/24", PEER_HOME_NETS="10.242.0.0/16") == \
+        ("192.168.1.0/24", "10.242.0.0/16")
+    assert _subnets(script, LAN_SUBNETS="10.0.0.0/24", HOME_SUBNETS="192.168.1.0/24") == ("10.0.0.0/24", "")
+    assert _subnets(script, LAN_SUBNETS="10.0.0.0/24; reboot") == ("10.0.0.0/24", ""), "фильтр формы снят"
+
+
+def test_the_unit_is_rewritten_with_the_new_names_only(script):
+    unit = script.split('cat > "$UNIT" <<UNITEOF', 1)[1].split("UNITEOF", 1)[0]
+    assert 'Environment="LAN_SUBNETS=$LAN_SUBNETS"' in unit and 'Environment="PEER_LAN_NETS=$PEER_LAN_NETS"' in unit
+    assert "HOME_SUBNETS" not in unit and "PEER_HOME_NETS" not in unit
 
 
 # ── маскарад соседей к роутеру (VPN-транзит) ─────────────────
@@ -396,10 +414,10 @@ def _fn(script: str, name: str) -> str:
 
 def _router4(script: str, tmp_path, route_out: str, home: str = "192.168.0.0/16 10.0.0.0/8 172.16.0.0/12"):
     """(VIA4, ROUTER4) настоящих detect_via/detect_router при подставном
-    `ip route show default` и своих подсетях HOME_SUBNETS."""
+    `ip route show default` и своих подсетях LAN_SUBNETS."""
     fns = "".join(_fn(script, n) for n in ("detect_via", "ip_in_nets", "detect_router"))
     fake_cmd(tmp_path / "ip", "#!/bin/sh\ncat <<'IPEOF'\n" + route_out + "\nIPEOF\n")
-    r = _sh(fns + f"HOME_SUBNETS='{home}'\n" + 'VIA4="$(detect_via)"\nROUTER4="$(detect_router "$VIA4")"\n'
+    r = _sh(fns + f"LAN_SUBNETS='{home}'\n" + 'VIA4="$(detect_via)"\nROUTER4="$(detect_router "$VIA4")"\n'
             'printf "[%s|%s]" "$VIA4" "$ROUTER4"', path=f"{tmp_path}:/usr/bin:/bin")
     assert r.returncode == 0, r.stderr
     return tuple(r.stdout.strip()[1:-1].split("|"))
@@ -493,7 +511,7 @@ def test_router_address_is_the_ipv4_via_of_the_default_route(script, tmp_path, o
 ], ids=["own", "second-subnet", "other-half", "host-route", "outside", "no-subnets"])
 def test_router_address_must_be_inside_the_own_subnets(script, tmp_path, home, router):
     """Роутер — только шлюз маршрута по умолчанию внутри своих подсетей
-    (HOME_SUBNETS): роутер вне локальной сети (нестандартная схема) маскарадом
+    (LAN_SUBNETS): роутер вне локальной сети (нестандартная схема) маскарадом
     к нему не открывается. DNS имён Endpoint берёт шлюз маршрута как есть."""
     got = _router4(script, tmp_path, "default via 192.168.1.1 dev eth0", home=home)
     assert got == ("192.168.1.1", router), got
@@ -541,7 +559,7 @@ def test_router_address_is_in_the_status_file(script, tmp_path):
 
 def test_the_plan_names_the_router_masquerade(script):
     """План (без аргументов) и шаг 2 говорят о маскараде к роутеру; шапка
-    описывает его у PEER_HOME_NETS."""
+    описывает его у PEER_LAN_NETS."""
     plan = script.split('say "Будет сделано:"', 1)[1].split("exit 0", 1)[0]
     assert "маскарад к адресу роутера" in plan and "$ROUTER4" in plan
     step2 = script.split('step "2. Таблица $GUARD_TABLE"', 1)[1].split("cat <<GUARDEOF", 1)[0]

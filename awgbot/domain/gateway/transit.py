@@ -22,17 +22,16 @@ class TransitMixin:
     _LAN_QUIET_SECONDS = 24 * 3600          # столько без пакетов из LAN — «роутер не заворачивает»
     _LAN_FAILS_KEY = "gw_lan_lists_fails"
 
-    BUSY_APPLYING = ("обвязка сейчас применяется (конфигурация или настройки с сервера AWG) — "
-                     "повтори через минуту")
+    BUSY_APPLYING = "обвязка сейчас применяется (конфигурация с сервера AWG) — повтори через минуту"
     BUSY_ACTIVATING = "обвязка ещё запускается — повтори через минуту"
     STILL_APPLYING = "обвязка всё ещё применяет настройки — итог в 🩺 Здоровье через несколько минут"
 
     def reassert_guarded(self, why: str, *, timeout: int | None = None) -> tuple[bool, str]:
         """Единственный путь к рестарту юнита обвязки — для тика, кнопки
-        «Восстановить», путей SSH и настроек с сервера.
+        «Восстановить», путей SSH и перехода имён обвязки.
 
-        Под замком применения без ожидания: идёт применение (файл конфигурации
-        из чата, настройки из канала) — включение режима без VPN минуты стоит
+        Под замком применения без ожидания: идёт применение (документ
+        конфигурации из канала) — включение режима без VPN минуты стоит
         на apt, и рестарт юнита посреди него убил бы dpkg. Юнит уже в
         activating — то же самое, только запущено извне. Отказ — словами:
         вызывающий сам решает, откатывать ли своё. Отметка времени общая с
@@ -51,13 +50,36 @@ class TransitMixin:
             log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
         return ok, err
 
+    def plumbing_rename_due(self) -> bool:
+        """Обвязка прежнего образца после обновления: строки юнита под прежними
+        именами (их агент переписывает сразу) или таблица локальной сети под
+        прежним именем. True — нужен прогон обвязки: он перенесёт таблицу и
+        перепишет юнит целиком. Снимается со следующим сдвигом минимума."""
+        from awgbot.infra import gwguard
+        if not gwguard.plumbing_installed():
+            return False
+        due = False
+        if gwguard.unit_old_names():
+            due = True
+            try:
+                gwguard.unit_rename_old()
+                log.info("gateway: строки юнита обвязки переписаны под новые имена")
+            except (OSError, gwguard.GwGuardError) as e:
+                # прогон обвязки перепишет юнит сам: прежние имена скрипт ещё читает
+                log.warning("gateway: строки юнита обвязки не переписаны: %s", e)
+        try:
+            due = gwguard.lan_table_old() or due
+        except (OSError, gwguard.GwGuardError):
+            pass
+        return due
+
     def _reassert_due(self) -> bool:
         """Прошло ли окно троттлинга с последнего реассерта."""
         return time.monotonic() - self._last_reassert >= self._REASSERT_MIN_INTERVAL
 
     def _reassert_throttled(self, why: str) -> bool:
         """Рестарт юнита обвязки не чаще раза в 10 минут (общий троттлинг с
-        tg_mark_ensure): скрипт идемпотентен, вернёт и guard, и awg_home."""
+        tg_mark_ensure): скрипт идемпотентен, вернёт и guard, и awg_lan."""
         if not self._reassert_due():
             return False
         ok, _err = self.reassert_guarded(why)
@@ -104,7 +126,7 @@ class TransitMixin:
         st = gwguard.script_status()
         iface, addr = st.get("LAN_IF", ""), st.get("LAN_ADDR", "")
         resolver = gwguard.unit_env("RESOLVER")
-        nets_all = gwguard.unit_env("HOME_SUBNETS").split()
+        nets_all = gwguard.unit_env("LAN_SUBNETS").split()
         info: dict = {"iface": iface, "addr": addr, "resolver": resolver or "1.1.1.1 (запасной)",
                       "subnet": nets_all[0] if nets_all else "",
                       "uplink": st.get("UPLINK_IF", "")}
@@ -112,16 +134,14 @@ class TransitMixin:
         # скрипта списков нет — фиды применить нечем, ни свои, ни из канала
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             checks.append(GwCheck(gc.CHECK_LISTS_SCRIPT, False,
-                                  "скрипт обновления списков РФ-доступа не найден — "
-                                  + ("«🚑 Восстановить»" if self.server_cfg1() else
-                                     "перевыпусти конфигурацию шлюза с сервера AWG")))
+                                  "скрипт обновления списков РФ-доступа не найден — «🚑 Восстановить»"))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")
         if err:
             checks.append(GwCheck(gc.CHECK_TRANSIT, False, err))
         # интерфейс переехал (OMV собрал bridge/bond — адрес теперь на br0): правила
         # остались на старом имени, весь LAN идёт мимо маркировки. Перевыставить.
-        nets = gwguard.unit_env("HOME_SUBNETS").split()
+        nets = gwguard.unit_env("LAN_SUBNETS").split()
         if nets and iface:
             live = gwguard.iface_for_subnet(nets[0])
             if live and live[0] != iface:
@@ -141,15 +161,15 @@ class TransitMixin:
                                                     else "статистика dnsmasq не прочиталась"))))
         # таблица и наборы
         try:
-            home = gwguard.home_table_info()
+            home = gwguard.lan_table_info()
         except gwguard.GwGuardError:
             home = None
         table_ok = home is not None and "prerouting" in home["chains"]
         if not table_ok and not err:
             # таблицу снёс кто-то посторонний (nftables.service с flush ruleset,
             # ручной nft) — вернёт юнит; перевыпуск тут ни при чём
-            self._reassert_throttled("таблицы awg_home нет")
-            checks.append(GwCheck(gc.CHECK_LAN_TABLE, False, f"таблицы awg_home нет; {gc.SELF_HEAL_TAIL}"))
+            self._reassert_throttled("таблицы awg_lan нет")
+            checks.append(GwCheck(gc.CHECK_LAN_TABLE, False, f"таблицы awg_lan нет; {gc.SELF_HEAL_TAIL}"))
         else:
             checks.append(GwCheck(gc.CHECK_LAN_TABLE, table_ok, "" if table_ok else err))
         ls = gwguard.lists_status()
@@ -240,7 +260,7 @@ class TransitMixin:
         подсеть из юнита обвязки, адрес из статуса скрипта. Подсетей соседей
         рецепт не берёт: сам роутер открывает им маскарад шлюза."""
         from awgbot.infra import gwguard
-        nets = gwguard.unit_env("HOME_SUBNETS").split()
+        nets = gwguard.unit_env("LAN_SUBNETS").split()
         return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", "")
 
 
@@ -357,17 +377,6 @@ class TransitMixin:
             self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
             self.db.set_state(self._LAN_FAILS_KEY, "0")
         return {"ok": True, "error": ""}
-
-    def lan_lists_needed(self) -> bool:
-        """Режим без VPN включён, а списков ещё нет: сразу после применения
-        бандла, включившего режим, ждать планового обновления (до шести часов)
-        значило бы оставить локальную сеть с пустыми наборами — «заблокированное»
-        шло бы напрямую."""
-        from awgbot.infra import gwguard
-        if not gwguard.lan_mode():
-            return False
-        ls = gwguard.lists_status()
-        return not (int(ls.get("domains") or 0) or int(ls.get("nets") or 0))
 
     def lan_lists_update(self) -> list[Notification]:
         """Задача планировщика: обновить списки; два провала подряд — замечание.

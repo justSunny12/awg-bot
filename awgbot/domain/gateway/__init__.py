@@ -11,7 +11,7 @@ gateway/ — доменная механика роли gateway (docs/ROADMAP.md
             туннеле своей сети из `role`
   ownlists  свои списки, общие для всех шлюзов, и повтор после поломки
   peersvc   сервисы соседних сетей
-  bundle    файл конфигурации из чата, настройки с сервера по каналу, резервная копия
+  bundle    операции с кнопки, метка выпуска файла, токен пометки, резервная копия
   egress    выход наружу через канал шлюза
   cfg/      документ конфигурации с сервера: применение по разделам, транзакции
             линка и аплинка, вопросы человеку, смена ключей линка и токена бота
@@ -29,7 +29,7 @@ domain/ (самообновление, резервные копии, почта
 обязана рисоваться и на полумёртвом шлюзе — именно тогда она нужнее всего.
 """
 
-from .base import (GwCheck, GwStatus, TIMEOUT_MARK, _APPLY_LOCK, _run, _out, _bundle_argv,
+from .base import (GwCheck, GwStatus, TIMEOUT_MARK, _APPLY_LOCK, _run, _out,
                    pathlib_read, log)
 from . import base  # noqa: F401 — модуль хелперов: тесты подменяют base._run и base.pathlib_read
 from .link import LinkMixin
@@ -66,4 +66,4 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin,
 
 
 __all__ = ["GatewayServices", "GwCheck", "GwStatus", "TIMEOUT_MARK", "_APPLY_LOCK", "_run", "_out",
-           "_bundle_argv", "pathlib_read", "log", "base"]
+           "pathlib_read", "log", "base"]

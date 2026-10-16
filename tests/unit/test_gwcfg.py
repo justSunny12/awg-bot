@@ -26,12 +26,11 @@ MAIL = {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap
 
 # ── имена и разделы ──────────────────────────────────────────────────────────
 
-def test_document_names_map_to_unit_names_and_back():
-    """В юните 3.3.0 две строки ещё под прежними именами — их читают агенты
-    3.2.x; документ зовёт их по-новому, и таблица одна."""
-    assert gwcfg.unit_name("LAN_SUBNETS") == "HOME_SUBNETS" and gwcfg.unit_name("PEER_LAN_NETS") == "PEER_HOME_NETS"
-    assert gwcfg.unit_name("ADMIN_IPS") == "ADMIN_IPS"
-    assert gwcfg.doc_name("HOME_SUBNETS") == "LAN_SUBNETS" and gwcfg.doc_name("RESOLVER") == "RESOLVER"
+def test_document_names_are_the_unit_names():
+    """С 3.3.1 таблицы сопоставления нет: ключи env документа — те же имена,
+    что у строк юнита обвязки."""
+    assert not hasattr(gwcfg, "unit_name") and not hasattr(gwcfg, "UNIT_NAMES")
+    assert {"LAN_SUBNETS", "PEER_LAN_NETS"} <= set(gwcfg.ENV_KEYS)
     assert all(gwcfg.human(k) for k in (*gwcfg.ENV_KEYS, *gwcfg.SECTIONS)), "у раздела нет человеческого имени"
 
 

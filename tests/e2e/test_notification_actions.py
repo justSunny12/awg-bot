@@ -52,7 +52,7 @@ class RecordingBot:
 # ── notifier: подсказка → кнопка ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("action, label", [
-    (("extend", 7), "⏱ Продлить"), (("gwcfg", 2), "📤 Конфигурация"),
+    (("extend", 7), "⏱ Продлить"),
     (("unassigned", 0), "📦 Без профиля"), (("sub", 0), "💳 Подписка")])
 def test_action_becomes_a_button_above_hide(action, label):
     rows = _rows(notifier.action_markup(action))
@@ -60,7 +60,7 @@ def test_action_becomes_a_button_above_hide(action, label):
                     [("Скрыть", HideCB().pack())]], rows
 
 
-@pytest.mark.parametrize("action", [(), ("unknown", 1), None])
+@pytest.mark.parametrize("action", [(), ("unknown", 1), None, ("gwcfg", 2)])   # gwcfg — снят в 3.3.1
 def test_no_or_unknown_action_leaves_only_hide(action):
     assert _rows(notifier.action_markup(action)) == [[("Скрыть", HideCB().pack())]]
 
@@ -156,19 +156,18 @@ async def test_admin_only_hints_never_open_admin_screens_for_a_client(services, 
         assert shown and shown[-1].startswith("👋 "), (kind, shown)
 
 
-async def test_gwcfg_button_issues_the_slot_configuration(services, fake_bot, monkeypatch):
-    """«📤 Конфигурация» под «конфигурация шлюза неактуальна» — файл слота
-    сразу, как из карточки."""
-    from awgbot.bot.handlers import settings as sh
-    issued = []
-
-    async def fake_bundle(message, services_, slot=0, instr_id=None):
-        issued.append((message.chat.id, slot))
-        return True
-    monkeypatch.setattr(sh, "send_gw_bundle", fake_bundle)
-    cb, _ = await _press(services, fake_bot, "gwcfg", 2)
-    assert issued == [(ADMIN, 2)]
+async def test_an_old_gwcfg_button_is_stale_and_opens_the_main_menu(services, fake_bot, monkeypatch):
+    """«📤 Конфигурация» под уведомлением до 3.3.1: файла перевыпуска больше
+    нет — кнопка устаревшая: «Кнопка устарела — открыл меню», кнопки
+    уведомления сняты, главная новым живым меню."""
+    from awgbot.bot.handlers.stale import STALE_BUTTON
+    from awgbot.bot.handlers.admin import _panel_parts
+    services.ensure_admin_client()
+    cb, note = await _press(services, fake_bot, "gwcfg", 2)
+    assert cb.answers and cb.answers[0][0] == STALE_BUTTON, cb.answers
     assert ("edit_reply_markup", ADMIN) in fake_bot.records
+    main_text, _ = await _panel_parts(services)
+    assert [t for k, t, _ in note.sent if k == "answer"] == [main_text]
 
 
 async def test_hide_still_deletes_the_note(services, fake_bot):
@@ -292,7 +291,9 @@ def test_gateway_notes_link_the_slot_card_and_have_no_button(services):
     assert services._txt_rt_gw_down(a).startswith("🔴 Шлюз NASPi не отвечает.")
 
 
-def test_link_port_note_links_the_slot_and_offers_the_configuration(services, monkeypatch, tmp_path):
+def test_link_port_note_links_the_slot_and_offers_no_file(services, monkeypatch, tmp_path):
+    """Порт линка изменили руками: имя слота — ссылкой на карточку, просьба
+    вернуть ListenPort; ни ссылки «Перевыпусти», ни кнопки файла."""
     services.bot_username = BOT
     g = _gw(services, 1, "NASPi")
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink1")
@@ -301,11 +302,10 @@ def test_link_port_note_links_the_slot_and_offers_the_configuration(services, mo
     (tmp_path / "awglink1.conf").write_text("[Interface]\nAddress = 10.99.91.1/30\nListenPort = 5555\n")
     notes = services.gateway_sync_link_ports()
     assert len(notes) == 1, notes
-    assert notes[0].text.startswith(f"🛰 {_link('gw-1', 'NASPi')}: порт линка изменён на <code>5555</code> (был <code>{g.link_port}</code>)")
-    # «Перевыпусти» — ссылка, по которой бот сразу отдаёт файл слота
-    assert f"{_link('gwcfg-1', 'Перевыпусти')} конфигурацию шлюза" in notes[0].text, \
-        notes[0].text
-    assert notes[0].action == ("gwcfg", 1)
+    assert notes[0].text.startswith(f"🛰 {_link('gw-1', 'NASPi')}: порт линка изменён руками на <code>5555</code> "
+                                    f"(был <code>{g.link_port}</code>)"), notes[0].text
+    assert "gwcfg-" not in notes[0].text and "Перевыпусти" not in notes[0].text
+    assert not notes[0].action
 
 
 def test_switch_note_links_the_card_where_traffic_can_be_moved_back(services):
@@ -319,26 +319,17 @@ def test_switch_note_links_the_card_where_traffic_can_be_moved_back(services):
     assert "обратно можно в карточке шлюза." in services._txt_rt_switched(a, b, "down")
 
 
-async def test_gwcfg_link_removes_the_command_and_issues_the_slot_configuration(
-        services, fake_bot, monkeypatch):
-    """Переход по «Перевыпусти» (/start gwcfg-<слот>): команда из чата убрана,
-    файл конфигурации слота отдан сразу — без захода в карточку."""
+async def test_an_old_gwcfg_link_opens_the_main_menu(services, fake_bot, monkeypatch):
+    """Переход по «Перевыпусти» (/start gwcfg-<слот>) из уведомления до 3.3.1:
+    ссылка устаревшая — файла нет, бот показывает главную."""
     from aiogram.filters import CommandObject
     from awgbot.bot.handlers import admin as ah
-    from awgbot.bot.handlers import settings as sh
-    issued = []
-
-    async def fake_bundle(message, services_, slot=0, instr_id=None):
-        issued.append((message.chat.id, slot))
-        return True
-    monkeypatch.setattr(sh, "send_gw_bundle", fake_bundle)
     services.ensure_admin_client()
     msg = FakeMessage(text="/start gwcfg-2", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(),
                          command=CommandObject(prefix="/", command="start", args="gwcfg-2"))
-    assert issued == [(ADMIN, 2)], issued
-    assert msg.deleted, "команда /start gwcfg-2 осталась в чате"
-    assert not [t for k, t, _ in msg.sent if k == "answer"], "вместо файла — ещё и главная"
+    main_text, _ = await ah._panel_parts(services)
+    assert [t for k, t, _ in msg.sent if k == "answer"] == [main_text]
 
 
 def test_admin_device_over_limit_is_a_notice_only_once(services, make_active_client):

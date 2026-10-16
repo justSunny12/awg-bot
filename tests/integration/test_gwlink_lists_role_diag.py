@@ -36,7 +36,7 @@ from awgbot.infra.db import Database
 from awgbot.runtime import linkclient, linkserver
 from awgbot.util import gwlink
 from tests.integration.test_gwlink_channel import _Gw, _free_port, _until
-from tests.unit.test_gwlink_settings_apply import UNIT_TEXT, _Unit
+from tests.unit._gw_unit_common import UNIT_TEXT, _Unit
 from tests.conftest import SH
 
 pytestmark = pytest.mark.integration
@@ -277,7 +277,7 @@ async def test_new_feeds_on_the_server_go_out_on_the_next_tick(services, link, m
 
 class _Pi(GatewayServices):
     def gw_snapshot(self) -> dict:
-        return gwsnapshot.collect(mark_status="confirmed", egress_ok=True, guard_info=None,
+        return gwsnapshot.collect(mark_status="confirmed", egress_ok=True,
                                   peer_nets=None)
 
     def gateway_claim_if_needed(self):
@@ -288,7 +288,7 @@ class _Pi(GatewayServices):
 async def pi(services, link, tmp_path, monkeypatch):
     """Шлюз: юнит совпадает с выдаваемым (настройки не едут), скрипт списков
     записывает, откуда его попросили брать фиды, journalctl/nft подменены."""
-    want = services.gwlink_settings_want(services.db.gateway(1))
+    want = services.gwlink_issued_env(services.db.gateway(1))
     assert want["LAN_MODE"] == "1" and want["RESOLVER"] == "10.9.1.1"
     unit = _Unit(tmp_path, monkeypatch, text=UNIT_TEXT.replace(
         '"ADMIN_IPS=10.8.1.2"', f'"ADMIN_IPS={want["ADMIN_IPS"]}"'))

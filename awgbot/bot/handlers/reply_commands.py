@@ -19,9 +19,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
-from awgbot.bot import ui
 from awgbot.bot.callbacks import CancelCB, NoteCB
-from awgbot.bot.handlers.common import call, card_from_main, edit_nav, show_main_menu
+from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 
 router = Router(name="reply_commands")
 
@@ -70,14 +69,16 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     except Exception:                                 # noqa: BLE001
         pass
     kind, ref = callback_data.kind, callback_data.ref
-    if role == "admin" and kind == "gwcfg" and "cfg1" in await call(services.gwlink_agent_caps, ref):
-        kind = "gw"                                   # агент с документом: файла нет — карточка слота
-        card_from_main(cb.message.chat.id, True)      # «Назад» с неё — на главную, как у ссылки gw-<слот>
-    if role == "admin" and kind == "gwcfg":
-        # перевыпуск конфигурации слота — файл сразу, как из карточки
-        from awgbot.bot.handlers.settings import send_gw_bundle
-        await cb.answer(ui.Toast.packing)
-        await send_gw_bundle(cb.message, services, ref)
+    if kind == "gwcfg":
+        # «📤 Конфигурация» на уведомлении выпусков до 3.3.1: файла перевыпуска
+        # больше нет — кнопка устаревшая, как любая снятая
+        from awgbot.bot.handlers.stale import STALE_BUTTON
+        await cb.answer(STALE_BUTTON)
+        parts = await screens.render("main", services=services, role=role, client=client,
+                                     chat_id=cb.message.chat.id)
+        if parts is not None:
+            await cleanup_content(cb.bot, services, cb.message.chat.id)
+            await send_menu(cb.message, services, *parts)
         return
     screen_kind = {"extend": "extend", "unassigned": "unassigned", "sub": "sub", "gw": "gw"}.get(kind, "main")
     if role != "admin" and screen_kind in ("extend", "unassigned", "gw"):

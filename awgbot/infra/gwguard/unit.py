@@ -229,6 +229,51 @@ def unit_set_env(values: dict[str, str]) -> str:
     return text
 
 
+# ── переход с прежних имён юнита ─────────────────────────────────────────────
+# Юнит, записанный скриптом обвязки 3.3.0 и раньше, держит подсети под прежними
+# именами и постоянную строку LINK_CHANNEL=1. Скрипт 3.3.1 перепишет юнит сам на
+# первом прогоне; агент после обновления доводит строки сразу и просит прогон,
+# чтобы снимок и документ конфигурации с первого тика видели новые имена.
+# Снимается со следующим сдвигом минимума.
+_UNIT_OLD_NAMES = {"HOME_SUBNETS": "LAN_SUBNETS", "PEER_HOME_NETS": "PEER_LAN_NETS"}
+_UNIT_OLD_RE = re.compile(r'^Environment="?(?:HOME_SUBNETS|PEER_HOME_NETS|LINK_CHANNEL)=', re.M)
+
+
+def unit_old_names() -> bool:
+    """В юните есть строки прежнего образца."""
+    return bool(_UNIT_OLD_RE.search(pkg.unit_text()))
+
+
+def unit_rename_old() -> bool:
+    """Строки прежних имён — под новыми, LINK_CHANNEL=1 — вон; новое имя уже
+    есть (документ успел его записать) — прежняя строка просто снимается.
+    True — юнит переписан и перечитан; при отказе перечитать — прежний текст."""
+    path = pkg.unit_path()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    new = text
+    for old, cur in _UNIT_OLD_NAMES.items():
+        if re.search(rf'^Environment="?{cur}=', new, re.M):
+            new = re.sub(rf'^Environment="?{old}=[^\n]*\n', "", new, flags=re.M)
+        else:
+            new = re.sub(rf'^(Environment="?){old}=', rf"\g<1>{cur}=", new, flags=re.M)
+    new = re.sub(r'^Environment="?LINK_CHANNEL=[^\n]*\n', "", new, flags=re.M)
+    if new == text:
+        return False
+    tmp = path.with_suffix(".tmp")
+    pkg._write_private(tmp, new)
+    tmp.replace(path)
+    try:
+        pkg._daemon_reload()
+    except pkg.GwGuardError:
+        pkg._write_private(tmp, text)
+        tmp.replace(path)
+        raise
+    return True
+
+
 def _write_private(path: Path, text: str) -> None:
     """Файл с секретом: 0600 с первого байта, атомарно (util/fsatomic)."""
     from awgbot.util.fsatomic import write_private

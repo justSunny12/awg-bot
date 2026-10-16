@@ -10,21 +10,22 @@ from .ddl import SCHEMA
 from .selects import SERVICE_CLIENT_NAME
 
 
-# Что добавили в схему миграции версий ниже 3.2.0 (сняты): по этим признакам
-# сторож восстановления отличает копию, снятую до минимума, — такую базу
-# нечем довести, и бот на ней упадёт на первом же запросе.
+# Что добавили в схему миграции версий ниже минимума 3.3.0 (сняты): по этим
+# признакам сторож восстановления отличает копию, снятую до минимума, — такую
+# базу нечем довести, и бот на ней упадёт на первом же запросе. Последний —
+# переименование подсетей слота gateways.home_subnets → lan_subnets (3.3.0).
 _FLOOR_COLUMNS = (
     ("clients", "kind"), ("clients", "tg_name"), ("clients", "tg_name_at"), ("clients", "tg_username"),
     ("devices", "holder_client_id"),
     ("client_pause", "pause_balance_days"), ("client_pause_histories", "pause_balance_days"),
-    ("gateways", "lan_mode"),
+    ("gateways", "lan_mode"), ("gateways", "lan_subnets"),
     ("device_traffic", "rf_rx_month"), ("device_traffic", "rf_tx_month"),
     ("traffic_monthly", "rf_rx"), ("traffic_monthly", "rf_tx"),
 )
 
 
 def schema_gap(path: str) -> str:
-    """Чем схема базы в копии отстаёт от минимума 3.2.0: «» — ничем, иначе
+    """Чем схема базы в копии отстаёт от минимума 3.3.0: «» — ничем, иначе
     первый признак словами. Таблицы, которых в базе нет вовсе, не в счёт —
     их создаст SCHEMA; пустой или нечитаемый файл — «не база SQLite»."""
     try:
@@ -68,31 +69,16 @@ class SchemaMixin:
         """Создаёт таблицы (идемпотентно) и гарантирует служебного клиента.
 
         Схема нормализована (identity/подписка/квота/grace/pause разведены по
-        таблицам). Боевую БД не пересоздаём. Единственный шаг доводки —
-        переименование колонки подсетей слота на месте (_rename_lan_subnets,
-        до SCHEMA); прочих миграций нет — минимальная поддерживаемая версия
-        3.2.0 (README-bot §9a), её схема полная, всё, что доводило БД версий
-        старше (гостевые колонки, счёт паузы, слоты шлюзов, режим без VPN,
-        РФ-трафик), снято: хост старше проходит через 3.2.0 и получает это
-        там, копия старше не разворачивается (schema_gap).
+        таблицам). Боевую БД не пересоздаём. Миграций нет — минимальная
+        поддерживаемая версия 3.3.0 (README-bot §9a), её схема полная, всё,
+        что доводило БД версий старше (гостевые колонки, счёт паузы, слоты
+        шлюзов, режим без VPN, РФ-трафик, переименование подсетей слота),
+        снято: хост старше проходит через 3.3.0 и получает это там, копия
+        старше не разворачивается (schema_gap).
         """
         with self._tx() as cur:
-            self._rename_lan_subnets(cur)
             cur.executescript(SCHEMA)
         self._ensure_service_client()
-
-    @staticmethod
-    def _rename_lan_subnets(cur) -> None:
-        """3.2.x → 3.3.0: колонка `gateways.home_subnets` переименована в
-        `lan_subnets` — на месте, данные те же. База 3.2.x приходит и накатом,
-        и восстановлением копии; SCHEMA ниже таблицу не тронет (IF NOT
-        EXISTS), поэтому переименование — до неё. Снять при минимуме 3.3.0."""
-        tables = {r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "gateways" not in tables:
-            return
-        cols = {r[1] for r in cur.execute("PRAGMA table_info(gateways)")}
-        if "home_subnets" in cols and "lan_subnets" not in cols:
-            cur.execute("ALTER TABLE gateways RENAME COLUMN home_subnets TO lan_subnets")
 
     def _ensure_service_client(self) -> None:
         """Служебный клиент «Устройства без клиента» — ровно один, создаётся один раз.

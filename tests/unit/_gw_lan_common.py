@@ -175,11 +175,11 @@ _DIG_MAP = {"example.com": ["198.51.100.34", "198.51.100.35"], "shop.ru": ["10.1
 
 
 def _vpn_line(d: str) -> str:
-    return f"nftset=/{d}/inet#awg_home#lan_vpn4"
+    return f"nftset=/{d}/inet#awg_lan#lan_vpn4"
 
 
 def _ru_line(d: str) -> str:
-    return f"nftset=/{d}/inet#awg_home#lan_ru4"
+    return f"nftset=/{d}/inet#awg_lan#lan_ru4"
 
 
 def _own(dns_d: Path, vpn=(), ru=()) -> None:
@@ -213,7 +213,7 @@ case "$1 $2" in
       grep -qxF "$ip" "$S/$5" 2>/dev/null || { echo "Error: element does not exist" >&2; exit 1; }
       grep -vxF "$ip" "$S/$5" > "$S/$5.x"; mv "$S/$5.x" "$S/$5" ;;
   "flush set") : > "$S/$5" ;;
-  "list set") echo "table inet awg_home {"; echo "  set $5 {"
+  "list set") echo "table inet awg_lan {"; echo "  set $5 {"
       echo "    elements = { $(sort "$S/$5" 2>/dev/null | paste -sd, - | sed 's/,/, /g') }"; echo "  }"; echo "}" ;;
 esac
 exit 0

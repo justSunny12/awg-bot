@@ -67,7 +67,7 @@ SSH = [
     _shot("gw.ssh.on.empty", press=[GwCB(action="ssh"), GwCB(action="ssh_on!")], ssh=_ssh(allow=[]),
           title="включить фильтр при пустом списке — alert с ценой, без «адреса из списка»"),
     _shot("gw.ssh.on.refused", press=[GwCB(action="ssh"), GwCB(action="ssh_on!")], ssh=_ssh(allow=list(_ALLOW2)),
-          filter_error="Обвязка шлюза старого образца: перевыпусти конфигурацию шлюза с сервера AWG",
+          filter_error="Обвязка шлюза старого образца — «🚑 Восстановить»",
           title="включить фильтр на старой обвязке — отказ alert, раздел как был"),
     _shot("gw.ssh.off", press=[GwCB(action="ssh"), GwCB(action="ssh_off!")],
           ssh=_ssh(filter=True, allow=list(_ALLOW2)), title="выключить фильтр — alert"),

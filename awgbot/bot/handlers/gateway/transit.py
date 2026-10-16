@@ -12,7 +12,7 @@ from awgbot.bot import texts, ui
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, ask_here, ask_tracked
-from .panel import log, router
+from .panel import router
 from awgbot.bot.handlers import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -131,17 +131,4 @@ async def gw_transit_router(cb: CallbackQuery, callback_data: GwCB, services):
                                              net, addr, tab=tab),
                    kb.gateway_transit_router_kb(tab))
     await cb.answer()
-
-
-async def _lan_lists_soon(services, bot, delay: float = 60.0) -> None:
-    """Первые списки после включения режима без VPN бандлом. lan_lists_update
-    сам промолчит, если фиды уже привёз канал."""
-    from awgbot.bot.notifier import send_notifications
-    await pkg.asyncio.sleep(delay)
-    try:
-        notes = await call(services.lan_lists_update)
-        if notes:
-            await send_notifications(bot, notes)
-    except Exception as e:                                # noqa: BLE001
-        log.warning("gateway: первые списки после бандла: %s", e)
 

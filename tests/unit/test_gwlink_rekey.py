@@ -218,10 +218,11 @@ def _switched(services, vps) -> dict:
 
 # ── стадия ───────────────────────────────────────────────────────────────────
 
-def test_stage_needs_an_agent_that_can_confirm(services, slot, vps):
-    """Агент 3.2 не знает link_next: новые ключи он не примет, а ВПС
-    переключился бы — линк мёртв. Отказ до скрипта, состояния нет."""
-    services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=("cfg1",))
+def test_stage_needs_an_agent_not_below_330(services, slot, vps):
+    """Агент ниже 3.3.0 (вернулся после молчания, документа не принимает) не
+    знает link_next: новые ключи он не примет, а ВПС переключился бы — линк
+    мёртв. Отказ до скрипта, состояния нет."""
+    services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=())
     with pytest.raises(ServiceError, match="3.3.0"):
         services.gateway_rekey_stage(1)
     assert vps.runs == [] and services.gateway_rekey(1) == {}
@@ -650,10 +651,11 @@ async def test_link_next_goes_once_per_session(services, slot, vps, monkeypatch)
     assert wire.kinds() == ["link_next", "link_next"] and wire.sent[1][1]["id"] == st["id"]
 
 
-async def test_link_next_is_not_sent_to_an_agent_that_cannot_confirm(services, slot, vps, monkeypatch):
-    wire = _Wire(services, monkeypatch, caps=("cfg1",))
-    services.gateway_rekey_stage(1)
-    assert await wire.server.deliver_rekey(1) is False and wire.sent == []
+def test_a_slot_with_an_agent_below_330_is_not_offered_the_rekey(services, slot):
+    services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=())
+    assert services.gateway_rekey_slots() == []
+    services.gwlink_session_opened(1, "3.3.0", gwlink.PROTO, caps=("cfg1", "confirm1", "token1"))
+    assert [s for s, _n in services.gateway_rekey_slots()] == [1]
 
 
 async def test_ready_sends_link_go_and_switches_the_vps_after_the_delay(services, slot, vps, monkeypatch):

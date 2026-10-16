@@ -134,7 +134,7 @@ def test_monitor_flags_a_table_that_lost_the_port(svc, host):
     assert checks["фильтр SSH снаружи"].ok is False
     host.chains.discard("ssh_in")
     checks = {c.name: c for c in svc.ssh_checks(host.info())}
-    assert "перевыпусти" in checks["фильтр SSH снаружи"].detail
+    assert "«🚑 Восстановить»" in checks["фильтр SSH снаружи"].detail
 
 
 # ── смена порта из чата ──────────────────────────────────────────────────────

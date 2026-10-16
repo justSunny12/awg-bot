@@ -21,7 +21,7 @@ H = gwlink.KEY_HUMAN
 
 
 def _items():
-    return [("HOME_SUBNETS", H["HOME_SUBNETS"], "192.168.68.0/24", "192.168.1.0/24"),
+    return [("LAN_SUBNETS", H["LAN_SUBNETS"], "192.168.68.0/24", "192.168.1.0/24"),
             ("LAN_MODE", H["LAN_MODE"], "1", "0"),
             ("RESOLVER", H["RESOLVER"], "10.9.1.1", "")]
 
@@ -62,7 +62,7 @@ def test_an_empty_mode_is_a_word_not_an_empty_string():
 
 def test_markup_from_the_gateway_is_escaped_in_html():
     """Значение со шлюза с `<b>` и `&` доезжает текстом внутри <code>."""
-    out = drift_lines([("HOME_SUBNETS", H["HOME_SUBNETS"], "192.168.68.0/24", "<b>x</b>&")], html=True)
+    out = drift_lines([("LAN_SUBNETS", H["LAN_SUBNETS"], "192.168.68.0/24", "<b>x</b>&")], html=True)
     assert out == ["локальные подсети: у сервера <code>192.168.68.0/24</code>, "
                    "на шлюзе <code>&lt;b&gt;x&lt;/b&gt;&amp;</code>"], out
 
@@ -92,8 +92,8 @@ def test_neighbour_subnets_have_one_human_name_everywhere(tmp_path, monkeypatch)
     from awgbot.infra import gwguard
     from awgbot.infra.db import Database
     db = Database(tmp_path / "gw.db"); db.init_schema()
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: "192.168.2.0/24" if k == "PEER_HOME_NETS" else "")
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "192.168.2.0/24" if k == "PEER_LAN_NETS" else "")
     check = GatewayServices(db).peer_nets_check({"sets": {"peer_nets4": set()}})
     name = "локальные подсети других шлюзов"
-    assert H["PEER_HOME_NETS"] == name
+    assert H["PEER_LAN_NETS"] == name
     assert check is not None and check.name == name, check

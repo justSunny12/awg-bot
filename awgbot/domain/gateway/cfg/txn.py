@@ -46,9 +46,9 @@ class CfgTxnMixin:
             return []
 
     def cfg_env_changes(self, env: dict) -> dict:
-        """Какие строки юнита (в именах юнита) отличаются от желаемых."""
+        """Какие строки юнита отличаются от желаемых."""
         current = self.cfg_env_current()
-        return {gwcfg.unit_name(k): env[k] for k in gwcfg.ENV_KEYS if env.get(k, "") != current.get(k, "")}
+        return {k: env[k] for k in gwcfg.ENV_KEYS if env.get(k, "") != current.get(k, "")}
 
     def cfg_link_changed(self, link_text: str) -> bool:
         return gwcfg.link_print(link_text) != gwcfg.link_print(self.cfg_link_text())
@@ -60,7 +60,7 @@ class CfgTxnMixin:
         from awgbot.infra import gwguard
         env_changes = self.cfg_env_changes(env)
         link_new = bool(link_text) and self.cfg_link_changed(link_text)
-        changed = [k for k in gwcfg.ENV_KEYS if gwcfg.unit_name(k) in env_changes] + (["link"] if link_new else [])
+        changed = [k for k in gwcfg.ENV_KEYS if k in env_changes] + (["link"] if link_new else [])
         if not changed:
             return {"ok": True, "changed": [], "error": "", "retry": False, "how": "unchanged"}
         with base._APPLY_LOCK:

@@ -37,9 +37,10 @@ class PresetCB(CallbackData, prefix="ps"):
 
 class NoteCB(CallbackData, prefix="nt"):
     """Кнопка действия на уведомлении (Notification.action): kind — extend
-    (продлить профиль ref), gwcfg (выпустить конфигурацию слота ref),
-    unassigned (устройства без профиля), sub (подписка клиента). Нажатие
-    снимает кнопки с уведомления и открывает экран новым живым меню."""
+    (продлить профиль ref), unassigned (устройства без профиля), sub
+    (подписка клиента); gwcfg — «📤 Конфигурация» уведомлений до 3.3.1, кнопка
+    устаревшая. Нажатие снимает кнопки с уведомления и открывает экран новым
+    живым меню."""
     kind: str
     ref: int = 0
 
@@ -257,9 +258,8 @@ class GwSlotCB(CallbackData, prefix="gws"):
       list — список слотов; card — карточка слота; add — новый слот;
       switch_ask|switch_yes — переложить трафик на слот; ping — замер;
       pref — тумблер «предпочтительный при холодном старте»;
-      lan_nets|label — ввод локальных подсетей / подписи (FSM); «home» —
-      прежнее имя lan_nets в кнопках старых сообщений, принимается один выпуск;
-      remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
+      lan_nets|label — ввод локальных подсетей / подписи (FSM);
+      remove_ask|remove_yes — убрать слот;
       failover — тумблер автопереключения;
       lan_ask|lan_yes — «🔀 VPN-транзит» с подтверждением;
       router — рецепт роутера (val — вкладка: mt|ow);
@@ -292,7 +292,6 @@ class GwCB(CallbackData, prefix="gw"):
       разделов (bot/sections); новые кнопки разделов — общим правилом
       action="раздел/действие", val="ключ|значение";
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
-      apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
       cfg_ask — первый вопрос очереди («⏳ Решить»), cfg_no|cfg_ok! (val — раздел
       link|uplink|mail|backup) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
       у вопросов «Оставить своё» / «Принять с сервера AWG»;

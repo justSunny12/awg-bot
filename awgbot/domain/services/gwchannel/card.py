@@ -22,7 +22,6 @@ class CardMixin:
         протухнет хендшейк.
         """
         from awgbot.infra import awglock
-        from awgbot.util import gwlink
         sess = self.gwlink_session(gw.id)
         fresh = handshake_age is not None and handshake_age <= GWLINK_FRESH_HANDSHAKE_S
         snap = self.gwlink_snapshot(gw.id)
@@ -31,8 +30,6 @@ class CardMixin:
             mine_gen = awglock.generation()
         except Exception:                                 # noqa: BLE001
             mine_gen = None
-        drift, drift_keys = self.gwlink_config_drift(gw, with_keys=True) if snap else ([], [])
-        ack = self.gwlink_ack(gw.id)
         return {
             "online": bool(sess) and fresh,
             "ever": bool(seen or snap),
@@ -42,26 +39,12 @@ class CardMixin:
             "agent": snap.get("agent_version", ""),
             "awg_gen": snap.get("awg_generation"),
             "awg_gen_mine": mine_gen,
-            "drift": drift,
-            "drift_items": self.gwlink_config_drift_items(gw) if snap else [],
-            # что из расхождения довезёт канал, а что — только файл (подсети
-            # соседей живут и в конфиге линка): экран не должен обещать
-            # доставку, которой не будет
-            "drift_bundle": any(k in gwlink.BUNDLE_ONLY_KEYS for k in drift_keys),
-            "drift_channel": any(k in gwlink.SETTINGS_KEYS for k in drift_keys),
             "has_snap": bool(snap),
             "egress_gw": snap.get("egress_ok") if snap else None,
-            "plumbing_gen": snap.get("plumbing_gen", "") if snap else "",
-            # Снимок есть, а блока установленной конфигурации нет (старый или
-            # урезанный агент): пустая сверка тогда значит «сказать нечего», а
-            # не «совпадает» — экран обязан это различать.
-            "has_bundle": isinstance(snap.get("bundle"), dict) if snap else False,
+            # агент ниже 3.3.0 (не принимает документ конфигурации): конфигурация
+            # до него не дойдёт, пока его не обновят
+            "outdated": self.gwlink_agent_outdated(gw.id),
             "clock_skew": self._gwlink_clock_skew(gw.id),
-            "ack": ack,
-            # отказ шлюза — на текущий набор (отпечаток ответа = отпечаток желаемого):
-            # старый отказ после правки настройки карточка не показывает как свежий
-            "ack_current": bool(snap) and bool(ack)
-            and ack.get("hash") == gwlink.settings_hash(self.gwlink_settings_want(gw)),
             "lists": self.gwlink_lists(gw.id) if gw.lan_mode else {},
             "error": (self.db.get_state(self._gwlink_key(self._GWLINK_ERROR_KEY, gw.id)) or ""
                       ).partition(" ")[2],

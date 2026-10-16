@@ -12,7 +12,7 @@ Flood-контроль Telegram (~30 msg/с на бота): пачки (меся
 
 Кнопки под уведомлением: своя клавиатура уведомления (reply_markup или
 готовая по имени — Notification.keyboard, KEYBOARDS), иначе — кнопка действия
-по подсказке Notification.action («⏱ Продлить», «📤 Конфигурация», «📦 Без
+по подсказке Notification.action («⏱ Продлить», «📦 Без
 профиля», «💳 Подписка», ACTION_LABELS) над «Скрыть», иначе одна «Скрыть».
 Нажатие разбирает reply_commands.on_note_action.
 """
@@ -168,8 +168,7 @@ def note_markup(n):
 
 
 # подписи кнопок действия по подсказке Notification.action
-ACTION_LABELS = {"extend": "⏱ Продлить", "gwcfg": "📤 Конфигурация",
-                 "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
+ACTION_LABELS = {"extend": "⏱ Продлить", "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
 
 
 def action_markup(action, base=None):

@@ -68,12 +68,21 @@ class SessionMixin:
     _GWLINK_CAPS_KEY = "gwlink_caps"
 
     def gwlink_agent_caps(self, slot_id: int) -> list[str]:
-        """Возможности агента слота — из сессии, а без неё из последнего hello:
-        экраны и подсказки решают по ним и для шлюза не на связи."""
+        """Возможности агента слота (контракт канала) — из сессии, а без неё из
+        последнего hello: по ним видно и агента ниже 3.3.0 не на связи."""
         sess = self.gwlink_session(slot_id)
         if sess:
             return list(sess.get("caps") or [])
         return [c for c in (self.db.get_state(self._gwlink_key(self._GWLINK_CAPS_KEY, slot_id)) or "").split(",") if c]
+
+    def gwlink_agent_outdated(self, slot_id: int) -> bool:
+        """Агент слота ниже 3.3.0: на связь выходил, а документа конфигурации
+        (возможность cfg1) не принимает — конфигурация до него не дойдёт, пока
+        его не обновят (карточка — «обнови агента»). Слот, ещё не выходивший
+        на связь, не устаревший: его ставит файл первого применения этого же
+        сервера."""
+        seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id)) or ""
+        return bool(seen or self.gwlink_session(slot_id)) and "cfg1" not in self.gwlink_agent_caps(slot_id)
 
     def gwlink_sessions_reset(self) -> None:
         """Старт процесса: ни одной живой сессии быть не может — сокеты умерли

@@ -61,9 +61,7 @@ class LinkMixin:
             if info is None:
                 checks.append(GwCheck(
                     gc.CHECK_GUARD, False,
-                    "нет — обвязка снята; «🚑 Восстановить»" if self.server_cfg1() else
-                    "нет — обвязка старого образца или снята; перевыпусти "
-                    "конфигурацию шлюза с сервера AWG"))
+                    "нет — обвязка снята; «🚑 Восстановить»"))
         self._guard_info = info
         if info is not None:
             nets = info["sets"].get("tunnel_nets4", set())
@@ -73,9 +71,7 @@ class LinkMixin:
                 checks.append(GwCheck(
                     gc.CHECK_MASQ_ISOLATION, ok,
                     "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
-                                   "не приходит — проверь «🔧 Канал конфигурации» на главном экране бота шлюза" if self.server_cfg1() else
-                                   f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
-                                   "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
+                                   "не приходит — проверь «🔧 Канал конфигурации» на главном экране бота шлюза")))
             else:
                 checks.append(GwCheck(gc.CHECK_MASQ_ISOLATION, None,
                                       "подсеть клиентов неизвестна (нет конфигурации с сервера AWG) — "
@@ -124,9 +120,7 @@ class LinkMixin:
                 masq = uplink in info.get("masq_ifaces", set())
                 checks.append(GwCheck(gc.CHECK_UPLINK_MASQ, masq,
                                       "" if masq else f"нет маскарада на {uplink}: пакеты агента "
-                                      "уходят в туннель с локальным адресом — "
-                                      + ("«🚑 Восстановить»" if self.server_cfg1() else
-                                         "перевыпусти конфигурацию шлюза с сервера AWG")))
+                                      "уходят в туннель с локальным адресом — «🚑 Восстановить»"))
         else:
             checks.append(GwCheck(gc.CHECK_UPLINK_POLICY, None, "аплинк не найден"))
         # Маскарад клиентов привязан к интерфейсу маршрута по умолчанию на
@@ -165,7 +159,7 @@ class LinkMixin:
         соседи — не авария обвязки."""
         from awgbot.infra import gwguard
         self.__dict__["_router_masq_stale"] = False
-        if info is None or not gwguard.lan_mode() or not gwguard.unit_env("PEER_HOME_NETS").split():
+        if info is None or not gwguard.lan_mode() or not gwguard.unit_env("PEER_LAN_NETS").split():
             return None
 
         def check(ok, detail, stale=False):
@@ -180,7 +174,7 @@ class LinkMixin:
                 return check(False, "обвязка старого образца: сам роутер из подсетей других шлюзов недоступен; "
                              "обвязка перевыставится в ближайшие минуты", True)
             return check(None, "скрипт обвязки старого образца: сам роутер из подсетей других шлюзов не открыт — "
-                         "перевыпусти конфигурацию шлюза с сервера AWG")
+                         "обнови агента шлюза: скрипт обвязки приезжает с ним")
         if not route.get("present"):
             return check(None, "маршрута по умолчанию нет: адрес роутера не узнать")
         have = sorted(info.get("router_masq", set()))
@@ -222,14 +216,14 @@ class LinkMixin:
 
     @staticmethod
     def _in_own_nets(addr: str) -> bool:
-        """Адрес внутри одной из своих подсетей (HOME_SUBNETS юнита)."""
+        """Адрес внутри одной из своих подсетей (LAN_SUBNETS юнита)."""
         import ipaddress
         from awgbot.infra import gwguard
         try:
             ip = ipaddress.IPv4Address(addr)
         except ValueError:
             return False
-        for raw in gwguard.unit_env("HOME_SUBNETS").split():
+        for raw in gwguard.unit_env("LAN_SUBNETS").split():
             try:
                 if ip in ipaddress.IPv4Network(raw, strict=False):
                     return True

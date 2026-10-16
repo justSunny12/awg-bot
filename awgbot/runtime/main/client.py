@@ -169,19 +169,14 @@ async def main() -> None:
         log.warning("restore_panel_after_restart: %s", e)
 
     # Крючки канала линка — ДО планировщика и слушателя: агент, подключившийся
-    # во время старта, шлёт applied/installed сразу, и без крючка итог
-    # применения и «шлюз настроен» терялись бы навсегда (ack уходит, повтора
-    # не будет, файл с ключом остаётся в чате).
+    # во время старта, шлёт installed сразу, и без крючка «шлюз настроен»
+    # терялось бы навсегда (повтора не будет, файл с ключом остаётся в чате).
     try:
         from awgbot.runtime import linkserver as _linkserver
-        from awgbot.bot.handlers.settings import bundle_applied, bundle_installed
-
-        async def _on_applied(slot_id: int, ok: bool, error: str, fp: str = "") -> None:
-            await bundle_applied(bot, services, slot_id, ok, error, fp)
+        from awgbot.bot.handlers.settings import bundle_installed
 
         async def _on_installed(slot_id: int) -> None:
             await bundle_installed(bot, services, slot_id)
-        _linkserver.set_on_applied(_on_applied)
         _linkserver.set_on_installed(_on_installed)
 
         async def _on_notes(notes) -> None:

@@ -52,7 +52,7 @@ def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False,
         fake("avahi-browse", "exit 0\n")
     conf = dns_d / "awg-gw-peer-services.conf"
     conf.write_text("local=/awg.internal/\n", encoding="utf-8")
-    prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_HOME_NETS="{peers}"\n'
+    prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_LAN_NETS="{peers}"\n'
             + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
             + "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
@@ -96,7 +96,7 @@ def _run_avahi(script, tmp_path, *, home: str, lan_mode="0", peers="", avahi_rc=
     if browse:
         fake("avahi-browse", "exit 0\n")
     prog = (_helpers(script)
-            + f'\nMODE=apply\nLAN_MODE="{lan_mode}"\nHOME_SUBNETS="{home}"\nPEER_HOME_NETS="{peers}"\n'
+            + f'\nMODE=apply\nLAN_MODE="{lan_mode}"\nLAN_SUBNETS="{home}"\nPEER_LAN_NETS="{peers}"\n'
             + (f'LINK_CHANNEL="{link_channel}"\n' if link_channel else "")
             + f'HOME_FILE="{tmp_path}/none.nft"\nDNSMASQ_D="{dns_d}"\n'
             + 'lan_apply() { echo "lan_apply"; return 0; }\nlan_remove() { echo "lan_remove"; }\n'
@@ -182,7 +182,7 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
                    for name in ("lan_remove", "_lan_remove_locked"))
     t = tmp_path
     prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
-            f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_home"\n'
+            f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_lan"\n'
             f'HOME_FILE="{t}/home.nft"\nLAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
             f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n'
             f'PEER_SVC_CONF="{dns_d}/awg-gw-peer-services.conf"\n' + fn + "\nlan_remove\n")
@@ -205,10 +205,10 @@ def _plan_line(script: str, **env) -> str:
 
 
 @pytest.mark.parametrize("env,state", [
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1"}, "включены"),
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "включены"),
-    ({"PEER_HOME_NETS": "", "LAN_MODE": "1"}, "нет"),
-    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "0"}, "нет"),
+    ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "1"}, "включены"),
+    ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "включены"),
+    ({"PEER_LAN_NETS": "", "LAN_MODE": "1"}, "нет"),
+    ({"PEER_LAN_NETS": "192.168.1.0/24", "LAN_MODE": "0"}, "нет"),
 ])
 def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
     """Показ плана до применения: записи SMB соседей возможны при соседях и
@@ -342,11 +342,11 @@ def test_the_feed_filter_takes_domains_by_segment_and_subnets_not_shorter_than_8
     m = re.search(r"grep -Ei '(\^\(#\.\*\|nftset=.*?)' \"\$TMP\"", lists)
     assert m, "фильтр фида не найден"
     rx = re.compile(m.group(1).replace("\\\\", "\\"), re.I)
-    for good in ("nftset=/gosuslugi.ru/inet#awg_home#lan_vpn4", "nftset=/a.b.xn--p1ai/c.ru/inet#awg_home#lan_vpn4",
+    for good in ("nftset=/gosuslugi.ru/inet#awg_lan#lan_vpn4", "nftset=/a.b.xn--p1ai/c.ru/inet#awg_lan#lan_vpn4",
                  "# comment"):
         assert rx.match(good), good
-    for bad in ("nftset=/#/inet#awg_home#lan_vpn4", "nftset=/./inet#awg_home#lan_vpn4",
-                "nftset=/ru/inet#awg_home#lan_vpn4", "nftset=/-a.ru/inet#awg_home#lan_vpn4",
+    for bad in ("nftset=/#/inet#awg_lan#lan_vpn4", "nftset=/./inet#awg_lan#lan_vpn4",
+                "nftset=/ru/inet#awg_lan#lan_vpn4", "nftset=/-a.ru/inet#awg_lan#lan_vpn4",
                 "server=/x.ru/1.1.1.1"):
         assert not rx.match(bad), bad
     m = re.search(r"grep -E '(\^\[0-9\]\+.*?)' \"\$NETS\"", lists)

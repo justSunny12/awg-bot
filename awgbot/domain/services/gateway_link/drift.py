@@ -17,32 +17,22 @@ class DriftMixin:
     def _gw_drift_pending(self, g, items: list) -> list:
         """Что из расхождения по снимку канал сам не закроет.
 
-        Канал обязателен, и о доставке решает он: ключи обвязки (SETTINGS_KEYS)
-        уходят слоту при каждом подключении. Поэтому пока шлюз не на связи —
-        молчим, сколько бы он ни молчал (расхождение всё это время видно в
-        карточке), а на связи ждём итога доставки. Остаются два случая: шлюз
-        ответил отказом на текущий набор (ответ несёт отпечаток набора — иначе
-        старый отказ сошёл бы за отказ на новое) и то, что канал не везёт
-        вовсе — подсети других шлюзов (BUNDLE_ONLY_KEYS: они и в конфиге линка)."""
-        from awgbot.util import gwlink
+        Канал обязателен, и о доставке решает он: документ конфигурации уходит
+        слоту при каждом подключении. Поэтому пока шлюз не на связи — молчим,
+        сколько бы он ни молчал (расхождение всё это время видно в карточке),
+        а на связи ждём итога доставки. Остаётся то, что шлюз отверг в ответе
+        на текущий документ (ответ несёт отпечаток документа — иначе старый
+        отказ сошёл бы за отказ на новое)."""
         if not self.gwlink_session(g.id):
             return []
-        if "cfg1" in self.gwlink_agent_caps(g.id):
-            # агент принимает документ: подсети соседей тоже едут каналом; остаётся
-            # только то, что шлюз отверг в ответе на текущий документ
-            ack = self.gwcfg_ack(g.id)
-            if not ack or ack.get("retry") or ack.get("hash") != self.gwcfg_doc(g)["hash"] or not ack.get("failed"):
-                return []                             # нет ответа, временный отказ или ответ на прежний документ
-            failed = ack["failed"]
-            out = [it for it in items if "env" in failed or "*" in failed]
-            if "link" in failed:
-                out.append(("link", "конфиг линка", "", ""))
-            return out
-        ack = self.gwlink_ack(g.id)
-        refused = (bool(ack) and not ack.get("ok")
-                   and ack.get("hash") == gwlink.settings_hash(self.gwlink_settings_want(g)))
-        return [it for it in items
-                if it[0] in gwlink.BUNDLE_ONLY_KEYS or (refused and it[0] in gwlink.SETTINGS_KEYS)]
+        ack = self.gwcfg_ack(g.id)
+        if not ack or ack.get("retry") or ack.get("hash") != self.gwcfg_doc(g)["hash"] or not ack.get("failed"):
+            return []                                 # нет ответа, временный отказ или ответ на прежний документ
+        failed = ack["failed"]
+        out = [it for it in items if "env" in failed or "*" in failed]
+        if "link" in failed:
+            out.append(("link", "конфиг линка", "", ""))
+        return out
 
     def _gw_drift_note(self, g) -> Optional[Notification]:
         """Одно уведомление на набор расхождений, которые канал сам не закроет;
@@ -54,46 +44,36 @@ class DriftMixin:
         items = self.gwlink_config_drift_items(g)
         key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
         told = self.db.get_state(key) or ""
-        # у агента с документом отказ бывает и без расхождения в bundle (конфиг линка)
+        # отказ бывает и без расхождения в bundle (конфиг линка)
         pending = self._gw_drift_pending(g, items)
         if not pending:
             if not items and told:
                 self.db.set_state(key, "")
                 return Notification(config.ADMIN_ID, f"✅ {self._gw_link(g)}: конфигурация актуализирована")
             return None
-        # подпись — по полным значениям обеих сторон и итогу отказа: settings_hash
-        # знает только ключи канала (смена подсетей соседей не дала бы нового
-        # уведомления), а строки расхождения обрезаны и слились бы у длинных списков
+        # подпись — по полным значениям обеих сторон и итогу отказа: строки
+        # расхождения обрезаны и слились бы у длинных списков
         import hashlib
         from awgbot.util import gwlink
         env, got = self.gwlink_issued_env(g), snap["bundle"]
         src = [f"{k}={env.get(k, '')}|{' '.join(str(got.get(gwlink.snap_field(k), '')).split())}"
-               for k, _h, _m, _t in pending] + [str(self.gwlink_ack(g.id).get("hash") or "")]
+               for k, _h, _m, _t in pending] + [str(self.gwcfg_ack(g.id).get("hash") or "")]
         sig = hashlib.sha256("\n".join(src).encode()).hexdigest()
         if told == sig:
             return None
         self.db.set_state(key, sig)
-        # кнопка «📤 Конфигурация» — агентам без документа: файл довезёт и то, что канал
-        # им не везёт; агенту с документом файл не нужен
-        action = None if "cfg1" in self.gwlink_agent_caps(g.id) else ("gwcfg", int(g.id))
-        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending), action=action)
+        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending))
 
     def _gw_drift_text(self, g, pending: list) -> str:
         """Текст уведомления: что разошлось — именами; отказ шлюза — второй
         строкой; устройства админа — группами по именам, прочее — «у сервера …,
-        на шлюзе …». Без хвоста «перевыпусти»: канал обязателен."""
+        на шлюзе …»."""
         import html
-        from awgbot.util import gwlink
         from awgbot.domain.services.gwchannel import drift_lines
         names = ", ".join(html.escape(human, quote=False) for _k, human, _m, _t in pending)
         lines = [f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {names}"]
-        if "cfg1" in self.gwlink_agent_caps(g.id):
-            failed = self.gwcfg_ack(g.id).get("failed") or {}
-            why = "; ".join(failed.values())
-        else:
-            ack = self.gwlink_ack(g.id)
-            why = (ack.get("error") or "ошибка") if ack and not ack.get("ok") and any(
-                k in gwlink.SETTINGS_KEYS for k, _h, _m, _t in pending) else ""
+        failed = self.gwcfg_ack(g.id).get("failed") or {}
+        why = "; ".join(failed.values())
         if why:
             lines.append(f"Шлюз не применил: {html.escape(why, quote=False)}")
         for key, human, mine, theirs in pending:

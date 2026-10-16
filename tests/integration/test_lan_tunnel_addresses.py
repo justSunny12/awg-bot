@@ -109,20 +109,18 @@ def test_more_than_fifteen_slots_is_refused(services, monkeypatch):
         services.gateway_next_slot()
 
 
-# ── старт: уборка маршрутов 3.2.x и уведомление ──────────────────────────────
+# ── старт: таблица и уведомление ─────────────────────────────────────────────
 
-def test_startup_drops_the_real_routes_and_puts_the_table(two, fake_routing, monkeypatch):
-    """Маршруты настоящих подсетей, поставленные 3.2.x, живы до ребута: без
-    уборки настоящие адреса у полного туннеля работали бы до него."""
+def test_startup_puts_the_table(two, fake_routing, monkeypatch):
+    """Старт: таблица адресов в туннеле — на место до первого такта (разовая
+    уборка маршрутов настоящих подсетей 3.2.x снята со сдвигом минимума)."""
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     two.lan_map_startup()
     assert fake_routing.lanmap and two.db.get_state("lanmap_text") == fake_routing.lanmap
-    assert fake_routing.dropped_routes == [("192.168.1.0/24", "awglink"), ("192.168.1.0/24", "awglink2")]
 
 
 def test_a_table_that_did_not_go_in_keeps_the_real_routes_and_is_said(two, fake_routing, monkeypatch):
-    """nft отказал — прежние маршруты настоящих подсетей не трогаем (иначе
-    админ остался бы без сетей вовсе), причина — в state, карточке слота и
+    """nft отказал — причина в state, карточке слота и
     замечании при запуске; поставилась на следующей сверке — строки уходят."""
     from awgbot.bot.texts.routing.card import lan_space_lines
     from awgbot.runtime import preflight
@@ -132,7 +130,7 @@ def test_a_table_that_did_not_go_in_keeps_the_real_routes_and_is_said(two, fake_
         raise routing.RoutingError("nft -c -f -: Error: Could not process rule: No such file or directory")
     monkeypatch.setattr(routing.lanmap, "apply", refuse)
     two.lan_map_startup()
-    assert fake_routing.lanmap is None and fake_routing.dropped_routes == []
+    assert fake_routing.lanmap is None
     card = two.lan_space_card(two.db.gateway(1))
     assert card["error"].startswith("nft -c -f -: Error")
     assert lan_space_lines(card) == [

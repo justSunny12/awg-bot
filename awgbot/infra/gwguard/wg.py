@@ -239,8 +239,8 @@ def _setup_env() -> dict:
     стартует обвязка."""
     import os
     env = dict(os.environ)
-    for key in ("CLIENT_SUBNET", "LINK_IF", "ADMIN_IPS", "LAN_MODE", "HOME_SUBNETS", "RESOLVER",
-                "PEER_HOME_NETS", "LINK_CHANNEL_PORT", "GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY",
+    for key in ("CLIENT_SUBNET", "LINK_IF", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
+                "PEER_LAN_NETS", "LINK_CHANNEL_PORT", "GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY",
                 "TG_MARK", "UPLINK_TABLE"):
         val = pkg.unit_env(key)
         if val or key not in env:

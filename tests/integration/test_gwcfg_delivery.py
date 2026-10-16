@@ -169,10 +169,10 @@ def test_env_comes_from_the_same_sources_as_the_first_apply_file(services, slot)
     bundle, _ = services._gw_bundle_env(slot)
     assert tuple(env) == gwcfg.ENV_KEYS, f"состав env не по таблице документа: {list(env)}"
     assert env["ADMIN_IPS"] == bundle["ADMIN_IPS"] and len(env["ADMIN_IPS"].split()) == 2, env
-    assert env["LAN_SUBNETS"] == bundle["HOME_SUBNETS"] == "192.168.68.0/24"
+    assert env["LAN_SUBNETS"] == bundle["LAN_SUBNETS"] == "192.168.68.0/24"
     assert env["LAN_MODE"] == bundle["LAN_MODE"] == "1"
     assert env["RESOLVER"] == bundle["RESOLVER"] == "10.9.1.1"
-    assert env["PEER_LAN_NETS"] == bundle["PEER_HOME_NETS"] == ""
+    assert env["PEER_LAN_NETS"] == bundle["PEER_LAN_NETS"] == ""
     assert env["LINK_CHANNEL_PORT"] == bundle["LINK_CHANNEL_PORT"] == str(gwlink.channel_port())
     assert env["CLIENT_SUBNET"] == "10.8.1.0/24"
     assert gwcfg.check_env(env) == env, "агент отверг бы env, который хочет сервер"
@@ -557,10 +557,13 @@ def test_removing_the_slot_forgets_its_document_state(services, slot, monkeypatc
 # ── что знает карточка ───────────────────────────────────────────────────────
 
 def test_the_card_knows_nothing_of_the_document_for_an_agent_without_cfg1(services, slot):
+    """Агент ниже 3.3.0 (возможности cfg1 нет) — устаревший: о документе
+    карточке сказать нечего, строка «обнови агента» — её дело."""
     services.gwlink_session_opened(1, "3.2.1", 2)
     _snap(services, _have(services, env="0" * 16))
     card = services.gwcfg_card(slot, services.gwlink_snapshot(1))
-    assert card["cfg1"] is False and card["due"] == [] and card["failed"] == {}
+    assert services.gwlink_agent_outdated(1) is True
+    assert card["due"] == [] and card["failed"] == {} and "cfg1" not in card
 
 
 def test_the_card_follows_the_answer_to_the_current_document_only(services, slot, host):
@@ -572,7 +575,7 @@ def test_the_card_follows_the_answer_to_the_current_document_only(services, slot
     _snap(services, _have(services, env="0" * 16))
     doc = services.gwcfg_doc(gw)
     card = services.gwcfg_card(gw, services.gwlink_snapshot(1))
-    assert card["cfg1"] is True and card["due"] == ["env"], card
+    assert card["due"] == ["env"], card
     assert card["failed"] == {} and card["applied_at"] == ""
     services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "failed": {"env": "exit 1"}})
     card = services.gwcfg_card(gw, services.gwlink_snapshot(1))
@@ -601,16 +604,17 @@ def test_the_card_names_waiting_and_kept_sections(services, slot, host):
 
 
 def test_capabilities_outlive_the_session(services, slot):
-    """Шлюз ушёл со связи — карточка и подсказки по-прежнему знают, что его
-    агент принимает документ: иначе не на связи он выглядел бы агентом 3.2 и
-    человеку советовали бы перевыпуск."""
+    """Шлюз ушёл со связи — карточка по-прежнему знает, что его агент
+    принимает документ: иначе не на связи он выглядел бы устаревшим. Слот,
+    ни разу не выходивший на связь, — не устаревший."""
+    assert services.gwlink_agent_outdated(1) is False, "новый слот выглядит устаревшим"
     services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
     services.gwlink_session_closed(1)
     assert services.gwlink_agent_caps(1) == ["cfg1"]
-    assert services.gwcfg_all_capable() is True
+    assert services.gwlink_agent_outdated(1) is False
     services.gwlink_session_opened(1, "3.2.1", 2)
     assert services.gwlink_agent_caps(1) == [], "откат агента не сбросил возможности"
-    assert services.gwcfg_all_capable() is False
+    assert services.gwlink_agent_outdated(1) is True
 
 
 # ── доставка на живом слушателе ──────────────────────────────────────────────
@@ -638,9 +642,9 @@ async def srv(services, make_active_client, monkeypatch, host):
 
 
 def _bundle(services, **over) -> dict:
-    want = services.gwlink_settings_want(services.db.gateway(1))
-    names = {"ADMIN_IPS": "admin_ips", "HOME_SUBNETS": "home_subnets", "LAN_MODE": "lan_mode",
-             "PEER_HOME_NETS": "peer_home_nets", "RESOLVER": "resolver"}
+    want = services.gwlink_issued_env(services.db.gateway(1))
+    names = {"ADMIN_IPS": "admin_ips", "LAN_SUBNETS": "lan_subnets", "LAN_MODE": "lan_mode",
+             "PEER_LAN_NETS": "peer_lan_nets", "RESOLVER": "resolver"}
     return {**{names[k]: v for k, v in want.items()}, **over}
 
 
@@ -682,7 +686,7 @@ async def test_an_agent_with_cfg1_gets_the_document_not_the_settings(services, s
     уходит документ, а не прежние settings: два пути одному шлюзу значили бы
     двойное применение и спор, чей ответ верен."""
     gw = await _connect(srv, services, cfg=_have(services, env="0" * 16),
-                        bundle=_bundle(services, home_subnets="192.168.1.0/24"))
+                        bundle=_bundle(services, lan_subnets="192.168.1.0/24"))
     msg = await _next(gw)
     assert msg is not None, "расхождение есть, а документ не пришёл"
     assert msg["t"] == "cfg", f"агенту с cfg1 ушли {msg['t']}"
@@ -736,7 +740,7 @@ async def test_a_refusal_lands_in_state_and_notifies_once(services, srv):
     уведомление «Шлюз не применил: …» (расхождение пережило доставку), второго
     на тот же отказ нет."""
     gw = await _connect(srv, services, cfg=_have(services, env="0" * 16),
-                        bundle=_bundle(services, home_subnets="192.168.1.0/24"))
+                        bundle=_bundle(services, lan_subnets="192.168.1.0/24"))
     msg = await _next(gw)
     await gw.send("cfg_ack", {"gen": msg["gen"], "hash": msg["hash"], "applied": [],
                               "failed": {"env": "юнит обвязки не отработал за 600 с"}})
@@ -755,7 +759,7 @@ async def test_a_temporary_refusal_sends_the_document_again(services, srv):
     """Агент ответил «повтори» (юнит обвязки ещё работал): документ уходит
     снова на следующей сверке, уведомления об отказе нет."""
     gw = await _connect(srv, services, cfg=_have(services, env="0" * 16),
-                        bundle=_bundle(services, home_subnets="192.168.1.0/24"))
+                        bundle=_bundle(services, lan_subnets="192.168.1.0/24"))
     msg = await _next(gw)
     await gw.send("cfg_ack", {"gen": msg["gen"], "hash": msg["hash"], "retry": True})
     await _until(lambda: services.gwcfg_ack(1))
@@ -766,13 +770,11 @@ async def test_a_temporary_refusal_sends_the_document_again(services, srv):
     await gw.close()
 
 
-async def test_an_agent_without_capabilities_still_gets_settings(services, srv):
-    """Агент 3.2.x о cfg1 не знает: ему — прежние settings, документа нет, даже
-    если в снимке нашлось поле cfg."""
-    gw = await _connect(srv, services, caps=None, cfg=_have(services, env="0" * 16),
-                        bundle=_bundle(services, home_subnets="192.168.1.0/24"))
-    msg = await _next(gw)
-    assert msg is not None and msg["t"] == "settings", msg
-    assert msg["values"]["HOME_SUBNETS"] == "192.168.68.0/24", "агенту 3.2 ушли не прежние имена"
-    assert await _next(gw, timeout=0.4) is None, "агенту 3.2 ушёл и документ"
+async def test_an_agent_without_capabilities_gets_nothing_to_apply(services, srv):
+    """Агент ниже 3.3.0 вернулся после молчания: прежних settings больше нет,
+    а документ он не разберёт — снимок без отпечатков cfg, сверять нечего.
+    Конфигурация до него не доходит, пока его не обновят."""
+    gw = await _connect(srv, services, caps=None, bundle=_bundle(services, lan_subnets="192.168.1.0/24"))
+    assert await _next(gw, timeout=0.6) is None, "агенту ниже 3.3.0 что-то ушло"
+    assert services.gwlink_agent_outdated(1) is True
     await gw.close()

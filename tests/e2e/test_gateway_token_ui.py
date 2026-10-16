@@ -154,20 +154,17 @@ async def _asked(fake_bot, services, slot: int = 1) -> FakeState:
 
 # ── кнопка в «🔧 Сервис» ─────────────────────────────────────────────────────
 
-async def test_service_shows_the_token_button_only_for_an_agent_with_token1(services, slots, env, fake_bot):
-    """Агент без token1 — кнопки нет (довезти токен нечем); с confirm1, но
-    без token1 — только «🔑 Ключи линка»; с token1, но без confirm1 — только
-    «🤖 Токен шлюза»; с обеими — рядом одним рядом перед «Назад»."""
+async def test_service_shows_the_token_button_unless_the_agent_is_below_330(services, slots, env, fake_bot):
+    """Агент ниже 3.3.0 (на связь выходил, документа не принимает) — ни
+    «🔑 Ключи линка», ни «🤖 Токен шлюза»: довезти нечем. Агент не ниже
+    3.3.0 — обе рядом одним рядом перед «Назад» (возможности 3.3.0 приходят
+    вместе, по отдельности не проверяются)."""
     _, pi, _ = slots
     _slot1(services, pi)
+    _caps(services, 1, ())
     _, markup = await _service(fake_bot, services)
-    assert "🤖 Токен шлюза" not in sum(_rows(markup), []), _rows(markup)
-    _caps(services, 1, ("cfg1", "confirm1"))
-    _, markup = await _service(fake_bot, services)
-    assert _rows(markup)[-2:] == [["🔑 Ключи линка"], ["⬅️ Назад"]], _rows(markup)
-    _caps(services, 1, ("cfg1", "token1"))
-    _, markup = await _service(fake_bot, services)
-    assert _rows(markup)[-2:] == [["🤖 Токен шлюза"], ["⬅️ Назад"]], _rows(markup)
+    labels = sum(_rows(markup), [])
+    assert "🤖 Токен шлюза" not in labels and "🔑 Ключи линка" not in labels, _rows(markup)
     _caps(services)
     _, markup = await _service(fake_bot, services)
     assert _rows(markup)[-2:] == [["🔑 Ключи линка", "🤖 Токен шлюза"], ["⬅️ Назад"]], _rows(markup)
@@ -178,11 +175,11 @@ async def test_service_shows_the_token_button_only_for_an_agent_with_token1(serv
 # ── выбор шлюза ──────────────────────────────────────────────────────────────
 
 async def test_pick_without_agents_is_an_alert(services, slots, env, fake_bot):
-    """Устаревшая кнопка без шлюзов с token1 — всплывашка-объяснение, экран
-    не тронут, ввод не открыт."""
+    """Устаревшая кнопка, а шлюзов не ниже 3.3.0 нет — всплывашка-объяснение,
+    экран не тронут, ввод не открыт."""
     _, pi, _ = slots
     _slot1(services, pi)
-    _caps(services, 1, ("cfg1", "confirm1"))
+    _caps(services, 1, ())
     state = FakeState()
     cb, nav = await _gtk(fake_bot, services, state, "pick")
     assert cb.answers[-1] == ("Отправить токен по каналу конфигурации некому: нужен агент шлюза v3.3.0", True), cb.answers
@@ -190,11 +187,12 @@ async def test_pick_without_agents_is_an_alert(services, slots, env, fake_bot):
 
 
 async def test_pick_with_one_agent_opens_the_prompt_at_once(services, slots, env, fake_bot):
-    """Один шлюз с token1 — сразу приглашение с именем шлюза и «✖️ Отмена»
-    в «Сервис»: экран выбора из одного пункта — лишнее нажатие."""
+    """Один шлюз, которому можно довезти токен, — сразу приглашение с именем
+    шлюза и «✖️ Отмена» в «Сервис»: экран выбора из одного пункта — лишнее
+    нажатие."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    _caps(services, 1)
+    _caps(services, 1); _caps(services, 2, ())
     state = FakeState()
     _, nav = await _gtk(fake_bot, services, state, "pick")
     text, markup = _edits(nav)[-1]
@@ -227,12 +225,12 @@ async def test_pick_with_two_agents_shows_a_choice(services, slots, env, fake_bo
     assert (await state.get_data())["gw_slot"] == 2
 
 
-async def test_ask_for_a_slot_without_token1_is_stale(services, slots, env, fake_bot):
-    """Кнопка слота со старого экрана, а агент откатили на версию без token1 —
+async def test_ask_for_a_slot_below_330_is_stale(services, slots, env, fake_bot):
+    """Кнопка слота со старого экрана, а агент откатили ниже 3.3.0 —
     «устарело», ввод не открыт."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
-    _caps(services, 1)
+    _caps(services, 1); _caps(services, 2, ())
     state = FakeState()
     cb, nav = await _gtk(fake_bot, services, state, "ask", 2)
     assert cb.answers and cb.answers[-1][1] is True, cb.answers

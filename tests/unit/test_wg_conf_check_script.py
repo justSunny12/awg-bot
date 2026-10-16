@@ -42,8 +42,8 @@ def _check(tmp_path, conf_text: str, kind: str = "link", *, allow: Path | None =
 
 
 def _env(rule: dict) -> dict:
-    return {"CLIENT_SUBNET": rule["client_subnet"], "PEER_HOME_NETS": " ".join(rule.get("peer_nets") or []),
-            "RESOLVER": rule.get("resolver", ""), "HOME_SUBNETS": " ".join(rule.get("lan_subnets") or []),
+    return {"CLIENT_SUBNET": rule["client_subnet"], "PEER_LAN_NETS": " ".join(rule.get("peer_nets") or []),
+            "RESOLVER": rule.get("resolver", ""), "LAN_SUBNETS": " ".join(rule.get("lan_subnets") or []),
             "IFACE_NETS": " ".join(rule.get("iface_nets") or [])}
 
 

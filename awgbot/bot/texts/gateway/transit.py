@@ -151,7 +151,7 @@ def own_lists_state_line(own: dict) -> str:
     return ""
 
 
-OWN_FAIL_TAIL = " — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
+OWN_FAIL_TAIL = " — «🚑 Восстановить»; не поможет — причина в «🩺 Здоровье»"
 
 
 SYNC_TAILS = {

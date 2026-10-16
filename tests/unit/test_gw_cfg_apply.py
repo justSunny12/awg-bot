@@ -33,7 +33,7 @@ from awgbot.domain.gateway.cfg import txn
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
 from awgbot.util import wgconf
-from tests.unit.test_gwlink_settings_apply import UNIT_TEXT, _cp, _Unit
+from tests.unit._gw_unit_common import UNIT_TEXT, _cp, _Unit
 from tests.unit.test_wgconf_allowed import LINK
 
 pytestmark = pytest.mark.unit
@@ -169,7 +169,7 @@ def _doc(*, gen: int = 7, env: dict | None = None, link: str | None = None, **se
 # ── отпечатки стоящего: поле cfg снимка ──────────────────────────────────────
 
 def test_fingerprints_describe_what_stands_on_the_gateway(svc, host):
-    """env — по юниту, но в именах документа (HOME_SUBNETS юнита — это
+    """env — по юниту, но в именах документа (LAN_SUBNETS юнита — это
     LAN_SUBNETS документа): посчитай агент отпечаток в именах юнита, он не
     совпал бы с серверным никогда, и документ ехал бы на каждом снимке."""
     fp = svc.cfg_fingerprints()
@@ -303,13 +303,13 @@ def test_env_alone_rewrites_the_unit_and_reasserts_once(svc, host):
     assert svc.cfg_fingerprints()["gen"] == 7
 
 
-def test_unit_lines_are_written_under_the_unit_names(svc, host):
-    """PEER_LAN_NETS документа живёт в юните как PEER_HOME_NETS: скрипт и
-    агенты 3.2.x читают прежнее имя. Подсеть соседа доезжает и в юнит, и в
-    AllowedIPs линка — одной транзакцией."""
+def test_unit_lines_are_written_under_the_document_names(svc, host):
+    """С 3.3.1 имена юнита — те же, что у документа (PEER_LAN_NETS), прежних
+    в юните нет. Подсеть соседа доезжает и в юнит, и в AllowedIPs линка —
+    одной транзакцией."""
     res = svc.apply_cfg(_doc(env={"PEER_LAN_NETS": "192.168.70.0/24"}, link=LINK_WITH_PEER))
-    assert gwguard.unit_env("PEER_HOME_NETS") == "192.168.70.0/24", host.text()
-    assert "PEER_LAN_NETS" not in host.text(), "в юнит ушло имя документа"
+    assert gwguard.unit_env("PEER_LAN_NETS") == "192.168.70.0/24", host.text()
+    assert "PEER_HOME_NETS" not in host.text(), "в юнит ушло прежнее имя"
     assert "192.168.70.0/24" in host.link.read_text(encoding="utf-8")
     assert host.link_applies == ["link.next"] and host.restarts == 1
     assert "локальные подсети других шлюзов" in res["note"] and "конфиг линка" in res["note"], res["note"]

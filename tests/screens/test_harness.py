@@ -350,7 +350,7 @@ def test_multiline_copy_text_stays_on_one_line():
 
 @pytest.mark.parametrize("blob, answer", [
     (b"#!/bin/sh\n# awg-gw-bundle installer\n", lambda t: t.gw_first_run_file("conf.bin")),
-    (b"DUMMY", lambda t: t.gw_bundle_not_ours(False)),
+    (b"DUMMY", lambda t: t.gw_bundle_not_ours()),
 ])
 async def test_file_step_hands_the_bytes_to_the_handler(blob, answer, tmp_path, frozen, fakes):
     """Шаг «файл»: документ с подписью уходит агенту, обработчик скачивает

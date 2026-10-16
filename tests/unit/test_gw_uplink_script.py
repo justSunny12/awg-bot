@@ -320,7 +320,7 @@ def _unit_text(script: str, tmp_path, **env) -> str:
     tpl = script.split('cat > "$UNIT" <<UNITEOF', 1)[1].split("\nUNITEOF", 1)[0]
     base = {"CLIENT_SUBNET": "10.8.1.0/24", "LINK_IF": "awglink", "ADMIN_IPS": "10.8.1.2 10.8.1.3",
             "GATEWAY_PUBKEY": OLD_PUB, "GATEWAY_PREV_PUBKEY": "", "LAN_MODE": "1",
-            "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_HOME_NETS": "",
+            "LAN_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "",
             "LINK_CHANNEL": "1", "LINK_CHANNEL_PORT": "8787", "FW_ENV": "/etc/awg-gw/firewall.env",
             "SELF": "/usr/local/sbin/routing-gw-setup.sh", "HOST_CONF_DIR": "/etc/amnezia/amneziawg"}
     base.update(env)
@@ -368,7 +368,7 @@ class _Lock:
 
 _STARTED = {"CLIENT_SUBNET": "10.8.1.0/24", "LINK_IF": "awglink", "ADMIN_IPS": "10.8.1.2 10.8.1.3",
             "GATEWAY_PUBKEY": OLD_PUB, "GATEWAY_PREV_PUBKEY": "", "LAN_MODE": "1",
-            "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_HOME_NETS": "",
+            "LAN_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "",
             "LINK_CHANNEL_PORT": "8787"}
 
 

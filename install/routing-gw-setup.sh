@@ -25,9 +25,9 @@
 #      по линку (SSH, ICMP), всё прочее дропается. Исключение — УСТРОЙСТВА
 #      АДМИНА (ADMIN_IPS, приезжают с ВПС — файлом конфигурации или по каналу
 #      конфигурации в юнит): им открыто всё, и шлюз, и локальная сеть через него.
-#      При LAN_MODE=1 и непустом PEER_HOME_NETS — ещё маскарад соседей к
+#      При LAN_MODE=1 и непустом PEER_LAN_NETS — ещё маскарад соседей к
 #      роутеру: трафик из подсетей других шлюзов к адресу роутера (ROUTER4 —
-#      шлюз маршрута по умолчанию, `via`, если он внутри HOME_SUBNETS; в файле
+#      шлюз маршрута по умолчанию, `via`, если он внутри LAN_SUBNETS; в файле
 #      статуса — ROUTER=) уходит с
 #      адресом шлюза в локальной сети, и роутер отвечает шлюзу, а не мимо
 #      заворота провайдеру; маршрутов на соседей на роутере не нужно. Адрес
@@ -50,7 +50,7 @@
 #      апстрим @<аплинк> после его подъёма;
 #   5) при LAN_MODE=1 — VPN-транзит (локальная сеть за шлюзом без VPN на
 #      устройствах): dnsmasq на адресе шлюза в локальной сети (bind-dynamic, апстрим
-#      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_home
+#      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_lan
 #      (наборы lan_vpn4/lan_vpn_nets4/lan_ru4, метка в туннель, маскарад в
 #      локальную сеть) и скрипты списков в /usr/local/sbin — awg-lan-lists.sh
 #      (фиды; исходник до вычитания исключений — /var/lib/awg-gw/vpn-feed.src),
@@ -63,9 +63,9 @@
 #      наборы чистятся) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
-#      в Finder через домен обзора awg.internal; PEER_HOME_NETS пуст — файл
+#      в Finder через домен обзора awg.internal; PEER_LAN_NETS пуст — файл
 #      awg-gw-peer-services.conf снимается). Обзор своей сети — вне режима:
-#      при своих подсетях (HOME_SUBNETS) и живом avahi-daemon ставится
+#      при своих подсетях (LAN_SUBNETS) и живом avahi-daemon ставится
 #      avahi-utils (после apt-get update) — имена этой сети нужны и соседним
 #      шлюзам, и устройствам админа в туннеле («SMB в туннеле» на ВПС).
 #      awg-lan-services.sh <файл> ставит записи, собранные агентом из данных
@@ -84,9 +84,10 @@
 #      conf-dir: Debian читает оттуда всё, кроме .dpkg-*, и копия грузилась бы
 #      вместе с новым файлом.
 #      Таблица пишется БЕЗ delete table: наборы наполняет dnsmasq на лету, и
-#      реассерт обязан их сохранить — пересобираются только цепочки. Ручной
-#      слой прежней схемы переезжает в /var/lib/awg-gw/migrated — туда же
-#      хвосты conf-dir *.bak, *.tmp и *.prev.awg прежних версий. Личные
+#      реассерт обязан их сохранить — пересобираются только цепочки. Таблица
+#      прежнего имени (inet awg_home, обвязка 3.3.0 и раньше) переезжает в
+#      inet awg_lan на первом прогоне: наборы — слепками, строки nftset= — на
+#      новое имя (снимается со следующим сдвигом минимума). Личные
 #      списки при снятии уходят в /var/lib/awg-gw/restore (туда же их
 #      откладывает awg-bot restore, пока режим не применён), и следующее
 #      включение берёт их оттуда; нет — пустые заготовки. Занят :53
@@ -114,9 +115,9 @@
 #      из того же источника: wg_conf_check читает белые списки ключей и пределы
 #      правила AllowedIPs из install/gw-wg-allow.list поставки (его же читает
 #      awgbot/util/wgconf.py); нет файла — отказ. AllowedIPs — только
-#      CLIENT_SUBNET, /30 линка (по Address), PEER_HOME_NETS и /32 RESOLVER из
+#      CLIENT_SUBNET, /30 линка (по Address), PEER_LAN_NETS и /32 RESOLVER из
 #      окружения; все частные, не шире allowed_min_prefix, не больше
-#      allowed_max, без пересечений с HOME_SUBNETS и подсетями интерфейсов
+#      allowed_max, без пересечений с LAN_SUBNETS и подсетями интерфейсов
 #      шлюза. Разница с установленным только в AllowedIPs и PersistentKeepalive —
 #      awg syncconf без перезапуска линка (сессия канала живёт) и правка
 #      маршрутов в линк; иначе down/up с прежней таблицей защиты до подъёма.
@@ -155,20 +156,16 @@
 # работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
 # остаётся accept. avahi-daemon не ставит (он начал бы объявлять шлюз) —
 # только avahi-utils рядом с уже запущенным демоном и только при заданных своих
-# подсетях (HOME_SUBNETS).
+# подсетях (LAN_SUBNETS).
 # /etc/default/dnsmasq не трогает: DNSMASQ_EXCEPT init-скрипт Debian превращает
 # в except-interface, а тот перекрывает listen-address; файл, созданный до
 # пакета, ронял бы dpkg.
 #
 # ОКРУЖЕНИЕ. Первую группу вшивает в себя файл конфигурации и закрепляет юнит awg-link-gw
-# строками Environment= — значения приезжают с ВПС. Агенту с документом
-# конфигурации (возможность cfg1 канала) сервер доставляет каналом
-# CLIENT_SUBNET, ADMIN_IPS, LAN_MODE, HOME_SUBNETS, RESOLVER, PEER_HOME_NETS и
-# LINK_CHANNEL_PORT (domain/gwcfg, ENV_KEYS; в документе HOME_SUBNETS и
-# PEER_HOME_NETS зовутся LAN_SUBNETS и PEER_LAN_NETS); агенту 3.2.x — только
-# четыре (ADMIN_IPS, HOME_SUBNETS, LAN_MODE, RESOLVER — gwlink.SETTINGS_KEYS),
-# остальное — перевыпуском конфигурации шлюза. Агент переписывает эти строки
-# прямо в юните и перезапускает его. Ключи признания GATEWAY_PUBKEY /
+# строками Environment= — значения приезжают с ВПС. Дальше сервер доставляет
+# CLIENT_SUBNET, ADMIN_IPS, LAN_MODE, LAN_SUBNETS, RESOLVER, PEER_LAN_NETS и
+# LINK_CHANNEL_PORT документом конфигурации по каналу (domain/gwcfg, ENV_KEYS —
+# те же имена). Агент переписывает эти строки прямо в юните и перезапускает его. Ключи признания GATEWAY_PUBKEY /
 # GATEWAY_PREV_PUBKEY агент с документом тоже пишет в юнит сам — вместе с
 # конфигом аплинка (п.7).
 # Отдельного файла для них нет намеренно —
@@ -189,28 +186,28 @@
 #                   uplink.new — под umask 077, убирается при любом выходе.
 #                   Реассерт из юнита аплинк не переставляет
 #   LAN_MODE        1 — поднять VPN-транзит (см. п.5), 0 — снять своё
-#   HOME_SUBNETS    локальные подсети шлюза: по первой он находит свой
+#   LAN_SUBNETS     локальные подсети шлюза: по первой он находит свой
 #                   интерфейс и адрес в локальной сети
 #   RESOLVER        адрес резолвера ВПС для апстрима; пусто — запасной 1.1.1.1
-#   PEER_HOME_NETS  подсети других шлюзов — их префиксы в туннеле (/16 на
+#   PEER_LAN_NETS   подсети других шлюзов — их префиксы в туннеле (/16 на
 #                   слот, 10.241.0.0/16 и т. д.; переводит адреса только ВПС,
 #                   таблица awg_lan_map), только у слотов с VPN-транзитом:
 #                   им из линка открыт транзит в локальную сеть.
 #                   Те же префиксы стоят в AllowedIPs конфига линка, поэтому
-#                   агенту с документом они едут каналом вместе с конфигом
-#                   линка одной транзакцией (п.6), агенту 3.2.x — только
-#                   файлом конфигурации (gwlink.BUNDLE_ONLY_KEYS).
+#                   они едут каналом вместе с конфигом линка одной
+#                   транзакцией (п.6).
 #                   Непуст — действуют и сервисы соседних сетей (п.5), а
 #                   при LAN_MODE=1 — и маскарад их трафика к роутеру (п.2)
-#   LINK_CHANNEL    всегда 1: канал состояния до ВПС внутри линка обязателен,
-#                   агент держит его, пока есть конфиг линка. Строка в юните
-#                   держится для агентов прежних версий (они без неё канал
-#                   гасят); скрипт её только закрепляет
-#   LINK_CHANNEL_PORT  порт канала на адресе ВПС в /30 линка (8787)
+#   LINK_CHANNEL_PORT  порт канала на адресе ВПС в /30 линка (8787); канал
+#                   обязателен — агент держит его, пока есть конфиг линка
 #   BUNDLE_ISSUED_AT   метка выпуска файла конфигурации (unix-время) — ТОЛЬКО
 #                   при применении файла, в юнит не закрепляется: файл старее
 #                   применённого (/etc/awg-gw/issued_at) — отказ, код 3, до
 #                   первого шага; AWG_GW_ALLOW_OLD=1 — применить всё равно
+# Юнит, записанный скриптом 3.3.0 и раньше, держит подсети под прежними
+# именами HOME_SUBNETS / PEER_HOME_NETS: их скрипт читает, только если новые
+# пусты, и переписывает юнит уже с новыми — снимается со следующим сдвигом
+# минимума.
 # Значения файла конфигурации и окружения проходят фильтр формы до первого использования:
 # CLIENT_SUBNET — только цифры, точки и «/», вид a.b.c.d/n, иначе отказ;
 # LINK_IF — [A-Za-z0-9_.-], не длиннее 15 символов; ADMIN_IPS и
@@ -256,7 +253,7 @@ set -e
 # Строки юнита, которые переписывает агент (ключи признания, подсети, порт
 # канала), — как их дал systemd при старте процесса: после замка ниже они
 # сверяются с юнитом на диске (агент мог переписать его, пока прогон ждал).
-UNIT_ENV_KEYS="CLIENT_SUBNET LINK_IF ADMIN_IPS LAN_MODE HOME_SUBNETS RESOLVER PEER_HOME_NETS LINK_CHANNEL_PORT GATEWAY_PUBKEY GATEWAY_PREV_PUBKEY"
+UNIT_ENV_KEYS="CLIENT_SUBNET LINK_IF ADMIN_IPS LAN_MODE LAN_SUBNETS RESOLVER PEER_LAN_NETS LINK_CHANNEL_PORT GATEWAY_PUBKEY GATEWAY_PREV_PUBKEY"
 UNIT_ENV0="$(for _k in $UNIT_ENV_KEYS; do eval "printf '%s=%s\n' \"\$_k\" \"\${$_k-}\""; done)"
 
 LINK_IF="$(printf '%s' "${LINK_IF:-awglink}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)"
@@ -315,18 +312,19 @@ GW_FOREIGN=0                                  # 1 = слот помечен др
 GW_UNCONFIRMED=0                              # 1 = аплинка не видно, шлюз не подтверждён — линк не трогаем
 GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
 # локальная сеть без VPN: вторая таблица nft, dnsmasq, списки
-HOME_TABLE="inet awg_home"
-HOME_FILE="$GW_ETC/home.nft"            # после GW_ETC — иначе уедет в корень ФС
+LAN_TABLE="inet awg_lan"
+LAN_FILE="$GW_ETC/lan.nft"            # после GW_ETC — иначе уедет в корень ФС
 LAN_SYSCTL="/etc/sysctl.d/98-awg-gw-lan.conf"
 DNSMASQ_D="/etc/dnsmasq.d"
 DNSMASQ_OVR="/etc/systemd/system/dnsmasq.service.d/awg-gw.conf"
 LAN_DUMP="/var/lib/awg-gw"                # слепки наборов: грузятся при старте до фидов
-LAN_OLD="$LAN_DUMP/migrated"              # снятые файлы ручного слоя и личные списки —
-                                          # ВНЕ conf-dir: dnsmasq читает там всё, кроме .dpkg-*
 DNSMASQ_DEFAULT="/etc/default/dnsmasq"
 DNSMASQ_MARK="$GW_ETC/dnsmasq.installed"  # dnsmasq ставили мы — при снятии выключаем
-# Локальные подсети и резолвер — те же фильтры, что у чужих подсетей ниже
-HOME_SUBNETS="$(printf '%s' "${HOME_SUBNETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
+# Локальные подсети и резолвер — те же фильтры, что у чужих подсетей ниже.
+# Прежнее имя (юнит 3.3.0 и раньше) — только когда нового нет или оно пусто:
+# снимается со следующим сдвигом минимума.
+LAN_SUBNETS="${LAN_SUBNETS:-${HOME_SUBNETS:-}}"
+LAN_SUBNETS="$(printf '%s' "${LAN_SUBNETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
 RESOLVER="$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true)"
 LAN_LISTS="/usr/local/sbin/awg-lan-lists.sh"
@@ -334,14 +332,13 @@ LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
 LAN_SERVICES="/usr/local/sbin/awg-lan-services.sh"      # записи сервисов соседних сетей → dnsmasq
 PEER_SVC_CONF="$DNSMASQ_D/awg-gw-peer-services.conf"
 [ "${LAN_MODE:-0}" = "1" ] && LAN_MODE=1 || LAN_MODE=0
-# Канал до ВПС обязателен: строка в юните постоянная — агенты прежних версий без
-# неё канал гасят; значение из файла конфигурации не читается.
-LINK_CHANNEL=1
 LINK_CHANNEL_PORT="$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
 case "$LINK_CHANNEL_PORT" in ''|0) LINK_CHANNEL_PORT=8787 ;; esac
 # Подсети за другими шлюзами: им из линка
 # открыт транзит в локальную сеть — по источнику, выше drop по приватным.
-PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
+# Прежнее имя — как у LAN_SUBNETS выше.
+PEER_LAN_NETS="${PEER_LAN_NETS:-${PEER_HOME_NETS:-}}"
+PEER_LAN_NETS="$(printf '%s' "${PEER_LAN_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
 
 # Публичный ключ интерфейса: `awg show <if> public-key`.
@@ -426,11 +423,6 @@ dn_set_elsewhere() {           # $1 = regex: ключ dnsmasq уже задан 
     done
     return 1
 }
-park() {                       # $1 = файл → $LAN_OLD, с датой: ничего не теряем, conf-dir чист
-    [ -f "$1" ] || return 0
-    run "mkdir -p $LAN_OLD"
-    run "mv -f $1 $LAN_OLD/$(basename "$1").$(date +%Y%m%d%H%M%S)"
-}
 port53_busy() {                # слушатель :53, который не dnsmasq и мешает нам → строка или пусто
     ss -Hlnup 'sport = :53' 2>/dev/null | grep -v '"dnsmasq"' \
         | grep -E "(^|[[:space:]])(0\.0\.0\.0|\*|\[::\]|127\.0\.0\.1|${LAN_ADDR:-NOADDR}):53([[:space:]]|$)" | head -n1
@@ -474,51 +466,51 @@ _lan_remove_locked() {
     elif [ "$_changed" = "1" ] && systemctl is-active --quiet dnsmasq 2>/dev/null; then
         run "systemctl restart dnsmasq"
     fi
-    nft list table $HOME_TABLE >/dev/null 2>&1 && run "nft delete table $HOME_TABLE"
-    [ -f "$HOME_FILE" ] && run "rm -f $HOME_FILE"
+    nft list table $LAN_TABLE >/dev/null 2>&1 && run "nft delete table $LAN_TABLE"
+    [ -f "$LAN_FILE" ] && run "rm -f $LAN_FILE"
+    lan_table_old_drop
     [ -f "$LAN_SYSCTL" ] && run "rm -f $LAN_SYSCTL"
     [ -f "$LAN_LISTS" ] && run "rm -f $LAN_LISTS"
     [ -f "$LAN_DOMAIN" ] && run "rm -f $LAN_DOMAIN"
     [ -f "$LAN_SERVICES" ] && run "rm -f $LAN_SERVICES"
     return 0
 }
-lan_migrate_manual() {         # ручной слой: переезжает, не ломается
-    _moved=""
-    for _u in home-split.service awg-lists.timer awg-lists.service; do
-        if [ -f "/etc/systemd/system/$_u" ]; then
-            run "systemctl disable --now $_u 2>/dev/null || true"
-            park "/etc/systemd/system/$_u"
-            _moved="$_moved $_u"
-        fi
+# Переход таблицы локальной сети с прежнего имени (inet awg_home — обвязка
+# 3.3.0 и раньше) на $LAN_TABLE: наборы — слепками в новую таблицу, строки
+# nftset= своих списков, фида, слепков и копий для отката — на новое имя;
+# прежняя таблица и её файл снимаются после того, как новая встала.
+# Снимается со следующим сдвигом минимума.
+LAN_TABLE_OLD="inet awg_home"
+LAN_FILE_OLD="$GW_ETC/home.nft"
+lan_table_move_prepare() {     # до конфигов dnsmasq: строки nftset= — на новое имя
+    nft list table $LAN_TABLE_OLD >/dev/null 2>&1 || return 0
+    say "  таблица локальной сети переезжает: $LAN_TABLE_OLD → $LAN_TABLE (наборы и свои списки на месте)"
+    for _s in lan_vpn4 lan_vpn_nets4 lan_ru4; do
+        nft list set $LAN_TABLE_OLD $_s 2>/dev/null \
+            | sed "s|^table $LAN_TABLE_OLD {|table $LAN_TABLE {|" > "$LAN_DUMP/$_s.move.nft" \
+            || rm -f "$LAN_DUMP/$_s.move.nft"
     done
-    if ip rule list 2>/dev/null | grep -q "fwmark 0x10 lookup 100"; then
-        run "ip rule del fwmark 0x10 lookup 100"; _moved="$_moved ip-rule-0x10"
-    fi
-    nft list table inet home_split >/dev/null 2>&1 && { run "nft delete table inet home_split"; _moved="$_moved home_split"; }
-    for _f in /etc/home-split.nft /etc/sysctl.d/99-home-split.conf /usr/local/sbin/home-*.sh /usr/local/bin/awg-add \
-              /etc/systemd/network/99-awg-unmanaged.network \
-              /etc/systemd/system/dnsmasq.service.d/*.conf /etc/systemd/system/awg-quick@${UPLINK_IF:-awg0}.service.d/*.conf \
-              "$DNSMASQ_D/awg-base.conf" "$DNSMASQ_D/vpn-domains.conf"; do
-        [ -f "$_f" ] || continue
-        case "$_f" in */awg-gw.conf) continue ;; esac              # наши оверрайды
-        park "$_f"; _moved="$_moved $(basename "$_f")"
+    for _f in "$DNSMASQ_D"/awg-gw-*.conf "$LAN_DUMP"/restore/*.conf "$LAN_DUMP"/rollback/*.prev \
+              "$LAN_DUMP"/vpn-feed.src "$LAN_DUMP"/lan_vpn4.nft "$LAN_DUMP"/lan_vpn_nets4.nft; do
+        [ -f "$_f" ] && grep -q 'awg_home' "$_f" || continue
+        # через временный файл вне conf-dir и cat >: права и inode файла те же
+        _t="$(mktemp "$LAN_DUMP/move.XXXXXX")"
+        run "sed 's|inet#awg_home#|inet#awg_lan#|g; s|^table $LAN_TABLE_OLD {|table $LAN_TABLE {|' $_f > $_t && cat $_t > $_f"
+        rm -f "$_t"
+        _dn_changed=1
     done
-    # личные списки — данные человека: переносятся с заменой имени набора; оригинал — в $LAN_OLD
-    if [ -f "$DNSMASQ_D/ru-force.conf" ]; then
-        run "sed 's|inet#home_split#ru4|inet#awg_home#lan_ru4|' $DNSMASQ_D/ru-force.conf > $DNSMASQ_D/awg-gw-ru-user.conf"
-        park "$DNSMASQ_D/ru-force.conf"
-        _moved="$_moved ru-force.conf→awg-gw-ru-user.conf"
-    fi
-    if [ -f "$DNSMASQ_D/user-managed.conf" ]; then
-        run "sed 's|inet#home_split#vpn4|inet#awg_home#lan_vpn4|' $DNSMASQ_D/user-managed.conf > $DNSMASQ_D/awg-gw-vpn-user.conf"
-        park "$DNSMASQ_D/user-managed.conf"
-        _moved="$_moved user-managed.conf→awg-gw-vpn-user.conf"
-    fi
-    # хвосты в conf-dir, которые dnsmasq тоже прочитает: .bak/.tmp прежних версий
-    for _f in "$DNSMASQ_D"/*.bak "$DNSMASQ_D"/*.tmp "$DNSMASQ_D"/*.prev.awg; do
-        [ -f "$_f" ] && { park "$_f"; _moved="$_moved $(basename "$_f")"; }
+    return 0
+}
+lan_table_move_finish() {      # новая таблица встала: наборы из прежней — в неё, прежняя — вон
+    for _s in lan_vpn4 lan_vpn_nets4 lan_ru4; do
+        [ -s "$LAN_DUMP/$_s.move.nft" ] && run "nft -f $LAN_DUMP/$_s.move.nft 2>/dev/null || true"
+        rm -f "$LAN_DUMP/$_s.move.nft"
     done
-    [ -n "$_moved" ] && say "  ручной слой перенесён:$_moved (снятые файлы — в $LAN_OLD)"
+    lan_table_old_drop
+}
+lan_table_old_drop() {
+    nft list table $LAN_TABLE_OLD >/dev/null 2>&1 && run "nft delete table $LAN_TABLE_OLD"
+    [ -f "$LAN_FILE_OLD" ] && run "rm -f $LAN_FILE_OLD"
     return 0
 }
 write_lan_scripts() {          # скрипты списков — из этого же файла, чтобы файл конфигурации был самодостаточен
@@ -542,7 +534,7 @@ cat > "$LAN_LISTS.new" <<'LISTSEOF'
 #   итог → /var/lib/awg-gw/lists.status: updated_at, domains, nets, rc,
 #          source (net — скачано, channel — привёз канал)
 set -u
-TABLE="inet awg_home"
+TABLE="inet awg_lan"
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 FEED="$D/awg-gw-vpn-feed.conf"; RU="$D/awg-gw-ru-user.conf"
 DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; RB="$DUMP/rollback"
@@ -570,7 +562,7 @@ get_domains() {
 # ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
 if get_domains && [ -s "$TMP" ]; then
     # sed -i без суффикса — GNU-изм: правим через временный файл
-    sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_home#lan_vpn4|' "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
+    sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_lan#lan_vpn4|' "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
     # исходник до вычитания — awg-lan-domain.sh пересобирает фид по нему, когда
     # меняются исключения «напрямую» (иначе новое исключение ждало бы новых фидов);
     # кладётся только после проверки длины ниже, чтобы обрезанный фид не стал исходником
@@ -588,7 +580,7 @@ if get_domains && [ -s "$TMP" ]; then
     # провайдера, страница блокировки) иначе уехал бы в conf-dir и уронил бы
     # dnsmasq на «bad option» — локальная сеть без DNS до следующего удачного фида.
     # сегмент — только имя домена: `#` или `.` у dnsmasq значат «все домены»
-    grep -Ei '^(#.*|nftset=(/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59}))+/inet#awg_home#lan_vpn4)$' "$TMP" > "$TMP2"
+    grep -Ei '^(#.*|nftset=(/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59}))+/inet#awg_lan#lan_vpn4)$' "$TMP" > "$TMP2"
     mv "$TMP2" "$TMP"
     feed_ok=0
     if [ "$(grep -c '^nftset=' "$TMP")" -lt 10 ]; then
@@ -703,7 +695,7 @@ set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 VPN="$D/awg-gw-vpn-user.conf"; RU="$D/awg-gw-ru-user.conf"; FEED="$D/awg-gw-vpn-feed.conf"
 DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; SRC="$DUMP/vpn-feed.src"; RB="$DUMP/rollback"
-TABLE="inet awg_home"
+TABLE="inet awg_lan"
 DOMAIN_RE='([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})'
 # Аплинк — тот, что нашёл скрипт обвязки (UPLINK_IF в статусе): на машине с
 # аплинком не awg0 иначе хост ВПС не был бы под запретом
@@ -810,8 +802,8 @@ if cmp -s "$TMPD/want_vpn" "$TMPD/before_vpn" && cmp -s "$TMPD/want_ru" "$TMPD/b
     exit 0
 fi
 # ── файлы: по домену на строку, по алфавиту (sync и кнопка пишут одинаково)
-sed 's|.*|nftset=/&/inet#awg_home#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf"
-sed 's|.*|nftset=/&/inet#awg_home#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf"
+sed 's|.*|nftset=/&/inet#awg_lan#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf"
+sed 's|.*|nftset=/&/inet#awg_lan#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf"
 changed="$VPN $RU"
 # копии для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
 mkdir -p "$RB"
@@ -829,7 +821,7 @@ if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
         $0 !~ /^nftset=/ { print; next }
         { out=$1; n=0; for (i=2; i<NF; i++) if (!($i in skip)) { out=out "/" $i; n++ }
           if (n) print out "/" $(NF) }' "$TMPD/ru_awk" "$SRC" \
-        | grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_home#lan_vpn4)$' > "$TMPD/feed.conf" || true
+        | grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_lan#lan_vpn4)$' > "$TMPD/feed.conf" || true
     if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
         cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"
         install -m 644 "$TMPD/feed.conf" "$FEED"; changed="$changed $FEED"
@@ -1021,11 +1013,11 @@ ip_in_nets() {
         END { exit !f }'
 }
 # Адрес роутера — шлюз маршрута по умолчанию, если он внутри своих подсетей
-# (HOME_SUBNETS): к нему маскарад соседей (п.2). Роутер вне локальной сети
+# (LAN_SUBNETS): к нему маскарад соседей (п.2). Роутер вне локальной сети
 # (нестандартная схема) — пусто, правила нет. DNS имён Endpoint (п.5) берёт
 # шлюз маршрута по умолчанию как есть (VIA4).
 detect_router() {
-    [ -n "$1" ] && [ -n "$HOME_SUBNETS" ] && ip_in_nets "$1" $HOME_SUBNETS && printf '%s' "$1"
+    [ -n "$1" ] && [ -n "$LAN_SUBNETS" ] && ip_in_nets "$1" $LAN_SUBNETS && printf '%s' "$1"
     return 0
 }
 
@@ -1049,7 +1041,7 @@ esac
 
 [ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }
 
-# Один прогон за раз: файл конфигурации из чата, юнит (реассерт с тика, порт и
+# Один прогон за раз: файл первого применения, юнит (реассерт с тика, порт и
 # фильтр SSH, восстановление) делят одни временные файлы и одну таблицу —
 # второй ждёт первого, а не переписывает его .tmp и не побеждает последним nft -f.
 # AWG_GW_LOCK_HELD=1 — замок уже держит вызывающий (агент держит его на всю
@@ -1157,7 +1149,7 @@ say "  клиенты сервера AWG: $CLIENT_SUBNET"
 say "  выход в интернет   : $WAN_IF"
 if [ -n "$ROUTER4" ]; then _rt="$ROUTER4"
 elif [ -z "$VIA4" ]; then _rt="— (у маршрута по умолчанию нет шлюза)"
-elif [ -z "$HOME_SUBNETS" ]; then _rt="— (своих подсетей нет; шлюз маршрута $VIA4)"
+elif [ -z "$LAN_SUBNETS" ]; then _rt="— (своих подсетей нет; шлюз маршрута $VIA4)"
 else _rt="— ($VIA4 вне своих подсетей)"; fi
 say "  роутер             : $_rt"
 say "  локальные сети     : будут ЗАКРЫТЫ для клиентов (все приватные диапазоны)"
@@ -1244,8 +1236,8 @@ allow_list_path() {
 }
 wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink; 0 — принят, 1 — отказ (причина в stderr)
     _allow="$(allow_list_path)" || { echo "нет gw-wg-allow.list в поставке — конфиги каналом не принимаются" >&2; return 1; }
-    awk -v kind="$2" -v client="${CLIENT_SUBNET:-}" -v peers="${PEER_HOME_NETS:-}" -v resolver="${RESOLVER:-}" \
-        -v lan="${HOME_SUBNETS:-} ${IFACE_NETS:-}" '
+    awk -v kind="$2" -v client="${CLIENT_SUBNET:-}" -v peers="${PEER_LAN_NETS:-}" -v resolver="${RESOLVER:-}" \
+        -v lan="${LAN_SUBNETS:-} ${IFACE_NETS:-}" '
     function lc(s) { return tolower(s) }
     function fail(m) { print m > "/dev/stderr"; bad = 1; exit 1 }
     function ip2n(a,  p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
@@ -1477,10 +1469,10 @@ if [ "$MODE" = "plan" ]; then
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится устройству с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
-    say "  5. VPN-транзит: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
-    say "     SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && echo включены || echo нет)"
-    say "     локальные подсети других шлюзов (транзит из линка): ${PEER_HOME_NETS:-—}"
-    say "     сам роутер им (маскарад к адресу роутера): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ -n "$ROUTER4" ] && echo "открыт, $ROUTER4" || echo нет)"
+    say "  5. VPN-транзит: ${LAN_MODE:-0} (подсети: ${LAN_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
+    say "     SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): $([ -n "${PEER_LAN_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && echo включены || echo нет)"
+    say "     локальные подсети других шлюзов (транзит из линка): ${PEER_LAN_NETS:-—}"
+    say "     сам роутер им (маскарад к адресу роутера): $([ -n "${PEER_LAN_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ -n "$ROUTER4" ] && echo "открыт, $ROUTER4" || echo нет)"
     exit 0
 fi
 
@@ -1503,7 +1495,7 @@ issued_check() {     # 1 — файл старее применённого (и 
     _have="$(tr -cd '0-9' < "$ISSUED_FILE" 2>/dev/null || true)"
     [ -n "$_have" ] && [ "$_bundle_issued" -lt "$_have" ] || return 0
     say "ОТКАЗ: файл конфигурации выпущен $(issued_when "$_bundle_issued") — старее применённого ($(issued_when "$_have"))."
-    say "Перевыпусти конфигурацию шлюза с сервера AWG; всё равно применить этот: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
+    say "Свежий файл выдаёт бот сервера AWG: карточка шлюза → «✏️ Изменить» → «🔁 Заменить»; всё равно применить этот: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
     return 1
 }
 issued_record() {    # применённое — не старее метки этого файла
@@ -1761,7 +1753,7 @@ say "  локальную сеть; прочее дропается."
 say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через сервер AWG."
 command -v nft >/dev/null 2>&1 || { say "ОШИБКА: нет nft — apt install nftables"; exit 1; }
 ADMIN_ELEMS="$(ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA)"
-PEER_ELEMS="$(ipv4_list $PEER_HOME_NETS)"
+PEER_ELEMS="$(ipv4_list $PEER_LAN_NETS)"
 say "  Устройства админа: ${ADMIN_ELEMS:-— (никому, кроме сервера AWG по линку)}"
 # Маскарад соседей к роутеру (VPN-транзит): роутер отвечает со своего адреса по
 # основной таблице, мимо заворота на шлюз, — адрес соседа в туннеле для него
@@ -1927,8 +1919,8 @@ say "  Таблица держит то же самое; два владельц
 legacy_cleanup
 
 LAN_IF_PRE=""
-if [ "$LAN_MODE" = "1" ] && [ -n "${HOME_SUBNETS%% *}" ]; then
-    _r="$(lan_iface_for "${HOME_SUBNETS%% *}")"; LAN_IF_PRE="${_r%% *}"
+if [ "$LAN_MODE" = "1" ] && [ -n "${LAN_SUBNETS%% *}" ]; then
+    _r="$(lan_iface_for "${LAN_SUBNETS%% *}")"; LAN_IF_PRE="${_r%% *}"
 fi
 # ── 3a. чужая политика FORWARD ───────────────────────────────────────────────
 # accept в нашей inet-таблице не отменяет DROP в чужой ip filter FORWARD: docker
@@ -1976,12 +1968,10 @@ Environment=GATEWAY_PUBKEY=$GATEWAY_PUBKEY
 Environment=GATEWAY_PREV_PUBKEY=$GATEWAY_PREV_PUBKEY
 # Локальная сеть без VPN: флаг, подсети, резолвер ВПС.
 Environment=LAN_MODE=$LAN_MODE
-Environment="HOME_SUBNETS=$HOME_SUBNETS"
+Environment="LAN_SUBNETS=$LAN_SUBNETS"
 Environment=RESOLVER=$RESOLVER
-Environment="PEER_HOME_NETS=$PEER_HOME_NETS"
-# Канал до ВПС внутри линка обязателен: LINK_CHANNEL постоянно 1 (строку
-# читают агенты прежних версий), порт канала агент берёт отсюда.
-Environment=LINK_CHANNEL=$LINK_CHANNEL
+Environment="PEER_LAN_NETS=$PEER_LAN_NETS"
+# Канал до ВПС внутри линка обязателен; порт канала агент берёт отсюда.
 Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT
 # прогон самого юнита: после замка сверяет строки выше с юнитом на диске
 Environment=AWG_GW_UNIT_RUN=1
@@ -2018,7 +2008,7 @@ systemctl is-enabled -q awg-link-gw.service 2>/dev/null || run "systemctl enable
 # скрипт: любая ручная правка перезапишется при следующем применении.
 #
 # Две таблицы nft — не случайность: awg_gw_guard перевыставляется атомарно
-# (delete table), а наборы awg_home наполняет dnsmasq на лету, и терять их при
+# (delete table), а наборы awg_lan наполняет dnsmasq на лету, и терять их при
 # каждом реассерте нельзя — таблица создаётся БЕЗ delete, меняются только
 # цепочки. Метка — та же, что у агента: смысл один («в аплинк»), правило и
 # маршрут уже ставит PostUp аплинка, а чинит агент.
@@ -2043,8 +2033,8 @@ lan_apply() {                  # отказ — return 1 с LAN_ERROR: юнит 
     return $_rc
 }
 _lan_apply_locked() {
-    _net="${HOME_SUBNETS%% *}"
-    [ -n "$_net" ] || { lan_fail "LAN_MODE=1 без локальной подсети — задай её в боте и перевыпусти конфигурацию"; return 1; }
+    _net="${LAN_SUBNETS%% *}"
+    [ -n "$_net" ] || { lan_fail "LAN_MODE=1 без локальной подсети — задай её в боте сервера AWG: «🗺 Подсети» в карточке шлюза"; return 1; }
     _r="$(lan_iface_for "$_net")"; LAN_IF="${_r%% *}"; LAN_ADDR="${_r#* }"; [ "$LAN_ADDR" = "$_r" ] && LAN_ADDR=""
     [ -n "$LAN_IF" ] || { lan_fail "на этом устройстве нет адреса из подсети $_net — не та подсеть или не то устройство"; return 1; }
     say "  локальная сеть $_net: интерфейс $LAN_IF, адрес шлюза $LAN_ADDR"
@@ -2054,7 +2044,6 @@ _lan_apply_locked() {
     # стартует демон, тот не сможет забиндить порт, и apt-get упадёт посреди дела.
     _busy="$(port53_busy)"
     [ -z "$_busy" ] || { lan_fail "порт 53 занят: $_busy — освободи его (systemd-resolved на 0.0.0.0, Pi-hole?) и примени ещё раз"; return 1; }
-    lan_migrate_manual
     _upstream="${RESOLVER:-1.1.1.1}"
     [ -n "$RESOLVER" ] || say "  резолвера сервера AWG нет — апстрим 1.1.1.1 через аплинк (без защиты от DoH и общего кэша)"
     # Имена Endpoint аплинка и линка — через DNS роутера, мимо туннеля: DNS
@@ -2066,6 +2055,7 @@ _lan_apply_locked() {
         sed -n 's/^Endpoint *= *\(.*\):[0-9][0-9]*$/\1/p' "$_c" 2>/dev/null; done | grep -Ev '^[0-9.]+$|^\[' | sort -u)"
     _dn_changed=0
     run "mkdir -p $DNSMASQ_D $LAN_DUMP"
+    lan_table_move_prepare
     # ── конфиги dnsmasq ДО установки пакета: первый старт демона сразу с нашим
     # listen-address, а не wildcard на :53. Временные файлы — вне conf-dir.
     _tmp="$(mktemp "$LAN_DUMP/dnsmasq.XXXXXX")"
@@ -2169,12 +2159,12 @@ DOHEOF
     # ── sysctl: rp_filter loose на LAN
     run "printf 'net.ipv4.conf.$(printf '%s' "$LAN_IF" | tr . /).rp_filter = 2\\n' > $LAN_SYSCTL"
     run "sysctl -qw net.ipv4.conf.$(printf '%s' "$LAN_IF" | tr . /).rp_filter=2 || true"
-    # ── таблица awg_home: наборы без delete (переживают реассерт), цепочки заново
+    # ── таблица awg_lan: наборы без delete (переживают реассерт), цепочки заново
     {
-        cat <<HOMEEOF
+        cat <<LANEOF
 # awg-bot (шлюз): локальная сеть без VPN. Владелец — routing-gw-setup.sh.
 # Без «delete table»: наборы наполняет dnsmasq на лету, их нельзя терять при реассерте.
-table $HOME_TABLE {
+table $LAN_TABLE {
     set lan_vpn4      { type ipv4_addr; flags interval; auto-merge; }
     set lan_vpn_nets4 { type ipv4_addr; flags interval; auto-merge; }
     set lan_ru4       { type ipv4_addr; flags interval; auto-merge; }
@@ -2183,40 +2173,41 @@ table $HOME_TABLE {
     chain forward     { type filter hook forward priority filter; policy accept; }
     chain postrouting { type nat hook postrouting priority srcnat; policy accept; }
 }
-flush chain $HOME_TABLE prerouting
-flush chain $HOME_TABLE input
-flush chain $HOME_TABLE forward
-flush chain $HOME_TABLE postrouting
+flush chain $LAN_TABLE prerouting
+flush chain $LAN_TABLE input
+flush chain $LAN_TABLE forward
+flush chain $LAN_TABLE postrouting
 # из линка и аплинка — мимо маркировки; исключения ВЫШЕ метки (accept обрывает обход)
-add rule $HOME_TABLE prerouting iifname != "$LAN_IF" accept
+add rule $LAN_TABLE prerouting iifname != "$LAN_IF" accept
 # счётчик для агента: заворот с роутера — только unicast на MAC шлюза (до любых
 # вердиктов); mDNS/SSDP/DHCP-бродкасты фонят круглые сутки и считаться не должны
-add rule $HOME_TABLE prerouting meta pkttype host ip daddr != $_net counter
-add rule $HOME_TABLE prerouting ip daddr @lan_ru4 accept
-add rule $HOME_TABLE prerouting ip daddr @lan_vpn_nets4 meta mark set $TG_MARK
-add rule $HOME_TABLE prerouting ip daddr @lan_vpn4 meta mark set $TG_MARK
+add rule $LAN_TABLE prerouting meta pkttype host ip daddr != $_net counter
+add rule $LAN_TABLE prerouting ip daddr @lan_ru4 accept
+add rule $LAN_TABLE prerouting ip daddr @lan_vpn_nets4 meta mark set $TG_MARK
+add rule $LAN_TABLE prerouting ip daddr @lan_vpn4 meta mark set $TG_MARK
 # счётчик для агента: DNS с роутера (раздаёт ли DHCP адрес шлюза)
-add rule $HOME_TABLE input iifname "$LAN_IF" udp dport 53 counter
+add rule $LAN_TABLE input iifname "$LAN_IF" udp dport 53 counter
 # DoT мимо резолвера — как на ВПС для клиентов
-add rule $HOME_TABLE forward iifname "$LAN_IF" tcp dport 853 drop
+add rule $LAN_TABLE forward iifname "$LAN_IF" tcp dport 853 drop
 # ответ на прямой трафик должен вернуться на шлюз, а не на клиента мимо него
-add rule $HOME_TABLE postrouting ip saddr $_net oifname "$LAN_IF" masquerade
-HOMEEOF
-    } > "$HOME_FILE.tmp"
-    chmod 0644 "$HOME_FILE.tmp"
-    nft -c -f "$HOME_FILE.tmp" || { lan_fail "nft отклонил таблицу локальной сети — $HOME_FILE.tmp"; return 1; }
-    mv "$HOME_FILE.tmp" "$HOME_FILE"
-    run "nft -f $HOME_FILE" || { lan_fail "таблица локальной сети не применилась"; return 1; }
+add rule $LAN_TABLE postrouting ip saddr $_net oifname "$LAN_IF" masquerade
+LANEOF
+    } > "$LAN_FILE.tmp"
+    chmod 0644 "$LAN_FILE.tmp"
+    nft -c -f "$LAN_FILE.tmp" || { lan_fail "nft отклонил таблицу локальной сети — $LAN_FILE.tmp"; return 1; }
+    mv "$LAN_FILE.tmp" "$LAN_FILE"
+    run "nft -f $LAN_FILE" || { lan_fail "таблица локальной сети не применилась"; return 1; }
     # слепки наборов — до фидов: первая минута после загрузки не остаётся без списков
     for _s in lan_vpn4 lan_vpn_nets4; do
         [ -s "$LAN_DUMP/$_s.nft" ] && run "nft -f $LAN_DUMP/$_s.nft 2>/dev/null || true"
     done
+    lan_table_move_finish
     write_lan_scripts
     # ── сервисы соседних сетей: обзор своей
     # сети — avahi-browse при живом avahi-daemon (сам демон не ставим: он начал
     # бы объявлять шлюз); соседей нет — записи соседей снять
     # (обзор своей сети ставится ниже, вне режима: условие — свои подсети)
-    if [ -z "${PEER_HOME_NETS:-}" ] && [ -f "$PEER_SVC_CONF" ]; then
+    if [ -z "${PEER_LAN_NETS:-}" ] && [ -f "$PEER_SVC_CONF" ]; then
         run "rm -f $PEER_SVC_CONF"; _dn_changed=1
     fi
     if [ "$_dn_changed" = "1" ] || ! systemctl is-active --quiet dnsmasq; then
@@ -2236,7 +2227,7 @@ if [ "$LAN_MODE" = "1" ]; then
         say "  VPN-транзит НЕ применён: ${LAN_ERROR:-см. выше}"
     fi
 else
-    if [ -f "$HOME_FILE" ] || [ -f "$DNSMASQ_D/awg-gw-base.conf" ]; then
+    if [ -f "$LAN_FILE" ] || [ -f "$DNSMASQ_D/awg-gw-base.conf" ]; then
         say "  выключено — снимаю своё"
         lan_remove
     else
@@ -2249,7 +2240,7 @@ fi
 # подсети заданы. Сам avahi-daemon не ставим (он начал бы объявлять шлюз) —
 # только avahi-utils рядом с уже запущенным демоном; списки apt на шлюзе могут
 # быть старыми (404 на зеркале) — сначала update
-if [ -n "${HOME_SUBNETS:-}" ] && systemctl is-active --quiet avahi-daemon 2>/dev/null \
+if [ -n "${LAN_SUBNETS:-}" ] && systemctl is-active --quiet avahi-daemon 2>/dev/null \
         && ! command -v avahi-browse >/dev/null 2>&1; then
     say "  ставлю avahi-utils (обзор SMB-серверов этой подсети: для подсетей других шлюзов и устройств админа в туннеле)"
     run "apt-get update -q >/dev/null 2>&1 || true"

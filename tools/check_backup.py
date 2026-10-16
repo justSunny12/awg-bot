@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-check_backup.py — схема базы из резервной копии не ниже минимума 3.2.0?
+check_backup.py — схема базы из резервной копии не ниже минимума 3.3.0?
 
 Зовётся из `awg-bot restore` на распакованной базе до остановки сервиса:
 миграций под версии ниже минимума в коде нет, и базу старше нечем довести —
@@ -20,7 +20,7 @@ def main(argv: list[str]) -> int:
     from awgbot.infra.db.schema import schema_gap
     gap = schema_gap(argv[1])
     if gap:
-        print(f"схема базы ниже минимума 3.2.0: {gap}", file=sys.stderr)
+        print(f"схема базы ниже минимума 3.3.0: {gap}", file=sys.stderr)
         return 1
     return 0
 

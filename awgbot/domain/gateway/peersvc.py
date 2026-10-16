@@ -15,7 +15,7 @@ class PeerServicesMixin:
     """Сервисы соседних сетей."""
     # ── сервисы соседних сетей ────────────
     # Не настраивается. Обзор своей сети — при заданных своих подсетях
-    # (HOME_SUBNETS в юните): имена нужны и соседним шлюзам (связь подсетей), и
+    # (LAN_SUBNETS в юните): имена нужны и соседним шлюзам (связь подсетей), и
     # устройствам админа в туннеле («SMB в туннеле» на сервере AWG).
     _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
     _SVC_PEER_KEY = "gw_peer_svc"            # применённый чужой: {"hash", "items"}
@@ -26,7 +26,7 @@ class PeerServicesMixin:
 
     def services_active(self) -> bool:
         from awgbot.infra import gwguard
-        return bool(gwguard.unit_env("HOME_SUBNETS").split())
+        return bool(gwguard.unit_env("LAN_SUBNETS").split())
 
     def services_local(self) -> list[dict]:
         """SMB-серверы этой сети, найденные обзором (после чистки)."""
@@ -48,7 +48,7 @@ class PeerServicesMixin:
         out = gwguard.avahi_browse()
         if out is None:
             return False
-        nets = gwguard.unit_env("HOME_SUBNETS").split()
+        nets = gwguard.unit_env("LAN_SUBNETS").split()
         found = {(r["a"], r["p"]): r for r in gwservices.parse_avahi(out, nets)}
         misses: dict = self.__dict__.setdefault("_svc_misses", {})
         cur: list[dict] = []
@@ -87,9 +87,9 @@ class PeerServicesMixin:
         digest = gwlink.clean_hex(digest)
         if not gwguard.lan_mode():
             return self._svc_store(digest, [], False, "VPN-транзит на шлюзе выключен")
-        peers = gwguard.unit_env("PEER_HOME_NETS").split()
+        peers = gwguard.unit_env("PEER_LAN_NETS").split()
         clean_items = gwservices.clean(items, peers, gwservices.MAX_PEER) if peers else []
-        text = gwservices.render_dnsmasq(clean_items, gwguard.unit_env("HOME_SUBNETS").split(), digest)
+        text = gwservices.render_dnsmasq(clean_items, gwguard.unit_env("LAN_SUBNETS").split(), digest)
         try:
             with open(gwguard.PEER_SERVICES_CONF, encoding="utf-8") as f:
                 current = f.read()
@@ -185,7 +185,7 @@ class PeerServicesMixin:
         items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
         info["peer"] = [r.get("n", "") for r in items]
         # без подсетей соседей ждать от сервера нечего: «не найдены», а не «обновляю…»
-        info["ever"] = bool(peer) or not gwguard.unit_env("PEER_HOME_NETS").split()
+        info["ever"] = bool(peer) or not gwguard.unit_env("PEER_LAN_NETS").split()
         info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
         if info["err"]:
             checks.append(GwCheck(gc.CHECK_SMB_PEERS, False,

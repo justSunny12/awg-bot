@@ -250,7 +250,7 @@ def test_the_domain_rule_is_the_one_the_script_uses():
 # ── агент: шлюз под ним ────────────────────────────────────────────────────
 
 def _line(d: str, kind: str) -> str:
-    return f"nftset=/{d}/inet#awg_home#lan_{'vpn' if kind == 'vpn' else 'ru'}4\n"
+    return f"nftset=/{d}/inet#awg_lan#lan_{'vpn' if kind == 'vpn' else 'ru'}4\n"
 
 
 class _Host:

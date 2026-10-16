@@ -14,13 +14,13 @@ ROOT = Path(__file__).resolve().parents[2] / "awgbot" / "runtime"
 
 
 def test_channel_hooks_are_set_before_the_scheduler_and_the_listener_start():
-    """Агент, подключившийся во время старта, шлёт applied/installed сразу;
-    без крючка ack уходит, повтора не будет — итог применения и «шлюз
-    настроен» терялись бы, файл с ключом оставался в чате."""
+    """Агент, подключившийся во время старта, шлёт installed сразу; без
+    крючка повтора не будет — «шлюз настроен» терялось бы, файл с ключом
+    оставался в чате. Крючка итога применения файла (applied) больше нет."""
     src = (ROOT / "main" / "client.py").read_text(encoding="utf-8")
-    assert src.index("set_on_applied(") < src.index("scheduler.start()") < src.index("linkserver.ensure(services)")
+    assert src.index("set_on_installed(") < src.index("scheduler.start()") < src.index("linkserver.ensure(services)")
     assert src.index("gateway_units_migrate") < src.index("scheduler.start()"), "планировщик раньше миграции юнитов слотов"
-    assert src.count("set_on_applied(") == 1 and src.count("set_on_installed(") == 1
+    assert src.count("set_on_applied(") == 0 and src.count("set_on_installed(") == 1
 
 
 def test_liveness_tick_is_light_and_the_monitor_tick_delivers():

@@ -95,9 +95,9 @@ def test_lan_lists_from_a_copy_are_checked_line_by_line(script, tmp_path):
     исполнение от root. Допустимы только nftset= наших наборов и комментарии."""
     import subprocess
     good = tmp_path / "awg-gw-vpn-user.conf"
-    good.write_text("# awg-bot (шлюз): личный список\nnftset=/ozon.ru/inet#awg_home#lan_vpn4\n"
-                    "nftset=/xn--80ak6aa92e.xn--p1ai/inet#awg_home#lan_ru4\n"
-                    "nftset=/rutracker.org/4#inet#awg_home#lan_vpn4\n\n", encoding="utf-8")
+    good.write_text("# awg-bot (шлюз): личный список\nnftset=/ozon.ru/inet#awg_lan#lan_vpn4\n"
+                    "nftset=/xn--80ak6aa92e.xn--p1ai/inet#awg_lan#lan_ru4\n"
+                    "nftset=/rutracker.org/4#inet#awg_lan#lan_vpn4\n\n", encoding="utf-8")
     prog = 'warn() { echo "WARN $*"; }\n' + _func(script, "lan_lists_sane") + 'lan_lists_sane "$@"\n'
 
     def run(*files):
@@ -106,9 +106,9 @@ def test_lan_lists_from_a_copy_are_checked_line_by_line(script, tmp_path):
 
     assert run(good).returncode == 0
     for bad_line in ("conf-file=/etc/passwd", "dhcp-script=/tmp/x", "server=/x.ru/1.1.1.1",
-                     "nftset=/ozon.ru/inet#filter#input", "nftset=/*/inet#awg_home#lan_vpn4"):
+                     "nftset=/ozon.ru/inet#filter#input", "nftset=/*/inet#awg_lan#lan_vpn4"):
         bad = tmp_path / "awg-gw-ru-user.conf"
-        bad.write_text(f"nftset=/ok.ru/inet#awg_home#lan_ru4\n{bad_line}\n", encoding="utf-8")
+        bad.write_text(f"nftset=/ok.ru/inet#awg_lan#lan_ru4\n{bad_line}\n", encoding="utf-8")
         r = run(good, bad)
         assert r.returncode == 1 and "WARN" in r.stdout, (bad_line, r.stdout)
 

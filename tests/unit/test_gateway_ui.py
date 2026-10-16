@@ -57,25 +57,6 @@ def test_server_name_prefers_setting_then_bundle_then_default(svc, monkeypatch):
     assert svc.server_name() == "my-vps"
 
 
-def test_apply_bundle_remembers_server_name(svc, monkeypatch, tmp_path):
-    """Бандл несёт SERVER_NAME с ВПС — агент запоминает его для «Линк до …»."""
-    from awgbot.util import bundlecrypt as bc
-    from awgbot.core import config
-    priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
-    conf = tmp_path / "awg0.conf"; conf.write_text(f"[Interface]\nPrivateKey = {priv}\n")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    plain = ("#!/bin/sh\nSERVER_NAME=\"awg-srv\"\n#__GW_SETUP_BELOW__\n"
-             "__LINK_CONF_EOF__\n").encode()
-    blob = bc.encrypt(plain, bc.read_privkey(conf.read_text()))
-    monkeypatch.setattr(gw.base, "_run", lambda argv, timeout=10: type("P", (), {
-        "returncode": 0, "stdout": b"ok", "stderr": b""})())
-    import os, tempfile
-    monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
-        os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT), str(tmp_path / "b.sh")))
-    ok, _ = svc.apply_bundle(blob)
-    assert ok and svc.db.get_state(GatewayServices._SERVER_NAME_KEY) == "awg-srv"
-
-
 def test_root_block_device_strips_partition(tmp_path):
     for src, want in (("/dev/sda2", "/dev/sda"), ("/dev/mmcblk0p2", "/dev/mmcblk0"),
                       ("/dev/nvme0n1p3", "/dev/nvme0n1")):
@@ -86,32 +67,6 @@ def test_root_block_device_strips_partition(tmp_path):
 def test_smart_is_not_asked_on_sd_cards(monkeypatch):
     monkeypatch.setattr(hostmetrics, "root_block_device", lambda: "/dev/mmcblk0")
     assert hostmetrics.read_smart_health() is None
-
-
-def test_bundle_passphrase_is_applied_only_when_allowed(svc, monkeypatch, tmp_path):
-    """Фраза из бандла: без своей — ставится; со своей другой — только по
-    подтверждению (overwrite_passphrase)."""
-    import base64, json, os, tempfile
-    from awgbot.util import bundlecrypt as bc
-    from awgbot.core import config
-    priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
-    conf = tmp_path / "awg0.conf"; conf.write_text(f"[Interface]\nPrivateKey = {priv}\n")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    b64 = base64.b64encode(json.dumps({"passphrase": "phrase-from-vps"}).encode()).decode()
-    plain = (f"#!/bin/sh\nBACKUP_B64=\"{b64}\"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n").encode()
-    blob = bc.encrypt(plain, bc.read_privkey(conf.read_text()))
-    monkeypatch.setattr(gw.base, "_run", lambda argv, timeout=10: type("P", (), {"returncode": 0, "stdout": b"ok", "stderr": b""})())
-    monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
-        os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT), str(tmp_path / "b.sh")))
-    info = svc.inspect_bundle(blob)
-    assert info["ok"] and info["passphrase"] and not info["passphrase_differs"]
-    assert svc.apply_bundle(blob)[0] and svc.backup_enc_kwargs() == {"passphrase": "phrase-from-vps"}
-    svc.backup_set_passphrase("my-own-phrase")
-    assert svc.inspect_bundle(blob)["passphrase_differs"]
-    svc.apply_bundle(blob, overwrite_passphrase=False)
-    assert svc.backup_enc_kwargs() == {"passphrase": "my-own-phrase"}
-    svc.apply_bundle(blob, overwrite_passphrase=True)
-    assert svc.backup_enc_kwargs() == {"passphrase": "phrase-from-vps"}
 
 
 def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch, tmp_path):
@@ -138,23 +93,3 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         names = sorted(m.name for m in tar.getmembers() if m.isfile())
     assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/backup-meta.json", "state/conf/app.yaml"]
-
-
-def test_bundle_link_change_detection(svc, monkeypatch, tmp_path):
-    """Тот же конфиг линка в бандле — осмотр говорит «не изменился»: по нему
-    вопрос обещает «линк не перезапустится» без угрозы РФ-доступу даже на
-    шлюзе, который несёт трафик (экран — в эталоне), иначе человек откладывает
-    безобидное применение."""
-    from awgbot.util import bundlecrypt as bc
-    from awgbot.core import config
-    priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
-    conf = tmp_path / "awglink.conf"
-    link = f"[Interface]\nPrivateKey = {priv}\nAddress = 10.99.99.2/30\n"
-    conf.write_text(link)
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    def bundle(body):
-        plain = ("#!/bin/sh\ncat > \"$DEST/link.conf\" <<'__LINK_CONF_EOF__'\n" + body +
-                 "\n__LINK_CONF_EOF__\n#__GW_SETUP_BELOW__\n").encode()
-        return bc.encrypt(plain, bc.read_privkey(conf.read_text()))
-    assert svc.inspect_bundle(bundle(link))["link_changed"] is False
-    assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True

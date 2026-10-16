@@ -53,29 +53,6 @@ def test_password_hints_cover_all_known_providers():
     assert "Яндекс 360" in mail.PASSWORD_HINTS["yandex.ru"]
 
 
-def test_mail_settings_travel_in_the_bundle(services, monkeypatch, tmp_path):
-    """ВПС кладёт почту в бандл одной строкой, агент принимает и сохраняет."""
-    from awgbot.core import settings
-    from awgbot.domain.gateway import GatewayServices
-    from awgbot.infra.db import Database
-    store = {}
-    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
-    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
-    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
-    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
-    plain = b"#!/bin/sh\nSERVER_NAME=\"awg-srv\"\n#__GW_SETUP_BELOW__\nrest\n"
-    assert services._bundle_with_mail(plain) == plain, "без почты бандл не меняется"
-    services.email_save("box@icloud.com", "p@ss\"word", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    out = services._bundle_with_mail(plain)
-    assert b'MAIL_B64="' in out and out.index(b"MAIL_B64") < out.index(b"#__GW_SETUP_BELOW__")
-    assert b"p@ss" not in out, "пароль в бандле не открытым текстом"
-    gdb = Database(tmp_path / "gw.db"); gdb.init_schema()
-    gw = GatewayServices(gdb)
-    assert (gw._apply_bundle_mail(out.decode()) or {}).get("login") == "box@icloud.com", "принятый словарь — наружу"
-    acc = gw.email_account()
-    assert acc and acc.login == "box@icloud.com" and acc.password == "p@ss\"word" and acc.smtp_host == "smtp.mail.me.com"
-
-
 def test_backup_mailed_text_and_subject(services, monkeypatch):
     from awgbot.bot import texts
     from awgbot.util import timeutil

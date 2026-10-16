@@ -24,7 +24,6 @@ log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _routing_provision
 from .render import _drop_bundle_msgs, _render, _screen, _shared, card_kb
-from .slots import _issue_bundle_here
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "open"))
@@ -127,10 +126,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
         await _routing_provision(cb, services)
         return
     if callback_data.key == "bundle":
-        # «📤 Выпустить файл» упразднённого экрана «что произойдёт» — на случай
-        # старого сообщения в чате: тот же выпуск с карточки/экрана
-        await cb.answer(ui.Toast.packing)
-        await _issue_bundle_here(cb, services, int(callback_data.val or 0))
+        # «📤 Выпустить файл» в старом сообщении: файла перевыпуска больше нет —
+        # кнопка устаревшая, как в обработчике устаревших кнопок
+        from awgbot.bot.handlers.stale import STALE_BUTTON
+        await cb.answer(STALE_BUTTON)
+        try:
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception:                                  # noqa: BLE001
+            pass
+        await show_main_menu(cb.message, services, "admin")
         return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
@@ -163,8 +167,8 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
         await cb.answer()
         return
     if callback_data.key in ("bundle_cancel", "bundle_home"):
-        # «В карточку» / «На главную» под файлом (шифрованным или первого
-        # применения): файл и сообщение над ним (погасшая карточка, инструкция)
+        # «В карточку» / «На главную» под файлом первого применения (и
+        # шифрованным файлом перевыпуска в старых сообщениях): файл и сообщение над ним (погасшая карточка, инструкция)
         # уходят из чата — внутри ключ линка, — человек возвращается в карточку
         # слота, для которого выпускал, или на главную
         slot = int(callback_data.val or 0)

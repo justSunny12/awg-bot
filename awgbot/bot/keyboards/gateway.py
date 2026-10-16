@@ -112,17 +112,6 @@ def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup
     return confirm(GwCB(action=back), label, GwCB(action=f"{action}!"))
 
 
-def gateway_bundle_kb() -> InlineKeyboardMarkup:
-    return confirm(GwCB(action="drop"), "📦 Применить", GwCB(action="apply!"), danger=False)
-
-
-def gateway_bundle_passphrase_kb() -> InlineKeyboardMarkup:
-    """Та же пара, что у вопросов с сервера: «⬅️ Оставить своё» / «✅ Принять»."""
-    from awgbot.bot.texts.gateway.ask import KEEP_LABEL, ACCEPT_LABEL
-    return ui.rows([(KEEP_LABEL, GwCB(action="apply_keep!")),
-                    (ACCEPT_LABEL, GwCB(action="apply_ow!"))])
-
-
 def gateway_back_kb(sec: str = "") -> InlineKeyboardMarkup:
     """Одна кнопка назад: без sec — «В меню» (панель), с sec — «Назад» в раздел
     (отказ смены порта возвращает в «SSH-доступ»)."""

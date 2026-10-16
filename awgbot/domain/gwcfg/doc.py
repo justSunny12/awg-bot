@@ -1,4 +1,4 @@
-"""doc.py — разделы документа, ключи env, имена юнита, сборка и разбор документа и ответа."""
+"""doc.py — разделы документа, ключи env, сборка и разбор документа и ответа."""
 from __future__ import annotations
 
 import re
@@ -18,23 +18,17 @@ LINK_CONTRACT = "1"                            # штамп «контракт �
 # транзакцией, почта, фраза, токен, аплинк.
 SECTIONS = ("server", "env", "link", "mail", "backup", "token", "uplink")
 
-# Ключи раздела env — имена ДОКУМЕНТА. В юните обвязки 3.3.0 две из них ещё
-# прежние (их читают агенты 3.2.x и скрипт, приехавший к ним файлом): таблица
-# ниже — единственное место сопоставления, переименование юнита — в 3.3.1.
+# Ключи раздела env — те же имена, что у строк Environment= юнита обвязки.
 ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
             "PEER_LAN_NETS", "LINK_CHANNEL_PORT")
 ENV_REQUIRED = ENV_KEYS
-UNIT_NAMES = {"LAN_SUBNETS": "HOME_SUBNETS", "PEER_LAN_NETS": "PEER_HOME_NETS"}
-_DOC_NAMES = {v: k for k, v in UNIT_NAMES.items()}
 
 MAIL_KEYS = ("login", "password", "imap_host", "imap_port", "smtp_host", "smtp_port")
 MAIL_HINT = "backup"                           # подсказка «куда уходят бэкапы ВПС»: в отпечаток не входит
 
 # Человеческие имена — для уведомлений обеих сторон («применено: …», «не применилось: …»).
 HUMAN = {
-    **{k: gwlink.KEY_HUMAN[k] for k in ("ADMIN_IPS", "LAN_MODE", "RESOLVER")},
-    "LAN_SUBNETS": gwlink.KEY_HUMAN["HOME_SUBNETS"],
-    "PEER_LAN_NETS": gwlink.KEY_HUMAN["PEER_HOME_NETS"],
+    **gwlink.KEY_HUMAN,
     "CLIENT_SUBNET": "подсеть клиентов",
     "LINK_CHANNEL_PORT": "порт канала конфигурации",
     "env": "настройки обвязки",
@@ -45,16 +39,6 @@ HUMAN = {
     "token": "токен бота",
     "server": "имя сервера",
 }
-
-
-def unit_name(key: str) -> str:
-    """Имя ключа документа → имя строки Environment= в юните обвязки."""
-    return UNIT_NAMES.get(key, key)
-
-
-def doc_name(unit_key: str) -> str:
-    """Имя строки юнита → имя ключа документа."""
-    return _DOC_NAMES.get(unit_key, unit_key)
 
 
 def human(what: str) -> str:

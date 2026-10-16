@@ -74,13 +74,12 @@ class SnapshotMixin:
             return None
 
     def gwlink_forget(self, slot_id: int) -> None:
-        """Снятие слота: ключи канала уходят вместе с ключами бандла."""
+        """Снятие слота: ключи канала уходят вместе с ключами слота."""
         self.gwcfg_forget(slot_id)
         for key in (self._GWLINK_SESSION_KEY, self._GWLINK_SEEN_KEY, self._GWLINK_SNAP_KEY,
                     self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
-                    self._GWLINK_ERROR_KEY, self._GWLINK_CAPS_KEY, self._GWLINK_ACK_KEY, self._GWLINK_LISTS_KEY,
-                    self._GWLINK_SVC_KEY, self._GWLINK_PEER_SVC_KEY,
-                    self._GWLINK_APPLIED_KEY, self._GWLINK_BUNDLE_MSG_KEY,
+                    self._GWLINK_ERROR_KEY, self._GWLINK_CAPS_KEY, self._GWLINK_LISTS_KEY,
+                    self._GWLINK_SVC_KEY, self._GWLINK_PEER_SVC_KEY, self._GWLINK_BUNDLE_MSG_KEY,
                     self._GWLINK_OWN_UPTO_KEY, self._GWLINK_OWN_ACK_KEY, self._GWLINK_OWN_REJ_KEY,
                     self._GWLINK_OWN_CAP_KEY):
             self.db.set_state(self._gwlink_key(key, slot_id), "")

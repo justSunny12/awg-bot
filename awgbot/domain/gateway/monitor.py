@@ -80,8 +80,7 @@ class MonitorMixin:
                 "🔧 Политика «Telegram → аплинк» пропала и перевыставлена: "
                 + ", ".join(fixed) + ". Обычно так делает перезапуск "
                 "<code>systemd-networkd</code> — установщик шлюза запрещает ему трогать "
-                "чужие правила; " + ("повторится — «🚑 Восстановить»" if self.server_cfg1() else
-                                     "перевыпусти конфигурацию шлюза с сервера AWG, если повторится"),
+                "чужие правила; повторится — «🚑 Восстановить»",
                 critical=False))
 
         return [n for n in notes if n.text]
@@ -342,7 +341,6 @@ class MonitorMixin:
         snap = gwsnapshot.collect(
             mark_status=self.gateway_mark_status(),
             egress_ok=st.egress_ok if st is not None else None,
-            guard_info=self._guard_info,
             peer_nets=None if missing is None else (not missing, missing),
             agent_bot={"username": getattr(self, "bot_username", ""),
                        "name": getattr(self, "bot_name", "")},

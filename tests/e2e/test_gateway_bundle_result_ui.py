@@ -1,13 +1,7 @@
-"""Файл конфигурации шлюза в чате ВПС и что с ним происходит дальше.
+"""Файл первого применения шлюза в чате ВПС и что с ним происходит дальше.
 
-Шифрованный файл выпускается прямо из карточки слота («📤 Конфигурация»;
-до 3.2 — «⚙️ Конфигурация шлюза», поведение то же): карточка гаснет и становится контентом, под файлом — «⬅️ В меню»
-(`bundle_cancel` с номером слота); где лежат файл и карточка над ним —
-запомнено. «В меню» убирает оба и открывает карточку слота. Итог применения
-со шлюза (канал линка, вид `applied`): при любом исходе файл с карточкой
-уходят, админу — уведомление «✅ Конфигурация шлюза … успешно обновлена» или
-«⚠️ … не обновлена: причина» без кнопок, как контент, и следом карточка слота
-новым живым меню; итог о другом файле или без файла в чате не трогает ничего.
+Шифрованного файла перевыпуска больше нет: кнопка его выпуска в старом
+сообщении — устаревшая.
 
 Файл первого применения — под инструкцией, с той же «⬅️ В меню»
 (`bundle_cancel`): убирает файл и инструкцию, дальше карточка слота. Агент нового шлюза в первый час
@@ -18,13 +12,12 @@
 
 Тексты, подписи и кнопки этих экранов — в эталоне tests/screens/admin.txt
 (adm.gw.bundle*, adm.rt.mark_yes.standby*, adm.rt.new_yes.standby,
-adm.ev.gw_applied*, adm.ev.gw_installed*); здесь — что удаляется, что
+adm.ev.gw_installed*); здесь — что удаляется, что
 запоминается и что становится живым меню.
 
 Цена ошибки: файл с ключом линка (или токеном агента) остаётся в чате после
-того, как отслужил; «В меню» уводит не туда или удаляет чужое; итог о
-прежнем файле убирает новый, который ещё пересылать; две живые клавиатуры в
-чате; уведомление о настроенном шлюзе с грязным именем Telegram отвергает."""
+того, как отслужил; «В меню» уводит не туда или удаляет чужое; две живые
+клавиатуры в чате; уведомление о настроенном шлюзе с грязным именем Telegram отвергает."""
 from __future__ import annotations
 
 import pytest
@@ -123,17 +116,6 @@ async def _card(services, bot, slot):
     return _screen(nav)
 
 
-async def _issue(services, bot, slot=2):
-    """Админ в карточке слота жмёт «📤 Конфигурация»: вернуть карточку
-    (над файлом) и сообщение с файлом."""
-    nav = _Msg(bot=bot)
-    cb = FakeCallback(message=nav, user_id=ADMIN, bot=bot)
-    await sh.gw_slot_bundle(cb, GwSlotCB(action="bundle", slot=slot), services)
-    assert len(nav.docs) == 1, f"файл конфигурации не выдан: {nav.sent}"
-    nav.cb = cb
-    return nav, nav.docs[0]
-
-
 async def _issue_plain(services, bot, pi2, slot=2):
     """Назначение устройства Pi2 шлюзом слота 2 из «моих устройств» при
     известном токене: инструкция и файл первого применения."""
@@ -146,85 +128,26 @@ async def _issue_plain(services, bot, pi2, slot=2):
     return nav, instr, nav.docs[0]
 
 
-# ── выпуск из карточки ───────────────────────────────────────────────────────
+# ── кнопки выпуска файла перевыпуска в старых сообщениях ─────────────────────
 
-async def test_the_card_button_issues_the_file_and_remembers_it_with_the_dark_card(services, slots):
-    """«📤 Конфигурация» в карточке: погасшая карточка помечается контентом —
-    возврат в меню её уберёт; запись указывает на файл и на карточку над ним —
-    итог со шлюза должен найти оба. Подпись файла и кнопки под ним с номером
-    именно этого слота — эталон adm.gw.bundle.label."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_caption, _markup, doc) = await _issue(services, bot, 2)
-    assert nav.message_id in services.db.pop_content_msg_ids(ADMIN), \
-        "карточка не помечена как контент — возврат в меню её не уберёт"
-    where = services.gw_bundle_msg_get(2)
-    assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
-    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": nav.message_id, "plain": False}, \
-        "итог не найдёт файл и карточку над ним (или файл записан как файл первого применения)"
-    assert services.gw_bundle_msg_get(1) == {}, "файл слота 2 записан за слотом 1"
-
-
-async def test_a_bundle_button_on_an_old_message_issues_the_same_way(services, slots):
-    """«📤 Выпустить файл» на сообщении из прежней версии (экран до выпуска
-    упразднён, а сообщение могло остаться в чате) — тот же выпуск: файл,
-    сообщение над ним гаснет и запомнено (кнопки под файлом — эталон
-    adm.gw.bundle.old.two)."""
+async def test_a_bundle_button_on_an_old_message_is_stale(services, slots):
+    """«📤 Выпустить файл» в сообщении прежней версии: файла перевыпуска
+    больше нет — кнопка устаревшая: «Кнопка устарела — открыл меню», кнопки
+    сообщения сняты, главная новым сообщением, файл не выдан."""
+    from awgbot.bot.handlers.admin import _panel_parts
+    from awgbot.bot.handlers.stale import STALE_BUTTON
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     bot = _Bot()
     old = _Msg(bot=bot)
     cb = FakeCallback(message=old, user_id=ADMIN, bot=bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle", val="2"), services)
-    assert len(old.docs) == 1, old.sent
-    _c, _m, doc = old.docs[0]
-    assert old.markup_cleared, "старое сообщение над файлом осталось с кнопками"
-    where = services.gw_bundle_msg_get(2)
-    assert (where["file"], where["instr"]) == (doc.message_id, old.message_id), where
-
-
-async def test_a_reissued_file_removes_the_previous_one_and_takes_its_record(services, slots):
-    """Выпустили файл слота второй раз — прежний файл и карточка над ним
-    уходят из чата (в файле тот же ключ линка, а итог придёт только на
-    новый), запись указывает на новый файл и его карточку."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav1, (_c, _m, doc1) = await _issue(services, bot, 2)
-    assert _deleted(bot) == [], "первая выдача что-то удалила"
-    nav2, (_c, _m, doc2) = await _issue(services, bot, 2)
-    assert {nav1.message_id, doc1.message_id} <= set(_deleted(bot)), \
-        f"прежний файл с ключом линка остался в чате: удалены {_deleted(bot)}"
-    assert not {nav2.message_id, doc2.message_id} & set(_deleted(bot)), "удалён только что выданный файл"
-    where = services.gw_bundle_msg_get(2)
-    assert (where["file"], where["instr"]) == (doc2.message_id, nav2.message_id), where
-
-
-async def test_reissue_of_one_slot_keeps_the_file_of_another(services, slots):
-    """Перевыпуск для слота 2 не трогает лежащий в чате файл слота 1."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav1, (_c, _m, doc1) = await _issue(services, bot, 1)
-    await _issue(services, bot, 2)
-    await _issue(services, bot, 2)
-    assert not {nav1.message_id, doc1.message_id} & set(_deleted(bot)), "перевыпуск слота 2 убрал файл слота 1"
-    assert services.gw_bundle_msg_get(1)["file"] == doc1.message_id
-
-
-async def test_a_failed_build_remembers_nothing(services, slots, monkeypatch):
-    """Файл не собрался — записи нет: итогу нечего убирать, «В меню» тоже."""
-    from awgbot.domain.services import ServiceError
-    _, pi, _ = slots
-    _slot1(services, pi)
-
-    def _fail(slot=None):
-        raise ServiceError("нет ключей")
-    monkeypatch.setattr(services, "gw_bundle_encrypted", _fail)
-    msg = _Msg(bot=_Bot())
-    assert await sh.send_gw_bundle(msg, services, 1, instr_id=77) is False
-    assert services.gw_bundle_msg_get(1) == {}
+    assert old.docs == [], "по старой кнопке выдан файл"
+    assert old.markup_cleared, "старое сообщение осталось с кнопками"
+    assert cb.answers and cb.answers[0][0] == STALE_BUTTON, cb.answers
+    main_text, _ = await _panel_parts(services)
+    assert [s[1] for s in old.sent if s[0] == "answer"] == [main_text]
+    assert services.gw_bundle_msg_get(2) == {}
 
 
 # ── файл первого применения ──────────────────────────────────────────────────
@@ -317,37 +240,17 @@ async def test_an_old_menu_button_removes_only_its_message_and_opens_the_main_me
     assert services.gw_bundle_msg_get(2) == record, "кнопка прежней версии стёрла запись о нынешнем файле"
 
 
-# ── «В меню» под шифрованным файлом ──────────────────────────────────────────
-
-async def test_menu_removes_the_file_and_the_dark_card_and_opens_the_slot_card(services, slots):
-    """«В меню» под шифрованным файлом: из чата уходят файл (внутри ключ
-    линка) и погасшая карточка над ним, запись стирается, человек снова в
-    карточке слота, из которого выпускал файл, — новым сообщением."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    want_text, want_labels = await _card(services, bot, 2)
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    cb = FakeCallback(message=doc, user_id=ADMIN, bot=bot)
-    await sh.routing_action(cb, SetCB.unpack(CANCEL2), services)
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
-        f"в чате остались файл или карточка: удалены {_deleted(bot)}"
-    assert services.gw_bundle_msg_get(2) == {}, "запись о файле пережила «В меню»"
-    shown = [s for s in doc.sent if s[0] == "answer"]
-    assert len(shown) == 1, f"после «В меню» показано не одно сообщение: {shown}"
-    _, text, markup, _sent = shown[0]
-    assert text == want_text, "после «В меню» показана не карточка слота 2"
-    assert [b.text for row in markup.inline_keyboard for b in row] == want_labels
-
+# ── «В меню» под файлом: особые случаи ───────────────────────────────────────
 
 async def test_menu_still_opens_the_card_when_telegram_refuses_to_delete(services, slots):
     """Удалить не дали (файл удалили руками раньше) — карточка всё равно
     показана, запись стёрта."""
     _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
+    _slot1(services, pi)
+    services.token[2] = TOKEN2
     bot = _Bot()
+    _nav, _instr, (_c, _m, doc) = await _issue_plain(services, bot, pi2)
     want_text, _ = await _card(services, bot, 2)
-    _nav, (_c, _m, doc) = await _issue(services, bot, 2)
     bot.delete_fails = True
     cb = FakeCallback(message=doc, user_id=ADMIN, bot=bot)
     await sh.routing_action(cb, SetCB.unpack(CANCEL2), services)
@@ -359,13 +262,14 @@ async def test_menu_for_a_slot_removed_meanwhile_goes_to_the_main_menu(services,
     """Слот сняли, пока файл лежал в чате: «В меню» убирает файл и не падает
     на карточке, которой нет (главная — эталон adm.gw.bundle.card.gone)."""
     _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
+    _slot1(services, pi)
+    services.token[2] = TOKEN2
     bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
+    _nav, instr, (_c, _m, doc) = await _issue_plain(services, bot, pi2)
     services.db.gateway_delete(2)
     cb = FakeCallback(message=doc, user_id=ADMIN, bot=bot)
     await sh.routing_action(cb, SetCB.unpack(CANCEL2), services)
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
+    assert {instr.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
     assert len([s for s in doc.sent if s[0] == "answer"]) == 1, "после снятого слота ничего не показано"
     assert cb.answers
 
@@ -383,179 +287,6 @@ async def test_menu_without_a_slot_number_removes_only_its_own_message(services,
     assert _deleted(bot) == [doc.message_id], _deleted(bot)
     main_text, _ = await _panel_parts(services)
     assert [s[1] for s in doc.sent if s[0] == "answer"] == [main_text]
-
-
-async def test_menu_on_a_previous_file_removes_only_that_file(services, slots):
-    """Прежний файл пережил перевыпуск (Telegram не дал удалить) и на нём
-    нажали «В меню»: уходит только он. Новый файл, его карточка и запись о
-    них целы — итог со шлюза должен найти именно их."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    _nav1, (_c, _m, doc1) = await _issue(services, bot, 2)
-    bot.delete_fails = True
-    _nav2, (_c, _m, _doc2) = await _issue(services, bot, 2)
-    bot.delete_fails = False
-    record = services.gw_bundle_msg_get(2)
-    cb = FakeCallback(message=doc1, user_id=ADMIN, bot=bot)
-    await sh.routing_action(cb, SetCB.unpack(CANCEL2), services)
-    assert _deleted(bot) == [doc1.message_id], f"«В меню» на прежнем файле удалила лишнее: {_deleted(bot)}"
-    assert services.gw_bundle_msg_get(2) == record, "«В меню» на прежнем файле стёрла запись о новом"
-    assert cb.answers
-
-
-# ── итог применения со шлюза ──────────────────────────────────────────────────
-
-async def test_success_removes_the_file_and_brings_the_slot_card_as_the_live_menu(services, slots):
-    """Шлюз сказал «применено»: файл и карточка над ним уходят; уведомление
-    помечено контентом (возврат в меню его уберёт), следом второе сообщение,
-    и оно — живое меню чата; запись стёрта. Тексты уведомления (с подписью
-    слота) и карточки следом — эталон adm.ev.gw_applied.label."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    services.db.pop_content_msg_ids(ADMIN)                # что пометила сама выдача — не предмет теста
-    await sh.bundle_applied(bot, services, 2, True, "")
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
-    sent = _sent(bot)
-    assert [r[1] for r in sent] == [ADMIN, ADMIN], f"после итога не два сообщения админу: {sent}"
-    note_id, mid = sorted(bot.markups)[-2:]
-    assert services.db.pop_content_msg_ids(ADMIN) == [note_id], "уведомление не помечено контентом"
-    assert services.gw_bundle_msg_get(2) == {}
-    assert services.db.get_nav_message_id(ADMIN) == mid, "карточка не стала живым меню — повиснет вторая клавиатура"
-
-
-async def test_success_for_a_slot_removed_meanwhile_brings_the_main_menu(services, slots):
-    """Слот сняли, пока файл ехал: итог убирает файл, уведомление всё равно
-    приходит, дальше одно сообщение, а не падение на карточке, которой нет
-    (тексты — эталон adm.ev.gw_applied.gone)."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    services.db.gateway_delete(2)
-    await sh.bundle_applied(bot, services, 2, True, "")
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
-    assert len(_sent(bot)) == 2, f"после итога по снятому слоту не уведомление и меню: {_sent(bot)}"
-
-
-async def test_a_failure_also_removes_the_file_and_brings_the_slot_card(services, slots):
-    """Отказ: файл всё равно отслужил (внутри ключ линка) — он и карточка над
-    ним уходят; админу — уведомление, следом новое живое меню: перевыпуск
-    оттуда же. Текст с экранированной причиной (иначе Telegram отвергнет
-    уведомление) и карточка — эталон adm.ev.gw_applied.fail.escaped."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    record = services.gw_bundle_msg_get(2)
-    await sh.bundle_applied(bot, services, 2, False, "нет <места> & прав", fp=record["fp"])
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
-        f"после отказа файл с ключом линка остался в чате: удалены {_deleted(bot)}"
-    assert len(_sent(bot)) == 2, f"после отказа не уведомление и карточка слота: {_sent(bot)}"
-    assert services.db.get_nav_message_id(ADMIN) == max(bot.markups), "карточка не стала живым меню"
-    assert services.gw_bundle_msg_get(2) == {}
-
-
-@pytest.mark.parametrize("ok", [True, False], ids=["ok", "fail"])
-async def test_a_result_about_another_file_is_ignored_whatever_the_outcome(services, slots, ok):
-    """Итог о другом файле — ни успех, ни отказ не трогают лежащий в чате."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    await _issue(services, bot, 2)
-    record = services.gw_bundle_msg_get(2)
-    await sh.bundle_applied(bot, services, 2, ok, "", fp="0" * 16)
-    assert _deleted(bot) == [] and _sent(bot) == [], (_deleted(bot), _sent(bot))
-    assert services.gw_bundle_msg_get(2) == record
-
-
-async def test_a_result_without_a_file_record_sends_nothing(services, slots):
-    """Файл выдан до обновления бота (записи нет) или «В меню» уже нажали —
-    убирать нечего, и карточка поверх того, что человек делает, не всплывает."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    await sh.bundle_applied(bot, services, 2, True, "")
-    assert _deleted(bot) == [], "удалено то, чего бот не выдавал"
-    assert _sent(bot) == [], f"итог без файла в чате принёс сообщение: {_sent(bot)}"
-
-
-async def test_a_refused_delete_does_not_hold_back_the_card(services, slots):
-    """Старое сообщение удалить не дали — карточка всё равно приходит, запись
-    стирается (иначе следующий итог снова споткнулся бы о те же id)."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    want_text, _ = await _card(services, bot, 2)
-    await _issue(services, bot, 2)
-    bot.delete_fails = True
-    await sh.bundle_applied(bot, services, 2, True, "")
-    assert [r[2] for r in _sent(bot)] == ["✅ Конфигурация шлюза <b>Pi2</b> успешно обновлена",
-                                          want_text], _sent(bot)
-    assert services.gw_bundle_msg_get(2) == {}
-
-
-async def test_the_result_of_one_slot_does_not_touch_the_file_of_another(services, slots):
-    """Лежат два файла — для слота 1 и слота 2; итог слота 1 убирает только
-    свой: файл второго шлюза ещё не переслан."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav1, (_c, _m, doc1) = await _issue(services, bot, 1)
-    nav2, (_c, _m, doc2) = await _issue(services, bot, 2)
-    await sh.bundle_applied(bot, services, 1, True, "")
-    gone = set(_deleted(bot))
-    assert {nav1.message_id, doc1.message_id} <= gone
-    assert not {nav2.message_id, doc2.message_id} & gone, "итог слота 1 убрал файл слота 2"
-    assert services.gw_bundle_msg_get(2)["file"] == doc2.message_id
-
-
-async def test_a_result_about_another_file_leaves_the_current_one(services, slots):
-    """Итог пришёл с чужим отпечатком (применили прежний файл, пока в чате
-    уже лежит новый): новый файл и его карточка остаются — его ещё
-    пересылать, запись цела, в чат ничего не уходит."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    record = services.gw_bundle_msg_get(2)
-    assert record.get("fp") and record["fp"] != "0" * 16
-    await sh.bundle_applied(bot, services, 2, True, "", fp="0" * 16)
-    assert not {nav.message_id, doc.message_id} & set(_deleted(bot)), \
-        f"итог о другом файле убрал новый: удалены {_deleted(bot)}"
-    assert services.gw_bundle_msg_get(2) == record, "итог о другом файле стёр запись о новом"
-    assert _sent(bot) == [], f"итог о другом файле принёс сообщение: {_sent(bot)}"
-
-
-@pytest.mark.parametrize("same", [True, False], ids=["same-fp", "old-agent-no-fp"])
-async def test_a_result_about_this_file_or_without_fingerprint_removes_it(services, slots, same):
-    """Отпечаток совпал с выданным — файл и карточка уходят. Итог без
-    отпечатка (агент до этого обновления) — тоже: иначе после обновления ВПС
-    файлы у старых агентов не убирались бы никогда."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    bot = _Bot()
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    fp = services.gw_bundle_msg_get(2)["fp"] if same else ""
-    await sh.bundle_applied(bot, services, 2, True, "", fp=fp)
-    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
-    assert services.gw_bundle_msg_get(2) == {}
-    assert len(_sent(bot)) == 2 and _sent(bot)[0][2].startswith("✅ Конфигурация шлюза"), \
-        f"не уведомление и карточка: {_sent(bot)}"
-
-
-async def test_the_fingerprint_on_record_is_the_one_the_gateway_computes(services, slots, monkeypatch):
-    """Отпечаток в записи ВПС — от тех же байтов, что уйдут файлом; агент
-    считает его от присланного файла той же функцией. Разойдись они — ни
-    один итог не убрал бы файл."""
-    import hashlib
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: (b"ENC-BYTES", "b.enc"))
-    await _issue(services, _Bot(), 2)
-    assert services.gw_bundle_msg_get(2)["fp"] == hashlib.sha256(b"ENC-BYTES").hexdigest()[:16]
 
 
 # ── новый шлюз вышел на связь ────────────────────────────────────────────────
@@ -631,29 +362,6 @@ async def test_installed_gateway_after_menu_was_pressed_sends_no_second_menu(ser
     assert services.db.get_nav_message_id(ADMIN) == nav_before, "живое меню подменено"
 
 
-async def test_installed_gateway_leaves_an_encrypted_file_issued_after_it(services, slots):
-    """После файла первого применения успели выпустить шифрованный файл из
-    карточки (он вытеснил первый). Выход шлюза на связь — не итог этого
-    файла: файл и погасшая карточка над ним остаются (их уберёт итог
-    применения или «В меню»), запись о них цела; «настроен» всё равно
-    приходит — одним сообщением (эталон adm.ev.gw_installed.enc)."""
-    _, pi, pi2 = slots
-    _slot1(services, pi)
-    services.token[2] = TOKEN2
-    bot = _Bot()
-    await _issue_plain(services, bot, pi2)
-    nav, (_c, _m, doc) = await _issue(services, bot, 2)
-    record = services.gw_bundle_msg_get(2)
-    assert record["plain"] is False, record
-    before = set(_deleted(bot))
-    await sh.bundle_installed(bot, services, 2)
-    gone = set(_deleted(bot)) - before
-    assert not {nav.message_id, doc.message_id} & gone, \
-        f"уведомление о настройке убрало шифрованный файл, который ещё пересылать: {gone}"
-    assert services.gw_bundle_msg_get(2) == record, "уведомление о настройке стёрло запись о шифрованном файле"
-    assert len(_sent(bot)) == 1, f"не одно уведомление: {_sent(bot)}"
-
-
 def test_installed_text_escapes_names_and_falls_back_to_the_username():
     """Имя слота и имя бота задаёт человек: `<` и `&` без экранирования
     Telegram отвергает, и уведомление не дошло бы вовсе. Бот без имени —
@@ -665,14 +373,3 @@ def test_installed_text_escapes_names_and_falls_back_to_the_username():
         '<a href="https://t.me/pi_bot">pi_bot</a>')
     for none in ({}, None, {"username": "", "name": "x"}):
         assert texts.gateway_installed_text("Pi", none) == "✅ Шлюз <b>Pi</b> успешно настроен 🎉", none
-
-
-def test_applied_text_escapes_the_name_and_the_reason_and_has_no_dangling_colon():
-    """Имя слота и причина отказа шлюза — чужой текст: без экранирования
-    Telegram отвергает уведомление. Отказ без причины — без висящего «:»."""
-    assert texts.gateway_bundle_applied_text("A<B> (x & y)", True, "игнор") == \
-        "✅ Конфигурация шлюза <b>A&lt;B&gt; (x &amp; y)</b> успешно обновлена", "причина в успехе лишняя"
-    assert texts.gateway_bundle_applied_text("Pi", False, "") == \
-        "⚠️ Конфигурация шлюза <b>Pi</b> не обновлена"
-    assert texts.gateway_bundle_applied_text("Pi", False, "<b>rc=1</b>") == \
-        "⚠️ Конфигурация шлюза <b>Pi</b> не обновлена: &lt;b&gt;rc=1&lt;/b&gt;"

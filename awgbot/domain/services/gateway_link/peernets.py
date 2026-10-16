@@ -32,14 +32,14 @@ class PeerNetsMixin:
         return dns1 if resolver.is_private(dns1) and resolver.installed() else ""
 
     def _lan_env(self, gw) -> dict:
-        """Переменные функций A и B для скрипта обвязки: LAN_MODE, HOME_SUBNETS
+        """Переменные функций A и B для скрипта обвязки: LAN_MODE, LAN_SUBNETS
         (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER,
-        PEER_HOME_NETS (префиксы в туннеле других слотов с VPN-транзитом — в
+        PEER_LAN_NETS (префиксы в туннеле других слотов с VPN-транзитом — в
         AllowedIPs и файервол)."""
         return {"LAN_MODE": "1" if gw.lan_mode else "0",
-                "HOME_SUBNETS": " ".join(gw.lan_subnets),
+                "LAN_SUBNETS": " ".join(gw.lan_subnets),
                 "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
-                "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
+                "PEER_LAN_NETS": " ".join(self.gateway_peer_nets(gw.id))}
 
 
     # ── связь подсетей: часть VPN-транзита ───
@@ -78,18 +78,6 @@ class PeerNetsMixin:
         return {"state": "ok",
                 "pairs_named": [(self._gw_name(g), g.label, [t for _r, t in self.lan_twins(g)]) for g in transit]}
 
-    def gateway_transit_reissue(self, slot_id: int) -> list[str]:
-        """Кому подсети соседей после включения или выключения VPN-транзита
-        слота доедут только файлом: менялись они у самого слота и у других
-        слотов с VPN-транзитом — из них агенты без документа конфигурации
-        (3.2.x). Других слотов с транзитом нет или адреса в туннеле выключены —
-        связь не меняется, пусто. Имена — для экранов, сырые."""
-        me = self.db.gateway(slot_id)
-        others = [g for g in self.gateway_transit_slots() if g.id != int(slot_id)]
-        if me is None or not others or self.lan_space_problem():
-            return []
-        return [self._gw_display(g) for g in [me] + others if "cfg1" not in self.gwlink_agent_caps(g.id)]
-
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
         локальной подсети: по ней шлюз находит свой адрес. Возвращает
@@ -119,27 +107,20 @@ class PeerNetsMixin:
         """Имя файла первого применения для слота — как его кладёт скрипт."""
         return "awg-gw-bundle.sh" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.sh"
 
-    def _gw_bundle_build(self, gw, with_mail: bool = True) -> tuple[bytes, str]:
-        """Собрать бандл слота скриптом линка (ключи не меняются) и дополнить
-        почтой, фразой бэкапов, токеном агента. Возвращает (открытый текст,
-        приватный ключ линка слота)."""
-        from awgbot.util import bundlecrypt
+    def _gw_bundle_build(self, gw) -> bytes:
+        """Собрать файл первого применения слота скриптом линка (ключи не
+        меняются) и дополнить токеном агента. Почты и фразы бэкапов в нём нет:
+        их везёт документ конфигурации по каналу, а утечка открытого файла
+        отдавала бы ящик и ключ ко всем копиям сервера."""
         env, admin_ips = self._gw_bundle_env(gw)
         self._run_link_script("--bundle", env)
-        with open(f"/root/gw-{gw.link_if}.conf", encoding="utf-8") as f:
-            priv = bundlecrypt.read_privkey(f.read())
         with open(self._bundle_path(gw), "rb") as f:
             plain = f.read()
-        if with_mail:
-            # почту и фразу бэкапов везёт только шифрованный бандл: открытому
-            # файлу первого применения они не нужны (--install их не читает),
-            # а утечка файла отдавала бы ящик и ключ ко всем копиям сервера
-            plain = self._bundle_with_mail(plain)
         plain = self._bundle_with_agent(plain, gw.id)
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, gw.id),
                           timeutil.to_iso(timeutil.now()))
-        return plain, priv
+        return plain
 
     def gw_slot_id(self, slot_id: Optional[int] = None) -> int:
         """Номер слота, для которого выпускается файл (без номера — первый; 0 —
@@ -152,16 +133,6 @@ class PeerNetsMixin:
         gw = self._gw_slot(slot_id)
         return self._gw_display(gw), (self.gw_bot_identity(gw.id) if gw.id else {})
 
-    def gw_bundle_encrypted(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
-        """Бандл для доставки чатом: шифрован ключом линка СВОЕГО слота, он есть
-        только у уже настроенной машины этого слота. Открытый бандл на диске
-        ВПС остаётся под 600."""
-        from awgbot.util import bundlecrypt
-        gw = self._gw_slot(slot_id)
-        plain, priv = self._gw_bundle_build(gw)
-        name = "awg-gw-bundle.enc" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.enc"
-        return bundlecrypt.encrypt(plain, priv), name
-
     def gw_bundle_plain(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
         """Открытый бандл — для ПЕРВОГО применения на машине, у которой ключа
         линка ещё нет (новая машина или новые ключи). Внутри приватные ключи:
@@ -169,11 +140,9 @@ class PeerNetsMixin:
 
         Везёт с собой ПОСТАВКУ: шлюз стоит в России, GitHub там без туннеля
         недоступен, а туннель как раз и ставится этим файлом — качать агента
-        с шлюза неоткуда (наступили на чистой машине 19.09.2026). Шифрованный
-        бандл для чата поставку не везёт: у той машины агент уже стоит."""
+        с шлюза неоткуда (наступили на чистой машине 19.09.2026)."""
         gw = self._gw_slot(slot_id)
-        plain, _ = self._gw_bundle_build(gw, with_mail=False)
-        return self._bundle_with_dist(plain), self.bundle_name(gw)
+        return self._bundle_with_dist(self._gw_bundle_build(gw)), self.bundle_name(gw)
 
     _DIST_BEGIN = b"#__AWG_BOT_TGZ_BELOW__\n"
     _DIST_END = b"#__AWG_BOT_TGZ_END__\n"

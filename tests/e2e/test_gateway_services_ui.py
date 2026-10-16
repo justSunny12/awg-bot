@@ -35,7 +35,6 @@ def test_the_breakage_branch_without_a_name_reads_whole(error, note):
 
 
 @pytest.mark.parametrize("state,note", [
-    ("reissue", "⚠️ Для доступа к SMB перевыпусти конфигурацию шлюза"),
     ("old_agent", "⚠️ Для доступа к SMB обнови агента шлюза"),
     ("failed", "⚠️ Шлюз не смог принять записи SMB — подробности в «🩺 Здоровье» бота шлюза"),
     ("pending", "🟡 Синхронизация с другими шлюзами…"),

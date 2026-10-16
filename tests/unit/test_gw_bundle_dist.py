@@ -89,17 +89,16 @@ def test_bundle_without_marker_is_left_alone(svc):
     assert svc._bundle_with_dist(b"garbage") == b"garbage"
 
 
-def test_only_the_first_application_file_carries_it(monkeypatch, svc):
-    """Шифрованный бандл для чата — машине, где агент уже стоит: поставку не
-    везёт, иначе каждое перевыпуск тянул бы мегабайты через Telegram."""
+def test_the_first_application_file_carries_it_and_no_encrypted_one_exists(monkeypatch, svc):
+    """Файл первого применения везёт поставку; шифрованного файла перевыпуска
+    больше нет вовсе."""
     from types import SimpleNamespace
     gw = SimpleNamespace(id=1, link_if="awglink")
     monkeypatch.setattr(svc, "_gw_slot", lambda slot_id=None: gw)
-    monkeypatch.setattr(svc, "_gw_bundle_build", lambda g, with_mail=True: (_HEAD + _MARK, "K"))
-    monkeypatch.setattr("awgbot.util.bundlecrypt.encrypt", lambda plain, priv: plain)
+    monkeypatch.setattr(svc, "_gw_bundle_build", lambda g: _HEAD + _MARK)
     plain, _ = svc.gw_bundle_plain()
-    enc, _ = svc.gw_bundle_encrypted()
-    assert b"#__AWG_BOT_TGZ_BELOW__" in plain and b"#__AWG_BOT_TGZ_BELOW__" not in enc
+    assert b"#__AWG_BOT_TGZ_BELOW__" in plain
+    assert not hasattr(svc, "gw_bundle_encrypted")
 
 
 # ── режим --install бандла: прогоняем НАСТОЯЩЕЕ тело бандла ───────────────────

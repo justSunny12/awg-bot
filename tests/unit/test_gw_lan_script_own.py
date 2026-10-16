@@ -89,9 +89,9 @@ def test_a_tunnel_only_change_does_not_touch_the_feed(own_env):
     tool, dns_d, dump, log, env = own_env
     _own(dns_d)
     _with_src(dns_d, dump)
-    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_lan#lan_vpn4\n", encoding="utf-8")
     assert _run(tool, env, "add", "news.org").returncode == 0
-    assert (dns_d / FEED).read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n", \
+    assert (dns_d / FEED).read_text() == "nftset=/old.org/inet#awg_lan#lan_vpn4\n", \
         "«напрямую» не менялось — фид пересобран вхолостую"
 
 
@@ -144,11 +144,11 @@ def test_leaving_direct_refills_lan_ru4_from_the_remaining_list(own_env):
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "адрес убранного домена остался в lan_ru4"
     assert r.stdout.strip() == "<code>bank.ru</code>: убран", r.stdout
     nft = _nft(log)
-    assert "nft flush set inet awg_home lan_ru4" in nft, nft
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft, "оставшийся домен не вернулся в набор"
+    assert "nft flush set inet awg_lan lan_ru4" in nft, nft
+    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }" in nft, "оставшийся домен не вернулся в набор"
     assert not any("10.2.2.2" in ln and "add" in ln for ln in nft), "убранный домен снова в наборе"
-    assert nft.index("nft flush set inet awg_home lan_ru4") < nft.index(
-        "nft add element inet awg_home lan_ru4 { 10.1.1.1 }"), "наполнение до сброса стёрто сбросом"
+    assert nft.index("nft flush set inet awg_lan lan_ru4") < nft.index(
+        "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }"), "наполнение до сброса стёрто сбросом"
     text = _log(log)
     assert text.index("systemctl restart dnsmasq") < text.index("nft flush"), "dig до рестарта — по старым спискам"
 
@@ -162,10 +162,10 @@ def test_moving_from_direct_to_tunnel_refills_both_sets(own_env):
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "переведённый в туннель остался напрямую"
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.2.2.2"}
     nft = _nft(log)
-    assert "nft flush set inet awg_home lan_ru4" in nft
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
-    assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft
-    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" in nft, "домен не лёг в туннельный набор"
+    assert "nft flush set inet awg_lan lan_ru4" in nft
+    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }" in nft
+    assert "nft add element inet awg_lan lan_ru4 { 10.2.2.2 }" not in nft
+    assert "nft add element inet awg_lan lan_vpn4 { 10.2.2.2 }" in nft, "домен не лёг в туннельный набор"
     assert "1 адрес(а) в наборе lan_vpn4" in r.stdout
 
 
@@ -176,8 +176,8 @@ def test_a_new_direct_domain_lands_in_lan_ru4_once(own_env):
     assert r.returncode == 0, r.stderr
     nft = _nft(log)
     # «напрямую» изменилось — набор сброшен и наполнен заново одним вызовом со всеми адресами
-    adds = [ln for ln in nft if "add element inet awg_home lan_ru4" in ln]
-    assert adds == ["nft add element inet awg_home lan_ru4 { 10.1.1.1,10.2.2.2 }"], nft
+    adds = [ln for ln in nft if "add element inet awg_lan lan_ru4" in ln]
+    assert adds == ["nft add element inet awg_lan lan_ru4 { 10.1.1.1,10.2.2.2 }"], nft
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1", "10.2.2.2"}
     assert "bank.ru → 1 адрес(а) в наборе lan_ru4" in r.stdout
 
@@ -193,7 +193,7 @@ def test_deleting_a_tunnel_domain_takes_its_addresses_out_of_lan_vpn4(own_env):
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}, "адреса убранного домена остались в lan_vpn4"
     nft = _nft(log)
     for ip in _DIG_MAP["example.com"]:
-        assert f"nft delete element inet awg_home lan_vpn4 {{ {ip} }}" in nft, nft
+        assert f"nft delete element inet awg_lan lan_vpn4 {{ {ip} }}" in nft, nft
     assert not any("10.3.3.3" in ln for ln in nft), "тронут адрес оставшегося домена"
     assert not any("lan_ru4" in ln for ln in nft), "«напрямую» не менялось — набор сброшен зря"
     assert "−" not in r.stdout, "в add/ru/del адреса снимаются молча"
@@ -224,7 +224,7 @@ def test_the_lan_vpn4_snapshot_forgets_removed_addresses(own_env):
     snap = (dump / "lan_vpn4.nft").read_text()
     assert "10.3.3.3" in snap and "198.51.100.34" not in snap, f"слепок хранит снятый адрес: {snap}"
     nft = _nft(log)
-    assert nft.index("nft list set inet awg_home lan_vpn4") > max(
+    assert nft.index("nft list set inet awg_lan lan_vpn4") > max(
         i for i, ln in enumerate(nft) if "delete element" in ln), "слепок снят до удаления"
     assert not (dump / "lan_vpn4.nft.tmp").exists()
 

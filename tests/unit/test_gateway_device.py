@@ -103,64 +103,6 @@ def test_script_status_parse(tmp_path, monkeypatch):
     assert gwguard.script_status() == {}
 
 
-def test_gateway_mark_outcome(tmp_path, monkeypatch):
-    from awgbot.domain import gateway as gw
-    from awgbot.domain.gateway import GatewayServices
-    from awgbot.infra.db import Database
-    db = Database(tmp_path / "gw.db"); db.init_schema()
-    svc = GatewayServices(db)
-    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
-    monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", PUB))
-    # не помечен → claim (запасной путь); помечен другой → claim; свой → тишина
-    for status, expect in (("unmarked", True), ("foreign", True), ("unconfirmed", True), ("confirmed", False)):
-        monkeypatch.setattr(gwguard, "script_status", lambda s=status: {"GW_STATUS": s})
-        out = svc.gateway_mark_outcome()
-        assert out["status"] == status and bool(out["claim"]) is expect, status
-        assert svc.gateway_mark_status() == status
-        if out["claim"]:
-            assert gwsign.verify(PRIV, out["claim"])["pub"] == PUB
-
-
-def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
-    from awgbot.bot import texts
-    from awgbot.domain.gateway import GatewayServices
-    from awgbot.infra.db import Database
-    db = Database(tmp_path / "gw.db"); db.init_schema()
-    svc = GatewayServices(db)
-    cases = {
-        ("confirmed", "installed", "up"): "Аплинк обновлён · линк поднят · шлюз подтверждён",
-        ("confirmed", "unchanged", "up"): "Аплинк без изменений · линк поднят · шлюз подтверждён",
-        ("foreign", "", "foreign"): "Линк лежит: шлюз указывает на устройство, отличное от выбранного",
-        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этого устройства не найден · шлюз не подтверждён",
-        ("unmarked", "", ""): "Шлюз в боте сервера AWG не назначен",
-    }
-    for (gs, up, link), expect in cases.items():
-        st = {k: v for k, v in (("GW_STATUS", gs), ("UPLINK", up), ("LINK", link)) if v}
-        assert texts.gateway_apply_report(st) == expect, st
-        monkeypatch.setattr(gwguard, "script_status", lambda s=st: s)
-        assert svc.gateway_apply_report() == expect
-    assert texts.gateway_apply_report({}) == "", "нет статуса — нет отчёта, останется хвост"
-
-
-def test_apply_report_names_the_local_network_result():
-    """Бандл включил VPN-транзит: отчёт применения обязан сказать, встал ли он
-    и на каком интерфейсе, — или почему нет. Иначе человек идёт настраивать
-    роутер под сеть, которую скрипт так и не поднял."""
-    from awgbot.bot import texts
-    base = {"GW_STATUS": "confirmed", "LINK": "up"}
-    ok = texts.gateway_apply_report({**base, "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
-    assert ok == "Линк поднят · шлюз подтверждён\nVPN-транзит: применён (<code>end0</code>, <code>192.168.68.222</code>)", ok
-    bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
-    assert "VPN-транзит: не применён — порт 53 занят: pihole-FTL" in bad, bad
-    assert "применён (" not in bad
-    raw = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "<b>LAN</b> & co"})
-    assert "не применён — &lt;b&gt;LAN&lt;/b&gt; &amp; co" in raw, "текст отказа — от шлюза, экранируется"
-    bare = texts.gateway_apply_report({**base, "LAN": "1"})
-    assert bare.endswith("VPN-транзит: применён"), "без интерфейса — без пустых скобок"
-    for off in ({**base, "LAN": "0"}, base):
-        assert "VPN-транзит" not in texts.gateway_apply_report(off), "режим выключен — строки нет"
-
-
 def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.8.1.0/24")
     assert gwguard.client_subnet() == "10.8.1.0/24"
@@ -385,16 +327,16 @@ def test_gateway_conf_allowed_ips_carry_peer_subnets_and_bundle_refreshes_them(t
     out = tmp_path / "b.sh"
     env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
            "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out), "CLIENT_SUBNET": "10.9.1.0/24",
-           "PEER_HOME_NETS": "192.168.1.0/24 192.168.2.0/24; rm -rf /"}
+           "PEER_LAN_NETS": "192.168.1.0/24 192.168.2.0/24; rm -rf /"}
     r = subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24\n" in conf.read_text(encoding="utf-8")
     text = out.read_text(encoding="utf-8")
-    assert re.search(r'^PEER_HOME_NETS="192\.168\.1\.0/24 192\.168\.2\.0/24"$', text, re.M), "мусор отсеян"
+    assert re.search(r'^PEER_LAN_NETS="192\.168\.1\.0/24 192\.168\.2\.0/24"$', text, re.M), "мусор отсеян"
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24" in text
     # без чужих подсетей — как раньше
-    env["PEER_HOME_NETS"] = ""
+    env["PEER_LAN_NETS"] = ""
     subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
                    capture_output=True, text=True, env=env)
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n" in conf.read_text(encoding="utf-8")

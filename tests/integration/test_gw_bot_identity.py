@@ -426,9 +426,9 @@ def test_snapshot_does_not_cancel_getme_when_a_token_exists(two_slots):
 
 
 def test_card_and_bundle_caption_link_the_bot_from_the_snapshot(two_slots, monkeypatch):
-    """Сквозняком до текста: карточка слота (через gateway_screen_state) и
-    подпись под файлом конфигурации ведут в чат бота из снимка — с
-    экранированием имени; кэш по токену, если есть, главнее."""
+    """Сквозняком до текста: карточка слота (через gateway_screen_state)
+    ведёт в чат бота из снимка — с экранированием имени; кэш по токену, если
+    есть, главнее."""
     from awgbot.bot import texts
     s = two_slots
     monkeypatch.setattr(s, "gateway_ping", lambda slot: None)
@@ -440,8 +440,6 @@ def test_card_and_bundle_caption_link_the_bot_from_the_snapshot(two_slots, monke
     assert "Бот шлюза: " + link in lines, card
     tail = lines[lines.index("Бот шлюза: " + link) + 1:]
     assert all(ln.startswith("<blockquote") for ln in tail), f"после строки бота — только «подробнее»: {card}"
-    display, bot = s.gw_bundle_target(2)
-    assert f"боту шлюза ({link})" in texts.gateway_bundle_caption(display, bot), "подпись файла без ссылки"
     s.set_gw_bot_token(TOKEN2, 2)
     s.set_gw_bot_identity(2, "token_bot", "По токену")
     st = s.gateway_screen_state(2, lazy_ping=False)

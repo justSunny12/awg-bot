@@ -17,6 +17,20 @@ from awgbot.runtime import main as pkg          # подменяемое тес�
 from .common import log
 
 
+_rename_task: "asyncio.Task | None" = None   # прогон обвязки после перехода имён: ссылка держит задачу
+
+
+async def _plumbing_rename(services) -> None:
+    """Прогон обвязки после перехода имён: перенесёт таблицу локальной сети и
+    перепишет юнит целиком. Юнит уже запущен извне (загрузка) — тот прогон
+    сделает то же сам."""
+    ok, err = await asyncio.to_thread(services.reassert_guarded, "переход имён обвязки", timeout=600)
+    if ok:
+        log.info("gateway: обвязка перевыставлена под новые имена")
+    else:
+        log.warning("gateway: прогон обвязки после перехода имён: %s", err)
+
+
 async def run_gateway() -> None:
     """Сборка и запуск роли gateway: панель + монитор, больше ничего.
 
@@ -42,6 +56,15 @@ async def run_gateway() -> None:
     services.update_hold_start()            # цель обновления — после первого role сервера (≤ 15 мин)
     with contextlib.suppress(OSError):
         os.remove(marker)
+    # Обвязка прежнего образца после обновления: строки юнита — сразу, до
+    # первого снимка; таблица локальной сети — прогоном обвязки в фоне.
+    # Снимается со следующим сдвигом минимума.
+    try:
+        if services.plumbing_rename_due():
+            global _rename_task
+            _rename_task = asyncio.get_running_loop().create_task(_plumbing_rename(services))
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway: переход имён обвязки не начат: %s", e)
 
     # Шлюз стоит в юрисдикции, где Telegram заблокирован, и ходит к нему через
     # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель

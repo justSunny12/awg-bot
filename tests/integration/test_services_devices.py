@@ -216,16 +216,20 @@ def test_addresses_from_the_gateway_snapshot_are_reserved_too(services, make_act
     assert d.address == "10.8.1.5", d.address
 
 
-def test_a_document_agent_reserves_what_stands_not_the_old_file(services, make_active_client, monkeypatch):
-    """Агенту с документом (cfg1) список везёт канал: адреса из давнего файла
-    в карантине не держатся, держится то, что стоит у шлюза по снимку."""
+def test_the_reserve_is_what_stands_and_the_file_only_until_the_first_snapshot(
+        services, make_active_client, monkeypatch):
+    """Адреса админа в карантине — то, что стоит у шлюза по снимку; адреса из
+    файла первого применения — только пока снимка нет (агент ещё не на
+    связи). Вечного карантина по давнему файлу больше нет."""
     from awgbot.util import gwlink
     client = make_active_client(device_limit=5)
     pi = services.add_device(client.id, "pi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, 1), "10.8.1.7 10.8.1.8")
-    monkeypatch.setattr(services, "gwlink_snapshot",
-                        lambda slot_id: {"bundle": {"admin_ips": "10.8.1.3"}} if slot_id == 1 else {})
-    assert services.gateway_trusted_ips() == {"10.8.1.3", "10.8.1.7", "10.8.1.8"}, "агент 3.2.x — и файл тоже"
-    services.gwlink_session_opened(1, "3.3.0", gwlink.PROTO, caps=("cfg1",))
-    assert services.gateway_trusted_ips() == {"10.8.1.3"}
+    snaps = {}
+    monkeypatch.setattr(services, "gwlink_snapshot", lambda slot_id: snaps.get(slot_id, {}))
+    assert services.gateway_trusted_ips() == {"10.8.1.7", "10.8.1.8"}, "до первого снимка — адреса файла"
+    snaps[1] = {"bundle": {"admin_ips": "10.8.1.3"}}
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "давний файл держит адреса в карантине"
+    services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=())
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "и у агента ниже 3.3.0 — тоже по снимку"

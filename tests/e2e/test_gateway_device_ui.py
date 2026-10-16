@@ -51,7 +51,6 @@ def gwsetup(services, fake_awg, make_active_client, monkeypatch):
         from awgbot.util import timeutil
         services.db.set_state(services._GW_BUNDLE_ISSUED_KEY + "_1", timeutil.to_iso(timeutil.now()))
         return blob, name
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: _issued(b"ENC", "awg-gw-bundle.enc"))
     monkeypatch.setattr(services, "gw_bundle_plain", lambda slot=None: _issued(b"PLAIN", "awg-gw-bundle.sh"))
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
     # Токен агента живёт в /etc/awg-bot/env — в тестах держим его в памяти.
@@ -179,14 +178,14 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
 
 
 async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
-    """Пересланный claim: помечает, когда шлюза нет, и отдаёт конфигурацию;
-    при назначенном другом шлюзе — отказ (текст с отсылкой в карточку —
-    эталон adm.claim.foreign), шлюз прежний."""
+    """Пересланный claim: помечает, когда шлюза нет (конфигурацию везёт
+    канал — файла нет); при назначенном другом шлюзе — отказ (текст с
+    отсылкой в карточку — эталон adm.claim.foreign), шлюз прежний."""
     _, phone, pi = gwsetup
     msg = _amsg(fake_bot, "Перешли основному боту:\n" + gwsign.sign(PRIV, "claim", pi.public_key))
     await ah.gateway_claim_message(msg, services)
     assert _gw_dev_id(services) == pi.id
-    assert any(s[0] == "document" for s in msg.sent), "конфигурация сразу"
+    assert not any(s[0] == "document" for s in msg.sent), "в ответ на пересылку выдан файл"
     msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", phone.public_key))
     await ah.gateway_claim_message(msg, services)
     assert _gw_dev_id(services) == pi.id, "claim другого устройства сменил назначенный шлюз"
@@ -195,16 +194,15 @@ async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
 
 
 async def test_forwarded_claim_of_a_document_agent_gets_no_file(services, fake_bot, gwsetup):
-    """Агент 3.3.0 подписывает в токене, что принимает документ (cfg1):
-    сервер назначает шлюз без файла — конфигурацию везёт канал, и ответ
-    говорит то же, что агент обещал при пересылке."""
+    """Агент подписывает в токене свои возможности: сервер назначает шлюз без
+    файла — конфигурацию везёт канал, и ответ говорит то же."""
     _, _phone, pi = gwsetup
     msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", pi.public_key, caps=("cfg1", "confirm1", "token1")))
     await ah.gateway_claim_message(msg, services)
     assert _gw_dev_id(services) == pi.id
     assert not any(s[0] == "document" for s in msg.sent), "агенту с документом выдан файл"
     text = " ".join(s[1] or "" for s in msg.sent)
-    assert "уйдёт по каналу конфигурации" in text and "«📤 Конфигурация»" in text, text
+    assert "уйдёт по каналу конфигурации" in text and "📤" not in text, text
 
 
 def test_gateway_mark_rules(services, gwsetup, make_active_client):
@@ -222,8 +220,9 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
 
 
-async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fake_bot, gwsetup, monkeypatch):
-    """Финал переезда: двойник шлюза получил флаг и новые ключи — файл сразу."""
+async def test_migration_finish_sends_no_file_to_the_gateway(services, fake_bot, gwsetup, monkeypatch):
+    """Финал переезда: двойник шлюза получил флаг и новые ключи — конфиг
+    аплинка шлюзу везёт документ, файла нет ни при каком исходе."""
     _, phone, pi = gwsetup
     _slot1(services, pi.id)
     monkeypatch.setattr(services, "migration_available", lambda: True)
@@ -231,7 +230,7 @@ async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fak
     monkeypatch.setattr(services, "migration_finish", lambda: (1, 0, []))
     cb, nav = _acb(fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
-    assert any(s[0] == "document" for s in nav.sent), "после финала переезда — конфигурация шлюза"
+    assert not any(s[0] == "document" for s in nav.sent), "после финала переезда выдан файл"
     monkeypatch.setattr(services, "migration_finish", lambda: (0, 0, ["x"]))
     cb, nav = _acb(fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)

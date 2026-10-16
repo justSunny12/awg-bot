@@ -29,8 +29,8 @@ from tests.conftest import SH, fake_cmd
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
-VPN = "# awg-bot (шлюз): личный список\nnftset=/rutracker.org/4#inet#awg_home#lan_vpn4\n"
-RU = "# awg-bot (шлюз): личный список\nnftset=/gosuslugi.ru/4#inet#awg_home#lan_ru4\n"
+VPN = "# awg-bot (шлюз): личный список\nnftset=/rutracker.org/4#inet#awg_lan#lan_vpn4\n"
+RU = "# awg-bot (шлюз): личный список\nnftset=/gosuslugi.ru/4#inet#awg_lan#lan_ru4\n"
 PHRASE = "correct horse battery"
 
 
@@ -80,7 +80,7 @@ def test_the_backup_carries_both_personal_lists_byte_for_byte(backup):
     dnsmasq, members = backup
     (dnsmasq / "awg-gw-vpn-user.conf").write_text(VPN, encoding="utf-8")
     (dnsmasq / "awg-gw-ru-user.conf").write_text(RU, encoding="utf-8")
-    (dnsmasq / "awg-gw-vpn-feed.conf").write_text("nftset=/x/4#inet#awg_home#lan_vpn4\n")
+    (dnsmasq / "awg-gw-vpn-feed.conf").write_text("nftset=/x/4#inet#awg_lan#lan_vpn4\n")
     got = members()
     assert got.get("awg-gw/lan/awg-gw-vpn-user.conf") == VPN.encode(), "список «в туннель» не попал в копию"
     assert got.get("awg-gw/lan/awg-gw-ru-user.conf") == RU.encode(), "список «напрямую» не попал в копию"
@@ -165,6 +165,21 @@ def test_restore_puts_the_lists_in_place_and_restarts_dnsmasq_once(tmp_path):
     assert not pi.state.exists(), "при применённом режиме списки ещё и отложены"
 
 
+def test_lists_from_a_330_backup_come_back_under_the_new_table_name(tmp_path):
+    """Копия шлюза 3.3.0: наборы своих списков под прежним именем таблицы
+    (awg_home). restore принимает их и кладёт уже с awg_lan — иначе dnsmasq
+    писал бы адреса в таблицу, которой больше нет (снимается со следующим
+    сдвигом минимума)."""
+    pi = _Pi(tmp_path)
+    pi.lan_mode_applied()
+    pi.backup_has(**{"awg-gw-vpn-user.conf": VPN.replace("awg_lan", "awg_home"),
+                     "awg-gw-ru-user.conf": RU.replace("awg_lan", "awg_home")})
+    r = pi.restore()
+    assert r.returncode == 0 and "DONE" in r.stdout, r.stderr + r.stdout
+    assert (pi.dnsmasq / "awg-gw-vpn-user.conf").read_text() == VPN
+    assert (pi.dnsmasq / "awg-gw-ru-user.conf").read_text() == RU
+
+
 def test_restore_before_the_mode_is_applied_parks_the_lists_and_leaves_dnsmasq_alone(tmp_path):
     """Шлюз новая, режим без VPN ещё не включали: dnsmasq может быть чужим
     (OMV) или не стоять вовсе. Списки откладываются, dnsmasq не трогается."""
@@ -244,7 +259,7 @@ def test_enable_over_existing_lists_keeps_them(tmp_path):
     parked = tmp_path / "var-lib-awg-gw" / "restore"; parked.mkdir(parents=True)
     (parked / "awg-gw-vpn-user.conf").write_text(VPN, encoding="utf-8")
     dnsmasq = tmp_path / "dnsmasq.d"; dnsmasq.mkdir()
-    mine = "nftset=/свежий.рф/4#inet#awg_home#lan_vpn4\n"
+    mine = "nftset=/свежий.рф/4#inet#awg_lan#lan_vpn4\n"
     (dnsmasq / "awg-gw-vpn-user.conf").write_text(mine, encoding="utf-8")
     (dnsmasq / "awg-gw-ru-user.conf").write_text(RU, encoding="utf-8")
     r, dnsmasq, _ = _enable(tmp_path)

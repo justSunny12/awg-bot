@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-import time
 from dataclasses import asdict, dataclass, field, fields
 
 from awgbot.util import timeutil
@@ -19,8 +18,9 @@ log = logging.getLogger("awgbot.gateway")
 
 import threading  # noqa: E402
 
-# Бандл из чата и настройки из канала применяются одним и тем же скриптом через
-# тот же юнит — вперемешку они переписывали бы юнит друг другу посреди прогона.
+# Документ конфигурации из канала (транзакции env+link и аплинка) применяется
+# тем же скриптом через тот же юнит — вперемешку прогоны переписывали бы юнит
+# друг другу посреди прогона.
 # Прочие рестарты юнита (тик, «Восстановить», SSH) идут через reassert_guarded:
 # под этим замком без ожидания, отказ словами. Между процессами (ручной запуск,
 # юнит, systemd-run) прогоны разводит flock самого скрипта обвязки.
@@ -38,18 +38,6 @@ def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
         return subprocess.run(argv, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(argv, 124, b"", f"{TIMEOUT_MARK} {timeout} с".encode())
-
-
-def _bundle_argv(path: str) -> list[str]:
-    """Скрипт применения — под systemd-run вне cgroup агента: таймаут Python
-    убивает только sh, а apt под ним работал бы сиротой в нашем cgroup, и
-    рестарт агента (обновление) убил бы его посреди dpkg. Нет systemd-run —
-    как раньше."""
-    import shutil
-    if shutil.which("systemd-run"):
-        return ["systemd-run", "--wait", "--collect", "--pipe", "--quiet",
-                "--unit", f"awg-gw-apply-{int(time.time())}", "sh", path, "--apply"]
-    return ["sh", path, "--apply"]
 
 
 def _out(proc) -> str:

@@ -19,7 +19,6 @@ import random
 import pytest
 
 from awgbot.core import config
-from awgbot.domain import gateway as gw
 from awgbot.domain import gwsnapshot
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra import awglock, gwguard
@@ -65,8 +64,8 @@ class _Agent:
         self.temp = 48.0
         self.egress_ms: float | None = 30.0
         self.lan_pkts, self.dns_pkts = 1000, 100
-        self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
-                    "RESOLVER": "10.9.1.1", "PEER_HOME_NETS": "192.168.2.0/24"}
+        self.env = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.68.0/24",
+                    "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "192.168.2.0/24"}
         self.admin_ips = ["10.9.1.2"]
         self.chains = {"input", "tunnel_in", "forward", "ssh_in"}
         self.peer_nets4 = {"192.168.2.0/24"}
@@ -75,7 +74,7 @@ class _Agent:
         self.conf.write_text(f"# awg-bot: контракт линка 1\n[Interface]\nPrivateKey = {PRIV}\n",
                              encoding="utf-8")
 
-        monkeypatch.setattr(gw.base.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(__import__("time"), "monotonic", lambda: self.now)
         monkeypatch.setattr(config, "GW_LINK_CONF", str(self.conf))
         monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")
         monkeypatch.setattr(gwsnapshot, "boot_id", lambda: "b" * 36)
@@ -112,7 +111,7 @@ class _Agent:
         monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: True)
         # апстрим — по статистике dnsmasq, без запроса наружу
         monkeypatch.setattr(gwguard, "upstream_stats", lambda: {"10.9.1.1#53": (10, 0)})
-        monkeypatch.setattr(gwguard, "home_table_info", self._home)
+        monkeypatch.setattr(gwguard, "lan_table_info", self._home)
         monkeypatch.setattr(gwguard, "lists_status",
                             lambda: {"domains": "1180", "nets": "412", "rc": "0"})
         monkeypatch.setattr(gwguard, "lan_own_lists", lambda: (2, 1))
@@ -220,7 +219,7 @@ async def test_the_first_snapshot_is_full_padded_and_numbered_from_one(client, a
     await client.push(full=True)
     msg = _wire(client).messages(gwlink.channel_key(PRIV))[0]
     assert msg["t"] == "snap" and msg["rev"] == 1 and msg["seq"] == 1
-    assert msg["bundle"]["home_subnets"] == "192.168.68.0/24"
+    assert msg["bundle"]["lan_subnets"] == "192.168.68.0/24"
     assert len(_wire(client).lines[0]) % gwlink.PAD_SNAP == 0, "снимок не добит до кратности"
 
 
@@ -230,7 +229,7 @@ async def test_a_changed_fact_wakes_the_channel_up_exactly_once(client, agent):
     номером, а дальше канал снова молчит."""
     agent.tick()
     await client.push(full=True)
-    agent.env["HOME_SUBNETS"] = "192.168.1.0/24"
+    agent.env["LAN_SUBNETS"] = "192.168.1.0/24"
     agent.tick()
     assert await client.push() is True
     agent.tick()
@@ -240,7 +239,7 @@ async def test_a_changed_fact_wakes_the_channel_up_exactly_once(client, agent):
     assert len(msgs) == 2
     delta = msgs[1]
     assert delta["t"] == "delta" and delta["rev"] == 2 and delta["seq"] == 2
-    assert delta["bundle"]["home_subnets"] == "192.168.1.0/24"
+    assert delta["bundle"]["lan_subnets"] == "192.168.1.0/24"
     # подсети стоят и в юните (bundle), и в отпечатке раздела env (cfg): оба факта изменились
     assert set(delta) - {"t", "seq", "ts", "rev"} == {"bundle", "cfg"}, (
         "в дельте поехало больше, чем изменилось")

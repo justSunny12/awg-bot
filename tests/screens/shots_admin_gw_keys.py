@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import datetime as _dt
 
-from awgbot.bot.callbacks import CancelCB, GwSlotCB, NoteCB, SetCB
+from awgbot.bot.callbacks import CancelCB, GwSlotCB, SetCB
 from awgbot.core import config
 
 from tests.screens.base import NOW, Shot
@@ -33,21 +33,23 @@ def _cfg_mail(services, mp):
     services.gwcfg_backup = lambda: {"phrase": "DUMMY phrase long enough"}
 
 
-def _cfg(*, online: bool = True, closed: bool = False, age_h: float = 0, **over):
+def _cfg(*, online: bool = True, closed: bool = False, age_h: float = 0, caps=("cfg1", "confirm1", "token1"),
+         agent: str = "3.3.0", **over):
     """Снимок агента с документом: установленное — как выдаёт ВПС, поле cfg —
-    отпечатки желаемого с правками over; online — сессия с cfg1 открыта;
-    closed — закрыта после снимка; age_h — снимок принят столько часов назад."""
+    отпечатки желаемого с правками over; online — сессия открыта (агент с
+    возможностями caps; пусто — ниже 3.3.0); closed — закрыта после снимка;
+    age_h — снимок принят столько часов назад."""
     def step(services, mp):
         at = NOW - _dt.timedelta(hours=age_h)
         doc = services.gwcfg_doc(services.db.gateway(1))
-        snap = {"bundle": _installed(services), "link_contract": "1", "plumbing_gen": "new",
-                "mark_status": "confirmed", "agent_version": "3.3.0", "awg_generation": 1, "egress_ok": True,
+        snap = {"bundle": _installed(services), "link_contract": "1",
+                "mark_status": "confirmed", "agent_version": agent, "awg_generation": 1, "egress_ok": True,
                 "boot_id": "b" * 36, "ts": _iso(at), "rev": 1,
                 "cfg": {"gen": doc["gen"], **doc["prints"], **over}}
         services.gwlink_snapshot_in(1, snap, 1, True)
         services.db.set_state(services._gwlink_key(services._GWLINK_SNAP_AT_KEY, 1), _iso(at))
         if online or closed:
-            services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
+            services.gwlink_session_opened(1, agent, 2, list(caps))
         if closed:
             services.gwlink_session_closed(1)
     return step
@@ -247,16 +249,12 @@ REKEY = [
     Shot("adm.lk.yes.offline", role="admin", press=[SetCB(sec="lk", act="do", key="yes", val="1")],
          data=_keys(_stage_ok), title="«🔑 Сменить», канала нет — итог и всплывашка «едут по упр. каналу»"),
     Shot("adm.lk.yes.refused", role="admin", press=[SetCB(sec="lk", act="do", key="yes", val="1")],
-         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
-         title="агент без подтверждения — отказ стадии всплывашкой"),
+         data=_chan(1, _cfg_base, _cfg(caps=(), agent="3.2.1")),
+         title="агент ниже 3.3.0 — отказ стадии всплывашкой"),
     Shot("adm.set.mig.finish.old_uplink", role="admin", press=[SetCB(sec="mig", act="do", key="finish")],
          data=_old_uplink(True), title="завершить переезд? шлюз на прежнем аплинке — со ссылкой на бота"),
     Shot("adm.set.mig.finish.old_uplink.nobot", role="admin", press=[SetCB(sec="mig", act="do", key="finish")],
          data=_old_uplink(False), title="шлюз на прежнем аплинке, бот неизвестен — без ссылки"),
-    Shot("adm.note.gwcfg.cfg1", role="admin", press=[NoteCB(kind="gwcfg", ref=1)], data=_keys(),
-         title="«Перевыпустить» на напоминании, агент с документом — карточка слота вместо файла"),
-    Shot("adm.link.gwcfg.cfg1", role="admin", start="gwcfg-1", data=_keys(),
-         title="/start gwcfg-1, агент с документом — карточка слота вместо файла"),
 ]
 
 

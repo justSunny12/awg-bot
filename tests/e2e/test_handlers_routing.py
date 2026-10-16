@@ -364,15 +364,15 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
 
 # ── раздел маршрутизации в настройках админа: списки, бандл, подразделы ──────
 
-async def test_an_old_bundle_button_issues_the_file_and_dims_settings(
+async def test_an_old_bundle_button_is_stale_and_issues_nothing(
         services, make_active_client, fake_bot, monkeypatch):
-    """Бандл уходит файлом, а экран настроек гаснет: живым остаётся одно меню —
-    на самом бандле (кнопки под файлом — эталон adm.gw.bundle.old)."""
+    """Кнопка выпуска файла прежней версии — устаревшая: файла нет, кнопки
+    сообщения сняты, всплывашка «Кнопка устарела — открыл меню»."""
+    from awgbot.bot.handlers.stale import STALE_BUTTON
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
     import awgbot.core.config as cfg
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: (b"AWGGWB1\nxx", "b.enc"))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     sent_docs = []
 
@@ -381,10 +381,9 @@ async def test_an_old_bundle_button_issues_the_file_and_dims_settings(
     msg.answer_document = answer_document
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
-    assert sent_docs, "бандл не выдан по кнопке прежней версии"
-    assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "экран настроек не погашен"
-    assert msg.message_id in services.db.pop_content_msg_ids(cfg.ADMIN_ID), \
-        "инструкция не помечена как контент — «В меню» её не удалит"
+    assert not sent_docs, "по кнопке прежней версии выдан файл"
+    assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "кнопки старого сообщения не сняты"
+    assert cb.answers and cb.answers[0][0] == STALE_BUTTON, cb.answers
 
 
 async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):

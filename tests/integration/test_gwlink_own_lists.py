@@ -69,7 +69,6 @@ async def pair(services, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1")
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     # доставка настроек — не предмет этих тестов
-    monkeypatch.setattr(services, "gwlink_settings_due", lambda gw: None)
     port = _free_port()
     monkeypatch.setattr(linkserver, "channel_port", lambda: port)
     srv = linkserver.LinkServer(services)
@@ -211,8 +210,8 @@ async def test_an_agent_without_own_hash_gets_no_canon_and_keeps_its_session(pai
 
 async def test_lan_mode_off_gets_nothing_and_turning_it_on_sends_at_once(pair):
     """Режим без VPN выключен на Y — списков у него нет, канон не нужен. Режим
-    включили каналом (ack с LAN_MODE) — канон уходит в ту же секунду, не
-    дожидаясь такта."""
+    включили документом конфигурации (cfg_ack с применённым env) — канон
+    уходит в ту же секунду, не дожидаясь такта."""
     s = pair.services
     s.db.gateway_update(2, lan_mode=0)
     y = await _hello(pair, 2)
@@ -223,7 +222,8 @@ async def test_lan_mode_off_gets_nothing_and_turning_it_on_sends_at_once(pair):
     await pair.srv.deliver_all()
     assert await _next(y, "own_set", 0.5) is None, "канон ушёл шлюзу с выключенным режимом"
     s.db.gateway_update(2, lan_mode=1)
-    await y.send("ack", {"ok": True, "changed": ["LAN_MODE"]})
+    from awgbot.domain import gwcfg
+    await y.send("cfg_ack", gwcfg.ack_build(1, "ab12" * 4, applied=["env"]))
     msg = await _next(y, "own_set", 1.0)
     assert msg is not None and msg["items"] == [["a.com", "vpn"]], "включение режима не привезло канон сразу"
     await x.close(); await y.close()
@@ -421,7 +421,7 @@ def test_forgetting_a_slot_clears_its_keys_and_keeps_the_canon(pair):
 
 class _Pi(GatewayServices):
     def gw_snapshot(self) -> dict:
-        return gwsnapshot.collect(mark_status="confirmed", egress_ok=True, guard_info=None, peer_nets=None)
+        return gwsnapshot.collect(mark_status="confirmed", egress_ok=True, peer_nets=None)
 
     def gateway_claim_if_needed(self):
         return None
@@ -482,9 +482,9 @@ class _Host:
 
     def write(self, vpn=(), ru=()) -> None:
         (self.dns_d / "awg-gw-vpn-user.conf").write_text(
-            "".join(f"nftset=/{d}/inet#awg_home#lan_vpn4\n" for d in vpn), encoding="utf-8")
+            "".join(f"nftset=/{d}/inet#awg_lan#lan_vpn4\n" for d in vpn), encoding="utf-8")
         (self.dns_d / "awg-gw-ru-user.conf").write_text(
-            "".join(f"nftset=/{d}/inet#awg_home#lan_ru4\n" for d in ru), encoding="utf-8")
+            "".join(f"nftset=/{d}/inet#awg_lan#lan_ru4\n" for d in ru), encoding="utf-8")
 
     def lists(self) -> dict:
         from awgbot.domain import gwownlists
@@ -496,7 +496,7 @@ class _Host:
         return self.log.read_text().count("systemctl restart dnsmasq")
 
 
-ENV = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
+ENV = {"LAN_MODE": "1", "LAN_SUBNETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
 
 
 @pytest.fixture()
@@ -744,13 +744,13 @@ async def test_the_answer_goes_at_once_and_the_set_fills_in_the_background(pair,
     c = await pi.up(a)
     assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), (_card(s, 1), pair.acks)
     log = pi.host.log.read_text()
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in log, "«напрямую» не наполнен в sync"
+    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }" in log, "«напрямую» не наполнен в sync"
     assert "lan_vpn4 { 10.3.3.3 }" not in log, "ответ ушёл только после dig — сцена не та или fill синхронный"
     assert c._fill_task is not None, "fill не запущен после ответа"
     await asyncio.wait_for(c._fill_task, 10)
     log = pi.host.log.read_text()
-    assert "nft add element inet awg_home lan_vpn4 { 10.3.3.3 }" in log, "fill не положил адрес в набор"
-    assert log.rindex("nft list set inet awg_home lan_vpn4") > log.index("lan_vpn4 { 10.3.3.3 }"), \
+    assert "nft add element inet awg_lan lan_vpn4 { 10.3.3.3 }" in log, "fill не положил адрес в набор"
+    assert log.rindex("nft list set inet awg_lan lan_vpn4") > log.index("lan_vpn4 { 10.3.3.3 }"), \
         "слепок снят до наполнения"
     assert len(pair.acks) == 1 and pair.acks[0][1]["ok"] is True, pair.acks
     assert pi.host.lists() == {"news.org": "vpn", "shop.ru": "ru"}

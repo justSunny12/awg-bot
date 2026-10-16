@@ -44,11 +44,12 @@ def _caps(services, slot_id: int = 1, *caps) -> None:
 
 # ── раздел token ─────────────────────────────────────────────────────────────
 
-def test_no_token_section_for_an_agent_without_token1(services, slot, env):
-    """Агент 3.3 без token1 раздела не понимает — не получает его, даже если
-    токен на ВПС есть."""
+def test_no_token_section_for_a_token_not_entered_by_the_button(services, slot, env):
+    """Токен на ВПС есть, но введён при настройке, а не аварийной кнопкой: он
+    мог устареть — раздела нет (раздел токена с 3.3.1 не зависит от
+    возможностей агента: все агенты не ниже 3.3.0 его понимают)."""
     services.set_gw_bot_token(OLD, 1)
-    _caps(services, 1, "cfg1", "confirm1")
+    _caps(services, 1)
     assert services.gwcfg_token(slot) is None
     assert "token" not in gwcfg.build(1, "ab" * 8, services.gwcfg_desired(slot))
 
@@ -133,10 +134,11 @@ def test_a_matching_token_print_brings_nothing_a_new_token_brings_the_document(s
 
 # ── кому довезти ─────────────────────────────────────────────────────────────
 
-def test_token_slots_are_only_agents_with_token1(services, slot, env):
-    assert services.gateway_token_slots() == []
-    _caps(services, 1, "cfg1", "confirm1")
-    assert services.gateway_token_slots() == [], "агенту без token1 токен не довезти"
+def test_token_slots_are_all_but_agents_below_330(services, slot, env):
+    """Агент ниже 3.3.0 (на связь выходил, cfg1 нет) токен каналом не примет;
+    прочие — да: возможности 3.3.0 приходят вместе."""
+    services.gwlink_session_opened(1, "3.2.1", 2, [])
+    assert services.gateway_token_slots() == [], "агенту ниже 3.3.0 токен не довезти"
     _caps(services)
     services.gateway_set_label(1, "север")
     assert services.gateway_token_slots() == [(1, "NASPi (север)")]

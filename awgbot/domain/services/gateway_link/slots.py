@@ -57,24 +57,22 @@ class SlotsMixin:
         return f"{key}_{int(slot_id)}"
 
     def gateway_trusted_ips(self) -> set[str]:
-        """Адреса из последнего выданного ADMIN_IPS каждого слота: шлюзы доверяют
-        адресу, а не устройству (admin4 в таблице). Освободившийся адрес админа
-        нельзя отдать следующему устройству любого клиента, пока список у шлюзов
-        не сменится — иначе чужой клиент получит доступ к шлюзу и его сети."""
+        """Адреса ADMIN_IPS, которым доверяют шлюзы (admin4 в таблице): шлюзы
+        доверяют адресу, а не устройству. Освободившийся адрес админа нельзя
+        отдать следующему устройству любого клиента, пока список у шлюзов не
+        сменится — иначе чужой клиент получит доступ к шлюзу и его сети.
+        Источник — снимок канала (что реально стоит в обвязке); пока снимка
+        нет (файл первого применения выдан, агент ещё не на связи) — адреса,
+        вшитые в этот файл."""
+        from awgbot.util import gwlink as _gwlink
         out: set[str] = set()
         for g in self.db.gateways():
-            # последний выданный файл — только агентам без документа: агенту с
-            # cfg1 список везёт канал, и стоящее у него видно по снимку ниже —
-            # иначе адреса из давнего файла держались бы в карантине вечно
-            if "cfg1" not in self.gwlink_agent_caps(g.id):
+            snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
+            if isinstance(snap.get("bundle"), dict):
+                out.update(x for x in str(snap["bundle"].get(_gwlink.snap_field("ADMIN_IPS")) or "").split() if x)
+            else:
                 raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
                 out.update(x for x in raw.split() if x)
-            # и то, что реально стоит в обвязке по снимку канала: файл мог быть
-            # выдан и не применён, а канал — доставить список без файла
-            snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
-            from awgbot.util import gwlink as _gwlink
-            stands = (snap.get("bundle") or {}) if isinstance(snap.get("bundle"), dict) else {}
-            out.update(x for x in str(stands.get(_gwlink.snap_field("ADMIN_IPS")) or "").split() if x)
         return out
 
     def _gw_name(self, gw) -> str:
@@ -93,12 +91,6 @@ class SlotsMixin:
         когда шлюз лёг."""
         import html
         return html.escape(self._gw_display(gw), quote=False)
-
-    def _gw_reissue_link(self, gw, label: str = "Перевыпусти") -> str:
-        """«Перевыпусти» — ссылка, по которой бот сразу отдаёт файл
-        конфигурации слота (gwcfg-<слот>); без username — простой текст."""
-        slot = int(getattr(gw, "id", 0) or 0)
-        return self._link(f"gwcfg-{slot}", label) if slot else label
 
     def _gw_card_link(self, gw, label: str = "в карточке шлюза") -> str:
         """Ссылка на карточку слота с произвольной подписью."""
@@ -339,7 +331,7 @@ class SlotsMixin:
         cfg = self.generate_config(dev.id, for_bundle=True)
         return configgen.gateway_uplink_conf(cfg["conf"])
 
-    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"   # адреса админа, вшитые в последний файл слота
+    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"   # адреса админа, вшитые в последний файл первого применения
 
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))

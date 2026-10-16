@@ -43,7 +43,6 @@ def _routing(services, mp, *, enabled: bool = True, awake: bool = True) -> None:
     services.routing_link_ok = lambda: True
     services._link_privkey = lambda gw=None: PRIV
     services._run_link_script = lambda mode, env=None: None
-    services.gw_bundle_encrypted = lambda slot=None: (b"DUMMY-ENC", "awg-gw-bundle.enc")
     services.gw_bundle_plain = lambda slot=None: (b"DUMMY-PLAIN", "awg-gw-bundle.sh")
     import time as _time
     services.routing_update_lists = lambda force=False: (services.db.set_state(services._RT_LISTS_KEY, str(int(_time.time()))), 12345)[1]
@@ -158,24 +157,28 @@ def _ch_base(services, mp):
 def _installed(services) -> dict:
     """Что стоит на шлюзе, когда всё доехало: ровно то, из чего ВПС соберёт файл."""
     addrs = " ".join(sorted(set(services.db.admin_device_addresses(config.ADMIN_ID))))
-    return {"lan_mode": "1", "home_subnets": LAN1, "resolver": "10.9.1.1", "peer_home_nets": "", "admin_ips": addrs}
+    return {"lan_mode": "1", "lan_subnets": LAN1, "resolver": "10.9.1.1", "peer_lan_nets": "", "admin_ips": addrs}
+
+
+_CAPS = ("cfg1", "confirm1", "token1")
 
 
 def _ch(bundle: dict | None = None, *, online: bool = True, closed: bool = False, age_h: float = 0,
-        skew_min: int = 0, **kw):
+        skew_min: int = 0, caps=_CAPS, **kw):
     """Снимок слота 1: bundle — поверх установленного (None — всё доехало);
-    online — сессия канала открыта; closed — закрыта после снимка; age_h —
-    снимок принят столько часов назад; skew_min — часы шлюза спешат."""
+    online — сессия канала открыта (агент с возможностями caps; пусто —
+    агент ниже 3.3.0); closed — закрыта после снимка; age_h — снимок принят
+    столько часов назад; skew_min — часы шлюза спешат."""
     def step(services, mp):
         at = NOW - _dt.timedelta(hours=age_h)
-        snap = {"bundle": {**_installed(services), **(bundle or {})}, "link_contract": "1", "plumbing_gen": "new",
-                "mark_status": "confirmed", "agent_version": "3.1.0", "awg_generation": 1, "egress_ok": True,
+        snap = {"bundle": {**_installed(services), **(bundle or {})}, "link_contract": "1",
+                "mark_status": "confirmed", "agent_version": "3.3.0", "awg_generation": 1, "egress_ok": True,
                 "boot_id": "b" * 36, "ts": _iso(at + _dt.timedelta(minutes=skew_min)), "rev": 1}
         snap.update(kw)
         services.gwlink_snapshot_in(1, snap, 1, True)
         services.db.set_state(services._gwlink_key(services._GWLINK_SNAP_AT_KEY, 1), _iso(at))
         if online:
-            services.gwlink_session_opened(1, "3.1.0", 1)
+            services.gwlink_session_opened(1, snap["agent_version"], 2, list(caps))
         if closed:
             services.gwlink_session_closed(1)
     return step

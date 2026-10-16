@@ -243,38 +243,6 @@ async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot)
 
 # ── подпись под файлом конфигурации ──────────────────────────────────────────
 
-def test_bundle_caption_without_known_bot_has_no_link():
-    """getMe ещё не отвечал — без ссылки и без пустых скобок."""
-    for bot in ({}, None, {"username": "", "name": "x"}):
-        got = texts.gateway_bundle_caption("Pi2", bot)
-        assert got == ("📤 <b>Конфигурация шлюза «Pi2»</b>\nПерешли это сообщение боту шлюза — "
-                       "он проверит и применит сам\n" "\n⚠️ Сначала перешли его: любая кнопка ниже удалит это сообщение"), (bot, got)
-
-
-def test_bundle_caption_escapes_names():
-    """Имя устройства, подпись слота и имя бота задаёт человек: `<` или `&`
-    без экранирования Telegram отвергает, и файл с ключами не уходит вовсе."""
-    got = texts.gateway_bundle_caption("A<B> (x & y)", {"username": "b_bot", "name": "Шлюз <Pi2> & co"})
-    assert "A&lt;B&gt; (x &amp; y)" in got, got
-    assert ">Шлюз &lt;Pi2&gt; &amp; co</a>" in got, got
-    assert "<B>" not in got and "<Pi2>" not in got, got
-
-
-async def test_send_gw_bundle_failure_sends_no_file(services, slots, fake_bot, monkeypatch):
-    """Бандл не собрался — ни документа, ни подписи, только причина."""
-    from awgbot.domain.services import ServiceError
-    _, pi, _ = slots
-    _slot1(services, pi)
-
-    def _fail(slot=None):
-        raise ServiceError("нет ключей")
-    monkeypatch.setattr(services, "gw_bundle_encrypted", _fail)
-    msg = _amsg(fake_bot)
-    assert await sh.send_gw_bundle(msg, services, 1) is False
-    assert not [s for s in msg.sent if s[0] == "document"]
-    assert any(s[0] == "answer" and "нет ключей" in s[1] for s in msg.sent), msg.sent
-
-
 def _async(value):
     async def _f(*a, **k):
         return value
@@ -304,9 +272,11 @@ def test_nobody_handles_the_removed_token_callback():
     соседнее действие того же колбэка находится."""
     from tests.e2e.test_settings_layout import _first_matching_handler
     routers = _all_routers()
-    assert any(_first_matching_handler(r, GwSlotCB(action="bundle", slot=2)) == "gw_slot_bundle"
+    assert any(_first_matching_handler(r, GwSlotCB(action="ping", slot=2)) == "gw_slot_ping"
                for r in routers), "сверка не находит даже живой хендлер — проверка ничего не значит"
-    hit = [(r.name, _first_matching_handler(r, GwSlotCB(action="token", slot=2))) for r in routers]
-    assert not [h for h in hit if h[1]], f"колбэк снятой кнопки кто-то обрабатывает: {hit}"
+    # «📤 Конфигурация» и прежнее имя «🗺 Подсети» (home) сняты в 3.3.1 — туда же
+    for action in ("token", "bundle", "home"):
+        hit = [(r.name, _first_matching_handler(r, GwSlotCB(action=action, slot=2))) for r in routers]
+        assert not [h for h in hit if h[1]], f"колбэк снятой кнопки {action} кто-то обрабатывает: {hit}"
     assert not hasattr(sh, "gw_slot_token") and not hasattr(texts, "gateway_token_only_ask"), \
         "хвосты снятой кнопки остались в модулях"

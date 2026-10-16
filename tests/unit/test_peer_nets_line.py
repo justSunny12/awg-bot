@@ -63,24 +63,20 @@ def _dialog_state(problem: str) -> dict:
 
 
 def test_the_transit_dialog_promises_no_link_while_the_addresses_are_off():
-    on = gateway_lan_ask(_dialog_state(""), True, "10.9.1.1", ["Pi4"])
+    on = gateway_lan_ask(_dialog_state(""), True, "10.9.1.1")
     assert "из подсетей других шлюзов с включённым VPN-транзитом (Pi4)" in on
-    assert "Потребуется перевыпуск конфигурации шлюза: Pi4" in on
     off = gateway_lan_ask(_dialog_state("служебное пространство 10.0.0.0/12 пересекается с подсетью клиентов"),
-                          True, "10.9.1.1", [])
-    assert "🔗 Связь подсетей:" not in off and "Потребуется перевыпуск" not in off
+                          True, "10.9.1.1")
+    assert "🔗 Связь подсетей:" not in off
 
 
-def test_a_slot_without_its_channel_is_not_asked_twice_in_the_dialog():
-    """О перевыпуске — одна строка с именами: сам слот без канала в ней
-    первым и один раз, даже если сервис назвал его среди соседей."""
-    st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": False}}
-    text = gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
-    assert text.count("Потребуется перевыпуск") == 1 and "конфигурации шлюза: Pi5, Pi4" in text, text
-    st["channel"] = {"online": True}
-    assert "конфигурации шлюза: Pi5, Pi4" in gateway_lan_ask(st, True, "10.9.1.1", ["Pi5", "Pi4"])
-    assert "Потребуется перевыпуск" not in gateway_lan_ask(st, True, "10.9.1.1", [])
-
+def test_the_transit_dialog_never_asks_for_a_reissue():
+    """Режим и подсети соседей везёт документ конфигурации — и шлюзу не на
+    связи, как только появится: строки о перевыпуске нет ни при каком канале."""
+    for online in (True, False):
+        st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": online}}
+        for on in (True, False):
+            assert "перевыпуск" not in gateway_lan_ask(st, on, "10.9.1.1")
 
 
 def test_the_announcement_with_fifteen_slots_fits_telegram():
@@ -103,13 +99,6 @@ def test_nine_slots_and_more_show_up_to_three_addresses_each():
     assert line.count("<code>") == 27 and line.count("и ещё 2") == 9, line
     few = {"state": "ok", "pairs_named": many["pairs_named"][:8]}
     assert texts.peer_nets_line(few).count("<code>") == 40
-
-
-def test_the_off_dialog_names_who_needs_a_file():
-    st = {**_dialog_state(""), "display": "Pi5", "channel": {"online": True}}
-    text = gateway_lan_ask(st, False, "", ["Pi5", "Pi<4>"])
-    assert "Потребуется перевыпуск конфигурации шлюза: Pi5, Pi&lt;4&gt;" in text, text
-    assert "Потребуется перевыпуск" not in gateway_lan_ask(st, False, "", [])
 
 
 def test_the_card_caps_peer_names_and_subnet_warnings():

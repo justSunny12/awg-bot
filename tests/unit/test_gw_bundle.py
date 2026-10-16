@@ -243,34 +243,6 @@ def test_bundle_carries_the_vps_hostname(bundle):
         "в бандле нет SERVER_NAME"
 
 
-def test_mail_line_lands_before_the_marker_line_not_inside_sed(bundle, services, monkeypatch, tmp_path):
-    """Регресс 09.09.2026: вставка попадала в sed-выражение с тем же маркером,
-    sed ломался, на шлюз ложился пустой скрипт обвязки."""
-    import re, subprocess
-    from awgbot.core import settings
-    store = {}
-    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
-    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
-    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
-    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
-    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    services.backup_set_passphrase("correct horse battery")
-    store["app.scheduler.backup_channel"] = "email"
-    out = services._bundle_with_mail(bundle.encode())
-    text = out.decode()
-    import base64, json
-    payload = json.loads(base64.b64decode(re.search(r'^MAIL_B64="([^"]+)"', text, re.M).group(1)))
-    assert payload["backup"] == "email", "канал бэкапов ВПС едет шлюзу вместе с почтой"
-    assert "sed -n '/^#__GW_SETUP_BELOW__$/,$p'" in text, "sed-выражение повреждено"
-    m = re.search(r"^MAIL_B64=.*\n^BACKUP_B64=.*\n#__GW_SETUP_BELOW__$", text, re.M)
-    assert m, "строки почты и фразы должны стоять прямо перед строкой-маркером"
-    f = tmp_path / "b.sh"; f.write_text(text)
-    extracted = subprocess.run([SH, "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
-                               capture_output=True, text=True).stdout
-    assert extracted.strip() and "MAIL_B64" not in extracted, "скрипт обвязки извлекается целиком и без наших строк"
-    assert '[ -s "$DEST/routing-gw-setup.sh" ]' in text, "бандл обязан отказать на пустом скрипте"
-
-
 def test_bundle_carries_the_admin_devices_for_ssh(bundle):
     """SSH на шлюз через туннель — устройствам админа: список знает только бот
     ВПС, бандл вшивает его и экспортирует до gw-скрипта; чужие символы из
@@ -307,29 +279,27 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
 # ── канал ВПС ↔ шлюз: строки едут бандлом ─────────
 
 def _channel(text: str) -> tuple[str, str]:
+    """(строка LINK_CHANNEL — с 3.3.1 её нет, «», порт канала)."""
     on = re.search(r'^LINK_CHANNEL="([^"]*)"$', text, re.M)
     port = re.search(r'^LINK_CHANNEL_PORT="([^"]*)"$', text, re.M)
-    assert on and port, "строк канала в бандле нет"
-    return on.group(1), port.group(1)
+    assert port, "строки порта канала в бандле нет"
+    return (on.group(1) if on else ""), port.group(1)
 
 
-def test_bundle_turns_the_channel_on_and_exports_it(bundle):
-    """Строки канала доезжают до юнита обвязки: порт читает агент, а
-    LINK_CHANNEL=1 — агенты прежних версий, которые без него канал гасят. Не
-    доедут — карточка слота молчит, и человек гадает почему."""
-    assert _channel(bundle) == ("1", "8787")
-    assert "\nexport LINK_CHANNEL\n" in bundle and "\nexport LINK_CHANNEL_PORT\n" in bundle
-    assert bundle.index("export LINK_CHANNEL") < bundle.index(
+def test_bundle_carries_the_channel_port_and_no_channel_switch(bundle):
+    """Порт канала доезжает до юнита обвязки (его читает агент); строки
+    LINK_CHANNEL=1 для агентов до 3.3.0 больше нет: канал обязателен, агент
+    держит его, пока есть конфиг линка."""
+    assert _channel(bundle) == ("", "8787")
+    assert "\nexport LINK_CHANNEL_PORT\n" in bundle and "\nexport LINK_CHANNEL\n" not in bundle
+    assert bundle.index("export LINK_CHANNEL_PORT") < bundle.index(
         '"$DEST/routing-gw-setup.sh" "${1:---apply}"'), "переменные встают до запуска обвязки"
 
 
 @pytest.mark.parametrize("value", ["0", "", "да"])
-def test_the_channel_cannot_be_turned_off_from_the_environment(tmp_path, value):
-    """Канал обязателен: файл конфигурации несёт LINK_CHANNEL="1" при любом
-    окружении. Старый скрипт сборки или ручной запуск с LINK_CHANNEL=0 не
-    должны выпускать шлюзу конфигурацию, на которой прежний агент замолчит."""
+def test_the_environment_cannot_bring_the_channel_switch_back(tmp_path, value):
     out = _emit_bundle(tmp_path, env={"LINK_CHANNEL": value})
-    assert _channel(out)[0] == "1", f"окружение LINK_CHANNEL={value!r} выключило канал в бандле"
+    assert _channel(out)[0] == "", f"окружение LINK_CHANNEL={value!r} вернуло строку в бандл"
 
 
 def test_the_channel_port_comes_from_the_same_key_the_server_listens_on(tmp_path):
@@ -368,7 +338,7 @@ def test_junk_in_the_channel_port_does_not_reach_the_gateway(tmp_path):
                                       "LINK_CHANNEL": "да"})
     on, port = _channel(out)
     assert port == "9099", f"в бандл уехал непроверенный порт: {port!r}"
-    assert on == "1", f"мусор в окружении попал в строку канала: {on!r}"
+    assert on == "", f"мусор в окружении попал в бандл строкой канала: {on!r}"
 
 
 def test_bundle_stamps_the_issue_time(bundle):
@@ -450,10 +420,10 @@ def test_bundle_mode_refreshes_the_endpoint_host_from_settings(bundle):
     assert fn.index('if [ -n "${ENDPOINT_HOST:-}" ]') < fn.index("AllowedIPs пира ВПС зависит")
 
 
-def test_a_file_for_an_agent_32_carries_the_neighbour_prefix(tmp_path, services, make_active_client):
-    """Агенту 3.2.x подсети соседей едут только файлом: в нём — префикс слота
-    соседа в туннеле (10.241.0.0/16), а не его настоящие подсети, и в
-    переменной для обвязки, и в AllowedIPs конфига линка."""
+def test_a_first_run_file_carries_the_neighbour_prefix(tmp_path, services, make_active_client):
+    """Файл первого применения несёт подсети соседей: префикс слота соседа в
+    туннеле (10.241.0.0/16), а не его настоящие подсети, и в переменной для
+    обвязки, и в AllowedIPs конфига линка."""
     from awgbot.core import config
     admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
@@ -463,8 +433,8 @@ def test_a_file_for_an_agent_32_carries_the_neighbour_prefix(tmp_path, services,
     services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"], lan_mode=1)
     services.db.gateway_update(2, lan_subnets=["192.168.68.0/24"], lan_mode=1)
     env = services._lan_env(services.db.gateway(1))
-    assert env["PEER_HOME_NETS"] == "10.241.0.0/16"
+    assert env["PEER_LAN_NETS"] == "10.241.0.0/16"
     text = _emit_bundle(tmp_path, env={k: v for k, v in env.items() if v})
-    assert 'PEER_HOME_NETS="10.241.0.0/16"' in text, "префикс соседа не вшит"
+    assert 'PEER_LAN_NETS="10.241.0.0/16"' in text, "префикс соседа не вшит"
     assert "AllowedIPs = 10.8.1.0/24, 10.99.99.0/30, 10.241.0.0/16" in text, "префикс соседа не в AllowedIPs линка"
     assert "192.168.68.0/24" not in text, "настоящая подсеть соседа уехала в файл"

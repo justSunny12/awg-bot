@@ -49,7 +49,7 @@ class ServicesMixin:
         снимку): пока не применено, маршрута к соседу нет."""
         issued = self.gateway_peer_nets(gw.id)
         snap = self.gwlink_snapshot(gw.id)
-        applied = str((snap.get("bundle") or {}).get("peer_home_nets") or "").split()
+        applied = str((snap.get("bundle") or {}).get("peer_lan_nets") or "").split()
         return issued, [n for n in issued if n in applied]
 
     def gwlink_peer_services_for(self, gw, allowed: list[str] | None = None) -> tuple[str, list[dict]]:
@@ -89,16 +89,15 @@ class ServicesMixin:
         issued, applied = self._gwlink_peer_nets_applied(gw)
         digest, _items = self.gwlink_peer_services_for(gw, applied)
         ack = self.gwlink_peer_services_ack(gw.id)
-        # в счёт — сервисы по ВЫДАННЫМ подсетям: до перевыпуска они уже есть,
+        # в счёт — сервисы по ВЫДАННЫМ подсетям: до доставки они уже есть,
         # просто ждут, и строка обязана это сказать, а не «не найдены»
         peer = self._gwlink_neighbour_services(gw, issued) if issued else []
         acked = bool(ack) and ack.get("hash") == digest
         if acked and digest:
             state = "applied" if ack.get("ok") else "failed"
         elif issued and not applied:
-            # подсети соседей ещё не на шлюзе: агенту с документом их довезёт
-            # канал (ожидание), агенту 3.2.x — только файл (перевыпуск)
-            state = "pending" if "cfg1" in self.gwlink_agent_caps(gw.id) else "reissue"
+            # подсети соседей ещё не на шлюзе: их довезёт документ (ожидание)
+            state = "pending"
         elif acked:
             # пустое к пустому: шлюз подтвердил снятие записей
             state = "applied" if ack.get("ok") else "failed"

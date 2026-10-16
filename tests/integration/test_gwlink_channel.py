@@ -33,9 +33,9 @@ ADMIN = config.ADMIN_ID
 PRIV = base64.b64encode(os.urandom(32)).decode()
 KEY = gwlink.channel_key(PRIV)
 
-SNAP = {"bundle": {"lan_mode": "1", "home_subnets": "192.168.68.0/24",
-                   "resolver": "10.9.1.1", "peer_home_nets": "", "admin_ips": "10.8.1.2"},
-        "link_contract": "1", "plumbing_gen": "new", "mark_status": "confirmed",
+SNAP = {"bundle": {"lan_mode": "1", "lan_subnets": "192.168.68.0/24",
+                   "resolver": "10.9.1.1", "peer_lan_nets": "", "admin_ips": "10.8.1.2"},
+        "link_contract": "1", "mark_status": "confirmed",
         "agent_version": "3.1.0", "awg_generation": 1, "egress_ok": True,
         "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00"}
 
@@ -155,11 +155,10 @@ async def link(services, make_active_client, monkeypatch):
     services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     services.gateway_set_lan_mode(1, True)
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
-    # Снимок фикстуры — ровно то, что ВПС выдаёт этому слоту: иначе с этапа 2
-    # сервер сразу отвечает на снимок настройками, а тесты здесь не про них.
-    want = services.gwlink_settings_want(services.db.gateway(1))
+    # Снимок фикстуры — ровно то, что ВПС выдаёт этому слоту (снимок без
+    # отпечатков cfg — документа сервер не шлёт, тесты здесь не про него).
+    want = services.gwlink_issued_env(services.db.gateway(1))
     want = {k.lower(): v for k, v in want.items()}
-    want["peer_home_nets"] = " ".join(services.gateway_peer_nets(1))   # едет только бандлом
     assert want == SNAP["bundle"], "фикстурный снимок разошёлся с выдаваемым — поправь SNAP['bundle']"
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     port = _free_port()
@@ -205,7 +204,7 @@ async def test_a_connecting_gateway_gets_a_session_and_its_snapshot_is_stored(se
     sess = services.gwlink_session(1)
     assert sess["agent"] == "3.1.0" and sess["proto"] == str(gwlink.PROTO) and sess["since"]
     snap = services.gwlink_snapshot(1)
-    assert snap["bundle"]["home_subnets"] == "192.168.68.0/24"
+    assert snap["bundle"]["lan_subnets"] == "192.168.68.0/24"
     assert snap["agent_version"] == "3.1.0" and snap["egress_ok"] is True
     assert services.gwlink_snapshot_age(1) is not None and services.gwlink_snapshot_age(1) < 60
     assert link.online(1) is True
@@ -491,13 +490,13 @@ async def test_a_snapshot_full_of_junk_is_trimmed_and_the_bot_keeps_serving(serv
     gw = await _connect(link)
     await gw.send("hello", {"proto": 1, "agent": "3.1.0"})
     await gw.send("snap", {**SNAP, "rev": 1,
-                           "bundle": {**SNAP["bundle"], "home_subnets": "Я" * 40_000},
+                           "bundle": {**SNAP["bundle"], "lan_subnets": "Я" * 40_000},
                            "agent_version": "<b>3.1.0</b>", "temp": 61.2,
                            "ssh": {"port": 2222}, "будущее": {"a": [1, 2, 3]}})
     await _until(lambda: services.gwlink_snapshot(1))
 
     snap = services.gwlink_snapshot(1)
-    assert len(snap["bundle"]["home_subnets"]) == 512, "монстр доехал до БД целиком"
+    assert len(snap["bundle"]["lan_subnets"]) == 512, "монстр доехал до БД целиком"
     assert snap["agent_version"] == "<b>3.1.0</b>", "экранирует экран, а не хранилище"
     assert "temp" not in snap and "ssh" not in snap and "будущее" not in snap
     # сессия жива и продолжает работать
@@ -637,7 +636,7 @@ async def test_the_snapshot_survives_a_restart_of_the_bot(services, link, db):
 
     from awgbot.domain.services import Services
     fresh = Services(db)
-    assert fresh.gwlink_snapshot(1)["bundle"]["home_subnets"] == "192.168.68.0/24"
+    assert fresh.gwlink_snapshot(1)["bundle"]["lan_subnets"] == "192.168.68.0/24"
     assert fresh.gwlink_snapshot_age(1) is not None
     assert fresh.gwlink_snapshot(1)["agent_version"] == "3.1.0"
 
@@ -786,13 +785,12 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
     client.start()
     try:
         await _until(lambda: services.gwlink_snapshot(1))
-        assert services.gwlink_snapshot(1)["bundle"]["home_subnets"] == "192.168.68.0/24"
+        assert services.gwlink_snapshot(1)["bundle"]["lan_subnets"] == "192.168.68.0/24"
         assert services.gwlink_session(1)["agent"] == config.INSTALLED_VERSION
         sent_after_hello = client._sent_bytes
 
-        # событие на шлюзе: шлюз потерял выход наружу. Событие — не из
-        # настроек: смена подсетей на шлюзе с этапа 2 вызывает ответ сервера
-        # настройками, это проверяет test_gwlink_settings_delivery.py.
+        # событие на шлюзе: шлюз потерял выход наружу (не из конфигурации:
+        # её расхождение сервер закрывает документом, это — test_gwcfg_delivery.py).
         agent.snap["egress_ok"] = False
         await client.push()
         await _until(lambda: services.gwlink_snapshot(1)["egress_ok"] is False)
@@ -804,9 +802,9 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         assert client._sent_bytes == bytes_before_idle > sent_after_hello
 
         # человек нажал «Обновить»: ВПС просит полный снимок
-        agent.snap["plumbing_gen"] = "old"
+        agent.snap["link_contract"] = "2"
         assert await link.send(1, "ask", {"what": "snap"}) is True
-        await _until(lambda: services.gwlink_snapshot(1)["plumbing_gen"] == "old")
+        await _until(lambda: services.gwlink_snapshot(1)["link_contract"] == "2")
         assert services.db.get_state("gwlink_snap_rev_1") == "1", "нумерация началась заново"
 
         # оба конца считают байты канала там, где их читает зонд живости:

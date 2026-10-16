@@ -40,15 +40,16 @@ def _claim(services, pub):
     return services.gateway_claim("перешли: " + gwsign.sign(PRIV, "claim", pub, host="NASPi"))
 
 
-def test_the_claim_tells_whether_the_agent_takes_the_document(gw, services):
-    """caps в токене подписаны вместе с остальным: cfg1 — файл не нужен;
-    токен прежнего агента (без caps) и мусор в caps — файл, как раньше."""
+def test_the_claim_carries_the_capabilities_and_sends_no_file(gw, services):
+    """caps в токене подписаны вместе с остальным (контракт канала); файла в
+    ответ нет ни при каких caps — конфигурацию везёт канал."""
     _admin, _phone, pi = gw
     pub = services.db.get_device(pi.device_id).public_key
-    assert _claim(services, pub)["cfg1"] is False, "токен без caps принят за агента с документом"
+    assert "cfg1" not in _claim(services, pub)
     got = services.gateway_claim(gwsign.sign(PRIV, "claim", pub, caps=("cfg1", "token1")))
-    assert got["status"] == "already" and got["cfg1"] is True
+    assert got["status"] == "already" and "cfg1" not in got
     assert gwsign.verify(PRIV, gwsign.sign(PRIV, "claim", pub))["caps"] == []
+    assert gwsign.verify(PRIV, gwsign.sign(PRIV, "claim", pub, caps=("cfg1",)))["caps"] == ["cfg1"]
 
 
 def test_claim_marks_only_admin_device_and_only_once(gw, services, make_active_client):
@@ -221,7 +222,7 @@ def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatc
         tmp_path / _os.path.basename(str(p)) if str(p).startswith("/root/") else p, *a, **k))
     seen = {}
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: seen.update(env or {}))
-    services.gw_bundle_encrypted()
+    services.gw_bundle_plain()
     assert seen["GATEWAY_PUBKEY"] == dev.public_key and seen["GATEWAY_PREV_PUBKEY"] == ""
     conf = base64.b64decode(seen["UPLINK_B64"]).decode()
     assert "Table = off" in conf and "DNS" not in conf and dev.private_key in conf

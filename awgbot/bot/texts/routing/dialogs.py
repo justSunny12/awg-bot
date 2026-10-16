@@ -27,34 +27,14 @@ def gw_token_not_forgotten(name: str, env_var: str, env_path: str) -> str:
             "конфигурации шлюза")
 
 
-def _reissue_line(names, me: str) -> str:
-    """«Потребуется перевыпуск конфигурации шлюза: A, B» — одной строкой с
-    именами тех, кому изменение доедет только файлом; только сам слот — без
-    имени. Пусто — строки нет."""
-    names = list(dict.fromkeys(n for n in names if n))
-    if not names:
-        return ""
-    if names == [me]:
-        return "Потребуется перевыпуск конфигурации шлюза"
-    return "Потребуется перевыпуск конфигурации шлюза: " + ", ".join(_e(n) for n in names)
-
-
-def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
-    """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит;
-    о перевыпуске — одной строкой с именами. reissue — кому подсети соседей
-    после включения или выключения доедут только файлом (агенты 3.2.x этого и
-    соседних слотов с VPN-транзитом)."""
+def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
+    """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит.
+    Режим и подсети соседей шлюзам везёт документ конфигурации — и тем, кто не
+    на связи, как только появятся."""
     name = slot_ref(state)
-    chan = state.get("channel") or {}
-    # агент с документом получит режим каналом и не на связи — как только появится
-    online = bool(chan.get("online")) or bool((chan.get("cfg") or {}).get("cfg1"))
     peers = [slot_ref(x) for x in state.get("states") or []
              if x["gateway"].id != state["gateway"].id and x["gateway"].lan_mode]
     linked = bool(peers) and not (state.get("lan_space") or {}).get("problem")
-    # сам слот без канала получает всё только файлом — он в перечне первым
-    me = state.get("display") or name
-    names = ([me] if not online else []) + list(reissue)
-    reissue_line = _reissue_line(names, me)
     if on:
         lines = [f"🔀 VPN-транзит на {name} — включить?",          # вопрос-подтверждение — без жирного
                  "Роутер отдаёт шлюзу весь трафик локальной сети, шлюз разводит его: заблокированное — в туннель, "
@@ -67,8 +47,6 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
         if not resolver:
             lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на <code>1.1.1.1</code> через туннель, без "
                          "защиты от DoH — лучше задать свой: «⚙️ Настройки» → «🖥 Сервер AWG» → «🔒 Свой резолвер»")
-        if reissue_line:
-            lines.append(reissue_line)
         return "\n".join(lines)
     lines = [
         f"🔀 VPN-транзит на {name} — выключить?",
@@ -78,8 +56,6 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str, reissue=()) -> str:
     if linked:
         # связь подсетей — своей строкой со значком, как в диалоге включения
         lines.insert(2, f"🔗 Связь подсетей {name} с другими шлюзами выключится")
-    if reissue_line:
-        lines.append(reissue_line)
     return "\n".join(lines)
 
 

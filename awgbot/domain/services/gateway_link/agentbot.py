@@ -147,31 +147,3 @@ class AgentBotMixin:
         lines = (f'AGENT_BOT_TOKEN="{token}"\n'
                  f'AGENT_ADMIN_ID="{config.ADMIN_ID}"\n').encode()
         return plain[:m.start()] + lines + plain[m.start():]
-
-    def _bundle_with_mail(self, plain: bytes) -> bytes:
-        """Настройки почты и парольная фраза бэкапов — в бандл, чтобы не вводить
-        их дважды: строки MAIL_B64 / BACKUP_B64 (JSON в base64) перед строкой
-        маркера контракта. Бандл шифрован ключом линка. Чего нет на ВПС — не
-        добавляется, агент оставляет своё как есть."""
-        m = self._MAIL_MARK_LINE.search(plain)
-        if m is None:
-            return plain
-        import base64
-        import json
-        lines = b""
-        acc = self.email_account()
-        if acc is not None:
-            # backup=email — бэкапы ВПС уходят на почту: шлюз, приняв ящик,
-            # переключит свои туда же (при включённом шифровании)
-            payload = json.dumps({"login": acc.login, "password": acc.password,
-                                  "imap_host": acc.imap_host, "imap_port": acc.imap_port,
-                                  "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port,
-                                  "backup": self.backup_channel()},
-                                 ensure_ascii=False).encode()
-            lines += b'MAIL_B64="' + base64.b64encode(payload) + b'"\n'
-        if self.backup_encryption_mode() == "passphrase":
-            phrase = self.db.get_state(self._BK_PASSPHRASE_KEY) or ""
-            lines += b'BACKUP_B64="' + base64.b64encode(json.dumps({"passphrase": phrase}).encode()) + b'"\n'
-        if not lines:
-            return plain
-        return plain[:m.start()] + lines + plain[m.start():]

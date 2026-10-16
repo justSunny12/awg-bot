@@ -1,9 +1,9 @@
-"""settings.py — сверка выданного с установленным и настройки по каналу."""
+"""settings.py — сверка выдаваемого с установленным по снимку канала."""
 from __future__ import annotations
 
 
 
-from .common import _cut, drift_lines, log
+from .common import _cut, drift_lines
 
 
 class SettingsMixin:
@@ -12,7 +12,7 @@ class SettingsMixin:
     def gwlink_config_drift(self, gw, with_keys: bool = False):
         """Чем установленное на шлюзе расходится с тем, что ВПС выдал.
 
-        Сравниваем своим же набором значений, из которых собирается бандл, —
+        Сравниваем своим же набором значений, из которых собирается документ, —
         второй схемы сериализации для этого не нужно. Снимка нет — расхождений
         не выдумываем: пустой список значит «сказать нечего», а не «всё сошлось».
         """
@@ -40,44 +40,11 @@ class SettingsMixin:
                 items.append((key, gwlink.KEY_HUMAN[key], _cut(mine), _cut(theirs)))
         return items
 
-    # ── настройки по каналу (этап 2) ─────────────────────────────────────────
-    _GWLINK_ACK_KEY = "gwlink_ack"
-
     def gwlink_issued_env(self, gw) -> dict:
-        """Что ВПС выдал бы слоту сейчас — по всем ключам бандла, нормализовано.
-        Те самые значения, из которых собирается бандл: второй схемы нет, и
-        расходиться им не с чего."""
+        """Что ВПС выдал бы слоту сейчас — по ключам юнита обвязки, нормализовано.
+        Те самые значения, из которых собираются документ конфигурации и файл
+        первого применения: второй схемы нет, и расходиться им не с чего."""
         from awgbot.util import gwlink
         env = dict(self._lan_env(gw))
         env["ADMIN_IPS"] = " ".join(self._gw_ssh_allow())
         return {k: " ".join(str(env.get(k, "")).split()) for k in gwlink.BUNDLE_KEYS}
-
-    def gwlink_settings_want(self, gw) -> dict:
-        """Желаемые настройки слота — только ключи, которые везёт канал."""
-        from awgbot.util import gwlink
-        env = self.gwlink_issued_env(gw)
-        return {k: env[k] for k in gwlink.SETTINGS_KEYS}
-
-    def gwlink_settings_due(self, gw) -> dict | None:
-        """Что отправить шлюзу сейчас, или None — отправлять нечего.
-
-        Решает РАСХОЖДЕНИЕ, а не событие на ВПС: снимок показывает, что реально
-        стоит в юните обвязки, и пока оно не совпало с выдаваемым, есть что
-        доставлять. Кнопку, поменявшую настройку, это ловит так же, как бандл,
-        применённый руками из старого файла. Снимка нет — молчим: судить не по
-        чему, а слать вслепую значит рестартить обвязку без нужды."""
-        from awgbot.util import gwlink
-        _lines, keys = self.gwlink_config_drift(gw, with_keys=True)
-        if not any(k in gwlink.SETTINGS_KEYS for k in keys):
-            return None
-        return self.gwlink_settings_want(gw)
-
-    def gwlink_ack_in(self, slot_id: int, body: dict) -> None:
-        """Итог применения настроек на шлюзе — тем же форматом, что прочие ответы;
-        hash — отпечаток набора, ушедшего в сессии (ставит слушатель, не агент)."""
-        ack = self._gwlink_ack_put(self._GWLINK_ACK_KEY, slot_id, body)
-        if not ack["ok"]:
-            log.warning("канал линка: слот %s не применил настройки: %s", slot_id, ack["error"])
-
-    def gwlink_ack(self, slot_id: int) -> dict:
-        return self._gwlink_ack_get(self._GWLINK_ACK_KEY, slot_id)

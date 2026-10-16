@@ -17,11 +17,11 @@ class CfgPrintsMixin:
     # ── что стоит ────────────────────────────────────────────────────────────
 
     def cfg_env_current(self) -> dict:
-        """Раздел env по юниту обвязки — в именах документа. Юнит — то, с чем
+        """Раздел env по юниту обвязки. Юнит — то, с чем
         скрипт стартует при каждой загрузке; память агента о применении тут ни
         при чём."""
         from awgbot.infra import gwguard
-        return {k: " ".join(gwguard.unit_env(gwcfg.unit_name(k)).split()) for k in gwcfg.ENV_KEYS}
+        return {k: " ".join(gwguard.unit_env(k).split()) for k in gwcfg.ENV_KEYS}
 
     def cfg_link_text(self) -> str:
         try:

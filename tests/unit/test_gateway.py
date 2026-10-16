@@ -263,7 +263,7 @@ def test_github_route_is_a_plumbing_check(svc):
     assert svc.gh_route_check(full).ok is True
     part = {"sets": {"gh_nets4": {"140.82.112.0/20"}}}
     c = svc.gh_route_check(part)
-    assert c.ok is False and "перевыпусти конфигурацию" in c.detail
+    assert c.ok is False and "«🚑 Восстановить»" in c.detail
     assert svc.gh_route_check(None).ok is False, "таблицы нет — маршрута нет"
 
 
@@ -311,43 +311,6 @@ def test_panel_renders_on_a_dead_gateway():
 
 
 # ── этап 2: операции ─────────────────────────────────────────────────────────
-
-def test_apply_bundle_rejects_wrong_key_and_foreign_content(svc, monkeypatch, tmp_path):
-    import base64, os
-    from awgbot.util import bundlecrypt as bc
-    mine = base64.b64encode(os.urandom(32)).decode()
-    theirs = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    ran = []
-    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "ok"))
-
-    ok, msg = svc.apply_bundle(bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__", theirs))
-    assert not ok and "ключ" in msg and ran == [], "чужой бандл дошёл до запуска"
-
-    ok, msg = svc.apply_bundle(bc.encrypt(b"#!/bin/sh\nrm -rf /\n", mine))
-    assert not ok and "маркер" in msg and ran == [], "файл без контракта дошёл до запуска"
-
-
-def test_apply_bundle_runs_our_bundle_and_removes_the_file(svc, monkeypatch, tmp_path):
-    import base64, os
-    from awgbot.util import bundlecrypt as bc
-    mine = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    monkeypatch.setattr(gw.tempfile if hasattr(gw, "tempfile") else __import__("tempfile"),
-                        "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
-                                                 str(tmp_path / "b.sh")))
-    ran = []
-    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "Готово"))
-    body = b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n"
-    ok, msg = svc.apply_bundle(bc.encrypt(body, mine))
-    assert ok and "Готово" in msg
-    assert ran and ran[0][:1] == ["sh"] and ran[0][2] == "--apply"
-    assert not (tmp_path / "b.sh").exists(), "бандл с приватным ключом остался на диске"
-
 
 def test_tg_mark_ensure_reasserts_the_table_once_per_interval(svc, monkeypatch):
     """Таблицу правит только скрипт: недостающие диапазоны → рестарт юнита,
@@ -418,7 +381,7 @@ def test_plumbing_reports_uplink_policy(svc, monkeypatch):
     monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["маскарад в аплинк"].ok is False and "перевыпусти конфигурацию" in checks["маскарад в аплинк"].detail
+    assert checks["маскарад в аплинк"].ok is False and "«🚑 Восстановить»" in checks["маскарад в аплинк"].detail
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
     assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is None
 
@@ -539,14 +502,14 @@ def test_egress_alert_has_its_own_short_streak(svc, monkeypatch):
 
 
 def test_peer_nets_check_exists_only_when_the_bundle_brought_subnets(svc, monkeypatch):
-    """Набор peer_nets4 против PEER_HOME_NETS из юнита; переменная пустая —
+    """Набор peer_nets4 против PEER_LAN_NETS из юнита; переменная пустая —
     функции на шлюзе нет, и проверки нет."""
     from awgbot.infra import gwguard
     monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     assert svc.peer_nets_check({"sets": {}}) is None
-    monkeypatch.setattr(gwguard, "unit_env", lambda k: "192.168.1.0/24 192.168.2.0/24" if k == "PEER_HOME_NETS" else "")
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "192.168.1.0/24 192.168.2.0/24" if k == "PEER_LAN_NETS" else "")
     c = svc.peer_nets_check({"sets": {"peer_nets4": {"192.168.1.0/24"}}})
-    assert c.ok is False and "192.168.2.0/24" in c.detail and "перевыпусти конфигурацию" in c.detail
+    assert c.ok is False and "192.168.2.0/24" in c.detail and "«🚑 Восстановить»" in c.detail
     assert svc.peer_nets_check({"sets": {"peer_nets4": {"192.168.1.0/24", "192.168.2.0/24"}}}).ok is True
     assert svc.peer_nets_check(None).ok is False
 
@@ -628,7 +591,7 @@ def _reassert_host(svc, monkeypatch, state="active"):
 
 
 def test_no_reassert_while_a_bundle_or_channel_settings_are_being_applied(svc, monkeypatch):
-    """Включение режима без VPN минуты стоит на apt; таблицы awg_home в это
+    """Включение режима без VPN минуты стоит на apt; таблицы awg_lan в это
     время ещё нет, и тик монитора, увидев это, перезапустил бы юнит обвязки —
     посреди dpkg. Пока идёт применение, реассерт молчит и интервал не тратит."""
     calls, _unit = _reassert_host(svc, monkeypatch)
@@ -672,36 +635,6 @@ def test_a_reassert_does_not_hold_the_apply_lock(svc, monkeypatch):
     gw._APPLY_LOCK.release()
 
 
-def test_apply_bundle_refuses_a_file_older_than_the_applied_one(svc, monkeypatch, tmp_path):
-    """Старый файл из истории чата расшифровывается тем же ключом и откатил
-    бы линк на прежние параметры. Метка выпуска в шапке: старее применённой —
-    отказ с подсказкой перевыпустить; без метки (файлы до 3.2.0) — как раньше."""
-    import base64, os
-    from awgbot.util import bundlecrypt as bc
-    mine = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    ran = []
-    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: ran.append(plain) or (True, "Готово"))
-
-    def body(issued):
-        head = f"#!/bin/sh\n# ISSUED_AT: {issued}\n" if issued else "#!/bin/sh\n"
-        return (head + "#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n").encode()
-
-    ok, _ = svc.apply_bundle(bc.encrypt(body(1_800_000_000), mine))
-    assert ok and len(ran) == 1
-    assert svc.db.get_state("gw_bundle_issued_at") == "1800000000"
-    ok, msg = svc.apply_bundle(bc.encrypt(body(1_700_000_000), mine))
-    assert not ok and len(ran) == 1, msg
-    assert "старее" in msg and "перевыпусти конфигурацию шлюза с сервера AWG" in msg
-    ok, _ = svc.apply_bundle(bc.encrypt(body(1_800_000_001), mine))
-    assert ok and len(ran) == 2
-    ok, _ = svc.apply_bundle(bc.encrypt(body(None), mine))
-    assert ok and len(ran) == 3, "файл без метки должен применяться"
-    assert svc.db.get_state("gw_bundle_issued_at") == "1800000001"
-
-
 # ── реассерт под общим замком: кнопка, SSH-пути, канал ───────────────────────
 
 def test_reassert_guarded_refuses_while_applying_and_while_the_unit_starts(svc, monkeypatch):
@@ -732,34 +665,6 @@ def test_run_turns_a_timeout_into_a_refusal_not_an_exception(monkeypatch):
     monkeypatch.setattr(sp, "run", slow)
     proc = gw._run(["sleep", "99"], timeout=7)
     assert proc.returncode == 124 and gw.TIMEOUT_MARK in proc.stderr.decode() and "7 с" in proc.stderr.decode()
-
-
-def test_bundle_runs_under_systemd_run_when_available(monkeypatch):
-    """Таймаут Python убивает только sh, а apt под ним работал бы сиротой в
-    cgroup агента — и рестарт агента убил бы его посреди dpkg. Есть systemd-run —
-    скрипт идёт транзиентным юнитом; нет — как раньше."""
-    import shutil
-    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
-    argv = gw._bundle_argv("/root/b.sh")
-    assert argv[0] == "systemd-run" and "--wait" in argv and "--collect" in argv and "--pipe" in argv
-    assert argv[-3:] == ["sh", "/root/b.sh", "--apply"]
-    monkeypatch.setattr(shutil, "which", lambda name: None)
-    assert gw._bundle_argv("/root/b.sh") == ["sh", "/root/b.sh", "--apply"]
-
-
-def test_a_bundle_timeout_is_reported_with_advice(svc, monkeypatch, tmp_path):
-    import base64, os
-    from awgbot.util import bundlecrypt as bc
-    mine = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    import tempfile
-    monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
-                                                          str(tmp_path / "b.sh")))
-    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: subprocess.CompletedProcess(a, 124, b"", "не уложилось в 600 с".encode()))
-    ok, msg = svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
-    assert ok is False and "10 минут" in msg and "Здоровье" in msg
 
 
 def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monkeypatch):
@@ -795,29 +700,6 @@ def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monk
     assert len(reasserts) == 1, "флаг не сброшен — реассерт на каждом тике"
 
 
-def test_channel_settings_wait_out_a_slow_unit_instead_of_restarting_over_it(svc, monkeypatch, tmp_path):
-    """systemctl restart не дождался (600 с), а юнит ещё в activating (apt):
-    откатный рестарт поверх — ещё один рестарт идущего задания. Ждём, чем
-    кончится: active — успех, иначе откат."""
-    from awgbot.infra import gwguard
-    from awgbot.util import gwlink
-    unit = tmp_path / "awg-link-gw.service"
-    unit.write_text('[Service]\nEnvironment=LAN_MODE=0\nEnvironment="HOME_SUBNETS="\n'
-                    'Environment=RESOLVER=\nEnvironment="PEER_HOME_NETS="\nEnvironment="ADMIN_IPS="\n',
-                    encoding="utf-8")
-    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
-    monkeypatch.setattr(gwguard, "_daemon_reload", lambda: None)
-    states = iter(["active", "activating", "activating", "active"])
-    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": next(states, "active")})
-    monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
-    monkeypatch.setattr(gw.base.time, "sleep", lambda s: None)
-    want = {k: "" for k in gwlink.SETTINGS_KEYS}
-    want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
-    res = svc.apply_link_settings(want)
-    assert res["ok"] is True, res
-    assert 'HOME_SUBNETS=192.168.68.0/24' in unit.read_text(encoding="utf-8"), "новые значения откатились"
-
-
 def test_feeds_from_the_channel_are_fresh_while_the_session_lives(svc, monkeypatch):
     """Живая сессия — живой сервер (полуоткрытую после ребута ВПС добивает
     keepalive ядра): фиды из канала свежи, пока сессия жива, сколько бы сервер
@@ -834,32 +716,6 @@ def test_feeds_from_the_channel_are_fresh_while_the_session_lives(svc, monkeypat
     assert svc.lan_feeds_from_channel_fresh() is True, "запас от последнего контакта не учтён"
     svc.db.set_state(svc._LAN_CHANNEL_AT_KEY, str(int(_t.time()) - 13 * 3600))
     assert svc.lan_feeds_from_channel_fresh() is False
-
-
-def test_channel_settings_refuse_without_a_rollback_when_the_unit_never_settles(svc, monkeypatch, tmp_path):
-    """Юнит и через 600 + 300 с в activating (apt ждёт замок dpkg у OMV):
-    откат с рестартом поверх — то, от чего ветка защищает. Отказ словами,
-    новые значения в юните остаются, серверу — «повтори» (retry)."""
-    from awgbot.infra import gwguard
-    from awgbot.util import gwlink
-    unit = tmp_path / "awg-link-gw.service"
-    unit.write_text('[Service]\nEnvironment=LAN_MODE=0\nEnvironment="HOME_SUBNETS="\n'
-                    'Environment=RESOLVER=\nEnvironment="ADMIN_IPS="\n', encoding="utf-8")
-    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
-    monkeypatch.setattr(gwguard, "_daemon_reload", lambda: None)
-    states = iter(["active"])
-    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": next(states, "activating")})
-    restarts: list[int] = []
-    monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: restarts.append(timeout) or
-                        (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
-    monkeypatch.setattr(gw.base.time, "sleep", lambda s: None)
-    monkeypatch.setattr(gw.base.time, "monotonic", _fake_clock())
-    want = {k: "" for k in gwlink.SETTINGS_KEYS}
-    want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
-    res = svc.apply_link_settings(want)
-    assert res["ok"] is False and res.get("retry") is True and res["error"] == svc.STILL_APPLYING
-    assert restarts == [600], f"откат поверх идущего задания: {restarts}"
-    assert "HOME_SUBNETS=192.168.68.0/24" in unit.read_text(encoding="utf-8")
 
 
 def _fake_clock():
@@ -884,90 +740,3 @@ def test_module_label_is_the_built_tag_not_the_modinfo_version(svc, monkeypatch)
     assert svc.module_label("3.1.20260812") == "v3.1.20260812", "собирали не мы — тег манифеста"
     monkeypatch.setattr(awglock, "module_tag", lambda: "")
     assert svc.module_label("3.1.20260812") == "3.1.20260812"
-
-
-def test_mail_from_the_bundle_is_checked_and_backups_follow_the_server(svc, monkeypatch, tmp_path):
-    """Почта из файла конфигурации проверяется сразу, а backup=email в ней
-    переключает бэкапы шлюза на почту — но только после удачной проверки и при
-    включённом шифровании; итог виден в bundle_mail_check()."""
-    import base64, json, os
-    from awgbot.core import settings
-    from awgbot.util import bundlecrypt as bc
-    store = {}
-    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
-    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
-    mine = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
-    checks = []
-    monkeypatch.setattr(svc, "email_check", lambda acc=None: checks.append(1) or (True, ""))
-    monkeypatch.setattr(svc, "backup_encryption_enabled", lambda: True)
-    mail = base64.b64encode(json.dumps({"login": "box@icloud.com", "password": "pw",
-                                        "imap_host": "imap.mail.me.com", "imap_port": 993,
-                                        "smtp_host": "smtp.mail.me.com", "smtp_port": 587,
-                                        "backup": "email"}).encode()).decode()
-    body = f'#!/bin/sh\nMAIL_B64="{mail}"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n'.encode()
-    ok, _ = svc.apply_bundle(bc.encrypt(body, mine))
-    assert ok and checks == [1]
-    assert store.get("app.scheduler.backup_channel") == "email"
-    assert svc.bundle_mail_check() == {"state": "ok", "why": "", "backup": True}
-    # проверка не прошла — бэкапы не трогаем
-    monkeypatch.setattr(svc, "email_check", lambda acc=None: (False, "IMAP отверг"))
-    store.pop("app.scheduler.backup_channel")
-    svc.apply_bundle(bc.encrypt(body, mine))
-    assert "app.scheduler.backup_channel" not in store
-    assert svc.bundle_mail_check() == {"state": "fail", "why": "IMAP отверг", "backup": False}
-    # почты в файле нет — пусто
-    svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
-    assert svc.bundle_mail_check() == {}
-
-
-def test_an_early_refusal_of_a_bundle_clears_the_mail_note(svc, monkeypatch, tmp_path):
-    """Файл от другого шлюза не расшифровался — под «не применена» не должны
-    висеть «✉️ Почта принята…» от прошлого файла."""
-    import base64, os
-    from awgbot.util import bundlecrypt as bc
-    svc.db.set_state(svc._BUNDLE_MAIL_KEY, '{"state": "ok", "why": "", "backup": true}')
-    mine = base64.b64encode(os.urandom(32)).decode()
-    theirs = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    ok, _ = svc.apply_bundle(bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__", theirs))
-    assert not ok and svc.bundle_mail_check() == {}
-
-
-def test_backups_are_not_re_switched_when_the_channel_is_already_email(svc, monkeypatch, tmp_path):
-    """Канал уже e-mail или применение файла не удалось — строки «💾 Бэкапы
-    теперь…» нет; переключение не повторяется и выбор человека не перебивает."""
-    import base64, json, os
-    from awgbot.core import settings
-    from awgbot.util import bundlecrypt as bc
-    store = {"app.scheduler.backup_channel": "email"}
-    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
-    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
-    mine = base64.b64encode(os.urandom(32)).decode()
-    conf = tmp_path / "awglink.conf"
-    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
-    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
-    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
-    monkeypatch.setattr(svc, "email_check", lambda acc=None: (True, ""))
-    monkeypatch.setattr(svc, "backup_encryption_enabled", lambda: True)
-    mail = base64.b64encode(json.dumps({"login": "box@icloud.com", "password": "pw",
-                                        "imap_host": "imap.mail.me.com", "imap_port": 993,
-                                        "smtp_host": "smtp.mail.me.com", "smtp_port": 587,
-                                        "backup": "email"}).encode()).decode()
-    body = f'#!/bin/sh\nMAIL_B64="{mail}"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n'.encode()
-    assert svc.apply_bundle(bc.encrypt(body, mine))[0]
-    assert svc.bundle_mail_check() == {"state": "ok", "why": "", "backup": False}, "уже e-mail — не переключаем"
-    store["app.scheduler.backup_channel"] = "telegram"
-    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (False, "упало"))
-    assert not svc.apply_bundle(bc.encrypt(body, mine))[0]
-    assert svc.bundle_mail_check()["backup"] is False and store["app.scheduler.backup_channel"] == "telegram"
-    # таймаут IMAP не роняет применение
-    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
-    monkeypatch.setattr(svc, "email_check", lambda acc=None: (_ for _ in ()).throw(OSError("timed out")))
-    assert svc.apply_bundle(bc.encrypt(body, mine))[0]
-    assert svc.bundle_mail_check()["state"] == "fail" and "timed out" in svc.bundle_mail_check()["why"]
