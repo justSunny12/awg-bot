@@ -96,7 +96,9 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     try:
         after = await call(services.ssh_allow_add, raw)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}. Попробуй ещё раз")
+        # html — деталь уже размечена и экранирована доменом (адрес моноширинным)
+        why = str(e) if getattr(e, "html", False) else texts._e(str(e))
+        await ask_tracked(message, services, f"⚠️ {why}. Попробуй ещё раз")
         return
     await state.clear()
     new = [x for x in after if x not in before]
@@ -115,17 +117,21 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
     act = callback_data.action.rstrip("!")
     try:
         if act == "ssh_del":
-            allow = (await call(services.ssh_screen)).get("allow") or []
+            st = await call(services.ssh_screen)
+            allow = st.get("allow") or []
             num, _dot, tag = (callback_data.val or "").partition(".")
             idx = int(num) if num.isdigit() else -1
             if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):
                 await cb.answer(ui.Toast.list_changed, show_alert=True)
             else:
                 await call(services.ssh_allow_remove, allow[idx])
-                await cb.answer(ui.toast(f"{allow[idx]} убран"))
+                await cb.answer(ui.toast(texts.gateway_ssh_removed(
+                    allow[idx], bool(st.get("filter")) and len(allow) == 1)))
         elif act == "ssh_on":
             await call(services.ssh_filter_on)
-            await cb.answer(texts.GW_SSH_FILTER_ON_ALERT, show_alert=True)
+            empty = not await call(services.ssh_allow_current)
+            await cb.answer(texts.GW_SSH_FILTER_ON_EMPTY_ALERT if empty else texts.GW_SSH_FILTER_ON_ALERT,
+                            show_alert=True)
         else:
             await call(services.ssh_filter_off)
             await cb.answer(texts.GW_SSH_FILTER_OFF, show_alert=True)
@@ -159,6 +165,7 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     await linkclient.poke(services)
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
-    await edit_nav(cb, services, texts.gateway_op_result("Восстановление", ok, detail, texts.REASSERT_FAIL_HINT), None)
+    await edit_nav(cb, services, texts.gateway_op_result("Шлюз восстановлен", "Шлюз не восстановлен", ok, detail,
+                                                                 texts.REASSERT_FAIL_HINT), None)
     await pkg._panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 

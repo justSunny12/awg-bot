@@ -176,7 +176,8 @@ class _Agent(GatewayServices):
         allow = list(self.h.ssh["allow"])
         for tok in raw.split():
             if ":" in tok:
-                raise ServiceError(f"{tok} — IPv6, а фильтр на шлюзе только IPv4")
+                from awgbot.domain.gwssh import ipv6_refusal
+                raise ipv6_refusal(tok)
             if "." not in tok:
                 raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя")
             if "/" in tok:
@@ -322,8 +323,9 @@ class _Agent(GatewayServices):
         """Итог транзакции: applied | reverted | revert_failed | refused | busy."""
         if self.h.uplink_ok:
             return {"ok": True, "error": "", "state": "applied"}
-        state, why = self.h.uplink_fail
-        return {"ok": False, "error": why, "state": state}
+        # третье поле — причина отказа отката (back_why), как у настоящей транзакции
+        state, why, *back = self.h.uplink_fail
+        return {"ok": False, "error": why, "state": state, "back_why": back[0] if back else ""}
 
     def _cfg_uplink_pending_put(self, value):
         """Ожидающий конфиг аплинка — в памяти хоста снимка, а не в /etc/awg-gw."""

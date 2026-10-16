@@ -5,12 +5,12 @@ from awgbot.bot import ui
 from ..fmt import _e
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 # отчёт о применении — текст уведомления домена, общий с экраном итога
-from awgbot.domain.notices.gateway import gateway_apply_report, APPLY_PARTIAL_MARK  # noqa: F401
+from awgbot.domain.notices.gateway import gateway_apply_report, APPLY_PARTIAL_MARK, APPLY_LINK_PARTIAL  # noqa: F401
 from .common import mail_why, MAIL_FIX_TAIL
 
 
 GW_BACKUP_NO_KEY = ("💾 Бэкап шлюза — только шифрованный: в копии приватные ключи линка и туннеля. "
-                    "Задай фразу — 🔐 Шифрование")
+                    "Задай фразу в «🔐 Шифрование»")
 GW_NO_FILE = "Файл уже не у меня — пришли его заново"
 
 
@@ -24,14 +24,15 @@ def host_rebooted(hostname: str, who: str) -> str:
 
 
 def gw_confirm_reassert(carries: bool = True) -> str:
-    return ("🔧 Восстановить шлюз?\nБот переставит правила шлюза (маскарад, изоляция, метка) и "
-            "переподнимет линк" + (" — РФ-доступ прервётся на секунды" if carries else ""))
+    return ("🚑 Восстановить шлюз?\nБот переставит правила шлюза (маскарад, изоляция, метка) и "
+            "переподнимет линк" + (" — РФ-доступ у всех прервётся на секунды" if carries else ""))
 
 
 def gw_first_run_file(name: str = "awg-gw-bundle.sh") -> str:
-    """Прислан файл установки шлюза — под тем именем, под каким прислали:
-    команда с чужим именем файла у человека бы не нашлась."""
-    return ("⚠️ Это файл установки шлюза — его не присылают боту, а запускают в терминале шлюза: "
+    """Прислан файл конфигурации шлюза для установки (`--install`; основной бот
+    называет его «файл конфигурации шлюза») — под тем именем, под каким
+    прислали: команда с чужим именем файла у человека бы не нашлась."""
+    return ("⚠️ Это файл конфигурации шлюза для установки — его не присылают боту, а запускают в терминале шлюза: "
             f"<code>sudo sh {_e(name or 'awg-gw-bundle.sh')} --install</code>. Из чата убрал: внутри ключи")
 
 
@@ -45,8 +46,8 @@ def gw_bundle_not_ours(cfg1: bool = False) -> str:
 
 
 GW_BUNDLE_PASSPHRASE_QUESTION = (
-    ui.head("🔐 Ключевая фраза бэкапов в конфигурации отличается от фразы шлюза") + "\n\n"
-    "«✅ Принять» — новые копии шлюза зашифруются фразой с сервера AWG, прежние копии шлюза "
+    ui.head("🔐 Ключевая фраза бэкапов в конфигурации отличается от фразы шлюза") + "\n"
+    "«✅ Принять» — новые копии шлюза зашифруются фразой с сервера AWG, прежние "
     "откроются только прежней фразой; «⬅️ Оставить своё» — всё остальное из файла применится как обычно")
 
 
@@ -78,11 +79,14 @@ def gateway_claim_forward_text(token: str, status: str, by_channel: bool = False
     head = pkg._claim_head(status)
     tail = ("пришлёт конфигурацию сам, когда поднимется канал конфигурации" if by_channel else
             "пришлёт конфигурацию — сам, когда поднимется канал конфигурации, или файлом; файл отправь сюда")
-    how = ("Чтобы шлюзом стало это устройство, перешли это сообщение боту сервера AWG как есть "
-           "(или замени вручную: «🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить»)"
-           if status == "foreign" else "Перешли это сообщение боту сервера AWG как есть")
+    how = {"foreign": "Чтобы шлюзом стало это устройство, перешли это сообщение боту сервера AWG как есть",
+           # первым шагом — заголовок («подними аплинк и примени ещё раз»), пересылка — запасной путь
+           "unconfirmed": "Аплинк не поднять — перешли это сообщение боту сервера AWG как есть"
+           }.get(status, "Перешли это сообщение боту сервера AWG как есть")
+    manual = ("\nИли замени шлюз вручную: «🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить»"
+              if status == "foreign" else "")
     return (head + f"\n\nКанал конфигурации сервера AWG недоступен. {how}: бот найдёт это устройство "
-            f"по ключу, назначит его шлюзом и {tail}\n\n<code>{_e(token)}</code>")
+            f"по ключу, назначит его шлюзом и {tail}{manual}\n\n<code>{_e(token)}</code>")
 
 
 def _script_fail(detail: str) -> str:
@@ -92,25 +96,29 @@ def _script_fail(detail: str) -> str:
     text = (detail or "причина не названа").strip()
     text = re.sub(r"^routing-gw-setup\.sh:\s*", "", text)
     text = re.sub(r"\s*—\s*откатываю.*$", "", text)
+    text = text[:1].upper() + text[1:]                  # строка без эмодзи — с прописной
     return re.sub(r"&lt;([^&]+)&gt;", r"<code>\1</code>", _e(text))
 
 
 def gateway_config_result(ok: bool, detail: str, mail: dict | None = None) -> str:
     """Итог применения конфигурации: «✅ Конфигурация шлюза применена» и отчёт
     строками; есть строка «не применён» — «⚠️ … применена не полностью»;
-    отказ — «🔴 Конфигурация шлюза не применена — прежняя осталась» и причина
+    отказ — «⚠️ Конфигурация шлюза не применена — прежняя осталась» и причина
     строкой ниже. mail — {state: ok|fail, why, backup}: почта из файла
     проверена сразу, итог — отдельной строкой; backup — бэкапы переключены на
     e-mail вслед за сервером, об этом ещё строка."""
     mail = mail or {}
     if ok:
         # отчёт — готовый HTML из gateway_apply_report (адреса в <code>)
-        partial = APPLY_PARTIAL_MARK in (detail or "") or mail.get("state") == "fail"
+        # линк лежит или не тронут (чужое устройство, аплинк не найден) — тоже не полностью
+        low = (detail or "").lower()
+        partial = (APPLY_PARTIAL_MARK in low or any(m in low for m in APPLY_LINK_PARTIAL)
+                   or mail.get("state") == "fail")
         head = ("⚠️ <b>Конфигурация шлюза применена не полностью</b>" if partial
                 else "✅ <b>Конфигурация шлюза применена</b>")
         lines = [head] + ([detail] if detail else [])
     else:
-        lines = ["🔴 <b>Конфигурация шлюза не применена — прежняя осталась</b>", _script_fail(detail),
+        lines = ["⚠️ <b>Конфигурация шлюза не применена — прежняя осталась</b>", _script_fail(detail),
                  "Причина — в «🩺 Здоровье»"]
     if mail.get("state") == "ok":
         lines.append("✉️ Почта из конфигурации принята: IMAP и SMTP отвечают, вход выполнен")
@@ -122,10 +130,11 @@ def gateway_config_result(ok: bool, detail: str, mail: dict | None = None) -> st
     return "\n".join(lines)
 
 
-def gateway_op_result(title: str, ok: bool, detail: str, hint: str = "") -> str:
-    """«✅ Восстановление: готово» / «🔴 Восстановление: не удалось» + деталь
-    моноширинным; hint — следующий шаг при отказе, строкой ниже."""
-    head = ui.head(f"{'✅' if ok else '🔴'} {title}: {'готово' if ok else 'не удалось'}")
+def gateway_op_result(done: str, failed: str, ok: bool, detail: str, hint: str = "") -> str:
+    """«✅ Шлюз восстановлен» / «⚠️ Шлюз не восстановлен» (действие не
+    выполнено — ⚠️, не 🔴) + деталь моноширинным; hint — следующий шаг при
+    отказе, строкой ниже."""
+    head = ui.head(f"✅ {done}" if ok else f"⚠️ {failed}")
     text = head + (f"\n<code>{_e(detail)}</code>" if detail else "")
     return text + (f"\n{hint}" if hint and not ok else "")
 

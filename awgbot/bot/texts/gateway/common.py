@@ -26,13 +26,17 @@ def _uniq(names) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def _gw_health_summary(checks) -> str:
-    """Сводка панели: «🔴 проблем: 3 — линк, фильтр шлюза, выход наружу» /
+def _gw_health_summary(checks, smart: str = "") -> str:
+    """Сводка панели: «🔴 Проблемы: 3 — линк, фильтр шлюза, выход наружу» /
     «✅». Проблемы — те же строки, что красные на экране «🩺 Здоровье»
-    (gwchecks.health_problems); имя — без технического в скобках."""
+    (gwchecks.health_problems) плюс сбой SMART, чтобы число совпадало с шапкой
+    экрана здоровья; имя — без технического в скобках."""
     broken = gwchecks.health_problems(checks)
-    if broken:
-        return f"🔴 проблем: {len(broken)} — " + ", ".join(_uniq(_short_name(c.name) for c in broken)[:4])
+    names = _uniq(_short_name(c.name) for c in broken)
+    if smart and smart != "OK":
+        names.append("диск")
+    if names:
+        return f"🔴 Проблемы: {len(names)} — " + ", ".join(names[:4])
     return "✅"
 
 

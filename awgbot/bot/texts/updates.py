@@ -70,10 +70,10 @@ def update_wait_line(w: dict, bot_username: str = "") -> str:
     if w.get("role") == "gateway":
         server = w["peers"][0].version if w.get("peers") else ""
         if not server:
-            return (f"⏳ {tag} ждёт сервер AWG {need}: сервер не на связи, его версия неизвестна — "
-                    "когда выйдет на связь, обнови бот сервера AWG")
-        now = "" if server == "old" else f" ({_e(_ver(server))})"
-        return f"⏳ {tag} ждёт сервер AWG{now} — сначала обнови бот сервера AWG"
+            return f"⏳ {tag} ждёт сервер AWG {need} — версию сервера AWG не проверить: он не на связи"
+        # нужная версия — названа; в скобках — текущая, а не требуемая
+        now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
+        return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бот сервера AWG"
     peers = w.get("peers") or []
     where = "агентов в чатах ботов шлюзов" if len(peers) > 1 else "агента в чате бота шлюза"
     return f"⏳ {tag} — {_gw_todo(peers, bot_username)} — {where}"

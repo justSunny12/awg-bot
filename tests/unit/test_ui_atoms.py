@@ -50,8 +50,8 @@ def test_confirm_puts_the_question_first_and_the_cost_on_the_next_line():
 def test_result_has_both_forms_and_escapes_the_reason():
     assert ui.result(True, "AWG перезапущен", "AWG не перезапущен") == "✅ AWG перезапущен"
     assert ui.result(False, "AWG перезапущен", "AWG не перезапущен", "awg <quick> & dirty") == \
-        "🔴 AWG не перезапущен: awg &lt;quick&gt; &amp; dirty"
-    assert ui.fail("Порт не изменён") == "🔴 Порт не изменён"
+        "⚠️ AWG не перезапущен: awg &lt;quick&gt; &amp; dirty"
+    assert ui.fail("Порт не изменён") == "⚠️ Порт не изменён"
 
 
 def test_changed_shows_old_arrow_new_with_the_unit():

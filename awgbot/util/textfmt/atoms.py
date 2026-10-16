@@ -83,13 +83,14 @@ def confirm(question: str, cost: str = "") -> str:
 
 
 def fail(what: str, why: str = "") -> str:
-    """«🔴 Порт не изменён: причина» — причина экранируется (текст исключения
-    с «<» или «&» Telegram иначе не примет)."""
-    return f"🔴 {what}: {_html.escape(str(why), quote=False)}" if why else f"🔴 {what}"
+    """«⚠️ Порт не изменён: причина» — действие не выполнено (⚠️, не 🔴: 🔴 —
+    состояние объекта); причина экранируется (текст исключения с «<» или «&»
+    Telegram иначе не примет)."""
+    return f"⚠️ {what}: {_html.escape(str(why), quote=False)}" if why else f"⚠️ {what}"
 
 
 def result(ok: bool, done: str, failed: str, why: str = "") -> str:
-    """Итог действия целиком: «✅ AWG перезапущен» / «🔴 AWG не перезапущен: причина»."""
+    """Итог действия целиком: «✅ AWG перезапущен» / «⚠️ AWG не перезапущен: причина»."""
     return f"✅ {done}" if ok else fail(failed, why)
 
 

@@ -96,7 +96,7 @@ def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
     try:
         proc = pkg.subprocess.run([pkg.LAN_LISTS_SCRIPT], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
-        return False, "скрипта списков нет — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
+        return False, "скрипта списков нет — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
     except pkg.subprocess.TimeoutExpired:
         return False, "таймаут обновления списков"
     except OSError as e:
@@ -136,7 +136,7 @@ def run_lan_services(path: str = "", timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple
         proc = pkg.subprocess.run([pkg.LAN_SERVICES_SCRIPT, *([path] if path else [])],
                               capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "отсутствует скрипт — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
+        return False, "отсутствует скрипт — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
     except pkg.subprocess.TimeoutExpired:
         return False, f"скрипт не ответил за {timeout} с"
     except OSError as e:
@@ -176,7 +176,7 @@ def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEO
         proc = pkg.subprocess.run([pkg.LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout,
                               env={**os.environ, "AWG_HTML": "1"})
     except FileNotFoundError:
-        return False, "отсутствует скрипт — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
+        return False, "отсутствует скрипт — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
     except pkg.subprocess.TimeoutExpired:
         return False, f"скрипт не ответил за {timeout} с"
     except (OSError, pkg.subprocess.SubprocessError) as e:

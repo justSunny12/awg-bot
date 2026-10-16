@@ -51,7 +51,7 @@ def restore_rejected(error: str) -> str:
     return f"⚠️ Файл не принят: {_e(error)}"
 
 
-RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа: бот перезапустится и через несколько секунд пришлёт отчёт"
+RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа — бот перезапустится и через несколько секунд пришлёт отчёт"
 
 
 def restore_done(created_at_iso: str) -> str:
@@ -68,7 +68,7 @@ def email_not_configured(sec: str = "notify") -> str:
 
 
 def backup_needs_encryption(br) -> str:
-    return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу — 🔐 Шифрование"
+    return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу в «🔐 Шифрование»"
 
 
 def backup_encryption_text(mode: str, br) -> str:

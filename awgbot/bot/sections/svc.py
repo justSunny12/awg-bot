@@ -64,7 +64,7 @@ async def _awg_question(ctx) -> str:
 
 async def _awg_restart(ctx) -> str:
     """Итог первой строкой раздела у обеих ролей: «✅ AWG перезапущен» /
-    «🔴 AWG не перезапущен: причина»."""
+    «⚠️ AWG не перезапущен: причина»."""
     await ctx.cb.answer("Перезапускаю AWG…")           # ответ сразу: рестарт может идти долго
     ok, detail = await call(ctx.services.restart_awg)
     # хвост роли — следующий шаг при отказе (агент: «причина в «🩺 Здоровье»»)

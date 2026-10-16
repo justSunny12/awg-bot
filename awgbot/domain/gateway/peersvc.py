@@ -174,8 +174,11 @@ class PeerServicesMixin:
                                   "avahi-daemon не запущен: SMB-серверы этой подсети по именам не видны ни в подсетях "
                                   "других шлюзов, ни на устройствах админа в туннеле", off=True))
         elif not info["browse"]:
-            checks.append(GwCheck(gc.CHECK_SMB_OWN, None,
-                                  "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)"))
+            # функция включена, а инструмента нет — сам не появится: 🔴 и в счёт
+            # проблем (не «не проверено» тихой группы); группа svc мягкая —
+            # уведомлений не шлёт
+            checks.append(GwCheck(gc.CHECK_SMB_OWN, False,
+                                  "нет avahi-browse, пакет avahi-utils (🚑 Восстановить)"))
         else:
             checks.append(GwCheck(gc.CHECK_SMB_OWN, True, f"{len(own)} SMB"))
         peer = self.services_peer()

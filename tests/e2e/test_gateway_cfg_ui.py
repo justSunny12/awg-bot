@@ -145,7 +145,7 @@ async def test_keep_own_answers_the_server_and_opens_the_next_question(svc, fake
     assert len(reported) == 1 and reported[0]["section"] == "mail" and reported[0]["accepted"] is False
     assert reported[0]["gen"] == 7 and reported[0]["print"] == gwcfg.mail_print(MAIL)
     sent = _sent_texts(fake_bot)
-    assert sent and "Ключевая фраза бэкапов в конфигурации отличается" in sent[-1], sent
+    assert sent and "Ключевая фраза бэкапов на шлюзе отличается от фразы сервера AWG" in sent[-1], sent
 
 
 async def test_the_last_answer_returns_to_the_panel(svc, fake_bot, reported, login_ok):

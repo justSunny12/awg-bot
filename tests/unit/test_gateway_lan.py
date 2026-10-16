@@ -405,15 +405,20 @@ def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
     assert c.ok is False and "записи не применились: dnsmasq отверг" in c.detail
 
 
-def test_no_avahi_is_grey_not_red(svc, monkeypatch):
-    """Шлюз без NAS и без avahi — нормальное состояние: ⚪, не 🔴."""
+def test_no_avahi_is_off_but_missing_browse_is_red(svc, monkeypatch):
+    """Шлюз без NAS и без avahi — нормальное состояние: функция выключена
+    (off), строки в здоровье нет. Демон есть, а avahi-browse нет — сам не
+    появится: 🔴 и в счёт проблем."""
+    from awgbot.domain import gwchecks as gc
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети по именам не "
                                          "видны ни в подсетях других шлюзов, ни на устройствах админа в туннеле"), c.detail
     _svc_on(monkeypatch, browse=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
-    assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", c.detail
+    assert c.ok is False and c.detail == "нет avahi-browse, пакет avahi-utils (🚑 Восстановить)", c.detail
+    c.group = "svc"
+    assert gc.check_mark(c) == "🔴" and gc.health_problems([c]) == [c]
 
 
 def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):

@@ -20,27 +20,31 @@ def _channel_view(chan: dict | None) -> dict:
 
 
 def channel_panel_line(chan: dict | None = None) -> str:
-    """Строка канала конфигурации: «🔗 Канал конфигурации 🟢» / «🔴 нет связи» —
+    """Строка канала конфигурации: «🔧 Канал конфигурации 🟢» / «🔴 нет связи» —
     канал обязателен, строка есть всегда, отдельной строкой под линком."""
     chan = pkg._channel_view(chan)
-    return "🔗 Канал конфигурации " + ("🟢" if chan["online"] else "🔴 нет связи")
+    return "🔧 Канал конфигурации " + ("🟢" if chan["online"] else "🔴 нет связи")
 
 
 def gateway_wait_line(w: dict) -> str:
-    """«⬆️ v3.3.2 — сначала обнови сервер AWG до v3.3.1» (О6); версия сервера
+    """«⬆️ v3.3.2 — сначала обнови бот сервера AWG до v3.3.1» (О6); версия сервера
     неизвестна — «⬆️ v3.3.2 — версию сервера AWG не проверить: он не на связи» (О7)."""
     def v(x):
         return x if str(x).startswith("v") else f"v{x}"
     server = w["peers"][0].version if w.get("peers") else ""
-    tail = (f"сначала обнови сервер AWG до {_e(v(w['need']))}" if server
+    tail = (f"сначала обнови бот сервера AWG до {_e(v(w['need']))}" if server
             else "версию сервера AWG не проверить: он не на связи")
     return f"<b>⬆️ {_e(v(w['tag']))} — {tail}</b>"
 
 
 def _gw_role(st, chan: dict) -> str:
     """Роль по каналу: «несёт трафик» / «в резерве»; канала или связи нет —
-    состояние линка."""
-    role = chan["role"] if chan["online"] else ""
+    состояние линка. Пометка не подтверждена (не назначен, чужое устройство,
+    аплинк не найден) — роль из последнего слова сервера не говорим: шлюз,
+    которого сервер не назначил, трафик не несёт, а сохранённая роль могла
+    остаться от прежней сессии."""
+    mark = getattr(st, "mark_status", "") or ""
+    role = chan["role"] if chan["online"] and mark in ("", "confirmed") else ""
     if role == "active":
         return "🟢 несёт трафик"
     if role:
@@ -126,7 +130,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
     if pending:
         parts.append(pkg.cfg_pending_line(pending))     # вопросы с сервера AWG ждут человека
     traffic = st.month_rx + st.month_tx
-    health = f"🩺 Здоровье {pkg._gw_health_summary(st.checks)}"
+    health = f"🩺 Здоровье {pkg._gw_health_summary(st.checks, st.smart)}"
     if traffic:
         health += f" · 📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}"
     parts.append(health)
@@ -166,15 +170,20 @@ def gateway_health(st) -> str:
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
     if smart_bad:
-        lines.append("🔴 Диск: SMART сообщает о сбое — сделай бэкап и замени носитель")
+        lines.append("🔴 диск — SMART сообщает о сбое: сделай бэкап и замени носитель")
+    # «RAM свободно 2 345 МБ · диск свободно 87 ГБ, SMART ОК · питание ОК»:
+    # «свободно» у каждой величины — общий префикс читался бы и как «свободно: питание»
     hw = []
     if st.ram_free_mb is not None:
-        hw.append(f"RAM {num(st.ram_free_mb)} МБ")
+        hw.append(f"RAM свободно {num(st.ram_free_mb)} МБ")
+    disk = ""
     if st.disk_free_gb is not None:
         free = f"{st.disk_free_gb:.1f}".replace(".", ",") if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
-        hw.append(f"диск {free} ГБ")
+        disk = f"диск свободно {free} ГБ"
     if st.smart == "OK":
-        hw.append("SMART OK")
+        disk = f"{disk}, SMART ОК" if disk else "SMART ОК"
+    if disk:
+        hw.append(disk)
     if st.throttled is not None:
         now = st.throttled.get("now") or []
         ever = st.throttled.get("ever") or []
@@ -183,12 +192,12 @@ def gateway_health(st) -> str:
             power += " (с загрузки: " + "; ".join(ever) + ")"
         hw.append(f"питание {power}")
     if hw:
-        lines.append("Свободно: " + " · ".join(hw))
+        lines.append(" · ".join(hw))
     ver = st.module_version or "?"
     src = f" · srcversion {st.srcversion[:8]}…" if st.srcversion else ""
     kernels = (f" · собран для всех ядер ({st.kernels_total})"
                if st.kernels_total and not st.kernels_missing else "")
     lines.append(f"Модуль awg {_e(ver)}{_e(src)}{kernels}")
     if problems:
-        lines.append("«🔧 Восстановить» переставит правила и переподнимет линк")
+        lines.append("«🚑 Восстановить» переставит правила и переподнимет линк")
     return "\n".join(lines)

@@ -113,7 +113,7 @@ class TransitMixin:
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             checks.append(GwCheck(gc.CHECK_LISTS_SCRIPT, False,
                                   "скрипт обновления списков РФ-доступа не найден — "
-                                  + ("«🔧 Восстановить»" if self.server_cfg1() else
+                                  + ("«🚑 Восстановить»" if self.server_cfg1() else
                                      "перевыпусти конфигурацию шлюза с сервера AWG")))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")

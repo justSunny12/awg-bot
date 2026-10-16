@@ -242,11 +242,12 @@ class BackupCryptoMixin:
         if encrypted:
             kw = self.backup_enc_kwargs()
             if kw is None:
-                return {"ok": False, "error": "бэкап шифрованный, а парольная фраза здесь не задана"}
+                return {"ok": False, "error": ("бэкап шифрованный, а фраза здесь не задана — задай её в «🔐 Шифрование» "
+                                                      "и пришли файл снова")}
             try:
                 plain = secrets_util.decrypt(blob, **kw)
             except Exception:                              # noqa: BLE001
-                return {"ok": False, "error": "не расшифровалась — парольная фраза не та"}
+                return {"ok": False, "error": "не расшифровалась — фраза не та"}
         try:
             with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as tar:
                 f = tar.extractfile(self.META_NAME)

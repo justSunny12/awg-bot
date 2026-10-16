@@ -92,7 +92,7 @@ async def test_health_is_a_live_probe_not_the_tick_snapshot(svc, fake_bot):
 
 
 async def test_recovery_touches_nothing_until_confirmed(svc, fake_bot, monkeypatch):
-    """«🔧 Восстановить» сам ничего не трогает — только вопрос; реассерт —
+    """«🚑 Восстановить» сам ничего не трогает — только вопрос; реассерт —
     после подтверждения и ровно один раз: промах пальцем не рвёт РФ-доступ."""
     calls = []
     monkeypatch.setattr(svc, "reassert", lambda: calls.append(1) or (True, ""))

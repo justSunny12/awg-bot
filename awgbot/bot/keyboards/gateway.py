@@ -12,7 +12,7 @@ from .common import entry_tag, confirm
 
 def gateway_panel_kb(lan: bool = False, pending: int = 0, update_tag: str = "") -> InlineKeyboardMarkup:
     """Панель шлюза: [⏳ Ответить (N)] (ждут вопросы с сервера AWG) / [🩺 Здоровье]
-    [🔧 Восстановить] / [🔀 VPN-транзит] (когда включён) / [⬆️ vX] (доступно
+    [🚑 Восстановить] / [🔀 VPN-транзит] (когда включён) / [⬆️ vX] (доступно
     обновление — ведёт в «⬆️ Обновления») [⚙️ Настройки]. Перечитать панель
     живьём — ссылкой «🔄 обновлено …» в тексте, кнопки нет. Восстановление —
     через подтверждение: обрыв РФ у всех, пусть на секунды, не от промаха пальцем."""
@@ -20,7 +20,7 @@ def gateway_panel_kb(lan: bool = False, pending: int = 0, update_tag: str = "") 
     tag = (update_tag if str(update_tag).startswith("v") else f"v{update_tag}") if update_tag else ""
     return ui.rows(
         (f"⏳ Ответить ({n})", GwCB(action="cfg_ask")) if n else None,
-        [("🩺 Здоровье", GwCB(action="health")), ("🔧 Восстановить", GwCB(action="reassert"))],
+        [("🩺 Здоровье", GwCB(action="health")), ("🚑 Восстановить", GwCB(action="reassert"))],
         ("🔀 VPN-транзит", GwCB(action="lan")) if lan else None,
         [(f"⬆️ {tag}", GwCB(action="updates")) if tag else None, ("⚙️ Настройки", GwCB(action="settings"))])
 
@@ -44,7 +44,7 @@ def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:
 def gateway_health_kb() -> InlineKeyboardMarkup:
     """Экран здоровья: проверить заново (живьём), восстановить; в меню."""
     return ui.rows([("🔄 Проверить", GwCB(action="health")),
-                    ("🔧 Восстановить", GwCB(action="reassert", val="health"))],
+                    ("🚑 Восстановить", GwCB(action="reassert", val="health"))],
                    ui.to_menu(GwCB(action="panel")))
 
 
@@ -105,7 +105,7 @@ def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup
     """«Отмена» первой — необратимое не там, куда палец идёт по инерции.
     back — куда возвращает отказ (восстановление живёт на панели и экране
     здоровья); перезапуски — в «🔧 Сервисе» общих разделов."""
-    label = {"reassert": "🔧 Восстановить"}.get(action, "🔁 Перезапустить")
+    label = {"reassert": "🚑 Восстановить"}.get(action, "🔁 Перезапустить")
     return confirm(GwCB(action=back), label, GwCB(action=f"{action}!"))
 
 

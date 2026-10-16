@@ -49,7 +49,7 @@ class TgMarkMixin:
         return GwCheck(gc.CHECK_GH_ROUTE, not missing,
                        "" if not missing else
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
-                       + ("«🔧 Восстановить»" if self.server_cfg1() else "перевыпусти конфигурацию шлюза с сервера AWG"))
+                       + ("«🚑 Восстановить»" if self.server_cfg1() else "перевыпусти конфигурацию шлюза с сервера AWG"))
 
     @staticmethod
     def peer_nets_missing(info: dict | None) -> list[str] | None:
@@ -73,7 +73,7 @@ class TgMarkMixin:
             return None
         return GwCheck(gc.CHECK_PEER_NETS, not missing,
                        "" if not missing else
-                       f"в таблице нет {', '.join(missing)}; " + ("«🔧 Восстановить»" if self.server_cfg1() else
+                       f"в таблице нет {', '.join(missing)}; " + ("«🚑 Восстановить»" if self.server_cfg1() else
                                                                 "перевыпусти конфигурацию шлюза с сервера AWG"))
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:

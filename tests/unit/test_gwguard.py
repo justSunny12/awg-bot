@@ -277,7 +277,7 @@ def test_forward_accepts_without_iptables_is_empty(monkeypatch):
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "отсутствует скрипт — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"),
+    (FileNotFoundError(), "отсутствует скрипт — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"),
     (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "скрипт не ответил за 90 с"),
 ])
 def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
@@ -291,7 +291,7 @@ def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkey
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "отсутствует скрипт — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"),
+    (FileNotFoundError(), "отсутствует скрипт — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"),
     (subprocess.TimeoutExpired("awg-lan-domain.sh", 150), "скрипт не ответил за 150 с"),
 ])
 def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):

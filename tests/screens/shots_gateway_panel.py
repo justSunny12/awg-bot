@@ -20,13 +20,15 @@ _CHECKS_BAD = [
     GwCheck(gc.CHECK_TG_ROUTE, None, "нечем проверить: нет dig (пакет bind9-dnsutils)"),
     GwCheck(gc.CHECK_EGRESS, False, "таймаут 5 с <проба>"),
     GwCheck(gc.CHECK_MODULE, True, "собран для всех ядер (2)"),
+    # функция включена, инструмента нет — 🔴 и в счёт (решение 16.10.2026)
+    GwCheck(gc.CHECK_SMB_OWN, False, "нет avahi-browse, пакет avahi-utils (🚑 Восстановить)", group="svc"),
 ]
 
 # самопочинка (🟡, не в счёте), первый замер счётчиков (🟡), модуль не для всех ядер (🔴)
 _CHECKS_WAITING = [
     GwCheck(gc.CHECK_LINK, True, "хендшейк 40 с назад"),
     GwCheck(gc.CHECK_GUARD, True),
-    GwCheck(gc.CHECK_CLIENT_MASQ, False, f"маршрут по умолчанию через br0, а masquerade клиентов стоит в другом интерфейсе; {gc.SELF_HEAL_TAIL}"),
+    GwCheck(gc.CHECK_CLIENT_MASQ, False, f"маршрут по умолчанию через br0, а маскарад клиентов стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"),
     GwCheck(gc.CHECK_TG_ROUTE, True),
     GwCheck(gc.CHECK_MODULE, False, "нет для 1 из 2 ядер (6.12.1-v8): перезагрузка в такое ядро оставит шлюз без туннелей"),
     GwCheck(gc.CHECK_TRANSIT, True, group="lan"),

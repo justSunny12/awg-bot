@@ -46,7 +46,6 @@ _CHECKS_LAN = [
     GwCheck(gc.CHECK_RESOLVER, True, group="lan"),
     GwCheck(gc.CHECK_LISTS, True, "обновлены 15.09 06:00", group="lan"),
     GwCheck(gc.CHECK_SMB_OWN, True, "nas", group="svc"),
-    GwCheck(gc.CHECK_SMB_PEERS, None, "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", group="svc"),
 ]
 
 

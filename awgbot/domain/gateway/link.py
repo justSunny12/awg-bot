@@ -61,7 +61,7 @@ class LinkMixin:
             if info is None:
                 checks.append(GwCheck(
                     gc.CHECK_GUARD, False,
-                    "нет — обвязка снята; «🔧 Восстановить»" if self.server_cfg1() else
+                    "нет — обвязка снята; «🚑 Восстановить»" if self.server_cfg1() else
                     "нет — обвязка старого образца или снята; перевыпусти "
                     "конфигурацию шлюза с сервера AWG"))
         self._guard_info = info
@@ -73,7 +73,7 @@ class LinkMixin:
                 checks.append(GwCheck(
                     gc.CHECK_MASQ_ISOLATION, ok,
                     "" if ok else (f"{client_subnet} нет в tunnel_nets4 — сервер AWG пришлёт подсеть сам; "
-                                   "не приходит — проверь «🔗 Канал конфигурации» на главном экране бота шлюза" if self.server_cfg1() else
+                                   "не приходит — проверь «🔧 Канал конфигурации» на главном экране бота шлюза" if self.server_cfg1() else
                                    f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
                                    "выпущена под другую подсеть, перевыпусти её с сервера AWG")))
             else:
@@ -123,9 +123,9 @@ class LinkMixin:
             if info is not None:
                 masq = uplink in info.get("masq_ifaces", set())
                 checks.append(GwCheck(gc.CHECK_UPLINK_MASQ, masq,
-                                      "" if masq else f"нет masquerade в {uplink}: пакеты агента "
+                                      "" if masq else f"нет маскарада на {uplink}: пакеты агента "
                                       "уходят в туннель с локальным адресом — "
-                                      + ("«🔧 Восстановить»" if self.server_cfg1() else
+                                      + ("«🚑 Восстановить»" if self.server_cfg1() else
                                          "перевыпусти конфигурацию шлюза с сервера AWG")))
         else:
             checks.append(GwCheck(gc.CHECK_UPLINK_POLICY, None, "аплинк не найден"))
@@ -142,8 +142,8 @@ class LinkMixin:
             ok = not masq_ifaces or wan in masq_ifaces
             self.__dict__["_masq_stale"] = not ok
             checks.append(GwCheck(gc.CHECK_CLIENT_MASQ, ok,
-                                  "" if ok else f"маршрут по умолчанию через {wan}, а masquerade "
-                                  f"клиентов стоит в другом интерфейсе; {gc.SELF_HEAL_TAIL}"))
+                                  "" if ok else f"маршрут по умолчанию через {wan}, а маскарад "
+                                  f"клиентов стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"))
         router = self._router_masq_check(info, route)
         if router is not None:
             checks.append(router)

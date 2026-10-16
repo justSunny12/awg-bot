@@ -143,14 +143,14 @@ async def test_link_invitation_shows_the_fingerprint_and_the_price(svc, host, fa
     kind, text, markup = msg.sent[-1]
     assert kind == "edit_text" and "Новые ключи линка с сервера AWG" in text, text
     assert f"Отпечаток <code>{fp}</code>" in text, text
-    assert "РФ-доступ прервётся" not in text, "шлюз трафик не несёт, а цена — с обрывом"
+    assert "РФ-доступ у всех прервётся" not in text, "шлюз трафик не несёт, а цена — с обрывом"
     assert [[b.text for b in r] for r in markup.inline_keyboard] == [["⬅️ Отмена", "🔑 Применить"], ["⬅️ В меню"]]
     assert [b.callback_data for b in markup.inline_keyboard[0]] == [
         GwCB(action="cfg_no", val="link").pack(), GwCB(action="cfg_ok!", val="link").pack()]
     svc.set_link_role(True, standby=False, name="NASPi")
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_ask(cb, svc, FakeState())
-    assert "Линк переключится — РФ-доступ прервётся на секунды" in msg.sent[-1][1], msg.sent[-1][1]
+    assert "Линк переключится — РФ-доступ у всех прервётся на секунды" in msg.sent[-1][1], msg.sent[-1][1]
 
 
 async def test_apply_link_keys_says_ready_to_the_server_and_waits_for_it(svc, host, fake_bot, channel):

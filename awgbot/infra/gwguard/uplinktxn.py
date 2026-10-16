@@ -45,7 +45,7 @@ def _run(args: list[str], uplink_if: str, timeout: int) -> tuple[bool, str]:
     try:
         proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, *args], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
-        return False, "отсутствует скрипт обвязки — «🔧 Восстановить»"
+        return False, "отсутствует скрипт обвязки — «🚑 Восстановить»"
     except pkg.subprocess.TimeoutExpired:
         return False, f"скрипт обвязки не ответил за {timeout} с"
     except (OSError, pkg.subprocess.SubprocessError) as e:

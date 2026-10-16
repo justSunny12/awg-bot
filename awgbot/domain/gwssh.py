@@ -26,6 +26,7 @@ gwssh.py — доступ по SSH на шлюзе (раздел «🛡 Дост
 """
 from __future__ import annotations
 
+import html as _html
 import logging
 import threading
 import time
@@ -37,6 +38,15 @@ from awgbot.domain import gwchecks as gc
 
 log = logging.getLogger("awgbot.gateway")
 
+
+
+def ipv6_refusal(tok: str) -> ServiceError:
+    """Отказ IPv6-адреса в фильтре SSH: адрес моноширинным, как в итоге ввода.
+    Текст уже размечен и экранирован (html=True) — обработчик не экранирует
+    его второй раз."""
+    err = ServiceError(f"<code>{_html.escape(tok, quote=False)}</code> — IPv6, а фильтр на шлюзе только IPv4")
+    err.html = True
+    return err
 
 class SshOwnerRefusal(ServiceError):
     """Смена порта отказана: конфигом sshd владеет не бот. Экран рисует
@@ -180,7 +190,7 @@ class GwSshMixin:
             "lan": sorted((info or {}).get("sets", {}).get("lan4", set())),
             "peer_nets": sorted((info or {}).get("sets", {}).get("peer_nets4", set())),
             "new_plumbing": bool(info) and "ssh_in" in chains,
-            "server_cfg1": self.server_cfg1(),    # подсказка «🔧 Восстановить», а не «перевыпусти»
+            "server_cfg1": self.server_cfg1(),    # подсказка «🚑 Восстановить», а не «перевыпусти»
             "table_ports": dict((info or {}).get("ssh_ports", {})),
             "ufw": ufw,
             "omv_rules": omv_rules,
@@ -249,7 +259,7 @@ class GwSshMixin:
             except ValueError:
                 raise ServiceError(f"«{tok}» не адрес, не подсеть и не имя")
             if kind == "6":
-                raise ServiceError(f"{tok} — IPv6, а фильтр на шлюзе только IPv4")
+                raise ipv6_refusal(tok)
             norm = _no32(norm)
             if norm not in entries:
                 entries.append(norm)
@@ -281,7 +291,7 @@ class GwSshMixin:
             except gwguard.GwGuardError as e:
                 raise ServiceError(str(e))
             if not info or "ssh_in" not in info["chains"]:
-                raise ServiceError("Обвязка шлюза старого образца — «🔧 Восстановить»" if self.server_cfg1() else
+                raise ServiceError("Обвязка шлюза старого образца — «🚑 Восстановить»" if self.server_cfg1() else
                                    "Обвязка шлюза старого образца: перевыпусти конфигурацию шлюза с сервера AWG")
             gwguard.write_env(SSH_FILTER="1")
             ok, err = self.reassert_guarded("фильтр SSH снаружи")
@@ -438,16 +448,16 @@ class GwSshMixin:
             ok = held == port
             checks.append(GwCheck(gc.CHECK_SSH_PORT, ok, "" if ok else
                                   f"sshd слушает {port}, таблица держит {held or '?'}: "
-                                  "реассерт не прошёл (🔧 Восстановить)"))
+                                  "реассерт не прошёл (🚑 Восстановить)"))
         if gwguard.read_env().get("SSH_FILTER") == "1" and info is not None:
             if "ssh_in" not in info["chains"]:
                 checks.append(GwCheck(gc.CHECK_SSH_FILTER, False,
                                       "включён, а цепочки ssh_in в таблице нет — "
-                                      + ("«🔧 Восстановить»" if self.server_cfg1() else
+                                      + ("«🚑 Восстановить»" if self.server_cfg1() else
                                          "перевыпусти конфигурацию шлюза с сервера AWG")))
             else:
                 ok = table_ports.get("input") == (port if port is not None else held)
                 checks.append(GwCheck(gc.CHECK_SSH_FILTER, ok, "" if ok else
                                       "включён, а перехода на цепочку ssh_in в таблице нет "
-                                      "(🔧 Восстановить)"))
+                                      "(🚑 Восстановить)"))
         return checks

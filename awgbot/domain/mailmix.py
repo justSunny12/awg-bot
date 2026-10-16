@@ -94,8 +94,14 @@ class MailMixin:
         acc = self.email_account()
         if acc is None:
             raise mail.MailError("ящик не настроен")
-        mail.send_mail(acc, acc.login, "awg-bot: тестовое письмо",
-                       f"Почтовый канал бота работает. {timeutil.now_iso()}")
+        try:
+            mail.send_mail(acc, acc.login, "awg-bot: тестовое письмо",
+                           f"Почтовый канал бота работает. {timeutil.now_iso()}")
+        except mail.MailError as e:
+            # отказ — тоже итог проверки: шапка раздела иначе осталась бы
+            # «ещё не проверялось» сразу под только что показанным отказом
+            self.db.set_state(self._MAIL_CHECK_KEY, f"fail|{timeutil.now_iso()}|{e}")
+            raise
         self._email_mark_ok()
 
     def _email_mark_ok(self) -> None:

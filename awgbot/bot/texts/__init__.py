@@ -138,7 +138,7 @@ from .gateway import (
     gateway_op_result, gateway_config_result, gateway_bundle_received,
     gateway_ssh_text, gateway_ssh_port_changed,
     GW_SSH_ALLOW_ASK, gateway_ssh_allow_added, GW_SSH_ALLOW_ALREADY, GW_SSH_FILTER_ON_ALERT,
-    GW_SSH_FILTER_OFF, gateway_ssh_panel_line)
+    GW_SSH_FILTER_ON_EMPTY_ALERT, GW_SSH_FILTER_OFF, gateway_ssh_removed, gateway_ssh_panel_line)
 from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED
 
 __all__ = [
@@ -240,7 +240,7 @@ __all__ = [
     "GW_BUNDLE_PASSPHRASE_QUESTION", "gateway_claim_forward_text",
     "gateway_ssh_text", "gateway_ssh_port_changed",
     "GW_SSH_ALLOW_ASK", "gateway_ssh_allow_added", "GW_SSH_ALLOW_ALREADY",
-    "GW_SSH_FILTER_OFF",
+    "GW_SSH_FILTER_OFF", "GW_SSH_FILTER_ON_EMPTY_ALERT", "gateway_ssh_removed",
     "gateway_ssh_panel_line",
     "gateway_apply_report", "gateway_op_result", "gateway_config_result",
     "gateway_bundle_received", "HB_SERVER_DOWN", "HB_SERVER_UP", "cancelled",

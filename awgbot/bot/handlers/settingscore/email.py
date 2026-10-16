@@ -45,7 +45,9 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         try:
             await call(services.email_send_test)
         except mail.MailError as e:
-            await _render_with_note(cb, services, hooks, "email", f"🔴 {texts._e(str(e))}")
+            # действие не выполнено — ⚠️; причина «SMTP — …», как у mail_why в соседних экранах
+            from awgbot.domain.notices.gateway import mail_why
+            await _render_with_note(cb, services, hooks, "email", f"⚠️ Тест-письмо не ушло: {mail_why(str(e))}")
             return True
         acc = await call(services.email_account)
         await _render_with_note(cb, services, hooks, "email",

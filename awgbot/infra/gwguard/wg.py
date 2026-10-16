@@ -214,7 +214,7 @@ def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=()) -> t
     try:
         proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
-        return False, "отсутствует скрипт обвязки — «🔧 Восстановить»"
+        return False, "отсутствует скрипт обвязки — «🚑 Восстановить»"
     except pkg.subprocess.TimeoutExpired:
         return False, f"скрипт обвязки не ответил за {timeout} с"
     except (OSError, pkg.subprocess.SubprocessError) as e:

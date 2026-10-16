@@ -1,6 +1,8 @@
 """transit.py — часть пакета gateway (см. __init__)."""
 from __future__ import annotations
 
+import re
+
 from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
@@ -55,7 +57,8 @@ async def gw_transit_ask(cb: CallbackQuery, callback_data: GwCB, services, state
 async def gw_transit_domain_received(message: Message, state: FSMContext, services):
     kind = (await state.get_data()).get("kind") or "add"
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    domains = [t for t in (message.text or "").split() if t]
+    # как у клиента: пробел, перенос строки, запятая или точка с запятой
+    domains = [t for t in re.split(r"[\s,;]+", message.text or "") if t]
     if not domains:
         await ask_tracked(message, services, "⚠️ Пришли хотя бы один домен")
         return

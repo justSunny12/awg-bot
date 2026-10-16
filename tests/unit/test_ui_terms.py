@@ -47,7 +47,7 @@ ALLOWED: dict = {}
 # Прежние имена функций и разделов в текстах, которые видит человек:
 # «VPN-транзит» вместо «За шлюзом — без VPN» / «Локальная сеть без VPN»,
 # «Связь подсетей» вместо «Доступ между подсетями», «🛡 SSH-доступ» вместо
-# «Доступ по SSH», «🔧 Восстановить» вместо «Мастер восстановления», «🩺
+# «Доступ по SSH», «🚑 Восстановить» вместо «Мастер восстановления», «🩺
 # Здоровье» вместо «Монитор здоровья»; «Обслуживания» нет ни у одной роли.
 # Обе роли переименованы целиком — исключений нет.
 OLD_NAMES = {
@@ -160,7 +160,7 @@ def test_main_bot_texts_call_the_gateway_functions_by_their_new_names():
 
 def test_the_old_name_scan_reaches_the_agent_domain_strings(tmp_path):
     """Сторож: домен агента в скане — там детали проверок здоровья вида
-    «(🔧 Восстановить)», которые человек читает на экране."""
+    «(🚑 Восстановить)», которые человек читает на экране."""
     assert any(p.name == "gwssh.py" and p.parent.name == "domain" for p in MAIN_FILES)
     assert all(p.is_file() for p in MAIN_FILES), [p for p in MAIN_FILES if not p.is_file()]
     tmp = tmp_path / "probe.py"

@@ -99,10 +99,10 @@ def lan_virtual_line(virtual: list) -> str:
 def gateway_transit_ask_domain(kind: str) -> str:
     """Приглашение: куда пойдут домены — первой фразой, иначе «В туннель» и
     «Напрямую» отличаются только заголовком."""
-    head, where = {"add": (ui.head("➕ 🌍 В туннель"), "в туннель — через сервер AWG"),
-                   "ru": (ui.head("➕ 🇷🇺 Напрямую"), "напрямую — через провайдера, мимо туннеля")}[kind]
-    return (f"{head}\n\nЭти домены пойдут {where}. Пришли домены через пробел: "
-            "<code>example.com</code> — действует и на поддомены")
+    head, where = {"add": (ui.head("➕ 🌍 В туннель"), "в туннель, через сервер AWG"),
+                   "ru": (ui.head("➕ 🇷🇺 Напрямую"), "напрямую, через провайдера, мимо туннеля")}[kind]
+    return (f"{head}\n\nПришли домены через пробел, запятую или с новой строки — они пойдут {where}. "
+            "<code>example.com</code> действует и на поддомены")
 
 
 def own_lists_short(lan: dict, plain: bool = False) -> str:
@@ -148,7 +148,7 @@ def own_lists_state_line(own: dict) -> str:
     return ""
 
 
-OWN_FAIL_TAIL = " — «🔧 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
+OWN_FAIL_TAIL = " — «🚑 Восстановить»; не поможет — перевыпусти конфигурацию шлюза с сервера AWG"
 
 
 SYNC_TAILS = {
@@ -180,7 +180,9 @@ def _result_line(row: str) -> str:
     if row.endswith((": уже в списке", ": в списках нет")):
         return "ℹ️ " + row
     if row.endswith(": не похоже на домен, пропущен"):
-        return "⚠️ " + row[:-len("не похоже на домен, пропущен")] + "не домен, пропущен"
+        # скрипт печатает ввод как есть: моноширинным, как домены соседних строк
+        # (экранирует clean() в gateway_transit_result, теги <code> он оставляет)
+        return "⚠️ <code>" + row[:-len(": не похоже на домен, пропущен")] + "</code>: не домен, пропущен"
     if row.endswith(": это адрес самого сервера AWG — в туннель его не направить"):
         return "⚠️ " + row
     return row
@@ -194,8 +196,7 @@ def _fail_reason(out: str, cmd: str) -> str:
     dnsmasq не перезапустился с новым списком и прежний вернулся."""
     text = out.strip().replace("<code>", "").replace("</code>", "")
     if "откатываю" in text:
-        return ("dnsmasq не перезапустился — список остался прежним" if cmd == "del"
-                else "dnsmasq не перезапустился с новым списком — вернул прежний")
+        return "dnsmasq не перезапустился с новым списком — список остался прежним"
     # «домен: причина» — причину без домена, он в заголовке
     rows = [r for r in text.splitlines() if r.strip()]
     last = rows[-1] if rows else "не удалось"

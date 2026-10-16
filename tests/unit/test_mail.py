@@ -91,3 +91,16 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
     assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("awg-bot-main: резервная копия ")
     assert stamp[:10] in sent[0]
+
+
+def test_failed_test_mail_is_recorded_as_the_last_check(services, monkeypatch):
+    """Отказ тест-письма — тоже итог проверки: шапка раздела не должна
+    остаться «ещё не проверялось» сразу под показанным отказом."""
+    import pytest
+    acc = mail.MailAccount("a@b.co", "p", "imap.b.co", 993, "smtp.b.co", 587)
+    monkeypatch.setattr(services, "email_account", lambda: acc)
+    monkeypatch.setattr(mail, "send_mail", lambda *a, **kw: (_ for _ in ()).throw(mail.MailError("SMTP: авторизация отклонена")))
+    with pytest.raises(mail.MailError):
+        services.email_send_test()
+    state, _when, detail = services.email_last_check()
+    assert state == "fail" and detail == "SMTP: авторизация отклонена"
