@@ -191,12 +191,12 @@ def test_admin_main_is_seven_buttons_with_gateways_always():
     РФ-доступа, и к его включению — спрячь её, и функцию на новом сервере не
     найти."""
     full = [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства", "🇷🇺 Мой РФ-доступ"], ["👥 Профили", "➕ Профиль"],
-            ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление"]]
+            ["📢 Объявление", "🛰 Шлюзы"], ["⚙️ Настройки"]]
     rows = [[b.text for b in r] for r in kba.admin_main(routing_visible=True, self_client_id=1).inline_keyboard]
     assert rows == full, rows
     rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
-                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление"]], rows
+                    ["📢 Объявление", "🛰 Шлюзы"], ["⚙️ Настройки"]], rows
 
 
 @pytest.mark.parametrize("n", [1, 3, 5, 6, 8, 14])

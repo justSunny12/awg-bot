@@ -60,11 +60,12 @@ def refreshed_line(st, bot_username: str = "") -> str:
     from awgbot.util import timeutil
     now = timeutil.now()
     at = timeutil.parse_iso(st.ts).astimezone(timeutil.TZ) if st.ts else now
+    # ссылкой — только время: «обновлено в» остаётся подписью (решение 16.10.2026)
     if at.date() == now.date():
-        label = "обновлено в " + at.strftime("%H:%M:%S")
+        lead, when = "обновлено в ", at.strftime("%H:%M:%S")
     else:
-        label = "обновлено " + timeutil.fmt_dt_ui(at, seconds=True)
-    return "🔄 <i>" + deep_link(bot_username, REFRESH_PAYLOAD, label) + "</i>"
+        lead, when = "обновлено ", timeutil.fmt_dt_ui(at, seconds=True)
+    return "🔄 <i>" + lead + deep_link(bot_username, REFRESH_PAYLOAD, when) + "</i>"
 
 
 def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),
@@ -153,7 +154,7 @@ def _lan_fault(c) -> str:
 
 
 def gateway_health(st) -> str:
-    """Здоровье: «🩺 Здоровье pi ✅ Проблем не выявлено» и ниже железо и модуль;
+    """Здоровье: «🩺 Здоровье pi» ⏎ «✅ Проблем не выявлено» и ниже железо и модуль;
     проблемы — «🔴 Проблемы: N» и построчно только проблемные строки (🔴) и
     ожидания (🟡 — самопочинка, первый замер); ✅-строки и «не проверено»
     выключенных функций на экран не идут. Чинить будут по строкам, а не по вердикту."""
@@ -161,8 +162,9 @@ def gateway_health(st) -> str:
     problems = gwchecks.health_problems(st.checks)
     smart_bad = bool(st.smart and st.smart != "OK")
     n_problems = len(problems) + (1 if smart_bad else 0)
-    lines = [ui.head(f"🩺 Здоровье {host}",
-                     "✅ Проблем не выявлено" if not n_problems else f"🔴 Проблемы: {n_problems}")]
+    # вердикт своей строкой под заголовком (решение 16.10.2026)
+    lines = [ui.head(f"🩺 Здоровье {host}"),
+             "✅ Проблем не выявлено" if not n_problems else f"🔴 Проблемы: {n_problems}"]
     for c in st.checks:
         mark = gwchecks.check_mark(c)
         if mark in ("✅", ""):
@@ -171,15 +173,15 @@ def gateway_health(st) -> str:
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
     if smart_bad:
         lines.append("🔴 диск — SMART сообщает о сбое: сделай бэкап и замени носитель")
-    # «RAM свободно 2 345 МБ · диск свободно 87 ГБ, SMART ОК · питание ОК»:
+    # «RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART ОК · питание ОК»:
     # «свободно» у каждой величины — общий префикс читался бы и как «свободно: питание»
     hw = []
     if st.ram_free_mb is not None:
-        hw.append(f"RAM свободно {num(st.ram_free_mb)} МБ")
+        hw.append(f"RAM: свободно {num(st.ram_free_mb)} МБ")
     disk = ""
     if st.disk_free_gb is not None:
         free = f"{st.disk_free_gb:.1f}".replace(".", ",") if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
-        disk = f"диск свободно {free} ГБ"
+        disk = f"диск: свободно {free} ГБ"
     if st.smart == "OK":
         disk = f"{disk}, SMART ОК" if disk else "SMART ОК"
     if disk:
@@ -195,8 +197,9 @@ def gateway_health(st) -> str:
         lines.append(" · ".join(hw))
     ver = st.module_version or "?"
     src = f" · srcversion {st.srcversion[:8]}…" if st.srcversion else ""
+    # одно ядро — «собран для всех» ничего не сообщает; хвост — только когда ядер несколько
     kernels = (f" · собран для всех ядер ({st.kernels_total})"
-               if st.kernels_total and not st.kernels_missing else "")
+               if st.kernels_total and st.kernels_total > 1 and not st.kernels_missing else "")
     lines.append(f"Модуль awg {_e(ver)}{_e(src)}{kernels}")
     if problems:
         lines.append("«🚑 Восстановить» переставит правила и переподнимет линк")

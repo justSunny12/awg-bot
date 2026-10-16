@@ -309,7 +309,7 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
     await gh.gw_transit(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
     assert text.startswith("🔀 <b>VPN-транзит</b> 🟢 работает") and "end0" in text \
-        and "Свои списки: 1 в туннель" in text, text
+        and "· свои: 1 в туннель" in text, text
     labels = [b.text for row in markup.inline_keyboard for b in row]
     # обновления списков кнопкой нет: фиды привозит сервер или агент качает сам
     assert labels == ["➕ 🌍 В туннель", "➕ 🇷🇺 Напрямую", "🛜 Роутер", "⬅️ В меню"], labels
@@ -332,7 +332,7 @@ async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fa
     assert msg.message_id in deleted and reply.message_id in deleted, "приглашение и ввод убраны"
     answers = [s[1] for s in reply.sent if s[0] == "answer"]
     assert any(a.startswith("✅") and "добавлен" in a for a in answers)
-    assert "Свои списки" in answers[-1], "после ввода — назад в свои списки, откуда пришли"
+    assert "🔀 <b>VPN-транзит</b>" in answers[-1] and "📋 Списки:" in answers[-1], "после ввода — назад в свои списки, откуда пришли"
 
 
 def _own_lists_labels(msg) -> list[str]:

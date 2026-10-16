@@ -23,14 +23,15 @@ def _lists_counts(lan: dict) -> str:
 
 
 def _lists_updated_short(raw: str) -> str:
-    """«обновлены <когда>» после списков; ещё не обновлялись — так и пишем."""
+    """«обн. <когда>» после списков (строка одна со своими списками — коротко);
+    ещё не обновлялись — так и пишем."""
     from awgbot.util import timeutil
     if not raw:
         return "ещё не обновлялись"
     try:
-        return "обновлены " + timeutil.fmt_dt_ui(timeutil.parse_iso(raw))
+        return "обн. " + timeutil.fmt_dt_ui(timeutil.parse_iso(raw))
     except ValueError:
-        return "обновлены ?"
+        return "обн. ?"
 
 
 def smb_line(svc: dict) -> str:
@@ -73,8 +74,10 @@ def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list 
              *([lan_virtual_line(virtual)] if virtual else []),
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
              + (f"<code>{_e(lan['uplink'])}</code>" if lan.get("uplink") else "аплинк"),
-             f"📋 Списки: {pkg._lists_counts(lan)} · {pkg._lists_updated_short(lan.get('updated_at') or '')}",
-             pkg.own_lists_short(lan, plain=True)]
+             # одной строкой с общими: «📋 Списки: … · обн. 13.10 01:27 · свои: 1 в туннель»;
+             # своих нет — хвоста нет (решение 16.10.2026)
+             f"📋 Списки: {pkg._lists_counts(lan)} · {pkg._lists_updated_short(lan.get('updated_at') or '')}"
+             + (f" · {own_tail}" if (own_tail := pkg.own_lists_short(lan)) else "")]
     if (lan.get("svc") or {}).get("active"):
         lines.append(pkg.smb_line(lan["svc"]))
     shared = bool(own.get("active"))

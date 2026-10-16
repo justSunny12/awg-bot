@@ -56,11 +56,18 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     wait = await _update_wait(services, tag)
     pending = await call(services.cfg_questions)        # вопросы с сервера AWG ждут человека
     text = texts.gateway_panel(st, tag, linkclient.view(), pending, wait, _bot_username(services))
-    markup = kb.gateway_panel_kb(pending=len(pending), lan=lan, update_tag=tag)
+    markup = kb.gateway_panel_kb(pending=len(pending), lan=lan, update_tag=tag, broken=_has_problems(st))
     if cb is not None:
         await edit_nav(cb, services, text, markup)
     else:
         await send_menu(target, services, text, markup, keep_id=keep_id)
+
+
+def _has_problems(st) -> bool:
+    """Есть ли на панели что чинить: те же 🔴, что в «🩺 Здоровье», и сбой SMART."""
+    from awgbot.domain import gwchecks
+    smart = getattr(st, "smart", "") or ""
+    return bool(gwchecks.health_problems(getattr(st, "checks", []) or [])) or bool(smart and smart != "OK")
 
 
 def _bot_username(services) -> str:
@@ -82,7 +89,8 @@ async def _panel_parts(services, *, fresh: bool = False):
     tag = await call(services.update_available_tag)
     return (texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
                                 _bot_username(services)),
-            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag))
+            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag,
+                              broken=_has_problems(st)))
 
 
 async def panel_main_parts(services, chat_id: int):
@@ -150,7 +158,8 @@ async def _refresh_by_link(message: Message, services) -> None:
     pending = await call(services.cfg_questions)
     text = texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
                                _bot_username(services))
-    markup = kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag)
+    markup = kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag,
+                              broken=_has_problems(st))
     nav_id = await call(services.db.get_nav_message_id, message.chat.id)
     if nav_id is not None:
         try:

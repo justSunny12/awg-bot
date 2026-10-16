@@ -8,12 +8,12 @@
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main — главная с профилями, трафиком и онлайн
 > /start
@@ -26,12 +26,12 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.refresh — «🔄 Обновить» прежнего сообщения
 > press m:refresh
@@ -45,12 +45,12 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.refresh.link — ссылка «🔄 обновлено в …» — /start refresh: команда стёрта, главная на месте
 > /start refresh
@@ -64,12 +64,12 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.online — онлайн
 > press m:online
@@ -80,7 +80,7 @@
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i><a href="https://t.me/test_bot?start=online">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -91,7 +91,7 @@
 
 Сейчас никто не подключён
 
-🔄 <i><a href="https://t.me/test_bot?start=online">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -1383,12 +1383,12 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.bc — объявление: кому
 > press bc:pick:0
@@ -1509,12 +1509,12 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 ~ (пустой ответ)
 
 ### adm.set.root — корень настроек
@@ -2559,12 +2559,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.rt.provision — РФ-доступ не развёрнут
 > press set:rt:open::
@@ -3200,12 +3200,12 @@ uci commit</pre>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.gw.lan_nets — локальные подсети: приглашение
 > press gws:lan_nets:1:
@@ -3350,12 +3350,12 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.rt_off — главная: РФ-доступ админу не виден
 > /start
@@ -3367,12 +3367,12 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.set.svc.mig — сервис: переезд настроен
 > press set:svc:open::
@@ -3515,12 +3515,12 @@ Pi4 — 🟢 Резерв
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.online — /start online
 > /start online
@@ -3532,7 +3532,7 @@ Pi4 — 🟢 Резерв
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i><a href="https://t.me/test_bot?start=online">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
   [⬅️ В меню | m:main]
 
 ### adm.link.expiring — /start expiring
@@ -3663,12 +3663,12 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.upd — /start upd — обновления
 > /start upd
@@ -3743,12 +3743,12 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.claim — пересланное сообщение агента
 > text «✅ Шлюз настроен. Перешли это сообщение основному боту:
@@ -3962,12 +3962,12 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.bc.send.ext — разослано с продлением
 > press bc:send:0
@@ -4003,12 +4003,12 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.set.email.saved — мастер почты: ящик подключён
 > text «DUMMY-app-password»
@@ -4135,12 +4135,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.restore.junk — не резервная копия
 > file awg-bot-backup-2026-09-01.tgz
@@ -4279,12 +4279,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.ev.restore_done — восстановление из копии завершено
 > call report_restore_result
@@ -4425,12 +4425,12 @@ IMAP и SMTP отвечают, вход выполнен
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.rt_disabled — главная: РФ-доступ выключен, шлюзов нет
 > /start
@@ -4441,12 +4441,12 @@ IMAP и SMTP отвечают, вход выполнен
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.nobody_online — главная: онлайн 0 без ссылки рядом с «Истекают» и «Без профиля»; аптайм в днях и часах
 > /start
@@ -4459,12 +4459,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.update — главная: доступна версия (тег без «v»), переезд — последней строкой
 > /start
@@ -4480,12 +4480,12 @@ IMAP и SMTP отвечают, вход выполнен
 <b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.upd_wait — главная: допустимой версии нет, v1.3.0 ждёт шлюз — строка ожидания
 > /start
@@ -4500,12 +4500,12 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюз <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3)
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.upd_wait.many — главная: ждёт четыре шлюза — три и «и ещё 1»
 > /start
@@ -4520,12 +4520,12 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3), <a href="https://t.me/test_bot?start=gw-2">Pi4</a> (v1.2.0), <a href="https://t.me/test_bot?start=gw-3">NASPi</a> (v1.2.1) [+1]
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.down — главная: сервер не отвечает, шлюз РФ-доступа недоступен
 > /start
@@ -4538,12 +4538,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.dev.missing — устройства нет — главная
 > /start dev-99
@@ -4557,12 +4557,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.online.gw — онлайн: шлюз вверху с пометкой
 > press m:online
@@ -4573,7 +4573,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-🔄 <i><a href="https://t.me/test_bot?start=online">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=online">12:00:00</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -4758,12 +4758,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.traffic_local_dev.short — прежняя ссылка «traffic_local-<id>» без хвоста
 > /start traffic_local-3
@@ -4832,12 +4832,12 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 ~ (пустой ответ)
 
 ### adm.traffic.rf_on — строки РФ в списке: функция включена
@@ -5891,12 +5891,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.cl.admin — ссылка на карточку своего профиля — главная
 > /start cl-2
@@ -5910,12 +5910,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.dev.limit.profile — карточка устройства: лимит профиля
 > press d:open:4
@@ -6008,12 +6008,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.cl.delete.one — удалить профиль с одним устройством?
 > press c:delete:4
@@ -6034,12 +6034,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 0 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.rf_kept — главная: функция выключена, а РФ за месяц был — строка остаётся
 > /start
@@ -6051,12 +6051,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.rf_broken — главная: учёт РФ сломан — пометка без текста ошибки ядра
 > /start
@@ -6069,12 +6069,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.rf_only — главная: трафика нет, а РФ есть — ссылок нет
 > /start
@@ -6087,12 +6087,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 1 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.no_username — главная: имя бота неизвестно — подписи без ссылок
 > /start
@@ -6109,8 +6109,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.cl.limit.preset.low — лимит устройств пресетом ниже занятого — сразу, с ⚠️
 > press ps:cli_devs:3:1
@@ -6177,12 +6177,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 ~ (пустой ответ)
 
 ### adm.self.add.full — своё устройство при занятом лимите — сколько удалить
@@ -6534,12 +6534,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.bc.send.holders — разослано профилю и тем, с кем он делится устройствами
 > press bc:send:0
@@ -6566,12 +6566,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.bc.send.undelivered — разослано всем, держателям тоже; одному не доставлено
 > press bc:send:0
@@ -6599,12 +6599,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.bc.next.unlimited — с продлением отмечены одни бессрочные — продлевать некого
 > press bc:next:0
@@ -6697,12 +6697,12 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.rf.all.denied — «все» у профиля без разрешения — отказ
 > press rt:all:4:-1:
@@ -8000,12 +8000,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.gw.checking — главная: резерв ещё проверяется
 > /start
@@ -8018,12 +8018,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.gw.standby_dead — главная: резерв не отвечает (🟡)
 > /start
@@ -8036,12 +8036,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.gw.both_down — главная: оба шлюза не отвечают
 > /start
@@ -8054,12 +8054,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.gw.down.standby_alive — главная: активный не отвечает, резерв жив
 > /start
@@ -8072,12 +8072,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.main.gw.slot2 — главная: активен второй шлюз — ссылки в свои карточки
 > /start
@@ -8090,12 +8090,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.gw.lan_yes.off — VPN-транзит выключен — «❓ Роутер» ушёл
 > press gws:lan_yes:1:0
@@ -8418,12 +8418,12 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 ~ (пустой ответ)
 
 ### adm.claim.foreign — claim другого устройства при назначенном шлюзе — не принято
@@ -9302,12 +9302,12 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.link.gw.one — один шлюз по ссылке — «Назад» на главную
 > /start gw-1
@@ -9403,12 +9403,12 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.ev.gw_applied.label — файл слота 2 применён — имя с подписью
 > call bundle_applied
@@ -9444,12 +9444,12 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-🔄 <i><a href="https://t.me/test_bot?start=refresh">обновлено в 12:00:00</a></i>
+🔄 <i>обновлено в <a href="https://t.me/test_bot?start=refresh">12:00:00</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
-  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
-  [📢 Объявление | bc:pick:0]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
 
 ### adm.ev.gw_applied.fail.escaped — отказ шлюза — причина экранирована
 > call bundle_applied

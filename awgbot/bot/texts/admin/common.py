@@ -53,8 +53,9 @@ def refreshed_line(bot_username: str, payload: str, at=None) -> str:
     час в чате уже врёт (решение 16.10.2026)."""
     from ..fmt import deep_link
     at = at or timeutil.now()
-    label = "обновлено в " + at.astimezone(timeutil.TZ).strftime("%H:%M:%S")
-    return f"🔄 <i>{deep_link(bot_username, payload, label)}</i>"
+    # ссылкой — только время: «обновлено в» остаётся подписью (решение 16.10.2026)
+    when = at.astimezone(timeutil.TZ).strftime("%H:%M:%S")
+    return f"🔄 <i>обновлено в {deep_link(bot_username, payload, when)}</i>"
 
 
 REFRESH_PAYLOAD = "refresh"      # /start refresh — перечитать статус и перерисовать главную
