@@ -39,7 +39,7 @@ def _blocked_line(dev, *, user_as: str = "") -> str:
     """«⛔ Заблокировано: тобой», «⛔ Заблокировано: подписка истекла».
     user_as — кем подписать блок своей кнопкой (бит USER) глазами зрителя:
     на своём и на переданном у держателя — «тобой», у владельца переданного —
-    «держателем [Артём]»; пусто — подпись причины как есть («владельцем»)."""
+    «профилем [Артём]»; пусто — подпись причины как есть («владельцем»)."""
     from awgbot.core import blocks
     mask = int(dev.block_reason)
     reasons = blocks.device_reasons_ru(mask, for_admin=False)
@@ -70,7 +70,7 @@ def device_card_lent(dev, profile_limit_bytes: int) -> str:
     кнопкой здесь ставит только держатель — так и подписан."""
     parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}", meta=[f"управляется профилем {holder_link(dev)}"]),
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
-    blocked = _blocked_line(dev, user_as=f"держателем {holder_link(dev)}")
+    blocked = _blocked_line(dev, user_as=f"профилем {holder_link(dev)}")
     if blocked:
         parts.append(blocked)
     return "\n".join(parts)
@@ -100,13 +100,14 @@ def unmanaged_device_dialog(name: str) -> str:
 
 def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool = False) -> str:
     """Вопрос удаления: своё / единственное / переданное (у владельца) /
-    удерживаемое (у держателя; only — единственное у гостя: новое — только по
-    новому приглашению)."""
+    удерживаемое (у держателя; only — единственное у гостя: следующее — только
+    по новому приглашению, и тот же риск для Telegram)."""
     name = _e(dev.name)
     if held:
         if only:
             return (f"⚠️ Удалить устройство «{name}»? Оно у тебя единственное — "
-                    f"новое только по новому приглашению от профиля {owner_link(dev)}")
+                    f"следующее получишь только по новому приглашению от профиля {owner_link(dev)}\n"
+                    f"{TELEGRAM_RISK}")
         return (f"🗑 Удалить устройство «{name}»?\n"
                 f"Вернуть его можно будет только по новому приглашению от профиля {owner_link(dev)}")
     if lent:
@@ -115,7 +116,7 @@ def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool
                 "только с новым приглашением от тебя")
     if only:
         return (f"⚠️ Удалить устройство «{name}»? Оно у тебя единственное\n"
-                f"{TELEGRAM_RISK}")
+                f"{TELEGRAM_RISK}, и добавить новое будет нечем")
     return (f"🗑 Удалить устройство «{name}»?\n"
             "VPN на нём перестанет работать. Добавишь снова — понадобится новая ссылка")
 
@@ -147,8 +148,8 @@ def block_device_ask(name: str, *, owner: str = "") -> str:
 def transfer_ask(name: str) -> str:
     n = _e(name)
     return (f"👤 Передать устройство «{n}» другу?\n"
-            "Друг получит приглашение и подключится по этому устройству; на твоём "
-            f"«{n}» VPN после этого работать не будет — заведи себе новое. "
+            "Друг получит приглашение и подключит это устройство у себя; у тебя VPN "
+            "по нему работать перестанет — заведи себе новое. "
             "Устройство останется в твоём лимите")
 
 
@@ -157,9 +158,9 @@ def transfer_ask(name: str) -> str:
 def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
     slots = f" · {used} из {limit}" if limit else ""
     if for_friend:
-        return (f"{ui.head('👤 Устройство для друга')}{slots}{' · займёт твой слот' if limit else ''}\n"
+        return (f"{ui.head('👤 Устройство для друга')}{slots}{' · займёт твой слот' if limit else ''}\n\n"
                 "Как назвать? Имя увидит друг")
-    return f"{ui.head('➕ Новое устройство')}{slots}\nКак назвать? Например: «iPhone»"
+    return f"{ui.head('➕ Новое устройство')}{slots}\n\nКак назвать? Например: «iPhone»"
 
 
 def device_created(name: str, profile_limit_bytes: int) -> str:
@@ -171,13 +172,17 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
 
 
 def device_limit_prompt(name: str, profile_limit_bytes: int, current_bytes: int | None = None) -> str:
-    """«📊 Лимит трафика «Телефон» · сейчас ∞ · не больше 100 ГБ профиля»;
+    """«📊 Лимит трафика устройства «Телефон» · сейчас 10 ГБ · не больше 100 ГБ
+    профиля»; своего лимита нет — «сейчас как у профиля · не больше 100 ГБ»
+    (словами кнопки «∞ Как у профиля»), у профиля без лимита — «сейчас ∞»;
     current_bytes=None — устройство ещё создаётся, текущего значения нет."""
-    head = f"{ui.head('📊 Лимит трафика')} «{_e(name)}»"
+    head = f"{ui.head('📊 Лимит трафика')} устройства «{_e(name)}»"
+    as_profile = current_bytes == 0 and bool(profile_limit_bytes)
     if current_bytes is not None:
-        head += f" · сейчас {gb_str(current_bytes) if current_bytes else '∞'}"
+        now = gb_str(current_bytes) if current_bytes else ("как у профиля" if as_profile else "∞")
+        head += f" · сейчас {now}"
     if profile_limit_bytes:
-        return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
+        return f"{head} · не больше {gb_str(profile_limit_bytes)}{'' if as_profile else ' профиля'}"
     return head
 
 
@@ -185,7 +190,7 @@ def device_limit_other_prompt(profile_limit_bytes: int) -> str:
     """Приглашение «✏️ Другое»: заголовок, пустая строка, подсказка."""
     if profile_limit_bytes:
         return (f"{ui.head('✏️ Лимит трафика')} · не больше {gb(profile_limit_bytes)} ГБ (лимит профиля)\n\n"
-                "Пришли число ГБ; 0 — без ограничений в рамках лимита")
+                "Пришли число ГБ; 0 — как у профиля")
     return f"{ui.head('✏️ Лимит трафика')}\n\nПришли число ГБ; 0 — без лимита"
 
 
@@ -198,14 +203,14 @@ NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 
 def limit_note(old_bytes: int, new_bytes: int, profile_limit_bytes: int = 0) -> str:
-    """Итог правки лимита первой строкой карточки: «✅ Лимит: ∞ → 50 ГБ»;
-    снят у профиля с лимитом — «✅ Лимит: 50 ГБ → ∞ (не более 100 ГБ — лимит
+    """Итог правки лимита первой строкой карточки: «✅ Лимит трафика: ∞ → 50 ГБ»;
+    снят у профиля с лимитом — «✅ Лимит трафика: 50 ГБ → ∞ (не более 100 ГБ — лимит
     профиля)»."""
     def _f(b):
         return gb_str(b) if b else "∞"
     tail = (f" (не более {gb_str(profile_limit_bytes)} — лимит профиля)"
             if not new_bytes and profile_limit_bytes else "")
-    return f"✅ Лимит: {_f(old_bytes)} → {_f(new_bytes)}{tail}"
+    return f"✅ Лимит трафика: {_f(old_bytes)} → {_f(new_bytes)}{tail}"
 
 
 def name_note(old: str, new: str) -> str:

@@ -29,9 +29,19 @@ CODE_NO_ARG = "Отправь код после команды: <code>/code КО
 
 
 def issue_failed(error) -> str:
-    """Сервер не выдал настройки устройства: причина и следующий шаг."""
+    """Сервер не выдал настройки устройства: причина и следующий шаг. Сбой AWG
+    (AwgError) — «сервер не отвечает — попробуй через минуту»; отказ по условию
+    (ServiceError: «Устройство не найдено») — причина без совета ждать: минута
+    тут не поможет. Причина посреди фразы — со строчной (кроме аббревиатур) и
+    без точки в конце."""
     from ..fmt import _e
-    return f"⚠️ Не удалось получить настройки: {_e(str(error))} — попробуй через минуту"
+    from awgbot.infra.awg import AwgError
+    if isinstance(error, AwgError):
+        return "⚠️ Не удалось получить настройки: сервер не отвечает — попробуй через минуту"
+    reason = str(error).strip().rstrip(".")
+    if len(reason) > 1 and reason[1].islower():
+        reason = reason[0].lower() + reason[1:]
+    return f"⚠️ Не удалось получить настройки: {_e(reason)}"
 
 
 def limit_changed_notice(old: int, new: int) -> str:
@@ -56,4 +66,4 @@ GRACE_STALE = "Это предложение уже неактуально"
 
 def grace_activated_admin(link: str, days: int) -> str:
     """link — имя профиля ссылкой (texts.profile_link)."""
-    return f"🙏 {link}: взята отсрочка на {days} дн."
+    return f"🙏 Профиль {link}: взята отсрочка на {days} дн."

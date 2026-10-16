@@ -26,6 +26,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config,
                                         purge_menus, send_menu, cleanup_content, show_screen)
 from awgbot.domain.services import ServiceError
+from awgbot.infra.awg import AwgError
 from awgbot.bot.handlers import devcore
 
 router = Router(name="friend")
@@ -116,7 +117,7 @@ async def friend_start(message: Message, client, services, state: FSMContext):
 
 @router.callback_query(FriendCB.filter(F.action == "refresh"))
 async def friend_refresh(cb: CallbackQuery, client, services, state: FSMContext):
-    """Главный экран на месте: «В меню» из завершителя, «Назад» из списка."""
+    """Главный экран на месте: «В меню» из завершителя и из списка."""
     await state.clear()
     await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit_nav(cb, services, *await guest_main_payload(services, client))
@@ -171,7 +172,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     await drop_message(cb, services)
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.friend_finisher())
-    except ServiceError as e:
+    except (ServiceError, AwgError) as e:              # AwgError — сбой сервера AWG, не отказ по условию
         await cb.message.answer(texts.issue_failed(e))
         await show_guest_main(cb.message, services, client)
     await cb.answer()

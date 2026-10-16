@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..fmt import _e, client_link, owner_link, holder_link, _n_devices
+from ..fmt import _e, client_link, owner_link, holder_link, _n_devices, plural_ru, profile_link
 from .activation import ACTIVATION_OK
 
 
@@ -46,7 +46,7 @@ def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
     free = limit - used
     if not limit or free <= 0:
         return head
-    return f"{head}\nМесто освободилось: можно добавить ещё {free}"
+    return f"{head}.\nМесто освободилось: можно добавить ещё {free}"
 
 
 def lent_device_deleted_by_admin_notice(dev) -> str:
@@ -93,9 +93,13 @@ def friend_other_donor_refusal(held: list, donor) -> str:
 
 
 def guest_upgraded(donor, moved: list, limit: int) -> str:
-    lines = [ACTIVATION_OK, "",
-             f"Переданные тебе устройства от профиля {client_link(donor)} "
-             "перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:"]
+    if len(moved) == 1:
+        intro = (f"Переданное тебе устройство от профиля {client_link(donor)} "
+                 "перенесено в твой профиль — перенастраивать ничего не нужно, оно работает как раньше:")
+    else:
+        intro = (f"Переданные тебе устройства от профиля {client_link(donor)} "
+                 "перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:")
+    lines = [ACTIVATION_OK, "", intro]
     lines += [f"• {_e(d.name)}" for d in moved]
     if limit and len(moved) > limit:
         lines += ["", f"В твою подписку входит {_n_devices(limit)}, а перенесено {len(moved)} — "
@@ -104,16 +108,27 @@ def guest_upgraded(donor, moved: list, limit: int) -> str:
 
 
 def guest_upgraded_donor_notice(moved: list, holder, used: int, limit: int) -> str:
+    """Дарителю: гость стал клиентом, переданное ушло к нему. Хвост — как у
+    «удалил у себя»: «Место освободилось: можно добавить ещё N»; места нет —
+    «У тебя теперь 3 из 3 устройств», без лимита — «У тебя теперь 2 устройства»."""
     names = [d.name for d in moved]
     one = len(names) == 1
-    now = f"У тебя теперь {used} из {limit} устройств" if limit else f"У тебя теперь {_n_devices(used)}"
+    free = limit - used
+    if limit and free > 0:
+        now = f"Место освободилось: можно добавить ещё {free}"
+    elif limit:
+        now = f"У тебя теперь {used} из {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}"
+    else:
+        now = f"У тебя теперь {_n_devices(used)}"
     return (f"📤 У профиля {client_link(holder)} теперь своя подписка — "
             f"{'устройство' if one else 'устройства'} {_names_list(names)} "
             f"{'перешло' if one else 'перешли'} в его профиль. {now}")
 
 
-def guest_upgraded_admin_tail(donor, moved: list, limit: int) -> str:
-    return (f"\nПеренесено переданных устройств: {len(moved)} (от {_e(donor.name)}), "
+def guest_upgraded_admin_tail(donor, moved: list, limit: int, bot_username: str = "") -> str:
+    """Хвост уведомления админу: «(от профиля [Вася])» — ссылкой на карточку."""
+    return (f"\nПеренесено переданных устройств: {len(moved)} "
+            f"(от профиля {profile_link(donor, bot_username)}), "
             f"лимит подписки {limit if limit else 'без ограничения'}")
 
 
@@ -125,12 +140,12 @@ FRIEND_ALREADY_USER = (
 
 def friend_activated(device_name: str) -> str:
     """Первый экран гостя после активации — сразу выбор платформы, как у клиента."""
-    return f"🎉 Тебе передали устройство «{_e(device_name)}». Какое у тебя устройство?"
+    return f"🎉 Тебе передали устройство «{_e(device_name)}». Где будешь его настраивать?"
 
 
 def friend_activated_host_notice(device_name: str, who: str) -> str:
     """Владельцу: who — имя принявшего ссылкой на его Telegram (tg_link)."""
-    return f"👤 {who} принял приглашение — устройство «{_e(device_name)}» теперь у него"
+    return f"👤 Профиль {who} принял приглашение — устройство «{_e(device_name)}» теперь у него"
 
 
 # ── пояснения к выдаче (в одном сообщении с содержимым) ──────────────────────

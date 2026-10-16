@@ -24,7 +24,7 @@ async def test_on_cancel_clears_state_and_shows_menu(services, fake_bot, make_ac
     m = FakeMessage(text="✖️ Отмена", chat_id=701, user_id=701, bot=fake_bot)
     await rc.on_cancel(m, st, services, role="client", client=cl)
     assert await st.get_data() == {}                        # FSM сброшен (clear)
-    assert any(s[0] == "answer" and s[1] == "Отменено." for s in m.sent)
+    assert any(s[0] == "answer" and s[1] == "Отменено" for s in m.sent)
 
 
 async def test_on_cancel_names_the_dialog(services, fake_bot, make_active_client):
@@ -34,16 +34,16 @@ async def test_on_cancel_names_the_dialog(services, fake_bot, make_active_client
     from awgbot.bot import texts
     client = make_active_client(tg_id=702)
     cl = services.db.get_client(client.id)
-    for st_obj, expected in ((AddDevice.name, "Добавление устройства отменено."),
-                             (PauseDays.value, "Пауза подписки отменена."),
-                             (Broadcast.days, "Объявление отменено.")):
+    for st_obj, expected in ((AddDevice.name, "Добавление устройства отменено"),
+                             (PauseDays.value, "Пауза подписки отменена"),
+                             (Broadcast.days, "Объявление отменено")):
         st = FakeState()
         await st.set_state(st_obj)
         m = FakeMessage(text="✖️ Отмена", chat_id=702, user_id=702, bot=fake_bot)
         await rc.on_cancel(m, st, services, role="client", client=cl)
         assert any(s[0] == "answer" and s[1] == expected for s in m.sent), (expected, m.sent)
         assert await st.get_state() is None
-    assert texts.cancelled(None) == "Отменено."
+    assert texts.cancelled(None) == "Отменено"
 
 
 # ── «✖️ Отмена» под приглашением к вводу (инлайн, CancelCB) ─────────────────

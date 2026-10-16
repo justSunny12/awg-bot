@@ -192,7 +192,7 @@ async def test_client_resume_pause_result_then_info(services, fake_bot, make_act
     cb, screen = _cb(fake_bot, cl.tg_id)
     await ch.pause_resume(cb, PauseCB(action="resume", ref=cl.id), cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits and edits[-1][1].startswith("▶️ Пауза снята · прошло ") and edits[-1][2] is not None
+    assert edits and edits[-1][1].startswith("✅ Пауза снята · прошло ") and edits[-1][2] is not None
     assert "\n\n💳 <b>Подписка:</b> годовая · 🟢 активна" in edits[-1][1]
     assert not any(s[0] == "answer" for s in screen.sent), "итог ушёл отдельным сообщением"
 

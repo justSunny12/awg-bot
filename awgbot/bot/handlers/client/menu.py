@@ -13,6 +13,7 @@ from awgbot.bot.handlers.common import (
     call, drop_message, edit, ask_here, ask_tracked, back_to_context, own_device, mine_or_held,
     send_device_config, content_finisher)
 from awgbot.domain.services import ServiceError
+from awgbot.infra.awg import AwgError
 from awgbot.bot.states import EditDeviceName, EditTrafficLimit
 from awgbot.core.enums import PauseMode, SubStatus
 from awgbot.bot.handlers import devcore
@@ -111,7 +112,7 @@ async def _issue(cb: CallbackQuery, services, client, dev, kind: str) -> None:
     await drop_message(cb, services)                 # меню не должно висеть над ссылкой
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.to_menu())
-    except ServiceError as e:
+    except (ServiceError, AwgError) as e:              # AwgError — сбой сервера AWG, не отказ по условию
         await cb.message.answer(texts.issue_failed(e))
         await _show_main(cb.message, services, client)
     await cb.answer()

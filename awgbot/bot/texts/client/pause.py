@@ -19,9 +19,9 @@ PAUSE_WARNING_LINE = f"{TELEGRAM_RISK}, и снять паузу будет не
 def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
     """Экран паузы — вопрос «на сколько дней?», сколько доступно, что
     происходит; предупреждение — только когда аварийного выхода по почте нет."""
-    lines = [f"{ui.head('⏸️ Пауза')} — на сколько дней? · доступно {available_days}",
+    lines = [f"{ui.head('⏸️ Пауза')} — на сколько дней? · доступно {available_days} дн.",
              "VPN выключится, а срок подписки сдвинется на дни паузы. "
-             "Снимешь раньше — неизрасходованные дни вернутся"]
+             "Снимешь раньше — неизрасходованные дни вернутся на счёт"]
     if not email_resume:
         lines.append(PAUSE_WARNING_LINE)
     return "\n".join(lines)
@@ -62,5 +62,5 @@ def pause_limit_exhausted() -> str:
 
 def pause_resumed_self(actual_days: int, new_end) -> str:
     """Итог снятия паузы — первой строкой экрана «💳 Подписка»."""
-    return (f"▶️ Пауза снята · прошло {actual_days} дн. · "
+    return (f"✅ Пауза снята · прошло {actual_days} дн. · "
             f"подписка до {timeutil.fmt_end_ui(new_end)}")

@@ -100,7 +100,9 @@ def _expiring(services, cid):
 
 
 def _expired(services, cid):
-    services.db.update_client_fields(cid, period_end="2026-09-10T12:00:00+03:00", status="expired")
+    """Годовая подписка кончилась 10.09: начало — годом раньше (конец не раньше начала)."""
+    services.db.update_client_fields(cid, period_start="2025-09-10T12:00:00+03:00",
+                                     period_end="2026-09-10T12:00:00+03:00", status="expired")
 
 
 def _paused(services, cid):
@@ -122,7 +124,13 @@ def _admin_silent(services, cid):
 
 
 def _traffic_blocked(services, cid):
-    """Доступ приостановлен исчерпанным лимитом трафика профиля."""
+    """Доступ приостановлен исчерпанным лимитом трафика профиля: лимит 10 ГБ
+    выбран целиком (без расхода блок держится только до месячного сброса,
+    который снимает его той же транзакцией, — «0 из 10 ГБ» рядом с ⛔ в бою нет)."""
+    if not int(services.db.get_client(cid).traffic_limit):
+        services.db.update_client_fields(cid, traffic_limit=10 * G)
+    devs = services.db.list_devices(cid)
+    services.db.add_traffic_bulk([(devs[0].id, 8 * G, 2 * G)])
     services._client_set_block(cid, ClientBlock.TRAFFIC_CLIENT)
 
 
@@ -234,11 +242,11 @@ def guest(n=1, *, rf=False, drop=False, owner_after=None, more=False, other=Fals
 
 
 def _client_gen_fails(services, mp):
-    """Клиент с одним устройством; сервер не выдаёт конфиг (ServiceError)."""
+    """Клиент с одним устройством; выдача отказала (ServiceError — как в бою, когда устройство удалили в другом окне)."""
     from awgbot.domain.services import ServiceError
 
     def boom(device_id, **kw):
-        raise ServiceError("сервер не отвечает")
+        raise ServiceError("Устройство не найдено")
     who = ONE(services)
     mp.setattr(services, "generate_config", boom)
     return who
@@ -250,11 +258,11 @@ def _owner_blocked(services, cid):
 
 
 def _guest_gen_fails(services, mp):
-    """Гость с одним устройством; сервер не выдаёт конфиг (ServiceError)."""
+    """Гость с одним устройством; выдача отказала (ServiceError — как в бою, когда устройство удалили в другом окне)."""
     from awgbot.domain.services import ServiceError
 
     def boom(device_id, **kw):
-        raise ServiceError("сервер не отвечает")
+        raise ServiceError("Устройство не найдено")
     who = G1(services)
     mp.setattr(services, "generate_config", boom)
     return who
@@ -336,7 +344,7 @@ CLIENT_SHOTS = [
     Shot("cl.main.held_only", role="client", start="", data=vasya(holds=True),
          title="главная: своих нет, чужое в держании — ряд выдачи"),
     Shot("cl.main.back", role="client", press=[DEVICES, MAIN], data=ONE,
-         title="«Назад» из устройств — главная на месте"),
+         title="«В меню» из устройств — главная на месте"),
 
     # активация и коды: незнакомец
     Shot("cl.start.cold", role="client", start="", data=stranger(), title="незнакомец: /start без кода"),
@@ -770,7 +778,7 @@ CLIENT_SHOTS = [
     Shot("cl.rf.add.start_sub.back", role="client",
          steps=[("start", ""), ("press", rt("sites")), ("press", rt("add")), ("start", "sub"),
                 ("press", MAIN)], data=RF_SITES,
-         title="«Назад» с подписки, открытой ссылкой во время ввода"),
+         title="«В меню» с подписки, открытой ссылкой во время ввода"),
     Shot("cl.rf.del", role="client",
          press=[rt("sites"), rt("del", idx=0, tag=entry_tag(DOMAINS[0]))], data=RF_SITES,
          title="удалить адрес"),
@@ -831,7 +839,7 @@ GUEST_SHOTS = [
              s.db.add_traffic_bulk([(1, 20 * G, 4 * G + G // 10)]))),
          title="главная гостя: свой лимит устройства"),
     Shot("gst.refresh", role="guest", press=[fr("list"), fr("refresh")], data=G1,
-         title="«Назад» из устройств — главная на месте"),
+         title="«В меню» из устройств — главная на месте"),
 
     # коды и ссылки у гостя
     Shot("gst.code.more", role="guest", start="FTEST0000003", data=guest(1, more=True),

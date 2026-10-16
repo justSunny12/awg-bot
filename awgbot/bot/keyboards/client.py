@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
 from awgbot.bot import texts as _texts
 from awgbot.core import blocks as _blocks
 
-from .common import _btn_suffix, _manual_block_button, append_hide_row, confirm, device_limit_presets, issuable
+from .common import BTN_CANCEL, _btn_suffix, _manual_block_button, append_hide_row, confirm, device_limit_presets, issuable
 
 
 ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1): «➕ Устройство» из списка — отмена туда же
@@ -99,15 +99,15 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
         *ui.paged([(d, False) for d in devices] + [(d, True) for d in held], page, static=1,
                   screen="devices", ref=0, back=render or Menu(action="devices").pack(), button=_entry),
         [("➕ Устройство", DeviceCB(action="add", device_id=ADD_FROM_DEVICES)) if add else None,
-         ui.back(back or Menu(action="main").pack())])
+         ui.back(back) if back else ui.to_menu(Menu(action="main"))])
 
 
 def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
-    """«📱 Устройства» гостя: список, назад — на главный экран гостя."""
+    """«📱 Устройства» гостя: список, «⬅️ В меню» — на главный экран гостя."""
     return ui.rows(
         *ui.paged(devices, page, static=1, screen="gdevices", ref=0, back=FriendCB(action="list").pack(),
                   button=lambda _i, d: (f"{_dot(d)} {d.name}", FriendCB(action="open", device_id=d.id))),
-        ui.back(FriendCB(action="refresh")))
+        ui.to_menu(FriendCB(action="refresh")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,15 +188,15 @@ def unmanaged_device_dialog(device_id: int) -> InlineKeyboardMarkup:
 def client_device_limit_kb(ref: int, profile_limit_bytes: int, back_cb) -> InlineKeyboardMarkup:
     """Лимит трафика устройства у клиента: пресеты по три в ряд, затем «∞ Без
     лимита» (у профиля с лимитом — «∞ Как у профиля»: 0 = в рамках лимита
-    профиля) и «✏️ Другое», выход — «⬅️ Назад». ref — id устройства (карточка)
-    или 0 (новое устройство другу)."""
+    профиля) и «✏️ Другое», выход — «⬅️ Назад» к карточке; у нового устройства
+    другу (ref=0) — «✖️ Отмена»: добавление бросается, а не шаг назад к имени."""
     presets = [(f"{g} ГБ", PresetCB(kind="devlimit", ref=ref, val=g))
                for g in device_limit_presets(profile_limit_bytes) if g]
     return ui.rows(*ui.grid(presets, 3),
                    [("∞ Как у профиля" if profile_limit_bytes else "∞ Без лимита",
                      PresetCB(kind="devlimit", ref=ref, val=0)),
                     ("✏️ Другое", PresetCB(kind="devlimit", ref=ref, val=-1))],
-                   ui.back(back_cb))
+                   ui.back(back_cb) if ref else (BTN_CANCEL, back_cb))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,14 +224,14 @@ def pick_device(devices, action: str, back_cb: str = None, page: int = 0,
         *ui.paged(issuable(devices), page, static=1, screen="pick", ref=ref,
                   back=render or Menu(action=action).pack(),
                   button=lambda _i, d: (f"{_dot(d)} {d.name}{_btn_suffix(d)}", DeviceCB(action=action, device_id=d.id))),
-        ui.back(back_cb or Menu(action="main").pack()))
+        ui.back(back_cb) if back_cb else ui.to_menu(Menu(action="main")))
 
 
 def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMarkup:
     return ui.rows(
         *ui.paged(devices, page, static=1, screen="gpick", ref=0, back=FriendCB(action=action).pack(),
                   button=lambda _i, d: (f"{_dot(d)} {d.name}", FriendCB(action=action, device_id=d.id))),
-        ui.back(FriendCB(action="refresh")))
+        ui.to_menu(FriendCB(action="refresh")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ def subscription_kb(client_id: int, *, paused_user: bool, can_pause: bool) -> In
         pause = ("⏸️ Пауза", PauseCB(action="ask", ref=client_id))
     else:
         pause = None
-    return ui.rows([pause, ui.back(Menu(action="main"))])
+    return ui.rows([pause, ui.to_menu(Menu(action="main"))])
 
 
 def pause_kb(client_id: int, available: int) -> InlineKeyboardMarkup:

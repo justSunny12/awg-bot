@@ -41,14 +41,14 @@ def vpn_status_line(server_ok: bool) -> str:
 
 
 def rf_status_short(routing_ok, routing_on: bool, bot_username: str = "") -> str:
-    """«🇷🇺 РФ-доступ 🟢» / «… 🔴 не работает» / «… выкл» — простым текстом.
+    """«🇷🇺 РФ-доступ 🟢» / «… 🔴 недоступен» / «… выкл» — простым текстом.
     routing_ok=None — функция профилю не выдана: пусто."""
     if routing_ok is None:
         return ""
     label = f"🇷🇺 {ROUTING_NAME}"
     if not routing_on:
         return f"{label} выкл"
-    return f"{label} 🟢" if routing_ok else f"{label} 🔴 не работает"
+    return f"{label} 🟢" if routing_ok else f"{label} 🔴 недоступен"
 
 
 def status_line(server_ok: bool, routing_ok, routing_on: bool, bot_username: str = "") -> str:

@@ -181,7 +181,8 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
             await notify_one(message.bot, up.donor.tg_id,
                              texts.guest_upgraded_donor_notice(up.moved, new, used, limit))
         admin_text = (texts.activated_admin_notice(new, handle, _bot_username(services))
-                      + texts.guest_upgraded_admin_tail(up.donor, up.moved, new.device_limit))
+                      + texts.guest_upgraded_admin_tail(up.donor, up.moved, new.device_limit,
+                                                       _bot_username(services)))
     else:
         await message.answer(texts.ACTIVATION_OK)
         admin_text = texts.activated_admin_notice(new, handle, _bot_username(services))

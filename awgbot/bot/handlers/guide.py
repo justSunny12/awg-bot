@@ -28,6 +28,7 @@ from awgbot.bot.handlers.common import (call, drop_message, own_device, held_dev
                                         send_link, send_conf, send_qr, ask_here, ask_tracked,
                                         back_to_context)
 from awgbot.domain.services import LimitReached, ServiceError
+from awgbot.infra.awg import AwgError
 from awgbot.bot.states import AddDeviceGuide
 
 # Скриншоты гайдов лежат в пакете рядом с кодом (переживают деплой как обычный
@@ -171,7 +172,7 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
     await drop_message(cb, services)             # убрать сообщение с выбором способа
     try:
         await _send_captioned(cb.message, services, dev, callback_data.kind)
-    except ServiceError as e:
+    except (ServiceError, AwgError) as e:              # AwgError — сбой сервера AWG, не отказ по условию
         await cb.message.answer(texts.issue_failed(e))
         await cb.answer()
         return
