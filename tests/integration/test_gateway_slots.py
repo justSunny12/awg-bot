@@ -50,9 +50,9 @@ def test_slot_table_replaces_the_flag(services, make_active_client):
     assert services.db.gateway_by_device(a.device_id).id == 1
     g2 = services.db.gateway_add(b.device_id, "awglink2", 8443, "10.99.99.4/30")
     assert g2.id == 2 and g2.preferred == 0
-    services.db.gateway_update(2, lan_subnets=["192.168.2.0/24"], label="дом 2")
+    services.db.gateway_update(2, lan_subnets=["192.168.2.0/24"], label="дача 2")
     assert services.db.gateway(2).lan_subnets == ["192.168.2.0/24"]
-    assert services.db.gateway(2).label == "дом 2"
+    assert services.db.gateway(2).label == "дача 2"
     services.db.gateway_set_preferred(2)
     assert [x.id for x in services.db.gateways()] == [2, 1]
     with pytest.raises(sqlite3.IntegrityError):
@@ -298,8 +298,8 @@ def test_lan_subnets_are_parsed_and_the_same_subnet_is_no_conflict(two, services
     assert "10.240.1.0/24 : 192.168.1.0/24, 10.241.1.0/24 : 192.168.1.0/24" in fake_routing.lanmap
     assert services.gateway_set_lan_subnets(2, "—")["kept"] == []
     assert "10.241.1.0/24" not in fake_routing.lanmap
-    services.gateway_set_label(2, "  дом   2  очень длинная подпись сверх меры")
-    assert services.db.gateway(2).label == "дом 2 очень длинная"
+    services.gateway_set_label(2, "  дача   2  очень длинная подпись сверх меры")
+    assert services.db.gateway(2).label == "дача 2 очень длинная"
 
 
 def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, services, monkeypatch):

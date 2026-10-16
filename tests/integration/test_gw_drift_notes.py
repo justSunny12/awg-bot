@@ -200,7 +200,7 @@ def test_neighbour_subnets_are_notified_even_with_a_live_channel(services, slot)
     assert len(notes) == 1, [n.text for n in notes]
     text = notes[0].text
     assert text.splitlines()[0].endswith("конфигурация неактуальна — локальные подсети других шлюзов"), text
-    assert ("локальные подсети других шлюзов: у сервера «—», на шлюзе <code>192.168.2.0/24</code>"
+    assert ("локальные подсети других шлюзов: у сервера нет, на шлюзе <code>192.168.2.0/24</code>"
             in text.splitlines()), text
     assert "локальные подсети: у сервера" not in text, "в уведомлении то, что канал довезёт сам"
     assert "Шлюз не применил" not in text, "отказа не было, а он назван"

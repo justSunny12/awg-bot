@@ -97,7 +97,7 @@ async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake
     assert services.routing_profile_on(c.id) is True, "тумблер применил без «Применить»"
     cb, _ = await _all_apply(fake_bot, 73, c.id, c, services)
     assert services.routing_profile_on(c.id) is False
-    assert cb.answers[-1][0] == "Телефон: РФ-доступ выключен", cb.answers
+    assert cb.answers[-1][0] == "Устройство «Телефон»: РФ-доступ выключен", cb.answers
 
     c = services.db.get_client(c.id)
     await _all_apply(fake_bot, 73, c.id, c, services)
@@ -354,11 +354,11 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
 
     cb, _ = await _all_apply(fake_bot, 130, c.id, c, services)
     assert services.routing_device_counts(c.id) == (2, 2)
-    assert cb.answers[-1][0] == "Ноутбук: РФ-доступ включён", cb.answers
+    assert cb.answers[-1][0] == "Устройство «Ноутбук»: РФ-доступ включён", cb.answers
 
     cb2, _ = await _all_apply(fake_bot, 130, c.id, c, services)
     assert services.routing_device_counts(c.id) == (0, 2)
-    assert cb2.answers[-1][0] == "РФ-доступ: выключен 2", cb2.answers
+    assert cb2.answers[-1][0] == "РФ-доступ выключен на 2 устройствах", cb2.answers
     assert d2 is not None
 
 
@@ -540,7 +540,9 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    assert labels(nav_a) == labels(nav_c), "админ и клиент видят разное"
+    # кнопки одни; различается только выход: админ — в карточку профиля, клиент — на главную
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "админ и клиент видят разное"
+    assert (labels(nav_a)[-1], labels(nav_c)[-1]) == ("⬅️ Назад", "⬅️ В меню")
 
     # админ включил второе — клиент видит; клиент выключил первое — админ видит
     await _dev_apply(fake_bot, config.ADMIN_ID, d2.device_id, other.id, None, services)
@@ -550,7 +552,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_a, nav_a = _admin_cb(fake_bot)
     await routing_h.routing_panel(cb_a, RoutingCB(action="devs", ref=other.id),
                                   None, services, FakeState())
-    assert labels(nav_a) == labels(nav_c), "после правки админа клиент видит другое"
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки админа клиент видит другое"
     assert services.routing_device_counts(other.id) == (2, 2), "правка админа не дошла до профиля"
 
     first = [d for d in services.db.list_devices(other.id) if d.name == "Чужой"][0]
@@ -561,7 +563,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    assert labels(nav_a) == labels(nav_c), "после правки клиента админ видит другое"
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки клиента админ видит другое"
     assert services.routing_device_counts(other.id) == (1, 2)
 
 

@@ -30,7 +30,7 @@ def test_html_lines_put_values_in_code_and_the_mode_in_words():
     assert drift_lines(_items(), html=True) == [
         "локальные подсети: у сервера <code>192.168.68.0/24</code>, на шлюзе <code>192.168.1.0/24</code>",
         "VPN-транзит: у сервера включён, на шлюзе выключен",
-        "резолвер: у сервера <code>10.9.1.1</code>, на шлюзе «—»",
+        "резолвер: у сервера <code>10.9.1.1</code>, на шлюзе нет",
     ]
 
 
@@ -40,18 +40,24 @@ def test_plain_lines_quote_values_and_keep_the_mode_in_words():
     assert out == [
         "локальные подсети: у сервера «192.168.68.0/24», на шлюзе «192.168.1.0/24»",
         "VPN-транзит: у сервера включён, на шлюзе выключен",
-        "резолвер: у сервера «10.9.1.1», на шлюзе «—»",
+        "резолвер: у сервера «10.9.1.1», на шлюзе нет",
     ]
     assert not any("<" in line for line in out), "разметка в строках без HTML"
+
+
+def test_an_empty_value_is_said_in_words():
+    """Пустое значение — словом, а не «—» в ёлочках (читалось бы присланным прочерком)."""
+    line = drift_lines([("RESOLVER", H["RESOLVER"], "", "10.9.1.1")], html=True)[0]
+    assert line == "резолвер: у сервера нет, на шлюзе <code>10.9.1.1</code>", line
 
 
 def test_nothing_to_say_gives_no_lines():
     assert drift_lines([], html=True) == [] and drift_lines([], html=False) == []
 
 
-def test_an_empty_mode_is_a_dash_not_an_empty_word():
+def test_an_empty_mode_is_a_word_not_an_empty_string():
     out = drift_lines([("LAN_MODE", H["LAN_MODE"], "1", "")], html=True)
-    assert out == ["VPN-транзит: у сервера включён, на шлюзе —"], out
+    assert out == ["VPN-транзит: у сервера включён, на шлюзе нет"], out
 
 
 def test_markup_from_the_gateway_is_escaped_in_html():

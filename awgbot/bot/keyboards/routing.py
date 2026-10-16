@@ -11,12 +11,14 @@ from .settings import _cycle
 
 
 def routing_panel(client_id: int, devices, *, marks: dict, dirty: bool = False,
-                  n_domains: int = 0, back_target: str, page: int = 0) -> InlineKeyboardMarkup:
+                  n_domains: int = 0, back_target: str, page: int = 0,
+                  back_label: str = ui.BACK_LABEL) -> InlineKeyboardMarkup:
     """Раздел «🇷🇺 РФ-доступ» одним экраном: отметки устройств (свои и
     удерживаемые) — из marks {id: отмечено}, это выбор, а не состояние; «Все
     устройства» по правилу массового выбора; добавление сайтов и вход в их
     список; последним рядом — «✅ Применить» (только при отличии от
-    сохранённого, dirty) и выход. Переданные — строкой в тексте, без кнопки;
+    сохранённого, dirty) и выход (на главную — «⬅️ В меню», back_label).
+    Переданные — строкой в тексте, без кнопки;
     у гостя хвоста «от профиля» на кнопках нет — профиль в заголовке."""
     def _entry(_i, d):
         mark = "✅" if marks.get(d.id, bool(d.routing_on)) else "☑️"
@@ -29,7 +31,7 @@ def routing_panel(client_id: int, devices, *, marks: dict, dirty: bool = False,
                           RoutingCB(action="all", ref=client_id), "Все устройства") if devices else None,
         [("➕ Сайт", RoutingCB(action="add", ref=client_id, tag="panel")),
          (f"📋 Свои сайты: {n_domains}" if n_domains else "📋 Свои сайты", RoutingCB(action="sites", ref=client_id))],
-        apply_row(dirty, RoutingCB(action="apply", ref=client_id), back_target))
+        apply_row(dirty, RoutingCB(action="apply", ref=client_id), back_target, back_label))
 
 
 def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboardMarkup:
@@ -130,25 +132,26 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
 def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> InlineKeyboardMarkup:
     """Карточка слота: у резервного — «▶️ Сделать активным» первым рядом;
     [📤 Конфигурация] [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [🛜 Роутер]
-    [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «🛜 Роутер»."""
+    [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «🛜 Роутер»; агенту с
+    документом конфигурации файл не нужен — без «📤 Конфигурация», а
+    «✏️ Изменить» на том же месте, что у остальных. Открыта
+    ссылкой с главной (back_main) — выход «⬅️ В меню»."""
     gw = state["gateway"]
     if back_main:
-        back = Menu(action="main")
+        exit_row = ui.to_menu(Menu(action="main"))
     else:
-        back = GwSlotCB(action="list") if back_to_list else SetCB(sec="rt")
+        exit_row = ui.back(GwSlotCB(action="list") if back_to_list else SetCB(sec="rt"))
     cfg1 = bool(((state.get("channel") or {}).get("cfg") or {}).get("cfg1"))
     return ui.rows(
         ("▶️ Сделать активным", GwSlotCB(action="switch_ask", slot=gw.id)) if not state.get("active") else None,
-        # файл — агентам без документа конфигурации: остальным всё привозит канал, и на
-        # его месте в первом ряду — «✏️ Изменить»
+        # файл — агентам без документа конфигурации: остальным всё привозит канал
         [("📤 Конфигурация", GwSlotCB(action="bundle", slot=gw.id)) if not cfg1 else None,
-         ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id)),
-         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if cfg1 else None],
+         ("📡 Пинг", GwSlotCB(action="ping", slot=gw.id))],
         [(f"{_tick(bool(gw.lan_mode))} VPN-транзит", GwSlotCB(action="lan_ask", slot=gw.id)),
          ("🗺 Подсети", GwSlotCB(action="lan_nets", slot=gw.id))],
         [("🛜 Роутер", GwSlotCB(action="router", slot=gw.id)) if gw.lan_mode else None,
-         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id)) if not cfg1 else None],
-        ui.back(back))
+         ("✏️ Изменить", GwSlotCB(action="edit", slot=gw.id))],
+        exit_row)
 
 
 def gateway_edit_kb(state, *, two_slots: bool) -> InlineKeyboardMarkup:
@@ -261,7 +264,7 @@ def routing_params_kb(info: dict, lists_every: int) -> InlineKeyboardMarkup:
         [_cycle("rt_params", "app.routing.probe_seconds", f"⏱ Такт: {info['probe_seconds']} с"),
          _cycle("rt_params", "app.routing.failover.window_samples", f"🪟 Окно: {info['window']}")],
         [_cycle("rt_params", "app.routing.failover.min_availability", f"📉 Порог: {info['availability']}%"),
-         _cycle("rt_params", "app.routing.lists_refresh_hours", f"⏱ Списки: {lists_every} ч")],
+         _cycle("rt_params", "app.routing.lists_refresh_hours", f"📋 Списки: {lists_every} ч")],
         ("🔄 Обновить списки", SetCB(sec="rt", act="do", key="lists_refresh")),
         ("☑️ Выключить РФ-доступ", SetCB(sec="rt", act="toggle", key="app.routing.enabled")),
         ui.back(SetCB(sec="rt")))
@@ -284,12 +287,13 @@ def settings_routing_users(clients=(), marks: dict | None = None, *, dirty: bool
         apply_row(dirty, SetCB(sec="rt", act="do", key="allow_apply"), SetCB(sec="rt")))
 
 
-def bundle_menu_kb(slot: int = 0, *, plain: bool = False) -> InlineKeyboardMarkup:
+def bundle_menu_kb(slot: int = 0, *, plain: bool = False, from_card: bool = False) -> InlineKeyboardMarkup:
     """Под файлом конфигурации: обе кнопки убирают файл и сообщение над ним
     из чата (внутри ключ линка) и открывают карточку слота или главную
-    (`bundle_cancel`, `bundle_home`). Из карточки — «⬅️ Назад» (в неё) и
-    «⬅️ В меню»; файл нового шлюза (plain) — «🛰 Карточка шлюза» и «⬅️ В
-    меню». Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
-    return ui.rows([("🛰 Карточка шлюза" if plain else ui.BACK_LABEL,
+    (`bundle_cancel`, `bundle_home`). Выпущен из карточки (from_card) —
+    «⬅️ Назад» (в неё) и «⬅️ В меню»; иначе (ссылка из уведомления, файл
+    нового шлюза — plain) карточки человек не видел: «🛰 Карточка шлюза» и
+    «⬅️ В меню». Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
+    return ui.rows([(ui.BACK_LABEL if from_card and not plain else "🛰 Карточка шлюза",
                      SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or ""))),
                     (ui.MENU_LABEL, SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))])

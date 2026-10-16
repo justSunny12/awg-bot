@@ -267,7 +267,7 @@ def reassert(timeout: int = 90) -> tuple[bool, str]:
         proc = pkg.subprocess.run(["systemctl", "restart", config.GW_UNIT],
                               capture_output=True, timeout=timeout)
     except pkg.subprocess.TimeoutExpired:
-        return False, f"юнит обвязки {pkg.TIMEOUT_MARK} {timeout} с"
+        return False, f"скрипт обвязки {pkg.TIMEOUT_MARK} {timeout} с"
     except OSError as e:
         # systemctl нет или не запустился — тот же отказ: вызывающий обязан
         # откатить юнит, а не оставить новые значения без таблицы под ними

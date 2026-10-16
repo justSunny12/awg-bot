@@ -594,7 +594,7 @@ async def test_who_has_access_uses_select_all_both_ways(services, slots, fake_bo
     cb, nav = _acb(fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_apply"), services, st)
     assert services.db.get_client(a.id).routing_allowed and services.db.get_client(b.id).routing_allowed
-    assert cb.answers[-1] == ("РФ-доступ: разрешён 2", False), cb.answers
+    assert cb.answers[-1] == ("РФ-доступ разрешён 2 профилям", False), cb.answers
     notified = [r for r in fake_bot.records if r[0] == "send_message"][before:]
     assert sorted(r[1] for r in notified) == [4101, 4102], "уведомление — каждому, по одному"
     st = FakeState()
@@ -630,7 +630,7 @@ async def test_allow_all_reconciles_once_and_answers_first(services, slots, fake
 async def test_transit_confirmation_carries_the_target_state(services, slots, fake_bot, monkeypatch):
     """«Включить/Выключить» без цели брало «не текущее»: двойное нажатие
     выключало только что включённое. Цель едет в кнопке; повтор той же
-    кнопки при уже включённом режиме ничего не переключает («Уже включено» —
+    кнопки при уже включённом режиме ничего не переключает («Уже включён» —
     эталон adm.gw.lan_yes.again)."""
     _, pi, _pi2 = slots
     _slot1(services, pi)

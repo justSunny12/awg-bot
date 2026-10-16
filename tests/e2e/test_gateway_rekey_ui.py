@@ -36,7 +36,7 @@ from awgbot.bot.callbacks import GwSlotCB, NoteCB, SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.handlers.admin.panel import admin_start
 from awgbot.bot.handlers.reply_commands import on_note_action
-from awgbot.bot.texts import GATEWAY_KEYS_OFFLINE, GATEWAY_KEYS_SENT
+from awgbot.bot.texts import GATEWAY_KEYS_QUEUED, GATEWAY_KEYS_SENT
 from awgbot.core import config
 from awgbot.domain import gwcfg
 from awgbot.runtime import linkserver
@@ -197,7 +197,7 @@ async def test_one_gateway_opens_the_dialog_with_cancel_back_to_service(services
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "pick")
     text, markup = _edits(nav)[-1]
-    assert text.startswith("🔑 Сменить ключи линка NASPi?"), text
+    assert text.startswith("🔑 Сменить ключи линка шлюза «NASPi»?"), text
     assert _labels(markup) == ["⬅️ Отмена", "🔑 Сменить"], _labels(markup)
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert datas == [SetCB(sec="svc").pack(), SetCB(sec="lk", act="do", key="yes", val="1").pack()], datas
@@ -223,7 +223,7 @@ async def test_two_gateways_get_a_pick_screen(services, slots, stage, fake_bot):
     assert stage.modes == [] and services.gateway_rekey(1) == {} and services.gateway_rekey(2) == {}
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "ask", 2)
-    assert _edits(nav)[-1][0].startswith("🔑 Сменить ключи линка Pi2 (север)?"), _edits(nav)[-1][0]
+    assert _edits(nav)[-1][0].startswith("🔑 Сменить ключи линка шлюза «Pi2 (север)»?"), _edits(nav)[-1][0]
 
 
 async def test_keys_dialog_names_the_slot_with_its_label(services, slots, stage, fake_bot):
@@ -238,7 +238,7 @@ async def test_keys_dialog_names_the_slot_with_its_label(services, slots, stage,
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "ask", 1)
     text = _edits(nav)[-1][0]
-    assert text.startswith("🔑 Сменить ключи линка NASPi (север &lt;b&gt;)?"), text.splitlines()[0]
+    assert text.startswith("🔑 Сменить ключи линка шлюза «NASPi (север &lt;b&gt;)»?"), text.splitlines()[0]
 
 
 async def test_keys_dialog_advises_the_live_standby_only_for_the_active_slot(services, slots, stage, fake_bot):
@@ -316,7 +316,7 @@ async def test_change_stages_keys_sends_link_next_and_shows_the_result_first(
     text, markup = _edits(nav)[-1]
     assert text.startswith(GATEWAY_KEYS_SENT + "\n\n🔧 <b>Сервис</b>"), text.splitlines()[:2]
     assert "🔁 Перезапуск AWG" in _labels(markup), "под итогом — не «🔧 Сервис»"
-    assert all(a[0] != GATEWAY_KEYS_OFFLINE for a in cb.answers), cb.answers
+    assert all(a[0] != GATEWAY_KEYS_QUEUED for a in cb.answers), cb.answers
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     card = _edits(nav)[-1][0]
@@ -346,9 +346,9 @@ async def test_a_second_change_neither_restages_nor_resends(services, slots, sta
 async def test_change_offline_keeps_the_transition_and_says_keys_go_by_channel(
         services, slots, stage, fake_bot):
     """Шлюз не на связи: переход всё равно стоит (link_next уйдёт при
-    подключении), карточка с итогом и строкой ожидания, всплывашка «Шлюз не на
-    связи — новые ключи едут по упр. каналу» — без неё человек ждал бы
-    приглашения в чате шлюза прямо сейчас."""
+    подключении), «🔧 Сервис» с итогом «ключи записаны — шлюз получит их при
+    подключении», а не «ушли»: иначе человек ждал бы приглашения в чате шлюза
+    прямо сейчас."""
     _, pi, _ = slots
     _slot1(services, pi)
     _confirm(services)
@@ -356,9 +356,8 @@ async def test_change_offline_keeps_the_transition_and_says_keys_go_by_channel(
     cb, nav = _acb(fake_bot)
     await _lk(cb, services, "yes", 1)
     assert services.gateway_rekey(1).get("state") == "staged"
-    assert cb.answers[-1] == (GATEWAY_KEYS_OFFLINE, False), cb.answers
     text, _ = _edits(nav)[-1]
-    assert text.startswith(GATEWAY_KEYS_SENT), text
+    assert text.startswith(GATEWAY_KEYS_QUEUED), text
 
 
 async def test_change_with_a_session_but_no_confirm_does_not_send(services, slots, stage, listener, fake_bot):
@@ -369,10 +368,11 @@ async def test_change_with_a_session_but_no_confirm_does_not_send(services, slot
     _slot1(services, pi)
     _confirm(services)
     listener.open(1, caps=("cfg1",))
-    cb, _ = _acb(fake_bot)
+    cb, nav = _acb(fake_bot)
     await _lk(cb, services, "yes", 1)
     assert listener.sent(1) == [], "link_next ушёл агенту без confirm1"
-    assert cb.answers[-1] == (GATEWAY_KEYS_OFFLINE, False), cb.answers
+    text, _ = _edits(nav)[-1]
+    assert text.startswith(GATEWAY_KEYS_QUEUED), text
 
 
 async def test_change_refused_by_the_service_is_an_alert_and_changes_nothing(
@@ -522,7 +522,7 @@ async def test_ready_from_the_gateway_switches_and_the_card_says_so(services, sl
     assert services.gateway_rekey(1)["state"] == "switched"
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
-    assert "⏳ Ключи линка: переключение…" in _edits(nav)[-1][0], _edits(nav)[-1][0]
+    assert "🟡 Ключи линка: переключение…" in _edits(nav)[-1][0], _edits(nav)[-1][0]
     cb, _ = _acb(fake_bot)
     await _lk(cb, services, "ask", 1)
     assert cb.answers[-1] == ("Смена ключей уже идёт", True)
@@ -640,8 +640,8 @@ async def test_reissue_button_card_goes_back_to_the_main_screen(services, slots,
     card_from_main(ADMIN, False)
     markups = [m for k, t, m in nav.sent if k in ("answer", "edit_text") and t.startswith("🛰 <b>NASPi</b>")]
     assert markups, nav.sent
-    back = [b.callback_data for row in markups[-1].inline_keyboard for b in row if b.text == "⬅️ Назад"]
-    assert back == [Menu(action="main").pack()], f"«Назад» с карточки ведёт в {back}"
+    back = [b.callback_data for row in markups[-1].inline_keyboard for b in row if b.text == "⬅️ В меню"]
+    assert back == [Menu(action="main").pack()], f"«В меню» с карточки ведёт в {back}"
 
 
 async def test_gwcfg_link_opens_the_card_for_an_agent_with_the_document(services, slots, fake_bot, monkeypatch):

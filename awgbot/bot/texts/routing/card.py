@@ -11,14 +11,15 @@ from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
-from .slots import _bot_link, _slot_note, _slot_ping_tail, agent_bot_line, lan_example, lan_pairs, slot_name, slot_status
+from .slots import _slot_note, _slot_ping_tail, agent_bot_line, lan_example, lan_pairs, slot_name, slot_status
 
 
 # ── карточка слота ───────────────────────────────────────────────────────────
 
-def services_line(svc: dict, agent_bot: dict | None = None) -> str:
+def services_line(svc: dict, agent_bot: dict | None = None, online: bool | None = None) -> str:
     """«🗂 SMB: свои — 1, извне — 2 · 🟢 доступны»; нулевая часть не выводится,
-    обе нулевые — «🗂 SMB: не найдены»; что с ними на шлюзе — строкой под ней."""
+    обе нулевые — «🗂 SMB: не найдены»; что с ними на шлюзе — строкой под ней.
+    online — канал конфигурации на связи (False — ожидание «когда выйдет на связь»)."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
         return "🗂 SMB: не найдены"
@@ -34,7 +35,8 @@ def services_line(svc: dict, agent_bot: dict | None = None) -> str:
     if state == "reissue":
         note = "⚠️ Для доступа к SMB перевыпусти конфигурацию шлюза"
     else:
-        note = _slot_note(state, agent_bot, svc.get("error") or "", "Для доступа к SMB", "записи SMB")
+        note = _slot_note(state, agent_bot, svc.get("error") or "", "Для доступа к SMB", "записи SMB",
+                          offline=online is False)
     return head + "\n" + note
 
 
@@ -47,8 +49,10 @@ def own_lists_line(own: dict, agent_bot: dict | None = None) -> str:
     state = own.get("state", "")
     if state == "applied":
         return head
+    if not parts and state in ("offline", "pending"):
+        return head                                # пусто — ждать нечего
     if state == "offline":
-        note = "⏳ Синхронизируются со шлюзом, когда он выйдет на связь"
+        note = "🟡 Уйдут на шлюз, когда он выйдет на связь"
     else:
         note = _slot_note(state, agent_bot, own.get("error") or "", "Для синхронизации", "списки")
     return head + "\n" + note
@@ -63,9 +67,21 @@ def _agent_at_least(version, floor: str) -> bool:
         return False
 
 
-CHANNEL_HEAD = "🔗 Канал конфигурации"
+CHANNEL_HEAD = "🔧 Канал конфигурации"
 NOT_APPLIED_TAIL = " — оставил прежнюю; подробности в чате бота шлюза"
 UPLINK_ERR_PREFIX = "конфиг аплинка: "        # префикс проверки раздела — в строке карточки лишний
+RESTORE_BTN = "«🚑 Восстановить»"             # кнопка восстановления в чате бота шлюза
+
+
+def _snap_at(ch: dict) -> str:
+    """«, по снимку от 15.09 12:00» — момент снимка абсолютным временем:
+    сообщение само не перерисовывается, «12 мин назад» врало бы через час;
+    возраст неизвестен — пусто."""
+    age = ch.get("age")
+    if age is None:
+        return ""
+    from datetime import timedelta
+    return ", по снимку от " + timeutil.fmt_dt_ui(timeutil.now() - timedelta(seconds=max(0, int(age))))
 
 
 def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
@@ -99,12 +115,11 @@ def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
         n = len(due)
         n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
         if ch.get("online"):
-            warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
+            warns.append(f"🟡 Конфигурация на шлюзе расходится с выданной ({n_items}) — "
                          "изменения уходят по каналу конфигурации и применятся сами")
         else:
             items = "\n".join(f"   • {_e(gwcfg.human(s))}" for s in due)
-            warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
-                         f"{timeutil.age_ago(ch.get('age'))}):\n{items}\n"
+            warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{_snap_at(ch)}):\n{items}\n"
                          "└ изменения уйдут по каналу конфигурации, когда шлюз выйдет на связь")
     if "uplink" in (cfg.get("wait") or []):
         fp = f" · отпечаток <code>{_e(cfg['uplink_fp'])}</code>" if cfg.get("uplink_fp") else ""
@@ -127,16 +142,16 @@ def cfg_more_lines(cfg: dict) -> list[str]:
             pass
     declined = set(cfg.get("declined") or [])
     if {"mail", "backup"} <= declined:
-        out.append("почта и ключевая фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза")
+        out.append("почта и ключевая фраза бэкапов на шлюзе свои — так решено в чате бота шлюза")
     elif "mail" in declined:
-        out.append("почта на шлюзе своя — оставлена в чате бота шлюза")
+        out.append("почта на шлюзе своя — так решено в чате бота шлюза")
     elif "backup" in declined:
-        out.append("ключевая фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза")
+        out.append("ключевая фраза бэкапов на шлюзе своя — так решено в чате бота шлюза")
     return out
 
 
 def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
-    """Канал в карточке: (строка «🔗 Канал конфигурации …», предупреждения
+    """Канал в карточке: (строка «🔧 Канал конфигурации …», предупреждения
     открытыми строками, «выход шлюза в интернет» для «подробнее»). Строка
     канала — только связь и версия агента: «конфигурация актуальна» не
     пишется, расхождение и отказы — ⚠️/⏳ строками с действием. Всё, что
@@ -147,9 +162,9 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         # канал обязателен: перевыпуск тут не лечит. Линк жив — канал не держит агент
         # (не запущен или прежней версии: тем канал включала свежая конфигурация)
         if ch.get("link_fresh"):
-            return (f"{CHANNEL_HEAD}: ещё не поднимался — линк есть, агент шлюза не отвечает: "
+            return (f"{CHANNEL_HEAD} 🔴 ещё не подключался — линк есть, агент шлюза не отвечает: "
                     "запусти или обнови его", [], "")
-        return (f"{CHANNEL_HEAD}: ещё не поднимался — линк не поднят или агент шлюза не запущен", [], "")
+        return (f"{CHANNEL_HEAD} 🔴 ещё не подключался — линк не поднят или агент шлюза не запущен", [], "")
     if ch.get("online"):
         head = f"{CHANNEL_HEAD} 🟢"
     else:
@@ -177,7 +192,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         if cfg.get("cfg1"):
             warns += _cfg_lines(cfg, ch)
         elif not ch.get("has_bundle"):
-            head += " · 🔴 конфигурация: шлюз ещё не сообщал"
+            if ch.get("online"):                 # канал лежит — второй 🔴 в строке ничего не добавит
+                head += " · 🔴 шлюз не сообщает свою конфигурацию"
         elif drift:
             ack = ch.get("ack") or {}
             n = len(drift)
@@ -189,11 +205,11 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                 warns.append("⚠️ Локальные подсети других шлюзов неактуальны — перевыпусти "
                              "конфигурацию шлюза")
             elif ch.get("online") and ch.get("drift_bundle"):
-                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}): подсети других "
-                             "шлюзов — только перевыпуском конфигурации, остальное уйдёт по каналу "
-                             "конфигурации само")
+                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}): остальное уйдёт "
+                             "по каналу конфигурации само, а подсети других шлюзов — только с перевыпуском: "
+                             "перевыпусти конфигурацию шлюза")
             elif ch.get("online"):
-                warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
+                warns.append(f"🟡 Конфигурация на шлюзе расходится с выданной ({n_items}) — "
                              "изменения уходят по каналу конфигурации и применятся сами")
             else:
                 raw = ch.get("drift_items") or []
@@ -203,15 +219,14 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                          for it, line in zip(raw, drift_lines(raw, html=True))]
                 items = "\n".join(f"   • {d}" for d in shown)
                 # агент без документа получает изменения только файлом
-                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
-                             f"{timeutil.age_ago(ch.get('age'))}):\n{items}\n"
+                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{_snap_at(ch)}):\n{items}\n"
                              "└ перевыпусти конфигурацию шлюза — «📤 Конфигурация»")
         gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации",
                     "none": "⚠️ Обвязка шлюза не развёрнута — перевыпусти файл конфигурации"}
         if cfg.get("cfg1"):
             # обвязку освежает обновление агента, значения приезжают каналом: «новый файл» не лечит
-            gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — «🔧 Восстановить» в чате бота шлюза",
-                        "none": "⚠️ Обвязка шлюза не развёрнута — «🔧 Восстановить» в чате бота шлюза; "
+            gen_hint = {"old": f"⚠️ Обвязка шлюза старого образца — {RESTORE_BTN} в чате бота шлюза",
+                        "none": f"⚠️ Обвязка шлюза не развёрнута — {RESTORE_BTN} в чате бота шлюза; "
                                 "не поможет — причина в «🩺 Здоровье» там же"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
             warns.append(gen_hint[ch["plumbing_gen"]])
@@ -221,18 +236,18 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         mark = {True: "работает", False: "не работает", None: "нет данных"}
         egress = (f"выход шлюза в интернет: проверка с сервера — {mark[bool(server_ok)]}, "
                   f"проверка шлюза — {mark[gw_ok if isinstance(gw_ok, bool) else None]}"
-                  + ("" if ch.get("online") else f" (по снимку {timeutil.age_ago(ch.get('age'))})"))
+                  + ("" if ch.get("online") or not _snap_at(ch) else f" ({_snap_at(ch)[2:]})"))
     skew = ch.get("clock_skew")
     if isinstance(skew, int) and abs(skew) >= 120:
         side = "спешат" if skew > 0 else "отстают"
-        warns.append(f"⚠️ Часы шлюза {side} на {abs(skew) // 60} мин — проверь синхронизацию времени "
-                     "на шлюзе: от неё зависят TLS и расписания")
+        warns.append(f"⚠️ Часы шлюза {side} на {abs(skew) // 60} мин — проверь на нём синхронизацию "
+                     "времени: от неё зависят TLS и расписания")
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in (pn.get("missing") or [])[:8]) or "подсетей"
         if (ch.get("cfg") or {}).get("cfg1"):
             warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — сервер повторит доставку; "
-                         "не поможет — «🔧 Восстановить» в чате бота шлюза")
+                         f"не поможет — {RESTORE_BTN} в чате бота шлюза")
         else:
             warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
     lists = ch.get("lists") or {}
@@ -321,21 +336,20 @@ def gateway_card_text(state: dict, states: list) -> str:
     ch = state.get("channel") or {}
     cfg = ch.get("cfg") or {}
     if ch.get("has_snap") and not cfg.get("cfg1") and not _agent_at_least(ch.get("agent"), "3.3.0"):
-        # предупреждение — рядом с каналом, о котором оно; версия — настоящая, из снимка
-        bot = _bot_link(state.get("agent_bot"))
+        # предупреждение — рядом с каналом, о котором оно; версия — настоящая, из снимка;
+        # ссылка на бота — строкой «Бот шлюза» внизу карточки, второй раз не нужна
         ver = _ver(_e(str(ch.get("agent") or "?")[:32]))
-        lines.append(f"⚠️ Агент {ver} устарел: подсети других шлюзов, ключи линка и аплинк по каналу конфигурации "
-                     "до него не доходят — только перевыпуском конфигурации. Обнови агента"
-                     + (f" (бот: {bot})" if bot else ""))
+        lines.append(f"⚠️ Агент {ver} устарел: подсети других шлюзов, ключи линка и конфиг аплинка доходят до "
+                     "него только с перевыпуском конфигурации, не по каналу. Обнови агента")
     rk = state.get("rekey") or {}
     if rk.get("state") in ("staged", "asked"):
         fp = f" · отпечаток <code>{_e(rk['fp'])}</code>" if rk.get("fp") else ""
         lines.append(f"⏳ Ключи линка ждут подтверждения в чате бота шлюза{fp}")
     elif rk.get("state") == "switched":
-        lines.append("⏳ Ключи линка: переключение…")
+        lines.append("🟡 Ключи линка: переключение…")
     elif rk.get("state") == "declined":
         lines.append("⚠️ Шлюз отклонил новые ключи линка — линк работает на прежних; сменить снова — "
-                     "«🔧 Сервис» → «🔑 Ключи линка»")
+                     "«⚙️ Настройки» → «🔧 Сервис» → «🔑 Ключи линка»")
     lines += ch_warns
     nets = gw.lan_subnets
     nets_s = (lan_pairs(nets, state.get("lan_twins")) if nets
@@ -350,7 +364,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     if state.get("peer_nets"):
         lines.append(peer_links_line(state.get("peer_links") or []))
         if svc:
-            lines.append(services_line(svc, state.get("agent_bot")))
+            lines.append(services_line(svc, state.get("agent_bot"), ch.get("online") if ch else None))
     elif svc.get("tunnel") and svc.get("own"):
         # без связи подсетей «извне» не бывает — только свои и «в туннеле»
         lines.append(services_line({**svc, "peer": 0}, state.get("agent_bot")))

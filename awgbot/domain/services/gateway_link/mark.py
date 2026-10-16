@@ -91,7 +91,7 @@ class MarkMixin:
             raise ServiceError("профиль админа ещё не создан")
         gw = self.db.gateway(slot_id) if slot_id else None
         if slot_id and gw is None:
-            raise ServiceError("такого шлюза нет")
+            raise ServiceError("Такого шлюза нет")
         new_slot = gw is None
         if new_slot:
             n, iface, port, cidr = self.gateway_next_slot()
@@ -249,7 +249,7 @@ class MarkMixin:
 
     def gateway_set_preferred(self, slot_id: Optional[int]) -> None:
         if slot_id is not None and self.db.gateway(slot_id) is None:
-            raise ServiceError("такого шлюза нет")
+            raise ServiceError("Такого шлюза нет")
         self.db.gateway_set_preferred(slot_id)
 
     def gateway_set_label(self, slot_id: int, label: str) -> None:

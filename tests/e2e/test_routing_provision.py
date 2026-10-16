@@ -44,7 +44,7 @@ async def test_provisioned_but_asleep_says_how_to_wake_and_offers_only_the_exit(
     monkeypatch.setattr(services, "routing_provisioned", lambda: True)
     text, markup = await sh._screen("rt", services)
     assert text == ("🛰 <b>Шлюзы</b> · 🇷🇺 РФ-доступ ждёт перезапуска бота\n"
-                    "Обвязка развёрнута — РФ-доступ заработает после перезапуска")
+                    "На сервере всё готово — РФ-доступ заработает после перезапуска бота")
     assert [[b.text for b in row] for row in markup.inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
     assert SetCB.unpack(markup.inline_keyboard[0][0].callback_data) == SetCB(sec="svc", act="do", key="bot!")
 
@@ -66,7 +66,7 @@ async def test_provisioning_offers_a_restart_after_success(services, fake_bot, m
     assert calls == ["go"], "перезапуск — только по кнопке"
     assert cb.answers == [("Разворачиваю…", False)], "ответ на колбэк — ровно один"
     done = [s for s in nav.sent if s[0] == "answer"]
-    assert done and done[-1][1].startswith("✅ Обвязка развёрнута")
+    assert done and done[-1][1].startswith("✅ РФ-доступ развёрнут на сервере")
     assert "назначь шлюз — «🛰 Шлюзы» на главной" in done[-1][1], "следующий шаг и где его искать названы"
     assert [[b.text for b in row] for row in done[-1][2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
@@ -82,7 +82,7 @@ async def test_provisioning_failure_shows_the_reason_and_does_not_restart(servic
     await sh.do_action(cb, SetCB(sec="rt", act="do", key="provision"), services)
     assert calls == [], "перезапуск после неудачи не нужен"
     said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert said and "не развёрнута" in said[-1] and "dnsmasq" in said[-1]
+    assert said and "РФ-доступ не развёрнут" in said[-1] and "dnsmasq" in said[-1]
 
 
 def test_provision_runs_the_scripts_in_order_and_stops_on_the_first_failure(services, monkeypatch, tmp_path):

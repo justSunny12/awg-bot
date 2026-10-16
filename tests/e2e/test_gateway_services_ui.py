@@ -38,7 +38,7 @@ def test_the_breakage_branch_without_a_name_reads_whole(error, note):
     ("reissue", "⚠️ Для доступа к SMB перевыпусти конфигурацию шлюза"),
     ("old_agent", "⚠️ Для доступа к SMB обнови агента шлюза"),
     ("failed", "⚠️ Шлюз не смог принять записи SMB — подробности в «🩺 Здоровье» бота шлюза"),
-    ("pending", "⏳ Синхронизация с другими шлюзами…"),
+    ("pending", "🟡 Синхронизация с другими шлюзами…"),
 ])
 def test_without_a_name_the_note_does_not_repeat_the_word_gateway(state, note):
     """Имени нет — фраза целая, без «шлюза шлюза» и двойного пробела."""

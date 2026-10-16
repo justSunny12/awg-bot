@@ -417,7 +417,7 @@ async def gateway_remove_ask(cb: CallbackQuery, callback_data: GwMarkCB, service
 
 @router.callback_query(GwSlotCB.filter(F.action == "remove_yes"))
 async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    await cb.answer("Убираю…")
+    await cb.answer("Снимаю…")
     prev = await call(services.gateway_remove, callback_data.slot or None)
     if prev is None:
         await edit(cb, "Шлюз и так не назначен", kb.settings_back("rt"))

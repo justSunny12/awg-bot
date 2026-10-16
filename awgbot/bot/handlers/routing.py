@@ -71,6 +71,12 @@ def _back_target(client, speaker) -> str:
     return Menu(action="main").pack()
 
 
+def _back_label(back_target: str) -> str:
+    """Выход на главную (свою или гостя) — «⬅️ В меню», в карточку профиля — «⬅️ Назад»."""
+    home = (Menu(action="main").pack(), FriendCB(action="refresh").pack())
+    return ui.MENU_LABEL if back_target in home else ui.BACK_LABEL
+
+
 def _foreign(client, speaker) -> bool:
     """Админ открыл чужой раздел: имя профиля — в заголовок, переподключается владелец."""
     return speaker is None and client.tg_id != config.ADMIN_ID
@@ -111,12 +117,16 @@ async def panel_view(services, client, back_target: str, viewer_chat: int | None
     saved = _saved(devices)
     marks = await pick.load(state, _scope(client), saved) if state is not None else dict(saved)
     from awgbot.bot import paging
+    # чужой раздел — «· профиль Имя» ссылкой на его карточку; свой у админа — «Мой РФ-доступ»
+    from awgbot.util.textfmt import profile_link
+    tag = profile_link(client, getattr(services, "bot_username", "") or "") if profile else ""
+    own_admin = not profile and client.tg_id == config.ADMIN_ID
     text = texts.routing_panel_text(enabled=enabled, total=total, domains=domains,
-                                    lent_out=lent_out, link_ok=link_ok, profile=profile,
-                                    donors=await _donors(services, client))
+                                    lent_out=lent_out, link_ok=link_ok, profile=tag,
+                                    donors=await _donors(services, client), own_admin=own_admin)
     return text, kb.routing_panel(
         client.id, devices, marks=marks, dirty=bool(pick.changed(marks, saved)),
-        n_domains=len(domains), back_target=back_target,
+        n_domains=len(domains), back_target=back_target, back_label=_back_label(back_target),
         page=paging.page_of(viewer_chat or client.tg_id, "rtpanel", client.id))
 
 
@@ -354,7 +364,7 @@ async def routing_clear_apply(cb: CallbackQuery, callback_data: RoutingCB, clien
         return
     n = await call(services.routing_clear_domains, profile.id)
     await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
-    await cb.answer(f"Удалено сайтов: {n}" if n else "Список и так был пуст")
+    await cb.answer(f"Убрано сайтов: {n}" if n else "Список и так был пуст")
 
 
 __all__ = ["router", "panel_view", "sites_view", "screen_for"]

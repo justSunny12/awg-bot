@@ -196,13 +196,13 @@ def test_the_lists_breakage_branch_without_a_name_reads_whole():
 
 
 @pytest.mark.parametrize("own, note", [
-    ({"state": "offline"}, "⏳ Синхронизируются со шлюзом, когда он выйдет на связь"),
+    ({"state": "offline"}, "🟡 Уйдут на шлюз, когда он выйдет на связь"),
     ({"state": "failed", "error": "dnsmasq: bad option"},
      "⚠️ Шлюз не смог принять списки: dnsmasq: bad option — подробности в «🩺 Здоровье» бота шлюза"),
     ({"state": "failed"}, "⚠️ Шлюз не смог принять списки — подробности в «🩺 Здоровье» бота шлюза"),
     ({"state": "failed", "error": "ошибка записи файла"}, "⚠️ Ошибка записи файла на шлюзе"),
     ({"state": "old_agent"}, "⚠️ Для синхронизации обнови агента шлюза"),
-    ({"state": "pending"}, "⏳ Синхронизация с другими шлюзами…"),
+    ({"state": "pending"}, "🟡 Синхронизация с другими шлюзами…"),
 ])
 def test_the_lists_note_never_names_the_slot(own, note):
     """Под своими списками в карточке слота — одна строка состояния, и имени
@@ -213,13 +213,19 @@ def test_the_lists_note_never_names_the_slot(own, note):
     assert line == "📋 Свои списки: 2 в туннель, 1 напрямую\n" + note, line
 
 
-def test_the_old_agent_note_links_the_gateway_bot():
-    """Обновлять шлюз человек идёт в чат его бота: ссылка в строке, имя бота
-    экранировано — оно приходит со шлюза."""
+def test_the_old_agent_note_does_not_repeat_the_gateway_bot():
+    """Ссылка в чат бота шлюза — строкой «Бот шлюза» внизу карточки; под
+    своими списками второй раз она не нужна."""
     from awgbot.bot.texts.routing import own_lists_line
     line = own_lists_line({"vpn": 1, "state": "old_agent"}, {"username": "pi_gw_bot", "name": "Шлюз <1>"})
-    assert line.endswith('\n⚠️ Для синхронизации обнови агента шлюза '
-                         '(бот: <a href="https://t.me/pi_gw_bot">Шлюз &lt;1&gt;</a>)'), line
+    assert line.endswith("\n⚠️ Для синхронизации обнови агента шлюза"), line
+
+
+@pytest.mark.parametrize("state", ["offline", "pending"])
+def test_empty_own_lists_wait_for_nothing(state):
+    """Свои списки пусты — ждать нечего: строки ожидания под «пусто» нет."""
+    from awgbot.bot.texts.routing import own_lists_line
+    assert own_lists_line({"vpn": 0, "ru": 0, "state": state}) == "📋 Свои списки: пусто"
 
 
 # ── панель агента после правки своих списков (вычитка 3.1.0) ─────────────────

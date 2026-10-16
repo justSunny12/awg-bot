@@ -45,8 +45,8 @@ def routing_params_text(info: dict, lists: dict) -> str:
 
 def routing_users_text() -> str:
     return (ui.head("👥 Кому доступен РФ-доступ", meta=["тебе — всегда"]) + "\n"
-            "Разрешённым — включается на всех их устройствах; выключить на своих устройствах владельцы могут сами. "
-            "Отметь профили и нажми «✅ Применить»")
+            "Разрешённым — включается на всех их устройствах; выключить у себя владельцы могут сами. "
+            "Отметь профили и нажми «✅ Применить».")
 
 
 ROUTING_DISABLE_CONFIRM = ui.confirm("☑️ Выключить РФ-доступ для всех?",
@@ -54,27 +54,34 @@ ROUTING_DISABLE_CONFIRM = ui.confirm("☑️ Выключить РФ-досту�
 
 
 def routing_allowed_toast(changes: dict) -> str:
-    """Итог «✅ Применить» на «Кому доступен»: один профиль — по имени, несколько — счётом.
+    """Итог «✅ Применить» на «Кому доступен»: один профиль — по имени, несколько — счётом
+    («РФ-доступ разрешён 2 профилям», «… разрешён 1, запрещён 2 профилям»).
     changes — {имя: разрешён}."""
     if len(changes) == 1:
         name, on = next(iter(changes.items()))
-        return f"{name}: РФ-доступ " + ("разрешён" if on else "запрещён")
+        return f"Профиль {name}: РФ-доступ " + ("разрешён" if on else "запрещён")
     on = sum(1 for v in changes.values() if v)
     off = len(changes) - on
-    parts = ([f"разрешён {on}"] if on else []) + ([f"запрещён {off}"] if off else [])
-    return "РФ-доступ: " + ", ".join(parts)
+    return _counted(("разрешён", on), ("запрещён", off), ("профилю", "профилям", "профилям"), "")
+
+
+def _counted(a: tuple, b: tuple, noun: tuple, prep: str) -> str:
+    """«РФ-доступ включён на 1, выключен на 2 устройствах»: нулевая часть не
+    выводится, существительное — один раз, по последнему числу."""
+    parts = [(word, n) for word, n in (a, b) if n]
+    body = ", ".join(f"{word} {prep}{n}" for word, n in parts)
+    return f"РФ-доступ {body} " + plural_ru(parts[-1][1], *noun)
 
 
 def routing_devices_toast(changes: dict) -> str:
     """Итог «✅ Применить» в РФ-доступе профиля: одно устройство — по имени,
-    несколько — счётом. changes — {имя: включён}."""
+    несколько — счётом («РФ-доступ выключен на 2 устройствах»). changes — {имя: включён}."""
     if len(changes) == 1:
         name, on = next(iter(changes.items()))
-        return f"{name}: РФ-доступ " + ("включён" if on else "выключен")
+        return f"Устройство «{name}»: РФ-доступ " + ("включён" if on else "выключен")
     on = sum(1 for v in changes.values() if v)
     off = len(changes) - on
-    parts = ([f"включён {on}"] if on else []) + ([f"выключен {off}"] if off else [])
-    return "РФ-доступ: " + ", ".join(parts)
+    return _counted(("включён", on), ("выключен", off), ("устройстве", "устройствах", "устройствах"), "на ")
 
 
 def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
@@ -106,20 +113,20 @@ def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     who = "боту шлюза"
     if me.get("username"):
         who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return (ui.head(f"📤 Конфигурация шлюза {_e(display)}") + "\n"
+    return (ui.head(f"📤 Конфигурация шлюза «{_e(display)}»") + "\n"
             f"Перешли это сообщение {who} — он проверит и применит сам\n\n"
-            "ℹ️ Сначала перешли его: любая кнопка ниже удалит это сообщение")
+            "⚠️ Сначала перешли его: любая кнопка ниже удалит это сообщение")
 
 
 def gateway_plain_bundle_caption(display: str) -> str:
     """Подпись под файлом конфигурации нового шлюза: команда установки —
     сообщением выше."""
     return (f"🛰 Файл конфигурации шлюза «{_e(display)}»\n"
-            "Команда установки — в сообщении выше. После возврата в меню файл и инструкция удалятся из чата")
+            "Команда установки — в сообщении выше. Любая кнопка ниже удалит файл и инструкцию из чата")
 
 
 def routing_provision_failed(reason: str) -> str:
-    return ("⚠️ Обвязка не развёрнута.\n\n<pre>" + _e(str(reason)[-900:]) + "</pre>\n\n"
+    return ("⚠️ РФ-доступ не развёрнут.\n\n<pre>" + _e(str(reason)[-900:]) + "</pre>\n\n"
             "Ничего наполовину не осталось: следующий запуск начнёт с того же места. "
             "Частая причина — нет пакета dnsmasq в репозиториях образа.")
 
@@ -135,7 +142,7 @@ def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
     достать, а туннель этим файлом и ставится.
     """
     reset = "\nРФ-доступ у устройства снят: шлюзу он не нужен." if routing_reset else ""
-    return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).{reset}\n\n"
+    return (f"🛰 Шлюзом назначено устройство «{_e(dev.name)}» ({plain_ip(dev.address)}).{reset}\n\n"
             "Сохрани файл ниже и выполни <b>со своего компьютера</b> (из папки с файлом) "
             "одну команду — вместо ШЛЮЗ подставь адрес устройства в локальной сети; команда скопирует "
             "файл и поставит агента:\n\n"
@@ -199,19 +206,22 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
         line += " — " + ", ".join(_link(n, s) for n, s in names) + " не отвечают"
     if alive:
         line += ", " + _link("резерв", alive[0].get("slot")) + " жив"
+        if info.get("active"):
+            # активный лежит, резерв жив — следующий шаг человеку
+            line += " — переключи на резерв в «🛰 Шлюзы»"
     return line
 
 
 ROUTING_ABOUT = (
     "Включишь — банки, госуслуги, маркетплейсы будут открываться с российского "
     "адреса, заблокированное — через VPN. Отметь устройства ниже и нажми «✅ Применить» — "
-    "ссылки менять не нужно"
+    "ссылки менять не нужно."
 )
 
 ROUTING_ADD_PROMPT = "\n".join([
     ui.head("➕ Свои сайты"), "",
     "Пришли адреса — через пробел, с новой строки или через запятую, можно ссылками. "
-    "Добавляй те, что пишут «вы не из России»"])
+    "Добавляй те, что пишут «вы не из России»."])
 
 ROUTING_APPLY_HINT = "Заработает в течение минуты; не сработало — переподключи VPN"
 # админ пополняет чужой список: переподключаться — владельцу
@@ -233,16 +243,20 @@ def _lent_out_lines(lent_out) -> list[str]:
 
 
 def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
-                       link_ok: bool = True, profile: str = "", donors: str = "") -> str:
+                       link_ok: bool = True, profile: str = "", donors: str = "",
+                       own_admin: bool = False) -> str:
     """Экран «🇷🇺 РФ-доступ»: охват первой строкой (сохранённое состояние —
     отметки на кнопках применяет «✅ Применить»), свои сайты второй; на всех
     выключено — объяснение открытым текстом; переданные — строкой без кнопки.
-    profile — имя профиля в заголовке, когда админ открыл чужой раздел;
-    donors — «от профиля X» у гостя (хвост с кнопок устройств ушёл сюда)."""
-    tag = f" · {_e(profile)}" if profile else (f" · {donors}" if donors else "")
+    profile — профиль в заголовке, когда админ открыл чужой раздел: готовый
+    HTML (ссылка на карточку, profile_link), «· профиль Имя»; donors — «от
+    профиля X» у гостя (хвост с кнопок устройств ушёл сюда); own_admin — свой
+    раздел админа: шапка как его кнопка на главной, «🇷🇺 Мой РФ-доступ»."""
+    tag = f" · профиль {profile}" if profile else (f" · {donors}" if donors else "")
     # свой раздел — «🇷🇺 <b>РФ-доступ:</b> …» (двоеточие внутри жирного); чужой или
     # гостевой — имя профиля после « · », двоеточие после него
-    head = ui.head(f"🇷🇺 {ROUTING_NAME}") + f"{tag}:" if tag else ui.head(f"🇷🇺 {ROUTING_NAME}:")
+    name = f"Мой {ROUTING_NAME}" if own_admin and not tag else ROUTING_NAME
+    head = ui.head(f"🇷🇺 {ROUTING_NAME}") + f"{tag}:" if tag else ui.head(f"🇷🇺 {name}:")
     lines = []
     if not total:
         lines += [f"{head} устройств пока нет", "Добавь устройство — и отметь его здесь"]
@@ -266,7 +280,7 @@ def routing_sites_text(domains: list) -> str:
     if not domains:
         return (ui.head("📋 Свои сайты") + "\n"
                 "Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; "
-                "добавляй те, что пишут «вы не из России»")
+                "добавляй те, что пишут «вы не из России».")
     return f"{ui.head('📋 Свои сайты', meta=[len(domains)])}\n{ROUTING_SITES_ABOUT}"
 
 
@@ -287,7 +301,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
         for reason, raws in by_reason.items():
             shown = ", ".join(f"<code>{_e(_short(r, 40))}</code>" for r in raws[:5])
             more = f" и ещё {len(raws) - 5}" if len(raws) > 5 else ""
-            parts.append(f"⚠️ Не добавлено: {shown}{more} — {_e(reason)}")
+            parts.append(f"⚠️ Не добавлено: {shown}{more} — {_reason_html(reason)}")
     if over_limit:
         parts.append(f"📦 Не поместилось: {over_limit} — в списке максимум {limit} "
                      f"{plural_ru(limit, 'адрес', 'адреса', 'адресов')}")
@@ -296,6 +310,13 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
     if added:
         parts.append(ROUTING_APPLY_HINT_OWNER if owner else ROUTING_APPLY_HINT)
     return "\n".join(parts)
+
+
+def _reason_html(reason: str) -> str:
+    """Причина отказа из домена — без разметки; образец адреса после «вида»
+    («нужен адрес вида sberbank.ru») — моноширинным, остальное экранировано."""
+    import re
+    return re.sub(r"вида (\S+)", r"вида <code>\1</code>", _e(str(reason)))
 
 
 def routing_clear_ask(n: int) -> str:

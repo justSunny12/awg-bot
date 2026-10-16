@@ -238,3 +238,17 @@ def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
              for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
              if any(root in line.lower() for root in ("малин", "квартир", "домашн"))]
     assert found == [], found
+
+
+def test_screen_fixtures_do_not_use_the_word_dom():
+    """Данные снимков рисуются на экранах и уходят на вычитку: подписи шлюзов
+    вида «дом 1» в эталонах читаются как термин. Подписи в фикстурах —
+    нейтральные («дача», «офис»); исключение — адрес-образец в подсказке
+    роутера и сообщение самого прогонщика о запрете."""
+    allowed = ("проспект Абая, дом 8", "локальная сеть — не «дом»")
+    rx = TERMS["дом"]
+    files = sorted((REPO / "tests" / "screens").glob("*.py"))
+    found = [f"{p.name}:{i}" for p in files
+             for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+             if rx.search(line) and not any(a in line for a in allowed)]
+    assert found == [], found

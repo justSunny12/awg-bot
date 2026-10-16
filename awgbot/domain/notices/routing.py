@@ -21,7 +21,11 @@ ROUTING_GW_DOWN_EFFECT = ("РФ-доступ включён, но пока не 
 def routing_gateway_warning(verdict: str, *, at_start: bool, gw: str = "") -> str:
     """Замер шлюза не прошёл: одна формулировка для замечаний при запуске и для
     момента включения функции в настройках. gw — имя шлюза готовой разметкой
-    (ссылка на карточку); без имени — «Шлюз РФ-доступа». PROBE_OK — пусто."""
+    (ссылка на карточку); без имени — «Шлюз РФ-доступа». PROBE_OK — пусто.
+    При включении (не at_start) замер идёт только после «РФ-доступ 🟢» по
+    живому линку: экран над уведомлением уже показал шлюз активным, и «не
+    отвечает» спорило бы с ним — отказ называется тем, что замер и видит:
+    трафик наружу не проходит."""
     from awgbot.infra import routing as _rt
     # замечание при запуске — пункт списка под общей шапкой «⚠️ Замечания»,
     # уведомление при включении — само по себе, со значком
@@ -31,6 +35,8 @@ def routing_gateway_warning(verdict: str, *, at_start: bool, gw: str = "") -> st
     if verdict == _rt.PROBE_NO_PATH:
         return (f"{mark}{who} отвечает, но интернета за ним нет — чинить на самом шлюзе (аплинк, ip_forward, "
                 f"MASQUERADE): {ROUTING_GW_DOWN_EFFECT}")
+    if verdict != _rt.PROBE_OK and not at_start:
+        return f"{mark}{who} не пропускает трафик наружу: {ROUTING_GW_DOWN_EFFECT}"
     if verdict != _rt.PROBE_OK:
         return f"{mark}{who} не отвечает{when}: {ROUTING_GW_DOWN_EFFECT}"
     return ""

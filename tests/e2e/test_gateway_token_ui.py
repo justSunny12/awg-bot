@@ -198,7 +198,7 @@ async def test_pick_with_one_agent_opens_the_prompt_at_once(services, slots, env
     state = FakeState()
     _, nav = await _gtk(fake_bot, services, state, "pick")
     text, markup = _edits(nav)[-1]
-    assert "Новый токен бота NASPi" in text and "сразу удалю" in text, text
+    assert "Новый токен бота шлюза «NASPi»" in text and "сразу удалю" in text, text
     assert "прежнего бота или нового. " in text, text
     assert _rows(markup) == [["✖️ Отмена"]], _rows(markup)
     assert markup.inline_keyboard[0][0].callback_data == CancelCB(kind="set_svc", ref=0).pack()
@@ -223,7 +223,7 @@ async def test_pick_with_two_agents_shows_a_choice(services, slots, env, fake_bo
                     [("⬅️ Назад", SetCB(sec="svc").pack())]], rows
     assert await state.get_state() is None, "выбор уже открыл ввод"
     _, nav = await _gtk(fake_bot, services, state, "ask", 2)
-    assert "Новый токен бота Pi2 (север)" in _edits(nav)[-1][0]
+    assert "Новый токен бота шлюза «Pi2 (север)»" in _edits(nav)[-1][0]
     assert (await state.get_data())["gw_slot"] == 2
 
 

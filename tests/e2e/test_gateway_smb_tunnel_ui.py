@@ -186,7 +186,7 @@ async def test_a_repeated_yes_changes_nothing(services, slots, smb, fake_bot):
     smb["store"]["app.routing.smb_tunnel"] = True
     cb, nav = _acb(fake_bot)
     await sh_slots.gw_slot_smb_yes(cb, GwSlotCB(action="smb_yes", val="1"), services)
-    assert cb.answers[0][0] == "Уже включено" and smb["calls"] == 0
+    assert cb.answers[0][0] == "Уже включён" and smb["calls"] == 0
     assert "✅ SMB в туннеле" in _screen(nav)[1]
 
 

@@ -338,7 +338,9 @@ def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
     ch = {"ever": True, "online": False, "seen": "", "age": 13 * 86400, "has_snap": True, "has_bundle": True,
           "egress_gw": True}
     _, _, egress = channel_lines(ch, False)
-    assert egress.endswith("(по снимку 13 дн назад)"), egress
+    # момент снимка — абсолютным временем: сообщение само не перерисовывается
+    import re
+    assert re.search(r"\(по снимку от \d\d\.\d\d \d\d:\d\d\)$", egress), egress
     ch["online"] = True
     _, _, egress = channel_lines(ch, False)
     assert "по снимку" not in egress, egress
@@ -390,7 +392,7 @@ async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_b
     файл не нужен, а кнопка звала бы перевыпускать то, что везёт канал."""
     _cfg_snap(services)
     text, labels = await _card(services, fake_bot)
-    assert "🔗 Канал конфигурации 🟢 · v3.3.0\n" in text and "актуальн" not in text, text
+    assert "🔧 Канал конфигурации 🟢 · v3.3.0\n" in text and "актуальн" not in text, text
     assert "устарел" not in text and "перевыпусти" not in text, text
     assert "📤 Конфигурация" not in labels, labels
 
@@ -400,7 +402,7 @@ async def test_a_cfg1_drift_on_a_live_channel_goes_by_itself(services, cfg1, fak
     пунктов, без хвоста про перевыпуск и без галочки «актуален»."""
     _cfg_snap(services, env="0" * 16, server="0" * 16)
     text, _ = await _card(services, fake_bot)
-    assert ("⏳ Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят по каналу "
+    assert ("🟡 Конфигурация на шлюзе расходится с выданной (2 пункта) — изменения уходят по каналу "
             "конфигурации и применятся сами") in text.splitlines(), text
     assert "актуальн" not in text and "перевыпусти" not in text, text
 
@@ -441,9 +443,9 @@ async def test_waiting_mail_and_phrase_are_named_on_the_card(services, cfg1, fak
 
 
 @pytest.mark.parametrize("declined, line", [
-    (("mail",), "почта на шлюзе своя — оставлена в чате бота шлюза"),
-    (("backup",), "ключевая фраза бэкапов на шлюзе своя — оставлена в чате бота шлюза"),
-    (("mail", "backup"), "почта и ключевая фраза бэкапов на шлюзе свои — оставлены в чате бота шлюза"),
+    (("mail",), "почта на шлюзе своя — так решено в чате бота шлюза"),
+    (("backup",), "ключевая фраза бэкапов на шлюзе своя — так решено в чате бота шлюза"),
+    (("mail", "backup"), "почта и ключевая фраза бэкапов на шлюзе свои — так решено в чате бота шлюза"),
 ])
 async def test_details_name_the_applied_generation_and_what_was_kept(services, cfg1, fake_bot, declined, line):
     """«подробнее» (К13): номер применённого документа и дата; что человек
@@ -477,14 +479,14 @@ async def test_a_link_conf_the_server_could_not_build_is_said(services, cfg1, fa
 
 
 async def test_cfg1_hints_point_to_restore_not_to_reissue(services, cfg1, fake_bot):
-    """Обвязка старого образца у агента с документом лечится «🔧 Восстановить»
+    """Обвязка старого образца у агента с документом лечится «🚑 Восстановить»
     в чате бота шлюза, а не новым файлом; то же у не применившейся связи
     подсетей."""
     _cfg_snap(services, snap={"plumbing_gen": "old", "peer_nets": {"ok": False, "missing": ["192.168.70.0/24"]}})
     text, _ = await _card(services, fake_bot)
-    assert "⚠️ Обвязка шлюза старого образца — «🔧 Восстановить» в чате бота шлюза" in text, text
+    assert "⚠️ Обвязка шлюза старого образца — «🚑 Восстановить» в чате бота шлюза" in text, text
     assert ("⚠️ Связь подсетей: на шлюзе нет <code>192.168.70.0/24</code> — сервер повторит доставку; "
-            "не поможет — «🔧 Восстановить» в чате бота шлюза") in text, text
+            "не поможет — «🚑 Восстановить» в чате бота шлюза") in text, text
     assert "перевыпусти" not in text, text
 
 
@@ -493,8 +495,8 @@ async def test_an_agent_32_card_asks_to_update_and_keeps_the_file_button(service
     кнопка файла остаётся, ею пока и довозится остальное."""
     _snap(services, agent_version="3.2.1")
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент v3.2.1 устарел: подсети других шлюзов, ключи линка и аплинк по каналу конфигурации " \
-           "до него не доходят — только перевыпуском конфигурации. Обнови агента" in text, text
+    assert "⚠️ Агент v3.2.1 устарел: подсети других шлюзов, ключи линка и конфиг аплинка доходят до него " \
+           "только с перевыпуском конфигурации, не по каналу. Обнови агента" in text, text
     assert "📤 Конфигурация" in labels, labels
 
 

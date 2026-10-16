@@ -46,7 +46,7 @@ class SlotsMixin:
         gw = self.db.gateway(slot_id) if slot_id else self.gateway_first_slot()
         if gw is None:
             if slot_id:
-                raise ServiceError("такого шлюза нет")
+                raise ServiceError("Такого шлюза нет")
             from awgbot.core.models import Gateway
             return Gateway(id=1, device_id=0, link_if=config.ROUTING_GW_INTERFACE or "awglink",
                            link_port=config.ROUTING_LINK_PORTS[0], link_cidr=config.ROUTING_LINK_CIDRS[0],
@@ -304,7 +304,7 @@ class SlotsMixin:
         states = self.gateway_states()
         st = next((x for x in states if x["gateway"].id == int(slot_id)), None)
         if st is None:
-            raise ServiceError("такого шлюза нет")
+            raise ServiceError("Такого шлюза нет")
         active = next((x for x in states if x.get("active")), None)
         st["active_display"] = active["display"] if active else ""
         st["states"] = states

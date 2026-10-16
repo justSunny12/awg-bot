@@ -81,5 +81,7 @@ async def _yes(cb: CallbackQuery, services, slot: int) -> None:
     from awgbot.runtime import linkserver
     srv = linkserver.current()
     sent = bool(srv is not None and await srv.deliver_rekey(slot))
-    await sections.render(cb, MAIN, services, "svc", note=texts.GATEWAY_KEYS_SENT)
-    await cb.answer(None if sent else ui.toast(texts.GATEWAY_KEYS_OFFLINE))
+    # не на связи — ключи записаны и ждут подключения: «ушли» было бы неправдой
+    await sections.render(cb, MAIN, services, "svc",
+                          note=texts.GATEWAY_KEYS_SENT if sent else texts.GATEWAY_KEYS_QUEUED)
+    await cb.answer()

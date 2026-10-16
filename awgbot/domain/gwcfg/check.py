@@ -219,12 +219,12 @@ def check_uplink(uplink: dict) -> wgconf.Conf:
     if norm(conf.get("Interface", "Table")) != "off":       # ровно как сверяет скрипт обвязки
         raise CfgError("конфиг аплинка: нужен Table = off")
     if not wgconf.is_pubkey(uplink.get("pubkey")):
-        raise CfgError("конфиг аплинка: pubkey — не ключ")
+        raise CfgError("конфиг аплинка: pubkey не похож на ключ")
     if wgconf.pubkey_of(conf.get("Interface", "PrivateKey")) != uplink.get("pubkey"):
         # конфиг другого устройства шлюзом не станет: обвязка признаёт аплинк по ключу
         raise CfgError("конфиг аплинка: ключ устройства не совпадает с pubkey")
     if uplink.get("prev_pubkey") and not wgconf.is_pubkey(uplink.get("prev_pubkey")):
-        raise CfgError("конфиг аплинка: prev_pubkey — не ключ")
+        raise CfgError("конфиг аплинка: prev_pubkey не похож на ключ")
     return conf
 
 

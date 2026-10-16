@@ -163,7 +163,7 @@ async def _routing_provision(cb: CallbackQuery, services) -> None:
     """Развернуть обвязку условной маршрутизации. Долго (до минуты) и меняет
     состояние хоста, поэтому: сразу сказать, что идём, и показать итог."""
     await cb.answer("Разворачиваю…")
-    await edit(cb, "🚀 Разворачиваю обвязку: dnsmasq, NAT, маршруты, линк. "
+    await edit(cb, "🚀 Разворачиваю РФ-доступ на сервере: dnsmasq, NAT, маршруты, линк. "
                    "Это до минуты — не нажимай ничего", None)
     try:
         tail = await call(services.routing_provision)

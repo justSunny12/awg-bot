@@ -127,9 +127,11 @@ LIST = GwSlotCB(action="list").pack()
 
 
 def _back(markup):
-    """callback_data кнопки «⬅️ Назад» — последней в карточке."""
+    """callback_data выхода — последней кнопки карточки: на главную —
+    «⬅️ В меню», в список или раздел — «⬅️ Назад»."""
     btn = markup.inline_keyboard[-1][0]
-    assert btn.text == "⬅️ Назад", [b.text for row in markup.inline_keyboard for b in row]
+    want = "⬅️ В меню" if btn.callback_data == HOME else "⬅️ Назад"
+    assert btn.text == want, [b.text for row in markup.inline_keyboard for b in row]
     return btn.callback_data
 
 
@@ -245,8 +247,8 @@ def test_bundle_caption_without_known_bot_has_no_link():
     """getMe ещё не отвечал — без ссылки и без пустых скобок."""
     for bot in ({}, None, {"username": "", "name": "x"}):
         got = texts.gateway_bundle_caption("Pi2", bot)
-        assert got == ("📤 <b>Конфигурация шлюза Pi2</b>\nПерешли это сообщение боту шлюза — "
-                       "он проверит и применит сам\n" "\nℹ️ Сначала перешли его: любая кнопка ниже удалит это сообщение"), (bot, got)
+        assert got == ("📤 <b>Конфигурация шлюза «Pi2»</b>\nПерешли это сообщение боту шлюза — "
+                       "он проверит и применит сам\n" "\n⚠️ Сначала перешли его: любая кнопка ниже удалит это сообщение"), (bot, got)
 
 
 def test_bundle_caption_escapes_names():
