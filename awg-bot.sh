@@ -226,7 +226,7 @@ ensure_ping() {
     command -v ping >/dev/null 2>&1 && return 0
     log "ставлю iputils-ping (пинг до шлюза по линку)…"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -q iputils-ping >/dev/null 2>&1 \
-        || warn "iputils-ping не установился — «Пинг до шлюза» в карточках покажет «не отвечает»"
+        || warn "iputils-ping не установился — «📡 Пинг» в карточке шлюза ответит «шлюз не отвечает»"
 }
 ensure_python() {
     if detect_python; then log "Python: $PYBIN ($("$PYBIN" -V 2>&1))"; return; fi
