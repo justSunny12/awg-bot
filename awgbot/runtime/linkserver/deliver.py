@@ -83,21 +83,24 @@ class DeliverMixin:
         digest = await asyncio.to_thread(self.services.gwlink_lan_feeds_digest)
         if not digest:
             return False
+        # Метка отправленного — отпечаток и момент сверки сервера с источниками:
+        # подтверждение «у тебя те же» уходит при подключении и после каждой
+        # удачной сверки; сами фиды — один раз на отпечаток (отвергнутые не шлём
+        # снова до новой сессии или новых фидов), и доставка тех же фидов уже
+        # подтверждает текущую сверку — лишнего lists_ok следом не нужно.
+        checked = await asyncio.to_thread(self.services.gwlink_lan_feeds_checked)
+        mark = f"{digest}@{checked}"
         if sess.lists_have == digest:
-            # У шлюза те же фиды. Подтверждаем при подключении и после каждой
-            # удачной сверки сервера с источниками (метка — отпечаток и момент
-            # сверки): иначе в долгой сессии шлюз показывал бы дату последнего
+            # Без подтверждения в долгой сессии шлюз показывал бы дату последнего
             # изменения фидов как «обновлены», будто списки застыли, а его запас
             # на своё скачивание протухал бы через 12 часов неизменных фидов.
-            checked = await asyncio.to_thread(self.services.gwlink_lan_feeds_checked)
-            mark = f"{digest}@{checked}"
             if sess.lists_sent == mark:
                 return False
             sess.lists_sent = mark                # метка ДО отправки — см. deliver()
             return await self.send(slot_id, "lists_ok", {"hash": digest})
-        if sess.lists_sent == digest:
+        if sess.lists_sent.split("@", 1)[0] == digest:
             return False
-        sess.lists_sent = digest                  # метка ДО отправки — см. deliver()
+        sess.lists_sent = mark                    # метка ДО отправки — см. deliver()
         feeds = await asyncio.to_thread(self.services.gwlink_lan_feeds)
         if feeds.get("hash") != digest:
             return False

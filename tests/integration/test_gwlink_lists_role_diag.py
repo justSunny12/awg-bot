@@ -609,3 +609,19 @@ def test_the_first_feeds_download_is_not_held_back_when_there_are_no_feeds_at_al
     assert services.gwlink_lan_feeds_update() is True, "первый поход задержан гейтом"
     services.db.set_state(services._LAN_FEEDS_AT_KEY, str(int(time.time()) + 6 * 3600))
     assert services.gwlink_lan_feeds_update() is False, "с фидами на месте гейт обязан действовать"
+
+
+async def test_an_accepted_feed_delivery_is_not_followed_by_an_extra_confirmation(services, link, monkeypatch):
+    """Шлюз принял новые фиды (lists_ack ok) — доставка уже подтверждает текущую
+    сверку сервера: следом в той же сессии не уходит «у тебя те же» (раньше метка
+    с моментом сверки не совпадала с отпечатком, и такт слал лишний lists_ok)."""
+    _Net(monkeypatch)
+    services.gwlink_lan_feeds_update(force=True)
+    feeds = services.gwlink_lan_feeds()
+    gw = await _hello(link, lists_hash="старый")
+    assert await _next(gw, "lists") is not None
+    await gw.send("lists_ack", {"ok": True, "hash": feeds["hash"]})
+    await _until(lambda: services.gwlink_lists(1))
+    await link.deliver_all()
+    assert await _next(gw, "lists_ok", 0.4) is None, "после принятых фидов ушло лишнее подтверждение"
+    await gw.close()

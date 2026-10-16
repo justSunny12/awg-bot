@@ -42,6 +42,18 @@ async def store(state, scope: str, marks: dict) -> None:
     await state.update_data(**{KEY: {"scope": scope, "marks": {str(k): bool(v) for k, v in marks.items()}}})
 
 
+async def clear_keep(state) -> None:
+    """Сбросить диалог, но оставить отметки: переход во вложенный экран
+    («➕ Сайт», «📋 Свои сайты») и возврат из него не должны молча терять
+    выбор, который ещё не применён (решение 16.10.2026)."""
+    if state is None:
+        return
+    kept = (await state.get_data()).get(KEY)
+    await state.clear()
+    if kept:
+        await state.update_data(**{KEY: kept})
+
+
 async def drop(state) -> None:
     """Отметки отслужили (применены или экран ушёл)."""
     if state is not None:
@@ -59,4 +71,4 @@ def toggle_all(marks: dict) -> dict:
     return {k: on for k in marks}
 
 
-__all__ = ["KEY", "load", "pending", "store", "drop", "changed", "toggle_all"]
+__all__ = ["KEY", "load", "pending", "store", "clear_keep", "drop", "changed", "toggle_all"]

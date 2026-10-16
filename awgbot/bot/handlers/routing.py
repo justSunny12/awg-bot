@@ -140,16 +140,17 @@ async def sites_view(services, client, viewer_chat: int | None = None):
                              page=paging.page_of(viewer_chat or client.tg_id, "rtsites", client.id)))
 
 
-async def screen_for(services, client, ref: int, kind: str):
+async def screen_for(services, client, ref: int, kind: str, state=None):
     """Экран реестра: kind = rf | sites; client — говорящий (None у админа),
-    ref — профиль. None — профиля нет или фича ему не выдана."""
+    ref — профиль; state — FSM смотрящего (возврат из вложенного экрана —
+    с неприменёнными отметками). None — профиля нет или фича ему не выдана."""
     profile = await _profile(services, client, ref)
     if profile is None or not await call(services.routing_client_visible, profile):
         return None
     viewer = client.tg_id if client is not None else config.ADMIN_ID   # страницу помнит смотрящий
     if kind == "sites":
         return await sites_view(services, profile, viewer)
-    return await panel_view(services, profile, _back_target(profile, client), viewer,
+    return await panel_view(services, profile, _back_target(profile, client), viewer, state=state,
                             profile=profile.name if _foreign(profile, client) else "")
 
 
@@ -163,11 +164,15 @@ async def show_panel(cb: CallbackQuery, services, client, speaker, state=None):
 @router.callback_query(RoutingCB.filter(F.action.in_(("panel", "devs"))))
 async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, services,
                         state: FSMContext):
-    """Вход в раздел: отметки — с сохранённого (прежний выбор, если был, сброшен)."""
+    """Вход в раздел: отметки — с сохранённого (прежний выбор, если был, сброшен);
+    возврат из вложенного экрана (tag="back") — с неприменёнными отметками."""
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
-    await state.clear()
+    if callback_data.tag == "back":
+        await pick.clear_keep(state)
+    else:
+        await state.clear()
     await show_panel(cb, services, profile, client, state)
     await cb.answer()
 
@@ -265,7 +270,7 @@ async def routing_sites(cb: CallbackQuery, callback_data: RoutingCB, client, ser
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
-    await state.clear()
+    await pick.clear_keep(state)                       # вложенный экран: отметки раздела ждут возврата
     await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
     await cb.answer()
 
@@ -315,7 +320,7 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
     ref = int(data.get("rt_client") or 0)
     profile = await _profile(services, client, ref)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    await state.clear()
+    await pick.clear_keep(state)                       # ввод закрыт, неприменённые отметки раздела — нет
     role = role_of(client)
     # тот же гвард, что и на кнопках: разрешение могли отозвать во время ввода
     if profile is None or not await call(services.routing_client_visible, profile):
@@ -324,7 +329,7 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
     res = await call(services.routing_add_domains, profile.id, message.text or "")
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit,
                                       owner=_foreign(profile, client))
-    await back_to_context(message, services, data, role, client, note=report)
+    await back_to_context(message, services, data, role, client, note=report, state=state)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "del"))

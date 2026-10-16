@@ -43,7 +43,7 @@ def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboar
                   button=lambda i, dom: (f"➖ {dom}", RoutingCB(action="del", ref=client_id, idx=i, tag=entry_tag(dom)))),
         [("➕ Сайт", RoutingCB(action="add", ref=client_id)),
          ("🗑 Очистить", RoutingCB(action="clear", ref=client_id)) if domains else None],
-        ui.back(RoutingCB(action="panel", ref=client_id)))
+        ui.back(RoutingCB(action="panel", ref=client_id, tag="back")))
 
 
 def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:

@@ -155,7 +155,7 @@ async def ask_here(cb: CallbackQuery, services, state, prompt: str, kind: str,
 
 
 async def back_to_context(message: Message, services, data: dict, role: str, client=None,
-                          note: str = "") -> None:
+                          note: str = "", state=None) -> None:
     """После ввода: убрать приглашение и ввод, показать экран-контекст новым
     сообщением с итогом первой строкой. Экрана нет (объект пропал, старый
     диалог) — главная роли."""
@@ -163,7 +163,7 @@ async def back_to_context(message: Message, services, data: dict, role: str, cli
     await cleanup_content(message.bot, services, message.chat.id)
     parts = await screens.render(data.get("ctx_kind") or "main", data.get("ctx_ref") or 0,
                                  services=services, role=role, client=client,
-                                 chat_id=message.chat.id, note=note)
+                                 chat_id=message.chat.id, note=note, state=state)
     if parts is None:
         parts = await screens.render("main", services=services, role=role, client=client,
                                      chat_id=message.chat.id, note=note)
@@ -193,8 +193,12 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
         try:
             await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
                                                 reply_markup=markup, link_preview_options=NO_PREVIEW)
+        except TelegramBadRequest as e:
+            # «без изменений» — экран уже такой (два нажатия ссылки за секунду):
+            # второе меню под ним не нужно; прочее — сообщение старое, новым
+            edited = "message is not modified" in str(e)
         except Exception:                             # noqa: BLE001
-            edited = False                            # сообщение старое или без изменений — новым
+            edited = False                            # сообщение старое или удалено — новым
         if edited:
             # приглашение к вводу было служебным — теперь это экран, уборка
             # при возврате в меню его не трогает; запись в БД — вне try: её

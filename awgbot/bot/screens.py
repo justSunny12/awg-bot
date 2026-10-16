@@ -44,11 +44,11 @@ def with_note(text: str, note: str) -> str:
 
 
 async def render(kind: str, ref: int = 0, *, services, role: str, client=None,
-                 chat_id: int = 0, note: str = ""):
+                 chat_id: int = 0, note: str = "", state=None):
     """(text, markup) экрана или None, если экрана нет (чужой ref, роль без
     такого экрана). Ошибок наружу не бросает — вызывающий подставит главную."""
     try:
-        parts = await _render(kind, int(ref or 0), services, role, client, chat_id)
+        parts = await _render(kind, int(ref or 0), services, role, client, chat_id, state)
     except Exception as e:                             # noqa: BLE001
         log.warning("screens: экран %s/%s не собрался: %s", kind, ref, e)
         return None
@@ -58,7 +58,7 @@ async def render(kind: str, ref: int = 0, *, services, role: str, client=None,
     return with_note(text, note), markup
 
 
-async def _render(kind: str, ref: int, services, role: str, client, chat_id: int):
+async def _render(kind: str, ref: int, services, role: str, client, chat_id: int, state=None):
     from awgbot.bot import roles, sections
     if roles.current() is roles.GATEWAY:
         # агент: человек в чате — админ, экраны — панель и разделы настроек
@@ -74,7 +74,7 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             return await panel._panel_parts(services)
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
-            return await rt.screen_for(services, None, ref, kind)
+            return await rt.screen_for(services, None, ref, kind, state)
         if kind == "cl":
             parts = await clients.client_card_parts(services, ref)
             return parts if parts is not None else await panel._panel_parts(services)
@@ -133,7 +133,7 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             return await ch.sub_parts(services, client.id)
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
-            return await rt.screen_for(services, client, client.id, kind)
+            return await rt.screen_for(services, client, client.id, kind, state)
         if kind == "guide":
             from awgbot.bot.handlers import guide as gh
             return await gh.connect_step0_payload(services, client, ref, chat_id)
@@ -149,7 +149,7 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             return None if dev is None else await fh.card_payload(services, dev)
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
-            return await rt.screen_for(services, client, client.id, kind)
+            return await rt.screen_for(services, client, client.id, kind, state)
         if kind == "guide":
             from awgbot.bot.handlers import guide as gh
             return await gh.connect_step0_payload(services, client, ref, chat_id)

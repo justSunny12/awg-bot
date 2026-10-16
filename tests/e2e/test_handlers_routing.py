@@ -786,3 +786,62 @@ async def test_admin_paging_in_a_foreign_profile_section_remembers_the_viewer(se
                       user_id=config.ADMIN_ID, bot=fake_bot)
     await routing_h.show_panel(cb, services, c, SimpleNamespace(tg_id=config.ADMIN_ID, id=1))
     assert seen.get("viewer") == config.ADMIN_ID, seen
+
+
+# ── отметки устройств переживают вложенные экраны ────────────────────────────
+
+def _labels(markup) -> list[str]:
+    return [b.text for row in markup.inline_keyboard for b in row]
+
+
+async def _marked(services, fake_bot, make_active_client, uid):
+    """Профиль с устройством, отметка устройства — без «Применить»."""
+    c = _allowed_client(services, make_active_client, uid)
+    dev_id = services.add_device(c.id, "Телефон").device_id
+    was = bool(services.db.get_device(dev_id).routing_on)
+    st = FakeState()
+    cb, _ = _cb(fake_bot, uid)
+    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=dev_id), c, services, st)
+    return c, dev_id, was, st
+
+
+async def test_marks_survive_adding_a_site_from_the_panel(services, fake_bot, make_active_client):
+    """Отметил устройство, не применил, ушёл в «➕ Сайт» и прислал домен —
+    раздел вернулся с той же отметкой и рядом «✅ Применить»; в БД ничего не
+    применено, пока человек не нажал «Применить»."""
+    c, dev, was, st = await _marked(services, fake_bot, make_active_client, 181)
+    cb, _ = _cb(fake_bot, 181)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=c.id, tag="panel"), c, services, st)
+    msg = FakeMessage(text="netflix.com", chat_id=181, user_id=181, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, c, services, st)
+    sent = [s for s in msg.sent if len(s) > 2 and s[2] is not None]
+    assert sent, msg.sent
+    assert any("Применить" in t for t in _labels(sent[-1][2])), "отметки потеряны после «➕ Сайт»"
+    assert bool(services.db.get_device(dev).routing_on) == was, "отметка применилась без «Применить»"
+
+
+async def test_marks_survive_the_sites_screen_and_its_back_button(services, fake_bot, make_active_client):
+    """«📋 Свои сайты» и «⬅️ Назад» (tag="back") — тот же раздел с отметкой;
+    свежий вход в раздел — снова с сохранённого."""
+    c, dev, was, st = await _marked(services, fake_bot, make_active_client, 182)
+    cb, _ = _cb(fake_bot, 182)
+    await routing_h.routing_sites(cb, RoutingCB(action="sites", ref=c.id), c, services, st)
+    cb, nav = _cb(fake_bot, 182)
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id, tag="back"), c, services, st)
+    assert any("Применить" in t for t in _labels(nav.sent[-1][2])), "отметки потеряны после «Свои сайты»"
+    cb, nav = _cb(fake_bot, 182)
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, st)
+    assert not any("Применить" in t for t in _labels(nav.sent[-1][2])), "свежий вход взял старые отметки"
+
+
+async def test_marks_survive_cancelling_the_site_input(services, fake_bot, make_active_client):
+    """«✖️ Отмена» под приглашением «➕ Сайт» — раздел с той же отметкой."""
+    from awgbot.bot.callbacks import CancelCB
+    from awgbot.bot.handlers.reply_commands import on_cancel_inline
+    c, dev, was, st = await _marked(services, fake_bot, make_active_client, 183)
+    cb, _ = _cb(fake_bot, 183)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=c.id, tag="panel"), c, services, st)
+    cb, nav = _cb(fake_bot, 183)
+    await on_cancel_inline(cb, CancelCB(kind="rf", ref=c.id), st, services, role="client", client=c)
+    shown = [s for s in nav.sent if len(s) > 2 and s[2] is not None]
+    assert shown and any("Применить" in t for t in _labels(shown[-1][2])), "отметки потеряны после «Отмены»"

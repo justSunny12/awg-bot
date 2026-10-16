@@ -32,9 +32,10 @@ async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FS
     на месте приглашения, без сообщения-следа. Роль — из middleware, экран —
     из реестра; нет экрана — главная роли."""
     from awgbot.bot import screens
-    await state.clear()
+    from awgbot.bot.handlers import pick
+    await pick.clear_keep(state)                      # отметки экрана-контекста не применены — не терять
     parts = await screens.render(callback_data.kind, callback_data.ref, services=services,
-                                 role=role, client=client, chat_id=cb.message.chat.id)
+                                 role=role, client=client, chat_id=cb.message.chat.id, state=state)
     if parts is None:
         parts = await screens.render("main", services=services, role=role, client=client,
                                      chat_id=cb.message.chat.id)

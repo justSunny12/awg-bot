@@ -2229,7 +2229,7 @@ https://t.me/test_bot?start=FTEST0000002
 📋 <b>Свои сайты</b>
 Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй те, что пишут «вы не из России».
   [➕ Сайт | rt:add:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 ~ (пустой ответ)
 
 ### cl.rf.sites — 📋 Сайты: список
@@ -2241,7 +2241,7 @@ https://t.me/test_bot?start=FTEST0000002
   [➖ sber.ru | rt:del:2:1:8960d643]
   [➖ ya.ru | rt:del:2:2:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 ~ (пустой ответ)
 
 ### cl.rf.sites.many — 📋 Сайты: первая страница
@@ -2258,7 +2258,7 @@ https://t.me/test_bot?start=FTEST0000002
   [➖ site07.ru | rt:del:2:6:7e83750c]
   [След. страница ▶️ | pg|rtsites|2|1|rt:sites:2:-1:]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 ~ (пустой ответ)
 
 ### cl.rf.add — ➕ Сайт из раздела — приглашение
@@ -2304,7 +2304,7 @@ https://www.ya.ru/path
   [➖ vk.com | rt:del:2:2:4894387e]
   [➖ ya.ru | rt:del:2:3:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 
 ### cl.rf.add.cancel — ➕ Сайт — «✖️ Отмена»
 > press x:sites:2
@@ -2316,7 +2316,7 @@ https://www.ya.ru/path
   [➖ sber.ru | rt:del:2:1:8960d643]
   [➖ ya.ru | rt:del:2:2:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 
 ### cl.rf.add.start — /start во время ввода сайтов — главная, не адрес
 > /start
@@ -2370,7 +2370,7 @@ https://www.ya.ru/path
   [➖ sber.ru | rt:del:2:0:8960d643]
   [➖ ya.ru | rt:del:2:1:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 
 ### cl.rf.del.stale — удалить адрес из изменившегося списка — отказ
 > press rt:del:2:0:zz
@@ -2382,7 +2382,7 @@ https://www.ya.ru/path
   [➖ sber.ru | rt:del:2:1:8960d643]
   [➖ ya.ru | rt:del:2:2:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 
 ### cl.rf.clear — 🗑 Очистить — подтверждение
 > press rt:clear:2:-1:
@@ -2398,7 +2398,7 @@ https://www.ya.ru/path
 📋 <b>Свои сайты</b>
 Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй те, что пишут «вы не из России».
   [➕ Сайт | rt:add:2:-1:]
-  [⬅️ Назад | rt:panel:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
 ~ Убрано сайтов: 3
 
 ### cl.note.sub — кнопка уведомления — подписка новым меню

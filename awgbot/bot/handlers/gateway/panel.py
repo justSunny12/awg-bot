@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from aiogram.exceptions import TelegramBadRequest
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -166,8 +167,11 @@ async def _refresh_by_link(message: Message, services) -> None:
             await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
                                                 reply_markup=markup)
             return
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                return                                 # панель уже такая (два нажатия за секунду)
         except Exception:                              # noqa: BLE001
-            pass                                       # меню старое или уже такое — новым
+            pass                                       # меню старое или удалено — новым
     await send_menu(message, services, text, markup)
 
 

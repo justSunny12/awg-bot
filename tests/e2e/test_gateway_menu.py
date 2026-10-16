@@ -143,3 +143,31 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     assert store["app.scheduler.backup_channel"] == "email"
     await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
     assert store["notifications.email_fallback"] is True
+
+
+async def test_two_refresh_taps_in_one_second_do_not_leave_a_second_panel(svc, fake_bot, monkeypatch):
+    """Два нажатия «обновлено в … 🔄» за секунду: текст совпал, Telegram отвечает
+    «message is not modified» — панель уже такая, новое меню под ней не шлётся
+    (раньше любая ошибка правки превращалась во второе меню)."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import EditMessageText
+    from awgbot.bot import texts
+    from awgbot.bot.handlers.gateway import panel as gpanel
+
+    class _Cmd:
+        args = texts.REFRESH_PAYLOAD
+
+    svc.db.set_nav_message_id(cfg.ADMIN_ID, 777)
+
+    async def _not_modified(*a, **k):
+        raise TelegramBadRequest(EditMessageText(text="x", chat_id=cfg.ADMIN_ID, message_id=777),
+                                 "Bad Request: message is not modified")
+    monkeypatch.setattr(fake_bot, "edit_message_text", _not_modified)
+    sent = []
+
+    async def _send_menu(*a, **k):
+        sent.append(a)
+    monkeypatch.setattr(gpanel, "send_menu", _send_menu)
+    msg = FakeMessage(text="/start refresh", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_start(msg, svc, FakeState(), command=_Cmd())
+    assert sent == [], "«без изменений» — а под панелью появилось второе меню"

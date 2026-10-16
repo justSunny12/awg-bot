@@ -299,6 +299,11 @@ async def edit_period_button(cb: CallbackQuery, callback_data: ClientCB, service
     if current not in (EditPeriod.start.state, EditPeriod.end.state):
         await cb.answer(ui.Toast.stale, show_alert=True)
         return
+    # кнопка под приглашением другого профиля (прошлое приглашение живёт в чате до
+    # конца ввода): не применять к открытому вводу чужую дату
+    if int(callback_data.client_id) != int((await state.get_data()).get("client_id") or 0):
+        await cb.answer(ui.Toast.stale, show_alert=True)
+        return
     client = await _client_or_alert(cb, services, callback_data.client_id)
     if client is None:
         await state.clear()

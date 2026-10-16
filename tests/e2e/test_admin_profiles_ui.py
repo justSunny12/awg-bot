@@ -115,6 +115,27 @@ async def test_period_end_zero_makes_it_unlimited(services, fake_bot, make_activ
     assert services.db.get_client(c.id).period_end is None, "«0» у окончания не сделал профиль бессрочным"
 
 
+async def test_period_button_of_another_profile_does_not_touch_the_open_input(services, fake_bot, make_active_client):
+    """В чате осталось приглашение к окончанию периода профиля B, а открыт ввод
+    у профиля A: «∞ Бессрочно» под старым приглашением — устаревшая кнопка,
+    ни A, ни B не меняются (раньше B получал дату начала от A и бессрочность)."""
+    from awgbot.bot.handlers.admin.clients import edit as edit_h
+    a = make_active_client("Ксюша", tg_id=4207, period_kind="month")
+    b = make_active_client("Боря", tg_id=4208, period_kind="month")
+    b_before = services.db.get_client(b.id)
+    st = FakeState()
+    cb, _ = _acb(fake_bot)
+    await ah.edit_period_start(cb, ClientCB(action="edit_period", client_id=a.id), services, st)
+    await ah.edit_period_start_apply(_amsg(fake_bot, "-"), services, st)
+    cb, nav = _acb(fake_bot)
+    await edit_h.edit_period_button(cb, ClientCB(action="period_never", client_id=b.id), services, st)
+    assert cb.answers and cb.answers[-1][1] is True, cb.answers
+    b_after = services.db.get_client(b.id)
+    assert (b_after.period_start, b_after.period_end) == (b_before.period_start, b_before.period_end), \
+        "кнопка чужого приглашения изменила период другого профиля"
+    assert services.db.get_client(a.id).period_end is not None, "открытый ввод применился кнопкой чужого профиля"
+
+
 # ── новый профиль ────────────────────────────────────────────────────────────
 
 async def test_new_profile_presets_create_exactly_what_was_chosen(services, fake_bot):
