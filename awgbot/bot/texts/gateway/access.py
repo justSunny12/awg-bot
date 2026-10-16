@@ -51,7 +51,7 @@ def gateway_ssh_text(st: dict) -> str:
                      + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3])
                      + (f" и ещё {len(peers) - 3}" if len(peers) > 3 else "") + ")")
     else:
-        lines.append("При включённой связи подсетей SSH открыт и из подсетей других шлюзов")
+        lines.append("Из подсетей других шлюзов: откроется, когда VPN-транзит свяжет подсети")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):

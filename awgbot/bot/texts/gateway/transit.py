@@ -118,7 +118,7 @@ def own_lists_short(lan: dict, plain: bool = False) -> str:
         return head
     state = own.get("state", "")
     if state in ("pending", "no_link", "stale_server"):
-        return head + " · ⏳ ждут синхронизации"
+        return head + " · 🟡 ждут синхронизации"
     if state in ("failed", "old_script"):
         return head + " · ⚠️ не применились (🩺 Здоровье)"
     return head
@@ -130,9 +130,9 @@ def own_lists_state_line(own: dict) -> str:
     n = int(own.get("pending") or 0)
     n_word = f"{n} " + plural_ru(n, "правка", "правки", "правок")
     if state == "no_link":
-        return f"⏳ Ждут синхронизации: {n_word} — нет связи с сервером AWG"
+        return f"🟡 Ждут синхронизации: {n_word} — нет связи с сервером AWG"
     if state in ("pending", "stale_server"):
-        return f"⏳ Ждут синхронизации: {n_word} — сервер AWG ещё не ответил"
+        return f"🟡 Ждут синхронизации: {n_word} — сервер AWG ещё не ответил"
     if state in ("failed", "old_script"):
         err = own.get("err") or "скрипт старого образца — обвязка перевыставляется"
         detail = failure_detail("Не применились", err)

@@ -66,7 +66,7 @@ class PeerNetsMixin:
                 if g.id != me.id and g.id <= lanspace.MAX_SLOTS]
 
     def gateway_peer_nets_info(self) -> dict:
-        """Строка «↔️ Связь подсетей» экрана «Шлюзы»: {'state', …}.
+        """Строка «🔗 Связь подсетей» экрана «Шлюзы»: {'state', …}.
         state: off — адреса в туннеле выключены (пространство или метка, см.
         карточку); few — слотов с VPN-транзитом меньше двух; ok — pairs_named:
         [(имя, подпись, адреса в туннеле)]."""

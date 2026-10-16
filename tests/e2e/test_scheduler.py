@@ -105,6 +105,17 @@ def test_service_failure_alert_after_sustained_downtime(services):
     assert db.get_state("service_alert_sent") == ""
 
 
+def test_service_failure_alert_without_sound_still_arrives(services):
+    """«Простой со звуком» выключен — алерт всё равно приходит, только по
+    правилам тихих часов (как у агента шлюза); раньше основной бот молчал."""
+    db = services.db
+    settings.set_value("app.monitoring.service_failure_alert_loud", False)
+    past = timeutil.now() - datetime.timedelta(minutes=settings.get_int("app.monitoring.service_failure_alert_minutes", 5) + 1)
+    db.set_state("service_down_since", timeutil.to_iso(past))
+    alerts = services.service_failure_alerts(ok=False)
+    assert len(alerts) == 1 and alerts[0].force_sound is False and alerts[0].critical is True
+
+
 async def test_job_monitor_refreshes_the_view_key_written_by_the_refresh_button(services, fake_bot, monkeypatch):
     """«🔄 Обновить» пишет server_ok_view, панель читает его первым; раньше
     монитор его не трогал, и после первого нажатия шапка замерзала навсегда."""

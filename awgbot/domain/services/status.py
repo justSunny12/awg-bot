@@ -328,13 +328,15 @@ class StatusMixin:
         if (down_secs >= settings.get_int("app.monitoring.service_failure_alert_minutes", 5) * 60
                 and self.db.get_state("service_alert_sent") != "1"):
             self.db.set_state("service_alert_sent", "1")
-            if settings.get_bool("app.monitoring.service_failure_alert_loud", True):
-                mins = settings.get_int("app.monitoring.service_failure_alert_minutes", 5)
-                return [Notification(
-                    config.ADMIN_ID,
-                    f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
-                    "Требуется вмешательство",
-                    force_sound=True, critical=True)]
+            # «Простой со звуком» управляет только звуком (как у агента): выключен —
+            # алерт всё равно приходит, но по правилам тихих часов
+            mins = settings.get_int("app.monitoring.service_failure_alert_minutes", 5)
+            return [Notification(
+                config.ADMIN_ID,
+                f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
+                "Требуется вмешательство",
+                force_sound=settings.get_bool("app.monitoring.service_failure_alert_loud", True),
+                critical=True)]
         return []
 
     def device_quota(self, client_id: int) -> tuple[int, int]:
