@@ -152,8 +152,8 @@ def _lan_fault(c) -> str:
 def gateway_health(st) -> str:
     """Здоровье: «🩺 Здоровье pi ✅ Проблем не выявлено» и ниже железо и модуль;
     проблемы — «🔴 Проблемы: N» и построчно только проблемные строки (🔴) и
-    ожидания (🟡 — самопочинка, первый замер, штатное «не проверено»);
-    ✅-строки на экран не идут. Чинить будут по строкам, а не по вердикту."""
+    ожидания (🟡 — самопочинка, первый замер); ✅-строки и «не проверено»
+    выключенных функций на экран не идут. Чинить будут по строкам, а не по вердикту."""
     host = _e(st.hostname) if st.hostname else "шлюза"
     problems = gwchecks.health_problems(st.checks)
     smart_bad = bool(st.smart and st.smart != "OK")
@@ -162,7 +162,7 @@ def gateway_health(st) -> str:
                      "✅ Проблем не выявлено" if not n_problems else f"🔴 Проблемы: {n_problems}")]
     for c in st.checks:
         mark = gwchecks.check_mark(c)
-        if mark == "✅":
+        if mark in ("✅", ""):
             continue
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))

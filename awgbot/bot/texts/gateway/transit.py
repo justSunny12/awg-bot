@@ -207,7 +207,7 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
     списке» со значками по исходу; служебные строки про адреса в наборе (с
     отступом) не показываем. Больше BATCH_SUMMARY_FROM доменов — сводка
-    «✅ Добавлено: 80 · уже в списке: 0 · пропущено: 0» и перечень только
+    «✅ Добавлено: 80 · пропущено: 2» (нулевые части опущены) и перечень только
     пропущенных. Отказ — «⚠️ example.org не добавлен: <причина>» (всплывашка
     у «➖», без разметки). sync — хвост про синхронизацию: "online" |
     "offline" | "". budget — предел в знаках (итог идёт первой строкой
@@ -228,7 +228,13 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
         added = sum(1 for r in rows if r.endswith(": добавлен"))
         known = sum(1 for r in rows if r.endswith(": уже в списке"))
         skipped = [r for r in rows if not r.endswith((": добавлен", ": уже в списке"))]
-        lines = [f"✅ Добавлено: {added} · уже в списке: {known} · пропущено: {len(skipped)}"]
+        # нули не выводим: «✅ Добавлено: 80» без пустых «уже в списке: 0 · пропущено: 0»
+        parts = [f"✅ Добавлено: {added}"]
+        if known:
+            parts.append(f"уже в списке: {known}")
+        if skipped:
+            parts.append(f"пропущено: {len(skipped)}")
+        lines = [" · ".join(parts)]
         rows = skipped
     else:
         lines = []

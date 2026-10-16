@@ -430,8 +430,8 @@ class GwSshMixin:
         held = table_ports.get("tunnel_in")
         if port is None:
             # sshd выключен (в OMV — штатно): строка SSH панели это показывает,
-            # в сводку «⚪ не проверено» не идёт (группа ssh — тихая)
-            checks.append(GwCheck(gc.CHECK_SSH_PORT, None, "sshd не запущен", group="ssh"))
+            # в «🩺 Здоровье» строка не идёт и не считается (off)
+            checks.append(GwCheck(gc.CHECK_SSH_PORT, None, "sshd не запущен", group="ssh", off=True))
         elif info is None:
             pass                                           # таблицы нет — своя проверка выше
         else:

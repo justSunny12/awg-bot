@@ -66,6 +66,9 @@ def settings_prompt(key: str, current=None) -> str:
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
         return ui.head(f"{icon} {_e(label)}", meta=[f"сейчас {shown}" if shown else ""]) + f"\n\n{_e(hint)}"
     lo, hi, label, unit = _bounds(key)
+    if unit == HOUR:
+        return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {hour_value(current)}" if current is not None else ""])
+                + f"\n\nПришли час от {lo} до {hi}")
     u = unit_suffix(unit)
     return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else ""])
             + f"\n\nПришли число от {lo} до {hi}" + (f" ({unit})" if unit else ""))
@@ -89,9 +92,21 @@ def bonus_changed(old: str, new: str) -> str:
     return ui.changed("Бонус при исчерпании", _e(old), _e(new))
 
 
+HOUR = "час"           # та же метка, что в sections/notify.BOUNDS: часы показываются как «20:00»
+
+
+def hour_value(v) -> str:
+    """Граница тихих часов для экрана: 20 → «20:00»."""
+    try:
+        return f"{int(v):02d}:00"
+    except (TypeError, ValueError):
+        return _e(str(v))
+
+
 def unit_suffix(unit: str) -> str:
-    """Единица после числа: «%» вплотную, остальные через пробел."""
-    if not unit:
+    """Единица после числа: «%» вплотную, остальные через пробел; у часов
+    единицы нет — значение само вида «20:00»."""
+    if not unit or unit == HOUR:
         return ""
     return unit if unit == "%" else f" {unit}"
 
@@ -102,6 +117,9 @@ def settings_changed(key: str, old, new) -> str:
         label, unit = SETTINGS_TEXT[key][0], ""
     else:
         _lo, _hi, label, unit = _bounds(key)
+        if unit == HOUR:
+            return ui.changed(_e(label), hour_value(old) if old is not None else "—",
+                              hour_value(new) if new is not None else "—")
         unit = unit_suffix(unit)
     old_s = _setting_value(key, old) if old not in (None, "", []) else "—"
     new_s = _setting_value(key, new) if new not in (None, "", []) else "—"
@@ -117,6 +135,8 @@ def settings_ssh_allow_added(entries: list) -> str:
 def settings_bad_value(key: str) -> str:
     """Переспрос: «⚠️ Частота опроса — число от 1 до 1440 мин, попробуй ещё раз»."""
     lo, hi, label, unit = _bounds(key)
+    if unit == HOUR:
+        return f"⚠️ {_e(label)} — час от {lo} до {hi}, попробуй ещё раз"
     return f"⚠️ {_e(label)} — число от {lo} до {hi}{unit_suffix(unit)}, попробуй ещё раз"
 
 

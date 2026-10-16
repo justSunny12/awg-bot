@@ -16,9 +16,10 @@ KEYS = ("quiet_hours.quiet_hours_enabled", "quiet_hours.quiet_hours_start", "qui
         "resource_alerts.enabled", "resource_alerts.thresholds_percent.cpu",
         "resource_alerts.thresholds_percent.ram", "resource_alerts.thresholds_percent.disk",
         "notifications.email_fallback", "app.gateway.temp_alert_c")
+HOUR = "час"          # единица-признак: значение показывается как «20:00», ввод — час от 0 до 23
 BOUNDS = {
-    "quiet_hours.quiet_hours_start": (0, 23, "Начало тихих часов", "ч"),
-    "quiet_hours.quiet_hours_end": (0, 23, "Конец тихих часов", "ч"),
+    "quiet_hours.quiet_hours_start": (0, 23, "Начало тихих часов", HOUR),
+    "quiet_hours.quiet_hours_end": (0, 23, "Конец тихих часов", HOUR),
     "resource_alerts.thresholds_percent.cpu": (1, 100, "Порог CPU", "%"),
     "resource_alerts.thresholds_percent.ram": (1, 100, "Порог RAM", "%"),
     "resource_alerts.thresholds_percent.disk": (1, 100, "Порог диска", "%"),

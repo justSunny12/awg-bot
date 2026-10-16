@@ -65,6 +65,7 @@ class GwCheck:
     ok: bool | None
     detail: str = ""
     group: str = ""                          # "lan" — локальная сеть без VPN: свой стрик, не критично
+    off: bool = False                        # функция выключена на шлюзе (sshd в OMV, avahi без NAS): не строка здоровья и не проблема
 
 
 @dataclass

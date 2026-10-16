@@ -136,8 +136,8 @@ async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
     if st is not None:
         await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
     dev = await call(services.db.get_device, gw.device_id)
-    # ⭐ снята — холодный старт оставляет трафик на прежнем активном (routing_cold_start)
-    await cb.answer(ui.toast("⭐ Снято: при холодном старте трафик останется на прежнем активном шлюзе"
+    # ⭐ снята — холодный старт оставляет трафик на последнем активном (routing_cold_start)
+    await cb.answer(ui.toast("⭐ Снято: при холодном старте трафик останется на последнем активном шлюзе"
                              if gw.preferred else
                              f"⭐ {dev.name if dev else 'Этот шлюз'} — по умолчанию при холодном старте"))
 

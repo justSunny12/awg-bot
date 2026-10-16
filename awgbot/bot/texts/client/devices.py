@@ -36,10 +36,10 @@ def _seen(dev) -> str:
 
 
 def _blocked_line(dev, *, user_as: str = "") -> str:
-    """«⛔ Заблокировано: владельцем», «⛔ Заблокировано: подписка истекла».
+    """«⛔ Заблокировано: тобой», «⛔ Заблокировано: подписка истекла».
     user_as — кем подписать блок своей кнопкой (бит USER) глазами зрителя:
-    у держателя переданного — «тобой», у владельца — «держателем [Артём]»;
-    пусто — подпись причины как есть («владельцем»)."""
+    на своём и на переданном у держателя — «тобой», у владельца переданного —
+    «держателем [Артём]»; пусто — подпись причины как есть («владельцем»)."""
     from awgbot.core import blocks
     mask = int(dev.block_reason)
     reasons = blocks.device_reasons_ru(mask, for_admin=False)
@@ -55,7 +55,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
     «добавлено не ботом». Адрес устройства — только у админа."""
     parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}"),
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
-    blocked = _blocked_line(dev)
+    blocked = _blocked_line(dev, user_as="тобой")      # свой блок своей кнопкой — «тобой», не «владельцем»
     if blocked:
         parts.append(blocked)
     if dev.friend_status == FriendStatus.PENDING:
