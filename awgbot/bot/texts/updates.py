@@ -75,8 +75,8 @@ def update_wait_line(w: dict, bot_username: str = "") -> str:
         now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
         return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бот сервера AWG"
     peers = w.get("peers") or []
-    where = "агентов в чатах ботов шлюзов" if len(peers) > 1 else "агента в чате бота шлюза"
-    return f"⏳ {tag} — {_gw_todo(peers, bot_username)} — {where}"
+    where = "в чатах ботов шлюзов" if len(peers) > 1 else "в чате бота шлюза"
+    return f"⏳ {tag} — {_gw_todo(peers, bot_username)} {where}"
 
 
 def update_wait_reason(w: dict) -> str:

@@ -11,8 +11,8 @@ from .service import UPDATE_SCHEDULE_LABELS
 # единица). Ключи общих разделов — в BOUNDS их модулей (bot/sections); единая
 # точка чтения — sections.bounds(key).
 SETTINGS_BOUNDS = {
-    "pause.pause_max_total_days": (1, 365, "Дней паузы за год", "дн."),
-    "pause.monthly_pause_days": (0, 31, "Дней паузы за месяц", "дн."),
+    "pause.pause_max_total_days": (1, 365, "Пауза за годовое продление", "дн."),
+    "pause.monthly_pause_days": (0, 31, "Пауза за месячное продление", "дн."),
     "grace.grace_days": (1, 365, "Отсрочка", "дн."),
     # MTU — в новые ссылки. 1280 — минимум IPv6, 1500 — Ethernet без запаса на
     # заголовки туннеля; выше него пакеты начинают фрагментироваться.
@@ -30,7 +30,7 @@ def _bounds(key: str):
 # Текстовые настройки (не числа): ключ → (подпись, подсказка). Ввод проверяется
 # валидатором в обработчике.
 SETTINGS_TEXT = {
-    "email.resume_address": ("Адрес для кода", "Пришли адрес почты; «-» — сам ящик"),
+    "email.resume_address": ("Адрес для кода", "Пришли адрес почты или нажми «↩️ Сам ящик»"),
     "app.network.server_host": ("Домен", "Пришли домен или IP — попадёт в новые ссылки"),
     "app.client_config.server_name": ("Имя сервера", "Пришли имя — его видно клиенту в приложении"),
     "app.client_config.dns1": ("DNS клиентов", "Пришли один или два адреса через запятую"),
@@ -56,11 +56,11 @@ def _setting_value(key: str, value) -> str:
 
 def settings_prompt(key: str, current=None) -> str:
     """Диалог ввода: «✏️ <b>Частота опроса</b> · сейчас 3 мин» ⏎⏎ «Пришли число от
-    1 до 1440 (мин)»; текстовые — со своей подсказкой."""
+    1 до 1440 мин»; текстовые — со своей подсказкой."""
     if key in SETTINGS_TEXT:
         label, hint = SETTINGS_TEXT[key]
         if isinstance(current, (list, tuple)):
-            shown = _setting_value(key, list(current)[:5]) + (f" и ещё {len(current) - 5}" if len(current) > 5 else "")
+            shown = _setting_value(key, list(current)[:5]) + (f" [+{len(current) - 5}]" if len(current) > 5 else "")
         else:
             shown = _setting_value(key, current) if current not in (None, "", []) else ""
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
@@ -71,7 +71,7 @@ def settings_prompt(key: str, current=None) -> str:
                 + f"\n\nПришли час от {lo} до {hi}")
     u = unit_suffix(unit)
     return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else ""])
-            + f"\n\nПришли число от {lo} до {hi}" + (f" ({unit})" if unit else ""))
+            + f"\n\nПришли число от {lo} до {hi}{u}")
 
 
 def bonus_prompt(current: str) -> str:
@@ -81,8 +81,8 @@ def bonus_prompt(current: str) -> str:
             "• <code>50</code> — 50 ГБ\n"
             "• <code>10%</code> — 10% лимита профиля, с округлением вверх до целых ГБ, но не больше половины лимита\n"
             "• <code>10% 50</code> — то же, но не больше 50 ГБ\n"
-            "• <code>0</code> — без бонуса: доступ отключится сразу, как только лимит исчерпан, и владелец "
-            "профиля может не узнать об этом: без доступа уведомление до него может не дойти")
+            "• <code>0</code> — без бонуса: доступ приостановится сразу, как только лимит исчерпан; уведомление "
+            "об этом может не дойти — у владельца профиля уже не будет доступа")
 
 
 BONUS_BAD = "⚠️ Не понял. Пришли число ГБ (<code>50</code>), процент (<code>10%</code>) или оба (<code>10% 50</code>)"

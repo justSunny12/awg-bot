@@ -47,8 +47,8 @@ def online_devices_text(rows, bot_username: str = "", refreshed: str = "") -> st
 
 
 def expiring_text(rows, bot_username: str = "") -> str:
-    """«⏳ Истекают: 2»; «[Ксюша] — 3 дн., до 27.09 18:00»."""
-    head = ui.head("⏳ Истекают", value=str(len(rows)))
+    """«🟡 Истекают: 2»; «[Ксюша] — 3 дн., до 27.09 18:00»."""
+    head = ui.head("🟡 Истекают", value=str(len(rows)))
     if not rows:
         return head + _LIST_SEP + "Истекающих подписок нет"
     items = []

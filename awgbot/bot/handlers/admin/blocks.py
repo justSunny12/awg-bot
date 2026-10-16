@@ -96,7 +96,10 @@ async def admin_unblock_menu(cb: CallbackQuery, callback_data: BlockCB, services
         await _do_unblock(cb, services, target, ref, kind)
         await cb.answer(ui.toast(texts.unblocked_toast(obj.name, profile=target == "cli", owner=owner)))
         return
-    await edit(cb, texts.unblock_ask(obj.name, profile=target == "cli", owner=texts._e(owner)),
+    # владелец ссылкой — как на экране блокировки того же устройства
+    oc = None if target == "cli" else await call(services.db.get_client, obj.client_id)
+    link = texts.profile_link(oc, _bot(services)) if oc is not None and not oc.is_service else ""
+    await edit(cb, texts.unblock_ask(obj.name, profile=target == "cli", owner=link),
                kb.block_unblock_reasons(target, ref, mask))
     await cb.answer()
 

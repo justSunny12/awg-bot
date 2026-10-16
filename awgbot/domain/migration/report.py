@@ -78,7 +78,8 @@ class MigrationReportMixin:
             except (awg.AwgError, KeyError, TypeError, ValueError):
                 pass
         if config.MIGRATION_SUBNET_PREFIX:
-            d["subnet"] = (config.SUBNET_PREFIX, config.MIGRATION_SUBNET_PREFIX)
+            # подсеть — как в «🖥 Сервер AWG»: CIDR, а не префикс
+            d["subnet"] = (f"{config.SUBNET_PREFIX}.0/24", f"{config.MIGRATION_SUBNET_PREFIX}.0/24")
         applied, target = awglock.applied_generation(), awglock.target_generation()
         if target > applied:
             d["generation"] = (applied, target)

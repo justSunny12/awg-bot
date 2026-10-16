@@ -53,7 +53,7 @@ PASSWORD_HINTS: dict[str, str] = {
                  "→ App passwords); он доступен только при включённой двухэтапной проверке "
                  "и не выдаётся аккаунтам Workspace и Advanced Protection. Обычный пароль "
                  "Gmail для IMAP не подходит",
-    "icloud.com": "нужен app-specific password (account.apple.com → Sign-In and Security → "
+    "icloud.com": "нужен «пароль для приложения» (account.apple.com → Sign-In and Security → "
                   "App-Specific Passwords); показывается один раз",
     "yandex.ru": "нужен «пароль приложения» (id.yandex.ru → Безопасность → Пароли приложений "
                  "→ Почта) и включённый доступ по IMAP (Почта → Настройки → Почтовые "

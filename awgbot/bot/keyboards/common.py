@@ -218,14 +218,14 @@ def _manual_block_button(target: str, ref: int, mask: int, *, for_admin: bool):
 def block_unblock_reasons(target: str, ref: int, mask: int) -> InlineKeyboardMarkup:
     """Админ снимает блок: перечислить активные РУЧНЫЕ причины + «🔓 Снять все»
     (если больше одной). Если причина ровно одна — этот экран не показываем
-    вовсе (см. admin_unblock_menu), снимаем сразу. Блок владельца — только у
+    вовсе (см. admin_unblock_menu), снимаем сразу. Блокировка владельцем — только у
     устройства: профиль сам себя не блокирует."""
     if target == "dev":
-        items = [("silent", _blocks.DeviceBlock.ADMIN_SILENT, "🔒 Невидимая блокировка"),
+        items = [("silent", _blocks.DeviceBlock.ADMIN_SILENT, "🔕 Блокировка без уведомления"),
                  ("notified", _blocks.DeviceBlock.ADMIN_NOTIFIED, "🔔 Блокировка с уведомлением"),
-                 ("user", _blocks.DeviceBlock.USER, "👤 Блок владельца")]
+                 ("user", _blocks.DeviceBlock.USER, "👤 Блокировка владельцем")]
     else:
-        items = [("silent", _blocks.ClientBlock.ADMIN_SILENT, "🔒 Невидимая блокировка"),
+        items = [("silent", _blocks.ClientBlock.ADMIN_SILENT, "🔕 Блокировка без уведомления"),
                  ("notified", _blocks.ClientBlock.ADMIN_NOTIFIED, "🔔 Блокировка с уведомлением")]
     active = [(kind, lbl) for kind, bit, lbl in items if int(mask) & int(bit)]
     return ui.rows(

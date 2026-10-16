@@ -121,7 +121,7 @@ def test_credit_reasons_and_notifications(services, make_active_client):
     assert r.pause.after == 24 and texts.pause_credit_line(r.pause) == \
         "⏸️ Дней паузы +1 → 24 (максимум для месячной подписки)"
     r = services.extend_period(m.id, "month", keep_remainder=False)
-    assert texts.pause_credit_line(r.pause) == "⏸️ Дни паузы не добавлены: у месячной подписки их максимум 24"
+    assert texts.pause_credit_line(r.pause) == "⏸️ Дни паузы не добавлены: на счёте уже не меньше максимума месячной подписки (24)"
 
     services.db.update_client_fields(m.id, status="expired", period_end="2026-09-01T00:00:00+03:00")
     services.db.set_pause_balance(m.id, 4)
@@ -139,7 +139,7 @@ def test_credit_reasons_and_notifications(services, make_active_client):
     r = services.extend_period(y.id, "year", keep_remainder=False)
     assert texts.pause_credit_line(r.pause) == "⏸️ Дней паузы +5 → 56 (максимум)"
     r = services.extend_period(y.id, "year", keep_remainder=False)
-    assert texts.pause_credit_line(r.pause) == "⏸️ Дни паузы не добавлены: у годовой подписки их максимум 56"
+    assert texts.pause_credit_line(r.pause) == "⏸️ Дни паузы не добавлены: на счёте уже не меньше максимума годовой подписки (56)"
     r = services.extend_period(y.id, "never", keep_remainder=False)
     own = [n.text for n in r.notifications if n.tg_id == 7571][0]
     assert own == "Подписка теперь бессрочная 🎉" and texts.pause_credit_line(r.pause) == ""

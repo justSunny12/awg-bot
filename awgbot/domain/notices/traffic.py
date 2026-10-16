@@ -20,9 +20,9 @@ def _left_label(mins_left: int) -> str:
     return "меньше часа"
 
 
-_TXT_EXPIRING_CLIENT = "⏳ Подписка истекает через {label}"
+_TXT_EXPIRING_CLIENT = "🟡 Подписка истекает через {label}"
 # с кнопкой отсрочки: строка объясняет, что делает кнопка под ней
-_TXT_EXPIRING_CLIENT_GRACE = "⏳ Подписка истекает через {label} — можно взять отсрочку на {days}"
+_TXT_EXPIRING_CLIENT_GRACE = "🟡 Подписка истекает через {label} — можно взять отсрочку на {days}"
 _TXT_EXPIRING_ADMIN = "⏳ Профиль {name}: подписка истекает через {label}"     # name — ссылка
 _TXT_EXPIRED_ADMIN = "🔴 Профиль {name}: подписка истекла — доступ приостановлен"
 

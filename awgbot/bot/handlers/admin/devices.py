@@ -286,7 +286,7 @@ async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB, 
         return
     await state.clear()
     plimit = await call(services.profile_traffic_limit, dev.client_id)
-    await edit(cb, texts.device_limit_prompt(dev.name, plimit),
+    await edit(cb, texts.device_limit_prompt(dev.name, plimit, int(dev.traffic_limit)),
                kb.device_limit_kb(dev.id, plimit, DeviceCB(action="open", device_id=dev.id)))
     await cb.answer()
 
@@ -300,7 +300,8 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, servic
     if callback_data.val < 0:
         plimit = await call(services.profile_traffic_limit, dev.client_id)
         await state.set_state(EditTrafficLimit.value)
-        await ask_here(cb, services, state, texts.device_limit_other_prompt(plimit), "dev", dev.id,
+        await ask_here(cb, services, state,
+                       texts.device_limit_other_prompt(plimit, dev.name, int(dev.traffic_limit)), "dev", dev.id,
                        target="device", dev_ref=dev.id)
         await cb.answer()
         return

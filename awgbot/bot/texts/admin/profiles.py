@@ -16,6 +16,9 @@ from ..fmt import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def profiles_header(n: int, online: int) -> str:
+    """«👥 Профили · 4 · онлайн 2»; пустой список — словом, а не двумя нулями."""
+    if not n:
+        return ui.head("👥 Профили") + "\n\nПрофилей пока нет"
     return ui.head("👥 Профили", meta=[str(n), f"онлайн {online}"])
 
 
@@ -31,7 +34,8 @@ def _pause_of(client) -> str:
         return ""
     bal = int(client.pause_balance_days)
     if bal > cap:                      # счёт достался от прежнего вида подписки — потолок не его
-        return f"⏸️ Дней паузы: {bal}"
+        kind_ru = "годовой" if kind == "year" else "месячной"
+        return f"⏸️ Дней паузы: {bal} (максимум {kind_ru} подписки — {cap})"
     return f"⏸️ Дней паузы: {bal} из {cap}"
 
 
@@ -83,9 +87,10 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     client, devices = d["client"], d["devices"]
     from ..fmt import tg_link
     name = tg_link(client.name, client.tg_id, getattr(client, "tg_username", ""))
-    lines = [f"👤 {name} " + ("🟢 онлайн" if d["online"] else "🔴 офлайн"), ""]
-    if client.activation_status == ActivationStatus.PENDING:
-        lines.append("⏳ ждёт активации")
+    # ни разу не входил — «офлайн» вводил бы в заблуждение: ждёт активации
+    pending = client.activation_status == ActivationStatus.PENDING
+    state = "⏳ ждёт активации" if pending else "🟢 онлайн" if d["online"] else "🔴 офлайн"
+    lines = [f"👤 {name} {state}", ""]
     # ручная блокировка — «⛔»; истечение, пауза и исчерпанный трафик —
     # строкой состояния доступа (та же у клиента)
     manual = int(client.block_reason) & int(blocks.CLIENT_MANUAL)
@@ -133,8 +138,8 @@ def client_edit_text(client) -> str:
         start = timeutil.parse_iso(client.period_start) if client.period_start else None
         end = timeutil.parse_iso(client.period_end)
         # год — только не текущий: «15.09 → 15.10.27» (как в карточке «с 15.09»)
-        period = (f"Период {timeutil.fmt_date_ui(start)} → {timeutil.fmt_date_ui(end)}" if start
-                  else f"Период до {timeutil.fmt_date_ui(end)}")
+        period = (f"Период: {timeutil.fmt_date_ui(start)} → {timeutil.fmt_date_ui(end)}" if start
+                  else f"Период: до {timeutil.fmt_date_ui(end)}")
     else:
         period = "Период: бессрочно"
     devs = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
@@ -147,7 +152,7 @@ def client_name_prompt(client) -> str:
 
 
 def client_name_note(old: str, new: str) -> str:
-    return f"✅ Имя: {_e(old)} → {_e(new)}"
+    return f"✅ Имя профиля: {_e(old)} → {_e(new)}"
 
 
 def devs_limit_prompt(client, used: int) -> str:
@@ -166,7 +171,7 @@ def devs_limit_note(old: int, new: int, used: int) -> str:
     note = f"✅ Лимит устройств: {_limit_devices_str(old)} → {_limit_devices_str(new)}"
     if new and used > new:
         over = used - new
-        note += f" · ⚠️ занято {used} — новое не добавить, пока не удалишь {over}"
+        note += f" · ⚠️ занято {used} — на {over} больше лимита, новое не добавить"
     return note
 
 
@@ -192,8 +197,8 @@ def traffic_limit_note(old_b: int, new_b: int) -> str:
     return f"✅ Лимит трафика: {_f(old_b)} → {_f(new_b)}{tail}"
 
 
-NUMBER_BAD_LIMIT = "⚠️ Лимит — целое число, 0 — без лимита; попробуй ещё раз"
-NUMBER_BAD_TRAFFIC = "⚠️ Лимит — целое число ГБ, 0 — без лимита; попробуй ещё раз"
+NUMBER_BAD_LIMIT = "⚠️ Лимит — целое число (0 — без лимита), попробуй ещё раз"
+NUMBER_BAD_TRAFFIC = "⚠️ Лимит — целое число ГБ (0 — без лимита), попробуй ещё раз"
 NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 
@@ -203,17 +208,17 @@ def extend_text(client, cut_days: int = 0, bot_username: str = "", *, keep: bool
     задаётся в «✏️ Изменить»."""
     head = ui.head("⏱ Продление", value=profile_link(client, bot_username))
     if not client.period_end:
-        return head + "\nПодписка бессрочная — срок задаётся в «✏️ Изменить» → период"
+        return head + "\nПодписка бессрочная — срок задаётся в «✏️ Изменить» → «✏️ Период»"
     end = timeutil.parse_iso(client.period_end)
     if client.status != SubStatus.ACTIVE or timeutil.remaining_seconds(end) <= 0:
-        now = f"Сейчас: истекла {timeutil.fmt_date_ui(end)}"      # и по сроку: статус переключает такт
+        now = f"Продлю от сегодня — подписка истекла {timeutil.fmt_date_ui(end)}"      # и по сроку: статус переключает такт
     elif keep:
         now = f"Продлю от {timeutil.fmt_end_ui(end)} — остаток {timeutil.remaining_brief(end)} сохранится"
     else:
         now = f"Продлю от сегодня — остаток {timeutil.remaining_brief(end)} сгорит"
     lines = [head, now]
     if cut_days > 0:
-        lines.append(f"⚠️ Брал отсрочку на {cut_days} дн. — она вычтется из продления, поэтому коротких сроков нет")
+        lines.append(f"⚠️ Брал отсрочку на {cut_days} дн. — она вычтется из продления, поэтому сроки короче отсрочки недоступны")
     return "\n".join(lines)
 
 
@@ -271,7 +276,7 @@ def _period_point(dt) -> str:
 def period_changed_note(start, end) -> str:
     if end is None:
         return f"✅ Период: с {_period_point(start)}, бессрочно"
-    return f"✅ Период: {_period_point(start)} → {_period_point(end)}"
+    return f"✅ Период: с {_period_point(start)} до {_period_point(end)}"
 
 
 # ── блокировка ───────────────────────────────────────────────────────────────
@@ -287,7 +292,8 @@ def block_client_ask(client, bot_username: str = "", *, pause: bool = True) -> s
 
 
 def unblock_ask(name: str, *, profile: bool, owner: str = "") -> str:
-    """«🔓 Разблокировка профиля Ксюша» / «… устройства «X» (Ксюша)» и вопрос."""
+    """«🔓 Разблокировка профиля Ксюша» / «… устройства «X» ([Ксюша])» и вопрос;
+    owner — готовая разметка (ссылка на профиль владельца)."""
     if profile:
         head = ui.head(f"🔓 Разблокировка профиля {_e(name)}")
     else:

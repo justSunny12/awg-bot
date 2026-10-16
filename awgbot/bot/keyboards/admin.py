@@ -98,14 +98,21 @@ def reassign_addslot(device_id: int, client_id: int) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def client_state_icon(c, online_ids) -> str:
-    """Один значок по приоритету: ⛔ блок → ⏸️ пауза → ⏳ не активирован →
+    """Один значок по приоритету: ⛔ блок → ⏸️ пауза → ⛔ подписка истекла
+    (и тогда, когда такт истечения ещё не поставил бит: срок прошёл — доступа
+    нет, как в строке «💳 🔴 истекла» карточки) → ⏳ не активирован →
     🟢 онлайн → 🔴 офлайн."""
+    from awgbot.util import timeutil
     mask = int(c.block_reason)
     paused = int(_blocks.ClientBlock.PAUSED)
     if mask & ~paused:
         return "⛔"
     if mask & paused:
         return "⏸️"
+    end = getattr(c, "period_end", None)
+    if end and (str(getattr(c, "status", "")) == "expired"
+                or timeutil.remaining_seconds(timeutil.parse_iso(end)) <= 0):
+        return "⛔"
     if c.activation_status == ActivationStatus.PENDING:
         return "⏳"
     return "🟢" if c.id in online_ids else "🔴"
@@ -187,14 +194,19 @@ def _cancel_button(cancel_cb) -> tuple:
 
 
 def presets_kb(kind: str, ref: int, values, cancel_cb, notify=None) -> InlineKeyboardMarkup:
-    """Пресеты по три в ряд («∞» последним среди чисел), последним рядом —
-    «✏️ Другое» и отмена; одна раскладка у устройств и трафика. kind — из
-    PresetCB. notify — тумблер «уведомить клиента» первым рядом (правка
-    условий профиля админом); None — без него."""
-    rows = ui.grid([(_preset_label(kind, v), PresetCB(kind=kind, ref=ref, val=v)) for v in values], 3)
-    rows.append([("✏️ Другое", PresetCB(kind=kind, ref=ref, val=-1)), _cancel_button(cancel_cb)])
+    """Пресеты — та же раскладка, что у лимита устройства: числа по три в ряд,
+    затем «∞ Без лимита» и «✏️ Другое», выход последним рядом — «⬅️ Назад»
+    (под приглашением ввода, CancelCB, — «✖️ Отмена»). kind — из PresetCB.
+    notify — тумблер «уведомить клиента» первым рядом (правка условий профиля
+    админом); None — без него."""
+    rows = ui.grid([(_preset_label(kind, v), PresetCB(kind=kind, ref=ref, val=v)) for v in values if v], 3)
+    rows.append([("∞ Без лимита", PresetCB(kind=kind, ref=ref, val=0)) if 0 in values else None,
+                 ("✏️ Другое", PresetCB(kind=kind, ref=ref, val=-1))])
+    packed = cancel_cb if isinstance(cancel_cb, str) else cancel_cb.pack()
+    exit_btn = (_cancel_button(cancel_cb) if packed.startswith(CancelCB.__prefix__ + ":")
+                else ui.back(cancel_cb))
     head = notify_toggle(bool(notify), ClientCB(action=f"ntf_{kind}", client_id=ref)) if notify is not None else None
-    return ui.rows(head, *rows)
+    return ui.rows(head, *rows, exit_btn)
 
 
 def devs_limit_kb(client_id: int, notify: bool = True) -> InlineKeyboardMarkup:

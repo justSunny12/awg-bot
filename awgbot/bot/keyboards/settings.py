@@ -59,7 +59,7 @@ def private_dns_choices(migration_blocked: bool = False) -> InlineKeyboardMarkup
     возможен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")) if not migration_blocked else None,
-        [("⏳ С переездом", SetCB(sec="dns", act="do", key="later")),
+        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
          ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))],
         ui.back(SetCB(sec="srv", act="open")))
 
@@ -68,7 +68,7 @@ def private_dns_offer_kb() -> InlineKeyboardMarkup:
     """Инфобокс при старте: те же три решения, «Назад» не нужен."""
     return ui.rows(
         ("🚚 Переехать сейчас", SetCB(sec="dns", act="do", key="now")),
-        [("⏳ С переездом", SetCB(sec="dns", act="do", key="later")),
+        [("⏳ При переезде", SetCB(sec="dns", act="do", key="later")),
          ("☑️ Не нужно", SetCB(sec="dns", act="do", key="never"))])
 
 
@@ -76,7 +76,7 @@ def migration_prepare_confirm(want_port: int = 0) -> InlineKeyboardMarkup:
     return ui.rows(
         ("🚚 Поднять интерфейс", SetCB(sec="mig_prep", act="do", key="go", val=str(want_port or ""))),
         [("✏️ Свой порт", SetCB(sec="mig_prep", act="edit", key="port")),
-         ("✖️ Отмена", SetCB(sec="srv", act="open"))])
+         ("⬅️ Отмена", SetCB(sec="srv", act="open"))])
 
 
 def migration_generation_pending() -> InlineKeyboardMarkup:
@@ -136,7 +136,7 @@ def settings_subs() -> InlineKeyboardMarkup:
 
 
 _MIG_CONFIRM_LABEL = {"start": "🚚 Начать", "finish": "✅ Завершить",
-                      "cancel": "↩️ Отменить"}
+                      "cancel": "↩️ Да, отменить"}
 
 
 def migration_confirm(key: str) -> InlineKeyboardMarkup:

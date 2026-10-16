@@ -51,6 +51,14 @@ def keyboard(br, configured: bool) -> InlineKeyboardMarkup:
         back_button(br))
 
 
+def resume_prompt_kb(br) -> InlineKeyboardMarkup:
+    """Под приглашением адреса для кода: «↩️ Сам ящик» вместо ввода и «✖️ Отмена»."""
+    from awgbot.bot.callbacks import CancelCB
+    from awgbot.bot.keyboards.common import BTN_CANCEL
+    return ui.rows([("↩️ Сам ящик", br.cb.pack(ID, "do", "resume_self")),
+                    (BTN_CANCEL, CancelCB(kind=f"set_{ID}", ref=0))])
+
+
 def offer_kb(br, back_sec: str) -> InlineKeyboardMarkup:
     """«Почта не настроена» — вопрос: «⬅️ Отмена» (назад в раздел) первой,
     «✉️ Подключить ящик» — та же подпись, что на экране e-mail."""
@@ -90,5 +98,32 @@ async def _forget(ctx):
     await _email(ctx, "forget!")
 
 
-ACTIONS = {"setup": _setup, "check": _check, "test": _test,
+async def _resume_self(ctx):
+    """«↩️ Сам ящик» под приглашением адреса: код снова идёт на сам ящик.
+    Нажатие вне этого ввода (старое приглашение) — всплывашка «устарело»."""
+    from awgbot.bot.states import SettingsInput
+    key = "email.resume_address"
+    data = await ctx.state.get_data() if ctx.state is not None else {}
+    if ctx.state is None or await ctx.state.get_state() != SettingsInput.value.state or data.get("key") != key:
+        await ctx.cb.answer(ui.Toast.stale, show_alert=True)
+        return None
+    await ctx.state.clear()
+    mailbox = await call(ctx.services.email_mailbox)
+    old = str(settings.get(key, "") or "") or mailbox
+    if old == mailbox:
+        note = texts.EMAIL_RESUME_ALREADY_SELF
+    else:
+        try:
+            await call(settings.set_value, key, "")
+        except settings.SettingsWriteError as e:
+            note = ui.fail("Не сохранено", str(e))
+        else:
+            note = texts.settings_changed(key, old, mailbox)
+    # приглашение снова станет экраном раздела: из служебных долой
+    await call(ctx.services.db.remove_content_msg_id, ctx.cb.message.chat.id, ctx.cb.message.message_id)
+    await ctx.cb.answer()
+    return note
+
+
+ACTIONS = {"setup": _setup, "check": _check, "test": _test, "resume_self": _resume_self,
            "forget": Confirm(question=_forget_question, label="🗑 Отключить", run=_forget)}

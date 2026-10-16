@@ -50,6 +50,11 @@ async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
     data = await state.get_data()
     extend = bool(data.get("extend"))
     clients = await _bc_clients(services, extend)
+    if not clients and not await _bc_clients(services):
+        # профилей нет вовсе — тумблерам и «Далее» выбирать не из чего
+        await state.clear()
+        await edit(cb, texts.BROADCAST_NO_PROFILES, kb.to_menu())
+        return
     selected = set(data.get("targets") or ())
     from awgbot.bot import paging
     await edit(cb, texts.broadcast_targets_text(len(selected), extend),

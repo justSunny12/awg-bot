@@ -15,32 +15,33 @@ BROADCAST_EMPTY = "⚠️ Пустое объявление — пришли т�
 
 def broadcast_targets_text(selected: int, extend: bool) -> str:
     """Экран адресатов: «📢 Объявление · отмечено 2» (ноль — без хвоста); с
-    продлением — кто получит и что значат ∞ и 🟡 у имён."""
+    продлением — кто получит и что значат ∞ и 🔴 у имён."""
     marked = [f"отмечено {selected}"] if selected else []
     if extend:
         return (ui.head("📢 Объявление с продлением", meta=marked) + "\n"
                 "Получат только владельцы профилей с подпиской\n"
-                "∞ — бессрочная, не продлится · 🟡 — истекла, продлится с сегодняшнего дня")
+                "∞ — бессрочная, не продлится · 🔴 — истекла, продлится с сегодняшнего дня")
     return (ui.head("📢 Объявление", meta=marked) + "\n"
             "Получат владельцы и те, с кем они делятся устройствами")
 
 
+BROADCAST_NO_PROFILES = ui.head("📢 Объявление") + "\n\nПрофилей пока нет"
 BROADCAST_NO_TARGETS = "Никого не отметил — выбери хотя бы один профиль"
 BROADCAST_ALL_UNLIMITED = ("Продлевать некого: у всех отмеченных подписка бессрочная. "
                            "Сними «✅ С продлением подписки» — уйдёт обычное объявление")
-BROADCAST_DAYS_BAD = "⚠️ Дней — число от 1 до 365, попробуй ещё раз"
+BROADCAST_DAYS_BAD = "⚠️ Число дней — от 1 до 365, попробуй ещё раз"
 BROADCAST_DAYS_OTHER = ui.head("✏️ Продление, дней", meta=["1–365"]) + "\n\nПришли число"
 
 
 def subscription_mark(c) -> str:
     """Хвост к имени профиля в выборе адресатов с продлением: « ∞» — бессрочная,
-    « 🟡 DD.MM» — истекла тогда-то; активной — ничего."""
+    « 🔴 DD.MM» — истекла тогда-то; активной — ничего."""
     end = c.effective_period_end
     if not end:
         return " ∞"
     dt = timeutil.parse_iso(end)
     if c.status == "expired" or dt <= timeutil.now():
-        return f" 🟡 {timeutil.fmt_date_ui(dt)}"
+        return f" 🔴 {timeutil.fmt_date_ui(dt)}"
     return ""
 
 
@@ -106,7 +107,7 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
             lines.append(f"• {profile_link(e.client, bot_username)}: ∞ — без продления")
             continue
         old, new = timeutil.fmt_date_ui(e.old_end), timeutil.fmt_date_ui(e.new_end)
-        lines.append(f"• {profile_link(e.client, bot_username)}: {'🟡 ' if e.from_now else ''}{old} → {new}")
+        lines.append(f"• {profile_link(e.client, bot_username)}: {'🔴 ' if e.from_now else ''}{old} → {new}")
     return "\n".join(lines)
 
 
@@ -136,7 +137,7 @@ def broadcast_prompt(clients: list, with_friends: bool = False, *,
                    value=_names(clients, bot_username))
     if extend_days is not None:
         head += f" · продление на {_days(extend_days)}"
-    return head + "\n" + _how_to(config.TG_TEXT_MAX - r, config.TG_CAPTION_MAX - r)
+    return head + "\n\n" + _how_to(config.TG_TEXT_MAX - r, config.TG_CAPTION_MAX - r)
 
 
 def broadcast_preview(text: str, n: int, clients: list = (),
@@ -201,11 +202,11 @@ def _undelivered_names(failed, clients: list, bot_username: str) -> str:
 def broadcast_report(clients: list, with_friends: bool, delivered: int,
                     failed, extension=None, bot_username: str = "") -> str:
     """Отчёт: только факт доставки. Само объявление остаётся в чате строкой
-    выше. «✅ Доставлено: профили [Ксюша], [Петя] и те, с кем они делятся
-    устройствами — 3 адресата · продлено на 7 дн.» ⏎ «⚠️ Не доставлено: [Петя] —
+    выше. «✅ Разослано: профили [Ксюша], [Петя] и те, с кем они делятся
+    устройствами — доставлено: 3 адресата · продлено на 7 дн.» ⏎ «⚠️ Не доставлено: [Петя] —
     бот заблокирован или аккаунт удалён». failed — tg_id недоставленных."""
     w = plural_ru(delivered, "адресат", "адресата", "адресатов")
-    line = f"✅ Доставлено: {_bc_audience(clients, with_friends, bot_username)} — {delivered} {w}"
+    line = f"✅ Разослано: {_bc_audience(clients, with_friends, bot_username)} — доставлено: {delivered} {w}"
     if extension is not None:
         days, plan = extension
         unl = [profile_link(e.client, bot_username) for e in plan if e.unlimited]

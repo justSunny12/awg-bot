@@ -41,24 +41,26 @@ PRIVATE_DNS_WHAT = (
     "поднимется новый интерфейс, каждое устройство получит вторую конфигурацию — пользователи "
     "применят её, когда им будет удобно; прежние конфигурации продолжат работать до завершения переезда")
 
-PRIVATE_DNS_BLOCKED_LINE = "🚚 Переехать сейчас нельзя: идёт переезд профилей"
+PRIVATE_DNS_BLOCKED_LINE = "🚚 Переехать сейчас нельзя: {reason}"
 
 
-def private_dns_offer(target: str, blocked: bool = False) -> str:
+def private_dns_offer(target: str, blocked: str = "") -> str:
     """Экран решения (и инфобокс при старте): что даёт и как перейти; blocked —
-    переезд сейчас невозможен (идёт другой), кнопки «сейчас» нет — и сказано
-    почему."""
+    почему переезд сейчас невозможен (migration_blocked_reason: идёт другой
+    или второй интерфейс уже поднят), кнопки «сейчас» нет — и сказано почему."""
     return (ui.head("🔒 Свой DNS-резолвер", "сейчас публичный") + "\n"
-            f"Свой — <code>{_e(target)}</code>: меньшие задержки, запросы не уходят третьим лицам, защита от "
+            f"Свой — <code>{_e(target)}</code>: РФ-доступ у всех, запросы не уходят третьим лицам, защита от "
             "обхода через DoH. Цена — переезд профилей"
-            + (f"\n{PRIVATE_DNS_BLOCKED_LINE}" if blocked else "")
+            + ("\n" + PRIVATE_DNS_BLOCKED_LINE.format(reason=_e(blocked)) if blocked else "")
             + details(PRIVATE_DNS_WHAT))
 
 
 # всплывашки решений: экран на месте — «🖥 Сервер AWG», где решение видно строкой DNS
 PRIVATE_DNS_LATER = "Записал: свой резолвер — со следующим переездом профилей"
 PRIVATE_DNS_DISMISSED = "DNS клиентов остаётся публичным — передумать можно кнопкой «🔒 Свой резолвер»"
-PRIVATE_DNS_BLOCKED_TOAST = "Переезд уже идёт — свой резолвер можно включить после его завершения или отмены"
+def private_dns_blocked_toast(reason: str) -> str:
+    """Всплывашка «🚚 Переехать сейчас» при закрытом переезде — с настоящей причиной."""
+    return ui.toast(f"Переехать сейчас нельзя: {reason}")
 
 
 def settings_server_text(d: dict) -> str:
@@ -81,7 +83,7 @@ def settings_server_text(d: dict) -> str:
     warns = []
     conf_port = d.get("port_conf")
     if conf_port and d.get("port") and int(conf_port) != int(d["port"]):
-        warns.append(f"⚠️ В конфиге бота порт {conf_port}, а интерфейс слушает {d['port']} — "
+        warns.append(f"⚠️ В конфиге бота порт {conf_port}, а интерфейс слушает {d['port']}: "
                      "ссылки идут с портом интерфейса, проверки смотрят в конфиг — поправь <code>app.yaml</code>")
     blocked = d.get("migration_blocked") or ""
     if blocked:

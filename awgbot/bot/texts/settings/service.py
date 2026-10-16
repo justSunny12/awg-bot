@@ -30,7 +30,7 @@ def settings_svc_text(br, state: str = "", progress=None, available: bool = Fals
         p = progress
         nums = (f" переехали {migration_counts(p)}"
                 if p is not None and getattr(p, "clients_total", 0) else "")
-        lines.append(f"🚚 Переезд идёт:{nums} · выдаются только новые конфиги")
+        lines.append(f"🚚 Переезд идёт:{nums} · выдаются только новые конфигурации")
     return "\n".join(lines)
 
 

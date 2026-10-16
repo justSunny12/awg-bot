@@ -178,14 +178,18 @@ def _limit_devices_str(limit: int) -> str:
 
 def device_state(dev, *, for_admin: bool = False) -> str:
     """Один значок состояния устройства, по приоритету: ⛔ заблокировано
-    (видимой для роли причиной) → ⏳ приглашение другу не принято → 🟢 онлайн
+    (видимой для роли причиной) → ⏸️ только пауза профиля (каскад PAUSED —
+    не блокировка) → ⏳ приглашение другу не принято → 🟢 онлайн
     → 🔴 офлайн (решение 15.10.2026: кружок онлайна — зелёный/красный, как
     везде; ⚪ не используется). Для строк списков и кнопок."""
     from awgbot.core import blocks
     if getattr(dev, "is_gateway", 0):
         return "🛰"
-    if blocks.blocked_marker_device(int(getattr(dev, "block_reason", 0)), for_admin=for_admin):
+    mask = int(getattr(dev, "block_reason", 0))
+    if blocks.blocked_marker_device(mask & ~int(blocks.DeviceBlock.PAUSED), for_admin=for_admin):
         return "⛔"
+    if blocks.blocked_marker_device(mask, for_admin=for_admin):
+        return "⏸️"
     friend = getattr(dev, "friend", None)
     if friend is not None and getattr(friend, "status", None) == "pending":
         return "⏳"

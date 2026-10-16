@@ -273,14 +273,14 @@ def _upd_waits(*vers, tag: str = "v1.3.0", need: str = "1.3.0"):
 
 def _upd_silent(services):
     """Цель v1.3.0 есть; выше v1.4.0 ждёт Pi5; Pi4 молчит с 10.09 на старом
-    агенте, слот 3 — ни разу не выходил на связь."""
+    агенте, шлюз 3 — ни разу не выходил на связь."""
     from awgbot.domain.selfupdate import UpdatePeer
     who = _upd_found(services)
     services.update_waiting = lambda: {"tag": "v1.4.0", "need": "1.4.0", "role": "client",
                                        "peers": _upd_peers("1.3.0")}
     services.update_silent_peers = lambda f: {"tag": "v1.3.0", "need": "1.3.0", "peers": [
         UpdatePeer(slot=2, name="Pi4", version="1.2.0", fresh=False, seen="2026-09-10T12:00:00+03:00"),
-        UpdatePeer(slot=3, name="слот 3", version="", fresh=False, seen="")]}
+        UpdatePeer(slot=3, name="шлюз 3", version="", fresh=False, seen="")]}
     return who
 
 

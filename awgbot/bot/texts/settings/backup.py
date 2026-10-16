@@ -38,7 +38,7 @@ def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
     перезапуска AWG (restore_warning), только если восстановление затронет
     интерфейсы."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = ui.prompt(f"♻️ Бэкап от {when}", "восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}. Изменения после этого момента пропадут"
+    text = f"♻️ Восстановить бэкап от {when}?" + f"\nВсё вернётся к тому моменту: {br.backup_contents}. Изменения после этого момента пропадут"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
 
 

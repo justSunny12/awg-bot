@@ -32,14 +32,14 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
         await call(services.set_private_dns_decision, "pending")
         blocked = await call(services.migration_blocked_reason)
         if blocked:
-            await cb.answer(texts.PRIVATE_DNS_BLOCKED_TOAST, show_alert=True)
+            await cb.answer(texts.private_dns_blocked_toast(blocked), show_alert=True)
             await _render(cb, "srv", services)
             return
         await state.clear()
         await _render(cb, "mig_prep", services)
         await cb.answer(texts.PRIVATE_DNS_LATER)
         return
-    # «⏳ С переездом» и «☑️ Не нужно» — не подтверждение: итог всплывашкой,
+    # «⏳ При переезде» и «☑️ Не нужно» — не подтверждение: итог всплывашкой,
     # на месте — «🖥 Сервер AWG», где решение видно строкой DNS
     if key == "later":
         await call(services.set_private_dns_decision, "pending")

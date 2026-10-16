@@ -25,13 +25,13 @@ def new_profile_traffic(name: str, devs: int) -> str:
 
 def new_profile_devs_other(name: str) -> str:
     """«✏️ Другое» на шаге устройств нового профиля."""
-    return ui.head(f"✏️ {_e(name)} — сколько устройств?") + "\n\nПришли число; 0 — без лимита"
+    return ui.head(f"✏️ {_e(name)}") + " — сколько устройств?\n\nПришли число; 0 — без лимита"
 
 
 def new_profile_traffic_other(name: str, devs: int) -> str:
     """«✏️ Другое» на шаге трафика нового профиля."""
     return (ui.head(f"✏️ {_e(name)}", meta=[_n_devices(devs) if devs else "∞ устройств"])
-            + " — трафик в месяц\n\nПришли число ГБ; 0 — без лимита")
+            + " — сколько трафика в месяц?\n\nПришли число ГБ; 0 — без лимита")
 
 
 def new_profile_period(name: str, devs: int, gb_limit: int) -> str:

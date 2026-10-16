@@ -76,6 +76,8 @@ def _traffic_world(*, enabled: bool = True, rf_total=None, outside: int = 0, gon
         if rx or tx:
             services.db.rf_add_bulk([(phone, rx, tx)])
         if gone:
+            # общий трафик месяца не меньше РФ-итога: телефон набрал ещё 4 ГБ
+            services.db.add_traffic_bulk([(phone, 2 * GB, 2 * GB)])
             dev = services.add_device(ks, "Ноут").device_id
             services.db.add_traffic_bulk([(dev, GB, GB)])
             services.db.rf_add_bulk([(dev, GB, GB)])

@@ -173,9 +173,10 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
 
 def device_limit_prompt(name: str, profile_limit_bytes: int, current_bytes: int | None = None) -> str:
     """«📊 Лимит трафика устройства «Телефон» · сейчас 10 ГБ · не больше 100 ГБ
-    профиля»; своего лимита нет — «сейчас как у профиля · не больше 100 ГБ»
-    (словами кнопки «∞ Как у профиля»), у профиля без лимита — «сейчас ∞»;
-    current_bytes=None — устройство ещё создаётся, текущего значения нет."""
+    профиля» (обе роли, канон «устройство «X»»); своего лимита нет — «сейчас как
+    у профиля · не больше 100 ГБ» (словами кнопки «∞ Как у профиля»), у профиля
+    без лимита — «сейчас ∞»; current_bytes=None — устройство ещё создаётся,
+    текущего значения нет."""
     head = f"{ui.head('📊 Лимит трафика')} устройства «{_e(name)}»"
     as_profile = current_bytes == 0 and bool(profile_limit_bytes)
     if current_bytes is not None:
@@ -186,12 +187,19 @@ def device_limit_prompt(name: str, profile_limit_bytes: int, current_bytes: int 
     return head
 
 
-def device_limit_other_prompt(profile_limit_bytes: int) -> str:
-    """Приглашение «✏️ Другое»: заголовок, пустая строка, подсказка."""
+def device_limit_other_prompt(profile_limit_bytes: int, name: str = "",
+                              current_bytes: int | None = None) -> str:
+    """Приглашение «✏️ Другое»: заголовок, пустая строка, подсказка. name и
+    current_bytes — у админа: «✏️ Лимит трафика устройства «Телефон» · сейчас ∞»."""
+    head = ui.head('✏️ Лимит трафика')
+    if name:
+        head += f" устройства «{_e(name)}»"
+    if current_bytes is not None:
+        head += f" · сейчас {gb_str(current_bytes) if current_bytes else '∞'}"
     if profile_limit_bytes:
-        return (f"{ui.head('✏️ Лимит трафика')} · не больше {gb(profile_limit_bytes)} ГБ (лимит профиля)\n\n"
+        return (f"{head} · не больше {gb(profile_limit_bytes)} ГБ (лимит профиля)\n\n"
                 "Пришли число ГБ; 0 — как у профиля")
-    return f"{ui.head('✏️ Лимит трафика')}\n\nПришли число ГБ; 0 — без лимита"
+    return f"{head}\n\nПришли число ГБ; 0 — без лимита"
 
 
 def device_limit_over(profile_limit_bytes: int) -> str:
@@ -204,8 +212,8 @@ NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 def limit_note(old_bytes: int, new_bytes: int, profile_limit_bytes: int = 0) -> str:
     """Итог правки лимита первой строкой карточки: «✅ Лимит трафика: ∞ → 50 ГБ»;
-    снят у профиля с лимитом — «✅ Лимит трафика: 50 ГБ → ∞ (не более 100 ГБ — лимит
-    профиля)»."""
+    снят у профиля с лимитом — «✅ Лимит трафика: 50 ГБ → ∞ (не более 100 ГБ —
+    лимит профиля)»."""
     def _f(b):
         return gb_str(b) if b else "∞"
     tail = (f" (не более {gb_str(profile_limit_bytes)} — лимит профиля)"

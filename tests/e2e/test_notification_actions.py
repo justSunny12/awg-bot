@@ -202,7 +202,7 @@ def test_expiring_and_expired_notes_link_the_profile_and_offer_extend(services, 
     dead = admin[("extend", gone.id)]
     assert dead.text == f"🔴 Профиль {_link(f'cl-{gone.id}', 'Истёк')}: подписка истекла — доступ приостановлен", dead.text
     client = [n for n in notes if n.tg_id == 5201]
-    assert len(client) == 1 and client[0].text.startswith("⏳ Подписка истекает через ")
+    assert len(client) == 1 and client[0].text.startswith("🟡 Подписка истекает через ")
     assert client[0].action == ("sub", 0)
     assert [n.action for n in notes if n.tg_id == 5202] == [("sub", 0)]
     assert [n for n in services.check_expiry() if n.tg_id in (ADMIN, 5201, 5202)] == [], "повтор на тот же порог"

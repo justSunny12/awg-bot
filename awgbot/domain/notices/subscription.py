@@ -21,7 +21,7 @@ def pause_credit_line(pc) -> str:
         return ("⏸️ Дни паузы за этот период не начислены: в прошлом периоде использована "
                 f"отсрочка. Доступно {_days(pc.after)}")
     if pc.reason == "cap":
-        return f"⏸️ Дни паузы не добавлены: у {_pause_kind_ru(pc.kind)} подписки их максимум {pc.cap}"
+        return f"⏸️ Дни паузы не добавлены: на счёте уже не меньше максимума {_pause_kind_ru(pc.kind)} подписки ({pc.cap})"
     full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
             else settings.get_int("pause.monthly_pause_days", 2))
     partial = pc.added < full

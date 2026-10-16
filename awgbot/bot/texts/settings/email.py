@@ -37,11 +37,16 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
 EMAIL_ASK_ADDRESS = (ui.head("✉️ Подключение ящика") + "\n\n"
                      "Пришли адрес ящика — с него бот будет читать и слать почту. "
                      "Например: <code>box@icloud.com</code>")
-EMAIL_ASK_IMAP = ("Домен незнакомый — укажи серверы сам\n"
-                  "Пришли IMAP-сервер и порт, например <code>imap.example.com:993</code>")
-EMAIL_ASK_SMTP = "Пришли SMTP-сервер и порт, например <code>smtp.example.com:587</code>"
-EMAIL_ASK_IMAP_PORT = "Пришли порт IMAP (SSL/TLS) — обычно 993"
-EMAIL_ASK_SMTP_PORT = "Пришли порт SMTP (STARTTLS) — обычно 587"
+def _wizard_head(step: str) -> str:
+    """Шапка шага мастера: «✉️ <b>Подключение ящика</b> · IMAP» и пустая строка."""
+    return ui.head("✉️ Подключение ящика", meta=[step]) + "\n\n"
+
+
+EMAIL_ASK_IMAP = (_wizard_head("IMAP")
+                  + "Домен незнакомый — пришли IMAP-сервер и порт, например <code>imap.example.com:993</code>")
+EMAIL_ASK_SMTP = _wizard_head("SMTP") + "Пришли SMTP-сервер и порт, например <code>smtp.example.com:587</code>"
+EMAIL_ASK_IMAP_PORT = _wizard_head("порт IMAP") + "Пришли порт IMAP (SSL/TLS) — обычно 993"
+EMAIL_ASK_SMTP_PORT = _wizard_head("порт SMTP") + "Пришли порт SMTP (STARTTLS) — обычно 587"
 EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида <code>box@example.com</code>"
 EMAIL_BAD_PORT = "⚠️ Порт — число от 1 до 65535, попробуй ещё раз"
 EMAIL_BAD_HOST = ("⚠️ Порт — число от 1 до 65535. Пришли сервер и порт, например "
@@ -71,7 +76,10 @@ def email_ask_resume_address(current: str) -> str:
     return (ui.head("✉️ Адрес для писем с кодом", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n\n"
             "Сюда клиент на паузе, оставшийся без доступа к Telegram, присылает письмо с кодом. "
             "Обычно это сам ящик или его алиас.\n"
-            "Пришли адрес; «-» — вернуть сам ящик")
+            "Пришли адрес или нажми «↩️ Сам ящик»")
+
+
+EMAIL_RESUME_ALREADY_SELF = "ℹ️ Код и так приходит на сам ящик"
 
 
 def email_provider_line(address: str, provider) -> str:
@@ -81,11 +89,15 @@ def email_provider_line(address: str, provider) -> str:
     return ""
 
 
-def email_ask_password(address: str) -> str:
+def email_ask_password(address: str, provider=None) -> str:
+    """Шаг пароля; provider — распознанный провайдер, его серверы строкой над
+    приглашением."""
     from awgbot.infra import mail
     hint = mail.PASSWORD_HINTS.get(mail.domain_of(address), "")
     tail = f"\n⚠️ {_e(hint)}" if hint else ""
-    return ("Пришли пароль ящика — сообщение с ним удалю сразу; вход по IMAP и SMTP "
+    known = email_provider_line(address, provider)
+    return (_wizard_head("пароль") + (f"{known}\n" if known else "")
+            + "Пришли пароль ящика — сообщение с ним удалю сразу; вход по IMAP и SMTP "
             "проверю до сохранения" + tail)
 
 
@@ -94,5 +106,5 @@ def email_saved(address: str, detail: str) -> str:
 
 
 def email_check_failed(detail: str) -> str:
-    return (f"🔴 Ящик не подключён — вход не прошёл: {_e(detail)}\n"
+    return (f"⚠️ Ящик не подключён — вход не прошёл ({_e(detail)})\n"
             "Ничего не сохранено — проверь пароль и подключи ещё раз")

@@ -7,6 +7,8 @@ from tests.screens.base import Shot
 from tests.screens.shots_admin_common import _email_on, _fw, _people, _raise, _restarts, _tag, _upd_found
 
 
+# кнопки «С/До» есть только при включённых тихих часах
+_QUIET_ON = {"quiet_hours.quiet_hours_enabled": True}
 _FW_ALLOW = {"allow": ["203.0.113.5", "198.51.100.0/24"], "raw_allow": ["203.0.113.5", "198.51.100.0/24"]}
 
 
@@ -40,6 +42,14 @@ def _backup_files(services):
     return who
 
 
+def _email_alias(services):
+    """Почта подключена, письма с кодом — на алиас, а не на сам ящик."""
+    from awgbot.core import settings
+    who = _email_on(services)
+    settings.set_value("email.resume_address", "codes@example.org")
+    return who
+
+
 SETTINGS = [
     # ── 1.6 настройки ───────────────────────────────────────────────────────
     Shot("adm.set.root", role="admin", press=[SetCB(sec="root")], data=_people, title="корень настроек"),
@@ -52,20 +62,20 @@ SETTINGS = [
          title="аварии на e-mail без ящика"),
     Shot("adm.set.notify.edit", role="admin",
          press=[SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start")], data=_people,
-         title="начало тихих часов: приглашение"),
+         conf=_QUIET_ON, title="начало тихих часов: приглашение"),
     Shot("adm.set.notify.edit.done", role="admin",
          press=[SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start")], text="22",
-         data=_people, title="начало тихих часов: итог"),
+         data=_people, conf=_QUIET_ON, title="начало тихих часов: итог"),
     Shot("adm.set.notify.edit.cancel", role="admin",
          press=[SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"),
-                CancelCB(kind="set_notify")], data=_people, title="ввод: «✖️ Отмена» — раздел"),
+                CancelCB(kind="set_notify")], data=_people, conf=_QUIET_ON, title="ввод: «✖️ Отмена» — раздел"),
     Shot("adm.set.ncl", role="admin", press=[SetCB(sec="ncl")], data=_people, title="события профилей"),
     Shot("adm.set.srv", role="admin", press=[SetCB(sec="srv")], data=_srv(), title="сервер AWG"),
     Shot("adm.set.srv.ip", role="admin", press=[SetCB(sec="srv")],
          data=_srv(host="203.0.113.10", dns="1.1.1.1, 8.8.8.8", kernel=""),
          title="сервер без домена, DNS публичный"),
     Shot("adm.set.srv.blocked", role="admin", press=[SetCB(sec="srv")],
-         data=_srv(migration_blocked="идёт переезд профилей", port=45871, port_conf=43125),
+         data=_srv(migration_blocked="переезд уже идёт", port=45871, port_conf=43125),
          title="сервер: порт расходится, переезд недоступен"),
     Shot("adm.set.srv.host", role="admin",
          press=[SetCB(sec="srv", act="edit", key="app.network.server_host")], data=_srv(),
@@ -81,9 +91,11 @@ SETTINGS = [
          data=_srv(), title="DNS: итог"),
     Shot("adm.set.dns", role="admin", press=[SetCB(sec="dns")], data=_srv(dns="1.1.1.1, 8.8.8.8"),
          title="свой DNS-резолвер"),
-    Shot("adm.set.dns.later", role="admin", press=[SetCB(sec="dns", act="do", key="later")], data=_srv(),
-         title="резолвер «⏳ С переездом» — всплывашка и «🖥 Сервер AWG»"),
-    Shot("adm.set.dns.never", role="admin", press=[SetCB(sec="dns", act="do", key="never")], data=_srv(),
+    Shot("adm.set.dns.later", role="admin", press=[SetCB(sec="dns", act="do", key="later")],
+         data=_srv(dns="1.1.1.1, 1.0.0.1"),
+         title="резолвер «⏳ При переезде» — всплывашка и «🖥 Сервер AWG»"),
+    Shot("adm.set.dns.never", role="admin", press=[SetCB(sec="dns", act="do", key="never")],
+         data=_srv(dns="1.1.1.1, 1.0.0.1"),
          title="резолвер «☑️ Не нужно» — всплывашка и «🖥 Сервер AWG»"),
     Shot("adm.set.dns.now", role="admin", press=[SetCB(sec="dns", act="do", key="now")], data=_people,
          title="резолвер — переехать сейчас"),
@@ -148,6 +160,15 @@ SETTINGS = [
     Shot("adm.set.email.resume_addr.done", role="admin",
          press=[SetCB(sec="email", act="edit", key="email.resume_address")], text="codes@example.org",
          data=_email_on, title="адрес для кода: итог"),
+    Shot("adm.set.email.resume_addr.self", role="admin",
+         press=[SetCB(sec="email", act="edit", key="email.resume_address"),
+                SetCB(sec="email", act="do", key="resume_self")],
+         data=_email_alias,
+         title="адрес для кода: кнопка «Сам ящик» — алиас снят"),
+    Shot("adm.set.email.resume_addr.self.same", role="admin",
+         press=[SetCB(sec="email", act="edit", key="email.resume_address"),
+                SetCB(sec="email", act="do", key="resume_self")],
+         data=_email_on, title="адрес для кода: «Сам ящик», когда код и так идёт на ящик"),
     Shot("adm.set.subs", role="admin", press=[SetCB(sec="subs")], data=_people, title="подписки"),
     Shot("adm.set.subs.edit", role="admin", press=[SetCB(sec="subs", act="edit", key="grace.grace_days")],
          data=_people, title="отсрочка: приглашение"),
@@ -244,12 +265,19 @@ def _fw_with(extra: dict | None = None, **over):
 _DNS_PUBLIC = {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1"}
 
 
-def _dns_blocked(services):
-    """Свой резолвер не решён, переезд сейчас невозможен (идёт другой)."""
-    who = _people(services)
-    services.private_dns_info = lambda: {**_DNS_PUBLIC, "decision": ""}
-    services.migration_blocked_reason = lambda: "идёт переезд"
-    return who
+def _dns_blocked_by(reason: str):
+    """Свой резолвер не решён, переезд сейчас невозможен: reason — ответ
+    migration_blocked_reason (идёт другой переезд или второй интерфейс уже
+    поднят, а переезд не начат)."""
+    def build(services):
+        who = _srv(dns="1.1.1.1, 1.0.0.1")(services)
+        services.private_dns_info = lambda: {**_DNS_PUBLIC, "decision": ""}
+        services.migration_blocked_reason = lambda: reason
+        return who
+    return build
+
+
+_dns_blocked = _dns_blocked_by("переезд уже идёт")
 
 
 def _mig_prepare(ok: bool):
@@ -293,8 +321,11 @@ SSH = [
     Shot("adm.set.fw.owner", role="admin", press=[SetCB(sec="fw")],
          data=_fw(owner="generator", owner_detail="managed by ansible", owner_files=["/etc/ssh/sshd_config"]),
          title="SSH-доступ: конфигом sshd владеет другой процесс"),
-    Shot("adm.set.fw.drift", role="admin", press=[SetCB(sec="fw")], data=_fw(listening=2222, drift=True),
+    Shot("adm.set.fw.drift", role="admin", press=[SetCB(sec="fw")],
+         data=_fw(enabled=True, present=True, listening=2222, drift=True, **_FW_ALLOW),
          title="SSH-доступ: sshd слушает не тот порт, что держит фильтр"),
+    Shot("adm.set.fw.drift.off", role="admin", press=[SetCB(sec="fw")], data=_fw(listening=2222, drift=True),
+         title="SSH-доступ: фильтр выключен, sshd слушает не тот порт, что в настройках"),
     Shot("adm.set.fw.firewalld", role="admin", press=[SetCB(sec="fw")], data=_fw(firewalld=True),
          title="SSH-доступ: firewalld активен"),
     Shot("adm.set.fw.port.busy.unknown", role="admin", steps=_PORT + [("text", "8443")],
@@ -314,6 +345,9 @@ SSH = [
          title="свой резолвер при невозможном переезде — без «Переехать сейчас», причина строкой"),
     Shot("adm.set.dns.now.blocked", role="admin", press=[SetCB(sec="dns", act="do", key="now")],
          data=_dns_blocked, title="«Переехать сейчас», когда идёт переезд — объяснение"),
+    Shot("adm.set.dns.prepared", role="admin", press=[SetCB(sec="dns")],
+         data=_dns_blocked_by("второй интерфейс уже поднят — начни переезд в «🔧 Сервис» или отмени его"),
+         title="свой резолвер: интерфейс поднят, переезд не начат — настоящая причина"),
     Shot("adm.set.mig_prep.go", role="admin", press=[SetCB(sec="mig_prep", act="do", key="go", val="443")],
          data=_mig_prepare(True), title="подготовка переезда: интерфейс поднят, перезапуск по кнопке"),
     Shot("adm.set.mig_prep.go.fail", role="admin", press=[SetCB(sec="mig_prep", act="do", key="go")],

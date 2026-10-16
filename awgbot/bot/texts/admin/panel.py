@@ -80,7 +80,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         value = online_value(int(st.get("online_profiles") or 0), n)
         counters.append(_counter(ONLINE_PAYLOAD, "📶 Онлайн", value, n))
     if expiring:
-        counters.append(_counter(EXPIRING_PAYLOAD, "⏳ Истекают", str(expiring), expiring))
+        counters.append(_counter(EXPIRING_PAYLOAD, "🟡 Истекают", str(expiring), expiring))
     if unassigned:
         counters.append(_counter(UNASSIGNED_PAYLOAD, "📦 Без профиля", str(unassigned), unassigned))
     if counters:
@@ -139,7 +139,9 @@ def migration_counts(p) -> str:
 
 
 def _mig_dot(done: int, total: int) -> str:
-    return "🟢" if total and done >= total else "🔴"
+    """🟢 переехал целиком, ⏳ ждёт, пока человек перенастроит устройства —
+    прежние конфигурации работают до завершения переезда."""
+    return "🟢" if total and done >= total else "⏳"
 
 
 def migration_overview_text(d: dict, bot_username: str = "") -> str:
@@ -181,5 +183,5 @@ def migration_client_text(client, rows, bot_username: str = "") -> str:
                 datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc))
         else:
             seen = "ещё не подключалось"
-        items.append(f"{'🟢' if moved else '🔴'} {_e(dev.name)} — {seen}")
+        items.append(f"{'🟢' if moved else '⏳'} {_e(dev.name)} — {seen}")
     return head + (_LIST_SEP + "\n".join(items) if items else "")

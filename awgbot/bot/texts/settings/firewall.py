@@ -6,6 +6,13 @@ from awgbot.bot import ui
 from ..fmt import _e, plural_ru, more
 
 
+def _more_tail(items, shown: int = 12) -> str:
+    """Однострочная сводка адресов: хвост обрезанного списка — «[+N]»."""
+    items = list(items)
+    out = more(items[:shown])
+    return out + (f" [+{len(items) - shown}]" if len(items) > shown else "")
+
+
 def address_list_line(n: int, enabled: bool = False) -> str:
     """Список адресов в инфобокс не выносится — он редактируется кнопками
     под ним; здесь только число и отсылка. enabled — фильтр уже включён:
@@ -41,7 +48,7 @@ def settings_firewall_text(st: dict) -> str:
     if st.get("enabled") and not allow:
         # фильтр без адресов: снаружи не войти никому — «только адреса из
         # списка» при пустом списке вводило бы в заблуждение
-        lines.append("🔴 Снаружи: фильтр включён, список пуст — снаружи SSH закрыт, вход только из туннеля")
+        lines.append("🔴 Снаружи: фильтр включён, список пуст — SSH закрыт, вход только из туннеля")
     elif st.get("enabled"):
         lines.append("🟢 Снаружи: фильтр включён — только адреса из списка")
     else:
@@ -50,15 +57,21 @@ def settings_firewall_text(st: dict) -> str:
     lines.append(address_list_line(len(allow), bool(st.get("enabled"))))
     warns: list[str] = []
     if st.get("unresolved"):
-        warns.append("⚠️ Не резолвятся: " + more(st["unresolved"]))
-    if st.get("drift"):
+        warns.append("⚠️ Не резолвятся: " + _more_tail(st["unresolved"]))
+    if st.get("drift") and st.get("enabled"):
         warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → {st['listening']} "
+                     f"или верни sshd на {st.get('ssh_port')}")
+    elif st.get("drift"):
+        # фильтр выключен — таблица ничего не держит, вход открыт; запрётся,
+        # только если включить фильтр с прежним портом
+        warns.append(f"⚠️ sshd слушает порт {st['listening']}, а в настройках бота — {st.get('ssh_port')}: "
+                     f"включённый фильтр закроет вход. Нажми «🅿️ Порт» → {st['listening']} "
                      f"или верни sshd на {st.get('ssh_port')}")
     elif st.get("sshd_down"):
         warns.append("🔴 sshd не запущен")
     if st.get("owner") == "generator" and st.get("owner_detail"):
-        warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+        warns.append(f"⚠️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("ufw"):
         warns.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>)")

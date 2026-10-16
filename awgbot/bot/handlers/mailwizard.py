@@ -76,8 +76,7 @@ def register(router, *, cancel_kb, done) -> dict:
             await state.update_data(imap_host=imap, imap_port=ip, smtp_host=smtp, smtp_port=sp)
             await state.set_state(EmailSetup.password)
             await ask_tracked(message, services,
-                              texts.email_provider_line(addr, provider) + "\n\n"
-                              + texts.email_ask_password(addr), reply_markup=cancel_kb())
+                              texts.email_ask_password(addr, provider), reply_markup=cancel_kb())
             return
         await state.set_state(EmailSetup.imap_host)
         await ask_tracked(message, services, texts.EMAIL_ASK_IMAP, reply_markup=cancel_kb())

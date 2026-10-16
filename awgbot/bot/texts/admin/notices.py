@@ -20,13 +20,14 @@ def _slots_phrase(count: int, limit: int) -> str:
 
 
 def reassign_donor_notice(name: str, count: int, limit: int) -> str:
-    return f"Устройство «{_e(name)}» удалено из твоего профиля администратором.\n" + _slots_phrase(count, limit)
+    return f"Администратор перенёс устройство «{_e(name)}» из твоего профиля в другой.\n" + _slots_phrase(count, limit)
 
 
 def reassign_recipient_notice(name: str, count: int, limit: int, *,
                               recipient_is_admin: bool = False) -> str:
-    tail = "" if recipient_is_admin else " администратором"
-    return f"Устройство «{_e(name)}» добавлено в твой профиль{tail}.\n" + _slots_phrase(count, limit)
+    head = (f"Устройство «{_e(name)}» добавлено в твой профиль." if recipient_is_admin
+            else f"Администратор добавил в твой профиль устройство «{_e(name)}».")
+    return head + "\n" + _slots_phrase(count, limit)
 
 
 def reassign_recipient_notice_with_slot(name: str, count: int, limit: int, *,

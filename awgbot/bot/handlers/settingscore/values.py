@@ -24,7 +24,15 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=sec)
     if key == "email.resume_address":
+        # магического «-» нет: «↩️ Сам ящик» — кнопка под приглашением
+        from awgbot.bot.sections import email as email_sec
+        from awgbot.bot.handlers.common import edit
         prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
+        await state.update_data(ctx_kind=f"set_{email_sec.ID}", ctx_ref=0)
+        await edit(cb, prompt, email_sec.resume_prompt_kb(hooks.br))
+        await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+        await cb.answer()
+        return True
     elif key == bonus.SETTING:
         prompt = texts.bonus_prompt(bonus.screen_text(bonus.current(settings)))
     elif key == "backup_when":
@@ -88,9 +96,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
     raw = (message.text or "").strip()
     if key == "email.resume_address":
         from awgbot.infra import mail
-        if raw == "-":                            # «вернуть сам ящик»
-            raw = ""
-        if raw and not mail.is_address(raw):
+        if not mail.is_address(raw):
             await ask_tracked(message, services, texts.EMAIL_BAD_ADDRESS)
             return
     elif key == "app.firewall.ssh_allow":

@@ -16,9 +16,9 @@ from .common import LIMIT_REACHED
 
 def my_devices_header(n: int, limit: int) -> str:
     """«📱 <b>Мои устройства</b> · 2, без лимита» / «· 2 из 5»; ни одного и без
-    лимита — заголовок и строка «Своих устройств пока нет»."""
+    лимита — заголовок и строка «Устройств пока нет»."""
     if not n and not limit:
-        return ui.head("📱 Мои устройства") + "\n\nСвоих устройств пока нет"
+        return ui.head("📱 Мои устройства") + "\n\nУстройств пока нет"
     tail = f" из {limit}" if limit else ", без лимита"
     return ui.head("📱 Мои устройства", meta=[f"{n}{tail}"])
 
@@ -99,7 +99,7 @@ def _owner_tail(client, bot_username: str = "") -> str:
 
 
 def reassign_ask(dev, client=None, bot_username: str = "") -> str:
-    return f"{ui.head(f'↪️ Перенос устройства «{_e(dev.name)}»')}{_owner_tail(client, bot_username)} — в какой профиль?"
+    return f"{ui.head(f'🔀 Перенос устройства «{_e(dev.name)}»')}{_owner_tail(client, bot_username)} — в какой профиль?"
 
 
 def reassign_slot_ask(client, bot_username: str = "", used: int | None = None) -> str:
