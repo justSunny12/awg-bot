@@ -58,10 +58,11 @@ async def offer_restore(message: Message, services, state) -> bool:
     return True
 
 
-async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dict) -> None:
+async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dict, source: str = "") -> None:
     """Вопрос с планом живым меню — одна дорога для файла из чата сервера и для
-    бэкапа, переданного из чата бота шлюза. Прежний вопрос — о другом файле:
-    финишер без кнопок, а не живая «♻️ Восстановить»."""
+    бэкапа, переданного из чата бота шлюза (source — строка источника над
+    планом). Прежний вопрос — о другом файле: финишер без кнопок, а не живая
+    «♻️ Восстановить»."""
     fp = _fingerprint(blob)
     prev = (await state.get_data()).get("restore_qmid")
     if prev:
@@ -72,23 +73,36 @@ async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dic
             pass
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
-    qmid = await send_menu_to(bot, services, chat_id,
-                              texts.restore_offer_plan(Plan.from_dict(info["plan"]),
-                                                       getattr(services, "bot_username", "") or ""),
+    text = texts.restore_offer_plan(Plan.from_dict(info["plan"]), getattr(services, "bot_username", "") or "")
+    qmid = await send_menu_to(bot, services, chat_id, (source + "\n\n" + text) if source else text,
                               _backup.restore_confirm_kb(roles.MAIN, fp))
     await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
                             restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid)
 
 
-async def relay_restore(bot, services, state, blob: bytes, name: str) -> str:
+async def relay_restore(bot, services, state, blob: bytes, name: str, slot_id: int = 0) -> str:
     """Бэкап сервера из чата бота шлюза (собран слушателем канала): осмотр и
-    вопрос в чате бота сервера — как у файла, присланного сюда. «» — вопрос
-    задан; иначе причина для чата бота шлюза (сюда при отказе не идёт ничего)."""
+    вопрос в чате бота сервера — как у файла, присланного сюда, с источником
+    над планом. «» — вопрос задан; иначе причина для чата бота шлюза (сюда при
+    отказе не идёт ничего)."""
     from awgbot.core import config
-    info = await call(services.inspect_backup, blob, name)
+    if getattr(services, "_restore_running", False):
+        return texts.RELAY_RESTORING                    # восстановление уже идёт — осматривать незачем
+    info = await call(services.inspect_backup, blob, name)   # расшифровка — в потоке, не в цикле событий
     if not info.get("ok"):
         return str(info.get("error") or "не удалось прочитать")
-    await ask_restore(bot, services, state, config.ADMIN_ID, blob, info)
+    gw = await call(services.db.gateway, slot_id) if slot_id else None
+    source = ""
+    if gw is not None:
+        from awgbot.domain.notices import backup as nb
+        source = texts.relay_source(nb.gw_ref(await call(services._gw_name, gw), gw.label or "", slot=gw.id,
+                                              bot_username=getattr(services, "bot_username", "") or ""))
+    try:
+        await ask_restore(bot, services, state, config.ADMIN_ID, blob, info, source)
+    except Exception as e:                             # noqa: BLE001 — Telegram, а не бэкап
+        import logging
+        logging.getLogger("awgbot.restore").warning("вопрос о восстановлении через шлюз не задан: %s", e)
+        return texts.relay_ask_failed(str(e))
     return ""
 
 

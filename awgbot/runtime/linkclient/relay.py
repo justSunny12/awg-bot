@@ -13,6 +13,7 @@ from .common import log
 
 DONE_TIMEOUT = 180            # с: сервер расшифровывает и строит план — секунды, запас на большой бэкап
 OFFLINE, NO_CAP, BROKEN = "offline", "no_cap", "broken"
+BROKEN_AFTER = "broken_after"   # все части ушли, ответа нет: сервер мог успеть задать вопрос
 
 
 class RelayMixin:
@@ -31,24 +32,30 @@ class RelayMixin:
         if relay.CAP not in caps:
             return {"ok": False, "why": NO_CAP, "error": ""}
         try:
-            parts = relay.split(blob, name)
+            parts = await asyncio.to_thread(relay.split, blob, name)   # base64 до 20 МБ — не в цикле событий
         except relay.RelayError as e:
             return {"ok": False, "why": "refused", "error": str(e)}
         tid = parts[0]["id"]
         fut = asyncio.get_running_loop().create_future()
         self._rst_futures()[tid] = fut
         try:
+            sent = 0
             for body in parts:
+                if fut.done():
+                    break                                 # сервер ответил раньше (отказ части) — дальше незачем
                 if not await self._send("rst_part", body, pad=gwlink.PAD_DELTA):
                     return {"ok": False, "why": BROKEN, "error": ""}
+                sent += 1
+            sent_all = sent == len(parts)
             try:
                 res = await asyncio.wait_for(asyncio.shield(fut), DONE_TIMEOUT)
             except asyncio.TimeoutError:
-                return {"ok": False, "why": BROKEN, "error": ""}
+                res = None
         finally:
             self._rst_futures().pop(tid, None)
         if res is None:
-            return {"ok": False, "why": BROKEN, "error": ""}
+            # всё ушло, а ответа нет: вопрос мог успеть прийти в чат бота сервера
+            return {"ok": False, "why": BROKEN_AFTER if sent_all else BROKEN, "error": ""}
         if res.get("ok"):
             return {"ok": True, "why": "", "error": ""}
         return {"ok": False, "why": "refused", "error": str(res.get("error") or "")[:400]}

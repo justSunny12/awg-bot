@@ -336,7 +336,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "relay_backup", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
+           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "relay_backup", "relay_reserve", "relay_release", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 
@@ -360,6 +360,24 @@ async def report_rekey_answer(services, accept: bool) -> dict | None:
         await _client.send_rekey_answer(reply)
     return reply
 
+
+
+_relay_busy = False                     # идёт передача бэкапа серверу: одна за раз
+
+
+def relay_reserve() -> bool:
+    """Занять передачу бэкапа (синхронно, до первого await вызывающего): занято —
+    False, второй файл ждёт итога первого."""
+    global _relay_busy
+    if _relay_busy:
+        return False
+    _relay_busy = True
+    return True
+
+
+def relay_release() -> None:
+    global _relay_busy
+    _relay_busy = False
 
 
 async def relay_backup(blob: bytes, name: str) -> dict:

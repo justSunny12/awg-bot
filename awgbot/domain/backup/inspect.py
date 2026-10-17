@@ -18,6 +18,8 @@ log = logging.getLogger("awgbot.backup")
 
 OPEN_REFUSAL = "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
 NOT_BACKUP = "не похоже на бэкап сервера AWG"
+RANDOM_KEY = ("это бэкап прежних версий (шлюза или сервера), зашифрованный случайным ключом, — восстановиться "
+              "из него не получится: настройки шлюзов теперь хранятся в бэкапе сервера AWG")
 TERMINAL = "sudo awg-bot restore <файл>"
 TOO_BIG = f"бэкап больше 20 МБ — из чата бот его не скачает; восстанови в терминале сервера: {TERMINAL}"
 SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -68,6 +70,14 @@ class BackupInspectMixin:
         from awgbot.util import secrets_util
         if not blob.startswith(secrets_util.MAGIC):
             return {"ok": False, "error": OPEN_REFUSAL if recognize(filename, blob) else NOT_BACKUP}
+        from awgbot.util import secrets_util as _su
+        try:
+            if _su.inspect_mode(blob) == "random":
+                # случайным ключом шифровали только бэкапы прежних версий (шлюза и сервера):
+                # фраза к нему не подойдёт по построению — отказ словами до расшифровки
+                return {"ok": False, "error": RANDOM_KEY}
+        except ValueError:
+            return {"ok": False, "error": NOT_BACKUP}
         kw = self.backup_enc_kwargs()
         if kw is None:
             return {"ok": False, "error": ("бэкап шифрованный, а ключевая фраза здесь не задана — задай её в «🔐 Шифрование» "

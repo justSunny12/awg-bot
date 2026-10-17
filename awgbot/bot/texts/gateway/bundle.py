@@ -11,6 +11,7 @@ GW_OLD_BACKUP_REFUSED = ("⚠️ Бэкап шлюза не применён: н
                          "а новое устройство получает их по каналу конфигурации. Файл убран из чата — в нём ключи")
 # бэкап сервера AWG в чате шлюза — серверу по каналу (вторая точка входа восстановления)
 GW_RELAY_SENDING = "⏳ Передаю бэкап серверу AWG…"
+GW_RELAY_BUSY = "⏳ Уже передаю бэкап серверу AWG — этот файл убрал из чата; пришли его после итога, если он нужен"
 _TERMINAL = "<code>sudo awg-bot restore &lt;файл&gt;</code>"
 
 
@@ -29,6 +30,9 @@ def gw_relay_result(res: dict, server_bot: dict | None) -> str:
         return f"⚠️ Бэкап не принят сервером AWG: {reason}"
     if why == "broken":
         return f"⚠️ Не передал: связь с сервером AWG оборвалась — пришли файл снова (или в чат {bot})"
+    if why == "broken_after":
+        return (f"⚠️ Связь с сервером AWG оборвалась после передачи — проверь чат {bot}: вопрос о "
+                "восстановлении мог прийти туда; нет вопроса — пришли файл снова")
     if why == "no_cap":
         return (f"⚠️ Бэкап не передан: сервер AWG старше 3.4.0 и бэкапы через шлюз не принимает — пришли бэкап "
                 f"в чат {bot} или восстанови на сервере: {_TERMINAL}")
@@ -72,5 +76,5 @@ REASSERT_FAIL_HINT = "Причина — в «🩺 Здоровье»; повт�
 
 
 __all__ = [
-    "GW_OLD_BACKUP_REFUSED", "GW_RELAY_SENDING", "gw_relay_result", "host_rebooted", "gw_confirm_reassert",
+    "GW_OLD_BACKUP_REFUSED", "GW_RELAY_SENDING", "GW_RELAY_BUSY", "gw_relay_result", "host_rebooted", "gw_confirm_reassert",
     "GW_REISSUE_FILE_REFUSED", "gateway_op_result", "REASSERT_FAIL_HINT"]

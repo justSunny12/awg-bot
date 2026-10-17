@@ -203,7 +203,7 @@ async def main() -> None:
             from awgbot.bot.handlers.restore import relay_restore
             state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=config.ADMIN_ID,
                                                                   user_id=config.ADMIN_ID))
-            return await relay_restore(bot, services, state, blob, name)
+            return await relay_restore(bot, services, state, blob, name, slot_id)
         _linkserver.set_on_restore(_on_restore)
 
         async def _on_update(nxt) -> None:

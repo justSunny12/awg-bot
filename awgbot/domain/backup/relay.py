@@ -21,6 +21,7 @@ import secrets
 CAP = "restore1"                       # сервер принимает бэкап через шлюз
 MAX_BYTES = 20 * 1024 * 1024           # как у файла из чата сервера
 PART = 96 * 1024
+MIN_BYTES = 2048                       # короче настоящего бэкапа (подпись, соль, база) — отказ до осмотра
 MAX_PARTS = -(-MAX_BYTES // PART)
 _ID_RE = re.compile(r"[0-9a-f]{12}")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")

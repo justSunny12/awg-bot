@@ -183,7 +183,7 @@ async def test_a_file_not_like_a_backup_stays_in_the_chat(services):
 
 async def test_a_rejected_backup_is_removed_from_the_chat(services):
     services.backup_set_passphrase(PHRASE)
-    msg, _ = await _offer(services, "awg-bot-backup-main-20261001_120000.tgz.enc", b"AWGBK1-DUMMY-garbage")
+    msg, _ = await _offer(services, "awg-bot-backup-main-20261001_120000.tgz.enc", b"AWGBK1P-DUMMY-garbage")
     assert msg.deleted, "отвергнутый бэкап (в нём ключи) остался в чате"
     assert msg.sent[-1][1].startswith("⚠️ Файл не принят: не удалось расшифровать — ключевая фраза не подходит")
     assert "<code>sudo awg-bot restore &lt;файл&gt;</code>" in msg.sent[-1][1]

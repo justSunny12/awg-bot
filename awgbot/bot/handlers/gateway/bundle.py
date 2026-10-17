@@ -42,18 +42,19 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     import io
     buf = io.BytesIO()
     await message.bot.download(doc, destination=buf)
-    head = buf.getvalue()[:4096]
+    data = buf.getvalue()
+    head = data[:4096]
     if head.startswith(bundlecrypt.MAGIC) or (head.startswith(b"#!/bin/sh") and b"awg-gw-bundle" in head):
         # файл конфигурации шлюза под любым именем — что внутри, не важно
         await forget_secret(message)
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
-    kind = recognize(name, buf.getvalue())
+    kind = recognize(name, data)
     if kind == "gw":
         await _backup_refused(message)
         return
     if kind:                                           # бэкап сервера — серверу по каналу
-        await _relay(message, services, buf.getvalue(), name)
+        await _relay(message, services, data, name)
         return
     # прочий файл (в том числе архив выпуска awg-bot.tgz) — не наш: молча
 
@@ -70,17 +71,22 @@ async def _relay(message: Message, services, blob: bytes, name: str) -> None:
     «⏳ Передаю…». Сервер дальше — штатные рельсы (вопрос в чате бота сервера)."""
     from awgbot.core import config
     from awgbot.runtime import linkclient
-    if getattr(getattr(message, "from_user", None), "id", config.ADMIN_ID) != config.ADMIN_ID:
-        return                                         # только от админа
+    if getattr(getattr(message, "from_user", None), "id", None) != config.ADMIN_ID:
+        return                                         # только от админа: отправитель не известен — нет
     await forget_secret(message)
-    sent = await message.answer(texts.GW_RELAY_SENDING)
+    if not linkclient.relay_reserve():                 # одна передача за раз: второй файл ждёт итога первого
+        await message.answer(texts.GW_RELAY_BUSY)
+        return
     try:
-        res = await linkclient.relay_backup(blob, name)
-    except Exception as e:                             # noqa: BLE001
-        log.warning("gateway: бэкап серверу не передан: %s", e)
-        res = {"ok": False, "why": "broken", "error": ""}
+        sent = await message.answer(texts.GW_RELAY_SENDING)
+        try:
+            res = await linkclient.relay_backup(blob, name)
+        except Exception as e:                         # noqa: BLE001
+            log.warning("gateway: бэкап серверу не передан: %s", e)
+            res = {"ok": False, "why": "broken", "error": ""}
     finally:
-        blob = b""                                     # на шлюзе бэкап не задерживается
+        linkclient.relay_release()
+    # блоб — только в памяти этого вызова: на диск шлюза он не попадал и уйдёт вместе с ним
     text = texts.gw_relay_result(res, await call(services.link_server_bot))
     try:
         await sent.edit_text(text, reply_markup=None)
