@@ -13,13 +13,14 @@ from awgbot.util import timeutil as pkg          # подменяемое тес
 # ── даты и время ─────────────────────────────────────────────────────────────
 
 def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = False,
-              label: bool = True) -> str:
+              label: bool = True, year: bool = False) -> str:
     """Дата и время для экранов: «12.10 18:00 (UTC+5)». Год — двумя цифрами и
-    только когда он не текущий: «12.10.27 18:00 (UTC+5)». Секунды — только по
-    просьбе (правка периода админом) и только когда не :00. Метка пояса — этого
-    момента (label=False — без неё)."""
+    только когда он не текущий: «12.10.27 18:00 (UTC+5)»; year=True — всегда
+    (письма: лежат в ящике годами). Секунды — только по просьбе (правка периода
+    админом) и только когда не :00. Метка пояса — этого момента (label=False —
+    без неё)."""
     dt = dt.astimezone(pkg.TZ)
-    date = fmt_date_ui(dt, ref)
+    date = dt.strftime("%d.%m.%y") if year else fmt_date_ui(dt, ref)
     clock = dt.strftime("%H:%M") + (dt.strftime(":%S") if seconds and dt.second else "")
     return f"{date} {clock}" + (pkg.tz_tail(dt) if label else "")
 
@@ -37,12 +38,12 @@ def fmt_hour_ui(hour: int, *, label: bool = True) -> str:
     return f"{int(hour):02d}:00" + (pkg.tz_tail() if label else "")
 
 
-def fmt_refreshed(at: datetime, ref: Optional[datetime] = None) -> tuple[str, str]:
-    """Строка «обновлено 15.10 08:08:14 (UTC+5) 🔄» по частям: (подпись
-    «обновлено 15.10», время «08:08:14 (UTC+5)»). Дата — всегда: на следующий
-    день строка без неё врала бы; год — только не текущий."""
+def fmt_refreshed(at: datetime, ref: Optional[datetime] = None) -> str:
+    """Момент строки «обновлено 15.10 08:08:14 (UTC+5) 🔄»: «15.10 08:08:14
+    (UTC+5)» — дата, время с секундами, метка. Дата — всегда: на следующий день
+    строка без неё врала бы; год — только не текущий."""
     at = at.astimezone(pkg.TZ)
-    return f"обновлено {fmt_date_ui(at, ref)}", fmt_clock_ui(at, seconds=True)
+    return f"{fmt_date_ui(at, ref)} {fmt_clock_ui(at, seconds=True)}"
 
 
 def fmt_end_ui(dt: datetime, ref: Optional[datetime] = None) -> str:

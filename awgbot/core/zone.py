@@ -8,8 +8,10 @@ zone.py — часовой пояс бота: из ключа timezone в app.ya
 
 Порядок определения пояса хоста: переменная окружения TZ (без ведущего «:»;
 юнит её не ставит — её ставят тесты) → ссылка /etc/localtime (имя — хвост
-пути после «zoneinfo/») → /etc/timezone (Debian) → /etc/localtime обычным
-файлом (правила из файла, имени нет) → UTC.
+цели ссылки после «zoneinfo/», как у timedatectl; полный путь — запасом) →
+/etc/localtime обычным файлом (правила из файла; имя — из /etc/timezone, если
+правила те же, иначе без имени) → /etc/timezone (нет /etc/localtime) → UTC
+с признаком «пояс хоста не определён» (host_known=False).
 
 Нераспознанный ключ — не отказ старта: бот — единственный канал управления,
 лежащий бот хуже сдвинутых меток. Берётся пояс хоста, источник — conf_bad,
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import timezone, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Mapping, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -36,6 +38,7 @@ class Zone:
     source: str         # "conf" — из ключа, "host" — пояс хоста, "conf_bad" — ключ не распознан
     host_name: str      # имя пояса хоста ("" — без имени)
     bad_value: str      # нераспознанное значение ключа ("" — ключ распознан или его нет)
+    host_known: bool = True   # False — пояс хоста не определился, взят UTC
 
 
 def load(name: str) -> Optional[tzinfo]:
@@ -72,32 +75,49 @@ def host_zone(env: Optional[Mapping[str, str]] = None, localtime: str = LOCALTIM
     if tz is not None:
         return tz, name
     if os.path.islink(localtime):
-        name = _name_from_path(os.path.realpath(localtime)) or _name_from_path(os.readlink(localtime))
-        tz = load(name)
-        if tz is not None:
-            return tz, name
+        # сначала цель ссылки как она записана — так имя берёт timedatectl;
+        # полный путь — когда ссылка относительная или ведёт через синоним
+        for path in (os.readlink(localtime), os.path.realpath(localtime)):
+            name = _name_from_path(path)
+            tz = load(name)
+            if tz is not None:
+                return tz, name
     try:
         with open(timezone_file, encoding="utf-8") as f:
-            name = f.read().strip()
+            named = f.read().strip()
     except OSError:
-        name = ""
-    tz = load(name)
-    if tz is not None:
-        return tz, name
+        named = ""
     try:
         with open(localtime, "rb") as f:
-            return ZoneInfo.from_file(f), ""
+            rules = ZoneInfo.from_file(f)
     except (OSError, ValueError):
-        return timezone.utc, "UTC"
+        rules = None
+    if rules is not None:
+        # правила — из самого /etc/localtime; имя Debian — только если оно о том же
+        named_tz = load(named)
+        return (named_tz, named) if named_tz is not None and same_rules(named_tz, rules) else (rules, "")
+    tz = load(named)
+    if tz is not None:
+        return tz, named
+    return timezone.utc, "UTC"
+
+
+def same_rules(a: tzinfo, b: tzinfo, at: Optional[datetime] = None) -> bool:
+    """Один и тот же пояс по сути: смещения совпадают сейчас и через каждые три
+    месяца года вперёд (синонимы имён, копия файла пояса, летнее время)."""
+    at = at or datetime.now(timezone.utc)
+    moments = [at + timedelta(days=91 * k) for k in range(5)]
+    return all(m.astimezone(a).utcoffset() == m.astimezone(b).utcoffset() for m in moments)
 
 
 def resolve(conf_value: str, **host_kw) -> Zone:
     """Пояс бота: ключ timezone (пустая строка — ключа нет), иначе пояс хоста."""
     host_tz, host_name = host_zone(**host_kw)
+    known = host_tz is not timezone.utc            # запасной UTC — единственный timezone.utc
     conf_value = (conf_value or "").strip()
     if not conf_value:
-        return Zone(host_tz, host_name, "host", host_name, "")
+        return Zone(host_tz, host_name, "host", host_name, "", known)
     tz = load(conf_value)
     if tz is None:
-        return Zone(host_tz, host_name, "conf_bad", host_name, conf_value)
-    return Zone(tz, conf_value, "conf", host_name, "")
+        return Zone(host_tz, host_name, "conf_bad", host_name, conf_value, known)
+    return Zone(tz, conf_value, "conf", host_name, "", known)

@@ -65,9 +65,20 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     services.email_send_backup([])
     monkeypatch.setattr(cfg, "ROLE", "client")
     services.email_send_backup([])
-    stamp = timeutil.fmt_dt_ui(timeutil.now())
+    yy = timeutil.now().strftime("%d.%m.%y")
     assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("awg-bot-main: резервная копия ")
-    assert stamp.split()[0] in sent[0] and sent[0].endswith(" (UTC+5)"), "дата без текущего года, время с меткой"
+    assert f"копия {yy} " in sent[0] and sent[0].endswith(" (UTC+5)"), "год — всегда (письмо лежит годами), время с меткой"
+
+
+def test_test_and_alert_mail_bodies_show_the_display_zone(services, monkeypatch):
+    """Тело тестового и аварийного письма — время пояса показа с меткой и годом,
+    не ISO хранения «+03:00»."""
+    bodies = []
+    monkeypatch.setattr(mail, "send_mail", lambda acc, to, subject, body, **kw: bodies.append(body))
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    services.email_send_test()
+    services.email_send_alert("<b>линк</b> лежит")
+    assert all(b.endswith(" (UTC+5)") and "+03:00" not in b for b in bodies), bodies
 
 
 def test_failed_test_mail_is_recorded_as_the_last_check(services, monkeypatch):

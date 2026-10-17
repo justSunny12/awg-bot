@@ -20,12 +20,12 @@ def deep_link(bot_username: str, payload: str, label: str) -> str:
 def refreshed_link(bot_username: str, payload: str, at=None) -> str:
     """Последняя строка живого экрана обеих ролей: «<i>обновлено 15.10
     08:08:14 (UTC+5) 🔄</i>» — ссылкой (/start payload, перерисовать экран)
-    время с меткой и значком, «обновлено 15.10» — подписью (решение
-    16.10.2026). Дата и секунды — всегда: «только что» и время без даты верны
-    лишь в день получения; год — только не текущий. at — момент снимка (None —
-    сейчас); без имени бота — просто текст."""
-    lead, clock = timeutil.fmt_refreshed(at or timeutil.now())
-    return f"<i>{lead} {deep_link(bot_username, payload, clock + ' 🔄')}</i>"
+    дата и время с меткой и значком, «обновлено» — подписью. Дата и секунды —
+    всегда: «только что» и время без даты верны лишь в день получения; год —
+    только не текущий. at — момент снимка (None — сейчас); без имени бота —
+    просто текст."""
+    when = timeutil.fmt_refreshed(at or timeutil.now())
+    return f"<i>обновлено {deep_link(bot_username, payload, when + ' 🔄')}</i>"
 
 
 def profile_link(client, bot_username: str) -> str:

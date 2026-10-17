@@ -16,11 +16,12 @@ SHOTS = [*shots_admin.SHOTS, *shots_client.SHOTS, *shots_gateway.SHOTS]
 LABEL_EXCEPTIONS: dict[str, set[str]] = {**shots_admin.LABEL_EXCEPTIONS, **shots_client.LABEL_EXCEPTIONS,
                                          **shots_gateway.LABEL_EXCEPTIONS}
 
-# Снимки, где время без метки пояса законно (сторож tests/screens/timelabels):
-# текст, который пишет сам админ.
-TIME_LABEL_EXCEPTIONS: set[str] = {
-    "adm.bc.preview", "adm.bc.preview.one", "adm.bc.send", "adm.bc.send.holders", "adm.bc.send.one",
-    "adm.bc.send.undelivered",
+# Строки, где время без метки пояса законно (сторож tests/screens/timelabels),
+# — {id снимка: подстроки}: текст объявления, который пишет сам админ.
+_BC_TEXT = "В субботу с 02:00 до 03:00"
+TIME_LABEL_EXCEPTIONS: dict[str, set[str]] = {
+    sid: {_BC_TEXT} for sid in ("adm.bc.preview", "adm.bc.preview.one", "adm.bc.send", "adm.bc.send.holders",
+                                "adm.bc.send.one", "adm.bc.send.undelivered")
 }
 
 # Построители клавиатур, которых не рисует ни действие человека, ни событие, —

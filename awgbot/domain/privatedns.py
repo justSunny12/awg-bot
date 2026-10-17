@@ -172,7 +172,7 @@ class PrivateDnsMixin:
         if not alive and not said:
             self.db.set_state(_ALERT_KEY, "1")
             active = resolver.service_active()
-            hint = ("юнит dnsmasq не активен — <code>journalctl -u dnsmasq -e</code>"
+            hint = ("юнит dnsmasq не активен — <code>journalctl -u dnsmasq -o short-iso -e</code>"
                     if active is False else "юнит жив, но на адресе не отвечает — <code>awg-bot resolver status</code>")
             return [Notification(config.ADMIN_ID,
                                  f"🔴 <b>Резолвер клиентов не отвечает</b> ({shown}): у людей нет DNS. {hint}",

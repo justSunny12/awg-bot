@@ -236,11 +236,11 @@ restart_service() {
     run "systemctl enable --now ${DNSMASQ_SERVICE} >/dev/null 2>&1 || true"
     if ! run "systemctl restart ${DNSMASQ_SERVICE}"; then
         rollback_conf
-        die "dnsmasq не перезапустился — journalctl -u ${DNSMASQ_SERVICE} -e; прежний конфиг возвращён"
+        die "dnsmasq не перезапустился — journalctl -u ${DNSMASQ_SERVICE} -o short-iso -e; прежний конфиг возвращён"
     fi
     if [[ "$PLAN" -eq 0 ]] && ! systemctl is-active --quiet "$DNSMASQ_SERVICE"; then
         rollback_conf
-        die "dnsmasq не активен после запуска — journalctl -u ${DNSMASQ_SERVICE} -e; прежний конфиг возвращён"
+        die "dnsmasq не активен после запуска — journalctl -u ${DNSMASQ_SERVICE} -o short-iso -e; прежний конфиг возвращён"
     fi
     [[ -n "${PREV_CONF:-}" ]] && rm -f "$PREV_CONF"
     return 0

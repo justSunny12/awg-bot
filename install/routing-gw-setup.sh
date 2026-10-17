@@ -904,7 +904,7 @@ rollback() { if [ -f "$PREV" ]; then mv -f "$PREV" "$CONF"; else rm -f "$CONF"; 
 if [ $# -eq 0 ]; then
     [ -f "$CONF" ] || exit 0
     rm -f "$CONF"
-    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей SMB: journalctl -u dnsmasq -e" >&2; exit 1; }
+    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей SMB: journalctl -u dnsmasq -o short-iso -e" >&2; exit 1; }
     echo "записи SMB подсетей других шлюзов сняты"
     exit 0
 fi
@@ -2226,7 +2226,7 @@ LANEOF
     fi
     if [ "$_dn_changed" = "1" ] || ! systemctl is-active --quiet dnsmasq; then
         run "systemctl enable dnsmasq 2>/dev/null || true"
-        run "systemctl restart dnsmasq" || { lan_fail "dnsmasq не запустился: journalctl -u dnsmasq -e"; return 1; }
+        run "systemctl restart dnsmasq" || { lan_fail "dnsmasq не запустился: journalctl -u dnsmasq -o short-iso -e"; return 1; }
     else
         say "  dnsmasq: конфиги не изменились"
     fi

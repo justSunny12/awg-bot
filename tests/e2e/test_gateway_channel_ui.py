@@ -302,7 +302,7 @@ def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
     _, _, egress = channel_lines(ch, False)
     # момент снимка — абсолютным временем: сообщение само не перерисовывается
     import re
-    assert re.search(r"\(по снимку от \d\d\.\d\d \d\d:\d\d \(UTC\+5\)\)$", egress), egress
+    assert re.match(r"выход шлюза в интернет по снимку от \d\d\.\d\d \d\d:\d\d \(UTC\+5\): ", egress), egress
     ch["online"] = True
     _, _, egress = channel_lines(ch, False)
     assert "по снимку" not in egress, egress
@@ -374,7 +374,7 @@ async def test_a_cfg1_drift_off_the_channel_is_listed_by_section(services, cfg1,
     (К9): человек видит, что доедет, когда шлюз вернётся."""
     _cfg_snap(services, online=False, env="0" * 16, server="0" * 16)
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Конфигурация на шлюзе расходится с выданной (2 пункта, по снимку" in text, text
+    assert "⚠️ Конфигурация на шлюзе расходится с выданной — 2 пункта, по снимку от " in text, text
     assert "   • имя сервера\n   • настройки обвязки" in text, text
     assert "📤 Конфигурация" not in labels, "агент с документом не на связи выглядит агентом 3.2"
 

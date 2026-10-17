@@ -100,7 +100,7 @@ async def test_the_window_after_start_answers_with_the_wait(svc, fake_bot, monke
     await run
     assert calls == [] and svc.applied == []
     text, alert = cb.answers[0]
-    assert alert and text.startswith("⏳ Жду связи с сервером AWG после перезапуска — до ")
+    assert alert and text.startswith("⏳ До ") and text.endswith(" жду связи с сервером AWG после перезапуска")
 
 
 async def test_a_changed_target_in_the_live_menu_redraws_the_section(svc, fake_bot, monkeypatch):

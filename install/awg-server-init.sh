@@ -136,6 +136,6 @@ sysctl -q -w net.ipv4.ip_forward=1
 
 # автозагрузка: в host-режиме интерфейс поднимает awg-quick@, и его надо включить
 systemctl enable --now "awg-quick@$AWG_IF" >/dev/null 2>&1 \
-    || { awg-quick down "$AWG_IF" >/dev/null 2>&1 || true; rm -f "$CONF"; die "awg-quick@$AWG_IF не поднялся — конфиг убран, смотри journalctl -u awg-quick@$AWG_IF"; }
+    || { awg-quick down "$AWG_IF" >/dev/null 2>&1 || true; rm -f "$CONF"; die "awg-quick@$AWG_IF не поднялся — конфиг убран, смотри journalctl -u awg-quick@$AWG_IF -o short-iso"; }
 say "awg-quick@$AWG_IF включён и поднят"
 emit "$LISTEN_PORT" 1

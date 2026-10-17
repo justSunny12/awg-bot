@@ -37,6 +37,16 @@ def _section_roles():
 SECTION_ROLE = _section_roles()
 
 
+def _expected_labels(shot) -> set[str]:
+    """Метка, которую ждёт сторож: пояс снимка «другой пояс» (base.in_zone) или
+    пояс тестов — в момент часов снимка."""
+    from zoneinfo import ZoneInfo
+    from awgbot.core import config
+    from awgbot.util import timeutil
+    zone = getattr(shot.data, "zone", None)
+    return {timeutil.tz_label(catalog.NOW, tz=ZoneInfo(zone) if zone else config.TZ)}
+
+
 @pytest.mark.parametrize("name", FILES)
 async def test_screens_match_the_reference_file(name, request, tmp_path, frozen, fakes, monkeypatch):
     """Все снимки роли — через диспетчер; ни одно нажатие не ушло в обработчик
@@ -56,10 +66,10 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
         assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
         assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
-        bad += timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS)
-        if shot.id in catalog.TIME_LABEL_EXCEPTIONS:
-            assert timelabels.seen(rec), \
-                f"{shot.id}: исключение больше не нужно — убери из TIME_LABEL_EXCEPTIONS"
+        found, used = timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS, _expected_labels(shot))
+        bad += found
+        spare_t = catalog.TIME_LABEL_EXCEPTIONS.get(shot.id, set()) - used
+        assert not spare_t, f"{shot.id}: исключение больше не нужно — убери из TIME_LABEL_EXCEPTIONS: {spare_t}"
         spare = catalog.LABEL_EXCEPTIONS.get(shot.id, set()) - harness.long_labels(rec)
         assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
         circles |= harness.circle_actions_seen(rec)

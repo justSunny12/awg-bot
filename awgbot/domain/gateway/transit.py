@@ -151,7 +151,7 @@ class TransitMixin:
         # резолвер
         active = gwguard.dnsmasq_active()
         checks.append(GwCheck(gc.CHECK_RESOLVER, active, "" if active else
-                              ("dnsmasq не запущен: journalctl -u dnsmasq -e" if active is False
+                              ("dnsmasq не запущен: journalctl -u dnsmasq -o short-iso -e" if active is False
                                else "systemctl не ответил")))
         up = self._upstream_verdict() if active else None
         checks.append(GwCheck(gc.CHECK_UPSTREAM, up,

@@ -110,6 +110,7 @@ def in_zone(builder, name: str, **kw):
         n = len([p for p in inspect.signature(builder).parameters.values()
                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.VAR_POSITIONAL)])
         return builder(services, mp) if n >= 2 else builder(services)
+    build.zone = name                    # сторож меток ждёт смещение этого пояса
     return build
 
 

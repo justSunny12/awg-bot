@@ -197,7 +197,7 @@ class SubscriptionMixin:
                 out.append(DaysExtension(c))
                 continue
             old = timeutil.parse_iso(end_iso)
-            if c.status == SubStatus.EXPIRED or old <= now:
+            if c.status == SubStatus.EXPIRED or timeutil.elapsed(old, now) >= 0:
                 out.append(DaysExtension(c, old, now + delta, from_now=True))
             else:
                 out.append(DaysExtension(c, old, old + delta))

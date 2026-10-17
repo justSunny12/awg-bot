@@ -79,3 +79,11 @@ def test_zone_line_at_start(monkeypatch, caplog):
     rec = caplog.records[-1]
     assert rec.levelno == logging.WARNING and "'Europe/Moskva'" in rec.getMessage() \
         and "беру пояс хоста Asia/Yekaterinburg (UTC+5)" in rec.getMessage()
+
+
+def test_unknown_host_zone_is_a_warning(monkeypatch, caplog):
+    from awgbot.core import config
+    caplog.set_level(logging.INFO, logger="awgbot.main")
+    monkeypatch.setattr(config, "TZ_HOST_KNOWN", False)
+    common.log_zone()
+    assert any(r.levelno == logging.WARNING and "пояс хоста не определён" in r.getMessage() for r in caplog.records)

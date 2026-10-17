@@ -4,7 +4,7 @@
   • FATAL   — стоп-факторы (битая БД/нет записи в data-dir; отвергнутый токен
     проверяется в main через getMe, причём fatal только на 401 — сетевые сбои
     переживаемы). Бегут ДО создания бота; при провале поднимаем PreflightError
-    с человекочитаемым текстом в stderr — его видно в `journalctl -u awg-bot`,
+    с человекочитаемым текстом в stderr — его видно в `journalctl -u awg-bot -o short-iso`,
     потому что бот ещё не готов слать в чат.
   • WARNING — не блокируют старт (мало места, awg не отвечает, конфиг с
     дефолтами). Собираются в список и уходят админу ПЕРВЫМ сообщением после
@@ -123,7 +123,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
                 pass
             elif active == "failed" or st.get("Result", "success") not in ("success", ""):
                 warns.append("скрипт обвязки (awg-link-gw) не отработал, таблицы awg_gw_guard нет: "
-                             "шлюз открыт клиентам туннеля; смотри journalctl -u awg-link-gw -b")
+                             "шлюз открыт клиентам туннеля; смотри journalctl -u awg-link-gw -o short-iso -b")
             elif active == "inactive" or filestate in ("disabled", "masked"):
                 warns.append("обвязка не выставлена — автозапуск обвязки (awg-link-gw) не запущен, таблицы "
                              "awg_gw_guard нет: шлюз открыт клиентам туннеля; включи его "
@@ -191,7 +191,7 @@ def _resolver_warnings(services) -> list[str]:
         return []
     return [f"резолвер клиентов не отвечает на {', '.join(sorted(dead))} — у людей "
             "с приватным DNS в конфиге нет резолва; awg-bot resolver status, "
-            "journalctl -u dnsmasq -e"]
+            "journalctl -u dnsmasq -o short-iso -e"]
 
 
 def collect_warnings(services, server_ok: bool | None = None) -> list[str]:

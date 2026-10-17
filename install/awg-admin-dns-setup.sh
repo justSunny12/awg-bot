@@ -192,7 +192,7 @@ case "$MODE" in
             elif [[ -n "$prev" ]]; then
                 cp "$prev" "$CONF"; rm -f "$prev"; restart_unit || true
             fi
-            die "резолвер админа не поднялся — journalctl -u $ADMIN_UNIT -e"
+            die "резолвер админа не поднялся — journalctl -u $ADMIN_UNIT -o short-iso -e"
         fi
         [[ -n "$prev" ]] && rm -f "$prev"
         log "резолвер админа слушает $ADMIN_ADDR, остальное — к $ARG"
@@ -225,7 +225,7 @@ case "$MODE" in
             if [[ -n "$prev" ]]; then cp "$prev" "$RECORDS"; else rm -f "$RECORDS"; fi
             rm -f "$prev"
             restart_unit || true
-            die "резолвер админа не поднялся с новыми записями — прежние на месте; journalctl -u $ADMIN_UNIT -e"
+            die "резолвер админа не поднялся с новыми записями — прежние на месте; journalctl -u $ADMIN_UNIT -o short-iso -e"
         fi
         rm -f "$prev"
         log "записи резолвера админа обновлены"

@@ -59,7 +59,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     async def job_monthly(catchup: bool = False):
         ym = timeutil.now().strftime("%Y-%m")
         last = await asyncio.to_thread(db.get_state, "last_monthly_reset")
-        if last == ym:
+        if last and last >= ym:
+            # сделано — и когда записанный месяц новее «сейчас»: смена пояса на
+            # западный в первые часы 1-го числа вернула бы прошлый месяц, и сброс
+            # (с рассылкой клиентам) прошёл бы второй раз
             return
         if catchup and not pkg.planned_moment_passed(settings.get_int("app.scheduler.monthly_reset_day", 1),
                                                  settings.get_int("app.scheduler.monthly_reset_hour", 0)):

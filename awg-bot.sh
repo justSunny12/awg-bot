@@ -68,7 +68,10 @@
 #                          Ключ timezone в app.yaml комментируется: пояс бота —
 #                          пояс хоста (adopt_timezone); прежнее значение — в
 #                          метке $DATA_DIR/.tz-adopted, по ней первый старт бота
-#                          скажет админу, в каком поясе теперь время.
+#                          скажет админу, в каком поясе теперь время; прервётся
+#                          обновление — прежний app.yaml вернётся вместе с
+#                          прежним кодом. restore: ключ копии снимается снова,
+#                          если в текущем app.yaml его не было.
 #   uninstall              снять сервис (код, таблица учёта РФ-трафика и таблица
 #                          адресов в туннеле awg_lan_map — всегда; данные,
 #                          секреты, файервол и обвязка роли — по согласию: у шлюза
@@ -1163,7 +1166,7 @@ ensure_awg_generation() {
     log "ядро поколения $want не обслужит клиентов поколения $applied — поднимаю второй интерфейс $new_if ($new_prefix.0/24) под переезд профилей"
     AWG_IF="$new_if" SUBNET_PREFIX="$new_prefix" AWG_QUICK_DIR="$conf_dir" \
         bash "$INSTALL_DIR/install/awg-server-init.sh" >/dev/null \
-        || { warn "второй интерфейс не поднят — переезд пока невозможен; см. journalctl -u awg-quick@$new_if"; return 0; }
+        || { warn "второй интерфейс не поднят — переезд пока невозможен; см. journalctl -u awg-quick@$new_if -o short-iso"; return 0; }
     # Пул адресов начинается с .2: у созданного нами интерфейса .1 занимает сам
     # сервер, и двойник, выданный на .1, конфликтовал бы с ним.
     [[ "$(yaml_get "$app" ip_host_start)" == "1" ]] && yaml_set_soft "$app" ip_host_start 2
@@ -1185,6 +1188,7 @@ post_update_rescue() {  # ловушка второй половины обно�
     if [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]]; then
         warn "обновление прервалось (код $rc) — возвращаю прежнюю версию и поднимаю сервис"
         restore_prev_code "$AWG_UPDATE_PREV"; back=1
+        adopt_timezone_undo                # ключ снял этот прогон — прежний код получает его назад
     else
         warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
     fi
@@ -1203,6 +1207,7 @@ tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\n' + os.
 }
 update_done() {  # обновление доведено: прежние код и окружение больше не нужны
     [[ -n "${AWG_UPDATE_PREV:-}" ]] && rm -rf "$AWG_UPDATE_PREV"
+    [[ -n "${TZ_ADOPT_UNDO:-}" ]] && rm -f "$TZ_ADOPT_UNDO"
     venv_prune
 }
 
@@ -1227,7 +1232,7 @@ cmd_post_update() {
 
     if [[ "$wipe" -eq 1 ]]; then
         warn "удаляю данные и настройки по твоему запросу…"
-        rm -rf "$DATA_DIR"/*.db "$DATA_DIR"/*.db-* 2>/dev/null || true
+        rm -rf "$DATA_DIR"/*.db "$DATA_DIR"/*.db-* "$DATA_DIR/.tz-adopted" 2>/dev/null || true
         rm -f "$ENV_FILE" 2>/dev/null || true
         rm -rf "$CONF_DIR" 2>/dev/null || true
         warn "данные удалены — потребуется reconfigure перед стартом."
@@ -1405,7 +1410,11 @@ cmd_restore() {
             die "база из копии не легла в $DATA_DIR — восстановление прервано, сервис поднят на прежней базе; снимок ДО: $pre"
         fi
     done
-    # Настройки и env — только то, что отличается: не трогаем неизменившееся
+    # Настройки и env — только то, что отличается: не трогаем неизменившееся.
+    # Ключ timezone копии старше снятия ключа вернул бы пояс ключа молча: в
+    # текущем app.yaml его не было — после восстановления снимается снова.
+    local tz_had=0
+    grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
     if [[ -d "$src/conf" ]]; then
         mkdir -p "$CONF_DIR"
         local f
@@ -1414,6 +1423,7 @@ cmd_restore() {
             cmp -s "$f" "$CONF_DIR/$(basename "$f")" 2>/dev/null || cp -a "$f" "$CONF_DIR/"
         done
     fi
+    [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
     if [[ -f "$src/env" ]] && ! cmp -s "$src/env" "$ENV_FILE" 2>/dev/null; then
         cp -a "$src/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"
     fi
@@ -1498,7 +1508,7 @@ cmd_restore() {
             cp -a "$tmp"/awg-gw/lan/*-user.conf /etc/dnsmasq.d/ && chmod 644 /etc/dnsmasq.d/awg-gw-*-user.conf
             systemctl restart dnsmasq >/dev/null 2>&1 \
                 && ok "личные списки локальной сети восстановлены" \
-                || warn "личные списки восстановлены, но dnsmasq не перезапустился: journalctl -u dnsmasq -e"
+                || warn "личные списки восстановлены, но dnsmasq не перезапустился: journalctl -u dnsmasq -o short-iso -e"
         else
             mkdir -p /var/lib/awg-gw/restore
             cp -a "$tmp"/awg-gw/lan/*-user.conf /var/lib/awg-gw/restore/
@@ -1772,7 +1782,7 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
         systemctl is-active --quiet dnsmasq && return 0
         warn "dnsmasq не активен при живом конфиге резолвера — переписываю конфиг"
         bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr" \
-            || warn "резолвер не поднят — awg-bot resolver install $addr; journalctl -u dnsmasq -e"
+            || warn "резолвер не поднят — awg-bot resolver install $addr; journalctl -u dnsmasq -o short-iso -e"
         return 0
     fi
     dns1="$(yaml_get "$app" dns1)"
@@ -1789,21 +1799,34 @@ host_timezone() {  # имя пояса хоста: timedatectl, запасной
     printf '%s' "$tz"
 }
 
-adopt_timezone() {  # обновление: ключ timezone в app.yaml снимается — бот берёт пояс хоста
+adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml снимается, бот берёт пояс хоста
     # Ключ остался от прежнего шаблона («Europe/Moscow») или его записал
-    # установщик; снимается всегда. Комментируется, а не очищается: прежняя
-    # версия на пустом значении не стартовала бы (откат), а без ключа берёт
-    # свой пояс по умолчанию. Прежнее значение — в метку $DATA_DIR/.tz-adopted:
-    # первый старт бота скажет админу, в каком поясе теперь время, и снимет её.
+    # установщик; снимается всегда, только верхнего уровня. Комментируется, а не
+    # очищается: строка с прежним значением видна и возвращается одним движением.
+    # Обновление: прежнее значение — в метку $DATA_DIR/.tz-adopted (первый старт
+    # бота скажет админу, в каком поясе теперь время, и снимет её), прежний
+    # app.yaml — в TZ_ADOPT_UNDO: прервётся обновление — ловушка вернёт его вместе
+    # с прежним кодом. quiet (после восстановления копии) — без метки и без
+    # отката: пояс бота до восстановления и так был поясом хоста.
     local app="$CONF_DIR/app.yaml" old tz tmp
-    [[ -f "$app" ]] && grep -qE '^[[:space:]]*timezone:' "$app" || return 0
-    old="$(yaml_get "$app" timezone)"
+    [[ -f "$app" ]] && grep -qE '^timezone:' "$app" || return 0
+    old="$(yaml_get "$app" timezone)"; old="${old#\'}"; old="${old%\'}"
     tmp="$(mktemp)" || return 0
-    sed -E 's|^([[:space:]]*)timezone:|\1# timezone:|' "$app" > "$tmp" && cat "$tmp" > "$app"
+    if [[ "${1:-}" != "quiet" && -z "${TZ_ADOPT_UNDO:-}" ]]; then
+        TZ_ADOPT_UNDO="$(mktemp)" && cp -p "$app" "$TZ_ADOPT_UNDO" || TZ_ADOPT_UNDO=""
+    fi
+    sed -E 's|^timezone:|# timezone:|' "$app" > "$tmp" && cat "$tmp" > "$app"
     rm -f "$tmp"
-    mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"
+    [[ "${1:-}" == "quiet" ]] || { mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"; }
     tz="$(host_timezone)"
     log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
+}
+
+adopt_timezone_undo() {  # ловушка обновления: прежний app.yaml с ключом timezone — назад, метки нет
+    [[ -n "${TZ_ADOPT_UNDO:-}" && -f "$TZ_ADOPT_UNDO" ]] || return 0
+    cat "$TZ_ADOPT_UNDO" > "$CONF_DIR/app.yaml" && rm -f "$DATA_DIR/.tz-adopted"
+    rm -f "$TZ_ADOPT_UNDO"; TZ_ADOPT_UNDO=""
+    warn "ключ timezone в app.yaml возвращён — прежняя версия работает в своём поясе"
 }
 
 cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR] | admin status|plan|install|remove
@@ -1870,7 +1893,7 @@ cmd_gw_bundle() {
 
 cmd_status() {
     echo "Пути: код=$INSTALL_DIR conf=$CONF_DIR env=$ENV_FILE data=$DATA_DIR"
-    systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -n 12 || warn "юнит $SERVICE не найден"
+    systemctl status "$SERVICE" --no-pager -l -o short-iso 2>/dev/null | head -n 12 || warn "юнит $SERVICE не найден"
 }
 cmd_logs() { exec journalctl -u "$SERVICE" -n 200 -f -o short-iso; }   # время со смещением
 

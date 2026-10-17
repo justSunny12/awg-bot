@@ -26,7 +26,7 @@ def test_host_zone(monkeypatch):
     _zone(monkeypatch, "Asia/Yekaterinburg")
     assert zt.svc_zone_line(roles.MAIN) == (
         "Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: "
-        "<code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»")
+        "<code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»")
     assert ", пояс шлюза. " in zt.svc_zone_line(roles.GATEWAY)
     assert zt.svc_zone_warning(roles.MAIN) == ""
 

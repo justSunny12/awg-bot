@@ -61,7 +61,7 @@ RESTORE_BTN = "«🚑 Восстановить»"             # кнопка в�
 
 
 def _snap_at(ch: dict) -> str:
-    """«, по снимку от 15.09 12:00» — момент снимка абсолютным временем:
+    """«, по снимку от 15.09 12:00 (UTC+5)» — момент снимка абсолютным временем:
     сообщение само не перерисовывается, «12 мин назад» врало бы через час;
     возраст неизвестен — пусто."""
     age = ch.get("age")
@@ -104,7 +104,8 @@ def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
                          "изменения уходят по каналу конфигурации и применятся сами")
         else:
             items = "\n".join(f"   • {_e(gwcfg.human(s))}" for s in due)
-            warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{_snap_at(ch)}):\n{items}\n"
+            # без скобок вокруг: у момента снимка своя метка пояса в скобках
+            warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной — {n_items}{_snap_at(ch)}:\n{items}\n"
                          "└ изменения уйдут по каналу конфигурации, когда шлюз выйдет на связь")
     if "uplink" in (cfg.get("wait") or []):
         fp = f" · отпечаток <code>{_e(cfg['uplink_fp'])}</code>" if cfg.get("uplink_fp") else ""
@@ -177,9 +178,9 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         # «проверка шлюза» — его собственная проверка выхода через провайдера (egress_ok)
         gw_ok = ch.get("egress_gw")
         mark = {True: "работает", False: "не работает", None: "нет данных"}
-        egress = (f"выход шлюза в интернет: проверка с сервера — {mark[bool(server_ok)]}, "
-                  f"проверка шлюза — {mark[gw_ok if isinstance(gw_ok, bool) else None]}"
-                  + ("" if ch.get("online") or not _snap_at(ch) else f" ({_snap_at(ch)[2:]})"))
+        snap = "" if ch.get("online") else _snap_at(ch)[1:]      # « по снимку от … (UTC+5)»
+        egress = (f"выход шлюза в интернет{snap}: проверка с сервера — {mark[bool(server_ok)]}, "
+                  f"проверка шлюза — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
     skew = ch.get("clock_skew")
     if isinstance(skew, int) and abs(skew) >= 120:
         side = "спешат" if skew > 0 else "отстают"

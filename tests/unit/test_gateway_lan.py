@@ -395,7 +395,7 @@ def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
     # резолвер не отдаёт — 🔴 с подсказкой; dig не ответил — ⚪, а не «всё хорошо»
     _svc_on(monkeypatch, dig=())
     c = {c.name: c for c in svc.services_status()[1]}["SMB подсетей других шлюзов"]
-    assert c.ok is False and c.detail == "резолвер не отдаёт записи: journalctl -u dnsmasq -e", c.detail
+    assert c.ok is False and c.detail == "резолвер не отдаёт записи: journalctl -u dnsmasq -o short-iso -e", c.detail
     _svc_on(monkeypatch, dig=None)
     c = {c.name: c for c in svc.services_status()[1]}["SMB подсетей других шлюзов"]
     assert c.ok is None and c.detail == "не проверено: dig не ответил", c.detail

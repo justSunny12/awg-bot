@@ -195,7 +195,7 @@ class PeerServicesMixin:
             ok = None if got is None else bool(got)
             checks.append(GwCheck(gc.CHECK_SMB_PEERS, ok,
                                   f"{len(items)} SMB доступны" if ok else
-                                  ("резолвер не отдаёт записи: journalctl -u dnsmasq -e"
+                                  ("резолвер не отдаёт записи: journalctl -u dnsmasq -o short-iso -e"
                                    if ok is False else "не проверено: dig не ответил")))
         for c in checks:
             c.group = "svc"

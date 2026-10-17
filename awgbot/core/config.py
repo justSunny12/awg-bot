@@ -159,7 +159,7 @@ _app = _load_yaml("app")
 # Пояс хранения — отдельно и постоянный (util/timeutil: UTC+3).
 _zone = _zone_mod.resolve(str(_app.get("timezone") or ""))
 TZ, TZ_NAME, TZ_SOURCE = _zone.tz, _zone.name, _zone.source
-TZ_HOST_NAME, TZ_BAD_VALUE = _zone.host_name, _zone.bad_value
+TZ_HOST_NAME, TZ_BAD_VALUE, TZ_HOST_KNOWN = _zone.host_name, _zone.bad_value, _zone.host_known
 
 # ── Роль установки (docs/ROADMAP.md, п.7) ────────────────────────────────────
 # "client"  — обычный бот при awg-сервере (всё, что было всегда);

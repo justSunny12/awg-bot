@@ -114,7 +114,7 @@ PANEL = [
           title="«В меню»: снимок тика 2 мин назад, VPN-транзит, SMB, доступно обновление"),
     Shot("gw.panel.zone", role="gateway", press=(GwCB(action="panel"),),
          data=in_zone(_agent(tick=_TICK_LAN, update_tag="v1.2.4"), "Asia/Kolkata"),
-         title="агент в другом поясе (Asia/Kolkata): время снимка и списков — в поясе шлюза, «(UTC+5:30)»"),
+         title="агент в другом поясе (Asia/Kolkata): время снимка — в поясе шлюза, «(UTC+5:30)»"),
     _shot("gw.panel.refresh", press=[GwCB(action="refresh")], tick=_TICK_LAN,
           live=_status_lan(month_rx=0), title="прежняя кнопка «🔄 Обновить» из старого меню — живой замер поверх снимка тика"),
     _shot("gw.panel.refresh.link", start="refresh", tick=_TICK_LAN, live=_status_lan(month_rx=0),

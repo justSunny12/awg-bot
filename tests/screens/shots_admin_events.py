@@ -82,10 +82,6 @@ async def _ev_zone_adopted(services, bot, prev="Europe/Moscow"):
         await main._announce_zone(bot, d)
 
 
-async def _ev_zone_adopted_same(services, bot):
-    await _ev_zone_adopted(services, bot, prev="Asia/Yekaterinburg")
-
-
 def _restore_done(services):
     """awg-bot restore отработал и оставил маркер."""
     who = _people(services)
@@ -139,8 +135,6 @@ EVENTS = [
          data=_restore_done, title="восстановление из копии завершено"),
     Shot("adm.ev.zone_adopted", role="admin", call=("_announce_zone", _ev_zone_adopted), data=_people,
          title="первый старт после обновления: ключ пояса снят — время в поясе сервера, прежний был другим"),
-    Shot("adm.ev.zone_adopted.same", role="admin", call=("_announce_zone", _ev_zone_adopted_same), data=_people,
-         title="первый старт после обновления: ключ пояса снят, пояс тот же"),
     Shot("adm.ev.expired", role="admin", call=("check_expiry", _ev_expiry), data=_br_expired,
          title="подписка истекла — «⏱ Продлить» админу"),
     Shot("adm.ev.grace_offer", role="admin", call=("check_expiry", _ev_expiry), data=_ks_expiring,

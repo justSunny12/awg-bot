@@ -30,6 +30,9 @@ def test_month_traffic_accumulates_across_counter_resets(svc, monkeypatch):
     assert svc._account_traffic(20, 5) == (180, 30)        # счётчик обнулился: +20 / +5
     t[0] = dt.datetime(2026, 10, 1, 0, 5, tzinfo=timeutil.TZ)
     assert svc._account_traffic(30, 7) == (10, 2)          # новый месяц: только дельта
+    # пояс сменился на западный: «сейчас» снова сентябрь — октябрьский итог не обнуляется
+    t[0] = dt.datetime(2026, 9, 30, 23, 30, tzinfo=timeutil.TZ)
+    assert svc._account_traffic(40, 9) == (20, 4)
 
 
 def test_snapshot_roundtrip_keeps_checks_and_metrics(svc, monkeypatch):

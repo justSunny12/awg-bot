@@ -96,7 +96,7 @@ class MailMixin:
             raise mail.MailError("ящик не настроен")
         try:
             mail.send_mail(acc, acc.login, "awg-bot: тестовое письмо",
-                           f"Почтовый канал бота работает. {timeutil.now_iso()}")
+                           f"Почтовый канал бота работает. {timeutil.fmt_dt_ui(timeutil.now(), year=True)}")
         except mail.MailError as e:
             # отказ — тоже итог проверки: шапка раздела иначе осталась бы
             # «ещё не проверялось» сразу под только что показанным отказом
@@ -146,7 +146,7 @@ class MailMixin:
         for p in paths:
             with open(p, "rb") as f:
                 att.append((os.path.basename(p), f.read()))
-        stamp = timeutil.fmt_dt_ui(timeutil.now())          # «17.10 08:08 (UTC+5)», год — только не текущий
+        stamp = timeutil.fmt_dt_ui(timeutil.now(), year=True)   # «17.10.26 08:08 (UTC+5)»: письмо лежит годами
         tag = "gw" if config.ROLE == "gateway" else "main"
         mail.send_mail(acc, acc.login, f"awg-bot-{tag}: резервная копия {stamp}",
                        "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
@@ -165,6 +165,6 @@ class MailMixin:
         import re
         plain = re.sub(r"<[^>]+>", "", text)
         mail.send_mail(acc, acc.login, "awg-bot: критичный алерт (Telegram недоступен)",
-                       plain + f"\n\n{timeutil.now_iso()}")
+                       plain + f"\n\n{timeutil.fmt_dt_ui(timeutil.now(), year=True)}")
         self._email_mark_ok()
 

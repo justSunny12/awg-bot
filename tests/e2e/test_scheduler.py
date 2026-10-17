@@ -45,6 +45,23 @@ async def test_job_monthly_same_month_is_noop(services, fake_bot, make_active_cl
     assert services.db.get_device(dc.device_id).traffic_rx_month == 50   # не тронуто
 
 
+async def test_job_monthly_newer_recorded_month_is_noop(services, fake_bot, make_active_client):
+    """Пояс сменился на западный в первые часы 1-го числа: «сейчас» — ещё
+    прошлый месяц, а сброс этого уже был. Повторного сброса (и рассылки
+    клиентам) нет; то же у копии."""
+    client = make_active_client(tg_id=9005)
+    dc = services.add_device(client.id, "d")
+    services.db.set_state("last_monthly_reset", "2999-01")
+    services.db.set_state("last_backup", "2999-01")
+    services.db.add_traffic_bulk([(dc.device_id, 50, 50)])
+    jobs = _jobs(services, fake_bot)
+    await jobs["monthly"]()
+    await jobs["backup"]()
+    assert services.db.get_device(dc.device_id).traffic_rx_month == 50
+    assert services.db.get_state("last_monthly_reset") == "2999-01" and services.db.get_state("last_backup") == "2999-01"
+    assert not any(r[0] == "document" for r in fake_bot.records)
+
+
 async def test_job_monthly_catch_up_resets_after_downtime(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=9002)
     dc = services.add_device(client.id, "d")

@@ -39,7 +39,7 @@ async def install(cb: CallbackQuery, services, *, return_panel, tag: str = "", r
     кэша, если кнопка была в живом меню: показанное там уже неправда."""
     hold = await call(services.update_hold) if hasattr(services, "update_hold") else None
     if hold is not None:
-        await cb.answer(ui.toast(texts.update_hold_line(hold), html=True), show_alert=True)
+        await cb.answer(ui.toast(texts.update_hold_line(hold, toast=True), html=True), show_alert=True)
         return
     if hasattr(services, "update_check"):            # признак сбоя — этой проверки, не чужой
         nxt, failed = await call(services.update_check)

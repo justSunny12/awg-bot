@@ -147,18 +147,22 @@ __all__ = [
     "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST", "update_hold_line", "update_skipped_lines"]
 
 
-def update_hold_line(h: dict) -> str:
+def update_hold_line(h: dict, *, toast: bool = False) -> str:
     """Окно ожидания после старта (О9): раздел и всплывашка кнопки. Основной
     бот — каких шлюзов ждёт, агент — сервер AWG; «до» — предел окна, с меткой
-    пояса."""
+    пояса. toast — всплывашка: предел первым, длинные имена режет хвост (≤ 200)."""
     from awgbot.util import timeutil
     until = timeutil.fmt_clock_ui(h["until"])
     if h.get("role") == "gateway":
+        if toast:
+            return f"⏳ До {until} жду связи с сервером AWG после перезапуска"
         return f"⏳ Жду связи с сервером AWG после перезапуска — до {until}"
     names = list(h.get("waiting") or [])
     who = ", ".join(_e(n) for n in names[:_NAMES_SHOWN])
     if len(names) > _NAMES_SHOWN:
         who += f" и ещё {len(names) - _NAMES_SHOWN}"
+    if toast:
+        return f"⏳ До {until} жду связи со шлюзами после перезапуска: {who}"
     return f"⏳ Жду связи со шлюзами после перезапуска: {who} — до {until}"
 
 

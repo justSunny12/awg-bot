@@ -229,8 +229,8 @@ def test_clock_and_hour_labels():
 
 
 def test_refreshed_has_the_date_always_and_the_year_only_when_not_current():
-    assert t.fmt_refreshed(_dt(2026, 9, 27, 8, 8, 14), REF) == ("обновлено 27.09", "08:08:14 (UTC+5)")
-    assert t.fmt_refreshed(_dt(2025, 12, 31, 23, 0, 0), REF) == ("обновлено 31.12.25", "23:00:00 (UTC+5)")
+    assert t.fmt_refreshed(_dt(2026, 9, 27, 8, 8, 14), REF) == "27.09 08:08:14 (UTC+5)"
+    assert t.fmt_refreshed(_dt(2025, 12, 31, 23, 0, 0), REF) == "31.12.25 23:00:00 (UTC+5)"
 
 
 def test_refreshed_line_is_one_for_both_roles(monkeypatch):
@@ -239,7 +239,8 @@ def test_refreshed_line_is_one_for_both_roles(monkeypatch):
     monkeypatch.setattr(t, "now", lambda: REF)
     at = _dt(2026, 9, 26, 15, 43, 7)
     main_line = admin.refreshed_line("b", "refresh", at)
-    assert main_line == ('<i>обновлено 26.09 <a href="https://t.me/b?start=refresh">15:43:07 (UTC+5) 🔄</a></i>')
+    # дата — внутри ссылки, «обновлено» — подписью
+    assert main_line == ('<i>обновлено <a href="https://t.me/b?start=refresh">26.09 15:43:07 (UTC+5) 🔄</a></i>')
     assert gateway.refreshed_line(SimpleNamespace(ts=t.to_iso(at)), "b") == main_line
     assert gateway.refreshed_line(SimpleNamespace(ts=""), "") == "<i>обновлено 27.09 12:00:00 (UTC+5) 🔄</i>"
 
@@ -264,7 +265,7 @@ def test_two_moments_of_one_screen_over_dst_have_their_own_labels(monkeypatch):
     monkeypatch.setattr(t, "now", lambda: now)
     end = datetime(2026, 10, 26, 18, 0, tzinfo=berlin)
     assert t.fmt_end_ui(end) == "26.10 18:00 (UTC+1)"
-    assert t.fmt_refreshed(now)[1] == "12:00:00 (UTC+2)"
+    assert t.fmt_refreshed(now) == "24.10 12:00:00 (UTC+2)"
     assert t.remaining_seconds(end) == (2 * 24 + 6 + 1) * 3600
 
 
@@ -273,3 +274,14 @@ def test_handshake_without_the_full_year():
     ts = int((t.now() - timedelta(days=3)).timestamp())
     got = t.fmt_handshake(ts)
     assert got.endswith(" (UTC+5)") and len(got.split()[0]) == 5, got
+
+
+def test_hold_toast_puts_the_deadline_first():
+    """Всплывашка окна ожидания: «до …» первым — длинные имена режет хвост, а
+    не предел окна (≤ 200 знаков)."""
+    from awgbot.bot import texts, ui
+    hold = {"until": _dt(2026, 9, 27, 12, 15), "waiting": ["Шлюз-с-очень-длинным-именем-" + "x" * 60] * 3}
+    toast = ui.toast(texts.update_hold_line(hold, toast=True), html=True)
+    assert toast.startswith("⏳ До 12:15 (UTC+5) жду связи со шлюзами после перезапуска: ")
+    assert texts.update_hold_line({"until": _dt(2026, 9, 27, 12, 15), "role": "gateway"}) == \
+        "⏳ Жду связи с сервером AWG после перезапуска — до 12:15 (UTC+5)"

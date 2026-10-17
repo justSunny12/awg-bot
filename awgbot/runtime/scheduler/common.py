@@ -107,7 +107,7 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
     db = services.db
     ym = timeutil.now().strftime("%Y-%m")
     last = await asyncio.to_thread(db.get_state, "last_backup")
-    if last == ym:
+    if last and last >= ym:                      # сделано; новее «сейчас» — пояс сменился на западный
         return
     if catchup and not pkg.planned_moment_passed(settings.get_int("app.scheduler.backup_day", 1),
                                              settings.get_int("app.scheduler.backup_hour", 12)):
@@ -159,7 +159,7 @@ async def _backup_key_missing_notice(services, bot, db, ym: str, log_tag: str) -
     from awgbot.bot import roles
     from awgbot.domain.services import Notification
     log.warning("%s: копия %s не сделана — фраза шифрования не задана", log_tag, ym)
-    if await asyncio.to_thread(db.get_state, BACKUP_NO_KEY_NOTICED_KEY) == ym:
+    if (await asyncio.to_thread(db.get_state, BACKUP_NO_KEY_NOTICED_KEY) or "") >= ym:
         return
     br = roles.current()
     text = (f"⚠️ Плановый бэкап {br.host_gen} не сделан: фраза шифрования не задана, а {br.backup_keys}. "

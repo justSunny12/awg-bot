@@ -72,9 +72,39 @@ def test_localtime_plain_file_has_rules_but_no_name(tmp_path):
     assert datetime(2026, 7, 1, tzinfo=z.tz).utcoffset().total_seconds() == 5.5 * 3600
 
 
-def test_nothing_found_is_utc(tmp_path):
+def test_nothing_found_is_utc_and_flagged(tmp_path):
     z = zone.resolve("", **_paths(tmp_path))
-    assert (z.tz, z.name, z.source) == (timezone.utc, "UTC", "host")
+    assert (z.tz, z.name, z.source, z.host_known) == (timezone.utc, "UTC", "host", False)
+    assert zone.resolve("", **_paths(tmp_path, link="Etc/UTC")).host_known, "настоящий UTC хоста — известен"
+
+
+def test_link_name_as_written_like_timedatectl(tmp_path):
+    """Ссылка на синоним (Europe/Kiev → файл Europe/Kyiv): имя — как записано в
+    ссылке, как его показывает timedatectl, а не конец полного пути."""
+    db = tmp_path / "usr" / "share" / "zoneinfo" / "Europe"
+    db.mkdir(parents=True)
+    shutil.copy(_zoneinfo_file("Europe/Kyiv"), db / "Kyiv")
+    (db / "Kiev").symlink_to(db / "Kyiv")
+    kw = _paths(tmp_path)
+    Path(kw["localtime"]).symlink_to(db / "Kiev")
+    assert zone.host_zone(**{k: kw[k] for k in ("env", "localtime", "timezone_file")})[1] == "Europe/Kiev"
+
+
+def test_plain_localtime_takes_the_debian_name_only_for_the_same_rules(tmp_path):
+    kw = _paths(tmp_path, copy="Asia/Yekaterinburg", tz_file="Asia/Yekaterinburg")
+    assert zone.resolve("", **kw).name == "Asia/Yekaterinburg"
+    kw = _paths(tmp_path / "b", copy="Asia/Yekaterinburg", tz_file="Europe/Moscow")
+    z = zone.resolve("", **kw)
+    from datetime import datetime
+    assert z.name == "", "устаревшее имя Debian не берётся"
+    assert datetime(2026, 7, 1, tzinfo=z.tz).utcoffset().total_seconds() == 5 * 3600, "правила — из /etc/localtime"
+
+
+def test_same_rules():
+    assert zone.same_rules(ZoneInfo("Europe/Kiev"), ZoneInfo("Europe/Kyiv"))
+    assert zone.same_rules(ZoneInfo("Asia/Yekaterinburg"), ZoneInfo("Etc/GMT-5"))
+    assert not zone.same_rules(ZoneInfo("Europe/London"), ZoneInfo("Etc/UTC")), "летом +1"
+    assert not zone.same_rules(ZoneInfo("Europe/Moscow"), ZoneInfo("Asia/Yekaterinburg"))
 
 
 def test_unknown_key_falls_back_to_host_instead_of_failing(tmp_path):

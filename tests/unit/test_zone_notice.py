@@ -33,17 +33,26 @@ async def test_once_then_the_marker_is_gone(tmp_path, sent):
     await main._announce_zone(None, str(tmp_path))
     assert len(sent) == 1 and sent[0][0] == config.ADMIN_ID
     assert sent[0][1].startswith("🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5), "
-                                 "раньше — Europe/Moscow (UTC+3)\n")
+                                 "раньше был Europe/Moscow (UTC+3)\n")
     assert not sent[0][1].endswith("."), "уведомление — без точки в конце"
     assert not m.exists()
     await main._announce_zone(None, str(tmp_path))
     assert len(sent) == 1, "второй старт молчит"
 
 
-async def test_same_zone_no_previous_part(tmp_path, sent):
-    _marker(tmp_path, "Asia/Yekaterinburg")
+@pytest.mark.parametrize("prev", ["Asia/Yekaterinburg", "Etc/GMT-5"])
+async def test_zone_not_actually_changed_no_message(tmp_path, sent, prev):
+    """Ключ совпадал с поясом хоста — по имени или по правилам (синоним, тот
+    же сдвиг без переходов): говорить нечего, метка снимается молча."""
+    m = _marker(tmp_path, prev)
     await main._announce_zone(None, str(tmp_path))
-    assert "раньше" not in sent[0][1]
+    assert sent == [] and not m.exists()
+
+
+async def test_unknown_previous_value_no_previous_part(tmp_path, sent):
+    _marker(tmp_path, "Europe/Moskva")
+    await main._announce_zone(None, str(tmp_path))
+    assert len(sent) == 1 and "раньше" not in sent[0][1]
 
 
 async def test_not_delivered_the_marker_stays(tmp_path, monkeypatch):
@@ -72,3 +81,4 @@ def test_gateway_says_its_own_host():
     from awgbot.bot.texts.zone import zone_adopted
     text = zone_adopted(roles.GATEWAY, "Europe/Moscow")
     assert text.startswith("🕐 Время теперь показываю в поясе шлюза: ") and " на шлюзе и " in text
+    assert "«🔁 Перезапуск бота»" in text, "кнопка — как называется"

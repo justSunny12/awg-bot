@@ -8,7 +8,7 @@
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -26,7 +26,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -44,7 +44,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">07:00:00 (UTC) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 07:00:00 (UTC) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -63,7 +63,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -82,7 +82,7 @@
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -98,7 +98,7 @@
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=online">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -109,7 +109,7 @@
 
 Сейчас никто не подключён
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=online">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -1401,7 +1401,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -1527,7 +1527,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -2479,7 +2479,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [⬅️ Назад | set:root:open::]
 ~ (пустой ответ)
@@ -2520,7 +2520,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [⬅️ Назад | set:root:open::]
 
@@ -2599,7 +2599,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3224,7 +3224,7 @@ uci commit</pre>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3363,7 +3363,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3380,7 +3380,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3392,7 +3392,7 @@ Pi4 — 🟢 Резерв
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🚚 Начать переезд | set:mig:do:start:]
   [⬅️ Назад | set:root:open::]
@@ -3419,7 +3419,7 @@ Pi4 — 🟢 Резерв
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
 🚚 Переезд идёт: переехали 0 из 2 профилей · 0 из 2 устройств · выдаются только новые конфигурации
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [👥 Кто не переехал | set:mig:do:pending:]
   [✅ Завершить | set:mig:do:finish:] [↩️ Отменить | set:mig:do:cancel:]
@@ -3431,7 +3431,7 @@ Pi4 — 🟢 Резерв
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
 🚚 Переезд идёт: переехали 1 из 2 профилей · 1 из 2 устройств · выдаются только новые конфигурации
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [👥 Кто не переехал | set:mig:do:pending:]
   [✅ Завершить | set:mig:do:finish:] [↩️ Отменить | set:mig:do:cancel:]
@@ -3471,7 +3471,7 @@ Pi4 — 🟢 Резерв
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🚚 Начать переезд | set:mig:do:start:]
   [⚠️ Переехали до отмены: 1 | set:mig:do:orphans:]
@@ -3489,7 +3489,7 @@ Pi4 — 🟢 Резерв
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🚚 Начать переезд | set:mig:do:start:]
   [⬅️ Назад | set:root:open::]
@@ -3533,7 +3533,7 @@ Pi4 — 🟢 Резерв
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3550,7 +3550,7 @@ Pi4 — 🟢 Резерв
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=online">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [⬅️ В меню | m:main]
 
 ### adm.link.expiring — /start expiring
@@ -3681,7 +3681,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3732,7 +3732,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3769,7 +3769,7 @@ Pi4 — 🟢 Резерв
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -3965,7 +3965,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4006,7 +4006,7 @@ https://t.me/test_bot?start=CDUMMY000005
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4138,7 +4138,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4229,7 +4229,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4245,15 +4245,8 @@ IMAP и SMTP отвечают, вход выполнен
 ### adm.ev.zone_adopted — первый старт после обновления: ключ пояса снят — время в поясе сервера, прежний был другим
 > call _announce_zone
 + send #2
-🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5), раньше — Europe/Moscow (UTC+3)
-Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на сервере и «🔁 Перезапустить бота» в «⚙️ Настройки → 🔧 Сервис»
-  [Скрыть | hd]
-
-### adm.ev.zone_adopted.same — первый старт после обновления: ключ пояса снят, пояс тот же
-> call _announce_zone
-+ send #2
-🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5)
-Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на сервере и «🔁 Перезапустить бота» в «⚙️ Настройки → 🔧 Сервис»
+🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5), раньше был Europe/Moscow (UTC+3)
+Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на сервере и «🔁 Перезапуск бота» в «⚙️ Настройки → 🔧 Сервис»
   [Скрыть | hd]
 
 ### adm.ev.expired — подписка истекла — «⏱ Продлить» админу
@@ -4389,7 +4382,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4405,7 +4398,7 @@ IMAP и SMTP отвечают, вход выполнен
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4423,7 +4416,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4444,7 +4437,7 @@ IMAP и SMTP отвечают, вход выполнен
 <b><a href="https://t.me/test_bot?start=upd">⬆️ Доступна v1.3.0</a></b> — <a href="https://github.com/justSunny12/awg-bot/releases/tag/v1.3.0">список изменений</a>
 <a href="https://t.me/test_bot?start=migration">🚚 Переезд</a>: 1 из 2 профилей · 1 из 2 устройств
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4464,7 +4457,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюз <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4484,7 +4477,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 <b><a href="https://t.me/test_bot?start=upd">⬆️ v1.3.0</a></b> — сначала обнови шлюзы: <a href="https://t.me/test_bot?start=gw-1">Pi5</a> (v1.2.3), <a href="https://t.me/test_bot?start=gw-2">Pi4</a> (v1.2.0), <a href="https://t.me/test_bot?start=gw-3">NASPi</a> (v1.2.1) [+1]
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4502,7 +4495,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4521,7 +4514,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4537,7 +4530,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 🟢 <a href="https://t.me/test_bot?start=dev-3">Телефон</a> · <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> · <code>10.8.1.4</code>
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=online">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -4722,7 +4715,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -4796,7 +4789,7 @@ IMAP и SMTP отвечают, вход выполнен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5634,7 +5627,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 
 ### adm.upd.install.hold — «⬆️ Обновить» в окно ожидания после старта
 > press upd:install:v1.3.0
-~! ⏳ Жду связи со шлюзами после перезапуска: Pi5, Pi4 — до 12:15 (UTC+5)
+~! ⏳ До 12:15 (UTC+5) жду связи со шлюзами после перезапуска: Pi5, Pi4
 
 ### adm.set.upd.skipped — обновления: цель есть, v1.4.0 пропущен — метаданные не прочитаны
 > press set:upd:open::
@@ -5665,7 +5658,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [⬅️ Назад | set:root:open::]
 
@@ -5856,7 +5849,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5875,7 +5868,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5973,7 +5966,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -5999,7 +5992,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 0 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6016,7 +6009,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6034,7 +6027,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ · ⚠️ учёт трафика РФ-доступа не идёт
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6052,7 +6045,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: 0 ГБ
 └ 🇷🇺 РФ-доступ: 1 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6142,7 +6135,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6499,7 +6492,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6531,7 +6524,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6564,7 +6557,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -6662,7 +6655,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7113,7 +7106,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 Записи SMB уйдут на шлюз, когда он выйдет на связь
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7136,7 +7129,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🗂 SMB: извне — 1 · 🟢 доступны
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7160,7 +7153,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ Шлюз не смог принять записи SMB: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1 — подробности в «🩺 Здоровье» бота шлюза
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7204,7 +7197,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ Шлюз не смог принять записи SMB — подробности в «🩺 Здоровье» бота шлюза
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7228,7 +7221,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 Записи SMB уйдут на шлюз, когда он выйдет на связь
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7252,7 +7245,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ Шлюз не смог принять записи SMB — подробности в «🩺 Здоровье» бота шлюза
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7276,7 +7269,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ Ошибка записи файла на шлюзе: нет места на диске
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7300,7 +7293,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ Ошибка записи файла на шлюзе: &lt;b&gt;&amp;&lt;/b&gt;
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7321,7 +7314,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 📋 Свои списки: пусто
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -7933,7 +7926,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7951,7 +7944,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7969,7 +7962,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -7987,7 +7980,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8005,7 +7998,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8023,7 +8016,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8329,7 +8322,7 @@ NASPi — 🟢 Активен
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8406,7 +8399,7 @@ NASPi — 🟢 Активен
 📋 Свои списки: пусто
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>через туннель сеть открывается по адресам в туннеле: 192.168.1.10 → 10.240.1.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 02.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 02.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [📡 Пинг | gws:ping:1:]
   [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [🛜 Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
@@ -8717,7 +8710,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 ⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
 🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
-<blockquote expandable>выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+<blockquote expandable>выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -8736,7 +8729,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 ⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
 🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">Новое имя</a>
-<blockquote expandable>выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+<blockquote expandable>выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -8754,7 +8747,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 ⚠️ Конфиг линка для шлюза не собран: исходный файл не прочитан: [Errno 2] No such file or directory: &#x27;/root/gw-awglink2.conf&#x27;
 ⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
 🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
-<blockquote expandable>выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+<blockquote expandable>выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -8773,7 +8766,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 ⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
 🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
 Бот шлюза: <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
-<blockquote expandable>выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+<blockquote expandable>выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
@@ -8845,7 +8838,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -8944,7 +8937,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
@@ -9062,7 +9055,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 🌐 <code>203.0.113.10</code>
 🔧 Канал конфигурации 🔴 нет связи с 15.09 12:00 (UTC+5) · v3.3.0
 ⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
-⚠️ Конфигурация на шлюзе расходится с выданной (2 пункта, по снимку от 04.09 12:00 (UTC+5)):
+⚠️ Конфигурация на шлюзе расходится с выданной — 2 пункта, по снимку от 04.09 12:00 (UTC+5):
    • имя сервера
    • настройки обвязки
 └ изменения уйдут по каналу конфигурации, когда шлюз выйдет на связь
@@ -9070,7 +9063,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 📋 Свои списки: пусто
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
 <blockquote expandable>через туннель сеть открывается по адресам в туннеле: 192.168.1.10 → 10.240.1.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — работает (по снимку от 04.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 04.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — работает</blockquote>
   [📡 Пинг | gws:ping:1:]
   [✅ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
   [🛜 Роутер | gws:router:1:] [✏️ Изменить | gws:edit:1:]
@@ -9296,7 +9289,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9307,7 +9300,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9346,7 +9339,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9389,7 +9382,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9402,7 +9395,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9415,7 +9408,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9496,7 +9489,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9507,7 +9500,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9556,7 +9549,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9583,7 +9576,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9597,7 +9590,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9611,7 +9604,7 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
@@ -9723,7 +9716,7 @@ Pi4 — 🟢 Резерв
 🗂 SMB: свои — 1, извне — 1 · 🟢 доступны · в туннеле ✅
 Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
 <blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет: проверка с сервера — работает, проверка шлюза — нет данных (по снимку от 15.09 12:00 (UTC+5))</blockquote>
+выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
   [▶️ Сделать активным | gws:switch_ask:2:]
   [📡 Пинг | gws:ping:2:]
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]

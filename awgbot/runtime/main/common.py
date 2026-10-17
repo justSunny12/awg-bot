@@ -55,6 +55,9 @@ def log_zone() -> None:
     from awgbot.core import config
     from awgbot.util import timeutil
     shown = config.TZ_NAME or "без имени"
+    if not getattr(config, "TZ_HOST_KNOWN", True):
+        log.warning("пояс хоста не определён (нет TZ, /etc/localtime, /etc/timezone) — беру UTC; "
+                    "задай пояс: timedatectl set-timezone <пояс>")
     if config.TZ_SOURCE == "conf_bad":
         log.warning("часовой пояс %r из app.yaml не распознан — беру пояс хоста %s (%s)",
                     config.TZ_BAD_VALUE, shown, timeutil.tz_label())

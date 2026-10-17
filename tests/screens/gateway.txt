@@ -9,7 +9,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -29,12 +29,12 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⬆️ v1.2.4 | gw:updates:] [⚙️ Настройки | gw:settings:]
 
-### gw.panel.zone — агент в другом поясе (Asia/Kolkata): время снимка и списков — в поясе шлюза, «(UTC+5:30)»
+### gw.panel.zone — агент в другом поясе (Asia/Kolkata): время снимка — в поясе шлюза, «(UTC+5:30)»
 > press gw:panel:
 ~ (пустой ответ)
 = edit #1
@@ -50,7 +50,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:28:00 (UTC+5:30) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:28:00 (UTC+5:30) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⬆️ v1.2.4 | gw:updates:] [⚙️ Настройки | gw:settings:]
@@ -70,7 +70,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -90,7 +90,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -110,7 +110,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -127,7 +127,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -144,7 +144,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -161,7 +161,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -178,7 +178,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -195,7 +195,7 @@
 📈 CPU 97% | 81 °C · RAM 88% · диск 91% · питание ⚠️ недонапряжение
 🩺 Здоровье 🔴 Проблемы: 6 — линк, фильтр шлюза, маршрут к Telegram, выход наружу
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:] [🚑 Восстановить | gw:reassert:]
   [⚙️ Настройки | gw:settings:]
 
@@ -214,7 +214,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье 🔴 Проблемы: 1 — модуль awg
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:] [🚑 Восстановить | gw:reassert:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -234,7 +234,7 @@
 🗂 SMB: обновляю…
 🩺 Здоровье 🔴 Проблемы: 1 — резолвер
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:] [🚑 Восстановить | gw:reassert:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -254,7 +254,7 @@
 🗂 SMB: свои — 1, извне — 2
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -274,7 +274,7 @@
 🗂 SMB: не найдены
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -294,7 +294,7 @@
 🗂 SMB: извне — 5
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -313,7 +313,7 @@
 📋 Списки: 1 234 домена, 56 подсетей · свои: 2 в туннель, 1 напрямую
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [🔀 VPN-транзит | gw:lan:]
   [⚙️ Настройки | gw:settings:]
@@ -330,7 +330,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -346,7 +346,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -363,7 +363,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -380,7 +380,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -397,7 +397,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⬆️ v1.2.4 | gw:updates:] [⚙️ Настройки | gw:settings:]
 
@@ -413,7 +413,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⬆️ v1.2.4 | gw:updates:] [⚙️ Настройки | gw:settings:]
 
@@ -428,7 +428,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -444,7 +444,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:59:20 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:59:20 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -460,7 +460,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -476,7 +476,7 @@
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -602,7 +602,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -622,7 +622,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -639,7 +639,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 ⏳ Ждут решения: почта, ключевая фраза бэкапов
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [⏳ Ответить (2) | gw:cfg_ask:]
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
@@ -684,7 +684,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -702,7 +702,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -720,7 +720,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -738,7 +738,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -756,7 +756,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -785,7 +785,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 ⏳ Ждут решения: ключи линка, конфиг аплинка, почта
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [⏳ Ответить (3) | gw:cfg_ask:]
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
@@ -859,7 +859,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -877,7 +877,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -893,7 +893,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -913,7 +913,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -933,7 +933,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -953,7 +953,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -973,7 +973,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -1001,7 +1001,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -1019,7 +1019,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -1037,7 +1037,7 @@ RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART О
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">11:58:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 11:58:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3059,7 +3059,7 @@ IMAP и SMTP отвечают, вход выполнен
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG переподнимает линк до сервера AWG; перезапуск бота на пользователей не влияет
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | gw:restart:] [🔁 Перезапуск бота | gw:botrestart:]
   [⬅️ Назад | gw:settings:]
 ~ (пустой ответ)
@@ -3069,7 +3069,7 @@ IMAP и SMTP отвечают, вход выполнен
 = edit #1
 🔧 <b>Сервис</b>
 Перезапуск AWG переподнимает линк до сервера AWG — РФ-доступ у всех прервётся на секунды; перезапуск бота на пользователей не влияет
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | gw:restart:] [🔁 Перезапуск бота | gw:botrestart:]
   [⬅️ Назад | gw:settings:]
 ~ (пустой ответ)
@@ -3098,7 +3098,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 🔧 <b>Сервис</b>
 Перезапуск AWG переподнимает линк до сервера AWG; перезапуск бота на пользователей не влияет
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | gw:restart:] [🔁 Перезапуск бота | gw:botrestart:]
   [⬅️ Назад | gw:settings:]
 
@@ -3110,7 +3110,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 🔧 <b>Сервис</b>
 Перезапуск AWG переподнимает линк до сервера AWG; перезапуск бота на пользователей не влияет
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапустить бота»</blockquote>
+<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс шлюза. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
   [🔁 Перезапуск AWG | gw:restart:] [🔁 Перезапуск бота | gw:botrestart:]
   [⬅️ Назад | gw:settings:]
 
@@ -3246,7 +3246,7 @@ IMAP и SMTP отвечают, вход выполнен
 
 ### gw.upd.install.hold — «⬆️ Обновить» в окно ожидания после старта
 > press upd:install:v1.2.4
-~! ⏳ Жду связи с сервером AWG после перезапуска — до 12:15 (UTC+5)
+~! ⏳ До 12:15 (UTC+5) жду связи с сервером AWG после перезапуска
 
 ### gw.upd.install.failed — отказ до апдейтера — итог и панель
 > press upd:install:v1.2.4
@@ -3268,7 +3268,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⬆️ v1.2.4 | gw:updates:] [⚙️ Настройки | gw:settings:]
 
@@ -3285,7 +3285,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3310,7 +3310,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3375,7 +3375,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3420,7 +3420,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3437,7 +3437,7 @@ IMAP и SMTP отвечают, вход выполнен
 📈 CPU 12% | 48 °C · RAM 41% · диск 23% · питание ОК
 🩺 Здоровье ✅ · 📊 3,5 ГБ (↑3 ↓0,5)
 
-<i>обновлено 15.09 <a href="https://t.me/test_bot?start=refresh">12:00:00 (UTC+5) 🔄</a></i>
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
@@ -3473,8 +3473,8 @@ IMAP и SMTP отвечают, вход выполнен
 ### gw.event.zone_adopted — первый старт после обновления: ключ пояса снят — время в поясе шлюза
 > call _announce_zone
 + send #2
-🕐 Время теперь показываю в поясе шлюза: Asia/Yekaterinburg (UTC+5), раньше — Europe/Moscow (UTC+3)
-Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на шлюзе и «🔁 Перезапустить бота» в «⚙️ Настройки → 🔧 Сервис»
+🕐 Время теперь показываю в поясе шлюза: Asia/Yekaterinburg (UTC+5), раньше был Europe/Moscow (UTC+3)
+Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на шлюзе и «🔁 Перезапуск бота» в «⚙️ Настройки → 🔧 Сервис»
   [Скрыть | hd]
 
 ### gw.hide — «Скрыть» убирает сообщение
