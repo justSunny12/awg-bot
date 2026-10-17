@@ -40,5 +40,5 @@ class BackupCryptoMixin:
     def backup_set_passphrase(self, phrase: str) -> None:
         phrase = (phrase or "").strip()
         if len(phrase) < MIN_PASSPHRASE_LEN:
-            raise ValueError(f"фраза короче {MIN_PASSPHRASE_LEN} символов")
+            raise ValueError(f"ключевая фраза короче {MIN_PASSPHRASE_LEN} символов")
         self.db.set_state(self._BK_PASSPHRASE_KEY, phrase)

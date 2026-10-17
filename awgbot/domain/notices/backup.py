@@ -28,6 +28,15 @@ def gw_ref(name: str, label: str = "", *, slot: int = 0, bot_username: str = "")
     return f"«{shown}»" + (f" ({_e(label)})" if label else "")
 
 
+def chat_ref(bot: dict | None, words: str = "бота шлюза") -> str:
+    """«бота шлюза» — ссылкой на чат бота ({'username', 'name'}); бот
+    неизвестен — текстом."""
+    user = str((bot or {}).get("username") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_]{3,64}", user):
+        return words
+    return f'<a href="https://t.me/{user}">{words}</a>'
+
+
 def plain(text: str) -> str:
     """Тот же текст для терминала: без тегов, с раскрытыми сущностями."""
     return html.unescape(re.sub(r"<[^>]+>", "", text))
@@ -72,7 +81,7 @@ def slot_backup_line(ref: str, state: str, seen_iso: str = "", keep_at: str = ""
 def missed_backup_notice(has_slots: bool) -> str:
     keys = "ключи линков шлюзов" if has_slots else "ключи устройств"
     return (f"⚠️ Плановый бэкап сервера AWG не сделан: ключевая фраза шифрования не задана, а в бэкапе "
-            f"{keys}. Задай фразу в «💾 Бэкапы» → «🔐 Шифрование»")
+            f"{keys}. Задай ключевую фразу в «💾 Бэкапы» → «🔐 Шифрование»")
 
 
 REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — бэкап сниму сразу после неё"
@@ -81,7 +90,7 @@ REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — бэ�
 def backup_refused_notice(reason: str) -> str:
     """Бэкап по расписанию или по событию: Telegram отверг сам файл — повтор
     того же впустую, человеку — что делать."""
-    return (f"⚠️ Бэкап сервера AWG не отправлен: {_e(reason)} — сделай вручную в «⚙️ Настройки → 💾 Бэкапы» "
+    return (f"⚠️ Бэкап сервера AWG не отправлен: {_e(reason)} — попробуй вручную в «⚙️ Настройки → 💾 Бэкапы» "
             "или забери из терминала: <code>sudo awg-bot backup</code>")
 
 
@@ -201,9 +210,9 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
                      "устройства и шлюзы подключатся со своими прежними конфигами")
     elif plan.line == "unreadable":
         kept = [_plan_ref(s, "") for s in plan.slots if s.case not in ("removed", "restored")]
-        text = "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из бэкапа."
+        text = "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из бэкапа"
         if kept:
-            text += f" Шлюзы — по файлам линков на сервере: {', '.join(kept)} останутся на текущих ключах"
+            text += f". Шлюзы — по файлам линков на сервере: {', '.join(kept)} останутся на текущих ключах"
             first = plan.slot(1)
             if plan.first_slot_back and first is not None:
                 text += (f"; {_plan_ref(first, '')} мог быть снят после бэкапа — тогда он вернётся, "
@@ -213,8 +222,8 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
         clients, devices = plan.replaced
         what = " и ".join(x for x in (f"профили ({clients})" if clients else "",
                                        f"устройства ({devices})" if devices else "") if x)
-        parts.append(f"⚠️ Бэкап снят на другом сервере: текущие {what} пропадут, вместо них встанут профили "
-                     "и устройства из бэкапа. Шлюзы этого сервера останутся как есть")
+        parts.append(f"⚠️ Бэкап снят на другом сервере: текущие {what} будут удалены и потеряют доступ, их место "
+                     "займут профили и устройства из бэкапа. Шлюзы этого сервера останутся как есть")
     if plan.line != "same" and plan.expired_now:
         parts.append(f"Подписки, истёкшие после бэкапа ({plan.expired_now}), сразу станут истёкшими — "
                      "доступа у них не будет ни минуты")
@@ -295,7 +304,7 @@ def gateway_back(ref: str) -> str:
     return f"🟢 {ref} на связи после восстановления"
 
 
-def gateway_not_back(ref: str, *, empty: bool, link_if: str = "") -> str:
+def gateway_not_back(ref: str, *, empty: bool, link_if: str = "", bot: dict | None = None) -> str:
     if empty:
         from awgbot.domain.services.gateway_link.peernets import bundle_file
         out = bundle_file(link_if)
@@ -304,4 +313,4 @@ def gateway_not_back(ref: str, *, empty: bool, link_if: str = "") -> str:
                 f"<code>sudo awg-bot gw-bundle --link {_e(link_if)}</code>, перенеси на шлюз и примени: "
                 f"<code>sudo sh {_e(out)}</code>")
     return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления — связь с ним не "
-            "менялась, загляни в «🩺 Здоровье» в чате бота шлюза")
+            f"менялась, загляни в «🩺 Здоровье» в чате {chat_ref(bot)}")

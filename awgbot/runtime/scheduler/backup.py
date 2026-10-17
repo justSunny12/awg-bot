@@ -145,7 +145,7 @@ BACKUP_NO_KEY_NOTICED_KEY = "backup_nokey_noticed"      # «год-месяц» 
 async def _backup_key_missing_notice(services, bot, db, ym: str, log_tag: str) -> None:
     from awgbot.bot.notifier import send_notifications
     from awgbot.domain.services import Notification
-    log.warning("%s: копия %s не сделана — фраза шифрования не задана", log_tag, ym)
+    log.warning("%s: копия %s не сделана — ключевая фраза не задана", log_tag, ym)
     if (await asyncio.to_thread(db.get_state, BACKUP_NO_KEY_NOTICED_KEY) or "") >= ym:
         return
     from awgbot.domain.notices import backup as nb

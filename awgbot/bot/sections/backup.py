@@ -54,7 +54,8 @@ def keyboard(br, encryption: bool = False) -> InlineKeyboardMarkup:
 
 
 def encryption_kb(br, has_secret: bool) -> InlineKeyboardMarkup:
-    return ui.rows(("✏️ Сменить фразу" if has_secret else "🔑 Задать фразу", br.cb.pack(ID, "do", "enc_set")),
+    return ui.rows(("✏️ Сменить ключевую фразу" if has_secret else "🔑 Задать ключевую фразу",
+                    br.cb.pack(ID, "do", "enc_set")),
                    back_button(br, ID))
 
 

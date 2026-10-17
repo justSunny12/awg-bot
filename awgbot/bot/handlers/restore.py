@@ -55,8 +55,14 @@ async def offer_restore(message: Message, services, state) -> bool:
         await message.answer(texts.restore_rejected(info.get("error", "не удалось прочитать")))
         return True
     fp = _fingerprint(blob)
-    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
-                            restore_plan=info["plan"], restore_fp=fp)
+    prev = (await state.get_data()).get("restore_qmid")
+    if prev:
+        # прежний вопрос — о другом файле: финишер без кнопок, а не живая «♻️ Восстановить»
+        try:
+            await message.bot.edit_message_text(texts.RESTORE_REPLACED, chat_id=message.chat.id,
+                                                message_id=int(prev), reply_markup=None)
+        except Exception:                              # noqa: BLE001 — сообщение удалено или старое
+            pass
     br = roles.MAIN
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
@@ -64,6 +70,9 @@ async def offer_restore(message: Message, services, state) -> bool:
     await send_menu(message, services, texts.restore_offer_plan(Plan.from_dict(info["plan"]),
                                                                 getattr(services, "bot_username", "") or ""),
                     _backup.restore_confirm_kb(br, fp))
+    qmid = await call(services.db.get_nav_message_id, message.chat.id)
+    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
+                            restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid)
     return True
 
 

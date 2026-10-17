@@ -18,8 +18,8 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram", br
     from awgbot.domain.notices import backup as nb
     on = s.get_bool("app.scheduler.backup_enabled", True)
     if not encryption:
-        return ui.head("💾 Бэкапы", meta=["🔓 фраза не задана"]) + "\n" + nb.no_phrase_line(has_slots)
-    lines = [ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"), meta=["🔐 фраза задана"])]
+        return ui.head("💾 Бэкапы", meta=["🔓 ключевая фраза не задана"]) + "\n" + nb.no_phrase_line(has_slots)
+    lines = [ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"), meta=["🔐 ключевая фраза задана"])]
     if on:
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
@@ -44,12 +44,13 @@ def restore_rejected(error: str) -> str:
 
 
 RESTORE_ALREADY = "♻️ Уже восстанавливаю — бот перезапустится и пришлёт отчёт"
+RESTORE_REPLACED = "⏹ Вопрос о восстановлении заменён: прислан новый файл бэкапа — вопрос о нём ниже"
 RESTORE_OTHER_FILE = "Эта кнопка — от прежнего файла: восстанавливай из последнего вопроса"
 
 
 def restore_failed(reason: str) -> str:
     """Восстановление из чата не прошло — ничего не изменилось."""
-    return f"⚠️ Бэкап не восстановлен: {_e(reason)}"
+    return f"⚠️ Восстановление из бэкапа не удалось: {_e(reason)}"
 
 
 RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа — бот перезапустится и через несколько секунд пришлёт отчёт"
@@ -70,25 +71,26 @@ def email_not_configured(sec: str = "notify") -> str:
 
 
 def backup_needs_encryption(br=None) -> str:
-    return "По почте уходят только шифрованные копии: в базе приватные ключи устройств. Задай фразу в «🔐 Шифрование»"
+    return ("По почте уходят только шифрованные копии: в базе приватные ключи устройств. Задай ключевую фразу "
+            "в «🔐 Шифрование»")
 
 
 def backup_encryption_text(mode: str, br) -> str:
     """Экран «Шифрование»: состояние и правила; «вне сервера» — роли."""
-    state = "🔐 фраза задана" if mode == "passphrase" else f"🔓 фраза не задана — бэкапы {br.host_gen} не делаются"
+    state = "🔐 ключевая фраза задана" if mode == "passphrase" else "🔓 ключевая фраза не задана — бэкапы не делаются"
     return (ui.head("🔐 Шифрование бэкапов", state) + "\n"
-            f"Фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
-            + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
-                      "Смена фразы не перешифровывает старые бэкапы: из чата бот расшифровывает только "
-                      "текущей фразой, а бэкап с прежней восстанавливают в терминале сервера — "
-                      "<code>sudo awg-bot restore &lt;файл&gt;</code> спросит её. Не выбрасывай прежнюю "
-                      "фразу, пока такие бэкапы нужны"))
+            f"Ключевую фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
+            + details("Бот принимает ключевую фразу сообщением, тут же удаляет и никогда не показывает обратно. "
+                      "Смена ключевой фразы не перешифровывает старые бэкапы: из чата бот расшифровывает только "
+                      "текущей фразой, а из бэкапа с прежней фразой можно восстановиться в терминале сервера — "
+                      "<code>sudo awg-bot restore &lt;файл&gt;</code>. Не теряй прежнюю фразу, пока такие "
+                      "бэкапы нужны"))
 
 
-BACKUP_ASK_PASSPHRASE = ui.prompt("🔐 Парольная фраза", "не короче 8 символов; сообщение удалю сразу после приёма")
-BACKUP_ASK_PASSPHRASE_AGAIN = "Повтори фразу ещё раз — так исключим опечатку"
-BACKUP_PASSPHRASE_MISMATCH = "⚠️ Фразы не совпали — начнём заново: пришли фразу"
-BACKUP_PASSPHRASE_SET = "✅ Фраза задана — следующие копии уйдут шифрованными"
+BACKUP_ASK_PASSPHRASE = ui.prompt("🔐 Ключевая фраза", "не короче 8 символов; сообщение удалю сразу после приёма")
+BACKUP_ASK_PASSPHRASE_AGAIN = "Повтори ключевую фразу ещё раз — так исключим опечатку"
+BACKUP_PASSPHRASE_MISMATCH = "⚠️ Ключевые фразы не совпали — начнём заново: пришли ключевую фразу"
+BACKUP_PASSPHRASE_SET = "✅ Ключевая фраза задана — следующие копии уйдут шифрованными"
 
 
 def backup_when_prompt(day: int, hour: int) -> str:

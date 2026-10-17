@@ -137,13 +137,14 @@ def check(meta: dict | None, *, admin_id_copy: str = "", chat: bool = True) -> s
     чужую копию не восстанавливают (chat=False — терминал, можно)."""
     from awgbot.infra import awglock
     if not meta:
-        return "файл не похож на бэкап сервера AWG"
+        return "не похоже на бэкап сервера AWG"
     if str(meta.get("role") or "") == "gw":
         return "это бэкап шлюза прежних версий — шлюзы теперь восстанавливаются из бэкапа сервера AWG"
     ver = str(meta.get("version") or "")
     if meta.get("schema") != SCHEMA or compat.below_floor(ver):
-        return (f"бэкап снят версией {ver} — " if ver else "бэкап снят прежней версией — ") + \
-            f"бэкапы версий до {compat.COMPAT_FLOOR} не применяются"
+        if not ver:
+            return f"бэкап снят версией до {compat.COMPAT_FLOOR} — восстановиться из него не получится"
+        return f"бэкап снят версией {ver} — бэкапы версий до {compat.COMPAT_FLOOR} не применяются"
     if compat.newer_than(ver, config.INSTALLED_VERSION):
         return (f"бэкап снят версии {ver}, а здесь {config.INSTALLED_VERSION} — обнови бота до {ver}, "
                 "затем восстанови")

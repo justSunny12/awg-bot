@@ -1540,16 +1540,16 @@ cmd_restore() {
         || restore_die "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
     if [[ -n "$RESTORE_PENDING" ]]; then
         bot_tool tools.restore_backup --phrase-from-db --out "$tmp/backup.tgz" "$src" >/dev/null 2>&1 \
-            || restore_die "не расшифровался — ключевая фраза в базе не та или файл повреждён"
+            || restore_die "не расшифровался — ключевая фраза в базе некорректна или файл повреждён"
     else
         log "шифрованный бэкап — нужна ключевая фраза"
         bot_tool tools.restore_backup --out "$tmp/backup.tgz" "$src" >/dev/null \
-            || restore_die "не расшифровался — фраза не та или файл повреждён"
+            || restore_die "не расшифровался — ключевая фраза некорректна или файл повреждён"
     fi
     mkdir -p "$copy"
     tar xf "$tmp/backup.tgz" -C "$copy" --no-same-owner || restore_die "не удалось распаковать бэкап"
     rm -f "$tmp/backup.tgz"
-    [[ -f "$copy/state/backup-meta.json" ]] || restore_die "в бэкапе нет метки — это не бэкап сервера AWG"
+    [[ -f "$copy/state/backup-meta.json" ]] || restore_die "указанный файл не похож на бэкап"
     err="$(bot_tool tools.check_backup --meta "$copy/state/backup-meta.json" 2>&1 >/dev/null)" \
         || restore_die "${err:-метка бэкапа не прошла проверку}"
     local plan
@@ -1574,7 +1574,7 @@ cmd_restore() {
     # Слияние — после остановки: читает живую базу неподвижной, пишет только в
     # распакованный бэкап и сверяет план с вопросом. Отказ — живое не тронуто.
     if ! err="$(bot_tool tools.restore_merge --copy "$copy" --expect "$expect" 2>&1 >/dev/null)"; then
-        restore_die "${err:-слияние не прошло} — ничего не изменилось, сервис поднят"
+        restore_die "${err:-слияние не прошло} — изменения отменены, сервис поднят"
     fi
 
     # ── подготовка: каждый заменяемый файл — рядом с целью ──
@@ -1613,7 +1613,7 @@ cmd_restore() {
         [[ -f "$c" ]] || continue
         restore_stage "$c" "$ROOT_GW_DIR/$(basename "$c")" 600 || prep=1
     done
-    [[ "$prep" -eq 0 ]] || restore_die "подготовка не прошла — ничего не изменилось, сервис поднят"
+    [[ "$prep" -eq 0 ]] || restore_die "подготовка не прошла — изменения не применены, сервис поднят"
 
     # ── DROP заблокированным — до подъёма интерфейсов; не встал — замены нет ──
     restore_blocks "$copy/restore-merge.json" \
@@ -1646,10 +1646,10 @@ cmd_restore() {
     for i in $adopt; do
         [[ -n "$i" ]] || continue
         LINK_IF="$i" sh "$INSTALL_DIR/install/routing-link-setup.sh" --adopt >/dev/null \
-            || warn "линк $i не поднялся — бот повторит на старте"
+            || warn "линк $i не поднялся — бот повторит попытку на старте"
     done
     # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
-    restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте доналожит"
+    restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте поправит"
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"
 
     # маркер для бота: новый процесс доложит итог по каждому шлюзу

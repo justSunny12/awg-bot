@@ -164,7 +164,7 @@ def test_without_a_phrase_there_is_no_backup_anywhere(services, slot, fake_bot, 
     assert not (tmp_path / "backups").exists() or not list((tmp_path / "backups").glob("*"))
     assert [n.text for n in sent] == [
         "⚠️ Плановый бэкап сервера AWG не сделан: ключевая фраза шифрования не задана, а в бэкапе ключи линков "
-        "шлюзов. Задай фразу в «💾 Бэкапы» → «🔐 Шифрование»"]
+        "шлюзов. Задай ключевую фразу в «💾 Бэкапы» → «🔐 Шифрование»"]
     assert services.db.get_state("last_backup") == "2000-01"
 
 

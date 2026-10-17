@@ -43,7 +43,7 @@ class BackupsMixin:
             raise mail.MailError("ящик не настроен")
         if not self.backup_encryption_enabled():
             raise mail.MailError("бэкап без шифрования по почте не отправляется — "
-                                 "задай парольную фразу: 💾 Бэкапы → 🔐 Шифрование")
+                                 "задай ключевую фразу: 💾 Бэкапы → 🔐 Шифрование")
         import os
         att = []
         for p in paths:
@@ -215,6 +215,13 @@ class BackupsMixin:
         w = self.db.get_state_json(self.WAIT_KEY, {})
         return w if isinstance(w, dict) and isinstance(w.get("slots"), dict) else {}
 
+    def _wait_bot(self, slot: int) -> dict:
+        """Бот шлюза слота — для ссылки на его чат; слота нет или бот неизвестен — пусто."""
+        try:
+            return self.gw_bot_identity(slot) if self.db.gateway(slot) is not None else {}
+        except Exception:                                 # noqa: BLE001 — ссылка не обязательна
+            return {}
+
     def _wait_ref(self, slot: int, rec: dict) -> str:
         from awgbot.domain.notices import backup as nb
         gw = self.db.gateway(slot)
@@ -255,7 +262,8 @@ class BackupsMixin:
             return []
         notes = [Notification(config.ADMIN_ID,
                               nb.gateway_not_back(self._wait_ref(int(n), rec), empty=bool(w.get("empty")),
-                                                  link_if=str(rec.get("link_if") or "")), silent=True)
+                                                  link_if=str(rec.get("link_if") or ""),
+                                                  bot=self._wait_bot(int(n))), silent=True)
                  for n, rec in sorted((w.get("slots") or {}).items(), key=lambda x: int(x[0]))]
         self.db.set_state(self.WAIT_KEY, "")
         return notes

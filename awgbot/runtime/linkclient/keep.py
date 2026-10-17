@@ -11,6 +11,8 @@ from awgbot.runtime import linkclient as pkg          # крючки — на п
 
 from .common import log
 
+WITHDRAWN = "ℹ️ Вопрос снят: сервер AWG больше не предлагает эти настройки — свои настройки шлюза ушли ему"
+
 
 class KeepMixin:
     _keep_ready = False                    # сервер в этой сессии ответил на hello о копии настроек
@@ -21,6 +23,8 @@ class KeepMixin:
             # предлагать серверу нечего: висящий вопрос снят (иначе «вернуть»
             # применило бы снятое предложение, а своё не уходило бы до ответа)
             dropped = await asyncio.to_thread(self.services.keep_ask_drop)
+            if dropped:
+                await self._keep_withdrawn()
             first, self._keep_ready = not self._keep_ready, True
             if kind == "keep_ok":
                 await asyncio.to_thread(self.services.keep_acked, str(msg.get("hash") or ""))
@@ -48,6 +52,16 @@ class KeepMixin:
             return
         self._keep_ready = True
         await self.keep_push(force=True)
+
+    async def _keep_withdrawn(self) -> None:
+        """Снятый вопрос — финишер без кнопок на месте сообщения с вопросом."""
+        msg = await asyncio.to_thread(self.services.keep_msg_pop)
+        if not msg or pkg._edit is None:
+            return
+        try:
+            await pkg._edit(int(msg[0]), int(msg[1]), WITHDRAWN)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: снятый вопрос о настройках не поправлен: %s", e)
 
     async def keep_push(self, *, force: bool = False) -> bool:
         """Отправить свой блок: настройки разошлись с подтверждёнными, вырос

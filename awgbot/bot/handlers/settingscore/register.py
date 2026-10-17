@@ -29,7 +29,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         phrase = await _take_secret_message(message)
         if len(phrase) < MIN_PASSPHRASE_LEN:
             await ask_tracked(message, services,
-                              f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую")
+                              f"⚠️ Ключевая фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую")
             return
         await state.update_data(passphrase=phrase)
         await state.set_state(BackupPassphrase.second)

@@ -110,7 +110,7 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
     assert "не зашифрован" in err(_archive(_meta(), db=db))
     assert "не задана" in err(enc(_meta()))
     services.backup_set_passphrase(PHRASE)
-    assert "не та" in err(enc(_meta(), phrase="wrong-phrase!"))
+    assert "ключевая фраза не подходит" in err(enc(_meta(), phrase="wrong-phrase!"))
     assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.3.1"})) == \
         "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
     assert err(enc(_meta(version="3.3.1"))) == "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"

@@ -99,7 +99,7 @@ async def test_a_refused_file_is_logged_and_not_retried_every_hour(services, tmp
     notes = [r[2] for r in bot.records if r[0] == "send_message"]
     if not retried:
         assert "повторяться не будет" in caplog.text
-        assert notes == ["⚠️ Бэкап сервера AWG не отправлен: message caption is too long — сделай вручную в "
+        assert notes == ["⚠️ Бэкап сервера AWG не отправлен: message caption is too long — попробуй вручную в "
                          "«⚙️ Настройки → 💾 Бэкапы» или забери из терминала: <code>sudo awg-bot backup</code>"], notes
         await sch.monthly_backup(services, bot, "backup", on_undelivered=lambda: again.append(1))
         assert len([r for r in bot.records if r[0] == "send_message"]) == 1, "уведомление повторилось за месяц"
@@ -178,14 +178,14 @@ async def _offer(services, name, blob, size=100):
 
 async def test_a_file_not_like_a_backup_stays_in_the_chat(services):
     msg, _ = await _offer(services, "photos.tgz", _tar(None))
-    assert not msg.deleted and msg.sent[-1][1] == texts.restore_rejected("файл не похож на бэкап сервера AWG")
+    assert not msg.deleted and msg.sent[-1][1] == texts.restore_rejected("не похоже на бэкап сервера AWG")
 
 
 async def test_a_rejected_backup_is_removed_from_the_chat(services):
     services.backup_set_passphrase(PHRASE)
     msg, _ = await _offer(services, "awg-bot-backup-main-20261001_120000.tgz.enc", b"AWGBK1-DUMMY-garbage")
     assert msg.deleted, "отвергнутый бэкап (в нём ключи) остался в чате"
-    assert msg.sent[-1][1].startswith("⚠️ Файл не принят: не расшифровался — фраза не та")
+    assert msg.sent[-1][1].startswith("⚠️ Файл не принят: не удалось расшифровать — ключевая фраза не подходит")
     assert "<code>sudo awg-bot restore &lt;файл&gt;</code>" in msg.sent[-1][1]
     msg, _ = await _offer(services, "old.tgz", _tar({"role": "main", "created_at": "2026-09-01T00:00:00+05:00"}))
     assert msg.deleted and msg.sent[-1][1] == texts.restore_rejected(ins.OPEN_REFUSAL), "открытый бэкап с ключами"

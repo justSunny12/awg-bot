@@ -206,7 +206,7 @@ def test_the_same_gateway_reinstalled_and_touched_gets_its_own_question(server, 
     assert text.startswith("💾 <b>Настройки этого шлюза на сервере AWG</b>") and "до замены" not in text, text
     assert "отличаются от текущих: тихие часы" in text
     labels = [b.text for r in gateway_cfg_question_kb("keep_same").inline_keyboard for b in r]
-    assert labels[:2] == ["⬅️ Оставить текущие", "↩️ Вернуть с сервера"], labels
+    assert labels[:2] == ["⬅️ Оставить текущие", "↩️ Применить с сервера"], labels
     assert cfg_pending_line(["keep_same"]) == "⏳ Ждут решения: настройки шлюза с сервера AWG"
     assert server.gwkeep_card(1, agent_caps=["keep1"])["asked"] == "same"
     res = w.answer(True)

@@ -7,7 +7,7 @@ restore_backup.py — расшифровка резервной копии awg-b
 этот скрипт снимает шифрование. Запускается
 где угодно, где есть Python + PyNaCl. Режим определяет по заголовку файла:
 
-  • пассфраза — спросит фразу (соль внутри файла, ключ выведется сам);
+  • ключевая фраза — спросит её (соль внутри файла, ключ выведется сам);
   • случайный ключ (копии прежних версий; восстановить их уже нельзя, только
     расшифровать) — возьмёт BACKUP_KEY из окружения, из --key или спросит;
   • --phrase-from-db — секрет из базы этой установки (копия из чата: бот её
@@ -70,7 +70,7 @@ def _decrypt_one(path: Path, *, key_b64: str | None, out_arg: str | None, from_d
     if from_db:
         data = su.decrypt(blob, **_db_secret())
     elif mode == "passphrase":
-        phrase = getpass.getpass(f"Пассфраза для {path.name}: ")
+        phrase = getpass.getpass(f"Ключевая фраза для {path.name}: ")
         data = su.decrypt(blob, passphrase=phrase)
     else:
         kb = key_b64 or os.environ.get("BACKUP_KEY") or ""
@@ -89,7 +89,7 @@ def main() -> None:
     ap.add_argument("--key", help="BACKUP_KEY (base64) для файлов со случайным ключом")
     ap.add_argument("--out", help="путь результата (только при одном входном файле)")
     ap.add_argument("--phrase-from-db", action="store_true",
-                    help="фраза — из базы этой установки (копия из чата; только root)")
+                    help="ключевая фраза — из базы этой установки (копия из чата; только root)")
     args = ap.parse_args()
 
     if args.out and len(args.files) > 1:
@@ -112,7 +112,7 @@ def main() -> None:
 
     if not done:
         sys.exit(1)
-    print("\nРасшифрованный архив — для просмотра. Восстанавливают исходный файл: "
+    print("\nРасшифрованный архив — для просмотра. Восстанавливает исходный файл: "
           "sudo awg-bot restore <файл .tgz.enc> (бот остановится сам).")
 
 

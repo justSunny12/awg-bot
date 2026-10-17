@@ -187,7 +187,7 @@ def test_meta_guard_and_plan_go_before_the_service_stops(script, tmp_path):
 def test_a_merge_refusal_changes_nothing_and_brings_the_service_up(script, tmp_path):
     h = Host(tmp_path)
     r = run(script, h, "--yes", str(h.src), merge_fails=True)
-    assert r.returncode != 0 and "ничего не изменилось, сервис поднят" in r.stderr, r.stderr
+    assert r.returncode != 0 and "изменения отменены, сервис поднят" in r.stderr, r.stderr
     assert h.live() == OLD and h.leftovers() == []
     assert h.calls()[-1] == "systemctl start awg-bot"
     assert not (h.data / "restore-done.json").exists()
@@ -196,7 +196,7 @@ def test_a_merge_refusal_changes_nothing_and_brings_the_service_up(script, tmp_p
 def test_a_preparation_refusal_changes_nothing(script, tmp_path):
     h = Host(tmp_path)
     r = run(script, h, "--yes", str(h.src), stage_fails=True)
-    assert r.returncode != 0 and "подготовка не прошла — ничего не изменилось, сервис поднят" in r.stderr, r.stderr
+    assert r.returncode != 0 and "подготовка не прошла — изменения не применены, сервис поднят" in r.stderr, r.stderr
     assert h.live() == OLD and h.leftovers() == []
     assert "systemctl start awg-bot" in h.calls()
 

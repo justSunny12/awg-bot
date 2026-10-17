@@ -17,7 +17,7 @@ import logging
 log = logging.getLogger("awgbot.backup")
 
 OPEN_REFUSAL = "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
-NOT_BACKUP = "файл не похож на бэкап сервера AWG"
+NOT_BACKUP = "не похоже на бэкап сервера AWG"
 TERMINAL = "sudo awg-bot restore <файл>"
 TOO_BIG = f"бэкап больше 20 МБ — из чата бот его не скачает; восстанови в терминале сервера: {TERMINAL}"
 SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -70,13 +70,13 @@ class BackupInspectMixin:
             return {"ok": False, "error": OPEN_REFUSAL if recognize(filename, blob) else NOT_BACKUP}
         kw = self.backup_enc_kwargs()
         if kw is None:
-            return {"ok": False, "error": ("бэкап шифрованный, а фраза здесь не задана — задай её в «🔐 Шифрование» "
+            return {"ok": False, "error": ("бэкап шифрованный, а ключевая фраза здесь не задана — задай её в «🔐 Шифрование» "
                                            "и пришли файл снова")}
         try:
             plain = secrets_util.decrypt(blob, **kw)
         except Exception:                              # noqa: BLE001
-            return {"ok": False, "error": ("не расшифровался — фраза не та: бэкап, снятый с прежней фразой, "
-                                           f"восстанови в терминале сервера: {TERMINAL}")}
+            return {"ok": False, "error": ("не удалось расшифровать — ключевая фраза не подходит: бэкап, снятый "
+                                           f"с прежней фразой, восстанови в терминале сервера: {TERMINAL}")}
         from . import meta as _meta
         label = _meta.read(plain)
         err = _meta.check(label, admin_id_copy=_meta.env_admin_id(_member(plain, "state/env")), chat=True)

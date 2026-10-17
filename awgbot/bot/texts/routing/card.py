@@ -246,7 +246,7 @@ def lan_space_lines(info: dict | None) -> list[str]:
     return out
 
 
-def keep_line(keep: dict | None) -> str:
+def keep_line(keep: dict | None, agent_bot: dict | None = None) -> str:
     """Копия настроек бота шлюза в бэкапе сервера: на дату, ждёт решения в
     чате шлюза, агент её не присылает (на связи и без keep1)."""
     keep = keep or {}
@@ -255,7 +255,8 @@ def keep_line(keep: dict | None) -> str:
     if keep.get("state") == "asked":
         what = {"device": "⏳ Настройки прежнего устройства",
                 "same": "⏳ Настройки бота шлюза с сервера AWG"}.get(keep.get("asked"), "⏳ Настройки бота шлюза из бэкапа")
-        return f"{what} ждут решения в чате бота шлюза"
+        from awgbot.domain.notices.backup import chat_ref
+        return f"{what} ждут решения в чате {chat_ref(agent_bot)}"
     if keep.get("state") == "saved":
         try:
             when = timeutil.fmt_dt_ui(timeutil.parse_iso(keep["at"]), year=True)
@@ -296,7 +297,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         ver = _ver(_e(str(ch.get("agent") or "?")[:32])) if ch.get("has_snap") else ""
         lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: настройки по каналу конфигурации не принимает — "
                      "обнови агента шлюза")
-    keep = keep_line(state.get("keep"))
+    keep = keep_line(state.get("keep"), state.get("agent_bot"))
     if keep and not ch.get("outdated"):
         lines.append(keep)
     rk = state.get("rekey") or {}

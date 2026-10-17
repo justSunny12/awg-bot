@@ -56,6 +56,7 @@ class KeepMixin:
     _KEEP_TRAFFIC_KEY = "gw_keep_traffic"      # {"at": iso, "due": сек, "sum": rx+tx} — последний ушедший счёт
     _KEEP_TRAFFIC_GOT_KEY = "gw_keep_traffic_got"   # месяц, чей счёт с сервера уже перенесён
     _KEEP_FW_PENDING_KEY = "gw_keep_fw_pending"     # «1» — файервол с сервера записан, юнит обвязки не перезапущен
+    _KEEP_MSG_KEY = "gw_keep_msg"              # [chat, message] — сообщение с вопросом: снятый вопрос правится в итог
 
     # ── следы своих копий прежних версий ─────────────────────────────────────
 
@@ -188,6 +189,16 @@ class KeepMixin:
             return False
         self.db.set_state(self._KEEP_ASK_KEY, "")
         return True
+
+    def keep_mark_msg(self, chat_id: int, message_id: int) -> None:
+        """Вопрос показан этим сообщением — снятие вопроса поправит его в итог без кнопок."""
+        if self._keep_ask():
+            self.db.set_state(self._KEEP_MSG_KEY, json.dumps([int(chat_id), int(message_id)]))
+
+    def keep_msg_pop(self) -> list | None:
+        raw = self.db.get_state_json(self._KEEP_MSG_KEY, [])
+        self.db.set_state(self._KEEP_MSG_KEY, "")
+        return raw if isinstance(raw, list) and len(raw) == 2 else None
 
     # ── блок с сервера ───────────────────────────────────────────────────────
 
@@ -350,4 +361,5 @@ class KeepMixin:
         self.db.set_state(self._KEEP_ANSWERED_KEY, str(ask.get("hash") or ""))
         self.db.set_state(self._KEEP_SYNCED_KEY, "1")
         self.db.set_state(self._KEEP_ASK_KEY, "")
+        self.db.set_state(self._KEEP_MSG_KEY, "")      # ответ правит это сообщение сам
         return out
