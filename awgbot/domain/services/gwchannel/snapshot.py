@@ -5,6 +5,7 @@ import json
 
 from awgbot.util import timeutil
 from awgbot.domain import gwsnapshot
+from awgbot.domain.services.gateway_link import slotkeys
 
 from .common import log
 
@@ -79,17 +80,8 @@ class SnapshotMixin:
             return None
 
     def gwlink_forget(self, slot_id: int) -> None:
-        """Снятие слота: ключи канала уходят вместе с ключами слота."""
+        """Замена устройства и снятие слота: ключи канала и документа уходят
+        вместе с прежним устройством — по реестру slotkeys, пометка «устройство»."""
         self.gwcfg_forget(slot_id)
-        for key in (self._GWLINK_SESSION_KEY, self._GWLINK_SEEN_KEY, self._GWLINK_SNAP_KEY,
-                    self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
-                    self._GWLINK_ERROR_KEY, self._GWLINK_CAPS_KEY, self._GWLINK_LISTS_KEY,
-                    self._GWLINK_SVC_KEY, self._GWLINK_PEER_SVC_KEY, self._GWLINK_BUNDLE_MSG_KEY,
-                    self._GWLINK_OWN_UPTO_KEY, self._GWLINK_OWN_ACK_KEY, self._GWLINK_OWN_REJ_KEY,
-                    self._GWLINK_OWN_CAP_KEY):
-            self.db.set_state(self._gwlink_key(key, slot_id), "")
-        # подтверждение настроек и итог применения файла — доставки, снятой в
-        # 3.3.1: у слотов, заведённых раньше, ключи ещё лежат
-        for key in ("gwlink_ack", "gwlink_applied"):
-            self.db.set_state(self._gwlink_key(key, slot_id), "")
+        slotkeys.forget(self.db, slot_id, slotkeys.names(when=slotkeys.DEVICE, part="link"))
         # канон своих списков не трогается: он общий, вернувшийся шлюз его получит

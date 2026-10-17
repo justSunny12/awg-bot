@@ -8,6 +8,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.infra import routing
 from awgbot.domain.services.types import ServiceError
+from . import slotkeys
 from .common import log
 
 
@@ -159,17 +160,13 @@ class MarkMixin:
                 "created": created, "rekeyed": rekey, "routing_reset": routing_reset}
 
     def _slot_forget(self, slot_id: int) -> None:
-        """Всё состояние слота — в БД и в памяти — одним списком. Раньше его
-        чистили три ручных перечня, и новый слот с тем же номером наследовал
-        хвосты: ложное «снова отвечает», «лежит» до 5 минут, ложное
-        «конфигурация актуализирована»."""
+        """Всё состояние слота — в БД и в памяти. Ключи БД — по реестру
+        slotkeys: без него их чистили три ручных перечня, и новый слот с тем
+        же номером наследовал хвосты: ложное «снова отвечает», «лежит» до 5
+        минут, ложное «конфигурация актуализирована». Здесь — помеченные
+        «со слотом», ключи устройства снимает gwlink_forget."""
         sid = int(slot_id)
-        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY,
-                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY, self._REKEY_KEY, "gw_link_port_hand",
-                    self._REKEY_CANCEL_KEY, self._TOKEN_PUSH_KEY):
-            self.db.set_state(self._gw_slot_key(key, sid), "")
-        for key in self._rt_keys(sid):                     # стрик и «объявлен»
-            self.db.set_state(key, "")
+        slotkeys.forget(self.db, sid, slotkeys.names(when=slotkeys.SLOT))
         if (self.db.get_state(self._RT_HOLD_KEY) or "") == str(sid):
             self.db.set_state(self._RT_HOLD_KEY, "")
         self._gw_ping_forget(sid)

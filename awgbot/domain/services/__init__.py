@@ -21,7 +21,7 @@ from __future__ import annotations
 from awgbot.domain.migration import MigrationMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
 from awgbot.domain.mailmix import MailMixin
-from awgbot.domain.backupcrypto import BackupCryptoMixin
+from awgbot.domain.backup import BackupMixin
 from awgbot.domain.privatedns import PrivateDnsMixin
 from awgbot.domain.services.types import (
     BYTES_PER_GB, SECONDS_PER_DAY,
@@ -46,7 +46,7 @@ from awgbot.domain.services.routing import RoutingMixin
 class Services(ServicesBase, StatusMixin, BlocksMixin, ClientsMixin, DevicesMixin,
                SubscriptionMixin, TrafficMixin, ReconcileMixin, FirewallMixin,
                GatewayLinkMixin, GwChannelMixin, RoutingMixin,
-               SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, PrivateDnsMixin):
+               SelfUpdateMixin, MailMixin, BackupMixin, MigrationMixin, PrivateDnsMixin):
     """Сборка из миксинов по областям: каждый — свой модуль пакета, тела
     методов те же, что были в одном файле. Порядок баз — порядок разделов
     прежнего services.py."""

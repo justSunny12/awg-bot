@@ -81,18 +81,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     async def job_monthly_catchup():
         await job_monthly(catchup=True)
 
-    # ── автобэкап (та же catch-up-схема; тело общее с агентом) ───────────────
-    def _retry_backup():
-        # копия собрана, но не доставлена: повтор через час, пока не уйдёт
-        scheduler.add_job(job_backup, "date", run_date=timeutil.shift(timeutil.now(), 3600),
-                          id="backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
-
-    async def job_backup():
-        await pkg.monthly_backup(services, bot, "backup", on_undelivered=_retry_backup)
-
-    async def job_backup_catchup():
-        await pkg.monthly_backup(services, bot, "backup", catchup=True, on_undelivered=_retry_backup)
-
     async def job_purge_history():
         """Ежедневно: удалить историю старше ретеншна (батчами). Идемпотентно —
         если чистить нечего, просто отработает вхолостую."""
@@ -286,8 +274,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.migration_watch_seconds": ("migration_watch", _trig_migration_watch),
         "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
         "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
-        "app.scheduler.backup_day": ("backup", pkg.backup_trigger),
-        "app.scheduler.backup_hour": ("backup", pkg.backup_trigger),
         "app.history.purge_hour": ("purge_history", _trig_purge),
     }
 
@@ -299,11 +285,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_EXPIRY_SECONDS)
     # Месячный сброс и копия — обязательные (MANDATORY): без допуска по
     # опозданию, висят в очереди, пока не выполнятся; догон на старте — только
-    # после назначенного момента месяца
+    # после назначенного момента месяца. Задания копии — в части backup.
     scheduler.add_job(job_monthly, _trig_monthly(), id="monthly", max_instances=1, **MANDATORY)
     scheduler.add_job(job_monthly_catchup, "date", run_date=now, id="monthly_catchup", **MANDATORY)
-    scheduler.add_job(job_backup, pkg.backup_trigger(), id="backup", max_instances=1, **MANDATORY)
-    scheduler.add_job(job_backup_catchup, "date", run_date=now, id="backup_catchup", **MANDATORY)
+    pkg.add_server_backup(scheduler, services, bot, run_date=now)
     # ── опрос IMAP: аварийный email-выход из приостановки ────────────────────
     async def job_email_resume():
         from awgbot.infra import email_resume

@@ -44,8 +44,8 @@ def test_snapshot_writes_the_same_layout_as_the_chat_copy(tmp_path, monkeypatch)
 def test_snapshot_reports_failure_instead_of_a_half_file(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "ROLE", "client")
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "nope.db")
-    from awgbot.domain.backupcrypto import BackupCryptoMixin
-    monkeypatch.setattr(BackupCryptoMixin, "build_backup_archive",
+    from awgbot.domain.backup.archive import BackupArchiveMixin
+    monkeypatch.setattr(BackupArchiveMixin, "build_backup_archive",
                         lambda self, extra=None: (_ for _ in ()).throw(RuntimeError("boom")))
     from tools import snapshot
     out = tmp_path / "snap.tgz"

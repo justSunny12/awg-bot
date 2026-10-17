@@ -10,6 +10,7 @@ from awgbot.util import lanspace, timeutil
 from awgbot.infra import routing
 from awgbot.domain import configgen
 from awgbot.domain.services.types import ServiceError
+from . import slotkeys
 from .common import log
 
 
@@ -54,7 +55,7 @@ class SlotsMixin:
         return gw
 
     def _gw_slot_key(self, key: str, slot_id: int) -> str:
-        return f"{key}_{int(slot_id)}"
+        return slotkeys.key(key, slot_id)
 
     def gateway_trusted_ips(self) -> set[str]:
         """Адреса ADMIN_IPS, которым доверяют шлюзы (admin4 в таблице): шлюзы

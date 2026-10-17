@@ -23,7 +23,7 @@ ROOTS = (REPO / "awgbot", REPO / "tools")
 SKIP_DIRS = ("awgbot/util/timeutil/",)
 # не время для человека: имена файлов, машинные поля, журнал
 WHITELIST = {
-    "awgbot/domain/backupcrypto.py",          # имя файла копии — идентификатор
+    "awgbot/domain/backup/archive.py",        # имя файла копии — идентификатор
     "awgbot/infra/awg/server.py",             # ISO UTC для машинного поля
 }
 TEXT_DIRS = ("awgbot/bot/texts/", "awgbot/domain/notices/", "awgbot/util/textfmt/")

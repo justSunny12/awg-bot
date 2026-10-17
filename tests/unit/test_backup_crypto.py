@@ -7,7 +7,7 @@ import pytest
 from nacl import utils as nacl_utils
 
 import awgbot.core.config as cfg
-from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
+from awgbot.domain.backup.crypto import MIN_PASSPHRASE_LEN
 
 
 def test_passphrase_lives_in_db(services):
@@ -114,7 +114,7 @@ def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
     транзакций — устройство без ключа после восстановления. backup API снимает
     согласованную копию и при открытом писателе."""
     import sqlite3
-    from awgbot.domain.backupcrypto import BackupCryptoMixin
+    from awgbot.domain.backup.archive import BackupArchiveMixin
     path = tmp_path / "bot.db"
     w = sqlite3.connect(path)
     w.execute("PRAGMA journal_mode=WAL")
@@ -123,7 +123,7 @@ def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
     w.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     w.execute("INSERT INTO t VALUES ('in-wal')")
     w.commit()                                   # лежит в bot.db-wal, писатель открыт
-    raw = BackupCryptoMixin.db_snapshot_bytes(path)
+    raw = BackupArchiveMixin.db_snapshot_bytes(path)
     assert raw and raw[:16] == b"SQLite format 3\x00"
     assert b"in-wal" not in path.read_bytes(), "тест не воспроизводит WAL — строка уже в файле"
     snap = tmp_path / "snap.db"
@@ -131,7 +131,7 @@ def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
     assert sqlite3.connect(snap).execute("SELECT v FROM t").fetchall() == [("in-wal",)]
     w.close()
     assert not [p for p in tmp_path.iterdir() if p.name.startswith(".snap-")], "временный файл снимка остался"
-    assert BackupCryptoMixin.db_snapshot_bytes(tmp_path / "nope.db") is None
+    assert BackupArchiveMixin.db_snapshot_bytes(tmp_path / "nope.db") is None
 
 
 def test_backup_extra_depends_on_the_role(services, make_active_client, monkeypatch, tmp_path):

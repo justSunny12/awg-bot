@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 from awgbot.util import timeutil
+from awgbot.domain.services.gateway_link import slotkeys
 
 from .common import log
 
@@ -19,7 +20,7 @@ class SessionMixin:
     _GWLINK_SNAP_TS_KEY = "gwlink_snap_ts"
 
     def _gwlink_key(self, key: str, slot_id: int) -> str:
-        return f"{key}_{int(slot_id)}"
+        return slotkeys.key(key, slot_id)
 
     # ── сессия ───────────────────────────────────────────────────────────────
 

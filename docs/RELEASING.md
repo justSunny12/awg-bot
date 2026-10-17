@@ -137,7 +137,7 @@ GitHub `vX.Y.Z.P — …`.
   — «✖️ Отмена» под вводом у обеих ролей,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `runtime/main/` — сборка и запуск обеих ролей, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
-  `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
+  `domain/backup/archive.py` — состав копии по роли, `tools/snapshot.py` —
   снимок для `awg-bot backup` и `restore`, `tools/check_backup.py` — сторож
   схемы копии в `restore`, `handlers/updates_flow.py` и
   `handlers/settingscore/` — шаги обновления и настроек у обеих ролей,

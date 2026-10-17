@@ -35,8 +35,8 @@ def test_document_names_are_the_unit_names():
 
 
 def test_the_minimum_phrase_length_is_the_gateways_own():
-    from awgbot.domain import backupcrypto
-    assert gwcfg.MIN_PHRASE == backupcrypto.MIN_PASSPHRASE_LEN
+    from awgbot.domain.backup import crypto
+    assert gwcfg.MIN_PHRASE == crypto.MIN_PASSPHRASE_LEN
 
 
 # ── env ──────────────────────────────────────────────────────────────────────

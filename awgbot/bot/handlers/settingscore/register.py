@@ -25,7 +25,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
 
     @router.message(BackupPassphrase.first)
     async def passphrase_first_h(message: Message, state: FSMContext, services):
-        from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
+        from awgbot.domain.backup.crypto import MIN_PASSPHRASE_LEN
         phrase = await _take_secret_message(message)
         if len(phrase) < MIN_PASSPHRASE_LEN:
             await ask_tracked(message, services,

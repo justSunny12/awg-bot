@@ -8,6 +8,7 @@ import socket
 
 from awgbot.core import config, settings
 from awgbot.domain import gwcfg
+from awgbot.domain.services.gateway_link import slotkeys
 from awgbot.domain.services.types import Notification
 from awgbot.util import gwlink, timeutil, wgconf
 
@@ -405,6 +406,5 @@ class CfgMixin:
         return [cur]
 
     def gwcfg_forget(self, slot_id: int) -> None:
-        for key in (self._GWCFG_GEN_KEY, self._GWCFG_HASH_KEY, self._GWCFG_ACK_KEY, self._GWCFG_LINK_ERR_KEY,
-                    self._GWCFG_UPLINK_ERR_KEY, "gwcfg_uplink_declined_told", "gwcfg_token_failed_told"):
-            self.db.set_state(self._gwlink_key(key, slot_id), "")
+        """Состояние документа слота — по реестру slotkeys."""
+        slotkeys.forget(self.db, slot_id, slotkeys.names(part="cfg"))

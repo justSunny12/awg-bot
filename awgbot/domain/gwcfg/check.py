@@ -9,7 +9,7 @@ from awgbot.util.wgconf import norm
 
 from .doc import CfgError, ENV_KEYS, ENV_REQUIRED, MAIL_HINT
 
-MIN_PHRASE = 8                                   # как backupcrypto.MIN_PASSPHRASE_LEN — сверяет тест
+MIN_PHRASE = 8                                   # как backup.crypto.MIN_PASSPHRASE_LEN — сверяет тест
 _MAX_ADMIN_IPS = 64
 _MAX_SUBNETS = 64
 _HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")

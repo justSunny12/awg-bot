@@ -369,7 +369,7 @@ awgbot/
                gwservices, gwownlists, gwchecks, channelstate (общие данные канала
                и проверок, обе роли), gwssh (SSH на шлюзе), privatedns (свой
                резолвер клиентов), mailmix (почта в сервисах),
-               backupcrypto (секрет бэкапов)
+               backup/ (резервная копия: секрет, состав, осмотр, восстановление)
   bot/       презентация и glue aiogram:
     handlers/  роутеры: client/ — клиент и активация; admin/ — панель админа
                (clients/ — профили, broadcast/ — рассылки; panel, devices,

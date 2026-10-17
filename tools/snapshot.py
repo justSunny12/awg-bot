@@ -20,10 +20,10 @@ import os
 import sys
 
 from awgbot.core import config
-from awgbot.domain.backupcrypto import BackupCryptoMixin
+from awgbot.domain.backup.archive import BackupArchiveMixin
 
 
-class _Snapshot(BackupCryptoMixin):
+class _Snapshot(BackupArchiveMixin):
     """Ровно то, что нужно сборщику: база (для списка шлюзов сервера) и роль."""
 
     def __init__(self, db) -> None:

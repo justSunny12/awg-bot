@@ -214,11 +214,11 @@ def test_cron_over_dst(monkeypatch, day, expect):
     from zoneinfo import ZoneInfo
     from apscheduler.triggers.cron import CronTrigger
     from awgbot.core import config
-    from awgbot.runtime.scheduler import common as sched_common
+    from awgbot.runtime.scheduler import backup as sched_backup, common as sched_common
     london = ZoneInfo("Europe/London")
     monkeypatch.setattr(config, "TZ", london)
     assert sched_common.update_check_trigger().timezone == london
-    assert sched_common.backup_trigger().timezone == london
+    assert sched_backup.backup_trigger().timezone == london
     trig = CronTrigger(hour=1, minute=30, timezone=london)
     y, m, d = day
     now = datetime.datetime(y, m, d - 1, 12, tzinfo=london)

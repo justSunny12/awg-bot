@@ -61,7 +61,7 @@ def backup(tmp_path, monkeypatch):
         if p.startswith("/etc/dnsmasq.d/"):
             path = dnsmasq / p[len("/etc/dnsmasq.d/"):]
         return real_open(path, *a, **kw)
-    from awgbot.domain import backupcrypto as bc          # состав копии живёт там
+    from awgbot.domain.backup import archive as bc        # состав копии живёт там
     monkeypatch.setattr(bc, "open", _open, raising=False)
 
     def members() -> dict[str, bytes]:

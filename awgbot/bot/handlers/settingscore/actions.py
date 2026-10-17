@@ -116,7 +116,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
 async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     """«Бэкап сейчас»: в почту, если канал — почта, иначе файлами в чат."""
     from awgbot.infra import mail
-    from awgbot.domain.backupcrypto import BackupKeyMissing
+    from awgbot.domain.backup.crypto import BackupKeyMissing
     if hooks.br.has.backup_encrypted_only and not await call(services.backup_encryption_enabled):
         # копия только шифрованная, фразы нет — отказ всплывашкой, без «Готовлю…»
         await cb.answer(texts.GW_BACKUP_NO_KEY, show_alert=True)

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from awgbot.bot.handlers import gateway as gateway_handlers
 from awgbot.runtime import hostboot, linkclient
 from awgbot.core import config
-from awgbot.domain.backupcrypto import BackupKeyMissing
+from awgbot.domain.backup.crypto import BackupKeyMissing
 from awgbot.domain import gwcfg
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.domain.gwssh import SshOwnerRefusal
