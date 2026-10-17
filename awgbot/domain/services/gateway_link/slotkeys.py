@@ -8,6 +8,10 @@
 снимается; сторож-тест сверяет реестр с кодом пакетов gwchannel/,
 gateway_link/ и routing/.
 
+Третья пометка — что делает восстановление из бэкапа со слотом, который есть
+и сейчас: ключ описывает стоящее на шлюзе (текущий) или это данные человека,
+которые предлагаются шлюзу вопросом (из бэкапа).
+
 Имя ключа — основа без номера: в базе он лежит как «<имя>_<слот>»; имя с «{}»
 — шаблон, номер слота встаёт на его место («routing_gw_{}_up_streak»).
 """
@@ -18,10 +22,14 @@ from typing import NamedTuple
 SLOT = "slot"        # снимается только со слотом: свойство слота, а не устройства в нём
 DEVICE = "device"    # снимается и при замене устройства: описывает стоящее на шлюзе
 
+CURRENT = "current"  # восстановление: у текущего слота остаётся текущим — описывает стоящее сейчас
+OFFER = "offer"      # восстановление: из бэкапа с пометкой «предложить шлюзу» (данные человека)
+
 
 class SlotKey(NamedTuple):
     when: str        # SLOT | DEVICE
     part: str        # чья часть: cfg — документ, link — канал, rekey — смена ключей, slot, keep
+    merge: str = CURRENT   # CURRENT | OFFER — что берёт восстановление у слота, который есть сейчас
 
 
 KEYS: dict[str, SlotKey] = {
@@ -71,7 +79,7 @@ KEYS: dict[str, SlotKey] = {
     "routing_gw_{}_announced": SlotKey(SLOT, "slot"),
     "routing_gw_{}_down_since": SlotKey(SLOT, "slot"),
     # копия настроек шлюза: нужна новому устройству слота — переживает замену
-    "gwkeep": SlotKey(SLOT, "keep"),
+    "gwkeep": SlotKey(SLOT, "keep", OFFER),
 }
 
 
@@ -80,10 +88,11 @@ def key(name: str, slot_id: int) -> str:
     return name.format(int(slot_id)) if "{}" in name else f"{name}_{int(slot_id)}"
 
 
-def names(*, when: str | None = None, part: str | None = None) -> tuple[str, ...]:
-    """Имена реестра по пометке и части; без условий — все."""
+def names(*, when: str | None = None, part: str | None = None, merge: str | None = None) -> tuple[str, ...]:
+    """Имена реестра по пометкам и части; без условий — все."""
     return tuple(n for n, k in KEYS.items()
-                 if (when is None or k.when == when) and (part is None or k.part == part))
+                 if (when is None or k.when == when) and (part is None or k.part == part)
+                 and (merge is None or k.merge == merge))
 
 
 def forget(db, slot_id: int, which) -> None:

@@ -60,6 +60,9 @@
 #                          AWG_UPDATE_CLEANUP=<путь> (установщик и самообновление
 #                          из бота) — архив или каталог поставки убрать после
 #                          обновления; только из /tmp, чужое не трогается.
+#                          Поставка ниже версии совместимости установленного
+#                          кода (COMPAT_FLOOR, awgbot/core/compat.py) — отказ до
+#                          остановки сервиса: откат — только чистой установкой.
 #                          Копии обвязки (routing-host-setup.sh или
 #                          routing-gw-setup.sh) и скрипта линка в
 #                          /usr/local/sbin освежаются, если они там уже есть;
@@ -81,30 +84,37 @@
 #                          резолвер админа).
 #                          Что было до бота — аплинк шлюза, интерфейсы awg с
 #                          клиентами — остаётся.
-#   backup                 снимок состояния → $BACKUP_DIR/*.tgz тем же составом, что
-#                          копия из чата: сборщик tools/snapshot.py (БД через backup
-#                          API SQLite, conf, env, конфиги awg-интерфейсов; у ВПС —
-#                          конфиги линков слотов, у шлюза — firewall.env и свои
-#                          списки). Сборщик не отвечает — запасной снимок shell:
-#                          БД после чекпоинта WAL, conf, env.
-#   restore [<tgz>]        восстановить состояние из снимка (по умолчанию — свежий).
-#                          До остановки сервиса — отказ, если копия чужой роли
-#                          (метка backup-meta.json) или схема её базы ниже
-#                          минимума 3.3.0 (python -m tools.check_backup).
-#                          Перед подменой — снимок текущего тем же сборщиком (не
-#                          снялся — отказ). База ложится через временный файл и
-#                          mv: не легла — восстановление прерывается без маркера
-#                          «восстановлено», сервис поднимается на прежней базе.
-#                          Расшифрованная копия из чата (restore-pending.tgz)
-#                          удаляется сразу после распаковки.
-#                          Конфиг интерфейса с другими хуками
-#                          Pre/Post кладётся, но не поднимается.
-#                          На шлюзе — ещё firewall.env (кроме SSH_PORT: порт —
-#                          факт устройства, остаётся текущий) и свои списки
-#                          локальной сети (только строки nftset= своих наборов;
-#                          копия 3.3.0 и раньше — с таблицей awg_home, строки
-#                          переписываются на awg_lan; без применённого режима —
-#                          в /var/lib/awg-gw/restore).
+#   backup                 бэкап сервера AWG → $BACKUP_DIR/awg-bot-backup-main-*.tgz.enc
+#                          тем же составом, что копия из чата: сборщик
+#                          tools/snapshot.py (БД через backup API SQLite, conf,
+#                          env, конфиги awg-интерфейсов, линки слотов и выданные
+#                          шлюзовые стороны root/gw-*.conf, метка схемы 2 с
+#                          описью шлюзов). Только шифрованный ключевой фразой из
+#                          базы: без фразы — отказ, открытых бэкапов нет. На
+#                          шлюзе — отказ: его настройки в бэкапе сервера AWG.
+#   restore [<файл>]       восстановить сервер AWG из шифрованного бэкапа (по
+#                          умолчанию — свежий в $BACKUP_DIR); открытый архив —
+#                          отказ. Безопасность — порядком, снимка «до» нет: всё,
+#                          что может отказать (расшифровка — фразой из базы для
+#                          файла из чата restore-pending.tgz.enc, иначе вопросом;
+#                          распаковка `tar xf`; сторож метки tools/check_backup
+#                          --meta: схема 2, версия не ниже COMPAT_FLOOR и не
+#                          новее кода, поколение AmneziaWG; план — тот же текст,
+#                          что вопрос в чате, до «Продолжить?»), — до остановки
+#                          сервиса. После остановки — слияние с текущим
+#                          (tools/restore_merge --copy: читает живое, пишет
+#                          только в распакованное; отказ — ничего не изменилось,
+#                          сервис поднят), подготовка <имя>.restore-new рядом с
+#                          каждой целью, DROP заблокированным (--apply-blocks)
+#                          до подъёма интерфейсов, замена переименованием через
+#                          <имя>.restore-old под ловушкой (отказ посреди замены
+#                          — прежнее на место, сервис поднят), подъём
+#                          изменившихся интерфейсов (конфиг с другими хуками
+#                          Pre/Post кладётся, но не поднимается), линки пустого
+#                          сервера — routing-link-setup.sh --adopt, DROP ещё
+#                          раз, дубли .restore-old прочь, маркер для бота.
+#                          Временный каталог операции и файл из чата удаляются
+#                          при любом исходе. На шлюзе — отказ.
 #   status                 состояние сервиса и пути.
 #   logs                   журнал сервиса (follow, время journald со смещением).
 
@@ -902,6 +912,14 @@ cmd_update() {
     [[ -n "$main" ]] || { rm -rf "$tmp"; die "в архиве нет awgbot/ — не та поставка?"; }
     local src; src="$(dirname "$(dirname "$main")")"
     chown -R root:root "$src"
+    # Версия совместимости — граница, ниже которой этот код не возвращается:
+    # копии ниже неё не применяются, а откат — только чистой установкой.
+    local floor newver
+    floor="$(compat_floor)"; newver="$(tree_version "$src")"
+    if [[ -n "$floor" && -n "$newver" ]] && version_lt "$newver" "$floor"; then
+        rm -rf "$tmp"
+        die "откат ниже $floor невозможен — только чистая установка"
+    fi
 
     # ЯДРО — ДО подмены кода. Версия AmneziaWG прибита к поставке, значит её
     # надо собрать; а собирать надо ПЕРВЫМ делом, пока на диске рабочая
@@ -948,6 +966,10 @@ cmd_update() {
     # продолжать читать с диска файл, который сменился под ним, — отдельный
     # способ получить мусор в разборе оставшегося хвоста.
     exec "$INSTALL_DIR/awg-bot.sh" __post_update "$wipe"
+}
+
+compat_floor() {  # версия совместимости установленного кода (awgbot/core/compat.py); пусто — не прочитана
+    sed -n 's/^COMPAT_FLOOR *= *"\([0-9][0-9.]*\)".*/\1/p' "$INSTALL_DIR/awgbot/core/compat.py" 2>/dev/null | head -n1
 }
 
 tree_version() {  # tree_version DIR — версия поставки в каталоге (awgbot/__version__.py); пусто — не прочитана
@@ -1288,258 +1310,272 @@ prune_old_kernel_builds() {
         || log "прежние сборки ядра не убраны — позже: awg-bot awg prune"
 }
 
-# ── backup / restore (снимок состояния: БД + conf + env) ─────────────────────
-snapshot_state() {  # snapshot_state OUT — снимок состояния той же раскладкой, что копия из чата
-    # Сборщик один на все случаи (копия из чата, awg-bot backup, снимок перед
-    # восстановлением): три сборки с разным составом однажды дали снимок «до
-    # восстановления» без конфигов интерфейсов. БД — через backup API SQLite:
-    # cp -a на работающем боте терял WAL, то есть последние транзакции.
+# ── backup / restore: бэкап сервера AWG — один шифрованный архив ─────────────
+GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство ставится файлом конфигурации шлюза (sudo sh <файл> --install), остальное довезёт канал конфигурации"
+ROOT_GW_DIR="${AWG_ROOT_GW_DIR:-/root}"      # выданные шлюзовые стороны линков: /root/gw-<линк>.conf
+SYS_NET="${AWG_SYS_NET:-/sys/class/net}"     # поднятые интерфейсы хоста
+
+is_gateway_role() {  # роль установки — шлюз (role: gateway в app.yaml)
+    [[ "$(yaml_get "$CONF_DIR/app.yaml" role 2>/dev/null)" == "gateway" ]]
+}
+
+bot_tool() {  # bot_tool MODULE ARGS… — python -m MODULE кодом установки, с путями этой установки
     ( cd "$INSTALL_DIR" \
         && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
-        && ./venv/bin/python -m tools.snapshot --out "$1" ) && return 0
-    # Код установки не отвечает (сломан conf, который и восстанавливают) —
-    # запасной снимок средствами shell: база после чекпоинта WAL, conf, env.
-    warn "сборщик снимка не отработал — снимаю запасной снимок (БД, конфиг, секреты; без конфигов интерфейсов)"
-    local tmp; tmp="$(mktemp -d)"; mkdir -p "$tmp/state"
-    local db
-    for db in "$DATA_DIR"/*.db; do
-        [[ -f "$db" ]] || continue
-        ( cd "$INSTALL_DIR" && ./venv/bin/python -c 'import sqlite3, sys
-c = sqlite3.connect(sys.argv[1]); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()' "$db" 2>/dev/null ) \
-            || warn "$(basename "$db"): чекпоинт WAL не прошёл — копия может быть без последних записей"
-        cp -a "$db" "$tmp/state/"
-    done
-    [[ -d "$CONF_DIR" ]] && cp -a "$CONF_DIR" "$tmp/state/conf" 2>/dev/null || true
-    [[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$tmp/state/env" 2>/dev/null || true
-    local role="main"; [[ "$(yaml_get "$CONF_DIR/app.yaml" role 2>/dev/null)" == "gateway" ]] && role="gw"
-    printf '{"role": "%s", "created_at": "%s", "hostname": "%s"}\n' "$role" "$(date -Iseconds)" "$(hostname)" > "$tmp/state/backup-meta.json"
-    ( cd "$tmp" && tar czf "$1" . ) || { rm -rf "$tmp"; return 1; }
-    chmod 600 "$1"; rm -rf "$tmp"
+        && ./venv/bin/python -m "$@" )
 }
+
 cmd_backup() {
     require_root; require_installed
+    is_gateway_role && die "$GW_NO_BACKUPS"
     mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
-    local ts out; ts="$(date +%Y%m%d-%H%M%S)"; out="$BACKUP_DIR/awg-bot-state-$ts.tgz"
-    snapshot_state "$out" || die "снимок не снялся — смотри вывод выше"
-    ok "снимок состояния: $out"
-    log "в нём БД, конфиг, секреты и конфиги awg-интерфейсов — храни как чувствительный."
+    local ts out err; ts="$(date +%Y%m%d_%H%M%S)"; out="$BACKUP_DIR/awg-bot-backup-main-$ts.tgz.enc"
+    # Сборщик один на все случаи (tools/snapshot, тот же состав, что копия из
+    # чата): БД — через backup API SQLite; шифрование — фразой из базы. Без
+    # фразы бэкапа нет: открытых бэкапов нет, а шифровать без кода установки
+    # нечем — при сломанном коде бэкапа нет вовсе.
+    err="$(bot_tool tools.snapshot --out "$out" 2>&1 >/dev/null)" || die "${err:-бэкап не снялся}"
+    ok "бэкап: $out"
+    log "шифрованный ключевой фразой — восстановить: sudo awg-bot restore $out"
 }
 
 awg_conf_dir() {
-    # где лежат конфиги awg-интерфейсов: у шлюза — gateway.conf_dir, у хоста —
-    # /etc/amnezia/amneziawg (awg_dir в app.yaml — докерный рудимент)
+    # где лежат конфиги awg-интерфейсов хоста: /etc/amnezia/amneziawg (awg_dir в
+    # app.yaml — докерный рудимент); у шлюза — gateway.conf_dir
     local d; d="$(yaml_get "$CONF_DIR/app.yaml" conf_dir)"
     printf '%s' "${d:-/etc/amnezia/amneziawg}"
 }
-cmd_restore() {
-    require_root
-    # --yes: без вопросов (из чата: бот уже спросил админа); конфиги интерфейсов
-    # кладутся и интерфейсы переподнимаются сами, итог — маркером для бота.
-    local yes=0
-    if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
-    local tgz orig="${1:-}"
-    if [[ -n "${1:-}" ]]; then tgz="$1"; [[ -f "$tgz" ]] || die "не найден: $tgz"
-    else
-        [[ -d "$BACKUP_DIR" ]] || die "нет каталога снимков $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
-        tgz="$(ls -1t "$BACKUP_DIR"/awg-bot-state-*.tgz "$BACKUP_DIR"/awg-bot-backup-*.tgz* 2>/dev/null | head -n1 || true)"
-        [[ -n "$tgz" ]] || die "снимков не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
-    fi
-    warn "восстановление ПЕРЕЗАПИШЕТ текущие БД/конфиг/секреты содержимым: $(basename "$tgz")"
-    [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
-    local tmp; tmp="$(mktemp -d)"
-    # Копия из чата/почты — шифрованный архив (*.enc): расшифровать парольной
-    # фразой (спросит) во временный файл, дальше — как обычный снимок.
-    if [[ "$tgz" == *.enc ]]; then
-        log "шифрованная копия — нужна парольная фраза"
-        ( cd "$INSTALL_DIR" && ./venv/bin/python -m tools.restore_backup --out "$tmp/snapshot.tgz" "$tgz" ) \
-            || { rm -rf "$tmp"; die "не расшифровалось — фраза не та или файл повреждён"; }
-        tgz="$tmp/snapshot.tgz"
-    fi
-    tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
-    # раскладка копии из чата — с каталогом state/, старого снимка — без него
-    local src="$tmp"; [[ -d "$tmp/state" ]] && src="$tmp/state"
-    # чужую копию не разворачиваем: метка роли внутри архива против роли здесь
-    local meta="$src/backup-meta.json" bk_role="" bk_at="" my_role="main"
-    [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && my_role="gw"
-    if [[ -f "$meta" ]]; then
-        bk_role="$(grep -o '"role": *"[a-z]*"' "$meta" | sed 's/.*"\([a-z]*\)"$/\1/')"
-        bk_at="$(grep -o '"created_at": *"[^"]*"' "$meta" | sed 's/.*"\([^"]*\)"$/\1/')"
-        [[ -z "$bk_role" || "$bk_role" == "$my_role" ]] || { rm -rf "$tmp"; die "это копия роли «$bk_role», а здесь «$my_role» — не разворачиваю"; }
-    fi
-    # Схема базы в копии не ниже минимума 3.3.0: миграций старше в коде нет,
-    # такую базу нечем довести — бот упал бы на первом запросе
-    local dbf
-    for dbf in "$src"/*.db; do
-        [[ -f "$dbf" ]] || continue
-        ( cd "$INSTALL_DIR" && ./venv/bin/python -m tools.check_backup "$dbf" ) \
-            || { rm -rf "$tmp"; die "копия снята версией ниже 3.3.0 — восстанови её на хосте с 3.3.0, потом обновись"; }
-    done
-    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
-    # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
-    # распаковки и остановки сервиса (иначе снимали бы БД под записью).
-    #
-    # Без него у восстановления нет отката, а запускают его ровно тогда, когда
-    # уже всё плохо: ошибиться снимком в такой момент проще всего, и старый
-    # снимок молча уносит всё, что появилось после него. Так и вышло однажды —
-    # три дня состояния исчезли без следа.
-    local pre; pre="$BACKUP_DIR/awg-bot-prerestore-$(date +%Y%m%d-%H%M%S).tgz"
-    mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
-    if ! snapshot_state "$pre"; then
-        rm -rf "$tmp"; systemctl start "$SERVICE" 2>/dev/null || true
-        die "снимок ДО восстановления не снялся — восстановление отменено, сервис поднят"
-    fi
-    ok "снимок ДО восстановления: $pre"
-    log "передумал — вернуться: awg-bot restore $pre"
-    # Каталог конфигов интерфейсов — по ТЕКУЩЕМУ app.yaml, до его подмены:
-    # иначе копия сама выбирала бы, куда положить свои конфиги.
-    local awgdir; awgdir="$(awg_conf_dir)"
-    mkdir -p "$DATA_DIR" "$CONF_DIR"
-    # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОМУ файлу БД. Оставь их рядом с чужой
-    # базой — SQLite в лучшем случае отбросит их по несовпадению соли, в худшем
-    # доложит из них страницы в файл, которому они не родня.
-    rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
-    # через временный файл и mv: оборванная копия базы в рабочем пути с маркером
-    # «восстановлено» — худший исход; не легла — прежняя база цела, сервис вверх
-    local dbt
-    for dbf in "$src"/*.db; do
-        [[ -f "$dbf" ]] || continue
-        dbt="$DATA_DIR/.restore-$(basename "$dbf").tmp"
-        if ! { cp -a "$dbf" "$dbt" && mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"; }; then
-            rm -f "$dbt"; rm -rf "$tmp"
-            systemctl start "$SERVICE" 2>/dev/null || true
-            die "база из копии не легла в $DATA_DIR — восстановление прервано, сервис поднят на прежней базе; снимок ДО: $pre"
-        fi
-    done
-    # Настройки и env — только то, что отличается: не трогаем неизменившееся.
-    # Ключ timezone копии старше снятия ключа вернул бы пояс ключа молча: в
-    # текущем app.yaml его не было — после восстановления снимается снова.
-    local tz_had=0
-    grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
-    if [[ -d "$src/conf" ]]; then
-        mkdir -p "$CONF_DIR"
-        local f
-        for f in "$src/conf"/*; do
-            [[ -f "$f" ]] || continue
-            cmp -s "$f" "$CONF_DIR/$(basename "$f")" 2>/dev/null || cp -a "$f" "$CONF_DIR/"
-        done
-    fi
-    [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
-    if [[ -f "$src/env" ]] && ! cmp -s "$src/env" "$ENV_FILE" 2>/dev/null; then
-        cp -a "$src/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"
-    fi
-    # Конфиги awg-интерфейсов — отдельным вопросом: они с приватными ключами,
-    # и на живом хосте их подмена рвёт коннекты. Поднимать — руками после.
-    if compgen -G "$tmp/awg/*.conf" >/dev/null; then
-        # только ИЗМЕНИВШИЕСЯ конфиги: тот же файл — интерфейс не трогаем.
-        # Конфиг с ДРУГИМИ хуками (PreUp/PostUp/PreDown/PostDown) сам не
-        # поднимаем: awg-quick исполняет их от root, а копия из чата — это
-        # файл, который прислали. Класть — кладём, поднимать — руками.
-        local c i changed="" hooked=""
-        for c in "$tmp/awg"/*.conf; do
-            i="$(basename "$c" .conf)"
-            cmp -s "$c" "$awgdir/$i.conf" 2>/dev/null && continue
-            changed="$changed $i"
-            if ! cmp -s <(grep -E '^(Pre|Post)(Up|Down) *=' "$c" 2>/dev/null) \
-                        <(grep -E '^(Pre|Post)(Up|Down) *=' "$awgdir/$i.conf" 2>/dev/null); then
-                hooked="$hooked $i"
-            fi
-        done
-        if [[ -z "$changed" ]]; then
-            log "конфиги awg-интерфейсов не изменились с момента копии — не трогаю."
-        else
-            warn "в копии изменившиеся конфиги awg-интерфейсов:$changed"
-            if [[ "$yes" -eq 1 ]] || confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
-                mkdir -p "$awgdir"
-                for i in $changed; do
-                    cp -a "$tmp/awg/$i.conf" "$awgdir/$i.conf"; chmod 600 "$awgdir/$i.conf"
-                    case " $hooked " in *" $i "*)
-                        warn "$i: в копии другие хуки Pre/Post — положен, но не поднят: проверь и подними руками (awg-quick up $i)"
-                        continue ;;
-                    esac
-                    if [[ "$yes" -eq 1 && -d "/sys/class/net/$i" ]]; then
-                        # из чата: переподнять здесь же — руками некому
-                        awg-quick down "$i" >/dev/null 2>&1 || true
-                        awg-quick up "$i" >/dev/null 2>&1 || warn "$i не поднялся"
-                    fi
-                done
-                [[ "$yes" -eq 1 ]] && ok "изменившиеся интерфейсы восстановлены и переподняты:$changed" \
-                    || ok "конфиги восстановлены:$changed; поднять: awg-quick up <iface>"
-            else
-                log "конфиги интерфейсов оставлены как есть."
-            fi
-        fi
-    fi
-    # Локальное состояние файервола шлюза (порт SSH, адреса снаружи, доверенные
-    # из туннеля) — данные человека, файл конфигурации их не восстановит. Юнит обвязки
-    # подхватит файл при следующем реассерте (агент сверяет порт по тику).
-    if [[ -f "$tmp/awg-gw/firewall.env" ]]; then
-        # SSH_PORT из копии не переносим: порт — факт этого устройства (под OMV
-        # его задаёт OMV), агент снимет его на первом тике; из копии его
-        # значение давало таблицу на старом порту и ложное «порт изменился»
-        local fw_new="$tmp/awg-gw/firewall.env.restore"
-        { grep -v '^SSH_PORT=' "$tmp/awg-gw/firewall.env"; grep '^SSH_PORT=' /etc/awg-gw/firewall.env 2>/dev/null; } > "$fw_new" || true
-        if cmp -s "$fw_new" /etc/awg-gw/firewall.env 2>/dev/null; then
-            log "firewall.env шлюза не изменился с момента копии — не трогаю"
-        else
-            mkdir -p /etc/awg-gw
-            cp -a "$fw_new" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
-            if systemctl is-enabled awg-link-gw.service >/dev/null 2>&1; then
-                systemctl restart awg-link-gw.service >/dev/null 2>&1 \
-                    && ok "firewall.env шлюза восстановлен, обвязка перевыставлена" \
-                    || warn "firewall.env восстановлен, но обвязка не перевыставилась: awg-bot firewall apply"
-            else
-                ok "firewall.env шлюза восстановлен (обвязки ещё нет — подхватится при применении конфигурации)"
-            fi
-        fi
-    fi
-    # Личные списки локальной сети без VPN (awg-gw-*-user.conf) — тоже данные
-    # человека. Режим на машине применён (есть базовый конфиг dnsmasq) — кладём в
-    # conf-dir и перечитываем демон; ещё нет — откладываем в /var/lib/awg-gw/restore,
-    # скрипт обвязки подхватит их при первом включении режима.
-    if compgen -G "$tmp/awg-gw/lan/*-user.conf" >/dev/null && lan_lists_sane "$tmp"/awg-gw/lan/*-user.conf; then
-        # копия шлюза 3.3.0 и раньше — наборы под прежним именем таблицы:
-        # на новое, как скрипт обвязки при переходе (снимается со следующим
-        # сдвигом минимума)
-        _uf=""
-        for _uf in "$tmp"/awg-gw/lan/*-user.conf; do
-            sed 's|inet#awg_home#|inet#awg_lan#|g' "$_uf" > "$_uf.new" && mv -f "$_uf.new" "$_uf"
-        done
-        if [[ -f /etc/dnsmasq.d/awg-gw-base.conf ]]; then
-            cp -a "$tmp"/awg-gw/lan/*-user.conf /etc/dnsmasq.d/ && chmod 644 /etc/dnsmasq.d/awg-gw-*-user.conf
-            systemctl restart dnsmasq >/dev/null 2>&1 \
-                && ok "личные списки локальной сети восстановлены" \
-                || warn "личные списки восстановлены, но dnsmasq не перезапустился: journalctl -u dnsmasq -o short-iso -e"
-        else
-            mkdir -p /var/lib/awg-gw/restore
-            cp -a "$tmp"/awg-gw/lan/*-user.conf /var/lib/awg-gw/restore/
-            ok "личные списки локальной сети отложены в /var/lib/awg-gw/restore — встанут при включении режима без VPN"
-        fi
-    fi
-    # расшифрованная копия из чата (restore-pending.tgz) легла — открытый
-    # архив с ключами и базой в каталоге снимков больше не нужен; при отказе
-    # выше он остаётся, чтобы не присылать файл заново
-    [[ "$(basename "$orig")" == "restore-pending.tgz" ]] && rm -f -- "$orig"
-    # маркер для бота: новый процесс доложит админу, из какой копии восстановились
-    printf '{"created_at": "%s", "source": "%s"}\n' "$bk_at" "$(basename "$tgz")" > "$DATA_DIR/restore-done.json"
-    rm -rf "$tmp"
-    systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
-    systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
+
+# Замена файлов живого — переименованием в том же каталоге: <имя>.restore-new
+# готовится рядом с целью, заменяемый уходит в <имя>.restore-old, новый встаёт
+# на его место (mv в одном каталоге атомарен). Отказ посреди замены — ловушка
+# возвращает .restore-old на место и поднимает сервис; после последней замены
+# .restore-old удаляются: это не копия и не точка возврата, а временный дубль
+# внутри операции.
+RESTORE_TARGETS=()        # цели в порядке замены (без .restore-new — только убрать в дубль)
+RESTORE_DONE_T=()         # уже тронутые замены
+RESTORE_HAD_OLD=()        # 1 — у тронутой цели был прежний файл (.restore-old)
+RESTORE_SWAPPING=0
+RESTORE_ERR=""
+RESTORE_TMP=""
+RESTORE_PENDING=""
+
+restore_stage() {  # restore_stage SRC TARGET MODE — подготовить TARGET.restore-new, если отличается
+    cmp -s "$1" "$2" 2>/dev/null && return 0
+    mkdir -p "$(dirname "$2")" || return 1
+    cp "$1" "$2.restore-new" && chmod "$3" "$2.restore-new" || { rm -f "$2.restore-new"; return 1; }
+    RESTORE_TARGETS+=("$2")
 }
 
-lan_lists_sane() {  # lan_lists_sane FILE… → 0, если в файлах только строки личных списков
-    # Файлы уходят в conf-dir dnsmasq, а там строка conf-file=/dhcp-script= —
-    # исполнение от root. В личном списке допустимы только nftset= наших
-    # наборов (как пишет awg-lan-domain sync) и комментарии; таблица —
-    # awg_lan или прежняя awg_home (копия шлюза 3.3.0 и раньше — снимается со
-    # следующим сдвигом минимума).
-    local f re='^(#.*|nftset=/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})/(4#)?inet#awg_(lan|home)#lan_(vpn|ru)4)?$'
-    for f in "$@"; do
-        if grep -Ev "$re" "$f" | grep -q .; then
-            warn "$(basename "$f"): в копии строка не вида nftset=/домен/… — личные списки не восстановлены"
-            return 1
+restore_unstage() {  # .restore-new прочь (отказ до замены)
+    local t
+    for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do rm -f -- "$t.restore-new"; done
+}
+
+restore_rollback() {  # вернуть заменённое: .restore-old на место, новое прочь
+    local i t
+    i=${#RESTORE_DONE_T[@]}
+    while [[ "$i" -gt 0 ]]; do
+        i=$(( i - 1 ))
+        t="${RESTORE_DONE_T[$i]}"
+        if [[ "${RESTORE_HAD_OLD[$i]}" == "1" ]]; then
+            mv -f -- "$t.restore-old" "$t" 2>/dev/null || warn "не вернулся $t — прежний лежит в $t.restore-old"
+        else
+            rm -f -- "$t"
         fi
     done
+    for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do rm -f -- "$t.restore-new"; done
+    RESTORE_DONE_T=(); RESTORE_HAD_OLD=()
+}
+
+restore_mv() {  # restore_mv SRC DST — переименование; отказ — причина в RESTORE_ERR
+    local errf="${RESTORE_TMP:-/tmp}/.mv-err"
+    mv -f -- "$1" "$2" 2>"$errf" && return 0
+    RESTORE_ERR="$2: $(cat "$errf" 2>/dev/null)"
+    return 1
+}
+
+restore_swap() {  # restore_swap → 0 — всё заменено; 1 — отказ (причина в RESTORE_ERR)
+    local t had
+    RESTORE_SWAPPING=1
+    for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do
+        had=0
+        if [[ -e "$t" ]]; then
+            restore_mv "$t" "$t.restore-old" || return 1
+            had=1
+        fi
+        RESTORE_DONE_T+=("$t"); RESTORE_HAD_OLD+=("$had")
+        [[ -e "$t.restore-new" ]] || continue          # только убрать (журналы заменяемой базы)
+        restore_mv "$t.restore-new" "$t" || return 1
+    done
     return 0
+}
+
+restore_finish() {  # замена удалась: временные дубли прочь
+    local t
+    for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do rm -f -- "$t.restore-old"; done
+    RESTORE_SWAPPING=0
+}
+
+restore_exit() {  # ловушка операции: прерванная замена откатывается, временное — прочь
+    local rc=$?
+    if [[ "$RESTORE_SWAPPING" == "1" ]]; then
+        restore_rollback
+        RESTORE_SWAPPING=0
+        systemctl start "$SERVICE" 2>/dev/null || true
+    fi
+    [[ -n "$RESTORE_TMP" ]] && rm -rf -- "$RESTORE_TMP"
+    [[ -n "$RESTORE_PENDING" ]] && rm -f -- "$RESTORE_PENDING"
+    return "$rc"
+}
+
+restore_blocks() {  # DROP заблокированным из итога слияния — тем же входом, что у бота
+    bot_tool tools.restore_merge --apply-blocks "$1" \
+        || warn "не все DROP наложены — сверка бота на старте доналожит"
+}
+
+cmd_restore() {
+    require_root
+    is_gateway_role && die "$GW_NO_BACKUPS"
+    # --yes: без вопросов (из чата: бот уже показал план и спросил админа);
+    # итог — маркером для бота.
+    local yes=0
+    if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
+    local src="${1:-}"
+    if [[ -n "$src" ]]; then
+        [[ -f "$src" ]] || die "не найден: $src"
+    else
+        [[ -d "$BACKUP_DIR" ]] || die "нет каталога бэкапов $BACKUP_DIR — укажи путь: awg-bot restore <файл>"
+        src="$(ls -1t "$BACKUP_DIR"/awg-bot-backup-*.tgz.enc 2>/dev/null | head -n1 || true)"
+        [[ -n "$src" ]] || die "бэкапов не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <файл>"
+    fi
+    RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_SWAPPING=0
+    RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
+    # Файл из чата бот кладёт шифрованным (restore-pending.tgz.enc): при любом
+    # исходе он удаляется, расшифрованное живёт только во временном каталоге.
+    RESTORE_PENDING=""
+    [[ "$(basename "$src")" == "restore-pending.tgz.enc" ]] && RESTORE_PENDING="$src"
+    trap restore_exit EXIT
+    local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err
+
+    # ── всё, что может отказать, — до остановки сервиса ──
+    [[ "$(head -c 6 "$src" 2>/dev/null)" == "AWGBK1" ]] \
+        || die "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
+    if [[ -n "$RESTORE_PENDING" ]]; then
+        bot_tool tools.restore_backup --phrase-from-db --out "$tmp/backup.tgz" "$src" >/dev/null 2>&1 \
+            || die "не расшифровался — ключевая фраза в базе не та или файл повреждён"
+    else
+        log "шифрованный бэкап — нужна ключевая фраза"
+        bot_tool tools.restore_backup --out "$tmp/backup.tgz" "$src" >/dev/null \
+            || die "не расшифровался — фраза не та или файл повреждён"
+    fi
+    mkdir -p "$copy"
+    tar xf "$tmp/backup.tgz" -C "$copy" --no-same-owner || die "не удалось распаковать бэкап"
+    rm -f "$tmp/backup.tgz"
+    [[ -f "$copy/state/backup-meta.json" ]] || die "в бэкапе нет метки — это не бэкап сервера AWG"
+    err="$(bot_tool tools.check_backup --meta "$copy/state/backup-meta.json" 2>&1 >/dev/null)" \
+        || die "${err:-метка бэкапа не прошла проверку}"
+    local plan
+    plan="$(bot_tool tools.restore_merge --plan "$copy" 2>&1)" || die "$plan"
+    printf '%s\n\n' "$plan"
+    [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
+    local bk_at
+    bk_at="$(grep -o '"created_at": *"[^"]*"' "$copy/state/backup-meta.json" | sed 's/.*"\([^"]*\)"$/\1/')"
+    # Каталог конфигов интерфейсов и ключ timezone — по ТЕКУЩЕМУ app.yaml, до
+    # его подмены: иначе бэкап сам выбирал бы, куда положить свои конфиги.
+    local awgdir; awgdir="$(awg_conf_dir)"
+    local tz_had=0
+    grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
+
+    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    # Слияние — после остановки: читает живую базу неподвижной, пишет только в
+    # распакованный бэкап. Отказ — живое не тронуто.
+    if ! err="$(bot_tool tools.restore_merge --copy "$copy" 2>&1 >/dev/null)"; then
+        systemctl start "$SERVICE" 2>/dev/null || true
+        die "${err:-слияние не прошло} — ничего не изменилось, сервис поднят"
+    fi
+
+    # ── подготовка: каждый заменяемый файл — рядом с целью ──
+    local f i c changed="" hooked="" prep=0
+    mkdir -p "$DATA_DIR" "$CONF_DIR"
+    if [[ -f "$copy/state/bot.db" ]]; then
+        restore_stage "$copy/state/bot.db" "$DATA_DIR/bot.db" 600 || prep=1
+    fi
+    for f in "$copy/state/conf"/*.yaml; do
+        [[ -f "$f" ]] || continue
+        restore_stage "$f" "$CONF_DIR/$(basename "$f")" 644 || prep=1
+    done
+    if [[ -f "$copy/state/env" ]]; then
+        restore_stage "$copy/state/env" "$ENV_FILE" 600 || prep=1
+    fi
+    for c in "$copy/awg"/*.conf; do
+        [[ -f "$c" ]] || continue
+        i="$(basename "$c" .conf)"
+        cmp -s "$c" "$awgdir/$i.conf" 2>/dev/null && continue
+        changed="$changed $i"
+        # Конфиг с ДРУГИМИ хуками (PreUp/PostUp/PreDown/PostDown) сам не
+        # поднимаем: awg-quick исполняет их от root. Класть — кладём.
+        if ! cmp -s <(grep -E '^(Pre|Post)(Up|Down) *=' "$c" 2>/dev/null) \
+                    <(grep -E '^(Pre|Post)(Up|Down) *=' "$awgdir/$i.conf" 2>/dev/null); then
+            hooked="$hooked $i"
+        fi
+        restore_stage "$c" "$awgdir/$i.conf" 600 || prep=1
+    done
+    for c in "$copy/root"/gw-*.conf; do
+        [[ -f "$c" ]] || continue
+        restore_stage "$c" "$ROOT_GW_DIR/$(basename "$c")" 600 || prep=1
+    done
+    if [[ "$prep" -ne 0 ]]; then
+        restore_unstage
+        systemctl start "$SERVICE" 2>/dev/null || true
+        die "подготовка не прошла — ничего не изменилось, сервис поднят"
+    fi
+
+    # ── DROP заблокированным — до подъёма интерфейсов ──
+    restore_blocks "$copy/restore-merge.json"
+
+    # ── замена ──
+    # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОЙ базе: рядом с чужой SQLite в
+    # лучшем случае их отбросит, в худшем доложит в неё чужие страницы — они
+    # уходят в дубль вместе с ней (и возвращаются при откате).
+    for f in "$DATA_DIR/bot.db-wal" "$DATA_DIR/bot.db-shm"; do
+        [[ -e "$f" ]] && RESTORE_TARGETS+=("$f")
+    done
+    if ! restore_swap; then
+        restore_rollback; RESTORE_SWAPPING=0
+        systemctl start "$SERVICE" 2>/dev/null || true
+        die "замена не прошла — вернул прежнее, сервис поднят: ${RESTORE_ERR:-причина не названа}"
+    fi
+    [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
+
+    # ── подъём изменившихся интерфейсов, линки пустого сервера — юнитом ──
+    for i in $changed; do
+        case " $hooked " in *" $i "*)
+            warn "$i: в бэкапе другие хуки Pre/Post — положен, но не поднят: проверь и подними руками (awg-quick up $i)"
+            continue ;;
+        esac
+        if [[ -d "$SYS_NET/$i" ]]; then
+            awg-quick down "$i" >/dev/null 2>&1 || true
+            awg-quick up "$i" >/dev/null 2>&1 || warn "$i не поднялся"
+        fi
+    done
+    local adopt
+    adopt="$(sed -n 's/.*"adopt": *\[\([^]]*\)\].*/\1/p' "$copy/restore-merge.json" | tr -d '" ' | tr ',' ' ')"
+    for i in $adopt; do
+        [[ -n "$i" ]] || continue
+        LINK_IF="$i" sh "$INSTALL_DIR/install/routing-link-setup.sh" --adopt >/dev/null \
+            || warn "линк $i не поднялся — бот повторит на старте"
+    done
+    # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
+    restore_blocks "$copy/restore-merge.json"
+    restore_finish
+    [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"
+
+    # маркер для бота: новый процесс доложит итог по каждому шлюзу
+    { printf '{"created_at": "%s", "source": "%s", "merge": ' "$bk_at" "$(basename "$src")"
+      cat "$copy/restore-merge.json"; printf '}\n'; } > "$DATA_DIR/restore-done.json"
+    systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
+    systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
 }
 
 # ── uninstall (self-removal через отсоединённый пост-хук) ─────────────────────
@@ -1920,8 +1956,8 @@ awg-bot — управление установленным ботом.
   awg-bot restart            перезапустить сервис
   awg-bot reconfigure        перенастроить топологию/секреты (wizard)
   awg-bot update [tgz]       обновить код из архива (по умолч. awg-bot.tgz рядом)
-  awg-bot backup             снимок БД, конфига, секретов и конфигов интерфейсов
-  awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
+  awg-bot backup             шифрованный бэкап сервера AWG (БД, конфиг, секреты, интерфейсы, шлюзы)
+  awg-bot restore [файл]     восстановить из бэкапа со слиянием (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)
   awg-bot firewall <cmd>     файервол хоста (единственная точка — таблица awg_bot_guard):
                              status | setup | confirm [--disable-ufw] | apply [--no-rollback] |

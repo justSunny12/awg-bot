@@ -526,25 +526,19 @@ async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(cha
 
 # ── резервная копия агента и планировщик ─────────────────────────────────────
 
-@pytest.mark.parametrize("carries, tail", [(True, " — РФ-доступ у всех прервётся на секунды"), (False, "")])
-async def test_a_gateway_backup_that_touches_the_link_warns_about_rf_access_only_when_carrying(
-        svc, monkeypatch, carries, tail):
-    """Бэкап агента, который меняет конфиг линка: вопрос «восстановить?»
-    предупреждает, что линк опустится, — а про РФ-доступ только у шлюза,
-    который сейчас несёт трафик."""
+async def test_a_gateway_backup_in_chat_is_refused_in_words(svc, monkeypatch):
+    """На шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG; файл
+    копии в чате бота шлюза не принимается к восстановлению."""
     from awgbot.bot.handlers import restore as rs
-    monkeypatch.setattr(svc, "inspect_backup", lambda blob, name: {
-        "ok": True, "plain": b"x", "created_at": "2026-09-09T10:00:00+03:00", "ifaces_changed": ["awglink"]})
-    _carrying(svc, carries)
+    from awgbot.bot import texts
 
     class _Backup(_Doc):
         file_name = "awg-bot-gw.tgz.enc"
-    bot = _DlBot(b"archive")
+    bot = _DlBot(b"AWGBK1archive")
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     msg.document = _Backup(100)
     assert await rs.offer_restore(msg, svc, FakeState(), gateway=True) is True
-    offer = msg.sent[-1][1]
-    assert offer.endswith("\n\nЛинк опустится и поднимется" + tail), offer
+    assert msg.sent[-1][1].startswith(texts.restore_rejected("на шлюзе бэкапов нет"))
 
 
 async def test_gateway_scheduler_registers_its_jobs(svc, fake_bot):

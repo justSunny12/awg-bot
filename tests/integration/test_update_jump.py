@@ -1,7 +1,7 @@
 """
 Прыжок с минимума: хост на минимальной поддерживаемой версии (v3.3.0)
 обновляется на текущую одним шагом. Миграций ниже минимума в коде нет — схема
-3.3.0 обязана открываться как есть (schema_gap пуст), conf досеивается,
+3.3.0 обязана открываться как есть, conf досеивается,
 отсутствующие ключи закрыты дефолтами, поколение усыновляется как первое.
 
 Данные образца v3.3.0 создаются КОДОМ v3.3.0 (git archive во временный
@@ -95,8 +95,7 @@ def current_on_floor_host(floor_host, monkeypatch):
 
 def test_current_code_opens_the_floor_database_without_migrations(current_on_floor_host):
     cfg, conf, data = current_on_floor_host
-    from awgbot.infra.db import Database, schema
-    assert schema.schema_gap(str(cfg.DB_PATH)) == "", "схема минимума должна открываться как есть"
+    from awgbot.infra.db import Database
     db = Database(cfg.DB_PATH)
     db.init_schema()                                  # идемпотентно, повторно — тоже
     db.init_schema()

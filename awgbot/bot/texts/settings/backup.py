@@ -13,12 +13,19 @@ BACKUP_NO_KEY_LINE = ("⚠️ Без фразы автобэкап не дела
                       "в «🔐 Шифрование»")
 
 
-def settings_backup_text(encryption: bool = False, channel: str = "telegram", br=None) -> str:
-    """br.has.backup_encrypted_only (агент) и фразы нет — вместо расписания
-    предупреждение: копия без фразы не делается вовсе."""
+def settings_backup_text(encryption: bool = False, channel: str = "telegram", br=None, *,
+                         has_slots: bool = False, slot_lines=()) -> str:
+    """br.has.backup_encrypted_only и фразы нет — вместо расписания
+    предупреждение: копия без фразы не делается вовсе. Сервер AWG
+    (br.has.backup_gateways): без фразы — только предупреждение (раздел
+    держит одну кнопку «🔐 Шифрование»), с фразой — ещё блок шлюзов и строки
+    по слотам (slot_lines — готовые строки)."""
     from awgbot.core import settings as s
+    from awgbot.domain.notices import backup as nb
     on = s.get_bool("app.scheduler.backup_enabled", True)
     only_enc = bool(br is not None and br.has.backup_encrypted_only)
+    if br is not None and br.has.backup_gateways and not encryption:
+        return ui.head("💾 Бэкапы", meta=["🔓 фраза не задана"]) + "\n" + nb.no_phrase_line(has_slots)
     head = ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"),
                    meta=["🔐 фраза задана" if encryption else ("🔓 фраза не задана" if only_enc else "🔓 без шифрования")])
     lines = [head]
@@ -28,23 +35,18 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram", br
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
         lines.append(f"Каждое {day}-е число в {timeutil.fmt_hour_ui(hour)} → {where}")
+    if br is not None and br.has.backup_gateways and has_slots:
+        lines.append(nb.GATEWAYS_IN_BACKUP)
+        lines.extend(x for x in slot_lines if x)
     ext = ".tgz.enc" if (encryption or only_enc) else ".tgz"
     lines.append(f"Восстановить — пришли боту файл бэкапа ({ext})")
     return "\n".join(lines)
 
 
-def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
-    """Что в копии — у роли своё (backup_contents); iface_warning — цена
-    перезапуска AWG (restore_warning), только если восстановление затронет
-    интерфейсы."""
-    when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = f"♻️ Восстановить бэкап от {when}?" + f"\nВсё вернётся к тому моменту: {br.backup_contents}. Изменения после этого момента пропадут"
-    return text + (f"\n\n{iface_warning}" if iface_warning else "")
-
-
-def restore_warning(br, carries: bool = True) -> str:
-    """Цена перезапуска AWG словами роли — та же, что в подтверждении «🔧 Сервиса»."""
-    return br.awg_restart_cost_carrying if carries else br.awg_restart_cost
+def restore_offer_plan(plan, bot_username: str = "") -> str:
+    """Вопрос перед восстановлением — план (тот же текст печатает терминал)."""
+    from awgbot.domain.notices import backup as nb
+    return nb.restore_plan(plan, bot_username=bot_username)
 
 
 def restore_rejected(error: str) -> str:
@@ -54,9 +56,10 @@ def restore_rejected(error: str) -> str:
 RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа — бот перезапустится и через несколько секунд пришлёт отчёт"
 
 
-def restore_done(created_at_iso: str) -> str:
-    when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    return f"✅ Восстановлено из бэкапа от {when}"
+def restore_done_report(created_at_iso: str, report: dict, bot_username: str = "") -> str:
+    """Отчёт после восстановления: итог по шлюзам и устройства, которые не встали."""
+    from awgbot.domain.notices import backup as nb
+    return nb.restore_report(created_at_iso, report or {}, bot_username=bot_username)
 
 
 def email_not_configured(sec: str = "notify") -> str:

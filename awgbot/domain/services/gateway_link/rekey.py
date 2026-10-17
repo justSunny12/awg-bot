@@ -258,6 +258,7 @@ class RekeyMixin:
         finally:
             _REKEY_LOCK.release()
         log.info("ключи линка: слот %s на новых ключах", slot_id)
+        self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
         return {"notes": [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")],
                 "hold": False, "rekeyed": True}
 
@@ -325,6 +326,17 @@ class RekeyMixin:
         3.3.0): [(слот, «имя (подпись)»)] — для «🔧 Сервис → 🔑 Ключи линка»."""
         return [(gw.id, self._gw_display(gw)) for gw in self.db.gateways()
                 if gw.device_id and not self.gwlink_agent_outdated(gw.id)]
+
+    def _backup_event(self, slot_id: int, kind: str) -> None:
+        """Отметка «нужна свежая копия» (services/backups); отказ отметки
+        событие не ломает."""
+        mark = getattr(self, "backup_event_mark", None)
+        if mark is None:
+            return
+        try:
+            mark(kind, slot_id)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("бэкап по событию %s не отмечен: %s", kind, e)
 
     def gateway_rekey_forget(self, slot_id: int) -> None:
         """Переход и очередь отмен слота — по реестру slotkeys."""

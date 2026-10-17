@@ -124,4 +124,4 @@ class BundleMixin:
         if not self.backup_encryption_enabled():
             raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
                                "фразу в ⚙️ Настройки → 💾 Бэкапы → 🔐 Шифрование")
-        return self.write_backup_archive("gw", self.backup_extra(), require_encryption=True)
+        return self.write_backup_archive("gw", self.backup_extra())

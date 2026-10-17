@@ -1,6 +1,8 @@
 """
-restore.py — часть пакета backup (см. __init__): расшифрованная копия — на
-диск, запуск `awg-bot restore` вне cgroup бота и маркер его итога.
+restore.py — часть пакета backup (см. __init__): копия из чата — на диск
+шифрованной (restore-pending.tgz.enc, 0600: `awg-bot restore` расшифрует её
+фразой из базы во временный каталог операции и удалит при любом исходе),
+запуск `awg-bot restore` вне cgroup бота и маркер его итога.
 """
 from __future__ import annotations
 
@@ -8,14 +10,18 @@ from awgbot.core import config
 
 
 class BackupRestoreMixin:
-    RESTORE_PENDING = "restore-pending.tgz"
+    RESTORE_PENDING = "restore-pending.tgz.enc"
     RESTORE_DONE = "restore-done.json"
 
-    def prepare_restore(self, plain: bytes) -> str:
-        """Расшифрованный архив — на диск, откуда его возьмёт awg-bot restore."""
+    def prepare_restore(self, blob: bytes) -> str:
+        """Шифрованный файл из чата — на диск, откуда его возьмёт awg-bot
+        restore. Открытого содержимого вне временного каталога операции нет."""
+        import os
         config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         dst = config.BACKUP_DIR / self.RESTORE_PENDING
-        dst.write_bytes(plain)
+        fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(blob)
         dst.chmod(0o600)
         return str(dst)
 
@@ -27,6 +33,11 @@ class BackupRestoreMixin:
         from awgbot.infra.detach import spawn_detached
         script = str(config.BASE_DIR / "awg-bot.sh")
         spawn_detached(["bash", script, "restore", "--yes", path], unit_prefix="awg-bot-restore")
+
+    @staticmethod
+    def restore_done_pending() -> bool:
+        """Маркер восстановления лежит — этот старт первый после него."""
+        return (config.DATA_DIR / BackupRestoreMixin.RESTORE_DONE).exists()
 
     @staticmethod
     def pop_restore_done() -> dict | None:

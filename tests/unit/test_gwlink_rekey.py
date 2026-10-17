@@ -931,3 +931,14 @@ async def test_a_session_that_came_during_the_commit_is_not_dropped(services, sl
     assert await _settle(lambda: services.gateway_rekey(1).get("committed"))
     await asyncio.sleep(0.05)
     assert dropped == [], "порвана сессия, пришедшая уже новым ключом"
+
+
+def test_a_fixed_transition_asks_for_a_fresh_backup(services, slot, vps):
+    """Бэкап со старыми ключами линка больше не годится: фиксация перехода —
+    событие копии (с фразой — отметка backup_event_due)."""
+    import json
+    services.backup_set_passphrase("correct horse battery")
+    _switched(services, vps)
+    assert not services.db.get_state("backup_event_due")
+    assert services.gateway_rekey_hello(1)["rekeyed"] is True
+    assert [w["kind"] for w in json.loads(services.db.get_state("backup_event_due"))["why"]] == ["rekey"]

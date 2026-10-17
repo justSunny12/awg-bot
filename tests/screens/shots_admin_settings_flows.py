@@ -13,9 +13,30 @@ from tests.screens.shots_admin_common import (_email_on, _fw, _people, _raise, _
 
 # ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
 
-def _archive(role: str = "main", db: bytes | None = None) -> bytes:
-    """Резервная копия как её собирает make_backup: метка роли и даты, база —
-    по желанию (без базы проверять схему нечего)."""
+_KEY = bytes(range(32))     # случайный ключ прежней схемы: без KDF фразы, как в снимках шлюза
+
+
+def _db_bytes() -> bytes:
+    """Пустая база боевой схемы — база внутри бэкапа для плана."""
+    import os
+    import tempfile
+    from awgbot.infra.db import Database
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        db = Database(path)
+        db.init_schema()
+        db.close()
+        with open(path, "rb") as f:
+            return f.read()
+    finally:
+        for x in (path, path + "-wal", path + "-shm"):
+            if os.path.exists(x):
+                os.remove(x)
+
+
+def _archive(meta: dict, *, env: str = "", db: bytes | None = None) -> bytes:
+    """Резервная копия: метка внутри архива, env с ADMIN_ID и база по желанию."""
     import io
     import tarfile
     buf = io.BytesIO()
@@ -24,45 +45,73 @@ def _archive(role: str = "main", db: bytes | None = None) -> bytes:
             ti = tarfile.TarInfo(name)
             ti.size = len(raw)
             tar.addfile(ti, io.BytesIO(raw))
-        add("state/backup-meta.json",
-            json.dumps({"role": role, "created_at": "2026-09-01T03:00:00+05:00"}).encode())
+        add("state/backup-meta.json", json.dumps(meta).encode())
+        if env:
+            add("state/env", env.encode())
         if db is not None:
             add("state/bot.db", db)
     return buf.getvalue()
 
 
-def _old_db_bytes() -> bytes:
-    """База со схемой ниже 3.2.0: в clients нет колонки kind."""
-    import os
-    import sqlite3
-    import tempfile
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    try:
-        con = sqlite3.connect(path)
-        con.executescript("CREATE TABLE clients(id INTEGER PRIMARY KEY, tg_name TEXT);"
-                          "CREATE TABLE devices(id INTEGER PRIMARY KEY, holder_client_id INTEGER);")
-        con.commit()
-        con.close()
-        with open(path, "rb") as f:
-            return f.read()
-    finally:
-        os.remove(path)
+def _enc(raw: bytes) -> bytes:
+    from awgbot.util import secrets_util
+    return secrets_util.encrypt(raw, key=_KEY)
 
 
-_BK_OK = _archive()
-_BK_GW = _archive("gw")
-_BK_OLD = _archive(db=_old_db_bytes())
-_BK_NAME = "awg-bot-backup-2026-09-01.tgz"
+def _meta(**kw) -> dict:
+    m = {"schema": 2, "role": "main", "created_at": "2026-10-05T14:00:00+03:00", "version": "3.4.0",
+         "awg_gen": 1, "db_line": "", "gateways": []}
+    m.update(kw)
+    return m
 
 
-def _restore_ready(services):
-    """Восстановление из файла в чате: раскладка на диск и запуск awg-bot
-    restore — заглушки (они останавливают сервис на хосте)."""
+_BK_OPEN = _archive(_meta())
+_BK_GW = _enc(_archive({"role": "gw", "created_at": "2026-09-01T03:00:00+05:00"}))
+_BK_OLD = _enc(_archive({"role": "main", "created_at": "2026-09-01T03:00:00+05:00", "version": "3.3.1"}))
+_BK_NEWER = _enc(_archive(_meta(version="3.5.0")))
+_BK_ADMIN = _enc(_archive(_meta(), env="ADMIN_ID=4242\n"))
+_BK_PLAN = _enc(_archive(_meta(), db=_db_bytes()))
+_BK_NAME = "awg-bot-backup-main-20261005_140000.tgz.enc"
+
+
+def _restore_ready(services, mp):
+    """Восстановление из файла в чате: секрет задан, версия кода — 3.4.0;
+    раскладка на диск и запуск awg-bot restore — заглушки (они останавливают
+    сервис на хосте)."""
+    import base64
+    from awgbot.core import config
     who = _people(services)
-    services.prepare_restore = lambda plain: "/nonexistent/DUMMY-restore.tgz"
+    mp.setattr(config, "INSTALLED_VERSION", "3.4.0")
+    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_KEY).decode())
+    services.prepare_restore = lambda blob: "/nonexistent/DUMMY-restore-pending.tgz.enc"
     services.launch_restore = lambda path: None
     return who
+
+
+def _slot(n, case, name, label=""):
+    return {"slot": n, "case": case, "name": name, "label": label, "link_if": "awglink" if n == 1 else f"awglink{n}"}
+
+
+def _plan(**plan):
+    """Вопрос с планом: осмотр файла настоящий (фраза, метка), план — сцена."""
+    def build(services, mp):
+        who = _restore_ready(services, mp)
+        real = services.inspect_backup
+
+        def inspect(blob, name=""):
+            info = real(blob, name)
+            if info.get("ok"):
+                info["plan"] = {"line": "same", "empty": False, "slots": [], "replaced": [0, 0],
+                                "expired_now": 0, "host_copy": "", "host_cur": "", "first_slot_back": False,
+                                "created_at": info["created_at"], **plan}
+            return info
+        services.inspect_backup = inspect
+        return who
+    return build
+
+
+_SAME_SLOTS = [_slot(1, "same", "NASPi"), _slot(2, "rekeyed", "Pi4", "дача"), _slot(3, "device", "Pi3"),
+               _slot(4, "removed", "Шлюз 4"), _slot(5, "added", "Pi5"), _slot(6, "twin", "Pi6")]
 
 
 def _mail_check(ok: bool):
@@ -108,21 +157,50 @@ DIALOGS = [
 
 
 RESTORE = [
-    # ── A190: восстановление из файла в чате ────────────────────────────────
-    Shot("adm.restore", role="admin", steps=[("file", _BK_NAME, _BK_OK)], data=_restore_ready,
-         title="копия в чате: восстановить?"),
+    # ── восстановление из файла в чате: вопрос с планом ─────────────────────
+    Shot("adm.restore", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)], data=_plan(),
+         title="бэкап в чате: та же линия, шлюзов нет"),
+    Shot("adm.restore.slots", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)], data=_plan(slots=_SAME_SLOTS),
+         title="та же линия: шлюзы по каждому случаю"),
+    Shot("adm.restore.host", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(slots=_SAME_SLOTS[:1], host_copy="old.example.org", host_cur="vpn.example.org"),
+         title="адрес сервера отличается от бэкапа"),
+    Shot("adm.restore.clean", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(line="clean", empty=True, expired_now=3, host_copy="vpn.example.org",
+                    slots=[_slot(1, "restored", "NASPi"), _slot(2, "restored", "Pi4", "дача")]),
+         title="новый сервер: шлюзы из бэкапа, подписки истекли за время без сервера"),
+    Shot("adm.restore.unreadable", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(line="unreadable", first_slot_back=True,
+                    slots=[_slot(1, "same", "NASPi"), _slot(2, "rekeyed", "Pi4", "дача"),
+                           _slot(3, "removed", "Pi3")]),
+         title="текущая база не читается: шлюзы по файлам линков"),
+    Shot("adm.restore.foreign", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(line="foreign", replaced=[12, 31],
+                    slots=[_slot(1, "added", "NASPi"), _slot(2, "removed", "Pi4")]),
+         title="бэкап другого сервера на сервер со своими данными"),
+    Shot("adm.restore.many", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(host_copy="old-server-name.example.org", host_cur="new-server-name.example.org",
+                    slots=[_slot(n, ("same", "rekeyed", "device", "removed", "added", "twin")[n % 6],
+                                 f"Шлюз с длинным именем {n}", f"подпись места номер {n}") for n in range(1, 16)]),
+         title="лимит Telegram: 15 шлюзов в вопросе"),
     Shot("adm.restore.yes", role="admin",
-         steps=[("file", _BK_NAME, _BK_OK), ("press", SetCB(sec="backup", act="do", key="restore!"))],
-         data=_restore_ready, title="восстановление запущено"),
+         steps=[("file", _BK_NAME, _BK_PLAN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
+         data=_plan(), title="восстановление запущено"),
     Shot("adm.restore.drop", role="admin",
-         steps=[("file", _BK_NAME, _BK_OK), ("press", SetCB(sec="backup", act="do", key="restore_drop"))],
-         data=_restore_ready, title="файл отброшен"),
+         steps=[("file", _BK_NAME, _BK_PLAN), ("press", SetCB(sec="backup", act="do", key="restore_drop"))],
+         data=_plan(), title="файл отброшен"),
     Shot("adm.restore.junk", role="admin", steps=[("file", _BK_NAME, b"DUMMY")], data=_restore_ready,
          title="не резервная копия"),
+    Shot("adm.restore.open", role="admin", steps=[("file", _BK_NAME, _BK_OPEN)], data=_restore_ready,
+         title="бэкап не зашифрован"),
     Shot("adm.restore.gw", role="admin", steps=[("file", _BK_NAME, _BK_GW)], data=_restore_ready,
-         title="копия агента шлюза"),
+         title="бэкап шлюза прежних версий"),
     Shot("adm.restore.old", role="admin", steps=[("file", _BK_NAME, _BK_OLD)], data=_restore_ready,
-         title="копия со схемой ниже 3.2.0"),
+         title="бэкап версии до 3.4.0"),
+    Shot("adm.restore.newer", role="admin", steps=[("file", _BK_NAME, _BK_NEWER)], data=_restore_ready,
+         title="бэкап новее кода"),
+    Shot("adm.restore.admin", role="admin", steps=[("file", _BK_NAME, _BK_ADMIN)], data=_restore_ready,
+         title="бэкап другого админа"),
 ]
 
 
@@ -267,7 +345,7 @@ def _backup_to_mail(services):
     who = _email_on(services)
     services.backup_set_passphrase("DUMMY-passphrase-1234")
     services.make_backup = lambda: ["/nonexistent/DUMMY-a.enc", "/nonexistent/DUMMY-b.enc"]
-    services.email_send_backup = lambda paths: None
+    services.email_send_backup = lambda paths, caption="": None
     return who
 
 

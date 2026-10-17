@@ -14,7 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 pytestmark = pytest.mark.unit
 
 # задачи, которым в сеть ходить по расписанию — и потому обязателен джиттер
-NETWORK_JOBS_MAIN = ("monitor", "routing_liveness", "backup", "update_check", "tg_names")
+NETWORK_JOBS_MAIN = ("monitor", "routing_liveness", "backup", "backup_event", "update_check", "tg_names")
 NETWORK_JOBS_GW = ("gw_monitor", "gw_lan_lists", "gw_lan_services", "gw_backup", "update_check")
 
 

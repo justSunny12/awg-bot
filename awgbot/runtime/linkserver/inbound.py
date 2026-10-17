@@ -61,6 +61,9 @@ class InboundMixin:
             # роль — первым сообщением сервера: по нему клиент понимает, что
             # сессия настоящая, и только тогда сбрасывает свой бэкофф
             await self.send_role(gw.id)
+            if hasattr(self.services, "restore_wait_hello"):
+                # после восстановления ждали именно этого факта
+                await self.notes(await asyncio.to_thread(self.services.restore_wait_hello, gw.id))
             await self.deliver_lists(gw.id)
             await self.deliver_peer_services(gw.id)
             await self.deliver_own(gw.id)

@@ -132,9 +132,10 @@ class MailMixin:
         ch = str(settings.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
         return "email" if ch == "email" and self.email_account() is not None else "telegram"
 
-    def email_send_backup(self, paths) -> None:
+    def email_send_backup(self, paths, caption: str = "") -> None:
         """Файлы бэкапа — вложениями на сам ящик. Только шифрованные: в БД
-        приватные ключи, открытыми по почте они не ездят."""
+        приватные ключи. У сервера AWG тема — заголовок подписи копии, тело —
+        как восстановить и опись шлюзов."""
         acc = self.email_account()
         if acc is None:
             raise mail.MailError("ящик не настроен")
@@ -147,10 +148,16 @@ class MailMixin:
             with open(p, "rb") as f:
                 att.append((os.path.basename(p), f.read()))
         stamp = timeutil.fmt_dt_ui(timeutil.now(), year=True)   # «17.10.26 08:08 (UTC+5)»: письмо лежит годами
-        tag = "gw" if config.ROLE == "gateway" else "main"
-        mail.send_mail(acc, acc.login, f"awg-bot-{tag}: резервная копия {stamp}",
-                       "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
-                       "с BACKUP_KEY/BACKUP_PASSPHRASE.", attachments=att)
+        if config.ROLE == "gateway":
+            mail.send_mail(acc, acc.login, f"awg-bot-gw: резервная копия {stamp}",
+                           "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
+                           "с BACKUP_KEY/BACKUP_PASSPHRASE.", attachments=att)
+        else:
+            from awgbot.domain.notices import backup as nb
+            text = nb.plain(caption) if caption else f"💾 Бэкап сервера AWG от {stamp}"
+            head, _, rest = text.partition("\n")
+            mail.send_mail(acc, acc.login, head, nb.MAIL_BODY + (f"\n\n{rest}" if rest else ""),
+                           attachments=att)
         self._email_mark_ok()
 
     def email_alert_fallback_enabled(self) -> bool:

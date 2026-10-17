@@ -328,7 +328,7 @@ awgbot/
                параметры, блокировки, разбор вывода
     db/        SQLite (per-thread): ядро и миксины по темам; schema/ — схема, выборки,
                конвертеры строк (миграций нет: схема минимума 3.2.0 полная;
-               schema_gap — сторож старой копии)
+               db_line — линия базы для восстановления)
     nftguard/  файервол ВПС — таблица awg_bot_guard: сбор, текст таблицы, применение
     gwguard/   агент: таблицы nft шлюза, юнит обвязки, конфиги линка и аплинка
     routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq (шапка
@@ -369,7 +369,8 @@ awgbot/
                gwservices, gwownlists, gwchecks, channelstate (общие данные канала
                и проверок, обе роли), gwssh (SSH на шлюзе), privatedns (свой
                резолвер клиентов), mailmix (почта в сервисах),
-               backup/ (резервная копия: секрет, состав, осмотр, восстановление)
+               backup/ (резервная копия: секрет, состав, метка, осмотр, план,
+               слияние merge/, восстановление)
   bot/       презентация и glue aiogram:
     handlers/  роутеры: client/ — клиент и активация; admin/ — панель админа
                (clients/ — профили, broadcast/ — рассылки; panel, devices,
@@ -412,8 +413,9 @@ awgbot/
   assets/    guides/ — скриншоты пошаговых гайдов (смена региона App Store)
 
 tools/       restore_backup  расшифровка архива резервной копии на любой машине
-             snapshot        снимок состояния для `awg-bot backup` и `restore`
-             check_backup    схема базы из копии не ниже минимума 3.2.0 (`awg-bot restore`)
+             snapshot        шифрованный бэкап для `awg-bot backup`
+             check_backup    сторож метки бэкапа: схема 2, версия совместимости (`awg-bot restore`)
+             restore_merge   план и слияние бэкапа с текущим, DROP до подъёма (`awg-bot restore`)
              firewall, firewall_gw, gwssh  `awg-bot firewall …` (на ВПС; на шлюзе —
                              firewall_gw) и `awg-bot ssh …` (на шлюзе)
              pair, first_device  опознание админа по коду и первое устройство в терминале

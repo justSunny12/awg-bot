@@ -66,7 +66,9 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     monkeypatch.setattr(cfg, "ROLE", "client")
     services.email_send_backup([])
     yy = timeutil.now().strftime("%d.%m.%y")
-    assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("awg-bot-main: резервная копия ")
+    # у сервера AWG тема — заголовок подписи копии
+    assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("💾 Бэкап сервера AWG от ")
+    assert f"от {yy} " in sent[1] and sent[1].endswith(" (UTC+5)")
     assert f"копия {yy} " in sent[0] and sent[0].endswith(" (UTC+5)"), "год — всегда (письмо лежит годами), время с меткой"
 
 

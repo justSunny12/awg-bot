@@ -22,6 +22,7 @@ class TokenMixin:
         from awgbot.domain import gwcfg
         self.set_gw_bot_token(token, slot_id)
         self.db.set_state(self._gw_slot_key(self._TOKEN_PUSH_KEY, slot_id), gwcfg.token_print(token.strip()))
+        self._backup_event(slot_id, "token")
 
     def gateway_token_pushed(self, slot_id: int, token: str) -> bool:
         from awgbot.domain import gwcfg

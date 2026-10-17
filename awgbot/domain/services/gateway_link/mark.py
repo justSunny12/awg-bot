@@ -150,6 +150,8 @@ class MarkMixin:
                 self.gateway_rekey_abort(gw)          # смена ключей каналом, если шла, — снята
                 self._run_link_script("--rekey", self._slot_env(gw))
         gw = self.db.gateway(gw.id)
+        if new_slot or prev is not None:
+            self._backup_event(gw.id, "assign" if new_slot else "replace")
         if rekey or new_slot:
             routing.invalidate_self_check()
             try:
@@ -192,6 +194,32 @@ class MarkMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_remove: записи резолвера админа не подтянуты: %s", e)
 
+    _REMOVED_KEY = "gw_removed"
+    _REMOVED_KEEP_DAYS = 183
+    _REMOVED_MAX = 32
+
+    def _removed_journal_add(self, gw, dev) -> None:
+        """Журнал снятых слотов — для одного различения при восстановлении:
+        «слотов нет, потому что сервер новый» против «потому что все сняли».
+        Полгода, не больше 32 записей."""
+        import json
+        from awgbot.util import timeutil
+        from awgbot.domain.backup import meta as _meta
+        now = timeutil.now()
+        raw = self.db.get_state_json(self._REMOVED_KEY, [])
+        items = []
+        for r in raw if isinstance(raw, list) else []:
+            try:
+                if isinstance(r, dict) and timeutil.elapsed(timeutil.parse_iso(str(r.get("at")))) \
+                        < self._REMOVED_KEEP_DAYS * 86400:
+                    items.append(r)
+            except ValueError:
+                continue
+        link_gw_pub, _vps = _meta.link_pubs(gw.link_if)
+        items.append({"slot": gw.id, "link_gw_pub": link_gw_pub,
+                      "device_pub": dev.public_key if dev is not None else "", "at": timeutil.to_iso(now)})
+        self.db.set_state(self._REMOVED_KEY, json.dumps(items[-self._REMOVED_MAX:], ensure_ascii=False))
+
     def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
         """Убрать слот: активный при живом другом слоте — трафик на него;
         последний — условную маршрутизацию выключить. Линк слота: первый —
@@ -209,6 +237,8 @@ class MarkMixin:
         if others and active is not None and active.id == gw.id:
             target = next((g for g in others if not self._rt_unavailable(g.id)), others[0])
             self.gateway_switch(target.id, manual=True)
+        self._backup_event(gw.id, "remove")           # имя — пока слот есть
+        self._removed_journal_add(gw, prev)           # до смены ключей и снятия линка
         self.gateway_rekey_abort(gw)                  # .next/.prev смены ключей — прочь вместе со слотом
         self.db.gateway_delete(gw.id)
         self._slot_forget(gw.id)

@@ -56,6 +56,26 @@ class LinkScriptMixin:
         self._run_link_script("--reassert", env)
         return True
 
+    _LINK_UNIT_WANTS = "/etc/systemd/system/multi-user.target.wants/awg-link@{}.service"
+
+    def gateway_links_adopt(self) -> list[str]:
+        """Слоты с конфигом линка и без юнита (бэкап восстановлен на пустом
+        сервере, юнит не встал): --adopt — шаблон, экземпляр, подъём.
+        Возвращает принятые линки."""
+        done = []
+        for g in self.db.gateways():
+            if not os.path.exists(os.path.join(config.AWG_DIR, f"{g.link_if}.conf")):
+                continue
+            if os.path.exists(self._LINK_UNIT_WANTS.format(g.link_if)) or \
+                    (g.link_if == "awglink" and os.path.exists(self._LEGACY_LINK_UNIT)):
+                continue
+            try:
+                self._run_link_script("--adopt", self._slot_env(g))
+                done.append(g.link_if)
+            except ServiceError as e:
+                log.warning("линк %s не принят: %s", g.link_if, e)
+        return done
+
     def gateway_sync_link_ports(self) -> list[Notification]:
         """Порт линка слота — по живому конфигу на ВПС. Порт меняют руками
         (ListenPort в awglink.conf, перезапуск линка): конфиг линка ведёт бот,

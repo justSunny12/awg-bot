@@ -100,6 +100,11 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot,
     новым значением; обратно — Telegram."""
     key = "app.scheduler.backup_channel"
     store.update({"app.scheduler.backup_enabled": True, key: "telegram"})
+    if env.br.has.backup_gateways:
+        # сервер AWG без фразы держит одну «🔐 Шифрование»: канала нет вовсе
+        _, markup = await sections.screen("backup", env.br, env.services)
+        assert [b for r in _rows(markup) for b in r][0] == "🔐 Шифрование" and len(_rows(markup)) == 2
+        env.services.backup_set_passphrase("correct horse battery")
     _, markup = await sections.screen("backup", env.br, env.services)
     cyc = _button(markup, "📨 Куда: Telegram").callback_data
     assert sections.resolve(env.br, cyc) == ("backup", "cycle", key, "")
@@ -108,9 +113,10 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot,
     assert store[key] == "telegram" and text == texts.email_not_configured("backup")
     assert offer.inline_keyboard[0][0].callback_data == env.br.cb.pack("backup").pack(), "отказ увёл не в «Бэкапы»"
     env.services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    cb, nav = await _press(env, fake_bot, cyc)
-    assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(env.br), True)], cb.answers
-    env.services.backup_set_passphrase("correct horse battery")
+    if not env.br.has.backup_gateways:
+        cb, nav = await _press(env, fake_bot, cyc)
+        assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(env.br), True)], cb.answers
+        env.services.backup_set_passphrase("correct horse battery")
     cb, nav = await _press(env, fake_bot, cyc)
     assert store[key] == "email" and cb.answers[-1] == ("Куда: E-mail", False), cb.answers
     text, markup = _last_edit(nav)
@@ -125,6 +131,8 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     кнопка — новые, ввод закрыт."""
     store.update({"app.scheduler.backup_enabled": True, "app.scheduler.backup_day": 1,
                   "app.scheduler.backup_hour": 12})
+    if env.br.has.backup_gateways:
+        env.services.backup_set_passphrase("correct horse battery")   # без фразы расписания нет
     _, markup = await sections.screen("backup", env.br, env.services)
     when = _button(markup, "✏️ 1-е, 12:00").callback_data
     assert sections.resolve(env.br, when) == ("backup", "edit", "backup_when", "")
@@ -143,7 +151,7 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     lines = answers[0][1].split("\n")
     assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00 (UTC+5)", lines
     assert lines[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
-    if env.br.has.backup_encrypted_only:        # агент без фразы: вместо расписания — предупреждение
+    if env.br.has.backup_encrypted_only and not env.br.has.backup_gateways:   # агент без фразы: вместо расписания — предупреждение
         assert texts.BACKUP_NO_KEY_LINE in lines, lines
     else:
         assert "Каждое 5-е число в 09:00 (UTC+5) → в этот чат" in lines

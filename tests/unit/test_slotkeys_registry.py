@@ -164,6 +164,15 @@ def test_every_entry_says_when_it_goes():
     assert slotkeys.KEYS["gwkeep"].when == slotkeys.SLOT, "копия настроек нужна новому устройству слота"
 
 
+def test_on_restore_only_the_settings_copy_comes_from_the_backup():
+    """Слотовые ключи описывают стоящее на шлюзе сейчас — при восстановлении
+    у текущего слота они текущие; из бэкапа (с пометкой «предложить») — только
+    копия настроек шлюза."""
+    assert set(slotkeys.names(merge=slotkeys.OFFER)) == {"gwkeep"}
+    assert set(slotkeys.names(merge=slotkeys.CURRENT)) == set(slotkeys.KEYS) - {"gwkeep"}
+    assert all(k.merge in (slotkeys.CURRENT, slotkeys.OFFER) for k in slotkeys.KEYS.values())
+
+
 def test_the_key_of_a_slot():
     assert slotkeys.key("gwlink_seen", 2) == "gwlink_seen_2"
     assert slotkeys.key("routing_gw_{}_up_streak", 3) == "routing_gw_3_up_streak"

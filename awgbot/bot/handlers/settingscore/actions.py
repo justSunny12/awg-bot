@@ -117,22 +117,37 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     """«Бэкап сейчас»: в почту, если канал — почта, иначе файлами в чат."""
     from awgbot.infra import mail
     from awgbot.domain.backup.crypto import BackupKeyMissing
+    server = hooks.br.has.backup_gateways
+    no_key = texts.GW_BACKUP_NO_KEY
+    if server:
+        from awgbot.domain.notices import backup as nb
+        no_key = nb.no_phrase_line(bool(await call(services.db.gateways)))
     if hooks.br.has.backup_encrypted_only and not await call(services.backup_encryption_enabled):
         # копия только шифрованная, фразы нет — отказ всплывашкой, без «Готовлю…»
-        await cb.answer(texts.GW_BACKUP_NO_KEY, show_alert=True)
+        await cb.answer(no_key, show_alert=True)
         return
+    if server:
+        busy = await call(services.backup_rekey_busy)
+        if busy is not None:
+            # идёт смена ключей линка: на диске .next/.prev — копия после неё
+            await cb.answer(nb.REKEY_WAIT_TOAST.format(name=f"«{services._gw_name(busy)}»"), show_alert=True)
+            return
     await cb.answer("Готовлю резервную копию…")
     try:
         paths = await call(services.make_backup)
     except BackupKeyMissing:
-        await cb.message.answer(texts.GW_BACKUP_NO_KEY, reply_markup=kb.hide_only())
+        await cb.message.answer(no_key, reply_markup=kb.hide_only())
         return
     except Exception as e:                            # noqa: BLE001
         await cb.message.answer(f"⚠️ {texts._e(str(e))}")
         return
+    caption = await call(services.backup_caption) if server else ""
     if await call(services.backup_channel) == "email":
         try:
-            await call(services.email_send_backup, paths)
+            if caption:
+                await call(services.email_send_backup, paths, caption)
+            else:
+                await call(services.email_send_backup, paths)
             acc = await call(services.email_account)
             await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
                                     reply_markup=kb.hide_only())
@@ -142,7 +157,10 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
         return
     for p in paths:
         try:
-            await cb.message.answer_document(FSInputFile(p))
+            if caption:
+                await cb.message.answer_document(FSInputFile(p), caption=caption)
+            else:
+                await cb.message.answer_document(FSInputFile(p))
         except Exception:                             # noqa: BLE001
             pass
     await hooks.render(cb, services, "backup")

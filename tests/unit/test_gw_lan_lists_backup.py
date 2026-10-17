@@ -1,16 +1,17 @@
 """
 Личные списки локальной сети без VPN (awg-gw-vpn-user.conf, awg-gw-ru-user.conf)
-в резервной копии шлюза: копия их кладёт, `awg-bot restore` возвращает,
-скрипт обвязки подхватывает отложенные при первом включении режима.
+в резервной копии шлюза: копия их кладёт, скрипт обвязки подхватывает
+отложенные при первом включении режима. `awg-bot restore` на шлюзе бэкапов не
+разворачивает (настройки шлюза — в бэкапе сервера AWG, канон своих списков —
+на сервере).
 
 Списки набраны руками в чате агента («в туннель», «напрямую») — бандл их не
 везёт, и замена шлюза без копии теряла бы их молча: локальная сеть снова ходит
 «как было», а человек не помнит, что туда добавлял.
 
-Копия — боевой make_backup агента с подменённым путём /etc/dnsmasq.d;
-восстановление и подхват — прогон самих фрагментов awg-bot.sh (bash) и
-install/routing-gw-setup.sh (sh) с каталогами во временной папке и
-подставным systemctl. Хост не трогается.
+Копия — боевой make_backup агента с подменённым путём /etc/dnsmasq.d; подхват
+— прогон фрагмента install/routing-gw-setup.sh (sh) с каталогами во временной
+папке и подставным systemctl. Хост не трогается.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ import pytest
 
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
-from tests.conftest import SH, fake_cmd
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -99,127 +100,6 @@ def test_a_missing_list_does_not_break_the_backup(backup):
 
 
 # ── awg-bot restore ──────────────────────────────────────────────────────────
-
-def _restore_fragment() -> str:
-    src = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
-    body = src.split("cmd_restore()", 1)[1].split("\ncmd_uninstall()", 1)[0]
-    start = body.index("    # Личные списки локальной сети без VPN")
-    return body[start:body.index("    # маркер для бота", start)]
-
-
-class _Pi:
-    """Шлюз для восстановления: распакованная копия, conf-dir dnsmasq,
-    каталог отложенного, systemctl, который записывает вызовы."""
-
-    def __init__(self, tmp_path: Path):
-        self.tmp = tmp_path / "unpacked"
-        self.lan = self.tmp / "awg-gw" / "lan"
-        self.dnsmasq = tmp_path / "dnsmasq.d"
-        self.state = tmp_path / "var-lib-awg-gw"
-        self.bin = tmp_path / "bin"; self.bin.mkdir()
-        self.log = tmp_path / "systemctl.log"; self.log.write_text("")
-        self.restart_rc = 0
-
-    def backup_has(self, **files: str) -> None:
-        self.lan.mkdir(parents=True, exist_ok=True)
-        for name, text in files.items():
-            (self.lan / name).write_text(text, encoding="utf-8")
-
-    def lan_mode_applied(self) -> None:
-        self.dnsmasq.mkdir(exist_ok=True)
-        (self.dnsmasq / "awg-gw-base.conf").write_text("listen-address=192.168.68.2\n")
-
-    def restore(self) -> subprocess.CompletedProcess:
-        fake_cmd(self.bin / "systemctl",
-                 f'#!/bin/sh\necho "$*" >> "{self.log}"\nexit {self.restart_rc}\n')
-        frag = (_restore_fragment()
-                .replace("/etc/dnsmasq.d", str(self.dnsmasq))
-                .replace("/var/lib/awg-gw", str(self.state)))
-        # проверка строк списков — боевая функция из того же скрипта
-        src = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
-        sane = "lan_lists_sane() {" + src.split("lan_lists_sane() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
-        prog = ('ok(){ echo "OK $*"; }\nwarn(){ echo "WARN $*"; }\nlog(){ echo "LOG $*"; }\n'
-                f'tmp="{self.tmp}"\nset -e\n' + sane + frag + 'echo DONE\n')
-        return subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
-                              env={"PATH": f"{self.bin}:/usr/bin:/bin"})
-
-    def systemctl(self) -> list[str]:
-        return [ln for ln in self.log.read_text().splitlines() if ln]
-
-
-def test_restore_puts_the_lists_in_place_and_restarts_dnsmasq_once(tmp_path):
-    """Режим без VPN на машине уже применён: списки встают в conf-dir и dnsmasq
-    перечитывается — иначе домены из списков не наполнят наборы до ребута."""
-    pi = _Pi(tmp_path)
-    pi.lan_mode_applied()
-    (pi.dnsmasq / "awg-gw-vpn-user.conf").write_text("# пустая заготовка\n")
-    pi.backup_has(**{"awg-gw-vpn-user.conf": VPN, "awg-gw-ru-user.conf": RU})
-    r = pi.restore()
-    assert r.returncode == 0 and "DONE" in r.stdout, r.stderr + r.stdout
-    assert (pi.dnsmasq / "awg-gw-vpn-user.conf").read_text() == VPN, "список из копии не лёг поверх заготовки"
-    assert (pi.dnsmasq / "awg-gw-ru-user.conf").read_text() == RU
-    for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
-        assert (pi.dnsmasq / name).stat().st_mode & 0o777 == 0o644, f"{name}: dnsmasq под своим пользователем не прочтёт"
-    assert pi.systemctl() == ["restart dnsmasq"], f"dnsmasq перезапущен не один раз: {pi.systemctl()}"
-    assert "OK личные списки локальной сети восстановлены" in r.stdout
-    assert not pi.state.exists(), "при применённом режиме списки ещё и отложены"
-
-
-def test_lists_from_a_330_backup_come_back_under_the_new_table_name(tmp_path):
-    """Копия шлюза 3.3.0: наборы своих списков под прежним именем таблицы
-    (awg_home). restore принимает их и кладёт уже с awg_lan — иначе dnsmasq
-    писал бы адреса в таблицу, которой больше нет (снимается со следующим
-    сдвигом минимума)."""
-    pi = _Pi(tmp_path)
-    pi.lan_mode_applied()
-    pi.backup_has(**{"awg-gw-vpn-user.conf": VPN.replace("awg_lan", "awg_home"),
-                     "awg-gw-ru-user.conf": RU.replace("awg_lan", "awg_home")})
-    r = pi.restore()
-    assert r.returncode == 0 and "DONE" in r.stdout, r.stderr + r.stdout
-    assert (pi.dnsmasq / "awg-gw-vpn-user.conf").read_text() == VPN
-    assert (pi.dnsmasq / "awg-gw-ru-user.conf").read_text() == RU
-
-
-def test_restore_before_the_mode_is_applied_parks_the_lists_and_leaves_dnsmasq_alone(tmp_path):
-    """Шлюз новая, режим без VPN ещё не включали: dnsmasq может быть чужим
-    (OMV) или не стоять вовсе. Списки откладываются, dnsmasq не трогается."""
-    pi = _Pi(tmp_path)
-    pi.backup_has(**{"awg-gw-vpn-user.conf": VPN})
-    r = pi.restore()
-    assert r.returncode == 0 and "DONE" in r.stdout, r.stderr + r.stdout
-    assert (pi.state / "restore" / "awg-gw-vpn-user.conf").read_text() == VPN
-    assert not pi.dnsmasq.exists(), "в conf-dir чужого dnsmasq положены наши файлы"
-    assert pi.systemctl() == [], f"dnsmasq тронут до включения режима: {pi.systemctl()}"
-    assert "отложены" in r.stdout
-
-
-def test_restore_says_so_when_dnsmasq_does_not_come_back(tmp_path):
-    """Списки легли, а dnsmasq не перезапустился — человек должен узнать это
-    сразу и куда смотреть, а восстановление — дойти до конца."""
-    pi = _Pi(tmp_path)
-    pi.lan_mode_applied()
-    pi.backup_has(**{"awg-gw-ru-user.conf": RU})
-    pi.restart_rc = 1
-    r = pi.restore()
-    assert r.returncode == 0 and "DONE" in r.stdout, "отказ dnsmasq оборвал восстановление"
-    assert (pi.dnsmasq / "awg-gw-ru-user.conf").read_text() == RU
-    assert "WARN" in r.stdout and "journalctl -u dnsmasq" in r.stdout, r.stdout
-    assert "OK личные списки" not in r.stdout
-
-
-def test_a_backup_without_lists_changes_nothing(tmp_path):
-    """Копия прежнего выпуска или шлюз без режима — списков в ней нет. Ничего
-    не создаётся и dnsmasq не перезапускается."""
-    pi = _Pi(tmp_path)
-    pi.lan_mode_applied()
-    pi.tmp.mkdir()
-    r = pi.restore()
-    assert r.returncode == 0 and "DONE" in r.stdout, r.stderr + r.stdout
-    assert pi.systemctl() == [] and not pi.state.exists()
-    assert sorted(p.name for p in pi.dnsmasq.iterdir()) == ["awg-gw-base.conf"]
-
-
-# ── подхват отложенного при включении режима ─────────────────────────────────
 
 def _lan_lists_loop() -> str:
     src = (ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")

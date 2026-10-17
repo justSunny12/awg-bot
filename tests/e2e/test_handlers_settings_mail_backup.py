@@ -116,9 +116,10 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     # «создать сейчас» уходит письмом
     mailed = []
     monkeypatch.setattr(services, "make_backup", lambda: ["/tmp/a.enc", "/tmp/b.enc"])
-    monkeypatch.setattr(services, "email_send_backup", lambda paths: mailed.append(paths))
+    monkeypatch.setattr(services, "email_send_backup", lambda paths, caption="": mailed.append((paths, caption)))
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
-    assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]], "копия не ушла письмом"
+    assert mailed and mailed[0][0] == ["/tmp/a.enc", "/tmp/b.enc"], "копия не ушла письмом"
+    assert mailed[0][1].startswith("💾 Бэкап сервера AWG от "), "письмо без подписи копии"
     # итог отправки — снимок adm.set.backup.now.email
 
 
@@ -192,19 +193,31 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
 
 # ── ♻️ восстановление из файла в чате ────────────────────────────────────────
 
+def _backup_blob(services, monkeypatch, tmp_path) -> bytes:
+    """Настоящая копия этого же сервера (версия совместимости, фраза задана)."""
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.4.0")
+    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "DB_PATH", services.db.path)
+    env = tmp_path / "env"; env.write_text(f"BOT_TOKEN=DUMMY\nADMIN_ID={cfg.ADMIN_ID}\n", encoding="utf-8")
+    monkeypatch.setattr(cfg, "ENV_PATH", env)
+    from awgbot.infra import awg
+    monkeypatch.setattr(awg, "read_file", lambda p: (_ for _ in ()).throw(awg.AwgError("нет")))
+    services.backup_set_passphrase("correct horse battery")
+    path = services.make_backup()[0]
+    blob = open(path, "rb").read()
+    import os
+    os.unlink(path)
+    return blob
+
+
 async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services, fake_bot, monkeypatch, tmp_path):
-    import io, json, tarfile
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
     import awgbot.core.config as cfg
     monkeypatch.setattr(cfg, "ROLE", "client")
-    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        raw = json.dumps({"role": "main", "created_at": "2026-09-09T10:30:00+03:00"}).encode()
-        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
-    blob = buf.getvalue()
+    blob = _backup_blob(services, monkeypatch, tmp_path)
 
     class DlBot(FakeBot):
         async def download(self, doc, destination=None):
@@ -220,8 +233,11 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     monkeypatch.setattr(services, "launch_restore", lambda path: launched.append(path))
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await sh.backup_restore_action(cb, SetCB(sec="backup", act="do", key="restore!"), services, state)
-    assert launched and launched[0].endswith("restore-pending.tgz")
-    assert (tmp_path / "restore-pending.tgz").read_bytes() == blob
+    # в каталог копий файл ложится шифрованным: открытого содержимого вне
+    # временного каталога операции нет
+    assert launched and launched[0].endswith("restore-pending.tgz.enc")
+    assert (tmp_path / "restore-pending.tgz.enc").read_bytes() == blob
+    assert (tmp_path / "restore-pending.tgz.enc").stat().st_mode & 0o777 == 0o600
     assert await state.get_data() == {}
 
 
@@ -229,17 +245,11 @@ async def test_restore_offer_is_the_live_menu_and_cancel_brings_the_main_back(se
     """Вопрос о восстановлении — живым меню: прежнее меню гаснет. «Отмена»
     ставит на место вопроса главный экран — в чате одно живое меню, а не
     погасший вопрос под живой, но уехавшей вверх панелью."""
-    import io, json, tarfile
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
     import awgbot.core.config as cfg
-    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        raw = json.dumps({"role": "main", "created_at": "2026-09-09T10:30:00+03:00"}).encode()
-        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
-    blob = buf.getvalue()
+    blob = _backup_blob(services, monkeypatch, tmp_path)
 
     class DlBot(FakeBot):
         async def download(self, doc, destination=None):

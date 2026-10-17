@@ -71,6 +71,9 @@
 # Два режима зовёт юнит awg-link@<if>, руками они не нужны:
 #   --reassert   довести обвязку и переподнять линк после загрузки (ExecStart)
 #   --down       опустить линк (ExecStop; через скрипт, а не путём к awg-quick)
+# Один режим зовут восстановление бэкапа и старт бота:
+#   --adopt      линк с конфигом и без юнита (бэкап на пустом сервере): шаблон
+#                юнита, enable --now экземпляра, исключение из MASQUERADE
 # Четыре режима зовёт основной бот при смене ключей линка тем же устройством
 # по каналу конфигурации («🔑 Ключи линка», domain/services/gateway_link/rekey.py),
 # руками они не нужны. Меняются ключи обеих сторон, PSK и обфускация; порт
@@ -152,7 +155,7 @@ fi
 # Юнит — ШАБЛОН по интерфейсу (awg-link@awglink, awg-link@awglink2): линков
 # может быть несколько, по одному на слот шлюза. Прежний awg-link.service
 # переезжает на шаблон при первом --reassert (см. migrate_unit).
-UNIT_TEMPLATE="/etc/systemd/system/awg-link@.service"
+UNIT_TEMPLATE="${UNIT_TEMPLATE:-/etc/systemd/system/awg-link@.service}"
 UNIT_INSTANCE="awg-link@$LINK_IF.service"
 LEGACY_UNIT="/etc/systemd/system/awg-link.service"
 
@@ -173,6 +176,10 @@ case "${1:-}" in
     # машина теряет линк по построению — ей ничего не нужно сообщать.
     --rekey)    MODE="apply"; REKEY=1 ;;
     --reassert) MODE="reassert" ;;
+    # Линк, конфиг которого уже лежит (восстановление бэкапа на пустом сервере
+    # разложило его файлы), а юнита нет: поставить шаблон, включить экземпляр
+    # и поднять — тем же --reassert. Ключи и файлы не трогает. Идемпотентно.
+    --adopt)    MODE="adopt" ;;
     # ExecStop юнита: опустить линк. Через скрипт, а не абсолютным путём к
     # awg-quick — тулзы ставятся туда, куда собрал make, и захардкоженный
     # /usr/bin однажды не сошёлся: ExecStop падал, интерфейс оставался жить.
@@ -668,6 +675,18 @@ fi
 
 if [ "$MODE" = "down" ]; then
     ip link show "$LINK_IF" >/dev/null 2>&1 && run "awg-quick down $LINK_IF"
+    exit 0
+fi
+
+if [ "$MODE" = "adopt" ]; then
+    [ -f "$CONF" ] || { say "ОШИБКА: конфига линка $CONF нет — принимать нечего"; exit 1; }
+    SELF="$(install_self)" || { say "ОШИБКА: скрипт линка не встал в /usr/local/sbin"; exit 1; }
+    if [ ! -f "$UNIT_TEMPLATE" ] || ! grep -q -- '--down' "$UNIT_TEMPLATE"; then
+        write_unit_template
+        run "systemctl daemon-reload"
+    fi
+    run "systemctl enable --now $UNIT_INSTANCE"
+    assert_nat_exempt
     exit 0
 fi
 

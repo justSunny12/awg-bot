@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-snapshot.py — снимок состояния awg-bot одним архивом, тем же составом, что
-копия из чата: БД, conf/*.yaml, env, конфиги awg-интерфейсов и — у шлюза —
-firewall.env и личные списки локальной сети.
+snapshot.py — `awg-bot backup`: бэкап сервера AWG одним шифрованным архивом,
+тем же составом, что копия из чата: БД, conf/*.yaml, env, конфиги
+awg-интерфейсов, линки слотов и выданные шлюзовые стороны (root/gw-*.conf),
+метка схемы 2 с описью шлюзов. Сборщик один на все случаи: БД снимается через
+backup API SQLite — согласованно и на работающем боте (cp терял WAL).
 
-Зовёт `awg-bot backup` и `awg-bot restore` (снимок ДО восстановления). Сборщик
-один на все случаи нарочно: три сборки с разным составом однажды дали снимок
-«до восстановления» без конфигов интерфейсов, и «вернуться» возвращало базу,
-а не устройства. БД снимается через backup API SQLite — согласованно и на
-работающем боте (cp терял WAL).
+Открытых бэкапов нет: шифрование — ключевой фразой из базы; без неё отказ и
+файла нет. На шлюзе бэкапов нет вовсе (их настройки — в бэкапе сервера AWG).
 
-Запуск:  python -m tools.snapshot --out /path/to/snapshot.tgz
-Коды выхода: 0 — снят, 1 — не снят (причина в stderr).
+Запуск:  python -m tools.snapshot --out /path/to/awg-bot-backup-….tgz.enc
+Коды выхода: 0 — снят; 1 — не снят (причина в stderr).
 """
 from __future__ import annotations
 
@@ -21,29 +20,46 @@ import sys
 
 from awgbot.core import config
 from awgbot.domain.backup.archive import BackupArchiveMixin
+from awgbot.domain.backup.crypto import BackupCryptoMixin
+
+NO_PHRASE = ("без ключевой фразы бэкап не сделать: открытых бэкапов нет. Задай фразу в боте "
+             "сервера AWG: «💾 Бэкапы» → «🔐 Шифрование»")
+ON_GATEWAY = ("на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство ставится "
+              "файлом конфигурации шлюза (sudo sh <файл> --install), остальное довезёт канал конфигурации")
 
 
-class _Snapshot(BackupArchiveMixin):
-    """Ровно то, что нужно сборщику: база (для списка шлюзов сервера) и роль."""
+class _Snapshot(BackupCryptoMixin, BackupArchiveMixin):
+    """Ровно то, что нужно сборщику: база (секрет, опись шлюзов) и роль."""
 
     def __init__(self, db) -> None:
         self.db = db
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="снимок состояния awg-bot (открытый tgz)")
+    ap = argparse.ArgumentParser(description="бэкап сервера AWG (шифрованный tgz)")
     ap.add_argument("--out", required=True, help="куда положить архив")
     args = ap.parse_args(argv)
+    if config.ROLE == "gateway":
+        print(ON_GATEWAY, file=sys.stderr)
+        return 1
     db = None
     try:
-        if config.ROLE != "gateway" and os.path.exists(config.DB_PATH):
-            from awgbot.infra.db import Database
-            db = Database(config.DB_PATH)
-            db.init_schema()          # база прежней версии до первого старта сервиса — довести
+        if not os.path.exists(config.DB_PATH):
+            print(NO_PHRASE, file=sys.stderr)
+            return 1
+        from awgbot.infra.db import Database
+        db = Database(config.DB_PATH)
+        db.init_schema()              # база прежней версии до первого старта сервиса — довести
         snap = _Snapshot(db)
+        kw = snap.backup_enc_kwargs()
+        if kw is None:
+            print(NO_PHRASE, file=sys.stderr)
+            return 1
         raw = snap.build_backup_archive(snap.backup_extra())
+        from awgbot.util import secrets_util
+        blob = secrets_util.encrypt(raw, **kw)
     except Exception as e:                            # noqa: BLE001
-        print(f"снимок не снялся: {e}", file=sys.stderr)
+        print(f"бэкап не снялся: {e}", file=sys.stderr)
         return 1
     finally:
         if db is not None:
@@ -55,10 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as f:
-            f.write(raw)
+            f.write(blob)
         os.replace(tmp, args.out)
     except OSError as e:
-        print(f"снимок не записан: {e}", file=sys.stderr)
+        print(f"бэкап не записан: {e}", file=sys.stderr)
         try:
             os.unlink(tmp)
         except OSError:

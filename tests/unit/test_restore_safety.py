@@ -1,18 +1,39 @@
 """
-Восстановление обязано быть обратимым.
+`awg-bot restore`: безопасность — порядком, а не снимком.
 
-`awg-bot restore` перезаписывает БД, конфиг и секреты. Запускают его ровно
-тогда, когда уже всё плохо, — а значит ошибиться снимком проще всего. Без
-снимка «до» старый архив молча уносит всё, что появилось после него; однажды так
-и исчезли три дня состояния.
+Снимка «до восстановления» нет. Всё, что может отказать (расшифровка,
+распаковка, сторож метки, план), — до остановки сервиса; слияние — после
+остановки, но пишет только в распакованное; подготовка — <имя>.restore-new
+рядом с целью; замена — переименованием через <имя>.restore-old под ловушкой.
+Отказ на любом шаге — живые файлы байт в байт прежние, сервис поднят.
+DROP заблокированным — до подъёма интерфейсов и ещё раз после, до старта
+сервиса. Расшифрованное — только во временном каталоге операции; файл из
+чата удаляется при любом исходе.
+
+Прогоняется настоящая cmd_restore из awg-bot.sh (bash) с каталогами во
+временной папке; python-инструменты, systemctl, awg-quick и скрипт линка
+подменены функциями, которые пишут вызовы в журнал по порядку.
 """
 from __future__ import annotations
 
+import io
+import json
+import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "awg-bot.sh"
+from tests.unit.test_cli_script import SCRIPT, _extract_func
+
+pytestmark = pytest.mark.unit
+
+FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "restore_stage", "restore_unstage", "restore_rollback",
+         "restore_mv", "restore_swap", "restore_finish", "restore_exit", "restore_blocks", "cmd_restore")
+OLD = {"db": b"OLD-DB", "app": b"network:\n  server_host: vpn.example.org\n", "env": b"BOT_TOKEN=DUMMY\n",
+       "awg0": b"[Interface]\nPrivateKey = DUMMY-OLD\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-OLD\n"}
+NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\n", "env": b"BOT_TOKEN=DUMMY2\n",
+       "awg0": b"[Interface]\nPrivateKey = DUMMY-NEW\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-NEW\n"}
 
 
 @pytest.fixture(scope="module")
@@ -20,121 +41,210 @@ def script() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
-def _restore(script: str) -> str:
-    return script.split("cmd_restore()", 1)[1].split("\ncmd_uninstall()", 1)[0]
+def _tgz(files: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, raw in files.items():
+            ti = tarfile.TarInfo(name); ti.size = len(raw); ti.mode = 0o600
+            tar.addfile(ti, io.BytesIO(raw))
+    return buf.getvalue()
 
 
-def test_restore_snapshots_current_state_first(script):
-    body = _restore(script)
-    assert "prerestore" in body, "снимок текущего состояния не делается"
-    snap = body.index("prerestore")
-    overwrite = body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
-    assert snap < overwrite, "снимок обязан быть ДО перезаписи"
+class Host:
+    """Живые файлы установки во временной папке и копия, которую «расшифрует»
+    подставной restore_backup."""
+
+    def __init__(self, tmp: Path, *, role: str = "client", hooks: bool = False):
+        self.tmp = tmp
+        self.data = tmp / "data"; self.data.mkdir()
+        self.backups = self.data / "backups"; self.backups.mkdir()
+        self.conf = tmp / "conf"; self.conf.mkdir()
+        self.awg = tmp / "awg"; self.awg.mkdir()
+        self.root = tmp / "root"; self.root.mkdir()
+        self.net = tmp / "net"; (self.net / "awg0").mkdir(parents=True)
+        self.env = tmp / "env"
+        self.log = tmp / "calls"
+        (self.data / "bot.db").write_bytes(OLD["db"])
+        (self.conf / "app.yaml").write_bytes(OLD["app"] + (b"role: gateway\n" if role == "gateway" else b"")
+                                            + f"conf_dir: {self.awg}\n".encode())
+        self.env.write_bytes(OLD["env"])
+        (self.awg / "awg0.conf").write_bytes(OLD["awg0"])
+        (self.root / "gw-awglink.conf").write_bytes(OLD["gw"])
+        awg0 = NEW["awg0"] + (b"PostUp = iptables -A FORWARD -j ACCEPT\n" if hooks else b"")
+        self.plain = tmp / "plain.tgz"
+        self.plain.write_bytes(_tgz({
+            "state/backup-meta.json": json.dumps({"schema": 2, "role": "main",
+                                                  "created_at": "2026-10-05T14:00:00+03:00"}).encode(),
+            "state/bot.db": NEW["db"], "state/conf/app.yaml": NEW["app"] + f"conf_dir: {self.awg}\n".encode(),
+            "state/env": NEW["env"], "awg/awg0.conf": awg0, "root/gw-awglink.conf": NEW["gw"]}))
+        self.src = self.backups / "awg-bot-backup-main-20261005_140000.tgz.enc"
+        self.src.write_bytes(b"AWGBK1P" + b"\0" * 64)
+
+    def live(self) -> dict[str, bytes]:
+        app = b"".join(x for x in (self.conf / "app.yaml").read_bytes().splitlines(True)
+                       if not x.startswith(b"conf_dir:"))
+        return {"db": (self.data / "bot.db").read_bytes(), "app": app,
+                "env": self.env.read_bytes(), "awg0": (self.awg / "awg0.conf").read_bytes(),
+                "gw": (self.root / "gw-awglink.conf").read_bytes()}
+
+    def leftovers(self) -> list[str]:
+        return sorted(str(p) for p in self.tmp.rglob("*") if p.name.endswith((".restore-new", ".restore-old")))
+
+    def calls(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
 
 
-def test_restore_snapshot_is_taken_after_the_service_stops(script):
-    """Иначе БД снимается под записью бота и снимок может оказаться битым."""
-    body = _restore(script)
-    assert body.index('systemctl stop "$SERVICE"') < body.index("prerestore")
+def run(script: str, h: Host, *args: str, merge_fails: bool = False, mv_fail_at: int = 0,
+        stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=()) -> subprocess.CompletedProcess:
+    log = h.log
+    report = json.dumps({"blocked": list(blocked), "adopt": list(adopt), "slots": []})
+    prog = "\n".join([
+        "set -uo pipefail",
+        f'INSTALL_DIR="{h.tmp}/opt"; CONF_DIR="{h.conf}"; ENV_FILE="{h.env}"; DATA_DIR="{h.data}"',
+        f'BACKUP_DIR="{h.backups}"; SERVICE=awg-bot; ROOT_GW_DIR="{h.root}"; SYS_NET="{h.net}"',
+        'GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG"',
+        "RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_SWAPPING=0; RESTORE_ERR=''",
+        "RESTORE_TMP=''; RESTORE_PENDING=''",
+        'log() { echo "LOG $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*" >&2; }',
+        'die() { echo "DIE $*" >&2; exit 1; }',
+        "require_root() { :; }; confirm() { return 0; }; adopt_timezone() { :; }",
+        f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
+        f'awg-quick() {{ echo "awg-quick $*" >> "{log}"; }}',
+        f'sh() {{ echo "adopt $LINK_IF $*" >> "{log}"; }}',
+        "MV_N=0",
+        "mv() { MV_N=$((MV_N+1)); "
+        + (f'if [[ "$MV_N" -eq {mv_fail_at} ]]; then echo "нет места" >&2; return 1; fi; ' if mv_fail_at else "")
+        + 'command mv "$@"; }',
+        ("chmod() { case \"$2\" in *.restore-new) return 1 ;; esac; command chmod \"$@\"; }"
+         if stage_fails else ""),
+        "bot_tool() {",
+        '  local m="$1"; shift',
+        f'  echo "py $m $*" >> "{log}"',
+        '  case "$m" in',
+        '    tools.restore_backup)',
+        '      local out=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--out" ]] && out="$2"; shift; done',
+        f'      cp "{plain or h.plain}" "$out"; echo "decrypted-in $(dirname "$out")" >> "{log}" ;;',
+        '    tools.check_backup) return 0 ;;',
+        '    tools.restore_merge)',
+        '      case "$1" in',
+        '        --plan) echo "ПЛАН" ;;',
+        ('        --copy) echo "слияние не прошло: база бэкапа не читается" >&2; return 1 ;;' if merge_fails else
+         f"        --copy) printf '%s' '{report}' > \"$2/restore-merge.json\" ;;"),
+        '        --apply-blocks) return 0 ;;',
+        '      esac ;;',
+        '  esac',
+        "}",
+        *(_extract_func(script, f) for f in FUNCS),
+        'cmd_restore "$@"',
+    ])
+    return subprocess.run(["bash", "-c", prog, "x", *args], capture_output=True, text=True, timeout=30,
+                          env={"PATH": "/usr/bin:/bin", "TMPDIR": str(h.tmp)})
 
 
-def test_restore_tells_how_to_undo(script):
-    """Путь к снимку без команды возврата бесполезен в панике."""
-    body = _restore(script)
-    assert "awg-bot restore $pre" in body
+def test_success_replaces_everything_and_leaves_no_duplicates(script, tmp_path):
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src))
+    assert r.returncode == 0, r.stderr
+    assert h.live() == NEW, "живое не стало бэкапом"
+    assert h.leftovers() == [], "временные дубли остались"
+    assert not list(h.backups.glob("*prerestore*")) and "до восстановления" not in r.stdout + r.stderr
+    marker = json.loads((h.data / "restore-done.json").read_text(encoding="utf-8"))
+    assert marker["created_at"] == "2026-10-05T14:00:00+03:00" and marker["merge"]["blocked"] == ["10.8.1.5"]
+    assert (h.root / "gw-awglink.conf").stat().st_mode & 0o777 == 0o600
 
 
-def test_restore_removes_stale_wal(script):
-    """WAL/SHM принадлежат заменяемому файлу БД.
-
-    Рядом с чужой базой они в лучшем случае будут отброшены по несовпадению
-    соли, в худшем — доложены в файл, которому не родня.
-    """
-    body = _restore(script)
-    assert "db-wal" in body and "db-shm" in body
-    assert body.index("db-wal") < body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
-
-
-def _func(script: str, name: str) -> str:
-    head = f"{name}() {{"
-    assert head in script, f"в awg-bot.sh нет функции {name}()"
-    return head + script.split(head, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+def test_drop_goes_before_the_interface_comes_up_and_again_before_the_service_starts(script, tmp_path):
+    h = Host(tmp_path)
+    assert run(script, h, "--yes", str(h.src), adopt=("awglink2",)).returncode == 0
+    c = h.calls()
+    blocks = [i for i, x in enumerate(c) if x.startswith("py tools.restore_merge --apply-blocks")]
+    up = c.index("awg-quick up awg0")
+    start = c.index("systemctl start awg-bot")
+    assert len(blocks) == 2 and blocks[0] < up < blocks[1] < start, c
+    assert c.index("systemctl stop awg-bot") < c.index(next(x for x in c if x.startswith("py tools.restore_merge --copy")))
+    adopt = next(i for i, x in enumerate(c) if x.startswith("adopt awglink2 ") and x.endswith(" --adopt"))
+    assert adopt < blocks[1], c
 
 
-def test_backup_and_prerestore_use_one_snapshot_builder(script):
-    """Три сборки с разным составом однажды дали снимок «до восстановления»
-    без конфигов интерфейсов — «вернуться» возвращало базу, а не устройства.
-    Теперь и backup, и снимок перед restore зовут один сборщик (tools/snapshot),
-    а тот снимает БД через backup API SQLite, не cp."""
-    backup = _func(script, "cmd_backup")
-    assert "snapshot_state" in backup and "cp -a" not in backup, backup
-    assert "snapshot_state \"$pre\"" in _restore(script)
-    snap = _func(script, "snapshot_state")
-    assert "tools.snapshot --out" in snap
-    assert "wal_checkpoint(TRUNCATE)" in snap, "запасной снимок без чекпоинта потеряет WAL"
+def test_meta_guard_and_plan_go_before_the_service_stops(script, tmp_path):
+    h = Host(tmp_path)
+    assert run(script, h, "--yes", str(h.src)).returncode == 0
+    c = h.calls()
+    stop = c.index("systemctl stop awg-bot")
+    assert c.index(next(x for x in c if x.startswith("py tools.check_backup --meta"))) < stop
+    assert c.index(next(x for x in c if x.startswith("py tools.restore_merge --plan"))) < stop
 
 
-def test_restore_reads_the_interface_dir_before_swapping_the_config(script):
-    """awgdir из app.yaml — до подмены conf: иначе копия сама выбирала бы,
-    куда положить свои конфиги интерфейсов."""
-    body = _restore(script)
-    assert body.index('awgdir="$(awg_conf_dir)"') < body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
-    assert body.count('awgdir="$(awg_conf_dir)"') == 1
+def test_a_merge_refusal_changes_nothing_and_brings_the_service_up(script, tmp_path):
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src), merge_fails=True)
+    assert r.returncode != 0 and "ничего не изменилось, сервис поднят" in r.stderr, r.stderr
+    assert h.live() == OLD and h.leftovers() == []
+    assert h.calls()[-1] == "systemctl start awg-bot"
+    assert not (h.data / "restore-done.json").exists()
 
 
-def test_restore_does_not_bring_up_an_interface_with_changed_hooks(script):
-    """PreUp/PostUp исполняются от root: конфиг из копии с другими хуками
-    кладётся, но не поднимается сам."""
-    body = _restore(script)
-    assert "(Pre|Post)(Up|Down)" in body and "hooked" in body
-    assert body.index('case " $hooked " in') < body.index("awg-quick up \"$i\"")
+def test_a_preparation_refusal_changes_nothing(script, tmp_path):
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src), stage_fails=True)
+    assert r.returncode != 0 and "подготовка не прошла — ничего не изменилось, сервис поднят" in r.stderr, r.stderr
+    assert h.live() == OLD and h.leftovers() == []
+    assert "systemctl start awg-bot" in h.calls()
 
 
-def test_lan_lists_from_a_copy_are_checked_line_by_line(script, tmp_path):
-    """Файл уходит в conf-dir dnsmasq: строка conf-file= или dhcp-script= там —
-    исполнение от root. Допустимы только nftset= наших наборов и комментарии."""
-    import subprocess
-    good = tmp_path / "awg-gw-vpn-user.conf"
-    good.write_text("# awg-bot (шлюз): личный список\nnftset=/ozon.ru/inet#awg_lan#lan_vpn4\n"
-                    "nftset=/xn--80ak6aa92e.xn--p1ai/inet#awg_lan#lan_ru4\n"
-                    "nftset=/rutracker.org/4#inet#awg_lan#lan_vpn4\n\n", encoding="utf-8")
-    prog = 'warn() { echo "WARN $*"; }\n' + _func(script, "lan_lists_sane") + 'lan_lists_sane "$@"\n'
-
-    def run(*files):
-        return subprocess.run(["bash", "-c", prog, "x", *map(str, files)], capture_output=True,
-                              text=True, timeout=10, env={"PATH": "/usr/bin:/bin"})
-
-    assert run(good).returncode == 0
-    for bad_line in ("conf-file=/etc/passwd", "dhcp-script=/tmp/x", "server=/x.ru/1.1.1.1",
-                     "nftset=/ozon.ru/inet#filter#input", "nftset=/*/inet#awg_lan#lan_vpn4"):
-        bad = tmp_path / "awg-gw-ru-user.conf"
-        bad.write_text(f"nftset=/ok.ru/inet#awg_lan#lan_ru4\n{bad_line}\n", encoding="utf-8")
-        r = run(good, bad)
-        assert r.returncode == 1 and "WARN" in r.stdout, (bad_line, r.stdout)
+def test_a_failure_in_the_middle_of_the_swap_brings_everything_back(script, tmp_path):
+    """Подставной mv падает на третьем вызове: замена базы прошла, следующий
+    файл — нет; ловушка вернула заменённое, дублей нет, сервис поднят."""
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src), mv_fail_at=3)
+    assert r.returncode != 0 and "замена не прошла — вернул прежнее, сервис поднят" in r.stderr, r.stderr
+    assert h.live() == OLD, "заменённые файлы не вернулись"
+    assert h.leftovers() == []
+    assert h.calls()[-1] == "systemctl start awg-bot"
+    assert not (h.data / "restore-done.json").exists()
 
 
-def test_restore_copies_the_database_through_a_temp_file_and_aborts_on_failure(script):
-    """Оборванная копия базы в рабочем пути с маркером «восстановлено» — худший
-    исход: через временный файл и mv, отказ — прежняя база цела, сервис вверх."""
-    body = _restore(script)
-    assert 'dbt="$DATA_DIR/.restore-$(basename "$dbf").tmp"' in body
-    fail = body.split('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"', 1)[1].split("done", 1)[0]
-    assert 'systemctl start "$SERVICE"' in fail and "восстановление прервано" in fail
-    assert body.index("восстановление прервано") < body.index("restore-done.json"), "маркер при отказе"
+def test_decrypted_content_lives_only_in_the_operation_dir_and_the_chat_file_goes(script, tmp_path):
+    h = Host(tmp_path)
+    pending = h.backups / "restore-pending.tgz.enc"
+    pending.write_bytes(h.src.read_bytes())
+    r = run(script, h, "--yes", str(pending), merge_fails=True)
+    assert r.returncode != 0
+    assert not pending.exists(), "файл из чата остался после отказа"
+    c = h.calls()
+    assert any("--phrase-from-db" in x for x in c), "файл из чата расшифрован не фразой из базы"
+    where = next(x for x in c if x.startswith("decrypted-in")).split(" ", 1)[1]
+    assert not Path(where).exists(), "временный каталог операции остался"
+    assert not [p for p in h.backups.iterdir() if p.suffix == ".tgz" or p.name.endswith(".tgz")]
 
 
-def test_restore_removes_the_decrypted_chat_copy_after_unpacking(script):
-    """Копия из чата расшифровывается в restore-pending.tgz (открытая база и
-    ключи в каталоге снимков) — после распаковки файл больше не нужен."""
-    body = _restore(script)
-    assert 'restore-pending.tgz" ]] && rm -f -- "$orig"' in body
-    # после укладки базы и до маркера: при отказе файл остаётся для повтора
-    assert body.index('mv -f "$dbt"') < body.index('rm -f -- "$orig"') < body.index("restore-done.json")
+def test_an_open_archive_is_refused_before_anything(script, tmp_path):
+    h = Host(tmp_path)
+    opened = h.backups / "awg-bot-backup-main-x.tgz.enc"
+    opened.write_bytes(h.plain.read_bytes())
+    r = run(script, h, "--yes", str(opened))
+    assert r.returncode != 0 and "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы" in r.stderr
+    assert h.live() == OLD and "systemctl stop awg-bot" not in h.calls()
 
 
-def test_restore_does_not_carry_the_ssh_port_of_the_copy(script):
-    """Порт sshd — факт устройства (под OMV его задаёт OMV): SSH_PORT из копии
-    давал таблицу на старом порту и ложное «порт изменился (задал OMV)»."""
-    body = _restore(script)
-    assert "grep -v '^SSH_PORT=' \"$tmp/awg-gw/firewall.env\"" in body
-    assert body.index("grep -v '^SSH_PORT='") < body.index("cp -a \"$fw_new\" /etc/awg-gw/firewall.env")
+def test_a_config_with_other_hooks_is_laid_out_but_not_brought_up_and_drop_still_stands(script, tmp_path):
+    h = Host(tmp_path, hooks=True)
+    r = run(script, h, "--yes", str(h.src))
+    assert r.returncode == 0, r.stderr
+    c = h.calls()
+    assert "awg-quick up awg0" not in c and "другие хуки" in r.stderr
+    assert b"PostUp" in (h.awg / "awg0.conf").read_bytes()
+    assert sum(1 for x in c if x.startswith("py tools.restore_merge --apply-blocks")) == 2
+
+
+def test_the_gateway_has_no_restore(script, tmp_path):
+    h = Host(tmp_path, role="gateway")
+    r = run(script, h, "--yes", str(h.src))
+    assert r.returncode != 0 and "на шлюзе бэкапов нет" in r.stderr
+    assert h.calls() == []
+
+
+def test_unpacking_reads_the_format_from_the_content(script):
+    body = _extract_func(script, "cmd_restore")
+    assert 'tar xf "$tmp/backup.tgz"' in body and "tar xzf" not in body
+    assert "snapshot" not in body and "prerestore" not in body

@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 """
-check_backup.py — схема базы из резервной копии не ниже минимума 3.3.0?
+check_backup.py — сторож метки бэкапа для `awg-bot restore`, до остановки
+сервиса: метка схемы 2, роль сервера, версия не ниже версии совместимости и
+не новее кода, то же поколение AmneziaWG (domain/backup/meta.check).
 
-Зовётся из `awg-bot restore` на распакованной базе до остановки сервиса:
-миграций под версии ниже минимума в коде нет, и базу старше нечем довести —
-бот упал бы на первом запросе. Код 0 — схема годится; 1 — нет, причина в stderr.
+    python -m tools.check_backup --meta /tmp/x/state/backup-meta.json
 
-    python -m tools.check_backup /tmp/x/state/bot.db
+Код 0 — годится; 1 — нет, причина в stderr (без HTML).
 """
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("использование: check_backup.py <bot.db>", file=sys.stderr)
-        return 2
-    from awgbot.infra.db.schema import schema_gap
-    gap = schema_gap(argv[1])
-    if gap:
-        print(f"схема базы ниже минимума 3.3.0: {gap}", file=sys.stderr)
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="сторож метки бэкапа awg-bot")
+    ap.add_argument("--meta", required=True, help="state/backup-meta.json распакованного бэкапа")
+    args = ap.parse_args(argv)
+    from awgbot.domain.backup import meta
+    try:
+        with open(args.meta, encoding="utf-8") as f:
+            label = json.load(f)
+    except (OSError, ValueError):
+        label = None
+    err = meta.check(label, chat=False)
+    if err:
+        print(err, file=sys.stderr)
         return 1
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(main())

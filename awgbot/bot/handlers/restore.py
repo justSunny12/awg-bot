@@ -1,7 +1,9 @@
 """
-restore.py — восстановление из резервной копии, присланной в чат. Общее для
-обеих ролей: осмотр файла (шифр, метка роли и даты ВНУТРИ архива), вопрос с
-предупреждением, запуск `awg-bot restore --yes` вне cgroup бота.
+restore.py — восстановление сервера AWG из бэкапа, присланного в чат: осмотр
+файла (только шифрованный; метка схемы 2, версия, поколение, админ — ВНУТРИ
+архива), вопрос с планом — что вернётся, что останется текущим, что будет со
+шлюзами, — запуск `awg-bot restore --yes` вне cgroup бота, отчёт по маркеру и
+ожидание выхода шлюзов на связь. На шлюзе бэкапов нет — отказ словами.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ from awgbot.bot import texts, roles
 from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit_nav, forget_secret, send_menu
 
-_MAX_BYTES = 64 * 1024 * 1024
+_MAX_BYTES = 20 * 1024 * 1024          # облачный Bot API отдаёт боту файлы до 20 МБ
 _SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
 
 
@@ -24,7 +26,8 @@ def looks_like_backup(doc) -> bool:
 
 
 async def offer_restore(message: Message, services, state, *, gateway: bool) -> bool:
-    """Скачать, осмотреть, задать вопрос. True — файл принят к рассмотрению."""
+    """Скачать, осмотреть, задать вопрос с планом. True — файл принят к
+    рассмотрению."""
     doc = message.document
     if doc.file_size and doc.file_size > _MAX_BYTES:
         await message.answer(texts.restore_rejected("файл слишком большой для резервной копии"))
@@ -37,21 +40,20 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
         await message.answer(texts.restore_rejected(info.get("error", "не удалось прочитать")))
         return True
     await forget_secret(message)                       # в копии вся база — в чате ей не место
-    await state.update_data(restore_plain=base64.b64encode(info["plain"]).decode(),
-                            restore_at=info["created_at"])
-    carries = await call(services.carries_traffic)      # у сервера AWG — всегда True
+    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"])
     br = roles.pick(gateway)
-    warning = texts.restore_warning(br, carries) if info.get("ifaces_changed") else ""
     from awgbot.bot.sections import backup as _backup
+    from awgbot.domain.backup.plan import Plan
     # вопрос — живым меню: прежнее гаснет, «Отмена» вернёт на его место главную
-    await send_menu(message, services, texts.restore_offer(info["created_at"], br, warning),
+    await send_menu(message, services, texts.restore_offer_plan(Plan.from_dict(info["plan"]),
+                                                                getattr(services, "bot_username", "") or ""),
                     _backup.restore_confirm_kb(br))
     return True
 
 
 async def run_restore(cb: CallbackQuery, services, state) -> None:
     data = await state.get_data()
-    raw = data.get("restore_plain")
+    raw = data.get("restore_blob")
     await state.clear()
     if not raw:
         await cb.answer(ui.Toast.no_file, show_alert=True)
@@ -81,10 +83,16 @@ async def drop_restore(cb: CallbackQuery, services, state, hooks) -> None:
 
 
 async def report_restore_result(bot, services) -> None:
-    """На старте: маркер от awg-bot restore → отчёт админу."""
+    """На старте: маркер от awg-bot restore → отчёт админу по каждому шлюзу и
+    ожидание их выхода на связь (факт — hello слота)."""
     from awgbot.core import config
     from awgbot.bot.notifier import notify_one
     done = await call(services.pop_restore_done)
     if not done:
         return
-    await notify_one(bot, config.ADMIN_ID, texts.restore_done(str(done.get("created_at") or "")))
+    report = done.get("merge") if isinstance(done.get("merge"), dict) else {}
+    await notify_one(bot, config.ADMIN_ID,
+                     texts.restore_done_report(str(done.get("created_at") or ""), report,
+                                               getattr(services, "bot_username", "") or ""))
+    if hasattr(services, "restore_wait_start"):
+        await call(services.restore_wait_start, report)

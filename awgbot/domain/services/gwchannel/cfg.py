@@ -384,10 +384,13 @@ class CfgMixin:
         if known == str(cur):
             return
         with self.db.transaction():
-            if known.isdigit() and int(known) != cur:
+            changed = known.isdigit() and int(known) != cur
+            if changed:
                 self.db.set_state(self._CHPORT_PREV_KEY, f"{known}|{timeutil.to_iso(timeutil.now())}")
                 log.info("канал линка: порт сменился %s → %s, прежний слушаем ещё %s дн", known, cur, self.CHPORT_PREV_DAYS)
             self.db.set_state(self._CHPORT_CUR_KEY, str(cur))
+        if changed and hasattr(self, "backup_event_mark"):
+            self.backup_event_mark("chport")              # порт уже едет в юниты шлюзов
 
     def gwcfg_channel_ports(self, cur: int | None = None) -> list[int]:
         """Порты канала для слушателя и файервола: текущий и прежний, пока тот

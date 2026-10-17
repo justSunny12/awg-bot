@@ -174,6 +174,14 @@ async def liveness_tick(services) -> None:
     await _server.sweep_dead()
     await _server.send_roles()
     await _server.rekey_tick()
+    if hasattr(services, "restore_wait_tick"):
+        # после восстановления: кто не вышел на связь за срок — одно уведомление
+        notes = await asyncio.to_thread(services.restore_wait_tick)
+        if notes and _on_notes is not None:
+            try:
+                await _on_notes(list(notes))
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: уведомления после восстановления не ушли: %s", e)
     n = _server.__dict__.get("_ticks", 0) + 1
     _server.__dict__["_ticks"] = n
     if n % 4 == 0:

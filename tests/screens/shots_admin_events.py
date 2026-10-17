@@ -82,16 +82,55 @@ async def _ev_zone_adopted(services, bot, prev="Europe/Moscow"):
         await main._announce_zone(bot, d)
 
 
+_MERGE = {"line": "same", "empty": False,
+          "slots": [{"slot": 1, "case": "same", "name": "NASPi", "label": "", "link_if": "awglink"},
+                    {"slot": 2, "case": "rekeyed", "name": "Pi4", "label": "дача", "link_if": "awglink2"},
+                    {"slot": 3, "case": "device", "name": "Pi3", "label": "", "link_if": "awglink3"},
+                    {"slot": 4, "case": "removed", "name": "Шлюз 4", "label": "", "link_if": "awglink4"},
+                    {"slot": 5, "case": "added", "name": "Pi5", "label": "", "link_if": "awglink5"},
+                    {"slot": 6, "case": "twin", "name": "Pi6", "label": "", "link_if": "awglink6"}],
+          "lost": [{"device": "Телефон", "client": "Иван", "address": "10.8.1.7"}], "blocked": [], "adopt": []}
+
+
 def _restore_done(services):
-    """awg-bot restore отработал и оставил маркер."""
+    """awg-bot restore отработал и оставил маркер; итог слияния — без шлюзов."""
     who = _people(services)
-    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+05:00"}
+    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+05:00",
+                                         "merge": {"line": "same", "slots": [], "lost": []}}
+    return who
+
+
+def _restore_done_gw(services):
+    """Маркер с итогом по каждому шлюзу и устройством, которое не встало."""
+    who = _people(services)
+    services.pop_restore_done = lambda: {"created_at": "2026-10-05T14:00:00+03:00", "merge": _MERGE}
     return who
 
 
 async def _ev_restore_done(services, bot):
     from awgbot.bot.handlers.restore import report_restore_result
     await report_restore_result(bot, services)
+
+
+def _restore_wait(empty: bool, at: str):
+    """Ожидание выхода шлюзов на связь после восстановления: с отметки."""
+    def build(services):
+        import json
+        who = _people(services)
+        services.db.set_state("restore_wait", json.dumps(
+            {"at": at, "empty": empty, "slots": {"2": {"name": "Pi4", "label": "дача", "link_if": "awglink2"}}}))
+        return who
+    return build
+
+
+async def _ev_wait_hello(services, bot):
+    from awgbot.bot.notifier import send_notifications
+    await send_notifications(bot, services.restore_wait_hello(2))
+
+
+async def _ev_wait_tick(services, bot):
+    from awgbot.bot.notifier import send_notifications
+    await send_notifications(bot, services.restore_wait_tick())
 
 
 async def _ev_expiry(services, bot):
@@ -133,6 +172,16 @@ EVENTS = [
          data=_restart_promised, title="бот вернулся после перезапуска"),
     Shot("adm.ev.restore_done", role="admin", call=("report_restore_result", _ev_restore_done),
          data=_restore_done, title="восстановление из копии завершено"),
+    Shot("adm.ev.restore_done.gw", role="admin", call=("report_restore_result", _ev_restore_done),
+         data=_restore_done_gw, title="восстановление: итог по каждому шлюзу, устройство не встало"),
+    Shot("adm.ev.restore_back", role="admin", call=("restore_wait_hello", _ev_wait_hello),
+         data=_restore_wait(False, "2026-09-15T11:55:00+05:00"), title="шлюз на связи после восстановления"),
+    Shot("adm.ev.restore_lost", role="admin", call=("restore_wait_tick", _ev_wait_tick),
+         data=_restore_wait(False, "2026-09-15T11:40:00+05:00"),
+         title="шлюз не вышел на связь за 15 минут: непустой сервер"),
+    Shot("adm.ev.restore_lost.empty", role="admin", call=("restore_wait_tick", _ev_wait_tick),
+         data=_restore_wait(True, "2026-09-15T11:40:00+05:00"),
+         title="шлюз не вышел на связь за 15 минут: новый сервер"),
     Shot("adm.ev.zone_adopted", role="admin", call=("_announce_zone", _ev_zone_adopted), data=_people,
          title="первый старт после обновления: ключ пояса снят — время в поясе сервера, прежний был другим"),
     Shot("adm.ev.expired", role="admin", call=("check_expiry", _ev_expiry), data=_br_expired,

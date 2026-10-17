@@ -131,7 +131,8 @@ class Has:
     email_resume: bool           # аварийный выход из паузы в «E-mail»
     migration: bool              # переезд профилей в «Сервисе»
     gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен шлюза
-    backup_encrypted_only: bool = False   # копия только шифрованная: без фразы автобэкап не делается (агент)
+    backup_encrypted_only: bool = False   # копия только шифрованная: без фразы автобэкап не делается
+    backup_gateways: bool = False         # копия сервера AWG: со шлюзами, без фразы раздел — только «🔐 Шифрование»
 
 
 @dataclass(frozen=True)
@@ -194,7 +195,8 @@ MAIN = BotRole(
               outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
-    has=Has(email_resume=True, migration=True, gw_emergency=True),
+    has=Has(email_resume=True, migration=True, gw_emergency=True, backup_encrypted_only=True,
+            backup_gateways=True),
     cb=_MainCB("main"),
 )
 

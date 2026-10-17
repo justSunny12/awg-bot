@@ -109,7 +109,6 @@ class BackupArchiveMixin:
         import io
         import json
         import os
-        import socket
         import tarfile
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -119,11 +118,11 @@ class BackupArchiveMixin:
                 ti.mode = mode
                 ti.mtime = int(time.time())
                 tar.addfile(ti, io.BytesIO(raw))
-            # Метка ВНУТРИ архива: чья копия и когда снята. Имя файла не в счёт —
-            # его переименуют, а дату и роль восстановление читает отсюда.
-            meta = {"role": self.backup_role(), "created_at": timeutil.now_iso(),
-                    "hostname": socket.gethostname(), "version": config.INSTALLED_VERSION}
-            add(self.META_NAME, json.dumps(meta, ensure_ascii=False).encode(), 0o644)
+            # Метка ВНУТРИ архива (схема 2, опись шлюзов, линия базы): имя
+            # файла не в счёт — его переименуют, а восстановление читает отсюда.
+            from . import meta as _meta
+            label = _meta.build(getattr(self, "db", None), self.backup_role())
+            add(self.META_NAME, json.dumps(label, ensure_ascii=False).encode(), 0o644)
             try:
                 raw_db = self.db_snapshot_bytes(config.DB_PATH)
             except Exception as e:                    # noqa: BLE001 — sqlite3.Error, OSError
@@ -145,23 +144,19 @@ class BackupArchiveMixin:
                 add(name, raw)
         return buf.getvalue()
 
-    def write_backup_archive(self, tag: str, extra: list[tuple[str, bytes]] | None = None,
-                             *, require_encryption: bool = False) -> list[str]:
-        """Собрать архив, зашифровать (если задан секрет) и положить в BACKUP_DIR.
-        Возвращает список из одного пути — вызывающие ждут список."""
+    def write_backup_archive(self, tag: str, extra: list[tuple[str, bytes]] | None = None) -> list[str]:
+        """Собрать архив, зашифровать и положить в BACKUP_DIR. Открытых копий
+        нет: без секрета — BackupKeyMissing, файла нет. Возвращает список из
+        одного пути — вызывающие ждут список."""
         enc_kwargs = self.backup_enc_kwargs()
-        if enc_kwargs is None and require_encryption:
+        if enc_kwargs is None:
             raise BackupKeyMissing("нет секрета шифрования")
         config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
         raw = self.build_backup_archive(extra)
-        if enc_kwargs is not None:
-            from awgbot.util import secrets_util
-            dst = config.BACKUP_DIR / f"awg-bot-backup-{tag}-{stamp}.tgz.enc"
-            dst.write_bytes(secrets_util.encrypt(raw, **enc_kwargs))
-        else:
-            dst = config.BACKUP_DIR / f"awg-bot-backup-{tag}-{stamp}.tgz"
-            dst.write_bytes(raw)
+        from awgbot.util import secrets_util
+        dst = config.BACKUP_DIR / f"awg-bot-backup-{tag}-{stamp}.tgz.enc"
+        dst.write_bytes(secrets_util.encrypt(raw, **enc_kwargs))
         try:
             dst.chmod(0o600)
         except OSError:

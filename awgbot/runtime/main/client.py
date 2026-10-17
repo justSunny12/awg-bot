@@ -133,7 +133,10 @@ async def main() -> None:
 
     await pkg.do_reconcile(services, bot)                    # сверка состава пиров
     try:
-        await asyncio.to_thread(services.reconcile_blocks)   # восстановить блокировки
+        # восстановить блокировки; после восстановления — и снять лишние DROP,
+        # наложенные restore до подъёма интерфейсов по собранной базе
+        restored = await asyncio.to_thread(services.restore_done_pending)
+        await asyncio.to_thread(services.reconcile_blocks, restored)
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_blocks на старте: %s", e)
     # итог self-update: если перед рестартом запускалось обновление — удалить
@@ -235,6 +238,8 @@ async def main() -> None:
             # Слоты шлюзов: юнит первого линка —
             # на шаблон, активный на холодном старте — предпочтительный.
             await asyncio.to_thread(services.gateway_units_migrate)
+            # линки слотов с конфигом и без юнита (бэкап на пустом сервере)
+            await asyncio.to_thread(services.gateway_links_adopt)
             # порт линка правят руками в конфиге ВПС — строка слота узнаёт сама
             for note in await asyncio.to_thread(services.gateway_sync_link_ports):
                 await pkg.notify_one(bot, note.tg_id, note.text)
@@ -267,6 +272,13 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("preflight warnings: %s", e)
         try:
+            # отчёт о восстановлении — до слушателя канала: ожидание выхода
+            # шлюзов на связь должно стоять раньше их первого hello
+            from awgbot.bot.handlers.restore import report_restore_result
+            await report_restore_result(bot, services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("report_restore_result: %s", e)
+        try:
             # Слушатель канала линка — после слотов: он биндится на адреса их
             # /30, и до миграции юнитов их могло не быть.
             from awgbot.runtime import linkserver
@@ -281,11 +293,6 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("боты шлюзов: getMe: %s", e)
         await pkg._announce_reboot(bot, db, "бота")
-        try:
-            from awgbot.bot.handlers.restore import report_restore_result
-            await report_restore_result(bot, services)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("report_restore_result: %s", e)
         log.info("стартовые фоновые задачи завершены")
 
     after_start = asyncio.create_task(_after_start())

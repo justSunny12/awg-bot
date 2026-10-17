@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from awgbot.bot.callbacks import CancelCB, SetCB, UpdateCB
 
-from tests.screens.base import Shot, in_zone
-from tests.screens.shots_admin_common import _email_on, _fw, _people, _raise, _restarts, _tag, _upd_found
+from tests.screens.base import NOW, Shot, in_zone
+from tests.screens.shots_admin_common import _email_on, _fw, _iso, _people, _raise, _restarts, _tag, _upd_found
 
 
 # кнопки «С/До» есть только при включённых тихих часах
@@ -29,16 +29,53 @@ def _srv(host: str = "vpn.example.org", dns: str = "10.8.1.1", **over):
     return build
 
 
+_PHRASE = "DUMMY-passphrase-1234"
+
+
+def _with_phrase(services):
+    """Ключевая фраза задана: без неё у сервера AWG раздел — одна «🔐 Шифрование»."""
+    who = _people(services)
+    services.backup_set_passphrase(_PHRASE)
+    return who
+
+
 def _backup_files(services):
     """«Сделать сейчас» в чат: файл копии — во временном каталоге."""
     import tempfile
     import os
-    who = _people(services)
+    who = _with_phrase(services)
     d = tempfile.mkdtemp(prefix="awg-shot-")
     path = os.path.join(d, "awg-bot-backup.tgz.enc")
     with open(path, "wb") as f:
         f.write(b"DUMMY")
     services.make_backup = lambda: [path]
+    return who
+
+
+def _backup_gw(phrase: bool = True):
+    """Два шлюза: у первого агент старше 3.4.0 (на связь выходил, копии
+    настроек не шлёт), второй не на связи — его настройки в бэкапе на дату."""
+    def build(services, mp):
+        from tests.screens.shots_admin_common_gw import _slots
+        who = _slots(2)(services, mp)
+        if phrase:
+            services.backup_set_passphrase(_PHRASE)
+        services.db.set_state("gwlink_seen_1", _iso(NOW))
+        services.db.set_state("gwlink_caps_1", "cfg1,own1")
+        services.db.set_state("gwlink_seen_2", "2026-10-12T09:00:00+03:00")
+        services.db.set_state("gwlink_caps_2", "cfg1,own1,keep1")
+        services.db.set_state("gwkeep_2", '{"v": 1, "at": "2026-10-12T08:40:00+03:00"}')
+        services.db.gateway_update(2, label="дача")
+        return who
+    return build
+
+
+def _rekey_busy(services, mp):
+    """Идёт смена ключей линка первого шлюза: копия ждёт её конца."""
+    from tests.screens.shots_admin_common_gw import _slots
+    who = _slots(1)(services, mp)
+    services.backup_set_passphrase(_PHRASE)
+    services.backup_rekey_busy = lambda: services.db.gateway(1)
     return who
 
 
@@ -194,21 +231,30 @@ SETTINGS = [
     Shot("adm.set.mon.edit.done", role="admin",
          press=[SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes")], text="5", data=_people,
          title="частота опроса: итог"),
-    Shot("adm.set.backup", role="admin", press=[SetCB(sec="backup")], data=_people, title="бэкапы"),
-    Shot("adm.set.backup.off", role="admin", press=[SetCB(sec="backup")], data=_people,
+    Shot("adm.set.backup", role="admin", press=[SetCB(sec="backup")], data=_people,
+         title="бэкапы: фразы нет — только «🔐 Шифрование» (ключи устройств)"),
+    Shot("adm.set.backup.nokey_gw", role="admin", press=[SetCB(sec="backup")], data=_backup_gw(phrase=False),
+         title="бэкапы: фразы нет, шлюзы есть (ключи линков)"),
+    Shot("adm.set.backup.phrase", role="admin", press=[SetCB(sec="backup")], data=_with_phrase,
+         title="бэкапы: фраза задана"),
+    Shot("adm.set.backup.gw", role="admin", press=[SetCB(sec="backup")], data=_backup_gw(),
+         title="бэкапы со шлюзами: агент старше 3.4.0, шлюз не на связи"),
+    Shot("adm.set.backup.off", role="admin", press=[SetCB(sec="backup")], data=_with_phrase,
          conf={"app.scheduler.backup_enabled": False}, title="бэкапы выключены"),
-    Shot("adm.set.backup.email", role="admin", press=[SetCB(sec="backup")], data=_people,
+    Shot("adm.set.backup.email", role="admin", press=[SetCB(sec="backup")], data=_with_phrase,
          conf={"app.scheduler.backup_channel": "email"}, title="бэкапы на e-mail"),
     Shot("adm.set.backup.channel", role="admin",
-         press=[SetCB(sec="backup", act="cycle", key="app.scheduler.backup_channel")], data=_people,
+         press=[SetCB(sec="backup", act="cycle", key="app.scheduler.backup_channel")], data=_with_phrase,
          title="канал на e-mail без ящика"),
     Shot("adm.set.backup.when", role="admin", press=[SetCB(sec="backup", act="edit", key="backup_when")],
-         data=_people, title="день и час: приглашение"),
+         data=_with_phrase, title="день и час: приглашение"),
     Shot("adm.set.backup.when.done", role="admin",
-         press=[SetCB(sec="backup", act="edit", key="backup_when")], text="5 3", data=_people,
+         press=[SetCB(sec="backup", act="edit", key="backup_when")], text="5 3", data=_with_phrase,
          title="день и час: итог"),
     Shot("adm.set.backup.now", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
          data=_backup_files, title="копия сейчас — файлом в чат"),
+    Shot("adm.set.backup.now.rekey", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
+         data=_rekey_busy, title="копия сейчас во время смены ключей линка"),
     Shot("adm.set.backup.enc", role="admin", press=[SetCB(sec="backup", act="do", key="enc")], data=_people,
          title="шифрование"),
     Shot("adm.set.backup.enc_set", role="admin", press=[SetCB(sec="backup", act="do", key="enc_set")],

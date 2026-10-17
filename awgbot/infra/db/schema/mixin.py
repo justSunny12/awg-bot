@@ -1,62 +1,13 @@
-"""mixin.py — часть пакета schema (см. __init__): сторож минимума схемы копии
-(schema_gap) и SchemaMixin с init_schema и служебным клиентом."""
+"""mixin.py — часть пакета schema (см. __init__): SchemaMixin с init_schema,
+служебным клиентом и линией базы (db_line)."""
 from __future__ import annotations
 
-import sqlite3
+import secrets
 
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 from .ddl import SCHEMA
 from .selects import SERVICE_CLIENT_NAME
-
-
-# Что добавили в схему миграции версий ниже минимума 3.3.0 (сняты): по этим
-# признакам сторож восстановления отличает копию, снятую до минимума, — такую
-# базу нечем довести, и бот на ней упадёт на первом же запросе. Последний —
-# переименование подсетей слота gateways.home_subnets → lan_subnets (3.3.0).
-_FLOOR_COLUMNS = (
-    ("clients", "kind"), ("clients", "tg_name"), ("clients", "tg_name_at"), ("clients", "tg_username"),
-    ("devices", "holder_client_id"),
-    ("client_pause", "pause_balance_days"), ("client_pause_histories", "pause_balance_days"),
-    ("gateways", "lan_mode"), ("gateways", "lan_subnets"),
-    ("device_traffic", "rf_rx_month"), ("device_traffic", "rf_tx_month"),
-    ("traffic_monthly", "rf_rx"), ("traffic_monthly", "rf_tx"),
-)
-
-
-def schema_gap(path: str) -> str:
-    """Чем схема базы в копии отстаёт от минимума 3.3.0: «» — ничем, иначе
-    первый признак словами. Таблицы, которых в базе нет вовсе, не в счёт —
-    их создаст SCHEMA; пустой или нечитаемый файл — «не база SQLite»."""
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return "не база SQLite"
-    try:
-        try:
-            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        except sqlite3.DatabaseError:
-            return "не база SQLite"
-        if not tables:
-            return "не база SQLite"
-        for table, col in _FLOOR_COLUMNS:
-            if table not in tables:
-                continue
-            have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
-            if col not in have:
-                return f"в таблице {table} нет колонки {col}"
-        if "devices" in tables:
-            have = {r[1] for r in con.execute("PRAGMA table_info(devices)")}
-            if "full_access_link" in have:
-                return "в таблице devices осталась колонка full_access_link"
-            if "is_gateway" in have and con.execute("SELECT 1 FROM devices WHERE is_gateway = 1 LIMIT 1").fetchone():
-                return "шлюз помечен флагом devices.is_gateway, а не слотом"
-        if "device_friend" in tables and con.execute(
-                "SELECT 1 FROM device_friend WHERE friend_status = 'active' LIMIT 1").fetchone():
-            return "в device_friend есть активные «друзья» прежнего образца"
-        return ""
-    finally:
-        con.close()
 
 
 class SchemaMixin:
@@ -66,19 +17,34 @@ class SchemaMixin:
     # ── Инициализация ────────────────────────────────────────────────────────
 
     def init_schema(self) -> None:
-        """Создаёт таблицы (идемпотентно) и гарантирует служебного клиента.
+        """Создаёт таблицы (идемпотентно), гарантирует служебного клиента и
+        линию базы.
 
         Схема нормализована (identity/подписка/квота/grace/pause разведены по
         таблицам). Боевую БД не пересоздаём. Миграций нет — минимальная
         поддерживаемая версия 3.3.0 (README-bot §9a), её схема полная, всё,
-        что доводило БД версий старше (гостевые колонки, счёт паузы, слоты
-        шлюзов, режим без VPN, РФ-трафик, переименование подсетей слота),
-        снято: хост старше проходит через 3.3.0 и получает это там, копия
-        старше не разворачивается (schema_gap).
+        что доводило БД версий старше, снято: хост старше проходит через
+        3.3.0. Копии ниже версии совместимости (core/compat) не применяются
+        вовсе — схему копии сторожит её версия, а не колонки.
         """
         with self._tx() as cur:
             cur.executescript(SCHEMA)
         self._ensure_service_client()
+        self._ensure_db_line()
+
+    DB_LINE_KEY = "db_line"
+
+    def _ensure_db_line(self) -> None:
+        """Линия базы — случайная метка, которую база получает один раз и
+        уносит с собой при восстановлении: по ней восстановление отличает
+        «тот же сервер или его продолжение» от нового сервера и чужой копии."""
+        cur = self._connection().execute(
+            "SELECT value FROM server_state WHERE key = ?", (self.DB_LINE_KEY,)).fetchone()
+        if cur is None or not cur[0]:
+            with self._tx() as c:
+                c.execute("INSERT INTO server_state (key, value) VALUES (?, ?) "
+                          "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                          (self.DB_LINE_KEY, secrets.token_hex(8)))
 
     def _ensure_service_client(self) -> None:
         """Служебный клиент «Устройства без клиента» — ровно один, создаётся один раз.

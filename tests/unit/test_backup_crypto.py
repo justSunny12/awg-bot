@@ -29,84 +29,114 @@ def test_random_key_of_the_old_scheme_yields_to_passphrase(services):
     assert services.backup_encryption_mode() == "passphrase"
 
 
-def test_make_backup_encrypts_only_with_secret(services, monkeypatch, tmp_path):
+def test_make_backup_without_secret_makes_no_file(services, monkeypatch, tmp_path):
+    """Открытых копий нет: без секрета — отказ, файла нет; с ним — .tgz.enc."""
+    from awgbot.domain.backup.crypto import BackupKeyMissing
     monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "bot.db")
     (tmp_path / "bot.db").write_bytes(b"db")
     from awgbot.infra import awg
     monkeypatch.setattr(awg, "read_file", lambda p: (_ for _ in ()).throw(awg.AwgError("no conf")))
-    paths = services.make_backup()
-    assert paths and not paths[0].endswith(".enc")
+    with pytest.raises(BackupKeyMissing):
+        services.make_backup()
+    assert not list(tmp_path.glob("awg-bot-backup-*")), "без фразы файл копии появился"
     services.backup_set_passphrase("correct horse battery")
     paths = services.make_backup()
-    assert paths and paths[0].endswith(".enc")
+    assert paths and paths[0].endswith(".tgz.enc")
 
 
-def _archive_with_meta(role, created="2026-09-09T10:00:00+03:00"):
+PHRASE = "correct horse battery"
+
+
+def _archive(meta: dict | None = None, *, env: str = "", db: bytes | None = None) -> bytes:
     import io, json, tarfile
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        raw = json.dumps({"role": role, "created_at": created}).encode()
-        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw)
-        tar.addfile(ti, io.BytesIO(raw))
+        def add(name, raw):
+            ti = tarfile.TarInfo(name); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
+        if meta is not None:
+            add("state/backup-meta.json", json.dumps(meta).encode())
+        if env:
+            add("state/env", env.encode())
+        if db is not None:
+            add("state/bot.db", db)
     return buf.getvalue()
 
 
-def test_backup_meta_is_inside_the_archive_and_restore_is_role_bound(services, monkeypatch, tmp_path):
+def _meta(**kw) -> dict:
+    from awgbot.infra import awglock
+    m = {"schema": 2, "role": "main", "created_at": "2026-10-09T10:00:00+03:00", "version": "3.4.0",
+         "awg_gen": awglock.generation(), "db_line": "", "gateways": []}
+    m.update(kw)
+    return m
+
+
+@pytest.fixture()
+def v340(monkeypatch):
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.4.0")
+    monkeypatch.setattr(cfg, "ROLE", "client")
+
+
+def test_backup_meta_is_schema_two_inside_the_archive(services, monkeypatch, tmp_path, v340):
     import io, json, tarfile
-    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "nope.db")
     monkeypatch.setattr(cfg, "ENV_PATH", None)
     monkeypatch.setattr(cfg, "CONF_DIR", tmp_path / "noconf")
-    monkeypatch.setattr(cfg, "ROLE", "client")
     raw = services.build_backup_archive()
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         meta = json.loads(tar.extractfile("state/backup-meta.json").read())
-    assert meta["role"] == "main" and meta["created_at"]
-    info = services.inspect_backup(raw, "x.tgz")
-    assert info["ok"] and info["role"] == "main" and info["created_at"] == meta["created_at"]
-    # копия агента на основном — отказ; и наоборот
-    assert not services.inspect_backup(_archive_with_meta("gw"), "b.tgz")["ok"]
-    monkeypatch.setattr(cfg, "ROLE", "gateway")
-    # на шлюзе открытая копия не принимается вовсе: restore раскладывает её от root
-    gw_info = services.inspect_backup(_archive_with_meta("gw"), "b.tgz")
-    assert not gw_info["ok"] and "шифрованные" in gw_info["error"], gw_info
+    assert meta["schema"] == 2 and meta["role"] == "main" and meta["version"] == "3.4.0" and meta["created_at"]
+    assert meta["db_line"] == services.db.get_state("db_line") and len(meta["db_line"]) == 16
+    assert "awg_gen" in meta and "digest" in meta and meta["gateways"] == []
 
 
-def test_inspect_backup_encrypted_needs_the_right_phrase(services, monkeypatch, tmp_path):
+def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
+    """Отказы осмотра: открытый файл, схема 1, версия ниже 3.4.0, новее кода,
+    другое поколение, другой админ, копия шлюза прежних версий, фраза."""
     from awgbot.util import secrets_util
-    monkeypatch.setattr(cfg, "ROLE", "client")
-    blob = secrets_util.encrypt(_archive_with_meta("main"), passphrase="right-phrase")
-    assert "не задана" in services.inspect_backup(blob, "b.tgz.enc")["error"]
-    services.backup_set_passphrase("wrong-phrase!")
-    assert "не та" in services.inspect_backup(blob, "b.tgz.enc")["error"]
-    services.backup_set_passphrase("right-phrase")
-    info = services.inspect_backup(blob, "b.tgz.enc")
-    assert info["ok"] and info["created_at"].startswith("2026-09-09")
+    db = services.db_snapshot_bytes(services.db.path)
+
+    def enc(meta, env=f"ADMIN_ID={cfg.ADMIN_ID}\n", phrase=PHRASE):
+        return secrets_util.encrypt(_archive(meta, env=env, db=db), passphrase=phrase)
+
+    def err(blob):
+        r = services.inspect_backup(blob, "b.tgz.enc")
+        assert not r["ok"], r
+        return r["error"]
+
+    assert "не зашифрован" in err(_archive(_meta(), db=db))
+    assert "не задана" in err(enc(_meta()))
+    services.backup_set_passphrase(PHRASE)
+    assert "не та" in err(enc(_meta(), phrase="wrong-phrase!"))
+    assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.3.1"})) == \
+        "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
+    assert err(enc(_meta(version="3.3.1"))) == "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
+    assert err(enc(_meta(version="3.5.0"))) == \
+        "бэкап снят версии 3.5.0, а здесь 3.4.0 — обнови бота до 3.5.0, затем восстанови"
+    from awgbot.infra import awglock
+    monkeypatch.setattr(awglock, "generation", lambda: 2)
+    assert "другом поколении AmneziaWG" in err(enc(_meta(awg_gen=1)))
+    monkeypatch.setattr(awglock, "generation", lambda: 1)
+    assert err(enc(_meta(awg_gen=1), env="ADMIN_ID=4242\n")) == \
+        "бэкап другого админа — из чата его не восстановить; на сервере: sudo awg-bot restore <файл>"
+    assert "бэкап шлюза прежних версий" in err(enc({"role": "gw", "created_at": "2026-09-09T10:00:00+03:00"}))
     assert not services.inspect_backup(b"garbage", "b.tgz")["ok"]
+    ok = services.inspect_backup(enc(_meta(awg_gen=1, version="3.4.0.2")), "x.bin")
+    assert ok["ok"] and ok["created_at"].startswith("2026-10-09") and ok["plan"]["line"] in ("same", "clean")
 
 
-def test_restore_reports_only_changed_interfaces(services, monkeypatch, tmp_path):
-    import io, json, tarfile
-    from awgbot.bot import texts
-    monkeypatch.setattr(cfg, "ROLE", "client")
-    d = tmp_path / "awg"; d.mkdir(); (d / "awg1.conf").write_bytes(b"[Interface]\nA\n")
-    monkeypatch.setattr(cfg, "AWG_DIR", str(d))
-    def arc(conf):
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            for name, raw in (("state/backup-meta.json", json.dumps({"role": "main", "created_at": "2026-09-09T10:00:00+03:00"}).encode()),
-                              ("awg/awg1.conf", conf)):
-                ti = tarfile.TarInfo(name); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
-        return buf.getvalue()
-    assert services.inspect_backup(arc(b"[Interface]\nA\n"), "b.tgz")["ifaces_changed"] == []
-    assert services.inspect_backup(arc(b"[Interface]\nB\n"), "b.tgz")["ifaces_changed"] == ["awg1"]
-    from awgbot.bot.roles import MAIN, GATEWAY
-    warn = texts.restore_warning(MAIN)
-    assert warn.startswith("Все соединения оборвутся на несколько секунд")
-    assert texts.restore_offer("2026-09-09T10:00:00+03:00", MAIN, warn).endswith(warn)
-    assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00", MAIN)
-    assert texts.restore_warning(GATEWAY).startswith("Линк опустится и поднимется")
+def test_a_hotfix_of_the_same_version_is_not_newer(v340):
+    from awgbot.core import compat
+    assert not compat.newer_than("3.4.0.3", "3.4.0") and compat.newer_than("3.4.1", "3.4.0.9")
+    assert compat.below_floor("3.3.1") and not compat.below_floor("3.4.0") and compat.below_floor("")
+
+
+def test_the_gateway_takes_no_backups_in_chat(services, monkeypatch, tmp_path):
+    from awgbot.util import secrets_util
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    services.backup_set_passphrase(PHRASE)
+    r = services.inspect_backup(secrets_util.encrypt(_archive(_meta(role="gw")), passphrase=PHRASE), "b.tgz.enc")
+    assert not r["ok"] and r["error"].startswith("на шлюзе бэкапов нет")
 
 
 def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
@@ -158,3 +188,28 @@ def test_backup_extra_depends_on_the_role(services, make_active_client, monkeypa
     monkeypatch.setattr(gwguard, "FW_ENV", str(fw))
     names = [n for n, _ in services.backup_extra()]
     assert names[:2] == ["awg/awg0.conf", "awg/awglink.conf"] and "awg-gw/firewall.env" in names, names
+
+
+def test_drop_after_restore_goes_through_the_bots_single_entry(monkeypatch, tmp_path):
+    """--apply-blocks — тот же awg.block_ip и тот же вход seam._exec, что у
+    бота: на хосте — iptables прямо, в docker-режиме — docker exec в контейнер."""
+    import json
+    from awgbot.infra import awg
+    from tools import restore_merge
+    report = tmp_path / "restore-merge.json"
+    report.write_text(json.dumps({"blocked": ["10.8.1.5"]}), encoding="utf-8")
+    runs = []
+
+    class P:
+        def __init__(self, args):
+            self.returncode = 1 if "-C" in args else 0     # «правила ещё нет»
+            self.stdout = self.stderr = b""
+    monkeypatch.setattr(awg, "_run", lambda args, **kw: runs.append(list(args)) or P(args))
+    monkeypatch.setattr(awg, "in_container", lambda: True)
+    assert restore_merge.main(["--apply-blocks", str(report)]) == 0
+    assert ["docker", "exec", cfg.CONTAINER, "iptables", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] \
+        in runs, runs
+    runs.clear()
+    monkeypatch.setattr(awg, "in_container", lambda: False)
+    assert restore_merge.main(["--apply-blocks", str(report)]) == 0
+    assert ["iptables", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] in runs, runs

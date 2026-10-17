@@ -31,6 +31,7 @@ from awgbot.domain.services.types import (
 )
 from awgbot.domain.services.base import ServicesBase
 from awgbot.domain.services.status import StatusMixin
+from awgbot.domain.services.backups import BackupsMixin
 from awgbot.domain.services.blocks import BlocksMixin
 from awgbot.domain.services.clients import ClientsMixin
 from awgbot.domain.services.devices import DevicesMixin
@@ -43,7 +44,7 @@ from awgbot.domain.services.gwchannel import GwChannelMixin
 from awgbot.domain.services.routing import RoutingMixin
 
 
-class Services(ServicesBase, StatusMixin, BlocksMixin, ClientsMixin, DevicesMixin,
+class Services(ServicesBase, StatusMixin, BackupsMixin, BlocksMixin, ClientsMixin, DevicesMixin,
                SubscriptionMixin, TrafficMixin, ReconcileMixin, FirewallMixin,
                GatewayLinkMixin, GwChannelMixin, RoutingMixin,
                SelfUpdateMixin, MailMixin, BackupMixin, MigrationMixin, PrivateDnsMixin):
