@@ -9,37 +9,25 @@ from ..fmt import _e, details
 
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
-BACKUP_NO_KEY_LINE = ("⚠️ Без фразы автобэкап не делается: в копии приватные ключи — задай фразу "
-                      "в «🔐 Шифрование»")
-
-
 def settings_backup_text(encryption: bool = False, channel: str = "telegram", br=None, *,
                          has_slots: bool = False, slot_lines=()) -> str:
-    """br.has.backup_encrypted_only и фразы нет — вместо расписания
-    предупреждение: копия без фразы не делается вовсе. Сервер AWG
-    (br.has.backup_gateways): без фразы — только предупреждение (раздел
-    держит одну кнопку «🔐 Шифрование»), с фразой — ещё блок шлюзов и строки
-    по слотам (slot_lines — готовые строки)."""
+    """Бэкапы сервера AWG. Без фразы — только предупреждение (раздел держит
+    одну кнопку «🔐 Шифрование»): открытых копий нет; с фразой — расписание,
+    блок шлюзов и строки по слотам (slot_lines — готовые строки)."""
     from awgbot.core import settings as s
     from awgbot.domain.notices import backup as nb
     on = s.get_bool("app.scheduler.backup_enabled", True)
-    only_enc = bool(br is not None and br.has.backup_encrypted_only)
-    if br is not None and br.has.backup_gateways and not encryption:
+    if not encryption:
         return ui.head("💾 Бэкапы", meta=["🔓 фраза не задана"]) + "\n" + nb.no_phrase_line(has_slots)
-    head = ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"),
-                   meta=["🔐 фраза задана" if encryption else ("🔓 фраза не задана" if only_enc else "🔓 без шифрования")])
-    lines = [head]
-    if on and only_enc and not encryption:
-        lines.append(BACKUP_NO_KEY_LINE)
-    elif on:
+    lines = [ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"), meta=["🔐 фраза задана"])]
+    if on:
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
         lines.append(f"Каждое {day}-е число в {timeutil.fmt_hour_ui(hour)} → {where}")
-    if br is not None and br.has.backup_gateways and has_slots:
+    if has_slots:
         lines.append(nb.GATEWAYS_IN_BACKUP)
         lines.extend(x for x in slot_lines if x)
-    ext = ".tgz.enc" if (encryption or only_enc) else ".tgz"
-    lines.append(f"Восстановить — пришли боту файл бэкапа ({ext})")
+    lines.append("Восстановить — пришли боту файл бэкапа (.tgz.enc)")
     return "\n".join(lines)
 
 
@@ -75,20 +63,13 @@ def email_not_configured(sec: str = "notify") -> str:
     return "✉️ Для аварий на e-mail нужен подключённый ящик. Подключить сейчас?"
 
 
-def backup_needs_encryption(br) -> str:
-    return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу в «🔐 Шифрование»"
+def backup_needs_encryption(br=None) -> str:
+    return "По почте уходят только шифрованные копии: в базе приватные ключи устройств. Задай фразу в «🔐 Шифрование»"
 
 
 def backup_encryption_text(mode: str, br) -> str:
-    """Экран «Шифрование»: состояние и правила; «вне сервера» / «вне шлюза» — роли."""
-    if mode == "passphrase":
-        state = "🔐 фраза задана"
-    elif mode == "key":
-        state = "🔐 случайный ключ (перенесён из env)"
-    elif br.has.backup_encrypted_only:
-        state = f"🔓 фраза не задана — бэкапы {br.host_gen} не делаются"
-    else:
-        state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
+    """Экран «Шифрование»: состояние и правила; «вне сервера» — роли."""
+    state = "🔐 фраза задана" if mode == "passphrase" else f"🔓 фраза не задана — бэкапы {br.host_gen} не делаются"
     return (ui.head("🔐 Шифрование бэкапов", state) + "\n"
             f"Фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "

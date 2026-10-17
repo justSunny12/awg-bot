@@ -7,9 +7,8 @@ import re
 from awgbot.util import wgconf
 from awgbot.util.wgconf import norm
 
-from .doc import CfgError, ENV_KEYS, ENV_REQUIRED, MAIL_HINT
+from .doc import CfgError, ENV_KEYS, ENV_REQUIRED
 
-MIN_PHRASE = 8                                   # как backup.crypto.MIN_PASSPHRASE_LEN — сверяет тест
 _MAX_ADMIN_IPS = 64
 _MAX_SUBNETS = 64
 _HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
@@ -104,8 +103,7 @@ def check_env(env: dict) -> dict:
 # ── прочие разделы ───────────────────────────────────────────────────────────
 
 def check_mail(mail: dict) -> dict:
-    """Почта: логин до 254 знаков, хосты [A-Za-z0-9.-], порты 1–65535,
-    подсказка backup ∈ {email, telegram, пусто}."""
+    """Почта: логин до 254 знаков, хосты [A-Za-z0-9.-], порты 1–65535."""
     if not isinstance(mail, dict):
         raise CfgError("mail — не словарь")
     login = str(mail.get("login") or "")
@@ -120,23 +118,8 @@ def check_mail(mail: dict) -> dict:
     out = {"login": login, "password": password,
            "imap_host": str(mail["imap_host"]), "smtp_host": str(mail["smtp_host"]),
            "imap_port": _port(mail.get("imap_port"), "почта: imap_port"),
-           "smtp_port": _port(mail.get("smtp_port"), "почта: smtp_port"),
-           MAIL_HINT: norm(mail.get(MAIL_HINT))}
-    if out[MAIL_HINT] not in ("", "email", "telegram"):
-        raise CfgError("почта: backup — только email или telegram")
+           "smtp_port": _port(mail.get("smtp_port"), "почта: smtp_port")}
     return out
-
-
-def check_backup(backup: dict) -> dict:
-    """Фраза шифрования — те же правила, что у ввода на шлюзе."""
-    if not isinstance(backup, dict):
-        raise CfgError("backup — не словарь")
-    phrase = str(backup.get("phrase") or "").strip()
-    if len(phrase) < MIN_PHRASE:
-        raise CfgError(f"ключевая фраза бэкапов короче {MIN_PHRASE} символов")
-    if "\n" in phrase or len(phrase) > 512:
-        raise CfgError("ключевая фраза бэкапов: недопустимое значение")
-    return {"phrase": phrase}
 
 
 def check_token(token: dict) -> dict:
@@ -244,8 +227,6 @@ def check_doc(parsed: dict, *, link_cidr: str, address: str = "", fixed: dict | 
         out["server"] = check_server(sections["server"])
     if "mail" in sections:
         out["mail"] = check_mail(sections["mail"])
-    if "backup" in sections:
-        out["backup"] = check_backup(sections["backup"])
     if "token" in sections:
         out["token"] = check_token(sections["token"])
     if "uplink" in sections:

@@ -526,30 +526,38 @@ async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(cha
 
 # ── резервная копия агента и планировщик ─────────────────────────────────────
 
-async def test_a_gateway_backup_in_chat_is_refused_in_words(svc, monkeypatch):
-    """На шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG; файл
-    копии в чате бота шлюза не принимается к восстановлению."""
-    from awgbot.bot.handlers import restore as rs
+@pytest.mark.parametrize("name", ["awg-bot-backup-gw-20261001_120000.tgz.enc", "awg-bot-backup-main-x.tgz.enc",
+                                  "awg-bot-gw_20260901.tgz"])
+async def test_a_backup_in_the_gateway_chat_is_refused_and_removed(svc, name):
+    """Своих бэкапов у шлюза нет: копия шлюза прежних версий (или сервера) в
+    чате бота шлюза — один ответ, сообщение убрано (внутри ключи), файл не
+    скачивается и не осматривается."""
     from awgbot.bot import texts
 
     class _Backup(_Doc):
-        file_name = "awg-bot-gw.tgz.enc"
-    bot = _DlBot(b"AWGBK1archive")
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+        file_name = name
+
+    class _NoDl(FakeBot):
+        async def download(self, doc, destination=None):
+            raise AssertionError("бэкап в чате шлюза скачан")
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=_NoDl())
     msg.document = _Backup(100)
-    assert await rs.offer_restore(msg, svc, FakeState(), gateway=True) is True
-    assert msg.sent[-1][1].startswith(texts.restore_rejected("на шлюзе бэкапов нет"))
+    await gh.gw_bundle_document(msg, svc, FakeState())
+    assert msg.deleted, "файл с ключами остался в чате"
+    assert msg.sent[-1][1] == texts.GW_OLD_BACKUP_REFUSED, msg.sent
+    assert texts.GW_OLD_BACKUP_REFUSED.startswith("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся")
+    assert not texts.GW_OLD_BACKUP_REFUSED.endswith(".")
 
 
 async def test_gateway_scheduler_registers_its_jobs(svc, fake_bot):
-    """Планировщик агента: тик монитора, списки и записи соседей, месячная
-    копия с догоном, проверка обновлений с разовым запуском на старте — по
-    именам задач; выпасть одной из них молча нельзя."""
+    """Планировщик агента: тик монитора, списки и записи соседей, проверка
+    обновлений с разовым запуском на старте — по именам задач; выпасть одной
+    из них молча нельзя. Своих копий у шлюза нет — и заданий копии."""
     from awgbot.runtime import scheduler as sch
     s = sch.setup_gateway_scheduler(svc, fake_bot)
     try:
         ids = {j.id for j in s.get_jobs()}
     finally:
         s.shutdown(wait=False)
-    assert {"gw_monitor", "gw_lan_lists", "gw_lan_services", "gw_backup", "gw_backup_catchup",
-            "update_check", "update_check_startup"} <= ids, ids
+    assert {"gw_monitor", "gw_lan_lists", "gw_lan_services", "update_check", "update_check_startup"} <= ids, ids
+    assert not [j for j in ids if "backup" in j], ids

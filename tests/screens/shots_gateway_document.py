@@ -70,15 +70,11 @@ DOCUMENT = [
     _shot("gw.cfg.pending.keep", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail",),
           keep_ask=_keep("device"), title="панель: «⏳ Ждут решения: почта, настройки прежнего устройства»"),
 
-    # ── документ с сервера AWG: вопросы о почте и фразе ─────────────────────
-    _shot("gw.cfg.pending", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail", "backup"),
-          passphrase=True, title="панель: «⏳ Ждут решения: почта, ключевая фраза бэкапов» и кнопка «⏳ Ответить (2)»"),
+    # ── документ с сервера AWG: вопрос о почте ──────────────────────────────
+    _shot("gw.cfg.pending", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail",),
+          title="панель: «⏳ Ждут решения: почта» и кнопка «⏳ Ответить»"),
     _shot("gw.cfg.ask.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(), mail=True,
           cfg_ask=("mail",), title="вопрос о почте: отличается ящик"),
-    _shot("gw.cfg.ask.backup", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
-          passphrase=True, cfg_ask=("backup",), title="вопрос о фразе: своя фраза"),
-    _shot("gw.cfg.ask.backup.key", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
-          backup_key=True, cfg_ask=("backup",), title="вопрос о фразе: шлюз на случайном ключе"),
     _shot("gw.cfg.ask.none", press=[GwCB(action="panel"), GwCB(action="cfg_ask")], tick=_status(),
           title="«⏳ Ответить» без вопросов — всплывашка и панель"),
     _shot("gw.cfg.keep.mail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="mail")],
@@ -88,11 +84,9 @@ DOCUMENT = [
     _shot("gw.cfg.accept.mail.fail", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="mail")],
           tick=_status(), mail=True, mail_error="SMTP: авторизация отклонена", cfg_ask=("mail",),
           title="«✅ Принять»: почта сохранена, проверка не прошла"),
-    _shot("gw.cfg.accept.backup", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_ok!", val="backup")],
-          tick=_status(), passphrase=True, cfg_ask=("backup",), title="«✅ Принять»: фраза принята"),
     _shot("gw.cfg.queue", press=[GwCB(action="panel"), GwCB(action="cfg_ask"), GwCB(action="cfg_no", val="mail")],
-          tick=_status(), mail=True, passphrase=True, cfg_ask=("mail", "backup"),
-          title="очередь: после ответа о почте открывается вопрос о фразе"),
+          tick=_status(), mail=True, cfg_ask=("mail",), keep_ask=_keep("restore"),
+          title="очередь: после ответа о почте открывается вопрос о настройках из бэкапа"),
     # ── документ с сервера AWG: приглашения — ключи линка и конфиг аплинка ──
     _shot("gw.cfg.pending.all", press=[GwCB(action="panel")], tick=_status(), mail=True, rekey=_REKEY_ASKED,
           cfg_ask=("uplink", "mail"),

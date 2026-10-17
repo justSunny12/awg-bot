@@ -256,3 +256,58 @@ def set_value(key: str, value: Any) -> list[str]:
     if changed:
         _fire(changed)
     return changed
+
+
+def drop_keys(keys) -> list[str]:
+    """Снять ключи из conf-файлов (ruamel round-trip, атомарно, под меткой
+    самозаписи): ключ, которого больше нет в коде, не висит мёртвым. Нет файла
+    или ключа — ничего. Файл не разбирается — SettingsWriteError, как у
+    set_value. Возвращает изменившиеся dotted-ключи."""
+    from ruamel.yaml import YAML
+    if _conf_dir is None:
+        raise RuntimeError("settings.init() не вызван")
+    by_stem: dict[str, list[list[str]]] = {}
+    for key in keys:
+        stem, path = _split(key)
+        by_stem.setdefault(stem, []).append(path)
+    changed: list[str] = []
+    ruamel = YAML()
+    ruamel.preserve_quotes = True
+    with _lock:
+        for stem, paths in by_stem.items():
+            fpath = _conf_dir / f"{stem}.yaml"
+            if not fpath.exists():
+                continue
+            try:
+                with fpath.open(encoding="utf-8") as f:
+                    doc = ruamel.load(f) or {}
+            except Exception as e:                 # noqa: BLE001 — ruamel-иерархия
+                log.warning("settings: conf/%s.yaml не разбирается на запись: %s", stem, e)
+                raise SettingsWriteError(f"⚠️ conf/{stem}.yaml сломан — ключи не сняты") from e
+            hit = False
+            for path in paths:
+                cur = doc
+                for seg in path[:-1]:
+                    cur = cur.get(seg) if isinstance(cur, dict) else None
+                if isinstance(cur, dict) and path[-1] in cur:
+                    del cur[path[-1]]
+                    hit = True
+            if not hit:
+                continue
+            _self_writing.set()
+            try:
+                tmp = fpath.with_suffix(".yaml.tmp")
+                with tmp.open("w", encoding="utf-8") as f:
+                    ruamel.dump(doc, f)
+                os.replace(tmp, fpath)
+            finally:
+                _self_writing.clear()
+            old = _cache.get(stem, {})
+            new = _read_yaml(fpath)
+            if new is _PARSE_ERROR:
+                raise RuntimeError(f"conf/{stem}.yaml после записи не парсится")
+            changed += _diff_stem(stem, old, new)
+            _cache[stem] = new
+    if changed:
+        _fire(changed)
+    return changed

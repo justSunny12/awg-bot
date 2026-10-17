@@ -18,7 +18,6 @@ GatewayServices, построитель подменяет ему класс н�
 from __future__ import annotations
 
 import asyncio
-import base64
 import copy
 import datetime as _dt
 import ipaddress
@@ -28,7 +27,6 @@ from dataclasses import dataclass, field
 from awgbot.bot.handlers import gateway as gateway_handlers
 from awgbot.runtime import hostboot, linkclient
 from awgbot.core import config
-from awgbot.domain.backup.crypto import BackupKeyMissing
 from awgbot.domain import gwcfg
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.domain.gwssh import SshOwnerRefusal
@@ -37,7 +35,7 @@ from awgbot.infra import mail, sshd, updates
 from awgbot.util import timeutil
 
 from tests.screens.base import NOW, Shot
-from tests.screens.shots_gateway_common import (_BACKUP_KEY, _OWN_OFF, _RELEASE,
+from tests.screens.shots_gateway_common import (_OWN_OFF, _RELEASE,
                                                 _UPLINK_VALUE, _ssh, _status)
 
 
@@ -74,7 +72,6 @@ class _Host:
     mail: bool = False                                     # ящик подключён
     mail_last: str = ""                                    # ok | fail — последняя проверка
     mail_error: str = ""                                   # проверка/тест-письмо падают
-    passphrase: bool = False                               # фраза шифрования бэкапов задана
     release: updates.Release | None = None                 # цель обновления
     scan_fails: bool = False                               # список релизов недоступен
     update_error: str = ""                                 # apply_update падает
@@ -83,7 +80,7 @@ class _Host:
     server_version: str = ""                               # версия сервера из role: "" | old | X.Y.Z
     hold: bool = False                                     # окно ожидания после старта: role ещё не было
     muted: bool = False
-    cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail | backup, по порядку
+    cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail, по порядку
     keep_ask: dict | None = None                           # висящий вопрос о настройках с сервера (keep_back)
     rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
     uplink_mine: str = "f00d" * 4                          # отпечаток стоящего аплинка (свой, не серверный)
@@ -91,9 +88,7 @@ class _Host:
     uplink_ok: bool = True                                 # новый конфиг аплинка поднялся (проба прошла)
     uplink_fail: tuple = ("reverted", "аплинк не поднялся за 60 с")   # как не вышло: состояние и причина
     uplink_pending: str = ""                               # конфиг ожидающего аплинка (uplink.pending)
-    # резервные копии и старт процесса
-    backup_key: bool = False                               # ключ шифрования копий задан
-    restore_done: dict | None = None                       # маркер awg-bot restore
+    # старт процесса
     update_pending: str = ""                               # перед рестартом шло обновление до …
     update_wait: bool = False                              # «дождись завершения» — #1
     restart_wait: bool = False                             # «бот перезапускается» — #1
@@ -262,7 +257,7 @@ class _Agent(GatewayServices):
         net, addr = self.h.router
         return net, addr
 
-    # ── почта и бэкапы ──────────────────────────────────────────────────────
+    # ── почта ───────────────────────────────────────────────────────────────
     def email_check(self, acc=None):
         if self.h.mail_error:
             self.db.set_state(self._MAIL_CHECK_KEY, f"fail|{timeutil.now_iso()}|{self.h.mail_error}")
@@ -274,15 +269,6 @@ class _Agent(GatewayServices):
         if self.h.mail_error:
             raise mail.MailError(self.h.mail_error)
         self._email_mark_ok()
-
-    def email_send_backup(self, paths):
-        pass
-
-    def make_backup(self):
-        """Копия шлюза — только шифрованная: без фразы отказ, как у сервиса."""
-        if not self.backup_encryption_enabled():
-            raise BackupKeyMissing("нет фразы")
-        return ["/var/lib/awg-gw/backups/awg-gw-pi-2026-09-15.tgz.enc"]
 
     # ── обновления ──────────────────────────────────────────────────────────
     def update_next(self):
@@ -327,17 +313,6 @@ class _Agent(GatewayServices):
     def _cfg_uplink_pending_drop(self):
         self.h.uplink_pending = ""
 
-    # ── восстановление ──────────────────────────────────────────────────────
-    def prepare_restore(self, plain):
-        return "/var/lib/awg-bot/backups/restore-pending.tgz"
-
-    def launch_restore(self, path):
-        pass
-
-    def pop_restore_done(self):
-        return self.h.restore_done
-
-
 def _inside(entry: str, net) -> bool:
     try:
         return ipaddress.ip_network(entry, strict=False).subnet_of(net)
@@ -373,8 +348,6 @@ def _agent(**opts):
             elif h.mail_last == "fail":
                 services.db.set_state(services._MAIL_CHECK_KEY,
                                       "fail|2026-09-14T09:30:00+05:00|SMTP: авторизация отклонена")
-        if h.passphrase:
-            services.backup_set_passphrase("DUMMY-passphrase")
         if h.update_tag:
             services.db.set_state(services._AVAILABLE_KEY, h.update_tag)
         if h.muted:
@@ -388,20 +361,15 @@ def _agent(**opts):
         if h.waiting:
             import json
             services.db.set_state(services._WAITING_KEY, json.dumps({"tag": h.waiting[0], "need": h.waiting[1]}))
-        if h.backup_key:
-            services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_BACKUP_KEY).decode())
         for section in h.cfg_ask:
             # сервер прислал своё, отличное от стоящего: вопрос повис (как после документа)
             if section == "uplink":
                 value = dict(_UPLINK_VALUE)
                 server_print = gwcfg.uplink_print(value["conf"], value["pubkey"], value["prev_pubkey"])
-            elif section == "mail":
-                value = {"login": "box@example.org", "password": "DUMMY-server", "imap_host": "imap.example.org",
-                         "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "email"}
-                server_print = gwcfg.mail_print(value)
             else:
-                value = {"phrase": "DUMMY-server-phrase"}
-                server_print = gwcfg.backup_print(value["phrase"])
+                value = {"login": "box@example.org", "password": "DUMMY-server", "imap_host": "imap.example.org",
+                         "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
+                server_print = gwcfg.mail_print(value)
             services.cfg_hold(section, value, server_print, 18, "9c41" * 4)
         if h.keep_ask:
             import json

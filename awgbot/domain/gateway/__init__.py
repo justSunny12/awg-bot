@@ -11,13 +11,14 @@ gateway/ — доменная механика роли gateway (docs/ROADMAP.md
             туннеле своей сети из `role`
   ownlists  свои списки, общие для всех шлюзов, и повтор после поломки
   peersvc   сервисы соседних сетей
-  bundle    операции с кнопки, метка выпуска файла, токен пометки, резервная копия
+  bundle    операции с кнопки, метка выпуска файла, токен пометки
   egress    выход наружу через канал шлюза
   cfg/      документ конфигурации с сервера: применение по разделам, транзакции
             линка и аплинка, вопросы человеку, смена ключей линка и токена бота
+  keep      копия настроек шлюза на сервере AWG: своих бэкапов у шлюза нет
 
 Класс GatewayServices собирается здесь из миксинов частей и общих миксинов
-domain/ (самообновление, резервные копии, почта, SSH).
+domain/ (самообновление, почта, SSH).
 
 Агент на шлюзе условной маршрутизации: наблюдаемость линка, обвязки и железа,
 алерты с гистерезисом. НИКАКОЙ клиентской механики — у шлюза нет ни клиентов,
@@ -44,19 +45,16 @@ from .egress import EgressMixin
 from .cfg import CfgMixin
 from .keep import KeepMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
-from awgbot.domain.backup import BackupMixin
 from awgbot.domain.mailmix import MailMixin
 from awgbot.domain.gwssh import GwSshMixin
 
 
-class GatewayServices(SelfUpdateMixin, BackupMixin, MailMixin, GwSshMixin,
+class GatewayServices(SelfUpdateMixin, MailMixin, GwSshMixin,
                       LinkMixin, MonitorMixin, TgMarkMixin, TransitMixin, ReportMixin,
                       OwnListsMixin, PeerServicesMixin, BundleMixin, EgressMixin, CfgMixin, KeepMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
-
-    GATEWAY_ROLE = True          # состав копии — шлюзовой и без оглядки на config.ROLE
 
     def __init__(self, db):
         self.db = db

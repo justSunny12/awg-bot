@@ -88,8 +88,7 @@
 #      прежнего имени (inet awg_home, обвязка 3.3.0 и раньше) переезжает в
 #      inet awg_lan на первом прогоне: наборы — слепками, строки nftset= — на
 #      новое имя (снимается со следующим сдвигом минимума). Личные
-#      списки при снятии уходят в /var/lib/awg-gw/restore (туда же их
-#      откладывает awg-bot restore, пока режим не применён), и следующее
+#      списки при снятии уходят в /var/lib/awg-gw/restore, и следующее
 #      включение берёт их оттуда; нет — пустые заготовки. Занят :53
 #      не-dnsmasq — честный отказ ДО
 #      apt, причина в статусе; остальная обвязка при этом стоит. Юниту
@@ -453,7 +452,7 @@ _lan_remove_locked() {
         [ -f "$_f" ] && { run "rm -f $_f"; _changed=1; }
     done
     # личные списки — данные человека: не в архив с датой, а в restore/, откуда
-    # следующее включение режима (или awg-bot restore) вернёт их на место
+    # следующее включение режима вернёт их на место
     for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf; do
         [ -f "$DNSMASQ_D/$_f" ] || continue
         run "mkdir -p $LAN_DUMP/restore"
@@ -2121,8 +2120,8 @@ DOHEOF
         run "install -m 0644 $_tmp $DNSMASQ_D/awg-gw-doh.conf"; rm -f "$_tmp"; _dn_changed=1; fi
     for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf; do
         [ -f "$DNSMASQ_D/$_f" ] && continue
-        # awg-bot restore кладёт личные списки из копии сюда, когда режим на
-        # машине ещё не применён: подхватываем их при первом включении
+        # снятие режима откладывает личные списки сюда: подхватываем их при
+        # следующем включении
         if [ -f "$LAN_DUMP/restore/$_f" ]; then
             run "mv -f $LAN_DUMP/restore/$_f $DNSMASQ_D/$_f"
         else

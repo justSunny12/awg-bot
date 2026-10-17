@@ -55,6 +55,10 @@ async def run_gateway() -> None:
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
     services.update_hold_start()            # цель обновления — после первого role сервера (≤ 15 мин)
+    try:
+        services.backup_leftovers_drop()    # своих копий у шлюза нет: фраза, отметки, ключи conf — прочь
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway: следы своих копий не стёрты: %s", e)
     with contextlib.suppress(OSError):
         os.remove(marker)
     # Обвязка прежнего образца после обновления: строки юнита — сразу, до
@@ -172,11 +176,6 @@ async def run_gateway() -> None:
                 await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
     except Exception as e:                               # noqa: BLE001
         log.warning("итог смены токена не ушёл: %s", e)
-    try:
-        from awgbot.bot.handlers.restore import report_restore_result
-        await report_restore_result(bot, services)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("report_restore_result: %s", e)
 
     # Планировщик — СТРОГО после финишера, как у клиентской роли. Его стартовая
     # проверка обновлений укладывается в секунду, и, запущенная раньше, она

@@ -1,4 +1,4 @@
-"""Секрет шифрования бэкапов: в БД, фраза важнее ключа, переезд из env."""
+"""Секрет шифрования бэкапов сервера AWG: только фраза, в БД; бэкапы — только у сервера."""
 from __future__ import annotations
 
 import base64
@@ -19,17 +19,15 @@ def test_passphrase_lives_in_db(services):
     assert services.backup_enc_kwargs() == {"passphrase": "a" * MIN_PASSPHRASE_LEN}
 
 
-def test_the_random_key_of_the_old_scheme_is_no_encryption_on_the_server(services, monkeypatch):
-    """Фраза обязательна: случайный ключ, перенесённый в БД до v2.10.0, у
-    сервера AWG шифрованием не считается — раздел и копии как без фразы. У
-    агента (до снятия его копий) ключ ещё действует."""
+def test_the_random_key_of_the_old_scheme_is_no_encryption(services, monkeypatch):
+    """Фраза обязательна: случайный ключ, перенесённый в БД до v2.10.0,
+    шифрованием не считается ни у какой роли — раздел и копии как без фразы."""
     key = nacl_utils.random(32)
-    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(key).decode())
-    assert services.backup_encryption_mode() == "" and services.backup_enc_kwargs() is None
-    assert not services.backup_encryption_enabled()
-    monkeypatch.setattr(cfg, "ROLE", "gateway")
-    assert services.backup_encryption_mode() == "key" and services.backup_enc_kwargs() == {"key": key}
-    monkeypatch.setattr(cfg, "ROLE", "client")
+    services.db.set_state("backup_key", base64.b64encode(key).decode())
+    for role in ("client", "gateway"):
+        monkeypatch.setattr(cfg, "ROLE", role)
+        assert services.backup_encryption_mode() == "" and services.backup_enc_kwargs() is None
+        assert not services.backup_encryption_enabled()
     services.backup_set_passphrase("correct horse battery")
     assert services.backup_encryption_mode() == "passphrase"
 
@@ -136,12 +134,23 @@ def test_a_hotfix_of_the_same_version_is_not_newer(v340):
     assert compat.below_floor("3.3.1") and not compat.below_floor("3.4.0") and compat.below_floor("")
 
 
-def test_the_gateway_takes_no_backups_in_chat(services, monkeypatch, tmp_path):
+def test_the_gateway_has_no_backups(services, tmp_path):
+    """Своих копий у шлюза нет: у агента ни сборки, ни осмотра, ни
+    восстановления, ни фразы; копия шлюза прежних версий у сервера — отказ."""
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
     from awgbot.util import secrets_util
-    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    db = Database(str(tmp_path / "gw.db")); db.init_schema()
+    try:
+        gw = GatewayServices(db)
+        for name in ("make_backup", "inspect_backup", "prepare_restore", "backup_enc_kwargs",
+                     "backup_set_passphrase", "write_backup_archive", "email_send_backup", "backup_channel"):
+            assert not hasattr(gw, name), name
+    finally:
+        db.close()
     services.backup_set_passphrase(PHRASE)
     r = services.inspect_backup(secrets_util.encrypt(_archive(_meta(role="gw")), passphrase=PHRASE), "b.tgz.enc")
-    assert not r["ok"] and r["error"].startswith("на шлюзе бэкапов нет")
+    assert not r["ok"] and "бэкап шлюза прежних версий" in r["error"], r
 
 
 def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
@@ -169,11 +178,10 @@ def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
     assert BackupArchiveMixin.db_snapshot_bytes(tmp_path / "nope.db") is None
 
 
-def test_backup_extra_depends_on_the_role(services, make_active_client, monkeypatch, tmp_path):
-    """Один список «что сверх БД» на копию из чата, awg-bot backup и снимок
-    перед восстановлением: у сервера — конфиг интерфейса и линки слотов, у
-    шлюза — все конфиги интерфейсов, firewall.env и личные списки."""
-    from awgbot.infra import awg, gwguard
+def test_backup_extra_is_the_servers(services, make_active_client, monkeypatch, tmp_path):
+    """Один список «что сверх БД» на копию из чата, по почте и awg-bot backup:
+    конфиг интерфейса и линки слотов; шлюзовой ветки состава больше нет."""
+    from awgbot.infra import awg
     monkeypatch.setattr(awg, "read_file", lambda p: "[Interface]\nPrivateKey = DUMMY\n")
     awgdir = tmp_path / "awg"; awgdir.mkdir()
     (awgdir / "awglink.conf").write_text("link", encoding="utf-8")
@@ -183,16 +191,8 @@ def test_backup_extra_depends_on_the_role(services, make_active_client, monkeypa
     names = [n for n, _ in services.backup_extra()]
     assert f"awg/{cfg.AWG_INTERFACE}.conf" in names and "awg/awglink.conf" in names, names
     assert not any(n.startswith("awg-gw/") for n in names)
-
     monkeypatch.setattr(cfg, "ROLE", "gateway")
-    gwdir = tmp_path / "gw"; gwdir.mkdir()
-    for n in ("awg0.conf", "awglink.conf"):
-        (gwdir / n).write_text(n, encoding="utf-8")
-    monkeypatch.setattr(cfg, "GW_CONF_DIR", str(gwdir))
-    fw = tmp_path / "firewall.env"; fw.write_text("ADMIN_IPS_EXTRA=\n", encoding="utf-8")
-    monkeypatch.setattr(gwguard, "FW_ENV", str(fw))
-    names = [n for n, _ in services.backup_extra()]
-    assert names[:2] == ["awg/awg0.conf", "awg/awglink.conf"] and "awg-gw/firewall.env" in names, names
+    assert [n for n, _ in services.backup_extra()] == names and services.backup_role() == "main"
 
 
 def test_drop_after_restore_goes_through_the_bots_single_entry(monkeypatch, tmp_path):

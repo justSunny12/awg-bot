@@ -348,35 +348,35 @@ def test_a_bad_env_is_shown_as_the_whole_document_not_the_link(services, slot, m
     assert services.gwcfg_card(gw, services.gwlink_snapshot(1))["env_err"] == "", "причина пережила починку"
 
 
-# ── желаемое: почта, фраза, имя сервера, аплинк, токен ───────────────────────
+# ── желаемое: почта, имя сервера, аплинк, токен ──────────────────────────────
 
-def test_mail_is_absent_without_a_mailbox_and_carries_the_backup_hint_with_one(services, slot, host):
+def test_mail_is_absent_without_a_mailbox_and_is_just_the_mailbox_with_one(services, slot, host):
     """Почты на ВПС нет — раздела нет: своё на шлюзе не трогается. Есть —
-    ящик и серверы, плюс подсказка «куда уходят бэкапы», которая в отпечаток
-    не входит: иначе переключение канала бэкапов на ВПС задавало бы на шлюзе
-    вопрос о почте, которая не менялась."""
+    ящик и серверы, и только они: подсказки «куда уходят бэкапы» больше нет
+    (своих копий у шлюза нет), канал бэкапов ВПС документ не сдвигает."""
     assert services.gwcfg_mail() is None
     _mail_on(services, host)
     mail = services.gwcfg_mail()
-    assert {k: mail[k] for k in gwcfg.MAIL_KEYS} == {
-        "login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
-        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
-    assert mail[gwcfg.MAIL_HINT] == "telegram"
+    assert mail == {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
+                    "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
     gwcfg.check_mail(mail)
-    before = services.gwcfg_doc(slot)["prints"]["mail"]
+    before = services.gwcfg_doc(slot)
     host.conf["app.scheduler.backup_channel"] = "email"
-    assert services.gwcfg_mail()[gwcfg.MAIL_HINT] == "email"
-    assert services.gwcfg_doc(slot)["prints"]["mail"] == before, "подсказка о бэкапах сдвинула отпечаток почты"
+    assert services.gwcfg_mail() == mail
+    assert services.gwcfg_doc(slot)["hash"] == before["hash"], "канал бэкапов ВПС сдвинул документ"
 
 
-def test_the_phrase_goes_only_in_passphrase_mode(services, slot):
-    """Фраза — только когда бэкапы ВПС шифруются фразой. Режим случайного
-    ключа (прежняя схема) фразы не даёт — раздела нет."""
-    assert services.gwcfg_backup() is None
-    services.db.set_state("backup_key", base64.b64encode(os.urandom(32)).decode())
-    assert services.gwcfg_backup() is None, "в режиме ключа ушла бы пустая фраза"
+def test_the_backup_phrase_is_not_in_the_document(services, slot, host):
+    """Фраза бэкапов сервера на шлюз не едет: своих копий у шлюза нет — ни
+    раздела, ни отпечатка; смена фразы на ВПС документ не сдвигает."""
+    _mail_on(services, host)
+    assert not hasattr(services, "gwcfg_backup")
+    before = services.gwcfg_doc(slot)
+    assert "backup" not in before["sections"] and "backup" not in before["prints"]
     services.db.set_state("backup_passphrase", "DUMMY phrase long enough")
-    assert services.gwcfg_backup() == {"phrase": "DUMMY phrase long enough"}
+    after = services.gwcfg_doc(slot)
+    assert after["hash"] == before["hash"] and after["gen"] == before["gen"], "фраза ВПС сдвинула документ"
+    assert "DUMMY phrase long enough" not in str(gwcfg.build(after["gen"], after["hash"], after["sections"]))
 
 
 def test_the_server_name_is_the_host_name(services, slot, host):
@@ -395,7 +395,7 @@ def test_uplink_and_token_are_not_in_this_document(services, slot, host):
     assert want["uplink"] is None and want["token"] is None
     body = gwcfg.build(1, "ab" * 8, want)
     assert "uplink" not in body and "token" not in body, sorted(body)
-    assert {"env", "link", "mail", "backup", "server"} <= set(body), sorted(body)
+    assert {"env", "link", "mail", "server"} <= set(body) and "backup" not in body, sorted(body)
     _snap(services, _have(services, token="ab" * 8, uplink="cd" * 8))
     assert services.gwcfg_due(slot) is None, "отпечаток токена или аплинка вошёл в сверку"
 
@@ -462,7 +462,7 @@ def test_a_matching_snapshot_brings_nothing_and_a_drift_brings_the_whole_documen
 def test_a_section_the_server_does_not_have_is_left_alone(services, slot):
     """У сервера нет почты, а на шлюзе своя — это не расхождение: «нет у
     сервера» значит «своё на шлюзе не трогать»."""
-    _snap(services, _have(services, mail="ab" * 8, backup="cd" * 8))
+    _snap(services, _have(services, mail="ab" * 8))
     assert services.gwcfg_due(slot) is None
 
 
@@ -483,28 +483,28 @@ def test_mail_waiting_for_a_decision_is_not_sent_again_until_it_changes(services
     assert services.gwcfg_due(gw) is not None, "новая почта на ВПС не ушла"
 
 
-def test_kept_own_phrase_is_not_sent_again_until_the_server_phrase_changes(services, slot):
-    """«Оставить своё» о фразе — `declined` с отпечатком серверной фразы.
-    Тот же отпечаток — тишина; фразу на ВПС сменили — новый документ."""
-    services.db.set_state("backup_passphrase", "DUMMY phrase long enough")
+def test_kept_own_mail_is_not_sent_again_until_the_server_mail_changes(services, slot, host):
+    """«Оставить своё» о почте — `declined` с отпечатком серверной почты.
+    Тот же отпечаток — тишина; почту на ВПС сменили — новый документ."""
+    _mail_on(services, host)
     gw = _gw(services)
     doc = services.gwcfg_doc(gw)
-    _snap(services, _have(services, backup="ab" * 8))
+    _snap(services, _have(services, mail="ab" * 8))
     services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "applied": [],
-                              "declined": {"backup": doc["prints"]["backup"]}})
-    assert services.gwcfg_due(gw) is None, "отклонённая фраза ушла снова"
-    services.db.set_state("backup_passphrase", "DUMMY another phrase here")
-    assert services.gwcfg_due(gw) is not None, "новая фраза на ВПС не ушла"
+                              "declined": {"mail": doc["prints"]["mail"]}})
+    assert services.gwcfg_due(gw) is None, "отклонённая почта ушла снова"
+    services.db.set_state("email_password", "DUMMY-other")
+    assert services.gwcfg_due(gw) is not None, "новая почта на ВПС не ушла"
 
 
-def test_a_decline_of_an_older_value_does_not_hold_the_new_one(services, slot):
+def test_a_decline_of_an_older_value_does_not_hold_the_new_one(services, slot, host):
     """Отказ запомнен по отпечатку значения, а не по разделу: «оставить своё»
-    про прежнюю фразу не глушит доставку новой."""
-    services.db.set_state("backup_passphrase", "DUMMY phrase long enough")
+    про прежнюю почту не глушит доставку новой."""
+    _mail_on(services, host)
     gw = _gw(services)
     doc = services.gwcfg_doc(gw)
-    _snap(services, _have(services, backup="ab" * 8))
-    services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "declined": {"backup": "ef" * 8}})
+    _snap(services, _have(services, mail="ab" * 8))
+    services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "declined": {"mail": "ef" * 8}})
     assert services.gwcfg_due(gw) is not None
 
 
@@ -591,16 +591,17 @@ def test_the_card_follows_the_answer_to_the_current_document_only(services, slot
 
 
 def test_the_card_names_waiting_and_kept_sections(services, slot, host):
+    """Ждёт решения и оставлено своим — по разделам; фраза прежнего агента
+    (раздел, которого в документе больше нет) в карточку не попадает."""
     _mail_on(services, host)
-    services.db.set_state("backup_passphrase", "DUMMY phrase long enough")
     gw = _gw(services)
     services.gwlink_session_opened(1, "3.3.0", 2, ["cfg1"])
     doc = services.gwcfg_doc(gw)
-    _snap(services, _have(services, mail="ab" * 8, backup="cd" * 8))
+    _snap(services, _have(services, mail="ab" * 8))
     services.gwcfg_ack_in(1, {"gen": doc["gen"], "hash": doc["hash"], "wait": {"mail": doc["prints"]["mail"]},
-                              "declined": {"backup": doc["prints"]["backup"]}})
+                              "declined": {"backup": "cd" * 8}})
     card = services.gwcfg_card(gw, services.gwlink_snapshot(1))
-    assert card["wait"] == ["mail"] and card["declined"] == ["backup"] and card["due"] == [], card
+    assert card["wait"] == ["mail"] and card["declined"] == [] and card["due"] == [], card
 
 
 def test_capabilities_outlive_the_session(services, slot):

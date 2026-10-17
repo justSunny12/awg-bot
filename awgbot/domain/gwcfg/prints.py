@@ -39,8 +39,7 @@ def env_print(env: dict) -> str:
 
 
 def mail_text(mail: dict | None) -> str:
-    """Канонический текст почты: ящик и серверы по порядку; подсказка backup
-    не входит — на шлюзе ей соответствует свой выбор канала, а не значение.
+    """Канонический текст почты: ящик и серверы по порядку.
     Неполный ящик (нет логина, пароля или хоста) — заглушка, текст пуст."""
     if not mail:
         return ""
@@ -52,17 +51,6 @@ def mail_text(mail: dict | None) -> str:
 
 def mail_print(mail: dict | None) -> str:
     return section_print("mail", mail_text(mail))
-
-
-def backup_print(phrase: str) -> str:
-    """Фраза шифрования — отпечаток самой фразы; пусто — шифрование не задано."""
-    return section_print("backup", str(phrase or ""))
-
-
-def backup_key_print(key_b64: str) -> str:
-    """Шлюз на случайном ключе шифрования (прежняя схема): отпечаток ключа в
-    своём домене — с серверной фразой не совпадает никогда, и это не заглушка."""
-    return section_print("backup-key", str(key_b64 or ""))
 
 
 def server_print(name: str) -> str:

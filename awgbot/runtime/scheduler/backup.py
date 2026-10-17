@@ -1,7 +1,6 @@
-"""backup.py — часть пакета scheduler (см. __init__): копия по расписанию — месячная,
-догон на старте, повтор недоставленной, копия по событию сервера AWG. Тело
-месячной копии (monthly_backup) и триггер общие для обеих ролей; задания сервера
-ставит add_server_backup, у агента шлюза — свои в setup_gateway_scheduler.
+"""backup.py — часть пакета scheduler (см. __init__): копия сервера AWG по
+расписанию — месячная, догон на старте, повтор недоставленной, — и по событию;
+задания ставит add_server_backup. У шлюза копий нет.
 
 Без ключевой фразы копий нет: месячная говорит об этом раз в месяц, по событию
 не делается вовсе. Идёт смена ключей линка — копия ждёт её конца (повтор через
@@ -54,7 +53,7 @@ async def deliver(services, bot, paths, log_tag: str, caption: str = "") -> bool
 
 async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
                          on_undelivered=None, on_busy=None) -> None:
-    """Автобэкап раз в месяц — одно тело на обе роли. Guard по «году-месяцу»:
+    """Автобэкап сервера AWG раз в месяц. Guard по «году-месяцу»:
     защита от двойного запуска и catch-up после даунтайма через границу месяца
     (задача дополнительно прогоняется на старте; catchup=True — только после
     назначенного момента месяца). Первый запуск (state пуст) только фиксирует
@@ -113,18 +112,12 @@ BACKUP_NO_KEY_NOTICED_KEY = "backup_nokey_noticed"      # «год-месяц» 
 
 async def _backup_key_missing_notice(services, bot, db, ym: str, log_tag: str) -> None:
     from awgbot.bot.notifier import send_notifications
-    from awgbot.bot import roles
     from awgbot.domain.services import Notification
     log.warning("%s: копия %s не сделана — фраза шифрования не задана", log_tag, ym)
     if (await asyncio.to_thread(db.get_state, BACKUP_NO_KEY_NOTICED_KEY) or "") >= ym:
         return
-    br = roles.current()
-    if br.has.backup_gateways:
-        from awgbot.domain.notices import backup as nb
-        text = nb.missed_backup_notice(bool(await asyncio.to_thread(db.gateways)))
-    else:
-        text = (f"⚠️ Плановый бэкап {br.host_gen} не сделан: фраза шифрования не задана, а {br.backup_keys}. "
-                "Задай фразу в «💾 Бэкапы» → «🔐 Шифрование» — копия уйдёт при следующем запуске по расписанию")
+    from awgbot.domain.notices import backup as nb
+    text = nb.missed_backup_notice(bool(await asyncio.to_thread(db.gateways)))
     await send_notifications(bot, [Notification(config.ADMIN_ID, text)])
     await asyncio.to_thread(db.set_state, BACKUP_NO_KEY_NOTICED_KEY, ym)
 
@@ -150,7 +143,7 @@ async def event_backup(services, bot) -> bool:
 
 
 def backup_trigger():
-    """Месячная копия обеих ролей: день/час из настроек, джиттер — почта и файл
+    """Месячная копия: день/час из настроек, джиттер — почта и файл
     в чат ровно в 12:00:00 первого числа были бы маячком."""
     return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
                        hour=settings.get_int("app.scheduler.backup_hour", 12),

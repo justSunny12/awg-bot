@@ -92,7 +92,7 @@ def boot_id() -> str:
 
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку
-_CFG_SECTIONS = ("env", "link", "uplink", "mail", "backup", "token", "server")   # = gwcfg.SECTIONS, сверяет тест
+_CFG_SECTIONS = ("env", "link", "uplink", "mail", "token", "server")   # = gwcfg.SECTIONS, сверяет тест
 
 
 def collect(*, mark_status: str, egress_ok: bool | None,

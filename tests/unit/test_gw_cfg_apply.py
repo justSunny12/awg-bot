@@ -43,7 +43,7 @@ SAME_ENV = {"CLIENT_SUBNET": "10.8.1.0/24", "ADMIN_IPS": "10.8.1.2", "LAN_MODE":
             "LAN_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "",
             "LINK_CHANNEL_PORT": "8787"}
 MAIL = {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
-        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": ""}
+        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
 DIGEST = "9c41" * 4
 
 # конфиг линка с теми же ключами, но другим Endpoint — только down/up
@@ -185,29 +185,24 @@ def test_fingerprints_describe_what_stands_on_the_gateway(svc, host):
 
 
 def test_fingerprints_of_stubs_are_empty(svc, host):
-    """Заглушка (ящик не задан или задан наполовину, шифрования нет, имени
-    сервера нет) — пустой отпечаток: по нему сервер понимает «можно молча»."""
+    """Заглушка (ящик не задан или задан наполовину, имени сервера нет) —
+    пустой отпечаток: по нему сервер понимает «можно молча». Фразы бэкапов
+    в снимке нет: своих копий у шлюза нет."""
     fp = svc.cfg_fingerprints()
-    assert (fp["mail"], fp["backup"], fp["server"]) == ("", "", ""), fp
+    assert (fp["mail"], fp["server"]) == ("", ""), fp
+    assert "backup" not in fp, fp
     svc.db.set_state(svc._MAIL_LOGIN_KEY, "box@example.org")       # логин есть, пароля нет
     assert svc.cfg_fingerprints()["mail"] == "", "наполовину заданный ящик дал отпечаток"
 
 
 def test_fingerprints_of_own_values_follow_the_values(svc, host):
-    """Свой ящик, своя фраза, случайный ключ прежней схемы, имя сервера —
-    отпечатки тех же значений, что считает сервер; случайный ключ — в своём
-    домене, с фразой не совпадает никогда (иначе шлюз на ключе приняли бы за
-    «уже стоит фраза сервера»)."""
+    """Свой ящик, имя сервера — отпечатки тех же значений, что считает сервер."""
     svc.email_save(MAIL["login"], MAIL["password"], MAIL["imap_host"], MAIL["imap_port"],
                    MAIL["smtp_host"], MAIL["smtp_port"])
     svc.db.set_state(svc._SERVER_NAME_KEY, "AWG-SRV")
-    svc.db.set_state(svc._BK_KEY_KEY, "RFVNTVlLRVk=")
     fp = svc.cfg_fingerprints()
     assert fp["mail"] == gwcfg.mail_print(MAIL)
     assert fp["server"] == gwcfg.server_print("AWG-SRV")
-    assert fp["backup"] == gwcfg.backup_key_print("RFVNTVlLRVk=") and fp["backup"]
-    svc.backup_set_passphrase("DUMMY-phrase-1")
-    assert svc.cfg_fingerprints()["backup"] == gwcfg.backup_print("DUMMY-phrase-1")
 
 
 def test_a_broken_link_conf_gives_an_empty_link_print(svc, host):
@@ -266,9 +261,10 @@ def test_link_address_outside_the_installed_link_is_rejected(svc, host):
     assert "*" in res["ack"]["failed"] and host.link_runs == []
 
 
-def test_sections_go_in_order_server_env_link_mail_backup(svc, host, monkeypatch):
-    """Порядок — имя сервера, env + link одной транзакцией, почта, фраза:
-    почта и фраза зависят от живого линка меньше всего и идут последними."""
+def test_sections_go_in_order_server_env_link_mail(svc, host, monkeypatch):
+    """Порядок — имя сервера, env + link одной транзакцией, почта: почта
+    зависит от живого линка меньше всего и идёт последней. Раздел фразы
+    бэкапов (документ прежнего сервера) не применяется и в ответ не попадает."""
     from awgbot.infra import mail as mailmod
     monkeypatch.setattr(mailmod, "check_imap", lambda a, timeout=15.0: host.events.append("mail-check"))
     monkeypatch.setattr(mailmod, "check_smtp", lambda a, timeout=15.0: None)
@@ -277,14 +273,16 @@ def test_sections_go_in_order_server_env_link_mail_backup(svc, host, monkeypatch
     def set_state(key, value):
         if key == svc._SERVER_NAME_KEY:
             host.events.append("server")
-        if key == svc._BK_PASSPHRASE_KEY:
+        if key == "backup_passphrase":
             host.events.append("backup")
         return real_set(key, value)
     monkeypatch.setattr(svc.db, "set_state", set_state)
-    res = svc.apply_cfg(_doc(env={"ADMIN_IPS": "10.8.1.2 10.8.1.7"}, link=LINK_NEW_KA, mail=MAIL,
-                             backup={"phrase": "DUMMY-phrase-1"}, server={"name": "AWG-SRV"}))
-    assert host.events == ["server", "link:link.next", "reassert", "mail-check", "backup"], host.events
-    assert res["ack"]["applied"] == ["server", "env", "link", "mail", "backup"], res["ack"]
+    doc = _doc(env={"ADMIN_IPS": "10.8.1.2 10.8.1.7"}, link=LINK_NEW_KA, mail=MAIL, server={"name": "AWG-SRV"})
+    doc["backup"] = {"phrase": "DUMMY-phrase-1"}               # так слал прежний сервер
+    res = svc.apply_cfg(doc)
+    assert host.events == ["server", "link:link.next", "reassert", "mail-check"], host.events
+    assert res["ack"]["applied"] == ["server", "env", "link", "mail"], res["ack"]
+    assert not svc.db.get_state("backup_passphrase")
 
 
 # ── env + link: одна транзакция ──────────────────────────────────────────────
@@ -473,9 +471,9 @@ def test_the_answer_ack_names_the_asking_document(svc, host):
     отпечатком; вопроса не было — ответа нет."""
     yes = svc.cfg_answer_ack({"ok": True, "section": "mail", "accepted": True, "gen": 9, "hash": DIGEST, "print": "ab12"})
     assert yes == gwcfg.ack_build(9, DIGEST, applied=["mail"])
-    no = svc.cfg_answer_ack({"ok": True, "section": "backup", "accepted": False, "gen": 9, "hash": DIGEST,
+    no = svc.cfg_answer_ack({"ok": True, "section": "mail", "accepted": False, "gen": 9, "hash": DIGEST,
                              "print": "ab12"})
-    assert no["declined"] == {"backup": "ab12"} and no["applied"] == []
+    assert no["declined"] == {"mail": "ab12"} and no["applied"] == []
     assert svc.cfg_answer_ack({"ok": False, "section": "mail"}) is None
 
 

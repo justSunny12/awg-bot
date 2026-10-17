@@ -1,8 +1,6 @@
 """Почтовый канал: провайдеры, адреса, хранение кредов в БД, переезд из env."""
 from __future__ import annotations
 
-
-import awgbot.core.config as cfg
 from awgbot.infra import mail
 
 
@@ -61,15 +59,11 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     monkeypatch.setattr(mail, "send_mail", lambda acc, to, subject, body, **kw: sent.append(subject))
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     services.backup_set_passphrase("correct horse battery")
-    monkeypatch.setattr(cfg, "ROLE", "gateway")
-    services.email_send_backup([])
-    monkeypatch.setattr(cfg, "ROLE", "client")
     services.email_send_backup([])
     yy = timeutil.now().strftime("%d.%m.%y")
-    # у сервера AWG тема — заголовок подписи копии
-    assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("💾 Бэкап сервера AWG от ")
-    assert f"от {yy} " in sent[1] and sent[1].endswith(" (UTC+5)")
-    assert f"копия {yy} " in sent[0] and sent[0].endswith(" (UTC+5)"), "год — всегда (письмо лежит годами), время с меткой"
+    # тема — заголовок подписи копии; копии шлюза по почте больше не уходят
+    assert sent[0].startswith("💾 Бэкап сервера AWG от ")
+    assert f"от {yy} " in sent[0] and sent[0].endswith(" (UTC+5)"), "год — всегда (письмо лежит годами), время с меткой"
 
 
 def test_test_and_alert_mail_bodies_show_the_display_zone(services, monkeypatch):

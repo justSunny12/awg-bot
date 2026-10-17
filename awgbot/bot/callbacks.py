@@ -285,15 +285,15 @@ class PageCB(CallbackData, prefix="pg", sep="|"):
 class GwCB(CallbackData, prefix="gw"):
     """Кнопки агента шлюза (роль gateway). action:
       panel|refresh|health — панель и её обновление, проверки живьём;
-      settings и общие разделы notify|email|mon|backup|updates с правками
-      tgl|edit|cyc (val — ключ), enc|enc_set, backup!, restore!|restore_drop,
-      em_setup|em_check|em_test|em_forget(!), upd_toggle — разосланные имена,
+      settings и общие разделы notify|email|mon|updates с правками
+      tgl|edit|cyc (val — ключ), em_setup|em_check|em_test|em_forget(!),
+      upd_toggle — разосланные имена,
       которые переводчик роли (bot/roles.py) отображает на действия общих
       разделов (bot/sections); новые кнопки разделов — общим правилом
       action="раздел/действие", val="ключ|значение";
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       cfg_ask — первый вопрос очереди («⏳ Решить»), cfg_no|cfg_ok! (val — раздел
-      link|uplink|mail|backup) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
+      link|uplink|mail|keep|keep_dev) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
       у вопросов «Оставить своё» / «Принять с сервера AWG»;
       lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,

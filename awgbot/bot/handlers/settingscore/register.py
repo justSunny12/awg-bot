@@ -15,15 +15,15 @@ from .actions import _take_secret_message
 # ── регистрация обработчиков сообщений (состояния общие на обе роли) ────────
 
 def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
-    """Обработчики ввода: значение настройки, парольная фраза (два шага),
-    мастер почты. Возвращает их по именам — для тестов."""
+    """Обработчики ввода: значение настройки, парольная фраза (два шага; только
+    у роли с разделом «💾 Бэкапы» — у шлюза его нет), мастер почты. Возвращает
+    их по именам — для тестов."""
     from awgbot.bot.handlers import mailwizard
 
     @router.message(SettingsInput.value)
     async def receive_value_h(message: Message, state: FSMContext, services):
         await receive_value(message, state, services, hooks, default_sec)
 
-    @router.message(BackupPassphrase.first)
     async def passphrase_first_h(message: Message, state: FSMContext, services):
         from awgbot.domain.backup.crypto import MIN_PASSPHRASE_LEN
         phrase = await _take_secret_message(message)
@@ -36,7 +36,6 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         await ask_tracked(message, services, texts.BACKUP_ASK_PASSPHRASE_AGAIN,
                           reply_markup=kb.cancel_input("set_backup"))
 
-    @router.message(BackupPassphrase.second)
     async def passphrase_second_h(message: Message, state: FSMContext, services):
         phrase = await _take_secret_message(message)
         first = (await state.get_data()).get("passphrase", "")
@@ -50,10 +49,15 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         await call(services.backup_set_passphrase, phrase)
         await after_input(message, services, hooks, "backup", texts.BACKUP_PASSPHRASE_SET)
 
+    phrase = {}
+    if "backup" in hooks.br.settings_root:
+        router.message(BackupPassphrase.first)(passphrase_first_h)
+        router.message(BackupPassphrase.second)(passphrase_second_h)
+        phrase = {"passphrase_first": passphrase_first_h, "passphrase_second": passphrase_second_h}
+
     async def _email_done(message: Message, services, note: str = ""):
         await after_input(message, services, hooks, "email", note)
 
     mw = mailwizard.register(router, cancel_kb=lambda: kb.cancel_input("set_email"),
                              done=_email_done)
-    return {"receive_value": receive_value_h, "passphrase_first": passphrase_first_h,
-            "passphrase_second": passphrase_second_h, **mw}
+    return {"receive_value": receive_value_h, **phrase, **mw}

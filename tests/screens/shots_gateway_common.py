@@ -105,8 +105,5 @@ _RELEASE = updates.Release(
          "### Исправлено\n- итог применения конфигурации не терял строку почты\n\n#requires_gw_1.2.0")
 
 
-_BACKUP_KEY = b"DUMMY-backup-key-0123456789abcdef"[:32]
-
-
 _TICK_LAN = _status_lan()
 _MAIL = {"mail": True, "mail_last": "ok"}

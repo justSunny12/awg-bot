@@ -71,23 +71,7 @@ async def gw_cycle(cb: CallbackQuery, callback_data: GwCB, services):
     await pkg._shared(cb, callback_data, services)
 
 
-async def gw_encryption(cb: CallbackQuery, services, state: FSMContext):
-    await pkg._shared(cb, GwCB(action="enc"), services, state)
-
-
-async def gw_encryption_set(cb: CallbackQuery, services, state: FSMContext):
-    await pkg._shared(cb, GwCB(action="enc_set"), services, state)
-
-
-async def gw_backup_now(cb: CallbackQuery, services):
-    await pkg._shared(cb, GwCB(action="backup!"), services)
-
-
 async def gw_email_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
-    await pkg._shared(cb, callback_data, services, state)
-
-
-async def gw_restore_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     await pkg._shared(cb, callback_data, services, state)
 
 

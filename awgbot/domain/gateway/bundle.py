@@ -1,4 +1,4 @@
-"""bundle.py — операции с кнопки, метка выпуска файла конфигурации, токен пометки, резервная копия.
+"""bundle.py — операции с кнопки, метка выпуска файла конфигурации, токен пометки.
 
 Метку выпуска применённого файла первого применения (ISSUED_AT) хранят база
 агента и обвязка; её двигает и смена ключей линка: прежние файлы несут
@@ -10,13 +10,12 @@ import socket
 import time
 from pathlib import Path
 from awgbot.core import config
-from awgbot.domain.services import ServiceError
 from awgbot.domain.gateway import base
 from awgbot.domain.gateway.base import log
 
 
 class BundleMixin:
-    """Операции с кнопки, метка выпуска, токен пометки, резервная копия."""
+    """Операции с кнопки, метка выпуска, токен пометки."""
     # ── операции с кнопки (этап 2) ───────────────────────────────────────────
 
     def restart_link(self) -> tuple[bool, str]:
@@ -113,15 +112,3 @@ class BundleMixin:
         live = (gwguard.script_status().get("GW_STATUS") or "").strip()
         return live if live in ("unmarked", "confirmed", "foreign", "unconfirmed") else "?"
 
-
-    # ── резервная копия ──────────────────────────────────────────────────────
-
-    def make_backup(self) -> list[str]:
-        """Один архив: БД агента, все conf/*.yaml, env и ВСЕ конфиги
-        awg-интерфейсов шлюза (в них приватные ключи линка и туннеля —
-        единственная копия вне этой машины). Только шифрованно: без парольной
-        фразы отказ, открытые ключи в чат и на почту не уезжают."""
-        if not self.backup_encryption_enabled():
-            raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
-                               "фразу в ⚙️ Настройки → 💾 Бэкапы → 🔐 Шифрование")
-        return self.write_backup_archive("gw", self.backup_extra())

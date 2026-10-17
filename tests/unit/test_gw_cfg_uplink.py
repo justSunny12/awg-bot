@@ -2,7 +2,7 @@
 Раздел uplink документа конфигурации: на агенте (domain/gateway/cfg/uplink.py
 — решение и наблюдение «аплинк мёртв», uplinktxn.py — транзакция под замком
 обвязки, восстановление и тик; порядок в apply.py; ответ человека в
-mailphrase.cfg_answer) и на ВПС (domain/services/gwchannel/cfg.py:
+decide.cfg_answer) и на ВПС (domain/services/gwchannel/cfg.py:
 gwcfg_uplink, gwcfg_old_uplink, gwcfg_ack_take, отпечаток в карточке слота).
 
 Аплинк — единственная дорога агента в Telegram. Цена ошибки: новый конфиг,

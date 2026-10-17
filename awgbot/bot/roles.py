@@ -64,11 +64,9 @@ class _MainCB(RoleCB):
 
 # имена агента, уже разосланные в чатах: открытие разделов, ключевые действия, действия
 _GW_OPEN = {"root": "settings", "notify": "notify", "email": "email", "mon": "mon",
-            "backup": "backup", "svc": "svc", "upd": "updates", "ssh": "ssh", "lan": "lan"}
+            "svc": "svc", "upd": "updates", "ssh": "ssh", "lan": "lan"}
 _GW_KEYED = {"toggle": "tgl", "edit": "edit", "cycle": "cyc"}
-_GW_DO = {("backup", "enc"): "enc", ("backup", "enc_set"): "enc_set", ("backup", "now"): "backup!",
-          ("backup", "restore!"): "restore!", ("backup", "restore_drop"): "restore_drop",
-          ("email", "setup"): "em_setup", ("email", "check"): "em_check", ("email", "test"): "em_test",
+_GW_DO = {("email", "setup"): "em_setup", ("email", "check"): "em_check", ("email", "test"): "em_test",
           ("email", "forget"): "em_forget", ("email", "forget!"): "em_forget!",
           ("svc", "awg"): "restart", ("svc", "awg!"): "restart!",
           ("svc", "bot"): "botrestart", ("svc", "bot!"): "botrestart!"}
@@ -131,8 +129,6 @@ class Has:
     email_resume: bool           # аварийный выход из паузы в «E-mail»
     migration: bool              # переезд профилей в «Сервисе»
     gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен шлюза
-    backup_encrypted_only: bool = False   # копия только шифрованная: без фразы автобэкап не делается
-    backup_gateways: bool = False         # копия сервера AWG: со шлюзами, без фразы раздел — только «🔐 Шифрование»
 
 
 @dataclass(frozen=True)
@@ -150,8 +146,6 @@ class BotRole:
     mail_alarms: str             # что считается аварией для писем
     email_purpose: str           # зачем роли почта
     email_forget_tail: str       # что перестанет работать без почты
-    backup_contents: str         # что в копии
-    backup_keys: str             # почему копия только шифрованная
     mon_outage: str              # «простой AWG дольше» / «линк молчит дольше»
     mon_outage_button: str       # «⏳ Простой» / «⏳ Линк»
     ssh_port_tail: str           # хвост приглашения порта SSH (OPTIONAL)
@@ -181,8 +175,6 @@ MAIN = BotRole(
     mail_alarms="простой AWG, сбой шлюза, перегрузка сервера",
     email_purpose="для аварийного выхода из паузы по коду в письме, бэкапов и алертов об авариях",
     email_forget_tail="аварийный выход из паузы перестанет работать",
-    backup_contents="профили, устройства, подписки, ключи шифрования",
-    backup_keys="в базе приватные ключи устройств",
     mon_outage="простой AWG дольше",
     mon_outage_button="⏳ Простой",
     ssh_port_tail="",
@@ -195,8 +187,7 @@ MAIN = BotRole(
               outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
-    has=Has(email_resume=True, migration=True, gw_emergency=True, backup_encrypted_only=True,
-            backup_gateways=True),
+    has=Has(email_resume=True, migration=True, gw_emergency=True),
     cb=_MainCB("main"),
 )
 
@@ -212,14 +203,12 @@ GATEWAY = BotRole(
                         "на секунды; перезапуск бота на пользователей не влияет"),
     awg_restart_fail_hint="причина в «🩺 Здоровье»",
     mail_alarms="линк, выход наружу, обвязка, питание, перегрев, перегруз",
-    email_purpose="для бэкапов и аварийных алертов, когда Telegram недоступен",
-    email_forget_tail="бэкапы и аварийные алерты по почте перестанут уходить",
-    backup_contents="конфиги линка и туннеля, настройки, свои списки",
-    backup_keys="в копии приватные ключи линка и туннеля",
+    email_purpose="для аварийных алертов, когда Telegram недоступен",
+    email_forget_tail="аварийные алерты по почте перестанут уходить",
     mon_outage="линк молчит дольше",
     mon_outage_button="⏳ Линк",
     ssh_port_tail=". Проброс порта на роутере (при наличии) поправь сам",
-    settings_root=("notify", "ssh", "email", "backup", "mon", "svc", "upd"),    # порядок — как у основного бота
+    settings_root=("notify", "ssh", "email", "mon", "svc", "upd"),    # порядок — как у основного бота
     subsections=(),
     root_labels={"ssh": "🛡 SSH-доступ"},
     role_screens="awgbot.bot.handlers.gateway:_section",
@@ -228,7 +217,7 @@ GATEWAY = BotRole(
               outage="app.gateway.handshake_max_age",
               outage_loud="app.gateway.link_alert_loud",
               temp_alert="app.gateway.temp_alert_c"),
-    has=Has(email_resume=False, migration=False, backup_encrypted_only=True),
+    has=Has(email_resume=False, migration=False),
     cb=_GatewayCB("gateway"),
 )
 
@@ -237,9 +226,3 @@ def current() -> BotRole:
     """Словарь роли этой установки — по config.ROLE."""
     from awgbot.core import config
     return GATEWAY if config.ROLE == "gateway" else MAIN
-
-
-def pick(gateway: bool) -> BotRole:
-    """Переходный мостик для кода, где роль ещё приходит флагом (Hooks.gateway,
-    restore(gateway=)); уходит вместе с флагами."""
-    return GATEWAY if gateway else MAIN

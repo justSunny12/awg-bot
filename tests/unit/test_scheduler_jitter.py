@@ -1,8 +1,8 @@
 """
 Сторож планировщиков обеих ролей: у каждой задачи, которая ходит в сеть
-(зонд, списки, фиды, проверка обновлений, месячная копия, имена аккаунтов),
-есть джиттер — строго периодический запрос выглядит маячком (правило
-проекта); у агента есть догон месячной копии на старте.
+(зонд, списки, фиды, проверка обновлений, месячная копия сервера, имена
+аккаунтов), есть джиттер — строго периодический запрос выглядит маячком
+(правило проекта). Своих копий у агента нет — и заданий копии тоже.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 # задачи, которым в сеть ходить по расписанию — и потому обязателен джиттер
 NETWORK_JOBS_MAIN = ("monitor", "routing_liveness", "backup", "backup_event", "update_check", "tg_names")
-NETWORK_JOBS_GW = ("gw_monitor", "gw_lan_lists", "gw_lan_services", "gw_backup", "update_check")
+NETWORK_JOBS_GW = ("gw_monitor", "gw_lan_lists", "gw_lan_services", "update_check")
 
 
 def _jitter(trigger) -> int:
@@ -23,7 +23,7 @@ def _jitter(trigger) -> int:
     return int(trigger.jitter or 0)
 
 
-async def test_every_network_job_of_the_agent_has_jitter_and_the_backup_catches_up(tmp_path, monkeypatch):
+async def test_every_network_job_of_the_agent_has_jitter_and_there_is_no_backup(tmp_path, monkeypatch):
     from awgbot.core import config
     from awgbot.domain.gateway import GatewayServices
     from awgbot.infra.db import Database
@@ -36,9 +36,8 @@ async def test_every_network_job_of_the_agent_has_jitter_and_the_backup_catches_
         for jid in NETWORK_JOBS_GW:
             assert jid in jobs, f"у агента нет задачи {jid}"
             assert _jitter(jobs[jid].trigger) > 0, f"{jid}: без джиттера — маячок по расписанию"
-        assert isinstance(jobs["gw_backup_catchup"].trigger, DateTrigger), "нет догона месячной копии на старте"
         assert isinstance(jobs["update_check_startup"].trigger, DateTrigger)
-        assert _jitter(jobs["gw_backup"].trigger) == sch.BACKUP_JITTER
+        assert not [j for j in jobs if "backup" in j], f"у агента задания копии: {sorted(jobs)}"
     finally:
         scheduler.shutdown(wait=False)
         db.close()

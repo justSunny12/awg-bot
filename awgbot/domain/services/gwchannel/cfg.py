@@ -166,13 +166,7 @@ class CfgMixin:
         if acc is None:
             return None
         return {"login": acc.login, "password": acc.password, "imap_host": acc.imap_host,
-                "imap_port": acc.imap_port, "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port,
-                gwcfg.MAIL_HINT: self.backup_channel()}
-
-    def gwcfg_backup(self) -> dict | None:
-        if self.backup_encryption_mode() != "passphrase":
-            return None
-        return {"phrase": self.db.get_state(self._BK_PASSPHRASE_KEY) or ""}
+                "imap_port": acc.imap_port, "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port}
 
     @staticmethod
     def gwcfg_server() -> dict | None:
@@ -196,7 +190,7 @@ class CfgMixin:
         self._gwcfg_error_set(self._GWCFG_ENV_ERR_KEY, gw.id, "")
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
-                "mail": self.gwcfg_mail(), "backup": self.gwcfg_backup(), "token": self.gwcfg_token(gw),
+                "mail": self.gwcfg_mail(), "token": self.gwcfg_token(gw),
                 "server": self.gwcfg_server()}
 
     @staticmethod
@@ -215,8 +209,6 @@ class CfgMixin:
                 out[name] = gwcfg.uplink_print(sec.get("conf", ""), sec.get("pubkey", ""), sec.get("prev_pubkey", ""))
             elif name == "mail":
                 out[name] = gwcfg.mail_print(sec)
-            elif name == "backup":
-                out[name] = gwcfg.backup_print(sec.get("phrase", ""))
             elif name == "token":
                 out[name] = gwcfg.token_print(sec.get("value", ""))
             elif name == "server":

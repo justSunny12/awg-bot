@@ -142,10 +142,9 @@ def test_role_phrases_are_whole_sentences_not_fragments():
     assert roles.MAIN.host_gen.endswith("а") and roles.GATEWAY.host_loc.endswith("е")
 
 
-def test_current_and_pick_follow_the_installation_role(monkeypatch):
+def test_current_follows_the_installation_role(monkeypatch):
     from awgbot.core import config
     monkeypatch.setattr(config, "ROLE", "gateway")
     assert roles.current() is roles.GATEWAY
     monkeypatch.setattr(config, "ROLE", "client")
     assert roles.current() is roles.MAIN
-    assert roles.pick(True) is roles.GATEWAY and roles.pick(False) is roles.MAIN

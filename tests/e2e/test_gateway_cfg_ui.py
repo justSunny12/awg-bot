@@ -131,11 +131,13 @@ async def test_decide_opens_the_first_question(svc, fake_bot):
 
 async def test_keep_own_answers_the_server_and_opens_the_next_question(svc, fake_bot, reported):
     """«Оставить своё»: итог правкой вопроса, памятка по серверному
-    отпечатку, ответ серверу; в очереди есть фраза — она открывается новым
-    меню."""
+    отпечатку, ответ серверу; в очереди есть настройки из бэкапа — они
+    открываются новым меню."""
+    import json
     _own_mail(svc)
-    svc.backup_set_passphrase("DUMMY-own-phrase")
-    svc.apply_cfg(_doc(mail=MAIL, backup={"phrase": "DUMMY-server-phrase"}))
+    svc.apply_cfg(_doc(mail=MAIL))
+    at = "2026-10-05T14:00:00+03:00"
+    svc.db.set_state(svc._KEEP_ASK_KEY, json.dumps({"why": "restore", "from": at, "at": at, "items": {}}))
     msg, cb = _nav(fake_bot)
     await gh.gw_cfg_answer(cb, GwCB(action="cfg_no", val="mail"), svc, FakeState())
     edits = [t for k, t, _ in msg.sent if k == "edit_text"]
@@ -145,7 +147,7 @@ async def test_keep_own_answers_the_server_and_opens_the_next_question(svc, fake
     assert len(reported) == 1 and reported[0]["section"] == "mail" and reported[0]["accepted"] is False
     assert reported[0]["gen"] == 7 and reported[0]["print"] == gwcfg.mail_print(MAIL)
     sent = _sent_texts(fake_bot)
-    assert sent and "Ключевая фраза бэкапов на шлюзе отличается от фразы сервера AWG" in sent[-1], sent
+    assert sent and "Настройки шлюза из бэкапа" in sent[-1], sent
 
 
 async def test_the_last_answer_returns_to_the_panel(svc, fake_bot, reported, login_ok):
@@ -218,10 +220,10 @@ async def test_the_channel_hook_opens_the_question_as_a_new_menu(svc, fake_bot):
     меню в чате админа; вопросов нет — молчит."""
     assert await gh.show_cfg_question(fake_bot, svc, cfg.ADMIN_ID) is False
     assert _sent_texts(fake_bot) == []
-    svc.db.set_state(svc._BK_KEY_KEY, "RFVNTVlLRVk=")
-    svc.apply_cfg(_doc(backup={"phrase": "DUMMY-server-phrase"}))
+    _own_mail(svc)
+    svc.apply_cfg(_doc(mail=MAIL))
     assert await gh.show_cfg_question(fake_bot, svc, cfg.ADMIN_ID) is True
     sent = [r for r in fake_bot.records if r[0] == "send_message"]
     assert len(sent) == 1 and sent[0][1] == cfg.ADMIN_ID
-    assert "шифруются случайным ключом" in sent[0][2], sent[0][2]
-    assert "DUMMY-server-phrase" not in sent[0][2]
+    assert "Почта на шлюзе отличается от почты сервера AWG" in sent[0][2], sent[0][2]
+    assert MAIL["password"] not in sent[0][2]

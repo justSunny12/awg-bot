@@ -355,7 +355,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert set(out) == set(FACTS + VERDICTS + ("boot_id", "ts", "rev"))
     assert out["lan_addr"] == "192.168.1.10"
     assert gwsnapshot.sanitize({"lan_addr": "ШЛЮЗ; rm -rf /"})["lan_addr"] == "", "в команды роутера — только IPv4"
-    assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "", "backup": "",
+    assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "",
                           "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE + BUNDLE_OLD), "неизвестные ключи внутри bundle отброшены"

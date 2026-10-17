@@ -15,8 +15,9 @@ CAP = "cfg1"                                   # возможность аген
 LINK_CONTRACT = "1"                            # штамп «контракт линка N» — тот же, что LINK_CONTRACT скрипта линка (сверяет тест)
 
 # Разделы — в порядке применения на агенте (§3.3.2): имя сервера, env+link одной
-# транзакцией, почта, фраза, токен, аплинк.
-SECTIONS = ("server", "env", "link", "mail", "backup", "token", "uplink")
+# транзакцией, почта, токен, аплинк. Фразы бэкапов в документе нет: у шлюза
+# своих копий нет, его настройки — в бэкапе сервера AWG.
+SECTIONS = ("server", "env", "link", "mail", "token", "uplink")
 
 # Ключи раздела env — те же имена, что у строк Environment= юнита обвязки.
 ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
@@ -24,7 +25,6 @@ ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
 ENV_REQUIRED = ENV_KEYS
 
 MAIL_KEYS = ("login", "password", "imap_host", "imap_port", "smtp_host", "smtp_port")
-MAIL_HINT = "backup"                           # подсказка «куда уходят бэкапы ВПС»: в отпечаток не входит
 
 # Человеческие имена — для уведомлений обеих сторон («применено: …», «не применилось: …»).
 HUMAN = {
@@ -35,7 +35,6 @@ HUMAN = {
     "link": "конфиг линка",
     "uplink": "конфиг аплинка",
     "mail": "почта",
-    "backup": "ключевая фраза бэкапов",
     "token": "токен бота",
     "server": "имя сервера",
 }
@@ -101,11 +100,7 @@ def parse(msg: dict) -> dict:
         out["sections"]["mail"] = {
             **{k: _s(mail.get(k)) for k in ("login", "password", "imap_host", "smtp_host")},
             **{k: _int(mail.get(k)) for k in ("imap_port", "smtp_port")},
-            MAIL_HINT: norm(mail.get(MAIL_HINT)),
         }
-    backup = src.get("backup")
-    if isinstance(backup, dict):
-        out["sections"]["backup"] = {"phrase": _s(backup.get("phrase"))}
     token = src.get("token")
     if isinstance(token, dict):
         out["sections"]["token"] = {"value": norm(token.get("value"))}

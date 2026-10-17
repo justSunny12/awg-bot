@@ -17,10 +17,10 @@ from tests.screens.shots_admin_common_gw import (TOKEN, _card, _ch, _ch_base, _c
 # Агент слота 1 принимает документ: сессия открыта с возможностью cfg1,
 # снимок несёт поле cfg — отпечатки желаемого ВПС с правками по сценарию.
 # Конфиг линка в снимках не собирается (источника /root/gw-awglink.conf нет);
-# почта и фраза ВПС — подстановкой там, где о них сценарий.
+# почта ВПС — подстановкой там, где о ней сценарий.
 
 _CFG_MAIL = {"login": "box@example.org", "password": "DUMMY", "imap_host": "imap.example.org",
-             "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "telegram"}
+             "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
 
 
 def _cfg_base(services, mp):
@@ -28,9 +28,8 @@ def _cfg_base(services, mp):
 
 
 def _cfg_mail(services, mp):
-    """На ВПС есть почта и фраза бэкапов."""
+    """На ВПС есть почта."""
     services.gwcfg_mail = lambda: dict(_CFG_MAIL)
-    services.gwcfg_backup = lambda: {"phrase": "DUMMY phrase long enough"}
 
 
 def _cfg(*, online: bool = True, closed: bool = False, age_h: float = 0, caps=("cfg1", "confirm1", "token1"),
@@ -81,18 +80,15 @@ CFG = [
           "шлюз не применил документ — причина экранирована, вернул прежнюю", "adm.gw.card.cfg.refused"),
     _card(1, _cfg_chan(_cfg(online=False, closed=True, age_h=11 * 24, env="0" * 16, server="0" * 16)),
           "агент с документом не на связи, расходится — разделы по именам", "adm.gw.card.cfg.drift.dead"),
-    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8, backup="cd" * 8),
-                       _cfg_ack(applied=("server", "env"), wait=("mail", "backup"))),
-          "почта и фраза ждут решения в чате бота шлюза", "adm.gw.card.cfg.wait"),
-    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env", "backup"),
+    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8),
+                       _cfg_ack(applied=("server", "env"), wait=("mail",))),
+          "почта ждёт решения в чате бота шлюза", "adm.gw.card.cfg.wait"),
+    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env"),
                                                                 declined=("mail",))),
           "«подробнее»: номер применённого документа и оставленная своя почта", "adm.gw.card.cfg.more"),
-    _card(1, _cfg_chan(_cfg_mail, _cfg(mail="ab" * 8, backup="cd" * 8),
-                       _cfg_ack(applied=("server", "env"), declined=("mail", "backup"))),
-          "«подробнее»: почта и фраза оставлены своими", "adm.gw.card.cfg.more.both"),
     _card(1, _chan(1, _ch(agent_version="3.2.1")), "агент 3.2 со снимком — обнови агента, «📤» на месте",
           "adm.gw.card.cfg.agent32"),
-    _card(1, in_zone(_cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env", "backup"),
+    _card(1, in_zone(_cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env"),
                                                                          declined=("mail",))), "Europe/Moscow"),
           "сервер в другом поясе (Europe/Moscow): моменты от шлюза и свои — в поясе сервера, «(UTC+3)»",
           "adm.gw.card.cfg.more.zone"),

@@ -70,29 +70,3 @@ def test_root_block_device_strips_partition(tmp_path):
 def test_smart_is_not_asked_on_sd_cards(monkeypatch):
     monkeypatch.setattr(hostmetrics, "root_block_device", lambda: "/dev/mmcblk0")
     assert hostmetrics.read_smart_health() is None
-
-
-def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch, tmp_path):
-    import io, tarfile
-    from awgbot.core import config
-    from awgbot.util import secrets_util
-    gwd = tmp_path / "awg"; gwd.mkdir()
-    (gwd / "awg0.conf").write_text("[Interface]\nPrivateKey = A\n")
-    (gwd / "awglink.conf").write_text("[Interface]\nPrivateKey = B\n")
-    (gwd / "awg0.conf.pre-migration").write_text("old")
-    confd = tmp_path / "conf"; confd.mkdir(); (confd / "app.yaml").write_text("x: 1\n")
-    monkeypatch.setattr(config, "GW_CONF_DIR", str(gwd))
-    monkeypatch.setattr(config, "CONF_DIR", confd)
-    monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "bk")
-    monkeypatch.setattr(config, "DB_PATH", tmp_path / "nope.db")
-    monkeypatch.setattr(config, "ENV_PATH", None)
-    from awgbot.domain.services import ServiceError
-    with pytest.raises(ServiceError, match="шифрованная"):
-        svc.make_backup()                                  # без фразы — отказ
-    svc.backup_set_passphrase("correct horse battery")
-    paths = svc.make_backup()
-    assert len(paths) == 1 and paths[0].endswith(".tgz.enc")
-    raw = secrets_util.decrypt(open(paths[0], "rb").read(), passphrase="correct horse battery")
-    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
-        names = sorted(m.name for m in tar.getmembers() if m.isfile())
-    assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/backup-meta.json", "state/conf/app.yaml"]

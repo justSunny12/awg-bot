@@ -313,17 +313,16 @@ def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
 # расходится по разделам, отказан, ждёт решения человека. Сами экраны — в
 # эталоне (adm.gw.card.cfg.*); здесь — какие строки и кнопки появляются в
 # каком состоянии. Конфиг линка не собирается (источника на тестовой машине
-# нет), почта и фраза ВПС — подстановкой.
+# нет), почта ВПС — подстановкой.
 
 MAIL = {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
-        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "telegram"}
+        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
 
 
 @pytest.fixture()
 def cfg1(services, slot, monkeypatch):
     monkeypatch.setattr(services, "gwcfg_link_conf", lambda gw, env: "")
     monkeypatch.setattr(services, "gwcfg_mail", lambda: dict(MAIL))
-    monkeypatch.setattr(services, "gwcfg_backup", lambda: {"phrase": "DUMMY phrase long enough"})
     return slot
 
 
@@ -390,31 +389,28 @@ async def test_a_cfg1_refusal_says_what_and_that_the_old_one_stays(services, cfg
     assert "уходят по каналу" not in text and "актуальн" not in text, text
 
 
-async def test_waiting_mail_and_phrase_are_named_on_the_card(services, cfg1, fake_bot):
-    """Вопрос о почте и фразе висит в чате бота шлюза (К14): карточка говорит,
-    где решать, и не обещает доставку того, что ждёт человека."""
+async def test_waiting_mail_is_named_on_the_card(services, cfg1, fake_bot):
+    """Вопрос о почте висит в чате бота шлюза (К14): карточка говорит, где
+    решать, и не обещает доставку того, что ждёт человека. Фразы бэкапов в
+    документе нет — и строки о ней нет, даже если прежний агент её ждёт."""
     doc = _doc(services)
-    _cfg_snap(services, mail="ab" * 8, backup="cd" * 8)
-    _cfg_ack(services, applied=["env", "server"], wait={"mail": doc["prints"]["mail"],
-                                                        "backup": doc["prints"]["backup"]})
+    assert "backup" not in doc["prints"] and "backup" not in doc["sections"]
+    _cfg_snap(services, mail="ab" * 8)
+    _cfg_ack(services, applied=["env", "server"], wait={"mail": doc["prints"]["mail"], "backup": "cd" * 8})
     text, _ = await _card(services, fake_bot)
     lines = text.splitlines()
     assert "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик" in lines, text
-    assert "⏳ Ключевая фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя" in lines, text
+    assert "фраза" not in text, text
     assert "расходится с выданной" not in text, "ожидание решения выдано за доставку"
 
 
-@pytest.mark.parametrize("declined, line", [
-    (("mail",), "почта на шлюзе своя — так решено в чате бота шлюза"),
-    (("backup",), "ключевая фраза бэкапов на шлюзе своя — так решено в чате бота шлюза"),
-    (("mail", "backup"), "почта и ключевая фраза бэкапов на шлюзе свои — так решено в чате бота шлюза"),
-])
-async def test_details_name_the_applied_generation_and_what_was_kept(services, cfg1, fake_bot, declined, line):
+async def test_details_name_the_applied_generation_and_what_was_kept(services, cfg1, fake_bot):
     """«подробнее» (К13): номер применённого документа и дата; что человек
     оставил своим — без вопроса и без «расходится»."""
     doc = _doc(services)
-    _cfg_snap(services, **{s: "ab" * 8 for s in declined})
-    _cfg_ack(services, applied=["server", "env"], declined={s: doc["prints"][s] for s in declined})
+    line = "почта на шлюзе своя — так решено в чате бота шлюза"
+    _cfg_snap(services, mail="ab" * 8)
+    _cfg_ack(services, applied=["server", "env"], declined={"mail": doc["prints"]["mail"]})
     text, _ = await _card(services, fake_bot)
     details = text.split("<blockquote expandable>", 1)[1]
     assert f"конфигурация №{doc['gen']} применена " in details, details

@@ -6,19 +6,16 @@ inspect.py — часть пакета backup (см. __init__): разбор к�
 содержимому, не по имени): метка схемы 2, версия не ниже версии
 совместимости и не новее кода, то же поколение AmneziaWG, тот же ADMIN_ID
 (из чата чужую копию не восстанавливают; из терминала — можно). Ответ несёт
-план — тот же, что исполнит слияние в `awg-bot restore`. На шлюзе бэкапов нет:
-его настройки — в бэкапе сервера AWG.
+план — тот же, что исполнит слияние в `awg-bot restore`. У шлюза этого
+осмотра нет: его настройки — в бэкапе сервера AWG, копию в чате шлюза бот
+убирает с объяснением.
 """
 from __future__ import annotations
 
 import logging
 
-from awgbot.core import config
-
 log = logging.getLogger("awgbot.backup")
 
-GATEWAY_REFUSAL = ("на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство ставится "
-                   "файлом конфигурации шлюза (sudo sh <файл> --install), остальное довезёт канал конфигурации")
 OPEN_REFUSAL = "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
 
 
@@ -39,8 +36,6 @@ class BackupInspectMixin:
         {ok, created_at, plan (dict), error}; файл держит вызывающий сам —
         шифрованным (prepare_restore)."""
         from awgbot.util import secrets_util
-        if config.ROLE == "gateway" or getattr(self, "GATEWAY_ROLE", False):
-            return {"ok": False, "error": GATEWAY_REFUSAL}
         if not blob.startswith(secrets_util.MAGIC):
             return {"ok": False, "error": OPEN_REFUSAL}
         kw = self.backup_enc_kwargs()

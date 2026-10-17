@@ -1,6 +1,6 @@
 """
-archive.py — часть пакета backup (см. __init__): состав копии по роли, сборка
-архива и запись шифрованного файла.
+archive.py — часть пакета backup (см. __init__): состав копии сервера AWG,
+сборка архива и запись шифрованного файла.
 
 Одна резервная копия — один файл, который разворачивает `awg-bot restore` на
 любом хосте: state/bot.db, state/conf/*.yaml (все настройки, из UI и не из
@@ -26,7 +26,8 @@ class BackupArchiveMixin:
 
     @staticmethod
     def backup_role() -> str:
-        return "gw" if config.ROLE == "gateway" else "main"
+        """Роль в метке: копии бывают только у сервера AWG."""
+        return "main"
 
     @staticmethod
     def db_snapshot_bytes(path) -> bytes | None:
@@ -62,11 +63,8 @@ class BackupArchiveMixin:
                     pass
 
     def backup_extra(self) -> list[tuple[str, bytes]]:
-        """Что кладём в копию сверх БД/conf/env — по роли. Один список на все
-        случаи: копия из чата, `awg-bot backup` и снимок перед восстановлением
-        (tools/snapshot.py) — иначе снимок «до восстановления» шёл без конфигов
-        интерфейсов, и «вернуться» возвращало базу, а не устройства."""
-        import glob
+        """Что кладём в копию сверх БД/conf/env. Один список на все случаи:
+        копия из чата, по почте и `awg-bot backup` (tools/snapshot.py)."""
         import os
         extra: list[tuple[str, bytes]] = []
 
@@ -77,20 +75,7 @@ class BackupArchiveMixin:
             except OSError:
                 pass
 
-        if config.ROLE == "gateway" or getattr(self, "GATEWAY_ROLE", False):
-            # все конфиги awg-интерфейсов шлюза (приватные ключи линка и туннеля —
-            # единственная копия вне этой машины)
-            for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
-                add_file(p, f"awg/{os.path.basename(p)}")
-            # локальное состояние файервола (порт, адреса снаружи, доверенные из
-            # туннеля) — данные человека, бандл их не восстановит
-            from awgbot.infra import gwguard
-            add_file(gwguard.FW_ENV, "awg-gw/firewall.env")
-            # личные списки локальной сети без VPN — тоже данные человека
-            for name in gwguard.OWN_LIST_FILES:
-                add_file(os.path.join(gwguard.DNSMASQ_D, name), f"awg-gw/lan/{name}")
-            return extra
-        # сервер: конфиг awg-интерфейса (единственная копия вне сервера)
+        # конфиг awg-интерфейса (единственная копия вне сервера)
         from awgbot.infra import awg
         try:
             conf = awg.read_file(config.CONF_PATH)

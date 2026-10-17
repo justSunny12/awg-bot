@@ -1,18 +1,19 @@
 """
-Почта и фраза шифрования бэкапов с сервера AWG на агенте шлюза
-(domain/gateway/cfg/mailphrase, ask): правило «молча или вопрос», памятка
-«оставить своё», снятие вопроса ручной правкой, тексты вопросов и итогов.
+Почта с сервера AWG на агенте шлюза (domain/gateway/cfg/decide, ask):
+правило «молча или вопрос», памятка «оставить своё», снятие вопроса ручной
+правкой, тексты вопросов и итогов. Фразы бэкапов и подсказки «куда уходят
+бэкапы» больше нет: своих копий у шлюза нет — раздел прежнего сервера не
+применяется.
 
 Цена ошибки двусторонняя. Сервер, которому «всегда прав», молча заменил бы
-свой ящик шлюза (и новые копии ушли бы на чужую почту) или фразу (и новые
-копии перестали бы открываться своей). Сервер, которого спрашивают каждый
-раз, превратил бы каждую доставку в один и тот же вопрос в чате. Поэтому:
-заглушка — молча, совпало — ничего, своё — вопрос один раз на серверное
-значение; и ни логина, ни пароля, ни хостов, ни фразы в чате.
+свой ящик шлюза (и аварийные письма ушли бы на чужую почту). Сервер, которого
+спрашивают каждый раз, превратил бы каждую доставку в один и тот же вопрос в
+чате. Поэтому: заглушка — молча, совпало — ничего, своё — вопрос один раз на
+серверное значение; и ни логина, ни пароля, ни хостов в чате.
 
 Хост — `_Host` из теста документа: юнит и конфиг линка стоят, документ
 несёт тот же env, так что транзакция обвязки — пустая, и проверяется только
-почта и фраза. Вход в IMAP и SMTP подменён.
+почта. Вход в IMAP и SMTP подменён.
 """
 from __future__ import annotations
 
@@ -36,7 +37,6 @@ svc = _apply.svc
 OWN = {"login": "own@example.net", "password": "DUMMY-own", "imap_host": "imap.example.net",
        "imap_port": 993, "smtp_host": "smtp.example.net", "smtp_port": 587}
 PHRASE = "DUMMY-server-phrase"
-OWN_PHRASE = "DUMMY-own-phrase"
 
 
 @pytest.fixture()
@@ -84,12 +84,20 @@ def test_a_half_set_box_counts_as_empty(svc, host, checks):
     assert _login(svc) == MAIL["login"] and res["ask"] == [] and "mail" in res["ack"]["applied"]
 
 
-def test_a_phrase_over_no_encryption_is_applied_silently(svc, host):
-    res = svc.apply_cfg(_doc(backup={"phrase": PHRASE}))
-    assert svc.backup_encryption_mode() == "passphrase"
-    assert svc.cfg_backup_print() == gwcfg.backup_print(PHRASE)
-    assert "backup" in res["ack"]["applied"] and res["ask"] == []
-    assert "🔐 Ключевая фраза бэкапов с сервера AWG принята" in res["note"]
+def _with_phrase(doc: dict) -> dict:
+    """Документ прежнего сервера: раздел фразы бэкапов сверху."""
+    doc["backup"] = {"phrase": PHRASE}
+    return doc
+
+
+def test_a_phrase_section_of_an_older_server_is_not_applied(svc, host):
+    """Своих копий у шлюза нет: фраза прежнего сервера не ложится в базу, не
+    отвечается и не спрашивается."""
+    res = svc.apply_cfg(_with_phrase(_doc()))
+    assert not svc.db.get_state("backup_passphrase")
+    assert "backup" not in res["ack"]["applied"] and "backup" not in res["ack"]["wait"] and res["ask"] == []
+    assert "фраз" not in res["note"]
+    assert not hasattr(svc, "backup_set_passphrase") and not hasattr(svc, "cfg_backup_print")
 
 
 def test_a_failed_login_still_keeps_the_mail_and_says_why(svc, host, checks):
@@ -101,18 +109,13 @@ def test_a_failed_login_still_keeps_the_mail_and_says_why(svc, host, checks):
     assert "но не работает: IMAP отверг логин/пароль. Проверь логин и пароль" in res["note"], res["note"]
 
 
-def test_backups_follow_the_server_to_email_only_when_they_can(svc, host, checks):
-    """Подсказка сервера «бэкапы — на почту»: шлюз переключает канал бэкапов
-    вслед, только если вход прошёл и копии шифруются (на почту уходят только
-    шифрованные); без шифрования канал не трогается."""
-    res = svc.apply_cfg(_doc(mail={**MAIL, "backup": "email"}))
-    assert settings.get("app.scheduler.backup_channel") == "telegram", "без шифрования бэкапы ушли на почту"
-    assert "💾" not in res["note"]
-    svc.email_forget()
-    svc.backup_set_passphrase(OWN_PHRASE)
-    res = svc.apply_cfg(_doc(gen=8, mail={**MAIL, "backup": "email"}))
-    assert settings.get("app.scheduler.backup_channel") == "email"
-    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
+def test_a_backup_hint_in_the_mail_section_switches_nothing(svc, host, checks):
+    """Подсказка прежнего сервера «бэкапы — на почту»: шлюзу переключать нечего,
+    почта применяется как есть, без строки про бэкапы и без отметок."""
+    res = svc.apply_cfg(_with_phrase(_doc(mail={**MAIL, "backup": "email"})))
+    assert _login(svc) == MAIL["login"] and "mail" in res["ack"]["applied"]
+    assert settings.get("app.scheduler.backup_channel", "") != "email"
+    assert "💾" not in res["note"] and not svc.db.get_state("gwcfg_mail_hint")
 
 
 # ── совпало — ничего ─────────────────────────────────────────────────────────
@@ -194,25 +197,7 @@ def test_keeping_own_remembers_the_server_value_and_does_not_ask_again(svc, host
 
 def test_an_answer_without_a_question_is_not_ok(svc, host):
     assert svc.cfg_answer("mail", True)["ok"] is False
-    assert svc.cfg_answer("backup", False)["ok"] is False and svc.cfg_keep() == {}
-
-
-def test_own_phrase_and_random_key_ask_with_the_right_question(svc, host):
-    """Своя фраза — вопрос о фразе; шлюз на случайном ключе прежней схемы —
-    тоже вопрос (это не заглушка), но с другой формулировкой."""
-    svc.backup_set_passphrase(OWN_PHRASE)
-    res = svc.apply_cfg(_doc(backup={"phrase": PHRASE}))
-    assert res["ask"] == ["backup"] and svc.cfg_question("backup") == {"section": "backup", "random_key": False}
-    assert svc.db.get_state(svc._BK_PASSPHRASE_KEY) == OWN_PHRASE
-    svc.cfg_answer("backup", True)
-    assert svc.db.get_state(svc._BK_PASSPHRASE_KEY) == PHRASE
-
-
-def test_a_random_key_gateway_is_asked_not_overwritten(svc, host):
-    svc.db.set_state(svc._BK_KEY_KEY, "RFVNTVlLRVk=")
-    res = svc.apply_cfg(_doc(backup={"phrase": PHRASE}))
-    assert res["ask"] == ["backup"] and svc.backup_encryption_mode() == "key", "случайный ключ заменён молча"
-    assert svc.cfg_question("backup") == {"section": "backup", "random_key": True}
+    assert svc.cfg_answer("backup", False)["ok"] is False and svc.cfg_keep() == {}, "раздел прежних версий"
 
 
 def test_the_question_names_what_differs_without_values(svc, host):
@@ -227,11 +212,10 @@ def test_the_question_names_what_differs_without_values(svc, host):
     assert svc.cfg_question("mail")["differs"] == ["ящик", "серверы IMAP/SMTP"]
 
 
-def test_the_queue_is_mail_then_phrase(svc, host):
+def test_the_queue_holds_mail_but_no_phrase(svc, host):
     _own_mail(svc)
-    svc.backup_set_passphrase(OWN_PHRASE)
-    res = svc.apply_cfg(_doc(backup={"phrase": PHRASE}, mail=MAIL))
-    assert res["ask"] == ["mail", "backup"] and svc.cfg_questions() == ["mail", "backup"]
+    res = svc.apply_cfg(_with_phrase(_doc(mail=MAIL)))
+    assert res["ask"] == ["mail"] and svc.cfg_questions() == ["mail"]
 
 
 # ── ручная правка снимает вопрос ─────────────────────────────────────────────
@@ -251,83 +235,36 @@ def test_a_manual_change_while_asked_drops_the_question_without_a_memo(svc, host
     assert _login(svc) == "hand@example.net"
 
 
-def test_a_manual_phrase_change_drops_the_phrase_question(svc, host):
-    svc.backup_set_passphrase(OWN_PHRASE)
-    svc.apply_cfg(_doc(backup={"phrase": PHRASE}))
-    svc.backup_set_passphrase("DUMMY-new-own-phrase")
-    assert svc.cfg_drop_stale_questions() == ["backup"] and svc.cfg_questions() == []
-
-
 # ── тексты: ни одного значения в чате ────────────────────────────────────────
 
 _SECRETS = (MAIL["login"], MAIL["password"], MAIL["imap_host"], MAIL["smtp_host"],
-            OWN["login"], OWN["password"], OWN["imap_host"], OWN["smtp_host"], PHRASE, OWN_PHRASE)
+            OWN["login"], OWN["password"], OWN["imap_host"], OWN["smtp_host"])
 
 
 def test_questions_and_answers_carry_no_secret(svc, host, checks):
-    """Чат агента — не сейф: логин, пароль, хосты и фраза в вопросы и итоги
-    не попадают ни при каком ответе."""
+    """Чат агента — не сейф: логин, пароль и хосты в вопросы и итоги не
+    попадают ни при каком ответе."""
     _own_mail(svc)
-    svc.backup_set_passphrase(OWN_PHRASE)
-    svc.apply_cfg(_doc(backup={"phrase": PHRASE}, mail=MAIL))
-    shown = [cfg_question_text(svc.cfg_question("mail")), cfg_question_text(svc.cfg_question("backup")),
-             cfg_question_text({"section": "backup", "random_key": True})]
+    svc.apply_cfg(_doc(mail=MAIL))
+    shown = [cfg_question_text(svc.cfg_question("mail"))]
     mail_yes = svc.cfg_answer("mail", True)
     shown += [cfg_answer_text("mail", True, mail_yes["note"]), cfg_answer_text("mail", False, {}),
-              cfg_answer_text("backup", True, {"state": "ok"}), cfg_answer_text("backup", False, {}),
               cfg_answer_text("mail", True, {"state": "fail", "why": "IMAP: таймаут"})]
     for text in shown:
         for secret in _SECRETS:
             assert secret not in text, f"в чат ушло значение {secret!r}: {text}"
     assert "Различия: ящик, серверы IMAP/SMTP" in shown[0]
-    assert "случайным ключом" in shown[2] and "случайным ключом" not in shown[1]
 
 
 def test_answer_texts_say_what_happened():
     assert cfg_answer_text("mail", False, None).startswith("ℹ️ Почта шлюза осталась прежней")
-    assert cfg_answer_text("backup", False, None).startswith("ℹ️ Ключевая фраза бэкапов шлюза осталась прежней")
     assert "но не работает: таймаут. Проверь логин и пароль" in cfg_answer_text("mail", True, {"state": "fail", "why": "таймаут"})
     assert "SMTP — авторизация отклонена" in cfg_answer_text("mail", True, {"state": "fail", "why": "SMTP: авторизация отклонена"})
-    assert "💾" in cfg_answer_text("mail", True, {"state": "ok", "backup": True})
-    assert cfg_answer_text("backup", True, {"state": "fail", "why": "коротко"}).startswith("⚠️ Ключевая фраза бэкапов с сервера AWG не принята")
-    assert set(QUESTION_STALE) == {"mail", "backup", "uplink"}
+    assert "💾" not in cfg_answer_text("mail", True, {"state": "ok", "backup": True}), "бэкапы на почту — у шлюза их нет"
+    assert set(QUESTION_STALE) == {"mail", "uplink"}
 
 
 def test_the_pending_line_lists_the_queue_in_order():
-    assert cfg_pending_line(["mail", "backup"]) == "⏳ Ждут решения: почта, ключевая фраза бэкапов"
-    assert cfg_pending_line(["backup"]) == "⏳ Ждут решения: ключевая фраза бэкапов"
+    assert cfg_pending_line(["mail", "keep"]) == "⏳ Ждут решения: почта, настройки из бэкапа"
+    assert cfg_pending_line(["uplink", "keep_dev"]) == "⏳ Ждут решения: конфиг аплинка, настройки прежнего устройства"
     assert cfg_pending_line([]) == "", "нечего решать — строки нет"
-
-
-# ── бэкапы вслед за сервером: почта и фраза одним документом, смена подсказки ─
-
-def test_mail_and_phrase_in_one_document_switch_backups_to_email(svc, host, checks):
-    """Почта и фраза пришли одним документом: почта применяется первой, когда
-    фразы ещё нет, — переключение пересматривается после всех разделов, и
-    бэкапы уходят на почту сразу (раньше проверка внутри раздела почты видела
-    шлюз без фразы, а следующие документы с «тем же» ящиком её не повторяли)."""
-    res = svc.apply_cfg(_doc(mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
-    assert settings.get("app.scheduler.backup_channel") == "email", res["note"]
-    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
-
-
-def test_a_changed_hint_with_the_same_mailbox_still_switches_backups(svc, host, checks):
-    """Ящик тот же, сервер позже перевёл свои бэкапы на почту: подсказка в
-    отпечаток не входит, раздел почты «совпал» — шлюз всё равно идёт вслед."""
-    svc.backup_set_passphrase(OWN_PHRASE)
-    svc.apply_cfg(_doc(mail={**MAIL, "backup": "telegram"}))
-    assert settings.get("app.scheduler.backup_channel") == "telegram"
-    res = svc.apply_cfg(_doc(gen=8, mail={**MAIL, "backup": "email"}))
-    assert settings.get("app.scheduler.backup_channel") == "email", res["note"]
-    assert "💾 Бэкапы теперь уходят на почту" in res["note"], res["note"]
-
-
-def test_a_manual_return_to_telegram_is_not_overridden_by_the_next_document(svc, host, checks):
-    """Шлюз уже переключился по подсказке, человек вернул Telegram кнопкой —
-    следующий документ с той же подсказкой выбор человека не перебивает."""
-    svc.apply_cfg(_doc(mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
-    assert settings.get("app.scheduler.backup_channel") == "email"
-    settings.set_value("app.scheduler.backup_channel", "telegram")
-    res = svc.apply_cfg(_doc(gen=9, mail={**MAIL, "backup": "email"}, backup={"phrase": PHRASE}))
-    assert settings.get("app.scheduler.backup_channel") == "telegram", res["note"]
-    assert "💾" not in res["note"]

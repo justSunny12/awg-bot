@@ -1,12 +1,12 @@
 """ask.py — очередь вопросов человеку: что висит, что открыть первым, что снято ручной правкой."""
 from __future__ import annotations
 
-from .mailphrase import QUESTION_SECTIONS
+from .decide import QUESTION_SECTIONS
 
 
 class CfgAskMixin:
-    """Одно живое меню — один вопрос: остальные ждут в очереди (почта, копия
-    настроек шлюза, фраза — в этом порядке); решил одно — открывается
+    """Одно живое меню — один вопрос: остальные ждут в очереди (аплинк, почта,
+    копия настроек шлюза — в этом порядке); решил одно — открывается
     следующее. Срока у вопроса нет."""
 
     def cfg_questions(self) -> list[str]:
@@ -29,14 +29,12 @@ class CfgAskMixin:
         value = self.cfg_pending().get(section) or {}
         if section == "mail":
             return {"section": "mail", "differs": self._cfg_mail_differs(value)}
-        if section == "uplink":
-            from awgbot.util import wgconf
-            try:
-                device = wgconf.pubkey_of(wgconf.parse(value.get("conf", "")).get("Interface", "PrivateKey"))
-            except wgconf.WgConfError:
-                device = ""
-            return {"section": "uplink", "fp": self.cfg_uplink_fp(value), "device": device[:4]}
-        return {"section": "backup", "random_key": self.backup_encryption_mode() == "key"}
+        from awgbot.util import wgconf
+        try:
+            device = wgconf.pubkey_of(wgconf.parse(value.get("conf", "")).get("Interface", "PrivateKey"))
+        except wgconf.WgConfError:
+            device = ""
+        return {"section": "uplink", "fp": self.cfg_uplink_fp(value), "device": device[:4]}
 
     def _cfg_mail_differs(self, value: dict) -> list[str]:
         """«ящик» (адрес или пароль) и/или «серверы IMAP/SMTP» — что именно

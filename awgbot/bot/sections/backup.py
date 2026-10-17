@@ -1,8 +1,9 @@
-"""«💾 Бэкапы»: автобэкапы тумблером, «🔐 Шифрование» (всегда — фраза нужна и
+"""«💾 Бэкапы» сервера AWG (у шлюза раздела нет: его настройки — в бэкапе
+сервера): автобэкапы тумблером, «🔐 Шифрование» (всегда — фраза нужна и
 для восстановления), при включённых — канал циклом, день и час одной
 кнопкой, «сделать сейчас»; восстановление из файла в чате (handlers/restore).
-Сервер AWG без фразы — только «🔐 Шифрование»: открытых бэкапов нет; с
-фразой — ещё блок шлюзов и строки по слотам."""
+Без фразы — только «🔐 Шифрование»: открытых бэкапов нет; с фразой — ещё
+блок шлюзов и строки по слотам."""
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
@@ -37,7 +38,7 @@ def backup_when_label(day: int, hour: int) -> str:
 
 def keyboard(br, encryption: bool = False) -> InlineKeyboardMarkup:
     s = settings
-    if br.has.backup_gateways and not encryption:
+    if not encryption:
         # без фразы бэкапов сервера AWG нет вовсе: ни тумблера, ни канала, ни «Сделать сейчас»
         return ui.rows(("🔐 Шифрование", br.cb.pack(ID, "do", "enc")), back_button(br))
     on = s.get_bool("app.scheduler.backup_enabled", True)
@@ -66,14 +67,12 @@ def restore_confirm_kb(br) -> InlineKeyboardMarkup:
 async def screen(br, services, key: str = ""):
     enc = await call(services.backup_encryption_enabled)
     channel = str(settings.get("app.scheduler.backup_channel", "telegram") or "")
-    has_slots, lines = False, []
-    if br.has.backup_gateways:
-        from awgbot.domain.notices import backup as nb
-        has_slots = bool(await call(services.db.gateways))
-        bot = getattr(services, "bot_username", "") or ""
-        for slot, name, label, state, seen, keep_at in (await call(services.backup_slot_states) if enc else []):
-            lines.append(nb.slot_backup_line(nb.gw_ref(name, label, slot=slot, bot_username=bot),
-                                             state, seen, keep_at))
+    from awgbot.domain.notices import backup as nb
+    has_slots, lines = bool(await call(services.db.gateways)), []
+    bot = getattr(services, "bot_username", "") or ""
+    for slot, name, label, state, seen, keep_at in (await call(services.backup_slot_states) if enc else []):
+        lines.append(nb.slot_backup_line(nb.gw_ref(name, label, slot=slot, bot_username=bot),
+                                         state, seen, keep_at))
     return (texts.settings_backup_text(enc, channel, br, has_slots=has_slots, slot_lines=lines),
             keyboard(br, enc))
 

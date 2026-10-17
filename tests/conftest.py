@@ -580,6 +580,30 @@ def _settings_never_on_repo_conf():
                     "возвращай кэш через tests.conftest.restore_settings()")
 
 
+@pytest.fixture(autouse=True)
+def _backup_dir_is_temporary(monkeypatch, tmp_path_factory):
+    """Каталог копий — временный: старт агента (run_gateway) стирает в нём
+    файлы копий прежних версий, а по умолчанию это data/backups рабочего дерева."""
+    monkeypatch.setattr(_config, "BACKUP_DIR", tmp_path_factory.mktemp("backups"))
+
+
+@pytest.fixture(autouse=True)
+def _shared_conf_keeps_the_server_template():
+    """Старт агента (run_gateway) снимает из conf ключи расписания копий —
+    в прогоне это общая копия conf процесса: соседние тесты сервера читают
+    её дальше. Снял — копия app.yaml возвращается из рабочего дерева."""
+    yield
+    app = _CONF_COPY / "app.yaml"
+    try:
+        lost = "backup_day" not in app.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if lost:
+        _shutil.copy2(_REPO_CONF / "app.yaml", app)
+        if _settings._conf_dir is not None and os.path.abspath(str(_settings._conf_dir)) == str(_CONF_COPY):
+            restore_settings()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _repo_conf_untouched():
     """Сторож на сессию: файлы conf/*.yaml репозитория после прогона те же.

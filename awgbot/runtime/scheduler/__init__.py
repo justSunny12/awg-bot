@@ -15,16 +15,15 @@ scheduler/ — фоновые задачи (APScheduler 3.x, AsyncIOScheduler).
 Сброс и копия — обязательные задания (MANDATORY: misfire_grace_time=None,
 coalesce): опоздавший запуск не выбрасывается. Догон на старте (`*_catchup`)
 идёт только после назначенного момента месяца (planned_moment_passed);
-собранная, но не доставленная копия повторяется через час (`backup_retry`,
-у агента — `gw_backup_retry`), пока не уйдёт. Планировщик агента шлюза —
-setup_gateway_scheduler, тело месячной копии у ролей общее (monthly_backup).
+собранная, но не доставленная копия повторяется через час (`backup_retry`),
+пока не уйдёт. Копии — только у сервера AWG; планировщик агента шлюза —
+setup_gateway_scheduler, своих копий у шлюза нет.
 
 services синхронны → зовём через asyncio.to_thread, чтобы не морозить loop.
 
 Части: common — общее обеих ролей (проверка обновлений, уведомление о версии,
 имена Telegram-аккаунтов, назначенный момент месяца, MANDATORY); backup —
-копия по расписанию и по событию (тело месячной копии и триггер — обеих
-ролей, задания сервера — add_server_backup); client — планировщик основной роли
+копия сервера AWG по расписанию и по событию (add_server_backup); client — планировщик основной роли
 (setup_scheduler); gateway — планировщик роли gateway (setup_gateway_scheduler).
 """
 

@@ -74,7 +74,7 @@ def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeyp
 def test_backup_enc_kwargs_prefers_passphrase(services):
     """Случайный ключ прежней схемы у сервера не действует; задали фразу —
     действует фраза."""
-    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(bytes(32)).decode())
+    services.db.set_state("backup_key", base64.b64encode(bytes(32)).decode())
     assert services.backup_enc_kwargs() is None, "у сервера случайный ключ — не шифрование"
     services.backup_set_passphrase("phrase-of-eight")
     assert services.backup_enc_kwargs() == {"passphrase": "phrase-of-eight"}

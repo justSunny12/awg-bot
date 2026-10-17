@@ -234,7 +234,7 @@ async def admin_document(message: Message, services, state: FSMContext):
     восстановление. Прочие файлы молча не трогаем."""
     from awgbot.bot.handlers import restore as rs
     if rs.looks_like_backup(message.document):
-        await rs.offer_restore(message, services, state, gateway=False)
+        await rs.offer_restore(message, services, state)
 
 
 @router.callback_query(Menu.filter(F.action == "expiring"))

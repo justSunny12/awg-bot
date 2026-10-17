@@ -21,7 +21,7 @@ ENV = {"CLIENT_SUBNET": "10.8.1.0/24", "ADMIN_IPS": "10.8.1.2 10.8.1.7", "LAN_MO
        "LAN_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1", "PEER_LAN_NETS": "",
        "LINK_CHANNEL_PORT": "8787"}
 MAIL = {"login": "box@example.org", "password": "DUMMY-pass", "imap_host": "imap.example.org",
-        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465, "backup": "email"}
+        "imap_port": 993, "smtp_host": "smtp.example.org", "smtp_port": 465}
 
 
 # ── имена и разделы ──────────────────────────────────────────────────────────
@@ -34,9 +34,17 @@ def test_document_names_are_the_unit_names():
     assert all(gwcfg.human(k) for k in (*gwcfg.ENV_KEYS, *gwcfg.SECTIONS)), "у раздела нет человеческого имени"
 
 
-def test_the_minimum_phrase_length_is_the_gateways_own():
-    from awgbot.domain.backup import crypto
-    assert gwcfg.MIN_PHRASE == crypto.MIN_PASSPHRASE_LEN
+def test_the_document_carries_no_backup_phrase():
+    """Своих копий у шлюза нет: ни раздела фразы, ни подсказки «куда уходят
+    бэкапы» в почте, ни её проверок."""
+    assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink")
+    assert "backup" not in gwcfg.HUMAN
+    for name in ("MIN_PHRASE", "MAIL_HINT", "check_backup", "backup_print", "backup_key_print"):
+        assert not hasattr(gwcfg, name), name
+    parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "env": ENV, "backup": {"phrase": "DUMMY phrase long"},
+                          "mail": {**MAIL, "backup": "email"}})
+    assert "backup" not in parsed["sections"] and "backup" not in parsed["sections"]["mail"]
+    assert set(gwcfg.check_mail({**MAIL, "backup": "sms"})) == set(gwcfg.MAIL_KEYS)
 
 
 # ── env ──────────────────────────────────────────────────────────────────────
@@ -69,20 +77,10 @@ def test_a_missing_required_key_refuses_the_whole_env():
 # ── прочие разделы ───────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("bad", [{**MAIL, "login": ""}, {**MAIL, "password": ""}, {**MAIL, "imap_host": "imap host"},
-                                 {**MAIL, "smtp_port": 0}, {**MAIL, "imap_port": "x"}, {**MAIL, "backup": "sms"}])
+                                 {**MAIL, "smtp_port": 0}, {**MAIL, "imap_port": "x"}])
 def test_mail_values_are_checked(bad):
     with pytest.raises(CfgError):
         gwcfg.check_mail(bad)
-
-
-def test_mail_backup_hint_may_be_empty():
-    assert gwcfg.check_mail({**MAIL, "backup": ""})["backup"] == ""
-
-
-@pytest.mark.parametrize("phrase", ["short", "", "a" * 600])
-def test_backup_phrase_rules(phrase):
-    with pytest.raises(CfgError):
-        gwcfg.check_backup({"phrase": phrase})
 
 
 @pytest.mark.parametrize("token", ["", "abc", "12345:short", "12345:AAAAAAAAAAAAAAAAAAAAAAAAAAAA bad"])
@@ -153,10 +151,11 @@ def test_build_skips_absent_sections_and_ack_round_trips():
     body = gwcfg.build(18, "9c41" * 4, {"env": ENV, "mail": None, "server": {"name": "s"}})
     assert set(body) == {"gen", "hash", "env", "server"}
     ack = gwcfg.ack_parse(gwcfg.ack_build(18, "9c41" * 4, applied=["link", "env"], wait={"mail": "ab12"},
-                                          declined={"backup": "cd34"}, failed={"token": "другой бот"}, retry=True))
+                                          declined={"mail": "cd34"}, failed={"token": "другой бот"}, retry=True))
     assert ack["applied"] == ["env", "link"] and ack["wait"] == {"mail": "ab12"}
-    assert ack["declined"] == {"backup": "cd34"} and ack["failed"] == {"token": "другой бот"} and ack["retry"]
+    assert ack["declined"] == {"mail": "cd34"} and ack["failed"] == {"token": "другой бот"} and ack["retry"]
     assert gwcfg.ack_parse({"failed": {"*": "<b>x</b>", "weird": "y"}, "wait": "no"})["failed"] == {"*": "<b>x</b>"}
+    assert gwcfg.ack_parse({"declined": {"backup": "cd34"}})["declined"] == {}, "раздел прежних агентов принят"
 
 
 # ── отпечатки ────────────────────────────────────────────────────────────────
@@ -171,16 +170,10 @@ def test_prints_are_stable_to_whitespace_and_order_and_differ_by_value():
     assert gwcfg.link_print("мусор") == ""
 
 
-def test_mail_print_ignores_the_backup_hint_and_is_empty_for_a_stub():
+def test_mail_print_ignores_unknown_keys_and_is_empty_for_a_stub():
     assert gwcfg.mail_print(MAIL) == gwcfg.mail_print({**MAIL, "backup": "telegram"})
     assert gwcfg.mail_print({**MAIL, "password": "other"}) != gwcfg.mail_print(MAIL)
     assert gwcfg.mail_print(None) == "" and gwcfg.mail_print({**MAIL, "imap_host": ""}) == ""
-
-
-def test_backup_prints_phrase_and_random_key_never_collide():
-    assert gwcfg.backup_print("") == "" and gwcfg.backup_key_print("") == ""
-    assert gwcfg.backup_print("DUMMY-phrase-1") != gwcfg.backup_key_print("DUMMY-phrase-1")
-    assert gwcfg.backup_print("DUMMY-phrase-1") == gwcfg.backup_print("DUMMY-phrase-1")
 
 
 def test_doc_print_changes_with_any_section():

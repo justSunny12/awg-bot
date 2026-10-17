@@ -80,7 +80,6 @@ class _Start:
                 pass
 
         from awgbot.bot.handlers import gateway as gh
-        from awgbot.bot.handlers import restore
         from awgbot.runtime import linkclient, poolprobe, preflight, scheduler
         monkeypatch.setattr(notifier, "set_email_fallback", lambda fn: None)
         monkeypatch.setattr(notifier, "notify_one", notify_one)
@@ -94,10 +93,13 @@ class _Start:
         monkeypatch.setattr(gh, "restore_panel_after_restart", noop)
         monkeypatch.setattr(gh, "send_first_panel", noop)
         monkeypatch.setattr(gh, "show_cfg_question", show_question)
-        monkeypatch.setattr(restore, "report_restore_result", noop)
         monkeypatch.setattr(scheduler, "setup_gateway_scheduler", lambda s, b: _Sched())
         monkeypatch.setattr(linkclient, "ensure", lambda s: st.events.append("channel"))
         monkeypatch.setattr(linkclient, "shutdown", noop)
+        # ключи расписания копий снимаются из conf — не из общей копии conf прогона
+        from awgbot.core import settings
+        self.dropped: list = []
+        monkeypatch.setattr(settings, "drop_keys", lambda keys: self.dropped.extend(keys) or [])
 
     def note_pending(self) -> None:
         """В БД агента — метка «перезапущен на токене с сервера» (как после
@@ -184,3 +186,20 @@ async def test_an_undelivered_switch_note_stays_for_the_next_start(start):
 async def test_no_switch_note_without_the_mark(start):
     await start.run_to_polling()
     assert texts.GW_TOKEN_SWITCHED not in start.notes and "question" not in start.events
+
+
+async def test_the_start_wipes_the_leftovers_of_own_backups(start):
+    """Своих бэкапов у шлюза нет: старт стирает фразу и отметки копий прежних
+    версий до поллинга; отчёта о восстановлении у агента нет."""
+    d = Database(str(start.tmp / "gw.db"))
+    d.init_schema()
+    d.set_state("backup_passphrase", "DUMMY-own-phrase")
+    d.set_state("last_backup", "2026-09")
+    d.close()
+    await start.run_to_polling()
+    d = Database(str(start.tmp / "gw.db"))
+    try:
+        assert not d.get_state("backup_passphrase") and not d.get_state("last_backup")
+    finally:
+        d.close()
+    assert "app.scheduler.backup_day" in start.dropped, start.dropped

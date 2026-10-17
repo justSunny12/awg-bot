@@ -12,7 +12,7 @@
 Чистая установка — агент поставлен файлом первого применения (отметка
 первой установки), блок ни разу не уходил и не применялся, и человек не
 правил ни одного ключа из списка. Сервер возвращает блок того же устройства
-— применяется молча (Т18); другого устройства, после восстановления сервера
+— применяется молча; другого устройства, после восстановления сервера
 или поправленной руками новой установке — вопросом в чате бота шлюза.
 """
 from __future__ import annotations
@@ -28,6 +28,18 @@ from .base import log
 
 TRAFFIC_EVERY_S = 6 * 3600          # счёт линка — не чаще, ×uniform(0.6, 1.4)
 
+# Следы своих копий шлюза прежних версий: фраза и случайный ключ, отметки
+# месячной копии и почты «вслед за сервером», ключи расписания в conf. Своих
+# копий у шлюза больше нет, возврата на прежние версии тоже — держать незачем.
+LEFTOVER_STATE = ("backup_passphrase", "backup_key", "last_backup", "backup_nokey_noticed",
+                  "gwcfg_mail_hint", "gwcfg_backup_follow")
+LEFTOVER_CONF = ("app.scheduler.backup_enabled", "app.scheduler.backup_channel",
+                 "app.scheduler.backup_day", "app.scheduler.backup_hour")
+LEFTOVER_SECTION = "backup"          # раздел документа «фраза бэкапов» — в вопросах и памятках
+# файлы копий прежних версий в каталоге бэкапов агента: внутри ключи линка, а
+# применить их уже нельзя
+LEFTOVER_FILES = ("*.tgz", "*.tgz.enc", "*.tar.gz", "*.tar.gz.enc", "*.tgz.dec", "restore-pending*")
+
 
 class KeepMixin:
     _KEEP_BASE_KEY = "gw_keep_base"            # отпечаток настроек при первой установке
@@ -37,6 +49,42 @@ class KeepMixin:
     _KEEP_ANSWERED_KEY = "gw_keep_answered"    # отпечаток серверного блока, на который ответили
     _KEEP_TRAFFIC_KEY = "gw_keep_traffic"      # {"at": iso, "due": сек, "sum": rx+tx} — последний ушедший счёт
     _KEEP_TRAFFIC_GOT_KEY = "gw_keep_traffic_got"   # месяц, чей счёт с сервера уже перенесён
+
+    # ── следы своих копий прежних версий ─────────────────────────────────────
+
+    def backup_leftovers_drop(self) -> bool:
+        """На старте: стереть фразу, отметки, файлы и ключи расписания своих
+        копий, снять вопрос и памятку о фразе с сервера. Повторный вызов — ничего.
+        True — что-то стёрто."""
+        hit = False
+        for key in LEFTOVER_STATE:
+            if self.db.get_state(key):
+                self.db.set_state(key, "")
+                hit = True
+        for key in (self._CFG_KEEP_KEY, self._CFG_PENDING_KEY, self._CFG_WAIT_KEY):
+            data = self.db.get_state_json(key, {}) or {}
+            if isinstance(data, dict) and LEFTOVER_SECTION in data:
+                del data[LEFTOVER_SECTION]
+                self.db.set_state(key, json.dumps(data, ensure_ascii=False) if data else "")
+                hit = True
+        from awgbot.core import config
+        try:
+            olds = {p for pat in LEFTOVER_FILES for p in config.BACKUP_DIR.glob(pat) if p.is_file()}
+        except OSError:
+            olds = set()
+        for path in sorted(olds):
+            try:
+                path.unlink()
+                hit = True
+            except OSError as e:
+                log.warning("gateway: файл копии прежних версий %s не удалён: %s", path.name, e)
+        try:
+            hit = bool(settings.drop_keys(LEFTOVER_CONF)) or hit
+        except Exception as e:                            # noqa: BLE001 — conf сломан руками: ключи подождут
+            log.warning("gateway: ключи расписания копий в conf не сняты: %s", e)
+        if hit:
+            log.info("gateway: следы своих копий прежних версий стёрты — настройки шлюза в бэкапе сервера AWG")
+        return hit
 
     # ── сбор ─────────────────────────────────────────────────────────────────
 

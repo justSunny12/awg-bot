@@ -3,7 +3,8 @@ restore.py — восстановление сервера AWG из бэкапа
 файла (только шифрованный; метка схемы 2, версия, поколение, админ — ВНУТРИ
 архива), вопрос с планом — что вернётся, что останется текущим, что будет со
 шлюзами, — запуск `awg-bot restore --yes` вне cgroup бота, отчёт по маркеру и
-ожидание выхода шлюзов на связь. На шлюзе бэкапов нет — отказ словами.
+ожидание выхода шлюзов на связь. Только сервер AWG: у шлюза своих бэкапов нет,
+бэкап в его чате убирается с объяснением (handlers/gateway/bundle).
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ def looks_like_backup(doc) -> bool:
     return name.endswith(_SUFFIXES)
 
 
-async def offer_restore(message: Message, services, state, *, gateway: bool) -> bool:
+async def offer_restore(message: Message, services, state) -> bool:
     """Скачать, осмотреть, задать вопрос с планом. True — файл принят к
     рассмотрению."""
     doc = message.document
@@ -42,7 +43,7 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
     await forget_secret(message)                       # в копии вся база — в чате ей не место
     await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
                             restore_plan=info["plan"])
-    br = roles.pick(gateway)
+    br = roles.MAIN
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
     # вопрос — живым меню: прежнее гаснет, «Отмена» вернёт на его место главную

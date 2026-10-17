@@ -13,12 +13,13 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.runtime import scheduler as pkg          # подменяемое тестами — через пакет
 
-from .common import MANDATORY, log
+from .common import log
 
 
 def setup_gateway_scheduler(services, bot):
-    """Планировщик роли gateway: тик монитора, задачи канала линка, месячная
-    копия и проверка обновлений — сетевые с джиттером.
+    """Планировщик роли gateway: тик монитора, задачи канала линка и проверка
+    обновлений — сетевые с джиттером. Своих копий у шлюза нет: его настройки —
+    в бэкапе сервера AWG (копия настроек по каналу, linkclient/keep).
 
     Нарочно не переиспользует setup_scheduler: задачи основной роли шлюзу не
     нужны, а «фабрика с ветками по роли» хуже двух честных функций.
@@ -93,32 +94,6 @@ def setup_gateway_scheduler(services, bot):
         id="gw_lan_services", max_instances=1, coalesce=True,
         next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-
-    def _retry_gw_backup():
-        scheduler.add_job(job_gw_backup, "date", run_date=timeutil.shift(timeutil.now(), 3600),
-                          id="gw_backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
-
-    async def job_gw_backup():
-        await pkg.monthly_backup(services, bot, "gw backup", on_undelivered=_retry_gw_backup)
-
-    async def job_gw_backup_catchup():
-        await pkg.monthly_backup(services, bot, "gw backup", catchup=True, on_undelivered=_retry_gw_backup)
-
-    scheduler.add_job(job_gw_backup, pkg.backup_trigger(), id="gw_backup", max_instances=1, **MANDATORY)
-    # E7: догон на старте, как у основного бота — устройство, выключенное 1-го
-    # в 12:00, иначе теряло месячную копию (первый прогон только помечает
-    # месяц, копии не делает). Через минуты, не сразу: линк и почта ещё поднимаются.
-    scheduler.add_job(job_gw_backup_catchup, "date",
-                      run_date=timeutil.shift(timeutil.now(), random.randint(60, 300)),
-                      id="gw_backup_catchup", max_instances=1, **MANDATORY)
-
-    def _gw_backup_hook(_key=None, _val=None):
-        try:
-            scheduler.reschedule_job("gw_backup", trigger=pkg.backup_trigger())
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gw_backup reschedule: %s", e)
-    for key in ("app.scheduler.backup_day", "app.scheduler.backup_hour"):
-        settings.on_change(key, _gw_backup_hook)
 
     pkg.add_update_check(scheduler, services, bot, run_date=timeutil.now(), tag="gw update_check")
     scheduler.start()

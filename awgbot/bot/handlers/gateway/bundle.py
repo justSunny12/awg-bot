@@ -15,16 +15,18 @@ from awgbot.bot.handlers import gateway as pkg       # имена пакета �
 
 @router.message(F.document)
 async def gw_bundle_document(message: Message, services, state: FSMContext):
-    """Конфигурацию агент получает только документом по каналу конфигурации;
-    файл в чате — резервная копия (предложить восстановление), файл
-    конфигурации шлюза — любой: первого применения или шифрованный перевыпуск
-    прежних выпусков, по имени или по началу — один ответ и убрать из чата
-    (внутри ключи), прочие файлы — молча игнорировать: отвечать «не примем»
-    незачем, раз конфигурацию тоже не принимаем (решения пользователя 17.10.2026)."""
+    """Конфигурацию агент получает только документом по каналу конфигурации,
+    своих бэкапов у шлюза нет: бэкап в чате (шлюза прежних версий или сервера)
+    и файл конфигурации шлюза — любой: первого применения или шифрованный
+    перевыпуск прежних выпусков, по имени или по началу — один ответ и убрать
+    из чата (внутри ключи), прочие файлы — молча игнорировать: отвечать «не
+    примем» незачем, раз конфигурацию тоже не принимаем (решения пользователя
+    17.10.2026)."""
     doc = message.document
     from awgbot.bot.handlers import restore as rs
-    if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
-        await rs.offer_restore(message, services, state, gateway=True)
+    if rs.looks_like_backup(doc):                     # бэкап: не скачиваем, не осматриваем
+        await forget_secret(message)
+        await message.answer(texts.GW_OLD_BACKUP_REFUSED)
         return
     name = (getattr(doc, "file_name", "") or "").lower()
     if name.startswith("awg-gw-bundle") and name.endswith(".sh"):

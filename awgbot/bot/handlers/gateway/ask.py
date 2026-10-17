@@ -52,7 +52,7 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     своё» (памятка по отпечатку серверного значения) / «✅ Принять».
     Итог — правкой сообщения; ответ серверу — сразу или из очереди; следующее
     в очереди — новым меню."""
-    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "backup", "keep", "keep_dev") else ""
+    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "keep", "keep_dev") else ""
     accept = callback_data.action == "cfg_ok!"
     if not section:
         await cb.answer(ui.toast("Кнопка устарела — открой раздел заново"))

@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 
 from awgbot.bot.handlers import gateway as gateway_handlers
-from awgbot.bot.handlers import restore as restore_handlers
 from awgbot.bot.callbacks import GwCB, HideCB
 from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway import GwCheck, GwStatus
@@ -82,10 +81,6 @@ async def _restart_panel(services, bot):
 async def _update_result(services, bot):
     from awgbot.runtime import main
     await main.report_update_result(bot, services)
-
-
-async def _restore_result(services, bot):
-    await restore_handlers.report_restore_result(bot, services)
 
 
 async def _rebooted(services, bot):
@@ -210,8 +205,6 @@ EVENTS = [
           update_wait=True, title="обновление применилось: «дождись» убрано, итог со списком изменений"),
     _shot("gw.event.update_failed", call=("report_update_result", _update_result), update_pending="v1.2.4",
           update_wait=True, title="обновление не применилось"),
-    _shot("gw.event.restored", call=("report_restore_result", _restore_result),
-          restore_done={"created_at": "2026-09-14T03:00:00+05:00"}, title="восстановлено из копии"),
     _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="шлюз перезагрузился — бот снова на связи"),
     _shot("gw.event.zone_adopted", call=("_announce_zone", _zone_adopted),
           title="первый старт после обновления: ключ пояса снят — время в поясе шлюза"),

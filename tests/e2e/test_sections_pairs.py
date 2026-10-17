@@ -4,13 +4,13 @@
 исполняется общим диспетчером (sections.handle); ввод — общим ядром
 диалогов (settingscore.receive_value) с крючками роли.
 
-Пары: канал бэкапа с проверкой ящика и шифрования, неизвестный ключ цикла,
-день и час бэкапа одним вводом, проверка обновлений при открытии, тумблер и
+Пары: неизвестный ключ цикла, проверка обновлений при открытии, тумблер и
 расписание без сети, «никогда» → «месяц», порог простоя с множителем роли.
+«💾 Бэкапы» — только у сервера AWG (у шлюза своих копий нет): канал бэкапа
+с проверкой ящика и шифрования и день и час одним вводом — его тесты.
 
 Цена ошибки: раздел, который у одной роли ведёт себя иначе, чем у другой,
-— это ровно то, что общий слой должен был убрать: у агента почтовый канал
-бэкапа без шифрования отправил бы ключи линка открытым письмом, порог линка
+— это ровно то, что общий слой должен был убрать: порог линка
 в минутах, записанный в секундный ключ, поднимает «линк мёртв» через 5
 секунд тишины, а «никогда» из старого конфига глушит строку «⬆️ Доступна vX»
 навсегда.
@@ -46,6 +46,13 @@ def env(request, monkeypatch, tmp_path):
     d.init_schema()
     yield types.SimpleNamespace(br=roles.GATEWAY, services=GatewayServices(d))
     d.close()
+
+
+@pytest.fixture()
+def main_env(monkeypatch, services):
+    """Только сервер AWG: «💾 Бэкапы» есть лишь у него."""
+    monkeypatch.setattr(config, "ROLE", "client")
+    return types.SimpleNamespace(br=roles.MAIN, services=services)
 
 
 @pytest.fixture()
@@ -93,18 +100,26 @@ def _button(markup, label):
 
 # ── 💾 бэкапы ────────────────────────────────────────────────────────────────
 
-async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot, store):
-    """«📨 Куда» — цикл Telegram ↔ E-mail: без ящика — экран «почта не
-    настроена» с возвратом в «Бэкапы», без шифрования — alert со словами
-    роли (что в копии); прошло — записано, раздел перерисован, всплывашка с
-    новым значением; обратно — Telegram."""
+async def test_the_agent_has_no_backup_section(env):
+    """У шлюза своих копий нет: раздела нет в корне, его кнопки и ключи
+    общим разделам роли не достаются."""
+    available = sections.available(env.br, "backup")
+    assert available == (env.br is roles.MAIN)
+    packed = sections.resolve(env.br, env.br.cb.pack("backup", "toggle", "app.scheduler.backup_enabled").pack())
+    assert (packed is not None) == available
+
+
+async def test_backup_channel_cycle_checks_mailbox_and_encryption(main_env, fake_bot, store):
+    """«📨 Куда» — цикл Telegram ↔ E-mail: без фразы канала нет вовсе (одна
+    «🔐 Шифрование»); без ящика — экран «почта не настроена» с возвратом в
+    «Бэкапы»; прошло — записано, раздел перерисован, всплывашка с новым
+    значением; обратно — Telegram."""
+    env = main_env
     key = "app.scheduler.backup_channel"
     store.update({"app.scheduler.backup_enabled": True, key: "telegram"})
-    if env.br.has.backup_gateways:
-        # сервер AWG без фразы держит одну «🔐 Шифрование»: канала нет вовсе
-        _, markup = await sections.screen("backup", env.br, env.services)
-        assert [b for r in _rows(markup) for b in r][0] == "🔐 Шифрование" and len(_rows(markup)) == 2
-        env.services.backup_set_passphrase("correct horse battery")
+    _, markup = await sections.screen("backup", env.br, env.services)
+    assert [b for r in _rows(markup) for b in r][0] == "🔐 Шифрование" and len(_rows(markup)) == 2
+    env.services.backup_set_passphrase("correct horse battery")
     _, markup = await sections.screen("backup", env.br, env.services)
     cyc = _button(markup, "📨 Куда: Telegram").callback_data
     assert sections.resolve(env.br, cyc) == ("backup", "cycle", key, "")
@@ -113,10 +128,6 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot,
     assert store[key] == "telegram" and text == texts.email_not_configured("backup")
     assert offer.inline_keyboard[0][0].callback_data == env.br.cb.pack("backup").pack(), "отказ увёл не в «Бэкапы»"
     env.services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    if not env.br.has.backup_gateways:
-        cb, nav = await _press(env, fake_bot, cyc)
-        assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(env.br), True)], cb.answers
-        env.services.backup_set_passphrase("correct horse battery")
     cb, nav = await _press(env, fake_bot, cyc)
     assert store[key] == "email" and cb.answers[-1] == ("Куда: E-mail", False), cb.answers
     text, markup = _last_edit(nav)
@@ -125,14 +136,14 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(env, fake_bot,
     assert store[key] == "telegram" and cb.answers[-1] == ("Куда: Telegram", False)
 
 
-async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
+async def test_backup_day_and_hour_in_one_input(main_env, fake_bot, store):
     """«✏️ 1-е, 12:00» → одно приглашение «день и час»; «31 12» — переспрос
     без записи; «5 9» — записано, итог первой строкой раздела, расписание и
     кнопка — новые, ввод закрыт."""
+    env = main_env
     store.update({"app.scheduler.backup_enabled": True, "app.scheduler.backup_day": 1,
                   "app.scheduler.backup_hour": 12})
-    if env.br.has.backup_gateways:
-        env.services.backup_set_passphrase("correct horse battery")   # без фразы расписания нет
+    env.services.backup_set_passphrase("correct horse battery")   # без фразы расписания нет
     _, markup = await sections.screen("backup", env.br, env.services)
     when = _button(markup, "✏️ 1-е, 12:00").callback_data
     assert sections.resolve(env.br, when) == ("backup", "edit", "backup_when", "")
@@ -151,10 +162,7 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     lines = answers[0][1].split("\n")
     assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00 (UTC+5)", lines
     assert lines[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
-    if env.br.has.backup_encrypted_only and not env.br.has.backup_gateways:   # агент без фразы: вместо расписания — предупреждение
-        assert texts.BACKUP_NO_KEY_LINE in lines, lines
-    else:
-        assert "Каждое 5-е число в 09:00 (UTC+5) → в этот чат" in lines
+    assert "Каждое 5-е число в 09:00 (UTC+5) → в этот чат" in lines
     assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
     assert await st.get_state() is None
 

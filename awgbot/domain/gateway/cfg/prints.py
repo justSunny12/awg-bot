@@ -69,16 +69,6 @@ class CfgPrintsMixin:
                     out[key] = val
         return out
 
-    def cfg_backup_print(self) -> str:
-        """Фраза — отпечаток фразы; случайный ключ прежней схемы — отпечаток в
-        своём домене (не заглушка: шифрование задано, оно своё); ничего — пусто."""
-        mode = self.backup_encryption_mode()
-        if mode == "passphrase":
-            return gwcfg.backup_print(self.db.get_state(self._BK_PASSPHRASE_KEY) or "")
-        if mode == "key":
-            return gwcfg.backup_key_print(self.db.get_state(self._BK_KEY_KEY) or "")
-        return ""
-
     def cfg_mail_print(self) -> str:
         acc = self.email_account()
         if acc is None:
@@ -95,7 +85,6 @@ class CfgPrintsMixin:
             "link": gwcfg.link_print(self.cfg_link_text()),
             "uplink": self.cfg_uplink_print(cached=True),   # без команд: снимок только из локального
             "mail": self.cfg_mail_print(),
-            "backup": self.cfg_backup_print(),
             "token": self.cfg_token_print(),              # отпечаток, не сам токен
             "server": gwcfg.server_print(self.db.get_state(self._SERVER_NAME_KEY) or ""),
         }

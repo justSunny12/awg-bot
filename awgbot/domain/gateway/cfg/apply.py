@@ -67,40 +67,33 @@ class CfgApplyMixin:
                 failed["link"] = res["error"]
             notes.append(f"⚠️ Сервер AWG прислал конфигурацию шлюза ({self._cfg_names(res['changed'])}), "
                          f"но она не применилась: {html.escape(res['error'], quote=False)}. Вернул прежнюю")
-        # 3–4. почта и фраза — молча или вопрос
-        self.cfg_note_mail_hint(checked.get("mail"))
-        for section in ("mail", "backup"):
-            if section not in checked:
-                self.cfg_release(section)                 # раздела у сервера больше нет — вопрос потерял смысл
-                continue
-            value = checked[section]
-            verdict, server_print = self.cfg_decide(section, value)
+        # 3. почта — молча или вопрос
+        if "mail" not in checked:
+            self.cfg_release("mail")                      # раздела у сервера больше нет — вопрос потерял смысл
+        else:
+            value = checked["mail"]
+            verdict, server_print = self.cfg_decide("mail", value)
             if verdict != "ask":
-                self.cfg_release(section)                 # совпало, применяется молча или отклонено ранее
+                self.cfg_release("mail")                  # совпало, применяется молча или отклонено ранее
             if verdict == "apply":
                 try:
-                    note = self.cfg_apply_mail(value) if section == "mail" else self.cfg_apply_backup(value)
+                    note = self.cfg_apply_mail(value)
                 except (ValueError, OSError) as e:
-                    failed[section] = str(e)
-                    continue
-                applied.append(section)
-                changed.append(section)
-                notes += self._cfg_mail_lines(note) if section == "mail" else [
-                    "🔐 Ключевая фраза бэкапов с сервера AWG принята — новые копии шлюза шифруются ею"]
+                    failed["mail"] = str(e)
+                else:
+                    applied.append("mail")
+                    changed.append("mail")
+                    notes += self._cfg_mail_lines(note)
             elif verdict == "same":
-                applied.append(section)
+                applied.append("mail")
             elif verdict == "declined":
-                declined[section] = server_print
+                declined["mail"] = server_print
             else:
-                held = self.cfg_wait().get(section)
-                self.cfg_hold(section, value, server_print, gen, digest)
-                wait[section] = server_print
+                held = self.cfg_wait().get("mail")
+                self.cfg_hold("mail", value, server_print, gen, digest)
+                wait["mail"] = server_print
                 if not held or held.get("server") != server_print:
-                    asks.append(section)
-        # бэкапы вслед за сервером — когда почта и фраза уже на месте (обе пришли
-        # одним документом или подсказка сменилась при том же ящике)
-        if self.cfg_follow_backup_hint():
-            notes.append("💾 Бэкапы теперь уходят на почту")
+                    asks.append("mail")
         retry = False
         # 5. токен бота — только тот же бот; перезапуск агента — после ответа
         # серверу (клиент канала), иначе ответ ушёл бы в никуда
@@ -190,8 +183,6 @@ class CfgApplyMixin:
         else:
             from awgbot.domain.notices.gateway import mail_why, MAIL_FIX_TAIL
             lines = [f"⚠️ Почта с сервера AWG принята, но не работает: {mail_why(note.get('why') or '')}. {MAIL_FIX_TAIL}"]
-        if note.get("backup"):
-            lines.append("💾 Бэкапы теперь уходят на почту")
         return lines
 
     # ── очередь ответа: линк перезапускался, сессия умерла ───────────────────

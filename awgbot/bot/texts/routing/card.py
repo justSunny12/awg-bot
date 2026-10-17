@@ -112,9 +112,8 @@ def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
         warns.append(f"⏳ Конфиг аплинка ждёт подтверждения в чате бота шлюза{fp}")
     elif "uplink" in (cfg.get("declined") or []):
         warns.append("⚠️ Шлюз отклонил новый конфиг аплинка — аплинк прежний")
-    wait_text = {"mail": "⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик",
-                 "backup": "⏳ Ключевая фраза бэкапов ждёт решения в чате бота шлюза: на шлюзе своя"}
-    warns += [wait_text[s] for s in cfg.get("wait") or [] if s in wait_text]
+    if "mail" in (cfg.get("wait") or []):
+        warns.append("⏳ Почта ждёт решения в чате бота шлюза: на шлюзе свой ящик")
     return warns
 
 
@@ -126,13 +125,8 @@ def cfg_more_lines(cfg: dict) -> list[str]:
             out.append(f"конфигурация №{int(cfg['gen'])} применена {timeutil.fmt_dt_ui(timeutil.parse_iso(cfg['applied_at']))}")
         except ValueError:
             pass
-    declined = set(cfg.get("declined") or [])
-    if {"mail", "backup"} <= declined:
-        out.append("почта и ключевая фраза бэкапов на шлюзе свои — так решено в чате бота шлюза")
-    elif "mail" in declined:
+    if "mail" in set(cfg.get("declined") or []):
         out.append("почта на шлюзе своя — так решено в чате бота шлюза")
-    elif "backup" in declined:
-        out.append("ключевая фраза бэкапов на шлюзе своя — так решено в чате бота шлюза")
     return out
 
 

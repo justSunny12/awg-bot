@@ -1,12 +1,14 @@
-"""bundle.py — часть пакета gateway (см. __init__): файлы в чате агента, восстановление, перезагрузка."""
+"""bundle.py — часть пакета gateway (см. __init__): файлы в чате агента, перезагрузка."""
 from __future__ import annotations
 
 from awgbot.bot import ui
 from ..fmt import _e
 
 
-GW_BACKUP_NO_KEY = ("💾 Бэкап шлюза — только шифрованный: в копии приватные ключи линка и туннеля. "
-                    "Задай фразу в «🔐 Шифрование»")
+# Бэкап в чате агента — любой (шлюза прежних версий или сервера): своих копий у
+# шлюза нет, настройки едут с сервера AWG по каналу конфигурации
+GW_OLD_BACKUP_REFUSED = ("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся в бэкапе сервера AWG, "
+                         "а новое устройство получает их по каналу конфигурации. Файл убран из чата — в нём ключи")
 
 
 def host_rebooted(hostname: str, who: str) -> str:
@@ -43,5 +45,5 @@ REASSERT_FAIL_HINT = "Причина — в «🩺 Здоровье»; повт�
 
 
 __all__ = [
-    "GW_BACKUP_NO_KEY", "host_rebooted", "gw_confirm_reassert",
+    "GW_OLD_BACKUP_REFUSED", "host_rebooted", "gw_confirm_reassert",
     "GW_REISSUE_FILE_REFUSED", "gateway_op_result", "REASSERT_FAIL_HINT"]
