@@ -84,6 +84,7 @@ class _Host:
     hold: bool = False                                     # окно ожидания после старта: role ещё не было
     muted: bool = False
     cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail | backup, по порядку
+    keep_ask: dict | None = None                           # висящий вопрос о настройках с сервера (keep_back)
     rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
     uplink_mine: str = "f00d" * 4                          # отпечаток стоящего аплинка (свой, не серверный)
     uplink_after: str = ""                                 # аплинк поправили руками, пока висит вопрос
@@ -402,6 +403,9 @@ def _agent(**opts):
                 value = {"phrase": "DUMMY-server-phrase"}
                 server_print = gwcfg.backup_print(value["phrase"])
             services.cfg_hold(section, value, server_print, 18, "9c41" * 4)
+        if h.keep_ask:
+            import json
+            services.db.set_state(services._KEEP_ASK_KEY, json.dumps(h.keep_ask, ensure_ascii=False))
         if h.uplink_after:
             h.uplink_mine = h.uplink_after
         if h.update_pending:

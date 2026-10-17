@@ -36,6 +36,19 @@ def _own_old_agent(services, mp):
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
 
 
+def _keep(asked: str = ""):
+    """Агент 3.4.0 на связи прислал копию настроек; asked — сервер вернул блок
+    вопросом и ждёт ответа в чате бота шлюза."""
+    def step(services, mp):
+        import json
+        services.gwlink_session_opened(2, "3.4.0", 2, ("cfg1", "keep1"))
+        block = {"v": 1, "hash": "ab12" * 4, "at": "2026-09-14T15:40:00+05:00", "items": {}}
+        if asked:
+            block["asked"] = asked
+        services.db.set_state("gwkeep_2", json.dumps(block))
+    return step
+
+
 def _same_lan(services, mp):
     services.db.gateway_update(2, lan_subnets=[LAN1])
 
@@ -106,6 +119,8 @@ def _smb_ack(ok: bool = True, error: str = ""):
 
 
 CARDS = [
+    _card(2, _gw(2, _keep()), "копия настроек бота шлюза в бэкапе — на дату", "adm.gw.card.keep"),
+    _card(2, _gw(2, _keep("device")), "копия настроек ждёт решения в чате бота шлюза", "adm.gw.card.keep.asked"),
     # ── свои списки в карточке слота ─────────────────────────────────────
     _card(2, _gw(2, _own_sent, lan2=True), "свои списки: канон уходит на шлюз (домены — только числом)",
           "adm.gw.card.own.pending"),

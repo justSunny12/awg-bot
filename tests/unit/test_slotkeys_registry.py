@@ -29,8 +29,8 @@ SERVICES = REPO / "awgbot" / "domain" / "services"
 SCANNED = ("gwchannel", "gateway_link", "routing")
 
 # в реестре, но в коде пакетов не встречаются: ключи доставки, снятой в 3.3.1
-# (лежат у слотов, заведённых раньше), и копия настроек шлюза (пишет её канал)
-NOT_IN_CODE = {"gwlink_ack", "gwlink_applied", "gwkeep"}
+# (лежат у слотов, заведённых раньше)
+NOT_IN_CODE = {"gwlink_ack", "gwlink_applied"}
 
 _SLOT_NAMES = {"slot_id", "sid", "slot", "k"}
 _STATE_CALLS = {"get_state", "set_state", "get_state_json", "set_state_json"}

@@ -4,7 +4,8 @@ session — подключение и hello; outbox — отправка; feeds 
 документ конфигурации и cfg_ack (новый токен бота — перезапуск агента после ответа);
 dispatch — разбор входящих; rekey — смена ключей линка: приглашение, переключение,
 частый такт перехода; uplink — такт аплинка: откат прерванной транзакции и
-аварийное правило).
+аварийное правило; keep — копия настроек шлюза для бэкапа сервера: ответы на
+hello и свой блок `keep`).
 
 Коннект устанавливает ТОЛЬКО шлюз: на нём не появляется ни одного слушающего
 сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
@@ -50,8 +51,10 @@ dispatch — разбор входящих; rekey — смена ключей л
 `link_done` (часть `rekey`). В обратную сторону, кроме снимка и ответов, —
 свои SMB-серверы (`svc`), правки своих списков (`own_ev`: после кнопки в чате
 сразу, `own_changed`; правки мимо агента находит сверка файлов на тике
-монитора, `own_tick`) и «установлен» в первый час после установки
-(`installed`).
+монитора, `own_tick`), «установлен» в первый час после установки
+(`installed`) и копию своих настроек (`keep`: с keep1 сервер отвечает на hello
+`keep_ok`, `keep_none` или `keep_back` — блок для новой установки или после
+восстановления сервера; своё агент шлёт только после этого ответа).
 Неизвестный вид пропускается с записью в журнал: новый ВПС со старым агентом
 не рвёт сессию.
 Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
@@ -79,6 +82,7 @@ from .feeds import FeedsMixin
 from .dispatch import DispatchMixin
 from .rekey import RekeyMixin
 from .uplink import UplinkMixin
+from .keep import KeepMixin
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +122,7 @@ def server_address() -> str:
 
 
 
-class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin):
+class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin, KeepMixin):
     """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
 
 
@@ -239,7 +243,8 @@ async def on_tick(services) -> None:
                 return
             client._wake.set()                            # бэкофф спит — будим, шаг с нуля
     await client.push()
-    for step in (client.retry_peer_services, client.own_tick, client.rekey_tick_monitor, client.uplink_tick):
+    for step in (client.retry_peer_services, client.own_tick, client.rekey_tick_monitor, client.uplink_tick,
+                 client.keep_tick):
         try:
             await step()
         except Exception as e:                            # noqa: BLE001
@@ -328,7 +333,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
+           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 
@@ -352,3 +357,15 @@ async def report_rekey_answer(services, accept: bool) -> dict | None:
         await _client.send_rekey_answer(reply)
     return reply
 
+
+
+async def report_keep_answer(services, accept: bool) -> dict:
+    """Человек ответил на вопрос о настройках из бэкапа: применить (или нет) и
+    отправить серверу свой блок — сразу, если сессия открыта; иначе при
+    следующей (сервер, получив прежний отпечаток, спросит; на тот же блок агент
+    ответит своим без вопроса)."""
+    res = await asyncio.to_thread(services.keep_answer, accept)
+    if res.get("ok") and _client is not None and _client._writer is not None:
+        _client._keep_ready = True
+        await _client.keep_push(force=True)
+    return res

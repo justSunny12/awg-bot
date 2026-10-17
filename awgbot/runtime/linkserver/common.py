@@ -15,8 +15,9 @@ DEFAULT_PORT = gwlink.DEFAULT_PORT
 # Возможности сервера — уходят агенту первым сообщением (`role`): по ним он
 # понимает, что сервер пришлёт сам. Пустой список — сервер прежних версий.
 # cfg1 — документ cfg / cfg_ack; confirm1 — подтверждение в чате (ключи линка,
-# аплинк); token1 — раздел token (токен бота шлюза)
-SERVER_CAPS: tuple[str, ...] = ("cfg1", "confirm1", "token1")
+# аплинк); token1 — раздел token (токен бота шлюза); keep1 — копия настроек
+# шлюза (keep / keep_ok / keep_back / keep_none)
+SERVER_CAPS: tuple[str, ...] = ("cfg1", "confirm1", "token1", "keep1")
 
 class _Session:
     """Всё, что живёт ровно одну сессию слота. Одно место сброса вместо шести

@@ -44,7 +44,32 @@ def _withdraw(kind: str):
     return run
 
 
+def _keep(why: str, *, other: bool = False) -> dict:
+    """keep_back с сервера ждёт решения: тихие часы и порог температуры в блоке другие."""
+    return {"why": why, "other": other, "from": "2026-10-05T14:00:00+03:00", "at": "2026-10-04T21:10:00+03:00",
+            "hash": "ab12" * 4, "items": {"conf": {"quiet_hours.quiet_hours_start": 21,
+                                                   "app.gateway.temp_alert_c": 68}, "fw": {}, "mail": None}}
+
+
+_ASK = [GwCB(action="panel"), GwCB(action="cfg_ask")]
+
 DOCUMENT = [
+    # ── настройки шлюза с сервера AWG: после восстановления и для нового устройства ─
+    _shot("gw.cfg.ask.keep", press=_ASK, tick=_status(), keep_ask=_keep("restore"),
+          title="вопрос: сервер AWG восстановлен из бэкапа, настройки этого шлюза в нём другие"),
+    _shot("gw.cfg.ask.keep.other", press=_ASK, tick=_status(), keep_ask=_keep("restore", other=True),
+          title="вопрос: восстановлен из бэкапа, тогда в слоте было другое устройство"),
+    _shot("gw.cfg.ask.keep.device", press=_ASK, tick=_status(), keep_ask=_keep("device"),
+          title="вопрос: новое устройство в слоте — настройки прежнего"),
+    _shot("gw.cfg.keep.restore.yes", press=_ASK + [GwCB(action="cfg_ok!", val="keep")], tick=_status(),
+          keep_ask=_keep("restore"), title="«↩️ Вернуть из бэкапа»: итог правкой, панель следом"),
+    _shot("gw.cfg.keep.device.yes", press=_ASK + [GwCB(action="cfg_ok!", val="keep_dev")], tick=_status(),
+          keep_ask=_keep("device"), title="«↩️ Перенести настройки»: итог"),
+    _shot("gw.cfg.keep.no", press=_ASK + [GwCB(action="cfg_no", val="keep")], tick=_status(),
+          keep_ask=_keep("restore"), title="«⬅️ Оставить текущие»: итог"),
+    _shot("gw.cfg.pending.keep", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail",),
+          keep_ask=_keep("device"), title="панель: «⏳ Ждут решения: почта, настройки прежнего устройства»"),
+
     # ── документ с сервера AWG: вопросы о почте и фразе ─────────────────────
     _shot("gw.cfg.pending", press=[GwCB(action="panel")], tick=_status(), mail=True, cfg_ask=("mail", "backup"),
           passphrase=True, title="панель: «⏳ Ждут решения: почта, ключевая фраза бэкапов» и кнопка «⏳ Ответить (2)»"),

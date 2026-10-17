@@ -337,6 +337,9 @@ class SlotsMixin:
         st["services"] = self.gwlink_services_card(st["gateway"])
         st["own_lists"] = self.gwlink_own_card(st["gateway"])
         st["rekey"] = self.gateway_rekey(int(slot_id))   # смена ключей линка: строка карточки и кнопка
+        if hasattr(self, "gwkeep_card"):
+            # копия настроек шлюза для бэкапа: на дату, ждёт решения, агент не умеет
+            st["keep"] = self.gwkeep_card(int(slot_id), online=bool(self.gwlink_session(int(slot_id))))
         return st
 
     def gateway_uplink_conf(self, dev) -> str:

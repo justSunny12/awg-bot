@@ -64,6 +64,18 @@ class InboundMixin:
             if hasattr(self.services, "restore_wait_hello"):
                 # после восстановления ждали именно этого факта
                 await self.notes(await asyncio.to_thread(self.services.restore_wait_hello, gw.id))
+            if "keep1" in sess.caps:
+                # копия настроек шлюза — до документа: своя почта шлюза ложится
+                # раньше раздела mail, и тот видит памятку
+                reply, body = await asyncio.to_thread(
+                    self.services.gwkeep_hello, gw.id, str(msg.get("keep_hash") or ""),
+                    bool(msg.get("keep_new")), bool(msg.get("keep_fresh")))
+                if reply == "keep_back":
+                    await self.send(gw.id, "keep_back", body)
+                elif reply == "keep_none":
+                    await self.send(gw.id, "keep_none", body)
+                else:
+                    await self.send(gw.id, "keep_ok", body)
             await self.deliver_lists(gw.id)
             await self.deliver_peer_services(gw.id)
             await self.deliver_own(gw.id)
@@ -124,6 +136,10 @@ class InboundMixin:
                 await self.deliver_peer_services(gw.id)
                 sess.own_sent = None
                 await self.deliver_own(gw.id)
+            return
+        if kind == "keep":
+            digest = await asyncio.to_thread(self.services.gwkeep_in, gw.id, msg)
+            await self.send(gw.id, "keep_ok", {"hash": digest})
             return
         if kind == "claim":
             token = str(msg.get("token") or "")[:4096]

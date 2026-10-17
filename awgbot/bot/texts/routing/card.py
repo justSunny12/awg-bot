@@ -252,6 +252,23 @@ def lan_space_lines(info: dict | None) -> list[str]:
     return out
 
 
+def keep_line(keep: dict | None) -> str:
+    """Копия настроек бота шлюза в бэкапе сервера: на дату, ждёт решения в
+    чате шлюза, агент её не присылает (на связи и без keep1)."""
+    keep = keep or {}
+    if keep.get("state") == "outdated":
+        return "⚠️ Настройки бота шлюза не сохраняются в бэкап: агент шлюза старше 3.4.0 — обнови его"
+    if keep.get("state") == "asked":
+        return "⏳ Настройки бота шлюза из бэкапа ждут решения в чате бота шлюза"
+    if keep.get("state") == "saved":
+        try:
+            when = timeutil.fmt_dt_ui(timeutil.parse_iso(keep["at"]), year=True)
+        except (ValueError, KeyError, TypeError):
+            return ""
+        return f"💾 Настройки бота шлюза в бэкапе: на {when}"
+    return ""
+
+
 def gateway_card_text(state: dict, states: list) -> str:
     """Карточка слота: заголовок со значком («⭐» у предпочтительного, «🛰» у
     остальных), линк, адрес и трафик, канал конфигурации, подсети и VPN-транзит,
@@ -283,6 +300,9 @@ def gateway_card_text(state: dict, states: list) -> str:
         ver = _ver(_e(str(ch.get("agent") or "?")[:32])) if ch.get("has_snap") else ""
         lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: настройки по каналу конфигурации не принимает — "
                      "обнови агента шлюза")
+    keep = keep_line(state.get("keep"))
+    if keep and not ch.get("outdated"):
+        lines.append(keep)
     rk = state.get("rekey") or {}
     if rk.get("state") in ("staged", "asked"):
         fp = f" · отпечаток <code>{_e(rk['fp'])}</code>" if rk.get("fp") else ""

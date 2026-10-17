@@ -117,6 +117,8 @@ def test_no_side_parses_a_kind_nobody_sends():
 # добивка — та же, что у отправителя. Отпечаток считается от строки целиком,
 # с переводом строки.
 
+_KEEP_ITEMS = {"conf": {"quiet_hours.quiet_hours_enabled": True}, "fw": {"SSH_FILTER": "1"}, "mail": None}
+
 _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "ask": ({"what": "snap"}, gwlink.PAD_DELTA,
             "379e649f69e82043c3c3d0db258bd3fc7460e19d6c79a5b8096bb35eeaf331cc"),
@@ -137,6 +139,11 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
                    "fp": "ab12 cd34"}, gwlink.PAD_SNAP, "15f5775e30a55a37fe891444d779f82ad30ff4e8150a877c8def3c09801d2f99"),
     "link_go": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "45bc646bb865fcf1b4231e575c066573073ac6228cc1fa0ade758184c99a4d80"),
     "link_cancel": ({"id": "a1b2c3d4e5f6"}, gwlink.PAD_DELTA, "51024cb9d3a4c07b6189ecada0bc9e763b69653501cc51019bbfcb4f85578153"),
+    "keep_ok": ({"hash": "ab12" * 4}, gwlink.PAD_DELTA, "6d3974b76f0f4aa9c070d6489982d9a3972cc5eac983b55150a04f06b2504735"),
+    "keep_none": ({}, gwlink.PAD_DELTA, "be36fce9b1542870d397c738459f445703c95b30269e11f2a508d83292d3e81c"),
+    "keep_back": ({"why": "device", "from": "2026-10-12T08:40:00+03:00", "at": "2026-10-12T08:40:00+03:00",
+                   "hash": "ab12" * 4, "items": _KEEP_ITEMS, "traffic": {"month": "2026-10", "rx": 10, "tx": 20}},
+                  gwlink.PAD_DELTA, "2eea1716541cfd278b9fe3b46632fbc3b403f42e17fd21d21e323dcd9ceef77e"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
@@ -155,6 +162,9 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "link_ack": ({"id": "a1b2c3d4e5f6", "state": "ready", "error": ""}, gwlink.PAD_DELTA, "5470dfb609542e23645daa1d31040b8042e04a5bccc5e2fd4b390609b7742b57"),
     "link_done": ({"id": "a1b2c3d4e5f6", "ok": True, "keys": "new"}, gwlink.PAD_DELTA, "d8f443962ff9fe6133b81c9fc175597be909763e94be6a78254f58a5c2b7d7a9"),
     "peer_svc_ack": ({"ok": True, "hash": "cd" * 32, "n": 1, "error": ""}, gwlink.PAD_DELTA, "dc96a6446ba8e581278e95a66b06626191ca47f4e24a4b14d8b5349a47158137"),
+    "keep": ({"v": 1, "hash": "ab12" * 4, "at": "2026-10-12T08:40:00+03:00", "items": _KEEP_ITEMS,
+              "traffic": {"month": "2026-10", "rx": 10, "tx": 20}}, gwlink.PAD_DELTA,
+             "2b0dc7f7b047b2d31cb441cae22f111dcfe9f7e7dbea6c449c80316e51d663bd"),
 }
 
 

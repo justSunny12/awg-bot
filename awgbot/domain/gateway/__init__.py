@@ -42,6 +42,7 @@ from .peersvc import PeerServicesMixin
 from .bundle import BundleMixin
 from .egress import EgressMixin
 from .cfg import CfgMixin
+from .keep import KeepMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
 from awgbot.domain.backup import BackupMixin
 from awgbot.domain.mailmix import MailMixin
@@ -50,7 +51,7 @@ from awgbot.domain.gwssh import GwSshMixin
 
 class GatewayServices(SelfUpdateMixin, BackupMixin, MailMixin, GwSshMixin,
                       LinkMixin, MonitorMixin, TgMarkMixin, TransitMixin, ReportMixin,
-                      OwnListsMixin, PeerServicesMixin, BundleMixin, EgressMixin, CfgMixin):
+                      OwnListsMixin, PeerServicesMixin, BundleMixin, EgressMixin, CfgMixin, KeepMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""

@@ -82,15 +82,18 @@ def _slot_devices(con, slot: int, schema: str = "main") -> list[int]:
     return out
 
 
-def _keep_offer(copy_raw, cur_raw):
-    """gwkeep из бэкапа с пометкой offer; поле traffic — текущее."""
+def _keep_offer(copy_raw, cur_raw, created_at: str = ""):
+    """gwkeep из бэкапа с пометкой offer (и датой бэкапа — для вопроса в чате
+    шлюза); поле traffic — текущее."""
     try:
         keep = json.loads(copy_raw) if copy_raw else None
     except ValueError:
         keep = None
     if not isinstance(keep, dict):
         return None
+    keep.pop("asked", None)
     keep["offer"] = "restore"
+    keep["offer_from"] = str(created_at or "")
     try:
         cur = json.loads(cur_raw) if cur_raw else None
     except ValueError:
@@ -102,14 +105,14 @@ def _keep_offer(copy_raw, cur_raw):
     return json.dumps(keep, ensure_ascii=False)
 
 
-def _offer_keys(con, slots, *, copy_schema: str, cur_schema: str | None) -> None:
+def _offer_keys(con, slots, *, copy_schema: str, cur_schema: str | None, created_at: str = "") -> None:
     """Ключи слота с пометкой OFFER — из бэкапа (с offer). В бэкапе ключа нет
     (слот добавлен позже, агент старше) — остаётся текущий."""
     for n in slots:
         for name in slotkeys.names(merge=slotkeys.OFFER):
             key = slotkeys.key(name, n)
             cur_raw = _state_get(con, key, cur_schema) if cur_schema else None
-            offered = _keep_offer(_state_get(con, key, copy_schema), cur_raw)
+            offered = _keep_offer(_state_get(con, key, copy_schema), cur_raw, created_at)
             _state_put(con, key, offered if offered is not None else cur_raw)
 
 
@@ -146,7 +149,7 @@ def merge_same(result: str, copy_db: str, cur_db: str, p) -> None:
             _state_put(con, key, _state_get(con, key, "cp"))
         for key in STATE_RESET:
             _state_put(con, key, None)
-        _offer_keys(con, p.current_slots(), copy_schema="cp", cur_schema="main")
+        _offer_keys(con, p.current_slots(), copy_schema="cp", cur_schema="main", created_at=p.created_at)
         con.commit()
         con.execute("DETACH DATABASE cp")
     finally:
@@ -268,13 +271,13 @@ def merge_other(result: str, copy_db: str, cur_db: str | None, p) -> list[dict]:
                     _state_put(con, k, v)
             con.commit()
             con.execute("ATTACH DATABASE ? AS cur", (cur_db,))
-            _offer_keys(con, live, copy_schema="main", cur_schema="cur")
+            _offer_keys(con, live, copy_schema="main", cur_schema="cur", created_at=p.created_at)
             con.commit()
             con.execute("DETACH DATABASE cur")
             rest = [s.slot for s in p.slots if s.case == _plan.C_RESTORED]
         else:
             rest = [s.slot for s in p.slots if s.case != _plan.C_REMOVED]
-        _offer_keys(con, rest, copy_schema="main", cur_schema=None)
+        _offer_keys(con, rest, copy_schema="main", cur_schema=None, created_at=p.created_at)
         con.commit()
     finally:
         con.close()

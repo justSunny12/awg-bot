@@ -23,3 +23,15 @@ def mail_why(why: str) -> str:
 
 
 MAIL_FIX_TAIL = "Проверь логин и пароль в «✉️ E-mail» в боте сервера AWG"
+
+
+def keep_received(groups: list[str], at_iso: str) -> str:
+    """Переустановка того же устройства: настройки шлюза из копии на сервере
+    AWG применены молча — что именно и на какую дату."""
+    from awgbot.util import timeutil
+    try:
+        when = timeutil.fmt_dt_ui(timeutil.parse_iso(at_iso), year=True)
+    except (ValueError, TypeError):
+        when = "?"
+    what = ", ".join(groups) if groups else "настройки бота шлюза"
+    return f"💾 Настройки шлюза получены с сервера AWG: {_e(what)} — как на {when}"

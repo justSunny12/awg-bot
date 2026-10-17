@@ -33,7 +33,14 @@ def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:
     Вопрос о почте или фразе — одна пара на все вопросы «своё или с сервера»:
     «⬅️ Оставить своё» и «✅ Принять». «⬅️ В меню» последним рядом: не готов
     решать — вопрос остаётся в «⏳ Ждут решения»."""
+    from awgbot.bot.texts.gateway import ask as _ask
     from awgbot.bot.texts.gateway.ask import KEEP_LABEL, ACCEPT_LABEL
+    if section in ("keep", "keep_dev"):
+        keep, accept = ((_ask.RESTORE_KEEP_LABEL, _ask.RESTORE_ACCEPT_LABEL) if section == "keep"
+                        else (_ask.DEVICE_KEEP_LABEL, _ask.DEVICE_ACCEPT_LABEL))
+        # подписи длинные — по одной в ряд, «оставить» первой
+        return ui.rows((keep, GwCB(action="cfg_no", val=section)), (accept, GwCB(action="cfg_ok!", val=section)),
+                       ui.to_menu(GwCB(action="panel")))
     if section in ("link", "uplink"):
         icon = "🔑" if section == "link" else "🔐"
         pair = [("⬅️ Отмена", GwCB(action="cfg_no", val=section)),

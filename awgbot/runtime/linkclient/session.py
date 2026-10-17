@@ -88,6 +88,11 @@ class SessionMixin:
             # серверу, что агент синхронизацию знает (без него канон не шлётся)
             hello_body["own_hash"] = await asyncio.to_thread(self.services.own_applied_hash)
             hello_body["caps"] = list(CAPS)             # контракт: возможности, не версия
+            # копия настроек шлюза: отпечаток и чистота установки — сервер решает,
+            # вернуть ли блок; своё агент шлёт только после его ответа
+            if hasattr(self.services, "keep_hello"):
+                hello_body.update(await asyncio.to_thread(self.services.keep_hello))
+            self._keep_ready = False
             hello = gwlink.pack(self._channel_key(), "hello", hello_body,
                                 seq=self._seq, pad=gwlink.PAD_DELTA)
             writer.write(hello)

@@ -70,6 +70,9 @@ class DispatchMixin:
         if msg.get("t") == "link_cancel":
             await self._rekey_cancel(msg)
             return
+        if msg.get("t") in ("keep_ok", "keep_none", "keep_back"):
+            await self._keep_reply(msg)
+            return
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
             return

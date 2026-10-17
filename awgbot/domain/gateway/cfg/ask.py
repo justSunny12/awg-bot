@@ -5,15 +5,18 @@ from .mailphrase import QUESTION_SECTIONS
 
 
 class CfgAskMixin:
-    """Одно живое меню — один вопрос: остальные ждут в очереди (почта, фраза —
-    в этом порядке); решил одно — открывается следующее. Срока у вопроса нет."""
+    """Одно живое меню — один вопрос: остальные ждут в очереди (почта, копия
+    настроек шлюза, фраза — в этом порядке); решил одно — открывается
+    следующее. Срока у вопроса нет."""
 
     def cfg_questions(self) -> list[str]:
         """Разделы с висящими вопросами по порядку очереди; вопросы, потерявшие
         смысл после ручной правки, по дороге снимаются."""
         self.cfg_drop_stale_questions()
         wait = self.cfg_wait()
-        return self.rekey_pending_section() + [s for s in QUESTION_SECTIONS if s in wait]
+        keep = self.keep_section() if hasattr(self, "keep_section") else ""
+        return self.rekey_pending_section() + [keep if s == "keep" else s for s in QUESTION_SECTIONS
+                                               if s in wait or (s == "keep" and keep)]
 
     def cfg_question(self, section: str) -> dict | None:
         """Что показать: раздел и чем отличается (без значений секретов)."""
@@ -21,6 +24,8 @@ class CfgAskMixin:
             return None
         if section == "link":
             return self.rekey_question()
+        if section in ("keep", "keep_dev"):
+            return self.keep_question()
         value = self.cfg_pending().get(section) or {}
         if section == "mail":
             return {"section": "mail", "differs": self._cfg_mail_differs(value)}

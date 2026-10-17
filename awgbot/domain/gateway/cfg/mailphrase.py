@@ -8,9 +8,10 @@ from awgbot.domain import gwcfg
 
 from ..base import log
 
-# порядок очереди: аплинк (дорога агента в Telegram) — первым, затем почта и фраза;
-# ключи линка стоят ещё раньше, но живут в своём состоянии перехода (rekey)
-QUESTION_SECTIONS = ("uplink", "mail", "backup")
+# порядок очереди: аплинк (дорога агента в Telegram) — первым, затем почта,
+# копия настроек шлюза с сервера (keep: живёт в своём состоянии, domain/gateway/keep)
+# и фраза; ключи линка стоят ещё раньше, но живут в своём состоянии перехода (rekey)
+QUESTION_SECTIONS = ("uplink", "mail", "keep", "backup")
 
 
 class CfgMailPhraseMixin:

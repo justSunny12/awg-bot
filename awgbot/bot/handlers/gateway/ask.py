@@ -52,13 +52,16 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     своё» (памятка по отпечатку серверного значения) / «✅ Принять».
     Итог — правкой сообщения; ответ серверу — сразу или из очереди; следующее
     в очереди — новым меню."""
-    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "backup") else ""
+    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "backup", "keep", "keep_dev") else ""
     accept = callback_data.action == "cfg_ok!"
     if not section:
         await cb.answer(ui.toast("Кнопка устарела — открой раздел заново"))
         return
     if section == "link":
         await _rekey_answer(cb, services, accept)
+        return
+    if section in ("keep", "keep_dev"):
+        await _keep_answer(cb, services, accept)
         return
     if await call(services.cfg_question_stale, section):
         await call(services.cfg_release, section)
@@ -100,6 +103,24 @@ async def _rekey_answer(cb: CallbackQuery, services, accept: bool) -> None:
         await pkg._panel(cb.message, services, cb)
         return
     await edit_nav(cb, services, texts.cfg_answer_text("link", accept, None), None)
+    await cb.answer()
+    await _next_or_panel(cb, services)
+
+
+async def _keep_answer(cb: CallbackQuery, services, accept: bool) -> None:
+    """Настройки шлюза из бэкапа сервера (или прежнего устройства): «вернуть /
+    перенести» — применить, «оставить» — своё; в обоих случаях сервер AWG
+    сохранит то, что стоит после ответа."""
+    try:
+        answer = await linkclient.report_keep_answer(services, accept)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("gateway: ответ о настройках из бэкапа не ушёл: %s", e)
+        answer = {}
+    if not answer.get("ok"):
+        await cb.answer(ui.toast(texts.QUESTION_ANSWERED))
+        await pkg._panel(cb.message, services, cb)
+        return
+    await edit_nav(cb, services, texts.keep_answer_text(answer), None)
     await cb.answer()
     await _next_or_panel(cb, services)
 

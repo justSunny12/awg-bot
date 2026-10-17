@@ -63,6 +63,8 @@ class ReportMixin:
         Повторные запуски отметку не двигают."""
         if fresh_db and not self.db.get_state(self._FIRST_START_KEY):
             self.db.set_state(self._FIRST_START_KEY, timeutil.to_iso(timeutil.now()))
+            if hasattr(self, "keep_base_note"):
+                self.keep_base_note()                     # настройки по умолчанию — мерило чистоты установки
 
     def installed_report_pending(self) -> bool:
         """Сказать ли серверу «установлен»: один раз, и только если агент
