@@ -29,7 +29,7 @@ def lan_map_failed_line(error: str, *, markup: bool = True) -> str:
     строка и ведёт; замечание при запуске (без разметки) несёт его целиком."""
     from awgbot.infra.routing.lanmap import LOG_PREFIX
     err = " ".join(str(error).split())[:160]
-    cmd = f"journalctl -u awg-bot | grep '{LOG_PREFIX.rstrip(':')}'"
+    cmd = f"journalctl -u awg-bot -o short-iso | grep '{LOG_PREFIX.rstrip(':')}'"
     if not markup:
         return f"адреса в туннеле не работают: таблица awg_lan_map не поставлена ({err}) — журнал: {cmd}"
     return (f"⚠️ Адреса в туннеле не работают: nft не принял таблицу <code>awg_lan_map</code> — "

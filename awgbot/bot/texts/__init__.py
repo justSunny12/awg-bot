@@ -119,7 +119,7 @@ from .settings import (
     ssh_port_busy, ssh_port_same, ssh_port_changed, ssh_owner_refusal,
     settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value, bonus_prompt, BONUS_BAD, bonus_changed,
     settings_root_text, settings_notify_text, settings_subs_text, settings_mon_text,
-    settings_backup_text, BACKUP_NO_KEY_LINE, EMAIL_ASK_IMAP, EMAIL_ASK_SMTP, EMAIL_CHECK_OK, backup_when_prompt,
+    settings_backup_text, BACKUP_NO_KEY_LINE, EMAIL_ASK_IMAP, EMAIL_ASK_SMTP, EMAIL_CHECK_OK, backup_when_prompt, backup_when_changed,
     BACKUP_WHEN_BAD, ssh_port_ask, FIREWALL_ON_ALERT, toggle_toast, cycle_toast)
 from .broadcast import (
     BROADCAST_EMPTY, broadcast_targets_text,
@@ -224,7 +224,7 @@ __all__ = [
     "ssh_port_busy", "ssh_port_same", "ssh_port_changed", "ssh_owner_refusal",
     "settings_changed", "settings_ssh_allow_added", "settings_bad_value", "bonus_prompt", "BONUS_BAD", "bonus_changed",
     "settings_root_text", "settings_notify_text", "settings_subs_text", "settings_mon_text", "settings_backup_text",
-    "BACKUP_NO_KEY_LINE", "EMAIL_ASK_IMAP", "EMAIL_ASK_SMTP", "EMAIL_CHECK_OK", "backup_when_prompt",
+    "BACKUP_NO_KEY_LINE", "EMAIL_ASK_IMAP", "EMAIL_ASK_SMTP", "EMAIL_CHECK_OK", "backup_when_prompt", "backup_when_changed",
     "BACKUP_WHEN_BAD", "ssh_port_ask", "FIREWALL_ON_ALERT", "cycle_toast", "toggle_toast",
     "BROADCAST_EMPTY", "broadcast_targets_text", "BROADCAST_NO_TARGETS", "BROADCAST_NO_PROFILES", "BROADCAST_ALL_UNLIMITED",
     "BROADCAST_DAYS_BAD", "BROADCAST_DAYS_OTHER", "subscription_mark", "broadcast_days_prompt",

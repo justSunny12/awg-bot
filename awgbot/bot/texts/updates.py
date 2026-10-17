@@ -149,9 +149,10 @@ __all__ = [
 
 def update_hold_line(h: dict) -> str:
     """Окно ожидания после старта (О9): раздел и всплывашка кнопки. Основной
-    бот — каких шлюзов ждёт, агент — сервер AWG; «до» — предел окна."""
+    бот — каких шлюзов ждёт, агент — сервер AWG; «до» — предел окна, с меткой
+    пояса."""
     from awgbot.util import timeutil
-    until = h["until"].astimezone(timeutil.TZ).strftime("%H:%M")
+    until = timeutil.fmt_clock_ui(h["until"])
     if h.get("role") == "gateway":
         return f"⏳ Жду связи с сервером AWG после перезапуска — до {until}"
     names = list(h.get("waiting") or [])

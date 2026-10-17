@@ -29,15 +29,15 @@ def handshake_is_online(unix_ts: Optional[int], ref: Optional[datetime] = None,
 
 
 def fmt_handshake(unix_ts: Optional[int]) -> str:
-    """unix → «DD.MM.YYYY HH:MM» (пояс показа). None/0 → «никогда».
-    Свежий handshake (устройство сейчас онлайн) → «только что»: точный
-    таймстамп для живого подключения — шум, WG обновляет его каждые ~2 мин."""
+    """unix → «15.09 12:00 (UTC+5)» (fmt_dt_ui: год — только не текущий, метка
+    пояса). None/0 → «никогда». Свежий handshake (устройство сейчас онлайн) →
+    «только что»: точный таймстамп для живого подключения — шум, WG обновляет
+    его каждые ~2 мин."""
     if not unix_ts:
         return "никогда"
     if pkg.handshake_is_online(unix_ts):
         return "только что"
-    dt = datetime.fromtimestamp(unix_ts, tz=timezone.utc).astimezone(pkg.TZ)
-    return dt.strftime("%d.%m.%Y %H:%M")
+    return pkg.fmt_dt_ui(datetime.fromtimestamp(unix_ts, tz=timezone.utc))
 
 
 def parse_docker_time(s: str) -> Optional[datetime]:

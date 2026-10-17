@@ -19,6 +19,10 @@ timeutil/ — единый источник времени и все форма�
 временем интервал через переход врёт на час. Разность моментов — elapsed(),
 сдвиг момента на секунды — shift().
 
+Метка пояса — у каждого времени, которое видит человек: «12.10 18:00
+(UTC+5)», «08:08:14 (UTC+5)», «20:00 (UTC+5)»; у чистой даты и относительного
+(«5 мин назад», «ост. 3 дн.») — нет; у кнопок — нет (label=False).
+
 Части пакета: zone — метка пояса; clock — «сейчас», ISO, ввод, периоды,
 арифметика; fmt — форматтеры экранов; awg — хендшейк, Docker, аптайм. Части
 зовут через пакет всё, что подменяют тесты (pkg.now(), pkg.TZ): заморозка
@@ -38,7 +42,7 @@ STORE_TZ = timezone(timedelta(hours=3))          # пояс хранения —
 from .zone import tz_label, tz_tail  # noqa: E402
 from .clock import (now, now_iso, to_iso, parse_iso, parse_dt_sec, elapsed, shift,  # noqa: E402
                     add_period, period_minutes, remaining_seconds, ceil_days)
-from .fmt import (fmt_dt_ui, fmt_end_ui, fmt_date_ui, fmt_period_ui, age_short, age_ago,  # noqa: E402
+from .fmt import (fmt_dt_ui, fmt_clock_ui, fmt_hour_ui, fmt_refreshed, fmt_end_ui, fmt_date_ui, fmt_period_ui, age_short, age_ago,  # noqa: E402
                   fmt_ago, first_of_next_month_str, in_quiet_hours, _plural_ru, fmt_remaining,
                   remaining_brief, fmt_remaining_short, brief_units)
 from .awg import handshake_is_online, fmt_handshake, parse_docker_time, fmt_uptime  # noqa: E402
@@ -47,7 +51,7 @@ __all__ = [
     "TZ", "STORE_TZ", "tz_label", "tz_tail",
     "now", "now_iso", "to_iso", "parse_iso", "parse_dt_sec", "elapsed", "shift",
     "add_period", "period_minutes", "remaining_seconds", "ceil_days",
-    "fmt_dt_ui", "fmt_end_ui", "fmt_date_ui", "fmt_period_ui", "age_short", "age_ago",
+    "fmt_dt_ui", "fmt_clock_ui", "fmt_hour_ui", "fmt_refreshed", "fmt_end_ui", "fmt_date_ui", "fmt_period_ui", "age_short", "age_ago",
     "fmt_ago", "first_of_next_month_str", "in_quiet_hours", "_plural_ru", "fmt_remaining",
     "remaining_brief", "fmt_remaining_short", "brief_units",
     "handshake_is_online", "fmt_handshake", "parse_docker_time", "fmt_uptime",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awgbot.bot import ui
+from awgbot.util import timeutil
 from ..fmt import _e, plural_ru, details
 from ..updates import _ver
 
@@ -27,8 +28,8 @@ def settings_notify_text(br) -> str:
     from awgbot.bot.sections.notify import _bool, _int
     lines = [ui.head("🔔 Уведомления")]
     if _bool("quiet_hours.quiet_hours_enabled"):
-        lines.append(f"Тихие часы {_int('quiet_hours.quiet_hours_start'):02d}:00–"
-                     f"{_int('quiet_hours.quiet_hours_end'):02d}:00 МСК — без звука, кроме аварий")
+        lines.append(f"Тихие часы {timeutil.fmt_hour_ui(_int('quiet_hours.quiet_hours_start'), label=False)}–"
+                     f"{timeutil.fmt_hour_ui(_int('quiet_hours.quiet_hours_end'))} — без звука, кроме аварий")
     else:
         lines.append("Тихие часы выключены — уведомления со звуком круглые сутки")
     if _bool("resource_alerts.enabled"):

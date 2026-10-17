@@ -134,10 +134,10 @@ def test_a_table_that_did_not_go_in_keeps_the_real_routes_and_is_said(two, fake_
     assert card["error"].startswith("nft -c -f -: Error")
     assert lan_space_lines(card) == [
         "⚠️ Адреса в туннеле не работают: nft не принял таблицу <code>awg_lan_map</code> — подробности: "
-        "<code>journalctl -u awg-bot | grep 'адреса в туннеле'</code>"]
+        "<code>journalctl -u awg-bot -o short-iso | grep 'адреса в туннеле'</code>"]
     warns = preflight.collect_warnings(two, server_ok=True)
     assert ("адреса в туннеле не работают: таблица awg_lan_map не поставлена (nft -c -f -: Error: Could not "
-            "process rule: No such file or directory) — журнал: journalctl -u awg-bot | grep 'адреса в "
+            "process rule: No such file or directory) — журнал: journalctl -u awg-bot -o short-iso | grep 'адреса в "
             "туннеле'") in warns, warns
     monkeypatch.setattr(routing.lanmap, "apply", lambda text: setattr(fake_routing, "lanmap", text))
     two.lan_map_ensure()

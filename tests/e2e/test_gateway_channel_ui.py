@@ -302,7 +302,7 @@ def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
     _, _, egress = channel_lines(ch, False)
     # момент снимка — абсолютным временем: сообщение само не перерисовывается
     import re
-    assert re.search(r"\(по снимку от \d\d\.\d\d \d\d:\d\d\)$", egress), egress
+    assert re.search(r"\(по снимку от \d\d\.\d\d \d\d:\d\d \(UTC\+5\)\)$", egress), egress
     ch["online"] = True
     _, _, egress = channel_lines(ch, False)
     assert "по снимку" not in egress, egress

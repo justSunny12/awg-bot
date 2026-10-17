@@ -27,7 +27,7 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram", br
     elif on:
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
         where = "на e-mail" if str(channel or "").lower() == "email" else "в этот чат"
-        lines.append(f"Каждое {day}-е число в {hour:02d}:00 → {where}")
+        lines.append(f"Каждое {day}-е число в {timeutil.fmt_hour_ui(hour)} → {where}")
     ext = ".tgz.enc" if (encryption or only_enc) else ".tgz"
     lines.append(f"Восстановить — пришли боту файл бэкапа ({ext})")
     return "\n".join(lines)
@@ -95,8 +95,16 @@ BACKUP_PASSPHRASE_SET = "✅ Фраза задана — следующие ко
 
 
 def backup_when_prompt(day: int, hour: int) -> str:
-    return (ui.head("✏️ День и час автобэкапа", meta=[f"сейчас {day}-е, {hour:02d}:00"])
-            + "\n\nПришли день месяца (1–28) и час (0–23) через пробел, например <code>5 3</code> — 5-е число, 03:00")
+    return (ui.head("✏️ День и час автобэкапа", meta=[f"сейчас {day}-е, {timeutil.fmt_hour_ui(hour)}"])
+            + f"\n\nПришли день месяца (1–28) и час по {timeutil.tz_label()} (0–23) через пробел, например "
+              f"<code>5 3</code> — 5-е число, {timeutil.fmt_hour_ui(3)}")
+
+
+def backup_when_changed(old: tuple[int, int], new: tuple[int, int]) -> str:
+    """Итог ввода: «✅ Автобэкап: 1-е, 12:00 → 5-е, 03:00 (UTC+5)» — одна метка
+    в конце: повторяющееся время, пояс один."""
+    return (f"✅ Автобэкап: {old[0]}-е, {timeutil.fmt_hour_ui(old[1], label=False)} → "
+            f"{new[0]}-е, {timeutil.fmt_hour_ui(new[1])}")
 
 
 BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>"

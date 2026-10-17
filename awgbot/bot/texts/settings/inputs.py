@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awgbot.bot import ui
+from awgbot.util import timeutil
 from ..fmt import _e
 from .service import UPDATE_SCHEDULE_LABELS
 
@@ -68,7 +69,7 @@ def settings_prompt(key: str, current=None) -> str:
     lo, hi, label, unit = _bounds(key)
     if unit == HOUR:
         return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {hour_value(current)}" if current is not None else ""])
-                + f"\n\nПришли час от {lo} до {hi}")
+                + f"\n\nПришли час от {lo} до {hi} по {timeutil.tz_label()}")
     u = unit_suffix(unit)
     return (ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else ""])
             + f"\n\nПришли число от {lo} до {hi}{u}")
@@ -95,10 +96,11 @@ def bonus_changed(old: str, new: str) -> str:
 HOUR = "час"           # та же метка, что в sections/notify.BOUNDS: часы показываются как «20:00»
 
 
-def hour_value(v) -> str:
-    """Граница тихих часов для экрана: 20 → «20:00»."""
+def hour_value(v, *, label: bool = True) -> str:
+    """Граница тихих часов для экрана: 20 → «20:00 (UTC+5)»; label=False — без
+    метки (первое значение итога «20:00 → 22:00 (UTC+5)»)."""
     try:
-        return f"{int(v):02d}:00"
+        return timeutil.fmt_hour_ui(int(v), label=label)
     except (TypeError, ValueError):
         return _e(str(v))
 
@@ -118,7 +120,7 @@ def settings_changed(key: str, old, new) -> str:
     else:
         _lo, _hi, label, unit = _bounds(key)
         if unit == HOUR:
-            return ui.changed(_e(label), hour_value(old) if old is not None else "—",
+            return ui.changed(_e(label), hour_value(old, label=new is None) if old is not None else "—",
                               hour_value(new) if new is not None else "—")
         unit = unit_suffix(unit)
     old_s = _setting_value(key, old) if old not in (None, "", []) else "—"

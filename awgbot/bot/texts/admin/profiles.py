@@ -248,18 +248,21 @@ def extended_note(client, kind: str, new_end, pause, bot_username: str = "") -> 
     return f"✅ {who}: подписка продлена на {_PERIOD_ACC.get(kind, kind)}, {tail}"
 
 
-_PERIOD_HINT = "Пришли дату в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code> (без времени — 00:00)"
+def _period_hint() -> str:
+    """Ввод — стенные часы пояса бота, приглашение называет его смещение."""
+    return (f"Пришли дату и время по {timeutil.tz_label()} в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>; "
+            "без времени — начало суток")
 
 
 def period_start_prompt(client) -> str:
     cur = timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_start), seconds=True) if client.period_start else "—"
-    return ui.head(f"📅 Начало периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_PERIOD_HINT}"
+    return ui.head(f"📅 Начало периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_period_hint()}"
 
 
 def period_end_prompt(client) -> str:
     cur = (timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_end), seconds=True)
            if client.period_end else "бессрочно")
-    return ui.head(f"📅 Окончание периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_PERIOD_HINT}"
+    return ui.head(f"📅 Окончание периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_period_hint()}"
 
 
 PERIOD_BAD = ("⚠️ Не разобрал дату — формат <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>, время можно опустить; "
@@ -268,7 +271,8 @@ PERIOD_NO_START = "⚠️ У профиля нет даты начала — п�
 
 
 def _period_point(dt) -> str:
-    """Дата периода: время — только не полночь («15.09 12:00», «15.10.27»)."""
+    """Дата периода: время с меткой — только не полночь («15.09 12:00 (UTC+5)»,
+    «15.10.27»)."""
     dt = dt.astimezone(timeutil.TZ)
     return timeutil.fmt_dt_ui(dt) if (dt.hour or dt.minute) else timeutil.fmt_date_ui(dt)
 

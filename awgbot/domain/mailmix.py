@@ -146,7 +146,7 @@ class MailMixin:
         for p in paths:
             with open(p, "rb") as f:
                 att.append((os.path.basename(p), f.read()))
-        stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
+        stamp = timeutil.fmt_dt_ui(timeutil.now())          # «17.10 08:08 (UTC+5)», год — только не текущий
         tag = "gw" if config.ROLE == "gateway" else "main"
         mail.send_mail(acc, acc.login, f"awg-bot-{tag}: резервная копия {stamp}",
                        "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "

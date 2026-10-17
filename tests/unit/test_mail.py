@@ -65,9 +65,9 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     services.email_send_backup([])
     monkeypatch.setattr(cfg, "ROLE", "client")
     services.email_send_backup([])
-    stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
+    stamp = timeutil.fmt_dt_ui(timeutil.now())
     assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("awg-bot-main: резервная копия ")
-    assert stamp[:10] in sent[0]
+    assert stamp.split()[0] in sent[0] and sent[0].endswith(" (UTC+5)"), "дата без текущего года, время с меткой"
 
 
 def test_failed_test_mail_is_recorded_as_the_last_check(services, monkeypatch):

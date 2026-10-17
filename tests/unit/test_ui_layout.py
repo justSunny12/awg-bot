@@ -268,3 +268,17 @@ def test_rows_drops_none_and_empty_rows_and_keeps_order():
     assert m.inline_keyboard[3][0].url == "https://example.com"
     assert ui.grid([1, None, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]
     assert ui.back("m:x") == ("⬅️ Назад", "m:x") and ui.to_menu("m:main") == ("⬅️ В меню", "m:main")
+
+
+def test_hour_buttons_carry_no_zone_label(monkeypatch):
+    """Кнопки с часом — без метки пояса (её несёт текст раздела): «С 20:00
+    (UTC+5:30)» в ряду из двух не влезла бы в 18 знаков."""
+    from awgbot.bot import roles
+    from awgbot.bot.sections import backup, notify
+    assert backup.backup_when_label(1, 12) == "✏️ 1-е, 12:00"
+    monkeypatch.setattr(notify, "_bool", lambda key: True)
+    monkeypatch.setattr(notify, "_int", lambda key: {"quiet_hours.quiet_hours_start": 20,
+                                                     "quiet_hours.quiet_hours_end": 7}.get(key, 80))
+    labels = [b.text for row in notify.keyboard(roles.MAIN).inline_keyboard for b in row]
+    assert "С 20:00" in labels and "До 07:00" in labels, labels
+    assert not [x for x in labels if "UTC" in x]

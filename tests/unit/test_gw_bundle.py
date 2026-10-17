@@ -383,7 +383,7 @@ def test_an_older_file_is_refused_by_the_plumbing_script_itself(tmp_path):
 
     assert "PASS" in run(1_800_000_000, None), "чистая машина — сверять не с чем"
     out = run(1_700_000_000, 1_800_000_000)
-    assert "REFUSED" in out and "старее применённого" in out, out
+    assert "REFUSED" in out and "ОТКАЗ: файл конфигурации выпущен " in out and ", текущая конфигурация от " in out, out
     assert "PASS" in run(1_700_000_000, 1_800_000_000, allow="1")
     assert "PASS" in run(1_800_000_001, 1_800_000_000)
     run(1_800_000_005, 1_800_000_000, record=True)

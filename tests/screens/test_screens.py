@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 
-from tests.screens import catalog, harness
+from tests.screens import catalog, harness, timelabels
 from tests.screens.harness import take
 
 pytestmark = pytest.mark.screens
@@ -56,6 +56,10 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
         assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
         assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
+        bad += timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS)
+        if shot.id in catalog.TIME_LABEL_EXCEPTIONS:
+            assert timelabels.seen(rec), \
+                f"{shot.id}: исключение больше не нужно — убери из TIME_LABEL_EXCEPTIONS"
         spare = catalog.LABEL_EXCEPTIONS.get(shot.id, set()) - harness.long_labels(rec)
         assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
         circles |= harness.circle_actions_seen(rec)

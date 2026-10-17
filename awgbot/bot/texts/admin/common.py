@@ -46,17 +46,11 @@ LIMIT_REACHED = "Достигнут лимит устройств"
 
 
 def refreshed_line(bot_username: str, payload: str, at=None) -> str:
-    """Последняя строка живого экрана: «<i>обновлено в 15:43:07 🔄</i>» —
-    ссылка на самого бота (/start payload): нажатие перерисовывает экран,
-    команда из чата убирается. at — момент снимка (None — сейчас). Всегда
-    время с секундами: «только что» верно лишь в момент получения, а через
-    час в чате уже врёт (решение 16.10.2026)."""
-    from ..fmt import deep_link
-    at = at or timeutil.now()
-    # «обновлено в 14:41:07 🔄»: ссылкой — время со значком в конце, «обновлено в» —
-    # подписью (решение 16.10.2026)
-    when = at.astimezone(timeutil.TZ).strftime("%H:%M:%S")
-    return f"<i>обновлено в {deep_link(bot_username, payload, when + ' 🔄')}</i>"
+    """Последняя строка живого экрана (главная админа, «📶 Онлайн»):
+    «<i>обновлено 15.10 08:08:14 (UTC+5) 🔄</i>» — общая строка обеих ролей
+    (textfmt.refreshed_link). at — момент снимка (None — сейчас)."""
+    from ..fmt import refreshed_link
+    return refreshed_link(bot_username, payload, at)
 
 
 REFRESH_PAYLOAD = "refresh"      # /start refresh — перечитать статус и перерисовать главную

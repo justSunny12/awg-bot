@@ -10,7 +10,8 @@ from awgbot.domain import gwchecks as gc
 from awgbot.domain.gateway import GwCheck, GwStatus
 
 from tests.screens.shots_gateway_common import _CHECKS_LAN, _CHECKS_OK, _TICK_LAN, _lan, _ssh_panel, _status, _status_lan
-from tests.screens.shots_gateway_agent import _shot
+from tests.screens.base import Shot, in_zone
+from tests.screens.shots_gateway_agent import _agent, _shot
 
 
 _CHECKS_BAD = [
@@ -111,6 +112,9 @@ PANEL = [
     _shot("gw.panel.start", start="", title="по /start: снимка тика нет — живой замер, без VPN-транзита"),
     _shot("gw.panel", press=[GwCB(action="panel")], tick=_TICK_LAN, update_tag="v1.2.4",
           title="«В меню»: снимок тика 2 мин назад, VPN-транзит, SMB, доступно обновление"),
+    Shot("gw.panel.zone", role="gateway", press=(GwCB(action="panel"),),
+         data=in_zone(_agent(tick=_TICK_LAN, update_tag="v1.2.4"), "Asia/Kolkata"),
+         title="агент в другом поясе (Asia/Kolkata): время снимка и списков — в поясе шлюза, «(UTC+5:30)»"),
     _shot("gw.panel.refresh", press=[GwCB(action="refresh")], tick=_TICK_LAN,
           live=_status_lan(month_rx=0), title="прежняя кнопка «🔄 Обновить» из старого меню — живой замер поверх снимка тика"),
     _shot("gw.panel.refresh.link", start="refresh", tick=_TICK_LAN, live=_status_lan(month_rx=0),

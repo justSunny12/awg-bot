@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.domain import gwchecks
-from ..fmt import _e, human_bytes, updown_brief, num, deep_link
+from ..fmt import _e, human_bytes, updown_brief, num
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -53,19 +53,12 @@ def _gw_role(st, chan: dict) -> str:
 
 
 def refreshed_line(st, bot_username: str = "") -> str:
-    """Последняя строка панели: «<i>обновлено в 15:43:07 🔄</i>» (другой день —
-    «обновлено 15.10 14:03:07 🔄») — ссылкой на /start refresh (перечитать живьём);
-    без имени бота — просто текст. Всегда время с секундами, «только что» не
-    пишем: оно верно лишь в момент получения (решение 16.10.2026)."""
+    """Последняя строка панели: «<i>обновлено 15.10 08:08:14 (UTC+5) 🔄</i>» —
+    ссылкой на /start refresh (перечитать живьём), момент — снимка тика (нет
+    снимка — сейчас); общая строка обеих ролей (textfmt.refreshed_link)."""
     from awgbot.util import timeutil
-    now = timeutil.now()
-    at = timeutil.parse_iso(st.ts).astimezone(timeutil.TZ) if st.ts else now
-    # ссылкой — только время: «обновлено в» остаётся подписью (решение 16.10.2026)
-    if at.date() == now.date():
-        lead, when = "обновлено в ", at.strftime("%H:%M:%S")
-    else:
-        lead, when = "обновлено ", timeutil.fmt_dt_ui(at, seconds=True)
-    return "<i>" + lead + deep_link(bot_username, REFRESH_PAYLOAD, when + " 🔄") + "</i>"
+    from ..fmt import refreshed_link
+    return refreshed_link(bot_username, REFRESH_PAYLOAD, timeutil.parse_iso(st.ts) if st.ts else None)
 
 
 def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),

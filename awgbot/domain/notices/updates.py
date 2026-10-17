@@ -74,4 +74,4 @@ def update_applied(tag: str, body: str) -> str:
 
 def update_not_applied(tag: str, installed: str) -> str:
     return (f"⚠️ Обновление до {_e(_ver(tag))} не применилось, работает "
-            f"{_e(_ver(installed))} — журнал: <code>journalctl -u awg-bot-selfupdate*</code>")
+            f"{_e(_ver(installed))} — журнал: <code>journalctl -u awg-bot-selfupdate* -o short-iso</code>")

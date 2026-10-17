@@ -31,8 +31,9 @@ def _dt(y, mo, d, h=0, mi=0, s=0):
 # ── даты ─────────────────────────────────────────────────────────────────────
 
 def test_current_year_is_not_written():
-    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0), REF) == "12.10 18:00"
-    assert t.fmt_date_ui(_dt(2026, 10, 12, 18, 0), REF) == "12.10"
+    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0), REF) == "12.10 18:00 (UTC+5)"
+    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0), REF, label=False) == "12.10 18:00"
+    assert t.fmt_date_ui(_dt(2026, 10, 12, 18, 0), REF) == "12.10", "у чистой даты метки нет"
 
 
 @pytest.mark.parametrize("year, shown", [(2027, "12.10.27"), (2025, "12.10.25")])
@@ -40,27 +41,28 @@ def test_other_year_is_two_digits(year, shown):
     """Год — двумя цифрами и только когда он не текущий: и в будущем (срок
     до следующего года), и в прошлом (начало годовой подписки)."""
     assert t.fmt_date_ui(_dt(year, 10, 12), REF) == shown
-    assert t.fmt_dt_ui(_dt(year, 10, 12, 18, 5), REF) == f"{shown} 18:05"
+    assert t.fmt_dt_ui(_dt(year, 10, 12, 18, 5), REF) == f"{shown} 18:05 (UTC+5)"
 
 
 def test_year_is_taken_in_display_zone_not_utc():
     """31.12 23:30 UTC — уже 01.01 в поясе бота (UTC+5): и дата, и «текущий ли
     год» считаются по времени экрана."""
     utc = datetime(2026, 12, 31, 23, 30, tzinfo=timezone.utc)
-    assert t.fmt_dt_ui(utc, _dt(2027, 1, 1, 10)) == "01.01 04:30"
-    assert t.fmt_dt_ui(utc, REF) == "01.01.27 04:30"
+    assert t.fmt_dt_ui(utc, _dt(2027, 1, 1, 10)) == "01.01 04:30 (UTC+5)"
+    assert t.fmt_dt_ui(utc, REF) == "01.01.27 04:30 (UTC+5)"
 
 
 def test_seconds_only_on_request_and_only_when_not_zero():
-    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF) == "12.10 18:00", "секунды без просьбы"
-    # окончание срока: время — только в текущем месяце
-    assert t.fmt_end_ui(_dt(2026, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10 18:00"
-    assert t.fmt_end_ui(_dt(2026, 11, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.11"
-    assert t.fmt_end_ui(_dt(2026, 10, 1, 3, 0), _dt(2026, 9, 30, 9)) == "01.10 03:00", "стык месяцев: срок завтра — с часом"
+    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF) == "12.10 18:00 (UTC+5)", "секунды без просьбы"
+    # окончание срока: время (и метка) — только в текущем месяце
+    assert t.fmt_end_ui(_dt(2026, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10 18:00 (UTC+5)"
+    assert t.fmt_end_ui(_dt(2026, 11, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.11", "дата без метки"
+    assert t.fmt_end_ui(_dt(2026, 10, 1, 3, 0), _dt(2026, 9, 30, 9)) == "01.10 03:00 (UTC+5)", \
+        "стык месяцев: срок завтра — с часом"
     assert t.fmt_end_ui(_dt(2026, 10, 2, 3, 0), _dt(2026, 9, 30, 9)) == "02.10"
     assert t.fmt_end_ui(_dt(2027, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10.27"
-    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF, seconds=True) == "12.10 18:00:42"
-    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 0), REF, seconds=True) == "12.10 18:00", ":00 не пишем"
+    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF, seconds=True) == "12.10 18:00:42 (UTC+5)"
+    assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 0), REF, seconds=True) == "12.10 18:00 (UTC+5)", ":00 не пишем"
 
 
 def test_period_is_start_arrow_end_with_the_same_year_rule():
@@ -215,3 +217,59 @@ def test_volumes_switch_to_terabytes_from_a_terabyte():
     assert texts.used_of_limit(3 * GB, 50 * GB) == "3 из 50 ГБ"
     assert tc.traffic_short(0, 0, 0) == "📊 0 ГБ (безлимит)"
     assert tc.traffic_short(TB, TB, 4 * TB) == "📊 2 из 4 ТБ"
+
+
+# ── метка пояса у времени ────────────────────────────────────────────────────
+
+def test_clock_and_hour_labels():
+    assert t.fmt_clock_ui(_dt(2026, 10, 12, 8, 8, 14)) == "08:08 (UTC+5)"
+    assert t.fmt_clock_ui(_dt(2026, 10, 12, 8, 8, 0), seconds=True) == "08:08:00 (UTC+5)", "секунды — всегда"
+    assert t.fmt_clock_ui(_dt(2026, 10, 12, 8, 8), label=False) == "08:08"
+    assert t.fmt_hour_ui(20) == "20:00 (UTC+5)" and t.fmt_hour_ui(7, label=False) == "07:00"
+
+
+def test_refreshed_has_the_date_always_and_the_year_only_when_not_current():
+    assert t.fmt_refreshed(_dt(2026, 9, 27, 8, 8, 14), REF) == ("обновлено 27.09", "08:08:14 (UTC+5)")
+    assert t.fmt_refreshed(_dt(2025, 12, 31, 23, 0, 0), REF) == ("обновлено 31.12.25", "23:00:00 (UTC+5)")
+
+
+def test_refreshed_line_is_one_for_both_roles(monkeypatch):
+    from types import SimpleNamespace
+    from awgbot.bot.texts import admin, gateway
+    monkeypatch.setattr(t, "now", lambda: REF)
+    at = _dt(2026, 9, 26, 15, 43, 7)
+    main_line = admin.refreshed_line("b", "refresh", at)
+    assert main_line == ('<i>обновлено 26.09 <a href="https://t.me/b?start=refresh">15:43:07 (UTC+5) 🔄</a></i>')
+    assert gateway.refreshed_line(SimpleNamespace(ts=t.to_iso(at)), "b") == main_line
+    assert gateway.refreshed_line(SimpleNamespace(ts=""), "") == "<i>обновлено 27.09 12:00:00 (UTC+5) 🔄</i>"
+
+
+@pytest.mark.parametrize("name,label", [("Asia/Kolkata", "UTC+5:30"), ("Etc/UTC", "UTC"),
+                                        ("America/St_Johns", "UTC-2:30")])
+def test_labels_in_other_zones(monkeypatch, name, label):
+    from zoneinfo import ZoneInfo
+    monkeypatch.setattr(t, "TZ", ZoneInfo(name))
+    monkeypatch.setattr(t, "now", lambda: REF)          # метка повторяющегося часа — смещение «сейчас»
+    assert t.fmt_dt_ui(datetime(2026, 9, 27, 7, 0, tzinfo=timezone.utc), REF).endswith(f" ({label})")
+    assert t.fmt_hour_ui(20) == f"20:00 ({label})"
+
+
+def test_two_moments_of_one_screen_over_dst_have_their_own_labels(monkeypatch):
+    """Berlin, 24.10 (летнее): «обновлено … (UTC+2)», срок 26.10 18:00 (зимнее) —
+    «(UTC+1)»; остаток — по настоящим секундам."""
+    from zoneinfo import ZoneInfo
+    berlin = ZoneInfo("Europe/Berlin")
+    monkeypatch.setattr(t, "TZ", berlin)
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=berlin)
+    monkeypatch.setattr(t, "now", lambda: now)
+    end = datetime(2026, 10, 26, 18, 0, tzinfo=berlin)
+    assert t.fmt_end_ui(end) == "26.10 18:00 (UTC+1)"
+    assert t.fmt_refreshed(now)[1] == "12:00:00 (UTC+2)"
+    assert t.remaining_seconds(end) == (2 * 24 + 6 + 1) * 3600
+
+
+def test_handshake_without_the_full_year():
+    from datetime import timedelta
+    ts = int((t.now() - timedelta(days=3)).timestamp())
+    got = t.fmt_handshake(ts)
+    assert got.endswith(" (UTC+5)") and len(got.split()[0]) == 5, got

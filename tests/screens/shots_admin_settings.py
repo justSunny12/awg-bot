@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot.callbacks import CancelCB, SetCB, UpdateCB
 
-from tests.screens.base import Shot
+from tests.screens.base import Shot, in_zone
 from tests.screens.shots_admin_common import _email_on, _fw, _people, _raise, _restarts, _tag, _upd_found
 
 
@@ -216,6 +216,12 @@ SETTINGS = [
     Shot("adm.set.backup.enc_set.first", role="admin", press=[SetCB(sec="backup", act="do", key="enc_set")],
          text="DUMMY-passphrase-1234", data=_people, title="фраза: повтор"),
     Shot("adm.set.svc", role="admin", press=[SetCB(sec="svc")], data=_people, title="сервис"),
+    Shot("adm.set.svc.zone_conf", role="admin", press=[SetCB(sec="svc")],
+         data=in_zone(_people, "Europe/Moscow", source="conf", host="Europe/London"),
+         title="сервис: пояс задан ключом timezone и отличается от пояса сервера"),
+    Shot("adm.set.svc.zone_bad", role="admin", press=[SetCB(sec="svc")],
+         data=in_zone(_people, "Europe/London", source="conf_bad", bad="Europe/Moskva"),
+         title="сервис: ключ timezone не распознан — открытая строка ⚠️, пояс сервера"),
     Shot("adm.set.svc.awg", role="admin", press=[SetCB(sec="svc", act="do", key="awg")], data=_restarts,
          title="перезапустить AWG?"),
     Shot("adm.set.svc.awg.yes", role="admin", press=[SetCB(sec="svc", act="do", key="awg!")],

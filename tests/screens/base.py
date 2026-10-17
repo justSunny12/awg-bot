@@ -81,6 +81,38 @@ class Shot:
         return tuple(out)
 
 
+# ── пояс показа на снимок ────────────────────────────────────────────────────
+
+def zone(mp, name: str, *, source: str = "host", bad: str = "", host: str = "") -> None:
+    """Пояс бота на один снимок: «агент в другом поясе», ключ timezone задан
+    (source="conf", host — пояс хоста) или не распознан (source="conf_bad",
+    bad — значение ключа). Часы снимка — те же (NOW), показ пересчитывается."""
+    from zoneinfo import ZoneInfo
+    from awgbot.util import timeutil
+    tz = ZoneInfo(name)
+    mp.setattr(config, "TZ", tz)
+    mp.setattr(timeutil, "TZ", tz)
+    mp.setattr(config, "TZ_NAME", name)
+    mp.setattr(config, "TZ_SOURCE", source)
+    mp.setattr(config, "TZ_HOST_NAME", host or name)
+    mp.setattr(config, "TZ_BAD_VALUE", bad)
+
+
+def in_zone(builder, name: str, **kw):
+    """Построитель снимка в другом поясе: zone(), затем builder (services[, mp])
+    или (без builder) админ."""
+    import inspect
+
+    def build(services, mp):
+        zone(mp, name, **kw)
+        if builder is None:
+            return config.ADMIN_ID, "Админ"
+        n = len([p for p in inspect.signature(builder).parameters.values()
+                 if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.VAR_POSITIONAL)])
+        return builder(services, mp) if n >= 2 else builder(services)
+    return build
+
+
 # ── построители состояния ────────────────────────────────────────────────────
 
 def owner(services):

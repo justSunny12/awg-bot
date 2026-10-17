@@ -143,7 +143,7 @@ def test_fmt_handshake_never_and_old():
     assert t.fmt_handshake(None) == "никогда"
     assert t.fmt_handshake(0) == "никогда"
     old = t.fmt_handshake(int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp()))
-    assert "2020" in old
+    assert old == "01.01.20 05:00 (UTC+5)", "год — двумя цифрами, метка пояса"
 
 
 def test_fmt_handshake_online_now():

@@ -12,20 +12,44 @@ from awgbot.util import timeutil as pkg          # подменяемое тес
 
 # ── даты и время ─────────────────────────────────────────────────────────────
 
-def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = False) -> str:
-    """Дата и время для экранов: «12.10 18:00». Год — двумя цифрами и только
-    когда он не текущий: «12.10.27 18:00». Секунды — только по просьбе
-    (правка периода админом) и только когда не :00."""
+def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = False,
+              label: bool = True) -> str:
+    """Дата и время для экранов: «12.10 18:00 (UTC+5)». Год — двумя цифрами и
+    только когда он не текущий: «12.10.27 18:00 (UTC+5)». Секунды — только по
+    просьбе (правка периода админом) и только когда не :00. Метка пояса — этого
+    момента (label=False — без неё)."""
     dt = dt.astimezone(pkg.TZ)
     date = fmt_date_ui(dt, ref)
     clock = dt.strftime("%H:%M") + (dt.strftime(":%S") if seconds and dt.second else "")
-    return f"{date} {clock}"
+    return f"{date} {clock}" + (pkg.tz_tail(dt) if label else "")
+
+
+def fmt_clock_ui(dt: datetime, *, seconds: bool = False, label: bool = True) -> str:
+    """Время без даты: «08:08 (UTC+5)», с секундами — всегда «08:08:14 (UTC+5)»
+    (строка «обновлено …», окно ожидания). Метка — этого момента."""
+    dt = dt.astimezone(pkg.TZ)
+    return dt.strftime("%H:%M:%S" if seconds else "%H:%M") + (pkg.tz_tail(dt) if label else "")
+
+
+def fmt_hour_ui(hour: int, *, label: bool = True) -> str:
+    """Повторяющийся час (тихие часы, автобэкап): «20:00 (UTC+5)»; смещение —
+    текущее, кнопки зовут с label=False — «20:00»."""
+    return f"{int(hour):02d}:00" + (pkg.tz_tail() if label else "")
+
+
+def fmt_refreshed(at: datetime, ref: Optional[datetime] = None) -> tuple[str, str]:
+    """Строка «обновлено 15.10 08:08:14 (UTC+5) 🔄» по частям: (подпись
+    «обновлено 15.10», время «08:08:14 (UTC+5)»). Дата — всегда: на следующий
+    день строка без неё врала бы; год — только не текущий."""
+    at = at.astimezone(pkg.TZ)
+    return f"обновлено {fmt_date_ui(at, ref)}", fmt_clock_ui(at, seconds=True)
 
 
 def fmt_end_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
-    """Дата ОКОНЧАНИЯ срока (подписка, пауза): со временем только в текущем
-    месяце — «12.10 18:00»; дальше время не важно — «12.11», «12.10.27».
-    Исключение — срок завтра: на стыке месяцев час отключения терять нельзя."""
+    """Дата ОКОНЧАНИЯ срока (подписка, пауза): со временем и меткой пояса только
+    в текущем месяце — «12.10 18:00 (UTC+5)»; дальше время не важно — «12.11»,
+    «12.10.27» (дата без метки). Исключение — срок завтра: на стыке месяцев час
+    отключения терять нельзя."""
     dt = dt.astimezone(pkg.TZ)
     ref = (ref or pkg.now()).astimezone(pkg.TZ)
     if (dt.year, dt.month) == (ref.year, ref.month) or dt.date() <= (ref + timedelta(days=1)).date():

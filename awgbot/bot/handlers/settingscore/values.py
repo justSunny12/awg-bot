@@ -166,7 +166,7 @@ async def _receive_backup_when(message: Message, state: FSMContext, services, ho
         return
     await state.clear()
     await after_input(message, services, hooks, sec,
-                      f"✅ Автобэкап: {old[0]}-е, {old[1]:02d}:00 → {day}-е, {hour:02d}:00")
+                      texts.backup_when_changed(old, (day, hour)))
 
 
 async def _receive_bonus(message: Message, state: FSMContext, services, hooks: Hooks, sec: str) -> None:

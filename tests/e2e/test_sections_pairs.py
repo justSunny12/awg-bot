@@ -130,9 +130,9 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     assert sections.resolve(env.br, when) == ("backup", "edit", "backup_when", "")
     st = FakeState()
     cb, nav = await _press(env, fake_bot, when, st)
-    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-е, 12:00\n\n"
-                                  "Пришли день месяца (1–28) и час (0–23) через пробел, например <code>5 3</code> — "
-                                  "5-е число, 03:00")
+    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-е, 12:00 (UTC+5)\n\n"
+                                  "Пришли день месяца (1–28) и час по UTC+5 (0–23) через пробел, например "
+                                  "<code>5 3</code> — 5-е число, 03:00 (UTC+5)")
     bad = await _type(env, fake_bot, "31 12", st)
     assert [s[1] for s in bad.sent if s[0] == "answer"] == [texts.BACKUP_WHEN_BAD]
     assert store["app.scheduler.backup_day"] == 1 and await st.get_state() is not None
@@ -141,12 +141,12 @@ async def test_backup_day_and_hour_in_one_input(env, fake_bot, store):
     answers = [s for s in msg.sent if s[0] == "answer"]
     assert len(answers) == 1, answers
     lines = answers[0][1].split("\n")
-    assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00", lines
+    assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00 (UTC+5)", lines
     assert lines[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
     if env.br.has.backup_encrypted_only:        # агент без фразы: вместо расписания — предупреждение
         assert texts.BACKUP_NO_KEY_LINE in lines, lines
     else:
-        assert "Каждое 5-е число в 09:00 → в этот чат" in lines
+        assert "Каждое 5-е число в 09:00 (UTC+5) → в этот чат" in lines
     assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
     assert await st.get_state() is None
 

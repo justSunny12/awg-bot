@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot.callbacks import ClientCB, Menu, NoteCB
 
-from tests.screens.base import Shot
+from tests.screens.base import Shot, in_zone
 from tests.screens.shots_admin_common import (BR, GB, IPHONE, KS, PHONE, _base, _mig_running, _people,
                                               _quiet, _two_expiring, _upd_found, _upd_waits)
 from tests.screens.shots_admin_common_gw import NASPI, _gw_online, _routing, _slots
@@ -42,6 +42,8 @@ MAIN = [
     # ── 1.1 главная и ссылки с неё ──────────────────────────────────────────
     Shot("adm.main.quiet", role="admin", start="", data=_quiet, title="главная, никого нет"),
     Shot("adm.main", role="admin", start="", data=_people, title="главная с профилями, трафиком и онлайн"),
+    Shot("adm.main.zone_utc", role="admin", start="", data=in_zone(_people, "Etc/UTC"),
+         title="главная в поясе UTC: нулевое смещение — «(UTC)» без цифры"),
     Shot("adm.main.refresh", role="admin", press=[Menu(action="refresh")], data=_people,
          title="«🔄 Обновить» прежнего сообщения"),
     Shot("adm.main.refresh.link", role="admin", start="refresh", data=_people,

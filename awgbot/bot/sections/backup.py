@@ -10,6 +10,7 @@ from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit_nav
 from awgbot.core import settings
+from awgbot.util import timeutil
 
 from ._kb import _chk, back_button
 
@@ -28,7 +29,8 @@ def _day_label(day: int) -> str:
 
 
 def backup_when_label(day: int, hour: int) -> str:
-    return f"✏️ {_day_label(day)}, {int(hour):02d}:00"
+    """Кнопка «✏️ 1-е, 12:00» — без метки пояса: она в строке расписания."""
+    return f"✏️ {_day_label(day)}, {timeutil.fmt_hour_ui(hour, label=False)}"
 
 
 def keyboard(br, encryption: bool = False) -> InlineKeyboardMarkup:

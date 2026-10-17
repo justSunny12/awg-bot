@@ -7,7 +7,7 @@ import datetime as _dt
 from awgbot.bot.callbacks import CancelCB, GwSlotCB, SetCB
 from awgbot.core import config
 
-from tests.screens.base import NOW, Shot
+from tests.screens.base import NOW, Shot, in_zone
 from tests.screens.shots_admin_common import _iso
 from tests.screens.shots_admin_common_gw import (TOKEN, _card, _ch, _ch_base, _chan, _gw, _installed, _label,
                                                  _slots)
@@ -92,6 +92,10 @@ CFG = [
           "«подробнее»: почта и фраза оставлены своими", "adm.gw.card.cfg.more.both"),
     _card(1, _chan(1, _ch(agent_version="3.2.1")), "агент 3.2 со снимком — обнови агента, «📤» на месте",
           "adm.gw.card.cfg.agent32"),
+    _card(1, in_zone(_cfg_chan(_cfg_mail, _cfg(mail="ab" * 8), _cfg_ack(applied=("server", "env", "backup"),
+                                                                         declined=("mail",))), "Europe/Moscow"),
+          "сервер в другом поясе (Europe/Moscow): моменты от шлюза и свои — в поясе сервера, «(UTC+3)»",
+          "adm.gw.card.cfg.more.zone"),
 ]
 
 

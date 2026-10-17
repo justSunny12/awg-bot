@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardMarkup
 from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.core import settings
+from awgbot.util import timeutil
 
 from ._kb import _chk, back_button
 
@@ -61,8 +62,11 @@ def keyboard(br) -> InlineKeyboardMarkup:
     tail = ("👥 События", br.cb.pack("ncl")) if events else None
     return ui.rows(
         (f"{_chk(qh)} Тихие часы", br.cb.pack(ID, "toggle", "quiet_hours.quiet_hours_enabled")),
-        [(f"С {_int('quiet_hours.quiet_hours_start'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_start")),
-         (f"До {_int('quiet_hours.quiet_hours_end'):02d}:00", br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_end"))] if qh else None,
+        # кнопки — без метки пояса: она в тексте раздела, а в ряду из двух не влезла бы
+        [("С " + timeutil.fmt_hour_ui(_int("quiet_hours.quiet_hours_start"), label=False),
+          br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_start")),
+         ("До " + timeutil.fmt_hour_ui(_int("quiet_hours.quiet_hours_end"), label=False),
+          br.cb.pack(ID, "edit", "quiet_hours.quiet_hours_end"))] if qh else None,
         (f"{_chk(ra)} Алерты хоста", br.cb.pack(ID, "toggle", "resource_alerts.enabled")),
         [cpu, ram, disk] if ra else None,
         # порог температуры (у агента) — рядом с тумблером почты, как пороги у основного бота

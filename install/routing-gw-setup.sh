@@ -1493,12 +1493,23 @@ fi
 # ключах. Прогоны юнита и агента без файла метки не несут — сверять нечего.
 ISSUED_FILE="$GW_ETC/issued_at"
 _bundle_issued="$(printf '%s' "${BUNDLE_ISSUED_AT:-}" | tr -cd '0-9')"
-issued_when() { date -d "@$1" '+%d.%m.%y %H:%M' 2>/dev/null || printf '%s' "$1"; }
+# Время для человека — с меткой системного пояса (скрипт идёт в терминале хоста):
+# +0300 → UTC+3, +0530 → UTC+5:30, -0330 → UTC-3:30, +0000 → UTC.
+tz_label() {
+    case "$1" in
+        [+-]0000|"") printf 'UTC' ;;
+        *) printf 'UTC%s' "$(printf '%s' "$1" | sed -E 's/^([+-])0?([0-9]+)([0-9]{2})$/\1\2:\3/; s/:00$//')" ;;
+    esac
+}
+issued_when() {
+    _iw_z="$(date -d "@$1" +%z 2>/dev/null)" \
+        && date -d "@$1" "+%d.%m.%y %H:%M ($(tz_label "$_iw_z"))" 2>/dev/null || printf '%s' "$1"
+}
 issued_check() {     # 1 — файл старее применённого (и не велено применять всё равно)
     [ -n "$_bundle_issued" ] && [ "${AWG_GW_ALLOW_OLD:-}" != "1" ] || return 0
     _have="$(tr -cd '0-9' < "$ISSUED_FILE" 2>/dev/null || true)"
     [ -n "$_have" ] && [ "$_bundle_issued" -lt "$_have" ] || return 0
-    say "ОТКАЗ: файл конфигурации выпущен $(issued_when "$_bundle_issued") — старее применённого ($(issued_when "$_have"))."
+    say "ОТКАЗ: файл конфигурации выпущен $(issued_when "$_bundle_issued"), текущая конфигурация от $(issued_when "$_have")"
     say "Файл конфигурации нужен только для первоначальной настройки шлюза: дальше настройки приходят от сервера AWG по каналу конфигурации, неполадки закрывает «🚑 Восстановить» в чате бота шлюза; всё равно применить этот: sudo AWG_GW_ALLOW_OLD=1 sh <файл>"
     return 1
 }
