@@ -38,8 +38,10 @@ CONF_KEYS = (
     "app.gateway.link_alert_loud",
     "updates.poll_schedule",
 )
-# firewall.env без SSH_PORT: порт — факт устройства (под OMV его задаёт OMV)
-FW_KEYS = ("ADMIN_IPS_EXTRA", "SSH_FILTER", "SSH_ALLOW", "SSH_ALLOW_RESOLVED")
+# firewall.env без SSH_PORT: порт — факт устройства (под OMV его задаёт OMV);
+# без SSH_ALLOW_RESOLVED: адреса имён из SSH_ALLOW — факт резолвера, их пересчитывает
+# сам шлюз (в отпечатке давали бы ложные вопросы, в применении — устаревшие адреса)
+FW_KEYS = ("ADMIN_IPS_EXTRA", "SSH_FILTER", "SSH_ALLOW")
 MAIL_KEYS = ("login", "password", "imap_host", "imap_port", "smtp_host", "smtp_port", "keep")
 
 MAX_STR = 256
@@ -60,7 +62,7 @@ GROUPS = (
     ("расписание обновлений", ("updates.poll_schedule",)),
     ("доступ по SSH из туннеля", ("fw:ADMIN_IPS_EXTRA",)),
     ("фильтр SSH снаружи", ("fw:SSH_FILTER",)),
-    ("адреса SSH", ("fw:SSH_ALLOW", "fw:SSH_ALLOW_RESOLVED")),
+    ("адреса SSH", ("fw:SSH_ALLOW",)),
     ("своя почта", ("mail",)),
 )
 

@@ -7,7 +7,8 @@ awg-интерфейсов, линки слотов и выданные шлюз
 backup API SQLite — согласованно и на работающем боте (cp терял WAL).
 
 Открытых бэкапов нет: шифрование — ключевой фразой из базы; без неё отказ и
-файла нет. На шлюзе бэкапов нет вовсе (их настройки — в бэкапе сервера AWG).
+файла нет. Снятый в каталог бэкапов — с ротацией: там последние 5, как у
+бота. На шлюзе бэкапов нет вовсе (их настройки — в бэкапе сервера AWG).
 
 Запуск:  python -m tools.snapshot --out /path/to/awg-bot-backup-….tgz.enc
 Коды выхода: 0 — снят; 1 — не снят (причина в stderr).
@@ -73,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         with os.fdopen(fd, "wb") as f:
             f.write(blob)
         os.replace(tmp, args.out)
+        if os.path.dirname(os.path.abspath(args.out)) == os.path.abspath(str(config.BACKUP_DIR)):
+            _Snapshot._rotate_backups()                # в каталоге бэкапов — последние 5, как у бота
     except OSError as e:
         print(f"бэкап не записан: {e}", file=sys.stderr)
         try:

@@ -52,7 +52,7 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     своё» (памятка по отпечатку серверного значения) / «✅ Принять».
     Итог — правкой сообщения; ответ серверу — сразу или из очереди; следующее
     в очереди — новым меню."""
-    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "keep", "keep_dev") else ""
+    section = callback_data.val if callback_data.val in ("link", "uplink", "mail", "keep", "keep_dev", "keep_same") else ""
     accept = callback_data.action == "cfg_ok!"
     if not section:
         await cb.answer(ui.toast("Кнопка устарела — открой раздел заново"))
@@ -60,7 +60,7 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     if section == "link":
         await _rekey_answer(cb, services, accept)
         return
-    if section in ("keep", "keep_dev"):
+    if section in ("keep", "keep_dev", "keep_same"):
         await _keep_answer(cb, services, accept)
         return
     if await call(services.cfg_question_stale, section):
@@ -113,15 +113,20 @@ async def _keep_answer(cb: CallbackQuery, services, accept: bool) -> None:
     сохранит то, что стоит после ответа."""
     try:
         answer = await linkclient.report_keep_answer(services, accept)
-    except Exception as e:                                # noqa: BLE001
+    except Exception as e:                                # noqa: BLE001 — честный отказ: вопрос остаётся
         log.warning("gateway: ответ о настройках из бэкапа не ушёл: %s", e)
-        answer = {}
+        await cb.answer(ui.toast(texts.keep_answer_failed(str(e))), show_alert=True)
+        return
     if not answer.get("ok"):
         await cb.answer(ui.toast(texts.QUESTION_ANSWERED))
         await pkg._panel(cb.message, services, cb)
         return
     await edit_nav(cb, services, texts.keep_answer_text(answer), None)
     await cb.answer()
+    if answer.get("error"):
+        # не применилось — вопрос остаётся в очереди: панель с «⏳ Ответить», а не тот же вопрос снова
+        await pkg._panel(cb.message, services, keep_id=cb.message.message_id)
+        return
     await _next_or_panel(cb, services)
 
 

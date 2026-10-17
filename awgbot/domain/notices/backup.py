@@ -78,6 +78,20 @@ def missed_backup_notice(has_slots: bool) -> str:
 REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — бэкап сниму сразу после неё"
 
 
+def backup_refused_notice(reason: str) -> str:
+    """Бэкап по расписанию или по событию: Telegram отверг сам файл — повтор
+    того же впустую, человеку — что делать."""
+    return (f"⚠️ Бэкап сервера AWG не отправлен: {_e(reason)} — сделай вручную в «⚙️ Настройки → 💾 Бэкапы» "
+            "или забери из терминала: <code>sudo awg-bot backup</code>")
+
+
+def rekey_wait_toast(name: str) -> str:
+    """Всплывашка — до 200 знаков: имя шлюза подрезается."""
+    room = 200 - len(REKEY_WAIT_TOAST.format(name="«»"))
+    short = name if len(name) <= room else name[:max(room - 1, 1)] + "…"
+    return REKEY_WAIT_TOAST.format(name=f"«{short}»")
+
+
 # ── подпись копии и письмо ───────────────────────────────────────────────────
 
 _EVENT_TAIL = {
@@ -104,16 +118,51 @@ def event_tail(why: list[dict]) -> str:
     return _EVENT_TAIL.get(kind, "после изменений шлюзов").format(ref=ref)
 
 
-def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, str]], why_tail: str = "") -> str:
+CAPTION_MAX = 1024              # подпись файла в Telegram — не длиннее (видимый текст)
+
+
+def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, str]], why_tail: str = "",
+                   *, limit: int = CAPTION_MAX) -> str:
     """Подпись копии в чате и тело письма: одна строка на слот — только
-    отклонения; без шлюзов — без блока. offline — [(ref, seen, keep_at)]."""
+    отклонения; без шлюзов — без блока. offline — [(ref, seen, keep_at)].
+    Подпись файла в Telegram — не длиннее limit: шлюзы и строки «не на
+    связи» — сколько влезает, остальное — «и ещё N»."""
     head = f"💾 Бэкап сервера AWG от {created}" + (f" — {why_tail}" if why_tail else "")
-    lines = [head]
+
+    def size(refs_line: str, off: list[str]) -> int:
+        return len(plain("\n".join([head] + ([refs_line] if refs_line else []) + off)))
+
+    # сначала — кто не на связи (по ним человеку решать), перечень шлюзов — в оставшееся место
+    least = _refs_line(refs, 0) if refs else ""
+    off: list[str] = []
+    for i, (ref, seen, keep_at) in enumerate(offline):
+        line = f"🟡 {ref} не на связи с {_date(seen)} — его настройки в бэкапе на {_date(keep_at)}"
+        rest = len(offline) - i - 1
+        if size(least, off + [line] + ([_offline_more(rest)] if rest else [])) <= limit:
+            off.append(line)
+            continue
+        off.append(_offline_more(len(offline) - i))
+        break
+    refs_line = ""
     if refs:
-        lines.append("🛰 Шлюзы: " + ", ".join(refs))
-    for ref, seen, keep_at in offline:
-        lines.append(f"🟡 {ref} не на связи с {_date(seen)} — его настройки в бэкапе на {_date(keep_at)}")
-    return "\n".join(lines)
+        k = len(refs)
+        while k > 0 and size(_refs_line(refs, k), off) > limit:
+            k -= 1
+        refs_line = _refs_line(refs, k)
+    return "\n".join([head] + ([refs_line] if refs_line else []) + off)
+
+
+def _refs_line(refs: list[str], k: int) -> str:
+    shown = ", ".join(refs[:k])
+    rest = len(refs) - k
+    if not k:
+        return f"🛰 Шлюзов: {len(refs)}"
+    return "🛰 Шлюзы: " + shown + (f" и ещё {rest}" if rest else "")
+
+
+def _offline_more(n: int) -> str:
+    from awgbot.util.textfmt import plural_ru
+    return f"🟡 И ещё {n} {plural_ru(n, 'шлюз', 'шлюза', 'шлюзов')} не на связи — их настройки в бэкапе на дату последней связи"
 
 
 MAIL_BODY = ("Бэкап сервера AWG во вложении — вместе с шлюзами. Восстановить: пришли файл боту сервера AWG "
@@ -224,11 +273,22 @@ def restore_report(created_at: str, report: dict, *, bot_username: str = "") -> 
     lost = report.get("lost") or []
     if lost:
         parts.append("\n".join(
-            f"• устройство «{_e(d.get('device'))}» профиля {_e(d.get('client'))} не восстановлено: его адрес "
-            f"<code>{_e(d.get('address'))}</code> уже у устройства шлюза" for d in lost))
+            f"• устройство «{_e(d.get('device'))}» профиля {_client_ref(d, bot_username)} не восстановлено: "
+            f"его адрес <code>{_e(d.get('address'))}</code> уже у устройства шлюза" for d in lost))
     if any(str(s.get("case")) != "removed" for s in slots):
         parts.append("Свои списки шлюзов: добавленное после бэкапа сохранится, удалённое — вернётся")
     return "\n\n".join(parts)
+
+
+def _client_ref(d: dict, bot_username: str) -> str:
+    """Имя профиля — ссылкой на его карточку (id в отчёте слияния); профиль
+    админа и отчёт без id — текстом."""
+    import types
+    from awgbot.util.textfmt import profile_link
+    if not d.get("client_id") or not bot_username:
+        return _e(d.get("client"))
+    return profile_link(types.SimpleNamespace(id=int(d["client_id"]), tg_id=int(d.get("client_tg") or 0),
+                                              name=str(d.get("client") or "")), bot_username)
 
 
 def gateway_back(ref: str) -> str:
@@ -237,7 +297,8 @@ def gateway_back(ref: str) -> str:
 
 def gateway_not_back(ref: str, *, empty: bool, link_if: str = "") -> str:
     if empty:
-        out = "awg-gw-bundle.sh" if link_if == "awglink" else f"awg-gw-bundle-{link_if}.sh"
+        from awgbot.domain.services.gateway_link.peernets import bundle_file
+        out = bundle_file(link_if)
         return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления. Если на шлюзе "
                 "ключи линка новее бэкапа — выпусти файл конфигурации этого шлюза: "
                 f"<code>sudo awg-bot gw-bundle --link {_e(link_if)}</code>, перенеси на шлюз и примени: "

@@ -17,22 +17,27 @@ class KeepMixin:
 
     async def _keep_reply(self, msg: dict) -> None:
         kind = msg.get("t")
-        if kind == "keep_ok":
-            await asyncio.to_thread(self.services.keep_acked, str(msg.get("hash") or ""))
+        if kind in ("keep_ok", "keep_none"):
+            # предлагать серверу нечего: висящий вопрос снят (иначе «вернуть»
+            # применило бы снятое предложение, а своё не уходило бы до ответа)
+            dropped = await asyncio.to_thread(self.services.keep_ask_drop)
             first, self._keep_ready = not self._keep_ready, True
-            if first:                                     # ответ на hello: своё — если разошлось
-                await self.keep_push()
-            return
-        if kind == "keep_none":
-            self._keep_ready = True
+            if kind == "keep_ok":
+                await asyncio.to_thread(self.services.keep_acked, str(msg.get("hash") or ""))
+                if first or dropped:                      # ответ на hello: своё — если разошлось
+                    await self.keep_push()
+                return
             await self.keep_push(force=True)
             return
         res = await asyncio.to_thread(self.services.keep_back_in, msg)
         if res.get("note") and pkg._notify is not None:
             try:
-                await pkg._notify(res["note"])
+                await pkg._notify(res["note"], silent=True)       # настройки встали сами — без звука
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: уведомление о настройках с сервера не ушло: %s", e)
+        if res.get("action") == "wait":
+            self._keep_ready = False                      # вопрос уже в чате или не применилось — своё не шлём
+            return
         if res.get("action") == "ask":
             self._keep_ready = False
             if pkg._ask is not None:

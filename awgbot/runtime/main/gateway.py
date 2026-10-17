@@ -190,8 +190,8 @@ async def run_gateway() -> None:
         from awgbot.runtime import linkclient
         from awgbot.bot.notifier import notify_one as _notify_one
 
-        async def _chan_notify(text: str) -> None:
-            await _notify_one(bot, config.ADMIN_ID, text)
+        async def _chan_notify(text: str, *, silent: bool = False) -> None:
+            await _notify_one(bot, config.ADMIN_ID, text, silent=silent)
         linkclient.set_notify(_chan_notify)
 
         async def _chan_edit(chat_id: int, message_id: int, text: str) -> bool:
@@ -204,7 +204,7 @@ async def run_gateway() -> None:
         linkclient.set_edit(_chan_edit)
 
         async def _chan_ask(section: str) -> None:
-            # вопрос о почте или фразе с сервера AWG — живым меню (первый в очереди)
+            # вопрос с сервера AWG (почта, аплинк, настройки шлюза) — живым меню (первый в очереди)
             from awgbot.bot.handlers import gateway as gateway_handlers
             await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
         linkclient.set_ask(_chan_ask)

@@ -36,6 +36,27 @@ class KeepMixin:
         dev = self.db.get_device(gw.device_id) if gw is not None else None
         return dev.public_key if dev is not None else ""
 
+    def _slot_same_device(self, slot_id: int, dev_pub: str) -> bool:
+        """Блок — от устройства этого слота: ключ устройства слота или, в окне
+        переезда профилей, его двойника (у одной машины тогда два ключа)."""
+        if not dev_pub:
+            return False
+        gw = self.db.gateway(slot_id)
+        dev = self.db.get_device(gw.device_id) if gw is not None and gw.device_id else None
+        if dev is None:
+            return False
+        twin = self.db.twin_of_device(dev.id)
+        mate = self.db.get_device(dev.twin_of) if dev.twin_of else None
+        return dev_pub in {d.public_key for d in (dev, twin, mate) if d is not None}
+
+    def gwkeep_device_moved(self, slot_id: int, old_pub: str, new_pub: str) -> None:
+        """Финал переезда: слот перешёл к двойнику — блок помечается новым ключом
+        той же машины (иначе следующая установка выглядела бы «другим устройством»)."""
+        b = self.gwkeep(slot_id)
+        if b and b.get("dev") == old_pub and new_pub:
+            b["dev"] = new_pub
+            self._gwkeep_save(slot_id, b)
+
     def gwkeep_hello(self, slot_id: int, keep_hash: str, keep_new: bool, keep_fresh: bool) -> tuple[str, dict]:
         """Ответ на hello агента с keep1: (вид, тело) — keep_back, keep_none или
         keep_ok с отпечатком хранимого (агент сам пришлёт своё, если другое).
@@ -51,10 +72,11 @@ class KeepMixin:
             b["asked"] = "restore"
             self._gwkeep_save(slot_id, b)
             return "keep_back", {"why": "restore", "from": str(b.get("offer_from") or b.get("at") or ""),
-                                 "at": str(b.get("at") or ""), "other": bool(b.get("dev") and dev and b["dev"] != dev),
+                                 "at": str(b.get("at") or ""),
+                                 "other": bool(b.get("dev") and dev and not self._slot_same_device(slot_id, b["dev"])),
                                  "hash": b.get("hash", ""), "items": gwkeep.clean(b.get("items"))}
         if keep_new and b.get("items") is not None:
-            same = bool(dev) and b.get("dev") == dev
+            same = self._slot_same_device(slot_id, str(b.get("dev") or ""))
             if same and have == b.get("hash"):
                 return "keep_ok", {"hash": have}
             body = {"why": "same" if same else "device", "from": str(b.get("at") or ""),
@@ -86,7 +108,7 @@ class KeepMixin:
         if traffic is not None:
             block["traffic"] = traffic
         self._gwkeep_save(slot_id, block)
-        if prev.get("dev") != dev and hasattr(self, "backup_event_mark"):
+        if not self._slot_same_device(slot_id, str(prev.get("dev") or "")) and hasattr(self, "backup_event_mark"):
             try:
                 self.backup_event_mark("keep", slot=slot_id)   # первый блок нового устройства
             except Exception as e:                    # noqa: BLE001
@@ -96,14 +118,16 @@ class KeepMixin:
         return digest
 
     def gwkeep_card(self, slot_id: int, agent_caps=None, online: bool = False) -> dict:
-        """Строка карточки: {"state": saved|asked|outdated|"", "at"}. «Не
-        сохраняются» — только когда агент на связи и без keep1."""
+        """Строка карточки: {"state": saved|asked|outdated|"", "at", "asked":
+        restore|device|same — чего ждёт вопрос}. «Не сохраняются» — только
+        когда агент на связи и без keep1."""
         b = self.gwkeep(slot_id)
         caps = list(agent_caps if agent_caps is not None else self.gwlink_agent_caps(slot_id))
         if online and gwkeep.CAP not in caps:
             return {"state": "outdated", "at": ""}
         if b.get("asked") or b.get("offer") == "restore":
-            return {"state": "asked", "at": str(b.get("at") or "")}
+            kind = "restore" if b.get("offer") == "restore" else str(b.get("asked") or "")
+            return {"state": "asked", "at": str(b.get("at") or ""), "asked": kind}
         if b.get("at"):
             return {"state": "saved", "at": str(b["at"])}
         return {"state": "", "at": ""}

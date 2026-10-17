@@ -18,6 +18,12 @@ def transit_slots(gateways) -> list:
     форвардинг линк ↔ линк у них разошёлся бы."""
     return [g for g in gateways if g.lan_mode and g.lan_subnets]
 
+
+def bundle_file(link_if: str) -> str:
+    """Имя файла первого применения слота — одно правило с routing-link-setup.sh
+    (GW_BUNDLE_OUT): у первого линка прежнее имя, у остальных — с интерфейсом."""
+    return "awg-gw-bundle.sh" if link_if in ("", "awglink") else f"awg-gw-bundle-{link_if}.sh"
+
 class PeerNetsMixin:
     """VPN-транзит слота и связь подсетей за шлюзами."""
     # ── «за шлюзом — без VPN» ───────────────
@@ -100,12 +106,12 @@ class PeerNetsMixin:
 
     @staticmethod
     def _bundle_path(gw) -> str:
-        return "/root/awg-gw-bundle.sh" if gw.link_if == "awglink" else f"/root/awg-gw-bundle-{gw.link_if}.sh"
+        return f"/root/{bundle_file(gw.link_if)}"
 
     @staticmethod
     def bundle_name(gw) -> str:
         """Имя файла первого применения для слота — как его кладёт скрипт."""
-        return "awg-gw-bundle.sh" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.sh"
+        return bundle_file(gw.link_if)
 
     def _gw_bundle_build(self, gw) -> bytes:
         """Собрать файл первого применения слота скриптом линка (ключи не

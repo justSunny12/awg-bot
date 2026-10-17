@@ -20,9 +20,15 @@ def test_conf_keys_are_the_keys_of_the_agent_sections():
     assert set(gwkeep.CONF_KEYS) == want
 
 
-def test_fw_keys_are_firewall_env_without_the_ssh_port():
+def test_fw_keys_are_firewall_env_without_the_ssh_port_and_resolved_addresses():
+    """SSH_PORT — факт устройства; SSH_ALLOW_RESOLVED — факт резолвера: оба
+    вне отпечатка и вне применения."""
     from awgbot.infra.gwguard.common import ENV_KEYS
-    assert set(gwkeep.FW_KEYS) == set(ENV_KEYS) - {"SSH_PORT"}
+    assert set(gwkeep.FW_KEYS) == set(ENV_KEYS) - {"SSH_PORT", "SSH_ALLOW_RESOLVED"}
+    a = {"conf": {}, "fw": {"SSH_ALLOW": "home.example.org", "SSH_ALLOW_RESOLVED": "198.51.100.4"}}
+    b = {"conf": {}, "fw": {"SSH_ALLOW": "home.example.org", "SSH_ALLOW_RESOLVED": "198.51.100.9"}}
+    assert gwkeep.print_(a) == gwkeep.print_(b), "сменился адрес имени — блок «другой»"
+    assert "SSH_ALLOW_RESOLVED" not in gwkeep.clean(a)["fw"]
 
 
 def test_every_key_has_a_group_for_the_question():

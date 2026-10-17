@@ -96,3 +96,36 @@ def test_the_shell_has_no_open_fallback_snapshot():
     assert "tools.snapshot --out" in body and ".tgz.enc" in body
     assert "snapshot_state" not in script and "wal_checkpoint" not in script and "tar czf" not in body
     assert 'is_gateway_role && die "$GW_NO_BACKUPS"' in body
+
+
+def test_a_snapshot_into_the_backup_dir_keeps_the_last_five(tmp_path, monkeypatch):
+    """`awg-bot backup` кладёт в каталог бэкапов — там последние 5, как у бота."""
+    import os
+    import time
+    _host(tmp_path, monkeypatch)
+    bk = tmp_path / "backups"; bk.mkdir()
+    monkeypatch.setattr(cfg, "BACKUP_DIR", bk)
+    for i in range(6):
+        f = bk / f"awg-bot-backup-main-2026010{i}_000000.tgz.enc"
+        f.write_bytes(b"x"); os.utime(f, (time.time() - 1000 + i, time.time() - 1000 + i))
+    from tools import snapshot
+    out = bk / "awg-bot-backup-main-20261017_120000.tgz.enc"
+    assert snapshot.main(["--out", str(out)]) == 0
+    left = sorted(p.name for p in bk.glob("awg-bot-backup-*.tgz.enc"))
+    assert len(left) == 5 and out.name in left, left
+    other = tmp_path / "elsewhere"; other.mkdir()
+    assert snapshot.main(["--out", str(other / "a.tgz.enc")]) == 0
+    assert len(list(bk.glob("awg-bot-backup-*.tgz.enc"))) == 5, "снимок вне каталога тронул ротацию"
+
+
+def test_the_decrypt_tool_points_to_the_original_file(tmp_path, monkeypatch, capsys):
+    """restore принимает только исходный .tgz.enc — подсказка расшифровщика об этом."""
+    import sys
+    from tools import restore_backup
+    src = tmp_path / "awg-bot-backup-main-x.tgz.enc"
+    src.write_bytes(secrets_util.encrypt(b"payload", passphrase=PHRASE))
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": PHRASE)
+    monkeypatch.setattr(sys, "argv", ["restore_backup", str(src)])
+    restore_backup.main()
+    out = capsys.readouterr().out
+    assert "sudo awg-bot restore <файл .tgz.enc>" in out and "<архив>" not in out, out

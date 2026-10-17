@@ -253,7 +253,9 @@ def keep_line(keep: dict | None) -> str:
     if keep.get("state") == "outdated":
         return "⚠️ Настройки бота шлюза не сохраняются в бэкап: агент шлюза старше 3.4.0 — обнови его"
     if keep.get("state") == "asked":
-        return "⏳ Настройки бота шлюза из бэкапа ждут решения в чате бота шлюза"
+        what = {"device": "⏳ Настройки прежнего устройства",
+                "same": "⏳ Настройки бота шлюза с сервера AWG"}.get(keep.get("asked"), "⏳ Настройки бота шлюза из бэкапа")
+        return f"{what} ждут решения в чате бота шлюза"
     if keep.get("state") == "saved":
         try:
             when = timeutil.fmt_dt_ui(timeutil.parse_iso(keep["at"]), year=True)

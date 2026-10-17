@@ -86,7 +86,7 @@ class BackupsMixin:
         if slot:
             gw = self.db.gateway(slot)
             if gw is not None:
-                why.update(name=self._gw_name(gw), label=gw.label or "")
+                why.update(name=self._gw_name(gw), label=gw.label or "", slot=int(slot))
         due = self.db.get_state_json(EVENT_KEY, {})
         items = [w for w in (due.get("why") or []) if isinstance(w, dict)] if isinstance(due, dict) else []
         if why not in items:
@@ -153,9 +153,10 @@ class BackupsMixin:
         """Подпись копии в чате и тело письма: дата, шлюзы, отклонения;
         копия по событию — с причиной в заголовке."""
         from awgbot.domain.notices import backup as nb
+        bot = getattr(self, "bot_username", "") or ""
         refs, offline = [], []
         for gw in self.db.gateways():
-            ref = nb.gw_ref(self._gw_name(gw), gw.label or "")
+            ref = nb.gw_ref(self._gw_name(gw), gw.label or "", slot=gw.id, bot_username=bot)
             refs.append(ref)
             seen, keep_at = self.db.get_state(f"gwlink_seen_{gw.id}") or "", self._keep_at(gw.id)
             if seen and keep_at and not self.gwlink_session(gw.id):
@@ -163,8 +164,11 @@ class BackupsMixin:
         why = []
         for w in (due or {}).get("why") or []:
             if isinstance(w, dict):
-                why.append({"kind": w.get("kind"), "ref": nb.gw_ref(w["name"], w.get("label", ""))
-                            if w.get("name") else ""})
+                slot = int(w.get("slot") or 0)
+                live = bool(slot) and self.db.gateway(slot) is not None      # снятый — без ссылки
+                why.append({"kind": w.get("kind"),
+                            "ref": nb.gw_ref(w["name"], w.get("label", ""), slot=slot if live else 0,
+                                             bot_username=bot) if w.get("name") else ""})
         return nb.backup_caption(timeutil.fmt_dt_ui(timeutil.now(), year=True), refs, offline,
                                  nb.event_tail(why))
 

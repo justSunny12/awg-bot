@@ -17,6 +17,36 @@ import logging
 log = logging.getLogger("awgbot.backup")
 
 OPEN_REFUSAL = "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
+NOT_BACKUP = "файл не похож на бэкап сервера AWG"
+TERMINAL = "sudo awg-bot restore <файл>"
+TOO_BIG = f"бэкап больше 20 МБ — из чата бот его не скачает; восстанови в терминале сервера: {TERMINAL}"
+SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
+
+
+def recognize(name: str, blob: bytes | None = None) -> str:
+    """Чей это бэкап: "main" | "gw" | "any" (шифрованный, роль внутри) | ""
+    — не бэкап. По имени (awg-bot-backup-<роль>-…, awg-bot-gw…) или, когда
+    содержимое есть, по нему: подпись шифрованного бэкапа или метка в
+    архиве. Архив выпуска awg-bot.tgz и прочие файлы — не бэкап."""
+    n = (name or "").lower()
+    by_name = ""
+    if n.endswith(SUFFIXES):
+        if n.startswith("awg-bot-backup-main"):
+            by_name = "main"
+        elif n.startswith(("awg-bot-backup-gw", "awg-bot-gw")):
+            by_name = "gw"
+        elif n.startswith("awg-bot-backup"):
+            by_name = "any"
+    if blob is None:
+        return by_name
+    from awgbot.util import secrets_util
+    if blob.startswith(secrets_util.MAGIC):
+        return by_name or "any"
+    from . import meta as _meta
+    label = _meta.read(blob) if blob[:2] == b"\x1f\x8b" or blob[257:262] == b"ustar" else None
+    if label is not None:
+        return "gw" if str(label.get("role") or "") == "gw" else "main"
+    return by_name
 
 
 def _member(plain: bytes, name: str) -> bytes | None:
@@ -37,7 +67,7 @@ class BackupInspectMixin:
         шифрованным (prepare_restore)."""
         from awgbot.util import secrets_util
         if not blob.startswith(secrets_util.MAGIC):
-            return {"ok": False, "error": OPEN_REFUSAL}
+            return {"ok": False, "error": OPEN_REFUSAL if recognize(filename, blob) else NOT_BACKUP}
         kw = self.backup_enc_kwargs()
         if kw is None:
             return {"ok": False, "error": ("бэкап шифрованный, а фраза здесь не задана — задай её в «🔐 Шифрование» "
@@ -45,7 +75,8 @@ class BackupInspectMixin:
         try:
             plain = secrets_util.decrypt(blob, **kw)
         except Exception:                              # noqa: BLE001
-            return {"ok": False, "error": "не расшифровалась — фраза не та"}
+            return {"ok": False, "error": ("не расшифровался — фраза не та: бэкап, снятый с прежней фразой, "
+                                           f"восстанови в терминале сервера: {TERMINAL}")}
         from . import meta as _meta
         label = _meta.read(plain)
         err = _meta.check(label, admin_id_copy=_meta.env_admin_id(_member(plain, "state/env")), chat=True)

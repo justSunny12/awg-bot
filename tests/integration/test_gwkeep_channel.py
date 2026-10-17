@@ -74,10 +74,11 @@ class Wire:
     def __init__(self, server, slot: int, agent: Agent, monkeypatch, *, caps=("keep1",)):
         from awgbot.runtime import linkclient
         self.server, self.slot, self.agent, self.caps = server, slot, agent, caps
-        self.notes, self.asks = [], []
+        self.notes, self.asks, self.silent = [], [], []
 
-        async def notify(text):
+        async def notify(text, *, silent=False):
             self.notes.append(text)
+            self.silent.append(silent)
 
         async def ask(section):
             self.asks.append(section)

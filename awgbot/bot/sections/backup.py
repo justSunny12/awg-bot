@@ -58,10 +58,11 @@ def encryption_kb(br, has_secret: bool) -> InlineKeyboardMarkup:
                    back_button(br, ID))
 
 
-def restore_confirm_kb(br) -> InlineKeyboardMarkup:
+def restore_confirm_kb(br, fp: str = "") -> InlineKeyboardMarkup:
     """«Отмена» первой: восстановление необратимо, промах пальцем не должен
-    возвращать всех на неделю назад."""
-    return kb.confirm(br.cb.pack(ID, "do", "restore_drop"), "♻️ Восстановить", br.cb.pack(ID, "do", "restore!"))
+    возвращать всех на неделю назад. fp — отпечаток файла вопроса: кнопка
+    прежнего вопроса не запустит восстановление другого файла."""
+    return kb.confirm(br.cb.pack(ID, "do", "restore_drop"), "♻️ Восстановить", br.cb.pack(ID, "do", "restore!", fp))
 
 
 async def screen(br, services, key: str = ""):
@@ -106,7 +107,7 @@ async def _now(ctx):
 
 async def _restore(ctx):
     from awgbot.bot.handlers import restore as rs
-    await rs.run_restore(ctx.cb, ctx.services, ctx.state)
+    await rs.run_restore(ctx.cb, ctx.services, ctx.state, ctx.val or "")
 
 
 async def _restore_drop(ctx):

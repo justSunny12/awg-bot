@@ -52,6 +52,22 @@ def _backup_files(services):
     return who
 
 
+def _backup_many(services):
+    """«Сделать сейчас» при 15 шлюзах с длинными именами, все не на связи:
+    подпись файла не длиннее 1024 — остальное «и ещё N»."""
+    from tests.screens.shots_admin_common import ADM
+    who = _backup_files(services)
+    for slot in range(1, 16):
+        dev = services.add_device(ADM, f"Шлюз-с-очень-длинным-именем-номер-{slot:02d}").device_id
+        services.db.gateway_add(dev, "awglink" if slot == 1 else f"awglink{slot}", 8000 + slot,
+                                f"10.99.{slot}.0/30", slot_id=slot)
+        services.db.gateway_update(slot, label=f"дальняя площадка {slot:02d}")
+        services.db.set_state(f"gwlink_seen_{slot}", "2026-10-12T09:00:00+03:00")
+        services.db.set_state(f"gwkeep_{slot}", '{"v": 1, "at": "2026-10-12T08:40:00+03:00"}')
+    services.bot_username = "awg_test_bot"
+    return who
+
+
 def _backup_gw(phrase: bool = True):
     """Два шлюза: у первого агент старше 3.4.0 (на связь выходил, копии
     настроек не шлёт), второй не на связи — его настройки в бэкапе на дату."""
@@ -253,6 +269,8 @@ SETTINGS = [
          title="день и час: итог"),
     Shot("adm.set.backup.now", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
          data=_backup_files, title="копия сейчас — файлом в чат"),
+    Shot("adm.set.backup.now.many", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
+         data=_backup_many, title="копия сейчас при 15 шлюзах не на связи — подпись не длиннее 1024"),
     Shot("adm.set.backup.now.rekey", role="admin", press=[SetCB(sec="backup", act="do", key="now")],
          data=_rekey_busy, title="копия сейчас во время смены ключей линка"),
     Shot("adm.set.backup.enc", role="admin", press=[SetCB(sec="backup", act="do", key="enc")], data=_people,

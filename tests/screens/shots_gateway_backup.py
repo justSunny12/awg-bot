@@ -20,7 +20,7 @@ from tests.screens.shots_gateway_agent import _shot
 
 _BUNDLE = bundlecrypt.MAGIC + b"DUMMY-bundle"          # формат проверяется по подписи
 _BUNDLE_NAME = "awg-gw-NASPi.bin"
-_BACKUP = b"AWGBK1DUMMY-backup"                        # содержимое не читается — отказ по имени
+_BACKUP = b"AWGBK1DUMMY-backup"                        # подпись шифрованного бэкапа: по имени или по ней
 
 
 def _file(name: str, blob: bytes) -> tuple:
@@ -56,8 +56,9 @@ FILES = [
     # ── бэкап в чате шлюза: своих бэкапов нет ───────────────────────────────
     _shot("gw.backup.old", steps=[_file("awg-bot-backup-gw-20260914_030000.tgz.enc", _BACKUP)],
           title="бэкап шлюза прежней версии — отказ словами, файл убран"),
-    _shot("gw.backup.old.carries", steps=[("start", ""), _file("awg-gw-pi-2026-09-14.tgz", _BACKUP)],
-          carries=True, tick=_status(), title="открытый архив прежних версий у шлюза, несущего трафик"),
+    _shot("gw.backup.old.carries", steps=[("start", ""), _file("awg-gw-pi-2026-09-14.tgz.enc", _BACKUP)],
+          carries=True, tick=_status(),
+          title="шифрованный бэкап под чужим именем у шлюза, несущего трафик: узнан по содержимому, общий ответ"),
     _shot("gw.backup.server", steps=[_file("awg-bot-backup-main-20261017_120000.tgz.enc", _BACKUP)],
           title="бэкап сервера AWG в чате шлюза — тот же ответ"),
 ]

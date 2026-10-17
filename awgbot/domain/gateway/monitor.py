@@ -68,6 +68,10 @@ class MonitorMixin:
         # перепроверка — exec'ы nft и ip: только когда реассерт вообще не под троттлингом
         if self.__dict__.pop("_router_masq_stale", False) and self._reassert_due() and self._router_masq_stale_now():
             self._reassert_throttled("маскарад подсетей других шлюзов к роутеру разошёлся с маршрутом по умолчанию")
+        try:
+            self.keep_fw_finish()                       # файервол с сервера ждал перезапуска обвязки
+        except Exception as e:                          # noqa: BLE001
+            log.warning("gateway: keep_fw_finish: %s", e)
         # Реконсайл SSH прошёл внутри status() — до проверок, чтобы снимок не
         # называл «реассерт не прошёл» то, что ещё не пробовали; уведомления
         # оттуда забираем здесь.

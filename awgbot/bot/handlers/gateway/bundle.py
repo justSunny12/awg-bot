@@ -23,12 +23,12 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     примем» незачем, раз конфигурацию тоже не принимаем (решения пользователя
     17.10.2026)."""
     doc = message.document
-    from awgbot.bot.handlers import restore as rs
-    if rs.looks_like_backup(doc):                     # бэкап: не скачиваем, не осматриваем
-        await forget_secret(message)
-        await message.answer(texts.GW_OLD_BACKUP_REFUSED)
-        return
+    from awgbot.domain.backup.inspect import recognize
     name = (getattr(doc, "file_name", "") or "").lower()
+    kind = recognize(name)
+    if kind:                                           # бэкап по имени: не скачиваем, не осматриваем
+        await _backup_refused(message, kind)
+        return
     if name.startswith("awg-gw-bundle") and name.endswith(".sh"):
         await forget_secret(message)
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
@@ -45,7 +45,17 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         await forget_secret(message)
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
-    # прочий файл — не наш: молча
+    kind = recognize(name, buf.getvalue())
+    if kind:                                           # бэкап под чужим именем — по содержимому
+        await _backup_refused(message, kind)
+        return
+    # прочий файл (в том числе архив выпуска awg-bot.tgz) — не наш: молча
+
+
+async def _backup_refused(message: Message, kind: str) -> None:
+    """Бэкап в чате шлюза — один ответ, файл из чата прочь (в нём ключи)."""
+    await forget_secret(message)
+    await message.answer(texts.GW_OLD_BACKUP_REFUSED if kind == "gw" else texts.GW_SERVER_BACKUP_REFUSED)
 
 
 # Ввод значения, парольная фраза и мастер почты регистрирует роутер общих

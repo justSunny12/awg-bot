@@ -1,6 +1,7 @@
 """actions.py — часть пакета settingscore (см. __init__): тумблер, порт SSH, бэкап сейчас, канал бэкапа, парольная фраза."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable
 from aiogram.fsm.context import FSMContext
@@ -13,6 +14,8 @@ from awgbot.bot.states import BackupPassphrase
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
 from awgbot.domain.services import ServiceError
 from .base import Hooks, ask, after_input
+
+log = logging.getLogger("awgbot.settings")
 
 
 # ── тумблер ──────────────────────────────────────────────────────────────────
@@ -126,7 +129,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     busy = await call(services.backup_rekey_busy)
     if busy is not None:
         # идёт смена ключей линка: на диске .next/.prev — копия после неё
-        await cb.answer(nb.REKEY_WAIT_TOAST.format(name=f"«{services._gw_name(busy)}»"), show_alert=True)
+        await cb.answer(nb.rekey_wait_toast(services._gw_name(busy)), show_alert=True)
         return
     await cb.answer("Готовлю резервную копию…")
     from awgbot.util import timeutil as _tu
@@ -156,8 +159,9 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
         try:
             await cb.message.answer_document(FSInputFile(p), caption=caption or None)
             sent = True
-        except Exception:                             # noqa: BLE001
-            pass
+        except Exception as e:                        # noqa: BLE001 — сказать, а не молчать
+            log.warning("бэкап сейчас: файл не отправлен: %s", e)
+            await cb.message.answer(texts.backup_not_sent(str(e)), reply_markup=kb.hide_only())
     if sent:
         await call(services.backup_event_covered, made_at)       # копия по событию уже не нужна
     await hooks.render(cb, services, "backup")

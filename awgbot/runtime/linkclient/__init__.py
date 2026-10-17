@@ -157,14 +157,15 @@ def set_edit(fn) -> None:
 
 def set_ask(fn) -> None:
     """Крючок вопроса человеку (async fn(section)): документ с сервера принёс
-    почту или фразу, отличные от стоящих, — показать вопрос живым меню."""
+    почту или аплинк, отличные от стоящих, ключи линка или настройки шлюза
+    с сервера — показать вопрос живым меню."""
     global _ask
     _ask = fn
 
 
 def set_notify(fn) -> None:
-    """Корутина `fn(text)` — отправить человеку в чат агента. Ставит main:
-    у клиента канала своего бота нет."""
+    """Корутина `fn(text, *, silent=False)` — отправить человеку в чат агента
+    (silent — без звука). Ставит main: у клиента канала своего бота нет."""
     global _notify
     _notify = fn
 
@@ -365,7 +366,7 @@ async def report_keep_answer(services, accept: bool) -> dict:
     следующей (сервер, получив прежний отпечаток, спросит; на тот же блок агент
     ответит своим без вопроса)."""
     res = await asyncio.to_thread(services.keep_answer, accept)
-    if res.get("ok") and _client is not None and _client._writer is not None:
+    if res.get("ok") and not res.get("error") and _client is not None and _client._writer is not None:
         _client._keep_ready = True
         await _client.keep_push(force=True)
     return res

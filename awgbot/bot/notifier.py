@@ -206,7 +206,7 @@ async def send_notifications(bot, notifications) -> None:
     await _paced(items, one)
 
 
-async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) -> None:
+async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False, silent=False) -> None:
     """Разовое уведомление ТРЕТЬЕМУ ЛИЦУ (не инициатору действия) — с тихими
     часами и кнопкой «Скрыть» (по умолчанию, если reply_markup не передан).
     Для ответа самому инициатору на его же действие это НЕ нужно: там
@@ -216,7 +216,7 @@ async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) 
     снять кнопку при следующей ступени."""
     if not tg_id:
         return None
-    silent = _silent_now(force_sound)
+    silent = silent or _silent_now(force_sound)        # silent — без звука и вне тихих часов
     markup = reply_markup or kb.hide_only()
     return await _send(bot, tg_id, text, markup, silent)
 

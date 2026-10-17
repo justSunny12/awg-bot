@@ -217,10 +217,12 @@ def _transplant(con, cur, slot: int, admin: int, lost: list[dict], dead: set[str
     for dev_id in cur_devs:
         d = cur.execute(f"SELECT {','.join(dcols)}, holder_client_id FROM devices WHERE id = ?", (dev_id,)).fetchone()
         holder = admin if admin_cur is not None and d["holder_client_id"] == admin_cur[0] else None
-        for c in con.execute("SELECT d.id, d.name, d.address, c.name, d.public_key FROM devices d "
+        for c in con.execute("SELECT d.id, d.name, d.address, c.name, d.public_key, c.id, c.tg_id FROM devices d "
                              "JOIN clients c ON c.id = d.client_id "
                              "WHERE d.address = ? AND d.public_key != ?", (d["address"], d["public_key"])).fetchall():
-            lost.append({"device": c[1], "client": c[3], "address": c[2], "pub": c[4]})
+            # id профиля — в итоговой базе (она и станет живой): ссылка в отчёте
+            lost.append({"device": c[1], "client": c[3], "address": c[2], "pub": c[4],
+                         "client_id": int(c[5]), "client_tg": int(c[6] or 0)})
             _drop_device(con, int(c[0]))
         same = con.execute("SELECT id FROM devices WHERE public_key = ?", (d["public_key"],)).fetchone()
         if same is not None:

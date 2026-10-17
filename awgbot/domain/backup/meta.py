@@ -137,7 +137,7 @@ def check(meta: dict | None, *, admin_id_copy: str = "", chat: bool = True) -> s
     чужую копию не восстанавливают (chat=False — терминал, можно)."""
     from awgbot.infra import awglock
     if not meta:
-        return "это не бэкап awg-bot"
+        return "файл не похож на бэкап сервера AWG"
     if str(meta.get("role") or "") == "gw":
         return "это бэкап шлюза прежних версий — шлюзы теперь восстанавливаются из бэкапа сервера AWG"
     ver = str(meta.get("version") or "")

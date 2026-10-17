@@ -24,7 +24,7 @@ class CfgAskMixin:
             return None
         if section == "link":
             return self.rekey_question()
-        if section in ("keep", "keep_dev"):
+        if section in ("keep", "keep_dev", "keep_same"):
             return self.keep_question()
         value = self.cfg_pending().get(section) or {}
         if section == "mail":

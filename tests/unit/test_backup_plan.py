@@ -157,3 +157,18 @@ def test_a_slot_removed_and_assigned_again_after_the_copy(world, services, tmp_p
     p = _plan(world, copy)
     assert [(s.slot, s.case) for s in p.slots] == [(1, "removed"), (1, "added")]
     assert p.current_slots() == [1] and p.offer_slots() == [] and p.removed_slots() == []
+
+
+def test_the_server_address_is_kept_even_when_it_is_the_same(world, tmp_path):
+    """Адрес сервера в плане — отдельно от признака «отличается»: пустой
+    сервер с тем же адресом называет его, а не «по адресу <code></code>»."""
+    from awgbot.domain.backup.plan import Plan
+    from awgbot.domain.notices import backup as nb
+    copy = world.take_copy(tmp_path / "c")
+    p = _plan(world, copy)
+    assert p.host_copy == p.host_cur == "vpn.example.org", (p.host_copy, p.host_cur)
+    empty = Plan.from_dict({**p.to_dict(), "line": "clean", "empty": True,
+                            "slots": [{"slot": 1, "case": "restored", "name": "NASPi", "label": "", "link_if": "awglink"}]})
+    text = nb.restore_plan(empty)
+    assert "по адресу <code>vpn.example.org</code>" in text and "<code></code>" not in text, text
+    assert "В бэкапе адрес сервера" not in text, "одинаковый адрес выдан за другой"

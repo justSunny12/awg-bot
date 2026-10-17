@@ -9,6 +9,10 @@ from ..fmt import _e
 # шлюза нет, настройки едут с сервера AWG по каналу конфигурации
 GW_OLD_BACKUP_REFUSED = ("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся в бэкапе сервера AWG, "
                          "а новое устройство получает их по каналу конфигурации. Файл убран из чата — в нём ключи")
+# бэкап сервера AWG или шифрованный, чья роль не видна по имени, — в чате шлюза
+GW_SERVER_BACKUP_REFUSED = ("⚠️ Бэкап не применён: на шлюзе бэкапы не восстанавливаются — настройки шлюза "
+                            "хранятся в бэкапе сервера AWG, а сам бэкап сервера восстанавливают в чате бота "
+                            "сервера AWG. Файл убран из чата — в нём ключи")
 
 
 def host_rebooted(hostname: str, who: str) -> str:
@@ -45,5 +49,5 @@ REASSERT_FAIL_HINT = "Причина — в «🩺 Здоровье»; повт�
 
 
 __all__ = [
-    "GW_OLD_BACKUP_REFUSED", "host_rebooted", "gw_confirm_reassert",
+    "GW_OLD_BACKUP_REFUSED", "GW_SERVER_BACKUP_REFUSED", "host_rebooted", "gw_confirm_reassert",
     "GW_REISSUE_FILE_REFUSED", "gateway_op_result", "REASSERT_FAIL_HINT"]

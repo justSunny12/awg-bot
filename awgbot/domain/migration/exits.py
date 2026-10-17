@@ -143,6 +143,8 @@ class MigrationExitsMixin:
             _slot = self.db.gateway_by_device(old.id)
             if _slot is not None and _slot.device_id == old.id:
                 self.db.gateway_update(_slot.id, device_id=twin.id)
+                if hasattr(self, "gwkeep_device_moved"):
+                    self.gwkeep_device_moved(_slot.id, old.public_key, twin.public_key)
             self.db.delete_device(old.id, archive_reason="миграция")
             self.db.update_device_fields(twin.id, twin_of=None)
 

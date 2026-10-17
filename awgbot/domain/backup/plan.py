@@ -198,8 +198,7 @@ def plan(meta: dict, copy_db: str, cur_db: str, *, awg_dir: str | None = None,
     now = now or timeutil.now()
     copy_gws = {int(g["slot"]): g for g in meta.get("gateways") or [] if isinstance(g, dict) and g.get("slot")}
     p = Plan(line=FOREIGN, created_at=str(meta.get("created_at") or ""),
-             host_copy=host_copy if host_copy != host_cur else "",
-             host_cur=host_cur if host_copy != host_cur else "")
+             host_copy=host_copy, host_cur=host_cur)    # «отличается» — сравнением при показе
     try:
         cur = _ro(cur_db)
     except sqlite3.Error:

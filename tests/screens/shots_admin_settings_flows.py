@@ -92,6 +92,8 @@ def _restore_ready(services, mp):
     services.backup_set_passphrase(_PHRASE_TEXT)
     services.prepare_restore = lambda blob, plan=None: "/nonexistent/DUMMY-restore-pending.tgz.enc"
     services.launch_restore = lambda path: None
+    from awgbot.bot.handlers import restore as rs
+    mp.setattr(rs, "_fingerprint", lambda blob: "0123456789ab")   # шифрование со свежей солью — отпечаток постоянный
     return who
 
 
@@ -176,6 +178,10 @@ RESTORE = [
          data=_plan(line="clean", empty=True, expired_now=3, host_copy="vpn.example.org",
                     slots=[_slot(1, "restored", "NASPi"), _slot(2, "restored", "Pi4", "дача")]),
          title="новый сервер: шлюзы из бэкапа, подписки истекли за время без сервера"),
+    Shot("adm.restore.clean.same_host", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
+         data=_plan(line="clean", empty=True, host_copy="vpn.example.org", host_cur="vpn.example.org",
+                    slots=[_slot(1, "restored", "NASPi")]),
+         title="новый сервер с тем же адресом: адрес назван, предупреждения о другом адресе нет"),
     Shot("adm.restore.unreadable", role="admin", steps=[("file", _BK_NAME, _BK_PLAN)],
          data=_plan(line="unreadable", first_slot_back=True,
                     slots=[_slot(1, "same", "NASPi"), _slot(2, "rekeyed", "Pi4", "дача"),

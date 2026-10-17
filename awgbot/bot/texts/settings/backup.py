@@ -38,7 +38,13 @@ def restore_offer_plan(plan, bot_username: str = "") -> str:
 
 
 def restore_rejected(error: str) -> str:
-    return f"⚠️ Файл не принят: {_e(error)}"
+    """Отказ словами осмотра; команда терминала — моноширинным."""
+    from awgbot.domain.backup.inspect import TERMINAL
+    return f"⚠️ Файл не принят: {_e(error)}".replace(_e(TERMINAL), f"<code>{_e(TERMINAL)}</code>")
+
+
+RESTORE_ALREADY = "♻️ Уже восстанавливаю — бот перезапустится и пришлёт отчёт"
+RESTORE_OTHER_FILE = "Эта кнопка — от прежнего файла: восстанавливай из последнего вопроса"
 
 
 def restore_failed(reason: str) -> str:
@@ -73,8 +79,10 @@ def backup_encryption_text(mode: str, br) -> str:
     return (ui.head("🔐 Шифрование бэкапов", state) + "\n"
             f"Фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
-                      "Смена фразы не перешифровывает старые копии: они открываются прежней — не "
-                      "выбрасывай её, пока они нужны"))
+                      "Смена фразы не перешифровывает старые бэкапы: из чата бот расшифровывает только "
+                      "текущей фразой, а бэкап с прежней восстанавливают в терминале сервера — "
+                      "<code>sudo awg-bot restore &lt;файл&gt;</code> спросит её. Не выбрасывай прежнюю "
+                      "фразу, пока такие бэкапы нужны"))
 
 
 BACKUP_ASK_PASSPHRASE = ui.prompt("🔐 Парольная фраза", "не короче 8 символов; сообщение удалю сразу после приёма")
@@ -97,6 +105,11 @@ def backup_when_changed(old: tuple[int, int], new: tuple[int, int]) -> str:
 
 
 BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>"
+
+
+def backup_not_sent(reason: str) -> str:
+    """«Сделать сейчас»: файл собран, а Telegram его не принял — сказать, почему."""
+    return f"⚠️ Бэкап не отправлен в чат: {_e(reason)}"
 
 
 def backup_mailed(address: str, n: int = 1) -> str:

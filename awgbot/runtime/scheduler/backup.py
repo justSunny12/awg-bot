@@ -27,18 +27,25 @@ EVENT_MINUTES = 5              # такт копии по событию; джи
 REKEY_WAIT_S = 300             # смена ключей в работе — повтор месячной через столько ±40 %
 
 
-async def deliver(services, bot, paths, log_tag: str, caption: str = "") -> bool:
-    """Почта, если выбрана и ушло; иначе файлами админу в чат. True — ушло."""
+SENT, RETRY, REFUSED = "sent", "retry", "refused"
+
+
+async def deliver(services, bot, paths, log_tag: str, caption: str = "") -> tuple[str, str]:
+    """Почта, если выбрана и ушло; иначе файлами админу в чат. (итог,
+    причина): SENT — ушло; RETRY — не ушло (сеть, Telegram недоступен):
+    повтор имеет смысл; REFUSED — Telegram отверг сам запрос (подпись,
+    размер): повтор того же впустую, причина — его словами."""
+    from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
     if await asyncio.to_thread(services.backup_channel) == "email":
         try:
             if caption:
                 await asyncio.to_thread(services.email_send_backup, paths, caption)
             else:
                 await asyncio.to_thread(services.email_send_backup, paths)
-            return True
+            return SENT, ""
         except Exception as e:               # noqa: BLE001
             log.warning("%s: на почту не ушёл, шлю в Telegram: %s", log_tag, e)
-    delivered = False
+    delivered, refused = False, ""
     for p in paths:
         try:
             if caption:
@@ -46,9 +53,27 @@ async def deliver(services, bot, paths, log_tag: str, caption: str = "") -> bool
             else:
                 await bot.send_document(config.ADMIN_ID, FSInputFile(p))
             delivered = True
+        except (TelegramBadRequest, TelegramEntityTooLarge) as e:
+            refused = str(getattr(e, "message", "") or e)
+            log.error("%s: Telegram отверг файл %s: %s — повтор того же не поможет", log_tag, p, e)
         except Exception as e:               # noqa: BLE001
             log.warning("%s: отправка %s: %s", log_tag, p, e)
-    return delivered
+    if delivered:
+        return SENT, ""
+    return (REFUSED, refused) if refused else (RETRY, "")
+
+
+async def _refused_notice(bot, reason: str) -> None:
+    """Telegram отверг файл копии — сказать админу (один раз: месяц закрыт,
+    событие снято). Канал — тот же Telegram: он работает, отверг он запрос,
+    а почтой копия не ушла раньше — дубля нет."""
+    from awgbot.bot.notifier import send_notifications
+    from awgbot.domain.services import Notification
+    from awgbot.domain.notices import backup as nb
+    try:
+        await send_notifications(bot, [Notification(config.ADMIN_ID, nb.backup_refused_notice(reason))])
+    except Exception as e:                   # noqa: BLE001
+        log.warning("уведомление об отвергнутом бэкапе не ушло: %s", e)
 
 
 async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
@@ -93,10 +118,17 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
         caption = ""
         if hasattr(services, "backup_caption"):
             caption = await asyncio.to_thread(services.backup_caption)
-        if await deliver(services, bot, paths, log_tag, caption):
+        res, why = await deliver(services, bot, paths, log_tag, caption)
+        if res == SENT:
             await asyncio.to_thread(db.set_state, "last_backup", ym)
             if hasattr(services, "backup_event_covered"):
                 await asyncio.to_thread(services.backup_event_covered, made_at)
+        elif res == REFUSED:
+            # Telegram отверг сам файл: повтор каждый час упёрся бы в то же —
+            # месяц закрыт, причина в журнале (выше)
+            log.error("%s: копия %s не доставлена и повторяться не будет — причина выше", log_tag, ym)
+            await asyncio.to_thread(db.set_state, "last_backup", ym)
+            await _refused_notice(bot, why)
         else:
             # архив собран, наружу не ушёл (Telegram через лежащий линк):
             # «сделан» не ставим — повтор через час, пока не уйдёт
@@ -135,7 +167,13 @@ async def event_backup(services, bot) -> bool:
     except BackupKeyMissing:
         return False
     caption = await asyncio.to_thread(services.backup_caption, due)
-    if not await deliver(services, bot, paths, "backup event", caption):
+    res, why = await deliver(services, bot, paths, "backup event", caption)
+    if res == REFUSED:
+        log.error("backup event: копия по событию не доставлена и повторяться не будет — причина выше")
+        await asyncio.to_thread(services.backup_event_done, str(due.get("at") or ""))
+        await _refused_notice(bot, why)
+        return False
+    if res != SENT:
         log.warning("backup event: копия по событию собрана, но не доставлена — повторю тактом")
         return False
     await asyncio.to_thread(services.backup_event_done, str(due.get("at") or ""))

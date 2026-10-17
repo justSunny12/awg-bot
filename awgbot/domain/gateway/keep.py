@@ -14,6 +14,9 @@
 правил ни одного ключа из списка. Сервер возвращает блок того же устройства
 — применяется молча; другого устройства, после восстановления сервера
 или поправленной руками новой установке — вопросом в чате бота шлюза.
+
+Сбой применения ничего не теряет: своё серверу не уходит (единственная копия
+блока — на сервере), вопрос остаётся, записанное в conf откатывается.
 """
 from __future__ import annotations
 
@@ -39,6 +42,9 @@ LEFTOVER_SECTION = "backup"          # раздел документа «фра�
 # файлы копий прежних версий в каталоге бэкапов агента: внутри ключи линка, а
 # применить их уже нельзя
 LEFTOVER_FILES = ("*.tgz", "*.tgz.enc", "*.tar.gz", "*.tar.gz.enc", "*.tgz.dec", "restore-pending*")
+# маркеры awg-bot restore прежних версий в каталоге данных агента
+LEFTOVER_MARKERS = ("restore-*.json", ".restore-prune")
+KINDS = ("restore", "device", "same")       # вопрос: после восстановления, новое устройство, та же машина заново
 
 
 class KeepMixin:
@@ -49,6 +55,7 @@ class KeepMixin:
     _KEEP_ANSWERED_KEY = "gw_keep_answered"    # отпечаток серверного блока, на который ответили
     _KEEP_TRAFFIC_KEY = "gw_keep_traffic"      # {"at": iso, "due": сек, "sum": rx+tx} — последний ушедший счёт
     _KEEP_TRAFFIC_GOT_KEY = "gw_keep_traffic_got"   # месяц, чей счёт с сервера уже перенесён
+    _KEEP_FW_PENDING_KEY = "gw_keep_fw_pending"     # «1» — файервол с сервера записан, юнит обвязки не перезапущен
 
     # ── следы своих копий прежних версий ─────────────────────────────────────
 
@@ -72,6 +79,10 @@ class KeepMixin:
             olds = {p for pat in LEFTOVER_FILES for p in config.BACKUP_DIR.glob(pat) if p.is_file()}
         except OSError:
             olds = set()
+        try:
+            olds |= {p for pat in LEFTOVER_MARKERS for p in config.DATA_DIR.glob(pat) if p.is_file()}
+        except OSError:
+            pass
         for path in sorted(olds):
             try:
                 path.unlink()
@@ -147,6 +158,8 @@ class KeepMixin:
         last = self.db.get_state_json(self._KEEP_TRAFFIC_KEY, {})
         if not isinstance(last, dict) or not last.get("at"):
             return True
+        if last.get("month") and last["month"] != t["month"]:
+            return True                                   # счёт нового месяца — как впервые (сумма с нуля)
         if t["rx"] + t["tx"] <= int(last.get("sum") or 0):
             return False
         try:
@@ -160,10 +173,21 @@ class KeepMixin:
         self.db.set_state(self._KEEP_SYNCED_KEY, "1")
         self.db.set_state(self._KEEP_TRAFFIC_KEY, json.dumps(
             {"at": timeutil.to_iso(timeutil.now()), "due": int(TRAFFIC_EVERY_S * random.uniform(0.6, 1.4)),
-             "sum": int(t.get("rx") or 0) + int(t.get("tx") or 0)}))
+             "sum": int(t.get("rx") or 0) + int(t.get("tx") or 0), "month": str(t.get("month") or "")}))
 
     def keep_acked(self, digest: str) -> None:
+        """keep_ok: сервер подтвердил отпечаток — установка синхронизирована."""
         self.db.set_state(self._KEEP_ACKED_KEY, str(digest or "")[:16])
+        self.db.set_state(self._KEEP_SYNCED_KEY, "1")
+
+    def keep_ask_drop(self) -> bool:
+        """keep_ok / keep_none: серверу предлагать нечего — висящий вопрос
+        снимается (иначе «вернуть» применило бы снятое предложение). True —
+        вопрос был."""
+        if not self._keep_ask():
+            return False
+        self.db.set_state(self._KEEP_ASK_KEY, "")
+        return True
 
     # ── блок с сервера ───────────────────────────────────────────────────────
 
@@ -181,17 +205,25 @@ class KeepMixin:
 
     def keep_apply(self, items) -> dict:
         """Применить блок: conf, firewall.env без SSH_PORT и реассерт под замком
-        применения, своя почта с памяткой. {"ok", "error", "groups"}."""
+        применения, своя почта с памяткой. Сначала проверка значений
+        файервола, потом запись; сбой посреди — записанное откатывается.
+        {"ok", "error", "groups"}."""
         from awgbot.infra import gwguard
         items = gwkeep.clean(items)
         groups = gwkeep.differs(self.keep_collect(), items)
+        conf_was: list[tuple[str, object]] = []
+        fw_was: dict | None = None
         try:
-            for k, v in items["conf"].items():
-                if settings.get(k) != v:
-                    settings.set_value(k, v)
             fw_now = gwguard.read_env()
             fw = {k: v for k, v in items["fw"].items() if fw_now.get(k, "") != v}
+            for k, v in fw.items():
+                gwguard._check_env_value(k, v)            # до первой записи: отказ — ничего не тронуто
+            for k, v in items["conf"].items():
+                if settings.get(k) != v:
+                    conf_was.append((k, settings.get(k)))
+                    settings.set_value(k, v)
             if fw:
+                fw_was = {k: fw_now.get(k, "") for k in fw}
                 gwguard.write_env(**fw)
             mail = items.get("mail")
             if mail:
@@ -202,38 +234,80 @@ class KeepMixin:
                 self._cfg_json_set(self._CFG_KEEP_KEY, keep)
         except (ValueError, OSError, settings.SettingsWriteError) as e:
             log.warning("gateway: копия настроек с сервера не применена: %s", e)
+            self._keep_undo(conf_was, fw_was)
             return {"ok": False, "error": str(e), "groups": groups}
-        if fw and hasattr(self, "reassert_guarded"):
-            ok, err = self.reassert_guarded("настройки с сервера AWG")
-            if not ok:
-                log.info("gateway: обвязка после настроек с сервера подхватит файервол тактом: %s", err)
+        if fw:
+            self.db.set_state(self._KEEP_FW_PENDING_KEY, "1")
+            self.keep_fw_finish(throttled=False)
         self.db.set_state(self._KEEP_SYNCED_KEY, "1")
         return {"ok": True, "error": "", "groups": groups}
 
+    def _keep_undo(self, conf_was, fw_was) -> None:
+        """Откат частично применённого блока: conf — к прежним значениям
+        (ключа не было — снимается), firewall.env — к прежним."""
+        from awgbot.infra import gwguard
+        for k, v in reversed(conf_was):
+            try:
+                if v is None:
+                    settings.drop_keys([k])
+                else:
+                    settings.set_value(k, v)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("gateway: откат %s не удался: %s", k, e)
+        if fw_was:
+            try:
+                gwguard.write_env(**fw_was)
+            except (ValueError, OSError) as e:
+                log.warning("gateway: откат firewall.env не удался: %s", e)
+
+    def keep_fw_finish(self, *, throttled: bool = True) -> bool:
+        """Файервол с сервера записан, а юнит обвязки не перезапущен (занят
+        применением или запускается): перезапуск — сразу после записи, иначе
+        тактом монитора (троттлинг общий). True — перезапущен."""
+        if not self.db.get_state(self._KEEP_FW_PENDING_KEY) or not hasattr(self, "reassert_guarded"):
+            return False
+        why = "настройки файервола с сервера AWG"
+        if throttled:
+            ok = self._reassert_throttled(why) if hasattr(self, "_reassert_throttled") else False
+        else:
+            ok, err = self.reassert_guarded(why)
+            if not ok:
+                log.info("gateway: файервол с сервера ждёт перезапуска обвязки — добью тактом: %s", err)
+        if ok:
+            self.db.set_state(self._KEEP_FW_PENDING_KEY, "")
+        return ok
+
     def keep_back_in(self, body: dict) -> dict:
         """keep_back с сервера. {"action": "send" — отправить своё (после
-        применения или без него) | "ask" — вопрос в чате, "note": текст для
-        чата или ""}."""
+        применения или без него) | "ask" — вопрос в чате | "wait" — вопрос
+        уже висит по тому же блоку или применение не удалось: своё не шлётся,
+        "note": текст для чата или ""}."""
         why = str(body.get("why") or "")
+        why = why if why in KINDS else "device"
         items = gwkeep.clean(body.get("items"))
         digest = str(body.get("hash") or "")[:16]
         if why in ("same", "device") and body.get("traffic") is not None:
             self.keep_traffic_apply(body.get("traffic"))      # расход места: переносится сразу
         if gwkeep.print_(items) == self.keep_print():
             self.db.set_state(self._KEEP_SYNCED_KEY, "1")
+            self.keep_ask_drop()
             return {"action": "send", "note": ""}
         if why == "same" and self.keep_fresh():
             res = self.keep_apply(items)
             if not res["ok"]:
-                return {"action": "send", "note": ""}
+                # своё не уходит: единственная копия блока — на сервере; повтор — со следующей сессией
+                from awgbot.domain.notices.gateway import keep_failed
+                return {"action": "wait", "note": keep_failed(res["error"])}
             from awgbot.domain.notices.gateway import keep_received
             return {"action": "send", "note": keep_received(res["groups"], str(body.get("at") or ""))}
-        if why == "restore" and self.db.get_state(self._KEEP_ANSWERED_KEY) == digest:
+        if self.db.get_state(self._KEEP_ANSWERED_KEY) == digest:
             return {"action": "send", "note": ""}          # на этот блок уже ответили — своё серверу
-        self.db.set_state(self._KEEP_ASK_KEY, json.dumps(
-            {"why": why if why in ("restore", "device", "same") else "device",
-             "from": str(body.get("from") or "")[:40], "at": str(body.get("at") or "")[:40],
-             "other": bool(body.get("other")), "hash": digest, "items": items}, ensure_ascii=False))
+        held = self._keep_ask()
+        ask = {"why": why, "from": str(body.get("from") or "")[:40], "at": str(body.get("at") or "")[:40],
+               "other": bool(body.get("other")), "hash": digest, "items": items}
+        self.db.set_state(self._KEEP_ASK_KEY, json.dumps(ask, ensure_ascii=False))
+        if held and held.get("hash") == digest and held.get("why") == why:
+            return {"action": "wait", "note": ""}          # тот же вопрос уже в чате — молча обновлён
         return {"action": "ask", "note": ""}
 
     # ── вопрос и ответ ───────────────────────────────────────────────────────
@@ -244,11 +318,12 @@ class KeepMixin:
 
     def keep_section(self) -> str:
         """Раздел очереди вопросов: keep — из бэкапа, keep_dev — прежнего
-        устройства; вопроса нет — пусто."""
+        устройства, keep_same — этого же шлюза до новой установки; вопроса
+        нет — пусто."""
         ask = self._keep_ask()
         if not ask:
             return ""
-        return "keep" if ask["why"] == "restore" else "keep_dev"
+        return {"restore": "keep", "same": "keep_same"}.get(ask["why"], "keep_dev")
 
     def keep_question(self) -> dict | None:
         ask = self._keep_ask()
@@ -260,15 +335,18 @@ class KeepMixin:
 
     def keep_answer(self, accept: bool) -> dict:
         """«Вернуть / перенести» — применить блок; «оставить» — своё остаётся,
-        сервер сохранит его. {"ok", "accepted", "why", "from", "error"}."""
+        сервер сохранит его. Не применилось — вопрос остаётся, ответа нет:
+        своё серверу не уходит. {"ok", "accepted", "why", "from", "at", "error"}."""
         ask = self._keep_ask()
         if not ask:
-            return {"ok": False, "accepted": accept, "why": "", "from": "", "error": ""}
-        out = {"ok": True, "accepted": accept, "why": ask["why"], "from": ask.get("from", ""), "error": ""}
+            return {"ok": False, "accepted": accept, "why": "", "from": "", "at": "", "error": ""}
+        out = {"ok": True, "accepted": accept, "why": ask["why"], "from": ask.get("from", ""),
+               "at": ask.get("at", ""), "error": ""}
         if accept:
             res = self.keep_apply(ask.get("items"))
             if not res["ok"]:
                 out["error"] = res["error"]
+                return out
         self.db.set_state(self._KEEP_ANSWERED_KEY, str(ask.get("hash") or ""))
         self.db.set_state(self._KEEP_SYNCED_KEY, "1")
         self.db.set_state(self._KEEP_ASK_KEY, "")

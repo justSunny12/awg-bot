@@ -112,7 +112,8 @@ def main() -> None:
 
     if not done:
         sys.exit(1)
-    print("\nРазложить по местам: sudo awg-bot restore <архив> (бот остановится сам).")
+    print("\nРасшифрованный архив — для просмотра. Восстанавливают исходный файл: "
+          "sudo awg-bot restore <файл .tgz.enc> (бот остановится сам).")
 
 
 if __name__ == "__main__":

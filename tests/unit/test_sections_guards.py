@@ -144,7 +144,7 @@ def test_keys_belong_to_exactly_one_section():
 SAMPLES = {"encryption": (False, True), "configured": (False, True), "has_secret": (False, True),
            "muted": (False, True), "target_tag": ("", "v9.9.9"), "blocked": ("", "переезд"),
            "migration": ("", "running"), "available": (False, True), "orphans": (0, 2),
-           "link_keys": (False, True), "bot_token": (False, True)}
+           "link_keys": (False, True), "bot_token": (False, True), "fp": ("", "0123456789ab")}
 
 
 def _builders(m):

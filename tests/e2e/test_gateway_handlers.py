@@ -544,7 +544,8 @@ async def test_a_backup_in_the_gateway_chat_is_refused_and_removed(svc, name):
     msg.document = _Backup(100)
     await gh.gw_bundle_document(msg, svc, FakeState())
     assert msg.deleted, "файл с ключами остался в чате"
-    assert msg.sent[-1][1] == texts.GW_OLD_BACKUP_REFUSED, msg.sent
+    want = texts.GW_SERVER_BACKUP_REFUSED if "-main-" in name else texts.GW_OLD_BACKUP_REFUSED
+    assert msg.sent[-1][1] == want, msg.sent
     assert texts.GW_OLD_BACKUP_REFUSED.startswith("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся")
     assert not texts.GW_OLD_BACKUP_REFUSED.endswith(".")
 

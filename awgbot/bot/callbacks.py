@@ -293,7 +293,7 @@ class GwCB(CallbackData, prefix="gw"):
       action="раздел/действие", val="ключ|значение";
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       cfg_ask — первый вопрос очереди («⏳ Решить»), cfg_no|cfg_ok! (val — раздел
-      link|uplink|mail|keep|keep_dev) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
+      link|uplink|mail|keep|keep_dev|keep_same) — у приглашений «⬅️ Отмена» / «🔑|🔐 Применить»,
       у вопросов «Оставить своё» / «Принять с сервера AWG»;
       lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
