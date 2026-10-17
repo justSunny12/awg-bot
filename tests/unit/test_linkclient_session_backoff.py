@@ -112,7 +112,7 @@ async def test_the_session_mark_follows_the_session(vps):
     agent = _Agent()
     client = linkclient.LinkClient(agent)
     seen: list = []
-    agent.set_link_role = lambda *a: seen.append(agent.channel.online)
+    agent.set_link_role = lambda *a, **k: seen.append(agent.channel.online)
     vps.answers()
     await client._connect_once()
     assert seen == [True], "во время сессии признак не выставлен"

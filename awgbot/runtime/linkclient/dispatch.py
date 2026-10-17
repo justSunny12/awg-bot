@@ -45,7 +45,9 @@ class DispatchMixin:
                                     # и версию: нет поля — сервер старше 3.3.0
                                     msg.get("server"),
                                     # адреса в туннеле своей сети — для показа; форму проверяет домен
-                                    msg.get("lan_virtual"))
+                                    msg.get("lan_virtual"),
+                                    # бот сервера — ссылкой на его чат (с 3.4.0; нет поля — пусто)
+                                    msg.get("bot"))
             await self._update_regate()
             return
         if msg.get("t") == "lists_ok":
@@ -69,6 +71,9 @@ class DispatchMixin:
             return
         if msg.get("t") == "link_cancel":
             await self._rekey_cancel(msg)
+            return
+        if msg.get("t") == "rst_done":
+            self._rst_done(msg)
             return
         if msg.get("t") in ("keep_ok", "keep_none", "keep_back"):
             await self._keep_reply(msg)

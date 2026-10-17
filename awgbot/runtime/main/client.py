@@ -195,6 +195,17 @@ async def main() -> None:
             await _drop_bundle_msgs(bot, services, slot_id)
         _linkserver.set_on_rekeyed(_on_rekeyed)
 
+        async def _on_restore(slot_id: int, blob: bytes, name: str) -> str:
+            # бэкап сервера из чата бота шлюза: штатные рельсы — вопрос в чате
+            # админа, его данные — в том же хранилище диалогов, что у файла из чата
+            from aiogram.fsm.context import FSMContext
+            from aiogram.fsm.storage.base import StorageKey
+            from awgbot.bot.handlers.restore import relay_restore
+            state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=config.ADMIN_ID,
+                                                                  user_id=config.ADMIN_ID))
+            return await relay_restore(bot, services, state, blob, name)
+        _linkserver.set_on_restore(_on_restore)
+
         async def _on_update(nxt) -> None:
             # версии шлюзов открыли новую цель обновления — то же уведомление,
             # что у проверки по расписанию (один раз на тег решает домен)

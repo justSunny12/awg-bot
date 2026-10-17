@@ -208,7 +208,9 @@ class DeliverMixin:
         # и версию сервера: по ней агент выбирает цель обновления (roles.gw.needs_main);
         # адреса в туннеле сети слота меняются с подсетями — role уходит заново сам
         payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id),
-                   "caps": list(SERVER_CAPS), "server": config.INSTALLED_VERSION}
+                   "caps": list(SERVER_CAPS), "server": config.INSTALLED_VERSION,
+                   # бот сервера — ссылкой в чате шлюза («вопрос о восстановлении — в чате …»)
+                   "bot": str(getattr(self.services, "bot_username", "") or "")[:64]}
         if sess.role_sent == payload:
             return False
         sess.role_sent = payload

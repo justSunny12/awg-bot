@@ -526,12 +526,11 @@ async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(cha
 
 # ── резервная копия агента и планировщик ─────────────────────────────────────
 
-@pytest.mark.parametrize("name", ["awg-bot-backup-gw-20261001_120000.tgz.enc", "awg-bot-backup-main-x.tgz.enc",
-                                  "awg-bot-gw_20260901.tgz"])
-async def test_a_backup_in_the_gateway_chat_is_refused_and_removed(svc, name):
-    """Своих бэкапов у шлюза нет: копия шлюза прежних версий (или сервера) в
-    чате бота шлюза — один ответ, сообщение убрано (внутри ключи), файл не
-    скачивается и не осматривается."""
+@pytest.mark.parametrize("name", ["awg-bot-backup-gw-20261001_120000.tgz.enc", "awg-bot-gw_20260901.tgz"])
+async def test_a_gateway_backup_in_the_gateway_chat_is_refused_and_removed(svc, name):
+    """Своих бэкапов у шлюза нет: копия шлюза прежних версий в чате бота
+    шлюза — один ответ, сообщение убрано (внутри ключи), файл не скачивается
+    и не осматривается. Бэкап сервера едет серверу — test_gateway_relay."""
     from awgbot.bot import texts
 
     class _Backup(_Doc):
@@ -544,8 +543,7 @@ async def test_a_backup_in_the_gateway_chat_is_refused_and_removed(svc, name):
     msg.document = _Backup(100)
     await gh.gw_bundle_document(msg, svc, FakeState())
     assert msg.deleted, "файл с ключами остался в чате"
-    want = texts.GW_SERVER_BACKUP_REFUSED if "-main-" in name else texts.GW_OLD_BACKUP_REFUSED
-    assert msg.sent[-1][1] == want, msg.sent
+    assert msg.sent[-1][1] == texts.GW_OLD_BACKUP_REFUSED, msg.sent
     assert texts.GW_OLD_BACKUP_REFUSED.startswith("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся")
     assert not texts.GW_OLD_BACKUP_REFUSED.endswith(".")
 

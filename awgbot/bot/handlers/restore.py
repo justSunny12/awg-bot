@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import texts, roles
 from awgbot.bot import ui
-from awgbot.bot.handlers.common import call, edit_nav, forget_secret, send_menu
+from awgbot.bot.handlers.common import call, edit_nav, forget_secret, send_menu_to
 
 _MAX_BYTES = 20 * 1024 * 1024          # облачный Bot API отдаёт боту файлы до 20 МБ
 _SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -54,26 +54,42 @@ async def offer_restore(message: Message, services, state) -> bool:
     if not info.get("ok"):
         await message.answer(texts.restore_rejected(info.get("error", "не удалось прочитать")))
         return True
+    await ask_restore(message.bot, services, state, message.chat.id, blob, info)
+    return True
+
+
+async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dict) -> None:
+    """Вопрос с планом живым меню — одна дорога для файла из чата сервера и для
+    бэкапа, переданного из чата бота шлюза. Прежний вопрос — о другом файле:
+    финишер без кнопок, а не живая «♻️ Восстановить»."""
     fp = _fingerprint(blob)
     prev = (await state.get_data()).get("restore_qmid")
     if prev:
-        # прежний вопрос — о другом файле: финишер без кнопок, а не живая «♻️ Восстановить»
         try:
-            await message.bot.edit_message_text(texts.RESTORE_REPLACED, chat_id=message.chat.id,
-                                                message_id=int(prev), reply_markup=None)
+            await bot.edit_message_text(texts.RESTORE_REPLACED, chat_id=chat_id, message_id=int(prev),
+                                        reply_markup=None)
         except Exception:                              # noqa: BLE001 — сообщение удалено или старое
             pass
-    br = roles.MAIN
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
-    # вопрос — живым меню: прежнее гаснет, «Отмена» вернёт на его место главную
-    await send_menu(message, services, texts.restore_offer_plan(Plan.from_dict(info["plan"]),
-                                                                getattr(services, "bot_username", "") or ""),
-                    _backup.restore_confirm_kb(br, fp))
-    qmid = await call(services.db.get_nav_message_id, message.chat.id)
+    qmid = await send_menu_to(bot, services, chat_id,
+                              texts.restore_offer_plan(Plan.from_dict(info["plan"]),
+                                                       getattr(services, "bot_username", "") or ""),
+                              _backup.restore_confirm_kb(roles.MAIN, fp))
     await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
                             restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid)
-    return True
+
+
+async def relay_restore(bot, services, state, blob: bytes, name: str) -> str:
+    """Бэкап сервера из чата бота шлюза (собран слушателем канала): осмотр и
+    вопрос в чате бота сервера — как у файла, присланного сюда. «» — вопрос
+    задан; иначе причина для чата бота шлюза (сюда при отказе не идёт ничего)."""
+    from awgbot.core import config
+    info = await call(services.inspect_backup, blob, name)
+    if not info.get("ok"):
+        return str(info.get("error") or "не удалось прочитать")
+    await ask_restore(bot, services, state, config.ADMIN_ID, blob, info)
+    return ""
 
 
 async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:

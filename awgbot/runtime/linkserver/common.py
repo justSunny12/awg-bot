@@ -16,8 +16,9 @@ DEFAULT_PORT = gwlink.DEFAULT_PORT
 # понимает, что сервер пришлёт сам. Пустой список — сервер прежних версий.
 # cfg1 — документ cfg / cfg_ack; confirm1 — подтверждение в чате (ключи линка,
 # аплинк); token1 — раздел token (токен бота шлюза); keep1 — копия настроек
-# шлюза (keep / keep_ok / keep_back / keep_none)
-SERVER_CAPS: tuple[str, ...] = ("cfg1", "confirm1", "token1", "keep1")
+# шлюза (keep / keep_ok / keep_back / keep_none); restore1 — бэкап сервера из чата
+# бота шлюза (rst_part / rst_done)
+SERVER_CAPS: tuple[str, ...] = ("cfg1", "confirm1", "token1", "keep1", "restore1")
 
 class _Session:
     """Всё, что живёт ровно одну сессию слота. Одно место сброса вместо шести
@@ -39,6 +40,7 @@ class _Session:
         self.caps: list[str] = []        # возможности агента из hello (контракт канала); пусто — агент до 3.3.0
         self.cfg_sent = ""               # отпечаток документа конфигурации, ушедшего в этой сессии
         self.rekey_sent = ""             # id перехода ключей, чей link_next ушёл в этой сессии
+        self.rst = None                  # сборка бэкапа из чата шлюза (rst_part): обрыв сессии её стирает
         # вытеснила сессию, прошедшую hello: запись «на связи» в БД — её, и
         # закрыть её обязана эта, даже если сама до hello не дойдёт
         self.took_over = False

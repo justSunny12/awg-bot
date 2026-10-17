@@ -1,7 +1,7 @@
 """
 Агент шлюза — правки по ревью: бэкап в чате бота шлюза — только узнанный
 (по имени или содержимому), прочие файлы, включая архив выпуска awg-bot.tgz,
-молча пропускаются; бэкап сервера — свой ответ без «шлюза»; сбой ответа на
+молча пропускаются; бэкап сервера — серверу по каналу (test_gateway_relay); сбой ответа на
 вопрос о настройках — честный отказ, вопрос остаётся; следы восстановления
 прежних версий стираются на старте; карточка слота называет вид вопроса.
 """
@@ -69,17 +69,9 @@ async def test_other_files_are_ignored_silently(svc, name, blob):
     assert msg.sent == [] and not msg.deleted, "на не-бэкап бот ответил или убрал его"
 
 
-@pytest.mark.parametrize("name, blob, want", [
-    ("renamed.tgz.enc", b"AWGBK1DUMMY", "server"),
-    ("copy.tgz", _tar({"role": "gw"}), "gw"),
-    ("copy.tgz", _tar({"role": "main"}), "server"),
-    ("awg-bot-backup-main-20261017_120000.tgz.enc", b"", "server"),
-], ids=["renamed-enc", "gw-label", "main-label", "main-name"])
-async def test_a_recognized_backup_is_refused_and_removed(svc, name, blob, want):
-    msg = await _send(svc, name, blob)
-    assert msg.deleted
-    assert msg.sent[-1][1] == (texts.GW_OLD_BACKUP_REFUSED if want == "gw" else texts.GW_SERVER_BACKUP_REFUSED)
-    assert "Бэкап шлюза" not in texts.GW_SERVER_BACKUP_REFUSED and not texts.GW_SERVER_BACKUP_REFUSED.endswith(".")
+async def test_a_gateway_backup_by_its_label_is_refused_and_removed(svc):
+    msg = await _send(svc, "copy.tgz", _tar({"role": "gw"}))
+    assert msg.deleted and msg.sent[-1][1] == texts.GW_OLD_BACKUP_REFUSED
 
 
 async def test_a_failed_keep_answer_is_refused_honestly_and_the_question_stays(svc, monkeypatch):

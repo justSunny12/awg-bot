@@ -1,7 +1,7 @@
 """
 linkserver/ — сторона ВПС для канала ВПС ↔ шлюз (части: common — сессия и предел hello;
 session — слушатели и сессии; inbound — разбор входящих; deliver — доставки; rekey — смена ключей линка: link_next,
-link_go, переключение ВПС, фиксация первым шагом hello, сроки).
+link_go, переключение ВПС, фиксация первым шагом hello, сроки; relay — бэкап сервера из чата бота шлюза).
 
 Слушатель живёт ТОЛЬКО на адресах линков: публичный адрес сервера порт канала
 не показывает даже при снятом файерволе. Коннект всегда устанавливает шлюз —
@@ -67,6 +67,7 @@ from .session import SessionMixin
 from .inbound import InboundMixin
 from .deliver import DeliverMixin
 from .rekey import RekeyMixin
+from .relay import RelayMixin
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def gw_address(link_cidr: str) -> str:
 
 
 
-class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin):
+class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin, RelayMixin):
     """По серверу на адрес линка, по сессии на слот — собирается из частей пакета."""
 
 
@@ -102,6 +103,7 @@ _server: LinkServer | None = None
 
 
 _on_installed = None
+_on_restore = None
 _on_notes = None
 _on_rekeyed = None
 _update_hook = UpdateHook()             # пересчёт цели обновления — общий с другой ролью (runtime/updatehooks)
@@ -131,6 +133,14 @@ def set_on_notes(fn) -> None:
     """Уведомления админу о событиях канала (смена ключей линка): async fn(notes)."""
     global _on_notes
     _on_notes = fn
+
+
+def set_on_restore(fn) -> None:
+    """Бэкап сервера из чата бота шлюза собран (async fn(slot_id, blob, name) ->
+    «» — принят и вопрос задан в чате бота сервера, иначе причина отказа для
+    чата бота шлюза). Ставит main: у слушателя канала своего бота нет."""
+    global _on_restore
+    _on_restore = fn
 
 
 def set_on_installed(fn) -> None:

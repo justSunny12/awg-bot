@@ -9,10 +9,33 @@ from ..fmt import _e
 # шлюза нет, настройки едут с сервера AWG по каналу конфигурации
 GW_OLD_BACKUP_REFUSED = ("⚠️ Бэкап шлюза не применён: настройки шлюза теперь хранятся в бэкапе сервера AWG, "
                          "а новое устройство получает их по каналу конфигурации. Файл убран из чата — в нём ключи")
-# бэкап сервера AWG или шифрованный, чья роль не видна по имени, — в чате шлюза
-GW_SERVER_BACKUP_REFUSED = ("⚠️ Бэкап не применён: на шлюзе бэкапы не восстанавливаются — настройки шлюза "
-                            "хранятся в бэкапе сервера AWG, а сам бэкап сервера восстанавливают в чате бота "
-                            "сервера AWG. Файл убран из чата — в нём ключи")
+# бэкап сервера AWG в чате шлюза — серверу по каналу (вторая точка входа восстановления)
+GW_RELAY_SENDING = "⏳ Передаю бэкап серверу AWG…"
+_TERMINAL = "<code>sudo awg-bot restore &lt;файл&gt;</code>"
+
+
+def gw_relay_result(res: dict, server_bot: dict | None) -> str:
+    """Итог передачи — правкой «⏳ Передаю…»: принят — где вопрос; отказ
+    сервера — его словами (в причине уже есть следующий шаг, если он есть);
+    канала нет, сервер старше, обрыв, большой файл — что делать."""
+    from awgbot.domain.notices.backup import chat_ref
+    bot = chat_ref(server_bot, "бота сервера AWG")
+    why = str(res.get("why") or "")
+    if res.get("ok"):
+        return f"✅ Бэкап передан серверу AWG: вопрос о восстановлении — в чате {bot}"
+    if why == "refused":
+        reason = _e(str(res.get("error") or "отказ без причины"))
+        reason = reason.replace(_e("sudo awg-bot restore <файл>"), _TERMINAL)
+        return f"⚠️ Бэкап не принят сервером AWG: {reason}"
+    if why == "broken":
+        return f"⚠️ Не передал: связь с сервером AWG оборвалась — пришли файл снова (или в чат {bot})"
+    if why == "no_cap":
+        return (f"⚠️ Бэкап не передан: сервер AWG старше 3.4.0 и бэкапы через шлюз не принимает — пришли бэкап "
+                f"в чат {bot} или восстанови на сервере: {_TERMINAL}")
+    if why == "big":
+        return f"⚠️ Бэкап не передан: он больше 20 МБ — восстанови на сервере: {_TERMINAL}"
+    return (f"⚠️ Бэкап не передан: сервер AWG сейчас не на связи — пришли бэкап в чат {bot} или восстанови "
+            f"на сервере: {_TERMINAL}")
 
 
 def host_rebooted(hostname: str, who: str) -> str:
@@ -49,5 +72,5 @@ REASSERT_FAIL_HINT = "Причина — в «🩺 Здоровье»; повт�
 
 
 __all__ = [
-    "GW_OLD_BACKUP_REFUSED", "GW_SERVER_BACKUP_REFUSED", "host_rebooted", "gw_confirm_reassert",
+    "GW_OLD_BACKUP_REFUSED", "GW_RELAY_SENDING", "gw_relay_result", "host_rebooted", "gw_confirm_reassert",
     "GW_REISSUE_FILE_REFUSED", "gateway_op_result", "REASSERT_FAIL_HINT"]

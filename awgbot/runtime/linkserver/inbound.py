@@ -137,6 +137,9 @@ class InboundMixin:
                 sess.own_sent = None
                 await self.deliver_own(gw.id)
             return
+        if kind == "rst_part":
+            await self._rst_part(gw, sess, msg)
+            return
         if kind == "keep":
             digest = await asyncio.to_thread(self.services.gwkeep_in, gw.id, msg)
             await self.send(gw.id, "keep_ok", {"hash": digest})

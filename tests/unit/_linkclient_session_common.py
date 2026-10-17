@@ -63,7 +63,7 @@ class _Agent(AgentStub):
         self.touched += 1
 
     def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...,
-                      lan_virtual=...) -> None:
+                      lan_virtual=..., bot=...) -> None:
         self.roles.append(active)
         self.caps.append(caps)
 

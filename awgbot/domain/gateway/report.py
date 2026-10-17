@@ -94,8 +94,10 @@ class ReportMixin:
 
     _LINK_LAN_VIRTUAL_KEY = "gwlink_lan_virtual"
 
+    _LINK_SERVER_BOT_KEY = "gwlink_server_bot"
+
     def set_link_role(self, active: bool, standby=None, name=None, caps=None, server=...,
-                      lan_virtual=...) -> None:
+                      lan_virtual=..., bot=...) -> None:
         """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве;
         standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
         РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
@@ -113,6 +115,11 @@ class ReportMixin:
             self.db.set_state(self._LINK_SERVER_VERSION_KEY, _server_version(server))
         if lan_virtual is not ...:
             self.db.set_state(self._LINK_LAN_VIRTUAL_KEY, " ".join(_lan_virtual(lan_virtual)))
+        if bot is not ...:
+            # username бота сервера (с 3.4.0) — ссылкой на его чат; мусор — пусто
+            user = str(bot or "")
+            ok = 3 <= len(user) <= 64 and all(ch.isalnum() or ch == "_" for ch in user) and user.isascii()
+            self.db.set_state(self._LINK_SERVER_BOT_KEY, user if ok else "")
         if caps is not None:
             good = [c for c in (caps if isinstance(caps, list) else []) if isinstance(c, str)]
             self.db.set_state(self._LINK_SERVER_CAPS_KEY,
@@ -130,6 +137,11 @@ class ReportMixin:
         """True — другой шлюз есть, False — нет, None — сервер не говорил."""
         raw = self.db.get_state(self._LINK_STANDBY_KEY)
         return None if raw is None or raw == "" else raw == "1"
+
+    def link_server_bot(self) -> dict:
+        """{'username'} бота сервера AWG из `role`; сервер не говорил — пусто."""
+        user = self.db.get_state(self._LINK_SERVER_BOT_KEY) or ""
+        return {"username": user} if user else {}
 
     def link_server_caps(self) -> list[str]:
         """Возможности сервера из его первого `role`; пусто — сервер прежний или не говорил."""

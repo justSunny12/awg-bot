@@ -5,9 +5,9 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from awgbot.bot import texts
-from awgbot.bot.handlers.common import forget_secret
+from awgbot.bot.handlers.common import call, forget_secret
 from awgbot.util import bundlecrypt
-from .panel import router
+from .panel import router, log
 from awgbot.bot.handlers import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -16,24 +16,27 @@ from awgbot.bot.handlers import gateway as pkg       # имена пакета �
 @router.message(F.document)
 async def gw_bundle_document(message: Message, services, state: FSMContext):
     """Конфигурацию агент получает только документом по каналу конфигурации,
-    своих бэкапов у шлюза нет: бэкап в чате (шлюза прежних версий или сервера)
-    и файл конфигурации шлюза — любой: первого применения или шифрованный
-    перевыпуск прежних выпусков, по имени или по началу — один ответ и убрать
-    из чата (внутри ключи), прочие файлы — молча игнорировать: отвечать «не
-    примем» незачем, раз конфигурацию тоже не принимаем (решения пользователя
-    17.10.2026)."""
+    своих бэкапов у шлюза нет. Бэкап шлюза прежних версий и файл конфигурации
+    шлюза (первого применения или шифрованный перевыпуск прежних выпусков, по
+    имени или по началу) — один ответ и убрать из чата (внутри ключи). Бэкап
+    сервера AWG — серверу по каналу: вторая точка входа восстановления, вопрос
+    — в чате бота сервера. Прочие файлы — молча игнорировать (решения
+    пользователя 17.10.2026)."""
     doc = message.document
     from awgbot.domain.backup.inspect import recognize
     name = (getattr(doc, "file_name", "") or "").lower()
     kind = recognize(name)
-    if kind:                                           # бэкап по имени: не скачиваем, не осматриваем
-        await _backup_refused(message, kind)
+    if kind == "gw":                                   # бэкап шлюза прежних версий: не скачиваем
+        await _backup_refused(message)
         return
     if name.startswith("awg-gw-bundle") and name.endswith(".sh"):
         await forget_secret(message)
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
     if doc.file_size and doc.file_size > pkg._BUNDLE_MAX_BYTES:
+        if kind:                                       # бэкап сервера по имени, но Bot API его не отдаст
+            await forget_secret(message)
+            await message.answer(texts.gw_relay_result({"ok": False, "why": "big"}, {}))
         return                                         # крупнее предела Bot API — заведомо не наш
 
     import io
@@ -46,16 +49,43 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         await message.answer(texts.GW_REISSUE_FILE_REFUSED)
         return
     kind = recognize(name, buf.getvalue())
-    if kind:                                           # бэкап под чужим именем — по содержимому
-        await _backup_refused(message, kind)
+    if kind == "gw":
+        await _backup_refused(message)
+        return
+    if kind:                                           # бэкап сервера — серверу по каналу
+        await _relay(message, services, buf.getvalue(), name)
         return
     # прочий файл (в том числе архив выпуска awg-bot.tgz) — не наш: молча
 
 
-async def _backup_refused(message: Message, kind: str) -> None:
-    """Бэкап в чате шлюза — один ответ, файл из чата прочь (в нём ключи)."""
+async def _backup_refused(message: Message) -> None:
+    """Бэкап шлюза прежних версий — один ответ, файл из чата прочь (в нём ключи)."""
     await forget_secret(message)
-    await message.answer(texts.GW_OLD_BACKUP_REFUSED if kind == "gw" else texts.GW_SERVER_BACKUP_REFUSED)
+    await message.answer(texts.GW_OLD_BACKUP_REFUSED)
+
+
+async def _relay(message: Message, services, blob: bytes, name: str) -> None:
+    """Бэкап сервера AWG в чате бота шлюза — вторая точка входа восстановления:
+    файл из чата прочь (в нём ключи), серверу по каналу, итог — правкой
+    «⏳ Передаю…». Сервер дальше — штатные рельсы (вопрос в чате бота сервера)."""
+    from awgbot.core import config
+    from awgbot.runtime import linkclient
+    if getattr(getattr(message, "from_user", None), "id", config.ADMIN_ID) != config.ADMIN_ID:
+        return                                         # только от админа
+    await forget_secret(message)
+    sent = await message.answer(texts.GW_RELAY_SENDING)
+    try:
+        res = await linkclient.relay_backup(blob, name)
+    except Exception as e:                             # noqa: BLE001
+        log.warning("gateway: бэкап серверу не передан: %s", e)
+        res = {"ok": False, "why": "broken", "error": ""}
+    finally:
+        blob = b""                                     # на шлюзе бэкап не задерживается
+    text = texts.gw_relay_result(res, await call(services.link_server_bot))
+    try:
+        await sent.edit_text(text, reply_markup=None)
+    except Exception:                                  # noqa: BLE001 — сообщение удалено: итог новым
+        await message.answer(text)
 
 
 # Ввод значения, парольная фраза и мастер почты регистрирует роутер общих

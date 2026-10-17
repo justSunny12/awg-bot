@@ -83,6 +83,7 @@ from .dispatch import DispatchMixin
 from .rekey import RekeyMixin
 from .uplink import UplinkMixin
 from .keep import KeepMixin
+from .relay import RelayMixin
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +123,8 @@ def server_address() -> str:
 
 
 
-class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin, KeepMixin):
+class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin, KeepMixin,
+                 RelayMixin):
     """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
 
 
@@ -334,7 +336,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
+           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "relay_backup", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 
@@ -358,6 +360,14 @@ async def report_rekey_answer(services, accept: bool) -> dict | None:
         await _client.send_rekey_answer(reply)
     return reply
 
+
+
+async def relay_backup(blob: bytes, name: str) -> dict:
+    """Бэкап сервера из чата бота шлюза — серверу по каналу (linkclient/relay).
+    Клиента нет — сервер не на связи."""
+    if _client is None:
+        return {"ok": False, "why": "offline", "error": ""}
+    return await _client.send_backup(blob, name)
 
 
 async def report_keep_answer(services, accept: bool) -> dict:
