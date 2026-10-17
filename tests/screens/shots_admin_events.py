@@ -107,6 +107,14 @@ def _restore_done_gw(services):
     return who
 
 
+def _restore_failed(services):
+    """Копия из чата не прошла до остановки сервиса: маркер отказа, сервис поднят."""
+    who = _people(services)
+    services.pop_restore_failed = lambda: "бэкап не зашифрован"
+    services.pop_restore_done = lambda: None
+    return who
+
+
 async def _ev_restore_done(services, bot):
     from awgbot.bot.handlers.restore import report_restore_result
     await report_restore_result(bot, services)
@@ -174,6 +182,8 @@ EVENTS = [
          data=_restore_done, title="восстановление из копии завершено"),
     Shot("adm.ev.restore_done.gw", role="admin", call=("report_restore_result", _ev_restore_done),
          data=_restore_done_gw, title="восстановление: итог по каждому шлюзу, устройство не встало"),
+    Shot("adm.ev.restore_failed", role="admin", call=("report_restore_result", _ev_restore_done),
+         data=_restore_failed, title="копия из чата не восстановлена — ничего не изменилось"),
     Shot("adm.ev.restore_back", role="admin", call=("restore_wait_hello", _ev_wait_hello),
          data=_restore_wait(False, "2026-09-15T11:55:00+05:00"), title="шлюз на связи после восстановления"),
     Shot("adm.ev.restore_lost", role="admin", call=("restore_wait_tick", _ev_wait_tick),

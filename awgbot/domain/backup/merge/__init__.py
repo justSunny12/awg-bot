@@ -37,8 +37,10 @@ def _finalize(db_path: str) -> None:
 
 def run(copy_dir: str, *, cur_db: str | None = None, conf_dir: str | None = None,
         env_path: str | None = None, awg_dir: str | None = None, root_dir: str | None = None,
-        client_if: str | None = None, now=None) -> dict:
-    """Слить бэкап в copy_dir с текущим; итог — в copy_dir/restore-merge.json."""
+        client_if: str | None = None, now=None, expect: dict | None = None) -> dict:
+    """Слить бэкап в copy_dir с текущим; итог — в copy_dir/restore-merge.json.
+    expect — план, который человек видел в вопросе: после остановки сервиса он
+    обязан совпасть (иначе отказ, ничего не изменилось)."""
     cur_db = cur_db or str(config.DB_PATH)
     conf_dir = conf_dir or str(config.CONF_DIR)
     env_path = env_path or (str(config.ENV_PATH) if config.ENV_PATH is not None else "")
@@ -57,38 +59,34 @@ def run(copy_dir: str, *, cur_db: str | None = None, conf_dir: str | None = None
         raise MergeError("в бэкапе нет базы")
     p = _plan.plan_for_dir(meta, copy_dir, cur_db=cur_db, conf_dir=conf_dir, awg_dir=awg_dir,
                            root_dir=root_dir, now=now)
-    out = {"lost": [], "recheck": {}}
+    if expect is not None and _plan.Plan.from_dict(expect).signature() != p.signature():
+        raise MergeError("с момента вопроса на сервере изменились шлюзы или база — бэкап не применён, "
+                         "пришли его снова")
+    out = {"lost": [], "recheck": {}, "moved": {}, "dead": set()}
 
     def build(result: str, copy_db: str) -> None:
         if p.same_line:
             data.merge_same(result, copy_db, cur_db, p)
         else:
-            out["lost"] = data.merge_other(result, copy_db, cur_db, p)
+            out["lost"] = data.merge_other(result, copy_db, cur_db, p, out)
             out["recheck"] = recheck.recheck(result)
         _finalize(result)
 
+    provision = (not p.same_line and bool(_plan.conf_value(os.path.join(copy_dir, "state", "conf", "app.yaml"),
+                                                          ("routing", "gw_interface")))
+                 and not _plan.conf_value(os.path.join(conf_dir, "app.yaml"), ("routing", "gw_interface")))
     try:
         db_path = data.replace_db(copy_dir, build)
         files.merge_app_yaml(copy_dir, conf_dir, p.same_line)
         files.merge_env(copy_dir, env_path, p)
         files.merge_link_files(copy_dir, p, awg_dir=awg_dir, root_dir=root_dir)
-        moved = set()
-        if not p.same_line and p.line != _plan.UNREADABLE and os.path.exists(cur_db):
-            con = sqlite3.connect(cur_db)
-            try:
-                for n in p.current_slots():
-                    for dev in data._slot_devices(con, n):
-                        row = con.execute("SELECT public_key FROM devices WHERE id = ?", (dev,)).fetchone()
-                        if row is not None:
-                            moved.add(row[0])
-            finally:
-                con.close()
         files.merge_iface_confs(copy_dir, p, awg_dir=awg_dir, link_ifs={s.link_if for s in p.slots},
-                                client_if=client_if, transplanted_pubs=moved,
-                                lost_pubs={d.get("pub", "") for d in out["lost"]})
+                                client_if=client_if, transplanted=out["moved"],
+                                lost_pubs={d.get("pub", "") for d in out["lost"]} | out["dead"])
     except (sqlite3.Error, OSError, RuntimeError) as e:
         raise MergeError(f"слияние не прошло: {e}") from e
     report = build_report(p, db_path, out["lost"], out["recheck"])
+    report["provision"] = provision          # новый сервер: обвязка РФ-доступа из бэкапа — развернуть до линков
     with open(os.path.join(copy_dir, REPORT_NAME), "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False)
     return report

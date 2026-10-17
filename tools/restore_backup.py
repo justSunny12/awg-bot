@@ -53,13 +53,11 @@ def _db_secret() -> dict:
         def get(key: str) -> str:
             row = con.execute("SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
             return str(row[0]) if row is not None and row[0] else ""
-        phrase, key = get("backup_passphrase"), get("backup_key")
+        phrase = get("backup_passphrase")
     finally:
         con.close()
     if phrase:
         return {"passphrase": phrase}
-    if key:
-        return {"key": su.b64d(key)}
     raise ValueError("в базе нет ключевой фразы")
 
 
@@ -74,7 +72,8 @@ def _decrypt_one(path: Path, *, key_b64: str | None, out_arg: str | None, from_d
     else:
         kb = key_b64 or os.environ.get("BACKUP_KEY") or ""
         if not kb:
-            kb = input(f"BACKUP_KEY (base64) для {path.name}: ").strip()
+            # подсказка — в терминал, не в stdout (его глушат), ключ — без эха
+            kb = getpass.getpass(f"BACKUP_KEY (base64) для {path.name}: ").strip()
         data = su.decrypt(blob, key=su.b64d(kb))
     dst = _out_path(path, out_arg)
     dst.write_bytes(data)

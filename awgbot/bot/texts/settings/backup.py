@@ -53,6 +53,11 @@ def restore_rejected(error: str) -> str:
     return f"⚠️ Файл не принят: {_e(error)}"
 
 
+def restore_failed(reason: str) -> str:
+    """Восстановление из чата не прошло — ничего не изменилось."""
+    return f"⚠️ Бэкап не восстановлен: {_e(reason)}"
+
+
 RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа — бот перезапустится и через несколько секунд пришлёт отчёт"
 
 

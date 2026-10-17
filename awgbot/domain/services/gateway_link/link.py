@@ -56,18 +56,18 @@ class LinkScriptMixin:
         self._run_link_script("--reassert", env)
         return True
 
-    _LINK_UNIT_WANTS = "/etc/systemd/system/multi-user.target.wants/awg-link@{}.service"
+    _SYS_NET = "/sys/class/net"
 
     def gateway_links_adopt(self) -> list[str]:
-        """Слоты с конфигом линка и без юнита (бэкап восстановлен на пустом
-        сервере, юнит не встал): --adopt — шаблон, экземпляр, подъём.
-        Возвращает принятые линки."""
+        """Слоты с конфигом линка, чей интерфейс не поднят (бэкап восстановлен
+        на пустом сервере, --adopt в restore не прошёл): --adopt — шаблон,
+        экземпляр, подъём; идемпотентен, повторяется на каждом старте, пока
+        линк не встанет. Возвращает принятые линки."""
         done = []
         for g in self.db.gateways():
             if not os.path.exists(os.path.join(config.AWG_DIR, f"{g.link_if}.conf")):
                 continue
-            if os.path.exists(self._LINK_UNIT_WANTS.format(g.link_if)) or \
-                    (g.link_if == "awglink" and os.path.exists(self._LEGACY_LINK_UNIT)):
+            if os.path.isdir(os.path.join(self._SYS_NET, g.link_if)):
                 continue
             try:
                 self._run_link_script("--adopt", self._slot_env(g))

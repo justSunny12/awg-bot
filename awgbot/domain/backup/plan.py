@@ -66,6 +66,10 @@ class Plan:
         d["replaced"] = tuple(d.get("replaced") or (0, 0))
         return cls(**d)
 
+    def signature(self) -> tuple:
+        """Что человек видел в вопросе: вид линии и случай каждого слота."""
+        return (self.line, bool(self.empty), tuple(sorted((s.slot, s.case) for s in self.slots)))
+
     def slot(self, n: int) -> SlotPlan | None:
         return next((s for s in self.slots if s.slot == n), None)
 
@@ -77,6 +81,16 @@ class Plan:
         """Слоты, которые остаются текущими (копия к ним применяется с их
         связностью)."""
         return [s.slot for s in self.slots if s.case in (C_SAME, C_REKEYED, C_DEVICE, C_TWIN, C_ADDED)]
+
+    def offer_slots(self) -> list[int]:
+        """Текущие слоты, которым предлагается копия их настроек из бэкапа:
+        добавленным после бэкапа (и снятым и назначенным заново) — нечего."""
+        return [s.slot for s in self.slots if s.case in (C_SAME, C_REKEYED, C_DEVICE, C_TWIN)]
+
+    def removed_slots(self) -> list[int]:
+        """Слоты бэкапа, к которым он не применяется, и которых нет сейчас."""
+        live = set(self.current_slots())
+        return [s.slot for s in self.slots if s.case == C_REMOVED and s.slot not in live]
 
     def copy_slots(self) -> list[int]:
         """Слоты, которые встают из копии целиком (пустой сервер)."""
@@ -153,6 +167,29 @@ def _case(copy: dict, cur: dict, *, by_files: bool) -> str:
     return C_SAME
 
 
+def _slot_plan(n: int, src: dict, case: str) -> SlotPlan:
+    return SlotPlan(slot=n, case=case, name=str(src.get("name") or ""), label=str(src.get("label") or ""),
+                    link_if=str(src.get("link_if") or ""))
+
+
+def _readded(journal: list[dict], copy_gws: dict, created_at: str) -> set[int]:
+    """Слоты бэкапа, снятые после него (журнал: снят позже даты бэкапа)."""
+    out = set()
+    try:
+        made = timeutil.parse_iso(created_at)
+    except (ValueError, TypeError):
+        return out
+    for r in journal:
+        try:
+            n = int(r.get("slot") or 0)
+            when = timeutil.parse_iso(str(r.get("at") or ""))
+        except (ValueError, TypeError):
+            continue
+        if n in copy_gws and timeutil.elapsed(made, when) >= 0:   # слот в бэкапе есть — снят не раньше
+            out.add(n)
+    return out
+
+
 def plan(meta: dict, copy_db: str, cur_db: str, *, awg_dir: str | None = None,
          root_dir: str | None = None, host_copy: str = "", host_cur: str = "", now=None) -> Plan:
     """План по метке и базе копии и по текущей базе."""
@@ -193,7 +230,9 @@ def plan(meta: dict, copy_db: str, cur_db: str, *, awg_dir: str | None = None,
         else:
             cur_slots = _slots(cur, awg_dir, root_dir)
             journal = removed_journal(cur)
-        p.empty = cur is not None and not cur_slots and not journal
+        # пустой сервер — только на другой линии: на той же журнал снятых
+        # чистится по сроку, и «слотов нет» значит «все сняли», а не «новый»
+        p.empty = p.line != SAME and cur is not None and not cur_slots and not journal
         if p.line == FOREIGN and cur is not None:
             slot_devs = set()
             for n in cur_slots:
@@ -208,11 +247,17 @@ def plan(meta: dict, copy_db: str, cur_db: str, *, awg_dir: str | None = None,
     finally:
         if cur is not None:
             cur.close()
+    readded = _readded(journal, copy_gws, p.created_at)
     for n in sorted(set(copy_gws) | set(cur_slots)):
         copy, now_ = copy_gws.get(n), cur_slots.get(n)
+        if copy and now_ and n in readded:
+            # снят после бэкапа и назначен заново: в бэкапе — снятый, сейчас —
+            # добавленный; настройки снятого новому не предлагаются
+            p.slots.append(_slot_plan(n, copy, C_REMOVED))
+            p.slots.append(_slot_plan(n, now_, C_ADDED))
+            continue
         src = now_ or copy or {}
-        sp = SlotPlan(slot=n, case="", name=str(src.get("name") or ""), label=str(src.get("label") or ""),
-                      link_if=str(src.get("link_if") or ""))
+        sp = _slot_plan(n, src, "")
         if copy and now_:
             sp.case = _case(copy, now_, by_files=cur is None)
         elif copy:
@@ -235,13 +280,21 @@ def plan_for_dir(meta: dict, copy_dir: str, *, cur_db: str | None = None, conf_d
                 host_cur=cur_host, now=now)
 
 
-def conf_host(path: str) -> str:
-    """network.server_host из app.yaml."""
+def conf_value(path: str, keys: tuple) -> str:
+    """Значение из app.yaml по пути ключей; нет — пусто."""
     import yaml
     try:
         with open(path, encoding="utf-8") as f:
             doc = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
         return ""
-    net = doc.get("network") if isinstance(doc, dict) else None
-    return str(net.get("server_host") or "") if isinstance(net, dict) else ""
+    for k in keys:
+        if not isinstance(doc, dict):
+            return ""
+        doc = doc.get(k)
+    return "" if doc is None or isinstance(doc, dict) else str(doc)
+
+
+def conf_host(path: str) -> str:
+    """network.server_host из app.yaml."""
+    return conf_value(path, ("network", "server_host"))

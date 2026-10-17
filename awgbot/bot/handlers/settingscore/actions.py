@@ -133,6 +133,8 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
             await cb.answer(nb.REKEY_WAIT_TOAST.format(name=f"«{services._gw_name(busy)}»"), show_alert=True)
             return
     await cb.answer("Готовлю резервную копию…")
+    from awgbot.util import timeutil as _tu
+    made_at = _tu.to_iso(_tu.now())
     try:
         paths = await call(services.make_backup)
     except BackupKeyMissing:
@@ -151,18 +153,24 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
             acc = await call(services.email_account)
             await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
                                     reply_markup=kb.hide_only())
+            if server:
+                await call(services.backup_event_covered, made_at)   # копия по событию уже не нужна
         except mail.MailError as e:
             await cb.message.answer(f"🔴 {texts._e(str(e))}")
         await hooks.render(cb, services, "backup")
         return
+    sent = False
     for p in paths:
         try:
             if caption:
                 await cb.message.answer_document(FSInputFile(p), caption=caption)
             else:
                 await cb.message.answer_document(FSInputFile(p))
+            sent = True
         except Exception:                             # noqa: BLE001
             pass
+    if sent and server:
+        await call(services.backup_event_covered, made_at)       # копия по событию уже не нужна
     await hooks.render(cb, services, "backup")
 
 

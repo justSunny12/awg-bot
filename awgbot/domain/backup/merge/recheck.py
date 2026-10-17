@@ -43,25 +43,34 @@ def _pair(db, dev_id: int) -> list[int]:
 
 
 def traffic(db) -> int:
-    """Биты лимитов по счётчикам бэкапа. Возвращает число заблокированных устройств."""
+    """Биты лимитов по счётчикам бэкапа — по правилу check_traffic_limits:
+    шлюзы не в счёт; у пары переезда расход — сумма обеих строк против лимита
+    пары, старая строка отдельно не судится; тотал профиля — против лимита с
+    бонусом; профиль админа не блокируется. Возвращает число заблокированных
+    устройств."""
     if (db.get_state("last_monthly_reset") or "") != timeutil.now().strftime("%Y-%m"):
         return 0
-    slot_devs = {g.device_id for g in db.gateways()}
     n = 0
     for client in db.list_clients(include_service=False):
         if client.activation_status != "active" or client.tg_id == config.ADMIN_ID:
             continue
-        devices = [d for d in db.list_devices(client.id, all_rows=True) if d.id not in slot_devs]
-        total = 0
+        devices = [d for d in db.list_devices(client.id, all_rows=True) if not d.is_gateway]
+        by_id = {d.id: d for d in devices}
+        paired_old = {d.twin_of for d in devices if d.twin_of is not None}
         for dev in devices:
+            if dev.id in paired_old or not dev.traffic_limit:
+                continue
             used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-            total += used
-            if dev.twin_of is None and dev.traffic_limit and used >= int(dev.traffic_limit):
+            mate = by_id.get(dev.twin_of) if dev.twin_of else None
+            if mate is not None:
+                used += int(mate.traffic_rx_month) + int(mate.traffic_tx_month)
+            if used >= int(dev.traffic_limit):
                 for d in _pair(db, dev.id):
                     db.device_mask_apply(d, or_bits=int(DeviceBlock.TRAFFIC_USER))
                 db.add_traffic_notified(client.id, f"dev_over:{dev.id}")
                 n += 1
         climit = int(client.traffic_limit or 0)
+        total = sum(int(d.traffic_rx_month) + int(d.traffic_tx_month) for d in devices)
         if climit and total >= climit + int(client.bonus_bytes or 0):
             db.client_mask_apply(client.id, or_bits=int(ClientBlock.TRAFFIC_CLIENT))
             for dev in devices:

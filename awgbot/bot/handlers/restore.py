@@ -40,7 +40,8 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
         await message.answer(texts.restore_rejected(info.get("error", "не удалось прочитать")))
         return True
     await forget_secret(message)                       # в копии вся база — в чате ей не место
-    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"])
+    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
+                            restore_plan=info["plan"])
     br = roles.pick(gateway)
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
@@ -59,7 +60,7 @@ async def run_restore(cb: CallbackQuery, services, state) -> None:
         await cb.answer(ui.Toast.no_file, show_alert=True)
         return
     await cb.answer()
-    path = await call(services.prepare_restore, base64.b64decode(raw))
+    path = await call(services.prepare_restore, base64.b64decode(raw), data.get("restore_plan"))
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                  # noqa: BLE001
@@ -87,6 +88,9 @@ async def report_restore_result(bot, services) -> None:
     ожидание их выхода на связь (факт — hello слота)."""
     from awgbot.core import config
     from awgbot.bot.notifier import notify_one
+    failed = await call(services.pop_restore_failed) if hasattr(services, "pop_restore_failed") else ""
+    if failed:
+        await notify_one(bot, config.ADMIN_ID, texts.restore_failed(failed))
     done = await call(services.pop_restore_done)
     if not done:
         return

@@ -82,6 +82,7 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
             on_busy()
         return
     from awgbot.domain.backup.crypto import BackupKeyMissing
+    made_at = timeutil.to_iso(timeutil.now())
     try:
         try:
             paths = await asyncio.to_thread(services.make_backup)
@@ -95,6 +96,8 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
             caption = await asyncio.to_thread(services.backup_caption)
         if await deliver(services, bot, paths, log_tag, caption):
             await asyncio.to_thread(db.set_state, "last_backup", ym)
+            if hasattr(services, "backup_event_covered"):
+                await asyncio.to_thread(services.backup_event_covered, made_at)
         else:
             # архив собран, наружу не ушёл (Telegram через лежащий линк):
             # «сделан» не ставим — повтор через час, пока не уйдёт
@@ -135,7 +138,7 @@ async def event_backup(services, bot) -> bool:
         return False
     from awgbot.domain.backup.crypto import BackupKeyMissing
     try:
-        paths = await asyncio.to_thread(services.make_backup)
+        paths = await asyncio.to_thread(services.backup_event_paths, due)
     except BackupKeyMissing:
         return False
     caption = await asyncio.to_thread(services.backup_caption, due)

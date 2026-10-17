@@ -28,8 +28,9 @@ from tests.unit.test_cli_script import SCRIPT, _extract_func
 
 pytestmark = pytest.mark.unit
 
-FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "restore_stage", "restore_unstage", "restore_rollback",
-         "restore_mv", "restore_swap", "restore_finish", "restore_exit", "restore_blocks", "cmd_restore")
+FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "json_str", "restore_die", "restore_stage", "restore_unstage",
+         "restore_rollback", "restore_mv", "restore_swap", "restore_finish", "restore_prune_mark",
+         "restore_fail_marker", "restore_exit", "restore_blocks", "restore_provision", "cmd_restore")
 OLD = {"db": b"OLD-DB", "app": b"network:\n  server_host: vpn.example.org\n", "env": b"BOT_TOKEN=DUMMY\n",
        "awg0": b"[Interface]\nPrivateKey = DUMMY-OLD\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-OLD\n"}
 NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\n", "env": b"BOT_TOKEN=DUMMY2\n",
@@ -55,6 +56,7 @@ class Host:
     подставной restore_backup."""
 
     def __init__(self, tmp: Path, *, role: str = "client", hooks: bool = False):
+        tmp.mkdir(parents=True, exist_ok=True)
         self.tmp = tmp
         self.data = tmp / "data"; self.data.mkdir()
         self.backups = self.data / "backups"; self.backups.mkdir()
@@ -95,22 +97,27 @@ class Host:
 
 
 def run(script: str, h: Host, *args: str, merge_fails: bool = False, mv_fail_at: int = 0,
-        stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=()) -> subprocess.CompletedProcess:
+        stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=(),
+        blocks_fail: bool = False, stays_active: bool = False, merge_kill: bool = False,
+        provision: bool = False) -> subprocess.CompletedProcess:
     log = h.log
-    report = json.dumps({"blocked": list(blocked), "adopt": list(adopt), "slots": []})
+    report = json.dumps({"blocked": list(blocked), "adopt": list(adopt), "slots": [], "provision": provision})
     prog = "\n".join([
         "set -uo pipefail",
         f'INSTALL_DIR="{h.tmp}/opt"; CONF_DIR="{h.conf}"; ENV_FILE="{h.env}"; DATA_DIR="{h.data}"',
         f'BACKUP_DIR="{h.backups}"; SERVICE=awg-bot; ROOT_GW_DIR="{h.root}"; SYS_NET="{h.net}"',
         'GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG"',
-        "RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_SWAPPING=0; RESTORE_ERR=''",
-        "RESTORE_TMP=''; RESTORE_PENDING=''",
+        "RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_PHASE=''; RESTORE_ERR=''",
+        "RESTORE_TMP=''; RESTORE_PENDING=''; RESTORE_PLAN_FILE=''; RESTORE_FAIL=''; RESTORE_YES=0",
         'log() { echo "LOG $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*" >&2; }',
         'die() { echo "DIE $*" >&2; exit 1; }',
         "require_root() { :; }; confirm() { return 0; }; adopt_timezone() { :; }",
-        f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
+        f'apt-get() {{ echo "apt-get $*" >> "{log}"; }}',
+        f'systemctl() {{ case "$1" in is-active) return {0 if stays_active else 1} ;; list-unit-files) '
+        f'echo dnsmasq.service; return 0 ;; esac; echo "systemctl $*" >> "{log}"; }}',
         f'awg-quick() {{ echo "awg-quick $*" >> "{log}"; }}',
-        f'sh() {{ echo "adopt $LINK_IF $*" >> "{log}"; }}',
+        f'sh() {{ case "$1" in *routing-host-setup.sh) echo "host-setup $2" >> "{log}" ;; '
+        f'*) echo "adopt $LINK_IF $*" >> "{log}" ;; esac; }}',
         "MV_N=0",
         "mv() { MV_N=$((MV_N+1)); "
         + (f'if [[ "$MV_N" -eq {mv_fail_at} ]]; then echo "нет места" >&2; return 1; fi; ' if mv_fail_at else "")
@@ -127,10 +134,12 @@ def run(script: str, h: Host, *args: str, merge_fails: bool = False, mv_fail_at:
         '    tools.check_backup) return 0 ;;',
         '    tools.restore_merge)',
         '      case "$1" in',
-        '        --plan) echo "ПЛАН" ;;',
+        '        --plan) echo "ПЛАН"; [[ "$3" == "--save" ]] && echo "{}" > "$4" ;;',
         ('        --copy) echo "слияние не прошло: база бэкапа не читается" >&2; return 1 ;;' if merge_fails else
+         '        --copy) kill -TERM $$ ;;' if merge_kill else
          f"        --copy) printf '%s' '{report}' > \"$2/restore-merge.json\" ;;"),
-        '        --apply-blocks) return 0 ;;',
+        ('        --apply-blocks) echo "iptables: отказ" >&2; return 1 ;;' if blocks_fail else
+         '        --apply-blocks) return 0 ;;'),
         '      esac ;;',
         '  esac',
         "}",
@@ -248,3 +257,117 @@ def test_unpacking_reads_the_format_from_the_content(script):
     body = _extract_func(script, "cmd_restore")
     assert 'tar xf "$tmp/backup.tgz"' in body and "tar xzf" not in body
     assert "snapshot" not in body and "prerestore" not in body
+
+
+# ── правки по ревью: фазы, точка невозврата, маркеры ─────────────────────────
+
+def test_a_service_that_did_not_stop_means_nothing_changed(script, tmp_path):
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src), stays_active=True)
+    assert r.returncode != 0 and "не остановился — ничего не изменилось" in r.stderr, r.stderr
+    assert h.live() == OLD and not any(x.startswith("py tools.restore_merge --copy") for x in h.calls())
+
+
+def test_a_signal_during_the_merge_brings_the_service_up_and_leaves_no_staging(script, tmp_path):
+    """Сигнал или set -e посреди слияния: живое не тронуто, сервис поднят."""
+    h = Host(tmp_path)
+    run(script, h, "--yes", str(h.src), merge_kill=True)
+    assert h.live() == OLD and h.leftovers() == []
+    assert h.calls()[-1] == "systemctl start awg-bot", h.calls()
+
+
+def test_a_refused_first_drop_means_nothing_changed_and_the_bot_prunes_on_start(script, tmp_path):
+    h = Host(tmp_path)
+    r = run(script, h, "--yes", str(h.src), blocks_fail=True)
+    assert r.returncode != 0 and "DROP заблокированным не наложен — ничего не изменилось" in r.stderr, r.stderr
+    assert h.live() == OLD and h.leftovers() == []
+    assert (h.data / ".restore-prune").exists(), "DROP первого наложения не снимутся"
+    assert h.calls()[-1] == "systemctl start awg-bot"
+
+
+def test_a_rolled_back_swap_asks_the_bot_to_prune_drops(script, tmp_path):
+    h = Host(tmp_path)
+    run(script, h, "--yes", str(h.src), mv_fail_at=3)
+    assert h.live() == OLD and (h.data / ".restore-prune").exists()
+
+
+def test_wal_and_shm_go_into_the_duplicate_first(script, tmp_path):
+    """Журналы заменяемой базы — первыми: отказ на базе не оставит её с чужим WAL."""
+    h = Host(tmp_path)
+    (h.data / "bot.db-wal").write_bytes(b"WAL"); (h.data / "bot.db-shm").write_bytes(b"SHM")
+    r = run(script, h, "--yes", str(h.src), mv_fail_at=3)   # 1 — wal в дубль, 2 — shm, 3 — база
+    assert r.returncode != 0
+    assert (h.data / "bot.db-wal").read_bytes() == b"WAL" and (h.data / "bot.db").read_bytes() == OLD["db"]
+    h2 = Host(tmp_path / "ok")
+    (h2.data / "bot.db-wal").write_bytes(b"WAL")
+    assert run(script, h2, "--yes", str(h2.src)).returncode == 0
+    assert not (h2.data / "bot.db-wal").exists() and h2.live() == NEW
+
+
+def test_the_point_of_no_return_is_right_after_the_swap(script, tmp_path):
+    """После замены дублей нет: подъём интерфейсов и маркер — уже вперёд, не назад."""
+    body = _extract_func(script, "cmd_restore")
+    assert body.index("restore_finish") < body.index('awg-quick up "$i"') < body.index("restore-done.json")
+    assert body.index("restore_swap") < body.index("restore_finish") < body.index("restore_provision")
+
+
+def test_a_chat_restore_that_fails_before_the_stop_tells_the_admin(script, tmp_path):
+    h = Host(tmp_path)
+    pending = h.backups / "restore-pending.tgz.enc"
+    pending.write_bytes(h.plain.read_bytes())          # не зашифрован — отказ до остановки
+    r = run(script, h, "--yes", str(pending))
+    assert r.returncode != 0
+    marker = json.loads((h.data / "restore-failed.json").read_text(encoding="utf-8"))
+    assert marker["failed"].startswith("бэкап не зашифрован")
+    assert "systemctl restart awg-bot" in h.calls(), "бот не узнает об отказе"
+
+
+def test_the_marker_is_valid_json_whatever_the_file_name(script, tmp_path):
+    h = Host(tmp_path)
+    odd = h.backups / 'awg-bot-backup-main-"x"\\y.tgz.enc'
+    odd.write_bytes(h.src.read_bytes())
+    assert run(script, h, "--yes", str(odd)).returncode == 0
+    marker = json.loads((h.data / "restore-done.json").read_text(encoding="utf-8"))
+    assert marker["source"] == odd.name
+
+
+def test_on_a_new_server_the_plumbing_is_provisioned_before_the_links(script, tmp_path):
+    h = Host(tmp_path)
+    assert run(script, h, "--yes", str(h.src), provision=True, adopt=("awglink",)).returncode == 0
+    c = h.calls()
+    i_apply, i_unit = c.index("host-setup --apply"), c.index("host-setup --install-unit")
+    i_adopt = next(i for i, x in enumerate(c) if x.startswith("adopt awglink "))
+    assert i_apply < i_unit < i_adopt, c
+    h2 = Host(tmp_path / "no")
+    run(script, h2, "--yes", str(h2.src))
+    assert not any(x.startswith("host-setup") for x in h2.calls())
+
+
+def test_the_plan_from_the_chat_is_checked_after_the_stop(script, tmp_path):
+    h = Host(tmp_path)
+    pending = h.backups / "restore-pending.tgz.enc"
+    pending.write_bytes(h.src.read_bytes())
+    plan = h.backups / "restore-pending.plan.json"
+    plan.write_text('{"line": "same"}', encoding="utf-8")
+    assert run(script, h, "--yes", str(pending)).returncode == 0
+    copy_call = next(x for x in h.calls() if x.startswith("py tools.restore_merge --copy"))
+    assert "--expect" in copy_call
+    assert not plan.exists() and not pending.exists()
+
+
+def test_the_random_key_is_asked_without_echo_and_not_on_stdout(tmp_path, monkeypatch, capsys):
+    """Режим случайного ключа: stdout скрипт глушит — подсказка и ввод идут мимо него, без эха."""
+    import base64, getpass, sys
+    from awgbot.util import secrets_util as su
+    from tools import restore_backup
+    key = bytes(32)                                   # DUMMY
+    src = tmp_path / "awg-bot-backup-main-x.tgz.enc"
+    src.write_bytes(su.encrypt(b"payload", key=key))
+    asked = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or base64.b64encode(key).decode())
+    monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("ключ спрошен открытым вводом"))
+    monkeypatch.delenv("BACKUP_KEY", raising=False)
+    monkeypatch.setattr(sys, "argv", ["restore_backup", str(src), "--out", str(tmp_path / "out.tgz")])
+    restore_backup.main()
+    assert asked and (tmp_path / "out.tgz").read_bytes() == b"payload"
+    assert "BACKUP_KEY" not in capsys.readouterr().out

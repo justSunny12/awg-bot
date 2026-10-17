@@ -11,7 +11,7 @@ import json
 import pytest
 
 from awgbot.core import config
-from tests.integration.test_restore_merge import World, _sql
+from tests.integration._restore_merge_common import World, _sql
 
 pytestmark = pytest.mark.unit
 
@@ -92,6 +92,10 @@ def test_an_empty_server_gets_the_gateway_part_and_with_a_journal_nothing_return
     copy = world.take_copy(tmp_path / "c")
     _sql(services.db, "DELETE FROM gateways")
     p = _plan(world, copy)
+    assert p.line == "same" and not p.empty and _cases(p) == {1: "removed"}, \
+        "на той же линии «слотов нет» — значит сняли, а не новый сервер"
+    services.db.set_state("db_line", "0123456789abcdef")    # другой сервер: слотов нет и никто не снимал
+    p = _plan(world, copy)
     assert p.empty and _cases(p) == {1: "restored"} and p.copy_slots() == [1]
     services.db.set_state("gw_removed", json.dumps([{"slot": 1, "at": "2026-10-01T00:00:00+03:00"}]))
     p = _plan(world, copy)
@@ -140,3 +144,16 @@ def test_the_bot_plan_and_the_merge_plan_are_the_same(world, services, tmp_path,
                        awg_dir=str(world.awg), root_dir=str(world.gwroot), client_if="awg0")
     assert bot == {1: "rekeyed", 2: "same"}
     assert {s["slot"]: s["case"] for s in report["slots"]} == bot
+
+
+def test_a_slot_removed_and_assigned_again_after_the_copy(world, services, tmp_path):
+    """Снят после бэкапа и назначен заново: в бэкапе — снятый, сейчас —
+    добавленный; копия настроек снятого новому не предлагается."""
+    copy = world.take_copy(tmp_path / "c")
+    services._run_link_script = lambda mode, env=None: None
+    services.gateway_remove(1)
+    other = services.add_device(world.admin.id, "Pi-новый").device_id
+    world.slot(1, other, "GWPUB1-B", "VPSPUB1-B")
+    p = _plan(world, copy)
+    assert [(s.slot, s.case) for s in p.slots] == [(1, "removed"), (1, "added")]
+    assert p.current_slots() == [1] and p.offer_slots() == [] and p.removed_slots() == []

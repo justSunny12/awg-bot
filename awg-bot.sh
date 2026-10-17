@@ -1355,10 +1355,31 @@ awg_conf_dir() {
 RESTORE_TARGETS=()        # цели в порядке замены (без .restore-new — только убрать в дубль)
 RESTORE_DONE_T=()         # уже тронутые замены
 RESTORE_HAD_OLD=()        # 1 — у тронутой цели был прежний файл (.restore-old)
-RESTORE_SWAPPING=0
+# Фазы операции — от них зависит, что делает ловушка при любом выходе:
+#   ""        до остановки сервиса: живое не тронуто, сервис работает;
+#   stopped   сервис остановлен, живые файлы прежние (слияние, подготовка,
+#             первый DROP): .restore-new прочь, сервис вверх;
+#   swapping  идёт замена: заменённое возвращается из .restore-old, сервис вверх;
+#   done      точка невозврата пройдена (замена удалась): только сервис вверх.
+RESTORE_PHASE=""
 RESTORE_ERR=""
+RESTORE_FAIL=""           # причина отказа — в маркер для бота (копия из чата)
+RESTORE_YES=0
 RESTORE_TMP=""
 RESTORE_PENDING=""
+RESTORE_PLAN_FILE=""
+
+json_str() {  # json_str TEXT → "TEXT" с экранированием для JSON (без переводов строк)
+    local s="${1//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="$(printf '%s' "$s" | tr -d '\000-\037')"
+    printf '"%s"' "$s"
+}
+
+restore_die() {  # restore_die ПРИЧИНА — отказ с причиной для маркера бота
+    RESTORE_FAIL="$*"
+    die "$*"
+}
 
 restore_stage() {  # restore_stage SRC TARGET MODE — подготовить TARGET.restore-new, если отличается
     cmp -s "$1" "$2" 2>/dev/null && return 0
@@ -1397,7 +1418,7 @@ restore_mv() {  # restore_mv SRC DST — переименование; отка�
 
 restore_swap() {  # restore_swap → 0 — всё заменено; 1 — отказ (причина в RESTORE_ERR)
     local t had
-    RESTORE_SWAPPING=1
+    RESTORE_PHASE=swapping
     for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do
         had=0
         if [[ -e "$t" ]]; then
@@ -1411,34 +1432,72 @@ restore_swap() {  # restore_swap → 0 — всё заменено; 1 — отк
     return 0
 }
 
-restore_finish() {  # замена удалась: временные дубли прочь
+restore_finish() {  # замена удалась — точка невозврата: временные дубли прочь
     local t
     for t in ${RESTORE_TARGETS[@]+"${RESTORE_TARGETS[@]}"}; do rm -f -- "$t.restore-old"; done
-    RESTORE_SWAPPING=0
+    RESTORE_PHASE=done
 }
 
-restore_exit() {  # ловушка операции: прерванная замена откатывается, временное — прочь
+restore_prune_mark() {  # DROP первого наложения при откате остаются: старт бота снимет лишние
+    : > "$DATA_DIR/.restore-prune" 2>/dev/null || true
+}
+
+restore_fail_marker() {  # отказ восстановления из чата — новый процесс бота скажет админу
+    [[ "$RESTORE_YES" -eq 1 && -n "$RESTORE_FAIL" ]] || return 0
+    mkdir -p "$DATA_DIR" 2>/dev/null || true
+    printf '{"failed": %s}\n' "$(json_str "$RESTORE_FAIL")" > "$DATA_DIR/restore-failed.json" 2>/dev/null || true
+}
+
+restore_exit() {  # ловушка операции: по фазе — откат, сервис вверх, временное прочь
     local rc=$?
-    if [[ "$RESTORE_SWAPPING" == "1" ]]; then
-        restore_rollback
-        RESTORE_SWAPPING=0
-        systemctl start "$SERVICE" 2>/dev/null || true
-    fi
+    case "$RESTORE_PHASE" in
+        stopped)
+            restore_unstage
+            restore_prune_mark
+            restore_fail_marker
+            systemctl start "$SERVICE" 2>/dev/null || true ;;
+        swapping)
+            restore_rollback
+            restore_prune_mark
+            restore_fail_marker
+            systemctl start "$SERVICE" 2>/dev/null || true ;;
+        done)
+            systemctl is-active --quiet "$SERVICE" 2>/dev/null || systemctl start "$SERVICE" 2>/dev/null || true ;;
+        *)
+            # сервис не останавливали: бот работает и об отказе не знает —
+            # перезапуск, чтобы новый процесс доложил его из маркера
+            if [[ "$rc" -ne 0 && "$RESTORE_YES" -eq 1 && -n "$RESTORE_FAIL" ]]; then
+                restore_fail_marker
+                systemctl restart "$SERVICE" 2>/dev/null || true
+            fi ;;
+    esac
+    RESTORE_PHASE=""
     [[ -n "$RESTORE_TMP" ]] && rm -rf -- "$RESTORE_TMP"
     [[ -n "$RESTORE_PENDING" ]] && rm -f -- "$RESTORE_PENDING"
+    [[ -n "$RESTORE_PLAN_FILE" ]] && rm -f -- "$RESTORE_PLAN_FILE"
     return "$rc"
 }
 
 restore_blocks() {  # DROP заблокированным из итога слияния — тем же входом, что у бота
-    bot_tool tools.restore_merge --apply-blocks "$1" \
-        || warn "не все DROP наложены — сверка бота на старте доналожит"
+    bot_tool tools.restore_merge --apply-blocks "$1"
+}
+
+restore_provision() {  # новый сервер, обвязка в бэкапе развёрнута, на хосте — нет: развернуть до линков
+    local base="$INSTALL_DIR/install"
+    if ! systemctl list-unit-files dnsmasq.service 2>/dev/null | grep -q dnsmasq.service; then
+        apt-get install -y --no-install-recommends dnsmasq >/dev/null 2>&1 \
+            || { warn "dnsmasq не поставился — обвязку РФ-доступа разверни из чата бота"; return 1; }
+    fi
+    sh "$base/routing-host-setup.sh" --apply >/dev/null \
+        && sh "$base/routing-host-setup.sh" --install-unit >/dev/null \
+        || { warn "обвязка хоста не развернулась — разверни её из чата бота"; return 1; }
 }
 
 cmd_restore() {
     require_root
     is_gateway_role && die "$GW_NO_BACKUPS"
     # --yes: без вопросов (из чата: бот уже показал план и спросил админа);
-    # итог — маркером для бота.
+    # итог и отказ — маркером для бота.
     local yes=0
     if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
     local src="${1:-}"
@@ -1449,34 +1508,40 @@ cmd_restore() {
         src="$(ls -1t "$BACKUP_DIR"/awg-bot-backup-*.tgz.enc 2>/dev/null | head -n1 || true)"
         [[ -n "$src" ]] || die "бэкапов не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <файл>"
     fi
-    RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_SWAPPING=0
+    RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_PHASE=""; RESTORE_FAIL=""
+    RESTORE_YES="$yes"
     RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
-    # Файл из чата бот кладёт шифрованным (restore-pending.tgz.enc): при любом
-    # исходе он удаляется, расшифрованное живёт только во временном каталоге.
-    RESTORE_PENDING=""
-    [[ "$(basename "$src")" == "restore-pending.tgz.enc" ]] && RESTORE_PENDING="$src"
+    # Файл из чата бот кладёт шифрованным (restore-pending.tgz.enc) и рядом —
+    # план из вопроса: при любом исходе оба удаляются, расшифрованное живёт
+    # только во временном каталоге.
+    RESTORE_PENDING=""; RESTORE_PLAN_FILE=""
+    if [[ "$(basename "$src")" == "restore-pending.tgz.enc" ]]; then
+        RESTORE_PENDING="$src"; RESTORE_PLAN_FILE="$(dirname "$src")/restore-pending.plan.json"
+    fi
     trap restore_exit EXIT
-    local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err
+    local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err expect="$RESTORE_TMP/plan.json"
 
     # ── всё, что может отказать, — до остановки сервиса ──
     [[ "$(head -c 6 "$src" 2>/dev/null)" == "AWGBK1" ]] \
-        || die "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
+        || restore_die "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
     if [[ -n "$RESTORE_PENDING" ]]; then
         bot_tool tools.restore_backup --phrase-from-db --out "$tmp/backup.tgz" "$src" >/dev/null 2>&1 \
-            || die "не расшифровался — ключевая фраза в базе не та или файл повреждён"
+            || restore_die "не расшифровался — ключевая фраза в базе не та или файл повреждён"
     else
         log "шифрованный бэкап — нужна ключевая фраза"
         bot_tool tools.restore_backup --out "$tmp/backup.tgz" "$src" >/dev/null \
-            || die "не расшифровался — фраза не та или файл повреждён"
+            || restore_die "не расшифровался — фраза не та или файл повреждён"
     fi
     mkdir -p "$copy"
-    tar xf "$tmp/backup.tgz" -C "$copy" --no-same-owner || die "не удалось распаковать бэкап"
+    tar xf "$tmp/backup.tgz" -C "$copy" --no-same-owner || restore_die "не удалось распаковать бэкап"
     rm -f "$tmp/backup.tgz"
-    [[ -f "$copy/state/backup-meta.json" ]] || die "в бэкапе нет метки — это не бэкап сервера AWG"
+    [[ -f "$copy/state/backup-meta.json" ]] || restore_die "в бэкапе нет метки — это не бэкап сервера AWG"
     err="$(bot_tool tools.check_backup --meta "$copy/state/backup-meta.json" 2>&1 >/dev/null)" \
-        || die "${err:-метка бэкапа не прошла проверку}"
+        || restore_die "${err:-метка бэкапа не прошла проверку}"
     local plan
-    plan="$(bot_tool tools.restore_merge --plan "$copy" 2>&1)" || die "$plan"
+    plan="$(bot_tool tools.restore_merge --plan "$copy" --save "$expect" 2>&1)" || restore_die "$plan"
+    # из чата человек видел план в вопросе бота — сверяем с ним
+    [[ -n "$RESTORE_PLAN_FILE" && -f "$RESTORE_PLAN_FILE" ]] && cp "$RESTORE_PLAN_FILE" "$expect"
     printf '%s\n\n' "$plan"
     [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
     local bk_at
@@ -1488,16 +1553,25 @@ cmd_restore() {
     grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
 
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+        restore_die "$SERVICE не остановился — ничего не изменилось"
+    fi
+    RESTORE_PHASE=stopped
     # Слияние — после остановки: читает живую базу неподвижной, пишет только в
-    # распакованный бэкап. Отказ — живое не тронуто.
-    if ! err="$(bot_tool tools.restore_merge --copy "$copy" 2>&1 >/dev/null)"; then
-        systemctl start "$SERVICE" 2>/dev/null || true
-        die "${err:-слияние не прошло} — ничего не изменилось, сервис поднят"
+    # распакованный бэкап и сверяет план с вопросом. Отказ — живое не тронуто.
+    if ! err="$(bot_tool tools.restore_merge --copy "$copy" --expect "$expect" 2>&1 >/dev/null)"; then
+        restore_die "${err:-слияние не прошло} — ничего не изменилось, сервис поднят"
     fi
 
     # ── подготовка: каждый заменяемый файл — рядом с целью ──
     local f i c changed="" hooked="" prep=0
     mkdir -p "$DATA_DIR" "$CONF_DIR"
+    # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОЙ базе: рядом с чужой SQLite в
+    # лучшем случае их отбросит, в худшем доложит в неё чужие страницы — они
+    # уходят в дубль первыми (и возвращаются при откате последними).
+    for f in "$DATA_DIR/bot.db-wal" "$DATA_DIR/bot.db-shm"; do
+        [[ -e "$f" ]] && RESTORE_TARGETS+=("$f")
+    done
     if [[ -f "$copy/state/bot.db" ]]; then
         restore_stage "$copy/state/bot.db" "$DATA_DIR/bot.db" 600 || prep=1
     fi
@@ -1525,29 +1599,23 @@ cmd_restore() {
         [[ -f "$c" ]] || continue
         restore_stage "$c" "$ROOT_GW_DIR/$(basename "$c")" 600 || prep=1
     done
-    if [[ "$prep" -ne 0 ]]; then
-        restore_unstage
-        systemctl start "$SERVICE" 2>/dev/null || true
-        die "подготовка не прошла — ничего не изменилось, сервис поднят"
-    fi
+    [[ "$prep" -eq 0 ]] || restore_die "подготовка не прошла — ничего не изменилось, сервис поднят"
 
-    # ── DROP заблокированным — до подъёма интерфейсов ──
-    restore_blocks "$copy/restore-merge.json"
+    # ── DROP заблокированным — до подъёма интерфейсов; не встал — замены нет ──
+    restore_blocks "$copy/restore-merge.json" \
+        || restore_die "DROP заблокированным не наложен — ничего не изменилось, сервис поднят"
 
     # ── замена ──
-    # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОЙ базе: рядом с чужой SQLite в
-    # лучшем случае их отбросит, в худшем доложит в неё чужие страницы — они
-    # уходят в дубль вместе с ней (и возвращаются при откате).
-    for f in "$DATA_DIR/bot.db-wal" "$DATA_DIR/bot.db-shm"; do
-        [[ -e "$f" ]] && RESTORE_TARGETS+=("$f")
-    done
     if ! restore_swap; then
-        restore_rollback; RESTORE_SWAPPING=0
-        systemctl start "$SERVICE" 2>/dev/null || true
-        die "замена не прошла — вернул прежнее, сервис поднят: ${RESTORE_ERR:-причина не названа}"
+        restore_die "замена не прошла — вернул прежнее, сервис поднят: ${RESTORE_ERR:-причина не названа}"
     fi
     [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
+    restore_finish                                      # точка невозврата: дальше — только вперёд
 
+    # ── новый сервер: обвязка РФ-доступа из бэкапа — до линков ──
+    if grep -q '"provision": *true' "$copy/restore-merge.json" 2>/dev/null; then
+        restore_provision || true
+    fi
     # ── подъём изменившихся интерфейсов, линки пустого сервера — юнитом ──
     for i in $changed; do
         case " $hooked " in *" $i "*)
@@ -1567,12 +1635,11 @@ cmd_restore() {
             || warn "линк $i не поднялся — бот повторит на старте"
     done
     # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
-    restore_blocks "$copy/restore-merge.json"
-    restore_finish
+    restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте доналожит"
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"
 
     # маркер для бота: новый процесс доложит итог по каждому шлюзу
-    { printf '{"created_at": "%s", "source": "%s", "merge": ' "$bk_at" "$(basename "$src")"
+    { printf '{"created_at": %s, "source": %s, "merge": ' "$(json_str "$bk_at")" "$(json_str "$(basename "$src")")"
       cat "$copy/restore-merge.json"; printf '}\n'; } > "$DATA_DIR/restore-done.json"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"

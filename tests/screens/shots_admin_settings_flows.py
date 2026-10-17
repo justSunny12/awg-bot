@@ -13,7 +13,7 @@ from tests.screens.shots_admin_common import (_email_on, _fw, _people, _raise, _
 
 # ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
 
-_KEY = bytes(range(32))     # случайный ключ прежней схемы: без KDF фразы, как в снимках шлюза
+_PHRASE_TEXT = "DUMMY-passphrase-1234"
 
 
 def _db_bytes() -> bytes:
@@ -54,8 +54,16 @@ def _archive(meta: dict, *, env: str = "", db: bytes | None = None) -> bytes:
 
 
 def _enc(raw: bytes) -> bytes:
+    """Шифрование фразой с параметрами KDF прогона (MIN — как ставит conftest
+    на время теста): иначе файл, собранный при импорте, тестом не открыть."""
+    from nacl import pwhash
     from awgbot.util import secrets_util
-    return secrets_util.encrypt(raw, key=_KEY)
+    saved = secrets_util._OPS, secrets_util._MEM
+    secrets_util._OPS, secrets_util._MEM = pwhash.argon2id.OPSLIMIT_MIN, pwhash.argon2id.MEMLIMIT_MIN
+    try:
+        return secrets_util.encrypt(raw, passphrase=_PHRASE_TEXT)
+    finally:
+        secrets_util._OPS, secrets_util._MEM = saved
 
 
 def _meta(**kw) -> dict:
@@ -78,12 +86,11 @@ def _restore_ready(services, mp):
     """Восстановление из файла в чате: секрет задан, версия кода — 3.4.0;
     раскладка на диск и запуск awg-bot restore — заглушки (они останавливают
     сервис на хосте)."""
-    import base64
     from awgbot.core import config
     who = _people(services)
     mp.setattr(config, "INSTALLED_VERSION", "3.4.0")
-    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_KEY).decode())
-    services.prepare_restore = lambda blob: "/nonexistent/DUMMY-restore-pending.tgz.enc"
+    services.backup_set_passphrase(_PHRASE_TEXT)
+    services.prepare_restore = lambda blob, plan=None: "/nonexistent/DUMMY-restore-pending.tgz.enc"
     services.launch_restore = lambda path: None
     return who
 

@@ -72,10 +72,10 @@ def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeyp
 
 
 def test_backup_enc_kwargs_prefers_passphrase(services):
-    """Фраза важнее ключа: случайный ключ прежней схемы лежит в БД, потом задали
-    фразу — действует фраза."""
+    """Случайный ключ прежней схемы у сервера не действует; задали фразу —
+    действует фраза."""
     services.db.set_state(services._BK_KEY_KEY, base64.b64encode(bytes(32)).decode())
-    assert services.backup_enc_kwargs() == {"key": bytes(32)}
+    assert services.backup_enc_kwargs() is None, "у сервера случайный ключ — не шифрование"
     services.backup_set_passphrase("phrase-of-eight")
     assert services.backup_enc_kwargs() == {"passphrase": "phrase-of-eight"}
 
@@ -244,3 +244,57 @@ def test_slot_events_mark_a_backup(services, slot, monkeypatch, tmp_path):
     assert kinds == ["token", "chport", "replace", "remove"], kinds
     journal = json.loads(services.db.get_state("gw_removed"))
     assert journal[-1]["slot"] == 1 and journal[-1]["link_gw_pub"] == "GWPUB"
+
+
+# ── правки по ревью: копия по событию, ротация, отметки старта ───────────────
+
+def test_an_undelivered_event_copy_is_reused_and_a_manual_copy_closes_the_event(services, slot, monkeypatch,
+                                                                               tmp_path):
+    import json
+    from awgbot.util import timeutil
+    _patch_sources(monkeypatch, tmp_path)
+    services.backup_set_passphrase(PHRASE)
+    services.backup_event_mark("rekey", 1)
+    due = json.loads(services.db.get_state("backup_event_due"))
+    first = services.backup_event_paths(due)
+    again = services.backup_event_paths(due)
+    assert again == first, "недоставленная копия собрана заново"
+    later = timeutil.to_iso(timeutil.shift(timeutil.now(), 5))
+    services.backup_event_covered(later)
+    assert not services.db.get_state("backup_event_due"), "копия, снятая после события, его не закрыла"
+    services.backup_event_mark("token", 1)
+    services.backup_event_covered(timeutil.to_iso(timeutil.shift(timeutil.now(), -3600)))
+    assert services.db.get_state("backup_event_due"), "копия, снятая до события, его закрыла"
+
+
+def test_the_backup_dir_keeps_the_last_five(services, monkeypatch, tmp_path):
+    import os, time as _t
+    _patch_sources(monkeypatch, tmp_path)
+    services.backup_set_passphrase(PHRASE)
+    bk = tmp_path / "backups"; bk.mkdir(exist_ok=True)
+    (bk / "restore-pending.tgz.enc").write_bytes(b"x")
+    for i in range(7):
+        f = bk / f"awg-bot-backup-main-2026010{i}_000000.tgz.enc"
+        f.write_bytes(b"x"); os.utime(f, (_t.time() - 1000 + i, _t.time() - 1000 + i))
+    services.make_backup()
+    left = sorted(p.name for p in bk.glob("awg-bot-backup-*.tgz.enc"))
+    assert len(left) == 5 and (bk / "restore-pending.tgz.enc").exists()
+
+
+def test_the_start_after_a_rolled_back_restore_prunes_once(services, monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    assert not services.restore_done_pending()
+    (tmp_path / ".restore-prune").write_text("")
+    assert services.restore_done_pending() and not services.restore_done_pending()
+    (tmp_path / "restore-failed.json").write_text('{"failed": "бэкап не зашифрован"}', encoding="utf-8")
+    assert services.pop_restore_failed() == "бэкап не зашифрован" and services.pop_restore_failed() == ""
+
+
+def test_links_are_adopted_while_their_interface_is_down(services, slot, monkeypatch, tmp_path):
+    runs = []
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append(mode))
+    net = tmp_path / "net"; net.mkdir()
+    monkeypatch.setattr(services, "_SYS_NET", str(net))
+    assert services.gateway_links_adopt() == ["awglink"] and runs == ["--adopt"]
+    (net / "awglink").mkdir()
+    assert services.gateway_links_adopt() == [], "поднятый линк принимают снова"

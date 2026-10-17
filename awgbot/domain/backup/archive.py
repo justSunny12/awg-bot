@@ -99,8 +99,9 @@ class BackupArchiveMixin:
             pass
         # линки шлюзов: без них новая машина не соберёт ни один бандл и не
         # примет ни одну сессию канала — восстановление кончалось бы переустановкой шлюзов
+        from . import meta as _meta
         for gw in self.db.gateways():
-            add_file(f"/root/gw-{gw.link_if}.conf", f"root/gw-{gw.link_if}.conf")
+            add_file(os.path.join(_meta.ROOT_DIR, f"gw-{gw.link_if}.conf"), f"root/gw-{gw.link_if}.conf")
             add_file(os.path.join(config.AWG_DIR, f"{gw.link_if}.conf"), f"awg/{gw.link_if}.conf")
         return extra
 
@@ -161,4 +162,19 @@ class BackupArchiveMixin:
             dst.chmod(0o600)
         except OSError:
             pass
+        self._rotate_backups()
         return [str(dst)]
+
+    KEEP_BACKUPS = 5
+
+    @classmethod
+    def _rotate_backups(cls) -> None:
+        """В каталоге копий — последние KEEP_BACKUPS снятых ботом (файл из чата
+        для восстановления не трогается)."""
+        files = sorted(config.BACKUP_DIR.glob("awg-bot-backup-*.tgz.enc"), key=lambda p: p.stat().st_mtime,
+                       reverse=True)
+        for old in files[cls.KEEP_BACKUPS:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass

@@ -21,6 +21,7 @@ from awgbot.util import timeutil
 log = logging.getLogger("awgbot.services")
 
 EVENT_KEY = "backup_event_due"
+EVENT_FILE_KEY = "backup_event_file"   # {"at", "path"} — собранная, но не доставленная копия по событию
 EVENT_SETTLE_S = 600              # с последнего события до копии
 
 
@@ -85,6 +86,31 @@ class BackupsMixin:
         due = self.db.get_state_json(EVENT_KEY, {})
         if isinstance(due, dict) and str(due.get("at") or "") == str(at):
             self.db.set_state(EVENT_KEY, "")
+        self.db.set_state(EVENT_FILE_KEY, "")
+
+    def backup_event_paths(self, due: dict) -> list[str]:
+        """Файл копии по этой отметке: собранный, но не доставленный в прошлый
+        такт, — тот же (не собирать каждые 5 минут новый); иначе — новый."""
+        import os
+        kept = self.db.get_state_json(EVENT_FILE_KEY, {})
+        if isinstance(kept, dict) and kept.get("at") == due.get("at") and os.path.exists(str(kept.get("path"))):
+            return [str(kept["path"])]
+        paths = self.make_backup()
+        self.db.set_state(EVENT_FILE_KEY, json.dumps({"at": due.get("at"), "path": paths[0]}))
+        return paths
+
+    def backup_event_covered(self, made_at: str) -> None:
+        """Доставлена копия, снятая не раньше последнего события (кнопка,
+        месячная): отметка события закрыта — второй копии не будет."""
+        due = self.db.get_state_json(EVENT_KEY, {})
+        if not isinstance(due, dict) or not due.get("at"):
+            return
+        try:
+            if timeutil.elapsed(timeutil.parse_iso(str(due["at"])), timeutil.parse_iso(made_at)) >= 0:
+                self.db.set_state(EVENT_KEY, "")
+                self.db.set_state(EVENT_FILE_KEY, "")
+        except ValueError:
+            return
 
     # ── подпись копии и раздел ───────────────────────────────────────────────
 

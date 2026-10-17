@@ -3,11 +3,14 @@
 restore_merge.py — слияние распакованного бэкапа с текущим состоянием сервера
 для `awg-bot restore` (domain/backup/merge).
 
-    python -m tools.restore_merge --plan DIR          план восстановления текстом
-                                                      (тот же, что вопрос в чате)
-    python -m tools.restore_merge --copy DIR          слияние после остановки
+    python -m tools.restore_merge --plan DIR [--save F] план восстановления текстом
+                                                      (тот же, что вопрос в чате;
+                                                      --save — он же JSON)
+    python -m tools.restore_merge --copy DIR [--expect F] слияние после остановки
                                                       сервиса: пишет только в DIR,
-                                                      итог — DIR/restore-merge.json
+                                                      итог — DIR/restore-merge.json;
+                                                      план не совпал с вопросом —
+                                                      отказ
     python -m tools.restore_merge --apply-blocks FILE DROP всем адресам из итога
                                                       (до подъёма интерфейсов и
                                                       ещё раз после, до старта
@@ -23,7 +26,7 @@ import os
 import sys
 
 
-def _plan(copy_dir: str) -> int:
+def _plan(copy_dir: str, save: str | None = None) -> int:
     from awgbot.domain.backup import meta, plan
     from awgbot.domain.notices import backup as notices
     try:
@@ -41,13 +44,23 @@ def _plan(copy_dir: str) -> int:
         print(f"план не построен: {e}", file=sys.stderr)
         return 1
     print(notices.plain(notices.restore_plan(p)))
+    if save:
+        with open(save, "w", encoding="utf-8") as f:
+            json.dump(p.to_dict(), f, ensure_ascii=False)
     return 0
 
 
-def _copy(copy_dir: str) -> int:
+def _copy(copy_dir: str, expect: str | None = None) -> int:
     from awgbot.domain.backup import merge
+    want = None
+    if expect:
+        try:
+            with open(expect, encoding="utf-8") as f:
+                want = json.load(f)
+        except (OSError, ValueError):
+            want = None
     try:
-        merge.run(copy_dir)
+        merge.run(copy_dir, expect=want)
     except merge.MergeError as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -78,11 +91,13 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--plan", metavar="DIR")
     g.add_argument("--copy", metavar="DIR")
     g.add_argument("--apply-blocks", metavar="FILE")
+    ap.add_argument("--save", metavar="FILE", help="с --plan: план — в файл (для сверки после остановки)")
+    ap.add_argument("--expect", metavar="FILE", help="с --copy: план из вопроса — обязан совпасть")
     args = ap.parse_args(argv)
     if args.plan:
-        return _plan(args.plan)
+        return _plan(args.plan, args.save)
     if args.copy:
-        return _copy(args.copy)
+        return _copy(args.copy, args.expect)
     return _blocks(args.apply_blocks)
 
 

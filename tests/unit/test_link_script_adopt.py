@@ -77,3 +77,19 @@ def test_adopt_without_a_link_config_refuses(tmp_path):
     r = vps.run()
     assert r.returncode == 1 and "ОШИБКА: конфига линка" in r.stdout
     assert not vps.unit.exists()
+
+
+def test_apply_over_a_restored_link_config_keeps_its_keys(tmp_path):
+    """Восстановление на новом сервере: --apply поверх конфига из бэкапа ключей не пересоздаёт."""
+    vps = Vps(tmp_path)
+    conf = vps.conf_dir / "awglink2.conf"
+    conf.write_text(VPS_LIVE, encoding="utf-8")
+    vps.log.write_text("", encoding="utf-8")
+    env = {"PATH": f"{vps.bin}:/usr/bin:/bin", "LINK_IF": "awglink2", "LINK_CIDR": "10.99.99.4/30",
+           "LINK_PORT": "8443", "CONF_DIR": str(vps.conf_dir), "UNIT_TEMPLATE": str(vps.unit),
+           "GW_CONF_OUT": str(tmp_path / "gw-awglink2.conf"), "_APP_YAML": str(tmp_path / "нет.yaml"),
+           "CLIENT_SUBNET": "10.8.1.0/24", "LINK_KEEPALIVE": "25-35"}
+    r = subprocess.run([SH, str(SCRIPT), "--apply"], capture_output=True, text=True, env=env, timeout=30)
+    assert "Линк уже настроен" in r.stdout, r.stdout + r.stderr
+    assert not any("genkey" in x or "genpsk" in x for x in vps.calls()), vps.calls()
+    assert conf.read_text(encoding="utf-8") == VPS_LIVE, "ключи линка тронуты"

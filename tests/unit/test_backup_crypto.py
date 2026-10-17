@@ -19,12 +19,17 @@ def test_passphrase_lives_in_db(services):
     assert services.backup_enc_kwargs() == {"passphrase": "a" * MIN_PASSPHRASE_LEN}
 
 
-def test_random_key_of_the_old_scheme_yields_to_passphrase(services):
-    """Случайный ключ, перенесённый в БД до v2.10.0, продолжает действовать,
-    пока не задана фраза."""
+def test_the_random_key_of_the_old_scheme_is_no_encryption_on_the_server(services, monkeypatch):
+    """Фраза обязательна: случайный ключ, перенесённый в БД до v2.10.0, у
+    сервера AWG шифрованием не считается — раздел и копии как без фразы. У
+    агента (до снятия его копий) ключ ещё действует."""
     key = nacl_utils.random(32)
     services.db.set_state(services._BK_KEY_KEY, base64.b64encode(key).decode())
+    assert services.backup_encryption_mode() == "" and services.backup_enc_kwargs() is None
+    assert not services.backup_encryption_enabled()
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
     assert services.backup_encryption_mode() == "key" and services.backup_enc_kwargs() == {"key": key}
+    monkeypatch.setattr(cfg, "ROLE", "client")
     services.backup_set_passphrase("correct horse battery")
     assert services.backup_encryption_mode() == "passphrase"
 

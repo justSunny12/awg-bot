@@ -25,6 +25,11 @@ CONF_ALWAYS_CURRENT = (("network", "server_host"), ("network", "ssh_port"), ("ro
 CONF_SAME_LINE = (("network", "subnet_prefix"), ("network", "subnet_cidr"), ("network", "server_port"),
                   ("network", "ip_host_start"), ("network", "ip_host_end"),
                   ("routing", "lan_space"), ("routing", "link_channel_port"),
+                  # обвязка развёрнута на этом хосте (линк до шлюзов): копия до
+                  # развёртывания усыпила бы маршрутизацию при живых шлюзах
+                  ("routing", "gw_interface"),
+                  # DNS в выданных конфигах устройств и устройств админа
+                  ("client_config", "dns1"), ("client_config", "dns2"), ("client_config", "admin_dns"),
                   ("docker", "app_container"), ("docker", "migration_interface"),
                   ("docker", "migration_subnet_prefix"), ("docker", "migration_dns"))
 
@@ -105,7 +110,7 @@ def merge_env(copy_dir: str, env_path: str, p) -> None:
         return
     cur_vals = {_env_key(x): x for x in cur if _env_key(x)}
     keep_current = set(ENV_ALWAYS_CURRENT) | {gw_token_env(n) for n in p.current_slots()}
-    drop = {gw_token_env(s.slot) for s in p.slots if s.case == _plan.C_REMOVED}
+    drop = {gw_token_env(n) for n in p.removed_slots()}
     out, seen = [], set()
     for line in _env_lines(dst):
         k = _env_key(line)
@@ -138,14 +143,17 @@ def _put_live(src: str, dst: str) -> None:
 def merge_link_files(copy_dir: str, p, *, awg_dir: str, root_dir: str) -> None:
     """Файлы линков: у текущих слотов — текущие, у снятых после бэкапа —
     прочь, у вставших из бэкапа (пустой сервер) — из бэкапа."""
+    removed, live_slots = set(p.removed_slots()), set(p.current_slots())
     for s in p.slots:
         if not s.link_if:
             continue
+        if s.case == _plan.C_REMOVED and s.slot in live_slots:
+            continue                                      # снят и назначен заново: файлы — текущего
         pair = ((os.path.join(awg_dir, f"{s.link_if}.conf"), os.path.join(copy_dir, "awg", f"{s.link_if}.conf")),
                 (os.path.join(root_dir, f"gw-{s.link_if}.conf"),
                  os.path.join(copy_dir, "root", f"gw-{s.link_if}.conf")))
         for live, dst in pair:
-            if s.case == _plan.C_REMOVED:
+            if s.slot in removed:
                 if os.path.exists(dst):
                     os.unlink(dst)
             elif s.case != _plan.C_RESTORED:
@@ -153,14 +161,19 @@ def merge_link_files(copy_dir: str, p, *, awg_dir: str, root_dir: str) -> None:
 
 
 def merge_iface_confs(copy_dir: str, p, *, awg_dir: str, link_ifs: set[str], client_if: str,
-                      transplanted_pubs: set[str], lost_pubs: set[str]) -> None:
+                      transplanted: dict[str, str], lost_pubs: set[str]) -> None:
     """Конфиги awg-интерфейсов, кроме линков. Та же линия — текущие (роздано
-    устройствам). Другая — из бэкапа; в клиентском конфиге пиры устройств
-    текущих слотов — текущие, пиры невставших устройств — прочь."""
+    устройствам). Другая — из бэкапа; пиры устройств текущих слотов —
+    текущие, в конфиге своего интерфейса (двойник переезда — в интерфейсе
+    переезда); пиры невставших и мёртвых устройств — прочь.
+    transplanted — {ключ: интерфейс устройства ('' — клиентский)}."""
     from awgbot.infra.awg import parsers
     d = os.path.join(copy_dir, "awg")
     if not os.path.isdir(d):
         return
+    by_iface: dict[str, set[str]] = {}
+    for pub, iface in transplanted.items():
+        by_iface.setdefault(iface or client_if, set()).add(pub)
     for name in sorted(os.listdir(d)):
         if not name.endswith(".conf") or name[:-5] in link_ifs:
             continue
@@ -169,7 +182,8 @@ def merge_iface_confs(copy_dir: str, p, *, awg_dir: str, link_ifs: set[str], cli
         if p.same_line:
             _put_live(live, dst)
             continue
-        if name[:-5] != client_if or not (transplanted_pubs or lost_pubs):
+        mine = by_iface.get(name[:-5], set())
+        if not (mine or lost_pubs or transplanted):
             continue
         with open(dst, encoding="utf-8") as f:
             header, peers = parsers._split_conf(f.read())
@@ -181,13 +195,16 @@ def merge_iface_confs(copy_dir: str, p, *, awg_dir: str, link_ifs: set[str], cli
             pass
         out, have = [], set()
         for x in peers:
-            if x["pubkey"] in lost_pubs and x["pubkey"] not in transplanted_pubs:
+            pub = x["pubkey"]
+            if pub in transplanted and pub not in mine:
+                continue                                  # устройство живёт на другом интерфейсе
+            if pub in lost_pubs and pub not in transplanted:
                 continue
-            if x["pubkey"] in transplanted_pubs and x["pubkey"] in live_peers:
-                x = live_peers[x["pubkey"]]
-            have.add(x["pubkey"])
+            if pub in mine and pub in live_peers:
+                x = live_peers[pub]
+            have.add(pub)
             out.append(x)
-        for pub in sorted(transplanted_pubs - have):
+        for pub in sorted(mine - have):
             if pub in live_peers:
                 out.append(live_peers[pub])
         with open(dst, "w", encoding="utf-8") as f:
