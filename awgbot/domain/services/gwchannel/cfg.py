@@ -396,7 +396,7 @@ class CfgMixin:
         port, _, since = raw.partition("|")
         if port.isdigit() and int(port) != cur and since:
             try:
-                age = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
+                age = timeutil.elapsed(timeutil.parse_iso(since))
             except ValueError:
                 age = None
             if age is not None and age < self.CHPORT_PREV_DAYS * 86400:

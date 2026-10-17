@@ -343,7 +343,7 @@ class RekeyMixin:
 
 def _age(now, iso: str, default: float) -> float:
     try:
-        return (now - timeutil.parse_iso(iso)).total_seconds()
+        return timeutil.elapsed(timeutil.parse_iso(iso), now)
     except (ValueError, TypeError):
         return default
 

@@ -96,7 +96,7 @@ def subscription_text(client, *, routing_visible: bool) -> str:
         elif pause_visible and mode == "user":
             since = timeutil.parse_iso(client.pause_active_since) if client.pause_active_since else None
             reserved = int(client.pause_reserved_days)
-            used = timeutil.ceil_days((timeutil.now() - since).total_seconds()) if since else 0
+            used = timeutil.ceil_days(timeutil.elapsed(since)) if since else 0
             used = max(0, min(used, reserved))
             until = _pause_until(client)
             lines.append("")

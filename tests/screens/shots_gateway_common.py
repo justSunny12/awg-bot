@@ -59,7 +59,7 @@ def _ssh_panel(**kw) -> dict:
 def _lan(**kw) -> dict:
     """VPN-транзит включён: интерфейс, адрес, резолвер, списки, свои, SMB."""
     d = {"iface": "end0", "addr": "192.168.1.10", "resolver": "10.8.0.1", "uplink": "awg0",
-         "domains": 1234, "nets": 56, "updated_at": "2026-09-15T06:00:00+03:00",
+         "domains": 1234, "nets": 56, "updated_at": "2026-09-15T06:00:00+05:00",
          "own_vpn": 2, "own_ru": 1, "lan_pkts": 123456,
          "svc": {"active": True, "own": ["nas"], "peer": ["nas-2", "printer"], "ever": True}}
     d.update(kw)

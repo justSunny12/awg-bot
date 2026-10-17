@@ -4,7 +4,7 @@ traffic_samples как база для дельт опросчика.
 
 from __future__ import annotations
 
-from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
+from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 
 class TrafficMixin:
@@ -33,7 +33,7 @@ class TrafficMixin:
             )
 
     def reset_month_traffic_all(self) -> None:
-        """Сброс месячных счётчиков у всех устройств (1-го числа 00:00 UTC+3)."""
+        """Сброс месячных счётчиков у всех устройств (1-го числа 00:00 по поясу бота)."""
         with self._tx() as cur:
             cur.execute(
                 "UPDATE device_traffic SET traffic_rx_month = 0, traffic_tx_month = 0, "

@@ -104,7 +104,7 @@ class GwStatus:
     def age_seconds(self) -> float | None:
         if not self.ts:
             return None
-        return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
+        return max(0.0, timeutil.elapsed(timeutil.parse_iso(self.ts)))
 
 
 

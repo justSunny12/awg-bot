@@ -74,7 +74,7 @@ class SnapshotMixin:
         if not raw:
             return None
         try:
-            return max(0, int((timeutil.now() - timeutil.parse_iso(raw)).total_seconds()))
+            return max(0, int(timeutil.elapsed(timeutil.parse_iso(raw))))
         except ValueError:
             return None
 

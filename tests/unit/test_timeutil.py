@@ -1,4 +1,6 @@
-"""Unit: awgbot.util.timeutil — время UTC+3, периоды, форматтеры (чистая логика)."""
+"""Unit: awgbot.util.timeutil — пояс показа (в тестах — Asia/Yekaterinburg,
+conftest), хранение UTC+3, метка пояса, арифметика через летнее время,
+периоды, форматтеры (чистая логика)."""
 from datetime import datetime, timezone
 
 import pytest
@@ -21,12 +23,16 @@ def test_iso_roundtrip():
 
 
 def test_parse_iso_naive_treated_as_utc3():
-    assert t.parse_iso("2026-07-05T19:08:02") == _dt(2026, 7, 5, 19, 8, 2)
+    """Наивная строка (наследие) — время пояса хранения UTC+3, показ — в поясе бота."""
+    got = t.parse_iso("2026-07-05T19:08:02")
+    assert got == datetime(2026, 7, 5, 19, 8, 2, tzinfo=t.STORE_TZ)
+    assert got == _dt(2026, 7, 5, 21, 8, 2) and got.tzinfo is TZ
 
 
 def test_to_iso_converts_from_other_tz():
-    utc = datetime(2026, 7, 5, 16, 8, 2, tzinfo=timezone.utc)   # = 19:08 UTC+3
-    assert t.parse_iso(t.to_iso(utc)) == _dt(2026, 7, 5, 19, 8, 2)
+    utc = datetime(2026, 7, 5, 16, 8, 2, tzinfo=timezone.utc)   # = 19:08 UTC+3 = 21:08 UTC+5
+    assert t.to_iso(utc) == "2026-07-05T19:08:02+03:00"
+    assert t.parse_iso(t.to_iso(utc)) == _dt(2026, 7, 5, 21, 8, 2)
 
 
 # ── периоды ──────────────────────────────────────────────────────────────────
@@ -122,8 +128,8 @@ def test_fmt_remaining_expired_and_small():
 
 # ── docker StartedAt ─────────────────────────────────────────────────────────
 def test_parse_docker_time_valid_and_tz():
-    got = t.parse_docker_time("2026-07-05T10:39:22.158372221Z")   # 10:39 UTC = 13:39 UTC+3
-    assert got is not None and got.hour == 13 and got.minute == 39
+    got = t.parse_docker_time("2026-07-05T10:39:22.158372221Z")   # 10:39 UTC = 15:39 UTC+5
+    assert got is not None and got.hour == 15 and got.minute == 39
 
 
 def test_parse_docker_time_never_and_garbage():
@@ -159,3 +165,116 @@ def test_online_threshold_is_keyword_only():
         tu.handshake_is_online(now_ts, 300, 300)      # третьего позиционного нет
     # и опорное время по-прежнему работает как опорное время
     assert tu.handshake_is_online(now_ts - 10, tu.now())
+
+
+
+# ── пояс хранения — UTC+3 при любом поясе показа ─────────────────────────────
+@pytest.fixture()
+def berlin(monkeypatch):
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Europe/Berlin")
+    monkeypatch.setattr(t, "TZ", tz)
+    return tz
+
+
+def test_storage_is_utc3_whatever_the_display_zone(berlin):
+    summer = datetime(2026, 7, 5, 12, 0, tzinfo=berlin)           # 12:00 UTC+2
+    assert t.to_iso(summer) == "2026-07-05T13:00:00+03:00"
+    assert t.now_iso().endswith("+03:00")
+    got = t.parse_iso("2026-07-05T13:00:00+03:00")
+    assert got == summer and got.tzinfo is berlin and got.hour == 12
+    assert t.parse_iso("2026-07-05T10:00:00+00:00").hour == 12, "любое смещение читается"
+    assert t.to_iso(datetime(2026, 7, 5, 12, 0)) == "2026-07-05T13:00:00+03:00", "наивное — стенные часы показа"
+
+
+def test_storage_offset_in_the_pinned_zone():
+    assert t.to_iso(_dt(2026, 9, 15, 12)) == "2026-09-15T10:00:00+03:00"
+    assert t.now_iso().endswith("+03:00")
+
+
+# ── метка пояса ──────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("name,at,label", [
+    ("Europe/Moscow", (2026, 7, 1), "UTC+3"),
+    ("Asia/Yekaterinburg", (2026, 7, 1), "UTC+5"),
+    ("Asia/Kolkata", (2026, 7, 1), "UTC+5:30"),
+    ("Asia/Kathmandu", (2026, 7, 1), "UTC+5:45"),
+    ("America/St_Johns", (2026, 1, 15), "UTC-3:30"),
+    ("Etc/UTC", (2026, 7, 1), "UTC"),
+    ("Europe/London", (2026, 1, 15), "UTC"),
+    ("Pacific/Kiritimati", (2026, 7, 1), "UTC+14"),
+    ("Etc/GMT+12", (2026, 7, 1), "UTC-12"),
+    ("Europe/Berlin", (2026, 7, 1), "UTC+2"),
+    ("Europe/Berlin", (2026, 1, 15), "UTC+1"),
+])
+def test_tz_label(monkeypatch, name, at, label):
+    from zoneinfo import ZoneInfo
+    monkeypatch.setattr(t, "TZ", ZoneInfo(name))
+    assert t.tz_label(datetime(*at, 12, tzinfo=timezone.utc)) == label
+    assert t.tz_tail(datetime(*at, 12, tzinfo=timezone.utc)) == f" ({label})"
+
+
+def test_tz_label_now_and_explicit_zone():
+    from zoneinfo import ZoneInfo
+    assert t.tz_label() == "UTC+5"
+    assert t.tz_label(tz=ZoneInfo("Europe/Moscow")) == "UTC+3"
+
+
+def test_tz_label_is_of_the_shown_moment_not_of_now(berlin):
+    """Летнее время: у двух моментов одного экрана метки разные."""
+    assert t.tz_label(datetime(2026, 10, 24, 12, tzinfo=berlin)) == "UTC+2"
+    assert t.tz_label(datetime(2026, 10, 26, 18, tzinfo=berlin)) == "UTC+1"
+
+
+# ── арифметика через переход на летнее время ─────────────────────────────────
+def test_elapsed_counts_real_seconds_over_dst(berlin):
+    """25.10.2026 01:00 → 04:00 по стенным часам Берлина — 4 настоящих часа
+    (вычитание дат одного пояса дало бы 3)."""
+    a = datetime(2026, 10, 25, 1, 0, tzinfo=berlin)
+    b = datetime(2026, 10, 25, 4, 0, tzinfo=berlin)
+    assert (b - a).total_seconds() == 3 * 3600, "предпосылка: вычитание — по стенным часам"
+    assert t.elapsed(a, b) == 4 * 3600
+    assert t.remaining_seconds(b, a) == 4 * 3600
+    assert t.period_minutes(a, b) == 240
+    spring_a = datetime(2026, 3, 29, 1, 0, tzinfo=berlin)
+    spring_b = datetime(2026, 3, 29, 4, 0, tzinfo=berlin)
+    assert t.elapsed(spring_a, spring_b) == 2 * 3600
+
+
+def test_elapsed_default_is_now_and_shift_is_absolute(monkeypatch, berlin):
+    ref = datetime(2026, 10, 25, 4, 0, tzinfo=berlin)
+    monkeypatch.setattr(t, "now", lambda: ref)
+    assert t.elapsed(datetime(2026, 10, 25, 1, 0, tzinfo=berlin)) == 4 * 3600
+    back = t.shift(ref, -4 * 3600)
+    assert (back.hour, back.utcoffset().total_seconds()) == (1, 7200)
+    assert back.tzinfo is berlin
+
+
+def test_uptime_over_dst(monkeypatch, berlin):
+    monkeypatch.setattr(t, "now", lambda: datetime(2026, 10, 25, 4, 0, tzinfo=berlin))
+    assert t.fmt_uptime(datetime(2026, 10, 25, 1, 0, tzinfo=berlin)) == "4 часа"
+
+
+def test_add_period_keeps_the_wall_clock_over_dst(berlin):
+    start = datetime(2026, 10, 24, 18, 0, tzinfo=berlin)
+    end = t.add_period(start, "day")
+    assert (end.day, end.hour) == (25, 18) and t.tz_label(end) == "UTC+1"
+    assert t.add_period(datetime(2026, 3, 1, 18, tzinfo=berlin), "month").hour == 18
+
+
+# ── ввод: пропавший и повторный час ──────────────────────────────────────────
+def test_input_in_the_missing_hour_moves_forward(berlin):
+    got = t.parse_dt_sec("29.03.2026 02:30")
+    assert (got.hour, got.minute, t.tz_label(got)) == (3, 30, "UTC+2")
+    assert t.to_iso(got) == "2026-03-29T04:30:00+03:00"
+
+
+def test_input_in_the_repeated_hour_is_the_first_one(berlin):
+    got = t.parse_dt_sec("25.10.2026 02:30")
+    assert (got.hour, got.minute, t.tz_label(got)) == (2, 30, "UTC+2")
+    assert t.to_iso(got) == "2026-10-25T03:30:00+03:00"
+
+
+def test_input_is_the_wall_clock_of_the_display_zone():
+    got = t.parse_dt_sec("01.02.2027 18:30")
+    assert (got.hour, got.minute, got.tzinfo) == (18, 30, TZ)
+    assert t.to_iso(got) == "2027-02-01T16:30:00+03:00"

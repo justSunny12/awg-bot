@@ -66,6 +66,6 @@ class CardMixin:
         if not ts or not at:
             return None
         try:
-            return int((timeutil.parse_iso(ts) - timeutil.parse_iso(at)).total_seconds())
+            return int(timeutil.elapsed(timeutil.parse_iso(at), timeutil.parse_iso(ts)))
         except ValueError:
             return None

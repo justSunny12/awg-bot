@@ -92,6 +92,17 @@ async def _rebooted(services, bot):
     await main._announce_reboot(bot, services.db, "агента")
 
 
+async def _zone_adopted(services, bot, prev="Europe/Moscow"):
+    """Первый старт после обновления, снявшего ключ timezone: метка шага
+    обновления с прежним значением — во временном каталоге."""
+    import tempfile
+    from pathlib import Path
+    from awgbot.runtime import main
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / main.ZONE_ADOPTED_MARKER).write_text(prev + "\n", encoding="utf-8")
+        await main._announce_zone(bot, d)
+
+
 _SMB_PEERS = ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"]
 
 
@@ -196,8 +207,10 @@ EVENTS = [
     _shot("gw.event.update_failed", call=("report_update_result", _update_result), update_pending="v1.2.4",
           update_wait=True, title="обновление не применилось"),
     _shot("gw.event.restored", call=("report_restore_result", _restore_result),
-          restore_done={"created_at": "2026-09-14T03:00:00+03:00"}, title="восстановлено из копии"),
+          restore_done={"created_at": "2026-09-14T03:00:00+05:00"}, title="восстановлено из копии"),
     _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="шлюз перезагрузился — бот снова на связи"),
+    _shot("gw.event.zone_adopted", call=("_announce_zone", _zone_adopted),
+          title="первый старт после обновления: ключ пояса снят — время в поясе шлюза"),
 
     # ── общее: «Скрыть» на итоге ────────────────────────────────────────────
     _shot("gw.hide", press=[HideCB()], title="«Скрыть» убирает сообщение"),

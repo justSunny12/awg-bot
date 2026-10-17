@@ -180,3 +180,38 @@ async def test_an_undelivered_backup_is_retried_in_an_hour(services, fake_bot, m
     retry = sched.get_job("backup_retry")
     assert retry is not None and retry.misfire_grace_time is None, "повтора нет"
     assert services.db.get_state("last_backup") == "2000-01", "месяц помечен сделанным без доставки"
+
+
+@pytest.mark.parametrize("day,expect", [
+    # пропавший час: один запуск, часом позже стенного (01:30 UTC = 02:30 летнего)
+    ((2026, 3, 29), ["2026-03-29T01:30:00+00:00"]),
+    # повторный час: крон APScheduler срабатывает в обоих его прохождениях —
+    # месячные задания (сброс трафика, копия) защищены ключом месяца, проверка
+    # обновлений повторяется без вреда
+    ((2026, 10, 25), ["2026-10-25T01:30:00+01:00", "2026-10-25T01:30:00+00:00"]),
+])
+def test_cron_over_dst(monkeypatch, day, expect):
+    """Расписание в поясе с летним временем (Europe/London, крон 01:30) в день
+    перехода — без пропуска; «сейчас» планировщика — настоящее время после
+    запуска. Триггеры обеих ролей строятся в поясе бота (config.TZ)."""
+    from zoneinfo import ZoneInfo
+    from apscheduler.triggers.cron import CronTrigger
+    from awgbot.core import config
+    from awgbot.runtime.scheduler import common as sched_common
+    london = ZoneInfo("Europe/London")
+    monkeypatch.setattr(config, "TZ", london)
+    assert sched_common.update_check_trigger().timezone == london
+    assert sched_common.backup_trigger().timezone == london
+    trig = CronTrigger(hour=1, minute=30, timezone=london)
+    y, m, d = day
+    now = datetime.datetime(y, m, d - 1, 12, tzinfo=london)
+    end = datetime.datetime(y, m, d + 1, 12, tzinfo=london).timestamp()
+    fires, prev = [], None
+    for _ in range(10):
+        nxt = trig.get_next_fire_time(prev, now)
+        if nxt is None or nxt.timestamp() >= end:
+            break
+        fires.append(nxt)
+        prev, now = nxt, datetime.datetime.fromtimestamp(nxt.timestamp() + 1, london)
+    assert [f.isoformat() for f in fires if f.date() == datetime.date(y, m, d)] == expect
+    assert len({f.date() for f in fires}) == 2, "запуск каждый день, без пропуска"

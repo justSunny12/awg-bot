@@ -39,7 +39,7 @@ class ServicesMixin:
             return True
         raw = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id)) or ""
         try:
-            return bool(raw) and (timeutil.now() - timeutil.parse_iso(raw)).total_seconds() < within_s
+            return bool(raw) and timeutil.elapsed(timeutil.parse_iso(raw)) < within_s
         except ValueError:
             return False
 

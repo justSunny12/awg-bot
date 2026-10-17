@@ -94,7 +94,7 @@ class RoutingLivenessMixin:
         if not raw:
             return True
         try:
-            since = (timeutil.now() - timeutil.parse_iso(raw)).total_seconds()
+            since = timeutil.elapsed(timeutil.parse_iso(raw))
         except ValueError:
             return True
         return since >= 60 * settings.get_int("app.routing.failover.min_interval_minutes", 10)

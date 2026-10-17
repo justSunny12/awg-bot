@@ -95,14 +95,14 @@ def vasya(devices=(), *, limit=3, period="year", traffic=0, rf=False, rf_on=True
 
 
 def _expiring(services, cid):
-    services.db.update_client_fields(cid, period_end="2026-09-18T12:00:00+03:00",
+    services.db.update_client_fields(cid, period_end="2026-09-18T12:00:00+05:00",
                                      notified_thresholds="4320")
 
 
 def _expired(services, cid):
     """Годовая подписка кончилась 10.09: начало — годом раньше (конец не раньше начала)."""
-    services.db.update_client_fields(cid, period_start="2025-09-10T12:00:00+03:00",
-                                     period_end="2026-09-10T12:00:00+03:00", status="expired")
+    services.db.update_client_fields(cid, period_start="2025-09-10T12:00:00+05:00",
+                                     period_end="2026-09-10T12:00:00+05:00", status="expired")
 
 
 def _paused(services, cid):
@@ -180,8 +180,8 @@ async def _expiry_tick(services, bot):
 
 def _soon(services, cid):
     """До конца годовой подписки неделя, уведомления о сроке ещё не было."""
-    services.db.update_client_fields(cid, period_start="2025-09-22T12:00:00+03:00",
-                                     period_end="2026-09-22T12:00:00+03:00")
+    services.db.update_client_fields(cid, period_start="2025-09-22T12:00:00+05:00",
+                                     period_end="2026-09-22T12:00:00+05:00")
 
 
 async def _added_by_admin(services, bot):

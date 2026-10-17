@@ -286,9 +286,9 @@ class OwnListsMixin:
             asked = timeutil.parse_iso(cur["asked"]) if cur.get("asked") else None
         except ValueError:
             return False
-        if (now - since).total_seconds() < self._NUDGE_AFTER_S:
+        if timeutil.elapsed(since, now) < self._NUDGE_AFTER_S:
             return False
-        if asked is not None and (now - asked).total_seconds() < self._NUDGE_AFTER_S:
+        if asked is not None and timeutil.elapsed(asked, now) < self._NUDGE_AFTER_S:
             return False
         cur["asked"] = timeutil.to_iso(now)
         self.db.set_state(key, json.dumps(cur))
@@ -339,7 +339,7 @@ class OwnListsMixin:
         waited = 0.0
         if p.get("sent_at"):
             try:
-                waited = (timeutil.now() - timeutil.parse_iso(p["sent_at"])).total_seconds()
+                waited = timeutil.elapsed(timeutil.parse_iso(p["sent_at"]))
             except ValueError:
                 waited = 0.0
         from awgbot.util.textfmt import plural_ru

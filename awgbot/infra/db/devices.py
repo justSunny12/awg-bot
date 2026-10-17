@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
+from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 from .schema import _DEVICE_SELECT, _device_from_row, _gateway_from_row
 

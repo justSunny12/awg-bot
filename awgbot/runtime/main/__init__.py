@@ -10,9 +10,11 @@ main/ — точка входа. Собирает всё вместе и зап�
   5. вотчдог (inotify) + планировщик (APScheduler)
   6. polling до остановки; на выходе — аккуратное закрытие
 
-Части: common — журнал и метка свежей установки; startup — стартовые
-уведомления и финишеры (меню команд, переезд, свой DNS, реконсиляция, итог
-обновления, имя бота, перезагрузка хоста); gateway — сборка и запуск роли
+Части: common — журнал (под journald без времени в строке, вне — ISO со
+смещением в поясе бота), строка пояса на старте и метки в каталоге данных;
+startup — стартовые уведомления и финишеры (меню команд, переезд, свой DNS,
+реконсиляция, итог обновления, имя бота, перезагрузка хоста, пояс после
+обновления); gateway — сборка и запуск роли
 gateway (run_gateway); client — сборка и запуск основной роли (main).
 Запуск модулем — __main__.
 """
@@ -37,21 +39,24 @@ from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
 from awgbot.runtime.conf_watcher import ConfWatcher
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
+from .common import FRESH_INSTALL_MARKER, ZONE_ADOPTED_MARKER, log, log_formatter, log_zone  # noqa: E402
+
+# Журнал: под journald время ставит journald, вне — ISO со смещением в поясе бота.
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(log_formatter())
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
 
 # части зовут через пакет всё, что подменяют тесты (Bot, Database, Services,
 # ConfWatcher, make_dispatcher, notify_one, функции старта)
-from .common import FRESH_INSTALL_MARKER, log  # noqa: E402
 from .startup import (_menu_command, _notify_migration_needed, _notify_private_dns_offer,  # noqa: E402
-                      do_reconcile, report_update_result, _sync_bot_identity, _announce_reboot)
+                      do_reconcile, report_update_result, _sync_bot_identity, _announce_reboot,
+                      _announce_zone)
 from .gateway import run_gateway  # noqa: E402
 from .client import main  # noqa: E402
 
 __all__ = ["Bot", "TelegramUnauthorizedError", "DefaultBotProperties", "ParseMode", "config", "settings", "awg",
            "Database", "Services", "notify_one", "send_notifications", "make_dispatcher", "setup_scheduler",
-           "AwgWatcher", "ConfWatcher", "FRESH_INSTALL_MARKER", "log",
+           "AwgWatcher", "ConfWatcher", "FRESH_INSTALL_MARKER", "ZONE_ADOPTED_MARKER", "log", "log_zone",
            "_menu_command", "_notify_migration_needed", "_notify_private_dns_offer", "do_reconcile",
-           "report_update_result", "_sync_bot_identity", "_announce_reboot", "run_gateway", "main"]
+           "report_update_result", "_sync_bot_identity", "_announce_reboot", "_announce_zone",
+           "run_gateway", "main"]

@@ -43,12 +43,12 @@ def test_other_year_is_two_digits(year, shown):
     assert t.fmt_dt_ui(_dt(year, 10, 12, 18, 5), REF) == f"{shown} 18:05"
 
 
-def test_year_is_taken_in_moscow_time_not_utc():
-    """31.12 23:30 UTC — уже 01.01 по UTC+3: и дата, и «текущий ли год»
-    считаются по времени экрана."""
+def test_year_is_taken_in_display_zone_not_utc():
+    """31.12 23:30 UTC — уже 01.01 в поясе бота (UTC+5): и дата, и «текущий ли
+    год» считаются по времени экрана."""
     utc = datetime(2026, 12, 31, 23, 30, tzinfo=timezone.utc)
-    assert t.fmt_dt_ui(utc, _dt(2027, 1, 1, 10)) == "01.01 02:30"
-    assert t.fmt_dt_ui(utc, REF) == "01.01.27 02:30"
+    assert t.fmt_dt_ui(utc, _dt(2027, 1, 1, 10)) == "01.01 04:30"
+    assert t.fmt_dt_ui(utc, REF) == "01.01.27 04:30"
 
 
 def test_seconds_only_on_request_and_only_when_not_zero():

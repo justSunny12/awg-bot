@@ -143,7 +143,7 @@ class SubscriptionMixin:
             raise ServiceError("Профиль не найден")
         was_expired = client.status == SubStatus.EXPIRED
         # new_end=None → бессрочная (никогда не истекает) → всегда active
-        now_expired = new_end is not None and new_end <= timeutil.now()
+        now_expired = new_end is not None and timeutil.elapsed(new_end) >= 0
         status = SubStatus.EXPIRED if now_expired else SubStatus.ACTIVE
         self.db.update_client_fields(
             client_id,
@@ -390,7 +390,7 @@ class SubscriptionMixin:
         mode = client.pause_mode or PauseMode.USER
         since = timeutil.parse_iso(client.pause_active_since)
         now = timeutil.now()
-        actual = timeutil.ceil_days((now - since).total_seconds())
+        actual = timeutil.ceil_days(timeutil.elapsed(since, now))
         if mode == PauseMode.ADMIN_OPEN:
             # temp-бессрочная: восстанавливаем сохранённый конец + фактические дни
             saved = client.pause_saved_end
@@ -482,7 +482,7 @@ class SubscriptionMixin:
                 continue
             reserved = int(client.pause_reserved_days)
             since = timeutil.parse_iso(client.pause_active_since)
-            if (now - since).total_seconds() >= reserved * SECONDS_PER_DAY:
+            if timeutil.elapsed(since, now) >= reserved * SECONDS_PER_DAY:
                 ok, _, _, n = self.exit_pause(client.id, auto=True)
                 if ok:
                     notes += n

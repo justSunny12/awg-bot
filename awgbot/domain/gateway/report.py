@@ -71,7 +71,7 @@ class ReportMixin:
         if self.db.get_state(self._INSTALLED_SENT_KEY):
             return False
         try:
-            age = (timeutil.now() - timeutil.parse_iso(self.db.get_state(self._FIRST_START_KEY) or "")).total_seconds()
+            age = timeutil.elapsed(timeutil.parse_iso(self.db.get_state(self._FIRST_START_KEY) or ""))
         except ValueError:
             return False
         return age <= self._INSTALLED_REPORT_WINDOW_S

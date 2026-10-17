@@ -285,7 +285,7 @@ def get_host_metrics(db) -> dict | None:
     except (json.JSONDecodeError, ValueError):
         return None
     ts = snap.get("ts")
-    snap["age_seconds"] = ((timeutil.now() - timeutil.parse_iso(ts)).total_seconds()
+    snap["age_seconds"] = (timeutil.elapsed(timeutil.parse_iso(ts))
                            if ts else None)
     return snap
 

@@ -22,7 +22,6 @@ UPDATE_HOLD_MINUTES; затем — обычное правило по посл�
 """
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import Optional
 
@@ -45,10 +44,10 @@ class SelfUpdateHoldMixin:
         if not initial:
             return
         start = timeutil.now().replace(microsecond=0)        # как пишется gwlink_seen — до секунды
-        until = start + datetime.timedelta(minutes=UPDATE_HOLD_MINUTES)
+        until = timeutil.shift(start, UPDATE_HOLD_MINUTES * 60)
         self.__dict__["_upd_hold"] = {"start": start, "until": until, "initial": initial}
         log.info("обновление: после старта жду другую сторону (%s) — до %s",
-                 len(initial), until.strftime("%H:%M"))
+                 len(initial), until.isoformat(timespec="seconds"))
 
     def _update_hold_state(self):
         """(окно, кого ещё ждём) без изменения окна; окно None — закрыто."""
@@ -60,7 +59,7 @@ class SelfUpdateHoldMixin:
         return hold, left
 
     def _update_hold_satisfied(self, hold, left) -> bool:
-        return not left or timeutil.now() >= hold["until"]
+        return not left or timeutil.elapsed(hold["until"]) >= 0
 
     def update_hold(self) -> Optional[dict]:
         """Открыто ли окно: {"until": datetime, "waiting": [имена], "role"} или

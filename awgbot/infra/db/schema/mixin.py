@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
+from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 from .ddl import SCHEMA
 from .selects import SERVICE_CLIENT_NAME

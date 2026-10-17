@@ -56,7 +56,7 @@ class ExpiryMixin:
             secs = timeutil.remaining_seconds(end, now)
             if secs <= 0:
                 continue
-            length_days = int((end - start).total_seconds() // 86400) if start else 0
+            length_days = int(timeutil.elapsed(start, end) // 86400) if start else 0
             limit = self.expiring_limit_days(length_days)
             if limit is None or secs <= limit * 86400:
                 out.append((client, secs))

@@ -25,7 +25,7 @@ def _archive(role: str = "main", db: bytes | None = None) -> bytes:
             ti.size = len(raw)
             tar.addfile(ti, io.BytesIO(raw))
         add("state/backup-meta.json",
-            json.dumps({"role": role, "created_at": "2026-09-01T03:00:00+03:00"}).encode())
+            json.dumps({"role": role, "created_at": "2026-09-01T03:00:00+05:00"}).encode())
         if db is not None:
             add("state/bot.db", db)
     return buf.getvalue()

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from zoneinfo import ZoneInfo
-
 import yaml
+
+from awgbot.core import zone as _zone_mod
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Пути (FHS: код в /opt, состояние в /var/lib, конфиг/секреты в /etc)
@@ -155,8 +155,11 @@ def validate() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 _app = _load_yaml("app")
 
-TZ_NAME = _app.get("timezone", "Europe/Moscow")
-TZ = ZoneInfo(TZ_NAME)
+# Пояс показа: ключ timezone (необязателен) или пояс хоста — core/zone.py.
+# Пояс хранения — отдельно и постоянный (util/timeutil: UTC+3).
+_zone = _zone_mod.resolve(str(_app.get("timezone") or ""))
+TZ, TZ_NAME, TZ_SOURCE = _zone.tz, _zone.name, _zone.source
+TZ_HOST_NAME, TZ_BAD_VALUE = _zone.host_name, _zone.bad_value
 
 # ── Роль установки (docs/ROADMAP.md, п.7) ────────────────────────────────────
 # "client"  — обычный бот при awg-сервере (всё, что было всегда);

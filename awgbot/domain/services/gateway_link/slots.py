@@ -84,7 +84,7 @@ class SlotsMixin:
         snap_at = self.db.get_state(
             self._gw_slot_key(getattr(self, "_GWLINK_SNAP_AT_KEY", "gwlink_snap_at"), slot_id)) or ""
         try:
-            return not snap_at or timeutil.parse_iso(issued) >= timeutil.parse_iso(snap_at)
+            return not snap_at or timeutil.elapsed(timeutil.parse_iso(snap_at), timeutil.parse_iso(issued)) >= 0
         except ValueError:
             return True
 
@@ -198,7 +198,7 @@ class SlotsMixin:
             return None
         val, at = raw.split(" ", 1)
         try:
-            age = (timeutil.now() - timeutil.parse_iso(at)).total_seconds()
+            age = timeutil.elapsed(timeutil.parse_iso(at))
         except ValueError:
             return None
         return None if age > self._GW_PING_TTL else (val, at)

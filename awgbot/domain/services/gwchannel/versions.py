@@ -28,7 +28,7 @@ class VersionsMixin:
             fresh = bool(sess)
             if not fresh and seen:
                 try:
-                    fresh = (now - timeutil.parse_iso(seen)).total_seconds() < UPDATE_PEER_FRESH_DAYS * 86400
+                    fresh = timeutil.elapsed(timeutil.parse_iso(seen), now) < UPDATE_PEER_FRESH_DAYS * 86400
                 except ValueError:
                     fresh = False
             has_device = self.db.get_device(gw.device_id) is not None
@@ -47,7 +47,7 @@ class VersionsMixin:
         for gw in self.db.gateways():
             seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
             try:
-                recent = bool(seen) and (now - timeutil.parse_iso(seen)).total_seconds() \
+                recent = bool(seen) and timeutil.elapsed(timeutil.parse_iso(seen), now) \
                     < UPDATE_PEER_FRESH_DAYS * 86400
             except ValueError:
                 recent = False
@@ -68,7 +68,7 @@ class VersionsMixin:
                 continue
             seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot)) or ""
             try:
-                fresh = bool(seen) and timeutil.parse_iso(seen) >= start
+                fresh = bool(seen) and timeutil.elapsed(start, timeutil.parse_iso(seen)) >= 0
             except ValueError:
                 fresh = False
             if not fresh:

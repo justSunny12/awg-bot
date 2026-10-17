@@ -20,6 +20,7 @@ async def main() -> None:
     from awgbot.runtime import preflight
     preflight.check_fatal()                 # стоп-факторы: data-dir, целостность БД
     settings.init(config.CONF_DIR)          # горячий кэш conf/*.yaml (до чтений)
+    pkg.log_zone()                          # пояс показа — строкой в журнал (обе роли)
 
     if config.ROLE == "gateway":
         # Роль агента шлюза — свой мир целиком (docs/ROADMAP.md, п.7): ни
@@ -142,6 +143,7 @@ async def main() -> None:
         await pkg.report_update_result(bot, services)       # тот же финишер, что у агента
     except Exception as e:                               # noqa: BLE001
         log.warning("report_update_result: %s", e)
+    await pkg._announce_zone(bot)                            # ключ пояса снят обновлением — сказать
 
     # Поставка привезла ядро нового поколения — переезд профилей обязателен, и
     # сказать об этом надо при КАЖДОМ старте, пока он не начат: пропустить такое

@@ -18,7 +18,7 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
                 f"Почта нужна {br.email_purpose}. Портов на {br.host_loc} бот не открывает — сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
-        when = timeutil.age_ago((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
+        when = timeutil.age_ago(timeutil.elapsed(timeutil.parse_iso(iso))) if iso else ""
         status = f"🟢 <i>{when}</i>" if when else "🟢 проверено"
     elif state == "fail":
         status = f"🔴 {_e(detail)}"

@@ -324,7 +324,7 @@ class StatusMixin:
         if not since:
             self.db.set_state("service_down_since", timeutil.to_iso(timeutil.now()))
             return []
-        down_secs = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
+        down_secs = timeutil.elapsed(timeutil.parse_iso(since))
         if (down_secs >= settings.get_int("app.monitoring.service_failure_alert_minutes", 5) * 60
                 and self.db.get_state("service_alert_sent") != "1"):
             self.db.set_state("service_alert_sent", "1")

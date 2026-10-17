@@ -65,6 +65,10 @@
 #                          /usr/local/sbin освежаются, если они там уже есть;
 #                          откат неудачного обновления шлюза возвращает и
 #                          прежнюю копию routing-gw-setup.sh (gw_plumbing_sync).
+#                          Ключ timezone в app.yaml комментируется: пояс бота —
+#                          пояс хоста (adopt_timezone); прежнее значение — в
+#                          метке $DATA_DIR/.tz-adopted, по ней первый старт бота
+#                          скажет админу, в каком поясе теперь время.
 #   uninstall              снять сервис (код, таблица учёта РФ-трафика и таблица
 #                          адресов в туннеле awg_lan_map — всегда; данные,
 #                          секреты, файервол и обвязка роли — по согласию: у шлюза
@@ -99,7 +103,7 @@
 #                          переписываются на awg_lan; без применённого режима —
 #                          в /var/lib/awg-gw/restore).
 #   status                 состояние сервиса и пути.
-#   logs                   журнал сервиса (follow).
+#   logs                   журнал сервиса (follow, время journald со смещением).
 
 set -euo pipefail
 
@@ -445,10 +449,8 @@ configure_topology_auto() {
     fi
     name="$(yaml_get "$app" server_name)"
     [[ -n "$name" ]] || yaml_set "$app" server_name "\"Сервер 1\""
-    # Таймзона хоста: от неё зависят тихие часы и расписания, а спрашивать её
-    # бессмысленно — система уже знает ответ.
-    local tz; tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
-    [[ -n "$tz" && "$tz" != "$(yaml_get "$app" timezone)" ]] && yaml_set "$app" timezone "\"$tz\""
+    # Часовой пояс в app.yaml не пишем: без ключа timezone бот берёт пояс
+    # хоста и, в отличие от записанного значения, следует за timedatectl.
     ok "адрес сервера: $host (правится в боте: ⚙️ Настройки → 🖥 Сервер AWG → ✏️ Домен)"
 }
 
@@ -799,7 +801,7 @@ cmd_reconfigure() {
         systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "не удалось включить $SERVICE на автозагрузку"
         systemctl restart "$SERVICE"; sleep 1
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
-            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
         # Из файла первого применения диалога с ботом ещё нет, и первым он
         # написать не может; после опознания кодом — админ ему уже писал, и
@@ -833,7 +835,7 @@ cmd_reconfigure() {
         systemctl enable --now "$SERVICE"; sleep 1
         local svc_state="failed"
         systemctl is-active --quiet "$SERVICE" && { svc_state="active"; ok "$SERVICE запущен."; } \
-            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         optional_steps
         print_map "$svc_state"
         # Конфигурация первого устройства — в терминал: у человека прямо сейчас
@@ -854,7 +856,7 @@ cmd_reconfigure() {
         validate_config
         log "перезапускаю ${SERVICE}…"; systemctl restart "$SERVICE" 2>/dev/null || true
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE перезапущен." \
-            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         ok "Переконфигурация завершена."
     fi
 }
@@ -1195,7 +1197,7 @@ post_update_rescue() {  # ловушка второй половины обно�
 import os
 from awgbot.infra import tgsend
 tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\n' + os.environ['AWG_WHAT'] + '\n\n'
-            'Посмотреть причину: <code>journalctl -u awg-bot -e</code>, '
+            'Посмотреть причину: <code>journalctl -u awg-bot -e -o short-iso</code>, '
             'повторить: <code>sudo awg-bot update &lt;архив&gt;</code>.')
 " >/dev/null 2>&1 ) || true
 }
@@ -1218,6 +1220,7 @@ cmd_post_update() {
     ensure_awg_module_loaded
     ensure_awg_generation
     adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
+    adopt_timezone                         # ключ timezone снят — пояс бота = пояс хоста
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
@@ -1236,7 +1239,7 @@ cmd_post_update() {
     if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
         # сервис — сразу, со старой конфигурацией: не применится файл — агент
         # всё равно работает; применение файла ниже перезапустит сервис само
-        systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e"
+        systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
         prune_old_kernel_builds
     else
         systemctl start "$SERVICE"; sleep 1
@@ -1244,7 +1247,7 @@ cmd_post_update() {
             ok "$SERVICE перезапущен."
             prune_old_kernel_builds
         else
-            warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+            warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         fi
     fi
     # сервис стартовал — назад дороги нет: новый код мог уже тронуть базу
@@ -1510,7 +1513,7 @@ cmd_restore() {
     printf '{"created_at": "%s", "source": "%s"}\n' "$bk_at" "$(basename "$tgz")" > "$DATA_DIR/restore-done.json"
     rm -rf "$tmp"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
-    systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+    systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
 }
 
 lan_lists_sane() {  # lan_lists_sane FILE… → 0, если в файлах только строки личных списков
@@ -1779,6 +1782,30 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
         || warn "резолвер не взят под опеку — позже: awg-bot resolver install $addr"
 }
 
+host_timezone() {  # имя пояса хоста: timedatectl, запасной путь — ссылка /etc/localtime
+    local tz
+    tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    [[ -n "$tz" ]] || { tz="$(readlink -f /etc/localtime 2>/dev/null || true)"; [[ "$tz" == */zoneinfo/* ]] && tz="${tz#*/zoneinfo/}" || tz=""; }
+    printf '%s' "$tz"
+}
+
+adopt_timezone() {  # обновление: ключ timezone в app.yaml снимается — бот берёт пояс хоста
+    # Ключ остался от прежнего шаблона («Europe/Moscow») или его записал
+    # установщик; снимается всегда. Комментируется, а не очищается: прежняя
+    # версия на пустом значении не стартовала бы (откат), а без ключа берёт
+    # свой пояс по умолчанию. Прежнее значение — в метку $DATA_DIR/.tz-adopted:
+    # первый старт бота скажет админу, в каком поясе теперь время, и снимет её.
+    local app="$CONF_DIR/app.yaml" old tz tmp
+    [[ -f "$app" ]] && grep -qE '^[[:space:]]*timezone:' "$app" || return 0
+    old="$(yaml_get "$app" timezone)"
+    tmp="$(mktemp)" || return 0
+    sed -E 's|^([[:space:]]*)timezone:|\1# timezone:|' "$app" > "$tmp" && cat "$tmp" > "$app"
+    rm -f "$tmp"
+    mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"
+    tz="$(host_timezone)"
+    log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
+}
+
 cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR] | admin status|plan|install|remove
     require_installed
     local mode="${1:-status}" addr="${2:-}"
@@ -1845,7 +1872,7 @@ cmd_status() {
     echo "Пути: код=$INSTALL_DIR conf=$CONF_DIR env=$ENV_FILE data=$DATA_DIR"
     systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -n 12 || warn "юнит $SERVICE не найден"
 }
-cmd_logs() { exec journalctl -u "$SERVICE" -n 200 -f; }
+cmd_logs() { exec journalctl -u "$SERVICE" -n 200 -f -o short-iso; }   # время со смещением
 
 cmd_start()   { require_root; systemctl start "$SERVICE";   _svc_feedback "запущен"; }
 cmd_stop()    { require_root; systemctl stop "$SERVICE";    _svc_feedback "остановлен"; }
@@ -1856,7 +1883,7 @@ _svc_feedback() {  # короткий итог после start/stop/restart
         ok "$SERVICE $1 (active)."
     else
         [[ "$1" == "остановлен" ]] && ok "$SERVICE $1." \
-            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
     fi
 }
 

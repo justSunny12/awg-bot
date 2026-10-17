@@ -142,6 +142,7 @@ async def run_gateway() -> None:
         await pkg.report_update_result(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway confirm_applied_update: %s", e)
+    await pkg._announce_zone(bot)                    # ключ пояса снят обновлением — сказать
     # rt-18: очередь общего пула потоков в первые минуты — строкой в журнал
     from awgbot.runtime import poolprobe
     asyncio.create_task(poolprobe.run("gateway: "))

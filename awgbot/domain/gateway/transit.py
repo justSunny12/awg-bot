@@ -197,7 +197,7 @@ class TransitMixin:
                     detail = "" if prev >= 0 else gc.FIRST_TICK_DETAIL
                 else:
                     try:
-                        quiet = (now - timeutil.parse_iso(at)).total_seconds() if at else 0.0
+                        quiet = timeutil.elapsed(timeutil.parse_iso(at), now) if at else 0.0
                     except ValueError:
                         quiet = 0.0
                     ok = quiet < self._LAN_QUIET_SECONDS
@@ -289,7 +289,7 @@ class TransitMixin:
         import datetime as _dt
         confirmed = _dt.datetime.fromtimestamp(int(raw), tz=_dt.timezone.utc)
         try:
-            if written and timeutil.parse_iso(written) >= confirmed:
+            if written and timeutil.elapsed(confirmed, timeutil.parse_iso(written)) >= 0:
                 return written
         except ValueError:
             pass

@@ -71,10 +71,25 @@ async def _ev_restarted(services, bot):
     await restore_panel_after_restart(bot, services)
 
 
+async def _ev_zone_adopted(services, bot, prev="Europe/Moscow"):
+    """Первый старт после обновления, снявшего ключ timezone: метка шага
+    обновления с прежним значением — во временном каталоге."""
+    import tempfile
+    from pathlib import Path
+    from awgbot.runtime import main
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / main.ZONE_ADOPTED_MARKER).write_text(prev + "\n", encoding="utf-8")
+        await main._announce_zone(bot, d)
+
+
+async def _ev_zone_adopted_same(services, bot):
+    await _ev_zone_adopted(services, bot, prev="Asia/Yekaterinburg")
+
+
 def _restore_done(services):
     """awg-bot restore отработал и оставил маркер."""
     who = _people(services)
-    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+03:00"}
+    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+05:00"}
     return who
 
 
@@ -122,6 +137,10 @@ EVENTS = [
          data=_restart_promised, title="бот вернулся после перезапуска"),
     Shot("adm.ev.restore_done", role="admin", call=("report_restore_result", _ev_restore_done),
          data=_restore_done, title="восстановление из копии завершено"),
+    Shot("adm.ev.zone_adopted", role="admin", call=("_announce_zone", _ev_zone_adopted), data=_people,
+         title="первый старт после обновления: ключ пояса снят — время в поясе сервера, прежний был другим"),
+    Shot("adm.ev.zone_adopted.same", role="admin", call=("_announce_zone", _ev_zone_adopted_same), data=_people,
+         title="первый старт после обновления: ключ пояса снят, пояс тот же"),
     Shot("adm.ev.expired", role="admin", call=("check_expiry", _ev_expiry), data=_br_expired,
          title="подписка истекла — «⏱ Продлить» админу"),
     Shot("adm.ev.grace_offer", role="admin", call=("check_expiry", _ev_expiry), data=_ks_expiring,

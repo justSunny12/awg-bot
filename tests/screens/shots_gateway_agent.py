@@ -368,10 +368,10 @@ def _agent(**opts):
             services.email_save("admin@example.org", "DUMMY", "imap.example.org", 993,
                                 "smtp.example.org", 587)
             if h.mail_last == "ok":
-                services.db.set_state(services._MAIL_CHECK_KEY, "ok|2026-09-14T09:30:00+03:00")
+                services.db.set_state(services._MAIL_CHECK_KEY, "ok|2026-09-14T09:30:00+05:00")
             elif h.mail_last == "fail":
                 services.db.set_state(services._MAIL_CHECK_KEY,
-                                      "fail|2026-09-14T09:30:00+03:00|SMTP: авторизация отклонена")
+                                      "fail|2026-09-14T09:30:00+05:00|SMTP: авторизация отклонена")
         if h.passphrase:
             services.backup_set_passphrase("DUMMY-passphrase")
         if h.update_tag:

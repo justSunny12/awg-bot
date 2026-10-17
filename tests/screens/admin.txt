@@ -4197,6 +4197,20 @@ IMAP и SMTP отвечают, вход выполнен
 ✅ Восстановлено из бэкапа от 01.09 03:00
   [Скрыть | hd]
 
+### adm.ev.zone_adopted — первый старт после обновления: ключ пояса снят — время в поясе сервера, прежний был другим
+> call _announce_zone
++ send #2
+🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5), раньше — Europe/Moscow (UTC+3)
+Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на сервере и «🔁 Перезапустить бота» в «⚙️ Настройки → 🔧 Сервис»
+  [Скрыть | hd]
+
+### adm.ev.zone_adopted.same — первый старт после обновления: ключ пояса снят, пояс тот же
+> call _announce_zone
++ send #2
+🕐 Время теперь показываю в поясе сервера: Asia/Yekaterinburg (UTC+5)
+Другой пояс — <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> на сервере и «🔁 Перезапустить бота» в «⚙️ Настройки → 🔧 Сервис»
+  [Скрыть | hd]
+
 ### adm.ev.expired — подписка истекла — «⏱ Продлить» админу
 > call check_expiry
 + send #1 → чат tg 2002
@@ -8278,7 +8292,7 @@ NASPi — 🟢 Активен
 ~ (пустой ответ)
 
 ### adm.claim.foreign — claim другого устройства при назначенном шлюзе — не принято
-> text «GW1:eyJhY3QiOiJjbGFpbSIsInB1YiI6IlJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFPSIsInRzIjoxNzg5NDYyODAwLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAiLCJob3N0IjoiIn0.Qed97rqvIPVrjNc-9I7k-pAKVA8»
+> text «GW1:eyJhY3QiOiJjbGFpbSIsInB1YiI6IlJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFPSIsInRzIjoxNzg5NDU1NjAwLCJub25jZSI6IjAwMDAwMDAwMDAwMDAwMDAiLCJob3N0IjoiIn0.N5SPUnseh1XK9sSJC9sKkc3ndso»
 + send #2
 🛰 Сообщение шлюза не принято: на этом линке уже назначен шлюз NASPi. Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»
 

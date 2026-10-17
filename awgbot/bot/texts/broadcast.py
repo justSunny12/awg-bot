@@ -40,7 +40,7 @@ def subscription_mark(c) -> str:
     if not end:
         return " ∞"
     dt = timeutil.parse_iso(end)
-    if c.status == "expired" or dt <= timeutil.now():
+    if c.status == "expired" or timeutil.elapsed(dt) >= 0:
         return f" 🔴 {timeutil.fmt_date_ui(dt)}"
     return ""
 

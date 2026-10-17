@@ -27,6 +27,14 @@ if _ROOT not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "12345:test-token")
 os.environ.setdefault("ADMIN_ID", "1")
 
+# Пояс «хоста» тестов — закреплён: в шаблоне conf/app.yaml ключа timezone нет,
+# и без закрепления пояс бота был бы поясом машины разработки — эталоны с
+# меткой «(UTC+5)» разъехались бы на машине в другом поясе. Пояс — тот, что
+# стоит на живых хостах, чтобы эталоны показывали то, что увидит человек.
+import time as _time                                # noqa: E402
+os.environ["TZ"] = "Asia/Yekaterinburg"
+_time.tzset()
+
 import pytest  # noqa: E402
 
 # settings читает conf/*.yaml в горячий кэш; мигрированные точки (лимиты, пауза,

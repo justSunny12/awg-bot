@@ -67,8 +67,7 @@ def _snap_at(ch: dict) -> str:
     age = ch.get("age")
     if age is None:
         return ""
-    from datetime import timedelta
-    return ", по снимку от " + timeutil.fmt_dt_ui(timeutil.now() - timedelta(seconds=max(0, int(age))))
+    return ", по снимку от " + timeutil.fmt_dt_ui(timeutil.shift(timeutil.now(), -max(0, int(age))))
 
 
 def _cfg_lines(cfg: dict, ch: dict) -> list[str]:

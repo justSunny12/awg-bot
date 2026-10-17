@@ -28,7 +28,7 @@ class RoutingNotesMixin:
     def _txt_rt_switch_refused(self, active) -> str:
         raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
         try:
-            mins = max(1, int((timeutil.now() - timeutil.parse_iso(raw)).total_seconds() // 60))
+            mins = max(1, int(timeutil.elapsed(timeutil.parse_iso(raw)) // 60))
         except ValueError:
             mins = settings.get_int("app.routing.failover.min_interval_minutes", 10)
         return (f"🔴 {self._gw_link(active)} перестал отвечать через {mins} мин после "

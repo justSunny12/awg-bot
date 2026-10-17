@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -82,7 +81,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # ── автобэкап (та же catch-up-схема; тело общее с агентом) ───────────────
     def _retry_backup():
         # копия собрана, но не доставлена: повтор через час, пока не уйдёт
-        scheduler.add_job(job_backup, "date", run_date=timeutil.now() + datetime.timedelta(hours=1),
+        scheduler.add_job(job_backup, "date", run_date=timeutil.shift(timeutil.now(), 3600),
                           id="backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
 
     async def job_backup():
@@ -230,8 +229,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # (catch-up после даунтайма через границу месяца).
     # misfire_grace_time даёт запас: короткая задержка старта (подключение
     # вотчдога и т.п.) не должна съедать первый запуск задачи.
-    # timezone=config.TZ и в интервальных триггерах — чтобы всё жило в UTC+3,
-    # а не в системной зоне сервера (у нас Europe/London).
+    # timezone=config.TZ и в интервальных триггерах — всё живёт в поясе бота
+    # (пояс хоста или ключ timezone в app.yaml), одном с текстами и тихими часами.
     now = timeutil.now()
 
     # ── Класс 2: расписания/интервалы читаем из settings ФАБРИКАМИ. Одна фабрика

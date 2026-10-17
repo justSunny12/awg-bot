@@ -54,7 +54,7 @@ def _base(services, *, status: bool = True):
     assert services.admin_client().id == ADM
     if status:
         services.db.set_state("server_ok_view", "1")
-        services.db.set_state("container_started_at", "2026-09-12T09:00:00Z")
+        services.db.set_state("container_started_at", "2026-09-12T07:00:00Z")
         services.db.set_state(hostmetrics.STATE_METRICS,
                               json.dumps({"cpu": 12, "ram": 41, "disk": 23, "ts": _iso(NOW)}))
     return config.ADMIN_ID, "Админ"
@@ -279,7 +279,7 @@ def _upd_silent(services):
     services.update_waiting = lambda: {"tag": "v1.4.0", "need": "1.4.0", "role": "client",
                                        "peers": _upd_peers("1.3.0")}
     services.update_silent_peers = lambda f: {"tag": "v1.3.0", "need": "1.3.0", "peers": [
-        UpdatePeer(slot=2, name="Pi4", version="1.2.0", fresh=False, seen="2026-09-10T12:00:00+03:00"),
+        UpdatePeer(slot=2, name="Pi4", version="1.2.0", fresh=False, seen="2026-09-10T12:00:00+05:00"),
         UpdatePeer(slot=3, name="шлюз 3", version="", fresh=False, seen="")]}
     return who
 

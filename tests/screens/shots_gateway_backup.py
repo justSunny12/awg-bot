@@ -37,7 +37,7 @@ def _archive(role: str = "gw", *, db: bytes | None = None, iface: bool = False) 
             ti.mtime = int(NOW.timestamp())
             tar.addfile(ti, io.BytesIO(raw))
         add("state/backup-meta.json",
-            json.dumps({"role": role, "created_at": "2026-09-14T03:00:00+03:00"}).encode())
+            json.dumps({"role": role, "created_at": "2026-09-14T03:00:00+05:00"}).encode())
         if db is not None:
             add("state/bot.db", db)
         if iface:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 import random
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -74,7 +73,7 @@ def setup_gateway_scheduler(services, bot):
     scheduler.add_job(
         job_gw_lan_lists, IntervalTrigger(hours=6, jitter=int(6 * 3600 * 0.4), timezone=config.TZ),
         id="gw_lan_lists", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
+        next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     # Сервисы соседних сетей: обзор mDNS
@@ -92,11 +91,11 @@ def setup_gateway_scheduler(services, bot):
         job_gw_lan_services,
         IntervalTrigger(minutes=15, jitter=int(15 * 60 * 0.4), timezone=config.TZ),
         id="gw_lan_services", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
+        next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     def _retry_gw_backup():
-        scheduler.add_job(job_gw_backup, "date", run_date=timeutil.now() + datetime.timedelta(hours=1),
+        scheduler.add_job(job_gw_backup, "date", run_date=timeutil.shift(timeutil.now(), 3600),
                           id="gw_backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
 
     async def job_gw_backup():
@@ -110,7 +109,7 @@ def setup_gateway_scheduler(services, bot):
     # в 12:00, иначе теряло месячную копию (первый прогон только помечает
     # месяц, копии не делает). Через минуты, не сразу: линк и почта ещё поднимаются.
     scheduler.add_job(job_gw_backup_catchup, "date",
-                      run_date=timeutil.now() + datetime.timedelta(seconds=random.randint(60, 300)),
+                      run_date=timeutil.shift(timeutil.now(), random.randint(60, 300)),
                       id="gw_backup_catchup", max_instances=1, **MANDATORY)
 
     def _gw_backup_hook(_key=None, _val=None):
