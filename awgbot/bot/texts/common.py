@@ -1,6 +1,27 @@
-"""Общее: статус awg-сервиса, отмена текстового диалога, перезапуск бота."""
+"""Общее: статус awg-сервиса, отмена текстового диалога, перезапуск бота,
+финишер устаревшего вопроса."""
 
 from __future__ import annotations
+
+import html as _html
+import re as _re
+
+TEXT_MAX = 4096                                     # предел текста сообщения Telegram (видимый)
+_TAG = _re.compile(r"<[^>]+>")
+
+
+def stale_finisher(head: str, original: str) -> str:
+    """Финишер устаревшего вопроса: исходный текст сообщения без изменений, но
+    под катом («подробнее»), над ним жирным — почему не актуально. Вложенный
+    кат Telegram не принимает — внутренний снимается; не влезает в предел —
+    исходный текст под катом без разметки и с отрезанным хвостом."""
+    inner = original.replace("<blockquote expandable>", "").replace("<blockquote>", "").replace("</blockquote>", "")
+    out = f"<b>{_html.escape(head, quote=False)}</b>\n\n<blockquote expandable>{inner}</blockquote>"
+    if len(_html.unescape(_TAG.sub("", out))) <= TEXT_MAX:
+        return out
+    room = TEXT_MAX - len(head) - 4
+    flat = _html.unescape(_TAG.sub("", inner))[:max(room - 1, 0)] + "…"
+    return f"<b>{_html.escape(head, quote=False)}</b>\n\n<blockquote expandable>{_html.escape(flat, quote=False)}</blockquote>"
 
 
 

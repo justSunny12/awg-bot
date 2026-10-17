@@ -49,9 +49,9 @@ def test_parts_assemble_in_any_order_and_a_repeated_part_is_harmless():
 
 
 @pytest.mark.parametrize("spoil, why", [
-    (lambda p: {**p, "z": base64.b64encode(b"x" * 11).decode()}, "часть не того размера"),
-    (lambda p: {**p, "i": 7}, "часть вне передачи"),
-    (lambda p: {**p, "size": p["size"] + 1}, "части разных передач"),
+    (lambda p: {**p, "z": base64.b64encode(b"x" * 11).decode()}, "файл повредился при передаче, попробуй снова"),
+    (lambda p: {**p, "i": 7}, "файл повредился при передаче, попробуй снова"),
+    (lambda p: {**p, "size": p["size"] + 1}, "файл повредился при передаче, попробуй снова"),
 ], ids=["size", "index", "mixed"])
 def test_a_bad_part_is_refused(spoil, why):
     parts = relay.split(_blob(relay.PART + 10), "b.tgz.enc")
@@ -68,7 +68,7 @@ def test_limits_and_checksum():
     parts = relay.split(_blob(100), "b")
     asm = relay.Assembly({**parts[0], "sha": "cd" * 32})
     asm.add({**parts[0], "sha": "cd" * 32})
-    with pytest.raises(relay.RelayError, match="повреждённым"):
+    with pytest.raises(relay.RelayError, match="файл бэкапа повреждён"):
         asm.blob()
 
 
@@ -140,8 +140,7 @@ def test_a_backup_goes_in_parts_and_the_server_takes_it_on_its_rails(tmp_path, h
     assert a.parts == [0, 1, 2] and got == [(1, blob, "awg-bot-backup-main-x.tgz.enc")]
     assert a.srv.sess.rst is None, "собранное осталось в сессии"
     text = texts.gw_relay_result(res, a.s.link_server_bot())
-    assert text == ('✅ Бэкап передан серверу AWG: вопрос о восстановлении — в чате '
-                    '<a href="https://t.me/awg_srv_bot">бота сервера AWG</a>')
+    assert text == '✅ Бэкап передан: продолжи в чате <a href="https://t.me/awg_srv_bot">бота сервера AWG</a>'
     a.db.close()
 
 
@@ -163,7 +162,7 @@ def test_a_break_mid_transfer_says_send_again_and_leaves_nothing(tmp_path, hook)
     res = asyncio.run(a.c.send_backup(_blob(relay.PART * 3), "b.tgz.enc"))
     assert res["why"] == "broken" and got == [], "сервер получил недособранный бэкап"
     assert texts.gw_relay_result(res, SERVER_BOT).startswith(
-        "⚠️ Не передал: связь с сервером AWG оборвалась — пришли файл снова (или в чат ")
+        "⚠️ Передать бэкап не удалось: связь с сервером AWG оборвалась — пришли файл снова (или напрямую в чат ")
     assert not list(tmp_path.glob("*.tgz*")), "на шлюзе остался файл бэкапа"
     a.srv.sess = _Session(writer=None, key=b"")                    # новая сессия — с чистого листа
     assert a.srv.sess.rst is None
@@ -203,7 +202,8 @@ def test_a_server_without_restore1_is_not_asked(tmp_path, hook):
     a = _Agent(tmp_path, caps=("cfg1", "keep1"))
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
     assert res["why"] == "no_cap" and a.parts == []
-    assert "сервер AWG старше 3.4.0 и бэкапы через шлюз не принимает" in texts.gw_relay_result(res, SERVER_BOT)
+    assert ("версия сервера AWG старше 3.4.0 и бэкапы через шлюз не принимает"
+            in texts.gw_relay_result(res, SERVER_BOT))
     a.db.close()
 
 
@@ -213,7 +213,7 @@ def test_without_a_session_or_a_client_it_is_offline(tmp_path):
     assert asyncio.run(a.c.send_backup(b"x", "b"))["why"] == "offline"
     assert asyncio.run(linkclient.relay_backup(b"x", "b"))["why"] == "offline"
     text = texts.gw_relay_result({"ok": False, "why": "offline"}, SERVER_BOT)
-    assert text.startswith("⚠️ Бэкап не передан: сервер AWG сейчас не на связи — пришли бэкап в чат ")
+    assert text.startswith("⚠️ Передать бэкап не удалось: сервер AWG сейчас не на связи — пришли бэкап в чат ")
     assert text.endswith("или восстанови на сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>")
     a.db.close()
 
@@ -294,8 +294,10 @@ async def test_a_too_big_server_backup_is_refused_without_download(tmp_path):
     msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=NoDl())
     msg.document = _Doc("awg-bot-backup-main-x.tgz.enc", size=30 * 1024 * 1024)
     await gh.gw_bundle_document(msg, GatewayServices(d), FakeState())
-    assert msg.deleted and msg.sent[-1][1] == ("⚠️ Бэкап не передан: он больше 20 МБ — восстанови на сервере: "
-                                               "<code>sudo awg-bot restore &lt;файл&gt;</code>")
+    assert msg.deleted and msg.sent[-1][1] == texts.GW_RELAY_SENDING, "итог — не правкой «⏳ Передаю…»"
+    edits = [r for r in msg.bot.records if r[0] == "edit_text"]
+    assert edits == [("edit_text", config.ADMIN_ID, "⚠️ Передать бэкап не удалось: он больше 20 МБ — восстанови на "
+                      "сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>")], edits
     d.close()
 
 
@@ -319,16 +321,19 @@ async def test_the_server_asks_in_its_own_chat_and_replaces_a_previous_question(
     services.inspect_backup = lambda blob, name="": {"ok": True, "created_at": "2026-10-05T14:00:00+03:00",
                                                      "plan": {"line": "same", "slots": [], "created_at": ""}}
     state = FakeState()
-    await state.update_data(restore_qmid=4242)                      # висел вопрос о прежнем файле
+    await state.update_data(restore_qmid=4242, restore_qtext="♻️ Восстановить бэкап от 01.10.26?")
     edits = []
 
     async def edit(text, chat_id=None, message_id=None, **kw):
-        edits.append((message_id, text))
+        edits.append((message_id, text, kw.get("reply_markup")))
     fake_bot.edit_message_text = edit
     assert await rs.relay_restore(fake_bot, services, state, b"AWGBK1DUMMY", "b.tgz.enc") == ""
     data = await state.get_data()
     assert data["restore_blob"] and data["restore_fp"] and data["restore_qmid"] != 4242
-    assert edits == [(4242, texts.RESTORE_REPLACED)]
+    assert len(edits) == 1 and edits[0][0] == 4242
+    assert edits[0][1] == ("<b>Не актуально: прислан новый файл бэкапа</b>\n\n<blockquote expandable>"
+                           "♻️ Восстановить бэкап от 01.10.26?</blockquote>"), edits
+    assert [b.text for r in edits[0][2].inline_keyboard for b in r] == ["Скрыть"]
     asked = [r for r in fake_bot.records if r[0] == "send_message"]
     assert asked and asked[-1][1] == config.ADMIN_ID and asked[-1][2].startswith("♻️ Восстановить бэкап от ")
 
@@ -347,7 +352,7 @@ def test_a_blob_too_small_for_a_backup_is_refused_before_inspection(tmp_path, ho
     on_restore, got = hook
     a = _Agent(tmp_path)
     res = asyncio.run(a.c.send_backup(b"AWGBK1P" + b"x" * 100, "b.tgz.enc"))
-    assert res["why"] == "refused" and res["error"] == "файл слишком мал для бэкапа сервера AWG" and got == []
+    assert res["why"] == "refused" and res["error"] == "файл не похож на бэкап сервера AWG (слишком мал)" and got == []
     a.db.close()
 
 
@@ -356,7 +361,7 @@ def test_one_slot_is_inspected_at_most_once_a_minute_and_paused_after_a_refusal(
     a = _Agent(tmp_path)
     assert asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))["ok"]
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
-    assert res["why"] == "refused" and res["error"].startswith("бэкап через этот шлюз только что осматривался — "
+    assert res["why"] == "refused" and res["error"].startswith("файл бэкапа с этого шлюза уже приходил недавно — "
                                                                 "повтори через ") and len(got) == 1
     from awgbot.runtime.linkserver import relay as srv_relay
     a.srv._rst_next = {}
@@ -410,6 +415,7 @@ async def test_a_second_file_while_relaying_says_already_and_is_removed(tmp_path
     await first
     assert calls == ["one.tgz.enc"], "вторая передача пошла параллельно"
     assert m2.deleted and m2.sent[-1][1] == texts.GW_RELAY_BUSY
+    assert [b.text for r in m2.sent[-1][2].inline_keyboard for b in r] == ["Скрыть"]
     assert linkclient.relay_reserve(), "передача не освобождена после итога"
     linkclient.relay_release()
     d.close()
@@ -456,7 +462,7 @@ def test_a_break_after_all_parts_says_check_the_server_chat(tmp_path, hook):
     assert res["why"] == "broken_after"
     assert texts.gw_relay_result(res, SERVER_BOT) == (
         '⚠️ Связь с сервером AWG оборвалась после передачи — проверь чат <a href="https://t.me/awg_srv_bot">бота '
-        'сервера AWG</a>: вопрос о восстановлении мог прийти туда; нет вопроса — пришли файл снова')
+        'сервера AWG</a>: если диалога о восстановлении нет — пришли файл снова')
     a.db.close()
 
 
@@ -529,15 +535,17 @@ async def test_the_question_names_the_gateway_and_a_telegram_error_is_not_a_bad_
                                                      "plan": {"line": "same", "slots": [], "created_at": ""}}
     assert await rs.relay_restore(fake_bot, services, FakeState(), b"AWGBK1P", "b.tgz.enc", 1) == ""
     asked = [r for r in fake_bot.records if r[0] == "send_message"][-1][2]
-    assert asked.startswith('📥 Бэкап пришёл через шлюз «<a href="https://t.me/awg_test_bot?start=gw-1">NASPi</a>»'
+    assert asked.startswith('📥 Бэкап получен от шлюза «<a href="https://t.me/awg_test_bot?start=gw-1">NASPi</a>»'
                             '\n\n♻️ Восстановить бэкап от '), asked
 
     async def down(*a, **k):
         raise RuntimeError("Telegram не ответил")
     fake_bot.send_message = down
     err = await rs.relay_restore(fake_bot, services, FakeState(), b"AWGBK1P", "b.tgz.enc", 1)
-    assert err == ("бэкап годится, но вопрос в чат бота сервера AWG не ушёл: Telegram не ответил — пришли бэкап "
-                   "в чат бота сервера")
+    assert err == ("файл бэкапа подходящий, но вопрос в чат бота сервера AWG не отправлен: Telegram не ответил — "
+                   "пришли бэкап в чат бота сервера")
+    shown = texts.gw_relay_result({"ok": False, "why": "refused", "error": err}, SERVER_BOT)
+    assert shown.endswith('пришли бэкап в чат <a href="https://t.me/awg_srv_bot">бота сервера</a>'), shown
 
 
 async def test_a_random_key_backup_and_a_running_restore_are_refused_at_once(services, fake_bot):
@@ -549,3 +557,29 @@ async def test_a_random_key_backup_and_a_running_restore_are_refused_at_once(ser
     assert await rs.relay_restore(fake_bot, services, FakeState(), blob, "b.tgz.enc") == ins.RANDOM_KEY
     services._restore_running = True
     assert await rs.relay_restore(fake_bot, services, FakeState(), blob, "b.tgz.enc") == texts.RELAY_RESTORING
+
+
+async def test_every_outcome_edits_the_sending_message_with_hide(monkeypatch):
+    from awgbot.bot.handlers.gateway import bundle as gb
+
+    async def relay(blob, name):
+        return {"ok": False, "why": "offline", "error": ""}
+    monkeypatch.setattr(linkclient, "relay_backup", relay)
+
+    class Svc:
+        def link_server_bot(self):
+            return SERVER_BOT
+    msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=FakeBot())
+    sending = []
+    real = msg.answer
+
+    async def answer(text, reply_markup=None, **kw):
+        m = await real(text, reply_markup=reply_markup, **kw)
+        sending.append(m)
+        return m
+    msg.answer = answer
+    await gb._relay(msg, Svc(), b"AWGBK1P", "b.tgz.enc")
+    assert len(sending) == 1 and sending[0].text == texts.GW_RELAY_SENDING
+    kind, text, markup = sending[0].sent[-1]
+    assert kind == "edit_text" and text.startswith("⚠️ Передать бэкап не удалось: сервер AWG сейчас не на связи")
+    assert [b.text for r in markup.inline_keyboard for b in r] == ["Скрыть"]

@@ -32,7 +32,7 @@ class RelayMixin:
         nxt = (self._rst_next or {}).get(slot_id, 0.0)
         left = int(nxt - time.monotonic())
         if left > 0:
-            return f"бэкап через этот шлюз только что осматривался — повтори через {max(left, 1)} с"
+            return f"файл бэкапа с этого шлюза уже приходил недавно — повтори через {max(left, 1)} с"
         return ""
 
     def _rst_mark(self, slot_id: int, refused: bool) -> None:
@@ -63,7 +63,7 @@ class RelayMixin:
         sess.rst = None
         error = ""
         if len(blob) < relay.MIN_BYTES:
-            error = "файл слишком мал для бэкапа сервера AWG"
+            error = "файл не похож на бэкап сервера AWG (слишком мал)"
         elif pkg._on_restore is None:
             error = "сервер AWG сейчас не принимает бэкапы через шлюз"
         else:

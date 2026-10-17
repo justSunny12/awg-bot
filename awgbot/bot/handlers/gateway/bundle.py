@@ -4,6 +4,7 @@ from __future__ import annotations
 from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.handlers.common import call, forget_secret
 from awgbot.util import bundlecrypt
@@ -36,7 +37,8 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     if doc.file_size and doc.file_size > pkg._BUNDLE_MAX_BYTES:
         if kind:                                       # бэкап сервера по имени, но Bot API его не отдаст
             await forget_secret(message)
-            await message.answer(texts.gw_relay_result({"ok": False, "why": "big"}, {}))
+            sent = await message.answer(texts.GW_RELAY_SENDING)
+            await _say(message, sent, texts.gw_relay_result({"ok": False, "why": "big"}, {}))
         return                                         # крупнее предела Bot API — заведомо не наш
 
     import io
@@ -75,7 +77,7 @@ async def _relay(message: Message, services, blob: bytes, name: str) -> None:
         return                                         # только от админа: отправитель не известен — нет
     await forget_secret(message)
     if not linkclient.relay_reserve():                 # одна передача за раз: второй файл ждёт итога первого
-        await message.answer(texts.GW_RELAY_BUSY)
+        await message.answer(texts.GW_RELAY_BUSY, reply_markup=kb.hide_only())
         return
     try:
         sent = await message.answer(texts.GW_RELAY_SENDING)
@@ -87,11 +89,15 @@ async def _relay(message: Message, services, blob: bytes, name: str) -> None:
     finally:
         linkclient.relay_release()
     # блоб — только в памяти этого вызова: на диск шлюза он не попадал и уйдёт вместе с ним
-    text = texts.gw_relay_result(res, await call(services.link_server_bot))
+    await _say(message, sent, texts.gw_relay_result(res, await call(services.link_server_bot)))
+
+
+async def _say(message: Message, sent, text: str) -> None:
+    """Итог — правкой «⏳ Передаю…» с «Скрыть»; сообщение удалили — новым."""
     try:
-        await sent.edit_text(text, reply_markup=None)
+        await sent.edit_text(text, reply_markup=kb.hide_only())
     except Exception:                                  # noqa: BLE001 — сообщение удалено: итог новым
-        await message.answer(text)
+        await message.answer(text, reply_markup=kb.hide_only())
 
 
 # Ввод значения, парольная фраза и мастер почты регистрирует роутер общих

@@ -27,6 +27,9 @@ _ID_RE = re.compile(r"[0-9a-f]{12}")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 
 
+BROKEN_PART = "файл повредился при передаче, попробуй снова"   # любая испорченная часть — одна причина
+
+
 class RelayError(ValueError):
     """Часть или сборка не годится — причина словами для ответа шлюзу."""
 
@@ -57,7 +60,7 @@ class Assembly:
         if not isinstance(self.size, int) or isinstance(self.size, bool) or not 0 < self.size <= MAX_BYTES:
             raise RelayError("бэкап больше 20 МБ")
         if not isinstance(self.n, int) or isinstance(self.n, bool) or self.n != -(-self.size // PART):
-            raise RelayError("число частей не сходится с размером")
+            raise RelayError(BROKEN_PART)
         self.parts: dict[int, bytes] = {}
 
     def same(self, msg: dict) -> bool:
@@ -66,18 +69,18 @@ class Assembly:
     def add(self, msg: dict) -> None:
         i = msg.get("i")
         if not isinstance(i, int) or isinstance(i, bool) or not 0 <= i < self.n:
-            raise RelayError("часть вне передачи")
+            raise RelayError(BROKEN_PART)
         if msg.get("n") != self.n or msg.get("size") != self.size or msg.get("sha") != self.sha:
-            raise RelayError("части разных передач")
+            raise RelayError(BROKEN_PART)
         try:
             raw = base64.b64decode(str(msg.get("z") or ""), validate=True)
         except ValueError as e:
-            raise RelayError("часть повреждена") from e
+            raise RelayError(BROKEN_PART) from e
         want = PART if i < self.n - 1 else self.size - PART * (self.n - 1)
         if len(raw) != want:
-            raise RelayError("часть не того размера")
+            raise RelayError(BROKEN_PART)
         if i in self.parts and self.parts[i] != raw:
-            raise RelayError("повтор части с другим содержимым")
+            raise RelayError(BROKEN_PART)
         self.parts[i] = raw
 
     @property
@@ -87,5 +90,5 @@ class Assembly:
     def blob(self) -> bytes:
         data = b"".join(self.parts[i] for i in range(self.n))
         if len(data) != self.size or hashlib.sha256(data).hexdigest() != self.sha:
-            raise RelayError("бэкап пришёл повреждённым")
+            raise RelayError("файл бэкапа повреждён")
         return data

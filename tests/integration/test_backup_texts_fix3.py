@@ -85,9 +85,10 @@ async def test_a_new_file_turns_the_previous_question_into_a_finisher(services, 
         msg.document = Doc()
         await rs.offer_restore(msg, services, state)
         first = first or (await state.get_data())["restore_qmid"]
-    assert first and edits == [(first, texts.RESTORE_REPLACED, None)], (first, edits)
+    assert first and len(edits) == 1 and edits[0][0] == first, (first, edits)
+    assert edits[0][1].startswith("<b>Не актуально: прислан новый файл бэкапа</b>\n\n<blockquote expandable>♻️ ")
+    assert [b.text for r in edits[0][2].inline_keyboard for b in r] == ["Скрыть"]
     assert (await state.get_data())["restore_qmid"] != first, "новый вопрос не запомнен"
-    assert not texts.RESTORE_REPLACED.endswith(".") and texts.RESTORE_REPLACED.startswith("⏹ ")
 
 
 def test_a_withdrawn_keep_question_becomes_a_finisher(tmp_path, monkeypatch):
@@ -101,11 +102,11 @@ def test_a_withdrawn_keep_question_becomes_a_finisher(tmp_path, monkeypatch):
     d = Database(str(tmp_path / "gw.db")); d.init_schema()
     s = GatewayServices(d)
     s.db.set_state(s._KEEP_ASK_KEY, json.dumps({"why": "restore", "hash": "ab" * 8, "items": {}}))
-    s.keep_mark_msg(config.ADMIN_ID, 77)
+    s.keep_mark_msg(config.ADMIN_ID, 77, "💾 <b>Настройки шлюза из бэкапа</b>\n\nСервер AWG восстановлен")
     edits = []
 
-    async def edit(chat, mid, text):
-        edits.append((chat, mid, text))
+    async def edit(chat, mid, text, hide=False):
+        edits.append((chat, mid, text, hide))
         return True
     monkeypatch.setattr(linkclient, "_edit", edit)
     c = LinkClient(s)
@@ -115,6 +116,21 @@ def test_a_withdrawn_keep_question_becomes_a_finisher(tmp_path, monkeypatch):
         return True
     c._send = send
     asyncio.run(c._keep_reply({"t": "keep_ok", "hash": "cd" * 8}))
-    assert edits == [(config.ADMIN_ID, 77, WITHDRAWN)] and s.keep_section() == ""
-    assert not WITHDRAWN.endswith(".")
+    assert edits == [(config.ADMIN_ID, 77, "<b>Не актуально: восстановление из бэкапа отменено. Текущие настройки "
+                      "шлюза сохранены на сервере.</b>\n\n<blockquote expandable>💾 <b>Настройки шлюза из бэкапа</b>"
+                      "\n\nСервер AWG восстановлен</blockquote>", True)], edits
+    assert s.keep_section() == "" and WITHDRAWN.startswith("Не актуально: ")
     d.close()
+
+
+def test_a_finisher_fits_the_message_limit():
+    """Исходный текст под катом с пометкой сверху — не длиннее 4096 видимых
+    символов: не влезает — без разметки и с отрезанным хвостом."""
+    import html
+    import re
+    long = "<b>x</b> " + "строка вопроса " * 400
+    out = texts.stale_finisher("Не актуально: прислан новый файл бэкапа", long)
+    visible = html.unescape(re.sub(r"<[^>]+>", "", out))
+    assert len(visible) <= 4096 and out.endswith("…</blockquote>") and out.startswith("<b>Не актуально")
+    nested = texts.stale_finisher("Не актуально", "текст<blockquote expandable>подробнее</blockquote>")
+    assert nested.count("<blockquote") == 1, "вложенный кат"

@@ -11,7 +11,8 @@ from awgbot.runtime import linkclient as pkg          # крючки — на п
 
 from .common import log
 
-WITHDRAWN = "ℹ️ Вопрос снят: сервер AWG больше не предлагает эти настройки — свои настройки шлюза ушли ему"
+# снятый сервером вопрос: исходный текст под катом, над ним — почему не актуален
+WITHDRAWN = "Не актуально: восстановление из бэкапа отменено. Текущие настройки шлюза сохранены на сервере."
 
 
 class KeepMixin:
@@ -54,12 +55,14 @@ class KeepMixin:
         await self.keep_push(force=True)
 
     async def _keep_withdrawn(self) -> None:
-        """Снятый вопрос — финишер без кнопок на месте сообщения с вопросом."""
+        """Снятый вопрос — финишер на месте сообщения с вопросом: его текст под
+        катом, «не актуально» жирным, единственная кнопка — «Скрыть»."""
+        from awgbot.bot.texts.common import stale_finisher
         msg = await asyncio.to_thread(self.services.keep_msg_pop)
         if not msg or pkg._edit is None:
             return
         try:
-            await pkg._edit(int(msg[0]), int(msg[1]), WITHDRAWN)
+            await pkg._edit(int(msg[0]), int(msg[1]), stale_finisher(WITHDRAWN, msg[2]), hide=True)
         except Exception as e:                            # noqa: BLE001
             log.warning("канал линка: снятый вопрос о настройках не поправлен: %s", e)
 

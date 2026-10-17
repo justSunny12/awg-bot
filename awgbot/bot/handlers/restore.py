@@ -64,20 +64,23 @@ async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dic
     планом). Прежний вопрос — о другом файле: финишер без кнопок, а не живая
     «♻️ Восстановить»."""
     fp = _fingerprint(blob)
-    prev = (await state.get_data()).get("restore_qmid")
+    data = await state.get_data()
+    prev = data.get("restore_qmid")
     if prev:
+        # прежний вопрос — под кат с пометкой «не актуально», единственная кнопка — «Скрыть»
+        from awgbot.bot import keyboards as kb
         try:
-            await bot.edit_message_text(texts.RESTORE_REPLACED, chat_id=chat_id, message_id=int(prev),
-                                        reply_markup=None)
+            await bot.edit_message_text(texts.stale_finisher(texts.RESTORE_REPLACED, str(data.get("restore_qtext") or "")),
+                                        chat_id=chat_id, message_id=int(prev), reply_markup=kb.hide_only())
         except Exception:                              # noqa: BLE001 — сообщение удалено или старое
             pass
     from awgbot.bot.sections import backup as _backup
     from awgbot.domain.backup.plan import Plan
     text = texts.restore_offer_plan(Plan.from_dict(info["plan"]), getattr(services, "bot_username", "") or "")
-    qmid = await send_menu_to(bot, services, chat_id, (source + "\n\n" + text) if source else text,
-                              _backup.restore_confirm_kb(roles.MAIN, fp))
+    text = (source + "\n\n" + text) if source else text
+    qmid = await send_menu_to(bot, services, chat_id, text, _backup.restore_confirm_kb(roles.MAIN, fp))
     await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
-                            restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid)
+                            restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid, restore_qtext=text)
 
 
 async def relay_restore(bot, services, state, blob: bytes, name: str, slot_id: int = 0) -> str:

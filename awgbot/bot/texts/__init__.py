@@ -138,7 +138,7 @@ from .gateway import (
     gateway_ssh_text, gateway_ssh_port_changed,
     GW_SSH_ALLOW_ASK, gateway_ssh_allow_added, GW_SSH_ALLOW_ALREADY, GW_SSH_FILTER_ON_ALERT,
     GW_SSH_FILTER_ON_EMPTY_ALERT, GW_SSH_FILTER_OFF, gateway_ssh_removed, gateway_ssh_panel_line)
-from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED
+from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED, stale_finisher
 
 __all__ = [
     "_e", "gb", "human_bytes", "used_of_limit", "gb_str", "plain_ip", "tg_link", "client_link",
@@ -240,5 +240,5 @@ __all__ = [
     "GW_SSH_FILTER_OFF", "GW_SSH_FILTER_ON_EMPTY_ALERT", "gateway_ssh_removed",
     "gateway_ssh_panel_line",
     "gateway_op_result", "HB_SERVER_DOWN", "HB_SERVER_UP", "cancelled",
-    "BOT_RESTARTED",
+    "BOT_RESTARTED", "stale_finisher",
 ]

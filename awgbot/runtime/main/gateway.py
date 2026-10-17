@@ -194,10 +194,12 @@ async def run_gateway() -> None:
             await _notify_one(bot, config.ADMIN_ID, text, silent=silent)
         linkclient.set_notify(_chan_notify)
 
-        async def _chan_edit(chat_id: int, message_id: int, text: str) -> bool:
-            # итог смены ключей и отзыв — правкой самого приглашения
+        async def _chan_edit(chat_id: int, message_id: int, text: str, *, hide: bool = False) -> bool:
+            # итог смены ключей и отзыв — правкой самого приглашения; hide — с кнопкой «Скрыть»
+            from awgbot.bot import keyboards as _kb
             try:
-                await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=None)
+                await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                            reply_markup=_kb.hide_only() if hide else None)
                 return True
             except Exception:                            # noqa: BLE001 — сообщение удалено или старое
                 return False

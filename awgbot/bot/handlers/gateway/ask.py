@@ -28,7 +28,8 @@ async def show_cfg_question(bot, services, chat_id: int) -> bool:
     if q["section"] == "link" and msg_id:
         await call(services.rekey_mark_msg, chat_id, msg_id)    # итог и отзыв поправят это сообщение
     if q["section"] in ("keep", "keep_dev", "keep_same") and msg_id:
-        await call(services.keep_mark_msg, chat_id, msg_id)     # снятый сервером вопрос поправит это сообщение
+        # снятый сервером вопрос свернёт это сообщение под кат
+        await call(services.keep_mark_msg, chat_id, msg_id, texts.cfg_question_text(q))
     return True
 
 
@@ -46,7 +47,7 @@ async def gw_cfg_ask(cb: CallbackQuery, services, state: FSMContext):
     if q["section"] == "link":
         await call(services.rekey_mark_msg, cb.message.chat.id, cb.message.message_id)
     if q["section"] in ("keep", "keep_dev", "keep_same"):
-        await call(services.keep_mark_msg, cb.message.chat.id, cb.message.message_id)
+        await call(services.keep_mark_msg, cb.message.chat.id, cb.message.message_id, texts.cfg_question_text(q))
     await cb.answer()
 
 

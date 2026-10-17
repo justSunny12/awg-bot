@@ -190,15 +190,20 @@ class KeepMixin:
         self.db.set_state(self._KEEP_ASK_KEY, "")
         return True
 
-    def keep_mark_msg(self, chat_id: int, message_id: int) -> None:
-        """Вопрос показан этим сообщением — снятие вопроса поправит его в итог без кнопок."""
+    def keep_mark_msg(self, chat_id: int, message_id: int, text: str = "") -> None:
+        """Вопрос показан этим сообщением (text — его текст): снятие вопроса
+        свернёт его под кат с пометкой «не актуально»."""
         if self._keep_ask():
-            self.db.set_state(self._KEEP_MSG_KEY, json.dumps([int(chat_id), int(message_id)]))
+            self.db.set_state(self._KEEP_MSG_KEY, json.dumps([int(chat_id), int(message_id), str(text)],
+                                                             ensure_ascii=False))
 
     def keep_msg_pop(self) -> list | None:
+        """[chat, message, text] сообщения с вопросом; нет — None."""
         raw = self.db.get_state_json(self._KEEP_MSG_KEY, [])
         self.db.set_state(self._KEEP_MSG_KEY, "")
-        return raw if isinstance(raw, list) and len(raw) == 2 else None
+        if not isinstance(raw, list) or len(raw) < 2:
+            return None
+        return [raw[0], raw[1], str(raw[2]) if len(raw) > 2 else ""]
 
     # ── блок с сервера ───────────────────────────────────────────────────────
 
