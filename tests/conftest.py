@@ -10,6 +10,16 @@ import os
 from pathlib import Path
 import sys
 
+# ── один экземпляр модуля ─────────────────────────────────────────────────────
+# pytest грузит этот файл как «conftest», а тестовые модули берут из него
+# помощников как `from tests.conftest import …` — без псевдонима Python
+# выполнил бы файл второй раз: вторая копия conf процесса (_CONF_COPY), и
+# settings смотрели бы в неё, а автоматические сторожа первой копии
+# стерегли бы не ту папку (старт агента снимал ключи из общего app.yaml, и
+# соседние тесты воркера падали — в зависимости от порядка).
+if __name__ == "conftest":
+    sys.modules.setdefault("tests.conftest", sys.modules[__name__])
+
 # ── шим StrEnum (py3.10) — до любого импорта awgbot ──────────────────────────
 if not hasattr(enum, "StrEnum"):
     class StrEnum(str, enum.Enum):          # noqa: D401 — минимальный эквивалент 3.11+
