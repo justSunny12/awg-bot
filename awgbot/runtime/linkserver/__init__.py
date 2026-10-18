@@ -169,6 +169,7 @@ async def liveness_tick(services) -> None:
     await _server.sweep_dead()
     await _server.send_roles()
     await _server.rekey_tick()
+    await _server.i1_tick()
     if hasattr(services, "restore_wait_tick"):
         # после восстановления: кто не вышел на связь за срок — одно уведомление
         notes = await asyncio.to_thread(services.restore_wait_tick)

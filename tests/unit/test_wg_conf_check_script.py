@@ -96,3 +96,11 @@ def test_the_scripts_key_set_is_the_lists_key_set(tmp_path):
                 text = LINK.replace(marker, marker + f"{key} = {val}\n")
             rc, err = _check(tmp_path, text, **_env(dict(client_subnet="10.8.1.0/24", link_cidr="10.99.99.0/30")))
             assert rc == 0, f"{section} {key}: {err}"
+
+
+def test_the_script_takes_i1_with_angle_brackets_and_spaces(tmp_path):
+    """I1 линка — строка I1 клиентского интерфейса как есть: `<`, `>`, пробелы."""
+    i1 = "<b 0xc70000000108ce1bc7e1d8a3b4a9><r 16><t><rc 8>"
+    rc, err = _check(tmp_path, LINK.replace("H4 = 4\n", f"H4 = 4\nI1 = {i1}\n"),
+                     **_env(dict(client_subnet="10.8.1.0/24", link_cidr="10.99.99.0/30")))
+    assert rc == 0, err

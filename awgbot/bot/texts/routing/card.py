@@ -308,7 +308,11 @@ def gateway_card_text(state: dict, states: list) -> str:
     if keep and not ch.get("outdated"):
         lines.append(keep)
     rk = state.get("rekey") or {}
-    if rk.get("state") in ("staged", "asked"):
+    if rk.get("auto") and rk.get("state") in ("staged", "asked", "switched"):
+        lines.append("🟡 Ключи линка: переключение…")         # без вопроса (I1, сопряжение) — ждать некого
+    elif rk.get("auto") and rk.get("state") == "declined":
+        pass                                              # отказ смены без вопроса — строкой I1 после трёх
+    elif rk.get("state") in ("staged", "asked"):
         fp = f" · отпечаток <code>{_e(rk['fp'])}</code>" if rk.get("fp") else ""
         lines.append(f"⏳ Ключи линка ждут подтверждения в чате бота шлюза{fp}")
     elif rk.get("state") == "switched":
@@ -316,6 +320,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     elif rk.get("state") == "declined":
         lines.append("⚠️ Шлюз отклонил новые ключи линка — линк работает на прежних; сменить снова — "
                      "«⚙️ Настройки» → «🔧 Сервис» → «🔑 Ключи линка»")
+    if state.get("i1"):
+        lines.append(state["i1"])                          # Т-Л1 / Т-Л2 — уже готовой строкой
     lines += ch_warns
     nets = gw.lan_subnets
     nets_s = (lan_pairs(nets, state.get("lan_twins")) if nets

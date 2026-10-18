@@ -67,6 +67,8 @@ KEYS: dict[str, SlotKey] = {
     # снимает переход своим путём (gateway_rekey_abort), со слотом — ключи
     "gwlink_rekey": SlotKey(SLOT, "rekey"),
     "gwlink_rekey_cancel": SlotKey(SLOT, "rekey"),
+    # I1 живым линкам (gateway_link/rekey_i1.py): план попыток — со слотом, как переход
+    "gwlink_i1": SlotKey(SLOT, "rekey"),
     # слот: файл первого применения, расхождение, бот, токен, порт, живость
     "gw_bundle_issued_at": SlotKey(SLOT, "slot"),
     "gw_bundle_ssh_allow": SlotKey(SLOT, "slot"),

@@ -180,3 +180,57 @@ def test_doc_print_changes_with_any_section():
     base = {"env": gwcfg.env_print(ENV), "server": gwcfg.server_print("s")}
     assert gwcfg.doc_print(base) != gwcfg.doc_print({**base, "server": gwcfg.server_print("t")})
     assert gwcfg.doc_print(base) == gwcfg.doc_print(dict(base))
+
+
+# ── I1 линка (этап 3 «единых обновлений») ────────────────────────────────────
+
+I1 = "<b 0xc70000000108ce1bc7e1d8a3b4a9><r 16><t><rc 8>"
+
+
+def _with_i1(text: str, value: str = I1) -> str:
+    return text.replace("H4 = 4\n", f"H4 = 4\nI1 = {value}\n")
+
+
+def test_a_rekey_with_i1_passes_and_the_switch_takes_it():
+    """Смена ключей с I1: проверка проходит, переключение берёт [Interface]
+    нового целиком — I1 вместе с ключами."""
+    import base64
+    priv = base64.b64encode(b"DUMMY-new-link-private-key-32b!!").decode()   # DUMMY, 32 байта — ключ по форме
+    pub = base64.b64encode(b"DUMMY-new-vps-public-key-32-byte").decode()
+    new = _with_i1(LINK).replace("DUMMY-LINK-PRIVATE-KEY=", priv).replace("DUMMY-VPS-PUBLIC-KEY=", pub)
+    conf = gwcfg.check_link_rekey(new, LINK)
+    assert conf.get("Interface", "I1") == I1
+    merged = gwcfg.merge_link_keys(LINK, conf)
+    assert merged.get("Interface", "I1") == I1 and merged.get("Peer", "Endpoint") == "vps.example.org:51821"
+
+
+def test_a_document_with_another_i1_is_refused_the_guard_is_not_weakened():
+    fixed = _fixed() | {"I1": I1}
+    standing = _with_i1(LINK)
+    gwcfg.check_link(standing, gwcfg.check_env(ENV), link_cidr="10.99.99.0/30", address="10.99.99.2/30", fixed=fixed)
+    for other in (_with_i1(LINK, "<b 0x01>"), LINK):          # другой I1 и I1 нет вовсе
+        with pytest.raises(CfgError, match="переходом"):
+            gwcfg.check_link(other, gwcfg.check_env(ENV), link_cidr="10.99.99.0/30", address="10.99.99.2/30",
+                             fixed=fixed)
+    with pytest.raises(CfgError, match="переходом"):              # и добавить I1 документ не вправе
+        gwcfg.check_link(standing, gwcfg.check_env(ENV), link_cidr="10.99.99.0/30", address="10.99.99.2/30",
+                         fixed=_fixed())
+
+
+def test_the_document_link_section_carries_i1_from_the_issued_conf(services, monkeypatch, make_active_client):
+    """Раздел link документа собирается из /root/gw-<линк>.conf — I1 едет с ним."""
+    import builtins
+    admin = make_active_client(name="Админ", tg_id=1, device_limit=0)
+    dev = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(dev.device_id, "awglink", 51821, "10.99.99.0/30", slot_id=1)
+    real_open = builtins.open
+
+    def fake_open(path, *a, **kw):
+        if str(path) == "/root/gw-awglink.conf":
+            import io
+            return io.StringIO(_with_i1(LINK))
+        return real_open(path, *a, **kw)
+    monkeypatch.setattr(builtins, "open", fake_open)
+    text = services.gwcfg_link_conf(services.db.gateway(1), {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": ""})
+    from awgbot.util import wgconf
+    assert text and wgconf.parse(text).get("Interface", "I1") == I1

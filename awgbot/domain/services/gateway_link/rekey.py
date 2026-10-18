@@ -32,7 +32,14 @@ class RekeyMixin:
     переход зафиксирован, состояние стёрто; срок вышел — прежние ключи;
     declined — шлюз отказал (строка карточки сутки). Фиксирует hello новым
     ключом: он сам доказывает, что шлюз на новых ключах и путь до агента
-    есть, — и фиксируется ДО первого слова сервера в этой сессии."""
+    есть, — и фиксируется ДО первого слова сервера в этой сессии.
+
+    Шлюзовая сторона получает I1 клиентского интерфейса (linki1.py) при любой
+    смене ключей. `auto` — смена без вопроса в чате бота шлюза (агенту с
+    возможностью `rekey2`): «i1» — переход живого линка на I1 (rekey_i1.py),
+    «join» — согласие уже дано кодом сопряжения. Сменой с `auto` админ не
+    управлял: итог без звука, отказы — строкой карточки после трёх
+    (rekey_i1.py), а не уведомлением на каждый."""
     _REKEY_KEY = "gwlink_rekey"
 
     # ── состояние ────────────────────────────────────────────────────────────
@@ -91,14 +98,17 @@ class RekeyMixin:
         """(сторона ВПС .next, сторона шлюза .next)."""
         return f"{config.AWG_DIR}/{gw.link_if}.conf.next", f"/root/gw-{gw.link_if}.conf.next"
 
-    def _rekey_env(self, gw) -> dict:
-        return {**self._slot_env(gw), **self._lan_env(gw),
-                "LINK_KEEPALIVE": str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS))}
+    def _rekey_env(self, gw, i1: str = "") -> dict:
+        env = {**self._slot_env(gw), **self._lan_env(gw),
+               "LINK_KEEPALIVE": str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS))}
+        if i1:
+            env["LINK_I1"] = i1                           # только --rekey-stage его пишет, и только шлюзу
+        return env
 
-    def _rekey_run(self, gw, mode: str) -> Optional[str]:
+    def _rekey_run(self, gw, mode: str, i1: str = "") -> Optional[str]:
         """Режим скрипта линка; отказ — причина словами, успех — None."""
         try:
-            self._run_link_script(mode, self._rekey_env(gw))
+            self._run_link_script(mode, self._rekey_env(gw, i1))
             return None
         except ServiceError as e:
             log.warning("ключи линка: слот %s, %s: %s", gw.id, mode, e)
@@ -106,14 +116,26 @@ class RekeyMixin:
 
     # ── начало ───────────────────────────────────────────────────────────────
 
-    def gateway_rekey_stage(self, slot_id: int) -> dict:
-        """«🔑 Сменить»: новые ключи в .next обеих сторон, живые не тронуты;
-        дальше link_next уходит шлюзу (сейчас, если на связи, иначе при
-        подключении). Возвращает состояние."""
+    def gateway_rekey_stage(self, slot_id: int, auto: str = "") -> dict:
+        """«🔑 Сменить» (auto пусто) или смена без вопроса (auto: i1 | join):
+        новые ключи в .next обеих сторон, живые не тронуты; дальше link_next
+        уходит шлюзу (сейчас, если на связи, иначе при подключении).
+        Возвращает состояние."""
         with _REKEY_LOCK:                                 # двойное «🔑 Сменить» — одна стадия
-            return self._rekey_stage(slot_id)
+            return self._rekey_stage(slot_id, auto)
 
-    def _rekey_stage(self, slot_id: int) -> dict:
+    def _rekey_i1_for(self, gw, auto: str) -> str:
+        """I1 шлюзовой стороне: клиентского интерфейса; не прочитан — ручная
+        смена оставляет стоящий у линка (не снимать I1 случайно), смена ради
+        I1 — отказ (менять не на что)."""
+        ok, i1 = self.gateway_client_i1()
+        if ok:
+            return i1
+        if auto == "i1":
+            raise ServiceError("I1 клиентского интерфейса не прочитан")
+        return self.gateway_link_i1(gw)[1]
+
+    def _rekey_stage(self, slot_id: int, auto: str = "") -> dict:
         gw = self._gw_slot(slot_id)
         if self.gwlink_agent_outdated(gw.id):
             raise ServiceError("Нужен агент шлюза v3.3.0")
@@ -122,7 +144,8 @@ class RekeyMixin:
         for other in self.db.gateways():
             if other.id != gw.id and self.gateway_rekey_active(other.id):
                 raise ServiceError(f"Идёт смена ключей у {self._gw_display(other)} — дождись итога")
-        err = self._rekey_run(gw, "--rekey-stage")
+        i1 = self._rekey_i1_for(gw, auto)
+        err = self._rekey_run(gw, "--rekey-stage", i1)
         if err:
             raise ServiceError(f"Новые ключи не сгенерированы: {err}")
         body = self.gateway_rekey_next_body(gw.id, stage=True)
@@ -130,7 +153,7 @@ class RekeyMixin:
             self._rekey_run(gw, "--rekey-drop")
             raise ServiceError("Новые ключи не прочитаны")
         st = {"id": secrets.token_hex(6), "state": "staged", "fp": body["fp"],
-              "at": timeutil.to_iso(timeutil.now())}
+              "at": timeutil.to_iso(timeutil.now()), "auto": auto if auto in ("i1", "join") else "", "i1": i1}
         self._rekey_save(gw.id, st)
         self.db.set_state(self._gw_slot_key(self._REKEY_CANCEL_KEY, gw.id), "")   # прежний отзыв — не о нём
         log.info("ключи линка: слот %s — новые ключи готовы (%s)", gw.id, st["fp"])
@@ -154,7 +177,22 @@ class RekeyMixin:
             return None
         gconf.comments = []
         fp = gwcfg.key_fp(vconf.get("Peer", "PublicKey"), gconf.get("Peer", "PublicKey"))
-        return {"id": st.get("id", ""), "conf": wgconf.render(gconf, "link", stamp=gwcfg.LINK_CONTRACT), "fp": fp}
+        out = {"id": st.get("id", ""), "conf": wgconf.render(gconf, "link", stamp=gwcfg.LINK_CONTRACT), "fp": fp}
+        if st.get("auto") and "rekey2" in self.gwlink_agent_caps(slot_id):
+            out["auto"] = st["auto"]                      # без вопроса в чате бота шлюза
+        return out
+
+    @staticmethod
+    def _rekey_notes(st: dict, notes: list, *, done: bool = False) -> list:
+        """Уведомления перехода: смена без вопроса (auto) — итог без звука,
+        отказы молча (о них скажет строка карточки после трёх)."""
+        if not st.get("auto"):
+            return notes
+        if not done:
+            return []
+        for n in notes:
+            n.silent = True
+        return notes
 
     # ── ответы шлюза ─────────────────────────────────────────────────────────
 
@@ -181,16 +219,18 @@ class RekeyMixin:
             if st.get("state") == "switched":
                 committed = bool(st.get("committed"))
                 self._rekey_run(gw, "--rekey-revert" if committed else "--rekey-drop")
-                self._rekey_save(slot_id, {"state": "declined", "at": timeutil.to_iso(timeutil.now()), "error": error})
+                self._rekey_save(slot_id, {"state": "declined", "at": timeutil.to_iso(timeutil.now()), "error": error,
+                                           "auto": st.get("auto") or ""})
                 if committed:
                     self._rekey_restarted(slot_id)
                 text = f"⚠️ {self._gw_link(gw)}: шлюз не поднял новые ключи линка" + (f": {_esc(error)}" if error else "")
-                return "", [Notification(config.ADMIN_ID, text + " — вернул прежние")]
+                return "", self._rekey_notes(st, [Notification(config.ADMIN_ID, text + " — вернул прежние")])
             self._rekey_run(gw, "--rekey-drop")
-            self._rekey_save(slot_id, {"state": "declined", "at": timeutil.to_iso(timeutil.now()), "error": error})
+            self._rekey_save(slot_id, {"state": "declined", "at": timeutil.to_iso(timeutil.now()), "error": error,
+                                           "auto": st.get("auto") or ""})
             text = (f"🔑 {self._gw_link(gw)}: смену ключей линка отклонили в чате бота шлюза" if not error else
                     f"⚠️ {self._gw_link(gw)}: шлюз не принял новые ключи линка: {_esc(error)}")
-            return "", [Notification(config.ADMIN_ID, text)]
+            return "", self._rekey_notes(st, [Notification(config.ADMIN_ID, text)])
 
     def gateway_rekey_go(self, slot_id: int) -> None:
         """link_go ушёл в сокет: дальше — переключение ВПС и срок 180 с."""
@@ -217,8 +257,8 @@ class RekeyMixin:
                 self._rekey_save(slot_id, {})
                 self._rekey_cancel_queue(slot_id, str(st.get("id") or ""))
                 self._rekey_restarted(slot_id)
-                return False, [Notification(config.ADMIN_ID,
-                                            f"⚠️ {self._gw_link(gw)}: новые ключи линка не поднялись — вернул прежние")]
+                return False, self._rekey_notes(st, [Notification(
+                    config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: новые ключи линка не поднялись — вернул прежние")])
             st["committed"] = True
             self._rekey_save(slot_id, st)
             self._rekey_restarted(slot_id)
@@ -259,8 +299,8 @@ class RekeyMixin:
             _REKEY_LOCK.release()
         log.info("ключи линка: слот %s на новых ключах", slot_id)
         self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
-        return {"notes": [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")],
-                "hold": False, "rekeyed": True}
+        notes = [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")]
+        return {"notes": self._rekey_notes(st, notes, done=True), "hold": False, "rekeyed": True}
 
     def gateway_rekey_done_in(self, slot_id: int, body: dict) -> None:
         """link_done — подтверждение шлюза для журнала: фиксирует hello."""
@@ -290,15 +330,15 @@ class RekeyMixin:
                     self._rekey_run(gw, "--rekey-drop")
                     cancel.append((gw.id, str(st.get("id") or "")))
                     self._rekey_cancel_queue(gw.id, str(st.get("id") or ""))   # нет сессии — уйдёт при подключении
-                    notes.append(Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: смена ключей линка "
-                                                                "отменена — за сутки её не подтвердили"))
+                    notes += self._rekey_notes(st, [Notification(
+                        config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: смена ключей линка отменена — за сутки её не подтвердили")])
                 elif state == "switched" and _age(now, st.get("go_at", ""), SWITCH_SECONDS + 1) > SWITCH_SECONDS:
                     self._rekey_run(gw, "--rekey-revert")
                     self._rekey_save(gw.id, {})
                     self._rekey_cancel_queue(gw.id, str(st.get("id") or ""))
                     self._rekey_restarted(gw.id)
-                    notes.append(Notification(config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: новые ключи линка "
-                                                                "не поднялись за 3 мин — вернул прежние"))
+                    notes += self._rekey_notes(st, [Notification(
+                        config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: новые ключи линка не поднялись за 3 мин — вернул прежние")])
         return cancel, notes
 
     def gateway_rekey_startup(self) -> list[Notification]:
@@ -317,8 +357,8 @@ class RekeyMixin:
                     self._rekey_save(gw.id, {})
                     self._rekey_cancel_queue(gw.id, str(st.get("id") or ""))
                     self._rekey_restarted(gw.id)
-                    notes.append(Notification(config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: перезапуск бота посреди "
-                                                                "смены ключей линка — вернул прежние"))
+                    notes += self._rekey_notes(st, [Notification(
+                        config.ADMIN_ID, f"⚠️ {self._gw_link(gw)}: перезапуск бота посреди смены ключей линка — вернул прежние")])
         return notes
 
     def gateway_rekey_slots(self) -> list[tuple[int, str]]:

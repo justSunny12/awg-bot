@@ -263,9 +263,28 @@ def _rekey_declined(services, mp):
     services._rekey_save(1, {"state": "declined", "at": _iso(NOW), "error": ""})
 
 
+def _rekey_auto(services, mp):
+    """Смена ключей без вопроса (I1 живому линку): ждать подтверждения некого."""
+    services._rekey_save(1, {"id": "0a1b2c3d4e5f", "state": "staged", "fp": _REKEY_FP, "at": _iso(NOW), "auto": "i1"})
+
+
+def _i1_failed(services, mp):
+    """Смена ключей ради I1 не встала трижды — Т-Л1."""
+    services._i1_plan_save(1, {"want": "<b 0x01>", "tries": 3, "next_at": _iso(NOW)})
+
+
+def _i1_none(services, mp):
+    """У клиентского интерфейса нет строки I1 — Т-Л2."""
+    mp.setattr(services, "gateway_client_i1", lambda: (True, ""))
+
+
 REKEY_DECLINED = [
     _card(1, _keys(_rekey_declined), "К4 ключей: шлюз отклонил новые ключи линка — линк на прежних",
           "adm.gw.card.rekey.declined"),
+    _card(1, _keys(_rekey_auto), "смена ключей без вопроса (I1): «переключение…», без «ждут подтверждения»",
+          "adm.gw.card.rekey.auto"),
+    _card(1, _keys(_i1_failed), "Т-Л1: новые ключи и обфускация линка не встали трижды", "adm.gw.card.i1.failed"),
+    _card(1, _keys(_i1_none), "Т-Л2: у клиентского интерфейса нет I1 — линк без I1", "adm.gw.card.i1.none"),
     _card(1, _chan(1, _cfg_base, _confirm1(), _cfg(online=False), _cfg_ack(applied=("server", "env"))),
           "раздел uplink не прошёл проверку на сервере — не едет, причина в карточке", "adm.gw.card.uplink.err"),
     Shot("adm.lk.ask.label", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],

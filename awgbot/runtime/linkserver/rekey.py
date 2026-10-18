@@ -95,6 +95,20 @@ class RekeyMixin:
     async def rekey_done_in(self, slot_id: int, msg: dict) -> None:
         await asyncio.to_thread(self.services.gateway_rekey_done_in, slot_id, msg)
 
+    async def i1_tick(self) -> None:
+        """Такт живости: I1 живым линкам — смена ключей без вопроса, по одному
+        слоту (план и стадия — домен, rekey_i1.py); link_next — сразу живой сессии."""
+        if not hasattr(self.services, "gateway_i1_tick"):
+            return
+        try:
+            started, notes = await asyncio.to_thread(self.services.gateway_i1_tick)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: такт I1 линков: %s", e)
+            return
+        for slot_id in started:
+            await self.deliver_rekey(slot_id)
+        await self.notes(notes)
+
     async def rekey_tick(self) -> None:
         """Такт живости: сутки без решения — link_cancel; 180 с без hello новым
         ключом — прежние ключи."""

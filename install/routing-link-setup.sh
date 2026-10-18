@@ -84,7 +84,11 @@
 # обфускацию; Endpoint, AllowedIPs и keepalive при переключении остаются из
 # стоящего у него конфига (их ведёт документ конфигурации).
 # Итог — последней строкой «rekey: staged|committed|reverted|dropped»:
-#   --rekey-stage   новые конфиги в $CONF.next и $GW_CONF_OUT.next, живые не тронуты
+#   --rekey-stage   новые конфиги в $CONF.next и $GW_CONF_OUT.next, живые не тронуты;
+#                   LINK_I1 (бот: строка I1 клиентского интерфейса сервера AWG как
+#                   есть) — строкой I1 только в шлюзовую сторону: сигнатурный пакет
+#                   шлёт инициатор рукопожатия; сторона ВПС I1 не получает никогда,
+#                   прочие режимы (--apply, --rekey) — тоже без I1
 #   --rekey-commit  исключение из MASQUERADE (отказ — ключи не тронуты, код 1),
 #                   живые → .prev, .next → живые, awg-quick down/up линка;
 #                   не поднялся — .prev назад, код 1
@@ -378,6 +382,15 @@ Endpoint = $2
 AllowedIPs = $(gw_allowed_ips)
 PersistentKeepalive = $LINK_KEEPALIVE
 GWEOF
+    chmod 600 "$1"
+    gw_conf_i1 "$1"
+}
+gw_conf_i1() {   # $1 = конфиг стороны шлюза: строка I1 после H4 — только в --rekey-stage и только с LINK_I1
+    [ "$MODE" = "rekey-stage" ] || return 0
+    _i1="$(printf '%s' "${LINK_I1:-}" | tr -d '\r\n')"
+    [ -n "$_i1" ] || return 0
+    LINK_I1_LINE="I1 = $_i1" awk '{ print } /^H4 = / && !done { print ENVIRON["LINK_I1_LINE"]; done = 1 }' "$1" > "$1.i1"
+    cat "$1.i1" > "$1" && rm -f "$1.i1"
     chmod 600 "$1"
 }
 link_restart() {   # переподнять линк ВПС на том, что лежит в $CONF; 0 — поднялся

@@ -22,6 +22,7 @@ DEAD_CONFIRM_SECONDS = 30       # «линк мёртв» — два замер�
 DECLINED_KEEP = 24 * 3600       # метка отказа держится столько: повтор того же id — отказ без вопроса
 TICK_SWITCHED = 10              # с — такт, пока ждём ответа сервера после переключения
 TICK_SEARCH = 30                # с — такт поиска (шаги — по next_try)
+AUTO = ("i1", "join")           # link_next без вопроса человеку (возможность rekey2)
 
 # link.txn переписывают такт цикла, такт монитора, link_go, ответ сервера,
 # ответ человека — из разных потоков. Один замок на всё; такт его не ждёт.
@@ -109,7 +110,10 @@ class CfgRekeyMixin:
         """link_next с сервера. Возвращает {"reply": тело link_ack, "ask": bool,
         "replaced": сообщение прежнего приглашения или None}. Тот же id, что
         уже ждёт (сессия упала между asked и ready), — второй раз не
-        спрашиваем, отвечаем своим состоянием; тот же id после отказа — отказ."""
+        спрашиваем, отвечаем своим состоянием; тот же id после отказа — отказ.
+        `auto` (возможность rekey2): «i1» — переход линка на I1 клиентов
+        сервера, «join» — согласие дано кодом сопряжения; человека не
+        спрашиваем — сразу ready (проверки ключей те же)."""
         rid = "".join(c for c in str(msg.get("id") or "") if c.isalnum())[:32]
         out = {"reply": None, "ask": False, "replaced": None}
         if not rid:
@@ -133,6 +137,12 @@ class CfgRekeyMixin:
         fp = gwcfg.key_fp(wgconf.pubkey_of(conf.get("Interface", "PrivateKey")), conf.get("Peer", "PublicKey"))
         self._cfg_write_private(self._rk_path("rekey.next"),
                                 wgconf.render(conf, "link", stamp=conf.stamp or gwcfg.LINK_CONTRACT))
+        auto = str(msg.get("auto") or "")
+        if auto in AUTO:
+            self._rk_save({"id": rid, "state": "ready", "fp": fp, "at": time.time(), "ready_at": time.time(),
+                           "auto": auto})
+            log.info("gateway: новые ключи линка без вопроса (%s)", auto)
+            return {**out, "reply": {"id": rid, "state": "ready", "error": ""}}
         self._rk_save({"id": rid, "state": "asked", "fp": fp, "at": time.time()})
         return {**out, "reply": {"id": rid, "state": "asked", "error": ""}, "ask": True}
 
@@ -248,7 +258,9 @@ class CfgRekeyMixin:
         if on_new:
             self._rk_save({})                              # сервер ответил на новых ключах — прежний не нужен
             self.bundle_issued_raise(int(time.time()))     # файлы до смены несут прежние ключи — им отказ
-            return {"done": {"id": st["id"], "ok": True, "keys": "new"}, "note": "✅ Линк на новых ключах", "msg": msg}
+            # без вопроса (auto) человек ничего не начинал — и итог ему без строки
+            note = "" if st.get("auto") else "✅ Линк на новых ключах"
+            return {"done": {"id": st["id"], "ok": True, "keys": "new"}, "note": note, "msg": msg}
         if state in ("back", "switched"):
             self._rk_save({})
             # на прежних: о возврате человек уже знает (сказано на сроке переключения)
