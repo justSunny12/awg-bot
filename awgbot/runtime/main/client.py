@@ -12,6 +12,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
+from . import alive
 from .common import log
 
 
@@ -35,6 +36,7 @@ async def main() -> None:
     services = pkg.Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
+    services.adopt_installed_digest()       # digest выпуска от установщика или `awg-bot update` — в базу
     # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.
@@ -50,6 +52,9 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                      link_preview_is_disabled=True),
     )
+    # отметка жизни для сторожа обновления — первый ответ на getUpdates (база
+    # уже открыта); раньше — не в счёт
+    alive.watch(bot)
     # Токен: getMe ловит протухший/отозванный токен сразу (внятное сообщение
     # вместо «молчаливого» бота). ВАЖНО: fatal — ТОЛЬКО явный отказ Bot API
     # (401 Unauthorized). Сетевые ошибки (VPS стартовал раньше сети/DNS) не

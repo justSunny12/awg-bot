@@ -30,7 +30,8 @@ _OBFUSCATION_KEYS = [
 
 def _extract_param(conf_text: str, key: str) -> Optional[str]:
     """Значение `key = ...` из [Interface]. Учитывает закомментированные строки
-    (I1-I5 в awg0.conf закомментированы, но их значение нужно для клиента).
+    (I1-I5 в конфиге клиентского интерфейса — awg1 на хосте после переезда —
+    закомментированы, но их значение нужно для клиента).
     Возвращает строку значения (может быть пустой) или None, если ключа нет."""
     pattern = re.compile(rf"^[ \t]*#?[ \t]*{re.escape(key)}[ \t]*=[ \t]*(.*)$", re.MULTILINE)
     m = pattern.search(conf_text)

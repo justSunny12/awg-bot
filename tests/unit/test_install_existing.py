@@ -657,6 +657,7 @@ class _PostUpdate:
             f'SELF_PATH="{self.self_path}"; SERVICE=awg-bot\n'
             f'DATA_DIR="{self.tmp}/data"; ENV_FILE="{self.tmp}/env"; CONF_DIR="{self.tmp}/conf"\n'
             + stubs + "\n"
+            "update_guard_due() { return 1; }\n"      # сторож — tests/unit/test_update_guard.py
             "systemctl() { return 0; }\n"
             "log() { echo \"LOG $*\"; }; ok() { echo \"OK $*\"; }; warn() { echo \"WARN $*\"; }\n"
             "die() { echo \"DIE $*\"; exit 1; }\n"

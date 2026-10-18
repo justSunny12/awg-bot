@@ -14,6 +14,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
+from . import alive
 from .common import log
 
 
@@ -54,6 +55,7 @@ async def run_gateway() -> None:
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
+    services.adopt_installed_digest()       # digest выпуска от установщика или `awg-bot update` — в базу
     services.update_hold_start()            # цель обновления — после первого role сервера (≤ 15 мин)
     try:
         services.backup_leftovers_drop()    # своих копий у шлюза нет: фраза, отметки, ключи conf — прочь
@@ -91,6 +93,9 @@ async def run_gateway() -> None:
     bot = pkg.Bot(config.BOT_TOKEN, session=session,
               default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                            link_preview_is_disabled=True))
+    # отметка жизни для сторожа обновления: первый ответ на getUpdates или
+    # первое подписанное слово сервера AWG в канале (linkclient) — что раньше
+    alive.watch(bot)
     token_dead = False
     try:
         me = await bot.get_me()

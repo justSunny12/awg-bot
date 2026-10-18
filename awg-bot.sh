@@ -76,6 +76,32 @@
 #                          обновление — прежний app.yaml вернётся вместе с
 #                          прежним кодом. restore: ключ копии снимается снова,
 #                          если в текущем app.yaml его не было.
+#                          После старта нового сервиса прежние код, окружение,
+#                          app.yaml с ключом timezone и сборка ядра остаются до
+#                          отметки жизни нового процесса ($DATA_DIR/update-ok:
+#                          основной бот — ответ Telegram на getUpdates, агент —
+#                          он же или подписанное слово сервера AWG в канале):
+#                          бот, поставив её, сразу зовёт фиксацию
+#                          (__update_guard --alive, вне своего cgroup); сторож —
+#                          таймер systemd awg-bot-update-guard через 10 минут
+#                          (__update_guard). Отметка этой версии — прежнее
+#                          прочь; нет — откат в той же установке: прежние код и
+#                          окружение на место, перезапуск, метка
+#                          $DATA_DIR/update-rolled-back для прежнего процесса.
+#                          Перезагрузка в окне снимает таймер — его заменяет
+#                          ExecStartPre юнита (__update_guard --start): окно не
+#                          истекло — сторож заново на остаток, истекло без
+#                          отметки — откат до старта сервиса.
+#                          Переход через COMPAT_FLOOR (прежняя версия ниже
+#                          версии совместимости нового кода) сторожем не
+#                          прикрыт: прежнее снимается сразу после старта. Новое
+#                          обновление поверх неподтверждённого снимает прежнего
+#                          сторожа: откат — на версию, работающую сейчас.
+#                          sha256 архива сверяется с ассетами выпуска той же
+#                          версии на GitHub (один запрос): совпало — версия и
+#                          sha256 в $DATA_DIR/installed-digest, бот на старте
+#                          переносит их в базу (метка бэкапа знает выпуск); нет
+#                          ответа или своя сборка — файла нет.
 #   uninstall              снять сервис (код, таблица учёта РФ-трафика и таблица
 #                          адресов в туннеле awg_lan_map — всегда; данные,
 #                          секреты, файервол и обвязка роли — по согласию: у шлюза
@@ -416,6 +442,10 @@ WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$ENV_FILE
 Environment=AWG_BOT_CONF_DIR=$CONF_DIR
 Environment=AWG_BOT_DATA_DIR=$DATA_DIR
+# сторож обновления, потерянный перезагрузкой: окно истекло без отметки
+# жизни — откат до старта (awg-bot.sh __update_guard --start); «-» — отказ
+# проверки не держит сервис
+ExecStartPre=-$INSTALL_DIR/awg-bot.sh __update_guard --start
 ExecStart=$INSTALL_DIR/venv/bin/python -m awgbot
 Restart=on-failure
 RestartSec=5
@@ -934,6 +964,7 @@ cmd_update() {
         rm -rf "$tmp"
         die "откат ниже $floor невозможен — только чистая установка"
     fi
+    note_installed_digest "$tgz" "$newver"     # архив из выпуска — бэкапы будут знать выпуск
 
     # ЯДРО — ДО подмены кода. Версия AmneziaWG прибита к поставке, значит её
     # надо собрать; а собирать надо ПЕРВЫМ делом, пока на диске рабочая
@@ -948,6 +979,9 @@ cmd_update() {
         fi
     fi
 
+    # Сторож прошлого обновления, если ещё стоит, — прочь: его прежний код
+    # уходит ниже, откат теперь — на версию, работающую сейчас
+    update_guard_disarm
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     lanmap_drop_for_older "$src"
     # Старый код — в сторону, а не под нож: отказ копирования (кончилось место,
@@ -980,6 +1014,44 @@ cmd_update() {
     # продолжать читать с диска файл, который сменился под ним, — отдельный
     # способ получить мусор в разборе оставшегося хвоста.
     exec "$INSTALL_DIR/awg-bot.sh" __post_update "$wipe"
+}
+
+INSTALLED_DIGEST_FILE="$DATA_DIR/installed-digest"   # «<версия> <sha256>» архива из выпуска — бот перенесёт в базу
+
+release_sha256s() {  # release_sha256s VER → sha256 ассетов выпуска vVER на GitHub (hex, по строке); пусто — нет сети или выпуска
+    local repo
+    repo="$(yaml_get "$CONF_DIR/updates.yaml" repo)"
+    [[ -n "$repo" ]] || repo="$(yaml_get "$INSTALL_DIR/conf/updates.yaml" repo)"
+    [[ -n "$repo" && -n "$1" ]] || return 0
+    command -v curl >/dev/null 2>&1 || return 0
+    { curl -fsS --max-time 10 "https://api.github.com/repos/${repo// /}/releases/tags/v$1" 2>/dev/null \
+        | grep -oE '"digest" *: *"sha256:[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}'; } || true
+}
+
+note_installed_digest() {  # note_installed_digest TGZ VER — архив совпал с выпуском vVER → installed-digest
+    # Метка бэкапа берёт digest выпуска из базы (update_installed_digest), и
+    # без него переход на версию бэкапа недоступен. Самообновление кнопкой
+    # кладёт его само, ручной `update` — этим файлом: один запрос к GitHub,
+    # sha256 архива против ассетов выпуска той же версии. Нет сети или не
+    # совпало (своя сборка) — файла нет, прежний прочь: чужой версии он не нужен.
+    local tgz="$1" ver="$2" have sums
+    rm -f "$INSTALLED_DIGEST_FILE"
+    [[ -n "$ver" && -f "$tgz" ]] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+    have="$(sha256sum "$tgz" | awk '{print $1}')"
+    if [[ -n "${AWG_BOT_VERIFIED_SHA256:-}" && "$have" == "${AWG_BOT_VERIFIED_SHA256:-}" ]]; then
+        sums="$have"                       # установщик из трубы уже сверил этот архив с выпуском
+    else
+        sums="$(release_sha256s "$ver")"
+    fi
+    if [[ -n "$have" ]] && grep -qxF "$have" <<<"$sums"; then
+        mkdir -p "$DATA_DIR"
+        ( umask 077; printf '%s %s\n' "$ver" "$have" > "$INSTALLED_DIGEST_FILE" )
+        log "целостность: sha256 архива совпал с выпуском v$ver"
+    else
+        log "целостность: архив не сверен с выпуском v$ver (нет ответа GitHub или своя сборка)"
+    fi
+    return 0
 }
 
 compat_floor() {  # версия совместимости установленного кода (awgbot/core/compat.py); пусто — не прочитана
@@ -1228,6 +1300,7 @@ post_update_rescue() {  # ловушка второй половины обно�
     else
         warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
     fi
+    update_guard_disarm                    # сторож этого прогона, если успел встать: откат уже здесь
     systemctl start "$SERVICE" 2>/dev/null || true
     local what='Код уже подменён, но довести установку не удалось. Сервис поднят на том, что есть.'
     [[ "$back" -eq 1 ]] && what='Довести установку не удалось — вернул прежнюю версию: и код, и окружение. Сервис поднят.'
@@ -1245,6 +1318,139 @@ update_done() {  # обновление доведено: прежние код 
     [[ -n "${AWG_UPDATE_PREV:-}" ]] && rm -rf "$AWG_UPDATE_PREV"
     [[ -n "${TZ_ADOPT_UNDO:-}" ]] && rm -f "$TZ_ADOPT_UNDO"
     venv_prune
+}
+
+# ── сторож обновления: прежняя версия живёт, пока новая не вышла на связь ─────
+# После старта нового сервиса прежние код (.prev-code), окружение (.venvs/.prev),
+# app.yaml с ключом timezone и сборка ядра не снимаются сразу: сторож —
+# таймер systemd через UPDATE_GUARD_MIN минут — смотрит отметку жизни, которую
+# пишет новый процесс бота (основной бот — первый ответ Telegram на getUpdates,
+# агент — он же или первое подписанное слово сервера AWG в сессии канала).
+# Отметка этой версии — фиксация (update_done, prune ядра); нет — откат в той
+# же установке: прежние код и окружение на место, перезапуск, метка отката
+# для прежнего процесса. Переход через COMPAT_FLOOR (прежняя версия ниже
+# версии совместимости нового кода) сторожем не прикрывается: откат ниже неё
+# запрещён тем же правилом, что `awg-bot update`.
+UPDATE_GUARD="$DATA_DIR/update-guard"            # сторож взведён: VERSION= и PREV= (пишет post_update)
+UPDATE_OK="$DATA_DIR/update-ok"                  # отметка жизни «<версия> <время>» (пишет бот)
+UPDATE_ROLLED="$DATA_DIR/update-rolled-back"     # метка отката (JSON) — прочтёт прежний процесс
+UPDATE_TZ_UNDO="$DATA_DIR/update-guard.app.yaml" # прежний app.yaml с ключом timezone — до фиксации
+UPDATE_GUARD_UNIT="awg-bot-update-guard"
+UPDATE_GUARD_MIN=10                             # окно сторожа, минут
+
+guard_get() { [[ -f "$UPDATE_GUARD" ]] && sed -nE "s/^$1=(.*)$/\1/p" "$UPDATE_GUARD" | head -n1 || true; }
+
+update_guard_due() {  # 0 — обновление прикрыть сторожем: прежний код на месте и в линии совместимости
+    [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]] || return 1
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    local prev floor
+    prev="$(tree_version "$AWG_UPDATE_PREV")"; floor="$(compat_floor)"
+    [[ -n "$prev" && -n "$floor" ]] || return 1
+    version_lt "$prev" "$floor" && return 1      # переход через COMPAT_FLOOR: назад дороги нет
+    return 0
+}
+
+update_guard_write() {  # update_guard_write — до старта сервиса: что сторожить и как вернуть пояс
+    local ver prev
+    ver="$(tree_version "$INSTALL_DIR")"; prev="$(tree_version "$AWG_UPDATE_PREV")"
+    rm -f "$UPDATE_OK"                     # отметка прошлых запусков не в счёт — только новый процесс
+    mkdir -p "$DATA_DIR"
+    if [[ -n "${TZ_ADOPT_UNDO:-}" && -f "$TZ_ADOPT_UNDO" ]]; then
+        # копия из mktemp живёт до конца этого процесса, сторож — дольше
+        mv -f "$TZ_ADOPT_UNDO" "$UPDATE_TZ_UNDO" && TZ_ADOPT_UNDO="$UPDATE_TZ_UNDO"
+    fi
+    # AT — секунды эпохи: по ним проверка на старте сервиса считает, истекло ли окно
+    ( umask 077; printf 'VERSION=%s\nPREV=%s\nAT=%s\n' "$ver" "$prev" "$(date +%s)" > "$UPDATE_GUARD" )
+}
+
+update_guard_arm() {  # update_guard_arm [МИНУТ] — таймер сторожа; отказ systemd-run — 1
+    # RemainAfterElapse=no и --collect: отработавший таймер и его служба
+    # выгружаются — следующее обновление взводит сторожа под тем же именем
+    systemd-run --quiet --collect --unit="$UPDATE_GUARD_UNIT" --on-active="${1:-$UPDATE_GUARD_MIN}min" \
+        --timer-property=AccuracySec=10s --timer-property=RemainAfterElapse=no \
+        --description="awg-bot: сторож обновления" \
+        "$INSTALL_DIR/awg-bot.sh" __update_guard >/dev/null 2>&1
+}
+
+update_guard_disarm() {  # снять сторожа: таймер, его состояние и копию app.yaml
+    systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
+    systemctl reset-failed "$UPDATE_GUARD_UNIT.timer" "$UPDATE_GUARD_UNIT.service" 2>/dev/null || true
+    rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+}
+
+update_guard_rollback() {  # update_guard_rollback VERSION PREV [nostart] — новая не вышла на связь: прежняя на место
+    # nostart — из ExecStartPre юнита: сервис ещё не запущен, а systemctl для
+    # него из его же запуска ждал бы сам себя; запустится он сам, уже прежним кодом
+    local ver="$1" prev="$2" how="${3:-}"
+    if [[ ! -d "$AWG_UPDATE_PREV" ]]; then
+        warn "v$ver не вышла на связь за $UPDATE_GUARD_MIN минут, но прежнего кода нет — откатывать некуда"
+        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        return 1
+    fi
+    warn "v$ver не вышла на связь за $UPDATE_GUARD_MIN минут — возвращаю v$prev"
+    [[ "$how" == "nostart" ]] || systemctl stop "$SERVICE" 2>/dev/null || true
+    restore_prev_code "$AWG_UPDATE_PREV"
+    venv_rollback
+    venv_prune                             # окружение новой версии — прочь
+    adopt_timezone_undo
+    ( umask 077; printf '{"version": %s, "prev": %s, "at": %s}\n' "$(json_str "$ver")" "$(json_str "$prev")" \
+        "$(json_str "$(date -Iseconds)")" > "$UPDATE_ROLLED" ) || true
+    rm -f "$UPDATE_GUARD" "$UPDATE_OK" "$UPDATE_TZ_UNDO"
+    [[ "$how" == "nostart" ]] && return 0
+    systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
+    return 0
+}
+
+cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация по отметке жизни или откат
+    # без ключа — таймер сторожа: отметка этой версии — фиксация, нет — откат;
+    # --alive — бот, поставив отметку: фиксация сразу, без отметки — ничего
+    #   (решает таймер);
+    # --start — ExecStartPre юнита, перед каждым стартом сервиса: таймера нет
+    #   (перезагрузка в окне) — окно не истекло — сторож заново на остаток, истекло
+    #   без отметки — откат до старта; таймер есть или сторожа нет — ничего.
+    require_root
+    local mode="${1:-}"
+    [[ -f "$UPDATE_GUARD" ]] || return 0
+    if command -v flock >/dev/null 2>&1; then
+        # одно решение за раз; откат держит замок и запускает сервис — проверка
+        # его старта не ждёт замка (ждала бы сама себя), решает тот, кто держит
+        exec 9>"$UPDATE_GUARD.lock"
+        if [[ "$mode" == "--start" ]]; then flock -n 9 || return 0; else flock -w 120 9 || return 0; fi
+        [[ -f "$UPDATE_GUARD" ]] || return 0
+    fi
+    local ver prev at cur mark left
+    ver="$(guard_get VERSION)"; prev="$(guard_get PREV)"; at="$(guard_get AT)"; cur="$(tree_version "$INSTALL_DIR")"
+    if [[ -z "$ver" || "$ver" != "$cur" ]]; then
+        # установку сменили мимо сторожа (новое обновление, чистая установка) — сторожить нечего
+        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        return 0
+    fi
+    AWG_UPDATE_PREV="$INSTALL_DIR/.prev-code"
+    TZ_ADOPT_UNDO=""; [[ -f "$UPDATE_TZ_UNDO" ]] && TZ_ADOPT_UNDO="$UPDATE_TZ_UNDO"
+    mark="$(awk 'NR == 1 { print $1 }' "$UPDATE_OK" 2>/dev/null || true)"
+    if [[ "$mark" == "$ver" ]]; then
+        log "v$ver вышла на связь — прежняя версия v$prev больше не нужна"
+        systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
+        rm -f "$UPDATE_GUARD" "$UPDATE_OK"
+        prune_old_kernel_builds
+        update_done
+        return 0
+    fi
+    case "$mode" in
+        --alive) return 0 ;;
+        --start)
+            systemctl is-active --quiet "$UPDATE_GUARD_UNIT.timer" && return 0
+            [[ "$at" =~ ^[0-9]+$ ]] || at=0
+            left=$(( at + UPDATE_GUARD_MIN * 60 - $(date +%s) ))
+            if (( left > 0 )); then
+                log "сторож обновления потерян (перезагрузка) — взвожу заново на $(( (left + 59) / 60 )) мин"
+                update_guard_arm $(( (left + 59) / 60 )) && return 0
+                warn "сторож обновления не взведён заново (systemd-run) — решаю сейчас"
+            fi
+            update_guard_rollback "$ver" "$prev" nostart || true
+            return 0 ;;
+    esac
+    update_guard_rollback "$ver" "$prev"
 }
 
 cmd_post_update() {
@@ -1277,22 +1483,43 @@ cmd_post_update() {
         die "запусти: sudo awg-bot reconfigure"
     fi
 
+    # Сторож — до старта: отметка жизни прошлых запусков стирается, таймер
+    # взведён раньше, чем новый процесс может её написать. Не взвёлся — как
+    # раньше: прежняя версия снимается сразу после старта.
+    local guarded=0
+    if update_guard_due; then
+        update_guard_disarm                # сторож прошлого обновления, если ещё стоит
+        update_guard_write
+        if update_guard_arm; then
+            guarded=1
+        else
+            warn "сторож обновления не взведён (systemd-run) — прежняя версия снимается сразу"
+            rm -f "$UPDATE_GUARD"
+        fi
+    fi
+
     if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
         # сервис — сразу, со старой конфигурацией: не применится файл — агент
         # всё равно работает; применение файла ниже перезапустит сервис само
         systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
-        prune_old_kernel_builds
+        [[ "$guarded" -eq 1 ]] || prune_old_kernel_builds
     else
         systemctl start "$SERVICE"; sleep 1
         if systemctl is-active --quiet "$SERVICE"; then
             ok "$SERVICE перезапущен."
-            prune_old_kernel_builds
+            [[ "$guarded" -eq 1 ]] || prune_old_kernel_builds
         else
             warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         fi
     fi
-    # сервис стартовал — назад дороги нет: новый код мог уже тронуть базу
-    update_done
+    if [[ "$guarded" -eq 1 ]]; then
+        # прежние код, окружение и сборка ядра ждут отметку жизни нового процесса
+        ok "прежняя версия хранится, пока новая не выйдет на связь: сторож посмотрит через $UPDATE_GUARD_MIN минут"
+    else
+        # без сторожа (переход через версию совместимости) назад дороги нет:
+        # новый код мог уже тронуть базу
+        update_done
+    fi
     trap - EXIT
     ok "Обновление завершено."
     # временный каталог с архивом от установщика — только из /tmp, чужое не трогаем
@@ -1670,6 +1897,7 @@ cmd_uninstall() {
     # то, из-за чего установка считается установкой (код + симлинк), чтобы
     # прерывание на любом дальнейшем вопросе оставляло чистое поле, а не тупик.
     systemctl disable --now "$SERVICE" 2>/dev/null || true
+    update_guard_disarm                    # сторож обновления — без кода ему нечего возвращать
     rm -f "$UNIT_PATH"; systemctl daemon-reload 2>/dev/null || true
     rm -f "$SELF_LINK"
     local tmp_self; tmp_self="$(mktemp)"; cp "$SELF_PATH" "$tmp_self"; chmod +x "$tmp_self"
@@ -2071,6 +2299,7 @@ case "$VERB" in
     restore)     cmd_restore "$@" ;;
     uninstall)   cmd_uninstall ;;
     __post_update)    cmd_post_update "${1:-0}" ;;
+    __update_guard)   cmd_update_guard "$@" ;;
     __post_uninstall) cmd_post_uninstall ;;
     status)      cmd_status ;;
     start)       cmd_start ;;

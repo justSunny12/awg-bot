@@ -109,6 +109,10 @@ class SessionMixin:
             last_seq: int | None = int(msg.get("seq") or 0)
             self._confirmed = True
             self.services.channel.last_word = time.time()
+            # сервер ответил подписанным словом — агент на связи: отметка для
+            # сторожа обновления (одна на процесс, только когда он взведён)
+            from awgbot.domain.selfupdate.marks import mark_alive
+            mark_alive("сервер AWG ответил в канале")
             self._writer = writer
             self._set_online(True)
             await self._handle(msg)

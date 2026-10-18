@@ -74,6 +74,13 @@ class SelfUpdateCoreMixin:
             return None                                   # роль без переезда
         return awglock.target_generation() if running else None
 
+    def adopt_installed_digest(self) -> bool:
+        """Старт: digest выпуска, сверенный установщиком или `awg-bot update`
+        (файл installed-digest в каталоге данных), — в базу, файл прочь
+        (marks.py). До итога самообновления: тот пишет свой digest поверх."""
+        from .marks import adopt_installed_digest
+        return adopt_installed_digest(self.db)
+
     def clear_update_pending(self) -> None:
         """Обновление не взлетело до апдейтера — снять флаг, иначе следующий
         старт принесёт ложное «не применилось»."""

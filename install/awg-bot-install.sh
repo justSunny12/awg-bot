@@ -99,22 +99,50 @@ verify_archive() {  # verify_archive TGZ SRC_ROOT — сверить sha256 с �
     # может не быть вовсе. Ответил — сверяем и на расхождении отказываемся
     # ставить; не ответил — говорим об этом одной строкой и продолжаем, потому
     # что целостность загрузки и так держит TLS.
+    # Совпало — версия и sha256 запоминаются (INSTALLED_DIGEST): установщик
+    # кладёт их в $DATA_DIR/installed-digest, бот на старте переносит в базу, и
+    # метка бэкапа знает выпуск. Установщику из поставки (труба зовёт его с
+    # --skip-verify) совпавший sha256 передаётся в AWG_BOT_VERIFIED_SHA256: сверку
+    # он не повторяет, но выпуск знает. Своя сборка (--skip-verify) — пусто.
     local tgz="$1" root="$2" ver repo want have
-    [[ "$SKIP_VERIFY" != "1" ]] || { log "целостность: сверка отключена (--skip-verify)"; return 0; }
+    INSTALLED_DIGEST=""
+    ver="$(sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' "$root/awgbot/__version__.py" 2>/dev/null | head -n1)" || ver=""
+    if [[ "$SKIP_VERIFY" == "1" ]]; then
+        have=""
+        if [[ -n "${AWG_BOT_VERIFIED_SHA256:-}" && -n "$ver" && -f "$tgz" ]] && command -v sha256sum >/dev/null 2>&1; then
+            have="$(sha256sum "$tgz" | awk '{print $1}')"
+        fi
+        if [[ -n "$have" && "$have" == "${AWG_BOT_VERIFIED_SHA256:-}" ]]; then
+            INSTALLED_DIGEST="$ver $have"
+            log "целостность: sha256 уже сверен с релизом v$ver"
+        else
+            log "целостность: сверка отключена (--skip-verify)"
+        fi
+        return 0
+    fi
     [[ -f "$tgz" ]] || return 0
     command -v sha256sum >/dev/null 2>&1 || return 0
-    ver="$(sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' "$root/awgbot/__version__.py" 2>/dev/null | head -n1)"
-    repo="$(sed -nE 's/^ *repo: *"?([^"#]+)"?.*/\1/p' "$root/conf/updates.yaml" 2>/dev/null | head -n1 | tr -d ' ')"
+    repo="$(sed -nE 's/^ *repo: *"?([^"#]+)"?.*/\1/p' "$root/conf/updates.yaml" 2>/dev/null | head -n1 | tr -d ' ')" || repo=""
     [[ -n "$ver" && -n "$repo" ]] || return 0
-    want="$(curl -fsS --max-time 10 "https://api.github.com/repos/$repo/releases/tags/v$ver" 2>/dev/null \
-            | sed -nE 's/.*"digest" *: *"sha256:([0-9a-f]{64})".*/\1/p' | head -n1)"
+    # все digest выпуска (поставка и метаданные), по строке; отказ curl под
+    # pipefail — не выход из установщика, а «GitHub не ответил»
+    want="$({ curl -fsS --max-time 10 "https://api.github.com/repos/$repo/releases/tags/v$ver" 2>/dev/null \
+             | grep -oE '"digest" *: *"sha256:[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}'; } || true)"
     if [[ -z "$want" ]]; then
         log "целостность: GitHub не ответил — ставлю без сверки (загрузку прикрывает TLS)"
         return 0
     fi
     have="$(sha256sum "$tgz" | awk '{print $1}')"
-    [[ "$have" == "$want" ]] || die "sha256 архива не совпал с релизом v$ver — ставить не буду. Скачай архив заново; если это своя сборка — повтори с --skip-verify"
+    grep -qxF "$have" <<<"$want" || die "sha256 архива не совпал с релизом v$ver — ставить не буду. Скачай архив заново; если это своя сборка — повтори с --skip-verify"
+    INSTALLED_DIGEST="$ver $have"
+    export AWG_BOT_VERIFIED_SHA256="$have"
     log "целостность: sha256 совпал с релизом v$ver"
+}
+
+note_installed_digest() {  # архив совпал с выпуском — версия и sha256 в $DATA_DIR/installed-digest (0600)
+    rm -f "$DATA_DIR/installed-digest"
+    [[ -n "${INSTALLED_DIGEST:-}" ]] || return 0
+    ( umask 077; printf '%s\n' "$INSTALLED_DIGEST" > "$DATA_DIR/installed-digest" )
 }
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -391,6 +419,7 @@ if [[ -n "$SRC_ROOT" ]]; then
     # ловушку перед передачей управления awg-bot.sh: дальше уборка его.
     trap '[[ $? -eq 0 ]] || case "$SRC_ROOT" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac' EXIT
     verify_archive "$TGZ" "$SRC_ROOT"
+    note_installed_digest
     log "раскладываю код в ${INSTALL_DIR}…"
     ( shopt -s dotglob; cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/ )
     chown -R root:root "$INSTALL_DIR"      # архив несёт uid машины, где собран
