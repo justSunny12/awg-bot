@@ -16,6 +16,7 @@ from __future__ import annotations
 from tests.screens import shots_admin_broadcast as broadcast
 from tests.screens import shots_admin_devices as devices
 from tests.screens import shots_admin_events as events
+from tests.screens import shots_admin_fleet as fleet
 from tests.screens import shots_admin_gateways as gateways
 from tests.screens import shots_admin_gw_cards as gw_cards
 from tests.screens import shots_admin_gw_channel as gw_channel
@@ -38,6 +39,7 @@ SHOTS = [
     *profiles.NEW,
     *broadcast.BROADCAST,
     *settings.SETTINGS,
+    *fleet.FLEET,
     *gateways.GATEWAYS,
     *migration.MIGRATION,
     *home.LINKS,

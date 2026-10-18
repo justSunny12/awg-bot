@@ -1,8 +1,12 @@
-"""«⬆️ Обновления»: проверка при открытии, «⬆️ Обновить до vX», тумблер
-уведомлений (мьют в БД, не YAML), цикл расписания день → неделя → месяц.
-Шаги установки, «В меню» на итоге и «Не уведомлять» — handlers/updates_flow;
-их кнопки (UpdateCB) общие у ролей и возвращают на главную роли через
-реестр экранов."""
+"""«⬆️ Обновления» основного бота — раздел набора: сервер AWG и шлюзы на
+одном выпуске (Т-У1). Проверка при открытии, «⬆️ Обновить до vX» (диалог и
+ход — handlers/fleet), «🔁 Повторить» (набор откатился, догон не прошёл
+трижды), тумблер уведомлений (мьют в БД), цикл расписания день → неделя →
+месяц. «В меню» на итоге и «Не уведомлять» — handlers/updates_flow.
+
+У агента шлюза раздела нет (Р3): шлюзы обновляются только по команде сервера
+AWG; прежние кнопки агента — «Кнопка устарела…» (register_update_buttons).
+"""
 from __future__ import annotations
 
 from aiogram import F
@@ -11,9 +15,11 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 
 from awgbot.bot import texts
 from awgbot.bot import ui
-from awgbot.bot.callbacks import UpdateCB
+from awgbot.bot.callbacks import GwCB, UpdateCB
+from awgbot.bot.handlers import fleet as fleet_flow
 from awgbot.bot.handlers import updates_flow
 from awgbot.bot.handlers.common import call, cleanup_content, send_menu
+from awgbot.bot.texts import fleet as ft
 from awgbot.core import settings
 
 from ._kb import _chk, back_button
@@ -25,58 +31,51 @@ UPDATE_SCHEDULE_CYCLE = texts.UPDATE_SCHEDULE_CYCLE
 UPDATE_SCHEDULE_LABELS = texts.UPDATE_SCHEDULE_LABELS
 CYCLES = {"updates.poll_schedule": UPDATE_SCHEDULE_CYCLE}
 AFTER_CYCLE_KEY = "cached"      # после цикла — раздел без похода в сеть
-ACTIONS: dict = {}
+AGENT_STALE = "Кнопка устарела — обновления теперь в боте сервера AWG"
 
 
-def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
-    """target_tag — найденная цель (кнопка «⬆️ Обновить до vX», если не
-    заблокирована; тег едет в кнопке — ставится только он); «Уведомлять» —
-    мьют в БД; «Проверка» — цикл."""
+def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "", retry: bool = False,
+             running: bool = False) -> InlineKeyboardMarkup:
+    """target_tag — цель набора (кнопка «⬆️ Обновить до vX», если не идёт ход
+    и не заблокирована); retry — «🔁 Повторить» (набор откатился, откат не
+    прошёл, догон не прошёл трижды); «Уведомлять» — мьют в БД; «Проверка» — цикл."""
     sched = str(settings.get("updates.poll_schedule", "day")).lower()
     if sched not in UPDATE_SCHEDULE_LABELS:
         sched = "month"
     tag = target_tag if str(target_tag).startswith("v") else f"v{target_tag}"
     return ui.rows(
-        (f"⬆️ Обновить до {tag}", UpdateCB(action="install", tag=str(target_tag))) if target_tag and not blocked else None,
+        (f"⬆️ Обновить до {tag}", UpdateCB(action="install", tag=str(target_tag)))
+        if target_tag and not blocked and not running and not retry else None,
+        ("🔁 Повторить", br.cb.pack(ID, "do", "retry")) if retry and not running else None,
         [(f"{_chk(not muted)} Уведомлять", br.cb.pack(ID, "toggle", "notify")),
          (f"📅 Проверка: {UPDATE_SCHEDULE_LABELS[sched]}", br.cb.pack(ID, "cycle", "updates.poll_schedule"))],
         back_button(br))
 
 
+def _retry_due(plan: dict) -> bool:
+    if (plan.get("run") or {}).get("state") in ("rolled_back", "rollback_failed"):
+        return True
+    return any((g.get("upd_state") or {}).get("final") for g in plan.get("gateways") or [])
+
+
 async def screen(br, services, key: str = ""):
-    """key «cached» — тумблер и цикл: без похода в сеть, по тегу последней
-    проверки; иначе — проверка при открытии. «никогда» из старого конфига —
-    «месяц» и уведомления выкл."""
+    """key «cached» — тумблер и цикл: без похода в сеть; иначе — проверка при
+    открытии (сохраняет и список выпусков для плана)."""
     await call(services.normalize_update_schedule)
     failed = False
-    if key == "cached":
-        tag = await call(services.update_available_tag)
-        found = updates_flow.CachedTarget(tag) if tag else None
-        blocked = ""
-        if found is not None and hasattr(services, "update_cached_release"):
-            # переезд мог начаться после проверки: причина — по метаданным из кэша
-            rel = await call(services.update_cached_release, tag)
-            blocked = await call(services.update_block_reason, rel) if rel is not None else ""
-    else:
-        if hasattr(services, "update_scan_checked"):
-            found, failed = await call(services.update_scan_checked)
-        else:
-            found = await call(services.update_scan)
-            failed = bool(getattr(services, "update_scan_failed", False))
-        blocked = await call(services.update_block_reason, found) if found is not None else ""
-    waiting = silent = hold = None
-    skipped = []
-    if hasattr(services, "update_waiting"):               # сверка с другой ролью — без сети
-        hold = await call(services.update_hold)
-        waiting = await call(services.update_waiting)
-        silent = await call(services.update_silent_peers, found) if found is not None else None
-        skipped = await call(services.update_skipped)
-    text = texts.settings_upd_text(None, found, blocked,
-                                   scan_failed=failed,
-                                   waiting=waiting, silent=silent, skipped=skipped, hold=hold,
-                                   bot_username=getattr(services, "bot_username", "") or "")
-    return text, keyboard(br, await call(services.updates_muted),
-                          target_tag=found.tag if found is not None else "", blocked=blocked)
+    if key != "cached":
+        _found, failed = await call(services.update_scan_checked)
+    target = None if await call(services.fleet_running) else await call(services.fleet_target)
+    blocked = await call(services.update_block_reason, target) if target is not None else ""
+    plan = await call(services.fleet_plan, target)
+    skipped = await call(services.update_skipped)
+    text = ft.fleet_section(plan, scan_failed=failed, skipped=skipped,
+                            bot_username=getattr(services, "bot_username", "") or "")
+    if blocked:
+        text += f"\n⛔ Обновление до {target.tag} сейчас недоступно: {ui.toast(blocked, 1000)}"
+    running = (plan.get("run") or {}).get("state") in ("running", "rolling_back")
+    return text, keyboard(br, await call(services.updates_muted), target_tag=target.tag if target else "",
+                          blocked=blocked, retry=_retry_due(plan), running=running)
 
 
 async def open(ctx) -> bool:  # noqa: A001 — имя действия раздела
@@ -97,6 +96,18 @@ async def toggle(ctx) -> bool:
     return True
 
 
+async def _retry(ctx):
+    """«🔁 Повторить» в разделе: ход заново (живое сообщение) или догоны заново."""
+    await fleet_flow.retry(ctx.cb, ctx.services)
+    if not await call(ctx.services.fleet_running):
+        from . import render
+        await render(ctx.cb, ctx.br, ctx.services, ID, "cached")
+    return None
+
+
+ACTIONS: dict = {"retry": _retry}
+
+
 async def _main_anew(message, services, keep_id=None) -> None:
     """Главная роли новым сообщением — выход из потока обновления."""
     from awgbot.bot import screens
@@ -104,18 +115,6 @@ async def _main_anew(message, services, keep_id=None) -> None:
     parts = await screens.render("main", services=services, role="admin", chat_id=message.chat.id)
     if parts is not None:
         await send_menu(message, services, *parts, keep_id=keep_id)
-
-
-async def install(cb: CallbackQuery, services, callback_data: UpdateCB | None = None, br=None) -> None:
-    """«⬆️ Обновить до vX» — ставится только тег кнопки; отказ — всплывашка,
-    а раздел, если кнопка была в нём, перерисовывается из кэша."""
-    from . import render
-
-    async def _rerender():
-        await render(cb, br, services, ID, "cached")
-    await updates_flow.install(cb, services, return_panel=_main_anew,
-                               tag=callback_data.tag if callback_data is not None else "",
-                               rerender=_rerender if br is not None else None)
 
 
 async def menu(cb: CallbackQuery, services, state: FSMContext) -> None:
@@ -129,10 +128,44 @@ async def mute(cb: CallbackQuery, services) -> None:
 
 
 def register_update_buttons(router, br=None) -> None:
-    """UpdateCB: установка, «В меню» на итоге, «Не уведомлять» — на роутере
-    общих разделов, у обеих ролей; br — словарь роли (перерисовка раздела)."""
+    """UpdateCB — на роутере общих разделов. Основной бот: диалог, ход,
+    «🔁 Повторить», «В меню» на итоге, «Не уведомлять». Агент (роль без
+    has.fleet): «В меню» на итоге — живая, прочие кнопки прежних «⬆️
+    Обновлений» — «Кнопка устарела…»."""
+    if br is not None and not br.has.fleet:
+        # «⬅️ В меню» на итоге обновления (руками, awg-bot update) у агента живая
+        router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
+
+        async def _agent_stale(cb: CallbackQuery, services) -> None:
+            await cb.answer(AGENT_STALE, show_alert=True)
+            try:
+                await cb.message.edit_reply_markup(reply_markup=None)
+            except Exception:                             # noqa: BLE001
+                pass
+        router.callback_query(UpdateCB.filter())(_agent_stale)
+        router.callback_query(GwCB.filter(F.action.in_({"updates", "upd_toggle"})))(_agent_stale)
+        return
+
+    async def _rerender(cb, services):
+        from . import render
+        await render(cb, br, services, ID, "cached")
+
     async def _install(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
-        await install(cb, services, callback_data, br)
+        await fleet_flow.install(cb, services, callback_data.tag,
+                                 rerender=(lambda: _rerender(cb, services)) if br is not None else None)
+
+    async def _go(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
+        await fleet_flow.start(cb, services, callback_data.tag)
+
+    async def _cancel(cb: CallbackQuery, services) -> None:
+        await fleet_flow.cancel(cb, services, rerender=(lambda: _rerender(cb, services)) if br is not None else None)
+
+    async def _retry_btn(cb: CallbackQuery, services) -> None:
+        await fleet_flow.retry(cb, services)
+
     router.callback_query(UpdateCB.filter(F.action == "install"))(_install)
+    router.callback_query(UpdateCB.filter(F.action == "go"))(_go)
+    router.callback_query(UpdateCB.filter(F.action == "cancel"))(_cancel)
+    router.callback_query(UpdateCB.filter(F.action == "retry"))(_retry_btn)
     router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
     router.callback_query(UpdateCB.filter(F.action == "mute"))(mute)

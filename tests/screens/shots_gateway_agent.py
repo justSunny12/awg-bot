@@ -72,14 +72,8 @@ class _Host:
     mail: bool = False                                     # ящик подключён
     mail_last: str = ""                                    # ok | fail — последняя проверка
     mail_error: str = ""                                   # проверка/тест-письмо падают
-    release: updates.Release | None = None                 # цель обновления
-    scan_fails: bool = False                               # список релизов недоступен
-    update_error: str = ""                                 # apply_update падает
-    update_tag: str = ""                                   # «⬆️ Доступна vX» с прошлой проверки
-    waiting: tuple = ()                                    # (тег, нужная версия сервера): релиз ждёт сервер AWG
+    upd: dict | None = None                                # команда набора с сервера AWG (gw_upd)
     server_version: str = ""                               # версия сервера из role: "" | old | X.Y.Z
-    hold: bool = False                                     # окно ожидания после старта: role ещё не было
-    muted: bool = False
     cfg_ask: tuple = ()                                    # висящие вопросы документа: uplink | mail, по порядку
     keep_ask: dict | None = None                           # висящий вопрос о настройках с сервера (keep_back)
     rekey: dict = field(default_factory=dict)              # переход ключей линка (link.txn): {"id", "state", "fp"}
@@ -270,17 +264,9 @@ class _Agent(GatewayServices):
             raise mail.MailError(self.h.mail_error)
         self._email_mark_ok()
 
-    # ── обновления ──────────────────────────────────────────────────────────
-    def update_next(self):
-        self.update_scan_failed = self.h.scan_fails
-        return None if self.h.scan_fails else self.h.release
-
-    def update_block_reason(self, release=None):
-        return ""
-
-    def apply_update(self, release):
-        if self.h.update_error:
-            raise updates.UpdateError(self.h.update_error)
+    # ── обновления: только по команде сервера AWG ──────────────────────────
+    def apply_update(self, release, *, hold: bool = False):
+        pass
 
     # ── документ: ключи линка и аплинк ──────────────────────────────────────
     def rekey_state(self):
@@ -348,19 +334,12 @@ def _agent(**opts):
             elif h.mail_last == "fail":
                 services.db.set_state(services._MAIL_CHECK_KEY,
                                       "fail|2026-09-14T09:30:00+05:00|SMTP: авторизация отклонена")
-        if h.update_tag:
-            services.db.set_state(services._AVAILABLE_KEY, h.update_tag)
-        if h.muted:
-            services.mute_updates()
+        if h.upd:
+            services._upd_save({"id": "a1b2c3d4", "prev": "v1.2.3", **h.upd})
         if h.server_version:
             services.db.set_state(services._LINK_SERVER_VERSION_KEY, h.server_version)
         if h.lan_virtual:
             services.db.set_state(services._LINK_LAN_VIRTUAL_KEY, " ".join(h.lan_virtual))
-        if h.hold:
-            services.update_hold_start()
-        if h.waiting:
-            import json
-            services.db.set_state(services._WAITING_KEY, json.dumps({"tag": h.waiting[0], "need": h.waiting[1]}))
         for section in h.cfg_ask:
             # сервер прислал своё, отличное от стоящего: вопрос повис (как после документа)
             if section == "uplink":

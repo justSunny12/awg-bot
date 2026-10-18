@@ -276,12 +276,3 @@ def test_handshake_without_the_full_year():
     assert got.endswith(" (UTC+5)") and len(got.split()[0]) == 5, got
 
 
-def test_hold_toast_puts_the_deadline_first():
-    """Всплывашка окна ожидания: «до …» первым — длинные имена режет хвост, а
-    не предел окна (≤ 200 знаков)."""
-    from awgbot.bot import texts, ui
-    hold = {"until": _dt(2026, 9, 27, 12, 15), "waiting": ["Шлюз-с-очень-длинным-именем-" + "x" * 60] * 3}
-    toast = ui.toast(texts.update_hold_line(hold, toast=True), html=True)
-    assert toast.startswith("⏳ До 12:15 (UTC+5) жду связи со шлюзами после перезапуска: ")
-    assert texts.update_hold_line({"until": _dt(2026, 9, 27, 12, 15), "role": "gateway"}) == \
-        "⏳ Жду связи с сервером AWG после перезапуска — до 12:15 (UTC+5)"

@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import types
 
 import pytest
 
@@ -125,9 +124,6 @@ def _transit_status():
 
 async def _role(svc, monkeypatch, **fields) -> None:
     """`role` от сервера через настоящий разбор канала агента."""
-    async def no_regate(services, **kw):
-        return None
-    monkeypatch.setattr(linkclient, "update_regate", no_regate)
     await linkclient.LinkClient(svc)._dispatch({"t": "role", "active": True, "standby": False,
                                                 "name": "NASPi", **fields})
 
@@ -223,45 +219,13 @@ async def test_link_threshold_absent_in_the_config_is_written_in_seconds(svc, fa
 
 # ── 💾 бэкапы ────────────────────────────────────────────────────────────────
 
-# ── ⬆️ обновления ────────────────────────────────────────────────────────────
+# ── ⬆️ обновления: у агента их нет — его обновляет сервер AWG ───────────────
 
-@pytest.fixture()
-def upd(svc, monkeypatch, store):
-    """Проверка обновлений без сети: счётчик походов к списку релизов."""
-    from awgbot.infra import updates
-    # поколение ядра 0 — блокировка обновления (update_block_reason) не срабатывает
-    scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", title="", awg_generation=lambda: 0),
-             "fail": False, "calls": 0}
-
-    def _next(max_generation=None, **_):
-        scene["calls"] += 1
-        if scene["fail"]:
-            raise updates.UpdateError("GitHub не ответил")
-        return scene["next"]
-    monkeypatch.setattr(updates, "next_release", _next)
-    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.2.0")
-    store["updates.poll_schedule"] = "day"
-    return scene
-
-
-async def test_a_failed_check_keeps_the_found_version(svc, fake_bot, upd):
-    """Сбой проверки не стирает найденную раньше версию: иначе строка
-    «⬆️ Доступна vX» на панели гаснет от каждого таймаута GitHub."""
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_screen(cb, svc)
-    upd["fail"] = True
-    await gh.gw_updates_screen(cb, svc)
-    assert upd["calls"] == 2, "проверка при открытии не сходила к списку релизов"
-    assert svc.update_available_tag() == "v3.2.1", "сбой проверки стёр найденную версию"
-
-
-async def test_never_from_an_old_config_becomes_month_and_mute_at_agent_start(tmp_path, monkeypatch):
-    """То же при старте агента — до первого открытия раздела: иначе до него
-    периодическая проверка спит, и строка «⬆️ Доступна vX» молчит."""
+async def test_agent_start_wipes_the_keys_of_its_former_updates(tmp_path, monkeypatch):
+    """Первый старт 3.4.0: ключи прежних «⬆️ Обновлений» агента (цель,
+    объявленное, ожидание, список и метаданные, мьют) — прочь (Р3)."""
+    from awgbot.domain.gateway.upd import LEGACY_KEYS
     from awgbot.runtime import main as rt
-    from tests.conftest import restore_settings
-    (tmp_path / "updates.yaml").write_text('poll_schedule: "never"\npoll_hour: 10\npoll_minute: 0\n',
-                                           encoding="utf-8")
 
     class _Stop(Exception):
         pass
@@ -269,49 +233,19 @@ async def test_never_from_an_old_config_becomes_month_and_mute_at_agent_start(tm
     def _no_bot(*a, **k):
         raise _Stop()
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "gw.db")
+    d = Database(tmp_path / "gw.db")
+    d.init_schema()
+    for key in LEGACY_KEYS:
+        d.set_state(key, "1")
+    d.close()
     monkeypatch.setattr(rt, "Bot", _no_bot)
-    settings.init(tmp_path)
+    with pytest.raises(_Stop):
+        await rt.run_gateway()
+    d = Database(tmp_path / "gw.db")
     try:
-        with pytest.raises(_Stop):
-            await rt.run_gateway()
-        assert settings.get("updates.poll_schedule") == "month"
-        assert "never" not in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
-        d = Database(tmp_path / "gw.db")
-        try:
-            assert GatewayServices(d).updates_muted(), "уведомления при «никогда» не выключены"
-        finally:
-            d.close()
+        assert [k for k in LEGACY_KEYS if d.get_state(k)] == []
     finally:
-        restore_settings()
-
-
-async def test_an_ordinary_schedule_is_left_alone_at_agent_start(tmp_path, monkeypatch):
-    """«день» при старте не трогается и уведомления не глушатся — починка
-    только для «никогда»."""
-    from awgbot.runtime import main as rt
-    from tests.conftest import restore_settings
-    (tmp_path / "updates.yaml").write_text('poll_schedule: "day"\npoll_hour: 10\npoll_minute: 0\n',
-                                           encoding="utf-8")
-
-    class _Stop(Exception):
-        pass
-
-    def _no_bot(*a, **k):
-        raise _Stop()
-    monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "gw.db")
-    monkeypatch.setattr(rt, "Bot", _no_bot)
-    settings.init(tmp_path)
-    try:
-        with pytest.raises(_Stop):
-            await rt.run_gateway()
-        assert settings.get("updates.poll_schedule") == "day"
-        d = Database(tmp_path / "gw.db")
-        try:
-            assert not GatewayServices(d).updates_muted()
-        finally:
-            d.close()
-    finally:
-        restore_settings()
+        d.close()
 
 
 # ── мелочи, которые люди видят каждый день ───────────────────────────────────

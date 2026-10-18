@@ -54,11 +54,10 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     история ведётся для /start."""
     st = await pkg._status(services, fresh)
     lan = bool(getattr(st, "lan", None))
-    tag = await call(services.update_available_tag)
-    wait = await _update_wait(services, tag)
+    upd = await _upd(services)
     pending = await call(services.cfg_questions)        # вопросы с сервера AWG ждут человека
-    text = texts.gateway_panel(st, tag, linkclient.view(), pending, wait, _bot_username(services))
-    markup = kb.gateway_panel_kb(pending=len(pending), lan=lan, update_tag=tag, broken=_has_problems(st))
+    text = texts.gateway_panel(st, upd, linkclient.view(), pending, _bot_username(services))
+    markup = kb.gateway_panel_kb(pending=len(pending), lan=lan, broken=_has_problems(st))
     if cb is not None:
         await edit_nav(cb, services, text, markup)
     else:
@@ -77,22 +76,22 @@ def _bot_username(services) -> str:
     return getattr(services, "bot_username", "") or ""
 
 
-async def _update_wait(services, tag: str):
-    """Ожидание сервера AWG — строкой панели, только когда «⬆️ Доступна» нет."""
-    if tag or not hasattr(services, "update_waiting"):
-        return None
-    return await call(services.update_waiting)
+async def _upd(services) -> dict:
+    """Команда обновления с сервера AWG — строкой панели (Т-А1, Т-А3)."""
+    if not hasattr(services, "upd_panel"):
+        return {}
+    upd = await call(services.upd_panel)
+    if upd.get("state") == "failed":
+        upd["server_bot"] = await call(services.link_server_bot)
+    return upd
 
 
 async def _panel_parts(services, *, fresh: bool = False):
     """Текст и клавиатура панели агента — для показа без входящего сообщения."""
     st = await pkg._status(services, fresh=fresh)
     pending = await call(services.cfg_questions)
-    tag = await call(services.update_available_tag)
-    return (texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
-                                _bot_username(services)),
-            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag,
-                              broken=_has_problems(st)))
+    return (texts.gateway_panel(st, await _upd(services), linkclient.view(), pending, _bot_username(services)),
+            kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), broken=_has_problems(st)))
 
 
 async def panel_main_parts(services, chat_id: int):
@@ -156,12 +155,9 @@ async def _refresh_by_link(message: Message, services) -> None:
     except Exception:                                  # noqa: BLE001
         pass
     st = await pkg._status(services, fresh=True)
-    tag = await call(services.update_available_tag)
     pending = await call(services.cfg_questions)
-    text = texts.gateway_panel(st, tag, linkclient.view(), pending, await _update_wait(services, tag),
-                               _bot_username(services))
-    markup = kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), update_tag=tag,
-                              broken=_has_problems(st))
+    text = texts.gateway_panel(st, await _upd(services), linkclient.view(), pending, _bot_username(services))
+    markup = kb.gateway_panel_kb(bool(getattr(st, "lan", None)), pending=len(pending), broken=_has_problems(st))
     nav_id = await call(services.db.get_nav_message_id, message.chat.id)
     if nav_id is not None:
         try:

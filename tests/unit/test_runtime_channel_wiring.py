@@ -49,26 +49,26 @@ def test_the_admin_resolver_is_ensured_on_start_and_watched_on_the_monitor_tick(
         "уведомления монитора резолвера админа никуда не уходят"
 
 
-def test_the_update_hook_and_the_window_are_wired_before_the_channel_starts():
-    """Пересчёт цели по событиям канала уведомляет крючком main: без него
-    обновлённый шлюз открыл бы серверу цель молча (до плановой проверки — до
-    месяца). Окно ожидания после старта открывается до планировщика: иначе
-    стартовая проверка решила бы по старым версиям."""
+def test_the_fleet_hook_is_wired_before_the_channel_starts_and_no_update_window_is_left():
+    """Набор обновлений говорит живым сообщением крючком main — он стоит раньше
+    слушателя (шлюз, вышедший на связь на старте, уже двигает ход); после
+    слушателя — старт набора (откат сервера сторожем, ход с записанного).
+    Окна ожидания после старта и пересчёта цели по версиям другой стороны
+    нет ни у одной роли (порядок — по hello, правило «ждать факта»)."""
     main = (ROOT / "main" / "client.py").read_text(encoding="utf-8")
-    assert main.count("set_on_update(") == 1
-    assert main.index("set_on_update(") < main.index("scheduler.start()") < main.index("linkserver.ensure(services)")
-    assert main.index("services.update_hold_start()") < main.index("scheduler.start()")
-    assert "notify_update_available(bot, services, nxt)" in main.split("set_on_update(", 1)[0][-600:]
+    assert main.count("set_on_fleet(") == 1
+    assert main.index("set_on_fleet(") < main.index("scheduler.start()") < main.index("linkserver.ensure(services)")
+    assert main.index("linkserver.ensure(services)") < main.index("_fleet_upd.on_start(services)")
     gw = (ROOT / "main" / "gateway.py").read_text(encoding="utf-8")
-    assert gw.count("linkclient.set_on_update(") == 1
-    assert gw.index("services.update_hold_start()") < gw.index("setup_gateway_scheduler(services, bot)")
-    assert gw.index("linkclient.set_on_update(") < gw.index("linkclient.ensure(services)")
+    for src in (main, gw):
+        assert "update_hold_start" not in src and "set_on_update(" not in src
+    assert "services.upd_legacy_drop()" in gw
 
 
-def test_the_liveness_tick_keeps_seen_true_and_regates():
+def test_the_liveness_tick_keeps_seen_true_and_ticks_the_fleet():
     ls = (ROOT / "linkserver" / "__init__.py").read_text(encoding="utf-8")
     body = ls.split("async def liveness_tick", 1)[1].split("async def monitor_tick", 1)[0]
-    assert "gwlink_seen_touch" in body and "update_regate(services, force=n % 20 == 0)" in body
+    assert "gwlink_seen_touch" in body and "fleet_run_tick(services)" in body
+    assert "update_regate" not in ls
     lc = (ROOT / "linkclient" / "__init__.py").read_text(encoding="utf-8")
-    tick = lc.split("async def on_tick", 1)[1].split("\nasync def ", 1)[0]
-    assert "update_regate(services, force=False)" in tick, "конец окна после старта у агента — без события"
+    assert "update_regate" not in lc

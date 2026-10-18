@@ -1,22 +1,19 @@
 """cache.py — часть пакета selfupdate (см. __init__): сохранённый список
-релизов, кэш метаданных, выбор цели под замком и пересчёт без сети.
+релизов, кэш метаданных и выбор цели под замком.
 
-Проверка по расписанию ходит на GitHub раз в день, неделю или месяц, а версии
-другой стороны меняются когда угодно: шлюз обновился, сервер прислал новую
-версию в `role`. Ходить на GitHub по каждому такому событию — маячок, ждать
-расписания — месяц не видеть обновлённых шлюзов. Поэтому проверка сохраняет
-список релизов новее установленного (с метаданными и телами — уведомлению
-нужен список изменений), а событие пересчитывает цель по нему (update_regate).
+Проверка по расписанию ходит на GitHub раз в день, неделю или месяц и
+сохраняет список релизов новее установленного и линии совместимости (с
+метаданными и телами — уведомлению нужен список изменений): по нему без сети
+набор обновлений (domain/fleet) строит план, версии ролей в выпуске и цель
+кнопки.
 
-Один замок на выбор и запись. Плановая проверка, пересчёт по снимку и кнопка
-решают в разных потоках; выбор цели и запись его результата
-(update_available_tag, update_waiting, отметка уведомления) — под одним
-замком процесса, иначе поздний поток перетёр бы свежий вывод устаревшим.
-Версии другой стороны читаются ПОСЛЕ ответа GitHub, внутри замка: сеть
-отвечает секунды, и снятые до неё версии к решению уже устарели бы.
+Один замок на выбор и запись. Плановая проверка и кнопка решают в разных
+потоках; выбор цели и запись его результата (update_available_tag, отметка
+уведомления) — под одним замком процесса, иначе поздний поток перетёр бы
+свежий вывод устаревшим.
 
 Метаданные выпущенного тега не меняются — их кэш (update_meta) держится по
-тегу и digest ассета; хранится только для релизов новее установленного.
+тегу и digest ассета.
 """
 from __future__ import annotations
 
@@ -55,9 +52,9 @@ class SelfUpdateCacheMixin:
         return _TL
 
     def _update_gated(self) -> bool:
-        """У роли есть другая сторона — выбор идёт полным путём (метаданные с
-        кэшем, замок, ожидание); без неё — как до сверки."""
-        return callable(getattr(self, "update_peers", None))
+        """Роль ведёт набор (основной бот: fleet_pick) — выбор идёт полным
+        путём: список сохраняется, метаданные — с кэшем, выбор — под замком."""
+        return callable(getattr(self, "fleet_pick", None))
 
     def _update_meta_cache(self) -> dict:
         data = self.db.get_state_json(self._META_KEY, {})
@@ -67,8 +64,14 @@ class SelfUpdateCacheMixin:
         """Скачанный список (только новее установленного) и кэш метаданных — в
         state: по ним пересчёт без сети и следующая проверка без лишних
         запросов."""
+        from awgbot.core.compat import COMPAT_FLOOR, version_key
         installed = updates.parse_version(config.INSTALLED_VERSION)
-        newer = [r for r in releases if installed is not None and r.version > installed]
+        floor = version_key(COMPAT_FLOOR)
+        # новее установленного — цель; сам установленный (и его база X.Y.Z) —
+        # «сборка из выпуска»; в линии совместимости — версии ролей в выпуске
+        # набора (шлюзы идут за сервером AWG и вниз)
+        newer = [r for r in releases if installed is not None
+                 and (r.version >= installed or r.version[:3] == installed[:3] or r.version[:3] >= floor)]
         tags = {r.tag for r in newer}
         if isinstance(meta_cache, dict):
             self.db.set_state(self._META_KEY, json.dumps(
@@ -80,11 +83,13 @@ class SelfUpdateCacheMixin:
                           "meta": r.meta, "meta_bad": r.meta_bad} for r in newer],
         }, ensure_ascii=False))
 
-    def _update_cached_releases(self):
+    def _update_cached_releases(self, strict: bool = True):
         """Сохранённый список (Release по возрастанию) или None: проверки не
-        было или она была на другой установленной версии."""
+        было или (strict) она была на другой установленной версии. Набору
+        годится и список прежней версии (strict=False): выпуски линии в нём
+        те же, а цели выше установленной выбор отсеивает сам."""
         data = self.db.get_state_json(self._RELEASES_KEY, {})
-        if not isinstance(data, dict) or data.get("installed") != config.INSTALLED_VERSION:
+        if not isinstance(data, dict) or (strict and data.get("installed") != config.INSTALLED_VERSION):
             return None
         out = []
         for r in data.get("releases") or []:
@@ -99,21 +104,12 @@ class SelfUpdateCacheMixin:
         out.sort(key=lambda x: x.version)
         return out
 
-    def _update_choose(self, installed: tuple, releases: list, role: str, ceiling,
-                       by_regate: bool = False):
-        """(цель, отложено) — выбор и запись тега и ожидания; зовётся под
-        замком. Окно после старта открыто — решение отложено, записи нет.
-        Закрывает окно только выбор (читатели его не трогают): закрыл не
-        пересчёт — пересчёт всё равно нужен (флаг due, hold.py) — он и
-        объявит цель."""
-        if self.update_hold() is not None:
-            return None, True
-        self._update_hold_close(due=not by_regate)
-        gate = self._update_gate(self._update_peers())     # версии — сейчас, после сети
-        target = updates.pick_target(installed, releases, role, ceiling, gate)
+    def _update_choose(self, installed: tuple, releases: list, role: str, ceiling):
+        """Выбор цели и запись тега; зовётся под замком. Роль с набором —
+        цель набора (fleet_pick): новейший выпуск для любой роли."""
+        target = self.fleet_pick(installed, releases, ceiling)
         self.db.set_state(self._AVAILABLE_KEY, target.tag if target is not None else "")
-        self._update_note_waiting(installed, releases, role, ceiling, gate)
-        return target, False
+        return target
 
     def _update_decide(self, installed: tuple, releases: list, role: str, ceiling):
         """decide для updates.next_release: список пришёл из сети — сохранить и
@@ -121,37 +117,10 @@ class SelfUpdateCacheMixin:
         with _LOCK:
             _TL.decided = True
             self._update_store(releases, getattr(_TL, "meta_cache", None))
-            target, _held = self._update_choose(installed, releases, role, ceiling)
+            target = self._update_choose(installed, releases, role, ceiling)
             for r in updates.skipped(installed, releases):
                 log.warning("обновление: %s пропущен — %s", r.tag, r.skip_reason())
             return target
-
-    def update_regate(self, notify: bool = True):
-        """Версии другой стороны изменились — пересчитать цель по сохранённому
-        списку, без сети: тег «⬆️ Доступна vX» и ожидание. Вернуть Release, о
-        котором надо уведомить (допустимая цель новее объявленной — по
-        правилам update_to_notify), иначе None; notify=False — только
-        пересчитать (вызывающему нечем уведомить — уведомит следующий
-        пересчёт). Списка нет или идёт окно после старта — ничего не трогаем."""
-        if not self._update_gated():
-            return None
-        with _LOCK:
-            self.__dict__["_upd_hold_due"] = False            # пересчитываем — флаг снят
-            releases = self._update_cached_releases()
-            installed = updates.parse_version(config.INSTALLED_VERSION)
-            if releases is None or installed is None:
-                return None
-            before = self.db.get_state(self._AVAILABLE_KEY) or ""
-            target, held = self._update_choose(installed, releases, self._update_role(),
-                                               self._generation_ceiling(), by_regate=True)
-            if held:
-                return None
-            now = target.tag if target is not None else ""
-            if now != before:
-                log.info("обновление: цель пересчитана по версиям другой стороны — %s", now or "нет")
-            if not notify or target is None:
-                return None
-            return self.update_to_notify(target)
 
     def update_cached_release(self, tag: str):
         """Release из сохранённого списка по тегу или None — для раздела без

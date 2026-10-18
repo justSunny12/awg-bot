@@ -79,30 +79,6 @@ async def gw_bot_restart(cb: CallbackQuery, services):
     await pkg._shared(cb, GwCB(action="botrestart!"), services)
 
 
-async def gw_updates_screen(cb: CallbackQuery, services):
-    await pkg._shared(cb, GwCB(action="updates"), services)
-
-
-async def gw_updates_toggle(cb: CallbackQuery, services):
-    await pkg._shared(cb, GwCB(action="upd_toggle"), services)
-
-
-async def gw_update_install(cb: CallbackQuery, services, callback_data=None):
-    from awgbot.bot import roles
-    from awgbot.bot.sections import updates as _upd
-    await _upd.install(cb, services, callback_data, roles.GATEWAY)
-
-
-async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):
-    from awgbot.bot.sections import updates as _upd
-    await _upd.menu(cb, services, state)
-
-
-async def gw_update_mute(cb: CallbackQuery, services):
-    from awgbot.bot.sections import updates as _upd
-    await _upd.mute(cb, services)
-
-
 async def gw_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, services, state: FSMContext):
     from awgbot.bot.handlers.reply_commands import on_cancel_inline
     await on_cancel_inline(cb, callback_data, state, services, role="admin")

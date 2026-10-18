@@ -96,10 +96,12 @@ class _Host:
         self.script = tmp / "awg-bot.sh"
         _exe(self.script, src)
 
-    def run(self, *args: str, run_rc: int = 0, timer_rc: int = 3) -> subprocess.CompletedProcess:
+    def run(self, *args: str, run_rc: int = 0, timer_rc: int = 3, hold: bool = False) -> subprocess.CompletedProcess:
         env = {"PATH": f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin", "CALLS": str(self.calls),
                "RUN_RC": str(run_rc), "TIMER_RC": str(timer_rc),
                "AWG_UPDATE_PREV": str(self.inst / ".prev-code"), "HOME": str(self.tmp)}
+        if hold:
+            env["AWG_UPDATE_HOLD"] = "1"
         return subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True,
                               timeout=30, env=env)
 
@@ -361,3 +363,97 @@ def test_rescue_and_uninstall_disarm(script):
         "копия app.yaml снята раньше, чем вернула ключ"
     assert rescue.index("update_guard_disarm") < rescue.index('systemctl start "$SERVICE"')
     assert "update_guard_disarm" in _func(script, "cmd_uninstall")
+
+
+# ── шаг набора: прежнее держится до фиксации или отката всего набора ────────
+
+def _held(tmp_path) -> _Host:
+    """Шаг набора (hold) вышел на связь: бот поставил отметку и позвал --alive."""
+    host = _Host(tmp_path)
+    host.post_update(hold=True)
+    assert _guard_state(host)["HOLD"] == "1"
+    host.mark(host.new)
+    host.guard("--alive")
+    return host
+
+
+def test_with_hold_the_mark_lifts_the_guard_but_keeps_the_old_one(tmp_path):
+    host = _held(tmp_path)
+    assert not (host.data / "update-guard").exists(), "сторож остался после отметки"
+    assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old"
+    assert not (host.inst / ".prev-code").exists()
+    assert host.env_old.is_dir(), "прежнее окружение снято до фиксации набора"
+    assert "kernel prune" not in host.log(), "сборка ядра снята до фиксации набора"
+    hold = dict(ln.split("=", 1) for ln in (host.data / "update-hold").read_text(encoding="utf-8").splitlines())
+    assert hold["PREV"] == host.prev and hold["ENV"] == str(host.env_old)
+    assert (host.data / "update-hold.app.yaml").read_text(encoding="utf-8") == host.app_text
+
+
+def test_commit_drops_the_held_old_one_and_kernel_builds(tmp_path):
+    host = _held(tmp_path)
+    host.calls.write_text("", encoding="utf-8")
+    r = host.run("__update_commit")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (host.inst / ".hold-code").exists() and not host.env_old.exists()
+    assert not (host.data / "update-hold").exists() and not (host.data / "update-hold.app.yaml").exists()
+    assert "kernel prune" in host.log() and host.whose() == "new" and host.venv() == host.env_new
+
+
+def test_revert_brings_the_held_one_back_without_network(tmp_path):
+    host = _held(tmp_path)
+    host.calls.write_text("", encoding="utf-8")
+    assert host.run("__update_revert", "--check").returncode == 0
+    r = host.run("__update_revert")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert host.whose() == "old" and host.venv() == host.env_old and not host.env_new.exists()
+    assert host.app.read_text(encoding="utf-8") == host.app_text, "ключ пояса не вернулся"
+    assert not (host.inst / ".hold-code").exists() and not (host.data / "update-hold").exists()
+    log = host.log()
+    assert log.index("systemctl stop awg-bot") < log.index("systemctl start awg-bot")
+
+
+def test_revert_without_anything_to_go_back_to_is_code_2(tmp_path):
+    host = _Host(tmp_path)
+    import shutil
+    shutil.rmtree(host.inst / ".prev-code")
+    assert host.run("__update_revert", "--check").returncode == 2
+    assert host.run("__update_revert").returncode == 2
+    assert host.whose() == "new" and "systemctl stop awg-bot" not in host.log()
+
+
+def test_revert_of_a_step_not_yet_alive_uses_the_guarded_old_one(tmp_path):
+    host = _Host(tmp_path)
+    host.post_update(hold=True)
+    r = host.run("__update_revert")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert host.whose() == "old" and host.venv() == host.env_old
+    assert not (host.data / "update-guard").exists()
+
+
+def test_a_chain_under_one_command_holds_the_very_first_old_one(tmp_path):
+    """Две ступени одной командой: промежуточная снимается, когда следующая
+    вышла на связь; откат набора — сразу на самое первое прежнее."""
+    import shutil
+    host = _held(tmp_path)
+    # вторая ступень: промежуточный код (new) — в .prev-code, на месте — третий
+    shutil.move(str(host.inst / "whose"), str(tmp_path / "whose-new"))
+    (host.inst / ".prev-code").mkdir()
+    _tree(host.inst / ".prev-code", host.new, "3.4.0", "new")
+    _tree(host.inst, "3.4.2", "3.4.0", "third")
+    env_third = host.inst / ".venvs" / "C"; env_third.mkdir()
+    (host.inst / "venv").unlink(); (host.inst / "venv").symlink_to(env_third)
+    (host.inst / ".venvs" / ".prev").write_text(f"{host.env_new}\n", encoding="utf-8")
+    host.post_update(hold=True)
+    host.mark("3.4.2")
+    host.guard("--alive")
+    assert not (host.inst / ".prev-code").exists() and not host.env_new.exists(), "промежуточная ступень осталась"
+    assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old" and host.env_old.is_dir()
+    host.run("__update_revert")
+    assert host.whose() == "old" and host.venv() == host.env_old and not env_third.exists()
+
+
+def test_commit_and_revert_are_dispatched(script):
+    assert re.search(r"^\s+__update_commit\)\s+cmd_update_commit ;;$", script, re.M)
+    assert re.search(r"^\s+__update_revert\)\s+cmd_update_revert \"\$@\" ;;$", script, re.M)
+    upd = _func(script, "cmd_update")
+    assert "! -name .hold-code" in upd and "! -name .hold-code" in _func(script, "restore_prev_code")

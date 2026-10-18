@@ -1,7 +1,8 @@
 """
 linkserver/ — сторона ВПС для канала ВПС ↔ шлюз (части: common — сессия и предел hello;
 session — слушатели и сессии; inbound — разбор входящих; deliver — доставки; rekey — смена ключей линка: link_next,
-link_go, переключение ВПС, фиксация первым шагом hello, сроки; relay — бэкап сервера из чата бота шлюза).
+link_go, переключение ВПС, фиксация первым шагом hello, сроки; relay — бэкап сервера из чата бота шлюза;
+upd — набор обновлений: команды шлюзам, их ответы, такт набора).
 
 Слушатель живёт ТОЛЬКО на адресах линков: публичный адрес сервера порт канала
 не показывает даже при снятом файерволе. Коннект всегда устанавливает шлюз —
@@ -59,7 +60,6 @@ import asyncio
 import logging
 
 from awgbot.core import config
-from awgbot.runtime.updatehooks import UpdateHook
 from awgbot.util import gwlink
 
 from .common import HELLO_TIMEOUT, _Session
@@ -106,22 +106,6 @@ _on_installed = None
 _on_restore = None
 _on_notes = None
 _on_rekeyed = None
-_update_hook = UpdateHook()             # пересчёт цели обновления — общий с другой ролью (runtime/updatehooks)
-
-
-def set_on_update(fn) -> None:
-    """Крючок уведомления о версии (async fn(release)): версии агентов из
-    hello или снимка открыли серверу новую цель обновления — то же «Доступна
-    новая версия», что шлёт проверка по расписанию. Ставит main."""
-    _update_hook.fn = fn
-
-
-async def update_regate(services, *, force: bool = True) -> None:
-    """Пересчёт цели обновления без сети и уведомление крючком main
-    (runtime/updatehooks — одна реализация на обе роли)."""
-    await _update_hook.regate(services, force=force)
-
-
 def set_on_rekeyed(fn) -> None:
     """Ключи линка слота сменены (async fn(slot_id)): прежний файл конфигурации
     слота в чате админа больше не годится — его убирает main."""
@@ -172,8 +156,9 @@ async def liveness_tick(services) -> None:
     """Такт живости (30 с): слушатели по слотам, мёртвые сессии долой, роль —
     и только каждый четвёртый такт полная сверка доставки в отдельной задаче:
     ~20 запросов к БД на сессию каждые 30 с ради редкого расхождения — лишнее.
-    На тех же тактах — время «последний раз на связи» живых сессий; раз в 20
-    тактов и по концу окна после старта — пересчёт цели обновления без сети."""
+    На тех же тактах — время «последний раз на связи» живых сессий; каждый
+    такт — такт набора обновлений (шаг шлюза, пропавшего посреди обновления,
+    повторы догона)."""
     global _server
     if config.ROLE == "gateway":
         return
@@ -203,9 +188,8 @@ async def liveness_tick(services) -> None:
                 await asyncio.to_thread(services.gwlink_seen_touch, live)
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: время связи не записано: %s", e)
-    # цель обновления: страховочно раз в ~10 минут (событие могло потеряться)
-    # и сразу, как закрылось окно ожидания после старта
-    await update_regate(services, force=n % 20 == 0)
+    from . import upd as _upd
+    await _upd.fleet_run_tick(services)
 
 
 async def monitor_tick(services) -> None:
@@ -226,5 +210,7 @@ async def shutdown() -> None:
         _server = None
 
 
-__all__ = ["set_on_update", "update_regate", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+from .upd import set_on_fleet  # noqa: E402
+
+__all__ = ["set_on_fleet", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

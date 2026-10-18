@@ -80,6 +80,8 @@ KEYS: dict[str, SlotKey] = {
     "routing_gw_{}_down_since": SlotKey(SLOT, "slot"),
     # копия настроек шлюза: нужна новому устройству слота — переживает замену
     "gwkeep": SlotKey(SLOT, "keep", OFFER),
+    # шлюз в наборе обновлений (domain/fleet): команда, её итог и повторы
+    "gwupd": SlotKey(SLOT, "fleet"),
 }
 
 

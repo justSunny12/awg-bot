@@ -54,9 +54,8 @@ async def run_gateway() -> None:
     db.init_schema()
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
-    services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
     services.adopt_installed_digest()       # digest выпуска от установщика или `awg-bot update` — в базу
-    services.update_hold_start()            # цель обновления — после первого role сервера (≤ 15 мин)
+    services.upd_legacy_drop()              # ключи прежних «⬆️ Обновлений» агента: сам он больше не обновляется
     try:
         services.backup_leftovers_drop()    # своих копий у шлюза нет: фраза, отметки, ключи conf — прочь
     except Exception as e:                               # noqa: BLE001
@@ -215,13 +214,6 @@ async def run_gateway() -> None:
             from awgbot.bot.handlers import gateway as gateway_handlers
             await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
         linkclient.set_ask(_chan_ask)
-
-        async def _chan_update(nxt) -> None:
-            # версия сервера в role открыла новую цель обновления — то же
-            # уведомление, что у проверки по расписанию (один раз на тег)
-            from awgbot.runtime import scheduler as _scheduler
-            await _scheduler.notify_update_available(bot, services, nxt)
-        linkclient.set_on_update(_chan_update)
         linkclient.ensure(services)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: клиент не поднят: %s", e)

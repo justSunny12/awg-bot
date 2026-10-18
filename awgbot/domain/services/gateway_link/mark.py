@@ -266,12 +266,6 @@ class MarkMixin:
             self.reconcile_routing()
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_remove: реконсиляция: %s", e)
-        try:
-            # снятый шлюз больше не держит обновление сервера: пересчёт без сети;
-            # уведомить отсюда нечем — уведомит страховочный пересчёт такта канала
-            self.update_regate(notify=False)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gateway_remove: пересчёт цели обновления: %s", e)
         return prev
 
     def gateway_set_preferred(self, slot_id: Optional[int]) -> None:

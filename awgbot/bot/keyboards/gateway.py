@@ -10,22 +10,20 @@ from awgbot.bot.callbacks import GwCB
 from .common import entry_tag, confirm
 
 
-def gateway_panel_kb(lan: bool = False, pending: int = 0, update_tag: str = "",
-                     broken: bool = False) -> InlineKeyboardMarkup:
+def gateway_panel_kb(lan: bool = False, pending: int = 0, broken: bool = False) -> InlineKeyboardMarkup:
     """Панель шлюза: [⏳ Ответить (N)] (ждут вопросы с сервера AWG) / [🩺 Здоровье]
     [🚑 Восстановить] (только при проблемах — иначе кнопка дублирует ту, что
-    есть в «🩺 Здоровье»; решение 16.10.2026) / [🔀 VPN-транзит] (когда включён) / [⬆️ vX] (доступно
-    обновление — ведёт в «⬆️ Обновления») [⚙️ Настройки]. Перечитать панель
+    есть в «🩺 Здоровье»; решение 16.10.2026) / [🔀 VPN-транзит] (когда включён) / [⚙️ Настройки].
+    Обновлений у агента нет — его обновляет сервер AWG. Перечитать панель
     живьём — ссылкой «обновлено … 🔄» в тексте, кнопки нет. Восстановление —
     через подтверждение: обрыв РФ у всех, пусть на секунды, не от промаха пальцем."""
     n = int(pending or 0)
-    tag = (update_tag if str(update_tag).startswith("v") else f"v{update_tag}") if update_tag else ""
     return ui.rows(
         (f"⏳ Ответить ({n})", GwCB(action="cfg_ask")) if n else None,
         [("🩺 Здоровье", GwCB(action="health")),
          ("🚑 Восстановить", GwCB(action="reassert")) if broken else None],
         ("🔀 VPN-транзит", GwCB(action="lan")) if lan else None,
-        [(f"⬆️ {tag}", GwCB(action="updates")) if tag else None, ("⚙️ Настройки", GwCB(action="settings"))])
+        ("⚙️ Настройки", GwCB(action="settings")))
 
 
 def gateway_cfg_question_kb(section: str) -> InlineKeyboardMarkup:

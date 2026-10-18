@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import json
 
-from awgbot.bot.callbacks import SetCB, UpdateCB
+from awgbot.bot.callbacks import SetCB
 
 from tests.screens.base import Shot
-from tests.screens.shots_admin_common import (_email_on, _fw, _people, _raise, _restarts, _upd_found,
-                                              _upd_hold, _upd_offline, _upd_silent, _upd_skipped,
-                                              _upd_waits)
+from tests.screens.shots_admin_common import _email_on, _fw, _people, _raise, _restarts
 
 
 # ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
@@ -244,35 +242,6 @@ def _mail_fails(services):
     return who
 
 
-def _upd_scan_failed(services):
-    """Проверка обновлений не дошла до списка релизов (сеть)."""
-    who = _people(services)
-    del services.update_scan                    # настоящая: признак сбоя ставит update_next
-
-    def nxt():
-        services.update_scan_failed = True
-    services.update_next = nxt
-    return who
-
-
-def _upd_blocked(services):
-    """Следующая версия найдена, но ставить её сейчас нельзя."""
-    who = _upd_found(services)
-    services.update_block_reason = lambda f: "идёт переезд на поколение 2"
-    return who
-
-
-def _upd_huge(services):
-    """Список изменений следующей версии не влезает в сообщение."""
-    import types
-    who = _upd_found(services)
-    found = types.SimpleNamespace(tag="v1.3.0", name="v1.3.0", url="https://example.org/r/v1.3.0",
-                                  body="\n".join(f"- пункт номер {i} с подробным текстом" for i in range(150)))
-    services.update_scan = lambda: found
-    services.update_next = lambda: found
-    return who
-
-
 def _awg_restart_fails(services):
     who = _restarts(services)
     services.restart_service = _raise("runtime", "docker: <no such container>")
@@ -317,34 +286,6 @@ SECTIONS = [
          title="длина кода циклом: 8 → 12"),
     Shot("adm.set.backup.when.bad", role="admin", steps=_BACKUP_WHEN + [("text", "31 12")], data=_people,
          title="день и час: день за 28 — переспрос"),
-    Shot("adm.set.upd.failed", role="admin", press=[SetCB(sec="upd")], data=_upd_scan_failed,
-         title="обновления: проверка не удалась"),
-    Shot("adm.set.upd.blocked", role="admin", press=[SetCB(sec="upd")], data=_upd_blocked,
-         title="обновления: новая есть, но сейчас недоступна — строка, а не кнопка"),
-    Shot("adm.set.upd.huge", role="admin", press=[SetCB(sec="upd")], data=_upd_huge,
-         title="обновления: список изменений обрезан со ссылкой на релиз"),
-    Shot("adm.set.upd.wait", role="admin", press=[SetCB(sec="upd")], data=_upd_waits("1.2.3"),
-         title="обновления: актуальна, v1.3.0 ждёт шлюз — строка ожидания"),
-    Shot("adm.set.upd.wait.many", role="admin", press=[SetCB(sec="upd")],
-         data=_upd_waits("1.2.3", "1.2.0", "", "1.2.1"),
-         title="обновления: ждёт четыре шлюза — три и «и ещё 1», версия неизвестна"),
-    Shot("adm.set.upd.silent", role="admin", press=[SetCB(sec="upd")], data=_upd_silent,
-         title="обновления: цель есть, выше ждёт шлюз, двое молчат — предупреждения"),
-    Shot("adm.upd.install.wait", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
-         data=_upd_waits("1.2.3"),
-         title="«⬆️ Обновить»: условие закрылось между проверкой и нажатием — alert с причиной"),
-    Shot("adm.upd.install.changed", role="admin", press=[UpdateCB(action="install", tag="v1.2.9")],
-         data=_upd_found, title="«⬆️ Обновить»: цель пересчитана другой — alert, установки нет"),
-    Shot("adm.upd.install.old_button", role="admin", press=["upd:install"], data=_upd_found,
-         title="«⬆️ Обновить» прежнего образца без тега — alert, установки нет"),
-    Shot("adm.upd.install.offline", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
-         data=_upd_offline, title="«⬆️ Обновить»: GitHub не ответил — своя всплывашка"),
-    Shot("adm.upd.install.hold", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")],
-         data=_upd_hold, title="«⬆️ Обновить» в окно ожидания после старта"),
-    Shot("adm.set.upd.skipped", role="admin", press=[SetCB(sec="upd")], data=_upd_skipped,
-         title="обновления: цель есть, v1.4.0 пропущен — метаданные не прочитаны"),
-    Shot("adm.set.upd.hold", role="admin", press=[SetCB(sec="upd")], data=_upd_hold,
-         title="обновления: окно ожидания после старта — жду шлюзы"),
     Shot("adm.set.svc.awg.fail", role="admin", press=[SetCB(sec="svc", act="do", key="awg!")],
          data=_awg_restart_fails, title="AWG не перезапущен — первой строкой раздела"),
 ]

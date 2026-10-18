@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import asyncio
 
-
-from awgbot.runtime import linkclient as pkg          # крючки — на пакете: их ставит main
-
 from .common import log
 
 
@@ -20,12 +17,6 @@ class DispatchMixin:
             raise
         except Exception as e:                            # noqa: BLE001
             log.warning("канал линка: сообщение «%s» не обработано: %s", msg.get("t"), e)
-
-    async def _update_regate(self) -> None:
-        """Версия сервера могла смениться — цель обновления агента
-        пересчитывается по сохранённому списку релизов, без сети; новая
-        допустимая — уведомление крючком main (один раз на тег)."""
-        await pkg.update_regate(self.services)
 
     async def _dispatch(self, msg: dict) -> None:
         if msg.get("t") == "lists_part":
@@ -48,7 +39,6 @@ class DispatchMixin:
                                     msg.get("lan_virtual"),
                                     # бот сервера — ссылкой на его чат (с 3.4.0; нет поля — пусто)
                                     msg.get("bot"))
-            await self._update_regate()
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него
@@ -77,6 +67,15 @@ class DispatchMixin:
             return
         if msg.get("t") in ("keep_ok", "keep_none", "keep_back"):
             await self._keep_reply(msg)
+            return
+        if msg.get("t") == "upd":
+            await self._upd_in(msg)
+            return
+        if msg.get("t") == "upd_commit":
+            await self._upd_commit(msg)
+            return
+        if msg.get("t") == "upd_revert":
+            await self._upd_revert(msg)
             return
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)

@@ -237,77 +237,10 @@ def _restarts(services):
     return who
 
 
-def _upd_found(services):
-    """Проверка обновлений нашла следующую версию."""
-    import types
-    who = _people(services)
-    found = types.SimpleNamespace(tag="v1.3.0", body="- исправлено одно\n- добавлено другое",
-                                  name="v1.3.0", url="https://example.org/r/v1.3.0")
-    services.update_scan = lambda: found
-    services.update_block_reason = lambda f: ""
-    services.update_next = lambda: found
-    services.update_available_tag = lambda: "v1.3.0"
-    services.apply_update = lambda nxt: None
-    return who
-
-
-def _upd_peers(*vers, fresh: bool = True, seen: str = "") -> list:
-    """Шлюзы для сверки версий: Pi5, Pi4, NASPi, … с данными версиями агента."""
-    from awgbot.domain.selfupdate import UpdatePeer
-    names = ("Pi5", "Pi4", "NASPi", "Дача", "Офис")
-    return [UpdatePeer(slot=i + 1, name=names[i], version=v, fresh=fresh, seen=seen) for i, v in enumerate(vers)]
-
-
-def _upd_waits(*vers, tag: str = "v1.3.0", need: str = "1.3.0"):
-    """Допустимой цели нет: tag ждёт шлюзы с агентами vers."""
-    def data(services):
-        who = _people(services)
-        services.update_scan = lambda: None
-        services.update_next = lambda: None
-        services.update_available_tag = lambda: ""
-        services.update_waiting = lambda: {"tag": tag, "need": need, "role": "client",
-                                           "peers": _upd_peers(*vers)}
-        return who
-    return data
-
-
-def _upd_silent(services):
-    """Цель v1.3.0 есть; выше v1.4.0 ждёт Pi5; Pi4 молчит с 10.09 на старом
-    агенте, шлюз 3 — ни разу не выходил на связь."""
-    from awgbot.domain.selfupdate import UpdatePeer
-    who = _upd_found(services)
-    services.update_waiting = lambda: {"tag": "v1.4.0", "need": "1.4.0", "role": "client",
-                                       "peers": _upd_peers("1.3.0")}
-    services.update_silent_peers = lambda f: {"tag": "v1.3.0", "need": "1.3.0", "peers": [
-        UpdatePeer(slot=2, name="Pi4", version="1.2.0", fresh=False, seen="2026-09-10T12:00:00+05:00"),
-        UpdatePeer(slot=3, name="шлюз 3", version="", fresh=False, seen="")]}
-    return who
-
-
-def _upd_skipped(services):
-    """Проверка нашла цель, а v1.4.0 пропущен: метаданные релиза не прочитаны."""
-    who = _upd_found(services)
-    services.update_skipped = lambda: [("v1.4.0", "sha256 метаданных релиза не совпал")]
-    return who
-
-
-def _upd_hold(services):
-    """Окно ожидания после старта: ждём Pi5 и Pi4 — до NOW + 15 минут."""
-    who = _people(services)
-    hold = {"until": NOW + _dt.timedelta(minutes=15), "waiting": ["Pi5", "Pi4"], "role": "client"}
-    services.update_hold = lambda: hold
-    services.update_next = lambda: None
-    return who
-
-
-def _upd_offline(services):
-    """Сеть не ответила на нажатии «⬆️ Обновить»."""
-    who = _upd_found(services)
-
-    def nxt():
-        services.update_scan_failed = True
-    services.update_next = nxt
-    return who
+def _upd_found(services, mp):
+    """Проверка нашла цель набора v1.3.0 (мир набора — shots_admin_fleet)."""
+    from tests.screens.shots_admin_fleet import _fleet
+    return _fleet()(services, mp)
 
 
 def _bc_ready(services):

@@ -41,9 +41,6 @@ async def main() -> None:
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.
     services.gwlink_sessions_reset()
-    # цель обновления — не раньше, чем переподключатся шлюзы, бывшие на связи
-    # перед остановкой (не дольше 15 минут): по старым версиям не решаем
-    services.update_hold_start()
 
     bot = pkg.Bot(
         config.BOT_TOKEN,
@@ -211,12 +208,11 @@ async def main() -> None:
             return await relay_restore(bot, services, state, blob, name, slot_id)
         _linkserver.set_on_restore(_on_restore)
 
-        async def _on_update(nxt) -> None:
-            # версии шлюзов открыли новую цель обновления — то же уведомление,
-            # что у проверки по расписанию (один раз на тег решает домен)
-            from awgbot.runtime import scheduler as _scheduler
-            await _scheduler.notify_update_available(bot, services, nxt)
-        _linkserver.set_on_update(_on_update)
+        async def _on_fleet(services_, out) -> None:
+            # набор обновлений: живое сообщение хода и уведомления (догон, откат сервера)
+            from awgbot.bot.handlers.fleet import fleet_show
+            await fleet_show(bot, services_, out)
+        _linkserver.set_on_fleet(_on_fleet)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: крючки не поставлены: %s", e)
 
@@ -301,6 +297,12 @@ async def main() -> None:
             await linkserver.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)
+        try:
+            # набор обновлений: откат сервера сторожем (Т-У8), ход и откат — с записанного
+            from awgbot.runtime.linkserver import upd as _fleet_upd
+            await _fleet_upd.on_start(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("набор обновлений на старте: %s", e)
         try:
             # имена ботов шлюзов для ссылок в карточках — только тем слотам,
             # у которых ответа ещё нет

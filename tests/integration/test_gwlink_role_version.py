@@ -1,9 +1,8 @@
 """
-Версия сервера в `role` канала и пересчёт цели обновления по событиям канала:
-сервер называет свою версию в каждом `role` (агент 3.2.x — его разбор взят
-дословно из тега v3.2.1 — лишнее поле пропускает), агент её хранит; шлюз пришёл с новой версией агента — сервер
-пересчитывает цель по сохранённому списку релизов без GitHub и уведомляет
-крючком main один раз на тег.
+Версия сервера в `role` канала: сервер называет свою версию в каждом `role`
+(агент 3.2.x — его разбор взят дословно из тега v3.2.1 — лишнее поле
+пропускает), агент её хранит — по ней он проверяет `needs_main` команды
+набора обновлений.
 
 Сокеты настоящие (петля), сервер — боевой LinkServer поверх временной БД;
 фикстуры слушателя и шлюза — общие с проверками фидов и роли.
@@ -15,9 +14,7 @@ import asyncio
 import pytest
 
 from awgbot.core import config
-from awgbot.infra import updates
-from awgbot.runtime import linkserver
-from awgbot.util import gwlink, timeutil
+from awgbot.util import gwlink
 from tests.integration import test_gwlink_lists_role_diag as _role
 from tests.integration.test_gwlink_channel import _Gw, _until
 
@@ -78,36 +75,6 @@ async def test_an_old_agent_skips_the_server_version_in_the_role(services, link)
     old = _Agent321()
     await old._dispatch(role)
     assert old.state == {"gwlink_role": "active", "gwlink_standby": "0", "gwlink_slot_name": "NASPi"}
-
-
-async def test_a_hello_with_a_new_agent_version_opens_the_server_update(services, link, monkeypatch):
-    """Шлюз пришёл с новой версией агента — сервер пересчитывает цель по
-    сохранённому списку (без GitHub) и уведомляет крючком main."""
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.3.0")
-    def r(tag, roles):
-        meta = {"schema": 1, "version": tag[1:], "awg_gen": 1, "roles": roles}
-        return updates.Release(tag, updates.parse_version(tag), "", None, None, meta=meta)
-    rel = [r("v3.3.0", {"main": {"requires": "3.2.0"}}),
-           r("v3.3.1", {"main": {"requires": "3.3.0", "needs_gw": "3.3.0"}})]
-    monkeypatch.setattr(updates, "list_releases", lambda **_: rel)
-    services.gwlink_snapshot_in(1, {"agent_version": "3.2.1"}, 1, True)
-    services.db.set_state("gwlink_seen_1", timeutil.now_iso())
-    assert services.update_scan() is None, "шлюз на связи с агентом 3.2.1 — v3.3.1 ждёт"
-
-    def boom(**_):
-        raise AssertionError("пересчёт по событию пошёл на GitHub")
-    monkeypatch.setattr(updates, "list_releases", boom)
-    got = []
-
-    async def on_update(nxt):
-        got.append(nxt.tag)
-    monkeypatch.setattr(linkserver._update_hook, "fn", on_update)
-    gw = await _hello(link)                                   # агент 3.4.0
-    await _until(lambda: got)
-    assert got == ["v3.3.1"] and services.update_available_tag() == "v3.3.1"
-    await gw.send("snap", {"rev": 1, "agent_version": "3.4.0"})
-    await asyncio.sleep(0.2)
-    assert got == ["v3.3.1"], "уведомление — один раз на тег"
 
 
 # ── адреса в туннеле сети слота в role ───────────────────────────────────────

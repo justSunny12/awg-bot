@@ -5,7 +5,8 @@ session — подключение и hello; outbox — отправка; feeds 
 dispatch — разбор входящих; rekey — смена ключей линка: приглашение, переключение,
 частый такт перехода; uplink — такт аплинка: откат прерванной транзакции и
 аварийное правило; keep — копия настроек шлюза для бэкапа сервера: ответы на
-hello и свой блок `keep`).
+hello и свой блок `keep`; upd — команда набора обновлений: `upd`, `upd_commit`,
+`upd_revert` и ответ `upd_ack`).
 
 Коннект устанавливает ТОЛЬКО шлюз: на нём не появляется ни одного слушающего
 сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
@@ -39,8 +40,8 @@ hello и свой блок `keep`).
 (`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же, запас
 своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот
 трафик (`active`), есть ли другой слот с устройством (`standby`), имя слота
-(`name`), возможности сервера (`caps`), его версия (`server` — сверка версий:
-условие обновления агента и конец окна ожидания после старта) и адреса в
+(`name`), возможности сервера (`caps`), его версия (`server` — условие
+`needs_main` команды набора обновлений) и адреса в
 туннеле своей сети (`lan_virtual` — только для показа; старый сервер шлёт
 только `active`), `ask snap` — просьба о полном снимке, `peer_svc` — записи SMB
 соседних сетей (`apply_peer_services`, ответ `peer_svc_ack`), `own_set` —
@@ -48,7 +49,9 @@ hello и свой блок `keep`).
 `own_ack`), смена ключей линка — `link_next` (приглашение, ответ
 `link_ack`), `link_go` (переключение), `link_cancel` (сервер вернулся на
 прежние или снял переход — «согласие» снимается); итог перехода шлюз сообщает
-`link_done` (часть `rekey`). В обратную сторону, кроме снимка и ответов, —
+`link_done` (часть `rekey`); команда набора обновлений — `upd` (проверки и
+ступень — у агента, ответ `upd_ack`), `upd_commit` (набор зафиксирован —
+удержанное прежнее прочь), `upd_revert` (откат набора). В обратную сторону, кроме снимка и ответов, —
 свои SMB-серверы (`svc`), правки своих списков (`own_ev`: после кнопки в чате
 сразу, `own_changed`; правки мимо агента находит сверка файлов на тике
 монитора, `own_tick`), «установлен» в первый час после установки
@@ -72,7 +75,6 @@ import subprocess
 import time
 
 from awgbot.core import config
-from awgbot.runtime.updatehooks import UpdateHook
 from awgbot.util import gwlink
 
 from .common import DEFAULT_PORT, SEND_TIMEOUT, _BACKOFF
@@ -84,6 +86,7 @@ from .rekey import RekeyMixin
 from .uplink import UplinkMixin
 from .keep import KeepMixin
 from .relay import RelayMixin
+from .upd import UpdMixin
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +127,7 @@ def server_address() -> str:
 
 
 class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin, KeepMixin,
-                 RelayMixin):
+                 RelayMixin, UpdMixin):
     """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
 
 
@@ -134,22 +137,6 @@ CONF_GONE_STOP = 600                    # столько без конфига �
 _notify = None
 _ask = None
 _edit = None
-_update_hook = UpdateHook()             # пересчёт цели обновления — общий с другой ролью (runtime/updatehooks)
-
-
-def set_on_update(fn) -> None:
-    """Крючок уведомления о версии (async fn(release)): версия сервера в
-    `role` открыла новую цель обновления — то же «Доступна новая версия», что
-    шлёт проверка по расписанию. Ставит main."""
-    _update_hook.fn = fn
-
-
-async def update_regate(services, *, force: bool = True) -> None:
-    """Пересчёт цели обновления без сети и уведомление крючком main
-    (runtime/updatehooks — одна реализация на обе роли)."""
-    await _update_hook.regate(services, force=force)
-
-
 def set_edit(fn) -> None:
     """Крючок правки (async fn(chat_id, message_id, text) -> bool): итог смены
     ключей и отзыв правят само сообщение приглашения. Ставит main."""
@@ -219,12 +206,7 @@ async def on_tick(services) -> None:
     шлёт FIN, а агент в простое сам ничего не отправляет и RST не получит:
     сессия висела бы «открытой» днями, подавляя своё скачивание фидов. Линк
     лёг и поднялся — значит, прежней сессии на той стороне нет наверняка;
-    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт.
-
-    Здесь же — конец окна ожидания после старта: первого `role` не было, а
-    предел вышел — цель обновления считается по последней известной версии
-    сервера (без сети)."""
-    await update_regate(services, force=False)
+    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт."""
     if await _retire_without_conf():
         return
     client = ensure(services)
@@ -336,7 +318,7 @@ async def shutdown() -> None:
 
 
 __all__ = ["LinkClient", "DEFAULT_PORT", "SEND_TIMEOUT", "_BACKOFF", "enabled", "server_port", "server_address",
-           "set_notify", "set_on_update", "update_regate", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "relay_backup", "relay_reserve", "relay_release", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
+           "set_notify", "set_ask", "set_edit", "_edit", "report_cfg_answer", "report_rekey_answer", "report_keep_answer", "relay_backup", "relay_reserve", "relay_release", "_ask", "ensure", "role", "online", "view", "on_tick", "poke", "own_changed",
            "services_changed", "shutdown", "asyncio", "random", "gwlink"]
 
 

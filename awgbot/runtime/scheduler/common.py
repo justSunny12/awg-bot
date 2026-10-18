@@ -1,4 +1,4 @@
-"""common.py — часть пакета scheduler (см. __init__): общее обеих ролей — уведомление о версии,
+"""common.py — часть пакета scheduler (см. __init__): общее ролей — уведомление о версии (основной бот),
 имена Telegram-аккаунтов, проверка обновлений, назначенный момент месяца и MANDATORY."""
 
 from __future__ import annotations
@@ -18,27 +18,22 @@ log = logging.getLogger("awgbot.scheduler")
 
 
 async def notify_update_available(bot, services, nxt) -> None:
-    """Уведомление «доступна следующая версия» — общее для обеих ролей.
+    """Уведомление «доступна следующая версия» — основной бот, цель набора.
 
     Перед отправкой снимаем «В меню» у всех прошлых окон обновления: после
     ступени в чате висит финишер «обновлён до…» с живой кнопкой, а следующее
     сообщение — это уведомление; две живые кнопки в двух соседних окнах ведут
-    в одно место. Тексты финишеров не трогаем.
-
-    Хвост — молчащие шлюзы, чью версию агента цель уже не обслуживает
-    (сверка версий ролей, без сети): обновиться можно, но о них надо знать."""
+    в одно место. Тексты финишеров не трогаем. Только основной бот: цель —
+    выпуск набора (сервер AWG и шлюзы одной кнопкой)."""
     from awgbot.bot import texts
     from awgbot.bot import keyboards as kb
     from awgbot.bot.notifier import send_notifications
     from awgbot.bot.handlers.common import dismiss_update_reports
     from awgbot.domain.services import Notification
-    silent = None
-    if hasattr(services, "update_silent_peers"):
-        silent = await asyncio.to_thread(services.update_silent_peers, nxt)
     await dismiss_update_reports(bot, services)
     await send_notifications(bot, [Notification(
-        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, silent=silent,
-                                                bot_username=getattr(services, "bot_username", "") or ""),
+        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, installed=services.fleet_release() or None)
+        if hasattr(services, "fleet_release") else texts.update_available(nxt.tag, nxt.body),
         reply_markup=kb.update_notify(nxt.tag))])
 
 
@@ -129,7 +124,7 @@ def update_check_hook(scheduler):
 
 
 def add_update_check(scheduler, services, bot, *, run_date, tag: str) -> None:
-    """Проверка обновлений — одна на обе роли: по расписанию (update_check_trigger,
+    """Проверка обновлений основного бота (цель набора): по расписанию (update_check_trigger,
     с джиттером) и разово на старте (сразу после апдейта увидим следующую
     ступень, не дожидаясь утра); смена расписания из чата или руками в conf —
     перевешивание без рестарта. update_to_notify сам учитывает mute и «ровно

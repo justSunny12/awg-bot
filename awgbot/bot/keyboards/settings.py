@@ -161,6 +161,19 @@ def migration_needed() -> InlineKeyboardMarkup:
                    ("Скрыть", HideCB()))
 
 
+def fleet_confirm(tag: str) -> InlineKeyboardMarkup:
+    """Диалог «⬆️ Обновить до vX?» (Т-У3): «⬅️ Отмена» · «⬆️ Обновить» — тег
+    в кнопке, ставится только он."""
+    return ui.rows([("⬅️ Отмена", UpdateCB(action="cancel")), ("⬆️ Обновить", UpdateCB(action="go", tag=tag))])
+
+
+def fleet_final(retry: bool) -> InlineKeyboardMarkup:
+    """Итог хода набора: «⬅️ В меню»; набор откатился или откат не прошёл —
+    «🔁 Повторить» первой (весь набор заново; «продолжить без шлюза» нет)."""
+    return ui.rows([("🔁 Повторить", UpdateCB(action="retry")), ui.to_menu(UpdateCB(action="menu"))] if retry
+                   else ui.to_menu(UpdateCB(action="menu")))
+
+
 def update_done_menu() -> InlineKeyboardMarkup:
     """«В меню» на итоговом сообщении self-update. Свой колбэк (upd:menu), а не
     Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение в панель, а итог

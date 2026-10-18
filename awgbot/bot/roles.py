@@ -129,6 +129,7 @@ class Has:
     email_resume: bool           # аварийный выход из паузы в «E-mail»
     migration: bool              # переезд профилей в «Сервисе»
     gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен шлюза
+    fleet: bool = False          # «⬆️ Обновления» — набор: сервер AWG и шлюзы одной кнопкой (у агента раздела нет)
 
 
 @dataclass(frozen=True)
@@ -187,7 +188,7 @@ MAIN = BotRole(
               outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
-    has=Has(email_resume=True, migration=True, gw_emergency=True),
+    has=Has(email_resume=True, migration=True, gw_emergency=True, fleet=True),
     cb=_MainCB("main"),
 )
 
@@ -208,7 +209,8 @@ GATEWAY = BotRole(
     mon_outage="линк молчит дольше",
     mon_outage_button="⏳ Линк",
     ssh_port_tail=". Проброс порта на роутере (при наличии) поправь сам",
-    settings_root=("notify", "ssh", "email", "mon", "svc", "upd"),    # порядок — как у основного бота
+    # порядок — как у основного бота; «⬆️ Обновлений» нет: шлюз обновляет сервер AWG
+    settings_root=("notify", "ssh", "email", "mon", "svc"),
     subsections=(),
     root_labels={"ssh": "🛡 SSH-доступ"},
     role_screens="awgbot.bot.handlers.gateway:_section",

@@ -8,7 +8,7 @@ import pytest
 
 import awgbot.core.config as cfg
 from awgbot.bot import texts
-from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
+from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
@@ -147,52 +147,6 @@ async def test_oversized_document_is_not_downloaded(svc):
     assert msg.sent == [] and not msg.deleted, "на заведомо чужой файл бот ответил или его убрал"
 
 
-async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, monkeypatch):
-    """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
-    механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
-    import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="", awg_generation=lambda: 0)
-    applied = []
-    monkeypatch.setattr(svc, "update_next", lambda: nxt)
-    monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_update_install(cb, svc, UpdateCB(action="install", tag="v9.9.9"))
-    assert applied == ["v9.9.9"]
-    assert svc.db.get_state("update_wait"), "«дождись» не запомнено для нового процесса"
-
-
-async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
-    """«Не удалось обновить: GitHub HTTP 500» — финишер со «Скрыть», панель
-    следом: отказ не итог ступени, держать его в истории незачем, а меню под
-    кнопкой уже удалено."""
-    import types
-    monkeypatch.setattr(cfg, "ROLE", "gateway")         # реестр экранов рисует панель агента
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="", awg_generation=lambda: 0)
-    monkeypatch.setattr(svc, "update_next", lambda: nxt)
-
-    def boom(r):
-        raise RuntimeError("GitHub HTTP 500: Internal Server Error")
-    monkeypatch.setattr(svc, "apply_update", boom)
-    sent = []
-    real = fake_bot.send_message
-
-    async def send_message(chat_id, text, reply_markup=None, **kw):
-        sent.append((text, reply_markup))
-        return await real(chat_id, text, reply_markup=reply_markup, **kw)
-    monkeypatch.setattr(fake_bot, "send_message", send_message)
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_update_install(cb, svc, UpdateCB(action="install", tag="v9.9.9"))
-    text, markup = [x for x in sent if "Не удалось обновить" in x[0]][0]
-    labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert labels == ["Скрыть"]
-    assert markup.inline_keyboard[0][0].callback_data == HideCB().pack()
-    assert not svc.db.get_state("update_pending")
-    panel = [s for s in msg.sent if s[0] == "answer" and s[2] is not None]
-    assert panel and "Шлюз" in panel[-1][1] or svc.db.get_nav_message_id(cfg.ADMIN_ID), "панель не пришла"
-
-
 async def test_start_removes_all_previous_menus(svc, fake_bot):
     """Повторный /start убирает ВСЕ прошлые меню, а не только снимает кнопки с
     последнего: /start — «начать заново», и стопка мёртвых панелей над живой
@@ -206,31 +160,6 @@ async def test_start_removes_all_previous_menus(svc, fake_bot):
     await gh.gw_start(msg, svc, FakeState())
     deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
     assert len(deleted) >= 2, "удаляется не всё прошлое"
-
-
-async def test_gateway_updates_screen_checks_on_every_open(svc, fake_bot, monkeypatch):
-    """У агента есть ручная точка входа в обновления: раздел проверяет при
-    каждом открытии — нет ступени — «актуальна», есть — кнопка «Обновить»
-    (живой колбэк обновления, без мёртвой «Скрыть»)."""
-    import types
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    # раздел проверяет при открытии — без сети: ступени нет
-    monkeypatch.setattr(svc, "update_next", lambda: None)
-    await gh.gw_updates_screen(cb, svc)
-    shown = [t for k, t, _ in msg.sent if k == "edit_text"]
-    assert shown and cfg.INSTALLED_VERSION in shown[-1]
-    assert "актуальн" in shown[-1].lower(), shown[-1]
-
-    monkeypatch.setattr(svc, "update_next",
-                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки", title="",
-                                                      awg_generation=lambda: 0))
-    await gh.gw_updates_screen(cb, svc)
-    kind, text, markup = [x for x in msg.sent if x[0] == "edit_text"][-1]
-    assert "v9.9.9" in text and markup is not None, "нет кнопки «Обновить»"
-    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert any(d.startswith("upd:install") for d in datas)
-    assert not any(d.startswith("hide") for d in datas), "мёртвая «Скрыть» у агента"
 
 
 def test_gateway_update_check_hook_reschedules_and_reads_never_as_month(monkeypatch):
@@ -549,14 +478,14 @@ async def test_a_gateway_backup_in_the_gateway_chat_is_refused_and_removed(svc, 
 
 
 async def test_gateway_scheduler_registers_its_jobs(svc, fake_bot):
-    """Планировщик агента: тик монитора, списки и записи соседей, проверка
-    обновлений с разовым запуском на старте — по именам задач; выпасть одной
-    из них молча нельзя. Своих копий у шлюза нет — и заданий копии."""
+    """Планировщик агента: тик монитора, списки и записи соседей — по именам
+    задач; выпасть одной из них молча нельзя. Своих копий у шлюза нет — и
+    заданий копии; проверки обновлений нет — агента обновляет сервер AWG."""
     from awgbot.runtime import scheduler as sch
     s = sch.setup_gateway_scheduler(svc, fake_bot)
     try:
         ids = {j.id for j in s.get_jobs()}
     finally:
         s.shutdown(wait=False)
-    assert {"gw_monitor", "gw_lan_lists", "gw_lan_services", "update_check", "update_check_startup"} <= ids, ids
-    assert not [j for j in ids if "backup" in j], ids
+    assert {"gw_monitor", "gw_lan_lists", "gw_lan_services"} <= ids, ids
+    assert not [j for j in ids if "backup" in j or "update" in j], ids

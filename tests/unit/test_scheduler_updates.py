@@ -34,8 +34,10 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
 
 def test_updates_sections_show_current_version_with_v():
     """Голое «2.4.2.12» Telegram рисует ссылкой на IP — версия с буквой v."""
-    assert texts.settings_upd_text("2.4.2.12") == "⬆️ <b>Обновления</b> · v2.4.2.12 🟢 актуальна"
-    assert "vv" not in texts.settings_upd_text("v2.4.2.12")
+    from awgbot.bot.texts import fleet as ft
+    plan = {"release": "2.4.2.12", "server": "2.4.2.12", "gateways": [], "run": {}}
+    assert ft.fleet_section(plan).splitlines()[0] == "⬆️ <b>Обновления</b> · v2.4.2.12 🟢 актуальна"
+    assert "vv" not in ft.fleet_section({**plan, "release": "v2.4.2.12", "server": "v2.4.2.12"})
 
 
 def test_admin_panel_title_carries_hostname(monkeypatch):

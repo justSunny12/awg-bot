@@ -31,7 +31,7 @@ STATE_RESET = ("email_check",)            # почта из бэкапа про�
 # бота, кода и хоста (загрузка, старт контейнера — иначе ложное «хост
 # перезагружен»)
 STATE_ALWAYS_CURRENT = (_plan.REMOVED_KEY, "bot_identity", "restore_wait", "backup_event_due", "updates_muted",
-                        "host_boot_id", "container_started_at", "routing_host_boot_id", "routing_host_boot_at")
+                        "fleet_target", "host_boot_id", "container_started_at", "routing_host_boot_id", "routing_host_boot_at")
 STATE_ALWAYS_CURRENT_PREFIX = ("update_",)           # GLOB: «_» — буква, а не любой знак
 # фраза — та, что человек знает сейчас; на другой линии без текущей — из бэкапа
 PHRASE_KEYS = ("backup_passphrase", "backup_key")

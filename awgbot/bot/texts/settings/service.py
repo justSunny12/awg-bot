@@ -1,10 +1,10 @@
-"""service.py — часть пакета settings (см. __init__): «🔧 Сервис» и «⬆️ Обновления»."""
+"""service.py — часть пакета settings (см. __init__): «🔧 Сервис» и расписание
+проверки обновлений; раздел «⬆️ Обновления» — texts/fleet.py (набор)."""
 
 from __future__ import annotations
 
 from awgbot.bot import ui
-from ..fmt import _e, details
-from ..updates import _ver
+from ..fmt import details
 
 
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
@@ -43,41 +43,6 @@ def settings_svc_text(br, state: str = "", progress=None, available: bool = Fals
 
 
 # ── ⬆️ Обновления ────────────────────────────────────────────────────────────
-
-def settings_upd_text(installed: str | None = None, target=None, blocked: str = "",
-                      scan_failed: bool = False, waiting: dict | None = None,
-                      silent: dict | None = None, skipped=(), hold: dict | None = None,
-                      bot_username: str = "") -> str:
-    """«⬆️ Обновления · v3.1.0 🟢 актуальна» или цель обновления со
-    списком изменений под «подробнее»; блок — строкой «⛔ … недоступно: …».
-    waiting — новейший релиз ждёт другую сторону (строка «⏳ … ждёт …»);
-    silent — молчащие шлюзы, чью версию цель не обслуживает (основной бот);
-    skipped — релизы с непрочитанными метаданными; hold — окно ожидания
-    после старта: цель ещё не считалась."""
-    from awgbot.core import config
-    from ..updates import (changelog_details, update_wait_line, update_silent_lines,
-                           update_hold_line, update_skipped_lines)
-    cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
-    tail = update_skipped_lines(skipped)
-    if hold:
-        return "\n".join([ui.head("⬆️ Обновления", meta=[_e(cur)]), update_hold_line(hold)] + tail)
-    if target is None:
-        head = ui.head("⬆️ Обновления", meta=[f"{_e(cur)} " + (ui.st("bad", "проверка не удалась") if scan_failed else ui.st("ok", "актуальна"))])
-        return "\n".join([head] + ([update_wait_line(waiting, bot_username)] if waiting else []) + tail)
-    lines = [ui.head("⬆️ Обновления", meta=[f"{_e(cur)} → {_e(_ver(target.tag))}"])]
-    if blocked:
-        lines.append(f"⛔ Обновление до {_e(_ver(target.tag))} сейчас недоступно: {_e(blocked)}")
-    if waiting:
-        lines.append(update_wait_line(waiting, bot_username))
-    lines.extend(update_silent_lines(silent, bot_username))
-    lines.extend(tail)
-    header = "\n".join(lines) + "\n"
-    body = changelog_details(getattr(target, "body", "") or "", header=header,   # бюджет — от настоящей шапки
-                             tag=str(target.tag))
-    if body:
-        lines.append(body)
-    return "\n".join(lines)
-
 
 UPDATE_SCHEDULE_CYCLE = ("day", "week", "month")
 UPDATE_SCHEDULE_LABELS = {"day": "день", "week": "неделя", "month": "месяц"}

@@ -6,7 +6,7 @@ import datetime as _dt
 from awgbot.core import config
 
 from tests.screens.base import NOW, Shot
-from tests.screens.shots_admin_common import KS, LAPTOP, _br_expired, _iso, _mig_ready, _people, _upd_silent
+from tests.screens.shots_admin_common import KS, LAPTOP, _br_expired, _iso, _mig_ready, _people
 from tests.screens.shots_admin_common_gw import _slots
 
 
@@ -170,8 +170,6 @@ EVENTS = [
          data=_gw_file_in_chat(True), title="A146: шлюз настроен"),
     Shot("adm.ev.upd_available", role="admin", call=("notify_update_available", _ev_update_available),
          data=_people, title="доступна новая версия"),
-    Shot("adm.ev.upd_available.silent", role="admin", call=("notify_update_available", _ev_update_available),
-         data=_upd_silent, title="доступна новая версия: хвост о молчащих шлюзах"),
     Shot("adm.ev.upd_done", role="admin", call=("report_update_result", _ev_update_result),
          data=_upd_pending("v1.2.3"), title="обновлён после рестарта"),
     Shot("adm.ev.upd_failed", role="admin", call=("report_update_result", _ev_update_result),

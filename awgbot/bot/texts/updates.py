@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fmt import _e, deep_link
+from .fmt import _e
 # итог self-update и список изменений — тексты уведомления домена, общие с экранами
 from awgbot.domain.notices.updates import (  # noqa: F401
     _TG_LIMIT, CHANGELOG_URL, release_url, changelog_link, _changelog_block, _ver,
@@ -17,75 +17,14 @@ def changelog_details(body: str, header: str = "", header_len: int = 200, tag: s
     return _changelog_block(body, header or " " * header_len, tag)
 
 
-def update_available(tag: str, body: str, installed: str | None = None,
-                     silent: dict | None = None, bot_username: str = "") -> str:
-    """Уведомление о доступной новой версии — цели обновления. Тело — её
+def update_available(tag: str, body: str, installed: str | None = None) -> str:
+    """Уведомление о доступной новой версии — цели набора обновлений. Тело — её
     changelog; пропущенные ступени не перечисляются: старшая версия включает
-    правки младших. silent — молчащие шлюзы, чью версию цель уже не
-    обслуживает (update_silent_peers): хвостом предупреждения."""
+    правки младших. installed — от чего («сейчас»): выпуск набора."""
     from awgbot.core import config
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     header = f"⬆️ <b>Доступна {_e(_ver(tag))}</b> · сейчас {_e(cur)}\n"
-    tail = "\n".join(update_silent_lines(silent, bot_username)) if silent else ""
-    if not tail:
-        return header + _changelog_block(body, header, tag)
-    tail = "\n\n" + tail
-    return header + _changelog_block(body, header + tail, tag) + tail     # бюджет — с хвостом
-
-
-# ── сверка версий ролей: ожидание и молчащие ─────────────────────────────────
-# Данные — из домена (update_waiting, update_silent_peers): кто держит, его
-# версия, нужная версия. Имя шлюза без подписи, версия в скобках; имя — ссылка
-# на карточку слота (gw-<слот>).
-
-_NAMES_SHOWN = 3            # шлюзов в строке ожидания; дальше — «[+N]»
-
-
-def _peer_ver(p) -> str:
-    return _ver(p.version) if p.version else "версия неизвестна"
-
-
-def update_gw_names(peers, bot_username: str = "", *, links: bool = True) -> str:
-    """«Pi5 (v3.2.1), Pi4 (v3.2.0) [+2]» — шлюзы, которые держат или молчат
-    (строка-сводка: хвост в квадратных скобках); links=False — простым
-    текстом (всплывашка)."""
-    items = [(deep_link(bot_username, f"gw-{p.slot}", p.name) if links else p.name)
-             + f" ({_peer_ver(p)})" for p in peers]
-    out = ", ".join(items[:_NAMES_SHOWN])
-    if len(items) > _NAMES_SHOWN:
-        out += f" [+{len(items) - _NAMES_SHOWN}]"
-    return out
-
-
-def _gw_todo(peers, bot_username: str = "", *, links: bool = True) -> str:
-    """«сначала обнови шлюз Pi5 (v1.2.3)» / «сначала обнови шлюзы: Pi5 (…), Pi4 (…)»."""
-    names = update_gw_names(peers, bot_username, links=links)
-    return f"сначала обнови шлюз {names}" if len(peers) == 1 else f"сначала обнови шлюзы: {names}"
-
-
-def update_wait_line(w: dict, bot_username: str = "") -> str:
-    """Строка ожидания раздела «⬆️ Обновления»: основной бот — какие шлюзы
-    держат (О2), агент — какой сервер нужен (О3)."""
-    tag, need = _e(_ver(w["tag"])), _e(_ver(w["need"]))
-    if w.get("role") == "gateway":
-        server = w["peers"][0].version if w.get("peers") else ""
-        if not server:
-            return f"⏳ {tag} ждёт сервер AWG {need} — версию сервера AWG не проверить: он не на связи"
-        # нужная версия — названа; в скобках — текущая, а не требуемая
-        now = "" if server == "old" else f" (сейчас {_e(_ver(server))})"
-        return f"⏳ {tag} ждёт сервер AWG {need}{now} — сначала обнови бот сервера AWG"
-    peers = w.get("peers") or []
-    where = "в чатах ботов шлюзов" if len(peers) > 1 else "в чате бота шлюза"
-    return f"⏳ {tag} — {_gw_todo(peers, bot_username)} {where}"
-
-
-def update_wait_reason(w: dict) -> str:
-    """Почему кнопка не ставит: условие закрылось между проверкой и нажатием
-    (О5, после «Нельзя: »). Простой текст — для всплывашки."""
-    tag = _ver(w["tag"])
-    if w.get("role") == "gateway":
-        return f"{tag} ждёт сервер AWG {_ver(w['need'])} — сначала обнови бот сервера AWG"
-    return f"{tag} — {_gw_todo(w.get('peers') or [], links=False)}"
+    return header + _changelog_block(body, header, tag)
 
 
 def _seen_date(seen: str) -> str:
@@ -96,21 +35,7 @@ def _seen_date(seen: str) -> str:
         return ""
 
 
-def update_silent_lines(s: dict | None, bot_username: str = "") -> list[str]:
-    """Предупреждения о молчащих шлюзах (О4): цель их версию агента уже не
-    обслуживает — обновиться можно, обновить агента — когда выйдет на связь."""
-    if not s:
-        return []
-    tag, need = _e(_ver(s["tag"])), _e(_ver(s["need"]))
-    out = []
-    for p in s.get("peers") or []:
-        name = deep_link(bot_username, f"gw-{p.slot}", p.name)
-        date = _seen_date(p.seen)
-        since = f" с {date}" if date else ""
-        ver = f"агент {_e(_ver(p.version))}" if p.version else "версия агента неизвестна"
-        out.append(f"⚠️ {name} не на связи{since} ({ver}): {tag} работает с агентом не ниже {need} — "
-                   "когда шлюз выйдет на связь, обнови его агента")
-    return out
+_NAMES_SHOWN = 3            # пропущенных релизов в строках раздела
 
 
 UPDATE_NOTHING = "Текущая версия актуальна"
@@ -129,41 +54,12 @@ def updates_notify_toast(*, enabled: bool) -> str:
     return "Уведомления об обновлениях " + ("включены" if enabled else "выключены")
 
 
-def update_wait(tag: str) -> str:
-    """Единственное сообщение на время обновления (цепочка до него стёрта)."""
-    return f"⏳ Обновляюсь до {_e(tag)} — бот перезапустится и пришлёт итог"
-
-
-def update_failed(reason: str) -> str:
-    return f"⚠️ Не удалось обновить: {_e(reason)}"
-
-
 __all__ = [
     "_TG_LIMIT", "CHANGELOG_URL", "release_url", "changelog_link", "_changelog_block", "_ver",
     "update_applied", "update_not_applied", "changelog_details", "update_available",
     "UPDATE_NOTHING", "UPDATE_STARTING", "UPDATES_MUTED_TOAST", "update_blocked_toast",
-    "updates_notify_toast", "update_wait", "update_failed",
-    "update_gw_names", "update_wait_line", "update_wait_reason", "update_silent_lines",
-    "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST", "update_hold_line", "update_skipped_lines"]
-
-
-def update_hold_line(h: dict, *, toast: bool = False) -> str:
-    """Окно ожидания после старта (О9): раздел и всплывашка кнопки. Основной
-    бот — каких шлюзов ждёт, агент — сервер AWG; «до» — предел окна, с меткой
-    пояса. toast — всплывашка: предел первым, длинные имена режет хвост (≤ 200)."""
-    from awgbot.util import timeutil
-    until = timeutil.fmt_clock_ui(h["until"])
-    if h.get("role") == "gateway":
-        if toast:
-            return f"⏳ До {until} жду связи с сервером AWG после перезапуска"
-        return f"⏳ Жду связи с сервером AWG после перезапуска — до {until}"
-    names = list(h.get("waiting") or [])
-    who = ", ".join(_e(n) for n in names[:_NAMES_SHOWN])
-    if len(names) > _NAMES_SHOWN:
-        who += f" и ещё {len(names) - _NAMES_SHOWN}"
-    if toast:
-        return f"⏳ До {until} жду связи со шлюзами после перезапуска: {who}"
-    return f"⏳ Жду связи со шлюзами после перезапуска: {who} — до {until}"
+    "updates_notify_toast", "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST",
+    "update_skipped_lines", "_seen_date"]
 
 
 def update_skipped_lines(skipped) -> list[str]:

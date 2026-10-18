@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 # задачи, которым в сеть ходить по расписанию — и потому обязателен джиттер
 NETWORK_JOBS_MAIN = ("monitor", "routing_liveness", "backup", "backup_event", "update_check", "tg_names")
-NETWORK_JOBS_GW = ("gw_monitor", "gw_lan_lists", "gw_lan_services", "update_check")
+NETWORK_JOBS_GW = ("gw_monitor", "gw_lan_lists", "gw_lan_services")
 
 
 def _jitter(trigger) -> int:
@@ -36,7 +36,8 @@ async def test_every_network_job_of_the_agent_has_jitter_and_there_is_no_backup(
         for jid in NETWORK_JOBS_GW:
             assert jid in jobs, f"у агента нет задачи {jid}"
             assert _jitter(jobs[jid].trigger) > 0, f"{jid}: без джиттера — маячок по расписанию"
-        assert isinstance(jobs["update_check_startup"].trigger, DateTrigger)
+        # агент обновлений не ищет: его обновляет сервер AWG командой набора
+        assert not [j for j in jobs if "update" in j], f"у агента проверка обновлений: {sorted(jobs)}"
         assert not [j for j in jobs if "backup" in j], f"у агента задания копии: {sorted(jobs)}"
     finally:
         scheduler.shutdown(wait=False)

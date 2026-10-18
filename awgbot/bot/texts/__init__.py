@@ -57,10 +57,9 @@ from .routing import (
     routing_granted_holder_notice, routing_revoked_holder_notice,
     ROUTING_REVOKED_NOTICE)
 from .updates import (
-    update_available, release_url, update_wait, UPDATE_NOTHING, UPDATE_STARTING, UPDATES_MUTED_TOAST,
-    update_blocked_toast, updates_notify_toast, update_failed, update_applied, update_not_applied, changelog_details, CHANGELOG_URL,
-    update_gw_names, update_wait_line, update_wait_reason, update_silent_lines,
-    UPDATE_TARGET_CHANGED_TOAST, UPDATE_CHECK_FAILED_TOAST, update_hold_line, update_skipped_lines)
+    update_available, release_url, UPDATE_NOTHING, UPDATE_STARTING, UPDATES_MUTED_TOAST,
+    update_blocked_toast, updates_notify_toast, update_applied, update_not_applied, changelog_details, CHANGELOG_URL,
+    UPDATE_TARGET_CHANGED_TOAST, UPDATE_CHECK_FAILED_TOAST, update_skipped_lines)
 from .client import (
     greeting_guest, held_devices_tail, device_delete_ask, device_card_own, device_card_lent, device_card_held,
     lent_device_deleted_by_holder_notice, lent_device_deleted_by_admin_notice,
@@ -112,8 +111,7 @@ from .settings import (
     restore_offer_plan, restore_rejected, restore_failed, RESTORE_ALREADY, RELAY_RESTORING, relay_source, relay_ask_failed, RESTORE_OTHER_FILE, RESTORE_REPLACED, RESTORE_STARTED, restore_done_report,
     email_not_configured, backup_needs_encryption, backup_encryption_text,
     BACKUP_ASK_PASSPHRASE, BACKUP_ASK_PASSPHRASE_AGAIN, BACKUP_PASSPHRASE_MISMATCH,
-    BACKUP_PASSPHRASE_SET, backup_mailed, backup_not_sent, svc_confirm_awg, svc_confirm_bot, settings_svc_text, settings_upd_text,
-    SETTINGS_BOUNDS, SETTINGS_TEXT, UPDATE_SCHEDULE_CYCLE, UPDATE_SCHEDULE_LABELS, PRIVATE_DNS_WHAT, private_dns_offer,
+    BACKUP_PASSPHRASE_SET, backup_mailed, backup_not_sent, svc_confirm_awg, svc_confirm_bot, settings_svc_text, SETTINGS_BOUNDS, SETTINGS_TEXT, UPDATE_SCHEDULE_CYCLE, UPDATE_SCHEDULE_LABELS, PRIVATE_DNS_WHAT, private_dns_offer,
     PRIVATE_DNS_LATER, PRIVATE_DNS_DISMISSED, private_dns_blocked_toast, settings_server_text,
     settings_firewall_text, firewall_confirmed, firewall_rolled_back,
     ssh_port_busy, ssh_port_same, ssh_port_changed, ssh_owner_refusal,
@@ -166,10 +164,9 @@ __all__ = [
     "routing_add_report", "routing_sites_text", "routing_clear_ask", "ROUTING_UNAVAILABLE", "ROUTING_NOT_ALLOWED_ADMIN",
     "routing_gateway_warning", "ROUTING_DISABLE_CONFIRM", "ROUTING_GRANTED_NOTICE",
     "routing_granted_holder_notice", "routing_revoked_holder_notice",
-    "ROUTING_REVOKED_NOTICE", "update_available", "update_wait", "UPDATE_NOTHING", "UPDATE_STARTING", "UPDATES_MUTED_TOAST",
-    "update_blocked_toast", "updates_notify_toast", "update_failed", "update_applied", "changelog_details", "CHANGELOG_URL",
-    "update_gw_names", "update_wait_line", "update_wait_reason", "update_silent_lines",
-    "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST", "update_hold_line", "update_skipped_lines",
+    "ROUTING_REVOKED_NOTICE", "update_available", "UPDATE_NOTHING", "UPDATE_STARTING", "UPDATES_MUTED_TOAST",
+    "update_blocked_toast", "updates_notify_toast", "update_applied", "changelog_details", "CHANGELOG_URL",
+    "UPDATE_TARGET_CHANGED_TOAST", "UPDATE_CHECK_FAILED_TOAST", "update_skipped_lines",
     "update_not_applied", "greeting_guest", "held_devices_tail", "device_delete_ask", "device_card_own",
     "device_card_lent", "device_card_held", "lent_device_deleted_by_holder_notice",
     "lent_device_deleted_by_admin_notice", "lent_device_reassigned_notice", "lent_device_deleted_by_owner_notice",
@@ -217,7 +214,7 @@ __all__ = [
     "BACKUP_ASK_PASSPHRASE", "BACKUP_ASK_PASSPHRASE_AGAIN",
     "BACKUP_PASSPHRASE_MISMATCH", "BACKUP_PASSPHRASE_SET", "backup_mailed", "backup_not_sent",
     "svc_confirm_awg", "svc_confirm_bot", "settings_svc_text",
-    "settings_upd_text", "SETTINGS_BOUNDS", "SETTINGS_TEXT", "UPDATE_SCHEDULE_CYCLE", "UPDATE_SCHEDULE_LABELS",
+    "SETTINGS_BOUNDS", "SETTINGS_TEXT", "UPDATE_SCHEDULE_CYCLE", "UPDATE_SCHEDULE_LABELS",
     "PRIVATE_DNS_WHAT", "private_dns_offer", "PRIVATE_DNS_LATER",
     "PRIVATE_DNS_DISMISSED", "private_dns_blocked_toast", "settings_server_text", "settings_firewall_text",
     "firewall_confirmed", "firewall_rolled_back", "settings_prompt",

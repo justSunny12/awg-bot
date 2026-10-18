@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot.callbacks import CancelCB, GwCB, UpdateCB
 
-from tests.screens.shots_gateway_common import _MAIL, _RELEASE
+from tests.screens.shots_gateway_common import _MAIL
 from tests.screens.shots_gateway_agent import _p, _shot, _t
 
 
@@ -150,40 +150,10 @@ SERVICE = [
     _shot("gw.svc.botrestart.done", press=[GwCB(action="svc"), GwCB(action="botrestart"),
                                            GwCB(action="botrestart!")], title="обещание на месте меню"),
 
-    # ── W40–W41 обновления ──────────────────────────────────────────────────
-    _shot("gw.upd", press=[GwCB(action="updates")], title="версия актуальна"),
-    _shot("gw.upd.available", press=[GwCB(action="updates")], release=_RELEASE,
-          title="доступна новая версия: список изменений"),
-    _shot("gw.upd.scan_failed", press=[GwCB(action="updates")], scan_fails=True,
-          title="список релизов недоступен"),
-    _shot("gw.upd.notify", press=[GwCB(action="updates"), GwCB(action="upd_toggle")], muted=True,
-          title="«Уведомлять» — включены"),
-    _shot("gw.upd.schedule", press=[GwCB(action="updates"), GwCB(action="cyc", val="updates.poll_schedule")],
-          title="«📅 Проверка» по кругу: день → неделя"),
-    _shot("gw.upd.schedule.never", press=[GwCB(action="updates")], conf={"updates.poll_schedule": "never"},
-          title="«никогда» из старого conf → «месяц» и уведомления выкл"),
-    _shot("gw.upd.install", press=[GwCB(action="updates"), UpdateCB(action="install", tag="v1.2.4")], release=_RELEASE,
-          title="«⬆️ Обновить» — шаг убран, «дождись завершения»"),
-    _shot("gw.upd.install.nothing", press=[UpdateCB(action="install", tag="v1.2.4")],
-          title="обновлять не на что — alert"),
-    # сверка версий ролей: релиз ждёт сервер AWG
-    _shot("gw.upd.wait", press=[GwCB(action="updates")], waiting=("v1.3.0", "1.3.0"), server_version="1.2.3",
-          title="актуальна, v1.3.0 ждёт сервер AWG v1.3.0 (сейчас v1.2.3)"),
-    _shot("gw.upd.wait.old", press=[GwCB(action="updates")], waiting=("v1.3.0", "1.3.0"), server_version="old",
-          title="ждёт сервер AWG: сервер старше 3.3.0 версию не называет"),
-    _shot("gw.upd.wait.unknown", press=[GwCB(action="updates")], waiting=("v1.3.0", "1.3.0"),
-          title="ждёт сервер AWG: версия сервера неизвестна — не на связи"),
-    _shot("gw.upd.available.wait", press=[GwCB(action="updates")], release=_RELEASE,
-          waiting=("v1.3.0", "1.3.0"), server_version="1.2.3",
-          title="цель v1.2.4 и строка: v1.3.0 ждёт сервер AWG"),
-    _shot("gw.upd.install.wait", press=[UpdateCB(action="install", tag="v1.3.0")], waiting=("v1.3.0", "1.3.0"),
-          server_version="1.2.3", title="условие закрылось между проверкой и нажатием — alert с причиной"),
-    _shot("gw.upd.hold", press=[GwCB(action="updates")], hold=True,
-          title="окно ожидания после старта — жду связи с сервером AWG"),
-    _shot("gw.upd.install.hold", press=[UpdateCB(action="install", tag="v1.2.4")], hold=True,
-          release=_RELEASE, title="«⬆️ Обновить» в окно ожидания после старта"),
-    _shot("gw.upd.install.failed", press=[GwCB(action="updates"), UpdateCB(action="install", tag="v1.2.4")],
-          release=_RELEASE, update_error="sha256 не сошёлся", title="отказ до апдейтера — итог и панель"),
-    _shot("gw.upd.menu", press=[UpdateCB(action="menu")], title="«В меню» на итоге обновления"),
-    _shot("gw.upd.mute", press=[UpdateCB(action="mute")], title="«Не уведомлять» на уведомлении"),
+    # ── W40–W41 обновления: раздела нет — шлюз обновляет сервер AWG ─────────
+    _shot("gw.upd.stale", press=[GwCB(action="updates")], title="прежняя «⬆️ vX» / «⬆️ Обновления» — устарела"),
+    _shot("gw.upd.install.stale", press=[UpdateCB(action="install", tag="v1.2.4")],
+          title="«⬆️ Обновить» прежнего уведомления — устарела"),
+    _shot("gw.upd.menu", press=[UpdateCB(action="menu")], title="«В меню» на итоге обновления — панель"),
+
 ]

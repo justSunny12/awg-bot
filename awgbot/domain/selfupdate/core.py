@@ -89,11 +89,10 @@ class SelfUpdateCoreMixin:
     def update_next(self):
         """Цель обновления (updates.Release) или None: последний релиз для роли
         с учётом обязательных ступеней, потолка поколения при идущем переезде,
-        метаданных релизов и условия на версию другой роли. У роли с другой
-        стороной (update_peers) выбор и запись результата — под замком cache.py,
-        версии другой стороны — после ответа GitHub; список релизов и кэш
-        метаданных сохраняются для пересчёта без сети. В окно ожидания после
-        старта (hold.py) цель не считается — None. Сетевые ошибки гасим в None
+        метаданных релизов. У роли с набором (основной бот, domain/fleet) цель —
+        выпуск набора для любой роли, выбор и запись результата — под замком
+        cache.py, список релизов и кэш метаданных сохраняются для плана без
+        сети. Сетевые ошибки гасим в None
         — фоновая задача/кнопка от них не падают; признак сбоя — в потоке
         вызова (update_check), а не общим атрибутом: кнопка и плановая
         проверка в разных потоках не путают чужой сбой со своим."""
@@ -137,8 +136,8 @@ class SelfUpdateCoreMixin:
         независимо от того, включены ли уведомления, — шапка панели читает
         ключ без сетевого запроса. Возвращает Release или None. Сетевой сбой
         прежний тег не стирает: «актуальна» и «не проверилось» — разное;
-        признак — update_scan_failed. У роли с другой стороной тег записан
-        уже при выборе, под замком; в окно ожидания — не трогается."""
+        признак — update_scan_failed. У роли с набором тег записан уже при
+        выборе, под замком."""
         self.update_scan_failed = False
         tl = self._update_tl()
         tl.decided = False
@@ -158,13 +157,12 @@ class SelfUpdateCoreMixin:
 
     def update_available_tag(self) -> str:
         """Тег последней найденной версии (для строки «⬆️ Доступна vX»); пусто —
-        обновляться не на что, ещё не проверяли, идёт окно ожидания после
-        старта (строку заменит результат пересчёта) или тег не новее
-        установленной версии (записан до обновления, проверка ещё не прошла)."""
-        if self.update_hold() is not None:
-            return ""
+        обновляться не на что, ещё не проверяли или тег не новее установленной
+        версии (у набора — выпуска набора): записан до обновления, проверка
+        ещё не прошла."""
         tag = self.db.get_state(self._AVAILABLE_KEY) or ""
-        have = updates.parse_version(config.INSTALLED_VERSION)
+        base = self.fleet_release() if callable(getattr(self, "fleet_release", None)) else ""
+        have = updates.parse_version(base or config.INSTALLED_VERSION)
         want = updates.parse_version(tag)
         if tag and have is not None and want is not None and want <= have:
             return ""
@@ -175,8 +173,8 @@ class SelfUpdateCoreMixin:
         пометить его как уведомлённый. Уведомляем только о цели НОВЕЕ уже
         объявленной (сравнение версий): цель, опустившаяся по условию и
         вернувшаяся, второй раз не объявляется. None, если уведомления
-        заглушены, расписание «никогда», обновлять не на что, идёт окно
-        ожидания после старта, или эту версию (или новее) уже объявляли.
+        заглушены, расписание «никогда», обновлять не на что или эту версию
+        (или новее) уже объявляли.
         Проверка «никогда» здесь, а не только в UI — инвариант держится и при
         ручной правке conf/updates.yaml. Помечаем ДО отправки — «не более
         одного раза» важнее, чем «гарантированно доставить» (миссы закрывает
@@ -193,8 +191,6 @@ class SelfUpdateCoreMixin:
         if nxt is None:
             return None
         with self._update_lock():
-            if self.update_hold() is not None:
-                return None
             if (self.db.get_state(self._AVAILABLE_KEY) or "") != str(nxt.tag):
                 return None                           # пока решали, цель пересчитали — объявит пересчёт
             done = updates.parse_version(self.db.get_state(self._NOTIFIED_KEY) or "")
@@ -227,7 +223,7 @@ class SelfUpdateCoreMixin:
                 return ""
             kw = {}
             if self._update_gated():                      # кэш метаданных — тот же, сеть — ноль лишних
-                kw = {"peer": self._update_gate(), "meta_cache": self._update_meta_cache()}
+                kw = {"meta_cache": self._update_meta_cache()}
             try:                                          # без потолка
                 release = updates.next_release(**kw)
             except updates.UpdateError:
@@ -246,13 +242,15 @@ class SelfUpdateCoreMixin:
                 f"{release.awg_generation()}. Заверши переезд — и обновление станет "
                 "доступно: профили на трёх интерфейсах мигрировать нечем.")
 
-    def apply_update(self, release) -> None:
+    def apply_update(self, release, *, hold: bool = False) -> None:
         """Скачать ассет следующей версии, сверить sha256 и запустить апдейтер
         (он остановит и заменит сервис). UpdateError пробрасывается — обработчик
         покажет пользователю причину, сервис остаётся жив.
 
         Перед запуском пишем update_pending=tag: на следующем старте
-        confirm_applied_update() сверит фактическую версию и отчитается админу."""
+        confirm_applied_update() сверит фактическую версию и отчитается админу.
+        hold — шаг набора: прежние код и окружение держатся до фиксации или
+        отката всего набора (awg-bot.sh: __update_commit / __update_revert)."""
         reason = self.update_block_reason(release)
         if reason:
             raise updates.UpdateError(reason)
@@ -261,7 +259,7 @@ class SelfUpdateCoreMixin:
         # digest релиза — в метку бэкапа после удачного обновления (задел
         # «перейти на версию копии»); установка не из релиза его не знает
         self.db.set_state("update_pending_digest", str(getattr(release, "sha256", "") or ""))
-        updates.apply(blob)
+        updates.apply(blob, hold=hold)
 
     def set_update_wait(self, chat_id: int, message_id: int) -> None:
         """Запомнить «дождись завершения»-сообщение: после рестарта новый процесс
@@ -299,6 +297,13 @@ class SelfUpdateCoreMixin:
         self.db.set_state("update_pending_digest", "")
         if want is not None and want == have:
             self.db.set_state("update_installed_digest", f"{config.INSTALLED_VERSION} {digest}" if digest else "")
+        # шаг набора (живое сообщение у сервера, строка Т-А2 у агента) — своим текстом роли
+        alt = getattr(self, "update_applied_note", None)
+        if callable(alt):
+            note = alt(pending, want is not None and want == have)
+            if note is not ...:
+                return note
+        if want is not None and want == have:
             body = updates.release_body(pending)
             return _notification(config.ADMIN_ID, update_applied(pending, body),
                                 keyboard="update_done")

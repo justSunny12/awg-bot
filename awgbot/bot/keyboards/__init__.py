@@ -44,7 +44,7 @@ from .settings import (
     settings_back, restart_now_or_later, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
     settings_firewall, ssh_port_finisher, settings_subs, migration_confirm, update_notify,
-    migration_needed, update_done_menu)
+    migration_needed, update_done_menu, fleet_confirm, fleet_final)
 from .routing import (
     routing_panel, routing_sites, routing_clear_confirm, gateways_kb, gateway_edit_kb, gateway_router_kb, routing_params_kb,
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
@@ -81,7 +81,7 @@ __all__ = [
     "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_subs", "migration_confirm",
     "update_notify", "migration_needed",
-    "update_done_menu", "routing_panel", "routing_sites", "routing_clear_confirm",
+    "update_done_menu", "fleet_confirm", "fleet_final", "routing_panel", "routing_sites", "routing_clear_confirm",
     "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing_users",

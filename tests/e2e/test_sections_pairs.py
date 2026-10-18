@@ -180,51 +180,58 @@ async def test_an_unknown_cycle_key_is_refused(env, fake_bot, store, sec, key):
     assert key not in store
 
 
-# ── ⬆️ обновления ────────────────────────────────────────────────────────────
+# ── ⬆️ обновления (только сервер AWG: набор; у агента раздела нет) ──────────
 
-def _release(tag):
-    # поколение ядра 0 — блокировка обновления (update_block_reason) не срабатывает
-    return types.SimpleNamespace(tag=tag, body="- пункт", title="", awg_generation=lambda: 0)
+def _meta_release(tag):
+    from awgbot.infra import updates
+    meta = {"schema": 1, "version": tag[1:], "awg_gen": 1,
+            "roles": {"main": {"requires": "3.2.0"}, "gw": {"requires": "3.2.0"}}}
+    return updates.Release(tag=tag, version=updates.parse_version(tag), body="- пункт",
+                           asset_url=f"https://api/assets/{tag}", sha256="a" * 64,
+                           meta=updates.meta.check(meta, tag))
 
 
 @pytest.fixture()
-def upd(env, monkeypatch, store):
-    """Проверка обновлений без сети: счётчик походов к списку релизов."""
-    from awgbot.infra import updates
-    scene = {"next": _release("v3.3.1"), "fail": False, "calls": 0}
+def upd(main_env, monkeypatch, store):
+    """Список выпусков без сети: счётчик походов к GitHub."""
+    from awgbot.infra import awglock, updates
+    scene = {"releases": [_meta_release("v3.2.0"), _meta_release("v3.3.1")], "fail": False, "calls": 0}
 
-    def _next(max_generation=None, **_):
+    def _list(**_):
         scene["calls"] += 1
         if scene["fail"]:
             raise updates.UpdateError("GitHub не ответил")
-        return scene["next"]
-    monkeypatch.setattr(updates, "next_release", _next)
+        return list(scene["releases"])
+    monkeypatch.setattr(updates, "list_releases", _list)
+    monkeypatch.setattr(awglock, "generation", lambda: 1)
     monkeypatch.setattr(config, "INSTALLED_VERSION", "3.2.0")
     store["updates.poll_schedule"] = "day"
     return scene
 
 
-async def test_opening_updates_checks_right_away(env, fake_bot, upd):
-    """Проверка — при открытии раздела: сразу «Проверяю…», найденная цель — в
+async def test_opening_updates_checks_right_away(main_env, fake_bot, upd):
+    """Проверка — при открытии раздела: сразу «Проверяю…», цель набора — в
     шапке и кнопкой «⬆️ Обновить до vX»; тег ложится туда, откуда строку
-    «⬆️ Доступна vX» читает главная роли; ступени нет — «актуальна»."""
+    «⬆️ Доступна vX» читает главная; цели нет — «актуальна»."""
+    env = main_env
     cb, nav = await _press(env, fake_bot, env.br.cb.pack("upd"))
     assert cb.answers[0][0] == "Проверяю…" and upd["calls"] == 1, cb.answers
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1", text
+    assert text.split("\n")[:2] == ["⬆️ <b>Обновления</b> · доступна v3.3.1", "🖥 Сервер AWG: v3.2.0 → v3.3.1"], text
     assert _rows(markup) == [["⬆️ Обновить до v3.3.1"], ["✅ Уведомлять", "📅 Проверка: день"], ["⬅️ Назад"]]
     assert env.services.update_available_tag() == "v3.3.1"
-    upd["next"] = None
+    upd["releases"] = upd["releases"][:1]
     cb, nav = await _press(env, fake_bot, env.br.cb.pack("upd"))
     text, markup = _last_edit(nav)
-    assert text == "⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна", text
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна\n🖥 Сервер AWG: v3.2.0", text
     assert _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
 
 
-async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_network(env, fake_bot, upd, store):
+async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_network(main_env, fake_bot, upd, store):
     """Тумблер «Уведомлять» и цикл «📅 Проверка» отвечают сразу и рисуют
-    раздел по сохранённому тегу — без похода к списку релизов на каждое
-    нажатие и без потери кнопки обновления; «никогда» в цикле нет."""
+    раздел по сохранённому списку — без похода к GitHub на каждое нажатие и
+    без потери кнопки обновления; «никогда» в цикле нет."""
+    env = main_env
     _, markup = await sections.screen("upd", env.br, env.services)
     calls = upd["calls"]
     toggle = _button(markup, "✅ Уведомлять").callback_data
@@ -232,7 +239,7 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
     cb, nav = await _press(env, fake_bot, toggle)
     assert env.services.updates_muted() and cb.answers[0][0] == "Уведомления об обновлениях выключены", cb.answers
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1", text
+    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · доступна v3.3.1", text
     assert _rows(markup)[0] == ["⬆️ Обновить до v3.3.1"], "кнопка обновления пропала без сети"
     assert _rows(markup)[1][0] == "☑️ Уведомлять"
     seen = []
@@ -245,15 +252,24 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
     assert upd["calls"] == calls, "тумблер или цикл сходили в сеть"
 
 
-async def test_never_from_an_old_config_becomes_month_and_mute_on_open(env, fake_bot, upd, store):
+async def test_never_from_an_old_config_becomes_month_and_mute_on_open(main_env, fake_bot, upd, store):
     """«никогда» из старого конфига: раздел при открытии ставит «месяц» и
     выключает уведомления — проверка идёт ради строки на главной."""
+    env = main_env
     store["updates.poll_schedule"] = "never"
     assert not env.services.updates_muted()
     cb, nav = await _press(env, fake_bot, env.br.cb.pack("upd"))
     assert store["updates.poll_schedule"] == "month" and env.services.updates_muted()
     assert _rows(_last_edit(nav)[1])[1] == ["☑️ Уведомлять", "📅 Проверка: месяц"]
     assert upd["calls"] == 1, "проверка при «никогда» не пошла"
+
+
+def test_the_agent_has_no_updates_section():
+    """«⬆️ Обновления» у агента нет (Р3): его обновляет сервер AWG; прежняя
+    кнопка раздела роутером разделов не разбирается — её ловит «Кнопка устарела…»."""
+    from awgbot.bot.callbacks import GwCB
+    assert "upd" not in roles.GATEWAY.settings_root and not sections.available(roles.GATEWAY, "upd")
+    assert sections.resolve(roles.GATEWAY, GwCB(action="updates").pack()) is None
 
 
 # ── 🩺 порог простоя ─────────────────────────────────────────────────────────

@@ -11,14 +11,14 @@ from apscheduler.triggers.interval import IntervalTrigger
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
-from awgbot.runtime import scheduler as pkg          # подменяемое тестами — через пакет
 
 from .common import log
 
 
 def setup_gateway_scheduler(services, bot):
-    """Планировщик роли gateway: тик монитора, задачи канала линка и проверка
-    обновлений — сетевые с джиттером. Своих копий у шлюза нет: его настройки —
+    """Планировщик роли gateway: тик монитора и задачи канала линка — сетевые с
+    джиттером. Проверки обновлений у агента нет: он обновляется только по
+    команде сервера AWG (набор обновлений). Своих копий у шлюза нет: его настройки —
     в бэкапе сервера AWG (копия настроек по каналу, linkclient/keep).
 
     Нарочно не переиспользует setup_scheduler: задачи основной роли шлюзу не
@@ -95,6 +95,5 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
-    pkg.add_update_check(scheduler, services, bot, run_date=timeutil.now(), tag="gw update_check")
     scheduler.start()
     return scheduler

@@ -9,7 +9,7 @@ from awgbot.bot import ui
 from ..fmt import _e, human_bytes, rf_line, profile_link, plural_ru
 from ..fmt import deep_link as _deep_link
 from ..routing import routing_status_line, routing_admin_status_line
-from ..updates import release_url, update_gw_names
+from ..updates import release_url
 from .common import (
     TRAFFIC_PAYLOAD, UPD_PAYLOAD, ONLINE_PAYLOAD, EXPIRING_PAYLOAD, UNASSIGNED_PAYLOAD,
     REFRESH_PAYLOAD, month_label, refreshed_line, _LIST_SEP)
@@ -43,12 +43,12 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                 bot_username: str = "", expiring: int = 0, routing_info: dict = None,
                 rf: dict = None, unassigned: int = 0, update_tag: str = "",
-                update_wait: dict = None) -> str:
+                update_run: dict = None) -> str:
     """Шапка главной: сервер и аптайм одной строкой, пустая строка, метрики,
     РФ-доступ, счётчики и трафик со ссылками на значении, РФ-ветка, доступное
-    обновление и переезд — только когда есть что сказать. update_wait —
-    допустимой цели нет, а новейшая ждёт шлюзы (update_waiting): строка
-    ожидания вместо «⬆️ Доступна»."""
+    обновление и переезд — только когда есть что сказать. update_run — идёт
+    ход набора обновлений (fleet_progress): «🟡 Обновление до vX: 1 из 3»
+    ссылкой в раздел вместо «⬆️ Доступна»."""
     if st.get("ok") is None:
         dot = "…"
     elif st["ok"]:
@@ -94,16 +94,14 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         if rf and rf.get("show"):
             lines.append(rf_traffic_line(rf, bot_username))
     tail = []
-    if update_tag:
+    if update_run:
+        tag = update_run["tag"] if str(update_run["tag"]).startswith("v") else f"v{update_run['tag']}"
+        tail.append(_deep_link(bot_username, UPD_PAYLOAD,
+                               f"🟡 Обновление до {_e(tag)}: {update_run['n']} из {update_run['total']}"))
+    elif update_tag:
         tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
         tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}") + "</b> — "
                     + f'<a href="{release_url(tag)}">список изменений</a>')
-    elif update_wait:
-        tag = update_wait["tag"] if str(update_wait["tag"]).startswith("v") else f"v{update_wait['tag']}"
-        peers = update_wait.get("peers") or []
-        what = "сначала обнови шлюзы:" if len(peers) != 1 else "сначала обнови шлюз"
-        tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ {tag}") + "</b> — "
-                    + f"{what} {update_gw_names(peers, bot_username)}")
     mig = migration_line(migration, bot_username)
     if mig:
         tail.append(mig)

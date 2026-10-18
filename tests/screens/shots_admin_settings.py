@@ -1,10 +1,10 @@
 """Снимки админа: настройки — уведомления, сервер AWG, резолвер, SSH-доступ, подписки, сервис."""
 from __future__ import annotations
 
-from awgbot.bot.callbacks import CancelCB, SetCB, UpdateCB
+from awgbot.bot.callbacks import CancelCB, SetCB
 
 from tests.screens.base import NOW, Shot, in_zone
-from tests.screens.shots_admin_common import _email_on, _fw, _iso, _people, _raise, _restarts, _tag, _upd_found
+from tests.screens.shots_admin_common import _email_on, _fw, _iso, _people, _raise, _restarts, _tag
 
 
 # кнопки «С/До» есть только при включённых тихих часах
@@ -294,19 +294,6 @@ SETTINGS = [
          title="перезапустить бота?"),
     Shot("adm.set.svc.bot.yes", role="admin", press=[SetCB(sec="svc", act="do", key="bot!")],
          data=_restarts, title="бот перезапускается"),
-    Shot("adm.set.upd", role="admin", press=[SetCB(sec="upd")], data=_people, title="обновления: актуальна"),
-    Shot("adm.set.upd.found", role="admin", press=[SetCB(sec="upd")], data=_upd_found,
-         title="обновления: доступна новая"),
-    Shot("adm.set.upd.notify", role="admin", press=[SetCB(sec="upd", act="toggle", key="notify")],
-         data=_upd_found, title="уведомления об обновлениях выключены"),
-    Shot("adm.set.upd.cycle", role="admin", press=[SetCB(sec="upd", act="cycle", key="updates.poll_schedule")],
-         data=_people, title="расписание проверки"),
-    Shot("adm.upd.install", role="admin", press=[UpdateCB(action="install", tag="v1.3.0")], data=_upd_found,
-         title="обновить: ожидание"),
-    Shot("adm.upd.mute", role="admin", press=[UpdateCB(action="mute")], data=_people,
-         title="«Не уведомлять» на уведомлении"),
-    Shot("adm.upd.menu", role="admin", press=[UpdateCB(action="menu")], data=_people,
-         title="«В меню» на итоге обновления"),
 ]
 
 

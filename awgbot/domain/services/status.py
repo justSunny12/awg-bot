@@ -65,8 +65,8 @@ class StatusMixin:
             # «🛰 Шлюзы» на главной — когда шлюзы есть или их можно добавить
             "gateways": bool(self.db.gateways()) or settings.get_bool("app.routing.enabled", False),
             "update_tag": update_tag,
-            # цели нет, а новейшая ждёт шлюзы — строка ожидания вместо «Доступна»
-            "update_wait": None if update_tag else self.update_waiting(),
+            # идёт ход набора — строка хода вместо «Доступна»
+            "update_run": self.fleet_progress(),
         }
 
     def online_ref(self) -> datetime.datetime:

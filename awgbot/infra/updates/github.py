@@ -55,7 +55,8 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
 
     Метаданные (ассет config.UPDATES_META_ASSET_NAME) качаются только
     релизной сборке (_is_release_build), только для релизов новее
-    установленного и только мимо кэша: meta_cache —
+    установленного или в линии совместимости (не ниже COMPAT_FLOOR) и только
+    мимо кэша: meta_cache —
     {тег: {"digest", "meta"}}, его даёт и хранит вызывающий (здесь БД не
     знают); тот же digest — метаданные из кэша, другой — перечитать.
     Выпущенный тег не меняется, поэтому обычно за проверку уходит ноль или
@@ -87,10 +88,14 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
     # метаданные — только релизной сборке: нерелизная не обновляется вовсе, и
     # ходить ей за ассетами незачем
     release_build = installed is not None and _up()._is_release_build(installed, [f[1] for f in found])
+    # и ниже установленного — в линии совместимости: набор обновлений ведёт
+    # шлюзы и вниз, вслед за сервером AWG (версия роли в выпуске — по адресатам)
+    from awgbot.core.compat import COMPAT_FLOOR, version_key
+    floor = version_key(COMPAT_FLOOR)
     out: list[Release] = []
     for r, ver, asset_url, sha256, meta_asset in found:
         meta = bad = None
-        if fetch_meta and release_build and meta_asset is not None and ver > installed:
+        if fetch_meta and release_build and meta_asset is not None and (ver > installed or ver[:3] >= floor):
             meta, bad = _read_meta(r["tag_name"], meta_asset, meta_cache)
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),
@@ -151,7 +156,7 @@ def download_asset(release: Release) -> bytes:
     return blob
 
 
-def apply(blob: bytes) -> None:
+def apply(blob: bytes, *, hold: bool = False) -> None:
     """Записать поставку во временный файл и запустить `awg-bot update <tgz>`
     ОТДЕЛЬНО от нашего процесса, чтобы пережить `systemctl stop awg-bot` внутри
     апдейтера.
@@ -177,8 +182,11 @@ def apply(blob: bytes) -> None:
     # архив (только из /tmp) — иначе поставка на десятки мегабайт оставалась
     # после каждого обновления
     from awgbot.infra.detach import spawn_detached
-    spawn_detached([_AWG_BOT_BIN, "update", path], unit_prefix="awg-bot-selfupdate",
-                   env={"AWG_UPDATE_CLEANUP": path})
+    # AWG_UPDATE_HOLD — шаг набора: прежнее держится до фиксации или отката набора
+    env = {"AWG_UPDATE_CLEANUP": path}
+    if hold:
+        env["AWG_UPDATE_HOLD"] = "1"
+    spawn_detached([_AWG_BOT_BIN, "update", path], unit_prefix="awg-bot-selfupdate", env=env)
 
 
 def release_body(tag: str) -> str:

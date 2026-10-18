@@ -27,6 +27,7 @@ pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 SERVICES = REPO / "awgbot" / "domain" / "services"
 SCANNED = ("gwchannel", "gateway_link", "routing")
+FLEET = REPO / "awgbot" / "domain" / "fleet"        # набор обновлений: gwupd_<слот>
 
 # в реестре, но в коде пакетов не встречаются: ключи доставки, снятой в 3.3.1
 # (лежат у слотов, заведённых раньше)
@@ -46,7 +47,7 @@ def _str_consts() -> dict[str, set[str]]:
     """Строковые константы сервисного слоя: NAME = "…" на уровне модуля и
     класса — по ним разрешается self._X_KEY."""
     out: dict[str, set[str]] = {}
-    for path in _py_files(SERVICES):
+    for path in _py_files(SERVICES) + _py_files(FLEET):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bodies = [tree.body] + [n.body for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
         for body in bodies:
@@ -117,8 +118,8 @@ def scan_slot_keys() -> set[str]:
     _gwcfg_error_set, _gw_cached…), и f-строки с номером слота."""
     consts = _str_consts()
     found: set[str] = set()
-    for pkg in SCANNED:
-        for path in _py_files(SERVICES / pkg):
+    for root in [SERVICES / pkg for pkg in SCANNED] + [FLEET]:
+        for path in _py_files(root):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call) and len(node.args) >= 2 and _slotish(node.args[1]):

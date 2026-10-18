@@ -26,17 +26,6 @@ def channel_panel_line(chan: dict | None = None) -> str:
     return "🔧 Канал конфигурации " + ("🟢" if chan["online"] else "🔴 нет связи")
 
 
-def gateway_wait_line(w: dict) -> str:
-    """«⬆️ v3.3.2 — сначала обнови бот сервера AWG до v3.3.1» (О6); версия сервера
-    неизвестна — «⬆️ v3.3.2 — версию сервера AWG не проверить: он не на связи» (О7)."""
-    def v(x):
-        return x if str(x).startswith("v") else f"v{x}"
-    server = w["peers"][0].version if w.get("peers") else ""
-    tail = (f"сначала обнови бот сервера AWG до {_e(v(w['need']))}" if server
-            else "версию сервера AWG не проверить: он не на связи")
-    return f"<b>⬆️ {_e(v(w['tag']))} — {tail}</b>"
-
-
 def _gw_role(st, chan: dict) -> str:
     """Роль по каналу: «несёт трафик» / «в резерве»; канала или связи нет —
     состояние линка. Пометка не подтверждена (не назначен, чужое устройство,
@@ -61,13 +50,14 @@ def refreshed_line(st, bot_username: str = "") -> str:
     return refreshed_link(bot_username, REFRESH_PAYLOAD, timeutil.parse_iso(st.ts) if st.ts else None)
 
 
-def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=(),
-                  update_wait: dict | None = None, bot_username: str = "") -> str:
+def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending=(),
+                  bot_username: str = "") -> str:
     """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк, канал
     конфигурации, предупреждения, SSH, железо, VPN-транзит и списки, SMB,
     здоровье и трафик, пустая строка, свежесть ссылкой.
     chan — состояние канала (linkclient.view()); None — спросить самим.
-    update_wait — допустимой цели нет, а новейшая ждёт сервер AWG (update_waiting)."""
+    upd — команда обновления с сервера AWG (upd_panel): идёт — Т-А1, не
+    удалась — Т-А3 до следующей удачной."""
     from awgbot.util import timeutil
     chan = pkg._channel_view(chan)
     host = _e(st.hostname) if st.hostname else "шлюз"
@@ -91,11 +81,13 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None, pending=()
                       "foreign": "⚠️ Шлюз указывает на устройство, отличное от выбранного; линк лежит",
                       "unconfirmed": "⚠️ Аплинк этого устройства не найден — шлюз не подтверждён"}
                      .get(mark, f"⚠️ Пометка: {_e(mark)}"))
-    if update_tag:
-        tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
-        parts.append(f"<b>⬆️ Доступна {_e(tag)}</b>")
-    elif update_wait:
-        parts.append(pkg.gateway_wait_line(update_wait))
+    if upd and upd.get("state") == "updating":
+        from awgbot.domain.notices.fleet import agent_updating
+        parts.append(agent_updating(upd.get("target") or ""))
+    elif upd and upd.get("state") == "failed":
+        from awgbot.domain.notices.fleet import agent_update_failed
+        parts.append(agent_update_failed(upd.get("target") or "", upd.get("prev") or "", upd.get("error") or "",
+                                         upd.get("server_bot"), state=upd.get("how") or "rolled_back"))
     ssh_line = pkg.gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
     if ssh_line:
         parts.append(ssh_line)

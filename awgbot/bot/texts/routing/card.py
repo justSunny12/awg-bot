@@ -288,6 +288,13 @@ def gateway_card_text(state: dict, states: list) -> str:
     ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"))
     if ch_head:
         lines.append(ch_head)
+    fleet = state.get("fleet") or {}
+    if fleet.get("row"):
+        # набор обновлений: состояние — сразу под строкой канала (Т-К1…Т-К4)
+        from ..fleet import gw_state_line
+        fl = gw_state_line(fleet["row"], release=fleet.get("release") or "", run=fleet.get("run"))
+        if fl:
+            lines.append(fl)
     ch = state.get("channel") or {}
     cfg = ch.get("cfg") or {}
     if ch.get("outdated"):

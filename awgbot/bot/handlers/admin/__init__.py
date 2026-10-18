@@ -51,7 +51,8 @@ from awgbot.bot.handlers.admin.devices import (
     device_card_parts, my_devices_parts)
 from awgbot.bot.handlers.admin.gateway import has_gw_token, gateway_claim_message
 from awgbot.bot.handlers.admin.selfops import self_devices, self_gen_pick, self_add_start, self_add_name
-from awgbot.bot.sections.updates import install as update_install, menu as update_menu, mute as update_mute  # для тестов
+from awgbot.bot.sections.updates import menu as update_menu, mute as update_mute  # для тестов
+from awgbot.bot.handlers.fleet import install as update_install  # для тестов
 from awgbot.bot.handlers.admin.blocks import (
     admin_block_menu, admin_unblock_menu, admin_block_do, admin_unblock_do, admin_block_cancel)
 from awgbot.bot.handlers.admin.broadcast import (

@@ -27,7 +27,7 @@ def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = F
 
 def fmt_clock_ui(dt: datetime, *, seconds: bool = False, label: bool = True) -> str:
     """Время без даты: «08:08 (UTC+5)», с секундами — всегда «08:08:14 (UTC+5)»
-    (строка «обновлено …», окно ожидания). Метка — этого момента."""
+    (строка «обновлено …»). Метка — этого момента."""
     dt = dt.astimezone(pkg.TZ)
     return dt.strftime("%H:%M:%S" if seconds else "%H:%M") + (pkg.tz_tail(dt) if label else "")
 

@@ -97,3 +97,19 @@ class AgentStub:
     def cfg_uplink_tick(self) -> dict:
         return {"answer": None, "notes": []}
 
+
+    # команда набора обновлений: заглушке нечего доводить
+    def upd_ack_pending(self) -> dict:
+        return {}
+
+    def upd_ack_clear(self) -> None:
+        pass
+
+    def upd_cmd(self) -> dict:
+        return {}
+
+    def upd_resume(self) -> str:
+        return ""
+
+    def upd_settled(self) -> bool:
+        return True
