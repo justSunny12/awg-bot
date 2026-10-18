@@ -86,6 +86,7 @@ def test_a_tag_not_newer_than_the_fleet_release_is_not_shown(vps, monkeypatch):
     vps.db.set_state(vps._AVAILABLE_KEY, "v3.4.2")
     assert vps.update_available_tag() == "v3.4.2"
     vps.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.2", "state": "done", "steps": []})
+    vps.fleet_release_set("v3.4.2")                    # пишет фиксация хода
     monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")
     assert vps.fleet_release() == "v3.4.2" and vps.update_available_tag() == ""
 

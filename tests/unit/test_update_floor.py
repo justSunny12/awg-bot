@@ -43,6 +43,7 @@ def _run(tmp_path, version: str) -> tuple[subprocess.CompletedProcess, list[str]
         f'SELF_DIR="{tmp_path}"',
         'log() { echo "LOG $*"; }; die() { echo "DIE $*" >&2; exit 1; }; warn() { echo "WARN $*" >&2; }',
         "require_root() { :; }; require_installed() { :; }; ensure_python() { :; }; chown() { :; }",
+        "update_lock() { :; }",
         "lanmap_drop_for_older() { :; }",
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; [[ "$1" == stop ]] && exit 0; }}',
         *(_extract_func(script, f) for f in FUNCS),

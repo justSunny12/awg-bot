@@ -45,11 +45,13 @@ class _Agent(GatewayServices):
     def __init__(self, db):
         super().__init__(db)
         self.applied: list = []
+        self.hold_ids: list = []
         self.github = list(RELEASES)
         self.github_calls = 0
 
-    def apply_update(self, release, *, hold: bool = False) -> None:
-        self.applied.append((release.tag, hold))
+    def apply_update(self, release, *, hold="") -> None:
+        self.applied.append((release.tag, bool(hold)))
+        self.hold_ids.append(hold)
 
     # канал клиента спрашивает у агента всё это — у агента без обвязки пусто
     def gw_snapshot(self) -> dict:
@@ -86,6 +88,13 @@ def agent(tmp_path, monkeypatch):
     monkeypatch.setattr(lc_upd, "PAUSE_S", (0, 0))
     yield a
     d.close()
+
+
+def _restart(monkeypatch, version: str | None = None) -> None:
+    """Новый процесс агента (после апдейтера): другая метка процесса."""
+    if version is not None:
+        monkeypatch.setattr(config, "INSTALLED_VERSION", version)
+    monkeypatch.setattr(gw_upd, "_PROC", gw_upd.secrets.token_hex(4))
 
 
 def _cmd(target: str, *, rid: str = "a1b2c3d4", hold: bool = True, digest: str | None = None) -> dict:
@@ -162,7 +171,8 @@ async def test_two_steps_in_one_command_follow_the_chain_of_minimums(agent, monk
     та же команда; done — только на цели."""
     sent = await _run(agent, _cmd("v3.5.0"))
     assert sent[0]["step"] == "v3.4.1" and agent.applied == [("v3.4.1", True)]
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")        # новый процесс
+    assert agent.hold_ids == ["a1b2c3d4"], "удержание без id команды"
+    _restart(monkeypatch, "3.4.1")                                 # новый процесс
     assert agent.upd_resume() == "next"
     client = linkclient.LinkClient(agent)
     got: list = []
@@ -173,7 +183,7 @@ async def test_two_steps_in_one_command_follow_the_chain_of_minimums(agent, monk
     client._send, client._writer = send, object()
     await client._upd_run()
     assert agent.applied[-1] == ("v3.5.0", True) and got[-1]["step"] == "v3.5.0"
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.5.0")
+    _restart(monkeypatch, "3.5.0")
     assert agent.upd_resume() == "done"
     assert agent.upd_ack_pending()["state"] == "done"
 
@@ -182,7 +192,7 @@ async def test_the_answer_waits_for_the_guard_and_survives_a_restart(agent, monk
     """После перезапуска «done» уходит первой сессией — и только когда сторож
     снят (удержание прежнего уже на месте)."""
     await _run(agent, _cmd("v3.4.1"))
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")
+    _restart(monkeypatch, "3.4.1")
     (tmp_path / "update-guard").write_text("VERSION=3.4.1\n", encoding="utf-8")
     monkeypatch.setattr(lc_upd, "SETTLE_POLL_S", 0.01)
     client = linkclient.LinkClient(agent)
@@ -202,6 +212,7 @@ async def test_the_answer_waits_for_the_guard_and_survives_a_restart(agent, monk
 
 async def test_a_guard_rollback_is_reported_as_rolled_back(agent, tmp_path, monkeypatch):
     await _run(agent, _cmd("v3.4.1"))
+    _restart(monkeypatch)
     (tmp_path / "update-rolled-back").write_text(json.dumps({"version": "3.4.1", "prev": "3.4.0"}), encoding="utf-8")
     notes: list = []
 
@@ -261,7 +272,7 @@ async def test_the_same_command_again_gets_the_current_answer(agent):
 
 async def test_revert_is_local_when_the_old_one_is_held(agent, monkeypatch):
     await _run(agent, _cmd("v3.4.1"))
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")
+    _restart(monkeypatch, "3.4.1")
     agent.upd_resume()
     spawned: list = []
     import awgbot.infra.detach as detach
@@ -270,19 +281,19 @@ async def test_revert_is_local_when_the_old_one_is_held(agent, monkeypatch):
     calls = agent.github_calls
     sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     assert spawned == [["__update_revert"]] and sent == [] and agent.github_calls == calls, "откат пошёл на GitHub"
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.0")          # новый (прежний) процесс
+    _restart(monkeypatch, "3.4.0")                                   # новый (прежний) процесс
     assert agent.upd_resume() == "reverted"
     assert agent.upd_ack_pending()["state"] == "reverted"
 
 
 async def test_revert_without_the_old_one_goes_down_from_github(agent, monkeypatch):
     await _run(agent, _cmd("v3.4.1"))
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")
+    _restart(monkeypatch, "3.4.1")
     agent.upd_resume()
     monkeypatch.setattr(gw_upd, "_revert_check", lambda: 2)
     sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     assert agent.applied[-1] == ("v3.4.0", False) and sent == []
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.0")
+    _restart(monkeypatch, "3.4.0")
     assert agent.upd_resume() == "reverted"
 
 
@@ -297,6 +308,33 @@ async def test_commit_drops_the_held_old_one(agent, monkeypatch):
     assert spawned == [["__update_commit"]]
 
 
+async def test_a_reconnect_while_the_updater_works_is_not_a_rollback(agent, monkeypatch, tmp_path):
+    """Сессия переподключилась в окне «скачивание → сборка → остановка» (тот
+    же процесс): ложного rolled_back нет; апдейтер умер, не доведя, — failed."""
+    await _run(agent, _cmd("v3.4.1"))
+    (tmp_path / "update-running").write_text("999999\n", encoding="utf-8")
+    assert agent.upd_resume() == "" and agent.upd_cmd()["state"] == "applying", "ложный откат набора"
+    cmd = agent.upd_cmd()
+    cmd["applied_at"] = "2020-01-01T00:00:00+00:00"                # прошло больше 90 секунд, апдейтера нет
+    agent._upd_save(cmd)
+    assert agent.upd_resume() == "failed"
+    assert agent.upd_ack_pending()["state"] == "failed"
+
+
+async def test_a_repeated_revert_does_not_start_a_second_one(agent, monkeypatch):
+    await _run(agent, _cmd("v3.4.1"))
+    _restart(monkeypatch, "3.4.1")
+    agent.upd_resume()
+    spawned: list = []
+    import awgbot.infra.detach as detach
+    monkeypatch.setattr(detach, "spawn_detached", lambda argv, **k: spawned.append(argv[1:]))
+    monkeypatch.setattr(gw_upd, "_revert_check", lambda: 0)
+    await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
+    sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
+    assert spawned == [["__update_revert"]], "второй __update_revert тем же id"
+    assert sent and sent[0]["t"] == "upd_ack"
+
+
 def test_the_agent_tells_the_server_it_takes_the_command():
     from awgbot.runtime.linkclient.common import CAPS
     assert "upd1" in CAPS
@@ -309,7 +347,8 @@ def test_the_applied_note_of_the_agent_is_one_silent_line(agent):
     agent._upd_save({"id": "a1b2c3d4", "target": "v3.5.0", "state": "applying", "step": "v3.4.1"})
     assert agent.update_applied_note("v3.4.1", True) is None, "промежуточная ступень сказала «обновлён»"
     agent._upd_save({})
-    assert agent.update_applied_note("v3.4.1", True) is ..., "обновление руками потеряло обычный итог"
+    from awgbot.domain.selfupdate.core import DEFAULT_NOTE
+    assert agent.update_applied_note("v3.4.1", True) is DEFAULT_NOTE, "обновление руками потеряло обычный итог"
 
 
 # ── живой канал: команда, ответ, перезапуск ────────────────────────────────

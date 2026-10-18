@@ -668,7 +668,7 @@ def test_kernel_updater_hands_the_archive_path_to_post_update_for_cleanup():
     from awgbot.infra import updates as up
     src = (ROOT / "awgbot" / "infra" / "updates" / "github.py").read_text(encoding="utf-8")
     assert 'env = {"AWG_UPDATE_CLEANUP": path}' in src and "spawn_detached(" in src
-    assert 'env["AWG_UPDATE_HOLD"] = "1"' in src, "шаг набора не держит прежнее до фиксации"
+    assert 'env["AWG_UPDATE_HOLD"] = hold' in src, "шаг набора не держит прежнее до фиксации"
     assert up  # модуль импортируется
 
 

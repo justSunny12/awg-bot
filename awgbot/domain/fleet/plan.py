@@ -22,7 +22,7 @@ from typing import Optional
 from awgbot.core import config
 from awgbot.infra import updates
 
-from .state import DONE
+from .state import RELEASE_KEY
 
 
 def role_target(releases: list, role: str, upto: tuple):
@@ -64,12 +64,15 @@ class FleetPlanMixin:
         releases = self.fleet_releases()
         if inst is None or releases is None or not updates._is_release_build(inst, releases):
             return ""
-        run = self.fleet_run()
-        want = updates.parse_version(str(run.get("tag") or ""))
-        if run.get("state") == DONE and want is not None and want > inst:
+        # выпуск только для шлюзов поверх сервера — его пишет только фиксация
+        # хода (неудачный следующий ход его не трогает); сервер сменил версию
+        # сам — ключ не про него и не в счёт
+        kept = str(self.db.get_state(RELEASE_KEY) or "")
+        want = updates.parse_version(kept)
+        if want is not None and want > inst:
             main = role_target(releases, "main", want)
             if main is not None and main.version == inst:
-                return str(run["tag"])                    # выпуск только для шлюзов поверх сервера
+                return _tag(kept)
         return _tag(config.INSTALLED_VERSION)
 
     def fleet_gw_target(self, release: str = ""):
@@ -169,6 +172,7 @@ class FleetPlanMixin:
         gw_want = self.fleet_gw_target(target.tag) if target is not None else None
         main_want = None
         needs_gw = False
+        needs_ver = ""
         if target is not None:
             releases = self.fleet_releases() or []
             mt = role_target(releases, "main", target.version)
@@ -176,6 +180,8 @@ class FleetPlanMixin:
             if mt is not None and inst is not None and mt.version > inst:
                 main_want = mt.tag
                 _step, needs_gw = self.fleet_server_step(target)
+                need = mt.needs("main") if needs_gw else None
+                needs_ver = "v" + ".".join(str(x) for x in need) if need else ""
         rows = []
         for g in sorted(self.fleet_gateways(), key=lambda r: r["slot"]):      # на экране — по номеру слота
             st = self.fleet_slot(g["slot"])
@@ -185,7 +191,7 @@ class FleetPlanMixin:
                 "body": getattr(target, "body", "") if target is not None else "",
                 "server": _tag(config.INSTALLED_VERSION), "server_want": main_want,
                 "gw_changes": gw_want is not None and (gw_now is None or gw_want.tag != gw_now.tag),
-                "needs_gw": needs_gw, "gateways": rows, "run": self.fleet_run()}
+                "needs_gw": needs_gw, "needs_gw_ver": needs_ver, "gateways": rows, "run": self.fleet_run()}
 
     def fleet_run_plan(self) -> dict:
         """План для живого сообщения хода: цель — тег хода."""

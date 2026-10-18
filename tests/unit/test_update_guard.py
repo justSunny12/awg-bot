@@ -46,6 +46,8 @@ def _tree(root: Path, version: str, floor: str, tag: str) -> None:
     (root / "awgbot" / "__version__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
     (root / "awgbot" / "core" / "compat.py").write_text(f'COMPAT_FLOOR = "{floor}"\n', encoding="utf-8")
     (root / "whose").write_text(tag, encoding="utf-8")
+    (root / "awgbot" / "__main__.py").write_text("# main\n", encoding="utf-8")   # полная поставка: откат её примет
+    (root / "awg-bot.sh").write_text("# script\n", encoding="utf-8")
     (root / "install").mkdir(exist_ok=True)
     (root / "install" / "awg.lock").write_text("AWG_GENERATION=2\n", encoding="utf-8")
     _exe(root / "install" / "awg-kernel-install.sh",
@@ -265,13 +267,25 @@ def test_reboot_inside_the_window_rearms_the_guard_for_what_is_left(tmp_path):
     assert host.whose() == "new" and (host.data / "update-guard").exists()
 
 
-def test_reboot_after_the_window_without_the_mark_rolls_back_before_start(tmp_path):
-    """Таймер унесла перезагрузка, окно истекло, отметки нет — откат прямо в
-    ExecStartPre: без systemctl для самого сервиса (его запуск ждал бы сам себя)."""
+def test_reboot_after_the_window_gives_the_new_version_five_minutes(tmp_path):
+    """Окно по стенным часам включает простой хоста: после загрузки новой
+    версии — не меньше 5 минут выйти на связь, а не откат с порога."""
     host = _Host(tmp_path)
     host.post_update()
     _age(host, 11)
     host.guard("--start")
+    assert host.whose() == "new" and (host.data / "update-guard").exists()
+    assert any("--on-active=5min" in c for c in host.log()), host.log()
+
+
+def test_reboot_after_the_window_without_the_mark_rolls_back_before_start(tmp_path):
+    """Таймер унесла перезагрузка, окно истекло, отметки нет, а взвести сторожа
+    заново нечем — откат прямо в ExecStartPre: без systemctl для самого
+    сервиса (его запуск ждал бы сам себя)."""
+    host = _Host(tmp_path)
+    host.post_update()
+    _age(host, 11)
+    host.guard("--start", run_rc=1)
     assert host.whose() == "old" and host.venv() == host.env_old
     assert host.app.read_text(encoding="utf-8") == host.app_text
     assert (host.data / "update-rolled-back").exists() and not (host.data / "update-guard").exists()

@@ -17,6 +17,7 @@ import pytest
 
 from awgbot.core import config
 from awgbot.domain.fleet import order as fleet_order
+from awgbot.domain.fleet import server as fleet_server
 from awgbot.infra import awglock, updates
 from awgbot.util import timeutil
 
@@ -53,7 +54,12 @@ class Fleet:
         monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.0")
         monkeypatch.setattr(config, "DB_PATH", tmp_path / "bot.db")
         monkeypatch.setattr(awglock, "generation", lambda: 1)
-        monkeypatch.setattr(services, "apply_update", lambda r, hold=False: self.applied.append((r.tag, hold)))
+        self.hold_ids: list[str] = []
+
+        def apply(r, hold=""):
+            self.applied.append((r.tag, bool(hold)))
+            self.hold_ids.append(hold if isinstance(hold, str) else "")
+        monkeypatch.setattr(services, "apply_update", apply)
         monkeypatch.setattr(fleet_order, "_spawn", lambda argv, unit: self.spawned.append(argv[1:]))
         monkeypatch.setattr(fleet_order, "_revert_check", lambda: self.revert_rc)
         self.admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID, device_limit=0)
@@ -92,8 +98,10 @@ class Fleet:
         self.s.gwlink_session_closed(n)
 
     def server(self, version: str) -> None:
-        """Новый процесс сервера после перезапуска: версия установки сменилась."""
+        """Новый процесс сервера после перезапуска: версия установки сменилась
+        (и процесс другой — шаг, начатый прежним, ждёт факта уже не его)."""
         self.mp.setattr(config, "INSTALLED_VERSION", version)
+        self.mp.setattr(fleet_server, "PROC", fleet_server.new_id())
 
     def guard(self, armed: bool) -> None:
         path = self.tmp / "update-guard"
@@ -126,6 +134,9 @@ class Fleet:
         st = self.s.fleet_slot(n)
         return self.deliver(self.s.fleet_ack(n, {"id": st["id"], "state": state, "step": step or st.get("target"),
                                                  "error": error}))
+
+    def ack_id(self, n: int, rid: str, state: str, step: str = "", error: str = ""):
+        return self.deliver(self.s.fleet_ack(n, {"id": rid, "state": state, "step": step, "error": error}))
 
     def hello(self, n: int, version: str):
         self.online(n, version)

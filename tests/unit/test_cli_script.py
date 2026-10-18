@@ -392,6 +392,7 @@ def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script
     (inst / "venv").mkdir(); (inst / "venv" / "keep").write_text("", encoding="utf-8")
     prev = inst / ".prev-code"; prev.mkdir()
     (prev / "awg-bot.sh").write_text("old", encoding="utf-8")
+    (prev / "awgbot").mkdir(); (prev / "awgbot" / "__main__.py").write_text("# old\n", encoding="utf-8")
     (prev / ".env.example").write_text("old", encoding="utf-8")
     (inst / "awg-bot.sh").write_text("new-half", encoding="utf-8")
     upd_tmp = tmp_path / "upd"; upd_tmp.mkdir()
@@ -496,6 +497,7 @@ def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp
     (inst / "venv").symlink_to(new_env)
     (inst / ".venvs" / ".prev").write_text(str(old_env) + "\n", encoding="utf-8")
     prev = inst / ".prev-code"; prev.mkdir(); (prev / "awg-bot.sh").write_text("old", encoding="utf-8")
+    (prev / "awgbot").mkdir(); (prev / "awgbot" / "__main__.py").write_text("# old\n", encoding="utf-8")
     (inst / "awg-bot.sh").write_text("new", encoding="utf-8")
     log = tmp_path / "log"
     prog = "\n".join([

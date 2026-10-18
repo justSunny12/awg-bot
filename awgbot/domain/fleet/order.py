@@ -13,12 +13,13 @@
 активный; выпуску сервера нужны новые шлюзы (`needs_gw`) — сначала шлюзы.
 Следующий шаг — только по факту предыдущего: шлюз ответил `done` или стал
 недоступен (без сессии 15 минут), сервер — новый процесс вышел на связь
-(сторож обновления снят, отметка жизни есть).
+(сторож обновления снят, отметка жизни есть; server.py). Шлюз на связи без
+ответа полчаса — неудача шага. Команда вне хода (догон, следование), ещё в
+пути у шлюза на связи, ход держит: два обновления разом агент не примет.
 """
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from dataclasses import dataclass, field
 
@@ -26,11 +27,14 @@ from awgbot.core import config
 from awgbot.infra import updates
 from awgbot.util import timeutil
 
+from awgbot.domain.notices import fleet as notes_
+
 from .state import (ACTIVE_RUN, DONE, FAILURES, IN_FLIGHT, ROLLING_BACK, RUNNING, new_id)
 
 log = logging.getLogger("awgbot.fleet")
 
 LOST_AFTER_S = 15 * 60          # шаг шлюза без сессии столько — шлюз недоступен, ход идёт дальше
+GW_STEP_MAX_S = 30 * 60         # шлюз на связи без ответа на шаг столько — шаг не удался
 
 _LOCK = threading.RLock()       # один такт за раз: слушатель, кнопка и старт решают в разных потоках
 
@@ -74,12 +78,6 @@ class FleetOrderMixin:
     def fleet_lock(self):
         return _LOCK
 
-    def fleet_server_settled(self) -> bool:
-        """Сервер не посреди своего шага: сторож обновления не взведён (новый
-        процесс вышел на связь — прежнее в удержании или снято)."""
-        base = os.path.dirname(str(config.DB_PATH))
-        return not os.path.exists(os.path.join(base, "update-guard"))
-
     # ── старт ────────────────────────────────────────────────────────────────
 
     def fleet_start(self, tag: str) -> str:
@@ -96,6 +94,7 @@ class FleetOrderMixin:
                 return "changed"
             self.fleet_run_set({
                 "id": new_id(), "tag": target.tag, "prev": self.fleet_release(),
+                "main_prev": _v(config.INSTALLED_VERSION),
                 "digest": f"sha256:{target.sha256}" if target.sha256 else "",
                 "why": "button", "at": _now_iso(), "state": RUNNING, "steps": [], "undo": 0,
                 "failed_on": "", "reason": "", "revert_failed": [], "msg": []})
@@ -105,8 +104,9 @@ class FleetOrderMixin:
     def update_applied_note(self, pending: str, ok: bool):
         """Итог своего обновления после перезапуска (selfupdate/core): в ходе
         набора — без отдельного сообщения, о нём говорит живое сообщение
-        набора; вне хода — обычный итог (...)."""
-        return None if self.fleet_run().get("state") in ACTIVE_RUN else ...
+        набора; вне хода — обычный итог роли (DEFAULT_NOTE)."""
+        from awgbot.domain.selfupdate.core import DEFAULT_NOTE
+        return None if self.fleet_run().get("state") in ACTIVE_RUN else DEFAULT_NOTE
 
     def fleet_set_message(self, chat_id: int, message_id: int) -> None:
         with _LOCK:
@@ -130,7 +130,7 @@ class FleetOrderMixin:
             return self._fleet_outside(run, out)
 
     def _fleet_forward(self, run: dict, out: FleetOut) -> FleetOut:
-        if not self.fleet_server_settled():
+        if self._fleet_server_wait(run, out):
             return out                                    # сервер посреди своего шага — ждём факта
         target = self.fleet_release_of(str(run.get("tag") or ""))
         if target is None:
@@ -139,12 +139,21 @@ class FleetOrderMixin:
         # шаг шлюза в пути: ждём его ответа или признаём недоступным
         for g in gws:
             st = self.fleet_slot(g["slot"])
-            if st.get("run") != run["id"] or st.get("state") not in IN_FLIGHT:
+            if st.get("state") not in IN_FLIGHT:
+                continue
+            if st.get("run") != run["id"]:
+                # команда вне хода у шлюза на связи — ждём её итога (второй агент не примет)
+                if g["online"] and _since(str(st.get("at") or "")) < GW_STEP_MAX_S:
+                    return out
                 continue
             if g["online"]:
                 if st.get("off_since"):
                     st["off_since"] = ""
                     self.fleet_slot_set(g["slot"], st)
+                if _since(str(st.get("at") or "")) >= GW_STEP_MAX_S:
+                    st["state"], st["error"] = "failed", notes_.GW_NO_ANSWER
+                    self.fleet_slot_set(g["slot"], st)
+                    return self._fleet_rollback_begin(run, out, int(g["slot"]), notes_.GW_NO_ANSWER)
                 return out
             if not st.get("off_since"):
                 st["off_since"] = _now_iso()
@@ -152,7 +161,7 @@ class FleetOrderMixin:
                 return out
             if _since(st["off_since"]) < LOST_AFTER_S:
                 return out
-            st["state"] = "lost"
+            st["state"], st["lost_from"] = "lost", st.get("state") or ""
             self.fleet_slot_set(g["slot"], st)
             out.live = True
             log.info("набор: «%s» пропал посреди обновления — ход идёт дальше", g["name"])
@@ -163,25 +172,24 @@ class FleetOrderMixin:
             run["steps"].append(["main", step.tag])
             run["undo"] = len(run["steps"])
             self._fleet_expect(run, gws)
+            self._fleet_server_mark(run, "apply", step.tag)   # до апдейтера: второй такт его не повторит
             self.fleet_run_set(run)
             out.server, out.step, out.live = "apply", step, True
             return out
         gw_target = self.fleet_gw_target(target.tag)
         queue = []
         if gw_target is not None:
-            for g in gws:
+            for g in gws:                                 # по порядку хода: резервные, активный последним
                 if not g["participant"]:
                     continue
                 st = self.fleet_slot(g["slot"])
-                if st.get("run") == run["id"] and st.get("state") in ("done",) + FAILURES:
+                if st.get("run") == run["id"] and st.get("state") in ("done", "lost") + FAILURES:
                     continue
                 if updates.parse_version(g["version"]) == gw_target.version:
                     continue
-                late = st.get("run") == run["id"] and st.get("state") == "lost"
-                queue.append((late, g))
-        queue.sort(key=lambda x: x[0])                    # вернувшийся посреди хода — в конец очереди
+                queue.append(g)
         if queue:
-            g = queue[0][1]
+            g = queue[0]
             out.send.append(self._fleet_command(run, g, gw_target, why="fleet", hold=True))
             out.live = True
             return out
@@ -222,10 +230,12 @@ class FleetOrderMixin:
         return (g["slot"], "upd", _upd_body(st))
 
     def _fleet_commit(self, run: dict, out: FleetOut) -> FleetOut:
-        """Все доступные на выпуске хода — фиксация: прежнее у хостов прочь."""
+        """Все доступные на выпуске хода — фиксация: прежнее у хостов прочь;
+        выпуск набора — тег хода (ключ пишет только фиксация)."""
         run["state"] = DONE
         run["at"] = _now_iso()
         self.fleet_run_set(run)
+        self.fleet_release_set(str(run.get("tag") or ""))
         for g in self.fleet_gateways():
             st = self.fleet_slot(g["slot"])
             if st.get("run") == run["id"] and st.get("hold") and st.get("state") == "done" and g["online"]:
@@ -237,28 +247,6 @@ class FleetOrderMixin:
         out.live = out.final = True
         log.info("набор: ход до %s зафиксирован", run.get("tag"))
         return out
-
-    # ── действие сервера над собой ───────────────────────────────────────────
-
-    def fleet_server_act(self, out: FleetOut) -> FleetOut:
-        """Исполнить out.server (после того, как живое сообщение показало шаг):
-        apply — ступень сервера с удержанием прежнего; commit — прежнее прочь;
-        revert — прежнее на место. Отказ — следующий такт (FleetOut)."""
-        if out.server == "apply":
-            try:
-                self.apply_update(out.step, hold=True)
-            except Exception as e:                        # noqa: BLE001 — сеть, sha256, переезд
-                log.warning("набор: ступень сервера %s не запустилась: %s", getattr(out.step, "tag", "?"), e)
-                return self.fleet_server_failed(str(e))
-            return FleetOut()
-        if out.server == "commit":
-            _spawn([updates._AWG_BOT_BIN, "__update_commit"], "awg-bot-update-commit")
-            return FleetOut()
-        if out.server == "revert":
-            if _revert_check() != 0:
-                return self.fleet_server_revert_failed("прежней версии сервера AWG нет — откатывать некуда")
-            _spawn([updates._AWG_BOT_BIN, "__update_revert"], "awg-bot-update-revert")
-        return FleetOut()
 
     # ── ответы шлюзов ────────────────────────────────────────────────────────
 

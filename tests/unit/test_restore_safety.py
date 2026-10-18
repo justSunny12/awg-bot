@@ -31,7 +31,7 @@ pytestmark = pytest.mark.unit
 FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "json_str", "restore_die", "restore_stage", "restore_unstage",
          "restore_rollback", "restore_mv", "restore_swap", "restore_finish", "restore_prune_mark",
          "restore_fail_marker", "restore_exit", "restore_blocks", "restore_provision", "cmd_restore",
-         "restore_apply", "restore_code_back", "tree_version")
+         "restore_apply", "restore_code_back", "tree_version", "update_lock")
 OLD = {"db": b"OLD-DB", "app": b"network:\n  server_host: vpn.example.org\n", "env": b"BOT_TOKEN=DUMMY\n",
        "awg0": b"[Interface]\nPrivateKey = DUMMY-OLD\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-OLD\n"}
 NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\n", "env": b"BOT_TOKEN=DUMMY2\n",
@@ -116,6 +116,7 @@ def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int 
         f'INSTALL_DIR="{h.tmp}/opt"; CONF_DIR="{h.conf}"; ENV_FILE="{h.env}"; DATA_DIR="{h.data}"',
         f'BACKUP_DIR="{h.backups}"; SERVICE=awg-bot; ROOT_GW_DIR="{h.root}"; SYS_NET="{h.net}"',
         'GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG"',
+        f'UPDATE_LOCK="{h.data}/update-guard.lock"',
         "RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_PHASE=''; RESTORE_ERR=''",
         "RESTORE_TMP=''; RESTORE_PENDING=''; RESTORE_PLAN_FILE=''; RESTORE_FAIL=''; RESTORE_YES=0",
         'log() { echo "LOG $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*" >&2; }',

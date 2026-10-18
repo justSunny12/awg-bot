@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
 import json
 import subprocess
 import tarfile
@@ -175,3 +176,24 @@ def test_the_state_reaches_the_second_half_under_its_own_names(script):
     after = _extract_func(script, "cmd_restore_after_update")
     for name in ("YES", "TMP", "PENDING", "PLAN_FILE"):
         assert f"AWG_RESTORE_{name}=" in body and f'"${{AWG_RESTORE_{name}:-' in after, name
+
+
+@pytest.mark.skipif(shutil.which("flock") is None, reason="нет flock")
+def test_restore_takes_the_install_lock_and_refuses_while_it_is_held(script, tmp_path):
+    """Замок установки занят (обновление, сторож, откат) — отказ до остановки,
+    «ничего не изменилось»; вторая половина замок не берёт заново — наследует."""
+    import time
+    h = Host(tmp_path)
+    rel = Release(script, h)
+    holder = subprocess.Popen(["flock", str(h.data / "update-guard.lock"), "sleep", "5"])
+    try:
+        time.sleep(0.3)
+        r = rel.run(script)
+    finally:
+        holder.kill()
+    assert r.returncode != 0 and "ничего не изменилось" in r.stderr
+    assert "systemctl stop awg-bot" not in h.calls() and OLD_VER in rel.code() and h.live() == OLD
+    after = _extract_func(script, "cmd_restore_after_update")
+    assert "update_lock" not in after, "вторая половина берёт замок повторно — ждала бы сама себя"
+    r = rel.run(script)
+    assert r.returncode == 0, r.stderr

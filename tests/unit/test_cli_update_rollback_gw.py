@@ -35,6 +35,7 @@ def _host(tmp_path, *, copy: str | None):
     prev = inst / ".prev-code"; (prev / "install").mkdir(parents=True)
     (prev / "install" / "routing-gw-setup.sh").write_text(_OLD_GW, encoding="utf-8")
     (prev / "awg-bot.sh").write_text("old", encoding="utf-8")
+    (prev / "awgbot").mkdir(); (prev / "awgbot" / "__main__.py").write_text("# old\n", encoding="utf-8")
     sbin = tmp_path / "sbin"; sbin.mkdir()
     if copy is not None:
         (sbin / "routing-gw-setup.sh").write_text(copy, encoding="utf-8")

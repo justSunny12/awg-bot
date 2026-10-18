@@ -30,6 +30,19 @@ def gw_followed_down(name: str, label: str, tag: str, *, slot: int = 0, bot_user
             f"{_e(_ver(tag))} вслед за сервером AWG")
 
 
+def gw_followed_up(name: str, label: str, tag: str, *, slot: int = 0, bot_username: str = "") -> str:
+    """Следование вверх: сервер AWG обновили мимо кнопки — шлюз за ним."""
+    return (f"✅ {gw_ref(name, label, slot=slot, bot_username=bot_username)} обновлён до "
+            f"{_e(_ver(tag))} вслед за сервером AWG")
+
+
+def gw_catchup_given_up(name: str, label: str, tag: str, reason: str, *, slot: int = 0,
+                        bot_username: str = "") -> str:
+    """Т-У7б, последняя неудача: повторов больше нет."""
+    return (f"⚠️ {gw_ref(name, label, slot=slot, bot_username=bot_username)} не обновился до "
+            f"{_e(_ver(tag))}: {_e(reason)} — повторов больше не будет, «🔁 Повторить» — в разделе обновлений")
+
+
 def gw_catchup_failed(name: str, label: str, tag: str, reason: str, tries: int, *,
                       slot: int = 0, bot_username: str = "") -> str:
     """Т-У7б: догон не удался — когда повтор."""
@@ -45,6 +58,10 @@ def server_rolled_back(tag: str, prev: str) -> str:
 
 
 SERVER_SILENT = "обновлённый сервер AWG не вышел на связь за 10 минут"
+SERVER_STEP_NOT_APPLIED = "обновление сервера AWG не применилось — работает прежняя версия"
+SERVER_STEP_LATE = "обновление сервера AWG не закончилось за 20 минут"
+SERVER_NOT_BACK = "прежняя версия сервера AWG не вернулась"
+GW_NO_ANSWER = "шлюз на связи, но не ответил за 30 минут"
 AGENT_SILENT = "обновленный агент не вышел на связь за 10 минут"
 
 

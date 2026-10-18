@@ -97,8 +97,9 @@
 #                          прикрыт: прежнее снимается сразу после старта. Новое
 #                          обновление поверх неподтверждённого снимает прежнего
 #                          сторожа: откат — на версию, работающую сейчас.
-#                          Шаг набора обновлений (AWG_UPDATE_HOLD=1 — ставит
-#                          бот: сервер AWG или шлюз по команде сервера) после
+#                          Шаг набора обновлений (AWG_UPDATE_HOLD=<id хода или
+#                          команды> — ставит бот: сервер AWG или шлюз по
+#                          команде сервера) после
 #                          отметки жизни прежнее не снимает, а держит
 #                          ($INSTALL_DIR/.hold-code, $DATA_DIR/update-hold) до
 #                          фиксации набора — __update_commit (прежнее и
@@ -106,7 +107,10 @@
 #                          (прежние код и окружение на место переименованием,
 #                          без сети; --check — есть ли на что, код 2 — нет).
 #                          Цепочка ступеней одной командой держит самое первое
-#                          прежнее.
+#                          прежнее; шаг другого хода или команды, ручной update,
+#                          wipe и переход через COMPAT_FLOOR прежнее удержание
+#                          снимают. update, сторож, фиксация и откат набора —
+#                          под одним замком ($DATA_DIR/update-guard.lock).
 #                          sha256 архива сверяется с ассетами выпуска той же
 #                          версии на GitHub (один запрос): совпало — версия и
 #                          sha256 в $DATA_DIR/installed-digest, бот на старте
@@ -199,8 +203,9 @@ GW_BUNDLE="${AWG_BOT_GW_BUNDLE:-}"      # файл первого примене
 AWG_UPDATE_KEEP="${AWG_UPDATE_KEEP:-0}"
 AWG_UPDATE_THEN_BUNDLE="${AWG_UPDATE_THEN_BUNDLE:-}"
 AWG_UPDATE_CLEANUP="${AWG_UPDATE_CLEANUP:-}"        # временный каталог с архивом — убрать после обновления
-# шаг набора (бот: apply_update(hold=True)): прежние код и окружение держатся до
-# фиксации набора (__update_commit) или его отката (__update_revert)
+# шаг набора (бот: apply_update(hold=<id>)): прежние код и окружение держатся до
+# фиксации набора (__update_commit) или его отката (__update_revert); значение —
+# id хода сервера или команды шлюза («0» или пусто — не шаг набора)
 AWG_UPDATE_HOLD="${AWG_UPDATE_HOLD:-0}"
 AWG_STATE="$ETC_DIR/awg.state"          # поколение AmneziaWG на этом хосте
 AWG_LOCK_FILE="$INSTALL_DIR/install/awg.lock"   # манифест версии из поставки
@@ -403,14 +408,16 @@ venv_rollback() {  # ссылка venv — обратно на прежнее о
     fi
     rm -f "$INSTALL_DIR/.venvs/.prev"
 }
-venv_prune() {  # оставить окружение, на которое смотрит ссылка (и то, что держит шаг набора)
-    local cur="" keep="" d
+venv_prune() {  # оставить окружение, на которое смотрит ссылка (и то, что держат шаг набора и сторож)
+    local cur="" keep="" guarded="" d
     cur="$(readlink -f "$INSTALL_DIR/venv" 2>/dev/null)" || return 0
     keep="$(hold_get ENV 2>/dev/null)" || keep=""
+    # взведённый сторож откатит на .venvs/.prev — его окружение не трогаем
+    [[ -f "${UPDATE_GUARD:-}" ]] && guarded="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null || true)"
     for d in "$INSTALL_DIR/.venvs"/*; do
-        [[ -d "$d" && "$d" != "$cur" && "$d" != "$keep" ]] && rm -rf "$d"
+        [[ -d "$d" && "$d" != "$cur" && "$d" != "$keep" && "$d" != "$guarded" ]] && rm -rf "$d"
     done
-    rm -f "$INSTALL_DIR/.venvs/.prev"
+    [[ -n "$guarded" ]] || rm -f "$INSTALL_DIR/.venvs/.prev"
 }
 build_venv() {
     if [[ "${AWG_VENV_FRESH:-}" == "1" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
@@ -956,6 +963,9 @@ locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь
 }
 cmd_update() {
     require_root; require_installed
+    # одно обновление за раз: второй апдейтер (повтор шага набора, ручной поверх
+    # кнопки) не начинает, пока первый не довёл; замок переходит в __post_update
+    update_lock -n || die "уже идёт обновление, фиксация или откат — дождись их конца"
     local tgz; tgz="$(locate_tgz "awg-bot.tgz" "${1:-}")"
     [[ -n "$tgz" ]] || die "не найден awg-bot.tgz (в текущем каталоге или рядом со скриптом); укажи путь: awg-bot update <tgz>"
     log "обновление из: $tgz"
@@ -1127,8 +1137,13 @@ update_rescue() {  # ловушка первой половины обновле
     [[ -n "${UPDATE_TMP:-}" ]] && rm -rf "$UPDATE_TMP"
     systemctl start "$SERVICE" 2>/dev/null || true
 }
-restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает)
+restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает); 1 — неполон
     local prev="$1" _rc=0
+    # текущий код удаляется только под полный прежний: иначе хост остался бы без кода
+    if [[ ! -f "$prev/awg-bot.sh" || ! -f "$prev/awgbot/__main__.py" ]]; then
+        warn "прежний код в $prev неполон — текущий оставлен на месте"
+        return 1
+    fi
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code ! -name .hold-code \
         -exec rm -rf {} + 2>/dev/null || true
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
@@ -1322,7 +1337,7 @@ post_update_rescue() {  # ловушка второй половины обно�
     venv_rollback
     if [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]]; then
         warn "обновление прервалось (код $rc) — возвращаю прежнюю версию и поднимаю сервис"
-        restore_prev_code "$AWG_UPDATE_PREV"; back=1
+        restore_prev_code "$AWG_UPDATE_PREV" && back=1
         adopt_timezone_undo                # ключ снял этот прогон — прежний код получает его назад
     else
         warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
@@ -1364,6 +1379,21 @@ UPDATE_ROLLED="$DATA_DIR/update-rolled-back"     # метка отката (JSON
 UPDATE_TZ_UNDO="$DATA_DIR/update-guard.app.yaml" # прежний app.yaml с ключом timezone — до фиксации
 UPDATE_GUARD_UNIT="awg-bot-update-guard"
 UPDATE_GUARD_MIN=10                             # окно сторожа, минут
+UPDATE_GUARD_BOOT_MIN=5                         # после загрузки в окне — не меньше стольких минут
+UPDATE_LOCK="$UPDATE_GUARD.lock"                 # update, сторож, фиксация и откат набора — по одному
+
+update_lock() {  # update_lock -n | -w СЕК — замок установки на fd 9 (живёт до конца процесса и через exec)
+    # нет flock — без замка, как раньше; замок не взят — 1.
+    # Взят — pid в update-running: бот видит, что апдейтер ещё жив (шаг набора
+    # ждёт его факта, а не запускает второй); exec сохраняет pid
+    mkdir -p "$DATA_DIR" 2>/dev/null || true
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$UPDATE_LOCK"
+        flock "$@" 9 || return 1
+    fi
+    printf '%s\n' "$$" > "$DATA_DIR/update-running" 2>/dev/null || true
+    return 0
+}
 
 guard_get() { [[ -f "$UPDATE_GUARD" ]] && sed -nE "s/^$1=(.*)$/\1/p" "$UPDATE_GUARD" | head -n1 || true; }
 
@@ -1387,8 +1417,9 @@ update_guard_write() {  # update_guard_write — до старта сервис�
         mv -f "$TZ_ADOPT_UNDO" "$UPDATE_TZ_UNDO" && TZ_ADOPT_UNDO="$UPDATE_TZ_UNDO"
     fi
     # AT — секунды эпохи: по ним проверка на старте сервиса считает, истекло ли окно
+    # HOLD — id хода или команды набора (0 — не шаг набора)
     ( umask 077; printf 'VERSION=%s\nPREV=%s\nAT=%s\nHOLD=%s\n' "$ver" "$prev" "$(date +%s)" \
-        "$([[ "${AWG_UPDATE_HOLD:-0}" == "1" ]] && echo 1 || echo 0)" > "$UPDATE_GUARD" )
+        "$(hold_id)" > "$UPDATE_GUARD" )
 }
 
 update_guard_arm() {  # update_guard_arm [МИНУТ] — таймер сторожа; отказ systemd-run — 1
@@ -1417,14 +1448,21 @@ update_guard_rollback() {  # update_guard_rollback VERSION PREV [nostart] — н
     fi
     warn "v$ver не вышла на связь за $UPDATE_GUARD_MIN минут — возвращаю v$prev"
     [[ "$how" == "nostart" ]] || systemctl stop "$SERVICE" 2>/dev/null || true
-    restore_prev_code "$AWG_UPDATE_PREV"
+    if ! restore_prev_code "$AWG_UPDATE_PREV"; then
+        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        [[ "$how" == "nostart" ]] || systemctl start "$SERVICE" 2>/dev/null || true
+        return 1
+    fi
     venv_rollback
-    venv_prune                             # окружение новой версии — прочь
+    # Метка отката и пояс — сразу за кодом: из ExecStartPre (таймаут 90 с) до
+    # удаления окружения дело может не дойти, а прежнему процессу нужны оба
     adopt_timezone_undo
     ( umask 077; printf '{"version": %s, "prev": %s, "at": %s}\n' "$(json_str "$ver")" "$(json_str "$prev")" \
         "$(json_str "$(date -Iseconds)")" > "$UPDATE_ROLLED" ) || true
     rm -f "$UPDATE_GUARD" "$UPDATE_OK" "$UPDATE_TZ_UNDO"
+    # окружение новой версии — прочь; из ExecStartPre — потом (следующая уборка)
     [[ "$how" == "nostart" ]] && return 0
+    venv_prune
     systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
     return 0
 }
@@ -1439,13 +1477,10 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
     require_root
     local mode="${1:-}"
     [[ -f "$UPDATE_GUARD" ]] || return 0
-    if command -v flock >/dev/null 2>&1; then
-        # одно решение за раз; откат держит замок и запускает сервис — проверка
-        # его старта не ждёт замка (ждала бы сама себя), решает тот, кто держит
-        exec 9>"$UPDATE_GUARD.lock"
-        if [[ "$mode" == "--start" ]]; then flock -n 9 || return 0; else flock -w 120 9 || return 0; fi
-        [[ -f "$UPDATE_GUARD" ]] || return 0
-    fi
+    # одно решение за раз; откат держит замок и запускает сервис — проверка
+    # его старта не ждёт замка (ждала бы сама себя), решает тот, кто держит
+    if [[ "$mode" == "--start" ]]; then update_lock -n || return 0; else update_lock -w 120 || return 0; fi
+    [[ -f "$UPDATE_GUARD" ]] || return 0
     local ver prev at cur mark left
     ver="$(guard_get VERSION)"; prev="$(guard_get PREV)"; at="$(guard_get AT)"; cur="$(tree_version "$INSTALL_DIR")"
     if [[ -z "$ver" || "$ver" != "$cur" ]]; then
@@ -1458,10 +1493,11 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
     mark="$(awk 'NR == 1 { print $1 }' "$UPDATE_OK" 2>/dev/null || true)"
     if [[ "$mark" == "$ver" ]]; then
         systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
-        if [[ "$(guard_get HOLD)" == "1" ]]; then
+        local hold; hold="$(guard_get HOLD)"
+        if [[ -n "$hold" && "$hold" != "0" ]]; then
             # шаг набора: прежнее ждёт фиксации или отката всего набора
             log "v$ver вышла на связь — прежняя версия держится до фиксации набора"
-            update_hold_take
+            update_hold_take "$hold"
             rm -f "$UPDATE_GUARD" "$UPDATE_OK"
             return 0
         fi
@@ -1477,11 +1513,12 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
             systemctl is-active --quiet "$UPDATE_GUARD_UNIT.timer" && return 0
             [[ "$at" =~ ^[0-9]+$ ]] || at=0
             left=$(( at + UPDATE_GUARD_MIN * 60 - $(date +%s) ))
-            if (( left > 0 )); then
-                log "сторож обновления потерян (перезагрузка) — взвожу заново на $(( (left + 59) / 60 )) мин"
-                update_guard_arm $(( (left + 59) / 60 )) && return 0
-                warn "сторож обновления не взведён заново (systemd-run) — решаю сейчас"
-            fi
+            # окно по стенным часам включает простой хоста: после загрузки новой
+            # версии — не меньше UPDATE_GUARD_BOOT_MIN минут выйти на связь
+            (( left < UPDATE_GUARD_BOOT_MIN * 60 )) && left=$(( UPDATE_GUARD_BOOT_MIN * 60 ))
+            log "сторож обновления потерян (перезагрузка) — взвожу заново на $(( (left + 59) / 60 )) мин"
+            update_guard_arm $(( (left + 59) / 60 )) && return 0
+            warn "сторож обновления не взведён заново (systemd-run) — решаю сейчас"
             update_guard_rollback "$ver" "$prev" nostart || true
             return 0 ;;
     esac
@@ -1495,15 +1532,38 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
 # сети. Цепочка ступеней под той же командой держит самое первое прежнее:
 # промежуточные ступени снимаются, когда следующая вышла на связь. Фиксация
 # набора (__update_commit) — прежнее и сборки ядра прочь.
-UPDATE_HOLD_FILE="$DATA_DIR/update-hold"         # PREV= (версия), ENV= (окружение), AT=
+UPDATE_HOLD_FILE="$DATA_DIR/update-hold"         # PREV= (версия), ENV= (окружение), AT=, RUN= (id хода/команды)
 UPDATE_HOLD_TZ="$DATA_DIR/update-hold.app.yaml"  # app.yaml прежней версии с ключом timezone
 UPDATE_HOLD_CODE="$INSTALL_DIR/.hold-code"
 
 hold_get() { [[ -f "${UPDATE_HOLD_FILE:-}" ]] && sed -nE "s/^$1=(.*)$/\1/p" "$UPDATE_HOLD_FILE" | head -n1 || true; }
 
-update_hold_take() {  # шаг вышел на связь: его прежнее — в удержание набора (первое — остаётся)
-    local prev_env=""
+hold_id() {  # id шага набора из AWG_UPDATE_HOLD; не шаг набора — 0
+    local id="${AWG_UPDATE_HOLD:-0}"
+    [[ "$id" =~ ^[0-9A-Za-z]{1,16}$ ]] || id=0
+    printf '%s' "$id"
+}
+
+update_hold_drop() {  # удержание набора прочь (ручной update, wipe, переход через COMPAT_FLOOR, другой ход)
+    [[ -f "$UPDATE_HOLD_FILE" || -d "$UPDATE_HOLD_CODE" ]] || return 0
+    log "удержание прежней версии v$(hold_get PREV) снято"
+    rm -rf "$UPDATE_HOLD_CODE"
+    rm -f "$UPDATE_HOLD_FILE" "$UPDATE_HOLD_TZ"
+}
+
+update_crosses_floor() {  # 0 — прежняя версия (AWG_UPDATE_PREV) ниже версии совместимости нового кода
+    [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]] || return 1
+    local prev floor
+    prev="$(tree_version "$AWG_UPDATE_PREV")"; floor="$(compat_floor)"
+    [[ -n "$prev" && -n "$floor" ]] && version_lt "$prev" "$floor"
+}
+
+update_hold_take() {  # update_hold_take ID — шаг вышел на связь: его прежнее — в удержание набора (первое — остаётся)
+    local run="${1:-}" prev_env=""
     prev_env="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null)" || prev_env=""
+    if [[ -f "$UPDATE_HOLD_FILE" && "$(hold_get RUN)" != "$run" ]]; then
+        update_hold_drop                   # удержание другого хода или команды — не наше, прочь
+    fi
     if [[ -f "$UPDATE_HOLD_FILE" && -d "$UPDATE_HOLD_CODE" ]]; then
         # следующая ступень той же команды: промежуточное прочь, первое прежнее держится
         rm -rf "$INSTALL_DIR/.prev-code"
@@ -1516,12 +1576,14 @@ update_hold_take() {  # шаг вышел на связь: его прежнее
     mv "$INSTALL_DIR/.prev-code" "$UPDATE_HOLD_CODE"
     rm -f "$INSTALL_DIR/.venvs/.prev"
     if [[ -f "$UPDATE_TZ_UNDO" ]]; then mv -f "$UPDATE_TZ_UNDO" "$UPDATE_HOLD_TZ"; else rm -f "$UPDATE_HOLD_TZ"; fi
-    ( umask 077; printf 'PREV=%s\nENV=%s\nAT=%s\n' "$(tree_version "$UPDATE_HOLD_CODE")" "$prev_env" \
-        "$(date +%s)" > "$UPDATE_HOLD_FILE" )
+    ( umask 077; printf 'PREV=%s\nENV=%s\nAT=%s\nRUN=%s\n' "$(tree_version "$UPDATE_HOLD_CODE")" "$prev_env" \
+        "$(date +%s)" "$run" > "$UPDATE_HOLD_FILE" )
 }
 
 cmd_update_commit() {  # __update_commit — набор зафиксирован: удержанное прежнее и сборки ядра прочь
     require_root
+    [[ -f "$UPDATE_HOLD_FILE" ]] || return 0
+    update_lock -w 120 || { warn "замок установки занят — фиксация набора не выполнена"; return 1; }
     [[ -f "$UPDATE_HOLD_FILE" ]] || return 0
     log "набор зафиксирован — прежняя версия v$(hold_get PREV) больше не нужна"
     rm -rf "$UPDATE_HOLD_CODE"
@@ -1530,25 +1592,53 @@ cmd_update_commit() {  # __update_commit — набор зафиксирован
     venv_prune
 }
 
-cmd_update_revert() {  # __update_revert [--check] — откат набора: прежние код и окружение на место
-    # Источник — удержанное шагом набора (.hold-code) или прежнее ещё не
-    # подтверждённого шага (.prev-code под сторожем). Нет ни того, ни другого —
-    # код 2: откатываться не на что, понижение — с GitHub. --check — только ответ.
-    require_root
-    local src="" env="" tz="" prev=""
+REV_SRC=""; REV_ENV=""; REV_TZ=""; REV_PREV=""
+revert_source() {  # источник отката набора → REV_*; нет (или он ниже версии совместимости) — 1
+    # Удержанное шагом набора (.hold-code) или прежнее ещё не подтверждённого
+    # шага (.prev-code под сторожем). Ниже COMPAT_FLOOR назад нельзя — как у update.
+    REV_SRC=""; REV_ENV=""; REV_TZ=""; REV_PREV=""
     if [[ -f "$UPDATE_HOLD_FILE" && -d "$UPDATE_HOLD_CODE" ]]; then
-        src="$UPDATE_HOLD_CODE"; env="$(hold_get ENV)"; tz="$UPDATE_HOLD_TZ"; prev="$(hold_get PREV)"
+        REV_SRC="$UPDATE_HOLD_CODE"; REV_ENV="$(hold_get ENV)"; REV_TZ="$UPDATE_HOLD_TZ"; REV_PREV="$(hold_get PREV)"
     elif [[ -f "$UPDATE_GUARD" && -d "$INSTALL_DIR/.prev-code" ]]; then
-        src="$INSTALL_DIR/.prev-code"; env="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null || true)"
-        tz="$UPDATE_TZ_UNDO"; prev="$(guard_get PREV)"
+        REV_SRC="$INSTALL_DIR/.prev-code"; REV_ENV="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null || true)"
+        REV_TZ="$UPDATE_TZ_UNDO"; REV_PREV="$(guard_get PREV)"
     fi
-    [[ -n "$src" ]] || { [[ "${1:-}" == "--check" ]] || warn "прежней версии нет — откатывать некуда"; return 2; }
+    [[ -n "$REV_SRC" ]] || return 1
+    local ver floor
+    ver="$(tree_version "$REV_SRC")"; floor="$(compat_floor)"
+    if [[ -n "$ver" && -n "$floor" ]] && version_lt "$ver" "$floor"; then
+        REV_SRC=""
+        return 1
+    fi
+    return 0
+}
+
+cmd_update_revert() {  # __update_revert [--check] — откат набора: прежние код и окружение на место
+    # Источника нет — код 2: откатываться не на что, понижение — с GitHub.
+    # --check — только ответ. Сам откат — под замком установки, источник
+    # выбирается заново после остановки сервиса (сторож или --alive могли
+    # решить, пока ждали замок).
+    require_root
+    if ! revert_source; then
+        [[ "${1:-}" == "--check" ]] || warn "прежней версии нет — откатывать некуда"
+        return 2
+    fi
     [[ "${1:-}" == "--check" ]] && return 0
-    warn "откат набора — возвращаю v${prev:-?}"
+    update_lock -w 120 || { warn "замок установки занят — откат набора не выполнен"; return 1; }
     systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
     systemctl stop "$SERVICE" 2>/dev/null || true
-    restore_prev_code "$src"
-    rm -rf "$INSTALL_DIR/.prev-code" "$UPDATE_HOLD_CODE"
+    if ! revert_source; then
+        warn "прежней версии нет — откатывать некуда"
+        systemctl start "$SERVICE" 2>/dev/null || true
+        return 2
+    fi
+    local src="$REV_SRC" env="$REV_ENV" tz="$REV_TZ" prev="$REV_PREV"
+    warn "откат набора — возвращаю v${prev:-?}"
+    if ! restore_prev_code "$src"; then
+        systemctl start "$SERVICE" 2>/dev/null || true
+        return 1
+    fi
+    rm -rf "$INSTALL_DIR/.prev-code" "$UPDATE_HOLD_CODE"     # источник перенесён — второй (если был) прочь
     [[ -n "$env" ]] && printf '%s\n' "$env" > "$INSTALL_DIR/.venvs/.prev"
     venv_rollback
     rm -f "$UPDATE_HOLD_FILE"
@@ -1578,6 +1668,12 @@ cmd_post_update() {
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
+
+    # удержание прошлого хода набора: ручной update, wipe и переход через
+    # версию совместимости его снимают (откатываться туда больше нельзя или незачем)
+    if [[ "$(hold_id)" == "0" || "$wipe" -eq 1 ]] || update_crosses_floor; then
+        update_hold_drop
+    fi
 
     if [[ "$wipe" -eq 1 ]]; then
         warn "удаляю данные и настройки по твоему запросу…"
@@ -1887,6 +1983,9 @@ cmd_restore() {
         RESTORE_PENDING="$src"; RESTORE_PLAN_FILE="$(dirname "$src")/restore-pending.plan.json"
     fi
     trap restore_exit EXIT
+    # тот же замок, что у update, сторожа, фиксации и отката набора: переход на
+    # выпуск бэкапа меняет код; __restore_after_update наследует замок через exec
+    update_lock -n || restore_die "уже идёт обновление, фиксация или откат — ничего не изменилось"
     local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err expect="$RESTORE_TMP/plan.json" relsrc=""
 
     # ── всё, что может отказать, — до остановки сервиса ──
@@ -2079,6 +2178,7 @@ restore_apply() {  # после остановки: слияние, подгот
     if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
         # переход на выпуск бэкапа доведён: прежние код и окружение больше не
         # нужны; digest установки — digest метки (бэкапы снова со ссылкой на выпуск)
+        update_hold_drop                                # удержание прошлого хода — о другом коде
         update_done
         prune_old_kernel_builds
         if [[ -n "${RESTORE_DIGEST:-}" ]]; then
@@ -2401,9 +2501,17 @@ adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml �
     log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
 }
 
-adopt_timezone_undo() {  # ловушка обновления: прежний app.yaml с ключом timezone — назад, метки нет
+adopt_timezone_undo() {  # откат обновления: ключ timezone в app.yaml — снова в силе, метки нет
+    # Копия app.yaml (TZ_ADOPT_UNDO) — только знак, что ключ снял этот прогон:
+    # возвращается строка — раскомментированием на месте, а не копия файла
+    # целиком (правки app.yaml за часы удержания остаются)
     [[ -n "${TZ_ADOPT_UNDO:-}" && -f "$TZ_ADOPT_UNDO" ]] || return 0
-    cat "$TZ_ADOPT_UNDO" > "$CONF_DIR/app.yaml" && rm -f "$DATA_DIR/.tz-adopted"
+    local app="$CONF_DIR/app.yaml" tmp
+    if [[ -f "$app" ]] && ! grep -qE '^timezone:' "$app" && grep -qE '^# timezone:' "$app" && tmp="$(mktemp)"; then
+        awk '!d && /^# timezone:/ { sub(/^# /, ""); d = 1 } { print }' "$app" > "$tmp" && cat "$tmp" > "$app"
+        rm -f "$tmp"
+    fi
+    rm -f "$DATA_DIR/.tz-adopted"
     rm -f "$TZ_ADOPT_UNDO"; TZ_ADOPT_UNDO=""
     warn "ключ timezone в app.yaml возвращён — прежняя версия работает в своём поясе"
 }

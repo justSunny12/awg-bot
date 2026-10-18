@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from awgbot.bot.texts import fleet as ft
-from awgbot.domain.fleet import role_target
+from awgbot.domain.fleet import order as fleet_order, role_target
 from tests.unit import _fleet_common as _fc
 from tests.unit._fleet_common import rel
 
@@ -52,12 +52,18 @@ def test_the_target_stops_at_a_skipped_release_and_the_generation_ceiling(fleet,
 
 
 def test_the_fleet_release_is_the_server_version_and_a_gw_only_run_moves_it(fleet):
-    fleet.releases(rel("v3.4.0", both=True), rel("v3.4.1", gw={"requires": "3.4.0"}))
+    """Выпуск набора поверх сервера пишет только фиксация (logic-6): неудачный
+    следующий ход его не трогает — шлюзы не тянутся ниже зафиксированного."""
+    fleet.releases(rel("v3.4.0", both=True), rel("v3.4.1", gw={"requires": "3.4.0"}),
+                   rel("v3.4.2", gw={"requires": "3.4.0"}))
     assert fleet.s.fleet_release() == "v3.4.0"
-    fleet.s.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.1", "state": "done", "steps": []})
+    fleet.s.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.1", "state": "running", "steps": []})
+    fleet.s._fleet_commit(fleet.run(), fleet_order.FleetOut())
     assert fleet.s.fleet_release() == "v3.4.1", "зафиксированный ход к выпуску для шлюзов не стал выпуском набора"
-    fleet.s.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.1", "state": "rolled_back", "steps": []})
-    assert fleet.s.fleet_release() == "v3.4.0"
+    fleet.s.fleet_run_set({"id": "b1b2c3d4", "tag": "v3.4.2", "state": "rolled_back", "steps": []})
+    assert fleet.s.fleet_release() == "v3.4.1", "откат следующего хода опустил выпуск набора"
+    fleet.server("3.4.2")                            # сервер сменил версию сам — ключ не про него
+    assert fleet.s.fleet_release() == "v3.4.2"
 
 
 def test_a_server_not_on_a_release_build_has_no_fleet(fleet, monkeypatch):

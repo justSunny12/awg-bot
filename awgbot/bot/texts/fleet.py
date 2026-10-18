@@ -126,7 +126,7 @@ def fleet_confirm(plan: dict) -> str:
     """Т-У3: порядок и атомарность; шлюзы не на связи — хвостом."""
     tag = _e(_ver(plan.get("tag") or ""))
     if plan.get("needs_gw"):
-        need = _e(_ver(plan.get("tag") or ""))
+        need = _e(_ver(plan.get("needs_gw_ver") or plan.get("tag") or ""))
         text = (f"⬆️ Обновить до {tag}?\nСерверу AWG {tag} нужны агенты шлюзов не ниже {need} — сначала "
                 "обновятся шлюзы (по одному, начиная с резервных), затем сервер AWG. Не удастся обновить "
                 "один из шлюзов — весь набор вернётся на прежнюю версию")
@@ -181,13 +181,33 @@ def _live_gw_line(g: dict, run: dict, user: str) -> str:
     return f"✅ {name} — {_e(_ver(ver))}" if ver else ""
 
 
+def _server_waits_line(run: dict, server: str) -> str:
+    """Сервер ещё не откачен: его очередь — по шагам, которые осталось
+    откатить (сервер откатывается на последнем своём шаге с конца)."""
+    steps = (run.get("steps") or [])[:int(run.get("undo") or 0)]
+    mains = [i for i, s in enumerate(steps) if s[0] == "main"]
+    ver = _e(_ver(server))
+    if not mains:
+        return f"✅ Сервер AWG — {ver}"
+    m = mains[-1]
+    after = any(s[0] == "gw" for s in steps[m + 1:])
+    before = any(s[0] == "gw" for s in steps[:m])
+    if not after:
+        return f"🟡 Сервер AWG — {ver}, вернётся следующим"
+    if not before:
+        return f"🟡 Сервер AWG — {ver}, вернётся последним"
+    return f"🟡 Сервер AWG — {ver}, вернётся в свою очередь"
+
+
 def _server_line(run: dict, server: str, plan: dict) -> str:
     steps = run.get("steps") or []
     did = any(s[0] == "main" for s in steps)
     state = run.get("state") or ""
     prev = _e(_ver(run.get("prev") or ""))
-    if state == "rolling_back" and did and int(run.get("undo") or 0) > 0:
-        return f"🟡 Сервер AWG — {_e(_ver(server))}, вернётся последним"
+    if state == "rolling_back" and did and not run.get("main_undone"):
+        return _server_waits_line(run, server)
+    if state == "rolling_back" and (run.get("server") or {}).get("kind") == "revert":
+        return f"↩️ Сервер AWG — возвращается на {prev}"
     if state in ("rolling_back", "rolled_back", "rollback_failed") and (did or run.get("failed_on") == "main"):
         if "main" in (run.get("revert_failed") or []):
             return f"⚠️ Сервер AWG — не вернулся на {prev}: {_e(run.get('reason_main') or 'откат не прошёл')}"

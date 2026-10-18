@@ -323,11 +323,11 @@ def test_apply_update_sets_pending(services, monkeypatch):
     rel = updates.Release("v9.9.9", (9, 9, 9), "", "u", "a" * 64)
     monkeypatch.setattr(updates, "download_asset", lambda r: b"blob")
     held = []
-    monkeypatch.setattr(updates, "apply", lambda blob, hold=False: held.append(hold))
+    monkeypatch.setattr(updates, "apply", lambda blob, hold="", sha256="": held.append((hold, sha256)))
     services.apply_update(rel)
-    assert services.db.get_state("update_pending") == "v9.9.9" and held == [False]
-    services.apply_update(rel, hold=True)
-    assert held == [False, True], "шаг набора не передал удержание апдейтеру"
+    assert services.db.get_state("update_pending") == "v9.9.9" and held == [("", "a" * 64)]
+    services.apply_update(rel, hold="a1b2c3d4")
+    assert held[-1] == ("a1b2c3d4", "a" * 64), "шаг набора не передал удержание апдейтеру"
 
 
 def test_update_to_notify_respects_never_schedule(services, monkeypatch, tmp_path):

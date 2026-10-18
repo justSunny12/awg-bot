@@ -1,5 +1,5 @@
-"""rollback.py — часть пакета fleet (см. __init__): откат набора, откат
-сервера сторожем, догон и следование вне хода, повторы.
+"""rollback.py — часть пакета fleet (см. __init__): откат набора и
+«🔁 Повторить».
 
 Откат (Р21) — шагами хода в обратном порядке, по одному: шлюз —
 `upd_revert` (прежнее у него в удержании, без сети), сервер — `awg-bot
@@ -8,43 +8,22 @@ __update_revert` и перезапуск, откат продолжает нов
 не вернувшийся, — в `revert_failed`, остальные откатываются дальше; итог —
 `rollback_failed`, и автоматических команд шлюзам нет до «🔁 Повторить».
 
-Вне хода набор ведётся по выпуску набора: доступный шлюз не на версии
-агента в выпуске получает команду сразу по `hello` — догон (ниже) или
-следование (новее, Р17). Удержание прошлого хода доводится тем же путём:
-фиксация — `upd_commit`, откат — `upd_revert`. Неудачный догон набор не
-откатывает (§12.1, п. 18): повторы 30 мин / 2 ч / 6 ч ±40 %, затем строка ⚠️
-и «🔁 Повторить».
+Удержание сервера — одно на ход и держит самое первое прежнее (awg-bot.sh),
+а ступени сервера могут перемежаться шагами шлюзов (`needs_gw` следующей
+ступени). Поэтому сервер откатывается один раз — на первом же его шаге с
+конца, сразу на версию до хода (`main_prev`); прочие его шаги откат
+пропускает, шлюзы между ними откатываются своим порядком. Сервер старше
+агентов на время отката — тот же случай, что понижение при восстановлении
+(канал совместим в обе стороны, RELEASING.md §2).
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
-import random
 
-from awgbot.core import config
-from awgbot.domain.notices import fleet as notes_
-from awgbot.infra import updates
-from awgbot.util import timeutil
-
-from .order import LOST_AFTER_S, FleetOut, _LOCK, _now_iso, _since, _upd_body
-from .state import DONE, IN_FLIGHT, ROLLBACK_FAILED, ROLLED_BACK, ROLLING_BACK, RUNNING
+from .order import LOST_AFTER_S, FleetOut, _LOCK, _now_iso, _since
+from .state import ROLLBACK_FAILED, ROLLED_BACK, ROLLING_BACK
 
 log = logging.getLogger("awgbot.fleet")
-
-RETRY_S = (30 * 60, 2 * 3600, 6 * 3600)
-RETRY_JITTER = 0.4
-RETRY_MAX = len(RETRY_S)
-ROLLED_MARK = "update-rolled-back"      # метка отката сторожем (awg-bot.sh) — для прежнего процесса
-
-
-def _due(iso: str) -> bool:
-    if not iso:
-        return True
-    try:
-        return timeutil.elapsed(timeutil.parse_iso(iso)) >= 0
-    except ValueError:
-        return True
 
 
 class FleetRollbackMixin:
@@ -62,6 +41,8 @@ class FleetRollbackMixin:
         return self._fleet_backward(run, out)
 
     def _fleet_backward(self, run: dict, out: FleetOut) -> FleetOut:
+        if self._fleet_server_wait(run, out):
+            return out                                    # откат сервера ещё идёт — ждём факта
         steps = run.get("steps") or []
         gws = self.fleet_gateways()
         online = {g["slot"]: g for g in gws}
@@ -95,12 +76,14 @@ class FleetRollbackMixin:
                 out.send.append((slot, "upd_revert", {"id": st["id"], "to": st.get("prev") or run.get("prev")}))
                 out.live = True
                 return out
-            # шаги сервера подряд — один откат: прежнее в удержании — самое первое
-            j = undo
-            while j > 0 and steps[j - 1][0] == "main":
-                j -= 1
-            run["undo"] = j
+            # сервер — один откат на ход, сразу на версию до хода (прежнее в
+            # удержании — самое первое); прочие его шаги уже откачены этим
+            run["undo"] = undo - 1
+            if run.get("main_undone"):
+                continue
+            run["main_undone"] = True
             self._fleet_expect(run, gws)
+            self._fleet_server_mark(run, "revert", str(run.get("main_prev") or ""))
             self.fleet_run_set(run)
             out.server, out.live = "revert", True
             return out
@@ -123,64 +106,6 @@ class FleetRollbackMixin:
             run["revert_failed"].append(slot)
         self.fleet_run_set(run)
 
-    def fleet_server_revert_failed(self, reason: str) -> FleetOut:
-        """Откатить сервер нечем (прежнего кода нет) — остальные откатываются дальше."""
-        with _LOCK:
-            run = self.fleet_run()
-            if run.get("state") != ROLLING_BACK:
-                return FleetOut()
-            if "main" not in run.setdefault("revert_failed", []):
-                run["revert_failed"].append("main")
-            run["reason_main"] = " ".join(str(reason or "").split())[:300]
-            self.fleet_run_set(run)
-            return self._fleet_backward(run, FleetOut(live=True))
-
-    def fleet_server_failed(self, reason: str) -> FleetOut:
-        """Ступень сервера не запустилась (сеть GitHub, sha256, место) — сервер
-        на прежнем: шаг снимается, откат того, что успели."""
-        with _LOCK:
-            run = self.fleet_run()
-            if run.get("state") != RUNNING:
-                return FleetOut()
-            steps = run.get("steps") or []
-            if steps and steps[-1][0] == "main":
-                steps.pop()
-            run["undo"] = len(steps)
-            return self._fleet_rollback_begin(run, FleetOut(), "main", reason)
-
-    # ── старт процесса: откат сервера сторожем ──────────────────────────────
-
-    def fleet_on_start(self) -> FleetOut:
-        """Сторож вернул прежнюю версию сервера (метка awg-bot.sh): Т-У8; в ходе
-        — шаги сервера сняты, остальное откатывается."""
-        with _LOCK:
-            out = FleetOut()
-            path = os.path.join(os.path.dirname(str(config.DB_PATH)), ROLLED_MARK)
-            try:
-                with open(path, encoding="utf-8") as f:
-                    mark = json.loads(f.read() or "{}")
-            except (OSError, ValueError):
-                return out
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            if not isinstance(mark, dict):
-                return out
-            ver, prev = str(mark.get("version") or ""), str(mark.get("prev") or config.INSTALLED_VERSION)
-            from awgbot.domain.services import Notification
-            run = self.fleet_run()
-            tag = run.get("tag") if run.get("state") == RUNNING else ver
-            out.notes.append(Notification(config.ADMIN_ID, notes_.server_rolled_back(tag or ver, prev),
-                                          silent=True))
-            if run.get("state") == RUNNING:
-                steps = run.get("steps") or []
-                while steps and steps[-1][0] == "main":
-                    steps.pop()
-                run["undo"] = len(steps)
-                out.merge(self._fleet_rollback_begin(run, FleetOut(), "main", notes_.SERVER_SILENT))
-            return out
-
     # ── «🔁 Повторить» ───────────────────────────────────────────────────────
 
     def fleet_retry(self) -> str:
@@ -201,127 +126,3 @@ class FleetRollbackMixin:
             run["state"] = ""                             # ход закрыт — новый с того, что стоит
             self.fleet_run_set(run)
             return self.fleet_start(target.tag)
-
-    # ── вне хода: удержание прошлого хода, догон, следование ────────────────
-
-    def fleet_hello(self, slot_id: int) -> FleetOut:
-        """Шлюз вышел на связь: команда в пути, которую он не получил, — снова
-        (тот же id, агент её узнает); дальше — такт."""
-        with _LOCK:
-            out = FleetOut()
-            st = self.fleet_slot(slot_id)
-            if st.get("state") == "sent":
-                out.send.append((slot_id, "upd", _upd_body(st)))
-            if st.get("state") == "done" and not st.get("run"):
-                g = next((x for x in self.fleet_gateways() if x["slot"] == slot_id), None)
-                if g is not None and updates.parse_version(g["version"]) != updates.parse_version(st.get("target") or ""):
-                    st["state"] = ""                      # вышел на связь не той версией — решит ведение вне хода
-                    self.fleet_slot_set(slot_id, st)
-            if st.get("off_since"):
-                st["off_since"] = ""
-                self.fleet_slot_set(slot_id, st)
-            run = self.fleet_run()
-            if st.get("state") == "lost" and st.get("run") == run.get("id") and run.get("state") == RUNNING:
-                g = next((x for x in self.fleet_gateways() if x["slot"] == slot_id), None)
-                want = self.fleet_gw_target(run["tag"])
-                if g is not None and want is not None and updates.parse_version(g["version"]) == want.version:
-                    st["state"] = "done"                  # обновился и пропал — участник на выпуске хода
-                    self.fleet_slot_set(slot_id, st)
-                    run["steps"].append(["gw", int(slot_id), want.tag])
-                    run["undo"] = len(run["steps"])
-                    self.fleet_run_set(run)
-                out.live = True
-            return out.merge(self.fleet_tick())
-
-    def _fleet_outside(self, run: dict, out: FleetOut) -> FleetOut:
-        if run.get("state") == ROLLBACK_FAILED:
-            return out                                    # до «🔁 Повторить» команд нет
-        release = self.fleet_release()
-        want = self.fleet_gw_target(release) if release else None
-        gws = self.fleet_gateways()
-        # догон и следование — по одному (§3.5): пока шлюз на связи посреди
-        # своей команды, новых не начинаем; пропавший посреди команды не держит
-        # (его команду повторит hello)
-        busy = any(g["participant"] and g["online"] and self.fleet_slot(g["slot"]).get("state") in IN_FLIGHT
-                   for g in gws)
-        for g in gws:
-            if not g["participant"]:
-                continue
-            slot = g["slot"]
-            st = self.fleet_slot(slot)
-            ver = updates.parse_version(g["version"])
-            if st.get("hold") and st.get("run"):
-                if st["run"] == run.get("id") and run.get("state") == DONE:
-                    # фиксация — до сдачи в сокет; не ушла — снова на следующей сессии
-                    out.send.append((slot, "upd_commit", {"id": st["id"]}))
-                    st["pending"] = "upd_commit"
-                    self.fleet_slot_set(slot, st)
-                    continue
-                prev = updates.parse_version(str(st.get("prev") or ""))
-                if st["run"] == run.get("id") and run.get("state") == ROLLED_BACK and prev is not None \
-                        and ver != prev and (st.get("state") != "reverting" or st.get("pending") == "upd_revert"):
-                    st["state"], st["at"], st["pending"] = "reverting", _now_iso(), "upd_revert"
-                    self.fleet_slot_set(slot, st)
-                    out.send.append((slot, "upd_revert", {"id": st["id"], "to": st["prev"]}))
-                    out.live = True
-                    continue
-                st["hold"] = False                        # прошлый ход ушёл — держать нечего
-                self.fleet_slot_set(slot, st)
-            if st.get("state") in IN_FLIGHT + ("reverting",):
-                continue                                  # ждём ответа
-            if want is None or ver == want.version:
-                continue
-            if st.get("state") == "done" and st.get("target") == want.tag:
-                continue                                  # ответил «done» — версию скажет его hello
-            if st.get("final") or not _due(str(st.get("next_at") or "")) or busy:
-                continue
-            same = not st.get("run") and st.get("target") == want.tag
-            why = "follow" if ver is not None and ver > want.version else "catchup"
-            out.send.append(self._fleet_command({}, g, want, why=why, hold=False,
-                                                tries=int(st.get("tries") or 0) if same else 0))
-            out.live = busy = True
-        return out
-
-    def fleet_delivered(self, slot_id: int, what: str, body: dict) -> None:
-        """Команда сдана в сокет (а не только собрана тактом): фиксация снимает
-        удержание, откат больше не ждёт повтора. Не сдана — пометка остаётся,
-        следующая сессия получит команду снова."""
-        with _LOCK:
-            st = self.fleet_slot(slot_id)
-            if not st or str(body.get("id") or "") != st.get("id") or st.get("pending") != what:
-                return
-            st["pending"] = ""
-            if what == "upd_commit":
-                st["hold"] = False
-            self.fleet_slot_set(slot_id, st)
-
-    def _fleet_outside_ack(self, slot_id: int, st: dict, state: str) -> FleetOut:
-        out = FleetOut()
-        gw = self.db.gateway(slot_id)
-        if gw is None:
-            return out
-        from awgbot.domain.services import Notification
-        name, label = self._gw_name(gw), gw.label or ""
-        user = getattr(self, "bot_username", "") or ""
-        if state == "done":
-            st.update(tries=0, next_at="", final=False)
-            self.fleet_slot_set(slot_id, st)
-            text = (notes_.gw_followed_down if st.get("why") == "follow" else notes_.gw_caught_up)(
-                name, label, st["target"], slot=slot_id, bot_username=user)
-            out.notes.append(Notification(config.ADMIN_ID, text, silent=True))
-        elif state in ("failed", "rolled_back", "refused"):
-            tries = int(st.get("tries") or 0) + 1
-            st["tries"] = tries
-            if tries >= RETRY_MAX:
-                st["final"], st["next_at"] = True, ""
-            else:
-                delay = RETRY_S[tries - 1] * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER)
-                st["next_at"] = timeutil.to_iso(timeutil.shift(timeutil.now(), int(delay)))
-                out.notes.append(Notification(config.ADMIN_ID, notes_.gw_catchup_failed(
-                    name, label, st["target"], st.get("error") or state, tries,
-                    slot=slot_id, bot_username=user), silent=True))
-            self.fleet_slot_set(slot_id, st)
-        elif state in ("reverted", "revert_failed"):
-            st["hold"] = False
-            self.fleet_slot_set(slot_id, st)
-        return out

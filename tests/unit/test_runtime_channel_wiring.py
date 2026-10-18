@@ -65,10 +65,16 @@ def test_the_fleet_hook_is_wired_before_the_channel_starts_and_no_update_window_
     assert "services.upd_legacy_drop()" in gw
 
 
-def test_the_liveness_tick_keeps_seen_true_and_ticks_the_fleet():
+def test_the_liveness_tick_keeps_seen_true_and_the_fleet_has_its_own_job():
+    """Такт набора — своё задание планировщика без условия маршрутизации
+    (logic-1): ход сервера без шлюзов иначе застревал на «running»."""
     ls = (ROOT / "linkserver" / "__init__.py").read_text(encoding="utf-8")
     body = ls.split("async def liveness_tick", 1)[1].split("async def monitor_tick", 1)[0]
-    assert "gwlink_seen_touch" in body and "fleet_run_tick(services)" in body
+    assert "gwlink_seen_touch" in body and "fleet_run_tick(services)" not in body
+    sched = (ROOT / "scheduler" / "client.py").read_text(encoding="utf-8")
+    job = sched.split("async def job_fleet", 1)[1].split("# окно переезда", 1)[0]
+    assert "fleet_upd.fleet_job(services)" in job and "\n    scheduler.add_job(job_fleet," in job, \
+        "такт набора под условием маршрутизации"
     assert "update_regate" not in ls
     lc = (ROOT / "linkclient" / "__init__.py").read_text(encoding="utf-8")
     assert "update_regate" not in lc

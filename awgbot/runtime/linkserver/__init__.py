@@ -188,8 +188,6 @@ async def liveness_tick(services) -> None:
                 await asyncio.to_thread(services.gwlink_seen_touch, live)
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: время связи не записано: %s", e)
-    from . import upd as _upd
-    await _upd.fleet_run_tick(services)
 
 
 async def monitor_tick(services) -> None:

@@ -97,7 +97,9 @@ class BackupInspectMixin:
             return {"ok": False, "error": err}
         from awgbot.domain.fleet import restore as fleet_restore
         cache = self._update_meta_cache() if hasattr(self, "_update_meta_cache") else None
-        rel = fleet_restore.plan_release(label, meta_cache=cache)   # другая версия — выпуск с GitHub (сеть)
+        from .meta import installed_digest
+        rel = fleet_restore.plan_release(label, meta_cache=cache,     # другая версия — выпуск с GitHub (сеть)
+                                         installed_release=bool(installed_digest(getattr(self, "db", None))))
         if rel["error"]:
             log.info("бэкап отвергнут: %s", rel["error"])
             return {"ok": False, "error": rel["error"]}

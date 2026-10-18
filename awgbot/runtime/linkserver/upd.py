@@ -74,6 +74,21 @@ async def fleet_run_tick(services) -> None:
             log.warning("набор: такт не прошёл: %s", e)
 
 
+async def fleet_job(services) -> None:
+    """Такт набора по расписанию (своё задание, без условия маршрутизации:
+    ход сервера без шлюзов тоже ждёт факта по такту). Без хода и без дел у
+    шлюзов — выход на первой проверке: вне хода всё решают hello и ответы."""
+    if not _fleet(services):
+        return
+    try:
+        if not await asyncio.to_thread(services.fleet_needs_tick):
+            return
+    except Exception as e:                                # noqa: BLE001
+        log.warning("набор: такт по расписанию не прошёл: %s", e)
+        return
+    await fleet_run_tick(services)
+
+
 async def on_hello(services, slot_id: int, srv=None) -> None:
     """Шлюз вышел на связь: удержание прошлого хода, догон, следование, очередь.
     srv — слушатель, принявший hello (по умолчанию — слушатель процесса)."""

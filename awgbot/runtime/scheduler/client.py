@@ -367,6 +367,20 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                           id="routing_liveness", max_instances=1, coalesce=True,
                           next_run_time=now,
                           misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    # набор обновлений — своим тиком, без условия маршрутизации: ход сервера
+    # без шлюзов тоже ждёт факта (сторож снят) по такту; без дел — выход сразу
+    async def job_fleet():
+        try:
+            from awgbot.runtime.linkserver import upd as fleet_upd
+            await fleet_upd.fleet_job(services)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("набор: %s", e)
+
+    def _trig_fleet():
+        return IntervalTrigger(seconds=30, jitter=10, timezone=_TZ)
+
+    scheduler.add_job(job_fleet, _trig_fleet(), id="fleet", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     # окно переезда — частым тиком, см. job_migration_watch
     scheduler.add_job(job_migration_watch, _trig_migration_watch(),
                       id="migration_watch", max_instances=1, coalesce=True,

@@ -124,9 +124,9 @@ class UpdMixin:
                 await asyncio.sleep(SETTLE_POLL_S)        # ждём факта: сторож снят — удержание на месте
                 waited += SETTLE_POLL_S
         res = await asyncio.to_thread(svc.upd_resume)
-        if res in ("done", "rolled_back", "reverted", "revert_failed"):
+        if res in ("done", "rolled_back", "failed", "reverted", "revert_failed"):
             await self.flush_upd_ack()
-            if res == "rolled_back":
+            if res in ("rolled_back", "failed"):
                 await self._upd_notify("failed")
             elif res == "reverted":
                 await self._upd_notify("reverted")
@@ -140,7 +140,10 @@ class UpdMixin:
 
     async def _upd_revert(self, msg: dict) -> None:
         res = await asyncio.to_thread(self.services.upd_revert, msg)
-        if res == "done":
+        if res == "same":
+            ack = await asyncio.to_thread(self.services.upd_current_ack)
+            await self._send("upd_ack", ack, pad=gwlink.PAD_DELTA)
+        elif res == "done":
             await self.flush_upd_ack()
         elif res == "remote":
             self._upd_start(revert=True)

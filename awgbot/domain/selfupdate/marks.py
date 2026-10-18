@@ -14,11 +14,13 @@
   значит, что он работает. Сторожа нет — отметка не нужна и не пишется.
   Поставив отметку, бот сразу зовёт фиксацию (`awg-bot __update_guard
   --alive`, вне своего cgroup): живой код не ждёт окна сторожа.
-- `update_installed_digest_prev` — digest прежней версии: новая версия при
-  первом старте переписывает `update_installed_digest`, и без копии прежняя
-  после отката сторожем осталась бы без digest (бэкапы без ссылки на выпуск).
-  Старт с другой версией, чем в базе, откладывает прежнее значение; совпала
-  версия отложенного — откат: оно возвращается.
+- `update_installed_digest_prev` — digest прежних версий, до трёх строк
+  «<версия> <sha256>», свежая первой: новая версия при первом старте
+  переписывает `update_installed_digest`, и без копии прежняя после отката
+  (сторожем или откатом набора через цепочку ступеней) осталась бы без
+  digest (бэкапы без ссылки на выпуск). Старт с другой версией, чем в базе,
+  откладывает прежнее значение; есть отложенное этой версии — откат: оно
+  возвращается.
 
 Каталог — каталог базы (как у прочих меток старта, runtime/main/common.py).
 """
@@ -35,11 +37,13 @@ log = logging.getLogger("awgbot.selfupdate")
 INSTALLED_DIGEST_FILE = "installed-digest"
 UPDATE_GUARD_FILE = "update-guard"
 UPDATE_OK_FILE = "update-ok"
+RUNNING_FILE = "update-running"      # pid awg-bot.sh под замком установки (update, откат, сторож)
 
 DIGEST_KEY = "update_installed_digest"
 DIGEST_PREV_KEY = "update_installed_digest_prev"
 
 _HEX = re.compile(r"[0-9a-f]{64}")
+DIGEST_PREV_MAX = 3                  # цепочка ступеней одного хода — не длиннее
 
 # отметка жизни — одна на процесс: решается на первом признаке
 _alive_lock = threading.Lock()
@@ -55,13 +59,20 @@ def _shift_digest(db) -> None:
     """Старт другой версией, чем у digest в базе: прежний — в отложенный, а
     если отложенный как раз этой версии (откат) — он возвращается."""
     from awgbot.core import config
-    cur, prev = db.get_state(DIGEST_KEY) or "", db.get_state(DIGEST_PREV_KEY) or ""
-    if not cur or cur.partition(" ")[0] == config.INSTALLED_VERSION:
+    cur = db.get_state(DIGEST_KEY) or ""
+    if cur.partition(" ")[0] == config.INSTALLED_VERSION:
         return
-    if prev.partition(" ")[0] == config.INSTALLED_VERSION:
-        db.set_state(DIGEST_KEY, prev)
+    kept = [x.strip() for x in (db.get_state(DIGEST_PREV_KEY) or "").splitlines() if x.strip()]
+    back = next((x for x in kept if x.partition(" ")[0] == config.INSTALLED_VERSION), "")
+    if not cur and not back:
+        return
+    kept = [x for x in kept if x != back]
+    if cur:
+        kept = [cur] + [x for x in kept if x.partition(" ")[0] != cur.partition(" ")[0]]
+    if back:
+        db.set_state(DIGEST_KEY, back)
         log.info("digest выпуска v%s возвращён после отката", config.INSTALLED_VERSION)
-    db.set_state(DIGEST_PREV_KEY, cur)
+    db.set_state(DIGEST_PREV_KEY, "\n".join(kept[:DIGEST_PREV_MAX]))
 
 
 def adopt_installed_digest(db, data_dir: Optional[str] = None) -> bool:
@@ -133,3 +144,24 @@ def _commit_now() -> None:
     from awgbot.infra.detach import spawn_detached
     from awgbot.infra.updates import _AWG_BOT_BIN
     spawn_detached([_AWG_BOT_BIN, "__update_guard", "--alive"], unit_prefix="awg-bot-update-commit")
+
+
+def install_busy() -> bool:
+    """Идёт ли сейчас `awg-bot update` / откат / решение сторожа (pid под
+    замком установки жив)."""
+    try:
+        with open(os.path.join(_data_dir(None), RUNNING_FILE), encoding="utf-8") as f:
+            pid = int((f.read().split() or ["0"])[0])
+    except (OSError, ValueError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True                                   # процесс есть, просто не наш
+    except OSError:
+        return False
+    return True

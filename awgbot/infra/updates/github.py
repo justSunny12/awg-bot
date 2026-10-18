@@ -168,7 +168,7 @@ def download_asset(release: Release) -> bytes:
     return blob
 
 
-def apply(blob: bytes, *, hold: bool = False) -> None:
+def apply(blob: bytes, *, hold="", sha256: str = "") -> None:
     """Записать поставку во временный файл и запустить `awg-bot update <tgz>`
     ОТДЕЛЬНО от нашего процесса, чтобы пережить `systemctl stop awg-bot` внутри
     апдейтера.
@@ -194,10 +194,14 @@ def apply(blob: bytes, *, hold: bool = False) -> None:
     # архив (только из /tmp) — иначе поставка на десятки мегабайт оставалась
     # после каждого обновления
     from awgbot.infra.detach import spawn_detached
-    # AWG_UPDATE_HOLD — шаг набора: прежнее держится до фиксации или отката набора
+    # AWG_UPDATE_HOLD — шаг набора (id хода или команды): прежнее держится до
+    # фиксации или отката набора; AWG_BOT_VERIFIED_SHA256 — архив уже сверен с
+    # выпуском (download_asset), второго запроса к GitHub апдейтер не делает
     env = {"AWG_UPDATE_CLEANUP": path}
     if hold:
-        env["AWG_UPDATE_HOLD"] = "1"
+        env["AWG_UPDATE_HOLD"] = hold if isinstance(hold, str) else "1"
+    if sha256:
+        env["AWG_BOT_VERIFIED_SHA256"] = sha256
     spawn_detached([_AWG_BOT_BIN, "update", path], unit_prefix="awg-bot-selfupdate", env=env)
 
 

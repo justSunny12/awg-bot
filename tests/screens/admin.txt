@@ -2991,6 +2991,22 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) — не на связи с 12.09: обновится, когда выйдет на связь
 🟡 Сервер AWG — v1.3.0, вернётся последним
 
+### adm.fleet.rolling_back.server_next — откат при needs_gw: сервер вернётся следующим, шлюз — за ним
+> call такт набора
+= edit #1
+⏳ <b>Обновление до v1.3.0 не удалось — возвращаю набор на v1.2.3</b>
+✅ «<a href="https://t.me/test_bot?start=gw-1">NASPi</a>» — v1.3.0
+🟡 «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) — не на связи с 12.09: обновится, когда выйдет на связь
+🟡 Сервер AWG — v1.3.0, вернётся следующим
+
+### adm.fleet.rolling_back.server_going — откат: сервер возвращается на прежнюю версию
+> call такт набора
+= edit #1
+⏳ <b>Обновление до v1.3.0 не удалось — возвращаю набор на v1.2.3</b>
+↩️ «<a href="https://t.me/test_bot?start=gw-1">NASPi</a>» — вернул v1.2.3
+🟡 «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) — не на связи с 12.09: обновится, когда выйдет на связь
+↩️ Сервер AWG — возвращается на v1.2.3
+
 ### adm.fleet.done — итог: обновлено, шлюз не на связи обновится позже — «⬅️ В меню»
 > call такт набора
 = edit #1
@@ -3019,24 +3035,26 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 
 ### adm.ev.fleet.catchup — шлюз вышел на связь и обновлён — без звука
 > call догон
-= edit #1
-✅ <b>Обновлено до v1.3.0</b>: сервер AWG, «<a href="https://t.me/test_bot?start=gw-1">NASPi</a>»
-<blockquote expandable>- исправлено одно
-- добавлено другое</blockquote>
-  [⬅️ В меню | upd:menu]
 + send #2
 ✅ «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) вышел на связь и обновлён до v1.3.0
   [Скрыть | hd]
 
 ### adm.ev.fleet.catchup_failed — догон не удался — когда повтор
 > call догон
-= edit #1
-✅ <b>Обновлено до v1.3.0</b>: сервер AWG, «<a href="https://t.me/test_bot?start=gw-1">NASPi</a>»
-<blockquote expandable>- исправлено одно
-- добавлено другое</blockquote>
-  [⬅️ В меню | upd:menu]
 + send #2
 ⚠️ «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) вышел на связь, но не обновился до v1.3.0: GitHub не ответил — повторю через 30 минут
+  [Скрыть | hd]
+
+### adm.ev.fleet.catchup_given_up — Т-У7б: последняя неудача догона — повторов больше нет
+> call догон
++ send #2
+⚠️ «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) не обновился до v1.3.0: GitHub не ответил — повторов больше не будет, «🔁 Повторить» — в разделе обновлений
+  [Скрыть | hd]
+
+### adm.ev.fleet.followed_up — сервер AWG обновили мимо кнопки — шлюз за ним вверх
+> call следование
++ send #2
+✅ «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) обновлён до v1.3.0 вслед за сервером AWG
   [Скрыть | hd]
 
 ### adm.ev.fleet.server_rolled_back — сторож вернул прежнюю версию сервера — Т-У8

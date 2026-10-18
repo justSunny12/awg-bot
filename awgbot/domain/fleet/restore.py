@@ -27,24 +27,31 @@ SAME, UP, DOWN = "same", "up", "down"
 RELEASE_FILE = "restore-pending.release.tgz"     # выпуск бэкапа, скачанный ботом до запуска restore
 
 
-def same_version(ver: str, cur: str) -> bool:
-    """Версия бэкапа та же, что у кода: совпадают X.Y.Z (хотфикс и локальная
-    сборка поверх неё схему не меняют — compat.newer_than); не разобрана одна из
-    двух (рабочая копия без версии) — как раньше, без перехода."""
+def same_version(ver: str, cur: str, *, releases: bool = False) -> bool:
+    """Версия бэкапа та же, что у кода. Обе стороны — сборки из выпуска
+    (releases: у метки бэкапа и у установки есть digest выпуска) — строго
+    полный номер X.Y.Z.P: хотфикс — тоже переход. Иначе (локальная сборка
+    X.Y.Z.N) — по X.Y.Z, как раньше; не разобрана одна из двух (рабочая копия
+    без версии) — без перехода."""
     want, have = updates.parse_version(str(ver or "")), updates.parse_version(str(cur or ""))
-    return want is None or have is None or want[:3] == have[:3]
+    if want is None or have is None:
+        return True
+    return want == have if releases else want[:3] == have[:3]
 
 
-def plan_release(label: dict, installed: str | None = None, meta_cache: dict | None = None) -> dict:
+def plan_release(label: dict, installed: str | None = None, meta_cache: dict | None = None, *,
+                 installed_release: bool = False) -> dict:
     """{"kind": same|up|down, "tag", "version", "from", "digest", "withdrawn",
     "release" (Release или None), "error" (отказ Т-В2 словами, без HTML)}.
     meta_cache — кэш метаданных проверки обновлений (тот же digest — без
-    повторного запроса за ассетом метаданных)."""
+    повторного запроса за ассетом метаданных). installed_release — у
+    установки есть digest выпуска (meta.installed_digest): тогда «та же
+    версия» — полный номер (same_version)."""
     cur = str(installed or config.INSTALLED_VERSION)
     ver = str(label.get("version") or "")
     out = {"kind": SAME, "tag": f"v{ver}" if ver and not ver.startswith("v") else ver, "version": ver,
            "from": cur, "digest": str(label.get("digest") or ""), "withdrawn": "", "release": None, "error": ""}
-    if same_version(ver, cur):
+    if same_version(ver, cur, releases=installed_release and bool(out["digest"])):
         return out
     want, have = updates.parse_version(ver), updates.parse_version(cur)
     out["kind"] = UP if want > have else DOWN
@@ -119,3 +126,4 @@ class FleetRestoreMixin:
         run = self.fleet_run()
         if run and str(run.get("tag") or "").lstrip("v") != str(version).lstrip("v"):
             self.fleet_run_set({})
+        self.fleet_release_set("")                     # выпуск набора — версия сервера

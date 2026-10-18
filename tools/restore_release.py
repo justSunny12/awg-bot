@@ -21,6 +21,20 @@ import shutil
 import sys
 
 
+def _installed_release() -> bool:
+    """У установки есть digest выпуска (база бота): «та же версия» — строго."""
+    from pathlib import Path
+    from awgbot.core import config
+    if not Path(config.DB_PATH).exists():
+        return False
+    try:
+        from awgbot.domain.backup.meta import installed_digest
+        from awgbot.infra.db import Database
+        return bool(installed_digest(Database(config.DB_PATH)))
+    except Exception:                                     # noqa: BLE001 — база не читается: как сборка не из выпуска
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="переход на выпуск бэкапа awg-bot")
     ap.add_argument("--meta", required=True, help="state/backup-meta.json распакованного бэкапа")
@@ -38,9 +52,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     ver = str(label.get("version") or "")
     digest = str(label.get("digest") or "")
+    ours = _installed_release()
     if args.archive:
         from awgbot.core import config
-        if fr.same_version(ver, config.INSTALLED_VERSION):
+        if fr.same_version(ver, config.INSTALLED_VERSION, releases=ours and bool(digest)):
             print("same")
             return 0
         with open(args.archive, "rb") as f:
@@ -53,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfile(args.archive, args.out)
         print(ver)
         return 0
-    rel = fr.plan_release(label)
+    rel = fr.plan_release(label, installed_release=ours)
     if rel["error"]:
         print(rel["error"], file=sys.stderr)
         return 1

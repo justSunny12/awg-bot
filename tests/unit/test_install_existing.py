@@ -603,7 +603,7 @@ def _run_update(tmp_path: Path, keep: str | None, answers: str = "y") -> subproc
         'DATA_DIR=/x; ENV_FILE=/x/env\n'
         "log() { echo \"LOG $*\"; }\n"
         "die() { echo \"DIE $*\"; exit 1; }\n"
-        "require_root() { :; }; require_installed() { :; }\n"
+        "require_root() { :; }; require_installed() { :; }; update_lock() { :; }\n"
         'locate_tgz() { echo "$2"; }\n'
         f'confirm() {{ echo "ASKED $1"; [[ "{answers}" == y ]]; }}\n'
         'ensure_python() { echo "WIPE=$wipe"; exit 0; }\n'
@@ -658,6 +658,7 @@ class _PostUpdate:
             f'DATA_DIR="{self.tmp}/data"; ENV_FILE="{self.tmp}/env"; CONF_DIR="{self.tmp}/conf"\n'
             + stubs + "\n"
             "update_guard_due() { return 1; }\n"      # сторож — tests/unit/test_update_guard.py
+            "hold_id() { echo 0; }; update_hold_drop() { :; }; update_crosses_floor() { return 1; }\n"
             "systemctl() { return 0; }\n"
             "log() { echo \"LOG $*\"; }; ok() { echo \"OK $*\"; }; warn() { echo \"WARN $*\"; }\n"
             "die() { echo \"DIE $*\"; exit 1; }\n"

@@ -145,4 +145,5 @@ def test_the_server_update_note_waits_for_the_live_message(fleet):
     fleet.start()
     assert fleet.s.update_applied_note("v3.5.0", True) is None
     fleet.s.fleet_run_set({**fleet.run(), "state": "done"})
-    assert fleet.s.update_applied_note("v3.5.0", True) is ...
+    from awgbot.domain.selfupdate.core import DEFAULT_NOTE
+    assert fleet.s.update_applied_note("v3.5.0", True) is DEFAULT_NOTE

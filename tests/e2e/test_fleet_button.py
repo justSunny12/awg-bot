@@ -84,7 +84,8 @@ async def test_refusals_are_toasts_and_start_nothing(world, fake_bot, monkeypatc
 async def test_the_final_message_keeps_the_history_and_offers_the_menu(world, fake_bot):
     cb = _cb(fake_bot)
     await fleet_flow.start(cb, world.s, "v3.5.0")
-    out = world.finish_server(world.s.fleet_tick(), "3.5.0")
+    world.server("3.5.0")                          # апдейтер ушёл с первым тактом — новый процесс
+    out = world.tick()
     world.gw_done(1, "3.5.0")
     await fleet_flow.fleet_show(fake_bot, world.s, None)
     run = world.run()
@@ -96,7 +97,9 @@ async def test_the_final_message_keeps_the_history_and_offers_the_menu(world, fa
 async def test_retry_after_a_rollback_starts_again(world, fake_bot):
     cb = _cb(fake_bot)
     await fleet_flow.start(cb, world.s, "v3.5.0")
-    world.finish_server(world.s.fleet_tick(), "3.5.0")
+    assert world.s.fleet_tick().server == "", "второй такт снова позвал апдейтер сервера"
+    world.server("3.5.0")
+    world.tick()
     out = world.ack(1, "failed", error="сеть")
     world.s.fleet_server_act(out)
     world.server("3.4.0")

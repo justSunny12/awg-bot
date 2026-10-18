@@ -11,6 +11,17 @@ from awgbot.infra import updates
 log = logging.getLogger("awgbot.selfupdate")
 
 
+
+class _DefaultNote:
+    """Ответ update_applied_note роли: «своего текста нет — обычный итог»."""
+
+    def __repr__(self) -> str:
+        return "DEFAULT_NOTE"
+
+
+DEFAULT_NOTE = _DefaultNote()
+
+
 class SelfUpdateCoreMixin:
     """Цель, установка, уведомление, итог после рестарта, перезапуск."""
 
@@ -242,7 +253,7 @@ class SelfUpdateCoreMixin:
                 f"{release.awg_generation()}. Заверши переезд — и обновление станет "
                 "доступно: профили на трёх интерфейсах мигрировать нечем.")
 
-    def apply_update(self, release, *, hold: bool = False) -> None:
+    def apply_update(self, release, *, hold="") -> None:
         """Скачать ассет следующей версии, сверить sha256 и запустить апдейтер
         (он остановит и заменит сервис). UpdateError пробрасывается — обработчик
         покажет пользователю причину, сервис остаётся жив.
@@ -250,7 +261,8 @@ class SelfUpdateCoreMixin:
         Перед запуском пишем update_pending=tag: на следующем старте
         confirm_applied_update() сверит фактическую версию и отчитается админу.
         hold — шаг набора: прежние код и окружение держатся до фиксации или
-        отката всего набора (awg-bot.sh: __update_commit / __update_revert)."""
+        отката всего набора (awg-bot.sh: __update_commit / __update_revert);
+        значение — id хода или команды: удержание другого шаг снимает."""
         reason = self.update_block_reason(release)
         if reason:
             raise updates.UpdateError(reason)
@@ -259,7 +271,7 @@ class SelfUpdateCoreMixin:
         # digest релиза — в метку бэкапа после удачного обновления (задел
         # «перейти на версию копии»); установка не из релиза его не знает
         self.db.set_state("update_pending_digest", str(getattr(release, "sha256", "") or ""))
-        updates.apply(blob, hold=hold)
+        updates.apply(blob, hold=hold, sha256=str(getattr(release, "sha256", "") or ""))
 
     def set_update_wait(self, chat_id: int, message_id: int) -> None:
         """Запомнить «дождись завершения»-сообщение: после рестарта новый процесс
@@ -301,7 +313,7 @@ class SelfUpdateCoreMixin:
         alt = getattr(self, "update_applied_note", None)
         if callable(alt):
             note = alt(pending, want is not None and want == have)
-            if note is not ...:
+            if note is not DEFAULT_NOTE:
                 return note
         if want is not None and want == have:
             body = updates.release_body(pending)

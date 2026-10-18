@@ -11,7 +11,9 @@
 
 Команда и её ход лежат в базе агента (`gw_upd`) и переживают перезапуск:
 новый процесс по первому слову сервера доводит её — `done`, следующая
-ступень той же команды или `rolled_back`. Ответ, не ушедший по каналу, ждёт
+ступень той же команды или `rolled_back`. Тот же процесс (сессия
+переподключилась, пока апдейтер скачивает и собирает) ничего не решает,
+пока апдейтер жив; умер, не доведя, или 20 минут — `failed`. Ответ, не ушедший по каналу, ждёт
 следующей сессии (`gw_upd_ack`). Прежние код и окружение при `hold`
 держатся до `upd_commit` / `upd_revert` (awg-bot.sh).
 """
@@ -21,9 +23,11 @@ import json
 import logging
 import os
 import re
+import secrets
 import subprocess
 
 from awgbot.core import config
+from awgbot.domain.selfupdate.marks import install_busy
 from awgbot.infra import updates
 from awgbot.util import timeutil
 
@@ -35,6 +39,8 @@ BUSY_WAIT_S = 600             # занят (смена ключей в пере�
 ROLLED_MARK = "update-rolled-back"
 GUARD_FILE = "update-guard"
 ACTIVE = ("checking", "accepted", "applying", "reverting")
+SPAWN_GRACE_S = 90            # апдейтер успевает взять замок установки и записать pid
+APPLY_MAX_S = 20 * 60         # ступень (с ядром) или понижение дольше — не удались
 FAILED = ("failed", "rolled_back", "refused")
 
 # ключи прежних «⬆️ Обновлений» агента: с 3.4.0 агент сам не обновляется (Р3)
@@ -200,8 +206,10 @@ class GatewayUpdMixin:
         reverting = cmd.get("state") == "reverting"
         if not reverting:
             cmd.update(state="applying", step=step.tag)
+        cmd.update(proc=_PROC, applied_at=timeutil.to_iso(timeutil.now()))
         self._upd_save(cmd)
-        self.apply_update(step, hold=bool(cmd.get("hold")) and not reverting)
+        hold = str(cmd.get("id") or "1") if cmd.get("hold") and not reverting else ""
+        self.apply_update(step, hold=hold)
 
     # ── новый процесс: довести команду ──────────────────────────────────────
 
@@ -217,6 +225,17 @@ class GatewayUpdMixin:
         не закончены; пусто — делать нечего."""
         cmd = self.upd_cmd()
         state = cmd.get("state") or ""
+        if state in ("applying", "reverting") and cmd.get("proc") == _PROC:
+            # тот же процесс — апдейтер ещё не перезапустил агента
+            age = _age(str(cmd.get("applied_at") or ""))
+            if age < APPLY_MAX_S and (install_busy() or age < SPAWN_GRACE_S):
+                return ""
+            if state == "applying":
+                self._upd_state("failed", error="обновление не применилось — агент на прежней версии")
+                return "failed"
+            if cmd.get("revert_local"):
+                self._upd_state("revert_failed", error="прежняя версия не вернулась")
+                return "revert_failed"
         rolled = self._upd_rolled_mark()
         inst = updates.parse_version(config.INSTALLED_VERSION)
         if state == "applying":
@@ -278,6 +297,8 @@ class GatewayUpdMixin:
         to = str(msg.get("to") or "")
         if str(msg.get("id") or "") != cmd.get("id") or not _TAG_RE.match(to):
             return "bad"
+        if cmd.get("state") in ("reverting", "reverted", "revert_failed") and cmd.get("revert_to") == _v(to):
+            return "same"                                 # повтор той же команды отката — второго не запускать
         if updates.parse_version(to) == updates.parse_version(config.INSTALLED_VERSION):
             self._upd_save({**cmd, "revert_to": _v(to)})
             self._upd_state("reverted")
@@ -311,15 +332,27 @@ class GatewayUpdMixin:
     def update_applied_note(self, pending: str, ok: bool):
         """Итог своего обновления после перезапуска (selfupdate/core): по команде
         сервера — одна строка без звука на цели (Т-А2), промежуточная ступень и
-        неудача — молча (неудачу скажет upd_resume); иначе — обычный итог."""
+        неудача — молча (неудачу скажет upd_resume); иначе — обычный итог
+        (DEFAULT_NOTE)."""
+        from awgbot.domain.selfupdate.core import DEFAULT_NOTE
         cmd = self.upd_cmd()
         if cmd.get("state") not in ("applying", "reverting"):
-            return ...
+            return DEFAULT_NOTE
         if ok and cmd.get("state") == "applying" and _v(pending) == _v(cmd.get("target")):
             from awgbot.domain.notices.fleet import agent_updated
             from awgbot.domain.selfupdate import _notification
             return _notification(config.ADMIN_ID, agent_updated(pending), silent=True)
         return None
+
+
+_PROC = secrets.token_hex(4)     # этот процесс агента: его апдейтер ещё не мог перезапустить
+
+
+def _age(iso: str) -> float:
+    try:
+        return timeutil.elapsed(timeutil.parse_iso(iso))
+    except ValueError:
+        return float(APPLY_MAX_S)
 
 
 def _revert_check() -> int:

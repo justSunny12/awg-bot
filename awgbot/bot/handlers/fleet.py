@@ -41,7 +41,10 @@ async def fleet_show(bot, services, out=None) -> None:
     уведомления такта (догон, откат сервера)."""
     run = await call(services.fleet_run)
     msg = run.get("msg") or []
-    if len(msg) == 2 and (out is None or out.live):
+    # итог прошлого хода не перерисовывается тактами вне хода (догон,
+    # следование): только идущий ход и его последний такт
+    active = run.get("state") in ("running", "rolling_back")
+    if len(msg) == 2 and (out is None or (out.live and (active or out.final))):
         plan = await call(services.fleet_run_plan)
         state = run.get("state") or ""
         final = state not in ("running", "rolling_back")

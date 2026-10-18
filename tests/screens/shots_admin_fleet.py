@@ -104,6 +104,18 @@ async def _catchup_failed(services, bot):
     await _ack(services, bot, 2, "failed", "GitHub не ответил")
 
 
+async def _catchup_given_up(services, bot):
+    st = services.fleet_slot(2)
+    services.fleet_slot_set(2, {**st, "tries": 3})
+    await _ack(services, bot, 2, "failed", "GitHub не ответил")
+
+
+async def _followed_up(services, bot):
+    st = services.fleet_slot(2)
+    services.fleet_slot_set(2, {**st, "why": "follow", "prev": "v1.2.3", "target": V1})
+    await _catchup_done(services, bot)
+
+
 async def _catchup_done(services, bot):
     services.gwlink_session_closed(2)
     services.gwlink_session_opened(2, "1.3.0", 2, ["cfg1", "upd1"])
@@ -246,6 +258,16 @@ FLEET = [
          data=_fleet(run=_RUN_BACK, server="1.3.0", slots={1: {"state": "reverting"}},
                      gws=(("NASPi", "1.3.0", True, ""), ("Pi4", "1.2.3", False, "офис"))),
          title="откат: шлюз возвращается, сервер вернётся последним"),
+    Shot("adm.fleet.rolling_back.server_next", role="admin", call=("такт набора", _show),
+         data=_fleet(run={"state": "rolling_back", "steps": [["gw", 1, V1], ["main", V1]], "undo": 2,
+                          "failed_on": "main", "reason": "сеть"}, server="1.3.0", slots={1: {"state": "done"}}),
+         title="откат при needs_gw: сервер вернётся следующим, шлюз — за ним"),
+    Shot("adm.fleet.rolling_back.server_going", role="admin", call=("такт набора", _show),
+         data=_fleet(run={"state": "rolling_back", "steps": [["main", V1], ["gw", 1, V1]], "undo": 0, "failed_on": 2,
+                          "main_undone": True, "server": {"kind": "revert", "want": "v1.2.3"},
+                          "reason": "обновленный агент не вышел на связь за 10 минут"},
+                     server="1.3.0", slots={1: {"state": "reverted"}}),
+         title="откат: сервер возвращается на прежнюю версию"),
     Shot("adm.fleet.done", role="admin", call=("такт набора", _show),
          data=_fleet(run={"state": "done", "steps": [["main", V1], ["gw", 1, V1]], "undo": 2}, server="1.3.0",
                      slots={1: {"state": "done"}}, gws=(("NASPi", "1.3.0", True, ""), ("Pi4", "1.2.3", False, "офис"))),
@@ -268,6 +290,10 @@ FLEET = [
          title="шлюз вышел на связь и обновлён — без звука"),
     Shot("adm.ev.fleet.catchup_failed", role="admin", call=("догон", _catchup_failed), data=_catchup(),
          title="догон не удался — когда повтор"),
+    Shot("adm.ev.fleet.catchup_given_up", role="admin", call=("догон", _catchup_given_up), data=_catchup(),
+         title="Т-У7б: последняя неудача догона — повторов больше нет"),
+    Shot("adm.ev.fleet.followed_up", role="admin", call=("следование", _followed_up), data=_catchup(),
+         title="сервер AWG обновили мимо кнопки — шлюз за ним вверх"),
     Shot("adm.ev.fleet.server_rolled_back", role="admin", call=("старт после отката", _server_rolled_back),
          data=_rolled_mark,
          title="сторож вернул прежнюю версию сервера — Т-У8"),

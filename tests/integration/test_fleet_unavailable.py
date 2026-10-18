@@ -52,8 +52,10 @@ def test_the_catch_up_starts_on_the_server_start_too(fleet):
     _gw_release(fleet)
     fleet.slot(1, "3.4.0")
     fleet.s.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.1", "state": "done", "steps": [], "prev": "v3.4.0"})
+    fleet.s.fleet_release_set("v3.4.1")             # его пишет фиксация хода
     out = fleet.s.fleet_on_start().merge(fleet.tick())
-    assert [s for s, _ in fleet.sent(out)] == [1]
+    sent = fleet.sent(out)
+    assert [s for s, _ in sent] == [1] and sent[0][1]["why"] == "catchup"
 
 
 def test_a_failed_catch_up_does_not_roll_back_and_retries_with_jitter(fleet, monkeypatch):
@@ -65,7 +67,7 @@ def test_a_failed_catch_up_does_not_roll_back_and_retries_with_jitter(fleet, mon
     monkeypatch.setattr(random, "uniform", lambda lo, hi: hi)       # крайний джиттер +40 %
     out = fleet.hello(1, "3.4.0")
     delays = []
-    for tries, want in ((1, 30 * 60), (2, 2 * 3600)):
+    for tries, want in ((1, 30 * 60), (2, 2 * 3600), (3, 6 * 3600)):
         before = timeutil.now()
         out = fleet.ack(1, "failed", error="GitHub не ответил")
         assert fleet.run()["state"] == "done", "неудачный догон откатил зафиксированный набор"
@@ -74,15 +76,18 @@ def test_a_failed_catch_up_does_not_roll_back_and_retries_with_jitter(fleet, mon
         delays.append(round((at - before).total_seconds() / want, 1))
         assert out.notes[0].text.endswith(
             "вышел на связь, но не обновился до v3.4.1: GitHub не ответил — повторю через "
-            + ("30 минут" if tries == 1 else "2 часа"))
+            + {1: "30 минут", 2: "2 часа", 3: "6 часов"}[tries])
         assert fleet.tick().send == [], "повтор раньше срока"
         monkeypatch.setattr(timeutil, "now", lambda at=at: at + datetime.timedelta(seconds=1))
         out = fleet.tick()
         assert [s for s, _ in fleet.sent(out)] == [1], "повтор не пошёл в срок"
-    assert delays == [1.4, 1.4]
+    assert delays == [1.4, 1.4, 1.4], "повторов не три (30 мин, 2 ч, 6 ч)"
     out = fleet.ack(1, "failed", error="GitHub не ответил")
     st = fleet.st(1)
-    assert st["final"] is True and not out.notes
+    assert st["final"] is True
+    assert [n.text for n in out.notes] == [
+        "⚠️ «Шлюз 1» не обновился до v3.4.1: GitHub не ответил — повторов больше не будет, «🔁 Повторить» — "
+        "в разделе обновлений"], "последняя неудача без строки (Т-У7б)"
     monkeypatch.setattr(timeutil, "now", lambda: datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc))
     assert fleet.tick().send == [], "после третьей неудачи повторы не прекратились"
     plan = fleet.s.fleet_plan(None)

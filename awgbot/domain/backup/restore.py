@@ -45,7 +45,9 @@ class BackupRestoreMixin:
             return ""
         label = {"version": rel.get("version"), "digest": rel.get("digest")}
         cache = self._update_meta_cache() if hasattr(self, "_update_meta_cache") else None
-        full = fleet_restore.plan_release(label, meta_cache=cache)   # тот же выпуск, свежий ответ GitHub
+        from .meta import installed_digest
+        full = fleet_restore.plan_release(label, meta_cache=cache,     # тот же выпуск, свежий ответ GitHub
+                                          installed_release=bool(installed_digest(getattr(self, "db", None))))
         if full["error"]:
             from awgbot.infra import updates
             raise updates.UpdateError(full["error"])
