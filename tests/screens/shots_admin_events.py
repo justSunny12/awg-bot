@@ -110,7 +110,24 @@ def _restore_done_gw(services):
 def _restore_failed(services):
     """Копия из чата не прошла до остановки сервиса: маркер отказа, сервис поднят."""
     who = _people(services)
-    services.pop_restore_failed = lambda: "бэкап не зашифрован"
+    services.pop_restore_failed_info = lambda: {"failed": "бэкап не зашифрован"}
+    services.pop_restore_done = lambda: None
+    return who
+
+
+def _restore_done_release(services):
+    """Восстановление с переходом на выпуск бэкапа (Т-В3): строка версии."""
+    who = _people(services)
+    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+05:00", "version": "1.2.0",
+                                         "merge": {"line": "same", "slots": [], "lost": []}}
+    return who
+
+
+def _restore_failed_release(services):
+    """Переход на выпуск бэкапа не удался: прежний код назад (Т-В3)."""
+    who = _people(services)
+    services.pop_restore_failed_info = lambda: {"failed": "слияние базы не удалось", "release": "1.2.0",
+                                                "from": "1.3.0"}
     services.pop_restore_done = lambda: None
     return who
 
@@ -182,6 +199,10 @@ EVENTS = [
          data=_restore_done_gw, title="восстановление: итог по каждому шлюзу, устройство не встало"),
     Shot("adm.ev.restore_failed", role="admin", call=("report_restore_result", _ev_restore_done),
          data=_restore_failed, title="копия из чата не восстановлена — ничего не изменилось"),
+    Shot("adm.ev.restore_done.release", role="admin", call=("report_restore_result", _ev_restore_done),
+         data=_restore_done_release, title="Т-В3: восстановление с переходом на выпуск бэкапа"),
+    Shot("adm.ev.restore_failed.release", role="admin", call=("report_restore_result", _ev_restore_done),
+         data=_restore_failed_release, title="Т-В3: переход на выпуск бэкапа не удался"),
     Shot("adm.ev.restore_back", role="admin", call=("restore_wait_hello", _ev_wait_hello),
          data=_restore_wait(False, "2026-09-15T11:55:00+05:00"), title="шлюз на связи после восстановления"),
     Shot("adm.ev.restore_lost", role="admin", call=("restore_wait_tick", _ev_wait_tick),

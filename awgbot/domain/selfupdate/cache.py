@@ -80,7 +80,7 @@ class SelfUpdateCacheMixin:
             "installed": config.INSTALLED_VERSION,
             "releases": [{"tag": r.tag, "title": r.title, "body": (r.body or "")[:_BODY_MAX],
                           "asset_url": r.asset_url, "sha256": r.sha256,
-                          "meta": r.meta, "meta_bad": r.meta_bad} for r in newer],
+                          "meta": r.meta, "meta_bad": r.meta_bad, "withdrawn": r.withdrawn} for r in newer],
         }, ensure_ascii=False))
 
     def _update_cached_releases(self, strict: bool = True):
@@ -100,7 +100,8 @@ class SelfUpdateCacheMixin:
             out.append(updates.Release(tag=r["tag"], version=ver, body=str(r.get("body") or ""),
                                        asset_url=r.get("asset_url"), sha256=r.get("sha256"),
                                        title=str(r.get("title") or ""), meta=meta,
-                                       meta_bad=str(r.get("meta_bad") or "")))
+                                       meta_bad=str(r.get("meta_bad") or ""),
+                                       withdrawn=str(r.get("withdrawn") or "")))
         out.sort(key=lambda x: x.version)
         return out
 

@@ -230,7 +230,7 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     # в копии вся база — сообщение с ней из чата убираем, как и присланный токен
     assert msg.deleted
     launched = []
-    monkeypatch.setattr(services, "launch_restore", lambda path: launched.append(path))
+    monkeypatch.setattr(services, "launch_restore", lambda path, release="": launched.append(path))
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await sh.backup_restore_action(cb, SetCB(sec="backup", act="do", key="restore!"), services, state)
     # в каталог копий файл ложится шифрованным: открытого содержимого вне

@@ -76,3 +76,66 @@ def agent_update_failed(tag: str, prev: str, reason: str, server_bot: dict | Non
 def agent_reverted(prev: str, tag: str) -> str:
     """Т-А5: откат набора по команде сервера."""
     return f"↩️ Агент вернулся на {_e(_ver(prev))}: обновление набора до {_e(_ver(tag))} отменено сервером AWG"
+
+
+# ── восстановление бэкапа = переход на выпуск бэкапа ─────────────────────────
+
+def restore_version_line(kind: str, cur: str, ver: str) -> str:
+    """Т-В1: строка версии в плане (первой после заголовка). kind — down | up."""
+    cur, ver = _e(_ver(cur)), _e(_ver(ver))
+    if kind == "down":
+        return (f"♻️ Версия: сейчас {cur}, бэкап снят на {ver} — сервер AWG сначала вернётся на {ver} "
+                f"(выпуск с GitHub, sha256 сверю с бэкапом), затем восстановится; шлюзы перейдут на {ver} следом")
+    return (f"♻️ Версия: сейчас {cur}, бэкап снят на {ver} — сервер AWG сначала обновится до {ver}, затем "
+            f"восстановится; шлюзы перейдут на {ver} следом")
+
+
+def restore_withdrawn_line(ver: str, reason: str) -> str:
+    """Т-В1, хвост: выпуск бэкапа помечен снятым."""
+    return (f"⚠️ Выпуск {_e(_ver(ver))} снят: {_e(reason)}. Восстановить можно, но после восстановления лучше "
+            "обновиться кнопкой «⬆️ Обновить»")
+
+
+# Т-В2: отказы осмотра (после «⚠️ Файл не принят: »)
+def restore_not_release(ver: str) -> str:
+    return f"бэкап снят на сборке не из выпуска ({_ver(ver)}) — восстановить его можно только на той же версии"
+
+
+def restore_no_release(ver: str) -> str:
+    v = _ver(ver)
+    return f"выпуска {v} на GitHub нет — восстановить этот бэкап можно только на {v}, поставив её вручную"
+
+
+def restore_other_digest(ver: str) -> str:
+    return (f"выпуск {_ver(ver)} на GitHub не совпадает с тем, на котором снят бэкап (sha256 другой) — "
+            "переходить на него не буду")
+
+
+def restore_github_down(ver: str) -> str:
+    return f"не удалось проверить выпуск {_ver(ver)} на GitHub — попробуй позже"
+
+
+def restore_fetch_failed(ver: str) -> str:
+    """После «♻️ Восстановить»: выпуск бэкапа не скачался или не сошёлся sha256."""
+    return f"выпуск {_ver(ver)} с GitHub не скачался — попробуй позже"
+
+
+def restore_not_launched(reason: str) -> str:
+    """После «♻️ Восстановить»: выпуск бэкапа не получен — ничего не запущено,
+    вопрос остаётся."""
+    return f"⚠️ Восстановление не запущено: {_e(reason)}"
+
+
+def restore_meta_bad(ver: str) -> str:
+    return f"метаданные выпуска {_ver(ver)} на GitHub не прочитаны — переходить на него не буду"
+
+
+def restore_version_done(ver: str) -> str:
+    """Т-В3: строка в отчёте после восстановления с переходом."""
+    return f"Версия: {_e(_ver(ver))} — как в бэкапе"
+
+
+def restore_version_failed(ver: str, reason: str, cur: str) -> str:
+    """Т-В3: отказ перехода (новым процессом, прежняя версия)."""
+    return (f"⚠️ Переход на {_e(_ver(ver))} не удался: {_e(reason)} — ничего не изменилось, работает "
+            f"{_e(_ver(cur))}")

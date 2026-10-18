@@ -175,6 +175,6 @@ def test_rescue_restore_and_wipe_wiring(script):
     assert 'rm -f "$TZ_ADOPT_UNDO"' in _func(script, "update_done")
     post = _func(script, "cmd_post_update")
     assert '"$DATA_DIR/.tz-adopted"' in post[post.index('if [[ "$wipe" -eq 1 ]]'):], "wipe убирает и метку"
-    restore = _func(script, "cmd_restore")
+    restore = _func(script, "cmd_restore") + _func(script, "restore_apply")   # до остановки — и после неё
     i_had, i_conf = restore.index("tz_had=1"), restore.index('for f in "$copy/state/conf"/*.yaml')
     assert i_had < i_conf < restore.index('[[ "$tz_had" -eq 1 ]] || adopt_timezone quiet')

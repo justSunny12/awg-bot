@@ -129,7 +129,7 @@
 #                          описью шлюзов). Только шифрованный ключевой фразой из
 #                          базы: без фразы — отказ, открытых бэкапов нет. На
 #                          шлюзе — отказ: его настройки в бэкапе сервера AWG.
-#   restore [--yes] [<файл>]
+#   restore [--yes] [--release <архив>] [<файл>]
 #                          восстановить сервер AWG из шифрованного бэкапа (по
 #                          умолчанию — свежий в $BACKUP_DIR); открытый архив —
 #                          отказ. --yes — без вопроса (зовёт бот: план человек
@@ -138,8 +138,11 @@
 #                          что может отказать (расшифровка — фразой из базы для
 #                          файла из чата restore-pending.tgz.enc, иначе вопросом;
 #                          распаковка `tar xf`; сторож метки tools/check_backup
-#                          --meta: схема 2, версия не ниже COMPAT_FLOOR и не
-#                          новее кода, поколение AmneziaWG; план — тот же текст,
+#                          --meta: схема 2, версия не ниже COMPAT_FLOOR,
+#                          поколение AmneziaWG; версия бэкапа другая — его
+#                          выпуск (tools/restore_release: выпуск vV с GitHub,
+#                          sha256 = digest метки; --release — архив, уже
+#                          скачанный ботом) и сборка ядра vV; план — тот же текст,
 #                          что вопрос в чате, до «Продолжить?»), — до остановки
 #                          сервиса. После остановки — слияние с текущим
 #                          (tools/restore_merge --copy: читает живое, пишет
@@ -165,6 +168,14 @@
 #                          $DATA_DIR/restore-failed.json (бот скажет админу).
 #                          Временный каталог операции и файл из чата удаляются
 #                          при любом исходе. На шлюзе — отказ.
+#                          Переход на выпуск бэкапа: после остановки — код vV на
+#                          место (прежний в .prev-code), exec в скрипт vV
+#                          (__restore_after_update): окружение, юнит, conf, затем
+#                          слияние и замена кодом vV. Отказ до точки невозврата —
+#                          прежние код и окружение назад, сервис поднят
+#                          («ничего не изменилось, работает vC»); успех —
+#                          прежнее прочь сразу (сторожа нет), installed-digest =
+#                          версия и digest метки.
 #   status                 состояние сервиса и пути.
 #   logs                   журнал сервиса (follow, время journald со смещением).
 
@@ -1782,7 +1793,16 @@ restore_prune_mark() {  # DROP первого наложения при отка
 restore_fail_marker() {  # отказ восстановления из чата — новый процесс бота скажет админу
     [[ "$RESTORE_YES" -eq 1 && -n "$RESTORE_FAIL" ]] || return 0
     mkdir -p "$DATA_DIR" 2>/dev/null || true
-    printf '{"failed": %s}\n' "$(json_str "$RESTORE_FAIL")" > "$DATA_DIR/restore-failed.json" 2>/dev/null || true
+    printf '{"failed": %s, "release": %s, "from": %s}\n' "$(json_str "$RESTORE_FAIL")" \
+        "$(json_str "${RESTORE_TO:-}")" "$(json_str "${RESTORE_FROM:-}")" > "$DATA_DIR/restore-failed.json" 2>/dev/null || true
+}
+
+restore_code_back() {  # переход на выпуск бэкапа не доведён: прежние код и окружение на место
+    [[ "${RESTORE_CODE:-0}" -eq 1 ]] || return 0
+    venv_rollback
+    [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]] && restore_prev_code "$AWG_UPDATE_PREV"
+    warn "Переход на v${RESTORE_TO:-?} не удался: ${RESTORE_FAIL:-причина не названа} — ничего не изменилось, работает v${RESTORE_FROM:-?}"
+    return 0
 }
 
 restore_exit() {  # ловушка операции: по фазе — откат, сервис вверх, временное прочь
@@ -1790,11 +1810,13 @@ restore_exit() {  # ловушка операции: по фазе — отка�
     case "$RESTORE_PHASE" in
         stopped)
             restore_unstage
+            restore_code_back
             restore_prune_mark
             restore_fail_marker
             systemctl start "$SERVICE" 2>/dev/null || true ;;
         swapping)
             restore_rollback
+            restore_code_back
             restore_prune_mark
             restore_fail_marker
             systemctl start "$SERVICE" 2>/dev/null || true ;;
@@ -1812,6 +1834,7 @@ restore_exit() {  # ловушка операции: по фазе — отка�
     [[ -n "$RESTORE_TMP" ]] && rm -rf -- "$RESTORE_TMP"
     [[ -n "$RESTORE_PENDING" ]] && rm -f -- "$RESTORE_PENDING"
     [[ -n "$RESTORE_PLAN_FILE" ]] && rm -f -- "$RESTORE_PLAN_FILE"
+    [[ -n "${RESTORE_RELEASE:-}" ]] && rm -f -- "$RESTORE_RELEASE"
     return "$rc"
 }
 
@@ -1834,9 +1857,16 @@ cmd_restore() {
     require_root
     is_gateway_role && die "$GW_NO_BACKUPS"
     # --yes: без вопросов (из чата: бот уже показал план и спросил админа);
-    # итог и отказ — маркером для бота.
-    local yes=0
-    if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
+    # итог и отказ — маркером для бота. --release <архив> — выпуск бэкапа,
+    # уже скачанный ботом (sha256 = digest метки); без него терминал скачает сам.
+    local yes=0 release=""
+    while [[ "${1:-}" == --* ]]; do
+        case "$1" in
+            --yes) yes=1; shift ;;
+            --release) release="${2:-}"; shift 2 || shift ;;
+            *) break ;;
+        esac
+    done
     local src="${1:-}"
     if [[ -n "$src" ]]; then
         [[ -f "$src" ]] || die "не найден: $src"
@@ -1846,7 +1876,8 @@ cmd_restore() {
         [[ -n "$src" ]] || die "бэкапов не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <файл>"
     fi
     RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_PHASE=""; RESTORE_FAIL=""
-    RESTORE_YES="$yes"
+    RESTORE_YES="$yes"; RESTORE_CODE=0; RESTORE_TO=""; RESTORE_FROM="$(tree_version "$INSTALL_DIR")"
+    RESTORE_RELEASE="$release"
     RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
     # Файл из чата бот кладёт шифрованным (restore-pending.tgz.enc) и рядом —
     # план из вопроса: при любом исходе оба удаляются, расшифрованное живёт
@@ -1856,7 +1887,7 @@ cmd_restore() {
         RESTORE_PENDING="$src"; RESTORE_PLAN_FILE="$(dirname "$src")/restore-pending.plan.json"
     fi
     trap restore_exit EXIT
-    local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err expect="$RESTORE_TMP/plan.json"
+    local tmp="$RESTORE_TMP" copy="$RESTORE_TMP/copy" err expect="$RESTORE_TMP/plan.json" relsrc=""
 
     # ── всё, что может отказать, — до остановки сервиса ──
     [[ "$(head -c 6 "$src" 2>/dev/null)" == "AWGBK1" ]] \
@@ -1875,12 +1906,31 @@ cmd_restore() {
     [[ -f "$copy/state/backup-meta.json" ]] || restore_die "указанный файл не похож на бэкап"
     err="$(bot_tool tools.check_backup --meta "$copy/state/backup-meta.json" 2>&1 >/dev/null)" \
         || restore_die "${err:-метка бэкапа не прошла проверку}"
+    # Версия бэкапа другая — переход на его выпуск (domain/fleet/restore.py):
+    # выпуск с GitHub, sha256 = digest метки; всё — до остановки сервиса
+    local rel_out
+    rel_out="$(bot_tool tools.restore_release --meta "$copy/state/backup-meta.json" --out "$tmp/release.tgz" \
+               ${release:+--archive "$release"} 2>"$tmp/release.err")" \
+        || restore_die "$(cat "$tmp/release.err" 2>/dev/null || echo "выпуск бэкапа не проверен")"
+    local rel_first; rel_first="$(printf '%s\n' "$rel_out" | head -n1)"
+    if [[ -n "$rel_first" && "$rel_first" != "same" ]]; then
+        RESTORE_TO="$rel_first"
+        RESTORE_DIGEST="$(sed -n 's/.*"digest": *"sha256:\([0-9a-f]*\)".*/\1/p' "$copy/state/backup-meta.json" | head -n1)"
+        relsrc="$(restore_release_tree "$tmp/release.tgz" "$tmp/release")" || restore_die "${relsrc:-архив выпуска не распаковался}"
+        printf '%s\n' "$rel_out" | tail -n +2
+    fi
     local plan
     plan="$(bot_tool tools.restore_merge --plan "$copy" --save "$expect" 2>&1)" || restore_die "$plan"
     # из чата человек видел план в вопросе бота — сверяем с ним
     [[ -n "$RESTORE_PLAN_FILE" && -f "$RESTORE_PLAN_FILE" ]] && cp "$RESTORE_PLAN_FILE" "$expect"
     printf '%s\n\n' "$plan"
     [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
+    if [[ -n "$RESTORE_TO" && -f "$relsrc/install/awg.lock" ]]; then
+        # ядро выпуска бэкапа — до остановки, как у update: не собралось — ничего не тронуто
+        log "AmneziaWG: версия выпуска v$RESTORE_TO — собираю до остановки сервиса…"
+        AWG_LOCK="$relsrc/install/awg.lock" bash "$relsrc/install/awg-kernel-install.sh" install \
+            || restore_die "ядро AmneziaWG выпуска v$RESTORE_TO не собралось — ничего не изменилось"
+    fi
     local bk_at
     bk_at="$(grep -o '"created_at": *"[^"]*"' "$copy/state/backup-meta.json" | sed 's/.*"\([^"]*\)"$/\1/')"
     # Каталог конфигов интерфейсов и ключ timezone — по ТЕКУЩЕМУ app.yaml, до
@@ -1889,11 +1939,89 @@ cmd_restore() {
     local tz_had=0
     grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
 
+    [[ -n "$RESTORE_TO" ]] && update_guard_disarm       # сторож прежнего обновления — код сменится
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
         restore_die "$SERVICE не остановился — ничего не изменилось"
     fi
     RESTORE_PHASE=stopped
+    RESTORE_COPY="$copy"; RESTORE_EXPECT="$expect"; RESTORE_BK_AT="$bk_at"; RESTORE_AWGDIR="$awgdir"
+    RESTORE_TZ_HAD="$tz_had"; RESTORE_SRC="$src"
+    if [[ -n "$RESTORE_TO" ]]; then
+        # переход на выпуск бэкапа: первая половина update без старта сервиса,
+        # дальше — слияние и замена руками скрипта выпуска бэкапа (новый код
+        # читает живую базу и сливает её своим кодом); отказ — прежний код назад
+        restore_code_swap "$relsrc"
+        # Состояние операции — второй половине через окружение: договор между
+        # версиями (скрипт vC передаёт, скрипт vV читает), имена не меняются.
+        # RESTORE_YES/TMP/PENDING/PLAN_FILE скрипт обнуляет при загрузке — им
+        # отдельные имена AWG_RESTORE_*
+        export AWG_RESTORE_YES="$RESTORE_YES" AWG_RESTORE_TMP="$RESTORE_TMP" AWG_RESTORE_PENDING="$RESTORE_PENDING"
+        export AWG_RESTORE_PLAN_FILE="$RESTORE_PLAN_FILE"
+        export RESTORE_TO RESTORE_FROM RESTORE_DIGEST
+        export RESTORE_COPY RESTORE_EXPECT RESTORE_BK_AT RESTORE_AWGDIR RESTORE_TZ_HAD RESTORE_SRC RESTORE_RELEASE
+        export AWG_UPDATE_PREV="$INSTALL_DIR/.prev-code"
+        RESTORE_FAIL="скрипт выпуска v$RESTORE_TO не запустился"    # exec не прошёл — причина для маркера
+        exec "$INSTALL_DIR/awg-bot.sh" __restore_after_update
+    fi
+    restore_apply
+}
+
+restore_release_tree() {  # restore_release_tree TGZ DIR → печатает каталог поставки (или причину, код 1)
+    mkdir -p "$2"
+    tar xzf "$1" -C "$2" --no-same-owner 2>/dev/null || { echo "архив выпуска не распаковался"; return 1; }
+    local main; main="$(find "$2" -maxdepth 3 -type f -path '*/awgbot/__main__.py' | head -n1)"
+    [[ -n "$main" ]] || { echo "в архиве выпуска нет awgbot/ — не та поставка"; return 1; }
+    local src; src="$(dirname "$(dirname "$main")")"
+    [[ "$(tree_version "$src")" == "$RESTORE_TO" ]] \
+        || { echo "архив выпуска v$RESTORE_TO несёт другую версию — переходить не буду"; return 1; }
+    # вторая половина — скриптом выпуска: без неё exec оставил бы сервис стоять
+    grep -q '__restore_after_update)' "$src/awg-bot.sh" 2>/dev/null \
+        || { echo "выпуск v$RESTORE_TO не умеет восстанавливать с переходом — переходить не буду"; return 1; }
+    chown -R root:root "$src" 2>/dev/null || true
+    printf '%s' "$src"
+}
+
+restore_code_swap() {  # restore_code_swap SRC — код выпуска бэкапа на место (прежний — в .prev-code)
+    local prev="$INSTALL_DIR/.prev-code"
+    rm -rf "$prev"; mkdir -p "$prev"
+    RESTORE_CODE=1; AWG_UPDATE_PREV="$prev"                 # с этого места отказ — прежний код назад
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code ! -name .hold-code \
+        -exec mv -t "$prev" {} + || restore_die "прежний код не отодвинулся"
+    cp -a "$1"/. "$INSTALL_DIR"/ || restore_die "код выпуска v$RESTORE_TO не лёг целиком"
+    chmod +x "$INSTALL_DIR/awg-bot.sh" 2>/dev/null || true
+    [[ -x "$INSTALL_DIR/awg-bot.sh" && -f "$INSTALL_DIR/awgbot/__main__.py" ]] \
+        || restore_die "код выпуска v$RESTORE_TO лёг не полностью"
+}
+
+cmd_restore_after_update() {  # __restore_after_update — вторая половина: скрипт выпуска бэкапа
+    # Окружение, юнит и досев conf — как во второй половине update, без старта;
+    # затем слияние и замена этим кодом. Отказ до точки невозврата — прежние
+    # код и окружение назад (restore_exit), сервис поднят на прежней версии.
+    require_root
+    RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_FAIL=""; RESTORE_CODE=1
+    RESTORE_YES="${AWG_RESTORE_YES:-0}"; RESTORE_TMP="${AWG_RESTORE_TMP:-}"
+    RESTORE_PENDING="${AWG_RESTORE_PENDING:-}"; RESTORE_PLAN_FILE="${AWG_RESTORE_PLAN_FILE:-}"
+    [[ -n "${RESTORE_TO:-}" && -n "${AWG_UPDATE_PREV:-}" ]] || die "__restore_after_update — только из awg-bot restore"
+    RESTORE_PHASE=stopped
+    trap restore_exit EXIT
+    [[ -n "${RESTORE_COPY:-}" && -d "$RESTORE_COPY" ]] || restore_die "распакованный бэкап потерялся по дороге"
+    export AWG_IN_UPDATE=1
+    RESTORE_FAIL="окружение выпуска v$RESTORE_TO не собралось"   # die посреди шагов — причина для маркера
+    ensure_python
+    build_venv
+    install_unit
+    ensure_host_autostart
+    ensure_awg_module_loaded
+    ensure_awg_generation
+    seed_conf
+    RESTORE_FAIL=""
+    restore_apply
+}
+
+restore_apply() {  # после остановки: слияние, подготовка, DROP, замена, подъём, маркер, старт
+    local copy="$RESTORE_COPY" expect="$RESTORE_EXPECT" bk_at="$RESTORE_BK_AT" awgdir="$RESTORE_AWGDIR"
+    local tz_had="$RESTORE_TZ_HAD" src="$RESTORE_SRC" err
     # Слияние — после остановки: читает живую базу неподвижной, пишет только в
     # распакованный бэкап и сверяет план с вопросом. Отказ — живое не тронуто.
     if ! err="$(bot_tool tools.restore_merge --copy "$copy" --expect "$expect" 2>&1 >/dev/null)"; then
@@ -1948,6 +2076,15 @@ cmd_restore() {
     fi
     [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
     restore_finish                                      # точка невозврата: дальше — только вперёд
+    if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
+        # переход на выпуск бэкапа доведён: прежние код и окружение больше не
+        # нужны; digest установки — digest метки (бэкапы снова со ссылкой на выпуск)
+        update_done
+        prune_old_kernel_builds
+        if [[ -n "${RESTORE_DIGEST:-}" ]]; then
+            ( umask 077; printf '%s %s\n' "$RESTORE_TO" "$RESTORE_DIGEST" > "$DATA_DIR/installed-digest" )
+        fi
+    fi
 
     # ── новый сервер: обвязка РФ-доступа из бэкапа — до линков ──
     if grep -q '"provision": *true' "$copy/restore-merge.json" 2>/dev/null; then
@@ -1976,7 +2113,8 @@ cmd_restore() {
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"
 
     # маркер для бота: новый процесс доложит итог по каждому шлюзу
-    { printf '{"created_at": %s, "source": %s, "merge": ' "$(json_str "$bk_at")" "$(json_str "$(basename "$src")")"
+    { printf '{"created_at": %s, "source": %s, "version": %s, "merge": ' "$(json_str "$bk_at")" \
+          "$(json_str "$(basename "$src")")" "$(json_str "${RESTORE_TO:-}")"
       cat "$copy/restore-merge.json"; printf '}\n'; } > "$DATA_DIR/restore-done.json"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
@@ -2398,6 +2536,7 @@ case "$VERB" in
     __update_guard)   cmd_update_guard "$@" ;;
     __update_commit)  cmd_update_commit ;;
     __update_revert)  cmd_update_revert "$@" ;;
+    __restore_after_update) cmd_restore_after_update ;;
     __post_uninstall) cmd_post_uninstall ;;
     status)      cmd_status ;;
     start)       cmd_start ;;

@@ -4,6 +4,9 @@
 переживает перезапуск агента; занят сменой ключей — ждёт факта; новее
 выпуска набора — понижение без цепочки, ниже COMPAT_FLOOR — отказ; агент без
 `upd1` команд не получает; откат набора — локально или понижением с GitHub.
+Сторона сервера вне хода: после восстановления на V ниже или ручного
+понижения сервера шлюзы идут следом по одному; шлюз сверх набора
+возвращается по hello; инвариант «умер сервер».
 
 Агент — настоящий GatewayServices на временной базе и настоящий клиент
 канала; ВПС на том конце — подставной (tests/unit/_linkclient_session_common),
@@ -327,3 +330,80 @@ async def test_a_command_over_the_wire_and_its_answer_after_the_restart(agent, v
     kinds = [gwlink.unpack(KEY, line, nonce=_c.SN).get("t") for line in conn.written[1:]]
     assert "upd_ack" in kinds
     conn.close()
+
+
+# ── сервер ведёт шлюзы вслед за собой вне хода (§3.5, шаг 6): по одному ─────
+
+from tests.unit import _fleet_common as _fc       # noqa: E402
+
+fleet = _fc.fleet
+DOWN_RELEASES = [rel("v3.4.0", both=True), rel("v3.4.1", both=True), rel("v3.4.2", both=True)]
+
+
+def _two_gateways_above(fleet, version="3.4.2"):
+    fleet.releases(*DOWN_RELEASES)
+    fleet.slot(1, version)
+    fleet.slot(2, version)
+    fleet.active(1)
+    fleet.s.fleet_run_set({"id": "a1b2c3d4", "tag": "v3.4.2", "state": "done", "steps": [], "prev": "v3.4.1"})
+
+
+@pytest.mark.parametrize("how", ["restore", "manual"])
+def test_the_server_went_down_and_the_gateways_follow_one_at_a_time(fleet, how):
+    """Восстановление на V ниже (или ручной `awg-bot update` вниз): выпуск
+    набора — версия сервера; шлюзы выше получают `upd` до версии роли в V,
+    по одному, без цепочки и без удержания."""
+    _two_gateways_above(fleet)
+    fleet.server("3.4.1")
+    if how == "restore":
+        fleet.s.fleet_after_restore("3.4.1")
+        assert fleet.run() == {}, "ход прежнего выпуска пережил восстановление"
+    out = fleet.tick()
+    sent = fleet.sent(out)
+    assert len(sent) == 1, "шлюзы пошли вниз не по одному"
+    first, body = sent[0]
+    assert body["target"] == "v3.4.1" and body["why"] == "follow" and body["hold"] is False
+    assert fleet.sent(fleet.tick()) == [], "второй шлюз пошёл, пока первый посреди команды"
+    out = fleet.gw_done(first, "3.4.1")
+    assert [n.text for n in out.notes] and all(n.silent for n in out.notes)
+    second = fleet.sent(out) + fleet.sent(fleet.tick())     # ответ первого — такт: следующий сразу
+    assert [s for s, _ in second] == [3 - first] and second[0][1]["target"] == "v3.4.1"
+
+
+def test_a_gateway_updated_by_hand_above_the_fleet_is_brought_back_on_hello(fleet):
+    fleet.releases(*DOWN_RELEASES)
+    fleet.server("3.4.1")
+    fleet.slot(1, "3.4.1")
+    assert fleet.sent(fleet.tick()) == []
+    out = fleet.hello(1, "3.4.2")                       # ручной `update` на шлюзе — вышел на связь новее набора
+    sent = fleet.sent(out)
+    assert sent and sent[0][1]["target"] == "v3.4.1" and sent[0][1]["why"] == "follow"
+
+
+def test_a_gateway_gone_mid_command_does_not_hold_the_others(fleet):
+    _two_gateways_above(fleet)
+    fleet.server("3.4.1")
+    first = fleet.sent(fleet.tick())[0][0]
+    fleet.offline(first)
+    sent = fleet.sent(fleet.tick())
+    assert [s for s, _ in sent] == [3 - first], "пропавший посреди команды держит остальных"
+
+
+def test_dead_server_invariant(fleet, monkeypatch):
+    """Умер сервер: новый — новейшей версии, бэкап снят на V ниже. Переход —
+    вниз на V (выпуск с GitHub, digest метки); после него сервер на V, а
+    шлюзы — на версии своей роли в V, даже если сами были новее."""
+    from awgbot.domain.fleet import restore as fr
+    v341 = rel("v3.4.1", main=BOTH)                    # V: выпуск только для сервера — агент в нём v3.4.0
+    releases = [rel("v3.4.0", both=True), v341, rel("v3.4.2", both=True)]
+    fleet.releases(*releases)
+    fleet.server("3.4.2")
+    monkeypatch.setattr(updates, "list_releases", lambda **kw: list(releases))
+    plan = fr.plan_release({"version": "3.4.1", "digest": f"sha256:{v341.sha256}"})
+    assert plan["kind"] == fr.DOWN and not plan["error"] and plan["release"].tag == "v3.4.1"
+    fleet.slot(1, "3.4.2")                              # шлюз нового сервера — новейшей версии
+    fleet.server("3.4.1")                               # restore --release довёл переход
+    fleet.s.fleet_after_restore("3.4.1")
+    assert fleet.s.fleet_release() == "v3.4.1"
+    sent = fleet.sent(fleet.tick())
+    assert sent and sent[0][1]["target"] == "v3.4.0", "шлюз не на версии роли в выпуске бэкапа"

@@ -69,10 +69,16 @@ def restore_failed(reason: str) -> str:
 RESTORE_STARTED = "♻️ Восстанавливаю из бэкапа — бот перезапустится и через несколько секунд пришлёт отчёт"
 
 
-def restore_done_report(created_at_iso: str, report: dict, bot_username: str = "") -> str:
-    """Отчёт после восстановления: итог по шлюзам и устройства, которые не встали."""
+def restore_done_report(created_at_iso: str, report: dict, bot_username: str = "", *, version: str = "") -> str:
+    """Отчёт после восстановления: итог по шлюзам и устройства, которые не встали;
+    version — восстановление шло с переходом на выпуск бэкапа (Т-В3)."""
     from awgbot.domain.notices import backup as nb
-    return nb.restore_report(created_at_iso, report or {}, bot_username=bot_username)
+    text = nb.restore_report(created_at_iso, report or {}, bot_username=bot_username)
+    if version:
+        from awgbot.domain.notices.fleet import restore_version_done
+        head, _, tail = text.partition("\n")
+        text = head + "\n" + restore_version_done(version) + ("\n" + tail if tail else "")
+    return text
 
 
 def email_not_configured(sec: str = "notify") -> str:

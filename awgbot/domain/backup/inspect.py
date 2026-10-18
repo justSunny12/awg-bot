@@ -4,9 +4,11 @@ inspect.py — часть пакета backup (см. __init__): разбор к�
 
 Принимается только шифрованная копия сервера AWG (распознаётся по
 содержимому, не по имени): метка схемы 2, версия не ниже версии
-совместимости и не новее кода, то же поколение AmneziaWG, тот же ADMIN_ID
-(из чата чужую копию не восстанавливают; из терминала — можно). Ответ несёт
-план — тот же, что исполнит слияние в `awg-bot restore`. У шлюза этого
+совместимости, то же поколение AmneziaWG, тот же ADMIN_ID (из чата чужую
+копию не восстанавливают; из терминала — можно). Версия бэкапа другая —
+переход на его выпуск (domain/fleet/restore.py): выпуск есть на GitHub и
+sha256 совпал с digest метки, иначе отказ. Ответ несёт план — тот же, что
+исполнит слияние в `awg-bot restore`, со строкой версии. У шлюза этого
 осмотра нет: его настройки — в бэкапе сервера AWG, копию в чате шлюза бот
 убирает с объяснением.
 """
@@ -93,11 +95,18 @@ class BackupInspectMixin:
         if err:
             log.info("бэкап отвергнут: %s", err)
             return {"ok": False, "error": err}
+        from awgbot.domain.fleet import restore as fleet_restore
+        cache = self._update_meta_cache() if hasattr(self, "_update_meta_cache") else None
+        rel = fleet_restore.plan_release(label, meta_cache=cache)   # другая версия — выпуск с GitHub (сеть)
+        if rel["error"]:
+            log.info("бэкап отвергнут: %s", rel["error"])
+            return {"ok": False, "error": rel["error"]}
         try:
             p = self._restore_plan(plain, label, getattr(getattr(self, "db", None), "path", None))
         except Exception as e:                         # noqa: BLE001 — база бэкапа не читается
             log.warning("план восстановления не построен: %s", e)
             return {"ok": False, "error": "база в бэкапе не читается"}
+        p.release = fleet_restore.public(rel)
         return {"ok": True, "created_at": str(label.get("created_at") or ""), "plan": p.to_dict()}
 
     @staticmethod

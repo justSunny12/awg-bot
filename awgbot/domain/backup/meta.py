@@ -145,9 +145,8 @@ def check(meta: dict | None, *, admin_id_copy: str = "", chat: bool = True) -> s
         if not ver:
             return f"бэкап снят версией до {compat.COMPAT_FLOOR} — восстановиться из него не получится"
         return f"бэкап снят версией {ver} — бэкапы версий до {compat.COMPAT_FLOOR} не применяются"
-    if compat.newer_than(ver, config.INSTALLED_VERSION):
-        return (f"бэкап снят версии {ver}, а здесь {config.INSTALLED_VERSION} — обнови бота до {ver}, "
-                "затем восстанови")
+    # версия бэкапа другая (новее или старше кода) — не отказ: восстановление
+    # переходит на выпуск бэкапа (domain/fleet/restore.py)
     gen = meta.get("awg_gen")
     if isinstance(gen, int) and gen and awglock.generation() and gen != awglock.generation():
         return "бэкап снят на другом поколении AmneziaWG — восстановление из него невозможно"

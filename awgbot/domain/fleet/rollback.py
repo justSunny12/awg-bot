@@ -238,7 +238,13 @@ class FleetRollbackMixin:
             return out                                    # до «🔁 Повторить» команд нет
         release = self.fleet_release()
         want = self.fleet_gw_target(release) if release else None
-        for g in self.fleet_gateways():
+        gws = self.fleet_gateways()
+        # догон и следование — по одному (§3.5): пока шлюз на связи посреди
+        # своей команды, новых не начинаем; пропавший посреди команды не держит
+        # (его команду повторит hello)
+        busy = any(g["participant"] and g["online"] and self.fleet_slot(g["slot"]).get("state") in IN_FLIGHT
+                   for g in gws)
+        for g in gws:
             if not g["participant"]:
                 continue
             slot = g["slot"]
@@ -267,13 +273,13 @@ class FleetRollbackMixin:
                 continue
             if st.get("state") == "done" and st.get("target") == want.tag:
                 continue                                  # ответил «done» — версию скажет его hello
-            if st.get("final") or not _due(str(st.get("next_at") or "")):
+            if st.get("final") or not _due(str(st.get("next_at") or "")) or busy:
                 continue
             same = not st.get("run") and st.get("target") == want.tag
             why = "follow" if ver is not None and ver > want.version else "catchup"
             out.send.append(self._fleet_command({}, g, want, why=why, hold=False,
                                                 tries=int(st.get("tries") or 0) if same else 0))
-            out.live = True
+            out.live = busy = True
         return out
 
     def fleet_delivered(self, slot_id: int, what: str, body: dict) -> None:

@@ -76,6 +76,9 @@ _BK_GW = _enc(_archive({"role": "gw", "created_at": "2026-09-01T03:00:00+05:00"}
 _BK_OLD = _enc(_archive({"role": "main", "created_at": "2026-09-01T03:00:00+05:00", "version": "3.3.1"}))
 _BK_NEWER = _enc(_archive(_meta(version="3.5.0")))
 _BK_ADMIN = _enc(_archive(_meta(), env="ADMIN_ID=4242\n"))
+_DIGEST = "d" * 64                                  # DUMMY: sha256 ассета выпуска бэкапа
+_BK_DOWN = _enc(_archive(_meta(version="3.4.1", digest="sha256:" + _DIGEST), db=_db_bytes()))
+_BK_UP = _enc(_archive(_meta(version="3.5.0", digest="sha256:" + _DIGEST), db=_db_bytes()))
 _BK_PLAN = _enc(_archive(_meta(), db=_db_bytes()))
 _BK_NAME = "awg-bot-backup-main-20261005_140000.tgz.enc"
 
@@ -89,10 +92,44 @@ def _restore_ready(services, mp):
     mp.setattr(config, "INSTALLED_VERSION", "3.4.0")
     services.backup_set_passphrase(_PHRASE_TEXT)
     services.prepare_restore = lambda blob, plan=None: "/nonexistent/DUMMY-restore-pending.tgz.enc"
-    services.launch_restore = lambda path: None
+    services.launch_restore = lambda path, release="": None
     from awgbot.bot.handlers import restore as rs
     mp.setattr(rs, "_fingerprint", lambda blob: "0123456789ab")   # шифрование со свежей солью — отпечаток постоянный
     return who
+
+
+def _releases(*, sha=_DIGEST, withdrawn="", down=False, tags=("v3.4.1", "v3.5.0"), fetch=True):
+    """Выпуски на GitHub для осмотра бэкапа другой версии — без сети;
+    down — GitHub не ответил; fetch=False — ассет не скачался после «♻️ Восстановить»."""
+    def build(services, mp):
+        from awgbot.infra import updates
+        who = _restore_ready(services, mp)
+        from awgbot.core import config
+        mp.setattr(config, "INSTALLED_VERSION", "3.4.2")
+
+        def releases(*a, **kw):
+            if down:
+                raise updates.UpdateError("HTTP 503")
+            return [updates.Release(tag=t, version=updates.parse_version(t), body="", asset_url="DUMMY",
+                                    sha256=sha, meta={"awg_gen": 1}, withdrawn=withdrawn) for t in tags]
+        mp.setattr(updates, "list_releases", releases)
+
+        def download(rel):
+            if not fetch:
+                raise updates.UpdateError("HTTP 502")
+            return b"DUMMY-release"
+        mp.setattr(updates, "download_asset", download)
+        real = services.inspect_backup
+
+        def inspect(blob, name=""):
+            # осмотр и строка версии — настоящие; линия — та же, шлюзов нет (сцена)
+            info = real(blob, name)
+            if info.get("ok"):
+                info["plan"].update(line="same", empty=False, slots=[], replaced=[0, 0])
+            return info
+        services.inspect_backup = inspect
+        return who
+    return build
 
 
 def _slot(n, case, name, label=""):
@@ -209,9 +246,28 @@ RESTORE = [
     Shot("adm.restore.old", role="admin", steps=[("file", _BK_NAME, _BK_OLD)], data=_restore_ready,
          title="бэкап версии до 3.4.0"),
     Shot("adm.restore.newer", role="admin", steps=[("file", _BK_NAME, _BK_NEWER)], data=_restore_ready,
-         title="бэкап новее кода"),
+         title="Т-В2: бэкап другой версии со сборки не из выпуска"),
     Shot("adm.restore.admin", role="admin", steps=[("file", _BK_NAME, _BK_ADMIN)], data=_restore_ready,
          title="бэкап другого админа"),
+    # ── другая версия бэкапа — переход на его выпуск (Т-В1, Т-В2) ─────────────
+    Shot("adm.restore.release.down", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)], data=_releases(),
+         title="Т-В1: бэкап старше кода — сервер вернётся на его выпуск"),
+    Shot("adm.restore.release.up", role="admin", steps=[("file", _BK_NAME, _BK_UP)], data=_releases(),
+         title="Т-В1: бэкап новее кода — сервер обновится до его выпуска"),
+    Shot("adm.restore.release.withdrawn", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
+         data=_releases(withdrawn="ломает маршруты шлюза"), title="Т-В1: выпуск бэкапа снят — предупреждение"),
+    Shot("adm.restore.release.yes", role="admin",
+         steps=[("file", _BK_NAME, _BK_DOWN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
+         data=_releases(), title="выпуск бэкапа скачан — восстановление запущено"),
+    Shot("adm.restore.release.fetch", role="admin",
+         steps=[("file", _BK_NAME, _BK_DOWN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
+         data=_releases(fetch=False), title="выпуск бэкапа не скачался — вопрос остаётся, кнопку можно нажать снова"),
+    Shot("adm.restore.release.none", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
+         data=_releases(tags=("v3.5.0",)), title="Т-В2: выпуска бэкапа на GitHub нет"),
+    Shot("adm.restore.release.digest", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
+         data=_releases(sha="e" * 64), title="Т-В2: выпуск на GitHub не тот, на котором снят бэкап"),
+    Shot("adm.restore.release.github", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
+         data=_releases(down=True), title="Т-В2: GitHub не ответил"),
 ]
 
 

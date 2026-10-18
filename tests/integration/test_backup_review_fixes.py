@@ -219,7 +219,7 @@ async def test_the_button_is_of_its_own_file_and_a_second_tap_is_refused(service
     assert cb.answers[-1][0] == texts.RESTORE_OTHER_FILE and (await state.get_data())["restore_blob"]
     launched = []
     services.prepare_restore = lambda blob, plan=None: "/tmp/DUMMY"
-    services.launch_restore = lambda path: launched.append(path)
+    services.launch_restore = lambda path, release="": launched.append(path)
     await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
     assert launched == ["/tmp/DUMMY"]
     await state.update_data(restore_blob="RFVNTVk=", restore_fp="aaaaaaaaaaaa")

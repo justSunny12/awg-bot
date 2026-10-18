@@ -35,14 +35,32 @@ class BackupRestoreMixin:
             plan_path.unlink()
         return str(dst)
 
+    def prepare_restore_release(self, plan: dict | None) -> str:
+        """Версия бэкапа другая — выпуск бэкапа с GitHub до запуска restore
+        (sha256 = digest метки): путь к архиву; та же версия — пусто. Сеть или
+        sha256 — UpdateError (кнопку можно нажать снова)."""
+        from awgbot.domain.fleet import restore as fleet_restore
+        rel = (plan or {}).get("release") or {}
+        if not rel or rel.get("kind") in ("", fleet_restore.SAME):
+            return ""
+        label = {"version": rel.get("version"), "digest": rel.get("digest")}
+        cache = self._update_meta_cache() if hasattr(self, "_update_meta_cache") else None
+        full = fleet_restore.plan_release(label, meta_cache=cache)   # тот же выпуск, свежий ответ GitHub
+        if full["error"]:
+            from awgbot.infra import updates
+            raise updates.UpdateError(full["error"])
+        return fleet_restore.fetch_release(full)
+
     @staticmethod
-    def launch_restore(path: str) -> None:
+    def launch_restore(path: str, release: str = "") -> None:
         """awg-bot restore --yes — ВНЕ нашего cgroup: он остановит сервис,
         подменит БД/конфиги и запустит бота заново; итог доложит новый процесс
-        по маркеру restore-done.json."""
+        по маркеру restore-done.json. release — выпуск бэкапа, уже скачанный:
+        переход на него до слияния."""
         from awgbot.infra.detach import spawn_detached
         script = str(config.BASE_DIR / "awg-bot.sh")
-        spawn_detached(["bash", script, "restore", "--yes", path], unit_prefix="awg-bot-restore")
+        argv = ["bash", script, "restore", "--yes"] + (["--release", release] if release else []) + [path]
+        spawn_detached(argv, unit_prefix="awg-bot-restore")
 
     RESTORE_FAILED = "restore-failed.json"
     RESTORE_PRUNE = ".restore-prune"
@@ -62,8 +80,10 @@ class BackupRestoreMixin:
         return flagged or (config.DATA_DIR / BackupRestoreMixin.RESTORE_DONE).exists()
 
     @staticmethod
-    def pop_restore_failed() -> str:
-        """Отказ восстановления из чата (пишет awg-bot restore) — причина; нет — пусто."""
+    def pop_restore_failed_info() -> dict:
+        """Отказ восстановления из чата (пишет awg-bot restore): {"failed",
+        "release" — выпуск бэкапа, на который не перешли, "from" — версия,
+        которая работает}; нет — пусто."""
         import json
         p = config.DATA_DIR / BackupRestoreMixin.RESTORE_FAILED
         try:
@@ -74,7 +94,12 @@ class BackupRestoreMixin:
             p.unlink()
         except OSError:
             pass
-        return str((d or {}).get("failed") or "") if isinstance(d, dict) else ""
+        return d if isinstance(d, dict) else {}
+
+    @staticmethod
+    def pop_restore_failed() -> str:
+        """Отказ восстановления из чата — причина; нет — пусто."""
+        return str(BackupRestoreMixin.pop_restore_failed_info().get("failed") or "")
 
     @staticmethod
     def pop_restore_done() -> dict | None:

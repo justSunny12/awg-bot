@@ -199,6 +199,8 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
     """Вопрос перед восстановлением: что вернётся, что останется текущим,
     что будет со шлюзами."""
     parts = [f"♻️ Восстановить бэкап от {_when(plan.created_at)}?"]
+    from awgbot.domain.fleet import restore as fleet_restore
+    version = fleet_restore.version_lines(getattr(plan, "release", None) or {})
     if plan.line == "same":
         parts[0] += ("\nВернутся к тому моменту настройки профилей, устройств и сервера; профили и "
                      "устройства, созданные или удалённые после бэкапа, останутся как сейчас.\n"
@@ -243,6 +245,10 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
                      f"<code>{_e(plan.host_cur)}</code>. Устройства и шлюзы ищут сервер по прежнему: пока он "
                      "не ведёт сюда, они не подключатся. Шлюзам новый адрес придёт сам, как только они выйдут "
                      "на связь; устройствам — только с перевыпущенным конфигом")
+    if version:
+        # Т-В1 — первой после заголовка (у той же линии заголовок несёт и абзац о том, что вернётся)
+        head, _, tail = parts[0].partition("\n")
+        parts[0] = head + "\n" + "\n".join(version) + ("\n" + tail if tail else "")
     return "\n\n".join(parts)
 
 

@@ -53,6 +53,7 @@ class Plan:
     host_cur: str = ""
     first_slot_back: bool = False      # база не читается: слот 1 по файлам — мог быть снят
     created_at: str = ""
+    release: dict = field(default_factory=dict)   # переход на выпуск бэкапа (fleet/restore.public)
 
     def to_dict(self) -> dict:
         d = asdict(self)

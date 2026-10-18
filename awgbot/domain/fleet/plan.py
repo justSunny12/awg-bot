@@ -90,8 +90,8 @@ class FleetPlanMixin:
         for r in releases:
             if r.version <= base or (barrier is not None and r.version >= barrier):
                 continue
-            if not (r.applies_to("main") or r.applies_to("gateway")):
-                continue
+            if r.withdrawn or not (r.applies_to("main") or r.applies_to("gateway")):
+                continue                                  # снятый выпуск — не цель кнопки
             if ceiling is not None and r.awg_generation() > ceiling:
                 continue
             if best is None or r.version > best.version:

@@ -97,13 +97,25 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
         meta = bad = None
         if fetch_meta and release_build and meta_asset is not None and (ver > installed or ver[:3] >= floor):
             meta, bad = _read_meta(r["tag_name"], meta_asset, meta_cache)
+        title = _strip_tag(r.get("name") or "", r["tag_name"])
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),
-                           asset_url=asset_url, sha256=sha256,
-                           title=_strip_tag(r.get("name") or "", r["tag_name"]),
-                           meta=meta, meta_bad=bad or ""))
+                           asset_url=asset_url, sha256=sha256, title=title,
+                           meta=meta, meta_bad=bad or "", withdrawn=withdrawn_reason(r, title)))
     out.sort(key=lambda x: x.version)
     return out
+
+
+def withdrawn_reason(r: dict, title: str) -> str:
+    """Снятый выпуск: флаг prerelease и заголовок «снят: причина» (тег и
+    ассеты не трогаются — выпуски иммутабельны). Причина словами; «снят» без
+    причины — «без причины»; не снят — пусто."""
+    if not r.get("prerelease"):
+        return ""
+    head, sep, why = title.partition(":")
+    if head.strip().lower() != "снят":
+        return ""
+    return why.strip() or "без причины"
 
 
 def _read_meta(tag: str, asset: dict, cache: Optional[dict]):

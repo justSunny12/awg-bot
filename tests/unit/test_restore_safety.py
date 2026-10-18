@@ -30,7 +30,8 @@ pytestmark = pytest.mark.unit
 
 FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "json_str", "restore_die", "restore_stage", "restore_unstage",
          "restore_rollback", "restore_mv", "restore_swap", "restore_finish", "restore_prune_mark",
-         "restore_fail_marker", "restore_exit", "restore_blocks", "restore_provision", "cmd_restore")
+         "restore_fail_marker", "restore_exit", "restore_blocks", "restore_provision", "cmd_restore",
+         "restore_apply", "restore_code_back", "tree_version")
 OLD = {"db": b"OLD-DB", "app": b"network:\n  server_host: vpn.example.org\n", "env": b"BOT_TOKEN=DUMMY\n",
        "awg0": b"[Interface]\nPrivateKey = DUMMY-OLD\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-OLD\n"}
 NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\n", "env": b"BOT_TOKEN=DUMMY2\n",
@@ -96,13 +97,21 @@ class Host:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
 
 
-def run(script: str, h: Host, *args: str, merge_fails: bool = False, mv_fail_at: int = 0,
-        stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=(),
-        blocks_fail: bool = False, stays_active: bool = False, merge_kill: bool = False,
-        provision: bool = False) -> subprocess.CompletedProcess:
+def run(script: str, h: Host, *args: str, **kw) -> subprocess.CompletedProcess:
+    prog = "\n".join(prelude(script, h, **kw) + ['cmd_restore "$@"'])
+    return subprocess.run(["bash", "-c", prog, "x", *args], capture_output=True, text=True, timeout=30,
+                          env={"PATH": "/usr/bin:/bin", "TMPDIR": str(h.tmp)})
+
+
+def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int = 0,
+            stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=(),
+            blocks_fail: bool = False, stays_active: bool = False, merge_kill: bool = False,
+            provision: bool = False, extra=(), funcs=()) -> list[str]:
+    """Подмены и настоящие функции awg-bot.sh — без вызова: его дописывает
+    вызывающий (run — cmd_restore; переход на выпуск бэкапа — и скрипт выпуска)."""
     log = h.log
     report = json.dumps({"blocked": list(blocked), "adopt": list(adopt), "slots": [], "provision": provision})
-    prog = "\n".join([
+    return [
         "set -uo pipefail",
         f'INSTALL_DIR="{h.tmp}/opt"; CONF_DIR="{h.conf}"; ENV_FILE="{h.env}"; DATA_DIR="{h.data}"',
         f'BACKUP_DIR="{h.backups}"; SERVICE=awg-bot; ROOT_GW_DIR="{h.root}"; SYS_NET="{h.net}"',
@@ -141,13 +150,11 @@ def run(script: str, h: Host, *args: str, merge_fails: bool = False, mv_fail_at:
         ('        --apply-blocks) echo "iptables: отказ" >&2; return 1 ;;' if blocks_fail else
          '        --apply-blocks) return 0 ;;'),
         '      esac ;;',
+        *extra,                                         # другие инструменты: строки `case` целиком
         '  esac',
         "}",
-        *(_extract_func(script, f) for f in FUNCS),
-        'cmd_restore "$@"',
-    ])
-    return subprocess.run(["bash", "-c", prog, "x", *args], capture_output=True, text=True, timeout=30,
-                          env={"PATH": "/usr/bin:/bin", "TMPDIR": str(h.tmp)})
+        *(_extract_func(script, f) for f in FUNCS + tuple(funcs)),
+    ]
 
 
 def test_success_replaces_everything_and_leaves_no_duplicates(script, tmp_path):
@@ -306,7 +313,7 @@ def test_wal_and_shm_go_into_the_duplicate_first(script, tmp_path):
 
 def test_the_point_of_no_return_is_right_after_the_swap(script, tmp_path):
     """После замены дублей нет: подъём интерфейсов и маркер — уже вперёд, не назад."""
-    body = _extract_func(script, "cmd_restore")
+    body = _extract_func(script, "restore_apply")
     assert body.index("restore_finish") < body.index('awg-quick up "$i"') < body.index("restore-done.json")
     assert body.index("restore_swap") < body.index("restore_finish") < body.index("restore_provision")
 

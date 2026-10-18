@@ -94,7 +94,7 @@ def test_backup_meta_is_schema_two_inside_the_archive(services, monkeypatch, tmp
 
 
 def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
-    """Отказы осмотра: открытый файл, схема 1, версия ниже 3.4.0, новее кода,
+    """Отказы осмотра: открытый файл, схема 1, версия ниже 3.4.0, другая версия без digest,
     другое поколение, другой админ, копия шлюза прежних версий, фраза."""
     from awgbot.util import secrets_util
     db = services.db_snapshot_bytes(services.db.path)
@@ -114,8 +114,9 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
     assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.3.1"})) == \
         "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
     assert err(enc(_meta(version="3.3.1"))) == "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
+    # новее кода — не отказ, а переход вверх; без digest — сборка не из выпуска (Т-В2)
     assert err(enc(_meta(version="3.5.0"))) == \
-        "бэкап снят версии 3.5.0, а здесь 3.4.0 — обнови бота до 3.5.0, затем восстанови"
+        "бэкап снят на сборке не из выпуска (v3.5.0) — восстановить его можно только на той же версии"
     from awgbot.infra import awglock
     monkeypatch.setattr(awglock, "generation", lambda: 2)
     assert "другом поколении AmneziaWG" in err(enc(_meta(awg_gen=1)))

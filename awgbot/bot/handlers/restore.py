@@ -127,13 +127,22 @@ async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:
     services._restore_running = True
     await cb.answer()
     try:
+        try:
+            # другая версия — выпуск бэкапа с GitHub, до запуска (sha256 = digest метки)
+            release = await call(services.prepare_restore_release, data.get("restore_plan"))
+        except Exception as e:                         # noqa: BLE001 — сеть, sha256
+            services._restore_running = False
+            await state.update_data(**data)            # вопрос остаётся живым: кнопку можно нажать снова
+            from awgbot.domain.notices import fleet as nf
+            await cb.message.answer(nf.restore_not_launched(str(e)))
+            return
         path = await call(services.prepare_restore, base64.b64decode(raw), data.get("restore_plan"))
         try:
             await cb.message.edit_reply_markup(reply_markup=None)
         except Exception:                              # noqa: BLE001
             pass
         await cb.message.answer(texts.RESTORE_STARTED)
-        await call(services.launch_restore, path)
+        await call(services.launch_restore, path, release)
     except Exception:
         services._restore_running = False             # не запустилось — кнопку можно нажать снова
         raise
@@ -158,15 +167,23 @@ async def report_restore_result(bot, services) -> None:
     ожидание их выхода на связь (факт — hello слота)."""
     from awgbot.core import config
     from awgbot.bot.notifier import notify_one
-    failed = await call(services.pop_restore_failed) if hasattr(services, "pop_restore_failed") else ""
+    info = await call(services.pop_restore_failed_info) if hasattr(services, "pop_restore_failed_info") else {}
+    failed = str(info.get("failed") or "")
     if failed:
-        await notify_one(bot, config.ADMIN_ID, texts.restore_failed(failed))
+        from awgbot.domain.notices import fleet as nf
+        text = (nf.restore_version_failed(info["release"], failed, info.get("from") or config.INSTALLED_VERSION)
+                if info.get("release") else texts.restore_failed(failed))
+        await notify_one(bot, config.ADMIN_ID, text)
     done = await call(services.pop_restore_done)
     if done:
         report = done.get("merge") if isinstance(done.get("merge"), dict) else {}
+        version = str(done.get("version") or "")
+        if version and hasattr(services, "fleet_after_restore"):
+            # выпуск набора — версия бэкапа: шлюзы пойдут следом по hello
+            await call(services.fleet_after_restore, version)
         await notify_one(bot, config.ADMIN_ID,
                          texts.restore_done_report(str(done.get("created_at") or ""), report,
-                                                   getattr(services, "bot_username", "") or ""))
+                                                   getattr(services, "bot_username", "") or "", version=version))
         if hasattr(services, "restore_wait_start"):
             await call(services.restore_wait_start, report)
     if failed or done:
