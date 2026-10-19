@@ -22,6 +22,7 @@ import pytest
 from awgbot.core import config
 from awgbot.domain.gateway import GatewayServices
 from awgbot.domain.gateway import upd as gw_upd
+from awgbot.domain.selfupdate import marks
 from awgbot.infra import awglock, updates
 from awgbot.infra.db import Database
 from awgbot.runtime import linkclient
@@ -277,7 +278,7 @@ async def test_revert_is_local_when_the_old_one_is_held(agent, monkeypatch):
     spawned: list = []
     import awgbot.infra.detach as detach
     monkeypatch.setattr(detach, "spawn_detached", lambda argv, **k: spawned.append(argv[1:]))
-    monkeypatch.setattr(gw_upd, "_revert_check", lambda: 0)
+    monkeypatch.setattr(marks, "revert_check", lambda: 0)
     calls = agent.github_calls
     sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     assert spawned == [["__update_revert"]] and sent == [] and agent.github_calls == calls, "откат пошёл на GitHub"
@@ -290,7 +291,7 @@ async def test_revert_without_the_old_one_goes_down_from_github(agent, monkeypat
     await _run(agent, _cmd("v3.4.1"))
     _restart(monkeypatch, "3.4.1")
     agent.upd_resume()
-    monkeypatch.setattr(gw_upd, "_revert_check", lambda: 2)
+    monkeypatch.setattr(marks, "revert_check", lambda: 2)
     sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     assert agent.applied[-1] == ("v3.4.0", False) and sent == []
     _restart(monkeypatch, "3.4.0")
@@ -328,7 +329,7 @@ async def test_a_repeated_revert_does_not_start_a_second_one(agent, monkeypatch)
     spawned: list = []
     import awgbot.infra.detach as detach
     monkeypatch.setattr(detach, "spawn_detached", lambda argv, **k: spawned.append(argv[1:]))
-    monkeypatch.setattr(gw_upd, "_revert_check", lambda: 0)
+    monkeypatch.setattr(marks, "revert_check", lambda: 0)
     await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     sent = await _run(agent, {"t": "upd_revert", "id": "a1b2c3d4", "to": "v3.4.0"})
     assert spawned == [["__update_revert"]], "второй __update_revert тем же id"

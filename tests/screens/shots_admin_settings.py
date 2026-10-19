@@ -91,7 +91,8 @@ def _rekey_busy(services, mp):
     from tests.screens.shots_admin_common_gw import _slots
     who = _slots(1)(services, mp)
     services.backup_set_passphrase(_PHRASE)
-    services.backup_rekey_busy = lambda: services.db.gateway(1)
+    from awgbot.domain.services.backups import BackupBusy
+    services.backup_rekey_busy = lambda: BackupBusy(1, services._gw_name(services.db.gateway(1)), False)
     return who
 
 

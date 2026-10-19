@@ -72,8 +72,8 @@ def test_a_copy_waits_for_a_new_slot_being_joined(services, vps, monkeypatch):
     res = services.gwjoin_issue()
     assert services.db.gateway(1) is None, "сценарий собран не так: строка слота до кода"
     busy = services.backup_rekey_busy()
-    assert busy is not None and busy.id == 1, "копия снимется посреди сопряжения нового слота"
-    toast = nb.rekey_wait_toast(services._gw_name(busy), joining=bool(getattr(busy, "joining", False)))
+    assert busy is not None and busy.slot == 1 and busy.joining, "копия снимется посреди сопряжения нового слота"
+    toast = nb.rekey_wait_toast(busy.name, joining=busy.joining)
     assert toast.startswith("Идёт подключение шлюза «") and "смена ключей" not in toast, toast
     monkeypatch.setattr("awgbot.domain.services.backups.EVENT_SETTLE_S", 0)
     services.backup_set_passphrase("correct horse battery staple")
@@ -90,8 +90,8 @@ def test_a_copy_waits_for_a_device_replacement_and_names_the_slot(services, vps)
     slot_with_device(services, vps, 1)
     res = services.gwjoin_issue(slot_id=1)
     busy = services.backup_rekey_busy()
-    assert busy is not None and busy.id == 1 and getattr(busy, "joining", False)
-    assert nb.rekey_wait_toast(services._gw_name(busy), joining=True) == \
+    assert busy is not None and busy.slot == 1 and busy.joining
+    assert nb.rekey_wait_toast(busy.name, joining=busy.joining) == \
         "Идёт подключение шлюза «NASPi» — бэкап сниму сразу после него"
     services.gwjoin_cancel(1, res["state"]["id"])
     services.gwjoin_revert(1, "cancel")

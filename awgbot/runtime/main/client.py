@@ -42,7 +42,7 @@ async def main() -> None:
     services = pkg.Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
-    services.adopt_installed_digest()       # digest выпуска от установщика или `awg-bot update` — в базу
+    services.adopt_installed_digest()       # digest выпуска от установщика, `awg-bot update` или самообновления — в базу
     # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.

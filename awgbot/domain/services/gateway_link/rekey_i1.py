@@ -66,16 +66,12 @@ class RekeyI1Mixin:
     def _i1_blocked(self) -> bool:
         """Переход на I1 не начинать: идёт ход набора обновлений, команда
         обновления шлюзу вне хода ещё в пути или идёт сопряжение."""
-        running = getattr(self, "fleet_running", None)
-        if callable(running) and running():
+        from awgbot.domain.fleet.state import IN_FLIGHT
+        if self.fleet_running():
             return True
-        slot_state = getattr(self, "fleet_slot", None)
-        if callable(slot_state):
-            from awgbot.domain.fleet.state import IN_FLIGHT
-            if any(slot_state(g.id).get("state") in IN_FLIGHT for g in self.db.gateways()):
-                return True
-        joining = getattr(self, "gwjoin_active", None)
-        return bool(callable(joining) and joining())
+        if any(self.fleet_slot(g.id).get("state") in IN_FLIGHT for g in self.db.gateways()):
+            return True
+        return self.gwjoin_active()
 
     def _i1_failed(self, gw, plan: dict, why: str) -> None:
         """Попытка не встала (или не начата) — неудача в счёт, повтор через сутки."""
@@ -121,7 +117,7 @@ class RekeyI1Mixin:
                 plan = {"want": want, "next_at": _later(random.uniform(*WINDOW_S)), "tries": 0}
                 self._i1_plan_save(gw.id, plan)
             if plan.get("rid"):
-                if hasattr(self, "gwjoin_slot_busy") and self.gwjoin_slot_busy(gw.id):
+                if self.gwjoin_slot_busy(gw.id):
                     # смену сняло сопряжение этого слота (замена устройства) — не неудача линка
                     plan.pop("rid", None)
                     self._i1_plan_save(gw.id, plan)

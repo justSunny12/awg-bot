@@ -54,7 +54,7 @@ async def run_gateway() -> None:
     db.init_schema()
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
-    services.adopt_installed_digest()       # digest выпуска от установщика или `awg-bot update` — в базу
+    services.adopt_installed_digest()       # digest выпуска от установщика, `awg-bot update` или самообновления — в базу
     services.upd_legacy_drop()              # ключи прежних «⬆️ Обновлений» агента: сам он больше не обновляется
     try:
         services.backup_leftovers_drop()    # своих копий у шлюза нет: фраза, отметки, ключи conf — прочь

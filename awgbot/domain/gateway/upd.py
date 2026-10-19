@@ -21,13 +21,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import secrets
-import subprocess
 
 from awgbot.core import config
-from awgbot.domain.selfupdate.marks import install_busy
+from awgbot.domain.selfupdate import marks
 from awgbot.infra import updates
 from awgbot.util import timeutil
 
@@ -36,8 +34,6 @@ log = logging.getLogger("awgbot.gateway")
 CMD_KEY = "gw_upd"
 ACK_KEY = "gw_upd_ack"
 BUSY_WAIT_S = 600             # занят (смена ключей в переходе) — ждать факта не дольше
-ROLLED_MARK = "update-rolled-back"
-GUARD_FILE = "update-guard"
 ACTIVE = ("checking", "accepted", "applying", "reverting")
 SPAWN_GRACE_S = 90            # апдейтер успевает взять замок установки и записать pid
 APPLY_MAX_S = 20 * 60         # ступень (с ядром) или понижение дольше — не удались
@@ -54,10 +50,6 @@ _TAG_RE = re.compile(r"v?\d+\.\d+\.\d+(\.\d+)?\Z")
 def _v(ver: str) -> str:
     ver = str(ver or "")
     return ver if not ver or ver.startswith("v") else f"v{ver}"
-
-
-def _data(name: str) -> str:
-    return os.path.join(os.path.dirname(str(config.DB_PATH)), name)
 
 
 class GatewayUpdMixin:
@@ -216,7 +208,7 @@ class GatewayUpdMixin:
     def upd_settled(self) -> bool:
         """Сторож обновления снят (новый процесс отметился): ответ «done»
         только после этого — иначе фиксация набора опередила бы удержание."""
-        return not os.path.exists(_data(GUARD_FILE))
+        return not marks.guard_armed()
 
     def upd_resume(self) -> str:
         """Первое слово сервера в новом процессе: что с командой. «done» /
@@ -228,7 +220,7 @@ class GatewayUpdMixin:
         if state in ("applying", "reverting") and cmd.get("proc") == _PROC:
             # тот же процесс — апдейтер ещё не перезапустил агента
             age = _age(str(cmd.get("applied_at") or ""))
-            if age < APPLY_MAX_S and (install_busy() or age < SPAWN_GRACE_S):
+            if age < APPLY_MAX_S and (marks.install_busy() or age < SPAWN_GRACE_S):
                 return ""
             if state == "applying":
                 self._upd_state("failed", error="обновление не применилось — агент на прежней версии")
@@ -236,7 +228,7 @@ class GatewayUpdMixin:
             if cmd.get("revert_local"):
                 self._upd_state("revert_failed", error="прежняя версия не вернулась")
                 return "revert_failed"
-        rolled = self._upd_rolled_mark()
+        rolled = marks.pop_rolled_mark()
         inst = updates.parse_version(config.INSTALLED_VERSION)
         if state == "applying":
             step = updates.parse_version(str(cmd.get("step") or ""))
@@ -262,19 +254,6 @@ class GatewayUpdMixin:
         if state in ("checking", "accepted"):
             return "check"
         return ""
-
-    def _upd_rolled_mark(self) -> dict:
-        path = _data(ROLLED_MARK)
-        try:
-            with open(path, encoding="utf-8") as f:
-                mark = json.loads(f.read() or "{}")
-        except (OSError, ValueError):
-            return {}
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        return mark if isinstance(mark, dict) else {}
 
     # ── фиксация и откат набора ─────────────────────────────────────────────
 
@@ -303,7 +282,7 @@ class GatewayUpdMixin:
             self._upd_save({**cmd, "revert_to": _v(to)})
             self._upd_state("reverted")
             return "done"
-        local = _revert_check() == 0
+        local = marks.revert_check() == 0
         self._upd_save({**cmd, "state": "reverting", "revert_to": _v(to), "revert_local": local,
                         "target": cmd.get("target"), "step": ""})
         if local:
@@ -355,10 +334,3 @@ def _age(iso: str) -> float:
         return float(APPLY_MAX_S)
 
 
-def _revert_check() -> int:
-    """`awg-bot __update_revert --check`: 0 — прежнее на месте, 2 — нет."""
-    try:
-        return subprocess.run([updates._AWG_BOT_BIN, "__update_revert", "--check"],
-                              capture_output=True, timeout=30).returncode
-    except (OSError, subprocess.SubprocessError):
-        return 2

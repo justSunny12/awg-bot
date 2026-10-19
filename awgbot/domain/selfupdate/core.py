@@ -86,9 +86,9 @@ class SelfUpdateCoreMixin:
         return awglock.target_generation() if running else None
 
     def adopt_installed_digest(self) -> bool:
-        """Старт: digest выпуска, сверенный установщиком или `awg-bot update`
-        (файл installed-digest в каталоге данных), — в базу, файл прочь
-        (marks.py). До итога самообновления: тот пишет свой digest поверх."""
+        """Старт: digest выпуска, сверенный установщиком, `awg-bot update` или
+        апдейтером самообновления (файл installed-digest в каталоге данных), —
+        в базу, файл прочь (marks.py)."""
         from .marks import adopt_installed_digest
         return adopt_installed_digest(self.db)
 
@@ -268,9 +268,8 @@ class SelfUpdateCoreMixin:
             raise updates.UpdateError(reason)
         blob = updates.download_asset(release)
         self.db.set_state("update_pending", release.tag)
-        # digest релиза — в метку бэкапа после удачного обновления (задел
-        # «перейти на версию копии»); установка не из релиза его не знает
-        self.db.set_state("update_pending_digest", str(getattr(release, "sha256", "") or ""))
+        # sha256 ассета — апдейтеру: совпал с архивом — версия и digest в
+        # installed-digest, бот на старте перенесёт их в базу (marks.py)
         updates.apply(blob, hold=hold, sha256=str(getattr(release, "sha256", "") or ""))
 
     def set_update_wait(self, chat_id: int, message_id: int) -> None:
@@ -305,10 +304,6 @@ class SelfUpdateCoreMixin:
         have = updates.parse_version(config.INSTALLED_VERSION)
         from awgbot.domain.notices.updates import update_applied, update_not_applied
         # кнопка «В меню» — по имени клавиатуры: собирает её слой бота
-        digest = self.db.get_state("update_pending_digest") or ""
-        self.db.set_state("update_pending_digest", "")
-        if want is not None and want == have:
-            self.db.set_state("update_installed_digest", f"{config.INSTALLED_VERSION} {digest}" if digest else "")
         # шаг набора (живое сообщение у сервера, одна строка у агента) — своим текстом роли
         alt = getattr(self, "update_applied_note", None)
         if callable(alt):

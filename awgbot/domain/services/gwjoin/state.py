@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import threading
+import types
 
 from awgbot.util import timeutil
 
@@ -25,11 +26,29 @@ JOIN_TTL = 3600            # команда — чтобы выполнить е
 MAX_SESSIONS = 10          # сессий по токену
 MAX_ATTEMPTS = 3           # неверных кодов на токен
 JOIN_KEY = "gw_join"
+
+# состояния записи: код ещё не введён; сопряжение идёт (код верный, смена ключей
+# не зафиксирована); запись живая — слот занят (возврат ещё не сделан); до
+# кода или в возврате — строки слота нет и команду можно отменить
+OPEN = frozenset({"waiting", "connected"})
+PAIRING = OPEN | {"accepted"}
+LIVE = PAIRING | {"closing"}
+OPEN_OR_CLOSING = OPEN | {"closing"}
 GW_NEW_NAME = "Шлюз"       # устройство, которое заводит код: «Шлюз» / «Шлюз N»
 
 # {слот: {"sid": id сессии, "code", "kp": ключ сопряжения, "eph": открытый ключ сервера}}
 _LIVE: dict[int, dict] = {}
 _LOCK = threading.RLock()
+
+
+def slot_ns(slot, link_if: str, port, cidr: str):
+    """Слот без строки в `gateways` — для окружения скрипта линка и токена."""
+    return types.SimpleNamespace(id=int(slot), link_if=link_if, link_port=int(port), link_cidr=cidr)
+
+
+def slot_of(st: dict):
+    """То же по записи сопряжения."""
+    return slot_ns(st["slot"], st["link_if"], st["port"], st["cidr"])
 
 
 def new_device_name(slot: int) -> str:

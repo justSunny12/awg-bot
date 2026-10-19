@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 from awgbot.core import settings
 from awgbot.util import timeutil
@@ -25,13 +26,13 @@ EVENT_FILE_KEY = "backup_event_file"   # {"at", "path"} — собранная, 
 EVENT_SETTLE_S = 600              # с последнего события до копии
 
 
-class _JoinSlot:
-    """Новый слот в сопряжении: строки в gateways ещё нет, а линк на ключах
-    токена уже стоит — для «копия ждёт» ведёт себя как шлюз без устройства."""
-
-    def __init__(self, slot_id: int, name: str, device_id=None):
-        self.id, self.name, self.device_id, self.label, self.link_if = slot_id, name, device_id, "", ""
-        self.joining = True                               # «копия ждёт подключения», не смены ключей
+@dataclass(frozen=True)
+class BackupBusy:
+    """Из-за кого копия ждёт: слот и его имя; joining — подключение командой,
+    иначе смена ключей линка."""
+    slot: int
+    name: str
+    joining: bool
 
 
 class BackupsMixin:
@@ -75,20 +76,17 @@ class BackupsMixin:
 
     # ── смена ключей линка в работе: копия ждёт её конца ─────────────────────
 
-    def backup_rekey_busy(self):
-        """Слот, у которого идёт смена ключей линка (на диске .next/.prev,
-        шлюз может быть уже на новых) или сопряжение (линк на ключах токена,
-        прежние — в .join-prev, которого в копии нет), или None: копия ждёт
-        факта — фиксации или возврата."""
+    def backup_rekey_busy(self) -> BackupBusy | None:
+        """Из-за кого копия ждёт факта — фиксации или возврата: сопряжение
+        (линк на ключах токена, прежние — в .join-prev, которого в копии нет;
+        у нового слота строки ещё нет) или смена ключей линка (на диске
+        .next/.prev, шлюз может быть уже на новых); None — никто."""
+        joining = self.gwjoin_busy_slot()
+        if joining is not None:
+            return BackupBusy(joining[0], joining[1], True)
         for gw in self.db.gateways():
-            if hasattr(self, "gwjoin_slot_busy") and self.gwjoin_slot_busy(gw.id):
-                return _JoinSlot(gw.id, self._gw_name(gw), device_id=gw.device_id)   # подключение, не смена ключей
             if self.gateway_rekey_active(gw.id):
-                return gw
-        if hasattr(self, "gwjoin_all"):
-            for st in self.gwjoin_all():                  # новый слот: строки ещё нет, линк со штампом уже стоит
-                if st.get("state") in ("waiting", "connected", "accepted", "closing"):
-                    return _JoinSlot(int(st.get("slot") or 0), str(st.get("name") or "") or f"Шлюз {st.get('slot')}")
+                return BackupBusy(gw.id, self._gw_name(gw), False)
         return None
 
     # ── копия по событию ─────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import pytest
 from awgbot.core import config
 from awgbot.domain.fleet import order as fleet_order
 from awgbot.domain.fleet import server as fleet_server
+from awgbot.domain.selfupdate import marks
 from awgbot.infra import awglock, updates
 from awgbot.runtime.linkserver import upd as ls_upd
 from awgbot.util import timeutil
@@ -65,7 +66,7 @@ class Fleet:
             self.hold_ids.append(hold if isinstance(hold, str) else "")
         monkeypatch.setattr(services, "apply_update", apply)
         monkeypatch.setattr(fleet_order, "_spawn", lambda argv, unit: self.spawned.append(argv[1:]))
-        monkeypatch.setattr(fleet_order, "_revert_check", lambda: self.revert_rc)
+        monkeypatch.setattr(marks, "revert_check", lambda: self.revert_rc)
         self.admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID, device_limit=0)
         self.names: dict[int, str] = {}
         self.drop: set[int] = set()        # слоты, которым отправка срывается (сессия падает на записи)

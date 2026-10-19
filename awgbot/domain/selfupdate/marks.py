@@ -14,6 +14,9 @@
   значит, что он работает. Сторожа нет — отметка не нужна и не пишется.
   Поставив отметку, бот сразу зовёт фиксацию (`awg-bot __update_guard
   --alive`, вне своего cgroup): живой код не ждёт окна сторожа.
+- `update-rolled-back` — метка отката сторожем (JSON: version, prev, at):
+  её читает прежний процесс на старте (pop_rolled_mark) — сервер уведомляет
+  и снимает свой шаг набора, агент отвечает `rolled_back`.
 - `update_installed_digest_prev` — digest прежних версий, до трёх строк
   «<версия> <sha256>», свежая первой: новая версия при первом старте
   переписывает `update_installed_digest`, и без копии прежняя после отката
@@ -38,6 +41,7 @@ INSTALLED_DIGEST_FILE = "installed-digest"
 UPDATE_GUARD_FILE = "update-guard"
 UPDATE_OK_FILE = "update-ok"
 RUNNING_FILE = "update-running"      # pid awg-bot.sh под замком установки (update, откат, сторож)
+ROLLED_MARK_FILE = "update-rolled-back"
 
 DIGEST_KEY = "update_installed_digest"
 DIGEST_PREV_KEY = "update_installed_digest_prev"
@@ -53,6 +57,43 @@ _alive_done = False
 def _data_dir(data_dir: Optional[str]) -> str:
     from awgbot.core import config
     return data_dir or os.path.dirname(str(config.DB_PATH))
+
+
+def data_path(name: str, data_dir: Optional[str] = None) -> str:
+    """Путь метки в каталоге данных."""
+    return os.path.join(_data_dir(data_dir), name)
+
+
+def guard_armed(data_dir: Optional[str] = None) -> bool:
+    """Сторож обновления взведён: новый процесс ещё не отметился."""
+    return os.path.exists(data_path(UPDATE_GUARD_FILE, data_dir))
+
+
+def pop_rolled_mark(data_dir: Optional[str] = None) -> dict:
+    """Метка отката сторожем — прочитать и убрать; нет или не читается — пусто."""
+    import json
+    path = data_path(ROLLED_MARK_FILE, data_dir)
+    try:
+        with open(path, encoding="utf-8") as f:
+            mark = json.loads(f.read() or "{}")
+    except (OSError, ValueError):
+        return {}
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    return mark if isinstance(mark, dict) else {}
+
+
+def revert_check() -> int:
+    """`awg-bot __update_revert --check`: 0 — есть на что откатиться, 2 — нет."""
+    import subprocess
+    from awgbot.infra.updates import _AWG_BOT_BIN
+    try:
+        return subprocess.run([_AWG_BOT_BIN, "__update_revert", "--check"],
+                              capture_output=True, timeout=30).returncode
+    except (OSError, subprocess.SubprocessError):
+        return 2
 
 
 def _shift_digest(db) -> None:
@@ -131,10 +172,9 @@ def mark_alive(reason: str, data_dir: Optional[str] = None) -> bool:
         _alive_done = True
     from awgbot.core import config
     from awgbot.util import timeutil
-    base = _data_dir(data_dir)
-    if not os.path.exists(os.path.join(base, UPDATE_GUARD_FILE)):
+    if not guard_armed(data_dir):
         return False
-    path = os.path.join(base, UPDATE_OK_FILE)
+    path = data_path(UPDATE_OK_FILE, data_dir)
     tmp = f"{path}.tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
@@ -165,7 +205,7 @@ def install_busy() -> bool:
     """Идёт ли сейчас `awg-bot update` / откат / решение сторожа (pid под
     замком установки жив)."""
     try:
-        with open(os.path.join(_data_dir(None), RUNNING_FILE), encoding="utf-8") as f:
+        with open(data_path(RUNNING_FILE), encoding="utf-8") as f:
             pid = int((f.read().split() or ["0"])[0])
     except (OSError, ValueError):
         return False

@@ -12,12 +12,9 @@
 """
 from __future__ import annotations
 
-import json
-import os
-
 from awgbot.core import config
 from awgbot.domain.notices import fleet as notes_
-from awgbot.domain.selfupdate.marks import install_busy
+from awgbot.domain.selfupdate import marks
 from awgbot.infra import updates
 
 from . import order as _order
@@ -27,13 +24,6 @@ from .state import ROLLING_BACK, RUNNING, new_id
 PROC = new_id()                 # этот процесс бота: шаг, начатый им, ещё не мог дойти до конца
 SPAWN_GRACE_S = 90              # апдейтер успевает взять замок и записать pid
 STEP_MAX_S = 20 * 60            # ступень (с ядром) или откат дольше — не удались
-ROLLED_MARK = "update-rolled-back"      # метка отката сторожем (awg-bot.sh) — для прежнего процесса
-
-
-def _data(name: str) -> str:
-    return os.path.join(os.path.dirname(str(config.DB_PATH)), name)
-
-
 def _mark(kind: str, want: str) -> dict:
     return {"kind": kind, "want": str(want or ""), "proc": PROC, "at": _now_iso()}
 
@@ -43,7 +33,7 @@ class FleetServerMixin:
 
     def fleet_server_settled(self) -> bool:
         """Сервер не посреди своего шага: сторож не взведён и отметки шага нет."""
-        return not os.path.exists(_data("update-guard")) and not self.fleet_run().get("server")
+        return not marks.guard_armed() and not self.fleet_run().get("server")
 
     def _fleet_server_mark(self, run: dict, kind: str, want: str) -> None:
         run["server"] = _mark(kind, want)
@@ -51,14 +41,14 @@ class FleetServerMixin:
     def _fleet_server_wait(self, run: dict, out: FleetOut) -> bool:
         """True — сервер посреди шага (ждём факта) или шаг только что признан
         неудавшимся (out уже несёт откат); False — можно идти дальше."""
-        if os.path.exists(_data("update-guard")):
+        if marks.guard_armed():
             return True                                   # новый процесс ещё не отметился
         mark = run.get("server") or {}
         if not mark:
             return False
         age = _since(str(mark.get("at") or ""))
         same = mark.get("proc") == PROC
-        if age < STEP_MAX_S and (install_busy() or (same and age < SPAWN_GRACE_S)):
+        if age < STEP_MAX_S and (marks.install_busy() or (same and age < SPAWN_GRACE_S)):
             return True
         want = updates.parse_version(str(mark.get("want") or ""))
         ok = want is not None and updates.parse_version(config.INSTALLED_VERSION) == want
@@ -95,7 +85,7 @@ class FleetServerMixin:
             _order._spawn([updates._AWG_BOT_BIN, "__update_commit"], "awg-bot-update-commit")
             return FleetOut()
         if out.server == "revert":
-            if _order._revert_check() != 0:
+            if marks.revert_check() != 0:
                 return self.fleet_server_revert_failed("прежней версии сервера AWG нет — откатывать некуда")
             _order._spawn([updates._AWG_BOT_BIN, "__update_revert"], "awg-bot-update-revert")
         return FleetOut()
@@ -138,17 +128,8 @@ class FleetServerMixin:
         остальное откатывается обратным ходом."""
         with _LOCK:
             out = FleetOut()
-            path = _data(ROLLED_MARK)
-            try:
-                with open(path, encoding="utf-8") as f:
-                    mark = json.loads(f.read() or "{}")
-            except (OSError, ValueError):
-                return out
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            if not isinstance(mark, dict):
+            mark = marks.pop_rolled_mark()
+            if not mark:
                 return out
             ver, prev = str(mark.get("version") or ""), str(mark.get("prev") or config.INSTALLED_VERSION)
             from awgbot.domain.services import Notification

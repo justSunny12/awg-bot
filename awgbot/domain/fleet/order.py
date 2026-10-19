@@ -106,7 +106,7 @@ class FleetOrderMixin:
         переключения ключей сжёг бы попытку)."""
         if any(self.gateway_rekey_active(gw.id) for gw in self.db.gateways()):
             return True
-        return bool(getattr(self, "gwjoin_active", lambda: False)())
+        return self.gwjoin_active()
 
     def update_applied_note(self, pending: str, ok: bool):
         """Итог своего обновления после перезапуска (selfupdate/core): в ходе
@@ -297,16 +297,6 @@ def _spawn(argv: list, unit: str) -> None:
     """Команда awg-bot.sh вне cgroup бота (она перезапускает сервис)."""
     from awgbot.infra.detach import spawn_detached
     spawn_detached(argv, unit_prefix=unit)
-
-
-def _revert_check() -> int:
-    """`awg-bot __update_revert --check`: 0 — есть на что откатиться, 2 — нет."""
-    import subprocess
-    try:
-        return subprocess.run([updates._AWG_BOT_BIN, "__update_revert", "--check"],
-                              capture_output=True, timeout=30).returncode
-    except (OSError, subprocess.SubprocessError):
-        return 2
 
 
 def _v(ver: str) -> str:

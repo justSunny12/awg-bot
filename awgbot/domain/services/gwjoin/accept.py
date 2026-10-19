@@ -15,7 +15,6 @@ Jc…H4, I1). Фиксация — hello новым ключом (gateway_link/r
 """
 from __future__ import annotations
 
-import types
 from typing import Optional
 
 from awgbot.core import config
@@ -24,7 +23,7 @@ from awgbot.infra import routing
 from awgbot.util import joinsas, timeutil
 
 from ..gateway_link.common import log
-from .state import _LOCK, new_device_name
+from .state import _LOCK, new_device_name, slot_of
 
 
 class GwJoinAcceptMixin:
@@ -169,8 +168,7 @@ class GwJoinAcceptMixin:
             st["state"] = "closing"
             st.setdefault("why", why)
             self._gwjoin_save(slot_id, st)
-        slot = types.SimpleNamespace(id=int(slot_id), link_if=st["link_if"], link_port=int(st["port"]),
-                                     link_cidr=st["cidr"])
+        slot = slot_of(st)
         err = ""
         try:
             if st.get("kind") == "new":

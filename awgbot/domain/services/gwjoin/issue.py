@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import secrets
-import types
 from typing import Optional
 
 from awgbot.core import config, settings
@@ -20,7 +19,7 @@ from awgbot.infra import routing
 from awgbot.util import gwlink, jointoken, timeutil, wgconf
 
 from ..gateway_link.common import log
-from .state import JOIN_TTL, _LOCK, new_device_name
+from .state import JOIN_TTL, OPEN_OR_CLOSING, _LOCK, new_device_name, slot_ns, slot_of
 
 
 JOIN_FLEET_BUSY = "Идёт обновление набора — подключение и замена шлюзов после его итога"
@@ -31,10 +30,6 @@ JOIN_NO_CONTAINER = ("Подключение шлюза командой нед�
 def _new_id() -> str:
     """id сопряжения: 8 случайных байт, hex."""
     return secrets.token_hex(8)
-
-
-def _ns(slot: int, link_if: str, port: int, cidr: str):
-    return types.SimpleNamespace(id=int(slot), link_if=link_if, link_port=int(port), link_cidr=cidr)
 
 
 class GwJoinIssueMixin:
@@ -48,7 +43,7 @@ class GwJoinIssueMixin:
         # новые слоты в сопряжении — без строки до кода; после кода строка есть,
         # и запись (accepted / linked) не должна занимать номер второй раз
         pending = [st for st in self.gwjoin_all() if st.get("kind") == "new"
-                   and st.get("state") in ("waiting", "connected", "closing")
+                   and st.get("state") in OPEN_OR_CLOSING
                    and not self.db.gateway(int(st["slot"]))]
         if len(slots) + len(pending) >= config.ROUTING_GATEWAYS_MAX:
             from awgbot.domain.notices.routing import gateways_full
@@ -75,7 +70,7 @@ class GwJoinIssueMixin:
         """Выпуск для шлюза: версия агента в выпуске набора; набора нет
         (сервер не на сборке из выпуска) — версия сервера."""
         try:
-            want = self.fleet_gw_target() if hasattr(self, "fleet_gw_target") else None
+            want = self.fleet_gw_target()
         except Exception:                                 # noqa: BLE001
             want = None
         if want is not None:
@@ -87,8 +82,7 @@ class GwJoinIssueMixin:
         выпуска (своя сборка будущего выпуска) — шлюз ставится только китом.
         Выпуски не проверялись — неизвестно: как обычно."""
         try:
-            releases = self.fleet_releases() if hasattr(self, "fleet_releases") else None
-            if releases is None:
+            if self.fleet_releases() is None:
                 return False
             return not self.fleet_server_release_build() and self.fleet_gw_target() is None
         except Exception:                                 # noqa: BLE001
@@ -141,7 +135,7 @@ class GwJoinIssueMixin:
             old = self.gwjoin(n)
             stale = old.get("msg") if old.get("msg") else None
             jid = _new_id()
-            slot = gw if gw is not None else _ns(n, iface, port, cidr)
+            slot = gw if gw is not None else slot_ns(n, iface, port, cidr)
             env = {**self._slot_env(slot), "JOIN_ID": jid}
             if kind != "new":
                 env["JOIN_PREV"] = "1"
@@ -189,7 +183,7 @@ class GwJoinIssueMixin:
         """Ход набора обновлений идёт (или откатывается): устройство слота в
         это время не меняется — иначе новое устройство унаследовало бы шаг хода
         прежнего, а откат ждал бы ответа, которого не будет."""
-        if getattr(self, "fleet_running", lambda: False)():
+        if self.fleet_running():
             raise ServiceError(JOIN_FLEET_BUSY)
 
     @staticmethod
@@ -206,7 +200,7 @@ class GwJoinIssueMixin:
         токен собирается заново из конфигов линка и записи — совпадает с
         выданным; не собрался — пусто."""
         try:
-            slot = _ns(int(st["slot"]), st["link_if"], int(st["port"]), st["cidr"])
+            slot = slot_of(st)
             return self.gwjoin_command(self._gwjoin_token(slot, st["id"], version=str(st.get("version") or ""),
                                                           expires=str(st.get("expires") or "")))
         except (ServiceError, KeyError, ValueError, TypeError):

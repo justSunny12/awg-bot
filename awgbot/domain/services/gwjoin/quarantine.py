@@ -16,6 +16,7 @@ from awgbot.util import timeutil
 
 from ..gateway_link import slotkeys
 from ..gateway_link.common import log
+from .state import LIVE, OPEN, OPEN_OR_CLOSING, PAIRING
 
 # прежние файлы первого применения (выпуски до 3.4.0): внутри ключи линка,
 # токен бота шлюза и ADMIN_ID — на сервере им больше незачем лежать
@@ -30,19 +31,30 @@ class GwJoinQuarantineMixin:
         """Идёт сопряжение (команда жива или смена ключей после кода не
         зафиксирована) — переход линков на I1 и прочие автоматические смены
         ключей ждут."""
-        return any(st.get("state") in ("waiting", "connected", "accepted", "closing") for st in self.gwjoin_all())
+        return self.gwjoin_busy_slot() is not None
 
     def gwjoin_slot_busy(self, slot_id: int) -> bool:
         """Слот в сопряжении (команда жива, код принят, возврат ещё идёт): смена
         ключей ради I1 этого слота — не неудача, а снятая сопряжением."""
-        return self.gwjoin(slot_id).get("state") in ("waiting", "connected", "accepted", "closing")
+        return self.gwjoin(slot_id).get("state") in LIVE
+
+    def gwjoin_busy_slot(self):
+        """(слот, имя) первого живого сопряжения — и нового слота, у которого
+        строки ещё нет, и слота в замене; нет — None. Копия сервера ждёт его
+        конца: линк на ключах токена, прежние — в .join-prev, которого в копии нет."""
+        for st in self.gwjoin_all():
+            if st.get("state") in LIVE:
+                slot = int(st.get("slot") or 0)
+                gw = self.db.gateway(slot)
+                return slot, (self._gw_name(gw) if gw is not None else str(st.get("name") or "") or f"шлюз {slot}")
+        return None
 
     def gwjoin_replacing(self, slot_id: int) -> bool:
         """Слот в замене устройства до фиксации смены ключей после кода."""
         if slot_id is None:
             return False                                  # слотов нет: линк обвязки без строки
         st = self.gwjoin(slot_id)
-        return st.get("kind") in ("replace", "same") and st.get("state") in ("waiting", "connected", "accepted")
+        return st.get("kind") in ("replace", "same") and st.get("state") in PAIRING
 
     def gwjoin_session_barred(self, slot_id: int) -> bool:
         """Обычная сессия слота (hello без join) не открывается: слот в
@@ -53,10 +65,10 @@ class GwJoinQuarantineMixin:
         сроком, а ключи токена стоят)."""
         st = self.gwjoin(slot_id)
         state = st.get("state")
-        if state in ("waiting", "connected", "closing"):
+        if state in OPEN_OR_CLOSING:
             return True
         if state == "accepted":
-            rk = self.gateway_rekey(slot_id) if hasattr(self, "gateway_rekey") else {}
+            rk = self.gateway_rekey(slot_id)
             return not (rk.get("state") == "switched" and rk.get("committed"))
         gw = self.db.gateway(slot_id)
         link_if = gw.link_if if gw is not None else st.get("link_if", "")
@@ -90,7 +102,7 @@ class GwJoinQuarantineMixin:
         """Для карточки и списка шлюзов: {"state": waiting | code | replace,
         "until": ISO} или пусто."""
         st = self.gwjoin(slot_id)
-        if st.get("state") not in ("waiting", "connected"):
+        if st.get("state") not in OPEN:
             return {}
         try:
             if timeutil.elapsed(timeutil.parse_iso(str(st.get("expires") or ""))) >= 0:
