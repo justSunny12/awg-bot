@@ -7,7 +7,6 @@ import sqlite3
 import pytest
 
 from awgbot.core import config, settings
-from awgbot.domain.services import ServiceError
 from awgbot.infra import routing
 from awgbot.util import timeutil
 
@@ -65,32 +64,18 @@ def test_slot_table_replaces_the_flag(services, make_active_client):
 
 # ── назначение второго слота ─────────────────────────────────────────────────
 
-def test_second_slot_brings_its_own_link_and_needs_no_rekey_of_the_first(
-        services, make_active_client, monkeypatch, fake_routing):
+def test_removing_the_second_slot_rolls_back_its_own_link(services, make_active_client, monkeypatch, fake_routing):
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi"); pi2 = services.add_device(admin.id, "Pi2")
     runs = []
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append((mode, dict(env or {}))))
-    services.gateway_setup(pi.device_id)
-    assert runs == [("--rekey", {"LINK_IF": "awglink", "LINK_PORT": "443", "LINK_CIDR": "10.99.99.0/30"})], \
-        "назначение всегда полным путём: ключи линка новые и у первого слота"
-    res = services.gateway_setup(pi2.device_id)
-    assert res["gateway"].id == 2 and res["rekeyed"] and res["previous"] is None
-    assert runs[-1][0] == "--apply" and runs[-1][1]["LINK_IF"] == "awglink2" \
-        and runs[-1][1]["LINK_PORT"] == "8443" and runs[-1][1]["LINK_CIDR"] == "10.99.99.4/30"
+    services.gateway_slot_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.gateway_slot_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     assert services.gateway_candidates() == []
-    with pytest.raises(ServiceError):
-        services.gateway_setup(None)                    # третьего слота нет
-    assert services.active_gateway().id == 1, "активный не сменился"
-    # замена машины во втором слоте — rekey своего линка
-    pi3 = services.add_device(admin.id, "Pi3")
-    res = services.gateway_setup(pi3.device_id, rekey=True, slot_id=2)
-    assert res["previous"].id == pi2.device_id and runs[-1][0] == "--rekey"
-    assert {k: runs[-1][1][k] for k in ("LINK_IF", "LINK_PORT", "LINK_CIDR")} == \
-        {"LINK_IF": "awglink2", "LINK_PORT": "8443", "LINK_CIDR": "10.99.99.4/30"}
+    assert services.active_gateway().id == 1, "активный — первый"
     # снять второй — rollback своего линка, первый жив
     prev = services.gateway_remove(2)
-    assert prev.id == pi3.device_id and runs[-1][0] == "--rollback" and runs[-1][1]["LINK_IF"] == "awglink2"
+    assert prev.id == pi2.device_id and runs[-1][0] == "--rollback" and runs[-1][1]["LINK_IF"] == "awglink2"
     assert [g.id for g in services.db.gateways()] == [1]
 
 
@@ -569,13 +554,11 @@ def test_link_changes_refresh_the_host_firewall_and_clear_the_hold(services, mak
     monkeypatch.setattr(routing.marking, "switch_active", lambda iface: None)
     refreshed = []
     monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: refreshed.append(1))
-    services.gateway_setup(pi.device_id)
-    assert refreshed == [], "первый слот — линк обвязки, порт уже открыт"
-    services.gateway_setup(pi2.device_id)
-    assert refreshed == [1], "второй линк — порт в файервол сразу"
+    services.gateway_slot_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.gateway_slot_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.set_state(services._RT_HOLD_KEY, "2")
     services.gateway_remove(2)
-    assert refreshed == [1, 1] and services.db.get_state(services._RT_HOLD_KEY) == ""
+    assert refreshed == [1] and services.db.get_state(services._RT_HOLD_KEY) == ""
 
 
 def test_switch_on_the_third_failure_in_a_sliding_window(two, services, monkeypatch):

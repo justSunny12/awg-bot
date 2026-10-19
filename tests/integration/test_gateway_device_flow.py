@@ -84,35 +84,6 @@ def test_claim_refuses_when_another_gateway_is_assigned(gw, services):
     assert _gw_dev_id(services) == d_pi.id
 
 
-def test_setup_existing_device_always_rekeys(gw, services):
-    """Назначение всегда полным путём: устройство, созданное в боте раньше,
-    линка не знает — ключи линка слота выпускаются заново и при первом
-    назначении, и при замене."""
-    admin, phone, pi = gw
-    res = services.gateway_setup(pi.device_id)
-    assert res["previous"] is None and not res["created"] and res["rekeyed"]
-    assert services.modes == ["--rekey"], "первое назначение — тоже новые ключи"
-    res = services.gateway_setup(phone.device_id, slot_id=1)
-    assert res["previous"].id == pi.device_id and res["rekeyed"]
-    assert _gw_dev_id(services) == phone.device_id
-    assert services.db.get_device(pi.device_id).is_gateway == 0
-    assert services.modes == ["--rekey", "--rekey"]
-    assert services.gateway_setup(phone.device_id, rekey=True, slot_id=1)["previous"] is None, "то же устройство — prev нет"
-    with pytest.raises(ServiceError):
-        services.gateway_setup(999999)
-
-
-def test_setup_new_machine_creates_device_and_rekeys(gw, services):
-    admin, phone, pi = gw
-    before = {d.id for d in services.db.list_devices(admin.id)}
-    res = services.gateway_setup(None)
-    dev = res["device"]
-    assert res["created"] and res["rekeyed"] and dev.name == "Шлюз" and dev.id not in before
-    assert dev.is_gateway == 1 and _gw_dev_id(services) == dev.id
-    assert services.modes == ["--rekey"]
-    assert dev.id not in [d.id for d in services.gateway_candidates()]
-
-
 def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
     """Экран «Шлюзы» и строка слота читают состояние, а не догадку: шлюза нет —
     «Шлюз не назначен»; назначен, но линк не отвечает — не зелёный; ожил —
@@ -237,21 +208,6 @@ def test_migration_hands_the_flag_to_the_twin(services, fake_awg, make_active_cl
     assert _gw_dev_id(services) == twin_id, "слот переехал к двойнику"
 
 
-def test_new_gateway_machine_counts_against_the_limit(gw, services):
-    """Шлюз считается обычным устройством: и в счётчике, и в лимите. Профиль
-    админа безлимитный по построению, так что тупика это не создаёт, а
-    счётчик, который врёт на одну строку, создавал."""
-    admin, phone, pi = gw
-    from awgbot.domain.services import LimitReached
-    services.db.update_client_fields(admin.id, device_limit=2)
-    with pytest.raises(LimitReached):
-        services.gateway_setup(None)                      # лимит исчерпан — отказ
-    services.db.update_client_fields(admin.id, device_limit=0)   # безлимит, как у админа
-    res = services.gateway_setup(None)
-    assert res["created"] and _gw_dev_id(services) == res["device"].id
-    assert services.db.count_devices(admin.id) == 3, "шлюз в счётчике"
-
-
 def test_agent_token_is_kept_on_the_server_until_the_channel_takes_it(gw, services, monkeypatch, tmp_path):
     """Токен бота шлюза спрашивается на сервере и хранится в его env (0600) —
     шлюзу его везёт канал после кода; не токен — отказ."""
@@ -314,13 +270,12 @@ def test_replacing_the_device_drops_the_channel_state(gw, services):
     import json
     from awgbot.util import gwlink, timeutil
     _admin, phone, pi = gw
-    services.gateway_setup(pi.device_id)
-    sid = services.active_gateway().id
+    sid = _slot1(services, pi.device_id).id
     services.gwlink_session_opened(sid, "3.3.0", gwlink.PROTO, caps=("cfg1",))
     services.db.set_state(f"gwlink_snap_{sid}", json.dumps({"bundle": {"admin_ips": "10.8.1.3"}}))
     services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(timeutil.now()))
     assert services.gateway_trusted_ips() == {"10.8.1.3"}
-    services.gateway_setup(phone.device_id, slot_id=sid)               # замена устройства
+    services.gateway_device_replace(sid, phone.device_id)              # замена устройства (верный код сопряжения)
     assert services.gwlink_snapshot(sid) == {}, "снимок прежнего устройства пережил замену"
     assert not services.db.get_state(f"gwlink_caps_{sid}"), "возможности прежнего агента пережили замену"
     assert services.gateway_trusted_ips() == set(), "адреса прежней обвязки пережили замену"

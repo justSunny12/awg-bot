@@ -75,9 +75,6 @@ def _since(iso: str) -> float:
 class FleetOrderMixin:
     """Ход набора вперёд."""
 
-    def fleet_lock(self):
-        return _LOCK
-
     # ── старт ────────────────────────────────────────────────────────────────
 
     def fleet_start(self, tag: str) -> str:

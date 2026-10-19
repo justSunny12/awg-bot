@@ -20,7 +20,7 @@ from awgbot.infra import routing
 from awgbot.util import gwlink, jointoken, timeutil, wgconf
 
 from ..gateway_link.common import log
-from .state import JOIN_TTL, _LOCK
+from .state import JOIN_TTL, _LOCK, new_device_name
 
 
 JOIN_FLEET_BUSY = "Идёт обновление набора — подключение и замена шлюзов после его итога"
@@ -234,7 +234,7 @@ class GwJoinIssueMixin:
             dev = self.db.get_device(device_id)
             if dev is not None:
                 return dev.name
-        return self._GW_NEW_NAME if slot == 1 else f"{self._GW_NEW_NAME} {slot}"
+        return new_device_name(slot)
 
     def _gwjoin_token(self, slot, jid: str, *, version: str = "", expires: str = "") -> str:
         """Токен из конфигов линка на ключах токена: закрытый ключ и Jc…H4 —

@@ -25,10 +25,16 @@ JOIN_TTL = 3600            # команда — чтобы выполнить е
 MAX_SESSIONS = 10          # сессий по токену
 MAX_ATTEMPTS = 3           # неверных кодов на токен
 JOIN_KEY = "gw_join"
+GW_NEW_NAME = "Шлюз"       # устройство, которое заводит код: «Шлюз» / «Шлюз N»
 
 # {слот: {"sid": id сессии, "code", "kp": ключ сопряжения, "eph": открытый ключ сервера}}
 _LIVE: dict[int, dict] = {}
 _LOCK = threading.RLock()
+
+
+def new_device_name(slot: int) -> str:
+    """Имя устройства, которое заводит верный код нового слота."""
+    return GW_NEW_NAME if int(slot) == 1 else f"{GW_NEW_NAME} {int(slot)}"
 
 
 class GwJoinStateMixin:

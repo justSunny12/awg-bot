@@ -99,11 +99,6 @@ class BackupRestoreMixin:
         return d if isinstance(d, dict) else {}
 
     @staticmethod
-    def pop_restore_failed() -> str:
-        """Отказ восстановления из чата — причина; нет — пусто."""
-        return str(BackupRestoreMixin.pop_restore_failed_info().get("failed") or "")
-
-    @staticmethod
     def pop_restore_done() -> dict | None:
         """Маркер завершённого восстановления (пишет awg-bot restore) — прочитать
         и убрать. В БД его хранить нельзя: БД как раз и подменяется."""

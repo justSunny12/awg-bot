@@ -231,7 +231,7 @@ async def test_the_button_is_of_its_own_file_and_a_second_tap_is_refused(service
 
 async def test_the_report_is_followed_by_a_live_menu(services, fake_bot):
     from awgbot.bot.handlers import restore as rs
-    services.pop_restore_failed = lambda: ""
+    services.pop_restore_failed_info = lambda: {}
     services.pop_restore_done = lambda: {"created_at": "2026-10-05T14:00:00+03:00",
                                          "merge": {"line": "same", "slots": [], "lost": []}}
     await rs.report_restore_result(fake_bot, services)

@@ -28,7 +28,7 @@ def test_round_trip():
     t = token(version="3.4.0.2")
     assert jointoken.decode(jointoken.encode(t)) == t
     d = jointoken.decode(jointoken.encode(token()))
-    assert d.version == "3.4.0" and d.vps_addr == "10.99.99.5" and d.cidr == "10.99.99.4/30"
+    assert d.version == "3.4.0" and d.cidr == "10.99.99.4/30"
     assert d.obfuscation()["H2"] == "500000001-500100001" and d.obfuscation()["S4"] == "50"
 
 

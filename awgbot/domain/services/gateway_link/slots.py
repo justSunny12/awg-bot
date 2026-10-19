@@ -127,6 +127,22 @@ class SlotsMixin:
             return n, iface, port, cidr
         raise ServiceError("свободного места для шлюза нет")
 
+    def gateway_slot_add(self, device_id: int, link_if: str, port: int, cidr: str, *, slot_id: int):
+        """Строка нового слота на устройстве (верный код сопряжения нового
+        слота): копия по событию «назначение»."""
+        gw = self.db.gateway_add(int(device_id), link_if, int(port), cidr, slot_id=int(slot_id))
+        self._backup_event(gw.id, "assign")
+        return gw
+
+    def gateway_device_replace(self, slot_id: int, device_id: int) -> None:
+        """Устройство слота — другое (верный код замены): строка на новое,
+        копия по событию «замена»; снимок, сессия и документ прежнего — вон,
+        иначе новое их унаследует, а доверенные адреса шлюзов считались бы по
+        обвязке прежнего."""
+        self.db.gateway_update(int(slot_id), device_id=int(device_id))
+        self._backup_event(int(slot_id), "replace")
+        self.gwlink_forget(int(slot_id))
+
 
     # ── переключение трафика ─────────────────────────────────────────────────
     _RT_SWITCHED_KEY = "routing_switched_at"

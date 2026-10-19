@@ -214,8 +214,7 @@ def test_removing_a_slot_clears_its_slot_and_device_keys(slots, services):
 
 
 def test_replacing_the_device_clears_only_device_keys(slots, services):
-    res = services.gateway_setup(slots.device_id, slot_id=2)
-    assert res["previous"] is not None, "замены не было"
+    services.gateway_device_replace(2, slots.device_id)
     assert not _left(services, 2, slotkeys.names(when=slotkeys.DEVICE)), \
         "ключи прежнего устройства пережили замену"
     slot_only = set(slotkeys.names(when=slotkeys.SLOT))
@@ -224,7 +223,7 @@ def test_replacing_the_device_clears_only_device_keys(slots, services):
 
 
 def test_the_gateway_settings_copy_survives_a_replacement_and_goes_with_the_slot(slots, services):
-    services.gateway_setup(slots.device_id, slot_id=2)
+    services.gateway_device_replace(2, slots.device_id)
     assert services.db.get_state("gwkeep_2") == VALUE, "копия настроек шлюза снята заменой устройства"
     services.gateway_remove(2)
     assert not services.db.get_state("gwkeep_2"), "копия настроек шлюза пережила снятие слота"
@@ -234,6 +233,4 @@ def test_partial_forgets_take_their_part_of_the_registry(slots, services):
     services.gwcfg_forget(2)
     assert not _left(services, 2, slotkeys.names(part="cfg"))
     assert _left(services, 2, slotkeys.names(part="link")) == set(slotkeys.names(part="link"))
-    services.gateway_rekey_forget(2)
-    assert not _left(services, 2, slotkeys.names(part="rekey"))
     assert _left(services, 2, slotkeys.names(part="slot")) == set(slotkeys.names(part="slot"))

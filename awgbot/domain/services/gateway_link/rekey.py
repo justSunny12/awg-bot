@@ -11,7 +11,6 @@ from awgbot.domain import gwcfg
 from awgbot.domain.services.types import Notification, ServiceError
 from awgbot.util import timeutil, wgconf
 
-from . import slotkeys
 from .common import log
 
 ASK_HOURS = 24          # без решения человека дольше — переход снимается
@@ -393,10 +392,6 @@ class RekeyMixin:
             mark(kind, slot_id)
         except Exception as e:                            # noqa: BLE001
             log.warning("бэкап по событию %s не отмечен: %s", kind, e)
-
-    def gateway_rekey_forget(self, slot_id: int) -> None:
-        """Переход и очередь отмен слота — по реестру slotkeys."""
-        slotkeys.forget(self.db, slot_id, slotkeys.names(part="rekey"))
 
     def gateway_rekey_abort(self, gw) -> None:
         """Ключи линка слота меняются другим путём (замена устройства, файл):

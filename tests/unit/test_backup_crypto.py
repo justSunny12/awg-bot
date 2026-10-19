@@ -129,9 +129,8 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
     assert ok["ok"] and ok["created_at"].startswith("2026-10-09") and ok["plan"]["line"] in ("same", "clean")
 
 
-def test_a_hotfix_of_the_same_version_is_not_newer(v340):
+def test_the_floor_reads_versions_with_and_without_a_patch(v340):
     from awgbot.core import compat
-    assert not compat.newer_than("3.4.0.3", "3.4.0") and compat.newer_than("3.4.1", "3.4.0.9")
     assert compat.below_floor("3.3.1") and not compat.below_floor("3.4.0") and compat.below_floor("")
 
 

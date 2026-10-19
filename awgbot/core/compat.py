@@ -24,9 +24,3 @@ def below_floor(version: str) -> bool:
     """Версия ниже COMPAT_FLOOR (или не читается)."""
     have = version_key(version)
     return have is None or have[:3] < version_key(COMPAT_FLOOR)[:3]
-
-
-def newer_than(version: str, code: str) -> bool:
-    """Копия новее кода по X.Y.Z (хотфикс поверх той же версии — не новее)."""
-    a, b = version_key(version), version_key(code)
-    return a is not None and b is not None and a[:3] > b[:3]

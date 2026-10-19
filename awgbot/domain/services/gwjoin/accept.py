@@ -24,7 +24,7 @@ from awgbot.infra import routing
 from awgbot.util import joinsas, timeutil
 
 from ..gateway_link.common import log
-from .state import _LOCK
+from .state import _LOCK, new_device_name
 
 
 class GwJoinAcceptMixin:
@@ -43,8 +43,7 @@ class GwJoinAcceptMixin:
         made = 0
         if kind in ("new", "replace") and (dev_id == "new" or dev_id is None):
             name = st.get("name") if kind == "new" else ""
-            dc = self.add_device(admin.id, name or (self._GW_NEW_NAME if int(slot_id) == 1
-                                                    else f"{self._GW_NEW_NAME} {slot_id}"))
+            dc = self.add_device(admin.id, name or new_device_name(slot_id))
             dev_id = made = dc.device_id
         dev = self.db.get_device(int(dev_id)) if dev_id not in (None, "new") else None
         if dev is None:
@@ -52,12 +51,10 @@ class GwJoinAcceptMixin:
         if dev.routing_on:
             self.set_routing_device(dev.id, False)        # шлюзу РФ-доступ не нужен никогда
         if kind == "new":
-            gw = self.db.gateway_add(dev.id, st["link_if"], int(st["port"]), st["cidr"], slot_id=int(slot_id))
-            self._backup_event(gw.id, "assign")
+            self.gateway_slot_add(dev.id, st["link_if"], int(st["port"]), st["cidr"], slot_id=int(slot_id))
+        elif gw is not None and kind == "replace" and gw.device_id != dev.id:
+            self.gateway_device_replace(gw.id, dev.id)
         elif gw is not None:
-            if kind == "replace" and gw.device_id != dev.id:
-                self.db.gateway_update(gw.id, device_id=dev.id)
-                self._backup_event(gw.id, "replace")
             self.gwlink_forget(gw.id)                     # снимок, сессия, документ прежней установки — вон
         # эфемерный ключ шлюза, чей код ввели: после кода сессия — только с ним
         st.update(state="accepted", device=dev.id, eph=str(self._gwjoin_live(slot_id).get("eph") or ""),

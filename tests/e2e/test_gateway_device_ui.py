@@ -212,19 +212,17 @@ async def test_forwarded_claim_of_a_document_agent_gets_no_file(services, fake_b
     assert "применятся по каналу конфигурации" in text and "📤" not in text, text
 
 
-def test_gateway_mark_rules(services, gwsetup, make_active_client):
-    from awgbot.domain.services import ServiceError as SE
+def test_candidates_are_the_admins_devices_without_the_current_gateway(services, gwsetup, make_active_client):
     _, phone, pi = gwsetup
     client = make_active_client(name="Клиент", tg_id=779)
-    foreign = services.add_device(client.id, "x")
-    with pytest.raises(SE):
-        services.gateway_setup(foreign.device_id)
-    res = services.gateway_setup(pi.id)
-    assert res["previous"] is None and _gw_dev_id(services) == pi.id
-    assert services.gateway_setup(pi.id, slot_id=1)["previous"] is None, "повтор — без изменений"
-    res = services.gateway_setup(phone.id, slot_id=1)
-    assert res["previous"].id == pi.id and _gw_dev_id(services) == phone.id
-    assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
+    services.add_device(client.id, "x")                   # чужое устройство — не кандидат
+    assert {d.id for d in services.gateway_candidates()} == {phone.id, pi.id}
+    _slot1(services, pi.id)
+    assert _gw_dev_id(services) == pi.id
+    assert [d.id for d in services.gateway_candidates()] == [phone.id], "текущий шлюз в кандидатах не нужен"
+    services.gateway_device_replace(1, phone.id)
+    assert _gw_dev_id(services) == phone.id
+    assert [d.id for d in services.gateway_candidates()] == [pi.id]
 
 
 async def test_migration_finish_sends_no_file_to_the_gateway(services, fake_bot, gwsetup, monkeypatch):
@@ -258,13 +256,10 @@ def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     assert services.db.get_device(pi.id).routing_on == 1
     assert {d.id for d in services.routing_devices(admin.id)} == {phone.id, pi.id}
 
-    res = services.gateway_setup(pi.id, rekey=True)
-    assert res["routing_reset"] is True
-    assert services.db.get_device(pi.id).routing_on == 0, "назначение сняло флаг"
+    _slot1(services, pi.id)
+    # даже с флагом, оставшимся от прежней версии, — не в списке, не в наборе и не в счёте
+    assert services.db.get_device(pi.id).routing_on == 1
     assert [d.id for d in services.routing_devices(admin.id)] == [phone.id], "шлюза в списке нет"
-    assert services.routing_device_counts(admin.id) == (1, 1)
-    # даже с флагом, поставленным в обход (прежняя версия) — не в наборе и не в счёте
-    services.db.update_device_fields(pi.id, routing_on=1)
     assert services.routing_device_counts(admin.id) == (1, 1)
     assert pi.address not in sum(services.db.routing_active_addresses(ADMIN).values(), [])
     # «включить на всех» профиля, выдача разрешения владельцу и тумблер по id
@@ -276,6 +271,3 @@ def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     assert services.db.get_device(pi.id).routing_on == 0
     services.set_routing_device(pi.id, True)
     assert services.db.get_device(pi.id).routing_on == 0
-    # повторное назначение без флага — строки о снятии в отчёте нет
-    res = services.gateway_setup(pi.id, rekey=True, slot_id=res["gateway"].id)
-    assert res["routing_reset"] is False

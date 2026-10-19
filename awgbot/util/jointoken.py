@@ -78,12 +78,6 @@ class JoinToken:
         return base64.b64encode(self.gw_priv).decode()
 
     @property
-    def vps_addr(self) -> str:
-        """Адрес ВПС в /30: первый хост той же /30, что адрес шлюза."""
-        net = ipaddress.ip_network(f"{self.gw_addr}/30", strict=False)
-        return str(list(net.hosts())[0])
-
-    @property
     def cidr(self) -> str:
         return str(ipaddress.ip_network(f"{self.gw_addr}/30", strict=False))
 

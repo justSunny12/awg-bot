@@ -238,7 +238,7 @@ def test_slot_events_mark_a_backup(services, slot, monkeypatch, tmp_path):
     services.gateway_token_replace(1, "2222222222:DUMMYDUMMYDUMMYDUMMYDUMMY")
     services.gwcfg_channel_port_tick(8787); services.gwcfg_channel_port_tick(9797)
     admin = services.db.get_device(slot.device_id).client_id
-    services.gateway_setup(services.add_device(admin, "Pi-новый").device_id, slot_id=1)
+    services.gateway_device_replace(1, services.add_device(admin, "Pi-новый").device_id)
     services.gateway_remove(1)
     kinds = [w["kind"] for w in json.loads(services.db.get_state("backup_event_due"))["why"]]
     assert kinds == ["token", "chport", "replace", "remove"], kinds
@@ -287,7 +287,8 @@ def test_the_start_after_a_rolled_back_restore_prunes_once(services, monkeypatch
     (tmp_path / ".restore-prune").write_text("")
     assert services.restore_done_pending() and not services.restore_done_pending()
     (tmp_path / "restore-failed.json").write_text('{"failed": "бэкап не зашифрован"}', encoding="utf-8")
-    assert services.pop_restore_failed() == "бэкап не зашифрован" and services.pop_restore_failed() == ""
+    assert services.pop_restore_failed_info().get("failed") == "бэкап не зашифрован"
+    assert services.pop_restore_failed_info() == {}
 
 
 def test_links_are_adopted_while_their_interface_is_down(services, slot, monkeypatch, tmp_path):
