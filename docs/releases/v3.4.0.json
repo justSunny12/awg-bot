@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "version": "3.4.0",
+  "awg_gen": 1,
+  "roles": {
+    "main": {
+      "requires": "3.3.0"
+    },
+    "gw": {
+      "requires": "3.3.0",
+      "needs_main": "3.4.0"
+    }
+  }
+}
