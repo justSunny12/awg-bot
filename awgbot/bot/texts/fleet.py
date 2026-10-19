@@ -15,6 +15,7 @@ from .fmt import _e
 from .updates import _seen_date, _ver, changelog_details, update_skipped_lines
 
 UPDATE_RUNNING_TOAST = "Обновление уже идёт"
+UPDATE_LINKS_BUSY_TOAST = "Идёт смена ключей линка или подключение шлюза — обновить набор можно после их конца"
 
 
 def _name(g: dict, user: str) -> str:

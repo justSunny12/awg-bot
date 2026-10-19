@@ -79,7 +79,14 @@ def _decrypt_one(path: Path, *, key_b64: str | None, out_arg: str | None, from_d
             kb = getpass.getpass(f"BACKUP_KEY (base64) для {path.name}: ").strip()
         data = su.decrypt(blob, key=su.b64d(kb))
     dst = _out_path(path, out_arg)
-    dst.write_bytes(data)
+    # внутри — база с секретами: файл только владельцу, а не по umask (0644 под sudo)
+    fd = os.open(str(dst), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    try:
+        os.chmod(dst, 0o600)                              # файл уже был — права тоже 0600
+    except OSError:
+        pass
     return dst
 
 

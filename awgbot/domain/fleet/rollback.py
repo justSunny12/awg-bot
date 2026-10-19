@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 
-from .order import LOST_AFTER_S, FleetOut, _LOCK, _now_iso, _since
+from .order import GW_STEP_MAX_S, LOST_AFTER_S, FleetOut, _LOCK, _now_iso, _since
 from .state import ROLLBACK_FAILED, ROLLED_BACK, ROLLING_BACK
 
 log = logging.getLogger("awgbot.fleet")
@@ -60,6 +60,13 @@ class FleetRollbackMixin:
                         # команда не ушла (сессия упала на отправке) — снова новой сессией
                         out.send.append((slot, "upd_revert", {"id": st["id"], "to": st.get("prev") or run.get("prev")}))
                         return out
+                    if g is not None and g["online"] and _since(str(st.get("at") or "")) >= GW_STEP_MAX_S:
+                        # на связи, а ответа на откат нет (команда не о его установке —
+                        # устройство слота сменили посреди хода, агент её не знает)
+                        st["state"], st["error"] = "revert_failed", "шлюз на связи, но не ответил на откат за 30 минут"
+                        self.fleet_slot_set(slot, st)
+                        self._fleet_revert_answered(run, slot, "revert_failed")
+                        continue
                     if g is not None and (g["online"] or _since(str(st.get("at") or "")) < LOST_AFTER_S):
                         return out                        # ждём его ответа (или переподключения — не дольше 15 минут)
                     st["state"] = "done"                  # пропал посреди отката: вернувшись, получит upd_revert

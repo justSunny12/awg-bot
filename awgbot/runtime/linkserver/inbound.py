@@ -121,9 +121,11 @@ class InboundMixin:
                 # временный отказ (юнит обвязки ещё работал): тот же документ
                 # уйдёт снова по следующему расхождению снимка
                 sess.cfg_sent = ""
-            if "env" in ack.get("applied", []):
+            if "env" in ack.get("applied", []) and sess.env_applied != str(ack.get("hash") or ""):
                 # режим без VPN мог включиться документом: фиды, отправленные при
-                # hello, шлюз отверг («режим выключен») — теперь есть кому принять
+                # hello, шлюз отверг («режим выключен») — теперь есть кому принять;
+                # повторный ответ на тот же документ фиды заново не будит
+                sess.env_applied = str(ack.get("hash") or "")
                 sess.lists_sent = ""
                 await self.deliver_lists(gw.id)
                 await self.deliver_peer_services(gw.id)

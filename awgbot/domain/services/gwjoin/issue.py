@@ -23,6 +23,7 @@ from ..gateway_link.common import log
 from .state import JOIN_TTL, _LOCK
 
 
+JOIN_FLEET_BUSY = "Идёт обновление набора — подключение и замена шлюзов после его итога"
 JOIN_NO_CONTAINER = ("Подключение шлюза командой недоступно: AmneziaWG сервера работает в контейнере, а линк до "
                      "верного кода держит в карантине файервол хоста, а в этом режиме линки он не ведёт")
 
@@ -123,6 +124,7 @@ class GwJoinIssueMixin:
         if self.admin_client() is None:
             raise ServiceError("профиль админа ещё не создан")
         self._gwjoin_check_runtime()
+        self._gwjoin_check_fleet()
         with _LOCK:
             gw = self.db.gateway(slot_id) if slot_id else None
             if slot_id and gw is None:
@@ -180,7 +182,15 @@ class GwJoinIssueMixin:
     def gwjoin_peek_slot(self) -> int:
         """Номер слота, который получит следующая команда «🛰 Подключить шлюз»."""
         self._gwjoin_check_runtime()                      # до вопроса о токене, а не после
+        self._gwjoin_check_fleet()
         return self._gwjoin_next_slot()[0]
+
+    def _gwjoin_check_fleet(self) -> None:
+        """Ход набора обновлений идёт (или откатывается): устройство слота в
+        это время не меняется — иначе новое устройство унаследовало бы шаг хода
+        прежнего, а откат ждал бы ответа, которого не будет."""
+        if getattr(self, "fleet_running", lambda: False)():
+            raise ServiceError(JOIN_FLEET_BUSY)
 
     @staticmethod
     def _gwjoin_check_runtime() -> None:

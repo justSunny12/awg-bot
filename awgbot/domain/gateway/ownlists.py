@@ -307,6 +307,11 @@ class OwnListsMixin:
         raw = self.db.get_state(self._OWN_DEFER_KEY) or ""
         if not raw:
             return None
+        if not gwguard.lan_mode():
+            # VPN-транзит выключили: скрипта списков в выключенном режиме нет и не
+            # будет — отложенное потеряло смысл (иначе перезапуск обвязки без конца)
+            self.db.set_state(self._OWN_DEFER_KEY, "")
+            return None
         if not gwguard.lan_domain_has_sync():
             # первый реассерт мог не пройти (юнит был занят, троттлинг) —
             # пробуем снова, пока отложенное ждёт

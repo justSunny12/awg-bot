@@ -140,6 +140,20 @@ class GatewayJoinMixin:
             self.join_status(state="code", code=joinsas.show(code))
         return code
 
+    def join_next_open(self, msg: dict) -> dict:
+        """link_next сессии сопряжения: конфиг новых ключей — под ключом
+        сопряжения (box); расшифровать. Не расшифровалось или ключа нет —
+        без conf (проверка откажет)."""
+        kp = self.__dict__.get("_join_kp")
+        if not kp:
+            return {k: v for k, v in msg.items() if k != "box"}
+        try:
+            data = joinsas.unseal(kp, str(msg.get("box") or ""))
+        except ValueError:
+            log.warning("gateway: новые ключи линка в сессии сопряжения не расшифровались")
+            return {k: v for k, v in msg.items() if k != "box"}
+        return {**{k: v for k, v in msg.items() if k != "box"}, "conf": str(data.get("conf") or "")}
+
     def join_wrong_in(self, msg: dict) -> None:
         try:
             left = max(0, int(msg.get("left") or 0))
@@ -159,7 +173,10 @@ class GatewayJoinMixin:
         if st:
             st["state"] = "refused"
             st["why"] = why
+            st.pop("eph_priv", None)                      # пара отслужила — закрытый ключ прочь
             self._join_save(st)
+        self.__dict__.pop("_join_eph", None)
+        self.__dict__.pop("_join_kp", None)
         self.join_status(state="refused", why=why)
         log.info("gateway: сервер AWG закрыл сопряжение (%s)", why)
 

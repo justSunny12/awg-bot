@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 from awgbot.domain import gwcfg
 
@@ -20,6 +21,10 @@ class CfgDecideMixin:
     _CFG_KEEP_KEY = "gwcfg_keep"          # {раздел: отпечаток серверного значения, от которого отказались}
     _CFG_PENDING_KEY = "gwcfg_pending"    # {раздел: серверное значение}, пока вопрос висит
     _CFG_WAIT_KEY = "gwcfg_wait"          # {раздел: {"mine": отпечаток стоящего, "server": отпечаток, "gen", "hash"}}
+    # вопрос вешает поток канала (применение документа), снимает — поток экрана
+    # (ответ человека): оба читают и переписывают pending/wait целиком — под
+    # одним замком, иначе одна запись затирает другую
+    _cfg_q_lock = threading.RLock()
 
     def _cfg_json(self, key: str) -> dict:
         return self.db.get_state_json(key, {}) or {}
@@ -65,22 +70,24 @@ class CfgDecideMixin:
         """Вопрос повис: серверное значение — в pending, отпечатки — в wait; новое
         серверное значение заменяет прежний вопрос."""
         mine, _ = self._cfg_section_prints(section, value)
-        pending = self._cfg_json(self._CFG_PENDING_KEY)
-        pending[section] = self._cfg_uplink_pending_put(value) if section == "uplink" else value
-        wait = self.cfg_wait(); wait[section] = {"mine": mine, "server": server_print, "gen": int(gen), "hash": digest}
-        with self.db.transaction():                       # значение и отпечатки — одной записью
-            self._cfg_json_set(self._CFG_PENDING_KEY, pending)
-            self._cfg_json_set(self._CFG_WAIT_KEY, wait)
+        with self._cfg_q_lock:
+            pending = self._cfg_json(self._CFG_PENDING_KEY)
+            pending[section] = self._cfg_uplink_pending_put(value) if section == "uplink" else value
+            wait = self.cfg_wait(); wait[section] = {"mine": mine, "server": server_print, "gen": int(gen), "hash": digest}
+            with self.db.transaction():                   # значение и отпечатки — одной записью
+                self._cfg_json_set(self._CFG_PENDING_KEY, pending)
+                self._cfg_json_set(self._CFG_WAIT_KEY, wait)
 
     def cfg_release(self, section: str) -> None:
         """Снять вопрос: pending и wait раздела стираются."""
-        for key in (self._CFG_PENDING_KEY, self._CFG_WAIT_KEY):
-            data = self._cfg_json(key)
-            if section in data:
-                del data[section]
-                self._cfg_json_set(key, data)
-        if section == "uplink":
-            self._cfg_uplink_pending_drop()
+        with self._cfg_q_lock:
+            for key in (self._CFG_PENDING_KEY, self._CFG_WAIT_KEY):
+                data = self._cfg_json(key)
+                if section in data:
+                    del data[section]
+                    self._cfg_json_set(key, data)
+            if section == "uplink":
+                self._cfg_uplink_pending_drop()
 
     def cfg_question_stale(self, section: str) -> bool:
         """Стоящее поменяли руками, пока вопрос висел: отпечаток стоящего не тот,
@@ -118,6 +125,10 @@ class CfgDecideMixin:
         значение (памятка стирается); оставить своё — памятка с серверным
         отпечатком. Возвращает {"ok", "section", "accepted", "note", "gen", "hash",
         "print"} — для ответа серверу и итога в чате; вопроса нет — ok False."""
+        with self._cfg_q_lock:
+            return self._cfg_answer(section, accept)
+
+    def _cfg_answer(self, section: str, accept: bool) -> dict:
         wait = self.cfg_wait().get(section)
         value = self.cfg_pending().get(section)
         if not wait or value is None:

@@ -802,7 +802,8 @@ cmd_reconfigure() {
         case "$1" in
             --first-run) first_run=1; shift ;;
             --advanced)  ADVANCED=1; shift ;;
-            --join)      GW_JOIN="${2:-}"; shift 2 ;;
+            --join)      # токен — из окружения (AWG_JOIN_TOKEN, установщик), в argv его нет
+                         if [[ "${2:-}" == AWGJ1.* ]]; then GW_JOIN="$2"; shift 2; else GW_JOIN="${AWG_JOIN_TOKEN:-$GW_JOIN}"; shift; fi ;;
             --role)      role="${2:-}"; shift 2 ;;
             --port)      # порт awg для СОЗДАВАЕМОГО сервера — без advanced-режима
                          [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 65535 ]] || die "--port: число 1..65535"
@@ -838,7 +839,7 @@ cmd_reconfigure() {
             install_unit
             systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "не удалось включить $SERVICE на автозагрузку"
             cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
-            bot_tool tools.join "$GW_JOIN"
+            AWG_JOIN_TOKEN="$GW_JOIN" bot_tool tools.join
             return
         fi
         # Перенастройка стоящего агента: токен бота и ADMIN_ID уже в env (их
@@ -934,19 +935,11 @@ cmd_update() {
     [[ -n "$tgz" ]] || die "не найден awg-bot.tgz (в текущем каталоге или рядом со скриптом); укажи путь: awg-bot update <tgz>"
     log "обновление из: $tgz"
 
-    local wipe=0
-    # AWG_UPDATE_KEEP=1 — установщик уже выбрал «обновить, сохранив данные»:
-    # второй раз про удаление не спрашиваем
-    if [[ "${AWG_UPDATE_KEEP:-0}" != "1" ]] \
-       && confirm "Удалить пользовательские данные (БД в $DATA_DIR + секреты $ENV_FILE + конфиг)?" n; then
-        confirm "Точно удалить ВСЕ данные и настройки? Это НЕОБРАТИМО." n && wipe=1 || log "данные оставлены."
-    fi
-
-    ensure_python
-
     # Всё, что может отказать, — ДО остановки сервиса: распаковка, проверка
     # состава, сборка ядра. Пока это идёт, работает прежний код, и любой отказ
-    # ничего не ломает — сервис даже не трогали.
+    # ничего не ломает — сервис даже не трогали. Версия поставки проверяется
+    # раньше вопросов об удалении данных: отказ «откат невозможен» не должен
+    # идти после «Удалить данные?»
     local tmp; tmp="$(mktemp -d)"
     log "распаковываю новый код…"
     # --no-same-owner: архив несёт uid машины, где его собрали; код в /opt — только root
@@ -964,6 +957,16 @@ cmd_update() {
         die "откат ниже $floor невозможен — только чистая установка"
     fi
     note_installed_digest "$tgz" "$newver"     # архив из выпуска — бэкапы будут знать выпуск
+
+    local wipe=0
+    # AWG_UPDATE_KEEP=1 — установщик уже выбрал «обновить, сохранив данные»:
+    # второй раз про удаление не спрашиваем
+    if [[ "${AWG_UPDATE_KEEP:-0}" != "1" ]] \
+       && confirm "Удалить пользовательские данные (БД в $DATA_DIR + секреты $ENV_FILE + конфиг)?" n; then
+        confirm "Точно удалить ВСЕ данные и настройки? Это НЕОБРАТИМО." n && wipe=1 || log "данные оставлены."
+    fi
+
+    ensure_python
 
     # ЯДРО — ДО подмены кода. Версия AmneziaWG прибита к поставке, значит её
     # надо собрать; а собирать надо ПЕРВЫМ делом, пока на диске рабочая
@@ -1303,10 +1306,12 @@ post_update_rescue() {  # ловушка второй половины обно�
         warn "обновление прервалось (код $rc) — возвращаю прежнюю версию и поднимаю сервис"
         restore_prev_code "$AWG_UPDATE_PREV" && back=1
         adopt_timezone_undo                # ключ снял этот прогон — прежний код получает его назад
+        unit_guard_strip_for_old           # прежний скрипт сторожа не знает — его шаг из юнита прочь
     else
         warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
     fi
     update_guard_disarm                    # сторож этого прогона, если успел встать: откат уже здесь
+    rm -f "$DATA_DIR/update-running"
     systemctl start "$SERVICE" 2>/dev/null || true
     local what='Код уже подменён, но довести установку не удалось. Сервис поднят на том, что есть.'
     [[ "$back" -eq 1 ]] && what='Довести установку не удалось — вернул прежнюю версию: и код, и окружение. Сервис поднят.'
@@ -1320,7 +1325,20 @@ tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\n' + os.
             'повторить: <code>sudo awg-bot update &lt;архив&gt;</code>.')
 " >/dev/null 2>&1 ) || true
 }
+unit_guard_strip_for_old() {  # возвращённый код не знает __update_guard: ExecStartPre из юнита — прочь
+    # Юнит переписал новый скрипт (install_unit) до отказа; прежний скрипт на
+    # глагол __update_guard отвечал бы «неизвестная команда» на каждом старте
+    # (строка с «-» старт не держит, но сорит в журнал)
+    local unit="/etc/systemd/system/$SERVICE.service" tmp
+    grep -q '__update_guard' "$INSTALL_DIR/awg-bot.sh" 2>/dev/null && return 0
+    [[ -f "$unit" ]] && grep -q '__update_guard' "$unit" || return 0
+    tmp="$(mktemp)" || return 0
+    grep -v '__update_guard' "$unit" > "$tmp" && cat "$tmp" > "$unit"
+    rm -f "$tmp"
+    systemctl daemon-reload 2>/dev/null || true
+}
 update_done() {  # обновление доведено: прежние код и окружение больше не нужны
+    rm -f "$DATA_DIR/update-running"       # апдейтер отработал — pid в файле больше ничего не значит
     [[ -n "${AWG_UPDATE_PREV:-}" ]] && rm -rf "$AWG_UPDATE_PREV"
     [[ -n "${TZ_ADOPT_UNDO:-}" ]] && rm -f "$TZ_ADOPT_UNDO"
     venv_prune
@@ -1625,9 +1643,13 @@ update_env_steps() {  # update_env_steps [restore] — окружение нов
     ensure_awg_module_loaded
     ensure_awg_generation
     adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
-    # ключ timezone снят — пояс бота = пояс хоста; восстановление решает пояс
-    # после замены conf (restore_apply)
-    [[ "${1:-}" == "restore" ]] || adopt_timezone
+    # ключ timezone снимается один раз — на переходе с выпуска, где его писали
+    # шаблон и установщик (ниже 3.4.0): с 3.4.0 ключ в app.yaml — переопределение
+    # человека, обновление его не трогает; восстановление решает пояс после
+    # замены conf (restore_apply)
+    if [[ "${1:-}" != "restore" ]] && update_adopts_timezone; then
+        adopt_timezone
+    fi
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
@@ -1695,7 +1717,7 @@ cmd_post_update() {
     # Шлюз, подключаемый командой поверх стоящего агента другой версии
     # (установщик --join): подключение — теперь, новым кодом
     if [[ -n "${AWG_UPDATE_THEN_JOIN:-}" ]]; then
-        exec "$SELF_PATH" join "$AWG_UPDATE_THEN_JOIN"
+        AWG_JOIN_TOKEN="$AWG_UPDATE_THEN_JOIN" exec "$SELF_PATH" join
     fi
 }
 
@@ -2496,6 +2518,14 @@ host_timezone() {  # имя пояса хоста: timedatectl, запасной
     printf '%s' "$tz"
 }
 
+TZ_ADOPT_BELOW="3.4.0"   # выпуски ниже писали timezone в app.yaml сами — у них ключ снимается на переходе
+update_adopts_timezone() {  # 0 — это обновление снимает ключ timezone: прежняя версия ниже TZ_ADOPT_BELOW
+    local prev
+    [[ -n "${AWG_UPDATE_PREV:-}" && -d "${AWG_UPDATE_PREV:-}" ]] || return 1
+    prev="$(tree_version "$AWG_UPDATE_PREV")"
+    [[ -n "$prev" ]] && version_lt "$prev" "$TZ_ADOPT_BELOW"
+}
+
 adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml снимается, бот берёт пояс хоста
     # Ключ остался от прежнего шаблона («Europe/Moscow») или его записал
     # установщик; снимается всегда, только верхнего уровня. Комментируется, а не
@@ -2591,12 +2621,20 @@ cmd_gw_kit() {
 
 cmd_join() {  # join <команда подключения> | --status — шлюз: подключение командой из бота сервера AWG
     require_root
-    [[ -n "${1:-}" ]] || die "usage: awg-bot join <команда подключения из бота сервера AWG> | --status"
-    if [[ "$1" != "--status" ]] && ! is_gateway_role; then
+    if [[ "${1:-}" == "--status" ]]; then
+        bot_tool tools.join --status
+        return
+    fi
+    # токен — окружением (AWG_JOIN_TOKEN: установщик, обновление с подключением)
+    # или строкой руками; python получает его только окружением — не в argv
+    local tok="${AWG_JOIN_TOKEN:-}"
+    [[ -n "${1:-}" ]] && tok="$*"
+    [[ -n "$tok" ]] || die "usage: awg-bot join <команда подключения из бота сервера AWG> | --status"
+    if ! is_gateway_role; then
         # первая установка агента идёт установщиком; здесь — уже поставленный агент
         die "агент шлюза не настроен — выполни команду подключения целиком (curl … --join …)"
     fi
-    bot_tool tools.join "$@"
+    AWG_JOIN_TOKEN="$tok" bot_tool tools.join
 }
 
 cmd_status() {

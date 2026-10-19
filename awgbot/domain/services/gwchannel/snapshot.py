@@ -84,4 +84,6 @@ class SnapshotMixin:
         вместе с прежним устройством — по реестру slotkeys, пометка «устройство»."""
         self.gwcfg_forget(slot_id)
         slotkeys.forget(self.db, slot_id, slotkeys.names(when=slotkeys.DEVICE, part="link"))
+        # команда набора обновлений — тоже о прежнем устройстве: новое её не знает
+        slotkeys.forget(self.db, slot_id, slotkeys.names(when=slotkeys.DEVICE, part="fleet"))
         # канон своих списков не трогается: он общий, вернувшийся шлюз его получит

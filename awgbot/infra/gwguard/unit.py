@@ -213,8 +213,10 @@ def unit_set_env(values: dict[str, str]) -> str:
             if anchor is None:
                 raise pkg.GwGuardError("скрипт обвязки без ExecStart — не трогаю")
             new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
+    tmp = path.with_suffix(".tmp")
+    if tmp.exists():
+        tmp.unlink()                                  # остаток прерванной записи (упало между шагами)
     if new != text:
-        tmp = path.with_suffix(".tmp")
         pkg._write_private(tmp, new)                  # права юнита — 0600, как ставит скрипт
         tmp.replace(path)
         try:

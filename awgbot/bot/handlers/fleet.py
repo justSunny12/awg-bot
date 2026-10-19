@@ -21,7 +21,7 @@ from awgbot.bot.texts import fleet as ft
 log = logging.getLogger("awgbot.fleet")
 
 _REFUSALS = {"running": ft.UPDATE_RUNNING_TOAST, "nothing": texts.UPDATE_NOTHING,
-             "changed": texts.UPDATE_TARGET_CHANGED_TOAST}
+             "changed": texts.UPDATE_TARGET_CHANGED_TOAST, "links": ft.UPDATE_LINKS_BUSY_TOAST}
 
 
 def _user(services) -> str:

@@ -145,7 +145,8 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
     fake_cmd(inst / "venv" / "bin" / "python", "#!/bin/sh\n")
     (inst / "awgbot" / "__version__.py").write_text(f'__version__ = "{have}"\n', encoding="utf-8")
     log = tmp_path / "calls"
-    fake_cmd(inst / "awg-bot.sh", f'#!/bin/sh\necho "awg-bot $* JOIN=${{AWG_UPDATE_THEN_JOIN-}}" >> "{log}"\n')
+    fake_cmd(inst / "awg-bot.sh",
+             f'#!/bin/sh\necho "awg-bot $* JOIN=${{AWG_UPDATE_THEN_JOIN-}} TOK=${{AWG_JOIN_TOKEN-}}" >> "{log}"\n')
     etc = tmp_path / "etc"; (etc / "conf").mkdir(parents=True)
     (etc / "conf" / "app.yaml").write_text(f'role: "{role}"\n' if role == "gateway" else "", encoding="utf-8")
     src_root = tmp_path / "src"; src_root.mkdir()
@@ -161,7 +162,7 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
         "log() { printf '[install] %s\\n' \"$*\"; }\n"
         "die() { printf '[install:ОШИБКА] %s\\n' \"$*\" >&2; exit 1; }\n"
         + _func(src, "ver_of") +
-        f'JOIN_TOKEN="AWGJ1.DUMMY"; JOIN_VER="{want}"; TGZ=""; SRC_ROOT="{src_root}"\n'
+        f'JOIN_TOKEN="AWGJ1.DUMMY"; export AWG_JOIN_TOKEN="$JOIN_TOKEN"; JOIN_VER="{want}"; TGZ=""; SRC_ROOT="{src_root}"\n'
         f'JOIN_ID="0123456789abcdef"; JOIN_STATE_FILE="{jf}"; ASSUME_YES={int(yes)}\n'
         + (f'exec 3<"{ans}"\n' if tty else "") + frag + "echo CONTINUE_INSTALL\n")
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
@@ -176,13 +177,13 @@ def test_an_installed_agent_of_the_same_release_joins_without_a_menu(tmp_path):
     assert r.returncode == 0, r.stderr
     assert "агент шлюза уже установлен (v3.4.0) — подключаю это устройство заново" in r.stderr
     assert "Что делаем?" not in r.stdout + r.stderr
-    assert calls == ["awg-bot join AWGJ1.DUMMY JOIN="], calls
+    assert calls == ["awg-bot join JOIN= TOK=AWGJ1.DUMMY"], calls
 
 
 def test_an_installed_agent_of_another_release_is_updated_and_then_joins(tmp_path):
     r, calls = _existing(tmp_path, "3.3.1", "3.4.0", "y")
     assert r.returncode == 0, r.stderr
-    assert len(calls) == 1 and calls[0].startswith("awg-bot update ") and calls[0].endswith("JOIN=AWGJ1.DUMMY"), calls
+    assert len(calls) == 1 and calls[0].startswith("awg-bot update ") and "JOIN=AWGJ1.DUMMY" in calls[0], calls
 
 
 def test_no_means_nothing_changes(tmp_path):
@@ -205,7 +206,7 @@ def test_the_same_command_still_running_is_not_asked_again(tmp_path):
                          state='{"id": "0123456789abcdef", "state": "pairing"}')
     assert r.returncode == 0, r.stderr
     assert "уже идёт — показываю ход" in r.stdout and "Продолжить?" not in r.stdout + r.stderr
-    assert calls == ["awg-bot join AWGJ1.DUMMY JOIN="], calls
+    assert calls == ["awg-bot join JOIN= TOK=AWGJ1.DUMMY"], calls
     (tmp_path / "other").mkdir()
     r, calls = _existing(tmp_path / "other", "3.4.0", "3.4.0", "n",
                          state='{"id": "ffffffffffffffff", "state": "pairing"}')
@@ -220,7 +221,7 @@ def test_without_a_terminal_it_asks_for_yes(tmp_path):
     assert "нет терминала" in r.stderr and "--yes" in r.stderr, r.stderr
     (tmp_path / "y").mkdir()
     r, calls = _existing(tmp_path / "y", "3.4.0", "3.4.0", "", tty=False, yes=True)
-    assert r.returncode == 0 and calls == ["awg-bot join AWGJ1.DUMMY JOIN="], (r.stderr, calls)
+    assert r.returncode == 0 and calls == ["awg-bot join JOIN= TOK=AWGJ1.DUMMY"], (r.stderr, calls)
 
 
 def _local(tmp_path, ver: str, token: str) -> subprocess.CompletedProcess:

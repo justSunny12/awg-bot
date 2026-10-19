@@ -111,7 +111,13 @@ async def test_the_right_code_sends_the_secrets_and_the_new_keys(services, join,
     ok = await gw.recv()
     assert ok["t"] == "join_ok" and joinsas.unseal(side.kp, ok["box"])["admin_id"] == jc.ADMIN
     nxt = await gw.recv()
-    assert nxt["t"] == "link_next" and nxt.get("auto") == "join" and "PresharedKey" in nxt["conf"]
+    assert nxt["t"] == "link_next" and nxt.get("auto") == "join"
+    # sec-1: конфиг новых ключей — только под ключом сопряжения Kp, не ключом
+    # канала (его выводит и держатель токена)
+    assert "conf" not in nxt and nxt.get("box")
+    with pytest.raises(ValueError):
+        joinsas.unseal(bytes(32), nxt["box"])
+    assert "PresharedKey" in joinsas.unseal(side.kp, nxt["box"])["conf"]
     await gw.send("link_ack", {"id": nxt["id"], "state": "ready"})
     go = await gw.recv()
     assert go["t"] == "link_go" and go["id"] == nxt["id"]

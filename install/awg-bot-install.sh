@@ -239,7 +239,7 @@ fi
 # ── ключи: --role gateway (или AWG_BOT_ROLE=gateway), --port N, --subnet X.Y.Z ──
 ROLE="${AWG_BOT_ROLE:-client}"
 SKIP_VERIFY=0                  # своя сборка: sha256 с релизом сверять не с чем
-ORIG_ARGS=("$@")               # что передать установщику из поставки как есть
+ORIG_ARGS=("$@")               # что передать установщику из поставки (токен — только окружением)
 EXTRA=()                       # что уходит дальше в reconfigure --first-run
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
@@ -249,12 +249,19 @@ while [[ "${1:-}" == --* ]]; do
         --advanced) EXTRA+=(--advanced); shift ;;
         --skip-verify) SKIP_VERIFY=1; shift ;;
         --yes)    ASSUME_YES=1; shift ;;
-        --join)   JOIN_TOKEN="${2:-}"; join_parse "$JOIN_TOKEN" || join_bad
-                  ROLE="gateway"; EXTRA+=(--join "$JOIN_TOKEN"); shift 2 ;;
+        --join)   # токен — из строки или из окружения (AWG_JOIN_TOKEN): дальше по
+                  # цепочке он идёт только окружением, не в argv (ps, журнал sudo)
+                  if [[ "${2:-}" == AWGJ1.* ]]; then JOIN_TOKEN="$2"; shift 2; else JOIN_TOKEN="${AWG_JOIN_TOKEN:-}"; shift; fi
+                  join_parse "$JOIN_TOKEN" || join_bad
+                  ROLE="gateway"; EXTRA+=(--join); export AWG_JOIN_TOKEN="$JOIN_TOKEN" ;;
         *) die "неизвестный ключ: $1" ;;
     esac
 done
 
+PASS_ARGS=()                   # ORIG_ARGS без токена: его несёт AWG_JOIN_TOKEN
+for __a in ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}; do
+    [[ -n "$JOIN_TOKEN" && "$__a" == "$JOIN_TOKEN" ]] || PASS_ARGS+=("$__a")
+done
 if [[ -n "$JOIN_TOKEN" ]]; then
     # ровно выпуск из токена, а не latest: сервер назвал версию набора
     [[ -n "${AWG_BOT_TGZ_URL:-}" ]] || TGZ_URL="https://github.com/$REPO/releases/download/v$JOIN_VER/awg-bot.tgz"
@@ -301,7 +308,7 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     # система) — и тогда временный каталог оставался бы на диске навсегда.
     # --skip-verify: sha256 уже сверен здесь, второй запрос к API ни к чему.
     set +e
-    bash "$SRC_ROOT/install/awg-bot-install.sh" --skip-verify ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+    bash "$SRC_ROOT/install/awg-bot-install.sh" --skip-verify ${PASS_ARGS[@]+"${PASS_ARGS[@]}"}
     __rc=$?
     set -e
     # Установщик вернулся — каталог больше никому не нужен: отказ, «Отмена»
@@ -438,7 +445,7 @@ if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
     if [[ -n "$have_ver" && "$have_ver" == "$JOIN_VER" ]]; then
         case "${SRC_ROOT:-}" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac
         trap - EXIT
-        exec "$INSTALL_DIR/awg-bot.sh" join "$JOIN_TOKEN"
+        exec "$INSTALL_DIR/awg-bot.sh" join                # токен — в AWG_JOIN_TOKEN
     fi
     if [[ -z "$TGZ" ]]; then
         TGZ="$(mktemp -d)/awg-bot.tgz"

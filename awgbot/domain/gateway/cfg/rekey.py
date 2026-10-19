@@ -118,6 +118,12 @@ class CfgRekeyMixin:
         out = {"reply": None, "ask": False, "replaced": None}
         if not rid:
             return out
+        if msg.get("box") and not msg.get("conf"):
+            opener = getattr(self, "join_next_open", None)   # сессия сопряжения: conf под ключом сопряжения
+            msg = opener(msg) if callable(opener) else msg
+            if not msg.get("conf"):
+                return {**out, "reply": {"id": rid, "state": "declined",
+                                         "error": "новые ключи линка не расшифровались ключом сопряжения"}}
         st = self.rekey_state()
         if st.get("id") == rid:
             state = st.get("state")

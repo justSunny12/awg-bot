@@ -108,9 +108,12 @@ class KeepMixin:
         if traffic is not None:
             block["traffic"] = traffic
         self._gwkeep_save(slot_id, block)
-        if not self._slot_same_device(slot_id, str(prev.get("dev") or "")) and hasattr(self, "backup_event_mark"):
+        # первый блок нового устройства — событие бэкапа; самый первый блок слота
+        # (агент только что получил эту возможность) — нет: устройство не менялось
+        if prev.get("dev") and not self._slot_same_device(slot_id, str(prev.get("dev") or "")) \
+                and hasattr(self, "backup_event_mark"):
             try:
-                self.backup_event_mark("keep", slot=slot_id)   # первый блок нового устройства
+                self.backup_event_mark("keep", slot=slot_id)
             except Exception as e:                    # noqa: BLE001
                 log.warning("бэкап по событию keep не отмечен: %s", e)
         if prev.get("hash") != digest:

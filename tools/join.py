@@ -3,8 +3,11 @@
 tools/join.py — `awg-bot join <токен>` на шлюзе: подключение к серверу AWG
 командой из его бота.
 
-    python -m tools.join <токен>     линк по токену, агент в режиме сопряжения, код на экран
-    python -m tools.join --status    ход и код ещё раз (из файла хода агента)
+    AWG_JOIN_TOKEN=<токен> python -m tools.join   линк по токену, агент в режиме сопряжения, код на экран
+    python -m tools.join --status                 ход и код ещё раз (из файла хода агента)
+
+Токен — окружением (AWG_JOIN_TOKEN), не аргументом: argv виден в ps и в
+журнале sudo. Строкой аргумента его всё же можно передать руками.
 
 Разбор и проверка токена (util/jointoken: контрольная сумма, формат, срок),
 конфиг линка на ключах токена (без PSK и I1 — их ставит смена ключей после
@@ -215,12 +218,13 @@ def cmd_status() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if not args:
-        print("использование: awg-bot join <команда подключения> | --status", file=sys.stderr)
-        return 2
-    if args[0] == "--status":
+    if args and args[0] == "--status":
         return cmd_status()
-    return cmd_join(" ".join(args))
+    text = " ".join(args) if args else os.environ.get("AWG_JOIN_TOKEN", "")
+    if not text:
+        print("использование: AWG_JOIN_TOKEN=<команда> awg-bot join | awg-bot join --status", file=sys.stderr)
+        return 2
+    return cmd_join(text)
 
 
 if __name__ == "__main__":

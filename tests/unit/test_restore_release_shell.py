@@ -309,7 +309,7 @@ def test_the_second_half_takes_the_same_steps_as_an_update(script, tmp_path):
     after = _extract_func(script, "cmd_restore_after_update")
     assert "update_env_steps restore" in after
     steps = _extract_func(script, "update_env_steps")
-    assert '[[ "${1:-}" == "restore" ]] || adopt_timezone' in steps
+    assert '[[ "${1:-}" != "restore" ]] && update_adopts_timezone' in steps
     h = Host(tmp_path)
     rel = Release(script, h)
     assert rel.run(script).returncode == 0

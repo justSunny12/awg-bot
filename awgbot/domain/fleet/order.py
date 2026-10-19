@@ -92,6 +92,8 @@ class FleetOrderMixin:
                 return "nothing"
             if target.tag != tag:
                 return "changed"
+            if self._fleet_links_busy():
+                return "links"                            # смена ключей линка или сопряжение: ход — после их конца
             self.fleet_run_set({
                 "id": new_id(), "tag": target.tag, "prev": self.fleet_release(),
                 "main_prev": _v(config.INSTALLED_VERSION),
@@ -100,6 +102,14 @@ class FleetOrderMixin:
                 "failed_on": "", "reason": "", "revert_failed": [], "msg": []})
             log.info("набор: ход до %s начат", target.tag)
             return ""
+
+    def _fleet_links_busy(self) -> bool:
+        """Идёт смена ключей линка (ручная или ради I1) или сопряжение: ход
+        набора их ждёт — как и они ждут ход (перезапуск агента посреди
+        переключения ключей сжёг бы попытку)."""
+        if any(self.gateway_rekey_active(gw.id) for gw in self.db.gateways()):
+            return True
+        return bool(getattr(self, "gwjoin_active", lambda: False)())
 
     def update_applied_note(self, pending: str, ok: bool):
         """Итог своего обновления после перезапуска (selfupdate/core): в ходе

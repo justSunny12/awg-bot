@@ -35,7 +35,7 @@ def _tree(tmp_path: Path) -> tuple[Path, Path]:
     (root / "awg-bot.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (root / "install" / "routing-gw-setup.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (root / "install" / "awg-bot-install.sh").write_text(
-        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KIT_ARGS"\n', encoding="utf-8")
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" "TOK=${AWG_JOIN_TOKEN-}" > "$KIT_ARGS"\n', encoding="utf-8")
     (root / "install" / "awg.lock").write_text(
         "AWG_GENERATION=1\n"
         "AWG_MODULE_TAG=v3.1.20260906\n"
@@ -92,7 +92,8 @@ def test_the_kit_unpacks_the_sources_and_hands_the_token_to_the_installer(tmp_pa
     `--skip-verify --join <токен>`; временный каталог убран."""
     r, out, gw_cache = _run_kit(tmp_path, "--join", "AWGJ1.DUMMYTOKEN")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--join", "AWGJ1.DUMMYTOKEN"]
+    # sec-2: токен — установщику окружением, не в argv
+    assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--join", "TOK=AWGJ1.DUMMYTOKEN"]
     assert (gw_cache / "amneziawg-tools-3.1.20260812.tar.gz").read_bytes() == TOOLS
     assert (gw_cache / "amneziawg-linux-kernel-module-3.1.20260906.tar.gz").read_bytes() == MODULE
 
@@ -102,7 +103,7 @@ def test_the_kit_finds_the_token_in_a_whole_pasted_command(tmp_path):
            "| sudo bash -s -- --join AWGJ1.DUMMYTOKEN").split()
     r, out, _ = _run_kit(tmp_path, "--join", *cmd)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert out.read_text(encoding="utf-8").split()[-1] == "AWGJ1.DUMMYTOKEN"
+    assert out.read_text(encoding="utf-8").split()[-1] == "TOK=AWGJ1.DUMMYTOKEN"
 
 
 def test_the_kit_without_a_token_says_what_it_needs(tmp_path):
@@ -116,7 +117,7 @@ def test_the_kit_passes_yes_to_the_installer(tmp_path):
     только --yes; кит передаёт его установщику."""
     r, out, _ = _run_kit(tmp_path, "--join", "AWGJ1.DUMMYTOKEN", "--yes")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--yes", "--join", "AWGJ1.DUMMYTOKEN"]
+    assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--yes", "--join", "TOK=AWGJ1.DUMMYTOKEN"]
 
 
 def test_the_kit_is_refused_when_the_set_names_another_agent_version():

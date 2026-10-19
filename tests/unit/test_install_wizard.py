@@ -266,7 +266,8 @@ def test_piped_bootstrap_hands_over_to_the_installer_from_the_delivery(bootstrap
     assert "--skip-verify" in piped, "второй запрос к API ни к чему: sha256 уже сверен"
     assert piped.index('verify_archive "$TGZ"') < piped.index('bash "$SRC_ROOT'), \
         "код из архива запускается до сверки целостности"
-    assert 'ORIG_ARGS[@]' in piped, "аргументы (--role gateway и прочее) обязаны доехать"
+    assert 'PASS_ARGS[@]' in piped, "аргументы (--role gateway и прочее) обязаны доехать"
+    assert '"$__a" == "$JOIN_TOKEN" ]] || PASS_ARGS+=' in bootstrap, "токен подключения уходит внутрь argv, не окружением"
     # каталог создали мы — мы и убираем, если установка сорвалась; через exec
     # ловушку не унести, а отказ бывает до того, как установщик что-то поймёт
     assert "exec bash" not in piped and "__rc" in piped
@@ -304,13 +305,13 @@ def test_gateway_install_goes_through_the_join_command(script):
     шлюзе не спрашивают: их довезёт канал после кода."""
     gw = _gw_branch(script)
     join = gw.split('if [[ -n "${GW_JOIN:-}" ]]; then', 1)[1].split("\n        fi\n", 1)[0]
-    for step in ("build_venv", "seed_conf", "configure_gateway", "install_unit", 'bot_tool tools.join "$GW_JOIN"'):
+    for step in ("build_venv", "seed_conf", "configure_gateway", "install_unit", 'AWG_JOIN_TOKEN="$GW_JOIN" bot_tool tools.join'):
         assert step in join, step
     assert join.index("install_unit") < join.index("bot_tool tools.join"), "агент без юнита не стартует"
     assert "setup_secrets" not in join and "validate_config" not in join, "на шлюзе спрашивают секреты"
     assert gw.index("ensure_awg_kernel") < gw.index("ensure_python") < gw.index("ensure_venv_ready") \
         < gw.index('if [[ -n "${GW_JOIN:-}" ]]; then')
-    assert '--join)      GW_JOIN="${2:-}"; shift 2 ;;' in script
+    assert 'GW_JOIN="${AWG_JOIN_TOKEN:-$GW_JOIN}"' in script, "токен из установщика не доходит окружением"
 
 
 def test_gateway_install_without_a_command_says_exactly_what_to_do(script):
@@ -348,7 +349,7 @@ def test_update_does_not_build_twice_and_wipe_ends_cleanly(script):
     post = script.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
     venv = script.split("build_venv() {", 1)[1].split("\n}\n", 1)[0]
     assert 'AWG_VENV_FRESH:-}" == "1"' in venv
-    assert 'exec "$SELF_PATH" join "$AWG_UPDATE_THEN_JOIN"' in post, "подключение после обновления потеряно"
+    assert 'AWG_JOIN_TOKEN="$AWG_UPDATE_THEN_JOIN" exec "$SELF_PATH" join' in post, "подключение после обновления потеряно"
     wipe = post.split('warn "удаляю данные и настройки по твоему запросу…"', 1)[1].split("\n    fi\n", 1)[0]
     assert "trap - EXIT" in wipe, "«удалить данные» заканчивалось ловушкой «обновление прервалось»"
 

@@ -161,7 +161,7 @@ def test_every_entry_says_when_it_goes():
         assert _TEMPLATE_RE.match(name), name
         if k.when == slotkeys.DEVICE:
             # ключи устройства снимает gwlink_forget: документ — через gwcfg_forget, канал — сам
-            assert k.part in ("cfg", "link"), name
+            assert k.part in ("cfg", "link", "fleet"), name
     assert slotkeys.KEYS["gwkeep"].when == slotkeys.SLOT, "копия настроек нужна новому устройству слота"
 
 

@@ -151,6 +151,11 @@ class FleetOutsideMixin:
                 continue
             if st.get("state") == "done" and st.get("target") == want.tag:
                 continue                                  # ответил «done» — версию скажет его hello
+            if st.get("target") and st.get("target") != want.tag and not st.get("run"):
+                # цель сменилась (сервер перешёл на другой выпуск): прежние
+                # неудачи и исчерпанные повторы — не о ней
+                st.update(tries=0, next_at="", final=False)
+                self.fleet_slot_set(slot, st)
             if st.get("final") or not _due(str(st.get("next_at") or "")) or busy:
                 continue
             same = not st.get("run") and st.get("target") == want.tag

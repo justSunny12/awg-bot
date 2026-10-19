@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 
 from awgbot.core import config, settings
 from awgbot.domain import gwservices
@@ -13,6 +14,7 @@ SETTING = "app.routing.smb_tunnel"
 _APPLIED_KEY = "smb_tunnel_applied"        # отпечаток поставленного файла записей
 _ALERT_KEY = "admin_dns_alert"             # «резолвер админа не отвечает» уже сказано
 _FAIL_KEY = "admin_dns_failed_once"        # прошлый тик резолвер админа молчал, тревоги ещё не было
+_FAIL_PAUSE_S = 10 * 60                    # файл записей не встал — тот же файл не пробуется каждый такт
 
 
 class SmbTunnelMixin:
@@ -114,11 +116,17 @@ class SmbTunnelMixin:
         digest = hashlib.sha256(text.encode()).hexdigest()[:16] if text else "-"
         if not force and (self.db.get_state(_APPLIED_KEY) or "") == digest:
             return True
+        fail = self.__dict__.setdefault("_smb_apply_fail", {})
+        if not force and fail.get("digest") == digest and time.monotonic() - float(fail.get("at") or 0) < _FAIL_PAUSE_S:
+            return False                                  # тот же файл только что не встал — пауза, не каждый такт
         try:
             admindns.apply_records(text)
         except admindns.AdminDnsError as e:
-            log.warning("SMB в туннеле: записи не поставлены: %s", e)
+            if fail.get("text") != str(e):
+                log.warning("SMB в туннеле: записи не поставлены: %s", e)   # один раз на текст отказа
+            fail.update(digest=digest, text=str(e), at=time.monotonic())
             return False
+        fail.clear()
         self.db.set_state(_APPLIED_KEY, digest)
         log.info("SMB в туннеле: записей резолвера админа — %s", text.count("srv-host=") if text else 0)
         return True
@@ -158,6 +166,11 @@ class SmbTunnelMixin:
             self._gw_firewall_refresh()
         self.smb_tunnel_sync(force=True)
 
+    def _admin_dns_fail_set(self, value: str) -> None:
+        """Отметка «молчал прошлый тик» — записью только при смене значения."""
+        if (self.db.get_state(_FAIL_KEY) or "0") != value:
+            self.db.set_state(_FAIL_KEY, value)
+
     def admin_dns_health_tick(self) -> list[Notification]:
         """Резолвер админа поставлен — обязан отвечать: от него DNS всех
         устройств админа с конфигом, выданным после его установки, тумблер тут
@@ -168,16 +181,16 @@ class SmbTunnelMixin:
         from awgbot.domain.alerts import armer
         from awgbot.infra import admindns
         if not admindns.installed():
-            self.db.set_state(_FAIL_KEY, "0")        # снят и поставлен заново — счёт молчания с нуля
+            self._admin_dns_fail_set("0")            # снят и поставлен заново — счёт молчания с нуля
             return []
         self.smb_tunnel_sync()
         alive = admindns.probe()
         said = self.db.get_state(_ALERT_KEY) == "1"
         if alive:
-            self.db.set_state(_FAIL_KEY, "0")
+            self._admin_dns_fail_set("0")
         elif not said and self.db.get_state(_FAIL_KEY) != "1":
             # первый тик отказа — ждём второго, как у резолвера клиентов
-            self.db.set_state(_FAIL_KEY, "1")
+            self._admin_dns_fail_set("1")
             log.warning("резолвер админа не ответил — проверю на следующем тике")
             return []
         if alive and said:

@@ -118,7 +118,7 @@ tar xzf "$_d/awg-bot.tgz" -C "$_d" --no-same-owner
 rm -f "$_d/awg-bot.tgz"
 [ -f "$_d/install/awg-bot-install.sh" ] || {{ echo "кит повреждён: в поставке нет установщика"; exit 1; }}
 set +e
-bash "$_d/install/awg-bot-install.sh" --skip-verify $_yes --join "$_token"
+AWG_JOIN_TOKEN="$_token" bash "$_d/install/awg-bot-install.sh" --skip-verify $_yes --join
 _rc=$?
 exit "$_rc"
 '''

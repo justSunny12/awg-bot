@@ -139,7 +139,9 @@ def _guard_state(host: _Host) -> dict:
 # ── после обновления: прежнее на месте до отметки ───────────────────────────
 
 def test_after_update_the_old_code_and_env_wait_for_the_mark(tmp_path):
-    host = _Host(tmp_path)
+    # прежняя версия ниже 3.4.0 (ключ timezone снимается), но не ниже версии
+    # совместимости этого стенда (сторож взводится): так виден и путь копии ключа
+    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
     host.mark(host.new)                                  # отметка прошлого запуска той же версии
     r = host.post_update()
     assert (host.inst / ".prev-code" / "whose").read_text(encoding="utf-8") == "old", "прежний код снят до отметки"
@@ -162,7 +164,7 @@ def test_after_update_the_old_code_and_env_wait_for_the_mark(tmp_path):
 
 
 def test_the_mark_of_this_version_commits_the_update(tmp_path):
-    host = _Host(tmp_path)
+    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
     host.post_update()
     host.mark(host.new)
     host.guard()
@@ -180,7 +182,7 @@ def test_the_mark_of_this_version_commits_the_update(tmp_path):
 def test_no_mark_of_this_version_brings_the_old_one_back(tmp_path, mark):
     """Отметки нет или она другой версии (прежний процесс, чужая сборка) —
     прежние код и окружение на место, ключ пояса назад, перезапуск, метка отката."""
-    host = _Host(tmp_path)
+    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
     host.post_update()
     if mark:
         host.mark(mark)
@@ -381,9 +383,9 @@ def test_rescue_and_uninstall_disarm(script):
 
 # ── шаг набора: прежнее держится до фиксации или отката всего набора ────────
 
-def _held(tmp_path) -> _Host:
+def _held(tmp_path, **kw) -> _Host:
     """Шаг набора (hold) вышел на связь: бот поставил отметку и позвал --alive."""
-    host = _Host(tmp_path)
+    host = _Host(tmp_path, **kw)
     host.post_update(hold=True)
     assert _guard_state(host)["HOLD"] == "1"
     host.mark(host.new)
@@ -392,7 +394,7 @@ def _held(tmp_path) -> _Host:
 
 
 def test_with_hold_the_mark_lifts_the_guard_but_keeps_the_old_one(tmp_path):
-    host = _held(tmp_path)
+    host = _held(tmp_path, prev="3.3.9", floor="3.3.0")   # копия ключа пояса — только на переходе с < 3.4.0
     assert not (host.data / "update-guard").exists(), "сторож остался после отметки"
     assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old"
     assert not (host.inst / ".prev-code").exists()
@@ -471,3 +473,15 @@ def test_commit_and_revert_are_dispatched(script):
     assert re.search(r"^\s+__update_revert\)\s+cmd_update_revert \"\$@\" ;;$", script, re.M)
     upd = _func(script, "cmd_update")
     assert "! -name .hold-code" in upd and "! -name .hold-code" in _func(script, "restore_prev_code")
+
+
+def test_an_update_within_the_line_keeps_a_timezone_key_set_by_hand(tmp_path):
+    """Ключ timezone в app.yaml с 3.4.0 — переопределение человека: обновление
+    3.4.0 → 3.4.1 (и любой догон набора) его не трогает, копии ключа у сторожа
+    нет и уведомления о поясе не будет. Снимается он один раз — на переходе с
+    выпуска ниже 3.4.0, где его писали шаблон и установщик."""
+    host = _Host(tmp_path)                               # prev 3.4.0, new 3.4.1
+    host.post_update()
+    assert host.app.read_text(encoding="utf-8") == host.app_text, "ключ, вписанный руками, снят обновлением"
+    assert not (host.data / "update-guard.app.yaml").exists()
+    assert not (host.data / ".tz-adopted").exists()

@@ -279,13 +279,18 @@ def test_lines_outside_the_whitelist_take_the_file_down_instead(services, two_sl
     assert adm.calls == [("records", "-")], adm.calls
 
 
-def test_a_refused_records_file_is_retried_on_the_next_sync(services, two_slots, adm, toggle):
-    """Скрипт отказал — отпечаток не записан, следующий такт пробует снова."""
+def test_a_refused_records_file_is_retried_after_a_pause(services, two_slots, adm, toggle, monkeypatch):
+    """Скрипт отказал — отпечаток не записан; тот же файл не пробуется каждый
+    такт (пауза), а после паузы — снова. Отказ в журнале — один раз на текст."""
     services.gwlink_services_in(1, [NAS]); _seen(services, 1, 1)
     toggle["on"] = True
     adm.fail = "records"
     assert services.smb_tunnel_sync() is False
+    n = len(adm.calls)
+    assert services.smb_tunnel_sync() is False and len(adm.calls) == n, "в паузе скрипт не зовётся"
     adm.fail = ""
+    assert services.smb_tunnel_sync() is False and len(adm.calls) == n, "пауза держит и после починки"
+    monkeypatch.setattr("awgbot.domain.services.gwchannel.smbtunnel._FAIL_PAUSE_S", 0)
     assert services.smb_tunnel_sync() is True and adm.records and "naspi5" in adm.records
 
 

@@ -301,3 +301,23 @@ def test_a_link_that_did_not_come_up_leaves_no_pairing_file(joinrun, monkeypatch
     assert tjoin.cmd_join(_token(expires=int(time.time()) + 3600)) == 1
     assert not jf.exists() and not os.path.exists(jmod.STATUS_FILE)
     assert "линк по команде подключения не поднялся" in capsys.readouterr().err
+
+
+def test_the_keys_after_the_code_open_only_with_the_pairing_key(agent, monkeypatch):
+    """sec-1: link_next сессии сопряжения несёт конфиг под ключом сопряжения;
+    агент расшифровывает своим Kp, чужой или отсутствующий — отказ без
+    перехода; после join_refused ключей сопряжения у агента нет."""
+    hello = agent.join_hello()
+    body, _code, kp = _server_side(hello)
+    agent.join_eph_in(body)
+    box = joinsas.seal(kp, {"conf": "[Interface]\nPrivateKey = DUMMY\n"})
+    assert agent.join_next_open({"t": "link_next", "id": "a1", "box": box})["conf"].startswith("[Interface]")
+    bad = joinsas.seal(bytes(32), {"conf": "x"})
+    assert "conf" not in agent.join_next_open({"t": "link_next", "id": "a1", "box": bad})
+    monkeypatch.setattr(agent, "rekey_state", lambda: {}, raising=False)
+    monkeypatch.setattr(agent, "cfg_link_text", lambda: "", raising=False)
+    from awgbot.domain.gateway.cfg.rekey import CfgRekeyMixin
+    res = CfgRekeyMixin.rekey_next_in(agent, {"t": "link_next", "id": "a1", "box": bad, "auto": "join"})
+    assert res["reply"]["state"] == "declined" and "ключом сопряжения" in res["reply"]["error"]
+    agent.join_refused_in({"why": "code"})
+    assert "eph_priv" not in agent.join_state() and "_join_kp" not in agent.__dict__

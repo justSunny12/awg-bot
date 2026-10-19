@@ -30,7 +30,12 @@ class GwJoinQuarantineMixin:
         """Идёт сопряжение (команда жива или смена ключей после кода не
         зафиксирована) — переход линков на I1 и прочие автоматические смены
         ключей ждут."""
-        return any(st.get("state") in ("waiting", "connected", "accepted") for st in self.gwjoin_all())
+        return any(st.get("state") in ("waiting", "connected", "accepted", "closing") for st in self.gwjoin_all())
+
+    def gwjoin_slot_busy(self, slot_id: int) -> bool:
+        """Слот в сопряжении (команда жива, код принят, возврат ещё идёт): смена
+        ключей ради I1 этого слота — не неудача, а снятая сопряжением."""
+        return self.gwjoin(slot_id).get("state") in ("waiting", "connected", "accepted", "closing")
 
     def gwjoin_replacing(self, slot_id: int) -> bool:
         """Слот в замене устройства до фиксации смены ключей после кода."""

@@ -83,14 +83,28 @@ class GwJoinAcceptMixin:
         (снята сроком переключения или перезапуском сервера посреди неё,
         join-1) — заводится заново: иначе сопряжение ждало бы до отката."""
         nxt = self.gateway_rekey_next_body(slot_id)
-        if nxt or self.gwjoin(slot_id).get("state") != "accepted" or self.gateway_rekey(slot_id):
+        if not nxt and self.gwjoin(slot_id).get("state") == "accepted" and not self.gateway_rekey(slot_id):
+            try:
+                self.gateway_rekey_stage(int(slot_id), auto="join")
+            except ServiceError as e:
+                log.warning("сопряжение: слот %s — смена ключей после кода не начата заново: %s", slot_id, e)
+                return None
+            nxt = self.gateway_rekey_next_body(slot_id)
+        return self._gwjoin_seal_next(slot_id, nxt)
+
+    def _gwjoin_seal_next(self, slot_id: int, nxt: Optional[dict]) -> Optional[dict]:
+        """Конфиг новых ключей в сессии сопряжения — под ключом сопряжения Kp:
+        ключ канала этой сессии выводится из закрытого ключа токена, и
+        держатель токена, перетянувший endpoint пира на себя, прочёл бы
+        постоянный ключ слота. Ключа сопряжения нет (сессии нет) — не шлём."""
+        if not nxt:
             return nxt
-        try:
-            self.gateway_rekey_stage(int(slot_id), auto="join")
-        except ServiceError as e:
-            log.warning("сопряжение: слот %s — смена ключей после кода не начата заново: %s", slot_id, e)
+        kp = self._gwjoin_live(slot_id).get("kp")
+        if not kp:
             return None
-        return self.gateway_rekey_next_body(slot_id)
+        out = {k: v for k, v in nxt.items() if k != "conf"}
+        out["box"] = joinsas.seal(kp, {"conf": nxt["conf"]})
+        return out
 
     def gwjoin_ok_body(self, slot_id: int) -> dict:
         """Тело join_ok живой сессии: секреты под ключом сопряжения."""

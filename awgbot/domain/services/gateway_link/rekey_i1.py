@@ -121,6 +121,11 @@ class RekeyI1Mixin:
                 plan = {"want": want, "next_at": _later(random.uniform(*WINDOW_S)), "tries": 0}
                 self._i1_plan_save(gw.id, plan)
             if plan.get("rid"):
+                if hasattr(self, "gwjoin_slot_busy") and self.gwjoin_slot_busy(gw.id):
+                    # смену сняло сопряжение этого слота (замена устройства) — не неудача линка
+                    plan.pop("rid", None)
+                    self._i1_plan_save(gw.id, plan)
+                    continue
                 # смена, начатая планом, закончилась, а I1 у линка прежний — не встало
                 self._i1_failed(gw, plan, "смена ключей не встала")
             if not self.gwlink_session(gw.id):

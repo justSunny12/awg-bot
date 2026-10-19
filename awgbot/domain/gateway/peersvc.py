@@ -138,6 +138,11 @@ class PeerServicesMixin:
         raw = self.db.get_state(self._SVC_PENDING_KEY) or ""
         if not raw:
             return None
+        if not gwguard.lan_mode():
+            # VPN-транзит выключили: помощника сервисов в выключенном режиме нет
+            # и не будет — отложенное потеряло смысл (иначе перезапуск обвязки без конца)
+            self.db.set_state(self._SVC_PENDING_KEY, "")
+            return None
         if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
             self._reassert_throttled("помощника сервисов соседей нет")
             if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):

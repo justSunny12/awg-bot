@@ -76,6 +76,14 @@ class SelfUpdateCacheMixin:
         if isinstance(meta_cache, dict):
             self.db.set_state(self._META_KEY, json.dumps(
                 {t: v for t, v in meta_cache.items() if t in tags}, ensure_ascii=False))
+        # digest установки пуст (переход с выпуска, чей скрипт его не писал,
+        # или предрелизная сборка того же номера), а установленная версия —
+        # опубликованный выпуск: digest его ассета и есть тот, что качать при
+        # переходе на эту версию из бэкапа
+        own = next((r for r in releases if r.version == installed and r.sha256), None)
+        if own is not None:
+            from .marks import adopt_release_digest
+            adopt_release_digest(self.db, config.INSTALLED_VERSION, own.sha256)
         self.db.set_state(self._RELEASES_KEY, json.dumps({
             "installed": config.INSTALLED_VERSION,
             "releases": [{"tag": r.tag, "title": r.title, "body": (r.body or "")[:_BODY_MAX],

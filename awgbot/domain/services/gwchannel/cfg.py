@@ -304,8 +304,40 @@ class CfgMixin:
             return None
         doc = self.gwcfg_doc(gw)
         if not self.gwcfg_diff(gw, doc, snap["cfg"]):
+            self._gwcfg_ack_follow(gw, doc, snap["cfg"])
+            if self._gwcfg_backup_question_nudge(gw, doc):
+                return gwcfg.build(doc["gen"], doc["hash"], doc["sections"])
             return None
         return gwcfg.build(doc["gen"], doc["hash"], doc["sections"])
+
+    def _gwcfg_ack_follow(self, gw, doc: dict, have: dict) -> dict:
+        """Документ изменился без расхождения со стоящим (состав разделов
+        сменился на сервере — раздел ушёл из документа): новый отпечаток шлюзу
+        не уходит, и сохранённый ответ остался бы «на другой документ» — из
+        карточки пропала бы дата применения, а удержание прежних отказов снялось
+        бы. Такой ответ переписывается на новый отпечаток. Возвращает ответ."""
+        ack = self.gwcfg_ack(gw.id)
+        if not ack or ack.get("hash") == doc["hash"] or ack.get("retry") or not have:
+            return ack
+        ack["hash"] = doc["hash"]
+        ack["gen"] = max(int(ack.get("gen") or 0), int(doc["gen"]))
+        self.db.set_state(self._gwlink_key(self._GWCFG_ACK_KEY, gw.id), json.dumps(ack, ensure_ascii=False))
+        return ack
+
+    def _gwcfg_backup_question_nudge(self, gw, doc: dict) -> bool:
+        """Агент прежнего выпуска (без keep1) держит вопрос о ключевой фразе из
+        раздела, которого у сервера больше нет: сам он снимет его только по
+        следующему документу, а документ без расхождения не уходит. Один раз
+        на отпечаток — документ отправляется и так."""
+        ack = self.gwcfg_ack(gw.id)
+        held = {**(ack.get("wait") or {}), **(ack.get("declined") or {})}
+        if "backup" not in held or "keep1" in self.gwlink_agent_caps(gw.id):
+            return False
+        key = self._gwlink_key("gwcfg_backup_q_nudged", gw.id)
+        if (self.db.get_state(key) or "") == doc["hash"]:
+            return False
+        self.db.set_state(key, doc["hash"])
+        return True
 
     def gwcfg_diff(self, gw, doc: dict, have: dict) -> list[str]:
         """Разделы, в которых желаемое расходится с отпечатками снимка и которые
@@ -340,10 +372,10 @@ class CfgMixin:
         if not snap or self.gwlink_agent_outdated(gw.id):
             return out
         doc = self.gwcfg_doc(gw)
-        ack = self.gwcfg_ack(gw.id)
+        out["due"] = self.gwcfg_diff(gw, doc, have) if have else []
+        ack = self._gwcfg_ack_follow(gw, doc, have) if have and not out["due"] else self.gwcfg_ack(gw.id)
         # временный отказ («повтори») — не отказ: ни строки «не применил», ни даты применения
         current = bool(ack) and ack.get("hash") == doc["hash"] and not ack.get("retry")
-        out["due"] = self.gwcfg_diff(gw, doc, have) if have else []
         out["failed"] = dict(ack.get("failed") or {}) if current else {}
         out["wait"] = [s for s, p in (ack.get("wait") or {}).items() if p == doc["prints"].get(s)] if current else []
         out["declined"] = [s for s, p in (ack.get("declined") or {}).items() if p == doc["prints"].get(s)]

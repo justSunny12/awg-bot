@@ -37,6 +37,7 @@ KEYS: dict[str, SlotKey] = {
     "gwcfg_gen": SlotKey(DEVICE, "cfg"),
     "gwcfg_hash": SlotKey(DEVICE, "cfg"),
     "gwcfg_ack": SlotKey(DEVICE, "cfg"),
+    "gwcfg_backup_q_nudged": SlotKey(DEVICE, "cfg"),      # документ дослан агенту прежнего выпуска с висящим вопросом о фразе
     "gwcfg_link_err": SlotKey(DEVICE, "cfg"),
     "gwcfg_uplink_err": SlotKey(DEVICE, "cfg"),
     "gwcfg_env_err": SlotKey(DEVICE, "cfg"),
@@ -83,8 +84,10 @@ KEYS: dict[str, SlotKey] = {
     "gwkeep": SlotKey(SLOT, "keep", OFFER),
     # подключение шлюза командой (gwjoin/): запись сопряжения — со слотом
     "gw_join": SlotKey(SLOT, "join"),
-    # шлюз в наборе обновлений (domain/fleet): команда, её итог и повторы
-    "gwupd": SlotKey(SLOT, "fleet"),
+    # шлюз в наборе обновлений (domain/fleet): команда, её итог и повторы — с
+    # устройством: новое устройство слота чужую команду (id, удержание,
+    # «пропал», исчерпанные повторы) не наследует
+    "gwupd": SlotKey(DEVICE, "fleet"),
 }
 
 

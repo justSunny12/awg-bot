@@ -592,6 +592,10 @@ def _run_update(tmp_path: Path, keep: str | None, answers: str = "y") -> subproc
         "die() { echo \"DIE $*\"; exit 1; }\n"
         "require_root() { :; }; require_installed() { :; }; update_lock() { :; }\n"
         'locate_tgz() { echo "$2"; }\n'
+        # распаковка и проверка версии поставки идут ДО вопросов об удалении
+        # данных (отказ «откат невозможен» — раньше вопросов): поставка подставная
+        'tar() { mkdir -p "$4/x/awgbot"; : > "$4/x/awgbot/__main__.py"; }\n'   # tar xzf <tgz> -C <dir> …
+        "chown() { :; }; compat_floor() { :; }; tree_version() { echo 3.4.0; }; note_installed_digest() { :; }\n"
         f'confirm() {{ echo "ASKED $1"; [[ "{answers}" == y ]]; }}\n'
         'ensure_python() { echo "WIPE=$wipe"; exit 0; }\n'
         + _func(src, "cmd_update") +
@@ -630,7 +634,8 @@ class _PostUpdate:
         self.tmp = tmp_path
         self.log = tmp_path / "calls.log"; self.log.write_text("")
         self.self_path = tmp_path / "awg-bot.sh"
-        fake_cmd(self.self_path, '#!/bin/sh\necho "self $*" >> "$CALLS"\n')
+        # токен подключения идёт окружением, не аргументом (ps, журнал sudo) — пишем и его
+        fake_cmd(self.self_path, '#!/bin/sh\necho "self $*${AWG_JOIN_TOKEN:+ tok=$AWG_JOIN_TOKEN}" >> "$CALLS"\n')
 
     def run(self, bundle: str | None, wipe: str = "0", join: str = "") -> subprocess.CompletedProcess:
         src = BOT_SCRIPT.read_text(encoding="utf-8")
@@ -670,7 +675,7 @@ def test_post_update_joins_the_gateway_with_the_new_code(tmp_path):
     pu = _PostUpdate(tmp_path)
     r = pu.run(None, join="AWGJ1.DUMMYTOKEN")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert pu.calls() == ["self join AWGJ1.DUMMYTOKEN"], pu.calls()
+    assert pu.calls() == ["self join tok=AWGJ1.DUMMYTOKEN"], pu.calls()
     assert "Обновление завершено" in r.stdout
     assert "AFTER_POST_UPDATE" not in r.stdout, "join должен сменить процесс (exec)"
 

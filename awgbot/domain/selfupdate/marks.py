@@ -75,6 +75,21 @@ def _shift_digest(db) -> None:
     db.set_state(DIGEST_PREV_KEY, "\n".join(kept[:DIGEST_PREV_MAX]))
 
 
+def adopt_release_digest(db, version: str, sha256: str) -> bool:
+    """Digest установки пуст, а установленная версия — опубликованный выпуск с
+    таким ассетом: записать его. Непустой digest не трогается (его дал архив
+    при установке). True — записан."""
+    sha = str(sha256 or "").lower()
+    if not _HEX.fullmatch(sha):
+        return False
+    cur = db.get_state(DIGEST_KEY) or ""
+    if cur.partition(" ")[0] == version and _HEX.search(cur):
+        return False
+    db.set_state(DIGEST_KEY, f"{version} {sha}")
+    log.info("установка — выпуск v%s: digest ассета взят из списка выпусков", version)
+    return True
+
+
 def adopt_installed_digest(db, data_dir: Optional[str] = None) -> bool:
     """Перенести `installed-digest` в `update_installed_digest` и удалить файл;
     перед этим — отложить или вернуть digest прежней версии (_shift_digest).
