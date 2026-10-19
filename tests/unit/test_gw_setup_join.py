@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 from awgbot.util import jointoken, wgconf
 from tests.conftest import SH, fake_cmd
 from tests.unit._gw_setup_common import _helpers
@@ -235,7 +237,7 @@ def test_no_text_sends_the_human_to_a_configuration_file(monkeypatch, tmp_path):
     assert warns and "«🛰 Подключить шлюз»" in warns[0] and "--bundle" not in warns[0]
     assert "«🛰 Подключить шлюз»" in ON_GATEWAY and "<файл>" not in ON_GATEWAY
     assert "файл конфигурации" not in GATEWAY_KEYS_PICK
-    sh = (Path(__file__).resolve().parents[2] / "awg-bot.sh").read_text(encoding="utf-8")
+    sh = flat()
     assert "времён файла конфигурации" not in sh
     gw = SCRIPT.read_text(encoding="utf-8")
     says = [ln for ln in gw.splitlines() if ln.strip().startswith("say ")]

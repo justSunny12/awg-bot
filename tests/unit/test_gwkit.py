@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 from awgbot.util import dist
 from tools import gwkit
 
@@ -133,13 +135,13 @@ def test_the_kit_is_refused_when_the_set_names_another_agent_version():
 def test_the_hints_name_the_token_not_the_whole_command():
     """flow-6: вся строка из бота с `| sudo bash` в кавычках не сработает —
     подсказки зовут только токен."""
-    for text in ((ROOT / "awg-bot.sh").read_text(encoding="utf-8"), (ROOT / "tools" / "gwkit.py").read_text(encoding="utf-8")):
+    for text in (flat(), (ROOT / "tools" / "gwkit.py").read_text(encoding="utf-8")):
         assert "<команда из бота" not in text
         assert "--join <токен AWGJ1…>" in text
 
 
 def test_the_cli_verb_is_gw_kit_and_gw_bundle_is_gone():
-    sh = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    sh = flat()
     assert "gw-kit)      cmd_gw_kit" in sh and "gw-bundle)" not in sh
     assert "bot_tool tools.gwkit --stdout" in sh
     assert "sudo awg-bot gw-kit --stdout | " in sh

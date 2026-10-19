@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 from awgbot.core import config
 from awgbot.domain import configgen
 from awgbot.infra import gwguard
@@ -131,7 +133,7 @@ def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path
     раскомментированы, runtime — host, клиентскую подсеть не спрашивает и не
     пишет (она приезжает в юните обвязки из бандла). Вопросов нет вовсе:
     stdin закрыт, любой read упал бы."""
-    text = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    text = flat()
     fn = lambda name: re.search(rf"^{name}\(\) \{{.*?^\}}$", text, re.S | re.M).group(0)
     conf = tmp_path / "conf"; conf.mkdir()
     app = conf / "app.yaml"

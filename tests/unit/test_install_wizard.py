@@ -195,7 +195,7 @@ def _run_cleanup(tmp_path, what, tgz=""):
     """Прогоняет cleanup_delivery настоящим bash: это rm -rf, и проверять его
     сверкой подстрок — ровно тот случай, когда тест зелёный, а каталог снесён."""
     import subprocess
-    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    script = flat()
     body = script.split("cleanup_delivery() {", 1)[1].split("\n}\n", 1)[0]
     prog = (
         'log(){ printf "[log] %s\\n" "$*"; }\n'

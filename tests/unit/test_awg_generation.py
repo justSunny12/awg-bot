@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.botscript import flat
+
 from awgbot.core import config
 from awgbot.infra import awglock, updates
 
@@ -180,8 +182,7 @@ def test_state_file_and_keys_match_the_installer():
     `applied_generation` усыновляет поколение поставки, и переезд не будет
     объявлен НИКОГДА. Тихо, без единой ошибки."""
     import re
-    from pathlib import Path as _P
-    script = (_P(__file__).resolve().parents[2] / "awg-bot.sh").read_text(encoding="utf-8")
+    script = flat()
     assert 'AWG_STATE="$ETC_DIR/awg.state"' in script
     assert 'ETC_DIR="/etc/awg-bot"' in script
     # путь бота: рядом с conf, то есть /etc/awg-bot/awg.state
