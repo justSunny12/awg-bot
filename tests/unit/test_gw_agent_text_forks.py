@@ -49,8 +49,8 @@ def test_a_configuration_file_in_the_agent_chat_gets_one_answer():
     """Файл конфигурации шлюза в чате агента — один ответ: шлюзы
     подключаются командой из бота сервера, файл убран (внутри ключи)."""
     t = texts.GW_REISSUE_FILE_REFUSED
-    assert t.startswith("⚠️ Файл конфигурации шлюза не применён") and "«🛰 Подключить шлюз»" in t
-    assert t.endswith("Файл убран из чата — в нём ключи")
+    assert t.startswith("⚠️ Файл конфигурации не применён") and "по каналу конфигурации" in t
+    assert t.endswith("Сообщение с файлом из чата убрал: внутри ключи")
     assert "перевыпус" not in t and "📤" not in t
 
 

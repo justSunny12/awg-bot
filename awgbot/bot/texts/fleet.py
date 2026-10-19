@@ -8,14 +8,14 @@
 from __future__ import annotations
 
 from awgbot.bot import ui
-from awgbot.domain.notices.backup import gw_ref
+from awgbot.domain.notices.backup import chat_ref, gw_ref
 from awgbot.domain.notices.fleet import JOURNAL, SERVER_SILENT
 
 from .fmt import _e
 from .updates import _seen_date, _ver, changelog_details, update_skipped_lines
 
 UPDATE_RUNNING_TOAST = "Обновление уже идёт"
-UPDATE_LINKS_BUSY_TOAST = "Идёт смена ключей линка или подключение шлюза — обновить набор можно после их конца"
+UPDATE_LINKS_BUSY_TOAST = "Идёт смена ключей линка или подключение шлюза — применить обновление можно после завершения"
 
 
 def _name(g: dict, user: str) -> str:
@@ -27,6 +27,29 @@ def _since(g: dict) -> str:
     return f"не на связи с {date}" if date else "не на связи"
 
 
+def _who(run: dict, *, without=()) -> tuple[str, bool]:
+    """Кто обновлялся в ходе — по его шагам, без хостов из without: («сервер
+    AWG и шлюз», множественное число). «Набор» — слово кода, не человека:
+    в текстах — состав словами. Шагов нет — общая форма."""
+    steps = run.get("steps") or []
+    main = any(s[0] == "main" for s in steps) and "main" not in without
+    gws = len({int(s[1]) for s in steps if s[0] == "gw" and int(s[1]) not in without})
+    gw = "шлюз" if gws == 1 else "шлюзы" if gws else ""
+    if main and gw:
+        return f"сервер AWG и {gw}", True
+    if main:
+        return "сервер AWG", False
+    if gw:
+        return gw, gws > 1
+    return "сервер AWG и шлюзы", True
+
+
+def gw_no_upd(g: dict) -> bool:
+    """Агент команду обновления не знает (ниже 3.4.0) — обновить его можно
+    только из чата бота шлюза."""
+    return bool(g.get("version") and not g.get("upd") and g.get("device"))
+
+
 # ── строка шлюза по состоянию (раздел, карточка) ────────────────────────────
 
 def gw_state_line(g: dict, *, release: str = "", run: dict | None = None) -> str:
@@ -35,19 +58,18 @@ def gw_state_line(g: dict, *, release: str = "", run: dict | None = None) -> str
     st = g.get("upd_state") or {}
     ver = g.get("version") or ""
     want = g.get("want") or ""
-    if g.get("version") and not g.get("upd") and g.get("device"):
-        return (f"⚠️ агент {_e(_ver(ver))} командой сервера AWG не обновляется — обнови его последний раз "
-                "в чате бота шлюза: «⚙️ Настройки» → «⬆️ Обновления»")
+    if gw_no_upd(g):
+        return (f"⚠️ агент {_e(_ver(ver))} командой сервера AWG не обновляется — обнови его "
+                f"в чате {chat_ref(g.get('agent_bot'))}: «⚙️ Настройки» → «⬆️ Обновления»")
     if ver and not g.get("release"):
-        return (f"⚠️ Агент — сборка не из выпуска ({_e(_ver(ver))}): по команде сервера AWG обновить "
-                "не получится")
+        return "⚠️ Агент — сборка не из выпуска: по команде сервера AWG обновить не получится"
     state = st.get("state") or ""
     active = (run or {}).get("state") in ("running", "rolling_back") and st.get("run") == (run or {}).get("id")
     if active or not st.get("run"):
         if state in ("sent", "accepted"):
             return f"🟡 обновляется до {_e(_ver(st.get('target')))}"
         if state == "lost":
-            return "🟡 пропал посреди обновления — доведётся, когда выйдет на связь"
+            return "🟡 пропал посреди обновления: доведётся, когда выйдет на связь"
         if state == "reverting":
             return f"↩️ возвращается на {_e(_ver(st.get('prev')))}"
     if not st.get("run") and st.get("final") and state in ("failed", "rolled_back", "refused"):
@@ -57,9 +79,9 @@ def gw_state_line(g: dict, *, release: str = "", run: dict | None = None) -> str
         from awgbot.infra import updates
         a, b = updates.parse_version(ver), updates.parse_version(want)
         if not g.get("online"):
-            return f"🟡 {_since(g)} — обновится, когда выйдет на связь"
+            return f"🟡 {_since(g)}: обновится, когда выйдет на связь"
         if a is not None and b is not None and a > b:
-            return f"🟡 Агент {_e(_ver(ver))} новее сервера AWG — вернётся к {_e(_ver(want))}"
+            return f"🟡 Агент новее поставки сервера AWG — вернётся к {_e(_ver(want))}"
         return "🟡 ждёт очереди" if active else ""
     return ""
 
@@ -88,11 +110,12 @@ def fleet_section(plan: dict, *, scan_failed: bool = False, skipped=(), bot_user
     if state in ("running", "rolling_back"):
         lines.append(f"⏳ Идёт обновление до {_e(_ver(run.get('tag')))}")
     elif state == "rolled_back":
-        lines.append(f"⚠️ Обновление до {_e(_ver(run.get('tag')))} отменено — набор вернулся на "
-                     f"{_e(_ver(run.get('prev')))}: {_e(run.get('reason') or '')}".rstrip(": "))
+        who, many = _who(run)
+        lines.append(f"⚠️ Обновление до {_e(_ver(run.get('tag')))} отменено — {who} "
+                     f"{'вернулись' if many else 'вернулся'} на {_e(_ver(run.get('prev')))}: "
+                     f"{_e(run.get('reason') or '')}".rstrip(": "))
     elif state == "rollback_failed":
-        lines.append("⚠️ Откат набора не удался — пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам "
-                     "команд не шлёт")
+        lines.append("⚠️ Откат не удался — пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт")
     server = _ver(plan.get("server") or "")
     want = plan.get("server_want")
     lines.append(f"🖥 Сервер AWG: {_e(server)}" + (f" → {_e(_ver(want))}" if want else ""))
@@ -135,11 +158,11 @@ def fleet_confirm(plan: dict) -> str:
         need = _e(_ver(plan.get("needs_gw_ver") or plan.get("tag") or ""))
         text = (f"⬆️ Обновить до {tag}?\nСерверу AWG {tag} нужны агенты шлюзов не ниже {need} — сначала "
                 "обновятся шлюзы (по одному, начиная с резервных), затем сервер AWG. Не удастся обновить "
-                "один из шлюзов — весь набор вернётся на прежнюю версию")
+                "один из шлюзов — все вернутся на прежнюю версию")
     else:
         text = (f"⬆️ Обновить до {tag}?\nСначала обновится сервер AWG, затем шлюзы по одному: сначала "
-                "резервные, последним — активный. Линк шлюза на время его обновления ненадолго пропадет. "
-                "Не удастся обновить один из шлюзов — весь набор вернётся на прежнюю версию")
+                "резервные, последним — активный. Линк шлюза на время его обновления ненадолго пропадёт. "
+                "Не удастся обновить один из шлюзов — сервер и шлюзы вернутся на прежнюю версию")
     if any(not g.get("online") and g.get("version") and g.get("want") and _ver(g["version"]) != _ver(g["want"])
            for g in plan.get("gateways") or []):
         text += ". Шлюзы не на связи обновятся, когда выйдут на связь"
@@ -170,7 +193,7 @@ def _live_gw_line(g: dict, run: dict, user: str) -> str:
     if state in ("sent", "accepted"):
         return f"🟡 {name} — обновляется"
     if state == "lost":
-        return f"🟡 {name} — пропал посреди обновления, доведётся, когда выйдет на связь"
+        return f"🟡 {name} — пропал посреди обновления: доведётся, когда выйдет на связь"
     want = g.get("want") or ""
     ver = g.get("version") or ""
     if not mine and run.get("state") in ("rolling_back", "rolled_back", "rollback_failed") \
@@ -254,14 +277,16 @@ def fleet_live(plan: dict, *, bot_username: str = "") -> str:
                 g = next((g for g in gws if g["slot"] == x), None)
                 err = ((g or {}).get("upd_state") or {}).get("error") or "откат не прошёл"
                 bad.append(f"{_name(g, user) if g else f'шлюз {x}'} остался на {tag} — {_e(err)}")
-        rest = "Сервер AWG и остальные шлюзы" if "main" not in failed else "Остальные шлюзы"
-        return (f"⚠️ <b>Откат набора не удался</b>: {'; '.join(bad)}\n"
-                f"{rest} — {prev}. Пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт; "
+        rest, _many = _who(run, without=failed)           # кто вернулся: шаги хода без не вернувшихся
+        back = f"{rest[0].upper()}{rest[1:]} — {prev}. " if len(failed) < len(run.get("steps") or []) else ""
+        return (f"⚠️ <b>Откат не удался</b>: {'; '.join(bad)}\n"
+                f"{back}Пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт; "
                 f"журнал шлюза: {JOURNAL}")
+    who, many = _who(run)
     if state == "rolled_back":
-        lines = [f"⚠️ <b>Обновление до {tag} отменено</b> — набор вернулся на {prev}"]
+        lines = [f"⚠️ <b>Обновление до {tag} отменено</b> — {who} {'вернулись' if many else 'вернулся'} на {prev}"]
     elif state == "rolling_back":
-        lines = [f"⏳ <b>Обновление до {tag} не удалось — возвращаю набор на {prev}</b>"]
+        lines = [f"⏳ <b>Обновление до {tag} не удалось — возвращаю {who} на {prev}</b>"]
     else:
         lines = [f"⏳ <b>Обновление до {tag}</b>"]
     server_line = _server_line(run, plan.get("server") or "", plan)

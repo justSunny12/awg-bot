@@ -186,7 +186,7 @@ def test_status_before_the_first_answer_is_not_silent(monkeypatch, capsys):
     from tools import join as tjoin
     monkeypatch.setattr(tjoin, "_status", lambda: {"state": "waiting"})
     assert tjoin._follow(int(time.time()) + 3600, once=True) == 0
-    assert "жду ответа сервера AWG до" in capsys.readouterr().out
+    assert "жду ответа до" in capsys.readouterr().out
     monkeypatch.setattr(tjoin, "_status", lambda: {})
     monkeypatch.setattr("awgbot.domain.gateway.join.JOIN_FILE", "/nonexistent/join.json")
     assert tjoin.cmd_status() == 1

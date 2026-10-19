@@ -186,7 +186,7 @@ def _many(services, mp):
 
 _RUN_FWD = {"state": "running", "steps": [["main", V1]], "undo": 1}
 _RUN_BACK = {"state": "rolling_back", "steps": [["main", V1], ["gw", 1, V1]], "undo": 2, "failed_on": 2,
-             "reason": "обновленный агент не вышел на связь за 10 минут"}
+             "reason": "обновлённый агент не вышел на связь за 10 минут"}
 
 
 FLEET = [
@@ -265,7 +265,7 @@ FLEET = [
     Shot("adm.fleet.rolling_back.server_going", role="admin", call=("такт набора", _show),
          data=_fleet(run={"state": "rolling_back", "steps": [["main", V1], ["gw", 1, V1]], "undo": 0, "failed_on": 2,
                           "main_undone": True, "server": {"kind": "revert", "want": "v1.2.3"},
-                          "reason": "обновленный агент не вышел на связь за 10 минут"},
+                          "reason": "обновлённый агент не вышел на связь за 10 минут"},
                      server="1.3.0", slots={1: {"state": "reverted"}}),
          title="откат: сервер возвращается на прежнюю версию"),
     Shot("adm.fleet.done", role="admin", call=("такт набора", _show),
@@ -274,9 +274,9 @@ FLEET = [
          title="итог: обновлено, шлюз не на связи обновится позже — «⬅️ В меню»"),
     Shot("adm.fleet.rolled_back", role="admin", call=("такт набора", _show),
          data=_fleet(run={"state": "rolled_back", "steps": [["main", V1], ["gw", 1, V1]], "failed_on": 2,
-                          "reason": "обновленный агент не вышел на связь за 10 минут"},
+                          "reason": "обновлённый агент не вышел на связь за 10 минут"},
                      slots={1: {"state": "reverted"}, 2: {"state": "rolled_back",
-                                                          "error": "обновленный агент не вышел на связь за 10 минут"}},
+                                                          "error": "обновлённый агент не вышел на связь за 10 минут"}},
                      gws=(("NASPi", "1.2.3", True, ""), ("Pi4", "1.2.3", True, "офис"), ("Дача", "1.2.3", False, ""))),
          title="набор откатился: причина и шлюз, «🔁 Повторить» · «⬅️ В меню»"),
     Shot("adm.fleet.rollback_failed", role="admin", call=("такт набора", _show),

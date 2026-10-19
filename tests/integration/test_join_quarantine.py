@@ -194,7 +194,7 @@ def test_the_command_is_refused_and_unstaged_when_the_firewall_fails(services, v
     def boom(*a, **kw):
         raise nftguard.GuardError("nft: синтаксис")
     monkeypatch.setattr(nftguard, "reconcile", boom)
-    with pytest.raises(ServiceError, match="команда не выдана"):
+    with pytest.raises(ServiceError, match="Команда не выдана"):
         services.gwjoin_issue()
     assert services.gwjoin(1) == {} and not vps.stamped("awglink") and vps.modes[-1] == "--rekey"
 

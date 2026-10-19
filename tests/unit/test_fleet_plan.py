@@ -98,9 +98,9 @@ def test_agents_that_cannot_take_the_command_do_not_participate(fleet):
     assert rows[2]["participant"] is False and rows[2]["release"] is False
     plan = fleet.s.fleet_plan(fleet.s.fleet_target())
     text = ft.fleet_section(plan)
-    assert ("⚠️ «Шлюз 1»: агент v3.3.1 командой сервера AWG не обновляется — обнови его последний раз в "
+    assert ("⚠️ «Шлюз 1»: агент v3.3.1 командой сервера AWG не обновляется — обнови его в "
             "чате бота шлюза: «⚙️ Настройки» → «⬆️ Обновления»") in text
-    assert ("🛰 «Шлюз 2»: v3.9.9.1 · ⚠️ Агент — сборка не из выпуска (v3.9.9.1): по команде сервера AWG "
+    assert ("🛰 «Шлюз 2»: v3.9.9.1 · ⚠️ Агент — сборка не из выпуска: по команде сервера AWG "
             "обновить не получится") in text
 
 
@@ -124,10 +124,10 @@ def test_the_section_and_the_dialog_say_the_plan(fleet):
     assert lines[0] == "⬆️ <b>Обновления</b> · доступна v3.5.0"
     assert lines[1] == "🖥 Сервер AWG: v3.4.0 → v3.5.0"
     assert lines[2] == "🛰 «Шлюз 1»: v3.4.0 → v3.5.0"
-    assert lines[3] == "🛰 «Офис»: v3.4.0 → v3.5.0 · 🟡 не на связи с 12.10 — обновится, когда выйдет на связь"
+    assert lines[3] == "🛰 «Офис»: v3.4.0 → v3.5.0 · 🟡 не на связи с 12.10: обновится, когда выйдет на связь"
     dialog = ft.fleet_confirm(plan)
     assert dialog.startswith("⬆️ Обновить до v3.5.0?\nСначала обновится сервер AWG, затем шлюзы по одному")
-    assert dialog.endswith("Не удастся обновить один из шлюзов — весь набор вернётся на прежнюю версию. "
+    assert dialog.endswith("Не удастся обновить один из шлюзов — сервер и шлюзы вернутся на прежнюю версию. "
                            "Шлюзы не на связи обновятся, когда выйдут на связь")
 
 
@@ -161,7 +161,7 @@ def test_an_agent_newer_than_the_fleet_says_it_will_follow(fleet):
     fleet.releases(rel("v3.4.0", both=True), rel("v3.4.1", both=True))
     fleet.slot(1, "3.4.1")
     text = ft.fleet_section(fleet.s.fleet_plan(None))
-    assert "🛰 «Шлюз 1»: v3.4.1 · 🟡 Агент v3.4.1 новее сервера AWG — вернётся к v3.4.0" in text
+    assert "🛰 «Шлюз 1»: v3.4.1 · 🟡 Агент новее поставки сервера AWG — вернётся к v3.4.0" in text
 
 
 async def test_the_blocked_line_is_escaped_and_fits_the_message(fleet, monkeypatch):

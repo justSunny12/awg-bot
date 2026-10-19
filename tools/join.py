@@ -112,7 +112,7 @@ def _follow(expires: int, *, once: bool = False) -> int:
             name = st.get("name") or "шлюз"
             if state in ("", "waiting") and once:
                 # --status до первого ответа сервера — не молчим (flow-7)
-                _p(f"[awg-bot] линк по команде подключения поднят — жду ответа сервера AWG до {until}")
+                _p(f"[awg-bot] линк до сервера AWG поднят по команде подключения — жду ответа до {until}")
             elif state == "code":
                 _frame(st.get("code", ""), until)
             elif state == "wrong":

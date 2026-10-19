@@ -35,7 +35,7 @@ class GwJoinAcceptMixin:
         st = self.gwjoin(slot_id)
         admin = self.admin_client()
         if not st or admin is None:
-            raise ServiceError("сопряжения нет")
+            raise ServiceError("Сопряжения нет")
         kind = st.get("kind")
         gw = self.db.gateway(slot_id)
         dev_id = st.get("device")
@@ -46,7 +46,7 @@ class GwJoinAcceptMixin:
             dev_id = made = dc.device_id
         dev = self.db.get_device(int(dev_id)) if dev_id not in (None, "new") else None
         if dev is None:
-            raise ServiceError("устройство слота не найдено")
+            raise ServiceError("Устройство слота не найдено")
         if dev.routing_on:
             self.set_routing_device(dev.id, False)        # шлюзу РФ-доступ не нужен никогда
         if kind == "new":

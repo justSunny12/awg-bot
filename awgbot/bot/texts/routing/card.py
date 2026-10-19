@@ -5,6 +5,7 @@ from __future__ import annotations
 from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain import gwcfg
+from awgbot.domain.notices.backup import chat_ref
 from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
@@ -296,15 +297,30 @@ def gateway_card_text(state: dict, states: list) -> str:
     if ch_head:
         lines.append(ch_head)
     fleet = state.get("fleet") or {}
-    if fleet.get("row"):
+    ch = state.get("channel") or {}
+    cfg = ch.get("cfg") or {}
+    from ..fleet import gw_no_upd, gw_state_line
+    old = bool(fleet.get("row")) and gw_no_upd(fleet["row"])
+    if old:
+        # агент ниже 3.4.0: чего он не умеет — одной строкой, с одним «обнови»
+        # (без команды сервера AWG он обновляется только из своего чата)
+        facts = []
+        if ch.get("outdated"):
+            facts.append("настройки по каналу конфигурации не принимает")
+        if (state.get("keep") or {}).get("state") == "outdated":
+            facts.append("настройки бота шлюза в бэкап не сохраняет")
+        facts.append("командой сервера AWG не обновляется")
+        what = ", ".join(facts[:-1]) + (" и " if len(facts) > 1 else "") + facts[-1]
+        ver = _ver(_e(str(fleet["row"].get("version") or "")[:32]))
+        lines.append(f"⚠️ Агент {ver} устарел: {what} — обнови его в чате "
+                     f"{chat_ref(fleet['row'].get('agent_bot') or state.get('agent_bot'))}: "
+                     "«⚙️ Настройки» → «⬆️ Обновления»")
+    elif fleet.get("row"):
         # набор обновлений: состояние — сразу под строкой канала
-        from ..fleet import gw_state_line
         fl = gw_state_line(fleet["row"], release=fleet.get("release") or "", run=fleet.get("run"))
         if fl:
             lines.append(fl)
-    ch = state.get("channel") or {}
-    cfg = ch.get("cfg") or {}
-    if ch.get("outdated"):
+    if ch.get("outdated") and not old:
         # агент ниже 3.3.0 (молчавший шлюз вернулся): документа не принимает —
         # рядом с каналом, о котором оно; версия — из снимка, если он есть;
         # ссылка на бота — строкой «Бот шлюза» внизу карточки, второй раз не нужна
@@ -312,8 +328,8 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append(f"⚠️ Агент {ver + ' ' if ver else ''}устарел: настройки по каналу конфигурации не принимает — "
                      "обнови агента шлюза")
     keep = keep_line(state.get("keep"), state.get("agent_bot"))
-    if keep and not ch.get("outdated"):
-        lines.append(keep)
+    if keep and not ch.get("outdated") and not (old and (state.get("keep") or {}).get("state") == "outdated"):
+        lines.append(keep)                                # «не сохраняет» у старого агента — в строке выше
     rk = state.get("rekey") or {}
     if rk.get("auto") and rk.get("state") in ("staged", "asked", "switched"):
         lines.append("🟡 Ключи линка: переключение…")         # без вопроса (I1, сопряжение) — ждать некого

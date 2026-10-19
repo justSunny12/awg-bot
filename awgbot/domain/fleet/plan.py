@@ -137,7 +137,7 @@ class FleetPlanMixin:
             row = {"slot": gw.id, "name": self._gw_name(gw), "label": gw.label or "", "version": ver,
                    "online": online, "seen": self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or "",
                    "caps": caps, "active": active is not None and active.id == gw.id, "device": device,
-                   "upd": "upd1" in caps, "release": release}
+                   "upd": "upd1" in caps, "release": release, "agent_bot": self.gw_bot_identity(gw.id)}
             row["participant"] = online and row["upd"] and release
             out.append(row)
         out.sort(key=lambda r: (r["active"], r["slot"]))

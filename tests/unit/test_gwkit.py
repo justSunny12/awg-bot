@@ -223,4 +223,4 @@ def test_the_cli_refuses_before_building(monkeypatch, capsys):
     monkeypatch.setattr(gwkit, "build", lambda *a, **kw: pytest.fail("кит собран вопреки отказу"))
     monkeypatch.setattr("sys.stdout.isatty", lambda: False, raising=False)
     assert gwkit.main(["--stdout"]) == 1
-    assert "выпуск набора" in capsys.readouterr().err
+    assert "версия сервера AWG" in capsys.readouterr().err

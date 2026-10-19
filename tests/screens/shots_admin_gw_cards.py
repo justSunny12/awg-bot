@@ -41,7 +41,7 @@ def _keep(asked: str = ""):
     вопросом и ждёт ответа в чате бота шлюза."""
     def step(services, mp):
         import json
-        services.gwlink_session_opened(2, "3.4.0", 2, ("cfg1", "keep1"))
+        services.gwlink_session_opened(2, "3.4.0", 2, ("cfg1", "keep1", "upd1"))   # агент 3.4.0 умеет и команду набора
         block = {"v": 1, "hash": "ab12" * 4, "at": "2026-09-14T15:40:00+05:00", "items": {}}
         if asked:
             block["asked"] = asked

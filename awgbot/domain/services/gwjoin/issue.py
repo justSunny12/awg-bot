@@ -14,7 +14,7 @@ import secrets
 from typing import Optional
 
 from awgbot.core import config, settings
-from awgbot.domain.services.types import ServiceError
+from awgbot.domain.services.types import ServiceError, ServiceErrorHtml
 from awgbot.infra import routing
 from awgbot.util import gwlink, jointoken, timeutil, wgconf
 
@@ -22,7 +22,7 @@ from ..gateway_link.common import log
 from .state import JOIN_TTL, OPEN_OR_CLOSING, _LOCK, new_device_name, slot_ns, slot_of
 
 
-JOIN_FLEET_BUSY = "Идёт обновление набора — подключение и замена шлюзов после его итога"
+JOIN_FLEET_BUSY = "Идёт обновление сервера и шлюзов — подключение и замена шлюзов после его итога"
 JOIN_NO_CONTAINER = ("Подключение шлюза командой недоступно: AmneziaWG сервера работает в контейнере, а линк до "
                      "верного кода держит в карантине файервол хоста, а в этом режиме линки он не ведёт")
 
@@ -56,15 +56,16 @@ class GwJoinIssueMixin:
             if n in used_ids:
                 continue
             if n > lanspace.MAX_SLOTS:
-                raise ServiceError(f"шлюзов не больше {lanspace.MAX_SLOTS}: на каждый — свои адреса в туннеле")
+                raise ServiceError(f"Шлюзов не больше {lanspace.MAX_SLOTS}: на каждый — свои адреса в туннеле")
             iface = (config.ROUTING_GW_INTERFACE or "awglink") if n == 1 else f"awglink{n}"
             if n > len(config.ROUTING_LINK_PORTS) or n > len(config.ROUTING_LINK_CIDRS):
-                raise ServiceError(f"для шлюза {n} нет порта или подсети линка в routing.link_ports / link_cidrs")
+                raise ServiceErrorHtml(f"Для шлюза {n} нет порта или подсети линка в <code>routing.link_ports</code> / "
+                                       "<code>link_cidrs</code>")
             port, cidr = config.ROUTING_LINK_PORTS[n - 1], config.ROUTING_LINK_CIDRS[n - 1]
             if iface in used_if or port in used_port or cidr in used_cidr:
                 continue
             return n, iface, port, cidr
-        raise ServiceError("свободного слота нет")
+        raise ServiceError("Свободного слота нет")
 
     def _gwjoin_version(self) -> str:
         """Выпуск для шлюза: версия агента в выпуске набора; набора нет
@@ -101,12 +102,12 @@ class GwJoinIssueMixin:
         if admin is None or dev is None:
             raise ServiceError("Устройство не найдено")
         if dev.client_id != admin.id:
-            raise ServiceError("шлюзом может быть только устройство профиля админа")
+            raise ServiceError("Шлюзом может быть только устройство профиля админа")
         if not dev.private_key:
-            raise ServiceError("это устройство создавал не бот — шлюзом его не сделать")
+            raise ServiceError("Это устройство создавал не бот — шлюзом его не сделать")
         other = self.db.gateway_by_device(dev.id)
         if other is not None and other.id != slot_id:
-            raise ServiceError(f"это устройство уже шлюз {other.id}")
+            raise ServiceError("Это устройство уже шлюз")
 
     def gwjoin_issue(self, *, device_id: Optional[int] = None, slot_id: Optional[int] = None,
                      same: bool = False) -> dict:
@@ -116,7 +117,7 @@ class GwJoinIssueMixin:
         устройство). {"state", "token", "command", "stale": сообщение прежней
         команды слота или None}."""
         if self.admin_client() is None:
-            raise ServiceError("профиль админа ещё не создан")
+            raise ServiceError("Профиль админа ещё не создан")
         self._gwjoin_check_runtime()
         self._gwjoin_check_fleet()
         with _LOCK:
@@ -167,7 +168,7 @@ class GwJoinIssueMixin:
         except ServiceError as e:
             # без карантина команду не выдаём (quar-6): интерфейс под токен — прочь
             self.gwjoin_revert(n, "firewall")
-            raise ServiceError(f"команда не выдана — {e}") from None
+            raise ServiceError(f"Команда не выдана — {e}") from None
         if kind != "new":
             self._channel_touch()                         # подсети слота уходят из PEER_LAN_NETS соседей
         log.info("сопряжение: слот %s — команда выпущена (%s, id %s…)", n, kind, jid[:4])
@@ -241,7 +242,7 @@ class GwJoinIssueMixin:
             with open(f"{config.AWG_DIR}/{slot.link_if}.conf", encoding="utf-8") as f:
                 vconf = wgconf.parse(f.read())
         except (OSError, wgconf.WgConfError) as e:
-            raise ServiceError(f"конфиги линка на ключах токена не прочитаны: {e}")
+            raise ServiceError(f"Конфиги линка на ключах токена не прочитаны: {e}")
         obf = {k: gconf.get("Interface", k) for k in ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
                                                      "H1", "H2", "H3", "H4")}
         try:
@@ -258,11 +259,11 @@ class GwJoinIssueMixin:
                 s=tuple(int(obf[f"S{i}"]) for i in range(1, 5)), h=h)
             return jointoken.encode(tok)
         except (ValueError, TypeError, KeyError, jointoken.TokenError) as e:
-            raise ServiceError(f"токен подключения не собрался: {e}")
+            raise ServiceError(f"Токен подключения не собрался: {e}")
 
     @staticmethod
     def _gwjoin_host() -> str:
         host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         if not host:
-            raise ServiceError("не задан адрес сервера AWG (network.server_host) — шлюзу некуда подключаться")
+            raise ServiceErrorHtml("Не задан адрес сервера AWG (<code>network.server_host</code>) — шлюзу некуда подключаться")
         return host

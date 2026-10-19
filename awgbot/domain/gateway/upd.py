@@ -132,7 +132,7 @@ class GatewayUpdMixin:
         except Exception:                                 # noqa: BLE001
             st = {}
         if st.get("state") in ("ready", "switched", "back"):
-            return "смена ключей линка в переходе"
+            return "идёт смена ключей линка"
         return ""
 
     # ── проверки и ступень ──────────────────────────────────────────────────

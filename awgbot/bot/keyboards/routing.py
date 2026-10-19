@@ -124,7 +124,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     for j in joins or ():
         # новый слот в сопряжении: команда занимает его невидимо — отменить
         # можно и отсюда, не ища сообщение подключения в чате (ui-3)
-        body.append((f"⬅️ Отменить подключение «{_fit(str(j.get('name') or ''), SWITCH_NAME_MAX)}»",
+        body.append((f"⬅️ Не подключать «{_fit(str(j.get('name') or ''), SWITCH_NAME_MAX)}»",
                      GwJoinCB(action="cancel", slot=int(j["slot"]), jid=str(j.get("id") or ""))))
     if smb_on is not None:
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))

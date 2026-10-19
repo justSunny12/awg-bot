@@ -27,6 +27,15 @@ SECONDS_PER_DAY = 86400
 class ServiceError(Exception):
     """Ошибка бизнес-операции (показывается пользователю)."""
 
+    html = False        # True — текст уже HTML: подстановки экранированы тем, кто бросил
+
+
+class ServiceErrorHtml(ServiceError):
+    """Отказ с разметкой (моноширинные ключи конфига и команды): показывать
+    как есть, не экранируя второй раз."""
+
+    html = True
+
 
 class LimitReached(ServiceError):
     pass

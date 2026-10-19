@@ -52,7 +52,7 @@ async def gwjoin_go(message: Message, services, *, device_id: int | None = None,
     try:
         res = await call(services.gwjoin_issue, device_id=device_id, slot_id=slot or None, same=same)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}", reply_markup=kb.settings_back("rt"))
+        await message.answer(f"⚠️ {str(e) if e.html else texts._e(str(e))}", reply_markup=kb.settings_back("rt"))
         return
     st = res["state"]
     stale = res.get("stale")

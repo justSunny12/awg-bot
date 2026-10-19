@@ -150,7 +150,7 @@ def test_a_gateway_gone_mid_step_is_unavailable_after_15_minutes(fleet, monkeypa
     monkeypatch.setattr(timeutil, "now", lambda: later2)
     out = fleet.tick()
     assert fleet.st(2)["state"] == "lost" and [s for s, _ in fleet.sent(out)] == [1]
-    assert "🟡 «Шлюз 2» — пропал посреди обновления, доведётся, когда выйдет на связь" in \
+    assert "🟡 «Шлюз 2» — пропал посреди обновления: доведётся, когда выйдет на связь" in \
         ft.fleet_live(fleet.s.fleet_run_plan())
     out = fleet.gw_done(1, "3.4.1")
     assert fleet.run()["state"] == "done"

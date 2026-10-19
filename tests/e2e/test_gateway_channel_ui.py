@@ -349,12 +349,15 @@ def _cfg_ack(services, **body):
 
 async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_bot):
     """Всё совпадает — строка канала без «актуальна» (только негативные
-    исходы), ни строки про старого агента, ни кнопки файла: агенту с документом
-    файл не нужен, а кнопка звала бы перевыпускать то, что везёт канал."""
+    исходы), ни кнопки файла: агенту с документом файл не нужен, а кнопка
+    звала бы перевыпускать то, что везёт канал. Агент 3.3.0 — одной строкой:
+    чего не умеет (копия настроек, команда обновления) и одно «обнови»."""
     _cfg_snap(services)
     text, labels = await _card(services, fake_bot)
     assert "🔧 Канал конфигурации 🟢 · v3.3.0\n" in text and "актуальн" not in text, text
-    assert "устарел" not in text and "перевыпусти" not in text, text
+    assert ("⚠️ Агент v3.3.0 устарел: настройки бота шлюза в бэкап не сохраняет и командой сервера AWG "
+            "не обновляется — обнови его в чате бота шлюза: «⚙️ Настройки» → «⬆️ Обновления»") in text, text
+    assert text.count("устарел") == 1 and text.count("обнови") == 1 and "перевыпусти" not in text, text
     assert "📤 Конфигурация" not in labels, labels
 
 
@@ -450,10 +453,13 @@ async def test_cfg1_hints_point_to_restore_not_to_reissue(services, cfg1, fake_b
 
 async def test_an_agent_32_card_asks_to_update_and_has_no_file_button(services, slot, fake_bot):
     """Агент ниже 3.3.0 вернулся после молчания (К7): документа он не
-    принимает, файла перевыпуска больше нет — только «обнови агента шлюза»."""
+    принимает, файла перевыпуска больше нет — одна строка: чего не умеет и «обнови»."""
     _snap(services, agent_version="3.2.1", caps=[])
     text, labels = await _card(services, fake_bot)
-    assert "⚠️ Агент v3.2.1 устарел: настройки по каналу конфигурации не принимает — обнови агента шлюза" in text, text
+    assert ("⚠️ Агент v3.2.1 устарел: настройки по каналу конфигурации не принимает, настройки бота шлюза в бэкап "
+            "не сохраняет и командой сервера AWG не обновляется — обнови его в чате бота шлюза: "
+            "«⚙️ Настройки» → «⬆️ Обновления»") in text, text
+    assert text.count("устарел") == 1 and text.count("обнови") == 1, text
     assert "📤 Конфигурация" not in labels, labels
 
 

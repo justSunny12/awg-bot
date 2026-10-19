@@ -49,7 +49,7 @@ def test_a_failure_anywhere_rolls_the_whole_fleet_back_in_reverse(fleet, monkeyp
     failing = {"first": 2, "middle": 3, "last": 1}[place]
     for n in done:
         fleet.gw_done(n, "3.5.0")
-    out = fleet.ack(failing, state, error="обновленный агент не вышел на связь за 10 минут")
+    out = fleet.ack(failing, state, error="обновлённый агент не вышел на связь за 10 минут")
     run = fleet.run()
     assert run["state"] == "rolling_back" and run["failed_on"] == failing
     order = []
@@ -131,7 +131,7 @@ def test_a_revert_that_fails_on_one_host_leaves_rollback_failed_and_no_commands(
     assert fleet.tick().send == []
     assert fleet.hello(3, "3.5.0").send == [], "в rollback_failed сервер тянет шлюз сам"
     text = ft.fleet_live(fleet.s.fleet_run_plan())
-    assert text.startswith("⚠️ <b>Откат набора не удался</b>: «Шлюз 3» остался на v3.5.0 — прежней версии нет")
+    assert text.startswith("⚠️ <b>Откат не удался</b>: «Шлюз 3» остался на v3.5.0 — прежней версии нет")
     assert "Пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт" in text
 
 
@@ -185,7 +185,7 @@ def test_retry_starts_the_whole_fleet_again_from_what_stands(fleet):
     fleet.tick()
     assert fleet.run()["state"] == "rolled_back"
     text = ft.fleet_live(fleet.s.fleet_run_plan())
-    assert text.startswith("⚠️ <b>Обновление до v3.5.0 отменено</b> — набор вернулся на v3.4.0")
+    assert text.startswith("⚠️ <b>Обновление до v3.5.0 отменено</b> — сервер AWG вернулся на v3.4.0"), text
     assert "⚠️ «Шлюз 2» — обновление не удалось, вернул v3.4.0: занят" in text
     assert "↩️ Сервер AWG — вернул v3.4.0" in text
     assert fleet.s.fleet_retry() == ""

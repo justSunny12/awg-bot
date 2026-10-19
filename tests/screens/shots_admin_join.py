@@ -159,7 +159,7 @@ JOIN = [
     Shot("adm.join.list.cancel", role="admin",
          steps=[("press", NEW), ("start", ""), ("press", SetCB(sec="rt")),
                 ("press", GwJoinCB(action="cancel", slot=2, jid=J1))],
-         data=_gw(1, _token2), title="«Шлюзы»: «⬅️ Отменить подключение» — экран заново, без строки (ui-3)"),
+         data=_gw(1, _token2), title="«Шлюзы»: «⬅️ Не подключать» — экран заново, без строки (ui-3)"),
     Shot("adm.join.list", role="admin", steps=[("press", NEW), ("press", SetCB(sec="rt"))],
          data=_gw(1, _token2), title="«Шлюзы» — новый слот в сопряжении строкой"),
     # ── замена устройства и её отмена ─────────────────────────────────────

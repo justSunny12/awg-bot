@@ -117,7 +117,7 @@ trap 'rm -rf "$_d"' EXIT
 _take awg-bot.tgz > "$_d/awg-bot.tgz"
 tar xzf "$_d/awg-bot.tgz" -C "$_d" --no-same-owner
 rm -f "$_d/awg-bot.tgz"
-[ -f "$_d/install/awg-bot-install.sh" ] || {{ echo "кит повреждён: в поставке нет установщика"; exit 1; }}
+[ -f "$_d/install/awg-bot-install.sh" ] || {{ echo "поставка повреждена: в ней нет установщика"; exit 1; }}
 set +e
 AWG_JOIN_TOKEN="$_token" bash "$_d/install/awg-bot-install.sh" --skip-verify $_yes --join
 _rc=$?
@@ -168,9 +168,9 @@ def check_version(kit: str, want: str) -> None:
     """Кит везёт код сервера: команда подключения называет другой выпуск (набор
     ведёт шлюзы на свою версию агента) — шлюз встал бы не на неё (flow-5)."""
     if want and kit and want != kit:
-        raise KitError(f"команда подключения ставит агента v{want} (выпуск набора), а кит собирается из кода "
-                       f"сервера v{kit} — шлюз встал бы не на версию набора. Кит годится, когда сервер и "
-                       "шлюзы на одной версии: доведи обновление набора и собери кит заново")
+        raise KitError(f"команда подключения ставит агента v{want} (версия сервера AWG), а поставка для шлюза "
+                       f"собирается из кода сервера v{kit} — шлюз встал бы не на неё. Поставка годится, когда "
+                       "сервер AWG и шлюзы на одной версии: доведи обновление и собери её заново")
 
 
 def main(argv: list[str]) -> int:
@@ -179,7 +179,7 @@ def main(argv: list[str]) -> int:
               "sh /root/awg-gw-kit.sh --join <токен AWGJ1…>'", file=sys.stderr)
         return 2
     if sys.stdout.isatty():
-        print("[awg-bot:ОШИБКА] кит — двоичный поток: направь его в ssh или в файл", file=sys.stderr)
+        print("[awg-bot:ОШИБКА] поставка — двоичный поток: направь её в ssh или в файл", file=sys.stderr)
         return 2
     try:
         from awgbot.core import config

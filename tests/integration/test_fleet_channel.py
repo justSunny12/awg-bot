@@ -228,10 +228,10 @@ async def test_a_guard_rollback_is_reported_as_rolled_back(agent, tmp_path, monk
         return True
     client._send, client._writer = send, object()
     await client._upd_resume()
-    assert got[-1]["state"] == "rolled_back" and got[-1]["error"] == "обновленный агент не вышел на связь за 10 минут"
+    assert got[-1]["state"] == "rolled_back" and got[-1]["error"] == "обновлённый агент не вышел на связь за 10 минут"
     assert notes and notes[0][1] is True
     assert notes[0][0].startswith("⚠️ Обновление до v3.4.1 не удалось — агент вернулся на v3.4.0: "
-                                  "обновленный агент не вышел на связь за 10 минут. Подробности — в чате")
+                                  "обновлённый агент не вышел на связь за 10 минут. Подробности — в чате")
     assert agent.upd_panel()["state"] == "failed"
 
 
@@ -240,7 +240,7 @@ async def test_a_busy_agent_waits_for_the_fact_and_then_refuses(agent, monkeypat
     monkeypatch.setattr(lc_upd, "BUSY_POLL_S", 0)
     monkeypatch.setattr(lc_upd, "svc_busy_wait", lambda: 0)
     sent = await _run(agent, _cmd("v3.4.1"))
-    assert sent[-1]["state"] == "refused" and sent[-1]["error"] == "занят: смена ключей линка в переходе"
+    assert sent[-1]["state"] == "refused" and sent[-1]["error"] == "занят: идёт смена ключей линка"
     # смена ключей закончилась вовремя — команда идёт
     state = {"n": 0}
 
