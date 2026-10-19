@@ -36,6 +36,9 @@ def _tree(tmp_path: Path) -> tuple[Path, Path]:
     (root / "awgbot" / "__version__.py").write_text('__version__ = "3.4.0"\n', encoding="utf-8")
     (root / "awg-bot.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (root / "install" / "routing-gw-setup.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (root / "install" / "lib").mkdir()
+    for part in ("update.sh", "restore.sh"):               # части awg-bot.sh — без них он не разберётся
+        (root / "install" / "lib" / part).write_text("# part\n", encoding="utf-8")
     (root / "install" / "awg-bot-install.sh").write_text(
         '#!/usr/bin/env bash\nprintf "%s\\n" "$@" "TOK=${AWG_JOIN_TOKEN-}" > "$KIT_ARGS"\n', encoding="utf-8")
     (root / "install" / "awg.lock").write_text(
@@ -163,6 +166,7 @@ def test_dist_archive_matches_release_layout():
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
         names = tar.getnames()
     for must in ("./awgbot/__main__.py", "./awg-bot.sh", "./install/awg-bot-install.sh",
+                 "./install/lib/update.sh", "./install/lib/restore.sh",
                  "./install/routing-gw-setup.sh", "./install/routing-link-setup.sh",
                  "./install/awg.lock", "./requirements.txt", "./conf/app.yaml"):
         assert must in names, must
