@@ -275,7 +275,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     two = len(states) > 1
     head = ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}")
     if state.get("join"):
-        # замена устройства идёт (Т-П15): статус слота — она, а не «🟢 Активен»
+        # замена устройства идёт: статус слота — она, а не «🟢 Активен»
         # линка, который уже на ключах команды (ui-7)
         from .join import join_card_line
         lines = [f"{head} — {join_card_line(state['join'])}"]
@@ -297,7 +297,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append(ch_head)
     fleet = state.get("fleet") or {}
     if fleet.get("row"):
-        # набор обновлений: состояние — сразу под строкой канала (Т-К1…Т-К4)
+        # набор обновлений: состояние — сразу под строкой канала
         from ..fleet import gw_state_line
         fl = gw_state_line(fleet["row"], release=fleet.get("release") or "", run=fleet.get("run"))
         if fl:
@@ -328,7 +328,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append("⚠️ Шлюз отклонил новые ключи линка — линк работает на прежних; сменить снова — "
                      "«⚙️ Настройки» → «🔧 Сервис» → «🔑 Ключи линка»")
     if state.get("i1"):
-        lines.append(state["i1"])                          # Т-Л1 / Т-Л2 — уже готовой строкой
+        lines.append(state["i1"])                          # I1 линка — уже готовой строкой
     lines += ch_warns
     nets = gw.lan_subnets
     nets_s = (lan_pairs(nets, state.get("lan_twins")) if nets

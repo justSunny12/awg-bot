@@ -130,7 +130,7 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
 
 @router.callback_query(GwMarkCB.filter(F.action == "same"))
 async def gateway_same_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
-    """«🔁 Настроить заново» — то же устройство слота, новая команда (§3.8)."""
+    """«🔁 Настроить заново» — то же устройство слота, новая команда."""
     slot = _slot_of(callback_data)
     st = next((s for s in await call(services.gateway_states) if s["gateway"].id == slot), None)
     if st is None:

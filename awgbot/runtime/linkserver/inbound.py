@@ -189,7 +189,7 @@ class InboundMixin:
             return
         if kind == "join_done":
             # конец сопряжения своим словом агента (полный агент, файл
-            # сопряжения ещё на диске): итог Т-П9 — и у агента, стоявшего
+            # сопряжения ещё на диске): итог «шлюз подключён» — и у агента, стоявшего
             # раньше, у которого «установлен» не уходит; ответ — join_done_ok
             st = await asyncio.to_thread(self.services.gwjoin_installed, gw.id,
                                          str(msg.get("id") or "")[:32])
@@ -201,7 +201,7 @@ class InboundMixin:
             # агент нового шлюза первый раз на связи: установщик отработал —
             # админу «✅ … успешно настроен» (крючок main). Снимок к этому
             # моменту уже принят: агент шлёт installed после него. Шлюз,
-            # подключённый командой, — итог сообщением подключения (Т-П9)
+            # подключённый командой, — итог сообщением подключения
             if hasattr(self.services, "gwjoin_installed"):
                 st = await asyncio.to_thread(self.services.gwjoin_installed, gw.id)
                 if st:

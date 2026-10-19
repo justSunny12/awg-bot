@@ -1,7 +1,7 @@
 """Сопряжение со стороны агента шлюза (domain/gateway/join.py, tools/join.py):
 файл сопряжения, эфемерный ключ и код, секреты после кода, отказ сервера,
 правило первого аплинка, конец сопряжения; терминал `awg-bot join` — рамка
-кода и ход (Т-Т2…Т-Т8).
+кода и ход.
 
 Цена ошибки: код на экране шлюза, который не совпадает с кодом сервера (не
 подключиться никогда); ADMIN_ID чужого сервера в env агента; hello с полем
@@ -160,7 +160,7 @@ def test_a_broken_or_expired_command_says_so(capsys):
 
 
 def test_the_terminal_follows_the_pairing(tmp_path, monkeypatch, capsys):
-    """Т-Т3 рамка кода, Т-Т4 неверный, Т-Т5 после кода, Т-Т6/Т-Т8 — отказ."""
+    """Рамка кода, неверный код, ход после кода, отказ сервера."""
     from tools import join as tjoin
     status = {}
     monkeypatch.setattr(tjoin, "_status", lambda: dict(status))
@@ -271,7 +271,7 @@ def test_the_status_file_with_the_code_is_private(agent):
 @pytest.mark.parametrize("token, finished", [("", False), ("123456789:DUMMY-token-of-the-gateway-bot", True)])
 def test_linked_drops_the_pair_and_a_full_agent_finishes_at_once(agent, monkeypatch, token, finished):
     """join-1: эфемерная пара живёт до линка на постоянных ключах. Блокер
-    fix4: агент, стоявший раньше (Т-Т11, токен бота уже есть), заканчивает
+    fix4: агент, стоявший раньше (токен бота уже есть), заканчивает
     сопряжение сразу — раздела token с тем же ботом нет (отпечатки равны), и
     ждать его значило бы join_stale через сутки; агент в режиме сопряжения
     (токена нет) ждёт раздела token."""

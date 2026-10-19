@@ -383,7 +383,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     # сопряжения шлюзов — своим тиком, тоже без условия маршрутизации: срок
-    # команды подключения роняет интерфейс под токен сразу (Р24)
+    # команды подключения роняет интерфейс под токен сразу
     async def job_gwjoin():
         try:
             from awgbot.runtime import linkserver

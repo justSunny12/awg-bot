@@ -1,11 +1,11 @@
-"""gwjoin.py — подключение шлюза командой в чате бота сервера AWG (§3.6–3.9
-концепта «единые обновления»): сообщение подключения (Т-П1…Т-П3), ввод
-кода (Т-П4…Т-П8), отмена (Т-П10, Т-П14), срок (Т-П11), не актуально (Т-П12),
-итог (Т-П9).
+"""gwjoin.py — подключение шлюза командой в чате бота сервера AWG: сообщение
+подключения (ждём, подключился, с двух адресов), ввод кода (приглашение,
+не тот формат, не совпал, попытки кончились, верный), отмена и её
+подтверждение у замены, срок, «Не актуально», итог «шлюз подключён».
 
 Сообщение подключения — обычное сообщение, не живое меню: его правит ход
 сопряжения, и навигация по боту не должна снимать с него «✏️ Ввести код».
-Ввод кода относится только к заявке нажатой кнопки (Р20): слот и id
+Ввод кода относится только к заявке нажатой кнопки: слот и id
 сопряжения — в данных диалога.
 """
 from __future__ import annotations
@@ -109,7 +109,7 @@ async def gwjoin_code_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение и переспросы — прочь
     st = await _with_ref(services, res.get("st") or {})
     if result == "ok":
-        # «⬅️ В меню» — сообщение не тупик (ui-1); итог Т-П9 заменит его само
+        # «⬅️ В меню» — сообщение не тупик (ui-1); итог «шлюз подключён» заменит его сам
         await _edit_msg(message.bot, st, jt.join_accepted(st), kb.gwjoin_final())
         await linkserver.join_accepted(slot)
         return
@@ -162,7 +162,7 @@ async def gwjoin_cancel(cb: CallbackQuery, callback_data: GwJoinCB, services, st
         return
     if st.get("kind") in ("replace", "same"):
         await cb.answer()
-        # подтверждение — на самом сообщении подключения (ui-2): текст Т-П14 и
+        # подтверждение — на самом сообщении подключения (ui-2): вопрос «отменить замену?» и
         # «⬅️ Отмена» · «↩️ Отменить замену»; «⬅️ Отмена» вернёт сообщение
         st = await _with_ref(services, st)
         await _edit_msg(cb.bot, st, jt.join_cancel_ask(st), kb.gwjoin_cancel_confirm(st["slot"], st["id"]))
@@ -200,7 +200,7 @@ async def _cancel(cb: CallbackQuery, services, callback_data: GwJoinCB, state: F
         await state.clear()
         await cleanup_content(cb.bot, services, cb.message.chat.id)
     from awgbot.runtime import linkserver
-    err = await linkserver.join_close(services, st["slot"], "cancel")   # интерфейс под токен — сразу (Р24)
+    err = await linkserver.join_close(services, st["slot"], "cancel")   # интерфейс под токен — сразу, не по сроку
     if err:
         await call(services.gwjoin_revert_told, st["slot"], st["id"])          # сказано — такт не повторит
     st = await _with_ref(services, st)

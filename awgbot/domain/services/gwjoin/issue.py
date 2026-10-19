@@ -6,7 +6,7 @@
 штамп «сопряжение» — карантин в файерволе); при замене прежние ключи — в
 `.join-prev`. Устройство слота и строка `gateways` — только после верного
 кода (accept.py). Новая команда того же слота убивает прежнюю: её сообщение —
-«Не актуально» (Т-П12).
+«Не актуально».
 """
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class GwJoinIssueMixin:
         raise ServiceError("свободного слота нет")
 
     def _gwjoin_version(self) -> str:
-        """Выпуск для шлюза (Р14): версия агента в выпуске набора; набора нет
+        """Выпуск для шлюза: версия агента в выпуске набора; набора нет
         (сервер не на сборке из выпуска) — версия сервера."""
         try:
             want = self.fleet_gw_target() if hasattr(self, "fleet_gw_target") else None
@@ -163,7 +163,7 @@ class GwJoinIssueMixin:
                   "kit": self._gwjoin_kit(),
                   "issued": timeutil.to_iso(now), "expires": timeutil.to_iso(timeutil.shift(now, JOIN_TTL)),
                   "sessions": 0, "attempts": 0, "endpoints": [], "hosts": {}, "msg": [], "state": "waiting"}
-            # выпуск в токене — тот же, что в записи (его покажет и Т-П1)
+            # выпуск в токене — тот же, что в записи (его покажет и сообщение подключения)
             token = self._gwjoin_token(slot, jid, version=st["version"], expires=st["expires"])
             self._gwjoin_save(n, st)
         try:

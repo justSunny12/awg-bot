@@ -61,7 +61,7 @@ class CfgTokenMixin:
         new = str(value.get("value") or "").strip()
         cur = config.BOT_TOKEN
         if new and new == cur and self._token_join_waits():
-            # агент, стоявший раньше (Т-Т11), с тем же ботом: токен тот же, но
+            # агент, стоявший раньше (подключён заново), с тем же ботом: токен тот же, но
             # конец сопряжения наступает только на старте полного агента
             log.info("gateway: токен бота тот же — перезапуск, чтобы довести подключение командой")
             return {"state": "applied", "error": ""}

@@ -3,8 +3,8 @@
 hello{join, eph, host} → join_eph{eph, slot_name, until}: у обеих сторон
 один код (util/joinsas), он живёт, пока жива сессия. Сессий по токену — не
 больше 10, живая — одна (новая вытесняет прежнюю, код меняется). Ввод кода —
-только к заявке нажатой кнопки (Р20): формат не тот — переспрос, попытка не
-сгорает; не совпал — попытка; третья — сопряжение закрыто сразу (Р24). Срок —
+только к заявке нажатой кнопки: формат не тот — переспрос, попытка не
+сгорает; не совпал — попытка; третья — сопряжение закрыто сразу. Срок —
 час от выпуска; вышел — интерфейс под токен падает сразу.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ _HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
 
 
 def clean_host(value) -> str:
-    """hostname из hello сопряжения (Р25): данные с чужой машины — не длиннее
+    """hostname из hello сопряжения: данные с чужой машины — не длиннее
     63 знаков, только A-Za-z0-9.-, иначе отброшено молча."""
     s = str(value or "")
     return s if _HOST_RE.match(s) else ""
@@ -76,7 +76,7 @@ class GwJoinPairingMixin:
                     or st.get("state") not in ("waiting", "connected", "accepted"):
                 return {"ok": False, "why": "gone"}
             if self._gwjoin_expired(st):
-                # закрывает слушатель: сначала отказ шлюзу, затем возврат (Р24)
+                # закрывает слушатель: сначала отказ шлюзу, затем возврат
                 st.update(state="closing", why="expired")
                 self._gwjoin_save(slot_id, st)
                 return {"ok": False, "why": "expired", "st": st}
@@ -141,7 +141,7 @@ class GwJoinPairingMixin:
     # ── ввод кода ────────────────────────────────────────────────────────────
 
     def gwjoin_code(self, slot_id: int, join_id: str, text: str) -> dict:
-        """Код из чата к заявке нажатой кнопки (Р20). {"result": format |
+        """Код из чата к заявке нажатой кнопки. {"result": format |
         wait | gone | expired | wrong | refused | ok, "left": попыток, "st"}."""
         code = joinsas.normalize(text)
         if code is None:
@@ -195,7 +195,7 @@ class GwJoinPairingMixin:
     def gwjoin_cancel(self, slot_id: int, join_id: str = "") -> dict:
         """«⬅️ Отменить» / «↩️ Отменить замену»: можно ли (до верного кода).
         Возвращает запись, помеченную «closing», или пусто; закрывает —
-        вызывающий (join_refused шлюзу, затем gwjoin_revert — сразу, Р24)."""
+        вызывающий (join_refused шлюзу, затем gwjoin_revert — сразу)."""
         with _LOCK:
             st = self.gwjoin(slot_id)
             if not st or (join_id and st.get("id") != join_id) \
@@ -219,7 +219,7 @@ class GwJoinPairingMixin:
     def gwjoin_tick(self) -> list[dict]:
         """Такт: сопряжения, у которых вышел срок, — помечены «closing» и
         возвращены (закрывает вызывающий: join_refused, затем gwjoin_revert —
-        сразу; Т-П11 и правка сообщения)."""
+        сразу; уведомление «срок вышел» и правка сообщения)."""
         closed = []
         for st in self.gwjoin_all():
             if st.get("state") in ("waiting", "connected") and self._gwjoin_expired(st):

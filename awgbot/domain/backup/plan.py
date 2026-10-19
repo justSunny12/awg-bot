@@ -26,7 +26,7 @@ from . import meta as _meta
 
 SAME, CLEAN, UNREADABLE, FOREIGN = "same", "clean", "unreadable", "foreign"
 
-# случаи слота (§ сопоставление)
+# случаи слота при сопоставлении бэкапа с установкой
 C_SAME, C_REKEYED, C_DEVICE, C_TWIN = "same", "rekeyed", "device", "twin"
 C_REMOVED, C_RESTORED, C_ADDED = "removed", "restored", "added"
 

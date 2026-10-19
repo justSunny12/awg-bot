@@ -116,7 +116,7 @@ def _restore_failed(services):
 
 
 def _restore_done_release(services):
-    """Восстановление с переходом на выпуск бэкапа (Т-В3): строка версии."""
+    """Восстановление с переходом на выпуск бэкапа: строка версии."""
     who = _people(services)
     services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+05:00", "version": "1.2.0",
                                          "merge": {"line": "same", "slots": [], "lost": []}}
@@ -124,7 +124,7 @@ def _restore_done_release(services):
 
 
 def _restore_failed_release(services):
-    """Переход на выпуск бэкапа не удался: прежний код назад (Т-В3)."""
+    """Переход на выпуск бэкапа не удался: прежний код назад."""
     who = _people(services)
     services.pop_restore_failed_info = lambda: {"failed": "слияние базы не удалось", "release": "1.2.0",
                                                 "from": "1.3.0"}
@@ -200,9 +200,9 @@ EVENTS = [
     Shot("adm.ev.restore_failed", role="admin", call=("report_restore_result", _ev_restore_done),
          data=_restore_failed, title="копия из чата не восстановлена — ничего не изменилось"),
     Shot("adm.ev.restore_done.release", role="admin", call=("report_restore_result", _ev_restore_done),
-         data=_restore_done_release, title="Т-В3: восстановление с переходом на выпуск бэкапа"),
+         data=_restore_done_release, title="восстановление с переходом на выпуск бэкапа"),
     Shot("adm.ev.restore_failed.release", role="admin", call=("report_restore_result", _ev_restore_done),
-         data=_restore_failed_release, title="Т-В3: переход на выпуск бэкапа не удался"),
+         data=_restore_failed_release, title="переход на выпуск бэкапа не удался"),
     Shot("adm.ev.restore_back", role="admin", call=("restore_wait_hello", _ev_wait_hello),
          data=_restore_wait(False, "2026-09-15T11:55:00+05:00"), title="шлюз на связи после восстановления"),
     Shot("adm.ev.restore_lost", role="admin", call=("restore_wait_tick", _ev_wait_tick),

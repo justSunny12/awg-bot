@@ -1,7 +1,7 @@
-"""I1 живым линкам — смена ключей без вопроса (`auto=i1`, §3.10 концепта
-«единые обновления»): без приглашения в чате бота шлюза, `ready` сразу,
+"""I1 живым линкам — смена ключей без вопроса (`auto=i1`): без приглашения
+в чате бота шлюза, `ready` сразу,
 фиксация по hello новым ключом; не встало — прежние ключи, повтор через
-сутки, после трёх — Т-Л1; агент без `rekey2` — попыток нет; ручная
+сутки, после трёх — строка карточки; агент без `rekey2` — попыток нет; ручная
 «🔑 Ключи линка» — с вопросом, как была; по одному слоту, резервные первыми,
 окно 30 мин…6 ч; ход набора идёт — не начинаем.
 
@@ -120,7 +120,7 @@ def test_a_failed_attempt_returns_and_retries_daily_and_after_three_the_card_say
         if n < 3:
             assert server.gateway_i1_line(1) is None
     assert server.gateway_i1_line(1) == T_L1
-    assert server.gateway_screen_state(1, lazy_ping=False)["i1"] == T_L1, "строки Т-Л1 нет в карточке"
+    assert server.gateway_screen_state(1, lazy_ping=False)["i1"] == T_L1, "строки «не встало трижды» нет в карточке"
 
 
 def test_an_agent_without_rekey2_gets_no_attempts(server, clock):
@@ -211,7 +211,7 @@ def test_the_slot_is_on_i1_only_after_the_hello(server, vps, clock, caplog):
 
 
 def test_a_refused_stage_is_a_failure_too(server, clock, monkeypatch):
-    """i1-2: стадия отказала — неудача в счёт (иначе Т-Л1 не появится никогда)."""
+    """i1-2: стадия отказала — неудача в счёт (иначе строка карточки не появится никогда)."""
     from awgbot.domain.services.types import ServiceError
     _due(server, clock)
 
@@ -262,17 +262,17 @@ def test_a_failing_client_interface_read_is_not_retried_every_tick(server, monke
 
 
 def test_t_l2_only_when_a_link_really_has_no_i1(server, vps, monkeypatch):
-    """Т-Л2 — одним уведомлением без звука и только когда у линка I1
+    """«У клиентов нет I1» — одним уведомлением без звука и только когда у линка I1
     фактически нет; пока у линка стоит прежний — молчим (его снимет смена)."""
     from awgbot.domain.services.gateway_link.rekey_i1 import T_L2
     monkeypatch.setattr(awg, "read_server_params", lambda force=False, iface=None: {"obfuscation": {"I1": ""}})
     monkeypatch.setattr(server, "gateway_link_i1", lambda gw: (True, I1))
-    assert server.gateway_i1_tick()[1] == [], "Т-Л2 при стоящем у линка I1"
+    assert server.gateway_i1_tick()[1] == [], "уведомление «нет I1» при стоящем у линка I1"
     monkeypatch.setattr(server, "gateway_link_i1", lambda gw: (True, ""))
     notes = server.gateway_i1_tick()[1]
     assert [n.text for n in notes] == [T_L2] and notes[0].silent
     assert server.gateway_i1_tick()[1] == []
-    assert server.gateway_i1_line(1) is None, "Т-Л2 строкой карточки"
+    assert server.gateway_i1_line(1) is None, "«нет I1» строкой карточки"
 
 
 def test_the_agent_keeps_quiet_about_auto_rekeys(svc, host, monkeypatch):

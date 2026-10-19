@@ -162,7 +162,7 @@ def migration_needed() -> InlineKeyboardMarkup:
 
 
 def fleet_confirm(tag: str) -> InlineKeyboardMarkup:
-    """Диалог «⬆️ Обновить до vX?» (Т-У3): «⬅️ Отмена» · «⬆️ Обновить» — тег
+    """Диалог «⬆️ Обновить до vX?»: «⬅️ Отмена» · «⬆️ Обновить» — тег
     в кнопке, ставится только он."""
     return ui.rows([("⬅️ Отмена", UpdateCB(action="cancel")), ("⬆️ Обновить", UpdateCB(action="go", tag=tag))])
 

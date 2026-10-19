@@ -272,7 +272,7 @@ async def test_a_double_press_issues_one_command(services, vps, monkeypatch):
 ])
 def test_a_server_not_from_a_release_sends_the_gateway_to_the_kit(services, vps, monkeypatch, installed, releases,
                                                                   kit):
-    """flow-12: версия в токене — та, что есть на GitHub, или Т-П1 ведёт к киту
+    """flow-12: версия в токене — та, что есть на GitHub, или сообщение подключения ведёт к киту
     сервера (его код и есть эта версия)."""
     from awgbot.bot.texts.routing.join import join_message
     from awgbot.infra import updates

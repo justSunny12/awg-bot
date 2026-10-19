@@ -76,7 +76,7 @@ class GatewayToken(StatesGroup):
 
 class GatewayJoinCode(StatesGroup):
     """Код подтверждения с экрана шлюза к сообщению подключения: в данных —
-    gwjoin_slot и gwjoin_id (заявка нажатой кнопки, Р20)."""
+    gwjoin_slot и gwjoin_id (заявка нажатой кнопки)."""
     value = State()
 
 

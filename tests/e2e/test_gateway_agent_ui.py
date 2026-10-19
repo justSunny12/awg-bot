@@ -223,7 +223,7 @@ async def test_link_threshold_absent_in_the_config_is_written_in_seconds(svc, fa
 
 async def test_agent_start_wipes_the_keys_of_its_former_updates(tmp_path, monkeypatch):
     """Первый старт 3.4.0: ключи прежних «⬆️ Обновлений» агента (цель,
-    объявленное, ожидание, список и метаданные, мьют) — прочь (Р3)."""
+    объявленное, ожидание, список и метаданные, мьют) — прочь."""
     from awgbot.domain.gateway.upd import LEGACY_KEYS
     from awgbot.runtime import main as rt
 

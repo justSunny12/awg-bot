@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tools/gwkit.py — `awg-bot gw-kit --stdout` на сервере AWG: поставка для
-шлюза без доступа к GitHub (§3.11.5 концепта «единые обновления»).
+шлюза без доступа к GitHub.
 
     python -m tools.gwkit --stdout     кит одним sh-файлом — в stdout
 
@@ -149,7 +149,7 @@ def build(root: Path | None = None, cache: Path = SRC_CACHE) -> bytes:
 
 
 def join_version() -> str:
-    """Выпуск, который назовёт токен команды подключения (Р14): версия агента в
+    """Выпуск, который назовёт токен команды подключения: версия агента в
     выпуске набора, без набора — версия сервера; база не читается — пусто
     (сверка остаётся установщику на шлюзе)."""
     from awgbot.core import config

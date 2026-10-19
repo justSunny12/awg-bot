@@ -79,7 +79,7 @@ def test_needs_gw_puts_the_gateways_before_the_server(fleet):
 
 
 def test_an_unavailable_gateway_does_not_hold_needs_gw(fleet):
-    """Р22: шлюз не на связи `needs_gw` не держит — сервер идёт сам."""
+    """Шлюз не на связи `needs_gw` не держит — сервер идёт сам."""
     fleet.releases(rel("v3.4.0", both=True),
                    rel("v3.5.0", main={"requires": "3.4.0", "needs_gw": "3.5.0"}, gw=BOTH))
     fleet.slot(1, online=False)

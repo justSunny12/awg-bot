@@ -313,7 +313,7 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)
         try:
-            # набор обновлений: откат сервера сторожем (Т-У8), ход и откат — с записанного
+            # набор обновлений: откат сервера сторожем, ход и откат — с записанного
             from awgbot.runtime.linkserver import upd as _fleet_upd
             await _fleet_upd.on_start(services)
         except Exception as e:                           # noqa: BLE001

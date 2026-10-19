@@ -19,13 +19,13 @@ RETRY_WORDS = ("30 минут", "2 часа", "6 часов")
 
 
 def gw_caught_up(name: str, label: str, tag: str, *, slot: int = 0, bot_username: str = "") -> str:
-    """Т-У7: шлюз вышел на связь и догнал выпуск набора."""
+    """Шлюз вышел на связь и догнал выпуск набора."""
     return (f"✅ {gw_ref(name, label, slot=slot, bot_username=bot_username)} вышел на связь и обновлён "
             f"до {_e(_ver(tag))}")
 
 
 def gw_followed_down(name: str, label: str, tag: str, *, slot: int = 0, bot_username: str = "") -> str:
-    """Т-У9 после понижения: агент новее выпуска набора вернулся к нему."""
+    """После понижения: агент новее выпуска набора вернулся к нему."""
     return (f"✅ {gw_ref(name, label, slot=slot, bot_username=bot_username)} вернулся к "
             f"{_e(_ver(tag))} вслед за сервером AWG")
 
@@ -38,21 +38,21 @@ def gw_followed_up(name: str, label: str, tag: str, *, slot: int = 0, bot_userna
 
 def gw_catchup_given_up(name: str, label: str, tag: str, reason: str, *, slot: int = 0,
                         bot_username: str = "") -> str:
-    """Т-У7б, последняя неудача: повторов больше нет."""
+    """Догон не удался в последний раз: повторов больше нет."""
     return (f"⚠️ {gw_ref(name, label, slot=slot, bot_username=bot_username)} не обновился до "
             f"{_e(_ver(tag))}: {_e(reason)} — повторов больше не будет, «🔁 Повторить» — в разделе обновлений")
 
 
 def gw_catchup_failed(name: str, label: str, tag: str, reason: str, tries: int, *,
                       slot: int = 0, bot_username: str = "") -> str:
-    """Т-У7б: догон не удался — когда повтор."""
+    """Догон не удался — когда повтор."""
     when = RETRY_WORDS[min(max(tries, 1), len(RETRY_WORDS)) - 1]
     return (f"⚠️ {gw_ref(name, label, slot=slot, bot_username=bot_username)} вышел на связь, но не обновился "
             f"до {_e(_ver(tag))}: {_e(reason)} — повторю через {when}")
 
 
 def server_rolled_back(tag: str, prev: str) -> str:
-    """Т-У8: сторож вернул прежнюю версию сервера AWG."""
+    """Сторож вернул прежнюю версию сервера AWG."""
     return (f"⚠️ Обновление до {_e(_ver(tag))} отменено: обновлённый сервер AWG не вышел на связь за "
             f"10 минут — вернул {_e(_ver(prev))}. Журнал: {JOURNAL}")
 
@@ -68,18 +68,18 @@ AGENT_SILENT = "обновленный агент не вышел на связ�
 # ── агент шлюза ──────────────────────────────────────────────────────────────
 
 def agent_updating(tag: str) -> str:
-    """Т-А1: строка панели, пока идёт обновление."""
+    """Строка панели агента, пока идёт обновление."""
     return f"⬆️ Обновляюсь до {_e(_ver(tag))} по команде сервера AWG"
 
 
 def agent_updated(tag: str) -> str:
-    """Т-А2: после обновления — одна строка вместо списка изменений."""
+    """После обновления — одна строка вместо списка изменений."""
     return f"✅ Агент обновлён до {_e(_ver(tag))} по команде сервера AWG"
 
 
 def agent_update_failed(tag: str, prev: str, reason: str, server_bot: dict | None = None,
                         state: str = "rolled_back") -> str:
-    """Т-А3: неудача — панель до следующего удачного и уведомление. Обновлённый
+    """Неудача — строка панели до следующего удачного и уведомление. Обновлённый
     агент не вышел на связь (rolled_back) — «вернулся на»; до перезапуска не
     дошло (refused, failed) — «не выполнено, остался на»."""
     where = f"Подробности — в чате {chat_ref(server_bot, 'бота сервера AWG')}"
@@ -91,14 +91,14 @@ def agent_update_failed(tag: str, prev: str, reason: str, server_bot: dict | Non
 
 
 def agent_reverted(prev: str, tag: str) -> str:
-    """Т-А5: откат набора по команде сервера."""
+    """Откат набора по команде сервера."""
     return f"↩️ Агент вернулся на {_e(_ver(prev))}: обновление набора до {_e(_ver(tag))} отменено сервером AWG"
 
 
 # ── восстановление бэкапа = переход на выпуск бэкапа ─────────────────────────
 
 def restore_version_line(kind: str, cur: str, ver: str) -> str:
-    """Т-В1: строка версии в плане (первой после заголовка). kind — down | up."""
+    """Строка версии в плане восстановления (первой после заголовка). kind — down | up."""
     cur, ver = _e(_ver(cur)), _e(_ver(ver))
     if kind == "down":
         return (f"♻️ Версия: сейчас {cur}, бэкап снят на {ver} — сервер AWG сначала вернётся на {ver} "
@@ -108,12 +108,12 @@ def restore_version_line(kind: str, cur: str, ver: str) -> str:
 
 
 def restore_withdrawn_line(ver: str, reason: str) -> str:
-    """Т-В1, хвост: выпуск бэкапа помечен снятым."""
+    """Хвост строки версии: выпуск бэкапа помечен снятым."""
     return (f"⚠️ Выпуск {_e(_ver(ver))} снят: {_e(reason)}. Восстановить можно, но после восстановления лучше "
             "обновиться кнопкой «⬆️ Обновить»")
 
 
-# Т-В2: отказы осмотра (после «⚠️ Файл не принят: »)
+# отказы осмотра бэкапа (после «⚠️ Файл не принят: »)
 def restore_not_release(ver: str) -> str:
     return f"бэкап снят на сборке не из выпуска ({_ver(ver)}) — восстановить его можно только на той же версии"
 
@@ -144,13 +144,13 @@ def restore_not_launched(reason: str) -> str:
 
 
 def restore_up_requires(ver: str, req: str) -> str:
-    """Т-В2: выпуск бэкапа новее, но ставится только с минимума выше текущей."""
+    """Отказ: выпуск бэкапа новее, но ставится только с минимума выше текущей."""
     return (f"выпуск {_ver(ver)} ставится только с {_ver(req)} и новее — сначала обнови сервер AWG до "
             f"{_ver(req)} кнопкой «⬆️ Обновить», затем восстанови бэкап")
 
 
 def restore_other_generation(ver: str, gen: int, here: int) -> str:
-    """Т-В2: выпуск бэкапа — на другом поколении AmneziaWG."""
+    """Отказ: выпуск бэкапа — на другом поколении AmneziaWG."""
     return (f"выпуск {_ver(ver)} несёт AmneziaWG поколения {int(gen)}, на сервере AWG — поколения {int(here)}: "
             "восстановление с переходом между поколениями не ведётся")
 
@@ -160,11 +160,11 @@ def restore_meta_bad(ver: str) -> str:
 
 
 def restore_version_done(ver: str) -> str:
-    """Т-В3: строка в отчёте после восстановления с переходом."""
+    """Строка в отчёте после восстановления с переходом."""
     return f"Версия: {_e(_ver(ver))} — как в бэкапе"
 
 
 def restore_version_failed(ver: str, reason: str, cur: str) -> str:
-    """Т-В3: отказ перехода (новым процессом, прежняя версия)."""
+    """Отказ перехода (новым процессом, прежняя версия)."""
     return (f"⚠️ Переход на {_e(_ver(ver))} не удался: {_e(reason)} — ничего не изменилось, работает "
             f"{_e(_ver(cur))}")

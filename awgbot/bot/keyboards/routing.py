@@ -181,13 +181,13 @@ def gateway_choose_kind(has_candidates: bool, slot: int = 0) -> InlineKeyboardMa
 
 
 def gwjoin_message(slot: int, jid: str, *, replace: bool) -> InlineKeyboardMarkup:
-    """Сообщение подключения (Т-П1): ввод кода и отмена."""
+    """Сообщение подключения: ввод кода и отмена."""
     return ui.rows([("✏️ Ввести код", GwJoinCB(action="code", slot=slot, jid=jid)),
                     ("↩️ Отменить замену" if replace else "⬅️ Отменить", GwJoinCB(action="cancel", slot=slot, jid=jid))])
 
 
 def gwjoin_cancel_confirm(slot: int, jid: str) -> InlineKeyboardMarkup:
-    """Т-П14: «⬅️ Отмена» · «↩️ Отменить замену»."""
+    """Подтверждение отмены замены: «⬅️ Отмена» · «↩️ Отменить замену»."""
     return ui.rows([("⬅️ Отмена", GwJoinCB(action="cancel_no", slot=slot, jid=jid)),
                     ("↩️ Отменить замену", GwJoinCB(action="cancel_yes", slot=slot, jid=jid))])
 

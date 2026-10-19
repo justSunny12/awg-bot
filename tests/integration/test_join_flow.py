@@ -1,7 +1,6 @@
 """Подключение шлюза командой из бота сервера AWG — сторона сервера целиком,
 без сокетов: выпуск команды, сессия сопряжения и код, неверный код, верный
-код и смена ключей после него (auto=join), фиксация, отказы и сроки — §3.6,
-§3.9 концепта «единые обновления» (Р20–Р25).
+код и смена ключей после него (auto=join), фиксация, отказы и сроки.
 
 Цена ошибки: команда, по которой подключается чужая машина; токен в чате,
 который продолжает к чему-то подходить после отмены, срока или третьего
@@ -95,7 +94,7 @@ def test_more_than_ten_sessions_are_refused(services, vps):
 @pytest.mark.parametrize("host, shown", [("raspberrypi", "raspberrypi"), ("evil;rm -rf", ""), ("x" * 64, ""),
                                          ("", "")])
 def test_the_hostname_from_hello_is_shown_only_when_clean(services, vps, host, shown):
-    """Р25: hostname из hello — в Т-П2; мусорный или длинный — отброшен, без
+    """hostname из hello — в сообщении «шлюз подключился»; мусорный или длинный — отброшен, без
     поля — без «(hostname: …)»."""
     from awgbot.bot.texts.routing import join as jt
     res, gwside = _issue(services)
@@ -107,7 +106,7 @@ def test_the_hostname_from_hello_is_shown_only_when_clean(services, vps, host, s
 
 
 def test_two_addresses_on_one_token_are_named(services, vps):
-    """Т-П3: к токену подключались с двух адресов — оба в сообщении."""
+    """К токену подключались с двух адресов — оба в сообщении."""
     from awgbot.bot.texts.routing import join as jt
     res, gwside = _issue(services)
     connect(services, gwside, 1)
@@ -119,7 +118,7 @@ def test_two_addresses_on_one_token_are_named(services, vps):
 
 
 def test_the_code_belongs_to_the_pressed_request_only(services, vps):
-    """Р20: ввод кода — только к заявке нажатой кнопки; до подключения шлюза
+    """Ввод кода — только к заявке нажатой кнопки; до подключения шлюза
     кода нет; формат не тот — не попытка."""
     res, gwside = _issue(services)
     jid = res["state"]["id"]
@@ -134,7 +133,7 @@ def test_the_code_belongs_to_the_pressed_request_only(services, vps):
 
 def test_three_wrong_codes_close_the_join_and_the_token_is_dead_at_once(services, vps):
     """Неверный ×2 — попытки; третий — закрыто: запись «closing», вызывающий
-    шлёт join_refused и сразу снимает интерфейс под токен (Р24): новый
+    шлёт join_refused и сразу снимает интерфейс под токен: новый
     слот — линк снят, ключи токена удалены, слушателю слушать нечего."""
     res, gwside = _issue(services)
     jid = res["state"]["id"]
@@ -179,7 +178,7 @@ def test_the_right_code_makes_the_slot_and_rekeys_without_asking(services, vps):
     """Верный код: строка слота и устройство «Шлюз», join_ok — секреты под
     ключом сопряжения, смена ключей auto=join (без вопроса в чате бота
     шлюза), после фиксации штампа нет — карантин снят; агент «установлен» —
-    запись снята, итог Т-П9."""
+    запись снята, итог «шлюз подключён»."""
     res, gwside = _issue(services)
     connect(services, gwside, 1)
     st = services.gwjoin(1)
@@ -238,7 +237,7 @@ def _expire(services, slot):
 
 
 def test_the_hour_ends_the_join_at_once(services, vps):
-    """Р23, Р24: час вышел — такт отдаёт запись на закрытие; hello по токену
+    """Час вышел — такт отдаёт запись на закрытие; hello по токену
     после срока — отказ и тоже на закрытие (сначала отказ шлюзу)."""
     _res, gwside = _issue(services)
     _expire(services, 1)
@@ -263,7 +262,7 @@ def test_an_expired_code_input_closes_too(services, vps):
 
 def test_a_new_command_for_the_same_slot_kills_the_old_one(services, vps):
     """Новая команда того же слота: прежняя мертва (её сессия и код —
-    тоже), её сообщение — «Не актуально» (Т-П12)."""
+    тоже), её сообщение — «Не актуально»."""
     slot_with_device(services, vps, 1)
     first, gw1 = _issue(services, slot_id=1)
     connect(services, gw1, 1)

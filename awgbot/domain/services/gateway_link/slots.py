@@ -320,9 +320,9 @@ class SlotsMixin:
         st["own_lists"] = self.gwlink_own_card(st["gateway"])
         st["rekey"] = self.gateway_rekey(int(slot_id))   # смена ключей линка: строка карточки и кнопка
         if hasattr(self, "gateway_i1_line"):
-            st["i1"] = self.gateway_i1_line(int(slot_id))  # I1 линка: Т-Л1 (трижды не встало) или Т-Л2 (нет у клиентов)
+            st["i1"] = self.gateway_i1_line(int(slot_id))  # I1 линка: строка «не встало трижды» (или ничего)
         if hasattr(self, "fleet_card"):
-            st["fleet"] = self.fleet_card(int(slot_id))   # набор обновлений: строка под каналом (Т-К1…Т-К4)
+            st["fleet"] = self.fleet_card(int(slot_id))   # набор обновлений: строка под каналом
         if hasattr(self, "gwkeep_card"):
             # копия настроек шлюза для бэкапа: на дату, ждёт решения, агент не умеет
             st["keep"] = self.gwkeep_card(int(slot_id), online=bool(self.gwlink_session(int(slot_id))))

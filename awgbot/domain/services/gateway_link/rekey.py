@@ -309,7 +309,7 @@ class RekeyMixin:
         self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
         if st.get("auto") == "join" and hasattr(self, "gwjoin_linked"):
             self.gwjoin_linked(slot_id)                   # сопряжение: карантин снят, .join-prev прочь
-            # итог — сообщением подключения (Т-П8 → Т-П9), не «ключи сменены» (ui-7)
+            # итог — сообщением подключения («код верный» → «шлюз подключён»), не «ключи сменены» (ui-7)
             return {"notes": [], "hold": False, "rekeyed": True}
         notes = [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")]
         return {"notes": self._rekey_notes(st, notes, done=True), "hold": False, "rekeyed": True}

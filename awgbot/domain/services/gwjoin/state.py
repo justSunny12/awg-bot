@@ -21,7 +21,7 @@ import threading
 
 from awgbot.util import timeutil
 
-JOIN_TTL = 3600            # команда — чтобы выполнить её сейчас (Р23)
+JOIN_TTL = 3600            # команда — чтобы выполнить её сейчас, а не хранить
 MAX_SESSIONS = 10          # сессий по токену
 MAX_ATTEMPTS = 3           # неверных кодов на токен
 JOIN_KEY = "gw_join"

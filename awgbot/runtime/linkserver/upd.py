@@ -112,7 +112,7 @@ async def on_ack(services, slot_id: int, msg: dict, srv=None) -> None:
 
 
 async def on_start(services) -> None:
-    """Старт бота: откат сервера сторожем (Т-У8), затем такт — ход и откат
+    """Старт бота: откат сервера сторожем (уведомление), затем такт — ход и откат
     продолжаются с записанного."""
     if not _fleet(services):
         return

@@ -265,7 +265,7 @@ async def test_never_from_an_old_config_becomes_month_and_mute_on_open(main_env,
 
 
 def test_the_agent_has_no_updates_section():
-    """«⬆️ Обновления» у агента нет (Р3): его обновляет сервер AWG; прежняя
+    """«⬆️ Обновления» у агента нет: его обновляет сервер AWG; прежняя
     кнопка раздела роутером разделов не разбирается — её ловит «Кнопка устарела…»."""
     from awgbot.bot.callbacks import GwCB
     assert "upd" not in roles.GATEWAY.settings_root and not sections.available(roles.GATEWAY, "upd")

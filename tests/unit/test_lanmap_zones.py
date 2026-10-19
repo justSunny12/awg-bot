@@ -107,7 +107,7 @@ def test_a_reply_gets_the_zone_of_its_query(what, query, reply, zone):
 
 
 def test_the_same_address_behind_two_slots_lands_in_two_zones():
-    """(а) из концепта: один исходный порт к двум NAS 192.168.1.10 за разными
+    """(а) один исходный порт к двум NAS 192.168.1.10 за разными
     шлюзами — ответные кортежи после перевода совпадают, зоны — нет."""
     assert classify("awg1", ADMIN, "10.240.1.10") != classify("awg1", ADMIN, "10.241.1.10")
     # (б): одинаковые источники из двух сетей к админу

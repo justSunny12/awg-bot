@@ -1,5 +1,5 @@
 """quarantine.py — часть пакета gwjoin (см. __init__): признак сопряжения для
-остального бота (§3.7).
+остального бота.
 
 Новый слот до кода строки в `gateways` не имеет — его нет нигде. Слот в
 замене строку имеет, поэтому: для автомата недоступен, политики маршрута нет
@@ -82,7 +82,7 @@ class GwJoinQuarantineMixin:
         return out
 
     def gwjoin_card(self, slot_id: int) -> dict:
-        """Для карточки и списка (Т-П15): {"state": waiting | code | replace,
+        """Для карточки и списка шлюзов: {"state": waiting | code | replace,
         "until": ISO} или пусто."""
         st = self.gwjoin(slot_id)
         if st.get("state") not in ("waiting", "connected"):
@@ -97,7 +97,7 @@ class GwJoinQuarantineMixin:
         return {"state": "code" if st.get("state") == "connected" else "waiting", "until": st["expires"]}
 
     def gwjoin_boot(self) -> int:
-        """Старт сервера: прежние файлы первого применения — прочь (§8.4), их
+        """Старт сервера: прежние файлы первого применения — прочь, их
         метки в базе — тоже. Идемпотентно; число удалённых файлов."""
         n = 0
         for path in glob.glob(LEGACY_BUNDLES):

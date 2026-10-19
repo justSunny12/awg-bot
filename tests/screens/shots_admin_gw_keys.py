@@ -269,7 +269,7 @@ def _rekey_auto(services, mp):
 
 
 def _i1_failed(services, mp):
-    """Смена ключей ради I1 не встала трижды — Т-Л1."""
+    """Смена ключей ради I1 не встала трижды — строка карточки."""
     services._i1_plan_save(1, {"want": "<b 0x01>", "tries": 3, "next_at": _iso(NOW)})
 
 
@@ -278,7 +278,7 @@ REKEY_DECLINED = [
           "adm.gw.card.rekey.declined"),
     _card(1, _keys(_rekey_auto), "смена ключей без вопроса (I1): «переключение…», без «ждут подтверждения»",
           "adm.gw.card.rekey.auto"),
-    _card(1, _keys(_i1_failed), "Т-Л1: новые ключи и обфускация линка не встали трижды", "adm.gw.card.i1.failed"),
+    _card(1, _keys(_i1_failed), "новые ключи и обфускация линка не встали трижды", "adm.gw.card.i1.failed"),
     _card(1, _chan(1, _cfg_base, _confirm1(), _cfg(online=False), _cfg_ack(applied=("server", "env"))),
           "раздел uplink не прошёл проверку на сервере — не едет, причина в карточке", "adm.gw.card.uplink.err"),
     Shot("adm.lk.ask.label", role="admin", press=[SetCB(sec="lk", act="do", key="ask", val="1")],

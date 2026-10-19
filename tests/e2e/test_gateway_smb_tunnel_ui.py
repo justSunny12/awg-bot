@@ -215,7 +215,7 @@ async def _card(services, fake_bot, slot=1) -> str:
 async def test_the_card_says_own_smb_servers_are_in_the_tunnel_with_a_single_gateway(services, slots, smb,
                                                                                      fake_bot):
     """Один шлюз, связи подсетей нет и быть не может — а имена его SMB у
-    админа в туннеле есть: карточка обязана это сказать (§7.3:
+    админа в туннеле есть: карточка обязана это сказать (
     «🗂 SMB: свои — 2 · в туннеле ✅»)."""
     _, pi, _ = slots
     _slot1(services, pi)

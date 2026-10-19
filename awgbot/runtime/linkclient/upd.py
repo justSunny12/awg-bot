@@ -34,7 +34,7 @@ class UpdMixin:
         return True
 
     async def _upd_notify(self, what: str) -> None:
-        """Строка в чат бота шлюза без звука: Т-А3 (неудача), Т-А5 (откат набора)."""
+        """Строка в чат бота шлюза без звука: неудача обновления, откат набора."""
         if pkg._notify is None:
             return
         from awgbot.domain.notices import fleet as notes_

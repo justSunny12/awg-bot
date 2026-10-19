@@ -5,7 +5,7 @@
 только для сервера (или наоборот, не ставит нужный); цель, найденная только
 для своей роли, не зажигает кнопку выпуска для шлюзов; шлюз, «бывший на
 связи час назад», держащий ход или `needs_gw`, — набор, который ждёт
-выключенное устройство (Р22).
+выключенное устройство.
 """
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def test_a_server_not_on_a_release_build_has_no_fleet(fleet, monkeypatch):
 
 
 def test_only_a_gateway_with_a_live_session_holds_the_run_and_needs_gw(fleet):
-    """Р22: шлюз, бывший на связи час назад, не держит ни ход, ни needs_gw."""
+    """Шлюз, бывший на связи час назад, не держит ни ход, ни needs_gw."""
     fleet.releases(rel("v3.4.0", both=True), rel("v3.4.1", gw={"requires": "3.4.0"}),
                    rel("v3.4.2", main={"requires": "3.4.0", "needs_gw": "3.4.1"}, gw={"requires": "3.4.0"}))
     fleet.slot(1, "3.4.0", online=False)
@@ -113,7 +113,7 @@ def test_the_queue_goes_standby_first_and_the_active_one_last(fleet):
 
 
 def test_the_section_and_the_dialog_say_the_plan(fleet):
-    """Т-У1 и Т-У3: строки хостов, шлюз не на связи, хвост диалога."""
+    """Раздел и диалог: строки хостов, шлюз не на связи, хвост диалога."""
     fleet.releases(rel("v3.4.0", both=True), rel("v3.5.0", both=True))
     fleet.slot(1, "3.4.0")
     fleet.slot(2, "3.4.0", online=False, name="Офис")

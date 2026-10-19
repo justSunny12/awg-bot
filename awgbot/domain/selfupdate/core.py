@@ -309,7 +309,7 @@ class SelfUpdateCoreMixin:
         self.db.set_state("update_pending_digest", "")
         if want is not None and want == have:
             self.db.set_state("update_installed_digest", f"{config.INSTALLED_VERSION} {digest}" if digest else "")
-        # шаг набора (живое сообщение у сервера, строка Т-А2 у агента) — своим текстом роли
+        # шаг набора (живое сообщение у сервера, одна строка у агента) — своим текстом роли
         alt = getattr(self, "update_applied_note", None)
         if callable(alt):
             note = alt(pending, want is not None and want == have)

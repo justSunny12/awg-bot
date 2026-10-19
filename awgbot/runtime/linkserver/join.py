@@ -1,5 +1,5 @@
-"""join.py — сессия сопряжения на стороне слушателя (§3.6–3.7 концепта
-«единые обновления»): hello{join,eph} → join_eph, код в чате бота сервера,
+"""join.py — сессия сопряжения на стороне слушателя: hello{join,eph} →
+join_eph, код в чате бота сервера,
 join_wrong / join_refused / join_ok, смена ключей `auto=join` по этой же
 сессии (link_next, link_ack, link_go), переключение ВПС.
 
@@ -120,7 +120,7 @@ class JoinMixin:
 
     async def join_close(self, slot: int, why: str) -> str:
         """Отказ шлюзу (если сессия жива) — затем интерфейс под токен прочь сразу
-        (Р24). "" — сделано; иначе причина: запись осталась «closing», такт
+        "" — сделано; иначе причина: запись осталась «closing», такт
         сопряжений повторит возврат."""
         sess = self._join_sessions.pop(slot, None)
         if sess is not None:

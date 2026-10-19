@@ -50,7 +50,7 @@ def test_after_fifteen_minutes_one_notice_per_silent_slot(services):
 
 def test_on_an_empty_server_the_notice_names_the_reconnect_path(services):
     """Пустой сервер: ключи линка на шлюзе могут быть новее бэкапа — путь
-    один, «🔁 Настроить заново» (Т-П17), без файлов и команд."""
+    один, «🔁 Настроить заново», без файлов и команд."""
     services.restore_wait_start({**REPORT, "empty": True})
     _late(services, 16)
     texts = [n.text for n in services.restore_wait_tick()]

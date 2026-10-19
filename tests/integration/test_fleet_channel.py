@@ -371,7 +371,7 @@ async def test_a_command_over_the_wire_and_its_answer_after_the_restart(agent, v
     conn.close()
 
 
-# ── сервер ведёт шлюзы вслед за собой вне хода (§3.5, шаг 6): по одному ─────
+# ── сервер ведёт шлюзы вслед за собой вне хода: по одному ──────────────────
 
 from tests.unit import _fleet_common as _fc       # noqa: E402
 

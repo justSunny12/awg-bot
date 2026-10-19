@@ -77,7 +77,7 @@ def _bot_username(services) -> str:
 
 
 async def _upd(services) -> dict:
-    """Команда обновления с сервера AWG — строкой панели (Т-А1, Т-А3)."""
+    """Команда обновления с сервера AWG — строкой панели (идёт; не удалась)."""
     if not hasattr(services, "upd_panel"):
         return {}
     upd = await call(services.upd_panel)

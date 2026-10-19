@@ -268,7 +268,7 @@ def test_recognize(name, blob, kind):
 
 def test_the_empty_server_notice_needs_no_file_or_command():
     """Пустой сервер после восстановления: путь подключения — кнопками в боте
-    (Т-П17), ни файла конфигурации, ни команды gw-bundle больше нет."""
+    («🔁 Настроить заново»), ни файла конфигурации, ни команды gw-bundle больше нет."""
     for link_if in ("awglink", "awglink2"):
         text = nb.gateway_not_back("x", empty=True, link_if=link_if)
         assert "«🔁 Настроить заново»" in text and "gw-bundle" not in text and "<code>" not in text

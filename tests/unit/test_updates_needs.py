@@ -56,8 +56,8 @@ def test_a_hotfix_carries_no_condition():
 
 
 def test_hashtags_in_the_body_are_not_conditions():
-    """Перекрёстные условия — только в метаданных: черновые хэштеги концепта
-    в теле не читаются ни с метаданными, ни без них."""
+    """Перекрёстные условия — только в метаданных: похожие хэштеги в теле
+    выпуска не читаются ни с метаданными, ни без них."""
     body = "#gw_needs_main_3.3.0\n#main_needs_gw_3.3.0\n#needs_main_3.3.0"
     assert _r("v3.3.1", "3.3.0", "3.3.0", body=body).needs("gateway") is None
     bare = updates.Release(tag="v3.3.1", version=(3, 3, 1), body="#requires_gw_3.3.0\n" + body,

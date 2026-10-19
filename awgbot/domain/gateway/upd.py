@@ -1,11 +1,11 @@
 """upd.py — команда набора обновлений на агенте шлюза: проверки, ступень,
 ход и ответ серверу (`upd_ack`).
 
-Сервер называет только тег (Р2); всё остальное агент проверяет сам (§3.2):
+Сервер называет только тег; всё остальное агент проверяет сам:
 сборка из выпуска, не ниже COMPAT_FLOOR, выпуск есть на GitHub и не за
 барьером пропущенных, digest ассета совпал с названным сервером, то же
 поколение AmneziaWG; ступень вверх — тем же выбором цели роли с условием
-`needs_main` по версии сервера из `role`, вниз — сразу на цель (Р17).
+`needs_main` по версии сервера из `role`, вниз — сразу на цель.
 Неудача проверки — refused, сети или скачивания — failed, обновлённый агент
 не вышел на связь (метка отката сторожа) — rolled_back.
 
@@ -43,7 +43,7 @@ SPAWN_GRACE_S = 90            # апдейтер успевает взять з�
 APPLY_MAX_S = 20 * 60         # ступень (с ядром) или понижение дольше — не удались
 FAILED = ("failed", "rolled_back", "refused")
 
-# ключи прежних «⬆️ Обновлений» агента: с 3.4.0 агент сам не обновляется (Р3)
+# ключи прежних «⬆️ Обновлений» агента: с 3.4.0 агент сам не обновляется
 LEGACY_KEYS = ("update_available_tag", "update_notified_tag", "update_waiting", "update_releases",
                "update_meta", "updates_muted")
 
@@ -134,7 +134,7 @@ class GatewayUpdMixin:
                 "version": config.INSTALLED_VERSION, "error": cmd.get("error") or ""}
 
     def upd_busy(self) -> str:
-        """Чем агент занят так, что обновляться сейчас нельзя (§3.2), или пусто."""
+        """Чем агент занят так, что обновляться сейчас нельзя, или пусто."""
         try:
             st = self.rekey_state() if callable(getattr(self, "rekey_state", None)) else {}
         except Exception:                                 # noqa: BLE001
@@ -182,9 +182,9 @@ class GatewayUpdMixin:
         if gen and have and gen != have:
             return None, "refused", f"{rel.tag} несёт AmneziaWG поколения {gen}, у шлюза — {have}"
         if want < inst:
-            return rel, "step", ""                        # понижение — сразу на цель (Р17)
+            return rel, "step", ""                        # понижение — сразу на цель
         from awgbot.domain.selfupdate import UpdatePeer
-        # цель снята (сервер на ней, Р17) — шлюзу она годится; прочие снятые ступенями не станут
+        # цель снята (сервер на ней) — шлюзу она годится; прочие снятые ступенями не станут
         import dataclasses
         capped = [dataclasses.replace(r, withdrawn="", prerelease=False) if r.version == want else r
                   for r in releases if r.version <= want]
@@ -331,7 +331,7 @@ class GatewayUpdMixin:
 
     def update_applied_note(self, pending: str, ok: bool):
         """Итог своего обновления после перезапуска (selfupdate/core): по команде
-        сервера — одна строка без звука на цели (Т-А2), промежуточная ступень и
+        сервера — одна строка без звука на цели, промежуточная ступень и
         неудача — молча (неудачу скажет upd_resume); иначе — обычный итог
         (DEFAULT_NOTE)."""
         from awgbot.domain.selfupdate.core import DEFAULT_NOTE

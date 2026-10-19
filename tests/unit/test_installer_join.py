@@ -1,5 +1,4 @@
-"""Установщик с командой подключения (`… | sudo bash -s -- --join AWGJ1.…`,
-§3.6, Т-Т1, Т-Т9…Т-Т11 концепта «единые обновления»).
+"""Установщик с командой подключения (`… | sudo bash -s -- --join AWGJ1.…`).
 
 Разбор токена — на bash (base64url → od, поля по смещениям util/jointoken):
 он обязан дать те же выпуск, слот и хост, что Python, иначе шлюз поставит
@@ -75,7 +74,7 @@ def test_the_shell_reads_the_token_like_python(kw):
 
 
 def test_the_shell_checks_the_sum_like_python(b2sum):
-    """quar-9: испорченный байт при той же длине — отказ здесь (Т-Т10), а не
+    """quar-9: испорченный байт при той же длине — отказ здесь («повреждена»), а не
     404 выпуска и ложное «нужен доступ к GitHub»."""
     import base64
     token = _token(version="3.4.0.2")
@@ -111,8 +110,8 @@ def _piped(tmp_path, *args, curl_rc: int = 22) -> tuple[subprocess.CompletedProc
 
 
 def test_join_downloads_exactly_the_release_from_the_token(tmp_path):
-    """Выпуск — из токена (Р14), не latest; Т-Т1 — строкой в начале; GitHub не
-    ответил — Т-Т9 с отсылкой к пути без GitHub."""
+    """Выпуск — из токена, не latest; что ставим — строкой в начале; GitHub не
+    ответил — отказ с отсылкой к пути без GitHub."""
     r, calls = _piped(tmp_path, "--join", _token(version="3.4.0.2"))
     assert r.returncode != 0
     urls = calls.read_text(encoding="utf-8").split()
@@ -124,7 +123,7 @@ def test_join_downloads_exactly_the_release_from_the_token(tmp_path):
 
 
 def test_a_broken_token_is_refused_before_the_network(tmp_path):
-    """Т-Т10: команда повреждена (обрезали при копировании) — отказ до сети."""
+    """Команда повреждена (обрезали при копировании) — отказ до сети."""
     token = _token()
     r, calls = _piped(tmp_path, "--join", token[:-10])
     assert r.returncode != 0
@@ -171,7 +170,7 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
 
 
 def test_an_installed_agent_of_the_same_release_joins_without_a_menu(tmp_path):
-    """Т-Т11: агент стоит, выпуск тот же — меню нет: вопрос и сразу `awg-bot
+    """Агент стоит, выпуск тот же — меню нет: вопрос и сразу `awg-bot
     join` (поставленное не ставится заново)."""
     r, calls = _existing(tmp_path, "3.4.0", "3.4.0", "y")
     assert r.returncode == 0, r.stderr

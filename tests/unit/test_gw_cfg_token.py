@@ -102,7 +102,7 @@ def test_the_same_token_is_same_and_asks_nobody(svc, env, tg):
 @pytest.mark.parametrize("state, want", [("accepted", "applied"), ("linked", "applied"), ("done", "same"),
                                          ("pairing", "same")])
 def test_the_same_token_restarts_an_agent_finishing_a_pairing(svc, env, tg, monkeypatch, state, want):
-    """flow-3: Т-Т11 с тем же ботом — конец сопряжения на старте полного агента: перезапуск, env цел."""
+    """flow-3: агент уже стоял, бот тот же — конец сопряжения на старте полного агента: перезапуск, env цел."""
     monkeypatch.setattr(svc, "join_state", lambda: {"state": state})
     assert svc.cfg_token_apply({"value": CUR})["state"] == want
     assert tg.calls == [] and env.read_text(encoding="utf-8") == ENV_TEXT

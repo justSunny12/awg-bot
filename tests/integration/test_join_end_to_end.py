@@ -204,7 +204,7 @@ def test_a_new_gateway_gets_its_bot_token_and_finishes(server, vps, pi, monkeypa
 
 
 def test_a_gateway_that_had_the_same_bot_finishes_without_a_token_section(server, vps, tmp_path, monkeypatch):
-    """Т-Т11 / «🔁 Настроить заново»: агент стоял, бот тот же — отпечатки
+    """Агент уже стоял / «🔁 Настроить заново»: бот тот же — отпечатки
     токена совпадают, раздел token ничего не меняет и не перезапускает:
     сопряжение заканчивается на линке."""
     jc.slot_with_device(server, vps, 1)

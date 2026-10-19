@@ -73,7 +73,7 @@ class RoutingLivenessMixin:
 
     def _rt_unavailable(self, slot_id) -> bool:
         """Недоступен: в окне неуспешных не меньше порога; слот в замене
-        устройства (сопряжение, §3.7) — недоступен всегда."""
+        устройства (сопряжение) — недоступен всегда."""
         replacing = getattr(self, "gwjoin_replacing", None)
         if callable(replacing) and replacing(slot_id):
             return True

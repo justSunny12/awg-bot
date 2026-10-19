@@ -1,5 +1,5 @@
 """join.py — подключение шлюза командой: сообщение подключения во всех
-состояниях, приглашение кода, итоги, отмена, срок, карточка (Т-П1…Т-П15)."""
+состояниях, приглашение кода, итоги, отмена, срок, карточка."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ..fmt import _e
 
 
 def until_text(iso: str) -> str:
-    """«13:07 (UTC+3)»; срок не сегодня — с датой (Т-П1)."""
+    """«13:07 (UTC+3)»; срок не сегодня — с датой."""
     try:
         dt = timeutil.parse_iso(iso)
     except ValueError:
@@ -37,8 +37,8 @@ def _head(st: dict) -> str:
 
 
 def join_message(st: dict, command: str, *, event: str = "", addr: str = "") -> str:
-    """Т-П1 с последним абзацем по состоянию: ждём (Т-П1), подключился (Т-П2),
-    заново (Т-П2), с двух адресов (Т-П3)."""
+    """Сообщение подключения с последним абзацем по состоянию: ждём,
+    подключился, заново, с двух адресов."""
     ver = _e(str(st.get("version") or ""))
     if st.get("kit"):
         # своя сборка сервера: выпуска на GitHub нет — только кит (flow-12)
@@ -82,7 +82,7 @@ def join_code_wrong(left: int) -> str:
 
 
 def join_refused(st: dict) -> str:
-    """Т-П7: попытки кончились."""
+    """Попытки кончились."""
     name = _nm(st)
     if st.get("kind") in ("replace", "same"):
         return (f"⛔ Код не совпал трижды — подключение {name} закрыто, команда больше не действует — линк вернулся "
@@ -92,19 +92,19 @@ def join_refused(st: dict) -> str:
 
 
 def join_accepted(st: dict) -> str:
-    """Т-П8: код верный — команды в сообщении больше нет."""
+    """Код верный — команды в сообщении больше нет."""
     return f"✅ Код верный — подключаю {_nm(st)}: постоянные ключи линка, аплинк, бот шлюза…"
 
 
 def join_done(st: dict, version: str, bot: str) -> str:
-    """Т-П9."""
+    """Итог: шлюз подключён."""
     tail = f", бот шлюза @{_e(bot)} — открой его и нажми «Запустить»" if bot else ""
     ver = f": агент v{_e(version)}" if version else ""
     return f"✅ Шлюз {_nm(st)} подключён{ver}{tail}"
 
 
 def join_cancelled(st: dict) -> str:
-    """Т-П10."""
+    """Отменено."""
     name = _nm(st)
     if st.get("kind") in ("replace", "same"):
         return f"ℹ️ Замена отменена — линк вернулся прежнему устройству {name}, команда больше не действует"
@@ -112,7 +112,7 @@ def join_cancelled(st: dict) -> str:
 
 
 def join_expired(st: dict) -> str:
-    """Т-П11 (уведомление без звука и правка сообщения подключения)."""
+    """Срок вышел (уведомление без звука и правка сообщения подключения)."""
     name = _nm(st)
     until = until_text(st.get("expires") or "")
     if st.get("kind") in ("replace", "same"):
@@ -147,13 +147,13 @@ JOIN_STALE = "ℹ️ Не актуально: выпущена новая ком
 
 
 def join_cancel_ask(st: dict) -> str:
-    """Т-П14."""
+    """Отменить замену? — подтверждение."""
     return "\n".join([f"↩️ Отменить замену {_nm(st)}?",
                       "Линк вернётся на ключи прежнего устройства, команда перестанет действовать"])
 
 
 def join_card_line(card: dict) -> str:
-    """Т-П15 — карточка и список шлюзов во время сопряжения."""
+    """Строка карточки и списка шлюзов во время сопряжения."""
     if not card:
         return ""
     until = until_text(card.get("until") or "")

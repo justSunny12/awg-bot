@@ -1,7 +1,7 @@
-"""I1 линка (§2.6 концепта «единые обновления», Р16, Р26): значение — строка
+"""I1 линка: значение — строка
 `#I1` клиентского интерфейса сервера как есть, тем же разбором, что у
 генератора конфигов (`parsers._extract_param`); у всех слотов одно; строки
-нет или она пустая — линк без I1, строка Т-Л2; сменили клиентский I1 — у
+нет или она пустая — линк без I1, уведомление «нет I1»; сменили клиентский I1 — у
 каждого слота с другим I1 назначается автоматическая смена ключей.
 """
 from __future__ import annotations
@@ -77,11 +77,11 @@ def test_without_a_client_i1_the_link_goes_without_one_and_the_card_says_so(serv
     env = [env for mode, env in vps.runs if mode == "--rekey-stage"][0]
     assert "LINK_I1" not in env
     from awgbot.domain.services.gateway_link.rekey_i1 import T_L2
-    assert services.gateway_i1_line(1) is None, "Т-Л2 — постоянной строкой карточки"
+    assert services.gateway_i1_line(1) is None, "«нет I1» — постоянной строкой карточки"
     monkeypatch.setattr(services, "gateway_link_i1", lambda gw: (True, ""))
     _, notes = services.gateway_i1_tick()
     assert [n.text for n in notes] == [T_L2] and notes[0].silent and notes[0].tg_id == ADMIN
-    assert services.gateway_i1_tick()[1] == [], "Т-Л2 сказано второй раз"
+    assert services.gateway_i1_tick()[1] == [], "«нет I1» сказано второй раз"
 
 
 def test_a_changed_client_i1_plans_a_rekey_for_every_slot_with_another(services, slot, vps, monkeypatch):

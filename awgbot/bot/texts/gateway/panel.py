@@ -56,8 +56,8 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     конфигурации, предупреждения, SSH, железо, VPN-транзит и списки, SMB,
     здоровье и трафик, пустая строка, свежесть ссылкой.
     chan — состояние канала (linkclient.view()); None — спросить самим.
-    upd — команда обновления с сервера AWG (upd_panel): идёт — Т-А1, не
-    удалась — Т-А3 до следующей удачной."""
+    upd — команда обновления с сервера AWG (upd_panel): идёт — строка хода, не
+    удалась — строка неудачи до следующей удачной."""
     from awgbot.util import timeutil
     chan = pkg._channel_view(chan)
     host = _e(st.hostname) if st.hostname else "шлюз"

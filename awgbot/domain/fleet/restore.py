@@ -1,5 +1,5 @@
 """restore.py — часть пакета fleet (см. __init__): восстановление бэкапа =
-переход на выпуск бэкапа (§3.5).
+переход на выпуск бэкапа.
 
 Версия бэкапа V против установленной C: V = C — как раньше; иначе нужен
 выпуск vV с GitHub, и только тот, на котором снят бэкап: sha256 ассета =
@@ -7,7 +7,7 @@ digest метки. Бэкап без digest (сборка не из выпуск
 версии. Списку выпусков из сохранённого не верим: в нём выпуски ниже
 установленного могут быть без метаданных, а сравнить digest надо с тем, что
 GitHub отдаёт сейчас, — запрос в сеть при осмотре. Снятый выпуск годится, с
-предупреждением в вопросе (Р20); удалённый тег — отказ.
+предупреждением в вопросе; удалённый тег — отказ.
 
 Функции модульные: их зовут и осмотр бэкапа в боте (в потоке), и терминал
 (`tools.restore_release` до остановки сервиса).
@@ -42,7 +42,7 @@ def same_version(ver: str, cur: str, *, releases: bool = False) -> bool:
 def plan_release(label: dict, installed: str | None = None, meta_cache: dict | None = None, *,
                  installed_release: bool = False) -> dict:
     """{"kind": same|up|down, "tag", "version", "from", "digest", "withdrawn",
-    "release" (Release или None), "error" (отказ Т-В2 словами, без HTML)}.
+    "release" (Release или None), "error" (отказ словами, без HTML)}.
     meta_cache — кэш метаданных проверки обновлений (тот же digest — без
     повторного запроса за ассетом метаданных). installed_release — у
     установки есть digest выпуска (meta.installed_digest): тогда «та же
@@ -94,7 +94,7 @@ def plan_release(label: dict, installed: str | None = None, meta_cache: dict | N
 
 
 def version_lines(rel: dict) -> list[str]:
-    """Т-В1 по итогу plan_release: строка версии и, у снятого выпуска, хвост."""
+    """Строки плана по итогу plan_release: строка версии и, у снятого выпуска, хвост."""
     if not rel or rel.get("kind") == SAME or rel.get("error"):
         return []
     out = [notes_.restore_version_line(rel["kind"], rel.get("from") or "", rel.get("version") or "")]
@@ -134,7 +134,7 @@ class FleetRestoreMixin:
     """Набор после восстановления."""
 
     def fleet_after_restore(self, version: str) -> None:
-        """Сервер перешёл на выпуск бэкапа: выпуск набора — его версия (Р17),
+        """Сервер перешёл на выпуск бэкапа: выпуск набора — его версия,
         прежний ход ничего не значит; шлюзы пойдут следом по hello (вне хода,
         по одному). Остаётся только идущий ход на ту же версию: законченный
         (в том числе rollback_failed) держал бы следование шлюзов."""

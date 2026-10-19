@@ -5,7 +5,7 @@ handlers/fleet.py — набор обновлений в чате бота се�
 
 Ход ведёт домен (domain/fleet) по тактам канала (runtime/linkserver/upd.py);
 здесь — только человек: кнопки и одно живое сообщение без звука, которое
-правится по ходу (Т-У4) и закрывается итогом (Т-У5, Т-У6, Т-У13) с кнопками.
+правится по ходу и закрывается итогом (готово, набор откатился, откат не прошёл) с кнопками.
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ async def fleet_show(bot, services, out=None) -> None:
 
 
 async def install(cb: CallbackQuery, services, tag: str = "", rerender=None) -> None:
-    """«⬆️ Обновить до vX» (раздел, уведомление) — диалог с порядком (Т-У3).
+    """«⬆️ Обновить до vX» (раздел, уведомление) — диалог с порядком обновления.
     Цель по сохранённому списку, без сети; сменилась — всплывашка."""
     if await call(services.fleet_running):
         await cb.answer(ft.UPDATE_RUNNING_TOAST, show_alert=True)

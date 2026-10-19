@@ -1,7 +1,7 @@
-"""Набор обновлений, откат (Р21): неудача любого доступного шлюза — назад весь
+"""Набор обновлений, откат: неудача любого доступного шлюза — назад весь
 набор, порядок отката — обратный ходу; откат локальный; откат, не прошедший
 на хосте, — `rollback_failed` без автоматических команд; сторож сервера
-откатил сервер — Т-У8; «🔁 Повторить» — ход заново.
+откатил сервер — уведомление; «🔁 Повторить» — ход заново.
 
 Инвариант: ни одного состояния после хода, где доступные хосты на разных
 выпусках, — либо все на новом, либо все на прежнем.
@@ -147,7 +147,7 @@ def test_the_server_without_its_old_version_is_a_failed_revert_too(fleet):
 
 def test_the_server_guard_rolling_the_server_back_ends_the_run(fleet):
     """Обновлённый сервер не вышел на связь — сторож вернул прежний; шлюзам в
-    обычном ходе команд ещё не было: набор rolled_back, Т-У8 без звука."""
+    обычном ходе команд ещё не было: набор rolled_back, уведомление без звука."""
     fleet.releases(rel("v3.4.0", both=True), rel("v3.5.0", both=True))
     fleet.slot(1)
     fleet.start()
@@ -195,7 +195,7 @@ def test_retry_starts_the_whole_fleet_again_from_what_stands(fleet):
 
 
 def test_no_state_offers_to_go_on_without_a_gateway(fleet):
-    """Кнопки «продолжить без шлюза» нет ни в одном итоге (Р21)."""
+    """Кнопки «продолжить без шлюза» нет ни в одном итоге."""
     from awgbot.bot import keyboards as kb
     for retry in (False, True):
         labels = [b.text for row in kb.fleet_final(retry).inline_keyboard for b in row]

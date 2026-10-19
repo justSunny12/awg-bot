@@ -247,16 +247,16 @@ RESTORE = [
     Shot("adm.restore.old", role="admin", steps=[("file", _BK_NAME, _BK_OLD)], data=_restore_ready,
          title="бэкап версии до 3.4.0"),
     Shot("adm.restore.newer", role="admin", steps=[("file", _BK_NAME, _BK_NEWER)], data=_restore_ready,
-         title="Т-В2: бэкап другой версии со сборки не из выпуска"),
+         title="отказ: бэкап другой версии со сборки не из выпуска"),
     Shot("adm.restore.admin", role="admin", steps=[("file", _BK_NAME, _BK_ADMIN)], data=_restore_ready,
          title="бэкап другого админа"),
-    # ── другая версия бэкапа — переход на его выпуск (Т-В1, Т-В2) ─────────────
+    # ── другая версия бэкапа — переход на его выпуск (план, отказы) ────────────
     Shot("adm.restore.release.down", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)], data=_releases(),
-         title="Т-В1: бэкап старше кода — сервер вернётся на его выпуск"),
+         title="бэкап старше кода — сервер вернётся на его выпуск"),
     Shot("adm.restore.release.up", role="admin", steps=[("file", _BK_NAME, _BK_UP)], data=_releases(),
-         title="Т-В1: бэкап новее кода — сервер обновится до его выпуска"),
+         title="бэкап новее кода — сервер обновится до его выпуска"),
     Shot("adm.restore.release.withdrawn", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
-         data=_releases(withdrawn="ломает маршруты шлюза"), title="Т-В1: выпуск бэкапа снят — предупреждение"),
+         data=_releases(withdrawn="ломает маршруты шлюза"), title="выпуск бэкапа снят — предупреждение"),
     Shot("adm.restore.release.yes", role="admin",
          steps=[("file", _BK_NAME, _BK_DOWN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
          data=_releases(), title="выпуск бэкапа скачан — восстановление запущено"),
@@ -264,11 +264,11 @@ RESTORE = [
          steps=[("file", _BK_NAME, _BK_DOWN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
          data=_releases(fetch=False), title="выпуск бэкапа не скачался — вопрос остаётся, кнопку можно нажать снова"),
     Shot("adm.restore.release.none", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
-         data=_releases(tags=("v3.5.0",)), title="Т-В2: выпуска бэкапа на GitHub нет"),
+         data=_releases(tags=("v3.5.0",)), title="отказ: выпуска бэкапа на GitHub нет"),
     Shot("adm.restore.release.digest", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
-         data=_releases(sha="e" * 64), title="Т-В2: выпуск на GitHub не тот, на котором снят бэкап"),
+         data=_releases(sha="e" * 64), title="отказ: выпуск на GitHub не тот, на котором снят бэкап"),
     Shot("adm.restore.release.github", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
-         data=_releases(down=True), title="Т-В2: GitHub не ответил"),
+         data=_releases(down=True), title="отказ: GitHub не ответил"),
 ]
 
 

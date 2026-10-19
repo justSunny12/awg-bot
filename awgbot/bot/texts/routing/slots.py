@@ -230,7 +230,7 @@ def _slot_ping_tail(state) -> str:
 def slot_line(state, star: bool = True) -> str:
     """Строка слота на экране «Шлюзы»: «⭐ NASPi — 🟢 Активен · 43 мс»; при
     одном слоте звезды нет — выбирать не из чего. Слот в замене устройства —
-    строкой сопряжения (Т-П15)."""
+    строкой сопряжения."""
     if state.get("join"):
         from .join import join_card_line
         return f"{slot_name(state, star=star)} — {join_card_line(state['join'])}"
@@ -304,7 +304,7 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
     нет — «🔴 шлюз не назначен» и что такое шлюз), строки слотов, под ними
     предупреждение о выключенном автопереключении, переключение и списки,
     «подробнее» (без обещания переключения, когда оно выключено), связь
-    подсетей; новые слоты в сопряжении (joins) — строками Т-П15. Что значит ⭐
+    подсетей; новые слоты в сопряжении (joins) — строками сопряжения. Что значит ⭐
     — в README, не на экране."""
     from .join import join_card_line
     ok, reason = status

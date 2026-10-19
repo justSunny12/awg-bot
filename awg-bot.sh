@@ -2013,7 +2013,7 @@ cmd_restore() {
     # из чата человек видел план в вопросе бота — сверяем с ним
     [[ -n "$RESTORE_PLAN_FILE" && -f "$RESTORE_PLAN_FILE" ]] && cp "$RESTORE_PLAN_FILE" "$expect"
     if [[ -n "$rel_lines" ]]; then
-        # как в вопросе бота (Т-В1): заголовок плана, строка версии, остальное
+        # как в вопросе бота: заголовок плана, строка версии, остальное
         printf '%s\n%s\n' "$(printf '%s\n' "$plan" | head -n1)" "$rel_lines"
         printf '%s\n\n' "$(printf '%s\n' "$plan" | tail -n +2)"
     else

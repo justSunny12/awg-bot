@@ -127,7 +127,7 @@ async def join_wrong(slot: int, left: int) -> None:
 
 
 async def join_close(services, slot: int, why: str) -> str:
-    """Отказ шлюзу и интерфейс под токен прочь — сразу (Р24). "" — сделано,
+    """Отказ шлюзу и интерфейс под токен прочь — сразу. "" — сделано,
     иначе причина (возврат повторит такт)."""
     if _server is not None:
         return await _server.join_close(int(slot), why)
@@ -182,7 +182,7 @@ async def ensure(services) -> LinkServer | None:
 
 async def join_job(services) -> None:
     """Своё задание сопряжений (30 с с джиттером, без условия маршрутизации):
-    пока команда подключения жива — слушатель на адресе линка и срок (Т-П11,
+    пока команда подключения жива — слушатель на адресе линка и срок (час:
     интерфейс под токен прочь сразу); сопряжений нет — выход сразу."""
     global _server
     if config.ROLE == "gateway" or not hasattr(services, "gwjoin_all"):

@@ -1,9 +1,9 @@
-"""Восстановление = переход на выпуск бэкапа (domain/fleet/restore.py, §3.5):
+"""Восстановление = переход на выпуск бэкапа (domain/fleet/restore.py):
 версия бэкапа та же — как раньше; другая — только выпуск vV с GitHub, sha256
-ассета которого равен digest метки; иначе отказ Т-В2 словами. План несёт
-строку версии (Т-В1) первой после заголовка, у снятого выпуска — хвост.
+ассета которого равен digest метки; иначе отказ словами. План несёт
+строку версии первой после заголовка, у снятого выпуска — хвост.
 После «♻️ Восстановить» бот качает ассет до запуска и передаёт его в
-`awg-bot restore --release`; итог и отказ перехода — строки Т-В3.
+`awg-bot restore --release`; итог и отказ перехода — строки отчёта.
 """
 from __future__ import annotations
 
@@ -190,7 +190,7 @@ async def test_a_failed_transition_says_nothing_changed(services, fake_bot):
 
 def test_the_terminal_tool(github, tmp_path, capsys):
     """tools.restore_release: та же версия — «same»; другая — версия первой
-    строкой и строки Т-В1 без HTML (Т-В4); архив от бота — только сверка sha256."""
+    строкой и строки плана без HTML; архив от бота — только сверка sha256."""
     from tools import restore_release as tool
     meta = tmp_path / "backup-meta.json"
     out = tmp_path / "release.tgz"
@@ -398,7 +398,7 @@ async def test_a_downloaded_release_is_removed_when_the_launch_fails(services, m
 
 def test_withdrawn_and_preliminary_releases_are_not_the_roles_version():
     """Вне оси: version роли в выпуске пропускает снятые и предварительные
-    (prerelease без «снят:») ниже upto; сам upto годится и снятым (Р17)."""
+    (prerelease без «снят:») ниже upto; сам upto годится и снятым."""
     from awgbot.domain.fleet.plan import role_target
     rels = [_rel("v3.4.1"), _rel("v3.4.2", withdrawn="DUMMY"),
             updates.Release(tag="v3.4.3", version=(3, 4, 3), body="", asset_url="DUMMY", sha256=HEX,
