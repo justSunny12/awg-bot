@@ -12,8 +12,11 @@ from pathlib import Path
 from awgbot.core import config
 
 ADMIN = config.ADMIN_ID
+# routing.lan_space — роздано в адреса в туннеле локальных сетей шлюзов: на той
+# же линии остаётся текущим, на другой — из бэкапа
 APP = ("network:\n  subnet_prefix: \"{prefix}\"\n  subnet_cidr: \"{prefix}.0/24\"\n  server_host: \"{host}\"\n"
-       "  server_port: {port}\nrouting:\n  link_channel_port: {chport}\nscheduler:\n  backup_day: {day}\n")
+       "  server_port: {port}\nrouting:\n  link_channel_port: {chport}\n  lan_space: \"10.240.0.0/12\"\n"
+       "scheduler:\n  backup_day: {day}\n")
 
 
 def _sql(db, q, *a):

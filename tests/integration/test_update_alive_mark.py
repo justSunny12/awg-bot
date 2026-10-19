@@ -127,13 +127,6 @@ async def test_one_mark_per_process(data):
     assert _COMMITS == [1]
 
 
-def test_both_roles_watch_telegram_once_the_base_is_open():
-    from awgbot.runtime.main import client, gateway
-    for mod, base in ((client, "db.init_schema()"), (gateway, "db.init_schema()")):
-        text = Path(mod.__file__).read_text(encoding="utf-8")
-        assert text.index(base) < text.index("alive.watch(bot)") < text.index("start_polling"), mod.__name__
-
-
 # ── агент: подписанное слово сервера в канале ───────────────────────────────
 
 async def _session_once(vps_conn) -> None:

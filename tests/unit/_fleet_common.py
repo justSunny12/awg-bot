@@ -10,7 +10,10 @@
 """
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import hashlib
+import threading
 import types
 
 import pytest
@@ -19,6 +22,7 @@ from awgbot.core import config
 from awgbot.domain.fleet import order as fleet_order
 from awgbot.domain.fleet import server as fleet_server
 from awgbot.infra import awglock, updates
+from awgbot.runtime.linkserver import upd as ls_upd
 from awgbot.util import timeutil
 
 
@@ -117,14 +121,37 @@ class Fleet:
         return self.s.fleet_start(tag or (target.tag if target else ""))
 
     def deliver(self, out):
-        """Как слушатель канала: сданное в сокет — подтвердить домену;
-        слотам из drop отправка срывается — сессия падает."""
-        for slot, kind, body in out.send:
-            if slot in self.drop:
-                self.offline(slot)
-                continue
-            if kind in ("upd_commit", "upd_revert"):
-                self.s.fleet_delivered(slot, kind, body)
+        """Отправка — настоящим слушателем набора (linkserver/upd._run): сданное
+        в сокет подтверждается домену; слотам из drop запись в сокет срывается
+        (send → False, сессия падает). Живое сообщение, уведомления и действие
+        сервера над собой тест проверяет по out сам — в _run они не уходят."""
+        stand = self
+
+        class _Srv:
+            async def send(self, slot, kind, body):
+                if slot in stand.drop:
+                    stand.offline(slot)
+                    return False
+                return True
+        quiet = dataclasses.replace(out, server="", live=False, notes=[])
+        coro = ls_upd._run(self.s, quiet, _Srv())
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(coro)
+            return out
+        failed: list = []                              # внутри цикла событий (e2e) — своим потоком
+
+        def _go():
+            try:
+                asyncio.run(coro)
+            except BaseException as e:                 # noqa: BLE001
+                failed.append(e)
+        t = threading.Thread(target=_go)
+        t.start()
+        t.join(30)
+        if failed:
+            raise failed[0]
         return out
 
     def tick(self):

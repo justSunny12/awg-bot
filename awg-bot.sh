@@ -1351,7 +1351,7 @@ unit_guard_strip_for_old() {  # возвращённый код не знает 
     # Юнит переписал новый скрипт (install_unit) до отказа; прежний скрипт на
     # глагол __update_guard отвечал бы «неизвестная команда» на каждом старте
     # (строка с «-» старт не держит, но сорит в журнал)
-    local unit="/etc/systemd/system/$SERVICE.service" tmp
+    local unit="$UNIT_PATH" tmp
     grep -q '__update_guard' "$INSTALL_DIR/awg-bot.sh" 2>/dev/null && return 0
     [[ -f "$unit" ]] && grep -q '__update_guard' "$unit" || return 0
     tmp="$(mktemp)" || return 0
@@ -2727,9 +2727,10 @@ case "$VERB" in
     restore)     cmd_restore "$@" ;;
     uninstall)   cmd_uninstall ;;
     __post_update)    cmd_post_update "${1:-0}" ;;
-    __update_guard)   cmd_update_guard "$@" ;;
-    __update_commit)  cmd_update_commit ;;
-    __update_revert)  cmd_update_revert "$@" ;;
+    # pid в update-running — пока процесс под замком работает; дальше он ничего не значит
+    __update_guard)   cmd_update_guard "$@" && _rc=0 || _rc=$?; rm -f "$DATA_DIR/update-running"; exit "$_rc" ;;
+    __update_commit)  cmd_update_commit      && _rc=0 || _rc=$?; rm -f "$DATA_DIR/update-running"; exit "$_rc" ;;
+    __update_revert)  cmd_update_revert "$@" && _rc=0 || _rc=$?; rm -f "$DATA_DIR/update-running"; exit "$_rc" ;;
     __restore_after_update) cmd_restore_after_update ;;
     __post_uninstall) cmd_post_uninstall ;;
     status)      cmd_status ;;

@@ -51,14 +51,26 @@ def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
     return out
 
 
-def _tool(asset: bytes, *, refuse: str = "") -> list[str]:
-    """tools.restore_release: версия бэкапа первой строкой, архив — в --out."""
+def _version_line() -> str:
+    """Строка версии, которую tools.restore_release печатает после версии,
+    когда сам скачал выпуск (без --archive), — настоящим текстом."""
+    from awgbot.domain.fleet import restore as fr
+    from awgbot.domain.notices import backup as nb
+    from awgbot.domain.notices import fleet as nf
+    return nb.plain(nf.restore_version_line(fr.DOWN, OLD_VER, NEW_VER))
+
+
+def _tool(asset: bytes, *, refuse: str = "", github: Path | None = None) -> list[str]:
+    """tools.restore_release как настоящий: с --archive (выпуск уже скачан
+    ботом) — архив в --out и только версия; без него — «скачивание» с GitHub
+    (файл github) в --out, версия и строка версии для плана."""
     if refuse:
         return [f'    tools.restore_release) echo "{refuse}" >&2; return 1 ;;']
     return ['    tools.restore_release)',
             '      local out="" arch=""; while [[ $# -gt 0 ]]; do case "$1" in --out) out="$2" ;; '
             '--archive) arch="$2" ;; esac; shift; done',
-            '      cp "$arch" "$out"; echo "' + NEW_VER + '"; echo "♻️ Версия: сейчас v' + OLD_VER + '" ;;']
+            '      if [[ -n "$arch" ]]; then cp "$arch" "$out"; echo "' + NEW_VER + '"; else',
+            f'        cp "{github}" "$out"; echo "{NEW_VER}"; echo "{_version_line()}"; fi ;;']
 
 
 class Release:
@@ -113,14 +125,20 @@ class Release:
         plain.write_bytes(_tgz(files))
         self.plain = plain
 
-    def run(self, script: str, *, refuse: str = "") -> subprocess.CompletedProcess:
+    def run(self, script: str, *, refuse: str = "", release: bool = True) -> subprocess.CompletedProcess:
+        """release — выпуск уже скачан ботом (--release <архив>, из чата);
+        False — терминал качает его сам (tools.restore_release без --archive)."""
         h = self.h
-        prog = "\n".join([*prelude(script, h, plain=self.plain, extra=_tool(self.blob, refuse=refuse),
+        github = h.tmp / "github-asset.tgz"
+        github.write_bytes(self.blob)
+        prog = "\n".join([*prelude(script, h, plain=self.plain,
+                                   extra=_tool(self.blob, refuse=refuse, github=github),
                                    funcs=FUNCS + self.real, **self.pre),
                           *_stubs(h.log, real=self.real), 'cmd_restore "$@"'])
         pending = h.backups / "restore-pending.tgz.enc"
         pending.write_bytes(h.src.read_bytes())
-        return subprocess.run(["bash", "-c", prog, "x", "--yes", "--release", str(self.asset), str(pending)],
+        args = ["--yes", *(["--release", str(self.asset)] if release else []), str(pending)]
+        return subprocess.run(["bash", "-c", prog, "x", *args],
                               capture_output=True, text=True, timeout=60,
                               env={"PATH": f"{self.bin}:/usr/bin:/bin", "TMPDIR": str(h.tmp)})
 
@@ -182,13 +200,25 @@ def test_a_release_refusal_goes_before_the_stop(script, tmp_path):
     assert not rel.asset.exists()
 
 
-def test_the_state_reaches_the_second_half_under_its_own_names(script):
+def test_the_state_reaches_the_second_half_under_its_own_names(script, tmp_path):
     """Скрипт обнуляет RESTORE_YES/TMP/PENDING/PLAN_FILE при загрузке — exec
-    передаёт их под AWG_RESTORE_*; договор между версиями."""
-    body = _extract_func(script, "cmd_restore")
-    after = _extract_func(script, "cmd_restore_after_update")
-    for name in ("YES", "TMP", "PENDING", "PLAN_FILE"):
-        assert f"AWG_RESTORE_{name}=" in body and f'"${{AWG_RESTORE_{name}:-' in after, name
+    передаёт их под AWG_RESTORE_*: вторая половина (скрипт выпуска) убирает
+    файл из чата и план вопроса, временный каталог операции, а при отказе
+    пишет маркер для бота (он есть только при --yes)."""
+    h = Host(tmp_path)
+    plan = h.backups / "restore-pending.plan.json"
+    plan.write_text("{}", encoding="utf-8")
+    rel = Release(script, h)
+    assert rel.run(script).returncode == 0
+    assert not (h.backups / "restore-pending.tgz.enc").exists(), "файл из чата остался в каталоге бэкапов"
+    assert not plan.exists(), "план вопроса остался"
+    blocks = next(c for c in h.calls() if c.startswith("py tools.restore_merge --apply-blocks "))
+    op_tmp = Path(blocks.split()[-1]).parent.parent                 # RESTORE_TMP/copy/restore-merge.json
+    assert not op_tmp.exists(), f"временный каталог операции (расшифрованный бэкап) остался: {op_tmp}"
+    h2 = Host(tmp_path / "refused")
+    rel2 = Release(script, h2, merge_fails=True)
+    assert rel2.run(script).returncode != 0
+    assert (h2.data / "restore-failed.json").exists(), "отказ во второй половине — без маркера для бота"
 
 
 @pytest.mark.skipif(shutil.which("flock") is None, reason="нет flock")
@@ -319,12 +349,27 @@ def test_the_second_half_takes_the_same_steps_as_an_update(script, tmp_path):
 
 
 def test_the_version_line_comes_after_the_plan_header(script, tmp_path):
-    """Вне оси: строка версии в терминале — после заголовка плана, как в вопросе бота."""
+    """Вне оси: `awg-bot restore <файл>` из терминала (без --release) — выпуск
+    качает tools.restore_release сам и печатает строку версии; она — после
+    заголовка плана, как в вопросе бота. Переход доводится тем же путём."""
+    h = Host(tmp_path)
+    rel = Release(script, h)
+    r = rel.run(script, release=False)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.index("ПЛАН") < r.stdout.index(_version_line()), r.stdout
+    assert h.live() == NEW and NEW_VER in rel.code(), "без --release переход не доведён"
+    assert not any("--archive" in c for c in h.calls() if c.startswith("py tools.restore_release")), h.calls()
+
+
+def test_a_release_from_the_chat_prints_no_version_line_of_its_own(script, tmp_path):
+    """С --release (выпуск скачал бот) инструмент печатает только версию —
+    строки версии в выводе нет, план — как есть."""
     h = Host(tmp_path)
     rel = Release(script, h)
     r = rel.run(script)
-    assert r.returncode == 0
-    assert r.stdout.index("ПЛАН") < r.stdout.index(f"♻️ Версия: сейчас v{OLD_VER}"), r.stdout
+    assert r.returncode == 0, r.stderr
+    assert "♻️ Версия" not in r.stdout and "ПЛАН" in r.stdout
+    assert any("--archive" in c for c in h.calls() if c.startswith("py tools.restore_release"))
 
 
 def test_a_bare_failure_still_writes_the_marker(script, tmp_path):

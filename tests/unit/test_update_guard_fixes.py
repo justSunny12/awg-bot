@@ -141,9 +141,24 @@ def test_pruning_keeps_the_old_env_of_an_armed_guard(tmp_path):
 
 
 def test_the_updater_leaves_its_pid_under_the_lock(tmp_path):
-    host = _held(tmp_path)
-    pid = (host.data / "update-running").read_text(encoding="utf-8").split()[0]
-    assert pid.isdigit() and int(pid) > 1
+    """Пока шаг обновления ждёт факта, в update-running — pid процесса под
+    замком (бот по нему видит живой апдейтер); отработавший сторож pid за собой
+    убирает: мёртвый pid мог бы достаться новому процессу."""
+    from tests.unit.test_update_guard import SCRIPT, _func
+    host = _Host(tmp_path)
+    # сам замок: пока процесс под ним — в файле его pid
+    prog = ("set -euo pipefail\n" f'DATA_DIR="{host.data}"; UPDATE_LOCK="{host.data}/update-guard.lock"\n'
+            + _func(SCRIPT.read_text(encoding="utf-8"), "update_lock") + "\n"
+            + 'update_lock -n; cat "$DATA_DIR/update-running"; echo "me $$"\n')
+    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, r.stderr
+    pid, me = r.stdout.split()[0], r.stdout.split()[-1]
+    assert pid.isdigit() and pid == me, r.stdout
+    # отработавший сторож (шаг набора с удержанием) pid за собой убирает
+    host.post_update(hold=True)
+    host.mark(host.new)
+    host.guard("--alive")
+    assert not (host.data / "update-running").exists(), "pid отработавшего сторожа остался"
 
 
 @pytest.mark.skipif(shutil.which("flock") is None, reason="нет flock")

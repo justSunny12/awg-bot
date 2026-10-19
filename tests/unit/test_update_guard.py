@@ -356,28 +356,13 @@ def _func(text: str, name: str) -> str:
     return m.group(0)
 
 
-def test_manual_update_gets_the_same_guard(script):
-    """Ручной `awg-bot update` и самообновление кнопкой — один путь: оба
-    доходят до cmd_post_update нового скрипта, где стоит сторож."""
-    from awgbot.infra.updates import github
-    assert 'exec "$INSTALL_DIR/awg-bot.sh" __post_update' in _func(script, "cmd_update")
-    assert re.search(r"spawn_detached\(\[_AWG_BOT_BIN, \"update\", path\]", Path(github.__file__).read_text(encoding="utf-8"))
-    assert re.search(r"^\s+__update_guard\)\s+cmd_update_guard \"\$@\" ;;$", script, re.M)
-
-
-def test_the_previous_guard_goes_right_before_the_service_stops(script):
-    """Снимается после всех проверок первой половины (отказ до остановки не
-    лишает прежнее обновление сторожа) и до подмены кода."""
-    upd = _func(script, "cmd_update")
-    i = upd.index("update_guard_disarm")
-    assert upd.index("awg-kernel-install.sh") < i < upd.index('systemctl stop "$SERVICE"')
-
-
-def test_rescue_and_uninstall_disarm(script):
-    rescue = _func(script, "post_update_rescue")
-    assert rescue.index("adopt_timezone_undo") < rescue.index("update_guard_disarm"), \
-        "копия app.yaml снята раньше, чем вернула ключ"
-    assert rescue.index("update_guard_disarm") < rescue.index('systemctl start "$SERVICE"')
+def test_uninstall_disarms_the_guard(script):
+    """Снятие бота снимает и сторожа: таймер через 10 минут «откатил» бы
+    удалённую установку. Здесь — по исходнику: uninstall трогает хост за
+    пределами временного каталога (nft, iptables, юниты), гонять его на машине
+    теста нельзя. Ручной update, самообновление кнопкой, снятие прежнего
+    сторожа перед остановкой и ловушка второй половины — прогоном настоящего
+    скрипта (test_review_fixes_update_run)."""
     assert "update_guard_disarm" in _func(script, "cmd_uninstall")
 
 
@@ -466,13 +451,6 @@ def test_a_chain_under_one_command_holds_the_very_first_old_one(tmp_path):
     assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old" and host.env_old.is_dir()
     host.run("__update_revert")
     assert host.whose() == "old" and host.venv() == host.env_old and not env_third.exists()
-
-
-def test_commit_and_revert_are_dispatched(script):
-    assert re.search(r"^\s+__update_commit\)\s+cmd_update_commit ;;$", script, re.M)
-    assert re.search(r"^\s+__update_revert\)\s+cmd_update_revert \"\$@\" ;;$", script, re.M)
-    upd = _func(script, "cmd_update")
-    assert "! -name .hold-code" in upd and "! -name .hold-code" in _func(script, "restore_prev_code")
 
 
 def test_an_update_within_the_line_keeps_a_timezone_key_set_by_hand(tmp_path):

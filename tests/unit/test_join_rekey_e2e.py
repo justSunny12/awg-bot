@@ -52,6 +52,50 @@ def _server_next(peers: str = "") -> str:
             f"Endpoint = vpn-server.example.org:443\nAllowedIPs = {allowed}\nPersistentKeepalive = 25-35\n")
 
 
+LINK_SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh"
+
+
+def _script_next(tmp: Path, standing: str, peers: str = "") -> str:
+    """Шлюзовая сторона новыми ключами — выводом настоящего --rekey-stage
+    скрипта линка ВПС (LINK_I1, PEER_LAN_NETS, ENDPOINT_HOST, как их
+    передаёт бот) и в том виде, в каком её отдаёт link_next
+    (gateway_rekey_next_body: без пояснений, штамп контракта). awg — подставной:
+    genkey/genpsk — настоящие ключи по очереди, pubkey — их пары."""
+    import base64
+    import os
+    from tests.conftest import fake_cmd
+    run = tmp / "rekey-stage"; run.mkdir()
+    bin_, conf_dir, root = run / "bin", run / "amneziawg", run / "root"
+    for d in (bin_, conf_dir, root):
+        d.mkdir()
+    pairs = [keypair() for _ in range(2)]
+    (run / "keys").write_text("".join(f"{priv}\n" for priv, _ in pairs), encoding="utf-8")
+    (run / "pubs").write_text("".join(f"{priv} {pub}\n" for priv, pub in pairs), encoding="utf-8")
+    (run / "psk").write_text(base64.b64encode(os.urandom(32)).decode() + "\n", encoding="utf-8")
+    fake_cmd(bin_ / "id", "echo 0\n")
+    fake_cmd(bin_ / "awg",
+             f'case "$1" in\n'
+             f'  genkey) head -n1 "{run}/keys"; sed -i.bak 1d "{run}/keys" ;;\n'
+             f'  genpsk) cat "{run}/psk" ;;\n'
+             f'  pubkey) read k; awk -v k="$k" \'$1 == k {{ print $2 }}\' "{run}/pubs" ;;\n'
+             f'esac\n')
+    vps_priv, _ = keypair()
+    gw_pub = wgconf.pubkey_of(wgconf.parse(standing).get("Interface", "PrivateKey"))
+    (conf_dir / "awglink.conf").write_text(
+        f"[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\nPrivateKey = {vps_priv}\nTable = off\n\n"
+        f"[Peer]\nPublicKey = {gw_pub}\nAllowedIPs = 0.0.0.0/0\n", encoding="utf-8")
+    (root / "gw-awglink.conf").write_text(standing, encoding="utf-8")
+    env = {"PATH": f"{bin_}:/usr/bin:/bin", "LINK_IF": "awglink", "LINK_CIDR": "10.99.99.0/30", "LINK_PORT": "443",
+           "CONF_DIR": str(conf_dir), "GW_CONF_OUT": str(root / "gw-awglink.conf"), "_APP_YAML": str(run / "нет.yaml"),
+           "CLIENT_SUBNET": "10.8.1.0/24", "LINK_KEEPALIVE": "25-35", "ENDPOINT_HOST": "vpn-server.example.org",
+           "LINK_I1": I1, "PEER_LAN_NETS": peers.replace(",", " ")}
+    r = _RUN([SH, str(LINK_SCRIPT), "--rekey-stage"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and r.stdout.strip().endswith("rekey: staged"), r.stdout + r.stderr
+    conf = wgconf.parse((root / "gw-awglink.conf.next").read_text(encoding="utf-8"))
+    conf.comments = []
+    return wgconf.render(conf, "link", stamp=gwcfg.LINK_CONTRACT)
+
+
 def _script_check(path: str, env: dict) -> subprocess.CompletedProcess:
     """Проверка --link-apply настоящего скрипта: вид — как в нём (LINK_CHECK_KIND)."""
     text = SCRIPT.read_text(encoding="utf-8")
@@ -110,18 +154,20 @@ def joined(svc, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("peers", ["", "10.241.0.0/16"])
-def test_the_keys_after_the_code_pass_the_scripts_check(joined, peers):
+def test_the_keys_after_the_code_pass_the_scripts_check(joined, peers, tmp_path):
     """link_next auto=join после кода: проверка ключей агентом, переключение,
     --link-apply — настоящая проверка скрипта принимает конфиг, и на месте —
     [Peer] сервера (подсеть клиентов, соседи, PSK), [Interface] нового (I1)."""
-    nxt = _server_next(peers)
+    nxt = _script_next(tmp_path, joined.link.read_text(encoding="utf-8"), peers)
     res = joined.rekey_next_in({"t": "link_next", "id": "a1b2c3d4e5f6", "conf": nxt, "fp": "x", "auto": "join"})
     assert res["reply"]["state"] == "ready" and not res["ask"], res
     out = joined.rekey_go({"id": "a1b2c3d4e5f6"})
     assert out["ok"], (out, joined.runs)
     conf = wgconf.parse(joined.link.read_text(encoding="utf-8"))
-    assert conf.get("Peer", "AllowedIPs").startswith("10.8.1.0/24, 10.99.99.0/30")
-    assert conf.get("Peer", "PresharedKey") == "DUMMY-NEW-PSK=" and conf.get("Interface", "I1") == I1
+    want = "10.8.1.0/24, 10.99.99.0/30" + (f", {peers}" if peers else "")
+    assert conf.get("Peer", "AllowedIPs") == want, conf.get("Peer", "AllowedIPs")
+    assert conf.get("Peer", "PresharedKey") == wgconf.parse(nxt).get("Peer", "PresharedKey")
+    assert conf.get("Interface", "I1") == I1
 
 
 def test_the_old_merge_would_have_been_refused_by_the_script(joined, tmp_path):
@@ -181,3 +227,25 @@ def test_the_resolver_is_not_guessed_from_allowed_ips():
     env = gwcfg.join_link_env(_server_next("10.241.0.0/16, 10.242.0.7/32"))
     assert env == {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": "10.241.0.0/16 10.242.0.7/32"}
     assert "RESOLVER" not in env
+
+
+def test_the_keys_under_the_pairing_key_reach_the_link_and_a_stranger_cannot_read_them(joined, tmp_path):
+    """sec-1: в сессии сопряжения сервер шлёт конфиг новых ключей только под
+    ключом сопряжения (box). Агент со своим Kp открывает его и переходит;
+    чужой ключ (держатель токена, перетянувший endpoint) — отказ, линк на
+    месте."""
+    import os
+    from awgbot.util import joinsas
+    standing = joined.link.read_text(encoding="utf-8")
+    nxt = _script_next(tmp_path, standing)
+    kp = os.urandom(32)
+    stranger = joinsas.seal(os.urandom(32), {"conf": nxt})
+    joined.__dict__["_join_kp"] = kp
+    res = joined.rekey_next_in({"t": "link_next", "id": "a1b2c3d4e5f6", "box": stranger, "fp": "x", "auto": "join"})
+    assert res["reply"]["state"] == "declined", res
+    assert joined.link.read_text(encoding="utf-8") == standing
+    res = joined.rekey_next_in({"t": "link_next", "id": "a1b2c3d4e5f7", "box": joinsas.seal(kp, {"conf": nxt}),
+                                "fp": "x", "auto": "join"})
+    assert res["reply"]["state"] == "ready", res
+    assert joined.rekey_go({"id": "a1b2c3d4e5f7"})["ok"], joined.runs
+    assert wgconf.parse(joined.link.read_text(encoding="utf-8")).get("Interface", "I1") == I1

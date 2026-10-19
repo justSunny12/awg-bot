@@ -150,15 +150,34 @@ def test_a_bad_link_config_is_not_installed(tmp_path):
     assert r.returncode == 2 and "нужен файл" in r.stdout
 
 
-def test_the_full_apply_and_rollback_take_the_quarantine_away():
-    """Полное применение после сопряжения (тот же --apply) и снятие обвязки
-    снимают карантинную таблицу: иначе линк на постоянных ключах остался бы
-    без пересылки навсегда."""
+def test_the_rollback_takes_the_quarantine_away(tmp_path):
+    """Снятие обвязки (--rollback) снимает и карантинную таблицу с её файлом:
+    иначе линк на постоянных ключах после повторной установки остался бы без
+    пересылки навсегда. Блок режима — под sh из настоящего скрипта; run пишет
+    команды в журнал и исполняет только nft (подставной) и rm во временном
+    каталоге — системных путей тест не трогает. Полное применение после
+    сопряжения снимает карантин — test_the_quarantine_is_lifted_only_by_the_end_of_pairing."""
     script = SCRIPT.read_text(encoding="utf-8")
-    full = script.split('run "nft -f $GUARD_FILE"', 1)[1].split("# ── 3.", 1)[0]
-    assert 'run "nft delete table $JOIN_TABLE 2>/dev/null || true"' in full and "join.nft" in full
-    rollback = script.split('if [ "$MODE" = "rollback" ]; then', 1)[1].split("\nfi\n", 1)[0]
-    assert 'nft delete table $JOIN_TABLE' in rollback and "join.nft" in rollback
+    bin_ = tmp_path / "bin"; bin_.mkdir()
+    log = tmp_path / "calls.log"; log.write_text("", encoding="utf-8")
+    fake_cmd(bin_ / "nft", f'echo "nft $*" >> {log}\nexit 0\n')
+    etc = tmp_path / "awg-gw"; etc.mkdir()
+    (etc / "join.nft").write_text("table inet awg_gw_join\n", encoding="utf-8")
+    start = script.index('if [ "$MODE" = "rollback" ]; then')
+    block = script[start:script.index("\nfi\n", start) + 4]
+    prog = (_helpers(script)
+            + f'\nrun() {{ echo "run $*" >> {log}; case "$*" in "nft "*|"rm -f {etc}/"*) sh -c "$*" ;; esac; }}\n'
+            + "link_cidr_of() { :; }; legacy_cleanup() { :; }; lan_remove() { :; }\n"
+            + f'MODE=rollback; GW_ETC="{etc}"; JOIN_TABLE="inet awg_gw_join"; GUARD_TABLE="inet awg_gw_guard"\n'
+            + f'LINK_IF=awglink; AWG_QUICK=awg-quick; FW_ENV="{etc}/firewall.env"; GUARD_FILE="{etc}/guard.nft"\n'
+            + f'GW_STATUS_FILE="{etc}/status"; HOST_CONF_DIR="{tmp_path}/amnezia"; UNIT="{tmp_path}/u.service"\n'
+            + f'SYSCTL_CONF="{tmp_path}/sysctl.conf"; NETWORKD_UNMANAGED="{tmp_path}/unmanaged.conf"\n' + block)
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, env={"PATH": f"{bin_}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "nft delete table inet awg_gw_join" in calls, calls
+    assert not (etc / "join.nft").exists(), "файл карантина пережил снятие обвязки"
+    assert calls.index("nft delete table inet awg_gw_join") < calls.index("nft delete table inet awg_gw_guard")
 
 
 def _apply_quarantine_block(tmp_path, *, finish: bool) -> tuple[subprocess.CompletedProcess, list[str], Path]:
