@@ -141,6 +141,10 @@ class RekeyMixin:
             raise ServiceError("Нужен агент шлюза v3.3.0")
         if self.gateway_rekey_active(gw.id):
             raise ServiceError("Смена ключей уже идёт")
+        if auto != "join" and getattr(self, "fleet_running", lambda: False)():
+            # ход набора обновлений перезапускает агента — посреди переключения
+            # ключей это сожгло бы смену; ход, в свою очередь, не начинается при ней
+            raise ServiceError("Идёт обновление набора — смена ключей линка после его итога")
         joining = getattr(self, "gwjoin", None)
         if auto != "join" and callable(joining) and joining(gw.id).get("state") in ("waiting", "connected",
                                                                                      "accepted", "closing"):

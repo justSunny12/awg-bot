@@ -72,8 +72,8 @@ class SlotsMixin:
         return out
 
     def _gw_name(self, gw) -> str:
-        if getattr(gw, "device_id", None) is None:
-            return getattr(gw, "name", "") or f"шлюз {gw.id}"   # слот без устройства (сопряжение нового слота)
+        if getattr(gw, "device_id", None) is None or getattr(gw, "joining", False):
+            return getattr(gw, "name", "") or f"шлюз {gw.id}"   # слот в сопряжении: имя уже снято
         dev = self.db.get_device(gw.device_id)
         return dev.name if dev is not None else f"шлюз {gw.id}"
 

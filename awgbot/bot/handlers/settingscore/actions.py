@@ -129,7 +129,8 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     busy = await call(services.backup_rekey_busy)
     if busy is not None:
         # идёт смена ключей линка: на диске .next/.prev — копия после неё
-        await cb.answer(nb.rekey_wait_toast(services._gw_name(busy)), show_alert=True)
+        await cb.answer(nb.rekey_wait_toast(services._gw_name(busy), joining=bool(getattr(busy, "joining", False))),
+                        show_alert=True)
         return
     await cb.answer("Готовлю резервную копию…")
     from awgbot.util import timeutil as _tu

@@ -85,6 +85,7 @@ def missed_backup_notice(has_slots: bool) -> str:
 
 
 REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — бэкап сниму сразу после неё"
+JOIN_WAIT_TOAST = "Идёт подключение шлюза {name} — бэкап сниму сразу после него"
 
 
 def backup_refused_notice(reason: str) -> str:
@@ -94,11 +95,13 @@ def backup_refused_notice(reason: str) -> str:
             "или забери из терминала: <code>sudo awg-bot backup</code>")
 
 
-def rekey_wait_toast(name: str) -> str:
-    """Всплывашка — до 200 знаков: имя шлюза подрезается."""
-    room = 200 - len(REKEY_WAIT_TOAST.format(name="«»"))
+def rekey_wait_toast(name: str, joining: bool = False) -> str:
+    """Всплывашка — до 200 знаков: имя шлюза подрезается. joining — слот в
+    сопряжении (подключение командой), а не в смене ключей."""
+    tpl = JOIN_WAIT_TOAST if joining else REKEY_WAIT_TOAST
+    room = 200 - len(tpl.format(name="«»"))
     short = name if len(name) <= room else name[:max(room - 1, 1)] + "…"
-    return REKEY_WAIT_TOAST.format(name=f"«{short}»")
+    return tpl.format(name=f"«{short}»")
 
 
 # ── подпись копии и письмо ───────────────────────────────────────────────────

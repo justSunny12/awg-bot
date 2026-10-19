@@ -29,9 +29,9 @@ class _JoinSlot:
     """Новый слот в сопряжении: строки в gateways ещё нет, а линк на ключах
     токена уже стоит — для «копия ждёт» ведёт себя как шлюз без устройства."""
 
-    def __init__(self, slot_id: int, name: str):
-        self.id, self.name, self.device_id, self.label, self.link_if = slot_id, name, None, "", ""
-        self.joining = True
+    def __init__(self, slot_id: int, name: str, device_id=None):
+        self.id, self.name, self.device_id, self.label, self.link_if = slot_id, name, device_id, "", ""
+        self.joining = True                               # «копия ждёт подключения», не смены ключей
 
 
 class BackupsMixin:
@@ -81,7 +81,9 @@ class BackupsMixin:
         прежние — в .join-prev, которого в копии нет), или None: копия ждёт
         факта — фиксации или возврата."""
         for gw in self.db.gateways():
-            if self.gateway_rekey_active(gw.id) or (hasattr(self, "gwjoin_slot_busy") and self.gwjoin_slot_busy(gw.id)):
+            if hasattr(self, "gwjoin_slot_busy") and self.gwjoin_slot_busy(gw.id):
+                return _JoinSlot(gw.id, self._gw_name(gw), device_id=gw.device_id)   # подключение, не смена ключей
+            if self.gateway_rekey_active(gw.id):
                 return gw
         if hasattr(self, "gwjoin_all"):
             for st in self.gwjoin_all():                  # новый слот: строки ещё нет, линк со штампом уже стоит

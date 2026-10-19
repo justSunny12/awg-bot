@@ -101,7 +101,7 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
         return
     busy = getattr(services, "backup_rekey_busy", None)
     if busy is not None and await asyncio.to_thread(busy) is not None:
-        log.info("%s: идёт смена ключей линка — копия после неё", log_tag)
+        log.info("%s: идёт смена ключей линка или подключение шлюза — копия после них", log_tag)
         if on_busy is not None:
             on_busy()
         return
