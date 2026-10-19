@@ -175,7 +175,10 @@ def test_rescue_restore_and_wipe_wiring(script):
     rescue = _func(script, "post_update_rescue")
     back = rescue[rescue.index('restore_prev_code "$AWG_UPDATE_PREV"'):]
     assert back.index("adopt_timezone_undo") < back.index("else"), "ключ возвращается только вместе с прежним кодом"
-    assert 'rm -f "$TZ_ADOPT_UNDO"' in _func(script, "update_done")
+    # сторож и откат набора ключа не касаются: переход с выпуска ниже 3.4.0 идёт
+    # через версию совместимости, где сторожа нет
+    for name in ("update_guard_rollback", "cmd_update_revert", "update_hold_take"):
+        assert "adopt_timezone" not in _func(script, name) and "app.yaml" not in _func(script, name), name
     post = _func(script, "cmd_post_update")
     assert '"$DATA_DIR/.tz-adopted"' in post[post.index('if [[ "$wipe" -eq 1 ]]'):], "wipe убирает и метку"
     restore = _func(script, "cmd_restore") + _func(script, "restore_apply")   # до остановки — и после неё

@@ -320,5 +320,5 @@ def test_a_failure_after_the_guard_is_armed_disarms_it_and_gives_the_old_one_bac
     log = host.log()
     arm = next(i for i, c in enumerate(log) if c.startswith("systemd-run"))
     assert any(c == "systemctl stop awg-bot-update-guard.timer" for c in log[arm:]), "сторож прогона не снят"
-    assert not (host.data / "update-guard").exists() and not (host.data / "update-guard.app.yaml").exists()
+    assert not (host.data / "update-guard").exists()
     assert host.whose() == "old" and host.app.read_text(encoding="utf-8") == host.app_text

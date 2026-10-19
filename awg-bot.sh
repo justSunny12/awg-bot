@@ -76,8 +76,11 @@
 #                          пояс хоста (adopt_timezone); прежнее значение — в
 #                          метке $DATA_DIR/.tz-adopted, по ней первый старт бота
 #                          скажет админу, в каком поясе теперь время; прервётся
-#                          обновление — прежний app.yaml вернётся вместе с
-#                          прежним кодом. restore: ключ копии снимается снова,
+#                          вторая половина — ключ вернётся вместе с прежним
+#                          кодом (ловушка; сторож и откат набора ключа не
+#                          касаются: переход с выпуска ниже 3.4.0 идёт через
+#                          версию совместимости, где сторожа нет).
+#                          restore: ключ копии снимается снова,
 #                          если в текущем app.yaml его не было.
 #                          Ловушка второй половины (post_update_rescue),
 #                          вернувшая код, чей скрипт не знает __update_guard
@@ -87,8 +90,8 @@
 #                          $DATA_DIR/update-running (по нему бот видит, что
 #                          обновление ещё идёт); файл убирают и конец
 #                          обновления, и ловушка.
-#                          После старта нового сервиса прежние код, окружение,
-#                          app.yaml с ключом timezone и сборка ядра остаются до
+#                          После старта нового сервиса прежние код, окружение
+#                          и сборка ядра остаются до
 #                          отметки жизни нового процесса ($DATA_DIR/update-ok:
 #                          основной бот — ответ Telegram на getUpdates, агент —
 #                          он же или подписанное слово сервера AWG в канале):
@@ -1362,13 +1365,12 @@ unit_guard_strip_for_old() {  # возвращённый код не знает 
 update_done() {  # обновление доведено: прежние код и окружение больше не нужны
     rm -f "$DATA_DIR/update-running"       # апдейтер отработал — pid в файле больше ничего не значит
     [[ -n "${AWG_UPDATE_PREV:-}" ]] && rm -rf "$AWG_UPDATE_PREV"
-    [[ -n "${TZ_ADOPT_UNDO:-}" ]] && rm -f "$TZ_ADOPT_UNDO"
     venv_prune
 }
 
 # ── сторож обновления: прежняя версия живёт, пока новая не вышла на связь ─────
-# После старта нового сервиса прежние код (.prev-code), окружение (.venvs/.prev),
-# app.yaml с ключом timezone и сборка ядра не снимаются сразу: сторож —
+# После старта нового сервиса прежние код (.prev-code), окружение (.venvs/.prev)
+# и сборка ядра не снимаются сразу: сторож —
 # таймер systemd через UPDATE_GUARD_MIN минут — смотрит отметку жизни, которую
 # пишет новый процесс бота (основной бот — первый ответ Telegram на getUpdates,
 # агент — он же или первое подписанное слово сервера AWG в сессии канала).
@@ -1380,7 +1382,6 @@ update_done() {  # обновление доведено: прежние код 
 UPDATE_GUARD="$DATA_DIR/update-guard"            # сторож взведён: VERSION= и PREV= (пишет post_update)
 UPDATE_OK="$DATA_DIR/update-ok"                  # отметка жизни «<версия> <время>» (пишет бот)
 UPDATE_ROLLED="$DATA_DIR/update-rolled-back"     # метка отката (JSON) — прочтёт прежний процесс
-UPDATE_TZ_UNDO="$DATA_DIR/update-guard.app.yaml" # прежний app.yaml с ключом timezone — до фиксации
 UPDATE_GUARD_UNIT="awg-bot-update-guard"
 UPDATE_GUARD_MIN=10                             # окно сторожа, минут
 UPDATE_GUARD_BOOT_MIN=5                         # после загрузки в окне — не меньше стольких минут
@@ -1411,15 +1412,11 @@ update_guard_due() {  # 0 — обновление прикрыть сторож
     return 0
 }
 
-update_guard_write() {  # update_guard_write — до старта сервиса: что сторожить и как вернуть пояс
+update_guard_write() {  # update_guard_write — до старта сервиса: что сторожить
     local ver prev
     ver="$(tree_version "$INSTALL_DIR")"; prev="$(tree_version "$AWG_UPDATE_PREV")"
     rm -f "$UPDATE_OK"                     # отметка прошлых запусков не в счёт — только новый процесс
     mkdir -p "$DATA_DIR"
-    if [[ -n "${TZ_ADOPT_UNDO:-}" && -f "$TZ_ADOPT_UNDO" ]]; then
-        # копия из mktemp живёт до конца этого процесса, сторож — дольше
-        mv -f "$TZ_ADOPT_UNDO" "$UPDATE_TZ_UNDO" && TZ_ADOPT_UNDO="$UPDATE_TZ_UNDO"
-    fi
     # AT — секунды эпохи: по ним проверка на старте сервиса считает, истекло ли окно
     # HOLD — id хода или команды набора (0 — не шаг набора)
     ( umask 077; printf 'VERSION=%s\nPREV=%s\nAT=%s\nHOLD=%s\n' "$ver" "$prev" "$(date +%s)" \
@@ -1435,10 +1432,10 @@ update_guard_arm() {  # update_guard_arm [МИНУТ] — таймер стор�
         "$INSTALL_DIR/awg-bot.sh" __update_guard >/dev/null 2>&1
 }
 
-update_guard_disarm() {  # снять сторожа: таймер, его состояние и копию app.yaml
+update_guard_disarm() {  # снять сторожа: таймер и его состояние
     systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
     systemctl reset-failed "$UPDATE_GUARD_UNIT.timer" "$UPDATE_GUARD_UNIT.service" 2>/dev/null || true
-    rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+    rm -f "$UPDATE_GUARD"
 }
 
 update_guard_rollback() {  # update_guard_rollback VERSION PREV [nostart] — новая не вышла на связь: прежняя на место
@@ -1447,23 +1444,22 @@ update_guard_rollback() {  # update_guard_rollback VERSION PREV [nostart] — н
     local ver="$1" prev="$2" how="${3:-}"
     if [[ ! -d "$AWG_UPDATE_PREV" ]]; then
         warn "v$ver не вышла на связь за $UPDATE_GUARD_MIN минут, но прежнего кода нет — откатывать некуда"
-        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        rm -f "$UPDATE_GUARD"
         return 1
     fi
     warn "v$ver не вышла на связь за $UPDATE_GUARD_MIN минут — возвращаю v$prev"
     [[ "$how" == "nostart" ]] || systemctl stop "$SERVICE" 2>/dev/null || true
     if ! restore_prev_code "$AWG_UPDATE_PREV"; then
-        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        rm -f "$UPDATE_GUARD"
         [[ "$how" == "nostart" ]] || systemctl start "$SERVICE" 2>/dev/null || true
         return 1
     fi
     venv_rollback
-    # Метка отката и пояс — сразу за кодом: из ExecStartPre (таймаут 90 с) до
-    # удаления окружения дело может не дойти, а прежнему процессу нужны оба
-    adopt_timezone_undo
+    # Метка отката — сразу за кодом: из ExecStartPre (таймаут 90 с) до
+    # удаления окружения дело может не дойти, а прежнему процессу она нужна
     ( umask 077; printf '{"version": %s, "prev": %s, "at": %s}\n' "$(json_str "$ver")" "$(json_str "$prev")" \
         "$(json_str "$(date -Iseconds)")" > "$UPDATE_ROLLED" ) || true
-    rm -f "$UPDATE_GUARD" "$UPDATE_OK" "$UPDATE_TZ_UNDO"
+    rm -f "$UPDATE_GUARD" "$UPDATE_OK"
     # окружение новой версии — прочь; из ExecStartPre — потом (следующая уборка)
     [[ "$how" == "nostart" ]] && return 0
     venv_prune
@@ -1489,11 +1485,10 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
     ver="$(guard_get VERSION)"; prev="$(guard_get PREV)"; at="$(guard_get AT)"; cur="$(tree_version "$INSTALL_DIR")"
     if [[ -z "$ver" || "$ver" != "$cur" ]]; then
         # установку сменили мимо сторожа (новое обновление, чистая установка) — сторожить нечего
-        rm -f "$UPDATE_GUARD" "$UPDATE_TZ_UNDO"
+        rm -f "$UPDATE_GUARD"
         return 0
     fi
     AWG_UPDATE_PREV="$INSTALL_DIR/.prev-code"
-    TZ_ADOPT_UNDO=""; [[ -f "$UPDATE_TZ_UNDO" ]] && TZ_ADOPT_UNDO="$UPDATE_TZ_UNDO"
     mark="$(awk 'NR == 1 { print $1 }' "$UPDATE_OK" 2>/dev/null || true)"
     if [[ "$mark" == "$ver" ]]; then
         systemctl stop "$UPDATE_GUARD_UNIT.timer" 2>/dev/null || true
@@ -1531,13 +1526,12 @@ cmd_update_guard() {  # __update_guard [--alive|--start] — фиксация п
 
 # ── шаг набора: прежнее держится до фиксации или отката всего набора ──────────
 # Шаг (сервер или шлюз под командой набора) вышел на связь — прежние код
-# (.hold-code), окружение (ENV в update-hold) и app.yaml с ключом пояса не
-# снимаются: откат набора (__update_revert) — переименованием на месте, без
+# (.hold-code) и окружение (ENV в update-hold) не снимаются: откат набора
+# (__update_revert) — переименованием на месте, без
 # сети. Цепочка ступеней под той же командой держит самое первое прежнее:
 # промежуточные ступени снимаются, когда следующая вышла на связь. Фиксация
 # набора (__update_commit) — прежнее и сборки ядра прочь.
 UPDATE_HOLD_FILE="$DATA_DIR/update-hold"         # PREV= (версия), ENV= (окружение), AT=, RUN= (id хода/команды)
-UPDATE_HOLD_TZ="$DATA_DIR/update-hold.app.yaml"  # app.yaml прежней версии с ключом timezone
 UPDATE_HOLD_CODE="$INSTALL_DIR/.hold-code"
 
 hold_get() { [[ -f "${UPDATE_HOLD_FILE:-}" ]] && sed -nE "s/^$1=(.*)$/\1/p" "$UPDATE_HOLD_FILE" | head -n1 || true; }
@@ -1552,7 +1546,7 @@ update_hold_drop() {  # удержание набора прочь (ручной
     [[ -f "$UPDATE_HOLD_FILE" || -d "$UPDATE_HOLD_CODE" ]] || return 0
     log "удержание прежней версии v$(hold_get PREV) снято"
     rm -rf "$UPDATE_HOLD_CODE"
-    rm -f "$UPDATE_HOLD_FILE" "$UPDATE_HOLD_TZ"
+    rm -f "$UPDATE_HOLD_FILE"
 }
 
 update_crosses_floor() {  # 0 — прежняя версия (AWG_UPDATE_PREV) ниже версии совместимости нового кода
@@ -1572,14 +1566,13 @@ update_hold_take() {  # update_hold_take ID — шаг вышел на связ�
         # следующая ступень той же команды: промежуточное прочь, первое прежнее держится
         rm -rf "$INSTALL_DIR/.prev-code"
         [[ -n "$prev_env" && "$prev_env" != "$(hold_get ENV)" ]] && rm -rf "$prev_env"
-        rm -f "$INSTALL_DIR/.venvs/.prev" "$UPDATE_TZ_UNDO"
+        rm -f "$INSTALL_DIR/.venvs/.prev"
         return 0
     fi
     [[ -d "$INSTALL_DIR/.prev-code" ]] || return 0
     rm -rf "$UPDATE_HOLD_CODE"
     mv "$INSTALL_DIR/.prev-code" "$UPDATE_HOLD_CODE"
     rm -f "$INSTALL_DIR/.venvs/.prev"
-    if [[ -f "$UPDATE_TZ_UNDO" ]]; then mv -f "$UPDATE_TZ_UNDO" "$UPDATE_HOLD_TZ"; else rm -f "$UPDATE_HOLD_TZ"; fi
     ( umask 077; printf 'PREV=%s\nENV=%s\nAT=%s\nRUN=%s\n' "$(tree_version "$UPDATE_HOLD_CODE")" "$prev_env" \
         "$(date +%s)" "$run" > "$UPDATE_HOLD_FILE" )
 }
@@ -1591,21 +1584,21 @@ cmd_update_commit() {  # __update_commit — набор зафиксирован
     [[ -f "$UPDATE_HOLD_FILE" ]] || return 0
     log "набор зафиксирован — прежняя версия v$(hold_get PREV) больше не нужна"
     rm -rf "$UPDATE_HOLD_CODE"
-    rm -f "$UPDATE_HOLD_FILE" "$UPDATE_HOLD_TZ"
+    rm -f "$UPDATE_HOLD_FILE"
     prune_old_kernel_builds
     venv_prune
 }
 
-REV_SRC=""; REV_ENV=""; REV_TZ=""; REV_PREV=""
+REV_SRC=""; REV_ENV=""; REV_PREV=""
 revert_source() {  # источник отката набора → REV_*; нет (или он ниже версии совместимости) — 1
     # Удержанное шагом набора (.hold-code) или прежнее ещё не подтверждённого
     # шага (.prev-code под сторожем). Ниже COMPAT_FLOOR назад нельзя — как у update.
-    REV_SRC=""; REV_ENV=""; REV_TZ=""; REV_PREV=""
+    REV_SRC=""; REV_ENV=""; REV_PREV=""
     if [[ -f "$UPDATE_HOLD_FILE" && -d "$UPDATE_HOLD_CODE" ]]; then
-        REV_SRC="$UPDATE_HOLD_CODE"; REV_ENV="$(hold_get ENV)"; REV_TZ="$UPDATE_HOLD_TZ"; REV_PREV="$(hold_get PREV)"
+        REV_SRC="$UPDATE_HOLD_CODE"; REV_ENV="$(hold_get ENV)"; REV_PREV="$(hold_get PREV)"
     elif [[ -f "$UPDATE_GUARD" && -d "$INSTALL_DIR/.prev-code" ]]; then
         REV_SRC="$INSTALL_DIR/.prev-code"; REV_ENV="$(cat "$INSTALL_DIR/.venvs/.prev" 2>/dev/null || true)"
-        REV_TZ="$UPDATE_TZ_UNDO"; REV_PREV="$(guard_get PREV)"
+        REV_PREV="$(guard_get PREV)"
     fi
     [[ -n "$REV_SRC" ]] || return 1
     local ver floor
@@ -1636,7 +1629,7 @@ cmd_update_revert() {  # __update_revert [--check] — откат набора: 
         systemctl start "$SERVICE" 2>/dev/null || true
         return 2
     fi
-    local src="$REV_SRC" env="$REV_ENV" tz="$REV_TZ" prev="$REV_PREV"
+    local src="$REV_SRC" env="$REV_ENV" prev="$REV_PREV"
     warn "откат набора — возвращаю v${prev:-?}"
     if ! restore_prev_code "$src"; then
         systemctl start "$SERVICE" 2>/dev/null || true
@@ -1647,9 +1640,7 @@ cmd_update_revert() {  # __update_revert [--check] — откат набора: 
     venv_rollback
     rm -f "$UPDATE_HOLD_FILE"
     venv_prune
-    TZ_ADOPT_UNDO=""; [[ -f "$tz" ]] && TZ_ADOPT_UNDO="$tz"
-    adopt_timezone_undo
-    rm -f "$UPDATE_GUARD" "$UPDATE_OK" "$UPDATE_TZ_UNDO" "$UPDATE_HOLD_TZ"
+    rm -f "$UPDATE_GUARD" "$UPDATE_OK"
     systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
     return 0
 }
@@ -2554,36 +2545,33 @@ adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml �
     # зовёт это только на переходе с выпуска ниже TZ_ADOPT_BELOW. Комментируется, а не
     # очищается: строка с прежним значением видна и возвращается одним движением.
     # Обновление: прежнее значение — в метку $DATA_DIR/.tz-adopted (первый старт
-    # бота скажет админу, в каком поясе теперь время, и снимет её), прежний
-    # app.yaml — в TZ_ADOPT_UNDO: прервётся обновление — ловушка вернёт его вместе
-    # с прежним кодом. quiet (после восстановления копии) — без метки и без
-    # отката: пояс бота до восстановления и так был поясом хоста.
+    # бота скажет админу, в каком поясе теперь время, и снимет её); TZ_ADOPTED=1
+    # — ключ снял этот прогон: прервётся вторая половина — ловушка вернёт его
+    # вместе с прежним кодом (adopt_timezone_undo). quiet (после восстановления
+    # копии) — без метки и без отката: пояс бота до восстановления и так был
+    # поясом хоста.
     local app="$CONF_DIR/app.yaml" old tz tmp
     [[ -f "$app" ]] && grep -qE '^timezone:' "$app" || return 0
     old="$(yaml_get "$app" timezone)"; old="${old#\'}"; old="${old%\'}"
     tmp="$(mktemp)" || return 0
-    if [[ "${1:-}" != "quiet" && -z "${TZ_ADOPT_UNDO:-}" ]]; then
-        TZ_ADOPT_UNDO="$(mktemp)" && cp -p "$app" "$TZ_ADOPT_UNDO" || TZ_ADOPT_UNDO=""
-    fi
     sed -E 's|^timezone:|# timezone:|' "$app" > "$tmp" && cat "$tmp" > "$app"
     rm -f "$tmp"
-    [[ "${1:-}" == "quiet" ]] || { mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"; }
+    [[ "${1:-}" == "quiet" ]] || { TZ_ADOPTED=1; mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"; }
     tz="$(host_timezone)"
     log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
 }
 
-adopt_timezone_undo() {  # откат обновления: ключ timezone в app.yaml — снова в силе, метки нет
-    # Копия app.yaml (TZ_ADOPT_UNDO) — только знак, что ключ снял этот прогон:
-    # возвращается строка — раскомментированием на месте, а не копия файла
-    # целиком (правки app.yaml за часы удержания остаются)
-    [[ -n "${TZ_ADOPT_UNDO:-}" && -f "$TZ_ADOPT_UNDO" ]] || return 0
+adopt_timezone_undo() {  # ловушка второй половины: ключ timezone в app.yaml — снова в силе, метки нет
+    # Только когда ключ снял этот прогон (TZ_ADOPTED): возвращается строка —
+    # раскомментированием на месте
+    [[ "${TZ_ADOPTED:-0}" == "1" ]] || return 0
     local app="$CONF_DIR/app.yaml" tmp
     if [[ -f "$app" ]] && ! grep -qE '^timezone:' "$app" && grep -qE '^# timezone:' "$app" && tmp="$(mktemp)"; then
         awk '!d && /^# timezone:/ { sub(/^# /, ""); d = 1 } { print }' "$app" > "$tmp" && cat "$tmp" > "$app"
         rm -f "$tmp"
     fi
     rm -f "$DATA_DIR/.tz-adopted"
-    rm -f "$TZ_ADOPT_UNDO"; TZ_ADOPT_UNDO=""
+    TZ_ADOPTED=0
     warn "ключ timezone в app.yaml возвращён — прежняя версия работает в своём поясе"
 }
 

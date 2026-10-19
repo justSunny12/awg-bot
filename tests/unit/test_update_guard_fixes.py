@@ -6,7 +6,6 @@
   неё снимает удержание (guard-2);
 - удержание привязано к id хода или команды: другой id и ручной update его
   снимают (guard-3);
-- откат пояса — раскомментированием строки, правки app.yaml остаются (guard-4);
 - откат из ExecStartPre: метка и пояс — сразу, окружение — потом (guard-6);
 - уборка окружений не трогает прежнее окружение взведённого сторожа (guard-7);
 - под замком установки pid апдейтера — в update-running (logic-2).
@@ -104,17 +103,6 @@ def test_a_manual_update_drops_the_hold(tmp_path):
     _next_step(host, "3.4.2", "third")
     assert _run(host, "__post_update", "0").returncode == 0
     assert not (host.inst / ".hold-code").exists() and not (host.data / "update-hold").exists()
-
-
-def test_the_timezone_comes_back_as_a_line_and_other_edits_stay(tmp_path):
-    host = _Host(tmp_path)
-    host.post_update()
-    host.app.write_text(host.app.read_text(encoding="utf-8") + "extra: 1\n", encoding="utf-8")  # правка в окне
-    _age(host, 11)
-    host.guard()
-    text = host.app.read_text(encoding="utf-8")
-    assert 'timezone: "Europe/Moscow"' in text and "# timezone:" not in text
-    assert "extra: 1" in text, "откат пояса затёр правку app.yaml"
 
 
 def test_the_start_check_writes_the_mark_and_leaves_the_env_for_later(tmp_path):

@@ -1,7 +1,7 @@
 """awg-bot.sh: сторож обновления — откат в той же установке.
 
-После старта нового сервиса прежние код (.prev-code), окружение (.venvs/.prev),
-app.yaml с ключом timezone и сборка ядра живут, пока новый процесс не напишет
+После старта нового сервиса прежние код (.prev-code), окружение (.venvs/.prev)
+и сборка ядра живут, пока новый процесс не напишет
 отметку жизни (update-ok своей версией); сторож — таймер systemd через 10
 минут (__update_guard): отметка есть — прежнее прочь, нет — прежнее на место,
 перезапуск и метка отката для прежнего процесса. Переход через COMPAT_FLOOR
@@ -57,7 +57,7 @@ def _tree(root: Path, version: str, floor: str, tag: str) -> None:
 class _Host:
     """Установка сразу после первой половины обновления: в $INSTALL_DIR новая
     поставка, в .prev-code — прежняя, venv смотрит на новое окружение, прежнее
-    записано в .venvs/.prev; app.yaml ещё с ключом timezone."""
+    записано в .venvs/.prev; app.yaml с ключом timezone, вписанным руками."""
 
     def __init__(self, tmp: Path, *, new: str = "3.4.1", prev: str = "3.4.0", floor: str = "3.4.0"):
         self.tmp = tmp
@@ -139,9 +139,7 @@ def _guard_state(host: _Host) -> dict:
 # ── после обновления: прежнее на месте до отметки ───────────────────────────
 
 def test_after_update_the_old_code_and_env_wait_for_the_mark(tmp_path):
-    # прежняя версия ниже 3.4.0 (ключ timezone снимается), но не ниже версии
-    # совместимости этого стенда (сторож взводится): так виден и путь копии ключа
-    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
+    host = _Host(tmp_path)
     host.mark(host.new)                                  # отметка прошлого запуска той же версии
     r = host.post_update()
     assert (host.inst / ".prev-code" / "whose").read_text(encoding="utf-8") == "old", "прежний код снят до отметки"
@@ -157,14 +155,11 @@ def test_after_update_the_old_code_and_env_wait_for_the_mark(tmp_path):
     assert "kernel prune" not in host.log(), "прежняя сборка ядра снята до отметки"
     assert host.log().index(run[0]) < host.log().index("systemctl start awg-bot"), \
         "сторож взводится раньше старта: новый процесс может отметиться сразу"
-    # прежний app.yaml с ключом — до решения сторожа, не во временном каталоге процесса
-    assert (host.data / "update-guard.app.yaml").read_text(encoding="utf-8") == host.app_text
-    assert "timezone:" not in host.app.read_text(encoding="utf-8").replace("# timezone:", "")
     assert "сторож посмотрит через 10 минут" in r.stdout
 
 
 def test_the_mark_of_this_version_commits_the_update(tmp_path):
-    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
+    host = _Host(tmp_path)
     host.post_update()
     host.mark(host.new)
     host.guard()
@@ -173,16 +168,15 @@ def test_the_mark_of_this_version_commits_the_update(tmp_path):
     assert host.venv() == host.env_new and host.whose() == "new"
     assert "kernel prune" in host.log(), "прежняя сборка ядра не убрана после отметки"
     assert "systemctl stop awg-bot" not in host.log(), "живой сервис остановлен"
-    for name in ("update-guard", "update-ok", "update-guard.app.yaml", "update-rolled-back"):
+    for name in ("update-guard", "update-ok", "update-rolled-back"):
         assert not (host.data / name).exists(), name
-    assert "# timezone:" in host.app.read_text(encoding="utf-8"), "ключ пояса вернулся у живой версии"
 
 
 @pytest.mark.parametrize("mark", [None, "3.4.0", "3.4.1.1"])
 def test_no_mark_of_this_version_brings_the_old_one_back(tmp_path, mark):
     """Отметки нет или она другой версии (прежний процесс, чужая сборка) —
-    прежние код и окружение на место, ключ пояса назад, перезапуск, метка отката."""
-    host = _Host(tmp_path, prev="3.3.9", floor="3.3.0")
+    прежние код и окружение на место, перезапуск, метка отката."""
+    host = _Host(tmp_path)
     host.post_update()
     if mark:
         host.mark(mark)
@@ -195,11 +189,10 @@ def test_no_mark_of_this_version_brings_the_old_one_back(tmp_path, mark):
     log = host.log()
     assert "systemctl stop awg-bot" in log and "systemctl start awg-bot" in log
     assert log.index("systemctl stop awg-bot") < log.index("systemctl start awg-bot")
-    assert host.app.read_text(encoding="utf-8") == host.app_text, "ключ timezone не вернулся прежней версии"
     rolled = json.loads((host.data / "update-rolled-back").read_text(encoding="utf-8"))
     assert (rolled["version"], rolled["prev"]) == (host.new, host.prev) and rolled["at"]
     assert (host.data / "update-rolled-back").stat().st_mode & 0o777 == 0o600
-    for name in ("update-guard", "update-ok", "update-guard.app.yaml"):
+    for name in ("update-guard", "update-ok"):
         assert not (host.data / name).exists(), name
     assert "kernel prune" not in log
     assert f"v{host.new} не вышла на связь за 10 минут — возвращаю v{host.prev}" in r.stdout + r.stderr
@@ -327,7 +320,7 @@ def test_systemd_run_refusing_falls_back_to_committing_at_once(tmp_path):
     host = _Host(tmp_path)
     r = host.post_update(run_rc=1)
     assert "сторож обновления не взведён" in r.stdout + r.stderr
-    assert not (host.data / "update-guard").exists() and not (host.data / "update-guard.app.yaml").exists()
+    assert not (host.data / "update-guard").exists()
     assert not (host.inst / ".prev-code").exists() and "kernel prune" in host.log()
 
 
@@ -379,7 +372,7 @@ def _held(tmp_path, **kw) -> _Host:
 
 
 def test_with_hold_the_mark_lifts_the_guard_but_keeps_the_old_one(tmp_path):
-    host = _held(tmp_path, prev="3.3.9", floor="3.3.0")   # копия ключа пояса — только на переходе с < 3.4.0
+    host = _held(tmp_path)
     assert not (host.data / "update-guard").exists(), "сторож остался после отметки"
     assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old"
     assert not (host.inst / ".prev-code").exists()
@@ -387,7 +380,6 @@ def test_with_hold_the_mark_lifts_the_guard_but_keeps_the_old_one(tmp_path):
     assert "kernel prune" not in host.log(), "сборка ядра снята до фиксации набора"
     hold = dict(ln.split("=", 1) for ln in (host.data / "update-hold").read_text(encoding="utf-8").splitlines())
     assert hold["PREV"] == host.prev and hold["ENV"] == str(host.env_old)
-    assert (host.data / "update-hold.app.yaml").read_text(encoding="utf-8") == host.app_text
 
 
 def test_commit_drops_the_held_old_one_and_kernel_builds(tmp_path):
@@ -396,7 +388,7 @@ def test_commit_drops_the_held_old_one_and_kernel_builds(tmp_path):
     r = host.run("__update_commit")
     assert r.returncode == 0, r.stdout + r.stderr
     assert not (host.inst / ".hold-code").exists() and not host.env_old.exists()
-    assert not (host.data / "update-hold").exists() and not (host.data / "update-hold.app.yaml").exists()
+    assert not (host.data / "update-hold").exists()
     assert "kernel prune" in host.log() and host.whose() == "new" and host.venv() == host.env_new
 
 
@@ -455,11 +447,10 @@ def test_a_chain_under_one_command_holds_the_very_first_old_one(tmp_path):
 
 def test_an_update_within_the_line_keeps_a_timezone_key_set_by_hand(tmp_path):
     """Ключ timezone в app.yaml с 3.4.0 — переопределение человека: обновление
-    3.4.0 → 3.4.1 (и любой догон набора) его не трогает, копии ключа у сторожа
-    нет и уведомления о поясе не будет. Снимается он один раз — на переходе с
-    выпуска ниже 3.4.0, где его писали шаблон и установщик."""
+    3.4.0 → 3.4.1 (и любой догон набора) его не трогает и уведомления о поясе
+    не будет. Снимается он один раз — на переходе с выпуска ниже 3.4.0, где его
+    писали шаблон и установщик."""
     host = _Host(tmp_path)                               # prev 3.4.0, new 3.4.1
     host.post_update()
     assert host.app.read_text(encoding="utf-8") == host.app_text, "ключ, вписанный руками, снят обновлением"
-    assert not (host.data / "update-guard.app.yaml").exists()
     assert not (host.data / ".tz-adopted").exists()
