@@ -136,14 +136,17 @@ class CfgApplyMixin:
                     retry = retry or bool(res.get("busy"))   # обвязка занята — сервер повторит
             elif verdict == "declined":
                 declined["uplink"] = server_print
-            elif verdict == "emergency":
+            elif verdict in ("emergency", "fresh"):
                 same = self.cfg_uplink_same_device(value)
-                res = self.cfg_uplink_apply(value)
-                if res.get("state") != "busy":
+                res = self.cfg_uplink_apply(value, fresh=verdict == "fresh")
+                if res.get("state") != "busy" and verdict == "emergency":
                     self.__dict__["_uplink_emergency_at"] = time.monotonic()
                 if res["ok"]:
                     applied.append("uplink")
-                    notes.append(self.cfg_uplink_emergency_note(same))
+                    if verdict == "emergency":
+                        notes.append(self.cfg_uplink_emergency_note(same))
+                    else:
+                        changed.append("uplink")          # первый аплинк шлюза, подключённого командой
                 else:
                     # не «отвергнуто»: временная причина (пир ещё не поднят, DNS) —
                     # раздел ждёт как вопрос, тик повторит аварийную попытку

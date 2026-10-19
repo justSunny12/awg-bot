@@ -94,10 +94,6 @@ def test_one_default_port_on_both_ends_and_in_both_scripts(monkeypatch):
     assert nftguard.link_channel_port() == port, "файервол ВПС открывает не тот порт, что слушает канал"
     monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     assert linkclient.server_port() == port, "клиент шлюза без строки в юните стучится не туда"
-    link = LINK_SETUP.read_text(encoding="utf-8")
-    line = next(ln for ln in link.splitlines() if ln.startswith("LINK_CHANNEL_PORT="))
-    assert _sh("_cfg_chport=\n" + line + '\nprintf "%s" "$LINK_CHANNEL_PORT"') == str(port), (
-        "бандл без настройки в app.yaml везёт другой порт")
     gw = GW_SETUP.read_text(encoding="utf-8")
     lines = [ln for ln in gw.splitlines()
              if ln.startswith("LINK_CHANNEL_PORT=") or ln.startswith('case "$LINK_CHANNEL_PORT"')]

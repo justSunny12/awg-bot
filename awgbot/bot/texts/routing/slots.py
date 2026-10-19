@@ -229,7 +229,11 @@ def _slot_ping_tail(state) -> str:
 
 def slot_line(state, star: bool = True) -> str:
     """Строка слота на экране «Шлюзы»: «⭐ NASPi — 🟢 Активен · 43 мс»; при
-    одном слоте звезды нет — выбирать не из чего."""
+    одном слоте звезды нет — выбирать не из чего. Слот в замене устройства —
+    строкой сопряжения (Т-П15)."""
+    if state.get("join"):
+        from .join import join_card_line
+        return f"{slot_name(state, star=star)} — {join_card_line(state['join'])}"
     return f"{slot_name(state, star=star)} — {slot_status(state)}{_slot_ping_tail(state)}"
 
 
@@ -295,19 +299,23 @@ def _lists_tail(info: dict | None) -> str:
 
 def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str = "",
                   auto_on: bool = True, peer_info: dict | None = None,
-                  lists: dict | None = None) -> str:
+                  lists: dict | None = None, joins: list | None = None) -> str:
     """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием (слотов
     нет — «🔴 шлюз не назначен» и что такое шлюз), строки слотов, под ними
     предупреждение о выключенном автопереключении, переключение и списки,
     «подробнее» (без обещания переключения, когда оно выключено), связь
-    подсетей. Что значит ⭐ — в README, не на экране."""
+    подсетей; новые слоты в сопряжении (joins) — строками Т-П15. Что значит ⭐
+    — в README, не на экране."""
+    from .join import join_card_line
     ok, reason = status
+    pending = [f"🛰 {_e(c.get('name') or '')} — {join_card_line(c)}" for c in joins or ()]
     if not states:
         return "\n".join([ui.head("🛰 Шлюзы", meta=[f"🇷🇺 {ROUTING_NAME} " + ui.st("bad", "шлюз не назначен")]),
-                          GATEWAYS_NO_SLOT])
+                          *pending, GATEWAYS_NO_SLOT])
     head = ui.head("🛰 Шлюзы", meta=[f"🇷🇺 {ROUTING_NAME} " + (ui.st("ok") if ok else ui.st("bad", f"не работает: {_e(reason)}"))])
     lines = [head]
     lines += [slot_line(st, star=len(states) > 1) for st in states]
+    lines += pending
     if len(states) > 1 and not auto_on:
         lines.append(GATEWAYS_AUTO_OFF)
     tail = []

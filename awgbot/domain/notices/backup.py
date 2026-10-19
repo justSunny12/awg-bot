@@ -312,11 +312,9 @@ def gateway_back(ref: str) -> str:
 
 def gateway_not_back(ref: str, *, empty: bool, link_if: str = "", bot: dict | None = None) -> str:
     if empty:
-        from awgbot.domain.services.gateway_link.peernets import bundle_file
-        out = bundle_file(link_if)
+        # Т14 единого бэкапа, пустой сервер: путь — «🔁 Настроить заново» (Т-П17)
         return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления. Если на шлюзе "
-                "ключи линка новее бэкапа — выпусти файл конфигурации этого шлюза: "
-                f"<code>sudo awg-bot gw-bundle --link {_e(link_if)}</code>, перенеси на шлюз и примени: "
-                f"<code>sudo sh {_e(out)}</code>")
+                "ключи линка новее бэкапа — подключи его заново: карточка шлюза → «✏️ Изменить» → "
+                "«🔁 Заменить» → «🔁 Настроить заново»")
     return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления — связь с ним не "
             f"менялась, загляни в «🩺 Здоровье» в чате {chat_ref(bot)}")

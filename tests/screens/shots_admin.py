@@ -22,6 +22,7 @@ from tests.screens import shots_admin_gw_cards as gw_cards
 from tests.screens import shots_admin_gw_channel as gw_channel
 from tests.screens import shots_admin_gw_keys as gw_keys
 from tests.screens import shots_admin_home as home
+from tests.screens import shots_admin_join as join
 from tests.screens import shots_admin_migration as migration
 from tests.screens import shots_admin_profiles as profiles
 from tests.screens import shots_admin_rf as rf
@@ -75,6 +76,7 @@ SHOTS = [
     *rf.PROFILE,
     *gw_cards.CARDS,
     *gateways.SLOTS,
+    *join.JOIN,
     *gw_channel.CHANNEL,
     *gw_keys.CFG,
     *gw_keys.REKEY,

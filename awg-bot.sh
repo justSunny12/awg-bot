@@ -13,7 +13,7 @@
 #
 # Глаголы:
 #   reconfigure [--first-run] [--role client|gateway] [--port N] [--subnet X.Y.Z]
-#               [--cleanup <inst> <tgz>]
+#               [--join <токен>] [--cleanup <inst> <tgz>]
 #                          мастер конфигурации (топология + секреты). --first-run —
 #                          первичный прогон из установщика (ядро awg по манифесту,
 #                          сервер с нуля, venv, юнит, enable+start, карта, уборка).
@@ -22,17 +22,14 @@
 #                          --advanced возвращает ВСЕ вопросы визарда (адрес, имя
 #                          сервера, порт, подсеть); шифрование бэкапов —
 #                          только в боте («💾 Бэкапы» → «🔐 Шифрование»).
-#                          Шлюз по файлу первого применения — ещё метка
-#                          $DATA_DIR/.fresh-install: первый запуск агента скажет
-#                          серверу «установлен», даже если база уцелела.
-#                          Файл — --bundle <файл> или AWG_BOT_GW_BUNDLE; без них
-#                          ищется ТОЛЬКО в /root и в каталоге SUDO_USER (из passwd)
-#                          (не в /tmp и не в каталоге вызова) и принимается лишь
-#                          от root или SUDO_USER, без записи группе/прочим.
-#                          Python 3.12 и модуль venv (ensurepip) роль gateway
-#                          готовит ДО применения файла: тот удаляет себя после
-#                          успеха, и отказ venv после него было бы нечем
-#                          повторить. deadsnakes PPA — только на Ubuntu; на
+#                          Шлюз — командой подключения из бота сервера AWG:
+#                          --join <токен> (или AWG_BOT_GW_JOIN) — venv, conf,
+#                          юнит, затем `awg-bot join` (линк по токену, агент в
+#                          режиме сопряжения, код подтверждения — в терминал);
+#                          без токена и без стоящего агента — отказ «нет
+#                          команды подключения». Python 3.12 и модуль venv
+#                          (ensurepip) роль gateway готовит первым делом.
+#                          deadsnakes PPA — только на Ubuntu; на
 #                          Debian без python3.12 в репозиториях — отказ словами.
 #                          AWG_VENV_FRESH=1 (ставит post_update перед этим
 #                          прогоном) — venv только что собран, второй раз не
@@ -52,12 +49,9 @@
 #                          inet awg_lan_map снимается при остановке сервиса.
 #                          Из установщика (пункт «обновить» поверх установки):
 #                          AWG_UPDATE_KEEP=1 — вопрос об удалении данных не
-#                          задаётся; AWG_UPDATE_THEN_BUNDLE=<файл> — шлюзу после
-#                          обновления применить этот файл конфигурации новым
-#                          кодом (reconfigure --role gateway --bundle); сервис
-#                          стартует сразу, ещё со старой конфигурацией (не
-#                          применится файл — агент всё равно работает),
-#                          применение файла перезапускает его само.
+#                          задаётся; AWG_UPDATE_THEN_JOIN=<токен> — шлюзу после
+#                          обновления подключиться командой новым кодом
+#                          (`awg-bot join`).
 #                          AWG_UPDATE_CLEANUP=<путь> (установщик и самообновление
 #                          из бота) — архив или каталог поставки убрать после
 #                          обновления; только из /tmp, чужое не трогается.
@@ -197,11 +191,11 @@ SERVICE="awg-bot"
 SELF_LINK="/usr/local/bin/awg-bot"
 
 ADVANCED="${AWG_BOT_ADVANCED:-0}"       # 1 — спрашивать всё, как раньше
-GW_BUNDLE="${AWG_BOT_GW_BUNDLE:-}"      # файл первого применения для роли gateway
 # от установщика при обновлении поверх прошлой установки: не спрашивать про
-# удаление данных; шлюзу после обновления применить этот файл конфигурации
+# удаление данных; шлюзу после обновления — подключение командой
 AWG_UPDATE_KEEP="${AWG_UPDATE_KEEP:-0}"
-AWG_UPDATE_THEN_BUNDLE="${AWG_UPDATE_THEN_BUNDLE:-}"
+AWG_UPDATE_THEN_JOIN="${AWG_UPDATE_THEN_JOIN:-}"    # шлюз: после обновления — подключение командой (установщик --join)
+GW_JOIN="${AWG_BOT_GW_JOIN:-}"
 AWG_UPDATE_CLEANUP="${AWG_UPDATE_CLEANUP:-}"        # временный каталог с архивом — убрать после обновления
 # шаг набора (бот: apply_update(hold=<id>)): прежние код и окружение держатся до
 # фиксации набора (__update_commit) или его отката (__update_revert); значение —
@@ -736,57 +730,6 @@ print_map() {  # print_map "active"|"failed"
 }
 
 # ── reconfigure ──────────────────────────────────────────────────────────────
-# ── роль gateway: файл первого применения ────────────────────────────────────
-bundle_trusted() {  # bundle_trusted FILE → 0: владелец root или вызвавший, без записи группе/прочим
-    # Файл исполняется от root, а токен агента и ADMIN_ID из него уходят в env:
-    # подложенный чужим пользователем файл привязал бы агента к чужому боту.
-    local uid mode own
-    uid="$(stat -c '%u' "$1" 2>/dev/null)" || return 1
-    mode="$(stat -c '%a' "$1" 2>/dev/null)" || return 1
-    own="$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo 0)"
-    [[ "$uid" == "0" || "$uid" == "$own" ]] || return 1
-    [[ $(( 8#$mode & 8#022 )) -eq 0 ]]
-}
-find_gw_bundle() {  # печатает путь к файлу конфигурации или пусто
-    local c home=""
-    [[ -n "${SUDO_USER:-}" ]] && home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
-    if [[ -n "$GW_BUNDLE" ]]; then
-        [[ -f "$GW_BUNDLE" ]] || die "файла нет: $GW_BUNDLE"
-        bundle_trusted "$GW_BUNDLE" \
-            || die "файл $GW_BUNDLE должен принадлежать root или ${SUDO_USER:-root} и быть закрыт для остальных: chmod 600 $GW_BUNDLE"
-        printf '%s' "$GW_BUNDLE"; return 0
-    fi
-    # Только каталоги, куда кладёт scp из инструкции бота (/root) или сам
-    # админ под своим пользователем. Ни /tmp, ни каталог вызова: туда кладёт кто угодно.
-    for c in /root/awg-gw-bundle.sh "${home:+$home/awg-gw-bundle.sh}"; do
-        [[ -n "$c" && -f "$c" ]] || continue
-        bundle_trusted "$c" && { printf '%s' "$c"; return 0; }
-        warn "$c пропущен: владелец не root/${SUDO_USER:-root} или файл открыт на запись другим"
-    done
-    return 0
-}
-
-gw_bundle_secrets() {  # gw_bundle_secrets FILE — вытащить токен агента и ADMIN_ID
-    # Строки положены в файл конфигурации ботом ВПС и лежат ПОСЛЕ exec — при запуске файла конфигурации
-    # они не исполняются, это данные для установщика.
-    local f="$1" token admin
-    token="$(sed -nE 's/^AGENT_BOT_TOKEN="([^"]+)"$/\1/p' "$f" | head -n1)"
-    admin="$(sed -nE 's/^AGENT_ADMIN_ID="([0-9]+)"$/\1/p' "$f" | head -n1)"
-    [[ -n "$token" && -n "$admin" ]] || return 1
-    mkdir -p "$ETC_DIR"; touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
-    env_set BOT_TOKEN "$token"; env_set ADMIN_ID "$admin"
-    ok "токен агента и ADMIN_ID взяты из файла первого применения — вопросов не будет"
-}
-
-apply_gw_bundle() {  # применить файл конфигурации: аплинк, линк, обвязка, файервол шлюза
-    local f="$1"
-    echo; log "─── Конфигурация с сервера AWG: $f ───"
-    sh "$f" || die "файл первого применения не применился — смотри вывод выше; исправь причину и повтори установку"
-    # файл конфигурации удаляет себя сам после успеха; на случай старого файла конфигурации — добиваем
-    [[ -f "$f" ]] && rm -f -- "$f" && log "файл конфигурации удалён: внутри были ключи"
-    ok "аплинк, линк и обвязка шлюза подняты"
-}
-
 # ── роль gateway: агент на шлюзе (docs/ROADMAP.md, п.7) ──────────────────────
 configure_gateway() {
     # Раскомментировать блок роли из шаблона (yaml_set правит только существующие
@@ -827,7 +770,7 @@ cmd_reconfigure() {
         case "$1" in
             --first-run) first_run=1; shift ;;
             --advanced)  ADVANCED=1; shift ;;
-            --bundle)    GW_BUNDLE="${2:-}"; shift 2 ;;
+            --join)      GW_JOIN="${2:-}"; shift 2 ;;
             --role)      role="${2:-}"; shift 2 ;;
             --port)      # порт awg для СОЗДАВАЕМОГО сервера — без advanced-режима
                          [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 65535 ]] || die "--port: число 1..65535"
@@ -849,38 +792,34 @@ cmd_reconfigure() {
         # юнит — то же самое, теми же функциями. Ядро awg — по манифесту
         # поставки, обеим ролям одинаково.
         ensure_awg_kernel
-        # Python и модуль venv — ДО файла первого применения: он удаляет себя
-        # после успеха, и отказ venv после него было бы нечем повторить.
         ensure_python
         ensure_venv_ready
-        # Файл первого применения приезжает с ВПС и несёт всё: ключи линка,
-        # конфиг аплинка, список устройств админа, токен агента и ADMIN_ID.
-        # Поэтому у роли gateway вопросов нет вовсе — есть файл или его нет.
-        local bundle; bundle="$(find_gw_bundle)"
-        local from_bundle=0
-        if [[ -n "$bundle" ]]; then
-            log "нашёл конфигурацию шлюза: $bundle"
-            if gw_bundle_secrets "$bundle"; then
-                from_bundle=1
-                # первый запуск агента должен сказать серверу «установлен», даже
-                # если база от прежней установки уцелела: метка, снимает агент
-                mkdir -p "$DATA_DIR" && : > "$DATA_DIR/.fresh-install"
-            else
-                warn "в файле нет токена агента — спрошу секреты вручную"
-            fi
-            apply_gw_bundle "$bundle"
-        elif [[ -z "$(env_get BOT_TOKEN)" ]]; then
-            die "нет файла первого применения. Выпусти его в боте сервера AWG
-  («🛰 Шлюзы» → «🛰 Назначить» → «➕ Новое устройство»),
-  скопируй сюда и запусти его — поставка агента внутри, GitHub не нужен:
-    scp awg-gw-bundle.sh root@ЭТОТ_ХОСТ:/root/
-    sudo sh /root/awg-gw-bundle.sh --install"
+        if [[ -n "${GW_JOIN:-}" ]]; then
+            # Подключение командой из бота сервера AWG: токена бота и ADMIN_ID
+            # нет — их довезёт канал после кода; агент стартует в режиме
+            # сопряжения, ход и код — в терминал (awg-bot join)
+            build_venv
+            mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
+            seed_conf
+            configure_gateway
+            mkdir -p "$ETC_DIR"; touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
+            install_unit
+            systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "не удалось включить $SERVICE на автозагрузку"
+            cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
+            bot_tool tools.join "$GW_JOIN"
+            return
+        fi
+        # Перенастройка стоящего агента: токен бота и ADMIN_ID уже в env (их
+        # довёз канал после кода); нового агента без команды не поставить
+        if [[ -z "$(env_get BOT_TOKEN)" ]]; then
+            die "нет команды подключения. Выпусти её в боте сервера AWG
+  («🛰 Шлюзы» → «🛰 Подключить шлюз») и выполни здесь — одной строкой"
         fi
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
         configure_gateway
-        [[ "$from_bundle" -eq 1 ]] || setup_secrets
+        setup_secrets
         validate_config
         install_unit
         # Включение — ОТДЕЛЬНО от запуска. Слитое `enable --now || restart`
@@ -892,14 +831,7 @@ cmd_reconfigure() {
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
         cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
-        # Из файла первого применения диалога с ботом ещё нет, и первым он
-        # написать не может; после опознания кодом — админ ему уже писал, и
-        # агент пришлёт панель сам (обещание кода «бот напишет сюда сам»).
-        if [[ "$from_bundle" -eq 1 ]]; then
-            ok "Готово: напиши /start боту шлюза — первым написать он не может."
-        else
-            ok "Готово: бот шлюза напишет сам."
-        fi
+        ok "Готово: бот шлюза напишет сам."
         return
     fi
 
@@ -1701,19 +1633,12 @@ cmd_post_update() {
         fi
     fi
 
-    if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
-        # сервис — сразу, со старой конфигурацией: не применится файл — агент
-        # всё равно работает; применение файла ниже перезапустит сервис само
-        systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e -o short-iso"
+    systemctl start "$SERVICE"; sleep 1
+    if systemctl is-active --quiet "$SERVICE"; then
+        ok "$SERVICE перезапущен."
         [[ "$guarded" -eq 1 ]] || prune_old_kernel_builds
     else
-        systemctl start "$SERVICE"; sleep 1
-        if systemctl is-active --quiet "$SERVICE"; then
-            ok "$SERVICE перезапущен."
-            [[ "$guarded" -eq 1 ]] || prune_old_kernel_builds
-        else
-            warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
-        fi
+        warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
     fi
     if [[ "$guarded" -eq 1 ]]; then
         # прежние код, окружение и сборка ядра ждут отметку жизни нового процесса
@@ -1727,12 +1652,10 @@ cmd_post_update() {
     ok "Обновление завершено."
     # временный каталог с архивом от установщика — только из /tmp, чужое не трогаем
     case "${AWG_UPDATE_CLEANUP:-}" in /tmp/*) rm -rf "$AWG_UPDATE_CLEANUP" ;; esac
-    # Шлюз, обновлённый установщиком из файла конфигурации: применить этот
-    # файл теперь, новым кодом (AWG_UPDATE_THEN_BUNDLE ставит установщик).
-    if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
-        log "применяю конфигурацию шлюза из $AWG_UPDATE_THEN_BUNDLE…"
-        export AWG_VENV_FRESH=1               # venv только что собран — reconfigure не собирает второй раз
-        exec "$SELF_PATH" reconfigure --role gateway --bundle "$AWG_UPDATE_THEN_BUNDLE"
+    # Шлюз, подключаемый командой поверх стоящего агента другой версии
+    # (установщик --join): подключение — теперь, новым кодом
+    if [[ -n "${AWG_UPDATE_THEN_JOIN:-}" ]]; then
+        exec "$SELF_PATH" join "$AWG_UPDATE_THEN_JOIN"
     fi
 }
 
@@ -1755,7 +1678,7 @@ prune_old_kernel_builds() {
 }
 
 # ── backup / restore: бэкап сервера AWG — один шифрованный архив ─────────────
-GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство ставится файлом конфигурации шлюза (sudo sh <файл> --install), остальное довезёт канал конфигурации"
+GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство подключается командой из бота сервера AWG, остальное довезёт канал конфигурации"
 ROOT_GW_DIR="${AWG_ROOT_GW_DIR:-/root}"      # выданные шлюзовые стороны линков: /root/gw-<линк>.conf
 SYS_NET="${AWG_SYS_NET:-/sys/class/net}"     # поднятые интерфейсы хоста
 
@@ -2548,7 +2471,7 @@ cmd_lan() {
     # VPN-транзит (локальная сеть без VPN) на шлюзе: личные
     # списки и обновление фидов. Делегируем скриптам, которые кладёт обвязка
     # шлюза (routing-gw-setup.sh) — источник истины один; глагол здесь ради
-    # находимости, как gw-bundle. Только роль gateway с включённой функцией.
+    # находимости, как gw-kit. Только роль gateway с включённой функцией.
     require_root
     local dom="/usr/local/sbin/awg-lan-domain.sh" lists="/usr/local/sbin/awg-lan-lists.sh"
     case "${1:-}" in
@@ -2562,20 +2485,23 @@ cmd_lan() {
     esac
 }
 
-cmd_gw_bundle() {
-    # Делегируем скрипту линка: источник истины один, дублировать сборку файла конфигурации
-    # здесь значило бы завести второе место, которое разъедется при правке.
-    # Глагол существует только ради находимости: скрипты лежат в $INSTALL_DIR и
-    # в PATH их нет, а нужен файл конфигурации через полгода после установки.
+cmd_gw_kit() {
+    # Поставка для шлюза без доступа к GitHub: код этой установки и исходники
+    # AmneziaWG из кэша сервера, без ключей и токенов (tools/gwkit.py)
     require_root; require_installed
-    local sh_="$INSTALL_DIR/install/routing-link-setup.sh"
-    [[ -f "$sh_" ]] || die "не найден $sh_ — поставка неполная?"
-    # --link <if>: файл конфигурации другого слота (резервный шлюз);
-    # без него — первый линк, как и было
-    if [[ "${1:-}" == "--link" && -n "${2:-}" ]]; then
-        LINK_IF="$2" exec sh "$sh_" --bundle
+    is_gateway_role && die "gw-kit собирается на сервере AWG, а здесь шлюз"
+    [[ "${1:-}" == "--stdout" ]] || die "usage: awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sudo sh /root/awg-gw-kit.sh --join <команда из бота>'"
+    bot_tool tools.gwkit --stdout
+}
+
+cmd_join() {  # join <команда подключения> | --status — шлюз: подключение командой из бота сервера AWG
+    require_root
+    [[ -n "${1:-}" ]] || die "usage: awg-bot join <команда подключения из бота сервера AWG> | --status"
+    if [[ "$1" != "--status" ]] && ! is_gateway_role; then
+        # первая установка агента идёт установщиком; здесь — уже поставленный агент
+        die "агент шлюза не настроен — выполни команду подключения целиком (curl … --join …)"
     fi
-    exec sh "$sh_" --bundle
+    bot_tool tools.join "$@"
 }
 
 cmd_status() {
@@ -2618,8 +2544,10 @@ awg-bot — управление установленным ботом.
   awg-bot routing-doctor     где рвётся РФ-доступ (только чтение)
   awg-bot lan <cmd>          шлюз, VPN-транзит: add|ru|del <домен…> — свои списки
                              (в туннель / напрямую / убрать), list, update — обновить фиды
-  awg-bot gw-bundle [--link IF]  пересобрать файл конфигурации шлюза (ключи не меняются);
-                             --link — линк другого слота (резервный шлюз)
+  awg-bot gw-kit --stdout    собрать поставку для шлюза без доступа к GitHub (без ключей и токенов):
+                             sudo awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sudo sh /root/awg-gw-kit.sh --join <команда из бота>'
+  awg-bot join <команда>     шлюз: подключиться к серверу AWG командой из его бота;
+                             join --status — код и ход подключения ещё раз
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
                              status | install | reload | prune | plan
   awg-bot first-device       конфигурация первого устройства админа в терминал
@@ -2654,7 +2582,8 @@ case "$VERB" in
     firewall)    cmd_firewall "$@" ;;
     ssh)         cmd_ssh "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
-    gw-bundle)   cmd_gw_bundle "$@" ;;
+    gw-kit)      cmd_gw_kit "$@" ;;
+    join)        cmd_join "$@" ;;
     lan)         cmd_lan "$@" ;;
     awg)         cmd_awg "$@" ;;
     first-device) cmd_first_device "$@" ;;

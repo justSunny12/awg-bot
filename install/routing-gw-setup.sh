@@ -235,6 +235,15 @@
 #   sudo UPLINK_IF=awg0 sh routing-gw-setup.sh --uplink uplink.next   # только аплинк (п.7)
 #   sudo UPLINK_IF=awg0 sh routing-gw-setup.sh --uplink-commit|--uplink-revert  # итог пробы (п.7)
 #   sudo sh routing-gw-setup.sh --rollback
+#   sudo sh routing-gw-setup.sh --join link.conf   # линк по команде подключения (п.8)
+# 8) --join <конфиг> — шлюз, подключаемый командой из бота сервера AWG (зовёт
+#    `awg-bot join`, tools/join.py): конфиг линка по токену (тот же второй
+#    рубеж wg_conf_check), карантинная таблица inet awg_gw_join — пересылки из
+#    линка и в линк нет, на сам шлюз с линка — только ответы на свои
+#    соединения (канал открывает шлюз) — до подъёма линка, затем подъём. Ни
+#    аплинка, ни VPN-транзита, ни dnsmasq, ни юнита. Полная обвязка — обычным
+#    --apply после сопряжения (его зовёт агент на постоянных ключах линка):
+#    он снимает карантинную таблицу. Итог — последней строкой «join: linked».
 # --rollback снимает и ACCEPT п.3a — со всех интерфейсов, кроме lo: имя
 # интерфейса со времён применения могло смениться (br0, bond после OMV).
 # Один прогон за раз: --apply, --link-apply, --uplink* и --rollback (из юнита, из файла
@@ -272,6 +281,7 @@ GW_ETC="/etc/awg-gw"
 GUARD_FILE="$GW_ETC/guard.nft"           # таблица — источник для nft -f при каждом старте
 FW_ENV="$GW_ETC/firewall.env"            # ADMIN_IPS_EXTRA, правится на шлюзе (awg-bot firewall)
 GUARD_TABLE="inet awg_gw_guard"
+JOIN_TABLE="inet awg_gw_join"             # карантин линка до кода подключения (--join)
 SSH_PORT="${SSH_PORT:-22}"
 TG_MARK="${TG_MARK:-0x1}"
 # Диапазоны Telegram (AS62014/62041/59930/44907) — стабильны годами; тот же
@@ -1037,6 +1047,9 @@ case "${1:-}" in
     --uplink-revert) MODE="uplink-revert" ;;
     --uplink-commit) MODE="uplink-commit" ;;
     --rollback) MODE="rollback" ;;
+    # шлюз, подключаемый командой (awg-bot join): только линк по токену и
+    # карантинная таблица — ни аплинка, ни транзита, ни юнита обвязки
+    --join)     MODE="join"; SRC_CONF="${2:-}" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
@@ -1237,7 +1250,9 @@ allow_list_path() {
     done
     return 1
 }
-wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink; 0 — принят, 1 — отказ (причина в stderr)
+wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink|join; 0 — принят, 1 — отказ (причина в stderr)
+    # join — конфиг линка по команде подключения: ключи линка, а AllowedIPs —
+    # только /30 линка (подсеть клиентов шлюз узнает из документа после кода)
     _allow="$(allow_list_path)" || { echo "нет gw-wg-allow.list в поставке — конфиги каналом не принимаются" >&2; return 1; }
     awk -v kind="$2" -v client="${CLIENT_SUBNET:-}" -v peers="${PEER_LAN_NETS:-}" -v resolver="${RESOLVER:-}" \
         -v lan="${LAN_SUBNETS:-} ${IFACE_NETS:-}" '
@@ -1260,12 +1275,12 @@ wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink; 0 — п
         if ($1 == "allowed_max") { amax = $2 + 0; next }
         if ($1 == "allowed_min_prefix") { aminp = $2 + 0; next }
         if ($1 == "allowed_nets") { for (i = 2; i <= NF; i++) if (net_parse($i)) { nn++; anet_a[nn] = NET_A; anet_p[nn] = NET_P }; next }
-        if (NF == 3 && $1 == kind) ok[$2 "\t" lc($3)] = $3
+        if (NF == 3 && $1 == (kind == "join" ? "link" : kind)) ok[$2 "\t" lc($3)] = $3
         next
     }
     { line = $0; sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line) }
     line == "" { next }
-    line ~ /^#/ { if (kind == "link" && line !~ /^#[ \t]*awg-bot:[ \t]*контракт линка[ \t]+[0-9]+$/) fail("в конфиге линка допустим только штамп контракта"); next }
+    line ~ /^#/ { if (kind != "uplink" && line !~ /^#[ \t]*awg-bot:[ \t]*контракт линка[ \t]+[0-9]+$/) fail("в конфиге линка допустим только штамп контракта"); next }
     line ~ /^\[.*\]$/ { sec = substr(line, 2, length(line) - 2); if (sec != "Interface" && sec != "Peer") fail("неизвестная секция " sec); cnt[sec]++; next }
     sec == "" { fail("строка вне секции") }
     index(line, "=") == 0 { fail("строка без «=»: " line) }
@@ -1281,10 +1296,10 @@ wg_conf_check() {     # $1 = файл конфига, $2 = link|uplink; 0 — п
         if (bad) exit 1
         if (!amax || !aminp || !nn) fail("gw-wg-allow.list: не заданы пределы правила AllowedIPs")
         if (cnt["Interface"] != 1 || cnt["Peer"] != 1) fail("нужны ровно одна секция [Interface] и один [Peer]")
-        if (kind != "link") exit 0
+        if (kind == "uplink") exit 0
         if (!net_parse(address) || NET_P != 30) fail("Address линка — не /30")
         link_c = ntoa(base(NET_A, 30)) "/30"
-        nw = 0; want[++nw] = client; want[++nw] = link_c
+        nw = 0; want[++nw] = (kind == "join") ? link_c : client; want[++nw] = link_c
         np = split(peers, pl, /[ ,]+/); for (i = 1; i <= np; i++) if (pl[i] != "") want[++nw] = pl[i]
         if (resolver != "") want[++nw] = resolver "/32"
         ne = split(allowed, el, /[ ,]+/); n = 0
@@ -1396,6 +1411,48 @@ if [ "$MODE" = "link-apply" ]; then
     exit 0
 fi
 
+if [ "$MODE" = "join" ]; then
+    step "Линк по команде подключения → $HOST_CONF_DIR/$LINK_IF.conf"
+    [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || { say "ОШИБКА: нужен файл: $0 --join <конфиг>"; exit 2; }
+    if [ -z "${IFACE_NETS+x}" ]; then
+        IFACE_NETS="$(ip -4 route show scope link 2>/dev/null | awk -v l="$LINK_IF" '$1 ~ /\// && $3 != l && $3 !~ /^awg/ { print $1 }' | paste -sd' ' - 2>/dev/null || true)"
+    fi
+    wg_conf_check "$SRC_CONF" join || { say "ОШИБКА: конфиг линка не прошёл проверку — не установлен"; exit 1; }
+    [ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; exit 1; }
+    mkdir -p "$HOST_CONF_DIR" "$GW_ETC"
+    _jt="$GW_ETC/join.nft"
+    cat > "$_jt.tmp" <<JOINEOF
+#!/usr/sbin/nft -f
+# awg-bot (шлюз): карантин линка до подтверждения кода подключения.
+# Снимает полный прогон обвязки (--apply) после сопряжения.
+table $JOIN_TABLE
+delete table $JOIN_TABLE
+table $JOIN_TABLE {
+    chain input {
+        type filter hook input priority -1; policy accept;
+        iifname "$LINK_IF" ct state established,related accept
+        iifname "$LINK_IF" drop
+    }
+    chain forward {
+        type filter hook forward priority -1; policy accept;
+        iifname "$LINK_IF" drop
+        oifname "$LINK_IF" drop
+    }
+}
+JOINEOF
+    nft -c -f "$_jt.tmp" || { say "ОШИБКА: nft отклонил карантинную таблицу — $_jt.tmp"; exit 1; }
+    mv "$_jt.tmp" "$_jt"
+    run "nft -f $_jt"
+    install_self >/dev/null || true             # копия в /usr/local/sbin — её зовёт агент
+    run "install -m 600 '$SRC_CONF' $HOST_CONF_DIR/$LINK_IF.conf"
+    if ip link show "$LINK_IF" >/dev/null 2>&1; then
+        run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
+    fi
+    "$AWG_QUICK" up "$LINK_IF" || { say "ОШИБКА: линк по команде подключения не поднялся"; exit 1; }
+    say "join: linked"
+    exit 0
+fi
+
 if [ "$MODE" = "uplink" ]; then
     step "Конфиг аплинка из канала конфигурации"
     # отказ до установки — итог «uplink: refused»: на диске ничего не менялось
@@ -1430,6 +1487,8 @@ fi
 if [ "$MODE" = "rollback" ]; then
     step "Снятие"
     LINK_CIDR_PRE="$(link_cidr_of "$LINK_IF")"
+    run "nft delete table $JOIN_TABLE 2>/dev/null || true"
+    run "rm -f $GW_ETC/join.nft"
     run "systemctl disable --now awg-link-gw.service 2>/dev/null || true"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
     # подсеть линка — пока интерфейс ещё жив (до down он выше уже снят, но
@@ -1925,6 +1984,11 @@ chmod 0644 "$GUARD_FILE.tmp"
 nft -c -f "$GUARD_FILE.tmp" || { say "ОШИБКА: nft отклонил таблицу — $GUARD_FILE.tmp"; exit 1; }
 mv "$GUARD_FILE.tmp" "$GUARD_FILE"
 run "nft -f $GUARD_FILE"
+# карантин подключения командой (--join) своё отслужил: обвязка полная
+if [ -f "$GW_ETC/join.nft" ] || nft list table $JOIN_TABLE >/dev/null 2>&1; then
+    run "nft delete table $JOIN_TABLE 2>/dev/null || true"
+    run "rm -f $GW_ETC/join.nft"
+fi
 fi
 
 # ── 3. прежняя обвязка в iptables — снять ────────────────────────────────────

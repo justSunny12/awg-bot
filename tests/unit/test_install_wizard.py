@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 
 import pytest
-from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -294,116 +293,50 @@ def test_bootstrap_without_root_prints_the_whole_command(bootstrap):
 
 # ── шлюз: установка без единого вопроса ──────────────────────────────────────
 
-def test_gateway_install_takes_secrets_from_the_bundle(script):
-    """Файл первого применения несёт всё: ключи линка, конфиг аплинка, список
-    устройств админа, токен агента и ADMIN_ID. Значит спрашивать на шлюзе
-    нечего — есть файл или его нет."""
-    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
-    assert "find_gw_bundle" in body and "gw_bundle_secrets" in body
-    assert "apply_gw_bundle" in body
-    assert '[[ "$from_bundle" -eq 1 ]] || setup_secrets' in body, \
-        "с файлом вопросы про секреты не задаются"
-    assert body.index("ensure_awg_kernel") < body.index("apply_gw_bundle"), \
-        "бандл применяется до ядра — awg-quick ещё нет"
-    assert body.index("apply_gw_bundle") < body.index("build_venv"), \
-        "агенту нужен уже поднятый аплинк: без него Telegram недоступен"
+def _gw_branch(script: str) -> str:
+    return script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
 
 
-def test_gateway_install_without_a_bundle_says_exactly_what_to_do(script):
-    """Тупик «нет файла» обязан кончаться двумя командами, а не советом
-    почитать документацию."""
-    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
-    stop = body.split('elif [[ -z "$(env_get BOT_TOKEN)" ]]; then', 1)[1].split("fi", 1)[0]
-    assert "scp awg-gw-bundle.sh" in stop and "--install" in stop
-    assert "«🛰 Назначить»" in stop
+def test_gateway_install_goes_through_the_join_command(script):
+    """Шлюз ставится командой подключения из бота сервера: ядро, Python и
+    venv, conf с ролью gateway, юнит — и `awg-bot join` (линк по токену,
+    агент в режиме сопряжения, код в терминал). Токена бота и ADMIN_ID на
+    шлюзе не спрашивают: их довезёт канал после кода."""
+    gw = _gw_branch(script)
+    join = gw.split('if [[ -n "${GW_JOIN:-}" ]]; then', 1)[1].split("\n        fi\n", 1)[0]
+    for step in ("build_venv", "seed_conf", "configure_gateway", "install_unit", 'bot_tool tools.join "$GW_JOIN"'):
+        assert step in join, step
+    assert join.index("install_unit") < join.index("bot_tool tools.join"), "агент без юнита не стартует"
+    assert "setup_secrets" not in join and "validate_config" not in join, "на шлюзе спрашивают секреты"
+    assert gw.index("ensure_awg_kernel") < gw.index("ensure_python") < gw.index("ensure_venv_ready") \
+        < gw.index('if [[ -n "${GW_JOIN:-}" ]]; then')
+    assert '--join)      GW_JOIN="${2:-}"; shift 2 ;;' in script
 
 
-def test_bundle_secrets_are_read_as_data_not_executed(script):
-    """Строки лежат в бандле после exec: их читают sed'ом, а не исполняют."""
-    body = script.split("gw_bundle_secrets() {", 1)[1].split("\n}\n", 1)[0]
-    assert "sed -nE" in body and "AGENT_BOT_TOKEN" in body and "AGENT_ADMIN_ID" in body
-    assert "source" not in body and ". \"$f\"" not in body
-    assert "env_set BOT_TOKEN" in body and "env_set ADMIN_ID" in body
+def test_gateway_install_without_a_command_says_exactly_what_to_do(script):
+    """Тупик «нет команды» кончается путём в боте, а не советом почитать
+    документацию; стоящий агент (токен в env) перенастраивается без него."""
+    gw = _gw_branch(script)
+    stop = gw.split('if [[ -z "$(env_get BOT_TOKEN)" ]]; then', 1)[1].split("fi", 1)[0]
+    assert "нет команды подключения" in stop and "«🛰 Подключить шлюз»" in stop
+    assert "Готово: бот шлюза напишет сам." in gw.split("cleanup_delivery", 2)[2]
 
 
-def test_bundle_is_searched_where_scp_puts_it(script):
-    """Только /root (куда кладёт копирование из инструкции бота) и дом
-    вызвавшего: файл исполняется от root, а токен агента и ADMIN_ID из него
-    уходят в env — подложенный в /tmp или в каталог вызова чужой файл
-    привязал бы агента к чужому боту."""
-    body = script.split("find_gw_bundle() {", 1)[1].split("\n}\n", 1)[0]
-    assert "/root/awg-gw-bundle.sh" in body, "инструкция бота кладёт файл именно туда"
-    assert "SUDO_USER" in body and "getent passwd" in body
-    assert "/tmp/" not in body and "$PWD" not in body, "автопоиск снова смотрит в общедоступные места"
-    assert body.count("bundle_trusted") == 2, "владелец и права не проверяются и у найденного, и у явного"
-    assert '[[ -n "$GW_BUNDLE" ]]' in body, "явный --bundle важнее поиска"
+def test_the_first_application_file_is_gone_from_the_scripts(script, bootstrap):
+    """Файла первого применения больше нет: ни поиска, ни разбора секретов,
+    ни применения, ни ключа --bundle в установщике и в reconfigure."""
+    for name in ("find_gw_bundle", "gw_bundle_secrets", "apply_gw_bundle", "bundle_trusted",
+                 "AWG_UPDATE_THEN_BUNDLE", "GW_BUNDLE=", "--bundle)"):
+        assert name not in script, name
+    assert "--bundle" not in bootstrap.split("while [[", 1)[1].split("done", 1)[0]
+    assert "AWG_UPDATE_THEN_BUNDLE" not in bootstrap
 
 
-def test_bundle_flag_travels_through_the_bootstrap(bootstrap):
-    assert "--bundle) " in bootstrap and "EXTRA+=(--bundle" in bootstrap
-
-
-def test_gateway_install_finish_line_matches_how_the_admin_was_identified(script):
-    """Опознание кодом: админ боту уже писал, агент пришлёт панель сам. Из
-    файла первого применения диалога нет, первым бот написать не может —
-    «напиши /start». Одно «Готово» на оба случая врало в одном из них."""
-    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
-    tail = body.split("cleanup_delivery", 1)[1]
-    assert 'if [[ "$from_bundle" -eq 1 ]]' in tail
-    assert "напиши /start" in tail and "напишет сам" in tail
-
-
-def test_install_from_the_bundle_leaves_the_first_start_marker_where_the_agent_looks(script):
-    """Установка по файлу первого применения оставляет метку рядом с базой
-    агента: по ней первый запуск говорит серверу «установлен», даже если база
-    от прежней установки уцелела. Разойдись имя или каталог — метку никто не
-    увидит, а файл с ключом линка так и провисит в чате сервера."""
-    from awgbot.runtime import main
-    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
-    ok_branch = body.split("if gw_bundle_secrets", 1)[1].split("else", 1)[0]
-    assert f': > "$DATA_DIR/{main.FRESH_INSTALL_MARKER}"' in ok_branch, ok_branch
-    assert 'DATA_DIR="/var/lib/awg-bot"' in script
-    assert "Environment=AWG_BOT_DATA_DIR=$DATA_DIR" in script, "база агента — не в том каталоге, где метка"
-
-
-def test_bundle_trusted_checks_owner_and_mode(script, tmp_path):
-    """Файл исполняется от root: принимаем только свой (root или вызвавшего
-    через sudo) и закрытый от записи группе и прочим."""
-    import getpass
-    import os
-    import subprocess
-    body = script.split("bundle_trusted() {", 1)[1].split("\n}\n", 1)[0]
-    fn = "bundle_trusted() {" + body + "\n}\n"
-    # GNU stat -c нет на macOS: подставка с той же семантикой на python
-    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
-    fake_cmd(bin_dir / "stat",
-        "#!/bin/sh\nexec python3 -c 'import os, sys\nst = os.stat(sys.argv[2])\n"
-        "print(st.st_uid if sys.argv[1] == \"%u\" else oct(st.st_mode & 0o777)[2:])' \"$2\" \"$3\"\n")
-    f = tmp_path / "awg-gw-bundle.sh"; f.write_text("#!/bin/sh\n", encoding="utf-8")
-
-    def check(mode: int, sudo_user: str | None) -> int:
-        f.chmod(mode)
-        env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
-        if sudo_user is not None:
-            env["SUDO_USER"] = sudo_user
-        return subprocess.run(["bash", "-c", fn + f'bundle_trusted "{f}"'], env=env,
-                              capture_output=True, text=True, timeout=10).returncode
-
-    me = getpass.getuser()
-    if os.geteuid() == 0:
-        pytest.skip("под root владелец файла — root, различать нечего")
-    assert check(0o600, None) == 1, "файл не root и не вызвавшего принят"
-    assert check(0o600, me) == 0
-    assert check(0o644, me) == 0
-    assert check(0o666, me) == 1, "файл, открытый на запись всем, принят"
-    assert check(0o620, me) == 1, "файл, открытый на запись группе, принят"
-
-
-def test_python_and_venv_are_ready_before_the_first_application_file_runs(script):
-    """Файл первого применения удаляет себя после успеха: отказ venv после него
-    (trixie без python3-venv, /tmp на tmpfs) повторить было нечем."""
-    gw = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
-    assert gw.index("ensure_python") < gw.index("ensure_venv_ready") < gw.index("apply_gw_bundle")
+def test_python_and_venv_are_ready_first_on_a_gateway(script):
+    """Python и venv — первым делом: отказ venv (trixie без python3-venv,
+    /tmp на tmpfs) — до того, как линк по токену поднят."""
+    gw = _gw_branch(script)
+    assert gw.index("ensure_python") < gw.index("ensure_venv_ready") < gw.index("bot_tool tools.join")
     fn = script.split("ensure_venv_ready() {", 1)[1].split("\n}\n", 1)[0]
     assert "import ensurepip" in fn and "python3-venv" in fn
     py = script.split("ensure_python() {", 1)[1].split("\n}\n", 1)[0]
@@ -411,11 +344,11 @@ def test_python_and_venv_are_ready_before_the_first_application_file_runs(script
     assert "DPkg::Lock::Timeout=120" in py
 
 
-def test_update_with_a_configuration_file_does_not_start_or_build_twice(script):
+def test_update_does_not_build_twice_and_wipe_ends_cleanly(script):
     post = script.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
-    assert "export AWG_VENV_FRESH=1" in post
     venv = script.split("build_venv() {", 1)[1].split("\n}\n", 1)[0]
     assert 'AWG_VENV_FRESH:-}" == "1"' in venv
+    assert 'exec "$SELF_PATH" join "$AWG_UPDATE_THEN_JOIN"' in post, "подключение после обновления потеряно"
     wipe = post.split('warn "удаляю данные и настройки по твоему запросу…"', 1)[1].split("\n    fi\n", 1)[0]
     assert "trap - EXIT" in wipe, "«удалить данные» заканчивалось ловушкой «обновление прервалось»"
 

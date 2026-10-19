@@ -925,3 +925,23 @@ def test_the_agent_check_wants_table_off_exactly_as_the_script_does(table):
     with pytest.raises(gwcfg.CfgError, match="Table = off"):
         gwcfg.check_uplink({"conf": text, "pubkey": pub, "prev_pubkey": ""})
     assert gwcfg.check_uplink({"conf": uplink_conf(priv, srv), "pubkey": pub, "prev_pubkey": ""}) is not None
+
+
+# ── правило fresh: первый аплинк шлюза, подключённого командой ───────────────
+
+@pytest.mark.parametrize("joined", [True, False])
+def test_a_gateway_joined_by_command_takes_its_first_uplink_without_asking(svc, host, monkeypatch, joined):
+    """Аплинка нет вовсе, а код подключения подтверждён — вопрос задать
+    негде (чата бота шлюза ещё нет): первый конфиг ставится без вопроса, под
+    той же пробой и без «аварийной» строки. Без подтверждённого кода — как
+    раньше, приглашение."""
+    host.uplink.write_text("", encoding="utf-8")         # аплинка нет: подставной скрипт ждёт файл
+    host.uplink_age = "absent"
+    monkeypatch.setattr(svc, "join_fresh_uplink", lambda: joined, raising=False)
+    res = svc.apply_cfg(_doc(uplink=_value(host)))
+    if joined:
+        assert "uplink" in res["ack"]["applied"] and res["ask"] == [], res
+        assert res["note"] != EMERGENCY_SAME and "молчал" not in (res["note"] or "")
+        assert [n for n, _, _ in host.uplink_runs] == ["uplink.next"] and host.finishes == ["commit"]
+    else:
+        assert res["ask"] == ["uplink"] and host.uplink_runs == [], res

@@ -145,12 +145,10 @@ class RekeyI1Mixin:
         return [Notification(config.ADMIN_ID, T_L2, silent=True)]
 
     def gateway_i1_line(self, slot_id: int) -> Optional[str]:
-        """Строка карточки слота: Т-Л1 (трижды не встало) или Т-Л2 (у клиентов
-        нет I1); иначе None. Без сети."""
+        """Строка карточки слота: Т-Л1 (трижды не встало); иначе None. Без
+        сети. Т-Л2 строкой карточки не бывает: линк без I1, когда его нет и у
+        клиентов, — не ошибка, а «как у клиентов»; о нём — одно уведомление."""
         plan = self.gateway_i1_plan(slot_id)
         if int(plan.get("tries") or 0) >= TRIES_WARN:
             return T_L1
-        ok, want = self.gateway_client_i1()
-        if ok and not want:
-            return T_L2
         return None

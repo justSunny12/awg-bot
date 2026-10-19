@@ -36,8 +36,12 @@ class SessionMixin:
         cur = pkg.channel_port()
         self.services.gwcfg_channel_port_tick(cur)
         ports = self.services.gwcfg_channel_ports(cur) or [cur]
-        return {(pkg.vps_address(g.link_cidr), port) for g in self.services.db.gateways()
-                for port in ports if pkg.vps_address(g.link_cidr)}
+        out = {(pkg.vps_address(g.link_cidr), port) for g in self.services.db.gateways()
+               for port in ports if pkg.vps_address(g.link_cidr)}
+        if hasattr(self.services, "gwjoin_addresses"):
+            # линки сопряжения: строки слота у нового ещё нет, а канал нужен
+            out |= {(addr, port) for _slot, addr in self.services.gwjoin_addresses() for port in ports}
+        return out
 
     async def ensure(self) -> None:
         """Поднять недостающие слушатели и снять лишние — по адресу, не трогая
@@ -64,6 +68,10 @@ class SessionMixin:
         for slot_id in [s for s, sess in self._sessions.items()
                         if (sess.writer.get_extra_info("sockname") or ("",))[0] == addr[0]]:
             await self._drop(slot_id)
+        joins = self.__dict__.get("_join_sess") or {}
+        for slot_id in [s for s, sess in joins.items()
+                        if (sess.writer.get_extra_info("sockname") or ("",))[0] == addr[0]]:
+            await self._close_session(joins.pop(slot_id))     # сессия сопряжения — вместе с адресом
         srv.close()
         with contextlib.suppress(Exception):
             await srv.wait_closed()
@@ -164,6 +172,13 @@ class SessionMixin:
         peer = writer.get_extra_info("peername") or ("", 0)
         local = writer.get_extra_info("sockname") or ("", 0)
         gw = self._slot_for(str(local[0]), str(peer[0]))
+        join = (self.services.gwjoin_for_addr(str(local[0]), str(peer[0]))
+                if hasattr(self.services, "gwjoin_for_addr") else {})
+        if gw is None and join:
+            # новый слот в сопряжении: строки нет — линк и ключ по записи сопряжения
+            import types
+            gw = types.SimpleNamespace(id=int(join["slot"]), link_if=join["link_if"], link_cidr=join["cidr"],
+                                       link_port=int(join["port"]), joining=True)
         if gw is None:
             # клиент туннеля в цикле открывает TCP на адрес линка — журнал не заливаем
             now = time.monotonic()
@@ -209,6 +224,13 @@ class SessionMixin:
                 await asyncio.to_thread(self.services.gwlink_note_error, gw.id, str(e))
                 return
             last_seq = int(msg.get("seq") or 0)
+            if msg.get("join") and join:
+                # сессия сопряжения — своя ветка: ни роли, ни доставок (linkserver/join.py)
+                await self._serve_join(reader, int(join["slot"]), sess, msg, last_seq)
+                return
+            if getattr(gw, "joining", False):
+                log.warning("канал линка: слот %s в сопряжении прислал hello без join — закрываю", gw.id)
+                return
             old = self._sessions.get(gw.id)
             sess.took_over = bool(old and (old.hello or old.took_over))
             self._sessions[gw.id] = sess                  # синхронно: без await между проверкой и записью

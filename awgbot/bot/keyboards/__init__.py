@@ -48,7 +48,8 @@ from .settings import (
 from .routing import (
     routing_panel, routing_sites, routing_clear_confirm, gateways_kb, gateway_edit_kb, gateway_router_kb, routing_params_kb,
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
-    gateway_remove_confirm, routing_disable_confirm, settings_routing_users, bundle_menu_kb, gateway_card,
+    gwjoin_message, gwjoin_cancel_confirm, gwjoin_final, gateway_same_confirm,
+    gateway_remove_confirm, routing_disable_confirm, settings_routing_users, gateway_card,
     gateway_switch_confirm,
     gateway_lan_confirm, gateway_keys_confirm, gateway_keys_pick, gateway_token_pick, gateway_smb_confirm)
 from .broadcast import (
@@ -82,10 +83,10 @@ __all__ = [
     "settings_subs", "migration_confirm",
     "update_notify", "migration_needed",
     "update_done_menu", "fleet_confirm", "fleet_final", "routing_panel", "routing_sites", "routing_clear_confirm",
-    "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick",
+    "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick", "gwjoin_message", "gwjoin_cancel_confirm", "gwjoin_final", "gateway_same_confirm",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing_users",
-    "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_keys_confirm", "gateway_keys_pick", "gateway_token_pick", "gateway_smb_confirm",
+    "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_keys_confirm", "gateway_keys_pick", "gateway_token_pick", "gateway_smb_confirm",
  "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_cfg_question_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_health_kb", "gateway_transit_router_kb",
     "gateway_confirm_kb",

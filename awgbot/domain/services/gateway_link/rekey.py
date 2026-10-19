@@ -142,7 +142,8 @@ class RekeyMixin:
         if self.gateway_rekey_active(gw.id):
             raise ServiceError("Смена ключей уже идёт")
         for other in self.db.gateways():
-            if other.id != gw.id and self.gateway_rekey_active(other.id):
+            # сопряжение (join) — новый линк, трафика ещё не несёт: чужая смена ему не помеха
+            if auto != "join" and other.id != gw.id and self.gateway_rekey_active(other.id):
                 raise ServiceError(f"Идёт смена ключей у {self._gw_display(other)} — дождись итога")
         i1 = self._rekey_i1_for(gw, auto)
         err = self._rekey_run(gw, "--rekey-stage", i1)
@@ -178,8 +179,10 @@ class RekeyMixin:
         gconf.comments = []
         fp = gwcfg.key_fp(vconf.get("Peer", "PublicKey"), gconf.get("Peer", "PublicKey"))
         out = {"id": st.get("id", ""), "conf": wgconf.render(gconf, "link", stamp=gwcfg.LINK_CONTRACT), "fp": fp}
-        if st.get("auto") and "rekey2" in self.gwlink_agent_caps(slot_id):
-            out["auto"] = st["auto"]                      # без вопроса в чате бота шлюза
+        # без вопроса в чате бота шлюза; сопряжение — агент 3.4.0 и новее
+        # (join1) заведомо, а возможностей у сессии сопряжения нет
+        if st.get("auto") == "join" or (st.get("auto") and "rekey2" in self.gwlink_agent_caps(slot_id)):
+            out["auto"] = st["auto"]
         return out
 
     @staticmethod
@@ -298,6 +301,8 @@ class RekeyMixin:
         finally:
             _REKEY_LOCK.release()
         log.info("ключи линка: слот %s на новых ключах", slot_id)
+        if st.get("auto") == "join" and hasattr(self, "gwjoin_linked"):
+            self.gwjoin_linked(slot_id)                   # сопряжение: карантин снят, .join-prev прочь
         self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
         notes = [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")]
         return {"notes": self._rekey_notes(st, notes, done=True), "hold": False, "rekeyed": True}

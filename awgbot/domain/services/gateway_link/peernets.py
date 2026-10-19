@@ -3,8 +3,6 @@ VPN-транзитом связаны всегда, подсети соседе�
 
 from __future__ import annotations
 
-from typing import Optional
-from awgbot.util import timeutil
 from awgbot.domain import configgen
 from awgbot.domain.services.types import ServiceError
 from .common import log
@@ -18,11 +16,6 @@ def transit_slots(gateways) -> list:
     форвардинг линк ↔ линк у них разошёлся бы."""
     return [g for g in gateways if g.lan_mode and g.lan_subnets]
 
-
-def bundle_file(link_if: str) -> str:
-    """Имя файла первого применения слота — одно правило с routing-link-setup.sh
-    (GW_BUNDLE_OUT): у первого линка прежнее имя, у остальных — с интерфейсом."""
-    return "awg-gw-bundle.sh" if link_if in ("", "awglink") else f"awg-gw-bundle-{link_if}.sh"
 
 class PeerNetsMixin:
     """VPN-транзит слота и связь подсетей за шлюзами."""
@@ -50,8 +43,11 @@ class PeerNetsMixin:
 
     # ── связь подсетей: часть VPN-транзита ───
     def gateway_transit_slots(self) -> list:
-        """Слоты с VPN-транзитом — по порядку номеров (правило — transit_slots)."""
-        return transit_slots(self.db.gateways())
+        """Слоты с VPN-транзитом — по порядку номеров (правило — transit_slots);
+        слот в замене устройства (сопряжение) в транзит не входит."""
+        replacing = getattr(self, "gwjoin_replacing", None)
+        gws = [g for g in self.db.gateways() if not (callable(replacing) and replacing(g.id))]
+        return transit_slots(gws)
 
     def gateway_transit_links(self) -> list[str]:
         """Линки слотов с VPN-транзитом — файерволу ВПС для форвардинга
@@ -103,64 +99,3 @@ class PeerNetsMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_set_lan_mode: файервол ВПС не перерисован: %s", e)
         return {"gateway": gw, "resolver": self.gateway_resolver_addr(gw) if on else ""}
-
-    @staticmethod
-    def _bundle_path(gw) -> str:
-        return f"/root/{bundle_file(gw.link_if)}"
-
-    @staticmethod
-    def bundle_name(gw) -> str:
-        """Имя файла первого применения для слота — как его кладёт скрипт."""
-        return bundle_file(gw.link_if)
-
-    def _gw_bundle_build(self, gw) -> bytes:
-        """Собрать файл первого применения слота скриптом линка (ключи не
-        меняются) и дополнить токеном агента. Почты и фразы бэкапов в нём нет:
-        их везёт документ конфигурации по каналу, а утечка открытого файла
-        отдавала бы ящик и ключ ко всем копиям сервера."""
-        env, admin_ips = self._gw_bundle_env(gw)
-        self._run_link_script("--bundle", env)
-        with open(self._bundle_path(gw), "rb") as f:
-            plain = f.read()
-        plain = self._bundle_with_agent(plain, gw.id)
-        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
-        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, gw.id),
-                          timeutil.to_iso(timeutil.now()))
-        return plain
-
-    def gw_bundle_target(self, slot_id: Optional[int] = None) -> tuple[str, dict]:
-        """Кому уходит файл: «имя» (подпись) слота, сырое, и бот шлюза из кэша
-        getMe ({'username', 'name'} или пусто) — для подписи под файлом."""
-        gw = self._gw_slot(slot_id)
-        return self._gw_display(gw), (self.gw_bot_identity(gw.id) if gw.id else {})
-
-    def gw_bundle_plain(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
-        """Открытый бандл — для ПЕРВОГО применения на машине, у которой ключа
-        линка ещё нет (новая машина или новые ключи). Внутри приватные ключи:
-        тот же уровень доверия, что у ссылок vpn:// с ключами устройств.
-
-        Везёт с собой ПОСТАВКУ: шлюз стоит в России, GitHub там без туннеля
-        недоступен, а туннель как раз и ставится этим файлом — качать агента
-        с шлюза неоткуда (наступили на чистой машине 19.09.2026)."""
-        gw = self._gw_slot(slot_id)
-        return self._bundle_with_dist(self._gw_bundle_build(gw)), self.bundle_name(gw)
-
-    _DIST_BEGIN = b"#__AWG_BOT_TGZ_BELOW__\n"
-    _DIST_END = b"#__AWG_BOT_TGZ_END__\n"
-
-    def _bundle_with_dist(self, plain: bytes) -> bytes:
-        """Поставка base64-блоком между маркерами — ПОСЛЕ `exit` тела бандла и
-        ДО маркера скрипта обвязки: при запуске не исполняется, в скрипт
-        обвязки не попадает. Режим `--install` бандла вырезает её и передаёт
-        управление установщику из неё."""
-        import base64
-        from awgbot.util import dist
-        m = self._MAIL_MARK_LINE.search(plain)
-        if m is None:
-            return plain
-        try:
-            blob = dist.archive()
-        except dist.DistError as e:
-            raise ServiceError(str(e))
-        body = base64.encodebytes(blob)                 # строками по 76 символов
-        return plain[:m.start()] + self._DIST_BEGIN + body + self._DIST_END + plain[m.start():]

@@ -78,7 +78,6 @@ def test_second_slot_brings_its_own_link_and_needs_no_rekey_of_the_first(
     assert res["gateway"].id == 2 and res["rekeyed"] and res["previous"] is None
     assert runs[-1][0] == "--apply" and runs[-1][1]["LINK_IF"] == "awglink2" \
         and runs[-1][1]["LINK_PORT"] == "8443" and runs[-1][1]["LINK_CIDR"] == "10.99.99.4/30"
-    assert services.bundle_name(res["gateway"]) == "awg-gw-bundle-awglink2.sh"
     assert services.gateway_candidates() == []
     with pytest.raises(ServiceError):
         services.gateway_setup(None)                    # третьего слота нет
@@ -86,7 +85,9 @@ def test_second_slot_brings_its_own_link_and_needs_no_rekey_of_the_first(
     # замена машины во втором слоте — rekey своего линка
     pi3 = services.add_device(admin.id, "Pi3")
     res = services.gateway_setup(pi3.device_id, rekey=True, slot_id=2)
-    assert res["previous"].id == pi2.device_id and runs[-1] == ("--rekey", {"LINK_IF": "awglink2", "LINK_PORT": "8443", "LINK_CIDR": "10.99.99.4/30"})
+    assert res["previous"].id == pi2.device_id and runs[-1][0] == "--rekey"
+    assert {k: runs[-1][1][k] for k in ("LINK_IF", "LINK_PORT", "LINK_CIDR")} == \
+        {"LINK_IF": "awglink2", "LINK_PORT": "8443", "LINK_CIDR": "10.99.99.4/30"}
     # снять второй — rollback своего линка, первый жив
     prev = services.gateway_remove(2)
     assert prev.id == pi3.device_id and runs[-1][0] == "--rollback" and runs[-1][1]["LINK_IF"] == "awglink2"

@@ -199,31 +199,6 @@ def test_unit_carries_gateway_env(script):
         assert f"Environment={var}=${var}" in script, var
 
 
-def test_bundle_header_carries_gateway_fields(tmp_path):
-    """Шапка бандла: ключи и конфиг аплинка из окружения сборки, только
-    base64-символы (значения приходят из БД, но фильтр обязателен)."""
-    link = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8").replace(
-        '[ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }', ":", 1)
-    inst = tmp_path / "install"; inst.mkdir()
-    (inst / "routing-link-setup.sh").write_text(link, encoding="utf-8")
-    (inst / "routing-gw-setup.sh").write_text((ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8"), encoding="utf-8")
-    conf = tmp_path / "gw.conf"; conf.write_text("[Interface]\nAddress = 10.99.99.2/30\nPrivateKey = X==\n\n[Peer]\nEndpoint = 203.0.113.10:443\n", encoding="utf-8")
-    (tmp_path / "linkconf").mkdir(); (tmp_path / "linkconf" / "awglink.conf").write_text("[Interface]\nListenPort = 443\nPrivateKey = X==\n", encoding="utf-8")
-    out = tmp_path / "b.sh"
-    up = base64.b64encode(b"[Interface]\nTable = off\n").decode()
-    r = subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
-                       capture_output=True, text=True,
-                       env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
-                            "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
-                            "GATEWAY_PUBKEY": PUB + '; $( ) "\n', "GATEWAY_PREV_PUBKEY": "", "UPLINK_B64": up})
-    assert r.returncode == 0, r.stderr
-    text = out.read_text(encoding="utf-8")
-    assert re.search(rf'^GATEWAY_PUBKEY="{re.escape(PUB)}"$', text, re.M), "мусор из окружения отсеян"
-    assert 'GATEWAY_PREV_PUBKEY=""' in text and f'UPLINK_B64="{up}"' in text
-    for var in ("GATEWAY_PUBKEY", "UPLINK_B64"):
-        assert text.index(f"export {var}") < text.index('"$DEST/routing-gw-setup.sh" "${1:---apply}"')
-
-
 def test_uplink_postup_lands_inside_interface_section(tmp_path):
     """Прогоняем сам awk из скрипта: PostUp обязан стоять до [Peer]."""
     import subprocess as sp
@@ -310,33 +285,22 @@ def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypa
     assert gwguard.uplink_policy("awg0")["route"] is False
 
 
-def test_gateway_conf_allowed_ips_carry_peer_subnets_and_bundle_refreshes_them(tmp_path):
+def test_gateway_conf_allowed_ips_carry_peer_subnets(tmp_path):
     """Чужие подсети — в AllowedIPs пира ВПС в конфиге шлюза: awg-quick сам
-    ставит маршруты. Меняются после --apply — --bundle правит строку в
-    источнике, как порт в Endpoint."""
-    link = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8").replace(
-        '[ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }', ":", 1)
+    ставит маршруты. Мусор из окружения отсеивается; без чужих подсетей —
+    клиентская подсеть и /30 линка."""
+    link = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
     assert "AllowedIPs = $(gw_allowed_ips)" in link
-    inst = tmp_path / "install"; inst.mkdir()
-    (inst / "routing-link-setup.sh").write_text(link, encoding="utf-8")
-    (inst / "routing-gw-setup.sh").write_text((ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8"), encoding="utf-8")
-    conf = tmp_path / "gw.conf"
-    conf.write_text("[Interface]\nAddress = 10.99.99.2/30\nPrivateKey = X==\n\n[Peer]\n"
-                    "Endpoint = 203.0.113.10:443\nAllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n", encoding="utf-8")
-    (tmp_path / "linkconf").mkdir(); (tmp_path / "linkconf" / "awglink.conf").write_text("[Interface]\nListenPort = 443\nPrivateKey = X==\n", encoding="utf-8")
-    out = tmp_path / "b.sh"
-    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
-           "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out), "CLIENT_SUBNET": "10.9.1.0/24",
-           "PEER_LAN_NETS": "192.168.1.0/24 192.168.2.0/24; rm -rf /"}
-    r = subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
-                       capture_output=True, text=True, env=env)
-    assert r.returncode == 0, r.stderr
-    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24\n" in conf.read_text(encoding="utf-8")
-    text = out.read_text(encoding="utf-8")
-    assert re.search(r'^PEER_LAN_NETS="192\.168\.1\.0/24 192\.168\.2\.0/24"$', text, re.M), "мусор отсеян"
-    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24" in text
-    # без чужих подсетей — как раньше
-    env["PEER_LAN_NETS"] = ""
-    subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
-                   capture_output=True, text=True, env=env)
-    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n" in conf.read_text(encoding="utf-8")
+    start = link.index('PEER_LAN_NETS="$(printf')
+    end = link.index("\n}\n", link.index("gw_allowed_ips() {")) + 3
+    prog = link[start:end] + 'gw_allowed_ips\n'
+
+    def _run(nets):
+        r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
+                           env={"PATH": "/usr/bin:/bin", "CLIENT_SUBNET": "10.9.1.0/24",
+                                "LINK_CIDR": "10.99.99.0/30", "PEER_LAN_NETS": nets})
+        assert r.returncode == 0, r.stderr
+        return r.stdout
+    assert _run("192.168.1.0/24 192.168.2.0/24; rm -rf /") == \
+        "10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24"
+    assert _run("") == "10.9.1.0/24, 10.99.99.0/30"

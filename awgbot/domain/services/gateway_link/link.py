@@ -7,7 +7,6 @@ import re
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.domain.services.types import Notification, ServiceError
-from awgbot.util import gwlink
 from .common import log
 
 
@@ -120,20 +119,24 @@ class LinkScriptMixin:
 
     @staticmethod
     def _slot_env(gw) -> dict:
-        """Окружение скрипта линка для слота: имя интерфейса, порт, /30 и хост
-        Endpoint из настроек (network.server_host), если задан: без него скрипт
-        берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный."""
+        """Окружение скрипта линка для слота: имя интерфейса, порт, /30, хост
+        Endpoint из настроек (network.server_host), если задан (без него скрипт
+        берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный), и
+        keepalive линка."""
         env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
         # живое значение, как у клиентских ссылок: после «✏️ Домен» файл шлюза
         # не должен нести прежний хост до рестарта бота
         host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         if host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
             env["ENDPOINT_HOST"] = host
+        # keepalive линка — тем же значением, что у клиентских пиров: бот читает
+        # YAML целиком, а скрипт линка — только awk-ом по строке в двойных
+        # кавычках, и `keepalive_seconds: 25` без них у него пропадал бы в «25-35»
+        env["LINK_KEEPALIVE"] = str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS))
         return env
 
 
-    # ── бандл шлюза: скрипт линка и сборка архива ────────────────────────────
-    _GW_BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
+    # ── ключ линка ───────────────────────────────────────────────────────────
 
     def _link_privkey(self, gw=None) -> str:
         from awgbot.util import bundlecrypt
@@ -143,30 +146,3 @@ class LinkScriptMixin:
                 return bundlecrypt.read_privkey(f.read())
         except (OSError, ValueError) as e:
             raise ServiceError(f"ключ линка не прочитан: {e}")
-
-    def _gw_bundle_env(self, gw) -> tuple[dict, list[str]]:
-        """Окружение сборки бандла слота: устройства админа, ключ и конфиг
-        аплинка устройства слота (в окне переезда — двойника, старый ключ
-        отдельно), параметры линка слота."""
-        admin_ips = self._gw_ssh_allow()
-        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw),
-               # порт канала — из того же ключа, на котором слушает linkserver
-               "LINK_CHANNEL_PORT": str(gwlink.channel_port()),
-               # keepalive линка — тем же значением, что у клиентских пиров: бот
-               # читает YAML целиком, а скрипт линка — только awk-ом по строке в
-               # двойных кавычках, и `keepalive_seconds: 25` без них у него
-               # пропадал бы в «25-35»
-               "LINK_KEEPALIVE": str(settings.get("app.client_config.keepalive_seconds",
-                                                  config.KEEPALIVE_SECONDS))}
-        dev = self.db.get_device(gw.device_id) if gw.device_id else None
-        if dev is not None:
-            import base64
-            twin = self.db.twin_of_device(dev.id)
-            target = twin or dev
-            env["GATEWAY_PUBKEY"] = target.public_key
-            env["GATEWAY_PREV_PUBKEY"] = dev.public_key if twin else ""
-            try:
-                env["UPLINK_B64"] = base64.b64encode(self.gateway_uplink_conf(target).encode()).decode()
-            except ServiceError as e:
-                log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
-        return env, admin_ips

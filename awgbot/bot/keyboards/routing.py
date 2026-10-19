@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup
 from awgbot.bot import ui
-from awgbot.bot.callbacks import RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
+from awgbot.bot.callbacks import RoutingCB, SetCB, GwMarkCB, GwJoinCB, GwSlotCB, Menu
 
 from .common import _tick, _btn_suffix, select_all_button, apply_row, confirm, entry_tag
 from .settings import _cycle
@@ -99,7 +99,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     states = list(states)
     body: list = []
     if not states:
-        body.append(("🛰 Назначить", SetCB(sec="rt_gw", act="open")))
+        body.append(("🛰 Подключить шлюз", SetCB(sec="rt_gw", act="open")))
     else:
         slots = []
         two_up = len(states) > 1 or can_add       # ряд из двух и больше — подписи режутся
@@ -171,7 +171,24 @@ def gateway_choose_kind(has_candidates: bool, slot: int = 0) -> InlineKeyboardMa
     return ui.rows(
         ("📱 Из моих устройств", GwMarkCB(action="pick_list", slot=slot)) if has_candidates else None,
         ("➕ Новое устройство", GwMarkCB(action="new_ask", slot=slot)),
+        ("🔁 Настроить заново", GwMarkCB(action="same", slot=slot)) if slot else None,
         ui.back(back))
+
+
+def gwjoin_message(slot: int, jid: str, *, replace: bool) -> InlineKeyboardMarkup:
+    """Сообщение подключения (Т-П1): ввод кода и отмена."""
+    return ui.rows([("✏️ Ввести код", GwJoinCB(action="code", slot=slot, jid=jid)),
+                    ("↩️ Отменить замену" if replace else "⬅️ Отменить", GwJoinCB(action="cancel", slot=slot, jid=jid))])
+
+
+def gwjoin_cancel_confirm(slot: int, jid: str) -> InlineKeyboardMarkup:
+    """Т-П14: «⬅️ Отмена» · «↩️ Отменить замену»."""
+    return ui.rows([("⬅️ Отмена", GwJoinCB(action="cancel_no", slot=slot, jid=jid)),
+                    ("↩️ Отменить замену", GwJoinCB(action="cancel_yes", slot=slot, jid=jid))])
+
+
+def gwjoin_final() -> InlineKeyboardMarkup:
+    return ui.rows(ui.to_menu(Menu(action="main")))
 
 
 def gateway_pick(devices, slot: int = 0, page: int = 0) -> InlineKeyboardMarkup:
@@ -183,13 +200,18 @@ def gateway_pick(devices, slot: int = 0, page: int = 0) -> InlineKeyboardMarkup:
 
 
 def gateway_mark_confirm(device_id: int, slot: int = 0) -> InlineKeyboardMarkup:
-    return confirm(SetCB(sec="rt_gw", act="open", key=str(slot or "")), "🛰 Назначить",
+    return confirm(SetCB(sec="rt_gw", act="open", key=str(slot or "")), "🛰 Подключить",
                    GwMarkCB(action="mark_yes", device_id=device_id, slot=slot), danger=False)
 
 
 def gateway_new_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     return confirm(SetCB(sec="rt_gw", act="open", key=str(slot or "")), "🔁 Заменить",
                    GwMarkCB(action="new_yes", slot=slot), danger=False)
+
+
+def gateway_same_confirm(slot: int) -> InlineKeyboardMarkup:
+    return confirm(SetCB(sec="rt_gw", act="open", key=str(slot or "")), "🔁 Настроить заново",
+                   GwMarkCB(action="same_yes", slot=slot), danger=False)
 
 
 def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
@@ -281,13 +303,3 @@ def settings_routing_users(clients=(), marks: dict | None = None, *, dirty: bool
         select_all_button(sum(1 for v in marks.values() if v), len(marks),
                           SetCB(sec="rt", act="do", key="allow_all"), "Все профили") if clients else None,
         apply_row(dirty, SetCB(sec="rt", act="do", key="allow_apply"), SetCB(sec="rt")))
-
-
-def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
-    """Под файлом первого применения: обе кнопки убирают файл и сообщение над
-    ним из чата (внутри ключ линка) и открывают карточку слота или главную
-    (`bundle_cancel`, `bundle_home`): «🛰 Карточка шлюза» и «⬅️ В меню».
-    Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
-    return ui.rows([("🛰 Карточка шлюза",
-                     SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or ""))),
-                    (ui.MENU_LABEL, SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))])

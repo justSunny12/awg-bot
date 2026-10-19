@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional
-from awgbot.core import config
 from awgbot.domain.services.types import ServiceError
 from .common import log
 
@@ -129,21 +128,3 @@ class AgentBotMixin:
             write_private(path, "\n".join(lines) + "\n")
         except OSError as e:
             raise ServiceError(f"не записать {path}: {e}")
-
-    def _bundle_with_agent(self, plain: bytes, slot_id: Optional[int] = None) -> bytes:
-        """Токен агента и ADMIN_ID — в файл первого применения, чтобы установка
-        на шлюзе не задавала ВООБЩЕ ни одного вопроса.
-
-        Строки кладутся ПОСЛЕ `exit` в теле бандла (перед маркером скрипта
-        обвязки), то есть при запуске бандла не исполняются — это данные для
-        установщика, а не команды.
-        """
-        token = self.gw_bot_token(slot_id)
-        if not token:
-            return plain
-        m = self._MAIL_MARK_LINE.search(plain)
-        if m is None:
-            return plain
-        lines = (f'AGENT_BOT_TOKEN="{token}"\n'
-                 f'AGENT_ADMIN_ID="{config.ADMIN_ID}"\n').encode()
-        return plain[:m.start()] + lines + plain[m.start():]

@@ -160,20 +160,20 @@ def _parsed(text: str) -> wgconf.Conf:
 
 # ── желаемое: env ────────────────────────────────────────────────────────────
 
-def test_env_comes_from_the_same_sources_as_the_first_apply_file(services, slot):
-    """Раздел env и файл первого применения считаются из одних источников —
-    разойдись они, канал довозил бы одно, а файл ставил другое, и шлюз после
-    перевыпуска откатывался бы на прежнее. Имена — документа (LAN_*), значения
-    те же, и агент обязан их принять."""
+def test_env_comes_from_the_same_sources_as_the_link_script(services, slot):
+    """Раздел env считается из тех же источников, что окружение скрипта линка
+    и обвязки (_lan_env) — разойдись они, канал довозил бы одно, а скрипт
+    ставил другое. Имена — документа (LAN_*), значения те же, и агент обязан
+    их принять."""
     env = services.gwcfg_env(slot)
-    bundle, _ = services._gw_bundle_env(slot)
+    lan = services._lan_env(slot)
     assert tuple(env) == gwcfg.ENV_KEYS, f"состав env не по таблице документа: {list(env)}"
-    assert env["ADMIN_IPS"] == bundle["ADMIN_IPS"] and len(env["ADMIN_IPS"].split()) == 2, env
-    assert env["LAN_SUBNETS"] == bundle["LAN_SUBNETS"] == "192.168.68.0/24"
-    assert env["LAN_MODE"] == bundle["LAN_MODE"] == "1"
-    assert env["RESOLVER"] == bundle["RESOLVER"] == "10.9.1.1"
-    assert env["PEER_LAN_NETS"] == bundle["PEER_LAN_NETS"] == ""
-    assert env["LINK_CHANNEL_PORT"] == bundle["LINK_CHANNEL_PORT"] == str(gwlink.channel_port())
+    assert len(env["ADMIN_IPS"].split()) == 2, env
+    assert env["LAN_SUBNETS"] == lan["LAN_SUBNETS"] == "192.168.68.0/24"
+    assert env["LAN_MODE"] == lan["LAN_MODE"] == "1"
+    assert env["RESOLVER"] == lan["RESOLVER"] == "10.9.1.1"
+    assert env["PEER_LAN_NETS"] == lan["PEER_LAN_NETS"] == ""
+    assert env["LINK_CHANNEL_PORT"] == str(gwlink.channel_port())
     assert env["CLIENT_SUBNET"] == "10.8.1.0/24"
     assert gwcfg.check_env(env) == env, "агент отверг бы env, который хочет сервер"
 

@@ -1,8 +1,7 @@
 """Ссылки из экранов в сторону шлюза — то, что не сводится к одному экрану
 эталона: deep-link «/start gw-<слот>» встаёт на место живого меню и не роняет
 апдейт на мусорных номерах, пометка «карточка с главной» живёт до возврата
-на главную и только в своём чате, getMe сразу после ввода токена, подпись
-файла на входе функции (пустой бот, экранирование).
+на главную и только в своём чате, getMe сразу после ввода токена.
 
 Экраны — в эталоне tests/screens/admin.txt: строка «Бот шлюза» в карточках
 слота и устройства с ботом, без него, после смены токена и из снимка канала
@@ -25,7 +24,7 @@ from awgbot.core import config
 from awgbot.runtime import gwbotme
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 from tests.e2e import test_gateway_slots_ui as _slots_ui
-from tests.e2e.test_gateway_slots_ui import _acb, _amsg, _screen, _slot1, _slot2
+from tests.e2e.test_gateway_slots_ui import _acb, _amsg, _code_ok, _join_msgs, _screen, _slot1, _slot2
 
 pytestmark = pytest.mark.e2e
 # два слота, заглушки линка и бандла, токены в памяти — та же сцена, что у
@@ -221,22 +220,22 @@ async def test_token_input_fills_the_card_link_end_to_end(services, slots, fake_
         get_me=_async(types.SimpleNamespace(username="pi2_gw_bot", first_name="Шлюз <Pi2>")),
         session=types.SimpleNamespace(close=_async(None))))
     await _enter_second_token(services, fake_bot)
+    _code_ok(services, 2)
     text, _ = await _card_text(services, fake_bot, 2)
     assert _ends_with_agent(text), text
 
 
-async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot):
+async def test_getme_failure_does_not_stop_the_join(services, slots, fake_bot):
     """Telegram не ответил (сеть в тестах закрыта — как у ВПС без выхода в
-    api.telegram.org): файл первого применения и инструкция всё равно
-    приходят, в карточке просто нет ссылки."""
+    api.telegram.org): команда подключения всё равно приходит, в карточке
+    подключённого слота просто нет ссылки."""
     _, pi, pi2 = slots
     _slot1(services, pi)
     msg = await _enter_second_token(services, fake_bot)
+    assert len(_join_msgs(msg)) == 1, f"команда не выдана после отказа getMe: {msg.sent}"
+    assert not [s for s in msg.sent if s[0] == "document"], "выдан файл"
+    _code_ok(services, 2)
     assert [g.id for g in services.db.gateways()] == [1, 2]
-    docs = [s for s in msg.sent if s[0] == "document"]
-    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза «"), \
-        f"бандл не выдан после отказа getMe: {docs}"
-    assert any(s[0] == "answer" and "--install" in s[1] for s in msg.sent), "инструкции нет"
     text, _ = await _card_text(services, fake_bot, 2)
     assert "Бот шлюза" not in text
 

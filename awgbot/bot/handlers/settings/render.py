@@ -102,8 +102,9 @@ async def gateways_screen(services):
     auto = settings.get_bool("app.routing.failover.enabled", True)
     peer = await call(services.gateway_peer_nets_info) if len(states) > 1 else None
     lists = await call(services.routing_lists_info) if states else None
+    joins = await call(services.gwjoin_new_cards) if hasattr(services, "gwjoin_new_cards") else []
     text = texts.gateways_text(states, status=status, switched_at=switched or "", auto_on=auto,
-                               peer_info=peer, lists=lists)
+                               peer_info=peer, lists=lists, joins=joins)
     # тумблер — только при слотах (снятие последнего его выключает)
     smb = (await call(services.smb_tunnel_on)) if states and await call(services.smb_tunnel_possible) else None
     return text, kb.gateways_kb(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
@@ -159,10 +160,10 @@ def _bundle_chat(where: dict) -> int:
 
 async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
     """(«имя» слота для подписи, бот шлюза); слота уже нет — «шлюз N»."""
-    try:
-        return await call(services.gw_bundle_target, slot_id)
-    except (ServiceError, OSError):
+    gw = await call(services.db.gateway, slot_id)
+    if gw is None:
         return f"шлюз {slot_id}", {}
+    return await call(services._gw_display, gw), (await call(services.gw_bot_identity, gw.id) or {})
 
 
 async def _drop_bundle_msgs(bot, services, slot_id: int, where: dict | None = None) -> bool:

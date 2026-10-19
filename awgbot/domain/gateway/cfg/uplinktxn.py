@@ -17,6 +17,8 @@ UPLINK_FRESH_SECONDS = 60
 EMERGENCY_RETRY_SECONDS = 600   # аварийная попытка не удалась — следующая не раньше
 
 
+FRESH_UPLINK_IF = "awg0"         # первый аплинк шлюза, подключённого командой (как UPLINK_IF скрипта обвязки)
+
 class CfgUplinkTxnMixin:
     """Новый конфиг аплинка — одной транзакцией под замком обвязки (тот же
     flock, что у скрипта): прогон юнита на загрузке иначе прочитал бы юнит
@@ -84,13 +86,15 @@ class CfgUplinkTxnMixin:
 
     # ── транзакция ───────────────────────────────────────────────────────────
 
-    def cfg_uplink_apply(self, value: dict, flock_wait: float | None = None) -> dict:
+    def cfg_uplink_apply(self, value: dict, flock_wait: float | None = None, fresh: bool = False) -> dict:
         """Новый конфиг аплинка одной транзакцией. Возвращает {"ok", "error",
         "state"}: applied | refused (скрипт не принял — ничего не тронуто) |
         reverted (не поднялся — прежний на месте) | revert_failed (не поднялся,
         и прежний не вернулся) | busy (агент или обвязка заняты — ничего не
-        тронуто). flock_wait — сколько ждать замка обвязки (тик — 0)."""
-        iface = self.cfg_uplink_if()
+        тронуто). flock_wait — сколько ждать замка обвязки (тик — 0). fresh —
+        первый аплинк шлюза, подключённого командой: интерфейса ещё нет —
+        имя по умолчанию скрипта обвязки (awg0)."""
+        iface = self.cfg_uplink_if() or (FRESH_UPLINK_IF if fresh else "")
         if not iface:
             return {"ok": False, "error": "аплинк этого устройства не найден", "state": "refused"}
         nxt, txn = self._cfg_uplink_paths()

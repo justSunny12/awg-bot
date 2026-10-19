@@ -74,6 +74,12 @@ class GatewayToken(StatesGroup):
     value = State()
 
 
+class GatewayJoinCode(StatesGroup):
+    """Код подтверждения с экрана шлюза к сообщению подключения: в данных —
+    gwjoin_slot и gwjoin_id (заявка нажатой кнопки, Р20)."""
+    value = State()
+
+
 class GatewayBotToken(StatesGroup):
     """Аварийная смена токена бота шлюза («🔧 Сервис → 🤖 Токен бота»): новый
     токен того же бота; уедет шлюзу каналом. В данных — gw_slot, gw_name."""

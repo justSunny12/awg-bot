@@ -17,6 +17,7 @@ gateway/ — доменная механика роли gateway (docs/ROADMAP.md
             линка и аплинка, вопросы человеку, смена ключей линка и токена бота
   keep      копия настроек шлюза на сервере AWG: своих бэкапов у шлюза нет
   upd       команда набора обновлений с сервера AWG: проверки, ступень, ответ
+  join      сопряжение: шлюз, подключённый командой, — код, секреты, конец сопряжения
 
 Класс GatewayServices собирается здесь из миксинов частей и общих миксинов
 domain/ (установка обновления и итог после перезапуска, почта, SSH). Сам
@@ -47,6 +48,7 @@ from .egress import EgressMixin
 from .cfg import CfgMixin
 from .keep import KeepMixin
 from .upd import GatewayUpdMixin
+from .join import GatewayJoinMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
 from awgbot.domain.mailmix import MailMixin
 from awgbot.domain.gwssh import GwSshMixin
@@ -55,7 +57,7 @@ from awgbot.domain.gwssh import GwSshMixin
 class GatewayServices(SelfUpdateMixin, MailMixin, GwSshMixin,
                       LinkMixin, MonitorMixin, TgMarkMixin, TransitMixin, ReportMixin,
                       OwnListsMixin, PeerServicesMixin, BundleMixin, EgressMixin, CfgMixin, KeepMixin,
-                      GatewayUpdMixin):
+                      GatewayUpdMixin, GatewayJoinMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""

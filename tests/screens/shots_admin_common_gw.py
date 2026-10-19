@@ -43,7 +43,12 @@ def _routing(services, mp, *, enabled: bool = True, awake: bool = True) -> None:
     services.routing_link_ok = lambda: True
     services._link_privkey = lambda gw=None: PRIV
     services._run_link_script = lambda mode, env=None: None
-    services.gw_bundle_plain = lambda slot=None: (b"DUMMY-PLAIN", "awg-gw-bundle.sh")
+    # токен команды подключения — из конфигов линка, которых в снимках нет;
+    # id сопряжений — по порядку, эталону нужен один и тот же текст кнопок
+    services._gwjoin_token = lambda slot, jid, **k: "AWGJ1." + "DUMMY" * 40
+    from awgbot.domain.services.gwjoin import issue as _join_issue
+    _ids = iter(f"{n:016x}" for n in range(1, 100))
+    mp.setattr(_join_issue, "_new_id", lambda: next(_ids))
     import time as _time
     services.routing_update_lists = lambda force=False: (services.db.set_state(services._RT_LISTS_KEY, str(int(_time.time()))), 12345)[1]
     services.routing_provision = lambda: "dnsmasq: ok\nlink: awglink up"

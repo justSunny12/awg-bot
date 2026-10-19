@@ -17,6 +17,12 @@ from .common import log
 
 
 async def main() -> None:
+    if pkg.join_pending():
+        # шлюз, подключаемый командой: токена бота и ADMIN_ID ещё нет — их
+        # довезёт канал после верного кода (runtime/main/join.py)
+        settings.init(config.CONF_DIR)
+        await pkg.run_join()
+        return
     config.validate()
     from awgbot.runtime import preflight
     preflight.check_fatal()                 # стоп-факторы: data-dir, целостность БД
@@ -135,6 +141,11 @@ async def main() -> None:
 
     await pkg.do_reconcile(services, bot)                    # сверка состава пиров
     try:
+        # прежние файлы первого применения шлюзов (в них ключи) — с сервера прочь
+        await asyncio.to_thread(services.gwjoin_boot)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gwjoin_boot: %s", e)
+    try:
         # восстановить блокировки; после восстановления — и снять лишние DROP,
         # наложенные restore до подъёма интерфейсов по собранной базе
         restored = await asyncio.to_thread(services.restore_done_pending)
@@ -185,6 +196,10 @@ async def main() -> None:
         async def _on_installed(slot_id: int) -> None:
             await bundle_installed(bot, services, slot_id)
         _linkserver.set_on_installed(_on_installed)
+
+        # сообщение подключения шлюза командой: подключился, срок, готово
+        from awgbot.bot.handlers.settings import gwjoin_set_hooks
+        gwjoin_set_hooks(bot, services)
 
         async def _on_notes(notes) -> None:
             # события смены ключей линка: «сменены», «отклонили», «вернул прежние»

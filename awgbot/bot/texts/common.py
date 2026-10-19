@@ -52,6 +52,7 @@ _CANCELLED = {
     "SettingsInput": "Изменение настройки отменено",
     "GatewayToken": "Ввод токена шлюза отменён",
     "GatewayBotToken": "Смена токена бота шлюза отменена",
+    "GatewayJoinCode": "Ввод кода с экрана шлюза отменён",
     "MigrationPort": "Подготовка переезда отменена",
     "RoutingDomains": "Добавление адресов отменено",
     "Broadcast": "Объявление отменено",

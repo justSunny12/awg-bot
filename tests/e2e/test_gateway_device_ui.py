@@ -16,6 +16,7 @@ from awgbot.bot.handlers import settings as sh
 from awgbot.core import config, settings
 from awgbot.util import gwsign
 from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.e2e.test_gateway_slots_ui import _code_ok, _join_msgs
 
 pytestmark = pytest.mark.e2e
 ADMIN = config.ADMIN_ID
@@ -47,11 +48,8 @@ def gwsetup(services, fake_awg, make_active_client, monkeypatch):
     modes = []
     monkeypatch.setattr(services, "_link_privkey", lambda gw=None: PRIV)
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: modes.append(mode))
-    def _issued(blob, name):
-        from awgbot.util import timeutil
-        services.db.set_state(services._GW_BUNDLE_ISSUED_KEY + "_1", timeutil.to_iso(timeutil.now()))
-        return blob, name
-    monkeypatch.setattr(services, "gw_bundle_plain", lambda slot=None: _issued(b"PLAIN", "awg-gw-bundle.sh"))
+    # токен команды подключения — из конфигов линка, которых в тестах нет
+    monkeypatch.setattr(services, "_gwjoin_token", lambda slot, jid, **k: f"AWGJ1.DUMMY{slot.id}")
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
     # Токен агента живёт в /etc/awg-bot/env — в тестах держим его в памяти.
     token = {"v": ""}
@@ -82,10 +80,9 @@ def _docs(nav):
 
 async def test_settings_assign_existing_device_goes_the_full_way(services, fake_bot, gwsetup):
     """Своё устройство → подтверждение → токен агента: до токена ничего не
-    назначено, после — пометка с новыми ключами линка и файл первого
-    применения (устройство линка не знает, поэтому путь всегда полный, как у
-    нового). Новый шлюз в «Шлюзах» не зелёный, пока не поднялся, — эталон
-    adm.rt.one.fresh."""
+    выпущено, после — команда подключения (линк на ключах токена), до кода
+    ничего не назначено; верный код — устройство в слоте. Новый шлюз в
+    «Шлюзах» не зелёный, пока не поднялся, — эталон adm.rt.one.fresh."""
     _, phone, pi = gwsetup
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
@@ -95,20 +92,22 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert _gw_dev_id(services) is None, "назначено до токена"
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
+    assert services.modes == ["--join-stage"], "линк — на ключах токена"
+    assert _gw_dev_id(services) is None, "назначено до кода"
+    assert len(_join_msgs(msg)) == 1 and not _docs(msg), msg.sent
+    _code_ok(services, 1)
     assert _gw_dev_id(services) == pi.id
-    assert services.modes == ["--rekey"], "ключи линка новые: устройство линка не знает"
-    assert len(_docs(msg)) == 1, f"открытый файл, руками: {msg.sent}"
 
 
 async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(services, fake_bot, gwsetup):
-    """Шлюз был, выбрали другое устройство: ключи линка новые, файл первого
-    применения открытый; никаких токенов старому шлюзу."""
+    """Шлюз был, выбрали другое устройство: линк слота сразу на ключах
+    команды (прежние — в .join-prev на случай отмены), до кода шлюз прежний;
+    верный код — устройство заменено; никаких токенов старому шлюзу."""
     _, phone, pi = gwsetup
     _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id, slot=1), services)
-    # Со сменой ключей файл едет открытым и ставится с нуля — значит нужен
-    # токен агента, как и для новой машины.
+    # токен бота слота — один на слот: у слота его ещё нет, спрашивается
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=phone.id, slot=1), services, st)
@@ -116,16 +115,19 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
     nav = msg
+    assert services.modes == ["--join-stage"]
+    assert _gw_dev_id(services) == pi.id, "до кода шлюз прежний"
+    assert services.gwjoin(1)["kind"] == "replace" and services.gwjoin_replacing(1)
+    assert len(_join_msgs(nav)) == 1 and not _docs(nav), nav.sent
+    _code_ok(services, 1)
     assert _gw_dev_id(services) == phone.id
     assert services.db.get_device(pi.id).is_gateway == 0
-    assert services.modes == ["--rekey"]
-    assert len(_docs(nav)) == 1, nav.sent
     assert not any("GW1:" in (s[1] or "") for s in nav.sent), "токенов в новой схеме нет"
 
 
 async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake_bot, gwsetup, monkeypatch):
-    """Токен бота-агента спрашивается ЗДЕСЬ и один раз: он уедет внутрь файла
-    первого применения, и установка на шлюзе не задаст ни одного вопроса.
+    """Токен бота-агента спрашивается ЗДЕСЬ и один раз: он уедет шлюзу каналом
+    после кода, и установка на шлюзе не задаст ни одного вопроса.
     Приглашение сразу, без подтверждения, — эталон adm.rt.new_ask; при
     известном токене не спрашивается — adm.rt.new_yes.known."""
     _, phone, pi = gwsetup
@@ -141,17 +143,22 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
 
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
+    assert services.modes == ["--join-stage"]
+    assert stored["t"].startswith("123456789:")
+    assert len(_join_msgs(msg)) == 1 and not _docs(msg), msg.sent
+    assert services.gwjoin(1)["device"] == "new", "устройство — только после кода"
+    _code_ok(services, 1)
     gw = services.db.get_device(_gw_dev_id(services) or 0)
     assert gw is not None and gw.name == "Шлюз" and gw.id not in (phone.id, pi.id)
-    assert services.modes == ["--rekey"]
-    assert stored["t"].startswith("123456789:")
-    assert len(_docs(msg)) == 1, msg.sent
 
-    # Токен уже есть — второй раз не спрашиваем
+    # Токен уже есть — второй раз не спрашиваем: сразу команда
     services.db.gateway_delete(1)
+    services._gwjoin_save(1, {})
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, FakeState())
-    assert _gw_dev_id(services) is not None, f"известный токен спрошен заново, шлюз не заведён: {nav.sent}"
+    st2 = FakeState()
+    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, st2)
+    assert await st2.get_state() is None, "известный токен спрошен заново"
+    assert services.gwjoin(1).get("state") == "waiting", f"команда не выпущена: {nav.sent}"
 
 
 async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup):
@@ -272,6 +279,3 @@ def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     # повторное назначение без флага — строки о снятии в отчёте нет
     res = services.gateway_setup(pi.id, rekey=True, slot_id=res["gateway"].id)
     assert res["routing_reset"] is False
-    from awgbot.bot import texts
-    assert "РФ-доступ у устройства снят" in texts.gateway_install_instructions(pi, routing_reset=True)
-    assert "РФ-доступ у устройства снят" not in texts.gateway_install_instructions(pi)

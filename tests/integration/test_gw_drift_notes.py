@@ -297,10 +297,10 @@ def test_no_all_clear_without_a_notification_before_it(services, slot):
     assert services.gw_bundle_drift_notes() == [], "отбой без уведомления"
 
 
-# ── окружение сборки бандла ──────────────────────────────────────────────────
+# ── окружение скрипта линка ──────────────────────────────────────────────────
 
 @pytest.mark.parametrize("value, want", [(25, "25"), ("20-30", "20-30"), ("25-35", "25-35")])
-def test_the_bundle_carries_the_link_keepalive_from_the_client_config(services, slot, monkeypatch,
+def test_the_link_script_gets_the_link_keepalive_from_the_client_config(services, slot, monkeypatch,
                                                                      value, want):
     """Ритм keepalive линка — тот же, что у клиентских пиров. Скрипт линка
     читает YAML awk-ом только в двойных кавычках: `keepalive_seconds: 25` без
@@ -309,11 +309,11 @@ def test_the_bundle_carries_the_link_keepalive_from_the_client_config(services, 
     real = settings.get
     monkeypatch.setattr(settings, "get", lambda k, d=None:
                         value if k == "app.client_config.keepalive_seconds" else real(k, d))
-    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    env = services._slot_env(services.db.gateway(1))
     assert env["LINK_KEEPALIVE"] == want
 
 
-def test_the_keepalive_the_bundle_carries_survives_the_link_script(services, slot, monkeypatch):
+def test_the_keepalive_the_slot_env_carries_survives_the_link_script(services, slot, monkeypatch):
     """Значение из окружения проходит разбор скрипта линка как есть: если
     скрипт счёл бы его мусором, он молча откатил бы линк к «25-35»."""
     import subprocess
@@ -321,7 +321,7 @@ def test_the_keepalive_the_bundle_carries_survives_the_link_script(services, slo
     real = settings.get
     monkeypatch.setattr(settings, "get", lambda k, d=None:
                         25 if k == "app.client_config.keepalive_seconds" else real(k, d))
-    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    env = services._slot_env(services.db.gateway(1))
     script = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
     head = script.split('LINK_KEEPALIVE="${LINK_KEEPALIVE', 1)[1].split("\nesac\n", 1)[0]
     prog = '_cfg_keepalive=""\nLINK_KEEPALIVE="${LINK_KEEPALIVE' + head + '\nesac\nprintf "%s" "$LINK_KEEPALIVE"'

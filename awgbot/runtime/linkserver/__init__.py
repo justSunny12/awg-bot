@@ -68,6 +68,7 @@ from .inbound import InboundMixin
 from .deliver import DeliverMixin
 from .rekey import RekeyMixin
 from .relay import RelayMixin
+from .join import JoinMixin
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def gw_address(link_cidr: str) -> str:
 
 
 
-class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin, RelayMixin):
+class LinkServer(SessionMixin, InboundMixin, DeliverMixin, RekeyMixin, RelayMixin, JoinMixin):
     """По серверу на адрес линка, по сессии на слот — собирается из частей пакета."""
 
 
@@ -104,6 +105,33 @@ _server: LinkServer | None = None
 
 _on_installed = None
 _on_restore = None
+_on_join = None
+
+
+def set_on_join(fn) -> None:
+    """Сообщение подключения шлюза (async fn(event, st, extra)): шлюз
+    подключился, заново, с двух адресов, срок вышел. Ставит main."""
+    global _on_join
+    _on_join = fn
+
+
+async def join_accepted(slot: int) -> None:
+    """Код верный (из чата): секреты и новые ключи — живой сессии сопряжения."""
+    if _server is not None:
+        await _server.join_accepted(int(slot))
+
+
+async def join_wrong(slot: int, left: int) -> None:
+    if _server is not None:
+        await _server.join_wrong(int(slot), int(left))
+
+
+async def join_close(services, slot: int, why: str) -> None:
+    """Отказ шлюзу и интерфейс под токен прочь — сразу (Р24)."""
+    if _server is not None:
+        await _server.join_close(int(slot), why)
+    else:
+        await asyncio.to_thread(services.gwjoin_revert, int(slot), why)
 _on_notes = None
 _on_rekeyed = None
 def set_on_rekeyed(fn) -> None:
@@ -150,6 +178,22 @@ async def ensure(services) -> LinkServer | None:
     await _server.ensure()
     await _server.deliver_all()
     return _server
+
+
+async def join_job(services) -> None:
+    """Своё задание сопряжений (30 с с джиттером, без условия маршрутизации):
+    пока команда подключения жива — слушатель на адресе линка и срок (Т-П11,
+    интерфейс под токен прочь сразу); сопряжений нет — выход сразу."""
+    global _server
+    if config.ROLE == "gateway" or not hasattr(services, "gwjoin_all"):
+        return
+    if not await asyncio.to_thread(services.gwjoin_all):
+        return
+    if _server is None:
+        _server = LinkServer(services)
+        _server._loop = asyncio.get_running_loop()
+    await _server.ensure()
+    await _server.join_tick()
 
 
 async def liveness_tick(services) -> None:

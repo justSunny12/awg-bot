@@ -260,6 +260,8 @@ class CfgRekeyMixin:
             self.bundle_issued_raise(int(time.time()))     # файлы до смены несут прежние ключи — им отказ
             # без вопроса (auto) человек ничего не начинал — и итог ему без строки
             note = "" if st.get("auto") else "✅ Линк на новых ключах"
+            if st.get("auto") == "join" and hasattr(self, "join_linked"):
+                self.join_linked()                         # сопряжение: обвязка полным прогоном
             return {"done": {"id": st["id"], "ok": True, "keys": "new"}, "note": note, "msg": msg}
         if state in ("back", "switched"):
             self._rk_save({})

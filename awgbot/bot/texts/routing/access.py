@@ -5,7 +5,7 @@ from __future__ import annotations
 from awgbot.bot import ui
 from awgbot.util import timeutil
 
-from ..fmt import _e, plain_ip, holder_link, plural_ru, details
+from ..fmt import _e, holder_link, plural_ru, details
 
 from .slots import ROUTING_NAME
 from ..fmt import num
@@ -96,40 +96,10 @@ def gateway_installed_text(display: str, agent_bot: dict | None) -> str:
     return text
 
 
-def gateway_plain_bundle_caption(display: str) -> str:
-    """Подпись под файлом конфигурации нового шлюза: команда установки —
-    сообщением выше."""
-    return (f"🛰 Файл конфигурации шлюза «{_e(display)}»\n"
-            "Команда установки — в сообщении выше. Любая кнопка ниже удалит файл и инструкцию из чата")
-
-
 def routing_provision_failed(reason: str) -> str:
     return ("⚠️ РФ-доступ не развёрнут.\n\n<pre>" + _e(str(reason)[-900:]) + "</pre>\n\n"
             "Ничего наполовину не осталось: следующий запуск начнёт с того же места. "
             "Частая причина — нет пакета dnsmasq в репозиториях образа.")
-
-
-def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
-                                 routing_reset: bool = False) -> str:
-    """Что делать с файлом конфигурации шлюза — ОДНА строка со своего компьютера.
-
-    Копирование и установка склеены намеренно: установка на шлюзе не задаёт
-    вопросов, значит её незачем отделять от копирования и незачем заходить на
-    шлюз отдельным сеансом. `ssh -t` — чтобы у sudo был терминал для пароля.
-    Поставка агента едет ВНУТРИ файла: с шлюза в России GitHub без туннеля не
-    достать, а туннель этим файлом и ставится.
-    """
-    reset = "\nРФ-доступ у устройства снят: шлюзу он не нужен." if routing_reset else ""
-    return (f"🛰 Шлюзом назначено устройство «{_e(dev.name)}» ({plain_ip(dev.address)}).{reset}\n\n"
-            "Сохрани файл ниже и выполни <b>со своего компьютера</b> (из папки с файлом) "
-            "одну команду — вместо ШЛЮЗ подставь адрес устройства в локальной сети; команда скопирует "
-            "файл и поставит агента:\n\n"
-            f"<code>scp {_e(bundle_name)} root@ШЛЮЗ:/root/ &amp;&amp; \\\n"
-            f"  ssh -t root@ШЛЮЗ 'sudo sh /root/{_e(bundle_name)} --install'</code>\n\n"
-            "Установка полностью автоматическая: все необходимые настройки уже собраны в файле.\n"
-            "Когда установка закончится, открой <b>бота шлюза</b> и нажми «Запустить» — "
-            "и всё готово 🙂\n\n"
-            "После установки файл конфигурации удалится со шлюза сам.")
 
 
 def routing_status_line(ok: bool) -> str:
@@ -313,8 +283,8 @@ __all__ = [
     "routing_gateway_warning", "ROUTING_GRANTED_NOTICE", "routing_granted_holder_notice",
     "routing_revoked_holder_notice", "ROUTING_REVOKED_NOTICE", "routing_params_text",
     "routing_users_text", "ROUTING_DISABLE_CONFIRM", "routing_allowed_toast", "routing_devices_toast",
-    "gateway_installed_text", "gateway_plain_bundle_caption",
-    "routing_provision_failed", "gateway_install_instructions", "routing_status_line",
+    "gateway_installed_text",
+    "routing_provision_failed", "routing_status_line",
     "GW_CARD_PAYLOAD", "routing_admin_status_line", "ROUTING_ABOUT", "ROUTING_ADD_PROMPT",
     "ROUTING_APPLY_HINT", "ROUTING_APPLY_HINT_OWNER", "ROUTING_SITES_ABOUT", "_short", "routing_domain_removed",
     "_lent_out_lines", "routing_panel_text", "routing_sites_text", "routing_add_report",

@@ -26,7 +26,7 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 SERVICES = REPO / "awgbot" / "domain" / "services"
-SCANNED = ("gwchannel", "gateway_link", "routing")
+SCANNED = ("gwchannel", "gateway_link", "routing", "gwjoin")
 FLEET = REPO / "awgbot" / "domain" / "fleet"        # набор обновлений: gwupd_<слот>
 
 # в реестре, но в коде пакетов не встречаются: ключи доставки, снятой в 3.3.1

@@ -68,6 +68,8 @@ class GuardSpec:
                                                               # только устройствам админа
     wan_ifs: list[str] = field(default_factory=list)          # внешние интерфейсы (host): частным адресам
                                                               # назначения туда хода нет
+    quarantine_ifs: list[str] = field(default_factory=list)   # линки сопряжения (штамп в конфиге): только
+                                                              # канал на адрес ВПС, пересылки нет
 
 
 def enabled() -> bool:

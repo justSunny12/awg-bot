@@ -145,7 +145,7 @@ class _Host:
         bot.write_text(
             '#!/bin/sh\n'
             'echo "awg-bot $* KEEP=${AWG_UPDATE_KEEP-<unset>} '
-            'BUNDLE=${AWG_UPDATE_THEN_BUNDLE-<unset>}" >> "$CALLS"\n', encoding="utf-8")
+            'JOIN=${AWG_UPDATE_THEN_JOIN-<unset>}" >> "$CALLS"\n', encoding="utf-8")
         bot.chmod(0o755)
         (self.etc / "conf").mkdir(parents=True)
         (self.etc / "conf" / "app.yaml").write_text(
@@ -275,7 +275,7 @@ def test_newer_delivery_updates_keeping_data_with_the_archive(host):
     before = host.snapshot()
     r = host.run(["1"], tgz=tgz)
     assert r.returncode == 0, r.stderr
-    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 BUNDLE="], host.calls()
+    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 JOIN=<unset>"], host.calls()
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout, "после exec установка не должна идти дальше"
     assert host.snapshot() == before, "обновление из меню что-то удалило до запуска update"
     assert not any(c.startswith(("systemctl", "nft")) for c in host.calls())
@@ -288,7 +288,7 @@ def test_four_digit_hotfix_is_offered_as_an_update(host):
     tgz = host.archive("3.0.0.1")
     r = host.run(["1"], tgz=tgz)
     assert r.returncode == 0, r.stderr
-    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 BUNDLE="]
+    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 JOIN=<unset>"]
 
 
 @pytest.mark.parametrize("have,new", [("3.0.0", "3.0.0"), ("3.0.1", "3.0.0"), ("3.0.0.1", "3.0.0")])
@@ -307,16 +307,15 @@ def test_same_or_older_delivery_refuses_to_update(host, have, new):
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout
 
 
-def test_refused_update_on_gateway_says_how_to_apply_a_new_configuration(host):
-    """На шлюзе ту же команду повторяют ради нового файла конфигурации, а не
-    ради кода. Отказ «обновлять нечего» без подсказки оставил бы человека
-    без пути: прежде установщик применял файл сам."""
+def test_refused_update_on_gateway_says_where_the_configuration_comes_from(host):
+    """Отказ «обновлять нечего» на шлюзе говорит, откуда берётся конфигурация
+    (канал сервера AWG), — файлов первого применения больше нет."""
     host.installed("3.0.0", "gateway")
     before = host.snapshot()
-    r = host.run(["1"], role="gateway", extra=("--bundle", "/root/gw.sh"), tgz=host.archive("3.0.0"))
+    r = host.run(["1"], role="gateway", tgz=host.archive("3.0.0"))
     assert r.returncode != 0 and host.updates() == []
     assert "обновление не требуется" in r.stderr
-    assert "sudo sh <файл> (без --install)" in r.stderr, r.stderr
+    assert "по каналу конфигурации" in r.stderr and "sudo sh <файл>" not in r.stderr, r.stderr
     assert host.snapshot() == before
 
 
@@ -523,36 +522,24 @@ def test_cancel_changes_nothing(host, answer):
     assert "sudo sh <файл>" not in r.stdout + r.stderr, "подсказка шлюза ушла на ВПС"
 
 
-def test_cancel_on_gateway_says_how_to_apply_a_new_configuration(host):
-    """Шлюз раньше сам применял файл при повторе команды. Теперь отмена —
-    значит нужна подсказка, как применить файл без переустановки."""
+def test_cancel_on_gateway_says_how_to_reconnect(host):
+    """Отмена на шлюзе — подсказка: конфигурацию везёт канал, подключить
+    устройство заново — командой подключения из бота сервера."""
     host.installed("2.25.2", "gateway")
     before = host.snapshot()
-    r = host.run(["3"], role="gateway", extra=("--bundle", "/root/awg-gw-bundle.sh"),
-                 tgz=host.archive("3.0.0"))
+    r = host.run(["3"], role="gateway", tgz=host.archive("3.0.0"))
     assert r.returncode == 0, r.stderr
-    assert "sudo sh <файл> (без --install)" in r.stdout, r.stdout + r.stderr
+    assert "командой подключения из бота сервера AWG" in r.stdout, r.stdout + r.stderr
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout
     assert host.snapshot() == before and host.changes() == [], host.calls()
 
 
-def test_gateway_update_carries_the_bundle_to_apply_after(host):
-    """Шлюз пришли обновлять вместе с новым файлом конфигурации: путь уходит в
-    AWG_UPDATE_THEN_BUNDLE, и файл применяется уже новым кодом. Потеряйся
-    путь — код обновится, а конфигурация останется старой без единого слова."""
-    host.installed("2.25.2", "gateway")
-    tgz = host.archive("3.0.0")
-    r = host.run(["1"], role="gateway", extra=("--port", "51820", "--bundle", "/root/gw.sh"), tgz=tgz)
-    assert r.returncode == 0, r.stderr
-    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 BUNDLE=/root/gw.sh"], host.calls()
-
-
-def test_gateway_update_without_a_bundle_applies_nothing_after(host):
+def test_gateway_update_from_the_menu_joins_nothing_after(host):
     host.installed("2.25.2", "gateway")
     tgz = host.archive("3.0.0")
     r = host.run(["1"], role="gateway", tgz=tgz)
     assert r.returncode == 0, r.stderr
-    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 BUNDLE="], host.calls()
+    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 JOIN=<unset>"], host.calls()
 
 
 def test_unpacked_delivery_without_an_archive_is_packed_for_update(host):
@@ -567,7 +554,7 @@ def test_unpacked_delivery_without_an_archive_is_packed_for_update(host):
     built = packs[0].split()[2]
     assert built.startswith(str(host.tmpdir)), "архив собран не во временном каталоге"
     assert Path(built).is_file()
-    assert host.updates() == [f"awg-bot update {built} KEEP=1 BUNDLE="], host.calls()
+    assert host.updates() == [f"awg-bot update {built} KEEP=1 JOIN=<unset>"], host.calls()
     assert not any(c.startswith("tar -xzOf") for c in host.calls()), \
         "версию распакованной поставки читают из файла, а не из архива"
 
@@ -645,7 +632,7 @@ class _PostUpdate:
         self.self_path = tmp_path / "awg-bot.sh"
         fake_cmd(self.self_path, '#!/bin/sh\necho "self $*" >> "$CALLS"\n')
 
-    def run(self, bundle: str | None, wipe: str = "0") -> subprocess.CompletedProcess:
+    def run(self, bundle: str | None, wipe: str = "0", join: str = "") -> subprocess.CompletedProcess:
         src = BOT_SCRIPT.read_text(encoding="utf-8")
         stubs = " ".join(f"{n}() {{ :; }};" for n in (
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
@@ -667,28 +654,31 @@ class _PostUpdate:
         )
         env = {"PATH": "/usr/bin:/bin", "CALLS": str(self.log)}
         if bundle is not None:
-            env["AWG_UPDATE_THEN_BUNDLE"] = bundle
+            env["AWG_UPDATE_THEN_BUNDLE"] = bundle           # прежний выпуск ставил — больше ничего не значит
+        if join:
+            env["AWG_UPDATE_THEN_JOIN"] = join
         return subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10, env=env)
 
     def calls(self) -> list[str]:
         return [ln for ln in self.log.read_text().splitlines() if ln]
 
 
-def test_post_update_applies_the_gateway_bundle_with_the_new_code(tmp_path):
-    """Обновили шлюз вместе с новым файлом: после «Обновление завершено» тот
-    же процесс применяет файл уже новым скриптом — ровно этим путём."""
+def test_post_update_joins_the_gateway_with_the_new_code(tmp_path):
+    """Шлюз, подключаемый командой поверх агента другой версии: после
+    «Обновление завершено» тот же процесс подключается уже новым кодом —
+    `awg-bot join <токен>`, сменой процесса."""
     pu = _PostUpdate(tmp_path)
-    bundle = tmp_path / "awg-gw-bundle.sh"; bundle.write_text("#!/bin/sh\n")
-    r = pu.run(str(bundle))
+    r = pu.run(None, join="AWGJ1.DUMMYTOKEN")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert pu.calls() == [f"self reconfigure --role gateway --bundle {bundle}"], pu.calls()
-    assert r.stdout.index("Обновление завершено") < r.stdout.index("применяю конфигурацию шлюза")
-    assert "AFTER_POST_UPDATE" not in r.stdout, "reconfigure должен сменить процесс (exec)"
+    assert pu.calls() == ["self join AWGJ1.DUMMYTOKEN"], pu.calls()
+    assert "Обновление завершено" in r.stdout
+    assert "AFTER_POST_UPDATE" not in r.stdout, "join должен сменить процесс (exec)"
 
 
 @pytest.mark.parametrize("bundle", [None, ""])
-def test_post_update_without_a_bundle_just_finishes(tmp_path, bundle):
-    """Обычное обновление (ВПС, шлюз без файла) — никакого reconfigure."""
+def test_post_update_without_a_join_just_finishes(tmp_path, bundle):
+    """Обычное обновление (ВПС, шлюз без команды подключения) — никакого
+    reconfigure и join."""
     pu = _PostUpdate(tmp_path)
     r = pu.run(bundle)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -696,20 +686,21 @@ def test_post_update_without_a_bundle_just_finishes(tmp_path, bundle):
     assert "Обновление завершено" in r.stdout and "AFTER_POST_UPDATE" in r.stdout
 
 
-def test_post_update_skips_a_bundle_that_is_gone(tmp_path):
-    """Файл успели удалить (или путь был опечаткой) — обновление всё равно
-    завершено; reconfigure с несуществующим файлом упал бы уже после успеха."""
+def test_post_update_ignores_a_first_run_file_from_an_old_installer(tmp_path):
+    """Установщик прежнего выпуска мог передать файл первого применения
+    (AWG_UPDATE_THEN_BUNDLE): файлов больше нет — обновление просто
+    завершается, файл не применяется."""
     pu = _PostUpdate(tmp_path)
-    r = pu.run(str(tmp_path / "нет-такого.sh"))
+    bundle = tmp_path / "awg-gw-bundle.sh"; bundle.write_text("#!/bin/sh\n")
+    r = pu.run(str(bundle))
     assert r.returncode == 0, r.stdout + r.stderr
     assert pu.calls() == [] and "AFTER_POST_UPDATE" in r.stdout
 
 
-def test_post_update_with_wiped_data_does_not_apply_the_bundle(tmp_path):
-    """Данные удалены по запросу — дальше только ручной reconfigure; применять
-    файл поверх пустой установки из хвоста обновления нельзя."""
+def test_post_update_with_wiped_data_does_not_join(tmp_path):
+    """Данные удалены по запросу — дальше только ручной reconfigure;
+    подключаться поверх пустой установки из хвоста обновления нельзя."""
     pu = _PostUpdate(tmp_path)
-    bundle = tmp_path / "awg-gw-bundle.sh"; bundle.write_text("#!/bin/sh\n")
-    r = pu.run(str(bundle), wipe="1")
+    r = pu.run(None, wipe="1", join="AWGJ1.DUMMYTOKEN")
     assert r.returncode != 0 and "DIE запусти: sudo awg-bot reconfigure" in r.stdout, r.stdout
     assert pu.calls() == []

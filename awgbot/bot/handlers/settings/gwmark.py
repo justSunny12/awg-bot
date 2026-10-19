@@ -1,4 +1,5 @@
-"""gwmark.py — назначение шлюза: выбор устройства, новое устройство, токен агента, файл конфигурации шлюза."""
+"""gwmark.py — подключение шлюза: выбор устройства, новое устройство, «🔁 Настроить заново», токен агента;
+дальше — команда подключения (gwjoin.py)."""
 
 from __future__ import annotations
 
@@ -12,11 +13,11 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB
 from awgbot.bot.states import GatewayToken
 from awgbot.domain.services import ServiceError
-from awgbot.bot.handlers.common import call, edit, send_menu, ask_here, ask_tracked, cleanup_content
+from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, cleanup_content
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
-from .render import _bundle_display, _drop_bundle_msgs
+from .gwjoin import gwjoin_go
 
 def _slot_of(callback_data) -> int:
     return int(getattr(callback_data, "slot", 0) or 0)
@@ -57,15 +58,13 @@ async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
 @router.callback_query(GwMarkCB.filter(F.action == "mark_yes"))
 async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
                            state: FSMContext):
-    """Существующее устройство — всегда полный путь: ключи линка слота новые
-    (устройство линка не знает, а прежняя машина теряет его сама), файл
-    первого применения едет открытым и ставится руками, поэтому нужен токен
-    агента слота. Та же дорога, что у нового устройства."""
+    """Существующее устройство — та же дорога, что у нового: токен бота
+    слота (если его ещё нет), затем команда подключения."""
     slot = _slot_of(callback_data)
-    # номер нового слота — первый свободный, как его выдаст gateway_setup:
+    # номер нового слота — первый свободный, как его выдаст команда подключения:
     # «число слотов + 1» после снятия слота 1 при живом 2 давало токен не тому слоту
     try:
-        token_slot = slot or (await call(services.gateway_next_slot))[0]
+        token_slot = slot or await call(services.gwjoin_peek_slot)
     except ServiceError as e:                      # слоты заняты, нет портов/подсетей
         await cb.answer(ui.toast(e), show_alert=True)
         await state.clear()
@@ -78,9 +77,8 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
         name = dev.name if dev is not None else texts.gateway_new_name(token_slot)
         await ask_here(cb, services, state, texts.gateway_ask_token(name), "set_rt_gw", slot or 0)
         return
-    await cb.answer("Назначаю…")
-    await edit(cb, "🛰 Назначаю шлюз…", None)
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+    await cb.answer()
+    await _screen_done(cb, services)
     await _gateway_setup_go(cb.message, services, callback_data.device_id, slot)
 
 
@@ -103,11 +101,11 @@ async def gateway_new_ask(cb: CallbackQuery, callback_data: GwMarkCB, services, 
 @router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
 async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, state: FSMContext):
     """Новая машина. Токен её бота спрашиваем ЗДЕСЬ и один раз на слот: он
-    уедет внутрь файла первого применения, и установка на шлюзе не задаст ни
-    одного вопроса. Токен уже есть — идём сразу к выпуску."""
+    уедет шлюзу каналом после кода, и установка на шлюзе не задаст ни одного
+    вопроса. Токен уже есть — идём сразу к команде."""
     slot = _slot_of(callback_data)
     try:
-        token_slot = slot or (await call(services.gateway_next_slot))[0]
+        token_slot = slot or await call(services.gwjoin_peek_slot)
     except ServiceError as e:
         await cb.answer(ui.toast(e), show_alert=True)
         await state.clear()
@@ -119,10 +117,28 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await ask_here(cb, services, state, texts.gateway_ask_token(texts.gateway_new_name(token_slot)),
                        "set_rt_gw", slot or 0)
         return
-    await cb.answer("Создаю устройство и ключи…")
-    await edit(cb, "🛰 Создаю устройство и ключи…", None)       # экран выбора отслужил
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+    await cb.answer()
+    await _screen_done(cb, services)
     await _gateway_setup_go(cb.message, services, slot=slot)
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "same"))
+async def gateway_same_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    """«🔁 Настроить заново» — то же устройство слота, новая команда (§3.8)."""
+    slot = _slot_of(callback_data)
+    st = next((s for s in await call(services.gateway_states) if s["gateway"].id == slot), None)
+    if st is None:
+        await cb.answer(ui.toast("Такого шлюза нет"), show_alert=True)
+        return
+    await cb.answer()
+    await edit(cb, texts.gateway_same_ask(st), kb.gateway_same_confirm(slot))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "same_yes"))
+async def gateway_same_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    await cb.answer()
+    await _screen_done(cb, services)
+    await gwjoin_go(cb.message, services, slot=_slot_of(callback_data), same=True)
 
 
 @router.message(GatewayToken.value)
@@ -135,7 +151,7 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     data = await state.get_data()
     slot = int(data.get("gw_slot") or 0)
     try:
-        token_slot = slot or (await call(services.gateway_next_slot))[0]
+        token_slot = slot or await call(services.gwjoin_peek_slot)
     except ServiceError as e:
         await state.clear()
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
@@ -159,39 +175,14 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     await _gateway_setup_go(message, services, slot=slot)
 
 
+async def _screen_done(cb: CallbackQuery, services) -> None:
+    """Экран выбора отслужил: команду несёт отдельное сообщение подключения."""
+    await edit(cb, "🛰 Готовлю команду подключения…", None)
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+
+
 async def _gateway_setup_go(message: Message, services, device_id: int | None = None,
                             slot: int = 0) -> None:
-    """Назначить шлюзом существующее устройство (со сменой ключей) или создать
-    устройство «Шлюз»; выпустить файл первого применения и объяснить одну
-    команду на устройстве-шлюзе."""
-    try:
-        if device_id is not None:
-            res = await call(services.gateway_setup, device_id, rekey=True, slot_id=slot or None)
-        else:
-            res = await call(services.gateway_setup, None, slot_id=slot or None)
-    except ServiceError as e:
-        await send_menu(message, services, f"⚠️ {texts._e(str(e))}", kb.settings_back("rt"))
-        return
-    instr = await message.answer(texts.gateway_install_instructions(res["device"],
-                                                                    services.bundle_name(res["gateway"]),
-                                                                    routing_reset=res.get("routing_reset", False)))
-    await _send_plain_bundle(message, services, res["gateway"].id, instr.message_id)
-
-
-async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id: int | None = None) -> None:
-    """Открытый файл конфигурации нового шлюза: внутри ключи и токен агента."""
-    try:
-        blob, name = await call(services.gw_bundle_plain, slot or None)
-    except (ServiceError, OSError) as e:
-        await message.answer(ui.fail("Файл конфигурации шлюза не собран", str(e)))
-        return
-    from aiogram.types import BufferedInputFile
-    if slot:
-        await _drop_bundle_msgs(message.bot, services, slot)
-    display, _bot = await _bundle_display(services, slot or None)
-    sent = await message.answer_document(
-        BufferedInputFile(blob, filename=name),
-        caption=texts.gateway_plain_bundle_caption(display),
-        reply_markup=kb.bundle_menu_kb(slot))
-    if slot:
-        await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id)
+    """Своё устройство (device_id) или новое «Шлюз N»; новый слот (slot 0)
+    или замена в слоте — команда подключения и сообщение подключения."""
+    await gwjoin_go(message, services, device_id=device_id, slot=slot)

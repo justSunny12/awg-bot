@@ -183,21 +183,23 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
     assert texts.online_devices_text(rows).startswith("📶 <b>Онлайн:</b> 1 профиль, 1 устройство\n\n")
 
 
-def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_client):
-    """Шлюзы доверяют адресу, а не устройству: пока в выданном ADMIN_IPS слота
-    стоит освободившийся адрес админа, новое устройство любого клиента его
-    получить не должно — иначе чужой клиент попадёт в локальную сеть."""
+def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_client, monkeypatch):
+    """Шлюзы доверяют адресу, а не устройству: пока в ADMIN_IPS обвязки слота
+    (снимок канала) стоит освободившийся адрес админа, новое устройство любого
+    клиента его получить не должно — иначе чужой клиент попадёт в локальную
+    сеть."""
     client = make_active_client(device_limit=5)
     a = services.add_device(client.id, "d1")
     pi = services.add_device(client.id, "pi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
-    services.db.set_state("gw_bundle_ssh_allow_1", a.address + " 10.8.1.9")
+    snaps = {1: {"bundle": {"admin_ips": a.address + " 10.8.1.9"}}}
+    monkeypatch.setattr(services, "gwlink_snapshot", lambda slot_id: snaps.get(slot_id, {}))
     services.remove_device(a.device_id)                       # адрес освободился в БД
     other = make_active_client(name="Другой", tg_id=1001, device_limit=5)
     assert services.gateway_trusted_ips() == {a.address, "10.8.1.9"}
     b = services.add_device(other.id, "d2")
     assert b.address not in {a.address, "10.8.1.9"}
-    services.db.set_state("gw_bundle_ssh_allow_1", "")
+    snaps[1] = {"bundle": {"admin_ips": ""}}
     c = services.add_device(other.id, "d3")
     assert c.address == a.address, "после смены списка адрес снова свободен"
 
@@ -216,20 +218,29 @@ def test_addresses_from_the_gateway_snapshot_are_reserved_too(services, make_act
     assert d.address == "10.8.1.5", d.address
 
 
-def test_the_reserve_is_what_stands_and_the_file_only_until_the_first_snapshot(
-        services, make_active_client, monkeypatch):
-    """Адреса админа в карантине — то, что стоит у шлюза по снимку; адреса из
-    файла первого применения — только пока снимка нет (агент ещё не на
-    связи). Вечного карантина по давнему файлу больше нет."""
-    from awgbot.util import gwlink
+def test_the_reserve_is_what_stands_and_an_old_file_reserves_nothing(
+        services, make_active_client, monkeypatch, tmp_path):
+    """Адреса админа в карантине — только то, что стоит у шлюза по снимку:
+    файлов первого применения больше нет, и метка прежнего файла адресов не
+    держит; старт сервера стирает и её, и сами прежние файлы (в них ключи)."""
+    from awgbot.domain.services.gwjoin import quarantine
     client = make_active_client(device_limit=5)
     pi = services.add_device(client.id, "pi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, 1), "10.8.1.7 10.8.1.8")
+    services.db.set_state(services._gw_slot_key("gw_bundle_ssh_allow", 1), "10.8.1.7 10.8.1.8")
+    services.db.set_state(services._gw_slot_key("gw_bundle_issued_at", 1), "2026-09-01T10:00:00+00:00")
     snaps = {}
     monkeypatch.setattr(services, "gwlink_snapshot", lambda slot_id: snaps.get(slot_id, {}))
-    assert services.gateway_trusted_ips() == {"10.8.1.7", "10.8.1.8"}, "до первого снимка — адреса файла"
+    assert services.gateway_trusted_ips() == set(), "метка прежнего файла держит адреса"
     snaps[1] = {"bundle": {"admin_ips": "10.8.1.3"}}
-    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "давний файл адреса в карантине не держит"
-    services.gwlink_session_opened(1, "3.2.1", gwlink.PROTO, caps=())
-    assert services.gateway_trusted_ips() == {"10.8.1.3"}, "и у агента ниже 3.3.0 — тоже по снимку"
+    assert services.gateway_trusted_ips() == {"10.8.1.3"}
+    old = tmp_path / "awg-gw-bundle-awglink2.sh"
+    old.write_text("DUMMY")
+    keep = tmp_path / "gw-awglink.conf"
+    keep.write_text("DUMMY")
+    monkeypatch.setattr(quarantine, "LEGACY_BUNDLES", str(tmp_path / "awg-gw-bundle*.sh"))
+    assert services.gwjoin_boot() == 1
+    assert not old.exists() and keep.exists(), "убран не тот файл"
+    assert services.db.get_state(services._gw_slot_key("gw_bundle_ssh_allow", 1)) == ""
+    assert services.db.get_state(services._gw_slot_key("gw_bundle_issued_at", 1)) == ""
+    assert services.gwjoin_boot() == 0, "второй старт — убирать нечего"

@@ -48,14 +48,16 @@ def test_after_fifteen_minutes_one_notice_per_silent_slot(services):
     assert services.restore_wait_hello(2) == [], "ожидание не снято"
 
 
-def test_on_an_empty_server_the_notice_names_the_bundle_command(services):
+def test_on_an_empty_server_the_notice_names_the_reconnect_path(services):
+    """Пустой сервер: ключи линка на шлюзе могут быть новее бэкапа — путь
+    один, «🔁 Настроить заново» (Т-П17), без файлов и команд."""
     services.restore_wait_start({**REPORT, "empty": True})
     _late(services, 16)
     texts = [n.text for n in services.restore_wait_tick()]
     assert texts[1] == ("⚠️ «Pi4» (дача) не вышел на связь за 15 минут после восстановления. Если на шлюзе ключи "
-                        "линка новее бэкапа — выпусти файл конфигурации этого шлюза: <code>sudo awg-bot gw-bundle "
-                        "--link awglink2</code>, перенеси на шлюз и примени: <code>sudo sh awg-gw-bundle-awglink2.sh</code>")
-    assert "<code>sudo sh awg-gw-bundle.sh</code>" in texts[0], "у первого линка файл под прежним именем"
+                        "линка новее бэкапа — подключи его заново: карточка шлюза → «✏️ Изменить» → «🔁 Заменить» "
+                        "→ «🔁 Настроить заново»")
+    assert all("gw-bundle" not in t and "awg-gw-bundle" not in t for t in texts), texts
 
 
 def test_nothing_to_wait_for_when_no_slot_got_the_copy(services):

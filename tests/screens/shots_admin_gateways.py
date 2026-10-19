@@ -87,7 +87,7 @@ GATEWAYS = [
     Shot("adm.rt.new_ask.replace", role="admin", press=[GwMarkCB(action="new_ask", slot=1)], data=_slots(1),
          title="новое устройство вместо прежнего?"),
     Shot("adm.rt.token.done", role="admin", press=[GwMarkCB(action="new_ask")], text=TOKEN, data=_rt_none,
-         title="токен принят: инструкция и файл первого применения"),
+         title="токен принят: команда подключения"),
     Shot("adm.rt.users", role="admin", press=[SetCB(sec="rt_users")], data=_slots(1), title="кому доступен"),
     Shot("adm.rt.users.allow", role="admin", press=[SetCB(sec="rt", act="do", key="allow", val=str(BR))],
          data=_slots(1), title="отметить профиль — ряд «✅ Применить»"),
@@ -231,11 +231,11 @@ def _token_kept(services, mp):
 
 
 def _slot7(services, mp):
-    services.gateway_next_slot = lambda: (7, "awglink7", 9443, "10.99.99.24/30")
+    services._gwjoin_next_slot = lambda: (7, "awglink7", 9443, "10.99.99.24/30")
 
 
 def _no_free_slot(services, mp):
-    services.gateway_next_slot = _raise("service", "свободных слотов нет")
+    services._gwjoin_next_slot = _raise("service", "свободных слотов нет")
 
 
 def _fresh_gw(services, mp):
@@ -356,19 +356,15 @@ SLOTS = [
     Shot("adm.rt.new_yes.known", role="admin", press=[GwMarkCB(action="new_yes")],
          data=_rt_none_token, title="новая машина при известном токене — не спрашивает"),
     Shot("adm.rt.new_yes.standby", role="admin", press=[GwMarkCB(action="new_yes", slot=0)],
-         data=_gw(1, _token2), title="резерв новой машиной при известном токене — файл «Шлюз 2»"),
+         data=_gw(1, _token2), title="резерв новой машиной при известном токене — команда «Шлюз 2»"),
     Shot("adm.rt.token.done.standby", role="admin", press=[GwMarkCB(action="new_ask", slot=0)], text=TOKEN2,
-         data=_slots(1), title="токен второго слота принят — файл и скрипт слота 2"),
+         data=_slots(1), title="токен второго слота принят — команда подключения слота 2"),
     Shot("adm.rt.pick_list.standby", role="admin", press=[GwMarkCB(action="pick_list", slot=0)],
          data=_slots(1), title="резерв из моих — без назначенного"),
     Shot("adm.rt.pick.standby", role="admin", press=[GwMarkCB(action="pick", device_id=PI4, slot=0)],
          data=_slots(1), title="резерв из моих: станет резервным?"),
     Shot("adm.rt.mark_yes.standby", role="admin", press=[GwMarkCB(action="mark_yes", device_id=PI4, slot=0)],
-         data=_gw(1, _token2), title="резерв из моих при известном токене — инструкция и файл"),
-    Shot("adm.rt.mark_yes.standby.menu", role="admin",
-         press=[GwMarkCB(action="mark_yes", device_id=PI4, slot=0),
-                SetCB(sec="rt", act="do", key="bundle_cancel", val="2")],
-         data=_gw(1, _token2), title="«🛰 В карточку» под файлом первого применения — карточка слота 2"),
+         data=_gw(1, _token2), title="резерв из моих при известном токене — команда подключения"),
     # ── снятие ───────────────────────────────────────────────────────────
     Shot("adm.gw.remove_ask.old", role="admin", press=[GwMarkCB(action="remove_ask", device_id=NASPI)],
          data=_slots(1), title="снять последний шлюз старой кнопкой — РФ-доступ выключится"),

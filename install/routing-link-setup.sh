@@ -19,53 +19,37 @@
 #   2) поднимает интерфейс на ВПС и включает автозапуск;
 #   3) выводит трафик в линк из-под MASQUERADE (иначе шлюз увидел бы адрес ВПС
 #      вместо адреса клиента);
-#   4) собирает ФАЙЛ КОНФИГУРАЦИИ для шлюза: скрипт настройки и конфиг линка одним файлом,
-#      плюс печатает готовую строку scp и что запустить на той стороне.
-#      В шапке файла конфигурации — метка выпуска `# ISSUED_AT: <unix-время>`: скрипт
-#      обвязки на шлюзе отказывает файлу, выпущенному раньше уже применённого. Режим
-#      --bundle и тело файла конфигурации работают под umask 077 (внутри ключи). На шлюзе
-#      тело раскладывается во временный каталог /root/awg-gw-apply.XXXXXX и
-#      убирает его после прогона; после успеха — и сам файл, и каталог
-#      /opt/awg-gw прежних выпусков (вторая копия ключа линка). В тело
-#      вшивается BUNDLE_VERSION — версия поставки этого сервера: на шлюзе файл
-#      сверяет её с агентом в /opt/awg-bot (скрипт обвязки обязан быть версии
-#      агента): агент новее — скрипт обвязки берётся из поставки агента,
-#      старше — отказ до первого шага с советом `sudo sh <файл> --install`;
-#      агента нет или версия не известна — как есть;
+#   4) пишет конфиг шлюзовой стороны ($GW_CONF_OUT, 0600). Файла конфигурации
+#      для шлюза больше нет: шлюз подключается командой из бота сервера AWG
+#      (токен строит бот из этого конфига, режим --join-stage ниже), прежний
+#      файл /root/awg-gw-bundle*.sh снимается вместе с линком;
 #   5) обфускация линка — S2 переизбирается, пока S1 + 56 = S2 (длины init и
 #      response совпали бы, рукопожатие не разбиралось).
 #
 # ОКРУЖЕНИЕ: LINK_IF (awglink; у второго слота — awglink2; остаются только
 # [A-Za-z0-9_.-], не длиннее 15 символов), LINK_PORT (443),
 # LINK_CIDR — /30 линка, из него выводятся LINK_VPS_ADDR и LINK_GW_ADDR,
-# ENDPOINT_HOST (бот передаёт network.server_host в --apply и --bundle: адрес
+# ENDPOINT_HOST (бот передаёт network.server_host в --apply и --join-stage: адрес
 # ВПС сменился или на интерфейсе приватный адрес за 1:1 NAT — строка Endpoint
 # конфига шлюзовой стороны правится при сборке, как порт), PEER_LAN_NETS (подсети других шлюзов — их
 # префиксы в туннеле, /16 на слот, только слоту с VPN-транзитом — в AllowedIPs
-# пира ВПС), CONF_DIR, GW_CONF_OUT, GW_BUNDLE_OUT. Из конфига бота (_APP_YAML,
-# /etc/awg-bot/conf/app.yaml) и перечитываются при каждой сборке файла конфигурации:
+# пира ВПС), CONF_DIR, GW_CONF_OUT. Из конфига бота (_APP_YAML,
+# /etc/awg-bot/conf/app.yaml) и перечитываются при каждой сборке конфига шлюза:
 # CLIENT_SUBNET (network.subnet_cidr) и LINK_KEEPALIVE
 # (client_config.keepalive_seconds) — PersistentKeepalive линка идёт в ритме
 # клиентских пиров, «25-35» или одиночное число; непонятное значение
 # откатывается к «25-35». Любую переменную можно переопределить окружением;
-# бот при сборке файла конфигурации так и делает с LINK_KEEPALIVE — читает YAML целиком,
-# а awk здесь видит только значение в двойных кавычках (число без кавычек у
-# ручного `awg-bot gw-bundle` превратится в «25-35»).
-# В ФАЙЛ КОНФИГУРАЦИИ дополнительно вшивается LINK_CHANNEL_PORT
-# (routing.link_channel_port из app.yaml, 8787 по умолчанию — тот же ключ, на
-# котором ВПС слушает): он уезжает в юнит обвязки на шлюзе строкой
-# Environment=, его читает агент. Канал обязателен — агент держит его, пока на
-# шлюзе есть конфиг линка.
+# бот так и делает с LINK_KEEPALIVE — читает YAML целиком, а awk здесь видит
+# только значение в двойных кавычках.
 # GW_CONF_OUT (/root/gw-<линк>.conf) — источник и для документа конфигурации,
 # который основной бот шлёт агенту по каналу конфигурации (domain/services/gwchannel/
 # cfg.py): бот читает его сам и делает те же поправки Endpoint, AllowedIPs и
-# PersistentKeepalive, что --bundle, — этот скрипт для документа не зовётся
+# PersistentKeepalive, что и здесь, — этот скрипт для документа не зовётся
 # (зовётся только для смены ключей линка, режимы --rekey-* ниже).
 #
 # ЗАПУСК:
 #   sudo sh routing-link-setup.sh              # показать план
 #   sudo sh routing-link-setup.sh --apply      # поднять
-#   sudo sh routing-link-setup.sh --bundle     # пересобрать файл конфигурации (ключи те же)
 #   sudo sh routing-link-setup.sh --rekey      # новые ключи линка (смена/снятие шлюза)
 #   sudo sh routing-link-setup.sh --rollback   # снять
 # Два режима зовёт юнит awg-link@<if>, руками они не нужны:
@@ -79,7 +63,7 @@
 # руками они не нужны. Меняются ключи обеих сторон, PSK и обфускация; порт
 # (живой ListenPort из $CONF) и адреса /30 — те же; хост Endpoint — из
 # ENDPOINT_HOST (network.server_host), без него — из $GW_CONF_OUT.
-# Окружение — как у --bundle (AllowedIPs шлюзовой стороны собираются заново).
+# Окружение — как у --apply (AllowedIPs шлюзовой стороны собираются заново).
 # Шлюз из $GW_CONF_OUT.next сверяет только Address и берёт ключи, PSK и
 # обфускацию; Endpoint, AllowedIPs и keepalive при переключении остаются из
 # стоящего у него конфига (их ведёт документ конфигурации).
@@ -94,6 +78,16 @@
 #                   не поднялся — .prev назад, код 1
 #   --rekey-revert  .next снять; был коммит — .prev назад и переподнять линк
 #   --rekey-drop    убрать .next и .prev (переход зафиксирован или снят)
+# Три режима зовёт бот при подключении шлюза командой (domain/services/gwjoin):
+#   --join-stage    линк слота на ключах токена: новые ключи и обфускация Jc…H4,
+#                   без PSK и без I1 (их ставит смена ключей после кода), в
+#                   конфиге стороны ВПС — штамп «# awg-bot: сопряжение <JOIN_ID>»
+#                   (по нему файервол держит карантин); JOIN_PREV=1 (замена
+#                   устройства) — сначала живые конфиги обеих сторон в .join-prev
+#                   (если их там ещё нет); линк поднимается сразу. Итог — «join: staged»
+#   --join-revert   .join-prev на место и линк на прежних ключах (замена отменена,
+#                   срок вышел, код не подтверждён) — «join: reverted»; нечего — «join: nothing»
+#   --join-drop     убрать .join-prev (верный код) — «join: dropped»
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e
@@ -130,12 +124,6 @@ LINK_KEEPALIVE="${LINK_KEEPALIVE:-${_cfg_keepalive:-25-35}}"
 case "$LINK_KEEPALIVE" in
     ''|*[!0-9-]*|-*|*-|*-*-*) LINK_KEEPALIVE="25-35" ;;
 esac
-# Порт канала — тот же ключ, на котором ВПС слушает (routing.link_channel_port).
-# Файл конфигурации, собранный с другим числом, увёз бы шлюз стучаться в порт, где никого
-# нет, и канал молча не поднялся бы. Бот передаёт значение и окружением; отсюда
-# оно нужно CLI `awg-bot gw-bundle`, которому окружение никто не готовит.
-_cfg_chport="$(awk '/^  link_channel_port:/{print $2; exit}' "$_APP_YAML" 2>/dev/null | tr -cd '0-9' || true)"
-LINK_CHANNEL_PORT="${LINK_CHANNEL_PORT:-${_cfg_chport:-8787}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
@@ -149,8 +137,8 @@ gw_allowed_ips() {             # клиентская подсеть, /30 лин
     for _n in $PEER_LAN_NETS; do _a="$_a, $_n"; done
     printf '%s' "$_a"
 }
-# Файл конфигурации первого линка — под прежним именем: его ждут инструкции и установщик
-# на шлюзе; у остальных слотов имя с интерфейсом, чтобы файлы не перетирались.
+# Прежний файл конфигурации шлюза (выпуски до 3.4.0) — только чтобы снять его
+# вместе с линком: внутри ключи. Новых файлов скрипт не собирает.
 if [ "$LINK_IF" = "awglink" ]; then
     GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle.sh}"
 else
@@ -165,7 +153,7 @@ LEGACY_UNIT="/etc/systemd/system/awg-link.service"
 
 # Версия КОНТРАКТА ЛИНКА: формат конфига шлюза плюс набор обфускации, который
 # обе стороны обязаны понимать одинаково. Бампается, когда меняется генерация
-# конфига здесь, — тогда шлюз надо переприслать файлом конфигурации.
+# конфига здесь, — тогда шлюзы переходят на него сменой ключей линка.
 #
 # Сверять её автоматически некому и не нужно: несовпадающие H1..H4/S1..S4/I1..I5
 # ломают хендшейк, линк не встаёт, и бот сообщает об этом сам своим тиком
@@ -174,6 +162,8 @@ LINK_CONTRACT="1"
 
 MODE="plan"
 REKEY=0
+JOIN=0
+JOIN_ID="$(printf '%s' "${JOIN_ID:-}" | tr -cd '0-9a-f' | cut -c1-16)"
 case "${1:-}" in
     --apply)    MODE="apply" ;;
     # Новые ключи линка при живом линке: смена или снятие шлюза. Прежняя
@@ -189,7 +179,6 @@ case "${1:-}" in
     # /usr/bin однажды не сошёлся: ExecStop падал, интерфейс оставался жить.
     --down)     MODE="down" ;;
     --rollback) MODE="rollback" ;;
-    --bundle)   MODE="bundle" ;;
     # Смена ключей линка каналом (бот на ВПС ведёт переход, шлюз подтверждает):
     # stage — новые ключи и обфускация в .next обеих сторон, живые не тронуты;
     # commit — живые → .prev, .next → живые, линк переподнят; revert — .prev
@@ -199,6 +188,9 @@ case "${1:-}" in
     --rekey-commit) MODE="rekey-commit" ;;
     --rekey-revert) MODE="rekey-revert" ;;
     --rekey-drop)   MODE="rekey-drop" ;;
+    --join-stage)   MODE="apply"; JOIN=1 ;;
+    --join-revert)  MODE="join-revert" ;;
+    --join-drop)    MODE="join-drop" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
@@ -351,6 +343,15 @@ PresharedKey = $PSK
 AllowedIPs = 0.0.0.0/0
 CONFEOF
     chmod 600 "$1"
+    join_conf "$1" stamp
+}
+join_conf() {   # $1 = конфиг, $2 = stamp|plain: на ключах токена — без PSK; стороне ВПС — штамп сопряжения
+    [ "$JOIN" = "1" ] || return 0
+    _stamp=""
+    [ "${2:-}" = "stamp" ] && _stamp="# awg-bot: сопряжение $JOIN_ID"
+    STAMP="$_stamp" awk 'NR == 1 && ENVIRON["STAMP"] != "" { print ENVIRON["STAMP"] } !/^PresharedKey = / { print }' \
+        "$1" > "$1.join" && cat "$1.join" > "$1" && rm -f "$1.join"
+    chmod 600 "$1"
 }
 write_gw_conf() {   # $1 = куда, $2 = Endpoint (хост:порт): конфиг стороны шлюза, 0600
     cat > "$1" <<GWEOF
@@ -384,6 +385,7 @@ PersistentKeepalive = $LINK_KEEPALIVE
 GWEOF
     chmod 600 "$1"
     gw_conf_i1 "$1"
+    join_conf "$1" plain
 }
 gw_conf_i1() {   # $1 = конфиг стороны шлюза: строка I1 после H4 — только в --rekey-stage и только с LINK_I1
     [ "$MODE" = "rekey-stage" ] || return 0
@@ -405,7 +407,7 @@ if [ "$MODE" = "rekey-stage" ]; then
     [ -f "$CONF" ] && [ -f "$GW_CONF_OUT" ] || { say "ОШИБКА: линк $LINK_IF не настроен — менять нечего"; exit 1; }
     umask 077
     _port="$(awk '/^ListenPort/{print $3; exit}' "$CONF")"
-    # хост — из настроек бота (ENDPOINT_HOST), как у --bundle и документа:
+    # хост — из настроек бота (ENDPOINT_HOST), как у --apply и документа:
     # /root/gw-*.conf после «✏️ Домен» помнит прежний
     if [ -n "${ENDPOINT_HOST:-}" ] && [ -n "$_port" ]; then
         _ep="$ENDPOINT_HOST:$_port"
@@ -461,228 +463,21 @@ if [ "$MODE" = "rekey-drop" ]; then
     exit 0
 fi
 
-# ── файл конфигурации для шлюза: скрипт настройки + конфиг линка одним файлом ────────────
-# Оператор несёт на шлюз ОДИН файл вместо двух. Два — это лишний способ
-# ошибиться: скопировал скрипт, забыл конфиг, и «почему-то не работает».
-emit_gw_bundle() {
-    # Соседа ищем рядом, затем в поставке: юниты зовут КОПИЮ этого скрипта из
-    # /usr/local/sbin, где gw-скрипт не живёт, — без фолбэка запуск --bundle
-    # оттуда падал, хотя поставка лежит на месте.
-    _gwsrc="$(dirname "$(readlink -f "$0")")/routing-gw-setup.sh"
-    [ -f "$_gwsrc" ] || _gwsrc="/opt/awg-bot/install/routing-gw-setup.sh"
-    [ -f "$_gwsrc" ] || {
-        say "ОШИБКА: routing-gw-setup.sh не найден ни рядом, ни в /opt/awg-bot/install"
-        exit 1; }
-    [ -f "$GW_CONF_OUT" ] || {
-        say "ОШИБКА: нет $GW_CONF_OUT — линк ещё не поднят. Сначала: $0 --apply"
-        exit 1; }
-    # Endpoint в конфиге шлюза ЗАМЕРЗАЕТ при генерации, а порт линка — факт из
-    # живого $CONF. Разошлись — файл конфигурации увёз бы шлюз в закрытый порт, и линк умер
-    # бы до ручной правки (наступили: перенос 443 → 47231). Правим источник до
-    # упаковки; сам конфиг линка не трогаем.
-    if [ -f "$CONF" ]; then
-        _live_port="$(awk '/^ListenPort/{print $3; exit}' "$CONF" 2>/dev/null || true)"
-        if [ -n "$_live_port" ] && ! grep -q ":$_live_port\$" "$GW_CONF_OUT"; then
-            say "Endpoint в $GW_CONF_OUT отстал от ListenPort=$_live_port — правлю"
-            # sed -i без суффикса — GNU-изм; скрипт POSIX, BSD sed съедает
-            # выражение как суффикс. Временный файл переносим везде.
-            sed "s/^\(Endpoint = .*\):[0-9][0-9]*\$/\1:$_live_port/" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
-                && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
-        fi
-    fi
-
-    # Хост Endpoint: адрес ВПС мог смениться (новый IP, домен, ВПС за 1:1 NAT
-    # с приватным адресом на интерфейсе) — правим по network.server_host из
-    # настроек бота (ENDPOINT_HOST), как порт.
-    if [ -n "${ENDPOINT_HOST:-}" ] && [ -f "$GW_CONF_OUT" ] \
-        && ! grep -qE "^Endpoint = ${ENDPOINT_HOST}:[0-9]+\$" "$GW_CONF_OUT"; then
-        say "Endpoint в $GW_CONF_OUT отстал от network.server_host=$ENDPOINT_HOST — правлю"
-        sed "s/^Endpoint = .*:\([0-9][0-9]*\)\$/Endpoint = $ENDPOINT_HOST:\1/" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
-            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
-    fi
-
-    # AllowedIPs пира ВПС зависит от подсетей за другими шлюзами, а те меняются
-    # после --apply: правим строку в источнике при каждой сборке, как порт.
-    _want="AllowedIPs = $(gw_allowed_ips)"
-    if [ -f "$GW_CONF_OUT" ] && ! grep -qxF "$_want" "$GW_CONF_OUT"; then
-        say "AllowedIPs в $GW_CONF_OUT отстал (локальные подсети других шлюзов) — правлю"
-        sed "s|^AllowedIPs = .*\$|$_want|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
-            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
-    fi
-
-    # PersistentKeepalive — тоже из конфига бота, и тоже замерзает при
-    # генерации: шлюзы, выданные до того, как значение стало диапазоном,
-    # остались бы с прибитыми 25 навсегда. Правим строку при каждой сборке.
-    _want_ka="PersistentKeepalive = $LINK_KEEPALIVE"
-    if [ -f "$GW_CONF_OUT" ] && grep -q '^PersistentKeepalive = ' "$GW_CONF_OUT" \
-        && ! grep -qxF "$_want_ka" "$GW_CONF_OUT"; then
-        say "PersistentKeepalive в $GW_CONF_OUT отстал — правлю на $LINK_KEEPALIVE"
-        sed "s|^PersistentKeepalive = .*\$|$_want_ka|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
-            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
-    fi
-    _issued="$(date +%s)"
-    # Версия поставки сервера — с ней файл сверяет агента на шлюзе (тело ниже)
-    _bver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$(dirname "$_gwsrc")/../awgbot/__version__.py" 2>/dev/null \
-        | head -n 1 | tr -cd '0-9.')"
-    {
-        cat <<HDREOF
-#!/bin/sh
-# ─────────────────────────────────────────────────────────────────────────────
-# awg-gw-bundle.sh — сторона ШЛЮЗА условной маршрутизации, одним файлом.
-#
-# Собран на ВПС: $(date '+%Y-%m-%d %H:%M %z')
-# ISSUED_AT: $_issued
-# Контракт линка: $LINK_CONTRACT
-#
-# ВНУТРИ ПРИВАТНЫЙ КЛЮЧ И PSK. Файл секретный: права 600, после установки удалить.
-#
-# ЗАПУСК НА ШЛЮЗЕ:
-#   sudo sh awg-gw-bundle.sh --install    # чистая машина или агент старше файла:
-#                                         # поставить (обновить) агента из
-#                                         # поставки внутри файла и применить
-#   sudo sh awg-gw-bundle.sh              # агент уже стоит: применить (обвязка,
-#                                         # линк, аплинк)
-#   sudo sh awg-gw-bundle.sh --rollback   # снять всё, что поставил
-# ─────────────────────────────────────────────────────────────────────────────
-HDREOF
-        # Подсеть ВШИВАЕТСЯ в файл конфигурации: на шлюзе нет app.yaml, взять её там неоткуда,
-        # а env-дефолт скрипта вернул бы после ребута правила для чужой подсети.
-        printf 'CLIENT_SUBNET="${CLIENT_SUBNET:-%s}"\nexport CLIENT_SUBNET\n' "$CLIENT_SUBNET"
-        # Метка выпуска — и окружением: скрипт обвязки на шлюзе откажет файлу
-        # старее применённого, даже запущенному руками мимо агента.
-        printf 'BUNDLE_ISSUED_AT="%s"\nexport BUNDLE_ISSUED_AT\n' "$_issued"
-        printf 'BUNDLE_VERSION="%s"\n' "$_bver"
-        # Устройства админа — им с туннеля открыт сам шлюз и локальная сеть за
-        # ним. Список знает только бот ВПС: он передаёт его окружением при
-        # сборке, файл конфигурации вшивает, юнит на шлюзе закрепляет. Сменился состав —
-        # список везёт канал документом конфигурации.
-        printf 'ADMIN_IPS="${ADMIN_IPS:-%s}"\nexport ADMIN_IPS\n' "$(printf '%s' "${ADMIN_IPS:-}" | tr -cd '0-9./ ')"
-        # Помеченный шлюз: ключ его аплинка (в окне переезда — ключ двойника и
-        # старый ключ отдельно) и конфиг аплинка в base64. По ключу агент поймёт,
-        # он ли шлюз; конфиг ставится только машине с тем же ключом.
-        printf 'GATEWAY_PUBKEY="%s"\nexport GATEWAY_PUBKEY\n' "$(printf '%s' "${GATEWAY_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
-        printf 'GATEWAY_PREV_PUBKEY="%s"\nexport GATEWAY_PREV_PUBKEY\n' "$(printf '%s' "${GATEWAY_PREV_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
-        printf 'UPLINK_B64="%s"\nexport UPLINK_B64\n' "$(printf '%s' "${UPLINK_B64:-}" | tr -cd 'A-Za-z0-9+/=')"
-        # «За шлюзом — без VPN»: включена ли функция у
-        # слота, локальные подсети (первая даёт LAN-интерфейс и адрес
-        # резолвера), апстрим резолвера — свой резолвер ВПС через аплинк.
-        printf 'LAN_MODE="%s"\nexport LAN_MODE\n' "$(printf '%s' "${LAN_MODE:-0}" | tr -cd '01' | cut -c1)"
-        printf 'LAN_SUBNETS="%s"\nexport LAN_SUBNETS\n' "$(printf '%s' "${LAN_SUBNETS:-}" | tr -cd '0-9./ ')"
-        printf 'RESOLVER="%s"\nexport RESOLVER\n' "$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.')"
-        printf 'PEER_LAN_NETS="%s"\nexport PEER_LAN_NETS\n' "$(printf '%s' "${PEER_LAN_NETS:-}" | tr -cd '0-9./ ')"
-        # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
-        printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
-        # Канал ВПС ↔ шлюз внутри линка обязателен; порт читает агент.
-        printf 'LINK_CHANNEL_PORT="%s"\nexport LINK_CHANNEL_PORT\n' "$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
-        cat <<'BODYEOF'
-set -e
-umask 077     # внутри приватный ключ и PSK: всё, что кладём, — только root
-[ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }
-
-# --install: поставить агента ИЗ ЭТОГО ЖЕ файла. Поставка вшита ниже базой64
-# между маркерами: шлюз стоит в России, GitHub там без туннеля недоступен, а
-# туннель как раз и ставим — качать с шлюза неоткуда. Распаковываем во
-# временный каталог (установщик уберёт его сам) и передаём управление
-# установщику из поставки; он применит этот файл как --bundle, и после
-# успеха файл удалит себя. --skip-verify: sha256 с релизом такая сборка не
-# совпадает (собрана из установки ВПС), доверие держит scp с машины админа.
-if [ "${1:-}" = "--install" ]; then
-    _self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    _src="$(mktemp -d /tmp/awg-bot-install.XXXXXX)"
-    sed -n '/^#__AWG_BOT_TGZ_BELOW__$/,/^#__AWG_BOT_TGZ_END__$/p' "$_self" | sed '1d;$d' \
-        | base64 -d > "$_src/awg-bot.tgz" 2>/dev/null || true
-    [ -s "$_src/awg-bot.tgz" ] || { rm -rf "$_src"; \
-        echo "в этом файле нет поставки: он собран без неё (awg-bot gw-bundle). Выпусти конфигурацию шлюза в боте сервера AWG."; exit 1; }
-    tar xzf "$_src/awg-bot.tgz" -C "$_src" || { rm -rf "$_src"; echo "поставка внутри файла не распаковалась"; exit 1; }
-    [ -f "$_src/install/awg-bot-install.sh" ] || { rm -rf "$_src"; echo "в поставке нет установщика — не та поставка?"; exit 1; }
-    exec bash "$_src/install/awg-bot-install.sh" --skip-verify --role gateway --bundle "$_self"
+# ── сопряжение: возврат прежнего устройства и уборка ─────────────────────────
+if [ "$MODE" = "join-revert" ]; then
+    umask 077
+    [ -f "$CONF.join-prev" ] || { say "join: nothing"; exit 0; }
+    install -m 600 "$CONF.join-prev" "$CONF"
+    [ -f "$GW_CONF_OUT.join-prev" ] && install -m 600 "$GW_CONF_OUT.join-prev" "$GW_CONF_OUT"
+    rm -f "$CONF.join-prev" "$GW_CONF_OUT.join-prev"
+    link_restart || { say "ОШИБКА: линк на прежних ключах не поднялся"; exit 1; }
+    assert_nat_exempt || say "ВНИМАНИЕ: исключение линка из MASQUERADE не поставлено — поставит --reassert"
+    say "join: reverted"
+    exit 0
 fi
-
-# Раскладываем в ПОСТОЯННЫЙ каталог, а не во временный. Скрипт настройки
-# прописывает СЕБЯ в systemd-юнит по собственному пути: запущенный из /tmp, он
-# оставил бы юнит, указывающий на удалённый файл. Обнаружилось бы это только
-# после ребута и выглядело бы как «шлюз сам отвалился».
-# Временный каталог в /root (0700, не tmpfs): скрипт обвязки кладёт себя в
-# /usr/local/sbin сам, а в /opt/awg-gw оставалась вторая копия ключа линка
-# и устаревший скрипт, которых никто не читал.
-DEST="$(mktemp -d /root/awg-gw-apply.XXXXXX)"
-
-sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.sh"
-# Конвейер прячет отказ sed за кодом tail: пустой скрипт обвязки затем
-# исполнился бы «успешно», а юнит реассерта остался бы с пустым файлом.
-[ -s "$DEST/routing-gw-setup.sh" ] || { echo "файл конфигурации повреждён: скрипт обвязки не извлёкся"; exit 1; }
-chmod 0755 "$DEST/routing-gw-setup.sh"
-
-# Скрипт обвязки — той же версии, что агент на шлюзе: агент другой версии
-# реассертил бы чужую обвязку (имена таблицы и строк юнита у версий разные).
-# Агент новее файла — скрипт из поставки агента; старше — сначала обновить
-# агента из этого же файла (--install). Агента нет или версия файла не
-# известна — как есть.
-_agent_dir="/opt/awg-bot"
-_agent_ver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$_agent_dir/awgbot/__version__.py" 2>/dev/null | head -n 1)"
-if [ -n "${BUNDLE_VERSION:-}" ] && [ -n "$_agent_ver" ] && [ "${1:-}" != "--rollback" ]; then
-    _cmp="$(awk -v a="$_agent_ver" -v b="$BUNDLE_VERSION" 'BEGIN {
-        n = split(a, x, "."); m = split(b, y, "."); k = n > m ? n : m
-        for (i = 1; i <= k; i++) {
-            if (x[i] + 0 < y[i] + 0) { print "<"; exit }
-            if (x[i] + 0 > y[i] + 0) { print ">"; exit }
-        }
-        print "=" }')"
-    if [ "$_cmp" = ">" ] && [ -s "$_agent_dir/install/routing-gw-setup.sh" ]; then
-        echo "агент на шлюзе ($_agent_ver) новее файла ($BUNDLE_VERSION): скрипт обвязки — из поставки агента"
-        cp "$_agent_dir/install/routing-gw-setup.sh" "$DEST/routing-gw-setup.sh"
-        chmod 0755 "$DEST/routing-gw-setup.sh"
-    elif [ "$_cmp" = "<" ]; then
-        rm -rf "$DEST"
-        echo "агент на шлюзе ($_agent_ver) старше файла ($BUNDLE_VERSION) — сначала обнови агента из этого же файла: sudo sh $0 --install"
-        exit 1
-    fi
-fi
-
-BODYEOF
-        printf '%s\n' "cat > \"\$DEST/link.conf\" <<'__LINK_CONF_EOF__'"
-        printf '# awg-bot: контракт линка %s\n' "$LINK_CONTRACT"
-        cat "$GW_CONF_OUT"
-        printf '%s\n' "__LINK_CONF_EOF__"
-        cat <<'TAILEOF'
-chmod 0600 "$DEST/link.conf"
-
-# Внутри приватный ключ: после успешного применения файл удаляет себя сам,
-# чтобы не полагаться на память человека. Отказ — файл остаётся для повтора.
-"$DEST/routing-gw-setup.sh" "${1:---apply}" "$DEST/link.conf"
-_rc=$?
-rm -rf "$DEST"
-[ "$_rc" -eq 0 ] && rm -rf /opt/awg-gw 2>/dev/null   # остаток прежних выпусков: копия ключа
-[ "$_rc" -eq 0 ] && rm -f -- "$0" 2>/dev/null
-exit "$_rc"
-TAILEOF
-        printf '#__GW_SETUP_BELOW__\n'
-        cat "$_gwsrc"
-    } > "$GW_BUNDLE_OUT"
-    chmod 600 "$GW_BUNDLE_OUT"
-}
-
-# Инструкция печатается и после --apply, и после --bundle: человек читает её в
-# момент, когда идёт к шлюзу, а не когда поднимал линк.
-print_gw_instructions() {
-    say ""
-    say "Файл конфигурации для шлюза: $GW_BUNDLE_OUT   (контракт линка: $LINK_CONTRACT)"
-    say ""
-    say "Скопировать на шлюз:"
-    say "    scp $GW_BUNDLE_OUT <юзер>@<адрес-шлюза>:~/"
-    say ""
-    say "И там:"
-    say "    sudo sh ~/$(basename "$GW_BUNDLE_OUT")"
-    say "    rm ~/$(basename "$GW_BUNDLE_OUT")          # внутри приватный ключ"
-    say "(агента этот файл не ставит: поставку везёт только файл конфигурации из бота сервера AWG)"
-    say ""
-    say "Пересобрать файл конфигурации позже (ключи НЕ меняются): LINK_IF=$LINK_IF $0 --bundle"
-}
-
-if [ "$MODE" = "bundle" ]; then
-    umask 077     # /root/gw-<if>.conf правится через tmp+mv: без umask файл выходил 0644
-    emit_gw_bundle
-    print_gw_instructions
+if [ "$MODE" = "join-drop" ]; then
+    rm -f "$CONF.join-prev" "$GW_CONF_OUT.join-prev"
+    say "join: dropped"
     exit 0
 fi
 
@@ -765,6 +560,22 @@ done
 # Порядок проверок важен: свой же поднятый линк держит порт, и проверка порта
 # первой сообщала бы «порт занят» вместо «уже настроено» — диагноз, уводящий в
 # сторону ровно после успешного запуска.
+if [ "$JOIN" = "1" ]; then
+    [ -n "$JOIN_ID" ] || { say "ОШИБКА: нет JOIN_ID — сопряжение без id не ставлю"; exit 1; }
+    step "0. Линк слота на ключах токена"
+    umask 077
+    if [ "${JOIN_PREV:-0}" = "1" ] && [ -f "$CONF" ] && [ ! -f "$CONF.join-prev" ]; then
+        # замена устройства: прежние ключи — на случай отмены, только раз за сопряжение
+        cp -p "$CONF" "$CONF.join-prev"
+        [ -f "$GW_CONF_OUT" ] && cp -p "$GW_CONF_OUT" "$GW_CONF_OUT.join-prev"
+    fi
+    if [ -f "$CONF" ]; then
+        _jport="$(awk '/^ListenPort/{print $3; exit}' "$CONF")"
+        [ -n "$_jport" ] && LINK_PORT="$_jport"
+        run "awg-quick down $LINK_IF 2>/dev/null || true"
+        run "rm -f $CONF"
+    fi
+fi
 if [ "$REKEY" = "1" ] && [ -f "$CONF" ]; then
     step "0. Смена ключей линка"
     say "  прежний конфиг линка снимается, ключи генерируются заново"
@@ -778,7 +589,6 @@ if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
         say "Интерфейс $LINK_IF поднят — делать нечего."
         say "Состояние:  awg show $LINK_IF"
         say "Конфиг для шлюза: $GW_CONF_OUT"
-        say "Пересобрать файл конфигурации:  $0 --bundle"
     else
         say "Интерфейс $LINK_IF НЕ поднят. Поднять из существующего конфига:"
         say "    awg-quick up $LINK_IF"
@@ -815,7 +625,6 @@ if [ "$MODE" = "plan" ]; then
     say "  3. iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     say "  4. юнит awg-link.service + enable"
     say "  5. записать конфигурацию шлюза в $GW_CONF_OUT"
-    say "  6. собрать файл конфигурации шлюза в $GW_BUNDLE_OUT"
     exit 0
 fi
 
@@ -859,10 +668,10 @@ step "Проверка"
 say "  awg show $LINK_IF"
 say "  ip -br addr show $LINK_IF"
 
-step "6. Файл конфигурации для шлюза"
-emit_gw_bundle
-say "  собран (права 600 — внутри приватный ключ и psk)"
-print_gw_instructions
+if [ "$JOIN" = "1" ]; then
+    say "join: staged"
+    exit 0
+fi
 say ""
 if [ "$LINK_IF" = "awglink" ]; then
     say "Затем на сервере AWG в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""

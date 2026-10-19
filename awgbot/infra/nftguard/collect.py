@@ -190,7 +190,26 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         admin_dns4=_admin_dns_addr() if host_mode else "",
         lan_space4=_lan_space() if host_mode else "",
         wan_ifs=pkg.wan_ifaces() if host_mode else [],
+        quarantine_ifs=pkg.quarantine_ifaces(links) if host_mode else [],
     )
+
+
+JOIN_STAMP = "# awg-bot: сопряжение "
+
+
+def quarantine_ifaces(links: list[str]) -> list[str]:
+    """Линки сопряжения — по штампу в их конфиге (routing-link-setup.sh
+    --join-stage), без БД: смена ключей после кода пишет обычный конфиг, и
+    карантин снят по построению."""
+    out: list[str] = []
+    for name in links:
+        try:
+            text = Path(f"{config.AWG_DIR}/{name}.conf").read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(line.startswith(JOIN_STAMP) for line in text.splitlines()[:5]):
+            out.append(name)
+    return out
 
 
 def _lan_space() -> str:

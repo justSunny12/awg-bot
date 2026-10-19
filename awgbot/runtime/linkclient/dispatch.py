@@ -80,4 +80,8 @@ class DispatchMixin:
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
             return
+        if msg.get("t") in ("join_eph", "join_wrong", "join_refused", "join_ok"):
+            if hasattr(self.services, "join_state"):
+                await self._join_in(msg)
+            return
         log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))

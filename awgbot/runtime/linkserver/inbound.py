@@ -190,7 +190,13 @@ class InboundMixin:
         if kind == "installed":
             # агент нового шлюза первый раз на связи: установщик отработал —
             # админу «✅ … успешно настроен» (крючок main). Снимок к этому
-            # моменту уже принят: агент шлёт installed после него.
+            # моменту уже принят: агент шлёт installed после него. Шлюз,
+            # подключённый командой, — итог сообщением подключения (Т-П9)
+            if hasattr(self.services, "gwjoin_installed"):
+                st = await asyncio.to_thread(self.services.gwjoin_installed, gw.id)
+                if st:
+                    await self._join_event("done", st)
+                    return
             if pkg._on_installed is not None:
                 try:
                     await pkg._on_installed(gw.id)

@@ -70,8 +70,6 @@ KEYS: dict[str, SlotKey] = {
     # I1 живым линкам (gateway_link/rekey_i1.py): план попыток — со слотом, как переход
     "gwlink_i1": SlotKey(SLOT, "rekey"),
     # слот: файл первого применения, расхождение, бот, токен, порт, живость
-    "gw_bundle_issued_at": SlotKey(SLOT, "slot"),
-    "gw_bundle_ssh_allow": SlotKey(SLOT, "slot"),
     "gw_drift_notified": SlotKey(SLOT, "slot"),
     "gw_bot_me": SlotKey(SLOT, "slot"),
     "gw_token_push": SlotKey(SLOT, "slot"),
@@ -82,6 +80,8 @@ KEYS: dict[str, SlotKey] = {
     "routing_gw_{}_down_since": SlotKey(SLOT, "slot"),
     # копия настроек шлюза: нужна новому устройству слота — переживает замену
     "gwkeep": SlotKey(SLOT, "keep", OFFER),
+    # подключение шлюза командой (gwjoin/): запись сопряжения — со слотом
+    "gw_join": SlotKey(SLOT, "join"),
     # шлюз в наборе обновлений (domain/fleet): команда, её итог и повторы
     "gwupd": SlotKey(SLOT, "fleet"),
 }

@@ -72,7 +72,11 @@ class RoutingLivenessMixin:
         return self.__dict__.setdefault("_rt_windows", {}).get(slot_id, [])
 
     def _rt_unavailable(self, slot_id) -> bool:
-        """Недоступен: в окне неуспешных не меньше порога."""
+        """Недоступен: в окне неуспешных не меньше порога; слот в замене
+        устройства (сопряжение, §3.7) — недоступен всегда."""
+        replacing = getattr(self, "gwjoin_replacing", None)
+        if callable(replacing) and replacing(slot_id):
+            return True
         return sum(1 for g in self._rt_window(slot_id) if not g) >= self._rt_fail_need()
 
     def _rt_dead(self, slot_id) -> bool:

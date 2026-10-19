@@ -114,6 +114,13 @@ async def run_gateway() -> None:
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)
 
+    # конец сопряжения (шлюз подключён командой): отметка первого старта —
+    # отсюда, а не от первого запуска процесса; терминалу — имя бота
+    try:
+        services.join_finish_start(getattr(services, "bot_username", "") or "")
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway: конец сопряжения не отмечен: %s", e)
+
     # клиентов в БД нет: AccessMiddleware пускает админа, остальных молча
     # роняет — ровно то, что шлюзу и нужно; роутеры — bot/routers.py
     dp = pkg.make_dispatcher("gateway", services, db)

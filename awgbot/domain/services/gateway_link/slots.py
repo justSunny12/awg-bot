@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import time
 from typing import Optional
 from awgbot.core import config
@@ -62,32 +61,15 @@ class SlotsMixin:
         доверяют адресу, а не устройству. Освободившийся адрес админа нельзя
         отдать следующему устройству любого клиента, пока список у шлюзов не
         сменится — иначе чужой клиент получит доступ к шлюзу и его сети.
-        Источник — снимок канала (что реально стоит в обвязке) и адреса,
-        вшитые в файл первого применения, пока снимок не новее файла: файл
-        выдан, а агент с ним ещё не на связи (новое устройство, замена)."""
+        Источник — снимок канала (что реально стоит в обвязке); шлюз,
+        подключаемый командой, адресов админа до документа не знает вовсе."""
         from awgbot.util import gwlink as _gwlink
         out: set[str] = set()
         for g in self.db.gateways():
             snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
             if isinstance(snap.get("bundle"), dict):
                 out.update(x for x in str(snap["bundle"].get(_gwlink.snap_field("ADMIN_IPS")) or "").split() if x)
-            if not isinstance(snap.get("bundle"), dict) or self._gw_bundle_newer_than_snapshot(g.id):
-                raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
-                out.update(x for x in raw.split() if x)
         return out
-
-    def _gw_bundle_newer_than_snapshot(self, slot_id: int) -> bool:
-        """Файл первого применения выдан после последнего снимка канала: в
-        обвязке может стоять уже он. Метка не читается — считаем, что новее."""
-        issued = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, slot_id)) or ""
-        if not issued:
-            return False
-        snap_at = self.db.get_state(
-            self._gw_slot_key(getattr(self, "_GWLINK_SNAP_AT_KEY", "gwlink_snap_at"), slot_id)) or ""
-        try:
-            return not snap_at or timeutil.elapsed(timeutil.parse_iso(snap_at), timeutil.parse_iso(issued)) >= 0
-        except ValueError:
-            return True
 
     def _gw_name(self, gw) -> str:
         dev = self.db.get_device(gw.device_id)
@@ -245,7 +227,7 @@ class SlotsMixin:
     # ── состояние для экранов ────────────────────────────────────────────────
     def gateway_states(self) -> list[dict]:
         """По слоту: gateway, device, active, preferred, link_ok, handshake_age,
-        issued_at, down_ticks, display. Порядок — предпочтительный, затем номер.
+        down_ticks, display, join. Порядок — предпочтительный, затем номер.
         Сетевых вызовов нет, кроме возраста хендшейка (один exec на слот)."""
         active = self.active_gateway()
         out = []
@@ -267,10 +249,10 @@ class SlotsMixin:
                 "link_ok": link_ok, "handshake_age": age, "unavailable": unavailable,
                 "down_ticks": self._rt_bad_ticks(g.id), "up_ticks": up,
                 "down_since": int(self.db.get_state(f"routing_gw_{g.id}_down_since") or 0),
-                "issued_at": self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, g.id)) or "",
                 "display": self._gw_display(g),
                 "rekey": self.gateway_rekey(g.id),
                 "ping": self.gateway_ping_cached(g.id),
+                "join": self.gwjoin_card(g.id) if hasattr(self, "gwjoin_card") else {},
             })
         return out
 
@@ -352,12 +334,6 @@ class SlotsMixin:
         cfg = self.generate_config(dev.id, for_bundle=True)
         return configgen.gateway_uplink_conf(cfg["conf"])
 
-    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"   # адреса админа, вшитые в последний файл первого применения
-
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
 
-    # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
-    # внутри sed-выражения, которым он вырезает скрипт обвязки; вставка туда
-    # ломала sed, и на шлюз ложился пустой скрипт (наступили: 09.09.2026).
-    _MAIL_MARK_LINE = re.compile(rb"^#__GW_SETUP_BELOW__$", re.M)

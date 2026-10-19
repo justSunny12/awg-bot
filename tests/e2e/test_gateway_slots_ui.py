@@ -47,7 +47,8 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     runs = []
     monkeypatch.setattr(services, "_link_privkey", lambda gw=None: PRIV)
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append((mode, dict(env or {}))))
-    monkeypatch.setattr(services, "gw_bundle_plain", lambda slot=None: (b"PLAIN", f"awg-gw-bundle{slot}.sh"))
+    # токен команды подключения — из конфигов линка, которых в тестах нет
+    monkeypatch.setattr(services, "_gwjoin_token", lambda slot, jid, **k: f"AWGJ1.DUMMY{slot.id}")
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
     token = {}
     monkeypatch.setattr(services, "gw_bot_token", lambda slot=None: token.get(slot or 1, ""))
@@ -79,6 +80,20 @@ def _slot1(services, dev):
 
 def _slot2(services, dev):
     return services.db.gateway_add(dev.id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+
+
+def _code_ok(services, slot: int = 0) -> dict:
+    """Код с экрана шлюза верный — как ввод в чат бота сервера: строка слота
+    и устройство по виду сопряжения, смена ключей после кода начата."""
+    st = services.gwjoin(slot) if slot else services.gwjoin_all()[0]
+    services._gwjoin_live_set(int(st["slot"]), {"code": "K7F2QX", "kp": bytes(32), "sid": "s1"})
+    res = services.gwjoin_code(int(st["slot"]), st["id"], "k7f-2qx")
+    assert res["result"] == "ok", res
+    return res["st"]
+
+
+def _join_msgs(msg) -> list[str]:
+    return [s[1] for s in msg.sent if s[0] == "answer" and "--join AWGJ1." in (s[1] or "")]
 
 
 def _settled(services, slots_n=2):
@@ -235,10 +250,11 @@ async def test_failed_label_input_reasks_and_keeps_the_input_open(services, slot
 
 async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots, fake_bot):
     """«➕ Новое устройство» в новый слот — сразу к выпуску, без подтверждения:
-    у второго шлюза свой бот, токен спрашивается здесь один раз и уезжает
-    в файл именно второго слота. Приглашение «Токен бота шлюза 2», файл
-    «Шлюз 2» и скрипт второго слота — эталоны adm.rt.new_ask.standby и
-    adm.rt.token.done.standby."""
+    у второго шлюза свой бот, токен спрашивается здесь один раз и уедет
+    каналом именно второму слоту. Дальше — команда подключения второго слота
+    (линк на ключах токена), строка слота и устройство «Шлюз 2» — только
+    после верного кода. Приглашение «Токен бота шлюза 2» и сообщение
+    подключения — эталоны adm.rt.new_ask.standby и adm.join.*."""
     _, pi, pi2 = slots
     _slot1(services, pi)
     services.token[1] = "111111111:AA-first-token-value-long-enough"
@@ -251,10 +267,13 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     assert services.token[2].startswith("222222222:")
     assert nav.message_id in [r[2] for r in fake_bot.records if r[0] == "delete_message"], \
         "приглашение ввести токен отслужило"
+    assert [g.id for g in services.db.gateways()] == [1], "строка слота до кода"
+    assert services.runs[-1][0] == "--join-stage" and services.runs[-1][1]["LINK_IF"] == "awglink2"
+    assert "JOIN_PREV" not in services.runs[-1][1], "новому слоту прежних ключей нет"
+    assert len(_join_msgs(msg)) == 1 and not [s for s in msg.sent if s[0] == "document"], msg.sent
+    _code_ok(services, 2)
     gws = services.db.gateways()
     assert [g.id for g in gws] == [1, 2] and services.db.get_device(gws[1].device_id).name == "Шлюз 2"
-    assert services.runs[-1][0] == "--apply" and services.runs[-1][1]["LINK_IF"] == "awglink2"
-    assert len([s for s in msg.sent if s[0] == "document"]) == 1, "файл первого применения не выдан"
 
 
 async def test_replacing_a_machine_still_asks_first(services, slots, fake_bot):
@@ -268,10 +287,10 @@ async def test_replacing_a_machine_still_asks_first(services, slots, fake_bot):
 
 
 async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
-    """Второй слот из «моих устройств» при известном токене: машина
-    назначена во второй слот, файл первого применения выдан. Список без
-    назначенного, вопрос «станет резервным» и подпись файла — эталоны
-    adm.rt.pick_list.standby, adm.rt.pick.standby, adm.rt.mark_yes.standby."""
+    """Второй слот из «моих устройств» при известном токене: команда
+    подключения второго слота, после верного кода машина — во втором слоте.
+    Список без назначенного и вопрос «станет резервным» — эталоны
+    adm.rt.pick_list.standby, adm.rt.pick.standby."""
     _, pi, pi2 = slots
     _slot1(services, pi)
     services.token[2] = "222222222:BB-second-token-value-long-enough"
@@ -280,8 +299,10 @@ async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
     assert services.db.gateway_by_device(pi2.id) is None, "вопрос «станет шлюзом?» уже назначил"
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())
+    assert services.db.gateway_by_device(pi2.id) is None, "назначено до кода"
+    assert len(_join_msgs(nav)) == 1, f"команда подключения не выдана: {nav.sent}"
+    _code_ok(services, 2)
     assert services.db.gateway_by_device(pi2.id).id == 2
-    assert len([s for s in nav.sent if s[0] == "document"]) == 1, f"файл первого применения не выдан: {nav.sent}"
 
 
 async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch):
@@ -398,7 +419,7 @@ def _snap_installed(services, sid: int, online: bool = True) -> None:
 
 async def test_lan_mode_travels_in_the_bundle_and_the_channel_without_a_notification(
         services, slots, monkeypatch):
-    """LAN_MODE, LAN_SUBNETS и RESOLVER едут в окружении сборки — и каналом:
+    """LAN_MODE, LAN_SUBNETS и RESOLVER едут в окружении обвязки — и каналом:
     смена подсетей или режима при живом канале уведомления не даёт, канал
     довезёт сам. Шлюз отверг текущий документ — одно уведомление, режим
     назван словами, а не «без VPN»."""
@@ -407,10 +428,10 @@ async def test_lan_mode_travels_in_the_bundle_and_the_channel_without_a_notifica
     _slot1(services, pi)
     services.gateway_set_lan_subnets(1, "192.168.68.0/24")
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
-    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    env = services._lan_env(services.db.gateway(1))
     assert env["LAN_MODE"] == "0" and env["LAN_SUBNETS"] == "192.168.68.0/24" and env["RESOLVER"] == ""
     services.gateway_set_lan_mode(1, True)
-    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    env = services._lan_env(services.db.gateway(1))
     assert env["LAN_MODE"] == "1" and env["RESOLVER"] == "10.9.1.1"
     _snap_installed(services, 1)
     assert services.gw_bundle_drift_notes() == []
@@ -464,7 +485,7 @@ def test_peer_nets_are_prefixes_of_the_other_transit_slots(services, slots, monk
     assert res["kept"] == ["192.168.1.0/24"] and "conflict" not in res and "peer_others" not in res
     assert services.gateway_peer_nets(1) == ["10.241.0.0/16"], "подсети соседа префиксу не указ"
     assert [n for _, _, n in services.gateway_peer_nets_info()["pairs_named"]] == [["10.240.1.0/24"], ["10.241.1.0/24"]]
-    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    env = services._lan_env(services.db.gateway(1))
     assert env["PEER_LAN_NETS"] == "10.241.0.0/16"
     import pytest as _pt
     with _pt.raises(Exception, match="сначала выключи"):
@@ -623,13 +644,13 @@ async def test_transit_confirmation_carries_the_target_state(services, slots, fa
 
 
 async def test_no_free_slot_is_an_alert_not_a_spinning_button(services, slots, fake_bot, monkeypatch):
-    """gateway_next_slot бросает ServiceError (слоты заняты, gateways_max поднят
+    """Следующий слот не выдаётся — ServiceError (слоты заняты, gateways_max поднят
     без портов/подсетей): раньше никто не ловил — кнопка крутилась, экрана не было.
     Отказ всплывашкой — эталон adm.rt.new_ask.full; диалог ввода не открыт."""
     from awgbot.domain.services import ServiceError
     _, pi, pi2 = slots
     _slot1(services, pi)
-    monkeypatch.setattr(services, "gateway_next_slot", lambda: (_ for _ in ()).throw(ServiceError("свободных слотов нет")))
+    monkeypatch.setattr(services, "_gwjoin_next_slot", lambda: (_ for _ in ()).throw(ServiceError("свободных слотов нет")))
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask", slot=0), services, st)

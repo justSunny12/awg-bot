@@ -51,7 +51,9 @@ hello и свой блок `keep`; upd — команда набора обно�
 прежние или снял переход — «согласие» снимается); итог перехода шлюз сообщает
 `link_done` (часть `rekey`); команда набора обновлений — `upd` (проверки и
 ступень — у агента, ответ `upd_ack`), `upd_commit` (набор зафиксирован —
-удержанное прежнее прочь), `upd_revert` (откат набора). В обратную сторону, кроме снимка и ответов, —
+удержанное прежнее прочь), `upd_revert` (откат набора). Сопряжение (шлюз, подключённый командой, `join`) — своей сессией: hello с
+`join`, `eph`, `host`; с ВПС — `join_eph`, `join_wrong`, `join_refused`,
+`join_ok` и смена ключей `auto=join` (часть `join`). В обратную сторону, кроме снимка и ответов, —
 свои SMB-серверы (`svc`), правки своих списков (`own_ev`: после кнопки в чате
 сразу, `own_changed`; правки мимо агента находит сверка файлов на тике
 монитора, `own_tick`), «установлен» в первый час после установки
@@ -87,6 +89,7 @@ from .uplink import UplinkMixin
 from .keep import KeepMixin
 from .relay import RelayMixin
 from .upd import UpdMixin
+from .join import JoinMixin
 
 log = logging.getLogger(__name__)
 
@@ -98,9 +101,21 @@ def enabled() -> bool:
 
 
 def server_port() -> int:
+    """Порт канала: из юнита обвязки; до него (сопряжение) — из файла сопряжения."""
     from awgbot.infra import gwguard
     raw = gwguard.unit_env("LINK_CHANNEL_PORT")
-    return int(raw) if raw.isdigit() else DEFAULT_PORT
+    if raw.isdigit():
+        return int(raw)
+    try:
+        import json
+        from awgbot.domain.gateway.join import JOIN_FILE
+        with open(JOIN_FILE, encoding="utf-8") as f:
+            port = int(json.loads(f.read() or "{}").get("channel_port") or 0)
+        if 0 < port < 65536:
+            return port
+    except (OSError, ValueError, TypeError):
+        pass
+    return DEFAULT_PORT
 
 
 def server_address() -> str:
@@ -127,7 +142,7 @@ def server_address() -> str:
 
 
 class LinkClient(SessionMixin, OutboxMixin, FeedsMixin, DispatchMixin, RekeyMixin, UplinkMixin, KeepMixin,
-                 RelayMixin, UpdMixin):
+                 RelayMixin, UpdMixin, JoinMixin):
     """Клиент канала на шлюзе — собирается из частей пакета (см. шапку)."""
 
 

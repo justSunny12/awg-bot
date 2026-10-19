@@ -1,10 +1,11 @@
-"""Файл первого применения шлюза в чате ВПС и что с ним происходит дальше.
+"""Файл первого применения шлюза в чате ВПС, оставшийся от прежних выпусков,
+и что с ним происходит дальше.
 
-Шифрованного файла перевыпуска больше нет: кнопка его выпуска в старом
-сообщении — устаревшая.
-
-Файл первого применения — под инструкцией, с той же «⬅️ В меню»
-(`bundle_cancel`): убирает файл и инструкцию, дальше карточка слота. Агент нового шлюза в первый час
+Файлов больше не выдаётся (шлюз подключается командой из бота); шифрованного
+файла перевыпуска нет тем более — кнопка его выпуска в старом сообщении
+устаревшая. Файл прежнего выпуска мог остаться в чате вместе с записью о нём:
+его «⬅️ В меню» (`bundle_cancel`) убирает файл и инструкцию, дальше карточка
+слота. Агент нового шлюза в первый час
 после установки говорит каналом «установлен» (вид `installed`): админу —
 «✅ Шлюз … успешно настроен» со ссылкой на бота шлюза, без кнопок, как
 контент; если файл с инструкцией ещё в чате — они уходят и следом карточка
@@ -19,6 +20,8 @@ adm.ev.gw_installed*); здесь — что удаляется, что
 того, как отслужил; «В меню» уводит не туда или удаляет чужое; две живые
 клавиатуры в чате; уведомление о настроенном шлюзе с грязным именем Telegram отвергает."""
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -35,6 +38,7 @@ pytestmark = pytest.mark.e2e
 slots = _slots_ui.slots
 ADMIN = config.ADMIN_ID
 CANCEL2 = SetCB(sec="rt", act="do", key="bundle_cancel", val="2").pack()
+HOME2 = SetCB(sec="rt", act="do", key="bundle_home", val="2").pack()
 TOKEN2 = "222222222:BB-second-token-value-long-enough"
 
 
@@ -117,14 +121,17 @@ async def _card(services, bot, slot):
 
 
 async def _issue_plain(services, bot, pi2, slot=2):
-    """Назначение устройства Pi2 шлюзом слота 2 из «моих устройств» при
-    известном токене: инструкция и файл первого применения."""
+    """Файл первого применения прежнего выпуска в чате: инструкция и файл
+    под ней, запись о них (слот 2 назначен устройству Pi2)."""
+    if services.db.gateway(slot) is None:
+        _slot2(services, pi2)
     nav = _Msg(bot=bot)
-    cb = FakeCallback(message=nav, user_id=ADMIN, bot=bot)
-    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())
-    assert services.db.gateway_by_device(pi2.id).id == slot, "сцена собрана не так"
-    assert len(nav.docs) == 1, f"файл первого применения не выдан: {nav.sent}"
-    instr = next(s[3] for s in nav.sent if s[0] == "answer" and "--install" in s[1])
+    instr = _Msg(bot=bot, text="инструкция прежнего выпуска")
+    doc = _Msg(bot=bot, caption="файл прежнего выпуска")
+    markup = SimpleNamespace(inline_keyboard=[[SimpleNamespace(text="🛰 Карточка шлюза", callback_data=CANCEL2),
+                                              SimpleNamespace(text="⬅️ В меню", callback_data=HOME2)]])
+    nav.docs.append(("файл прежнего выпуска", markup, doc))
+    services.gw_bundle_msg_set(slot, ADMIN, doc.message_id, instr.message_id)
     return nav, instr, nav.docs[0]
 
 
@@ -152,36 +159,21 @@ async def test_a_bundle_button_on_an_old_message_is_stale(services, slots):
 
 # ── файл первого применения ──────────────────────────────────────────────────
 
-async def test_the_first_install_file_offers_menu_and_is_remembered(services, slots):
-    """Файл первого применения (назначение устройства из «моих»): в записи —
-    сообщение с инструкцией установки над ним, уберётся и она. Подпись и
-    кнопки под файлом с номером нового слота (`bundle_cancel`: вернёт в
-    карточку этого слота) — эталон adm.rt.mark_yes.standby."""
-    _, pi, pi2 = slots
-    _slot1(services, pi)
-    services.token[2] = TOKEN2
-    nav, instr, (_caption, _markup, doc) = await _issue_plain(services, _Bot(), pi2)
-    where = services.gw_bundle_msg_get(2)
-    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id}, \
-        "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
-
-
-async def test_the_first_install_file_of_a_new_machine_is_remembered_too(services, slots):
-    """«Новое устройство» с уже известным токеном — тот же путь выдачи (файл
-    «Шлюз 2» и кнопки под ним — эталон adm.rt.new_yes.standby)."""
+async def test_connecting_a_gateway_sends_no_file(services, slots):
+    """«🛰 Подключить шлюз» из «моих устройств» и новым устройством: в чат —
+    сообщение подключения с командой, ни одного файла и ни одной записи о
+    файле (файлов первого применения больше нет)."""
     _, pi, pi2 = slots
     _slot1(services, pi)
     services.token[2] = TOKEN2
     bot = _Bot()
     nav = _Msg(bot=bot)
     cb = FakeCallback(message=nav, user_id=ADMIN, bot=bot)
-    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes", slot=0), services, FakeState())
-    assert len(nav.docs) == 1, nav.sent
-    _caption, _markup, doc = nav.docs[0]
-    instr = next(s[3] for s in nav.sent if s[0] == "answer" and "--install" in s[1])
-    where = services.gw_bundle_msg_get(2)
-    assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id}, \
-        "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())
+    assert nav.docs == [], "выдан файл"
+    assert any(s[0] == "answer" and "--join AWGJ1." in s[1] for s in nav.sent), nav.sent
+    assert services.gw_bundle_msg_get(2) == {}
+    assert services.db.gateway(2) is None, "строка слота до кода"
 
 
 async def test_menu_under_the_first_install_file_removes_it_and_opens_the_slot_card(services, slots):

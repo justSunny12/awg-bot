@@ -196,7 +196,7 @@ def test_a_verified_sum_of_another_archive_is_not_trusted(tmp_path):
 def test_the_installer_hands_the_verified_sum_to_the_update():
     src = INSTALLER.read_text(encoding="utf-8")
     assert 'export AWG_BOT_VERIFIED_SHA256="$have"' in _func(src, "verify_archive")
-    upd = src[src.index("AWG_UPDATE_KEEP=1 AWG_UPDATE_THEN_BUNDLE"):].splitlines()[0]
+    upd = src[src.index('AWG_UPDATE_KEEP=1 AWG_UPDATE_CLEANUP="$cleanup" exec "$BOT"'):].splitlines()[0]
     assert 'exec "$BOT" update "$TGZ"' in upd and "env -i" not in upd
 
 

@@ -247,6 +247,16 @@ class BroadcastCB(CallbackData, prefix="bc"):
     ref: int = 0
 
 
+class GwJoinCB(CallbackData, prefix="gwj"):
+    """Сообщение подключения шлюза командой: code («✏️ Ввести код»), cancel
+    («⬅️ Отменить» / «↩️ Отменить замену»), cancel_yes, cancel_no (диалог
+    отмены замены). jid — id сопряжения: кнопка относится только к своей
+    заявке (Р20)."""
+    action: str
+    slot: int = 0
+    jid: str = ""
+
+
 class GwMarkCB(CallbackData, prefix="gwm"):
     """Назначение машины в слот шлюза у основного бота: pick_list|pick|mark_yes
     (из моих устройств), new_ask|new_yes (новая машина), remove_ask|remove_yes

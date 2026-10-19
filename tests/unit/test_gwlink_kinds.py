@@ -81,7 +81,7 @@ def _parsed_kinds(pkg: Path) -> set[str]:
     return out
 
 
-SERVER_SENDS = _sent_kinds(SERVER, ("send",))
+SERVER_SENDS = _sent_kinds(SERVER, ("send", "_join_send"))   # сессия сопряжения — своей отправкой
 CLIENT_SENDS = _sent_kinds(CLIENT, ("_send", "_send_result", "pack"))
 SERVER_PARSES = _parsed_kinds(SERVER)
 CLIENT_PARSES = _parsed_kinds(CLIENT)
@@ -152,6 +152,13 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "keep_back": ({"why": "device", "from": "2026-10-12T08:40:00+03:00", "at": "2026-10-12T08:40:00+03:00",
                    "hash": "ab12" * 4, "items": _KEEP_ITEMS, "traffic": {"month": "2026-10", "rx": 10, "tx": 20}},
                   gwlink.PAD_DELTA, "2eea1716541cfd278b9fe3b46632fbc3b403f42e17fd21d21e323dcd9ceef77e"),
+    # сессия сопряжения (подключение шлюза командой)
+    "join_eph": ({"eph": "QUJD" * 10 + "QUI", "slot_name": "Шлюз 2", "until": "2026-10-18T13:07:00+03:00", "slot": 2},
+                 gwlink.PAD_DELTA, "34271f79b32b38aa90c116685877e4d8c3da706519f9f6ed4e1dbfac1dd22917"),
+    "join_wrong": ({"left": 2}, gwlink.PAD_DELTA, "7bfe3e63312a09f61ae87cba340a37e4b0abb2e0f9a02701cd7435470d48ac3b"),
+    "join_refused": ({"why": "code"}, gwlink.PAD_DELTA,
+                     "a7e4eea6e5e890470301d92d4057d438bbf826d8fef24f3bc20887ab0851bb8c"),
+    "join_ok": ({"box": "ab" * 72}, gwlink.PAD_DELTA, "950f8e85c412be152246d4727dd0379fa490cff09302415cc137131833069db4"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {

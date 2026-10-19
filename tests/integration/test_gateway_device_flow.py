@@ -209,25 +209,6 @@ def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):
     assert services.gateway_remove() is None and services.modes == ["--rekey"]
 
 
-def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatch, tmp_path):
-    import builtins, os as _os
-    admin, phone, pi = gw
-    _slot1(services, pi.device_id)
-    dev = services.db.get_device(pi.device_id)
-    (tmp_path / "gw-awglink.conf").write_text("[Interface]\nPrivateKey = " + PRIV + "\n")
-    (tmp_path / "awg-gw-bundle.sh").write_bytes(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n")
-    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    real_open = builtins.open
-    monkeypatch.setattr(builtins, "open", lambda p, *a, **k: real_open(
-        tmp_path / _os.path.basename(str(p)) if str(p).startswith("/root/") else p, *a, **k))
-    seen = {}
-    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: seen.update(env or {}))
-    services.gw_bundle_plain()
-    assert seen["GATEWAY_PUBKEY"] == dev.public_key and seen["GATEWAY_PREV_PUBKEY"] == ""
-    conf = base64.b64decode(seen["UPLINK_B64"]).decode()
-    assert "Table = off" in conf and "DNS" not in conf and dev.private_key in conf
-
-
 def test_migration_hands_the_flag_to_the_twin(services, fake_awg, make_active_client, monkeypatch):
     from awgbot.infra import awg as infra_awg
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
@@ -271,10 +252,9 @@ def test_new_gateway_machine_counts_against_the_limit(gw, services):
     assert services.db.count_devices(admin.id) == 3, "шлюз в счётчике"
 
 
-def test_agent_token_travels_inside_the_first_run_bundle(gw, services, monkeypatch, tmp_path):
-    """Токен агента и ADMIN_ID уезжают в файл первого применения — ради этого
-    установка на шлюзе и не задаёт вопросов. Строки лежат ПОСЛЕ exec: при
-    запуске бандла они данные, а не команды."""
+def test_agent_token_is_kept_on_the_server_until_the_channel_takes_it(gw, services, monkeypatch, tmp_path):
+    """Токен бота шлюза спрашивается на сервере и хранится в его env (0600) —
+    шлюзу его везёт канал после кода; не токен — отказ."""
     admin, phone, pi = gw
     env = tmp_path / "env"
     monkeypatch.setenv("AWG_BOT_ENV", str(env))
@@ -284,15 +264,6 @@ def test_agent_token_travels_inside_the_first_run_bundle(gw, services, monkeypat
     services.set_gw_bot_token("123456789:AA-token-value-long-enough-here")
     assert services.gw_bot_token().startswith("123456789:")
     assert oct(env.stat().st_mode)[-3:] == "600", "в файле токен — права 600"
-
-    plain = b"#!/bin/sh\nexec /opt/awg-gw/routing-gw-setup.sh\n#__GW_SETUP_BELOW__\n# script\n"
-    out = services._bundle_with_agent(plain)
-    text = out.decode()
-    assert 'AGENT_BOT_TOKEN="123456789:AA-token-value-long-enough-here"' in text
-    assert f'AGENT_ADMIN_ID="{config.ADMIN_ID}"' in text
-    assert text.index("exec ") < text.index("AGENT_BOT_TOKEN"), \
-        "строки попали в исполняемую часть бандла"
-    assert text.index("AGENT_BOT_TOKEN") < text.index("#__GW_SETUP_BELOW__")
 
 
 def test_agent_token_write_keeps_the_other_secrets(gw, services, monkeypatch, tmp_path):
@@ -312,14 +283,6 @@ def test_agent_token_write_keeps_the_other_secrets(gw, services, monkeypatch, tm
     lines = env.read_text(encoding="utf-8").splitlines()
     assert sum(1 for l in lines if l.startswith("GW_BOT_TOKEN=")) == 1
     assert "BOT_TOKEN=111:aaa" in lines
-
-
-def test_bundle_without_a_token_stays_as_it_was(gw, services, monkeypatch, tmp_path):
-    """Токена нет — файл первого применения собирается без него, и установка на
-    шлюзе честно вернётся к вопросам, а не получит пустой токен."""
-    monkeypatch.setenv("AWG_BOT_ENV", str(tmp_path / "пусто"))
-    plain = b"#!/bin/sh\nexec x\n#__GW_SETUP_BELOW__\n"
-    assert services._bundle_with_agent(plain) == plain
 
 
 def test_counters_agree_with_the_lists_they_head(gw, services):
@@ -344,11 +307,10 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
     assert len([d for d, _ in rows]) == 2
 
 
-def test_replacing_the_device_drops_the_channel_state_and_quarantines_the_file(gw, services):
+def test_replacing_the_device_drops_the_channel_state(gw, services):
     """Замена устройства слота: снимок, сессия и возможности прежнего уходят —
     иначе новое их наследует, а доверенные адреса шлюзов считаются по обвязке
-    прежнего. Адреса админа из нового файла в карантине, пока снимок канала
-    не новее файла."""
+    прежнего."""
     import json
     from awgbot.util import gwlink, timeutil
     _admin, phone, pi = gw
@@ -361,31 +323,7 @@ def test_replacing_the_device_drops_the_channel_state_and_quarantines_the_file(g
     services.gateway_setup(phone.device_id, slot_id=sid)               # замена устройства
     assert services.gwlink_snapshot(sid) == {}, "снимок прежнего устройства пережил замену"
     assert not services.db.get_state(f"gwlink_caps_{sid}"), "возможности прежнего агента пережили замену"
-    # новое устройство получило файл первого применения: его адреса — в карантине
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, sid), "10.8.1.7")
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_ISSUED_KEY, sid),
-                          timeutil.to_iso(timeutil.now()))
-    assert services.gateway_trusted_ips() == {"10.8.1.7"}
-
-
-def test_a_file_issued_after_the_snapshot_keeps_its_addresses_in_quarantine(gw, services):
-    """Снимок есть, но файл первого применения выдан позже: в обвязке может
-    встать уже он — адреса и снимка, и файла не выдаются; снимок новее
-    файла — только он."""
-    import json
-    from datetime import timedelta
-    from awgbot.util import timeutil
-    _admin, _phone, pi = gw
-    services.gateway_setup(pi.device_id)
-    sid = services.active_gateway().id
-    now = timeutil.now()
-    services.db.set_state(f"gwlink_snap_{sid}", json.dumps({"bundle": {"admin_ips": "10.8.1.3"}}))
-    services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(now - timedelta(minutes=5)))
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_SSH_KEY, sid), "10.8.1.7")
-    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_ISSUED_KEY, sid), timeutil.to_iso(now))
-    assert services.gateway_trusted_ips() == {"10.8.1.3", "10.8.1.7"}
-    services.db.set_state(f"gwlink_snap_at_{sid}", timeutil.to_iso(now + timedelta(minutes=1)))
-    assert services.gateway_trusted_ips() == {"10.8.1.3"}
+    assert services.gateway_trusted_ips() == set(), "адреса прежней обвязки пережили замену"
 
 
 def test_forgetting_a_slot_clears_the_keys_of_the_removed_delivery(services):

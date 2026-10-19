@@ -274,6 +274,9 @@ def gateway_card_text(state: dict, states: list) -> str:
     gw, dev = state["gateway"], state.get("device")
     two = len(states) > 1
     lines = [ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}") + f" — {slot_status(state)}"]
+    if state.get("join"):
+        from .join import join_card_line
+        lines.append(join_card_line(state["join"]))      # замена устройства идёт (Т-П15)
     age = state.get("handshake_age")
     if age is None or age > 300:
         hs = "хендшейка нет"
@@ -355,12 +358,6 @@ def gateway_card_text(state: dict, states: list) -> str:
     if egress:
         more.append(egress)
     more += cfg_more_lines(cfg)
-    issued = state.get("issued_at") or ""
-    if issued:
-        try:
-            more.append(f"файл конфигурации шлюза выпущен {timeutil.fmt_dt_ui(timeutil.parse_iso(issued))}")
-        except ValueError:
-            pass
     if more:
         lines.append(details(";\n".join(more)))
     return "\n".join(lines)

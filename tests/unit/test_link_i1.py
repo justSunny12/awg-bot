@@ -76,14 +76,12 @@ def test_without_a_client_i1_the_link_goes_without_one_and_the_card_says_so(serv
     services.gateway_rekey_stage(1)
     env = [env for mode, env in vps.runs if mode == "--rekey-stage"][0]
     assert "LINK_I1" not in env
-    assert services.gateway_i1_line(1) == ("⚠️ Линк без I1: у клиентского интерфейса сервера AWG нет строки I1 — "
-                                           "линк берёт её оттуда")
+    from awgbot.domain.services.gateway_link.rekey_i1 import T_L2
+    assert services.gateway_i1_line(1) is None, "Т-Л2 — постоянной строкой карточки"
     monkeypatch.setattr(services, "gateway_link_i1", lambda gw: (True, ""))
     _, notes = services.gateway_i1_tick()
-    assert [n.text for n in notes] == [services.gateway_i1_line(1)] and notes[0].silent and notes[0].tg_id == ADMIN
+    assert [n.text for n in notes] == [T_L2] and notes[0].silent and notes[0].tg_id == ADMIN
     assert services.gateway_i1_tick()[1] == [], "Т-Л2 сказано второй раз"
-    _client(monkeypatch, AWG1)
-    assert services.gateway_i1_line(1) is None
 
 
 def test_a_changed_client_i1_plans_a_rekey_for_every_slot_with_another(services, slot, vps, monkeypatch):

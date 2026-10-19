@@ -90,7 +90,11 @@ class SessionMixin:
             hello_body["caps"] = list(CAPS)             # контракт: возможности, не версия
             # копия настроек шлюза: отпечаток и чистота установки — сервер решает,
             # вернуть ли блок; своё агент шлёт только после его ответа
-            if hasattr(self.services, "keep_hello"):
+            joining = await asyncio.to_thread(self.services.join_hello) if hasattr(self.services, "join_hello") else {}
+            if joining:
+                # сессия сопряжения: сервер в ней разбирает только своё (join_*, link_ack)
+                hello_body.update(joining)
+            elif hasattr(self.services, "keep_hello"):
                 hello_body.update(await asyncio.to_thread(self.services.keep_hello))
             self._keep_ready = False
             hello = gwlink.pack(self._channel_key(), "hello", hello_body,
@@ -116,6 +120,9 @@ class SessionMixin:
             self._writer = writer
             self._set_online(True)
             await self._handle(msg)
+            if joining:
+                await self._join_loop(reader, last_seq)
+                return
             # ответ на документ — первым: сервер узнаёт итог раньше, чем снимок с прежними
             # отпечатками после отката, и не повторяет доставку вслепую
             await self.flush_cfg_ack()
@@ -165,6 +172,9 @@ class SessionMixin:
     async def _run(self) -> None:
         attempt = 0
         while True:
+            if self._join_dead():
+                log.info("канал линка: сопряжение закрыто сервером AWG — не подключаюсь")
+                return
             try:
                 await self._connect_once()
             except asyncio.CancelledError:

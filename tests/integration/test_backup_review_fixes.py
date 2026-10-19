@@ -266,12 +266,9 @@ def test_recognize(name, blob, kind):
     assert ins.recognize(name, blob) == kind
 
 
-def test_bundle_names_share_one_rule_with_the_link_script():
-    from awgbot.domain.services.gateway_link.peernets import bundle_file
-    from pathlib import Path
-    assert bundle_file("awglink") == "awg-gw-bundle.sh" and bundle_file("awglink2") == "awg-gw-bundle-awglink2.sh"
-    script = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
-    assert 'GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle.sh}"' in script
-    assert 'GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle-$LINK_IF.sh}"' in script
-    assert "awg-gw-bundle-awglink2.sh" in nb.gateway_not_back("x", empty=True, link_if="awglink2")
-    assert "sudo sh awg-gw-bundle.sh" in nb.gateway_not_back("x", empty=True, link_if="awglink")
+def test_the_empty_server_notice_needs_no_file_or_command():
+    """Пустой сервер после восстановления: путь подключения — кнопками в боте
+    (Т-П17), ни файла конфигурации, ни команды gw-bundle больше нет."""
+    for link_if in ("awglink", "awglink2"):
+        text = nb.gateway_not_back("x", empty=True, link_if=link_if)
+        assert "«🔁 Настроить заново»" in text and "gw-bundle" not in text and "<code>" not in text

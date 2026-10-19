@@ -16,9 +16,8 @@
 #   1) обновить до версии поставки, сохранив данные и настройки — только если
 #      версия на хосте МЕНЬШЕ версии в поставке, иначе пункт говорит «обновление
 #      не нужно». Зовёт `awg-bot update <архив>` с AWG_UPDATE_KEEP=1 (вопроса
-#      об удалении данных нет); шлюзу — ещё AWG_UPDATE_THEN_BUNDLE=<файл
-#      конфигурации из --bundle>, и после обновления файл применяется новым
-#      кодом (`awg-bot reconfigure --role gateway --bundle`);
+#      об удалении данных нет); шлюз с командой подключения (--join) меню не
+#      видит — см. «ШЛЮЗ ОДНОЙ КОМАНДОЙ» ниже;
 #   2) удалить прошлую установку вместе с данными и настройками, затем чистая
 #      установка (второе подтверждение): код, /etc/awg-bot, /var/lib/awg-bot; у
 #      шлюза — ещё `routing-gw-setup.sh --rollback`, /etc/awg-gw, /var/lib/awg-gw,
@@ -33,9 +32,9 @@
 #      чистого листа;
 #   3) отмена. Отмена здесь и отказ на втором подтверждении — не ошибка:
 #      обычная строка лога и код возврата 0.
-# Молча применять файл конфигурации на уже установленном агенте установщик НЕ
-# будет: конфигурацию агенту присылает сервер AWG по каналу конфигурации; файл
-# первого применения на установленном агенте — `sudo sh <файл>` без --install.
+# Конфигурацию установленному агенту присылает сервер AWG по каналу
+# конфигурации; подключить это устройство заново — командой подключения из
+# бота сервера (--join, меню тогда не показывается).
 #
 # Код раскладывается с владельцем root (tar --no-same-owner, chown): архив
 # несёт uid хоста, где его собрали.
@@ -77,8 +76,14 @@
 #                                                            # awg-сервера (иначе порт случайный)
 #   sudo ./awg-bot-install.sh --advanced      # спросить всё, как в прежних версиях
 #   sudo ./awg-bot-install.sh --skip-verify   # своя сборка: не сверять sha256 с релизом
-#   … --role gateway [--bundle <файл>]        # агент шлюза; без --bundle файл ищется
-#                                             # в /root и в каталоге SUDO_USER (из passwd)
+#
+# ШЛЮЗ ОДНОЙ КОМАНДОЙ ИЗ БОТА СЕРВЕРА AWG:
+#   curl -fsSL …/install/awg-bot-install.sh | sudo bash -s -- --join AWGJ1.<токен>
+# Роль gateway подразумевается. Из токена (разбор на месте: base64url → od,
+# поля по смещениям util/jointoken.py; контрольную сумму сверяет `awg-bot
+# join`) — выпуск: качается ровно он (releases/download/v<выпуск>), а не
+# latest. Агент уже стоит — меню нет: вопрос «подключить заново?» и сразу
+# `awg-bot join` (версия другая — сначала `awg-bot update` до выпуска токена).
 #
 set -euo pipefail
 
@@ -92,6 +97,40 @@ SELF_LINK="/usr/local/bin/awg-bot"
 
 c_info=$'\033[0;36m'; c_err=$'\033[0;31m'; c_off=$'\033[0m'
 log() { printf '%s[install]%s %s\n' "$c_info" "$c_off" "$*"; }
+
+JOIN_TOKEN=""; JOIN_SLOT=""; JOIN_VER=""; JOIN_HOST=""
+join_parse() {  # join_parse ТОКЕН → JOIN_SLOT, JOIN_VER, JOIN_HOST; не разобрался — 1
+    local t="$1" b64 pad bytes i n host=""
+    [[ "$t" == AWGJ1.* ]] || return 1
+    b64="${t#AWGJ1.}"
+    [[ "$b64" =~ ^[A-Za-z0-9_-]+$ ]] && (( ${#b64} >= 40 && ${#b64} <= 400 )) || return 1
+    pad=$(( (4 - ${#b64} % 4) % 4 ))
+    b64="$(printf '%s' "$b64" | tr '_-' '/+')"
+    while (( pad > 0 )); do b64="$b64="; pad=$((pad - 1)); done
+    bytes="$(printf '%s' "$b64" | base64 -d 2>/dev/null | od -An -v -tu1)" || return 1
+    local -a b
+    read -r -d '' -a b <<<"$bytes" || true
+    (( ${#b[@]} >= 30 )) || return 1
+    [[ "${b[0]}" == "1" ]] || return 1               # формат токена 1
+    n="${b[18]}"
+    # длина — ровно по формату (после хоста — порты, адрес, два ключа,
+    # обфускация и контрольная сумма: 115 байт): обрезанная команда — Т-Т10
+    # здесь, а не после загрузки выпуска; саму сумму сверяет `awg-bot join`
+    (( n >= 1 && n <= 63 && ${#b[@]} == 19 + n + 115 )) || return 1
+    for (( i = 19; i < 19 + n; i++ )); do
+        host="$host$(printf "\\$(printf '%03o' "${b[$i]}")")"
+    done
+    [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || return 1
+    JOIN_SLOT="${b[1]}"
+    JOIN_VER="${b[2]}.${b[3]}.${b[4]}"
+    [[ "${b[5]}" != "0" ]] && JOIN_VER="$JOIN_VER.${b[5]}"
+    JOIN_HOST="$host"
+    return 0
+}
+join_bad() {  # Т-Т10
+    die "команда подключения повреждена — скопируй её из бота сервера AWG
+целиком"
+}
 die() { printf '%s[install:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
 
 verify_archive() {  # verify_archive TGZ SRC_ROOT — сверить sha256 с релизом GitHub
@@ -175,10 +214,17 @@ while [[ "${1:-}" == --* ]]; do
         --subnet) [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"; EXTRA+=(--subnet "$2"); shift 2 ;;
         --advanced) EXTRA+=(--advanced); shift ;;
         --skip-verify) SKIP_VERIFY=1; shift ;;
-        --bundle) [[ -n "${2:-}" ]] || die "--bundle: нужен путь к файлу"; EXTRA+=(--bundle "$2"); shift 2 ;;
+        --join)   JOIN_TOKEN="${2:-}"; join_parse "$JOIN_TOKEN" || join_bad
+                  ROLE="gateway"; EXTRA+=(--join "$JOIN_TOKEN"); shift 2 ;;
         *) die "неизвестный ключ: $1" ;;
     esac
 done
+
+if [[ -n "$JOIN_TOKEN" ]]; then
+    # ровно выпуск из токена (Р14), а не latest: сервер назвал версию набора
+    [[ -n "${AWG_BOT_TGZ_URL:-}" ]] || TGZ_URL="https://github.com/$REPO/releases/download/v$JOIN_VER/awg-bot.tgz"
+    [[ "$PIPED" -eq 1 ]] && log "подключение шлюза к серверу AWG $JOIN_HOST: слот $JOIN_SLOT, выпуск v$JOIN_VER"
+fi
 
 # ── откуда брать код ─────────────────────────────────────────────────────────
 # Поставка теперь ОДИН архив, и установщик едет внутри него: обычный путь —
@@ -196,8 +242,12 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     command -v tar  >/dev/null 2>&1 || die "нужен tar"
     SRC_ROOT="$(mktemp -d /tmp/awg-bot-install.XXXXXX)"
     log "качаю поставку: $TGZ_URL"
-    curl -fsSL --retry 3 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL" \
-        || { rm -rf "$SRC_ROOT"; die "не скачалась поставка ($TGZ_URL)"; }
+    if ! curl -fsSL --retry 3 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL"; then
+        rm -rf "$SRC_ROOT"
+        [[ -n "$JOIN_TOKEN" ]] && die "не скачался выпуск v$JOIN_VER с GitHub — шлюзу нужен доступ к GitHub
+на время установки. Без него — README, раздел «Шлюз без доступа к GitHub»"
+        die "не скачалась поставка ($TGZ_URL)"
+    fi
     tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" --no-same-owner \
         || { rm -rf "$SRC_ROOT"; die "архив не распаковался — скачан не тот файл?"; }
     # уборка при любом отказе отсюда и до передачи управления: «Отмена» в меню
@@ -313,12 +363,43 @@ wipe_previous() {
     fi
     rm -rf "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
 }
+if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
+    # Агент уже стоит — меню нет (§3.9: повтор той же команды не ставит заново
+    # то, что стоит): вопрос и сразу подключение; версия другая — сначала
+    # обновление до выпуска токена, подключение — следом новым кодом
+    inst_role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    [[ "${inst_role:-client}" == "gateway" ]] \
+        || die "здесь установлен сервер AWG, а команда подключения — для шлюза"
+    have_ver="$(ver_of "$INSTALL_DIR/awgbot/__version__.py")"
+    printf '%s[install]%s агент шлюза уже установлен (v%s) — подключаю это устройство заново\n' \
+        "$c_info" "$c_off" "${have_ver:-?}" >&2
+    read -r -p "по команде: прежние ключи линка будут заменены. Продолжить? [y/N] " __a < /dev/tty
+    [[ "$(printf '%s' "${__a:-n}" | tr '[:upper:]' '[:lower:]')" == "y" ]] || { log "отмена — ничего не изменено"; exit 0; }
+    if [[ -n "$have_ver" && "$have_ver" == "$JOIN_VER" ]]; then
+        case "${SRC_ROOT:-}" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac
+        trap - EXIT
+        exec "$INSTALL_DIR/awg-bot.sh" join "$JOIN_TOKEN"
+    fi
+    if [[ -z "$TGZ" ]]; then
+        TGZ="$(mktemp -d)/awg-bot.tgz"
+        tar czf "$TGZ" -C "$SRC_ROOT" .
+    fi
+    case "${SRC_ROOT:-}" in
+        /tmp/awg-bot-install.*)
+            case "$TGZ" in "$SRC_ROOT"/*) cp "$TGZ" "$(mktemp -d)/awg-bot.tgz"; TGZ="$_" ;; esac
+            rm -rf "$SRC_ROOT" ;;
+    esac
+    cleanup=""
+    case "$TGZ" in /tmp/*) cleanup="$(dirname "$TGZ")" ;; esac
+    log "→ обновление ${have_ver:-?} → v$JOIN_VER, затем подключение"
+    trap - EXIT
+    AWG_UPDATE_KEEP=1 AWG_UPDATE_THEN_JOIN="$JOIN_TOKEN" AWG_UPDATE_CLEANUP="$cleanup" exec "$INSTALL_DIR/awg-bot.sh" update "$TGZ"
+fi
 if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
     # Рабочая установка уже есть — обеим ролям одно и то же меню из трёх
     # пунктов. Обновление — только вверх и с сохранением данных: вопрос
     # «удалить ли данные» здесь не задаётся (AWG_UPDATE_KEEP), для этого есть
-    # второй пункт. Шлюзу после обновления применяется файл конфигурации, с
-    # которым пришли (AWG_UPDATE_THEN_BUNDLE).
+    # второй пункт.
     BOT="$INSTALL_DIR/awg-bot.sh"
     # Роль — та, что установлена (app.yaml), а не флаг запуска: команду для
     # шлюза могли скопировать на ВПС, и диалог обязан говорить о том хосте,
@@ -347,19 +428,13 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
         1)
             if [[ "$newer" -ne 1 ]]; then
                 hint=""
-                [[ "$inst_role" == "gateway" ]] && hint=". Настройки установленному агенту присылает сервер AWG по каналу конфигурации; файл первого применения — так: sudo sh <файл> (без --install)"
+                [[ "$inst_role" == "gateway" ]] && hint=". Настройки установленному агенту присылает сервер AWG по каналу конфигурации"
                 die "обновление не требуется: установлена ${have_ver:-?}, в поставке ${new_ver:-?}$hint"
             fi
             if [[ -z "$TGZ" ]]; then
                 # поставка распакована, архива рядом нет — awg-bot update ждёт архив
                 TGZ="$(mktemp -d)/awg-bot.tgz"
                 tar czf "$TGZ" -C "$SRC_ROOT" .
-            fi
-            bundle=""
-            if [[ "$inst_role" == "gateway" ]]; then
-                for ((i = 0; i < ${#EXTRA[@]}; i++)); do
-                    [[ "${EXTRA[$i]}" == "--bundle" ]] && bundle="${EXTRA[$((i + 1))]:-}"
-                done
             fi
             # временное — прочь: каталог распаковки из трубы и собранный архив
             # никто после exec не уберёт; архив, если он в этом каталоге,
@@ -372,7 +447,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
             esac
             case "$TGZ" in /tmp/*) cleanup="$(dirname "$TGZ")" ;; esac
             log "→ обновление ${have_ver:-?} → $new_ver из $TGZ, данные и настройки сохраняются"
-            AWG_UPDATE_KEEP=1 AWG_UPDATE_THEN_BUNDLE="$bundle" AWG_UPDATE_CLEANUP="$cleanup" exec "$BOT" update "$TGZ" ;;
+            AWG_UPDATE_KEEP=1 AWG_UPDATE_CLEANUP="$cleanup" exec "$BOT" update "$TGZ" ;;
         2)
             printf '%s[install:!]%s Будут удалены: код, /etc/awg-bot (секреты и конфиг), /var/lib/awg-bot (БД, копии)' "$c_err" "$c_off" >&2
             if [[ "$inst_role" == "gateway" ]]; then
@@ -380,7 +455,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
             else
                 printf ',\n  ЛИНКИ ДО ШЛЮЗОВ, обвязка условной маршрутизации, резолвер клиентов, ИНТЕРФЕЙСЫ AWG СО ВСЕМИ ПИРАМИ.\n' >&2
                 printf '  Клиенты останутся БЕЗ ДОСТУПА. Чтобы вернуть его, придётся заново добавить всех в бота\n' >&2
-                printf '  и перевыпустить каждому конфигурацию; шлюзам — новые файлы конфигурации.\n' >&2
+                printf '  и перевыпустить каждому конфигурацию; шлюзы — подключить заново командой из бота.\n' >&2
             fi
             printf '  Это необратимо. Резервную копию, если она нужна, забери с хоста до ответа.\n' >&2
             read -r -p "Точно удалить и поставить заново? [y/N]: " __a < /dev/tty
@@ -394,7 +469,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
         *)
             # отмена — не ошибка: обычная строка установщика и код 0
             if [[ "$inst_role" == "gateway" ]]; then
-                log "отмена — ничего не изменено. Конфигурацию установленному агенту присылает сервер AWG по каналу конфигурации; файл первого применения — так: sudo sh <файл> (без --install)"
+                log "отмена — ничего не изменено. Конфигурацию установленному агенту присылает сервер AWG по каналу конфигурации; подключить это устройство заново — командой подключения из бота сервера AWG"
             else
                 log "отмена — ничего не изменено (для действий: sudo awg-bot update|restore|uninstall)"
             fi

@@ -381,6 +381,18 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     scheduler.add_job(job_fleet, _trig_fleet(), id="fleet", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # сопряжения шлюзов — своим тиком, тоже без условия маршрутизации: срок
+    # команды подключения роняет интерфейс под токен сразу (Р24)
+    async def job_gwjoin():
+        try:
+            from awgbot.runtime import linkserver
+            await linkserver.join_job(services)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("сопряжение: %s", e)
+
+    scheduler.add_job(job_gwjoin, IntervalTrigger(seconds=30, jitter=10, timezone=_TZ), id="gwjoin",
+                      max_instances=1, coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     # окно переезда — частым тиком, см. job_migration_watch
     scheduler.add_job(job_migration_watch, _trig_migration_watch(),
                       id="migration_watch", max_instances=1, coalesce=True,

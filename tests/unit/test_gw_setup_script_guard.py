@@ -138,7 +138,8 @@ def test_gateway_itself_is_closed_to_tunnel_clients(script):
 def test_admin_devices_reach_the_home_lan_others_do_not(script):
     """Устройствам админа с туннеля открыта локальная сеть, прочим — изоляция:
     исключение стоит ВЫШЕ drop по приватным диапазонам."""
-    fwd = script.split("chain forward", 1)[1].split("}", 1)[0]
+    guard = script.split("table $GUARD_TABLE {", 1)[1]           # не карантинная таблица сопряжения
+    fwd = guard.split("chain forward", 1)[1].split("}", 1)[0]
     assert fwd.index('ip saddr @admin4 accept') < fwd.index("@private4 drop")
 
 

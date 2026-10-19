@@ -51,7 +51,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _wan_private_drop(spec)
+        rules = _quarantine_forward(spec) + _wan_private_drop(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -89,6 +89,7 @@ def render(spec: pkg.GuardSpec) -> str:
         "        ct state established,related accept",
         "        ct state invalid drop",
         '        iifname "lo" accept',
+        *_quarantine_input(spec),
         "        ip protocol icmp accept",
         "        meta l4proto ipv6-icmp accept",
     ]
@@ -134,6 +135,7 @@ def render(spec: pkg.GuardSpec) -> str:
             "",
             "    chain forward {",
             "        type filter hook forward priority filter; policy drop;",
+            *_quarantine_forward(spec),
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
@@ -166,6 +168,30 @@ def render(spec: pkg.GuardSpec) -> str:
     out += nat_chain
     out.append("}")
     return "\n".join(out) + "\n"
+
+
+def _quarantine_input(spec) -> list[str]:
+    """Линк сопряжения до верного кода: на ВПС с него — только канал на адрес
+    ВПС в /30 этого линка (адрес — по конфигу; правило канала ниже держит и
+    адрес шлюза), прочее — drop."""
+    if not spec.quarantine_ifs:
+        return []
+    q = nftjson.ifs(spec.quarantine_ifs)
+    ports = [int(spec.link_channel_port), *[int(p) for p in spec.link_channel_extra]] if spec.link_channel_port else []
+    out = []
+    if ports and spec.link_peers4:
+        out.append(f"        iifname {q} ip saddr @{pkg.SET_LINK_PEERS} tcp dport {pkg._ports(ports)} accept")
+    out.append(f"        iifname {q} drop")
+    return out
+
+
+def _quarantine_forward(spec) -> list[str]:
+    """Пересылки с линка сопряжения и на него нет вовсе — раньше любых
+    разрешений транзита и связи подсетей."""
+    if not spec.quarantine_ifs:
+        return []
+    q = nftjson.ifs(spec.quarantine_ifs)
+    return [f"        iifname {q} drop", f"        oifname {q} drop"]
 
 
 def _wan_private_drop(spec) -> list[str]:

@@ -16,7 +16,8 @@ startup — стартовые уведомления и финишеры (ме�
 реконсиляция, итог обновления, имя бота, перезагрузка хоста, пояс после
 обновления); alive — отметка жизни для сторожа обновления по ответу
 Telegram на getUpdates; gateway — сборка и запуск роли
-gateway (run_gateway); client — сборка и запуск основной роли (main).
+gateway (run_gateway); join — агент шлюза в режиме сопряжения, без Telegram
+(run_join); client — сборка и запуск основной роли (main).
 Запуск модулем — __main__.
 """
 
@@ -53,6 +54,7 @@ from .startup import (_menu_command, _notify_migration_needed, _notify_private_d
                       do_reconcile, report_update_result, _sync_bot_identity, _announce_reboot,
                       _announce_zone)
 from .gateway import run_gateway  # noqa: E402
+from .join import join_pending, run_join  # noqa: E402
 from .client import main  # noqa: E402
 
 __all__ = ["Bot", "TelegramUnauthorizedError", "DefaultBotProperties", "ParseMode", "config", "settings", "awg",
@@ -60,4 +62,4 @@ __all__ = ["Bot", "TelegramUnauthorizedError", "DefaultBotProperties", "ParseMod
            "AwgWatcher", "ConfWatcher", "FRESH_INSTALL_MARKER", "ZONE_ADOPTED_MARKER", "log", "log_zone",
            "_menu_command", "_notify_migration_needed", "_notify_private_dns_offer", "do_reconcile",
            "report_update_result", "_sync_bot_identity", "_announce_reboot", "_announce_zone",
-           "run_gateway", "main"]
+           "run_gateway", "join_pending", "run_join", "main"]

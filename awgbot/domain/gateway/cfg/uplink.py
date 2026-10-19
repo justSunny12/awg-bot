@@ -116,7 +116,9 @@ class CfgUplinkMixin:
         """Что делать с разделом uplink: same — то же; keys — отличаются только
         ключи признания, а стоящий аплинк ими признаётся (молча); declined —
         от этого серверного значения уже отказались; emergency — аплинк мёртв
-        по наблюдению (без вопроса); ask — приглашение человеку. И отпечаток
+        по наблюдению (без вопроса); fresh — аплинка нет вовсе, а шлюз
+        подключён командой (код подтверждён): вопрос задать негде, чата ещё
+        нет (без вопроса); ask — приглашение человеку. И отпечаток
         серверного значения. Ключ устройства в конфиге проверка документа уже
         сверила с pubkey слота: сервер называет его конфигом этого шлюза."""
         server = gwcfg.uplink_print(value.get("conf", ""), value.get("pubkey", ""), value.get("prev_pubkey", ""))
@@ -130,6 +132,9 @@ class CfgUplinkMixin:
                 return "keys", server
         if self.cfg_keep().get("uplink") == server:
             return "declined", server
+        fresh = getattr(self, "join_fresh_uplink", None)
+        if not standing and callable(fresh) and fresh():
+            return "fresh", server
         new_pub = self._cfg_uplink_device_pub(value.get("conf", ""))
         if new_pub and new_pub in (value.get("pubkey"), value.get("prev_pubkey")) and self.cfg_uplink_observe():
             return "emergency", server
