@@ -5,7 +5,10 @@
  "device": id | "new", "prev_device": id, "name": имя слота для текстов,
  "version": выпуск для шлюза, "issued", "expires": ISO,
  "sessions", "attempts", "endpoints": [адрес], "hosts": {адрес: hostname},
- "msg": [чат, сообщение], "state": waiting | connected | accepted | linked}
+ "msg": [чат, сообщение], "state": waiting | connected | accepted | linked | closing}
+
+closing — возврат линка начат (срок, отмена, код, `why`) и не удался или ещё
+не сделан: такт сопряжений повторяет его (pairing.gwjoin_tick).
 
 Эфемерные ключи, код и ключ сопряжения в базу не пишутся — только здесь, в
 памяти процесса: перезапуск сервера рвёт сессию, шлюз переподключается, новая
