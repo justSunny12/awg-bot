@@ -199,4 +199,4 @@ def test_no_state_offers_to_go_on_without_a_gateway(fleet):
     from awgbot.bot import keyboards as kb
     for retry in (False, True):
         labels = [b.text for row in kb.fleet_final(retry).inline_keyboard for b in row]
-        assert labels == (["🔁 Повторить", "⬅️ В меню"] if retry else ["⬅️ В меню"])
+        assert labels == (["🔁 Повторить", "⬅️ В меню", "Скрыть"] if retry else ["⬅️ В меню", "Скрыть"])

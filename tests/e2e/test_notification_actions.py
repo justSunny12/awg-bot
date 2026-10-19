@@ -89,14 +89,14 @@ async def test_keyboard_hint_becomes_the_named_bot_keyboard():
     незнакомое имя — «Скрыть», как без клавиатуры."""
     done = Notification(ADMIN, "x", keyboard="update_done")
     assert notifier.note_markup(done) == kb.update_done_menu()
-    assert _rows(notifier.note_markup(done)) == [[("⬅️ В меню", "upd:menu")]]
+    assert _rows(notifier.note_markup(done)) == [[("⬅️ В меню", "upd:menu")], [("Скрыть", "hd")]]
     own = kb.hide_only()
     assert notifier.note_markup(Notification(ADMIN, "x", reply_markup=own, keyboard="update_done")) is own
     assert notifier.note_markup(Notification(ADMIN, "x", keyboard="nope")) is None
     bot = RecordingBot()
     await notifier.send_notifications(bot, [done, Notification(222, "y", keyboard="nope")])
     by = {c[0]: c[2] for c in bot.calls}
-    assert _rows(by[ADMIN]) == [[("⬅️ В меню", "upd:menu")]]
+    assert _rows(by[ADMIN]) == [[("⬅️ В меню", "upd:menu")], [("Скрыть", "hd")]]
     assert _rows(by[222]) == [[("Скрыть", HideCB().pack())]]
 
 

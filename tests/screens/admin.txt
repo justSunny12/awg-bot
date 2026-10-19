@@ -3015,6 +3015,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
   [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 
 ### adm.fleet.rolled_back — набор откатился: причина и шлюз, «🔁 Повторить» · «⬅️ В меню»
 > call такт набора
@@ -3025,6 +3026,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 «<a href="https://t.me/test_bot?start=gw-3">Дача</a>» — не на связи с 12.09, остался на v1.2.3
 ↩️ Сервер AWG — вернул v1.2.3
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 
 ### adm.fleet.rollback_failed — откат не прошёл: шлюз остался на новой, команд нет до «🔁 Повторить»
 > call такт набора
@@ -3032,6 +3034,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ <b>Откат не удался</b>: «<a href="https://t.me/test_bot?start=gw-1">NASPi</a>» остался на v1.3.0 — прежней версии нет
 Сервер AWG — v1.2.3. Пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт; журнал шлюза: <code>journalctl -u awg-bot -o short-iso</code>
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 
 ### adm.ev.fleet.catchup — шлюз вышел на связь и обновлён — без звука
 > call догон
@@ -3064,6 +3067,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 «<a href="https://t.me/test_bot?start=gw-2">Pi4</a>» (офис) — не на связи с 12.09, остался на v1.2.3
 ⚠️ Сервер AWG — обновление не удалось, вернул v1.2.3: обновлённый сервер AWG не вышел на связь за 10 минут
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 + send #2
 ⚠️ Обновление до v1.3.0 отменено: обновлённый сервер AWG не вышел на связь за 10 минут — вернул v1.2.3. Журнал: <code>journalctl -u awg-bot -o short-iso</code>
   [Скрыть | hd]
@@ -4945,6 +4949,7 @@ IMAP и SMTP отвечают, вход выполнен
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
   [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 
 ### adm.ev.upd_failed — обновление не применилось
 > call report_update_result
@@ -4952,6 +4957,7 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 ⚠️ Обновление до v1.3.0 не применилось, работает v1.2.3 — журнал: <code>journalctl -u awg-bot-selfupdate* -o short-iso</code>
   [⬅️ В меню | upd:menu]
+  [Скрыть | hd]
 
 ### adm.ev.restarted — бот вернулся после перезапуска
 > call restore_panel_after_restart
