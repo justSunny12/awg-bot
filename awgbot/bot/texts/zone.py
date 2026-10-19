@@ -27,7 +27,9 @@ def zone_adopted(br, prev: str = "") -> str:
     old = zone.load(prev) if prev and prev != config.TZ_NAME else None
     if old is not None:
         line += f", раньше был {zone_name_label(prev, old)}"
-    line += "\nЧасы в расписаниях (бэкап, проверка обновлений, чистка) — тоже в этом поясе"
+    # расписания — по роли: у шлюза ни бэкапа, ни проверки обновлений нет
+    what = "бэкап, проверка обновлений, чистка" if br.host == "сервер" else "монитор, списки"
+    line += f"\nЧасы в расписаниях ({what}) — тоже в этом поясе"
     return (line + f"\nДругой пояс — {_SET_ZONE} на "
             f"{br.host_loc} и «🔁 Перезапуск бота» в «⚙️ Настройки → 🔧 Сервис»")
 

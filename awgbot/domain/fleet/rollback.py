@@ -130,6 +130,8 @@ class FleetRollbackMixin:
             target = self.fleet_target()
             if target is None:
                 return "nothing"
+            if self._fleet_links_busy():
+                return "links"                            # итог и «🔁 Повторить» остаются на экране до конца смены ключей
             run["state"] = ""                             # ход закрыт — новый с того, что стоит
             self.fleet_run_set(run)
             return self.fleet_start(target.tag)

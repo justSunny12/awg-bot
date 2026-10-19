@@ -124,11 +124,9 @@ class CfgDecideMixin:
         """Ответ человека на вопрос: принять с сервера — применить отложенное
         значение (памятка стирается); оставить своё — памятка с серверным
         отпечатком. Возвращает {"ok", "section", "accepted", "note", "gen", "hash",
-        "print"} — для ответа серверу и итога в чате; вопроса нет — ok False."""
-        with self._cfg_q_lock:
-            return self._cfg_answer(section, accept)
-
-    def _cfg_answer(self, section: str, accept: bool) -> dict:
+        "print"} — для ответа серверу и итога в чате; вопроса нет — ok False.
+        Замок — только на записи (cfg_hold, cfg_release): само применение ходит
+        в сеть (проверка почты, проба аплинка), держать под ним поток канала нельзя."""
         wait = self.cfg_wait().get(section)
         value = self.cfg_pending().get(section)
         if not wait or value is None:

@@ -321,6 +321,9 @@ class CfgMixin:
             return ack
         ack["hash"] = doc["hash"]
         ack["gen"] = max(int(ack.get("gen") or 0), int(doc["gen"]))
+        # отказы прежнего документа уже ни о чём: расхождения нет — каждый раздел
+        # либо совпал со стоящим, либо держится в wait/declined
+        ack["failed"] = {}
         self.db.set_state(self._gwlink_key(self._GWCFG_ACK_KEY, gw.id), json.dumps(ack, ensure_ascii=False))
         return ack
 

@@ -81,12 +81,12 @@ def _decrypt_one(path: Path, *, key_b64: str | None, out_arg: str | None, from_d
     dst = _out_path(path, out_arg)
     # внутри — база с секретами: файл только владельцу, а не по umask (0644 под sudo)
     fd = os.open(str(dst), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
     try:
-        os.chmod(dst, 0o600)                              # файл уже был — права тоже 0600
+        os.fchmod(fd, 0o600)                              # файл уже был — права 0600 до записи, не после
     except OSError:
         pass
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
     return dst
 
 
