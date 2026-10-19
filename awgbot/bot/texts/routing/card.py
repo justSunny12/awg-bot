@@ -273,10 +273,14 @@ def gateway_card_text(state: dict, states: list) -> str:
     строками; редкое — под «подробнее»."""
     gw, dev = state["gateway"], state.get("device")
     two = len(states) > 1
-    lines = [ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}") + f" — {slot_status(state)}"]
+    head = ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}")
     if state.get("join"):
+        # замена устройства идёт (Т-П15): статус слота — она, а не «🟢 Активен»
+        # линка, который уже на ключах команды (ui-7)
         from .join import join_card_line
-        lines.append(join_card_line(state["join"]))      # замена устройства идёт (Т-П15)
+        lines = [f"{head} — {join_card_line(state['join'])}"]
+    else:
+        lines = [f"{head} — {slot_status(state)}"]
     age = state.get("handshake_age")
     if age is None or age > 300:
         hs = "хендшейка нет"

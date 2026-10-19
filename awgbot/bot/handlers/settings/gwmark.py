@@ -77,6 +77,9 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
         name = dev.name if dev is not None else texts.gateway_new_name(token_slot)
         await ask_here(cb, services, state, texts.gateway_ask_token(name), "set_rt_gw", slot or 0)
         return
+    if not _first_press(cb):
+        await cb.answer(ui.toast(JOIN_PREPARING), show_alert=True)   # двойное нажатие — одна команда
+        return
     await cb.answer()
     await _screen_done(cb, services)
     await _gateway_setup_go(cb.message, services, callback_data.device_id, slot)
@@ -117,6 +120,9 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await ask_here(cb, services, state, texts.gateway_ask_token(texts.gateway_new_name(token_slot)),
                        "set_rt_gw", slot or 0)
         return
+    if not _first_press(cb):
+        await cb.answer(ui.toast(JOIN_PREPARING), show_alert=True)   # двойное нажатие — одна команда
+        return
     await cb.answer()
     await _screen_done(cb, services)
     await _gateway_setup_go(cb.message, services, slot=slot)
@@ -136,6 +142,9 @@ async def gateway_same_ask(cb: CallbackQuery, callback_data: GwMarkCB, services)
 
 @router.callback_query(GwMarkCB.filter(F.action == "same_yes"))
 async def gateway_same_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    if not _first_press(cb):
+        await cb.answer(ui.toast(JOIN_PREPARING), show_alert=True)   # двойное нажатие — одна команда
+        return
     await cb.answer()
     await _screen_done(cb, services)
     await gwjoin_go(cb.message, services, slot=_slot_of(callback_data), same=True)
@@ -173,6 +182,26 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         await _gateway_setup_go(message, services, int(device_id), slot)
         return
     await _gateway_setup_go(message, services, slot=slot)
+
+
+JOIN_PREPARING = "Команда подключения уже готовится — она придёт следующим сообщением"
+_PRESSED: dict[tuple[int, int], float] = {}
+
+
+def _first_press(cb: CallbackQuery) -> bool:
+    """Первое нажатие «Подключить / Заменить / Настроить заново» под этим
+    сообщением (ui-4): второе, пришедшее раньше, чем экран сменился, —
+    вторая команда и второй слот. Помним минуту."""
+    import time
+    now = time.monotonic()
+    for k, at in list(_PRESSED.items()):
+        if now - at > 60:
+            _PRESSED.pop(k, None)
+    key = (cb.message.chat.id, cb.message.message_id)
+    if key in _PRESSED:
+        return False
+    _PRESSED[key] = now
+    return True
 
 
 async def _screen_done(cb: CallbackQuery, services) -> None:

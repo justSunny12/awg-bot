@@ -44,6 +44,16 @@ class JoinMixin:
             if self._join_dead():
                 break
 
+    async def _maybe_join_done(self) -> None:
+        """Полный агент, сопряжение доведено: серверу join_done (итог Т-П9);
+        файл сопряжения уйдёт по ответу join_done_ok."""
+        pending = getattr(self.services, "join_done_pending", None)
+        if not callable(pending):
+            return
+        body = await asyncio.to_thread(pending)
+        if body:
+            await self._send("join_done", body, pad=gwlink.PAD_DELTA)
+
     async def _join_in(self, msg: dict) -> None:
         kind = msg.get("t")
         if kind == "join_eph":

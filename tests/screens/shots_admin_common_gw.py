@@ -29,6 +29,9 @@ def _routing(services, mp, *, enabled: bool = True, awake: bool = True) -> None:
     from awgbot.infra import routing as rt
     mp.setattr(config, "ROUTING_ENABLED", awake)
     services.routing_provisioned = lambda: True
+    # версия снимка (1.2.3) не из выпусков фейка: команда подключения — как
+    # у сервера из выпуска; вариант «китом» — свой снимок (adm.join.kit)
+    mp.setattr(services, "_gwjoin_kit", lambda: False)
     # выключатель — настоящая настройка снимка (фейк маршрутизации держит его
     # константой): кнопки «Включить» и «Выключить» меняют экран, как в бою
     settings.set_value("app.routing.enabled", enabled)

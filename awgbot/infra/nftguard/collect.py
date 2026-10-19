@@ -191,10 +191,29 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         lan_space4=_lan_space() if host_mode else "",
         wan_ifs=pkg.wan_ifaces() if host_mode else [],
         quarantine_ifs=pkg.quarantine_ifaces(links) if host_mode else [],
+        quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)) if host_mode else [],
     )
 
 
 JOIN_STAMP = "# awg-bot: сопряжение "
+
+
+def quarantine_pairs(names: list[str]) -> list[tuple[str, str, str]]:
+    """(линк, адрес ВПС, адрес шлюза) линков сопряжения — по Address стороны
+    ВПС в /30 (шлюз — следующий адрес): канал открыт только этой паре."""
+    out = []
+    for name in names:
+        try:
+            text = Path(f"{config.AWG_DIR}/{name}.conf").read_text(encoding="utf-8")
+            addr = next(line.split("=", 1)[1].strip() for line in text.splitlines()
+                        if line.strip().lower().startswith("address"))
+            iface = ipaddress.ip_interface(addr.split(",")[0].strip())
+        except (OSError, StopIteration, ValueError):
+            continue
+        if iface.version != 4:
+            continue
+        out.append((name, str(iface.ip), str(iface.ip + 1)))
+    return out
 
 
 def quarantine_ifaces(links: list[str]) -> list[str]:

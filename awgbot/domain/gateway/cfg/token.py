@@ -49,12 +49,22 @@ class CfgTokenMixin:
         except (TypeError, ValueError):
             return "bad", 0
 
+    def _token_join_waits(self) -> bool:
+        """Сопряжение после кода ждёт полного старта агента (accepted / linked)."""
+        state = getattr(self, "join_state", None)
+        return callable(state) and state().get("state") in ("accepted", "linked")
+
     def cfg_token_apply(self, value: dict) -> dict:
         """{"state": same | applied | failed | retry, "error"}. applied — env
         переписан, нужен перезапуск агента (его делает клиент канала после
         ответа серверу)."""
         new = str(value.get("value") or "").strip()
         cur = config.BOT_TOKEN
+        if new and new == cur and self._token_join_waits():
+            # агент, стоявший раньше (Т-Т11), с тем же ботом: токен тот же, но
+            # конец сопряжения наступает только на старте полного агента
+            log.info("gateway: токен бота тот же — перезапуск, чтобы довести подключение командой")
+            return {"state": "applied", "error": ""}
         if not new or new == cur:
             return {"state": "same", "error": ""}
         how, bot_id = self._cfg_token_getme(new)

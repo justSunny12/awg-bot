@@ -213,14 +213,20 @@ def test_after_the_right_code_cancel_is_impossible(services, vps):
     assert services.gwjoin_cancel(1, res["state"]["id"]) == {}
 
 
-def test_the_join_ok_is_repeated_to_a_session_reconnecting_after_the_code(services, vps):
-    """Сессия оборвалась после верного кода — новая получает «accepted» и
-    тот же путь: join_ok и смену ключей (слушатель доведёт)."""
+def test_the_join_ok_is_repeated_only_to_the_gateway_whose_code_was_entered(services, vps):
+    """Сессия оборвалась после верного кода — новая сессия ТОГО ЖЕ шлюза (тот
+    же эфемерный ключ, агент держит пару до join_ok) получает «accepted» и
+    тот же путь: join_ok и смену ключей. Чужой hello с тем же токеном и своим
+    эфемерным ключом — отказ (quar-1): ни секретов, ни постоянных ключей."""
     res, gwside = _issue(services)
     connect(services, gwside, 1)
     services.gwjoin_code(1, res["state"]["id"], gwside.code)
-    out = connect(services, Gateway(res["command"]), 1)
+    assert services.gwjoin_hello(1, Gateway(res["command"]).hello()) == {"ok": False, "why": "gone"}
+    again = Gateway(res["command"])
+    again.priv, again.pub = gwside.priv, gwside.pub              # тот же шлюз — та же пара
+    out = connect(services, again, 1)
     assert out["accepted"] and out["body"]["accepted"] is True
+    assert joinsas.unseal(again.kp, services.gwjoin_ok_body(1)["box"])["admin_id"] == ADMIN
 
 
 # ── сроки, отмена, новая команда ─────────────────────────────────────────────

@@ -114,14 +114,17 @@ class JoinMixin:
         if sess is not None:
             await self._join_send(sess, "join_wrong", {"left": int(left)})
 
-    async def join_close(self, slot: int, why: str) -> None:
-        """Отказ шлюзу (если сессия жива) — затем интерфейс под токен прочь сразу (Р24)."""
+    async def join_close(self, slot: int, why: str) -> str:
+        """Отказ шлюзу (если сессия жива) — затем интерфейс под токен прочь сразу
+        (Р24). "" — сделано; иначе причина: запись осталась «closing», такт
+        сопряжений повторит возврат."""
         sess = self._join_sessions.pop(slot, None)
         if sess is not None:
             await self._join_send(sess, "join_refused", {"why": why})
             await self._close_session(sess)
-        await asyncio.to_thread(self.services.gwjoin_revert, slot, why)
+        err = await asyncio.to_thread(self.services.gwjoin_revert, slot, why)
         await self.ensure()                           # слушатель на адресе линка — прочь
+        return err or ""
 
     async def _join_link_ack(self, slot: int, sess: _Session, msg: dict) -> None:
         action, notes = await asyncio.to_thread(self.services.gateway_rekey_ack_in, slot, msg)
@@ -159,5 +162,14 @@ class JoinMixin:
             log.warning("канал линка: такт сопряжений: %s", e)
             return
         for st in closed:
-            await self.join_close(int(st["slot"]), "expired")
-            await self._join_event("expired", st)
+            event = st.get("event") or "expired"
+            if event == "stale":
+                await self._join_event("stale", st)          # запись уже снята — только сказать
+                continue
+            err = await self.join_close(int(st["slot"]), event)
+            if err:
+                # возврат не удался — такт повторит; человеку — один раз (quar-4)
+                if await asyncio.to_thread(self.services.gwjoin_revert_told, int(st["slot"]), str(st.get("id") or "")):
+                    await self._join_event("revert_failed", st, err=err)
+                continue
+            await self._join_event(event, st)

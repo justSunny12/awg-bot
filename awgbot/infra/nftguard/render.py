@@ -66,6 +66,15 @@ def render(spec: pkg.GuardSpec) -> str:
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
                      "    }"]
+        q_in = _quarantine_input(spec)
+        if q_in:
+            # карантин сопряжения — и без фильтра: на сам ВПС с линка сопряжения
+            # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
+            block += ["", "    chain input {",
+                      "        type filter hook input priority filter; policy accept;",
+                      "        ct state established,related accept",
+                      *q_in,
+                      "    }"]
         out = head + [
             "# Форма NAT-only: firewall.enabled=false, фильтра нет, только NAT клиентов.",
             f"table {pkg.TABLE}",
@@ -179,8 +188,11 @@ def _quarantine_input(spec) -> list[str]:
     q = nftjson.ifs(spec.quarantine_ifs)
     ports = [int(spec.link_channel_port), *[int(p) for p in spec.link_channel_extra]] if spec.link_channel_port else []
     out = []
-    if ports and spec.link_peers4:
-        out.append(f"        iifname {q} ip saddr @{pkg.SET_LINK_PEERS} tcp dport {pkg._ports(ports)} accept")
+    if ports:
+        # каждый линк — своей паре адресов: шлюз этого линка к адресу ВПС
+        # этого линка, а не любой адрес шлюзов на любой локальный адрес
+        for iface, vps, gw in spec.quarantine_pairs:
+            out.append(f'        iifname "{iface}" ip saddr {gw} ip daddr {vps} tcp dport {pkg._ports(ports)} accept')
     out.append(f"        iifname {q} drop")
     return out
 

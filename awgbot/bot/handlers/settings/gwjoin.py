@@ -107,18 +107,19 @@ async def gwjoin_code_received(message: Message, state: FSMContext, services):
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение и переспросы — прочь
-    st = res.get("st") or {}
+    st = await _with_ref(services, res.get("st") or {})
     if result == "ok":
-        await _edit_msg(message.bot, st, jt.join_accepted(st))
+        # «⬅️ В меню» — сообщение не тупик (ui-1); итог Т-П9 заменит его само
+        await _edit_msg(message.bot, st, jt.join_accepted(st), kb.gwjoin_final())
         await linkserver.join_accepted(slot)
         return
-    if result == "refused":
-        await linkserver.join_close(services, slot, "code")
-        await _edit_msg(message.bot, st, jt.join_refused(st), kb.gwjoin_final())
-        return
-    if result == "expired":
-        await linkserver.join_close(services, slot, "expired")      # интерфейс под токен — сразу (Р24)
-        await on_join_event(message.bot, services, "expired", st, {})
+    if result in ("refused", "expired"):
+        err = await linkserver.join_close(services, slot, "code" if result == "refused" else "expired")
+        if err:
+            await call(services.gwjoin_revert_told, slot, st.get("id") or "")   # сказано — такт не повторит
+            await _edit_msg(message.bot, st, jt.join_revert_failed(st, err), kb.gwjoin_final())
+        else:
+            await on_join_event(message.bot, services, "code" if result == "refused" else "expired", st, {})
         return
     if result == "wait":
         await ask_tracked(message, services, jt.JOIN_CODE_WAIT)
@@ -126,69 +127,104 @@ async def gwjoin_code_received(message: Message, state: FSMContext, services):
     await ask_tracked(message, services, jt.JOIN_GONE)
 
 
+async def _with_ref(services, st: dict) -> dict:
+    """Запись с именем-ссылкой на карточку слота (если строка слота есть)."""
+    if not st:
+        return st
+    from awgbot.domain.notices.backup import gw_ref
+    slot = int(st.get("slot") or 0)
+    has_row = await call(services.db.gateway, slot) is not None if slot else False
+    ref = gw_ref(str(st.get("name") or ""), "", slot=slot if has_row else 0,
+                 bot_username=getattr(services, "bot_username", "") or "")
+    return {**st, "ref": ref}
+
+
+async def _join_text_back(services, st: dict) -> tuple[str, object] | None:
+    """Сообщение подключения как есть сейчас (после «⬅️ Отмена» в диалоге отмены)."""
+    cmd = await call(services.gwjoin_command_for, st)
+    if not cmd:
+        return None
+    event = "connected" if st.get("state") == "connected" else ""
+    return (jt.join_message(st, cmd, event=event),
+            kb.gwjoin_message(st["slot"], st["id"], replace=st.get("kind") != "new"))
+
+
+def _on_join_message(cb: CallbackQuery, st: dict) -> bool:
+    msg = st.get("msg") or []
+    return len(msg) == 2 and cb.message is not None and int(msg[1]) == cb.message.message_id
+
+
 @router.callback_query(GwJoinCB.filter(F.action == "cancel"))
-async def gwjoin_cancel(cb: CallbackQuery, callback_data: GwJoinCB, services):
+async def gwjoin_cancel(cb: CallbackQuery, callback_data: GwJoinCB, services, state: FSMContext):
     st = await call(services.gwjoin, callback_data.slot)
     if not st or st.get("id") != callback_data.jid or st.get("state") not in ("waiting", "connected"):
         await cb.answer(ui.toast(jt.JOIN_GONE), show_alert=True)
         return
-    await cb.answer()
     if st.get("kind") in ("replace", "same"):
-        try:
-            await cb.message.edit_reply_markup(reply_markup=kb.gwjoin_cancel_confirm(st["slot"], st["id"]))
-        except Exception:                                 # noqa: BLE001
-            pass
-        await cb.message.answer(jt.join_cancel_ask(st), reply_markup=kb.gwjoin_cancel_confirm(st["slot"], st["id"]))
+        await cb.answer()
+        # подтверждение — на самом сообщении подключения (ui-2): текст Т-П14 и
+        # «⬅️ Отмена» · «↩️ Отменить замену»; «⬅️ Отмена» вернёт сообщение
+        st = await _with_ref(services, st)
+        await _edit_msg(cb.bot, st, jt.join_cancel_ask(st), kb.gwjoin_cancel_confirm(st["slot"], st["id"]))
         return
-    await _cancel(cb, services, callback_data)
+    await _cancel(cb, services, callback_data, state)
 
 
 @router.callback_query(GwJoinCB.filter(F.action == "cancel_yes"))
-async def gwjoin_cancel_yes(cb: CallbackQuery, callback_data: GwJoinCB, services):
-    await cb.answer()
-    await _cancel(cb, services, callback_data)
+async def gwjoin_cancel_yes(cb: CallbackQuery, callback_data: GwJoinCB, services, state: FSMContext):
+    await _cancel(cb, services, callback_data, state)
 
 
 @router.callback_query(GwJoinCB.filter(F.action == "cancel_no"))
 async def gwjoin_cancel_no(cb: CallbackQuery, callback_data: GwJoinCB, services):
-    """Диалог отмены замены закрыт: кнопки сообщения подключения — назад."""
-    await cb.answer()
+    """Диалог отмены замены закрыт: сообщение подключения — как было."""
     st = await call(services.gwjoin, callback_data.slot)
-    if cb.message.text and cb.message.text.startswith("↩️"):
-        try:
-            await cb.message.delete()
-        except Exception:                                 # noqa: BLE001
-            pass
-    if st.get("id") == callback_data.jid:
-        msg = st.get("msg") or []
-        if len(msg) == 2:
-            try:
-                await cb.bot.edit_message_reply_markup(chat_id=int(msg[0]), message_id=int(msg[1]),
-                                                       reply_markup=kb.gwjoin_message(st["slot"], st["id"],
-                                                                                      replace=True))
-            except Exception:                             # noqa: BLE001
-                pass
+    if st.get("id") != callback_data.jid or st.get("state") not in ("waiting", "connected"):
+        await cb.answer(ui.toast(jt.JOIN_GONE), show_alert=True)
+        return
+    await cb.answer()
+    back = await _join_text_back(services, st)
+    if back is not None:
+        await _edit_msg(cb.bot, st, *back)
 
 
-async def _cancel(cb: CallbackQuery, services, callback_data: GwJoinCB) -> None:
+async def _cancel(cb: CallbackQuery, services, callback_data: GwJoinCB, state: FSMContext) -> None:
     st = await call(services.gwjoin_cancel, callback_data.slot, callback_data.jid)
     if not st:
+        await cb.answer(ui.toast(jt.JOIN_GONE), show_alert=True)      # не молчим (ui-2)
         return
+    await cb.answer()
+    data = await state.get_data()
+    if str(data.get("gwjoin_id") or "") == st["id"]:
+        # ввод кода к этой заявке был открыт — сброшен вместе с ней (ui-5)
+        await state.clear()
+        await cleanup_content(cb.bot, services, cb.message.chat.id)
     from awgbot.runtime import linkserver
-    await linkserver.join_close(services, st["slot"], "cancel")   # интерфейс под токен — сразу (Р24)
-    if cb.message.text and cb.message.text.startswith("↩️"):
-        try:
-            await cb.message.delete()                     # диалог отмены замены отслужил
-        except Exception:                                 # noqa: BLE001
-            pass
-    await _edit_msg(cb.bot, st, jt.join_cancelled(st), kb.gwjoin_final())
+    err = await linkserver.join_close(services, st["slot"], "cancel")   # интерфейс под токен — сразу (Р24)
+    if err:
+        await call(services.gwjoin_revert_told, st["slot"], st["id"])          # сказано — такт не повторит
+    st = await _with_ref(services, st)
+    text = jt.join_revert_failed(st, err) if err else jt.join_cancelled(st)
+    await _edit_msg(cb.bot, st, text, kb.gwjoin_final())
+    if not _on_join_message(cb, st):
+        # отменили с экрана «Шлюзы» (ui-3): экран — заново, уже без строки
+        from .render import gateways_screen
+        from awgbot.bot.handlers.common import edit
+        await edit(cb, *await gateways_screen(services))
 
 
 # ── события хода сопряжения (крючок слушателя канала) ────────────────────────
 
 async def on_join_event(bot, services, event: str, st: dict, extra: dict) -> None:
-    """Шлюз подключился, заново, с двух адресов; срок вышел; готово."""
+    """Шлюз подключился, заново, с двух адресов; срок вышел; не доведено;
+    готово; возврат после неудачного — по причине закрытия."""
+    st = await _with_ref(services, st)
     if event in ("connected", "reconnected", "two"):
+        if st.get("state") == "accepted":
+            # код уже верный (перезапуск сервера, сессия заново) — сообщение не
+            # откатывается к команде (ui-6)
+            await _edit_msg(bot, st, jt.join_accepted(st), kb.gwjoin_final())
+            return
         # токена в записи нет — команда собирается заново из конфигов линка
         cmd = await call(services.gwjoin_command_for, st)
         if not cmd:
@@ -196,11 +232,23 @@ async def on_join_event(bot, services, event: str, st: dict, extra: dict) -> Non
         await _edit_msg(bot, st, jt.join_message(st, cmd, event=event),
                         kb.gwjoin_message(st["slot"], st["id"], replace=st.get("kind") != "new"))
         return
-    if event == "expired":
-        await _edit_msg(bot, st, jt.join_expired(st), kb.gwjoin_final())
+    final = {"expired": jt.join_expired, "stuck": jt.join_stuck, "stale": jt.join_stale,
+             "cancel": jt.join_cancelled, "code": jt.join_refused}.get(event)
+    if final is not None:
+        text = final(st)
+        await _edit_msg(bot, st, text, kb.gwjoin_final())
+        if event in ("expired", "stuck", "stale"):
+            from awgbot.bot.notifier import notify_one
+            from awgbot.core import config
+            await notify_one(bot, config.ADMIN_ID, text, silent=True)
+        return
+    if event == "revert_failed":
+        # такт не вернул линк под токен — честно, один раз; повторы — молча
+        text = jt.join_revert_failed(st, str(extra.get("err") or ""))
+        await _edit_msg(bot, st, text, kb.gwjoin_final())
         from awgbot.bot.notifier import notify_one
         from awgbot.core import config
-        await notify_one(bot, config.ADMIN_ID, jt.join_expired(st), silent=True)
+        await notify_one(bot, config.ADMIN_ID, text, silent=True)
         return
     if event == "done":
         version, bot_name = await call(services.gwjoin_done_info, int(st["slot"]))

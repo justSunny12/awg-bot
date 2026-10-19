@@ -159,6 +159,8 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "join_refused": ({"why": "code"}, gwlink.PAD_DELTA,
                      "a7e4eea6e5e890470301d92d4057d438bbf826d8fef24f3bc20887ab0851bb8c"),
     "join_ok": ({"box": "ab" * 72}, gwlink.PAD_DELTA, "950f8e85c412be152246d4727dd0379fa490cff09302415cc137131833069db4"),
+    "join_done_ok": ({"id": "0123456789abcdef"}, gwlink.PAD_DELTA,
+                     "ae20782dcb00c8f35465397e169b7e4158f1e6a4b6bfe18edea118170a12e9ff"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
@@ -181,6 +183,8 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
                   "z": "QVdHQksx"}, gwlink.PAD_DELTA, "edabf41c4e00270cdc9933a141aa7f46a24b24a06dcb2c05bd95a4e20f3c29ea"),
     "upd_ack": ({"id": "a1b2c3d4", "state": "done", "step": "v3.5.0", "version": "3.5.0", "error": ""},
                 gwlink.PAD_DELTA, "8fa491c6c4083847708ae6a392bfb5690137184a09b25271f990574a19f8362f"),
+    "join_done": ({"id": "0123456789abcdef"}, gwlink.PAD_DELTA,
+                  "1944d915051f163afc10915041bce7bdd56791550ac781f4f04feab1b249be25"),
     "keep": ({"v": 1, "hash": "ab12" * 4, "at": "2026-10-12T08:40:00+03:00", "items": _KEEP_ITEMS,
               "traffic": {"month": "2026-10", "rx": 10, "tx": 20}}, gwlink.PAD_DELTA,
              "2b0dc7f7b047b2d31cb441cae22f111dcfe9f7e7dbea6c449c80316e51d663bd"),

@@ -99,6 +99,15 @@ def test_the_same_token_is_same_and_asks_nobody(svc, env, tg):
     assert svc.cfg_token_note_take() is False, "заметка «на новом токене» без смены"
 
 
+@pytest.mark.parametrize("state, want", [("accepted", "applied"), ("linked", "applied"), ("done", "same"),
+                                         ("pairing", "same")])
+def test_the_same_token_restarts_an_agent_finishing_a_pairing(svc, env, tg, monkeypatch, state, want):
+    """flow-3: Т-Т11 с тем же ботом — конец сопряжения на старте полного агента: перезапуск, env цел."""
+    monkeypatch.setattr(svc, "join_state", lambda: {"state": state})
+    assert svc.cfg_token_apply({"value": CUR})["state"] == want
+    assert tg.calls == [] and env.read_text(encoding="utf-8") == ENV_TEXT
+
+
 def test_a_token_of_another_bot_is_taken_when_telegram_knows_it(svc, env, tg):
     """Токен нового бота (прежнего удалили вовсе) — принимается: годность
     бота шлюзу проверил сервер при вводе; агенту важно, что токен живой."""

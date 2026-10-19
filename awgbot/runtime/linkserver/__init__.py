@@ -126,12 +126,12 @@ async def join_wrong(slot: int, left: int) -> None:
         await _server.join_wrong(int(slot), int(left))
 
 
-async def join_close(services, slot: int, why: str) -> None:
-    """Отказ шлюзу и интерфейс под токен прочь — сразу (Р24)."""
+async def join_close(services, slot: int, why: str) -> str:
+    """Отказ шлюзу и интерфейс под токен прочь — сразу (Р24). "" — сделано,
+    иначе причина (возврат повторит такт)."""
     if _server is not None:
-        await _server.join_close(int(slot), why)
-    else:
-        await asyncio.to_thread(services.gwjoin_revert, int(slot), why)
+        return await _server.join_close(int(slot), why)
+    return await asyncio.to_thread(services.gwjoin_revert, int(slot), why) or ""
 _on_notes = None
 _on_rekeyed = None
 def set_on_rekeyed(fn) -> None:

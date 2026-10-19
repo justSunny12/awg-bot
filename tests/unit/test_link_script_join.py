@@ -147,3 +147,16 @@ def test_the_bundle_mode_is_gone(tmp_path):
     vps = _Vps(tmp_path, live=True)
     r = vps.run("--bundle")
     assert r.returncode == 2 and "неизвестный аргумент: --bundle" in r.stderr
+
+
+def test_rollback_takes_the_old_keys_of_a_replacement_too(tmp_path):
+    """Вне оси: --rollback линка убирает и *.join-prev — ключи прежнего
+    устройства снятому слоту ни к чему."""
+    vps = _Vps(tmp_path, live=True)
+    assert vps.run("--join-stage", JOIN_ID=JID, JOIN_PREV="1").returncode == 0
+    # исключения из MASQUERADE нет (-C — 1): цикл снятия не крутится вечно
+    fake_cmd(vps.bin / "iptables", f'echo "iptables $*" >> {vps.log}\ncase " $* " in *" -C "*) exit 1 ;; esac\nexit 0\n')
+    r = vps.run("--rollback")
+    assert r.returncode == 0, r.stdout + r.stderr
+    left = {f.name for d in (vps.conf_dir, vps.root) for f in d.iterdir()}
+    assert not any("join-prev" in n for n in left) and not vps.conf.exists(), left

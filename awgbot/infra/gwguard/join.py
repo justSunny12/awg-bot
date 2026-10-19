@@ -45,25 +45,18 @@ def join_link(conf_path: str, channel_port: int, script: str = "") -> tuple[bool
     return _run(script or pkg.SETUP_SCRIPT, ["--join", conf_path], _env(channel_port), JOIN_TIMEOUT)
 
 
-def _client_subnet(conf_path: str) -> str:
-    """Подсеть клиентов сервера — первая запись AllowedIPs конфига линка,
-    который поставила смена ключей после кода (сервер пишет её первой): до
-    документа шлюзу её взять больше неоткуда, а без неё обвязка встала бы на
-    подсеть по умолчанию."""
-    from awgbot.util import wgconf
-    try:
-        with open(conf_path, encoding="utf-8") as f:
-            allowed = wgconf.parse(f.read()).get("Peer", "AllowedIPs") or ""
-    except (OSError, wgconf.WgConfError):
-        return ""
-    first = allowed.split(",")[0].strip()
-    return first if pkg._ADDR_CHARS_RE.fullmatch(first or "-") and "/" in first else ""
-
-
 def join_finish(channel_port: int) -> tuple[bool, str]:
     """Полная обвязка после сопряжения (`--apply` стоящего конфига линка)."""
     env = _env(channel_port)
-    subnet = _client_subnet(config.GW_LINK_CONF)
-    if subnet:
-        env["CLIENT_SUBNET"] = subnet
+    # юнита ещё нет: подсеть клиентов, соседи и резолвер — из конфига линка,
+    # который поставила смена ключей после кода (его собрал сервер), иначе
+    # обвязка встала бы на подсеть по умолчанию
+    from awgbot.domain import gwcfg
+    try:
+        with open(config.GW_LINK_CONF, encoding="utf-8") as f:
+            vals = gwcfg.join_link_env(f.read())
+    except OSError:
+        vals = {}
+    env.update({k: v for k, v in vals.items() if k != "LINK_CHECK_KIND" and v})
+    env["JOIN_FINISH"] = "1"                         # карантин снимает только этот прогон
     return _run(pkg.SETUP_SCRIPT, ["--apply", config.GW_LINK_CONF], env, FINISH_TIMEOUT)

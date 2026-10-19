@@ -187,6 +187,16 @@ class InboundMixin:
                 sess.svc_have = str(msg.get("hash") or "")[:64]
             await asyncio.to_thread(self.services.gwlink_peer_services_ack_in, gw.id, msg)
             return
+        if kind == "join_done":
+            # конец сопряжения своим словом агента (полный агент, файл
+            # сопряжения ещё на диске): итог Т-П9 — и у агента, стоявшего
+            # раньше, у которого «установлен» не уходит; ответ — join_done_ok
+            st = await asyncio.to_thread(self.services.gwjoin_installed, gw.id,
+                                         str(msg.get("id") or "")[:32])
+            await self.send(gw.id, "join_done_ok", {"id": str(msg.get("id") or "")[:32]})
+            if st:
+                await self._join_event("done", st)
+            return
         if kind == "installed":
             # агент нового шлюза первый раз на связи: установщик отработал —
             # админу «✅ … успешно настроен» (крючок main). Снимок к этому

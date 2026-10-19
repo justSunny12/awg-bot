@@ -494,4 +494,3 @@ def test_a_down_active_link_still_leaves_the_other_slots_their_tables(monkeypatc
     assert ["ip", "route", "replace", "default", "dev", "awglink2", "table", str(routing.slot_table(2))] in replaced
     assert any(a[:3] == ["ip", "rule", "add"] and str(routing.slot_table(2)) in a for a in calls), \
         "правило слота 2 не поставлено"
-

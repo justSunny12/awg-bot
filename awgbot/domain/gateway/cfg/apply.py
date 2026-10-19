@@ -96,22 +96,32 @@ class CfgApplyMixin:
                     asks.append("mail")
         retry = False
         # 5. токен бота — только тот же бот; перезапуск агента — после ответа
-        # серверу (клиент канала), иначе ответ ушёл бы в никуда
+        # серверу (клиент канала), иначе ответ ушёл бы в никуда. Шлюз,
+        # подключённый командой, без аплинка: getMe нового токена идёт через
+        # аплинк — токен после аплинка (flow-4)
         restart = False
-        if "token" in checked:
+        fresh = getattr(self, "join_fresh_uplink", None)
+        token_late = callable(fresh) and fresh() and "uplink" in checked and not self.cfg_uplink_text()
+
+        def _token() -> bool:
+            nonlocal retry
             res = self.cfg_token_apply(checked["token"])
             if res["state"] == "same":
                 applied.append("token")
             elif res["state"] == "applied":
                 applied.append("token")
                 changed.append("token")
-                restart = True
+                return True
             else:
                 failed["token"] = res["error"]
                 retry = retry or res["state"] == "retry"
                 if res["state"] == "failed":
                     # бот на прежнем токене может быть жив (токен другого бота) — сказать
                     notes.append(f"⚠️ Токен бота с сервера AWG не применён: {html.escape(res['error'], quote=False)}")
+            return False
+
+        if "token" in checked and not token_late:
+            restart = _token()
         # 6. аплинк — с подтверждением человека; молча — только ключи признания
         # и аварийно (аплинк мёртв, конфиг того же устройства)
         if "uplink" in checked:
@@ -147,6 +157,9 @@ class CfgApplyMixin:
                         notes.append(self.cfg_uplink_emergency_note(same))
                     else:
                         changed.append("uplink")          # первый аплинк шлюза, подключённого командой
+                        # обвязка ставилась без аплинка и ключей признания — заново
+                        # полным прогоном, уже с ними (flow-4)
+                        self.reassert_guarded("первый аплинк шлюза, подключённого командой")
                 else:
                     # не «отвергнуто»: временная причина (пир ещё не поднят, DNS) —
                     # раздел ждёт как вопрос, тик повторит аварийную попытку
@@ -162,6 +175,8 @@ class CfgApplyMixin:
                     asks.insert(0, "uplink")              # аплинк — первым в очереди
         else:
             self.cfg_release("uplink")
+        if "token" in checked and token_late:
+            restart = _token()                        # аплинк уже стоит — getMe дойдёт
         if not failed:
             with self.db.transaction():
                 self.db.set_state(self._CFG_GEN_KEY, str(gen))

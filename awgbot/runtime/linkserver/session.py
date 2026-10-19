@@ -228,7 +228,12 @@ class SessionMixin:
                 # сессия сопряжения — своя ветка: ни роли, ни доставок (linkserver/join.py)
                 await self._serve_join(reader, int(join["slot"]), sess, msg, last_seq)
                 return
-            if getattr(gw, "joining", False):
+            barred = getattr(gw, "joining", False)
+            if not barred and hasattr(self.services, "gwjoin_session_barred"):
+                # любой слот в сопряжении (замена, «Настроить заново»): ключ
+                # канала — из ключей токена, обычная сессия до кода — нет
+                barred = await asyncio.to_thread(self.services.gwjoin_session_barred, gw.id)
+            if barred:
                 log.warning("канал линка: слот %s в сопряжении прислал hello без join — закрываю", gw.id)
                 return
             old = self._sessions.get(gw.id)

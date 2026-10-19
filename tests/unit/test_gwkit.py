@@ -107,8 +107,34 @@ def test_the_kit_finds_the_token_in_a_whole_pasted_command(tmp_path):
 
 def test_the_kit_without_a_token_says_what_it_needs(tmp_path):
     r, out, _ = _run_kit(tmp_path)
-    assert r.returncode == 2 and "команда подключения" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 2 and "токен подключения" in r.stdout and "<токен AWGJ1…" in r.stdout, r.stdout + r.stderr
     assert not out.exists(), "установщик позван без токена"
+
+
+def test_the_kit_passes_yes_to_the_installer(tmp_path):
+    """flow-6: у трубы кита терминала нет — «подключить заново?» снимает
+    только --yes; кит передаёт его установщику."""
+    r, out, _ = _run_kit(tmp_path, "--join", "AWGJ1.DUMMYTOKEN", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--yes", "--join", "AWGJ1.DUMMYTOKEN"]
+
+
+def test_the_kit_is_refused_when_the_set_names_another_agent_version():
+    """flow-5: кит везёт код сервера; команда подключения назовёт версию
+    агента в выпуске набора — другая: отказ до сборки; та же или неизвестна
+    (база не читается — сверит установщик на шлюзе) — собирается."""
+    with pytest.raises(gwkit.KitError, match="ставит агента v3.4.0 .* кода сервера v3.4.1"):
+        gwkit.check_version("3.4.1", "3.4.0")
+    gwkit.check_version("3.4.1", "3.4.1")
+    gwkit.check_version("3.4.1", "")
+
+
+def test_the_hints_name_the_token_not_the_whole_command():
+    """flow-6: вся строка из бота с `| sudo bash` в кавычках не сработает —
+    подсказки зовут только токен."""
+    for text in ((ROOT / "awg-bot.sh").read_text(encoding="utf-8"), (ROOT / "tools" / "gwkit.py").read_text(encoding="utf-8")):
+        assert "<команда из бота" not in text
+        assert "--join <токен AWGJ1…>" in text
 
 
 def test_the_cli_verb_is_gw_kit_and_gw_bundle_is_gone():
@@ -181,3 +207,13 @@ def test_dist_and_release_carry_no_unit_file():
     build = (ROOT / "build_release.sh").read_text(encoding="utf-8")
     assert "awg-bot.service" not in build.split("build_bot() {", 1)[1].split("\n}\n", 1)[0]
     assert "git archive" in build.split("build_project() {", 1)[1], "полный проект снова пакуется из рабочего дерева"
+
+
+def test_the_cli_refuses_before_building(monkeypatch, capsys):
+    from awgbot.core import config
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.1")
+    monkeypatch.setattr(gwkit, "join_version", lambda: "3.4.0")
+    monkeypatch.setattr(gwkit, "build", lambda *a, **kw: pytest.fail("кит собран вопреки отказу"))
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False, raising=False)
+    assert gwkit.main(["--stdout"]) == 1
+    assert "выпуск набора" in capsys.readouterr().err

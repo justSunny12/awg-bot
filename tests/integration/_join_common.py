@@ -206,7 +206,11 @@ def admin(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     services.add_device(a.id, "NASPi")
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     peer = {"addr": "203.0.113.50"}
-    monkeypatch.setattr(routing, "link_peer_endpoint", lambda iface="": peer["addr"])
+    # подмена — на части, где имя определено (routing.probes), а не на пакете:
+    # пакет отдаёт имена частей через __getattr__, и monkeypatch на пакете при
+    # откате оставил бы в нём навсегда подмену fake_routing — соседние тесты
+    # процесса (test_routing_domains) получали бы её вместо настоящей
+    monkeypatch.setattr(routing.probes, "link_peer_endpoint", lambda iface="": peer["addr"])
     services.peer = peer
     return a
 

@@ -14,10 +14,13 @@ pytestmark = pytest.mark.unit
 
 
 def test_conf_keys_are_the_keys_of_the_agent_sections():
-    from awgbot.bot.sections import mon, notify, updates
-    want = set(notify.KEYS) | set(updates.KEYS) | {k for k in mon.KEYS if k.startswith("app.gateway.")
-                                                    or k == "app.monitoring.alert_streak"}
-    assert set(gwkeep.CONF_KEYS) == want
+    """Расписания обновлений у агента нет (шлюзы обновляет сервер AWG) — ключа
+    в закрытом списке тоже; сервер с прежним блоком его отбросит (clean)."""
+    from awgbot.bot.sections import mon, notify
+    want = set(notify.KEYS) | {k for k in mon.KEYS if k.startswith("app.gateway.")
+                               or k == "app.monitoring.alert_streak"}
+    assert set(gwkeep.CONF_KEYS) == want and "updates.poll_schedule" not in gwkeep.CONF_KEYS
+    assert gwkeep.clean({"conf": {"updates.poll_schedule": "week"}})["conf"] == {}
 
 
 def test_fw_keys_are_firewall_env_without_the_ssh_port_and_resolved_addresses():

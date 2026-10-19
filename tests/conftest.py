@@ -575,6 +575,35 @@ def _argon2_is_cheap_in_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_join_presses():
+    """Память «уже нажато» кнопок подключения шлюза — модульная: у каждого
+    теста своя (FakeMessage повторяет номера сообщений)."""
+    from awgbot.bot.handlers.settings import gwmark
+    gwmark._PRESSED.clear()
+    yield
+    gwmark._PRESSED.clear()
+
+
+@pytest.fixture(autouse=True)
+def _routing_package_not_shadowed():
+    """Сторож: тест не оставил в пакете awgbot.infra.routing имени его части.
+
+    Пакет отдаёт имена частей через __getattr__ (подмена на части видна через
+    routing.X). monkeypatch.setattr(routing, "X", …) на самом пакете при
+    откате кладёт в пакет прежнее значение навсегда — и это значение могло
+    быть подменой fake_routing: соседи по процессу (под xdist — любые)
+    получают заглушку вместо настоящей функции. Виновника роняем, имя убираем."""
+    from awgbot.infra import routing
+    before = set(vars(routing))
+    yield
+    stray = [n for n in set(vars(routing)) - before if any(n in vars(p) for p in routing._PARTS)]
+    for n in stray:
+        delattr(routing, n)
+    if stray:
+        pytest.fail(f"тест подменил {stray} на пакете awgbot.infra.routing — подменяй на части, где имя определено")
+
+
+@pytest.fixture(autouse=True)
 def _settings_never_on_repo_conf():
     """Сторож: после теста кэш настроек не смотрит в conf/ рабочего дерева.
 

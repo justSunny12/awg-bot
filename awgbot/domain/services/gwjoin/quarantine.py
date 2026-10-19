@@ -39,6 +39,35 @@ class GwJoinQuarantineMixin:
         st = self.gwjoin(slot_id)
         return st.get("kind") in ("replace", "same") and st.get("state") in ("waiting", "connected", "accepted")
 
+    def gwjoin_session_barred(self, slot_id: int) -> bool:
+        """Обычная сессия слота (hello без join) не открывается: слот в
+        сопряжении — любой, и новый, и в замене или «Настроить заново» (ключ
+        канала уже из ключей токена). Можно только после переключения ВПС на
+        постоянные ключи (смена после кода зафиксирована ВПС): hello новым
+        ключом и есть фиксация. Без записи — по штампу линка (запись снята
+        сроком, а ключи токена стоят)."""
+        st = self.gwjoin(slot_id)
+        state = st.get("state")
+        if state in ("waiting", "connected", "closing"):
+            return True
+        if state == "accepted":
+            rk = self.gateway_rekey(slot_id) if hasattr(self, "gateway_rekey") else {}
+            return not (rk.get("state") == "switched" and rk.get("committed"))
+        gw = self.db.gateway(slot_id)
+        link_if = gw.link_if if gw is not None else st.get("link_if", "")
+        return bool(link_if) and self._gwjoin_stamped(link_if)
+
+    @staticmethod
+    def _gwjoin_stamped(link_if: str) -> bool:
+        from awgbot.core import config
+        from awgbot.infra.nftguard.collect import JOIN_STAMP
+        try:
+            with open(f"{config.AWG_DIR}/{link_if}.conf", encoding="utf-8") as f:
+                head = [next(f, "") for _ in range(5)]
+        except OSError:
+            return False
+        return any(line.startswith(JOIN_STAMP) for line in head)
+
     def gwjoin_new_cards(self) -> list[dict]:
         """Новые слоты в сопряжении (строки в `gateways` у них нет) — для
         экрана «🛰 Шлюзы»: [{"slot", "name", "state", "until"}]."""
@@ -48,7 +77,8 @@ class GwJoinQuarantineMixin:
                 continue
             card = self.gwjoin_card(int(st["slot"]))
             if card:
-                out.append({"slot": int(st["slot"]), "name": str(st.get("name") or ""), **card})
+                out.append({"slot": int(st["slot"]), "name": str(st.get("name") or ""), "id": st.get("id", ""),
+                            **card})
         return out
 
     def gwjoin_card(self, slot_id: int) -> dict:

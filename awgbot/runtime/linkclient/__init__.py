@@ -101,11 +101,10 @@ def enabled() -> bool:
 
 
 def server_port() -> int:
-    """Порт канала: из юнита обвязки; до него (сопряжение) — из файла сопряжения."""
+    """Порт канала: идёт сопряжение — из файла сопряжения (токен этого
+    сервера: у шлюза, подключённого раньше, юнит обвязки ещё прежний, flow-9);
+    иначе — из юнита обвязки."""
     from awgbot.infra import gwguard
-    raw = gwguard.unit_env("LINK_CHANNEL_PORT")
-    if raw.isdigit():
-        return int(raw)
     try:
         import json
         from awgbot.domain.gateway.join import JOIN_FILE
@@ -113,8 +112,11 @@ def server_port() -> int:
             port = int(json.loads(f.read() or "{}").get("channel_port") or 0)
         if 0 < port < 65536:
             return port
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
+    raw = gwguard.unit_env("LINK_CHANNEL_PORT")
+    if raw.isdigit():
+        return int(raw)
     return DEFAULT_PORT
 
 

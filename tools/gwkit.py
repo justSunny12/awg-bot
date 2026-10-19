@@ -12,14 +12,16 @@ tools/gwkit.py — `awg-bot gw-kit --stdout` на сервере AWG: поста
 токенов, ни адресов в ките нет: трубу можно гнать через любой компьютер.
 Подключение — той же командой из бота сервера и тем же кодом:
 
-    sudo awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ \\
-        'cat > /root/awg-gw-kit.sh && sudo sh /root/awg-gw-kit.sh --join <команда из бота>'
+    sudo awg-bot gw-kit --stdout | ssh root@ШЛЮЗ \\
+        'cat > /root/awg-gw-kit.sh && sh /root/awg-gw-kit.sh --join <токен AWGJ1…>'
 
 На шлюзе кит раскладывает исходники AmneziaWG в тот же кэш (установщик ядра
 сверит их с awg.lock ещё раз и в сеть не пойдёт), распаковывает поставку во
 временный каталог и зовёт её установщик с `--skip-verify --join <токен>`
-(своя сборка: sha256 выпуска к ней не подходит). Токен находится среди
-аргументов сам — можно вставить и всю команду из бота целиком.
+(своя сборка: sha256 выпуска к ней не подходит). Передаётся только токен
+`AWGJ1.…` из команды бота: вся строка с `| sudo bash` в кавычках не
+сработает. Терминала у такой трубы нет (stdin занят китом) — вопросов
+установщик не задаёт: агент уже стоит — нужен `--yes`.
 """
 from __future__ import annotations
 
@@ -83,14 +85,14 @@ def _payload(name: str, blob: bytes) -> str:
 HEAD = r'''#!/bin/sh
 # awg-gw-kit.sh — поставка awg-bot v{version} для шлюза без доступа к GitHub:
 # код агента и исходники AmneziaWG (по install/awg.lock). Ключей и токенов
-# внутри нет. Запуск:  sudo sh awg-gw-kit.sh --join <команда из бота сервера AWG>
+# внутри нет. Запуск:  sudo sh awg-gw-kit.sh --join <токен AWGJ1… из команды бота сервера AWG> [--yes]
 set -eu
-[ "$(id -u)" = "0" ] || {{ echo "нужен root: sudo sh $0 --join <команда из бота>"; exit 1; }}
-_token=""
+[ "$(id -u)" = "0" ] || {{ echo "нужен root: sudo sh $0 --join <токен AWGJ1…>"; exit 1; }}
+_token=""; _yes=""
 for _a in "$@"; do
-    case "$_a" in AWGJ1.*) _token="$_a" ;; esac
+    case "$_a" in AWGJ1.*) _token="$_a" ;; --yes) _yes="--yes" ;; esac
 done
-[ -n "$_token" ] || {{ echo "нужна команда подключения: sudo sh $0 --join <команда из бота сервера AWG>"; exit 2; }}
+[ -n "$_token" ] || {{ echo "нужен токен подключения: sudo sh $0 --join <токен AWGJ1… из команды бота сервера AWG>"; exit 2; }}
 for _t in base64 tar awk; do
     command -v "$_t" >/dev/null 2>&1 || {{ echo "нужен $_t"; exit 1; }}
 done
@@ -110,7 +112,7 @@ tar xzf "$_d/awg-bot.tgz" -C "$_d" --no-same-owner
 rm -f "$_d/awg-bot.tgz"
 [ -f "$_d/install/awg-bot-install.sh" ] || {{ echo "кит повреждён: в поставке нет установщика"; exit 1; }}
 set +e
-bash "$_d/install/awg-bot-install.sh" --skip-verify --join "$_token"
+bash "$_d/install/awg-bot-install.sh" --skip-verify $_yes --join "$_token"
 _rc=$?
 exit "$_rc"
 '''
@@ -140,15 +142,41 @@ def build(root: Path | None = None, cache: Path = SRC_CACHE) -> bytes:
     return "".join(body).encode("utf-8")
 
 
+def join_version() -> str:
+    """Выпуск, который назовёт токен команды подключения (Р14): версия агента в
+    выпуске набора, без набора — версия сервера; база не читается — пусто
+    (сверка остаётся установщику на шлюзе)."""
+    from awgbot.core import config
+    if not Path(config.DB_PATH).exists():
+        return ""
+    try:
+        from awgbot.domain.services import Services
+        from awgbot.infra.db import Database
+        return Services(Database(config.DB_PATH))._gwjoin_version()
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+
+def check_version(kit: str, want: str) -> None:
+    """Кит везёт код сервера: команда подключения называет другой выпуск (набор
+    ведёт шлюзы на свою версию агента) — шлюз встал бы не на неё (flow-5)."""
+    if want and kit and want != kit:
+        raise KitError(f"команда подключения ставит агента v{want} (выпуск набора), а кит собирается из кода "
+                       f"сервера v{kit} — шлюз встал бы не на версию набора. Кит годится, когда сервер и "
+                       "шлюзы на одной версии: доведи обновление набора и собери кит заново")
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] != ["--stdout"]:
-        print("usage: awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && "
-              "sudo sh /root/awg-gw-kit.sh --join <команда из бота>'", file=sys.stderr)
+        print("usage: awg-bot gw-kit --stdout | ssh root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && "
+              "sh /root/awg-gw-kit.sh --join <токен AWGJ1…>'", file=sys.stderr)
         return 2
     if sys.stdout.isatty():
         print("[awg-bot:ОШИБКА] кит — двоичный поток: направь его в ssh или в файл", file=sys.stderr)
         return 2
     try:
+        from awgbot.core import config
+        check_version(str(config.INSTALLED_VERSION).lstrip("v"), join_version())
         blob = build()
     except KitError as e:
         print(f"[awg-bot:ОШИБКА] {e}", file=sys.stderr)

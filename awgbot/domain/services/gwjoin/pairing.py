@@ -10,13 +10,24 @@ hello{join, eph, host} → join_eph{eph, slot_name, until}: у обеих сто
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import re
 import secrets
 
 from awgbot.util import gwlink, joinsas, timeutil
 
 from ..gateway_link.common import log
-from .state import MAX_ATTEMPTS, MAX_SESSIONS, _LOCK
+from .state import JOIN_TTL, MAX_ATTEMPTS, MAX_SESSIONS, _LOCK
+
+STALE_LINKED_S = 24 * 3600     # линк на постоянных ключах, а конца сопряжения нет — запись снимается
+
+
+def _older(iso, seconds: int) -> bool:
+    try:
+        return timeutil.elapsed(timeutil.parse_iso(str(iso or ""))) > seconds
+    except ValueError:
+        return False
 
 _HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
 
@@ -66,7 +77,7 @@ class GwJoinPairingMixin:
                 return {"ok": False, "why": "gone"}
             if self._gwjoin_expired(st):
                 # закрывает слушатель: сначала отказ шлюзу, затем возврат (Р24)
-                st["state"] = "closing"
+                st.update(state="closing", why="expired")
                 self._gwjoin_save(slot_id, st)
                 return {"ok": False, "why": "expired", "st": st}
             if int(st.get("sessions") or 0) >= MAX_SESSIONS:
@@ -77,6 +88,12 @@ class GwJoinPairingMixin:
                 g_eph = b""
             if len(g_eph) != 32:
                 return {"ok": False, "why": "bad"}
+            if st.get("state") == "accepted" and not hmac.compare_digest(
+                    str(st.get("eph") or ""), hashlib.sha256(g_eph).hexdigest()):
+                # после верного кода — только тот шлюз, чей код ввели: его
+                # эфемерный ключ (агент держит пару до join_ok); чужой hello
+                # с тем же токеном не получит ни секретов, ни постоянных ключей
+                return {"ok": False, "why": "gone"}
             st["sessions"] = int(st.get("sessions") or 0) + 1
             try:
                 addr = routing.link_peer_endpoint(st["link_if"]) or ""
@@ -95,6 +112,7 @@ class GwJoinPairingMixin:
             k = joinsas.shared(s_priv, g_eph)
             sid = secrets.token_hex(4)
             live = {"sid": sid, "kp": joinsas.pair_key(st["id"], k), "addr": addr,
+                    "eph": hashlib.sha256(g_eph).hexdigest(),
                     "code": joinsas.code(st["id"], slot_id, g_eph, s_pub, k)}
             self._gwjoin_live_set(slot_id, live)
             event = "reconnected" if st.get("state") in ("connected", "accepted") or int(st["sessions"]) > 1 \
@@ -134,7 +152,7 @@ class GwJoinPairingMixin:
                 return {"result": "gone", "st": st}
             if self._gwjoin_expired(st):
                 # закрывает вызывающий, как такт срока: отказ шлюзу, затем возврат
-                st["state"] = "closing"
+                st.update(state="closing", why="expired")
                 self._gwjoin_save(slot_id, st)
                 return {"result": "expired", "st": st}
             live = self._gwjoin_live(slot_id)
@@ -148,7 +166,7 @@ class GwJoinPairingMixin:
             if left <= 0:
                 # закрыть — вызывающему: сначала join_refused шлюзу, затем
                 # gwjoin_revert (интерфейс под токен падает — отказ уже не дошёл бы)
-                st["state"] = "closing"
+                st.update(state="closing", why="code")
                 self._gwjoin_save(slot_id, st)
                 log.info("сопряжение: слот %s — код не подтверждён трижды, закрываю", slot_id)
                 return {"result": "refused", "left": 0, "st": st, "sid": live.get("sid")}
@@ -183,9 +201,20 @@ class GwJoinPairingMixin:
             if not st or (join_id and st.get("id") != join_id) \
                     or st.get("state") not in ("waiting", "connected", "closing"):
                 return {}
-            st["state"] = "closing"
+            st.update(state="closing", why="cancel")
             self._gwjoin_save(slot_id, st)
             return st
+
+    def gwjoin_revert_told(self, slot_id: int, join_id: str) -> bool:
+        """Возврат по такту не удался: сказать человеку — один раз на запись
+        (такт повторяет каждую минуту, сообщение — нет). True — сказать сейчас."""
+        with _LOCK:
+            st = self.gwjoin(slot_id)
+            if not st or st.get("id") != join_id or st.get("err_told"):
+                return False
+            st["err_told"] = 1
+            self._gwjoin_save(slot_id, st)
+            return True
 
     def gwjoin_tick(self) -> list[dict]:
         """Такт: сопряжения, у которых вышел срок, — помечены «closing» и
@@ -198,14 +227,28 @@ class GwJoinPairingMixin:
                     cur = self.gwjoin(int(st["slot"]))
                     if cur.get("id") != st.get("id"):
                         continue
-                    cur["state"] = "closing"
+                    cur.update(state="closing", why="expired")
                     self._gwjoin_save(int(st["slot"]), cur)
-                closed.append(st)
+                closed.append({**st, "event": "expired"})
             elif st.get("state") == "closing":
-                closed.append(st)                         # прошлый такт пометил, а закрыть не успел
-            elif st.get("state") == "accepted" and self._gwjoin_expired(st) \
-                    and timeutil.elapsed(timeutil.parse_iso(st["expires"])) > 24 * 3600:
-                # код верный, а смена ключей так и не встала за сутки — слот остаётся
-                # обычным; запись сопряжения больше ничего не значит
-                self._gwjoin_save(int(st["slot"]), {})
+                # прошлый такт пометил или возврат не удался — повтор; итог —
+                # по причине закрытия (срок, отмена, код)
+                closed.append({**st, "event": st.get("why") or "expired"})
+            elif st.get("state") == "accepted" and _older(st.get("accepted_at") or st.get("expires"), JOIN_TTL):
+                # код верный, а смена ключей так и не встала за час — откат, как
+                # при отмене (quar-3): штамп и .join-prev не остаются навсегда
+                with _LOCK:
+                    cur = self.gwjoin(int(st["slot"]))
+                    if cur.get("id") != st.get("id"):
+                        continue
+                    cur.update(state="closing", why="stuck")
+                    self._gwjoin_save(int(st["slot"]), cur)
+                closed.append({**st, "event": "stuck"})
+            elif st.get("state") == "linked" and _older(st.get("linked_at") or st.get("expires"), STALE_LINKED_S):
+                # линк на постоянных ключах, а агент так и не доложил конец (quar-7):
+                # запись снимается, человеку — одно уведомление
+                with _LOCK:
+                    if self.gwjoin(int(st["slot"])).get("id") == st.get("id"):
+                        self._gwjoin_save(int(st["slot"]), {})
+                closed.append({**st, "event": "stale"})
         return closed

@@ -945,3 +945,28 @@ def test_a_gateway_joined_by_command_takes_its_first_uplink_without_asking(svc, 
         assert [n for n, _, _ in host.uplink_runs] == ["uplink.next"] and host.finishes == ["commit"]
     else:
         assert res["ask"] == ["uplink"] and host.uplink_runs == [], res
+
+
+def test_a_joined_gateway_takes_the_uplink_before_the_token_and_reasserts(svc, host, monkeypatch):
+    """flow-4: в первом документе шлюза, подключённого командой, аплинка нет —
+    getMe нового токена идёт через аплинк: токен — после аплинка; обвязку,
+    вставшую без аплинка и ключей признания, — заново полным прогоном."""
+    host.uplink.write_text("", encoding="utf-8")
+    host.uplink_age = "absent"
+    monkeypatch.setattr(svc, "join_fresh_uplink", lambda: True, raising=False)
+    order = []
+    monkeypatch.setattr(svc, "cfg_token_apply", lambda value: (order.append(("token", len(host.uplink_runs))),
+                                                                {"state": "applied", "error": ""})[1])
+    monkeypatch.setattr(svc, "reassert_guarded", lambda why, **kw: (order.append(("reassert", why)), (True, ""))[1])
+    res = svc.apply_cfg(_doc(uplink=_value(host), token={"value": "123456789:AA" + "D" * 33}))
+    assert "uplink" in res["ack"]["applied"] and "token" in res["ack"]["applied"], res["ack"]
+    assert order[0][0] == "reassert" and order[-1] == ("token", 1), f"токен раньше аплинка: {order}"
+    assert res.get("restart") is True
+
+
+def test_a_normal_gateway_keeps_the_token_first(svc, host, monkeypatch):
+    order = []
+    monkeypatch.setattr(svc, "cfg_token_apply", lambda value: (order.append(len(host.uplink_runs)),
+                                                                {"state": "same", "error": ""})[1])
+    svc.apply_cfg(_doc(uplink=_value(host), token={"value": "123456789:AA" + "D" * 33}))
+    assert order == [0]

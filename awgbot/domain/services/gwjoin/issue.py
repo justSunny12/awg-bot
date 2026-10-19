@@ -40,7 +40,11 @@ class GwJoinIssueMixin:
         но мимо слотов, занятых другими живыми сопряжениями (строки у них нет)."""
         from awgbot.util import lanspace
         slots = self.db.gateways()
-        pending = [st for st in self.gwjoin_all() if st.get("kind") == "new"]
+        # новые слоты в сопряжении — без строки до кода; после кода строка есть,
+        # и запись (accepted / linked) не должна занимать номер второй раз
+        pending = [st for st in self.gwjoin_all() if st.get("kind") == "new"
+                   and st.get("state") in ("waiting", "connected", "closing")
+                   and not self.db.gateway(int(st["slot"]))]
         if len(slots) + len(pending) >= config.ROUTING_GATEWAYS_MAX:
             from awgbot.domain.notices.routing import gateways_full
             raise ServiceError(gateways_full(len(slots), config.ROUTING_GATEWAYS_MAX))
@@ -72,6 +76,18 @@ class GwJoinIssueMixin:
         if want is not None:
             return str(want.tag).lstrip("v")
         return str(config.INSTALLED_VERSION).lstrip("v")
+
+    def _gwjoin_kit(self) -> bool:
+        """Выпуска токена на GitHub нет (flow-12): сервер не на сборке из
+        выпуска (своя сборка будущего выпуска) — шлюз ставится только китом.
+        Выпуски не проверялись — неизвестно: как обычно."""
+        try:
+            releases = self.fleet_releases() if hasattr(self, "fleet_releases") else None
+            if releases is None:
+                return False
+            return not self.fleet_server_release_build() and self.fleet_gw_target() is None
+        except Exception:                                 # noqa: BLE001
+            return False
 
     def gwjoin_command(self, token: str) -> str:
         repo = str(config.UPDATES_REPO or "justSunny12/awg-bot")
@@ -128,18 +144,29 @@ class GwJoinIssueMixin:
                 except routing.RoutingError as e:
                     log.warning("сопряжение: политика слота %s не снята: %s", gw.id, e)
             self._gwjoin_live_set(n, None)                # сессия прежней команды больше ничего не значит
-            self._run_link_script("--join-stage", env)
+            try:
+                self._run_link_script("--join-stage", env)
+            except ServiceError:
+                # скрипт отказал на полпути — линк назад, как при отмене (quar-4)
+                self._gwjoin_unstage(kind, slot)
+                raise
             now = timeutil.now()
             st = {"id": jid, "kind": kind, "slot": n, "link_if": iface, "port": int(port), "cidr": cidr,
                   "device": device_id if device_id is not None else "new",
                   "prev_device": gw.device_id if gw is not None else 0,
                   "name": self._gwjoin_name(n, gw, device_id), "version": self._gwjoin_version(),
+                  "kit": self._gwjoin_kit(),
                   "issued": timeutil.to_iso(now), "expires": timeutil.to_iso(timeutil.shift(now, JOIN_TTL)),
                   "sessions": 0, "attempts": 0, "endpoints": [], "hosts": {}, "msg": [], "state": "waiting"}
             # выпуск в токене — тот же, что в записи (его покажет и Т-П1)
             token = self._gwjoin_token(slot, jid, version=st["version"], expires=st["expires"])
             self._gwjoin_save(n, st)
-        self._gw_firewall_refresh()                       # карантин линка и порт канала — сразу
+        try:
+            self._gw_firewall_refresh(strict=True)        # карантин линка и порт канала — сразу
+        except ServiceError as e:
+            # без карантина команду не выдаём (quar-6): интерфейс под токен — прочь
+            self.gwjoin_revert(n, "firewall")
+            raise ServiceError(f"команда не выдана — {e}") from None
         if kind != "new":
             self._channel_touch()                         # подсети слота уходят из PEER_LAN_NETS соседей
         log.info("сопряжение: слот %s — команда выпущена (%s, id %s…)", n, kind, jid[:4])
@@ -159,6 +186,21 @@ class GwJoinIssueMixin:
                                                           expires=str(st.get("expires") or "")))
         except (ServiceError, KeyError, ValueError, TypeError):
             return ""
+
+    def _gwjoin_unstage(self, kind: str, slot) -> None:
+        """Линк слота — назад после отказа --join-stage: замена — прежние ключи
+        (.join-prev), новый первый слот — новые случайные, новый следующий —
+        снят. Отказ и здесь — в журнал: запись не заводилась, повтора нет."""
+        mode = "--join-revert" if kind != "new" else ("--rekey" if int(slot.id) == 1 else "--rollback")
+        try:
+            self._run_link_script(mode, self._slot_env(slot))
+        except ServiceError as e:
+            log.warning("сопряжение: слот %s — линк после отказа не возвращён (%s): %s", slot.id, mode, e)
+        if kind != "new":
+            try:
+                self._ensure_gateway_policy()
+            except routing.RoutingError as e:
+                log.warning("сопряжение: политика слота %s не вернулась: %s", slot.id, e)
 
     def _gwjoin_name(self, slot: int, gw, device_id) -> str:
         if gw is not None:

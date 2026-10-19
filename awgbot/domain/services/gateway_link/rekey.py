@@ -141,6 +141,11 @@ class RekeyMixin:
             raise ServiceError("Нужен агент шлюза v3.3.0")
         if self.gateway_rekey_active(gw.id):
             raise ServiceError("Смена ключей уже идёт")
+        joining = getattr(self, "gwjoin", None)
+        if auto != "join" and callable(joining) and joining(gw.id).get("state") in ("waiting", "connected",
+                                                                                     "accepted", "closing"):
+            # слот в сопряжении (замена, «Настроить заново»): ключи линка ведёт оно (ui-8)
+            raise ServiceError("Идёт подключение шлюза командой — дождись итога или отмени его")
         for other in self.db.gateways():
             # сопряжение (join) — новый линк, трафика ещё не несёт: чужая смена ему не помеха
             if auto != "join" and other.id != gw.id and self.gateway_rekey_active(other.id):
@@ -301,9 +306,11 @@ class RekeyMixin:
         finally:
             _REKEY_LOCK.release()
         log.info("ключи линка: слот %s на новых ключах", slot_id)
+        self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
         if st.get("auto") == "join" and hasattr(self, "gwjoin_linked"):
             self.gwjoin_linked(slot_id)                   # сопряжение: карантин снят, .join-prev прочь
-        self._backup_event(gw.id, "rekey")                # бэкап со старыми ключами больше не годится
+            # итог — сообщением подключения (Т-П8 → Т-П9), не «ключи сменены» (ui-7)
+            return {"notes": [], "hold": False, "rekeyed": True}
         notes = [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")]
         return {"notes": self._rekey_notes(st, notes, done=True), "hold": False, "rekeyed": True}
 

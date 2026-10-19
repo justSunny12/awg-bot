@@ -528,7 +528,9 @@ if [ "$MODE" = "rollback" ]; then
         run "rm -f $LEGACY_UNIT"
     fi
     run "awg-quick down $LINK_IF 2>/dev/null || true"
-    run "rm -f $CONF $GW_CONF_OUT $GW_BUNDLE_OUT"
+    # с линком — и прежние ключи замены (.join-prev) и перехода (.next/.prev):
+    # снятому слоту ключи прежнего устройства ни к чему
+    run "rm -f $CONF $GW_CONF_OUT $GW_BUNDLE_OUT $CONF.join-prev $GW_CONF_OUT.join-prev $CONF.next $CONF.prev $GW_CONF_OUT.next $GW_CONF_OUT.prev"
     # шаблон юнита общий на все линки: снимаем, только если экземпляров не осталось
     if ! ls /etc/systemd/system/multi-user.target.wants/awg-link@*.service >/dev/null 2>&1; then
         run "rm -f $UNIT_TEMPLATE"

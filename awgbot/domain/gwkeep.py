@@ -28,7 +28,8 @@ import re
 V = 1
 CAP = "keep1"
 
-# ключи разделов агента: «🔔 Уведомления», «🩺 Мониторинг» (часть шлюза), «⬆️ Обновления»
+# ключи разделов агента: «🔔 Уведомления», «🩺 Мониторинг» (часть шлюза). Расписания
+# обновлений у агента больше нет (шлюзы обновляет сервер AWG) — ключ снят
 CONF_KEYS = (
     "quiet_hours.quiet_hours_enabled", "quiet_hours.quiet_hours_start", "quiet_hours.quiet_hours_end",
     "resource_alerts.enabled", "resource_alerts.thresholds_percent.cpu",
@@ -36,7 +37,6 @@ CONF_KEYS = (
     "notifications.email_fallback", "app.gateway.temp_alert_c",
     "app.monitoring.alert_streak", "app.gateway.monitor_minutes", "app.gateway.handshake_max_age",
     "app.gateway.link_alert_loud",
-    "updates.poll_schedule",
 )
 # firewall.env без SSH_PORT: порт — факт устройства (под OMV его задаёт OMV);
 # без SSH_ALLOW_RESOLVED: адреса имён из SSH_ALLOW — факт резолвера, их пересчитывает
@@ -59,7 +59,6 @@ GROUPS = (
                          "app.gateway.temp_alert_c")),
     ("мониторинг", ("app.monitoring.alert_streak", "app.gateway.monitor_minutes",
                     "app.gateway.handshake_max_age", "app.gateway.link_alert_loud")),
-    ("расписание обновлений", ("updates.poll_schedule",)),
     ("доступ по SSH из туннеля", ("fw:ADMIN_IPS_EXTRA",)),
     ("фильтр SSH снаружи", ("fw:SSH_FILTER",)),
     ("адреса SSH", ("fw:SSH_ALLOW",)),

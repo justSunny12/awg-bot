@@ -258,18 +258,45 @@ def check_link_rekey(conf_text: str, standing_text: str) -> wgconf.Conf:
     return conf
 
 
-def merge_link_keys(standing_text: str, new: wgconf.Conf) -> wgconf.Conf:
+def join_link_env(conf_text: str) -> dict:
+    """Окружение проверки конфига линка у шлюза в сопряжении: юнита обвязки ещё
+    нет, и подсеть клиентов, подсети соседей и резолвер скрипт взял бы по
+    умолчанию. Значения — из AllowedIPs самого конфига (его собрал сервер:
+    подсеть клиентов первой, /30 линка, префиксы соседей, /32 резолвера).
+    Конфиг по токену (только /30) — {"LINK_CHECK_KIND": "join"}."""
+    try:
+        conf = wgconf.parse(conf_text)
+        link = str(ipaddress.ip_interface(norm(conf.get("Interface", "Address"))).network)
+    except (wgconf.WgConfError, ValueError):
+        return {}
+    entries = [e.strip() for e in str(conf.get("Peer", "AllowedIPs") or "").split(",") if e.strip()]
+    others = [e for e in entries if e != link]
+    if not others:
+        return {"LINK_CHECK_KIND": "join"}
+    resolver = next((e[:-3] for e in others[1:] if e.endswith("/32")), "")
+    return {"CLIENT_SUBNET": others[0], "PEER_LAN_NETS": " ".join(e for e in others[1:] if not e.endswith("/32")),
+            "RESOLVER": resolver}
+
+
+def merge_link_keys(standing_text: str, new: wgconf.Conf, *, peer_from_new: bool = False) -> wgconf.Conf:
     """Конфиг для переключения: стоящий сейчас (Endpoint, AllowedIPs, keepalive
     — как их держит документ на этот момент) с ключами, PSK и обфускацией
     нового. [Interface] — из нового целиком (Address проверка сверила), в
     [Peer] — новые PublicKey и PresharedKey. Между приглашением и «Применить»
     документ мог поменять Endpoint или подсети соседей — переключение их не
-    откатывает."""
+    откатывает. peer_from_new — смена ключей после кода сопряжения: стоящий
+    конфиг — по токену (AllowedIPs — только /30 линка, документа ещё не было),
+    и [Peer] берётся из нового целиком: его собрал сервер со всеми записями."""
     try:
         standing = wgconf.parse(standing_text)
     except wgconf.WgConfError as e:
         raise CfgError(f"текущий конфиг линка: {e}") from None
     out = wgconf.Conf()
+    if peer_from_new:
+        out.stamp = new.stamp or standing.stamp
+        out.sections.append(("Interface", list(new.section("Interface"))))
+        out.sections.append(("Peer", list(new.section("Peer"))))
+        return out
     out.stamp = new.stamp or standing.stamp
     out.sections.append(("Interface", list(new.section("Interface"))))
     peer = [(k, v) for k, v in standing.section("Peer") if k.lower() not in ("publickey", "presharedkey")]

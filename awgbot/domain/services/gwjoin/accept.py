@@ -20,7 +20,7 @@ import types
 from awgbot.core import config
 from awgbot.domain.services.types import ServiceError
 from awgbot.infra import routing
-from awgbot.util import joinsas
+from awgbot.util import joinsas, timeutil
 
 from ..gateway_link.common import log
 from .state import _LOCK
@@ -39,11 +39,12 @@ class GwJoinAcceptMixin:
         kind = st.get("kind")
         gw = self.db.gateway(slot_id)
         dev_id = st.get("device")
+        made = 0
         if kind in ("new", "replace") and (dev_id == "new" or dev_id is None):
             name = st.get("name") if kind == "new" else ""
             dc = self.add_device(admin.id, name or (self._GW_NEW_NAME if int(slot_id) == 1
                                                     else f"{self._GW_NEW_NAME} {slot_id}"))
-            dev_id = dc.device_id
+            dev_id = made = dc.device_id
         dev = self.db.get_device(int(dev_id)) if dev_id not in (None, "new") else None
         if dev is None:
             raise ServiceError("устройство слота не найдено")
@@ -57,7 +58,11 @@ class GwJoinAcceptMixin:
                 self.db.gateway_update(gw.id, device_id=dev.id)
                 self._backup_event(gw.id, "replace")
             self.gwlink_forget(gw.id)                     # снимок, сессия, документ прежней установки — вон
-        st.update(state="accepted", device=dev.id)
+        # эфемерный ключ шлюза, чей код ввели: после кода сессия — только с ним
+        st.update(state="accepted", device=dev.id, eph=str(self._gwjoin_live(slot_id).get("eph") or ""),
+                  accepted_at=timeutil.to_iso(timeutil.now()))
+        if made:
+            st["made"] = int(made)                        # заведено кодом — возврат его снимет
         self._gwjoin_save(slot_id, st)
         try:
             self.gateway_rekey_stage(int(slot_id), auto="join")
@@ -89,6 +94,7 @@ class GwJoinAcceptMixin:
                 except ServiceError as e:
                     log.warning("сопряжение: слот %s — .join-prev не убран: %s", slot_id, e)
             st["state"] = "linked"
+            st["linked_at"] = timeutil.to_iso(timeutil.now())
             self._gwjoin_save(slot_id, st)
             self._gwjoin_live_set(slot_id, None)
         self._gw_firewall_refresh()
@@ -100,12 +106,13 @@ class GwJoinAcceptMixin:
         self._channel_touch()
         log.info("сопряжение: слот %s на постоянных ключах — карантин снят", slot_id)
 
-    def gwjoin_installed(self, slot_id: int) -> dict:
-        """Агент подключённого шлюза сказал «установлен» — сопряжение доведено:
-        запись снимается, возвращается (для Т-П9); не было — пусто."""
+    def gwjoin_installed(self, slot_id: int, join_id: str = "") -> dict:
+        """Агент подключённого шлюза сказал «установлен» или join_done —
+        сопряжение доведено: запись снимается, возвращается (для Т-П9); не
+        было (или id другого сопряжения) — пусто."""
         with _LOCK:
             st = self.gwjoin(slot_id)
-            if st.get("state") not in ("linked", "accepted"):
+            if st.get("state") not in ("linked", "accepted") or (join_id and st.get("id") != join_id):
                 return {}
             self._gwjoin_save(slot_id, {})
             return st
@@ -116,19 +123,29 @@ class GwJoinAcceptMixin:
         me = self.gw_bot_identity(int(slot_id)) or {}
         return str(snap.get("agent_version") or "").lstrip("v"), str(me.get("username") or "")
 
-    def gwjoin_revert(self, slot_id: int, why: str) -> None:
+    def gwjoin_revert(self, slot_id: int, why: str) -> str:
         """Интерфейс под токен — прочь сразу (Р24): новый слот — линк снят
-        (первый — новые случайные ключи), замена — прежние ключи на место."""
+        (первый — новые случайные ключи), замена — прежние ключи на место.
+        "" — сделано, запись снята; иначе причина отказа: запись остаётся
+        «closing», такт сопряжений повторит (quar-4), человеку — честно."""
         with _LOCK:
             st = self.gwjoin(slot_id)
             if not st:
-                return
+                return ""
             self._gwjoin_live_set(slot_id, None)
-            self._gwjoin_save(slot_id, {})
+            st["state"] = "closing"
+            st.setdefault("why", why)
+            self._gwjoin_save(slot_id, st)
         slot = types.SimpleNamespace(id=int(slot_id), link_if=st["link_if"], link_port=int(st["port"]),
                                      link_cidr=st["cidr"])
+        err = ""
         try:
             if st.get("kind") == "new":
+                if self.db.gateway(slot_id) is not None:
+                    # код был верный, а смена ключей не встала (срок accepted):
+                    # строка слота, заведённая кодом, — прочь вместе с линком
+                    self._gwjoin_drop_new_row(slot_id)
+                self._gwjoin_drop_made(st)
                 if int(slot_id) == 1:
                     self._run_link_script("--rekey", self._slot_env(slot))
                 else:
@@ -138,13 +155,52 @@ class GwJoinAcceptMixin:
                     except routing.RoutingError:
                         pass
             else:
+                if self.gateway_rekey(int(slot_id)):
+                    self.gateway_rekey_abort(self.db.gateway(slot_id) or slot)   # смена после кода — снята
                 self._run_link_script("--join-revert", self._slot_env(slot))
+                gw = self.db.gateway(slot_id)
+                prev = int(st.get("prev_device") or 0)
+                if gw is not None and prev and gw.device_id != prev and self.db.get_device(prev) is not None:
+                    # код был верный (устройство уже заменено), а смена ключей не
+                    # встала: линк — прежнему устройству, и слот — ему же
+                    self.gwlink_forget(gw.id)
+                    self.db.gateway_update(gw.id, device_id=prev)
+                self._gwjoin_drop_made(st)
                 try:
                     self._ensure_gateway_policy()
                 except routing.RoutingError as e:
                     log.warning("сопряжение: политика слота %s не вернулась: %s", slot_id, e)
                 self._channel_touch()
         except ServiceError as e:
+            err = str(e)
             log.warning("сопряжение: слот %s — интерфейс под токен не снят: %s", slot_id, e)
+        if not err:
+            with _LOCK:
+                if self.gwjoin(slot_id).get("id") == st.get("id"):
+                    self._gwjoin_save(slot_id, {})
         self._gw_firewall_refresh()
-        log.info("сопряжение: слот %s — закрыто (%s)", slot_id, why)
+        log.info("сопряжение: слот %s — %s (%s)", slot_id, "закрыто" if not err else "возврат не удался", why)
+        return err
+
+    def _gwjoin_drop_made(self, st: dict) -> None:
+        """Устройство «Шлюз N», заведённое верным кодом, — прочь вместе с
+        недоведённым сопряжением: в списке админа не остаётся пира-сироты.
+        Отказ — в журнал: линк важнее, устройство админ снимет сам."""
+        made = int(st.get("made") or 0)
+        if not made or self.db.get_device(made) is None or self.db.gateway_by_device(made) is not None:
+            return
+        try:
+            self.remove_device(made)
+        except ServiceError as e:
+            log.warning("сопряжение: устройство %s, заведённое кодом, не снято: %s", made, e)
+
+    def _gwjoin_drop_new_row(self, slot_id: int) -> None:
+        """Строка нового слота, заведённая верным кодом, — прочь (сопряжение не
+        доведено); устройство, заведённое кодом, снимает _gwjoin_drop_made."""
+        gw = self.db.gateway(slot_id)
+        if gw is None:
+            return
+        self.gateway_rekey_abort(gw)
+        self.gwlink_forget(gw.id)
+        self._slot_forget(gw.id)
+        self.db.gateway_delete(gw.id)

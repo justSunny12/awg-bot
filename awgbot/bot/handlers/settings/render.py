@@ -107,8 +107,9 @@ async def gateways_screen(services):
                                peer_info=peer, lists=lists, joins=joins)
     # тумблер — только при слотах (снятие последнего его выключает)
     smb = (await call(services.smb_tunnel_on)) if states and await call(services.smb_tunnel_possible) else None
-    return text, kb.gateways_kb(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
-                                failover_on=auto, smb_on=smb)
+    # живая команда подключения занимает номер слота — и в «➕ Резерв» тоже (ui-3)
+    return text, kb.gateways_kb(states, can_add=len(states) + len(joins) < config.ROUTING_GATEWAYS_MAX,
+                                failover_on=auto, smb_on=smb, joins=joins)
 
 
 async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):

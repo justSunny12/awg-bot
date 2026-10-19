@@ -25,6 +25,12 @@ def _token2(services, mp):
     services._shot_tokens[2] = TOKEN2
 
 
+def _kit(services, mp):
+    """Сервер не из выпуска (своя сборка): выпуска на GitHub нет — кит."""
+    _token2(services, mp)
+    mp.setattr(services, "_gwjoin_kit", lambda: True)
+
+
 def _joined(slot: int, *addrs: str, hosts: dict | None = None):
     """Шлюз подключился к сопряжению слота с адресов addrs (последний — живая
     сессия) — как это записал бы слушатель канала; код — в памяти."""
@@ -75,6 +81,23 @@ def _done(slot: int):
     return step
 
 
+def _only(slot: int, event: str, **extra):
+    """Событие хода как есть, состояние записи не трогается (ui-6, такт)."""
+    async def step(services, bot):
+        from awgbot.bot.handlers.settings import on_join_event
+        await on_join_event(bot, services, event, services.gwjoin(slot), extra)
+    return step
+
+
+def _accepted(slot: int):
+    """Код верный — запись accepted, как после gwjoin_code (без смены ключей)."""
+    async def step(services, bot):
+        st = services.gwjoin(slot)
+        st["state"] = "accepted"
+        services._gwjoin_save(slot, st)
+    return step
+
+
 NEW = GwMarkCB(action="new_yes", slot=0)          # «➕ Новое устройство» резервом, токен известен
 REPLACE = GwMarkCB(action="new_yes", slot=1)      # замена устройства слота 1 новым
 
@@ -119,6 +142,24 @@ JOIN = [
          title="Т-П11: срок вышел — правка сообщения и уведомление без звука", sid="adm.join.expired"),
     _new(("press", GwJoinCB(action="code", slot=2, jid="00000000000000ff")),
          title="кнопка чужой (прежней) заявки — всплывашка", sid="adm.join.code.gone"),
+    _new(("press", GwJoinCB(action="cancel", slot=2, jid=J1)), ("press", GwJoinCB(action="cancel", slot=2, jid=J1)),
+         title="«⬅️ Отменить» второй раз — всплывашка, а не тишина (ui-2)", sid="adm.join.cancel.twice"),
+    _new(("call", _joined(2, "203.0.113.50"), "подключился"), ("call", _accepted(2), "код верный"),
+         ("call", _only(2, "connected"), "переподключился"),
+         title="код уже верный, шлюз переподключился — Т-П8 остаётся (ui-6)", sid="adm.join.accepted.again"),
+    _new(("call", _joined(2, "203.0.113.50"), "подключился"), ("call", _accepted(2), "код верный"),
+         ("call", _only(2, "stuck"), "час после кода"),
+         title="код верный, а ключи не встали за час — откат и уведомление (quar-3)", sid="adm.join.stuck"),
+    _new(("call", _joined(2, "203.0.113.50"), "подключился"), ("call", _only(2, "stale"), "сутки без итога"),
+         title="на постоянных ключах, а агент не доложил за сутки (quar-7)", sid="adm.join.stale_linked"),
+    _new(("call", _only(2, "revert_failed", err="скрипт линка (--rollback) не отработал: занято"), "возврат упал"),
+         title="возврат линка не удался — честно, один раз (quar-4)", sid="adm.join.revert_failed"),
+    Shot("adm.join.kit", role="admin", steps=[("press", NEW)], data=_gw(1, _kit),
+         title="Т-П1: сервер не из выпуска — шлюз ставится китом (flow-12)"),
+    Shot("adm.join.list.cancel", role="admin",
+         steps=[("press", NEW), ("start", ""), ("press", SetCB(sec="rt")),
+                ("press", GwJoinCB(action="cancel", slot=2, jid=J1))],
+         data=_gw(1, _token2), title="«Шлюзы»: «⬅️ Отменить подключение» — экран заново, без строки (ui-3)"),
     Shot("adm.join.list", role="admin", steps=[("press", NEW), ("press", SetCB(sec="rt"))],
          data=_gw(1, _token2), title="Т-П15: «Шлюзы» — новый слот в сопряжении строкой"),
     # ── замена устройства и её отмена ─────────────────────────────────────

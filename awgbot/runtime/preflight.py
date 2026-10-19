@@ -95,7 +95,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     warns += _service_autostart_warning()
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
-                     f"шлюз ставится файлом конфигурации с сервера AWG (routing-link-setup.sh --bundle)")
+                     "шлюз подключается командой из бота сервера AWG: «🛰 Шлюзы» → «🛰 Подключить шлюз»")
     if _unit_enabled(_c.GW_UNIT) != "enabled":
         warns.append(f"автозапуск обвязки ({_c.GW_UNIT}) выключен — после перезагрузки обвязка "
                      f"шлюза не восстановится")

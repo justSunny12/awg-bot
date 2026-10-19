@@ -37,6 +37,9 @@ class _Agent(GatewayJoinMixin):
     def first_start_note(self, fresh: bool) -> None:
         self.first.append(fresh)
 
+    def installed_report_done(self) -> None:
+        self.first.append("installed-sent")
+
     def status(self) -> dict:
         with open(self._join_status_file, encoding="utf-8") as f:
             return json.load(f)
@@ -70,7 +73,10 @@ def test_both_sides_show_one_code(agent, monkeypatch):
     assert st["state"] == "code" and st["code"] == joinsas.show(code)
     assert agent.join_state()["name"] == "Шлюз 2", "имя слота из join_eph не запомнено"
     second = agent.join_hello()
-    assert second["eph"] != hello["eph"], "эфемерный ключ не новый на новую сессию"
+    assert second["eph"] == hello["eph"], "пара сменилась до join_ok — сервер после кода её не примет"
+    assert len(bytes.fromhex(agent.join_state()["eph_priv"])) == 32
+    import os
+    assert os.stat(agent._join_file).st_mode & 0o777 == 0o600, "закрытый эфемерный ключ — не 0600"
 
 
 def test_a_strange_hostname_is_not_sent(agent, monkeypatch):
@@ -117,10 +123,14 @@ def test_the_end_of_pairing_marks_the_first_start_and_removes_the_file(agent, tm
     st["state"] = "linked"
     agent._join_save(st)
     assert agent.join_finish_start("pi2_gw_bot") is True
-    assert agent.first == [True], "отметка первого старта не от конца сопряжения"
-    assert not (tmp_path / "join.json").exists()
+    assert agent.first == [True, "installed-sent"], \
+        "отметка первого старта не от конца сопряжения или ушло бы второе «установлен»"
     assert agent.status()["state"] == "done" and agent.status()["bot"] == "pi2_gw_bot"
-    assert agent.join_finish_start("pi2_gw_bot") is False, "второй старт — снова «установлен»"
+    assert agent.join_done_pending() == {"id": JID}, "итог сопряжения серверу не уйдёт"
+    assert not agent.join_active() and agent.join_hello() == {}
+    assert agent.join_finish_start("pi2_gw_bot") is False, "второй старт — снова конец сопряжения"
+    agent.join_done_sent()
+    assert not (tmp_path / "join.json").exists() and agent.join_done_pending() == {}
 
 
 # ── терминал: awg-bot join ───────────────────────────────────────────────────
@@ -162,3 +172,87 @@ def test_the_terminal_follows_the_pairing(tmp_path, monkeypatch, capsys):
     status.update(state="done", bot="pi2_gw_bot", name="Шлюз 2")
     assert tjoin._follow(int(time.time()) + 3600) == 0
     assert "Готово: шлюз «Шлюз 2» подключён. Открой бота шлюза @pi2_gw_bot" in capsys.readouterr().out
+
+
+def test_status_before_the_first_answer_is_not_silent(monkeypatch, capsys):
+    """flow-7: `join --status` до ответа сервера и без хода вовсе — строкой."""
+    from tools import join as tjoin
+    monkeypatch.setattr(tjoin, "_status", lambda: {"state": "waiting"})
+    assert tjoin._follow(int(time.time()) + 3600, once=True) == 0
+    assert "жду ответа сервера AWG до" in capsys.readouterr().out
+    monkeypatch.setattr(tjoin, "_status", lambda: {})
+    monkeypatch.setattr("awgbot.domain.gateway.join.JOIN_FILE", "/nonexistent/join.json")
+    assert tjoin.cmd_status() == 1
+    assert "подключения командой нет" in capsys.readouterr().out
+
+
+@pytest.fixture()
+def joinrun(tmp_path, monkeypatch):
+    """cmd_join без хоста: файл сопряжения во временном каталоге, скрипт
+    обвязки и systemctl — подставные."""
+    from awgbot.domain.gateway import join as jmod
+    from awgbot.infra import gwguard
+    from tools import join as tjoin
+    jf = tmp_path / "awg-gw" / "join.json"
+    monkeypatch.setattr(jmod, "JOIN_FILE", str(jf))
+    monkeypatch.setattr(jmod, "STATUS_FILE", str(tmp_path / "join.status"))
+    calls = []
+    monkeypatch.setattr(gwguard, "join_link", lambda conf, port, script="": (calls.append("link"), (True, ""))[1])
+    rc = {"restart": 0}
+
+    def run(argv, **kw):
+        calls.append(" ".join(argv))
+        return type("P", (), {"returncode": rc["restart"], "stdout": b"", "stderr": b""})()
+    monkeypatch.setattr(tjoin.subprocess, "run", run)
+    monkeypatch.setattr(tjoin, "_follow", lambda expires, once=False: (calls.append("follow"), 0)[1])
+    return tjoin, jf, calls, rc
+
+
+def test_a_failed_agent_restart_is_said(joinrun, capsys):
+    """flow-10: агент не перезапустился — не «жду ответа» вечно, а отказ."""
+    tjoin, _jf, calls, rc = joinrun
+    rc["restart"] = 1
+    assert tjoin.cmd_join(_token(expires=int(time.time()) + 3600)) == 1
+    assert "агент awg-bot не перезапустился" in capsys.readouterr().err and "follow" not in calls
+
+
+def test_the_same_command_again_only_follows(joinrun):
+    """flow-11: та же команда ещё идёт (код на экране, или уже после кода) —
+    линк и агент не трогаются, только ход; новая — заново."""
+    tjoin, jf, calls, _rc = joinrun
+    tok = _token(expires=int(time.time()) + 3600)
+    jf.parent.mkdir(parents=True)
+    from awgbot.domain.gateway import join as jmod
+    for state, status in (("pairing", {"state": "code"}), ("done", {}), ("accepted", {})):
+        jf.write_text(json.dumps({"id": JID, "state": state}), encoding="utf-8")
+        with open(jmod.STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+        calls.clear()
+        assert tjoin.cmd_join(tok) == 0
+        assert calls == ["follow"], (state, calls)
+    jf.write_text(json.dumps({"id": "ffffffffffffffff", "state": "pairing"}), encoding="utf-8")
+    calls.clear()
+    assert tjoin.cmd_join(tok) == 0
+    assert calls[0] == "link" and "systemctl restart awg-bot" in calls
+
+
+def test_the_channel_port_while_pairing_comes_from_the_token(tmp_path, monkeypatch):
+    """flow-9: у шлюза, подключённого раньше, юнит обвязки ещё прежний — порт
+    канала сопряжения из файла сопряжения (токена), не из юнита."""
+    from awgbot.domain.gateway import join as jmod
+    from awgbot.infra import gwguard
+    from awgbot.runtime import linkclient
+    jf = tmp_path / "join.json"
+    monkeypatch.setattr(jmod, "JOIN_FILE", str(jf))
+    monkeypatch.setattr(gwguard, "unit_env", lambda key: "9999")
+    jf.write_text(json.dumps({"id": JID, "channel_port": 8787}), encoding="utf-8")
+    assert linkclient.server_port() == 8787
+    jf.unlink()
+    assert linkclient.server_port() == 9999
+
+
+def test_the_status_file_with_the_code_is_private(agent):
+    """Вне оси (axis-pairing): файл хода с кодом — 0600, не 0644."""
+    import os
+    agent.join_status(state="code", code="K7F-2QX")
+    assert os.stat(agent._join_status_file).st_mode & 0o777 == 0o600

@@ -407,8 +407,10 @@ def _reset_module_state(mp) -> None:
     """Модульное состояние процесса, которое иначе протекало бы из снимка в
     снимок (и из чужих тестов того же воркера): страницы листания, «карточка
     с главной», кэш «кто это» в middleware, метки и замки объявлений, клиент
-    упр. канала, запасной канал почты, кэши проб и резолва."""
+    упр. канала, запасной канал почты, кэши проб и резолва, память нажатий
+    «Подключить шлюз»."""
     from awgbot.bot import notifier
+    from awgbot.bot.handlers.settings import gwmark
     from awgbot.bot.handlers.admin import broadcast
     from awgbot.infra import awg, nftguard
     from awgbot.infra.routing import probes, selfcheck
@@ -423,6 +425,7 @@ def _reset_module_state(mp) -> None:
     awg._params_cache.clear()
     awg._params_cached_at.clear()
     probes._last_probe_ms.clear()
+    gwmark._PRESSED.clear()
     mp.setattr(selfcheck, "_selfcheck_cache", None)
     mp.setattr(linkclient, "_client", None)
     mp.setattr(linkclient, "_notify", None)

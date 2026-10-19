@@ -118,6 +118,34 @@ async def test_hello_names_the_agents_capabilities_as_a_list(vps):
     assert isinstance(hello["caps"], list) and all(isinstance(c, str) for c in hello["caps"])
 
 
+async def test_after_the_code_the_hello_carries_no_settings_copy(vps):
+    """flow-2: после верного кода, до полного старта агента — hello без копии
+    настроек и без keep1: установка ещё не «новая» (отметки первого старта
+    нет), и умолчания затёрли бы блок слота на сервере. Полный агент — как
+    обычно."""
+    class _Pairing(_Agent):
+        active = True
+
+        def join_hello(self):
+            return {}
+
+        def join_active(self):
+            return self.active
+
+        def keep_hello(self):
+            return {"keep_hash": "0" * 16, "keep_new": False, "keep_fresh": False}
+    agent = _Pairing()
+    conn = vps.answers()
+    await linkclient.LinkClient(agent)._connect_once()
+    hello = conn.hello()
+    assert "keep1" not in hello["caps"] and "keep_hash" not in hello, hello
+    agent.active = False
+    conn = vps.answers()
+    await linkclient.LinkClient(agent)._connect_once()
+    hello = conn.hello()
+    assert "keep1" in hello["caps"] and hello["keep_hash"] == "0" * 16
+
+
 async def test_the_servers_capabilities_from_its_role_reach_the_agent(vps):
     """Первое слово сервера — роль — несёт его возможности: по ним подсказки
     агента говорят, что сервер пришлёт сам. Прежний сервер поля не шлёт — до

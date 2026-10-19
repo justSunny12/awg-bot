@@ -246,3 +246,36 @@ def test_the_report_is_pending_only_within_the_hour_and_until_done(agent):
     assert pi.installed_report_pending() is False, "окно в час не соблюдено"
     pi.db.set_state(pi._FIRST_START_KEY, "мусор")
     assert pi.installed_report_pending() is False
+
+
+# ── конец сопряжения своим словом (flow-3) ───────────────────────────────────
+
+async def test_join_done_finishes_the_pairing_even_on_an_old_install(link, services, agent, monkeypatch):
+    """Агент, стоявший раньше (Т-Т11): отметка первого старта у него давняя, и
+    «установлен» не уходит. Конец сопряжения — join_done: сервер снимает
+    запись, итог Т-П9 — крючком сопряжения, ответ join_done_ok убирает файл
+    сопряжения у агента; «установлен» второй раз не приходит."""
+    import json
+    pi, client, kinds = agent
+    events = []
+
+    async def on_join(event, st, extra):
+        events.append((event, st.get("id")))
+    monkeypatch.setattr(linkserver, "_on_join", on_join)
+    monkeypatch.setattr(linkserver, "_on_installed", None)
+    services._gwjoin_save(1, {"id": "0123456789abcdef", "kind": "same", "slot": 1, "state": "linked",
+                              "link_if": "awglink", "port": 443, "cidr": "127.0.0.0/30", "name": "NASPi"})
+    _first_start(pi, 60 * 24 * 30)                      # давняя установка
+    from pathlib import Path
+    import tempfile
+    d = Path(tempfile.mkdtemp())
+    monkeypatch.setattr(pi, "_join_file", str(d / "join.json"))
+    monkeypatch.setattr(pi, "_join_status_file", str(d / "join.status"))
+    (d / "join.json").write_text(json.dumps({"id": "0123456789abcdef", "slot": 1, "state": "linked"}),
+                                 encoding="utf-8")
+    assert pi.join_finish_start("naspi_gw_bot")
+    await _up(client, kinds)
+    assert await _until(lambda: events, timeout=5), f"итога сопряжения нет: {kinds}"
+    assert events == [("done", "0123456789abcdef")] and services.gwjoin(1) == {}
+    assert await _until(lambda: not (d / "join.json").exists(), timeout=5), "файл сопряжения остался"
+    assert "installed" not in kinds and kinds.count("join_done") == 1

@@ -100,7 +100,10 @@ def _follow(expires: int, *, once: bool = False) -> int:
         if key != seen:
             seen = key
             name = st.get("name") or "шлюз"
-            if state == "code":
+            if state in ("", "waiting") and once:
+                # --status до первого ответа сервера — не молчим (flow-7)
+                _p(f"[awg-bot] линк по команде подключения поднят — жду ответа сервера AWG до {until}")
+            elif state == "code":
                 _frame(st.get("code", ""), until)
             elif state == "wrong":
                 _p(f"[awg-bot] код введён на сервере AWG неверно — осталось попыток: {st.get('left', 0)}")
@@ -144,8 +147,11 @@ def cmd_join(text: str) -> int:
             st = json.loads(f.read() or "{}")
     except (OSError, ValueError):
         st = {}
-    if st.get("id") == tok.join_id and st.get("state") in ("accepted", "linked"):
-        return _follow(tok.expires)                       # повтор той же команды после кода — только ход
+    if st.get("id") == tok.join_id and (st.get("state") in ("accepted", "linked", "done")
+                                        or (st.get("state") == "pairing" and _status().get("state"))):
+        # повтор той же команды (терминал закрыли): идёт — только ход и код,
+        # линк и агент не трогаются (flow-11)
+        return _follow(tok.expires)
     os.makedirs(os.path.dirname(JOIN_FILE), exist_ok=True)
     conf_path = os.path.join(os.path.dirname(JOIN_FILE), "join.conf")
     write_private(conf_path, _link_conf(tok))
@@ -166,7 +172,16 @@ def cmd_join(text: str) -> int:
     if not ok:
         _err("линк по команде подключения не поднялся: " + (out.splitlines()[-1] if out else "скрипт отказал"))
         return 1
-    subprocess.run(["systemctl", "restart", "awg-bot"], check=False, capture_output=True)
+    try:
+        rc = subprocess.run(["systemctl", "restart", "awg-bot"], check=False, capture_output=True,
+                            timeout=120).returncode
+    except (OSError, subprocess.SubprocessError) as e:
+        rc, out = 1, str(e)
+    if rc != 0:
+        # агент не встал в режим сопряжения — ждать кода бессмысленно (flow-10)
+        _err("агент awg-bot не перезапустился — линк поднят, но сопряжения не будет; "
+             "journalctl -u awg-bot -e -o short-iso")
+        return 1
     _p("[awg-bot] линк до сервера AWG поднят по команде подключения — жду ответа…")
     return _follow(tok.expires)
 
@@ -179,7 +194,7 @@ def cmd_status() -> int:
     except (OSError, ValueError):
         st = {}
     if not st and not _status():
-        _p("[awg-bot] подключения командой нет")
+        _p("[awg-bot] подключения командой нет — запусти команду из бота сервера AWG")
         return 1
     return _follow(int(st.get("expires") or 0) or int(time.time()) + 1, once=True)
 

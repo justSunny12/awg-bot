@@ -68,7 +68,7 @@ class GatewayJoinMixin:
         data = {"state": fields.pop("state", ""), "slot": st.get("slot"), "name": st.get("name", ""),
                 "until": st.get("expires", ""), "at": int(time.time()), **fields}
         try:
-            write_private(self._join_status_file, json.dumps(data, ensure_ascii=False), mode=0o644)
+            write_private(self._join_status_file, json.dumps(data, ensure_ascii=False))   # в нём код — 0600
         except OSError as e:
             log.warning("gateway: ход сопряжения не записан: %s", e)
 
@@ -89,7 +89,18 @@ class GatewayJoinMixin:
         st = self.join_state()
         if st.get("state") != "pairing" or not st.get("id"):
             return {}
-        priv, pub = joinsas.new_pair()
+        # пара — на всё сопряжение до join_ok (файл 0600): после верного кода
+        # сервер ведёт сессию только с тем эфемерным ключом, чей код ввели
+        try:
+            priv = bytes.fromhex(str(st.get("eph_priv") or ""))
+        except ValueError:
+            priv = b""
+        if len(priv) != 32:
+            priv, _pub = joinsas.new_pair()
+            st["eph_priv"] = priv.hex()
+            self._join_save(st)
+        from nacl.public import PrivateKey
+        pub = bytes(PrivateKey(priv).public_key)
         self.__dict__["_join_eph"] = (priv, pub)
         host = socket.gethostname().split(".")[0][:63]
         out = {"join": st["id"], "eph": _b64u(pub)}
@@ -162,6 +173,7 @@ class GatewayJoinMixin:
         except OSError as e:
             log.warning("gateway: ADMIN_ID не записан: %s", e)
             return False
+        st.pop("eph_priv", None)                          # пара отслужила
         st.update(state="accepted", server_bot=str(secrets_.get("server_bot") or "")[:64],
                   name=str(secrets_.get("name") or st.get("name") or "")[:64])
         self._join_save(st)
@@ -203,14 +215,29 @@ class GatewayJoinMixin:
         if st.get("state") not in ("accepted", "linked"):
             return False
         self.first_start_note(True)
+        # итог сопряжения сервер узнаёт своим словом join_done (и у агента,
+        # стоявшего раньше, — отметка первого старта у него давняя): обычное
+        # «установлен» не нужно — второго «настроен» админ не получит
+        self.installed_report_done()
         if hasattr(self, "cfg_token_note_clear"):
             self.cfg_token_note_clear()                   # «бот на новом токене» новому шлюзу ни к чему
+        st["state"] = "done"
+        self._join_save(st)
         self.join_status(state="done", bot=bot_username, name=st.get("name", ""))
+        return True
+
+    def join_done_pending(self) -> dict:
+        """Тело join_done серверу ({"id"}) — агент полный, сопряжение доведено;
+        иначе пусто."""
+        st = self.join_state()
+        return {"id": str(st.get("id") or "")} if st.get("state") == "done" and st.get("id") else {}
+
+    def join_done_sent(self) -> None:
+        """Сервер принял join_done — файл сопряжения больше не нужен."""
         try:
             os.remove(self._join_file)
         except OSError:
             pass
-        return True
 
     def join_fresh_uplink(self) -> bool:
         """Правило `fresh` первого аплинка: агент подключён командой (код

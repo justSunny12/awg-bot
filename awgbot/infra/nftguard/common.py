@@ -70,6 +70,8 @@ class GuardSpec:
                                                               # назначения туда хода нет
     quarantine_ifs: list[str] = field(default_factory=list)   # линки сопряжения (штамп в конфиге): только
                                                               # канал на адрес ВПС, пересылки нет
+    quarantine_pairs: list[tuple] = field(default_factory=list)   # (линк, адрес ВПС, адрес шлюза) — канал
+                                                                  # каждого линка сопряжения — только своей паре
 
 
 def enabled() -> bool:

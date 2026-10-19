@@ -79,7 +79,7 @@ def slot_button_label(name: str, label: str = "", *, star: bool = False, fit: bo
 
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
-                smb_on: bool | None = None) -> InlineKeyboardMarkup:
+                smb_on: bool | None = None, joins=()) -> InlineKeyboardMarkup:
     """Экран «🛰 Шлюзы» с главной: не развёрнуто — «🚀 Развернуть»; спит до
     перезапуска — только выход; выключено — «✅ Включить»; включено — слоты
     кнопками (⭐ у предпочтительного), переключение на резерв, тумблер
@@ -121,6 +121,11 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
                          GwSlotCB(action="switch_ask", slot=standby["gateway"].id, val="l")))
         if len(states) > 1:
             body.append((f"{_tick(failover_on)} Автопереключение", GwSlotCB(action="failover")))
+    for j in joins or ():
+        # новый слот в сопряжении: команда занимает его невидимо — отменить
+        # можно и отсюда, не ища сообщение подключения в чате (ui-3)
+        body.append((f"⬅️ Отменить подключение «{_fit(str(j.get('name') or ''), SWITCH_NAME_MAX)}»",
+                     GwJoinCB(action="cancel", slot=int(j["slot"]), jid=str(j.get("id") or ""))))
     if smb_on is not None:
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
     return ui.rows(

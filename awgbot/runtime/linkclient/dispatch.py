@@ -80,6 +80,10 @@ class DispatchMixin:
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
             return
+        if msg.get("t") == "join_done_ok":
+            if hasattr(self.services, "join_done_sent"):
+                await asyncio.to_thread(self.services.join_done_sent)
+            return
         if msg.get("t") in ("join_eph", "join_wrong", "join_refused", "join_ok"):
             if hasattr(self.services, "join_state"):
                 await self._join_in(msg)

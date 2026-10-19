@@ -196,7 +196,6 @@ class CfgRekeyMixin:
         ключами, PSK и обфускацией из приглашения; прежний — в rekey.prev;
         состояние switched пишется ДО применения (перезапуск посреди — тот же
         отсчёт и поиск). Ответ сервер получит в новой сессии. {"ok", "error", "msg"}."""
-        from awgbot.infra import gwguard
         st = self.rekey_state()
         if st.get("state") != "ready" or st.get("id") != str(msg.get("id") or ""):
             # ничего не трогали — человеку говорить не о чем, серверу — отказ
@@ -204,7 +203,7 @@ class CfgRekeyMixin:
         with base._APPLY_LOCK:
             try:
                 new = wgconf.parse(base.pathlib_read(self._rk_path("rekey.next")))
-                merged = gwcfg.merge_link_keys(self.cfg_link_text(), new)
+                merged = gwcfg.merge_link_keys(self.cfg_link_text(), new, peer_from_new=st.get("auto") == "join")
                 prev = self.cfg_link_conf()
                 if prev is None:
                     raise gwcfg.CfgError("текущий конфиг линка не прочитан")
@@ -217,7 +216,7 @@ class CfgRekeyMixin:
                 return {"ok": False, "error": str(e)[:300], "msg": st.get("msg"), "auto": str(st.get("auto") or "")}
             st.update(state="switched", switched_at=time.time())
             self._rk_save(st)
-            ok, out = gwguard.link_apply(self._rk_path("rekey.next"), iface_nets=self._cfg_iface_nets())
+            ok, out = self._rk_link_apply(self._rk_path("rekey.next"))
         if not ok:
             # скрипт вернул прежний конфиг сам — переходу конец, серверу отказ
             log.warning("gateway: новые ключи линка не встали: %s", out[-200:])
@@ -231,15 +230,28 @@ class CfgRekeyMixin:
         return {"ok": True, "error": "", "msg": st.get("msg")}
 
     def _rk_apply_file(self, name: str) -> bool:
-        from awgbot.infra import gwguard
         path = self._rk_path(name)
         if not os.path.exists(path):
             return False
         with base._APPLY_LOCK:
-            ok, out = gwguard.link_apply(path, iface_nets=self._cfg_iface_nets())
+            ok, out = self._rk_link_apply(path)
         if not ok:
             log.warning("gateway: конфиг линка %s не встал: %s", name, out[-200:])
         return ok
+
+    def _rk_link_apply(self, path: str) -> tuple[bool, str]:
+        """--link-apply конфига перехода. Шлюз в сопряжении (юнита обвязки ещё
+        нет): подсеть клиентов, соседи и резолвер для проверки скрипта — из
+        самого конфига; конфиг по токену — проверкой вида join."""
+        from awgbot.infra import gwguard
+        extra = {}
+        active = getattr(self, "join_active", None)
+        if callable(active) and active():
+            try:
+                extra = gwcfg.join_link_env(base.pathlib_read(path))
+            except OSError:
+                extra = {}
+        return gwguard.link_apply(path, iface_nets=self._cfg_iface_nets(), env_extra=extra)
 
     # ── ответ сервера ────────────────────────────────────────────────────────
 

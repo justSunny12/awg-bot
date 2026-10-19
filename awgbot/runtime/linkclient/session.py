@@ -91,9 +91,17 @@ class SessionMixin:
             # копия настроек шлюза: отпечаток и чистота установки — сервер решает,
             # вернуть ли блок; своё агент шлёт только после его ответа
             joining = await asyncio.to_thread(self.services.join_hello) if hasattr(self.services, "join_hello") else {}
+            pairing = bool(getattr(self.services, "join_active", None) and
+                           await asyncio.to_thread(self.services.join_active))
             if joining:
                 # сессия сопряжения: сервер в ней разбирает только своё (join_*, link_ack)
                 hello_body.update(joining)
+            elif pairing:
+                # после кода, до полного старта агента: копией настроек не
+                # обмениваемся — установка ещё не «новая» (отметки первого старта
+                # нет), и умолчания затёрли бы блок слота на сервере; обмен — в
+                # первой сессии полного агента
+                hello_body["caps"] = [c for c in CAPS if c != "keep1"]
             elif hasattr(self.services, "keep_hello"):
                 hello_body.update(await asyncio.to_thread(self.services.keep_hello))
             self._keep_ready = False
@@ -132,6 +140,7 @@ class SessionMixin:
             await self.push(full=True)
             await self.push_services()
             await self._maybe_installed()
+            await self._maybe_join_done()
             await self.push_own()
             await self._maybe_claim()
             while True:

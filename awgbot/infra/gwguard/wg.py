@@ -195,13 +195,14 @@ def handshake_state(iface: str) -> tuple[str, int | None]:
     return "ok", max(0, int(time.time()) - best)
 
 
-def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=()) -> tuple[bool, str]:
+def link_apply(path: str, timeout: int = LINK_APPLY_TIMEOUT, iface_nets=(), env_extra: dict | None = None) -> tuple[bool, str]:
     """Поставить конфиг линка из файла режимом обвязки `--link-apply`: скрипт
     сам проверяет его белым списком и правилом AllowedIPs (второй рубеж), а
     дальше — syncconf без перезапуска или down/up. (ok, вывод): в выводе строка
     `link: unchanged|syncconf|restarted`."""
     env = pkg._setup_env()
     env["IFACE_NETS"] = " ".join(str(n) for n in iface_nets)   # подсети интерфейсов — те же, что сверял агент
+    env.update(env_extra or {})                                 # сопряжение: юнита нет — значения из конфига
     try:
         proc = pkg.subprocess.run([pkg.SETUP_SCRIPT, "--link-apply", path], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:

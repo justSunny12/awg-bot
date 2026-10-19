@@ -106,16 +106,24 @@ class LinkScriptMixin:
                 f"верни <code>ListenPort = {g.link_port}</code> в <code>{g.link_if}.conf</code>"))
         return notes
 
-    def _gw_firewall_refresh(self) -> None:
-        """Порт нового линка (и снятие старого) — в файервол хоста сразу, а не
-        при следующей плановой перерисовке: иначе второй шлюз не достучится до
-        ВПС до неё."""
+    def _gw_firewall_refresh(self, strict: bool = False) -> None:
+        """Порт нового линка (и снятие старого) и карантин сопряжения — в
+        таблицу хоста сразу, а не при следующей плановой перерисовке: иначе
+        второй шлюз не достучится до ВПС до неё. Фильтр выключен — таблица в
+        форме NAT-only, карантин рисуется и в ней (reconcile). strict — отказ
+        поднимается (выпуск команды подключения без карантина не идёт)."""
         try:
             from awgbot.infra import nftguard
             if nftguard.enabled():
                 self._firewall_apply(rollback=False)
+            else:
+                nftguard.reconcile(self.db.admin_device_addresses(config.ADMIN_ID),
+                                   channel_extra=self.gwcfg_channel_ports()[1:],
+                                   transit_links=self.gateway_transit_links())
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway: файервол хоста не перерисован: %s", e)
+            if strict:
+                raise ServiceError(f"таблица файервола сервера не перерисована: {e}") from None
 
     @staticmethod
     def _slot_env(gw) -> dict:

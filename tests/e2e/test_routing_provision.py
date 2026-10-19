@@ -67,7 +67,7 @@ async def test_provisioning_offers_a_restart_after_success(services, fake_bot, m
     assert cb.answers == [("Разворачиваю…", False)], "ответ на колбэк — ровно один"
     done = [s for s in nav.sent if s[0] == "answer"]
     assert done and done[-1][1].startswith("✅ РФ-доступ развёрнут на сервере")
-    assert "назначь шлюз — «🛰 Шлюзы» на главной" in done[-1][1], "следующий шаг и где его искать названы"
+    assert "подключи шлюз — «🛰 Шлюзы» на главной" in done[-1][1], "следующий шаг и где его искать названы"
     assert [[b.text for b in row] for row in done[-1][2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
 

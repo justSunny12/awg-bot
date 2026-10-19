@@ -1123,7 +1123,7 @@ ensure_host_autostart() {
         gw_plumbing_sync || _rc=$?
         case "$_rc" in
             0) ok "обновлена копия обвязки в /usr/local/sbin/routing-gw-setup.sh (её выполняет юнит при загрузке)" ;;
-            1) warn "не удалось обновить /usr/local/sbin/routing-gw-setup.sh — обвязка останется по версии времён файла конфигурации" ;;
+            1) warn "не удалось обновить /usr/local/sbin/routing-gw-setup.sh — обвязка останется прежней версии" ;;
         esac
         return 0
     fi
@@ -2553,7 +2553,7 @@ cmd_gw_kit() {
     # AmneziaWG из кэша сервера, без ключей и токенов (tools/gwkit.py)
     require_root; require_installed
     is_gateway_role && die "gw-kit собирается на сервере AWG, а здесь шлюз"
-    [[ "${1:-}" == "--stdout" ]] || die "usage: awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sudo sh /root/awg-gw-kit.sh --join <команда из бота>'"
+    [[ "${1:-}" == "--stdout" ]] || die "usage: awg-bot gw-kit --stdout | ssh root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sh /root/awg-gw-kit.sh --join <токен AWGJ1…>'"
     bot_tool tools.gwkit --stdout
 }
 
@@ -2608,7 +2608,8 @@ awg-bot — управление установленным ботом.
   awg-bot lan <cmd>          шлюз, VPN-транзит: add|ru|del <домен…> — свои списки
                              (в туннель / напрямую / убрать), list, update — обновить фиды
   awg-bot gw-kit --stdout    собрать поставку для шлюза без доступа к GitHub (без ключей и токенов):
-                             sudo awg-bot gw-kit --stdout | ssh -t root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sudo sh /root/awg-gw-kit.sh --join <команда из бота>'
+                             sudo awg-bot gw-kit --stdout | ssh root@ШЛЮЗ 'cat > /root/awg-gw-kit.sh && sh /root/awg-gw-kit.sh --join <токен AWGJ1…>'
+                             (токен — из команды бота; агент на шлюзе уже стоит — добавь --yes)
   awg-bot join <команда>     шлюз: подключиться к серверу AWG командой из его бота;
                              join --status — код и ход подключения ещё раз
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):

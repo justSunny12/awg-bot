@@ -80,10 +80,14 @@
 # ШЛЮЗ ОДНОЙ КОМАНДОЙ ИЗ БОТА СЕРВЕРА AWG:
 #   curl -fsSL …/install/awg-bot-install.sh | sudo bash -s -- --join AWGJ1.<токен>
 # Роль gateway подразумевается. Из токена (разбор на месте: base64url → od,
-# поля по смещениям util/jointoken.py; контрольную сумму сверяет `awg-bot
-# join`) — выпуск: качается ровно он (releases/download/v<выпуск>), а не
-# latest. Агент уже стоит — меню нет: вопрос «подключить заново?» и сразу
-# `awg-bot join` (версия другая — сначала `awg-bot update` до выпуска токена).
+# поля по смещениям util/jointoken.py; контрольная сумма — b2sum -l 32, если
+# он есть, и ещё раз в `awg-bot join`) — выпуск: качается ровно он
+# (releases/download/v<выпуск>), а не latest. Поставка не скачана, а лежит
+# рядом (кит сервера, свой архив) — её версия обязана совпасть с выпуском
+# токена. Агент уже стоит — меню нет: вопрос «подключить заново?» и сразу
+# `awg-bot join` (версия другая — сначала `awg-bot update` до выпуска токена);
+# та же команда ещё идёт (id в /etc/awg-gw/join.json) — без вопроса, ход.
+# Терминала нет (труба кита) — вопрос не задаётся: --yes или отказ.
 #
 set -euo pipefail
 
@@ -98,9 +102,20 @@ SELF_LINK="/usr/local/bin/awg-bot"
 c_info=$'\033[0;36m'; c_err=$'\033[0;31m'; c_off=$'\033[0m'
 log() { printf '%s[install]%s %s\n' "$c_info" "$c_off" "$*"; }
 
-JOIN_TOKEN=""; JOIN_SLOT=""; JOIN_VER=""; JOIN_HOST=""
-join_parse() {  # join_parse ТОКЕН → JOIN_SLOT, JOIN_VER, JOIN_HOST; не разобрался — 1
-    local t="$1" b64 pad bytes i n host=""
+JOIN_TOKEN=""; JOIN_SLOT=""; JOIN_VER=""; JOIN_HOST=""; JOIN_ID=""
+JOIN_STATE_FILE="/etc/awg-gw/join.json"           # файл сопряжения агента (domain/gateway/join.py)
+ASSUME_YES=0                                       # --yes: «подключить заново?» без вопроса
+join_sum_ok() {  # join_sum_ok БАЙТ… — контрольная сумма токена (BLAKE2b, 4 байта); нет b2sum — не сверяем
+    command -v b2sum >/dev/null 2>&1 || return 0
+    local -a b=("$@")
+    local n=$(( ${#b[@]} - 4 )) i fmt="" want="" have
+    for (( i = 0; i < n; i++ )); do fmt="$fmt\\$(printf '%03o' "${b[$i]}")"; done
+    for (( i = n; i < n + 4; i++ )); do want="$want$(printf '%02x' "${b[$i]}")"; done
+    have="$(printf "$fmt" | b2sum -l 32 | awk '{print $1}')" || return 1
+    [[ "$have" == "$want" ]]
+}
+join_parse() {  # join_parse ТОКЕН → JOIN_SLOT, JOIN_VER, JOIN_HOST, JOIN_ID; не разобрался — 1
+    local t="$1" b64 pad bytes i n host="" jid=""
     [[ "$t" == AWGJ1.* ]] || return 1
     b64="${t#AWGJ1.}"
     [[ "$b64" =~ ^[A-Za-z0-9_-]+$ ]] && (( ${#b64} >= 40 && ${#b64} <= 400 )) || return 1
@@ -121,6 +136,11 @@ join_parse() {  # join_parse ТОКЕН → JOIN_SLOT, JOIN_VER, JOIN_HOST; не
         host="$host$(printf "\\$(printf '%03o' "${b[$i]}")")"
     done
     [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || return 1
+    # испорченный байт при той же длине — здесь, а не 404 выпуска и ложное
+    # «нужен доступ к GitHub»
+    join_sum_ok "${b[@]}" || return 1
+    for (( i = 6; i < 14; i++ )); do jid="$jid$(printf '%02x' "${b[$i]}")"; done
+    JOIN_ID="$jid"
     JOIN_SLOT="${b[1]}"
     JOIN_VER="${b[2]}.${b[3]}.${b[4]}"
     [[ "${b[5]}" != "0" ]] && JOIN_VER="$JOIN_VER.${b[5]}"
@@ -214,6 +234,7 @@ while [[ "${1:-}" == --* ]]; do
         --subnet) [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"; EXTRA+=(--subnet "$2"); shift 2 ;;
         --advanced) EXTRA+=(--advanced); shift ;;
         --skip-verify) SKIP_VERIFY=1; shift ;;
+        --yes)    ASSUME_YES=1; shift ;;
         --join)   JOIN_TOKEN="${2:-}"; join_parse "$JOIN_TOKEN" || join_bad
                   ROLE="gateway"; EXTRA+=(--join "$JOIN_TOKEN"); shift 2 ;;
         *) die "неизвестный ключ: $1" ;;
@@ -245,7 +266,7 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     if ! curl -fsSL --retry 3 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL"; then
         rm -rf "$SRC_ROOT"
         [[ -n "$JOIN_TOKEN" ]] && die "не скачался выпуск v$JOIN_VER с GitHub — шлюзу нужен доступ к GitHub
-на время установки. Без него — README, раздел «Шлюз без доступа к GitHub»"
+на время установки. Без него — поставка с сервера AWG: на нём sudo awg-bot gw-kit --stdout (как — awg-bot help)"
         die "не скачалась поставка ($TGZ_URL)"
     fi
     tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" --no-same-owner \
@@ -363,6 +384,19 @@ wipe_previous() {
     fi
     rm -rf "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
 }
+if [[ -n "${JOIN_TOKEN:-}" ]]; then
+    # поставка рядом (кит сервера, свой архив), а не скачанный выпуск токена:
+    # версия обязана совпасть — иначе шлюз встал бы не на версию набора
+    if [[ -n "$SRC_ROOT" ]]; then
+        src_ver="$(ver_of "$SRC_ROOT/awgbot/__version__.py")"
+    else
+        src_ver="$(tar -xzOf "$TGZ" --wildcards '*awgbot/__version__.py' 2>/dev/null \
+                   | sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' | head -n1)" || src_ver=""
+    fi
+    [[ -z "$src_ver" || "$src_ver" == "$JOIN_VER" ]] \
+        || die "поставка — v$src_ver, а команда подключения ставит агента v$JOIN_VER (выпуск набора сервера AWG) —
+шлюз встал бы не на версию набора. Кит годится, когда сервер и шлюзы на одной версии"
+fi
 if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
     # Агент уже стоит — меню нет (§3.9: повтор той же команды не ставит заново
     # то, что стоит): вопрос и сразу подключение; версия другая — сначала
@@ -371,10 +405,22 @@ if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
     [[ "${inst_role:-client}" == "gateway" ]] \
         || die "здесь установлен сервер AWG, а команда подключения — для шлюза"
     have_ver="$(ver_of "$INSTALL_DIR/awgbot/__version__.py")"
-    printf '%s[install]%s агент шлюза уже установлен (v%s) — подключаю это устройство заново\n' \
-        "$c_info" "$c_off" "${have_ver:-?}" >&2
-    read -r -p "по команде: прежние ключи линка будут заменены. Продолжить? [y/N] " __a < /dev/tty
-    [[ "$(printf '%s' "${__a:-n}" | tr '[:upper:]' '[:lower:]')" == "y" ]] || { log "отмена — ничего не изменено"; exit 0; }
+    if [[ -n "$JOIN_ID" && -f "$JOIN_STATE_FILE" ]] && grep -qE "\"id\": *\"$JOIN_ID\"" "$JOIN_STATE_FILE"; then
+        # та же команда ещё идёт (повтор после закрытого терминала) — не
+        # спрашиваем: `awg-bot join` покажет код и ход
+        log "эта команда подключения уже идёт — показываю ход"
+    else
+        printf '%s[install]%s агент шлюза уже установлен (v%s) — подключаю это устройство заново\n' \
+            "$c_info" "$c_off" "${have_ver:-?}" >&2
+        if [[ "$ASSUME_YES" == "1" ]]; then
+            log "по команде: прежние ключи линка будут заменены (--yes)"
+        elif ! { : < /dev/tty; } 2>/dev/null; then
+            die "спросить негде (нет терминала): по команде прежние ключи линка будут заменены — повтори с --yes"
+        else
+            read -r -p "по команде: прежние ключи линка будут заменены. Продолжить? [y/N] " __a < /dev/tty
+            [[ "$(printf '%s' "${__a:-n}" | tr '[:upper:]' '[:lower:]')" == "y" ]] || { log "отмена — ничего не изменено"; exit 0; }
+        fi
+    fi
     if [[ -n "$have_ver" && "$have_ver" == "$JOIN_VER" ]]; then
         case "${SRC_ROOT:-}" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac
         trap - EXIT
