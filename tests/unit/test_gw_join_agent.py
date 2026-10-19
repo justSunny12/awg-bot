@@ -268,7 +268,7 @@ def test_the_status_file_with_the_code_is_private(agent):
     assert os.stat(agent._join_status_file).st_mode & 0o777 == 0o600
 
 
-@pytest.mark.parametrize("token, finished", [("", False), ("123456789:DUMMY-token-of-the-gateway-bot", True)])
+@pytest.mark.parametrize("token, finished", [("", False), ("123456789:AA-token-of-the-gateway-bot", True)])
 def test_linked_drops_the_pair_and_a_full_agent_finishes_at_once(agent, monkeypatch, token, finished):
     """join-1: эфемерная пара живёт до линка на постоянных ключах. Блокер
     fix4: агент, стоявший раньше (токен бота уже есть), заканчивает

@@ -41,8 +41,8 @@ from tests.unit.test_join_rekey_e2e import _script_check
 pytestmark = pytest.mark.integration
 admin, vps = jc.admin, jc.vps                     # фикстуры сцены
 
-TOKEN = "1234567890:DUMMY_gateway_bot_token_abcdef"
-OTHER = "1234567891:DUMMY_another_gateway_bot_token"
+TOKEN = "123456789:AA-gateway-bot-token"
+OTHER = "123456789:BB-another-gateway-bot-token"
 
 
 class _Pi:
