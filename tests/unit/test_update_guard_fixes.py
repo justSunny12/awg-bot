@@ -20,6 +20,8 @@ import subprocess
 
 import pytest
 
+from tests.botscript import flat
+
 from tests.unit.test_update_guard import _Host, _age, _guard_state, _tree
 
 pytestmark = pytest.mark.unit
@@ -132,11 +134,11 @@ def test_the_updater_leaves_its_pid_under_the_lock(tmp_path):
     """Пока шаг обновления ждёт факта, в update-running — pid процесса под
     замком (бот по нему видит живой апдейтер); отработавший сторож pid за собой
     убирает: мёртвый pid мог бы достаться новому процессу."""
-    from tests.unit.test_update_guard import SCRIPT, _func
+    from tests.unit.test_update_guard import _func
     host = _Host(tmp_path)
     # сам замок: пока процесс под ним — в файле его pid
     prog = ("set -euo pipefail\n" f'DATA_DIR="{host.data}"; UPDATE_LOCK="{host.data}/update-guard.lock"\n'
-            + _func(SCRIPT.read_text(encoding="utf-8"), "update_lock") + "\n"
+            + _func(flat(), "update_lock") + "\n"
             + 'update_lock -n; cat "$DATA_DIR/update-running"; echo "me $$"\n')
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10)
     assert r.returncode == 0, r.stderr

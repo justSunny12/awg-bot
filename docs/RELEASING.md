@@ -169,8 +169,9 @@ GitHub `vX.Y.Z.P — …`.
   — «✖️ Отмена» под вводом у обеих ролей,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `runtime/main/` — сборка и запуск обеих ролей (там же
-  `alive.py` — отметка жизни для сторожа обновления), `awg-bot.sh` (сторож,
-  удержание, фиксация и откат набора — у обеих ролей), установщик, preflight, `notifier.py`, `db/*`,
+  `alive.py` — отметка жизни для сторожа обновления), `awg-bot.sh` с частями
+  `install/lib/update.sh` и `install/lib/restore.sh` (сторож, удержание,
+  фиксация и откат набора — у обеих ролей; restore — только сервер), установщик, preflight, `notifier.py`, `db/*`,
   `core/compat.py` — версия совместимости (её читает `awg-bot update` обеих
   ролей), `handlers/updates_flow.py` и
   `handlers/settingscore/` — шаги обновления и настроек у обеих ролей,
@@ -381,7 +382,7 @@ GitHub `vX.Y.Z.P — …`.
    по ядрам через `pytest-xdist`, `-n auto` тоже в `pytest.ini`; чтобы
    разобрать один падающий тест по порядку — `-n 0`),
    `.venv/bin/python -m pyflakes awgbot tests tools`, `sh -n` по
-   `install/*.sh` и `bash -n awg-bot.sh`. Провал — выпуск останавливается,
+   `install/*.sh`, `bash -n awg-bot.sh` и `install/lib/*.sh`. Провал — выпуск останавливается,
    номер версии не занимается; после правок процедура начинается заново.
 3. Записать номер в `awgbot/__version__.py`; метаданные — `python -m
    tools.release_meta [--main A.B.C [--needs-gw X]] [--gw D.E.F [--needs-main

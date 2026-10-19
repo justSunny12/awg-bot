@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,7 +93,7 @@ class _Bot:
         (self.conf / "app.yaml").write_text('role: "gateway"\n', encoding="utf-8")
 
     def run(self, body: str, env_token: str = "") -> subprocess.CompletedProcess:
-        src = BOT.read_text(encoding="utf-8")
+        src = flat()
         stubs = "".join(f"{n}() {{ :; }}\n" for n in (
             "require_root", "ensure_awg_kernel", "ensure_python", "ensure_venv_ready", "build_venv", "seed_conf",
             "configure_gateway", "install_unit", "systemctl", "cleanup_delivery", "warn", "log"))

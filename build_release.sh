@@ -76,6 +76,9 @@ build_bot() {
         # когда им закрывают SSH.
         install -m 0755 "$_f" "$s/install/"
     done
+    # части awg-bot.sh: он читает их при разборе, сами не запускаются
+    mkdir -p "$s/install/lib"
+    for _f in "$ROOT"/install/lib/*.sh; do install -m 0644 "$_f" "$s/install/lib/"; done
     # Манифест версии AmneziaWG — не скрипт, но без него установщику нечего
     # ставить: версия ядра прибита к поставке (docs/ROADMAP.md, п.8).
     install -m 0644 "$ROOT/install/awg.lock" "$s/install/"

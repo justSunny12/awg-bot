@@ -13,12 +13,14 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 SCRIPT = Path(__file__).resolve().parents[2] / "awg-bot.sh"
 
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 def test_python_is_run_from_the_install_dir(script):
@@ -96,7 +98,7 @@ def test_shell_scripts_reference_only_defined_variables(path: Path):
     строку: `iptables -s "" -o eth0` — это уже другая команда, и ломается она на
     боевом сервере. Ровно так уехала правка MASQUERADE для линк-подсети.
     """
-    text = path.read_text(encoding="utf-8")
+    text = flat() if path == SCRIPT else path.read_text(encoding="utf-8")   # awg-bot.sh — с частями install/lib
     # присваивание может стоять не в начале строки: `A=1; B=2` — обычный приём
     # Имя целиком и хотя бы одна заглавная: иначе регулярка откусывает префикс
     # от локальных вроде __verbose и «находит» переменную __.

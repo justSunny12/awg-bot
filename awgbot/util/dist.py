@@ -18,7 +18,8 @@ from pathlib import Path
 # Состав — как в build_release.sh (build_bot): менять синхронно.
 _ENTRIES = ("awgbot", "tools", "conf", "install", "awg-bot.sh", "run.sh",
             "requirements.txt", ".env.example", "README.md")
-_MUST = ("awgbot/__main__.py", "awg-bot.sh", "install/awg-bot-install.sh",
+_MUST = ("awgbot/__main__.py", "awg-bot.sh", "install/lib/update.sh", "install/lib/restore.sh",
+         "install/awg-bot-install.sh",
          "install/routing-gw-setup.sh")
 
 _cache: dict[str, bytes] = {}

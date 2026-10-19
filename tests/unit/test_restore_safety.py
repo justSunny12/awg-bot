@@ -24,7 +24,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.test_cli_script import SCRIPT, _extract_func
+from tests.botscript import flat
+
+from tests.unit.test_cli_script import _extract_func
 
 pytestmark = pytest.mark.unit
 
@@ -41,7 +43,7 @@ NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 def _tgz(files: dict[str, bytes]) -> bytes:

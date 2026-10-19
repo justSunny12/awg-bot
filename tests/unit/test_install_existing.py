@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.botscript import flat
 from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -584,7 +586,7 @@ def test_without_a_working_install_there_is_no_menu(host):
 def _run_update(tmp_path: Path, keep: str | None, answers: str = "y") -> subprocess.CompletedProcess:
     """cmd_update до решения про данные: ensure_python — первая команда после
     вопроса, на ней и останавливаемся, печатая решение."""
-    src = BOT_SCRIPT.read_text(encoding="utf-8")
+    src = flat()
     prog = (
         "set -euo pipefail\n"
         'DATA_DIR=/x; ENV_FILE=/x/env\n'
@@ -638,7 +640,7 @@ class _PostUpdate:
         fake_cmd(self.self_path, '#!/bin/sh\necho "self $*${AWG_JOIN_TOKEN:+ tok=$AWG_JOIN_TOKEN}" >> "$CALLS"\n')
 
     def run(self, bundle: str | None, wipe: str = "0", join: str = "") -> subprocess.CompletedProcess:
-        src = BOT_SCRIPT.read_text(encoding="utf-8")
+        src = flat()
         stubs = " ".join(f"{n}() {{ :; }};" for n in (
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
             "install_unit", "ensure_host_autostart", "ensure_awg_module_loaded",

@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 
 import pytest
+
+from tests.botscript import flat
 from tests.conftest import fake_cmd
 
 ROOT =Path(__file__).resolve().parents[2]
@@ -33,7 +35,7 @@ def lock() -> dict:
 
 @pytest.fixture(scope="module")
 def bot_sh() -> str:
-    return (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    return flat()
 
 
 @pytest.fixture(scope="module")
@@ -290,7 +292,7 @@ def _run_module_check(tmp_path, *, disk_src, loaded_src, reload_rc=0):
     """Прогоняет ensure_awg_module_loaded с подменёнными modinfo и /sys."""
     import os
     import subprocess
-    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    script = flat()
     body = script.split("ensure_awg_module_loaded() {", 1)[1].split("\n}\n", 1)[0]
     syssrc = tmp_path / "loaded_src"
     syssrc.write_text(loaded_src, encoding="utf-8")
@@ -368,7 +370,7 @@ def _run_bot_func(tmp_path, name, *, lock_gen="2", applied="", target="",
     отмечаются в журнале. Возвращает (proc, state_text, app_yaml_text, log)."""
     import os
     import subprocess
-    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    script = flat()
     tmp_path.mkdir(parents=True, exist_ok=True)
     inst = tmp_path / "install"; inst.mkdir(exist_ok=True)
     journal = tmp_path / "journal"
@@ -534,7 +536,7 @@ def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_e
     install/awg-resolver-setup.sh (пишет вызов в журнал, код — script_rc)."""
     import os
     import subprocess
-    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    script = flat()
     tmp_path.mkdir(parents=True, exist_ok=True)
     inst = tmp_path / "install"; inst.mkdir(exist_ok=True)
     journal = tmp_path / "journal"

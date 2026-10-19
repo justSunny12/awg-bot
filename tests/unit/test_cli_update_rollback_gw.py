@@ -9,13 +9,15 @@ from __future__ import annotations
 import subprocess
 
 import pytest
-from tests.unit.test_cli_script import SCRIPT, _extract_func
+
+from tests.botscript import flat
+from tests.unit.test_cli_script import _extract_func
 
 
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 _OLD_GW = "#!/bin/sh\n# обвязка прежней версии\n"

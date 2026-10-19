@@ -15,7 +15,9 @@ import tarfile
 
 import pytest
 
-from tests.unit.test_cli_script import SCRIPT, _extract_func
+from tests.botscript import flat
+
+from tests.unit.test_cli_script import _extract_func
 
 pytestmark = pytest.mark.unit
 
@@ -37,7 +39,7 @@ def _run(tmp_path, version: str) -> tuple[subprocess.CompletedProcess, list[str]
     tgz = tmp_path / "awg-bot.tgz"
     _release(tgz, version)
     log = tmp_path / "calls"
-    script = SCRIPT.read_text(encoding="utf-8")
+    script = flat()
     prog = "\n".join([
         f'INSTALL_DIR="{inst}"; DATA_DIR="{tmp_path}/data"; ENV_FILE=/x; SERVICE=awg-bot; AWG_UPDATE_KEEP=1',
         f'SELF_DIR="{tmp_path}"',

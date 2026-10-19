@@ -15,6 +15,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.botscript import flat
 import yaml
 
 pytestmark = pytest.mark.unit
@@ -25,7 +27,7 @@ TEMPLATE = Path(__file__).resolve().parents[2] / "conf" / "app.yaml"
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 def _func(text: str, name: str) -> str:

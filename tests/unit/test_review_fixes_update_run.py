@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 from tests.unit.test_update_guard import _HEAVY, _Host
 
 pytestmark = pytest.mark.unit
@@ -41,7 +43,7 @@ def _exe(path: Path, body: str) -> None:
 
 def _patched(tmp: Path, inst: Path, etc: Path, data: Path, hook: Path) -> str:
     """awg-bot.sh с путями во временном каталоге и подменами из hook."""
-    src = SCRIPT.read_text(encoding="utf-8")
+    src = flat()
     for var, val in (("INSTALL_DIR", inst), ("ETC_DIR", etc), ("DATA_DIR", data),
                      ("UNIT_PATH", tmp / "awg-bot.service"), ("SELF_LINK", tmp / "awg-bot")):
         src, n = re.subn(rf'^{var}="[^"]*"', f'{var}="{val}"', src, count=1, flags=re.M)

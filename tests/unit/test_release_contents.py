@@ -40,7 +40,7 @@ def test_built_package_contains_every_install_script(tmp_path):
     shipped = {Path(n).name for n in names if "/install/" in n}
     assert not any("/tests/" in n for n in names), "тесты в продуктовую поставку не едут"
 
-    expected = {p.name for p in INSTALL.glob("*.sh")} | {BOOTSTRAP}
+    expected = {p.name for p in INSTALL.glob("*.sh")} | {p.name for p in (INSTALL / "lib").glob("*.sh")} | {BOOTSTRAP}
     expected |= {"awg.lock"}          # версия awg прибита к поставке (ROADMAP п.8)
     missing = expected - shipped
     assert not missing, f"не доехали до поставки: {sorted(missing)}"

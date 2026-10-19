@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -143,7 +145,7 @@ def test_the_installer_writes_the_file_after_laying_out_the_tree():
 # ── awg-bot update ──────────────────────────────────────────────────────────
 
 def _update(tmp: Path, curl: str, *, stale: bool = False, env: dict | None = None):
-    src = BOT.read_text(encoding="utf-8")
+    src = flat()
     s, tgz = _tree(tmp)
     data = tmp / "data"; data.mkdir()
     conf = tmp / "conf"; conf.mkdir()
@@ -201,7 +203,7 @@ def test_the_installer_hands_the_verified_sum_to_the_update():
 
 
 def test_update_checks_before_touching_the_service():
-    src = BOT.read_text(encoding="utf-8")
+    src = flat()
     upd = _func(src, "cmd_update")
     assert 'note_installed_digest "$tgz" "$newver"' in upd
     assert upd.index("откат ниже $floor невозможен") < upd.index("note_installed_digest") \

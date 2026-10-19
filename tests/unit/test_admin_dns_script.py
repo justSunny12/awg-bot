@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.botscript import flat
 from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -306,7 +308,7 @@ def _cli_admin(tmp_path, *args, euid="0", admin_dns=None):
     скрипты резолверов подменены журналом «кто, ADMIN_ADDR, аргументы»."""
     import tempfile
     from tests.unit.test_cli_script import _extract_func
-    src = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    src = flat()
     tmp = Path(tempfile.mkdtemp(dir=tmp_path))
     inst = tmp / "inst"; (inst / "install").mkdir(parents=True)
     conf = tmp / "conf"; conf.mkdir()
@@ -368,7 +370,7 @@ def test_uninstall_takes_the_admin_resolver_with_it():
     приложения к этому моменту может быть уже снят): иначе на хосте остался
     бы dnsmasq на 10.255.53.53 и dummy-интерфейс, о которых никто не помнит."""
     from tests.unit.test_cli_script import _extract_func
-    body = _extract_func((ROOT / "awg-bot.sh").read_text(encoding="utf-8"), "cmd_post_uninstall")
+    body = _extract_func(flat(), "cmd_post_uninstall")
     assert "-f /etc/systemd/system/awgbot-admin-dns.service" in body, "ветка снятия не видит резолвер админа"
     for cmd in ("systemctl disable --now awgbot-admin-dns", "rm -f /etc/systemd/system/awgbot-admin-dns.service",
                 "ip link del awgadmdns", "rm -rf /etc/awgbot-admin-dns"):
@@ -379,7 +381,7 @@ def test_first_client_resolver_install_also_installs_the_admin_resolver():
     """Установщик ставит резолвер админа вместе с резолвером клиентов, на его
     адрес; отказ — предупреждение, не обрыв установки (поставит бот)."""
     from tests.unit.test_cli_script import _extract_func
-    body = _extract_func((ROOT / "awg-bot.sh").read_text(encoding="utf-8"), "ensure_resolver")
+    body = _extract_func(flat(), "ensure_resolver")
     lines = body.splitlines()
     i = next((i for i, ln in enumerate(lines) if "awg-admin-dns-setup.sh" in ln), None)
     assert i is not None and 'install "$addr"' in lines[i], body

@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,7 +88,7 @@ class _Host:
         # тяжёлые шаги второй половины — заглушками; остальное — как в скрипте
         hook = tmp / "hook.sh"
         hook.write_text("".join(f"{n}() {{ :; }}\n" for n in _HEAVY), encoding="utf-8")
-        src = SCRIPT.read_text(encoding="utf-8")
+        src = flat()
         for var, val in (("INSTALL_DIR", self.inst), ("ETC_DIR", self.etc), ("DATA_DIR", self.data),
                          ("UNIT_PATH", tmp / "awg-bot.service"), ("SELF_LINK", tmp / "awg-bot")):
             src, n = re.subn(rf'^{var}="[^"]*"', f'{var}="{val}"', src, count=1, flags=re.M)
@@ -340,7 +342,7 @@ def test_a_guard_still_pending_is_disarmed_first(tmp_path):
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 def _func(text: str, name: str) -> str:

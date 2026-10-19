@@ -24,8 +24,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 from tests.unit.test_restore_safety import NEW, OLD, Host, _tgz, prelude
-from tests.unit.test_cli_script import SCRIPT, _extract_func
+from tests.unit.test_cli_script import _extract_func
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +38,7 @@ OLD_VER, NEW_VER = "3.4.2", "3.4.1"
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return flat()
 
 
 def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
