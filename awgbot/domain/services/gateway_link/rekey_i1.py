@@ -64,35 +64,55 @@ class RekeyI1Mixin:
         self.db.set_state(self._gw_slot_key(self._I1_KEY, slot_id), json.dumps(plan, ensure_ascii=False) if plan else "")
 
     def _i1_blocked(self) -> bool:
-        """Переход на I1 не начинать: идёт ход набора обновлений или сопряжение."""
+        """Переход на I1 не начинать: идёт ход набора обновлений, команда
+        обновления шлюзу вне хода ещё в пути или идёт сопряжение."""
         running = getattr(self, "fleet_running", None)
         if callable(running) and running():
             return True
+        slot_state = getattr(self, "fleet_slot", None)
+        if callable(slot_state):
+            from awgbot.domain.fleet.state import IN_FLIGHT
+            if any(slot_state(g.id).get("state") in IN_FLIGHT for g in self.db.gateways()):
+                return True
         joining = getattr(self, "gwjoin_active", None)
         return bool(callable(joining) and joining())
+
+    def _i1_failed(self, gw, plan: dict, why: str) -> None:
+        """Попытка не встала (или не начата) — неудача в счёт, повтор через сутки."""
+        plan["tries"] = int(plan.get("tries") or 0) + 1
+        plan["rid"] = ""
+        plan["next_at"] = _later(RETRY_S * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER))
+        self._i1_plan_save(gw.id, plan)
+        log.info("I1 линка: слот %s — %s (%s), повтор через сутки", gw.id, why, plan["tries"])
 
     def gateway_i1_tick(self) -> tuple[list[int], list[Notification]]:
         """Такт живости: ([слот, которому начата смена ключей], уведомления).
         Ничего в сеть — только план и стадия; link_next доставит слушатель."""
         notes: list[Notification] = []
-        ok, want = self.gateway_client_i1()
+        ok, want = self.gateway_client_i1(cached=True)
         if not ok:
             return [], notes
-        notes += self._i1_none_note(want)
         gws = sorted(self.db.gateways(), key=lambda g: (self._i1_is_active(g), g.id))   # резервные, активный последним
         busy = any(self.gateway_rekey_active(g.id) for g in gws)   # смена ключей идёт (своя или ручная) — ждём итога
         started: list[int] = []
+        bare = False                                      # у какого-то линка I1 фактически нет
         queued = False                                    # слот раньше по порядку ждёт своей попытки
         for gw in gws:
             plan = self.gateway_i1_plan(gw.id)
+            if plan.get("rid") and self.gateway_rekey_active(gw.id):
+                # смена, начатая планом, ещё идёт (в том числе после переключения
+                # ВПС, до hello новым ключом): сравнивать рано — итог решит фиксация
+                continue
             got, cur = self.gateway_link_i1(gw)
             if not got or not gw.device_id:
                 continue
+            if not cur:
+                bare = True
             if cur == want:
                 if plan:
                     self._i1_plan_save(gw.id, {})
                     if plan.get("rid"):
-                        log.info("I1 линка: слот %s на I1 клиентского интерфейса", gw.id)
+                        log.info("I1 линка: слот %s на I1 клиентского интерфейса", gw.id)   # после фиксации
                 continue
             if "rekey2" not in self.gwlink_agent_caps(gw.id):
                 continue                                  # агент без смены ключей без вопроса — попыток нет
@@ -100,13 +120,9 @@ class RekeyI1Mixin:
                 # новый план (или клиентский I1 сменили — прежние неудачи не о нём)
                 plan = {"want": want, "next_at": _later(random.uniform(*WINDOW_S)), "tries": 0}
                 self._i1_plan_save(gw.id, plan)
-            if plan.get("rid") and not self.gateway_rekey_active(gw.id):
+            if plan.get("rid"):
                 # смена, начатая планом, закончилась, а I1 у линка прежний — не встало
-                plan["tries"] = int(plan.get("tries") or 0) + 1
-                plan["rid"] = ""
-                plan["next_at"] = _later(RETRY_S * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER))
-                self._i1_plan_save(gw.id, plan)
-                log.info("I1 линка: слот %s — смена ключей не встала (%s), повтор через сутки", gw.id, plan["tries"])
+                self._i1_failed(gw, plan, "смена ключей не встала")
             if not self.gwlink_session(gw.id):
                 continue                                  # не на связи — никого не держит
             if queued or busy:
@@ -117,29 +133,30 @@ class RekeyI1Mixin:
             try:
                 st = self.gateway_rekey_stage(gw.id, auto="i1")
             except ServiceError as e:
-                log.info("I1 линка: слот %s — смена ключей не начата: %s", gw.id, e)
-                plan["next_at"] = _later(RETRY_S * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER))
-                self._i1_plan_save(gw.id, plan)
+                self._i1_failed(gw, plan, f"смена ключей не начата: {e}")   # отказ стадии — тоже неудача
                 continue
             plan["rid"] = st.get("id", "")
             self._i1_plan_save(gw.id, plan)
             started.append(gw.id)
             busy = True
             log.info("I1 линка: слот %s — смена ключей ради I1 начата", gw.id)
+        notes += self._i1_none_note(want, bare)
         return started, notes
 
     def _i1_is_active(self, gw) -> bool:
         active = self.active_gateway()
         return active is not None and active.id == gw.id
 
-    def _i1_none_note(self, want: str) -> list[Notification]:
-        """Т-Л2 один раз без звука: у клиентского интерфейса нет I1, а линки есть."""
+    def _i1_none_note(self, want: str, bare: bool) -> list[Notification]:
+        """Т-Л2 один раз без звука: у клиентского интерфейса нет I1, и у линков
+        его фактически нет (bare — у кого-то из линков с устройством строки I1
+        нет). Пока у линка ещё стоит прежний I1 — молчим: его снимет смена ключей."""
         told = bool(self.db.get_state(NONE_TOLD_KEY))
         if want:
             if told:
                 self.db.set_state(NONE_TOLD_KEY, "")
             return []
-        if told or not any(gw.device_id for gw in self.db.gateways()):
+        if told or not bare:
             return []
         self.db.set_state(NONE_TOLD_KEY, "1")
         return [Notification(config.ADMIN_ID, T_L2, silent=True)]

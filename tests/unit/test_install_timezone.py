@@ -110,7 +110,8 @@ def test_the_installer_no_longer_writes_the_zone(script):
 
 
 def test_the_step_runs_in_post_update(script):
-    post = _func(script, "cmd_post_update")
+    post = _func(script, "update_env_steps")
+    assert "update_env_steps" in _func(script, "cmd_post_update")
     assert post.index("adopt_timezone") < post.index("validate_config")
 
 

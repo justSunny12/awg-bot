@@ -67,8 +67,9 @@ KEYS: dict[str, SlotKey] = {
     # снимает переход своим путём (gateway_rekey_abort), со слотом — ключи
     "gwlink_rekey": SlotKey(SLOT, "rekey"),
     "gwlink_rekey_cancel": SlotKey(SLOT, "rekey"),
-    # I1 живым линкам (gateway_link/rekey_i1.py): план попыток — со слотом, как переход
-    "gwlink_i1": SlotKey(SLOT, "rekey"),
+    # I1 живым линкам (gateway_link/rekey_i1.py): план попыток — с устройством:
+    # новое устройство слота неудач прежнего (tries, next_at, rid) не наследует
+    "gwlink_i1": SlotKey(DEVICE, "link"),
     # слот: файл первого применения, расхождение, бот, токен, порт, живость
     "gw_drift_notified": SlotKey(SLOT, "slot"),
     "gw_bot_me": SlotKey(SLOT, "slot"),

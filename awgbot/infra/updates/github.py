@@ -49,7 +49,8 @@ def _digest_hex(asset: dict) -> Optional[str]:
     return d[7:].strip().lower() if d.startswith("sha256:") else None
 
 
-def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) -> list[Release]:
+def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
+                  meta_tag: str = "") -> list[Release]:
     """Все релизы репо, отсортированные по возрастанию версии. Нерелизные теги
     (не semver) и черновики отбрасываются.
 
@@ -61,7 +62,10 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
     знают); тот же digest — метаданные из кэша, другой — перечитать.
     Выпущенный тег не меняется, поэтому обычно за проверку уходит ноль или
     один лишний запрос. Битый ассет (нет digest, не совпал, не JSON, не та
-    схема или версия) — Release.meta_bad с причиной; сеть — UpdateError."""
+    схема или версия) — Release.meta_bad с причиной; сеть — UpdateError.
+    meta_tag — метаданные этого тега читаются всегда (переход на выпуск
+    бэкапа): установка может быть и не релизной сборкой (предрелизная
+    X.Y.Z.N), а без метаданных выпуск бэкапа ложно «не прочитан»."""
     raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases",
                          "application/vnd.github+json")
     try:
@@ -95,13 +99,16 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True) ->
     out: list[Release] = []
     for r, ver, asset_url, sha256, meta_asset in found:
         meta = bad = None
-        if fetch_meta and release_build and meta_asset is not None and (ver > installed or ver[:3] >= floor):
+        wanted = bool(meta_tag) and r["tag_name"].lstrip("v") == meta_tag.lstrip("v")
+        if fetch_meta and meta_asset is not None and (
+                wanted or (release_build and (ver > installed or ver[:3] >= floor))):
             meta, bad = _read_meta(r["tag_name"], meta_asset, meta_cache)
         title = _strip_tag(r.get("name") or "", r["tag_name"])
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),
                            asset_url=asset_url, sha256=sha256, title=title,
-                           meta=meta, meta_bad=bad or "", withdrawn=withdrawn_reason(r, title)))
+                           meta=meta, meta_bad=bad or "", withdrawn=withdrawn_reason(r, title),
+                           prerelease=bool(r.get("prerelease"))))
     out.sort(key=lambda x: x.version)
     return out
 

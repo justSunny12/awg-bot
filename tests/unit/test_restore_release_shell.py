@@ -30,7 +30,7 @@ from tests.unit.test_cli_script import SCRIPT, _extract_func
 pytestmark = pytest.mark.unit
 
 FUNCS = ("restore_release_tree", "restore_code_swap", "cmd_restore_after_update", "restore_prev_code",
-         "update_done")
+         "update_done", "update_env_steps")
 OLD_VER, NEW_VER = "3.4.2", "3.4.1"
 
 
@@ -39,12 +39,13 @@ def script() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
-def _stubs(log: Path, *, env_fails: bool = False) -> list[str]:
-    """Шаги второй половины update, которые трогают систему, — в журнал."""
-    names = ("update_guard_disarm", "ensure_python", "install_unit", "ensure_host_autostart",
-             "ensure_awg_module_loaded", "ensure_awg_generation", "seed_conf", "venv_rollback", "venv_prune",
-             "prune_old_kernel_builds", "gw_plumbing_sync")
-    out = [f'{n}() {{ echo "{n}" >> "{log}"; return 0; }}' for n in names]
+def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
+    """Шаги второй половины update, которые трогают систему, — в журнал
+    (real — эти остаются настоящими)."""
+    names = ("update_guard_disarm", "ensure_python", "ensure_ping", "install_unit", "ensure_host_autostart",
+             "ensure_awg_module_loaded", "ensure_awg_generation", "adopt_resolver", "seed_conf", "validate_config",
+             "venv_rollback", "venv_prune", "prune_old_kernel_builds", "gw_plumbing_sync")
+    out = [f'{n}() {{ echo "{n}" >> "{log}"; return 0; }}' for n in names if n not in real]
     out.append(f'build_venv() {{ echo "build_venv" >> "{log}"; '
                + ('die "pip: нет сети"; ' if env_fails else "") + "}")
     return out
@@ -64,8 +65,11 @@ class Release:
     """Установка vC в opt/ и архив выпуска vV, в котором скрипт — те же
     функции awg-bot.sh с подменами; mv -t — через прокладку (у BSD mv его нет)."""
 
-    def __init__(self, script: str, h: Host, *, merge_fails: bool = False, env_fails: bool = False):
+    def __init__(self, script: str, h: Host, *, merge_fails: bool = False, env_fails: bool = False,
+                 compat: str = "", kernel: bool = False, real=(), **pre):
         self.h = h
+        self.real, self.pre = tuple(real), pre
+        funcs = FUNCS + self.real
         self.opt = h.tmp / "opt"
         (self.opt / "awgbot").mkdir(parents=True)
         (self.opt / "awgbot" / "__version__.py").write_text(f'__version__ = "{OLD_VER}"\n', encoding="utf-8")
@@ -78,14 +82,21 @@ class Release:
                         'exec /bin/mv "$@"\n', encoding="utf-8")
         shim.chmod(0o755)
         new_script = "\n".join(["#!/usr/bin/env bash", f'echo "new-script $*" >> "{h.log}"',
-                                *prelude(script, h, merge_fails=merge_fails, funcs=FUNCS),
-                                *_stubs(h.log, env_fails=env_fails),
+                                *prelude(script, h, merge_fails=merge_fails, funcs=funcs, **pre),
+                                *_stubs(h.log, env_fails=env_fails, real=self.real),
                                 'case "${1:-}" in __restore_after_update) cmd_restore_after_update ;; esac'])
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            for name, raw, mode in (("awg-bot/awgbot/__version__.py", f'__version__ = "{NEW_VER}"\n'.encode(), 0o644),
-                                    ("awg-bot/awgbot/__main__.py", b"# new\n", 0o644),
-                                    ("awg-bot/awg-bot.sh", new_script.encode(), 0o755)):
+            files = [("awg-bot/awgbot/__version__.py", f'__version__ = "{NEW_VER}"\n'.encode(), 0o644),
+                     ("awg-bot/awgbot/__main__.py", b"# new\n", 0o644),
+                     ("awg-bot/awg-bot.sh", new_script.encode(), 0o755)]
+            if compat:
+                files.append(("awg-bot/awgbot/core/compat.py", f'COMPAT_FLOOR = "{compat}"\n'.encode(), 0o644))
+            if kernel:
+                files += [("awg-bot/install/awg.lock", b"AWG_GENERATION=1\n# new\n", 0o644),
+                          ("awg-bot/install/awg-kernel-install.sh",
+                           f'echo "kernel $1 $(tail -n1 "$AWG_LOCK")" >> "{h.log}"\n'.encode(), 0o755)]
+            for name, raw, mode in files:
                 ti = tarfile.TarInfo(name); ti.size = len(raw); ti.mode = mode
                 tar.addfile(ti, io.BytesIO(raw))
         self.blob = buf.getvalue()
@@ -104,8 +115,9 @@ class Release:
 
     def run(self, script: str, *, refuse: str = "") -> subprocess.CompletedProcess:
         h = self.h
-        prog = "\n".join([*prelude(script, h, plain=self.plain, extra=_tool(self.blob, refuse=refuse), funcs=FUNCS),
-                          *_stubs(h.log), 'cmd_restore "$@"'])
+        prog = "\n".join([*prelude(script, h, plain=self.plain, extra=_tool(self.blob, refuse=refuse),
+                                   funcs=FUNCS + self.real, **self.pre),
+                          *_stubs(h.log, real=self.real), 'cmd_restore "$@"'])
         pending = h.backups / "restore-pending.tgz.enc"
         pending.write_bytes(h.src.read_bytes())
         return subprocess.run(["bash", "-c", prog, "x", "--yes", "--release", str(self.asset), str(pending)],
@@ -133,7 +145,8 @@ def test_the_transition_swaps_code_after_the_stop_and_merges_with_the_new_script
     marker = json.loads((h.data / "restore-done.json").read_text(encoding="utf-8"))
     assert marker["version"] == NEW_VER
     assert not rel.asset.exists(), "архив выпуска остался в каталоге бэкапов"
-    assert c[-1] == "systemctl start awg-bot"
+    # прежнее (код, окружение, сборки ядра) — только после того, как сервис на выпуске бэкапа поднялся
+    assert c.index("systemctl start awg-bot") < c.index("prune_old_kernel_builds") == len(c) - 1, c
 
 
 @pytest.mark.parametrize("how, reason", [
@@ -197,3 +210,132 @@ def test_restore_takes_the_install_lock_and_refuses_while_it_is_held(script, tmp
     assert "update_lock" not in after, "вторая половина берёт замок повторно — ждала бы сама себя"
     r = rel.run(script)
     assert r.returncode == 0, r.stderr
+
+
+# ── правки по ревью (FIXES-uupd-2) ───────────────────────────────────────────
+
+def _failed(h) -> dict:
+    return json.loads((h.data / "restore-failed.json").read_text(encoding="utf-8"))
+
+
+def test_a_jump_through_the_release_compat_floor_is_refused_before_the_stop(script, tmp_path):
+    """restore-2: версия совместимости выпуска бэкапа выше установленной — его
+    код данных этой версии не примет: отказ до остановки, причина в маркере."""
+    h = Host(tmp_path)
+    rel = Release(script, h, compat="3.4.5")
+    r = rel.run(script)
+    assert r.returncode != 0
+    assert "systemctl stop awg-bot" not in h.calls() and OLD_VER in rel.code() and h.live() == OLD
+    assert _failed(h)["failed"] == (f"выпуск v{NEW_VER} принимает переход только с v3.4.5 и новее, а здесь "
+                                    f"v{OLD_VER} — сначала обнови сервер AWG до v3.4.5 кнопкой «⬆️ Обновить», "
+                                    "затем восстанови бэкап")
+    rel2 = Release(script, Host(tmp_path / "ok"), compat="3.4.0")
+    assert rel2.run(script).returncode == 0, "версия совместимости ниже установленной — не помеха"
+
+
+def test_a_refusal_returns_the_venv_link_of_the_old_code_not_a_stale_one(script, tmp_path):
+    """restore-3: .venvs/.prev остался от прежнего обновления (окружение vB);
+    отказ после смены кода возвращает ссылку venv на окружение vC — то, с
+    которым работал прежний код."""
+    h = Host(tmp_path)
+    rel = Release(script, h, env_fails=True, real=("venv_rollback",))
+    import shutil as _sh
+    _sh.rmtree(rel.opt / "venv")
+    venvs = rel.opt / ".venvs"
+    (venvs / "B").mkdir(parents=True); (venvs / "C").mkdir()
+    (rel.opt / "venv").symlink_to(venvs / "C")
+    (venvs / ".prev").write_text(f"{venvs / 'B'}\n", encoding="utf-8")       # хвост прежнего обновления
+    r = rel.run(script)
+    assert r.returncode != 0 and OLD_VER in rel.code()
+    import os
+    assert os.path.realpath(rel.opt / "venv") == os.path.realpath(venvs / "C"), "код vC на окружении vB"
+
+
+def test_a_failed_exec_of_the_release_script_goes_through_the_trap(script):
+    """restore-4: неудачный exec не обрывает процесс мимо ловушки: execfail,
+    затем restore_die — прежние код, окружение и ядро назад."""
+    body = _extract_func(script, "cmd_restore")
+    tail = body.split("shopt -s execfail", 1)[1]
+    assert tail.index('exec "$INSTALL_DIR/awg-bot.sh" __restore_after_update') < tail.index('restore_die "$RESTORE_FAIL"')
+    prog = ('restore_die() { echo "DIED $*"; exit 3; }\nINSTALL_DIR=/nonexistent; RESTORE_FAIL="скрипт не запустился"\n'
+            "shopt -s execfail\n" + tail.split("\n    fi", 1)[0])
+    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 3 and "DIED скрипт не запустился" in r.stdout, r.stdout + r.stderr
+
+
+def _kernel_files(rel) -> None:
+    inst = rel.opt / "install"; inst.mkdir(exist_ok=True)
+    (inst / "awg.lock").write_text("AWG_GENERATION=1\n# old\n", encoding="utf-8")
+    (inst / "awg-kernel-install.sh").write_text(f'echo "kernel $1 $(tail -n1 "$AWG_LOCK")" >> "{rel.h.log}"\n',
+                                                encoding="utf-8")
+
+
+def test_a_refusal_after_the_kernel_build_gives_the_old_kernel_back(script, tmp_path):
+    """restore-5: ядро выпуска бэкапа собирается до остановки; отказ дальше —
+    ядро прежней версии ставится обратно (тулзы и модуль — под код vC)."""
+    h = Host(tmp_path)
+    rel = Release(script, h, env_fails=True, kernel=True)
+    _kernel_files(rel)
+    r = rel.run(script)
+    assert r.returncode != 0
+    kernels = [c for c in h.calls() if c.startswith("kernel ")]
+    assert kernels == ["kernel install # new", "kernel install # old"], h.calls()
+    assert "ядро прежней версии" in r.stdout
+
+
+def test_a_successful_transition_keeps_the_kernel_of_the_backup(script, tmp_path):
+    h = Host(tmp_path)
+    rel = Release(script, h, kernel=True)
+    _kernel_files(rel)
+    assert rel.run(script).returncode == 0
+    assert [c for c in h.calls() if c.startswith("kernel ")] == ["kernel install # new"]
+
+
+def test_the_old_code_stays_when_the_service_does_not_come_up(script, tmp_path):
+    """restore-10: прежние код и сборки ядра снимаются только после того, как
+    сервис на выпуске бэкапа поднялся; не поднялся — прежний код оставлен."""
+    h = Host(tmp_path)
+    rel = Release(script, h, start_fails=True)
+    r = rel.run(script)
+    assert (rel.opt / ".prev-code").is_dir(), "прежний код снят до того, как сервис поднялся"
+    assert "prune_old_kernel_builds" not in h.calls()
+    assert f"прежний код v{OLD_VER} оставлен" in r.stderr
+    assert r.returncode == 0
+
+
+def test_the_second_half_takes_the_same_steps_as_an_update(script, tmp_path):
+    """restore-11: вторая половина — та же функция шагов, что у update (ping,
+    резолвер, проверка conf); пояс — после замены conf, не до."""
+    after = _extract_func(script, "cmd_restore_after_update")
+    assert "update_env_steps restore" in after
+    steps = _extract_func(script, "update_env_steps")
+    assert '[[ "${1:-}" == "restore" ]] || adopt_timezone' in steps
+    h = Host(tmp_path)
+    rel = Release(script, h)
+    assert rel.run(script).returncode == 0
+    c = h.calls()
+    for step in ("ensure_python", "ensure_ping", "build_venv", "adopt_resolver", "seed_conf", "validate_config"):
+        assert step in c, step
+
+
+def test_the_version_line_comes_after_the_plan_header(script, tmp_path):
+    """Вне оси: строка версии в терминале — после заголовка плана, как в вопросе бота."""
+    h = Host(tmp_path)
+    rel = Release(script, h)
+    r = rel.run(script)
+    assert r.returncode == 0
+    assert r.stdout.index("ПЛАН") < r.stdout.index(f"♻️ Версия: сейчас v{OLD_VER}"), r.stdout
+
+
+def test_a_bare_failure_still_writes_the_marker(script, tmp_path):
+    """Вне оси: голый die или errexit после «RESTORE_FAIL=» — маркер отказа
+    для бота всё равно пишется."""
+    h = Host(tmp_path)
+    funcs = "\n".join(_extract_func(script, f) for f in ("json_str", "restore_fail_marker", "restore_exit"))
+    stubs = "\n".join(f"{n}() {{ :; }}" for n in ("restore_unstage", "restore_code_back", "restore_kernel_back",
+                                                  "restore_prune_mark", "systemctl"))
+    prog = (f'DATA_DIR="{h.data}"; RESTORE_YES=1; RESTORE_FAIL=""; RESTORE_PHASE=stopped\n'
+            'RESTORE_TMP=""; RESTORE_PENDING=""; RESTORE_PLAN_FILE=""\n'
+            f"{funcs}\n{stubs}\ntrap restore_exit EXIT\nfalse\nexit 1\n")
+    subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10)
+    assert _failed(h)["failed"] == "операция прервана (код 1)"

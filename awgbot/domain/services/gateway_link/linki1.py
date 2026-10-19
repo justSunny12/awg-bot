@@ -8,22 +8,35 @@
 """
 from __future__ import annotations
 
+import time
+
 from awgbot.infra import awg
 
 from .common import log
+
+READ_FAIL_BACKOFF_S = 600      # не прочитался — такт не зовёт exec снова раньше
 
 
 class LinkI1Mixin:
     """Значение I1 для линков и то, что стоит у линка сейчас."""
 
-    def gateway_client_i1(self) -> tuple[bool, str]:
+    def gateway_client_i1(self, cached: bool = False) -> tuple[bool, str]:
         """(прочитано, значение) I1 клиентского интерфейса; пусто — строки нет
-        или она пустая. Не прочитано (интерфейс не отвечает) — (False, "")."""
+        или она пустая. Не прочитано (интерфейс не отвечает) — (False, "").
+        cached (такт живости) — после неудачи чтения READ_FAIL_BACKOFF_S
+        секунд без exec: интерфейс, который не отвечает, такт иначе дёргал бы
+        каждые 30 с."""
+        failed = self.__dict__.get("_client_i1_failed_at")
+        if cached and failed is not None and time.monotonic() - failed < READ_FAIL_BACKOFF_S:
+            return False, ""
         try:
             params = awg.read_server_params()
         except Exception as e:                            # noqa: BLE001 — нет интерфейса, exec, права
-            log.info("I1 клиентского интерфейса не прочитан: %s", e)
+            if failed is None or time.monotonic() - failed >= READ_FAIL_BACKOFF_S:
+                log.info("I1 клиентского интерфейса не прочитан: %s", e)
+            self.__dict__["_client_i1_failed_at"] = time.monotonic()
             return False, ""
+        self.__dict__.pop("_client_i1_failed_at", None)
         return True, str((params.get("obfuscation") or {}).get("I1") or "").strip()
 
     def _gw_link_conf_path(self, gw) -> str:

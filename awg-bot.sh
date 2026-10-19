@@ -1022,8 +1022,8 @@ note_installed_digest() {  # note_installed_digest TGZ VER — архив сов
     return 0
 }
 
-compat_floor() {  # версия совместимости установленного кода (awgbot/core/compat.py); пусто — не прочитана
-    sed -n 's/^COMPAT_FLOOR *= *"\([0-9][0-9.]*\)".*/\1/p' "$INSTALL_DIR/awgbot/core/compat.py" 2>/dev/null | head -n1
+compat_floor() {  # compat_floor [DIR] — версия совместимости кода в DIR (по умолчанию — установленного); пусто — не прочитана
+    sed -n 's/^COMPAT_FLOOR *= *"\([0-9][0-9.]*\)".*/\1/p' "${1:-$INSTALL_DIR}/awgbot/core/compat.py" 2>/dev/null | head -n1
 }
 
 tree_version() {  # tree_version DIR — версия поставки в каталоге (awgbot/__version__.py); пусто — не прочитана
@@ -1582,12 +1582,9 @@ cmd_update_revert() {  # __update_revert [--check] — откат набора: 
     return 0
 }
 
-cmd_post_update() {
-    # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
-    require_root
-    trap post_update_rescue EXIT
-    local wipe="${1:-0}"
-    export AWG_IN_UPDATE=1                 # build_venv держит прежнее окружение до конца
+update_env_steps() {  # update_env_steps [restore] — окружение новой версии: вторая половина update и восстановления
+    # Одна функция на оба пути: восстановление с переходом на выпуск бэкапа
+    # раньше копировало шаги руками и теряло их (ping, резолвер, проверка conf)
     ensure_python
     ensure_ping
     build_venv
@@ -1596,10 +1593,21 @@ cmd_post_update() {
     ensure_awg_module_loaded
     ensure_awg_generation
     adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
-    adopt_timezone                         # ключ timezone снят — пояс бота = пояс хоста
+    # ключ timezone снят — пояс бота = пояс хоста; восстановление решает пояс
+    # после замены conf (restore_apply)
+    [[ "${1:-}" == "restore" ]] || adopt_timezone
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
+}
+
+cmd_post_update() {
+    # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
+    require_root
+    trap post_update_rescue EXIT
+    local wipe="${1:-0}"
+    export AWG_IN_UPDATE=1                 # build_venv держит прежнее окружение до конца
+    update_env_steps
 
     # удержание прошлого хода набора: ручной update, wipe и переход через
     # версию совместимости его снимают (откатываться туда больше нельзя или незачем)
@@ -1819,23 +1827,43 @@ restore_fail_marker() {  # отказ восстановления из чата
 restore_code_back() {  # переход на выпуск бэкапа не доведён: прежние код и окружение на место
     [[ "${RESTORE_CODE:-0}" -eq 1 ]] || return 0
     venv_rollback
+    # ссылка — на окружение, с которым работал прежний код (restore_code_swap)
+    if [[ -n "${RESTORE_VENV:-}" && -d "$RESTORE_VENV" ]]; then
+        ln -sfn "$RESTORE_VENV" "$INSTALL_DIR/venv"
+    fi
     [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]] && restore_prev_code "$AWG_UPDATE_PREV"
     warn "Переход на v${RESTORE_TO:-?} не удался: ${RESTORE_FAIL:-причина не названа} — ничего не изменилось, работает v${RESTORE_FROM:-?}"
     return 0
 }
 
+restore_kernel_back() {  # ядро выпуска бэкапа поставлено, а переход не доведён — ядро прежней версии назад
+    [[ "${RESTORE_KERNEL:-0}" -eq 1 ]] || return 0
+    RESTORE_KERNEL=0
+    local lock="$INSTALL_DIR/install/awg.lock"
+    if [[ -f "$lock" && -f "$INSTALL_DIR/install/awg-kernel-install.sh" ]] \
+       && AWG_LOCK="$lock" bash "$INSTALL_DIR/install/awg-kernel-install.sh" install >/dev/null 2>&1; then
+        log "AmneziaWG: ядро прежней версии v${RESTORE_FROM:-?} возвращено"
+    else
+        warn "AmneziaWG: на хосте осталось ядро выпуска v${RESTORE_TO:-?} — верни прежнее: sudo awg-bot awg install"
+    fi
+}
+
 restore_exit() {  # ловушка операции: по фазе — откат, сервис вверх, временное прочь
     local rc=$?
+    # голый die или errexit после «RESTORE_FAIL=» — причина для маркера всё равно есть
+    [[ "$rc" -ne 0 && -z "$RESTORE_FAIL" && "$RESTORE_PHASE" != "done" ]] && RESTORE_FAIL="операция прервана (код $rc)"
     case "$RESTORE_PHASE" in
         stopped)
             restore_unstage
             restore_code_back
+            restore_kernel_back
             restore_prune_mark
             restore_fail_marker
             systemctl start "$SERVICE" 2>/dev/null || true ;;
         swapping)
             restore_rollback
             restore_code_back
+            restore_kernel_back
             restore_prune_mark
             restore_fail_marker
             systemctl start "$SERVICE" 2>/dev/null || true ;;
@@ -1844,6 +1872,7 @@ restore_exit() {  # ловушка операции: по фазе — отка�
         *)
             # сервис не останавливали: бот работает и об отказе не знает —
             # перезапуск, чтобы новый процесс доложил его из маркера
+            [[ "$rc" -ne 0 ]] && restore_kernel_back
             if [[ "$rc" -ne 0 && "$RESTORE_YES" -eq 1 && -n "$RESTORE_FAIL" ]]; then
                 restore_fail_marker
                 systemctl restart "$SERVICE" 2>/dev/null || true
@@ -1895,7 +1924,7 @@ cmd_restore() {
         [[ -n "$src" ]] || die "бэкапов не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <файл>"
     fi
     RESTORE_TARGETS=(); RESTORE_DONE_T=(); RESTORE_HAD_OLD=(); RESTORE_PHASE=""; RESTORE_FAIL=""
-    RESTORE_YES="$yes"; RESTORE_CODE=0; RESTORE_TO=""; RESTORE_FROM="$(tree_version "$INSTALL_DIR")"
+    RESTORE_YES="$yes"; RESTORE_CODE=0; RESTORE_KERNEL=0; RESTORE_TO=""; RESTORE_FROM="$(tree_version "$INSTALL_DIR")"
     RESTORE_RELEASE="$release"
     RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
     # Файл из чата бот кладёт шифрованным (restore-pending.tgz.enc) и рядом —
@@ -1934,22 +1963,35 @@ cmd_restore() {
     rel_out="$(bot_tool tools.restore_release --meta "$copy/state/backup-meta.json" --out "$tmp/release.tgz" \
                ${release:+--archive "$release"} 2>"$tmp/release.err")" \
         || restore_die "$(cat "$tmp/release.err" 2>/dev/null || echo "выпуск бэкапа не проверен")"
-    local rel_first; rel_first="$(printf '%s\n' "$rel_out" | head -n1)"
+    local rel_first rel_lines=""; rel_first="$(printf '%s\n' "$rel_out" | head -n1)"
     if [[ -n "$rel_first" && "$rel_first" != "same" ]]; then
         RESTORE_TO="$rel_first"
         RESTORE_DIGEST="$(sed -n 's/.*"digest": *"sha256:\([0-9a-f]*\)".*/\1/p' "$copy/state/backup-meta.json" | head -n1)"
         relsrc="$(restore_release_tree "$tmp/release.tgz" "$tmp/release")" || restore_die "${relsrc:-архив выпуска не распаковался}"
-        printf '%s\n' "$rel_out" | tail -n +2
+        # повышение через версию совместимости выпуска: его код данных этой
+        # версии не принимает — сначала обычное обновление по цепочке минимумов
+        local vfloor; vfloor="$(compat_floor "$relsrc")"
+        if [[ -n "$vfloor" && -n "$RESTORE_FROM" ]] && version_lt "$RESTORE_FROM" "$vfloor"; then
+            restore_die "выпуск v$RESTORE_TO принимает переход только с v$vfloor и новее, а здесь v$RESTORE_FROM — сначала обнови сервер AWG до v$vfloor кнопкой «⬆️ Обновить», затем восстанови бэкап"
+        fi
+        rel_lines="$(printf '%s\n' "$rel_out" | tail -n +2)"    # строка версии — в план, после заголовка
     fi
     local plan
     plan="$(bot_tool tools.restore_merge --plan "$copy" --save "$expect" 2>&1)" || restore_die "$plan"
     # из чата человек видел план в вопросе бота — сверяем с ним
     [[ -n "$RESTORE_PLAN_FILE" && -f "$RESTORE_PLAN_FILE" ]] && cp "$RESTORE_PLAN_FILE" "$expect"
-    printf '%s\n\n' "$plan"
+    if [[ -n "$rel_lines" ]]; then
+        # как в вопросе бота (Т-В1): заголовок плана, строка версии, остальное
+        printf '%s\n%s\n' "$(printf '%s\n' "$plan" | head -n1)" "$rel_lines"
+        printf '%s\n\n' "$(printf '%s\n' "$plan" | tail -n +2)"
+    else
+        printf '%s\n\n' "$plan"
+    fi
     [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
     if [[ -n "$RESTORE_TO" && -f "$relsrc/install/awg.lock" ]]; then
         # ядро выпуска бэкапа — до остановки, как у update: не собралось — ничего не тронуто
         log "AmneziaWG: версия выпуска v$RESTORE_TO — собираю до остановки сервиса…"
+        RESTORE_KERNEL=1; export RESTORE_KERNEL       # с этого места отказ — ядро прежней версии назад
         AWG_LOCK="$relsrc/install/awg.lock" bash "$relsrc/install/awg-kernel-install.sh" install \
             || restore_die "ядро AmneziaWG выпуска v$RESTORE_TO не собралось — ничего не изменилось"
     fi
@@ -1984,7 +2026,11 @@ cmd_restore() {
         export RESTORE_COPY RESTORE_EXPECT RESTORE_BK_AT RESTORE_AWGDIR RESTORE_TZ_HAD RESTORE_SRC RESTORE_RELEASE
         export AWG_UPDATE_PREV="$INSTALL_DIR/.prev-code"
         RESTORE_FAIL="скрипт выпуска v$RESTORE_TO не запустился"    # exec не прошёл — причина для маркера
+        # execfail: неудачный exec не обрывает процесс мимо ловушки — дальше
+        # restore_die, и ловушка вернёт прежние код, окружение и ядро
+        shopt -s execfail
         exec "$INSTALL_DIR/awg-bot.sh" __restore_after_update
+        restore_die "$RESTORE_FAIL"
     fi
     restore_apply
 }
@@ -2008,6 +2054,19 @@ restore_code_swap() {  # restore_code_swap SRC — код выпуска бэк�
     local prev="$INSTALL_DIR/.prev-code"
     rm -rf "$prev"; mkdir -p "$prev"
     RESTORE_CODE=1; AWG_UPDATE_PREV="$prev"                 # с этого места отказ — прежний код назад
+    # Окружение кода vC — явно: .venvs/.prev мог остаться от прежнего
+    # обновления (сторож снят выше) и указывать на окружение vB — откат
+    # поставил бы код vC на чужое окружение. Вторая половина (скрипт vV)
+    # читает RESTORE_VENV из окружения и возвращает ссылку на него
+    RESTORE_VENV=""
+    [[ -L "$INSTALL_DIR/venv" ]] && RESTORE_VENV="$(readlink -f "$INSTALL_DIR/venv")"
+    mkdir -p "$INSTALL_DIR/.venvs"
+    if [[ -n "$RESTORE_VENV" ]]; then
+        printf '%s\n' "$RESTORE_VENV" > "$INSTALL_DIR/.venvs/.prev"
+    else
+        rm -f "$INSTALL_DIR/.venvs/.prev"
+    fi
+    export RESTORE_VENV
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code ! -name .hold-code \
         -exec mv -t "$prev" {} + || restore_die "прежний код не отодвинулся"
     cp -a "$1"/. "$INSTALL_DIR"/ || restore_die "код выпуска v$RESTORE_TO не лёг целиком"
@@ -2030,13 +2089,7 @@ cmd_restore_after_update() {  # __restore_after_update — вторая поло
     [[ -n "${RESTORE_COPY:-}" && -d "$RESTORE_COPY" ]] || restore_die "распакованный бэкап потерялся по дороге"
     export AWG_IN_UPDATE=1
     RESTORE_FAIL="окружение выпуска v$RESTORE_TO не собралось"   # die посреди шагов — причина для маркера
-    ensure_python
-    build_venv
-    install_unit
-    ensure_host_autostart
-    ensure_awg_module_loaded
-    ensure_awg_generation
-    seed_conf
+    update_env_steps restore                    # те же шаги, что у второй половины update
     RESTORE_FAIL=""
     restore_apply
 }
@@ -2099,11 +2152,10 @@ restore_apply() {  # после остановки: слияние, подгот
     [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
     restore_finish                                      # точка невозврата: дальше — только вперёд
     if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
-        # переход на выпуск бэкапа доведён: прежние код и окружение больше не
-        # нужны; digest установки — digest метки (бэкапы снова со ссылкой на выпуск)
+        # переход на выпуск бэкапа доведён: digest установки — digest метки
+        # (бэкапы снова со ссылкой на выпуск); прежние код, окружение и ядро
+        # снимаются только после старта сервиса (ниже)
         update_hold_drop                                # удержание прошлого хода — о другом коде
-        update_done
-        prune_old_kernel_builds
         if [[ -n "${RESTORE_DIGEST:-}" ]]; then
             ( umask 077; printf '%s %s\n' "$RESTORE_TO" "$RESTORE_DIGEST" > "$DATA_DIR/installed-digest" )
         fi
@@ -2140,7 +2192,18 @@ restore_apply() {  # после остановки: слияние, подгот
           "$(json_str "$(basename "$src")")" "$(json_str "${RESTORE_TO:-}")"
       cat "$copy/restore-merge.json"; printf '}\n'; } > "$DATA_DIR/restore-done.json"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
-    systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
+    if systemctl is-active --quiet "$SERVICE"; then
+        ok "восстановлено, $SERVICE запущен."
+        if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
+            update_done                                 # сервис на выпуске бэкапа жив: прежнее прочь
+            prune_old_kernel_builds
+        fi
+    else
+        warn "$SERVICE не активен — journalctl -u $SERVICE -e -o short-iso"
+        if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
+            warn "прежний код v${RESTORE_FROM:-?} оставлен в $INSTALL_DIR/.prev-code — для ручного разбора"
+        fi
+    fi
 }
 
 # ── uninstall (self-removal через отсоединённый пост-хук) ─────────────────────

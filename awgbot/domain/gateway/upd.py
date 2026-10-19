@@ -186,7 +186,7 @@ class GatewayUpdMixin:
         from awgbot.domain.selfupdate import UpdatePeer
         # цель снята (сервер на ней, Р17) — шлюзу она годится; прочие снятые ступенями не станут
         import dataclasses
-        capped = [dataclasses.replace(r, withdrawn="") if r.version == want else r
+        capped = [dataclasses.replace(r, withdrawn="", prerelease=False) if r.version == want else r
                   for r in releases if r.version <= want]
         peer = self._update_gate([UpdatePeer(slot=0, name="", version=self.server_version(), fresh=True)])
         step = updates.pick_target(inst, capped, "gateway", None, peer)

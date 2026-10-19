@@ -143,6 +143,18 @@ def restore_not_launched(reason: str) -> str:
     return f"⚠️ Восстановление не запущено: {_e(reason)}"
 
 
+def restore_up_requires(ver: str, req: str) -> str:
+    """Т-В2: выпуск бэкапа новее, но ставится только с минимума выше текущей."""
+    return (f"выпуск {_ver(ver)} ставится только с {_ver(req)} и новее — сначала обнови сервер AWG до "
+            f"{_ver(req)} кнопкой «⬆️ Обновить», затем восстанови бэкап")
+
+
+def restore_other_generation(ver: str, gen: int, here: int) -> str:
+    """Т-В2: выпуск бэкапа — на другом поколении AmneziaWG."""
+    return (f"выпуск {_ver(ver)} несёт AmneziaWG поколения {int(gen)}, на сервере AWG — поколения {int(here)}: "
+            "восстановление с переходом между поколениями не ведётся")
+
+
 def restore_meta_bad(ver: str) -> str:
     return f"метаданные выпуска {_ver(ver)} на GitHub не прочитаны — переходить на него не буду"
 

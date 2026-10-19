@@ -27,9 +27,12 @@ from .state import RELEASE_KEY
 
 def role_target(releases: list, role: str, upto: tuple):
     """Версия роли в выпуске: новейший выпуск ≤ upto, адресованный роли; None —
-    такого нет."""
+    такого нет. Снятые и предварительные выпуски ниже upto — не версия роли:
+    набор их не ставит; сам выпуск upto годится и снятым (сервер на нём, Р17)."""
     best = None
     for r in releases:
+        if r.not_target and r.version != upto:
+            continue
         if r.version <= upto and r.applies_to(role) and (best is None or r.version > best.version):
             best = r
     return best
@@ -93,8 +96,8 @@ class FleetPlanMixin:
         for r in releases:
             if r.version <= base or (barrier is not None and r.version >= barrier):
                 continue
-            if r.withdrawn or not (r.applies_to("main") or r.applies_to("gateway")):
-                continue                                  # снятый выпуск — не цель кнопки
+            if r.not_target or not (r.applies_to("main") or r.applies_to("gateway")):
+                continue                                  # снятый и предварительный выпуск — не цель кнопки
             if ceiling is not None and r.awg_generation() > ceiling:
                 continue
             if best is None or r.version > best.version:

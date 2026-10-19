@@ -111,7 +111,8 @@ def _releases(*, sha=_DIGEST, withdrawn="", down=False, tags=("v3.4.1", "v3.5.0"
             if down:
                 raise updates.UpdateError("HTTP 503")
             return [updates.Release(tag=t, version=updates.parse_version(t), body="", asset_url="DUMMY",
-                                    sha256=sha, meta={"awg_gen": 1}, withdrawn=withdrawn) for t in tags]
+                                    sha256=sha, meta={"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}},
+                                    withdrawn=withdrawn) for t in tags]
         mp.setattr(updates, "list_releases", releases)
 
         def download(rel):

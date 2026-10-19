@@ -649,7 +649,7 @@ class _PostUpdate:
             "systemctl() { return 0; }\n"
             "log() { echo \"LOG $*\"; }; ok() { echo \"OK $*\"; }; warn() { echo \"WARN $*\"; }\n"
             "die() { echo \"DIE $*\"; exit 1; }\n"
-            + _func(src, "cmd_post_update") +
+            + _func(src, "update_env_steps") + _func(src, "cmd_post_update") +
             f'cmd_post_update {wipe}\necho AFTER_POST_UPDATE\n'
         )
         env = {"PATH": "/usr/bin:/bin", "CALLS": str(self.log)}

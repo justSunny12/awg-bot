@@ -24,7 +24,8 @@ HEX = hashlib.sha256(BLOB).hexdigest()
 
 def _rel(tag: str, *, sha: str = HEX, withdrawn: str = "", meta: dict | None = None, bad: str = ""):
     return updates.Release(tag=tag, version=updates.parse_version(tag), body="", asset_url="DUMMY",
-                           sha256=sha, meta={"awg_gen": 1} if meta is None and not bad else meta,
+                           sha256=sha, meta={"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}}
+                           if meta is None and not bad else meta,
                            meta_bad=bad, withdrawn=withdrawn)
 
 
@@ -246,3 +247,186 @@ def test_another_generation_is_refused_before_github(services, github, monkeypat
                                          env=f"ADMIN_ID={cfg.ADMIN_ID}\n", db=db), passphrase=PHRASE)
     assert "другом поколении AmneziaWG" in services.inspect_backup(blob, "b.tgz.enc")["error"]
     assert github["calls"] == 0
+
+
+# ── правки по ревью (FIXES-uupd-2: restore-1…12 и вне оси) ───────────────────
+
+def test_a_plan_from_another_version_is_read_tolerantly():
+    """restore-1: вторую половину перехода исполняет код другой версии — план с
+    полями, которых этот код не знает (и без полей, которые знает), читается:
+    чужое отброшено, недостающее — по умолчанию; подпись — та же."""
+    from awgbot.domain.backup.plan import Plan
+    d = {"line": "same", "slots": [{"slot": 1, "case": "same", "name": "Pi", "future": 7}],
+         "replaced": [0, 0], "release": {}, "new_field_of_3_9": {"x": 1}}
+    p = Plan.from_dict(d)
+    assert p.line == "same" and p.slots[0].name == "Pi" and p.slots[0].link_if == ""
+    assert p.signature() == ("same", False, ((1, "same"),))
+    assert Plan.from_dict({"line": "clean"}).slots == []
+
+
+def test_an_upgrade_below_the_release_minimum_is_refused(github):
+    """restore-2: повышение на выпуск, который ставится только с минимума выше
+    текущей версии, — отказ словами, без прыжка через минимум."""
+    github["releases"] = [_rel("v3.4.1"), _rel("v3.4.2"),
+                          _rel("v3.6.0", meta={"awg_gen": 1, "roles": {"main": {"requires": "3.5.0"}}})]
+    r = fr.plan_release(_label("3.6.0"))
+    assert r["error"] == ("выпуск v3.6.0 ставится только с v3.5.0 и новее — сначала обнови сервер AWG до v3.5.0 "
+                          "кнопкой «⬆️ Обновить», затем восстанови бэкап"), r["error"]
+    github["releases"][-1] = _rel("v3.6.0", meta={"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}})
+    assert fr.plan_release(_label("3.6.0"))["error"] == ""
+
+
+def test_a_release_of_another_awg_generation_is_refused(github, monkeypatch):
+    """restore-12: поколение AmneziaWG выпуска бэкапа сверяется с хостом."""
+    from awgbot.infra import awglock
+    monkeypatch.setattr(awglock, "generation", lambda: 1)
+    github["releases"] = [_rel("v3.4.1", meta={"awg_gen": 2, "roles": {"main": {"requires": "3.4.0"}}}),
+                          _rel("v3.4.2")]
+    r = fr.plan_release(_label("3.4.1"))
+    assert "поколения 2" in r["error"] and "поколения 1" in r["error"], r
+
+
+def test_the_backup_release_metadata_is_read_even_on_a_prerelease_build(github, monkeypatch):
+    """restore-7: на предрелизной сборке метаданные выпусков не читаются — а
+    метаданные выпуска бэкапа нужны: plan_release просит их по тегу."""
+    seen = []
+    real = updates.list_releases
+
+    def releases(*a, **kw):
+        seen.append(kw.get("meta_tag"))
+        return real(*a, **kw)
+    monkeypatch.setattr(updates, "list_releases", releases)
+    fr.plan_release(_label("3.4.1"))
+    assert seen == ["v3.4.1"]
+
+
+def test_list_releases_reads_the_named_tag_on_a_non_release_build(monkeypatch):
+    """Сам list_releases: установка не из выпуска (X.Y.Z.N), meta_tag — метаданные
+    этого тега прочитаны, остальных — нет."""
+    from awgbot.infra.updates import github as gh
+    raw = json.dumps([{"tag_name": t, "name": t, "body": "", "prerelease": False,
+                       "assets": [{"name": "awg-bot.tgz", "url": "DUMMY", "digest": "sha256:" + HEX},
+                                  {"name": "release-meta.json", "url": "DUMMY-META", "digest": "sha256:" + HEX}]}
+                      for t in ("v3.4.1", "v3.4.2")]).encode()
+    monkeypatch.setattr(gh._up(), "_request", lambda url, accept: raw)
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.4.3.1")          # предрелизная сборка 3.4.3
+    read = []
+    monkeypatch.setattr(gh, "_read_meta", lambda tag, asset, cache: (read.append(tag), ({"awg_gen": 1}, None))[1])
+    monkeypatch.setattr(cfg, "UPDATES_META_ASSET_NAME", "release-meta.json")
+    monkeypatch.setattr(cfg, "UPDATES_ASSET_NAME", "awg-bot.tgz")
+    gh.list_releases()
+    assert read == [], "предрелизная сборка читала метаданные всех выпусков"
+    rels = gh.list_releases(meta_tag="v3.4.1")
+    assert read == ["v3.4.1"] and next(r for r in rels if r.tag == "v3.4.1").meta == {"awg_gen": 1}
+
+
+def test_a_finished_run_of_the_same_release_does_not_hold_the_gateways(services):
+    """restore-6: после перехода остаётся только ИДУЩИЙ ход на ту же версию;
+    законченный (rollback_failed) держал бы следование шлюзов."""
+    services.fleet_run_set({"id": "a1", "tag": "v3.4.1", "state": "rollback_failed", "steps": []})
+    services.fleet_after_restore("3.4.1")
+    assert services.fleet_run() == {}
+    services.fleet_run_set({"id": "a2", "tag": "v3.4.1", "state": "running", "steps": []})
+    services.fleet_after_restore("3.4.1")
+    assert services.fleet_run()["id"] == "a2"
+
+
+def test_the_terminal_downloads_into_its_own_place(github, tmp_path, monkeypatch, capsys):
+    """restore-9: терминал качает выпуск сразу в свой --out — файл бота в
+    каталоге бэкапов не трогает; архив от бота не читается — отказ словами, без
+    трейсбека."""
+    from tools import restore_release as tool
+    backups = tmp_path / "backups"; backups.mkdir()
+    monkeypatch.setattr(cfg, "BACKUP_DIR", backups)
+    bot_file = backups / fr.RELEASE_FILE
+    bot_file.write_bytes(b"DUMMY-bot")
+    meta = tmp_path / "backup-meta.json"
+    meta.write_text(json.dumps(_label("3.4.1")), encoding="utf-8")
+    out = tmp_path / "op" / "release.tgz"
+    out.parent.mkdir()
+    assert tool.main(["--meta", str(meta), "--out", str(out)]) == 0
+    assert out.read_bytes() == BLOB and bot_file.read_bytes() == b"DUMMY-bot"
+    capsys.readouterr()
+    assert tool.main(["--meta", str(meta), "--out", str(out), "--archive", str(tmp_path / "нет.tgz")]) == 1
+    assert "не прочитан" in capsys.readouterr().err
+
+
+async def test_a_busy_install_lock_answers_in_the_chat_and_launches_nothing(services, monkeypatch):
+    """restore-8: замок установки занят — restore отказал бы сам и перезапустил
+    бота ради отчёта; бот отвечает сразу, вопрос остаётся живым."""
+    from awgbot.bot import texts
+    from awgbot.bot.handlers import restore as rs
+    from awgbot.domain.selfupdate import marks
+    from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
+    monkeypatch.setattr(marks, "install_busy", lambda: True)
+    state = FakeState()
+    await state.update_data(restore_blob="RFVNTVk=", restore_plan={}, restore_fp="aaaaaaaaaaaa")
+    launched = []
+    services.launch_restore = lambda path, release="": launched.append(path)
+    bot = FakeBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
+    assert launched == [] and (await state.get_data())["restore_blob"], "вопрос сброшен"
+    assert msg.sent[-1][1] == "⚠️ Восстановление не запущено: " + texts.RESTORE_INSTALL_BUSY
+    assert not getattr(services, "_restore_running", False)
+
+
+async def test_a_downloaded_release_is_removed_when_the_launch_fails(services, monkeypatch, tmp_path):
+    """restore-9: выпуск скачан, а запуск не удался — файл выпуска прочь."""
+    from awgbot.bot.handlers import restore as rs
+    from awgbot.domain.selfupdate import marks
+    from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
+    monkeypatch.setattr(marks, "install_busy", lambda: False)
+    rel = tmp_path / "restore-pending.release.tgz"
+    rel.write_bytes(b"DUMMY")
+    services.prepare_restore_release = lambda plan: str(rel)
+    services.prepare_restore = lambda blob, plan=None: "/tmp/DUMMY"
+
+    def launch(path, release=""):
+        raise OSError("systemd-run: нет")
+    services.launch_restore = launch
+    state = FakeState()
+    await state.update_data(restore_blob="RFVNTVk=", restore_plan={}, restore_fp="aaaaaaaaaaaa")
+    bot = FakeBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    with pytest.raises(OSError):
+        await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
+    assert not rel.exists()
+
+
+def test_withdrawn_and_preliminary_releases_are_not_the_roles_version():
+    """Вне оси: version роли в выпуске пропускает снятые и предварительные
+    (prerelease без «снят:») ниже upto; сам upto годится и снятым (Р17)."""
+    from awgbot.domain.fleet.plan import role_target
+    rels = [_rel("v3.4.1"), _rel("v3.4.2", withdrawn="DUMMY"),
+            updates.Release(tag="v3.4.3", version=(3, 4, 3), body="", asset_url="DUMMY", sha256=HEX,
+                            meta={"awg_gen": 1, "roles": {"gw": {"requires": "3.4.0"}}}, prerelease=True),
+            _rel("v3.4.4", withdrawn="DUMMY")]
+    for r in rels:
+        object.__setattr__(r, "meta", {"awg_gen": 1, "roles": {"gw": {"requires": "3.4.0"}}})
+    assert role_target(rels, "gateway", (3, 4, 3)).tag == "v3.4.3", "сам выпуск набора"
+    assert role_target(rels, "gateway", (3, 4, 4)).tag == "v3.4.4"
+    assert role_target(rels, "gateway", (3, 4, 5)).tag == "v3.4.1", "снятый или предварительный — версия роли"
+
+
+def test_a_preliminary_release_is_not_a_button_target(services, monkeypatch):
+    """Вне оси: prerelease без «снят:» — тоже не цель кнопки набора и не ступень."""
+    from awgbot.infra.updates import pick
+    meta = {"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}, "gw": {"requires": "3.4.0"}}}
+    rels = [updates.Release(tag=t, version=updates.parse_version(t), body="", asset_url="DUMMY", sha256=HEX,
+                            meta=meta, prerelease=pre) for t, pre in (("v3.4.2", False), ("v3.5.0", True))]
+    assert services.fleet_pick((3, 4, 2), rels, None) is None
+    assert pick._newer((3, 4, 2), rels, "main", None) == []
+    rels[1] = updates.Release(tag="v3.5.0", version=(3, 5, 0), body="", asset_url="DUMMY", sha256=HEX, meta=meta)
+    assert services.fleet_pick((3, 4, 2), rels, None).tag == "v3.5.0"
+
+
+def test_the_preliminary_flag_survives_the_saved_list(services):
+    meta = {"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}}
+    rel = updates.Release(tag="v3.5.0", version=(3, 5, 0), body="", asset_url="DUMMY", sha256=HEX, meta=meta,
+                          prerelease=True)
+    services._update_store([rel], {})
+    got = next(r for r in services._update_cached_releases(strict=False) if r.tag == "v3.5.0")
+    assert got.prerelease is True and got.not_target

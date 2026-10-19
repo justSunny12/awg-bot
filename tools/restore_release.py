@@ -58,14 +58,22 @@ def main(argv: list[str] | None = None) -> int:
         if fr.same_version(ver, config.INSTALLED_VERSION, releases=ours and bool(digest)):
             print("same")
             return 0
-        with open(args.archive, "rb") as f:
-            have = hashlib.sha256(f.read()).hexdigest()
+        try:
+            with open(args.archive, "rb") as f:
+                have = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            print(f"архив выпуска v{ver} не прочитан — скачай бэкап заново из чата бота", file=sys.stderr)
+            return 1
         if not digest.startswith("sha256:") or digest[7:] != have:
             print(f"архив выпуска v{ver} не совпал с бэкапом (sha256 другой) — переходить на него не буду",
                   file=sys.stderr)
             return 1
         if args.archive != args.out:
-            shutil.copyfile(args.archive, args.out)
+            try:
+                shutil.copyfile(args.archive, args.out)
+            except OSError as e:
+                print(f"архив выпуска v{ver} не скопирован: {e}", file=sys.stderr)
+                return 1
         print(ver)
         return 0
     rel = fr.plan_release(label, installed_release=ours)
@@ -75,12 +83,15 @@ def main(argv: list[str] | None = None) -> int:
     if rel["kind"] == fr.SAME:
         print("same")
         return 0
+    import os
+    out = os.path.abspath(args.out)
     try:
-        path = fr.fetch_release(rel)
-    except updates.UpdateError as e:
+        # сразу в --out (временный каталог операции): файл бота в каталоге
+        # бэкапов (restore-pending.release.tgz) терминал не трогает
+        fr.fetch_release(rel, dest_dir=os.path.dirname(out), name=os.path.basename(out))
+    except (updates.UpdateError, OSError) as e:
         print(str(e), file=sys.stderr)
         return 1
-    shutil.move(path, args.out)
     print(ver)
     for line in fr.version_lines(rel):
         print(nb.plain(line))

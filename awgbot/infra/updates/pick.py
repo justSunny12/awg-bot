@@ -91,8 +91,9 @@ def _newer(installed: tuple, releases: list, role: str,
     """Релизы новее установленного, адресованные роли, под потолком поколения
     и ниже первого пропущенного (_barrier)."""
     barrier = _barrier(installed, releases)
-    # снятый выпуск — не цель и не ступень (барьером он не становится: метаданные прочитаны)
-    newer = [r for r in releases if r.version > installed and r.applies_to(role) and not r.withdrawn
+    # снятый и предварительный выпуск — не цель и не ступень (барьером не
+    # становится: метаданные прочитаны)
+    newer = [r for r in releases if r.version > installed and r.applies_to(role) and not r.not_target
              and (barrier is None or r.version < barrier)]
     if max_generation is not None:
         newer = [r for r in newer if r.awg_generation() <= max_generation]

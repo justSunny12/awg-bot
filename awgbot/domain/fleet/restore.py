@@ -61,8 +61,9 @@ def plan_release(label: dict, installed: str | None = None, meta_cache: dict | N
         out["error"] = notes_.restore_not_release(ver)
         return out
     try:
-        releases = (updates.list_releases(meta_cache=dict(meta_cache)) if meta_cache
-                    else updates.list_releases())
+        # метаданные тега бэкапа — всегда, даже на предрелизной сборке
+        releases = (updates.list_releases(meta_cache=dict(meta_cache), meta_tag=out["tag"]) if meta_cache
+                    else updates.list_releases(meta_tag=out["tag"]))
     except updates.UpdateError:
         out["error"] = notes_.restore_github_down(ver)
         return out
@@ -75,6 +76,18 @@ def plan_release(label: dict, installed: str | None = None, meta_cache: dict | N
         return out
     if rel.meta_bad or not rel.usable():
         out["error"] = notes_.restore_meta_bad(ver)
+        return out
+    from awgbot.infra import awglock
+    gen, here = rel.awg_generation(), awglock.generation()
+    if gen and here and gen != here:
+        # другое поколение AmneziaWG — переход требует переезда профилей, а
+        # восстановление его не ведёт
+        out["error"] = notes_.restore_other_generation(ver, gen, here)
+        return out
+    req = rel.requires("main")
+    if out["kind"] == UP and req and have < tuple(req):
+        # выпуск бэкапа ставится только с минимума — через него прыгать нельзя
+        out["error"] = notes_.restore_up_requires(ver, ".".join(str(x) for x in req))
         return out
     out.update(release=rel, withdrawn=rel.withdrawn)
     return out
@@ -95,10 +108,11 @@ def public(rel: dict) -> dict:
     return {k: v for k, v in (rel or {}).items() if k != "release"}
 
 
-def fetch_release(rel: dict, dest_dir: str | None = None) -> str:
+def fetch_release(rel: dict, dest_dir: str | None = None, name: str = RELEASE_FILE) -> str:
     """Скачать ассет выпуска бэкапа со сверкой sha256 (download_asset сверяет
     с digest ассета, равным digest метки) в каталог бэкапов, 0600. Путь;
-    сеть или sha256 — UpdateError."""
+    сеть или sha256 — UpdateError. name — имя файла: терминал качает в свой
+    временный каталог под своим именем и с файлом бота не сталкивается."""
     release = rel.get("release")
     if release is None:
         raise updates.UpdateError(notes_.restore_github_down(rel.get("version") or ""))
@@ -109,7 +123,7 @@ def fetch_release(rel: dict, dest_dir: str | None = None) -> str:
         raise updates.UpdateError(notes_.restore_fetch_failed(rel.get("version") or "")) from e
     d = dest_dir or str(config.BACKUP_DIR)
     os.makedirs(d, exist_ok=True)
-    path = os.path.join(d, RELEASE_FILE)
+    path = os.path.join(d, name)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(blob)
@@ -122,8 +136,11 @@ class FleetRestoreMixin:
     def fleet_after_restore(self, version: str) -> None:
         """Сервер перешёл на выпуск бэкапа: выпуск набора — его версия (Р17),
         прежний ход ничего не значит; шлюзы пойдут следом по hello (вне хода,
-        по одному)."""
+        по одному). Остаётся только идущий ход на ту же версию: законченный
+        (в том числе rollback_failed) держал бы следование шлюзов."""
+        from .state import ACTIVE_RUN
         run = self.fleet_run()
-        if run and str(run.get("tag") or "").lstrip("v") != str(version).lstrip("v"):
+        if run and (str(run.get("tag") or "").lstrip("v") != str(version).lstrip("v")
+                    or run.get("state") not in ACTIVE_RUN):
             self.fleet_run_set({})
         self.fleet_release_set("")                     # выпуск набора — версия сервера

@@ -31,7 +31,8 @@ pytestmark = pytest.mark.unit
 FUNCS = ("yaml_get", "is_gateway_role", "awg_conf_dir", "json_str", "restore_die", "restore_stage", "restore_unstage",
          "restore_rollback", "restore_mv", "restore_swap", "restore_finish", "restore_prune_mark",
          "restore_fail_marker", "restore_exit", "restore_blocks", "restore_provision", "cmd_restore",
-         "restore_apply", "restore_code_back", "tree_version", "update_lock")
+         "restore_apply", "restore_code_back", "restore_kernel_back", "tree_version", "compat_floor", "version_lt",
+         "update_lock")
 OLD = {"db": b"OLD-DB", "app": b"network:\n  server_host: vpn.example.org\n", "env": b"BOT_TOKEN=DUMMY\n",
        "awg0": b"[Interface]\nPrivateKey = DUMMY-OLD\n", "gw": b"[Interface]\nPrivateKey = DUMMY-GW-OLD\n"}
 NEW = {"db": b"NEW-DB", "app": b"network:\n  server_host: vpn.example.org\nx: 1\n", "env": b"BOT_TOKEN=DUMMY2\n",
@@ -106,7 +107,7 @@ def run(script: str, h: Host, *args: str, **kw) -> subprocess.CompletedProcess:
 def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int = 0,
             stage_fails: bool = False, plain: Path | None = None, blocked=("10.8.1.5",), adopt=(),
             blocks_fail: bool = False, stays_active: bool = False, merge_kill: bool = False,
-            provision: bool = False, extra=(), funcs=()) -> list[str]:
+            provision: bool = False, extra=(), funcs=(), start_fails: bool = False) -> list[str]:
     """Подмены и настоящие функции awg-bot.sh — без вызова: его дописывает
     вызывающий (run — cmd_restore; переход на выпуск бэкапа — и скрипт выпуска)."""
     log = h.log
@@ -123,8 +124,12 @@ def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int 
         'die() { echo "DIE $*" >&2; exit 1; }',
         "require_root() { :; }; confirm() { return 0; }; adopt_timezone() { :; }",
         f'apt-get() {{ echo "apt-get $*" >> "{log}"; }}',
-        f'systemctl() {{ case "$1" in is-active) return {0 if stays_active else 1} ;; list-unit-files) '
-        f'echo dnsmasq.service; return 0 ;; esac; echo "systemctl $*" >> "{log}"; }}',
+        # сервис: после start — активен, после stop — нет (stays_active — stop не остановил)
+        f'SVC_UP={1 if stays_active else 0}',
+        f'systemctl() {{ case "$1" in is-active) [[ "$SVC_UP" -eq 1 ]]; return ;; list-unit-files) '
+        f'echo dnsmasq.service; return 0 ;; start|restart) SVC_UP={0 if start_fails else 1} ;; '
+        f'stop) SVC_UP={1 if stays_active else 0} ;; esac; '
+        f'echo "systemctl $*" >> "{log}"; }}',
         f'awg-quick() {{ echo "awg-quick $*" >> "{log}"; }}',
         f'sh() {{ case "$1" in *routing-host-setup.sh) echo "host-setup $2" >> "{log}" ;; '
         f'*) echo "adopt $LINK_IF $*" >> "{log}" ;; esac; }}',

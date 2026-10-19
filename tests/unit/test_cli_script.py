@@ -232,7 +232,10 @@ def test_update_hands_off_to_the_new_script(script):
     сервере, уже переехавшем на host-режим: фикс уехал, а файл не изменился.
     """
     upd = _extract_func(script, "cmd_update")
-    post = _extract_func(script, "cmd_post_update")
+    # шаги окружения — общей функцией второй половины (update и восстановление
+    # с переходом на выпуск бэкапа)
+    post = _extract_func(script, "cmd_post_update") + _extract_func(script, "update_env_steps")
+    assert re.search(r"^\s*update_env_steps\s*$", _extract_func(script, "cmd_post_update"), re.M)
 
     for step in _POST_UPDATE_STEPS:
         assert re.search(rf"^\s*{step}\b", post, re.M), \

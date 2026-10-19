@@ -90,7 +90,7 @@ def test_a_hotfix_backup_on_its_base_release_is_a_transition(monkeypatch):
     hexd = hashlib.sha256(blob).hexdigest()
     monkeypatch.setattr(updates, "list_releases", lambda **kw: [
         updates.Release(tag="v3.4.0.1", version=(3, 4, 0, 1), body="", asset_url="DUMMY", sha256=hexd,
-                        meta={"awg_gen": 1})])
+                        meta={"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}})])
     label = {"version": "3.4.0.1", "digest": f"sha256:{hexd}"}
     assert fr.plan_release(label, installed="3.4.0", installed_release=True)["kind"] == fr.UP
     assert fr.plan_release(label, installed="3.4.0", installed_release=False)["kind"] == fr.SAME

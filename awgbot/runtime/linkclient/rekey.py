@@ -58,7 +58,9 @@ class RekeyMixin:
         if not res.get("ok"):
             await self._send("link_ack", {"id": str(msg.get("id") or ""), "state": "declined",
                                           "error": str(res.get("error") or "")[:300]}, pad=gwlink.PAD_DELTA)
-            if not res.get("quiet"):                      # устаревший link_go — ничего не трогали
+            if res.get("auto"):
+                log.warning("канал линка: новые ключи без вопроса не поднялись — вернул прежние")
+            elif not res.get("quiet"):                    # устаревший link_go — ничего не трогали
                 await self._rekey_say(GO_FAILED, res.get("msg"))
             return
         self.rekey_kick()
@@ -69,7 +71,9 @@ class RekeyMixin:
 
     async def _rekey_cancel(self, msg: dict) -> None:
         res = await asyncio.to_thread(self.services.rekey_cancel, msg)
-        if res is not None:
+        if res is not None and res.get("auto"):
+            log.info("канал линка: смена ключей без вопроса отозвана сервером AWG")   # запроса человек не видел
+        elif res is not None:
             await self._rekey_say(WITHDRAWN, res.get("msg"))
 
     async def _rekey_answered(self) -> None:

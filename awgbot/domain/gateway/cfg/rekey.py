@@ -185,7 +185,7 @@ class CfgRekeyMixin:
             return None
         if st.get("state") in ("asked", "ready"):
             self._rk_save({})
-            return {"msg": st.get("msg")}
+            return {"msg": st.get("msg"), **({"auto": str(st["auto"])} if st.get("auto") else {})}
         return None
 
     # ── переключение ─────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ class CfgRekeyMixin:
                                         wgconf.render(merged, "link", stamp=merged.stamp or gwcfg.LINK_CONTRACT))
             except (OSError, wgconf.WgConfError, gwcfg.CfgError) as e:
                 self._rk_decline_mark(st["id"], st.get("msg"))
-                return {"ok": False, "error": str(e)[:300], "msg": st.get("msg")}
+                return {"ok": False, "error": str(e)[:300], "msg": st.get("msg"), "auto": str(st.get("auto") or "")}
             st.update(state="switched", switched_at=time.time())
             self._rk_save(st)
             ok, out = gwguard.link_apply(self._rk_path("rekey.next"), iface_nets=self._cfg_iface_nets())
@@ -222,7 +222,8 @@ class CfgRekeyMixin:
             # скрипт вернул прежний конфиг сам — переходу конец, серверу отказ
             log.warning("gateway: новые ключи линка не встали: %s", out[-200:])
             self._rk_decline_mark(st["id"], st.get("msg"))
-            return {"ok": False, "error": out.splitlines()[-1] if out else "скрипт отказал", "msg": st.get("msg")}
+            return {"ok": False, "error": out.splitlines()[-1] if out else "скрипт отказал", "msg": st.get("msg"),
+                    "auto": str(st.get("auto") or "")}
         # срок 90 с — от конца применения: скрипт мог ждать замка обвязки минуты
         st["switched_at"] = time.time()
         self._rk_save(st)
@@ -342,6 +343,9 @@ class CfgRekeyMixin:
                 # сервер так и не повёл переход (через сутки он снимает его и сам) —
                 # снимаем и правим приглашение: иначе в чате висели бы живые кнопки
                 self._rk_save({})
+                if st.get("auto"):
+                    log.info("gateway: смена ключей без вопроса снята — сервер её не повёл")
+                    return quiet                           # запроса человек не видел — только журнал
                 return {"note": "Запрос отозван сервером AWG", "msg": st.get("msg")}
             return quiet
         if state == "switched" and now - float(st.get("switched_at") or now) > SWITCH_SECONDS:
@@ -349,6 +353,9 @@ class CfgRekeyMixin:
             self._rk_apply_file("rekey.prev")
             self._rk_start_search(st, "prev", now)
             self._rk_save(st)
+            if st.get("auto"):
+                log.warning("gateway: новые ключи линка (без вопроса) не поднялись — вернул прежние")
+                return quiet
             return {"note": "⚠️ Новые ключи линка не поднялись — вернул прежние", "msg": st.get("msg")}
         if state == "back":
             if now > float(st.get("search_until") or 0) and self._rk_link_alive():

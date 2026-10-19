@@ -33,6 +33,13 @@ C_REMOVED, C_RESTORED, C_ADDED = "removed", "restored", "added"
 REMOVED_KEY = "gw_removed"             # журнал снятых слотов (gateway_link/mark.py)
 
 
+def _known(kind, d) -> dict:
+    """Только поля датакласса kind (from_dict терпим к версиям)."""
+    from dataclasses import fields
+    names = {f.name for f in fields(kind)}
+    return {k: v for k, v in dict(d or {}).items() if k in names}
+
+
 @dataclass
 class SlotPlan:
     slot: int
@@ -62,8 +69,12 @@ class Plan:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Plan":
-        d = dict(d or {})
-        d["slots"] = [SlotPlan(**s) for s in d.get("slots") or []]
+        """План из словаря — терпимо к полям других версий: вторую половину
+        перехода на выпуск исполняет код другой версии, и план, записанный
+        новой, несёт поля, которых старая не знает (и наоборот). Чужие поля
+        отбрасываются, недостающие — по умолчанию."""
+        d = _known(cls, d)
+        d["slots"] = [SlotPlan(**_known(SlotPlan, s)) for s in d.get("slots") or [] if isinstance(s, dict)]
         d["replaced"] = tuple(d.get("replaced") or (0, 0))
         return cls(**d)
 

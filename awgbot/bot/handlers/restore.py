@@ -123,9 +123,18 @@ async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:
     if fp and data.get("restore_fp") and fp != data["restore_fp"]:
         await cb.answer(ui.toast(texts.RESTORE_OTHER_FILE), show_alert=True)   # вопрос о прежнем файле
         return
+    from awgbot.domain.selfupdate.marks import install_busy
+    if await call(install_busy):
+        # замок установки занят (обновление, фиксация, откат): restore отказал
+        # бы сам и перезапустил бота ради отчёта — отвечаем здесь, вопрос жив
+        from awgbot.domain.notices import fleet as nf
+        await cb.answer()
+        await cb.message.answer(nf.restore_not_launched(texts.RESTORE_INSTALL_BUSY))
+        return
     await state.clear()
     services._restore_running = True
     await cb.answer()
+    release = ""
     try:
         try:
             # другая версия — выпуск бэкапа с GitHub, до запуска (sha256 = digest метки)
@@ -145,6 +154,12 @@ async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:
         await call(services.launch_restore, path, release)
     except Exception:
         services._restore_running = False             # не запустилось — кнопку можно нажать снова
+        if release:
+            import os
+            try:
+                os.remove(release)                     # скачанный выпуск без запуска — прочь
+            except OSError:
+                pass
         raise
 
 
