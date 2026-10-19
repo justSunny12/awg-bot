@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 
 _LOCK = asyncio.Lock()
 _on_fleet = None
-FLEET_KINDS = ("upd", "upd_commit", "upd_revert")        # в канал уходят только они, не любое имя от домена
 
 
 def set_on_fleet(fn) -> None:
@@ -38,7 +37,7 @@ async def _run(services, out, srv=None) -> None:
             if srv is None or not await _send(srv, slot, what, body):
                 log.info("набор: слоту %s «%s» не ушло — повторю по hello", slot, what)
                 continue
-            if what != "upd":
+            if what in ("upd_commit", "upd_revert"):
                 await asyncio.to_thread(services.fleet_delivered, slot, what, body)
         if (out.live or out.notes) and _on_fleet is not None:
             try:
@@ -51,10 +50,17 @@ async def _run(services, out, srv=None) -> None:
 
 
 async def _send(srv, slot: int, what: str, body: dict) -> bool:
-    if what not in FLEET_KINDS:
-        log.warning("набор: неизвестный вид «%s» слоту %s — не отправлен", what, slot)
-        return False
-    return await srv.send(slot, what, body)
+    """Виды набора — по имени, литералами: в канал уходят только они (`upd`,
+    `upd_commit`, `upd_revert`), а не любое имя от домена; сторож видов канала
+    (tests/unit/test_gwlink_kinds) считает отправителем литерал в send()."""
+    if what == "upd":
+        return await srv.send(slot, "upd", body)
+    if what == "upd_commit":
+        return await srv.send(slot, "upd_commit", body)
+    if what == "upd_revert":
+        return await srv.send(slot, "upd_revert", body)
+    log.warning("набор: неизвестный вид «%s» слоту %s — не отправлен", what, slot)
+    return False
 
 
 async def fleet_run_tick(services) -> None:

@@ -91,7 +91,8 @@ def test_snapshot_reports_failure_instead_of_a_half_file(tmp_path, monkeypatch):
 def test_the_shell_has_no_open_fallback_snapshot():
     """Запасной снимок оболочкой при неработающем Python снят: шифровать без
     кода установки нечем, а открытых бэкапов нет."""
-    script = (Path(__file__).resolve().parents[2] / "awg-bot.sh").read_text(encoding="utf-8")
+    from tests.botscript import flat
+    script = flat()
     body = script.split("cmd_backup() {", 1)[1].split("\n}\n", 1)[0]
     assert "tools.snapshot --out" in body and ".tgz.enc" in body
     assert "snapshot_state" not in script and "wal_checkpoint" not in script and "tar czf" not in body

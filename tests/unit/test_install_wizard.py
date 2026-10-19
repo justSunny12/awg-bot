@@ -13,12 +13,14 @@ from pathlib import Path
 
 import pytest
 
+from tests.botscript import flat
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    return flat()
 
 
 # ── вопросы визарда ──────────────────────────────────────────────────────────
