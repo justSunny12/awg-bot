@@ -69,10 +69,12 @@ async def screen(br, services, key: str = ""):
     blocked = await call(services.update_block_reason, target) if target is not None else ""
     plan = await call(services.fleet_plan, target)
     skipped = await call(services.update_skipped)
+    # причина и тег — в HTML экрана: экранировать (ui.toast не экранирует), строка —
+    # в пределе длины вместе со списком изменений
+    tail = (f"⛔ Обновление до {texts._e(target.tag)} сейчас недоступно: {texts._e(ui.toast(blocked, 1000))}"
+            if blocked else "")
     text = ft.fleet_section(plan, scan_failed=failed, skipped=skipped,
-                            bot_username=getattr(services, "bot_username", "") or "")
-    if blocked:
-        text += f"\n⛔ Обновление до {target.tag} сейчас недоступно: {ui.toast(blocked, 1000)}"
+                            bot_username=getattr(services, "bot_username", "") or "", tail=tail)
     running = (plan.get("run") or {}).get("state") in ("running", "rolling_back")
     return text, keyboard(br, await call(services.updates_muted), target_tag=target.tag if target else "",
                           blocked=blocked, retry=_retry_due(plan), running=running)

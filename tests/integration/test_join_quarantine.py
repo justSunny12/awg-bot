@@ -277,3 +277,25 @@ def test_a_stamp_without_a_record_bars_the_session_too(services, vps):
     services.gwjoin_issue(slot_id=1)
     services._gwjoin_save(1, {})
     assert vps.stamped("awglink") and services.gwjoin_session_barred(1)
+
+
+async def test_a_join_hello_on_the_permanent_keys_is_a_plain_session(services, replacing, vps):
+    """join-1: агент после кода приходит hello с join, пока не знает, что ВПС
+    переключился. На постоянных ключах (ВПС зафиксировал) такой hello — обычная
+    сессия: роль, и фиксация смены ключей (запись — linked); на ключах токена
+    до фиксации — сессия сопряжения, как прежде."""
+    from awgbot.util import bundlecrypt
+    srv = await replacing(False)
+    side = Gateway(srv.command)
+    jc.connect(services, side, 1)
+    assert services.gwjoin_code(1, services.gwjoin(1)["id"], joinsas.show(side.code))["result"] == "ok"
+    rk = services.gateway_rekey(1)
+    assert services.gateway_rekey_ack_in(1, {"id": rk["id"], "state": "ready"})[0] == "go"
+    services.gateway_rekey_go(1)
+    assert services.gateway_rekey_commit(1)[0] is True
+    new_priv = bundlecrypt.read_privkey(vps.gw("awglink").read_text(encoding="utf-8"))
+    gw = _Gw(*await asyncio.open_connection(*srv._bound[0]), key=gwlink.channel_key(new_priv))
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0", "caps": ["cfg1"], **side.hello()})
+    assert await gw.role(), "hello с join на постоянных ключах не получил обычной сессии"
+    assert await _until(lambda: services.gwjoin(1).get("state") == "linked"), services.gwjoin(1)
+    await gw.close()

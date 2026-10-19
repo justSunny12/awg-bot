@@ -260,10 +260,11 @@ def check_link_rekey(conf_text: str, standing_text: str) -> wgconf.Conf:
 
 def join_link_env(conf_text: str) -> dict:
     """Окружение проверки конфига линка у шлюза в сопряжении: юнита обвязки ещё
-    нет, и подсеть клиентов, подсети соседей и резолвер скрипт взял бы по
-    умолчанию. Значения — из AllowedIPs самого конфига (его собрал сервер:
-    подсеть клиентов первой, /30 линка, префиксы соседей, /32 резолвера).
-    Конфиг по токену (только /30) — {"LINK_CHECK_KIND": "join"}."""
+    нет, и подсеть клиентов и подсети соседей скрипт взял бы по умолчанию.
+    Значения — из AllowedIPs самого конфига (его собрал сервер, gw_allowed_ips
+    скрипта линка: подсеть клиентов первой, /30 линка, префиксы соседей);
+    резолвера в AllowedIPs нет — его довезёт документ (join-3). Конфиг по
+    токену (только /30) — {"LINK_CHECK_KIND": "join"}."""
     try:
         conf = wgconf.parse(conf_text)
         link = str(ipaddress.ip_interface(norm(conf.get("Interface", "Address"))).network)
@@ -273,9 +274,7 @@ def join_link_env(conf_text: str) -> dict:
     others = [e for e in entries if e != link]
     if not others:
         return {"LINK_CHECK_KIND": "join"}
-    resolver = next((e[:-3] for e in others[1:] if e.endswith("/32")), "")
-    return {"CLIENT_SUBNET": others[0], "PEER_LAN_NETS": " ".join(e for e in others[1:] if not e.endswith("/32")),
-            "RESOLVER": resolver}
+    return {"CLIENT_SUBNET": others[0], "PEER_LAN_NETS": " ".join(others[1:])}
 
 
 def merge_link_keys(standing_text: str, new: wgconf.Conf, *, peer_from_new: bool = False) -> wgconf.Conf:

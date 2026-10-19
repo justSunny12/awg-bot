@@ -155,7 +155,7 @@ def test_the_env_comes_from_the_conf_only_while_pairing(joined, monkeypatch):
     p = Path(joined._rk_path("rekey.next")); p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(_server_next("10.241.0.0/16"), encoding="utf-8")
     joined._rk_link_apply(str(p))
-    assert seen[-1] == {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": "10.241.0.0/16", "RESOLVER": ""}
+    assert seen[-1] == {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": "10.241.0.0/16"}
     monkeypatch.setattr(joined, "join_active", lambda: False)
     joined._rk_link_apply(str(p))
     assert seen[-1] == {}
@@ -172,3 +172,12 @@ def test_the_full_apply_after_pairing_gets_the_client_subnet(joined, monkeypatch
     gwguard.join_finish(8787)
     assert got["CLIENT_SUBNET"] == "10.8.1.0/24" and got["PEER_LAN_NETS"] == "10.241.0.0/16"
     assert "LINK_CHECK_KIND" not in got
+
+
+def test_the_resolver_is_not_guessed_from_allowed_ips():
+    """join-3: в AllowedIPs линка резолвера нет (gw_allowed_ips скрипта линка:
+    подсеть клиентов, /30, префиксы соседей) — /32 не принимается за него;
+    резолвер довезёт документ."""
+    env = gwcfg.join_link_env(_server_next("10.241.0.0/16, 10.242.0.7/32"))
+    assert env == {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": "10.241.0.0/16 10.242.0.7/32"}
+    assert "RESOLVER" not in env

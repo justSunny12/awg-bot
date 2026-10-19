@@ -162,3 +162,23 @@ def test_an_agent_newer_than_the_fleet_says_it_will_follow(fleet):
     fleet.slot(1, "3.4.1")
     text = ft.fleet_section(fleet.s.fleet_plan(None))
     assert "🛰 «Шлюз 1»: v3.4.1 · 🟡 Агент v3.4.1 новее сервера AWG — вернётся к v3.4.0" in text
+
+
+async def test_the_blocked_line_is_escaped_and_fits_the_message(fleet, monkeypatch):
+    """Вычитчик (fix4): «⛔ Обновление до … сейчас недоступно: …» — тег и
+    причина экранированы (ui.toast HTML не экранирует), строка — в том же
+    пределе 4096, что и список изменений, и не теряется за ним."""
+    from awgbot.bot import sections
+    from awgbot.bot.roles import MAIN
+    from awgbot.infra import updates
+    big = updates.Release(tag="v3.5.0", version=(3, 5, 0), body="\n".join(f"- пункт {i} " + "x" * 60
+                                                                          for i in range(200)),
+                          asset_url="https://api/assets/v3.5.0", sha256="a" * 64,
+                          meta=rel("v3.5.0", both=True).meta)
+    fleet.releases(rel("v3.4.0", both=True), big)
+    fleet.slot(1, "3.4.0")
+    monkeypatch.setattr(fleet.s, "update_block_reason", lambda release=None: "занято <b>переездом</b> & ждёт")
+    text, _kb = await sections.updates.screen(MAIN, fleet.s, "cached")
+    assert len(text) <= 4096, len(text)
+    tail = text.rsplit("\n", 1)[-1]
+    assert tail == "⛔ Обновление до v3.5.0 сейчас недоступно: занято &lt;b&gt;переездом&lt;/b&gt; &amp; ждёт", tail

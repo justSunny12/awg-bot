@@ -73,8 +73,16 @@ class GatewayJoinMixin:
             log.warning("gateway: ход сопряжения не записан: %s", e)
 
     def join_pairing(self) -> bool:
-        """Сопряжение не доведено до верного кода — hello несёт join."""
-        return self.join_state().get("state") == "pairing"
+        """hello несёт join: код не введён, или код верный, а линк ещё на ключах
+        токена (обрыв между join_ok и link_go — сервер в такой сессии повторит
+        join_ok и link_next тому же эфемерному ключу, join-1)."""
+        st = self.join_state()
+        if st.get("state") == "pairing":
+            return True
+        if st.get("state") != "accepted":
+            return False
+        rk = getattr(self, "rekey_state", None)
+        return not (callable(rk) and rk().get("state") == "switched")
 
     def join_active(self) -> bool:
         """Агенту ещё нужен режим сопряжения (без Telegram): код не введён или
@@ -87,10 +95,11 @@ class GatewayJoinMixin:
         """Поля hello сессии сопряжения (новая эфемерная пара на каждую сессию);
         не сопряжение — пусто."""
         st = self.join_state()
-        if st.get("state") != "pairing" or not st.get("id"):
+        if not self.join_pairing() or not st.get("id"):
             return {}
-        # пара — на всё сопряжение до join_ok (файл 0600): после верного кода
-        # сервер ведёт сессию только с тем эфемерным ключом, чей код ввели
+        # пара — на всё сопряжение до линка на постоянных ключах (файл 0600):
+        # после верного кода сервер ведёт сессию только с тем эфемерным
+        # ключом, чей код ввели
         try:
             priv = bytes.fromhex(str(st.get("eph_priv") or ""))
         except ValueError:
@@ -158,6 +167,8 @@ class GatewayJoinMixin:
         """join_ok: секреты под ключом сопряжения — ADMIN_ID в env агента."""
         kp = self.__dict__.get("_join_kp")
         st = self.join_state()
+        if st.get("state") == "accepted":
+            return True                                   # повтор после обрыва (join-1): секреты уже записаны
         if not kp or st.get("state") != "pairing":
             return False
         try:
@@ -173,7 +184,6 @@ class GatewayJoinMixin:
         except OSError as e:
             log.warning("gateway: ADMIN_ID не записан: %s", e)
             return False
-        st.pop("eph_priv", None)                          # пара отслужила
         st.update(state="accepted", server_bot=str(secrets_.get("server_bot") or "")[:64],
                   name=str(secrets_.get("name") or st.get("name") or "")[:64])
         self._join_save(st)
@@ -203,9 +213,16 @@ class GatewayJoinMixin:
         ok, out = gwguard.join_finish(st.get("channel_port") or 0)
         if not ok:
             log.warning("gateway: обвязка после сопряжения не применилась: %s", out[-300:])
+        st.pop("eph_priv", None)                          # линк на постоянных ключах — пара отслужила
         st["state"] = "linked"
         self._join_save(st)
         self.join_status(state="linked")
+        from awgbot.core import config
+        if config.BOT_TOKEN:
+            # агент полный (стоял раньше, Т-Т11): токен бота у него уже есть —
+            # конец сопряжения здесь, не ждём раздела token (тот же бот — раздела
+            # нет вовсе: отпечатки совпадают)
+            self.join_finish_start(getattr(self, "bot_username", "") or "")
 
     def join_finish_start(self, bot_username: str = "") -> bool:
         """Полный старт агента после сопряжения (токен приехал): отметка первого

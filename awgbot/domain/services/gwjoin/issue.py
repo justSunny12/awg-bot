@@ -23,6 +23,10 @@ from ..gateway_link.common import log
 from .state import JOIN_TTL, _LOCK
 
 
+JOIN_NO_CONTAINER = ("Подключение шлюза командой недоступно: AmneziaWG сервера работает в контейнере, а линк до "
+                     "верного кода держит в карантине файервол хоста, а в этом режиме линки он не ведёт")
+
+
 def _new_id() -> str:
     """id сопряжения: 8 случайных байт, hex."""
     return secrets.token_hex(8)
@@ -118,6 +122,7 @@ class GwJoinIssueMixin:
         команды слота или None}."""
         if self.admin_client() is None:
             raise ServiceError("профиль админа ещё не создан")
+        self._gwjoin_check_runtime()
         with _LOCK:
             gw = self.db.gateway(slot_id) if slot_id else None
             if slot_id and gw is None:
@@ -174,7 +179,17 @@ class GwJoinIssueMixin:
 
     def gwjoin_peek_slot(self) -> int:
         """Номер слота, который получит следующая команда «🛰 Подключить шлюз»."""
+        self._gwjoin_check_runtime()                      # до вопроса о токене, а не после
         return self._gwjoin_next_slot()[0]
+
+    @staticmethod
+    def _gwjoin_check_runtime() -> None:
+        """AmneziaWG сервера в контейнере (прежний режим runtime: docker):
+        линки, порт канала и пересылку таблица хоста в нём не ведёт вовсе —
+        карантин линка до кода встать не может, команда не выдаётся."""
+        from awgbot.infra import awg
+        if awg.in_container():
+            raise ServiceError(JOIN_NO_CONTAINER)
 
     def gwjoin_command_for(self, st: dict) -> str:
         """Та же команда для сообщения подключения (правка по событию хода):

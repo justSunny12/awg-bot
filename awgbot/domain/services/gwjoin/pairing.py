@@ -225,8 +225,8 @@ class GwJoinPairingMixin:
             if st.get("state") in ("waiting", "connected") and self._gwjoin_expired(st):
                 with _LOCK:
                     cur = self.gwjoin(int(st["slot"]))
-                    if cur.get("id") != st.get("id"):
-                        continue
+                    if cur.get("id") != st.get("id") or cur.get("state") != st.get("state"):
+                        continue                          # код ввели / отменили, пока такт шёл (join-2)
                     cur.update(state="closing", why="expired")
                     self._gwjoin_save(int(st["slot"]), cur)
                 closed.append({**st, "event": "expired"})
@@ -239,8 +239,8 @@ class GwJoinPairingMixin:
                 # при отмене (quar-3): штамп и .join-prev не остаются навсегда
                 with _LOCK:
                     cur = self.gwjoin(int(st["slot"]))
-                    if cur.get("id") != st.get("id"):
-                        continue
+                    if cur.get("id") != st.get("id") or cur.get("state") != st.get("state"):
+                        continue                          # код ввели / отменили, пока такт шёл (join-2)
                     cur.update(state="closing", why="stuck")
                     self._gwjoin_save(int(st["slot"]), cur)
                 closed.append({**st, "event": "stuck"})
@@ -248,7 +248,9 @@ class GwJoinPairingMixin:
                 # линк на постоянных ключах, а агент так и не доложил конец (quar-7):
                 # запись снимается, человеку — одно уведомление
                 with _LOCK:
-                    if self.gwjoin(int(st["slot"])).get("id") == st.get("id"):
-                        self._gwjoin_save(int(st["slot"]), {})
+                    cur = self.gwjoin(int(st["slot"]))
+                    if cur.get("id") != st.get("id") or cur.get("state") != "linked":
+                        continue                          # итог агента пришёл, пока такт шёл (join-2)
+                    self._gwjoin_save(int(st["slot"]), {})
                 closed.append({**st, "event": "stale"})
         return closed

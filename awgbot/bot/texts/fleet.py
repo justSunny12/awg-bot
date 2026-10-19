@@ -65,9 +65,11 @@ def gw_state_line(g: dict, *, release: str = "", run: dict | None = None) -> str
 
 # ── раздел ───────────────────────────────────────────────────────────────────
 
-def fleet_section(plan: dict, *, scan_failed: bool = False, skipped=(), bot_username: str = "") -> str:
+def fleet_section(plan: dict, *, scan_failed: bool = False, skipped=(), bot_username: str = "",
+                  tail: str = "") -> str:
     """Т-У1: шапка — выпуск набора и статус; строки хостов; список изменений
-    цели — под катом."""
+    цели — под катом; tail — готовая строка (HTML) после него, в том же
+    пределе длины сообщения."""
     release = _ver(plan.get("release") or plan.get("server") or "")
     tag = plan.get("tag") or ""
     run = plan.get("run") or {}
@@ -114,9 +116,12 @@ def fleet_section(plan: dict, *, scan_failed: bool = False, skipped=(), bot_user
             else:
                 lines.append(f"🛰 {_name(g, user)}: {ver}" + (f" · {note}" if note else ""))
     lines.extend(update_skipped_lines(skipped))
-    body = changelog_details(plan.get("body") or "", header="\n".join(lines) + "\n", tag=tag) if tag else ""
+    budget = "\n".join(lines) + "\n" + (tail + "\n" if tail else "")
+    body = changelog_details(plan.get("body") or "", header=budget, tag=tag) if tag else ""
     if body:
         lines.append(body)
+    if tail:
+        lines.append(tail)
     return "\n".join(lines)
 
 

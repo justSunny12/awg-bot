@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 
 import pytest
@@ -95,7 +96,13 @@ def test_the_secrets_after_the_code_write_only_the_admin_id(agent):
     lines = agent.env.read_text(encoding="utf-8").splitlines()
     assert lines.count("ADMIN_ID=777000111") == 1 and "ADMIN_ID=1" not in lines and "GW_BOT_TOKEN=x" in lines
     assert agent.join_state()["state"] == "accepted" and agent.status()["state"] == "accepted"
-    assert agent.join_hello() == {}, "после кода hello снова с join"
+    # join-1: пока линк на ключах токена, hello — с join и тем же эфемерным
+    # ключом (сервер повторит join_ok и link_next); повтор join_ok — не отказ
+    again = agent.join_hello()
+    assert again.get("join") == JID and again["eph"] == hello["eph"], again
+    assert agent.join_ok_in({"box": box}) and lines == agent.env.read_text(encoding="utf-8").splitlines()
+    agent.rekey_state = lambda: {"state": "switched"}
+    assert agent.join_hello() == {}, "на новых ключах hello с join — сервер не зафиксировал бы смену"
     assert agent.join_fresh_uplink() and agent.join_active()
 
 
@@ -245,8 +252,11 @@ def test_the_channel_port_while_pairing_comes_from_the_token(tmp_path, monkeypat
     jf = tmp_path / "join.json"
     monkeypatch.setattr(jmod, "JOIN_FILE", str(jf))
     monkeypatch.setattr(gwguard, "unit_env", lambda key: "9999")
-    jf.write_text(json.dumps({"id": JID, "channel_port": 8787}), encoding="utf-8")
+    jf.write_text(json.dumps({"id": JID, "channel_port": 8787, "state": "pairing"}), encoding="utf-8")
     assert linkclient.server_port() == 8787
+    # join-4: файл закрытого сопряжения — не про порт
+    jf.write_text(json.dumps({"id": JID, "channel_port": 8787, "state": "refused"}), encoding="utf-8")
+    assert linkclient.server_port() == 9999
     jf.unlink()
     assert linkclient.server_port() == 9999
 
@@ -256,3 +266,38 @@ def test_the_status_file_with_the_code_is_private(agent):
     import os
     agent.join_status(state="code", code="K7F-2QX")
     assert os.stat(agent._join_status_file).st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("token, finished", [("", False), ("123456789:DUMMY-token-of-the-gateway-bot", True)])
+def test_linked_drops_the_pair_and_a_full_agent_finishes_at_once(agent, monkeypatch, token, finished):
+    """join-1: эфемерная пара живёт до линка на постоянных ключах. Блокер
+    fix4: агент, стоявший раньше (Т-Т11, токен бота уже есть), заканчивает
+    сопряжение сразу — раздела token с тем же ботом нет (отпечатки равны), и
+    ждать его значило бы join_stale через сутки; агент в режиме сопряжения
+    (токена нет) ждёт раздела token."""
+    from awgbot.core import config
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "join_finish", lambda port: (True, ""))
+    monkeypatch.setattr(config, "BOT_TOKEN", token)
+    agent.join_hello()
+    st = agent.join_state()
+    assert st.get("eph_priv")
+    st["state"] = "accepted"
+    agent._join_save(st)
+    agent.join_linked()
+    st = agent.join_state()
+    assert "eph_priv" not in st
+    assert st["state"] == ("done" if finished else "linked")
+    assert (agent.join_done_pending() == {"id": JID}) is finished
+
+
+def test_a_link_that_did_not_come_up_leaves_no_pairing_file(joinrun, monkeypatch, capsys):
+    """Вне оси: --join отказал — файла сопряжения нет: агент на следующем
+    перезапуске не уйдёт в режим сопряжения без линка."""
+    from awgbot.domain.gateway import join as jmod
+    from awgbot.infra import gwguard
+    tjoin, jf, calls, _rc = joinrun
+    monkeypatch.setattr(gwguard, "join_link", lambda conf, port, script="": (False, "awg-quick: нет"))
+    assert tjoin.cmd_join(_token(expires=int(time.time()) + 3600)) == 1
+    assert not jf.exists() and not os.path.exists(jmod.STATUS_FILE)
+    assert "линк по команде подключения не поднялся" in capsys.readouterr().err

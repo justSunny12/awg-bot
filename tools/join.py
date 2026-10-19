@@ -177,6 +177,13 @@ def cmd_join(text: str) -> int:
     except OSError:
         pass
     if not ok:
+        # файл сопряжения — прочь: иначе агент на следующем перезапуске ушёл бы в
+        # режим сопряжения без линка, а клиент канала — на порт из файла
+        for path in (JOIN_FILE, STATUS_FILE):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
         _err("линк по команде подключения не поднялся: " + (out.splitlines()[-1] if out else "скрипт отказал"))
         return 1
     try:

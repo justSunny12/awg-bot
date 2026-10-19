@@ -287,3 +287,52 @@ def test_a_server_not_from_a_release_sends_the_gateway_to_the_kit(services, vps,
     assert bool(st.get("kit")) is kit
     text = join_message(st, "curl … --join AWGJ1.DUMMY")
     assert ("sudo awg-bot gw-kit --stdout" in text) is kit and ("нужен доступ к GitHub" in text) is not kit
+
+
+@pytest.mark.parametrize("seen, now_state", [("connected", "accepted"), ("accepted", "linked"),
+                                             ("linked", "closing")])
+def test_the_tick_checks_the_state_under_the_lock(services, vps, monkeypatch, seen, now_state):
+    """join-2: такт читает записи без замка; пока он шёл, код ввели (или
+    сопряжение довели, или отменили) — под замком сверяется и состояние, и
+    свежая запись не закрывается по устаревшему виду."""
+    services.gwjoin_issue()
+    st = services.gwjoin(1)
+    services._gwjoin_save(1, {**st, "state": now_state})
+    old = {**st, "state": seen, "expires": _ago(10), "accepted_at": _ago(2 * 3600), "linked_at": _ago(25 * 3600)}
+    monkeypatch.setattr(services, "gwjoin_all", lambda: [old])
+    assert services.gwjoin_tick() == []
+    assert services.gwjoin(1)["state"] == now_state
+
+
+async def test_an_expired_hello_says_the_honest_result_first(services, vps, server, monkeypatch):
+    """Вне оси: срок вышел внутри сессии, а возврат линка не удался — сначала
+    «не вернулся» (один раз), не «срок вышел»."""
+    slot_with_device(services, vps, 1)
+    services.gwjoin_issue(slot_id=1)
+    st = services.gwjoin(1)
+    services._gwjoin_save(1, {**st, "expires": _ago(10)})
+    vps.fail["--join-revert"] = "awg-quick: занято"
+    sent = []
+
+    async def send(sess, kind, body):
+        sent.append(kind)
+        return True
+    monkeypatch.setattr(server, "_join_send", send)
+    await server._serve_join(None, 1, object(), {"join": st["id"], "eph": "x"}, 0)
+    assert sent == ["join_refused"]
+    assert [e for e, _s, _x in server.events] == ["revert_failed"]
+    assert services.gwjoin(1)["state"] == "closing"
+
+
+def test_the_command_is_refused_in_the_container_mode(services, vps, monkeypatch):
+    """Остаток quar-2: AmneziaWG в контейнере — таблица хоста линков не ведёт,
+    карантин не встаёт: команда не выдаётся (и номер слота до вопроса о
+    токене не выдаётся тоже), линк не тронут."""
+    from awgbot.domain.services.types import ServiceError
+    from awgbot.infra import awg
+    monkeypatch.setattr(awg, "in_container", lambda: True)
+    with pytest.raises(ServiceError, match="в контейнере"):
+        services.gwjoin_issue()
+    with pytest.raises(ServiceError, match="в контейнере"):
+        services.gwjoin_peek_slot()
+    assert services.gwjoin(1) == {} and vps.runs == []

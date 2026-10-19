@@ -16,6 +16,7 @@ Jc…H4, I1). Фиксация — hello новым ключом (gateway_link/r
 from __future__ import annotations
 
 import types
+from typing import Optional
 
 from awgbot.core import config
 from awgbot.domain.services.types import ServiceError
@@ -63,12 +64,33 @@ class GwJoinAcceptMixin:
                   accepted_at=timeutil.to_iso(timeutil.now()))
         if made:
             st["made"] = int(made)                        # заведено кодом — возврат его снимет
+        token = self.gw_bot_token(int(slot_id))
+        if token:
+            # токен бота, введённый при подключении (или стоявший у слота), — шлюзу
+            # разделом token документа: у новой установки другого пути к нему нет
+            from awgbot.domain import gwcfg
+            self.db.set_state(self._gw_slot_key(self._TOKEN_PUSH_KEY, int(slot_id)),
+                              gwcfg.token_print(token.strip()))
         self._gwjoin_save(slot_id, st)
         try:
             self.gateway_rekey_stage(int(slot_id), auto="join")
         except ServiceError as e:
             log.warning("сопряжение: слот %s — смена ключей после кода не начата: %s", slot_id, e)
         log.info("сопряжение: слот %s — код верный (%s)", slot_id, kind)
+
+    def gwjoin_next_body(self, slot_id: int) -> Optional[dict]:
+        """link_next сессии сопряжения после верного кода. Смены ключей нет
+        (снята сроком переключения или перезапуском сервера посреди неё,
+        join-1) — заводится заново: иначе сопряжение ждало бы до отката."""
+        nxt = self.gateway_rekey_next_body(slot_id)
+        if nxt or self.gwjoin(slot_id).get("state") != "accepted" or self.gateway_rekey(slot_id):
+            return nxt
+        try:
+            self.gateway_rekey_stage(int(slot_id), auto="join")
+        except ServiceError as e:
+            log.warning("сопряжение: слот %s — смена ключей после кода не начата заново: %s", slot_id, e)
+            return None
+        return self.gateway_rekey_next_body(slot_id)
 
     def gwjoin_ok_body(self, slot_id: int) -> dict:
         """Тело join_ok живой сессии: секреты под ключом сопряжения."""

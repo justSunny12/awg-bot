@@ -146,6 +146,25 @@ async def test_after_the_code_the_hello_carries_no_settings_copy(vps):
     assert "keep1" in hello["caps"] and hello["keep_hash"] == "0" * 16
 
 
+async def test_a_join_hello_answered_by_a_plain_session_goes_on_as_usual(vps):
+    """join-1: после кода hello несёт join, пока агент не на новых ключах; ВПС
+    уже переключился и ответил обычной сессией (ролью) — клиент не сидит в
+    цикле сопряжения, а ведёт сессию как обычно: снимок уходит."""
+    class _Accepted(_Agent):
+        def join_hello(self):
+            return {"join": "0123456789abcdef", "eph": "DUMMY"}
+
+        def join_active(self):
+            return True
+    agent = _Accepted()
+    conn = vps.answers()
+    await linkclient.LinkClient(agent)._connect_once()
+    hello = conn.hello()
+    assert hello.get("join") and "keep1" not in hello["caps"], hello
+    kinds = [gwlink.unpack(KEY, line, nonce=SN).get("t") for line in conn.written[1:]]
+    assert agent.roles and "snap" in kinds, (agent.roles, kinds)
+
+
 async def test_the_servers_capabilities_from_its_role_reach_the_agent(vps):
     """Первое слово сервера — роль — несёт его возможности: по ним подсказки
     агента говорят, что сервер пришлёт сам. Прежний сервер поля не шлёт — до

@@ -109,7 +109,11 @@ def server_port() -> int:
         import json
         from awgbot.domain.gateway.join import JOIN_FILE
         with open(JOIN_FILE, encoding="utf-8") as f:
-            port = int(json.loads(f.read() or "{}").get("channel_port") or 0)
+            st = json.loads(f.read() or "{}")
+        # только живое сопряжение (или доведённое, до join_done_ok): файл
+        # закрытого (refused) — не про порт этого сервера (join-4)
+        port = int(st.get("channel_port") or 0) if st.get("state") in ("pairing", "accepted", "linked",
+                                                                         "done") else 0
         if 0 < port < 65536:
             return port
     except (OSError, ValueError, TypeError, AttributeError):

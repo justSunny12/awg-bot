@@ -94,8 +94,10 @@ class SessionMixin:
             pairing = bool(getattr(self.services, "join_active", None) and
                            await asyncio.to_thread(self.services.join_active))
             if joining:
-                # сессия сопряжения: сервер в ней разбирает только своё (join_*, link_ack)
+                # сессия сопряжения: сервер в ней разбирает только своё (join_*, link_ack);
+                # копией настроек не обмениваемся (как и ниже, до полного старта)
                 hello_body.update(joining)
+                hello_body["caps"] = [c for c in CAPS if c != "keep1"]
             elif pairing:
                 # после кода, до полного старта агента: копией настроек не
                 # обмениваемся — установка ещё не «новая» (отметки первого старта
@@ -128,9 +130,11 @@ class SessionMixin:
             self._writer = writer
             self._set_online(True)
             await self._handle(msg)
-            if joining:
+            if joining and str(msg.get("t") or "").startswith("join_"):
                 await self._join_loop(reader, last_seq)
                 return
+            # hello с join, а сервер ответил обычной сессией: ВПС уже на
+            # постоянных ключах — дальше как обычно (фиксация смены ключей)
             # ответ на документ — первым: сервер узнаёт итог раньше, чем снимок с прежними
             # отпечатками после отката, и не повторяет доставку вслепую
             await self.flush_cfg_ack()

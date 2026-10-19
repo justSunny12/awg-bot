@@ -54,8 +54,12 @@ class JoinMixin:
         if not res.get("ok"):
             await self._join_send(sess, "join_refused", {"why": res.get("why") or "gone"})
             if res.get("why") == "expired" and res.get("st"):
-                await self.join_close(slot, "expired")    # отказ ушёл — интерфейс под токен прочь
-                await self._join_event("expired", res["st"])
+                err = await self.join_close(slot, "expired")    # отказ ушёл — интерфейс под токен прочь
+                if not err:
+                    await self._join_event("expired", res["st"])
+                elif await asyncio.to_thread(self.services.gwjoin_revert_told, slot, str(res["st"].get("id") or "")):
+                    # возврат не удался — сначала честный итог; «срок вышел» скажет такт после возврата
+                    await self._join_event("revert_failed", res["st"], err=err)
             return
         old = self._join_sessions.get(slot)
         self._join_sessions[slot] = sess
@@ -105,7 +109,7 @@ class JoinMixin:
         body = await asyncio.to_thread(self.services.gwjoin_ok_body, slot)
         if body:
             await self._join_send(sess, "join_ok", body)
-        nxt = await asyncio.to_thread(self.services.gateway_rekey_next_body, slot)
+        nxt = await asyncio.to_thread(self.services.gwjoin_next_body, slot)
         if nxt:
             await self._join_send(sess, "link_next", nxt)
 
