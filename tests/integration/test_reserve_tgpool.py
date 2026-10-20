@@ -309,8 +309,13 @@ def test_an_address_already_in_the_pool_is_not_learned_again(learn):
     learn.seen.data = {"203.0.113.5": 9, "203.0.113.77": 4}       # тот же /24 — гонка с перерисовкой
     assert learn.reserve_tg_learn_tick() == [], "повтор такта — снова «выучено» и лишняя перерисовка"
     assert [x["prefix"] for x in _file()["learned"]] == ["203.0.113.0/24"]
-    learn.seen.data = {"149.154.161.1": 9}                        # из ядра — уже в пуле
-    assert learn.reserve_tg_learn_tick() == []
+
+
+def test_an_address_of_the_core_is_not_learned(learn, monkeypatch):
+    """Адрес из ядра уже в пуле — учить нечего (ядро подменено документационной сетью)."""
+    monkeypatch.setattr(nftguard, "DEFAULT_TG_POOL", ("198.51.100.0/24",))
+    learn.seen.data = {"198.51.100.5": 9}
+    assert learn.reserve_tg_learn_tick() == [] and not _file().get("learned"), "адрес ядра выучен заново"
 
 
 def test_the_learned_count_has_a_ceiling(learn):
