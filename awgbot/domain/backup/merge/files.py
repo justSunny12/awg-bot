@@ -17,8 +17,8 @@ import yaml
 from .. import plan as _plan
 
 # app.yaml: факты хоста — текущие всегда
-CONF_ALWAYS_CURRENT = (("network", "server_host"), ("network", "ssh_port"), ("role",), ("firewall",),
-                       ("awg", "interface"), ("awg", "conf_dir"))
+CONF_ALWAYS_CURRENT = (("network", "server_host"), ("network", "self_host"), ("network", "ssh_port"), ("role",),
+                       ("firewall",), ("awg", "interface"), ("awg", "conf_dir"))
 # app.yaml: роздано в конфиги устройств, аплинков и юниты шлюзов — текущее на
 # той же линии; на другой линии (новый сервер) — из бэкапа
 CONF_SAME_LINE = (("network", "subnet_prefix"), ("network", "subnet_cidr"), ("network", "server_port"),

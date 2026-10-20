@@ -71,6 +71,13 @@
 #                          /usr/local/sbin освежаются, если они там уже есть;
 #                          откат неудачного обновления шлюза возвращает и
 #                          прежнюю копию routing-gw-setup.sh (gw_plumbing_sync).
+#                          Конфигам линков слотов на ВПС (awglink*.conf) без
+#                          строки PersistentKeepalive она дописывается
+#                          (adopt_link_keepalive, с 4.0.0: keepalive с обеих
+#                          сторон линка; значение — client_config.keepalive_seconds)
+#                          и ставится на живой линк `awg set … persistent-keepalive`;
+#                          строка есть — линк не трогается. Тот же шаг —
+#                          у восстановления с переходом на выпуск бэкапа.
 #                          Ключ timezone в app.yaml комментируется один раз —
 #                          на переходе с выпуска ниже TZ_ADOPT_BELOW (3.4.0;
 #                          update_adopts_timezone): у тех ключ писали шаблон и
@@ -1348,6 +1355,34 @@ host_timezone() {  # имя пояса хоста: timedatectl, запасной
     tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
     [[ -n "$tz" ]] || { tz="$(readlink -f /etc/localtime 2>/dev/null || true)"; [[ "$tz" == */zoneinfo/* ]] && tz="${tz#*/zoneinfo/}" || tz=""; }
     printf '%s' "$tz"
+}
+
+adopt_link_keepalive() {  # keepalive стороны сервера AWG на линках слотов (с 4.0.0): строка в конфиге и живой линк
+    # До 4.0.0 keepalive слал только шлюз: сервер видел шлюз, а шлюз сервер — лишь
+    # по рукопожатию раз в ~2 мин. С резервом шлюзу нужен взгляд на сервер за
+    # секунды, поэтому keepalive — с обеих сторон, на всех серверах. Диапазон —
+    # как у клиентских пиров (client_config.keepalive_seconds). Идемпотентно:
+    # строка есть — линк не трогается.
+    local app="$CONF_DIR/app.yaml" dir ka f name pub
+    [[ "$(yaml_get "$app" role)" == "gateway" ]] && return 0      # у шлюза keepalive линка стоит с его стороны и так
+    # каталог awg-quick — из раздела awg (conf_dir), у прежней раскладки — docker.awg_dir;
+    # ключ с тем же именем есть и в разделе gateway, поэтому не yaml_get по всему файлу
+    dir="$(awk '/^(awg|docker):/{s=1; next} /^[^ #]/{s=0} s && /^  (conf_dir|awg_dir):/{v=$2; gsub(/"/, "", v); print v; exit}' "$app" 2>/dev/null || true)"
+    dir="${dir:-/etc/amnezia/amneziawg}"
+    ka="$(awk -F'"' '/^  keepalive_seconds:/{print $2; exit}' "$app" 2>/dev/null || true)"
+    case "$ka" in ''|*[!0-9-]*|-*|*-|*-*-*) ka="25-35" ;; esac
+    for f in "$dir"/awglink*.conf; do
+        [[ -f "$f" ]] || continue
+        grep -q '^PersistentKeepalive' "$f" && continue
+        name="$(basename "$f" .conf)"
+        printf 'PersistentKeepalive = %s\n' "$ka" >> "$f"
+        pub="$(sed -n 's/^PublicKey *= *//p' "$f" | head -n1)"
+        if [[ -n "$pub" ]]; then
+            awg set "$name" peer "$pub" persistent-keepalive "$ka" 2>/dev/null \
+                || warn "линк $name: keepalive не применился на живом интерфейсе — применится при следующем подъёме"
+        fi
+        log "линк $name: keepalive стороны сервера AWG — $ka"
+    done
 }
 
 TZ_ADOPT_BELOW="3.4.0"   # выпуски ниже писали timezone в app.yaml сами — у них ключ снимается на переходе

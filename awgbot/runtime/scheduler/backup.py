@@ -244,3 +244,4 @@ def add_server_backup(scheduler, services, bot, *, run_date) -> None:
         except Exception as e:                            # noqa: BLE001
             log.warning("бэкап по смене адреса сервера не отмечен: %s", e)
     settings.on_change("app.network.server_host", _host_hook)
+    settings.on_change("app.network.self_host", _host_hook)       # собственный адрес — в Endpoint линков шлюзов

@@ -128,7 +128,7 @@ class LinkScriptMixin:
     @staticmethod
     def _slot_env(gw) -> dict:
         """Окружение скрипта линка для слота: имя интерфейса, порт, /30, хост
-        Endpoint из настроек (network.server_host), если задан (без него скрипт
+        Endpoint из настроек (network.self_host, иначе server_host), если задан (без него скрипт
         берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный), и
         keepalive линка."""
         env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}

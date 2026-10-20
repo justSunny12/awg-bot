@@ -56,7 +56,8 @@ class CfgMixin:
     def gwcfg_link_conf(self, gw, env: dict) -> str:
         """Желаемый конфиг линка шлюзовой стороны: источник `/root/gw-<линк>.conf`
         с теми же поправками, что делает сборка файла (порт Endpoint — из живого
-        ListenPort, хост — network.server_host, AllowedIPs — по правилу документа,
+        ListenPort, хост — собственный адрес (network.self_host, иначе
+        server_host), AllowedIPs — по правилу документа,
         PersistentKeepalive — из настроек клиентов). Текст канонический, со
         штампом контракта. Не собрался (нет источника, правило AllowedIPs не
         пропускает подсеть соседа) — пусто, причина — в gwcfg_link_error."""

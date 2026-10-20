@@ -32,7 +32,8 @@
 # ОКРУЖЕНИЕ: LINK_IF (awglink; у второго слота — awglink2; остаются только
 # [A-Za-z0-9_.-], не длиннее 15 символов), LINK_PORT (443),
 # LINK_CIDR — /30 линка, из него выводятся LINK_VPS_ADDR и LINK_GW_ADDR,
-# ENDPOINT_HOST (бот передаёт network.server_host в --apply и --join-stage: адрес
+# ENDPOINT_HOST (бот передаёт network.self_host, если задан, иначе
+# network.server_host, в --apply, --join-stage и --rekey-stage: адрес
 # ВПС сменился или на интерфейсе приватный адрес за 1:1 NAT — строка Endpoint
 # конфига шлюзовой стороны правится при сборке, как порт), PEER_LAN_NETS (подсети других шлюзов — их
 # префиксы в туннеле, /16 на слот, только слоту с VPN-транзитом — в AllowedIPs
@@ -42,9 +43,9 @@
 # устройства, прежние конфиги в .join-prev), CONF_DIR, GW_CONF_OUT. Из конфига бота (_APP_YAML,
 # /etc/awg-bot/conf/app.yaml) и перечитываются при каждой сборке конфига шлюза:
 # CLIENT_SUBNET (network.subnet_cidr) и LINK_KEEPALIVE
-# (client_config.keepalive_seconds) — PersistentKeepalive линка идёт в ритме
-# клиентских пиров, «25-35» или одиночное число; непонятное значение
-# откатывается к «25-35». Любую переменную можно переопределить окружением;
+# (client_config.keepalive_seconds) — PersistentKeepalive линка (с 4.0.0 — у
+# обеих сторон, и в $CONF стороны ВПС) идёт в ритме клиентских пиров,
+# «25-35» или одиночное число; непонятное значение откатывается к «25-35». Любую переменную можно переопределить окружением;
 # бот так и делает с LINK_KEEPALIVE — читает YAML целиком, а awk здесь видит
 # только значение в двойных кавычках.
 # GW_CONF_OUT (/root/gw-<линк>.conf) — источник и для документа конфигурации,
@@ -68,7 +69,8 @@
 # по каналу конфигурации («🔑 Ключи линка», domain/services/gateway_link/rekey.py),
 # руками они не нужны. Меняются ключи обеих сторон, PSK и обфускация; порт
 # (живой ListenPort из $CONF) и адреса /30 — те же; хост Endpoint — из
-# ENDPOINT_HOST (network.server_host), без него — из $GW_CONF_OUT.
+# ENDPOINT_HOST (network.self_host или network.server_host), без него — из
+# $GW_CONF_OUT.
 # Окружение — как у --apply (AllowedIPs шлюзовой стороны собираются заново).
 # Шлюз из $GW_CONF_OUT.next сверяет только Address и берёт ключи, PSK и
 # обфускацию; Endpoint, AllowedIPs и keepalive при переключении остаются из
