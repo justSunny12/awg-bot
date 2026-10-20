@@ -74,22 +74,19 @@ async def refresh_live(bot, services) -> None:
 
 # ── возврат (основа, рычаг «по кнопке») ──────────────────────────────────────
 
-@router.callback_query(RsvCB.filter(F.action == "back"))
 async def back_ask(cb: CallbackQuery, services, **_):
-    if config.GUEST:
-        return                                            # у гостя своя ветка (reserve/guest.py)
+    """«↩️ Вернуть клиентов» у основы (рычаг «по кнопке»): диалог Т-Р11б. Зовётся
+    из reserve/guest.py — там единственный хендлер этого действия."""
     why = await call(services.reserve_return_check)
     if why:
         await cb.answer(why[:200], show_alert=True)
         return
-    await edit(cb, st_t.evict_dialog(await call(services.reserve_peer_name)).replace("к нему", "сюда"), rkb.confirm_return())
+    d = await call(services.reserve_return_dialog_data)
+    await edit(cb, st_t.return_dialog(d), rkb.confirm_return())
     await cb.answer()
 
 
-@router.callback_query(RsvCB.filter(F.action == "back_yes"))
 async def back_go(cb: CallbackQuery, services, **_):
-    if config.GUEST:
-        return
     try:
         actions = await call(services.reserve_return_start, "button")
     except ServiceError as e:

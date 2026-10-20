@@ -22,6 +22,7 @@ from tests.screens.base import NOW, Shot
 from tests.screens.shots_admin_common import _iso, _quiet
 
 PEER_ADMIN = 424242
+OWN_IP = "203.0.113.5"          # адрес этого сервера в снимках
 PID = "0123456789abcdef"
 _K = lambda b: base64.b64encode(bytes([b]) * 32).decode()            # noqa: E731 — ключ-заглушка из одного байта
 STAGE = {"PAIR_VPS_PRIV": _K(1), "PAIR_VPS_PUB": _K(2), "PAIR_PEER_PRIV": _K(3), "PAIR_PEER_PUB": _K(4),
@@ -39,6 +40,10 @@ def _host(services, mp):
     mp.setattr(services, "_gw_firewall_refresh", lambda strict=False: None)
     mp.setattr(services, "_awg_generation", lambda: 1)
     mp.setattr(invitemod, "secrets", types.SimpleNamespace(token_hex=lambda n: PID[:2 * n]))
+    # адрес сервера и запись DNS — без сети: резолвер и авторитетный сервер отвечают заглушкой
+    from awgbot.util import dnsapi
+    mp.setattr(dnsapi, "read_system", lambda name, timeout=3.0: [OWN_IP])
+    mp.setattr(dnsapi, "read_authoritative", lambda name: [OWN_IP])
 
     async def no_delete(*a, **k):
         return None
@@ -81,7 +86,8 @@ def _guest(*, alive: bool = False):
         mp.setattr(config, "GUEST", True)
         services.guest_state_in({"name": "Beta", "since": _iso(NOW.replace(hour=3, minute=12)), "reason": "dead",
                                  "own_name": "Alpha", "return": "button" if alive else "immediate",
-                                 "primary": {"status": "alive"} if alive else
+                                 "primary": {"status": "alive", "healthy": True, "can_return": True,
+                                             "since": _iso(NOW.replace(hour=9, minute=40))} if alive else
                                  {"status": "dead", "since": _iso(NOW.replace(hour=3, minute=10))}})
         return who
     return build

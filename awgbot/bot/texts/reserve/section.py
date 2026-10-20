@@ -208,7 +208,8 @@ def move_dialog(d: dict) -> str:
         first = f"Запись <code>{record}</code> переключится на <code>{target}</code> сама"
     return (f"🔀 <b>Перевести клиентов на {name}?</b>\n\n"
             f"{first}. Устройства перейдут при переподключении VPN, бот переедет вместе с ними, подключение шлюзов к "
-            f"{name} не меняется. Вернуть всё обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть "
+            f"{name} не меняется. Настройки, шлюзы, бэкапы и обновления до возврата будут недоступны; {name} получит "
+            f"уведомление. Вернуть всё обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть "
             "клиентов»; вернётся и всё, что изменилось там")
 
 
@@ -223,18 +224,30 @@ def move_live(d: dict) -> str:
     if state != "leaving":
         return f"ℹ️ Перевод клиентов на {name} завершён"
     order = ["pkg", "up", "record", "release", "released"]
-    pos = order.index(step) if step in order else 0
+    pos = order.index(step) + 1 if step in order else 1      # 1 — пакет в работе, 2 — резерв поднимает, 3 — запись, 4 — бот
     def mark(i):
         return "✅" if i < pos else "⏳"
     record, target = _e(d.get("record") or ""), _e(d.get("target") or "")
     lines = [f"⏳ <b>Перевод клиентов на {name}</b>", "",
              f"{mark(1)} данные для переезда у {name}" + (f" — от {_e(_when(d.get('pkg_at') or ''))}" if d.get("pkg_at") else ""),
              f"{mark(2)} {name} поднял клиентов",
-             f"{mark(3)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 2
+             f"{mark(3)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 3
                                else (f"смени запись <code>{record}</code> на <code>{target}</code> у провайдера — жду…"
                                      if d.get("manual") else f"жду смену записи <code>{record}</code> → <code>{target}</code>…")),
-             f"{mark(4)} передаю бот на {name}…" if pos < 4 else f"✅ бот передан на {name}"]
+             f"{mark(4)} передаю бот на {name}…" if pos < 5 else f"✅ бот передан на {name}"]
     return "\n".join(lines)
+
+
+def return_dialog(d: dict) -> str:
+    """Т-Р11б: вернуть клиентов с резерва (у основы, рычаг «по кнопке»)."""
+    name = _n(d.get("name") or "резерв")
+    rec = ""
+    if d.get("record") and d.get("own"):
+        rec = f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own'])}</code>"
+    return (f"↩️ <b>Вернуть клиентов с {name}?</b>\n\n"
+            f"Сервер в строю. Бот вернётся сюда, всё, что изменилось на {name}, — тоже{rec}. Устройства, "
+            f"которые ещё ходят через {name}, он будет пересылать сюда, пока они не переподключатся, — у каждого "
+            "связь прервётся на секунды")
 
 
 # ── Т-Р12: вернуть клиентов к основе (у резерва) ─────────────────────────────

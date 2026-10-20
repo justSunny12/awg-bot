@@ -109,12 +109,26 @@ class ReserveOutboundMixin:
         return out
 
     def _move_fail(self, reason: str, released: bool = False) -> list[tuple]:
-        """Переезд не состоялся: домой, резерву — `back` (снять зону), итог админу."""
+        """Переезд не состоялся: домой, резерву — `back` (снять зону, если он
+        её поднял или ещё поднимает), запись — обратно на себя, если успела
+        смениться, итог админу."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
+        out = self._out()
+        record_back = ""
+        if out.get("record_set_at") and self.reserve_dns_automatic():
+            own = self.reserve_own_ip()
+            try:
+                if own:
+                    self.reserve_dns_switch(own)
+            except ServiceError as e:
+                record_back = str(e)
         self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
+        if record_back:
+            notes.append(Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                      text=rn.record_not_changed(self.reserve_dns_name(), record_back, self.reserve_own_ip())))
         actions: list[tuple] = [("live",), ("notify", notes)]
         if released:
             actions.insert(0, ("send", "back", {}))
@@ -150,7 +164,8 @@ class ReserveOutboundMixin:
         if self._expired(out) and step not in ("released",):
             why = {"pkg": "данные для переезда не подтверждены резервом", "up": f"«{self.reserve_peer_name()}» не поднял клиентов",
                    "record": "запись не изменена за 30 минут", "release": "передача бота не завершилась"}.get(step, "срок шага вышел")
-            return self._move_fail(why, released=step in ("record", "release"))
+            # резерву — `back` и на шаге подъёма: его процесс открытия мог кончиться позже срока
+            return self._move_fail(why, released=step in ("up", "record", "release"))
         if step == "pkg":
             sent = self.rsv_get("rsv_pkg_sent")
             if sent.get("gen") and str(sent.get("at") or "") >= str(out.get("started_at") or ""):
@@ -276,6 +291,10 @@ class ReserveOutboundMixin:
         out = self._out()
         return str(out.get("state") or "") == "away" and bool(out.get("can_return"))
 
+    def reserve_return_dialog_data(self) -> dict:
+        """Т-Р11б у основы: имя резерва, запись и свой адрес."""
+        return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "own": self.reserve_own_ip()}
+
     def reserve_return_check(self) -> str:
         if self.reserve_out() != "away":
             return "клиенты не у резерва"
@@ -338,7 +357,7 @@ class ReserveOutboundMixin:
             self.reserve_set_out("away", kind=str(out.get("kind") or ""), step="", merge_error=str(e)[:200])
             from awgbot.domain.notices import reserve as rn
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
-                                             text=rn.move_failed(self.reserve_peer_name(), f"слияние не удалось: {e}"))])]
+                                             text=rn.return_failed(self.reserve_peer_name(), str(e)))])]
         self.rsv_update("rsv_out", merge_report=report)
         self._out_step("restart")
         return [("restart",)]

@@ -80,7 +80,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "gen": (_I, None), "ports": (_L, 4), "self": (_S, MAX_HOST), "out": (_S, 16),
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
-                            "healthy": (_B, None), "can_return": (_B, None)}),
+                            "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -134,7 +134,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
-OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return"})}
+OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind"})}
 
 
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:

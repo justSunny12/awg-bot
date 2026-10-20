@@ -1,6 +1,6 @@
 """
 pollctl.py — право отвечать в Telegram у основного бота: поллинг как
-управляемая задача. Арбитр — вебхук (§ Р33 концепта резерва): пока адрес
+управляемая задача. Арбитр — вебхук Telegram: пока адрес
 вебхука стоит у бота основы на резерве, `getUpdates` отвечает 409 «webhook is
 active». Здесь: на старте и перед каждым возобновлением — `getWebhookInfo`
 (чужой адрес → не поллим, `rsv_poll = away`); посредник запросов сессии
@@ -42,7 +42,9 @@ class _Watch(BaseRequestMiddleware):
                 self.ctl.conflict(str(e))
             raise
         try:
-            updates = list(resp.result or [])
+            # make_request отдаёт уже разобранный результат (список Update); у
+            # прежних выпусков — Response с полем result
+            updates = list(getattr(resp, "result", resp) or [])
             if updates:
                 self.ctl.last_update_id = max(int(u.update_id) for u in updates)
         except Exception:                                    # noqa: BLE001

@@ -28,8 +28,12 @@ async def guest_screen(services):
 
 @router.callback_query(RsvCB.filter(F.action == "back"))
 async def back_ask(cb: CallbackQuery, services, **_):
-    """«↩️ Вернуть клиентов» в боте основы на резерве: диалог Т-Р11."""
+    """«↩️ Вернуть клиентов»: в боте основы на резерве — диалог Т-Р11; у основы
+    (возврат по кнопке, Т-РУ6б) — ветка move.py. Один обработчик на оба: aiogram
+    останавливается на первом совпавшем, и второй был бы недостижим."""
     if not config.GUEST:
+        from . import move
+        await move.back_ask(cb, services)
         return
     if not await call(services.guest_can_return):
         await cb.answer("Сервер ещё не в строю — вернуть клиентов пока нельзя", show_alert=True)
@@ -42,6 +46,8 @@ async def back_ask(cb: CallbackQuery, services, **_):
 @router.callback_query(RsvCB.filter(F.action == "back_yes"))
 async def back_go(cb: CallbackQuery, services, **_):
     if not config.GUEST:
+        from . import move
+        await move.back_go(cb, services)
         return
     from awgbot.runtime.pairlink import guestctl
     c = guestctl.client()

@@ -141,6 +141,11 @@ def move_failed(reserve: str, reason: str, released: bool = False) -> str:
     return text + (f"; {_n(reserve)} отпустил клиентов" if released else "")
 
 
+def return_failed(reserve: str, reason: str) -> str:
+    return (f"⚠️ Возврат не состоялся: слияние данных с {_n(reserve)} не удалось — {_e(reason)}. Клиенты и бот "
+            f"остаются на {_n(reserve)}; проверь журнал и повтори возврат")
+
+
 def record_not_changed(name: str, reason: str, ip: str) -> str:
     """Т-РУ11."""
     return (f"⚠️ Запись <code>{_e(name)}</code> не изменена: {_e(reason)} — смени её у провайдера на "

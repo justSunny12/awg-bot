@@ -164,6 +164,12 @@ class ReserveGuestMixin:
         d = self.guest_state()
         d["online"] = self.guest_devices_online()
         d["snapshot_at"] = self.guest_snapshot_at()
+        # запись и адрес основы — из её же настроек (гость — бот основы): Т-Р11 называет, куда вернётся запись
+        try:
+            d["record"] = self.reserve_dns_name()
+            d["own_ip"] = self.reserve_own_ip() if d["record"] else ""
+        except Exception:                                     # noqa: BLE001
+            d["record"], d["own_ip"] = "", ""
         return d
 
     # ── сторона бота резерва: что сказать гостю ─────────────────────────────
