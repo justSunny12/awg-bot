@@ -614,7 +614,8 @@ class _PostUpdate:
         stubs = " ".join(f"{n}() {{ :; }};" for n in (
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
             "install_unit", "ensure_host_autostart", "ensure_awg_module_loaded",
-            "ensure_awg_generation", "adopt_resolver", "update_adopts_timezone", "adopt_timezone", "adopt_awg_section", "seed_conf", "validate_config",
+            "ensure_awg_generation", "adopt_resolver", "update_adopts_timezone", "adopt_timezone", "adopt_awg_section",
+            "adopt_link_keepalive", "seed_conf", "validate_config",
             "prune_old_kernel_builds", "update_done", "sleep"))
         prog = (
             "set -euo pipefail\n"

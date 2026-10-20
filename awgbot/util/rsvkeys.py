@@ -100,8 +100,22 @@ def code_point(code: str) -> shamir.Point:
 
 # ── аварийный код: base32 с контрольной суммой ───────────────────────────────
 
+_CRC_POLY = 0x80F          # CRC-12: любой всплеск ошибок до 12 бит подряд ловится — опечатка в одном знаке
+                           # base32 меняет не больше 5 бит подряд
+
+
 def _sum(y: bytes) -> int:
-    return int.from_bytes(hashlib.blake2b(y, digest_size=2, person=_PERSON).digest(), "big") & ((1 << _SUM_BITS) - 1)
+    """CRC-12 над битами точки (старшим битом вперёд), а не хеш: хеш пропускал
+    бы примерно одну из 4096 опечаток, CRC — ни одной одиночной."""
+    n = int.from_bytes(y, "big")
+    crc = 0
+    for i in range(len(y) * 8 - 1, -1, -1):
+        bit = (n >> i) & 1
+        top = (crc >> (_SUM_BITS - 1)) & 1
+        crc = (crc << 1) & ((1 << _SUM_BITS) - 1)
+        if top ^ bit:
+            crc ^= _CRC_POLY
+    return crc
 
 
 def code_encode(y: bytes) -> str:

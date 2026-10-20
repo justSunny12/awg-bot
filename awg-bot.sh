@@ -1375,6 +1375,7 @@ adopt_link_keepalive() {  # keepalive стороны сервера AWG на л�
         [[ -f "$f" ]] || continue
         grep -q '^PersistentKeepalive' "$f" && continue
         name="$(basename "$f" .conf)"
+        [[ -z "$(tail -c1 "$f")" ]] || printf '\n' >> "$f"      # файл без перевода строки в конце — не склеивать
         printf 'PersistentKeepalive = %s\n' "$ka" >> "$f"
         pub="$(sed -n 's/^PublicKey *= *//p' "$f" | head -n1)"
         if [[ -n "$pub" ]]; then

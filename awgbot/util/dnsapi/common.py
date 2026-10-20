@@ -92,8 +92,16 @@ def read_system(name: str, timeout: float = TIMEOUT) -> list[str]:
 
 def _qname(name: str) -> bytes:
     out = b""
-    for label in name.strip(".").split("."):
-        raw = label.encode("idna") if label else b""
+    labels = name.strip(".").split(".")
+    if not name.strip(".") or len(name) > 253:
+        raise DnsError(f"имя {name!r} не годится для DNS")
+    for label in labels:
+        if not label or len(label) > 63:
+            raise DnsError(f"имя {name!r} не годится для DNS")
+        try:
+            raw = label.encode("idna")
+        except UnicodeError as e:
+            raise DnsError(f"имя {name!r} не годится для DNS") from e
         if not raw or len(raw) > 63:
             raise DnsError(f"имя {name!r} не годится для DNS")
         out += bytes([len(raw)]) + raw
@@ -139,15 +147,24 @@ def query(server: str, name: str, qtype: int, timeout: float = TIMEOUT) -> list[
     _, flags, qd, an, ns, _ar = struct.unpack(">HHHHHH", data[:12])
     if flags & 0x000F not in (0, 3):             # NXDOMAIN — ответ без записей, остальное — ошибка
         raise DnsError(f"сервер DNS {server}: код ошибки {flags & 0xF}")
+    try:
+        return _records(data, qd, an + ns)
+    except (IndexError, struct.error) as e:      # ответ оборван или искажён — не наша ошибка, но и не падение
+        raise DnsError(f"сервер DNS {server} ответил обрывком") from e
+
+
+def _records(data: bytes, qd: int, n: int) -> list[tuple[str, int, bytes, bytes, int]]:
     off = 12
     for _ in range(qd):
         _, off = _read_name(data, off)
         off += 4
     out = []
-    for _ in range(an + ns):
+    for _ in range(n):
         nm, off = _read_name(data, off)
         rtype, _, _ttl, rdlen = struct.unpack(">HHIH", data[off:off + 10])
         off += 10
+        if off + rdlen > len(data):
+            raise IndexError("rdata за концом ответа")
         out.append((nm, rtype, data[off:off + rdlen], data, off))
         off += rdlen
     return out

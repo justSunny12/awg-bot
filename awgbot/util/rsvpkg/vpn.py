@@ -17,6 +17,7 @@ import re
 from awgbot.infra.awg.parsers import _OBFUSCATION_KEYS, _extract_param, _split_conf, parse_interface_params
 
 _B64 = re.compile(r"[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=\Z")
+_OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")       # число или диапазон, ничего больше
 _EXCLUDED_OBF = ("I1", "I2", "I3", "I4", "I5")
 MAX_PEERS = 4096
 
@@ -62,7 +63,8 @@ def iface_part(name: str, conf_text: str) -> dict:
         port = int(params.get("ListenPort", ""))
     except (TypeError, ValueError) as e:
         raise VpnPartError(f"{name}: нет ListenPort") from e
-    obf = {k: str(params[k]) for k in _OBFUSCATION_KEYS if k in params and k not in _EXCLUDED_OBF}
+    obf = {k: str(params[k]).strip() for k in _OBFUSCATION_KEYS if k in params and k not in _EXCLUDED_OBF}
+    obf = {k: v for k, v in obf.items() if _OBF_VALUE.match(v)}      # мусор из живого конфига в пакет не едет
     out = {
         "name": str(name), "addr": addr, "port": port,
         "priv": _key(_extract_param(header, "PrivateKey") or "", f"{name}: PrivateKey"),
@@ -98,8 +100,19 @@ def build(ifaces: list[tuple[str, str]], *, admin: list[str], dns: list[str], up
 
 
 def check(part: dict) -> dict:
-    """Проверить часть VPN, пришедшую с другой стороны: типы, ключи, адреса.
+    """Проверить часть VPN, пришедшую с другой стороны: типы, ключи, адреса,
+    значения обфускации (только числа и диапазоны — в конфиг клона уходит
+    ровно это, никакая строка не протащит в него лишнюю директиву).
     Негодное — VpnPartError."""
+    try:
+        return _check(part)
+    except VpnPartError:
+        raise
+    except (ValueError, TypeError, AttributeError, KeyError) as e:
+        raise VpnPartError(f"часть VPN не того вида: {str(e)[:80]}") from e
+
+
+def _check(part: dict) -> dict:
     if not isinstance(part, dict) or not isinstance(part.get("ifaces"), list) or not part["ifaces"]:
         raise VpnPartError("часть VPN без интерфейсов")
     for i in part["ifaces"]:
@@ -108,22 +121,34 @@ def check(part: dict) -> dict:
         if not re.fullmatch(r"[a-z][a-z0-9]{1,14}", str(i.get("name", ""))):
             raise VpnPartError("имя интерфейса не годится")
         net = ipaddress.ip_interface(str(i.get("addr", ""))).network
-        if not 1 <= int(i.get("port", 0)) <= 65535:
+        if isinstance(i.get("port"), bool) or not isinstance(i.get("port"), int) or not 1 <= i["port"] <= 65535:
             raise VpnPartError("порт интерфейса не годится")
+        if "mtu" in i and (isinstance(i["mtu"], bool) or not isinstance(i["mtu"], int) or not 576 <= i["mtu"] <= 9000):
+            raise VpnPartError("MTU не годится")
         _key(i.get("priv", ""), "PrivateKey")
-        if not isinstance(i.get("obf"), dict) or any(k in _EXCLUDED_OBF or k not in _OBFUSCATION_KEYS for k in i["obf"]):
+        obf = i.get("obf")
+        if not isinstance(obf, dict) or any(k in _EXCLUDED_OBF or k not in _OBFUSCATION_KEYS for k in obf):
             raise VpnPartError("обфускация не того вида")
+        for k, v in obf.items():
+            if not isinstance(v, str) or not _OBF_VALUE.match(v):
+                raise VpnPartError(f"значение {k} не число и не диапазон")
         if not isinstance(i.get("peers"), list) or len(i["peers"]) > MAX_PEERS:
             raise VpnPartError("пиры не того вида")
         for p in i["peers"]:
+            if not isinstance(p, dict):
+                raise VpnPartError("пир не того вида")
             _key(p.get("pub", ""), "PublicKey")
             if p.get("psk"):
                 _key(p["psk"], "PresharedKey")
             if ipaddress.ip_address(str(p.get("ip", ""))) not in net:
                 raise VpnPartError("адрес пира вне подсети интерфейса")
     for k in ("admin", "dns", "upstreams"):
+        if not isinstance(part.get(k, []), list):
+            raise VpnPartError(f"{k}: не список")
         for a in part.get(k, []):
             ipaddress.ip_address(str(a))
+    if not isinstance(part.get("tz", ""), str) or "\n" in part.get("tz", ""):
+        raise VpnPartError("пояс не того вида")
     return part
 
 
@@ -135,8 +160,9 @@ def clone_conf(iface: dict) -> str:
     if iface.get("mtu"):
         lines.append(f"MTU = {int(iface['mtu'])}")
     for k in _OBFUSCATION_KEYS:
-        if k in iface.get("obf", {}):
-            lines.append(f"{k} = {iface['obf'][k]}")
+        v = str(iface.get("obf", {}).get(k, ""))
+        if v and _OBF_VALUE.match(v):                     # только число или диапазон — лишней директиве взяться неоткуда
+            lines.append(f"{k} = {v}")
     out = "\n".join(lines)
     for p in iface.get("peers", []):
         block = ["[Peer]", f"PublicKey = {p['pub']}"]

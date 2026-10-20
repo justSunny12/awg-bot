@@ -205,7 +205,7 @@ def _steps(script: str, tmp_path: Path, prev: str | None, mode: str = "") -> tup
     stubs = "\n".join(f"{n}() {{ :; }}" for n in ("ensure_python", "ensure_ping", "build_venv", "install_unit",
                                                    "ensure_host_autostart", "ensure_awg_module_loaded",
                                                    "ensure_awg_generation", "adopt_resolver", "adopt_awg_section",
-                                                   "seed_conf", "validate_config"))
+                                                   "adopt_link_keepalive", "seed_conf", "validate_config"))
     tz_below = re.search(r'^TZ_ADOPT_BELOW="[^"]*"', script, re.M).group(0)
     body = "\n".join([stubs, tz_below, _func(script, "tree_version"), _func(script, "version_lt"),
                       _func(script, "update_adopts_timezone"), _func(script, "update_env_steps"),
