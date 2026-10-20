@@ -49,6 +49,11 @@ def _unb64u(text) -> bytes:
         return b""
 
 
+def _from_ts(ts: int):
+    from datetime import datetime
+    return datetime.fromtimestamp(int(ts), timeutil.TZ)
+
+
 class ReservePairingMixin:
 
     # ── общее: кто я в сопряжении ───────────────────────────────────────────
@@ -94,7 +99,7 @@ class ReservePairingMixin:
                 raise ServiceError("Приглашение другого формата — обнови бот")
             raise ServiceError("Приглашение повреждено — попроси переслать его заново")
         if tok.expires and tok.expires <= int(timeutil.now().timestamp()):
-            raise ServiceError(f"Срок приглашения вышел в {timeutil.fmt_time(timeutil.from_ts(tok.expires))} — попроси новое")
+            raise ServiceError(f"Срок приглашения вышел в {timeutil.fmt_clock_ui(_from_ts(tok.expires))} — попроси новое")
         if self.reserve_paired():
             raise ServiceError(f"Резерв уже есть — «{self.reserve_peer_name()}». Сначала удали его")
         mine = self.reserve_invite()
@@ -132,7 +137,7 @@ class ReservePairingMixin:
             st = {"id": tok.pair_id, "role": "acceptor", "pair_if": "awgpair", "port": int(env["PAIR_PORT"]),
                   "peer_port": int(tok.pair_port), "cidr": tok.cidr, "host": tok.host,
                   "peer_version": tok.version, "rf_via_mine": bool(rf_via_mine),
-                  "issued": timeutil.to_iso(now), "expires": timeutil.to_iso(timeutil.from_ts(tok.expires) if tok.expires
+                  "issued": timeutil.to_iso(now), "expires": timeutil.to_iso(_from_ts(tok.expires) if tok.expires
                                                                              else timeutil.shift(now, INVITE_TTL)),
                   "sessions": 0, "attempts": 0, "msg": [], "state": "waiting"}
             self.rsv_put("rsv_invite", st)
@@ -222,6 +227,9 @@ class ReservePairingMixin:
             a_eph = _unb64u(msg.get("eph"))
             if len(a_eph) != 32:
                 return {"ok": False, "why": "bad"}
+            if not bool(msg.get("gw")) and not self.reserve_has_gateway():
+                # ни у кого нет шлюза — переезд невозможен ни в одну сторону (Т-Р4)
+                return {"ok": False, "why": "nogw"}
             if st.get("state") == "accepted" and st.get("eph") != hashlib.sha256(a_eph).hexdigest():
                 return {"ok": False, "why": "gone"}
             st["sessions"] = int(st.get("sessions") or 0) + 1
@@ -344,6 +352,7 @@ class ReservePairingMixin:
         self.reserve_keys_init()
         self.reserve_set_out("home")
         self.reserve_set_in("idle")
+        self.rsv_update("rsv_peer_state", linked_msg=list(st.get("msg") or []))   # живое сообщение приглашения — итогу
         self.rsv_put("rsv_invite", None)
         _live_set(None)
         try:

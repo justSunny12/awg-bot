@@ -108,6 +108,15 @@ async def show_code(cb: CallbackQuery, services):
 
 
 @router.callback_query(RsvCB.filter(F.action == "new_code"))
+async def new_code_ask(cb: CallbackQuery, services):
+    if not await call(services.reserve_paired):
+        await cb.answer("Резерва нет", show_alert=True)
+        return
+    await edit(cb, st_t.new_code_dialog(await call(services.reserve_peer_name)), rkb.confirm_new_code())
+    await cb.answer()
+
+
+@router.callback_query(RsvCB.filter(F.action == "new_code_yes"))
 async def new_code(cb: CallbackQuery, services):
     if not await call(services.reserve_paired):
         await cb.answer("Резерва нет", show_alert=True)

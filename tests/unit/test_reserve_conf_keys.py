@@ -23,6 +23,8 @@ RESERVE = {
     "return": "immediate",
     "rf_via_mine": True,
     "pair_cidr": "10.99.98.0/30",
+    "pair_port": 47101,
+    "pair_channel_port": 8788,
     "zone_cidr": "169.254.77.0/30",
     "zone_rf_cidr": "169.254.77.4/30",
     "rsv_cidrs": ["10.99.97.0/30", "10.99.97.4/30"],
@@ -70,3 +72,14 @@ def test_the_reserve_subnets_do_not_overlap_each_other():
     for i, a in enumerate(nets):
         for b in nets[i + 1:]:
             assert not a.overlaps(b), f"{a} и {b} пересекаются"
+
+
+def test_the_code_defaults_match_the_template():
+    """Порт линка пары и порт канала пары читаются с умолчанием в коде: оно
+    обязано совпадать с шаблоном, иначе сервер без ключа в своём app.yaml
+    (досев не дошёл) поднимет линк или слушатель не на том порту, а
+    файервол откроет другой."""
+    from awgbot.domain.services.reserve import invite
+    from awgbot.runtime.pairlink import common
+    assert invite.DEFAULT_PAIR_PORT == RESERVE["pair_port"]
+    assert common.DEFAULT_PORT == RESERVE["pair_channel_port"]

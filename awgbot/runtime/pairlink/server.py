@@ -117,8 +117,8 @@ class PairServer(InboundMixin):
             last_seq = int(msg.get("seq") or 0)
             if msg.get("t") == "pair_admin":
                 await asyncio.to_thread(self.services.reserve_pair_admin_in, msg)
-                await self.event("linked", await asyncio.to_thread(self.services.reserve_peer))
-                await self.notes(await asyncio.to_thread(self.services.reserve_linked_notes))
+                await self.event("linked", await asyncio.to_thread(self.services.reserve_peer),
+                                 msg=await asyncio.to_thread(self.services.reserve_linked_msg))
                 break
             log.warning("канал пары: сессия сопряжения прислала «%s» — разрыв", str(msg.get("t"))[:32])
             break
@@ -129,7 +129,7 @@ class PairServer(InboundMixin):
             await close_session(old)
         sess.hello = True
         sess.caps = [str(c)[:16] for c in (hello.get("caps") or [])[:16]]
-        await asyncio.to_thread(self.services.reserve_session_opened, hello)
+        await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, hello))
         if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body)):
             return
         while True:
@@ -138,7 +138,7 @@ class PairServer(InboundMixin):
                 break
             msg = gwlink.unpack(sess.key, line, last_seq=last_seq, nonce=sess.sn)
             last_seq = int(msg.get("seq") or 0)
-            await asyncio.to_thread(self.services.reserve_last_word)
+            await self.notes(await asyncio.to_thread(self.services.reserve_last_word))
             if not await self._handle_safe(sess, msg):
                 break
 

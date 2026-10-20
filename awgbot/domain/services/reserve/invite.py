@@ -4,7 +4,8 @@ invite.py — часть пакета reserve (см. __init__): приглаше
 
 «📤 Пригласить»: линк пары поднимается на ключах приглашения
 (`reserve-pair-setup.sh --stage`: ключи обеих сторон, обфускация, штамп
-«пара <id>» — карантин в файерволе до кода), запись `rsv_invite` в
+«пара <id>»; файервол с линка пары пускает только канал пары — и до кода, и
+после), запись `rsv_invite` в
 `server_state`, строка `AWGP1.…` — админу в живое сообщение. Срок — час;
 вышел, отменили, третий неверный код — линк снимается (`--rollback`). Новое
 приглашение убивает прежнее. Закрытый ключ стороны принявшего в базу не
@@ -111,6 +112,8 @@ class ReserveInviteMixin:
         if not host:
             raise ServiceErrorHtml("Не задан адрес сервера (<code>network.server_host</code> или "
                                    "<code>network.self_host</code>) — второму серверу некуда подключаться")
+        if not settings.get_bool("app.reserve.ready", False):
+            raise ServiceError("Сначала включи «Готов быть резервом» — без готовности пара не нужна")
         if not self.reserve_has_gateway():
             log.info("резерв: приглашение без своего шлюза — направление «мои клиенты» будет не готово")
         with _LOCK:
@@ -122,7 +125,15 @@ class ReserveInviteMixin:
             port = int(settings.get("app.reserve.pair_port", DEFAULT_PAIR_PORT) or DEFAULT_PAIR_PORT)
             cidr = str(settings.get("app.reserve.pair_cidr", "10.99.98.0/30") or "10.99.98.0/30")
             env = {"PAIR_IF": "awgpair", "PAIR_CIDR": cidr, "PAIR_PORT": str(port), "PAIR_ID": pid}
-            kv = self._run_pair_script("--stage", env)
+            try:
+                kv = self._run_pair_script("--stage", env)
+            except ServiceError:
+                # конфиг со штампом мог лечь до отказа — снять, иначе линк-сирота
+                try:
+                    self._run_pair_script("--rollback", env)
+                except ServiceError as e:
+                    log.warning("резерв: линк после отказа --stage не снят: %s", e)
+                raise
             try:
                 import base64
                 tok = pairtoken.PairToken(

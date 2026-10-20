@@ -36,7 +36,7 @@ class InboundMixin:
             await send_line(sess, "pong", {"n": body["n"]})
             return
         if kind == "pong":
-            await asyncio.to_thread(self.services.reserve_pong_in, body["n"])
+            await self.notes(await asyncio.to_thread(self.services.reserve_pong_in, body["n"]))
             return
         if kind == "gone":
             notes = await asyncio.to_thread(self.services.reserve_peer_gone)

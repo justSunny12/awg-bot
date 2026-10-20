@@ -70,7 +70,15 @@ async def on_event(bot, services, event: str, st: dict, extra: dict) -> None:
         inv_msg = extra.get("msg")
         if inv_msg:
             await _edit(bot, {"msg": inv_msg}, notices.linked(name, bot_user), rkb.final())
+        else:
+            await bot.send_message(config.ADMIN_ID, notices.linked(name, bot_user), reply_markup=kb.hide_only())
         await send_code(bot, services)
+        return
+    if event == "no_answer":
+        await _edit(bot, st, pt.no_answer(str(extra.get("host") or ""), int(extra.get("port") or 0)), rkb.accept_message())
+        return
+    if event == "refused":
+        await _edit(bot, st, notices.refused_by_inviter(str(extra.get("why") or "")), rkb.final())
         return
     if event == "expired":
         text = pt.invite_expired(st) if role == "inviter" else notices.refused_by_inviter("expired")

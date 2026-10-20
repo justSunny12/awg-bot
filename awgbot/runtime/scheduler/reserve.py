@@ -42,6 +42,15 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             await pairlink.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт приглашения: %s", e)
+        try:
+            # новый аварийный код после снятия или замены шлюза — админу, со звуком, удаляется через 10 мин
+            why = await asyncio.to_thread(services.reserve_code_notify_pending)
+            if why:
+                from awgbot.bot.handlers.settings.reserve.events import send_code
+                await send_code(bot, services, renewed_why=why)
+                await asyncio.to_thread(services.reserve_code_notify_clear)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: новый код не отправлен: %s", e)
 
     scheduler.add_job(job_invite_tick, IntervalTrigger(minutes=1, timezone=config.TZ),
                       id="rsv_invite_tick", max_instances=1, coalesce=True,

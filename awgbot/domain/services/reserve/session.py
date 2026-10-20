@@ -19,8 +19,15 @@ from awgbot.domain.services.types import Notification
 from awgbot.util import timeutil
 
 from ..gateway_link.common import log
+from awgbot.domain.notices import reserve as rn
+
 from . import compat
 from .state import _LOCK
+
+
+def _compat_reason(why: str) -> bool:
+    """Причина про версию или возможности, а не про готовность, шлюз или пакет."""
+    return any(w in why for w in ("верси", "выпуск", "младше", "обнов", "не умеет", "возможност"))
 
 
 class ReserveSessionMixin:
@@ -93,7 +100,7 @@ class ReserveSessionMixin:
         me = self._my_hello_fields()
         return {"ready": settings.get_bool("app.reserve.ready", False), "name": me["name"], "version": me["version"],
                 "caps": me["caps"], "gen": me["gen"], "ports": me["ports"], "self": self._own_host_or_empty(),
-                "out": self.reserve_out(), "in": self.reserve_in(),
+                "out": self.reserve_out(), "in": self.reserve_in(), "gw": self.reserve_has_gateway(),
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
                 "voters": [], "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened"))}
 
@@ -106,7 +113,8 @@ class ReserveSessionMixin:
             peer = compat.side(name=str(body.get("name") or ""), version=str(body.get("version") or ""),
                                caps=list(body.get("caps") or []), gen=int(body.get("gen") or 0),
                                ports=[int(p) for p in body.get("ports") or [] if isinstance(p, int)],
-                               ready=bool(body.get("ready")), has_gateway=bool(body.get("voters")) or bool(prev.get("gw")))
+                               ready=bool(body.get("ready")),
+                               has_gateway=bool(body.get("gw")) if "gw" in body else (bool(body.get("voters")) or bool(prev.get("gw"))))
             peer.update(out=str(body.get("out") or ""), inn=str(body.get("in") or ""), self_host=str(body.get("self") or ""),
                         pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
                         admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso())
@@ -127,28 +135,34 @@ class ReserveSessionMixin:
                 except Exception:                         # noqa: BLE001
                     pass
                 if row.get("peer_admin_id"):
-                    notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._t().peer_admin_changed(peer["name"] or row.get("name") or "резерв"),
+                    notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.peer_admin_changed(peer["name"] or row.get("name") or "резерв"),
                                               silent=True))
             if fields:
                 self.db.reserve_peer_update(**fields)
-            was_ready = (prev.get("ready"), prev.get("version"), prev.get("caps"))
-            now_ready = (peer["ready"], peer["version"], peer["caps"])
-            if prev and was_ready != now_ready:
-                notes.extend(self._reserve_compat_notes(prev, peer))
+            notes.extend(self._reserve_compat_notes(peer))
         return notes
 
-    def _reserve_compat_notes(self, prev: dict, peer: dict) -> list[Notification]:
-        """Направление выключилось из-за версии или возможностей — один раз на расхождение."""
+    def _reserve_compat_notes(self, peer: dict) -> list[Notification]:
+        """Т-РУ9: направление выключилось по версии или возможностям — один раз
+        на расхождение, в обе стороны; ловит и своё обновление (сравнение с
+        последним сосчитанным состоянием, а не с прежним `st`); вернулось —
+        «снова совместим» один раз."""
         mine = self._my_side()
         out_ok, out_why = compat.direction_ready(mine, peer)
         in_ok, in_why = compat.direction_ready(peer, mine)
-        out_was, _ = compat.direction_ready(mine, prev) if prev.get("version") else (True, "")
-        in_was, _ = compat.direction_ready(prev, mine) if prev.get("version") else (True, "")
+        marks = self.rsv_get("rsv_view").get("compat") or {}
+        now = {"out": "" if out_ok or not _compat_reason(out_why) else out_why,
+               "in": "" if in_ok or not _compat_reason(in_why) else in_why}
+        if marks == now and "out" in marks:
+            return []
+        self.rsv_update("rsv_view", compat=now)
+        name = peer.get("name") or "резерв"
         notes = []
-        if out_was and not out_ok and "версия" in out_why or (out_was and not out_ok and "выпуск" in out_why):
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._t().direction_off(peer.get("name") or "резерв", out_why)))
-        if in_was and not in_ok and ("выпуск" in in_why or "версия" in in_why):
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._t().direction_off(peer.get("name") or "резерв", in_why)))
+        for key in ("out", "in"):
+            if now[key] and now[key] != marks.get(key):
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_off(name, now[key])))
+        if "out" in marks and (marks.get("out") or marks.get("in")) and not (now["out"] or now["in"]):
+            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_on(name)))
         return notes
 
     def _my_side(self) -> dict:
@@ -168,15 +182,23 @@ class ReserveSessionMixin:
 
     # ── сессия ───────────────────────────────────────────────────────────────
 
-    def reserve_session_opened(self, hello: dict) -> None:
+    def reserve_session_opened(self, hello: dict) -> list[Notification]:
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso())
-        self.reserve_liveness_word()
+        return self.reserve_liveness_word()
 
     def reserve_session_closed(self) -> None:
         self.rsv_update("rsv_peer_state", session=False)
 
-    def reserve_last_word(self) -> None:
-        self.reserve_liveness_word()
+    def reserve_last_word(self) -> list[Notification]:
+        return self.reserve_liveness_word()
+
+    def reserve_linked_msg(self) -> list:
+        """Живое сообщение приглашения ([chat, mid]) — итогу Т-Р8 после сопряжения; одноразово."""
+        ps = self.reserve_peer_state()
+        msg = list(ps.get("linked_msg") or [])
+        if msg:
+            self.rsv_update("rsv_peer_state", linked_msg=[])
+        return msg
 
     def reserve_online(self) -> bool:
         return bool(self.reserve_peer_state().get("session"))
@@ -189,17 +211,5 @@ class ReserveSessionMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("резерв: пара не снята по слову второй стороны: %s", e)
             return []
-        return [Notification(tg_id=int(config.ADMIN_ID), text=self._t().peer_unpaired(name))]
+        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.peer_unpaired(name))]
 
-    def reserve_linked_notes(self) -> list[Notification]:
-        """После сопряжения: итог Т-Р8 (его правит живое сообщение) и аварийный
-        код Т-Р18 со звуком — одним уведомлением с кнопкой показа."""
-        peer = self.reserve_peer() or {}
-        return [Notification(tg_id=int(config.ADMIN_ID), text=self._t().linked(peer.get("name") or "резерв", peer.get("bot_username") or "")),
-                Notification(tg_id=int(config.ADMIN_ID), text=self._t().code_issued(self.reserve_code()), force_sound=True,
-                             action=("rsv_code", 0))]
-
-    @staticmethod
-    def _t():
-        from awgbot.bot.texts.reserve import notices
-        return notices

@@ -51,7 +51,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _quarantine_forward(spec) + _wan_private_drop(spec)
+        rules = _quarantine_forward(spec) + _pair_forward(spec) + _wan_private_drop(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -66,9 +66,9 @@ def render(spec: pkg.GuardSpec) -> str:
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
                      "    }"]
-        q_in = _quarantine_input(spec)
+        q_in = _quarantine_input(spec) + _pair_input(spec)
         if q_in:
-            # карантин сопряжения — и без фильтра: на сам ВПС с линка сопряжения
+            # карантин сопряжения и линк пары — и без фильтра: на сам ВПС с них
             # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
             block += ["", "    chain input {",
                       "        type filter hook input priority filter; policy accept;",
@@ -99,6 +99,7 @@ def render(spec: pkg.GuardSpec) -> str:
         "        ct state invalid drop",
         '        iifname "lo" accept',
         *_quarantine_input(spec),
+        *_pair_input(spec),
         "        ip protocol icmp accept",
         "        meta l4proto ipv6-icmp accept",
     ]
@@ -125,7 +126,6 @@ def render(spec: pkg.GuardSpec) -> str:
         out.append(f"        tcp dport {pkg._ports(spec.open_tcp)} accept")
     if spec.open_udp:
         out.append(f"        udp dport {pkg._ports(spec.open_udp)} accept")
-    out += _pair_input(spec)
     out.append("")
     if spec.tunnel_nets4:
         # SSH из туннеля — только устройствам админа

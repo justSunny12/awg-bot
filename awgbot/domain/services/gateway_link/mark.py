@@ -152,6 +152,7 @@ class MarkMixin:
             self.gateway_switch(target.id, manual=True)
         self._backup_event(gw.id, "remove")           # имя — пока слот есть
         self._removed_journal_add(gw, prev)           # до смены ключей и снятия линка
+        self._reserve_after_gateway_change("после снятия шлюза")   # доля ключа переезда у него была
         self.gateway_rekey_abort(gw)                  # .next/.prev смены ключей — прочь вместе со слотом
         self.db.gateway_delete(gw.id)
         self._slot_forget(gw.id)

@@ -23,8 +23,8 @@ def section(ready: bool, *, invite_live: bool, accepting: bool) -> InlineKeyboar
     busy = invite_live or accepting
     return ui.rows(
         (f"{_chk(ready)} Готов быть резервом: {'вкл' if ready else 'выкл'}", RsvCB(action="ready")),
-        [("📤 Пригласить", RsvCB(action="invite")) if not busy else None,
-         ("📥 Принять приглашение", RsvCB(action="accept")) if not busy else None],
+        ("📤 Пригласить", RsvCB(action="invite")) if not busy else None,
+        ("📥 Принять приглашение", RsvCB(action="accept")) if not busy else None,
         ("⬅️ Отменить приглашение", RsvCB(action="cancel")) if busy else None,
         _back())
 
@@ -61,7 +61,8 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool) ->
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
         (f"{_chk(rf_on)} РФ-доступ его клиентов через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
-        [("🆘 На крайний случай", RsvCB(action="emerg")), ("🗑 Удалить резерв", RsvCB(action="unpair"))],
+        ("🆘 На крайний случай", RsvCB(action="emerg")),
+        ("🗑 Удалить резерв", RsvCB(action="unpair")),
         _back())
 
 
@@ -70,6 +71,10 @@ def emergency(has_code: bool) -> InlineKeyboardMarkup:
         [("🔑 Показать код", RsvCB(action="show_code")) if has_code else None,
          ("🔄 Сменить код", RsvCB(action="new_code")) if has_code else None],
         _back("rsv"))
+
+
+def confirm_new_code() -> InlineKeyboardMarkup:
+    return kc.confirm(RsvCB(action="emerg"), "🔄 Сменить", RsvCB(action="new_code_yes"))
 
 
 def confirm_unpair() -> InlineKeyboardMarkup:

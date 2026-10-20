@@ -26,6 +26,8 @@ from awgbot.core import config, settings
 from awgbot.domain.services.types import Notification
 from awgbot.util import timeutil
 
+from awgbot.domain.notices import reserve as rn
+
 from ..gateway_link.common import log
 
 PROBE_EVERY = 5
@@ -43,6 +45,7 @@ class Liveness:
     last_ping: float = 0.0
     nonce: str = ""
     told: bool = False              # уведомление «недоступен» ушло
+    pending_up: bool = False        # слово по каналу после «недоступен»: «снова на связи» отдаст такт
     events: list = field(default_factory=list)
 
 
@@ -50,6 +53,11 @@ def step(lv: Liveness, now: float, rx: int | None, *, suspect_s: int, probe_s: i
     """Один такт. Возвращает действие: "" / "ping" / "down" / "up"."""
     if lv.last_life == 0.0:
         lv.last_life = now
+    if lv.pending_up:
+        lv.pending_up = False
+        if rx is not None:
+            lv.last_rx = rx
+        return _alive(lv, now)
     if rx is not None and rx != lv.last_rx:
         if lv.last_rx >= 0 and rx > lv.last_rx or lv.last_rx < 0:
             lv.last_rx = rx
@@ -83,6 +91,17 @@ def _alive(lv: Liveness, now: float) -> str:
     was = lv.state
     lv.state, lv.pings = "ok", 0
     return "up" if was == "down" else ""
+
+
+def _word(lv: Liveness, now: float) -> None:
+    """Слово по каналу (hello, любое сообщение, pong): жизнь. После «недоступен»
+    состояние не меняем здесь — «снова на связи» со всеми отметками отдаст
+    ближайший такт (один путь для счётчика и для слова)."""
+    lv.last_life = now
+    if lv.state == "down":
+        lv.pending_up = True
+    else:
+        lv.state, lv.pings = "ok", 0
 
 
 class ReserveLivenessMixin:
@@ -120,24 +139,30 @@ class ReserveLivenessMixin:
         if act == "down":
             lv.told = True
             self.rsv_update("rsv_peer_state", down_since=timeutil.now_iso())
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._t().peer_down(self.reserve_peer_name()), force_sound=True))
+            notes.append(Notification(tg_id=int(config.ADMIN_ID),
+                                      text=rn.peer_down(self.reserve_peer_name(), self.reserve_down_since())))
             log.warning("резерв: «%s» недоступен — линк пары молчит", self.reserve_peer_name())
             return "", notes
         if act == "up":
-            self.rsv_update("rsv_peer_state", down_since="")
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._t().peer_up(self.reserve_peer_name())))
-            log.info("резерв: «%s» снова на связи", self.reserve_peer_name())
-            return "", notes
+            return "", self._liveness_up()
         return act, notes
 
-    def reserve_liveness_word(self) -> None:
-        """Слово по каналу — жизнь."""
-        _alive(self._lv, time.monotonic())
+    def _liveness_up(self) -> list[Notification]:
+        """Связь вернулась (по счётчику, по слову или по pong): отметка и Т-РУ8 один раз."""
+        self.rsv_update("rsv_peer_state", down_since="")
+        log.info("резерв: «%s» снова на связи", self.reserve_peer_name())
+        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.peer_up(self.reserve_peer_name()))]
 
-    def reserve_pong_in(self, nonce: str) -> None:
+    def reserve_liveness_word(self) -> list[Notification]:
+        """Слово по каналу — жизнь; «снова на связи» после «недоступен» отдаст такт."""
+        _word(self._lv, time.monotonic())
+        return []
+
+    def reserve_pong_in(self, nonce: str) -> list[Notification]:
         lv = self._lv
         if nonce == lv.nonce:
-            _alive(lv, time.monotonic())
+            _word(lv, time.monotonic())
+        return []
 
     def reserve_ping_nonce(self) -> str:
         return self._lv.nonce

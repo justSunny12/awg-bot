@@ -14,6 +14,7 @@ from __future__ import annotations
 from awgbot.util import rsvkeys, shamir, timeutil
 from awgbot.util.rsvpkg import seal
 
+from ..gateway_link.common import log
 from .state import _LOCK
 
 
@@ -52,6 +53,25 @@ class ReserveKeysMixin:
             self.rsv_put("rsv_keys", keys)
             self.rsv_put("rsv_shares", None)
             return keys
+
+    def _reserve_after_gateway_change(self, why: str) -> None:
+        """Снятие или замена шлюза: его доля ключа переезда могла остаться у
+        чужого — новое поколение и код; код админу шлёт такт планировщика."""
+        if not self.reserve_paired():
+            return
+        try:
+            self.reserve_new_generation(why)
+            self.rsv_update("rsv_keys", code_notify_why=why)
+            self.reserve_pkg_mark() if hasattr(self, "reserve_pkg_mark") else None
+        except Exception as e:                            # noqa: BLE001
+            log.warning("резерв: поколение ключа после смены шлюза не сменено: %s", e)
+
+    def reserve_code_notify_pending(self) -> str:
+        """Причина отложенной отправки нового кода админу; пусто — нечего слать."""
+        return str(self.reserve_keys().get("code_notify_why") or "")
+
+    def reserve_code_notify_clear(self) -> None:
+        self.rsv_update("rsv_keys", code_notify_why="")
 
     def reserve_new_k(self) -> dict:
         """Новый ключ пакета после каждого возврата: резерв прежний знал."""

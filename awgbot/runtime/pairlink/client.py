@@ -13,6 +13,8 @@ from awgbot.util import gwlink, pairproto
 from .common import _BACKOFF, _Session, channel_key, close_session, log, send_line
 from .inbound import InboundMixin
 
+NO_ANSWER_ATTEMPTS = 3        # подключений без ответа подряд — сказать принявшему (Т-Р6б)
+
 
 class PairClient(InboundMixin):
     def __init__(self, services):
@@ -57,6 +59,12 @@ class PairClient(InboundMixin):
                 attempt, self._confirmed = 0, False
             delay = _BACKOFF[min(attempt, len(_BACKOFF) - 1)] * random.uniform(0.6, 1.4)
             attempt += 1
+            if attempt == NO_ANSWER_ATTEMPTS:
+                # принявший ждёт кода, а пригласивший не отвечает — сказать один раз (Т-Р6б)
+                st = await asyncio.to_thread(self.services.reserve_invite)
+                if st.get("role") == "acceptor" and st.get("state") in ("waiting", "connected"):
+                    target = await asyncio.to_thread(self.services.reserve_connect_address)
+                    await self.event("no_answer", st, host=(target or ("", 0))[0], port=(target or ("", 0))[1])
             self._wake.clear()
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), delay)
@@ -94,7 +102,7 @@ class PairClient(InboundMixin):
                 return
             sess.hello = True
             self._sess = sess
-            await asyncio.to_thread(self.services.reserve_session_opened, {"caps": msg.get("caps") or []})
+            await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, {"caps": msg.get("caps") or []}))
             await self._handle_safe(sess, msg)
             if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body)):
                 return
@@ -104,7 +112,7 @@ class PairClient(InboundMixin):
                     break
                 msg = gwlink.unpack(sess.key, line, last_seq=last_seq, nonce=sess.sn)
                 last_seq = int(msg.get("seq") or 0)
-                await asyncio.to_thread(self.services.reserve_last_word)
+                await self.notes(await asyncio.to_thread(self.services.reserve_last_word))
                 if not await self._handle_safe(sess, msg):
                     break
         finally:
@@ -130,14 +138,14 @@ class PairClient(InboundMixin):
                 st = await asyncio.to_thread(self.services.reserve_invite)
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(self.services.reserve_invite_cancel, why)
-                await self.event(why, st)
+                await self.event("refused", st, why=why)
                 self._dead = True
                 return
             elif kind == "pair_ok":
                 reply = await asyncio.to_thread(self.services.reserve_accept_ok_in, msg)
                 await send_line(sess, "pair_admin", reply)
-                await self.event("linked", await asyncio.to_thread(self.services.reserve_peer))
-                await self.notes(await asyncio.to_thread(self.services.reserve_linked_notes))
+                await self.event("linked", await asyncio.to_thread(self.services.reserve_peer),
+                                 msg=await asyncio.to_thread(self.services.reserve_linked_msg))
                 self._confirmed = True
                 return                                    # линк переходит на новые ключи — сессия заново
             else:

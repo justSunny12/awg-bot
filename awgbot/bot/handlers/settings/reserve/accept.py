@@ -35,7 +35,7 @@ async def _dialog(services, token: str, rf_on: bool):
     tok = info["tok"]
     has_gw = await call(services.reserve_has_gateway)
     # имя второго сервера приглашение не несёт (оно придёт по каналу) — в диалоге он «второй сервер»
-    text = pt.accept_dialog("второй сервер", tok.host, tok.version, rf_via_mine=rf_on, has_gateway=has_gw,
+    text = pt.accept_dialog("", tok.host, tok.version, rf_via_mine=rf_on, has_gateway=has_gw,
                             warn=info["warn"], ask_version=info["ask_version"])
     return text, rkb.accept_dialog(rf_on, has_gateway=has_gw)
 
