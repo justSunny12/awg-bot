@@ -53,10 +53,10 @@ class OpenError(RuntimeError):
     pass
 
 
-def _step(name: str, **fields) -> None:
+def _step(step: str, **fields) -> None:
     from awgbot.infra import rsvzone
-    rsvzone.open_status_write(name, **fields)
-    _p(name)
+    rsvzone.open_status_write(step, **fields)
+    _p(step)
 
 
 def _fail(reason: str) -> int:

@@ -142,6 +142,12 @@ def _merge_table(con, table: str, rpt: Report, id_map: dict) -> None:
     rep_rows = _rows(con, "rep", table, cols, key)
     cur_rows = _rows(con, "main", table, cols, key)
     parent = P.TABLES[table].get("_parent")
+    # сначала удалённое на резерве: освобождённые им уникальные значения
+    # (адрес, tg_id) могли занять новые строки резерва — они вставляются ниже
+    for k in base_rows:
+        if k not in rep_rows and k in cur_rows:
+            _delete_row(con, table, key, k, rpt)
+            cur_rows.pop(k, None)
     for k, rrow in rep_rows.items():
         rk = _remap_key(table, k, parent, id_map)
         if k in base_rows:
@@ -150,11 +156,13 @@ def _merge_table(con, table: str, rpt: Report, id_map: dict) -> None:
             if crow is None:
                 continue                                  # основа удалила строку после снимка — её решение
             _update_row(con, table, rules, cols, key, rk, brow, crow, rrow, rpt, id_map)
+        elif rk in cur_rows and table not in ("clients", "devices"):
+            # ленивая строка 1:1 (отсрочка, пауза), заведённая с обеих сторон после
+            # снимка: снимка нет — значение резерва главнее, счётчики складываются
+            # (у таблиц со своим id совпадение ключа — две разные строки, см. _insert_row)
+            _update_row(con, table, rules, cols, key, rk, None, cur_rows[rk], rrow, rpt, id_map)
         else:
             _insert_row(con, table, rules, cols, key, rk, rrow, rpt, id_map, parent)
-    for k in base_rows:
-        if k not in rep_rows and k in cur_rows:
-            _delete_row(con, table, key, k, rpt)
 
 
 def _remap_key(table: str, k: tuple, parent, id_map: dict) -> tuple:
@@ -184,13 +192,14 @@ def _update_row(con, table, rules, cols, key, rk, brow, crow, rrow, rpt, id_map)
         rule = rules[c]
         if rule == P.KEY:
             continue
+        b = brow[c] if brow is not None else None
         if rule == P.COUNTER:
-            v, delta = _counter(brow[c], crow[c], rrow[c])
+            v, delta = _counter(b, crow[c], rrow[c])
             if delta is not None:
                 archive[c] = delta
         else:
             r = _ref_value(table, c, rrow[c], id_map)
-            v = _merge_value(rule, brow[c], crow[c], r)
+            v = _merge_value(rule, b, crow[c], r)
         if v != crow[c]:
             sets.append(f"{c} = ?")
             vals.append(v)

@@ -73,8 +73,13 @@ class DatabaseCore:
     _TX_DATA = "data"
 
     def _tx_note(self, kind: str) -> None:
+        """Писатели счётчиков зовут ПОСЛЕ своих записей: запоминаем счётчик
+        изменений соединения — всё, что запишут после, считается данными
+        (непомеченный писатель ничего не отмечает, но пишет)."""
         if kind == self._TX_DATA or getattr(self._local, "tx_kind", None) is None:
             self._local.tx_kind = kind
+        if kind == self._TX_COUNTERS:
+            self._local.tx_counters_changes = self._connection().total_changes
 
     def set_commit_hook(self, fn) -> None:
         """fn(kind) — после каждого коммита внешней транзакции; None — снять."""
@@ -90,6 +95,7 @@ class DatabaseCore:
         self._local.tx_depth = depth + 1
         if depth == 0:
             self._local.tx_kind = None
+            self._local.tx_counters_changes = -1
         cur = conn.cursor()
         try:
             yield cur
@@ -102,6 +108,8 @@ class DatabaseCore:
                 hook = self.__dict__.get("_commit_hook")
                 if hook is not None:
                     kind = getattr(self._local, "tx_kind", None) or self._TX_DATA
+                    if kind == self._TX_COUNTERS and conn.total_changes != getattr(self._local, "tx_counters_changes", -1):
+                        kind = self._TX_DATA           # после отметки счётчиков писали ещё — это данные
                     try:
                         hook(kind)
                     except Exception:                  # noqa: BLE001 — крючок не роняет запись
@@ -179,12 +187,12 @@ class DatabaseCore:
             # состояние — данные клиентов только для ключей белого списка пакета
             # (почта выхода из паузы и подобное); стрики, отметки и ключи резерва — счётчики
             from awgbot.util.rsvpkg.bot import GUEST_STATE
-            self._tx_note(self._TX_DATA if key in GUEST_STATE else self._TX_COUNTERS)
             cur.execute(
                 """INSERT INTO server_state (key, value) VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
                 (key, value),
             )
+            self._tx_note(self._TX_DATA if key in GUEST_STATE else self._TX_COUNTERS)   # отметка — ПОСЛЕ записи
         if key in self._HOT_STATE_KEYS:
             # ПОСЛЕ записи: сброс до неё давал другому потоку положить в кэш
             # старое значение, и двойники не рождались до следующей записи

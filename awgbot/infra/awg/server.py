@@ -2,6 +2,8 @@
 сервиса, каталог для вотчдога, перезапуск сервера."""
 from __future__ import annotations
 
+import os
+import re
 import time as _time
 from typing import Optional
 
@@ -79,8 +81,19 @@ def restart_server() -> None:
     маршрут клону ставила зона; перезапуск — вниз, setconf, вверх."""
     if config.GUEST:
         iface = config.AWG_INTERFACE
+        # setconf не знает расширений awg-quick (Address, MTU, DNS, Table) — файл
+        # без них кладёт рядом скрипт зоны; нет его — отфильтровать самим
+        setconf = config.CONF_PATH[:-5] + ".setconf" if config.CONF_PATH.endswith(".conf") else config.CONF_PATH + ".setconf"
+        if not os.path.exists(setconf):
+            try:
+                with open(config.CONF_PATH, encoding="utf-8") as f:
+                    text = f.read()
+                kept = [ln for ln in text.splitlines() if not re.match(r"^\s*(Address|MTU|DNS|Table)\s*=", ln)]
+                pkg.write_file(setconf, "\n".join(kept) + "\n")
+            except OSError:
+                setconf = config.CONF_PATH
         pkg._run(["ip", "link", "set", iface, "down"], check=False, timeout=30)
-        pkg._run(["awg", "setconf", iface, config.CONF_PATH], timeout=60)
+        pkg._run(["awg", "setconf", iface, setconf], timeout=60)
         pkg._run(["ip", "link", "set", iface, "up"], timeout=30)
         return
     # down может честно не сработать, если интерфейса нет, — это не ошибка,

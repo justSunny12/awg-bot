@@ -155,6 +155,7 @@ class ReservePackageMixin:
             keys = self.reserve_keys()
             if not keys.get("k") or not keys.get("m"):
                 return None
+            self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
             db_bytes = pkgbot.replica(self.db.path if hasattr(self.db, "path") else self._db_path())
             pkgbot.assert_clean(db_bytes)
             vpn_part = pkgvpn.build(self._pkg_ifaces(), admin=self._pkg_admin_addrs(), dns=self._pkg_dns_addrs(),
@@ -228,8 +229,9 @@ class ReservePackageMixin:
                                           "at": timeutil.now_iso(), "prev_gen": prev})
             self._pkg_prune_bases([int(gen), prev] if prev else [int(gen)])
             due_at = self.__dict__.get("_rsv_pkg_due_at")
-            if due_at is not None and due_at <= time.monotonic() - PKG_BATCH_SECONDS:
-                self.__dict__.pop("_rsv_pkg_due_at", None)
+            built = self.__dict__.get("_rsv_pkg_built_mono")
+            if due_at is not None and built is not None and due_at <= built:
+                self.__dict__.pop("_rsv_pkg_due_at", None)      # правка после сборки — в следующий пакет
             log.info("резерв: пакет %s подтверждён", gen)
 
     def reserve_pkg_bad(self, gen: int, reason: str) -> None:

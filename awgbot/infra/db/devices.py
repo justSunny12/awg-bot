@@ -277,13 +277,13 @@ class DevicesMixin:
         if not by_table:
             return
         with self._tx() as cur:
-            # рукопожатие пишет каждый опрос — счётчик; остальные поля — данные
-            self._tx_note(self._TX_COUNTERS if set(fields) <= {"last_handshake"} else self._TX_DATA)
             for table, cols in by_table.items():
                 key = self._DEVICE_KEY[table]
                 assignments = ", ".join(f"{c} = ?" for c in cols)
                 values = list(cols.values()) + [device_id]
                 cur.execute(f"UPDATE {table} SET {assignments} WHERE {key} = ?", values)
+            # рукопожатие пишет каждый опрос — счётчик; остальные поля — данные (отметка — после записи)
+            self._tx_note(self._TX_COUNTERS if set(fields) <= {"last_handshake"} else self._TX_DATA)
 
     def claim_first_handshake(self, device_id: int, value: str) -> bool:
         """Записать ПЕРВЫЙ хендшейк устройства; True — только тому, кто записал.

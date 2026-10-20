@@ -130,6 +130,7 @@ class Has:
     migration: bool              # переезд профилей в «Сервисе»
     gw_emergency: bool = False   # аварийные смены секретов шлюзов в «Сервисе»: ключи линка, токен шлюза
     fleet: bool = False          # «⬆️ Обновления» — набор: сервер AWG и шлюзы одной кнопкой (у агента раздела нет)
+    updates_stale: bool = False  # кнопки прежних «⬆️ Обновлений» роли — «устарели» (агент); без флага роль их не ведёт
 
 
 @dataclass(frozen=True)
@@ -220,7 +221,7 @@ GATEWAY = BotRole(
               outage="app.gateway.handshake_max_age",
               outage_loud="app.gateway.link_alert_loud",
               temp_alert="app.gateway.temp_alert_c"),
-    has=Has(email_resume=False, migration=False),
+    has=Has(email_resume=False, migration=False, updates_stale=True),
     cb=_GatewayCB("gateway"),
 )
 

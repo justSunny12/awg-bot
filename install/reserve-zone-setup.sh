@@ -332,6 +332,11 @@ write_dnsmasq() {   # write_dnsmasq "адреса" "апстримы"
     [ -f "$RUN/dnsmasq-rf.conf" ] || : > "$RUN/dnsmasq-rf.conf"
 }
 
+write_setconf() {   # write_setconf IFACE — конфиг для awg setconf: без расширений awg-quick (Address, MTU, DNS, Table)
+    grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$RUN/awg/$1.conf" > "$RUN/awg/$1.setconf"
+    chmod 0600 "$RUN/awg/$1.setconf"
+}
+
 # ── --take ──────────────────────────────────────────────────────────────────
 cmd_take() {
     need_root
@@ -342,6 +347,9 @@ cmd_take() {
     # конфиг клона — только из stdin в хранилище в памяти
     cat > "$RUN/awg/$iface.conf"; chmod 0600 "$RUN/awg/$iface.conf"
     grep -q '^PrivateKey' "$RUN/awg/$iface.conf" || die "в конфиге клона нет ключа"
+    # для awg setconf — без расширений awg-quick (Address, MTU, DNS, Table): их setconf не знает
+    grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$RUN/awg/$iface.conf" > "$RUN/awg/$iface.setconf"
+    chmod 0600 "$RUN/awg/$iface.setconf"
     # veth: бот основы и клиенты наружу (NAT хоста) и РФ-трафик к шлюзам резерва
     ip link show "$VH" >/dev/null 2>&1 || { ip link add "$VH" type veth peer name "$VN"; ip link set "$VN" netns "$ZONE"; }
     ip link show "$RH" >/dev/null 2>&1 || { ip link add "$RH" type veth peer name "$RN"; ip link set "$RN" netns "$ZONE"; }
@@ -354,10 +362,12 @@ cmd_take() {
     local tmp="awgc$$"
     nsx ip link show "$iface" >/dev/null 2>&1 && { nsx ip link del "$iface" 2>/dev/null || true; }
     ip link add "$tmp" type amneziawg || die "клон не создался"
-    awg setconf "$tmp" "$RUN/awg/$iface.conf" || { ip link del "$tmp"; die "конфиг клона не принят"; }
+    awg setconf "$tmp" "$RUN/awg/$iface.setconf" || { ip link del "$tmp"; die "конфиг клона не принят"; }
     ip link set "$tmp" netns "$ZONE" || { ip link del "$tmp"; die "клон не перенёсся в зону"; }
     nsx ip link set "$tmp" name "$iface"
     nsx ip addr replace "$addr" dev "$iface"
+    local mtu; mtu="$(awk -F'=' '/^[[:space:]]*MTU[[:space:]]*=/{gsub(/ /,"",$2); print $2; exit}' "$RUN/awg/$iface.conf")"
+    [ -n "$mtu" ] && nsx ip link set "$iface" mtu "$mtu"
     nsx ip link set "$iface" up
     zone_nft "$iface"
     local a
@@ -380,7 +390,8 @@ cmd_restart_clone() {
     need_root
     local iface; iface="$(state_get iface)"; [ -n "$iface" ] || die "клона нет"
     nsx ip link set "$iface" down
-    nsx awg setconf "$iface" "$RUN/awg/$iface.conf" || die "конфиг клона не принят"
+    write_setconf "$iface"
+    nsx awg setconf "$iface" "$RUN/awg/$iface.setconf" || die "конфиг клона не принят"
     nsx ip link set "$iface" up
     say "clone: restarted"
 }
