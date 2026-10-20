@@ -496,6 +496,11 @@ restore_apply() {  # после остановки: слияние, подгот
         LINK_IF="$i" sh "$INSTALL_DIR/install/routing-link-setup.sh" --adopt >/dev/null \
             || warn "линк $i не поднялся — бот повторит попытку на старте"
     done
+    # линк пары серверов (резерв): конфиг из копии — юнит и подъём
+    if [[ -f "$awgdir/awgpair.conf" && -f "$INSTALL_DIR/install/reserve-pair-setup.sh" ]]; then
+        PAIR_IF=awgpair sh "$INSTALL_DIR/install/reserve-pair-setup.sh" --adopt >/dev/null \
+            || warn "линк пары не поднялся — бот повторит попытку на старте"
+    fi
     # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
     restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте поправит"
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"

@@ -125,6 +125,7 @@ def render(spec: pkg.GuardSpec) -> str:
         out.append(f"        tcp dport {pkg._ports(spec.open_tcp)} accept")
     if spec.open_udp:
         out.append(f"        udp dport {pkg._ports(spec.open_udp)} accept")
+    out += _pair_input(spec)
     out.append("")
     if spec.tunnel_nets4:
         # SSH из туннеля — только устройствам админа
@@ -143,6 +144,7 @@ def render(spec: pkg.GuardSpec) -> str:
             "    chain forward {",
             "        type filter hook forward priority filter; policy drop;",
             *_quarantine_forward(spec),
+            *_pair_forward(spec),
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
@@ -201,6 +203,25 @@ def _quarantine_forward(spec) -> list[str]:
     if not spec.quarantine_ifs:
         return []
     q = nftjson.ifs(spec.quarantine_ifs)
+    return [f"        iifname {q} drop", f"        oifname {q} drop"]
+
+
+def _pair_input(spec) -> list[str]:
+    """Линк пары серверов: с него на хост — только канал пары (TCP) с адреса
+    второй стороны в /30; всё остальное с линка — прочь. Правило одно и то же
+    до кода (карантин) и после: другого у линка пары нет никогда."""
+    if not spec.pair_if or not spec.pair_peer4 or not spec.pair_port:
+        return []
+    q = nftjson.ifs([spec.pair_if])
+    return [f"        iifname {q} ip saddr {spec.pair_peer4} tcp dport {int(spec.pair_port)} accept",
+            f"        iifname {q} drop"]
+
+
+def _pair_forward(spec) -> list[str]:
+    """Пересылки через линк пары нет вовсе — раньше любых разрешений."""
+    if not spec.pair_if:
+        return []
+    q = nftjson.ifs([spec.pair_if])
     return [f"        iifname {q} drop", f"        oifname {q} drop"]
 
 
