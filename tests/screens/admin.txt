@@ -11308,6 +11308,60 @@ NASPi — 🟢 Активен
   [🔑 Показать код | rsv:show_code:] [🔄 Сменить код | rsv:new_code:]
   [⬅️ Назад | set:rsv:open::]
 
+### adm.rsv.guest.main — бот основы на резерве: главная с первой строкой
+> /start
++ send #2
+🛟 Работаю на резерве «Beta» с 03:12 (UTC+5) — сервер AWG не отвечает
+
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23%
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: 0
+📊 Трафик за сентябрь: 0 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0]
+  [⚙️ Настройки | set:root:open::]
+
+### adm.rsv.guest.root — резерв: «⚙️ Настройки» — одна карточка
+> press set:root:open::
+= edit #1
+⚙️ <b>Настройки</b>
+
+Бот работает на резерве «Beta» — настройки сервера, шлюзы, бэкапы и обновления вернутся вместе с клиентами
+
+🛟 <b>Резерв «Beta»</b> 🟢 несёт нагрузку с 03:12 (UTC+5)
+<blockquote expandable>сервер AWG «Alpha»: 🔴 не отвечает с 03:10 (UTC+5)</blockquote>
+  [🛟 Резерв | set:rsv:open::] [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### adm.rsv.guest.card — резерв: карточка, основа не отвечает
+> press set:rsv:open::
+= edit #1
+🛟 <b>Резерв «Beta»</b> 🟢 несёт нагрузку с 03:12 (UTC+5)
+<blockquote expandable>сервер AWG «Alpha»: 🔴 не отвечает с 03:10 (UTC+5)</blockquote>
+  [🔄 Обновить | rsv:refresh:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.rsv.guest.return — резерв: основа в строю, рычаг «по кнопке» — «↩️ Вернуть клиентов»
+> press set:rsv:open::
+= edit #1
+🛟 <b>Резерв «Beta»</b> 🟢 несёт нагрузку с 03:12 (UTC+5)
+<blockquote expandable>сервер AWG «Alpha»: 🟢 на связи</blockquote>
+  [↩️ Вернуть клиентов | rsv:back:]
+  [🔄 Обновить | rsv:refresh:]
+  [⬅️ Назад | set:root:open::]
+~ (пустой ответ)
+
+### adm.rsv.guest.refused — резерв: раздел хоста — всплывашка
+> press set:backup:open::
+~! На резерве это недоступно — вернётся вместе с клиентами
+
 ### adm.rsv.peer — админ «Beta» в этом боте: всё готово
 > /start
 + send #2

@@ -73,6 +73,20 @@ def _rsv(*, host: str = "vpn.example.org", ready: bool = False, gw: str = "none"
     return build
 
 
+def _guest(*, alive: bool = False):
+    """Бот основы на резерве: config.GUEST на снимок и состояние от бота резерва."""
+    def build(services, mp):
+        from awgbot.core import config
+        who = _quiet(services)
+        mp.setattr(config, "GUEST", True)
+        services.guest_state_in({"name": "Beta", "since": _iso(NOW.replace(hour=3, minute=12)), "reason": "dead",
+                                 "own_name": "Alpha", "return": "button" if alive else "immediate",
+                                 "primary": {"status": "alive"} if alive else
+                                 {"status": "dead", "since": _iso(NOW.replace(hour=3, minute=10))}})
+        return who
+    return build
+
+
 def _pair(services):
     """Пара записана (как после сопряжения): «Beta» на v1.2.3 с шлюзом,
     готова, ключи переезда первого поколения — постоянные."""
@@ -264,6 +278,13 @@ RESERVE = [
     Shot("adm.rsv.new_code.yes", role="admin",
          press=[RSV, RsvCB(action="emerg"), RsvCB(action="new_code"), RsvCB(action="new_code_yes")],
          data=_rsv(ready=True, gw="rsv", paired=True, then=[_fixed_generation]), title="код сменён"),
+    # ── бот основы на резерве (гостевой режим): главная, корень настроек, карточка ──
+    Shot("adm.rsv.guest.main", role="admin", start="", data=_guest(), title="бот основы на резерве: главная с первой строкой"),
+    Shot("adm.rsv.guest.root", role="admin", press=[SetCB(sec="root")], data=_guest(), title="резерв: «⚙️ Настройки» — одна карточка"),
+    Shot("adm.rsv.guest.card", role="admin", press=[RSV], data=_guest(), title="резерв: карточка, основа не отвечает"),
+    Shot("adm.rsv.guest.return", role="admin", press=[RSV], data=_guest(alive=True),
+         title="резерв: основа в строю, рычаг «по кнопке» — «↩️ Вернуть клиентов»"),
+    Shot("adm.rsv.guest.refused", role="admin", press=[SetCB(sec="backup")], data=_guest(), title="резерв: раздел хоста — всплывашка"),
     # ── роль админа второго сервера (Т-РН1) ─────────────────────────────
     Shot("adm.rsv.peer", role="admin", start="", data=_peer_admin(),
          title="админ «Beta» в этом боте: всё готово"),

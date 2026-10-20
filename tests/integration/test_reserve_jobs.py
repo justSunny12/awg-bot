@@ -56,9 +56,10 @@ def wired(services, rsv, monkeypatch):
 
 
 def test_the_jobs_are_registered_with_their_periods(wired):
-    assert set(wired.jobs) == {"rsv_liveness", "rsv_invite_tick"}
+    assert set(wired.jobs) == {"rsv_liveness", "rsv_invite_tick", "rsv_pkg_tick"}
     assert wired.jobs["rsv_liveness"][1].interval.total_seconds() == 5
     assert wired.jobs["rsv_invite_tick"][1].interval.total_seconds() == 60
+    assert wired.jobs["rsv_pkg_tick"][1].interval.total_seconds() == 5
     assert all(kw.get("max_instances") == 1 and kw.get("coalesce") for _f, _t, kw in wired.jobs.values())
 
 
