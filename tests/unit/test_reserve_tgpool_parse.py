@@ -103,9 +103,10 @@ def test_a_non_json_answer_is_an_error(monkeypatch):
 # ── самый узкий анонс ───────────────────────────────────────────────────────
 
 def test_narrowest_picks_the_longest_prefix_that_holds_the_address():
-    prefixes = ["203.0.0.0/8", "203.0.113.0/24", "203.0.112.0/20", "198.51.100.0/24"]
+    prefixes = ["198.51.100.0/24", "198.51.100.0/25", "203.0.113.0/24"]
+    assert tgpool.narrowest("198.51.100.9", prefixes) == "198.51.100.0/25"
+    assert tgpool.narrowest("198.51.100.200", prefixes) == "198.51.100.0/24"
     assert tgpool.narrowest("203.0.113.9", prefixes) == "203.0.113.0/24"
-    assert tgpool.narrowest("203.0.1.1", prefixes) == "203.0.0.0/8"
 
 
 @pytest.mark.parametrize("addr, prefixes", [("198.51.100.9", ["203.0.113.0/24"]), ("198.51.100.9", []),
