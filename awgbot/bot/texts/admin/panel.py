@@ -43,7 +43,7 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                 bot_username: str = "", expiring: int = 0, routing_info: dict = None,
                 rf: dict = None, unassigned: int = 0, update_tag: str = "",
-                update_run: dict = None) -> str:
+                update_run: dict = None, rsv_line: str = "") -> str:
     """Шапка главной: сервер и аптайм одной строкой, пустая строка, метрики,
     РФ-доступ, счётчики и трафик со ссылками на значении, РФ-ветка, доступное
     обновление и переезд — только когда есть что сказать. update_run — идёт
@@ -57,6 +57,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         dot = "🔴 AWG не отвечает"
     host = _e(_hostname() or "AWG")
     lines = [ui.head(f"🛠 {host}", dot)]
+    if rsv_line:
+        lines.append(rsv_line)                       # Т-Р17: резерв — только в не-обычном состоянии
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"

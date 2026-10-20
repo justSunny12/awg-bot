@@ -79,6 +79,19 @@ def card_text(d: dict) -> str:
     return "\n".join(lines)
 
 
+def return_dialog(d: dict) -> str:
+    """Т-Р11: вернуть клиентов на основу (из бота основы на резерве)."""
+    own, name = _n(d.get("own_name") or "сервер"), _n(d.get("name") or "резерв")
+    since = _when((d.get("primary") or {}).get("since") or "")
+    rec = ""
+    if d.get("record") and d.get("own_ip"):
+        rec = f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own_ip'])}</code>"
+    return (f"↩️ <b>Вернуть клиентов на {own}?</b>\n\n"
+            f"Сервер {own} в строю" + (f" с {since}" if since else "") + f". Бот вернётся туда же, всё, что изменилось "
+            f"здесь, — тоже{rec}. Устройства, которые ещё ходят через {name}, он будет пересылать на {own}, пока они не "
+            "переподключатся, — у каждого связь прервётся на секунды")
+
+
 def webhook_stalled(reserve_name: str, since: str, error: str) -> str:
     """Т-РУ19 основе (в её чат на резерве): Telegram не доставляет обновления."""
     return (f"⚠️ Telegram не доставляет обновления твоего бота на {_n(reserve_name)} с {_when(since)}: "

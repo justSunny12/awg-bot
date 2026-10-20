@@ -197,16 +197,17 @@ def test_the_main_line_tells_where_the_return_lever_is_only_when_the_primary_is_
         "шлюзы не на связи — возвращать рано, РФ-доступ идёт через резерв"
 
 
-def test_the_return_button_is_on_the_card_only_when_the_primary_is_alive_and_the_lever_is_a_button(services, guest_mode):
+def test_the_return_button_is_on_the_card_only_when_the_primary_said_it_is_waiting_for_the_button(services, guest_mode):
+    """Кнопка — по слову самой основы (`primary.can_return`), а не по статусу связи и рычагу."""
     from awgbot.bot.keyboards.reserve import guest_card
     labels = lambda m: [b.text for row in m.inline_keyboard for b in row]    # noqa: E731
     assert not any("Вернуть" in x for x in labels(guest_card(can_return=False)))
     assert any("Вернуть" in x for x in labels(guest_card(can_return=True)))
     services.guest_state_in({"primary": {"status": "dead"}, "return": "button"})
     assert services.guest_can_return() is False
-    services.guest_state_in({"primary": {"status": "alive"}, "return": "immediate"})
-    assert services.guest_can_return() is False
-    services.guest_state_in({"primary": {"status": "alive"}, "return": "button"})
+    services.guest_state_in({"primary": {"status": "alive", "can_return": False}, "return": "button"})
+    assert services.guest_can_return() is False, "основа жива и рычаг «по кнопке», но она ещё не сказала «здорова»"
+    services.guest_state_in({"primary": {"status": "alive", "healthy": True, "can_return": True}, "return": "button"})
     assert services.guest_can_return() is True
 
 

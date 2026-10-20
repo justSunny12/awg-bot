@@ -101,8 +101,22 @@ class ReserveSessionMixin:
         return {"ready": settings.get_bool("app.reserve.ready", False), "name": me["name"], "version": me["version"],
                 "caps": me["caps"], "gen": me["gen"], "ports": me["ports"], "self": self._own_host_or_empty(),
                 "out": self.reserve_out(), "in": self.reserve_in(), "gw": self.reserve_has_gateway(),
+                "healthy": bool(self.reserve_away() and self._healthy_safe()), "can_return": bool(self._can_return_safe()),
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
+                "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
                 "voters": [], "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened"))}
+
+    def _healthy_safe(self) -> bool:
+        try:
+            return bool(self.reserve_healthy())
+        except Exception:                                     # noqa: BLE001
+            return False
+
+    def _can_return_safe(self) -> bool:
+        try:
+            return bool(self.reserve_can_return())
+        except Exception:                                     # noqa: BLE001
+            return False
 
     def reserve_st_in(self, body: dict) -> list[Notification]:
         """`st` другой стороны: запомнить, пересчитать готовность, заметить смену
@@ -117,8 +131,11 @@ class ReserveSessionMixin:
                                has_gateway=bool(body.get("gw")) if "gw" in body else (bool(body.get("voters")) or bool(prev.get("gw"))))
             peer.update(out=str(body.get("out") or ""), inn=str(body.get("in") or ""), self_host=str(body.get("self") or ""),
                         pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
-                        admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso())
-            self.rsv_put("rsv_peer_state", peer)
+                        admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(),
+                        healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
+                        in_kind=str(body.get("in_kind") or ""))
+            # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
+            self.rsv_put("rsv_peer_state", {**prev, **peer})
             row = self.reserve_peer() or {}
             fields = {}
             if peer["name"] and peer["name"] != row.get("name"):

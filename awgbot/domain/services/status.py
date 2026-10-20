@@ -56,6 +56,7 @@ class StatusMixin:
         return {
             "st": st, "ac": ac, "routing_ok": routing_ok, "routing_info": routing_info, "mig": mig,
             "rf": rf,
+            "rsv_line": self.reserve_main_line() if hasattr(self, "reserve_main_line") else "",
             "expiring": len(self.expiring_subscriptions()),
             "unassigned": self.count_unassigned_devices(),
             "has_dev": n_dev > 0,

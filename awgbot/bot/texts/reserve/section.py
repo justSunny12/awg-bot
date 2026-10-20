@@ -19,6 +19,18 @@ def _when(iso: str) -> str:
         return ""
 
 
+def _date(iso: str) -> str:
+    try:
+        return timeutil.fmt_dt_ui(timeutil.parse_iso(iso))
+    except ValueError:
+        return ""
+
+
+def _move_step(step: str) -> str:
+    return {"pkg": "обновляю данные для переезда", "up": "жду подъёма клиентов", "record": "жду смену записи",
+            "release": "передаю бот", "released": "передаю бот"}.get(step, "идёт переезд")
+
+
 ABOUT = ("Два сервера AWG с разными админами страхуют друг друга: упадёт один — его клиенты и его бот будут "
          "работать на втором без новых конфигураций, вернётся — всё переедет обратно, вместе с тем, что "
          "изменилось за это время. Свои клиенты каждого всегда остаются на своём сервере")
@@ -104,17 +116,43 @@ def card_text(d: dict) -> str:
     lines.append("")
     out_ok, out_why = d.get("dir_out") or (False, "")
     in_ok, in_why = d.get("dir_in") or (False, "")
-    lines.append("📤 Мои клиенты: на этом сервере")
-    if out_ok:
-        gws = ", ".join(_n(g) for g in d.get("voters") or [])
-        sent = d.get("pkg_sent_at") or ""
-        tail = f"данные для переезда у {_n(name)} от {_e(_when(sent))}" if sent else f"данные для переезда у {_n(name)} ещё не отправлены"
-        lines.append("└ " + tail + (f" · падение подтвердят шлюзы {gws}" if gws else ""))
+    out, inn = str(d.get("out") or "home"), str(d.get("inn") or "idle")
+    if out == "leaving":
+        lines.append(f"📤 Мои клиенты: переезжают на {_n(name)} — {_e(_move_step(d.get('out_step') or ''))}")
+    elif out == "away":
+        lines.append(f"📤 Мои клиенты: на {_n(name)} с {_e(_when(d.get('out_since') or ''))}")
+    elif out == "returning":
+        lines.append(f"📤 Мои клиенты: возвращаются с {_n(name)}")
     else:
-        lines.append("└ ⚠️ " + _e(out_why))
-    lines.append(f"📥 Клиенты {_n(name)}: на его сервере")
-    if not in_ok and in_why:
-        lines.append("└ ⚠️ " + _e(in_why))
+        lines.append("📤 Мои клиенты: на этом сервере")
+        if out_ok:
+            gws = ", ".join(_n(g) for g in d.get("voters") or [])
+            sent = d.get("pkg_sent_at") or ""
+            tail = f"данные для переезда у {_n(name)} от {_e(_when(sent))}" if sent else f"данные для переезда у {_n(name)} ещё не отправлены"
+            lines.append("└ " + tail + (f" · падение подтвердят шлюзы {gws}" if gws else ""))
+        else:
+            lines.append("└ ⚠️ " + _e(out_why))
+        if d.get("move_why") and out_ok:
+            lines.append("└ перевести кнопкой нельзя: " + _e(d["move_why"]))
+        if d.get("out_relay_until"):
+            lines.append(f"└ пересылка хвоста у {_n(name)} до {_e(_date(d['out_relay_until']))}")
+    if inn in ("taking", "serving", "releasing"):
+        since = d.get("in_since") or ""
+        lines.append(f"📥 Клиенты {_n(name)}: здесь" + (f" с {_e(_when(since))}" if since else "")
+                     + (" — принимаю" if inn == "taking" else " — возвращаю" if inn == "releasing" else ""))
+    elif inn == "relay":
+        lines.append(f"📥 Клиенты {_n(name)}: возвращаются к нему — пересылка до {_e(_date(d.get('in_relay_until') or ''))}")
+    else:
+        lines.append(f"📥 Клиенты {_n(name)}: на его сервере")
+        if not in_ok and in_why:
+            lines.append("└ ⚠️ " + _e(in_why))
+    dns = d.get("dns") or {}
+    if dns.get("name"):
+        prov = dns.get("provider_label") or "вручную"
+        cur = dns.get("current") or ""
+        where = ("этот сервер" if dns.get("points_here") else f"<code>{_e(cur)}</code>") if cur else "не проверена"
+        lines.append(f"🌐 Запись <code>{_e(dns['name'])}</code>: {where} · {_e(prov)}"
+                     + ("" if dns.get("provider") == "manual" or dns.get("has_token") else " · токен не задан"))
     tr = d.get("traffic") or {}
     if tr.get("out") or tr.get("in"):
         lines += ["", f"📊 Через резерв за {_e(tr.get('month_label') or 'месяц')}"]
@@ -158,3 +196,108 @@ def new_code_dialog(name: str) -> str:
     return (f"🔄 <b>Сменить аварийный код?</b>\n\n"
             f"Ключ переезда сменится: прежний код и доли ключа у шлюзов и у {_n(name)} перестанут действовать, "
             f"новые уедут им сами в ближайшие минуты. Новый код пришлю отдельным сообщением")
+
+
+# ── Т-Р10: переезд кнопкой ───────────────────────────────────────────────────
+
+def move_dialog(d: dict) -> str:
+    name, record, target = _n(d.get("name") or "резерв"), _e(d.get("record") or ""), _e(d.get("target") or "")
+    if d.get("manual"):
+        first = f"Смени у провайдера A-запись <code>{record}</code> на <code>{target}</code> — бот увидит смену сам"
+    else:
+        first = f"Запись <code>{record}</code> переключится на <code>{target}</code> сама"
+    return (f"🔀 <b>Перевести клиентов на {name}?</b>\n\n"
+            f"{first}. Устройства перейдут при переподключении VPN, бот переедет вместе с ними, подключение шлюзов к "
+            f"{name} не меняется. Настройки, шлюзы, бэкапы и обновления до возврата будут недоступны; {name} получит "
+            f"уведомление. Вернуть всё обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть "
+            "клиентов»; вернётся и всё, что изменилось там")
+
+
+def move_live(d: dict) -> str:
+    """Т-Р10б: ход перевода в живом сообщении; итоги — по состоянию."""
+    name = _n(d.get("name") or "резерв")
+    state, step = str(d.get("state") or ""), str(d.get("step") or "")
+    if state == "away":
+        return f"✅ Клиенты и бот — на {name}: устройства переходят при переподключении — здесь ещё {int(d.get('online') or 0)}"
+    if state == "home" and d.get("reason"):
+        return f"⚠️ Перевод не состоялся: {_e(d['reason'])}"
+    if state != "leaving":
+        return f"ℹ️ Перевод клиентов на {name} завершён"
+    order = ["pkg", "up", "record", "release", "released"]
+    pos = order.index(step) + 1 if step in order else 1      # 1 — пакет в работе, 2 — резерв поднимает, 3 — запись, 4 — бот
+    def mark(i):
+        return "✅" if i < pos else "⏳"
+    record, target = _e(d.get("record") or ""), _e(d.get("target") or "")
+    lines = [f"⏳ <b>Перевод клиентов на {name}</b>", "",
+             f"{mark(1)} данные для переезда у {name}" + (f" — от {_e(_when(d.get('pkg_at') or ''))}" if d.get("pkg_at") else ""),
+             f"{mark(2)} {name} поднял клиентов",
+             f"{mark(3)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 3
+                               else (f"смени запись <code>{record}</code> на <code>{target}</code> у провайдера — жду…"
+                                     if d.get("manual") else f"жду смену записи <code>{record}</code> → <code>{target}</code>…")),
+             f"{mark(4)} передаю бот на {name}…" if pos < 5 else f"✅ бот передан на {name}"]
+    return "\n".join(lines)
+
+
+def return_dialog(d: dict) -> str:
+    """Т-Р11б: вернуть клиентов с резерва (у основы, рычаг «по кнопке»)."""
+    name = _n(d.get("name") or "резерв")
+    rec = ""
+    if d.get("record") and d.get("own"):
+        rec = f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own'])}</code>"
+    return (f"↩️ <b>Вернуть клиентов с {name}?</b>\n\n"
+            f"Сервер в строю. Бот вернётся сюда, всё, что изменилось на {name}, — тоже{rec}. Устройства, "
+            f"которые ещё ходят через {name}, он будет пересылать сюда, пока они не переподключатся, — у каждого "
+            "связь прервётся на секунды")
+
+
+# ── Т-Р12: вернуть клиентов к основе (у резерва) ─────────────────────────────
+
+def evict_dialog(name: str) -> str:
+    n = _n(name)
+    return (f"↩️ <b>Вернуть клиентов и бот {n} к нему?</b>\n\n"
+            f"{n} на связи — он примет свой бот и данные, сам переключит запись на себя. Пока устройства {n} не "
+            f"переподключатся, этот сервер пересылает их трафик к нему; данные {n} здесь снимаются сразу. {n} получит "
+            "уведомление")
+
+
+# ── Т-Р16: запись DNS ───────────────────────────────────────────────────────
+
+DNS_MORE = ("▸ подробнее: Бот меняет только эту A-запись: при переезде кнопкой и при возврате — сам, при падении "
+            "сервера — резерв, токеном из зашифрованных данных, которые он открывает только при переезде. После такого "
+            "переезда бот попросит сменить токен. Раз в несколько минут бот сверяет запись и сообщит, если она "
+            "указывает не сюда. Часть операторов связи держит запись в кэше дольше TTL — их абоненты переходят позже. "
+            "Лучше дать токену право только на эту зону")
+
+
+def dns_text(d: dict) -> str:
+    name = d.get("name") or ""
+    if not name:
+        return ("🌐 <b>Запись DNS</b>\n\n⛔ Адрес для клиентов — IP, записи DNS у него нет. Задай домен в "
+                "«🖥 Сервер AWG» — без записи переезд невозможен")
+    lines = [f"🌐 <b>Запись DNS</b> · <code>{_e(name)}</code>", ""]
+    cur = d.get("current") or ""
+    if cur:
+        who = "этот сервер" if d.get("points_here") else "не этот сервер"
+        lines.append(f"Сейчас: <code>{_e(cur)}</code> — {who}" + (f" · проверено в {_e(_when(d.get('checked_at') or ''))}"
+                                                                   if d.get("checked_at") else ""))
+    else:
+        lines.append("Сейчас: не проверена — «🧪 Проверить»")
+    prov = d.get("provider_label") or "вручную"
+    if d.get("provider") == "manual":
+        lines.append("Провайдер: вручную — при переезде запись меняет человек, аварийный переезд невозможен")
+    else:
+        lines.append(f"Провайдер: {_e(prov)} · " + ("токен задан" if d.get("has_token") else "⚠️ токен не задан"))
+    if d.get("check_ok") is False and d.get("check_why"):
+        lines.append("⚠️ " + _e(d["check_why"]))
+    lines += ["", details(DNS_MORE)]
+    return "\n".join(lines)
+
+
+def dns_token_prompt(provider: str, zone_hint: str) -> str:
+    if provider == "dyndns2":
+        return "✏️ <b>DynDNS2</b>\n\nПришли строку <code>https://логин:пароль@сервер/nic/update</code> — сообщение удалю сразу"
+    if provider == "duckdns":
+        return "✏️ <b>Токен DuckDNS</b>\n\nПришли токен из личного кабинета DuckDNS — сообщение удалю сразу"
+    return (f"✏️ <b>Токен Cloudflare</b>\n\nПришли API-токен с правом Zone → DNS → Edit на зону "
+            f"<code>{_e(zone_hint)}</code> — сообщение удалю сразу")
+

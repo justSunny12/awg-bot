@@ -14,28 +14,41 @@ reserve — взаимный резерв серверов AWG на сторон
 - `peeradmin` — роль админа второго сервера;
 - `unpair` — удаление пары;
 - `package` — пакет переезда: отметки, сборка, досылка, приём;
-- `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов.
+- `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов;
+- `dns` — запись DNS: провайдер, смена, факт, надзор;
+- `outbound` — «мои клиенты»: переезд кнопкой, возврат, слияние;
+- `inbound` — «клиенты основы у меня»: процесс открытия, зона, handback;
+- `notify` — уведомления клиентам о переезде и возврате;
+- `traffic` — итоги трафика через резерв;
+- `away` — отказы при away, строка главной.
 
-Дальше по этапам: переезд и возврат, голосование, пул адресов Telegram.
+Дальше по этапам: голосование шлюзов, РФ-доступ в переезде, пул адресов Telegram.
 """
 from __future__ import annotations
 
+from .away import ReserveAwayMixin
+from .dns import ReserveDnsMixin
 from .guest import ReserveGuestMixin
+from .inbound import ReserveInboundMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
 from .liveness import ReserveLivenessMixin
+from .notify import ReserveNotifyMixin
+from .outbound import ReserveOutboundMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .screen import ReserveScreenMixin
 from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
+from .traffic import ReserveTrafficMixin
 from .unpair import ReserveUnpairMixin
 
 
 class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, ReservePairingMixin,
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
-                   ReserveGuestMixin):
+                   ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
+                   ReserveTrafficMixin, ReserveAwayMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

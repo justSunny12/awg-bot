@@ -168,7 +168,8 @@ def note_markup(n):
 
 
 # подписи кнопок действия по подсказке Notification.action
-ACTION_LABELS = {"extend": "⏱ Продлить", "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
+ACTION_LABELS = {"extend": "⏱ Продлить", "unassigned": "📦 Без профиля", "sub": "💳 Подписка",
+                 "rsv_record_back": "↩️ Вернуть запись"}
 
 
 def action_markup(action, base=None):

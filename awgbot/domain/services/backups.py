@@ -213,6 +213,8 @@ class BackupsMixin:
     def restore_wait_start(self, report: dict) -> None:
         """Отчёт ушёл: по каждому слоту, к которому бэкап применён, ждём hello.
         Пустой сервер — свой текст на случай, если шлюз не выйдет."""
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
         slots = {}
         for s in (report or {}).get("slots") or []:
             if isinstance(s, dict) and s.get("case") != "removed" and s.get("slot"):

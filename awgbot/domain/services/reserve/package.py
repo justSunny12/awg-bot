@@ -186,9 +186,10 @@ class ReservePackageMixin:
 
     def _pkg_dns_envelope(self) -> dict | None:
         dns = self.rsv_get("rsv_dns")
-        if not dns.get("provider"):
+        name = self.reserve_dns_name()                        # имя записи — её меняет резерв
+        if not dns.get("provider") or not name:
             return None
-        return {**dns, "self_host": self._own_host_or_empty()}
+        return {**dns, "name": name, "self_host": self._own_host_or_empty()}
 
     def _pkg_store_base(self, gen: int, db_bytes: bytes) -> None:
         out = os.path.join(reserve_dir(), "out")

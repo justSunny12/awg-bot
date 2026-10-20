@@ -187,7 +187,7 @@ def test_the_state_view_of_the_reserve_reports_the_primary_by_the_pair_liveness(
     services._lv.state = "down"
     services.rsv_update("rsv_peer_state", down_since="2026-10-21T03:10:00+05:00")
     v = services.reserve_guest_state_view()
-    assert v["primary"] == {"status": "dead", "since": "2026-10-21T03:10:00+05:00"}
+    assert v["primary"] == {"status": "dead", "since": "2026-10-21T03:10:00+05:00", "healthy": False, "can_return": False}
 
 
 def test_the_screen_data_counts_devices_online_and_survives_a_failing_count(services, monkeypatch):

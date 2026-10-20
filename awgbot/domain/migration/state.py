@@ -57,6 +57,8 @@ class MigrationStateMixin:
         случайный высокий порт и первую свободную подсеть. Константы config
         читаются при старте, поэтому вызывающий обязан перезапустить бота.
         """
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
         import subprocess
         from awgbot.core import settings
         reason = self.migration_blocked_reason()

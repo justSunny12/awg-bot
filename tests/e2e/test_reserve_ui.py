@@ -43,6 +43,8 @@ rsv = rc.rsv
 def ui(services, rsv, fake_bot, make_active_client, monkeypatch):
     """Админ в чате, канал пары — PairServer без слушателя (только его
     действия из чата: pair_wrong/pair_close/pair_accepted)."""
+    from awgbot.util import dnsapi
+    monkeypatch.setattr(dnsapi, "read_system", lambda name, timeout=3.0: [])      # карточка не ходит в сеть за адресом
     make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     from awgbot.runtime.pairlink.server import PairServer
     srv = PairServer(services)
@@ -71,7 +73,7 @@ def _labels(markup) -> list[str]:
 async def test_the_section_without_a_pair_offers_invite_and_accept(services, ui):
     text, markup = await card_h.reserve_screen(services)
     assert "🛟 <b>Резерв</b>" in text and f"<code>{rc.HOST_A}</code>" in text
-    assert _labels(markup) == ["✅ Готов быть резервом: вкл", "📤 Пригласить", "📥 Принять приглашение", "⬅️ Назад"]
+    assert _labels(markup) == ["✅ Готов быть резервом: вкл", "📤 Пригласить", "📥 Принять приглашение", "🌐 Запись DNS", "⬅️ Назад"]
 
 
 async def test_an_ip_address_for_clients_is_a_stop_line(services, ui):

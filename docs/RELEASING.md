@@ -250,12 +250,17 @@ GitHub `vX.Y.Z.P — …`.
   `bot/handlers/guest.py`, тексты `bot/texts/reserve/guest.py`), слияние при
   возврате (`domain/backup/merge/policy.py`, `reserve.py`), процесс открытия
   `tools/rsvopen.py`, обёртка зоны `infra/rsvzone.py` и файервол резерва в
-  `infra/nftguard/`. Правка `jobs.py` задевает и обычный основной бот (те же
+  `infra/nftguard/`. Туда же — запись DNS, переезд кнопкой и возврат:
+  автоматы `domain/services/reserve/{dns,outbound,inbound,notify,traffic,away}.py`,
+  уведомления `domain/notices/reserve.py`, управляемый поллинг `runtime/pollctl.py`
+  (право отвечать в Telegram) и исполнитель действий `runtime/rsvactions.py`,
+  экраны `handlers/settings/reserve/{move,dns}.py`. Правка `jobs.py` задевает и обычный основной бот (те же
   задания), но не агента. **Обе роли**: код агента
   `domain/gateway/reserve/` вместе с разделом `reserve` документа
   конфигурации, правилами `awgrsv` в обвязке шлюза и словарём сообщений
   пары и гостевого канала `util/pairproto.py` (гостевым каналом говорят
-  агенты), ключи и доли — `util/shamir.py`, `util/rsvkeys.py` (доля шлюза
+  агенты; поля `st`, добавленные внутри линии, — необязательные
+  (`pairproto.OPTIONAL`), поэтому старая сторона их не отвергает), ключи и доли — `util/shamir.py`, `util/rsvkeys.py` (доля шлюза
   едет в разделе `reserve`), месячный накопитель `util/monthacc.py` (им
   копят трафик линка агент и трафик через резерв сервер) — формат обязан
   совпадать на концах, как у канала. Блок `reserve` в `conf/app.yaml` и

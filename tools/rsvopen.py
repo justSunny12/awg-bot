@@ -125,24 +125,24 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
     return m, k
 
 
-def _db_from_snapshot(k: bytes, pkg_gen: int) -> bytes | None:
-    """`rep.bin` новее пакета → его база; нет или старее — None."""
+def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
+    """`rep.bin` новее пакета → (его база, время снимка); нет или старее — (None, "")."""
     from awgbot.infra import rsvzone
     from awgbot.util.rsvpkg import seal
     try:
         blob = rsvzone.REP_PATH.read_bytes()
     except OSError:
-        return None
+        return None, ""
     try:
         snap = seal.snapshot_open(k, blob)
     except seal.PackageError:
-        return None
+        return None, ""
     if not isinstance(snap, dict) or int(snap.get("pkg_gen") or 0) < int(pkg_gen):
-        return None
+        return None, ""
     try:
-        return bytes.fromhex(str(snap.get("db") or ""))
+        return bytes.fromhex(str(snap.get("db") or "")), str(snap.get("at") or "")
     except ValueError:
-        return None
+        return None, ""
 
 
 def _yaml_dump(obj) -> str:
@@ -211,7 +211,8 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
     rsvzone.write_private(rsvzone.K_FILE, k.hex())
     from awgbot.util import timeutil
     rsvzone.write_private(run / "pkg.json", json.dumps({"pkg_gen": int(data.get("_pkg_gen") or 0),
-                                                        "opened_at": timeutil.now_iso()}))
+                                                        "opened_at": timeutil.now_iso(),
+                                                        "db_at": str(data.get("_db_at") or "")}))
     key_p, crt_p = _make_cert(str(data.get("self_host") or ""), str(run))
     webhook = {"port": int(data.get("webhook_port") or 0), "path": secrets.token_urlsafe(24),
                "secret": secrets.token_urlsafe(32), "key": key_p, "cert": crt_p,
@@ -282,8 +283,9 @@ def run(data: dict) -> int:
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
         return _fail(str(e))
     iface = vpn["ifaces"][0]
-    db_bytes = _db_from_snapshot(k, head.pkg_gen)
+    db_bytes, db_at = _db_from_snapshot(k, head.pkg_gen)
     from_snapshot = db_bytes is not None
+    data["_db_at"] = db_at
     if db_bytes is None:
         try:
             db_bytes = bytes.fromhex(str(parts["bot"].get("db") or ""))

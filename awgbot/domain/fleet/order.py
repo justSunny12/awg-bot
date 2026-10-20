@@ -80,6 +80,8 @@ class FleetOrderMixin:
     def fleet_start(self, tag: str) -> str:
         """«⬆️ Обновить»: начать ход к tag. Пусто — начат; иначе причина
         (всплывашкой): идёт ход, цель сменилась, сервер не на сборке из выпуска."""
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
         with _LOCK:
             run = self.fleet_run()
             if run.get("state") in ACTIVE_RUN:
