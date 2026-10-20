@@ -171,6 +171,9 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
+        extra: list[tuple] = []
+        if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
+            extra = self.reserve_code_failed(reason)             # Н4: не подошёл — окно снова открыто
         log.warning("резерв: клиентов «%s» не принял: %s", name, reason)
         for fn in (rsvzone.teardown, rsvzone.wipe):
             try:
@@ -179,7 +182,7 @@ class ReserveInboundMixin:
                 log.warning("резерв: зона после отказа: %s", e)
         self.reserve_set_in("idle", step="", reason=reason)
         return [("send", "down", {"reason": reason[:120]}), ("fw",),
-                ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])]
+                ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra
 
     # ── реплика и право отвечать (переезд кнопкой) ──────────────────────────
     def reserve_released_store(self, blob: bytes) -> list[tuple]:
@@ -213,7 +216,8 @@ class ReserveInboundMixin:
         log.info("резерв: клиенты и бот «%s» у меня", name)
         return [("send", "taken", {}), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_started(
-                    name, str(inn.get("kind") or "button"), str(inn.get("open_started") or "")))])]
+                    name, str(inn.get("kind") or "button"), str(inn.get("dead_since") or inn.get("open_started") or ""),
+                    str(inn.get("extra") or "")))])]
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone

@@ -135,6 +135,25 @@ class InboundMixin:
         """Блокировки основы, пока её клиенты у меня, — гостю в зону."""
         await self._actions([("guest", "blocks", {"addrs": list(body.get("addrs") or [])[:4096]})])
 
+    async def _in_slots(self, sess: _Session, body: dict) -> None:
+        """Ключи шлюзовых сторон основы → стороны зоны, ответ slots_ok."""
+        ok = await asyncio.to_thread(self.services.reserve_slots_in, list(body.get("slots") or []))
+        await send_line(sess, "slots_ok", ok)
+
+    async def _in_slots_ok(self, sess: _Session, body: dict) -> None:
+        await asyncio.to_thread(self.services.reserve_slots_ok_in, list(body.get("slots") or []))
+
+    async def _in_ask(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_ask_in, str(body["case"]), str(body["since"]),
+                                                    list(body.get("voters") or [])))
+
+    async def _in_ask_no(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_ask_no_in, str(body["reason"])))
+
+    async def _in_view(self, sess: _Session, body: dict) -> None:
+        await self.notes(await asyncio.to_thread(self.services.reserve_view_in, str(body["case"]), str(body["since"]),
+                                                 list(body.get("voters") or [])))
+
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))
 

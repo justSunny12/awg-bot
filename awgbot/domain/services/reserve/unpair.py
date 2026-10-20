@@ -38,6 +38,10 @@ class ReserveUnpairMixin:
                 self._run_pair_script("--rollback", self._pair_env())
             except ServiceError as e:
                 log.warning("резерв: линк пары не снят при удалении (%s): %s", why, e)
+            try:
+                self.reserve_zone_links_drop()                # стороны линков шлюзов основы в зоне — прочь
+            except Exception as e:                        # noqa: BLE001
+                log.warning("резерв: стороны зоны не сняты при удалении пары: %s", e)
             self.db.reserve_peer_delete()
             self.rsv_clear_all()
             try:

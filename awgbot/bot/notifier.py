@@ -153,7 +153,12 @@ async def _paced(items, fn) -> list:
 
 # готовые клавиатуры по подсказке Notification.keyboard — домен называет
 # клавиатуру по имени, собирает её бот
-KEYBOARDS = {"update_done": kb.update_done_menu}
+def _peer_code_offer():
+    from awgbot.bot.keyboards import reserve as rkb
+    return rkb.peer_code_offer()
+
+
+KEYBOARDS = {"update_done": kb.update_done_menu, "peer_code": _peer_code_offer}
 
 
 def note_markup(n):

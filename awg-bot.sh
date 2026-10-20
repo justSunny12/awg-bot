@@ -1151,6 +1151,9 @@ cmd_post_uninstall() {
         if [[ -x /usr/local/sbin/routing-gw-setup.sh || -d /etc/awg-gw || -d /var/lib/awg-gw ]]; then
             warn "Найдена обвязка шлюза (линк до сервера AWG, юнит и таблицы, /etc/awg-gw, /var/lib/awg-gw)."
             if confirm "Снять её? (SSH-фильтр шлюза уйдёт вместе с таблицами — SSH снова станет открыт для всех адресов)" y; then
+                # постоянный линк к резерву (awgrsv, своя таблица и юнит) — раньше обвязки
+                [[ -f "$INSTALL_DIR/install/reserve-gw-setup.sh" ]] \
+                    && sh "$INSTALL_DIR/install/reserve-gw-setup.sh" --remove >/dev/null 2>&1 || true
                 [[ -x /usr/local/sbin/routing-gw-setup.sh ]] \
                     && sh /usr/local/sbin/routing-gw-setup.sh --rollback >/dev/null 2>&1 || true
                 rm -rf /etc/awg-gw /var/lib/awg-gw /opt/awg-gw

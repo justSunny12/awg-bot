@@ -104,7 +104,14 @@ class ReserveSessionMixin:
                 "healthy": bool(self.reserve_away() and self._healthy_safe()), "can_return": bool(self._can_return_safe()),
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
-                "voters": [], "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened"))}
+                "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened"))}
+
+    def _voters_body(self) -> list[dict]:
+        """Мои шлюзы с агентом rsv1 — слот и имя: резерву для набора голосующих и текстов."""
+        try:
+            return [{"slot": int(g["slot"]), "name": str(g["name"])[:64]} for g in self._reserve_gateways_view() if g.get("rsv")][:16]
+        except Exception:                                     # noqa: BLE001
+            return []
 
     def _healthy_safe(self) -> bool:
         try:

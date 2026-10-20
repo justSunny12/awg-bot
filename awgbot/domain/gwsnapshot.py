@@ -67,7 +67,7 @@ def bundle_both_names(bundle: dict) -> dict:
 # lan_addr — адрес шлюза в его локальной сети (интерфейс VPN-транзита): ВПС
 # подставляет его в настройку роутера вместо плейсхолдера. Локальное чтение,
 # как и всё остальное; агент без транзита шлёт пустую строку.
-FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "lan_addr", "rev", "ts", "boot_id")
+FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "lan_addr", "rev", "ts", "boot_id", "rsv")
 _LAN_ADDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 _CONTRACT_RE = re.compile(r"^#\s*awg-bot:\s*контракт линка\s+(\d+)", re.M)
@@ -92,7 +92,7 @@ def boot_id() -> str:
 
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку
-_CFG_SECTIONS = ("env", "link", "uplink", "mail", "token", "server")   # = gwcfg.SECTIONS, сверяет тест
+_CFG_SECTIONS = ("env", "link", "uplink", "mail", "token", "server", "reserve")   # = gwcfg.SECTIONS, сверяет тест
 
 
 def collect(*, mark_status: str, egress_ok: bool | None,
@@ -235,6 +235,18 @@ def sanitize(raw: dict) -> dict:
         out["cfg"] = {"gen": gen, **{s: _gwlink.clean_hex(cfg.get(s), 16) for s in _CFG_SECTIONS}}
     elif "cfg" in src and src["cfg"] is None:
         out["cfg"] = None
+    rsv = src.get("rsv")
+    if isinstance(rsv, dict):
+        # резерв глазами шлюза: связь с резервом, доля, пересылка — только строки
+        # из перечня и целые; экран сервера и готовность направления читают это
+        seen = _clean_str(rsv.get("seen", ""))
+        out["rsv"] = {"seen": seen if seen in ("ok", "down", "absent") else "",
+                      "since": _clean_str(rsv.get("since", ""))[:40],
+                      "gen": int(rsv.get("gen") or 0) if str(rsv.get("gen") or "0").isdigit() else 0,
+                      "open": bool(rsv.get("open")), "state": _clean_str(rsv.get("state", ""))[:16],
+                      "primary": _clean_str(rsv.get("primary", ""))[:16]}
+    elif "rsv" in src and src["rsv"] is None:
+        out["rsv"] = None
     return out
 
 

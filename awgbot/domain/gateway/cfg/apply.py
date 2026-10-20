@@ -177,6 +177,20 @@ class CfgApplyMixin:
             self.cfg_release("uplink")
         if "token" in checked and token_late:
             restart = _token()                        # аплинк уже стоит — getMe дойдёт
+        # 7. резерв: постоянный линк к резерву, доля ключа переезда, состояние
+        # пересылки — молча; раздела у сервера нет — пары нет, линк снимается
+        if hasattr(self, "reserve_apply"):
+            try:
+                res = self.reserve_apply(checked.get("reserve"))
+            except Exception as e:                        # noqa: BLE001 — скрипт линка, файлы
+                failed["reserve"] = str(e)[:200]
+            else:
+                if "reserve" in checked:
+                    applied.append("reserve")
+                if res.get("changed"):
+                    changed.append("reserve")
+                if res.get("note"):
+                    notes.append(res["note"])
         if not failed:
             with self.db.transaction():
                 self.db.set_state(self._CFG_GEN_KEY, str(gen))

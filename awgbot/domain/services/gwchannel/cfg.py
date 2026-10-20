@@ -192,7 +192,17 @@ class CfgMixin:
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
                 "mail": self.gwcfg_mail(), "token": self.gwcfg_token(gw),
-                "server": self.gwcfg_server()}
+                "server": self.gwcfg_server(), "reserve": self._gwcfg_reserve_safe(gw)}
+
+    def _gwcfg_reserve_safe(self, gw) -> dict | None:
+        """Раздел `reserve` — у сервера с парой и стороной зоны для слота (reserve/gwside)."""
+        if not hasattr(self, "gwcfg_reserve"):
+            return None
+        try:
+            return self.gwcfg_reserve(gw)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("документ конфигурации: слот %s, раздел reserve не собрался: %s", gw.id, e)
+            return None
 
     @staticmethod
     def gwcfg_prints(sections: dict) -> dict:
@@ -214,6 +224,8 @@ class CfgMixin:
                 out[name] = gwcfg.token_print(sec.get("value", ""))
             elif name == "server":
                 out[name] = gwcfg.server_print(sec.get("name", ""))
+            elif name == "reserve":
+                out[name] = gwcfg.reserve_print(sec)
         return out
 
     # ── поколение и документ ─────────────────────────────────────────────────

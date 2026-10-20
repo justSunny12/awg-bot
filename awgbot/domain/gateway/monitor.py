@@ -264,6 +264,18 @@ class MonitorMixin:
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck(gc.CHECK_LINK, ok_link, f"хендшейк {timeutil.age_short(st.handshake_age)}" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
+        try:
+            st.rsv = self.reserve_panel_view() if hasattr(self, "reserve_panel_view") else {}
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: резерв в снимке: %s", e)
+            st.rsv = {}
+        if st.rsv:
+            # Т-РА2: «резервный линк — «Beta» на связи» / «не отвечает с 13:58»
+            name = f"«{st.rsv.get('name') or 'резерв'}»"
+            down = st.rsv.get("seen") in ("down", "absent")
+            since = str(st.rsv.get("since") or "")
+            checks.append(GwCheck(gc.CHECK_RSV_LINK, not down,
+                                  f"{name} на связи" if not down else f"{name} не отвечает" + (f" с {since[11:16]}" if len(since) >= 16 else "")))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.
         (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total), smart = \
@@ -343,6 +355,11 @@ class MonitorMixin:
         # статуса обвязки): сервер подставляет его в настройку роутера; транзит
         # выключен — пусто. Ключ верхнего уровня снимка, сервер разбирает его сам.
         snap["lan_addr"] = (gwguard.script_status().get("LAN_ADDR", "") or "") if gwguard.lan_mode() else ""
+        # резерв глазами шлюза: связь по awgrsv, доля, пересылка — только из локального
+        try:
+            snap["rsv"] = self.reserve_snapshot() if hasattr(self, "reserve_snapshot") else None
+        except Exception:                                     # noqa: BLE001
+            snap["rsv"] = None
         return snap
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:

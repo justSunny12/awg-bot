@@ -20,15 +20,23 @@ reserve — взаимный резерв серверов AWG на сторон
 - `inbound` — «клиенты основы у меня»: процесс открытия, зона, handback;
 - `notify` — уведомления клиентам о переезде и возврате;
 - `traffic` — итоги трафика через резерв;
-- `away` — отказы при away, строка главной.
+- `away` — отказы при away, строка главной;
+- `gwside` — постоянные линки моих шлюзов к резерву: ключи шлюзовых сторон,
+  обмен `slots`/`slots_ok`, раздел `reserve` документа шлюза, взгляды шлюзов
+  из снимков, Т-РУ18;
+- `zonelinks` — стороны линков шлюзов основы в гостевой зоне (резерв);
+- `vote` — матрица случаев, набор голосующих, `need` → `share` → процесс
+  открытия, строка Н4 и приём аварийного кода;
+- `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы.
 
-Дальше по этапам: голосование шлюзов, РФ-доступ в переезде, пул адресов Telegram.
+Дальше по этапам: РФ-доступ в переезде, пул адресов Telegram.
 """
 from __future__ import annotations
 
 from .away import ReserveAwayMixin
 from .dns import ReserveDnsMixin
 from .guest import ReserveGuestMixin
+from .gwside import ReserveGwSideMixin
 from .inbound import ReserveInboundMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
@@ -38,17 +46,21 @@ from .outbound import ReserveOutboundMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
+from .rfblock import ReserveRfBlockMixin
 from .screen import ReserveScreenMixin
 from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
 from .traffic import ReserveTrafficMixin
 from .unpair import ReserveUnpairMixin
+from .vote import ReserveVoteMixin
+from .zonelinks import ReserveZoneLinksMixin
 
 
 class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, ReservePairingMixin,
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
-                   ReserveTrafficMixin, ReserveAwayMixin):
+                   ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
+                   ReserveRfBlockMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

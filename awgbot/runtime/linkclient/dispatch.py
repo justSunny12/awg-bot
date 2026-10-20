@@ -19,6 +19,13 @@ class DispatchMixin:
             log.warning("канал линка: сообщение «%s» не обработано: %s", msg.get("t"), e)
 
     async def _dispatch(self, msg: dict) -> None:
+        # любое слово сервера — жизнь основы для взгляда шлюза (резерв)
+        if hasattr(self.services, "reserve_gw_word"):
+            self.services.reserve_gw_word()
+        if msg.get("t") == "pong":
+            if hasattr(self.services, "reserve_gw_pong_in"):
+                self.services.reserve_gw_pong_in(str(msg.get("n") or ""))
+            return
         if msg.get("t") == "lists_part":
             whole = self._collect_part(msg)
             if whole is not None:

@@ -103,6 +103,10 @@ class InboundMixin:
                 # Просим полный снимок и начинаем счёт заново.
                 await self.send(gw.id, "ask", {"what": "snap"})
             return
+        if kind == "ping":
+            # проба живости сервера по подозрению шлюза (резерв): ответ тем же нонсом
+            await self.send(gw.id, "pong", {"n": str(msg.get("n") or "")[:32]})
+            return
         if kind == "lists_ack":
             if msg.get("ok"):
                 sess.lists_have = str(msg.get("hash") or "")[:64]

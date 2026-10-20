@@ -17,7 +17,7 @@ LINK_CONTRACT = "1"                            # штамп «контракт �
 # Разделы — в порядке применения на агенте: имя сервера, env+link одной
 # транзакцией, почта, токен, аплинк. Фразы бэкапов в документе нет: у шлюза
 # своих копий нет, его настройки — в бэкапе сервера AWG.
-SECTIONS = ("server", "env", "link", "mail", "token", "uplink")
+SECTIONS = ("server", "env", "link", "mail", "token", "uplink", "reserve")
 
 # Ключи раздела env — те же имена, что у строк Environment= юнита обвязки.
 ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
@@ -37,6 +37,7 @@ HUMAN = {
     "mail": "почта",
     "token": "токен бота",
     "server": "имя сервера",
+    "reserve": "постоянный линк к резерву и доля ключа переезда",
 }
 
 
@@ -107,6 +108,17 @@ def parse(msg: dict) -> dict:
     server = src.get("server")
     if isinstance(server, dict):
         out["sections"]["server"] = {"name": norm(server.get("name"))}
+    reserve = src.get("reserve")
+    if isinstance(reserve, dict):
+        share = reserve.get("share") if isinstance(reserve.get("share"), dict) else {}
+        link = reserve.get("link") if isinstance(reserve.get("link"), dict) else {}
+        out["sections"]["reserve"] = {"self": norm(reserve.get("self")), "state": norm(reserve.get("state")),
+                                      "move": _int(reserve.get("move")), "name": _s(reserve.get("name"), 64),
+                                      "slot": _int(reserve.get("slot")), "record": norm(reserve.get("record")),
+                                      "peer_host": norm(reserve.get("peer_host")),
+                                      "share": {"x": _int(share.get("x")), "y": _hex(share.get("y")),
+                                                "gen": _int(share.get("gen"))},
+                                      "link": {"conf": _s(link.get("conf"), _MAX_CONF)}}
     return out
 
 

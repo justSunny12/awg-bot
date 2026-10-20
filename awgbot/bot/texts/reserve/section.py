@@ -132,6 +132,14 @@ def card_text(d: dict) -> str:
             lines.append("└ " + tail + (f" · падение подтвердят шлюзы {gws}" if gws else ""))
         else:
             lines.append("└ ⚠️ " + _e(out_why))
+        for g in d.get("gw_links") or []:
+            if not g.get("rsv1"):
+                continue
+            if g.get("seen") == "down" or (g.get("seen") == "absent" and g.get("online")):
+                since = g.get("since") or ""
+                lines.append(f"└ ⚠️ {_n(g['name'])} не на связи с {_n(name)}" + (f" с {_e(_when(since))}" if since else ""))
+        if d.get("peer_case_line"):
+            lines.append("└ " + _e(d["peer_case_line"]))
         if d.get("move_why") and out_ok:
             lines.append("└ перевести кнопкой нельзя: " + _e(d["move_why"]))
         if d.get("out_relay_until"):
@@ -146,6 +154,12 @@ def card_text(d: dict) -> str:
         lines.append(f"📥 Клиенты {_n(name)}: на его сервере")
         if not in_ok and in_why:
             lines.append("└ ⚠️ " + _e(in_why))
+        if d.get("code_open"):
+            lines.append(f"└ 🆘 {_n(name)} и его шлюзы не отвечают — жду аварийный код его админа")
+        elif d.get("auto_block"):
+            lines.append("└ ⚠️ переезд по взглядам не идёт: " + _e(d["auto_block"]))
+        elif d.get("rf_line"):
+            lines.append("└ " + _e(d["rf_line"]))
     dns = d.get("dns") or {}
     if dns.get("name"):
         prov = dns.get("provider_label") or "вручную"

@@ -94,3 +94,21 @@ def uplink_print(conf_text: str, pubkey: str = "", prev_pubkey: str = "") -> str
     if not canon:
         return ""
     return section_print("uplink", f"{canon}pubkey={norm(pubkey)}\nprev_pubkey={norm(prev_pubkey)}\n")
+
+
+def reserve_print(sec: dict | None) -> str:
+    """Отпечаток раздела reserve: канонический конфиг линка к резерву, доля
+    (точка и поколение), состояние пересылки с номером переезда, адрес основы.
+    Раздела нет — пусто."""
+    if not sec:
+        return ""
+    link = sec.get("link") or {}
+    try:
+        canon = wgconf.canonical(wgconf.parse(str(link.get("conf") or "")), "rsvlink") if link.get("conf") else ""
+    except wgconf.WgConfError:
+        return ""
+    share = sec.get("share") or {}
+    text = (f"{canon}self={norm(sec.get('self'))}\nstate={norm(sec.get('state'))}\nmove={int(sec.get('move') or 0)}\n"
+            f"share={int(share.get('x') or 0)}:{norm(share.get('y'))}:{int(share.get('gen') or 0)}\n")
+    return section_print("reserve", text)
+
