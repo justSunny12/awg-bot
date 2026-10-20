@@ -44,12 +44,14 @@ from awgbot.domain.services.gateway_link import GatewayLinkMixin
 from awgbot.domain.services.gwchannel import GwChannelMixin
 from awgbot.domain.services.routing import RoutingMixin
 from awgbot.domain.services.gwjoin import GwJoinMixin
+from awgbot.domain.services.reserve import ReserveMixin
 
 
 class Services(ServicesBase, StatusMixin, BackupsMixin, BlocksMixin, ClientsMixin, DevicesMixin,
                SubscriptionMixin, TrafficMixin, ReconcileMixin, FirewallMixin,
                GatewayLinkMixin, GwChannelMixin, RoutingMixin, GwJoinMixin,
-               FleetMixin, SelfUpdateMixin, MailMixin, BackupMixin, MigrationMixin, PrivateDnsMixin):
+               FleetMixin, SelfUpdateMixin, MailMixin, BackupMixin, MigrationMixin, PrivateDnsMixin,
+               ReserveMixin):
     """Сборка из миксинов по областям: каждый — свой модуль пакета, тела
     методов те же, что были в одном файле. Порядок баз — порядок разделов
     прежнего services.py."""

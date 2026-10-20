@@ -469,4 +469,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     settings.on_change("app.firewall", _hook_firewall)
     settings.on_change("app.network.ssh_port", _hook_firewall)
 
+    # резерв серверов: живость линка пары, срок приглашения, подъём канала
+    from .reserve import setup_reserve_jobs
+    setup_reserve_jobs(scheduler, services, bot)
+
     return scheduler

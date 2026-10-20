@@ -33,6 +33,9 @@ async def _screen(sec: str, services, key: str = ""):
         return await sections.screen(sec, MAIN, services, key)
     if sec == "subs":
         return texts.settings_subs_text(), kb.settings_subs()
+    if sec == "rsv":
+        from .reserve.card import reserve_screen
+        return await reserve_screen(services)
     if sec == "srv":
         d = await call(services.server_screen)
         offer = (d.get("private_dns") or {}).get("mode") == "public"

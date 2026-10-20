@@ -206,6 +206,12 @@ async def main() -> None:
             await pkg.send_notifications(bot, notes)
         _linkserver.set_on_notes(_on_notes)
 
+        # канал пары серверов (резерв): уведомления домена и события сопряжения в чат
+        from awgbot.runtime import pairlink as _pairlink
+        from awgbot.bot.handlers.settings.reserve import events as _rsv_events
+        _pairlink.set_on_notes(_on_notes)
+        _pairlink.set_on_event(_rsv_events.make_on_event(bot, services))
+
         async def _on_rekeyed(slot_id: int) -> None:
             # прежний файл конфигурации слота несёт старые ключи линка — из чата прочь
             from awgbot.bot.handlers.settings.render import _drop_bundle_msgs
@@ -313,6 +319,12 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)
         try:
+            # канал пары серверов (резерв): слушатель у пригласившего, клиент у принявшего
+            from awgbot.runtime import pairlink
+            await pairlink.ensure(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("канал пары: не поднят: %s", e)
+        try:
             # набор обновлений: откат сервера сторожем, ход и откат — с записанного
             from awgbot.runtime.linkserver import upd as _fleet_upd
             await _fleet_upd.on_start(services)
@@ -352,7 +364,8 @@ async def main() -> None:
         scheduler.shutdown(wait=False)
         watcher.stop()
         conf_watcher.stop()
-        from awgbot.runtime import linkserver
+        from awgbot.runtime import linkserver, pairlink
         await linkserver.shutdown()
+        await pairlink.shutdown()
         await bot.session.close()
         db.close()
