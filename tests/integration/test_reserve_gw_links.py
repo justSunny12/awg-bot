@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from awgbot.core import config
 from awgbot.domain import gwcfg
 from awgbot.infra import rsvzone
 from awgbot.infra.nftguard import collect
@@ -95,7 +96,12 @@ def test_both_sides_of_each_link_match(both):
         assert wgkeys.pubkey_of(zone.get("Interface", "PrivateKey")) == side.get("Peer", "PublicKey")
         assert zone.get("Peer", "PresharedKey") == side.get("Peer", "PresharedKey")
         z_addr, g_addr = zone.get("Interface", "Address").split("/")[0], side.get("Interface", "Address").split("/")[0]
-        assert zone.get("Peer", "AllowedIPs") == f"{g_addr}/32" and side.get("Peer", "AllowedIPs") == f"{z_addr}/32"
+        # сторона зоны — единственный пир, через него РФ-трафик клиентов наружу;
+        # сторона шлюза — адрес зоны (гостевой канал) и подсеть клиентов основы
+        assert zone.get("Peer", "AllowedIPs") == "0.0.0.0/0", "РФ-трафик клиентов из зоны не уйдёт в линк шлюза"
+        side_nets = [n.strip() for n in side.get("Peer", "AllowedIPs").split(",")]
+        assert side_nets[0] == f"{z_addr}/32" and f"{config.SUBNET_PREFIX}.0/24" in side_nets, side_nets
+        assert g_addr != z_addr
         assert side.get("Peer", "Endpoint") == f"{rc.HOST_A}:{zone.get('Interface', 'ListenPort')}"
         for k in ("Jc", "S1", "H4"):
             assert zone.get("Interface", k) == side.get("Interface", k), f"обфускация {k} сторон разошлась"
