@@ -301,7 +301,7 @@ class MarkMixin:
         """[(слот, интерфейс)] для ensure_policy: таблица и правило каждого
         слота, MSS-кламп в его линк. Подсети сюда не идут — в сеть шлюза ведёт
         адрес в туннеле (lan_map_ensure)."""
-        return [(g.id, g.link_if) for g in self.db.gateways()]
+        return [(g.id, g.link_if) for g in self.rt_slots()]
 
     def _ensure_gateway_policy(self) -> None:
         active = self.active_gateway()

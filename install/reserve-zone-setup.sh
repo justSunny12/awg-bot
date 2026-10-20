@@ -364,6 +364,11 @@ cmd_take() {
     nsx ip addr replace "$ZONE_V/30" dev "$VN"; nsx ip link set "$VN" up
     nsx ip addr replace "$ZONE_R/30" dev "$RN"; nsx ip link set "$RN" up
     nsx ip route replace default via "$HOST_V" dev "$VN"
+    # РФ-трафик из зоны: запасной слот бота основы — `default dev awggr-n`; хост
+    # отвечает на ARP за любой адрес (proxy ARP) и ведёт пакеты в таблицу своего
+    # РФ-доступа (линк активного слота), маскарад — в таблице хоста
+    sysctl -qw "net.ipv4.conf.$RH.proxy_arp=1" 2>/dev/null || true
+    ip rule show | grep -q "iif $RH lookup ${RF_TABLE:-100}" || ip rule add iif "$RH" lookup "${RF_TABLE:-100}" pref 150
     # клон: создаётся у хоста (сокет — у хоста), переносится в зону под именем основы
     local tmp="awgc$$"
     nsx ip link show "$iface" >/dev/null 2>&1 && { nsx ip link del "$iface" 2>/dev/null || true; }
@@ -431,6 +436,7 @@ guest_stop() {
     systemctl stop awg-bot-guest-dns.service 2>/dev/null || true
     local iface; iface="$(state_get iface)"
     [ -n "$iface" ] && nsx ip link del "$iface" 2>/dev/null
+    while ip rule del iif "$RH" lookup "${RF_TABLE:-100}" 2>/dev/null; do :; done
     ip link del "$VH" 2>/dev/null; ip link del "$RH" 2>/dev/null
     zone_nft ""
 }

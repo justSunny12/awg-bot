@@ -28,7 +28,8 @@ SNAPSHOT_TICK_SECONDS = 30
 CTL_TICK_SECONDS = 5
 # задания гостя — сторож-тест сверяет с планировщиком
 GUEST_JOBS: tuple[str, ...] = ("poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_resume",
-                               "tg_names", "tg_names_startup", "guest_monitor", "guest_snapshot", "guest_ctl")
+                               "tg_names", "tg_names_startup", "guest_monitor", "guest_snapshot", "guest_ctl",
+                               "guest_routing", "routing_liveness")
 
 
 def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOScheduler:
@@ -76,6 +77,29 @@ def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOSchedul
         except Exception as e:                       # noqa: BLE001
             log.warning("гость: состояние клона: %s", e)
 
+    # ── РФ-доступ в зоне: тем же кодом, что на основе — сверка (списки из кэша
+    # пакета, источники гостю недоступны) и живость слотов с запасным ────────
+    async def job_guest_routing():
+        try:
+            await asyncio.to_thread(services.reconcile_routing)
+            notes = await asyncio.to_thread(services.routing_infra_alerts)
+            if notes:
+                await pkg.send_notifications(bot, notes)
+        except Exception as e:                       # noqa: BLE001
+            log.warning("гость: сверка маршрутизации: %s", e)
+
+    async def job_routing_liveness():
+        try:
+            notes = await asyncio.to_thread(services.routing_liveness_tick)
+            if notes:
+                await pkg.send_notifications(bot, notes)
+        except Exception as e:                       # noqa: BLE001
+            log.warning("гость: живость шлюзов: %s", e)
+
+    def _trig_liveness():
+        secs = max(10, settings.get_int("app.routing.probe_seconds", 30))
+        return IntervalTrigger(seconds=secs, jitter=max(2, int(secs * 0.2)), timezone=_TZ)
+
     async def job_guest_snapshot():
         try:
             if await asyncio.to_thread(services.guest_snapshot_tick):
@@ -107,6 +131,10 @@ def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOSchedul
     scheduler.add_job(core["tg_names"], "date", run_date=now, id="tg_names_startup",
                       max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     scheduler.add_job(job_guest_monitor, _trig_monitor(), id="guest_monitor", max_instances=1, coalesce=True,
+                      next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    scheduler.add_job(job_guest_routing, _trig_monitor(), id="guest_routing", max_instances=1, coalesce=True,
+                      next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    scheduler.add_job(job_routing_liveness, _trig_liveness(), id="routing_liveness", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     scheduler.add_job(job_guest_snapshot, IntervalTrigger(seconds=SNAPSHOT_TICK_SECONDS, jitter=5, timezone=_TZ),
                       id="guest_snapshot", max_instances=1, coalesce=True,

@@ -18,10 +18,19 @@ class SlotsMixin:
     # ── слоты ────────────────────────────────────────────────────────────────
     _RT_ACTIVE_KEY = "routing_active_gateway"
 
+    def rt_slots(self) -> list:
+        """Слоты для маршрутизации: из БД и, у гостя на резерве, запасной «шлюзы
+        резерва» последним (reserve/rfzone)."""
+        slots = list(self.db.gateways())
+        spare = self.guest_rf_spare() if hasattr(self, "guest_rf_spare") else None
+        if spare is not None and slots:
+            slots.append(spare)
+        return slots
+
     def active_gateway(self):
         """Слот, который несёт трафик: из состояния; ключа нет или слот убран —
         первый по порядку (предпочтительный, затем номер)."""
-        slots = self.db.gateways()
+        slots = self.rt_slots()
         if not slots:
             return None
         raw = self.db.get_state(self._RT_ACTIVE_KEY)
@@ -72,13 +81,15 @@ class SlotsMixin:
         return out
 
     def _gw_name(self, gw) -> str:
+        if not gw.device_id and gw.label:
+            return gw.label                                   # запасной слот «шлюзы резерва» (гость)
         dev = self.db.get_device(gw.device_id)
         return dev.name if dev is not None else f"шлюз {gw.id}"
 
     def _gw_display(self, gw) -> str:
         """«Pi4 (ЕК-22П10)» — имя и подпись, сырое: экранирует слой текстов."""
         name = self._gw_name(gw)
-        return name + (f" ({gw.label})" if gw.label else "")
+        return name + (f" ({gw.label})" if gw.label and gw.device_id else "")
 
     def _gw_display_h(self, gw) -> str:
         """То же для текста, который уходит сообщением как HTML прямо отсюда.

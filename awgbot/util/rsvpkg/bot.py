@@ -110,6 +110,32 @@ def guest_part(conf_dir: str) -> dict:
     return out
 
 
+LISTS_MAX = 200_000                  # строк в кэше одного вида — потолок части
+
+
+def lists_part(data_dir: str) -> dict:
+    """Кэш списков РФ-доступа (`routing-<вид>.lst` в каталоге данных): {вид:
+    [строки]} — гостю, у которого источники списков недоступны (HOST_ONLY)."""
+    out: dict = {}
+    try:
+        names = sorted(os.listdir(data_dir))
+    except OSError:
+        return out
+    for name in names:
+        if not name.startswith("routing-") or not name.endswith(".lst"):
+            continue
+        kind = name[len("routing-"):-len(".lst")]
+        if not kind.replace("_", "").isalnum():
+            continue
+        try:
+            with open(os.path.join(data_dir, name), encoding="utf-8") as f:
+                lines = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
+        except OSError:
+            continue
+        out[kind] = lines[:LISTS_MAX]
+    return out
+
+
 def env_part(token: str, admin_id: int) -> dict:
     return {"BOT_TOKEN": str(token or ""), "ADMIN_ID": int(admin_id or 0)}
 

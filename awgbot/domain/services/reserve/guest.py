@@ -143,7 +143,8 @@ class ReserveGuestMixin:
     def guest_state_in(self, body: dict) -> None:
         """`state` из локального канала: имя резерва, с какого момента несёт
         нагрузку, причина, состояние основы, рычаг возврата."""
-        data = {k: body.get(k) for k in ("name", "since", "reason", "primary", "return", "self_host", "own_name")
+        data = {k: body.get(k) for k in ("name", "since", "reason", "primary", "return", "self_host", "own_name",
+                                          "rf_via", "rf_cidr")
                 if k in body}
         data["at"] = timeutil.now_iso()
         self.__dict__["_guest_state"] = data
@@ -185,10 +186,11 @@ class ReserveGuestMixin:
         primary = {"status": "dead" if seen == "down" else ("alive" if seen == "ok" else "suspect"),
                    "since": self.reserve_down_since() if seen == "down" else "",
                    "healthy": bool(ps.get("healthy")), "can_return": bool(ps.get("can_return"))}
+        rf = self.reserve_rf_via_view() if hasattr(self, "reserve_rf_via_view") else {}
         return {"name": str(config.SERVER_NAME or ""), "self_host": own_host(),
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
                 "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
-                "own_name": self.reserve_peer_name()}
+                "own_name": self.reserve_peer_name(), "rf_via": bool(rf.get("rf_via")), "rf_cidr": str(rf.get("rf_cidr") or "")}
 
     def guest_apply_blocks(self, addrs: list[str]) -> None:
         """Блокировки основы (её живые сессии): DROP в зоне тем же механизмом."""
