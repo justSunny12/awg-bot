@@ -120,7 +120,7 @@ def _copy_files(copy: Path) -> dict[str, bytes]:
 
 def make_world(services, make_active_client, monkeypatch, tmp_path) -> World:
     """Живой сервер: админ со слотом 1, Иван с телефоном и ноутбуком."""
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.0")
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "4.0.0")
     w = World(services, tmp_path / "live")
     monkeypatch.setattr(config, "AWG_DIR", str(w.awg))
     w.admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)

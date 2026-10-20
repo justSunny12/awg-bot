@@ -1,4 +1,4 @@
--- COMPAT_FLOOR 3.4.0
+-- COMPAT_FLOOR 4.0.0
 -- Снимок на версию совместимости (tests/unit/test_schema_line.py): переснимается
 -- только вместе со сдвигом COMPAT_FLOOR — python -m tests.unit.test_schema_line
 

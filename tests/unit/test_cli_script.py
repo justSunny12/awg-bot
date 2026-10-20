@@ -392,6 +392,7 @@ def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script
     prog = (
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; UPDATE_PREV="{prev}"; UPDATE_TMP="{upd_tmp}"\n'
         'warn() { echo "WARN $*"; }\n'
+        'adopt_awg_section_for_old() { :; }\n'      # раздел app.yaml — test_adopt_awg_section
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}\n'
         + _extract_func(script, "restore_prev_code") + "\n"
         + _extract_func(script, "update_rescue")
@@ -496,6 +497,7 @@ def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; AWG_UPDATE_PREV="{prev}"',
         'ENV_FILE=/x; CONF_DIR=/x; DATA_DIR=/x',
         'warn() { echo "WARN $*"; }',
+        "adopt_awg_section_for_old() { :; }",      # раздел app.yaml — test_adopt_awg_section
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
         _extract_func(script, "venv_rollback"), _extract_func(script, "restore_prev_code"),
         _extract_func(script, "post_update_rescue"),

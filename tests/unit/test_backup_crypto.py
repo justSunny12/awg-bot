@@ -68,19 +68,19 @@ def _archive(meta: dict | None = None, *, env: str = "", db: bytes | None = None
 
 def _meta(**kw) -> dict:
     from awgbot.infra import awglock
-    m = {"schema": 2, "role": "main", "created_at": "2026-10-09T10:00:00+03:00", "version": "3.4.0",
+    m = {"schema": 2, "role": "main", "created_at": "2026-10-09T10:00:00+03:00", "version": "4.0.0",
          "awg_gen": awglock.generation(), "db_line": "", "gateways": []}
     m.update(kw)
     return m
 
 
 @pytest.fixture()
-def v340(monkeypatch):
-    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.4.0")
+def v400(monkeypatch):
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "4.0.0")
     monkeypatch.setattr(cfg, "ROLE", "client")
 
 
-def test_backup_meta_is_schema_two_inside_the_archive(services, monkeypatch, tmp_path, v340):
+def test_backup_meta_is_schema_two_inside_the_archive(services, monkeypatch, tmp_path, v400):
     import io, json, tarfile
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "nope.db")
     monkeypatch.setattr(cfg, "ENV_PATH", None)
@@ -88,13 +88,13 @@ def test_backup_meta_is_schema_two_inside_the_archive(services, monkeypatch, tmp
     raw = services.build_backup_archive()
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         meta = json.loads(tar.extractfile("state/backup-meta.json").read())
-    assert meta["schema"] == 2 and meta["role"] == "main" and meta["version"] == "3.4.0" and meta["created_at"]
+    assert meta["schema"] == 2 and meta["role"] == "main" and meta["version"] == "4.0.0" and meta["created_at"]
     assert meta["db_line"] == services.db.get_state("db_line") and len(meta["db_line"]) == 16
     assert "awg_gen" in meta and "digest" in meta and meta["gateways"] == []
 
 
-def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
-    """Отказы осмотра: открытый файл, схема 1, версия ниже 3.4.0, другая версия без digest,
+def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v400):
+    """Отказы осмотра: открытый файл, схема 1, версия ниже 4.0.0, другая версия без digest,
     другое поколение, другой админ, копия шлюза прежних версий, фраза."""
     from awgbot.util import secrets_util
     db = services.db_snapshot_bytes(services.db.path)
@@ -111,12 +111,12 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
     assert "не задана" in err(enc(_meta()))
     services.backup_set_passphrase(PHRASE)
     assert "ключевая фраза не подходит" in err(enc(_meta(), phrase="wrong-phrase!"))
-    assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.3.1"})) == \
-        "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
-    assert err(enc(_meta(version="3.3.1"))) == "бэкап снят версией 3.3.1 — бэкапы версий до 3.4.0 не применяются"
+    assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.4.0"})) == \
+        "бэкап снят версией 3.4.0 — бэкапы версий до 4.0.0 не применяются"
+    assert err(enc(_meta(version="3.4.0"))) == "бэкап снят версией 3.4.0 — бэкапы версий до 4.0.0 не применяются"
     # новее кода — не отказ, а переход вверх; без digest — сборка не из выпуска (отказ)
-    assert err(enc(_meta(version="3.5.0"))) == \
-        "бэкап снят на сборке не из выпуска (v3.5.0) — восстановить его можно только на той же версии"
+    assert err(enc(_meta(version="4.1.0"))) == \
+        "бэкап снят на сборке не из выпуска (v4.1.0) — восстановить его можно только на той же версии"
     from awgbot.infra import awglock
     monkeypatch.setattr(awglock, "generation", lambda: 2)
     assert "другом поколении AmneziaWG" in err(enc(_meta(awg_gen=1)))
@@ -125,13 +125,13 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v340):
         "бэкап другого админа — из чата его не восстановить; на сервере: sudo awg-bot restore <файл>"
     assert "бэкап шлюза прежних версий" in err(enc({"role": "gw", "created_at": "2026-09-09T10:00:00+03:00"}))
     assert not services.inspect_backup(b"garbage", "b.tgz")["ok"]
-    ok = services.inspect_backup(enc(_meta(awg_gen=1, version="3.4.0.2")), "x.bin")
+    ok = services.inspect_backup(enc(_meta(awg_gen=1, version="4.0.0.2")), "x.bin")
     assert ok["ok"] and ok["created_at"].startswith("2026-10-09") and ok["plan"]["line"] in ("same", "clean")
 
 
-def test_the_floor_reads_versions_with_and_without_a_patch(v340):
+def test_the_floor_reads_versions_with_and_without_a_patch(v400):
     from awgbot.core import compat
-    assert compat.below_floor("3.3.1") and not compat.below_floor("3.4.0") and compat.below_floor("")
+    assert compat.below_floor("3.4.0") and not compat.below_floor("4.0.0") and compat.below_floor("")
 
 
 def test_the_gateway_has_no_backups(services, tmp_path):

@@ -49,7 +49,7 @@ def test_the_plan_and_refusals_are_word_for_word():
     u = Plan.from_dict({**p.to_dict(), "line": "unreadable"})
     assert "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из бэкапа" in nb.restore_plan(u)
     assert "из бэкапа." not in nb.restore_plan(u), "точка в конце строки без слотов"
-    assert meta.check({"schema": 1, "role": "main"}) == "бэкап снят версией до 3.4.0 — восстановиться из него не получится"
+    assert meta.check({"schema": 1, "role": "main"}) == "бэкап снят версией до 4.0.0 — восстановиться из него не получится"
     assert texts.restore_failed("x") == "⚠️ Восстановление из бэкапа не удалось: x"
     assert nb.backup_refused_notice("r").startswith("⚠️ Бэкап сервера AWG не отправлен: r — попробуй вручную в ")
 

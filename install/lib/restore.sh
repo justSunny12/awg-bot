@@ -463,7 +463,6 @@ restore_apply() {  # после остановки: слияние, подгот
         restore_die "замена не прошла — вернул прежнее, сервис поднят: ${RESTORE_ERR:-причина не названа}"
     fi
     [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
-    adopt_awg_section quiet                             # app.yaml из копии 3.4.0 — раздел под прежним именем
     restore_finish                                      # точка невозврата: дальше — только вперёд
     if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
         # переход на выпуск бэкапа доведён: digest установки — digest метки

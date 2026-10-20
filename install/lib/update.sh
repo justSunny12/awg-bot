@@ -575,7 +575,7 @@ update_env_steps() {  # update_env_steps [restore] — окружение нов
     if [[ "${1:-}" != "restore" ]] && update_adopts_timezone; then
         adopt_timezone
     fi
-    adopt_awg_section                      # раздел параметров AmneziaWG — под именем awg (с 3.4.1)
+    adopt_awg_section                      # раздел параметров AmneziaWG — под именем awg (с 4.0.0)
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config

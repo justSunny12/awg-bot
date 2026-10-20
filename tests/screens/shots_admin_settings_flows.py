@@ -65,7 +65,7 @@ def _enc(raw: bytes) -> bytes:
 
 
 def _meta(**kw) -> dict:
-    m = {"schema": 2, "role": "main", "created_at": "2026-10-05T14:00:00+03:00", "version": "3.4.0",
+    m = {"schema": 2, "role": "main", "created_at": "2026-10-05T14:00:00+03:00", "version": "4.0.0",
          "awg_gen": 1, "db_line": "", "gateways": []}
     m.update(kw)
     return m
@@ -73,23 +73,23 @@ def _meta(**kw) -> dict:
 
 _BK_OPEN = _archive(_meta())
 _BK_GW = _enc(_archive({"role": "gw", "created_at": "2026-09-01T03:00:00+05:00"}))
-_BK_OLD = _enc(_archive({"role": "main", "created_at": "2026-09-01T03:00:00+05:00", "version": "3.3.1"}))
-_BK_NEWER = _enc(_archive(_meta(version="3.5.0")))
+_BK_OLD = _enc(_archive({"role": "main", "created_at": "2026-09-01T03:00:00+05:00", "version": "3.4.0"}))
+_BK_NEWER = _enc(_archive(_meta(version="4.1.0")))
 _BK_ADMIN = _enc(_archive(_meta(), env="ADMIN_ID=4242\n"))
 _DIGEST = "d" * 64                                  # DUMMY: sha256 ассета выпуска бэкапа
-_BK_DOWN = _enc(_archive(_meta(version="3.4.1", digest="sha256:" + _DIGEST), db=_db_bytes()))
-_BK_UP = _enc(_archive(_meta(version="3.5.0", digest="sha256:" + _DIGEST), db=_db_bytes()))
+_BK_DOWN = _enc(_archive(_meta(version="4.0.1", digest="sha256:" + _DIGEST), db=_db_bytes()))
+_BK_UP = _enc(_archive(_meta(version="4.1.0", digest="sha256:" + _DIGEST), db=_db_bytes()))
 _BK_PLAN = _enc(_archive(_meta(), db=_db_bytes()))
 _BK_NAME = "awg-bot-backup-main-20261005_140000.tgz.enc"
 
 
 def _restore_ready(services, mp):
-    """Восстановление из файла в чате: секрет задан, версия кода — 3.4.0;
+    """Восстановление из файла в чате: секрет задан, версия кода — 4.0.0;
     раскладка на диск и запуск awg-bot restore — заглушки (они останавливают
     сервис на хосте)."""
     from awgbot.core import config
     who = _people(services)
-    mp.setattr(config, "INSTALLED_VERSION", "3.4.0")
+    mp.setattr(config, "INSTALLED_VERSION", "4.0.0")
     services.backup_set_passphrase(_PHRASE_TEXT)
     services.prepare_restore = lambda blob, plan=None: "/nonexistent/DUMMY-restore-pending.tgz.enc"
     services.launch_restore = lambda path, release="": None
@@ -98,20 +98,20 @@ def _restore_ready(services, mp):
     return who
 
 
-def _releases(*, sha=_DIGEST, withdrawn="", down=False, tags=("v3.4.1", "v3.5.0"), fetch=True):
+def _releases(*, sha=_DIGEST, withdrawn="", down=False, tags=("v4.0.1", "v4.1.0"), fetch=True):
     """Выпуски на GitHub для осмотра бэкапа другой версии — без сети;
     down — GitHub не ответил; fetch=False — ассет не скачался после «♻️ Восстановить»."""
     def build(services, mp):
         from awgbot.infra import updates
         who = _restore_ready(services, mp)
         from awgbot.core import config
-        mp.setattr(config, "INSTALLED_VERSION", "3.4.2")
+        mp.setattr(config, "INSTALLED_VERSION", "4.0.2")
 
         def releases(*a, **kw):
             if down:
                 raise updates.UpdateError("HTTP 503")
             return [updates.Release(tag=t, version=updates.parse_version(t), body="", asset_url="DUMMY",
-                                    sha256=sha, meta={"awg_gen": 1, "roles": {"main": {"requires": "3.4.0"}}},
+                                    sha256=sha, meta={"awg_gen": 1, "roles": {"main": {"requires": "4.0.0"}}},
                                     withdrawn=withdrawn) for t in tags]
         mp.setattr(updates, "list_releases", releases)
 
@@ -245,7 +245,7 @@ RESTORE = [
     Shot("adm.restore.gw", role="admin", steps=[("file", _BK_NAME, _BK_GW)], data=_restore_ready,
          title="бэкап шлюза прежних версий"),
     Shot("adm.restore.old", role="admin", steps=[("file", _BK_NAME, _BK_OLD)], data=_restore_ready,
-         title="бэкап версии до 3.4.0"),
+         title="бэкап версии до 4.0.0"),
     Shot("adm.restore.newer", role="admin", steps=[("file", _BK_NAME, _BK_NEWER)], data=_restore_ready,
          title="отказ: бэкап другой версии со сборки не из выпуска"),
     Shot("adm.restore.admin", role="admin", steps=[("file", _BK_NAME, _BK_ADMIN)], data=_restore_ready,
@@ -264,7 +264,7 @@ RESTORE = [
          steps=[("file", _BK_NAME, _BK_DOWN), ("press", SetCB(sec="backup", act="do", key="restore!"))],
          data=_releases(fetch=False), title="выпуск бэкапа не скачался — вопрос остаётся, кнопку можно нажать снова"),
     Shot("adm.restore.release.none", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
-         data=_releases(tags=("v3.5.0",)), title="отказ: выпуска бэкапа на GitHub нет"),
+         data=_releases(tags=("v4.1.0",)), title="отказ: выпуска бэкапа на GitHub нет"),
     Shot("adm.restore.release.digest", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],
          data=_releases(sha="e" * 64), title="отказ: выпуск на GitHub не тот, на котором снят бэкап"),
     Shot("adm.restore.release.github", role="admin", steps=[("file", _BK_NAME, _BK_DOWN)],

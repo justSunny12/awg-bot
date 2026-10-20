@@ -1,6 +1,12 @@
--- COMPAT_FLOOR 3.4.0
+-- COMPAT_FLOOR 4.0.0
 -- Снимок на версию совместимости (tests/unit/test_schema_line.py): переснимается
 -- только вместе со сдвигом COMPAT_FLOOR — python -m tests.unit.test_schema_line
+app.yaml	awg.conf_dir	str
+app.yaml	awg.interface	str
+app.yaml	awg.migration_dns	str
+app.yaml	awg.migration_interface	str
+app.yaml	awg.migration_subnet_prefix	str
+app.yaml	awg.protocol_id	str
 app.yaml	client_config.admin_dns	str
 app.yaml	client_config.allowed_ips	str
 app.yaml	client_config.dns1	str
@@ -8,12 +14,6 @@ app.yaml	client_config.dns2	str
 app.yaml	client_config.keepalive_seconds	str
 app.yaml	client_config.mtu	int
 app.yaml	client_config.server_name	str
-app.yaml	awg.protocol_id	str
-app.yaml	awg.conf_dir	str
-app.yaml	awg.interface	str
-app.yaml	awg.migration_dns	str
-app.yaml	awg.migration_interface	str
-app.yaml	awg.migration_subnet_prefix	str
 app.yaml	firewall.enabled	bool
 app.yaml	firewall.open_tcp	list
 app.yaml	firewall.open_udp	list

@@ -196,7 +196,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
 def _backup_blob(services, monkeypatch, tmp_path) -> bytes:
     """Настоящая копия этого же сервера (версия совместимости, фраза задана)."""
     import awgbot.core.config as cfg
-    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.4.0")
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "4.0.0")
     monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
     monkeypatch.setattr(cfg, "DB_PATH", services.db.path)
     env = tmp_path / "env"; env.write_text(f"BOT_TOKEN=DUMMY\nADMIN_ID={cfg.ADMIN_ID}\n", encoding="utf-8")

@@ -48,6 +48,8 @@ def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
              "ensure_awg_module_loaded", "ensure_awg_generation", "adopt_resolver", "seed_conf", "validate_config",
              "venv_rollback", "venv_prune", "prune_old_kernel_builds", "gw_plumbing_sync")
     out = [f'{n}() {{ echo "{n}" >> "{log}"; return 0; }}' for n in names if n not in real]
+    # раздел app.yaml (test_adopt_awg_section) — без записи: журнал шагов не о нём
+    out += [f"{n}() {{ :; }}" for n in ("adopt_awg_section", "adopt_awg_section_for_old") if n not in real]
     out.append(f'build_venv() {{ echo "build_venv" >> "{log}"; '
                + ('die "pip: нет сети"; ' if env_fails else "") + "}")
     return out

@@ -20,7 +20,7 @@ ADMIN = config.ADMIN_ID
 
 @pytest.fixture()
 def world(services, make_active_client, monkeypatch, tmp_path, fake_awg):
-    monkeypatch.setattr(config, "INSTALLED_VERSION", "3.4.0")
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "4.0.0")
     w = World(services, tmp_path / "live")
     monkeypatch.setattr(config, "AWG_DIR", str(w.awg))
     w.admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)

@@ -10,7 +10,7 @@ COMPAT_FLOOR — версия, ниже которой этот код не во
 """
 from __future__ import annotations
 
-COMPAT_FLOOR = "3.4.0"
+COMPAT_FLOOR = "4.0.0"
 
 
 def version_key(raw: str) -> tuple | None:
