@@ -200,6 +200,9 @@ update_rescue() {  # ловушка первой половины обновле
     systemctl start "$SERVICE" 2>/dev/null || true
 }
 restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает); 1 — неполон
+    # Единая точка всех откатов кода (ловушка второй половины, сторож, откат
+    # набора, несостоявшийся переход на выпуск копии): app.yaml приводится
+    # к раскладке возвращённого кода (adopt_awg_section_for_old)
     local prev="$1" _rc=0
     # текущий код удаляется только под полный прежний: иначе хост остался бы без кода
     if [[ ! -f "$prev/awg-bot.sh" || ! -f "$prev/awgbot/__main__.py" ]]; then
@@ -210,6 +213,7 @@ restore_prev_code() {  # restore_prev_code DIR — прежний код из DI
         -exec rm -rf {} + 2>/dev/null || true
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
     rm -rf "$prev"
+    adopt_awg_section_for_old
     # Копия обвязки шлюза — тоже код: ensure_host_autostart уже могла положить
     # скрипт новой версии, и прежний агент остался бы при чужой обвязке
     gw_plumbing_sync || _rc=$?

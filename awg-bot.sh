@@ -89,7 +89,12 @@
 #                          вернувшая код, чей скрипт не знает __update_guard
 #                          (выпуск ниже 3.4.0), убирает шаг сторожа из юнита
 #                          (unit_guard_strip_for_old): юнит уже переписал новый
-#                          скрипт. Pid апдейтера под замком — в
+#                          скрипт. Раздел параметров AmneziaWG в app.yaml с
+#                          3.4.1 зовётся awg (adopt_awg_section на обновлении и
+#                          восстановлении копии); любой откат кода ниже
+#                          AWG_SECTION_BELOW (restore_prev_code) возвращает
+#                          разделу прежнее имя и ключи (adopt_awg_section_revert).
+#                          Pid апдейтера под замком — в
 #                          $DATA_DIR/update-running (по нему бот видит, что
 #                          обновление ещё идёт); файл убирают и конец
 #                          обновления, и ловушка.
@@ -1396,6 +1401,31 @@ adopt_awg_section() {  # adopt_awg_section [quiet] — раздел app.yaml п�
         "$app" > "$tmp" && cat "$tmp" > "$app"
     rm -f "$tmp"
     [[ "${1:-}" == "quiet" ]] || log "app.yaml: раздел параметров AmneziaWG переименован в awg"
+}
+
+AWG_SECTION_BELOW="3.4.1"   # выпуски ниже читают раздел параметров AmneziaWG под прежним именем
+adopt_awg_section_revert() {  # раздел `awg:` app.yaml — обратно под прежнее имя, для кода ниже AWG_SECTION_BELOW
+    # Обратная сторона adopt_awg_section: возвращённый откатом код 3.4.0
+    # ищет раздел по прежнему имени с ключами app_container/awg_dir, а без
+    # runtime: "host" его install_unit вписал бы в юнит зависимость от
+    # службы контейнеров — сервис не поднялся бы. Значения — как были;
+    # комментарии прежнего шаблона не восстанавливаются (ключи важнее).
+    # Идемпотентно; следующее обновление переименует раздел снова.
+    local app="$CONF_DIR/app.yaml" tmp
+    [[ -f "$app" ]] && grep -qE '^awg:' "$app" || return 0
+    tmp="$(mktemp)" || return 0
+    awk '
+        /^awg:$/ { print "docker:"; print "  runtime: \"host\""; next }
+        { sub(/^  protocol_id:/, "  app_container:"); sub(/^  conf_dir:/, "  awg_dir:"); print }
+    ' "$app" > "$tmp" && cat "$tmp" > "$app"
+    rm -f "$tmp"
+    log "app.yaml: раздел параметров AmneziaWG — снова под прежним именем (возвращённый код ниже $AWG_SECTION_BELOW)"
+}
+
+adopt_awg_section_for_old() {  # возвращённый код ниже AWG_SECTION_BELOW — раздел app.yaml в его раскладке
+    local ver; ver="$(tree_version "$INSTALL_DIR")"
+    [[ -n "$ver" ]] && version_lt "$ver" "$AWG_SECTION_BELOW" || return 0
+    adopt_awg_section_revert
 }
 
 adopt_timezone_undo() {  # ловушка второй половины: ключ timezone в app.yaml — снова в силе, метки нет
