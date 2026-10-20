@@ -232,12 +232,15 @@ GitHub `vX.Y.Z.P — …`.
   токена адресуют обеим ролям одним релизом.
   Взаимный резерв серверов AWG (с 4.0.0) разложен так. Только основной бот —
   строка `main`: сервисный слой `domain/services/reserve/`, канал пары
-  `runtime/pairlink/`, слияние `domain/backup/merge/reserve.py`,
+  `runtime/pairlink/`, задания `runtime/scheduler/reserve.py`, раздел
+  «🛟 Резерв» `handlers/settings/reserve/`, экран админа второго сервера
+  `handlers/peeradmin.py`, тексты `bot/texts/reserve/` и клавиатуры
+  `keyboards/reserve.py`, слияние `domain/backup/merge/reserve.py`,
   `domain/services/selfhost.py` (собственный адрес сервера для линков
   шлюзов и токена подключения), пакет переезда `util/rsvpkg/`, приглашение в
   пару `util/pairtoken.py`, API провайдеров DNS `util/dnsapi/`, сетевые
   пространства `util/netns.py` и скрипты зоны и пары
-  (`install/reserve-zone-setup.sh`, …): их не зовёт ни один агент, и общее
+  (`install/reserve-zone-setup.sh`, `install/reserve-pair-setup.sh`): их не зовёт ни один агент, и общее
   правило «`util/…` — обе» к ним не относится. **Обе роли**: код агента
   `domain/gateway/reserve/` вместе с разделом `reserve` документа
   конфигурации, правилами `awgrsv` в обвязке шлюза и словарём сообщений

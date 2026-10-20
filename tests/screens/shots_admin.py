@@ -25,6 +25,7 @@ from tests.screens import shots_admin_home as home
 from tests.screens import shots_admin_join as join
 from tests.screens import shots_admin_migration as migration
 from tests.screens import shots_admin_profiles as profiles
+from tests.screens import shots_admin_reserve as reserve
 from tests.screens import shots_admin_rf as rf
 from tests.screens import shots_admin_settings as settings
 from tests.screens import shots_admin_settings_flows as settings_flows
@@ -84,6 +85,7 @@ SHOTS = [
     *gw_keys.TOKEN_SWAP,
     *gw_cards.SMB,
     *gw_cards.SMB_ONE,
+    *reserve.RESERVE,
 ]
 
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних

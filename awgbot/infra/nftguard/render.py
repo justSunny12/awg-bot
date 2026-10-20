@@ -51,7 +51,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _quarantine_forward(spec) + _wan_private_drop(spec)
+        rules = _quarantine_forward(spec) + _pair_forward(spec) + _wan_private_drop(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -66,9 +66,9 @@ def render(spec: pkg.GuardSpec) -> str:
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
                      "    }"]
-        q_in = _quarantine_input(spec)
+        q_in = _quarantine_input(spec) + _pair_input(spec)
         if q_in:
-            # карантин сопряжения — и без фильтра: на сам ВПС с линка сопряжения
+            # карантин сопряжения и линк пары — и без фильтра: на сам ВПС с них
             # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
             block += ["", "    chain input {",
                       "        type filter hook input priority filter; policy accept;",
@@ -99,6 +99,7 @@ def render(spec: pkg.GuardSpec) -> str:
         "        ct state invalid drop",
         '        iifname "lo" accept',
         *_quarantine_input(spec),
+        *_pair_input(spec),
         "        ip protocol icmp accept",
         "        meta l4proto ipv6-icmp accept",
     ]
@@ -143,6 +144,7 @@ def render(spec: pkg.GuardSpec) -> str:
             "    chain forward {",
             "        type filter hook forward priority filter; policy drop;",
             *_quarantine_forward(spec),
+            *_pair_forward(spec),
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
@@ -201,6 +203,25 @@ def _quarantine_forward(spec) -> list[str]:
     if not spec.quarantine_ifs:
         return []
     q = nftjson.ifs(spec.quarantine_ifs)
+    return [f"        iifname {q} drop", f"        oifname {q} drop"]
+
+
+def _pair_input(spec) -> list[str]:
+    """Линк пары серверов: с него на хост — только канал пары (TCP) с адреса
+    второй стороны в /30; всё остальное с линка — прочь. Правило одно и то же
+    до кода (карантин) и после: другого у линка пары нет никогда."""
+    if not spec.pair_if or not spec.pair_peer4 or not spec.pair_port:
+        return []
+    q = nftjson.ifs([spec.pair_if])
+    return [f"        iifname {q} ip saddr {spec.pair_peer4} tcp dport {int(spec.pair_port)} accept",
+            f"        iifname {q} drop"]
+
+
+def _pair_forward(spec) -> list[str]:
+    """Пересылки через линк пары нет вовсе — раньше любых разрешений."""
+    if not spec.pair_if:
+        return []
+    q = nftjson.ifs([spec.pair_if])
     return [f"        iifname {q} drop", f"        oifname {q} drop"]
 
 

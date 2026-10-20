@@ -150,3 +150,14 @@ class BackupPassphrase(StatesGroup):
     """Парольная фраза шифрования бэкапов — дважды, сообщения удаляются."""
     first = State()
     second = State()
+
+
+class ReserveInviteCode(StatesGroup):
+    """Код от резерва к приглашению (пригласивший): в данных — rsv_pid."""
+    value = State()
+
+
+class ReserveAcceptToken(StatesGroup):
+    """Строка приглашения AWGP1 (принявший): сообщение удаляется после приёма;
+    в данных диалога — token и rf (РФ-доступ через мои шлюзы)."""
+    value = State()

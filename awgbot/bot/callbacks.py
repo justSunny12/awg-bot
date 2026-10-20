@@ -315,3 +315,21 @@ class GwCB(CallbackData, prefix="gw"):
       ssh_on|ssh_on!|ssh_off|ssh_port_retry|ssh_port_back — его действия."""
     action: str
     val: str = ""
+
+
+class RsvCB(CallbackData, prefix="rsv"):
+    """Раздел «🛟 Резерв»: invite («📤 Пригласить»), accept («📥 Принять
+    приглашение»), code («✏️ Ввести код» у пригласившего), cancel («⬅️
+    Отменить» приглашение), rf («РФ-доступ через мои шлюзы» в диалоге
+    принятия), connect («🛟 Подключиться»), ready (тумблер готовности),
+    rfmine (тумблер в карточке), ret (рычаг возврата), emerg («🆘 На крайний
+    случай»), show_code, new_code, unpair, unpair_yes. pid — id приглашения:
+    кнопка относится только к своему приглашению."""
+    action: str
+    pid: str = ""
+
+
+class PeerCB(CallbackData, prefix="pa"):
+    """Экран админа второго сервера: refresh («🔄 Обновить»), code («🔑 Ввести
+    аварийный код», только в Н4)."""
+    action: str

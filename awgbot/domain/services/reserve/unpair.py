@@ -1,0 +1,55 @@
+"""
+unpair.py — часть пакета reserve (см. __init__): удаление пары.
+
+«🗑 Удалить резерв» — с обеих сторон: линк пары прочь (`--rollback`), строка
+пары и все ключи `rsv_*` — прочь, роль админа второго сервера снята (кэш
+доступа сброшен), файервол перерисован, второй стороне — `gone` по каналу
+(если жив) и уведомление. Пока мои клиенты у резерва (`away`) или его у меня
+(`serving`) — отказ: сначала возврат.
+"""
+from __future__ import annotations
+
+from awgbot.domain.services.types import ServiceError
+
+from ..gateway_link.common import log
+from .state import _LOCK
+
+
+class ReserveUnpairMixin:
+
+    def reserve_unpair_check(self) -> str:
+        """Пусто — можно; иначе причина отказа."""
+        if not self.reserve_paired():
+            return "Резерва нет"
+        if self.reserve_away():
+            return f"Твои клиенты и бот сейчас у «{self.reserve_peer_name()}» — сначала верни их"
+        if self.reserve_hosting():
+            return f"Клиенты и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
+        return ""
+
+    def reserve_unpair(self, why: str = "user") -> dict:
+        """Снять пару у себя. Возвращает прежнюю строку пары (для уведомления)."""
+        why_not = self.reserve_unpair_check()
+        if why_not and why != "peer":
+            raise ServiceError(why_not)
+        with _LOCK:
+            peer = self.reserve_peer() or {}
+            try:
+                self._run_pair_script("--rollback", self._pair_env())
+            except ServiceError as e:
+                log.warning("резерв: линк пары не снят при удалении (%s): %s", why, e)
+            self.db.reserve_peer_delete()
+            self.rsv_clear_all()
+            try:
+                from awgbot.core import access_cache
+                access_cache.invalidate_all()
+            except Exception:                             # noqa: BLE001 — слой бота не загружен (CLI)
+                pass
+        try:
+            self._gw_firewall_refresh()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("резерв: файервол после удаления пары не перерисован: %s", e)
+        if hasattr(self, "backup_event_mark"):
+            self.backup_event_mark("reserve")
+        log.info("резерв: пара с «%s» снята (%s)", peer.get("name") or "?", why)
+        return peer

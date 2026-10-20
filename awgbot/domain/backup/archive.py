@@ -91,6 +91,12 @@ class BackupArchiveMixin:
         for gw in self.db.gateways():
             add_file(os.path.join(_meta.ROOT_DIR, f"gw-{gw.link_if}.conf"), f"root/gw-{gw.link_if}.conf")
             add_file(os.path.join(config.AWG_DIR, f"{gw.link_if}.conf"), f"awg/{gw.link_if}.conf")
+        # линк пары серверов (резерв): без него восстановленный сервер не выйдет
+        # на связь с резервом; чужой пакет, доли и хранилище гостя в бэкап не идут
+        peer = self.db.reserve_peer() if hasattr(self.db, "reserve_peer") else None
+        if peer is not None:
+            add_file(os.path.join(config.AWG_DIR, f"{peer.get('pair_if') or 'awgpair'}.conf"),
+                     f"awg/{peer.get('pair_if') or 'awgpair'}.conf")
         return extra
 
     def build_backup_archive(self, extra: list[tuple[str, bytes]] | None = None) -> bytes:

@@ -430,6 +430,13 @@ def _reset_module_state(mp) -> None:
     mp.setattr(linkclient, "_client", None)
     mp.setattr(linkclient, "_notify", None)
     mp.setattr(notifier, "_email_fallback", None)
+    # канал пары и память сопряжения резерва — модульные
+    from awgbot.domain.services.reserve import invite as rsv_invite
+    from awgbot.runtime import pairlink
+    mp.setattr(pairlink, "_link", None)
+    mp.setattr(pairlink, "_on_event", None)
+    mp.setattr(pairlink, "_on_notes", None)
+    rsv_invite._live_set(None)
 
 
 def run_builder(shot: base.Shot, services, mp):
@@ -472,7 +479,15 @@ async def take(shot: base.Shot, tmp: pathlib.Path, fakes=()) -> Record:
 
 # ── полнота: какие построители клавиатур вызваны ────────────────────────────
 
-KEYBOARD_MODULES = ("admin", "broadcast", "client", "common", "gateway", "routing", "settings")
+def _keyboard_modules() -> tuple[str, ...]:
+    """Все модули пакета awgbot/bot/keyboards: перечень руками отставал бы —
+    новый модуль (резерв) выпал бы из сторожа полноты молча."""
+    import pkgutil
+    from awgbot.bot import keyboards
+    return tuple(sorted(m.name for m in pkgutil.iter_modules(keyboards.__path__) if not m.name.startswith("_")))
+
+
+KEYBOARD_MODULES = _keyboard_modules()
 
 
 def keyboard_builders() -> dict[str, object]:

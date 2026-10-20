@@ -167,7 +167,31 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         wan_ifs=pkg.wan_ifaces(),
         quarantine_ifs=pkg.quarantine_ifaces(links),
         quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
+        **pair_link(),
     )
+
+
+PAIR_IF = "awgpair"
+
+
+def pair_link() -> dict:
+    """Линк пары серверов (резерв) — из его конфига, без БД: интерфейс, адрес
+    второй стороны в /30 (AllowedIPs пира), порт канала пары из настроек.
+    Конфига нет — полей нет. В линки слотов он не входит: у него нет
+    `Table = off`."""
+    try:
+        text = Path(f"{config.AWG_DIR}/{PAIR_IF}.conf").read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    m = re.search(r"(?m)^\s*AllowedIPs\s*=\s*([0-9.]+)", text)
+    if not m:
+        return {}
+    try:
+        peer = str(ipaddress.ip_address(m.group(1)))
+    except ValueError:
+        return {}
+    port = int(settings.get_int("app.reserve.pair_channel_port", 8788) or 8788)
+    return {"pair_if": PAIR_IF, "pair_peer4": peer, "pair_port": port}
 
 
 JOIN_STAMP = "# awg-bot: сопряжение "

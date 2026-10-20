@@ -21,6 +21,9 @@ from awgbot.core import access_cache, config
 from awgbot.core.enums import ActivationStatus
 
 
+_PEER_ADMIN_SLOT = -1        # ключ кэша для ADMIN_ID второго сервера: не tg_id, отрицательный не встречается
+
+
 class AccessMiddleware(BaseMiddleware):
     def __init__(self, db):
         self.db = db
@@ -36,6 +39,20 @@ class AccessMiddleware(BaseMiddleware):
             self.db.set_tg_identity(client.id, name, uname)
             return self.db.get_client(client.id)
         return client
+
+    def _peer_admin_id(self) -> int:
+        """ADMIN_ID второго сервера пары (0 — пары нет); читается с коротким
+        кэшем, как остальные роли, чтобы не ходить в БД на каждый апдейт."""
+        hit = access_cache.get(_PEER_ADMIN_SLOT)
+        if hit is not None:
+            return int(hit[1] or 0)
+        try:
+            peer = self.db.reserve_peer()
+        except Exception:                                 # noqa: BLE001 — таблицы нет (агент)
+            peer = None
+        pid = int((peer or {}).get("peer_admin_id") or 0)
+        access_cache.put(_PEER_ADMIN_SLOT, "peer_admin", pid)
+        return pid
 
     async def __call__(
         self,
@@ -60,6 +77,15 @@ class AccessMiddleware(BaseMiddleware):
             if access_cache.get(uid) is None:
                 self._touch_tg_name(self.db.get_client_by_tg(uid), user)
                 access_cache.put(uid, "admin", None)
+            return await handler(event, data)
+
+        # 1б) Админ второго сервера (резерв): его экран в этом боте — только
+        #     чтение сведений о паре и ввод аварийного кода. Проверка — до
+        #     разбора клиентов: тот же аккаунт клиентом быть не может
+        #     (ему отвечает роль); без пары шага нет
+        if self._peer_admin_id() == uid:
+            data["role"] = "peer_admin"
+            data["client"] = None
             return await handler(event, data)
 
         # 2) Кэш «кто это»: TTL короткий, любая запись в БД сбрасывает его.

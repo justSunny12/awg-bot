@@ -7,6 +7,12 @@
 # bot_tool, шаги окружения (update_env_steps) и уборка (update_done,
 # prune_old_kernel_builds — install/lib/update.sh) — оттуда. Тесты склеивают
 # части в один текст (tests/botscript.py).
+#
+# После замены файлов restore_apply поднимает изменившиеся интерфейсы awg,
+# принимает линки слотов из плана (`routing-link-setup.sh --adopt`) и линк
+# пары резерва: лежит awgpair.conf (из копии или уже стоял) —
+# `reserve-pair-setup.sh --adopt` (копия скрипта, юнит awg-pair.service,
+# подъём); не поднялся — предупреждение, восстановление не прерывается.
 
 # ── backup / restore: бэкап сервера AWG — один шифрованный архив ─────────────
 GW_NO_BACKUPS="на шлюзе бэкапов нет: настройки шлюза — в бэкапе сервера AWG. Новое устройство подключается командой из бота сервера AWG, остальное довезёт канал конфигурации"
@@ -496,6 +502,11 @@ restore_apply() {  # после остановки: слияние, подгот
         LINK_IF="$i" sh "$INSTALL_DIR/install/routing-link-setup.sh" --adopt >/dev/null \
             || warn "линк $i не поднялся — бот повторит попытку на старте"
     done
+    # линк пары серверов (резерв): конфиг из копии — юнит и подъём
+    if [[ -f "$awgdir/awgpair.conf" && -f "$INSTALL_DIR/install/reserve-pair-setup.sh" ]]; then
+        PAIR_IF=awgpair sh "$INSTALL_DIR/install/reserve-pair-setup.sh" --adopt >/dev/null \
+            || warn "линк пары не поднялся — подними руками: PAIR_IF=awgpair sh $INSTALL_DIR/install/reserve-pair-setup.sh --adopt"
+    fi
     # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
     restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте поправит"
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"
