@@ -89,6 +89,7 @@ class GwStatus:
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
     lan: dict = field(default_factory=dict) # локальная сеть без VPN: пусто — выключена
     ssh: dict = field(default_factory=dict) # порт (факт), владелец, фильтр снаружи, адреса — для панели
+    rsv: dict = field(default_factory=dict) # резерв: имя, связь по awgrsv, пересылка, счётчики — Т-РА1; пусто — раздела нет
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:

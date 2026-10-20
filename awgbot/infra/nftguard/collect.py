@@ -149,7 +149,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         ssh_allow4=v4, ssh_allow6=v6, ssh_open=ssh_open,
         tunnel_nets4=pkg.tunnel_nets(), tunnel_admin4=admin,
         tunnel_ifs=pkg._tunnel_ifs(),
-        udp_ports=pkg.listen_ports(),
+        udp_ports=pkg.listen_ports() + zone_link_ports(),
         open_tcp=pkg._ports_from_conf(settings.get("app.firewall.open_tcp", [])),
         open_udp=pkg._ports_from_conf(settings.get("app.firewall.open_udp", [])),
         unresolved=bad,
@@ -170,6 +170,20 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         **pair_link(),
         **guest_zone(),
     )
+
+
+def zone_link_ports() -> list[int]:
+    """UDP-порты сторон постоянных линков шлюзов основы (конфиги в
+    `reserve/links/`, сокеты у хоста) — открыть во входе хоста."""
+    out: list[int] = []
+    try:
+        for path in sorted((Path(config.DATA_DIR) / "reserve" / "links").glob("awglink*.conf")):
+            m = re.search(r"(?m)^\s*ListenPort\s*=\s*(\d+)", path.read_text(encoding="utf-8"))
+            if m and 0 < int(m.group(1)) < 65536:
+                out.append(int(m.group(1)))
+    except OSError:
+        pass
+    return out
 
 
 def guest_zone() -> dict:

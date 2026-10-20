@@ -1,13 +1,25 @@
 """
 reserve — резерв серверов на стороне агента шлюза.
 
-Этап 1: перерезолв аплинка (`uplink`) — адрес для клиентов переехал на резерв,
-аплинк шлюза идёт на новый адрес сам, без человека и без пары. Дальше здесь
-появятся раздел `reserve` документа, взгляд на основу и резерв, голос и доля,
-пересылка (этап 5).
+- `uplink` — перерезолв аплинка: адрес для клиентов переехал на резерв, аплинк
+  идёт на новый адрес сам (работает и без пары);
+- `store` — раздел `reserve` документа: файл reserve.json, линк `awgrsv`
+  скриптом, решение о пересылке, поле `rsv` снимка;
+- `watch` — взгляд на основу (линк слота, проба по каналу и по аплинку) и на
+  резерв (awgrsv, проба по гостевому каналу);
+- `vote` — гостевой канал: hello/seen/share/pong, входящие view/need/state/ping;
+- `record` — факт записи DNS у авторитетного сервера.
 """
 from __future__ import annotations
 
-from . import uplink
+from . import record, uplink
+from .store import ReserveStoreMixin
+from .vote import ReserveVoteMixin
+from .watch import ReserveWatchMixin
 
-__all__ = ["uplink"]
+
+class GatewayReserveMixin(ReserveStoreMixin, ReserveWatchMixin, ReserveVoteMixin):
+    """Резерв у агента шлюза — одним миксином в GatewayServices."""
+
+
+__all__ = ["uplink", "record", "GatewayReserveMixin", "ReserveStoreMixin", "ReserveWatchMixin", "ReserveVoteMixin"]

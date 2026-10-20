@@ -27,6 +27,13 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 await pairlink.send("ping", {"n": services.reserve_ping_nonce()})
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт живости: %s", e)
+        try:
+            # голосование: живость шлюзов основы по сторонам зоны, матрица случаев,
+            # демпфер случаев 3 и Н3, просьбы основе — действия исполняет rsvactions
+            from awgbot.runtime import rsvactions
+            await rsvactions.run(await asyncio.to_thread(services.reserve_vote_tick))
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: такт голосования: %s", e)
 
     scheduler.add_job(job_liveness, IntervalTrigger(seconds=5, timezone=config.TZ),
                       id="rsv_liveness", max_instances=1, coalesce=True,
@@ -51,6 +58,21 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 await asyncio.to_thread(services.reserve_code_notify_clear)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: новый код не отправлен: %s", e)
+        try:
+            # постоянные линки шлюзов: ключи шлюзовых сторон резерву (slots), пока
+            # у всех слотов нет стороны зоны; слушатель гостевого канала в зоне;
+            # Т-РУ18 «шлюз не на связи с резервом»
+            from awgbot.runtime import pairlink, rsvactions
+            from awgbot.runtime.pairlink import guest
+            body = await asyncio.to_thread(services.reserve_slots_body)
+            if body and pairlink.online() and await pairlink.send("slots", body):
+                await asyncio.to_thread(services.reserve_slots_sent, body)
+            await guest.ensure(services)
+            notes = await asyncio.to_thread(services.reserve_gw_links_tick)
+            if notes:
+                await rsvactions.run([("notify", notes)])
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: линки шлюзов: %s", e)
         try:
             # локальный канал с ботом основы на резерве: слушатель — пока есть
             # пара; состояние основы гостю — по смене

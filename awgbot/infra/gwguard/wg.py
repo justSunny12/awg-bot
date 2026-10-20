@@ -42,7 +42,7 @@ def uplink_interface() -> str:
     from_script = pkg.script_status().get("UPLINK_IF", "").strip()
     if from_script and re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", from_script):
         return from_script
-    names = [n for n in pkg._awg(["show", "interfaces"]).split() if n != config.GW_LINK_IF]
+    names = [n for n in pkg._awg(["show", "interfaces"]).split() if n not in (config.GW_LINK_IF, "awgrsv")]
     link_host = pkg._endpoint_host(config.GW_LINK_IF)
     same = [n for n in names if link_host and pkg._endpoint_host(n) == link_host]
     if len(same) == 1:

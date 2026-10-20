@@ -127,6 +127,16 @@ def confirm_ready_off() -> InlineKeyboardMarkup:
     return kc.confirm(SetCB(sec="rsv"), "☑️ Выключить", RsvCB(action="ready_off_yes"))
 
 
+def peer_code_offer() -> InlineKeyboardMarkup:
+    """Т-РУ7б: «🔑 Ввести аварийный код» над «Скрыть»."""
+    return kc.append_hide_row(ui.rows(("🔑 Ввести аварийный код", PeerCB(action="code"))))
+
+
+def peer_code_cancel() -> InlineKeyboardMarkup:
+    """Т-РН2: «⬅️ Отмена»."""
+    return ui.rows(("⬅️ Отмена", PeerCB(action="code_cancel")))
+
+
 def peer_admin(*, code_needed: bool) -> InlineKeyboardMarkup:
     """Экран роли админа второго сервера: обновить, ввод кода (только в Н4), скрыть."""
     from awgbot.bot.keyboards.common import hide_only

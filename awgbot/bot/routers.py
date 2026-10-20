@@ -37,7 +37,7 @@ def routers_for(role: str) -> list[Router]:
             await gateway_handlers._panel(message, services)
         # ПОСЛЕДНИМ: кнопка старого меню
         return head + [shared, gateway_handlers.router, stale.make_router(_gw_main)]
-    from awgbot.bot.handlers import admin, client, friend, guide, peeradmin, reply_commands, routing, settings
+    from awgbot.bot.handlers import admin, client, friend, guide, peeradmin, peercode, reply_commands, routing, settings
     from awgbot.bot.handlers.common import show_main_menu
     # reply_commands ПЕРВЫМ — до общих разделов: reply-«✖️ Отмена» бьёт раньше
     # FSM ввода (иначе записалась бы как значение); routing ДО client — у обоих
@@ -52,7 +52,7 @@ def routers_for(role: str) -> list[Router]:
         from awgbot.bot.handlers import guest
         return head + [reply_commands.router, shared, guest.router, admin.router, settings.router, guide.router,
                        friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
-    return head + [reply_commands.router, shared, peeradmin.router, admin.router, settings.router, guide.router,
+    return head + [reply_commands.router, shared, peercode.router, peeradmin.router, admin.router, settings.router, guide.router,
                    friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
 
 

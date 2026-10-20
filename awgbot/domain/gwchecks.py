@@ -34,6 +34,7 @@ CHECK_GH_ROUTE = "маршрут к GitHub (обновления)"
 CHECK_PEER_NETS = "локальные подсети других шлюзов"
 # линк, ядро, выход
 CHECK_LINK = "линк"
+CHECK_RSV_LINK = "резервный линк"
 CHECK_MODULE = "модуль awg"
 CHECK_EGRESS = "выход наружу"
 # VPN-транзит

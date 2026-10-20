@@ -51,5 +51,16 @@ class ReservePeerAdminMixin:
             "has_gateway": bool(self.db.gateways()),
             "traffic": self._reserve_traffic_view(),
             "peer_ready": bool(ps.get("ready")), "my_ready": settings.get_bool("app.reserve.ready", False),
-            "code_needed": False,                                # Н4 — этап 5
+            "code_needed": bool(self.reserve_code_window()["open"]),
+            "code_since": self.reserve_code_window()["since"],
+            "gw_views": self.reserve_gw_views(), "case": str(self.rsv_get("rsv_view").get("case") or ""),
+            "case_since": str(self.rsv_get("rsv_view").get("case_since") or ""),
+            "rf_line": self.reserve_rf_line(), "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
+            "zone_links": [int(k) for k in self.reserve_guest_links() if str(k).isdigit()],
         }
+
+    def reserve_code_prompt_data(self) -> dict:
+        """Т-РН2: имена, момент аварии, запись основы (из заголовка пакета — нет: из st)."""
+        return {"peer": self.reserve_peer_name(), "me": str(config.SERVER_NAME or ""),
+                "since": self.reserve_code_window()["since"],
+                "record": str(self.reserve_peer_state().get("record") or "")}

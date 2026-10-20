@@ -37,7 +37,7 @@ def test_document_names_are_the_unit_names():
 def test_the_document_carries_no_backup_phrase():
     """Своих копий у шлюза нет: ни раздела фразы, ни подсказки «куда уходят
     бэкапы» в почте, ни её проверок."""
-    assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink")
+    assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink", "reserve")
     assert "backup" not in gwcfg.HUMAN
     for name in ("MIN_PHRASE", "MAIL_HINT", "check_backup", "backup_print", "backup_key_print"):
         assert not hasattr(gwcfg, name), name

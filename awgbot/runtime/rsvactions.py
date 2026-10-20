@@ -2,7 +2,8 @@
 rsvactions.py — исполнитель действий автоматов резерва (домен возвращает
 кортежи, слой runtime делает): `("send", вид, тело)` — по каналу пары,
 `("send_released", {gen, blob})` — реплика частями, `("guest", команда,
-тело)` — боту основы на резерве по локальному каналу, `("notify", [...])`,
+тело)` — боту основы на резерве по локальному каналу, `("gw", слот, вид,
+тело)` — шлюзу основы по гостевому каналу, `("notify", [...])`,
 `("fw",)` — перерисовать файервол хоста, `("live",)` — перерисовать живое
 сообщение хода переезда, `("release",)` — остановить поллинг, подтвердить
 пачку, опрос вне очереди, финальная реплика, `("restart",)` — перезапуск
@@ -50,6 +51,11 @@ async def _one(act: tuple) -> None:
         srv = guestctl.server()
         if srv is None or not await srv.send(act[1], act[2] if len(act) > 2 else None):
             log.info("резерв: гостю «%s» не ушло — канала нет", act[1])
+    elif kind == "gw":
+        from awgbot.runtime.pairlink import guest
+        srv = guest.server()
+        if srv is None or not await srv.send(int(act[1]), act[2], act[3] if len(act) > 3 else None):
+            log.info("резерв: шлюзу %s «%s» не ушло — сессии нет", act[1], act[2])
     elif kind == "notify":
         from awgbot.bot.notifier import send_notifications
         if bot is not None:

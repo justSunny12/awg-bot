@@ -1,0 +1,263 @@
+#!/bin/sh
+#
+# reserve-gw-setup.sh — постоянный линк шлюза к резерву (awgrsv) и его
+# обвязка на шлюзе условной маршрутизации.
+#
+# Линк живёт всегда, пока у сервера AWG есть пара: по нему идёт только
+# гостевой канал (шлюз — клиент TCP к стороне зоны резерва) и, во время
+# переезда клиентов на резерв, их РФ-трафик из зоны резерва наружу через
+# этот шлюз. Своя таблица nft `inet awg_rsv_guard` (не трогает таблицу
+# обвязки awg_gw_guard — она собирается отдельно и целиком):
+#   input:    с awgrsv — только ответы на соединения самого шлюза и, при
+#             открытой пересылке, SSH админов сервера с их адресов; остальное
+#             с awgrsv — drop (срабатывает раньше правил обвязки: приоритет
+#             filter - 1)
+#   forward:  с awgrsv — только источники из набора rsv_open4 (подсети
+#             клиентов сервера, пока пересылка открыта) и только наружу
+#             (не в частные сети); ответы — в awgrsv; пустой набор —
+#             пересылка закрыта
+#   prerouting (mangle): соединения, пришедшие с awgrsv, помечаются
+#             connmark 0x52; ответы по connmark уходят обратно в awgrsv
+#             через таблицу маршрутов 152 (ip rule fwmark 0x52 lookup 152)
+# Маскарад источников @tunnel_nets4 наружу делает таблица обвязки (подсеть
+# клиентов сервера — в ней).
+#
+# Режимы (root, кроме --status):
+#   --up <conf>     конфиг линка (из документа конфигурации сервера AWG;
+#                   проверка: PrivateKey, [Peer], Table = off, без PostUp/
+#                   PostDown/PreUp/PreDown/SaveConfig/DNS) →
+#                   /etc/awg-gw/awgrsv.conf (0600), линк поднят (awg-quick),
+#                   таблица nft, маршруты, копия скрипта в SELF_PATH и юнит
+#                   awg-rsv-gw.service (enable); тот же конфиг при поднятом
+#                   линке — только таблица и маршруты («up: same»), другой —
+#                   переподнимает
+#   --reassert      линк, таблица и маршруты по конфигу на диске (юнит при
+#                   загрузке); набор rsv_open4 — из состояния RSV_STATE
+#   --open <cidr…>  пересылка открыта для источников (через запятую)
+#   --close         пересылка закрыта (набор пуст)
+#   --down          линк опущен, таблица и маршруты сняты; конфиг и состояние
+#                   остаются (юнит при остановке)
+#   --remove        линк, таблица, маршруты, конфиг, юнит и состояние — прочь
+#                   (пары нет); копия в SELF_PATH остаётся
+#   --status        key=value: link, open, src, rx, tx, conf
+# Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
+# (/var/lib/awg-gw/rsv.status: open=0|1, src=…), RSV_MARK (0x52), RSV_TABLE
+# (152), SSH_PORT (иначе SSH_PORT из GW_STATUS — /etc/awg-gw/gateway.status —
+# или 22), ADMIN_IPS (адреса устройств админа сервера через запятую; передаёт
+# агент при --up из строк юнита обвязки — юнит awg-rsv-gw.service и --open их
+# не передают), UNIT (/etc/systemd/system/awg-rsv-gw.service), SELF_PATH
+# (/usr/local/sbin/reserve-gw-setup.sh).
+# Чего НЕ делает: не читает и не пишет документ конфигурации (его ведёт
+# агент), не решает, когда открывать пересылку (решает агент по слову
+# сервера или резерва вместе с фактом записи DNS), не трогает аплинк.
+set -u
+
+RSV_IF="$(printf '%s' "${RSV_IF:-awgrsv}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)"
+RSV_CONF_DIR="${RSV_CONF_DIR:-/etc/awg-gw}"
+CONF="$RSV_CONF_DIR/$RSV_IF.conf"
+RSV_STATE="${RSV_STATE:-/var/lib/awg-gw/rsv.status}"
+RSV_MARK="${RSV_MARK:-0x52}"
+RSV_TABLE="${RSV_TABLE:-152}"
+GUARD_TABLE="inet awg_rsv_guard"
+UNIT="${UNIT:-/etc/systemd/system/awg-rsv-gw.service}"
+SELF_PATH="${SELF_PATH:-/usr/local/sbin/reserve-gw-setup.sh}"
+GW_STATUS="${GW_STATUS:-/etc/awg-gw/gateway.status}"
+PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16"
+
+say() { printf '%s\n' "$*"; }
+die() { say "ОШИБКА: $*"; exit 1; }
+need_root() { [ "$(id -u)" -eq 0 ] || die "нужен root"; }
+
+ssh_port() {
+    _p="${SSH_PORT:-}"
+    [ -n "$_p" ] || _p="$(sed -n 's/^SSH_PORT=//p' "$GW_STATUS" 2>/dev/null | head -n1)"
+    case "$_p" in ''|*[!0-9]*) _p=22 ;; esac
+    printf '%s' "$_p"
+}
+
+state_write() {   # state_write open=0|1 src=…
+    mkdir -p "$(dirname "$RSV_STATE")"
+    { for kv in "$@"; do say "$kv"; done; } > "$RSV_STATE.tmp"
+    mv "$RSV_STATE.tmp" "$RSV_STATE"; chmod 0644 "$RSV_STATE"
+}
+state_get() { sed -n "s/^$1=//p" "$RSV_STATE" 2>/dev/null | head -n1; }
+
+ipv4_list() { _first=1; for n in "$@"; do if [ $_first -eq 1 ]; then printf '%s' "$n"; _first=0; else printf ', %s' "$n"; fi; done; }
+
+conf_check() {   # конфиг линка к резерву: только Interface/Peer с известными ключами, без PostUp
+    [ -f "$1" ] || return 1
+    grep -q '^PrivateKey' "$1" || return 1
+    grep -q '^\[Peer\]' "$1" || return 1
+    ! grep -Eqi '^(PostUp|PostDown|PreUp|PreDown|SaveConfig|DNS)' "$1" || return 1
+    grep -q '^Table *= *off' "$1" || return 1
+    return 0
+}
+
+guard_write() {   # таблица nft: вход, пересылка, connmark; набор rsv_open4 — из состояния
+    _open="$(state_get src | tr ',' ' ')"
+    _admins="$(printf '%s' "${ADMIN_IPS:-}" | tr ',' ' ')"
+    nft -f - <<EOF
+table $GUARD_TABLE
+delete table $GUARD_TABLE
+table $GUARD_TABLE {
+    set rsv_open4 {
+        type ipv4_addr
+        flags interval
+$( [ -n "$_open" ] && printf '        elements = { %s }\n' "$(ipv4_list $_open)" )
+    }
+    set rsv_admin4 {
+        type ipv4_addr
+        flags interval
+$( [ -n "$_admins" ] && printf '        elements = { %s }\n' "$(ipv4_list $_admins)" )
+    }
+    set rsv_private4 {
+        type ipv4_addr
+        flags interval
+        elements = { $(ipv4_list $PRIVATE_NETS) }
+    }
+    chain rsv_input {
+        type filter hook input priority filter - 1; policy accept;
+        iifname "$RSV_IF" ct state established,related accept
+        iifname "$RSV_IF" ip saddr @rsv_open4 ip saddr @rsv_admin4 tcp dport $(ssh_port) accept
+        iifname "$RSV_IF" drop
+    }
+    chain rsv_forward {
+        type filter hook forward priority filter - 1; policy accept;
+        oifname "$RSV_IF" ct state established,related accept
+        iifname "$RSV_IF" ip saddr @rsv_open4 ip daddr != @rsv_private4 accept
+        iifname "$RSV_IF" drop
+        oifname "$RSV_IF" drop
+    }
+    chain rsv_mark {
+        type filter hook prerouting priority mangle; policy accept;
+        iifname "$RSV_IF" ct state new ct mark set $RSV_MARK
+        iifname != "$RSV_IF" ct mark $RSV_MARK ct direction reply meta mark set $RSV_MARK
+    }
+}
+EOF
+}
+
+routes_up() {
+    ip rule list | grep -q "fwmark $RSV_MARK lookup $RSV_TABLE" || ip rule add fwmark "$RSV_MARK" lookup "$RSV_TABLE"
+    ip route replace default dev "$RSV_IF" table "$RSV_TABLE"
+}
+routes_down() {
+    while ip rule list | grep -q "fwmark $RSV_MARK lookup $RSV_TABLE"; do ip rule del fwmark "$RSV_MARK" lookup "$RSV_TABLE" || break; done
+    ip route flush table "$RSV_TABLE" 2>/dev/null || true
+}
+
+link_up() {
+    ip link show "$RSV_IF" >/dev/null 2>&1 && { awg-quick down "$CONF" >/dev/null 2>&1 || true; }
+    awg-quick up "$CONF"
+}
+link_down() { ip link show "$RSV_IF" >/dev/null 2>&1 && awg-quick down "$CONF"; return 0; }
+
+install_self() {
+    [ -f "$SELF_PATH" ] && cmp -s "$0" "$SELF_PATH" && return 0
+    install -m 0755 "$0" "$SELF_PATH" 2>/dev/null || return 1
+}
+
+write_unit() {
+    cat > "$UNIT" <<UNITEOF
+[Unit]
+Description=awg-bot: постоянный линк шлюза к резерву
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=RSV_IF=$RSV_IF
+ExecStart=$SELF_PATH --reassert
+ExecStop=$SELF_PATH --down
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+    systemctl daemon-reload
+}
+
+ensure_unit() {
+    install_self || die "скрипт линка к резерву не встал в /usr/local/sbin"
+    [ -f "$UNIT" ] && grep -q -- '--reassert' "$UNIT" || write_unit
+    systemctl enable "$(basename "$UNIT")" >/dev/null 2>&1 || true
+}
+
+counters() {   # rx tx интерфейса (сумма по пирам)
+    awg show "$RSV_IF" transfer 2>/dev/null | awk '{rx += $2; tx += $3} END {printf "%d %d", rx, tx}'
+}
+
+cmd_up() {
+    need_root
+    [ -n "${1:-}" ] && [ -f "$1" ] || die "нет файла конфига"
+    conf_check "$1" || die "конфиг линка к резерву не прошёл проверку"
+    mkdir -p "$RSV_CONF_DIR"; chmod 0700 "$RSV_CONF_DIR"
+    if [ -f "$CONF" ] && cmp -s "$1" "$CONF" && ip link show "$RSV_IF" >/dev/null 2>&1; then
+        guard_write; routes_up; ensure_unit; say "up: same"; return 0
+    fi
+    install -m 0600 "$1" "$CONF"
+    link_up || die "линк к резерву не поднялся"
+    guard_write; routes_up; ensure_unit
+    [ -f "$RSV_STATE" ] || state_write open=0 src=
+    say "up: ok"
+}
+
+cmd_reassert() {
+    need_root
+    [ -f "$CONF" ] || { say "reassert: конфига нет"; return 0; }
+    link_up || die "линк к резерву не поднялся"
+    guard_write; routes_up
+    say "reassert: ok"
+}
+
+cmd_open() {
+    need_root
+    _src="$(printf '%s' "${1:-}" | tr ' ' ',')"
+    [ -n "$_src" ] || die "нет подсетей"
+    state_write open=1 src="$_src"
+    nft flush set $GUARD_TABLE rsv_open4 2>/dev/null || guard_write
+    nft add element $GUARD_TABLE rsv_open4 "{ $(ipv4_list $(printf '%s' "$_src" | tr ',' ' ')) }" || { guard_write; }
+    say "open: $_src"
+}
+
+cmd_close() {
+    need_root
+    state_write open=0 src=
+    nft flush set $GUARD_TABLE rsv_open4 2>/dev/null || true
+    say "close: ok"
+}
+
+cmd_down() {
+    need_root
+    link_down
+    nft delete table $GUARD_TABLE 2>/dev/null || true
+    routes_down
+    say "down: ok"
+}
+
+cmd_remove() {
+    need_root
+    cmd_down >/dev/null
+    systemctl disable "$(basename "$UNIT")" >/dev/null 2>&1 || true
+    rm -f "$UNIT"; systemctl daemon-reload 2>/dev/null || true
+    rm -f "$CONF" "$RSV_STATE"
+    say "remove: ok"
+}
+
+cmd_status() {
+    if ip link show "$RSV_IF" >/dev/null 2>&1; then say "link=up"; else say "link=down"; fi
+    say "open=$(state_get open)"; say "src=$(state_get src)"
+    set -- $(counters); say "rx=${1:-0}"; say "tx=${2:-0}"
+    [ -f "$CONF" ] && say "conf=present" || say "conf=absent"
+}
+
+case "${1:-}" in
+    --up) cmd_up "${2:-}" ;;
+    --reassert) cmd_reassert ;;
+    --open) cmd_open "${2:-}" ;;
+    --close) cmd_close ;;
+    --down) cmd_down ;;
+    --remove) cmd_remove ;;
+    --status) cmd_status ;;
+    *) say "использование: $0 --up <conf>|--reassert|--open <cidr,…>|--close|--down|--remove|--status"; exit 2 ;;
+esac

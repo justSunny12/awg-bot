@@ -58,7 +58,11 @@ class ReserveScreenMixin:
                 "in_since": str(self.rsv_get("rsv_in").get("taken_at") or self.rsv_get("rsv_in").get("since") or ""),
                 "in_relay_until": str(self.rsv_get("rsv_in").get("relay_until") or ""),
                 "out_relay_until": str(out.get("relay_until") or ""), "out_step": str(out.get("step") or ""),
-                "dns": self.reserve_dns_screen_data()}
+                "dns": self.reserve_dns_screen_data(),
+                "gw_links": self.reserve_gateway_views(), "rf_line": self.reserve_rf_line(),
+                "peer_case_line": self.reserve_peer_case_line(),
+                "auto_block": str(self.rsv_get("rsv_view").get("auto_block") or ""),
+                "code_open": bool(self.reserve_code_window()["open"])}
 
     def _reserve_traffic_view(self) -> dict:
         tr = self.rsv_get("rsv_traffic")

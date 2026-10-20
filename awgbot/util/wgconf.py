@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 ALLOW_LIST = Path(__file__).resolve().parents[2] / "install" / "gw-wg-allow.list"
-KINDS = ("link", "uplink")
+KINDS = ("link", "uplink", "rsvlink")
 SECTIONS = ("Interface", "Peer")
 STAMP_RE = re.compile(r"^#\s*awg-bot:\s*контракт линка\s+(\d+)\s*$")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")

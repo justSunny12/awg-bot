@@ -92,13 +92,14 @@ class ReserveOutboundMixin:
         return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "target": self.reserve_peer_ip(),
                 "manual": not self.reserve_dns_automatic(), "own": self.reserve_own_ip()}
 
-    def reserve_move_start(self, chat_id: int = 0, message_id: int = 0) -> dict:
-        """«🔀 Перевести»: leaving/pkg, свежий пакет вне очереди."""
+    def reserve_move_start(self, chat_id: int = 0, message_id: int = 0, kind: str = "button", dead_since: str = "") -> dict:
+        """«🔀 Перевести»: leaving/pkg, свежий пакет вне очереди. По просьбе
+        резерва (случаи 3 и Н3) — тот же путь с видом rf | nogw."""
         why = self.reserve_move_check()
         if why:
             raise ServiceError(why)
         with _LOCK:
-            out = self.reserve_set_out("leaving", kind="button", started_at=timeutil.now_iso(),
+            out = self.reserve_set_out("leaving", kind=str(kind or "button"), dead_since=str(dead_since or ""), started_at=timeutil.now_iso(),
                                        msg=[int(chat_id), int(message_id)] if chat_id else [],
                                        target_ip=self.reserve_peer_ip(), record=self.reserve_dns_name(),
                                        pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
@@ -170,7 +171,8 @@ class ReserveOutboundMixin:
             sent = self.rsv_get("rsv_pkg_sent")
             if sent.get("gen") and str(sent.get("at") or "") >= str(out.get("started_at") or ""):
                 self._out_step("up", UP_WAIT_S, gen=int(sent["gen"]), pkg_at=str(sent.get("at") or ""))
-                return [("send", "go", {"k": self.reserve_k().hex(), "gen": int(sent["gen"]), "kind": "button"}), ("live",)]
+                return [("send", "go", {"k": self.reserve_k().hex(), "gen": int(sent["gen"]),
+                                        "kind": str(out.get("kind") or "button")}), ("live",)]
             return []
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
@@ -251,7 +253,8 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("away")
         log.info("резерв: клиенты и бот — на «%s»", self.reserve_peer_name())
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
-            self.reserve_peer_name(), "button", timeutil.now_iso()))])]
+            self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
+            dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
 
     # ── away: здоровье и возврат ────────────────────────────────────────────
     def reserve_healthy(self) -> bool:

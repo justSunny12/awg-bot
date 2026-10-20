@@ -98,6 +98,18 @@ def setup_gateway_scheduler(services, bot):
     # Перерезолв аплинка: адрес для клиентов переехал (резерв) — аплинк идёт
     # на новый адрес сам. Раз в минуту с джиттером, в сеть ходит только при
     # старом рукопожатии (разрешение имени, потолок 3 с), первый — через 1–2 мин.
+    async def job_gw_reserve_tick():
+        try:
+            from awgbot.runtime import guestlink
+            await guestlink.tick(services, bot)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_reserve_tick: %s", e)
+
+    scheduler.add_job(
+        job_gw_reserve_tick, IntervalTrigger(seconds=5, timezone=config.TZ),
+        id="gw_reserve_tick", max_instances=1, coalesce=True,
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     async def job_gw_uplink_reresolve():
         try:
             from awgbot.domain.gateway.reserve import uplink

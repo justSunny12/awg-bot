@@ -87,4 +87,5 @@ class CfgPrintsMixin:
             "mail": self.cfg_mail_print(),
             "token": self.cfg_token_print(),              # отпечаток, не сам токен
             "server": gwcfg.server_print(self.db.get_state(self._SERVER_NAME_KEY) or ""),
+            "reserve": self.reserve_print() if hasattr(self, "reserve_print") else "",
         }

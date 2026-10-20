@@ -162,6 +162,11 @@ class ReserveDnsToken(StatesGroup):
     value = State()
 
 
+class PeerCode(StatesGroup):
+    """Аварийный код резерва в чате роли админа второго сервера (Т-РН2): сообщение удаляется сразу."""
+    value = State()
+
+
 class ReserveAcceptToken(StatesGroup):
     """Строка приглашения AWGP1 (принявший): сообщение удаляется после приёма;
     в данных диалога — token и rf (РФ-доступ через мои шлюзы)."""

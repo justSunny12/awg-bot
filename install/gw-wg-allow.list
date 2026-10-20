@@ -78,3 +78,29 @@ uplink Peer PersistentKeepalive
 allowed_max 16
 allowed_min_prefix 16
 allowed_nets 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+# постоянный линк шлюза к резерву (раздел reserve документа конфигурации)
+rsvlink Interface Address
+rsvlink Interface PrivateKey
+rsvlink Interface Table
+rsvlink Interface MTU
+rsvlink Interface Jc
+rsvlink Interface Jmin
+rsvlink Interface Jmax
+rsvlink Interface S1
+rsvlink Interface S2
+rsvlink Interface S3
+rsvlink Interface S4
+rsvlink Interface H1
+rsvlink Interface H2
+rsvlink Interface H3
+rsvlink Interface H4
+rsvlink Interface I1
+rsvlink Interface I2
+rsvlink Interface I3
+rsvlink Interface I4
+rsvlink Interface I5
+rsvlink Peer PublicKey
+rsvlink Peer PresharedKey
+rsvlink Peer Endpoint
+rsvlink Peer AllowedIPs
+rsvlink Peer PersistentKeepalive

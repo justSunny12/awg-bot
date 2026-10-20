@@ -17,10 +17,8 @@ liveness.py — часть пакета reserve (см. __init__): живость
 """
 from __future__ import annotations
 
-import secrets
 import subprocess
 import time
-from dataclasses import dataclass, field
 
 from awgbot.core import config, settings
 from awgbot.domain.services.types import Notification
@@ -30,78 +28,11 @@ from awgbot.domain.notices import reserve as rn
 
 from ..gateway_link.common import log
 
-PROBE_EVERY = 5
-PROBE_COUNT = 3
+# машина живости — util/livestep (общая с агентом шлюза); имена оставлены для тестов
+from awgbot.util.livestep import (Liveness, step, PROBE_EVERY, PROBE_COUNT,  # noqa: E402,F401
+                                  ping as _ping, alive as _alive, word as _word)
 
-
-@dataclass
-class Liveness:
-    state: str = "ok"               # ok | suspect | down
-    last_rx: int = -1               # счётчик линка на прошлом такте
-    last_life: float = 0.0          # когда последний раз видели жизнь (monotonic)
-    since: float = 0.0              # когда началось подозрение
-    t0: float = 0.0                 # когда стало «недоступна»
-    pings: int = 0                  # отправлено проб в этом подозрении
-    last_ping: float = 0.0
-    nonce: str = ""
-    told: bool = False              # уведомление «недоступен» ушло
-    pending_up: bool = False        # слово по каналу после «недоступен»: «снова на связи» отдаст такт
-    events: list = field(default_factory=list)
-
-
-def step(lv: Liveness, now: float, rx: int | None, *, suspect_s: int, probe_s: int) -> str:
-    """Один такт. Возвращает действие: "" / "ping" / "down" / "up"."""
-    if lv.last_life == 0.0:
-        lv.last_life = now
-    if lv.pending_up:
-        lv.pending_up = False
-        if rx is not None:
-            lv.last_rx = rx
-        return _alive(lv, now)
-    if rx is not None and rx != lv.last_rx:
-        if lv.last_rx >= 0 and rx > lv.last_rx or lv.last_rx < 0:
-            lv.last_rx = rx
-            return _alive(lv, now)
-        lv.last_rx = rx                                # счётчик обнулился (переподнятие) — не жизнь, но и не тишина
-    silence = now - lv.last_life
-    if lv.state == "ok":
-        if silence >= suspect_s:
-            lv.state, lv.since, lv.pings, lv.last_ping = "suspect", now, 0, 0.0
-            return _ping(lv, now)
-        return ""
-    if lv.state == "suspect":
-        if now - lv.since >= probe_s:
-            lv.state, lv.t0 = "down", now
-            return "down"
-        if lv.pings < PROBE_COUNT and now - lv.last_ping >= PROBE_EVERY:
-            return _ping(lv, now)
-        return ""
-    return ""                                              # down: ждём жизни
-
-
-def _ping(lv: Liveness, now: float) -> str:
-    lv.pings += 1
-    lv.last_ping = now
-    lv.nonce = secrets.token_hex(8)
-    return "ping"
-
-
-def _alive(lv: Liveness, now: float) -> str:
-    lv.last_life = now
-    was = lv.state
-    lv.state, lv.pings = "ok", 0
-    return "up" if was == "down" else ""
-
-
-def _word(lv: Liveness, now: float) -> None:
-    """Слово по каналу (hello, любое сообщение, pong): жизнь. После «недоступен»
-    состояние не меняем здесь — «снова на связи» со всеми отметками отдаст
-    ближайший такт (один путь для счётчика и для слова)."""
-    lv.last_life = now
-    if lv.state == "down":
-        lv.pending_up = True
-    else:
-        lv.state, lv.pings = "ok", 0
+__all__ = ["Liveness", "step", "PROBE_EVERY", "PROBE_COUNT", "_ping", "_alive", "_word", "ReserveLivenessMixin"]
 
 
 class ReserveLivenessMixin:

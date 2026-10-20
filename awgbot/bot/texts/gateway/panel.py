@@ -68,6 +68,9 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
     parts.append(link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}", 1))
     parts.append(pkg.channel_panel_line(chan))
+    rsv_line = reserve_panel_line(getattr(st, "rsv", None) or {})
+    if rsv_line:
+        parts.append(rsv_line)
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
@@ -124,6 +127,32 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     parts.append("")
     parts.append(pkg.refreshed_line(st, bot_username))
     return "\n".join(parts)
+
+
+def reserve_panel_line(rsv: dict) -> str:
+    """Т-РА1: «🛟 Резерв «Beta»: на связи · часть ключа есть» / «клиенты на нём
+    с 03:12 · через резервный линк ↑ … · ↓ …» / «⚠️ … нет связи с 13:58 — при
+    падении сервера AWG этот шлюз не голосует». Пусто — раздела нет."""
+    if not rsv:
+        return ""
+    from awgbot.util import timeutil
+    name = f"«{_e(rsv.get('name') or 'резерв')}»"
+
+    def when(iso: str) -> str:
+        try:
+            return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
+        except (ValueError, TypeError):
+            return ""
+    if rsv.get("seen") in ("down", "absent"):
+        since = when(str(rsv.get("since") or ""))
+        return (f"⚠️ Резерв {name}: нет связи" + (f" с {since}" if since else "")
+                + " — при падении сервера AWG этот шлюз не голосует")
+    if rsv.get("open"):
+        since = when(str(rsv.get("since_open") or ""))
+        rx, tx = int(rsv.get("rx") or 0), int(rsv.get("tx") or 0)
+        tail = f" · через резервный линк {updown_brief(rx, tx)}" if rx + tx else ""
+        return f"🛟 Резерв {name}: клиенты на нём" + (f" с {since}" if since else "") + tail
+    return f"🛟 Резерв {name}: на связи" + (" · часть ключа есть" if rsv.get("share") else " · части ключа ещё нет")
 
 
 def _lan_fault(c) -> str:
