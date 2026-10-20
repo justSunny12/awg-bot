@@ -278,6 +278,7 @@ def _guest_forward(spec) -> list[str]:
         if spec.link_ifs:
             out.append(f"        iifname {r} oifname {nftjson.ifs(spec.link_ifs)} accept")
         out.append(f"        iifname {r} drop")
+        out.append(f"        oifname {r} drop")              # в зону через этот veth — только ответы (ct выше)
     if spec.relay_to and spec.relay_udp_port:
         out.append("        ct status dnat udp accept")
     return out

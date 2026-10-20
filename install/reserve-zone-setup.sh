@@ -87,6 +87,7 @@ LINKS_DIR="${RSV_LINKS_DIR:-/var/lib/awg-bot/reserve/links}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/awg-bot}"
 ZONE_CIDR="${ZONE_CIDR:-169.254.77.0/30}"
 ZONE_RF_CIDR="${ZONE_RF_CIDR:-169.254.77.4/30}"
+RF_TABLE="${RF_TABLE:-100}"
 VH="awggv-h"; VN="awggv-n"; RH="awggr-h"; RN="awggr-n"
 UNIT="/etc/systemd/system/awg-bot-guest.service"
 DNS_UNIT="/etc/systemd/system/awg-bot-guest-dns.service"
@@ -376,7 +377,7 @@ cmd_take() {
     # отвечает на ARP за любой адрес (proxy ARP) и ведёт пакеты в таблицу своего
     # РФ-доступа (линк активного слота), маскарад — в таблице хоста
     sysctl -qw "net.ipv4.conf.$RH.proxy_arp=1" 2>/dev/null || true
-    ip rule show | grep -q "iif $RH lookup ${RF_TABLE:-100}" || ip rule add iif "$RH" lookup "${RF_TABLE:-100}" pref 150
+    ip rule show | grep -q "iif $RH lookup $RF_TABLE" || ip rule add iif "$RH" lookup "$RF_TABLE" pref 150
     # клон: создаётся у хоста (сокет — у хоста), переносится в зону под именем основы
     local tmp="awgc$$"
     nsx ip link show "$iface" >/dev/null 2>&1 && { nsx ip link del "$iface" 2>/dev/null || true; }
@@ -421,6 +422,8 @@ cake_on() {
     has_cake || { state_write cake=absent; return 0; }
     local wan; wan="$(wan_if)"; [ -n "$wan" ] || return 0
     local prev; prev="$(tc qdisc show dev "$wan" 2>/dev/null | head -n1 | awk '{print $2}')"
+    # повторный --serve: cake уже стоит — прежняя дисциплина записана при первом, не затирать
+    [ "$prev" = "cake" ] && [ "$(state_get cake)" = "on" ] && prev="$(state_get cake_prev)"
     tc qdisc replace dev "$wan" root cake besteffort dual-dsthost nat 2>/dev/null && state_write cake=on cake_dev="$wan" cake_prev="${prev:-none}"
 }
 cake_off() {
@@ -444,7 +447,7 @@ guest_stop() {
     systemctl stop awg-bot-guest-dns.service 2>/dev/null || true
     local iface; iface="$(state_get iface)"
     [ -n "$iface" ] && nsx ip link del "$iface" 2>/dev/null
-    while ip rule del iif "$RH" lookup "${RF_TABLE:-100}" 2>/dev/null; do :; done
+    while ip rule del iif "$RH" lookup "$RF_TABLE" 2>/dev/null; do :; done
     ip link del "$VH" 2>/dev/null; ip link del "$RH" 2>/dev/null
     zone_nft ""
 }

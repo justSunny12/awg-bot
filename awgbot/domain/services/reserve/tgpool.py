@@ -167,21 +167,23 @@ class ReserveTgPoolMixin:
         now = time.monotonic() if now is None else now
         self.__dict__["_tg_pool_next"] = now + cfg["hours"] * 3600 * random.uniform(0.6, 1.4)
         data = _read()
-        announced: dict = {}
+        announced: dict = dict(data.get("announced") or {})   # кэш по AS: неответившая AS остаётся с прежним
         errors = []
+        fetched_any = False
         for asn in cfg["asns"]:
             prefixes, err = fetch_announced(asn, cfg["url"])
             if err:
                 errors.append(f"AS{asn}: {err}")
                 continue
             announced[str(asn)] = prefixes
+            fetched_any = True
         notes: list[Notification] = []
         told = dict(data.get("told") or {})
         name = self.reserve_peer_name()
-        if announced:
+        data["error"] = "; ".join(errors)
+        if fetched_any:
             data["announced"] = announced
             data["fetched_at"] = timeutil.now_iso()
-            data["error"] = "; ".join(errors)
             all_prefixes = sorted({p for ps in announced.values() for p in ps})
             lost = core_covered(self._core(), all_prefixes)
             kept = [x for x in data.get("learned") or [] if isinstance(x, dict) and str(x.get("prefix") or "") in all_prefixes]
@@ -199,17 +201,20 @@ class ReserveTgPoolMixin:
                 told["stale"] = ""
                 notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_ok(), silent=True))
         else:
-            data["error"] = "; ".join(errors)
-            stale_s = cfg["stale_days"] * 86400
+            # ни одна AS не ответила: пул прежний; застой считается от последнего удачного
+            # обновления, а до первого — от первой неудачи (свежая пара — не «давно»)
+            data.setdefault("first_fail_at", timeutil.now_iso())
+            since = str(data.get("fetched_at") or data.get("first_fail_at") or "")
             try:
-                age = timeutil.elapsed(timeutil.parse_iso(str(data.get("fetched_at") or "")))
+                age = timeutil.elapsed(timeutil.parse_iso(since))
             except ValueError:
-                age = float("inf")
-            if age >= stale_s and not told.get("stale"):
+                age = 0.0
+            if age >= cfg["stale_days"] * 86400 and not told.get("stale"):
                 told["stale"] = timeutil.now_iso()
-                since = str(data.get("fetched_at") or "")
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_stale(since), silent=True))
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_stale(str(data.get("fetched_at") or "")), silent=True))
             log.warning("пул Telegram: анонсы не обновлены (%s) — пул прежний", data["error"])
+        if fetched_any:
+            data.pop("first_fail_at", None)
         data["told"] = told
         _write(data)
         if notes:
@@ -289,10 +294,11 @@ class ReserveTgPoolMixin:
         """Для экранов: ядро, число выученных, когда обновлялись анонсы, застой."""
         data = _read()
         cfg = self._tg_pool_cfg()
+        since = str(data.get("fetched_at") or data.get("first_fail_at") or "")
         try:
-            age = timeutil.elapsed(timeutil.parse_iso(str(data.get("fetched_at") or "")))
+            age = timeutil.elapsed(timeutil.parse_iso(since)) if since else 0.0
         except ValueError:
-            age = float("inf")
+            age = 0.0
         return {"learned": len(data.get("learned") or []), "fetched_at": str(data.get("fetched_at") or ""),
                 "stale": age >= cfg["stale_days"] * 86400, "error": str(data.get("error") or "")}
 
