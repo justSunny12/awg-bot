@@ -312,8 +312,8 @@ def test_rollback_clears_accepts_on_every_interface(script):
 def test_bundle_values_are_taken_by_form(script):
     """Значения из бандла и env идут в nft, юнит и sh -c: подсеть клиентов,
     адреса админа и имя линка проходят фильтр формы, LAN_MODE — только 0/1;
-    поиска контейнера прежней схемы больше нет."""
-    assert "detect_container" not in script and "docker exec" not in script and "docker ps" not in script
+    поиска сервера прежней схемы больше нет."""
+    assert "detect_container" not in script
     assert "CLIENT_SUBNET=\"$(printf '%s' \"${CLIENT_SUBNET:-10.8.1.0/24}\" | tr -cd '0-9./')\"" in script
     assert "ADMIN_IPS=\"$(printf '%s' \"$ADMIN_IPS\" | tr -cd '0-9./ ')\"" in script
     assert "LINK_IF=\"$(printf '%s' \"${LINK_IF:-awglink}\" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)\"" in script

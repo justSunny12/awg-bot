@@ -1,5 +1,5 @@
 """awg.py — часть пакета timeutil (см. __init__): хендшейк (unix-время) →
-онлайн и «последнее подключение», время старта Docker, аптайм."""
+онлайн и «последнее подключение», время старта сервиса, аптайм."""
 
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ def fmt_handshake(unix_ts: Optional[int]) -> str:
     return pkg.fmt_dt_ui(datetime.fromtimestamp(unix_ts, tz=timezone.utc))
 
 
-def parse_docker_time(s: str) -> Optional[datetime]:
-    """Docker StartedAt (напр. '2026-07-05T10:39:22.158372221Z') → aware datetime.
+def parse_started_at(s: str) -> Optional[datetime]:
+    """Время старта в ISO с суффиксом Z (напр. '2026-07-05T10:39:22.158372221Z') → aware datetime.
     Обрезает наносекунды до микросекунд (fromisoformat не ест 9 знаков)."""
     if not s or s.startswith("0001"):        # 0001-01-01 = «не запускался»
         return None

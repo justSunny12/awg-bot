@@ -177,7 +177,7 @@ def _live(key: str, default):
 
 def _subnet_of(address: str) -> str:
     """«10.9.1.2» → «10.9.1.0» — адрес СЕТИ устройства (не сервера: у новых
-    установок сервер занимает .1, у докерных занимал .0)."""
+    установок сервер занимает .1, у прежней раскладки — .0)."""
     return address.rsplit(".", 1)[0] + ".0"
 
 
@@ -252,18 +252,18 @@ def dns_for(iface: str = "") -> tuple[str, str]:
     """DNS клиентского конфига — по ИНТЕРФЕЙСУ пира, как и протокол.
 
     В окне переезда у двойников свой резолвер на новом интерфейсе
-    (<новая подсеть>.1, ключ app.docker.migration_dns): старый адрес умрёт
+    (<новая подсеть>.1, ключ app.awg.migration_dns): старый адрес умрёт
     вместе со старым интерфейсом, а конфиг двойника переживёт финал. Оба поля
     на один адрес — публичный вторым номером возвращает утечку DoH."""
     if iface and config.MIGRATION_INTERFACE and iface == config.MIGRATION_INTERFACE:
-        mig = str(_live("app.docker.migration_dns", config.MIGRATION_DNS) or "").strip()
+        mig = str(_live("app.awg.migration_dns", config.MIGRATION_DNS) or "").strip()
         if mig:
             return mig, mig
     return (str(_live("app.client_config.dns1", config.DNS1)),
             str(_live("app.client_config.dns2", config.DNS2)))
 
 
-def app_container_for(iface: str = "") -> str:
+def protocol_id_for(iface: str = "") -> str:
     """Идентификатор протокола для приложения — по ИНТЕРФЕЙСУ, на котором
     живёт пир.
 
@@ -275,8 +275,8 @@ def app_container_for(iface: str = "") -> str:
     """
     if iface and config.MIGRATION_INTERFACE and iface == config.MIGRATION_INTERFACE:
         from awgbot.infra import awglock
-        return awglock.protocol_id() or config.APP_CONTAINER
-    return config.APP_CONTAINER
+        return awglock.protocol_id() or config.PROTOCOL_ID
+    return config.PROTOCOL_ID
 
 
 def _build_vpn_json(
@@ -305,16 +305,15 @@ def _build_vpn_json(
         "subnet_address": _subnet_of(address),
         "transport_proto": "udp",
     }
-    # APP_CONTAINER, а НЕ CONTAINER: это идентификатор протокола для приложения,
-    # а не имя docker-контейнера на сервере. Совпадают они исторически, и после
-    # переезда на хост docker-имя исчезнет — но зашитое в выданные ссылки
-    # значение обязано остаться прежним, иначе приложение перестанет опознавать
-    # профили у всех разом. В окне смены поколения у второго интерфейса он свой.
-    app_container = app_container_for(iface)
+    # Поля containers / container / defaultContainer — формат импорта
+    # приложения AmneziaVPN; значение — идентификатор протокола, зашитый в
+    # выданные ссылки: поменяй его — приложение перестанет опознавать профили у
+    # всех разом. В окне смены поколения у второго интерфейса он свой.
+    protocol_id = protocol_id_for(iface)
     dns1, dns2 = (admin_dns, admin_dns) if admin_dns else dns_for(iface)
     return {
-        "containers": [{"awg": awg_block, "container": app_container}],
-        "defaultContainer": app_container,
+        "containers": [{"awg": awg_block, "container": protocol_id}],
+        "defaultContainer": protocol_id,
         "description": _live("app.client_config.server_name", config.SERVER_NAME),
         "dns1": dns1,
         "dns2": dns2,

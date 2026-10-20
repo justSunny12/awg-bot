@@ -51,7 +51,7 @@ def test_generate_vpn_is_parseable_and_roundtrips_keys():
     res = cg.generate("PRIVKEY", "PUBKEY", "10.8.1.4", _server_params())
     assert res["vpn"].startswith("vpn://")
     decoded = cg.decode_vpn(res["vpn"])
-    assert decoded["containers"][0]["container"] == config.CONTAINER
+    assert decoded["containers"][0]["container"] == config.PROTOCOL_ID
     # приложение читает ключи именно из last_config — проверяем то, что оно увидит
     lc = json.loads(decoded["containers"][0]["awg"]["last_config"])
     assert lc["client_priv_key"] == "PRIVKEY"
@@ -363,7 +363,7 @@ def test_a_covering_allowed_ips_line_stays_byte_for_byte(monkeypatch, allowed):
 
 
 def test_without_admin_dns_the_config_is_exactly_the_old_one(monkeypatch):
-    """Клиенту, шлюзовому устройству и админу без резолвера админа (docker) —
+    """Клиенту, шлюзовому устройству и админу без резолвера админа —
     конфиг байт в байт тот же, что до «SMB в туннеле»."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     plain = cg.generate("PRIV", "PUB", "10.8.1.2", _params())

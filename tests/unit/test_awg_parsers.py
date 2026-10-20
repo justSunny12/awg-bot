@@ -1,7 +1,7 @@
 """Unit: чистые парсеры awgbot.infra.awg — разбор awg0.conf / dump / валидация.
 
-Docker не нужен: тестируем только текстовые парсеры (код сам помечает их как
-«тестируются без контейнера»).
+Сервер не нужен: тестируем только текстовые парсеры (код сам помечает их как
+«тестируются без сервера»).
 """
 import pytest
 
@@ -145,8 +145,8 @@ def test_validate_ip():
             awg._validate_ip(bad)
 
 
-# ── detect_topology: автодетект порта/подсети из живого контейнера ────────────
-def _mock_docker(monkeypatch, *, rc=0, conf=""):
+# ── detect_topology: автодетект порта/подсети из живого конфига ──────────────
+def _mock_conf(monkeypatch, *, rc=0, conf=""):
     import types
     from awgbot.infra import awg as _awg
     monkeypatch.setattr(_awg.subprocess, "run",
@@ -154,47 +154,47 @@ def _mock_docker(monkeypatch, *, rc=0, conf=""):
 
 
 def test_detect_topology_reads_port_and_subnet(monkeypatch):
-    _mock_docker(monkeypatch, conf=(
+    _mock_conf(monkeypatch, conf=(
         "[Interface]\nPrivateKey = X\nAddress = 10.66.66.0/24\nListenPort = 51899\n\n"
         "[Peer]\nAllowedIPs = 10.66.66.7/32\n"))
-    t = awg.detect_topology("amnezia-awg2")
+    t = awg.detect_topology()
     assert t == {"listen_port": 51899,
                  "subnet_prefix": "10.66.66",
                  "subnet_cidr": "10.66.66.0/24"}
 
 
 def test_detect_topology_standard_values(monkeypatch):
-    _mock_docker(monkeypatch, conf="[Interface]\nAddress = 10.8.1.0/24\nListenPort = 43125\n")
-    t = awg.detect_topology("c")
+    _mock_conf(monkeypatch, conf="[Interface]\nAddress = 10.8.1.0/24\nListenPort = 43125\n")
+    t = awg.detect_topology()
     assert t["listen_port"] == 43125 and t["subnet_prefix"] == "10.8.1"
 
 
-def test_detect_topology_dead_container_all_none(monkeypatch):
-    _mock_docker(monkeypatch, rc=1)
-    assert awg.detect_topology("x") == {
+def test_detect_topology_unreadable_conf_all_none(monkeypatch):
+    _mock_conf(monkeypatch, rc=1)
+    assert awg.detect_topology() == {
         "listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
 
 
 def test_detect_topology_missing_keys(monkeypatch):
     # конфиг есть, но без ListenPort/Address (бот ставится до полной настройки)
-    _mock_docker(monkeypatch, conf="[Interface]\nPrivateKey = X\n")
-    assert awg.detect_topology("c") == {
+    _mock_conf(monkeypatch, conf="[Interface]\nPrivateKey = X\n")
+    assert awg.detect_topology() == {
         "listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
 
 
 def test_detect_topology_address_with_v6_list(monkeypatch):
     # Address может быть списком "v4, v6" — берём первый (v4)
-    _mock_docker(monkeypatch, conf=(
+    _mock_conf(monkeypatch, conf=(
         "[Interface]\nAddress = 10.20.30.0/24, fd00::1/64\nListenPort = 40000\n"))
-    t = awg.detect_topology("c")
+    t = awg.detect_topology()
     assert t["subnet_prefix"] == "10.20.30" and t["subnet_cidr"] == "10.20.30.0/24"
 
 
-def test_detect_topology_docker_missing(monkeypatch):
-    # docker не установлен → OSError внутри → мягкий None по всем полям
+def test_detect_topology_cat_missing(monkeypatch):
+    # команды нет → OSError внутри → мягкий None по всем полям
     from awgbot.infra import awg as _awg
     def _boom(*_a, **_k):
-        raise OSError("docker not found")
+        raise OSError("cat not found")
     monkeypatch.setattr(_awg.subprocess, "run", _boom)
-    assert awg.detect_topology("c") == {
+    assert awg.detect_topology() == {
         "listen_port": None, "subnet_prefix": None, "subnet_cidr": None}

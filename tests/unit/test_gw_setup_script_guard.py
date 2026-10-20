@@ -18,9 +18,9 @@ script = _c.script
 def test_ip_forward_is_set_explicitly(script):
     """Без форвардинга правила NAT стоят и не работают — без единой ошибки.
 
-    Раньше это держалось побочным эффектом docker: он выставляет ip_forward при
-    старте. То есть шлюз работал на удаче — не запустился docker или его убрали,
-    и он молча переставал быть шлюзом.
+    Полагаться на то, что ip_forward включит кто-то другой, — значит работать
+    на удаче: тот сервис не запустился или его убрали, и шлюз молча переставал
+    быть шлюзом.
     """
     assert "net.ipv4.ip_forward" in script
     assert "sysctl -w net.ipv4.ip_forward=1" in script
@@ -42,20 +42,15 @@ def test_rollback_removes_the_sysctl_drop_in(script):
     assert "SYSCTL_CONF" in rollback
 
 
-def test_unit_does_not_depend_on_docker(script):
-    """Линк поднимает хостовой awg-quick, а не утилиты из образа Amnezia.
-
-    С Requires=docker.service не стартовавший или снесённый docker уносил за
-    собой весь обвяз шлюза — молча, и обнаруживалось это со стороны ВПС как
-    «интернета за шлюзом нет».
-    """
+def test_unit_depends_only_on_the_network(script):
+    """Линк поднимает awg-quick хоста: жёсткая зависимость от чужого сервиса
+    уносила бы весь обвяз шлюза вместе с ним — молча, и обнаруживалось бы это
+    со стороны ВПС как «интернета за шлюзом нет»."""
     unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
-    # только директивы: в комментариях docker поминается намеренно — там
-    # объясняется, почему зависимости больше нет
     directives = [ln for ln in unit.splitlines()
                   if ln.strip() and not ln.lstrip().startswith("#")]
-    assert not any("docker" in ln for ln in directives), \
-        "юнит шлюза не должен зависеть от docker"
+    assert not any(ln.startswith(("Requires=", "BindsTo=")) for ln in directives), \
+        "юнит шлюза не должен требовать чужих сервисов"
     assert any("network-online.target" in ln for ln in directives)
 
 

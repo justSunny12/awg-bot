@@ -52,8 +52,7 @@ def _read(conf):
             if ln.startswith("listen-address=")]
 
 
-def _set_dns(monkeypatch, dns1, dns2, runtime="host"):
-    monkeypatch.setattr(config, "AWG_RUNTIME", runtime)
+def _set_dns(monkeypatch, dns1, dns2):
     real = settings.get
     over = {"app.client_config.dns1": dns1, "app.client_config.dns2": dns2}
     monkeypatch.setattr(settings, "get", lambda k, d=None: over.get(k, real(k, d)))
@@ -73,9 +72,6 @@ def test_private_dns_modes(services, monkeypatch):
 
     _set_dns(monkeypatch, "10.8.1.1", "1.1.1.1")
     assert services.private_dns_info()["mode"] == "public", "один публичный — утечка есть"
-
-    _set_dns(monkeypatch, "1.1.1.1", "1.0.0.1", runtime="docker")
-    assert services.private_dns_info()["mode"] == "n/a" and not services.private_dns_offer_due()
 
 
 def test_any_decision_silences_the_offer_and_only_pending_drives_migration(services, monkeypatch):
@@ -108,7 +104,7 @@ def test_migration_start_brings_the_resolver_up_before_twins_are_born(
     res = services.migration_start()
     assert res.started and res.born == 1
     assert fake_resolver.calls == [("install", "10.9.1.1")]
-    assert written["app.docker.migration_dns"] == "10.9.1.1"
+    assert written["app.awg.migration_dns"] == "10.9.1.1"
 
     monkeypatch.setattr(config, "MIGRATION_DNS", "10.9.1.1")
     assert configgen.dns_for("awg1") == ("10.9.1.1", "10.9.1.1")
@@ -166,7 +162,7 @@ def test_finish_switches_dns_fields_and_drops_the_old_address(
     assert not failed
     assert written["app.client_config.dns1"] == "10.9.1.1"
     assert written["app.client_config.dns2"] == "10.9.1.1"
-    assert written["app.docker.migration_dns"] == ""
+    assert written["app.awg.migration_dns"] == ""
     assert ("remove", "10.8.1.1") in fake_resolver.calls
     assert fake_resolver.addrs() == ["10.9.1.1"]
     assert services.private_dns_decision() == ""
@@ -186,7 +182,7 @@ def test_cancel_drops_the_new_address_but_keeps_the_decision(
     assert fake_resolver.addrs() == ["10.9.1.1"]
     services.migration_cancel()
     assert ("remove", "10.9.1.1") in fake_resolver.calls and fake_resolver.addrs() == []
-    assert written["app.docker.migration_dns"] == ""
+    assert written["app.awg.migration_dns"] == ""
     assert services.private_dns_decision() == "pending", "решение ждёт следующего переезда"
 
 

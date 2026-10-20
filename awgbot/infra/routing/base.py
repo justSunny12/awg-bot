@@ -1,4 +1,4 @@
-"""base.py — журнал, замок перестроек, ошибки, запуск команд на хосте и в контейнере, имена наборов, интерфейс активного линка."""
+"""base.py — журнал, замок перестроек, ошибки, запуск команд на хосте, имена наборов, интерфейс активного линка."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import threading
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.infra import awg
 
 log = logging.getLogger("awgbot.routing")
 
@@ -34,7 +33,7 @@ class RoutingUnavailable(RoutingError):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Запуск команд: хост и контейнер
+# Запуск команд на хосте
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _host(args: list[str], *, check: bool = True,
@@ -61,24 +60,6 @@ _PROBE_TIMEOUT = 5
 def _host_ok(args: list[str]) -> bool:
     """Код возврата 0? Для проверок существования правил (iptables -C и т.п.)."""
     return _host(args, check=False, timeout=_PROBE_TIMEOUT).returncode == 0
-
-
-def _cont(args: list[str], *, check: bool = True):
-    """Команда внутри контейнера. Идёт через awg._exec — тот же путь, которым
-    ставятся блокировки, чтобы способ доступа к контейнеру был ровно один."""
-    try:
-        proc = awg._exec(args, check=False)
-    except awg.AwgError as e:
-        raise RoutingError(f"Контейнер недоступен: {e}")
-    if check and proc.returncode != 0:
-        raise RoutingError(
-            f"Ошибка в контейнере {' '.join(args[:4])}: "
-            f"{proc.stderr.decode(errors='replace').strip()}")
-    return proc
-
-
-def _cont_ok(args: list[str]) -> bool:
-    return _cont(args, check=False).returncode == 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

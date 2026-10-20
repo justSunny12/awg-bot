@@ -118,7 +118,7 @@ def _hooks() -> list[list[str]]:
     return [["-s", subnet, "-j", config.ROUTING_CHAIN]
             for subnet, _iface in config.routing_client_subnets()]
 # С МАСКОЙ, как и сама маркировка. Без маски правило требует точного равенства
-# метки, и любой чужой бит в fwmark (docker, tc, сторонний firewall) увёл бы
+# метки, и любой чужой бит в fwmark (tc, сторонний firewall) увёл бы
 # трафик мимо таблицы. Метим мы маскированно (--set-xmark 0x1/0x1) — сверять
 # обязаны так же, иначе две половины механизма расходятся в трактовке метки.
 _RULE = ["fwmark", _MARK, "lookup", str(config.ROUTING_TABLE)]

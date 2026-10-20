@@ -83,7 +83,7 @@ class LinkMixin:
             pol = gwguard.iptables_forward_policy()
             ok_fwd = pol in (None, "accept")
             if not ok_fwd:
-                # docker ставит DROP; раздел 3a скрипта открывает транзит своим
+                # чужая политика DROP; раздел 3a скрипта открывает транзит своим
                 # интерфейсам в той же цепочке. Есть наши ACCEPT для линка —
                 # транзит идёт, и красная проверка была бы ложной тревогой.
                 acc = gwguard.forward_accepts()

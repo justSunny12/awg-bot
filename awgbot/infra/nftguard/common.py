@@ -42,16 +42,15 @@ class GuardSpec:
     ssh_allow4: list[str] = field(default_factory=list)   # IP/CIDR v4 (вайтлист)
     ssh_allow6: list[str] = field(default_factory=list)
     ssh_open: bool = False            # вайтлист пуст → SSH открыт всем (осознанно)
-    tunnel_nets4: list[str] = field(default_factory=list)  # подсети туннеля (host) / bridge (docker)
-    tunnel_admin4: list[str] = field(default_factory=list) # устройства админа (host)
-    tunnel_ifs: list[str] = field(default_factory=list)    # awg-интерфейсы клиентов (host)
-    per_peer: bool = True             # host: SSH из туннеля только устройствам админа
+    tunnel_nets4: list[str] = field(default_factory=list)  # подсети туннеля
+    tunnel_admin4: list[str] = field(default_factory=list) # устройства админа
+    tunnel_ifs: list[str] = field(default_factory=list)    # awg-интерфейсы клиентов
     udp_ports: list[int] = field(default_factory=list)     # порты интерфейсов awg
     open_tcp: list[int] = field(default_factory=list)      # прочие порты хоста
     open_udp: list[int] = field(default_factory=list)
-    own_forward: bool = True          # host: своя цепочка FORWARD (policy drop)
+    own_forward: bool = True          # своя цепочка FORWARD (policy drop)
     unresolved: list[str] = field(default_factory=list)    # имена, которые не резолвятся
-    nat: bool = True                  # host: MASQUERADE подсетей туннеля наружу
+    nat: bool = True                  # MASQUERADE подсетей туннеля наружу
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)
     peer_link_ifs: list[str] = field(default_factory=list)    # линки слотов с VPN-транзитом: между ними

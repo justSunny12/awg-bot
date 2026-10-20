@@ -65,7 +65,6 @@ def test_the_firewall_opens_the_previous_port_too(monkeypatch):
     monkeypatch.setattr(nftguard, "tunnel_nets", lambda: [])
     monkeypatch.setattr(nftguard, "listen_ports", lambda: [])
     monkeypatch.setattr(nftguard, "_tunnel_ifs", lambda: [])
-    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: [])
     monkeypatch.setattr(nftguard, "_resolve", lambda host: [])
     monkeypatch.setattr(nftguard, "wan_ifaces", lambda: [])          # к маршрутам хоста не ходим
     built = nftguard.build_spec([], channel_extra=[9099, 0, 8787])

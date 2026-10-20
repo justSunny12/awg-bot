@@ -62,7 +62,7 @@ def test_parse_unescapes_decimal_escapes_and_drops_non_ascii():
 
 
 def test_parse_skips_addresses_outside_own_subnets_and_other_types():
-    """Сервер из чужой подсети (Docker-мост, гостевой Wi-Fi) соседям не
+    """Сервер из чужой подсети (мост, гостевой Wi-Fi) соседям не
     объявляем: адреса туда у них нет маршрута. Чужой тип — не наш."""
     text = "\n".join([
         _line(addr="172.17.0.2"),

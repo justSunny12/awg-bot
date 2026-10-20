@@ -122,7 +122,6 @@ class _Host:
             "systemctl": 'echo "systemctl $*" >> "$CALLS"',
             "nft": 'echo "nft $*" >> "$CALLS"',
             "awg-quick": 'echo "awg-quick $*" >> "$CALLS"',
-            "docker": 'echo "docker $*" >> "$CALLS"',
             # mktemp у macOS не смотрит на TMPDIR — свой, чтобы не мусорить на хосте
             "mktemp": ('[ "$1" = -d ] || exit 2\n'
                        'd="$TMPDIR/mktemp.$$"; mkdir "$d" && echo "$d"'),
@@ -137,7 +136,7 @@ class _Host:
 
     # ── состояние ──
 
-    def installed(self, version: str, role: str, container: str = "") -> None:
+    def installed(self, version: str, role: str) -> None:
         (self.install / "venv" / "bin").mkdir(parents=True)
         py = self.install / "venv" / "bin" / "python"
         py.write_text("#!/bin/sh\n"); py.chmod(0o755)
@@ -151,7 +150,7 @@ class _Host:
         bot.chmod(0o755)
         (self.etc / "conf").mkdir(parents=True)
         (self.etc / "conf" / "app.yaml").write_text(
-            f'role: "{role}"\ninterface: awg0\n' + (f'container: "{container}"\n' if container else ""))
+            f'role: "{role}"\ninterface: awg0\n')
         (self.etc / "awg-bot.env").write_text("BOT_TOKEN=1:x\n")
         self.data.mkdir(parents=True)
         (self.data / "awgbot.db").write_text("db")
@@ -379,7 +378,7 @@ def test_wipe_on_vps_removes_everything_the_bot_put_there(host):
     --rollback, по одному на линк), резолвер клиентов, интерфейсы awg,
     файлы шлюзов в /root, таблица файервола. Останься что-то — новая
     установка начинала бы с чужими правилами, пирами и маршрутами."""
-    host.installed("2.25.2", "client", container="amnezia-awg")
+    host.installed("2.25.2", "client")
     r = host.run(["2", "y", "УДАЛИТЬ"], tgz=host.archive("3.0.0"))
     assert r.returncode == 0, r.stderr
     calls = host.calls()
@@ -393,7 +392,6 @@ def test_wipe_on_vps_removes_everything_the_bot_put_there(host):
         assert f"systemctl disable --now awg-quick@{i}" in calls, calls
         assert f"awg-quick down {i}" in calls, calls
     assert "systemctl try-restart dnsmasq" in calls
-    assert "docker rm -f amnezia-awg" in calls, calls
     assert "nft delete table inet awg_bot_guard" in calls, calls
     assert not any(c.startswith("routing-gw-setup.sh") for c in calls)
     for p in (host.guard, host.install, host.etc, host.data, host.unit, host.amnezia,
@@ -406,39 +404,11 @@ def test_wipe_on_vps_removes_everything_the_bot_put_there(host):
     assert "CONTINUE_FRESH_INSTALL" in r.stdout
 
 
-def test_wipe_on_vps_without_a_container_does_not_call_docker(host):
-    """Host-режим: контейнера нет — docker rm с пустым именем не зовём."""
-    host.installed("2.25.2", "client")
-    r = host.run(["2", "y", "УДАЛИТЬ"], tgz=host.archive("3.0.0"))
-    assert r.returncode == 0, r.stderr
-    assert not any(c.startswith("docker") for c in host.calls()), host.calls()
-
-
-def test_wipe_on_vps_warns_that_clients_lose_access(host):
-    """На ВПС пункт 2 оставляет всех клиентов без VPN: человек должен узнать
-    это до ответа, а не после."""
-    host.installed("2.25.2", "client")
-    r = host.run(["2", ""], tgz=host.archive("3.0.0"))
-    assert "Клиенты останутся БЕЗ ДОСТУПА" in r.stderr, r.stderr
-    assert "Аплинк остаётся" not in r.stderr
-
-
-def test_wipe_on_gateway_lists_what_goes_and_keeps_the_uplink(host):
-    host.installed("2.25.2", "gateway")
-    r = host.run(["2", ""], role="gateway", tgz=host.archive("3.0.0"))
-    warn = r.stderr.split("Будут удалены:", 1)[1].split("[y/N]", 1)[0]
-    # пути в тексте подменены вместе с остальными — сверяем их концы
-    for piece in ("линк до сервера AWG", "юнит и таблицы обвязки", "/etc/awg-gw,", "/var/lib/awg-gw,",
-                  "/opt/awg-gw.", "Аплинк остаётся."):
-        assert piece in warn, f"в предупреждении нет «{piece}»: {warn}"
-    assert "БЕЗ ДОСТУПА" not in r.stderr
-
-
 @pytest.mark.parametrize("word", ["", "удалить", "y", "УДАЛИТЬ!"])
 def test_wipe_on_vps_needs_the_typed_word(host, word):
     """На ВПС одного «y» мало: снос отрезает всех клиентов. Без слова
     «УДАЛИТЬ» дословно — отмена без единой правки."""
-    host.installed("2.25.2", "client", container="amnezia-awg")
+    host.installed("2.25.2", "client")
     before = host.snapshot()
     r = host.run(["2", "y", word], tgz=host.archive("3.0.0"))
     assert r.returncode == 0, r.stderr
@@ -483,12 +453,12 @@ def test_wipe_follows_the_installed_role_not_the_flag(host):
 
 def test_wipe_survives_missing_pieces_and_failing_commands(host):
     """Прошлая установка могла быть снята наполовину: нет юнита, нет обвязки,
-    systemctl, nft, awg-quick, docker и скрипты обвязки отвечают ошибкой.
+    systemctl, nft, awg-quick и скрипты обвязки отвечают ошибкой.
     Снос не должен падать под `set -e` — иначе человек застревает между
     старой и новой установкой."""
-    host.installed("2.25.2", "client", container="amnezia-awg")
+    host.installed("2.25.2", "client")
     host.unit.unlink(); host.guard.unlink(); host.resolver_dropin.unlink()
-    for name in ("systemctl", "nft", "awg-quick", "docker"):
+    for name in ("systemctl", "nft", "awg-quick"):
         fake_cmd(host.bin / name, f'#!/bin/sh\necho "{name} $*" >> "$CALLS"\nexit 1\n')
     for s in ("routing-link-setup.sh", "routing-host-setup.sh"):
         (host.sbin / s).write_text(f'#!/bin/sh\necho "{s} $*" >> "$CALLS"\nexit 3\n')
@@ -644,7 +614,7 @@ class _PostUpdate:
         stubs = " ".join(f"{n}() {{ :; }};" for n in (
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
             "install_unit", "ensure_host_autostart", "ensure_awg_module_loaded",
-            "ensure_awg_generation", "adopt_resolver", "adopt_timezone", "seed_conf", "validate_config",
+            "ensure_awg_generation", "adopt_resolver", "update_adopts_timezone", "adopt_timezone", "adopt_awg_section", "seed_conf", "validate_config",
             "prune_old_kernel_builds", "update_done", "sleep"))
         prog = (
             "set -euo pipefail\n"

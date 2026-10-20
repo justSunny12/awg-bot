@@ -3,7 +3,7 @@
 
 Подменены: Telegram (двойник Bot), диспетчер (поллинг ждёт конца стартовых
 фоновых задач, проигрывает сценарий и останавливает сборку), планировщик,
-вотчдоги, слушатель канала и всё, что на старте ходит в Telegram, docker или
+вотчдоги, слушатель канала и всё, что на старте ходит в Telegram или
 на хост. База и сервисы — настоящие, во временном каталоге; хранилище
 диалогов — настоящего aiogram.Dispatcher.
 
@@ -79,7 +79,7 @@ class _Client:
                 super().__init__(db)
                 st.services = self
 
-            def detect_and_handle_restart(self):          # docker и awg на машине теста нет
+            def detect_and_handle_restart(self):          # awg на машине теста нет
                 return None
 
             def server_ok(self):

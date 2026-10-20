@@ -56,19 +56,13 @@ def test_parse_chain_rules_is_structural(monkeypatch):
     assert routing.parse_chain_rules("-A OTHER -j MARK --set-xmark 0x1/0xffffffff\n", "AWGBOT_RT") is None
 
 
-def test_parse_nat_exempt():
-    text = "-N AWGBOT_RTNAT\n-A AWGBOT_RTNAT -s 10.8.1.5/32 -j ACCEPT\n-A AWGBOT_RTNAT -s 10.8.1.9/32 -j ACCEPT\n"
-    assert routing.parse_nat_exempt(text, "AWGBOT_RTNAT") == {"10.8.1.5", "10.8.1.9"}
-    assert routing.parse_nat_exempt("-N AWGBOT_RTNAT\n", "AWGBOT_RTNAT") == set()
-    assert routing.parse_nat_exempt("-A AWGBOT_RTNAT -j RETURN\n", "AWGBOT_RTNAT") is None
-
-
 # ── replace_members / ensure_set ─────────────────────────────────────────────
 
 def _host_recorder(monkeypatch):
     calls: list[list[str]] = []
     monkeypatch.setattr(routing.base, "_host", lambda args, **kw: calls.append(list(args)) or _cp())
     return calls
+
 
 
 def test_replace_members_skips_when_snapshot_matches(monkeypatch):
@@ -170,27 +164,6 @@ def test_rebuild_chain_order_matters(monkeypatch):
     calls = _mangle_recorder(monkeypatch, swapped)
     routing.rebuild_chain([3, 7])
     assert ["-F", "AWGBOT_RT"] in calls
-
-
-# ── sync_nat_exempt (docker-режим) ───────────────────────────────────────────
-
-def test_nat_exempt_skips_rebuild_when_addresses_match(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    monkeypatch.setattr(config, "ROUTING_NAT_CHAIN", "AWGBOT_RTNAT")
-    seen: list[list[str]] = []
-
-    def cont(args, **k):
-        seen.append(list(args))
-        if "-S" in args:
-            return _cp(0, "-N AWGBOT_RTNAT\n-A AWGBOT_RTNAT -s 10.8.1.5/32 -j ACCEPT\n")
-        return _cp()
-    monkeypatch.setattr(routing.base, "_cont", cont)
-    monkeypatch.setattr(routing.base, "_cont_ok", lambda args: True)
-    routing.sync_nat_exempt(["10.8.1.5"])
-    assert not any("-F" in a or "-A" in a for a in seen), "состав тот же — цепочку не трогаем"
-    seen.clear()
-    routing.sync_nat_exempt(["10.8.1.5", "10.8.1.6"])
-    assert any("-F" in a for a in seen) and sum("-A" in a for a in seen) == 2
 
 
 # ── services: снимок доезжает до replace_members ─────────────────────────────

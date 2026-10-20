@@ -96,7 +96,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         try:
             restarted = await asyncio.to_thread(services.detect_and_handle_restart)
             if restarted:
-                log.info("Обнаружен рестарт контейнера — блокировки переналожены")
+                log.info("Обнаружена перезагрузка хоста — блокировки переналожены")
             else:
                 # сверка DROP ↔ БД в обе стороны по одному iptables -S: разовый
                 # отказ iptables при (раз)блокировке иначе держался до рестарта
@@ -106,7 +106,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     log.warning("reconcile_blocks: %s", e)
             # пер-пирный SSH-к-хосту: реассерт каждый тик — дёшево и гарантирует
             # сходимость (удаление админ-устройства, переиспользование его IP,
-            # рестарт контейнера уберут/вернут правила в пределах одного цикла).
+            # перезагрузка хоста уберут/вернут правила в пределах одного цикла).
             try:
                 await asyncio.to_thread(services.reconcile_ssh_access)
             except Exception as e:                       # noqa: BLE001
@@ -120,15 +120,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     await pkg.send_notifications(bot, drift_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("ssh_port_drift_notes: %s", e)
-            # ребайнд вотчдога: PID меняется ТОЛЬКО при рестарте (который мы
-            # детектим по StartedAt), поэтому дёргать container_pid каждый тик
-            # незачем — только при рестарте или если наблюдатель умер.
+            # ребайнд вотчдога — только после перезагрузки или если наблюдатель умер.
             if watcher is not None and (restarted or not watcher.alive()):
                 await asyncio.to_thread(watcher.ensure_watching)
             # условная маршрутизация: реассерт наборов/правил + рубильник
             # деградации. Реассерт каждый тик по той же причине, что и у SSH —
             # правила эфемерны, а сходимость должна наступать в пределах цикла
-            # (рестарт контейнера, ручная правка, переиспользование адреса).
+            # (перезагрузка, ручная правка, переиспользование адреса).
             try:
                 # списки обновляются здесь же: метод сам решает, пора ли (по
                 # расписанию из conf) и не пуст ли кэш — при пустом обновляет

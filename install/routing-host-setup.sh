@@ -24,11 +24,11 @@
 #   4) разрешения FORWARD для клиентской подсети; MASQUERADE — только если его
 #      не ведёт бот (nft-таблица awg_bot_guard, см. README §6b): на новых
 #      установках NAT клиентов живёт там, здесь остаётся для прежней схемы;
-#   5) маршрут до клиентской подсети через контейнер — для обратного трафика
-#      (только при AWG_RUNTIME=docker; на хосте подсеть connected через awg0).
+#   5) снимает чужой via-маршрут до клиентской подсети: она connected через
+#      awg-интерфейс, и любой маршрут поверх уводил бы ответы в никуда.
 #
 # ЧЕГО НЕ ДЕЛАЕТ: не поднимает линк-туннель до шлюза (отдельный шаг, требует
-# настройки на обеих сторонах) и не трогает контейнер Amnezia.
+# настройки на обеих сторонах).
 #
 # КТО ЗАПУСКАЕТ. С v2.14.0 — сам бот, кнопкой «Развернуть» в разделе условной
 # маршрутизации (services.routing_provision). Руками — для разбора и отката.
@@ -101,13 +101,6 @@ fi
 DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAM1="${UPSTREAM1:-1.1.1.1}"
 UPSTREAM2="${UPSTREAM2:-9.9.9.9}"
-# имя контейнера берём из conf бота, а не хардкодим
-# `|| true`: без него set -e уносил весь скрипт, когда конфига бота на машине
-# нет вовсе, — и первым это ловил `--help`, прочитанный ДО установки: справка
-# молча не печаталась, код возврата 2.
-CONTAINER="${CONTAINER:-$(awk -F'"' '/^  container:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null || true)}"
-CONTAINER="${CONTAINER:-amnezia-awg2}"
-
 MODE="plan"
 case "${1:-}" in
     --apply)        MODE="apply" ;;
@@ -165,59 +158,18 @@ drop_rule() {
     done
 }
 
-# ── адрес контейнера: куда маршрутизировать обратный трафик ──────────────────
-container_ip() {
-    docker inspect -f \
-        '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$CONTAINER" \
-        2>/dev/null | awk '{print $1}'
-}
-
-# Режим: контейнер или хост. host — когда awg0 поднят прямо здесь; тогда
-# обратный маршрут не нужен вовсе (подсеть connected через awg-интерфейс), и
-# ждать контейнер незачем. См. docs/ROADMAP.md.
-#
-# Читаем из того же app.yaml, что и бот, а не просим задать переменную: два
-# источника истины разошлись бы ровно один раз — и обвяз молча собрался бы под
-# другой режим, чем работает бот.
-AWG_RUNTIME="${AWG_RUNTIME:-$(awk -F'"' '/^  runtime:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
-# Дефолт — host, как у бота (config.AWG_RUNTIME). Разойдись они — скрипт при
-# нечитаемом app.yaml уходил бы в контейнерную ветку, ждал контейнер и падал
-# на «не удалось узнать адрес контейнера» там, где контейнера нет и не должно.
-AWG_RUNTIME="${AWG_RUNTIME:-host}"
 # Имя awg-интерфейса нужно, чтобы отличить connected-маршрут от чужого.
-AWG_IF="${AWG_IF:-$(awk -F'"' '/^  interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
+# `|| true` у чтений app.yaml: без него set -e уносил весь скрипт, когда
+# конфига бота на машине нет вовсе, — и первым это ловил `--help`, прочитанный
+# ДО установки: справка молча не печаталась, код возврата 2.
+AWG_IF="${AWG_IF:-$(awk -F'"' '/^  interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null || true)}"
 AWG_IF="${AWG_IF:-awg0}"
 # Линк до шлюза и интерфейс переезда — чтобы НЕ маскарадить трафик в них (ниже).
 LINK_IF="${LINK_IF:-$(awk -F'"' '/^  gw_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 MIGRATION_IF="${MIGRATION_IF:-$(awk -F'"' '/^  migration_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
-case "$AWG_RUNTIME" in
-    docker|host) ;;
-    *) say "ОШИБКА: AWG_RUNTIME=$AWG_RUNTIME (допустимо docker или host)."; exit 1 ;;
-esac
-
-CONT_IP=""
-if [ "$AWG_RUNTIME" = "docker" ]; then
-    # Ретраи нужны для запуска из systemd на старте хоста: docker.service уже
-    # поднят, а контейнер ещё стартует, и адреса у него пока нет.
-    _try=0
-    while [ -z "$CONT_IP" ] && [ "$_try" -lt 15 ]; do
-        CONT_IP="$(container_ip || true)"
-        [ -n "$CONT_IP" ] && break
-        _try=$((_try + 1))
-        [ "$_try" = 1 ] && say "жду контейнер $CONTAINER..."
-        sleep 2
-    done
-    if [ -z "$CONT_IP" ]; then
-        say "ОШИБКА: не удалось узнать адрес контейнера $CONTAINER."
-        say "Проверь: docker inspect $CONTAINER"
-        exit 1
-    fi
-fi
-
 say "Параметры:"
 say "  клиентская подсеть : $CLIENT_SUBNET"
-say "  режим awg          : $AWG_RUNTIME"
-say "  адрес контейнера   : ${CONT_IP:-— (host-режим)}"
+say "  awg-интерфейс      : $AWG_IF"
 say "  dnsmasq            : $DNS_ADDR на $DNS_IF"
 say "  апстримы DNS       : $UPSTREAM1, $UPSTREAM2"
 [ "$MODE" = "plan" ] && { say ""; say "(режим показа: ничего не меняется, добавь --apply)"; }
@@ -226,18 +178,8 @@ say "  апстримы DNS       : $UPSTREAM1, $UPSTREAM2"
 if [ "$MODE" = "unit" ]; then
     SELF="$(install_self)"
     UNIT=/etc/systemd/system/awg-bot-routing.service
-    # В docker-режиме адрес контейнера и маршрут к нему вычисляются из docker,
-    # поэтому без него стартовать бессмысленно. В host-режиме зависимость от
-    # docker.service держала бы обвяз заложником сервиса, который переезд как раз
-    # и убирает: юнит не поднялся бы после ребута, а фича молча не завелась бы.
-    if [ "$AWG_RUNTIME" = "host" ]; then
-        UNIT_DEPS="After=network-online.target
+    UNIT_DEPS="After=network-online.target
 Wants=network-online.target"
-    else
-        UNIT_DEPS="After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service"
-    fi
     step "Юнит автоприменения → $UNIT"
     say "  Правила iptables, адрес на dummy и sysctl эфемерны и ребут не переживают."
     say "  Вместо дублирования их в netfilter-persistent юнит просто зовёт ЭТОТ же"
@@ -250,9 +192,8 @@ $UNIT_DEPS
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'AWG_RUNTIME=$AWG_RUNTIME $SELF --apply'
-# Контейнер может стартовать дольше docker.service — скрипт его ждёт сам,
-# но при совсем долгом старте даём повторить.
+ExecStart=/bin/sh -c '$SELF --apply'
+# при долгом старте хоста даём повторить
 Restart=on-failure
 RestartSec=10
 
@@ -285,12 +226,6 @@ if [ "$MODE" = "rollback" ]; then
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
     drop_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
-    # Именно if, а не `[ -n ... ] && run`: при set -e несработавший тест в
-    # AND-списке сам по себе завершает скрипт, и откат в host-режиме (где
-    # CONT_IP пуст) обрывался бы здесь, не сняв всё остальное.
-    if [ -n "$CONT_IP" ]; then
-        run "ip route del $CLIENT_SUBNET via $CONT_IP 2>/dev/null || true"
-    fi
     run "rm -rf /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf"
     if [ -n "$DUMMY_REFERENCED" ]; then
         # Адрес dummy вшит в конфиги клиентов: dnsmasq на нём и сам интерфейс
@@ -310,7 +245,7 @@ if [ "$MODE" = "rollback" ]; then
     run "rm -f /etc/systemd/system/awg-bot-routing.service"
     run "systemctl daemon-reload"
     say ""
-    say "Готово. Обвяз снят (линк-туннель и контейнер не трогались)."
+    say "Готово. Обвяз снят (линк-туннель не трогался)."
     exit 0
 fi
 
@@ -474,9 +409,6 @@ done
 # собственным адресом, и пакет идёт в INPUT, а не в FORWARD. При политике DROP
 # (ufw и подобные) он там и умирает: клиент подключается, ходит по голым
 # адресам — телеграм работает, — а всё, что требует резолва, мертво.
-#
-# В docker-режиме это годами не всплывало: контейнер маскарадил клиентов, DNAT
-# по -s 10.8.1.0/24 до них не доставал, и DNS уходил к настоящему 1.1.1.1.
 step "3a. Пропустить DNS клиентов в INPUT"
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
@@ -532,37 +464,27 @@ say "  а с DROP он ждал бы таймаута на каждом запр
 ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
             -j REJECT --reject-with tcp-reset
 
-# 5) обратный маршрут в контейнер
-if [ "$AWG_RUNTIME" = "host" ]; then
-    step "5. Маршрут $CLIENT_SUBNET — снимаем чужой"
-    say "  awg0 поднят на этом же хосте: подсеть connected через интерфейс."
-    say "  Прописать сюда via-маршрут значило бы увести трафик в никуда."
-    # Мало НЕ ставить свой: via-маршрут, оставшийся от контейнерной схемы,
-    # переживает переезд и перекрывает connected. Наружу всё уходит, а ответы
-    # клиентам отправляются в мёртвую docker-сеть — и это выглядит как
-    # «подключается, но интернета нет» при полностью зелёной диагностике.
-    _stale="$(ip route show "$CLIENT_SUBNET" 2>/dev/null | grep -v " dev $AWG_IF" || true)"
-    if [ -n "$_stale" ]; then
-        say "  НАЙДЕН лишний маршрут мимо $AWG_IF:"
-        say "    $_stale"
-        run "ip route del $CLIENT_SUBNET 2>/dev/null || true"
-    else
-        say "  лишних маршрутов нет"
-    fi
+# 5) чужой маршрут до клиентской подсети — прочь
+step "5. Маршрут $CLIENT_SUBNET — снимаем чужой"
+say "  $AWG_IF поднят на этом же хосте: подсеть connected через интерфейс."
+say "  Прописать сюда via-маршрут значило бы увести трафик в никуда."
+# Мало НЕ ставить свой: чужой via-маршрут перекрывает connected. Наружу всё
+# уходит, а ответы клиентам отправляются в мёртвую сеть — и это выглядит как
+# «подключается, но интернета нет» при полностью зелёной диагностике.
+_stale="$(ip route show "$CLIENT_SUBNET" 2>/dev/null | grep -v " dev $AWG_IF" || true)"
+if [ -n "$_stale" ]; then
+    say "  НАЙДЕН лишний маршрут мимо $AWG_IF:"
+    say "    $_stale"
+    run "ip route del $CLIENT_SUBNET 2>/dev/null || true"
 else
-    step "5. Маршрут $CLIENT_SUBNET → $CONT_IP"
-    if ip route show "$CLIENT_SUBNET" | grep -q "$CONT_IP"; then
-        say "  уже есть"
-    else
-        run "ip route replace $CLIENT_SUBNET via $CONT_IP"
-    fi
+    say "  лишних маршрутов нет"
 fi
 
 # 6) параметры ядра
 step "6. sysctl"
 say "  ip_forward — иначе хост не пропустит трафик клиентов вовсе"
-say "  rp_filter=strict отбросил бы пакеты с 10.8.1.x, пришедшие с докерного"
-say "  интерфейса, если обратный маршрут покажется ядру несимметричным"
+say "  rp_filter=strict отбросил бы пакеты с 10.8.1.x, пришедшие с awg-интерфейса,"
+say "  если обратный маршрут покажется ядру несимметричным"
 if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" != "1" ]; then
     run "sysctl -w net.ipv4.ip_forward=1"
 else

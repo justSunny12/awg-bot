@@ -197,7 +197,7 @@ def test_backup_extra_is_the_servers(services, make_active_client, monkeypatch, 
 
 def test_drop_after_restore_goes_through_the_bots_single_entry(monkeypatch, tmp_path):
     """--apply-blocks — тот же awg.block_ip и тот же вход seam._exec, что у
-    бота: на хосте — iptables прямо, в docker-режиме — docker exec в контейнер."""
+    бота: iptables хоста."""
     import json
     from awgbot.infra import awg
     from tools import restore_merge
@@ -210,11 +210,5 @@ def test_drop_after_restore_goes_through_the_bots_single_entry(monkeypatch, tmp_
             self.returncode = 1 if "-C" in args else 0     # «правила ещё нет»
             self.stdout = self.stderr = b""
     monkeypatch.setattr(awg, "_run", lambda args, **kw: runs.append(list(args)) or P(args))
-    monkeypatch.setattr(awg, "in_container", lambda: True)
-    assert restore_merge.main(["--apply-blocks", str(report)]) == 0
-    assert ["docker", "exec", cfg.CONTAINER, "iptables", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] \
-        in runs, runs
-    runs.clear()
-    monkeypatch.setattr(awg, "in_container", lambda: False)
     assert restore_merge.main(["--apply-blocks", str(report)]) == 0
     assert ["iptables", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] in runs, runs

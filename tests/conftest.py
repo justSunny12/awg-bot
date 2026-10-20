@@ -120,7 +120,7 @@ def db(tmp_path):
 
 @pytest.fixture()
 def fake_awg(monkeypatch):
-    """Замена awg-слоя (docker exec) на in-memory фейк. Патчим модуль
+    """Замена awg-слоя (exec) на in-memory фейк. Патчим модуль
     awgbot.infra.awg — тот же объект, что видит services. AwgError оставляем
     настоящим, чтобы `except awg.AwgError` в коде работал.
 
@@ -167,7 +167,7 @@ def fake_awg(monkeypatch):
     _set("block_ip", lambda addr: state.blocked.add(addr))
     _set("unblock_ip", lambda addr: state.blocked.discard(addr))
     _set("is_blocked", lambda addr: addr in state.blocked)
-    _set("container_started_at", lambda: state.started_at)
+    _set("service_started_at", lambda: state.started_at)
     # «сервер лежит» тесты изображают подменой services.server_ok — свой рычаг
     # здесь не нужен
     _set("awg_responding", lambda: True)
@@ -217,7 +217,7 @@ def fake_routing(monkeypatch, tmp_path):
 
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
-        marking=None, probe="ok", enabled=True, nat_exempt=None,
+        marking=None, probe="ok", enabled=True,
         dns={},                       # домен → IPv4, что «вернёт» резолвер
         # Счётчики пира линка. По умолчанию мир такой: клиенты через линк
         # ходят (tx растёт), обратно не приходит ничего (rx стоит) — то есть
@@ -290,7 +290,6 @@ def fake_routing(monkeypatch, tmp_path):
     # принимала лишний mark_in_set. Лишний параметр в двойнике опаснее, чем
     # кажется, — он делает зелёным вызов, который в бою упал бы на TypeError.
     _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))
-    _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
     _set("ensure_route", lambda iface="": None)
     _set("set_marking_enabled", lambda on: setattr(state, "marking", on))
     _set("probe_gateway", lambda target, *a, **k: state.probe)

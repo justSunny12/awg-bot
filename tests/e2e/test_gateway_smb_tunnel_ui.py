@@ -26,7 +26,6 @@ ADMIN = config.ADMIN_ID
 NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"}
 NAS2 = {"t": "_smb._tcp", "n": "Backup", "h": "backup", "p": 445, "a": "192.168.68.20"}
 WHY = {
-    "docker": "SMB в туннеле — только при VPN прямо на хосте, без docker",
     "no_client_resolver": "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»",
     "no_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
     "no_firewall": "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все клиенты",
@@ -37,7 +36,6 @@ WHY = {
 def smb(monkeypatch, tmp_path, slots):
     """Хост со своим резолвером и резолвером админа, файервол включён;
     настройки — словарь, записи резолвера админа — в `records`."""
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     conf = tmp_path / "admin-dns.conf"
     conf.write_text("listen-address=10.255.53.53\nserver=10.8.1.1\n", encoding="utf-8")
     monkeypatch.setattr(admindns, "CONF_PATH", conf)
@@ -98,14 +96,6 @@ async def test_without_slots_there_is_no_toggle_at_all(services, slots, smb):
     assert _smb_row(markup) == [], _rows(markup)
 
 
-async def test_in_docker_there_is_no_toggle_at_all(services, slots, smb, monkeypatch):
-    _, pi, _ = slots
-    _slot1(services, pi)
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    _, markup = await gateways_screen(services)
-    assert _smb_row(markup) == []
-
-
 async def test_turning_on_asks_first_then_writes_the_records(services, slots, smb, fake_bot):
     """Вопрос ничего не меняет; «✅ Включить» — настройка, файл записей и
     итог первой строкой «🛰 Шлюзы» с тумблером ✅."""
@@ -154,8 +144,6 @@ async def test_turning_on_without_what_it_needs_is_a_toast_not_a_dialog(services
         smb["conf"].unlink()
     elif why == "no_client_resolver":
         monkeypatch.setattr(resolver, "installed", lambda: False)
-    elif why == "docker":
-        monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     else:
         monkeypatch.setattr(nftguard, "enabled", lambda: False)
     cb, nav = _acb(fake_bot)

@@ -13,7 +13,6 @@ from awgbot.infra import awg, nftguard
 
 @pytest.fixture()
 def host_mode(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "SUBNET_PREFIX", "10.9.1")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
     monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
@@ -67,11 +66,11 @@ def test_resolve_allow_keeps_last_answer_when_dns_is_down(monkeypatch):
 
 # ── спецификация и рендер ────────────────────────────────────────────────────
 
-def test_spec_host_mode_per_peer(host_mode, monkeypatch):
+def test_spec_has_admin_devices_and_own_forward(host_mode, monkeypatch):
     _conf(monkeypatch, **{"app.firewall.ssh_allow": ["203.0.113.7", "home.example.org"],
                           "app.firewall.open_tcp": [8443, "bad"]})
     spec = nftguard.build_spec(["10.9.1.5", "10.9.1.2", "10.9.1.5"])
-    assert spec.per_peer and spec.own_forward
+    assert spec.own_forward
     assert spec.tunnel_nets4 == ["10.9.1.0/24"]
     assert spec.tunnel_admin4 == ["10.9.1.2", "10.9.1.5"]
     assert spec.ssh_allow4 == ["203.0.113.7/32", "203.0.113.9/32"]
@@ -150,20 +149,6 @@ def test_remove_keeps_nat_on_host(host_mode, monkeypatch, tmp_path):
     assert any("NAT" in ln for ln in done)
 
 
-def test_render_docker_mode_has_no_per_peer_and_no_forward(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    monkeypatch.setattr(config, "SERVER_PORT", 0)
-    monkeypatch.setattr(nftguard, "listen_ports", lambda: [])
-    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.29.172.0/24"])
-    _conf(monkeypatch, **{"app.firewall.ssh_allow": ["203.0.113.7"]})
-    spec = nftguard.build_spec(["10.8.1.5"])
-    assert not spec.per_peer and not spec.own_forward and spec.tunnel_admin4 == []
-    text = nftguard.render(spec)
-    assert "tcp dport 2222 ip saddr @tunnel_nets4 accept" in text
-    assert "hook forward" not in text and "@admin4" not in text and "iifname {" not in text
-    assert "masquerade" not in text, "в докере NAT делает контейнер"
-
-
 def test_render_is_deterministic_and_has_no_timestamps(host_mode, monkeypatch):
     _conf(monkeypatch)
     a = nftguard.render(nftguard.build_spec(["10.9.1.5", "10.9.1.2"]))
@@ -239,18 +224,10 @@ def test_reconcile_resyncs_when_live_set_drifted(host_mode, monkeypatch, tmp_pat
     assert nftguard.reconcile(["10.9.1.5"]) == "resynced"
 
 
-def test_reconcile_does_nothing_when_disabled_in_docker(monkeypatch):
-    """Докерный режим: NAT клиентов — дело контейнера, таблицы нет вовсе."""
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    _conf(monkeypatch, **{"app.firewall.enabled": False})
-    calls = _nft_stub(monkeypatch)
-    assert nftguard.reconcile(["10.9.1.5"]) == "disabled" and calls == []
-
-
 def test_reconcile_keeps_nat_when_firewall_is_off_on_host(host_mode, monkeypatch, tmp_path):
     """Выключенный файервол не означает «клиенты без интернета»: на хосте
-    таблица остаётся в форме NAT-only. Раньше MASQUERADE давал контейнер или
-    обвяз маршрутизации, и чистый хост оставался без выхода наружу."""
+    таблица остаётся в форме NAT-only. Раньше MASQUERADE давал обвяз
+    маршрутизации, и чистый хост оставался без выхода наружу."""
     _conf(monkeypatch, **{"app.firewall.enabled": False})
     monkeypatch.setattr(nftguard, "RULES_FILE", str(tmp_path / "g.nft"))
     monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path))
@@ -275,7 +252,6 @@ def test_live_set_parses_prefix_elements(monkeypatch):
 # ── старые ворота снимаются ──────────────────────────────────────────────────
 
 def test_remove_legacy_ssh_gate_strips_postup_and_chain(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
     conf = ("[Interface]\nAddress = 10.9.1.0/24\n"
@@ -306,7 +282,6 @@ def test_remove_legacy_ssh_gate_strips_postup_and_chain(monkeypatch):
 
 
 def test_remove_legacy_ssh_gate_is_a_noop_when_clean(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
     monkeypatch.setattr(awg, "read_file", lambda p: "[Interface]\nAddress = 10.9.1.0/24\n")
@@ -540,7 +515,7 @@ def test_the_tunnel_addresses_of_gateway_networks_are_for_admin_devices_only(hos
     """Второй рубеж на ВПС: в пространство адресов в туннеле (исходное
     назначение — к forward оно уже переведено) прочим клиентам хода нет,
     устройствам админа — есть; правило стоит до общего «клиенты — наружу».
-    Только host с фильтром: в NAT-only и docker решает шлюз."""
+    Только с фильтром: в NAT-only решает шлюз."""
     _conf(monkeypatch, **{"app.firewall.enabled": True})
     rule = "ip saddr @tunnel_nets4 ip saddr != @admin4 ct original ip daddr 10.240.0.0/12 drop"
     lines = [ln.strip() for ln in nftguard.render(nftguard.build_spec(["10.9.1.5"])).splitlines()]
@@ -551,11 +526,6 @@ def test_the_tunnel_addresses_of_gateway_networks_are_for_admin_devices_only(hos
     monkeypatch.setattr(config, "ROUTING_LAN_SPACE", "")
     _conf(monkeypatch, **{"app.firewall.enabled": False})
     assert "ct original" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "NAT-only — без фильтра"
-    _conf(monkeypatch, **{"app.firewall.enabled": True})
-    monkeypatch.setattr(awg, "in_container", lambda: True)
-    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.17.0.0/16"])
-    spec = nftguard.build_spec(["10.9.1.5"])
-    assert spec.lan_space4 == "" and "ct original" not in nftguard.render(spec), "docker — решает шлюз"
 
 
 # ── канал ВПС ↔ шлюз: одна строка и один набор ───────
@@ -707,19 +677,6 @@ def test_without_the_admin_resolver_there_is_no_rule(host_mode, monkeypatch, tmp
     assert "10.255.53.53" not in nftguard.render(spec)
 
 
-def test_docker_mode_has_no_admin_resolver_rule(monkeypatch, tmp_path):
-    """В docker-режиме своего резолвера нет вовсе — и набора admin4 тоже: правило
-    с пустым набором закрыло бы адрес всем, включая админа."""
-    _admin_dns(monkeypatch, tmp_path, installed=True)
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    monkeypatch.setattr(nftguard, "listen_ports", lambda: [])
-    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.29.172.0/24"])
-    _conf(monkeypatch)
-    spec = nftguard.build_spec(["10.8.1.5"])
-    assert spec.admin_dns4 == ""
-    assert "10.255.53.53" not in nftguard.render(spec)
-
-
 # ── частные адреса не уходят к провайдеру ────────────────────────────────────
 
 _WAN_RULE = ('iifname { "awg1", "awglink" } oifname { "eth0" } ip daddr { 10.0.0.0/8, 172.16.0.0/12, '
@@ -759,18 +716,8 @@ def test_the_wan_is_the_default_route_device_but_never_a_tunnel(monkeypatch):
     assert nftguard.wan_ifaces() == []
 
 
-def test_docker_mode_has_no_wan_rule(host_mode, monkeypatch):
-    """В docker-режиме FORWARD — дело docker, своей цепочки нет."""
-    monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
-    monkeypatch.setattr(awg, "in_container", lambda: True)
-    monkeypatch.setattr(nftguard, "_docker_bridge_subnets", lambda: ["172.17.0.0/16"])
-    _conf(monkeypatch, **{"app.firewall.enabled": True})
-    spec = nftguard.build_spec(["10.9.1.5"])
-    assert spec.wan_ifs == [] and "ip daddr { 10.0.0.0/8" not in nftguard.render(spec)
-
-
 def test_the_private_rule_touches_only_traffic_from_the_tunnel_and_links(host_mode, monkeypatch):
-    """Проходящий трафик хоста не из туннеля (docker, VM, резолвер VPC
+    """Проходящий трафик хоста не из туннеля (VM, резолвер VPC
     провайдера) правило не задевает — особенно в NAT-only, где политику держит
     хост: источник — только awg-интерфейсы клиентов и линки; их нет — правила
     нет вовсе."""

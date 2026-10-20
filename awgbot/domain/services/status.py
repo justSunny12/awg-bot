@@ -401,7 +401,7 @@ class StatusMixin:
         return notes
 
     def server_status_cached(self) -> dict:
-        """Статусный блок из state — ноль docker exec. Живость awg пишет монитор,
+        """Статусный блок из state — ни одного exec. Живость awg пишет монитор,
         started_at — детект рестарта, online_count — опросчик трафика, а метрики
         железа (CPU/RAM/диск) монитор снимает ЛОКАЛЬНО (co-located) — hostmetrics. Возраст
         метрик показываем в инфобоксе (обновляет монитор каждый тик, локально)."""
@@ -410,7 +410,7 @@ class StatusMixin:
         if ok_raw is None:
             ok_raw = self.db.get_state("last_server_ok")
         ok = None if ok_raw is None else (ok_raw == "1")
-        started = timeutil.parse_docker_time(self.db.get_state("container_started_at") or "")
+        started = timeutil.parse_started_at(self.db.get_state("service_started_at") or "")
         uptime = timeutil.fmt_uptime(started) if started else None
         # онлайн — живьём на момент показа и из одного источника со списком по
         # ссылке (online_devices): устройства и профили не расходятся («0 (7)»
@@ -427,13 +427,12 @@ class StatusMixin:
                 "cpu": cpu, "ram": ram, "disk": disk, "age_seconds": age_seconds}
 
     def server_ok(self) -> bool:
-        """Живая проверка: если awg внутри контейнера ответил — контейнер
-        заведомо запущен, отдельный container_running не нужен (1 exec, не 2)."""
+        """Живая проверка: awg отвечает — сервис жив (один exec)."""
         return awg.awg_responding()
 
     def server_ok_cached(self) -> bool:
         """Статус из state (пишет monitor-задача каждые MONITOR_MINUTES и старт).
-        Для приветствий/меню: 0 docker exec, свежесть ≤3 мин — для строки
+        Для приветствий/меню: ни одного exec, свежесть ≤3 мин — для строки
         «сервер работает» более чем достаточно."""
         cached = self.db.get_state("last_server_ok")
         if cached is not None:
@@ -445,8 +444,8 @@ class StatusMixin:
         живой снимок awg-статуса, опрос пиров (счётчик онлайн и хендшейки — без
         него цифра оставалась бы от прошлого тика) и локальные метрики железа
         прямо в state, минуя ожидание следующего тика монитора. Блокирующий
-        (docker exec + /proc) — вызывать через asyncio.to_thread. Меню/инфобокс
-        потом читают из state как обычно (0 docker exec на показ). Возвращает
+        (exec + /proc) — вызывать через asyncio.to_thread. Меню/инфобокс
+        потом читают из state как обычно (ни одного exec на показ). Возвращает
         уведомления опроса (поздравления переезда) — отправить их обязан
         вызывающий."""
         from awgbot.infra import hostmetrics
@@ -474,11 +473,9 @@ class StatusMixin:
         return True
 
     def restart_service(self) -> None:
-        """Перезапуск AmneziaWG по кнопке админа. На хосте это awg-quick
-        down/up — метка старта не меняется, блокировки не слетают, и
-        reconcile_blocks ниже лишь подтверждает картину. В docker-режиме
-        меняется StartedAt контейнера, и detect_and_handle_restart переналагает
-        и блокировки, и SSH-фильтр."""
+        """Перезапуск AmneziaWG по кнопке админа: awg-quick down/up — метка
+        старта не меняется, блокировки не слетают, и reconcile_blocks ниже лишь
+        подтверждает картину."""
         awg.restart_server()
         self.detect_and_handle_restart()
         self.reconcile_blocks()

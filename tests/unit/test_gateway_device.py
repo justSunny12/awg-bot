@@ -130,7 +130,7 @@ def test_link_script_rekey_mode_regenerates_keys():
 
 def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path):
     """configure_gateway на шаблоне conf/app.yaml: роль и секция gateway
-    раскомментированы, runtime — host, клиентскую подсеть не спрашивает и не
+    раскомментированы, клиентскую подсеть не спрашивает и не
     пишет (она приезжает в юните обвязки из бандла). Вопросов нет вовсе:
     stdin закрыт, любой read упал бы."""
     text = flat()
@@ -154,7 +154,6 @@ def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path
     assert re.search(r'^role: "gateway"$', out, re.M)
     assert re.search(r'^gateway:$', out, re.M) and re.search(r'^  link_interface: "awglink"', out, re.M)
     assert re.search(r'^  client_subnet: ""', out, re.M), "подсеть приезжает в юните из бандла"
-    assert re.search(r'^  runtime: "host"', out, re.M)
 
 
 # ── скрипт обвязки и шапка бандла ────────────────────────────────────────────

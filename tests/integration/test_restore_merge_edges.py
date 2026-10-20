@@ -72,14 +72,14 @@ def test_same_line_keeps_the_plumbing_and_dns_handed_out_to_devices(world, tmp_p
 
 
 def test_other_line_keeps_host_facts_and_takes_the_phrase_only_if_there_is_none(world, fresh, tmp_path):
-    world.db.set_state("host_boot_id", "old-boot"); world.db.set_state("container_started_at", "old")
+    world.db.set_state("host_boot_id", "old-boot"); world.db.set_state("service_started_at", "old")
     world.db.set_state("backup_passphrase", "copy phrase 1"); world.db.set_state("updates_muted", "1")
     copy = world.take_copy(tmp_path / "copy")
-    fresh.db.set_state("host_boot_id", "new-boot"); fresh.db.set_state("container_started_at", "new")
+    fresh.db.set_state("host_boot_id", "new-boot"); fresh.db.set_state("service_started_at", "new")
     fresh.run(copy)
     res = str(copy / "state" / "bot.db")
     state = dict(sqlite3.connect(res).execute("SELECT key, value FROM server_state").fetchall())
-    assert (state["host_boot_id"], state["container_started_at"]) == ("new-boot", "new"), "ложное «хост перезагружен»"
+    assert (state["host_boot_id"], state["service_started_at"]) == ("new-boot", "new"), "ложное «хост перезагружен»"
     assert state["backup_passphrase"] == "copy phrase 1", "на новом сервере без фразы функция бэкапов пропала"
     assert "updates_muted" not in state, "«не уведомлять» — факт текущей установки"
     copy2 = world.take_copy(tmp_path / "copy2")

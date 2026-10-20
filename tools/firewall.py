@@ -95,8 +95,7 @@ def _yes(prompt: str) -> bool:
 
 
 def _print_spec(spec: nftguard.GuardSpec) -> None:
-    mode = "host (пер-пирный SSH из туннеля)" if spec.per_peer else "docker (SSH из туннеля по bridge-подсети)"
-    print(f"  режим            : {mode}")
+    print("  SSH из туннеля   : только устройствам админа")
     print(f"  порт SSH         : {spec.ssh_port}")
     print(f"  вайтлист v4      : {', '.join(spec.ssh_allow4) or '—'}")
     print(f"  вайтлист v6      : {', '.join(spec.ssh_allow6) or '—'}")

@@ -24,7 +24,7 @@ timeutil/ — единый источник времени и все форма�
 («5 мин назад», «ост. 3 дн.») — нет; у кнопок — нет (label=False).
 
 Части пакета: zone — метка пояса; clock — «сейчас», ISO, ввод, периоды,
-арифметика; fmt — форматтеры экранов; awg — хендшейк, Docker, аптайм. Части
+арифметика; fmt — форматтеры экранов; awg — хендшейк, старт сервиса, аптайм. Части
 зовут через пакет всё, что подменяют тесты (pkg.now(), pkg.TZ): заморозка
 часов в эталонах подменяет timeutil.now, и форматтеры соседнего модуля
 обязаны её видеть.
@@ -45,7 +45,7 @@ from .clock import (now, now_iso, to_iso, parse_iso, parse_dt_sec, elapsed, shif
 from .fmt import (fmt_dt_ui, fmt_clock_ui, fmt_hour_ui, fmt_refreshed, fmt_end_ui, fmt_date_ui, fmt_period_ui, age_short, age_ago,  # noqa: E402
                   fmt_ago, first_of_next_month_str, in_quiet_hours, _plural_ru, fmt_remaining,
                   remaining_brief, fmt_remaining_short, brief_units)
-from .awg import handshake_is_online, fmt_handshake, parse_docker_time, fmt_uptime  # noqa: E402
+from .awg import handshake_is_online, fmt_handshake, parse_started_at, fmt_uptime  # noqa: E402
 
 __all__ = [
     "TZ", "STORE_TZ", "tz_label", "tz_tail",
@@ -54,5 +54,5 @@ __all__ = [
     "fmt_dt_ui", "fmt_clock_ui", "fmt_hour_ui", "fmt_refreshed", "fmt_end_ui", "fmt_date_ui", "fmt_period_ui", "age_short", "age_ago",
     "fmt_ago", "first_of_next_month_str", "in_quiet_hours", "_plural_ru", "fmt_remaining",
     "remaining_brief", "fmt_remaining_short", "brief_units",
-    "handshake_is_online", "fmt_handshake", "parse_docker_time", "fmt_uptime",
+    "handshake_is_online", "fmt_handshake", "parse_started_at", "fmt_uptime",
 ]

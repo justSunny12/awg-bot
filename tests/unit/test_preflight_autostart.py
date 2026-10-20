@@ -11,7 +11,6 @@ def _fake_units(states):
 
 
 def test_disabled_awg_quick_unit_is_reported(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")
     monkeypatch.setattr(preflight, "_unit_enabled", _fake_units({"awg-quick@awg1": "disabled"}))
     warns = preflight._host_autostart_warnings()
@@ -19,15 +18,8 @@ def test_disabled_awg_quick_unit_is_reported(monkeypatch):
 
 
 def test_enabled_unit_and_no_stale_units_is_quiet(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")
     monkeypatch.setattr(preflight, "_unit_enabled", _fake_units({"awg-quick@awg1": "enabled"}))
-    assert preflight._host_autostart_warnings() == []
-
-
-def test_docker_runtime_is_out_of_scope(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
-    monkeypatch.setattr(preflight, "_unit_enabled", _fake_units({"awg-quick@awg0": "disabled"}))
     assert preflight._host_autostart_warnings() == []
 
 
@@ -35,5 +27,4 @@ def test_disabled_bot_unit_is_reported_for_both_roles(monkeypatch):
     monkeypatch.setattr(preflight, "_unit_enabled",
                         lambda unit: "disabled" if unit == "awg-bot" else "enabled")
     assert any("systemctl enable awg-bot" in w for w in preflight._service_autostart_warning())
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     assert any("awg-bot" in w for w in preflight._host_autostart_warnings())

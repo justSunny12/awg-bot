@@ -138,7 +138,7 @@ def test_startup_messages_to_admin_are_dismissible():
         + "\nИспользуй notifier.notify_one — он подставит «Скрыть» сам.")
 
 
-# ── systemd-юнит: зависимость от docker только там, где docker нужен ─────────
+# ── systemd-юнит ──────────────────────────────────────────────────────────────
 
 def _extract_func(text: str, name: str) -> str:
     """Тело bash-функции из скрипта: от `name() {` до `}` в первой колонке."""
@@ -147,7 +147,7 @@ def _extract_func(text: str, name: str) -> str:
     return m.group(0)
 
 
-def _render_unit(tmp_path, script: str, runtime: str, role: str = "client") -> str:
+def _render_unit(tmp_path, script: str, role: str = "client") -> str:
     """Прогоняет НАСТОЯЩУЮ install_unit из awg-bot.sh и возвращает юнит.
 
     Не грепаем исходник, а рендерим: проверять надо то, что доедет до systemd,
@@ -156,7 +156,7 @@ def _render_unit(tmp_path, script: str, runtime: str, role: str = "client") -> s
     import subprocess
 
     conf = tmp_path / "conf"; conf.mkdir()
-    (conf / "app.yaml").write_text(f'role: "{role}"\ndocker:\n  runtime: "{runtime}"\n', encoding="utf-8")
+    (conf / "app.yaml").write_text(f'role: "{role}"\nawg:\n  interface: "awg0"\n', encoding="utf-8")
     unit = tmp_path / "awg-bot.service"
 
     harness = "\n".join([
@@ -175,26 +175,13 @@ def _render_unit(tmp_path, script: str, runtime: str, role: str = "client") -> s
     return unit.read_text(encoding="utf-8")
 
 
-def test_unit_keeps_docker_dependency_in_container_mode(tmp_path, script):
-    """Докерный режим: бот ходит в контейнер через docker exec — зависимость нужна."""
-    unit = _render_unit(tmp_path, script, "docker")
-    assert "Requires=docker.service" in unit
-    assert "After=network-online.target docker.service" in unit
-
-
-def test_unit_drops_docker_dependency_in_host_mode(tmp_path, script):
-    """Host-режим: docker не нужен, и жёсткая зависимость от него вредна.
-
-    `Requires=docker.service` означает две вещи разом: docker нельзя удалить
-    (юнит перестанет стартовать) и падение докера утащит за собой бота, который
-    к нему не обращается. Юнит переписывается на каждом update — значит правка
-    руками не живёт, чинить надо здесь.
-    """
-    unit = _render_unit(tmp_path, script, "host")
-    # именно по директивам: tmp_path в путях сам содержит слово docker
-    assert not [ln for ln in unit.splitlines()
-                if ln.startswith(("After=", "Wants=", "Requires=", "BindsTo="))
-                and "docker" in ln], unit
+def test_unit_requires_no_foreign_service(tmp_path, script):
+    """Жёсткая зависимость от чужого сервиса вредна дважды: его нельзя удалить
+    (юнит перестанет стартовать) и его падение утащит за собой бота. Юнит
+    переписывается на каждом update — значит правка руками не живёт, чинить
+    надо здесь."""
+    unit = _render_unit(tmp_path, script)
+    assert not [ln for ln in unit.splitlines() if ln.startswith(("Requires=", "BindsTo="))], unit
     # остальное на месте — не сломали шаблон, вырезая строки
     assert "After=network-online.target" in unit
     assert "Wants=network-online.target" in unit
@@ -209,14 +196,14 @@ def test_gateway_agent_starts_after_the_plumbing_unit(tmp_path, script):
     сообщением после каждой перезагрузки говорил «таблицы нет, шлюз открыт
     клиентам туннеля». Requires не ставим: не отработавшая обвязка не должна
     уносить агента — через него её и чинят."""
-    unit = _render_unit(tmp_path, script, "host", role="gateway")
+    unit = _render_unit(tmp_path, script, role="gateway")
     assert "After=network-online.target awg-link-gw.service" in unit
     assert "Wants=network-online.target awg-link-gw.service" in unit
     assert "Requires=awg-link-gw.service" not in unit
 
 
 def test_main_bot_unit_knows_nothing_about_gateway_plumbing(tmp_path, script):
-    assert "awg-link-gw" not in _render_unit(tmp_path, script, "host")
+    assert "awg-link-gw" not in _render_unit(tmp_path, script)
 
 
 # ── обновление: вторая половина обязана идти новым кодом ─────────────────────
@@ -230,7 +217,7 @@ def test_update_hands_off_to_the_new_script(script):
     Bash держит функции в памяти с момента разбора файла. cmd_update подменяет
     awg-bot.sh на диске, но в своём процессе продолжает звать старые
     install_unit/seed_conf — правка этих функций не может применить сама себя и
-    молчит ещё одно обновление. Так юнит остался с Requires=docker.service на
+    молчит ещё одно обновление. Так юнит однажды остался с устаревшей зависимостью на
     сервере, уже переехавшем на host-режим: фикс уехал, а файл не изменился.
     """
     upd = _extract_func(script, "cmd_update")
@@ -309,7 +296,7 @@ def _run_autostart(tmp_path, script: str, *, role: str,
         os.utime(p, (_OLD, _OLD))
     conf = tmp_path / "conf"; conf.mkdir()
     (conf / "app.yaml").write_text(
-        f'role: "{role}"\ndocker:\n  runtime: "host"\ninterface: "awg0"\n', encoding="utf-8")
+        f'role: "{role}"\nawg:\n  interface: "awg0"\n', encoding="utf-8")
 
     body = ((_extract_func(script, "gw_plumbing_sync") + "\n" + _extract_func(script, "ensure_host_autostart"))
             .replace("/usr/local/sbin", str(sbin))

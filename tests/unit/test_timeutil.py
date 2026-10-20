@@ -126,16 +126,16 @@ def test_fmt_remaining_expired_and_small():
     assert t.fmt_remaining(_dt(2026, 1, 6, 15), ref=_dt(2026, 1, 1, 12)) == "5 дней 3 часа"
 
 
-# ── docker StartedAt ─────────────────────────────────────────────────────────
-def test_parse_docker_time_valid_and_tz():
-    got = t.parse_docker_time("2026-07-05T10:39:22.158372221Z")   # 10:39 UTC = 15:39 UTC+5
+# ── время старта сервиса (ISO, суффикс Z) ─────────────────────────────────
+def test_parse_started_at_valid_and_tz():
+    got = t.parse_started_at("2026-07-05T10:39:22.158372221Z")   # 10:39 UTC = 15:39 UTC+5
     assert got is not None and got.hour == 15 and got.minute == 39
 
 
-def test_parse_docker_time_never_and_garbage():
-    assert t.parse_docker_time("0001-01-01T00:00:00Z") is None
-    assert t.parse_docker_time("не дата") is None
-    assert t.parse_docker_time("") is None
+def test_parse_started_at_never_and_garbage():
+    assert t.parse_started_at("0001-01-01T00:00:00Z") is None
+    assert t.parse_started_at("не дата") is None
+    assert t.parse_started_at("") is None
 
 
 # ── fmt_handshake ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-"""Unit: логика inotify-вотчдога (runtime/watcher) без реального контейнера.
+"""Unit: логика inotify-вотчдога (runtime/watcher) без реального каталога.
 
-Мокаем watchdog.Observer, awg.container_pid, os.path.isdir/os.stat — проверяем
+Мокаем watchdog.Observer, awg.watch_root, os.path.isdir/os.stat — проверяем
 дебаунс→колбэк, фильтр событий, (пере)подключение, идемпотентность и стоп.
 """
 import os
@@ -92,7 +92,7 @@ def test_handler_skips_self_write(monkeypatch):
 
 # ── ensure_watching ──────────────────────────────────────────────────────────
 def test_ensure_watching_binds_and_is_idempotent(monkeypatch):
-    monkeypatch.setattr(awg, "container_pid", lambda: 4242)
+    monkeypatch.setattr(awg, "watch_root", lambda: "/x/awg")
     monkeypatch.setattr(wmod, "Observer", FakeObserver)
     monkeypatch.setattr(os.path, "isdir", lambda p: True)
     monkeypatch.setattr(os, "stat", lambda p: type("S", (), {"st_mtime": 1.0})())
@@ -100,18 +100,17 @@ def test_ensure_watching_binds_and_is_idempotent(monkeypatch):
     w.ensure_watching()
     assert w.alive() is True
     assert len(FakeObserver.instances) == 1
-    w.ensure_watching()                                    # тот же PID, наблюдатель жив → no-op
+    w.ensure_watching()                                    # тот же путь, наблюдатель жив → no-op
     assert len(FakeObserver.instances) == 1                # новый Observer не создан
     w.stop()
     assert w.alive() is False
 
 
-def test_ensure_watching_no_pid_noops(monkeypatch):
-    """Контейнер без PID — пути наблюдения нет, вотчдог не поднимается.
-    Режим контейнера задан явно: на хосте путь — AWG_DIR, и на Linux-стенде
-    с AmneziaWG этот каталог настоящий — тест цеплялся бы к нему."""
-    monkeypatch.setattr(awg, "in_container", lambda: True)
-    monkeypatch.setattr(awg, "container_pid", lambda: None)
+def test_ensure_watching_no_path_noops(monkeypatch):
+    """Пути наблюдения нет — вотчдог не поднимается. Наблюдатель подменён:
+    на Linux-стенде с AmneziaWG каталог AWG_DIR настоящий, и настоящий
+    Observer цеплялся бы к нему."""
+    monkeypatch.setattr(awg, "watch_root", lambda: None)
     monkeypatch.setattr(wmod, "Observer", FakeObserver)
     w = AwgWatcher(on_change=lambda: None)
     w.ensure_watching()
@@ -121,8 +120,8 @@ def test_ensure_watching_no_pid_noops(monkeypatch):
 
 
 def test_ensure_watching_missing_path(monkeypatch):
-    monkeypatch.setattr(awg, "container_pid", lambda: 7)
-    monkeypatch.setattr(os.path, "isdir", lambda p: False)   # /proc путь недоступен
+    monkeypatch.setattr(awg, "watch_root", lambda: "/x/awg")
+    monkeypatch.setattr(os.path, "isdir", lambda p: False)   # каталога нет
     w = AwgWatcher(on_change=lambda: None)
     w.ensure_watching()
     assert w.alive() is False
@@ -131,27 +130,21 @@ def test_ensure_watching_missing_path(monkeypatch):
 # ── mtime-сетка ──────────────────────────────────────────────────────────────
 def test_snapshot_mtimes(monkeypatch):
     w = AwgWatcher(on_change=lambda: None)
-    w._path = "/proc/99/root/opt/amnezia/awg"
+    w._path = "/etc/amnezia/amneziawg"
     monkeypatch.setattr(os, "stat", lambda p: type("S", (), {"st_mtime": 123.0})())
     w._snapshot_mtimes()
     assert w._watched_paths() and all(v == 123.0 for v in w._mtimes.values())
 
 
-def test_watched_paths_empty_without_pid():
+def test_watched_paths_empty_without_path():
     w = AwgWatcher(on_change=lambda: None)
     assert w._watched_paths() == []
 
 
-def test_ensure_watching_uses_plain_dir_in_host_mode(monkeypatch):
-    """На хосте наблюдаем AWG_DIR напрямую — PID'а нет и не будет.
-
-    Привязка вотчдога к PID сделала бы host-режим слепым: container_pid там
-    бросает заслон, а раньше его результат ещё и глотался в None — вотчдог молча
-    не подключился бы, и правки конфига мимо бота перестали бы замечаться.
-    """
+def test_ensure_watching_uses_the_awg_dir(monkeypatch):
+    """Наблюдаем AWG_DIR напрямую — путь, а не процесс."""
     from awgbot.core import config
 
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(wmod, "Observer", FakeObserver)
     monkeypatch.setattr(os.path, "isdir", lambda p: True)
     monkeypatch.setattr(os, "stat", lambda p: type("S", (), {"st_mtime": 1.0})())

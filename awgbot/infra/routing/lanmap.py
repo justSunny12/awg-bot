@@ -138,7 +138,7 @@ def render(entries: Iterable[Entry], space: str, prefixes: dict[int, str]) -> st
 
 def _nft(args: list[str], stdin: str = "") -> object:
     """nft; бинарника нет — RoutingUnavailable (таблицы нет и быть не может:
-    docker-хост без nftables), прочие отказы — RoutingError."""
+    хост без nftables), прочие отказы — RoutingError."""
     import shutil
     if shutil.which("nft") is None:
         raise base.RoutingUnavailable("nft не найден — поставь пакет nftables")

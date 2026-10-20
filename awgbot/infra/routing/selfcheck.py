@@ -6,7 +6,6 @@ import time
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.infra import awg
 
 from . import base, probes
 from .base import log, RoutingError, RoutingUnavailable
@@ -31,7 +30,7 @@ _selfcheck_bad_streak = 0        # подряд отрицательных ве�
 def _check_host_tools() -> None:
     """Инструменты есть И ядро реально умеет то, что от него потребуется.
 
-    Одной проверки `ipset -V` мало: на контейнерной виртуализации (OpenVZ/LXC)
+    Одной проверки `ipset -V` мало: на виртуализации уровня ОС (OpenVZ/LXC)
     бинарь отработает, а `ipset create` упадёт — модулей ip_set в ядре гостя
     нет. Молча это вылезло бы уже после того, как кому-то включили режим.
     Поэтому наборы проверяем делом: создаём пробный и тут же сносим.
@@ -46,7 +45,7 @@ def _check_host_tools() -> None:
         raise RoutingUnavailable(
             "ядро не поддерживает ipset ("
             + probe.stderr.decode(errors="replace").strip()
-            + ") — на контейнерной виртуализации фича неработоспособна")
+            + ") — на виртуализации уровня ОС фича неработоспособна")
     base._host(["ipset", "destroy", probes._PROBE_SET], check=False)
 
     # расширение xt_set: без него `-m set --match-set` не соберётся, а наборы
@@ -67,7 +66,7 @@ def _check_static_plumbing() -> None:
 
     Без него фича «работает» ровно до первого пакета: правила соберутся, наборы
     наполнятся, а трафик включённого устройства либо не выйдет с хоста, либо не
-    вернётся в контейнер. Снаружи это выглядит как «интернет пропал у того, кому
+    вернётся в туннель. Снаружи это выглядит как «интернет пропал у того, кому
     включили режим» — то есть худший из возможных отказов, поэтому проверяем
     явно и до того, как кого-то включат.
     """
@@ -102,22 +101,9 @@ def _check_subnet_plumbing(subnet: str, iface: str) -> None:
             f"на хосте нет маршрута до {subnet} — обратный трафик не дойдёт "
             f"до клиентов")
     # Маршрут может СУЩЕСТВОВАТЬ и вести не туда. Проверять только наличие
-    # недостаточно: именно так фича и «работала» после переезда на хост —
-    # доктор был зелёным, а у клиентов не было интернета, потому что обратный
-    # маршрут остался от контейнера и вёл в мёртвую docker-сеть.
-    if awg.in_container():
-        # Контейнер пересоздали, docker выдал ему другой IP, а маршрут остался
-        # прежним. Снаружи — «у включённых пропал интернет» без единой ошибки.
-        insp = base._host(["docker", "inspect", "-f",
-                      "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-                      config.CONTAINER], check=False)
-        cont_ip = insp.stdout.decode(errors="replace").split()
-        if insp.returncode == 0 and cont_ip and cont_ip[0] not in route:
-            raise RoutingUnavailable(
-                f"маршрут до {subnet} ведёт не на текущий адрес контейнера "
-                f"({cont_ip[0]}) — контейнер пересоздавали? перезапустите "
-                f"awg-bot-routing.service")
-    elif f"dev {iface}" not in route:
+    # недостаточно: доктор бывал зелёным, а у клиентов не было интернета,
+    # потому что обратный маршрут вёл в мёртвую сеть.
+    if f"dev {iface}" not in route:
         # На хосте подсеть обязана быть connected через свой awg-интерфейс. Любой
         # via-маршрут поверх connected перехватывает обратный трафик: наружу всё
         # уходит, ответы возвращаются и отправляются в никуда.
@@ -175,11 +161,6 @@ def self_check(force: bool = False) -> tuple[bool, str]:
             if not base._host_ok(["ip", "link", "show", config.ROUTING_GW_INTERFACE]):
                 raise RoutingUnavailable(
                     f"интерфейс {config.ROUTING_GW_INTERFACE} не найден на хосте")
-            # Только в docker-режиме: на хосте контейнерного плеча нет вовсе, и
-            # проверка «доступен ли iptables в контейнере» гасила бы фичу из-за
-            # отсутствия контейнера, которого там и не должно быть.
-            if awg.in_container() and not base._cont_ok(["iptables", "-t", "nat", "-L", "-n"]):
-                raise RoutingUnavailable("iptables недоступен в контейнере")
             _check_static_plumbing()
             result = (True, "ок")
         except RoutingUnavailable as e:

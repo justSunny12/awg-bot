@@ -50,14 +50,13 @@ def test_fatal_on_unwritable_datadir(tmp_path, monkeypatch):
     assert "data-dir" in str(ei.value)
 
 
-def test_warnings_low_disk_and_container(tmp_path, monkeypatch):
-    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
+def test_warnings_low_disk_and_dead_awg(tmp_path, monkeypatch):
     from awgbot.core import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
 
     class Svc:
         def server_ok(self):
-            return False                        # контейнер молчит → warning
+            return False                        # awg молчит → warning
 
     # диск: подменяем на «мало места» (свой namedtuple — не трогаем приватный
     # shutil._ntuple_diskusage, он не API и может уехать между версиями Python)
@@ -68,7 +67,7 @@ def test_warnings_low_disk_and_container(tmp_path, monkeypatch):
     # awg.read_file недоступен → ещё warning
     warns = preflight.collect_warnings(Svc())
     assert any("мало места" in w for w in warns)
-    assert any("контейнер" in w.lower() for w in warns)
+    assert any("awg не отвечает" in w for w in warns)
     # format не падает
     assert "Замечания при запуске" in preflight.format_warnings(warns)
 

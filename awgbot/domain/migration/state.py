@@ -94,8 +94,8 @@ class MigrationStateMixin:
             if line.startswith("LISTEN_PORT="):
                 got_port = line.split("=", 1)[1].strip()
         try:
-            settings.set_value("app.docker.migration_interface", new_if)
-            settings.set_value("app.docker.migration_subnet_prefix", new_prefix)
+            settings.set_value("app.awg.migration_interface", new_if)
+            settings.set_value("app.awg.migration_subnet_prefix", new_prefix)
             # как делает установщик: на новом интерфейсе сервер на .1, пул с .2
             if int(config.IP_HOST_START) < 2:
                 settings.set_value("app.network.ip_host_start", 2)

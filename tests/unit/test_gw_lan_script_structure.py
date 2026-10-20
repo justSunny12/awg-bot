@@ -30,7 +30,7 @@ def test_lan_interface_is_found_by_home_subnet(script, tmp_path):
     fn = re.search(r"^lan_iface_for\(\) \{.*?^\}$", script, re.S | re.M).group(0)
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
     assert _sh(fn + '\nlan_iface_for 192.168.68.0/24', env=env).stdout.strip() == "end0 192.168.68.222"
-    assert _sh(fn + '\nlan_iface_for 10.9.1.0/24', env=env).stdout.strip() == "", "туннели и docker — не локальная сеть"
+    assert _sh(fn + '\nlan_iface_for 10.9.1.0/24', env=env).stdout.strip() == "", "туннели и мосты — не локальная сеть"
     assert _sh(fn + '\nlan_iface_for 192.168.1.0/24', env=env).stdout.strip() == "", "чужая подсеть — пусто"
     assert _sh(fn + '\nlan_iface_for 192.168.0.0/16', env=env).stdout.strip() == "end0 192.168.68.222", "вложенность"
 

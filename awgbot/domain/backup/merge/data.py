@@ -28,11 +28,11 @@ DEVICE_FROM_COPY = ("name", "routing_on")
 STATE_FROM_COPY = ("gwlink_own_lists", "email_login", "email_password", "private_dns_decision")
 STATE_RESET = ("email_check",)            # почта из бэкапа проверится заново
 # ключи server_state, текущие на любой линии: журнал снятых слотов, факты
-# бота, кода и хоста (загрузка, старт контейнера — иначе ложное «хост
+# бота, кода и хоста (загрузка, старт сервиса — иначе ложное «хост
 # перезагружен»)
 STATE_ALWAYS_CURRENT = (_plan.REMOVED_KEY, "bot_identity", "restore_wait", "backup_event_due", "updates_muted",
                         "fleet_target", "fleet_release",      # выпуск набора — версия ЭТОГО сервера, не чужого
-                        "host_boot_id", "container_started_at", "routing_host_boot_id", "routing_host_boot_at")
+                        "host_boot_id", "service_started_at", "routing_host_boot_id", "routing_host_boot_at")
 # GLOB: «_» — буква, а не любой знак. gw_join_<n> — заявки сопряжения всех
 # номеров слотов: линк на ключах токена стоит на этом хосте, запись о нём —
 # тоже этого хоста (иначе штамп без записи — карантин без возврата)

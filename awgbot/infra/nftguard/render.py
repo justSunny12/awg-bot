@@ -127,11 +127,9 @@ def render(spec: pkg.GuardSpec) -> str:
         out.append(f"        udp dport {pkg._ports(spec.open_udp)} accept")
     out.append("")
     if spec.tunnel_nets4:
-        if spec.per_peer:
-            out.append(f"        tcp dport {p} ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
-            out.append(f"        tcp dport {p} ip saddr @{pkg.SET_TUNNEL_NETS} drop")
-        else:
-            out.append(f"        tcp dport {p} ip saddr @{pkg.SET_TUNNEL_NETS} accept")
+        # SSH из туннеля — только устройствам админа
+        out.append(f"        tcp dport {p} ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
+        out.append(f"        tcp dport {p} ip saddr @{pkg.SET_TUNNEL_NETS} drop")
     if spec.ssh_open:
         out.append(f"        tcp dport {p} accept")
     else:
@@ -165,7 +163,7 @@ def render(spec: pkg.GuardSpec) -> str:
             out.append(f"        iifname {ifs} oifname {ifs} ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
             out.append(f"        iifname {ifs} oifname {ifs} drop")
         if spec.tunnel_nets4:
-            if spec.lan_space4 and spec.per_peer:
+            if spec.lan_space4:
                 # адреса в туннеле локальных сетей шлюзов — только устройствам
                 # админа; второй рубеж после шлюза. Назначение — исходное
                 # (ct original): к этому хуку адрес уже переведён в настоящий
@@ -217,7 +215,7 @@ def _wan_private_drop(spec) -> list[str]:
     (input), РФ-доступ — публичные адреса, линки и awg-интерфейсы — не
     внешние: их это не касается."""
     # Только из туннеля клиентов и линков: прочий проходящий трафик хоста
-    # (docker, VM, резолвер сети провайдера) — не наше, в NAT-only тем более.
+    # (VM, резолвер сети провайдера) — не наше, в NAT-only тем более.
     src = list(dict.fromkeys([*spec.tunnel_ifs, *spec.link_ifs]))
     if not spec.wan_ifs or not src:
         return []

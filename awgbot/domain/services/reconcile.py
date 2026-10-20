@@ -176,7 +176,7 @@ class ReconcileMixin:
                 action=("unassigned", 0)))
         return notifications
 
-    # ── Реконсиляция блокировок после рестарта контейнера ────────────────────
+    # ── Реконсиляция блокировок после перезагрузки хоста ─────────────────────
 
     def reconcile_blocks(self, prune: bool = False) -> int:
         """iptables-DROP'ы эфемерны — переналагаем их на всех, у кого
@@ -241,16 +241,13 @@ class ReconcileMixin:
         """Сверяет метку старта сервиса с сохранённой. Изменилась (был рестарт) —
         реконсиляция блокировок. Возвращает True, если был рестарт.
 
-        Что считать меткой, решает awg.service_started_at: в контейнере это его
-        StartedAt, на хосте — время загрузки системы. Ключ в state исторически
-        зовётся container_started_at и переименованию не подлежит — иначе первая
-        же сверка после обновления не найдёт сохранённого значения."""
+        Метка — awg.service_started_at: время загрузки системы."""
         current = awg.service_started_at()
         if not current:
             return False
-        stored = self.db.get_state("container_started_at")
+        stored = self.db.get_state("service_started_at")
         if current != stored:
-            self.db.set_state("container_started_at", current)
+            self.db.set_state("service_started_at", current)
             if stored is not None:                        # не первый запуск
                 self.reconcile_blocks()
                 self.reconcile_ssh_access()               # SSH-фильтр тоже слетел

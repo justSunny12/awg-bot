@@ -413,10 +413,9 @@ def _run_bot_func(tmp_path, name, *, lock_gen="2", applied="", target="",
     return proc, read(state), read(app), read(journal)
 
 
-_APP_YAML = """docker:
-  runtime: "host"
+_APP_YAML = """awg:
   interface: "awg0"
-  awg_dir: "__AWG_DIR__"
+  conf_dir: "__AWG_DIR__"
   migration_interface: ""
   migration_subnet_prefix: ""
 network:
@@ -518,7 +517,7 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
     поднятой AmneziaWG) прежде умирала на валидации «не задан server_port» —
     топология писалась только для сервера, созданного нами."""
     body = bot_sh.split("ensure_awg_server() {", 1)[1].split("\n}\n", 1)[0]
-    for key in ("server_port", "subnet_prefix", "subnet_cidr", "interface", "runtime"):
+    for key in ("server_port", "subnet_prefix", "subnet_cidr", "interface"):
         assert f'yaml_set "$app" {key}' in body, f"{key} не пишется"
     assert body.index('yaml_set "$app" server_port') < body.index('if [[ "$created" == "1" ]]'), \
         "запись топологии снова спрятана под created"
@@ -568,8 +567,8 @@ def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_e
     return proc, read(app), read(journal)
 
 
-_RES_YAML = """docker:
-  runtime: "host"
+_RES_YAML = """awg:
+  interface: "awg0"
 network:
   subnet_prefix: "10.8.1"
 client_config:
@@ -591,12 +590,6 @@ def test_fresh_install_keeps_public_dns_when_the_resolver_fails(tmp_path):
     proc, app, journal = _run_resolver_func(tmp_path, "ensure_resolver", app_yaml=_RES_YAML, script_rc=1)
     assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout
     assert "[warn]" in proc.stdout and 'dns1: "1.1.1.1"' in app
-
-
-def test_docker_mode_gets_no_resolver(tmp_path):
-    proc, app, journal = _run_resolver_func(
-        tmp_path, "ensure_resolver", app_yaml=_RES_YAML.replace('"host"', '"docker"'))
-    assert proc.returncode == 0 and journal == "" and 'dns1: "1.1.1.1"' in app
 
 
 def test_update_adopts_the_resolver_only_when_dns1_already_is_the_address(tmp_path):

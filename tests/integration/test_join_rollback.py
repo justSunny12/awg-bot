@@ -322,17 +322,3 @@ async def test_an_expired_hello_says_the_honest_result_first(services, vps, serv
     assert sent == ["join_refused"]
     assert [e for e, _s, _x in server.events] == ["revert_failed"]
     assert services.gwjoin(1)["state"] == "closing"
-
-
-def test_the_command_is_refused_in_the_container_mode(services, vps, monkeypatch):
-    """Остаток quar-2: AmneziaWG в контейнере — таблица хоста линков не ведёт,
-    карантин не встаёт: команда не выдаётся (и номер слота до вопроса о
-    токене не выдаётся тоже), линк не тронут."""
-    from awgbot.domain.services.types import ServiceError
-    from awgbot.infra import awg
-    monkeypatch.setattr(awg, "in_container", lambda: True)
-    with pytest.raises(ServiceError, match="в контейнере"):
-        services.gwjoin_issue()
-    with pytest.raises(ServiceError, match="в контейнере"):
-        services.gwjoin_peek_slot()
-    assert services.gwjoin(1) == {} and vps.runs == []

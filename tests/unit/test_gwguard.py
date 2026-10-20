@@ -256,13 +256,13 @@ def test_upstream_stats_is_none_when_dig_cannot_answer(monkeypatch):
 
 def test_forward_accepts_lists_our_interface_rules(monkeypatch):
     """Раздел 3a скрипта открывает транзит своим интерфейсам в цепочке, где
-    docker поставил DROP. Правила с условиями — чужие, в счёт не идут."""
+    чужой файервол поставил DROP. Правила с условиями — чужие, в счёт не идут."""
     out = ("-P FORWARD DROP\n"
            "-A FORWARD -o awglink -j ACCEPT\n"
            "-A FORWARD -i awglink -j ACCEPT\n"
            "-A FORWARD -i awg0 -j ACCEPT\n"
-           "-A FORWARD -j DOCKER-USER\n"
-           "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT\n"
+           "-A FORWARD -j ufw-user-forward\n"
+           "-A FORWARD -i br0 ! -o br0 -j ACCEPT\n"
            "-A FORWARD -o eth0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n")
     calls = _dig(monkeypatch, out=out)
     assert gwguard.forward_accepts() == {"o:awglink", "i:awglink", "i:awg0"}

@@ -147,20 +147,20 @@ def test_protocol_id_is_per_interface_in_the_migration_window(lockdir, monkeypat
     со старым (иначе приложение перестанет опознавать импортированные профили),
     двойники — получить новый."""
     from awgbot.domain import configgen
-    monkeypatch.setattr(config, "APP_CONTAINER", "amnezia-awg2")
+    monkeypatch.setattr(config, "PROTOCOL_ID", "amnezia-awg2")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
-    assert configgen.app_container_for("awg0") == "amnezia-awg2"
-    assert configgen.app_container_for("") == "amnezia-awg2"
-    assert configgen.app_container_for("awg1") == "amnezia-awg3"
+    assert configgen.protocol_id_for("awg0") == "amnezia-awg2"
+    assert configgen.protocol_id_for("") == "amnezia-awg2"
+    assert configgen.protocol_id_for("awg1") == "amnezia-awg3"
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
-    assert configgen.app_container_for("awg1") == "amnezia-awg2", "вне окна — общий"
+    assert configgen.protocol_id_for("awg1") == "amnezia-awg2", "вне окна — общий"
 
 
 def test_vpn_link_carries_the_interface_protocol(lockdir, monkeypatch):
     """Ссылка двойника несёт протокол НОВОГО поколения, ссылка с основного
     интерфейса — прежний."""
     from awgbot.domain import configgen
-    monkeypatch.setattr(config, "APP_CONTAINER", "amnezia-awg2")
+    monkeypatch.setattr(config, "PROTOCOL_ID", "amnezia-awg2")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
     monkeypatch.setattr(config, "SERVER_HOST", "203.0.113.10")
     params = {"obfuscation": {"Jc": "4"}, "listen_port": 51820,

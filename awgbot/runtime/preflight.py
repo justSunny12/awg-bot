@@ -73,10 +73,6 @@ def check_fatal() -> None:
             problems.append(f"БД не открывается ({config.DB_PATH}): {e}")
     # если файла БД нет — это первый запуск, init_schema создаст; не проблема
 
-    # Здесь стоял заслон на host-режим, пока перенос не был доделан. Снят: статус
-    # сервиса, вотчдог, SSH-цели, рестарт и контейнерное плечо маршрутизации
-    # портированы (docs/ROADMAP.md, шаг 2).
-
     if problems:
         raise PreflightError(
             "Проверка окружения не пройдена — бот не запущен:\n  • "
@@ -87,8 +83,7 @@ def check_fatal() -> None:
 # ── WARNING ──────────────────────────────────────────────────────────────────
 def collect_warnings_gateway(services=None) -> list[str]:
     """Warnings роли gateway: свои у каждой роли, потому что чинится разное.
-    Клиентские проверки (awg-сервер, docker) шлюзу не о чем сказать — у него
-    нет ни того, ни другого."""
+    Клиентские проверки (сервер awg) шлюзу не о чем сказать — у него его нет."""
     import os
     from awgbot.core import config as _c
     warns: list[str] = []
@@ -162,7 +157,7 @@ def _firewall_warnings(services) -> list[str]:
                    "🛡 SSH-доступ → «➕ Адрес»")
     if spec.unresolved:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
-    if not spec.udp_ports and not awg_in_container():
+    if not spec.udp_ports:
         out.append("файервол: не найден ListenPort ни в одном conf интерфейса — "
                    "порт клиентов awg может быть закрыт")
     if nftguard.ufw_active():
@@ -172,11 +167,6 @@ def _firewall_warnings(services) -> list[str]:
         out.append("firewalld активен рядом с таблицей awg_bot_guard — два владельца "
                    "правил; порт SSH и порты awg открывай и в нём или выключи его")
     return out
-
-
-def awg_in_container() -> bool:
-    from awgbot.infra import awg
-    return awg.in_container()
 
 
 def _resolver_warnings(services) -> list[str]:
@@ -201,10 +191,9 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     server_ok — живость awg, если старт её уже измерил: второй exec незачем."""
     warns: list[str] = []
 
-    # Автозагрузка awg-интерфейса в host-режиме. Дыра, найденная ребутом ВПС:
-    # в докерном режиме интерфейс поднимал контейнер, после переезда на хост
-    # его должен поднимать awg-quick@<iface>, и если юнит не включён — после
-    # ребута туннели не поднимутся, а узнать об этом можно только по ребуту.
+    # Автозагрузка awg-интерфейса. Дыра, найденная ребутом ВПС: интерфейс
+    # поднимает awg-quick@<iface>, и если юнит не включён — после ребута
+    # туннели не поднимутся, а узнать об этом можно только по ребуту.
     # Проверяем при каждом старте, пока это не исправлено.
     try:
         warns += _host_autostart_warnings()
@@ -232,19 +221,13 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     except OSError as e:
         log.warning("preflight: проверка диска не удалась: %s", e)
 
-    # awg отвечает. Совет по ремонту — по режиму: на хосте докера нет вовсе, и
-    # «проверьте docker ps» отправило бы чинить не тот слой. Такая адресация уже
-    # стоила нам часов при переезде (docs/ROADMAP.md, шаг 2).
+    # awg отвечает
     from awgbot.infra import awg
-    _in_cont = awg.in_container()
     try:
         alive = server_ok if server_ok is not None else services.server_ok()
         if not alive:
-            warns.append(
-                "контейнер AmneziaWG не отвечает на старте — "
-                "проверьте `docker ps` и журнал контейнера" if _in_cont else
-                f"awg не отвечает на старте — проверьте "
-                f"`ip link show {config.AWG_INTERFACE}` и `awg show`")
+            warns.append(f"awg не отвечает на старте — проверьте "
+                         f"`ip link show {config.AWG_INTERFACE}` и `awg show`")
     except Exception as e:                               # noqa: BLE001
         log.warning("preflight: проверка awg не удалась: %s", e)
 
@@ -252,8 +235,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     try:
         awg.read_file(config.CONF_PATH)
     except Exception as e:                               # noqa: BLE001
-        where = "в контейнере" if _in_cont else "на хосте"
-        warns.append(f"не читается {config.CONF_PATH} {where} ({e}) — "
+        warns.append(f"не читается {config.CONF_PATH} ({e}) — "
                      "выдача конфигов/реконсиляция могут не работать")
 
     # условная маршрутизация: инструменты на месте и namespace сходится.
@@ -330,8 +312,6 @@ def _service_autostart_warning() -> list[str]:
 
 def _host_autostart_warnings() -> list[str]:
     warns: list[str] = list(_service_autostart_warning())
-    if config.AWG_RUNTIME != "host":
-        return warns
     unit = f"awg-quick@{config.AWG_INTERFACE}"
     state = _unit_enabled(unit)
     if state and state != "enabled":

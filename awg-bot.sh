@@ -492,16 +492,6 @@ validate_config() {
 }
 install_unit() {
     log "ставлю systemd-юнит ${UNIT_PATH}…"
-    # Зависимость от docker ставим ТОЛЬКО в докерном режиме. В host-режиме бот к
-    # docker не обращается вовсе, а `Requires=docker.service` там вреден дважды:
-    # docker нельзя удалить (юнит перестанет стартовать), и падение докера
-    # утащило бы за собой бота, который от него не зависит. Юнит переписывается
-    # на каждом update — значит режим доедет сюда сам, править руками не нужно.
-    local docker_after="" docker_req=""
-    if [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" != "host" ]]; then
-        docker_after=" docker.service"
-        docker_req=$'\nRequires=docker.service'
-    fi
     # На шлюзе таблицу awg_gw_guard ставит юнит обвязки, и живёт она только в
     # ядре — после ребута её восстанавливает он же. Без упорядочивания агент
     # успевал сделать проверки раньше и первым сообщением после каждой
@@ -515,8 +505,8 @@ install_unit() {
     cat > "$UNIT_PATH" <<EOF
 [Unit]
 Description=AmneziaWG Telegram bot
-After=network-online.target${docker_after}${link_after}
-Wants=network-online.target${link_want}${docker_req}
+After=network-online.target${link_after}
+Wants=network-online.target${link_want}
 
 [Service]
 Type=simple
@@ -552,16 +542,6 @@ seed_conf() {
     [[ "$copied" -eq 1 ]] && log "шаблоны конфига скопированы в $CONF_DIR" \
                           || log "конфиг в $CONF_DIR уже есть — существующие файлы не трогаю"
 }
-_detect_awg_container() {  # печатает имена, ВНУТРИ которых отвечает `awg show`
-    local names ordered n
-    names="$(docker ps --format '{{.Names}}' 2>/dev/null)" || return 0
-    ordered="$( { printf '%s\n' "$names" | grep -E '^amnezia-awg';
-                  printf '%s\n' "$names" | grep -vE '^amnezia-awg'; } 2>/dev/null )"
-    for n in $ordered; do
-        docker exec "$n" awg show >/dev/null 2>&1 && printf '%s\n' "$n"
-    done
-}
-
 configure_topology_auto() {
     # Свежая установка без вопросов: адрес хоста определяем сами, имя сервера
     # берём дефолтное, порт с подсетью уже записал ensure_awg_server. Всё это
@@ -623,36 +603,24 @@ configure_topology() {
     ask srv_name "Имя сервера в ссылках (видно клиенту в приложении)" "$cur_name"
     yaml_set "$app" server_name "\"$srv_name\""
 
-    # Порт awg и VPN-подсеть почти всегда УЖЕ настроены в живом контейнере awg —
-    # подсасываем их из awg0.conf (detect_topology), юзер подтверждает Enter'ом.
-    # Контейнер ищем по факту живости `awg show` (имя amnezia-awg* лишь первым).
-    # Приоритет дефолта: текущее значение из конфига → автодетект из живого awg0.conf
-    # → хардкод (только первичная установка без контейнера). Так reconfigure с Enter
-    # сохраняет уже настроенные порт/подсеть, не сбрасывая их.
-    # Порт и подсеть: если живой awg-контейнер дал их автодетектом — берём молча
-    # (детект точен, лишний Enter не нужен; поправить можно потом в reconfigure).
-    # Спрашиваем ТОЛЬКО то, что детект не дал: нет контейнера / не прочитался конфиг.
-    # Порт у докерной Amnezia случайный — хардкод-дефолта не бывает; подсеть штатно
-    # 10.8.1. При reconfigure текущее значение из конфига в приоритете над детектом.
-    local cont det="" cur_port cur_prefix d_port="" d_prefix="" d_cidr=""
+    # Порт awg и VPN-подсеть: приоритет — текущее значение из конфига (так
+    # reconfigure с Enter сохраняет уже настроенное), затем автодетект из живого
+    # конфига интерфейса (detect_topology), затем вопрос. Спрашиваем ТОЛЬКО то,
+    # что ни конфиг, ни детект не дали: первичная установка до сервера.
+    local det="" cur_port cur_prefix d_port="" d_prefix="" d_cidr=""
     cur_port="$(yaml_get "$app" server_port)"
     cur_prefix="$(yaml_get "$app" subnet_prefix)"
-    # Контейнер ищем только в докерном режиме: на хосте сервер создаём мы сами
-    # (ensure_awg_server), и «живого контейнера не найдено» было бы не
-    # предупреждением, а недоумением на ровном месте.
-    if [[ "$(yaml_get "$app" runtime)" == "docker" ]]; then
-        cont="$(_detect_awg_container | head -n1)"
-    fi
-    if [[ -n "$cont" ]]; then
+    if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
         det="$(cd "$INSTALL_DIR" && AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
             ./venv/bin/python -c "
 from awgbot.infra import awg
-t = awg.detect_topology('$cont')
+t = awg.detect_topology()
 print('%s|%s|%s' % (t['listen_port'] or '', t['subnet_prefix'] or '', t['subnet_cidr'] or ''))
 " 2>/dev/null || true)"
         d_port="${det%%|*}"; local d_rest="${det#*|}"
         d_prefix="${d_rest%%|*}"; d_cidr="${d_rest#*|}"
-    elif [[ -z "$cur_port" || -z "$cur_prefix" ]]; then
+    fi
+    if [[ -z "$d_port$cur_port" || -z "$d_prefix$cur_prefix" ]]; then
         warn "порт/подсеть awg не определены — спрошу их ниже."
     fi
 
@@ -661,12 +629,12 @@ print('%s|%s|%s' % (t['listen_port'] or '', t['subnet_prefix'] or '', t['subnet_
     if [[ -n "$cur_port" ]]; then
         port="$cur_port"                     # reconfigure: конфиг в приоритете
         [[ -n "$d_port" && "$d_port" != "$cur_port" ]] && \
-            warn "в контейнере порт $d_port, в конфиге $cur_port — оставляю конфиг (меняй тут, если надо)."
+            warn "в конфиге интерфейса порт $d_port, в app.yaml $cur_port — оставляю app.yaml (меняй тут, если надо)."
     elif [[ -n "$d_port" ]]; then
-        port="$d_port"; ok "порт из контейнера: $port"
+        port="$d_port"; ok "порт из конфига интерфейса: $port"
     else
         while :; do
-            ask port "Порт awg-сервера (server_port) — у докерной Amnezia он случайный, см. awg0.conf/маппинг"
+            ask port "Порт awg-сервера (server_port)"
             [[ "$port" =~ ^[0-9]+$ ]] && break; warn "порт — число"
         done
     fi
@@ -677,9 +645,9 @@ print('%s|%s|%s' % (t['listen_port'] or '', t['subnet_prefix'] or '', t['subnet_
     if [[ -n "$cur_prefix" ]]; then
         prefix="$cur_prefix"
         [[ -n "$d_prefix" && "$d_prefix" != "$cur_prefix" ]] && \
-            warn "в контейнере подсеть ${d_prefix}.0, в конфиге ${cur_prefix}.0 — оставляю конфиг."
+            warn "в конфиге интерфейса подсеть ${d_prefix}.0, в app.yaml ${cur_prefix}.0 — оставляю app.yaml."
     elif [[ -n "$d_prefix" ]]; then
-        prefix="$d_prefix"; ok "подсеть из контейнера: ${d_cidr:-${prefix}.0/24}"
+        prefix="$d_prefix"; ok "подсеть из конфига интерфейса: ${d_cidr:-${prefix}.0/24}"
     else
         while :; do
             ask prefix "VPN-подсеть — первые три октета (subnet_prefix)" "10.8.1"
@@ -797,7 +765,6 @@ configure_gateway() {
     [[ -f "$app" ]] || die "нет $app — сначала seed_conf"
     sed -i -E 's/^# (role: "gateway")/\1/; s/^# (gateway:)/\1/' "$app"
     sed -i -E 's/^#   ((link_interface|conf_dir|unit|client_subnet|monitor_minutes|handshake_max_age|link_alert_streak|temp_alert_c|ipv4_only):)/  \1/' "$app"
-    yaml_set "$app" runtime '"host"'
     # подсеть клиентов не спрашиваем: она приезжает в конфигурации с ВПС и
     # закрепляется в юните обвязки, агент читает её оттуда
     ok "роль gateway записана в $app"
@@ -957,10 +924,9 @@ ensure_host_autostart() {
             && ok "$SERVICE включён на автозагрузку." \
             || warn "не удалось включить $SERVICE на автозагрузку — после ребута бот не поднимется."
     fi
-    # Дыра, найденная ребутом ВПС: в докерном режиме интерфейс поднимал
-    # контейнер, в host-режиме его поднимает awg-quick@<iface> — и его никто не
-    # включал. Ребут оставлял хост без туннелей. Включаем на каждом обновлении:
-    # idempotent, и режим доезжает сюда сам, как и в install_unit.
+    # Дыра, найденная ребутом ВПС: интерфейс поднимает awg-quick@<iface> — и
+    # его никто не включал. Ребут оставлял хост без туннелей. Включаем на
+    # каждом обновлении: idempotent.
     if [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]]; then
         # Та же дыра, что и на ВПС, только на другой стороне: копию
         # routing-gw-setup.sh в /usr/local/sbin кладёт файл конфигурации, её выполняет
@@ -979,7 +945,6 @@ ensure_host_autostart() {
         esac
         return 0
     fi
-    [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" == "host" ]] || return 0
     local iface; iface="$(yaml_get "$CONF_DIR/app.yaml" interface)"
     if [[ -n "$iface" ]] && systemctl list-unit-files 'awg-quick@.service' 2>/dev/null | grep -q awg-quick; then
         if [[ "$(systemctl is-enabled "awg-quick@$iface" 2>/dev/null)" != "enabled" ]]; then
@@ -1084,7 +1049,7 @@ ensure_awg_generation() {
     local base_if base_prefix new_if="" new_prefix="" i
     base_if="$(yaml_get "$app" interface)"; base_if="${base_if:-awg0}"
     base_prefix="$(yaml_get "$app" subnet_prefix)"; base_prefix="${base_prefix:-10.8.1}"
-    local conf_dir; conf_dir="$(yaml_get "$app" awg_dir)"; conf_dir="${conf_dir:-/etc/amnezia/amneziawg}"
+    local conf_dir; conf_dir="$(yaml_get "$app" conf_dir)"; conf_dir="${conf_dir:-/etc/amnezia/amneziawg}"
     for i in 1 2 3 4 5 6 7 8 9; do
         [[ -e "$conf_dir/awg$i.conf" || "awg$i" == "$base_if" ]] && continue
         new_if="awg$i"; break
@@ -1284,11 +1249,10 @@ ensure_awg_server() {  # клиентская роль: сервер с нуля
     # уже стоял. Прежде её писали только для созданного, и установка на хост с
     # готовым awg0.conf (переустановка, образ с AmneziaWG) умирала на валидации
     # «не задан network.server_port» — уже после ввода токена и сопряжения.
-    yaml_set "$app" runtime "\"host\""
-    yaml_set "$app" awg_dir "\"/etc/amnezia/amneziawg\""
+    yaml_set "$app" conf_dir "\"/etc/amnezia/amneziawg\""
     [[ -n "$iface" ]] && yaml_set "$app" interface "\"$iface\""
     # Первый клиентский адрес — следующий за адресом сервера: у нашего сервера
-    # это .1 → клиенты с .2, у доставшегося от докерной Amnezia .0 → с .1.
+    # это .1 → клиенты с .2, у сервера прежней раскладки на .0 → с .1.
     if [[ "$srv_addr" =~ \.([0-9]+)$ ]]; then
         yaml_set "$app" ip_host_start "$(( ${BASH_REMATCH[1]} + 1 ))"
     fi
@@ -1331,7 +1295,6 @@ ensure_resolver() {  # первая установка клиентской ро
     # «через раз». Приватный адрес браузеру не за что подхватить. Ставим с
     # первого дня, чтобы первое же устройство получило свой резолвер.
     local app="$CONF_DIR/app.yaml" addr
-    [[ "$(yaml_get "$app" runtime)" == "host" ]] || return 0
     addr="$(resolver_addr)" || { warn "подсеть не разобрана — DNS клиентов остаётся публичным"; return 0; }
     echo; log "─── Резолвер клиентов: dnsmasq на $addr ───"
     if bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr"; then
@@ -1353,7 +1316,6 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
     # реассерте ужимает свой до адреса перехвата. Публичный dns1 не трогаем:
     # переход на свой резолвер — решение админа в боте (переезд профилей).
     local app="$CONF_DIR/app.yaml" addr dns1
-    [[ "$(yaml_get "$app" runtime)" == "host" ]] || return 0
     addr="$(resolver_addr)" || return 0
     if [[ -f /etc/dnsmasq.d/awgbot-resolver.conf ]]; then
         # Уже под опекой. Но демон лежит — конфиг переписываем: v2.19.0 писала
@@ -1407,6 +1369,33 @@ adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml �
     [[ "${1:-}" == "quiet" ]] || { TZ_ADOPTED=1; mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"; }
     tz="$(host_timezone)"
     log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
+}
+
+adopt_awg_section() {  # adopt_awg_section [quiet] — раздел app.yaml прежнего имени → `awg:` (с 3.4.1)
+    # Выпуски до 3.4.1 держали параметры AmneziaWG в разделе, названном по
+    # снятому контейнерному режиму, с ключами runtime/container/app_container/
+    # awg_dir. Переименование на месте: раздел → awg, app_container →
+    # protocol_id, awg_dir → conf_dir; ключи режима и имени контейнера — прочь
+    # вместе с их комментариями из шаблона. Идемпотентно; quiet — без строки в журнал.
+    local app="$CONF_DIR/app.yaml" tmp
+    [[ -f "$app" ]] && grep -qE '^docker:' "$app" || return 0
+    tmp="$(mktemp)" || return 0
+    sed -E \
+        -e 's|^docker:|awg:|' \
+        -e 's|^  app_container:|  protocol_id:|' \
+        -e 's|^  awg_dir:(.*)$|  conf_dir:\1|' \
+        -e '/^  runtime:/d' -e '/^  container:/d' \
+        -e '/^# Docker \/ AmneziaWG — deploy-параметры$/d' \
+        -e '/^  # host — awg установлен на самой машине/d' \
+        -e '/^  # docker — команды идут через/d' \
+        -e '/^  # для установок прежней схемы\)\. Работают оба/d' \
+        -e '/^  # Переезд с docker на host/d' \
+        -e '/^  # разбирается на телефоне\. Совпадает с container исторически/d' \
+        -e '/^  # жизнью — после переезда на хост docker-имя исчезнет/d' \
+        -e 's|^  conf_dir: (.*)# host: каталог awg-quick; у старых [^|]*|  conf_dir: \1# каталог awg-quick|' \
+        "$app" > "$tmp" && cat "$tmp" > "$app"
+    rm -f "$tmp"
+    [[ "${1:-}" == "quiet" ]] || log "app.yaml: раздел параметров AmneziaWG переименован в awg"
 }
 
 adopt_timezone_undo() {  # ловушка второй половины: ключ timezone в app.yaml — снова в силе, метки нет

@@ -1,70 +1,10 @@
-"""sets.py — плечо контейнера — исключения из MASQUERADE; наборы ipset."""
+"""sets.py — наборы ipset."""
 
 from __future__ import annotations
 
 from typing import Optional
 
-from awgbot.core import config
-from awgbot.infra import awg
-
 from . import base
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Плечо КОНТЕЙНЕРА: исключения из MASQUERADE
-# ─────────────────────────────────────────────────────────────────────────────
-
-def sync_nat_exempt(addresses) -> None:
-    """Пересобрать цепочку исключений из MASQUERADE в контейнере.
-
-    ACCEPT, а не RETURN: RETURN вернул бы пакет в POSTROUTING, где его подобрало
-    бы следующее правило — то самое MASQUERADE, от которого мы уходим. ACCEPT в
-    таблице nat завершает обход цепочки, и адрес остаётся настоящим.
-
-    Хук вставляется ПЕРВЫМ правилом POSTROUTING: любое правило перед ним могло бы
-    замаскарадить пакет раньше, чем мы до него доберёмся.
-
-    В host-режиме — пусто. Не «нечего делать по случайности»: там MASQUERADE один
-    и наш, клиент приходит на маркировку с настоящим адресом, и отменять нечего.
-    Механизм исключений существовал ровно ради чужого MASQUERADE контейнера.
-    """
-    if not awg.in_container():
-        return
-    chain = config.ROUTING_NAT_CHAIN
-    want = set()
-    for addr in addresses:
-        awg._validate_ip(addr)
-        want.add(addr)
-    # дифф перед записью: один `-S` вместо флаша и правила на устройство
-    have = nat_exempt_addresses()
-    if have != want:
-        base._cont(["iptables", "-t", "nat", "-N", chain], check=False)   # есть → код 1
-        base._cont(["iptables", "-t", "nat", "-F", chain])
-        for addr in sorted(want):
-            base._cont(["iptables", "-t", "nat", "-A", chain,
-                   "-s", f"{addr}/32", "-j", "ACCEPT"])
-    if not base._cont_ok(["iptables", "-t", "nat", "-C", "POSTROUTING", "-j", chain]):
-        base._cont(["iptables", "-t", "nat", "-I", "POSTROUTING", "1", "-j", chain])
-
-
-def parse_nat_exempt(text: str, chain: str) -> Optional[set[str]]:
-    """Адреса из `iptables -t nat -S <chain>`; None — цепочки нет или в ней
-    правило чужой формы (тогда безопаснее пересобрать)."""
-    out: set[str] = set()
-    for line in text.splitlines():
-        parts = line.split()
-        if not parts or parts[0] in ("-N", "-P"):
-            continue
-        if parts[:2] != ["-A", chain] or "-s" not in parts or parts[-2:] != ["-j", "ACCEPT"]:
-            return None
-        out.add(parts[parts.index("-s") + 1].split("/")[0])
-    return out
-
-
-def nat_exempt_addresses() -> Optional[set[str]]:
-    proc = base._cont(["iptables", "-t", "nat", "-S", config.ROUTING_NAT_CHAIN], check=False)
-    if proc.returncode != 0:
-        return None
-    return parse_nat_exempt(proc.stdout.decode(errors="replace"), config.ROUTING_NAT_CHAIN)
 
 
 def ensure_set(name: str, kind: str, exists: bool = False) -> None:

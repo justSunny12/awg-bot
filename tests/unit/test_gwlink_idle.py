@@ -364,7 +364,7 @@ def test_an_unusable_link_address_yields_no_server_address(monkeypatch, broken):
 
 
 def test_a_missing_ip_binary_is_not_an_exception(monkeypatch):
-    """На шлюзе без iproute2 (и в контейнере теста) вызов просто не удаётся:
+    """На шлюзе без iproute2 (и в среде теста) вызов просто не удаётся:
     клиент обязан пережить это бэкоффом, а не падением задачи."""
     import subprocess
 

@@ -54,7 +54,7 @@ def _base(services, *, status: bool = True):
     assert services.admin_client().id == ADM
     if status:
         services.db.set_state("server_ok_view", "1")
-        services.db.set_state("container_started_at", "2026-09-12T07:00:00Z")
+        services.db.set_state("service_started_at", "2026-09-12T07:00:00Z")
         services.db.set_state(hostmetrics.STATE_METRICS,
                               json.dumps({"cpu": 12, "ram": 41, "disk": 23, "ts": _iso(NOW)}))
     return config.ADMIN_ID, "Админ"

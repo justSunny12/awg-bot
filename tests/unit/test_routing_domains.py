@@ -151,7 +151,6 @@ def test_set_names_are_constants_not_yaml():
 
     assert config.ROUTING_SET_USER_PREFIX == "vpn_u"
     assert config.ROUTING_CHAIN == "AWGBOT_RT"
-    assert config.ROUTING_NAT_CHAIN == "AWGBOT_RTNAT"
 
 
 # ── живость шлюза меряется проходимостью, а не состоянием туннеля ────────────
@@ -334,7 +333,7 @@ def test_doctor_does_not_blame_the_gateway_for_a_missing_rule(monkeypatch):
 
 def test_fwmark_rule_is_masked_like_the_mark_itself():
     """Метим маскированно (--set-xmark 0x1/0x1) — сверять обязаны так же. Без
-    маски правило требует точного равенства, и чужой бит в fwmark (docker, tc)
+    маски правило требует точного равенства, и чужой бит в fwmark (tc)
     увёл бы трафик мимо таблицы."""
     from awgbot.infra import routing
     assert "/" in routing._RULE[1], routing._RULE

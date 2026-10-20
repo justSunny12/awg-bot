@@ -241,8 +241,8 @@ def test_masquerade_check_disabled_without_subnet_is_unknown_not_ok(svc, monkeyp
     assert checks[gc.CHECK_MASQ_ISOLATION].ok is None
 
 
-def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
-    """accept в нашей таблице не отменяет drop в чужой: docker-овский DROP на
+def test_foreign_drop_policy_on_forward_is_reported(svc, monkeypatch):
+    """accept в нашей таблице не отменяет drop в чужой: чужой DROP на
     FORWARD молча перекрыл бы транзит клиентов."""
     import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
@@ -528,7 +528,7 @@ def test_lan_checks_alert_separately_and_quietly(svc, monkeypatch):
     assert not any("Обвязка шлюза неисправна" in n.text for n in notes)
 
 
-# ── политика FORWARD: наши ACCEPT поверх DROP docker ─────────────────────────
+# ── политика FORWARD: наши ACCEPT поверх чужого DROP ─────────────────────────
 
 def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
     """Проверки обвязки при чужом FORWARD с политикой policy и выводом
@@ -550,22 +550,22 @@ def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
     return {c.name: c for c in svc.plumbing_checks()}[gc.CHECK_FORWARD_POLICY]
 
 
-def test_docker_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatch):
-    """docker поставил DROP, раздел 3a скрипта открыл транзит линку в той же
-    цепочке. Транзит клиентов идёт — красная проверка здесь была бы ложной
-    тревогой, из-за которой человек полез бы сносить docker."""
+def test_foreign_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatch):
+    """Чужой файервол поставил DROP, раздел 3a скрипта открыл транзит линку в
+    той же цепочке. Транзит клиентов идёт — красная проверка здесь была бы
+    ложной тревогой, из-за которой человек полез бы сносить чужой файервол."""
     c = _forward(svc, monkeypatch, "-P FORWARD DROP\n-A FORWARD -o awglink -j ACCEPT\n"
-                                   "-A FORWARD -i awglink -j ACCEPT\n-A FORWARD -j DOCKER-USER\n")
+                                   "-A FORWARD -i awglink -j ACCEPT\n-A FORWARD -j ufw-user-forward\n")
     assert c.ok is True and c.detail == ""
 
 
 @pytest.mark.parametrize("rules", [
-    "-P FORWARD DROP\n-A FORWARD -j DOCKER-USER\n",                       # скрипт ещё не открыл
+    "-P FORWARD DROP\n-A FORWARD -j ufw-user-forward\n",                  # скрипт ещё не открыл
     "-P FORWARD DROP\n-A FORWARD -i awglink -j ACCEPT\n",                 # только в одну сторону
     "-P FORWARD DROP\n-A FORWARD -i awg0 -j ACCEPT\n-A FORWARD -o awg0 -j ACCEPT\n",   # не линку
     None,                                                                 # iptables не прочитался
 ])
-def test_docker_drop_without_our_link_accepts_stays_red(svc, monkeypatch, rules):
+def test_foreign_drop_without_our_link_accepts_stays_red(svc, monkeypatch, rules):
     """Без ACCEPT линка в обе стороны DROP чужой таблицы перекрывает транзит
     клиентов — проверка обязана оставаться красной и говорить, почему."""
     c = _forward(svc, monkeypatch, rules)

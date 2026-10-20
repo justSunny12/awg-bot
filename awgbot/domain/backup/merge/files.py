@@ -18,8 +18,7 @@ from .. import plan as _plan
 
 # app.yaml: факты хоста — текущие всегда
 CONF_ALWAYS_CURRENT = (("network", "server_host"), ("network", "ssh_port"), ("role",), ("firewall",),
-                       ("docker", "runtime"), ("docker", "container"), ("docker", "interface"),
-                       ("docker", "awg_dir"))
+                       ("awg", "interface"), ("awg", "conf_dir"))
 # app.yaml: роздано в конфиги устройств, аплинков и юниты шлюзов — текущее на
 # той же линии; на другой линии (новый сервер) — из бэкапа
 CONF_SAME_LINE = (("network", "subnet_prefix"), ("network", "subnet_cidr"), ("network", "server_port"),
@@ -30,8 +29,8 @@ CONF_SAME_LINE = (("network", "subnet_prefix"), ("network", "subnet_cidr"), ("ne
                   ("routing", "gw_interface"),
                   # DNS в выданных конфигах устройств и устройств админа
                   ("client_config", "dns1"), ("client_config", "dns2"), ("client_config", "admin_dns"),
-                  ("docker", "app_container"), ("docker", "migration_interface"),
-                  ("docker", "migration_subnet_prefix"), ("docker", "migration_dns"))
+                  ("awg", "protocol_id"), ("awg", "migration_interface"),
+                  ("awg", "migration_subnet_prefix"), ("awg", "migration_dns"))
 
 ENV_ALWAYS_CURRENT = ("BOT_TOKEN", "ADMIN_ID")
 GW_TOKEN = "GW_BOT_TOKEN"

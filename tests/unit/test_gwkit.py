@@ -204,8 +204,8 @@ def test_dist_archive_is_owned_by_root():
 
 
 def test_dist_and_release_carry_no_unit_file():
-    """Юнит пишет install_unit по конфигу хоста; файл-образец в поставке был
-    докерным и по §12 README копировался руками — на host-режиме не стартовал."""
+    """Юнит пишет install_unit по конфигу хоста; файл-образец в поставке
+    копировался руками и на живом хосте не стартовал."""
     blob = dist.archive(ROOT)
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
         names = tar.getnames()

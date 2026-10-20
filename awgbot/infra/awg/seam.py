@@ -1,18 +1,17 @@
-"""seam.py — часть пакета awg (см. __init__): шов контейнер/хост — запуск команд
-(`_run`, `_exec*`), заслон host-режима, чтение и запись файлов сервера."""
+"""seam.py — часть пакета awg (см. __init__): запуск команд на хосте
+(`_run`, `_exec*`), чтение и запись файлов сервера."""
 from __future__ import annotations
 
 import subprocess
 from typing import Optional
 
-from awgbot.core import config
 from awgbot.infra import awg as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
 
 from .common import AwgError
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Низкоуровневый запуск docker exec
+# Низкоуровневый запуск команд
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run(
@@ -41,54 +40,15 @@ def _run(
     return proc
 
 
-def in_container() -> bool:
-    """Ходим ли мы в контейнер, или команды идут прямо на хосте.
-
-    Функция, а не константа модуля: значение замёрзло бы на импорте, и тест,
-    подменяющий config.AWG_RUNTIME, проверял бы не то, что выполняется в бою.
-    """
-    return config.AWG_RUNTIME == "docker"
+def _exec(args: list[str], **kw) -> subprocess.CompletedProcess:
+    """Команда на сервере awg — прямо на хосте. Единственный вход: через неё
+    ходят и блокировки, и правка конфига, и условная маршрутизация."""
+    return pkg._run(list(args), **kw)
 
 
-class HostModeUnsupported(RuntimeError):
-    """Операция ещё не портирована на host-режим (docs/ROADMAP.md, шаг 2).
-
-    НЕ наследник AwgError, и это намеренно. Половина вызывающих глотает AwgError
-    и продолжает с пустым результатом: container_pid → None, awg_responding →
-    False, host_ssh_targets → частичный список. Унаследуй заслон от AwgError — и
-    он утонул бы ровно в тех except'ах, ради которых поставлен, вернув ту самую
-    молчаливую деградацию. Для SSH-фильтра это была бы дыра без единого признака.
-    """
-
-
-def _docker_only(what: str) -> None:
-    """Заслон для того, что в host-режиме ещё не портировано."""
-    if not pkg.in_container():
-        raise HostModeUnsupported(
-            f"{what}: в host-режиме не поддерживается — перенос ещё не сделан "
-            f"(docs/ROADMAP.md, шаг 2)")
-
-
-def _exec(cont_args: list[str], **kw) -> subprocess.CompletedProcess:
-    """Команда на сервере awg: `docker exec <container> ...` или прямо на хосте.
-
-    Единственный вход внутрь — через неё ходят и блокировки, и правка конфига, и
-    условная маршрутизация (infra/routing/base.py::_cont). Поэтому переезд с
-    контейнера на хост здесь и переключается, а не в двух десятках мест.
-    """
-    if pkg.in_container():
-        return pkg._run(["docker", "exec", config.CONTAINER, *cont_args], **kw)
-    return pkg._run(list(cont_args), **kw)
-
-
-def _exec_i(cont_args: list[str], input_data: bytes, **kw) -> subprocess.CompletedProcess:
+def _exec_i(args: list[str], input_data: bytes, **kw) -> subprocess.CompletedProcess:
     """То же с подачей stdin."""
-    if pkg.in_container():
-        return pkg._run(
-            ["docker", "exec", "-i", config.CONTAINER, *cont_args],
-            input_data=input_data, **kw,
-        )
-    return pkg._run(list(cont_args), input_data=input_data, **kw)
+    return pkg._run(list(args), input_data=input_data, **kw)
 
 
 def _exec_sh(script: str, **kw) -> subprocess.CompletedProcess:
@@ -98,7 +58,7 @@ def _exec_sh(script: str, **kw) -> subprocess.CompletedProcess:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Чтение / запись файлов контейнера (root в контейнере игнорирует права файлов)
+# Чтение / запись файлов сервера
 # ─────────────────────────────────────────────────────────────────────────────
 
 def read_file(path: str) -> str:

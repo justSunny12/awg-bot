@@ -243,7 +243,6 @@ def _dns_public(services, mp):
     """Ядро на хосте, DNS клиентов публичный, решения о своём резолвере нет."""
     from awgbot.core import settings
     who = _people(services)
-    mp.setattr(config, "AWG_RUNTIME", "host")
     settings.set_value("app.client_config.dns1", "1.1.1.1")
     settings.set_value("app.client_config.dns2", "8.8.8.8")
     return who

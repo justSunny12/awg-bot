@@ -71,8 +71,8 @@ def test_prepare_raises_the_interface_and_writes_the_keys(services, monkeypatch,
     assert seen["argv"][0] == "bash" and seen["argv"][1].endswith("awg-server-init.sh")
     assert seen["env"]["AWG_IF"] == "awg1" and seen["env"]["LISTEN_PORT"] == "443"
     assert seen["env"]["SUBNET_PREFIX"] == "10.9.1"
-    assert written["app.docker.migration_interface"] == "awg1"
-    assert written["app.docker.migration_subnet_prefix"] == "10.9.1"
+    assert written["app.awg.migration_interface"] == "awg1"
+    assert written["app.awg.migration_subnet_prefix"] == "10.9.1"
 
 
 def test_prepare_refuses_a_nonsense_port(services, monkeypatch):

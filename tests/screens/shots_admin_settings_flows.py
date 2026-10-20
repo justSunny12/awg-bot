@@ -301,7 +301,7 @@ def _mail_fails(services):
 
 def _awg_restart_fails(services):
     who = _restarts(services)
-    services.restart_service = _raise("runtime", "docker: <no such container>")
+    services.restart_service = _raise("runtime", "awg-quick: интерфейс не поднялся")
     return who
 
 

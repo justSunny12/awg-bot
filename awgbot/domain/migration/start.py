@@ -136,7 +136,7 @@ class MigrationStartMixin:
         with awg.mutation_lock:
             occupied_live = awg.read_occupied_ips(iface)
             # Второй интерфейс ставит awg-server-init.sh: сервер на .1 всегда,
-            # даже если у первого (докерная раскладка) он на .0 и ip_host_start=1
+            # даже если у первого (прежняя раскладка) он на .0 и ip_host_start=1
             ip = self.db.allocate_ip(
                 subnet_prefix=config.MIGRATION_SUBNET_PREFIX,
                 occupied_extra=occupied_live,

@@ -72,8 +72,8 @@ def read_server_params(force: bool = False, iface: Optional[str] = None) -> dict
     серверным ключом — значит выдать нерабочий конфиг, который выглядит рабочим.
 
     Публичный ключ ВЫВОДИТСЯ из приватного, а не читается из файла рядом.
-    Раньше его брали из wireguard_server_public_key.key — артефакта контейнера
-    Amnezia, который живёт своей жизнью. Файл и конфиг могут разойтись: смена
+    Раньше его брали из wireguard_server_public_key.key — файла, который
+    живёт своей жизнью. Файл и конфиг могут разойтись: смена
     серверного ключа без правки файла разослала бы всем конфиги с ЧУЖИМ
     публичным ключом, и заметили бы это только при первом переподключении.
     Вывод из PrivateKey исключает расхождение по построению."""
@@ -116,25 +116,20 @@ def read_occupied_ips(iface: Optional[str] = None) -> set[str]:
     return pkg.parse_occupied_ips(pkg.read_file(pkg.conf_path(iface)))
 
 
-def detect_topology(container: str | None = None) -> dict:
-    """Автодетект топологии из ЖИВОГО awg0.conf в контейнере — для установщика,
+def detect_topology() -> dict:
+    """Автодетект топологии из ЖИВОГО конфига интерфейса — для установщика,
     чтобы не спрашивать у пользователя то, что уже настроено в сервисе.
 
     Возвращает {"listen_port": int|None, "subnet_prefix": str|None,
     "subnet_cidr": str|None}. Любое поле None, если не удалось прочитать
-    (контейнер лёг / ключа нет / бот ставится ДО awg) — тогда установщик
-    спросит вручную. `container` переопределяет config.CONTAINER (нужно на
-    этапе установки, когда config ещё не финализирован).
+    (конфига нет / ключа нет / бот ставится ДО awg) — тогда установщик
+    спросит вручную.
     """
     out: dict = {"listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
     try:
-        cont = container or config.CONTAINER
-        # Не через _exec: установщик зовёт это ДО финализации конфига и передаёт
-        # имя контейнера параметром, которого в config ещё нет.
-        argv = (["docker", "exec", cont, "cat", config.CONF_PATH]
-                if pkg.in_container() else ["cat", config.CONF_PATH])
+        # Не через _exec: установщик зовёт это ДО финализации конфига
         cp = subprocess.run(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+            ["cat", config.CONF_PATH], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
         if cp.returncode != 0:
             return out
         conf = cp.stdout.decode(errors="replace")
@@ -162,7 +157,7 @@ def detect_topology(container: str | None = None) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gen_keypair() -> tuple[str, str]:
-    """Генерирует пару (private, public) ОДНИМ exec (пайп внутри контейнера).
+    """Генерирует пару (private, public) ОДНИМ exec (пайп в sh).
     Приватный ключ не касается диска и не светится в аргументах процесса."""
     script = ("priv=$(awg genkey); pub=$(printf '%s' \"$priv\" | awg pubkey); "
               "printf '%s\\n%s\\n' \"$priv\" \"$pub\"")

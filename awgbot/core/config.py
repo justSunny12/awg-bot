@@ -141,14 +141,6 @@ def validate() -> None:
             "Не заданы обязательные параметры конфига: " + "; ".join(missing_conf) +
             ". Заполните их (обычно это делает установщик).")
 
-    # Опечатка в runtime не должна тихо возвращать docker-режим: сервер, который
-    # уже переехал на хост, начал бы ходить `docker exec` в несуществующий
-    # контейнер и слёг бы целиком, а причина выглядела бы как «awg не отвечает».
-    if AWG_RUNTIME not in ("docker", "host"):
-        raise RuntimeError(
-            f"Неизвестный docker.runtime={AWG_RUNTIME!r} в app.yaml. "
-            f"Допустимо: docker (через контейнер Amnezia) или host (напрямую).")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # app.yaml — инфраструктура
@@ -186,38 +178,16 @@ GW_CLIENT_SUBNET = _gw.get("client_subnet", "")
 # автоопределение: не-линк awg-интерфейс с тем же хостом Endpoint, что у линка.
 GW_UPLINK_IF: str = _gw.get("uplink_interface", "") or ""
 
-_docker = _app.get("docker", {})
+_awg = _app.get("awg", {})
 
-# Как бот дотягивается до awg: "docker" — через `docker exec` в контейнер
-# Amnezia, "host" — командами прямо на хосте (docs/ROADMAP.md, шаг 2).
-#
-# Дефолт — "host": докерная схема снята (docs/ROADMAP.md, п.4), и свежая
-# установка без докера с дефолтом "docker" получала бы юнит с
-# Requires=docker.service, который systemd не запустит вовсе. Прежний довод
-# «отсутствие ключа = сервер, который обновился с докерных времён» исчерпан:
-# та установка давно несёт явный host. Докерный режим остаётся только явным.
-AWG_RUNTIME = str(_docker.get("runtime") or "host").strip().lower()
-
-CONTAINER = _docker.get("container", "amnezia-awg2")
-
-# Идентификатор протокола для приложения AmneziaVPN. Уезжает в vpn:// как
-# "container" и "defaultContainer" (domain/configgen.py) и разбирается на
-# телефоне пользователя.
-#
-# С docker-именем он совпадает исторически, но это РАЗНЫЕ сущности: одна умрёт
-# вместе с контейнером, вторая зашита во все выданные ссылки и обязана пережить
-# переезд без единого изменения. Пока они одно поле, любая «уборка» docker-имени
-# после переезда разом обесценит все выданные конфиги — молча, потому что
-# приложение просто не опознает профиль.
-#
-# Менять это значение нельзя НИКОГДА, кроме как одновременно с перевыпуском всех
-# ссылок (docs/ROADMAP.md, шаг 3).
-APP_CONTAINER = _docker.get("app_container") or CONTAINER
-AWG_INTERFACE = _docker.get("interface", "awg0")
-# Дефолт — каталог awg-quick на хосте, как в шаблоне conf/app.yaml. Прежний
-# /opt/amnezia/awg — путь докерной Amnezia, и конфиг без ключа означает не
-# «докерная установка», а «ключ не задан».
-AWG_DIR = _docker.get("awg_dir", "/etc/amnezia/amneziawg")
+# Идентификатор протокола для приложения AmneziaVPN. Уезжает в vpn:// полями
+# формата приложения (domain/configgen.py) и разбирается на телефоне
+# пользователя. Зашит во все выданные ссылки: менять его нельзя НИКОГДА, кроме
+# как одновременно с перевыпуском всех ссылок (переезд профилей, docs/ROADMAP.md).
+PROTOCOL_ID = _awg.get("protocol_id") or "amnezia-awg2"
+AWG_INTERFACE = _awg.get("interface", "awg0")
+# Каталог awg-quick на хосте, как в шаблоне conf/app.yaml.
+AWG_DIR = _awg.get("conf_dir", "/etc/amnezia/amneziawg")
 CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
 PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 
@@ -228,14 +198,14 @@ PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 # конвенция и тот же аварийный рубильник: очистил ключ, перезапустил бота.
 #
 # Само наличие ключа переезд НЕ начинает: он лишь делает рычаг доступным.
-MIGRATION_INTERFACE: str = _docker.get("migration_interface", "")
+MIGRATION_INTERFACE: str = _awg.get("migration_interface", "")
 # Своя подсеть у второго интерфейса — не украшение: комплекты пиров тогда не
 # пересекаются, аллокатор нового конфига видит только свои адреса, и забота
 # «двойной комплект должен помещаться в /24» исчезает вовсе.
-MIGRATION_SUBNET_PREFIX: str = _docker.get("migration_subnet_prefix", "")
+MIGRATION_SUBNET_PREFIX: str = _awg.get("migration_subnet_prefix", "")
 # DNS двойников в окне переезда (резолвер на новом интерфейсе); горячее чтение
 # через settings в configgen.dns_for — здесь дефолт для старта.
-MIGRATION_DNS: str = _docker.get("migration_dns", "") or ""
+MIGRATION_DNS: str = _awg.get("migration_dns", "") or ""
 
 # ── Протокольные лимиты Telegram (НЕ настройки: их задаёт не наш конфиг) ─────
 # Текст сообщения — 4096, подпись к медиа — 1024, вложений в альбоме — 10.
@@ -252,7 +222,7 @@ SUBNET_PREFIX = _net.get("subnet_prefix", "10.8.1")
 # subnet_cidr здесь не загружается: экран сервера и переезд читают его через
 # settings, скрипты обвязки — из app.yaml напрямую.
 # .2 — первый клиентский адрес новой раскладки (.1 занимает сам сервер).
-# Дефолт 1 достался от докерной схемы с сервером на .0 и отдал бы первому
+# Дефолт 1 достался от прежней раскладки с сервером на .0 и отдал бы первому
 # клиенту адрес сервера.
 IP_HOST_START = _net.get("ip_host_start", 2)
 IP_HOST_END = _net.get("ip_host_end", 254)
@@ -324,7 +294,6 @@ ROUTING_LAN_SPACE: str = str(_rt.get("lan_space") or "").strip()
 ROUTING_SET_USER_PREFIX = "vpn_u"      # набор клиента N: база + его личные → vpn_u<N>
 ROUTING_SET_SRC_PREFIX = "rt_src_u"    # адреса устройств клиента N → rt_src_u<N>
 ROUTING_CHAIN = "AWGBOT_RT"            # маркировка на хосте
-ROUTING_NAT_CHAIN = "AWGBOT_RTNAT"     # исключения из MASQUERADE в контейнере
 ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
 ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
 # Источники базовых списков. Дефолты ЗАШИТЫ в код, а не только в шаблон yaml:

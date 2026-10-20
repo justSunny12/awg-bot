@@ -31,23 +31,20 @@ def _reload_config(monkeypatch, conf_dir):
     return importlib.reload(c)
 
 
-def test_app_container_defaults_to_the_docker_name(monkeypatch, tmp_path):
-    """Без ключа app_container в yaml значение обязано совпадать с docker-именем.
-
-    Боевой app.yaml при обновлении не мигрирует, и новый ключ до сервера не
-    доедет. Разойдись дефолты — ссылки поехали бы у всех после обновления бота.
-    """
+def test_protocol_id_has_a_fixed_default(monkeypatch, tmp_path):
+    """Без ключа protocol_id в yaml значение — прежнее умолчание: оно зашито в
+    выданные ссылки, и разойдись дефолт с ним — профили поехали бы у всех."""
     (tmp_path / "app.yaml").write_text(
-        'docker: {container: "my-awg"}\nnetwork: {server_host: "h", server_port: 1}\n',
+        'awg: {interface: "awg0"}\nnetwork: {server_host: "h", server_port: 1}\n',
         encoding="utf-8")
     c = _reload_config(monkeypatch, tmp_path)
-    assert c.APP_CONTAINER == c.CONTAINER == "my-awg"
+    assert c.PROTOCOL_ID == "amnezia-awg2"
 
     (tmp_path / "app.yaml").write_text(
-        'docker: {container: "my-awg", app_container: "proto-id"}\n'
+        'awg: {interface: "awg0", protocol_id: "proto-id"}\n'
         'network: {server_host: "h", server_port: 1}\n', encoding="utf-8")
     c = _reload_config(monkeypatch, tmp_path)
-    assert c.APP_CONTAINER == "proto-id" and c.CONTAINER == "my-awg"
+    assert c.PROTOCOL_ID == "proto-id"
 
 
 def test_validate_passes_on_valid_conf(monkeypatch, tmp_path):

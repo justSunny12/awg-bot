@@ -22,7 +22,7 @@ from awgbot.bot.notifier import notify_one
 
 
 async def call(fn, *args, **kwargs):
-    """Синхронный service-вызов вне event loop (docker exec/БД не морозят loop)."""
+    """Синхронный service-вызов вне event loop (exec/БД не морозят loop)."""
     return await asyncio.to_thread(fn, *args, **kwargs)
 
 

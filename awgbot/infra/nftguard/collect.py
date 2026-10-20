@@ -106,7 +106,7 @@ def _ports_from_conf(entries) -> list[int]:
 def listen_ports() -> list[int]:
     """ListenPort всех *.conf в каталоге awg: интерфейсы клиентов (в т.ч.
     переезда) и линк до шлюза. Плюс network.server_port из conf — на случай,
-    если каталог недоступен (docker-режим: conf внутри контейнера)."""
+    если каталог не прочитался."""
     ports: list[int] = []
     try:
         for p in sorted(Path(config.AWG_DIR).glob("*.conf")):
@@ -125,30 +125,7 @@ def listen_ports() -> list[int]:
     return ports
 
 
-def _docker_bridge_subnets() -> list[str]:
-    try:
-        out = subprocess.run(
-            ["docker", "inspect", config.CONTAINER, "-f",
-             "{{range $k,$v := .NetworkSettings.Networks}}{{$k}}\n{{end}}"],
-            capture_output=True, timeout=10).stdout.decode(errors="replace")
-        nets = [n for n in out.split() if n]
-        subnets: list[str] = []
-        for n in nets:
-            o = subprocess.run(["docker", "network", "inspect", n, "-f",
-                                "{{range .IPAM.Config}}{{.Subnet}}\n{{end}}"],
-                               capture_output=True, timeout=10).stdout.decode(errors="replace")
-            for s in o.split():
-                if ":" not in s and s not in subnets:
-                    subnets.append(s)
-        return subnets
-    except (OSError, subprocess.SubprocessError):
-        return []
-
-
 def tunnel_nets() -> list[str]:
-    from awgbot.infra.awg import in_container
-    if in_container():
-        return pkg._docker_bridge_subnets()
     nets = [f"{config.SUBNET_PREFIX}.0/24"]
     if config.MIGRATION_INTERFACE and config.MIGRATION_SUBNET_PREFIX:
         m = f"{config.MIGRATION_SUBNET_PREFIX}.0/24"
@@ -162,9 +139,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
     линки слотов с VPN-транзитом (между ними открыт форвардинг линк ↔ линк):
     оба списка — из БД вызывающего; без БД (CLI до старта бота) — пусто, то
     есть транзит между линками закрыт."""
-    from awgbot.infra.awg import in_container
-    host_mode = not in_container()
-    links = pkg.link_ifaces() if host_mode else []
+    links = pkg.link_ifaces()
     v4, v6, bad = pkg.resolve_allow(settings.get("app.firewall.ssh_allow", []) or [])
     ssh_open = not v4 and not v6
     admin = sorted({str(ipaddress.ip_address(a)) for a in (admin_ips or [])
@@ -172,26 +147,26 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
     return pkg.GuardSpec(
         ssh_port=int(settings.get_int("app.network.ssh_port", config.SSH_PORT)),
         ssh_allow4=v4, ssh_allow6=v6, ssh_open=ssh_open,
-        tunnel_nets4=pkg.tunnel_nets(), tunnel_admin4=admin if host_mode else [],
-        tunnel_ifs=pkg._tunnel_ifs() if host_mode else [],
-        per_peer=host_mode, udp_ports=pkg.listen_ports(),
+        tunnel_nets4=pkg.tunnel_nets(), tunnel_admin4=admin,
+        tunnel_ifs=pkg._tunnel_ifs(),
+        udp_ports=pkg.listen_ports(),
         open_tcp=pkg._ports_from_conf(settings.get("app.firewall.open_tcp", [])),
         open_udp=pkg._ports_from_conf(settings.get("app.firewall.open_udp", [])),
-        own_forward=host_mode, unresolved=bad,
-        nat=host_mode, nat_exclude_ifs=pkg._nat_exclude_ifs() if host_mode else [],
+        unresolved=bad,
+        nat_exclude_ifs=pkg._nat_exclude_ifs(),
         filter=pkg.enabled(),
         peer_link_ifs=pkg._peer_link_ifs(links, transit_links),
         peer_link_block=links if len(links) >= 2 else [],
-        link_peers4=pkg.link_peer_addrs() if host_mode else [],
+        link_peers4=pkg.link_peer_addrs(),
         link_ifs=links,
-        link_channel_port=pkg.link_channel_port() if host_mode else 0,
+        link_channel_port=pkg.link_channel_port(),
         # прежний порт канала после смены — неделю открыт тоже (gwcfg_channel_ports)
-        link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()] if host_mode else [],
-        admin_dns4=_admin_dns_addr() if host_mode else "",
-        lan_space4=_lan_space() if host_mode else "",
-        wan_ifs=pkg.wan_ifaces() if host_mode else [],
-        quarantine_ifs=pkg.quarantine_ifaces(links) if host_mode else [],
-        quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)) if host_mode else [],
+        link_channel_extra=[int(p) for p in channel_extra if int(p) and int(p) != pkg.link_channel_port()],
+        admin_dns4=_admin_dns_addr(),
+        lan_space4=_lan_space(),
+        wan_ifs=pkg.wan_ifaces(),
+        quarantine_ifs=pkg.quarantine_ifaces(links),
+        quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
     )
 
 

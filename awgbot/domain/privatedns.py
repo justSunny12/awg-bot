@@ -51,14 +51,11 @@ class PrivateDnsMixin:
         """Для экрана сервера и инфобокса.
 
         mode: private — оба поля на этом хосте (резолвер стоит);
-              public  — хотя бы одно поле публичное, можно перейти;
-              n/a     — docker-режим: сервер на .0, приватного адреса нет.
+              public  — хотя бы одно поле публичное, можно перейти.
         """
         dns1, dns2 = self._dns_fields()
         target = self.private_dns_target()
-        if config.AWG_RUNTIME != "host":
-            mode = "n/a"
-        elif resolver.is_private(dns1) and resolver.is_private(dns2):
+        if resolver.is_private(dns1) and resolver.is_private(dns2):
             mode = "private"
         else:
             mode = "public"
@@ -82,25 +79,25 @@ class PrivateDnsMixin:
 
     def private_dns_on_migration_start(self, new_prefix: str) -> str:
         """Перед рождением двойников: резолвер слушает <новая подсеть>.1, адрес
-        записан в app.docker.migration_dns. Возвращает адрес или "" (не нужно).
+        записан в app.awg.migration_dns. Возвращает адрес или "" (не нужно).
         ResolverError — наверх: рождать двойников с мёртвым DNS нельзя."""
         if not self.private_dns_for_migration():
             return ""
         addr = resolver.resolver_addr(new_prefix)
         resolver.add(addr)
-        settings.set_value("app.docker.migration_dns", addr)
+        settings.set_value("app.awg.migration_dns", addr)
         log.info("переезд: резолвер клиентов слушает %s", addr)
         return addr
 
     def private_dns_on_promote(self, old_prefix: str) -> str:
         """Финал: dns1/dns2 = адрес двойников, старый адрес снят с резолвера,
         решение стёрто. Возвращает новый адрес или "" (переезд без DNS)."""
-        addr = str(settings.get("app.docker.migration_dns", "") or "").strip()
+        addr = str(settings.get("app.awg.migration_dns", "") or "").strip()
         if not addr:
             return ""
         settings.set_value("app.client_config.dns1", addr)
         settings.set_value("app.client_config.dns2", addr)
-        settings.set_value("app.docker.migration_dns", "")
+        settings.set_value("app.awg.migration_dns", "")
         self.set_private_dns_decision("")
         old = resolver.resolver_addr(old_prefix)
         if old and old != addr:
@@ -121,10 +118,10 @@ class PrivateDnsMixin:
     def private_dns_on_cancel(self) -> None:
         """Отмена переезда: адрес двойников с резолвера снимается, ключ
         очищается; решение админа остаётся — следующий переезд его исполнит."""
-        addr = str(settings.get("app.docker.migration_dns", "") or "").strip()
+        addr = str(settings.get("app.awg.migration_dns", "") or "").strip()
         if not addr:
             return
-        settings.set_value("app.docker.migration_dns", "")
+        settings.set_value("app.awg.migration_dns", "")
         try:
             resolver.remove(addr)
         except resolver.ResolverError as e:

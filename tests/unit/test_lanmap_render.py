@@ -209,7 +209,7 @@ def test_presence_is_read_from_the_list_of_tables(monkeypatch):
 
 
 def test_no_nft_on_the_host_is_unavailable_not_a_failure(monkeypatch):
-    """docker-хост без nftables: таблицы нет и быть не может — RoutingUnavailable,
+    """Хост без nftables: таблицы нет и быть не может — RoutingUnavailable,
     сверка с пустым текстом отказом это не считает."""
     import shutil
     monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)

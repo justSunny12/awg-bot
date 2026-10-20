@@ -11,20 +11,18 @@ pytestmark = pytest.mark.integration
 
 # ── detect_and_handle_restart + reconcile_blocks ─────────────────────────────
 def test_first_start_records_but_no_reconcile(services, fake_awg, monkeypatch):
-    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     # первый запуск: stored=None → фиксируем started_at, рестартом не считаем
     assert services.detect_and_handle_restart() is False
-    assert services.db.get_state("container_started_at") == fake_awg.started_at
+    assert services.db.get_state("service_started_at") == fake_awg.started_at
 
 
 def test_restart_detected_reapplies_blocks(services, fake_awg, make_active_client, monkeypatch):
-    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     client = make_active_client(tg_id=903)
     dc = services.add_device(client.id, "d")
     services._device_set_block(dc.device_id, DeviceBlock.EXPIRY)
     dev = services.db.get_device(dc.device_id)
     services.detect_and_handle_restart()                    # зафиксировать текущий started_at
-    # контейнер перезапустился → новый StartedAt, эфемерные DROP'ы слетели
+    # хост перезагрузился → новая метка старта, эфемерные DROP'ы слетели
     fake_awg.blocked.discard(dev.address)
     fake_awg.started_at = "2026-02-02T00:00:00+03:00"
     assert services.detect_and_handle_restart() is True
@@ -83,10 +81,10 @@ def test_purge_old_history_returns_counts(services, fake_awg):
 
 def test_refresh_status_now_writes_state(services, monkeypatch):
     """Кнопка «Обновить»: живой снимок статуса+метрик пишется в state,
-    чтобы последующий server_status_cached отдал свежее без docker exec."""
+    чтобы последующий server_status_cached отдал свежее без exec."""
     from awgbot.infra import awg
     monkeypatch.setattr(awg, "awg_responding", lambda: True)
-    monkeypatch.setattr(awg, "container_started_at", lambda: "2026-01-01T00:00:00Z")
+    monkeypatch.setattr(awg, "service_started_at", lambda: "2026-01-01T00:00:00Z")
     services.db.set_state("last_server_ok", "0")          # было «лежит»
     services.refresh_status_now()
     assert services.db.get_state("server_ok_view") == "1"  # показ обновился на «жив»

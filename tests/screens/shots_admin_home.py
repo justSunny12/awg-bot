@@ -117,7 +117,7 @@ def _nobody_online(services):
     who = _people(services)
     for d in (PHONE, IPHONE):
         services.db.update_device_fields(d, last_handshake=0)
-    services.db.set_state("container_started_at", "2026-09-03T03:00:00Z")
+    services.db.set_state("service_started_at", "2026-09-03T03:00:00Z")
     return who
 
 

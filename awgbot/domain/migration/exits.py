@@ -195,7 +195,7 @@ class MigrationExitsMixin:
             return ""
         target, applied = awglock.target_generation(), awglock.applied_generation()
         try:
-            settings.set_value("app.docker.interface", new_if)
+            settings.set_value("app.awg.interface", new_if)
             settings.set_value("app.network.subnet_prefix", new_prefix)
             settings.set_value("app.network.subnet_cidr", f"{new_prefix}.0/24")
             settings.set_value("app.network.server_port", port)
@@ -203,9 +203,9 @@ class MigrationExitsMixin:
             # только вместе с поколением: у двойников он уже новый, и теперь
             # таким же должны рождаться все следующие устройства.
             if target > applied and awglock.protocol_id():
-                settings.set_value("app.docker.app_container", awglock.protocol_id())
-            settings.set_value("app.docker.migration_interface", "")
-            settings.set_value("app.docker.migration_subnet_prefix", "")
+                settings.set_value("app.awg.protocol_id", awglock.protocol_id())
+            settings.set_value("app.awg.migration_interface", "")
+            settings.set_value("app.awg.migration_subnet_prefix", "")
         except Exception as e:                            # noqa: BLE001
             log.warning("promote: app.yaml не переписан: %s", e)
             return ""

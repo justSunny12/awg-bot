@@ -36,21 +36,11 @@ class SmbTunnelMixin:
         return bool(settings.get(SETTING, False))
 
     @staticmethod
-    def smb_tunnel_possible() -> bool:
-        """Режим host — только там свой резолвер клиентов и резолвер админа;
-        в docker тумблера на экране нет вовсе."""
-        from awgbot.infra.awg import in_container
-        return not in_container()
-
-    @staticmethod
     def smb_tunnel_unavailable() -> str:
         """Почему тумблер нельзя включить; пусто — можно. Нужен свой резолвер
         клиентов, поднятый резолвер админа и фильтр снаружи: только файервол
         закрывает имена от прочих клиентов."""
         from awgbot.infra import admindns, nftguard, resolver
-        from awgbot.infra.awg import in_container
-        if in_container():
-            return "SMB в туннеле — только при VPN прямо на хосте, без docker"
         if not resolver.installed():
             return "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»"
         if not admindns.serving():
@@ -142,12 +132,11 @@ class SmbTunnelMixin:
     # ── резолвер админа: старт и здоровье ────────────────────────────────────
 
     def admin_dns_ensure(self) -> None:
-        """Старт бота: резолвер админа — на хосте со своим резолвером клиентов
-        (режим host); переезд адреса резолвера клиентов тянет server=. Затем —
-        файл записей (тумблер мог быть включён до перезапуска)."""
+        """Старт бота: резолвер админа — на хосте со своим резолвером клиентов;
+        переезд адреса резолвера клиентов тянет server=. Затем — файл записей
+        (тумблер мог быть включён до перезапуска)."""
         from awgbot.infra import admindns, nftguard, resolver
-        from awgbot.infra.awg import in_container
-        if in_container() or not resolver.installed():
+        if not resolver.installed():
             return
         addrs = resolver.listen_addrs()
         was = admindns.installed()

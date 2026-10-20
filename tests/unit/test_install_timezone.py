@@ -60,7 +60,7 @@ def _run(script: str, tmp_path: Path, app_text: str, host_tz: str = "Asia/Yekate
 
 
 _APP = ('role: "client"\ntimezone: "{tz}"          # UTC+3, без переходов на летнее время\n'
-        'docker:\n  runtime: "host"\n')
+        'awg:\n  interface: "awg0"\n')
 
 
 @pytest.mark.parametrize("old", ["Europe/Moscow", "Europe/London", "Asia/Yekaterinburg"])
@@ -70,7 +70,7 @@ def test_update_always_comments_the_key_out(script, tmp_path, old):
     assert not re.search(r"^\s*timezone:", text, re.M), text
     assert f'# timezone: "{old}"' in text
     loaded = yaml.safe_load(text)
-    assert "timezone" not in loaded and loaded["docker"]["runtime"] == "host" and loaded["role"] == "client"
+    assert "timezone" not in loaded and loaded["awg"]["interface"] == "awg0" and loaded["role"] == "client"
     assert marker == old + "\n"
     assert f"пояс хоста (Asia/Yekaterinburg); ключ timezone в app.yaml снят (был: {old})" in out
 
@@ -204,8 +204,8 @@ def _steps(script: str, tmp_path: Path, prev: str | None, mode: str = "") -> tup
         (prev_dir / "awgbot" / "__version__.py").write_text(f'__version__ = "{prev}"\n', encoding="utf-8")
     stubs = "\n".join(f"{n}() {{ :; }}" for n in ("ensure_python", "ensure_ping", "build_venv", "install_unit",
                                                    "ensure_host_autostart", "ensure_awg_module_loaded",
-                                                   "ensure_awg_generation", "adopt_resolver", "seed_conf",
-                                                   "validate_config"))
+                                                   "ensure_awg_generation", "adopt_resolver", "adopt_awg_section",
+                                                   "seed_conf", "validate_config"))
     tz_below = re.search(r'^TZ_ADOPT_BELOW="[^"]*"', script, re.M).group(0)
     body = "\n".join([stubs, tz_below, _func(script, "tree_version"), _func(script, "version_lt"),
                       _func(script, "update_adopts_timezone"), _func(script, "update_env_steps"),

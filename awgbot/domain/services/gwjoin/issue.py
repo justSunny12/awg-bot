@@ -23,8 +23,6 @@ from .state import JOIN_TTL, OPEN_OR_CLOSING, _LOCK, new_device_name, slot_ns, s
 
 
 JOIN_FLEET_BUSY = "Идёт обновление сервера и шлюзов — подключение и замена шлюзов после его итога"
-JOIN_NO_CONTAINER = ("Подключение шлюза командой недоступно: AmneziaWG сервера работает в контейнере, а линк до "
-                     "верного кода держит в карантине файервол хоста, а в этом режиме линки он не ведёт")
 
 
 def _new_id() -> str:
@@ -118,7 +116,6 @@ class GwJoinIssueMixin:
         команды слота или None}."""
         if self.admin_client() is None:
             raise ServiceError("Профиль админа ещё не создан")
-        self._gwjoin_check_runtime()
         self._gwjoin_check_fleet()
         with _LOCK:
             gw = self.db.gateway(slot_id) if slot_id else None
@@ -176,7 +173,6 @@ class GwJoinIssueMixin:
 
     def gwjoin_peek_slot(self) -> int:
         """Номер слота, который получит следующая команда «🛰 Подключить шлюз»."""
-        self._gwjoin_check_runtime()                      # до вопроса о токене, а не после
         self._gwjoin_check_fleet()
         return self._gwjoin_next_slot()[0]
 
@@ -186,15 +182,6 @@ class GwJoinIssueMixin:
         прежнего, а откат ждал бы ответа, которого не будет."""
         if self.fleet_running():
             raise ServiceError(JOIN_FLEET_BUSY)
-
-    @staticmethod
-    def _gwjoin_check_runtime() -> None:
-        """AmneziaWG сервера в контейнере (прежний режим runtime: docker):
-        линки, порт канала и пересылку таблица хоста в нём не ведёт вовсе —
-        карантин линка до кода встать не может, команда не выдаётся."""
-        from awgbot.infra import awg
-        if awg.in_container():
-            raise ServiceError(JOIN_NO_CONTAINER)
 
     def gwjoin_command_for(self, st: dict) -> str:
         """Та же команда для сообщения подключения (правка по событию хода):

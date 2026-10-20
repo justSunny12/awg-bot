@@ -71,9 +71,6 @@ def nat_covers(subnet: str) -> bool:
     """Живая таблица маскарадит эту подсеть? Проверка для доктора условной
     маршрутизации: NAT переехал сюда из iptables, и «нет правила iptables»
     больше не означает «клиенты не выйдут наружу»."""
-    from awgbot.infra.awg import in_container
-    if in_container():
-        return False                      # в докере NAT делает контейнер
     proc = pkg._nft(["-j", "list", "table", pkg.TABLE_FAMILY, pkg.TABLE_NAME], check=False)
     if proc.returncode != 0:
         return False
@@ -118,11 +115,8 @@ def reconcile(admin_ips, channel_extra=(), transit_links=()) -> str:
     """Привести таблицу к желаемой. Возвращает, что сделано:
     'disabled' | 'ok' | 'applied' (текст изменился) | 'restored' (таблицу
     снесли) | 'resynced' (set устройств разошёлся с файлом)."""
-    from awgbot.infra.awg import in_container
     if not pkg.enabled():
-        if in_container():
-            return "disabled"           # docker: NAT — дело контейнера
-        # host: NAT-only форма, без фильтра. Файл ещё не существовал — первое
+        # NAT-only форма, без фильтра. Файл ещё не существовал — первое
         # появление таблицы на хосте: закрепить загрузку с ребута.
         text = pkg.render(pkg.build_spec([], channel_extra, transit_links))
         first = not pkg.read_file()
@@ -204,28 +198,16 @@ def disarm_rollback() -> bool:
 
 def remove(transit_links=()) -> list[str]:
     """Снять фильтр; SSH становится открыт всем (доступ не теряется). В
-    host-режиме таблица остаётся в NAT-only форме: без маскарада клиенты
-    потеряли бы интернет — «выключить файервол» этого не обещает."""
-    from awgbot.infra.awg import in_container
+    таблица остаётся в NAT-only форме: без маскарада клиенты потеряли бы
+    интернет — «выключить файервол» этого не обещает."""
     done: list[str] = []
-    if not in_container():
-        spec = pkg.build_spec([], transit_links=transit_links)
-        spec.filter = False
-        try:
-            pkg.apply_text(pkg.render(spec))
-            done.append("фильтр снят, NAT клиентов оставлен (таблица в форме NAT-only)")
-        except pkg.GuardError as e:
-            done.append(f"NAT-only форма не применена: {e}")
-        return done
-    if pkg._nft(["delete", "table", pkg.TABLE_FAMILY, pkg.TABLE_NAME], check=False).returncode == 0:
-        done.append("таблица снята")
-    p = Path(pkg.RULES_FILE)
-    if p.exists():
-        try:
-            p.replace(pkg.RULES_FILE + ".off")
-            done.append(f"файл перенесён в {pkg.RULES_FILE}.off")
-        except OSError as e:
-            done.append(f"файл не перенесён: {e}")
+    spec = pkg.build_spec([], transit_links=transit_links)
+    spec.filter = False
+    try:
+        pkg.apply_text(pkg.render(spec))
+        done.append("фильтр снят, NAT клиентов оставлен (таблица в форме NAT-only)")
+    except pkg.GuardError as e:
+        done.append(f"NAT-only форма не применена: {e}")
     return done
 
 

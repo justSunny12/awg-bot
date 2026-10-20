@@ -70,7 +70,7 @@ def test_add_device_full_flow(services, fake_awg, make_active_client):
 
 def test_add_device_allocates_sequential_ips(services, make_active_client):
     """Пул начинается с .2: адрес .1 держит сам сервер (раскладка новых
-    установок; у старых докерных сервер на .0, и ip_host_start там 1)."""
+    установок; у прежней раскладки сервер на .0, и ip_host_start там 1)."""
     client = make_active_client(device_limit=5)
     a = services.add_device(client.id, "d1")
     b = services.add_device(client.id, "d2")

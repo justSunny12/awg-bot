@@ -179,7 +179,7 @@ def test_peer_subnets_are_let_in_from_the_link_above_the_private_drop(script):
 
 
 def test_foreign_forward_drop_gets_accepts_for_our_interfaces(script):
-    """docker ставит политику FORWARD DROP в ip filter; accept в нашей inet-таблице
+    """Чужой файервол ставит политику FORWARD DROP в ip filter; accept в нашей inet-таблице
     её не отменяет — транзит локальной сети умирал бы молча. Правила в его цепочке,
     только когда политика DROP, снимаются при откате."""
     sec = script.split('step "3a. Чужая политика FORWARD"', 1)[1].split('step "4.', 1)[0]

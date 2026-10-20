@@ -75,7 +75,7 @@ def iface_for_subnet(net: str) -> Optional[tuple[str, str]]:
         return None
     for link in links:
         name = link.get("ifname", "")
-        if name == "lo" or name.startswith(("awg", "docker", "veth", "br-")):
+        if name == "lo" or name.startswith(("awg", "veth", "br")):
             continue
         for a in link.get("addr_info") or []:
             try:

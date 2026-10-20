@@ -6,7 +6,7 @@ reconcile, firewall, status; пакеты gateway_link, gwchannel, routing, traf
 общая основа — base.py, типы и исключения — types.py. Снаружи импортируют по-прежнему из awgbot.domain.services.
 
 Слой синхронный (db и awg блокирующие). Async-слой (хендлеры, планировщик)
-вызывает эти методы через asyncio.to_thread, чтобы docker exec не морозил loop.
+вызывает эти методы через asyncio.to_thread, чтобы exec не морозил loop.
 Поэтому services НЕ шлют сообщения сами, а возвращают список Notification —
 их рассылает async-слой.
 

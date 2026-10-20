@@ -75,12 +75,10 @@ def test_threshold_exceeds_wireguard_reject_time():
 def test_route_pointing_away_from_awg_is_a_failure(monkeypatch):
     """Проверять наличие маршрута мало.
 
-    После переезда на хост via-маршрут от контейнера пережил миграцию и
-    перекрыл connected. Наружу всё уходило, ответы клиентам отправлялись в
-    мёртвую docker-сеть — а доктор был полностью зелёным, потому что маршрут
+    Чужой via-маршрут перекрывал connected. Наружу всё уходило, ответы
+    клиентам отправлялись в мёртвую сеть — а доктор был полностью зелёным, потому что маршрут
     «есть». Три часа разбора стоили ровно этой строки.
     """
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
 
     def fake_host(args, check=True, input_data=None, timeout=20):
@@ -97,7 +95,6 @@ def test_route_pointing_away_from_awg_is_a_failure(monkeypatch):
 
 
 def test_connected_route_through_awg_passes(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
 
     def fake_host(args, check=True, input_data=None, timeout=20):
@@ -189,8 +186,6 @@ def selfcheck_env(monkeypatch):
     monkeypatch.setattr(routing.selfcheck, "_check_host_tools", lambda: None)
     monkeypatch.setattr(routing.selfcheck, "_check_static_plumbing", lambda: None)
     monkeypatch.setattr(routing.base, "_host_ok", host_ok)
-    from awgbot.infra import awg as _awg
-    monkeypatch.setattr(_awg, "in_container", lambda: False)
     routing.invalidate_self_check()
     yield state
     routing.invalidate_self_check()

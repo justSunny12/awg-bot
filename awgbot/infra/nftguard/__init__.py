@@ -28,9 +28,9 @@ Match Address) плюс ufw рядом, и отказ на любых выгля
     PostUp-строк и без окна «интерфейс поднялся, бот ещё не реассертил».
 
 NAT клиентов — тоже здесь (host-режим): цепочка postrouting маскарадит
-подсети туннеля во всё, что не awg-интерфейс. Раньше его давал контейнер
-Amnezia или обвяз условной маршрутизации, и чистый хост без него оставался
-без интернета для клиентов. Поэтому таблица в host-режиме существует ВСЕГДА:
+подсети туннеля во всё, что не awg-интерфейс. Раньше его давал обвяз условной
+маршрутизации, и чистый хост без него оставался без интернета для клиентов.
+Поэтому таблица существует ВСЕГДА:
 при firewall.enabled=false — в «NAT-only» форме (наборы и postrouting, без
 фильтрующих цепочек), при включённом файерволе — целиком. «Выключить
 файервол» снимает фильтр, но не NAT.
@@ -40,16 +40,14 @@ table X {…}` одним `nft -f`): нет момента с полупусто
 тику дешёвая: текст желаемой таблицы сравнивается с файлом (без exec), живой
 set — одним `nft -j list set`.
 
-Режимы. В host-режиме хост видит пиров с настоящими адресами → пер-пирный SSH
-(set устройств админа) и своя цепочка FORWARD. В docker-режиме пиры приходят
-с bridge-адреса контейнера и неразличимы → SSH из туннеля решается по
-bridge-подсети целиком, FORWARD оставлен docker'у.
+Хост видит пиров с настоящими адресами → пер-пирный SSH (set устройств
+админа) и своя цепочка FORWARD.
 """
 from __future__ import annotations
 
 from .common import log, TABLE_FAMILY, TABLE_NAME, TABLE, RULES_DIR, RULES_FILE, MAIN_CONF, ROLLBACK_UNIT, ROLLBACK_SECONDS, SET_ALLOW4, SET_ALLOW6, SET_TUNNEL_NETS, SET_TUNNEL_ADMIN, SET_LINK_PEERS, PRIVATE4, GuardError, GuardSpec, enabled
-from .collect import _resolve_cache, _RESOLVE_TTL, _RESOLVE_TIMEOUT, _getaddrinfo_timed, classify, _resolve, resolve_allow, _ports_from_conf, listen_ports, _docker_bridge_subnets, tunnel_nets, build_spec, _peer_link_ifs, _tunnel_ifs, wan_ifaces, link_ifaces, link_peer_addrs, link_channel_port, _nat_exclude_ifs, _is_v4, quarantine_ifaces
+from .collect import _resolve_cache, _RESOLVE_TTL, _RESOLVE_TIMEOUT, _getaddrinfo_timed, classify, _resolve, resolve_allow, _ports_from_conf, listen_ports, tunnel_nets, build_spec, _peer_link_ifs, _tunnel_ifs, wan_ifaces, link_ifaces, link_peer_addrs, link_channel_port, _nat_exclude_ifs, _is_v4, quarantine_ifaces
 from .render import _set_block, _ports, render
 from .apply import _nft, read_file, write_file, check_text, apply_text, nat_covers, table_present, live_set, reconcile, ensure_persistence, rollback_armed, arm_rollback, disarm_rollback, remove, ufw_active, firewalld_active, status
 
-__all__ = ["log", "TABLE_FAMILY", "TABLE_NAME", "TABLE", "RULES_DIR", "RULES_FILE", "MAIN_CONF", "ROLLBACK_UNIT", "ROLLBACK_SECONDS", "SET_ALLOW4", "SET_ALLOW6", "SET_TUNNEL_NETS", "SET_TUNNEL_ADMIN", "SET_LINK_PEERS", "PRIVATE4", "GuardError", "GuardSpec", "enabled", "_resolve_cache", "_RESOLVE_TTL", "_RESOLVE_TIMEOUT", "_getaddrinfo_timed", "classify", "_resolve", "resolve_allow", "_ports_from_conf", "listen_ports", "_docker_bridge_subnets", "tunnel_nets", "build_spec", "_peer_link_ifs", "_tunnel_ifs", "wan_ifaces", "link_ifaces", "link_peer_addrs", "link_channel_port", "_nat_exclude_ifs", "_is_v4", "quarantine_ifaces", "_set_block", "_ports", "render", "_nft", "read_file", "write_file", "check_text", "apply_text", "nat_covers", "table_present", "live_set", "reconcile", "ensure_persistence", "rollback_armed", "arm_rollback", "disarm_rollback", "remove", "ufw_active", "firewalld_active", "status"]
+__all__ = ["log", "TABLE_FAMILY", "TABLE_NAME", "TABLE", "RULES_DIR", "RULES_FILE", "MAIN_CONF", "ROLLBACK_UNIT", "ROLLBACK_SECONDS", "SET_ALLOW4", "SET_ALLOW6", "SET_TUNNEL_NETS", "SET_TUNNEL_ADMIN", "SET_LINK_PEERS", "PRIVATE4", "GuardError", "GuardSpec", "enabled", "_resolve_cache", "_RESOLVE_TTL", "_RESOLVE_TIMEOUT", "_getaddrinfo_timed", "classify", "_resolve", "resolve_allow", "_ports_from_conf", "listen_ports", "tunnel_nets", "build_spec", "_peer_link_ifs", "_tunnel_ifs", "wan_ifaces", "link_ifaces", "link_peer_addrs", "link_channel_port", "_nat_exclude_ifs", "_is_v4", "quarantine_ifaces", "_set_block", "_ports", "render", "_nft", "read_file", "write_file", "check_text", "apply_text", "nat_covers", "table_present", "live_set", "reconcile", "ensure_persistence", "rollback_armed", "arm_rollback", "disarm_rollback", "remove", "ufw_active", "firewalld_active", "status"]

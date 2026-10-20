@@ -101,7 +101,6 @@ def toggle(monkeypatch):
 
 @pytest.fixture()
 def host(monkeypatch):
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "SUBNET_PREFIX", "10.8.1")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
     monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
@@ -181,7 +180,7 @@ def test_the_gateway_device_of_the_admin_keeps_the_common_dns(services, two_slot
 
 def test_without_the_admin_resolver_the_admin_device_still_gets_the_space(services, make_active_client, host,
                                                                   monkeypatch, tmp_path):
-    """docker-режим или резолвер клиентов не свой — резолвера админа нет:
+    """Резолвер клиентов не свой — резолвера админа нет:
     DNS прежний, а строка пространства адресов в туннеле от резолвера не
     зависит — она есть."""
     _AdminDns(monkeypatch, tmp_path, installed=False)
@@ -321,7 +320,6 @@ def test_a_failed_records_file_is_reported_by_the_toggle(services, two_slots, ad
 
 
 _WHY = {
-    "docker": "SMB в туннеле — только при VPN прямо на хосте, без docker",
     "no_client_resolver": "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»",
     "no_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
     "dead_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
@@ -337,8 +335,6 @@ def test_turning_on_is_refused_where_names_would_leak_or_not_resolve(services, t
     записи не тронуты."""
     from awgbot.infra import nftguard
     a = _AdminDns(monkeypatch, tmp_path, installed=(why != "no_resolver"))
-    if why == "docker":
-        monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     if why == "no_client_resolver":
         monkeypatch.setattr(resolver, "installed", lambda: False)
     if why == "dead_resolver":
@@ -475,13 +471,9 @@ def test_start_installs_the_admin_resolver_and_redraws_the_firewall_once(service
     assert redraws == [1], "уже стоящий резолвер админа перерисовывал файервол на каждом старте"
 
 
-def test_start_does_nothing_without_the_client_resolver_or_in_docker(services, two_slots, monkeypatch,
-                                                                     tmp_path):
+def test_start_does_nothing_without_the_client_resolver(services, two_slots, monkeypatch, tmp_path):
     a = _AdminDns(monkeypatch, tmp_path, installed=False)
     _client_resolver(monkeypatch, [])
-    services.admin_dns_ensure()
-    _client_resolver(monkeypatch, ["10.8.1.1"])
-    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     services.admin_dns_ensure()
     assert a.calls == []
 

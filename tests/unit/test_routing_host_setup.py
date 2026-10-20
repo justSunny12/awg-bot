@@ -18,7 +18,7 @@ from tests.conftest import SH
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh"
 
 
-def _render_unit(script: str, tmp_path, runtime: str) -> str:
+def _render_unit(script: str, tmp_path) -> str:
     """Прогоняет ветку --install-unit НАСТОЯЩИМ кодом скрипта и возвращает
     юнит: проверять надо то, что доедет до systemd, вместе с подстановками."""
     block = script[script.index('if [ "$MODE" = "unit" ]'):]
@@ -28,7 +28,7 @@ def _render_unit(script: str, tmp_path, runtime: str) -> str:
     prog = "\n".join([
         "set -e", 'say(){ :; }', 'step(){ :; }', 'systemctl(){ :; }',
         'install_self(){ printf "/usr/local/sbin/routing-host-setup.sh"; }',
-        f'AWG_RUNTIME="{runtime}"', "MODE=unit", block,
+        "MODE=unit", block,
     ])
     r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
@@ -140,84 +140,33 @@ def test_fill_hint_uses_a_domain_that_will_be_in_the_set(script):
             f"и подсказка будет врать")
 
 
-# ── режим awg: контейнер или хост ────────────────────────────────────────────
+# ── юнит автоприменения ──────────────────────────────────────────────────────
 
-def test_runtime_is_read_from_the_same_yaml_as_the_bot(script):
-    """Режим берётся из app.yaml, а не из переменной окружения.
-
-    Два источника истины разошлись бы ровно один раз — и обвяз собрался бы под
-    другой режим, чем работает бот: маршрут до клиентской подсети ушёл бы в
-    никуда, а отказ выглядел бы как «у включённых пропал интернет».
-    """
-    assert "/^  runtime:/" in script, "runtime не читается из app.yaml"
-    # Дефолт обязан совпадать с дефолтом бота: конфиг не прочитался — оба
-    # должны решить одинаково, иначе обвяз соберётся под чужой режим.
-    from awgbot.core import config
-    import re as _re
-    src = (Path(config.__file__)).read_text(encoding="utf-8")
-    bot_default = _re.search(r'_docker\.get\("runtime"\)\s*or\s*"(\w+)"', src)
-    assert bot_default and bot_default.group(1) == "host"
-    assert 'AWG_RUNTIME="${AWG_RUNTIME:-host}"' in script, "дефолт разошёлся с ботом"
-
-
-def test_container_is_not_awaited_in_host_mode(script):
-    """Ожидание контейнера обёрнуто в проверку режима.
-
-    Без неё --apply на переехавшем сервере висел бы 30 секунд и падал с
-    «не удалось узнать адрес контейнера», хотя контейнера там уже быть не должно.
-    """
-    body = script[script.index("CONT_IP=\"\""):script.index("say \"Параметры:\"")]
-    assert 'if [ "$AWG_RUNTIME" = "docker" ]' in body
-
-
-def test_rollback_survives_empty_container_ip(script):
-    """При set -e несработавший тест в AND-списке завершает скрипт.
-
-    `[ -n "$CONT_IP" ] && run ...` в host-режиме оборвал бы откат на середине,
-    не сняв ни dnsmasq, ни правила, — и выглядело бы это как успешный откат.
-    """
-    rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1]
-    assert '[ -n "$CONT_IP" ] && run' not in rollback
-    assert 'if [ -n "$CONT_IP" ]; then' in rollback
-
-
-def test_unit_does_not_require_docker_in_host_mode(script, tmp_path):
-    """Юнит в host-режиме не должен зависеть от docker.service.
-
-    Иначе обвяз остался бы заложником сервиса, который переезд как раз убирает:
-    после ребута юнит не поднялся бы, а фича молча не завелась. В docker-режиме
-    зависимость, наоборот, нужна: без контейнера стартовать бессмысленно.
-    """
-    host = _render_unit(script, tmp_path, "host")
-    directives = [ln for ln in host.splitlines() if ln and not ln.startswith("#")]
-    assert not any("docker.service" in ln for ln in directives), directives
+def test_unit_depends_only_on_the_network(script, tmp_path):
+    """Юнит обвяза не требует чужих сервисов: иначе после ребута он не поднялся
+    бы без них, а фича молча не завелась."""
+    unit = _render_unit(script, tmp_path)
+    directives = [ln for ln in unit.splitlines() if ln and not ln.startswith("#")]
+    assert not any(ln.startswith(("Requires=", "BindsTo=")) for ln in directives), directives
     assert "After=network-online.target" in directives
-    docker = _render_unit(script, tmp_path, "docker")
-    assert "Requires=docker.service" in docker and "After=network-online.target docker.service" in docker
 
 
-@pytest.mark.parametrize("runtime", ["host", "docker"])
-def test_unit_carries_the_runtime_into_execstart(script, tmp_path, runtime):
-    """ExecStart обязан нести режим и постоянный путь скрипта.
-
-    Юнит пишется один раз, а срабатывает после каждого ребута — без переменной
-    он применил бы docker-ветку и прописал маршрут через контейнер, которого
-    больше нет.
-    """
-    unit = _render_unit(script, tmp_path, runtime)
+def test_unit_execstart_points_at_the_installed_script(script, tmp_path):
+    """Юнит пишется один раз, а срабатывает после каждого ребута — ExecStart
+    обязан звать постоянный путь скрипта."""
+    unit = _render_unit(script, tmp_path)
     exec_line = next(ln for ln in unit.splitlines() if ln.startswith("ExecStart="))
-    assert f"AWG_RUNTIME={runtime} " in exec_line
     assert "/usr/local/sbin/routing-host-setup.sh --apply" in exec_line
 
 
 # ── маршрут и DNS: два отказа переезда ───────────────────────────────────────
 
-def test_stale_route_is_removed_in_host_mode(script):
+def test_stale_route_is_removed(script):
     """Мало НЕ ставить свой маршрут — надо снять чужой.
 
-    Via-маршрут, оставшийся от контейнерной схемы, переживает переезд и
-    перекрывает connected: наружу всё уходит, а ответы клиентам отправляются в
-    мёртвую docker-сеть. Диагностика при этом зелёная — маршрут ведь есть.
+    Чужой via-маршрут перекрывает connected: наружу всё уходит, а ответы
+    клиентам отправляются в мёртвую сеть. Диагностика при этом зелёная —
+    маршрут ведь есть.
     """
     body = script.split('step "5.', 1)[1].split("step ", 1)[0]
     assert "ip route del" in body
@@ -229,8 +178,6 @@ def test_dnatted_dns_is_allowed_into_input(script):
 
     При политике DROP он там умирает: клиент подключается, ходит по голым
     адресам (телеграм работает), а всё, что требует резолва, мертво. В
-    docker-режиме не всплывало — контейнер маскарадил клиентов, и DNAT по
-    -s подсети до них не доставал.
     """
     assert 'ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT' in script
     dnat = script.index("3. Перехват DNS")

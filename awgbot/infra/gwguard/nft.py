@@ -62,7 +62,7 @@ def table_info() -> Optional[dict]:
 
 def iptables_forward_policy() -> Optional[str]:
     """Политика чужой цепочки ip filter FORWARD: accept в нашей таблице не
-    отменяет drop в ней. docker ставит DROP, если сам включал ip_forward."""
+    отменяет drop в ней (чужой файервол, включивший ip_forward)."""
     proc = pkg._nft(["-j", "list", "chain", "ip", "filter", "FORWARD"])
     if proc.returncode != 0:
         return None

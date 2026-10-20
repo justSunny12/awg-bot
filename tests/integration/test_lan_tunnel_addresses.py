@@ -210,7 +210,7 @@ def test_a_stale_error_goes_away_when_the_table_is_already_right(two, fake_routi
 
 def test_an_empty_table_looks_into_the_kernel_only_once_and_a_missing_nft_is_no_error(two, monkeypatch):
     """Подсетей нет и не было: в ядро смотрим только первой сверкой процесса
-    (таблица могла остаться от прошлой жизни); nft на хосте нет вовсе (docker
+    (таблица могла остаться от прошлой жизни); nft на хосте нет вовсе (хост
     без nftables) — таблицы нет, это не отказ."""
     looks = []
 

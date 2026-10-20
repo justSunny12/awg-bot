@@ -1,4 +1,4 @@
-"""Unit: docker-exec обёртки infra/awg/ (seam.py) с замоканными примитивами (_exec/_exec_sh/
+"""Unit: exec-обёртки infra/awg/ (seam.py) с замоканными примитивами (_exec/_exec_sh/
 _exec_i/_run). Фиксируем и разбор вывода, и КОМАНДЫ (валидация + конструкция).
 
 Эти тесты НЕ используют fake_awg (он подменяет весь модуль) — работаем с
@@ -84,22 +84,6 @@ def test_unblock_ip_deletes_drop(monkeypatch):
 def test_block_ip_rejects_bad_ip(monkeypatch):
     with pytest.raises(awg.AwgError):
         awg.block_ip("nope")
-
-
-# ── контейнер (docker inspect / restart) ─────────────────────────────────────
-def test_container_started_and_pid(monkeypatch):
-    monkeypatch.setattr(awg, "_inspect", lambda fmt: "2026-01-01T00:00:00Z")
-    assert awg.container_started_at() == "2026-01-01T00:00:00Z"
-    monkeypatch.setattr(awg, "_inspect", lambda fmt: "12345")
-    assert awg.container_pid() == 12345
-
-
-def test_container_inspect_swallows_error(monkeypatch):
-    def boom(fmt):
-        raise awg.AwgError("down")
-    monkeypatch.setattr(awg, "_inspect", boom)
-    assert awg.container_started_at() is None
-    assert awg.container_pid() is None
 
 
 def test_awg_responding(monkeypatch):
@@ -201,8 +185,8 @@ def test_read_server_params_caches_and_invalidates(monkeypatch):
 def test_server_pubkey_is_derived_not_read_from_a_file(monkeypatch):
     """Публичный ключ сервера обязан выводиться из PrivateKey живого конфига.
 
-    Пока его брали из wireguard_server_public_key.key (файла контейнера
-    Amnezia), файл и конфиг могли разойтись: смена серверного ключа без правки
+    Пока его брали из wireguard_server_public_key.key (отдельного файла),
+    файл и конфиг могли разойтись: смена серверного ключа без правки
     файла разослала бы всем конфиги с ЧУЖИМ публичным ключом, и заметили бы это
     только при первом переподключении.
     """
@@ -232,9 +216,7 @@ def test_server_params_refuse_conf_without_private_key(monkeypatch):
 def test_apply_config_does_not_use_a_predictable_tmp_path(monkeypatch):
     """В распакованном конфиге лежит ПРИВАТНЫЙ КЛЮЧ СЕРВЕРА.
 
-    Пока это был /tmp контейнера (свой mount namespace, кроме root никого),
-    риска не было. После переезда на хост тот же код стал ронять ключ в общий
-    /tmp — редирект создаёт файл с обычной маской, читаемой всеми, а
+    Редирект в общий /tmp создал бы файл с обычной маской, читаемой всеми, а
     предсказуемое имя там же открывает подмену симлинком.
     """
     seen = {}

@@ -29,20 +29,6 @@ def test_both_layers_required(services, db, make_active_client, fake_routing):
     assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
-def test_enabled_device_is_exempted_from_masquerade(
-        services, make_active_client, fake_routing):
-    """Плечо контейнера: включённое устройство должно выходить немаскараженным,
-    иначе на хосте его не отличить от остальных и маркировать будет нечего."""
-    c = make_active_client()
-    dc = _device(services, c)
-    services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
-    assert fake_routing.nat_exempt == [dc.address]
-
-    services.set_routing_all(c.id, False)
-    assert fake_routing.nat_exempt == []
-
-
 def test_revoking_permission_kills_effect_but_keeps_flags(
         services, db, make_active_client, fake_routing):
     """Отзыв разрешения гасит эффект, но НЕ разрушает настройку пользователя:

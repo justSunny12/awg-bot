@@ -24,7 +24,7 @@
 #      /opt/awg-gw (остаток прежних выпусков) и скрипты в /usr/local/sbin (аплинк НЕ трогается — это связь
 #      агента с Telegram); у ВПС — ВСЁ, что поставил бот: линки до шлюзов и
 #      обвязка условной маршрутизации (их же --rollback), резолвер клиентов и
-#      резолвер админа, интерфейсы awg со всеми пирами, контейнер docker-режима,
+#      резолвер админа, интерфейсы awg со всеми пирами,
 #      таблицы inet awg_bot_guard, inet awg_bot_acct (учёт РФ-трафика) и
 #      inet awg_lan_map (адреса в туннеле локальных сетей шлюзов) — клиенты
 #      остаются без доступа, поэтому ВПС
@@ -376,8 +376,8 @@ wipe_previous() {
     else
         # ВПС — всё, что поставил бот: линки до шлюзов и обвязка условной
         # маршрутизации (своими скриптами), резолвер клиентов, интерфейсы awg
-        # с пирами клиентов (host-режим: awg-quick@*, конфиги в
-        # /etc/amnezia/amneziawg; docker-рудимент: контейнер), таблица файервола.
+        # с пирами клиентов (awg-quick@*, конфиги в /etc/amnezia/amneziawg),
+        # таблица файервола.
         # Клиенты после этого без доступа — об этом спрошено выше, отдельно.
         local f name
         for f in /etc/amnezia/amneziawg/awglink*.conf; do
@@ -404,8 +404,6 @@ wipe_previous() {
             awg-quick down "$name" >/dev/null 2>&1 || true
         done
         rm -rf /etc/amnezia/amneziawg /root/gw-awglink*.conf /root/awg-gw-bundle*.sh
-        name="$(sed -nE 's/^ *container: *"?([^"#]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1 | tr -d ' ')"
-        [[ -n "$name" ]] && command -v docker >/dev/null 2>&1 && docker rm -f "$name" >/dev/null 2>&1 || true
         nft delete table inet awg_bot_guard 2>/dev/null || true
         nft delete table inet awg_bot_acct 2>/dev/null || true
         nft delete table inet awg_lan_map 2>/dev/null || true

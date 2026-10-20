@@ -34,13 +34,13 @@ def test_finish_promotes_the_migration_interface(services, mig, make_active_clie
     removed, dropped, failed = services.migration_finish()
     assert not failed and removed
 
-    assert written["app.docker.interface"] == config.MIGRATION_INTERFACE
+    assert written["app.awg.interface"] == config.MIGRATION_INTERFACE
     assert written["app.network.subnet_prefix"] == config.MIGRATION_SUBNET_PREFIX
     assert written["app.network.subnet_cidr"] == f"{config.MIGRATION_SUBNET_PREFIX}.0/24"
     assert isinstance(written["app.network.server_port"], int)
-    assert written["app.docker.app_container"] == "amnezia-awg3", "новое поколение — новый протокол"
-    assert written["app.docker.migration_interface"] == ""
-    assert written["app.docker.migration_subnet_prefix"] == ""
+    assert written["app.awg.protocol_id"] == "amnezia-awg3", "новое поколение — новый протокол"
+    assert written["app.awg.migration_interface"] == ""
+    assert written["app.awg.migration_subnet_prefix"] == ""
     assert retired == [config.AWG_INTERFACE], "старый интерфейс не погашен"
     assert awglock.applied_generation() == 2 and awglock.target_generation() == 2
     assert services.pop_promoted_iface() == config.MIGRATION_INTERFACE
@@ -63,8 +63,8 @@ def test_finish_without_generation_change_keeps_the_protocol_id(services, mig,
     monkeypatch.setattr(services, "_retire_interface", lambda name: None)
     awglock.write_state(applied=2, target=2)
     services.migration_finish()
-    assert "app.docker.app_container" not in written
-    assert written["app.docker.interface"] == config.MIGRATION_INTERFACE
+    assert "app.awg.protocol_id" not in written
+    assert written["app.awg.interface"] == config.MIGRATION_INTERFACE
 
 
 def test_promotion_is_skipped_when_the_new_port_cannot_be_read(services, mig,

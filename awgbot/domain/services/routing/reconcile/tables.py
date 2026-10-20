@@ -54,7 +54,6 @@ class RoutingTablesMixin:
         набор профилей равносилен выключенной функции сам по себе, и гасить
         ради него нечего.
         """
-        routing.sync_nat_exempt(())
         routing.rebuild_chain(())
         routing.set_marking_enabled(False)
 
@@ -95,10 +94,6 @@ class RoutingTablesMixin:
         # ушли вместе с обратной моделью. Российских подсетей сопровождаемого
         # источника не существует, поэтому здесь их нет.
         base_domains = list(self._routing_read_cache("tun_domains"))
-
-        # плечо контейнера: выпустить трафик включённых устройств
-        # немаскараженным, иначе на хосте их не отличить от остальных
-        routing.sync_nat_exempt([a for lst in addrs.values() for a in lst])
 
         # ДИФФ ПЕРЕД ЗАПИСЬЮ. Реконсиляция идёт каждый тик монитора, и раньше
         # она каждый раз пересобирала все наборы (6 exec на профиль) и цепочку
