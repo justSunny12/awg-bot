@@ -105,7 +105,8 @@ class ReserveSessionMixin:
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
                 "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
-                "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0)}
+                "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
+                "in_by": str(self.rsv_get("rsv_in").get("by") or "")}
 
     @staticmethod
     def reserve_mem_free_mb() -> int:
@@ -158,7 +159,8 @@ class ReserveSessionMixin:
                         admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(),
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),
-                        mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0))
+                        mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0),
+                        in_by=str(body.get("in_by") or ""))
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             row = self.reserve_peer() or {}

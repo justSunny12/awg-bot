@@ -31,7 +31,7 @@ CODE_WINDOW_S = 3600
 
 
 def decide(reserve_sees: bool, views: dict) -> str:
-    """Случай матрицы §3.9.1 по взглядам голосующих: views — слот → "see" | "unseen".
+    """Случай матрицы (README §6i) по взглядам голосующих: views — слот → "see" | "unseen".
     Возвращает "1", "2", "3", "4", "5", "6", "H3", "H4"."""
     seen = [s for s, v in views.items() if v == "see"]
     unseen = [s for s, v in views.items() if v == "unseen"]
@@ -286,7 +286,8 @@ class ReserveVoteMixin:
         self.rsv_update("rsv_view", need={"slot": pick, "at": timeutil.now_iso(), "mono": time.monotonic(),
                                           "case": case, "kind": kind, "asked": sorted(asked)})
         log.warning("резерв: прошу долю у шлюза %s основы (случай %s)", pick, case)
-        return [("gw", pick, "need", {"case": case, "since": since})]
+        return [("gw", pick, "need", {"case": case, "since": since,
+                                      "m_gen": int(self.rsv_get("rsv_pkg_in").get("m_gen") or 0)})]
 
     def _share_in(self, slot: int, share: str, m_gen: int) -> list[tuple]:
         need = dict(self.rsv_get("rsv_view").get("need") or {})
@@ -315,11 +316,13 @@ class ReserveVoteMixin:
             log.warning("резерв: процесс открытия (%s) не запущен: %s", kind, why)
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), why))])]
         pkg_in = self.rsv_get("rsv_pkg_in")
+        self.reserve_zone_shell_ensure()
         payload = self._open_payload(kind)
         payload.update(secret)
         extra = self._hosting_extra(case)
         with _LOCK:
             self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra=extra,
+                                by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
                                 up_sent=False, tg_taken=False, ended_auto=True,
                                 dead_since=str(self.rsv_get("rsv_view").get("case_since") or ""))
@@ -381,7 +384,9 @@ class ReserveVoteMixin:
             log.info("резерв: приём аварийного кода закрыт (%s)", why)
             pid = self.reserve_peer_admin_id()
             if cw.get("told") and pid:
-                actions.append(("notify", [Notification(tg_id=pid, text=self._rn().code_window_closed(primary, why))]))
+                gw_name = next((self.reserve_gw_name(s) for s in self._voters()), primary)
+                actions.append(("notify", [Notification(tg_id=pid, text=self._rn().code_window_closed(
+                    primary if why == "primary_seen" else gw_name, why))]))
         return actions
 
     def _code_block(self) -> str:

@@ -240,7 +240,7 @@ def sanitize(raw: dict) -> dict:
         # резерв глазами шлюза: связь с резервом, доля, пересылка — только строки
         # из перечня и целые; экран сервера и готовность направления читают это
         seen = _clean_str(rsv.get("seen", ""))
-        out["rsv"] = {"seen": seen if seen in ("ok", "down", "absent") else "",
+        out["rsv"] = {"seen": seen if seen in ("ok", "suspect", "down", "absent") else "",
                       "since": _clean_str(rsv.get("since", ""))[:40],
                       "gen": int(rsv.get("gen") or 0) if str(rsv.get("gen") or "0").isdigit() else 0,
                       "open": bool(rsv.get("open")), "state": _clean_str(rsv.get("state", ""))[:16],

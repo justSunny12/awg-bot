@@ -64,6 +64,7 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             # Т-РУ18 «шлюз не на связи с резервом»
             from awgbot.runtime import pairlink, rsvactions
             from awgbot.runtime.pairlink import guest
+            await asyncio.to_thread(services.reserve_zone_shell_ensure)
             body = await asyncio.to_thread(services.reserve_slots_body)
             if body and pairlink.online() and await pairlink.send("slots", body):
                 await asyncio.to_thread(services.reserve_slots_sent, body)

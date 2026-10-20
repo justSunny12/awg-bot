@@ -109,6 +109,7 @@ def reserve_print(sec: dict | None) -> str:
         return ""
     share = sec.get("share") or {}
     text = (f"{canon}self={norm(sec.get('self'))}\nstate={norm(sec.get('state'))}\nmove={int(sec.get('move') or 0)}\n"
-            f"share={int(share.get('x') or 0)}:{norm(share.get('y'))}:{int(share.get('gen') or 0)}\n")
+            f"share={int(share.get('x') or 0)}:{norm(share.get('y'))}:{int(share.get('gen') or 0)}\n"
+            f"chan={int(sec.get('chan') or 0)}\n")
     return section_print("reserve", text)
 

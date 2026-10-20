@@ -275,7 +275,8 @@ class MonitorMixin:
             down = st.rsv.get("seen") in ("down", "absent")
             since = str(st.rsv.get("since") or "")
             checks.append(GwCheck(gc.CHECK_RSV_LINK, not down,
-                                  f"{name} на связи" if not down else f"{name} не отвечает" + (f" с {since[11:16]}" if len(since) >= 16 else "")))
+                                  f"{name} на связи" if not down else f"{name} не отвечает" + (f" с {since[11:16]}" if len(since) >= 16 else ""),
+                                  group="rsv"))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.
         (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total), smart = \

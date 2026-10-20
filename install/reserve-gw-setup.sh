@@ -95,7 +95,7 @@ conf_check() {   # конфиг линка к резерву: только Inter
 
 guard_write() {   # таблица nft: вход, пересылка, connmark; набор rsv_open4 — из состояния
     _open="$(state_get src | tr ',' ' ')"
-    _admins="$(printf '%s' "${ADMIN_IPS:-}" | tr ',' ' ')"
+    _admins="$(printf '%s' "${ADMIN_IPS:-$(state_get admins)}" | tr ',' ' ')"
     nft -f - <<EOF
 table $GUARD_TABLE
 delete table $GUARD_TABLE
@@ -147,7 +147,14 @@ routes_down() {
 }
 
 link_up() {
-    ip link show "$RSV_IF" >/dev/null 2>&1 && { awg-quick down "$CONF" >/dev/null 2>&1 || true; }
+    # линк уже поднят — ключи и пир подтягиваются без пересоздания (сессия с
+    # резервом не рвётся); адрес и MTU у стоящего линка не меняем
+    if ip link show "$RSV_IF" >/dev/null 2>&1; then
+        _t="$(mktemp)"; awg-quick strip "$CONF" > "$_t" 2>/dev/null || { rm -f "$_t"; return 1; }
+        awg syncconf "$RSV_IF" "$_t"; _rc=$?; rm -f "$_t"
+        [ "$_rc" -eq 0 ] && return 0
+        awg-quick down "$CONF" >/dev/null 2>&1 || true
+    fi
     awg-quick up "$CONF"
 }
 link_down() { ip link show "$RSV_IF" >/dev/null 2>&1 && awg-quick down "$CONF"; return 0; }
@@ -192,13 +199,15 @@ cmd_up() {
     [ -n "${1:-}" ] && [ -f "$1" ] || die "нет файла конфига"
     conf_check "$1" || die "конфиг линка к резерву не прошёл проверку"
     mkdir -p "$RSV_CONF_DIR"; chmod 0700 "$RSV_CONF_DIR"
+    # адреса админов — в состояние: --reassert при загрузке и --open их не получают
+    state_write open="$(state_get open)" src="$(state_get src)" admins="${ADMIN_IPS:-}"
     if [ -f "$CONF" ] && cmp -s "$1" "$CONF" && ip link show "$RSV_IF" >/dev/null 2>&1; then
         guard_write; routes_up; ensure_unit; say "up: same"; return 0
     fi
     install -m 0600 "$1" "$CONF"
     link_up || die "линк к резерву не поднялся"
     guard_write; routes_up; ensure_unit
-    [ -f "$RSV_STATE" ] || state_write open=0 src=
+    [ -n "$(state_get open)" ] || state_write open=0 src= admins="${ADMIN_IPS:-}"
     say "up: ok"
 }
 
@@ -214,7 +223,7 @@ cmd_open() {
     need_root
     _src="$(printf '%s' "${1:-}" | tr ' ' ',')"
     [ -n "$_src" ] || die "нет подсетей"
-    state_write open=1 src="$_src"
+    state_write open=1 src="$_src" admins="$(state_get admins)"
     nft flush set $GUARD_TABLE rsv_open4 2>/dev/null || guard_write
     nft add element $GUARD_TABLE rsv_open4 "{ $(ipv4_list $(printf '%s' "$_src" | tr ',' ' ')) }" || { guard_write; }
     say "open: $_src"
@@ -222,7 +231,7 @@ cmd_open() {
 
 cmd_close() {
     need_root
-    state_write open=0 src=
+    state_write open=0 src= admins="$(state_get admins)"
     nft flush set $GUARD_TABLE rsv_open4 2>/dev/null || true
     say "close: ok"
 }

@@ -369,7 +369,11 @@ class CfgMixin:
         for name in gwcfg.SECTIONS:
             want = doc["prints"].get(name, "")
             if not want:
-                continue                                  # у сервера раздела нет — своё на шлюзе не трогаем
+                # у сервера раздела нет — своё на шлюзе не трогаем; исключение —
+                # reserve: пустой раздел и есть команда снять линк к резерву
+                if name == "reserve" and str(have.get(name) or ""):
+                    out.append(name)
+                continue
             if want == str(have.get(name) or ""):
                 continue
             if held.get(name) == want or name in failed:

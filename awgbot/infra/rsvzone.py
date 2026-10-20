@@ -112,8 +112,10 @@ def zone_addr(cidr: str = "") -> str:
         return ""
 
 
-def shell() -> str:
-    return run("shell")
+def shell(channel_port: int = 0) -> str:
+    """Зона-оболочка: пространство, таблица, стороны линков шлюзов основы из
+    reserve/links/; порт гостевого канала — во вход таблицы зоны."""
+    return run("shell", env={"GUEST_CHANNEL_PORT": str(int(channel_port))} if channel_port else None)
 
 
 def store() -> str:
