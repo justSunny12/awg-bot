@@ -91,6 +91,11 @@ async def run_guest() -> None:
         nonlocal watch_due
         if ctl.connected():
             await ctl.send_online()
+        if wh is not None:
+            try:
+                wh.refresh_pool()                         # хост выучил сеть Telegram — в фильтр без перезапуска
+            except Exception as e:                        # noqa: BLE001
+                log.info("гость: пул вебхука не перечитан: %s", e)
         if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()):
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
@@ -174,5 +179,7 @@ async def _watch(wh, bot, services, ctl) -> None:
     if res.get("stalled"):
         log.warning("гость: Telegram не доставляет обновления: %s", res.get("error"))
         await notify_one(bot, config.ADMIN_ID, gt.webhook_stalled(name, res.get("since") or "", res.get("error") or ""))
+        await ctl.send("webhook", {"stalled": True, "since": str(res.get("since") or ""), "error": str(res.get("error") or "")[:200]})
     elif res.get("restored"):
         await notify_one(bot, config.ADMIN_ID, gt.webhook_restored(name))
+        await ctl.send("webhook", {"stalled": False})

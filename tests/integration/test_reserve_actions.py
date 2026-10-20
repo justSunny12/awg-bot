@@ -290,6 +290,27 @@ async def test_the_guest_words_become_the_matching_service_calls(mv, wired, monk
     assert [("x",)] in wired.ran and [("y",)] in wired.ran and [("z",)] in wired.ran
 
 
+
+async def test_the_webhook_word_of_the_guest_reaches_the_reserve_admin_and_the_online_count_is_kept(mv, wired,
+                                                                                                   monkeypatch):
+    """Слово гостя о надзоре вебхука — в Т-РУ19 админу резерва; число
+    устройств основы у гостя — в st основе («там M»), без связи — 0."""
+    svc = wired.svc
+    monkeypatch.setattr(svc, "reserve_out_tick", lambda: [])
+    monkeypatch.setattr(svc, "reserve_in_tick", lambda: [])
+    got = []
+    monkeypatch.setattr(svc, "reserve_guest_webhook_in", lambda body: got.append(body) or [("w",)])
+    srv = types.SimpleNamespace(take_words=lambda: [("webhook", {"stalled": True, "since": "", "error": "x"})],
+                                online_count=9, connected=lambda: True)
+    monkeypatch.setattr(guestctl, "server", lambda: srv)
+    await wired.jobs["rsv_move_tick"][0]()
+    assert got == [{"stalled": True, "since": "", "error": "x"}] and [("w",)] in wired.ran
+    assert svc.reserve_st_body()["online"] == 9, "число устройств у гостя не уходит основе"
+    srv.connected = lambda: False
+    srv.take_words = lambda: []
+    await wired.jobs["rsv_move_tick"][0]()
+    assert svc.reserve_st_body()["online"] == 0, "гость отключился, а основе по-прежнему «там 9»"
+
 async def test_a_failing_automaton_does_not_stop_the_guest_words_and_the_blocks(mv, wired, monkeypatch):
     svc = wired.svc
 
@@ -328,9 +349,12 @@ async def test_the_slow_tick_runs_the_watch_the_return_notice_and_the_clone_coun
     monkeypatch.setattr(svc, "reserve_return_notify_tick",
                         lambda: calls.append("return") or [Notification(tg_id=1, text="вернулся")])
     monkeypatch.setattr(svc, "reserve_traffic_in_tick", lambda: calls.append("traffic"))
+    monkeypatch.setattr(svc, "reserve_tg_learn_tick", lambda: calls.append("tg_learn") or [])
+    monkeypatch.setattr(svc, "reserve_tg_pool_tick", lambda: calls.append("tg_pool") or [])
     await wired.jobs["rsv_slow_tick"][0]()
-    assert calls == ["watch", "return", "traffic"]
-    assert len(wired.ran) == 1 and wired.ran[0][0][0] == "notify"
+    assert calls == ["watch", "return", "traffic", "tg_learn", "tg_pool"], "шаг медленного такта пропал после сбоя соседа"
+    ran = [r for r in wired.ran if r]
+    assert len(ran) == 1 and ran[0][0][0] == "notify", f"кроме уведомления о возврате ушло что-то ещё: {wired.ran}"
 
 
 # ── реплика частями ─────────────────────────────────────────────────────────

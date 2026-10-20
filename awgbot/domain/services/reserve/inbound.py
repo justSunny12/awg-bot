@@ -66,10 +66,12 @@ class ReserveInboundMixin:
             bytes.fromhex(str(k_hex))
         except ValueError:
             return "ключ не hex"
+        if hasattr(self, "reserve_zone_shell_ensure"):
+            self.reserve_zone_shell_ensure()                  # после перезагрузки хоста зоны нет — --take отказал бы
         payload = self._open_payload(kind)
         payload["k"] = str(k_hex)
         with _LOCK:
-            self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"),
+            self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
                                 up_sent=False, tg_taken=False)
             self._in_step("open")

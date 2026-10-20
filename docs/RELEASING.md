@@ -260,8 +260,16 @@ GitHub `vX.Y.Z.P — …`.
   стороны зоны, матрица случаев, демпфер, `ask`/`ask_no`, аварийный код),
   слушатель гостевого канала в зоне `runtime/pairlink/guest.py`, ввод кода в
   роли админа второго сервера `handlers/peercode.py`, ключи без `awg genkey`
-  `util/wgkeys.py` (его зовёт только сервер). Правка `jobs.py` задевает и обычный основной бот (те же
-  задания), но не агента. **Только агент** — строка `gw`: скрипт линка к
+  `util/wgkeys.py` (его зовёт только сервер). Туда же — РФ-доступ в зоне и
+  пул адресов Telegram: `domain/services/reserve/{rfzone,tgpool,peeradmin}.py`,
+  запасной слот в маршрутизации (`domain/services/gateway_link/slots.py`,
+  `domain/services/routing/`), кэш списков в пакете (`util/rsvpkg/bot.py`),
+  экран роли общего админа (`bot/filters.py` — `PeerAdminFilter`,
+  `handlers/settings/reserve/card.py`). Правка `jobs.py` задевает и обычный основной бот (те же
+  задания), но не агента. `bot/middleware.py` и `core/access_cache.py` (роль
+  админа второго сервера и его «👤 Меню клиента» на полчаса) собирают обе роли —
+  их правка, как всякий общий код, адресуется обеим, даже когда меняет только
+  поведение основного бота. **Только агент** — строка `gw`: скрипт линка к
   резерву `install/reserve-gw-setup.sh` (на ВПС его не зовут; на шлюзе юнит
   `awg-rsv-gw.service` выполняет копию в `/usr/local/sbin`, которую кладёт сам
   скрипт при `--up`), его обёртка `infra/gwguard/rsv.py` и клиент гостевого

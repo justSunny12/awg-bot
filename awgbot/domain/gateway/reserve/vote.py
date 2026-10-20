@@ -37,7 +37,7 @@ class ReserveVoteMixin:
         """(адрес стороны зоны, порт гостевого канала)."""
         from awgbot.core import settings
         cur = self.reserve_section()
-        port = int(settings.get_int("app.gateway.guest_channel_port", 8787) or 8787)
+        port = int(cur.get("chan") or 0) or int(settings.get_int("app.gateway.guest_channel_port", 8787) or 8787)
         return str(cur.get("peer_addr") or ""), port
 
     def reserve_guest_in(self, kind: str, body: dict) -> list[tuple]:
@@ -59,7 +59,7 @@ class ReserveVoteMixin:
             _write(cur, self._RSV_STORE)
             return self._view_notice(cur)
         if kind == "need":
-            return self._reserve_need_in(str(body.get("case") or ""), str(body.get("since") or ""))
+            return self._reserve_need_in(str(body.get("case") or ""), str(body.get("since") or ""), int(body.get("m_gen") or 0))
         return []
 
     def _moved_notice(self, actions: list[tuple]) -> list[tuple]:
@@ -129,8 +129,9 @@ class ReserveVoteMixin:
         _write(cur, self._RSV_STORE)
         return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text, silent=True)])]
 
-    def _reserve_need_in(self, case: str, since: str) -> list[tuple]:
-        """`need{случай}`: доля — только если основу не видим сейчас."""
+    def _reserve_need_in(self, case: str, since: str, m_gen: int = 0) -> list[tuple]:
+        """`need{случай}`: доля — только если основу не видим сейчас и поколение
+        доли — то, которое просит резерв (прежняя доля — ошибка поколения)."""
         state, _ = self.reserve_primary_seen()
         cur = self.reserve_section()
         share = cur.get("share") or {}
@@ -139,6 +140,9 @@ class ReserveVoteMixin:
             return []
         if not share.get("y"):
             log.warning("reserve: резерв просит долю, а доли нет")
+            return []
+        if m_gen and int(share.get("gen") or 0) != int(m_gen):
+            log.warning("reserve: резерв просит долю поколения %s, а у меня %s — отказ", m_gen, share.get("gen"))
             return []
         log.warning("reserve: отдаю долю ключа переезда резерву (случай %s, основа не отвечает с %s)", case, since)
         cur["share_given_at"] = timeutil.now_iso()

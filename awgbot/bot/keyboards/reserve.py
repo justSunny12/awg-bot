@@ -58,7 +58,8 @@ def final() -> InlineKeyboardMarkup:
 
 
 def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, name: str = "",
-         can_move: bool = False, can_evict: bool = False, can_return: bool = False) -> InlineKeyboardMarkup:
+         can_move: bool = False, can_evict: bool = False, can_return: bool = False,
+         self_admin: bool = False) -> InlineKeyboardMarkup:
     """Кнопки переезда видны, только когда действие возможно; невозможное —
     строкой причины в карточке."""
     return ui.rows(
@@ -69,6 +70,7 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
         (f"{_chk(rf_on)} РФ-доступ его клиентов через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
         ("🌐 Запись DNS", RsvCB(action="dns")),
+        (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
         ("🆘 На крайний случай", RsvCB(action="emerg")),
         ("🗑 Удалить резерв", RsvCB(action="unpair")),
         _back())
@@ -137,10 +139,16 @@ def peer_code_cancel() -> InlineKeyboardMarkup:
     return ui.rows(("⬅️ Отмена", PeerCB(action="code_cancel")))
 
 
-def peer_admin(*, code_needed: bool) -> InlineKeyboardMarkup:
-    """Экран роли админа второго сервера: обновить, ввод кода (только в Н4), скрыть."""
+def peer_admin(*, code_needed: bool, has_client: bool = False, in_card: bool = False) -> InlineKeyboardMarkup:
+    """Экран роли админа второго сервера: обновить, ввод кода (только в Н4),
+    «👤 Меню клиента» (он ещё и клиент здесь), скрыть; у общего админа экран —
+    раздел его «🛟 Резерв»: вместо «Скрыть» — назад."""
     from awgbot.bot.keyboards.common import hide_only
     rows = ui.rows(("🔄 Обновить", PeerCB(action="refresh")),
-                   ("🔑 Ввести аварийный код", PeerCB(action="code")) if code_needed else None)
+                   ("🔑 Ввести аварийный код", PeerCB(action="code")) if code_needed else None,
+                   ("👤 Меню клиента", PeerCB(action="client")) if has_client and not in_card else None,
+                   _back("rsv") if in_card else None)
+    if in_card:
+        return rows
     hide = hide_only().inline_keyboard
     return InlineKeyboardMarkup(inline_keyboard=rows.inline_keyboard + hide)

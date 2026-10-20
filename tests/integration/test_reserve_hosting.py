@@ -555,3 +555,23 @@ def test_out_traffic_accumulates_per_month_and_ignores_negative_deltas(mv):
     svc.reserve_traffic_out_add(5, -3)
     acc = svc.rsv_get("rsv_traffic")["out"]
     assert (acc["rx"], acc["tx"]) == (15, 20)
+
+
+
+def test_the_package_opened_by_the_key_of_the_primary_is_said_as_k_in_st(host):
+    """Переезд кнопкой — пакет открыт ключом основы: `in_by = k`, после
+    возврата новое поколение ключа основе не нужно (его ждут только доли и код)."""
+    _taking(host)
+    assert host.svc.rsv_get("rsv_in").get("by") == "k"
+    assert host.svc.reserve_st_body()["in_by"] == "k"
+
+
+def test_the_zone_shell_is_ensured_before_the_opening_process_starts(host, monkeypatch):
+    """После перезагрузки хоста резерва пространства зоны нет: --take в
+    процессе открытия отказал бы — оболочку поднимают до запуска процесса."""
+    order = []
+    monkeypatch.setattr(host.svc, "reserve_zone_shell_ensure", lambda: order.append("shell") or True)
+    real = host.svc._rsvopen_launch
+    monkeypatch.setattr(host.svc, "_rsvopen_launch", lambda payload: order.append("open") or real(payload))
+    _taking(host)
+    assert order == ["shell", "open"], order

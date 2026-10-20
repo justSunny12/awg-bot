@@ -26,6 +26,31 @@ class ReservePeerAdminMixin:
         pid = self.reserve_peer_admin_id()
         return bool(pid) and int(uid) == pid and int(uid) != int(config.ADMIN_ID)
 
+    def reserve_self_peer_admin(self) -> bool:
+        """Один человек — админ обоих серверов: роль не наступает, экран роли —
+        разделом его же «🛟 Резерв» («🛰 Для «Alpha»»), ввод кода там же."""
+        pid = self.reserve_peer_admin_id()
+        return bool(pid) and pid == int(config.ADMIN_ID)
+
+    def reserve_code_sender_ok(self, uid: int) -> bool:
+        """Кому принимать аварийный код: админу второго сервера в его роли или
+        общему админу в своём разделе."""
+        return self.reserve_is_peer_admin(int(uid)) or (int(uid) == int(config.ADMIN_ID) and self.reserve_self_peer_admin())
+
+    def reserve_peer_admin_client(self):
+        """Клиент этого сервера с аккаунтом админа второго (в. 51) или None."""
+        pid = self.reserve_peer_admin_id()
+        if not pid or pid == int(config.ADMIN_ID):
+            return None
+        try:
+            return self.db.get_client_by_tg(pid)
+        except Exception:                                     # noqa: BLE001
+            return None
+
+    def reserve_peer_admin_is_client(self) -> bool:
+        """Админ второго сервера — ещё и клиент этого: на экране роли «👤 Меню клиента»."""
+        return self.reserve_peer_admin_client() is not None
+
     def reserve_peer_admin_opened(self) -> None:
         """Админ второго сервера открыл бот (/start) — ему теперь можно писать."""
         cur = self.rsv_get("rsv_peer_admin")
@@ -57,6 +82,8 @@ class ReservePeerAdminMixin:
             "case_since": str(self.rsv_get("rsv_view").get("case_since") or ""),
             "rf_line": self.reserve_rf_line(), "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
             "zone_links": [int(k) for k in self.reserve_guest_links() if str(k).isdigit()],
+            "mem_free": self.reserve_mem_free_mb(), "has_client": self.reserve_peer_admin_is_client(),
+            "self_admin": self.reserve_self_peer_admin(), "tg_pool": self.reserve_tg_pool_view(),
         }
 
     def reserve_code_prompt_data(self) -> dict:

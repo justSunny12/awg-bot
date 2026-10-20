@@ -27,6 +27,7 @@ from tests.screens import shots_admin_migration as migration
 from tests.screens import shots_admin_profiles as profiles
 from tests.screens import shots_admin_reserve as reserve
 from tests.screens import shots_admin_reserve_move as reserve_move
+from tests.screens import shots_admin_reserve_stage7 as reserve_stage7
 from tests.screens import shots_admin_reserve_vote as reserve_vote
 from tests.screens import shots_admin_rf as rf
 from tests.screens import shots_admin_settings as settings
@@ -90,6 +91,7 @@ SHOTS = [
     *reserve.RESERVE,
     *reserve_move.RESERVE_MOVE,
     *reserve_vote.RESERVE_VOTE,
+    *reserve_stage7.RESERVE_STAGE7,
 ]
 
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних

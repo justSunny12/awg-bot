@@ -204,3 +204,15 @@ async def test_the_listener_exists_only_while_the_pair_does(tmp_path, monkeypatc
     finally:
         await guestctl.shutdown()
         shutil.rmtree(d, ignore_errors=True)
+
+
+
+async def test_the_webhook_word_of_the_guest_is_kept_for_the_reserve_with_typed_fields(pair):
+    await _until(lambda: pair.server.connected())
+    assert await pair.client.send("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00",
+                                              "error": "Connection timed out"}) is True
+    assert await pair.client.send("webhook", {"stalled": False}) is True
+    words = []
+    assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 2)
+    assert words == [("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00", "error": "Connection timed out"}),
+                     ("webhook", {"stalled": False, "since": "", "error": ""})], words

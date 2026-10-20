@@ -115,7 +115,7 @@ def parse(msg: dict) -> dict:
         out["sections"]["reserve"] = {"self": norm(reserve.get("self")), "state": norm(reserve.get("state")),
                                       "move": _int(reserve.get("move")), "name": _s(reserve.get("name"), 64),
                                       "slot": _int(reserve.get("slot")), "record": norm(reserve.get("record")),
-                                      "peer_host": norm(reserve.get("peer_host")),
+                                      "peer_host": norm(reserve.get("peer_host")), "chan": _int(reserve.get("chan")),
                                       "share": {"x": _int(share.get("x")), "y": _hex(share.get("y")),
                                                 "gen": _int(share.get("gen"))},
                                       "link": {"conf": _s(link.get("conf"), _MAX_CONF)}}

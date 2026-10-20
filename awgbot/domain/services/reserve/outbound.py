@@ -154,7 +154,8 @@ class ReserveOutboundMixin:
         лежал) — `in = serving` у резерва → away."""
         peer = self.reserve_peer_state()
         if str(peer.get("inn") or "") in ("taking", "serving") and self.reserve_online():
-            self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso())
+            self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
+                                 by=str(peer.get("in_by") or "share"))
             self.reserve_set_poll("away")
             log.warning("резерв: «%s» несёт моих клиентов — я в состоянии away", self.reserve_peer_name())
             return [("live",)]
@@ -499,7 +500,15 @@ class ReserveOutboundMixin:
                              merge_report=dict(out.get("merge_report") or {}))
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
-        if str(out.get("kind") or "") in ("dead", "rf", "nogw", "code"):
+        kind = str(out.get("kind") or "")
+        # чем резерв открыл пакет: слово резерва (in_by), а без него — по виду переезда:
+        # dead — всегда по долям, code — по коду; rf/nogw без слова — по ключу основы (согласие)
+        by = str(out.get("by") or self.reserve_peer_state().get("in_by") or {"dead": "share", "code": "code"}.get(kind, ""))
+        if by in ("share", "code"):
+            # процесс открытия держал вторую точку прямой (или видел код) и конверт
+            # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен
+            self.reserve_new_generation("возврат после аварийного переезда")
+            self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
             notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
         log.info("резерв: клиенты и бот вернулись с «%s»", name)
         return actions + [("live",), ("notify", notes)]
@@ -514,6 +523,7 @@ class ReserveOutboundMixin:
                 "released_at": str(out.get("released_at") or ""), "taken_at": str(out.get("taken_at") or ""),
                 "reason": str(out.get("reason") or ""), "manual": not self.reserve_dns_automatic(),
                 "msg": list(out.get("msg") or []), "online": self._online_count(), "relay_until": str(out.get("relay_until") or ""),
+                "there": int(self.reserve_peer_state().get("there") or 0),
                 "own": self.reserve_own_ip(), "merge_report": dict(out.get("merge_report") or {})}
 
     def _online_count(self) -> int:

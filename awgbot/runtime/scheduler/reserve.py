@@ -64,6 +64,7 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             # Т-РУ18 «шлюз не на связи с резервом»
             from awgbot.runtime import pairlink, rsvactions
             from awgbot.runtime.pairlink import guest
+            await asyncio.to_thread(services.reserve_zone_shell_ensure)
             body = await asyncio.to_thread(services.reserve_slots_body)
             if body and pairlink.online() and await pairlink.send("slots", body):
                 await asyncio.to_thread(services.reserve_slots_sent, body)
@@ -125,6 +126,9 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_replica_in, word[1]))
                     elif word[0] == "back_req":
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_back_req))
+                    elif word[0] == "webhook":
+                        await rsvactions.run(await asyncio.to_thread(services.reserve_guest_webhook_in, word[1]))
+                await asyncio.to_thread(services.reserve_guest_online_set, srv.online_count if srv.connected() else 0)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: слова гостя: %s", e)
         try:
@@ -154,6 +158,15 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             await asyncio.to_thread(services.reserve_traffic_in_tick)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: учёт клона: %s", e)
+        try:
+            # пул адресов Telegram: обучение по SYN (только serving) и анонсы AS
+            # Telegram (сам решает, пора ли: tg_pool_hours ± 40 %)
+            await rsvactions.run(await asyncio.to_thread(services.reserve_tg_learn_tick))
+            notes = await asyncio.to_thread(services.reserve_tg_pool_tick)
+            if notes:
+                await rsvactions.run([("notify", notes)])
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: пул адресов Telegram: %s", e)
 
     scheduler.add_job(job_slow_tick, IntervalTrigger(seconds=60, jitter=15, timezone=config.TZ),
                       id="rsv_slow_tick", max_instances=1, coalesce=True,

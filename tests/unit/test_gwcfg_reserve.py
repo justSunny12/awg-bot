@@ -136,3 +136,20 @@ def test_notices_of_the_voting_stage_have_no_final_period_and_no_holes(name):
     text = TEXTS[name]
     assert text and not text.rstrip().endswith("."), f"{name}: точка в конце уведомления"
     assert "{" not in text and "None" not in text, f"{name}: недоподставленная строка"
+
+
+# ── порт гостевого канала (chan) ────────────────────────────────────────────
+
+def test_the_channel_port_of_the_reserve_rides_the_section_and_its_print():
+    """Порт гостевого канала резерва — в разделе: шлюз ходит на него; без
+    поля в отпечатке смена порта не доехала бы до стоящего раздела."""
+    assert gwcfg.check_reserve(_sec(chan=8791))["chan"] == 8791
+    assert gwcfg.check_reserve(_sec())["chan"] == 0, "раздел прежнего сервера без chan — 0, порт по умолчанию"
+    base = _sec()
+    assert gwcfg.reserve_print(base), "отпечаток пуст — сравнивать нечего"
+    assert gwcfg.reserve_print({**base, "chan": 8791}) != gwcfg.reserve_print({**base, "chan": 8787})
+
+
+@pytest.mark.parametrize("chan", [70000, -1, "много"])
+def test_a_channel_port_out_of_range_is_zero_not_an_error(chan):
+    assert gwcfg.check_reserve(_sec(chan=chan))["chan"] == 0

@@ -32,7 +32,8 @@ async def reserve_screen(services):
         return st_t.card_text(d), rkb.card(ready=d["ready"], rf_on=d["rf_on"], has_gateway=d["has_gateway"],
                                            ret_immediate=d["ret_immediate"], name=(d.get("peer") or {}).get("name") or "резерв",
                                            can_move=not d.get("move_why"), can_evict=not d.get("evict_why"),
-                                           can_return=await call(services.reserve_can_return))
+                                           can_return=await call(services.reserve_can_return),
+                                           self_admin=bool(d.get("self_admin")))
     d = await call(services.reserve_section_data)
     return st_t.section_text(d), rkb.section(d["ready"], invite_live=bool(d["invite_live"]), accepting=bool(d["accepting"]))
 
@@ -89,6 +90,15 @@ async def return_lever(cb: CallbackQuery, services):
         return
     await _render(cb, "rsv", services)
     await cb.answer("Возврат клиентов: сразу" if nxt == "immediate" else "Возврат клиентов: по кнопке")
+
+
+@router.callback_query(RsvCB.filter(F.action == "role"))
+async def role_screen(cb: CallbackQuery, services):
+    """Общий админ обоих серверов: экран роли «🛰 Для «Alpha»» — разделом карточки."""
+    from awgbot.bot.texts.reserve import peeradmin as pt
+    d = await call(services.reserve_peer_admin_summary)
+    await edit(cb, pt.screen(d), rkb.peer_admin(code_needed=bool(d.get("code_needed")), in_card=True))
+    await cb.answer()
 
 
 @router.callback_query(RsvCB.filter(F.action == "emerg"))

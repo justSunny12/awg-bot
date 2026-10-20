@@ -91,8 +91,9 @@ def test_memory_store_without_swap_needs_kernel_6_4(box, release, store):
 
 
 def _loaded(name: str) -> bool:
-    """Модуль уже загружен на машине прогона: скрипт видит его и через
-    /proc/modules, подмена modinfo этого не скрывает."""
+    """Модуль amneziawg уже загружен на машине прогона: его скрипт видит ещё
+    и через /proc/modules, подмена modinfo этого не скрывает (sch_cake —
+    только по modinfo)."""
     try:
         return any(line.split()[0] == name for line in Path("/proc/modules").read_text().splitlines())
     except OSError:
@@ -102,8 +103,8 @@ def _loaded(name: str) -> bool:
 def test_missing_modules_are_reported_as_no(box):
     box.mods(cake=False, awg=False)
     p = _plan(box.run("--plan"))
-    want = tuple("yes" if _loaded(m) else "no" for m in ("sch_cake", "amneziawg"))
-    assert (p["cake"], p["awg"]) == want
+    assert p["cake"] == "no", "без модуля по modinfo план обещает CAKE"
+    assert p["awg"] == ("yes" if _loaded("amneziawg") else "no")
 
 
 @pytest.mark.parametrize("busy, port", [((443,), "80"), ((443, 80), "88"), ((443, 80, 88), "8443"),

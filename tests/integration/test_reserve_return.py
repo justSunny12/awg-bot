@@ -446,3 +446,40 @@ def test_lost_devices_of_the_report_are_listed_in_the_notice(away):
     _at_step(away, "relay", merge_report={"lost": [line]})
     text = notices(svc.reserve_wiped_in())[0].text
     assert "Не встало устройство" in text and "Планшет" in text and "Выдай" in text
+
+
+# ── новое поколение ключа — только после возврата по долям или коду ─────────
+
+@pytest.mark.parametrize("kind, by, regen", [
+    ("button", "", False), ("button", "k", False),
+    ("dead", "", True), ("code", "", True),            # прежний резерв без in_by: по виду переезда
+    ("rf", "", False), ("nogw", "", False),            # rf/nogw без слова — согласие основы, ключом
+    ("rf", "share", True), ("dead", "share", True), ("button", "code", True),
+])
+def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_shares_or_code(away, kind, by,
+                                                                                                   regen):
+    """Доли и код раскрывают вторую точку прямой (и конверт DNS): после
+    такого возврата — новое поколение M, код админу и просьба сменить токен
+    DNS; после переезда ключом основы — ничего из этого (лишний код админу и
+    лишний перевыпуск долей шлюзов)."""
+    svc = away.svc
+    m_gen = int(svc.reserve_keys()["m_gen"])
+    _at_step(away, "relay")
+    svc.rsv_update("rsv_out", kind=kind, by="", record_fact_at=timeutil.now_iso())
+    svc.rsv_update("rsv_peer_state", in_by=by)
+    texts = [n.text for n in notices(svc.reserve_wiped_in())]
+    assert (int(svc.reserve_keys()["m_gen"]) == m_gen + 1) is regen, f"{kind}/{by}: поколение M"
+    assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is regen, f"{kind}/{by}: код админу"
+    assert bool([t for t in texts if "Токен API DNS" in t]) is regen, f"{kind}/{by}: просьба сменить токен"
+
+
+def test_the_way_of_opening_said_at_the_start_of_the_away_wins_over_a_later_st(away):
+    """`by` записан при переходе в away (слово резерва); st, пришедший позже
+    (резерв уже idle, in_by пуст), его не стирает."""
+    svc = away.svc
+    m_gen = int(svc.reserve_keys()["m_gen"])
+    _at_step(away, "relay")
+    svc.rsv_update("rsv_out", kind="button", by="share", record_fact_at=timeutil.now_iso())
+    svc.rsv_update("rsv_peer_state", in_by="")
+    svc.reserve_wiped_in()
+    assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1

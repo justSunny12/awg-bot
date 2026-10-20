@@ -142,13 +142,15 @@ class Box:
         return self.fact
 
     # пакет
-    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None):
+    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None, lists=None):
         iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"],
                              tz="Asia/Yekaterinburg")
         bot_part = {"db": self.replica.hex(), "conf": {"limits": {"limits": {"default_days": 5}},
                                                        "app": {"client_config": {"server_name": "Альфа"}}},
                     "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 51820}, "awg": {"protocol_id": 2}},
                     "env": env if env is not None else {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}}
+        if lists is not None:
+            bot_part["lists"] = lists
         blob = seal.seal(parts or {"vpn": iface, "bot": bot_part}, k=k or self.k, m=m or self.m, pkg_gen=pkg_gen,
                          m_gen=self.gen.gen, dns=dns)
         path = config.DATA_DIR / "reserve" / "guest.pkg"
@@ -577,3 +579,32 @@ def test_the_clone_config_has_only_keys_that_awg_setconf_accepts_or_the_script_s
     take = script[script.index("cmd_take() {"):script.index("cmd_restart_clone() {")]
     strips = "awg-quick strip" in take or "grep -v" in take or "sed " in take
     assert not present or strips, f"в конфиге клона {present}, а перед `awg setconf` скрипт зоны их не снимает"
+
+
+# ── кэш списков РФ-доступа — гостю ──────────────────────────────────────────
+
+def test_the_routing_lists_of_the_package_land_in_the_guest_data_with_private_rights(box):
+    """Источники списков гостю недоступны: без кэша из пакета маршрутизация
+    в зоне шла бы с пустым базовым списком — РФ-доступа у клиентов основы нет."""
+    box.write_package(lists={"tun_domains": ["gosuslugi.ru", "nalog.ru"], "tun_subnets": ["198.51.100.0/24"]})
+    assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
+    data = box.run_dir / "data"
+    assert (data / "routing-tun_domains.lst").read_text() == "gosuslugi.ru\nnalog.ru\n"
+    assert (data / "routing-tun_subnets.lst").read_text() == "198.51.100.0/24\n"
+    for name in ("routing-tun_domains.lst", "routing-tun_subnets.lst"):
+        assert stat.S_IMODE(os.stat(data / name).st_mode) == 0o600
+
+
+def test_a_list_kind_that_is_not_a_plain_name_is_not_written(box):
+    """Вид списка — часть имени файла: «../x» и прочее — мимо каталога данных гостя."""
+    box.write_package(lists={"../../etc/x": ["a"], "a b": ["b"], "ok_1": ["c"], "bad": "не список"})
+    assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
+    names = sorted(p.name for p in (box.run_dir / "data").iterdir() if p.name.startswith("routing-"))
+    assert names == ["routing-ok_1.lst"], names
+    assert not (box.tmp / "etc").exists()
+
+
+def test_a_package_without_lists_opens_as_before(box):
+    """Пакет прежней версии без части списков — открывается, файлов списков нет."""
+    assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
+    assert not [p for p in (box.run_dir / "data").iterdir() if p.name.startswith("routing-")]

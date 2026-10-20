@@ -40,6 +40,15 @@ def screen(d: dict) -> str:
     if d.get("has_gateway"):
         lines.append(("🟢 РФ-доступ через шлюзы " + _n(me) + ": разрешён") if d.get("rf_via_mine")
                      else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его админом")
+    mem = int(d.get("mem_free") or 0)
+    if mem and mem < 400:
+        lines.append(f"⚠️ у {_n(me)} мало свободной памяти ({mem} МБ) — твоих клиентов он может не потянуть")
+    tp = d.get("tg_pool") or {}
+    if tp:
+        learned = int(tp.get("learned") or 0)
+        tail = f" и {learned} выученн{'ая сеть' if learned == 1 else ('ые сети' if 2 <= learned <= 4 else 'ых сетей')}" if learned else ""
+        lines.append(("⚠️" if tp.get("stale") else "🟢") + f" пул адресов Telegram для вебхука: ядро{tail}"
+                     + (" · анонсы давно не обновлялись" if tp.get("stale") else ""))
     gws = d.get("gw_views") or []
     if d.get("zone_links") and gws:
         down = [g for g in gws if not g.get("voter")]

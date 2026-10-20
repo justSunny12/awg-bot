@@ -80,7 +80,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "gen": (_I, None), "ports": (_L, 4), "self": (_S, MAX_HOST), "out": (_S, 16),
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
-                            "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16)}),
+                            "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -112,7 +112,7 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
                          "nonce": (_S, 32)}),
     "seen":   (GATEWAY, {"seen": (_S, 32)}),
     "view":   (RESERVE, {"seen": (_S, 32), "voters": (_L, MAX_LIST), "in": (_S, 16), "pkg_gen": (_I, None)}),
-    "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32)}),
+    "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32), "m_gen": (_I, None)}),
     "share":  (GATEWAY, {"share": (_S, 64), "m_gen": (_I, None)}),
     "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None)}),
     "ping":   (BOTH, {"n": (_S, 32)}),                    # проба по подозрению — с любой стороны
@@ -134,7 +134,8 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
-OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind"})}
+OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by"}),
+                                  "need": frozenset({"m_gen"})}
 
 
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:

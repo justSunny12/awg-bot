@@ -92,6 +92,7 @@ class ReserveGwSideMixin:
                     continue
                 rec["zone"] = {"pub": str(item.get("pub") or ""), "port": int(item.get("port") or 0),
                                "host": str(item.get("host") or ""), "cidr": str(item.get("cidr") or ""),
+                               "chan": int(item.get("chan") or 0),
                                "obf": {k: str(v) for k, v in (item.get("obf") or {}).items() if k in wgkeys.OBF_KEYS}}
             self.rsv_put("rsv_gw_links", links)
         log.info("резерв: стороны зоны для %d слотов получены", len(slots or []))
@@ -129,7 +130,7 @@ class ReserveGwSideMixin:
         from ..selfhost import own_host
         return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "slot": int(gw.id),
                 "state": self.reserve_gw_state(), "move": self.reserve_move_gen(),
-                "record": self.reserve_dns_name(), "peer_host": self.reserve_peer_ip(),
+                "record": self.reserve_dns_name(), "peer_host": self.reserve_peer_ip(), "chan": int(zone.get("chan") or 0),
                 "share": share, "link": {"conf": "\n".join(lines) + "\n"}}
 
     def reserve_gw_state(self) -> str:

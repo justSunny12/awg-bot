@@ -270,7 +270,8 @@ def check_reserve(sec: dict) -> dict:
         raise CfgError("адрес основы не похож на адрес")
     return {"conf": conf, "conf_text": wgconf.render(conf, "rsvlink"), "share": {"x": x, "y": y, "gen": gen} if y else {},
             "state": state, "move": int(sec.get("move") or 0), "self": host, "name": str(sec.get("name") or "")[:64],
-            "slot": int(sec.get("slot") or 0), "record": norm(sec.get("record"))[:253], "peer_host": norm(sec.get("peer_host"))[:253]}
+            "slot": int(sec.get("slot") or 0), "record": norm(sec.get("record"))[:253], "peer_host": norm(sec.get("peer_host"))[:253],
+            "chan": int(sec.get("chan") or 0) if 0 <= int(sec.get("chan") or 0) <= 65535 else 0}
 
 
 def check_link_rekey(conf_text: str, standing_text: str) -> wgconf.Conf:

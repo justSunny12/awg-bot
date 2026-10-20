@@ -11,7 +11,8 @@ reserve — взаимный резерв серверов AWG на сторон
   него, готовность направлений;
 - `liveness` — живость линка пары (пропуски keepalive, проба по подозрению);
 - `screen` — данные экранов раздела «🛟 Резерв»;
-- `peeradmin` — роль админа второго сервера;
+- `peeradmin` — роль админа второго сервера (и общий админ обоих серверов,
+  и он же клиент этого — «👤 Меню клиента»);
 - `unpair` — удаление пары;
 - `package` — пакет переезда: отметки, сборка, досылка, приём;
 - `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов;
@@ -24,14 +25,15 @@ reserve — взаимный резерв серверов AWG на сторон
 - `gwside` — постоянные линки моих шлюзов к резерву: ключи шлюзовых сторон,
   обмен `slots`/`slots_ok`, раздел `reserve` документа шлюза, взгляды шлюзов
   из снимков, Т-РУ18;
-- `zonelinks` — стороны линков шлюзов основы в гостевой зоне (резерв);
+- `zonelinks` — стороны линков шлюзов основы в гостевой зоне (резерв) и
+  подъём оболочки зоны после перезагрузки хоста;
 - `vote` — матрица случаев, набор голосующих, `need` → `share` → процесс
   открытия, строка Н4 и приём аварийного кода;
 - `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы;
 - `rfzone` — РФ-доступ клиентов основы в зоне: запасной слот «шлюзы резерва»
-  у гостя, разрешение резерва.
-
-Дальше по этапам: пул адресов Telegram, надзор вебхука, CAKE.
+  у гостя, разрешение резерва;
+- `tgpool` — пул адресов Telegram для порта вебхука: анонсы AS Telegram,
+  обучение по SYN, Т-РУ25.
 """
 from __future__ import annotations
 
@@ -50,6 +52,7 @@ from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .rfblock import ReserveRfBlockMixin
 from .rfzone import ReserveRfZoneMixin
+from .tgpool import ReserveTgPoolMixin
 from .screen import ReserveScreenMixin
 from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
@@ -63,7 +66,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
-                   ReserveRfBlockMixin, ReserveRfZoneMixin):
+                   ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

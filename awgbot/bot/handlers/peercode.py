@@ -11,15 +11,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import PeerCB
-from awgbot.bot.filters import RoleFilter
+from awgbot.bot.filters import PeerAdminFilter
 from awgbot.bot.handlers.common import call, edit
 from awgbot.bot.keyboards import reserve as rkb
 from awgbot.bot.states import PeerCode
 from awgbot.bot.texts.reserve import peeradmin as pt
 
 router = Router(name="peercode")
-router.message.filter(RoleFilter("peer_admin"))
-router.callback_query.filter(RoleFilter("peer_admin"))
+router.message.filter(PeerAdminFilter())                  # только код в состоянии PeerCode
+router.callback_query.filter(PeerAdminFilter())
 
 
 @router.message(PeerCode.value, F.text)
@@ -53,8 +53,9 @@ async def code_start(cb: CallbackQuery, state: FSMContext, services, **_):
 
 
 @router.callback_query(PeerCB.filter(F.action == "code_cancel"))
-async def code_cancel(cb: CallbackQuery, state: FSMContext, services, **_):
+async def code_cancel(cb: CallbackQuery, state: FSMContext, services, role: str = "peer_admin", **_):
     await state.clear()
     d = await call(services.reserve_peer_admin_summary)
-    await edit(cb, pt.screen(d), rkb.peer_admin(code_needed=bool(d.get("code_needed"))))
+    await edit(cb, pt.screen(d), rkb.peer_admin(code_needed=bool(d.get("code_needed")), has_client=bool(d.get("has_client")),
+                                                in_card=(role == "admin")))
     await cb.answer()

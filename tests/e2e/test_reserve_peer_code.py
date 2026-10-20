@@ -46,14 +46,16 @@ def _labels(markup) -> list[str]:
 # ── место в диспетчере ──────────────────────────────────────────────────────
 
 def test_the_code_router_stands_before_the_role_router_and_is_behind_the_role_filter():
-    from awgbot.bot.filters import RoleFilter
+    """Код вводят в роли или общий админ обоих серверов в своём разделе —
+    фильтр роли (PeerAdminFilter) на сообщениях и на кнопках."""
+    from awgbot.bot.filters import PeerAdminFilter
     from awgbot.bot.handlers import peeradmin, peercode
     from awgbot.bot.routers import routers_for
     order = routers_for("client")
     assert order.index(peercode.router) < order.index(peeradmin.router), "текст с кодом поймает общий ответ роли"
     for observer in (peercode.router.message, peercode.router.callback_query):
-        roles = [f.callback.roles for f in observer._handler.filters if isinstance(f.callback, RoleFilter)]
-        assert roles == [{"peer_admin"}], f"обработчики кода без фильтра роли: {roles}"
+        got = [f.callback for f in observer._handler.filters]
+        assert len(got) == 1 and isinstance(got[0], PeerAdminFilter), f"обработчики кода без фильтра роли: {got}"
 
 
 # ── кнопка ──────────────────────────────────────────────────────────────────

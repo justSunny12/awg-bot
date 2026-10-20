@@ -377,6 +377,7 @@ def test_a_write_during_the_wait_for_the_answer_survives_the_confirmation(paired
 def test_the_package_opens_with_k_from_m_and_carries_no_host_secrets(paired, make_active_client, clock):
     make_active_client(name="Профиль", tg_id=7001)
     paired.db.set_state("backup_passphrase", "DUMMY-phrase")
+    (config.DATA_DIR / "routing-tun_domains.lst").write_text("gosuslugi.ru\n", encoding="utf-8")
     built = _tick(paired, clock)
     blob = bytes.fromhex(built["blob"])
     keys = paired.reserve_keys()
@@ -385,7 +386,9 @@ def test_the_package_opens_with_k_from_m_and_carries_no_host_secrets(paired, mak
     assert seal.open_k(blob, bytes.fromhex(keys["m"])) == bytes.fromhex(keys["k"])
     parts = seal.open_parts(blob, bytes.fromhex(keys["k"]))
     assert set(parts) == {"vpn", "bot"}
-    assert set(parts["bot"]) == {"db", "conf", "app_guest", "env"}
+    assert set(parts["bot"]) == {"db", "conf", "app_guest", "env", "lists"}
+    assert parts["bot"]["lists"].get("tun_domains") == ["gosuslugi.ru"], \
+        "кэш списков РФ-доступа не уехал гостю — маршрутизация в зоне без базового списка"
     assert parts["vpn"]["ifaces"][0]["addr"] == "10.8.1.1/24"
     assert "DUMMY-phrase" not in bytes.fromhex(parts["bot"]["db"]).decode("latin-1"), "фраза бэкапов уехала в реплике"
     other = seal.new_k()

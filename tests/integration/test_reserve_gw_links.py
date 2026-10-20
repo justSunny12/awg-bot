@@ -209,3 +209,60 @@ def test_the_section_says_away_only_while_clients_are_at_the_reserve(both):
     assert (both.gwcfg_reserve(gw)["state"], both.gwcfg_reserve(gw)["move"]) == ("away", 4)
     both.reserve_set_out("away", gen=4)
     assert both.gwcfg_reserve(gw)["state"] == "away"
+
+
+# ── порт гостевого канала едет к шлюзу ──────────────────────────────────────
+
+def test_the_guest_channel_port_of_the_reserve_rides_slots_ok_into_the_document_section(both):
+    """Порт гостевого канала резерва (routing.link_channel_port у него) —
+    в slots_ok, оттуда в раздел reserve документа шлюзу: иначе шлюз ходит на
+    порт по умолчанию, а у резерва порт другой — канал молчит, шлюз не
+    голосует."""
+    from awgbot.core import settings
+    settings.set_value("app.routing.link_channel_port", 8791)
+    _body, ok = _exchange(both)
+    assert {s["chan"] for s in ok["slots"]} == {8791}, ok["slots"]
+    sec = both.gwcfg_reserve(both.db.gateways()[0])
+    assert sec["chan"] == 8791
+    parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": sec})["sections"]["reserve"]
+    assert gwcfg.check_reserve(parsed)["chan"] == 8791, "порт канала не прошёл разбор и проверку шлюза"
+
+
+# ── оболочка зоны после перезагрузки ────────────────────────────────────────
+
+def test_the_zone_shell_is_raised_again_when_its_namespace_is_gone(both, rsv, monkeypatch):
+    _exchange(both)
+    both.shells.clear()
+    rsv.fw.clear()
+    monkeypatch.setattr(netns, "exists", lambda path: False)
+    assert both.reserve_zone_shell_ensure() is True
+    assert both.shells == [1], "после перезагрузки хоста зона-оболочка не поднята — --take откажет"
+    assert rsv.fw, "после подъёма зоны файервол хоста не перерисован (порты сторон линков)"
+
+
+def test_the_zone_shell_is_left_alone_while_its_namespace_exists(both, monkeypatch):
+    _exchange(both)
+    both.shells.clear()
+    monkeypatch.setattr(netns, "exists", lambda path: True)
+    assert both.reserve_zone_shell_ensure() is True and both.shells == [], "живую зону пересоздают каждую минуту"
+
+
+def test_no_zone_shell_without_link_sides_or_without_a_pair(both, monkeypatch):
+    monkeypatch.setattr(netns, "exists", lambda path: False)
+    assert both.reserve_zone_shell_ensure() is False and both.shells == [], "оболочка без сторон линков"
+    _exchange(both)
+    both.shells.clear()
+    both.reserve_unpair()
+    assert both.reserve_zone_shell_ensure() is False and both.shells == []
+
+
+def test_a_failing_zone_shell_is_reported_as_false_and_does_not_raise(both, rsv, monkeypatch):
+    _exchange(both)
+    rsv.fw.clear()
+    monkeypatch.setattr(netns, "exists", lambda path: False)
+
+    def boom():
+        raise rsvzone.ZoneError("ip netns add: нет прав")
+    monkeypatch.setattr(rsvzone, "shell", boom)
+    assert both.reserve_zone_shell_ensure() is False
+    assert not rsv.fw, "зона не поднялась, а файервол перерисован под неё"

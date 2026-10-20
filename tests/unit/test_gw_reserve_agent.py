@@ -384,3 +384,90 @@ def test_the_default_uplink_is_never_the_reserve_link(monkeypatch):
     assert gwguard.uplink_interface() == "awg0"
     ifaces["v"] = "awglink awgrsv"
     assert gwguard.uplink_interface() == "", "аплинком выбран линк к резерву"
+
+
+# ── поколение доли в need ───────────────────────────────────────────────────
+
+def test_need_of_the_generation_of_my_share_gets_it_and_another_generation_gets_nothing(gw, host):
+    """Резерв просит долю поколения своего пакета (`m_gen`): у шлюза доля
+    другого поколения — отказ, иначе резерв собрал бы ключ из долей разных
+    поколений и процесс открытия отказал бы уже после записи DNS."""
+    _watch(gw, 1000.0, 60)
+    assert gw.reserve_primary_seen()[0] == "down"
+    assert gw.reserve_guest_in("need", {"case": "1", "since": "x", "m_gen": 2}) == [], "доля чужого поколения ушла"
+    assert "share_given_at" not in gw.reserve_section()
+    acts = gw.reserve_guest_in("need", {"case": "1", "since": "x", "m_gen": 1})
+    assert acts == [("guest", "share", {"share": "cd" * 16, "m_gen": 1})], acts
+
+
+def test_need_without_a_generation_from_an_older_reserve_still_gets_the_share(gw, host):
+    _watch(gw, 1000.0, 60)
+    assert gw.reserve_guest_in("need", {"case": "1", "since": "x"})[0][1] == "share"
+    pairproto.check(pairproto.GUEST_PROTO, "need", {"case": "1", "since": "x"}, pairproto.RESERVE)
+    pairproto.check(pairproto.GUEST_PROTO, "need", {"case": "1", "since": "x", "m_gen": 3}, pairproto.RESERVE)
+
+
+# ── порт гостевого канала из раздела ────────────────────────────────────────
+
+def test_the_guest_channel_goes_to_the_port_of_the_section_and_falls_back_to_the_setting(gw, host):
+    gw.reserve_apply(_checked(gw.conf, chan=8791))
+    addr, port = gw.reserve_guest_target()
+    assert (addr, port) == ("10.99.97.1", 8791), "шлюз ходит не на порт гостевого канала резерва"
+    gw.reserve_apply(_checked(gw.conf, chan=0))
+    assert gw.reserve_guest_target()[1] == 8787
+
+
+def test_a_changed_channel_port_is_a_change_of_the_section_and_of_its_print(gw, host):
+    before = gw.reserve_print()
+    res = gw.reserve_apply(_checked(gw.conf, chan=8791))
+    assert res["changed"], "смена порта гостевого канала — не изменение раздела"
+    assert gw.reserve_print() != before, "отпечаток раздела не заметил порт канала — сервер шлёт документ снова и снова"
+    assert host.ups == [gw.conf], "смена порта канала переподняла линк"
+
+
+# ── адреса админов и линк ───────────────────────────────────────────────────
+
+def test_changed_admin_addresses_raise_the_link_again_and_the_same_ones_do_not(gw, host, monkeypatch):
+    env = {"CLIENT_SUBNET": SUBNET, "ADMIN_IPS": "203.0.113.200"}
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
+    gw.reserve_apply(_checked(gw.conf))
+    assert len(host.ups) == 1, "те же адреса админов переподняли линк"
+    env["ADMIN_IPS"] = "203.0.113.200,203.0.113.201"
+    gw.reserve_apply(_checked(gw.conf))
+    assert len(host.ups) == 2, "набор rsv_admin4 заполняет только --up: новые адреса админов не дошли бы"
+    assert gw.reserve_section()["admins"] == ["203.0.113.200", "203.0.113.201"]
+
+
+# ── момент открытия пересылки ───────────────────────────────────────────────
+
+def test_the_moment_of_opening_is_kept_also_when_the_primary_says_away(gw, host):
+    assert not gw.reserve_section().get("open_at")
+    gw.reserve_apply(_checked(gw.conf, state="away", move=4))
+    host.run(gw.reserve_forward_decide())
+    assert host.open == [SUBNET] and gw.reserve_section().get("open_at"), "момент открытия по слову основы не записан"
+
+
+# ── проверка «резервный линк» — не авария обвязки ───────────────────────────
+
+def test_a_silent_reserve_is_not_a_plumbing_alarm(gw, monkeypatch):
+    """Резерв не отвечает — это не поломка шлюза: строка видна в мониторе,
+    но «⚠️ Обвязка шлюза неисправна» (и её «снова в порядке») не приходят,
+    сколько бы тиков ни длилось."""
+    from awgbot.domain import gwchecks as gc
+    from awgbot.domain.gateway import GwCheck
+    from tests.unit.test_gateway import _quiet_status
+    st = _quiet_status(checks=[GwCheck("MASQUERADE", True),
+                               GwCheck(gc.CHECK_RSV_LINK, False, "«Gamma» не отвечает с 13:58", group="rsv")])
+    monkeypatch.setattr(gw, "status", lambda: st)
+    monkeypatch.setattr(gw, "uplink_policy_heal", lambda: [], raising=False)
+    notes = []
+    for _ in range(6):
+        notes += gw.monitor_tick()
+    assert not [n for n in notes if "Обвязка" in n.text], [n.text for n in notes]
+
+
+def test_the_snapshot_keeps_the_suspect_view_of_the_reserve():
+    """Взгляд «проверяю» (suspect) — штатное состояние пробы: снимок не
+    превращает его в пустую строку (экран сервера показывал бы «нет данных»)."""
+    from awgbot.domain import gwsnapshot
+    assert gwsnapshot.sanitize({"rsv": {"seen": "suspect"}})["rsv"]["seen"] == "suspect"

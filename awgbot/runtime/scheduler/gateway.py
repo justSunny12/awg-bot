@@ -95,9 +95,9 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
-    # Перерезолв аплинка: адрес для клиентов переехал (резерв) — аплинк идёт
-    # на новый адрес сам. Раз в минуту с джиттером, в сеть ходит только при
-    # старом рукопожатии (разрешение имени, потолок 3 с), первый — через 1–2 мин.
+    # Резерв: клиент гостевого канала, взгляды на основу и на резерв, пересылка
+    # с линка к резерву — такт 5 с (локальные счётчики; наружу — только проба по
+    # подозрению).
     async def job_gw_reserve_tick():
         try:
             from awgbot.runtime import guestlink
@@ -109,6 +109,10 @@ def setup_gateway_scheduler(services, bot):
         job_gw_reserve_tick, IntervalTrigger(seconds=5, timezone=config.TZ),
         id="gw_reserve_tick", max_instances=1, coalesce=True,
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # Перерезолв аплинка: адрес для клиентов переехал (резерв) — аплинк идёт
+    # на новый адрес сам. Раз в минуту с джиттером, в сеть ходит только при
+    # старом рукопожатии (разрешение имени, потолок 3 с), первый — через 1–2 мин.
 
     async def job_gw_uplink_reresolve():
         try:

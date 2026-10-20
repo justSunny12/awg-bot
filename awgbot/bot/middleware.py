@@ -83,7 +83,7 @@ class AccessMiddleware(BaseMiddleware):
         #     чтение сведений о паре и ввод аварийного кода. Проверка — до
         #     разбора клиентов: тот же аккаунт клиентом быть не может
         #     (ему отвечает роль); без пары шага нет
-        if self._peer_admin_id() == uid:
+        if self._peer_admin_id() == uid and not access_cache.peer_client_active(uid):
             data["role"] = "peer_admin"
             data["client"] = None
             return await handler(event, data)

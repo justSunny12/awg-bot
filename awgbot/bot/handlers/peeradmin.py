@@ -10,19 +10,20 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import PeerCB
-from awgbot.bot.filters import RoleFilter
+from awgbot.bot.filters import PeerAdminFilter, RoleFilter
 from awgbot.bot.handlers.common import call, edit
 from awgbot.bot.keyboards import reserve as rkb
 from awgbot.bot.texts.reserve import peeradmin as pt
 
 router = Router(name="peeradmin")
 router.message.filter(RoleFilter("peer_admin"))
-router.callback_query.filter(RoleFilter("peer_admin"))
+router.callback_query.filter(PeerAdminFilter())
 
 
-async def _screen(services):
+async def _screen(services, role: str = "peer_admin"):
     d = await call(services.reserve_peer_admin_summary)
-    return pt.screen(d), rkb.peer_admin(code_needed=bool(d.get("code_needed")))
+    return pt.screen(d), rkb.peer_admin(code_needed=bool(d.get("code_needed")), has_client=bool(d.get("has_client")),
+                                        in_card=(role == "admin"))
 
 
 @router.message(CommandStart())
@@ -39,7 +40,28 @@ async def any_text(message: Message, services, **_):
 
 
 @router.callback_query(PeerCB.filter(F.action == "refresh"))
-async def refresh(cb: CallbackQuery, services, **_):
-    text, markup = await _screen(services)
+async def refresh(cb: CallbackQuery, services, role: str = "peer_admin", **_):
+    text, markup = await _screen(services, role)
     await edit(cb, text, markup)
     await cb.answer("Обновлено")
+
+
+@router.callback_query(PeerCB.filter(F.action == "client"))
+async def as_client(cb: CallbackQuery, services, **_):
+    """«👤 Меню клиента»: он ещё и клиент этого сервера — на время сессии
+    middleware ведёт его как клиента; экран роли вернётся сам через полчаса."""
+    from awgbot.bot import screens
+    from awgbot.bot.handlers.common import send_menu
+    from awgbot.core import access_cache
+    uid = int(cb.from_user.id)
+    client = await call(services.reserve_peer_admin_client)
+    if client is None or int(getattr(client, "tg_id", 0) or 0) != uid:
+        await cb.answer("Ты не клиент этого сервера", show_alert=True)
+        return
+    access_cache.peer_client_on(uid)
+    parts = await screens.render("main", services=services, role="client", client=client, chat_id=cb.message.chat.id)
+    await cb.answer()
+    if parts is None:
+        access_cache.peer_client_off(uid)
+        return
+    await send_menu(cb.message, services, parts[0], parts[1])

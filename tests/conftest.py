@@ -576,6 +576,13 @@ def _shared_conf_back_after_the_test():
         return out
     before = snap()
     yield
+    # Тест переключил кэш на свой conf (tmp) и не вернул — следующий тест
+    # воркера писал бы settings.set_value туда, мимо отката ниже, и значение
+    # доживало бы до соседей. Этот autouse снимается последним — после
+    # собственных фикстур теста, так что их возврат уже прошёл.
+    cur = _settings._conf_dir
+    if cur is not None and os.path.abspath(str(cur)) != os.path.abspath(str(_CONF_COPY)):
+        restore_settings()
     try:
         after = snap()
     except OSError:

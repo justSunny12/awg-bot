@@ -275,6 +275,41 @@ def ask_refused(reserve: str, case: str, since: str, link_if: str = "", reserve_
             f"<code>{_e(link_if or 'awglink')}</code> — дело не в РФ, переезда на {_n(reserve)} не будет")
 
 
+# ── пул адресов Telegram и вебхук (этап 7) ──────────────────────────────────
+
+def tg_pool_stale(since: str) -> str:
+    """Т-РУ25: анонсы сетей Telegram не обновлялись."""
+    at = _date(since)
+    return ("⚠️ Анонсы сетей Telegram не обновлялись" + (f" с {at}" if at else "")
+            + ": источник не отвечает — пул вебхука прежний")
+
+
+def tg_pool_core_lost(prefix: str) -> str:
+    return (f"⚠️ Сеть <code>{_e(prefix)}</code> со страницы Bot API больше не анонсирует Telegram — пул её держит, "
+            "но страница могла устареть")
+
+
+def tg_pool_ok() -> str:
+    return "🟢 Анонсы сетей Telegram снова обновляются"
+
+
+def _date(iso: str) -> str:
+    try:
+        return timeutil.parse_iso(iso).strftime("%d.%m")
+    except (ValueError, TypeError):
+        return ""
+
+
+def webhook_stalled_reserve(primary: str, since: str, error: str, port: int) -> str:
+    """Т-РУ19 админу резерва: Telegram не доставляет обновления бота основы сюда."""
+    return (f"⚠️ Telegram не доставляет обновления бота {_n(primary)} на этот сервер с {_when(since)}: "
+            f"<code>{_e(error)}</code> — проверь, открыт ли у хостинга порт <code>{int(port)}</code>")
+
+
+def webhook_restored_reserve(primary: str) -> str:
+    return f"🟢 Доставка обновлений бота {_n(primary)} восстановлена"
+
+
 # ── агент шлюза ─────────────────────────────────────────────────────────────
 
 def gateway_moved(reserve: str, case: str, since: str, record: str = "", ip: str = "", others: dict | None = None) -> str:

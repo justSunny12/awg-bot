@@ -79,7 +79,7 @@ class ReserveZoneLinksMixin:
                 self._write_zone_link(slot, rec)
                 from ..selfhost import own_host
                 out.append({"slot": slot, "pub": rec["pub"], "port": int(rec["port"]), "host": own_host(),
-                            "cidr": rec["cidr"], "obf": rec["obf"]})
+                            "cidr": rec["cidr"], "obf": rec["obf"], "chan": self._guest_channel_port()})
             for key in list(links):
                 if key not in keep:
                     self._remove_zone_link(int(key), links.pop(key))
@@ -96,6 +96,32 @@ class ReserveZoneLinksMixin:
             log.warning("резерв: файервол после сторон зоны не перерисован: %s", e)
         log.info("резерв: стороны зоны для слотов основы: %s", ", ".join(str(s["slot"]) for s in out) or "нет")
         return {"slots": out}
+
+    def reserve_zone_shell_ensure(self) -> bool:
+        """Зона-оболочка есть, пока есть стороны линков (после перезагрузки хоста
+        её никто не поднимал: пространство — не на диске). True — есть."""
+        from awgbot.infra import rsvzone
+        from awgbot.util import netns
+        if not self.reserve_paired() or not self.reserve_guest_links():
+            return False
+        if netns.exists(netns.path_of(rsvzone.ZONE)):
+            return True
+        try:
+            rsvzone.shell()
+        except rsvzone.ZoneError as e:
+            log.warning("резерв: оболочка зоны не поднялась: %s", e)
+            return False
+        try:
+            self._gw_firewall_refresh()
+        except Exception as e:                                # noqa: BLE001
+            log.warning("резерв: файервол после подъёма зоны не перерисован: %s", e)
+        log.info("резерв: оболочка зоны поднята заново (стороны линков: %s)",
+                 ", ".join(k for k in self.reserve_guest_links() if k.isdigit()))
+        return True
+
+    @staticmethod
+    def _guest_channel_port() -> int:
+        return int(settings.get_int("app.routing.link_channel_port", 8787) or 8787)
 
     def _write_zone_link(self, slot: int, rec: dict) -> None:
         from awgbot.infra import rsvzone

@@ -60,7 +60,7 @@ class ReserveStoreMixin:
             return ""
         return gwcfg.reserve_print({"link": {"conf": sec["conf"]}, "share": sec.get("share") or {},
                                     "state": sec.get("state") or "idle", "move": int(sec.get("move") or 0),
-                                    "self": sec.get("self") or ""})
+                                    "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0)})
 
     # ── применение раздела ──────────────────────────────────────────────────
     def reserve_apply(self, checked: dict | None) -> dict:
@@ -77,11 +77,13 @@ class ReserveStoreMixin:
                "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
                "slot": int(checked.get("slot") or cur.get("slot") or 0),
                "record": str(checked.get("record") or ""), "peer_host": str(checked.get("peer_host") or ""),
+               "chan": int(checked.get("chan") or 0), "admins": list(self._reserve_admin_ips()),
                "peer_addr": _peer_addr(str(checked.get("conf_text") or "")),
                "reserve_state": cur.get("reserve_state") or "idle", "reserve_move": int(cur.get("reserve_move") or 0),
                "applied_at": timeutil.now_iso()}
-        changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self"))
-        link_changed = cur.get("conf") != new["conf"] or not rsvlink.present()
+        changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan"))
+        # адреса админов сменились — тоже повод переподнять: набор rsv_admin4 заполняет только --up
+        link_changed = cur.get("conf") != new["conf"] or not rsvlink.present() or cur.get("admins") != new["admins"]
         _write(new, self._RSV_STORE)
         note = ""
         if link_changed:
@@ -143,6 +145,8 @@ class ReserveStoreMixin:
         is_open = rsvlink.is_open()
         if want_open and not is_open:
             srcs = self._reserve_sources()
+            cur["open_at"] = timeutil.now_iso()
+            _write(cur, self._RSV_STORE)
             log.info("reserve: пересылка с awgrsv открыта для %s", ",".join(srcs))
             return [("open", srcs)]
         if not want_open and is_open:
