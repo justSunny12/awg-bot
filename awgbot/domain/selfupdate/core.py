@@ -263,6 +263,8 @@ class SelfUpdateCoreMixin:
         hold — шаг набора: прежние код и окружение держатся до фиксации или
         отката всего набора (awg-bot.sh: __update_commit / __update_revert);
         значение — id хода или команды: удержание другого шаг снимает."""
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
         reason = self.update_block_reason(release)
         if reason:
             raise updates.UpdateError(reason)

@@ -81,3 +81,58 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
     scheduler.add_job(job_pkg_tick, IntervalTrigger(seconds=5, timezone=config.TZ),
                       id="rsv_pkg_tick", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # переезд и возврат: автоматы обоих направлений, слово гостя по локальному
+    # каналу (вебхук поставлен, реплика, кнопка возврата), блокировки основы
+    # резерву — действия исполняет runtime/rsvactions
+    async def job_move_tick():
+        from awgbot.runtime import rsvactions
+        from awgbot.runtime.pairlink import guestctl
+        try:
+            await rsvactions.run(await asyncio.to_thread(services.reserve_out_tick))
+            await rsvactions.run(await asyncio.to_thread(services.reserve_in_tick))
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: такт переезда: %s", e)
+        try:
+            srv = guestctl.server()
+            if srv is not None:
+                for word in srv.take_words():
+                    if word[0] == "tg_taken":
+                        await rsvactions.run(await asyncio.to_thread(services.reserve_guest_tg_taken))
+                    elif word[0] == "replica":
+                        await rsvactions.run(await asyncio.to_thread(services.reserve_guest_replica_in, word[1]))
+                    elif word[0] == "back_req":
+                        await rsvactions.run(await asyncio.to_thread(services.reserve_guest_back_req))
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: слова гостя: %s", e)
+        try:
+            addrs = await asyncio.to_thread(services.reserve_blocks_to_send)
+            if addrs is not None:
+                await rsvactions.run([("send", "blocks", {"addrs": addrs})])
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: блокировки резерву: %s", e)
+
+    scheduler.add_job(job_move_tick, IntervalTrigger(seconds=3, timezone=config.TZ),
+                      id="rsv_move_tick", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # надзор за записью (сам решает, пора ли: 2 мин ± 40 %), Т-РК2 через 10 мин
+    # после возврата, итог трафика клона раз в минуту
+    async def job_slow_tick():
+        from awgbot.runtime import rsvactions
+        for fn, what in ((services.reserve_record_watch_tick, "надзор записи"),
+                         (services.reserve_return_notify_tick, "уведомление о возврате")):
+            try:
+                notes = await asyncio.to_thread(fn)
+                if notes:
+                    await rsvactions.run([("notify", notes)])
+            except Exception as e:                       # noqa: BLE001
+                log.warning("резерв: %s: %s", what, e)
+        try:
+            await asyncio.to_thread(services.reserve_traffic_in_tick)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: учёт клона: %s", e)
+
+    scheduler.add_job(job_slow_tick, IntervalTrigger(seconds=60, jitter=15, timezone=config.TZ),
+                      id="rsv_slow_tick", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)

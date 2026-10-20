@@ -95,6 +95,16 @@ async def main() -> None:
     conf_watcher = pkg.ConfWatcher(config.CONF_DIR)   # горячая правка настроек
     conf_watcher.start()
     scheduler = pkg.setup_scheduler(services, bot, db, watcher)
+    from awgbot.runtime import pollctl as _pollctl, rsvactions
+    pollctl = _pollctl.PollControl(dp, bot, services)
+    rsvactions.setup(bot, services, pollctl)
+    try:
+        # возврат клиентов с резерва на шаге перезапуска: после слияния бот
+        # перезапущен, пора забирать Telegram (deleteWebhook) и запись
+        if await asyncio.to_thread(services.reserve_return_after_restart):
+            log.info("резерв: возврат — после перезапуска забираю Telegram и запись")
+    except Exception as e:                               # noqa: BLE001
+        log.warning("резерв: шаг возврата после перезапуска: %s", e)
 
     # запасной канал для критичных алертов: почта, когда Telegram не отвечает
     from awgbot.bot import notifier as _notifier
@@ -363,14 +373,13 @@ async def main() -> None:
     after_start.add_done_callback(_after_start_done)
 
     try:
-        # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых
-        # getUpdates-запросов (TLS/CPU/сеть) на простаивающем боте; на задержку
-        # доставки не влияет — Telegram отвечает мгновенно при событии.
-        # allowed_updates задаём ЯВНО из зарегистрированных типов: иначе при
-        # некоторых конфигурациях getUpdates может не запросить нужные апдейты
-        # (например, message с deep-link /start), и бот «молчит» на инвайт-ссылку.
-        await dp.start_polling(bot, polling_timeout=50,
-                               allowed_updates=dp.resolve_used_update_types())
+        # Поллинг — управляемой задачей (runtime/pollctl): long-poll 50 с вместо
+        # дефолтных 10 (впятеро меньше холостых getUpdates), allowed_updates
+        # ЯВНО из зарегистрированных типов (иначе getUpdates мог не запросить
+        # message с deep-link /start). С парой серверов право отвечать держит
+        # вебхук: чужой адрес в getWebhookInfo или 409 на getUpdates — поллинга
+        # нет, пока клиенты не вернутся (deleteWebhook — шаг возврата).
+        await pollctl.run()
     finally:
         log.info("Останавливаюсь…")
         scheduler.shutdown(wait=False)
@@ -378,6 +387,7 @@ async def main() -> None:
         conf_watcher.stop()
         from awgbot.runtime import linkserver, pairlink
         from awgbot.runtime.pairlink import guestctl
+        await pollctl.close()
         await linkserver.shutdown()
         await pairlink.shutdown()
         await guestctl.shutdown()

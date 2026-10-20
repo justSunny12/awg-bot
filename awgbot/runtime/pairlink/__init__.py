@@ -92,6 +92,16 @@ async def send_package(built: dict) -> bool:
     return True
 
 
+async def send_released(built: dict) -> bool:
+    """Реплика при передаче бота частями: released{gen, i, n, blob}; пустой blob — одна часть."""
+    from awgbot.util import pairproto
+    parts = pairproto.chunks(str(built.get("blob") or "")) or [""]
+    for i, blob in enumerate(parts):
+        if not await send("released", {"gen": int(built.get("gen") or 0), "i": i, "n": len(parts), "blob": blob}):
+            return False
+    return True
+
+
 async def pair_accepted() -> None:
     if _link is not None and hasattr(_link, "pair_accepted"):
         await _link.pair_accepted()

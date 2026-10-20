@@ -21,7 +21,7 @@ router.callback_query.filter(RoleFilter("admin"))
 # разделы настроек, которые есть у гостя; остальные — хост основы
 GUEST_SECTIONS = frozenset({"root", "rsv"})
 # действия карточки резерва на резерве: открыть и вернуть клиентов (этап возврата)
-GUEST_RSV_ACTIONS = frozenset({"open", "back", "back_yes", "back_no", "refresh"})
+GUEST_RSV_ACTIONS = frozenset({"open", "back", "back_yes", "refresh"})
 
 
 async def _refuse(cb: CallbackQuery) -> None:

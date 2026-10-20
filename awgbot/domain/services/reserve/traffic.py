@@ -1,0 +1,77 @@
+"""
+traffic.py — часть пакета reserve (см. __init__): итоги трафика через резерв.
+`rsv_traffic` — {"out": накопитель (мои у резерва), "in": накопитель (его у
+меня)}; месячный накопитель — util/monthacc; закрытый месяц — в таблицу
+`reserve_traffic_monthly`. «in» считает резерв по счётчикам клона в зоне
+(раз в минуту, пока serving); «out» — основа по дельтам реплики против
+снимка при возврате.
+"""
+from __future__ import annotations
+
+import subprocess
+
+from awgbot.util import monthacc, timeutil
+
+from ..gateway_link.common import log
+
+
+class ReserveTrafficMixin:
+    def _traffic(self) -> dict:
+        return self.rsv_get("rsv_traffic")
+
+    def _traffic_put(self, direction: str, acc: dict) -> None:
+        tr = self._traffic()
+        prev = tr.get(direction) or {}
+        if prev.get("month") and str(acc.get("month") or "") > str(prev["month"]) and (prev.get("rx") or prev.get("tx")):
+            self.db.reserve_traffic_archive(str(prev["month"]), direction, int(prev.get("rx") or 0), int(prev.get("tx") or 0))
+        tr[direction] = acc
+        self.rsv_put("rsv_traffic", tr)
+
+    def reserve_traffic_out_add(self, rx: int, tx: int) -> None:
+        """Расход моих клиентов через резерв (дельты реплики) — в итог месяца."""
+        month = timeutil.now().strftime("%Y-%m")
+        acc = dict(self._traffic().get("out") or {})
+        if str(acc.get("month") or "") != month:
+            acc = {"month": month, "rx": 0, "tx": 0, "last_rx": 0, "last_tx": 0}
+        acc["rx"] = int(acc.get("rx") or 0) + max(0, int(rx))
+        acc["tx"] = int(acc.get("tx") or 0) + max(0, int(tx))
+        self._traffic_put("out", acc)
+
+    def reserve_traffic_in_tick(self) -> None:
+        """Раз в минуту при serving: счётчики клона в зоне → накопитель «in»."""
+        if self.reserve_in() not in ("serving", "taking"):
+            return
+        rx, tx = self._clone_counters()
+        if rx is None:
+            return
+        acc = monthacc.account(self._traffic().get("in"), rx, tx, timeutil.now().strftime("%Y-%m"))
+        self._traffic_put("in", acc)
+
+    def reserve_traffic_in_close(self) -> None:
+        """Возврат: последний замер и сброс прошлых значений счётчика (клон уходит)."""
+        self.reserve_traffic_in_tick()
+        acc = dict(self._traffic().get("in") or {})
+        if acc:
+            acc["last_rx"], acc["last_tx"] = 0, 0
+            self._traffic_put("in", acc)
+
+    def _clone_counters(self) -> tuple[int | None, int | None]:
+        from awgbot.infra import rsvzone
+        from awgbot.util import netns
+        iface = str(rsvzone.state().get("iface") or "")
+        if not iface:
+            return None, None
+        try:
+            proc = netns.run_in(netns.path_of(rsvzone.ZONE), ["awg", "show", iface, "transfer"], timeout=10)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.info("резерв: счётчики клона не прочитаны: %s", e)
+            return None, None
+        if proc.returncode != 0:
+            return None, None
+        rx = tx = 0
+        for line in proc.stdout.decode(errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+                rx += int(parts[1])
+                tx += int(parts[2])
+        return rx, tx

@@ -75,6 +75,66 @@ class InboundMixin:
         else:
             await send_line(sess, "pkg_bad", {"gen": gen, "reason": why[:pairproto.MAX_REASON]})
 
+    async def _actions(self, actions) -> None:
+        from awgbot.runtime import rsvactions
+        await rsvactions.run(actions)
+
+    async def _in_go(self, sess: _Session, body: dict) -> None:
+        why = await asyncio.to_thread(self.services.reserve_go_in, str(body["k"]), int(body["gen"]), str(body["kind"]))
+        if why:
+            await send_line(sess, "down", {"reason": why[:pairproto.MAX_REASON]})
+
+    async def _in_up(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_up_in))
+
+    async def _in_down(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_down_in, str(body["reason"])))
+
+    async def _in_released(self, sess: _Session, body: dict) -> None:
+        """Реплика частями: у основы (возврат) — слияние; у резерва (кнопка) — гостю."""
+        gen, i, n = int(body["gen"]), int(body["i"]), int(body["n"])
+        if not 0 < n <= pairproto.MAX_CHUNKS or not 0 <= i < n:
+            raise pairproto.ProtocolError("часть реплики вне предела")
+        key = ("released", gen)
+        parts = sess.parts.setdefault(key, [None] * n)
+        if len(parts) != n:
+            sess.parts[key] = parts = [None] * n
+        parts[i] = str(body["blob"])
+        if any(p is None for p in parts):
+            return
+        sess.parts.pop(key, None)
+        try:
+            blob = bytes.fromhex("".join(parts))
+        except ValueError:
+            log.warning("канал пары: реплика не склеилась")
+            return
+        if await asyncio.to_thread(self.services.reserve_out) == "returning":
+            await self._actions(await asyncio.to_thread(self.services.reserve_released_in, blob))
+        else:
+            await self._actions(await asyncio.to_thread(self.services.reserve_released_store, blob))
+
+    async def _in_taken(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_taken_in))
+
+    async def _in_back_req(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_back_req_in))
+
+    async def _in_back(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_back_in))
+
+    async def _in_relay(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_relay_in, str(body["until"])))
+
+    async def _in_wiped(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_wiped_in))
+
+    async def _in_evict(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_evict_in))
+
+    async def _in_blocks(self, sess: _Session, body: dict) -> None:
+        """Блокировки основы, пока её клиенты у меня, — гостю в зону."""
+        await self._actions([("guest", "blocks", {"addrs": list(body.get("addrs") or [])[:4096]})])
+
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))
 

@@ -26,6 +26,7 @@ def section(ready: bool, *, invite_live: bool, accepting: bool) -> InlineKeyboar
         ("📤 Пригласить", RsvCB(action="invite")) if not busy else None,
         ("📥 Принять приглашение", RsvCB(action="accept")) if not busy else None,
         ("⬅️ Отменить приглашение", RsvCB(action="cancel")) if busy else None,
+        ("🌐 Запись DNS", RsvCB(action="dns")),
         _back())
 
 
@@ -56,14 +57,46 @@ def final() -> InlineKeyboardMarkup:
     return ui.rows()
 
 
-def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool) -> InlineKeyboardMarkup:
+def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, name: str = "",
+         can_move: bool = False, can_evict: bool = False, can_return: bool = False) -> InlineKeyboardMarkup:
+    """Кнопки переезда видны, только когда действие возможно; невозможное —
+    строкой причины в карточке."""
     return ui.rows(
+        (f"🔀 Перевести клиентов на «{name}»", RsvCB(action="move")) if can_move else None,
+        ("↩️ Вернуть клиентов", RsvCB(action="back")) if can_return else None,
+        (f"↩️ Вернуть клиентов «{name}» к нему", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
         (f"{_chk(rf_on)} РФ-доступ его клиентов через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
+        ("🌐 Запись DNS", RsvCB(action="dns")),
         ("🆘 На крайний случай", RsvCB(action="emerg")),
         ("🗑 Удалить резерв", RsvCB(action="unpair")),
         _back())
+
+
+def confirm_move() -> InlineKeyboardMarkup:
+    return kc.confirm(SetCB(sec="rsv"), "🔀 Перевести", RsvCB(action="move_yes"), danger=False)
+
+
+def confirm_evict() -> InlineKeyboardMarkup:
+    return kc.confirm(SetCB(sec="rsv"), "↩️ Вернуть", RsvCB(action="evict_yes"), danger=False)
+
+
+def confirm_return() -> InlineKeyboardMarkup:
+    return kc.confirm(SetCB(sec="rsv"), "↩️ Вернуть", RsvCB(action="back_yes"), danger=False)
+
+
+def dns(*, provider_label: str, has_name: bool, manual: bool) -> InlineKeyboardMarkup:
+    """Т-Р16: провайдер циклом, токен, проверка, назад."""
+    return ui.rows(
+        (f"🏷 Провайдер: {provider_label}", RsvCB(action="dns_prov")) if has_name else None,
+        [("✏️ Токен", RsvCB(action="dns_token")) if has_name and not manual else None,
+         ("🧪 Проверить", RsvCB(action="dns_check")) if has_name else None],
+        _back("rsv"))
+
+
+def dns_token_prompt() -> InlineKeyboardMarkup:
+    return ui.rows(("⬅️ Отмена", RsvCB(action="dns")))
 
 
 def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:

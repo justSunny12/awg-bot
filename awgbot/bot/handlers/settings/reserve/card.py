@@ -30,7 +30,9 @@ async def reserve_screen(services):
     if await call(services.reserve_paired):
         d = await call(services.reserve_card_data)
         return st_t.card_text(d), rkb.card(ready=d["ready"], rf_on=d["rf_on"], has_gateway=d["has_gateway"],
-                                           ret_immediate=d["ret_immediate"])
+                                           ret_immediate=d["ret_immediate"], name=(d.get("peer") or {}).get("name") or "резерв",
+                                           can_move=not d.get("move_why"), can_evict=not d.get("evict_why"),
+                                           can_return=await call(services.reserve_can_return))
     d = await call(services.reserve_section_data)
     return st_t.section_text(d), rkb.section(d["ready"], invite_live=bool(d["invite_live"]), accepting=bool(d["accepting"]))
 

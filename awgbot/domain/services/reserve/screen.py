@@ -53,7 +53,12 @@ class ReserveScreenMixin:
                 "online": self.reserve_online(), "seen": self.reserve_peer_seen(), "down_since": self.reserve_down_since(),
                 "out": self.reserve_out(), "out_since": out.get("since") or "", "inn": self.reserve_in(),
                 "dir_out": dirs["out"], "dir_in": dirs["in"], "voters": voters,
-                "pkg_sent_at": sent.get("at") or "", "traffic": self._reserve_traffic_view()}
+                "pkg_sent_at": sent.get("at") or "", "traffic": self._reserve_traffic_view(),
+                "move_why": self.reserve_move_check(), "evict_why": self.reserve_evict_check(),
+                "in_since": str(self.rsv_get("rsv_in").get("taken_at") or self.rsv_get("rsv_in").get("since") or ""),
+                "in_relay_until": str(self.rsv_get("rsv_in").get("relay_until") or ""),
+                "out_relay_until": str(out.get("relay_until") or ""), "out_step": str(out.get("step") or ""),
+                "dns": self.reserve_dns_screen_data()}
 
     def _reserve_traffic_view(self) -> dict:
         tr = self.rsv_get("rsv_traffic")

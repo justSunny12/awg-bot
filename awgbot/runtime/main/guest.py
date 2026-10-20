@@ -28,6 +28,8 @@ from awgbot.runtime import main as pkg          # подменяемое тес�
 
 from .common import log
 
+MOVE_NOTIFY_DELAY_S = 60          # TTL записи: переподключение раньше попало бы на прежний адрес из кэша
+
 
 async def run_guest() -> None:
     from awgbot.infra import rsvzone
@@ -37,6 +39,12 @@ async def run_guest() -> None:
     db = pkg.Database(config.DB_PATH)
     db.init_schema()
     services = pkg.Services(db)
+    if services.guest_adopt_snapshot():
+        # база подменена под открытым соединением — открыть заново
+        db.close()
+        db = pkg.Database(config.DB_PATH)
+        db.init_schema()
+        services = pkg.Services(db)
     missing = services.guest_install_refusals()
     if missing:
         log.warning("гость: отказы не поставлены на %s", ", ".join(missing))
@@ -67,12 +75,15 @@ async def run_guest() -> None:
     await pkg.do_reconcile(services, bot)
     ctl = GuestCtlClient(services)
     ctl.start()
+    from awgbot.runtime.pairlink import guestctl as _guestctl
+    _guestctl.set_client(ctl)
     wh_conf = webhook.load_conf()
     wh = webhook.WebhookServer(wh_conf, webhook.load_pool()) if wh_conf is not None else None
     if wh is None:
         log.error("гость: настройки вебхука не прочитались — право отвечать в Telegram не возьму")
     tg_set = asyncio.Event()
     watch_due = 0.0
+    notify_at = {"t": 0.0}
 
     async def ctl_tick() -> None:
         """Такт локального канала: число устройств на связи, отметка «ставить вебхук»."""
@@ -83,6 +94,16 @@ async def run_guest() -> None:
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
+                await ctl.send("tg_taken")
+                notify_at["t"] = asyncio.get_running_loop().time() + MOVE_NOTIFY_DELAY_S
+        if tg_set.is_set() and notify_at["t"] and asyncio.get_running_loop().time() >= notify_at["t"]:
+            notify_at["t"] = 0.0
+            try:
+                from awgbot.bot.notifier import send_notifications
+                rf = str(services.guest_state().get("reason") or "") == "rf"
+                await send_notifications(bot, await asyncio.to_thread(services.guest_move_notify, rf))
+            except Exception as e:                       # noqa: BLE001
+                log.warning("гость: «переподключи VPN» не разослано: %s", e)
         if tg_set.is_set() and wh is not None and asyncio.get_running_loop().time() >= watch_due:
             watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
             await _watch(wh, bot, services, ctl)
@@ -100,6 +121,13 @@ async def run_guest() -> None:
         await ctl.stop_req.wait()
         log.info("гость: команда возврата — финальный снимок и реплика боту резерва")
         try:
+            if wh is not None:
+                await wh.stop()                          # слушатель закрыт: Telegram копит обновления у себя
+                wh = None
+            try:
+                await asyncio.to_thread(services.poll_traffic)   # свежие счётчики и рукопожатия в реплику
+            except Exception as e:                       # noqa: BLE001
+                log.info("гость: опрос перед репликой: %s", e)
             blob = await asyncio.to_thread(services.guest_snapshot_bytes)
             await asyncio.to_thread(services.guest_snapshot_tick, True)
             await ctl.send_replica(blob)

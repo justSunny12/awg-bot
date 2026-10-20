@@ -14,6 +14,7 @@ guest.py — часть пакета reserve (см. __init__): бот основ
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -180,6 +181,60 @@ class ReserveGuestMixin:
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
                 "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
                 "own_name": self.reserve_peer_name()}
+
+    def guest_apply_blocks(self, addrs: list[str]) -> None:
+        """Блокировки основы (её живые сессии): DROP в зоне тем же механизмом."""
+        from awgbot.infra import awg
+        mine = {str(d.address) for d in self.db.list_all_devices() if getattr(d, "block_reason", 0)}
+        for a in addrs:
+            if a not in mine:
+                try:
+                    awg.block_ip(str(a))
+                except Exception as e:                        # noqa: BLE001
+                    log.info("гость: блокировка %s не наложена: %s", a, e)
+
+    def guest_adopt_snapshot(self) -> bool:
+        """На старте: `rep.bin` новее базы хранилища (реплика при передаче
+        бота или снимок до перезагрузки резерва) — база из него."""
+        import shutil
+        from awgbot.infra import rsvzone
+        from awgbot.util.rsvpkg import seal
+        try:
+            blob = rsvzone.REP_PATH.read_bytes()
+            k = bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return False
+        try:
+            snap = seal.snapshot_open(k, blob)
+        except seal.PackageError as e:
+            log.warning("гость: rep.bin не открылся: %s", e)
+            return False
+        meta = rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json")
+        if not isinstance(snap, dict) or str(snap.get("at") or "") <= str(meta.get("db_at") or ""):
+            return False
+        try:
+            db_bytes = bytes.fromhex(str(snap.get("db") or ""))
+        except ValueError:
+            return False
+        if not db_bytes:
+            return False
+        path = str(config.DB_PATH)
+        bak = path + ".prev"
+        try:
+            shutil.copyfile(path, bak)
+            rsvzone.write_private(rsvzone.RUN_DIR / "data" / "bot.db", db_bytes)
+            for suffix in ("-wal", "-shm"):
+                try:
+                    os.unlink(path + suffix)
+                except OSError:
+                    pass
+            meta["db_at"] = str(snap.get("at") or "")
+            rsvzone.write_private(rsvzone.RUN_DIR / "pkg.json", json.dumps(meta))
+        except OSError as e:
+            log.warning("гость: база из rep.bin не подменена: %s", e)
+            return False
+        log.info("гость: база взята из снимка rep.bin от %s", snap.get("at"))
+        return True
 
     def guest_can_return(self) -> bool:
         """«↩️ Вернуть клиентов» — только когда основа снова в строю и рычаг «по кнопке»."""

@@ -10,9 +10,9 @@ guestctl.py — локальный канал между основным бот
 отдаёт число устройств на связи, нажатие кнопки возврата и шифротексты
 реплики. По сети гость с основой не говорит — всё через бот резерва.
 
-Гость → резерв: hello{online}, online{n}, back_req{}, replica{blob}, bye{}.
+Гость → резерв: hello{online}, online{n}, tg_taken{}, back_req{}, replica{blob}, bye{}.
 Резерв → гость: state{name, since, reason, primary, return, self_host},
-take_tg{}, stop{} (гость пишет финальный снимок, шлёт replica и выходит).
+take_tg{}, blocks{addrs}, stop{} (гость пишет финальный снимок, шлёт replica и выходит).
 """
 from __future__ import annotations
 
@@ -58,6 +58,11 @@ class GuestCtlServer:
         self.replica: bytes | None = None          # последняя реплика от гостя (шифротекст)
         self.back_requested_at: float = 0.0
         self._state_sent: str = ""
+        self._words: list[tuple] = []           # слова гостя для такта: (вид, тело)
+
+    def take_words(self) -> list[tuple]:
+        words, self._words = self._words, []
+        return words
 
     def connected(self) -> bool:
         return self._writer is not None and not self._writer.is_closing()
@@ -117,11 +122,16 @@ class GuestCtlServer:
                 await self.push_state(force=True)
         elif kind == "back_req":
             self.back_requested_at = time.time()
+            self._words.append(("back_req", None))
+        elif kind == "tg_taken":
+            self._words.append(("tg_taken", None))
         elif kind == "replica":
             try:
                 self.replica = bytes.fromhex(str(msg.get("blob") or ""))
             except ValueError:
                 self.replica = None
+            if self.replica:
+                self._words.append(("replica", self.replica))
         elif kind == "bye":
             pass
 
@@ -166,6 +176,7 @@ class GuestCtlClient:
         self._task: asyncio.Task | None = None
         self.take_tg = asyncio.Event()
         self.stop_req = asyncio.Event()
+        self.blocks: list[str] | None = None    # последние блокировки от основы (через резерв)
         self._attempt = 0
 
     def start(self) -> None:
@@ -222,6 +233,9 @@ class GuestCtlClient:
             self.take_tg.set()
         elif kind == "stop":
             self.stop_req.set()
+        elif kind == "blocks":
+            self.blocks = [str(a) for a in (msg.get("addrs") or [])][:4096]
+            await asyncio.to_thread(self.services.guest_apply_blocks, self.blocks)
 
     async def send(self, kind: str, body: dict | None = None) -> bool:
         w = self._writer
@@ -242,6 +256,16 @@ class GuestCtlClient:
 
 
 _server: GuestCtlServer | None = None
+_client: GuestCtlClient | None = None
+
+
+def set_client(c: "GuestCtlClient | None") -> None:
+    global _client
+    _client = c
+
+
+def client() -> "GuestCtlClient | None":
+    return _client
 
 
 async def ensure(services) -> GuestCtlServer | None:

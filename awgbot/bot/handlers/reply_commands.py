@@ -13,6 +13,8 @@ reply-«Отмена») включает только основной бот �
 """
 from __future__ import annotations
 
+import asyncio
+
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -69,6 +71,12 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     except Exception:                                 # noqa: BLE001
         pass
     kind, ref = callback_data.kind, callback_data.ref
+    if kind == "rsv_record_back" and role == "admin":
+        # Т-РУ16: запись указывает не сюда, а переезда не было — вернуть её на себя
+        why = await asyncio.to_thread(services.reserve_record_return)
+        await cb.answer("Запись возвращена на этот сервер" if not why else f"Запись не изменена: {why}"[:200],
+                        show_alert=bool(why))
+        return
     if kind == "gwcfg":
         # «📤 Конфигурация» на уведомлении выпусков до 3.3.1: файла перевыпуска
         # больше нет — кнопка устаревшая (снимается со следующим сдвигом минимума)

@@ -40,7 +40,8 @@ def _panel_text_from(services, snap: dict) -> str:
     text = texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"], rf=snap.get("rf"),
                              bot_username=_bot(services), expiring=snap["expiring"],
                              routing_info=snap.get("routing_info"), unassigned=snap.get("unassigned", 0),
-                             update_tag=snap.get("update_tag", ""), update_run=snap.get("update_run"))
+                             update_tag=snap.get("update_tag", ""), update_run=snap.get("update_run"),
+                             rsv_line=snap.get("rsv_line", ""))
     if config.GUEST:
         # бот основы на резерве: первая строка — где работаю и почему (Т-РГ1)
         from awgbot.bot.texts.reserve import guest as gt

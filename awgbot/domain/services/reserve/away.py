@@ -1,0 +1,80 @@
+"""
+away.py — часть пакета reserve (см. __init__): «клиенты у резерва» глазами
+основы — отказы действий над хостом, пока клиенты не здесь (набор
+обновлений, переезд профилей, восстановление, обновление: они разошлись бы
+с репликой), строка главного экрана админа (Т-Р17) и данные гостю по
+локальному каналу (на стороне резерва — reserve_guest_state_view в guest.py).
+"""
+from __future__ import annotations
+
+from awgbot.core import settings
+from awgbot.util import timeutil
+
+from ..types import ServiceError
+
+AWAY_REFUSED = ("Клиенты и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
+                "иначе изменения разойдутся с тем, что происходит на резерве")
+
+
+class ReserveAwayMixin:
+    def reserve_refuse_if_away(self) -> None:
+        """В начале действий над хостом: пока мои клиенты у резерва — отказ."""
+        if self.reserve_paired() and self.reserve_away():
+            raise ServiceError(AWAY_REFUSED.format(name=self.reserve_peer_name()))
+
+    def reserve_main_line(self) -> str:
+        """Т-Р17: строка главной админа только в не-обычном состоянии; пусто — обычное."""
+        if not self.reserve_paired():
+            return ""
+        name = self.reserve_peer_name()
+        out, inn = self.rsv_get("rsv_out"), self.rsv_get("rsv_in")
+        o, i = str(out.get("state") or "home"), str(inn.get("state") or "idle")
+        if o == "leaving":
+            return f"🛟 Клиенты переезжают на резерв «{name}» — жду смену записи"
+        if o == "away":
+            return f"🛟 Клиенты и бот — на «{name}» с {_when(str(out.get('taken_at') or out.get('since') or ''))}"
+        if o == "returning":
+            return f"🛟 Клиенты возвращаются с резерва «{name}»"
+        if o == "home" and out.get("relay_until") and i == "idle":
+            try:
+                if timeutil.parse_iso(str(out["relay_until"])) > timeutil.now():
+                    return f"🛟 Клиенты возвращаются с резерва «{name}» — пересылка до {_date(str(out['relay_until']))}"
+            except ValueError:
+                pass
+        if i in ("taking", "serving", "releasing"):
+            return f"🛟 У тебя клиенты и бот «{name}» с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}"
+        if i == "relay":
+            return f"🛟 Клиенты «{name}» возвращаются к нему — пересылка до {_date(str(inn.get('relay_until') or ''))}"
+        if self.reserve_peer_seen() == "down":
+            return f"🔴 Резерв «{name}» недоступен с {_when(self.reserve_down_since())}"
+        return ""
+
+    def reserve_blocks_to_send(self) -> list[str] | None:
+        """Пока мои клиенты у резерва: адреса заблокированных устройств — ему
+        (бот основы на резерве наложит DROP в зоне); None — не изменились."""
+        if not self.reserve_paired() or not self.reserve_away():
+            self.__dict__.pop("_rsv_blocks_sent", None)
+            return None
+        addrs = sorted({str(d.address) for d in self.db.list_all_devices()
+                        if getattr(d, "block_reason", 0) and d.address})
+        if self.__dict__.get("_rsv_blocks_sent") == addrs:
+            return None
+        self.__dict__["_rsv_blocks_sent"] = addrs
+        return addrs
+
+    def reserve_return_lever_button(self) -> bool:
+        return str(settings.get("app.reserve.return", "immediate") or "immediate") == "button"
+
+
+def _when(iso: str) -> str:
+    try:
+        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
+    except (ValueError, TypeError):
+        return "?"
+
+
+def _date(iso: str) -> str:
+    try:
+        return timeutil.fmt_dt_ui(timeutil.parse_iso(iso))
+    except (ValueError, TypeError):
+        return "?"
