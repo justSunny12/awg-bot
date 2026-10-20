@@ -208,6 +208,9 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
     tz = str((parts.get("vpn") or {}).get("tz") or "")
     rsvzone.write_private(run / "conf" / "app.yaml", _guest_app_yaml(conf, bot.get("app_guest") or {}, iface, tz))
     rsvzone.write_private(run / "data" / "bot.db", db_bytes)
+    for kind, lines in (bot.get("lists") or {}).items():          # кэш списков РФ-доступа — гостю
+        if isinstance(kind, str) and kind.replace("_", "").isalnum() and isinstance(lines, list):
+            rsvzone.write_private(run / "data" / f"routing-{kind}.lst", "\n".join(str(x) for x in lines) + "\n")
     rsvzone.write_private(rsvzone.K_FILE, k.hex())
     from awgbot.util import timeutil
     rsvzone.write_private(run / "pkg.json", json.dumps({"pkg_gen": int(data.get("_pkg_gen") or 0),

@@ -264,6 +264,13 @@ def _guest_forward(spec) -> list[str]:
             out.append(f"        oifname {v} ip daddr {spec.guest_zone4} tcp dport {int(spec.guest_webhook_port)} "
                        f"ct status dnat accept")
         out.append(f"        oifname {v} drop")
+    if spec.guest_rf_if and spec.guest_phase in ("taking", "serving"):
+        # РФ-трафик клиентов основы из зоны — только в линки моих слотов (запасной
+        # слот «шлюзы резерва»); ответы — по conntrack
+        r = nftjson.ifs([spec.guest_rf_if])
+        if spec.link_ifs:
+            out.append(f"        iifname {r} oifname {nftjson.ifs(spec.link_ifs)} accept")
+        out.append(f"        iifname {r} drop")
     if spec.relay_to and spec.relay_udp_port:
         out.append("        ct status dnat udp accept")
     return out
@@ -293,6 +300,8 @@ def _guest_postrouting(spec) -> list[str]:
         if spec.nat_exclude_ifs:
             rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
         out.append("        " + rule)
+    if spec.guest_rf_if and spec.guest_rf_zone4 and spec.link_ifs and spec.guest_phase in ("taking", "serving"):
+        out.append(f"        oifname {nftjson.ifs(spec.link_ifs)} ip saddr {spec.guest_rf_zone4} masquerade")
     if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
         out.append("        ct status dnat udp masquerade")
     return out

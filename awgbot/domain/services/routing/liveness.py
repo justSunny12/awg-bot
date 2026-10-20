@@ -125,7 +125,7 @@ class RoutingLivenessMixin:
         # задействован РФ-доступ — политику слотов утверждает он сам (ниже, по
         # тому же ритму), второй раз за такт не надо
         self.lan_map_tick(slot_policy=not engaged)
-        slots = self.db.gateways()
+        slots = self.rt_slots()
         active = self.active_gateway()
         # Зонды СНАРУЖИ замка и до транзакции: они длятся секунды (сеть), и
         # держать на это время БД или реконсиляцию значило бы менять один отказ
@@ -205,6 +205,8 @@ class RoutingLivenessMixin:
                 # ПЕРЕКЛЮЧЕНИЕ: активный недоступен, есть кандидат (три хороших
                 # подряд), интервал с прошлого автоматического прошёл.
                 unavailable = self._rt_unavailable(akey)
+                if hasattr(self, "_rt_spare_yields") and self._rt_spare_yields(akey, ups):
+                    unavailable = True                       # запасной слот не липкий: слот основы ожил
                 if (slots and len(slots) > 1 and unavailable
                         and self._rt_failover_enabled() and hold != str(akey)):
                     cand = next((g for g in slots if g.id != akey

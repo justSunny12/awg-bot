@@ -27,9 +27,11 @@ reserve — взаимный резерв серверов AWG на сторон
 - `zonelinks` — стороны линков шлюзов основы в гостевой зоне (резерв);
 - `vote` — матрица случаев, набор голосующих, `need` → `share` → процесс
   открытия, строка Н4 и приём аварийного кода;
-- `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы.
+- `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы;
+- `rfzone` — РФ-доступ клиентов основы в зоне: запасной слот «шлюзы резерва»
+  у гостя, разрешение резерва.
 
-Дальше по этапам: РФ-доступ в переезде, пул адресов Telegram.
+Дальше по этапам: пул адресов Telegram, надзор вебхука, CAKE.
 """
 from __future__ import annotations
 
@@ -47,6 +49,7 @@ from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .rfblock import ReserveRfBlockMixin
+from .rfzone import ReserveRfZoneMixin
 from .screen import ReserveScreenMixin
 from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
@@ -60,7 +63,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
-                   ReserveRfBlockMixin):
+                   ReserveRfBlockMixin, ReserveRfZoneMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

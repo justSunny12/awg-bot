@@ -210,6 +210,12 @@ def guest_zone() -> dict:
         zone4, net4 = "", ""
     if phase in ("taking", "serving"):
         out.update(guest_udp_port=port, guest_veth_if="awggv-h", guest_zone4=zone4, guest_zone_net4=net4)
+        try:
+            rf_hosts = list(ipaddress.ip_network(str(st.get("zone_rf_cidr") or "169.254.77.4/30"), strict=False).hosts())
+            if len(rf_hosts) >= 2:
+                out.update(guest_rf_if="awggr-h", guest_rf_zone4=str(rf_hosts[1]))
+        except ValueError:
+            pass
     if phase == "serving":
         try:
             out["guest_webhook_port"] = int(st.get("webhook_port") or 0)

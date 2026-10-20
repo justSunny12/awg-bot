@@ -162,7 +162,8 @@ class ReservePackageMixin:
                                     upstreams=self._pkg_upstreams(), tz=str(config.TZ_NAME or ""))
             bot_part = {"db": db_bytes.hex(), "conf": pkgbot.conf_part(str(config.CONF_DIR)),
                         "app_guest": pkgbot.guest_part(str(config.CONF_DIR)),
-                        "env": pkgbot.env_part(config.BOT_TOKEN, config.ADMIN_ID)}
+                        "env": pkgbot.env_part(config.BOT_TOKEN, config.ADMIN_ID),
+                        "lists": pkgbot.lists_part(str(config.DATA_DIR))}
             import json
             logical = hashlib.blake2b(db_bytes + json.dumps([vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"]],
                                                             sort_keys=True).encode(), digest_size=16).hexdigest()

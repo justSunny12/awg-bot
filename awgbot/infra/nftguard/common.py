@@ -86,6 +86,8 @@ class GuardSpec:
     guest_zone_net4: str = ""                                 # /30 veth: маскарад наружу
     guest_webhook_port: int = 0                               # порт вебхука: DNAT в зону только с пула Telegram (serving)
     tg_pool4: list[str] = field(default_factory=list)         # пул адресов Telegram (набор tg_pool4)
+    guest_rf_if: str = ""                                     # veth РФ-трафика зоны (хост): в линки слотов, маскарад
+    guest_rf_zone4: str = ""                                  # адрес зоны в нём — источник РФ-трафика
     relay_to: str = ""                                        # «адрес:порт» основы: пересылка хвоста UDP (relay)
     relay_udp_port: int = 0                                   # порт, который пересылается
 

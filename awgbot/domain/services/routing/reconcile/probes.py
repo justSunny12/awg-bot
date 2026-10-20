@@ -150,7 +150,10 @@ class RoutingProbesMixin:
         with ThreadPoolExecutor(max_workers=len(slots)) as pool:
             futs = {}
             for g in slots:
-                if active is not None and active.id == g.id:
+                is_active = active is not None and active.id == g.id
+                if hasattr(self, "rt_is_spare") and self.rt_is_spare(g):
+                    futs[g.id] = pool.submit(self._spare_verdict, g, is_active)
+                elif is_active:
                     futs[g.id] = pool.submit(self._active_verdict, g)
                 else:
                     futs[g.id] = pool.submit(self._standby_verdict, g)
