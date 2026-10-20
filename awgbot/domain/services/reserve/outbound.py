@@ -500,7 +500,10 @@ class ReserveOutboundMixin:
                              merge_report=dict(out.get("merge_report") or {}))
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
-        by = str(out.get("by") or self.reserve_peer_state().get("in_by") or "")
+        kind = str(out.get("kind") or "")
+        # чем резерв открыл пакет: слово резерва (in_by), а без него — по виду переезда:
+        # dead — всегда по долям, code — по коду; rf/nogw без слова — по ключу основы (согласие)
+        by = str(out.get("by") or self.reserve_peer_state().get("in_by") or {"dead": "share", "code": "code"}.get(kind, ""))
         if by in ("share", "code"):
             # процесс открытия держал вторую точку прямой (или видел код) и конверт
             # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен

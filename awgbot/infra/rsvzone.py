@@ -112,10 +112,12 @@ def zone_addr(cidr: str = "") -> str:
         return ""
 
 
-def shell(channel_port: int = 0) -> str:
+def shell() -> str:
     """Зона-оболочка: пространство, таблица, стороны линков шлюзов основы из
-    reserve/links/; порт гостевого канала — во вход таблицы зоны."""
-    return run("shell", env={"GUEST_CHANNEL_PORT": str(int(channel_port))} if channel_port else None)
+    reserve/links/; порт гостевого канала (routing.link_channel_port) — во вход таблицы зоны."""
+    from awgbot.core import settings
+    port = int(settings.get_int("app.routing.link_channel_port", 8787) or 8787)
+    return run("shell", env={"GUEST_CHANNEL_PORT": str(port)})
 
 
 def store() -> str:

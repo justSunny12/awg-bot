@@ -87,7 +87,7 @@ class ReserveZoneLinksMixin:
         if not out and not links:
             return {"slots": []}
         try:
-            rsvzone.shell(self._guest_channel_port())
+            rsvzone.shell()
         except rsvzone.ZoneError as e:
             log.warning("резерв: оболочка зоны не поднялась: %s", e)
         try:
@@ -107,7 +107,7 @@ class ReserveZoneLinksMixin:
         if netns.exists(netns.path_of(rsvzone.ZONE)):
             return True
         try:
-            rsvzone.shell(self._guest_channel_port())
+            rsvzone.shell()
         except rsvzone.ZoneError as e:
             log.warning("резерв: оболочка зоны не поднялась: %s", e)
             return False
