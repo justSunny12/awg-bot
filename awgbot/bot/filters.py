@@ -17,4 +17,19 @@ class RoleFilter(BaseFilter):
         return role in self.roles
 
 
-__all__ = ["RoleFilter"]
+class PeerAdminFilter(BaseFilter):
+    """Кнопки экрана роли админа второго сервера: сама роль — или админ этого
+    сервера, когда он же админ второго (экран роли — раздел его «🛟 Резерв»)."""
+
+    async def __call__(self, event: TelegramObject, role: str = "", services=None, **kw) -> bool:
+        if role == "peer_admin":
+            return True
+        if role == "admin" and services is not None and hasattr(services, "reserve_self_peer_admin"):
+            try:
+                return bool(services.reserve_self_peer_admin())
+            except Exception:                                 # noqa: BLE001
+                return False
+        return False
+
+
+__all__ = ["RoleFilter", "PeerAdminFilter"]

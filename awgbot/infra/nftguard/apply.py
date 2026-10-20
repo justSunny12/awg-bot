@@ -109,6 +109,32 @@ def live_set(name: str) -> Optional[set[str]]:
     return out
 
 
+def live_set_counters(name: str) -> dict[str, int]:
+    """Элементы динамического набора со счётчиками: адрес → пакеты; нет набора — пусто."""
+    proc = pkg._nft(["-j", "list", "set", pkg.TABLE_FAMILY, pkg.TABLE_NAME, name], check=False)
+    if proc.returncode != 0:
+        return {}
+    try:
+        doc = json.loads(proc.stdout.decode(errors="replace") or "{}")
+    except json.JSONDecodeError as e:
+        raise pkg.GuardError(f"nft -j: {e}")
+    out: dict[str, int] = {}
+    for item in doc.get("nftables", []):
+        s = item.get("set")
+        if not s:
+            continue
+        for el in s.get("elem", []) or []:
+            addr = nftjson.elem_str(el)
+            packets = 0
+            if isinstance(el, dict) and isinstance(el.get("elem"), dict):
+                c = el["elem"].get("counter")
+                if isinstance(c, dict):
+                    packets = int(c.get("packets") or 0)
+            if addr:
+                out[addr] = max(out.get(addr, 0), packets)
+    return out
+
+
 # ── сверка по тику ───────────────────────────────────────────────────────────
 
 def reconcile(admin_ips, channel_extra=(), transit_links=()) -> str:

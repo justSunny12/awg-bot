@@ -125,6 +125,9 @@ class GuestCtlServer:
             self._words.append(("back_req", None))
         elif kind == "tg_taken":
             self._words.append(("tg_taken", None))
+        elif kind == "webhook":
+            self._words.append(("webhook", {"stalled": bool(msg.get("stalled")), "since": str(msg.get("since") or ""),
+                                            "error": str(msg.get("error") or "")}))
         elif kind == "replica":
             try:
                 self.replica = bytes.fromhex(str(msg.get("blob") or ""))

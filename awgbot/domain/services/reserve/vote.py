@@ -400,7 +400,7 @@ class ReserveVoteMixin:
         итог придёт уведомлением; иначе {"ok": False, "why": closed | wrong |
         limit | busy, "left": n}. «wrong» здесь — код не разобран (контрольная
         сумма); не подошедший к пакету код процесс отдаст через `reserve_code_failed`."""
-        if not self.reserve_is_peer_admin(int(uid)):
+        if not self.reserve_code_sender_ok(int(uid)):
             log.warning("резерв: аварийный код не от админа основы (%s) — отказ", uid)
             return {"ok": False, "why": "closed"}
         if not self.reserve_code_window()["open"]:

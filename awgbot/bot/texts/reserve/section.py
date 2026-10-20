@@ -8,6 +8,9 @@ from awgbot.util.textfmt.base import details
 from ..fmt import _e
 
 
+LOW_MEM_MB = 400                     # меньше — строка «мало свободной памяти» (решение по в. 56)
+
+
 def _n(name: str) -> str:
     return f"«{_e(name)}»"
 
@@ -113,6 +116,9 @@ def card_text(d: dict) -> str:
     if not d.get("online"):
         since = d.get("down_since") or ""
         lines.append(f"🔴 Нет связи с {_n(name)}" + (f" с {_e(_when(since))}" if since else ""))
+    mem = int(d.get("mem_free") or 0)
+    if mem and mem < LOW_MEM_MB:
+        lines.append(f"⚠️ У {_n(name)} мало свободной памяти ({mem} МБ) — твоих клиентов он может не потянуть")
     lines.append("")
     out_ok, out_why = d.get("dir_out") or (False, "")
     in_ok, in_why = d.get("dir_in") or (False, "")
@@ -120,7 +126,9 @@ def card_text(d: dict) -> str:
     if out == "leaving":
         lines.append(f"📤 Мои клиенты: переезжают на {_n(name)} — {_e(_move_step(d.get('out_step') or ''))}")
     elif out == "away":
-        lines.append(f"📤 Мои клиенты: на {_n(name)} с {_e(_when(d.get('out_since') or ''))}")
+        here, there = int(d.get("here") or 0), int(d.get("there") or 0)
+        tail = f" · здесь ещё {here}" + (f", там {there}" if there else "") if here or there else ""
+        lines.append(f"📤 Мои клиенты: на {_n(name)} с {_e(_when(d.get('out_since') or ''))}{tail}")
     elif out == "returning":
         lines.append(f"📤 Мои клиенты: возвращаются с {_n(name)}")
     else:
@@ -232,7 +240,9 @@ def move_live(d: dict) -> str:
     name = _n(d.get("name") or "резерв")
     state, step = str(d.get("state") or ""), str(d.get("step") or "")
     if state == "away":
-        return f"✅ Клиенты и бот — на {name}: устройства переходят при переподключении — здесь ещё {int(d.get('online') or 0)}"
+        there = int(d.get("there") or 0)
+        return (f"✅ Клиенты и бот — на {name}: устройства переходят при переподключении — здесь ещё {int(d.get('online') or 0)}"
+                + (f", там {there}" if there else ""))
     if state == "home" and d.get("reason"):
         return f"⚠️ Перевод не состоялся: {_e(d['reason'])}"
     if state != "leaving":

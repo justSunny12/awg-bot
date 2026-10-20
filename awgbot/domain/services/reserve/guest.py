@@ -23,6 +23,8 @@ import time
 from awgbot.core import config
 from awgbot.util import timeutil
 
+from ..types import Notification
+
 from ..types import ServiceError
 from ..gateway_link.common import log
 
@@ -191,6 +193,27 @@ class ReserveGuestMixin:
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
                 "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
                 "own_name": self.reserve_peer_name(), "rf_via": bool(rf.get("rf_via")), "rf_cidr": str(rf.get("rf_cidr") or "")}
+
+    def reserve_guest_webhook_in(self, body: dict) -> list[tuple]:
+        """Слово гостя о надзоре вебхука: застой доставки — Т-РУ19 админу резерва
+        (один раз на расхождение), восстановление — 🟢."""
+        from awgbot.domain.notices import reserve as rn
+        from awgbot.infra import rsvzone
+        cur = self.rsv_get("rsv_in")
+        stalled = bool(body.get("stalled"))
+        if stalled == bool(cur.get("webhook_stalled")):
+            return []
+        self.rsv_update("rsv_in", webhook_stalled=stalled)
+        name = self.reserve_peer_name()
+        if stalled:
+            try:
+                port = int(rsvzone.read_json(rsvzone.WEBHOOK_FILE).get("port") or 0)
+            except Exception:                                 # noqa: BLE001
+                port = 0
+            text = rn.webhook_stalled_reserve(name, str(body.get("since") or ""), str(body.get("error") or ""), port)
+        else:
+            text = rn.webhook_restored_reserve(name)
+        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text)])]
 
     def guest_apply_blocks(self, addrs: list[str]) -> None:
         """Блокировки основы (её живые сессии): DROP в зоне тем же механизмом."""

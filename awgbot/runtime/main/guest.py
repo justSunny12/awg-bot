@@ -174,5 +174,7 @@ async def _watch(wh, bot, services, ctl) -> None:
     if res.get("stalled"):
         log.warning("гость: Telegram не доставляет обновления: %s", res.get("error"))
         await notify_one(bot, config.ADMIN_ID, gt.webhook_stalled(name, res.get("since") or "", res.get("error") or ""))
+        await ctl.send("webhook", {"stalled": True, "since": str(res.get("since") or ""), "error": str(res.get("error") or "")[:200]})
     elif res.get("restored"):
         await notify_one(bot, config.ADMIN_ID, gt.webhook_restored(name))
+        await ctl.send("webhook", {"stalled": False})

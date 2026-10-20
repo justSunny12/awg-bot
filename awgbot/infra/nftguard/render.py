@@ -239,7 +239,8 @@ def _guest_sets(spec) -> list[str]:
     """Набор пула адресов Telegram — только пока зона обслуживает (serving)."""
     if not spec.guest_webhook_port or not spec.guest_zone4:
         return []
-    return [pkg._set_block(pkg.SET_TG_POOL, "ipv4_addr", spec.tg_pool4 or list(pkg.DEFAULT_TG_POOL), True)]
+    return [pkg._set_block(pkg.SET_TG_POOL, "ipv4_addr", spec.tg_pool4 or list(pkg.DEFAULT_TG_POOL), True),
+            f"    set {pkg.SET_TG_SEEN} {{\n        type ipv4_addr\n        flags dynamic,timeout\n        timeout 10m\n        size 4096\n    }}"]
 
 
 def _guest_input(spec) -> list[str]:
@@ -249,6 +250,12 @@ def _guest_input(spec) -> list[str]:
     out = []
     if spec.guest_phase in ("taking", "serving") and spec.guest_udp_port:
         out.append(f"        udp dport {int(spec.guest_udp_port)} accept")
+    if spec.guest_phase == "serving" and spec.guest_webhook_port and spec.guest_zone4:
+        # SYN на порт вебхука с адреса вне пула виден до отбрасывания: адрес и
+        # число попыток — в динамический набор (обучение пула, reserve/tgpool)
+        out.append(f"        tcp dport {int(spec.guest_webhook_port)} ip saddr != @{pkg.SET_TG_POOL} "
+                   f"tcp flags & (syn|ack) == syn limit rate 20/second "
+                   f"update @{pkg.SET_TG_SEEN} {{ ip saddr counter }} drop")
     return out
 
 

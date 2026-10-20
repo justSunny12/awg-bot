@@ -29,9 +29,9 @@ reserve — взаимный резерв серверов AWG на сторон
   открытия, строка Н4 и приём аварийного кода;
 - `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы;
 - `rfzone` — РФ-доступ клиентов основы в зоне: запасной слот «шлюзы резерва»
-  у гостя, разрешение резерва.
-
-Дальше по этапам: пул адресов Telegram, надзор вебхука, CAKE.
+  у гостя, разрешение резерва;
+- `tgpool` — пул адресов Telegram для порта вебхука: анонсы AS Telegram,
+  обучение по SYN, Т-РУ25.
 """
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .rfblock import ReserveRfBlockMixin
 from .rfzone import ReserveRfZoneMixin
+from .tgpool import ReserveTgPoolMixin
 from .screen import ReserveScreenMixin
 from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
@@ -63,7 +64,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
-                   ReserveRfBlockMixin, ReserveRfZoneMixin):
+                   ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

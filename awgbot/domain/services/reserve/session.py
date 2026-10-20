@@ -104,7 +104,24 @@ class ReserveSessionMixin:
                 "healthy": bool(self.reserve_away() and self._healthy_safe()), "can_return": bool(self._can_return_safe()),
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
-                "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened"))}
+                "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
+                "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0)}
+
+    @staticmethod
+    def reserve_mem_free_mb() -> int:
+        """Доступная память хоста (MemAvailable), МБ; не прочитать — 0 (без строки)."""
+        try:
+            with open("/proc/meminfo", encoding="ascii", errors="replace") as f:
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        return int(line.split()[1]) // 1024
+        except (OSError, ValueError, IndexError):
+            pass
+        return 0
+
+    def reserve_guest_online_set(self, n: int) -> None:
+        """Число устройств основы на связи у гостя (локальный канал) — в st основе («там M»)."""
+        self.__dict__["_rsv_guest_online"] = int(n or 0)
 
     def _voters_body(self) -> list[dict]:
         """Мои шлюзы с агентом rsv1 — слот и имя: резерву для набора голосующих и текстов."""
@@ -140,7 +157,8 @@ class ReserveSessionMixin:
                         pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
                         admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(),
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
-                        in_kind=str(body.get("in_kind") or ""))
+                        in_kind=str(body.get("in_kind") or ""),
+                        mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0))
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             row = self.reserve_peer() or {}

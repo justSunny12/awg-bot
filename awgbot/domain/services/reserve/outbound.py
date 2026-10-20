@@ -514,6 +514,7 @@ class ReserveOutboundMixin:
                 "released_at": str(out.get("released_at") or ""), "taken_at": str(out.get("taken_at") or ""),
                 "reason": str(out.get("reason") or ""), "manual": not self.reserve_dns_automatic(),
                 "msg": list(out.get("msg") or []), "online": self._online_count(), "relay_until": str(out.get("relay_until") or ""),
+                "there": int(self.reserve_peer_state().get("there") or 0),
                 "own": self.reserve_own_ip(), "merge_report": dict(out.get("merge_report") or {})}
 
     def _online_count(self) -> int:
