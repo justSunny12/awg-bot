@@ -556,6 +556,40 @@ def mig(monkeypatch, services, fake_awg):
     return state
 
 
+# Первый autouse файла — раньше monkeypatch (его берут autouse ниже), значит
+# и откат после него: в teardown чужие подмены open/stat уже сняты.
+@pytest.fixture(autouse=True)
+def _shared_conf_back_after_the_test():
+    """Копия conf — одна на процесс: тест, дошедший до settings.set_value
+    (финал переезда переписывает network.subnet_cidr на подсеть второго
+    интерфейса), оставлял её соседям по воркеру. Под xdist сосед — любой: у
+    агента в тесте канала документ вёз «чужую» подсеть клиентов и
+    перезапускал обвязку. После теста файлы копии — как до него."""
+    def snap() -> dict[str, bytes]:
+        out = {}
+        for name in sorted(os.listdir(_CONF_COPY)):
+            if name.endswith(".yaml"):
+                fd = os.open(os.path.join(_CONF_COPY, name), os.O_RDONLY)
+                try:
+                    out[name] = b"".join(iter(lambda: os.read(fd, 1 << 16), b""))
+                finally:
+                    os.close(fd)
+        return out
+    before = snap()
+    yield
+    try:
+        after = snap()
+    except OSError:
+        return
+    if after == before:
+        return
+    for name, raw in before.items():
+        if after.get(name) != raw:
+            (_CONF_COPY / name).write_bytes(raw)
+    if _settings._conf_dir is not None and os.path.abspath(str(_settings._conf_dir)) == str(_CONF_COPY):
+        restore_settings()
+
+
 # ── Telegram в тестах закрыт ─────────────────────────────────────────────────
 # Настоящий aiogram.Bot в коде создаётся не только на старте: ввод токена бота
 # шлюза сразу спрашивает у Telegram getMe (runtime/gwbotme). Тест, дошедший до
@@ -582,6 +616,17 @@ def _fresh_join_presses():
     gwmark._PRESSED.clear()
     yield
     gwmark._PRESSED.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_channel_listener_from_a_neighbour(monkeypatch):
+    """Слушатель канала процесса (linkserver._server) — модульный: такт живости
+    и join_job заводят его на сервисах своего теста, и он переживал тест.
+    Сосед по процессу (под xdist — любой) звал join_close через него — на
+    чужих сервисах с настоящим скриптом линка: на Linux «--rollback не
+    отработал» вместо «подключение отменено». У каждого теста — свой (никакого)."""
+    from awgbot.runtime import linkserver
+    monkeypatch.setattr(linkserver, "_server", None)
 
 
 @pytest.fixture(autouse=True)

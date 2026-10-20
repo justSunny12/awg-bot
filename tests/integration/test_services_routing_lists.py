@@ -317,7 +317,14 @@ def test_empty_home_cache_forces_a_refresh(services, monkeypatch):
     from awgbot.infra import routing as infra_rt
     monkeypatch.setattr(infra_rt.feeds, "fetch", lambda url: fetched.append(url) or ("", "", 200))
 
+    import os
     services._routing_write_cache("tun_domains", [])
+    # пустой кэш — с прошлого раза, а не из той же миллисекунды: кэш в памяти
+    # сверяет файл по mtime, и на Linux две записи подряд получают одно и то
+    # же время — полный кэш ниже читался бы как прежний пустой
+    cache = services._routing_cache("tun_domains")
+    old = cache.stat().st_mtime - 3600
+    os.utime(cache, (old, old))
     services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
     services.routing_update_lists()
     assert fetched, "ранний выход по расписанию при пустом кэше"

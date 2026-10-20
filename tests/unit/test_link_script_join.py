@@ -56,13 +56,21 @@ class _Vps:
         for name in ("awg-quick", "ip", "iptables", "systemctl"):
             fake_cmd(self.bin / name, f'echo "{name} $*" >> {self.log}\nexit 0\n')
         fake_cmd(self.bin / "ss", "exit 0\n")
-        src = SCRIPT.read_text(encoding="utf-8").replace("/usr/local/sbin", str(self.sbin))
+        # всё, что скрипт трогает вне переменных окружения, — во временном
+        # каталоге: каталог юнитов прибит в скрипте (прежний awg-link.service,
+        # multi-user.target.wants), а на Linux-стенде он настоящий
+        self.units = tmp_path / "systemd"; self.units.mkdir()
+        src = (SCRIPT.read_text(encoding="utf-8").replace("/usr/local/sbin", str(self.sbin))
+               .replace("/etc/systemd/system", str(self.units)))
         self.script = tmp_path / "routing-link-setup.sh"
         self.script.write_text(src, encoding="utf-8")
 
     def run(self, mode: str, **env) -> subprocess.CompletedProcess:
         base = {"PATH": f"{self.bin}:/usr/bin:/bin", "LINK_IF": "awglink", "LINK_CIDR": "10.99.99.0/30",
                 "LINK_PORT": "51821", "CONF_DIR": str(self.conf_dir), "GW_CONF_OUT": str(self.gw),
+                # прежний файл конфигурации шлюза (до 3.4.0): иначе --rollback
+                # снимает настоящий /root/awg-gw-bundle.sh хоста, где идёт прогон
+                "GW_BUNDLE_OUT": str(self.root / "awg-gw-bundle.sh"),
                 "_APP_YAML": str(self.tmp / "нет.yaml"), "CLIENT_SUBNET": "10.8.1.0/24",
                 "LINK_KEEPALIVE": "25-35", "ENDPOINT_HOST": "vpn-server.example.org",
                 "UNIT_TEMPLATE": str(self.tmp / "awg-link@.service")}
@@ -154,9 +162,12 @@ def test_rollback_takes_the_old_keys_of_a_replacement_too(tmp_path):
     устройства снятому слоту ни к чему."""
     vps = _Vps(tmp_path, live=True)
     assert vps.run("--join-stage", JOIN_ID=JID, JOIN_PREV="1").returncode == 0
+    bundle = vps.root / "awg-gw-bundle.sh"          # прежний файл с ключами (до 3.4.0)
+    bundle.write_text("# DUMMY\n", encoding="utf-8")
     # исключения из MASQUERADE нет (-C — 1): цикл снятия не крутится вечно
     fake_cmd(vps.bin / "iptables", f'echo "iptables $*" >> {vps.log}\ncase " $* " in *" -C "*) exit 1 ;; esac\nexit 0\n')
     r = vps.run("--rollback")
     assert r.returncode == 0, r.stdout + r.stderr
     left = {f.name for d in (vps.conf_dir, vps.root) for f in d.iterdir()}
     assert not any("join-prev" in n for n in left) and not vps.conf.exists(), left
+    assert not bundle.exists(), "прежний файл конфигурации шлюза с ключами пережил снятие линка"

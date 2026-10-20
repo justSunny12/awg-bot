@@ -107,10 +107,17 @@ def test_ensure_watching_binds_and_is_idempotent(monkeypatch):
 
 
 def test_ensure_watching_no_pid_noops(monkeypatch):
+    """Контейнер без PID — пути наблюдения нет, вотчдог не поднимается.
+    Режим контейнера задан явно: на хосте путь — AWG_DIR, и на Linux-стенде
+    с AmneziaWG этот каталог настоящий — тест цеплялся бы к нему."""
+    monkeypatch.setattr(awg, "in_container", lambda: True)
     monkeypatch.setattr(awg, "container_pid", lambda: None)
+    monkeypatch.setattr(wmod, "Observer", FakeObserver)
     w = AwgWatcher(on_change=lambda: None)
     w.ensure_watching()
-    assert w.alive() is False
+    assert w.alive() is False, "без пути наблюдения вотчдог всё равно поднялся"
+    assert FakeObserver.instances == [], "наблюдатель создан без пути"
+    w.stop()
 
 
 def test_ensure_watching_missing_path(monkeypatch):

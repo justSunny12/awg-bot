@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 
 import pytest
@@ -153,13 +154,30 @@ def test_the_updater_leaves_its_pid_under_the_lock(tmp_path):
 
 @pytest.mark.skipif(shutil.which("flock") is None, reason="нет flock")
 def test_a_second_update_while_one_holds_the_lock_is_refused(tmp_path):
+    """Второй апдейтер (повтор шага хода, ручной поверх кнопки), пока первый
+    держит замок установки, не начинает — иначе два переноса кода в одно /opt.
+    Замок берётся после проверки «установлено» (venv/bin/python), поэтому
+    хост — с окружением, как настоящая установка."""
+    import time
     host = _Host(tmp_path)
+    py = host.env_new / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8"); py.chmod(0o755)
     lock = host.data / "update-guard.lock"
-    holder = subprocess.Popen(["flock", str(lock), "sleep", "5"])
+    ready = tmp_path / "held"
+    # держатель — своей группой: замок у дочернего sleep, не у самого flock
+    holder = subprocess.Popen(["flock", str(lock), "sh", "-c", f'touch "{ready}"; exec sleep 30'],
+                              start_new_session=True)
     try:
-        import time
-        time.sleep(0.3)
+        for _ in range(100):                         # ждём факта: замок взят
+            if ready.exists():
+                break
+            time.sleep(0.05)
+        assert ready.exists(), "держатель замка не взял его"
         r = host.run("update", str(tmp_path / "none.tgz"))
-        assert r.returncode != 0 and "уже идёт обновление" in r.stdout + r.stderr
+        out = r.stdout + r.stderr
+        assert r.returncode != 0 and "уже идёт обновление" in out, out
+        assert "не найден awg-bot.tgz" not in out, "второй апдейтер пошёл дальше замка"
     finally:
-        holder.kill()
+        os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()

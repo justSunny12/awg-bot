@@ -264,6 +264,12 @@ async def test_new_feeds_on_the_server_go_out_on_the_next_tick(services, link, m
     дожидаясь переподключения."""
     net = _Net(monkeypatch)
     services.gwlink_lan_feeds_update(force=True)
+    # прежние фиды скачаны часы назад, как в жизни (период — шесть часов):
+    # отпечаток кешируется по времени изменения файла, а на Linux две записи
+    # подряд получают одно и то же mtime — новые фиды выглядели бы прежними
+    feeds = services._lan_feeds_path()
+    old = feeds.stat().st_mtime - 6 * 3600
+    os.utime(feeds, (old, old))
     gw = await _hello(link, lists_hash=services.gwlink_lan_feeds()["hash"])
     net.body[f"{ITDOG}/Russia/inside-dnsmasq-ipset.lst"] = DOMAINS + "ipset=/new.org/vpn_domains\n"
     assert services.gwlink_lan_feeds_update(force=True) is True

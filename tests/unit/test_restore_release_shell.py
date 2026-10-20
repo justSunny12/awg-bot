@@ -227,19 +227,35 @@ def test_the_state_reaches_the_second_half_under_its_own_names(script, tmp_path)
 def test_restore_takes_the_install_lock_and_refuses_while_it_is_held(script, tmp_path):
     """Замок установки занят (обновление, сторож, откат) — отказ до остановки,
     «ничего не изменилось»; вторая половина замок не берёт заново — наследует."""
+    import os
+    import signal
     import time
     h = Host(tmp_path)
     rel = Release(script, h)
-    holder = subprocess.Popen(["flock", str(h.data / "update-guard.lock"), "sleep", "5"])
+    ready = tmp_path / "held"
+    # flock держит замок в дочернем процессе команды: убить один flock мало —
+    # его sleep остался бы с замком, и повтор ниже упёрся бы в него же.
+    # Держатель — своей группой, снимаем её целиком
+    holder = subprocess.Popen(["flock", str(h.data / "update-guard.lock"), "sh", "-c",
+                               f'touch "{ready}"; exec sleep 30'], start_new_session=True)
     try:
-        time.sleep(0.3)
+        for _ in range(100):                         # ждём факта: замок взят
+            if ready.exists():
+                break
+            time.sleep(0.05)
+        assert ready.exists(), "держатель замка не взял его"
         r = rel.run(script)
     finally:
-        holder.kill()
+        os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
     assert r.returncode != 0 and "ничего не изменилось" in r.stderr
     assert "systemctl stop awg-bot" not in h.calls() and OLD_VER in rel.code() and h.live() == OLD
     after = _extract_func(script, "cmd_restore_after_update")
     assert "update_lock" not in after, "вторая половина берёт замок повторно — ждала бы сама себя"
+    # отказ убирает и скачанный ботом выпуск (как бэкап из чата) — повтор
+    # кнопкой приходит с новой копией
+    assert not rel.asset.exists(), "выпуск из чата пережил отказ"
+    rel.asset.write_bytes(rel.blob)
     r = rel.run(script)
     assert r.returncode == 0, r.stderr
 

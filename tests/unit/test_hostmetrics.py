@@ -44,7 +44,12 @@ def test_read_disk_percent_error(monkeypatch):
 
 
 def test_read_cpu_percent(monkeypatch):
-    # два чтения /proc/stat: разница busy=20, total=100 → 20%
+    """Загрузка CPU — дельта двух чтений /proc/stat. База прошлого замера —
+    глобальная на процесс: на Linux её уже заполнил настоящий /proc/stat
+    (test_collect_and_store_and_get в том же воркере), и дельта к подставным
+    числам выходила отрицательной — None. Сбрасываем: первый вызов после старта."""
+    monkeypatch.setattr(hm, "_last_cpu_stat", None)
+    # busy = всё, кроме idle+iowait: 20/100 → 40/180, дельта 20 из 80 → 25%
     seq = iter([("cpu  10 0 10 80 0 0 0 0\n"), ("cpu  20 0 20 140 0 0 0 0\n")])
     class _F:
         def __init__(self, data): self._d = data
@@ -54,12 +59,14 @@ def test_read_cpu_percent(monkeypatch):
     monkeypatch.setattr("builtins.open",
                         lambda p, *a, **k: _F(next(seq)) if p == "/proc/stat" else (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(hm.time, "sleep", lambda s: None)
-    # busy0 = (10+0+10)=20, total0=110-80=... используем реальную формулу модуля
-    v = hm.read_cpu_percent()
-    assert v is not None and 0 <= v <= 100
+    assert hm.read_cpu_percent() == 25.0, "загрузка — доля busy в дельте total между двумя чтениями"
+    # второй вызов — к прошлому чтению, без новой паузы: 40/180 → 60/260 = 25%
+    seq = iter([("cpu  30 0 30 200 0 0 0 0\n")])
+    assert hm.read_cpu_percent() == 25.0, "второй замер считается от прошлого чтения, а не от свежей пробы"
 
 
 def test_read_cpu_percent_bad_stat(monkeypatch):
+    monkeypatch.setattr(hm, "_last_cpu_stat", None)
     class _F:
         def readline(self): return "garbage line\n"
         def __enter__(self): return self

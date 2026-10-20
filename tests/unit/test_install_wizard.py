@@ -220,13 +220,23 @@ def test_temp_directory_is_removed(tmp_path):
 
 def test_a_home_directory_is_never_removed(tmp_path):
     """Человек мог распаковать поставку и к себе домой — удалять её там мы не
-    вправе, и молчать об этом тоже нельзя."""
-    d = tmp_path / "awg-bot-delivery"
-    (d / "awgbot").mkdir(parents=True)
-    res = _run_cleanup(tmp_path, str(d))
-    assert res.returncode == 0, res.stderr
-    assert d.exists(), "снесли каталог вне /tmp"
-    assert "не временный" in res.stdout
+    вправе, и молчать об этом тоже нельзя.
+
+    Каталог — в $HOME, а не в tmp_path: на Linux tmp_path лежит в /tmp
+    (или /var/tmp по TMPDIR) — ровно там, где уборка сносить вправе."""
+    import shutil
+    import tempfile
+    home = tempfile.mkdtemp(prefix=".awg-bot-test-", dir=pathlib.Path.home())
+    try:
+        d = pathlib.Path(home) / "awg-bot-delivery"
+        assert not str(d).startswith(("/tmp/", "/var/tmp/", "/private/tmp/")), d
+        (d / "awgbot").mkdir(parents=True)
+        res = _run_cleanup(tmp_path, str(d))
+        assert res.returncode == 0, res.stderr
+        assert d.exists(), "снесли каталог вне /tmp"
+        assert "не временный" in res.stdout
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def test_cleanup_removes_the_installer_file_and_the_archive(tmp_path):

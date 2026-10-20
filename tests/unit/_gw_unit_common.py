@@ -77,6 +77,10 @@ class _Unit:
             return self.path if str(p) == target and not rest else real_path(p, *rest)
 
         monkeypatch.setattr(gwguard, "Path", _path)
+        # кэш текста юнита — глобальный на процесс и ключом (mtime_ns, размер)
+        # без пути: на Linux mtime грубее наносекунд, и юнит соседнего теста
+        # того же размера, записанный в тот же тик, читался бы вместо своего
+        monkeypatch.setattr(gwguard.unit, "_unit_cache", None)
         fake = types.SimpleNamespace(run=self._run, CompletedProcess=subprocess.CompletedProcess,
                                      SubprocessError=subprocess.SubprocessError,
                                      TimeoutExpired=subprocess.TimeoutExpired)

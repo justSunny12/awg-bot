@@ -163,6 +163,10 @@ async def test_an_old_gwcfg_button_is_stale_and_opens_the_main_menu(services, fa
     from awgbot.bot.handlers.stale import STALE_BUTTON
     from awgbot.bot.handlers.admin import _panel_parts
     services.ensure_admin_client()
+    # главная несёт «обновлено ЧЧ:ММ:СС»: эталон рисуется вторым вызовом, и
+    # граница секунды между ними роняла тест — часы стоят
+    fixed = timeutil.now()
+    monkeypatch.setattr(timeutil, "now", lambda: fixed)
     cb, note = await _press(services, fake_bot, "gwcfg", 2)
     assert cb.answers and cb.answers[0][0] == STALE_BUTTON, cb.answers
     assert ("edit_reply_markup", ADMIN) in fake_bot.records
@@ -325,6 +329,8 @@ async def test_an_old_gwcfg_link_opens_the_main_menu(services, fake_bot, monkeyp
     from aiogram.filters import CommandObject
     from awgbot.bot.handlers import admin as ah
     services.ensure_admin_client()
+    fixed = timeutil.now()                           # «обновлено …» — та же секунда в обоих рисунках
+    monkeypatch.setattr(timeutil, "now", lambda: fixed)
     msg = FakeMessage(text="/start gwcfg-2", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(),
                          command=CommandObject(prefix="/", command="start", args="gwcfg-2"))
