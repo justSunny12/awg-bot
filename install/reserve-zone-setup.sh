@@ -113,7 +113,7 @@ kernel_ge() {
 }
 port_free() { if command -v ss >/dev/null 2>&1; then ! ss -Hltn "sport = :$1" 2>/dev/null | grep -q .; else return 0; fi; }
 store_kind() { if kernel_ge 6 4; then printf 'tmpfs-noswap'; else printf 'ramfs'; fi; }
-has_cake() { modinfo sch_cake >/dev/null 2>&1 || grep -qw sch_cake /proc/modules 2>/dev/null; }
+has_cake() { modinfo sch_cake >/dev/null 2>&1; }   # modinfo знает и загруженный, и ещё не загруженный модуль
 
 # ── состояние для бота (без секретов) ───────────────────────────────────────
 state_write() {   # state_write KEY=VALUE … — слить с прежним
