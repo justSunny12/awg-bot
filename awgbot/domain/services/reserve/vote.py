@@ -1,6 +1,6 @@
 """
 vote.py — часть пакета reserve (см. __init__): переезд по взглядам на стороне
-резерва — матрица случаев (§3.9.1 концепта), набор голосующих, `need` →
+резерва — матрица случаев (README §6i), набор голосующих, `need` →
 `share` → процесс открытия по двум долям, строка Н4 (сразу Т-РУ7, Т-РУ7б и
 приём аварийного кода), `view` основе и шлюзам, `state` шлюзам.
 
@@ -88,6 +88,8 @@ class ReserveVoteMixin:
         """Слово шлюза по гостевому каналу."""
         rec = self._gwv.setdefault(int(slot), {"lv": livestep.Liveness(), "online": True})
         livestep.word(rec["lv"], time.monotonic())
+        if kind == "ping":
+            return []                                         # pong отдаёт слушатель канала сам
         if kind == "pong":
             livestep.pong(rec["lv"], time.monotonic(), str(body.get("n") or ""))
             return []
@@ -200,9 +202,8 @@ class ReserveVoteMixin:
         actions += self._code_window(case)
         if case in MOVE_CASES:
             actions += self._auto_move(case, views)
-        else:
-            if self.rsv_get("rsv_view").get("need"):
-                self.rsv_update("rsv_view", need=None)
+        elif case != "3" and self.rsv_get("rsv_view").get("need"):
+            self.rsv_update("rsv_view", need=None)            # в случае 3 просьбу ставит rfblock (без ответа основы)
         actions += self.reserve_gw_state_actions()
         return actions
 
@@ -218,6 +219,8 @@ class ReserveVoteMixin:
         """`view` основе по каналу пары — при смене случая (3, 4, Н3 — её уведомления)."""
         if case not in ("3", "4", "H3") or not self.reserve_online():
             return []
+        if case == "H3" and (not self._nogw_worth() or not self._absent_slots()):
+            return []                                         # резерву нечем дать РФ-доступ или у основы нет шлюзов
         view = self.rsv_get("rsv_view")
         body = {"case": case, "since": str(view.get("case_since") or ""),
                 "voters": [{"slot": s, "name": self.reserve_gw_name(s), "see": v == "see"} for s, v in self._voters().items()][:16]}

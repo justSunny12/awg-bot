@@ -71,7 +71,10 @@ def test_guest_routers_keep_the_client_ones_drop_the_peer_admin_and_put_the_fenc
     assert guest.index("guest") < guest.index("settings")
     assert guest.index("sections") < guest.index("guest"), "общие разделы стоят раньше загородки: их фильтр ролевой"
     assert guest[-1] == "stale" and guest[:3] == main[:3]
-    assert set(main) - set(guest) == {"peeradmin"}, f"у гостя лишилось не только peeradmin: {set(main) ^ set(guest)}"
+    # роль админа второго сервера целиком — экран и ввод аварийного кода — у бота основы на резерве не живёт
+    assert set(main) - set(guest) == {"peeradmin", "peercode"}, (
+        f"у гостя лишилось не только роль админа второго сервера: {set(main) ^ set(guest)}")
+    assert "peercode" not in guest, "ввод аварийного кода в боте основы на резерве"
     assert {"client", "friend", "routing", "guide"} <= set(guest), "клиентские роутеры целиком"
 
 

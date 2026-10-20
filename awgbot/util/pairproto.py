@@ -115,13 +115,13 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32)}),
     "share":  (GATEWAY, {"share": (_S, 64), "m_gen": (_I, None)}),
     "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None)}),
-    "ping":   (RESERVE, {"n": (_S, 32)}),
-    "pong":   (GATEWAY, {"n": (_S, 32)}),
+    "ping":   (BOTH, {"n": (_S, 32)}),                    # проба по подозрению — с любой стороны
+    "pong":   (BOTH, {"n": (_S, 32)}),
 }
 
 _SIDES = {
     PAIR_PROTO: {INVITER: (INVITER, BOTH), ACCEPTOR: (ACCEPTOR, BOTH)},
-    GUEST_PROTO: {RESERVE: (RESERVE,), GATEWAY: (GATEWAY,)},
+    GUEST_PROTO: {RESERVE: (RESERVE, BOTH), GATEWAY: (GATEWAY, BOTH)},
 }
 
 

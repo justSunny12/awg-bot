@@ -119,6 +119,8 @@ class GuestChannelServer:
                 last_seq = int(msg.get("seq") or 0)
                 kind = str(msg.get("t") or "")
                 body = pairproto.check(pairproto.GUEST_PROTO, kind, msg, pairproto.GATEWAY)
+                if kind == "ping":                        # проба шлюза по подозрению — ответ здесь же
+                    await self.send(slot, "pong", {"n": str(body.get("n") or "")})
                 actions = await asyncio.to_thread(self.services.reserve_guest_in, slot, kind, body)
                 await self._actions(actions)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError, OSError) as e:

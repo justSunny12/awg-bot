@@ -22,21 +22,31 @@
 # Маскарад источников @tunnel_nets4 наружу делает таблица обвязки (подсеть
 # клиентов сервера — в ней).
 #
-# Режимы (root):
-#   --up <conf>     конфиг линка (из документа конфигурации сервера AWG) →
+# Режимы (root, кроме --status):
+#   --up <conf>     конфиг линка (из документа конфигурации сервера AWG;
+#                   проверка: PrivateKey, [Peer], Table = off, без PostUp/
+#                   PostDown/PreUp/PreDown/SaveConfig/DNS) →
 #                   /etc/awg-gw/awgrsv.conf (0600), линк поднят (awg-quick),
-#                   таблица nft, маршруты, юнит awg-rsv-gw.service; повтор с
-#                   тем же конфигом — ничего не меняет, с другим — переподнимает
-#   --reassert      линк и правила по конфигу на диске (юнит при загрузке)
+#                   таблица nft, маршруты, копия скрипта в SELF_PATH и юнит
+#                   awg-rsv-gw.service (enable); тот же конфиг при поднятом
+#                   линке — только таблица и маршруты («up: same»), другой —
+#                   переподнимает
+#   --reassert      линк, таблица и маршруты по конфигу на диске (юнит при
+#                   загрузке); набор rsv_open4 — из состояния RSV_STATE
 #   --open <cidr…>  пересылка открыта для источников (через запятую)
 #   --close         пересылка закрыта (набор пуст)
-#   --down          линк опущен, таблица и маршруты сняты, конфиг остаётся
-#   --remove        линк, таблица, конфиг, юнит и состояние — прочь (пары нет)
-#   --status        key=value: link, open, src, rx, tx
+#   --down          линк опущен, таблица и маршруты сняты; конфиг и состояние
+#                   остаются (юнит при остановке)
+#   --remove        линк, таблица, маршруты, конфиг, юнит и состояние — прочь
+#                   (пары нет); копия в SELF_PATH остаётся
+#   --status        key=value: link, open, src, rx, tx, conf
 # Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
-# (/var/lib/awg-gw/rsv.status), RSV_MARK (0x52), RSV_TABLE (152), SSH_PORT
-# (из gateway.status или 22), ADMIN_IPS (адреса устройств админа сервера,
-# через запятую — из файла конфигурации), UNIT, SELF_PATH.
+# (/var/lib/awg-gw/rsv.status: open=0|1, src=…), RSV_MARK (0x52), RSV_TABLE
+# (152), SSH_PORT (иначе SSH_PORT из GW_STATUS — /etc/awg-gw/gateway.status —
+# или 22), ADMIN_IPS (адреса устройств админа сервера через запятую; передаёт
+# агент при --up из строк юнита обвязки — юнит awg-rsv-gw.service и --open их
+# не передают), UNIT (/etc/systemd/system/awg-rsv-gw.service), SELF_PATH
+# (/usr/local/sbin/reserve-gw-setup.sh).
 # Чего НЕ делает: не читает и не пишет документ конфигурации (его ведёт
 # агент), не решает, когда открывать пересылку (решает агент по слову
 # сервера или резерва вместе с фактом записи DNS), не трогает аплинк.
@@ -121,7 +131,7 @@ $( [ -n "$_admins" ] && printf '        elements = { %s }\n' "$(ipv4_list $_admi
     chain rsv_mark {
         type filter hook prerouting priority mangle; policy accept;
         iifname "$RSV_IF" ct state new ct mark set $RSV_MARK
-        ct mark $RSV_MARK meta mark set $RSV_MARK
+        iifname != "$RSV_IF" ct mark $RSV_MARK ct direction reply meta mark set $RSV_MARK
     }
 }
 EOF

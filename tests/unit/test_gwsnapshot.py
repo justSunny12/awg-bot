@@ -34,6 +34,10 @@ BUNDLE_OLD = ("home_subnets", "peer_home_nets")
 SERVICE = ("rev", "ts", "boot_id")
 VERDICTS = ("peer_nets", "egress_ok",
             "lan_addr")                     # lan_addr — адрес шлюза в локальной сети: в настройку роутера
+# rsv — резерв глазами шлюза (связь по линку к резерву, поколение доли,
+# пересылка, последнее слово резерва, взгляд на сервер): его кладёт монитор
+# агента поверх collect(), и только при разделе reserve документа
+RESERVE = ("rsv",)
 
 # Всё, что решает сам агент и о чём он говорит в своём чате. Появление любого
 # из этих имён в снимке означает, что на ВПС завели второй источник правды.
@@ -116,7 +120,7 @@ def test_the_snapshot_carries_exactly_the_agreed_fields_and_nothing_else(pi):
         f"лишние {sorted(set(snap) - set(FACTS + VERDICTS + SERVICE))}, "
         f"пропали {sorted(set(FACTS + VERDICTS + SERVICE) - set(snap))}")
     assert set(snap["bundle"]) == set(BUNDLE + BUNDLE_OLD), "блок «что применено из конфигурации» изменился"
-    assert set(gwsnapshot.FIELDS) == set(FACTS + VERDICTS + SERVICE)
+    assert set(gwsnapshot.FIELDS) == set(FACTS + VERDICTS + SERVICE + RESERVE)
     assert set(gwsnapshot.BUNDLE_FIELDS) == set(BUNDLE)
 
 
@@ -356,7 +360,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert out["lan_addr"] == "192.168.1.10"
     assert gwsnapshot.sanitize({"lan_addr": "ШЛЮЗ; rm -rf /"})["lan_addr"] == "", "в команды роутера — только IPv4"
     assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "",
-                          "token": "", "server": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
+                          "token": "", "server": "", "reserve": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE + BUNDLE_OLD), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["lan_subnets"]) == 512, "длина значения не ограничена"
@@ -364,6 +368,23 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert len(out["peer_nets"]["missing"]) == 64, "список в вердикте не ограничен"
     assert out["awg_generation"] == 2 and out["rev"] == 4, "числа приводятся к числам"
     assert not set(out) & set(FORBIDDEN)
+
+
+def test_sanitize_keeps_only_the_known_reserve_fields_and_cuts_them():
+    """Поле `rsv` читают готовность направления и экран сервера: связь шлюза
+    с резервом — только из перечня, числа — числами, строки — с потолком,
+    чужие ключи — прочь. Иначе шлюз мог бы положить в базу сервера что угодно
+    под видом «взгляда на резерв»."""
+    out = gwsnapshot.sanitize({"rsv": {"seen": "down", "since": "2026-10-21T03:12:00+03:00" + "Я" * 500,
+                                       "gen": "3", "open": 1, "state": "serving" * 10, "primary": "down",
+                                       "evil": "rm -rf /"}})["rsv"]
+    assert set(out) == {"seen", "since", "gen", "open", "state", "primary"}, f"лишние ключи доехали: {set(out)}"
+    assert out["seen"] == "down" and out["gen"] == 3 and out["open"] is True
+    assert len(out["since"]) == 40 and len(out["state"]) == 16, "длина строк в rsv не ограничена"
+    bad = gwsnapshot.sanitize({"rsv": {"seen": "всё хорошо", "gen": "три"}})["rsv"]
+    assert bad["seen"] == "" and bad["gen"] == 0, "значение вне перечня или не число прошло как есть"
+    assert gwsnapshot.sanitize({"rsv": None})["rsv"] is None, "«раздела нет» не передаётся как None"
+    assert "rsv" not in gwsnapshot.sanitize({}), "поле rsv появилось у шлюза без раздела"
 
 
 def test_sanitize_survives_lies_about_types_without_raising():

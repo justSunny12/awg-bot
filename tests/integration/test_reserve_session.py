@@ -254,7 +254,7 @@ def test_the_same_admin_id_on_both_servers_is_the_admin_not_the_role(services, r
 
 SUMMARY_KEYS = {"peer", "me", "version", "direction_in", "awg_ok", "link_online", "seen", "down_since", "inn",
                 "in_since", "pkg_at", "pkg_gen", "rf_via_mine", "has_gateway", "traffic", "peer_ready", "my_ready",
-                "code_needed"}
+                "code_needed", "code_since", "gw_views", "case", "case_since", "rf_line", "in_kind", "zone_links"}
 
 
 def test_the_role_summary_has_no_client_fields(services, paired, make_active_client, monkeypatch):

@@ -42,9 +42,10 @@ def _str_arg(node: ast.AST) -> str | None:
 
 def _sent_kinds(pkg: Path, senders: tuple[str, ...]) -> set[str]:
     """Виды из вызовов self.send(slot, "kind"…) / self._send("kind"…) /
-    gwlink.pack(key, "kind"…): строковый литерал среди первых двух аргументов."""
+    gwlink.pack(key, "kind"…): строковый литерал среди первых двух аргументов.
+    `pkg` — каталог пакета или один файл."""
     out: set[str] = set()
-    for path in sorted(pkg.glob("*.py")):
+    for path in ([pkg] if pkg.is_file() else sorted(pkg.glob("*.py"))):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
@@ -82,7 +83,10 @@ def _parsed_kinds(pkg: Path) -> set[str]:
 
 
 SERVER_SENDS = _sent_kinds(SERVER, ("send", "_join_send"))   # сессия сопряжения — своей отправкой
-CLIENT_SENDS = _sent_kinds(CLIENT, ("_send", "_send_result", "pack"))
+# проба живости сервера (резерв) уходит в канал конфигурации из такта гостевого
+# канала агента — runtime/guestlink.py, через ту же отправку клиента линка
+GUESTLINK = ROOT / "guestlink.py"
+CLIENT_SENDS = _sent_kinds(CLIENT, ("_send", "_send_result", "pack")) | _sent_kinds(GUESTLINK, ("_send",))
 SERVER_PARSES = _parsed_kinds(SERVER)
 CLIENT_PARSES = _parsed_kinds(CLIENT)
 
@@ -161,6 +165,8 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "join_ok": ({"box": "ab" * 72}, gwlink.PAD_DELTA, "950f8e85c412be152246d4727dd0379fa490cff09302415cc137131833069db4"),
     "join_done_ok": ({"id": "0123456789abcdef"}, gwlink.PAD_DELTA,
                      "ae20782dcb00c8f35465397e169b7e4158f1e6a4b6bfe18edea118170a12e9ff"),
+    "pong": ({"n": "0123456789abcdef"}, gwlink.PAD_DELTA,
+             "2b8cb703253c7597c34e1003c038422492a82560be43169a290dbbaa68c35fdd"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
@@ -188,6 +194,7 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "keep": ({"v": 1, "hash": "ab12" * 4, "at": "2026-10-12T08:40:00+03:00", "items": _KEEP_ITEMS,
               "traffic": {"month": "2026-10", "rx": 10, "tx": 20}}, gwlink.PAD_DELTA,
              "2b0dc7f7b047b2d31cb441cae22f111dcfe9f7e7dbea6c449c80316e51d663bd"),
+    "ping": ({"n": "0123456789abcdef"}, 0, "978d672e6075ad267de78a9d58c76a9c5d0d7766923aba90393f5b180e781a52"),
 }
 
 

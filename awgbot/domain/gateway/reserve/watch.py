@@ -142,10 +142,21 @@ class ReserveWatchMixin:
             iface = ""
         if not iface:
             return False
-        host, _port = up.conf_endpoint(iface)
-        own = str(self.reserve_section().get("self") or "")
-        if not host or not own or (host != own and up.resolve(host) != up.resolve(own)):
+        sec = self.reserve_section()
+        own, reserve = str(sec.get("self") or ""), str(sec.get("peer_host") or "")
+        if not own:
             return False
+        try:
+            live = gwguard._endpoint_host(iface)              # после перерезолва на клон аплинк смотрит на резерв
+        except Exception:                                     # noqa: BLE001
+            live = ""
+        if not live:
+            host, _port = up.conf_endpoint(iface)
+            live = up.resolve(host) if host else ""
+        if not live or live != (own if up.is_ip(own) else up.resolve(own)):
+            return False
+        if reserve and live == (reserve if up.is_ip(reserve) else up.resolve(reserve)):
+            return False                                      # имя для клиентов уже указывает на резерв — это клон
         try:
             subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
             parts = subnet.split(".")

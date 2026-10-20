@@ -254,10 +254,23 @@ GitHub `vX.Y.Z.P — …`.
   автоматы `domain/services/reserve/{dns,outbound,inbound,notify,traffic,away}.py`,
   уведомления `domain/notices/reserve.py`, управляемый поллинг `runtime/pollctl.py`
   (право отвечать в Telegram) и исполнитель действий `runtime/rsvactions.py`,
-  экраны `handlers/settings/reserve/{move,dns}.py`. Правка `jobs.py` задевает и обычный основной бот (те же
-  задания), но не агента. **Обе роли**: код агента
+  экраны `handlers/settings/reserve/{move,dns}.py`. Туда же — шлюзы и переезд
+  по взглядам: стороны основы и резерва
+  `domain/services/reserve/{gwside,zonelinks,vote,rfblock}.py` (ключи шлюзовых сторон, `slots`/`slots_ok`,
+  стороны зоны, матрица случаев, демпфер, `ask`/`ask_no`, аварийный код),
+  слушатель гостевого канала в зоне `runtime/pairlink/guest.py`, ввод кода в
+  роли админа второго сервера `handlers/peercode.py`, ключи без `awg genkey`
+  `util/wgkeys.py` (его зовёт только сервер). Правка `jobs.py` задевает и обычный основной бот (те же
+  задания), но не агента. **Только агент** — строка `gw`: скрипт линка к
+  резерву `install/reserve-gw-setup.sh` (на ВПС его не зовут; на шлюзе юнит
+  `awg-rsv-gw.service` выполняет копию в `/usr/local/sbin`, которую кладёт сам
+  скрипт при `--up`), его обёртка `infra/gwguard/rsv.py` и клиент гостевого
+  канала `runtime/guestlink.py`. **Обе роли**: код агента
   `domain/gateway/reserve/` вместе с разделом `reserve` документа
-  конфигурации, правилами `awgrsv` в обвязке шлюза и словарём сообщений
+  конфигурации (`domain/gwcfg/`, белый список `rsvlink` в
+  `install/gw-wg-allow.list`), полем `rsv` снимка (`domain/gwsnapshot.py`),
+  пробой `ping`/`pong` канала конфигурации (`runtime/linkserver/inbound.py` и
+  `runtime/linkclient/dispatch.py`), машиной живости `util/livestep.py` и словарём сообщений
   пары и гостевого канала `util/pairproto.py` (гостевым каналом говорят
   агенты; поля `st`, добавленные внутри линии, — необязательные
   (`pairproto.OPTIONAL`), поэтому старая сторона их не отвергает), ключи и доли — `util/shamir.py`, `util/rsvkeys.py` (доля шлюза
@@ -265,7 +278,8 @@ GitHub `vX.Y.Z.P — …`.
   копят трафик линка агент и трафик через резерв сервер) — формат обязан
   совпадать на концах, как у канала. Блок `reserve` в `conf/app.yaml` и
   ключ `network.self_host` — шаблон конфига, общий для поставки; читает их
-  основной бот. Стенд `tests/lab/` (в том числе сценарии зоны) в поставку хостов не входит — адресата
+  основной бот, а ключи резерва в разделе `gateway` (`reserve_suspect_seconds`,
+  `reserve_probe_seconds`, `guest_channel_port`, `rf_block_minutes`) — агент. Стенд `tests/lab/` (в том числе сценарии зоны) в поставку хостов не входит — адресата
   у его правки нет.
 - Число в строке — **минимальная версия роли**, с которой на этот релиз
   прыгают напрямую; хост ниже сначала обновляется на неё. Минимум — только

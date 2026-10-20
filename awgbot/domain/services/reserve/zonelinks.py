@@ -106,8 +106,11 @@ class ReserveZoneLinksMixin:
         for k in wgkeys.OBF_KEYS:
             if rec.get("obf", {}).get(k):
                 lines.append(f"{k} = {rec['obf'][k]}")
+        # единственный пир стороны зоны — шлюз: туда уходит и РФ-трафик клиентов основы
+        # наружу (таблица РФ-доступа зоны ведёт в этот линк), обратно — ответы
         lines += ["", "[Peer]", f"PublicKey = {rec['gw_pub']}", f"PresharedKey = {rec['psk']}",
-                  f"AllowedIPs = {gw_addr}/32", f"PersistentKeepalive = {ka}", ""]
+                  "AllowedIPs = 0.0.0.0/0", f"PersistentKeepalive = {ka}", ""]
+        del gw_addr
         os.makedirs(links_dir(), mode=0o700, exist_ok=True)
         from pathlib import Path
         rsvzone.write_private(Path(links_dir()) / f"{_link_name(slot)}.conf", "\n".join(lines))

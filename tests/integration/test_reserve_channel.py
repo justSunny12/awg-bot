@@ -225,10 +225,12 @@ async def test_an_ordinary_hello_gets_st_and_ping_gets_pong(services, server, li
     await gw.send("ping", {"n": "abcdef0123456789"})
     pong = await gw.recv()
     assert (pong["t"], pong["n"]) == ("pong", "abcdef0123456789")
-    await gw.send("slots", {"slots": []})              # вид словаря, который этот этап не ведёт
+    await gw.send("slots", {"slots": []})              # ключи шлюзовых сторон — ответ slots_ok тем же видом
+    ok = await gw.recv()
+    assert (ok["t"], ok["slots"]) == ("slots_ok", []), f"на slots без слотов не пришёл пустой slots_ok: {ok}"
     await gw.send("ping", {"n": "0123456789abcdef"})
     pong = await gw.recv()
-    assert (pong["t"], pong["n"]) == ("pong", "0123456789abcdef"), "сессия не пережила вид следующего этапа"
+    assert (pong["t"], pong["n"]) == ("pong", "0123456789abcdef"), "сессия не пережила обмен slots"
     await gw.send("whatever", {})                       # вида нет в словаре — разрыв, как у канала шлюзов
     assert await _closed(gw), "на вид вне словаря сессия продолжилась"
     await gw.close()

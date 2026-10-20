@@ -116,8 +116,10 @@ class ReserveGwSideMixin:
         for k in wgkeys.OBF_KEYS:
             if zone.get("obf", {}).get(k):
                 lines.append(f"{k} = {zone['obf'][k]}")
+        from awgbot.infra import nftguard
+        allowed = [f"{zone_addr}/32"] + [n for n in nftguard.tunnel_nets() if n]     # РФ-трафик клиентов основы
         lines += ["", "[Peer]", f"PublicKey = {zone['pub']}", f"PresharedKey = {rec['psk']}",
-                  f"AllowedIPs = {zone_addr}/32", f"Endpoint = {zone['host']}:{int(zone['port'])}",
+                  f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
         try:
             gen, y = self.reserve_share_gateway(int(gw.id))
