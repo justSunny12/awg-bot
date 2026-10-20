@@ -72,7 +72,8 @@ class ReserveGuestMixin:
         self.__dict__["_guest_snap_due"] = time.monotonic()
 
     def _guest_snapshot_touch(self, kind: str) -> None:
-        self.__dict__.setdefault("_guest_snap_due", time.monotonic())
+        if self.__dict__.get("_guest_snap_due") is None:   # первая запись после снимка — начало пачки
+            self.__dict__["_guest_snap_due"] = time.monotonic()
 
     def guest_snapshot_mark(self) -> None:
         self.__dict__["_guest_snap_due"] = time.monotonic()

@@ -217,12 +217,21 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
                "secret": secrets.token_urlsafe(32), "key": key_p, "cert": crt_p,
                "host": str(data.get("self_host") or "")}
     rsvzone.write_private(rsvzone.WEBHOOK_FILE, json.dumps(webhook))
-    pool = [str(p) for p in (data.get("tg_pool") or DEFAULT_TG_POOL)]
+    pool = [str(p) for p in (data.get("tg_pool") or _host_pool())]
     rsvzone.write_private(rsvzone.TG_POOL_FILE, json.dumps({"pool": pool}))
     try:
         rsvzone.TG_TAKE_FILE.unlink()
     except OSError:
         pass
+
+
+def _host_pool() -> list[str]:
+    """Пул адресов Telegram файервола хоста резерва — тот же, что в DNAT."""
+    try:
+        from awgbot.infra import nftguard
+        return list(nftguard.tg_pool())
+    except Exception:                                          # noqa: BLE001
+        return list(DEFAULT_TG_POOL)
 
 
 def set_record(dns: dict, target_ip: str) -> None:

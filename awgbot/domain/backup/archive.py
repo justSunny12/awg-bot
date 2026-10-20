@@ -24,6 +24,26 @@ from .crypto import BackupKeyMissing
 log = logging.getLogger("awgbot.backup")
 
 
+
+def _strip_foreign_share(con) -> None:
+    """Доля ключа переезда второй стороны (`rsv_pkg_in.share`) в копию не
+    идёт: копия — о своих данных; чужой пакет на диске и так не в архиве."""
+    import json
+    try:
+        row = con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone()
+    except Exception:                                          # noqa: BLE001 — схема без server_state
+        return
+    if not row or not str(row[0] or "").startswith("{"):
+        return
+    try:
+        data = json.loads(row[0])
+    except ValueError:
+        return
+    if isinstance(data, dict) and data.get("share"):
+        data["share"] = ""
+        con.execute("UPDATE server_state SET value = ? WHERE key = 'rsv_pkg_in'", (json.dumps(data, ensure_ascii=False),))
+        con.commit()
+
 class BackupArchiveMixin:
     META_NAME = "state/backup-meta.json"
 
@@ -52,6 +72,7 @@ class BackupArchiveMixin:
                 dst = sqlite3.connect(tmp)
                 try:
                     src.backup(dst)
+                    _strip_foreign_share(dst)
                 finally:
                     dst.close()
             finally:

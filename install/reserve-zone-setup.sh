@@ -11,9 +11,32 @@
 # На этом стоит вся схема, поэтому --selftest проверяет это на модуле ядра
 # хоста.
 #
-# Режимы (root, кроме --plan; секретное — только через stdin и в хранилище в
-# памяти; окружение: RSV_ZONE=awg-guest, ZONE_CIDR=169.254.77.0/30 (хост .1,
-# зона .2), ZONE_RF_CIDR=169.254.77.4/30 (хост .5, зона .6), INSTALL_DIR):
+# Запуск: root (кроме --plan); секретное — только через stdin и в хранилище в
+# памяти, в argv и на постоянный диск не попадает. Окружение:
+#   RSV_ZONE=awg-guest        имя пространства (и пространства журнала гостя)
+#   ZONE_CIDR=169.254.77.0/30 veth бота основы (хост .1, зона .2)
+#   ZONE_RF_CIDR=169.254.77.4/30  veth РФ-трафика к шлюзам резерва (хост .5, зона .6)
+#   INSTALL_DIR=/opt/awg-bot  где код (ExecStart юнита гостя)
+#   RSV_RUN=/run/awg-bot-guest  хранилище гостя в памяти; RSV_STORE_SIZE=32M — его размер
+#   RSV_VAR=/var/lib/awg-bot-guest  на диске только rep.bin (шифротекст под K)
+#   RSV_STATE_DIR=/run/awg-bot/rsv  state.json, open.status, guest.sock
+#   RSV_LINKS_DIR=/var/lib/awg-bot/reserve/links  конфиги сторон постоянных линков
+#   RSV_SELFTEST_PORT=45999   порт пробы --selftest
+# и по режимам (их кладёт обёртка awgbot/infra/rsvzone.py): --take — GUEST_IF
+# (имя клона, awg0), GUEST_ADDR (адрес клона cidr, обязателен), GUEST_DNS
+# (адреса резолвера зоны через пробел), GUEST_UPSTREAMS, GUEST_ADMIN (адреса
+# устройств админа), GUEST_CHANNEL_PORT (канал шлюзов с линков в зону, 8787);
+# --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
+#
+# Таблица nft зоны — inet awg_guest (input/forward с политикой drop, цепочка
+# zone_post — маскарад зоны наружу через veth). Файервол ХОСТА (порт клона,
+# маскарад veth, DNAT вебхука с набора tg_pool4, пересылка хвоста в relay) этот
+# скрипт НЕ пишет: его рисует бот по состоянию зоны (state.json) в таблице
+# awg_bot_guard. Скрипт также НЕ переносит данные основы (хранилище гостя
+# заполняет tools/rsvopen.py между --store и --take), НЕ меняет DNS и НЕ ставит
+# вебхук Telegram — это делают процесс открытия и бот основы на резерве.
+#
+# Режимы:
 #   --plan        без root: store=tmpfs-noswap|ramfs, cake=yes|no, netns=, awg=,
 #                 webhook_port=<свободный из 443/80/88/8443|none>, zone=present|absent
 #   --selftest    «сокет у хоста» и диапазон keepalive на установленном модуле;
@@ -33,7 +56,8 @@
 #   --relay       возврат: бот основы и dnsmasq остановлены, клон и veth
 #                 сняты, состояние relay (RELAY_TO=адрес:порт основы — правило
 #                 пересылки рисует бот)
-#   --teardown    снять клон, veth, юниты (без пересылки) — состояние idle
+#   --teardown    остановить бота основы и dnsmasq зоны, снять клон и veth (без
+#                 пересылки) — состояние idle; хранилище и rep.bin остаются
 #   --wipe        хранилище гостя, rep.bin, журнал гостя — прочь; CAKE —
 #                 прежняя дисциплина; зона остаётся оболочкой
 #   --status      состояние строками key=value
@@ -155,7 +179,7 @@ cmd_selftest() {
 
 # ── зона-оболочка ───────────────────────────────────────────────────────────
 zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона; пересылка — см. §3.2
-    local chan="${GUEST_CHANNEL_PORT:-8789}" iface="${1:-}"
+    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}"
     nsx nft -f - <<EOF
 table inet awg_guest {
     set admin4 { type ipv4_addr; }

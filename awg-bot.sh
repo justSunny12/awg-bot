@@ -248,6 +248,17 @@
 #                          первого применения с 3.4.0 нет: ни глагола
 #                          gw-bundle, ни ключа reconfigure и переменных
 #                          окружения для него.
+#   reserve status|plan|selftest|open|zone --<режим>
+#                          сервер AWG, взаимный резерв: гостевая зона и процесс
+#                          открытия. status — линк пары и зона (reserve-pair-setup.sh
+#                          --status, reserve-zone-setup.sh --status); plan — что
+#                          умеет хост (хранилище в памяти, порт вебхука);
+#                          selftest — механика зоны на модуле ядра (root);
+#                          open — tools/rsvopen.py (root; вход — JSON ТОЛЬКО в
+#                          stdin: доли, код или ключ пакета, секреты не в argv;
+#                          ход — /run/awg-bot/rsv/open.status);
+#                          zone --<режим> — скрипт зоны напрямую (root).
+#                          uninstall снимает линк пары и зону без вопроса.
 #   status                 состояние сервиса и пути.
 #   logs                   журнал сервиса (follow, время journald со смещением).
 

@@ -241,7 +241,17 @@ GitHub `vX.Y.Z.P — …`.
   пару `util/pairtoken.py`, API провайдеров DNS `util/dnsapi/`, сетевые
   пространства `util/netns.py` и скрипты зоны и пары
   (`install/reserve-zone-setup.sh`, `install/reserve-pair-setup.sh`): их не зовёт ни один агент, и общее
-  правило «`util/…` — обе» к ним не относится. **Обе роли**: код агента
+  правило «`util/…` — обе» к ним не относится. Туда же — пакет переезда
+  (сборка у основы и приём у резерва — `domain/services/reserve/package.py`),
+  бот основы на резерве (`config.GUEST`: `domain/services/reserve/guest.py`,
+  `runtime/main/guest.py`, `runtime/webhook.py`, локальный канал
+  `runtime/pairlink/guestctl.py`, планировщик `runtime/scheduler/guest.py` и
+  вынесенные из основного задания данных клиентов `runtime/scheduler/jobs.py`,
+  `bot/handlers/guest.py`, тексты `bot/texts/reserve/guest.py`), слияние при
+  возврате (`domain/backup/merge/policy.py`, `reserve.py`), процесс открытия
+  `tools/rsvopen.py`, обёртка зоны `infra/rsvzone.py` и файервол резерва в
+  `infra/nftguard/`. Правка `jobs.py` задевает и обычный основной бот (те же
+  задания), но не агента. **Обе роли**: код агента
   `domain/gateway/reserve/` вместе с разделом `reserve` документа
   конфигурации, правилами `awgrsv` в обвязке шлюза и словарём сообщений
   пары и гостевого канала `util/pairproto.py` (гостевым каналом говорят
@@ -250,7 +260,7 @@ GitHub `vX.Y.Z.P — …`.
   копят трафик линка агент и трафик через резерв сервер) — формат обязан
   совпадать на концах, как у канала. Блок `reserve` в `conf/app.yaml` и
   ключ `network.self_host` — шаблон конфига, общий для поставки; читает их
-  основной бот. Стенд `tests/lab/` в поставку хостов не входит — адресата
+  основной бот. Стенд `tests/lab/` (в том числе сценарии зоны) в поставку хостов не входит — адресата
   у его правки нет.
 - Число в строке — **минимальная версия роли**, с которой на этот релиз
   прыгают напрямую; хост ниже сначала обновляется на неё. Минимум — только
