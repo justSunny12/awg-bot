@@ -12,15 +12,19 @@ reserve — взаимный резерв серверов AWG на сторон
 - `liveness` — живость линка пары (пропуски keepalive, проба по подозрению);
 - `screen` — данные экранов раздела «🛟 Резерв»;
 - `peeradmin` — роль админа второго сервера;
-- `unpair` — удаление пары.
+- `unpair` — удаление пары;
+- `package` — пакет переезда: отметки, сборка, досылка, приём;
+- `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов.
 
-Дальше по этапам: пакет, переезд и возврат, голосование, пул адресов Telegram.
+Дальше по этапам: переезд и возврат, голосование, пул адресов Telegram.
 """
 from __future__ import annotations
 
+from .guest import ReserveGuestMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
 from .liveness import ReserveLivenessMixin
+from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .screen import ReserveScreenMixin
@@ -30,7 +34,8 @@ from .unpair import ReserveUnpairMixin
 
 
 class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, ReservePairingMixin,
-                   ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReserveUnpairMixin):
+                   ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
+                   ReserveGuestMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

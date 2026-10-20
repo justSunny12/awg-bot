@@ -1182,6 +1182,26 @@ cmd_post_uninstall() {
             fi
         fi
     fi
+    # Взаимный резерв серверов: линк пары, гостевая зона с хранилищем в памяти
+    # и её юниты — целиком работа бота; снимаем без вопроса (данных основы на
+    # диске нет, только шифротексты).
+    if [[ -x /usr/local/sbin/reserve-pair-setup.sh || -e /run/netns/awg-guest || -f /etc/amnezia/amneziawg/awgpair.conf \
+          || -f /etc/systemd/system/awg-bot-guest.service ]]; then
+        if [[ -x /usr/local/sbin/reserve-pair-setup.sh ]]; then
+            sh /usr/local/sbin/reserve-pair-setup.sh --down >/dev/null 2>&1 || true
+            rm -f /usr/local/sbin/reserve-pair-setup.sh
+        fi
+        systemctl disable --now awg-pair.service awg-bot-guest.service awg-bot-guest-dns.service 2>/dev/null || true
+        rm -f /etc/systemd/system/awg-pair.service /etc/systemd/system/awg-bot-guest.service \
+              /etc/systemd/system/awg-bot-guest-dns.service /etc/systemd/journald@awg-guest.conf
+        rm -f /etc/amnezia/amneziawg/awgpair.conf /etc/amnezia/amneziawg/awgpair.conf.next /etc/amnezia/amneziawg/awgpair.conf.prev
+        if mountpoint -q /run/awg-bot-guest 2>/dev/null; then umount -l /run/awg-bot-guest 2>/dev/null || true; fi
+        rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv
+        ip netns del awg-guest 2>/dev/null || true
+        nft delete table inet awg_guest 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+        ok "линк пары и гостевая зона резерва сняты"
+    fi
     # Firewall: снимаем ТОЛЬКО свою таблицу/файл (их создал awg-bot firewall setup).
     # Снятие адресных drop'ов делает SSH снова открытым для всех — доступ к хосту
     # при этом НЕ теряется (мы только убираем ограничение, а не рвём established).
@@ -1237,6 +1257,28 @@ cmd_first_device() {  # показать конфигурацию первого
     ( cd "$INSTALL_DIR" \
         && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
         && ./venv/bin/python -m tools.first_device "$@" )
+}
+
+cmd_reserve() {  # reserve status | plan | selftest | open — взаимный резерв серверов: зона и процесс открытия
+    local sub="${1:-status}"; shift || true
+    local zone="$INSTALL_DIR/install/reserve-zone-setup.sh"
+    case "$sub" in
+        status)
+            require_installed
+            [[ -x /usr/local/sbin/reserve-pair-setup.sh ]] && sh /usr/local/sbin/reserve-pair-setup.sh --status 2>/dev/null || echo "pair=absent"
+            bash "$zone" --status ;;
+        plan)     bash "$zone" --plan ;;
+        selftest) require_root; bash "$zone" --selftest ;;
+        open)
+            # процесс открытия: вход — ТОЛЬКО stdin (доли, код или K — секреты
+            # не в argv); зовёт бот резерва временным юнитом с песочницей
+            require_root
+            ( cd "$INSTALL_DIR" \
+                && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+                && exec ./venv/bin/python -m tools.rsvopen "$@" ) ;;
+        zone)     require_root; bash "$zone" "$@" ;;
+        *) die "awg-bot reserve: status | plan | selftest | open | zone --<режим>" ;;
+    esac
 }
 
 cmd_awg() {  # awg status | install | reload | plan — ядро по манифесту поставки
@@ -1611,6 +1653,11 @@ awg-bot — управление установленным ботом.
                              status | install | reload | prune | plan
   awg-bot first-device       конфигурация первого устройства админа в терминал
                              (ссылка, QR и файл — когда Telegram недоступен)
+  awg-bot reserve <cmd>      взаимный резерв серверов: status — линк пары и гостевая зона;
+                             plan — что умеет хост (хранилище в памяти, порт вебхука, очередь);
+                             selftest — проверка механики зоны на модуле ядра;
+                             open — процесс открытия пакета (вход — JSON в stdin, зовёт бот);
+                             zone --<режим> — скрипт зоны напрямую
   awg-bot resolver <cmd>     свой DNS-резолвер клиентов (dnsmasq на <подсеть>.1):
                              status | install [addr] | add <addr> | remove <addr> | plan |
                              dropin — обновить override юнита dnsmasq (зовёт бот на старте);
@@ -1646,6 +1693,7 @@ case "$VERB" in
     join)        cmd_join "$@" ;;
     lan)         cmd_lan "$@" ;;
     awg)         cmd_awg "$@" ;;
+    reserve)     cmd_reserve "$@" ;;
     first-device) cmd_first_device "$@" ;;
     resolver)    cmd_resolver "$@" ;;
     -h|--help|help|"") usage ;;

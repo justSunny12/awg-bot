@@ -29,6 +29,12 @@ async def main() -> None:
     settings.init(config.CONF_DIR)          # горячий кэш conf/*.yaml (до чтений)
     pkg.log_zone()                          # пояс показа — строкой в журнал (обе роли)
 
+    if config.GUEST:
+        # бот основы на резерве: те же данные клиентов, но в хранилище в памяти
+        # и в сетевом пространстве зоны — свой старт (runtime/main/guest.py),
+        # без всего, что действует на хост
+        await pkg.run_guest()
+        return
     if config.ROLE == "gateway":
         # Роль агента шлюза — свой мир целиком (docs/ROADMAP.md, п.7): ни
         # клиентов, ни awg-сервера, ни вотчдога конфига. Ветвимся РАНО, а не
@@ -319,9 +325,15 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)
         try:
-            # канал пары серверов (резерв): слушатель у пригласившего, клиент у принявшего
+            # канал пары серверов (резерв): слушатель у пригласившего, клиент у принявшего;
+            # крючок коммита базы — отметка пакета переезда; на старте пакет уходит заново
             from awgbot.runtime import pairlink
+            services.reserve_pkg_hook_install()
+            if services.reserve_paired():
+                services.reserve_pkg_mark()
             await pairlink.ensure(services)
+            from awgbot.runtime.pairlink import guestctl
+            await guestctl.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("канал пары: не поднят: %s", e)
         try:
@@ -365,7 +377,9 @@ async def main() -> None:
         watcher.stop()
         conf_watcher.stop()
         from awgbot.runtime import linkserver, pairlink
+        from awgbot.runtime.pairlink import guestctl
         await linkserver.shutdown()
         await pairlink.shutdown()
+        await guestctl.shutdown()
         await bot.session.close()
         db.close()

@@ -62,6 +62,24 @@ class DatabaseCore:
             conn.close()
             self._local.conn = None
 
+    # ── вид транзакции и крючок коммита (пакет переезда резерву) ─────────────
+    # Любая запись в данные клиентов — повод обновить пакет переезда у резерва;
+    # запись счётчиков (трафик, рукопожатия, отметки опроса) — нет: её пишет
+    # каждый опрос, и пакет каждые 5 минут был бы маячком. Поэтому писатели
+    # счётчиков помечают транзакцию «counters», всё прочее — «data»; крючок
+    # коммита получает вид внешней транзакции. Внутри вложенных — старшинство
+    # у «data». Крючок — лёгкий: отметка в памяти, не запись в базу.
+    _TX_COUNTERS = "counters"
+    _TX_DATA = "data"
+
+    def _tx_note(self, kind: str) -> None:
+        if kind == self._TX_DATA or getattr(self._local, "tx_kind", None) is None:
+            self._local.tx_kind = kind
+
+    def set_commit_hook(self, fn) -> None:
+        """fn(kind) — после каждого коммита внешней транзакции; None — снять."""
+        self.__dict__["_commit_hook"] = fn
+
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Cursor]:
         """Транзакция с поддержкой вложенности: commit/rollback делает только
@@ -70,6 +88,8 @@ class DatabaseCore:
         conn = self._connection()
         depth = getattr(self._local, "tx_depth", 0)
         self._local.tx_depth = depth + 1
+        if depth == 0:
+            self._local.tx_kind = None
         cur = conn.cursor()
         try:
             yield cur
@@ -79,6 +99,13 @@ class DatabaseCore:
                 conn.commit()
                 self.__dict__["_commits"] = self.__dict__.get("_commits", 0) + 1
                 _access_cache.invalidate_all()      # любая запись → middleware перечитает
+                hook = self.__dict__.get("_commit_hook")
+                if hook is not None:
+                    kind = getattr(self._local, "tx_kind", None) or self._TX_DATA
+                    try:
+                        hook(kind)
+                    except Exception:                  # noqa: BLE001 — крючок не роняет запись
+                        pass
         except Exception:
             if depth == 0:
                 conn.rollback()
@@ -149,6 +176,10 @@ class DatabaseCore:
                 self._hot_state[key] = value
             return False
         with self._tx() as cur:
+            # состояние — данные клиентов только для ключей белого списка пакета
+            # (почта выхода из паузы и подобное); стрики, отметки и ключи резерва — счётчики
+            from awgbot.util.rsvpkg.bot import GUEST_STATE
+            self._tx_note(self._TX_DATA if key in GUEST_STATE else self._TX_COUNTERS)
             cur.execute(
                 """INSERT INTO server_state (key, value) VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",

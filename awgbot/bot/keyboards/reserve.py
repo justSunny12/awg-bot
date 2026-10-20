@@ -66,6 +66,15 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool) ->
         _back())
 
 
+def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:
+    """Карточка резерва в боте основы на резерве: вернуть клиентов (когда
+    основа снова в строю и рычаг «по кнопке»), обновить, назад."""
+    return ui.rows(
+        ("↩️ Вернуть клиентов", RsvCB(action="back")) if can_return else None,
+        ("🔄 Обновить", RsvCB(action="refresh")),
+        _back())
+
+
 def emergency(has_code: bool) -> InlineKeyboardMarkup:
     return ui.rows(
         [("🔑 Показать код", RsvCB(action="show_code")) if has_code else None,

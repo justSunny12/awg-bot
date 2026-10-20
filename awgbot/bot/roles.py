@@ -17,7 +17,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclasses_replace
 
 from awgbot.bot.callbacks import GwCB, Menu, SetCB
 
@@ -158,10 +158,11 @@ class BotRole:
     keys: Keys
     has: Has
     cb: RoleCB = field(compare=False)   # переводчик колбэков роли
+    root_text: str = ""          # «модуль:функция» — свой текст корня «⚙️ Настроек»: async fn(services) -> str (OPTIONAL)
 
 
 # Поля, которые у одной из ролей законно пусты — сторож заполненности их пропускает.
-OPTIONAL = frozenset({"keys.temp_alert", "ssh_port_tail", "subsections", "awg_restart_fail_hint"})
+OPTIONAL = frozenset({"keys.temp_alert", "ssh_port_tail", "subsections", "awg_restart_fail_hint", "root_text"})
 
 
 MAIN = BotRole(
@@ -224,7 +225,20 @@ GATEWAY = BotRole(
 )
 
 
+# Бот основы на резерве (гостевой режим, config.GUEST): тот же основной бот,
+# но «⚙️ Настройки» — только «🛟 Резерв»; разделов хоста (сервер, SSH, почта,
+# подписки, бэкапы, обновления, сервис) нет — они действуют на хост основы,
+# а он сейчас не здесь. Остальные строки — как у MAIN: клиенты и админ видят
+# тот же бот.
+GUEST = dataclasses_replace(MAIN, name="guest",
+                            settings_root=("rsv",), subsections=(), root_labels={"rsv": "🛟 Резерв"},
+                            has=Has(email_resume=True, migration=False, gw_emergency=False, fleet=False),
+                            root_text="awgbot.bot.handlers.settings.reserve.guest:settings_root_text")
+
+
 def current() -> BotRole:
-    """Словарь роли этой установки — по config.ROLE."""
+    """Словарь роли этой установки — по config.ROLE и признаку гостя."""
     from awgbot.core import config
-    return GATEWAY if config.ROLE == "gateway" else MAIN
+    if config.ROLE == "gateway":
+        return GATEWAY
+    return GUEST if config.GUEST else MAIN

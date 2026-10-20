@@ -36,6 +36,14 @@ APP_SECTIONS: tuple[str, ...] = ("client_config", "routing", "bonus", "timezone"
 FORBIDDEN_CONF: tuple[str, ...] = ("awg", "network", "docker", "backup", "gateway", "updates", "reserve",
                                    "bot_identity", "dnsmasq_conf", "dnsmasq_service", "conf_dir")
 ENV_KEYS: tuple[str, ...] = ("BOT_TOKEN", "ADMIN_ID")
+# Ключи app.yaml из запрещённых разделов, которые гостю всё же нужны: без них
+# бот основы на резерве не соберёт ссылки и конфигурации клиентов (адрес,
+# порт и подсеть — те же, что у основы: клон несёт её интерфейс) и не отличит
+# своего протокола. Ровно этот перечень, ничего с путями.
+APP_GUEST_KEYS: dict[str, tuple[str, ...]] = {
+    "awg": ("protocol_id",),
+    "network": ("server_host", "server_port", "subnet_prefix", "subnet_cidr", "ip_host_start", "ip_host_end"),
+}
 
 
 class BotPartError(ValueError):
@@ -76,6 +84,28 @@ def conf_part(conf_dir: str) -> dict:
         app = {}
     if isinstance(app, dict):
         out["app"] = {k: _clean(app[k]) for k in APP_SECTIONS if k in app}
+    return out
+
+
+def guest_part(conf_dir: str) -> dict:
+    """Ключи запрещённых разделов app.yaml, нужные гостю (APP_GUEST_KEYS):
+    только скаляры, не пути. Отдельная часть бота (`app_guest`), не внутри
+    значений настроек: сторож «разделов хоста в настройках нет» остаётся строгим."""
+    import yaml
+    try:
+        with open(os.path.join(conf_dir, "app.yaml"), encoding="utf-8") as f:
+            app = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    out: dict = {}
+    for sec, keys in APP_GUEST_KEYS.items():
+        src = app.get(sec) if isinstance(app, dict) else None
+        if not isinstance(src, dict):
+            continue
+        vals = {k: src[k] for k in keys if k in src and isinstance(src[k], (str, int, float, bool))
+                and not _looks_like_path(src[k])}
+        if vals:
+            out[sec] = vals
     return out
 
 

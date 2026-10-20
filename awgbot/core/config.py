@@ -124,6 +124,8 @@ def validate() -> None:
         raise RuntimeError(
             f"Неизвестная role={ROLE!r} в app.yaml. Допустимо: client (бот при "
             f"awg-сервере) или gateway (агент на шлюзе маршрутизации).")
+    if GUEST and ROLE != "client":
+        raise RuntimeError("Гостевой режим (AWG_BOT_GUEST / app.guest) — только у основного бота, не у агента.")
 
     # Топология — обязательные ключи yaml, СВОИ у каждой роли: шлюзу не нужен
     # ни server_host, ни порт — он не выдаёт конфигов. Требовать их у агента
@@ -160,6 +162,13 @@ TZ_HOST_NAME, TZ_BAD_VALUE, TZ_HOST_KNOWN = _zone.host_name, _zone.bad_value, _z
 # Дефолт — client: боевой app.yaml при обновлении не мигрирует, и отсутствие
 # ключа обязано означать «сервер, который обновился».
 ROLE = str(_app.get("role") or "client").strip().lower()
+# Гостевой режим — тот же основной бот, но запущенный на резерве с данными
+# основы (взаимный резерв серверов): признак — переменная AWG_BOT_GUEST юнита
+# гостя или `guest: true` в его app.yaml (его собирает процесс открытия). Не
+# новая роль: клиенты и админ основы видят тот же бот; отличия — в старте,
+# планировщике и отказах хостовых сервисов (runtime/main/guest.py).
+GUEST: bool = (str(os.environ.get("AWG_BOT_GUEST", "") or "").strip().lower() in ("1", "true", "yes")
+               or bool(_app.get("guest")))
 
 _gw = _app.get("gateway", {})
 # Интерфейс линка до ВПС и каталог его конфига — те же, что у скриптов обвязки.

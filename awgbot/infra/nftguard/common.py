@@ -24,6 +24,10 @@ SET_TUNNEL_ADMIN = "admin4"
 # Адреса шлюзов в /30 линков: им и только им открыт порт канала.
 # Клиентская подсеть в tunnel_nets4 сюда не входит — канал не для клиентов.
 SET_LINK_PEERS = "link_peers4"
+# Пул адресов Telegram: только с них порт вебхука гостевой зоны резерва уходит
+# DNAT в зону; ведёт бот резерва (ядро — диапазоны со страницы Bot API).
+SET_TG_POOL = "tg_pool4"
+DEFAULT_TG_POOL = ("149.154.160.0/20", "91.108.4.0/22")
 # Частные адреса (RFC 1918): из туннеля к провайдеру они не уходят. Служебное
 # пространство адресов в туннеле (10.240.0.0/12, routing.lan_space) — внутри
 # них по построению: util/lanspace принимает только частную /12.
@@ -74,6 +78,16 @@ class GuardSpec:
     pair_if: str = ""                                         # линк пары серверов (резерв): вход — только канал
     pair_peer4: str = ""                                      #   пары с адреса второй стороны в /30, пересылки нет
     pair_port: int = 0                                        #   порт канала пары (TCP внутри линка)
+    # гостевая зона резерва (клиенты основы у меня): состояние зоны из state.json
+    guest_phase: str = ""                                     # idle | taking | serving | relay
+    guest_udp_port: int = 0                                   # порт клона: сокет у хоста — вход открыт (taking, serving)
+    guest_veth_if: str = ""                                   # veth хост ↔ зона: выход зоны наружу через NAT хоста
+    guest_zone4: str = ""                                     # адрес зоны в veth: DNAT вебхука сюда
+    guest_zone_net4: str = ""                                 # /30 veth: маскарад наружу
+    guest_webhook_port: int = 0                               # порт вебхука: DNAT в зону только с пула Telegram (serving)
+    tg_pool4: list[str] = field(default_factory=list)         # пул адресов Telegram (набор tg_pool4)
+    relay_to: str = ""                                        # «адрес:порт» основы: пересылка хвоста UDP (relay)
+    relay_udp_port: int = 0                                   # порт, который пересылается
 
 
 def enabled() -> bool:

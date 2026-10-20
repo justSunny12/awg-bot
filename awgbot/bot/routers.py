@@ -25,8 +25,8 @@ def routers_for(role: str) -> list[Router]:
     в порядке включения. Импорты ленивые: модуль не тянет хендлеры при загрузке."""
     from awgbot.bot import paging, sections
     from awgbot.bot.handlers import hide, reply_commands, stale
-    from awgbot.bot.roles import GATEWAY, MAIN
-    br = GATEWAY if role == "gateway" else MAIN
+    from awgbot.bot.roles import GATEWAY, GUEST, MAIN
+    br = GATEWAY if role == "gateway" else (GUEST if role == "guest" else MAIN)
     # общие разделы — раньше роутеров роли: у тех широкие фильтры (act == "do")
     head = [paging.make_router(), hide.make_router(), reply_commands.make_cancel_router()]
     shared = sections.make_router(br)
@@ -45,6 +45,13 @@ def routers_for(role: str) -> list[Router]:
     # message-хендлером клиента; stale ПОСЛЕДНИМ
     # peeradmin — до admin и клиентов: роль «админ второго сервера» ничего, кроме
     # своего экрана, не видит
+    if role == "guest":
+        # бот основы на резерве: клиентские роутеры целиком; админские — за
+        # загородкой guest, которая отвечает Т-РГ2 на всё, что действует на хост
+        # основы (шлюзы, обновления, бэкапы, сервис, восстановление, переезд)
+        from awgbot.bot.handlers import guest
+        return head + [reply_commands.router, shared, guest.router, admin.router, settings.router, guide.router,
+                       friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
     return head + [reply_commands.router, shared, peeradmin.router, admin.router, settings.router, guide.router,
                    friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
 

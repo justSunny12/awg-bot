@@ -355,6 +355,7 @@ class ReservePairingMixin:
         self.rsv_update("rsv_peer_state", linked_msg=list(st.get("msg") or []))   # живое сообщение приглашения — итогу
         self.rsv_put("rsv_invite", None)
         _live_set(None)
+        self.reserve_pkg_mark()                          # первый пакет — в ближайшие секунды
         try:
             self._gw_firewall_refresh()
         except Exception as e:                            # noqa: BLE001

@@ -277,6 +277,8 @@ class DevicesMixin:
         if not by_table:
             return
         with self._tx() as cur:
+            # рукопожатие пишет каждый опрос — счётчик; остальные поля — данные
+            self._tx_note(self._TX_COUNTERS if set(fields) <= {"last_handshake"} else self._TX_DATA)
             for table, cols in by_table.items():
                 key = self._DEVICE_KEY[table]
                 assignments = ", ".join(f"{c} = ?" for c in cols)

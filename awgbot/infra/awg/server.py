@@ -72,7 +72,17 @@ def service_started_at() -> Optional[str]:
 
 def restart_server() -> None:
     """Перезапуск AmneziaWG: awg-quick down/up. Правила iptables при этом не
-    слетают, но реконсиляция блокировок в вызывающем безвредна."""
+    слетают, но реконсиляция блокировок в вызывающем безвредна.
+
+    В гостевом режиме (бот основы на резерве) интерфейс — клон в сетевом
+    пространстве зоны без awg-quick: конфиг клона без хуков и Table, адрес и
+    маршрут клону ставила зона; перезапуск — вниз, setconf, вверх."""
+    if config.GUEST:
+        iface = config.AWG_INTERFACE
+        pkg._run(["ip", "link", "set", iface, "down"], check=False, timeout=30)
+        pkg._run(["awg", "setconf", iface, config.CONF_PATH], timeout=60)
+        pkg._run(["ip", "link", "set", iface, "up"], timeout=30)
+        return
     # down может честно не сработать, если интерфейса нет, — это не ошибка,
     # ради которой стоит не поднимать его обратно.
     pkg._run(["awg-quick", "down", config.AWG_INTERFACE], check=False, timeout=60)

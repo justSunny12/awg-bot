@@ -1,0 +1,186 @@
+"""
+guest.py — часть пакета reserve (см. __init__): бот основы на резерве
+(гостевой режим, `config.GUEST`).
+
+- шифрованные снимки `rep.bin`: тот же крючок коммита базы, что ставит
+  отметку пакета у основы, здесь ставит отметку «снимок устарел» — любая
+  запись, и счётчики тоже; такт пишет снимок базы под `K` из хранилища гостя
+  (ключ в памяти, на диске — только шифротекст);
+- состояние основы глазами резерва — из локального канала с ботом резерва
+  (`runtime/pairlink/guestctl`): для Т-РГ1, Т-РГ3 и кнопки возврата;
+- отказы хостовых сервисов: файервол хоста, SSH-доступ, резолвер админа,
+  адреса в туннеле, шлюзы, бэкапы, обновления, переезд профилей — методы из
+  HOST_ONLY в гостевом режиме отвечают ServiceError (сторож-тест по списку).
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+import tempfile
+import time
+
+from awgbot.core import config
+from awgbot.util import timeutil
+
+from ..types import ServiceError
+from ..gateway_link.common import log
+
+SNAPSHOT_BATCH_SECONDS = 30
+GUEST_REFUSED = "На резерве это недоступно — вернётся вместе с клиентами"
+DEVICE_CONFIG_LATER = ("📄 Конфигурацию этого устройства покажу, когда сервер вернётся в строй. VPN на нём "
+                       "работает, как прежде")
+
+# методы Services, которые действуют на хост и в гостевом режиме отказывают
+HOST_ONLY: tuple[str, ...] = (
+    "reconcile_ssh_access", "ssh_port_change", "ssh_port_drift_notes", "firewall_enable", "firewall_disable",
+    "firewall_confirm", "firewall_allow_add", "firewall_allow_remove", "retire_legacy_ssh_gate",
+    "routing_provision", "routing_update_lists", "check_resource_alerts", "private_dns_decision",
+    "gwcfg_doc", "gwlink_lan_feeds_update",
+    "make_backup", "backup_set_passphrase", "restore_wait_start",
+    "fleet_start", "fleet_run", "apply_update", "migration_prepare", "migration_start", "migration_finish",
+    "reserve_invite_issue", "reserve_accept_go", "reserve_unpair", "reserve_new_generation",
+)
+
+
+class ReserveGuestMixin:
+    @property
+    def guest(self) -> bool:
+        return bool(config.GUEST)
+
+    # ── отказы хостовых сервисов ────────────────────────────────────────────
+    def guest_install_refusals(self) -> list[str]:
+        """Подменить методы HOST_ONLY отказом; вернуть имена, которых у класса
+        нет (сторож-тест ждёт пустой список)."""
+        missing = []
+        for name in HOST_ONLY:
+            if not hasattr(type(self), name):
+                missing.append(name)
+                continue
+            self.__dict__[name] = self._guest_refuser(name)
+        return missing
+
+    @staticmethod
+    def _guest_refuser(name: str):
+        def refuse(*_a, **_k):
+            raise ServiceError(GUEST_REFUSED)
+        refuse.__name__ = name
+        return refuse
+
+    # ── снимки ──────────────────────────────────────────────────────────────
+    def guest_snapshot_hook_install(self) -> None:
+        self.db.set_commit_hook(self._guest_snapshot_touch)
+        self.__dict__["_guest_snap_due"] = time.monotonic()
+
+    def _guest_snapshot_touch(self, kind: str) -> None:
+        self.__dict__.setdefault("_guest_snap_due", time.monotonic())
+
+    def guest_snapshot_mark(self) -> None:
+        self.__dict__["_guest_snap_due"] = time.monotonic()
+
+    def guest_snapshot_due(self) -> bool:
+        due = self.__dict__.get("_guest_snap_due")
+        return due is not None and time.monotonic() - due >= SNAPSHOT_BATCH_SECONDS
+
+    def guest_snapshot_tick(self, force: bool = False) -> bool:
+        """Снимок базы под `K` в `rep.bin`, если отметка старше такта (или force)."""
+        if not force and not self.guest_snapshot_due():
+            return False
+        try:
+            blob = self.guest_snapshot_bytes()
+        except (OSError, ValueError, sqlite3.Error) as e:
+            log.warning("гость: снимок не собрался: %s", e)
+            return False
+        from awgbot.infra import rsvzone
+        try:
+            rsvzone.write_private(rsvzone.REP_PATH, blob)
+        except OSError as e:
+            log.warning("гость: снимок не записан: %s", e)
+            return False
+        self.__dict__["_guest_snap_due"] = None
+        self.__dict__["_guest_snap_at"] = timeutil.now_iso()
+        return True
+
+    def guest_snapshot_bytes(self) -> bytes:
+        """Шифротекст снимка: вся база гостя (с историей с момента переезда)
+        под `K` из хранилища; `pkg_gen` — из отметки процесса открытия."""
+        from awgbot.infra import rsvzone
+        from awgbot.util.rsvpkg import seal
+        k = bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())
+        meta = rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json")
+        obj = {"pkg_gen": int(meta.get("pkg_gen") or 0), "at": timeutil.now_iso(), "db": self._guest_db_bytes().hex()}
+        return seal.snapshot_seal(k, obj)
+
+    def _guest_db_bytes(self) -> bytes:
+        fd, tmp = tempfile.mkstemp(prefix="rsv-snap-", suffix=".db", dir=str(config.DATA_DIR))
+        os.close(fd)
+        try:
+            src = sqlite3.connect(str(config.DB_PATH))
+            try:
+                dst = sqlite3.connect(tmp)
+                try:
+                    src.backup(dst)
+                    dst.execute("PRAGMA journal_mode = DELETE")
+                    dst.commit()
+                finally:
+                    dst.close()
+            finally:
+                src.close()
+            with open(tmp, "rb") as f:
+                return f.read()
+        finally:
+            for suffix in ("", "-wal", "-shm", "-journal"):
+                try:
+                    os.unlink(tmp + suffix)
+                except OSError:
+                    pass
+
+    def guest_snapshot_at(self) -> str:
+        return str(self.__dict__.get("_guest_snap_at") or "")
+
+    # ── состояние от бота резерва ───────────────────────────────────────────
+    def guest_state_in(self, body: dict) -> None:
+        """`state` из локального канала: имя резерва, с какого момента несёт
+        нагрузку, причина, состояние основы, рычаг возврата."""
+        data = {k: body.get(k) for k in ("name", "since", "reason", "primary", "return", "self_host", "own_name")
+                if k in body}
+        data["at"] = timeutil.now_iso()
+        self.__dict__["_guest_state"] = data
+
+    def guest_state(self) -> dict:
+        data = dict(self.__dict__.get("_guest_state") or {})
+        if not data.get("own_name"):
+            data["own_name"] = str(config.SERVER_NAME or "")
+        return data
+
+    def guest_devices_online(self) -> int:
+        try:
+            return len(self.online_devices())
+        except Exception:                                     # noqa: BLE001
+            return 0
+
+    def guest_screen_data(self) -> dict:
+        d = self.guest_state()
+        d["online"] = self.guest_devices_online()
+        d["snapshot_at"] = self.guest_snapshot_at()
+        return d
+
+    # ── сторона бота резерва: что сказать гостю ─────────────────────────────
+    def reserve_guest_state_view(self) -> dict:
+        """Состояние основы глазами резерва — гостю по локальному каналу:
+        имя резерва и его адрес, с какого момента и почему несу нагрузку,
+        основа жива или нет, рычаг возврата."""
+        from awgbot.core import settings
+        from ..selfhost import own_host
+        inn = self.rsv_get("rsv_in")
+        seen = self.reserve_peer_seen()
+        primary = {"status": "dead" if seen == "down" else ("alive" if seen == "ok" else "suspect"),
+                   "since": self.reserve_down_since() if seen == "down" else ""}
+        return {"name": str(config.SERVER_NAME or ""), "self_host": own_host(),
+                "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
+                "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
+                "own_name": self.reserve_peer_name()}
+
+    def guest_can_return(self) -> bool:
+        """«↩️ Вернуть клиентов» — только когда основа снова в строю и рычаг «по кнопке»."""
+        d = self.guest_state()
+        return (d.get("primary") or {}).get("status") == "alive" and d.get("return") == "button"

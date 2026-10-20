@@ -150,6 +150,7 @@ class TrafficMixin:
             return
         now = _now_iso()
         with self._tx() as cur:
+            self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда
             cur.executemany(
                 """INSERT INTO traffic_samples (device_id, last_rx, last_tx, last_update)
                    VALUES (?, ?, ?, ?)
@@ -165,6 +166,7 @@ class TrafficMixin:
         if not rows:
             return
         with self._tx() as cur:
+            self._tx_note(self._TX_COUNTERS)
             cur.executemany(
                 """UPDATE device_traffic
                    SET traffic_rx_month = traffic_rx_month + ?, traffic_tx_month = traffic_tx_month + ?,
