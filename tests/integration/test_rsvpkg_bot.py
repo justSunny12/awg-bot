@@ -218,3 +218,24 @@ def test_a_broken_or_missing_conf_file_is_skipped_not_fatal(tmp_path):
     (tmp_path / "pause.yaml").write_text("- просто список\n", encoding="utf-8")
     conf = bot.conf_part(str(tmp_path))
     assert "limits" not in conf and "pause" not in conf and conf.get("app") == {}
+
+
+# ── кэш списков РФ-доступа ──────────────────────────────────────────────────
+
+def test_the_lists_part_carries_every_routing_cache_without_blank_lines(tmp_path):
+    (tmp_path / "routing-tun_domains.lst").write_text("gosuslugi.ru\n\n  nalog.ru  \n", encoding="utf-8")
+    (tmp_path / "routing-tun_subnets.lst").write_text("198.51.100.0/24\n", encoding="utf-8")
+    (tmp_path / "bot.db").write_bytes(b"DUMMY")
+    (tmp_path / "routing-.lst").write_text("x\n", encoding="utf-8")
+    (tmp_path / "routing-a.b.lst").write_text("x\n", encoding="utf-8")
+    (tmp_path / "other.lst").write_text("x\n", encoding="utf-8")
+    assert bot.lists_part(str(tmp_path)) == {"tun_domains": ["gosuslugi.ru", "nalog.ru"],
+                                              "tun_subnets": ["198.51.100.0/24"]}, \
+        "в часть списков попало не то, что читает маршрутизация"
+
+
+def test_the_lists_part_of_a_missing_dir_is_empty_and_a_huge_list_is_capped(tmp_path):
+    assert bot.lists_part(str(tmp_path / "нет")) == {}
+    (tmp_path / "routing-big.lst").write_text("\n".join(f"d{i}.example" for i in range(bot.LISTS_MAX + 5)),
+                                              encoding="utf-8")
+    assert len(bot.lists_part(str(tmp_path))["big"]) == bot.LISTS_MAX, "пакет без потолка разрастается без меры"

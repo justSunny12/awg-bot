@@ -106,16 +106,20 @@ def test_the_role_router_stands_before_admin_settings_and_clients():
 
 
 def test_every_role_handler_is_behind_the_role_filter():
-    from awgbot.bot.filters import RoleFilter
+    """Сообщения роли — только роли; кнопки экрана роли — роли или общему
+    админу обоих серверов (экран роли — раздел его «🛟 Резерв»)."""
+    from awgbot.bot.filters import PeerAdminFilter, RoleFilter
     from awgbot.bot.handlers import peeradmin
-    for observer in (peeradmin.router.message, peeradmin.router.callback_query):
-        roles = [f.callback.roles for f in observer._handler.filters if isinstance(f.callback, RoleFilter)]
-        assert roles == [{"peer_admin"}], f"обработчики роли без фильтра роли: {roles}"
+    roles = [f.callback.roles for f in peeradmin.router.message._handler.filters if isinstance(f.callback, RoleFilter)]
+    assert roles == [{"peer_admin"}], f"сообщения роли без фильтра роли: {roles}"
+    cb = [f.callback for f in peeradmin.router.callback_query._handler.filters]
+    assert len(cb) == 1 and isinstance(cb[0], PeerAdminFilter), f"кнопки роли без фильтра роли: {cb}"
 
 
 # только чтение сведений о паре; reserve_peer_admin_opened — отметка «админ
 # второго сервера открыл бот» (без неё бот не знает, можно ли ему писать)
-_ALLOWED = {"reserve_peer_admin_summary", "reserve_peer_admin_opened"}
+# reserve_peer_admin_client — чтение: клиент ли он здесь («👤 Меню клиента»)
+_ALLOWED = {"reserve_peer_admin_summary", "reserve_peer_admin_opened", "reserve_peer_admin_client"}
 
 
 def test_the_role_router_writes_nothing():

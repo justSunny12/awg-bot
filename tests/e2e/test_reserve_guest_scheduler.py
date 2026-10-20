@@ -1,5 +1,6 @@
 """Планировщик бота основы на резерве (runtime/scheduler/guest.py): ровно
-задания данных клиентов плюс три своих; хостовых заданий нет.
+задания данных клиентов, три своих и два РФ-доступа в зоне (сверка
+маршрутизации и живость слотов); хостовых заданий нет.
 
 Цена ошибки: задание хоста (бэкапы, набор обновлений, метрики железа,
 доставка шлюзам, доступ по SSH) в гостевом планировщике — бот основы на
@@ -23,6 +24,8 @@ pytestmark = pytest.mark.e2e
 # задания данных клиентов основы + задача шифрованного снимка + монитор без хоста + такт канала
 CORE = {"poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_resume", "tg_names", "tg_names_startup"}
 OWN = {"guest_monitor", "guest_snapshot", "guest_ctl"}
+# РФ-доступ клиентов основы в зоне — тем же кодом, что на основе
+ROUTING = {"guest_routing", "routing_liveness"}
 HOST_JOBS = {"backup", "monitor", "fleet", "gwjoin", "migration_watch", "ssh_access", "hostmetrics", "gw_delivery",
              "resource_alerts", "update_check"}
 
@@ -38,9 +41,10 @@ def _ids(sched) -> set[str]:
     return {j.id for j in sched.get_jobs()}
 
 
-def test_the_guest_scheduler_has_exactly_the_client_data_jobs_and_the_three_own_ones(guest_sched):
-    assert _ids(guest_sched) == CORE | OWN, f"лишнее/пропавшее: {_ids(guest_sched) ^ (CORE | OWN)}"
-    assert set(GUEST_JOBS) == CORE | OWN, "перечень GUEST_JOBS разошёлся с планировщиком"
+def test_the_guest_scheduler_has_exactly_the_client_data_jobs_its_own_ones_and_routing(guest_sched):
+    want = CORE | OWN | ROUTING
+    assert _ids(guest_sched) == want, f"лишнее/пропавшее: {_ids(guest_sched) ^ want}"
+    assert set(GUEST_JOBS) == want, "перечень GUEST_JOBS разошёлся с планировщиком"
 
 
 def test_no_host_job_is_scheduled_on_the_reserve(guest_sched, services, fake_bot):
@@ -132,3 +136,46 @@ async def test_a_failing_monitor_step_does_not_stop_the_other_one(guest_sched, s
     monkeypatch.setattr(services, "server_ok", lambda: True)
     await guest_sched.get_job("guest_monitor").func()
     assert services.db.get_state("last_server_ok") == "1"
+
+
+# ── РФ-доступ в зоне ────────────────────────────────────────────────────────
+
+async def test_the_routing_job_reconciles_and_sends_the_infra_alerts(guest_sched, services, fake_bot, monkeypatch):
+    from awgbot.domain.services.types import Notification
+    from awgbot.core import config
+    done = []
+    monkeypatch.setattr(services, "reconcile_routing", lambda *a, **k: done.append("reconcile"))
+    monkeypatch.setattr(services, "routing_infra_alerts",
+                        lambda: [Notification(tg_id=config.ADMIN_ID, text="🔴 списки РФ-доступа не применились")])
+    await guest_sched.get_job("guest_routing").func()
+    assert done == ["reconcile"], "сверка маршрутизации гостя не запущена"
+    assert [r for r in fake_bot.records if r[0] == "send_message" and "списки РФ-доступа" in r[2]], fake_bot.records
+
+
+async def test_a_failing_routing_job_does_not_raise_into_the_scheduler(guest_sched, services, monkeypatch):
+    monkeypatch.setattr(services, "reconcile_routing", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nft")))
+    await guest_sched.get_job("guest_routing").func()
+    monkeypatch.setattr(services, "routing_liveness_tick", lambda: (_ for _ in ()).throw(RuntimeError("зонд")))
+    await guest_sched.get_job("routing_liveness").func()
+
+
+async def test_the_liveness_job_ticks_the_slots_and_sends_its_notes(guest_sched, services, fake_bot, monkeypatch):
+    from awgbot.domain.services.types import Notification
+    from awgbot.core import config
+    monkeypatch.setattr(services, "routing_liveness_tick",
+                        lambda: [Notification(tg_id=config.ADMIN_ID, text="⚠️ РФ-доступ переключён на шлюзы «Gamma»")])
+    await guest_sched.get_job("routing_liveness").func()
+    assert [r for r in fake_bot.records if r[0] == "send_message" and "шлюзы «Gamma»" in r[2]], fake_bot.records
+
+
+def test_the_liveness_job_follows_probe_seconds_with_jitter(services, fake_bot, monkeypatch):
+    real = settings.get_int
+    monkeypatch.setattr(settings, "get_int",
+                        lambda key, default=None: 40 if key == "app.routing.probe_seconds" else real(key, default))
+    sched = setup_guest_scheduler(services, fake_bot, services.db)
+    try:
+        trig = sched.get_job("routing_liveness").trigger
+        assert trig.interval.total_seconds() == 40 and trig.jitter and trig.jitter >= 2, \
+            "живость слотов без джиттера — зонды наружу строго периодичны"
+    finally:
+        restore_settings()

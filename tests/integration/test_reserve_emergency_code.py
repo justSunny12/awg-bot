@@ -121,3 +121,37 @@ def test_only_the_role_chat_handler_passes_a_code_to_the_reserve():
                 if isinstance(node, ast.Attribute) and node.attr == "reserve_code_in":
                     callers.append(str(path.relative_to(ROOT)))
     assert sorted(set(callers)) == ["awgbot/bot/handlers/peercode.py"], f"код принимают ещё и здесь: {callers}"
+
+
+def test_the_package_opened_by_the_code_is_said_as_code_in_st(h4):
+    """Открыт кодом — `in_by = code`: после возврата основа меняет поколение
+    ключа и просит сменить токен DNS (код видели, конверт DNS раскрыт)."""
+    assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"]
+    assert h4.s.rsv_get("rsv_in").get("by") == "code" and h4.s.reserve_st_body()["in_by"] == "code"
+
+
+def test_the_admin_of_both_servers_enters_the_code_as_himself(h4):
+    """Один человек — админ обоих: роль не наступает, код он вводит в своём
+    разделе — от ADMIN_ID код принимается только тогда."""
+    rc.pair_row(h4.s, admin=ADMIN)
+    assert h4.s.reserve_code_window()["open"]
+    res = h4.s.reserve_code_in(ADMIN, CODE)
+    assert res["ok"] and len(h4.launched) == 1, res
+
+
+@pytest.mark.parametrize("sees, why_text", [(True, "видит сервер — переезд не нужен"),
+                                           (False, "не видит сервер — переезд идёт сам")])
+def test_the_closing_notice_names_the_gateway_that_came_back(h4, sees, why_text):
+    """Т-РН3: окно закрыл вернувшийся шлюз — в тексте его имя («Шлюз «NASPi»
+    снова на связи»), а не имя сервера основы."""
+    acts = h4.hello(1, sees=sees)
+    acts += h4.tick()
+    told = [n for n in notes(acts) if n.tg_id == PEER_ADMIN]
+    assert len(told) == 1, [n.text for n in notes(acts)]
+    assert "Шлюз «NASPi»" in told[0].text and why_text in told[0].text and "«Beta»" not in told[0].text, told[0].text
+
+
+def test_the_closing_notice_names_the_primary_when_it_came_back_itself(h4):
+    h4.primary(True)
+    told = [n for n in notes(h4.tick()) if n.tg_id == PEER_ADMIN]
+    assert len(told) == 1 and "«Beta» снова на связи" in told[0].text, [n.text for n in told]

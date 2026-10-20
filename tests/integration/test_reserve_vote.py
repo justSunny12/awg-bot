@@ -326,3 +326,28 @@ def test_the_guest_channel_is_silent_for_an_hour_of_idle(box):
             box.keepalive()
         acts += box.tick()
     assert not [a for a in acts if a and a[0] in ("gw", "send", "notify")], f"в простое канал говорил: {acts[:5]}"
+
+
+def test_the_opening_by_shares_ensures_the_zone_shell_first_and_says_share_in_st(box, monkeypatch):
+    """Переезд по долям: оболочка зоны поднимается до процесса открытия, а
+    `in_by = share` уходит основе в st — по нему основа после возврата
+    меняет поколение ключа."""
+    order = []
+    monkeypatch.setattr(box.s, "reserve_zone_shell_ensure", lambda: order.append("shell") or True)
+    real = box._launch
+    monkeypatch.setattr(box.s, "_rsvopen_launch", lambda payload: order.append("open") or real(payload))
+    box.primary(False)
+    box.hello(1, sees=False)
+    box.hello(2, sees=True)                             # случай 5: need — сразу
+    box.share(1)
+    assert box.launched, "переезд по долям не начался"
+    assert order[:2] == ["shell", "open"], order
+    assert box.s.rsv_get("rsv_in").get("by") == "share" and box.s.reserve_st_body()["in_by"] == "share"
+
+
+def test_need_carries_the_generation_of_the_share_of_the_package(box):
+    """Шлюз сверяет поколение своей доли с m_gen в need — без поля сверять нечего."""
+    box.primary(False)
+    acts = box.hello(1, sees=False) + box.hello(2, sees=True)
+    need = gw_sent(acts, "need")
+    assert need and all(b.get("m_gen") == M_GEN for _s, b in need), need
