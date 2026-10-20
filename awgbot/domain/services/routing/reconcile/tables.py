@@ -175,21 +175,23 @@ class RoutingTablesMixin:
 
     def _routing_read_cache(self, kind: str) -> list[str]:
         """Пусто — значит списки ещё не качали. Файл перечитывается только при
-        смене mtime: раньше ~600 строк читались с диска каждый тик."""
+        смене mtime, inode или размера (одного mtime мало — на Linux две записи
+        подряд его не различают): раньше ~600 строк читались с диска каждый тик."""
         path = self._routing_cache(kind)
         try:
-            mtime = path.stat().st_mtime
+            st = path.stat()
+            key = (st.st_mtime_ns, st.st_ino, st.st_size)
         except OSError:
             return []
         mem = self.__dict__.setdefault("_routing_cache_mem", {})   # на экземпляр
         hit = mem.get(str(path))
-        if hit and hit[0] == mtime:
+        if hit and hit[0] == key:
             return list(hit[1])
         try:
             items = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
         except OSError:
             return []
-        mem[str(path)] = (mtime, items)
+        mem[str(path)] = (key, items)
         return list(items)
 
     # Реконсиляция упала. Отдельный ключ, а не флаг рядом с источниками: там

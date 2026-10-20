@@ -124,18 +124,21 @@ def server_host() -> str:
     return m.group(1).rsplit(":", 1)[0].strip("[]")
 
 
-_unit_cache: tuple[tuple[int, int], str] | None = None
+_unit_cache: tuple[tuple[int, int, int], str] | None = None
 
 
 def unit_text() -> str:
-    """Текст юнита обвязки с кэшем по mtime и размеру: за тик его читали
-    больше десяти раз регуляркой, а перезапись из потока канала посреди тика
-    давала снимок из двух версий. Нет файла — пусто."""
+    """Текст юнита обвязки с кэшем по mtime, размеру и inode: за тик его
+    читали больше десяти раз регуляркой, а перезапись из потока канала посреди
+    тика давала снимок из двух версий. Inode в ключе обязателен: замена файла
+    через tmp.replace даёт новый inode, а mtime на Linux грубый — две записи
+    подряд того же размера иначе неразличимы, и unit_env вернул бы прежний
+    текст. Нет файла — пусто."""
     global _unit_cache
     p = pkg.unit_path()
     try:
         st = p.stat()
-        key = (st.st_mtime_ns, st.st_size)
+        key = (st.st_mtime_ns, st.st_size, st.st_ino)
     except OSError:
         _unit_cache = None
         return ""

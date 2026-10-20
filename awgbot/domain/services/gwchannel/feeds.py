@@ -37,17 +37,19 @@ class FeedsMixin:
 
     def gwlink_lan_feeds_digest(self) -> str:
         """Отпечаток текущих фидов без разбора всего файла на каждом такте:
-        кеш по времени изменения, файл меняется раз в шесть часов."""
+        кеш по времени изменения, inode и размеру (одного mtime мало — на Linux
+        две записи подряд его не различают), файл меняется раз в шесть часов."""
         path = self._lan_feeds_path()
         try:
-            mtime = path.stat().st_mtime
+            st = path.stat()
+            key = (st.st_mtime_ns, st.st_ino, st.st_size)
         except OSError:
             return ""
         cached = self.__dict__.get("_lan_feeds_digest")
-        if cached and cached[0] == mtime:
+        if cached and cached[0] == key:
             return cached[1]
         digest = self.gwlink_lan_feeds().get("hash", "")
-        self.__dict__["_lan_feeds_digest"] = (mtime, digest)
+        self.__dict__["_lan_feeds_digest"] = (key, digest)
         return digest
 
     def gwlink_lan_feeds_update(self, force: bool = False) -> bool:
