@@ -88,12 +88,39 @@ class WebhookServer:
         self.set_at: str = ""
         self._stalled_since: float = 0.0
         self._stalled_notified = False
+        self._filter = None
+        self._pool_key = None
+
+    def refresh_pool(self, path=None) -> int:
+        """Файл пула перечитан (по mtime): новые префиксы — в фильтр слушателя без
+        перезапуска (хост выучил сеть Telegram во время обслуживания). Возвращает
+        число добавленных."""
+        import os
+        from awgbot.infra import rsvzone
+        p = path or rsvzone.TG_POOL_FILE
+        try:
+            st = os.stat(p)
+            key = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return 0
+        if key == self._pool_key:
+            return 0
+        self._pool_key = key
+        new = [x for x in load_pool(p) if x not in self.pool]
+        if not new:
+            return 0
+        self.pool.extend(new)
+        if self._filter is not None:
+            self._filter.allow(*new)
+        log.info("гость: пул адресов вебхука пополнен на %d префиксов", len(new))
+        return len(new)
 
     async def start(self, dp, bot, host: str = "0.0.0.0") -> None:
         from aiohttp import web
         from aiogram.webhook.aiohttp_server import SimpleRequestHandler, ip_filter_middleware, setup_application
         from aiogram.webhook.security import IPFilter
-        app = web.Application(middlewares=[ip_filter_middleware(IPFilter(self.pool))])
+        self._filter = IPFilter(self.pool)
+        app = web.Application(middlewares=[ip_filter_middleware(self._filter)])
         SimpleRequestHandler(dispatcher=dp, bot=bot, handle_in_background=False,
                              secret_token=self.conf.secret).register(app, path="/" + self.conf.path)
         setup_application(app, dp, bot=bot)

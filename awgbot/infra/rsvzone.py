@@ -46,11 +46,23 @@ def _script() -> Path:
     return config.BASE_DIR / "install" / "reserve-zone-setup.sh"
 
 
+def _zone_env() -> dict:
+    """Подсети veth зоны и таблица РФ-доступа — из настроек, чтобы скрипт и бот не
+    разошлись, если умолчания сменили."""
+    try:
+        from awgbot.core import settings
+        return {"ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
+                "ZONE_RF_CIDR": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "169.254.77.4/30"),
+                "RF_TABLE": str(int(config.ROUTING_TABLE))}
+    except Exception:                                     # noqa: BLE001 — настройки недоступны (CLI без conf)
+        return {}
+
+
 def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout: int = 240) -> str:
     """Один режим скрипта (`--shell`, `--take`, …). Ненулевой код — ZoneError
     с хвостом вывода; `--status` и `--plan` возвращают текст как есть."""
     args = ["bash", str(_script()), f"--{mode.lstrip('-')}"]
-    full_env = {**os.environ, **{k: str(v) for k, v in (env or {}).items()}}
+    full_env = {**os.environ, **_zone_env(), **{k: str(v) for k, v in (env or {}).items()}}
     try:
         proc = subprocess.run(args, capture_output=True, timeout=timeout, env=full_env,
                               input=(stdin.encode() if stdin is not None else None))

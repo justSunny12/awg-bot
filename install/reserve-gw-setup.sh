@@ -28,11 +28,15 @@
 #                   PostDown/PreUp/PreDown/SaveConfig/DNS) →
 #                   /etc/awg-gw/awgrsv.conf (0600), линк поднят (awg-quick),
 #                   таблица nft, маршруты, копия скрипта в SELF_PATH и юнит
-#                   awg-rsv-gw.service (enable); тот же конфиг при поднятом
-#                   линке — только таблица и маршруты («up: same»), другой —
-#                   переподнимает
-#   --reassert      линк, таблица и маршруты по конфигу на диске (юнит при
-#                   загрузке); набор rsv_open4 — из состояния RSV_STATE
+#                   awg-rsv-gw.service (enable); ADMIN_IPS — в состояние
+#                   RSV_STATE (admins=); тот же конфиг при поднятом линке —
+#                   только таблица и маршруты («up: same»), другой при
+#                   поднятом — awg syncconf без пересоздания (сессия с
+#                   резервом не рвётся; адрес и MTU стоящего линка не
+#                   меняются), не вышло — awg-quick down/up
+#   --reassert      линк (живой — syncconf), таблица и маршруты по конфигу на
+#                   диске (юнит при загрузке); наборы rsv_open4 и rsv_admin4 —
+#                   из состояния RSV_STATE
 #   --open <cidr…>  пересылка открыта для источников (через запятую)
 #   --close         пересылка закрыта (набор пуст)
 #   --down          линк опущен, таблица и маршруты сняты; конфиг и состояние
@@ -41,12 +45,14 @@
 #                   (пары нет); копия в SELF_PATH остаётся
 #   --status        key=value: link, open, src, rx, tx, conf
 # Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
-# (/var/lib/awg-gw/rsv.status: open=0|1, src=…), RSV_MARK (0x52), RSV_TABLE
-# (152), SSH_PORT (иначе SSH_PORT из GW_STATUS — /etc/awg-gw/gateway.status —
-# или 22), ADMIN_IPS (адреса устройств админа сервера через запятую; передаёт
-# агент при --up из строк юнита обвязки — юнит awg-rsv-gw.service и --open их
-# не передают), UNIT (/etc/systemd/system/awg-rsv-gw.service), SELF_PATH
-# (/usr/local/sbin/reserve-gw-setup.sh).
+# (/var/lib/awg-gw/rsv.status: open=0|1, src=…, admins=…), RSV_MARK (0x52),
+# RSV_TABLE (152), SSH_PORT (иначе SSH_PORT из GW_STATUS —
+# /etc/awg-gw/gateway.status — или 22), ADMIN_IPS (адреса устройств админа
+# сервера через запятую, набор rsv_admin4; передаёт агент при --up из строк
+# юнита обвязки и переподнимает линк при их смене; юнит awg-rsv-gw.service и
+# --open их не передают — берут из RSV_STATE), UNIT
+# (/etc/systemd/system/awg-rsv-gw.service), SELF_PATH
+# (/usr/local/sbin/reserve-gw-setup.sh; её же зовёт awg-bot uninstall).
 # Чего НЕ делает: не читает и не пишет документ конфигурации (его ведёт
 # агент), не решает, когда открывать пересылку (решает агент по слову
 # сервера или резерва вместе с фактом записи DNS), не трогает аплинк.

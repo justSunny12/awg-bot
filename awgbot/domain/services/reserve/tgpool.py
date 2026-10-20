@@ -192,12 +192,12 @@ class ReserveTgPoolMixin:
             data["pool"] = [x["prefix"] for x in kept]
             if lost and told.get("core") != ",".join(lost):
                 told["core"] = ",".join(lost)
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_core_lost(lost[0])))
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_core_lost(lost[0]), silent=True))
             elif not lost and told.get("core"):
                 told["core"] = ""
             if told.get("stale"):
                 told["stale"] = ""
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_ok()))
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_ok(), silent=True))
         else:
             data["error"] = "; ".join(errors)
             stale_s = cfg["stale_days"] * 86400
@@ -208,7 +208,7 @@ class ReserveTgPoolMixin:
             if age >= stale_s and not told.get("stale"):
                 told["stale"] = timeutil.now_iso()
                 since = str(data.get("fetched_at") or "")
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_stale(since)))
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=self._rn().tg_pool_stale(since), silent=True))
             log.warning("пул Telegram: анонсы не обновлены (%s) — пул прежний", data["error"])
         data["told"] = told
         _write(data)
@@ -270,7 +270,20 @@ class ReserveTgPoolMixin:
         data["learned"] = learned
         data["pool"] = [x["prefix"] for x in learned]
         _write(data)
+        self._tg_pool_to_guest()
         return [("fw",)]
+
+    @staticmethod
+    def _tg_pool_to_guest() -> None:
+        """Полный пул — в хранилище гостя: его слушатель вебхука подхватит новые
+        префиксы по такту (файл есть только пока зона обслуживает)."""
+        from awgbot.infra import nftguard, rsvzone
+        if not rsvzone.TG_POOL_FILE.exists():
+            return
+        try:
+            rsvzone.write_private(rsvzone.TG_POOL_FILE, json.dumps({"pool": list(nftguard.tg_pool())}))
+        except OSError as e:
+            log.info("пул Telegram: файл пула гостя не обновлён: %s", e)
 
     def reserve_tg_pool_view(self) -> dict:
         """Для экранов: ядро, число выученных, когда обновлялись анонсы, застой."""

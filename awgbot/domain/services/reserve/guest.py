@@ -213,7 +213,7 @@ class ReserveGuestMixin:
             text = rn.webhook_stalled_reserve(name, str(body.get("since") or ""), str(body.get("error") or ""), port)
         else:
             text = rn.webhook_restored_reserve(name)
-        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text)])]
+        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text, silent=True)])]
 
     def guest_apply_blocks(self, addrs: list[str]) -> None:
         """Блокировки основы (её живые сессии): DROP в зоне тем же механизмом."""

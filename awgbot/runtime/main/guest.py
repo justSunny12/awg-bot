@@ -91,6 +91,11 @@ async def run_guest() -> None:
         nonlocal watch_due
         if ctl.connected():
             await ctl.send_online()
+        if wh is not None:
+            try:
+                wh.refresh_pool()                         # хост выучил сеть Telegram — в фильтр без перезапуска
+            except Exception as e:                        # noqa: BLE001
+                log.info("гость: пул вебхука не перечитан: %s", e)
         if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()):
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
