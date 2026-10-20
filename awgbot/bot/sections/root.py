@@ -25,4 +25,10 @@ def keyboard(br) -> InlineKeyboardMarkup:
 
 
 async def screen(br, services, key: str = ""):
+    if br.root_text:
+        # роль со своим текстом корня («модуль:функция», async fn(services) -> str):
+        # бот основы на резерве показывает здесь карточку резерва (Т-РГ3)
+        import importlib
+        mod, _, fn = br.root_text.partition(":")
+        return await getattr(importlib.import_module(mod), fn)(services), keyboard(br)
     return text(br), keyboard(br)

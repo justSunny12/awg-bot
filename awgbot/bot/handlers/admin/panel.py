@@ -33,14 +33,19 @@ def _bot(services) -> str:
 def _menu_markup_from(snap: dict):
     ac = snap["ac"]
     return kb.admin_main(routing_visible=snap["rt_visible"],
-                         self_client_id=(ac.id if ac else 0))
+                         self_client_id=(ac.id if ac else 0), guest=bool(config.GUEST))
 
 
 def _panel_text_from(services, snap: dict) -> str:
-    return texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"], rf=snap.get("rf"),
+    text = texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"], rf=snap.get("rf"),
                              bot_username=_bot(services), expiring=snap["expiring"],
                              routing_info=snap.get("routing_info"), unassigned=snap.get("unassigned", 0),
                              update_tag=snap.get("update_tag", ""), update_run=snap.get("update_run"))
+    if config.GUEST:
+        # бот основы на резерве: первая строка — где работаю и почему (Т-РГ1)
+        from awgbot.bot.texts.reserve import guest as gt
+        text = gt.main_line(snap.get("guest") or services.guest_state()) + "\n\n" + text
+    return text
 
 
 async def _panel_parts(services):

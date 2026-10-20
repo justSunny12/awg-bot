@@ -43,7 +43,13 @@ def render(spec: pkg.GuardSpec) -> str:
         if spec.nat_exclude_ifs:
             rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
         nat_chain.append("        " + rule)
+        nat_chain += _guest_postrouting(spec)
         nat_chain.append("    }")
+    elif _guest_postrouting(spec):
+        nat_chain = ["", "    chain postrouting {",
+                     "        type nat hook postrouting priority srcnat; policy accept;",
+                     *_guest_postrouting(spec), "    }"]
+    nat_chain += _guest_prerouting(spec)
     if not spec.filter:
         # NAT-only: файервол выключен, но клиентам нужен выход наружу.
         # Фильтрующих цепочек нет вовсе — политика хоста остаётся его. Одно
@@ -51,7 +57,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _quarantine_forward(spec) + _pair_forward(spec) + _wan_private_drop(spec)
+        rules = _quarantine_forward(spec) + _pair_forward(spec) + _wan_private_drop(spec) + _guest_forward(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -66,7 +72,7 @@ def render(spec: pkg.GuardSpec) -> str:
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
                      "    }"]
-        q_in = _quarantine_input(spec) + _pair_input(spec)
+        q_in = _quarantine_input(spec) + _pair_input(spec) + _guest_input(spec)
         if q_in:
             # карантин сопряжения и линк пары — и без фильтра: на сам ВПС с них
             # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
@@ -81,6 +87,7 @@ def render(spec: pkg.GuardSpec) -> str:
             f"delete table {pkg.TABLE}",
             f"table {pkg.TABLE} {{",
             pkg._set_block(pkg.SET_TUNNEL_NETS, "ipv4_addr", spec.tunnel_nets4, True),
+            *_guest_sets(spec),
         ] + nat_chain + block + ["}"]
         return "\n".join(out) + "\n"
     out: list[str] = head + [
@@ -92,6 +99,7 @@ def render(spec: pkg.GuardSpec) -> str:
         pkg._set_block(pkg.SET_TUNNEL_NETS, "ipv4_addr", spec.tunnel_nets4, True),
         pkg._set_block(pkg.SET_TUNNEL_ADMIN, "ipv4_addr", spec.tunnel_admin4, False),
         pkg._set_block(pkg.SET_LINK_PEERS, "ipv4_addr", spec.link_peers4, False),
+        *_guest_sets(spec),
         "",
         "    chain input {",
         "        type filter hook input priority filter; policy drop;",
@@ -105,6 +113,7 @@ def render(spec: pkg.GuardSpec) -> str:
     ]
     if spec.udp_ports:
         out.append(f"        udp dport {pkg._ports(spec.udp_ports)} accept")
+    out += _guest_input(spec)
     if spec.admin_dns4:
         # резолвер админа: имена SMB локальных сетей шлюзов — только устройствам
         # админа; правило раньше общего «:53 из туннеля», иначе то пустило бы всех
@@ -153,6 +162,7 @@ def render(spec: pkg.GuardSpec) -> str:
             # запрос устройства админа не уходит маршрутом по умолчанию к провайдеру
             out.append(f"        ip daddr {spec.admin_dns4} drop")
         out += _wan_private_drop(spec)
+        out += _guest_forward(spec)          # зона резерва — после запрета частных адресов наружу
         if spec.peer_link_ifs:
             # линк ↔ линк: связь подсетей между слотами с VPN-транзитом;
             # что именно едет, ограничивает AllowedIPs на стороне шлюза
@@ -223,6 +233,69 @@ def _pair_forward(spec) -> list[str]:
         return []
     q = nftjson.ifs([spec.pair_if])
     return [f"        iifname {q} drop", f"        oifname {q} drop"]
+
+
+def _guest_sets(spec) -> list[str]:
+    """Набор пула адресов Telegram — только пока зона обслуживает (serving)."""
+    if not spec.guest_webhook_port or not spec.guest_zone4:
+        return []
+    return [pkg._set_block(pkg.SET_TG_POOL, "ipv4_addr", spec.tg_pool4 or list(pkg.DEFAULT_TG_POOL), True)]
+
+
+def _guest_input(spec) -> list[str]:
+    """Гостевая зона резерва, вход на хост: порт клона (его UDP-сокет живёт у
+    хоста, расшифрованный пакет выходит в зоне) и, в relay, тот же порт для
+    пересылки хвоста (DNAT ниже — правило input его не видит, но ct нужен)."""
+    out = []
+    if spec.guest_phase in ("taking", "serving") and spec.guest_udp_port:
+        out.append(f"        udp dport {int(spec.guest_udp_port)} accept")
+    return out
+
+
+def _guest_forward(spec) -> list[str]:
+    """Пересылка зоны: наружу через veth (бот основы, Telegram, почта, фиды,
+    клиенты в интернет), вебхук после DNAT — в зону, хвост после DNAT — к
+    основе; в зону с внешнего интерфейса без DNAT хода нет."""
+    out = []
+    if spec.guest_veth_if and spec.guest_phase in ("taking", "serving"):
+        v = nftjson.ifs([spec.guest_veth_if])
+        out.append(f"        iifname {v} accept")
+        if spec.guest_webhook_port and spec.guest_zone4:
+            out.append(f"        oifname {v} ip daddr {spec.guest_zone4} tcp dport {int(spec.guest_webhook_port)} "
+                       f"ct status dnat accept")
+        out.append(f"        oifname {v} drop")
+    if spec.relay_to and spec.relay_udp_port:
+        out.append("        ct status dnat udp accept")
+    return out
+
+
+def _guest_prerouting(spec) -> list[str]:
+    """DNAT: порт вебхука с пула Telegram — боту основы в зоне (serving); порт
+    клона — на основу (relay: хвост сессий, пока клиенты не переподключились)."""
+    rules = []
+    if spec.guest_phase == "serving" and spec.guest_webhook_port and spec.guest_zone4:
+        rules.append(f"        tcp dport {int(spec.guest_webhook_port)} ip saddr @{pkg.SET_TG_POOL} "
+                     f"dnat ip to {spec.guest_zone4}:{int(spec.guest_webhook_port)}")
+    if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
+        rules.append(f"        udp dport {int(spec.relay_udp_port)} dnat ip to {spec.relay_to}")
+    if not rules:
+        return []
+    return ["", "    chain prerouting {", "        type nat hook prerouting priority dstnat; policy accept;",
+            *rules, "    }"]
+
+
+def _guest_postrouting(spec) -> list[str]:
+    """Маскарад зоны наружу и пересланного хвоста (ответ основы должен прийти
+    сюда же, чтобы вернуться клиенту через conntrack)."""
+    out = []
+    if spec.guest_zone_net4 and spec.guest_phase in ("taking", "serving"):
+        rule = f"ip saddr {spec.guest_zone_net4} masquerade"
+        if spec.nat_exclude_ifs:
+            rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
+        out.append("        " + rule)
+    if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
+        out.append("        ct status dnat udp masquerade")
+    return out
 
 
 def _wan_private_drop(spec) -> list[str]:

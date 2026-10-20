@@ -135,6 +135,8 @@ def register_update_buttons(router, br=None) -> None:
     has.fleet): «В меню» на итоге — живая, прочие кнопки прежних «⬆️
     Обновлений» — «Кнопка устарела…»."""
     if br is not None and not br.has.fleet:
+        if not br.has.updates_stale:
+            return                                        # роль без обновлений вовсе: кнопки ловит её загородка
         # «⬅️ В меню» на итоге обновления (руками, awg-bot update) у агента живая
         router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
 

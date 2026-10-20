@@ -168,7 +168,68 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         quarantine_ifs=pkg.quarantine_ifaces(links),
         quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
         **pair_link(),
+        **guest_zone(),
     )
+
+
+def guest_zone() -> dict:
+    """Гостевая зона резерва — из состояния зоны (state.json, без БД): порт
+    клона, veth, адрес зоны, порт вебхука, пересылка хвоста, пул Telegram.
+    Зоны нет или она пуста (idle) — полей нет."""
+    from awgbot.infra import rsvzone
+    st = rsvzone.state()
+    phase = str(st.get("phase") or "idle")
+    if phase not in ("taking", "serving", "relay"):
+        return {}
+    out: dict = {"guest_phase": phase}
+    try:
+        port = int(st.get("port") or 0)
+    except (TypeError, ValueError):
+        port = 0
+    cidr = str(st.get("zone_cidr") or "169.254.77.0/30")
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+        hosts = list(net.hosts())
+        zone4 = str(hosts[1]) if len(hosts) >= 2 else ""
+        net4 = str(net)
+    except ValueError:
+        zone4, net4 = "", ""
+    if phase in ("taking", "serving"):
+        out.update(guest_udp_port=port, guest_veth_if="awggv-h", guest_zone4=zone4, guest_zone_net4=net4)
+    if phase == "serving":
+        try:
+            out["guest_webhook_port"] = int(st.get("webhook_port") or 0)
+        except (TypeError, ValueError):
+            out["guest_webhook_port"] = 0
+        out["tg_pool4"] = tg_pool()
+    if phase == "relay":
+        to = str(st.get("relay_to") or "")
+        if to and ":" in to and port:
+            out.update(relay_to=to, relay_udp_port=port)
+    return out
+
+
+def tg_pool() -> list[str]:
+    """Пул адресов Telegram для порта вебхука: файл бота резерва
+    (`reserve/tg_pool.json` в каталоге данных) поверх ядра; негодные
+    строки — прочь."""
+    import json
+    pool = list(pkg.DEFAULT_TG_POOL)
+    try:
+        data = json.loads((Path(config.DATA_DIR) / "reserve" / "tg_pool.json").read_text(encoding="utf-8"))
+        for item in data.get("pool") or []:
+            pool.append(str(item))
+    except (OSError, ValueError, AttributeError):
+        pass
+    out: list[str] = []
+    for item in pool:
+        try:
+            n = str(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            continue
+        if n not in out:
+            out.append(n)
+    return out
 
 
 PAIR_IF = "awgpair"

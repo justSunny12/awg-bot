@@ -172,6 +172,11 @@ class DevicesMixin:
         if not for_bundle:
             self._refuse_if_gateway(dev)
         if not dev.private_key:
+            if config.GUEST:
+                # на резерве закрытых ключей выданных устройств нет (в реплику
+                # они не едут): конфигурацию покажет основа после возврата
+                from awgbot.domain.services.reserve.guest import DEVICE_CONFIG_LATER
+                raise ServiceError(DEVICE_CONFIG_LATER)
             raise ServiceError(
                 "Это устройство создавал не бот — приватного ключа у него нет, "
                 "выдать ссылку не из чего. Удали его и добавь новое через бота."

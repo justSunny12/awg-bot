@@ -34,6 +34,9 @@ async def _screen(sec: str, services, key: str = ""):
     if sec == "subs":
         return texts.settings_subs_text(), kb.settings_subs()
     if sec == "rsv":
+        if config.GUEST:
+            from .reserve.guest import guest_screen
+            return await guest_screen(services)
         from .reserve.card import reserve_screen
         return await reserve_screen(services)
     if sec == "srv":

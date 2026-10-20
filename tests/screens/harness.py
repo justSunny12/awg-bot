@@ -469,7 +469,8 @@ async def take(shot: base.Shot, tmp: pathlib.Path, fakes=()) -> Record:
             services.bot_username = BOT_USERNAME
             uid, name = run_builder(shot, services, mp)
             access_cache.invalidate_all()
-            dp = make_dispatcher(base.DISPATCHER[shot.role], services, db, reattach=True)
+            # бот основы на резерве: снимок включает config.GUEST шагом данных — диспетчер роли guest
+            dp = make_dispatcher("guest" if config.GUEST else base.DISPATCHER[shot.role], services, db, reattach=True)
             session = StubSession(uid, base.NOW, base.PEERS)
             return await run(dp, session, uid=uid, name=name, steps=shot.all_steps(),
                                      services=services, photo=shot.photo)

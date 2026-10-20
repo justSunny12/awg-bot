@@ -80,6 +80,18 @@ async def send(kind: str, body: dict | None = None) -> bool:
     return bool(_link is not None and await _link.send(kind, body))
 
 
+async def send_package(built: dict) -> bool:
+    """Пакет частями: pkg{gen, fp, i, n, blob, share, m_gen}; False — сессии нет или обрыв."""
+    from awgbot.util import pairproto
+    parts = pairproto.chunks(str(built["blob"]))
+    for i, blob in enumerate(parts):
+        ok = await send(("pkg"), {"gen": int(built["gen"]), "fp": str(built["fp"]), "i": i, "n": len(parts),
+                                  "blob": blob, "share": str(built["share"]), "m_gen": int(built["m_gen"])})
+        if not ok:
+            return False
+    return True
+
+
 async def pair_accepted() -> None:
     if _link is not None and hasattr(_link, "pair_accepted"):
         await _link.pair_accepted()
@@ -101,4 +113,4 @@ def wake() -> None:
 
 
 __all__ = ["DEFAULT_PORT", "channel_port", "pair_hosts", "set_on_event", "set_on_notes", "online", "ensure",
-           "shutdown", "send", "pair_accepted", "pair_wrong", "pair_close", "wake"]
+           "shutdown", "send", "send_package", "pair_accepted", "pair_wrong", "pair_close", "wake"]

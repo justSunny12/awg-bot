@@ -103,6 +103,7 @@ class TrafficMixin:
                      last_up = excluded.last_up, last_dn = excluded.last_dn,
                      last_update = excluded.last_update""",
                 [(d, up, dn, now) for d, up, dn in rows])
+            self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи
 
     def rf_add_bulk(self, rows: list[tuple[int, int, int]]) -> None:
         """Батч дельт РФ: [(device_id, d_up, d_dn)]; ↑ устройства — rf_rx, ↓ — rf_tx."""
@@ -113,6 +114,7 @@ class TrafficMixin:
                 """UPDATE device_traffic SET rf_rx_month = rf_rx_month + ?, rf_tx_month = rf_tx_month + ?
                    WHERE device_id = ?""",
                 [(up, dn, d) for d, up, dn in rows])
+            self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи
 
     def get_client_rf(self, client_id: int) -> tuple[int, int]:
         """(rx, tx) РФ профиля за месяц — сумма по устройствам владельца без шлюзов."""
@@ -159,6 +161,7 @@ class TrafficMixin:
                      last_update = excluded.last_update""",
                 [(d, rx, tx, now) for d, rx, tx in rows],
             )
+            self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи
 
     def add_traffic_bulk(self, rows: list[tuple[int, int, int]]) -> None:
         """Батч дельт: [(device_id, d_rx, d_tx)] одним executemany."""
@@ -172,3 +175,4 @@ class TrafficMixin:
                    WHERE device_id = ?""",
                 [(rx, tx, rx, tx, d) for d, rx, tx in rows],
             )
+            self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи

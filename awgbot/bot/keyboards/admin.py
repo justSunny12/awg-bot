@@ -19,10 +19,11 @@ from .common import (BTN_CANCEL, _btn_suffix, _manual_block_button, confirm, not
 # Главная
 # ─────────────────────────────────────────────────────────────────────────────
 
-def admin_main(*, routing_visible: bool = False, self_client_id: int = 0) -> InlineKeyboardMarkup:
+def admin_main(*, routing_visible: bool = False, self_client_id: int = 0, guest: bool = False) -> InlineKeyboardMarkup:
     """Семь кнопок: свои устройства и свой РФ-доступ (когда выдан), профили и
     новый профиль, объявление и шлюзы, настройки. Перечитать статус — ссылкой
-    «обновлено в … 🔄» в тексте главной, кнопки нет."""
+    «обновлено в … 🔄» в тексте главной, кнопки нет. guest — бот основы на
+    резерве: «🛰 Шлюзы» нет, их ведёт сервер основы."""
     from .client import menu_issue_row
     # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
     # включению, других входов у функции нет
@@ -32,7 +33,7 @@ def admin_main(*, routing_visible: bool = False, self_client_id: int = 0) -> Inl
          (f"🇷🇺 Мой {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=self_client_id)) if routing_visible else None],
         [("👥 Профили", Menu(action="clients")), ("➕ Профиль", Menu(action="add_client"))],
         # «⚙️ Настройки» — последним рядом одна (решение 16.10.2026)
-        [("📢 Объявление", BroadcastCB(action="pick")), ("🛰 Шлюзы", SetCB(sec="rt"))],
+        [("📢 Объявление", BroadcastCB(action="pick")), ("🛰 Шлюзы", SetCB(sec="rt")) if not guest else None],
         ("⚙️ Настройки", SetCB(sec="root")))
 
 

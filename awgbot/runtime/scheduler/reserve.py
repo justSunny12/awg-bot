@@ -51,7 +51,33 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 await asyncio.to_thread(services.reserve_code_notify_clear)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: новый код не отправлен: %s", e)
+        try:
+            # локальный канал с ботом основы на резерве: слушатель — пока есть
+            # пара; состояние основы гостю — по смене
+            from awgbot.runtime.pairlink import guestctl
+            srv = await guestctl.ensure(services)
+            if srv is not None and srv.connected():
+                await srv.push_state()
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: локальный канал гостя: %s", e)
 
     scheduler.add_job(job_invite_tick, IntervalTrigger(minutes=1, timezone=config.TZ),
                       id="rsv_invite_tick", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # пакет переезда: по отметке (≥ 10 с с последней записи) и по таймеру с джиттером —
+    # решает сервис, такт лишь спрашивает; уходит частями по каналу пары
+    async def job_pkg_tick():
+        try:
+            await asyncio.to_thread(services.reserve_pkg_sending_stale)
+            built = await asyncio.to_thread(services.reserve_pkg_tick)
+            if built:
+                from awgbot.runtime import pairlink
+                if not await pairlink.send_package(built):
+                    await asyncio.to_thread(services.reserve_pkg_bad, int(built["gen"]), "сессия оборвалась")
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: такт пакета: %s", e)
+
+    scheduler.add_job(job_pkg_tick, IntervalTrigger(seconds=5, timezone=config.TZ),
+                      id="rsv_pkg_tick", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)

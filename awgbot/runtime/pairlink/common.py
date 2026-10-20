@@ -57,6 +57,7 @@ class _Session:
         self.cn = b""                    # нонс другой стороны: им подписываем мы
         self.sn_sent = False
         self.st_sent: dict | None = None
+        self.parts: dict = {}            # сборка пакета частями: {gen: [часть…]}
 
 
 async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad: int = gwlink.PAD_DELTA) -> bool:

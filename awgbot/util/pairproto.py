@@ -7,7 +7,8 @@ pairproto.py — сообщения канала пары и гостевого 
 из PSK постоянного линка шлюза к резерву. Здесь — только словарь: какие виды
 бывают, кто их шлёт, какие поля обязательны и каких размеров, и потолки
 частей: пакет и реплика крупнее фидов, поэтому частей больше, чем у канала
-шлюзов (`MAX_CHUNKS`), а часть — та же (`gwlink.CHUNK`).
+шлюзов (`MAX_CHUNKS`), а часть — 64 КБ шифротекста (в hex и base64 конверта
+она укладывается в предел строки `MAX_LINE`).
 
 Разбор тела — `check(kind, body, side)`: неизвестный вид, вид не с той
 стороны, нет обязательного поля, поле не того типа или длиннее потолка —
@@ -19,18 +20,19 @@ from __future__ import annotations
 import hashlib
 
 from awgbot.util import bundlecrypt
-from awgbot.util.gwlink import CHUNK, ProtocolError
+from awgbot.util.gwlink import ProtocolError
 
 PAIR_PROTO = "pair1"
 GUEST_PROTO = "rsv1"
-MAX_CHUNKS = 256                   # 256 × 128 КБ = 32 МБ: потолок пакета 16 МБ сжатого с запасом
+MAX_CHUNKS = 256                   # 256 × 64 КБ = 16 МБ — потолок пакета
 MAX_LINE = 256 * 1024              # как у канала шлюзов
 PAD = 512
 MAX_NAME = 64                      # имя сервера, имя линка, имя записи DNS
 MAX_HOST = 253
 MAX_REASON = 200
 MAX_LIST = 64                      # подсети, адреса, слоты в одном сообщении
-MAX_BLOB = CHUNK * 2               # одна часть шифротекста в hex
+CHUNK_BYTES = 64 * 1024            # часть шифротекста: в hex 128 К знаков, в конверте (base64) — в предел строки
+MAX_BLOB = CHUNK_BYTES * 2         # одна часть шифротекста в hex
 
 _PAIR_TAG = b"awgbot-pair-v1"
 _GUEST_TAG = b"awgbot-rsvlink-v1"
