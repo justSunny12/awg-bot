@@ -79,7 +79,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "st":           (BOTH, {"ready": (_B, None), "name": (_S, MAX_NAME), "version": (_S, 24), "caps": (_L, 16),
                             "gen": (_I, None), "ports": (_L, 4), "self": (_S, MAX_HOST), "out": (_S, 16),
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
-                            "admin_opened": (_B, None), "gw": (_B, None)}),
+                            "admin_opened": (_B, None), "gw": (_B, None),
+                            "healthy": (_B, None), "can_return": (_B, None)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -132,6 +133,10 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
     raise ValueError(f"неизвестный канал {proto!r}")
 
 
+# поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
+OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return"})}
+
+
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:
     """Проверить тело сообщения вида `kind` от стороны `sender`; вернуть тело
     без служебных полей конверта. Неверно — ProtocolError."""
@@ -145,6 +150,8 @@ def check(proto: str, kind: str, body: dict, sender: str) -> dict:
     out = {}
     for name, (typ, cap) in fields.items():
         if name not in body:
+            if name in OPTIONAL.get(kind, ()):
+                continue                                   # поле появилось позже первого выпуска линии
             raise ProtocolError(f"в {kind!r} нет поля {name!r}")
         val = body[name]
         if typ is _I and isinstance(val, bool) or not isinstance(val, typ):

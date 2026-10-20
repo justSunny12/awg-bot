@@ -126,8 +126,9 @@ class PollControl:
             except asyncio.CancelledError:
                 if self._closing:
                     raise
-            except Exception as e:                           # noqa: BLE001
-                log.warning("поллинг завершился с ошибкой: %s", e)
+            except BaseException:
+                self._task = None
+                raise                                        # как прежде: сбой поллинга — наверх, в finally main
             self._task = None
             if self._closing or not (self._stopped or self._conflict):
                 return                                       # поллинг кончился сам (сигнал, заглушка теста) — выход, как прежде

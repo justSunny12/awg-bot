@@ -84,6 +84,7 @@ async def run_guest() -> None:
     tg_set = asyncio.Event()
     watch_due = 0.0
     notify_at = {"t": 0.0}
+    told: dict = {}
 
     async def ctl_tick() -> None:
         """Такт локального канала: число устройств на связи, отметка «ставить вебхук»."""
@@ -104,6 +105,7 @@ async def run_guest() -> None:
                 await send_notifications(bot, await asyncio.to_thread(services.guest_move_notify, rf))
             except Exception as e:                       # noqa: BLE001
                 log.warning("гость: «переподключи VPN» не разослано: %s", e)
+        await _primary_back_notice(bot, services, told)
         if tg_set.is_set() and wh is not None and asyncio.get_running_loop().time() >= watch_due:
             watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
             await _watch(wh, bot, services, ctl)
@@ -143,6 +145,19 @@ async def run_guest() -> None:
         with contextlib.suppress(Exception):
             await bot.session.close()
         db.close()
+
+
+async def _primary_back_notice(bot, services, told: dict) -> None:
+    """Т-РУ6: основа снова в строю — «возвращаю» (рычаг «сразу») или «верни кнопкой»; один раз."""
+    st = services.guest_state()
+    pr = st.get("primary") or {}
+    key = "button" if pr.get("can_return") else ("auto" if pr.get("healthy") and st.get("return") == "immediate" else "")
+    if not key or told.get(key):
+        return
+    told[key] = True
+    from awgbot.bot.notifier import notify_one
+    from awgbot.domain.notices import reserve as rn
+    await notify_one(bot, config.ADMIN_ID, rn.primary_back(auto=(key == "auto")))
 
 
 async def _watch(wh, bot, services, ctl) -> None:

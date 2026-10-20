@@ -175,8 +175,10 @@ class ReserveGuestMixin:
         from ..selfhost import own_host
         inn = self.rsv_get("rsv_in")
         seen = self.reserve_peer_seen()
+        ps = self.reserve_peer_state()
         primary = {"status": "dead" if seen == "down" else ("alive" if seen == "ok" else "suspect"),
-                   "since": self.reserve_down_since() if seen == "down" else ""}
+                   "since": self.reserve_down_since() if seen == "down" else "",
+                   "healthy": bool(ps.get("healthy")), "can_return": bool(ps.get("can_return"))}
         return {"name": str(config.SERVER_NAME or ""), "self_host": own_host(),
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
                 "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
@@ -196,7 +198,6 @@ class ReserveGuestMixin:
     def guest_adopt_snapshot(self) -> bool:
         """На старте: `rep.bin` новее базы хранилища (реплика при передаче
         бота или снимок до перезагрузки резерва) — база из него."""
-        import shutil
         from awgbot.infra import rsvzone
         from awgbot.util.rsvpkg import seal
         try:
@@ -219,9 +220,9 @@ class ReserveGuestMixin:
         if not db_bytes:
             return False
         path = str(config.DB_PATH)
-        bak = path + ".prev"
         try:
-            shutil.copyfile(path, bak)
+            with open(path, "rb") as f:
+                rsvzone.write_private(rsvzone.RUN_DIR / "data" / "bot.db.prev", f.read())
             rsvzone.write_private(rsvzone.RUN_DIR / "data" / "bot.db", db_bytes)
             for suffix in ("-wal", "-shm"):
                 try:
@@ -237,6 +238,7 @@ class ReserveGuestMixin:
         return True
 
     def guest_can_return(self) -> bool:
-        """«↩️ Вернуть клиентов» — только когда основа снова в строю и рычаг «по кнопке»."""
+        """«↩️ Вернуть клиентов» — когда основа сама сказала резерву, что здорова
+        и ждёт кнопки (рычаг «по кнопке»): признак идёт в `st` и дальше гостю."""
         d = self.guest_state()
-        return (d.get("primary") or {}).get("status") == "alive" and d.get("return") == "button"
+        return bool((d.get("primary") or {}).get("can_return"))
