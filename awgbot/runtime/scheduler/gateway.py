@@ -95,5 +95,22 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
+    # Перерезолв аплинка: адрес для клиентов переехал (резерв) — аплинк идёт
+    # на новый адрес сам. Раз в минуту с джиттером, в сеть ходит только при
+    # старом рукопожатии (разрешение имени, потолок 3 с), первый — через 1–2 мин.
+    async def job_gw_uplink_reresolve():
+        try:
+            from awgbot.domain.gateway.reserve import uplink
+            await asyncio.to_thread(uplink.reresolve)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_uplink_reresolve: %s", e)
+
+    scheduler.add_job(
+        job_gw_uplink_reresolve,
+        IntervalTrigger(minutes=1, jitter=24, timezone=config.TZ),
+        id="gw_uplink_reresolve", max_instances=1, coalesce=True,
+        next_run_time=timeutil.shift(timeutil.now(), random.randint(60, 120)),
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     scheduler.start()
     return scheduler

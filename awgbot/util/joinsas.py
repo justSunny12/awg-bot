@@ -42,9 +42,15 @@ def shared(priv: bytes, peer_pub: bytes) -> bytes:
     return bindings.crypto_scalarmult(priv, peer_pub)
 
 
-def code(join_id: str, slot: int, gw_eph: bytes, srv_eph: bytes, k: bytes) -> str:
-    """Код подтверждения: 30 бит → 6 знаков."""
-    d = hashlib.blake2b(_SAS_TAG + bytes.fromhex(join_id) + bytes([int(slot) & 0xFF]) + gw_eph + srv_eph + k,
+PAIR_SAS_TAG = b"awgbot-pair-sas-v1"    # сопряжение серверов (пара): свой домен — тот же вход даёт другой код
+PAIR_KEY_TAG = b"awgbot-pair-key-v1"
+
+
+def code(join_id: str, slot: int | None, gw_eph: bytes, srv_eph: bytes, k: bytes, tag: bytes = _SAS_TAG) -> str:
+    """Код подтверждения: 30 бит → 6 знаков. `slot` None — без байта слота
+    (пара серверов); `tag` — домен: шлюз или пара."""
+    slot_b = b"" if slot is None else bytes([int(slot) & 0xFF])
+    d = hashlib.blake2b(tag + bytes.fromhex(join_id) + slot_b + gw_eph + srv_eph + k,
                         digest_size=16).digest()
     n = int.from_bytes(d[:4], "big") >> 2           # 30 бит
     out = []
@@ -54,8 +60,8 @@ def code(join_id: str, slot: int, gw_eph: bytes, srv_eph: bytes, k: bytes) -> st
     return "".join(reversed(out))
 
 
-def pair_key(join_id: str, k: bytes) -> bytes:
-    return hashlib.blake2b(_KEY_TAG + bytes.fromhex(join_id) + k, digest_size=32).digest()
+def pair_key(join_id: str, k: bytes, tag: bytes = _KEY_TAG) -> bytes:
+    return hashlib.blake2b(tag + bytes.fromhex(join_id) + k, digest_size=32).digest()
 
 
 def show(c: str) -> str:

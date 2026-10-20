@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-import re
 from awgbot.core import config
 from awgbot.core import settings
+from awgbot.domain.services.selfhost import own_host
 from awgbot.domain.services.types import Notification, ServiceError
 from .common import log
 
@@ -133,9 +133,10 @@ class LinkScriptMixin:
         keepalive линка."""
         env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
         # живое значение, как у клиентских ссылок: после «✏️ Домен» файл шлюза
-        # не должен нести прежний хост до рестарта бота
-        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
-        if host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
+        # не должен нести прежний хост до рестарта бота; собственный адрес
+        # (network.self_host) главнее адреса для клиентов
+        host = own_host()
+        if host:
             env["ENDPOINT_HOST"] = host
         # keepalive линка — тем же значением, что у клиентских пиров: бот читает
         # YAML целиком, а скрипт линка — только awk-ом по строке в двойных

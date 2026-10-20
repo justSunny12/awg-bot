@@ -32,12 +32,13 @@ from .history import HistoryMixin
 from .routing import RoutingMixin
 from .nav import NavMixin
 from .broadcast import BroadcastMixin
+from .reserve import ReserveMixin
 
 log = logging.getLogger(__name__)
 
 
 class Database(SchemaMixin, ClientsMixin, DevicesMixin, TrafficMixin, HistoryMixin,
-               RoutingMixin, NavMixin, BroadcastMixin, DatabaseCore):
+               RoutingMixin, NavMixin, BroadcastMixin, ReserveMixin, DatabaseCore):
     """Тонкая обёртка над sqlite3. Один экземпляр на процесс.
 
     sqlite3 в Python потокобезопасен при check_same_thread=False + отдельные

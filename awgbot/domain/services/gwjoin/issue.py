@@ -13,7 +13,8 @@ from __future__ import annotations
 import secrets
 from typing import Optional
 
-from awgbot.core import config, settings
+from awgbot.core import config
+from awgbot.domain.services.selfhost import own_host
 from awgbot.domain.services.types import ServiceError, ServiceErrorHtml
 from awgbot.infra import routing
 from awgbot.util import gwlink, jointoken, timeutil, wgconf
@@ -250,7 +251,7 @@ class GwJoinIssueMixin:
 
     @staticmethod
     def _gwjoin_host() -> str:
-        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
+        host = own_host()      # собственный адрес, если задан, иначе адрес для клиентов
         if not host:
             raise ServiceErrorHtml("Не задан адрес сервера AWG (<code>network.server_host</code>) — шлюзу некуда подключаться")
         return host

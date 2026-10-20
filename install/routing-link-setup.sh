@@ -347,6 +347,7 @@ H4 = $H4
 PublicKey = $GW_PUB
 PresharedKey = $PSK
 AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = $LINK_KEEPALIVE
 CONFEOF
     chmod 600 "$1"
     join_conf "$1" stamp

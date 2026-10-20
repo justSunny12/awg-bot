@@ -7,6 +7,7 @@ import re
 import socket
 
 from awgbot.core import config, settings
+from awgbot.domain.services.selfhost import own_host
 from awgbot.domain import gwcfg
 from awgbot.domain.services.gateway_link import slotkeys
 from awgbot.domain.services.types import Notification
@@ -67,10 +68,9 @@ class CfgMixin:
         except (OSError, wgconf.WgConfError) as e:
             self._gwcfg_link_error_set(gw.id, f"исходный файл не прочитан: {e}")
             return ""
-        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
-        old_host = conf.get("Peer", "Endpoint").rpartition(":")[0]
-        if not (host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host)):
-            host = old_host
+        # собственный адрес сервера (network.self_host), если задан: адрес для
+        # клиентов при паре переезжает на резерв, линк шлюза — нет
+        host = own_host() or conf.get("Peer", "Endpoint").rpartition(":")[0]
         wgconf.set_value(conf, "Peer", "Endpoint", f"{host}:{self._gwcfg_live_port(gw)}")
         want = wgconf.allowed_ips_want(client_subnet=env["CLIENT_SUBNET"], link_cidr=gw.link_cidr,
                                        peer_nets=env["PEER_LAN_NETS"].split())

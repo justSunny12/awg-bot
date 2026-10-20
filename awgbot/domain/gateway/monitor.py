@@ -178,22 +178,11 @@ class MonitorMixin:
     _TRAFFIC_KEY = "gw_traffic"
 
     def _account_traffic(self, rx: int, tx: int) -> tuple[int, int]:
-        """Счётчики линка живут от подъёма интерфейса и обнуляются каждым
-        рестартом. Копим дельты в месячный итог: счётчик меньше прошлого —
-        значит, обнулился, и дельта — весь текущий. Новый календарный месяц
-        начинает итог заново; записанный месяц новее «сейчас» (пояс сменился на
-        западный в первые часы месяца) — итог тот же, не обнуляется."""
-        month = timeutil.now().strftime("%Y-%m")
-        acc = self.db.get_state_json(self._TRAFFIC_KEY, {})
-        if str(acc.get("month") or "") < month:
-            acc = {"month": month, "rx": 0, "tx": 0,
-                   "last_rx": acc.get("last_rx", 0), "last_tx": acc.get("last_tx", 0)}
-        last_rx, last_tx = int(acc.get("last_rx", 0)), int(acc.get("last_tx", 0))
-        d_rx = rx - last_rx if rx >= last_rx else rx
-        d_tx = tx - last_tx if tx >= last_tx else tx
-        acc["rx"] = int(acc.get("rx", 0)) + max(0, d_rx)
-        acc["tx"] = int(acc.get("tx", 0)) + max(0, d_tx)
-        acc["last_rx"], acc["last_tx"] = rx, tx
+        """Месячный итог трафика линка: накопитель дельт — `util/monthacc`
+        (там же — почему счётчик меньше прошлого значит «обнулился»)."""
+        from awgbot.util import monthacc
+        acc = monthacc.account(self.db.get_state_json(self._TRAFFIC_KEY, {}), rx, tx,
+                               timeutil.now().strftime("%Y-%m"))
         self.db.set_state(self._TRAFFIC_KEY, json.dumps(acc))
         return acc["rx"], acc["tx"]
 

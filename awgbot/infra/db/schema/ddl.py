@@ -224,6 +224,31 @@ CREATE TABLE IF NOT EXISTS gateways (
 );
 -- предпочтительный — не более одного: держит БД, как прежде держала единственность шлюза
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gateways_preferred ON gateways(preferred) WHERE preferred = 1;
+
+-- резерв (взаимный резерв серверов AWG); в первой версии строка одна
+CREATE TABLE IF NOT EXISTS reserve_peer (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT    NOT NULL DEFAULT '',           -- имя сервера резерва (его client_config.server_name)
+    host          TEXT    NOT NULL,                      -- собственный адрес резерва
+    pair_if       TEXT    NOT NULL,                      -- awgpair
+    pair_port     INTEGER NOT NULL,                      -- порт линка пары у меня
+    peer_port     INTEGER NOT NULL,                      -- порт линка пары у резерва
+    pair_cidr     TEXT    NOT NULL,                      -- 10.99.98.0/30
+    listener      INTEGER NOT NULL DEFAULT 0,            -- 1: канал пары слушаю я (пригласивший)
+    bot_username  TEXT    NOT NULL DEFAULT '',           -- @бот резерва: ссылка в мою роль у него
+    peer_admin_id INTEGER NOT NULL DEFAULT 0,            -- ADMIN_ID другой стороны: его роль в моём боте
+    created_at    TEXT    NOT NULL
+);
+-- месячный итог трафика через резерв: out — мои клиенты у резерва, in — его у меня
+CREATE TABLE IF NOT EXISTS reserve_traffic_monthly (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    month         TEXT    NOT NULL,                      -- 'YYYY-MM' по поясу бота
+    dir           TEXT    NOT NULL,                      -- out | in
+    rx            INTEGER NOT NULL DEFAULT 0,
+    tx            INTEGER NOT NULL DEFAULT 0,
+    archived_at   TEXT    NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rsv_tm_month_dir ON reserve_traffic_monthly(month, dir);
 -- истечение: предфильтр «активные с конечным периодом до границы»
 CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);
 CREATE INDEX IF NOT EXISTS idx_friend_tg        ON device_friend(friend_tg_id);
