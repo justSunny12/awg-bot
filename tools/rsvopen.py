@@ -168,8 +168,10 @@ def _yaml_dump(obj) -> str:
     return yaml.safe_dump(obj, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
 
-def _guest_app_yaml(bot_conf: dict, app_guest: dict, iface: str, tz: str) -> str:
-    """app.yaml гостя: разделы основы из белого списка + ключи для гостя + свои неизменяемые."""
+def _guest_app_yaml(bot_conf: dict, app_guest: dict, iface: str, tz: str, extra: list | None = None) -> str:
+    """app.yaml гостя: разделы основы из белого списка + ключи для гостя + свои
+    неизменяемые; второй интерфейс основы (окно переезда профилей) — как
+    интерфейс переезда гостя, чтобы бот вёл устройства на обоих."""
     from awgbot.infra import rsvzone
     app = dict(bot_conf.get("app") or {})
     for sec, vals in (app_guest or {}).items():
@@ -181,6 +183,10 @@ def _guest_app_yaml(bot_conf: dict, app_guest: dict, iface: str, tz: str) -> str
     app["role"] = "client"
     app.setdefault("awg", {})
     app["awg"].update({"interface": iface, "conf_dir": str(rsvzone.RUN_DIR / "awg")})
+    for x in (extra or [])[:1]:
+        prefix = ".".join(str(x.get("addr") or "").split("/")[0].split(".")[:3])
+        if x.get("name") and prefix:
+            app["awg"].update({"migration_interface": str(x["name"]), "migration_subnet_prefix": prefix})
     app.setdefault("routing", {})
     if isinstance(app["routing"], dict):
         app["routing"].update({"dnsmasq_conf": str(rsvzone.RUN_DIR / "dnsmasq-rf.conf"),
@@ -209,7 +215,7 @@ def _make_cert(self_host: str, out_dir) -> tuple[str, str]:
     return key_p, crt_p
 
 
-def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -> None:
+def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, extra: list | None = None) -> None:
     from awgbot.infra import rsvzone
     bot = parts.get("bot") or {}
     env = bot.get("env") or {}
@@ -226,7 +232,7 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
             continue
         rsvzone.write_private(run / "conf" / f"{name}.yaml", _yaml_dump(vals))
     tz = str((parts.get("vpn") or {}).get("tz") or "")
-    rsvzone.write_private(run / "conf" / "app.yaml", _guest_app_yaml(conf, bot.get("app_guest") or {}, iface, tz))
+    rsvzone.write_private(run / "conf" / "app.yaml", _guest_app_yaml(conf, bot.get("app_guest") or {}, iface, tz, extra or []))
     rsvzone.write_private(run / "data" / "bot.db", db_bytes)
     for kind, lines in (bot.get("lists") or {}).items():          # кэш списков РФ-доступа — гостю
         if isinstance(kind, str) and kind.replace("_", "").isalnum() and isinstance(lines, list):
@@ -306,6 +312,7 @@ def run(data: dict) -> int:
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
         return _fail(str(e))
     iface = vpn["ifaces"][0]
+    extra = [i for i in vpn["ifaces"][1:] if i.get("name") and i.get("addr")]   # окно переезда профилей
     db_bytes, db_at = _db_from_snapshot(k, head.pkg_gen)
     from_snapshot = db_bytes is not None
     data["_db_at"] = db_at
@@ -319,12 +326,14 @@ def run(data: dict) -> int:
     try:
         rsvzone.store()
         data["_pkg_gen"] = head.pkg_gen
-        fill_store(data, k, parts, db_bytes, iface["name"])
+        fill_store(data, k, parts, db_bytes, iface["name"], extra)
         _step("store", from_snapshot=int(from_snapshot))
+        for x in extra:                                       # конфиги вторых интерфейсов — в хранилище, скрипт поднимет их
+            rsvzone.write_private(rsvzone.RUN_DIR / "awg" / f"{x['name']}.conf", pkgvpn.clone_conf(x))
         rsvzone.take(pkgvpn.clone_conf(iface), iface=iface["name"], addr=iface["addr"], dns=list(vpn.get("dns") or []),
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
-                     channel_port=int(data.get("channel_port") or 0))
-        _step("clone_up", iface=iface["name"], port=iface["port"])
+                     channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra])
+        _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]))
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")
     finally:

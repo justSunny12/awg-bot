@@ -200,6 +200,7 @@ def guest_zone() -> dict:
         port = int(st.get("port") or 0)
     except (TypeError, ValueError):
         port = 0
+    ports = [int(p) for p in str(st.get("ports") or "").split() if p.isdigit() and 0 < int(p) < 65536] or ([port] if port else [])
     cidr = str(st.get("zone_cidr") or "169.254.77.0/30")
     try:
         net = ipaddress.ip_network(cidr, strict=False)
@@ -209,7 +210,7 @@ def guest_zone() -> dict:
     except ValueError:
         zone4, net4 = "", ""
     if phase in ("taking", "serving"):
-        out.update(guest_udp_port=port, guest_veth_if="awggv-h", guest_zone4=zone4, guest_zone_net4=net4)
+        out.update(guest_udp_port=port, guest_udp_ports=ports, guest_veth_if="awggv-h", guest_zone4=zone4, guest_zone_net4=net4)
         try:
             rf_hosts = list(ipaddress.ip_network(str(st.get("zone_rf_cidr") or "169.254.77.4/30"), strict=False).hosts())
             if len(rf_hosts) >= 2:
@@ -225,7 +226,7 @@ def guest_zone() -> dict:
     if phase == "relay":
         to = str(st.get("relay_to") or "")
         if to and ":" in to and port:
-            out.update(relay_to=to, relay_udp_port=port)
+            out.update(relay_to=to, relay_udp_port=port, relay_udp_ports=ports)
     return out
 
 

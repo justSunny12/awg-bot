@@ -59,12 +59,13 @@ def final() -> InlineKeyboardMarkup:
 
 def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, name: str = "",
          can_move: bool = False, can_evict: bool = False, can_return: bool = False,
-         self_admin: bool = False) -> InlineKeyboardMarkup:
+         self_admin: bool = False, can_force: bool = False) -> InlineKeyboardMarkup:
     """Кнопки переезда видны, только когда действие возможно; невозможное —
     строкой причины в карточке."""
     return ui.rows(
         (f"🔀 Перевести клиентов на «{name}»", RsvCB(action="move")) if can_move else None,
         ("↩️ Вернуть клиентов", RsvCB(action="back")) if can_return else None,
+        (f"⚠️ Вернуть клиентов без «{name}»", RsvCB(action="force")) if can_force else None,
         (f"↩️ Вернуть клиентов «{name}» к нему", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
         (f"{_chk(rf_on)} РФ-доступ его клиентов через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
@@ -82,6 +83,10 @@ def confirm_move() -> InlineKeyboardMarkup:
 
 def confirm_evict() -> InlineKeyboardMarkup:
     return kc.confirm(SetCB(sec="rsv"), "↩️ Вернуть", RsvCB(action="evict_yes"), danger=False)
+
+
+def confirm_force() -> InlineKeyboardMarkup:
+    return kc.confirm(SetCB(sec="rsv"), "⚠️ Вернуть без резерва", RsvCB(action="force_yes"), danger=True)
 
 
 def confirm_return() -> InlineKeyboardMarkup:

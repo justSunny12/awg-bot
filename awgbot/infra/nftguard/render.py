@@ -248,8 +248,8 @@ def _guest_input(spec) -> list[str]:
     хоста, расшифрованный пакет выходит в зоне) и, в relay, тот же порт для
     пересылки хвоста (DNAT ниже — правило input его не видит, но ct нужен)."""
     out = []
-    if spec.guest_phase in ("taking", "serving") and spec.guest_udp_port:
-        out.append(f"        udp dport {int(spec.guest_udp_port)} accept")
+    if spec.guest_phase in ("taking", "serving") and (spec.guest_udp_ports or spec.guest_udp_port):
+        out.append(f"        udp dport {pkg._ports(list(spec.guest_udp_ports) or [int(spec.guest_udp_port)])} accept")
     if spec.guest_phase == "serving" and spec.guest_webhook_port and spec.guest_zone4:
         # SYN на порт вебхука с адреса вне пула виден до отбрасывания: адрес и
         # число попыток — в динамический набор (обучение пула, reserve/tgpool)
@@ -296,7 +296,12 @@ def _guest_prerouting(spec) -> list[str]:
         rules.append(f"        tcp dport {int(spec.guest_webhook_port)} ip saddr @{pkg.SET_TG_POOL} "
                      f"dnat ip to {spec.guest_zone4}:{int(spec.guest_webhook_port)}")
     if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
-        rules.append(f"        udp dport {int(spec.relay_udp_port)} dnat ip to {spec.relay_to}")
+        ports = list(spec.relay_udp_ports) or [int(spec.relay_udp_port)]
+        host = spec.relay_to.rsplit(":", 1)[0]
+        if len(ports) == 1:
+            rules.append(f"        udp dport {int(ports[0])} dnat ip to {spec.relay_to}")
+        else:                                                 # каждый порт — на тот же порт основы
+            rules.append(f"        udp dport {pkg._ports(ports)} dnat ip to {host}")
     if not rules:
         return []
     return ["", "    chain prerouting {", "        type nat hook prerouting priority dstnat; policy accept;",

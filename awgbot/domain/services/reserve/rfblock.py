@@ -92,7 +92,7 @@ class ReserveRfBlockMixin:
         if why:
             return []
         body = {"case": "3" if case == "3" else "nogw", "since": str(rf.get("since") or ""),
-                "voters": [{"slot": s, "name": self.reserve_gw_name(s), "see": v == "see"} for s, v in self._voters().items()][:16]}
+                "voters": [{"slot": s, "see": v == "see"} for s, v in self._voters().items()][:16]}   # имена основа знает сама
         rf.update(ask_mono=now, ask_at=timeutil.now_iso(), ask_no="", blocked="")
         self.rsv_update("rsv_view", rf=rf)
         log.warning("резерв: прошу основу о переезде (случай %s)", case)
@@ -153,8 +153,14 @@ class ReserveRfBlockMixin:
         Т-РУ21 / Т-РУ23 один раз на расхождение, строка карточки."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
-        seen = [str(v.get("name") or f"Шлюз {v.get('slot')}") for v in voters or [] if isinstance(v, dict) and v.get("see")]
-        unseen = [str(v.get("name") or f"Шлюз {v.get('slot')}") for v in voters or [] if isinstance(v, dict) and not v.get("see")]
+        names = {int(g["slot"]): str(g["name"]) for g in self._reserve_gateways_view()}   # резерв шлёт только слоты
+        def _nm(v):
+            try:
+                return names.get(int(v.get("slot") or 0)) or f"Шлюз {v.get('slot')}"
+            except (TypeError, ValueError):
+                return f"Шлюз {v.get('slot')}"
+        seen = [_nm(v) for v in voters or [] if isinstance(v, dict) and v.get("see")]
+        unseen = [_nm(v) for v in voters or [] if isinstance(v, dict) and not v.get("see")]
         key = f"{case}|{since}"
         cur = self.rsv_get("rsv_view")
         self.rsv_update("rsv_view", peer_case=case, peer_since=since, peer_seen=seen, peer_unseen=unseen, peer_at=timeutil.now_iso())

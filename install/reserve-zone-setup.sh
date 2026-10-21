@@ -209,7 +209,9 @@ cmd_selftest() {
 
 # ── зона-оболочка ───────────────────────────────────────────────────────────
 zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
-    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}" whp
+    local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" whp
+    # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft
+    local ifset=""; [ -n "$ifaces" ] && ifset="{ $(printf '"%s", ' $ifaces | sed 's/, $//') }"
     whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
     # таблица рисуется целиком (delete + create): повторные --shell/--take не дописывают правила
     nsx nft -f - <<EOF
@@ -227,20 +229,20 @@ table inet awg_guest {
         iifname "awglink*" tcp dport $chan accept
         iifname "awglink*" drop
 $( [ -n "$iface" ] && [ -n "$whp" ] && printf '        iifname "%s" ip daddr %s tcp dport %s accept\n' "$VN" "$ZONE_V" "$whp" )
-$( [ -n "$iface" ] && printf '        iifname "%s" udp dport 53 accept\n        iifname "%s" tcp dport 53 accept\n' "$iface" "$iface" )
+$( [ -n "$iface" ] && printf '        iifname %s udp dport 53 accept\n        iifname %s tcp dport 53 accept\n' "$ifset" "$ifset" )
     }
     chain forward {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
 $( [ -n "$iface" ] && cat <<EOF2
-        iifname "$iface" oifname "$iface" ip saddr @admin4 accept
-        iifname "$iface" oifname "$iface" drop
-        iifname "$iface" ip daddr @private4 oifname "$VN" drop
-        iifname "$iface" oifname { "$VN", "$RN", "awglink*" } accept
+        iifname $ifset oifname $ifset ip saddr @admin4 accept
+        iifname $ifset oifname $ifset drop
+        iifname $ifset ip daddr @private4 oifname "$VN" drop
+        iifname $ifset oifname { "$VN", "$RN", "awglink*" } accept
 EOF2
 )
-$( [ -n "$iface" ] && printf '        iifname "awglink*" oifname "%s" ct state established,related accept\n' "$iface" )
+$( [ -n "$iface" ] && printf '        iifname "awglink*" oifname %s ct state established,related accept\n' "$ifset" )
         iifname "awglink*" drop
     }
     chain zone_post {
@@ -274,7 +276,7 @@ cmd_shell() {
     nsx ip link set lo up
     nsx sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
     mkdir -p "$LINKS_DIR"; chmod 0700 "$LINKS_DIR"
-    zone_nft "$(state_get iface)"
+    zone_nft "$(state_ifaces)"
     link_sides_up
     state_write zone=present
     say "shell: ok"
@@ -367,6 +369,10 @@ write_dnsmasq() {   # write_dnsmasq "адреса" "апстримы"
     [ -f "$RUN/dnsmasq-rf.conf" ] || : > "$RUN/dnsmasq-rf.conf"
 }
 
+state_ifaces() {    # все клоны из состояния; старое состояние знало один
+    local i; i="$(state_get ifaces)"; [ -n "$i" ] || i="$(state_get iface)"; printf '%s' "$i"
+}
+
 write_setconf() {   # write_setconf IFACE — конфиг для awg setconf: без расширений awg-quick (Address, MTU, DNS, Table)
     grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$RUN/awg/$1.conf" > "$RUN/awg/$1.setconf"
     chmod 0600 "$RUN/awg/$1.setconf"
@@ -379,12 +385,13 @@ cmd_take() {
     local iface="${GUEST_IF:-awg0}" addr="${GUEST_ADDR:-}" dns="${GUEST_DNS:-}" ups="${GUEST_UPSTREAMS:-}"
     [ -n "$addr" ] || die "нет GUEST_ADDR"
     store_mount
-    # конфиг клона — только из stdin в хранилище в памяти
+    # конфиг клона — только из stdin в хранилище в памяти; конфиги дополнительных
+    # интерфейсов (окно переезда профилей — второй интерфейс основы) процесс
+    # открытия кладёт в $RUN/awg/<имя>.conf сам (GUEST_EXTRA="имя=cidr …")
     cat > "$RUN/awg/$iface.conf"; chmod 0600 "$RUN/awg/$iface.conf"
     grep -q '^PrivateKey' "$RUN/awg/$iface.conf" || die "в конфиге клона нет ключа"
     # для awg setconf — без расширений awg-quick (Address, MTU, DNS, Table): их setconf не знает
-    grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$RUN/awg/$iface.conf" > "$RUN/awg/$iface.setconf"
-    chmod 0600 "$RUN/awg/$iface.setconf"
+    write_setconf "$iface"
     # veth: бот основы и клиенты наружу (NAT хоста) и РФ-трафик к шлюзам резерва
     ip link show "$VH" >/dev/null 2>&1 || { ip link add "$VH" type veth peer name "$VN"; ip link set "$VN" netns "$ZONE"; }
     ip link show "$RH" >/dev/null 2>&1 || { ip link add "$RH" type veth peer name "$RN"; ip link set "$RN" netns "$ZONE"; }
@@ -398,18 +405,21 @@ cmd_take() {
     # РФ-доступа (линк активного слота), маскарад — в таблице хоста
     sysctl -qw "net.ipv4.conf.$RH.proxy_arp=1" 2>/dev/null || true
     ip rule show | grep -q "iif $RH lookup $RF_TABLE" || ip rule add iif "$RH" lookup "$RF_TABLE" pref 150
-    # клон: создаётся у хоста (сокет — у хоста), переносится в зону под именем основы
-    local tmp="awgc$$"
-    nsx ip link show "$iface" >/dev/null 2>&1 && { nsx ip link del "$iface" 2>/dev/null || true; }
-    ip link add "$tmp" type amneziawg || die "клон не создался"
-    awg setconf "$tmp" "$RUN/awg/$iface.setconf" || { ip link del "$tmp"; die "конфиг клона не принят"; }
-    ip link set "$tmp" netns "$ZONE" || { ip link del "$tmp"; die "клон не перенёсся в зону"; }
-    nsx ip link set "$tmp" name "$iface"
-    nsx ip addr replace "$addr" dev "$iface"
-    local mtu; mtu="$(awk -F'=' '/^[[:space:]]*MTU[[:space:]]*=/{gsub(/ /,"",$2); print $2; exit}' "$RUN/awg/$iface.conf")"
-    [ -n "$mtu" ] && nsx ip link set "$iface" mtu "$mtu"
-    nsx ip link set "$iface" up
-    zone_nft "$iface"
+    # клоны: создаются у хоста (сокет — у хоста), переносятся в зону под именами основы;
+    # первый — клиентский интерфейс, остальные — интерфейсы окна переезда профилей
+    local ifaces="$iface" ports="" pair extra_if extra_addr
+    clone_up "$iface" "$addr" || die "клон $iface не поднялся"
+    for pair in ${GUEST_EXTRA:-}; do
+        extra_if="${pair%%=*}"; extra_addr="${pair#*=}"
+        [ -n "$extra_if" ] && [ -n "$extra_addr" ] && [ "$extra_if" != "$extra_addr" ] || continue
+        [ -f "$RUN/awg/$extra_if.conf" ] || { say "ВНИМАНИЕ: конфига $extra_if нет — интерфейс не поднят"; continue; }
+        write_setconf "$extra_if"
+        clone_up "$extra_if" "$extra_addr" || { say "ВНИМАНИЕ: клон $extra_if не поднялся"; continue; }
+        ifaces="$ifaces $extra_if"
+    done
+    local i; for i in $ifaces; do ports="$ports $(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$i.conf")"; done
+    ports="${ports# }"
+    zone_nft "$ifaces"
     local a
     for a in ${GUEST_ADMIN:-}; do nsx nft add element inet awg_guest admin4 "{ $a }" 2>/dev/null || true; done
     [ -n "$dns" ] || dns="${addr%/*}"
@@ -421,18 +431,33 @@ cmd_take() {
     mkdir -p "$STATE_DIR"
     systemctl restart awg-bot-guest-dns.service || say "ВНИМАНИЕ: dnsmasq зоны не поднялся"
     [ -f "$RUN/env" ] && systemctl restart awg-bot-guest.service || say "ВНИМАНИЕ: env бота основы ещё не положен — юнит не запущен"
-    state_write zone=present phase=taking iface="$iface" port="$(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$iface.conf")" \
+    state_write zone=present phase=taking iface="$iface" port="${ports%% *}" ifaces="$ifaces" ports="$ports" \
         zone_cidr="$ZONE_CIDR" zone_rf_cidr="$ZONE_RF_CIDR" taken_at="$(date -Iseconds)"
     say "take: ok"
 }
 
+clone_up() {   # clone_up IFACE CIDR — клон из $RUN/awg/IFACE.setconf: создать у хоста, перенести в зону, адрес, MTU
+    local iface="$1" addr="$2" tmp="awgc$$" mtu
+    nsx ip link show "$iface" >/dev/null 2>&1 && { nsx ip link del "$iface" 2>/dev/null || true; }
+    ip link add "$tmp" type amneziawg || return 1
+    awg setconf "$tmp" "$RUN/awg/$iface.setconf" || { ip link del "$tmp"; return 1; }
+    ip link set "$tmp" netns "$ZONE" || { ip link del "$tmp"; return 1; }
+    nsx ip link set "$tmp" name "$iface"
+    nsx ip addr replace "$addr" dev "$iface"
+    mtu="$(awk -F'=' '/^[[:space:]]*MTU[[:space:]]*=/{gsub(/ /,"",$2); print $2; exit}' "$RUN/awg/$iface.conf")"
+    [ -n "$mtu" ] && nsx ip link set "$iface" mtu "$mtu"
+    nsx ip link set "$iface" up
+}
+
 cmd_restart_clone() {
     need_root
-    local iface; iface="$(state_get iface)"; [ -n "$iface" ] || die "клона нет"
-    nsx ip link set "$iface" down
-    write_setconf "$iface"
-    nsx awg setconf "$iface" "$RUN/awg/$iface.setconf" || die "конфиг клона не принят"
-    nsx ip link set "$iface" up
+    local ifaces; ifaces="$(state_ifaces)"; [ -n "$ifaces" ] || die "клона нет"
+    local iface; for iface in $ifaces; do
+        nsx ip link set "$iface" down
+        write_setconf "$iface"
+        nsx awg setconf "$iface" "$RUN/awg/$iface.setconf" || die "конфиг клона $iface не принят"
+        nsx ip link set "$iface" up
+    done
     say "clone: restarted"
 }
 
@@ -458,7 +483,7 @@ cmd_serve() {
     [ -n "$(state_get iface)" ] || die "клона нет — сначала --take"
     cake_on
     state_write phase=serving serving_at="$(date -Iseconds)" webhook_port="${WEBHOOK_PORT:-}"
-    zone_nft "$(state_get iface)"            # вход вебхука с veth — только теперь, когда порт известен
+    zone_nft "$(state_ifaces)"               # вход вебхука с veth — только теперь, когда порт известен
     say "serve: ok"
 }
 
@@ -466,8 +491,8 @@ cmd_serve() {
 guest_stop() {
     systemctl stop awg-bot-guest.service 2>/dev/null || true
     systemctl stop awg-bot-guest-dns.service 2>/dev/null || true
-    local iface; iface="$(state_get iface)"
-    [ -n "$iface" ] && nsx ip link del "$iface" 2>/dev/null
+    local ifaces; ifaces="$(state_ifaces)"
+    local iface; for iface in $ifaces; do nsx ip link del "$iface" 2>/dev/null; done
     while ip rule del iif "$RH" lookup "$RF_TABLE" 2>/dev/null; do :; done
     ip link del "$VH" 2>/dev/null; ip link del "$RH" 2>/dev/null
     zone_nft ""
@@ -475,7 +500,7 @@ guest_stop() {
 cmd_relay() {
     need_root
     guest_stop
-    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface=
+    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces=
     say "relay: ok"
 }
 cmd_teardown() {

@@ -114,17 +114,27 @@ class ReserveStoreMixin:
         return [a.strip() for a in str(raw or "").replace(",", " ").split() if a.strip()]
 
     # ── состояние резерва и пересылка ───────────────────────────────────────
-    def reserve_state_in(self, state: str, move: int) -> list[tuple]:
-        """`state{state, move}` от резерва по гостевому каналу."""
+    def reserve_state_in(self, state: str, move: int, reason: str = "") -> list[tuple]:
+        """`state{state, move[, reason]}` от резерва по гостевому каналу. `idle` с
+        причиной после отданной этим шлюзом доли — переезд не состоялся: Т-РА5."""
         cur = self.reserve_section()
         if not cur:
             return []
         if state not in ("serving", "idle"):
             return []
+        actions: list[tuple] = []
+        if state == "idle" and reason and cur.get("share_given_at"):
+            from awgbot.core import config
+            from awgbot.domain.notices import reserve as rn
+            from awgbot.domain.services import Notification
+            _primary, since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
+            actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID),
+                                                    text=rn.gateway_move_failed(str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason))]))
+            cur["share_given_at"] = ""
         cur["reserve_state"], cur["reserve_move"] = state, int(move)
         cur["reserve_state_at"] = timeutil.now_iso()
         _write(cur, self._RSV_STORE)
-        return self.reserve_forward_decide()
+        return actions + self.reserve_forward_decide()
 
     def reserve_forward_decide(self) -> list[tuple]:
         """Открыть или закрыть пересылку с `awgrsv` по правилу раздела; действия

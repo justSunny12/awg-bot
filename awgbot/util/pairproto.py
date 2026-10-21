@@ -114,7 +114,7 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "view":   (RESERVE, {"seen": (_S, 32), "voters": (_L, MAX_LIST), "in": (_S, 16), "pkg_gen": (_I, None)}),
     "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32), "m_gen": (_I, None)}),
     "share":  (GATEWAY, {"share": (_S, 64), "m_gen": (_I, None)}),
-    "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None)}),
+    "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None), "reason": (_S, MAX_REASON)}),
     "ping":   (BOTH, {"n": (_S, 32)}),                    # проба по подозрению — с любой стороны
     "pong":   (BOTH, {"n": (_S, 32)}),
 }
@@ -135,7 +135,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by"}),
-                                  "need": frozenset({"m_gen"})}
+                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"})}
 
 
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:

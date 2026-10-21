@@ -212,8 +212,9 @@ class ReserveInboundMixin:
             except rsvzone.ZoneError as e:
                 log.warning("резерв: зона после отказа: %s", e)
         self.reserve_set_in("idle", step="", reason=reason)
+        gw_word = self.reserve_gw_state_actions(force=True, reason=reason) if hasattr(self, "reserve_gw_state_actions") else []
         return [("send", "down", {"reason": reason[:120]}), ("fw",),
-                ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra
+                ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra + gw_word
 
     # ── реплика и право отвечать (переезд кнопкой) ──────────────────────────
     def reserve_released_store(self, blob: bytes) -> list[tuple]:
@@ -264,7 +265,7 @@ class ReserveInboundMixin:
         log.warning("резерв: зона в состоянии %s, а я считаю serving — клиентов «%s» больше не несу", phase or "idle", name)
         self.reserve_pkg_in_drop()
         with _LOCK:
-            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=True)
+            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=False)   # матрица откроет снова без паузы
         actions: list[tuple] = [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, "зона снята"))])]
         if hasattr(self, "reserve_gw_state_actions"):
             actions += self.reserve_gw_state_actions(force=True)

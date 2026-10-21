@@ -49,7 +49,8 @@ class ReserveVoteMixin:
             self.reserve_guest_pong_in(str(body.get("n") or ""))
             return []
         if kind == "state":
-            actions = self.reserve_state_in(str(body.get("state") or ""), int(body.get("move") or 0))
+            actions = self.reserve_state_in(str(body.get("state") or ""), int(body.get("move") or 0),
+                                            str(body.get("reason") or ""))
             return actions + self._moved_notice(actions) + [("push",)]
         if kind == "view":
             cur = self.reserve_section()

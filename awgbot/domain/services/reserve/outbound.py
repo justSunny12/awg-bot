@@ -58,6 +58,7 @@ PKG_WAIT_S = 120          # свежий пакет до `go`
 UP_WAIT_S = 300           # резерв поднял клон
 RECORD_WAIT_S = 1800      # факт записи
 RELEASED_WAIT_S = 300     # `taken` после `released`; возврат: `released` после `back_req`
+FORCE_OFFLINE_S = 10 * 60        # «вернуть без резерва» — не раньше, чем он не на связи столько
 STUCK_IDLE_S = 10 * 60           # столько подряд запись на мне, а резерв клиентов не несёт — вебхук зависший
 STUCK_PAIR_S = 30 * 60           # пары нет на связи столько, запись на мне — вебхук резерва зависший
 HEALTHY_S = 300           # «здоров» — столько подряд
@@ -187,6 +188,8 @@ class ReserveOutboundMixin:
         """Дома: факт «клиенты у резерва» мимо меня (переезд по взглядам, пока я
         лежал) — `in = serving` у резерва → away."""
         peer = self.reserve_peer_state()
+        if out.get("await_merge"):
+            return self._tick_await_merge(out)
         if str(peer.get("inn") or "") in ("taking", "serving") and self.reserve_online():
             # переезд прошёл мимо меня — пакет открыт не моим K (своего `go` не было): по долям или
             # по коду; слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
@@ -284,6 +287,12 @@ class ReserveOutboundMixin:
             return None
         blob = seal.snapshot_seal(self.reserve_k(), {"pkg_gen": int(out.get("gen") or 0), "at": timeutil.now_iso(),
                                                      "db": db_bytes.hex()})
+        # снимок для слияния при возврате — именно эта реплика: с неё стартует гость, и всё,
+        # что было записано здесь между пакетом и передачей, не удвоится и не станет «чужим»
+        try:
+            self._pkg_store_base(int(out.get("gen") or 0), db_bytes)
+        except OSError as e:
+            log.warning("резерв: снимок финальной реплики не сохранён: %s", e)
         self._out_step("released", RELEASED_WAIT_S, released_at=timeutil.now_iso())
         self.reserve_set_poll("away")
         return {"gen": int(out.get("gen") or 0), "blob": blob.hex()}
@@ -372,15 +381,22 @@ class ReserveOutboundMixin:
             return False
 
     def reserve_stuck_home(self) -> list[tuple]:
-        """deleteWebhook прошёл (take): клиенты и так здесь — домой без возврата."""
+        """deleteWebhook прошёл (take): клиенты и так здесь — домой без возврата. По
+        рычагу «без резерва» (await_merge) — домой с ожиданием его реплики."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
+        out = self._out()
+        forced = bool(out.get("await_merge"))
         self.reserve_set_poll("mine")
-        self.reserve_set_out("home", step="", kind="", stuck_home_at=timeutil.now_iso())
-        self.reserve_new_k()
-        self.reserve_pkg_mark()
-        log.warning("резерв: вебхук «%s» снят — запись на мне, клиентов он не нёс; поллю сам", name)
-        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
+        self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
+                             stuck_home_at=timeutil.now_iso(), await_merge=forced, last_switch=timeutil.now_iso())
+        if not forced:
+            self.reserve_new_k()
+            self.reserve_pkg_mark()
+            log.warning("резерв: вебхук «%s» снят — запись на мне, клиентов он не нёс; поллю сам", name)
+            return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
+        log.warning("резерв: клиенты возвращены без «%s» — его реплика вольётся, когда он выйдет на связь", name)
+        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name))])]
 
     def reserve_can_return(self) -> bool:
         out = self._out()
@@ -396,6 +412,67 @@ class ReserveOutboundMixin:
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
         return ""
+
+    # ── С9: резерв не на связи — вернуть клиентов без него ──────────────────
+    def reserve_force_check(self) -> str:
+        """Пусто — рычаг «вернуть без резерва» возможен: мои клиенты у резерва, а он
+        не на связи дольше FORCE_OFFLINE_S."""
+        if self.reserve_out() != "away":
+            return "клиенты не у резерва"
+        if self.reserve_online():
+            return f"«{self.reserve_peer_name()}» на связи — верни клиентов обычным путём"
+        since = self.reserve_down_since()
+        try:
+            if not since or timeutil.elapsed(timeutil.parse_iso(since)) < FORCE_OFFLINE_S:
+                return f"«{self.reserve_peer_name()}» не на связи меньше {FORCE_OFFLINE_S // 60} мин — подожди"
+        except ValueError:
+            return "момент потери связи не известен"
+        return ""
+
+    def reserve_force_dialog_data(self) -> dict:
+        return {"name": self.reserve_peer_name(), "since": self.reserve_down_since(), "record": self.reserve_dns_name(),
+                "own": self.reserve_own_ip(), "manual": not self.reserve_dns_automatic()}
+
+    def reserve_force_home(self) -> list[tuple]:
+        """Рычаг: запись на себя (API — если автоматически), deleteWebhook и поллинг;
+        дома с отметкой `await_merge`: реплика резерва вольётся, когда он выйдет на
+        связь (его `released` по моему `back_req`)."""
+        why = self.reserve_force_check()
+        if why:
+            raise ServiceError(why)
+        from awgbot.domain.notices import reserve as rn
+        actions: list[tuple] = []
+        own = self.reserve_own_ip()
+        if own and self.reserve_dns_automatic():
+            try:
+                self.reserve_dns_switch(own)
+            except ServiceError as e:
+                actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                                        text=rn.record_not_changed(self.reserve_dns_name(), str(e), own))]))
+        self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
+        log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
+        return actions + [("take_home",)]
+
+    def _tick_await_merge(self, out: dict) -> list[tuple]:
+        """Дома после возврата без резерва: он вышел на связь и всё ещё несёт мой бот —
+        обычный возврат с шага back_req (слияние, рестарт, запись уже на мне)."""
+        peer = self.reserve_peer_state()
+        if not self.reserve_online():
+            return []
+        if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing"):
+            # резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего, новый K
+            from awgbot.domain.notices import reserve as rn
+            self.rsv_update("rsv_out", await_merge=False)
+            self.reserve_new_k()
+            self.reserve_pkg_mark()
+            log.warning("резерв: «%s» на связи без моего гостя — реплики не будет", self.reserve_peer_name())
+            return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_no_merge(self.reserve_peer_name()))])]
+        with _LOCK:
+            self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
+                                 return_started_at=timeutil.now_iso(), await_merge=False)
+            self._out_step("back_req", RELEASED_WAIT_S)
+        log.info("резерв: «%s» снова на связи — сливаю его реплику", self.reserve_peer_name())
+        return [("send", "back_req", {}), ("live",)]
 
     def reserve_return_start(self, why: str) -> list[tuple]:
         """Начать возврат: returning/back_req → `back_req` резерву."""
@@ -650,7 +727,7 @@ class ReserveOutboundMixin:
         self.reserve_set_out("home", step="", kind="", relay_until=str(out.get("relay_until") or ""),
                              returned_at=timeutil.now_iso(), last_switch=timeutil.now_iso(),
                              back_fact_at=str(out.get("record_fact_at") or timeutil.now_iso()), notified=False,
-                             merge_report=dict(out.get("merge_report") or {}), go_sent=False)
+                             merge_report=dict(out.get("merge_report") or {}), go_sent=False, await_merge=False)
         self.db.set_state("move_notified", "")              # «переподключи VPN» — заново на следующий переезд
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]

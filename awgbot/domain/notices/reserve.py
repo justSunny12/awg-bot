@@ -224,10 +224,10 @@ def code_needed_primary(primary: str, reserve: str, since: str) -> str:
 
 def code_window_closed(primary: str, why: str) -> str:
     """Т-РН3 (админу основы): приём кода закрыт — переезд не нужен или идёт сам."""
-    if why == "gw_sees":
-        return f"ℹ️ Шлюз {_n(primary)} снова на связи и видит сервер — переезд не нужен"
+    if why == "gw_sees":                                      # primary здесь — «шлюз N» (имён шлюзов основы у резерва нет)
+        return f"ℹ️ {_e(primary[:1].upper() + primary[1:])} снова на связи и видит сервер — переезд не нужен"
     if why == "gw_unseen":
-        return f"ℹ️ Шлюз {_n(primary)} снова на связи и не видит сервер — переезд идёт сам, код не нужен"
+        return f"ℹ️ {_e(primary[:1].upper() + primary[1:])} снова на связи и не видит сервер — переезд идёт сам, код не нужен"
     return f"ℹ️ {_n(primary)} снова на связи — переезд не нужен"
 
 
@@ -273,6 +273,17 @@ def ask_refused(reserve: str, case: str, since: str, link_if: str = "", reserve_
                 f"переезда на {_n(reserve)} не будет{tail}")
     return (f"⚠️ Шлюзы не видят этот сервер с {at}, а {_n(reserve)} видит: на сервере не поднят линк "
             f"<code>{_e(link_if or 'awglink')}</code> — дело не в РФ, переезда на {_n(reserve)} не будет")
+
+
+def forced_home(reserve: str) -> str:
+    """С9: клиенты возвращены без резерва."""
+    return (f"↩️ Клиенты и бот снова здесь: запись на этом сервере, Telegram забран. {_n(reserve)} не на связи — "
+            f"всё, что изменилось там, вольётся, когда он выйдет на связь")
+
+
+def forced_no_merge(reserve: str) -> str:
+    """С9: резерв вышел на связь без гостя — изменений с него не будет."""
+    return f"ℹ️ {_n(reserve)} снова на связи, но гостя на нём уже нет — изменения, сделанные там, не вольются"
 
 
 def webhook_stuck_removed(reserve: str) -> str:

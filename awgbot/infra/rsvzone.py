@@ -138,10 +138,12 @@ def store() -> str:
 
 
 def take(conf_text: str, *, iface: str, addr: str, dns: list[str], upstreams: list[str], admin: list[str],
-         channel_port: int = 0) -> str:
-    """Клон из конфига (stdin), veth, dnsmasq и юниты гостя."""
+         channel_port: int = 0, extra: list[tuple[str, str]] | None = None) -> str:
+    """Клон из конфига (stdin), veth, dnsmasq и юниты гостя. extra — (имя, cidr)
+    дополнительных интерфейсов основы (окно переезда профилей): их конфиги уже
+    лежат в хранилище (`RUN_DIR/awg/<имя>.conf`), скрипт поднимает их следом."""
     env = {"GUEST_IF": iface, "GUEST_ADDR": addr, "GUEST_DNS": " ".join(dns), "GUEST_UPSTREAMS": " ".join(upstreams),
-           "GUEST_ADMIN": " ".join(admin)}
+           "GUEST_ADMIN": " ".join(admin), "GUEST_EXTRA": " ".join(f"{n}={a}" for n, a in (extra or []))}
     if channel_port:
         env["GUEST_CHANNEL_PORT"] = str(int(channel_port))
     return run("take", env=env, stdin=conf_text)

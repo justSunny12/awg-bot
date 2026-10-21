@@ -162,6 +162,8 @@ def card_text(d: dict) -> str:
         lines.append(f"📥 Клиенты {_n(name)}: на его сервере")
         if not in_ok and in_why:
             lines.append("└ ⚠️ " + _e(in_why))
+        if d.get("await_merge"):
+            lines.append(f"└ ⏳ жду реплику {_n(name)} — она вольётся, когда он выйдет на связь")
         if d.get("code_open"):
             lines.append(f"└ 🆘 {_n(name)} и его шлюзы не отвечают — жду аварийный код его админа")
         elif d.get("auto_block"):
@@ -275,6 +277,20 @@ def return_dialog(d: dict) -> str:
 
 
 # ── Т-Р12: вернуть клиентов к основе (у резерва) ─────────────────────────────
+
+def force_dialog(d: dict) -> str:
+    """С9: вернуть клиентов без резерва."""
+    name = _n(str(d.get("name") or "резерв"))
+    since = _when(str(d.get("since") or ""))
+    rec = ""
+    if d.get("record") and d.get("own"):
+        rec = (f"смени у провайдера запись <code>{_e(d['record'])}</code> на <code>{_e(d['own'])}</code> сам"
+               if d.get("manual") else f"запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own'])}</code>")
+    return (f"⚠️ <b>Вернуть клиентов без {name}?</b>\n\n"
+            f"{name} не на связи" + (f" с {since}" if since else "") + ". Этот сервер заберёт Telegram и примет устройства сам"
+            + (f"; {rec}" if rec else "") + f". Всё, что изменилось на {name} за это время, вольётся, когда он выйдет на связь; "
+            "пересылки хвоста с него не будет — устройства, которые ещё ходят через него, переподключатся сами")
+
 
 def evict_dialog(name: str) -> str:
     n = _n(name)

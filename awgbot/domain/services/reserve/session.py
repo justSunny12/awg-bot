@@ -125,9 +125,10 @@ class ReserveSessionMixin:
         self.__dict__["_rsv_guest_online"] = int(n or 0)
 
     def _voters_body(self) -> list[dict]:
-        """Мои шлюзы с агентом rsv1 — слот и имя: резерву для набора голосующих и текстов."""
+        """Мои шлюзы с агентом rsv1 — только номера слотов: имена устройств и
+        мест второй стороне не раскрываются, в её текстах шлюз — «шлюз 2»."""
         try:
-            return [{"slot": int(g["slot"]), "name": str(g["name"])[:64]} for g in self._reserve_gateways_view() if g.get("rsv")][:16]
+            return [{"slot": int(g["slot"])} for g in self._reserve_gateways_view() if g.get("rsv")][:16]
         except Exception:                                     # noqa: BLE001
             return []
 

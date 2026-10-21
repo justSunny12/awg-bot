@@ -23,6 +23,7 @@ from awgbot.util import livestep, rsvkeys, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
+from . import codewait
 from .state import _LOCK
 
 NEED_RETRY_S = 30                 # доля не пришла — need следующему «не вижу»
@@ -59,11 +60,10 @@ class ReserveVoteMixin:
     def _gw_thresholds(self) -> tuple[int, int]:
         return (settings.get_int("app.reserve.suspect_seconds", 40), settings.get_int("app.reserve.probe_seconds", 15))
 
-    def reserve_gw_name(self, slot: int) -> str:
-        for v in self.reserve_peer_state().get("voters") or []:
-            if isinstance(v, dict) and int(v.get("slot") or 0) == int(slot):
-                return str(v.get("name") or f"Шлюз {slot}")
-        return f"Шлюз {slot}"
+    @staticmethod
+    def reserve_gw_name(slot: int) -> str:
+        """Шлюз основы в текстах резерва — по номеру слота: имён второй стороне нет."""
+        return f"шлюз {int(slot)}"
 
     # ── сессии гостевого канала ─────────────────────────────────────────────
     def reserve_guest_opened(self, slot: int, hello: dict) -> list[tuple]:
@@ -168,14 +168,17 @@ class ReserveVoteMixin:
                 "voters": [{"slot": s, "see": v == "see"} for s, v in self._voters().items()][:16],
                 "in": self.reserve_in(), "pkg_gen": int(self.rsv_get("rsv_pkg_in").get("gen") or 0)}
 
-    def _state_body(self) -> dict:
+    def _state_body(self, reason: str = "") -> dict:
         inn = self.rsv_get("rsv_in")
         serving = str(inn.get("state") or "idle") in ("taking", "serving", "releasing")   # до возврата — открыто
-        return {"state": "serving" if serving else "idle", "move": int(inn.get("gen") or 0)}
+        body = {"state": "serving" if serving else "idle", "move": int(inn.get("gen") or 0)}
+        if reason:
+            body["reason"] = str(reason)[:200]                 # срыв открытия после отданной доли — шлюзу Т-РА5
+        return body
 
-    def reserve_gw_state_actions(self, force: bool = False) -> list[tuple]:
+    def reserve_gw_state_actions(self, force: bool = False, reason: str = "") -> list[tuple]:
         """`state{serving|idle, move}` всем шлюзам основы по смене (или force)."""
-        body = self._state_body()
+        body = self._state_body(reason)
         packed = json.dumps(body, sort_keys=True)
         if not force and self.__dict__.get("_rsv_state_sent") == packed:
             return []
@@ -228,7 +231,7 @@ class ReserveVoteMixin:
             return []                                         # резерву нечем дать РФ-доступ или у основы нет шлюзов
         view = self.rsv_get("rsv_view")
         body = {"case": case, "since": str(view.get("case_since") or ""),
-                "voters": [{"slot": s, "name": self.reserve_gw_name(s), "see": v == "see"} for s, v in self._voters().items()][:16]}
+                "voters": [{"slot": s, "see": v == "see"} for s, v in self._voters().items()][:16]}   # имена основа знает сама
         packed = json.dumps(body, sort_keys=True)
         if view.get("view_sent") == packed:
             return []
@@ -358,11 +361,10 @@ class ReserveVoteMixin:
         if case == "5":
             unseen = [self.reserve_gw_name(s) for s, v in views.items() if v == "unseen"]
             seen = [self.reserve_gw_name(s) for s, v in views.items() if v == "see"]
-            parts.append("его шлюзы — частично: не видят " + ", ".join(f"«{n}»" for n in unseen)
-                         + ", видят " + ", ".join(f"«{n}»" for n in seen))
+            parts.append("его шлюзы — частично: не видят " + ", ".join(unseen) + ", видят " + ", ".join(seen))
         absent = [self.reserve_gw_name(s) for s in self._absent_slots()]
         if absent:
-            parts.append(", ".join(f"«{n}»" for n in absent) + (" не на связи с этим сервером" if len(absent) == 1 else " не на связи с этим сервером"))
+            parts.append(", ".join(absent) + " не на связи с этим сервером")
         return "; ".join(parts)
 
     # ── Н4: окно аварийного кода ────────────────────────────────────────────
@@ -446,7 +448,25 @@ class ReserveVoteMixin:
             return {"ok": False, "why": "busy", "actions": actions}
         cw.update(open=False, closed_why="used", closed_at=timeutil.now_iso(), pending=True)
         self.rsv_update("rsv_view", code=cw, moved_by={"code": True, "at": timeutil.now_iso()})
-        return {"ok": True, "pending": True, "actions": actions}
+        # итог — по ходу процесса открытия: конверт ключа код снимает за секунды, и
+        # «не подошёл» админ основы видит ответом на своё сообщение, а не уведомлением
+        verdict = codewait.verdict()
+        if verdict != "fail":
+            return {"ok": True, "pending": verdict != "ok", "actions": actions}
+        from awgbot.infra import rsvzone
+        reason = str(rsvzone.open_status().get("reason") or "процесс открытия отказал")
+        wrong = self._code_reason_wrong(reason)
+        fail = self._take_fail(reason)                          # окно снова открыто, попытка в счёт (reserve_code_failed)
+        pid = self.reserve_peer_admin_id()
+        fail = [a for a in fail if not (a and a[0] == "notify" and all(n.tg_id == pid for n in a[1]))]   # ответ — здесь
+        left = max(0, CODE_TRIES - len(self._code_tries(dict(self.rsv_get("rsv_view").get("code") or {}))))
+        return {"ok": False, "why": "wrong" if wrong else "open_failed", "checked": True, "left": left,
+                "reason": reason, "actions": actions + fail}
+
+    @staticmethod
+    def _code_reason_wrong(reason: str) -> bool:
+        return any(w in reason for w in ("ключ пакета", "доли не сошлись", "аварийный код"))
+
 
     @staticmethod
     def _code_tries(cw: dict) -> list:
@@ -468,7 +488,7 @@ class ReserveVoteMixin:
         if not cw.get("pending"):
             return []
         pid = self.reserve_peer_admin_id()
-        wrong = any(w in reason for w in ("ключ пакета", "доли не сошлись", "аварийный код"))
+        wrong = self._code_reason_wrong(reason)
         cw.update(open=True, pending=False, closed_why="")
         if wrong:
             res = self._code_try_failed(cw, "не подошёл")

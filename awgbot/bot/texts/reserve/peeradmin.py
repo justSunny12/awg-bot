@@ -117,7 +117,11 @@ def code_result(res: dict, peer: str) -> str:
     why = str(res.get("why") or "")
     if why == "wrong":
         left = int(res.get("left") or 0)
-        return f"⚠️ Код не разобран — проверь группы и знаки. Осталось попыток: {left}" + (" — следующие через час" if left else "")
+        head = "⚠️ Код не подошёл" if res.get("checked") else "⚠️ Код не разобран — проверь группы и знаки"
+        return f"{head}. Осталось попыток: {left}" + (" — следующие через час" if left else "")
+    if why == "open_failed":
+        return (f"⚠️ Код подошёл, но клиентов {_n(peer)} поднять не удалось: {_e(str(res.get('reason') or ''))}. "
+                "Приём кода снова открыт")
     if why == "limit":
         return "⚠️ Код не подошёл три раза — следующие попытки через час"
     if why == "busy":

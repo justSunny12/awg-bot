@@ -64,6 +64,8 @@ class ReserveScreenMixin:
                 "auto_block": str(self.rsv_get("rsv_view").get("auto_block") or ""),
                 "code_open": bool(self.reserve_code_window()["open"]),
                 "mem_free": int(ps.get("mem_free") or 0), "here": self._online_count(), "there": int(ps.get("there") or 0),
+                "force_why": self.reserve_force_check() if self.reserve_out() == "away" else "клиенты не у резерва",
+                "await_merge": bool(out.get("await_merge")),
                 "self_admin": self.reserve_self_peer_admin()}
 
     def _reserve_traffic_view(self) -> dict:

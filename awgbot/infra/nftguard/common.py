@@ -82,6 +82,7 @@ class GuardSpec:
     # гостевая зона резерва (клиенты основы у меня): состояние зоны из state.json
     guest_phase: str = ""                                     # idle | taking | serving | relay
     guest_udp_port: int = 0                                   # порт клона: сокет у хоста — вход открыт (taking, serving)
+    guest_udp_ports: list[int] = field(default_factory=list)  # все клоны (второй — окно переезда профилей)
     guest_veth_if: str = ""                                   # veth хост ↔ зона: выход зоны наружу через NAT хоста
     guest_zone4: str = ""                                     # адрес зоны в veth: DNAT вебхука сюда
     guest_zone_net4: str = ""                                 # /30 veth: маскарад наружу
@@ -91,6 +92,7 @@ class GuardSpec:
     guest_rf_zone4: str = ""                                  # адрес зоны в нём — источник РФ-трафика
     relay_to: str = ""                                        # «адрес:порт» основы: пересылка хвоста UDP (relay)
     relay_udp_port: int = 0                                   # порт, который пересылается
+    relay_udp_ports: list[int] = field(default_factory=list)  # все порты клонов — каждый на тот же порт основы
 
 
 def enabled() -> bool:

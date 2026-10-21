@@ -58,18 +58,22 @@ class ReserveTrafficMixin:
     def _clone_counters(self) -> tuple[int | None, int | None]:
         from awgbot.infra import rsvzone
         from awgbot.util import netns
-        iface = str(rsvzone.state().get("iface") or "")
-        if not iface:
+        st = rsvzone.state()
+        ifaces = str(st.get("ifaces") or st.get("iface") or "").split()
+        if not ifaces:
             return None, None
-        try:
-            proc = netns.run_in(netns.path_of(rsvzone.ZONE), ["awg", "show", iface, "transfer"], timeout=10)
-        except (OSError, subprocess.SubprocessError) as e:
-            log.info("резерв: счётчики клона не прочитаны: %s", e)
-            return None, None
-        if proc.returncode != 0:
-            return None, None
+        out = b""
+        for iface in ifaces:                                  # все клоны (окно переезда профилей — два)
+            try:
+                proc = netns.run_in(netns.path_of(rsvzone.ZONE), ["awg", "show", iface, "transfer"], timeout=10)
+            except (OSError, subprocess.SubprocessError) as e:
+                log.info("резерв: счётчики клона не прочитаны: %s", e)
+                return None, None
+            if proc.returncode != 0:
+                return None, None
+            out += proc.stdout
         rx = tx = 0
-        for line in proc.stdout.decode(errors="replace").splitlines():
+        for line in out.decode(errors="replace").splitlines():
             parts = line.split()
             if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
                 rx += int(parts[1])
