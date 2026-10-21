@@ -31,7 +31,8 @@ class ReserveAwayMixin:
             raise ServiceError(HOSTING_REFUSED.format(name=self.reserve_peer_name()))
 
     def reserve_main_line(self) -> str:
-        """Т-Р17: строка главной админа только в не-обычном состоянии; пусто — обычное."""
+        """Т-Р17: строка главной админа о резерве — особое состояние (переезд, возврат,
+        недоступен) или короткое «на связи»; пусто — пары нет."""
         if not self.reserve_paired():
             return ""
         name = self.reserve_peer_name()

@@ -12,6 +12,10 @@ invite.py — часть пакета reserve (см. __init__): приглаше
 `rsv_invite` вместе со строкой приглашения ровно час (он же — секрет канала
 до кода, нужен после перезапуска бота); копия по расписанию и по событию в
 это время не снимается (`backup_rekey_busy`).
+
+Пакеты гостевой зоны (dnsmasq, conntrack) здесь же: недостающие ставятся в
+фоне при сопряжении и включении готовности, такт повторяет раз в 6 часов,
+отказ — уведомление админу один раз до удачной установки.
 """
 from __future__ import annotations
 
@@ -215,10 +219,10 @@ class ReserveInviteMixin:
             raise ServiceErrorHtml("Не задан адрес сервера (<code>network.server_host</code> или "
                                    "<code>network.self_host</code>) — второму серверу некуда подключаться")
         self.reserve_pin_self_host()
-        self.reserve_require_zone_tools()
         host = own_host()
         if not settings.get_bool("app.reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом» — без готовности пара не нужна")
+        self.reserve_require_zone_tools()                     # после проверок: пакеты ставятся только ради пары
         if not self.reserve_has_gateway():
             log.info("резерв: приглашение без своего шлюза — направление «мои клиенты» будет не готово")
         with _LOCK:

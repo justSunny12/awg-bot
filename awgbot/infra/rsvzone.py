@@ -13,6 +13,10 @@ rsvzone.py — обёртка install/reserve-zone-setup.sh (гостевая з
 знают обе стороны: ключ пакета, настройки вебхука, пул адресов Telegram,
 отметка «право отвечать в Telegram — у гостя».
 
+Пакеты зоны (`ZONE_TOOLS`: dnsmasq, conntrack) скрипт не ставит — их ставит
+`install_tools` (apt-get, без вопросов); нет apt-get — ZoneError с тем, что
+поставить руками.
+
 Секретное в аргументы не кладётся никогда: конфиг клона — через stdin
 скрипта, ключи — только в файлах хранилища (0600).
 """
@@ -62,14 +66,15 @@ def install_tools(names: list[str], timeout: int = 900) -> str:
         raise ZoneError("нет apt-get — поставь руками: " + " ".join(names))
     env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
     try:
-        subprocess.run(["apt-get", "-q", "update"], capture_output=True, timeout=300, env=env)   # списки могли устареть
+        upd = subprocess.run(["apt-get", "-q", "update"], capture_output=True, timeout=300, env=env)   # списки могли устареть
         proc = subprocess.run(["apt-get", "-q", "-y", "--no-install-recommends", "install", *names],
                               capture_output=True, timeout=timeout, env=env)
     except (OSError, subprocess.SubprocessError) as e:
         raise ZoneError(f"apt-get не запустился: {e}") from e
     if proc.returncode != 0:
         tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
-        raise ZoneError("apt-get: " + (" · ".join(t.strip() for t in tail) or f"код {proc.returncode}"))
+        head = "списки пакетов не обновились (apt-get update) · " if upd.returncode != 0 else ""
+        raise ZoneError("apt-get: " + head + (" · ".join(t.strip() for t in tail) or f"код {proc.returncode}"))
     return " ".join(names)
 
 

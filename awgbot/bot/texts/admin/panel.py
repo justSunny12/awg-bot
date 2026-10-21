@@ -58,7 +58,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     host = _e(_hostname() or "AWG")
     lines = [ui.head(f"🛠 {host}", dot)]
     if rsv_line:
-        # Т-Р17: резерв — только в не-обычном состоянии; нажатие — карточка резерва
+        # Т-Р17: строка резерва (особое состояние или «на связи»); нажатие — карточка резерва
         safe = _e(rsv_line)
         lines.append(f'<a href="https://t.me/{bot_username}?start={RSV_PAYLOAD}">{safe}</a>' if bot_username else safe)
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:

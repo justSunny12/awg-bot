@@ -22,6 +22,11 @@ def _when(iso: str) -> str:
         return ""
 
 
+def ready_on_toast(tools: str) -> str:
+    """Всплывашка включения готовности; tools — что бот ставит в фоне (пусто — всё на месте)."""
+    return "Готовность включена" + (f" · {tools}" if tools else "")
+
+
 def _date(iso: str) -> str:
     try:
         return timeutil.fmt_dt_ui(timeutil.parse_iso(iso))

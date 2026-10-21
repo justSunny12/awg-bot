@@ -60,7 +60,7 @@ async def ready_toggle(cb: CallbackQuery, services, state: FSMContext):
     if not on:
         tools = await call(services.reserve_tools_ensure)      # dnsmasq и conntrack — сами, в фоне
     await _render(cb, "rsv", services)
-    await cb.answer(("Готовность включена" + (f" · {tools}" if tools else "")) if not on else "Готовность выключена")
+    await cb.answer(st_t.ready_on_toast(tools) if not on else "Готовность выключена")
     from awgbot.runtime import pairlink
     await pairlink.send("st", await call(services.reserve_st_body))
 

@@ -57,11 +57,13 @@
 # Режимы:
 #   --plan        без root: store=tmpfs-noswap|ramfs, cake=yes|no, netns=, awg=,
 #                 webhook_port=<свободный из 443/80/88/8443|none>, zone=present|absent,
-#                 dnsmasq=yes|no (без dnsmasq резолвер зоны не поднимется; пакет
-#                 скрипт не ставит), conntrack=yes|no (без него --relay-flush не
-#                 переведёт живые потоки), python=yes|no (для состояния зоны);
-#                 dnsmasq, python и webhook_port бот читает в готовность
-#                 направления «к себе» (поле zone в st)
+#                 dnsmasq=yes|no (без dnsmasq резолвер зоны не поднимется),
+#                 conntrack=yes|no (без него --relay-flush не переведёт живые
+#                 потоки), python=yes|no (для состояния зоны); dnsmasq, python и
+#                 webhook_port бот читает в готовность направления «к себе»
+#                 (поле zone в st). Пакеты dnsmasq и conntrack скрипт НЕ ставит:
+#                 по строкам «=no» их ставит бот (apt-get) при включении
+#                 готовности, сопряжении и раз в 6 часов, пока чего-то нет
 #   --selftest    «сокет у хоста» и диапазон keepalive на установленном модуле;
 #                 код 0 — обе гипотезы подтверждены, строки RESULT_*
 #   --shell       зона-оболочка: пространство, lo, таблица nft зоны, стороны
