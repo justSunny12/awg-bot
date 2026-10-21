@@ -119,6 +119,8 @@ STORE_SIZE="${RSV_STORE_SIZE:-32M}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ОШИБКА: %s\n' "$*" >&2; exit 1; }
+# python для состояния и разбора JSON: интерпретатор бота (venv), запасной — системный
+PY="$INSTALL_DIR/venv/bin/python"; [ -x "$PY" ] || PY="$(command -v python3 2>/dev/null || true)"
 need_root() { [ "$(id -u)" -eq 0 ] || die "нужен root"; }
 nsx() { ip netns exec "$ZONE" "$@"; }
 
@@ -138,10 +140,11 @@ store_kind() { if kernel_ge 6 4; then printf 'tmpfs-noswap'; else printf 'ramfs'
 has_cake() { modinfo sch_cake >/dev/null 2>&1; }   # modinfo знает и загруженный, и ещё не загруженный модуль
 
 # ── состояние для бота (без секретов) ───────────────────────────────────────
-state_write() {   # state_write KEY=VALUE … — слить с прежним
+state_write() {   # state_write KEY=VALUE … — слить с прежним; без python — отказ, состояние не затирается
+    [ -n "$PY" ] || die "нет python для состояния зоны"
     mkdir -p "$STATE_DIR"; chmod 0755 "$STATE_DIR"
     local tmp; tmp="$(mktemp)"
-    python3 - "$STATE" "$tmp" "$@" <<'EOF' 2>/dev/null || cat > "$tmp" <<EOF2
+    "$PY" - "$STATE" "$tmp" "$@" <<'EOF' || { rm -f "$tmp"; die "состояние зоны не записано"; }
 import json, sys
 path, out, *kv = sys.argv[1:]
 try:
@@ -153,11 +156,9 @@ for item in kv:
     data[k] = v
 json.dump(data, open(out, "w"), ensure_ascii=False)
 EOF
-{"note": "python3 недоступен"}
-EOF2
     mv "$tmp" "$STATE"; chmod 0644 "$STATE"
 }
-state_get() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$STATE" "$1" 2>/dev/null || true; }
+state_get() { [ -n "$PY" ] && "$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$STATE" "$1" 2>/dev/null || true; }
 
 # ── --plan ──────────────────────────────────────────────────────────────────
 cmd_plan() {
@@ -170,6 +171,8 @@ cmd_plan() {
     say "webhook_port=${chosen:-none}"
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
     if [ -x /usr/sbin/dnsmasq ] || command -v dnsmasq >/dev/null 2>&1; then say "dnsmasq=yes"; else say "dnsmasq=no"; fi
+    if command -v conntrack >/dev/null 2>&1; then say "conntrack=yes"; else say "conntrack=no"; fi
+    if [ -n "$PY" ]; then say "python=yes"; else say "python=no"; fi
 }
 
 # ── --selftest ──────────────────────────────────────────────────────────────
@@ -221,8 +224,9 @@ zone_nft() {   # таблица зоны: вход — только канал �
     # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft
     local ifset=""; [ -n "$ifaces" ] && ifset="{ $(printf '"%s", ' $ifaces | sed 's/, $//') }"
     whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
-    # таблица рисуется целиком (delete + create): повторные --shell/--take не дописывают правила
-    nsx nft -f - <<EOF
+    # таблица рисуется целиком (delete + create): повторные --shell/--take не дописывают правила;
+    # отвергнутая таблица — отказ (прежняя остаётся в зоне, звать дальше нельзя)
+    nsx nft -f - <<EOF || return 1
 table inet awg_guest
 delete table inet awg_guest
 table inet awg_guest {
@@ -259,6 +263,10 @@ $( [ -n "$iface" ] && printf '        iifname "awglink*" oifname %s ct state est
     }
 }
 EOF
+    # адреса админа основы (устройство ↔ устройство в зоне) — из состояния: таблица
+    # рисуется заново при --serve и повторном --shell, набор не должен пустеть
+    local a
+    for a in $(state_get admin); do nsx nft add element inet awg_guest admin4 "{ $a }" 2>/dev/null || true; done
 }
 
 link_sides_up() {   # стороны постоянных линков шлюзов основы из $LINKS_DIR/<linkname>.conf
@@ -269,7 +277,9 @@ link_sides_up() {   # стороны постоянных линков шлюз�
         nsx ip link show "$name" >/dev/null 2>&1 && continue
         tmp="awgz$$"
         ip link add "$tmp" type amneziawg || { say "ВНИМАНИЕ: сторона линка $name не создалась"; continue; }
-        awg setconf "$tmp" "$f" || { ip link del "$tmp"; say "ВНИМАНИЕ: конфиг стороны линка $name не принят"; continue; }
+        # awg setconf не знает расширений awg-quick (Address и др.) — снять их на лету
+        awg setconf "$tmp" <(grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$f") \
+            || { ip link del "$tmp"; say "ВНИМАНИЕ: конфиг стороны линка $name не принят"; continue; }
         ip link set "$tmp" netns "$ZONE"
         nsx ip link set "$tmp" name "$name"
         addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"
@@ -284,7 +294,7 @@ cmd_shell() {
     nsx ip link set lo up
     nsx sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
     mkdir -p "$LINKS_DIR"; chmod 0700 "$LINKS_DIR"
-    zone_nft "$(state_ifaces)"
+    zone_nft "$(state_ifaces)" || die "nft отверг таблицу зоны"
     link_sides_up
     state_write zone=present
     say "shell: ok"
@@ -296,7 +306,7 @@ store_mount() {
     mountpoint -q "$RUN" && return 0
     if [ "$(store_kind)" = "tmpfs-noswap" ]; then
         mount -t tmpfs -o "size=$STORE_SIZE,mode=0700,noswap" tmpfs "$RUN" 2>/dev/null \
-            || mount -t tmpfs -o "size=$STORE_SIZE,mode=0700" tmpfs "$RUN" || die "хранилище гостя не смонтировалось"
+            || mount -t ramfs -o mode=0700 ramfs "$RUN" || die "хранилище гостя не смонтировалось"
     else
         mount -t ramfs -o mode=0700 ramfs "$RUN" || die "хранилище гостя (ramfs) не смонтировалось"
     fi
@@ -336,6 +346,7 @@ Wants=awg-bot-guest-dns.service
 Type=simple
 NetworkNamespacePath=$NS
 EnvironmentFile=$RUN/env
+BindReadOnlyPaths=$RUN/resolv.conf:/etc/resolv.conf
 Environment=AWG_BOT_CONF_DIR=$RUN/conf
 Environment=AWG_BOT_DATA_DIR=$RUN/data
 Environment=AWG_BOT_ENV=$RUN/env
@@ -366,6 +377,9 @@ EOF
 }
 
 write_dnsmasq() {   # write_dnsmasq "адреса" "апстримы"
+    # бот основы в зоне резолвит через резолвер зоны, а не через /etc/resolv.conf
+    # хоста (stub 127.0.0.53 в зоне — её собственный lo, там никого нет)
+    printf 'nameserver %s\n' "${1%% *}" > "$RUN/resolv.conf"
     {
         say "# awg-bot: резолвер гостевой зоны резерва"
         say "no-resolv"; say "no-hosts"; say "bind-interfaces"; say "cache-size=1000"
@@ -427,9 +441,8 @@ cmd_take() {
     done
     local i; for i in $ifaces; do ports="$ports $(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$i.conf")"; done
     ports="${ports# }"
-    zone_nft "$ifaces"
-    local a
-    for a in ${GUEST_ADMIN:-}; do nsx nft add element inet awg_guest admin4 "{ $a }" 2>/dev/null || true; done
+    state_write admin="${GUEST_ADMIN:-}"
+    zone_nft "$ifaces" || die "nft отверг таблицу зоны"
     [ -n "$dns" ] || dns="${addr%/*}"
     for a in $dns; do [ "$a" = "${addr%/*}" ] || nsx ip addr replace "$a/32" dev lo; done
     write_dnsmasq "$dns" "$ups"
@@ -470,17 +483,21 @@ cmd_restart_clone() {
 }
 
 # ── --serve ─────────────────────────────────────────────────────────────────
-wan_if() { ip -j route show default 2>/dev/null | python3 -c 'import json,sys; r=json.load(sys.stdin); print(r[0]["dev"] if r else "")' 2>/dev/null || true; }
+wan_if() { ip -j route show default 2>/dev/null | "$PY" -c 'import json,sys; r=json.load(sys.stdin); print(r[0]["dev"] if r else "")' 2>/dev/null || true; }
 cake_on() {
     has_cake || { state_write cake=absent; return 0; }
     local wan; wan="$(wan_if)"; [ -n "$wan" ] || return 0
     local prev; prev="$(tc qdisc show dev "$wan" 2>/dev/null | head -n1 | awk '{print $2}')"
     # повторный --serve: cake уже стоит — прежняя дисциплина записана при первом, не затирать
+    if [ "$prev" = "cake" ] && [ "$(state_get cake)" != "on" ]; then
+        state_write cake=kept cake_dev= cake_prev=; return 0   # CAKE админа с его параметрами — не трогать
+    fi
     [ "$prev" = "cake" ] && [ "$(state_get cake)" = "on" ] && prev="$(state_get cake_prev)"
     tc qdisc replace dev "$wan" root cake besteffort dual-dsthost nat 2>/dev/null && state_write cake=on cake_dev="$wan" cake_prev="${prev:-none}"
 }
 cake_off() {
     local dev prev; dev="$(state_get cake_dev)"; prev="$(state_get cake_prev)"
+    [ "$(state_get cake)" = "kept" ] && { state_write cake=off; return 0; }
     [ -n "$dev" ] || return 0
     if [ -n "$prev" ] && [ "$prev" != "none" ] && [ "$prev" != "cake" ]; then tc qdisc replace dev "$dev" root "$prev" 2>/dev/null || tc qdisc del dev "$dev" root 2>/dev/null
     else tc qdisc del dev "$dev" root 2>/dev/null; fi
@@ -491,7 +508,7 @@ cmd_serve() {
     [ -n "$(state_get iface)" ] || die "клона нет — сначала --take"
     cake_on
     state_write phase=serving serving_at="$(date -Iseconds)" webhook_port="${WEBHOOK_PORT:-}"
-    zone_nft "$(state_ifaces)"               # вход вебхука с veth — только теперь, когда порт известен
+    zone_nft "$(state_ifaces)" || die "nft отверг таблицу зоны"   # вход вебхука с veth — только теперь, когда порт известен
     say "serve: ok"
 }
 
@@ -505,9 +522,15 @@ guest_stop() {
     ip link del "$VH" 2>/dev/null; ip link del "$RH" 2>/dev/null
     zone_nft ""
 }
+conntrack_flush_ports() {   # записи conntrack по портам клонов: NAT привязан к первому пакету потока —
+    local p                  # живые потоки клиентов иначе не попадут под DNAT хвоста
+    command -v conntrack >/dev/null 2>&1 || { say "ВНИМАНИЕ: нет conntrack — потоки клиентов, идущие сейчас, пересылки не получат"; return 0; }
+    for p in $(state_get ports); do conntrack -D -p udp --orig-port-dst "$p" >/dev/null 2>&1 || true; done
+}
 cmd_relay() {
     need_root
     guest_stop
+    conntrack_flush_ports
     state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces=
     say "relay: ok"
 }

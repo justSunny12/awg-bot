@@ -222,6 +222,7 @@ def _make_cert(self_host: str, out_dir) -> tuple[str, str]:
 
 def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, extra: list | None = None) -> None:
     from awgbot.infra import rsvzone
+    from awgbot.util.rsvpkg import bot as pkgbot
     bot = parts.get("bot") or {}
     env = bot.get("env") or {}
     token, admin_id = str(env.get("BOT_TOKEN") or ""), int(env.get("ADMIN_ID") or 0)
@@ -233,7 +234,9 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, e
     rsvzone.write_private(run / "env", f"BOT_TOKEN={token}\nADMIN_ID={admin_id}\n")
     conf = bot.get("conf") or {}
     for name, vals in conf.items():
-        if name == "app" or not isinstance(vals, dict):
+        # только известные имена наборов (pkgbot.CONF_FILES): имя из пакета второй
+        # стороны — не путь, запись не выходит за хранилище
+        if name == "app" or not isinstance(vals, dict) or name not in pkgbot.CONF_FILES:
             continue
         rsvzone.write_private(run / "conf" / f"{name}.yaml", _yaml_dump(vals))
     tz = str((parts.get("vpn") or {}).get("tz") or "")
@@ -314,6 +317,7 @@ def run(data: dict) -> int:
         dns = dict(data.get("dns") or {})
         if m and not dns:
             dns = seal.open_dns(blob, m) or {}
+        m = None                                              # M нужен был только для K и конверта DNS
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
         return _fail(str(e))
     iface = vpn["ifaces"][0]
@@ -354,10 +358,12 @@ def run(data: dict) -> int:
         set_record(dns, target)
     except Exception as e:                                     # noqa: BLE001 — DnsError, NotSupported, сеть
         return _fail(f"запись DNS: {e}")
-    _step("record_set", name=str(dns.get("name") or ""), ip=target)
-    if not wait_fact(str(dns.get("name") or ""), target):
+    name = str(dns.get("name") or "")
+    dns = {}                                                   # токен провайдера дальше не нужен
+    _step("record_set", name=name, ip=target)
+    if not wait_fact(name, target):
         return _fail("факт записи не подтвердился за 30 минут")
-    _step("record_fact", name=str(dns.get("name") or ""), ip=target)
+    _step("record_fact", name=name, ip=target)
     rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
     _step("done")
     return 0

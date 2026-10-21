@@ -397,6 +397,23 @@ wipe_previous() {
         rm -rf /etc/awgbot-admin-dns
         systemctl daemon-reload 2>/dev/null || true
         systemctl try-restart dnsmasq 2>/dev/null || true
+        # взаимный резерв серверов: зона (клоны, CAKE, ip rule, юниты и журнал гостя,
+        # хранилище с данными второй стороны), линк пары и его юнит — как awg-bot uninstall
+        if [[ -f "$INSTALL_DIR/install/reserve-zone-setup.sh" ]]; then
+            bash "$INSTALL_DIR/install/reserve-zone-setup.sh" --teardown >/dev/null 2>&1 || true
+            bash "$INSTALL_DIR/install/reserve-zone-setup.sh" --wipe >/dev/null 2>&1 || true
+        fi
+        [[ -x /usr/local/sbin/reserve-pair-setup.sh ]] \
+            && sh /usr/local/sbin/reserve-pair-setup.sh --down >/dev/null 2>&1 || true
+        systemctl disable --now awg-pair.service awg-bot-guest.service awg-bot-guest-dns.service 2>/dev/null || true
+        systemctl stop systemd-journald@awg-guest.service 2>/dev/null || true
+        rm -f /usr/local/sbin/reserve-pair-setup.sh /etc/systemd/system/awg-pair.service \
+              /etc/systemd/system/awg-bot-guest.service /etc/systemd/system/awg-bot-guest-dns.service \
+              /etc/systemd/journald@awg-guest.conf
+        if mountpoint -q /run/awg-bot-guest 2>/dev/null; then umount -l /run/awg-bot-guest 2>/dev/null || true; fi
+        while ip rule del iif awggr-h 2>/dev/null; do :; done
+        rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv /run/log/journal/*.awg-guest
+        ip netns del awg-guest 2>/dev/null || true
         for f in /etc/amnezia/amneziawg/*.conf; do
             [[ -f "$f" ]] || continue
             name="$(basename "$f" .conf)"

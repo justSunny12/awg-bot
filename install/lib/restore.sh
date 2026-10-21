@@ -36,7 +36,9 @@ cmd_backup() {
 awg_conf_dir() {
     # где лежат конфиги awg-интерфейсов хоста: awg.conf_dir в app.yaml
     # (умолчание /etc/amnezia/amneziawg); у шлюза — gateway.conf_dir
-    local d; d="$(yaml_get "$CONF_DIR/app.yaml" conf_dir)"
+    # ключ conf_dir есть и в разделе gateway (шлюз): брать из раздела awg
+    local d; d="$(awk '/^awg:$/{inside=1; next} /^[^ #]/{inside=0} inside && /^  conf_dir:/{sub(/^  conf_dir:[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit}' "$CONF_DIR/app.yaml" 2>/dev/null)"
+    [[ -n "$d" ]] || d="$(yaml_get "$CONF_DIR/app.yaml" conf_dir)"   # раздела awg нет — первое совпадение, как прежде
     printf '%s' "${d:-/etc/amnezia/amneziawg}"
 }
 
@@ -504,10 +506,13 @@ restore_apply() {  # после остановки: слияние, подгот
             || warn "линк $i не поднялся — бот повторит попытку на старте"
     done
     # линк пары серверов (резерв): конфиг из копии — юнит и подъём
-    if [[ -f "$awgdir/awgpair.conf" && -f "$INSTALL_DIR/install/reserve-pair-setup.sh" ]]; then
-        PAIR_IF=awgpair sh "$INSTALL_DIR/install/reserve-pair-setup.sh" --adopt >/dev/null \
-            || warn "линк пары не поднялся — подними руками: PAIR_IF=awgpair sh $INSTALL_DIR/install/reserve-pair-setup.sh --adopt"
-    fi
+    local pf pif
+    for pf in "$awgdir"/awgpair*.conf; do
+        [[ -f "$pf" && -f "$INSTALL_DIR/install/reserve-pair-setup.sh" ]] || continue
+        pif="$(basename "$pf" .conf)"
+        PAIR_IF="$pif" sh "$INSTALL_DIR/install/reserve-pair-setup.sh" --adopt >/dev/null \
+            || warn "линк пары не поднялся — подними руками: PAIR_IF=$pif sh $INSTALL_DIR/install/reserve-pair-setup.sh --adopt"
+    done
     # ── после подъёма, до старта сервиса — то же наложение ещё раз ──
     restore_blocks "$copy/restore-merge.json" || warn "не все DROP наложены — сверка бота на старте поправит"
     [[ -n "$changed" ]] && ok "изменившиеся интерфейсы восстановлены:$changed"

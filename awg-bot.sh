@@ -102,9 +102,9 @@
 #                          (выпуск ниже 3.4.0), убирает шаг сторожа из юнита
 #                          (unit_guard_strip_for_old): юнит уже переписал новый
 #                          скрипт. Раздел параметров AmneziaWG в app.yaml с
-#                          4.0.0 зовётся awg (adopt_awg_section — только на
-#                          обновлении: копия ниже версии совместимости не
-#                          восстанавливается, в restore шага нет); любой откат
+#                          4.0.0 зовётся awg (adopt_awg_section — на
+#                          обновлении и, идемпотентно, на восстановлении: копия
+#                          ниже версии совместимости не восстанавливается); любой откат
 #                          кода ниже AWG_SECTION_BELOW (restore_prev_code)
 #                          возвращает разделу прежнее имя и ключи
 #                          (adopt_awg_section_revert). При версии совместимости
@@ -1147,9 +1147,14 @@ cmd_uninstall() {
     rm -f "$UNIT_PATH"; systemctl daemon-reload 2>/dev/null || true
     rm -f "$SELF_LINK"
     local tmp_self; tmp_self="$(mktemp)"; cp "$SELF_PATH" "$tmp_self"; chmod +x "$tmp_self"
+    # скрипт зоны резерва — рядом: хвост снимает зону им (CAKE, ip rule, журнал гостя)
+    local tmp_zone=""
+    if [[ -f "$INSTALL_DIR/install/reserve-zone-setup.sh" ]]; then
+        tmp_zone="$(mktemp)"; cp "$INSTALL_DIR/install/reserve-zone-setup.sh" "$tmp_zone"
+    fi
     rm -rf "$INSTALL_DIR"
     ok "сервис снят, код и команда удалены — хост чист для переустановки."
-    AWG_ROLE="${role:-client}" exec "$tmp_self" __post_uninstall
+    AWG_ROLE="${role:-client}" AWG_ZONE_SCRIPT="$tmp_zone" exec "$tmp_self" __post_uninstall
 }
 # Хвост: опциональная зачистка данных/секретов и обвязки роли (из /tmp-копии,
 # прерывание тут уже безопасно — установка полностью снята). Принцип: после
@@ -1226,14 +1231,22 @@ cmd_post_uninstall() {
             sh /usr/local/sbin/reserve-pair-setup.sh --down >/dev/null 2>&1 || true
             rm -f /usr/local/sbin/reserve-pair-setup.sh
         fi
+        # зона — её же скриптом (копия сделана до удаления кода): клоны, CAKE, ip rule,
+        # юниты и журнал гостя, хранилище; без копии — руками
+        if [[ -n "${AWG_ZONE_SCRIPT:-}" && -f "${AWG_ZONE_SCRIPT:-}" ]]; then
+            bash "$AWG_ZONE_SCRIPT" --teardown >/dev/null 2>&1 || true
+            bash "$AWG_ZONE_SCRIPT" --wipe >/dev/null 2>&1 || true
+            rm -f "$AWG_ZONE_SCRIPT"
+        fi
         systemctl disable --now awg-pair.service awg-bot-guest.service awg-bot-guest-dns.service 2>/dev/null || true
+        systemctl stop systemd-journald@awg-guest.service 2>/dev/null || true
         rm -f /etc/systemd/system/awg-pair.service /etc/systemd/system/awg-bot-guest.service \
               /etc/systemd/system/awg-bot-guest-dns.service /etc/systemd/journald@awg-guest.conf
         rm -f /etc/amnezia/amneziawg/awgpair.conf /etc/amnezia/amneziawg/awgpair.conf.next /etc/amnezia/amneziawg/awgpair.conf.prev
         if mountpoint -q /run/awg-bot-guest 2>/dev/null; then umount -l /run/awg-bot-guest 2>/dev/null || true; fi
-        rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv
+        while ip rule del iif awggr-h 2>/dev/null; do :; done
+        rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv /run/log/journal/*.awg-guest
         ip netns del awg-guest 2>/dev/null || true
-        nft delete table inet awg_guest 2>/dev/null || true
         systemctl daemon-reload 2>/dev/null || true
         ok "линк пары и гостевая зона резерва сняты"
     fi

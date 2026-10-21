@@ -584,11 +584,23 @@ update_env_steps() {  # update_env_steps [restore] — окружение нов
     if [[ "${1:-}" != "restore" ]] && update_adopts_timezone; then
         adopt_timezone
     fi
+    refuse_container_runtime               # AmneziaWG в контейнере: 4.0.0 не поддерживает — отказ до переименования
     adopt_awg_section                      # раздел параметров AmneziaWG — под именем awg (с 4.0.0)
     adopt_link_keepalive                   # keepalive стороны сервера AWG на линках слотов (с 4.0.0)
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
+}
+
+refuse_container_runtime() {  # установка с AmneziaWG в контейнере (runtime: "docker") — остаётся на прежних выпусках
+    # С 4.0.0 бот ходит только к awg/awg-quick хоста; у контейнерной установки
+    # интерфейсов на хосте нет — обновление сделало бы клиентов без обслуживания.
+    # Ловушка второй половины вернёт прежний код и скажет в чат.
+    local app="$CONF_DIR/app.yaml"
+    [[ -f "$app" ]] || return 0
+    if awk '/^docker:$/{inside=1; next} /^[^ #]/{inside=0} inside && /^  runtime:[[:space:]]*"?docker"?/{found=1} END{exit !found}' "$app"; then
+        die "AmneziaWG в контейнере (docker.runtime: docker) — выпуск 4.0.0 такие установки не поддерживает; переведи AmneziaWG на хост прежним выпуском (awg-host-migrate) и обнови снова"
+    fi
 }
 
 cmd_post_update() {
