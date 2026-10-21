@@ -166,7 +166,8 @@ class ReservePackageMixin:
                         "lists": pkgbot.lists_part(str(config.DATA_DIR))}
             import json
             logical = hashlib.blake2b(db_bytes + json.dumps([vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"],
-                                                             bot_part["lists"]], sort_keys=True).encode(), digest_size=16).hexdigest()
+                                                             bot_part["lists"], int(keys.get("m_gen") or 0), int(keys.get("k_gen") or 0)],
+                                                            sort_keys=True).encode(), digest_size=16).hexdigest()
             sent = self.rsv_get("rsv_pkg_sent")
             if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
                 return None                               # по таймеру без изменений — не уходит

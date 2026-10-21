@@ -124,8 +124,8 @@ class GuestClient:
         try:
             body = pairproto.check(pairproto.GUEST_PROTO, kind, msg, pairproto.RESERVE)
         except pairproto.ProtocolError as e:
-            log.info("гостевой канал: сообщение «%s» не разобрано: %s", kind[:16], e)
-            return
+            log.warning("гостевой канал: сообщение «%s» не разобрано: %s — сессия разорвана", kind[:16], e)
+            raise ConnectionError(str(e))                     # подписанный собеседник шлёт мусор — поломка или чужой
         actions = await asyncio.to_thread(self.services.reserve_guest_in, kind, body)
         await run_actions(self.services, actions)
 

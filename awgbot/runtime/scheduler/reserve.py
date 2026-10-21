@@ -28,6 +28,15 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт живости: %s", e)
         try:
+            # `st` второй стороне по смене тела (направления, здоровье, рычаг, пакет) — не только в начале сессии
+            from awgbot.runtime import pairlink
+            if pairlink.online():
+                body = await asyncio.to_thread(services.reserve_st_if_changed)
+                if body is not None and not await pairlink.send("st", body):
+                    await asyncio.to_thread(services.reserve_st_sent_reset)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: st по смене: %s", e)
+        try:
             # голосование: живость шлюзов основы по сторонам зоны, матрица случаев,
             # демпфер случаев 3 и Н3, просьбы основе — действия исполняет rsvactions
             from awgbot.runtime import rsvactions
@@ -84,8 +93,9 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: локальный канал гостя: %s", e)
 
+    from awgbot.util import timeutil as _tu
     scheduler.add_job(job_invite_tick, IntervalTrigger(minutes=1, timezone=config.TZ),
-                      id="rsv_invite_tick", max_instances=1, coalesce=True,
+                      id="rsv_invite_tick", max_instances=1, coalesce=True, next_run_time=_tu.now(),
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     # пакет переезда: по отметке (≥ 10 с с последней записи) и по таймеру с джиттером —

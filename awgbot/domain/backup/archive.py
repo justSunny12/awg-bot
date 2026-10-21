@@ -43,6 +43,25 @@ def _strip_foreign_share(con) -> None:
         data["share"] = ""
         con.execute("UPDATE server_state SET value = ? WHERE key = 'rsv_pkg_in'", (json.dumps(data, ensure_ascii=False),))
         con.commit()
+    # ключи и PSK сторон линков шлюзов второй стороны (rsv_guest_links) — не в копию:
+    # стороны переиздаются обменом slots, а по PSK выводится ключ гостевого канала
+    try:
+        row = con.execute("SELECT value FROM server_state WHERE key = 'rsv_guest_links'").fetchone()
+    except Exception:                                          # noqa: BLE001
+        return
+    if not row or not str(row[0] or "").startswith("{"):
+        return
+    try:
+        links = json.loads(row[0])
+    except ValueError:
+        return
+    if isinstance(links, dict):
+        for rec in links.values():
+            if isinstance(rec, dict):
+                rec.pop("priv", None)
+                rec.pop("psk", None)
+        con.execute("UPDATE server_state SET value = ? WHERE key = 'rsv_guest_links'", (json.dumps(links, ensure_ascii=False),))
+        con.commit()
 
 class BackupArchiveMixin:
     META_NAME = "state/backup-meta.json"

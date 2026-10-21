@@ -151,6 +151,13 @@ class ReserveTgPoolMixin:
         if not self.reserve_paired():
             return False
         now = time.monotonic() if now is None else now
+        flag = pool_path().with_name("tg_pool.refresh")        # `awg-bot reserve tgpool refresh`
+        if flag.exists():
+            try:
+                flag.unlink()
+            except OSError:
+                pass
+            return True
         nxt = self.__dict__.get("_tg_pool_next")
         if nxt is None:
             data = _read()

@@ -206,6 +206,8 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
     token, admin_id = str(env.get("BOT_TOKEN") or ""), int(env.get("ADMIN_ID") or 0)
     if not token or not admin_id:
         raise OpenError("в части бота нет токена или ADMIN_ID")
+    if any(ch.isspace() for ch in token) or len(token) > 128:
+        raise OpenError("токен бота в пакете не того вида")     # файл env юнита — только одна строка токена
     run = rsvzone.RUN_DIR
     rsvzone.write_private(run / "env", f"BOT_TOKEN={token}\nADMIN_ID={admin_id}\n")
     conf = bot.get("conf") or {}

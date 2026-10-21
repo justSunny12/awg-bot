@@ -151,6 +151,7 @@ cmd_plan() {
     for p in $WEBHOOK_PORTS; do if port_free "$p"; then chosen="$p"; break; fi; done
     say "webhook_port=${chosen:-none}"
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
+    if [ -x /usr/sbin/dnsmasq ] || command -v dnsmasq >/dev/null 2>&1; then say "dnsmasq=yes"; else say "dnsmasq=no"; fi
 }
 
 # ── --selftest ──────────────────────────────────────────────────────────────
@@ -197,9 +198,13 @@ cmd_selftest() {
 }
 
 # ── зона-оболочка ───────────────────────────────────────────────────────────
-zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона; пересылка — см. §3.2
-    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}"
+zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
+    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}" whp
+    whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
+    # таблица рисуется целиком (delete + create): повторные --shell/--take не дописывают правила
     nsx nft -f - <<EOF
+table inet awg_guest
+delete table inet awg_guest
 table inet awg_guest {
     set admin4 { type ipv4_addr; }
     set private4 { type ipv4_addr; flags interval; elements = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } }
@@ -211,6 +216,7 @@ table inet awg_guest {
         ip protocol icmp accept
         iifname "awglink*" tcp dport $chan accept
         iifname "awglink*" drop
+$( [ -n "$iface" ] && [ -n "$whp" ] && printf '        iifname "%s" ip daddr %s tcp dport %s accept\n' "$VN" "$ZONE_V" "$whp" )
 $( [ -n "$iface" ] && printf '        iifname "%s" udp dport 53 accept\n        iifname "%s" tcp dport 53 accept\n' "$iface" "$iface" )
     }
     chain forward {
@@ -442,6 +448,7 @@ cmd_serve() {
     [ -n "$(state_get iface)" ] || die "клона нет — сначала --take"
     cake_on
     state_write phase=serving serving_at="$(date -Iseconds)" webhook_port="${WEBHOOK_PORT:-}"
+    zone_nft "$(state_get iface)"            # вход вебхука с veth — только теперь, когда порт известен
     say "serve: ok"
 }
 
@@ -475,7 +482,12 @@ cmd_wipe() {
     rm -rf /run/log/journal/*."$ZONE" /var/log/journal/*."$ZONE" 2>/dev/null
     rm -f "$UNIT" "$DNS_UNIT"; systemctl daemon-reload 2>/dev/null || true
     cake_off
-    state_write phase=idle iface= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+    if [ "$(state_get phase)" = "relay" ]; then
+        # пересылка хвоста идёт на хосте по state.json: фаза и адрес основы остаются до конца relay
+        state_write webhook_port= wiped_at="$(date -Iseconds)"
+    else
+        state_write phase=idle iface= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+    fi
     say "wipe: ok"
 }
 cmd_status() {

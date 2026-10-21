@@ -81,6 +81,22 @@ def load_pool(path=None) -> list[str]:
     return out or ["149.154.160.0/20", "91.108.4.0/22"]
 
 
+def _peer_filter(ip_filter):
+    """Прослойка aiohttp: адрес — только из сокета (peername); заголовок
+    X-Forwarded-For (его смотрит прослойка aiogram) подделывается, а прокси
+    перед слушателем нет."""
+    from aiohttp import web
+
+    @web.middleware
+    async def middleware(request, handler):
+        peer = request.transport.get_extra_info("peername") if request.transport else None
+        ip = str(peer[0]) if peer else ""
+        if not ip or not ip_filter.check(ip):
+            raise web.HTTPUnauthorized()
+        return await handler(request)
+    return middleware
+
+
 class WebhookServer:
     """Слушатель вебхука в процессе бота основы на резерве."""
 
@@ -120,10 +136,10 @@ class WebhookServer:
 
     async def start(self, dp, bot, host: str = "0.0.0.0") -> None:
         from aiohttp import web
-        from aiogram.webhook.aiohttp_server import SimpleRequestHandler, ip_filter_middleware, setup_application
+        from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
         from aiogram.webhook.security import IPFilter
         self._filter = IPFilter(self.pool)
-        app = web.Application(middlewares=[ip_filter_middleware(self._filter)])
+        app = web.Application(middlewares=[_peer_filter(self._filter)])
         SimpleRequestHandler(dispatcher=dp, bot=bot, handle_in_background=False,
                              secret_token=self.conf.secret).register(app, path="/" + self.conf.path)
         setup_application(app, dp, bot=bot)

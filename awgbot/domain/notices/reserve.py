@@ -275,6 +275,12 @@ def ask_refused(reserve: str, case: str, since: str, link_if: str = "", reserve_
             f"<code>{_e(link_if or 'awglink')}</code> — дело не в РФ, переезда на {_n(reserve)} не будет")
 
 
+def webhook_stuck_removed(reserve: str) -> str:
+    """Вебхук резерва снят самим сервером: запись уже на нём, клиентов резерв не нёс."""
+    return (f"ℹ️ Право отвечать в Telegram оставалось у {_n(reserve)}, хотя запись уже указывала сюда и клиентов "
+            f"он не нёс — вебхук снят, бот снова отвечает отсюда")
+
+
 # ── пул адресов Telegram и вебхук (этап 7) ──────────────────────────────────
 
 def tg_pool_stale(since: str) -> str:

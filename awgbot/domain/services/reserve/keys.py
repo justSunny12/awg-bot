@@ -52,7 +52,9 @@ class ReserveKeysMixin:
                         code_shown_at="", regenerated_at=timeutil.now_iso(), regenerated_why=reason)
             self.rsv_put("rsv_keys", keys)
             self.rsv_put("rsv_shares", None)
-            return keys
+        if hasattr(self, "reserve_pkg_mark"):
+            self.reserve_pkg_mark()                           # пакет прежнего поколения у резерва — заменить сразу
+        return keys
 
     def _reserve_after_gateway_change(self, why: str) -> None:
         """Снятие или замена шлюза: его доля ключа переезда могла остаться у

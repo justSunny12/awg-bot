@@ -125,6 +125,8 @@ class ReservePairingMixin:
         эфемерная пара; подключается клиент канала пары."""
         info = self.reserve_accept_parse(text)
         tok = info["tok"]
+        self.reserve_pin_self_host()
+        self.reserve_require_zone_tools()
         with _LOCK:
             if self.reserve_invite().get("id"):
                 self._invite_rollback("replaced")

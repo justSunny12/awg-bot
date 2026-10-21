@@ -20,7 +20,7 @@ from __future__ import annotations
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import timeutil
+from awgbot.util import livestep, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -43,22 +43,30 @@ class ReserveRfBlockMixin:
             if rf.get("since"):
                 self.rsv_update("rsv_view", rf={"blocked": "nogw_off"})
             return []
+        if self.reserve_in() != "idle" or self.reserve_out() != "home":
+            # переезд уже идёт (согласие или доли) либо мои клиенты не здесь — ни ask, ни need
+            why = "зона занята" if self.reserve_in() != "idle" else "мои клиенты не на этом сервере"
+            if rf.get("blocked") != why:
+                rf["blocked"] = why
+                rf.setdefault("since", str(view.get("case_since") or timeutil.now_iso()))
+                self.rsv_update("rsv_view", rf=rf)
+            return []
         if not rf.get("since"):
             rf = {"since": str(view.get("case_since") or timeutil.now_iso()), "mono": now}
             self.rsv_update("rsv_view", rf=rf)
             log.warning("резерв: случай %s — ни один шлюз основы на связи не видит её; жду %d мин",
                         case, settings.get_int("app.reserve.rf_block_minutes", 15))
             return []
-        held = now - float(rf.get("mono") or now)
+        held = livestep.mono_since(rf.get("mono"), now)
         if held < settings.get_int("app.reserve.rf_block_minutes", 15) * 60:
             return []
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)
         asked = float(rf.get("ask_mono") or 0)
-        if asked and now - asked < ask_s:
+        if asked and not livestep.mono_due(asked, now, ask_s):
             return []
         if rf.get("ask_no"):
             wait = ask_s if rf["ask_no"] == "busy" else REFUSE_RETRY_S
-            if now - float(rf.get("ask_no_mono") or 0) < wait:
+            if not livestep.mono_due(rf.get("ask_no_mono"), now, wait):
                 return []
         if asked and not rf.get("ask_no") and self.reserve_online():
             # основа не ответила: случай 3 — по долям, Н3 — просить снова

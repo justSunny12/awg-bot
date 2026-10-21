@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import logging
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
@@ -24,6 +25,7 @@ from aiogram.methods import GetUpdates
 log = logging.getLogger(__name__)
 
 POLL_TIMEOUT = 50
+RECHECK_S = 300                   # в ожидании права отвечать — повторный getWebhookInfo
 
 
 class _Watch(BaseRequestMiddleware):
@@ -116,7 +118,9 @@ class PollControl:
         while not self._closing:
             if not await self._allowed():
                 self._wake.clear()
-                await self._wake.wait()
+                with contextlib.suppress(asyncio.TimeoutError):
+                    # право отвечать решает Telegram: перепроверять getWebhookInfo, а не ждать слова вечно
+                    await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
                 continue
             self._conflict = ""
             self._stopped = False
@@ -135,7 +139,8 @@ class PollControl:
             if self._closing or not (self._stopped or self._conflict):
                 return                                       # поллинг кончился сам (сигнал, заглушка теста) — выход, как прежде
             self._wake.clear()
-            await self._wake.wait()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
 
     def wake(self) -> None:
         self._wake.set()

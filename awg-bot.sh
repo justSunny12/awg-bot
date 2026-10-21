@@ -1281,7 +1281,7 @@ cmd_first_device() {  # показать конфигурацию первого
         && ./venv/bin/python -m tools.first_device "$@" )
 }
 
-cmd_reserve() {  # reserve status | plan | selftest | open — взаимный резерв серверов: зона и процесс открытия
+cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | tgpool — взаимный резерв серверов
     local sub="${1:-status}"; shift || true
     local zone="$INSTALL_DIR/install/reserve-zone-setup.sh"
     case "$sub" in
@@ -1299,7 +1299,19 @@ cmd_reserve() {  # reserve status | plan | selftest | open — взаимный 
                 && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
                 && exec ./venv/bin/python -m tools.rsvopen "$@" ) ;;
         zone)     require_root; bash "$zone" "$@" ;;
-        *) die "awg-bot reserve: status | plan | selftest | open | zone --<режим>" ;;
+        teardown)
+            # аварийно: зона и хранилище гостя прочь (клиенты основы у меня обрываются);
+            # бот резерва увидит пустую зону по состоянию
+            require_root; bash "$zone" --teardown; bash "$zone" --wipe ;;
+        tgpool)
+            # пул адресов Telegram для порта вебхука: show — файл пула (ядро — в коде),
+            # refresh — отметка «обновить анонсы сейчас», её снимет такт бота
+            case "${1:-show}" in
+                show)    [[ -f "$DATA_DIR/reserve/tg_pool.json" ]] && cat "$DATA_DIR/reserve/tg_pool.json" || echo '{"pool": []}' ;;
+                refresh) require_root; mkdir -p "$DATA_DIR/reserve"; : > "$DATA_DIR/reserve/tg_pool.refresh"; echo "refresh: отметка поставлена" ;;
+                *) die "awg-bot reserve tgpool: show | refresh" ;;
+            esac ;;
+        *) die "awg-bot reserve: status | plan | selftest | open | zone --<режим> | teardown | tgpool show|refresh" ;;
     esac
 }
 

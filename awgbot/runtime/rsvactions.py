@@ -75,6 +75,12 @@ async def _one(act: tuple) -> None:
     elif kind == "take_tg":
         if pc is not None and await pc.take():
             await run(await asyncio.to_thread(svc.reserve_tg_taken_mark))
+    elif kind == "wake_poll":
+        if pc is not None:
+            pc.wake()
+    elif kind == "take_home":
+        if pc is not None and await pc.take():
+            await run(await asyncio.to_thread(svc.reserve_stuck_home))
     else:
         log.info("резерв: неизвестное действие %s", kind)
 
@@ -83,8 +89,11 @@ async def _release(bot, svc, pc) -> None:
     """Передача бота резерву: поллинг стоп, пачка подтверждена, опрос вне
     очереди (свежие рукопожатия адресатам Т-РК1), финальная реплика → released."""
     from awgbot.runtime import pairlink
-    if pc is not None:
-        await pc.release()
+    if pc is not None and not await pc.release():
+        log.warning("резерв: пачка обновлений не подтверждена — передачу бота откладываю, поллинг обратно")
+        await asyncio.to_thread(svc.rsv_update, "rsv_out", step="release")
+        pc.wake()
+        return
     try:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001

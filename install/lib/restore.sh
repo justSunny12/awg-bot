@@ -323,6 +323,7 @@ cmd_restore() {
     grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
 
     [[ -n "$RESTORE_TO" ]] && update_guard_disarm       # сторож прежнего обновления — код сменится
+    declare -F reserve_busy_guard >/dev/null 2>&1 && reserve_busy_guard "восстановление"
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
         restore_die "$SERVICE не остановился — ничего не изменилось"

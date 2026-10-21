@@ -96,6 +96,42 @@ class ReserveInviteMixin:
         st = self.reserve_invite()
         return bool(st.get("id")) and st.get("state") in LIVE and not self._invite_expired(st)
 
+    def reserve_pin_self_host(self) -> str:
+        """Собственный адрес сервера (`network.self_host`) — IP, на который сейчас
+        указывает запись для клиентов: линк пары и линки шлюзов смотрят на него,
+        а имя записи при переезде уходит на резерв. Пусто — зафиксировать по
+        резолву; имя не резолвится — отказ."""
+        import ipaddress
+        own = str(settings.get("app.network.self_host", "") or "").strip()
+        if own:
+            return own
+        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
+        try:
+            ipaddress.ip_address(host)
+            return host                                       # адрес для клиентов — IP, он и есть свой
+        except ValueError:
+            pass
+        from awgbot.util import dnsapi
+        try:
+            addrs = [a for a in dnsapi.read_system(host) if a and ":" not in a] if host else []
+        except Exception:                                     # noqa: BLE001 — резолвер недоступен
+            addrs = []
+        if not addrs:
+            log.warning("резерв: имя %s не резолвится — собственный адрес сервера не зафиксирован (network.self_host)", host)
+            return ""
+        settings.set_value("app.network.self_host", addrs[0])
+        log.info("резерв: собственный адрес сервера зафиксирован как %s (запись %s)", addrs[0], host)
+        return addrs[0]
+
+    @staticmethod
+    def reserve_require_zone_tools() -> None:
+        """Гостевой зоне нужен dnsmasq (резолвер зоны) — без него резерв принять
+        клиентов не сможет; план скрипта зоны говорит об этом заранее."""
+        from awgbot.infra import rsvzone
+        plan = rsvzone.plan()
+        if str(plan.get("dnsmasq") or "yes") == "no":
+            log.warning("резерв: на сервере нет dnsmasq — резолвер гостевой зоны не поднимется, принять клиентов не выйдет")
+
     @staticmethod
     def _invite_expired(st: dict) -> bool:
         try:
@@ -112,6 +148,9 @@ class ReserveInviteMixin:
         if not host:
             raise ServiceErrorHtml("Не задан адрес сервера (<code>network.server_host</code> или "
                                    "<code>network.self_host</code>) — второму серверу некуда подключаться")
+        self.reserve_pin_self_host()
+        self.reserve_require_zone_tools()
+        host = own_host()
         if not settings.get_bool("app.reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом» — без готовности пара не нужна")
         if not self.reserve_has_gateway():
