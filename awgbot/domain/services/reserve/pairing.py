@@ -211,6 +211,11 @@ class ReservePairingMixin:
             _live_set(live)
             return reply
 
+    def reserve_pair_live_code(self) -> str:
+        """Код сопряжения принявшего (живёт в памяти до итога) — для перерисовки экрана."""
+        live = _live()
+        return str((live or {}).get("code") or "")
+
     def reserve_accept_commit(self) -> None:
         """`pair_admin` ушёл (drain) — пара записана, линк на новые ключи (`--set-peer`)."""
         with _LOCK:

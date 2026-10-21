@@ -68,6 +68,9 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind.startswith("set_"):
             return await sections.screen(kind[4:], roles.GATEWAY, services, str(ref or ""))
         return None
+    if role == "peer_admin":
+        from awgbot.bot.handlers import peeradmin
+        return await peeradmin._screen(services) if kind == "main" else None
     if role == "admin":
         from awgbot.bot.handlers.admin import panel, clients, devices
         if kind == "main":

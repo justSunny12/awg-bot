@@ -20,11 +20,11 @@ class ReserveUnpairMixin:
     def reserve_unpair_check(self) -> str:
         """Пусто — можно; иначе причина отказа."""
         if not self.reserve_paired():
-            return "Резерва нет"
+            return "резерва нет"
         if self.reserve_away():
-            return f"Твои клиенты и бот сейчас у «{self.reserve_peer_name()}» — сначала верни их"
+            return f"твои клиенты и бот сейчас у «{self.reserve_peer_name()}» — сначала верни их"
         if self.reserve_hosting():
-            return f"Клиенты и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
+            return f"клиенты и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
         return ""
 
     def _unpair_zone(self, why: str) -> None:

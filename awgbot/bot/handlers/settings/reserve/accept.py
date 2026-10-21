@@ -50,7 +50,7 @@ async def token_received(message: Message, services, state: FSMContext):
     try:
         text, markup = await _dialog(services, token, True)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {ui.toast(e)}", reply_markup=rkb.code_prompt())
+        await ask_tracked(message, services, f"⚠️ {ui.toast(e, html=getattr(e, "html", False))}", reply_markup=rkb.code_prompt())
         return
     await state.update_data(token=token, rf=True)
     await cleanup_content(message.bot, services, message.chat.id)
@@ -69,7 +69,7 @@ async def rf_toggle(cb: CallbackQuery, services, state: FSMContext):
     try:
         text, markup = await _dialog(services, token, rf_on)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await edit(cb, text, markup)
     await cb.answer()
@@ -85,10 +85,13 @@ async def connect(cb: CallbackQuery, services, state: FSMContext):
     try:
         st = await call(services.reserve_accept_go, token, bool(data.get("rf", True)))
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await state.clear()
     await edit(cb, pt.connecting(str(st.get("host") or "")), rkb.accept_message())
+    # диалог принятия был служебным сообщением; теперь это живое сообщение хода — «⬅️ В меню»
+    # и /start его стирать не должны
+    await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await call(services.reserve_invite_set_message, cb.message.chat.id, cb.message.message_id)
     from awgbot.runtime import pairlink
     try:

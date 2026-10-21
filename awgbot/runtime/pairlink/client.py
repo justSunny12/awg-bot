@@ -132,7 +132,8 @@ class PairClient(InboundMixin):
                 await self.event("code", await asyncio.to_thread(self.services.reserve_invite), code=res["code"])
             elif kind == "pair_wrong":
                 await self.event("wrong", await asyncio.to_thread(self.services.reserve_invite),
-                                 left=int(msg.get("left") or 0))
+                                 left=int(msg.get("left") or 0),
+                                 code=await asyncio.to_thread(self.services.reserve_pair_live_code))
             elif kind == "pair_refused":
                 why = str(msg.get("reason") or "gone")
                 st = await asyncio.to_thread(self.services.reserve_invite)

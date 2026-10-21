@@ -58,7 +58,9 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     host = _e(_hostname() or "AWG")
     lines = [ui.head(f"🛠 {host}", dot)]
     if rsv_line:
-        lines.append(rsv_line)                       # Т-Р17: резерв — только в не-обычном состоянии
+        # Т-Р17: резерв — только в не-обычном состоянии; нажатие — карточка резерва
+        safe = _e(rsv_line)
+        lines.append(f'<a href="https://t.me/{bot_username}?start={RSV_PAYLOAD}">{safe}</a>' if bot_username else safe)
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
@@ -121,6 +123,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
 
 
 MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор переезда и профиль в нём
+RSV_PAYLOAD = "rsv"               # /start rsv — карточка резерва (строка Т-Р17 на главной)
 
 
 def migration_line(p, bot_username: str = "") -> str:

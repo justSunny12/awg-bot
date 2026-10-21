@@ -50,7 +50,7 @@ async def move_go(cb: CallbackQuery, services, **_):
     try:
         await call(services.reserve_move_start, cb.message.chat.id, cb.message.message_id)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await edit(cb, st_t.move_live(await call(services.reserve_move_live)), None)
     await cb.answer("Перевод начат")
@@ -62,12 +62,15 @@ async def refresh_live(bot, services) -> None:
     msg = d.get("msg") or []
     if len(msg) != 2:
         return
+    done = d.get("state") in ("away", "home")
     try:
-        await bot.edit_message_text(st_t.move_live(d), chat_id=int(msg[0]), message_id=int(msg[1]))
+        # итог — с кнопкой назад в раздел: сообщение хода было живым меню, без кнопок админ в тупике
+        await bot.edit_message_text(st_t.move_live(d), chat_id=int(msg[0]), message_id=int(msg[1]),
+                                    reply_markup=rkb.after_move() if done else None)
     except Exception as e:                                # noqa: BLE001 — не изменилось, удалено
         if "not modified" not in str(e):
             log.info("резерв: живое сообщение хода не поправлено: %s", e)
-    if d.get("state") in ("away", "home") and d.get("state") != "leaving":
+    if done:
         # ход закончен — сообщение больше не правим
         await call(services.rsv_update, "rsv_out", msg=[])
 
@@ -90,7 +93,7 @@ async def back_go(cb: CallbackQuery, services, **_):
     try:
         actions = await call(services.reserve_return_start, "button")
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _run(actions)
     await _render(cb, "rsv", services)
@@ -116,7 +119,7 @@ async def force_go(cb: CallbackQuery, services, **_):
     try:
         actions = await call(services.reserve_force_home)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _run(actions)
     await _render(cb, "rsv", services)

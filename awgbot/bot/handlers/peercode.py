@@ -22,6 +22,14 @@ router.message.filter(PeerAdminFilter())                  # только код 
 router.callback_query.filter(PeerAdminFilter())
 
 
+@router.message(PeerCode.value, F.text.startswith("/"))
+async def code_command(message: Message, state: FSMContext, services, **_):
+    """Команда вместо кода (/start, передумал): ввод закрыт, экран роли — попытка не в счёт."""
+    await state.clear()
+    text, markup = await _role_screen(services)
+    await message.answer(text, reply_markup=markup)
+
+
 @router.message(PeerCode.value, F.text)
 async def code_text(message: Message, state: FSMContext, services, **_):
     """Код из чата роли: удалить сообщение, проверить, итог (Т-РН3)."""
@@ -30,14 +38,30 @@ async def code_text(message: Message, state: FSMContext, services, **_):
         await message.delete()                            # код в чате не держим
     except Exception:                                     # noqa: BLE001
         pass
+    data = await state.get_data()
     await state.clear()
     res = await call(services.reserve_code_in, int(message.from_user.id), message.text or "")
     if res.get("actions"):
         await rsvactions.run(res["actions"])
     peer = await call(services.reserve_peer_name)
+    again = res.get("why") in ("wrong", "garbled") and (res.get("why") == "garbled" or int(res.get("left") or 0))
+    prompt = data.get("prompt") or []
+    if len(prompt) == 2 and not again:
+        # приглашение к вводу — на месте экрана роли; после итога вернуть экран
+        text, markup = await _role_screen(services)
+        try:
+            await message.bot.edit_message_text(text, chat_id=int(prompt[0]), message_id=int(prompt[1]), reply_markup=markup)
+        except Exception:                                 # noqa: BLE001 — удалено, не изменилось
+            pass
     await message.answer(pt.code_result(res, peer))
-    if not res.get("ok") and res.get("why") == "wrong" and int(res.get("left") or 0):
+    if again:
         await state.set_state(PeerCode.value)
+        await state.update_data(prompt=prompt)
+
+
+async def _role_screen(services):
+    from awgbot.bot.handlers.peeradmin import _screen
+    return await _screen(services)
 
 
 @router.callback_query(PeerCB.filter(F.action == "code"))
@@ -48,7 +72,8 @@ async def code_start(cb: CallbackQuery, state: FSMContext, services, **_):
         await cb.answer("Приём кода закрыт — переезд не нужен или идёт сам", show_alert=True)
         return
     await state.set_state(PeerCode.value)
-    await cb.message.answer(pt.code_prompt(d), reply_markup=rkb.peer_code_cancel())
+    await edit(cb, pt.code_prompt(d), rkb.peer_code_cancel())   # на месте экрана роли, не вторым сообщением
+    await state.update_data(prompt=[cb.message.chat.id, cb.message.message_id])
     await cb.answer()
 
 

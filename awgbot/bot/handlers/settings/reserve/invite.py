@@ -19,7 +19,7 @@ from awgbot.bot.texts.reserve import pairing as pt
 from awgbot.domain.services import ServiceError
 
 from .._router import router
-from ..render import _render
+from ..render import _render, _render_nav
 from .events import _edit
 
 log = logging.getLogger("awgbot.handlers.settings")
@@ -39,7 +39,7 @@ async def invite(cb: CallbackQuery, services, state: FSMContext):
     try:
         res = await call(services.reserve_invite_issue)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     st = res["state"]
     if res.get("stale"):
@@ -112,11 +112,9 @@ async def cancel(cb: CallbackQuery, services, state: FSMContext):
             await call(services.reserve_invite_cancel, "cancel")
             await pairlink.ensure(services)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _edit(cb.bot, st, pt.INVITE_CANCELLED if role == "inviter" else "ℹ️ Подключение отменено", rkb.final())
-    try:
-        await _render(cb, "rsv", services)
-    except Exception:                                     # noqa: BLE001 — кнопка была на сообщении приглашения, не на меню
-        pass
+    # след «отменено» остаётся на сообщении приглашения; раздел — на живом меню (одно меню в чате)
+    await _render_nav(cb, "rsv", services)
     await cb.answer("Приглашение отменено")

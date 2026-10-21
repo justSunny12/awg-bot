@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import ui
 from awgbot.bot.callbacks import RsvCB
-from awgbot.bot.handlers.common import ask_tracked, call, cleanup_content, edit
+from awgbot.bot.handlers.common import ask_tracked, call, cleanup_content, edit, send_menu
 from awgbot.bot.keyboards import reserve as rkb
 from awgbot.bot.states import ReserveDnsToken
 from awgbot.bot.texts.reserve import section as st_t
@@ -42,7 +42,7 @@ async def dns_provider(cb: CallbackQuery, services, **_):
     try:
         await call(services.reserve_dns_set_provider, nxt)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _render(cb, "rsv_dns", services)
     await cb.answer()
@@ -71,14 +71,14 @@ async def dns_token_received(message: Message, services, state: FSMContext):
     try:
         await call(services.reserve_dns_set_token, text)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {ui.toast(e)}", reply_markup=rkb.dns_token_prompt())
+        await ask_tracked(message, services, f"⚠️ {ui.toast(e, html=getattr(e, "html", False))}", reply_markup=rkb.dns_token_prompt())
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)
     res = await call(services.reserve_dns_check)
     text_r, markup = await dns_screen(services)
     await ask_tracked(message, services, ("✅ " if res.get("ok") else "⚠️ ") + html.escape(str(res.get("text") or ""), quote=False))
-    await message.answer(text_r, reply_markup=markup)
+    await send_menu(message, services, text_r, markup)   # прежнее меню (приглашение к вводу) гаснет
 
 
 @router.callback_query(RsvCB.filter(F.action == "dns_check"))

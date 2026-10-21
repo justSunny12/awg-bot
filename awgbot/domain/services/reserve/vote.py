@@ -459,7 +459,7 @@ class ReserveVoteMixin:
         try:
             rsvkeys.code_decode(norm)
         except ValueError:
-            return self._code_try_failed(cw, "не разобран")
+            return {"ok": False, "why": "garbled", "left": max(0, CODE_TRIES - len(tries))}   # не код — не попытка подбора
         pkg_in = self.rsv_get("rsv_pkg_in")
         # окно закрывается ДО запуска: иначе такт голосования в окне между запуском и закрытием
         # видел бы taking при открытом окне и закрыл бы его «шлюз видит основу»

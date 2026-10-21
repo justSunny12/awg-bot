@@ -52,6 +52,11 @@ def accept_message() -> InlineKeyboardMarkup:
     return ui.rows(("⬅️ Отменить", RsvCB(action="cancel")))
 
 
+def after_move() -> InlineKeyboardMarkup:
+    """Итог перевода в живом сообщении: назад в раздел."""
+    return ui.rows(_back("rsv"))
+
+
 def final() -> InlineKeyboardMarkup:
     """Итог в живом сообщении: кнопок нет, остаётся след в чате."""
     return ui.rows()
@@ -115,11 +120,16 @@ def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:
         _back())
 
 
-def emergency(has_code: bool) -> InlineKeyboardMarkup:
-    return ui.rows(
-        [("🔑 Показать код", RsvCB(action="show_code")) if has_code else None,
-         ("🔄 Сменить код", RsvCB(action="new_code")) if has_code else None],
-        _back("rsv"))
+def emergency(has_code: bool, peer_bot_url: str = "", peer_name: str = "") -> InlineKeyboardMarkup:
+    from aiogram.types import InlineKeyboardButton
+    rows = [[("🔑 Показать код", RsvCB(action="show_code")) if has_code else None,
+             ("🔄 Сменить код", RsvCB(action="new_code")) if has_code else None]]
+    markup = ui.rows(*rows, _back("rsv"))
+    if peer_bot_url:
+        # кнопка-ссылка на бот второй стороны: там свой экран и ввод кода (концепт §6.1)
+        markup.inline_keyboard.insert(len(markup.inline_keyboard) - 1,
+                                      [InlineKeyboardButton(text=f"🆘 Открыть бот «{peer_name or 'резерв'}»"[:32], url=peer_bot_url)])
+    return markup
 
 
 def confirm_new_code() -> InlineKeyboardMarkup:

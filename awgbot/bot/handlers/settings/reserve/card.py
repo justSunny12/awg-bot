@@ -43,7 +43,7 @@ async def _set(cb: CallbackQuery, key: str, value) -> bool:
         await call(settings.set_value, key, value)
         return True
     except settings.SettingsWriteError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return False
 
 
@@ -74,7 +74,7 @@ async def ready_off_yes(cb: CallbackQuery, services):
 
 
 @router.callback_query(RsvCB.filter(F.action == "rfmine"))
-async def rf_toggle(cb: CallbackQuery, services):
+async def rf_mine_toggle(cb: CallbackQuery, services):
     on = settings.get_bool("app.reserve.rf_via_mine", True)
     if not await _set(cb, "app.reserve.rf_via_mine", not on):
         return
@@ -104,8 +104,11 @@ async def role_screen(cb: CallbackQuery, services):
 @router.callback_query(RsvCB.filter(F.action == "emerg"))
 async def emergency(cb: CallbackQuery, services):
     keys = await call(services.reserve_keys)
+    peer = await call(services.reserve_peer) or {}
+    bot_user = str(peer.get("bot_username") or "").lstrip("@")
     await edit(cb, st_t.emergency_text(bool(keys.get("m")), str(keys.get("code_shown_at") or "")),
-               rkb.emergency(bool(keys.get("m"))))
+               rkb.emergency(bool(keys.get("m")), peer_bot_url=f"https://t.me/{bot_user}" if bot_user else "",
+                             peer_name=str(peer.get("name") or "")))
     await cb.answer()
 
 
@@ -136,7 +139,7 @@ async def new_code(cb: CallbackQuery, services):
     try:
         await call(services.reserve_new_generation, "по кнопке «🔄 Сменить код»")
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await send_code(cb.bot, services, renewed_why="по кнопке «🔄 Сменить код»")
     await cb.answer("Ключ переезда и код сменены")
@@ -161,7 +164,7 @@ async def unpair_yes(cb: CallbackQuery, services):
     try:
         peer = await call(services.reserve_unpair)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await pairlink.shutdown()
     await _render(cb, "rsv", services)

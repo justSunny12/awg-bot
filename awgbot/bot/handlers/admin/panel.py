@@ -178,6 +178,8 @@ def parse_link(payload: str) -> tuple[str, int] | None:
         return "traffic", 0
     if payload == texts.MIGRATION_PAYLOAD:
         return "migration", 0
+    if payload == texts.RSV_PAYLOAD:
+        return "set_rsv", 0
     for head, kind in ((texts.TRAFFIC_PAYLOAD, "traffic_dev"), (texts.RF_PAYLOAD, "traffic_dev"),
                        ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev"),
                        (texts.MIGRATION_PAYLOAD, "migration_cl")):

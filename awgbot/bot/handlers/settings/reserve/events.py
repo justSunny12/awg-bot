@@ -17,15 +17,19 @@ log = logging.getLogger("awgbot.handlers.settings")
 CODE_TTL = 10 * 60
 
 
-async def _edit(bot, st: dict, text: str, markup=None) -> None:
+async def _edit(bot, st: dict, text: str, markup=None) -> bool:
+    """True — поправлено (или не изменилось); False — сообщения нет."""
     msg = st.get("msg") or []
     if len(msg) != 2:
-        return
+        return False
     try:
         await bot.edit_message_text(text, chat_id=int(msg[0]), message_id=int(msg[1]), reply_markup=markup)
+        return True
     except Exception as e:                                # noqa: BLE001 — удалено, не изменилось
-        if "not modified" not in str(e):
-            log.info("резерв: живое сообщение не поправлено: %s", e)
+        if "not modified" in str(e):
+            return True
+        log.info("резерв: живое сообщение не поправлено: %s", e)
+        return False
 
 
 async def _delete_later(bot, chat_id: int, message_id: int, delay: int = CODE_TTL) -> None:
@@ -61,16 +65,15 @@ async def on_event(bot, services, event: str, st: dict, extra: dict) -> None:
                     rkb.accept_message())
         return
     if event == "wrong":
-        await _edit(bot, st, pt.code_message(str(st.get("peer_name") or "второго сервера"), "") + "\n\n"
+        # код остаётся на экране: пригласивший опечатался, диктовать нужно тот же
+        await _edit(bot, st, pt.code_message(str(st.get("peer_name") or "второго сервера"), str(extra.get("code") or "")) + "\n\n"
                     + pt.code_wrong(int(extra.get("left") or 0)), rkb.accept_message())
         return
     if event == "linked":
         peer = st or {}
         name, bot_user = str(peer.get("name") or "резерв"), str(peer.get("bot_username") or "")
         inv_msg = extra.get("msg")
-        if inv_msg:
-            await _edit(bot, {"msg": inv_msg}, notices.linked(name, bot_user), rkb.final())
-        else:
+        if not inv_msg or not await _edit(bot, {"msg": inv_msg}, notices.linked(name, bot_user), rkb.final()):
             await bot.send_message(config.ADMIN_ID, notices.linked(name, bot_user), reply_markup=kb.hide_only())
         await send_code(bot, services)
         return

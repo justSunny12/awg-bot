@@ -24,8 +24,14 @@ class PeerAdminFilter(BaseFilter):
     async def __call__(self, event: TelegramObject, role: str = "", services=None, **kw) -> bool:
         if role == "peer_admin":
             return True
-        if role == "admin" and services is not None and hasattr(services, "reserve_self_peer_admin"):
+        if role == "admin" and services is not None:
+            # тот же короткий кэш, что у middleware: SELECT на каждое сообщение админа ни к чему
             try:
+                from awgbot.core import access_cache, config
+                from awgbot.bot.middleware import _PEER_ADMIN_SLOT
+                hit = access_cache.get(_PEER_ADMIN_SLOT)
+                if hit is not None:
+                    return int(hit[1] or 0) == int(config.ADMIN_ID) and int(hit[1] or 0) > 0
                 return bool(services.reserve_self_peer_admin())
             except Exception:                                 # noqa: BLE001
                 return False

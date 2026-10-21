@@ -118,6 +118,8 @@ def code_result(res: dict, peer: str) -> str:
         return (f"✅ Код подошёл — поднимаю клиентов {_n(peer)}. "
                 "Дальше пиши своему боту — он ответит, как только будет готов")
     why = str(res.get("why") or "")
+    if why == "garbled":
+        return "⚠️ Это не похоже на код — проверь группы и знаки и пришли ещё раз"
     if why == "wrong":
         left = int(res.get("left") or 0)
         head = "⚠️ Код не подошёл" if res.get("checked") else "⚠️ Код не разобран — проверь группы и знаки"
