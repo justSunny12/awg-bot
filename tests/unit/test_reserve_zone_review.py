@@ -214,9 +214,11 @@ def test_link_sides_get_a_setconf_config_without_awg_quick_keys_but_keep_their_a
 def test_a_refused_link_side_is_a_warning_and_its_temp_link_is_removed(zone):
     zone.links.mkdir()
     (zone.links / "awglink1.conf").write_text(LINK, encoding="utf-8")
-    r = zone.run("link_sides_up", AWG_FAIL="/dev/fd")
+    r = zone.run("link_sides_up", AWG_FAIL=".awglink1.setconf")
     assert r.returncode == 0 and "ВНИМАНИЕ: конфиг стороны линка awglink1 не принят" in r.stdout, r.stdout + r.stderr
     assert any(c.startswith("ip link del awgz") for c in zone.calls("ip link del")), "временный интерфейс остался"
+    # срез конфига живёт только на время setconf: при отказе он тоже убирается
+    assert not (zone.links / ".awglink1.setconf").exists(), "срез конфига для awg setconf остался после отказа"
 
 
 # ── хранилище ───────────────────────────────────────────────────────────────

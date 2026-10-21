@@ -306,16 +306,20 @@ EOF
 }
 
 link_sides_up() {   # стороны постоянных линков шлюзов основы из $LINKS_DIR/<linkname>.conf
-    local f name tmp addr
+    local f name tmp addr sc
     for f in "$LINKS_DIR"/*.conf; do
         [ -f "$f" ] || continue
         name="$(basename "$f" .conf)"
         nsx ip link show "$name" >/dev/null 2>&1 && continue
         tmp="awgz$$"
         ip link add "$tmp" type amneziawg || { say "ВНИМАНИЕ: сторона линка $name не создалась"; continue; }
-        # awg setconf не знает расширений awg-quick (Address и др.) — снять их на лету
-        awg setconf "$tmp" <(grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$f") \
-            || { ip link del "$tmp"; say "ВНИМАНИЕ: конфиг стороны линка $name не принят"; continue; }
+        # awg setconf не знает расширений awg-quick (Address и др.) — снять их; срез
+        # рядом с конфигом (тот же закрытый каталог), живёт только на время setconf
+        sc="$LINKS_DIR/.$name.setconf"
+        grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$f" > "$sc"; chmod 0600 "$sc"
+        awg setconf "$tmp" "$sc" \
+            || { rm -f "$sc"; ip link del "$tmp"; say "ВНИМАНИЕ: конфиг стороны линка $name не принят"; continue; }
+        rm -f "$sc"
         ip link set "$tmp" netns "$ZONE"
         nsx ip link set "$tmp" name "$name"
         addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"
