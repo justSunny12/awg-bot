@@ -12015,6 +12015,78 @@ TTL: 60 с
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
 
+### adm.rsv.main.online — главная: обычное состояние, резерв на связи, пакета ещё не было
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи</a>
+📈 CPU 12% · RAM 41% · диск 23%
+🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
+📶 Онлайн: 0
+📊 Трафик за сентябрь: 0 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
+
+### adm.rsv.main.pkg — главная: обычное состояние, у резерва данные для переезда
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи · данные для переезда от 11:30 (UTC+5)</a>
+📈 CPU 12% · RAM 41% · диск 23%
+🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
+📶 Онлайн: 0
+📊 Трафик за сентябрь: 0 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
+
+### adm.rsv.main.not_ready — главная: обычное состояние, готовность выключена
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи · готовность выключена</a>
+📈 CPU 12% · RAM 41% · диск 23%
+🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
+📶 Онлайн: 0
+📊 Трафик за сентябрь: 0 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
+
+### adm.rsv.main.never — главная: пара есть, связи с резервом ещё не было
+> /start
++ send #2
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta»: связи ещё не было</a>
+📈 CPU 12% · RAM 41% · диск 23%
+🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
+📶 Онлайн: 0
+📊 Трафик за сентябрь: 0 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
+
 ### adm.rsv.guest.back — резерв: «↩️ Вернуть клиентов» — диалог
 > press rsv:back:
 = edit #1

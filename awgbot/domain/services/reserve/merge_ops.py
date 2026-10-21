@@ -53,9 +53,18 @@ class ReserveMergeOpsMixin:
             # пиры — до сверки: устройства с резерва должны попасть в конфиг раньше,
             # чем сверка посчитает их пропавшими
             added = 0
-            conf_pubs = {p["public_key"] for p in awg.show_dump(config.AWG_INTERFACE)}
+            conf_pubs: dict[str, set] = {}                   # пиры по каждому интерфейсу: двойники живут на втором
             for d in self.db.list_all_devices():
-                if d.public_key and d.public_key not in conf_pubs and not getattr(d, "is_gateway", 0):
+                if not d.public_key or getattr(d, "is_gateway", 0):
+                    continue
+                iface = awg.iface_of(d.iface)
+                if iface not in conf_pubs:
+                    try:
+                        conf_pubs[iface] = {p["public_key"] for p in awg.show_dump(iface)}
+                    except Exception as e:                    # noqa: BLE001 — интерфейса нет (окно переезда закрыто)
+                        log.info("резерв: пиры %s не прочитаны: %s", iface, e)
+                        conf_pubs[iface] = set()
+                if d.public_key not in conf_pubs[iface]:
                     try:
                         awg.add_peer(d.public_key, d.preshared_key or "", d.address, awg.iface_of(d.iface))
                         added += 1

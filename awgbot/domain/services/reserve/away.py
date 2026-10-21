@@ -63,6 +63,8 @@ class ReserveAwayMixin:
             return f"🛟 Резерв «{name}» на связи · данные для переезда от {_when(str(pkg.get('at') or ''))}"
         if self.reserve_online():
             return f"🛟 Резерв «{name}» на связи" + ("" if ready else " · готовность выключена")
+        if self.reserve_peer_state().get("session_at"):
+            return f"🛟 Резерв «{name}»: сейчас не на связи"   # сессия была и оборвалась; «недоступен» скажет проба
         return f"🛟 Резерв «{name}»: связи ещё не было"
 
     def reserve_blocks_to_send(self) -> list[str] | None:

@@ -13,7 +13,7 @@ from awgbot.bot.callbacks import RsvCB
 
 from tests.screens.base import NOW, Shot
 from tests.screens.shots_admin_common import _iso
-from tests.screens.shots_admin_reserve import OWN_IP, RSV, _away, _guest, _peer_down, _rsv, _serving
+from tests.screens.shots_admin_reserve import OWN_IP, RSV, _away, _guest, _not_ready, _peer_down, _rsv, _serving
 
 DNS = RsvCB(action="dns")
 FOREIGN = "198.51.100.77"
@@ -95,6 +95,16 @@ def _move_done(services, bot):
 def _await_merge(services, mp):
     """Клиенты возвращены без резерва (С9): жду его реплику."""
     services.reserve_set_out("home", await_merge=True, kind="dead")
+
+
+def _pkg_sent(services, mp):
+    """Резерв подтвердил пакет переезда, снятый в 11:30."""
+    services.rsv_put("rsv_pkg_sent", {"gen": 3, "fp": "ab" * 8, "at": _iso(NOW.replace(hour=11, minute=30))})
+
+
+def _no_session(services, mp):
+    """Пара записана, сессии с резервом ещё не было."""
+    services.rsv_update("rsv_peer_state", session=False)
 
 
 def _paired(*then):
@@ -181,6 +191,14 @@ RESERVE_MOVE = [
     Shot("adm.rsv.main.relay", role="admin", start="", data=_paired(_relay_after_return),
          title="главная: возврат состоялся, идёт пересылка"),
     Shot("adm.rsv.main.down", role="admin", start="", data=_paired(_peer_down), title="главная: резерв недоступен"),
+    Shot("adm.rsv.main.online", role="admin", start="", data=_paired(),
+         title="главная: обычное состояние, резерв на связи, пакета ещё не было"),
+    Shot("adm.rsv.main.pkg", role="admin", start="", data=_paired(_pkg_sent),
+         title="главная: обычное состояние, у резерва данные для переезда"),
+    Shot("adm.rsv.main.not_ready", role="admin", start="", data=_paired(_pkg_sent, _not_ready),
+         title="главная: обычное состояние, готовность выключена"),
+    Shot("adm.rsv.main.never", role="admin", start="", data=_paired(_no_session),
+         title="главная: пара есть, связи с резервом ещё не было"),
     # ── бот основы на резерве: возврат (Т-Р11) ──────────────────────────
     Shot("adm.rsv.guest.back", role="admin", press=[RSV, RsvCB(action="back")], data=_guest(alive=True),
          title="резерв: «↩️ Вернуть клиентов» — диалог"),

@@ -56,8 +56,42 @@ def test_without_a_pair_nothing_is_refused(services, rsv):
 
 # ── Т-Р17 ───────────────────────────────────────────────────────────────────
 
-def test_the_main_line_is_empty_in_the_ordinary_state_and_without_a_pair(mv, services):
-    assert mv.svc.reserve_main_line() == ""
+def test_the_main_line_in_the_ordinary_state_says_the_reserve_is_online(mv):
+    """Обычное состояние при паре: резерв на связи и готов, пакета ещё не было."""
+    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи"
+
+
+def test_the_main_line_names_the_time_of_the_data_for_the_move(mv):
+    """Готов и пакет у резерва подтверждён — когда снят: по этому админ судит,
+    насколько свежим будет переезд."""
+    mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": "2026-10-21T13:58:00+05:00"})
+    line = mv.svc.reserve_main_line()
+    assert line.startswith("🛟 Резерв «Beta» на связи · данные для переезда от 13:58"), line
+
+
+def test_the_main_line_says_readiness_is_off_and_hides_the_package_time(mv):
+    """Готовность выключена — переезда по ней не будет, время данных — лишнее
+    обещание; строка говорит о выключенной готовности."""
+    from awgbot.core import settings
+    settings.set_value("app.reserve.ready", False)
+    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи · готовность выключена"
+    mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": "2026-10-21T13:58:00+05:00"})
+    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи · готовность выключена"
+
+
+def test_the_main_line_before_the_first_session(services, rsv):
+    """Пара записана, сессии с резервом не было — строка об этом, а не «на связи»."""
+    rc.pair_row(services)
+    assert services.reserve_main_line() == "🛟 Резерв «Beta»: связи ещё не было"
+
+
+def test_the_main_line_after_a_session_dropped_does_not_say_there_was_none(mv):
+    """Сессия была (session_at записан) и только что оборвалась — до «недоступен»
+    (проба после 40 с тишины) строка не должна утверждать, что связи не было
+    никогда: админ ищет ошибку в сопряжении, которого нет."""
+    mv.svc.rsv_update("rsv_peer_state", session=False, session_at="2026-10-21T13:58:00+05:00")
+    assert mv.svc.reserve_peer_seen() != "down"
+    assert mv.svc.reserve_main_line() != "🛟 Резерв «Beta»: связи ещё не было", mv.svc.rsv_get("rsv_peer_state")
 
 
 def test_the_main_line_without_a_pair_is_empty(services, rsv):
@@ -81,9 +115,9 @@ def test_the_main_line_shows_the_forwarding_after_the_return_until_its_term(mv):
     svc.reserve_set_out("home", relay_until=soon)
     assert "пересылка до" in svc.reserve_main_line()
     svc.reserve_set_out("home", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), -60)))
-    assert svc.reserve_main_line() == "", "срок прошёл — строка исчезает сама"
+    assert svc.reserve_main_line() == "🛟 Резерв «Beta» на связи", "срок прошёл — строка пересылки исчезает сама"
     svc.reserve_set_out("home", relay_until="не дата")
-    assert svc.reserve_main_line() == ""
+    assert svc.reserve_main_line() == "🛟 Резерв «Beta» на связи"
 
 
 def test_the_main_line_of_the_reserve_while_hosting(mv):

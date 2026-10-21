@@ -626,6 +626,24 @@ def _reserve_zone_has_everything(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reserve_zone_tools_present(monkeypatch):
+    """Пакеты гостевой зоны (dnsmasq, conntrack) — по плану настоящего скрипта
+    зоны машины прогона: на машине без dnsmasq каждое включение готовности и
+    каждое сопряжение в тестах запускало бы фоновую установку. Здесь пакеты
+    на месте, а apt-get не запускается никогда — ни настоящий, ни по ошибке
+    теста. Установку проверяют tests/unit/test_rsvzone_install_tools.py и
+    tests/integration/test_reserve_zone_tools.py настоящими функциями (их
+    ссылки взяты при импорте, до подмены)."""
+    from awgbot.domain.services.reserve import invite as _invite
+    from awgbot.infra import rsvzone as _rz
+    monkeypatch.setattr(_invite.ReserveInviteMixin, "reserve_tools_missing", lambda self: [])
+
+    def _no_apt(names, timeout=900):
+        raise _rz.ZoneError("в тестах apt-get не запускается")
+    monkeypatch.setattr(_rz, "install_tools", _no_apt)
+
+
+@pytest.fixture(autouse=True)
 def _telegram_reachable_without_network(monkeypatch):
     """Здоровье основы (reserve/outbound.reserve_healthy) спрашивает TCP до
     api.telegram.org:443 — в прогоне сети нет и ходить в неё нельзя: Telegram

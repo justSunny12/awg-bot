@@ -189,7 +189,8 @@ class ReserveInviteMixin:
             due = True
         if due:
             self.reserve_tools_ensure()
-            view = self.rsv_get("rsv_view")
+            self.rsv_update("rsv_view", tools_at=timeutil.now_iso())   # план зоны — скрипт: не чаще раза в 6 ч и при всём на месте
+        # отказ говорится по снимку до запуска: установка идёт в фоне, её итог — следующему такту
         if view.get("tools_fail") and not view.get("tools_told"):
             self.rsv_update("rsv_view", tools_told=True)
             from ..types import Notification

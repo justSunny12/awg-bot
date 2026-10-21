@@ -348,13 +348,14 @@ async def test_the_check_button_shows_the_result_in_a_toast(ui):
 
 # ── главная: строка Т-Р17 ───────────────────────────────────────────────────
 
-async def test_the_admin_main_screen_shows_the_reserve_line_only_in_an_unusual_state(ui):
+async def test_the_admin_main_screen_shows_the_reserve_line_in_the_ordinary_and_the_unusual_state(ui):
+    """Обычное состояние при паре — короткая строка «на связи»; переезд — своя строка вместо неё."""
     from awgbot.bot.handlers.admin import panel
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟" not in parts[0], "строка резерва на главной в обычном состоянии"
+    assert "🛟 Резерв «Beta» на связи" in parts[0], "строки резерва нет на главной в обычном состоянии"
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 У тебя клиенты и бот «Beta» с" in parts[0]
+    assert "🛟 У тебя клиенты и бот «Beta» с" in parts[0] and "на связи" not in parts[0]
 
 
 def test_the_reserve_line_on_the_main_screen_links_to_the_reserve_card():
