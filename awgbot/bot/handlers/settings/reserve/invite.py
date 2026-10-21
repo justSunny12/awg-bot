@@ -39,7 +39,7 @@ async def invite(cb: CallbackQuery, services, state: FSMContext):
     try:
         res = await call(services.reserve_invite_issue)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     st = res["state"]
     if res.get("stale"):
@@ -112,7 +112,7 @@ async def cancel(cb: CallbackQuery, services, state: FSMContext):
             await call(services.reserve_invite_cancel, "cancel")
             await pairlink.ensure(services)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _edit(cb.bot, st, pt.INVITE_CANCELLED if role == "inviter" else "ℹ️ Подключение отменено", rkb.final())
     # след «отменено» остаётся на сообщении приглашения; раздел — на живом меню (одно меню в чате)

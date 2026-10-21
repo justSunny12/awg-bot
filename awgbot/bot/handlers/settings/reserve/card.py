@@ -43,7 +43,7 @@ async def _set(cb: CallbackQuery, key: str, value) -> bool:
         await call(settings.set_value, key, value)
         return True
     except settings.SettingsWriteError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return False
 
 
@@ -139,7 +139,7 @@ async def new_code(cb: CallbackQuery, services):
     try:
         await call(services.reserve_new_generation, "по кнопке «🔄 Сменить код»")
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await send_code(cb.bot, services, renewed_why="по кнопке «🔄 Сменить код»")
     await cb.answer("Ключ переезда и код сменены")
@@ -151,7 +151,7 @@ async def new_code(cb: CallbackQuery, services):
 async def unpair_ask(cb: CallbackQuery, services):
     why = await call(services.reserve_unpair_check)
     if why:
-        await cb.answer(why, show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     await edit(cb, st_t.unpair_dialog(await call(services.reserve_peer_name)), rkb.confirm_unpair())
     await cb.answer()
@@ -164,7 +164,7 @@ async def unpair_yes(cb: CallbackQuery, services):
     try:
         peer = await call(services.reserve_unpair)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await pairlink.shutdown()
     await _render(cb, "rsv", services)

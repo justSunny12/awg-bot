@@ -42,7 +42,7 @@ async def dns_provider(cb: CallbackQuery, services, **_):
     try:
         await call(services.reserve_dns_set_provider, nxt)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _render(cb, "rsv_dns", services)
     await cb.answer()
@@ -71,7 +71,7 @@ async def dns_token_received(message: Message, services, state: FSMContext):
     try:
         await call(services.reserve_dns_set_token, text)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {ui.toast(e, html=getattr(e, "html", False))}", reply_markup=rkb.dns_token_prompt())
+        await ask_tracked(message, services, f"⚠️ {ui.toast_cap(e, html=getattr(e, "html", False))}", reply_markup=rkb.dns_token_prompt())
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)

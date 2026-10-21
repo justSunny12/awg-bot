@@ -30,7 +30,7 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 
 from awgbot.util.textfmt.atoms import (  # noqa: F401
     STATUS, TOAST_MAX, TEXT_MAX, _TAG, st, tick, head, prompt, label, sub, screen, confirm,
-    fail, result, changed, Toast, _u16, toast, note_budget)
+    fail, result, changed, Toast, _u16, toast, toast_cap, note_budget)
 
 
 # ── клавиатуры ───────────────────────────────────────────────────────────────
@@ -112,5 +112,5 @@ def paged(items, page: int, *, static: int, screen: str, ref: int, back, button)
 
 __all__ = [
     "STATUS", "TOAST_MAX", "TEXT_MAX", "_TAG", "st", "tick", "head", "prompt", "label", "sub",
-    "screen", "confirm", "fail", "result", "changed", "Toast", "_u16", "toast", "note_budget",
+    "screen", "confirm", "fail", "result", "changed", "Toast", "_u16", "toast", "toast_cap", "note_budget",
     "BACK_LABEL", "MENU_LABEL", "btn", "_button", "rows", "grid", "back", "to_menu", "paged"]

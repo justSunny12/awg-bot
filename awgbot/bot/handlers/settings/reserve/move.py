@@ -38,7 +38,7 @@ async def move_ask(cb: CallbackQuery, services, **_):
         return
     why = await call(services.reserve_move_check)
     if why:
-        await cb.answer(why[:200], show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     d = await call(services.reserve_move_dialog_data)
     await edit(cb, st_t.move_dialog(d), rkb.confirm_move())
@@ -50,7 +50,7 @@ async def move_go(cb: CallbackQuery, services, **_):
     try:
         await call(services.reserve_move_start, cb.message.chat.id, cb.message.message_id)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await edit(cb, st_t.move_live(await call(services.reserve_move_live)), None)
     await cb.answer("Перевод начат")
@@ -82,7 +82,7 @@ async def back_ask(cb: CallbackQuery, services, **_):
     из reserve/guest.py — там единственный хендлер этого действия."""
     why = await call(services.reserve_return_check)
     if why:
-        await cb.answer(why[:200], show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     d = await call(services.reserve_return_dialog_data)
     await edit(cb, st_t.return_dialog(d), rkb.confirm_return())
@@ -93,7 +93,7 @@ async def back_go(cb: CallbackQuery, services, **_):
     try:
         actions = await call(services.reserve_return_start, "button")
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _run(actions)
     await _render(cb, "rsv", services)
@@ -107,7 +107,7 @@ async def force_ask(cb: CallbackQuery, services, **_):
     """С9: резерв не на связи — вернуть клиентов без него (диалог)."""
     why = await call(services.reserve_force_check)
     if why:
-        await cb.answer(why[:200], show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     d = await call(services.reserve_force_dialog_data)
     await edit(cb, st_t.force_dialog(d), rkb.confirm_force())
@@ -119,7 +119,7 @@ async def force_go(cb: CallbackQuery, services, **_):
     try:
         actions = await call(services.reserve_force_home)
     except ServiceError as e:
-        await cb.answer(ui.toast(e, html=getattr(e, "html", False)), show_alert=True)
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
         return
     await _run(actions)
     await _render(cb, "rsv", services)
@@ -130,7 +130,7 @@ async def force_go(cb: CallbackQuery, services, **_):
 async def evict_ask(cb: CallbackQuery, services, **_):
     why = await call(services.reserve_evict_check)
     if why:
-        await cb.answer(why[:200], show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     await edit(cb, st_t.evict_dialog(await call(services.reserve_peer_name)), rkb.confirm_evict())
     await cb.answer()
@@ -140,7 +140,7 @@ async def evict_ask(cb: CallbackQuery, services, **_):
 async def evict_go(cb: CallbackQuery, services, **_):
     why = await call(services.reserve_evict_check)
     if why:
-        await cb.answer(why[:200], show_alert=True)
+        await cb.answer(ui.toast_cap(why), show_alert=True)
         return
     await _run([("send", "evict", {})])
     await _render(cb, "rsv", services)

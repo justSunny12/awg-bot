@@ -253,8 +253,10 @@ class ReserveSessionMixin:
         sent = self.rsv_get("rsv_pkg_sent")
         fresh = bool(sent.get("at")) and timeutil.elapsed(timeutil.parse_iso(sent["at"])) < 2 * 3600 if sent.get("at") else False
         pkg_here = self.reserve_pkg_in_present() if hasattr(self, "reserve_pkg_in_present") else True
-        return {"out": compat.direction_ready(mine, peer, pkg_fresh=fresh or not sent),
-                "in": compat.direction_ready(peer, mine, pkg_fresh=pkg_here)}
+        inn = compat.direction_ready(peer, mine)
+        if inn[0] and not pkg_here:
+            inn = (False, f"данных для переезда от «{peer.get('name') or 'резерв'}» ещё нет")
+        return {"out": compat.direction_ready(mine, peer, pkg_fresh=fresh or not sent), "in": inn}
 
     # ── сессия ───────────────────────────────────────────────────────────────
 

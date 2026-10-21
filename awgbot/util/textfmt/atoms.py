@@ -124,6 +124,13 @@ def _u16(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
+def toast_cap(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
+    """toast с заглавной первой буквой: причины отказа сервисы отдают со строчной
+    (они же идут в строки карточки после двоеточия), а всплывашка — целое предложение."""
+    plain = str(text or "")
+    return toast(plain[:1].upper() + plain[1:], limit, html=html)
+
+
 def toast(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
     """Текст всплывашки: не длиннее limit единиц UTF-16 — с «…». Всплывашку
     Telegram не разбирает как разметку, поэтому текст идёт как есть (имена с

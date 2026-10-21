@@ -244,9 +244,9 @@ def move_live(d: dict) -> str:
     name = _n(d.get("name") or "резерв")
     state, step = str(d.get("state") or ""), str(d.get("step") or "")
     if state == "away":
-        there = int(d.get("there") or 0)
-        return (f"✅ Клиенты и бот — на {name}: устройства переходят при переподключении — здесь ещё {int(d.get('online') or 0)}"
-                + (f", там {there}" if there else ""))
+        there, here = int(d.get("there") or 0), int(d.get("online") or 0)
+        tail = ", ".join(x for x in ((f"здесь ещё {here}" if here else ""), (f"там {there}" if there else "")) if x)
+        return f"✅ Клиенты и бот — на {name}: устройства переходят при переподключении" + (f" — {tail}" if tail else "")
     if state == "home" and d.get("reason"):
         return f"⚠️ Перевод не состоялся: {_e(d['reason'])}"
     if state != "leaving":
