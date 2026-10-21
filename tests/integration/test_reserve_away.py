@@ -55,93 +55,136 @@ def test_without_a_pair_nothing_is_refused(services, rsv):
 
 
 # ── Т-Р17 ───────────────────────────────────────────────────────────────────
+# Статус резерва в шапке главной — {name, dot, text}, как строка сервера:
+# 🟢 переехать можно сейчас или резерв несёт клиентов, 🟡 не готов (с причиной)
+# или идёт переезд/возврат, 🔴 резерв недоступен.
 
-def test_the_main_line_in_the_ordinary_state_says_the_reserve_is_online(mv):
-    """Обычное состояние при паре: резерв на связи и готов, пакета ещё не было."""
-    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи"
+def _st(svc) -> tuple:
+    s = svc.reserve_main_status()
+    return s["name"], s["dot"], s["text"]
 
 
-def test_the_main_line_names_the_time_of_the_data_for_the_move(mv):
-    """Готов и пакет у резерва подтверждён — когда снят: по этому админ судит,
+def _clock(iso: str) -> str:
+    return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
+
+
+def test_online_without_confirmed_data_is_not_green(mv):
+    """На связи, направление готово, но пакета у резерва ещё нет — переехать
+    сейчас не на чем: зелёный кружок обещал бы админу переезд, которого не будет."""
+    assert _st(mv.svc) == ("Beta", "🟡", "не готов: данных для переезда у него ещё нет")
+
+
+def test_ready_with_fresh_data_is_green_and_names_the_data_time(mv):
+    """Готово всё и пакет подтверждён — 🟢 и время данных: по нему админ судит,
     насколько свежим будет переезд."""
-    mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": "2026-10-21T13:58:00+05:00"})
-    line = mv.svc.reserve_main_line()
-    assert line.startswith("🛟 Резерв «Beta» на связи · данные для переезда от 13:58"), line
+    rm.confirm_package(mv.svc)
+    at = mv.svc.rsv_get("rsv_pkg_sent")["at"]
+    assert _st(mv.svc) == ("Beta", "🟢", f"резерв готов · данные от {_clock(at)}")
+    assert mv.svc.reserve_main_line() == f"🛟 Beta 🟢 резерв готов · данные от {_clock(at)}", \
+        "строка одним текстом — имя, кружок, суть через пробел"
 
 
-def test_the_main_line_says_readiness_is_off_and_hides_the_package_time(mv):
-    """Готовность выключена — переезда по ней не будет, время данных — лишнее
-    обещание; строка говорит о выключенной готовности."""
+def test_readiness_off_here_is_named_as_this_side_even_with_data(mv):
+    """«Готов быть резервом» выключен у себя — переезда не будет, сколько бы
+    данных ни было; причина говорит «здесь», а не про второй сервер — иначе
+    админ идёт чинить не ту сторону."""
     from awgbot.core import settings
     settings.set_value("app.reserve.ready", False)
-    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи · готовность выключена"
-    mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": "2026-10-21T13:58:00+05:00"})
-    assert mv.svc.reserve_main_line() == "🛟 Резерв «Beta» на связи · готовность выключена"
+    rm.confirm_package(mv.svc)
+    assert _st(mv.svc) == ("Beta", "🟡", "не готов: здесь выключено «Готов быть резервом»")
 
 
-def test_the_main_line_before_the_first_session(services, rsv):
-    """Пара записана, сессии с резервом не было — строка об этом, а не «на связи»."""
+def test_peer_not_ready_names_the_peer(mv):
+    """У второго сервера выключена готовность — причина называет его, а не «здесь»."""
+    rm.st_in(mv.svc, ready=False)
+    rm.confirm_package(mv.svc)
+    name, dot, text = _st(mv.svc)
+    assert (dot, text) == ("🟡", "не готов: у «Beta» выключено «Готов быть резервом»"), text
+
+
+def test_stale_data_is_not_green(mv):
+    """Пакет подтверждён давно (старше двух часов) — переезд вернул бы клиентов
+    в прошлое: 🟡 с причиной про устаревшие данные, а не «готов» со старым временем."""
+    old = timeutil.to_iso(timeutil.shift(timeutil.now(), -3 * 3600))
+    mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": old})
+    name, dot, text = _st(mv.svc)
+    assert dot == "🟡" and text.startswith("не готов: ") and "устарели" in text, text
+
+
+def test_before_the_first_session(services, rsv):
+    """Пара записана, сессии с резервом не было — так и сказано."""
     rc.pair_row(services)
-    assert services.reserve_main_line() == "🛟 Резерв «Beta»: связи ещё не было"
+    assert _st(services) == ("Beta", "🟡", "связи ещё не было")
 
 
-def test_the_main_line_after_a_session_dropped_does_not_say_there_was_none(mv):
-    """Сессия была (session_at записан) и только что оборвалась — до «недоступен»
-    (проба после 40 с тишины) строка не должна утверждать, что связи не было
-    никогда: админ ищет ошибку в сопряжении, которого нет."""
+def test_after_a_session_dropped_it_says_not_online_now(mv):
+    """Сессия была и только что оборвалась (до «недоступен» — проба после 40 с
+    тишины): строка не утверждает, что связи не было никогда, — иначе админ
+    ищет ошибку в сопряжении, которого нет."""
     mv.svc.rsv_update("rsv_peer_state", session=False, session_at="2026-10-21T13:58:00+05:00")
     assert mv.svc.reserve_peer_seen() != "down"
-    assert mv.svc.reserve_main_line() != "🛟 Резерв «Beta»: связи ещё не было", mv.svc.rsv_get("rsv_peer_state")
+    assert _st(mv.svc) == ("Beta", "🟡", "сейчас не на связи"), mv.svc.rsv_get("rsv_peer_state")
 
 
-def test_the_main_line_without_a_pair_is_empty(services, rsv):
+def test_without_a_pair_the_status_and_the_line_are_empty(services, rsv):
+    """Пары нет — на главной нечего рисовать."""
+    assert services.reserve_main_status() == {}
     assert services.reserve_main_line() == ""
 
 
-def test_the_main_line_follows_the_move_and_the_return(mv):
+def test_the_status_follows_the_move_and_the_return(mv):
     svc = mv.svc
     svc.reserve_set_out("leaving")
-    assert svc.reserve_main_line() == "🛟 Клиенты переезжают на резерв «Beta» — жду смену записи"
+    assert _st(svc) == ("Beta", "🟡", "клиенты переезжают к нему — жду смену записи")
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
-    line = svc.reserve_main_line()
-    assert line.startswith("🛟 Клиенты и бот — на «Beta» с ") and "03:12" in line
+    assert _st(svc) == ("Beta", "🟢", f"несёт твоих клиентов и бот с {_clock('2026-10-21T03:12:00+05:00')}")
     svc.reserve_set_out("returning")
-    assert svc.reserve_main_line() == "🛟 Клиенты возвращаются с резерва «Beta»"
+    assert _st(svc) == ("Beta", "🟡", "клиенты возвращаются сюда")
 
 
-def test_the_main_line_shows_the_forwarding_after_the_return_until_its_term(mv):
+def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
     svc = mv.svc
     soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
     svc.reserve_set_out("home", relay_until=soon)
-    assert "пересылка до" in svc.reserve_main_line()
+    date = timeutil.fmt_dt_ui(timeutil.parse_iso(soon))
+    assert _st(svc) == ("Beta", "🟡", f"клиенты возвращаются сюда — пересылка до {date}")
+    rm.confirm_package(svc)
     svc.reserve_set_out("home", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), -60)))
-    assert svc.reserve_main_line() == "🛟 Резерв «Beta» на связи", "срок прошёл — строка пересылки исчезает сама"
+    assert _st(svc)[1:] == ("🟢", f"резерв готов · данные от {_clock(svc.rsv_get('rsv_pkg_sent')['at'])}"), \
+        "срок прошёл — строка пересылки исчезает сама"
     svc.reserve_set_out("home", relay_until="не дата")
-    assert svc.reserve_main_line() == "🛟 Резерв «Beta» на связи"
+    assert _st(svc)[1] == "🟢", "срок не читается — обычное состояние, а не падение главной"
 
 
-def test_the_main_line_of_the_reserve_while_hosting(mv):
+@pytest.mark.parametrize("state", ["taking", "serving", "releasing"])
+def test_the_reserve_hosting_the_peer_clients_is_green(mv, state):
+    """Резерв несёт клиентов второго сервера — это его работа, а не тревога."""
+    mv.svc.reserve_set_in(state, taken_at="2026-10-21T03:12:00+05:00")
+    assert _st(mv.svc) == ("Beta", "🟢", f"его клиенты и бот у тебя с {_clock('2026-10-21T03:12:00+05:00')}")
+
+
+def test_the_reserve_forwarding_the_peer_clients_back(mv):
+    soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
+    mv.svc.reserve_set_in("relay", relay_until=soon)
+    assert _st(mv.svc) == ("Beta", "🟡", f"его клиенты возвращаются к нему — пересылка до "
+                                          f"{timeutil.fmt_dt_ui(timeutil.parse_iso(soon))}")
+
+
+def test_an_unreachable_reserve_is_red(mv):
+    """Линк пары молчит — 🔴 и с какого времени; даже с данными «готов» не говорим."""
     svc = mv.svc
-    svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
-    assert svc.reserve_main_line().startswith("🛟 У тебя клиенты и бот «Beta» с ") and "03:12" in svc.reserve_main_line()
-    svc.reserve_set_in("relay", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), 86400)))
-    assert "возвращаются к нему — пересылка до" in svc.reserve_main_line()
-    svc.reserve_set_in("idle")
-
-
-def test_the_main_line_warns_when_the_reserve_is_unreachable(mv):
-    svc = mv.svc
+    rm.confirm_package(svc)
     svc._lv.state = "down"
     svc.rsv_update("rsv_peer_state", down_since="2026-10-21T13:58:00+05:00")
-    line = svc.reserve_main_line()
-    assert line.startswith("🔴 Резерв «Beta» недоступен с ") and "13:58" in line
+    assert _st(svc) == ("Beta", "🔴", f"недоступен с {_clock('2026-10-21T13:58:00+05:00')}")
 
 
-def test_the_move_line_takes_precedence_over_the_unreachable_reserve(mv):
+def test_the_move_takes_precedence_over_the_unreachable_reserve(mv):
+    """Клиенты у резерва — главное сказать, где они; «недоступен» тут — шум."""
     svc = mv.svc
     svc._lv.state = "down"
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
-    assert svc.reserve_main_line().startswith("🛟 Клиенты и бот — на «Beta»")
+    assert _st(svc)[1:2] == ("🟢",) and _st(svc)[2].startswith("несёт твоих клиентов и бот с ")
 
 
 # ── блокировки резерву ──────────────────────────────────────────────────────

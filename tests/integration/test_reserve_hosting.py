@@ -166,7 +166,7 @@ def test_go_with_a_foreign_package_generation_is_refused_with_the_reason(host):
 @pytest.mark.parametrize("prep,reason", [
     (lambda h: h.svc.reserve_set_in("serving"), "зона занята"),
     (lambda h: settings.set_value("app.reserve.ready", False), "выключена"),
-    (lambda h: h.svc.reserve_st_in(rm.peer_st(ready=False)), "не готов"),
+    (lambda h: h.svc.reserve_st_in(rm.peer_st(ready=False)), "у «Beta» выключено «Готов быть резервом»"),
 ])
 def test_go_is_refused_when_the_zone_is_busy_or_the_reserve_is_not_ready(host, prep, reason):
     prep(host)

@@ -349,13 +349,36 @@ async def test_the_check_button_shows_the_result_in_a_toast(ui):
 # ── главная: строка Т-Р17 ───────────────────────────────────────────────────
 
 async def test_the_admin_main_screen_shows_the_reserve_line_in_the_ordinary_and_the_unusual_state(ui):
-    """Обычное состояние при паре — короткая строка «на связи»; переезд — своя строка вместо неё."""
+    """Обычное состояние при паре — строка в стиле строки сервера: имя, кружок,
+    суть; переезд — та же строка с другой сутью, а не вторая строка рядом."""
     from awgbot.bot.handlers.admin import panel
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 Резерв «Beta» на связи" in parts[0], "строки резерва нет на главной в обычном состоянии"
+    assert "🛟 <b>Beta</b> 🟡 не готов: данных для переезда у него ещё нет" in parts[0], parts[0]
+    rm.confirm_package(ui.svc)
+    parts = await panel._panel_parts(ui.svc)
+    assert "🛟 <b>Beta</b> 🟢 резерв готов · данные от " in parts[0], "строки резерва нет на главной в обычном состоянии"
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 У тебя клиенты и бот «Beta» с" in parts[0] and "на связи" not in parts[0]
+    assert "🛟 <b>Beta</b> 🟢 его клиенты и бот у тебя с" in parts[0] and "резерв готов" not in parts[0]
+    assert parts[0].count("🛟") == 1, "строка резерва на главной должна быть одна"
+
+
+def test_the_reserve_status_on_the_main_screen_escapes_the_name_and_links_to_the_card():
+    """Имя второй стороны приходит из сопряжения — чужой текст: без
+    экранирования «<b>» ломает разметку всей главной (Telegram отвергает
+    сообщение). Строка — ссылкой на карточку резерва; без имени бота — текст;
+    статус важнее запасной строки."""
+    from awgbot.bot import texts
+    from awgbot.bot.texts.admin.panel import admin_panel
+    st = {"ok": True}
+    rsv = {"name": "<b>Beta</b>", "dot": "🟢", "text": "резерв готов · a & b"}
+    text = admin_panel(st, bot_username="srv_a_bot", rsv=rsv, rsv_line="🛟 запасная")
+    assert f'<a href="https://t.me/srv_a_bot?start={texts.RSV_PAYLOAD}">🛟 <b>&lt;b&gt;Beta&lt;/b&gt;</b> 🟢 ' \
+           "резерв готов · a &amp; b</a>" in text, text
+    assert "запасная" not in text, "при статусе запасная строка не рисуется"
+    plain = admin_panel(st, rsv={"name": "Beta", "dot": "🔴", "text": "недоступен с 13:58"})
+    assert "href" not in plain and "🛟 <b>Beta</b> 🔴 недоступен с 13:58" in plain, plain
+    assert "🛟" not in admin_panel(st, bot_username="srv_a_bot", rsv=None), "без пары строки резерва нет"
 
 
 def test_the_reserve_line_on_the_main_screen_links_to_the_reserve_card():

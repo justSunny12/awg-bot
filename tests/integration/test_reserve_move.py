@@ -44,7 +44,7 @@ def test_every_obstacle_gives_its_own_reason_and_no_start(mv):
     assert svc.reserve_out() == "home", "отказанный старт не должен менять состояние"
     svc.rsv_update("rsv_peer_state", session=True)
     rm.st_in(svc, ready=False)
-    assert "не готов" in svc.reserve_move_check()
+    assert "у «Beta» выключено «Готов быть резервом»" in svc.reserve_move_check(), "причина не называет сторону"
     rm.st_in(svc)
     settings.set_value("app.network.server_host", "203.0.113.5")
     assert "записи DNS нет" in svc.reserve_move_check(), "адрес для клиентов — IP: менять нечего"

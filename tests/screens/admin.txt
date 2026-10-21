@@ -11173,9 +11173,9 @@ NASPi — 🟢 Активен
 ☑️ Ты не готов быть резервом — переезды в обе стороны выключены
 
 📤 Мои клиенты: на этом сервере
-└ ⚠️ сторона не готова
+└ ⚠️ здесь выключено «Готов быть резервом»
 📥 Клиенты «Beta»: на его сервере
-└ ⚠️ «Сервер 1» не готов быть резервом
+└ ⚠️ здесь выключено «Готов быть резервом»
 🌐 Запись <code>vpn.example.org</code>: не проверена · вручную
 
 <blockquote expandable>▸ подробнее: Свои цифры каждый сервер считает сам; месяц — по часовому поясу своей стороны. Возврат клиентов: сразу, как только этот сервер в строю пять минут</blockquote>
@@ -11930,7 +11930,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Клиенты и бот — на «Beta» с 12:00 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 несёт твоих клиентов и бот с 12:00 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -11948,7 +11948,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Клиенты переезжают на резерв «Beta» — жду смену записи</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 клиенты переезжают к нему — жду смену записи</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -11966,7 +11966,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 У тебя клиенты и бот «Beta» с 12:00 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 его клиенты и бот у тебя с 12:00 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -11984,7 +11984,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Клиенты возвращаются с резерва «Beta» — пересылка до 22.09 14:05 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 клиенты возвращаются сюда — пересылка до 22.09 14:05 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12002,7 +12002,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🔴 Резерв «Beta» недоступен с 11:40 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🔴 недоступен с 11:40 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12020,7 +12020,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: данных для переезда у него ещё нет</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12038,7 +12038,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи · данные для переезда от 11:30 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 резерв готов · данные от 11:30 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12056,7 +12056,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta» на связи · готовность выключена</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: здесь выключено «Готов быть резервом»</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12074,7 +12074,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 Резерв «Beta»: связи ещё не было</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 связи ещё не было</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0

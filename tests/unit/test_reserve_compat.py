@@ -41,8 +41,8 @@ def test_two_equal_sides_are_ready_both_ways():
 _BROKEN = [
     ("версия src не читается", dict(version="мусор"), {}, "версия"),
     ("версия dst не читается", {}, dict(version=""), "версия"),
-    ("src не готов", dict(ready=False), {}, "не готов"),
-    ("dst не готов", {}, dict(ready=False), "не готов быть резервом"),
+    ("src не готов", dict(ready=False), {}, "выключено «Готов быть резервом»"),
+    ("dst не готов", {}, dict(ready=False), "у «Beta» выключено «Готов быть резервом»"),
     ("нет общего формата пакета", {}, dict(caps=["pair1", "zone1", "guest1", "vote1"]), "формат"),
     ("dst не умеет зону", {}, dict(caps=["pkg2", "guest1", "vote1"]), "принимать клиентов"),
     ("dst не умеет гостевой канал", {}, dict(caps=["pkg2", "zone1", "vote1"]), "принимать клиентов"),
@@ -68,6 +68,51 @@ def test_a_stale_package_closes_the_direction_last():
     говорит именно про устаревшие данные."""
     ok, reason = compat.direction_ready(_side(), _side(name="Beta", ports=[443]), pkg_fresh=False)
     assert (ok, "устарели" in reason) == (False, True), reason
+
+
+def _me(**over) -> dict:
+    """Своя сторона — как её собирает my_side(): с признаком `me`."""
+    return {**_side(**over), "me": True}
+
+
+def test_readiness_off_names_the_side_it_is_off_on():
+    """Выключенная готовность — с какой стороны: своя — «здесь выключено»,
+    чужая — по имени, в обоих направлениях. Безымянное «сторона не готова»
+    отправляло админа искать переключатель не на том сервере."""
+    beta = _side(name="Beta", ports=[443])
+    off = "выключено «Готов быть резервом»"
+    assert compat.direction_ready(_me(ready=False), beta) == (False, f"здесь {off}"), "своя отдающая — не «здесь»"
+    assert compat.direction_ready(beta, _me(ready=False)) == (False, f"здесь {off}"), "своя принимающая — не «здесь»"
+    assert compat.direction_ready(_side(name="Beta", ready=False, ports=[443]), _me()) == (False, f"у «Beta» {off}")
+    assert compat.direction_ready(_me(), _side(name="Beta", ready=False, ports=[443])) == (False, f"у «Beta» {off}")
+
+
+def test_the_own_side_is_recognised_by_the_flag_not_by_the_name(monkeypatch):
+    """Два сервера с одинаковым именем (оба «Сервер 1» по умолчанию): своя
+    сторона — по признаку, а не по совпадению имени; иначе выключенная
+    готовность второго сервера читалась бы как «здесь выключено», и админ
+    включал бы уже включённое у себя."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "SERVER_NAME", "Alpha")
+    twin = _side(name="Alpha", ready=False, ports=[443])
+    assert compat.direction_ready(_me(), twin) == (False, "у «Alpha» выключено «Готов быть резервом»")
+    assert compat.direction_ready(_me(ready=False), _side(name="Alpha", ports=[443])) == \
+        (False, "здесь выключено «Готов быть резервом»")
+    zone = "на сервере нет dnsmasq — резолвер зоны не поднимется"
+    ok, why = compat.direction_ready(_me(), _side(name="Alpha", ports=[443], zone=zone))
+    assert (ok, why) == (False, f"у «Alpha»: {zone}"), "зона второго сервера-тёзки названа «здесь»"
+    ok, why = compat.direction_ready(_side(name="Alpha", ports=[443]), {**_me(), "zone": zone})
+    assert (ok, why) == (False, f"здесь: {zone}"), why
+
+
+def test_my_side_carries_the_own_flag(monkeypatch):
+    """Признак своей стороны ставит только my_side(): без него вся разметка
+    «здесь / у «Beta»» в карточке и на главной перепутана."""
+    monkeypatch.setattr(compat, "zone_why", lambda: "")
+    me = compat.my_side(ready=True, has_gateway=True, ports=[51820])
+    assert me.get("me") is True
+    assert not compat.side(name="Beta", version="4.0.0", caps=[], gen=0, ports=[], ready=True,
+                           has_gateway=False).get("me"), "чужая сторона помечена своей"
 
 
 # ── «новый принимает старого» и мелочи версий ───────────────────────────────
