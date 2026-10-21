@@ -78,7 +78,8 @@ def test_the_plan_says_dnsmasq_yes_when_it_is_installed(tmp_path):
     box = _Box(tmp_path)
     fake_cmd(box.bin / "dnsmasq", "exit 0\n")
     p = _plan(box.run("--plan"))
-    assert p["dnsmasq"] == "yes" and list(p)[-1] == "dnsmasq", "строка dnsmasq — последней"
+    assert p["dnsmasq"] == "yes" and list(p)[-3:] == ["dnsmasq", "conntrack", "python"], \
+        "строка dnsmasq — перед conntrack и python"
 
 
 @pytest.mark.skipif(os.path.exists("/usr/sbin/dnsmasq") or bool(shutil.which("dnsmasq", path="/usr/bin:/bin")),

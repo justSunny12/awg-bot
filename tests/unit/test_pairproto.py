@@ -62,14 +62,36 @@ def test_a_kind_from_the_wrong_side_breaks_the_session(proto, kind, body, sender
 def test_kinds_for_both_sides_are_accepted_from_either_side():
     for sender in (pp.INVITER, pp.ACCEPTOR):
         assert pp.check(pp.PAIR_PROTO, "ping", {"n": "7"}, sender) == {"n": "7"}
-        assert pp.check(pp.PAIR_PROTO, "link_ack", {}, sender) == {}
+
+
+@pytest.mark.parametrize("kind", ["link_next", "link_ack", "link_go"])
+def test_the_removed_link_kinds_are_unknown_now(kind):
+    """Виды смены ключей линка пары сняты: их появление — чужой или сломанный
+    собеседник, сессия рвётся."""
+    with pytest.raises(ProtocolError, match="неизвестный вид"):
+        pp.check(pp.PAIR_PROTO, kind, {}, pp.INVITER)
 
 
 def test_a_missing_field_breaks_the_session():
     body = _hello()
-    del body["gen"]
-    with pytest.raises(ProtocolError, match="нет поля 'gen'"):
+    del body["nonce"]
+    with pytest.raises(ProtocolError, match="нет поля 'nonce'"):
         pp.check(pp.PAIR_PROTO, "hello", body, pp.ACCEPTOR)
+
+
+def test_a_plain_session_hello_without_pairing_fields_passes():
+    """hello обычной сессии несёт только nonce (и seen) — поля сопряжения есть
+    лишь у hello с pair; проверка словаря не должна рвать каждую сессию пары."""
+    assert pp.check(pp.PAIR_PROTO, "hello", {"nonce": "n" * 32}, pp.ACCEPTOR) == {"nonce": "n" * 32}
+    assert pp.check(pp.PAIR_PROTO, "hello", {"nonce": "n" * 32, "seen": "srv-b.example.net"}, pp.ACCEPTOR)["seen"] \
+        == "srv-b.example.net"
+
+
+@pytest.mark.parametrize("field, value", [("name", "Я" * (pp.MAX_NAME + 1)), ("nonce", "n" * 33),
+                                          ("seen", "h" * (pp.MAX_HOST + 1)), ("gen", "2"), ("ports", "51820")])
+def test_a_hello_field_over_its_ceiling_or_of_a_wrong_type_breaks_the_session(field, value):
+    with pytest.raises(ProtocolError):
+        pp.check(pp.PAIR_PROTO, "hello", _hello(**{field: value}), pp.ACCEPTOR)
 
 
 @pytest.mark.parametrize("field, value", [

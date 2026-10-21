@@ -79,12 +79,33 @@ def test_a_code_outside_h4_is_refused(box):
     assert not res["ok"] and res["why"] == "closed" and not box.launched
 
 
-def test_three_garbled_tries_per_hour_then_limit_then_the_hour_passes(h4):
+def test_a_garbled_code_is_not_a_try(h4):
+    """Не код (контрольная сумма не сошлась) — не попытка подбора: ответ
+    «не похоже на код», счёт не тронут, ничего не запущено."""
     bad = CODE[:-1] + ("0" if CODE[-1] != "0" else "1")
-    lefts = [h4.s.reserve_code_in(PEER_ADMIN, bad).get("left") for _ in range(3)]
-    assert lefts == [2, 1, 0], f"счёт попыток: {lefts}"
+    for _ in range(5):
+        res = h4.s.reserve_code_in(PEER_ADMIN, bad)
+        assert (res["ok"], res["why"], res["left"]) == (False, "garbled", 3), res
+    assert not h4.launched and h4.s.reserve_code_window()["open"]
+    assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"], "опечатки съели попытки верного кода"
+
+
+def test_three_wrong_codes_per_hour_then_limit_then_the_hour_passes(h4, monkeypatch):
+    """Попытки считают только отказы процесса «ключ не снялся»: три за час —
+    приём закрыт до конца часа."""
+    real_status = rsvzone.open_status
+    lefts = []
+    for _ in range(3):
+        monkeypatch.setattr(rsvzone, "open_status", real_status)
+        assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"]
+        monkeypatch.setattr(rsvzone, "open_status", lambda: {"step": "fail", "reason": "ключ пакета: SecretBox не снялся"})
+        h4.s.reserve_in_tick()
+        lefts.append(len(h4.s._code_tries(dict(h4.s.rsv_get("rsv_view").get("code") or {}))))
+    assert lefts == [1, 2, 3], f"счёт попыток: {lefts}"
+    monkeypatch.setattr(rsvzone, "open_status", real_status)
+    launched = len(h4.launched)
     res = h4.s.reserve_code_in(PEER_ADMIN, CODE)
-    assert not res["ok"] and res["why"] == "limit" and not h4.launched, "четвёртая попытка за час прошла"
+    assert not res["ok"] and res["why"] == "limit" and len(h4.launched) == launched, "четвёртая попытка за час прошла"
     h4.advance(3601)
     assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"], "через час попытки не вернулись"
 

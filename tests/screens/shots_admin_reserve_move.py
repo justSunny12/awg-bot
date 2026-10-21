@@ -82,6 +82,16 @@ def _foreign_record(services, bot):
     return run()
 
 
+def _move_done(services, bot):
+    """Такт автомата после перевода: клиенты у резерва — живое сообщение хода
+    становится итогом с кнопкой назад в раздел."""
+    async def run():
+        from awgbot.bot.handlers.settings.reserve import move as move_ui
+        services.rsv_update("rsv_out", state="away", step="", taken_at=_iso(NOW), last_switch=_iso(NOW))
+        await move_ui.refresh_live(bot, services)
+    return run()
+
+
 def _await_merge(services, mp):
     """Клиенты возвращены без резерва (С9): жду его реплику."""
     services.reserve_set_out("home", await_merge=True, kind="dead")
@@ -114,6 +124,10 @@ RESERVE_MOVE = [
          title="«🔀 Перевести» при недоступном резерве — всплывашка"),
     Shot("adm.rsv.move.yes", role="admin", press=[RSV, RsvCB(action="move"), RsvCB(action="move_yes")],
          data=_paired(), title="перевод начат: живое сообщение хода"),
+    Shot("adm.rsv.move.done", role="admin",
+         steps=[("press", RSV), ("press", RsvCB(action="move")), ("press", RsvCB(action="move_yes")),
+                ("call", _move_done, "reserve_out_tick")], data=_paired(),
+         title="перевод состоялся: живое сообщение хода — итог с кнопкой в раздел"),
     Shot("adm.rsv.move.twice", role="admin",
          press=[RSV, RsvCB(action="move"), RsvCB(action="move_yes"), RsvCB(action="move_yes")], data=_paired(),
          title="повторное подтверждение перевода — всплывашка"),

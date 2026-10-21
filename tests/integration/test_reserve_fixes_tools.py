@@ -77,7 +77,7 @@ def test_the_replica_carries_no_lan_of_the_gateways_and_no_pair_row(live, servic
     assert src.execute("SELECT COUNT(*) FROM reserve_peer").fetchone()[0] == 1, "контроль: строка пары есть"
     con = _open(pkgbot.replica(live.path), tmp_path)
     rows = con.execute("SELECT lan_subnets, label, lan_mode FROM gateways").fetchall()
-    assert rows and all(r == ("[]", "", 0) for r in rows), f"локальная сеть шлюза основы доехала до резерва: {rows}"
+    assert rows and all(r == ("", "", 0) for r in rows), f"локальная сеть шлюза основы доехала до резерва: {rows}"
     assert con.execute("SELECT COUNT(*) FROM reserve_peer").fetchone()[0] == 0, "строка пары доехала в реплику"
     assert src.execute("SELECT lan_subnets FROM gateways").fetchone()[0] == '["192.168.50.0/24"]', \
         "живая база тронута сборкой реплики"
@@ -92,7 +92,7 @@ def test_the_strip_cleans_gateways_and_the_pair_row_even_without_the_key_column(
     con.execute("CREATE TABLE reserve_peer (id INTEGER PRIMARY KEY, name TEXT)")
     con.execute("INSERT INTO reserve_peer VALUES (1, 'Beta')")
     pkgbot._strip(con)
-    assert con.execute("SELECT lan_subnets, label, lan_mode FROM gateways").fetchall() == [("[]", "", 0)]
+    assert con.execute("SELECT lan_subnets, label, lan_mode FROM gateways").fetchall() == [("", "", 0)]
     assert con.execute("SELECT COUNT(*) FROM reserve_peer").fetchone()[0] == 0
 
 
@@ -110,21 +110,22 @@ def _state(pkg_in):
     return con
 
 
-def _links(con) -> dict:
-    return json.loads(con.execute("SELECT value FROM server_state WHERE key = 'rsv_guest_links'").fetchone()[0])
+def _row(con, key: str):
+    return con.execute("SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
 
 
 @pytest.mark.parametrize("pkg_in", [json.dumps({"gen": 4, "share": "DUMMY-share"}), json.dumps({"gen": 4}), "", None],
                          ids=["with-share", "without-share", "dropped", "never"])
 def test_the_keys_of_the_zone_sides_do_not_go_into_the_backup(pkg_in):
-    """Пакет второй стороны снят (после возврата rsv_pkg_in пуст) или ещё не
-    приходил — стороны линков шлюзов в зоне от этого не исчезают, и их ключи
-    в копию идти не должны всё равно."""
+    """Стороны линков шлюзов второй стороны в зоне (ключи, PSK) в копию не идут
+    целиком — что бы ни было с пакетом: после восстановления новая сессия
+    переиздаёт их обменом slots; сторона без ключа выглядела бы «доставленной»."""
     con = _state(pkg_in)
+    con.execute("INSERT INTO server_state VALUES ('rsv_out', '{}')")
     archive._strip_foreign_share(con)
-    rec = _links(con)["1"]
-    assert "priv" not in rec and "psk" not in rec, f"ключи стороны зоны в бэкапе (rsv_pkg_in={pkg_in!r}): {rec}"
-    assert (rec["cidr"], rec["pub"], rec["port"]) == ("10.99.97.0/30", "DUMMY-pub", 45901), "вычищено лишнее"
+    assert _row(con, "rsv_guest_links") is None, f"стороны зоны в бэкапе (rsv_pkg_in={pkg_in!r})"
+    assert _row(con, "rsv_pkg_in") is None
+    assert _row(con, "rsv_out") == ("{}",), "вычищено лишнее"
 
 
 # ── фильтр вебхука по адресу сокета ─────────────────────────────────────────

@@ -49,6 +49,9 @@ def away(mv):
     mv.rsv.gw = False
     settings.set_value("app.reserve.return", "immediate")
     rm.go_away(mv.svc)
+    # резерв несёт клиентов (st с in=serving): иначе «резерв на связи без моего гостя» —
+    # возврат без реплики сразу, а не просьба реплики
+    rm.st_in(mv.svc, **{"in": "serving"})
     return mv
 
 
@@ -271,12 +274,20 @@ def test_a_replica_under_another_key_is_refused_and_the_clients_stay_at_the_rese
     assert not [e for e in w.peers.events if e[0] in ("add", "remove")]
 
 
-def test_a_missing_base_snapshot_stops_the_return_with_a_reason(merge_world):
+def test_a_missing_base_snapshot_merges_without_deletions_over_a_copy_of_the_live_base(merge_world):
+    """Снимка нет (основа восстановлена из копии — снимки в неё не входят):
+    возврат не встаёт, слияние идёт по копии живой базы без удалений, строка
+    об этом — в отчёте, копия после слияния убрана."""
     w = merge_world
-    os.unlink(os.path.join(str(config.DATA_DIR), "reserve", "out", "base-7.db"))
+    out_dir = os.path.join(str(config.DATA_DIR), "reserve", "out")
+    os.unlink(os.path.join(out_dir, "base-7.db"))
     acts = w.svc.reserve_released_in(rm.snapshot_blob(w.svc))
-    assert w.svc.reserve_out() == "away" and "base-7" in w.svc.rsv_get("rsv_out")["merge_error"]
-    assert notices(acts)
+    assert acts == [("restart",)], f"без снимка возврат встал: {w.svc.rsv_get('rsv_out')}"
+    assert w.svc.reserve_out() == "returning" and not w.svc.rsv_get("rsv_out").get("merge_error")
+    lost = w.svc.rsv_get("rsv_out").get("merge_report", {}).get("lost") or []
+    assert any("снимка для слияния не было" in x for x in lost), lost
+    assert not [n for n in os.listdir(out_dir) if "fallback" in n or n.startswith("rep-")], os.listdir(out_dir)
+    assert not [e for e in w.peers.events if e[0] == "remove"], "без снимка пиры сняты — удаление выведено из копии"
 
 
 def test_a_replica_outside_a_return_is_ignored(away):

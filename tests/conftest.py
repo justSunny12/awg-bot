@@ -296,7 +296,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("ensure_policy", lambda active_iface="", slots=(): None)
     _set("switch_active", lambda iface: None)
     _set("ping_peer", lambda iface="", **k: None)          # пинг до шлюза по линку
-    _set("ensure_slot_policy", lambda slot_id, iface: None)
+    _set("ensure_slot_policy", lambda slot_id, iface, via="": None)
     _set("link_handshake_age", lambda iface="": 30)      # линк жив; тесты про отвал переопределяют
 
     def link_peer_state(iface=""):
@@ -615,6 +615,27 @@ def _argon2_is_cheap_in_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reserve_zone_has_everything(monkeypatch):
+    """Чего не хватает гостевой зоне (reserve/compat.zone_why) — по плану
+    настоящего скрипта зоны машины прогона: на машине без dnsmasq (и без
+    пространств имён) направление «ко мне» закрылось бы в каждом тесте пары.
+    Здесь зоне всего хватает; причины проверяет tests/unit/test_reserve_zone_why.py
+    настоящей функцией (её ссылка взята при импорте, до подмены)."""
+    from awgbot.domain.services.reserve import compat as _compat
+    monkeypatch.setattr(_compat, "zone_why", lambda: "")
+
+
+@pytest.fixture(autouse=True)
+def _telegram_reachable_without_network(monkeypatch):
+    """Здоровье основы (reserve/outbound.reserve_healthy) спрашивает TCP до
+    api.telegram.org:443 — в прогоне сети нет и ходить в неё нельзя: Telegram
+    «достижим». Саму пробу проверяет tests/integration/test_reserve_fsm_review.py
+    подменой сокета (ссылка на метод взята при импорте, до подмены)."""
+    from awgbot.domain.services.reserve import outbound as _out
+    monkeypatch.setattr(_out.ReserveOutboundMixin, "_tg_reachable", lambda self: True)
+
+
+@pytest.fixture(autouse=True)
 def _reserve_zone_paths_in_tmp(tmp_path_factory, monkeypatch):
     """Пути гостевой зоны резерва (infra/rsvzone) — во временном каталоге
     каждого теста. На хосте, где зона жила (стенд гоняет сценарии зоны перед
@@ -632,6 +653,10 @@ def _reserve_zone_paths_in_tmp(tmp_path_factory, monkeypatch):
                       ("TG_POOL_FILE", run / "tg_pool.json"), ("TG_TAKE_FILE", run / "tg_take")):
         monkeypatch.setattr(_rz, name, val)
     monkeypatch.setattr(_rz.state, "__defaults__", (st / "state.json",))
+    # стороны линков шлюзов основы (rsvzone.links_dir) — по DATA_DIR в момент вызова;
+    # тест, не подменивший DATA_DIR, писал их в data/ рабочего дерева, и соседний тест
+    # файервола видел чужие порты во входе хоста
+    monkeypatch.setenv("RSV_LINKS_DIR", str(root / "links"))
 
 
 @pytest.fixture(autouse=True)

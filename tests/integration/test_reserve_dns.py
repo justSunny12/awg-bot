@@ -78,7 +78,8 @@ def test_dyndns2_splits_the_url_into_user_secret_and_server(mv):
     svc.reserve_dns_set_provider("dyndns2")
     svc.reserve_dns_set_token("https://login:DUMMY-pass@dyn.example.org:8443/nic/update")
     d = svc.rsv_get("rsv_dns")
-    assert (d["user"], d["token"], d["server"]) == ("login", "DUMMY-pass", "https://dyn.example.org:8443/nic/update")
+    assert (d["user"], d["token"], d["server"]) == ("login", "DUMMY-pass", "https://dyn.example.org:8443"), \
+        "сервер хранится без пути — путь /nic/update добавляет провайдер"
 
 
 @pytest.mark.parametrize("bad", ["DUMMY-token", "http://l:p@dyn.example.org/nic/update", "https://dyn.example.org/nic/update"])
@@ -188,7 +189,10 @@ def test_the_fact_is_what_the_authoritative_server_says_not_what_the_api_accepte
     svc = mv.svc
     assert svc.reserve_dns_points_to(PEER_IP) is False
     mv.dns.auth = [PEER_IP, FOREIGN]
+    assert svc.reserve_dns_points_to(PEER_IP) is False, "вторая A-запись увела бы половину клиентов мимо"
+    mv.dns.auth = [PEER_IP]
     assert svc.reserve_dns_points_to(PEER_IP) is True
+    assert svc.rsv_get("rsv_dns").get("addrs") == [PEER_IP] and svc.rsv_get("rsv_dns").get("ttl") == 60
     mv.dns.auth_error = True
     assert svc.reserve_dns_points_to(PEER_IP) is None, "не прочиталось — это не «нет»"
     assert svc.reserve_dns_points_to("") is None

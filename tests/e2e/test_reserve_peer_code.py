@@ -93,8 +93,10 @@ async def test_the_button_in_h4_asks_for_the_code_with_cancel(h4, fake_bot):
     await peercode.code_start(cb, st, h4.s)
     assert await st.get_state() == PeerCode.value.state
     kind, text, markup = nav.sent[-1]
-    assert kind == "answer" and "Пришли аварийный код" in text and "удалю сразу" in text
+    assert kind == "edit_text" and "Пришли аварийный код" in text and "удалю сразу" in text, \
+        "приглашение к вводу — не на месте экрана роли (второе сообщение в чате)"
     assert _labels(markup) == ["⬅️ Отмена"]
+    assert (await st.get_data()).get("prompt") == [nav.chat.id, nav.message_id], "место приглашения не запомнено"
 
 
 async def test_cancel_returns_to_the_role_screen(h4, fake_bot):
@@ -131,9 +133,32 @@ async def test_a_garbled_code_is_answered_and_the_input_stays_open(h4, fake_bot)
     st = FakeState()
     await st.set_state(PeerCode.value)
     await peercode.code_text(msg, st, h4.s)
-    assert msg.deleted and "Осталось попыток: 2" in msg.sent[-1][1]
+    assert msg.deleted and "не похоже на код" in msg.sent[-1][1], msg.sent
+    assert "Осталось попыток" not in msg.sent[-1][1], "опечатка посчитана попыткой подбора"
     assert await st.get_state() == PeerCode.value.state, "после неразобранного кода ввод закрылся"
     assert not h4.launched
+
+
+async def test_a_command_instead_of_the_code_closes_the_input_without_a_try(h4, fake_bot):
+    from awgbot.bot.handlers import peercode
+    msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
+    st = FakeState()
+    await st.set_state(PeerCode.value)
+    await peercode.code_command(msg, st, h4.s)
+    assert await st.get_state() is None
+    assert "Ты — админ «Beta»" in msg.sent[-1][1] and "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2])
+    assert not h4.launched and not h4.s._code_tries(dict(h4.s.rsv_get("rsv_view").get("code") or {}))
+
+
+async def test_after_the_result_the_role_screen_comes_back_in_place_of_the_prompt(h4, fake_bot):
+    from awgbot.bot.handlers import peercode
+    nav = FakeMessage(chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
+    cb, st = FakeCallback(message=nav, user_id=PEER_ADMIN, bot=fake_bot), FakeState()
+    await peercode.code_start(cb, st, h4.s)
+    msg = FakeMessage(text=CODE, chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
+    await peercode.code_text(msg, st, h4.s)
+    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    assert edits and "Ты — админ «Beta»" in edits[-1][2], f"экран роли не вернулся на место приглашения: {fake_bot.records}"
 
 
 async def test_after_the_window_closes_the_text_is_answered_as_not_needed(h4, fake_bot):

@@ -573,3 +573,31 @@ def test_after_the_merge_a_subscription_that_ran_out_meanwhile_is_expired_by_the
     assert t.result("SELECT s.status, c.name FROM client_subscription s JOIN clients c ON c.id = s.client_id "
                     "WHERE c.id = ?", (t.seeded["c"],)) == [("expired", "Аня (резерв)")]
     assert t.result("SELECT block_reason FROM clients WHERE id = ?", (t.seeded["c"],))[0][0] != 0, "бит блокировки по сроку"
+
+
+def test_an_archive_month_closed_on_both_sides_is_one_row_with_both_counters(trio):
+    """Граница месяца пришлась на away: архив прошлого месяца закрыли обе
+    стороны — строка одна, счётчики сложены (не две строки за месяц, не
+    удвоенный итог в отчёте)."""
+    t = trio()
+    did, cid = t.seeded["da"], t.seeded["a"]
+    prev = timeutil.shift(timeutil.now().replace(day=1), -1).strftime("%Y-%m")
+    for w, (rx, tx) in (("cur", (5, 6)), ("rep", (100, 200))):
+        t.sql(w, "INSERT INTO traffic_monthly (device_id, client_id, month, rx, tx, rf_rx, rf_tx, archived_at) "
+                 "VALUES (?, ?, ?, ?, ?, 1, 2, '2026-10-01T00:00:00+03:00')", (did, cid, prev, rx, tx))
+    t.merge()
+    rows = t.result("SELECT rx, tx, rf_rx, rf_tx FROM traffic_monthly WHERE device_id = ? AND month = ?", (did, prev))
+    assert rows == [(105, 206, 2, 4)], f"архив месяца после слияния: {rows}"
+
+
+def test_without_deletions_a_row_removed_on_the_reserve_stays(trio):
+    """Снимка нет — база слияния есть копия живой базы: «удалено на резерве»
+    вывести нельзя, удаление не выводится вовсе."""
+    t = trio()
+    t.sql("rep", "DELETE FROM devices WHERE id = ?", (t.seeded["db"],))
+    for db in t._open:
+        db.close()
+    t._open.clear()
+    M.merge(t.paths["cur"], t.paths["base"], t.paths["rep"], no_delete=True)
+    assert t.result("SELECT COUNT(*) FROM devices WHERE id = ?", (t.seeded["db"],)) == [(1,)], \
+        "без снимка устройство удалено слиянием"

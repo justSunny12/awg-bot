@@ -106,8 +106,10 @@ def test_a_health_flag_of_a_wrong_type_is_refused(field, value):
 def test_the_optional_fields_are_only_the_listed_ones_of_st_need_and_state():
     """Необязательные поля — только перечисленные (их нет у стороны прежней
     версии внутри линии); остальное по-прежнему обязательно."""
-    assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by"}),
-                           "need": frozenset({"m_gen"}), "state": frozenset({"reason"})}
+    assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone"}),
+                           "need": frozenset({"m_gen"}), "state": frozenset({"reason"}), "go": frozenset({"ttl"}),
+                           "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen",
+                                               "bot", "gw"})}
     body = _st()
     del body["admin_id"]
     with pytest.raises(ProtocolError):

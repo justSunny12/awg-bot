@@ -84,7 +84,7 @@ def test_go_waits_for_a_package_confirmed_after_the_start_and_carries_the_key(mv
     go = [a for a in acts if a[:2] == ("send", "go")]
     assert len(go) == 1
     body = go[0][2]
-    assert body == {"k": svc.reserve_k().hex(), "gen": 4, "kind": "button"}
+    assert body == {"k": svc.reserve_k().hex(), "gen": 4, "kind": "button", "ttl": 0}, "TTL записи ещё не читали — 0"
     pairproto.check(pairproto.PAIR_PROTO, "go", body, pairproto.INVITER)
     assert svc.rsv_get("rsv_out")["step"] == "up"
     assert svc.reserve_out_tick() == [], "go ушёл один раз: на шаге up такт молчит"
@@ -190,7 +190,8 @@ def test_a_step_that_outlives_its_deadline_fails_the_move_and_releases_the_reser
     svc = mv.svc
     rm.to_step(svc, step, wait=limit)
     mv.clock.advance(limit - 1)
-    assert not notices(svc.reserve_out_tick()) and svc.reserve_out() == "leaving", "срок ещё не вышел"
+    early = " ".join(n.text for n in notices(svc.reserve_out_tick()))      # на шаге записи — просьба сменить запись руками
+    assert reason not in early and "не состоялся" not in early and svc.reserve_out() == "leaving", "срок ещё не вышел"
     mv.clock.advance(2)
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home", "по сроку шаг обязан закончиться откатом"
@@ -198,37 +199,72 @@ def test_a_step_that_outlives_its_deadline_fails_the_move_and_releases_the_reser
     assert reason in " ".join(n.text for n in notices(acts))
 
 
+@pytest.mark.parametrize("why", ["webhook", "webhook_info"])
 @pytest.mark.parametrize("kind", ["button", "rf"])
-def test_the_released_step_that_outlives_its_deadline_counts_as_away_when_the_webhook_is_at_the_reserve(mv, kind):
-    """`taken` не пришёл, но вебхук уже у резерва (поллинг увидел его): откат
-    был бы ложью — away; вид переезда сохраняется (от него зависит поколение
-    после возврата), отметка переключения ставится (демпфер возврата)."""
+def test_the_released_step_that_outlives_its_deadline_counts_as_away_when_the_webhook_is_at_the_reserve(mv, kind, why):
+    """`taken` не пришёл, но Telegram (после released) говорит, что вебхук у
+    резерва: откат был бы ложью — away и уведомление о переезде; вид переезда
+    сохраняется (от него зависит поколение после возврата), отметка
+    переключения ставится (демпфер возврата)."""
     svc = mv.svc
     rm.to_step(svc, "released", kind=kind)
-    svc.reserve_set_poll("away")
+    svc.reserve_set_poll("away", why=why)
     mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
     acts = svc.reserve_out_tick()
     out = svc.rsv_get("rsv_out")
     assert svc.reserve_out() == "away" and out["kind"] == kind, out
-    assert ("wake_poll",) in acts, f"поллинг не разбужен: {acts}"
+    assert len(notices(acts)) == 1 and "Beta" in notices(acts)[0].text, f"о переезде не сказано: {acts}"
     assert out.get("last_switch"), "переключение без отметки — демпфер возврата не сработает"
 
 
-def test_the_released_step_without_the_webhook_at_the_reserve_checks_once_more_and_then_fails(mv):
-    """Право отвечать у меня, `taken` нет: сначала ещё одна проверка
-    getWebhookInfo (wake_poll и 120 с), а не away вслепую; вебхук так и не
-    появился — переезд сорван, резерву `back`."""
+def test_my_own_released_mark_is_not_the_word_of_telegram(mv):
+    """Отметка away, которую основа ставит себе при released (why=released), —
+    не слово Telegram: по сроку — проверка, а не away вслепую."""
+    svc = mv.svc
+    rm.to_step(svc, "released")
+    svc.reserve_set_poll("away", why="released")
+    mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
+    assert svc.reserve_out_tick() == [("wake_poll",)] and svc.reserve_out() == "leaving"
+
+
+def test_a_word_of_telegram_from_before_released_does_not_count(mv):
+    svc = mv.svc
+    svc.reserve_set_poll("away", why="webhook")                 # слово прошлого переезда
+    svc.rsv_update("rsv_poll", since="2026-01-01T00:00:00+00:00")
+    rm.to_step(svc, "released")
+    svc.rsv_update("rsv_out", released_at=timeutil.now_iso())
+    mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
+    acts = svc.reserve_out_tick()
+    assert acts == [("wake_poll",)] and svc.reserve_out() == "leaving", f"старое слово Telegram сочтено за переезд: {acts}"
+
+
+def test_the_released_step_with_telegram_saying_mine_fails_the_move(mv):
     svc = mv.svc
     rm.to_step(svc, "released")
     mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
-    acts = svc.reserve_out_tick()
-    assert acts == [("wake_poll",)] and svc.reserve_out() == "leaving", acts
-    mv.clock.advance(100)
-    assert svc.reserve_out_tick() == [] and svc.reserve_out() == "leaving", "вторая проверка раньше 120 с"
-    mv.clock.advance(30)
+    # как pollctl: getWebhookInfo сперва показал вебхук у резерва, потом вебхука не стало — mine без причины
+    svc.reserve_set_poll("away", why="webhook_info", url="https://203.0.113.5:8443/DUMMY")
+    svc.reserve_set_poll("mine")
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home" and "back" in sent(acts), acts
     assert "вебхук не поставлен" in " ".join(n.text for n in notices(acts))
+
+
+def test_the_released_step_without_a_word_of_telegram_wakes_the_poll_three_times_and_then_fails(mv):
+    """Слова Telegram нет: до трёх проверок getWebhookInfo через 120 с, затем
+    переезд сорван с причиной «право отвечать не проверено»."""
+    svc = mv.svc
+    rm.to_step(svc, "released")
+    mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
+    for i in range(3):
+        acts = svc.reserve_out_tick()
+        assert acts == [("wake_poll",)] and svc.reserve_out() == "leaving", f"проверка {i + 1}: {acts}"
+        mv.clock.advance(100)
+        assert svc.reserve_out_tick() == [], "следующая проверка раньше 120 с"
+        mv.clock.advance(30)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts), acts
+    assert "право отвечать не проверено" in " ".join(n.text for n in notices(acts))
 
 
 def test_down_from_the_reserve_aborts_the_move_without_a_second_back(mv):
@@ -300,7 +336,24 @@ def test_taken_outside_a_move_changes_nothing(mv):
 
 # ── клиенты у резерва мимо меня ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("inn", ["taking", "serving"])
+def test_taking_at_the_reserve_is_not_yet_a_fact_that_my_clients_moved(mv):
+    """taking — резерв только открывает пакет: клон может не встать, основа
+    остаётся дома, пока резерв не скажет serving."""
+    svc = mv.svc
+    rm.st_in(svc, **{"in": "taking"})
+    assert svc.reserve_out_tick() == [] and svc.reserve_out() == "home" and svc.reserve_poll() != "away"
+
+
+def test_a_serving_st_from_before_my_return_home_does_not_make_me_away(mv):
+    svc = mv.svc
+    rm.st_in(svc, **{"in": "serving"})
+    svc.reserve_set_out("home")
+    svc.rsv_update("rsv_out", since=timeutil.now_iso())
+    svc.rsv_update("rsv_peer_state", at="2026-01-01T00:00:00+00:00")    # st до моего перехода домой
+    assert svc.reserve_out_tick() == [] and svc.reserve_out() == "home", "старое st вернуло меня в away"
+
+
+@pytest.mark.parametrize("inn", ["serving"])
 def test_when_the_reserve_reports_my_clients_at_its_place_the_primary_becomes_away(mv, inn):
     svc = mv.svc
     rm.st_in(svc, **{"in": inn})
@@ -394,3 +447,19 @@ def test_in_kind_of_the_reserve_lands_in_the_peer_state_and_decides_the_kind_of_
     assert svc.reserve_peer_state()["in_kind"] == "rf"
     svc.reserve_out_tick()
     assert svc.rsv_get("rsv_out")["kind"] == "rf", "вид переезда у резерва не дошёл до основы"
+
+
+def test_go_carries_the_ttl_of_the_record_for_the_pause_before_reconnect(mv):
+    """TTL записи у основы (последняя проверка) едет в go: гость ждёт его,
+    прежде чем звать клиентов переподключиться."""
+    svc = mv.svc
+    svc.rsv_update("rsv_dns", ttl=900)
+    svc.reserve_move_start()
+    rm.confirm_package(svc, gen=4)
+    go = [a for a in svc.reserve_out_tick() if a[:2] == ("send", "go")]
+    assert go and go[0][2]["ttl"] == 900, go
+
+
+def test_a_go_without_ttl_from_an_older_primary_passes_the_check():
+    assert pairproto.check(pairproto.PAIR_PROTO, "go", {"k": "ab" * 32, "gen": 4, "kind": "button"},
+                           pairproto.INVITER)["gen"] == 4

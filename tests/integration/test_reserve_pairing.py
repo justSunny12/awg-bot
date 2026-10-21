@@ -394,6 +394,10 @@ def test_pair_ok_puts_the_new_keys_writes_the_pair_and_answers_with_the_admin_id
     _acceptor_at_code(services, inv)
     ok = inv.ok_body()
     reply = services.reserve_accept_ok_in({"sealed": ok["sealed"]})
+    # до ухода pair_admin пары нет и линк на ключах приглашения: иначе ответ до пригласившего не дойдёт
+    assert not services.reserve_paired() and "--set-peer" not in rsv.modes, \
+        "линк переведён на новые ключи до отправки pair_admin"
+    services.reserve_accept_commit()
     env = rsv.env("--set-peer")
     data = ok["_data"]
     assert (env["PAIR_PRIV"], env["PAIR_PEER_PUB"], env["PAIR_PSK"]) == (data["priv"], data["peer_pub"], data["psk"])
@@ -447,3 +451,32 @@ def test_hello_bodies_carry_the_gateway_flag_both_ways(services, rsv):
     _res, _acc, out = rc.invite_and_hello(services, rsv)
     assert out["body"]["gw"] is False
     assert services.reserve_invite()["peer_gw"] is True
+
+
+def test_pair_admin_that_did_not_go_rolls_the_invitation_back_and_writes_nothing(services, rsv):
+    inv = Inviter()
+    _acceptor_at_code(services, inv)
+    services.reserve_accept_ok_in({"sealed": inv.ok_body()["sealed"]})
+    services.reserve_accept_abort("link")
+    assert not services.reserve_paired() and "--set-peer" not in rsv.modes
+    assert not services.reserve_invite().get("id"), "приглашение живо после несостоявшегося ответа"
+    with pytest.raises(ServiceError, match="Сопряжения нет"):
+        services.reserve_accept_commit()
+    assert "--set-peer" not in rsv.modes
+
+
+def test_a_commit_without_a_checked_pair_ok_is_refused(services, rsv):
+    inv = Inviter()
+    _acceptor_at_code(services, inv)
+    with pytest.raises(ServiceError, match="Сопряжения нет"):
+        services.reserve_accept_commit()
+    assert not services.reserve_paired() and "--set-peer" not in rsv.modes
+
+
+def test_a_fresh_pair_is_not_confirmed_until_the_first_session(services, rsv):
+    inv = Inviter()
+    _acceptor_at_code(services, inv)
+    services.reserve_accept_ok_in({"sealed": inv.ok_body()["sealed"]})
+    services.reserve_accept_commit()
+    ps = services.reserve_peer_state()
+    assert ps.get("confirmed") is False and ps.get("linked_at"), ps

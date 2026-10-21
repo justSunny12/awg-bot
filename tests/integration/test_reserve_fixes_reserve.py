@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import pytest
 
-from awgbot.domain.services.reserve import inbound
+from awgbot.core import config
+from awgbot.domain.services.reserve import openproc
 from awgbot.infra import rsvzone
 from awgbot.runtime import pairlink
 from awgbot.runtime.scheduler import reserve as jobs
@@ -42,13 +43,13 @@ mv = rm.mv
 __all__ = ["box", "host"]
 
 CODE = rsvkeys.code_encode(bytes(range(16)))
-STOP = ["systemctl", "stop", f"{inbound.OPEN_UNIT}.service"]
+STOP = ["systemctl", "stop", f"{openproc.OPEN_UNIT}.service"]
 
 
 @pytest.fixture()
 def units(host, monkeypatch):
     """systemctl на месте: остановку юнита открытия видно в журнале запусков."""
-    monkeypatch.setattr(inbound.shutil, "which",
+    monkeypatch.setattr(openproc.shutil, "which",
                         lambda name: f"/usr/bin/{name}" if name in ("systemd-run", "systemctl") else None)
     return host
 
@@ -81,13 +82,18 @@ def test_the_open_process_runs_without_the_reserves_token_and_cannot_read_its_ba
     env = run["kw"].get("env") or {}
     assert "BOT_TOKEN" not in env and "ADMIN_ID" not in env, "токен резерва в окружении процесса открытия"
     assert "--setenv=AWG_BOT_ENV=/dev/null" in run["cmd"], "процесс читает env резерва"
-    for prop in ("ProtectHome=yes", "ProtectSystem=full", "NoNewPrivileges=yes"):
+    for prop in ("ProtectHome=yes", "ProtectSystem=strict", "NoNewPrivileges=yes"):
         assert prop in run["cmd"], f"нет {prop}"
     rw = [c for c in run["cmd"] if c.startswith("ReadWritePaths=")]
-    assert rw and "/etc/systemd" in rw[0], "скрипт зоны не запишет юниты гостя"
+    assert rw and "-/etc/systemd" in rw[0].split("=", 1)[1].split(), "скрипт зоны не запишет юниты гостя"
+    # каталог данных резерва закрыт временной ФС целиком (база, её WAL, стороны линков, копии);
+    # виден только пакет второй стороны
+    data = str(config.DATA_DIR)
+    assert f"TemporaryFileSystem={data}:ro" in run["cmd"], f"каталог данных резерва открыт процессу: {run['cmd']}"
+    binds = [c for c in run["cmd"] if c.startswith("BindReadOnlyPaths=")]
+    assert binds == [f"BindReadOnlyPaths=-{data}/reserve/guest.pkg"], f"процессу привязано не только пакет: {binds}"
     hidden = [c for c in run["cmd"] if c.startswith("InaccessiblePaths=")]
-    assert any(c.endswith("bot.db") for c in hidden), f"база резерва доступна процессу: {hidden}"
-    assert any("env" in c for c in hidden if not c.endswith("bot.db")), f"env резерва доступен процессу: {hidden}"
+    assert any("env" in c for c in hidden), f"env резерва доступен процессу: {hidden}"
 
 
 def test_a_second_go_while_the_first_is_opening_is_refused(host):
@@ -242,7 +248,10 @@ def test_h4_is_told_once_per_episode_even_when_the_window_closes_and_opens_again
     box.advance(60)
     again = box.tick()
     assert box.case == "H4" and box.s.reserve_code_window()["open"], "окно кода не открылось снова"
-    assert _code_notes(again) == [], f"Т-РУ7/7б повторно в том же эпизоде: {[n.text for n in _code_notes(again)]}"
+    # админ основы узнаёт, что окно снова открыто, — одной тихой строкой; админ резерва — ничего
+    got = _code_notes(again)
+    assert [n.tg_id for n in got] == [PEER_ADMIN] and got[0].silent, \
+        f"повторное открытие окна в том же эпизоде: {[(n.tg_id, n.silent, n.text) for n in got]}"
 
 
 def test_a_new_episode_is_told_again(hermetic):
@@ -311,7 +320,7 @@ def _run(box, seconds: float, step: float = 5) -> list[tuple]:
     return acts
 
 
-@pytest.mark.parametrize("busy, why", [(lambda s: s.reserve_set_in("relay"), "зона занята"),
+@pytest.mark.parametrize("busy, why", [(lambda s: s.reserve_set_in("serving"), "зона занята"),
                                        (lambda s: s.reserve_set_out("away"), "мои клиенты не на этом сервере")])
 def test_case_3_neither_asks_nor_needs_while_the_zone_is_busy(hermetic, busy, why):
     box = hermetic
@@ -331,7 +340,7 @@ def test_after_the_zone_frees_the_damper_still_counts_the_case(hermetic):
     освободилась: просьба основе — не раньше полного демпфера, а не сразу."""
     box = hermetic
     box.primary(True)
-    box.s.reserve_set_in("relay")
+    box.s.reserve_set_in("serving")
     box.hello(1, sees=False)
     box.hello(2, sees=False)
     _run(box, 60)
@@ -339,6 +348,19 @@ def test_after_the_zone_frees_the_damper_still_counts_the_case(hermetic):
     early = _run(box, 5 * 60)
     assert not sent(early, "ask"), "просьба основе сразу после освобождения зоны — демпфер пропущен"
     assert "зона занята" not in box.s.reserve_rf_line(), "зона свободна, а карточка всё пишет «зона занята»"
+
+
+def test_the_tail_relay_does_not_hold_the_zone_busy_for_case_3(hermetic):
+    """Пересылка хвоста (relay) уступает новому переезду: зона свободна,
+    случай 3 после демпфера просит основу, как при idle."""
+    box = hermetic
+    box.primary(True)
+    box.hello(1, sees=False)
+    box.hello(2, sees=False)
+    box.s.reserve_set_in("relay")
+    acts = _run(box, DAMPER + 180)
+    assert sent(acts, "ask"), "relay держит зону занятой — клиенты основы без РФ-доступа до конца хвоста"
+    assert "зона занята" not in box.s.reserve_rf_line()
 
 
 # ── st по смене ─────────────────────────────────────────────────────────────

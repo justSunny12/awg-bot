@@ -157,7 +157,7 @@ def test_gone_from_the_peer_unpairs_even_while_moved(services, paired):
 
 
 def test_unpair_without_a_pair_is_refused(services, rsv):
-    with pytest.raises(ServiceError, match="Резерва нет"):
+    with pytest.raises(ServiceError, match="[Рр]езерва нет"):
         services.reserve_unpair()
 
 

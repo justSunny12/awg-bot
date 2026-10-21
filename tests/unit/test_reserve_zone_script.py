@@ -30,7 +30,7 @@ from tests.conftest import fake_cmd
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "reserve-zone-setup.sh"
-KEYS = ("store", "cake", "netns", "awg", "webhook_port", "zone", "dnsmasq")
+KEYS = ("store", "cake", "netns", "awg", "webhook_port", "zone", "dnsmasq", "conntrack", "python")
 
 
 class _Box:
@@ -77,8 +77,10 @@ def test_the_plan_prints_every_line_without_root(box):
     p = _plan(box.run("--plan"))
     assert p["netns"] in ("yes", "no"), "netns смотрит на /proc хоста прогона"
     assert p["dnsmasq"] in ("yes", "no"), "dnsmasq смотрит на /usr/sbin хоста прогона"
-    assert {k: v for k, v in p.items() if k not in ("netns", "dnsmasq")} == {"store": "tmpfs-noswap", "cake": "yes", "awg": "yes",
-                                                            "webhook_port": "443", "zone": "absent"}
+    assert p["conntrack"] in ("yes", "no"), "conntrack смотрит на /usr/bin хоста прогона"
+    assert p["python"] == "yes", "python3 есть в /usr/bin хоста прогона"
+    assert {k: v for k, v in p.items() if k not in ("netns", "dnsmasq", "conntrack", "python")} == {
+        "store": "tmpfs-noswap", "cake": "yes", "awg": "yes", "webhook_port": "443", "zone": "absent"}
 
 
 @pytest.mark.parametrize("release, store", [("6.12.47+rpt-rpi-v8", "tmpfs-noswap"), ("6.4.0-1-amd64", "tmpfs-noswap"),
@@ -123,7 +125,7 @@ def test_the_selftest_refuses_without_root_before_touching_anything(box, tmp_pat
     assert not calls.exists(), "без root скрипт успел позвать ip"
 
 
-@pytest.mark.parametrize("mode", ["--shell", "--store", "--take", "--serve", "--restart-clone", "--relay",
+@pytest.mark.parametrize("mode", ["--shell", "--store", "--take", "--serve", "--restart-clone", "--relay", "--relay-flush",
                                   "--teardown", "--wipe"])
 def test_modes_that_change_the_host_refuse_without_root_and_touch_nothing(box, tmp_path, mode):
     """Без root ни одна из команд зоны не доходит до ip, mount, systemctl и nft."""

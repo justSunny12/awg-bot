@@ -610,3 +610,66 @@ def test_a_package_without_lists_opens_as_before(box):
     """Пакет прежней версии без части списков — открывается, файлов списков нет."""
     assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
     assert not [p for p in (box.run_dir / "data").iterdir() if p.name.startswith("routing-")]
+
+
+# ── имена наборов настроек и секреты в памяти процесса (ревью зоны) ─────────
+
+@pytest.mark.parametrize("name", ["../x", "../../etc/cron.d/x", "conf/limits", "evil", "app_guest", ""])
+def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
+    """Имя набора приходит из пакета второй стороны: не из pkgbot.CONF_FILES —
+    не пишется вовсе (ни в хранилище, ни путём наружу)."""
+    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+           "conf": {"limits": {"limits": {"default_days": 5}}, name: {"x": 1}}}
+    iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
+    box.write_package(parts={"vpn": iface, "bot": bot})
+    assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
+    conf = box.run_dir / "conf"
+    assert sorted(p.name for p in conf.iterdir()) == ["app.yaml", "limits.yaml"], \
+        f"в хранилище набор с именем {name!r}: {sorted(p.name for p in conf.iterdir())}"
+    written = [p for p in box.tmp.rglob("*.yaml") if p.read_text(errors="replace").strip() == "x: 1"]
+    assert not written, f"набор {name!r} записан вне хранилища: {written}"
+
+
+def test_every_known_settings_set_is_written(box):
+    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+           "conf": {n: {n: {"on": True}} for n in pkgbot.CONF_FILES}}
+    iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
+    box.write_package(parts={"vpn": iface, "bot": bot})
+    assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
+    names = {p.stem for p in (box.run_dir / "conf").iterdir()} - {"app"}
+    assert names == set(pkgbot.CONF_FILES), f"белый список отсёк известные наборы: {set(pkgbot.CONF_FILES) - names}"
+
+
+def _frame_of_run() -> dict:
+    """Локальные переменные rsvopen.run в момент вызова подмены (её вызывающий кадр выше по стеку)."""
+    f = sys._getframe(1)
+    while f is not None and not (f.f_code.co_name == "run" and f.f_code.co_filename == rsvopen.__file__):
+        f = f.f_back
+    assert f is not None, "подмену позвали не из rsvopen.run"
+    return dict(f.f_locals)
+
+
+def test_m_is_dropped_before_the_zone_and_the_dns_token_after_the_record(box):
+    """M (ключ всех будущих пакетов) нужен только для K и конверта DNS; токен
+    провайдера — только для записи: дальше процесс ждёт до 30 минут, и всё
+    это время ни M, ни токена в его памяти быть не должно."""
+    seen = {}
+    real_take, real_wait = box._take, box._wait_fact
+
+    def take(conf, **kw):
+        seen["take"] = _frame_of_run()
+        return real_take(conf, **kw)
+
+    def wait(name, ip, budget_s=0):
+        seen["wait"] = _frame_of_run()
+        seen["status"] = rsvzone.open_status()
+        return real_wait(name, ip, budget_s)
+    box.mp.setattr(rsvzone, "take", take)
+    box.mp.setattr(rsvopen, "wait_fact", wait)
+    assert box.open(shares=box.shares(1), dns=None) == 0, box.out
+    assert [c for c in box.calls if c[0] == "set_record"][0][1]["token"] == "DUMMY-cf-token", "конверт DNS не раскрыт"
+    assert seen["take"].get("m") is None, "M жив в памяти процесса при подъёме клона"
+    assert seen["wait"].get("m") is None
+    assert seen["wait"].get("dns") == {}, f"токен провайдера жив, пока ждём факт записи: {seen['wait'].get('dns')}"
+    assert seen["wait"].get("name") == "vpn.example.net", "имя записи для ожидания факта потеряно"
+    assert (seen["status"].get("step"), seen["status"].get("name")) == ("record_set", "vpn.example.net"), seen["status"]

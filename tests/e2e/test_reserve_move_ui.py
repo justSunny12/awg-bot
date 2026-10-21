@@ -357,6 +357,21 @@ async def test_the_admin_main_screen_shows_the_reserve_line_only_in_an_unusual_s
     assert "🛟 У тебя клиенты и бот «Beta» с" in parts[0]
 
 
+def test_the_reserve_line_on_the_main_screen_links_to_the_reserve_card():
+    """Строка Т-Р17 — ссылкой `/start rsv` на карточку резерва, имя второй
+    стороны экранировано; без имени бота — просто текст."""
+    from awgbot.bot import texts
+    from awgbot.bot.handlers.admin.panel import parse_link
+    from awgbot.bot.texts.admin.panel import admin_panel
+    st = {"ok": True}
+    text = admin_panel(st, bot_username="srv_a_bot", rsv_line="🛟 У тебя клиенты и бот «<b>Beta</b>»")
+    assert f'<a href="https://t.me/srv_a_bot?start={texts.RSV_PAYLOAD}">' in text, text
+    assert "&lt;b&gt;Beta&lt;/b&gt;" in text and "<b>Beta</b>" not in text, "имя второй стороны не экранировано"
+    plain = admin_panel(st, rsv_line="🛟 У тебя клиенты и бот «Beta»")
+    assert "href" not in plain and "🛟 У тебя клиенты и бот «Beta»" in plain
+    assert parse_link(texts.RSV_PAYLOAD) == ("set_rsv", 0)
+
+
 # ── уведомление Т-РУ16: «Вернуть запись» ────────────────────────────────────
 
 def test_the_record_notice_carries_the_return_button():

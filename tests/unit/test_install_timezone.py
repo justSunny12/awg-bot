@@ -204,7 +204,7 @@ def _steps(script: str, tmp_path: Path, prev: str | None, mode: str = "") -> tup
         (prev_dir / "awgbot" / "__version__.py").write_text(f'__version__ = "{prev}"\n', encoding="utf-8")
     stubs = "\n".join(f"{n}() {{ :; }}" for n in ("ensure_python", "ensure_ping", "build_venv", "install_unit",
                                                    "ensure_host_autostart", "ensure_awg_module_loaded",
-                                                   "ensure_awg_generation", "adopt_resolver", "adopt_awg_section",
+                                                   "ensure_awg_generation", "adopt_resolver", "refuse_container_runtime", "adopt_awg_section",
                                                    "adopt_link_keepalive", "seed_conf", "validate_config"))
     tz_below = re.search(r'^TZ_ADOPT_BELOW="[^"]*"', script, re.M).group(0)
     body = "\n".join([stubs, tz_below, _func(script, "tree_version"), _func(script, "version_lt"),

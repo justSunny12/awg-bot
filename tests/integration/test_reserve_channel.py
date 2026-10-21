@@ -451,6 +451,8 @@ async def test_pair_ok_answers_with_pair_admin_and_writes_the_pair(services, acc
     assert await _until(lambda: services.reserve_paired())
     peer = services.reserve_peer()
     assert (peer["listener"], peer["peer_admin_id"]) == (0, PEER_ADMIN)
+    # пара пишется раньше перевода линка (оба — в reserve_accept_commit, в потоке): ждём и его
+    assert await _until(lambda: "--set-peer" in rsv.modes), "линк на новые ключи не переведён"
     assert rsv.env("--set-peer")["PAIR_PSK"] == ok["_data"]["psk"]
     assert await _until(lambda: "linked" in acceptor.hooks.names())
 

@@ -149,7 +149,8 @@ def test_the_voting_module_reads_no_timer_that_waits_for_an_unreachable_gateway(
     assert "grace" not in src, "в модуле голосования снова «grace» — ожидание недоступного шлюза"
     consts = {t.id for node in ast.parse(path.read_text(encoding="utf-8")).body if isinstance(node, ast.Assign)
               for t in node.targets if isinstance(t, ast.Name) and t.id.isupper()}
-    assert consts == {"NEED_RETRY_S", "CODE_TRIES", "CODE_WINDOW_S", "MOVE_CASES", "RF_CASES"}, (
+    # FAIL_DAMPER_S — пауза после срыва открытия (не ожидание шлюза)
+    assert consts == {"NEED_RETRY_S", "CODE_TRIES", "CODE_WINDOW_S", "MOVE_CASES", "RF_CASES", "FAIL_DAMPER_S"}, (
         f"новые постоянные модуля голосования (таймер ожидания?): {sorted(consts)}")
 
 

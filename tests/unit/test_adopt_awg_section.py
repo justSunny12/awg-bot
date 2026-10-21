@@ -442,7 +442,8 @@ def test_rollback_of_code_brings_the_section_back(script, tmp_path):
     (prev / "awgbot" / "__version__.py").write_text('__version__ = "3.4.0"\n', encoding="utf-8")
     text, _ = _run(script, tmp_path, _custom_template(),
                    funcs=_GUARD + ("restore_prev_code",),
-                   pre=_below(script) + '\nwarn() { echo "WARN $*"; }; gw_plumbing_sync() { return 2; }',
+                   pre=_below(script) + '\nwarn() { echo "WARN $*"; }; gw_plumbing_sync() { return 2; }'
+                       '\nreserve_gw_drop_for_old() { :; }',            # линк к резерву — test_reserve_uninstall
                    call=f'restore_prev_code "{prev}"')
     assert (inst / "awg-bot.sh").read_text(encoding="utf-8") == "old", "прежний код не вернулся"
     assert _as_340(yaml.safe_load(text))["app_container"] == "proto-x", \

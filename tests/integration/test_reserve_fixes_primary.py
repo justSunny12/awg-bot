@@ -103,7 +103,7 @@ def stuck(mv):
 
 def _stuck_ticks(w, since_min: float) -> list:
     w.svc.rsv_update("rsv_out", stuck_since=_ago(since_min))
-    w.clock.advance(121)
+    w.clock.advance(169)                      # проба — раз в 120 с ± 40 % (джиттер): заведомо после верхней границы
     return w.svc.reserve_out_tick()
 
 
@@ -121,7 +121,7 @@ def test_the_stuck_probe_is_not_run_more_often_than_every_two_minutes(stuck):
     svc.reserve_out_tick()
     reads = stuck.dns.auth_reads
     svc.rsv_update("rsv_out", stuck_since=_ago(11))
-    stuck.clock.advance(60)
+    stuck.clock.advance(71)                   # нижняя граница джиттера — 72 с
     assert ("take_home",) not in svc.reserve_out_tick(), "проба раньше 2 минут"
     assert stuck.dns.auth_reads == reads, "авторитетный сервер опрашивается на каждом такте"
 
@@ -251,11 +251,12 @@ def test_the_merge_finds_the_snapshot_by_the_generation_of_the_replica(merge_wor
     assert acts == [("restart",)], f"gen={out_gen}: снимок base-7 не найден — {w.svc.rsv_get('rsv_out')}"
 
 
-def test_without_a_generation_anywhere_the_merge_fails_with_the_reason(merge_world):
+def test_without_a_generation_anywhere_the_merge_goes_over_a_copy_of_the_live_base(merge_world):
     w = merge_world
     w.svc.rsv_update("rsv_out", gen=0)
-    w.svc.reserve_released_in(rm.snapshot_blob(w.svc, gen=0))
-    assert w.svc.reserve_out() == "away" and "base-0" in w.svc.rsv_get("rsv_out")["merge_error"]
+    assert w.svc.reserve_released_in(rm.snapshot_blob(w.svc, gen=0)) == [("restart",)]
+    assert not w.svc.rsv_get("rsv_out").get("merge_error")
+    assert any("снимка для слияния не было" in x for x in w.svc.rsv_get("rsv_out")["merge_report"]["lost"])
 
 
 def test_a_failed_merge_resets_the_health_and_marks_the_switch(merge_world):
@@ -451,3 +452,13 @@ def test_an_unresolvable_name_pins_nothing_and_does_not_fail(services, rsv, monk
     monkeypatch.setattr(dnsapi, "read_system", lambda name, timeout=3.0: [])
     assert services.reserve_pin_self_host() == ""
     assert not settings.get("app.network.self_host")
+
+
+def test_the_stuck_probe_is_jittered(stuck, monkeypatch):
+    """Проба зависшего вебхука — сетевая задача по расписанию: строго
+    периодический запрос к DNS выглядит маячком."""
+    from awgbot.domain.services.reserve import outbound
+    seen = []
+    monkeypatch.setattr(outbound.random, "uniform", lambda a, b: seen.append((a, b)) or 1.0)
+    stuck.svc.reserve_out_tick()
+    assert (0.6, 1.4) in seen, f"проба без джиттера: {seen}"

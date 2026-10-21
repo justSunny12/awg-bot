@@ -619,6 +619,9 @@ def test_a_peer_that_has_no_package_yet_is_not_a_reason_to_resend_what_was_never
 
 
 def test_the_share_of_the_other_servers_key_does_not_go_into_a_backup_of_this_one():
+    """Запись о пакете второй стороны в копию не идёт целиком: половинная
+    (поколение и отпечаток без доли) после восстановления выглядела бы для
+    основы как «пакет доставлен», и основа не прислала бы его заново."""
     import json
     from awgbot.domain.backup import archive
     con = sqlite3.connect(":memory:")
@@ -626,11 +629,14 @@ def test_the_share_of_the_other_servers_key_does_not_go_into_a_backup_of_this_on
     con.execute("INSERT INTO server_state VALUES ('rsv_pkg_in', ?)",
                 (json.dumps({"gen": 4, "fp": "ab", "share": "DUMMY-share-hex", "m_gen": 2}),))
     con.execute("INSERT INTO server_state VALUES ('rsv_out', '{\"state\": \"home\"}')")
+    con.execute("INSERT INTO server_state VALUES ('rsv_pkg_sent', '{\"gen\": 9}')")
     archive._strip_foreign_share(con)
-    rec = json.loads(con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone()[0])
-    assert rec["share"] == "" and (rec["gen"], rec["fp"], rec["m_gen"]) == (4, "ab", 2), "вычищена должна быть только доля"
-    assert con.execute("SELECT value FROM server_state WHERE key = 'rsv_out'").fetchone()[0] == '{"state": "home"}'
+    assert con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone() is None, \
+        "запись о чужом пакете доехала в копию"
+    assert dict(con.execute("SELECT key, value FROM server_state").fetchall()) == {
+        "rsv_out": '{"state": "home"}', "rsv_pkg_sent": '{"gen": 9}'}, "вычищены свои записи"
     archive._strip_foreign_share(con)                  # повтор ничего не портит
+    assert con.execute("SELECT COUNT(*) FROM server_state").fetchone()[0] == 2
 
 
 @pytest.mark.parametrize("value", [None, "", "not json", "[1]", "{}"])
@@ -638,11 +644,12 @@ def test_stripping_the_share_tolerates_a_missing_empty_or_foreign_value(value):
     con = sqlite3.connect(":memory:")
     from awgbot.domain.backup import archive
     con.execute("CREATE TABLE server_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    con.execute("INSERT INTO server_state VALUES ('own', 'DUMMY')")
     if value is not None:
         con.execute("INSERT INTO server_state VALUES ('rsv_pkg_in', ?)", (value,))
     archive._strip_foreign_share(con)
-    row = con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone()
-    assert (row[0] if row else None) == value
+    assert con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone() is None
+    assert con.execute("SELECT value FROM server_state WHERE key = 'own'").fetchone() == ("DUMMY",)
 
 
 def test_stripping_the_share_tolerates_a_base_without_server_state():

@@ -33,7 +33,7 @@ def two(services, fake_routing, make_active_client, monkeypatch):
     services.db.gateway_update(1, lan_subnets=["192.168.1.0/24"])
     services.db.gateway_update(2, lan_subnets=["192.168.1.0/24"])
     policy: list = []
-    monkeypatch.setattr(routing.slots, "ensure_slot_policy", lambda sid, iface: policy.append((sid, iface)))
+    monkeypatch.setattr(routing.slots, "ensure_slot_policy", lambda sid, iface, via="": policy.append((sid, iface)))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
     services.policy = policy
     return services

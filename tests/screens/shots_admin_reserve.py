@@ -44,6 +44,9 @@ def _host(services, mp):
     from awgbot.util import dnsapi
     mp.setattr(dnsapi, "read_system", lambda name, timeout=3.0: [OWN_IP])
     mp.setattr(dnsapi, "read_authoritative", lambda name: [OWN_IP])
+    mp.setattr(dnsapi, "read_authoritative_ttl", lambda name: (list(dnsapi.read_authoritative(name)), 60))
+    # пакет второй стороны у этого сервера есть (направление «ко мне» не упирается в «данных нет»)
+    mp.setattr(services, "reserve_pkg_in_present", lambda: True)
 
     async def no_delete(*a, **k):
         return None

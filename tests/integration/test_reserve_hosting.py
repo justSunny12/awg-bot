@@ -23,7 +23,7 @@ import types
 import pytest
 
 from awgbot.core import settings
-from awgbot.domain.services.reserve import inbound
+from awgbot.domain.services.reserve import inbound, openproc
 from awgbot.infra import nftguard, rsvzone
 from awgbot.util import netns, timeutil
 
@@ -49,6 +49,15 @@ class Zone:
         self.rep = tmp_path / "var" / "rep.bin"
         self.take = tmp_path / "run" / "tg_take"
         self.webhook = tmp_path / "run" / "webhook.json"
+        self.events: list[str] = []                       # общий порядок: монтирование хранилища и запуск процесса
+
+    def store(self) -> str:
+        """Хранилище гостя монтирует бот до запуска юнита открытия (не в z.calls:
+        те сверяют ход зоны после открытия)."""
+        self.events.append("store")
+        if "store" in self.fail_on:
+            raise rsvzone.ZoneError(self.fail_on["store"])
+        return ""
 
     def _do(self, name, *a):
         self.calls.append((name, *a))
@@ -67,18 +76,22 @@ class Spawn:
     DEVNULL = subprocess.DEVNULL
     PIPE = subprocess.PIPE
 
-    def __init__(self):
+    def __init__(self, events: list[str] | None = None):
         self.popen: list[dict] = []
         self.runs: list[list] = []
         self.popen_error: OSError | None = None
         self.run_error: Exception | None = None
+        self.rc: int | None = None                         # код завершения процесса открытия; None — идёт
+        self.events = events if events is not None else []
 
     def Popen(self, cmd, **kw):                              # noqa: N802
         if self.popen_error:
             raise self.popen_error
         rec = {"cmd": list(cmd), "stdin": b"", "kw": kw}
         self.popen.append(rec)
+        self.events.append("popen")
         outer = rec
+        spawn = self
 
         class _In:
             def write(self, data):
@@ -86,7 +99,7 @@ class Spawn:
 
             def close(self):
                 outer["closed"] = True
-        return types.SimpleNamespace(stdin=_In())
+        return types.SimpleNamespace(stdin=_In(), poll=lambda: spawn.rc)
 
     def run(self, cmd, **kw):
         if self.run_error:
@@ -111,13 +124,16 @@ def host(mv, tmp_path, monkeypatch):
     monkeypatch.setattr(rsvzone, "teardown", lambda: z._do("teardown"))
     monkeypatch.setattr(rsvzone, "wipe", lambda: z._do("wipe"))
     monkeypatch.setattr(rsvzone, "relay", lambda to: z._do("relay", to))
+    monkeypatch.setattr(rsvzone, "store", z.store)
     monkeypatch.setattr(nftguard, "tg_pool", lambda: ["149.154.160.0/20", "91.108.4.0/22"])
-    spawn = Spawn()
-    monkeypatch.setattr(inbound, "subprocess", spawn)
-    monkeypatch.setattr(inbound.shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
+    monkeypatch.setattr(nftguard, "relay_packets", lambda: None)       # счётчик хвоста — не из таблицы хоста прогона
+    spawn = Spawn(z.events)
+    monkeypatch.setattr(inbound, "subprocess", spawn)                  # systemctl гостя при реплике
+    monkeypatch.setattr(openproc, "subprocess", spawn)                 # systemd-run / Popen процесса открытия
+    monkeypatch.setattr(openproc.shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
     z.webhook.parent.mkdir(parents=True, exist_ok=True)
     z.webhook.write_text(json.dumps({"port": 8443}))
-    svc.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp"})
+    svc.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "share": "DUMMY-share"})   # пакет и доля — направление «ко мне» открыто
     guard = tmp_path / "reserve"
     guard.mkdir(exist_ok=True)
     (guard / "guest.pkg").write_bytes(b"DUMMY-package")
@@ -168,7 +184,7 @@ def test_go_launches_the_open_process_with_the_key_only_in_stdin(host):
     _taking(host)
     assert svc.reserve_in() == "taking"
     run = host.spawn.popen[0]
-    assert run["cmd"][0] == "systemd-run" and "--pipe" in run["cmd"] and f"--unit={inbound.OPEN_UNIT}" in run["cmd"]
+    assert run["cmd"][0] == "systemd-run" and "--pipe" in run["cmd"] and f"--unit={openproc.OPEN_UNIT}" in run["cmd"]
     assert "tools.rsvopen" in run["cmd"]
     assert K_HEX not in " ".join(run["cmd"]), "ключ пакета в argv — виден любому через ps"
     payload = json.loads(run["stdin"])
@@ -280,10 +296,16 @@ def test_a_replica_outside_taking_is_ignored(host):
     assert not host.zone.rep.exists() and not host.zone.take.exists() and not host.spawn.runs
 
 
-def test_a_failed_guest_restart_does_not_mark_the_replica_as_delivered(host):
+def test_a_failed_guest_restart_ends_the_hosting_and_does_not_mark_the_replica_as_delivered(host):
+    """Гость остановлен до записи реплики, и поднять его не вышло — ждать
+    нечего: срыв приёма (down основе с причиной, зона снята), реплика не
+    считается доставленной."""
     _taking(host)
     host.spawn.run_error = subprocess.TimeoutExpired("systemctl", 60)
-    assert host.svc.reserve_released_store(b"DUMMY-replica") == []
+    acts = host.svc.reserve_released_store(b"DUMMY-replica")
+    down = [a[2]["reason"] for a in acts if a[:2] == ("send", "down")]
+    assert down and "реплика не положена боту основы" in down[0], acts
+    assert host.svc.reserve_in() == "idle" and host.zone.names()[-2:] == ["teardown", "wipe"]
     assert "replica_at" not in host.svc.rsv_get("rsv_in")
 
 
@@ -317,8 +339,21 @@ def test_back_req_stops_the_guest_and_waits_for_the_replica(host):
     assert svc.reserve_in() == "releasing" and svc.reserve_busy()
 
 
-def test_back_req_when_nothing_is_hosted_is_ignored(host):
-    assert host.svc.reserve_back_req_in() == [] and host.svc.reserve_in() == "idle"
+def test_back_req_when_nothing_is_hosted_answers_released_without_a_replica(host):
+    """Зоны нет (перезагрузка резерва, teardown мимо бота): основа не должна
+    просить вечно — released без реплики, зона остаётся idle."""
+    assert host.svc.reserve_back_req_in() == [("send_released", {"gen": 7, "blob": ""})]
+    assert host.svc.reserve_in() == "idle"
+
+
+@pytest.mark.parametrize("state", ["idle", "relay"])
+def test_back_req_without_a_zone_gives_the_snapshot_from_disk(host, state):
+    """rep.bin (под K основы) на диске — его и отдать, основа сольёт его."""
+    host.svc.reserve_set_in(state)
+    host.zone.rep.parent.mkdir(parents=True, exist_ok=True)
+    host.zone.rep.write_bytes(b"DUMMY-replica")
+    assert host.svc.reserve_back_req_in() == [("send_released", {"gen": 7, "blob": b"DUMMY-replica".hex()})]
+    assert host.svc.reserve_in() == state, "просьба основы сдвинула фазу зоны"
 
 
 def test_the_guest_replica_goes_to_the_primary_as_released(host):

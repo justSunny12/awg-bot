@@ -113,5 +113,5 @@ def test_side_normalises_what_came_over_the_channel():
     """`side` из полей `hello`/`st`: None и строки не роняют матрицу."""
     s = compat.side(name="Beta", version=None, caps=None, gen=None, ports=None, ready=1, has_gateway=0)
     assert s == {"name": "Beta", "version": "", "caps": [], "gen": 0, "ports": [], "ready": True, "gw": False,
-                 "floor": compat.COMPAT_FLOOR}
+                 "floor": compat.COMPAT_FLOOR, "zone": ""}
     assert compat.direction_ready(s, _side())[0] is False, "сторона без версии оказалась готовой"

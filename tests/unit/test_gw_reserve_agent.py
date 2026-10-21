@@ -36,6 +36,7 @@ from awgbot.util import pairproto, wgkeys
 pytestmark = pytest.mark.unit
 
 SUBNET = "10.9.1.0/24"
+OPEN = ["10.99.97.1/32", SUBNET]          # с awgrsv: адрес зоны (зонды бота основы) и подсеть клиентов
 RESERVE_IP = "198.51.100.7"
 PRIMARY_IP = "203.0.113.10"
 RECORD = "vpn-a.example.org"
@@ -87,7 +88,7 @@ def _conf() -> str:
     priv, _ = wgkeys.keypair()
     _, zone_pub = wgkeys.keypair()
     return (f"[Interface]\nAddress = 10.99.97.2/30\nPrivateKey = {priv}\nTable = off\nJc = 5\n\n"
-            f"[Peer]\nPublicKey = {zone_pub}\nPresharedKey = {wgkeys.psk()}\nAllowedIPs = 10.99.97.1/32\n"
+            f"[Peer]\nPublicKey = {zone_pub}\nPresharedKey = {wgkeys.psk()}\nAllowedIPs = 10.99.97.1/32, {SUBNET}\n"
             f"Endpoint = {RESERVE_IP}:45001\nPersistentKeepalive = 25-35\n")
 
 
@@ -158,13 +159,13 @@ def test_serving_with_the_record_fact_opens_even_for_a_gateway_that_sees_the_pri
     assert gw.reserve_primary_seen()[0] != "down"
     host.fact = True
     host.run(gw.reserve_state_in("serving", 3))
-    assert host.open == [SUBNET], "видящий шлюз с serving и фактом записи пересылку не открыл"
+    assert host.open == OPEN, "видящий шлюз с serving и фактом записи пересылку не открыл"
 
 
 def test_the_primarys_away_opens_without_the_reserve(gw, host):
     gw.reserve_apply(_checked(gw.conf, state="away", move=4))
     host.run(gw.reserve_forward_decide())
-    assert host.open == [SUBNET]
+    assert host.open == OPEN
 
 
 def test_idle_of_the_primary_newer_than_serving_closes(gw, host):
@@ -183,7 +184,7 @@ def test_idle_of_the_primary_older_than_serving_does_not_close(gw, host):
     host.run(gw.reserve_state_in("serving", 3))
     gw.reserve_apply(_checked(gw.conf, state="idle", move=2))
     host.run(gw.reserve_forward_decide())
-    assert host.open == [SUBNET], "старое idle основы закрыло пересылку при serving резерва"
+    assert host.open == OPEN, "старое idle основы закрыло пересылку при serving резерва"
 
 
 def test_idle_from_the_reserve_closes(gw, host):
@@ -200,7 +201,7 @@ def test_after_a_reboot_the_decision_comes_back_from_reserve_json(gw, host, tmp_
     fresh = GatewayServices(gw.db)
     fresh._RSV_STORE = tmp_path / "reserve.json"
     host.run(fresh.reserve_forward_decide())
-    assert host.open == [SUBNET], "после перезагрузки пересылка не восстановилась из reserve.json"
+    assert host.open == OPEN, "после перезагрузки пересылка не восстановилась из reserve.json"
 
 
 def test_unknown_state_words_are_ignored(gw, host):
@@ -341,9 +342,18 @@ def test_the_guest_channel_is_silent_for_an_hour_of_idle(gw, host):
     assert not acts, f"в простое такт агента что-то делал: {acts[:5]}"
 
 
+def test_no_hello_before_the_first_look_at_the_primary(gw, host):
+    """Взгляда ещё нет (такт не прочитал счётчик и не сделал пробу): hello с
+    пустым «вижу/не вижу» резерв принял бы за голос «не вижу»."""
+    assert gw.reserve_view_ready() is False
+    assert gw.reserve_guest_hello_body() is None
+
+
 def test_hello_carries_the_share_generation_and_the_view(gw, host):
+    gw.reserve_watch_tick(now=1000.0)                       # первое чтение — взгляд есть
+    assert gw.reserve_view_ready() is True
     body = gw.reserve_guest_hello_body()
-    assert body == {"slot": 1, "caps": ["rsv1"], "m_gen": 1, "seen": ""}
+    assert {k: body[k] for k in ("slot", "caps", "m_gen")} == {"slot": 1, "caps": ["rsv1"], "m_gen": 1}, body
     _watch(gw, 1000.0, 60)
     assert gw.reserve_guest_hello_body()["seen"], "hello после «не вижу» несёт «вижу»"
 
@@ -366,7 +376,7 @@ def test_opening_by_serving_tells_the_gateway_admin_that_clients_moved(gw, host)
     acts = gw.reserve_guest_in("state", {"state": "serving", "move": 3})
     host.run(acts)
     told = [n for a in acts if a[0] == "notify" for n in a[1]]
-    assert host.open == [SUBNET] and len(told) == 1 and "переехали на резерв" in told[0].text
+    assert host.open == OPEN and len(told) == 1 and "переехали на резерв" in told[0].text
     assert told[0].force_sound, "Т-РА3 «сервер не отвечает» без звука"
     assert ("push",) in acts, "серверу не ушёл снимок с новым состоянием"
 
@@ -444,7 +454,7 @@ def test_the_moment_of_opening_is_kept_also_when_the_primary_says_away(gw, host)
     assert not gw.reserve_section().get("open_at")
     gw.reserve_apply(_checked(gw.conf, state="away", move=4))
     host.run(gw.reserve_forward_decide())
-    assert host.open == [SUBNET] and gw.reserve_section().get("open_at"), "момент открытия по слову основы не записан"
+    assert host.open == OPEN and gw.reserve_section().get("open_at"), "момент открытия по слову основы не записан"
 
 
 # ── проверка «резервный линк» — не авария обвязки ───────────────────────────
@@ -471,3 +481,23 @@ def test_the_snapshot_keeps_the_suspect_view_of_the_reserve():
     превращает его в пустую строку (экран сервера показывал бы «нет данных»)."""
     from awgbot.domain import gwsnapshot
     assert gwsnapshot.sanitize({"rsv": {"seen": "suspect"}})["rsv"]["seen"] == "suspect"
+
+
+def test_the_forward_lets_in_every_allowed_ip_of_the_zone_side(gw):
+    """Адрес зоны (с него зонды живости бота основы) и все подсети туннеля
+    основы — клиентская и окно переезда профилей."""
+    conf = gw.conf.replace(f"AllowedIPs = 10.99.97.1/32, {SUBNET}\n",
+                           f"AllowedIPs = 10.99.97.1/32 , {SUBNET},198.51.100.0/24\n")
+    gw.reserve_apply(_checked(conf))
+    assert gw._reserve_sources() == ["10.99.97.1/32", SUBNET, "198.51.100.0/24"]
+
+
+def test_without_allowed_ips_the_forward_falls_back_to_the_client_subnet(gw):
+    gw.reserve_apply(_checked(gw.conf.replace(f"AllowedIPs = 10.99.97.1/32, {SUBNET}\n", "")))
+    assert gw._reserve_sources() == [SUBNET], "без AllowedIPs пересылка не знает, кого пускать"
+
+
+def test_without_allowed_ips_and_without_the_client_subnet_nothing_is_let_in(gw, monkeypatch):
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
+    gw.reserve_apply(_checked(gw.conf.replace(f"AllowedIPs = 10.99.97.1/32, {SUBNET}\n", "")))
+    assert gw._reserve_sources() == []

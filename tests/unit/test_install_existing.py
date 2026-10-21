@@ -87,6 +87,9 @@ _HOST_PATHS = (
     "/etc/systemd/system/", "/usr/local/sbin/", "/etc/awg-gw", "/var/lib/awg-gw",
     "/etc/nftables.d/", "/opt/awg-gw", "/etc/amnezia/amneziawg", "/etc/dnsmasq.d/",
     "/root/",
+    # взаимный резерв: зона, журнал и хранилище гостя — тоже под временный корень
+    "/etc/systemd/journald@awg-guest.conf", "/run/awg-bot-guest", "/var/lib/awg-bot-guest", "/run/awg-bot/rsv",
+    "/run/log/journal/",
 )
 # одним проходом: иначе «/root/» из уже подставленного корня подменился бы ещё раз
 _HOST_RE = re.compile("|".join(re.escape(p) for p in sorted(_HOST_PATHS, key=len, reverse=True)))
@@ -122,6 +125,9 @@ class _Host:
             "systemctl": 'echo "systemctl $*" >> "$CALLS"',
             "nft": 'echo "nft $*" >> "$CALLS"',
             "awg-quick": 'echo "awg-quick $*" >> "$CALLS"',
+            # ip хоста не трогаем: правила, пространства и линки — в журнал; `ip rule del` — «нет правила»
+            "ip": 'echo "ip $*" >> "$CALLS"; [ "$1 $2" = "rule del" ] && exit 1; exit 0',
+            "umount": 'echo "umount $*" >> "$CALLS"',
             # mktemp у macOS не смотрит на TMPDIR — свой, чтобы не мусорить на хосте
             "mktemp": ('[ "$1" = -d ] || exit 2\n'
                        'd="$TMPDIR/mktemp.$$"; mkdir "$d" && echo "$d"'),
@@ -614,7 +620,7 @@ class _PostUpdate:
         stubs = " ".join(f"{n}() {{ :; }};" for n in (
             "require_root", "post_update_rescue", "ensure_python", "ensure_ping", "build_venv",
             "install_unit", "ensure_host_autostart", "ensure_awg_module_loaded",
-            "ensure_awg_generation", "adopt_resolver", "update_adopts_timezone", "adopt_timezone", "adopt_awg_section",
+            "ensure_awg_generation", "adopt_resolver", "update_adopts_timezone", "adopt_timezone", "refuse_container_runtime", "adopt_awg_section",
             "adopt_link_keepalive", "seed_conf", "validate_config",
             "prune_old_kernel_builds", "update_done", "sleep"))
         prog = (

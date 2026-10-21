@@ -45,8 +45,8 @@ def _answer(query: bytes, records: list[tuple], *, rcode: int = 0, qid: int | No
     rid = struct.unpack(">H", query[:2])[0] if qid is None else qid
     question = query[12:]
     out = struct.pack(">HHHHHH", rid, 0x8180 | rcode, 1, len(records), len(authority), 0) + question
-    for rtype, rdata in list(records) + list(authority):
-        out += b"\xc0\x0c" + struct.pack(">HHIH", rtype, 1, 300, len(rdata)) + rdata
+    for rtype, rdata, *ttl in list(records) + list(authority):     # (тип, rdata[, ttl]); ttl по умолчанию 300
+        out += b"\xc0\x0c" + struct.pack(">HHIH", rtype, 1, ttl[0] if ttl else 300, len(rdata)) + rdata
     return out
 
 
@@ -195,7 +195,7 @@ def test_a_truncated_answer_is_a_dns_error_not_a_crash(dns, cut):
 
 def test_a_query_carries_the_name_and_type_asked(dns):
     recs = common.query("203.0.113.53", "vpn.example.net", 1)
-    assert [(t, rdata) for _n, t, rdata, _m, _o in recs] == [(1, socket.inet_aton("198.51.100.7"))]
+    assert [(t, rdata) for _n, t, rdata, _m, _o, _ttl in recs] == [(1, socket.inet_aton("198.51.100.7"))]
     assert recs[0][0] == "vpn.example.net", "имя-указатель записи не развернулось"
 
 
@@ -423,3 +423,19 @@ def test_the_provider_is_chosen_by_id_and_an_unknown_one_is_refused():
     for cfg in ({"provider": "route53"}, {}, None):
         with pytest.raises(dnsapi.DnsError):
             dnsapi.provider_for(cfg)
+
+
+def test_the_ttl_of_the_record_is_the_smallest_of_the_answer(dns):
+    """По TTL бот предупреждает админа (больше 300 — клиенты переедут поздно)
+    и ждёт перед «переподключи VPN»: берётся наименьший из A-записей ответа."""
+    def answer(server, name, qtype, query):
+        if server == "203.0.113.53" and qtype == 1:
+            return _answer(query, [(1, socket.inet_aton("198.51.100.7"), 3600), (1, socket.inet_aton("203.0.113.9"), 120)])
+    dns.override = answer
+    assert dnsapi.read_authoritative_ttl("vpn.example.net") == (["198.51.100.7", "203.0.113.9"], 120)
+    recs = common.query("203.0.113.53", "vpn.example.net", 1)
+    assert sorted(r[5] for r in recs) == [120, 3600], "TTL записи не разобран"
+
+
+def test_no_record_has_ttl_zero(dns):
+    assert dnsapi.read_authoritative_ttl("nothing.example.net") == ([], 0)

@@ -18,7 +18,7 @@ import types
 import pytest
 
 from awgbot.core import config
-from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, outbound, package
+from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, outbound, outbound_return, package
 from awgbot.infra import awg
 from awgbot.util import dnsapi, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal
@@ -81,12 +81,17 @@ class DnsWorld:
         self.api_value = OWN_IP
         self.auth_reads = 0
         self.system_reads = 0
+        self.ttl = 60                                      # TTL A-записи у авторитетного сервера
 
     def read_authoritative(self, name: str) -> list[str]:
         self.auth_reads += 1
         if self.auth_error:
             raise dnsapi.DnsError("авторитетный сервер не ответил")
         return list(self.auth)
+
+    def read_authoritative_ttl(self, name: str) -> tuple[list[str], int]:
+        addrs = self.read_authoritative(name)
+        return addrs, (self.ttl if addrs else 0)
 
     def read_system(self, name: str, timeout: float = 3.0) -> list[str]:
         self.system_reads += 1
@@ -121,9 +126,11 @@ def mv(services, rsv, tmp_path, monkeypatch):
     world = DnsWorld()
     for name in ("read_authoritative", "read_system", "provider_for"):
         monkeypatch.setattr(dnsapi, name, getattr(world, name))
+    # пакет dnsapi может не выставлять это имя (см. tests/unit/test_dnsapi.py) — подмена мира теста его ставит
+    monkeypatch.setattr(dnsapi, "read_authoritative_ttl", world.read_authoritative_ttl, raising=False)
     clock = Clock()
     stub = types.SimpleNamespace(monotonic=clock.monotonic)
-    for mod in (outbound, inbound, dnsmod, package):
+    for mod in (outbound, outbound_return, inbound, dnsmod, package):      # часы одни на все части автомата
         monkeypatch.setattr(mod, "time", stub)
     rc.pair_row(services)
     services.reserve_keys_init()

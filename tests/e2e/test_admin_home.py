@@ -87,7 +87,7 @@ def test_home_routing_line_is_silent_without_gateways():
     ("upd", ("upd", 0)), ("traffic", ("traffic", 0)), ("traffic_local", ("traffic", 0)),
     ("traffic-7", ("traffic_dev", 7)), ("traffic_local-7", ("traffic_dev", 7)),
     ("traffic_local-7-t", ("traffic_dev", 7)), ("cl-12", ("cl", 12)), ("dev-5", ("dev", 5)),
-    ("gw-2", ("gw", 2)), ("extend-3", ("extend", 3)),
+    ("gw-2", ("gw", 2)), ("extend-3", ("extend", 3)), ("rsv", ("set_rsv", 0)),
     ("cl-", None), ("cl-abc", None), ("dev-5-x", None), ("Cabcdefghijk", None), ("", None),
 ])
 def test_parse_link_maps_payloads_to_screens(payload, link):

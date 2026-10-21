@@ -74,3 +74,34 @@ def test_a_backup_without_a_pair_does_not_touch_the_pair_script(script, tmp_path
     assert r.returncode == 0, r.stderr
     assert not [x for x in h.calls() if x.startswith("pair ")], h.calls()
     assert json.loads((h.data / "restore-done.json").read_text(encoding="utf-8"))
+
+
+def _with_pairs(h: Host, names: list[str]) -> None:
+    """Копия несёт конфиги линков пары под заданными именами (awgpair, awgpair2, …)."""
+    with tarfile.open(h.plain, "r:gz") as tar:
+        files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+    for name in names:
+        files[f"awg/{name}.conf"] = PAIR.replace(b"DUMMY", f"DUMMY-{name}".encode())
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, raw in files.items():
+            ti = tarfile.TarInfo(name); ti.size = len(raw); ti.mode = 0o600
+            tar.addfile(ti, io.BytesIO(raw))
+    h.plain.write_bytes(buf.getvalue())
+
+
+@pytest.mark.parametrize("names", [["awgpair2"], ["awgpair", "awgpair2"]])
+def test_a_pair_link_of_any_name_is_adopted_under_its_own_name(script, tmp_path, names):
+    """Линк пары с другим именем интерфейса (второе приглашение, имя занято) —
+    тоже поднимается, и именно под своим PAIR_IF: под чужим именем скрипт
+    поднял бы не тот конфиг, а свой оставил бы без юнита."""
+    h = Host(tmp_path)
+    _with_pairs(h, names)
+    r = _run(script, h)
+    assert r.returncode == 0, r.stderr
+    c = h.calls()
+    adopted = [x for x in c if x.startswith("pair ")]
+    assert adopted == [f"pair PAIR_IF={n} --adopt" for n in names], f"линки пары подняты не по своим именам: {adopted}"
+    for n in names:
+        assert (h.awg / f"{n}.conf").read_bytes().count(f"DUMMY-{n}".encode()) == 1, f"{n}.conf не лёг на место"
+        assert c.index(f"pair PAIR_IF={n} --adopt") < c.index("systemctl start awg-bot")

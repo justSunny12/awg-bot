@@ -71,8 +71,9 @@ LINKQ = '{ "awglink", "awglink2" }'
 def test_rf_traffic_of_the_zone_goes_only_into_my_slot_links(filtering, phase):
     text = nftguard.render(_spec(filter=filtering, **{**RF, "guest_phase": phase}))
     fwd = _chain(text, "forward")
-    rf = [ln for ln in fwd if "awggr-h" in ln]
-    assert rf == [f"iifname {RFQ} oifname {LINKQ} accept", f"iifname {RFQ} drop", f"oifname {RFQ} drop"], \
+    # ответы наружным соединениям зоны (NAT-only) — отдельно, test_nftguard_guest_review
+    rf = [ln for ln in fwd if "awggr-h" in ln and "ct state established" not in ln]
+    assert rf == [f"iifname {RFQ} oifname {LINKQ} ip daddr != {{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }} accept", f"iifname {RFQ} drop", f"oifname {RFQ} drop"], \
         f"из veth РФ-трафика есть ход не только в линки слотов (или в него — с хоста): {rf}"
 
 

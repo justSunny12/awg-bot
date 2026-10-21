@@ -216,3 +216,20 @@ async def test_the_webhook_word_of_the_guest_is_kept_for_the_reserve_with_typed_
     assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 2)
     assert words == [("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00", "error": "Connection timed out"}),
                      ("webhook", {"stalled": False, "since": "", "error": ""})], words
+
+
+async def test_the_reserve_acknowledges_tg_taken_and_the_guest_knows_it(pair):
+    """Гость говорит «вебхук стоит», пока резерв не подтвердит: канал мог быть
+    не подключён в секунду вебхука, а без слова резерв не перейдёт в serving."""
+    await _until(lambda: pair.server.connected())
+    assert not pair.client.tg_acked.is_set()
+    assert await pair.client.send("tg_taken") is True
+    assert await _until(pair.client.tg_acked.is_set), "резерв не подтвердил tg_taken — гость повторял бы вечно"
+    assert ("tg_taken", None) in pair.server.take_words()
+
+
+async def test_an_ack_of_another_word_does_not_count_as_tg_taken(pair):
+    await _until(lambda: pair.server.connected())
+    assert await pair.server.send("ack", {"of": "replica"}) is True
+    await asyncio.sleep(0.2)
+    assert not pair.client.tg_acked.is_set()

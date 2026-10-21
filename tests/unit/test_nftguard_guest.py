@@ -98,7 +98,7 @@ def test_a_zone_that_is_not_running_adds_nothing_to_the_table(filtering):
 def test_relay_forwards_the_clone_port_to_the_main_and_masquerades_the_answer(filtering):
     text = nftguard.render(_spec(filter=filtering, **RELAY))
     lines = _lines(text)
-    assert "udp dport 45877 dnat ip to 203.0.113.5:45877" in lines, text
+    assert "udp dport 45877 counter dnat ip to 203.0.113.5:45877" in lines, text
     assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
     assert "ct status dnat meta l4proto udp accept" in lines, "пересылка хвоста не пропущена фильтром хоста"
     assert "udp dport 45877 accept" not in lines, "клона уже нет, а порт для хоста открыт"
@@ -146,7 +146,7 @@ def test_relay_with_two_ports_forwards_each_to_the_same_port_of_the_main(filteri
     интерфейс. При нескольких портах DNAT — на адрес без порта (порт тот же)."""
     spec = dict(RELAY, relay_udp_ports=[45877, 45878])
     lines = _lines(nftguard.render(_spec(filter=filtering, **spec)))
-    assert "udp dport { 45877, 45878 } dnat ip to 203.0.113.5" in lines, "\n".join(lines)
+    assert "udp dport { 45877, 45878 } counter dnat ip to 203.0.113.5" in lines, "\n".join(lines)
     assert not [ln for ln in lines if "dnat ip to 203.0.113.5:" in ln], "при двух портах DNAT с портом назначения"
     assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
     if filtering:
@@ -155,7 +155,7 @@ def test_relay_with_two_ports_forwards_each_to_the_same_port_of_the_main(filteri
 
 def test_relay_with_one_port_in_the_list_keeps_the_old_rule_with_the_port():
     lines = _lines(nftguard.render(_spec(**dict(RELAY, relay_udp_ports=[45877]))))
-    assert "udp dport 45877 dnat ip to 203.0.113.5:45877" in lines, "один клон — правило поменяло вид"
+    assert "udp dport 45877 counter dnat ip to 203.0.113.5:45877" in lines, "один клон — правило поменяло вид"
 
 
 def test_the_collection_reads_all_clone_ports_for_serving_and_relay(zone_state):
