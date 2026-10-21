@@ -99,8 +99,8 @@ def test_relay_forwards_the_clone_port_to_the_main_and_masquerades_the_answer(fi
     text = nftguard.render(_spec(filter=filtering, **RELAY))
     lines = _lines(text)
     assert "udp dport 45877 dnat ip to 203.0.113.5:45877" in lines, text
-    assert "ct status dnat udp masquerade" in lines, "ответ основы не вернётся клиенту"
-    assert "ct status dnat udp accept" in lines
+    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
+    assert "ct status dnat meta l4proto udp accept" in lines, "пересылка хвоста не пропущена фильтром хоста"
     assert "udp dport 45877 accept" not in lines, "клона уже нет, а порт для хоста открыт"
     assert "tg_pool4" not in text and "169.254.77" not in text
 
@@ -125,6 +125,52 @@ def test_the_table_is_deterministic_for_the_cheap_comparison_by_text():
     assert nftguard.render(_spec(**SERVING)) == nftguard.render(_spec(**SERVING))
     assert nftguard.render(_spec(**SERVING)) != nftguard.render(_spec(**RELAY))
 
+
+
+# ── два клона: клиентский интерфейс и окно переезда профилей ────────────────
+
+def test_serving_with_two_clones_opens_both_ports_in_one_rule():
+    """Основа в окне переезда профилей: часть устройств ещё на старом
+    интерфейсе, часть — на новом. Закрытый второй порт — эти устройства без
+    VPN всё время переезда."""
+    spec = dict(SERVING, guest_udp_ports=[45877, 45878])
+    lines = _lines(nftguard.render(_spec(**spec)))
+    assert "udp dport { 45877, 45878 } accept" in lines, "второй порт клона закрыт"
+    assert "udp dport 45877 accept" not in lines, "порт первого клона продублирован отдельным правилом"
+
+
+@pytest.mark.parametrize("filtering", [True, False], ids=["filter", "nat-only"])
+def test_relay_with_two_ports_forwards_each_to_the_same_port_of_the_main(filtering):
+    """DNAT набора портов на «адрес:порт» отправил бы оба интерфейса в один
+    порт основы — устройства второго интерфейса стучались бы не в свой
+    интерфейс. При нескольких портах DNAT — на адрес без порта (порт тот же)."""
+    spec = dict(RELAY, relay_udp_ports=[45877, 45878])
+    lines = _lines(nftguard.render(_spec(filter=filtering, **spec)))
+    assert "udp dport { 45877, 45878 } dnat ip to 203.0.113.5" in lines, "\n".join(lines)
+    assert not [ln for ln in lines if "dnat ip to 203.0.113.5:" in ln], "при двух портах DNAT с портом назначения"
+    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
+    if filtering:
+        assert "ct status dnat meta l4proto udp accept" in lines, "пересылка хвоста не пропущена фильтром хоста"
+
+
+def test_relay_with_one_port_in_the_list_keeps_the_old_rule_with_the_port():
+    lines = _lines(nftguard.render(_spec(**dict(RELAY, relay_udp_ports=[45877]))))
+    assert "udp dport 45877 dnat ip to 203.0.113.5:45877" in lines, "один клон — правило поменяло вид"
+
+
+def test_the_collection_reads_all_clone_ports_for_serving_and_relay(zone_state):
+    zone_state(phase="serving", port="45877", ports="45877 45878", zone_cidr="169.254.77.0/30")
+    z = nftguard.guest_zone()
+    assert (z["guest_udp_port"], z["guest_udp_ports"]) == (45877, [45877, 45878]), z
+    zone_state(phase="relay", port="45877", ports="45877 45878", relay_to="203.0.113.5:45877")
+    z = nftguard.guest_zone()
+    assert z["relay_udp_ports"] == [45877, 45878], "в relay второй порт не пересылается — хвост его устройств пропал"
+
+
+@pytest.mark.parametrize("ports, want", [("", [45877]), ("45877 мусор 70000 0", [45877])])
+def test_garbage_or_missing_ports_fall_back_to_the_first_clone(zone_state, ports, want):
+    zone_state(phase="taking", port="45877", ports=ports)
+    assert nftguard.guest_zone()["guest_udp_ports"] == want
 
 # ── сбор из состояния зоны ───────────────────────────────────────────────────
 
@@ -165,7 +211,8 @@ def test_a_taking_zone_has_no_webhook_port_and_no_pool(zone_state):
 def test_a_relay_zone_yields_only_the_forward_target(zone_state):
     zone_state(phase="relay", port="45877", relay_to="203.0.113.5:45877", zone_cidr="169.254.77.0/30")
     z = nftguard.guest_zone()
-    assert z == {"guest_phase": "relay", "relay_to": "203.0.113.5:45877", "relay_udp_port": 45877}
+    assert z == {"guest_phase": "relay", "relay_to": "203.0.113.5:45877", "relay_udp_port": 45877,
+                 "relay_udp_ports": [45877]}, "старое состояние без ports: пересылается один порт клона"
 
 
 @pytest.mark.parametrize("state", [dict(relay_to="203.0.113.5", port="45877"), dict(relay_to="203.0.113.5:1", port="0"),

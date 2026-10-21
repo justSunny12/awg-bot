@@ -90,6 +90,9 @@ def test_three_garbled_tries_per_hour_then_limit_then_the_hour_passes(h4):
 
 
 def test_a_wrong_code_reported_by_the_process_counts_and_reopens_the_window(h4, monkeypatch):
+    """Итог не успел в ответ на сообщение (pending) — отказ процесса приходит
+    тактом и уведомлением; следующий ввод — уже новое открытие со своим ходом."""
+    real_status = rsvzone.open_status
     assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"]
     monkeypatch.setattr(rsvzone, "open_status", lambda: {"step": "fail", "reason": "ключ пакета: SecretBox не снялся"})
     acts = h4.s.reserve_in_tick()
@@ -97,6 +100,7 @@ def test_a_wrong_code_reported_by_the_process_counts_and_reopens_the_window(h4, 
     assert h4.s.reserve_code_window()["open"], "после «не подошёл» приём кода не открыт снова"
     told = [n for n in notes(acts) if n.tg_id == PEER_ADMIN]
     assert len(told) == 1 and "Код не подошёл" in told[0].text and "Осталось попыток: 2" in told[0].text, told
+    monkeypatch.setattr(rsvzone, "open_status", real_status)   # новое открытие пишет свой ход (launching)
     assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"], "после возврата окна верный по виду код не принят"
 
 
@@ -142,13 +146,15 @@ def test_the_admin_of_both_servers_enters_the_code_as_himself(h4):
 @pytest.mark.parametrize("sees, why_text", [(True, "видит сервер — переезд не нужен"),
                                            (False, "не видит сервер — переезд идёт сам")])
 def test_the_closing_notice_names_the_gateway_that_came_back(h4, sees, why_text):
-    """Т-РН3: окно закрыл вернувшийся шлюз — в тексте его имя («Шлюз «NASPi»
-    снова на связи»), а не имя сервера основы."""
+    """Т-РН3: окно закрыл вернувшийся шлюз — в тексте он по номеру слота
+    («Шлюз 1 снова на связи»), а не имя сервера основы. Имён шлюзов основы у
+    резерва нет: они второй стороне не раскрываются."""
     acts = h4.hello(1, sees=sees)
     acts += h4.tick()
     told = [n for n in notes(acts) if n.tg_id == PEER_ADMIN]
     assert len(told) == 1, [n.text for n in notes(acts)]
-    assert "Шлюз «NASPi»" in told[0].text and why_text in told[0].text and "«Beta»" not in told[0].text, told[0].text
+    assert told[0].text.startswith("ℹ️ Шлюз 1 снова на связи") and why_text in told[0].text, told[0].text
+    assert "«Beta»" not in told[0].text and "NASPi" not in told[0].text, told[0].text
 
 
 def test_the_closing_notice_names_the_primary_when_it_came_back_itself(h4):

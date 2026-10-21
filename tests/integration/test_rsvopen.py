@@ -577,7 +577,9 @@ def test_the_clone_config_has_only_keys_that_awg_setconf_accepts_or_the_script_s
     present = sorted({ln.split("=")[0].strip() for ln in conf.splitlines() if "=" in ln} & quick_only)
     script = (Path(__file__).resolve().parents[2] / "install" / "reserve-zone-setup.sh").read_text()
     take = script[script.index("cmd_take() {"):script.index("cmd_restart_clone() {")]
-    strips = "awg-quick strip" in take or "grep -v" in take or "sed " in take
+    # снятие — в общей функции write_setconf (её зовут take и restart-clone)
+    setconf = script[script.index("write_setconf() {"):script.index("cmd_take() {")] if "write_setconf \"$iface\"" in take else ""
+    strips = any(w in body for body in (take, setconf) for w in ("awg-quick strip", "grep -v", "sed "))
     assert not present or strips, f"в конфиге клона {present}, а перед `awg setconf` скрипт зоны их не снимает"
 
 

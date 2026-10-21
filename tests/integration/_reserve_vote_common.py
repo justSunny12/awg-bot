@@ -137,9 +137,17 @@ def sent(actions, kind: str) -> list[dict]:
 
 
 @pytest.fixture()
-def box(services, rsv, monkeypatch):
+def box(services, rsv, monkeypatch, tmp_path):
     """Резерв в паре с «Beta» (её шлюзы — слоты 1–3 с rsv1), пакет поколения
-    PKG_GEN с долей резерва поколения M_GEN, готовность включена."""
+    PKG_GEN с долей резерва поколения M_GEN, готовность включена. Ход процесса
+    открытия (open.status) — во временном каталоге; итог аварийного кода в
+    ответе не ждётся (codewait.VERDICT_S = 0: «пока не ясно» сразу) — тесты,
+    которым нужен синхронный итог, подменяют open_status сами."""
+    from awgbot.domain.services.reserve import codewait
+    from awgbot.infra import rsvzone
+    monkeypatch.setattr(rsvzone, "STATE_DIR", tmp_path / "rsv-state")
+    monkeypatch.setattr(rsvzone, "OPEN_STATUS", tmp_path / "rsv-state" / "open.status")
+    monkeypatch.setattr(codewait, "VERDICT_S", 0.0)
     rc.pair_row(services)
     services.rsv_update("rsv_peer_state", version="4.0.0", session=True,
                         voters=[{"slot": s, "name": n} for s, n in NAMES.items()])

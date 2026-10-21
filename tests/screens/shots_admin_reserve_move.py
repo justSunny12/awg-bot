@@ -82,6 +82,11 @@ def _foreign_record(services, bot):
     return run()
 
 
+def _await_merge(services, mp):
+    """Клиенты возвращены без резерва (С9): жду его реплику."""
+    services.reserve_set_out("home", await_merge=True, kind="dead")
+
+
 def _paired(*then):
     return _rsv(ready=True, gw="rsv", paired=True, then=list(then))
 
@@ -119,6 +124,17 @@ RESERVE_MOVE = [
          data=_paired(_serving), title="просьба о возврате отправлена"),
     Shot("adm.rsv.evict.none", role="admin", press=[RSV, RsvCB(action="evict")], data=_paired(),
          title="вернуть некого — всплывашка"),
+    # ── вернуть клиентов без резерва (С9) ───────────────────────────────
+    Shot("adm.rsv.card.force", role="admin", press=[RSV], data=_paired(_away, _peer_down),
+         title="карточка: мои клиенты у резерва, он не на связи 20 минут — «⚠️ Вернуть клиентов без «Beta»»"),
+    Shot("adm.rsv.force", role="admin", press=[RSV, RsvCB(action="force")], data=_paired(_away, _peer_down),
+         title="«⚠️ Вернуть клиентов без «Beta»»: диалог, запись меняет человек"),
+    Shot("adm.rsv.force.auto", role="admin", press=[RSV, RsvCB(action="force")],
+         data=_paired(_automatic, _away, _peer_down), title="«⚠️ Вернуть клиентов без «Beta»»: диалог, запись вернётся сама"),
+    Shot("adm.rsv.force.refused", role="admin", press=[RSV, RsvCB(action="force")], data=_paired(_away),
+         title="«⚠️ Вернуть без резерва» при резерве на связи — всплывашка"),
+    Shot("adm.rsv.card.await_merge", role="admin", press=[RSV], data=_paired(_await_merge),
+         title="карточка: клиенты возвращены без резерва, жду его реплику"),
     # ── запись DNS (Т-Р16) ──────────────────────────────────────────────
     Shot("adm.rsv.dns.ip", role="admin", press=[RSV, DNS], data=_rsv(host="203.0.113.9", ready=True),
          title="«🌐 Запись DNS» при адресе-IP: записи нет"),

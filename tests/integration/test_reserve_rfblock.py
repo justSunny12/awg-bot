@@ -72,7 +72,8 @@ def test_case_3_asks_the_primary_only_after_the_damper(box):
     late = _run(box, 20)
     asks = _asks(late)
     assert len(asks) == 1 and asks[0]["case"] == "3", f"после демпфера нет ask{{3}}: {late}"
-    assert sorted(v["name"] for v in asks[0]["voters"]) == ["NASPi", "Pi5"]
+    assert sorted(v["slot"] for v in asks[0]["voters"]) == [1, 2], asks[0]
+    assert not [v for v in asks[0]["voters"] if "name" in v], "имена шлюзов основы ушли в ask — резерву их знать незачем"
 
 
 def test_the_first_see_resets_the_damper(box):
@@ -215,11 +216,16 @@ def test_view_3_tells_the_primary_admin_once_per_episode(services, rsv):
     assert len(again) == 1, "новый эпизод — без уведомления"
 
 
-def test_view_4_and_h3_have_their_own_texts(services, rsv):
+def test_view_4_and_h3_have_their_own_texts(services, rsv, make_active_client):
+    """Резерв шлёт только слоты — имена в тексте основа берёт из своей базы."""
     rc.pair_row(services)
-    v4 = services.reserve_view_in("4", "2026-10-21T03:11:00+03:00",
-                                  [{"slot": 1, "name": "NASPi", "see": False}, {"slot": 2, "name": "Pi5", "see": True}])
-    assert len(v4) == 1 and "переезда не будет" in v4[0].text and "«NASPi»" in v4[0].text
+    cl = make_active_client(name="Шлюзы", tg_id=7001)
+    for slot, name in ((1, "NASPi"), (2, "Pi5")):
+        dev = services.add_device(cl.id, name).device_id
+        services.db.gateway_add(dev, f"awglink{slot}" if slot > 1 else "awglink", 443 + slot, f"10.99.9{slot}.0/30", slot_id=slot)
+    v4 = services.reserve_view_in("4", "2026-10-21T03:11:00+03:00", [{"slot": 1, "see": False}, {"slot": 2, "see": True}])
+    assert len(v4) == 1 and "переезда не будет" in v4[0].text and "«NASPi»" in v4[0].text and "«Pi5»" in v4[0].text, \
+        v4[0].text
     h3 = services.reserve_view_in("H3", "2026-10-21T03:20:00+03:00", [])
     assert len(h3) == 1 and "ради РФ-доступа" in h3[0].text
     assert not services.reserve_view_in("6", "2026-10-21T03:30:00+03:00", []), "на штатный случай пришло уведомление"

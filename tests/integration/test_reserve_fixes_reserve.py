@@ -137,8 +137,9 @@ def test_back_during_the_opening_stops_the_open_unit(units):
 @pytest.mark.parametrize("phase", ["idle", "", "relay"])
 def test_a_zone_taken_down_outside_the_bot_ends_the_hosting_with_one_notice(host, phase):
     """`awg-bot reserve teardown` или перезагрузка хоста: бот резерва не
-    должен вечно считать себя «serving» — idle, пакет второй стороны прочь,
-    файервол заново, админу итог, шлюзам `state{idle}`."""
+    должен вечно считать себя «serving» — idle, файервол заново, админу итог,
+    шлюзам `state{idle}`. Пакет и доля второй стороны остаются (С11): основа
+    может быть всё ещё мертва, матрица откроет снова."""
     svc = host.svc
     seen = []
     svc.reserve_gw_state_actions = lambda force=False: seen.append(force) or [("gw", 1, "state", svc._state_body())]
@@ -146,7 +147,7 @@ def test_a_zone_taken_down_outside_the_bot_ends_the_hosting_with_one_notice(host
     host.zone.phase = phase
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and svc.rsv_get("rsv_in").get("reason") == "зона снята"
-    assert ("fw",) in acts and svc.rsv_get("rsv_pkg_in") == {}, acts
+    assert ("fw",) in acts and svc.rsv_get("rsv_pkg_in").get("gen") == 7, f"пакет стёрт — открыть снова нечем: {acts}"
     texts = [n.text for a in acts if a[0] == "notify" for n in a[1]]
     assert len(texts) == 1 and "зона снята" in texts[0] and "Beta" in texts[0], texts
     gw = [a for a in acts if a[:3] == ("gw", 1, "state")]

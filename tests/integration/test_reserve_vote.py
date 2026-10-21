@@ -303,8 +303,9 @@ def test_case_4_view_goes_to_the_primary_once(box):
     acts = box.hello(2, sees=True) + box.hello(1, sees=False)       # 6 → 4: основе — только 4
     views = [a[2] for a in acts if a[0] == "send" and a[1] == "view"]
     assert box.case == "4" and len(views) == 1 and views[0]["case"] == "4", views
-    names = {v["name"]: v["see"] for v in views[0]["voters"]}
-    assert names == {"NASPi": False, "Pi5": True}
+    seen = {v["slot"]: v["see"] for v in views[0]["voters"]}
+    assert seen == {1: False, 2: True}, views[0]
+    assert not [v for v in views[0]["voters"] if "name" in v], "в view основе — имена её же шлюзов"
     more = []
     for _ in range(6):
         box.advance(5)
