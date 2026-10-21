@@ -47,6 +47,8 @@ class ReserveZoneLinksMixin:
     def _free_port(self, taken: set[int]) -> int:
         from awgbot.infra import nftguard
         busy = set(nftguard.listen_ports()) | taken
+        # порты клиентских интерфейсов второй стороны: клоны займут их у хоста при переезде
+        busy |= {int(p) for p in (self.reserve_peer_state().get("ports") or []) if isinstance(p, int)}
         for _ in range(200):
             p = PORT_LO + secrets.randbelow(PORT_HI - PORT_LO)
             if p not in busy:

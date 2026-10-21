@@ -100,9 +100,14 @@ conf_check() {   # конфиг линка к резерву: только Inter
     return 0
 }
 
+zone_addr() {   # адрес стороны зоны в /30 — первый AllowedIPs пира (/32): зонды живости бота основы идут с него
+    sed -n 's/^[[:space:]]*AllowedIPs[[:space:]]*=[[:space:]]*\([0-9.]*\).*/\1/p' "$CONF" 2>/dev/null | head -n1
+}
+
 guard_write() {   # таблица nft: вход, пересылка, connmark; набор rsv_open4 — из состояния
     _open="$(state_get src | tr ',' ' ')"
     _admins="$(printf '%s' "${ADMIN_IPS:-$(state_get admins)}" | tr ',' ' ')"
+    _zone="$(zone_addr)"
     nft -f - <<EOF
 table $GUARD_TABLE
 delete table $GUARD_TABLE
@@ -140,8 +145,27 @@ $( [ -n "$_admins" ] && printf '        elements = { %s }\n' "$(ipv4_list $_admi
         iifname "$RSV_IF" ct state new ct mark set $RSV_MARK
         iifname != "$RSV_IF" ct mark $RSV_MARK ct direction reply meta mark set $RSV_MARK
     }
+    chain rsv_output {
+        type route hook output priority mangle; policy accept;
+        ct mark $RSV_MARK ct direction reply meta mark set $RSV_MARK
+    }
+$( [ -n "$_zone" ] && printf '    chain rsv_post {\n        type nat hook postrouting priority srcnat; policy accept;\n        oifname != "%s" ip saddr %s masquerade\n    }\n' "$RSV_IF" "$_zone" )
 }
 EOF
+}
+
+fwd_allow() {   # чужой файервол с политикой DROP в ip filter FORWARD (iptables): транзит линку — как обвязка шлюза
+    command -v iptables >/dev/null 2>&1 || return 0
+    iptables -w -S FORWARD 2>/dev/null | grep -q '^-P FORWARD DROP' || return 0
+    for d in -i -o; do
+        iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || iptables -w -I FORWARD 1 "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || true
+    done
+}
+fwd_disallow() {
+    command -v iptables >/dev/null 2>&1 || return 0
+    for d in -i -o; do
+        while iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null; do iptables -w -D FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || break; done
+    done
 }
 
 routes_up() {
@@ -209,11 +233,11 @@ cmd_up() {
     # адреса админов — в состояние: --reassert при загрузке и --open их не получают
     state_write open="$(state_get open)" src="$(state_get src)" admins="${ADMIN_IPS:-}"
     if [ -f "$CONF" ] && cmp -s "$1" "$CONF" && ip link show "$RSV_IF" >/dev/null 2>&1; then
-        guard_write; routes_up; ensure_unit; say "up: same"; return 0
+        guard_write; routes_up; fwd_allow; ensure_unit; say "up: same"; return 0
     fi
     install -m 0600 "$1" "$CONF"
     link_up || die "линк к резерву не поднялся"
-    guard_write; routes_up; ensure_unit
+    guard_write; routes_up; fwd_allow; ensure_unit
     [ -n "$(state_get open)" ] || state_write open=0 src= admins="${ADMIN_IPS:-}"
     say "up: ok"
 }
@@ -222,7 +246,7 @@ cmd_reassert() {
     need_root
     [ -f "$CONF" ] || { say "reassert: конфига нет"; return 0; }
     link_up || die "линк к резерву не поднялся"
-    guard_write; routes_up
+    guard_write; routes_up; fwd_allow
     say "reassert: ok"
 }
 
@@ -247,7 +271,7 @@ cmd_down() {
     need_root
     link_down
     nft delete table $GUARD_TABLE 2>/dev/null || true
-    routes_down
+    routes_down; fwd_disallow
     say "down: ok"
 }
 

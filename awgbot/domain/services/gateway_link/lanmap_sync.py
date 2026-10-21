@@ -38,7 +38,7 @@ class LanMapSyncMixin:
             if slot_policy:
                 for sid, link in sorted({(e.slot, e.link) for e in entries}):
                     try:
-                        routing.ensure_slot_policy(sid, link)
+                        routing.ensure_slot_policy(sid, link, via=self._slot_route_via(sid))
                         routing.ensure_mss_clamp(link)
                         self._lan_log_once(f"slot{sid}", "", "")
                     except routing.RoutingError as e:

@@ -16,6 +16,7 @@ veth нет): активный — по такту зондов активног
 """
 from __future__ import annotations
 
+import ipaddress
 import random
 import time
 
@@ -37,6 +38,19 @@ class ReserveRfZoneMixin:
         name = str(st.get("name") or "резерв")
         return models.Gateway(id=RF_SPARE_ID, device_id=0, link_if=RF_SPARE_IF, link_port=0,
                               link_cidr=str(st.get("rf_cidr") or ""), label=f"шлюзы «{name}»")
+
+    def _slot_route_via(self, slot_id: int) -> str:
+        """Шлюз маршрута слота: у запасного слота в зоне — адрес хоста в /30 veth;
+        у настоящих линков — пусто (p2p)."""
+        if int(slot_id) != RF_SPARE_ID:
+            return ""
+        gw = self.guest_rf_spare()
+        if gw is None or not gw.link_cidr:
+            return ""
+        try:
+            return str(next(iter(ipaddress.ip_network(gw.link_cidr, strict=False).hosts())))
+        except (ValueError, StopIteration):
+            return ""
 
     @staticmethod
     def rt_is_spare(gw) -> bool:

@@ -232,6 +232,8 @@ class ReserveInboundMixin:
                 return self._take_fail(f"зона не приняла режим serve: {e}")
             self.rsv_update("rsv_in", served=True)
             actions.append(("fw",))
+            if hasattr(self, "reserve_tg_pool_refresh_soon"):
+                self.reserve_tg_pool_refresh_soon(5)         # свежие анонсы — до первого вебхука
             if str(inn.get("kind") or "") != "button":
                 # аварийный переезд: право отвечать берёт гость сам по отметке tg_take
                 pass
@@ -353,6 +355,25 @@ class ReserveInboundMixin:
         self.rsv_update("rsv_in", released_at=timeutil.now_iso())
         return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
 
+    @staticmethod
+    def _relay_host_ip(host: str) -> str:
+        """Адрес основы для DNAT хвоста: IPv4-литерал как есть; имя — резолвится
+        сейчас (первый A); не резолвится — пусто (хвоста не будет, зона снимается)."""
+        import ipaddress
+        import socket
+        if not host:
+            return ""
+        try:
+            return str(ipaddress.IPv4Address(host))
+        except ValueError:
+            pass
+        try:
+            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_DGRAM)
+        except OSError as e:
+            log.warning("резерв: адрес основы %s для пересылки хвоста не резолвится: %s", host, e)
+            return ""
+        return str(infos[0][4][0]) if infos else ""
+
     def _tick_releasing(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone
         if inn.get("released_at"):
@@ -387,6 +408,7 @@ class ReserveInboundMixin:
                 log.info("резерв: юнит процесса открытия не остановлен: %s", e)
         peer = self.reserve_peer_state()
         host = str(peer.get("self_host") or (self.reserve_peer() or {}).get("host") or "")
+        host = self._relay_host_ip(host)                      # в правило nft — адрес: имя резолвится при загрузке таблицы
         ports = [int(p) for p in (peer.get("ports") or []) if isinstance(p, int)]
         to = f"{host}:{ports[0]}" if host and ports else ""
         until = timeutil.to_iso(timeutil.shift(timeutil.now(), settings.get_int("app.reserve.relay_max_days", 7) * 86400))

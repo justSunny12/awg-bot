@@ -73,7 +73,11 @@ class GuestCtlServer:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with contextlib.suppress(OSError):
             os.unlink(self.path)
-        self._server = await asyncio.start_unix_server(self._serve, path=self.path, limit=MAX_LINE)
+        old = os.umask(0o177)                                 # файл сокета — 0600 с создания, не после chmod
+        try:
+            self._server = await asyncio.start_unix_server(self._serve, path=self.path, limit=MAX_LINE)
+        finally:
+            os.umask(old)
         os.chmod(self.path, 0o600)
         log.info("локальный канал гостя: слушаю %s", self.path)
 

@@ -61,10 +61,18 @@ def check_text(text: str) -> None:
 
 def apply_text(text: str) -> None:
     """Проверить, записать, применить атомарно. Порядок важен: файл — источник
-    для загрузки при ребуте, и он не должен опережать проверку синтаксиса."""
+    для загрузки при ребуте, и он не должен опережать проверку синтаксиса; не
+    загрузилось в ядро — прежний файл возвращается, иначе сверка считала бы
+    «ok» по файлу, расходящемуся с ядром."""
     pkg.check_text(text)
+    prev = pkg.read_file()
     pkg.write_file(text)
-    pkg._nft(["-f", pkg.RULES_FILE])
+    try:
+        pkg._nft(["-f", pkg.RULES_FILE])
+    except pkg.GuardError:
+        if prev:
+            pkg.write_file(prev)
+        raise
 
 
 def nat_covers(subnet: str) -> bool:

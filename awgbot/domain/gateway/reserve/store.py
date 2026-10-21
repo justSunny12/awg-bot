@@ -167,6 +167,16 @@ class ReserveStoreMixin:
         return []
 
     def _reserve_sources(self) -> list[str]:
+        """Что пускать с `awgrsv` при открытой пересылке: все AllowedIPs стороны зоны
+        из конфига линка — адрес зоны (с него идут зонды живости бота основы) и
+        все подсети туннеля основы (клиентская и окно переезда профилей); конфига
+        нет — подсеть клиентов из окружения обвязки."""
+        import re
+        cur = self.reserve_section()
+        m = re.search(r"(?m)^\s*AllowedIPs\s*=\s*(.+)$", str(cur.get("conf") or ""))
+        nets = [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+        if nets:
+            return nets
         from awgbot.infra import gwguard
         try:
             net = str(gwguard.unit_env("CLIENT_SUBNET") or "").strip()

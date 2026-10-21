@@ -264,6 +264,12 @@ def _guest_forward(spec) -> list[str]:
     клиенты в интернет), вебхук после DNAT — в зону, хвост после DNAT — к
     основе; в зону с внешнего интерфейса без DNAT хода нет."""
     out = []
+    if not spec.filter and spec.guest_phase in ("taking", "serving"):
+        # NAT-only: общего «established accept» наверху нет, а ниже стоят drop на вход в
+        # зону — ответы наружным соединениям зоны пропускаются здесь
+        ifs = [i for i in (spec.guest_veth_if, spec.guest_rf_if) if i]
+        if ifs:
+            out.append(f"        oifname {nftjson.ifs(ifs)} ct state established,related accept")
     if spec.guest_veth_if and spec.guest_phase in ("taking", "serving"):
         v = nftjson.ifs([spec.guest_veth_if])
         if spec.wan_ifs:
@@ -280,7 +286,9 @@ def _guest_forward(spec) -> list[str]:
         # слот «шлюзы резерва»); ответы — по conntrack
         r = nftjson.ifs([spec.guest_rf_if])
         if spec.link_ifs:
-            out.append(f"        iifname {r} oifname {nftjson.ifs(spec.link_ifs)} accept")
+            # не к частным адресам: линк шлюза резерва и его локальная сеть — не для клиентов основы
+            nets = "{ " + ", ".join(pkg.PRIVATE4) + " }"
+            out.append(f"        iifname {r} oifname {nftjson.ifs(spec.link_ifs)} ip daddr != {nets} accept")
         out.append(f"        iifname {r} drop")
         out.append(f"        oifname {r} drop")              # в зону через этот veth — только ответы (ct выше)
     if spec.relay_to and spec.relay_udp_port:
@@ -298,10 +306,11 @@ def _guest_prerouting(spec) -> list[str]:
     if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
         ports = list(spec.relay_udp_ports) or [int(spec.relay_udp_port)]
         host = spec.relay_to.rsplit(":", 1)[0]
+        wan = f"iifname {nftjson.ifs(spec.wan_ifs)} " if spec.wan_ifs else ""   # только с внешнего интерфейса
         if len(ports) == 1:
-            rules.append(f"        udp dport {int(ports[0])} dnat ip to {spec.relay_to}")
+            rules.append(f"        {wan}udp dport {int(ports[0])} dnat ip to {spec.relay_to}")
         else:                                                 # каждый порт — на тот же порт основы
-            rules.append(f"        udp dport {pkg._ports(ports)} dnat ip to {host}")
+            rules.append(f"        {wan}udp dport {pkg._ports(ports)} dnat ip to {host}")
     if not rules:
         return []
     return ["", "    chain prerouting {", "        type nat hook prerouting priority dstnat; policy accept;",
@@ -337,6 +346,8 @@ def _wan_private_drop(spec) -> list[str]:
     # Только из туннеля клиентов и линков: прочий проходящий трафик хоста
     # (VM, резолвер сети провайдера) — не наше, в NAT-only тем более.
     src = list(dict.fromkeys([*spec.tunnel_ifs, *spec.link_ifs]))
+    if spec.guest_veth_if and spec.guest_phase in ("taking", "serving"):
+        src.append(spec.guest_veth_if)                       # бот основы в зоне — чужой код, в частную сеть провайдера ему нельзя
     if not spec.wan_ifs or not src:
         return []
     nets = "{ " + ", ".join(pkg.PRIVATE4) + " }"

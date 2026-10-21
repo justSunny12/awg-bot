@@ -24,9 +24,12 @@ def _slot_rule(slot_id: int) -> list[str]:
     return ["fwmark", f"{m}/{m}", "lookup", str(slot_table(slot_id))]
 
 
-def ensure_slot_policy(slot_id: int, iface: str) -> None:
-    """Таблица и правило слота: путь зонда резерва через ЕГО линк. Идемпотентно."""
-    base._host(["ip", "route", "replace", "default", "dev", iface, "table", str(slot_table(slot_id))])
+def ensure_slot_policy(slot_id: int, iface: str, via: str = "") -> None:
+    """Таблица и правило слота: путь зонда резерва через ЕГО линк. Идемпотентно.
+    `via` — шлюз маршрута для не-p2p интерфейса (veth запасного слота в зоне:
+    иначе на каждый адрес назначения нужна запись ARP)."""
+    base._host(["ip", "route", "replace", "default", *(["via", via] if via else []), "dev", iface,
+                "table", str(slot_table(slot_id))])
     rules = base._host(["ip", "rule", "show"], check=False, timeout=base._PROBE_TIMEOUT)
     text = rules.stdout.decode(errors="replace")
     if f"lookup {slot_table(slot_id)}" not in text:

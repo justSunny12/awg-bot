@@ -460,7 +460,7 @@ lan_iface_for() {              # $1 = подсеть a.b.c.d/n → «iface addr�
     ip -4 -o addr show 2>/dev/null | awk -v net="$1" '
         function ip2n(s, a) { split(s, a, "."); return ((a[1]*256+a[2])*256+a[3])*256+a[4] }
         BEGIN { split(net, p, "/"); h = 2^(32-(p[2]+0)); want = int(ip2n(p[1])/h) }
-        $2 != "lo" && $2 !~ /^(awg|veth|br)/ { split($4, q, "/"); if (int(ip2n(q[1])/h) == want) { print $2, q[1]; exit } }'
+        $2 != "lo" && $2 !~ /^(awg|veth|br-|docker)/ { split($4, q, "/"); if (int(ip2n(q[1])/h) == want) { print $2, q[1]; exit } }'
 }
 lan_remove() {                 # снять всё своё; личные списки — в $LAN_DUMP/restore (данные человека)
     _lan_lock=0

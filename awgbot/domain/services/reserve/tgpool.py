@@ -165,6 +165,17 @@ class ReserveTgPoolMixin:
             self.__dict__["_tg_pool_next"] = nxt = now + (60 if not data.get("announced") else 600) * random.uniform(0.6, 1.4)
         return now >= nxt
 
+    def reserve_tg_pool_refresh_soon(self, delay_s: float = 5.0, *, why: str = "") -> None:
+        """Внеплановое обновление анонсов: при переходе в serving (до вебхука) и
+        при кандидате вне кэша — не чаще раза в 30 минут."""
+        now = time.monotonic()
+        if why == "unknown":
+            last = float(self.__dict__.get("_tg_pool_unknown_at") or 0)
+            if last and now - last < 1800:
+                return
+            self.__dict__["_tg_pool_unknown_at"] = now
+        self.__dict__["_tg_pool_next"] = now + delay_s * random.uniform(0.6, 1.4)
+
     def reserve_tg_pool_tick(self, now: float | None = None) -> list[Notification]:
         """Обновить анонсы AS Telegram, проверить ядро, снять неанонсируемое из
         выученного; Т-РУ25 один раз на расхождение."""
@@ -266,6 +277,7 @@ class ReserveTgPoolMixin:
                     best, best_asn = p, asn
             if not best:
                 log.info("пул Telegram: %d SYN с %s — адрес вне анонсов AS Telegram, не учу", int(hits), addr)
+                self.reserve_tg_pool_refresh_soon(60, why="unknown")   # анонс мог появиться после кэша
                 continue
             if ipaddress.ip_network(best).prefixlen < LEARNED_MIN_PREFIX:
                 log.info("пул Telegram: анонс %s шире /%d — не учу", best, LEARNED_MIN_PREFIX)

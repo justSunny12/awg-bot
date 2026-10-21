@@ -104,7 +104,15 @@ def remove() -> str:
 
 
 def is_open() -> bool:
-    return str(status().get("open") or "0") == "1"
+    """Открыта ли пересылка — по файлу состояния скрипта (его пишет --open/--close,
+    0644 без секретов): такт зовёт это каждые 5 с, скрипт ради строки не нужен."""
+    try:
+        for line in STATE_PATH.read_text(encoding="utf-8").splitlines():
+            if line.startswith("open="):
+                return line[5:].strip() == "1"
+    except OSError:
+        pass
+    return False
 
 
 def counters() -> tuple[int, int] | None:
