@@ -79,6 +79,9 @@ class ReserveAwayMixin:
         """Причина для строки главной: имя резерва в строке уже есть, сторона — «у тебя»."""
         why = why.replace("здесь выключено", "у тебя выключено").replace(f"у «{name}» выключено", "выключено")
         why = why.replace(f"у «{name}»: ", "").replace("здесь: ", "у тебя: ")
+        why = why.replace(f"у «{name}» v", "v").replace(", здесь v", ", у тебя v")          # версии: «v4.0.0, у тебя v4.1.0 — …»
+        if why.startswith(f"«{name}» "):                      # «„Beta“ не читает формат…», «… не умеет принимать…»
+            why = why[len(f"«{name}» "):]
         return why.replace("у резерва устарели", "устарели")
 
     def reserve_main_line(self) -> str:
