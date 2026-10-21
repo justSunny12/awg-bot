@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 
 from awgbot.core import config, settings
@@ -167,6 +168,8 @@ class ReserveOutboundMixin:
                     self.reserve_dns_switch(own)
             except ServiceError as e:
                 record_back = str(e)
+        elif out.get("record_set_at"):
+            record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
         self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
@@ -273,6 +276,12 @@ class ReserveOutboundMixin:
                     self.rsv_update("rsv_out", record_error=str(e))
                     actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                             text=rn.record_not_changed(self.reserve_dns_name(), str(e), target))]))
+            elif not (out.get("state") == "leaving" and out.get("msg")):
+                # запись меняет человек, а живого сообщения хода с просьбой нет (возврат; переезд по
+                # просьбе резерва) — просьба отдельным уведомлением, со звуком
+                actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                                        text=rn.record_manual_needed(self.reserve_dns_name(), target,
+                                                                                     back=out.get("state") == "returning"))]))
             self.rsv_update("rsv_out", record_set_at=timeutil.now_iso())
             actions.append(("live",))
         if not livestep.mono_due(out.get("record_probe"), time.monotonic(), 20):
@@ -398,7 +407,7 @@ class ReserveOutboundMixin:
         запись указывает на меня (проба не чаще раза в 2 мин), а резерв говорит
         `in = idle` (или пары нет на связи дольше STUCK_PAIR_S). Возврат оборвался
         после передачи бота — снять вебхук и поллить самому."""
-        if not livestep.mono_due(out.get("stuck_probe"), now, 120):
+        if not livestep.mono_due(out.get("stuck_probe"), now, 120 * random.uniform(0.6, 1.4)):
             return False
         self.rsv_update("rsv_out", stuck_probe=now)
         own = self.reserve_own_ip()
@@ -449,8 +458,9 @@ class ReserveOutboundMixin:
         return str(out.get("state") or "") == "away" and bool(out.get("can_return"))
 
     def reserve_return_dialog_data(self) -> dict:
-        """Т-Р11б у основы: имя резерва, запись и свой адрес."""
-        return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "own": self.reserve_own_ip()}
+        """Т-Р11б у основы: имя резерва, запись и свой адрес; `manual` — запись меняет человек."""
+        return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "own": self.reserve_own_ip(),
+                "manual": not self.reserve_dns_automatic()}
 
     def reserve_return_check(self) -> str:
         if self.reserve_out() != "away":
@@ -655,17 +665,25 @@ class ReserveOutboundMixin:
         if snap_gen and (not gen or not os.path.exists(os.path.join(base_dir, f"base-{gen}.db"))):
             gen = snap_gen
         base = os.path.join(base_dir, f"base-{gen}.db")
-        if not os.path.exists(base):
-            raise ServiceError(f"нет снимка base-{gen}.db")
+        no_base = not os.path.exists(base)
+        if no_base:
+            # снимка нет (основа восстановлена из копии, снимки в неё не входят): база слияния —
+            # копия живой базы, удалённое на резерве не выводится, строки реплики — главнее
+            log.warning("резерв: снимка base-%s.db нет — слияние без удалений по копии живой базы", gen)
+            os.makedirs(base_dir, mode=0o700, exist_ok=True)
+            base = os.path.join(base_dir, f"base-{gen}.fallback.db")
+            self._copy_db(self._db_path(), base)
         rep = os.path.join(base_dir, f"rep-{gen}.db")
         with open(rep, "wb") as f:
             f.write(bytes.fromhex(str(snap["db"])))
         os.chmod(rep, 0o600)
         try:
-            removed = self._pubkeys_removed(base, rep)
+            removed = [] if no_base else self._pubkeys_removed(base, rep)
             before = self._merge_watch_snapshot(base)
-            rpt = merge_mod.merge(self._db_path(), base, rep, admin_tg=int(config.ADMIN_ID))
+            rpt = merge_mod.merge(self._db_path(), base, rep, admin_tg=int(config.ADMIN_ID), no_delete=no_base)
             warnings = self._merge_watch_lines(before)
+            if no_base:
+                warnings.insert(0, "снимка для слияния не было — удалённое на резерве не выводилось")
             # пиры — до сверки: устройства с резерва должны попасть в конфиг раньше,
             # чем сверка посчитает их пропавшими
             added = 0
@@ -687,18 +705,35 @@ class ReserveOutboundMixin:
             except Exception as e:                            # noqa: BLE001
                 log.warning("резерв: блокировки после слияния: %s", e)
             self._return_traffic(base, rep)
+            appended = getattr(rpt, "appended", {}) or {}
             report = {"clients": int(rpt.inserted.get("clients", 0)), "devices": int(rpt.inserted.get("devices", 0)),
                       "extensions": int(rpt.updated.get("client_subscription", 0)),
-                      "blocks": int(rpt.updated.get("client_block", 0) + rpt.updated.get("devices", 0) * 0),
+                      "blocks": int(appended.get("client_block_histories", 0)),   # записи журнала блокировок с резерва
                       "peers_added": added, "peers_removed": len(removed),
                       "lost": [self._lost_line(x) for x in rpt.lost[:5]] + warnings[:5]}
             log.info("резерв: слияние: %s", json.dumps(report, ensure_ascii=False))
             return report
         finally:
+            for p in (rep, base if no_base else ""):
+                try:
+                    if p:
+                        os.unlink(p)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _copy_db(src: str, dst: str) -> None:
+        import sqlite3
+        s_con = sqlite3.connect(src)
+        try:
+            d_con = sqlite3.connect(dst)
             try:
-                os.unlink(rep)
-            except OSError:
-                pass
+                s_con.backup(d_con)
+            finally:
+                d_con.close()
+        finally:
+            s_con.close()
+        os.chmod(dst, 0o600)
 
     @staticmethod
     def _merge_watch_snapshot(base: str) -> dict:

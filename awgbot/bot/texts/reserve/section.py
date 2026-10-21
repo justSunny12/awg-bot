@@ -269,7 +269,8 @@ def return_dialog(d: dict) -> str:
     name = _n(d.get("name") or "резерв")
     rec = ""
     if d.get("record") and d.get("own"):
-        rec = f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own'])}</code>"
+        rec = (f"; смени у провайдера запись <code>{_e(d['record'])}</code> на <code>{_e(d['own'])}</code> сам — бот увидит смену"
+               if d.get("manual") else f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own'])}</code>")
     return (f"↩️ <b>Вернуть клиентов с {name}?</b>\n\n"
             f"Сервер в строю. Бот вернётся сюда, всё, что изменилось на {name}, — тоже{rec}. Устройства, "
             f"которые ещё ходят через {name}, он будет пересылать сюда, пока они не переподключатся, — у каждого "
@@ -316,10 +317,18 @@ def dns_text(d: dict) -> str:
                 "«🖥 Сервер AWG» — без записи переезд невозможен")
     lines = [f"🌐 <b>Запись DNS</b> · <code>{_e(name)}</code>", ""]
     cur = d.get("current") or ""
+    addrs = [a for a in (d.get("addrs") or []) if a]
     if cur:
         who = "этот сервер" if d.get("points_here") else "не этот сервер"
-        lines.append(f"Сейчас: <code>{_e(cur)}</code> — {who}" + (f" · проверено в {_e(_when(d.get('checked_at') or ''))}"
-                                                                   if d.get("checked_at") else ""))
+        shown = ", ".join(f"<code>{_e(a)}</code>" for a in addrs) if len(addrs) > 1 else f"<code>{_e(cur)}</code>"
+        lines.append(f"Сейчас: {shown} — {who}" + (f" · проверено в {_e(_when(d.get('checked_at') or ''))}"
+                                                  if d.get("checked_at") else ""))
+        if len(addrs) > 1:
+            lines.append(f"⚠️ У записи {len(addrs)} адреса — при переезде часть клиентов останется на старом; оставь одну A-запись")
+        ttl = int(d.get("ttl") or 0)
+        if ttl:
+            lines.append(f"TTL: {ttl} с" + (f" — ⚠️ клиенты перейдут на новый адрес не раньше чем через {ttl // 60} мин; "
+                                           f"поставь ≤ {int(d.get('ttl_warn') or 300)} с" if ttl > int(d.get("ttl_warn") or 300) else ""))
     else:
         lines.append("Сейчас: не проверена — «🧪 Проверить»")
     prov = d.get("provider_label") or "вручную"

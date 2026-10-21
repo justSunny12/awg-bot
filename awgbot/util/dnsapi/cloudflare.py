@@ -43,6 +43,8 @@ def _record(cfg: dict) -> dict:
     res = _call(cfg, "GET", f"/zones/{zid}/dns_records?type=A&name={cfg.get('name')}").get("result") or []
     if not res:
         raise DnsError(f"Cloudflare: A-записи {cfg.get('name')} нет")
+    if len(res) > 1:
+        raise DnsError(f"Cloudflare: у {cfg.get('name')} несколько A-записей ({len(res)}) — оставь одну")
     rec = dict(res[0])
     rec["_zone"] = zid
     return rec

@@ -160,6 +160,23 @@ def record_not_changed(name: str, reason: str, ip: str) -> str:
             f"<code>{_e(ip)}</code>")
 
 
+def record_manual_needed(name: str, ip: str, back: bool = False) -> str:
+    """Запись меняет человек: просьба сменить её — при возврате и при переезде без живого сообщения."""
+    what = "клиенты возвращаются" if back else "клиенты переезжают"
+    return f"✏️ {what.capitalize()}: смени у провайдера A-запись <code>{_e(name)}</code> на <code>{_e(ip)}</code> — бот увидит смену сам"
+
+
+def record_missing(name: str) -> str:
+    """Записи нет у авторитетного сервера — клиенты не резолвят имя."""
+    return f"🚨 Записи <code>{_e(name)}</code> у авторитетного сервера нет — клиенты не находят сервер; заведи A-запись у провайдера"
+
+
+def record_multi(name: str, addrs: list) -> str:
+    """У записи несколько адресов — часть клиентов уходит мимо."""
+    return (f"⚠️ У записи <code>{_e(name)}</code> несколько адресов: {', '.join(f'<code>{_e(a)}</code>' for a in addrs)} — "
+            "часть клиентов уходит не сюда; оставь одну A-запись")
+
+
 def record_foreign(name: str, ip: str) -> str:
     """Т-РУ16: запись указывает не сюда, переезда не было."""
     return (f"🚨 Запись <code>{_e(name)}</code> указывает на <code>{_e(ip)}</code>, а не на этот сервер, — клиенты "

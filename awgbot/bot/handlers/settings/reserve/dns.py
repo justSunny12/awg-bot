@@ -54,7 +54,8 @@ async def dns_token_ask(cb: CallbackQuery, services, state: FSMContext, **_):
     if d.get("provider") == "manual":
         await cb.answer("Провайдер «вручную» — токен не нужен", show_alert=True)
         return
-    zone = ".".join(str(d.get("name") or "").split(".")[-2:])
+    labels = str(d.get("name") or "").split(".")
+    zone = ".".join(labels[-3:]) if len(labels) >= 3 and len(labels[-2]) <= 3 else ".".join(labels[-2:])   # vpn.example.co.uk → example.co.uk
     await state.set_state(ReserveDnsToken.value)
     await edit(cb, st_t.dns_token_prompt(str(d.get("provider") or ""), zone), rkb.dns_token_prompt())
     await cb.answer()

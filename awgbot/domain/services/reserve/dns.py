@@ -24,6 +24,7 @@ from .state import _LOCK
 PROVIDERS: tuple[str, ...] = ("manual", "cloudflare", "duckdns", "dyndns2")
 PROVIDER_LABELS = {"manual": "вручную", "cloudflare": "Cloudflare", "duckdns": "DuckDNS", "dyndns2": "DynDNS2"}
 RECORD_WATCH_SECONDS = 120
+TTL_WARN_S = 300                  # TTL записи выше — предупреждение: клиенты переходят медленно
 _OWN_IP_TTL = 600
 
 
@@ -56,7 +57,10 @@ class ReserveDnsMixin:
         if provider not in PROVIDERS:
             raise ServiceError("Неизвестный провайдер")
         with _LOCK:
-            d = self.rsv_update("rsv_dns", provider=provider, checked_at="", current="", check_ok=None)
+            fields = {"provider": provider, "checked_at": "", "current": "", "check_ok": None}
+            if provider != self.reserve_dns_provider():
+                fields.update(token="", user="", server="", token_at="")   # токен прежнего провайдера — не этому
+            d = self.rsv_update("rsv_dns", **fields)
         self.reserve_pkg_mark()
         return d
 
@@ -72,8 +76,9 @@ class ReserveDnsMixin:
             u = urlsplit(text)
             if u.scheme != "https" or not u.hostname or not u.username:
                 raise ServiceError("Для DynDNS2 нужна строка вида https://логин:пароль@сервер/nic/update")
+            # в server — только схема и хост[:порт]: путь /nic/update дописывает сам провайдер (dyndns2._url)
             fields.update(user=u.username or "", token=u.password or "",
-                          server=f"{u.scheme}://{u.hostname}{(':' + str(u.port)) if u.port else ''}{u.path or '/nic/update'}")
+                          server=f"{u.scheme}://{u.hostname}{(':' + str(u.port)) if u.port else ''}")
         with _LOCK:
             d = self.rsv_update("rsv_dns", **fields)
         self.reserve_pkg_mark()
@@ -91,25 +96,35 @@ class ReserveDnsMixin:
         name = self.reserve_dns_name()
         if not name:
             return {"ok": False, "text": "Адрес для клиентов — IP, записи DNS у него нет", "ip": ""}
+        busy = self.reserve_busy() if hasattr(self, "reserve_busy") else ""
+        if busy:
+            # у DuckDNS и DynDNS2 проверка — это запись: посреди переезда она вернула бы прежний адрес
+            return {"ok": False, "text": f"Сейчас {busy} — проверка подождёт", "ip": ""}
         d = self.reserve_dns()
-        ip, auth, why = "", [], ""
+        ip, auth, ttl, why = "", [], 0, ""
         try:
-            auth = dnsapi.read_authoritative(name)
+            auth, ttl = dnsapi.read_authoritative_ttl(name)
         except dnsapi.DnsError as e:
             why = str(e)
+        if not auth:
+            self.rsv_update("rsv_dns", checked_at=timeutil.now_iso(), check_ok=False, check_why=(why or "записи нет")[:160])
+            return {"ok": False, "text": f"Запись не прочитана: {why or 'у авторитетного сервера записи нет'}", "ip": ""}
         if self.reserve_dns_provider() != "manual":
             try:
                 ip = dnsapi.provider_for(d).check(d)
             except dnsapi.DnsError as e:
                 self.rsv_update("rsv_dns", checked_at=timeutil.now_iso(), check_ok=False, check_why=str(e)[:160])
-                return {"ok": False, "text": f"Токен не даёт править запись: {e}", "ip": auth[0] if auth else ""}
-        cur = ip or (auth[0] if auth else "")
-        if not cur:
-            self.rsv_update("rsv_dns", checked_at=timeutil.now_iso(), check_ok=False, check_why=why[:160])
-            return {"ok": False, "text": f"Запись не прочитана: {why or 'записи нет'}", "ip": ""}
-        self.rsv_update("rsv_dns", checked_at=timeutil.now_iso(), check_ok=True, current=cur, check_why="")
-        return {"ok": True, "text": f"Запись {name} доступна для правки: сейчас {cur}" if ip else f"Запись {name}: сейчас {cur}",
-                "ip": cur}
+                return {"ok": False, "text": f"Токен не даёт править запись: {e}", "ip": auth[0]}
+        cur = ip or auth[0]
+        self.rsv_update("rsv_dns", checked_at=timeutil.now_iso(), check_ok=True, current=cur, check_why="",
+                        addrs=list(auth), ttl=int(ttl))
+        warn = ""
+        if len(auth) > 1:
+            warn = f" ⚠️ у записи {len(auth)} адреса: {', '.join(auth)} — оставь одну A-запись"
+        elif ttl > TTL_WARN_S:
+            warn = f" ⚠️ TTL {ttl} с — часть клиентов перейдёт на новый адрес не раньше чем через {ttl // 60} мин, лучше ≤ {TTL_WARN_S}"
+        head = f"Запись {name} доступна для правки: сейчас {cur}" if ip else f"Запись {name}: сейчас {cur}"
+        return {"ok": not warn, "text": head + warn, "ip": cur, "ttl": int(ttl), "addrs": list(auth)}
 
     def reserve_dns_switch(self, ip: str) -> None:
         """Сменить запись на `ip` через API; «вручную» и отказ — ServiceError."""
@@ -131,11 +146,12 @@ class ReserveDnsMixin:
         if not name or not ip:
             return None
         try:
-            addrs = dnsapi.read_authoritative(name)
+            addrs, ttl = dnsapi.read_authoritative_ttl(name)
         except dnsapi.DnsError:
             return None
-        self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso())
-        return ip in addrs
+        self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
+                        ttl=int(ttl))
+        return addrs == [ip]                                  # вторая A-запись увела бы половину клиентов мимо
 
     def reserve_own_ip(self) -> str:
         """Собственный публичный адрес: `self_host` (или адрес для клиентов)
@@ -177,7 +193,8 @@ class ReserveDnsMixin:
                 "provider_label": PROVIDER_LABELS.get(self.reserve_dns_provider(), "вручную"),
                 "has_token": bool(d.get("token")), "current": cur, "own_ip": own, "points_here": bool(cur and cur == own),
                 "checked_at": str(d.get("checked_at") or ""), "check_ok": d.get("check_ok"),
-                "check_why": str(d.get("check_why") or "")}
+                "check_why": str(d.get("check_why") or ""), "ttl": int(d.get("ttl") or 0),
+                "addrs": [str(a) for a in (d.get("addrs") or [])], "ttl_warn": TTL_WARN_S}
 
     # ── надзор ───────────────────────────────────────────────────────────────
     def reserve_record_watch_tick(self) -> list[Notification]:
@@ -194,23 +211,38 @@ class ReserveDnsMixin:
         if self.reserve_away() or self.reserve_out() != "home" or self.reserve_poll() == "away":
             return []                                         # право отвечать у вебхука резерва — переезд был
         own = self.reserve_own_ip()
+        name = self.reserve_dns_name()
+        from awgbot.domain.notices import reserve as rn
         try:
-            addrs = dnsapi.read_authoritative(self.reserve_dns_name())
+            addrs, ttl = dnsapi.read_authoritative_ttl(name)
         except dnsapi.DnsError:
             return []
-        if not addrs or not own:
+        if not own:
             return []
-        self.rsv_update("rsv_dns", current=addrs[0], checked_at=timeutil.now_iso())
-        if own in addrs:
+        self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
+                        ttl=int(ttl))
+        if not addrs:                                         # записи нет вовсе — клиенты не резолвят имя
+            if w.get("told") == "missing":
+                return []
+            self.rsv_update("rsv_record_watch", told="missing", told_at=timeutil.now_iso())
+            log.warning("резерв: записи %s у авторитетного сервера нет", name)
+            return [Notification(tg_id=int(config.ADMIN_ID), text=rn.record_missing(name), force_sound=True)]
+        if addrs == [own]:
             if w.get("told"):
                 self.rsv_update("rsv_record_watch", told="")
             return []
+        if own in addrs:                                      # свой адрес среди нескольких: вторая запись чужая
+            key = "multi:" + ",".join(addrs)
+            if w.get("told") == key:
+                return []
+            self.rsv_update("rsv_record_watch", told=key, told_at=timeutil.now_iso())
+            log.warning("резерв: у записи %s несколько адресов: %s", name, ", ".join(addrs))
+            return [Notification(tg_id=int(config.ADMIN_ID), text=rn.record_multi(name, addrs), force_sound=True)]
         if w.get("told") == addrs[0]:
             return []
         self.rsv_update("rsv_record_watch", told=addrs[0], told_at=timeutil.now_iso())
-        from awgbot.domain.notices import reserve as rn
-        log.warning("резерв: запись %s указывает на %s, а не сюда — переезда не было", self.reserve_dns_name(), addrs[0])
-        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.record_foreign(self.reserve_dns_name(), addrs[0]),
+        log.warning("резерв: запись %s указывает на %s, а не сюда — переезда не было", name, addrs[0])
+        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.record_foreign(name, addrs[0]),
                              force_sound=True, action=("rsv_record_back", 0))]
 
     def reserve_record_return(self) -> str:

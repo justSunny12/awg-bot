@@ -128,9 +128,9 @@ def _read_name(msg: bytes, off: int) -> tuple[str, int]:
     return ".".join(labels), end
 
 
-def query(server: str, name: str, qtype: int, timeout: float = TIMEOUT) -> list[tuple[str, int, bytes, bytes, int]]:
+def query(server: str, name: str, qtype: int, timeout: float = TIMEOUT) -> list[tuple[str, int, bytes, bytes, int, int]]:
     """Один UDP-запрос: список записей (имя, тип, rdata, сообщение, смещение
-    rdata в сообщении) из ответа и раздела authority. Нет ответа — DnsError."""
+    rdata в сообщении, TTL) из ответа и раздела authority. Нет ответа — DnsError."""
     qid = random.randrange(65536)
     msg = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0) + _qname(name) + struct.pack(">HH", qtype, 1)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -153,7 +153,7 @@ def query(server: str, name: str, qtype: int, timeout: float = TIMEOUT) -> list[
         raise DnsError(f"сервер DNS {server} ответил обрывком") from e
 
 
-def _records(data: bytes, qd: int, n: int) -> list[tuple[str, int, bytes, bytes, int]]:
+def _records(data: bytes, qd: int, n: int) -> list[tuple[str, int, bytes, bytes, int, int]]:
     off = 12
     for _ in range(qd):
         _, off = _read_name(data, off)
@@ -161,11 +161,11 @@ def _records(data: bytes, qd: int, n: int) -> list[tuple[str, int, bytes, bytes,
     out = []
     for _ in range(n):
         nm, off = _read_name(data, off)
-        rtype, _, _ttl, rdlen = struct.unpack(">HHIH", data[off:off + 10])
+        rtype, _, ttl, rdlen = struct.unpack(">HHIH", data[off:off + 10])
         off += 10
         if off + rdlen > len(data):
             raise IndexError("rdata за концом ответа")
-        out.append((nm, rtype, data[off:off + rdlen], data, off))
+        out.append((nm, rtype, data[off:off + rdlen], data, off, int(ttl)))
         off += rdlen
     return out
 
@@ -183,7 +183,7 @@ def _ns_of(name: str, timeout: float) -> list[str]:
                 recs = query(srv, zone, 2, timeout)
             except DnsError:
                 continue
-            names = [_read_name(msg, at)[0] for nm, t, rdata, msg, at in recs if t == 2]
+            names = [_read_name(msg, at)[0] for nm, t, rdata, msg, at, _ttl in recs if t == 2]
             if names:
                 return names
             break
@@ -201,6 +201,12 @@ def _system_resolvers() -> list[str]:
 def read_authoritative(name: str, timeout: float = TIMEOUT) -> list[str]:
     """A-адреса имени у авторитетного сервера зоны — факт записи без кэшей.
     Пустой список — записи нет; недоступность — DnsError."""
+    return read_authoritative_ttl(name, timeout)[0]
+
+
+def read_authoritative_ttl(name: str, timeout: float = TIMEOUT) -> tuple[list[str], int]:
+    """То же, с TTL A-записи (наименьший из ответа; 0 — записей нет): по нему
+    бот предупреждает админа и выдерживает паузу перед «переподключи VPN»."""
     last: DnsError | None = None
     for ns in _ns_of(name, timeout):
         for addr in read_system(ns, timeout)[:2]:
@@ -209,7 +215,9 @@ def read_authoritative(name: str, timeout: float = TIMEOUT) -> list[str]:
             except DnsError as e:
                 last = e
                 continue
-            return sorted({str(_IPV4(rdata)) for nm, t, rdata, _m, _a in recs if t == 1 and len(rdata) == 4})
+            a_recs = [(rdata, ttl) for nm, t, rdata, _m, _a, ttl in recs if t == 1 and len(rdata) == 4]
+            addrs = sorted({str(_IPV4(rdata)) for rdata, _t in a_recs})
+            return addrs, (min(ttl for _r, ttl in a_recs) if a_recs else 0)
     raise last or DnsError(f"авторитетные серверы {name} не ответили")
 
 

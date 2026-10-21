@@ -180,7 +180,7 @@ def _strip(con) -> None:
     if "devices" in have and any(r[1] == "private_key" for r in con.execute("PRAGMA table_info(devices)")):
         con.execute("UPDATE devices SET private_key = NULL")
     # локальные сети и подписи шлюзов основы, строка пары (с админом резерва) — не резерву
-    for sql in ("UPDATE gateways SET lan_subnets = '[]', label = '', lan_mode = 0",
+    for sql in ("UPDATE gateways SET lan_subnets = '', label = '', lan_mode = 0",
                 "DELETE FROM reserve_peer"):
         try:
             con.execute(sql)

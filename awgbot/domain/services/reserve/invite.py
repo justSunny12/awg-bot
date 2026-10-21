@@ -108,6 +108,8 @@ class ReserveInviteMixin:
         own = str(settings.get("app.network.self_host", "") or "").strip()
         if own:
             return own
+        if hasattr(self, "reserve_out") and self.reserve_out() != "home":
+            return ""                                         # запись сейчас может указывать на резерв — не фиксировать его адрес как свой
         host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         try:
             ipaddress.ip_address(host)

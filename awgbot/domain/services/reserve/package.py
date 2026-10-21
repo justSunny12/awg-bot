@@ -92,8 +92,14 @@ class ReservePackageMixin:
         try:
             built = self.reserve_pkg_build(force=by_event)
         except Exception as e:                            # noqa: BLE001
-            log.warning("резерв: пакет не собрался: %s", e)
+            if str(e) != str(self.__dict__.get("_rsv_pkg_err") or ""):   # не каждые 5 с
+                log.warning("резерв: пакет не собрался: %s", e)
+                self.__dict__["_rsv_pkg_err"] = str(e)
+                self.rsv_update("rsv_view", pkg_error=str(e)[:160])
             return None
+        self.__dict__.pop("_rsv_pkg_err", None)
+        if self.rsv_get("rsv_view").get("pkg_error"):
+            self.rsv_update("rsv_view", pkg_error="")
         if built is None:
             return None
         self.__dict__["_rsv_pkg_sending"] = {"gen": built["gen"], "at": time.monotonic()}
@@ -278,6 +284,8 @@ class ReservePackageMixin:
     def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, share: str, m_gen: int) -> tuple[str, str]:
         """Целый пакет от основы: проверка, запись на диск, доля. Возвращает
         (ответ: pkg_ok | pkg_bad, причина)."""
+        if self.reserve_in() in ("taking", "serving", "releasing"):
+            return "pkg_bad", "зона занята"                  # гость стартовал с прежнего пакета — новый сбил бы поколение слияния
         try:
             head = seal.header(blob)
         except seal.PackageError as e:

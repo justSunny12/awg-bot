@@ -244,6 +244,18 @@ class ReserveGuestMixin:
         meta = rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json")
         if not isinstance(snap, dict) or str(snap.get("at") or "") <= str(meta.get("db_at") or ""):
             return False
+        # живая база в хранилище новее снимка (перезапуск гостя юнитом, не возврат) — снимок
+        # откатил бы правки последних секунд; сравнение по времени записи файла базы
+        try:
+            from datetime import datetime, timezone
+            db_mtime = datetime.fromtimestamp(os.path.getmtime(str(config.DB_PATH)), tz=timezone.utc)
+            snap_at = timeutil.parse_iso(str(snap.get("at") or ""))
+            older = snap_at < db_mtime
+        except (OSError, ValueError, TypeError):
+            older = False
+        if older and str(meta.get("db_at") or ""):
+            log.info("гость: rep.bin от %s старее живой базы — не подхватываю", snap.get("at"))
+            return False
         try:
             db_bytes = bytes.fromhex(str(snap.get("db") or ""))
         except ValueError:

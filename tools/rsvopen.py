@@ -249,7 +249,8 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, e
     from awgbot.util import timeutil
     rsvzone.write_private(run / "pkg.json", json.dumps({"pkg_gen": int(data.get("_pkg_gen") or 0),
                                                         "opened_at": timeutil.now_iso(),
-                                                        "db_at": str(data.get("_db_at") or "")}))
+                                                        "db_at": str(data.get("_db_at") or ""),
+                                                        "ttl": int(data.get("_ttl") or 0)}))
     key_p, crt_p = _make_cert(str(data.get("self_host") or ""), str(run))
     webhook = {"port": int(data.get("webhook_port") or 0), "path": secrets.token_urlsafe(24),
                "secret": secrets.token_urlsafe(32), "key": key_p, "cert": crt_p,
@@ -318,6 +319,7 @@ def run(data: dict) -> int:
         if m and not dns:
             dns = seal.open_dns(blob, m) or {}
         m = None                                              # M нужен был только для K и конверта DNS
+        data["_ttl"] = int((dns or {}).get("ttl") or 0)      # TTL записи — гостю: пауза перед «переподключи VPN»
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
         return _fail(str(e))
     iface = vpn["ifaces"][0]

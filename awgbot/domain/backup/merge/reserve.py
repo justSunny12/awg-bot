@@ -86,8 +86,11 @@ def _counter(base, cur, rep) -> tuple[int, int | None]:
     return c + (r - b), None
 
 
-def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0) -> Report:
-    """Слить реплику в живую базу основы на месте. Бот основы — остановлен."""
+def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delete: bool = False) -> Report:
+    """Слить реплику в живую базу основы на месте. Бот основы — остановлен.
+    `no_delete` — база не настоящий снимок (его нет: основа восстановлена из
+    копии), удалённое на резерве не выводится, строки только добавляются и
+    обновляются."""
     rpt = Report()
     con = sqlite3.connect(cur_db)
     con.row_factory = sqlite3.Row
@@ -100,10 +103,10 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0) -> Repor
         try:
             id_map: dict[str, dict[int, int]] = {"clients": {}, "devices": {}}
             for table in ("clients", "devices"):
-                _merge_table(con, table, rpt, id_map)
+                _merge_table(con, table, rpt, id_map, no_delete)
             for table in P.TABLES:
                 if table not in ("clients", "devices"):
-                    _merge_table(con, table, rpt, id_map)
+                    _merge_table(con, table, rpt, id_map, no_delete)
             _merge_state(con, rpt)
             for table in P.TABLE_REP:
                 _replace_table(con, table, rpt)
@@ -132,7 +135,7 @@ def _common_cols(con, table: str, schema_a: str, schema_b: str) -> list[str]:
     return [c for c in _cols(con, table, "main") if c in a and c in b]
 
 
-def _merge_table(con, table: str, rpt: Report, id_map: dict) -> None:
+def _merge_table(con, table: str, rpt: Report, id_map: dict, no_delete: bool = False) -> None:
     rules = P.columns(table)
     key = P.key_of(table)
     cols = [c for c in _common_cols(con, table, "base", "rep") if c in rules]
@@ -145,6 +148,8 @@ def _merge_table(con, table: str, rpt: Report, id_map: dict) -> None:
     # сначала удалённое на резерве: освобождённые им уникальные значения
     # (адрес, tg_id) могли занять новые строки резерва — они вставляются ниже
     for k in base_rows:
+        if no_delete:
+            break                                         # база — не снимок: «удалено на резерве» не выводится
         if k not in rep_rows and k in cur_rows:
             _delete_row(con, table, key, k, rpt)
             cur_rows.pop(k, None)
@@ -324,6 +329,10 @@ def _append_table(con, table: str, rpt: Report, id_map: dict) -> None:
     if not cols:
         return
     rows = con.execute(f"SELECT {','.join(cols)} FROM rep.{table}").fetchall()
+    # архив месяца обе стороны могли закрыть сами (граница месяца в away): строка за тот же
+    # месяц прибавляется к существующей, а не дописывается второй
+    monthly_key = {"traffic_monthly": ("device_id", "month"), "server_traffic_monthly": ("month",)}.get(table)
+    counters = ("rx", "tx", "rf_rx", "rf_tx")
     n = 0
     for r in rows:
         vals = []
@@ -334,6 +343,17 @@ def _append_table(con, table: str, rpt: Report, id_map: dict) -> None:
             if c in ("device_id",) and v is not None and int(v) in id_map.get("devices", {}):
                 v = id_map["devices"][int(v)]
             vals.append(v)
+        if monthly_key and all(k in cols for k in monthly_key):
+            row = dict(zip(cols, vals))
+            where = " AND ".join(f"{k} = ?" for k in monthly_key)
+            hit = con.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in monthly_key]).fetchone()
+            if hit is not None:
+                add = [c for c in counters if c in cols]
+                if add:
+                    con.execute(f"UPDATE {table} SET " + ", ".join(f"{c} = {c} + ?" for c in add) + " WHERE id = ?",
+                                [int(row.get(c) or 0) for c in add] + [hit[0]])
+                n += 1
+                continue
         con.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", vals)
         n += 1
     if n:

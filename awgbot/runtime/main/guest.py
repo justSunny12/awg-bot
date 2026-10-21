@@ -101,7 +101,8 @@ async def run_guest() -> None:
                 tg_set.set()
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
                 await ctl.send("tg_taken")
-                notify_at["t"] = asyncio.get_running_loop().time() + MOVE_NOTIFY_DELAY_S
+                ttl = int(rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json").get("ttl") or 0)
+                notify_at["t"] = asyncio.get_running_loop().time() + max(MOVE_NOTIFY_DELAY_S, ttl)   # не раньше TTL записи
         if tg_set.is_set() and not ctl.tg_acked.is_set() and ctl.connected():
             await ctl.send("tg_taken")                    # канал мог быть не подключён в момент вебхука — повтор до ack
         if tg_set.is_set() and notify_at["t"] and asyncio.get_running_loop().time() >= notify_at["t"]:
@@ -145,6 +146,12 @@ async def run_guest() -> None:
             log.warning("гость: финальная реплика не ушла: %s", e)
     finally:
         log.info("гость: останавливаюсь…")
+        if not ctl.stop_req.is_set():
+            # остановка не по команде (сигнал юнита, перезапуск): последние правки — в rep.bin
+            try:
+                await asyncio.to_thread(services.guest_snapshot_tick, True)
+            except Exception as e:                       # noqa: BLE001
+                log.info("гость: финальный снимок при остановке: %s", e)
         scheduler.shutdown(wait=False)
         if wh is not None:
             await wh.stop()

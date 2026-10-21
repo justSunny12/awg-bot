@@ -21,6 +21,8 @@ def _url(cfg: dict) -> str:
         raise DnsError("DynDNS2: не задан сервер обновления")
     if "://" not in server:
         server = "https://" + server
+    if server.endswith("/nic/update"):                       # записи прежних выпусков хранили путь в server
+        server = server[:-len("/nic/update")]
     return f"{server}/nic/update"
 
 
