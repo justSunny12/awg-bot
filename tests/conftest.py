@@ -615,6 +615,26 @@ def _argon2_is_cheap_in_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reserve_zone_paths_in_tmp(tmp_path_factory, monkeypatch):
+    """Пути гостевой зоны резерва (infra/rsvzone) — во временном каталоге
+    каждого теста. На хосте, где зона жила (стенд гоняет сценарии зоны перед
+    набором, s01 кончается фазой relay), настоящий /run/awg-bot/rsv/state.json
+    иначе попадал в файервол хоста (collect.guest_zone → правила пересылки
+    хвоста в чужом тесте), а open.status, rep.bin и хранилище гостя читались и
+    писались мимо теста. `state()` берёт путь умолчанием аргумента — его
+    подменяем отдельно."""
+    from awgbot.infra import rsvzone as _rz
+    root = tmp_path_factory.mktemp("rsvzone")
+    run, var, st = root / "run", root / "var", root / "state"
+    for name, val in (("RUN_DIR", run), ("VAR_DIR", var), ("STATE_DIR", st), ("STATE_PATH", st / "state.json"),
+                      ("GUEST_SOCK", st / "guest.sock"), ("OPEN_STATUS", st / "open.status"),
+                      ("REP_PATH", var / "rep.bin"), ("K_FILE", run / "k"), ("WEBHOOK_FILE", run / "webhook.json"),
+                      ("TG_POOL_FILE", run / "tg_pool.json"), ("TG_TAKE_FILE", run / "tg_take")):
+        monkeypatch.setattr(_rz, name, val)
+    monkeypatch.setattr(_rz.state, "__defaults__", (st / "state.json",))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_join_presses():
     """Память «уже нажато» кнопок подключения шлюза — модульная: у каждого
     теста своя (FakeMessage повторяет номера сообщений)."""

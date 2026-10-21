@@ -102,10 +102,11 @@ def status() -> dict:
         return {"error": str(e)}
 
 
-def state(path: Path = STATE_PATH) -> dict:
-    """Состояние зоны из state.json; нет файла — пусто (phase=idle)."""
+def state(path: Path | None = None) -> dict:
+    """Состояние зоны из state.json; нет файла — пусто (phase=idle). Путь берётся в
+    момент вызова (не при импорте) — подмена STATE_PATH в тестах доходит сюда."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads((path or STATE_PATH).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
