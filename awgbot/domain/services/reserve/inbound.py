@@ -16,7 +16,11 @@ bot.db резерва юниту закрыты, `AWG_BOT_ENV=/dev/null`) → `c
 `up` основе → `released{реплика}` → гость стоп, `rep.bin`, гость старт (он
 подхватит реплику), отметка `tg_take` → `tg_taken` от гостя → `taken` основе,
 serving, Т-РУ4. Отказ процесса — `down{причина}`, юнит открытия стоп, зона
-снята.
+снята, шлюзам — `state{idle, reason}` (шлюз, отдавший долю, говорит своему
+админу «переезд не состоялся», Т-РА5). Зона снята мимо бота (фаза зоны idle
+при моём serving) — idle без отметки автоматического переезда: паузы
+`min_interval_minutes` нет; пакет и доля при этом стёрты — следующее
+открытие ждёт свежего пакета основы.
 
 Возврат: `back_req` → гостю `stop` (открытие ещё шло — юнит стоп) →
 `replica` (гость молчит 90 с — `rep.bin`) → `released` основе (releasing;
@@ -255,7 +259,7 @@ class ReserveInboundMixin:
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
         """Зона снята мимо бота (`awg-bot reserve teardown`, перезагрузка хоста): состояние
-        idle, шлюзам основы — idle, пакет и доля — прочь, админу — итог."""
+        idle без паузы матрице, шлюзам основы — idle, админу — итог; пакет и доля остаются."""
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         phase = str(rsvzone.state().get("phase") or "")
@@ -263,7 +267,8 @@ class ReserveInboundMixin:
             return []
         name = self.reserve_peer_name()
         log.warning("резерв: зона в состоянии %s, а я считаю serving — клиентов «%s» больше не несу", phase or "idle", name)
-        self.reserve_pkg_in_drop()
+        # пакет и долю не трогаем: основа может быть всё ещё мертва — матрица откроет снова
+        # (С11), процесс возьмёт `rep.bin`, если он новее пакета
         with _LOCK:
             self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=False)   # матрица откроет снова без паузы
         actions: list[tuple] = [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, "зона снята"))])]

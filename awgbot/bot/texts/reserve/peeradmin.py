@@ -53,11 +53,11 @@ def screen(d: dict) -> str:
     if d.get("zone_links") and gws:
         down = [g for g in gws if not g.get("voter")]
         if not down:
-            lines.append("🟢 линки твоих шлюзов: " + ", ".join(_n(g["name"]) for g in gws))
+            lines.append("🟢 линки твоих шлюзов на связи: " + ", ".join(_e(str(g["name"])) for g in gws))
         else:
             for g in down:
                 since = g.get("down_since") or ""
-                lines.append(f"⚠️ линк шлюза {_n(g['name'])}: нет связи" + (f" с {_e(_when(since))}" if since else ""))
+                lines.append(f"⚠️ линк: {_e(str(g['name']))} без связи" + (f" с {_e(_when(since))}" if since else ""))
     lines += ["", f"<b>Как {_n(me)} видит {_n(peer)}</b>"]
     seen = d.get("seen") or "ok"
     if seen == "down":

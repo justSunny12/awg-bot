@@ -12,6 +12,11 @@ vote.py — часть пакета reserve (см. __init__): переезд п�
 
 Чистое правило — `decide(reserve_sees, views)`; состояние — в памяти процесса
 (живость, взгляды) и в `rsv_view` (случай, набор, need, окно кода).
+
+Имён шлюзов основы у резерва нет: `voters` в `view` и `ask` — только номера
+слотов, в текстах резерва шлюз — «шлюз N», имена подставляет основа сама.
+Принятый аварийный код ждёт итога процесса открытия до `codewait.VERDICT_S`
+и отвечает на сообщение админа основы; не дождался — итог уведомлением.
 """
 from __future__ import annotations
 
@@ -158,7 +163,7 @@ class ReserveVoteMixin:
                 continue
             slot = int(v.get("slot") or 0)
             rec = self._gwv.get(slot) or {}
-            out.append({"slot": slot, "name": str(v.get("name") or f"Шлюз {slot}"), "voter": slot in voters,
+            out.append({"slot": slot, "name": self.reserve_gw_name(slot), "voter": slot in voters,
                         "seen": str(rec.get("seen") or ""), "down_since": str(rec.get("down_since") or "")})
         return out
 

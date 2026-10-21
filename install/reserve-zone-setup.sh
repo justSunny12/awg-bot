@@ -514,7 +514,7 @@ cmd_relay() {
 cmd_teardown() {
     need_root
     guest_stop
-    state_write phase=idle iface= relay_to= webhook_port=
+    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port=
     say "teardown: ok"
 }
 cmd_wipe() {
@@ -529,13 +529,13 @@ cmd_wipe() {
         # пересылка хвоста идёт на хосте по state.json: фаза и адрес основы остаются до конца relay
         state_write webhook_port= wiped_at="$(date -Iseconds)"
     else
-        state_write phase=idle iface= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+        state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
     fi
     say "wipe: ok"
 }
 cmd_status() {
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
-    say "phase=$(state_get phase)"; say "iface=$(state_get iface)"
+    say "phase=$(state_get phase)"; say "iface=$(state_get iface)"; say "ifaces=$(state_ifaces)"
     if mountpoint -q "$RUN" 2>/dev/null; then say "store=mounted"; else say "store=absent"; fi
     systemctl is-active awg-bot-guest.service >/dev/null 2>&1 && say "guest=active" || say "guest=inactive"
     [ -f "$VAR/rep.bin" ] && say "rep=present" || say "rep=absent"
