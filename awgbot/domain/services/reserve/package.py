@@ -242,12 +242,22 @@ class ReservePackageMixin:
         log.warning("резерв: пакет %s отвергнут: %s", gen, reason[:120])
 
     def reserve_pkg_resend_if_stale(self) -> None:
-        """`st` резерва называет не тот пакет, что подтверждён, — отметка заново."""
+        """`st` резерва называет не тот пакет, что подтверждён (или никакого —
+        резерв восстановлен из копии без чужого пакета), — отметка заново."""
+        if self.reserve_away():
+            return
         peer = self.reserve_peer_state()
         have = (peer.get("pkg") or {}).get("fp") or ""
         sent = self.rsv_get("rsv_pkg_sent")
-        if sent.get("gen") and have and have != sent.get("fp"):
+        if sent.get("gen") and have != sent.get("fp") and self.__dict__.get("_rsv_pkg_due_at") is None:
+            log.info("резерв: у «%s» пакет %s вместо %s — отправлю заново", self.reserve_peer_name(),
+                     have[:8] or "—", str(sent.get("fp") or "")[:8])
             self.reserve_pkg_mark()
+
+    def reserve_pkg_in_present(self) -> bool:
+        """Пакет второй стороны и доля на месте — переезд к себе возможен."""
+        pkg_in = self.rsv_get("rsv_pkg_in")
+        return bool(pkg_in.get("share")) and os.path.exists(guest_pkg_path())
 
     # ── приём (резерв) ──────────────────────────────────────────────────────
 

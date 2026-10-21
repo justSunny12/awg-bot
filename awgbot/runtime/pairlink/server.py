@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
-from awgbot.util import gwlink
+from awgbot.util import gwlink, pairproto
 
 from .common import HELLO_TIMEOUT, _Session, channel_key, close_session, log, send_line
 from .inbound import InboundMixin
@@ -73,6 +73,7 @@ class PairServer(InboundMixin):
             msg = gwlink.unpack(sess.key, line)
             if msg.get("t") != "hello":
                 return
+            msg = {**msg, **pairproto.check(pairproto.PAIR_PROTO, "hello", msg, pairproto.ACCEPTOR)}   # потолки полей
             sess.cn = gwlink.nonce_from(msg.get("nonce"))
             last_seq = int(msg.get("seq") or 0)
             msg["_peer_addr"] = str(peer[0])
@@ -80,7 +81,7 @@ class PairServer(InboundMixin):
                 await self._serve_pairing(reader, sess, msg, last_seq)
                 return
             await self._serve_session(reader, sess, msg, last_seq)
-        except (gwlink.ProtocolError, asyncio.TimeoutError, ValueError, ConnectionError, OSError) as e:
+        except (gwlink.ProtocolError, asyncio.TimeoutError, ValueError, TypeError, ConnectionError, OSError) as e:
             log.info("канал пары: коннект с %s отвергнут (%s)", peer[0], e)
         finally:
             if self._sess is sess:

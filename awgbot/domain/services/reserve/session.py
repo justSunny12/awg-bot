@@ -24,6 +24,8 @@ from awgbot.domain.notices import reserve as rn
 from . import compat
 from .state import _LOCK
 
+PAIR_CONFIRM_S = 10 * 60          # пара без первой сессии на новых ключах дольше — снимается
+
 
 def _compat_reason(why: str) -> bool:
     """Причина про версию или возможности, а не про готовность, шлюз или пакет."""
@@ -106,7 +108,7 @@ class ReserveSessionMixin:
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
                 "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
-                "in_by": str(self.rsv_get("rsv_in").get("by") or "")}
+                "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or "")}
 
     @staticmethod
     def reserve_mem_free_mb() -> int:
@@ -177,7 +179,8 @@ class ReserveSessionMixin:
                                caps=list(body.get("caps") or []), gen=int(body.get("gen") or 0),
                                ports=[int(p) for p in body.get("ports") or [] if isinstance(p, int)],
                                ready=bool(body.get("ready")),
-                               has_gateway=bool(body.get("gw")) if "gw" in body else (bool(body.get("voters")) or bool(prev.get("gw"))))
+                               has_gateway=bool(body.get("gw")) if "gw" in body else (bool(body.get("voters")) or bool(prev.get("gw"))),
+                               zone=str(body.get("zone") or ""))
             peer.update(out=str(body.get("out") or ""), inn=str(body.get("in") or ""), self_host=str(body.get("self") or ""),
                         pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
                         admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(),
@@ -187,6 +190,8 @@ class ReserveSessionMixin:
                         in_by=str(body.get("in_by") or ""))
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
+            if hasattr(self, "reserve_pkg_resend_if_stale"):
+                self.reserve_pkg_resend_if_stale()           # у резерва не тот пакет (или никакого) — отметка заново
             row = self.reserve_peer() or {}
             fields = {}
             if peer["name"] and peer["name"] != row.get("name"):
@@ -245,14 +250,42 @@ class ReserveSessionMixin:
         mine = self._my_side()
         sent = self.rsv_get("rsv_pkg_sent")
         fresh = bool(sent.get("at")) and timeutil.elapsed(timeutil.parse_iso(sent["at"])) < 2 * 3600 if sent.get("at") else False
+        pkg_here = self.reserve_pkg_in_present() if hasattr(self, "reserve_pkg_in_present") else True
         return {"out": compat.direction_ready(mine, peer, pkg_fresh=fresh or not sent),
-                "in": compat.direction_ready(peer, mine)}
+                "in": compat.direction_ready(peer, mine, pkg_fresh=pkg_here)}
 
     # ── сессия ───────────────────────────────────────────────────────────────
 
     def reserve_session_opened(self, hello: dict) -> list[Notification]:
-        self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso())
+        """Сессия на линке пары открыта: пара подтверждена (первая сессия на новых
+        ключах), стороны зоны — заново при каждой сессии (резерв мог быть
+        восстановлен из копии без них; `slots` идемпотентен)."""
+        self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
+        self.rsv_update("rsv_view", slots_sent=[], slots_at="")
         return self.reserve_liveness_word()
+
+    def reserve_pair_confirm_tick(self) -> list[Notification]:
+        """Пара записана, а сессии на новых ключах за PAIR_CONFIRM_S не было:
+        сопряжение разошлось (pair_admin ушёл в сокет, но не дошёл) — пару
+        снять, админу сказать; вторая сторона снимет своё тем же тактом."""
+        if not self.reserve_paired():
+            return []
+        ps = self.reserve_peer_state()
+        if ps.get("confirmed", True) or not ps.get("linked_at"):
+            return []
+        try:
+            if timeutil.elapsed(timeutil.parse_iso(str(ps["linked_at"]))) < PAIR_CONFIRM_S:
+                return []
+        except ValueError:
+            return []
+        name = self.reserve_peer_name()
+        log.warning("резерв: пара с «%s» не подтвердилась сессией за %d с — снимаю", name, PAIR_CONFIRM_S)
+        try:
+            self.reserve_unpair("unconfirmed")
+        except Exception as e:                                # noqa: BLE001
+            log.warning("резерв: неподтверждённая пара не снята: %s", e)
+            return []
+        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.pair_unconfirmed(name))]
 
     def reserve_session_closed(self) -> None:
         self.rsv_update("rsv_peer_state", session=False)

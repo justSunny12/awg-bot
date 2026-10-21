@@ -143,7 +143,16 @@ class PairClient(InboundMixin):
                 return
             elif kind == "pair_ok":
                 reply = await asyncio.to_thread(self.services.reserve_accept_ok_in, msg)
-                await send_line(sess, "pair_admin", reply)
+                if not await send_line(sess, "pair_admin", reply):
+                    # не дошло — пары нет: линк на новые ключи без ответа второй стороне был бы
+                    # половиной пары (у него — приглашение, у меня — пара)
+                    st = await asyncio.to_thread(self.services.reserve_invite)
+                    with contextlib.suppress(Exception):
+                        await asyncio.to_thread(self.services.reserve_accept_abort, "link")
+                    await self.event("refused", st, why="link")
+                    self._dead = True
+                    return
+                await asyncio.to_thread(self.services.reserve_accept_commit)   # только теперь — линк на новые ключи
                 await self.event("linked", await asyncio.to_thread(self.services.reserve_peer),
                                  msg=await asyncio.to_thread(self.services.reserve_linked_msg))
                 self._confirmed = True

@@ -188,8 +188,11 @@ class ReservePairingMixin:
 
     def reserve_accept_ok_in(self, msg: dict) -> dict:
         """`pair_ok` (под ключом сопряжения): PSK, новые ключи линка, `admin_id`
-        пригласившего → линк на новые ключи, пара записана. Возвращает тело
-        `pair_admin` для ответа."""
+        пригласившего — проверить и отложить до `reserve_accept_commit`.
+        Возвращает тело `pair_admin` для ответа. Линк на новые ключи переводится
+        только ПОСЛЕ отправки `pair_admin`: пригласивший до него живёт на ключах
+        приглашения, и сообщение, посланное в линк на новых ключах и новой
+        обфускации, до него не дошло бы."""
         with _LOCK:
             st, live = self.reserve_invite(), _live()
             if st.get("role") != "acceptor" or not live.get("kp"):
@@ -203,12 +206,30 @@ class ReservePairingMixin:
                                                     for k, v in dict(data["obf"]).items()}}
             reply = {"sealed": joinsas.seal(live["kp"], {"admin_id": int(config.ADMIN_ID),
                                                          "self_host": self._own_host_or_empty()})}
-            self._pair_linked(st, peer_name=str(st.get("peer_name") or live.get("peer", {}).get("name") or ""),
-                              host=str(data.get("self_host") or st.get("host") or ""),
-                              peer_admin_id=int(data["admin_id"]), bot_username=str(st.get("peer_bot") or ""),
-                              listener=False, peer_port=int(st.get("peer_port") or 0), peer=live.get("peer") or {})
-            self._run_pair_script("--set-peer", env)
+            live["accept"] = {"env": env, "host": str(data.get("self_host") or st.get("host") or ""),
+                              "admin_id": int(data["admin_id"])}
+            _live_set(live)
             return reply
+
+    def reserve_accept_commit(self) -> None:
+        """`pair_admin` ушёл (drain) — пара записана, линк на новые ключи (`--set-peer`)."""
+        with _LOCK:
+            st, live = self.reserve_invite(), _live()
+            acc = live.get("accept") if live else None
+            if st.get("role") != "acceptor" or not acc:
+                raise ServiceError("Сопряжения нет")
+            self._pair_linked(st, peer_name=str(st.get("peer_name") or live.get("peer", {}).get("name") or ""),
+                              host=str(acc["host"]), peer_admin_id=int(acc["admin_id"]),
+                              bot_username=str(st.get("peer_bot") or ""), listener=False,
+                              peer_port=int(st.get("peer_port") or 0), peer=live.get("peer") or {})
+            self._run_pair_script("--set-peer", acc["env"])
+
+    def reserve_accept_abort(self, why: str) -> None:
+        """`pair_admin` не ушёл: пары нет, линк приглашения прочь (пригласивший
+        снимет своё по сроку или по следующей сессии)."""
+        with _LOCK:
+            if self.reserve_invite().get("id"):
+                self._invite_rollback(why)
 
     # ── пригласивший: сессия и код ──────────────────────────────────────────
 
@@ -349,7 +370,9 @@ class ReservePairingMixin:
                                  pair_port=int(st.get("port") or 0), peer_port=int(peer_port or 0),
                                  pair_cidr=str(st.get("cidr") or ""), listener=listener,
                                  bot_username=bot_username, peer_admin_id=int(peer_admin_id))
-        self.rsv_put("rsv_peer_state", {**peer, "at": timeutil.now_iso()})
+        # пара подтверждается первой сессией на новых ключах (confirmed); не дождались —
+        # такт снимает её (reserve_pair_confirm_tick)
+        self.rsv_put("rsv_peer_state", {**peer, "at": timeutil.now_iso(), "linked_at": timeutil.now_iso(), "confirmed": False})
         self.rsv_put("rsv_peer_admin", {"admin_id": int(peer_admin_id), "opened": False, "bound_at": timeutil.now_iso()})
         self.reserve_keys_init()
         self.reserve_set_out("home")

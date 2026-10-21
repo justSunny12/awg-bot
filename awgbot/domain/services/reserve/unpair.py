@@ -27,6 +27,26 @@ class ReserveUnpairMixin:
             return f"Клиенты и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
         return ""
 
+    def _unpair_zone(self, why: str) -> None:
+        """Зона при удалении пары: фаза taking/serving/relay — юнит открытия стоп,
+        `--teardown`, `--wipe` (иначе state.json держит DNAT хвоста, а клон и бот
+        второй стороны жили бы без автомата)."""
+        from awgbot.infra import rsvzone
+        phase = str(rsvzone.state().get("phase") or "idle")
+        if phase not in ("taking", "serving", "relay"):
+            return
+        log.warning("резерв: пара снимается (%s) при зоне в фазе %s — снимаю зону", why, phase)
+        if hasattr(self, "_rsvopen_stop"):
+            try:
+                self._rsvopen_stop()
+            except Exception as e:                            # noqa: BLE001
+                log.info("резерв: юнит процесса открытия не остановлен: %s", e)
+        for fn in (rsvzone.teardown, rsvzone.wipe):
+            try:
+                fn()
+            except rsvzone.ZoneError as e:
+                log.warning("резерв: зона при удалении пары: %s", e)
+
     def reserve_unpair(self, why: str = "user") -> dict:
         """Снять пару у себя. Возвращает прежнюю строку пары (для уведомления)."""
         why_not = self.reserve_unpair_check()
@@ -34,6 +54,7 @@ class ReserveUnpairMixin:
             raise ServiceError(why_not)
         with _LOCK:
             peer = self.reserve_peer() or {}
+            self._unpair_zone(why)                            # клон, пересылка хвоста, хранилище — прочь
             try:
                 self._run_pair_script("--rollback", self._pair_env())
             except ServiceError as e:

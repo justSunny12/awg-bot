@@ -20,6 +20,8 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
     async def job_liveness():
         try:
             act, notes = await asyncio.to_thread(services.reserve_liveness_tick)
+            if hasattr(services, "reserve_pair_confirm_tick"):
+                notes = list(notes) + list(await asyncio.to_thread(services.reserve_pair_confirm_tick))
             if notes:
                 await send_notifications(bot, notes)
             if act == "ping":

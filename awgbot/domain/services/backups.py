@@ -84,6 +84,8 @@ class BackupsMixin:
         joining = self.gwjoin_busy_slot()
         if joining is not None:
             return BackupBusy(joining[0], joining[1], True)
+        if hasattr(self, "reserve_invite_live") and self.reserve_invite_live():
+            return BackupBusy(0, "второй сервер", True)      # приглашение пары: ключ стороны принявшего ещё в базе
         for gw in self.db.gateways():
             if self.gateway_rekey_active(gw.id):
                 return BackupBusy(gw.id, self._gw_name(gw), False)

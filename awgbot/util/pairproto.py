@@ -72,15 +72,13 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "pair_refused": (INVITER, {"reason": (_S, MAX_REASON)}),
     "pair_ok":      (INVITER, {"sealed": (_S, 4096)}),
     "pair_admin":   (ACCEPTOR, {"sealed": (_S, 4096)}),
-    "link_next":    (BOTH, {"pub": (_S, 64), "port": (_I, None)}),
-    "link_ack":     (BOTH, {}),
-    "link_go":      (BOTH, {}),
     # обычная сессия
     "st":           (BOTH, {"ready": (_B, None), "name": (_S, MAX_NAME), "version": (_S, 24), "caps": (_L, 16),
                             "gen": (_I, None), "ports": (_L, 4), "self": (_S, MAX_HOST), "out": (_S, 16),
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
-                            "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8)}),
+                            "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
+                            "zone": (_S, 120)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -134,8 +132,10 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
-OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by"}),
-                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"})}
+OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone"}),
+                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
+                                  # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
+                                  "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 
 
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:
