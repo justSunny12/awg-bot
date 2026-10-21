@@ -71,8 +71,14 @@ def my_side(ready: bool, has_gateway: bool, ports: list[int]) -> dict:
         zone = zone_why() if ready else ""
     except Exception:                                     # noqa: BLE001 — план недоступен
         zone = ""
-    return side(name=str(config.SERVER_NAME or ""), version=str(config.INSTALLED_VERSION).lstrip("v"),
-                caps=list(CAPS), gen=gen, ports=ports, ready=ready, has_gateway=has_gateway, zone=zone)
+    return {**side(name=str(config.SERVER_NAME or ""), version=str(config.INSTALLED_VERSION).lstrip("v"),
+                   caps=list(CAPS), gen=gen, ports=ports, ready=ready, has_gateway=has_gateway, zone=zone), "me": True}
+
+
+def _not_ready(s: dict) -> str:
+    """Причина «готовность выключена» — с указанием стороны; своя сторона — по
+    признаку `me` (имена серверов могут совпадать)."""
+    return "здесь выключено «Готов быть резервом»" if s.get("me") else f"у «{s.get('name') or 'резерв'}» выключено «Готов быть резервом»"
 
 
 def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bool, str]:
@@ -82,19 +88,16 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
     if vs is None or vd is None:
         return False, "версия второго сервера не прочитана"
     if not src.get("ready"):
-        mine = str(src.get("name") or "") == str(config.SERVER_NAME or "")
-        return False, ("здесь выключено «Готов быть резервом»" if mine
-                       else f"у «{src.get('name') or 'резерв'}» выключено «Готов быть резервом»")
+        return False, _not_ready(src)
     if not dst.get("ready"):
-        return False, f"«{dst.get('name') or 'резерв'}» не готов быть резервом"
+        return False, _not_ready(dst)
     if not pkg_format(src.get("caps", []), dst.get("caps", [])):
         return False, f"«{dst.get('name') or 'резерв'}» не читает формат данных переезда — нужен выпуск новее"
     missing = [c for c in _NEEDED_TO_HOST if c not in dst.get("caps", [])]
     if missing:
         return False, f"«{dst.get('name') or 'резерв'}» не умеет принимать клиентов — нужен выпуск новее"
     if dst.get("zone"):
-        return False, (f"здесь: {dst['zone']}" if src is not dst and dst.get("name") == str(config.SERVER_NAME or "")
-                       else f"у «{dst.get('name') or 'резерв'}»: {dst['zone']}")
+        return False, (f"здесь: {dst['zone']}" if dst.get("me") else f"у «{dst.get('name') or 'резерв'}»: {dst['zone']}")
     if not src.get("gw"):
         return False, "нужен хотя бы один шлюз с агентом новой линии"
     if vd[:3] < vs[:3]:
