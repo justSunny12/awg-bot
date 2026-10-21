@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 HELLO_TIMEOUT = 15
 SEND_TIMEOUT = 20
 _BACKOFF = (5, 10, 20, 40, 80, 160, 300)
+_STORE_LOCK = asyncio.Lock()       # reserve.json правят такт и обработчик слов — не одновременно
 
 
 class GuestClient:
@@ -92,6 +93,9 @@ class GuestClient:
         gwlink.tcp_keepalive(writer)
         self._seq, self._cn, self._sn = 0, gwlink.new_nonce(), b""
         body = await asyncio.to_thread(self.services.reserve_guest_hello_body)
+        if not body:
+            writer.close()
+            raise OSError("взгляда на основу ещё нет — hello позже")
         body["nonce"] = gwlink.nonce_b64(self._cn)
         self._seq += 1
         writer.write(gwlink.pack(self._key, "hello", body, seq=self._seq, pad=gwlink.PAD_DELTA))
@@ -126,7 +130,8 @@ class GuestClient:
         except pairproto.ProtocolError as e:
             log.warning("гостевой канал: сообщение «%s» не разобрано: %s — сессия разорвана", kind[:16], e)
             raise ConnectionError(str(e))                     # подписанный собеседник шлёт мусор — поломка или чужой
-        actions = await asyncio.to_thread(self.services.reserve_guest_in, kind, body)
+        async with _STORE_LOCK:                              # слово резерва и такт правят reserve.json по очереди
+            actions = await asyncio.to_thread(self.services.reserve_guest_in, kind, body)
         await run_actions(self.services, actions)
 
     async def send(self, kind: str, body: dict | None = None) -> bool:
@@ -217,7 +222,8 @@ async def tick(services, bot=None) -> None:
     if bot is not None:
         _bot = bot
     c = await ensure(services)
-    actions = await asyncio.to_thread(services.reserve_watch_tick)
+    async with _STORE_LOCK:
+        actions = await asyncio.to_thread(services.reserve_watch_tick)
     if c is not None and not c.online and any(a[0] == "guest" for a in actions):
         c.wake()
     await run_actions(services, actions)

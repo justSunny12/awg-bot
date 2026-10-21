@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from awgbot.infra.gwguard import rsv as rsvlink
-from awgbot.util import timeutil
+from awgbot.util import livestep, timeutil
 
 from ..base import log
 
@@ -45,8 +45,77 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
     os.replace(str(tmp), str(path))
 
 
+# своё о ходе дел в reserve.json — переживает каждый новый документ
+_KEEP_KEYS = ("open_at", "share_given_at", "view_told", "reserve_view", "reserve_state_at", "moved_told",
+              "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last")
+NOTE_TTL_S = 24 * 3600            # уведомление без доставки дольше — устарело
+NOTE_RETRY_S = 60
+
+
 class ReserveStoreMixin:
     _RSV_STORE = STORE_PATH
+
+    # ── уведомления с доставкой ─────────────────────────────────────────────
+    def reserve_note(self, cur: dict, text: str, *, sound: bool = False, silent: bool = False, cond: dict | None = None,
+                     critical: bool = False):
+        """Уведомление админу шлюза, которое не теряется: Telegram агента идёт по
+        аплинку, а в момент события (основа мертва) аплинк как раз мёртв. Запись
+        в очередь, Notification с on_sent — доставлено, снято; такт повторяет
+        недоставленные, пока условие (`cond`) верно и не вышли сутки."""
+        import secrets as _s
+        from awgbot.core import config
+        from awgbot.domain.services import Notification
+        nid = _s.token_hex(4)
+        notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict)]
+        notes.append({"id": nid, "text": text, "sound": bool(sound), "silent": bool(silent), "critical": bool(critical),
+                      "cond": dict(cond or {}), "at": timeutil.now_iso(), "tried": 0.0})
+        cur["pending_notes"] = notes[-32:]
+        return Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=sound, silent=silent, critical=critical,
+                            on_sent=lambda nid=nid: self.reserve_note_sent(nid))
+
+    def reserve_note_sent(self, nid: str) -> None:
+        cur = self.reserve_section()
+        notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict) and n.get("id") != nid]
+        if len(notes) != len(cur.get("pending_notes") or []):
+            cur["pending_notes"] = notes
+            _write(cur, self._RSV_STORE)
+
+    def reserve_notes_retry(self, now: float | None = None) -> list[tuple]:
+        """Недоставленные уведомления — снова, раз в минуту, пока верны."""
+        import time as _t
+        from awgbot.core import config
+        from awgbot.domain.services import Notification
+        cur = self.reserve_section()
+        notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict)]
+        if not notes:
+            return []
+        now = _t.monotonic() if now is None else now
+        keep, out = [], []
+        for n in notes:
+            try:
+                age = timeutil.elapsed(timeutil.parse_iso(str(n.get("at") or "")))
+            except ValueError:
+                age = NOTE_TTL_S + 1
+            if age > NOTE_TTL_S or not self._note_still_true(cur, n.get("cond") or {}):
+                continue                                      # устарело или уже не так — не слать
+            keep.append(n)
+            if livestep.mono_due(n.get("tried"), now, NOTE_RETRY_S):
+                n["tried"] = now
+                out.append(Notification(tg_id=int(config.ADMIN_ID), text=str(n["text"]), force_sound=bool(n.get("sound")),
+                                        silent=bool(n.get("silent")), critical=bool(n.get("critical")),
+                                        on_sent=lambda nid=str(n["id"]): self.reserve_note_sent(nid)))
+        if keep != notes:
+            cur["pending_notes"] = keep
+            _write(cur, self._RSV_STORE)
+        return [("notify", out)] if out else []
+
+    @staticmethod
+    def _note_still_true(cur: dict, cond: dict) -> bool:
+        if cond.get("open") and not rsvlink.is_open():
+            return False                                      # Т-РА3: пересылка уже закрыта — переезд кончился
+        if cond.get("view_since") and str(cur.get("view_told") or "") != str(cond["view_since"]):
+            return False                                      # Т-РА4: взгляд сменился
+        return True
 
     def reserve_section(self) -> dict:
         return _read(self._RSV_STORE)
@@ -62,7 +131,9 @@ class ReserveStoreMixin:
             return ""
         return gwcfg.reserve_print({"link": {"conf": sec["conf"]}, "share": sec.get("share") or {},
                                     "state": sec.get("state") or "idle", "move": int(sec.get("move") or 0),
-                                    "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0)})
+                                    "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0),
+                                    "peer_host": sec.get("peer_host") or "", "record": sec.get("record") or "",
+                                    "name": sec.get("name") or "", "slot": int(sec.get("slot") or 0)})
 
     # ── применение раздела ──────────────────────────────────────────────────
     def reserve_apply(self, checked: dict | None) -> dict:
@@ -83,19 +154,67 @@ class ReserveStoreMixin:
                "peer_addr": _peer_addr(str(checked.get("conf_text") or "")),
                "reserve_state": cur.get("reserve_state") or "idle", "reserve_move": int(cur.get("reserve_move") or 0),
                "applied_at": timeutil.now_iso()}
+        for k in _KEEP_KEYS:                                  # своё о ходе дел — не из документа, не стирать
+            if k in cur:
+                new[k] = cur[k]
         changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan"))
         # адреса админов сменились — тоже повод переподнять: набор rsv_admin4 заполняет только --up
         link_changed = cur.get("conf") != new["conf"] or not rsvlink.present() or cur.get("admins") != new["admins"]
-        _write(new, self._RSV_STORE)
         note = ""
         if link_changed:
-            rsvlink.up(new["conf"], self._reserve_admin_ips())
-            note = "🛟 Линк к резерву поднят" if not cur.get("conf") else "🛟 Линк к резерву переподнят на новых ключах"
-            log.info("reserve: линк к резерву %s", "поднят" if not cur.get("conf") else "переподнят")
+            try:
+                rsvlink.up(new["conf"], self._reserve_admin_ips())
+                new.pop("link_pending", None)
+                note = "🛟 Линк к резерву поднят" if not cur.get("conf") else "🛟 Линк к резерву переподнят на новых ключах"
+                log.info("reserve: линк к резерву %s", "поднят" if not cur.get("conf") else "переподнят")
+            except rsvlink.RsvError as e:
+                # временный отказ (имя резерва не резолвится, модуль ещё не собран): раздел принят,
+                # подъём повторит такт — иначе сервер считал бы раздел отвергнутым до смены отпечатка
+                new["link_pending"] = str(e)[:200]
+                new["link_retry_mono"] = 0.0
+                note = f"⚠️ Линк к резерву не поднялся: {str(e)[:120]} — повторю"
+                log.warning("reserve: линк к резерву не поднялся: %s — повтор тактом", e)
+        _write(new, self._RSV_STORE)
         if cur.get("share", {}).get("gen") != new["share"].get("gen") and new["share"]:
             log.info("reserve: доля ключа переезда поколения %s принята", new["share"].get("gen"))
         self.reserve_forward_decide()
         return {"changed": changed, "note": note}
+
+    def reserve_link_retry_tick(self, now: float | None = None) -> list[tuple]:
+        """Линк к резерву не поднялся при применении раздела (или пропал с хоста):
+        повтор раз в минуту, пока не встанет; встал — снимок серверу."""
+        import time as _t
+        cur = self.reserve_section()
+        if not cur.get("conf"):
+            return []
+        if not cur.get("link_pending") and rsvlink.present():
+            return []
+        now = _t.monotonic() if now is None else now
+        if not livestep.mono_due(cur.get("link_retry_mono"), now, 60):
+            return []
+        cur["link_retry_mono"] = now
+        try:
+            rsvlink.up(str(cur["conf"]), self._reserve_admin_ips())
+        except rsvlink.RsvError as e:
+            cur["link_pending"] = str(e)[:200]
+            _write(cur, self._RSV_STORE)
+            log.info("reserve: линк к резерву всё ещё не поднимается: %s", e)
+            return []
+        cur.pop("link_pending", None)
+        _write(cur, self._RSV_STORE)
+        log.info("reserve: линк к резерву поднят повтором")
+        return [("push",)]
+
+    def reserve_counters_cached(self) -> tuple[int, int] | None:
+        """(rx, tx) линка к резерву — не чаще раза в 2 с (такт и панель спрашивают порознь)."""
+        import time as _t
+        now = _t.monotonic()
+        cache = self.__dict__.get("_rsv_counters")
+        if cache and now - cache[0] < 2.0:
+            return cache[1]
+        c = rsvlink.counters()
+        self.__dict__["_rsv_counters"] = (now, c)
+        return c
 
     def reserve_remove(self) -> None:
         try:
@@ -126,12 +245,10 @@ class ReserveStoreMixin:
             return []
         actions: list[tuple] = []
         if state == "idle" and reason and cur.get("share_given_at"):
-            from awgbot.core import config
             from awgbot.domain.notices import reserve as rn
-            from awgbot.domain.services import Notification
             _primary, since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
-            actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID),
-                                                    text=rn.gateway_move_failed(str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason))]))
+            actions.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
+                str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
             cur["share_given_at"] = ""
         cur["reserve_state"], cur["reserve_move"] = state, int(move)
         cur["reserve_state_at"] = timeutil.now_iso()
@@ -147,20 +264,27 @@ class ReserveStoreMixin:
         want_open = False
         primary_away = cur.get("state") == "away"
         reserve_serving = cur.get("reserve_state") == "serving"
+        is_open = rsvlink.is_open()
         if primary_away:
             want_open = True
-        elif reserve_serving and self.reserve_record_fact():
-            want_open = True
+        elif reserve_serving:
+            fact = self.reserve_record_fact()
+            if fact is None:
+                want_open = is_open                           # факт не прочитался и кэша нет — ничего не менять
+            else:
+                want_open = bool(fact)
         if cur.get("state") == "idle" and int(cur.get("move") or 0) >= int(cur.get("reserve_move") or 0) and reserve_serving:
             # основа вернула клиентов и её слово новее: закрыть, даже если резерв ещё говорит serving
             want_open = False
-        is_open = rsvlink.is_open()
         if want_open and not is_open:
             srcs = self._reserve_sources()
             cur["open_at"] = timeutil.now_iso()
             _write(cur, self._RSV_STORE)
             log.info("reserve: пересылка с awgrsv открыта для %s", ",".join(srcs))
-            return [("open", srcs)]
+            actions = [("open", srcs)]
+            if hasattr(self, "_moved_notice"):
+                actions += self._moved_notice(actions)        # Т-РА3 — при любом открытии, не только по слову state
+            return actions
         if not want_open and is_open:
             log.info("reserve: пересылка с awgrsv закрыта")
             return [("close",)]
@@ -193,7 +317,7 @@ class ReserveStoreMixin:
         target = str(cur.get("peer_host") or "")
         if not name or not target:
             return False
-        return record.points_to(name, target)
+        return record.points_to(name, target)                 # None — не прочиталось и кэша нет
 
     # ── панель (Т-РА1) ──────────────────────────────────────────────────────
     def reserve_panel_view(self) -> dict:
@@ -204,7 +328,7 @@ class ReserveStoreMixin:
         if not cur:
             return {}
         seen, since = self.reserve_seen() if hasattr(self, "reserve_seen") else ("", "")
-        c = rsvlink.counters() or (0, 0)
+        c = self.reserve_counters_cached() or (0, 0)
         return {"name": str(cur.get("name") or ""), "seen": seen or "absent", "since": since,
                 "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"),
                 "since_open": str(cur.get("open_at") or ""), "rx": int(c[0]), "tx": int(c[1]),

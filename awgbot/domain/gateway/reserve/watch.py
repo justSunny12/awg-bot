@@ -54,7 +54,10 @@ class ReserveWatchMixin:
         actions: list[tuple] = []
         # основа — по линку слота
         lp = self._rsv_lv_primary
-        act = livestep.step(lp, now, self._primary_rx(), suspect_s=suspect_s, probe_s=probe_s)
+        rx = self._primary_rx()
+        act = livestep.step(lp, now, rx, suspect_s=suspect_s, probe_s=probe_s)
+        if rx is not None or act:
+            self.__dict__["_rsv_view_ready"] = True          # счётчик прочитан (или проба пошла) — взгляд есть
         if act == "ping":
             actions.append(("gw_ping", lp.nonce))
             if self._uplink_probe():
@@ -76,6 +79,13 @@ class ReserveWatchMixin:
             actions.append(("guest", "ping", {"n": lr.nonce}))
         elif act == "down":
             self.__dict__["_rsv_reserve_since"] = timeutil.now_iso()
+            try:
+                cur = self.reserve_section()
+                cur["reserve_down_last"] = self.__dict__["_rsv_reserve_since"]   # для Т-РА3 (Н3) после возврата связи
+                from .store import _write
+                _write(cur, self._RSV_STORE)
+            except Exception as e:                            # noqa: BLE001
+                log.info("reserve: момент потери резерва не записан: %s", e)
             log.warning("reserve: резерв не отвечает по awgrsv")
             actions.append(("push",))
         elif act == "up":
@@ -89,7 +99,16 @@ class ReserveWatchMixin:
             actions += self.reserve_forward_decide()
         except Exception as e:                                # noqa: BLE001
             log.info("reserve: решение о пересылке: %s", e)
+        for fn in (self.reserve_link_retry_tick, self.reserve_notes_retry):
+            try:
+                actions += fn(now)
+            except Exception as e:                            # noqa: BLE001
+                log.info("reserve: %s: %s", fn.__name__, e)
         return actions
+
+    def reserve_view_ready(self) -> bool:
+        """Был ли хоть один цикл живости по основе (счётчик прочитан или проба)."""
+        return bool(self.__dict__.get("_rsv_view_ready"))
 
     # ── счётчики ────────────────────────────────────────────────────────────
     def _primary_rx(self) -> int | None:
@@ -100,7 +119,7 @@ class ReserveWatchMixin:
         return int(rx)
 
     def _reserve_rx(self) -> int | None:
-        c = rsvlink.counters()
+        c = self.reserve_counters_cached() if hasattr(self, "reserve_counters_cached") else rsvlink.counters()
         return int(c[0]) if c else None
 
     # ── слова ───────────────────────────────────────────────────────────────

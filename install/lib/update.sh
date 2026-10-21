@@ -223,11 +223,24 @@ restore_prev_code() {  # restore_prev_code DIR — прежний код из DI
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
     rm -rf "$prev"
     adopt_awg_section_for_old
+    reserve_gw_drop_for_old
     # Копия обвязки шлюза — тоже код: ensure_host_autostart уже могла положить
     # скрипт новой версии, и прежний агент остался бы при чужой обвязке
     gw_plumbing_sync || _rc=$?
     [[ "$_rc" -eq 1 ]] && warn "не удалось вернуть прежнюю копию обвязки в /usr/local/sbin/routing-gw-setup.sh"
     return 0
+}
+# Возвращённый код ниже 4.0.0 о резерве не знает: линк awgrsv, его таблица,
+# юнит и файл с долей ключа переезда остались бы на шлюзе без хозяина —
+# снять, пока скрипт ещё на месте (сервер выдаст долю заново при обновлении).
+reserve_gw_drop_for_old() {
+    [[ -x /usr/local/sbin/reserve-gw-setup.sh ]] || return 0
+    local v; v="$(sed -nE 's/^__version__ = "([0-9.]+)".*/\1/p' "$INSTALL_DIR/awgbot/__version__.py" 2>/dev/null | head -n1)"
+    [[ -n "$v" ]] || return 0
+    [[ "$(printf '%s\n%s\n' "$v" "4.0.0" | sort -V | head -n1)" == "$v" && "$v" != "4.0.0" ]] || return 0
+    sh /usr/local/sbin/reserve-gw-setup.sh --remove >/dev/null 2>&1 || true
+    rm -f /var/lib/awg-gw/reserve.json
+    log "резерв: линк к резерву и доля ключа переезда сняты — возвращённый код $v о них не знает"
 }
 # Копия routing-gw-setup.sh в /usr/local/sbin — по поставке в $INSTALL_DIR,
 # если копия уже есть (нет — обвязку тут не разворачивали, класть нечего).

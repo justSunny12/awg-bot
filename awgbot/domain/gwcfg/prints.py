@@ -110,6 +110,9 @@ def reserve_print(sec: dict | None) -> str:
     share = sec.get("share") or {}
     text = (f"{canon}self={norm(sec.get('self'))}\nstate={norm(sec.get('state'))}\nmove={int(sec.get('move') or 0)}\n"
             f"share={int(share.get('x') or 0)}:{norm(share.get('y'))}:{int(share.get('gen') or 0)}\n"
-            f"chan={int(sec.get('chan') or 0)}\n")
+            f"chan={int(sec.get('chan') or 0)}\n"
+            # адрес основы и имя записи — опора факта записи и текстов: их смена тянет документ
+            f"peer_host={norm(sec.get('peer_host'))}\nrecord={norm(sec.get('record'))}\n"
+            f"name={norm(sec.get('name'))}\nslot={int(sec.get('slot') or 0)}\n")
     return section_print("reserve", text)
 

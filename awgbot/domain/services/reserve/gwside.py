@@ -140,6 +140,8 @@ class ReserveGwSideMixin:
         state, step = str(out.get("state") or "home"), str(out.get("step") or "")
         if state == "away" or (state == "leaving" and step in ("record", "release", "released")):
             return "away"
+        if state == "returning" and step != "relay":
+            return "away"                                     # клиенты ещё на клоне: пересылка шлюзов нужна до `back`
         return "idle"
 
     # ── взгляды шлюзов из снимков ───────────────────────────────────────────
