@@ -252,7 +252,7 @@ GitHub `vX.Y.Z.P — …`.
   `tools/rsvopen.py`, сторож обновления и восстановления `tools/rsvbusy.py` (его зовёт общий
   `install/lib/update.sh` на обеих ролях, но у агента пары нет — он всегда «свободен»), обёртка зоны `infra/rsvzone.py` и файервол резерва в
   `infra/nftguard/`. Туда же — запись DNS, переезд кнопкой и возврат:
-  автоматы `domain/services/reserve/{dns,outbound,outbound_return,merge_ops,inbound,notify,traffic,away}.py`,
+  автоматы `domain/services/reserve/{dns,outbound,outbound_return,merge_ops,inbound,openproc,notify,traffic,away}.py`,
   уведомления `domain/notices/reserve.py`, управляемый поллинг `runtime/pollctl.py`
   (право отвечать в Telegram) и исполнитель действий `runtime/rsvactions.py`,
   экраны `handlers/settings/reserve/{move,dns}.py`. Туда же — шлюзы и переезд

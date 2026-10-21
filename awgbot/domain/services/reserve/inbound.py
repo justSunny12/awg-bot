@@ -13,7 +13,7 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 без доли: зона свободна, мои клиенты здесь, готовность, направление, пакет):
 пересылка хвоста прошлого возврата уступает (`_relay_yield`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
-открытия временным юнитом с песочницей (`rsvopen_sandbox_props`; stdin — JSON
+открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`; stdin — JSON
 с `K`; запись DNS меняет основа; env резерва закрыт, каталог данных подменён
 пустым — виден только guest.pkg, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
 `up` основе (повтор раз в 30 с, пока идёт подъём) → `released{реплика}` →
@@ -40,7 +40,8 @@ serving или releasing — новый пакет не принимается (
 и `wiped`; зоны нет — сразу `wiped`) → пересылка хвоста (`--relay`,
 файервол; адрес основы — IP, имя резолвится сейчас; срыв открытия до смены
 записи — без хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний
-пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days`/тишины →
+пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины `relay_idle_hours` (по счётчику правила
+DNAT — nftguard.relay_packets, отметка `relay_last_traffic`) →
 idle. `evict` — просьба вернуть клиентов по кнопке у резерва.
 """
 from __future__ import annotations
