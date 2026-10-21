@@ -3,14 +3,22 @@
 tools/rsvopen.py — процесс открытия: пакет переезда основы → гостевая зона
 резерва с её ботом и клоном VPN. Единственный код на резерве, который видит
 `M`, `K` и части пакета; бот резерва его только запускает (временным юнитом
-awg-bot-rsvopen с песочницей — domain/services/reserve/inbound.py
-`_rsvopen_launch`: MemoryMax=96M без swap и дампов, PrivateTmp, ProtectHome,
-ProtectSystem=full, NoNewPrivileges, запись — только хранилище гостя,
-/var/lib/awg-bot-guest, /run/awg-bot/rsv и /etc/systemd; /etc/awg-bot/env и
-bot.db резерва недоступны, в окружении нет BOT_TOKEN/ADMIN_ID резерва,
-AWG_BOT_ENV=/dev/null) и читает ход по /run/awg-bot/rsv/open.status (шаг,
-время, причина — без секретов; до запуска бот пишет туда `launching`, после —
-`launched`). Руками — `awg-bot reserve open` (root, без этой песочницы).
+awg-bot-rsvopen с песочницей — свойства в одном месте,
+domain/services/reserve/inbound.py `rsvopen_sandbox_props`: MemoryMax=192M
+без swap и дампов, PrivateTmp, ProtectHome, ProtectSystem=strict,
+NoNewPrivileges, запись — только хранилище гостя, /var/lib/awg-bot-guest,
+/run/awg-bot/rsv, /run/netns и /etc/systemd; каталог данных резерва подменён
+пустым (TemporaryFileSystem), виден только reserve/guest.pkg
+(BindReadOnlyPaths); /etc/awg-bot/env недоступен, в окружении нет
+BOT_TOKEN/ADMIN_ID резерва, AWG_BOT_ENV=/dev/null). Хранилище гостя бот
+монтирует сам до запуска юнита (в пространстве хоста: смонтированное внутри
+песочницы хосту и юнитам гостя не видно) и создаёт каталоги записи; шаг
+`store` здесь монтирует его, только если этого ещё нет (ручной запуск). Ход
+бот читает по /run/awg-bot/rsv/open.status (шаг, время, причина — без
+секретов; до запуска бот пишет туда `launching`, после — `launched`), stderr
+процесса — в /run/awg-bot/rsv/rsvopen.err: кончился без `done`/`fail` —
+бот срывает открытие сразу, хвостом stderr в причине. Руками — `awg-bot
+reserve open` (root, без этой песочницы).
 
     echo '<JSON>' | python -m tools.rsvopen         вход — только stdin
 
@@ -44,7 +52,12 @@ false, нет `target_ip` или провайдера — переезд кно�
 `migration_subnet_prefix` из его адреса: бот основы на резерве ведёт
 устройства на обоих.
 Снимок `rep.bin` новее пакета (перезагрузка резерва во время обслуживания)
-— база гостя из него, а не из пакета.
+— база гостя из него, а не из пакета. Наборы настроек из части бота ложатся в
+хранилище только с именами из белого списка пакета (util/rsvpkg/bot.py
+CONF_FILES): имя из пакета второй стороны путём не становится. `M` и
+настройка провайдера DNS (с токеном) отбрасываются, как только сделали своё;
+TTL записи из конверта DNS — в `pkg.json` хранилища (гость держит по нему
+паузу перед «переподключи VPN»).
 
 Токен бота основы из части бота — одна строка без пробелов, не длиннее 128
 знаков (он ложится строкой в env юнита гостя); иначе отказ «токен бота в
