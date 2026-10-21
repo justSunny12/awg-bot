@@ -198,13 +198,37 @@ def test_a_step_that_outlives_its_deadline_fails_the_move_and_releases_the_reser
     assert reason in " ".join(n.text for n in notices(acts))
 
 
-def test_the_released_step_that_outlives_its_deadline_counts_as_away_because_the_webhook_decides(mv):
-    """`taken` не пришёл, но бот уже отдан: право отвечать — у вебхука, откат был бы ложью."""
+@pytest.mark.parametrize("kind", ["button", "rf"])
+def test_the_released_step_that_outlives_its_deadline_counts_as_away_when_the_webhook_is_at_the_reserve(mv, kind):
+    """`taken` не пришёл, но вебхук уже у резерва (поллинг увидел его): откат
+    был бы ложью — away; вид переезда сохраняется (от него зависит поколение
+    после возврата), отметка переключения ставится (демпфер возврата)."""
+    svc = mv.svc
+    rm.to_step(svc, "released", kind=kind)
+    svc.reserve_set_poll("away")
+    mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
+    acts = svc.reserve_out_tick()
+    out = svc.rsv_get("rsv_out")
+    assert svc.reserve_out() == "away" and out["kind"] == kind, out
+    assert ("wake_poll",) in acts, f"поллинг не разбужен: {acts}"
+    assert out.get("last_switch"), "переключение без отметки — демпфер возврата не сработает"
+
+
+def test_the_released_step_without_the_webhook_at_the_reserve_checks_once_more_and_then_fails(mv):
+    """Право отвечать у меня, `taken` нет: сначала ещё одна проверка
+    getWebhookInfo (wake_poll и 120 с), а не away вслепую; вебхук так и не
+    появился — переезд сорван, резерву `back`."""
     svc = mv.svc
     rm.to_step(svc, "released")
     mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
-    svc.reserve_out_tick()
-    assert svc.reserve_out() == "away" and svc.reserve_poll() == "away"
+    acts = svc.reserve_out_tick()
+    assert acts == [("wake_poll",)] and svc.reserve_out() == "leaving", acts
+    mv.clock.advance(100)
+    assert svc.reserve_out_tick() == [] and svc.reserve_out() == "leaving", "вторая проверка раньше 120 с"
+    mv.clock.advance(30)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts), acts
+    assert "вебхук не поставлен" in " ".join(n.text for n in notices(acts))
 
 
 def test_down_from_the_reserve_aborts_the_move_without_a_second_back(mv):

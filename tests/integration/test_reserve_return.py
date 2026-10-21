@@ -331,7 +331,13 @@ def test_the_record_goes_back_by_the_manual_fact_and_then_the_reserve_gets_back(
     assert sent(acts) == ["back"], acts
     out = svc.rsv_get("rsv_out")
     assert out["step"] == "relay" and out["record_fact_at"]
-    assert svc.reserve_out_tick() == [], "back ушёл один раз"
+    away.clock.advance(5)
+    assert svc.reserve_out_tick() == [], "back повторён раньше минуты — резерв ещё мог не ответить relay"
+    away.clock.advance(60)
+    assert sent(svc.reserve_out_tick()) == ["back"], "relay не пришёл, а back не повторён — возврат ждёт срок впустую"
+    svc.reserve_relay_in("2026-10-28T00:00:00+05:00")
+    away.clock.advance(120)
+    assert svc.reserve_out_tick() == [], "relay пришёл, а back всё повторяется"
 
 
 def test_the_automatic_return_changes_the_record_to_my_address_exactly_once(away):
@@ -424,6 +430,7 @@ def test_the_return_ends_by_itself_when_wiped_never_comes(away):
     old_k = svc.reserve_k()
     svc.reserve_set_out("returning", kind="button", gen=7)
     svc._out_step("relay", outbound.RELAY_WAIT_S)
+    svc.reserve_relay_in("2026-10-28T00:00:00+05:00")      # relay пришёл, wiped — нет
     assert svc.reserve_out_tick() == []
     away.clock.advance(outbound.RELAY_WAIT_S + 1)
     acts = svc.reserve_out_tick()
@@ -450,36 +457,55 @@ def test_lost_devices_of_the_report_are_listed_in_the_notice(away):
 
 # ── новое поколение ключа — только после возврата по долям или коду ─────────
 
-@pytest.mark.parametrize("kind, by, regen", [
-    ("button", "", False), ("button", "k", False),
-    ("dead", "", True), ("code", "", True),            # прежний резерв без in_by: по виду переезда
-    ("rf", "", False), ("nogw", "", False),            # rf/nogw без слова — согласие основы, ключом
-    ("rf", "share", True), ("dead", "share", True), ("button", "code", True),
+@pytest.mark.parametrize("kind, go_sent, regen", [
+    ("button", True, False), ("rf", True, False), ("nogw", True, False),   # K отдан мной (`go`) — прямая цела
+    ("button", False, True), ("dead", False, True), ("code", False, True),  # своего go не было — по долям/коду
+    ("button", None, False), ("rf", None, False), ("nogw", None, False),    # отметки нет (прежнее состояние):
+    ("dead", None, True), ("code", None, True),                             # по виду переезда
 ])
-def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_shares_or_code(away, kind, by,
+def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_shares_or_code(away, kind, go_sent,
                                                                                                    regen):
     """Доли и код раскрывают вторую точку прямой (и конверт DNS): после
     такого возврата — новое поколение M, код админу и просьба сменить токен
     DNS; после переезда ключом основы — ничего из этого (лишний код админу и
-    лишний перевыпуск долей шлюзов)."""
+    лишний перевыпуск долей шлюзов). Чем открыт пакет, основа решает по своей
+    отметке отправки K (go_sent), а без неё — по виду переезда."""
     svc = away.svc
     m_gen = int(svc.reserve_keys()["m_gen"])
     _at_step(away, "relay")
-    svc.rsv_update("rsv_out", kind=kind, by="", record_fact_at=timeutil.now_iso())
-    svc.rsv_update("rsv_peer_state", in_by=by)
+    fields = dict(kind=kind, by="", record_fact_at=timeutil.now_iso())
+    if go_sent is not None:
+        fields["go_sent"] = go_sent
+    svc.rsv_update("rsv_out", **fields)
     texts = [n.text for n in notices(svc.reserve_wiped_in())]
-    assert (int(svc.reserve_keys()["m_gen"]) == m_gen + 1) is regen, f"{kind}/{by}: поколение M"
-    assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is regen, f"{kind}/{by}: код админу"
-    assert bool([t for t in texts if "Токен API DNS" in t]) is regen, f"{kind}/{by}: просьба сменить токен"
+    tag = f"{kind}/go_sent={go_sent}"
+    assert (int(svc.reserve_keys()["m_gen"]) == m_gen + 1) is regen, f"{tag}: поколение M"
+    assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is regen, f"{tag}: код админу"
+    assert bool([t for t in texts if "Токен API DNS" in t]) is regen, f"{tag}: просьба сменить токен"
 
 
-def test_the_way_of_opening_said_at_the_start_of_the_away_wins_over_a_later_st(away):
-    """`by` записан при переходе в away (слово резерва); st, пришедший позже
-    (резерв уже idle, in_by пуст), его не стирает."""
+@pytest.mark.parametrize("in_by", ["k", "share", ""])
+def test_the_word_of_the_reserve_does_not_spare_the_generation_when_my_k_was_not_sent(away, in_by):
+    """Резерв, собравший M по долям, мог бы сказать «открыл ключом» (in_by=k)
+    — и при доверии к его слову поколение осталось бы прежним, а он сохранил
+    бы способность открывать следующие пакеты. Решает только своя отметка."""
     svc = away.svc
     m_gen = int(svc.reserve_keys()["m_gen"])
     _at_step(away, "relay")
-    svc.rsv_update("rsv_out", kind="button", by="share", record_fact_at=timeutil.now_iso())
-    svc.rsv_update("rsv_peer_state", in_by="")
+    svc.rsv_update("rsv_out", kind="button", by="k", go_sent=False, record_fact_at=timeutil.now_iso())
+    svc.rsv_update("rsv_peer_state", in_by=in_by)
     svc.reserve_wiped_in()
-    assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1
+    assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1, f"in_by={in_by!r}: поколение не сменилось без моего go"
+
+
+def test_my_own_go_keeps_the_generation_even_if_the_reserve_says_shares(away):
+    """Обратная сторона: K отдан мной — прямая цела; слово резерва «по долям»
+    не заставляет перевыпускать доли шлюзов и слать админу новый код."""
+    svc = away.svc
+    m_gen = int(svc.reserve_keys()["m_gen"])
+    _at_step(away, "relay")
+    svc.rsv_update("rsv_out", kind="button", by="share", go_sent=True, record_fact_at=timeutil.now_iso())
+    svc.rsv_update("rsv_peer_state", in_by="share")
+    svc.reserve_wiped_in()
+    assert int(svc.reserve_keys()["m_gen"]) == m_gen, "поколение сменилось после переезда моим K"
+    assert svc.rsv_get("rsv_out").get("go_sent") is False, "отметка go_sent пережила возврат — следующий переезд её унаследует"

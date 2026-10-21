@@ -253,7 +253,7 @@ class ReserveOutboundMixin:
             self._out_step(next_step, RELEASED_WAIT_S if next_step == "release" else 0, record_fact_at=timeutil.now_iso())
             actions += [("live",), ("release",) if next_step == "release" else ("send", "back", {})]
             if next_step == "back":
-                self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso())
+                self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso(), back_resent=time.monotonic())
         return actions
 
     # ── события канала (переезд) ────────────────────────────────────────────
@@ -435,7 +435,7 @@ class ReserveOutboundMixin:
                 # `back` всё равно, админу Т-РУ11 (запись менять руками)
                 from awgbot.domain.notices import reserve as rn
                 own = self.reserve_own_ip()
-                self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso(), record_timeout=True)
+                self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso(), record_timeout=True, back_resent=time.monotonic())
                 return [("send", "back", {}), ("live",),
                         ("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                  text=rn.record_not_changed(self.reserve_dns_name(), "факт записи не наступил за 30 минут", own))])]

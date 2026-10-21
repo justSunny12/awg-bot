@@ -52,6 +52,9 @@ class ReserveRfBlockMixin:
                     rf.update(since=str(view.get("case_since") or timeutil.now_iso()), mono=now)
                 self.rsv_update("rsv_view", rf=rf)
             return []
+        if rf.get("blocked") in ("зона занята", "мои клиенты не на этом сервере"):
+            rf["blocked"] = ""                                # зона свободна — метка прочь, демпфер идёт своим счётом
+            self.rsv_update("rsv_view", rf=rf)
         if not rf.get("since"):
             rf = {"since": str(view.get("case_since") or timeutil.now_iso()), "mono": now}
             self.rsv_update("rsv_view", rf=rf)
@@ -83,10 +86,10 @@ class ReserveRfBlockMixin:
         if not self.reserve_online():
             return []
         why = self.reserve_auto_block()
+        if rf.get("blocked") != (why or ""):
+            rf["blocked"] = why or ""
+            self.rsv_update("rsv_view", rf=rf)
         if why:
-            if rf.get("blocked") != why:
-                rf["blocked"] = why
-                self.rsv_update("rsv_view", rf=rf)
             return []
         body = {"case": "3" if case == "3" else "nogw", "since": str(rf.get("since") or ""),
                 "voters": [{"slot": s, "name": self.reserve_gw_name(s), "see": v == "see"} for s, v in self._voters().items()][:16]}

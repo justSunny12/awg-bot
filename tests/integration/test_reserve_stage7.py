@@ -174,15 +174,23 @@ async def test_the_guest_tells_its_reserve_about_a_stall_and_the_recovery(servic
 
 # ── основа узнаёт о переезде мимо себя: чем открыт пакет ────────────────────
 
-@pytest.mark.parametrize("in_by, want", [("code", "code"), ("share", "share"), ("", "share")])
-def test_a_move_past_the_primary_remembers_how_the_reserve_opened_the_package(mv, in_by, want):
-    """Основа лежала, резерв перевёл её клиентов сам (по долям или коду):
-    основа узнаёт это из st, а прежний резерв без in_by — значит по долям
-    (ключа основы у него не было)."""
+@pytest.mark.parametrize("in_by", ["code", "share", "k", ""])
+def test_a_move_past_the_primary_counts_as_opened_without_my_key_whatever_the_reserve_says(mv, in_by):
+    """Основа лежала, резерв перевёл её клиентов сам: своего `go` с K основа
+    не отправляла, значит пакет открыт по долям или по коду — что бы ни
+    говорил резерв в in_by. Слово резерва здесь не слушаем: подложное
+    «k» оставило бы прежнее поколение после возврата, и резерв, собравший
+    M, мог бы открыть и следующий пакет. Поколение пакета — то, с которым
+    стартовал гость; отметка переключения — для демпфера возврата."""
     svc = mv.svc
-    over = {"in": "serving", "in_kind": "dead"}
+    over = {"in": "serving", "in_kind": "dead", "pkg": {"gen": 9, "fp": "DUMMY-fp"}}
     if in_by:
         over["in_by"] = in_by
     rm.st_in(svc, **over)
     svc.reserve_out_tick()
-    assert svc.reserve_out() == "away" and svc.rsv_get("rsv_out").get("by") == want, svc.rsv_get("rsv_out")
+    out = svc.rsv_get("rsv_out")
+    assert svc.reserve_out() == "away" and out.get("by") == "share", out
+    assert out.get("go_sent") is False, f"переезд мимо меня записан как отданный моим K: {out}"
+    assert int(out.get("gen") or 0) == 9, f"поколение не из пакета резерва — слияние не найдёт base-<gen>.db: {out}"
+    assert out.get("last_switch"), "переезд мимо основы без отметки переключения"
+    assert (out.get("healthy_mono"), out.get("can_return")) == (0, False), "здоровье прежнего эпизода не сброшено"

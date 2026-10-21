@@ -10887,7 +10887,7 @@ NASPi — 🟢 Активен
 
 Перешли это сообщение админу второго сервера AWG — он вставит строку ниже в своём боте: «⚙️ Настройки» → «🛟 Резерв» → «📥 Принять приглашение»
 
-<code>AWGP1.AQECAwABI0VniavN72qo-wAPdnBuLmV4YW1wbGUub3Jnt_0KY2IBAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUKMhQeKDIAAABkAAAAyCPDRgAjxMygQZCrAEGSMaBfXhAAX1-WoAGzOng5</code>
+<code>AWGP1.AQECAwABI0VniavN72qo-wALMjAzLjAuMTEzLjW3_QpjYgECAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQoyFB4oMgAAAGQAAADII8NGACPEzKBBkKsAQZIxoF9eEABfX5agAS0mP8w</code>
 
 Его бот покажет код подтверждения — админ продиктует его тебе; введи код здесь кнопкой «✏️ Ввести код». Приглашение действует час — до 13:00 (UTC+5)
   [✏️ Ввести код | rsv:code:0123456789abcdef] [⬅️ Отменить | rsv:cancel:0123456789abcdef]
@@ -10917,7 +10917,7 @@ NASPi — 🟢 Активен
 
 Перешли это сообщение админу второго сервера AWG — он вставит строку ниже в своём боте: «⚙️ Настройки» → «🛟 Резерв» → «📥 Принять приглашение»
 
-<code>AWGP1.AQECAwABI0VniavN72qo-wAPdnBuLmV4YW1wbGUub3Jnt_0KY2IBAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUKMhQeKDIAAABkAAAAyCPDRgAjxMygQZCrAEGSMaBfXhAAX1-WoAGzOng5</code>
+<code>AWGP1.AQECAwABI0VniavN72qo-wALMjAzLjAuMTEzLjW3_QpjYgECAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQoyFB4oMgAAAGQAAADII8NGACPEzKBBkKsAQZIxoF9eEABfX5agAS0mP8w</code>
 
 Его бот покажет код подтверждения — админ продиктует его тебе; введи код здесь кнопкой «✏️ Ввести код». Приглашение действует час — до 13:00 (UTC+5)
 
@@ -10931,7 +10931,7 @@ NASPi — 🟢 Активен
 
 Перешли это сообщение админу второго сервера AWG — он вставит строку ниже в своём боте: «⚙️ Настройки» → «🛟 Резерв» → «📥 Принять приглашение»
 
-<code>AWGP1.AQECAwABI0VniavN72qo-wAPdnBuLmV4YW1wbGUub3Jnt_0KY2IBAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUKMhQeKDIAAABkAAAAyCPDRgAjxMygQZCrAEGSMaBfXhAAX1-WoAGzOng5</code>
+<code>AWGP1.AQECAwABI0VniavN72qo-wALMjAzLjAuMTEzLjW3_QpjYgECAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQoyFB4oMgAAAGQAAADII8NGACPEzKBBkKsAQZIxoF9eEABfX5agAS0mP8w</code>
 
 Его бот покажет код подтверждения — админ продиктует его тебе; введи код здесь кнопкой «✏️ Ввести код». Приглашение действует час — до 13:00 (UTC+5)
 

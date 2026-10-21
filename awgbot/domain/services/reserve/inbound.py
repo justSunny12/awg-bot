@@ -329,6 +329,11 @@ class ReserveInboundMixin:
         if str(inn.get("state") or "") not in ("releasing", "serving", "taking"):
             return []
         name = self.reserve_peer_name()
+        if str(inn.get("state") or "") == "taking":
+            try:
+                self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь
+            except Exception as e:                            # noqa: BLE001
+                log.info("резерв: юнит процесса открытия не остановлен: %s", e)
         peer = self.reserve_peer_state()
         host = str(peer.get("self_host") or (self.reserve_peer() or {}).get("host") or "")
         ports = [int(p) for p in (peer.get("ports") or []) if isinstance(p, int)]

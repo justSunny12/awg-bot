@@ -1315,7 +1315,7 @@ cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | t
         teardown)
             # аварийно: зона и хранилище гостя прочь (клиенты основы у меня обрываются);
             # бот резерва увидит пустую зону по состоянию
-            require_root; bash "$zone" --teardown; bash "$zone" --wipe ;;
+            require_root; bash "$zone" --teardown || { echo "зона снята не полностью — хранилище всё равно стираю" >&2; true; }; bash "$zone" --wipe ;;
         tgpool)
             # пул адресов Telegram для порта вебхука: show — файл пула (ядро — в коде),
             # refresh — отметка «обновить анонсы сейчас», её снимет такт бота
