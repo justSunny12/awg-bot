@@ -147,9 +147,11 @@ def move_failed(reserve: str, reason: str, released: bool = False) -> str:
     return text + (f"; {_n(reserve)} отпустил клиентов" if released else "")
 
 
-def return_failed(reserve: str, reason: str) -> str:
+def return_failed(reserve: str, reason: str, final: bool = False) -> str:
+    tail = ("сам возврат больше не повторяю — разберись по журналу и верни кнопкой «↩️ Вернуть клиентов»" if final
+            else "проверь журнал и повтори возврат")
     return (f"⚠️ Возврат не состоялся: слияние данных с {_n(reserve)} не удалось — {_e(reason)}. Клиенты и бот "
-            f"остаются на {_n(reserve)}; проверь журнал и повтори возврат")
+            f"остаются на {_n(reserve)}; {tail}")
 
 
 def record_not_changed(name: str, reason: str, ip: str) -> str:
@@ -285,6 +287,12 @@ def forced_home(reserve: str) -> str:
     """С9: клиенты возвращены без резерва."""
     return (f"↩️ Клиенты и бот снова здесь: запись на этом сервере, Telegram забран. {_n(reserve)} не на связи — "
             f"всё, что изменилось там, вольётся, когда он выйдет на связь")
+
+
+def take_tg_stuck(reserve: str) -> str:
+    """Возврат: deleteWebhook с этого сервера не проходит минутами."""
+    return (f"⚠️ Возврат клиентов с {_n(reserve)}: Telegram с этого сервера не отвечает (deleteWebhook) уже 5 минут — "
+            "бот не отвечает никому, пока сеть не вернётся")
 
 
 def forced_no_merge(reserve: str) -> str:

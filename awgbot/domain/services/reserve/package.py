@@ -197,9 +197,23 @@ class ReservePackageMixin:
         out = os.path.join(reserve_dir(), "out")
         os.makedirs(out, mode=0o700, exist_ok=True)
         path = os.path.join(out, f"base-{gen}.db")
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # снимок нужен ровно в сценарии «основа умерла»: tmp + fsync + replace + fsync каталога,
+        # иначе после краха на диске файл нулевой длины или усечённый
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as f:
             f.write(db_bytes)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        try:
+            dfd = os.open(out, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            pass
 
     def _pkg_prune_bases(self, keep: list[int]) -> None:
         out = os.path.join(reserve_dir(), "out")

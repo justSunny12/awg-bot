@@ -129,6 +129,7 @@ class GuestCtlServer:
             self._words.append(("back_req", None))
         elif kind == "tg_taken":
             self._words.append(("tg_taken", None))
+            await self.send("ack", {"of": "tg_taken"})      # гость повторяет слово, пока не подтверждено
         elif kind == "webhook":
             self._words.append(("webhook", {"stalled": bool(msg.get("stalled")), "since": str(msg.get("since") or ""),
                                             "error": str(msg.get("error") or "")}))
@@ -182,6 +183,7 @@ class GuestCtlClient:
         self._writer: asyncio.StreamWriter | None = None
         self._task: asyncio.Task | None = None
         self.take_tg = asyncio.Event()
+        self.tg_acked = asyncio.Event()                      # резерв подтвердил tg_taken
         self.stop_req = asyncio.Event()
         self.blocks: list[str] | None = None    # последние блокировки от основы (через резерв)
         self._attempt = 0
@@ -236,6 +238,9 @@ class GuestCtlClient:
         kind = msg["kind"]
         if kind == "state":
             await asyncio.to_thread(self.services.guest_state_in, msg)
+        elif kind == "ack":
+            if str(msg.get("of") or "") == "tg_taken":
+                self.tg_acked.set()
         elif kind == "take_tg":
             self.take_tg.set()
         elif kind == "stop":

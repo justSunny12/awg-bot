@@ -102,6 +102,8 @@ async def run_guest() -> None:
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
                 await ctl.send("tg_taken")
                 notify_at["t"] = asyncio.get_running_loop().time() + MOVE_NOTIFY_DELAY_S
+        if tg_set.is_set() and not ctl.tg_acked.is_set() and ctl.connected():
+            await ctl.send("tg_taken")                    # канал мог быть не подключён в момент вебхука — повтор до ack
         if tg_set.is_set() and notify_at["t"] and asyncio.get_running_loop().time() >= notify_at["t"]:
             notify_at["t"] = 0.0
             try:

@@ -43,9 +43,9 @@ class ReserveRfBlockMixin:
             if rf.get("since"):
                 self.rsv_update("rsv_view", rf={"blocked": "nogw_off"})
             return []
-        if self.reserve_in() != "idle" or self.reserve_out() != "home":
+        if not self.reserve_zone_free() or self.reserve_out() != "home":
             # переезд уже идёт (согласие или доли) либо мои клиенты не здесь — ни ask, ни need
-            why = "зона занята" if self.reserve_in() != "idle" else "мои клиенты не на этом сервере"
+            why = "зона занята" if not self.reserve_zone_free() else "мои клиенты не на этом сервере"
             if rf.get("blocked") != why:
                 rf["blocked"] = why
                 if not rf.get("since"):

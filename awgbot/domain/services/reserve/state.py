@@ -120,6 +120,11 @@ class ReserveStateMixin:
         """У меня сейчас клиенты и бот резерва."""
         return self.reserve_in() in ("taking", "serving", "releasing")
 
+    def reserve_zone_free(self) -> bool:
+        """Зона свободна для нового открытия: idle — или relay (пересылка хвоста
+        уступает: `_relay_yield` снимает её перед открытием)."""
+        return self.reserve_in() in ("idle", "relay")
+
     def reserve_away(self) -> bool:
         """Мои клиенты и бот — у резерва."""
         return self.reserve_out() in ("leaving", "away", "returning")

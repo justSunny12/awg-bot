@@ -198,7 +198,8 @@ class ReserveOutboundMixin:
         peer = self.reserve_peer_state()
         if out.get("await_merge"):
             return self._tick_await_merge(out)
-        if str(peer.get("inn") or "") in ("taking", "serving") and self.reserve_online():
+        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")   # st получен после моего перехода домой
+        if str(peer.get("inn") or "") == "serving" and self.reserve_online() and fresh:
             # переезд прошёл мимо меня — пакет открыт не моим K (своего `go` не было): по долям или
             # по коду; слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
@@ -226,19 +227,36 @@ class ReserveOutboundMixin:
             return []
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
+        if step == "release":
+            # передача бота: действие выдаётся снова, пока не прошло (сбой подтверждения пачки,
+            # реплики или отправки — не повод срывать переезд через 5 минут)
+            now = time.monotonic()
+            if livestep.mono_due(out.get("release_try"), now, 30):
+                self.rsv_update("rsv_out", release_try=now)
+                return [("release",)]
+            return []
         if step == "released" and self._expired(out):
-            # резерв не ответил `taken` — право отвечать решает Telegram: разбудить
-            # поллинг (getWebhookInfo); away — только когда вебхук у резерва (poll away),
-            # иначе переезд не состоялся
-            if self.reserve_poll() == "away":
+            # резерв не ответил `taken` — право отвечать решает Telegram, не моя отметка:
+            # разбудить поллинг (getWebhookInfo) и решать по его слову, записанному после released
+            from awgbot.domain.notices import reserve as rn
+            poll = self.rsv_get("rsv_poll")
+            fresh = str(poll.get("since") or "") >= str(out.get("released_at") or "")
+            verdict = str(poll.get("why") or "") if fresh else ""
+            if verdict in ("webhook", "webhook_info"):          # Telegram: вебхук стоит — клиенты у резерва
                 self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
-                                     last_switch=timeutil.now_iso())
-                return [("wake_poll",), ("live",)]
-            if not out.get("poll_woken"):
-                self.rsv_update("rsv_out", poll_woken=True)
-                self._out_step("released", 120)
+                                     last_switch=timeutil.now_iso(), healthy_since="")
+                log.info("резерв: `taken` не пришёл, но вебхук у «%s» стоит — away", self.reserve_peer_name())
+                return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
+                    self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
+                    dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
+            if fresh and poll.get("state") == "mine":           # Telegram: вебхука нет — переезд не состоялся
+                return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True)
+            woken = int(out.get("poll_woken") or 0)
+            if woken < 3:                                       # слова Telegram ещё нет — разбудить и подождать
+                self.rsv_update("rsv_out", poll_woken=woken + 1)
+                self._out_step("released", 120, released_at=str(out.get("released_at") or ""))
                 return [("wake_poll",)]
-            return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True)
+            return self._move_fail("право отвечать не проверено — Telegram не ответил", released=True)
         return []
 
     def _tick_record(self, out: dict, target: str, next_step: str) -> list[tuple]:
@@ -261,7 +279,8 @@ class ReserveOutboundMixin:
             return actions
         self.rsv_update("rsv_out", record_probe=time.monotonic())
         if self.reserve_dns_points_to(target):
-            self._out_step(next_step, RELEASED_WAIT_S if next_step == "release" else 0, record_fact_at=timeutil.now_iso())
+            self._out_step(next_step, RELEASED_WAIT_S if next_step == "release" else 0, record_fact_at=timeutil.now_iso(),
+                           release_try=time.monotonic())
             actions += [("live",), ("release",) if next_step == "release" else ("send", "back", {})]
             if next_step == "back":
                 self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso(), back_resent=time.monotonic())
@@ -301,8 +320,8 @@ class ReserveOutboundMixin:
             self._pkg_store_base(int(out.get("gen") or 0), db_bytes)
         except OSError as e:
             log.warning("резерв: снимок финальной реплики не сохранён: %s", e)
-        self._out_step("released", RELEASED_WAIT_S, released_at=timeutil.now_iso())
-        self.reserve_set_poll("away")
+        self._out_step("released", RELEASED_WAIT_S, released_at=timeutil.now_iso(), poll_woken=0)
+        self.reserve_set_poll("away", why="released")           # своя отметка; слово Telegram — webhook/webhook_info
         return {"gen": int(out.get("gen") or 0), "blob": blob.hex()}
 
     def reserve_taken_in(self) -> list[tuple]:
@@ -330,7 +349,24 @@ class ReserveOutboundMixin:
         gw_ok = True
         if self.reserve_has_gateway() and hasattr(self, "gwlink_session"):
             gw_ok = any(bool(self.gwlink_session(g.id)) for g in self.db.gateways())
-        return bool(awg_ok and pair_ok and gw_ok)
+        return bool(awg_ok and pair_ok and gw_ok and self._tg_reachable())
+
+    def _tg_reachable(self) -> bool:
+        """Telegram достижим с этого сервера (TCP к api.telegram.org:443, кэш минуту):
+        возврат без Telegram оставил бы бота немым обеим сторонам."""
+        import socket
+        cache = self.__dict__.setdefault("_tg_reach", {})
+        now = time.monotonic()
+        if cache.get("at") and now - cache["at"] < 60:
+            return bool(cache.get("ok"))
+        ok = False
+        try:
+            with socket.create_connection(("api.telegram.org", 443), timeout=3):
+                ok = True
+        except OSError:
+            ok = False
+        cache.update(at=now, ok=ok)
+        return ok
 
     def _tick_away(self, out: dict) -> list[tuple]:
         now = time.monotonic()
@@ -343,6 +379,8 @@ class ReserveOutboundMixin:
                 return []
             if now - since < HEALTHY_S:
                 return []
+            if out.get("merge_blocked"):
+                return []                                     # слияние дважды упало с той же причиной — только по кнопке
             if str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate":
                 last = str(out.get("last_switch") or "")
                 gap = settings.get_int("app.reserve.min_interval_minutes", 30) * 60
@@ -510,18 +548,34 @@ class ReserveOutboundMixin:
 
     def _tick_returning(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "back_req")
+        now = time.monotonic()
         if step == "back_req":
-            if str(out.get("return_why") or "") == "force" and self.reserve_online() \
-                    and str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing"):
+            peer_idle = self.reserve_online() and \
+                str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing")
+            if peer_idle and str(out.get("return_why") or "") == "force":
                 return self._forced_no_merge()                # взгляд на него был старым: гостя у него уже нет
+            if peer_idle and str(self.reserve_peer_state().get("at") or "") >= str(out.get("return_started_at") or ""):
+                # резерв потерял зону (перезагрузка): реплики не будет — забрать Telegram и запись без слияния
+                log.warning("резерв: «%s» на связи без моего гостя — возврат без реплики", self.reserve_peer_name())
+                return self._return_without_replica()
             if self._expired(out):
                 # реплика не пришла: повторить просьбу (резерв мог лечь) — не чаще раза в срок
                 self._out_step("back_req", RELEASED_WAIT_S)
                 return [("send", "back_req", {})]
             return []
         if step == "restart":
-            return [("restart",)]
+            if livestep.mono_due(out.get("restart_at"), now, 60):   # один перезапуск, повтор не раньше минуты
+                self.rsv_update("rsv_out", restart_at=now)
+                return [("restart",)]
+            return []
         if step == "take_tg":
+            tries = int(out.get("take_tg_tries") or 0) + 1
+            self.rsv_update("rsv_out", take_tg_tries=tries)
+            if tries == 100 and not out.get("take_tg_told"):        # ~5 минут отказов deleteWebhook — Telegram недоступен
+                from awgbot.domain.notices import reserve as rn
+                self.rsv_update("rsv_out", take_tg_told=True)
+                return [("take_tg",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                                               text=rn.take_tg_stuck(self.reserve_peer_name()))])]
             return [("take_tg",)]
         if step == "record_back":
             if self._expired(out):
@@ -548,24 +602,46 @@ class ReserveOutboundMixin:
         return []
 
     # ── возврат: события канала ─────────────────────────────────────────────
+    def _return_without_replica(self) -> list[tuple]:
+        """Реплики нет (резерв потерял гостя, пустой released): слияния нет, пиры и
+        блокировки — по своей базе, перезапуск не нужен — сразу забирать Telegram."""
+        self.rsv_update("rsv_out", merge_report={"lost": True})
+        self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)
+        return [("take_tg",), ("live",)]
+
     def reserve_released_in(self, blob: bytes) -> list[tuple]:
-        """Реплика бота основы с резерва: слияние, пиры, блокировки → restart."""
+        """Реплика бота основы с резерва: слияние, пиры, блокировки → restart.
+        Пустая реплика — возврат без слияния. Та же реплика второй раз (повтор
+        back_req после рестарта посреди слияния) не сливается дважды."""
+        import hashlib
         out = self._out()
         if out.get("state") != "returning" or out.get("step") not in ("back_req", "merge"):
             log.info("резерв: released вне возврата — пропущен")
             return []
+        if not blob:
+            log.warning("резерв: «%s» отдал пустую реплику — возврат без слияния", self.reserve_peer_name())
+            return self._return_without_replica()
+        fp = hashlib.sha256(blob).hexdigest()
+        if fp == str(out.get("merged_fp") or ""):
+            log.info("резерв: реплика уже слита — к перезапуску")
+            self._out_step("restart")
+            return [("restart",)]
         self._out_step("merge", RELEASED_WAIT_S)
         try:
             report = self._return_merge(blob, int(out.get("gen") or 0))
         except Exception as e:                                # noqa: BLE001
+            reason = str(e)[:200]
+            same = reason == str(out.get("merge_error") or "")
             log.error("резерв: слияние не удалось: %s — клиенты остаются у резерва", e)
-            self.reserve_set_out("away", kind=str(out.get("kind") or ""), step="", merge_error=str(e)[:200],
+            self.reserve_set_out("away", kind=str(out.get("kind") or ""), step="", merge_error=reason,
+                                 merge_blocked=reason if same else "",
                                  healthy_mono=0, healthy_since="", can_return=False, last_switch=timeutil.now_iso())
             from awgbot.domain.notices import reserve as rn
-            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
-                                             text=rn.return_failed(self.reserve_peer_name(), str(e)))])]
-        self.rsv_update("rsv_out", merge_report=report)
-        self._out_step("restart")
+            # повтор той же причины — молча (громко один раз), автоматический возврат дальше не идёт
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=not same, silent=same,
+                                             text=rn.return_failed(self.reserve_peer_name(), reason, final=same))])]
+        self.rsv_update("rsv_out", merge_report=report, merged_fp=fp, merge_error="", merge_blocked="")
+        self._out_step("restart", restart_at=0)
         return [("restart",)]
 
     def _return_merge(self, blob: bytes, gen: int) -> dict:
@@ -726,11 +802,6 @@ class ReserveOutboundMixin:
         """`wiped`: резерв снял хранилище и прежний пакет — новый `K`, новый пакет, домой."""
         out = self._out()
         if out.get("state") != "returning":
-            # wiped может прийти первым сообщением новой сессии после обрыва — тоже в счёт
-            if out.get("state") == "home" and out.get("await_wiped"):
-                self.rsv_update("rsv_out", await_wiped=False)
-                self.reserve_new_k()
-                self.reserve_pkg_mark()
             return []
         return self._return_done([])
 
@@ -744,7 +815,8 @@ class ReserveOutboundMixin:
         self.reserve_set_out("home", step="", kind="", relay_until=str(out.get("relay_until") or ""),
                              returned_at=timeutil.now_iso(), last_switch=timeutil.now_iso(),
                              back_fact_at=str(out.get("record_fact_at") or timeutil.now_iso()), notified=False,
-                             merge_report=dict(out.get("merge_report") or {}), go_sent=False, await_merge=False)
+                             merge_report=dict(out.get("merge_report") or {}), go_sent=False, await_merge=False,
+                             merged_fp="", merge_error="", merge_blocked="")
         self.db.set_state("move_notified", "")              # «переподключи VPN» — заново на следующий переезд
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]

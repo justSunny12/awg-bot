@@ -47,6 +47,8 @@ from .state import _LOCK
 
 OPEN_UNIT = "awg-bot-rsvopen"
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
+TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
+DONE_BUTTON_WAIT_S = 1800 + 300 + 120   # кнопка: основе на запись (30 мин) и передачу бота (5 мин) с запасом
 REPLICA_WAIT_S = 90              # реплика от гостя после stop
 
 
@@ -64,7 +66,7 @@ class ReserveInboundMixin:
         pkg_in = self.rsv_get("rsv_pkg_in")
         if int(pkg_in.get("gen") or 0) != int(gen):
             return f"у меня пакет {pkg_in.get('gen') or 'нет'}, а не {gen}"
-        if self.reserve_in() != "idle":
+        if not self.reserve_zone_free():
             return "зона занята"
         if self.reserve_out() != "home":
             return "мои клиенты не на этом сервере"
@@ -82,8 +84,9 @@ class ReserveInboundMixin:
         payload = self._open_payload(kind)
         payload["k"] = str(k_hex)
         with _LOCK:
-            if self.reserve_in() != "idle":                   # проверка и запись — под одним замком
+            if not self.reserve_zone_free():                  # проверка и запись — под одним замком
                 return "зона занята"
+            self._relay_yield()                               # хвост уступает новому клону
             from awgbot.infra import rsvzone
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
@@ -97,6 +100,19 @@ class ReserveInboundMixin:
             return str(e)
         log.info("резерв: процесс открытия запущен (%s, пакет %s)", kind, gen)
         return ""
+
+    def _relay_yield(self) -> None:
+        """Фаза relay (пересылка хвоста) при новом открытии: правило DNAT снимается —
+        иначе оно увело бы клиентов нового клона на основу; состояние — idle."""
+        from awgbot.infra import rsvzone
+        if self.reserve_in() != "relay":
+            return
+        try:
+            rsvzone.teardown()
+        except rsvzone.ZoneError as e:
+            log.info("резерв: пересылка хвоста при новом открытии снята с ошибкой: %s", e)
+        self.reserve_set_in("idle", step="", relay_to="", relay_until="")
+        log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
 
     def _open_payload(self, kind: str) -> dict:
         from awgbot.infra import nftguard, rsvzone
@@ -138,7 +154,7 @@ class ReserveInboundMixin:
                     "AWG_BOT_ENV": "/dev/null"})
         if shutil.which("systemd-run"):
             pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
-            props = ["-p", "MemoryMax=96M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
+            props = ["-p", "MemoryMax=192M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
                      "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
                      "-p", "NoNewPrivileges=yes",
                      "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
@@ -221,25 +237,61 @@ class ReserveInboundMixin:
             rc, tail = self._rsvopen_exit()                   # юнит не стартовал (226) или процесс убит (OOM): сразу, не через 35 мин
             if rc is not None:
                 return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
+        now = time.monotonic()
         if step in ("clone_up", "record_set", "record_fact", "done") and not inn.get("up_sent"):
-            self.rsv_update("rsv_in", up_sent=True, clone_at=timeutil.now_iso())
+            self.rsv_update("rsv_in", up_sent=True, up_resent=now, clone_at=timeutil.now_iso())
             actions += [("send", "up", {}), ("fw",)]
+        elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
+            self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт
+            actions.append(("send", "up", {}))
         if step == "done" and not inn.get("served"):
             # факт записи (аварийный путь) или открытие без записи (кнопка: запись меняет основа)
             try:
                 rsvzone.serve(self._webhook_port())
             except rsvzone.ZoneError as e:
                 return self._take_fail(f"зона не приняла режим serve: {e}")
-            self.rsv_update("rsv_in", served=True)
+            self.rsv_update("rsv_in", served=True, done_mono=now)
             actions.append(("fw",))
             if hasattr(self, "reserve_tg_pool_refresh_soon"):
                 self.reserve_tg_pool_refresh_soon(5)         # свежие анонсы — до первого вебхука
-            if str(inn.get("kind") or "") != "button":
-                # аварийный переезд: право отвечать берёт гость сам по отметке tg_take
-                pass
-        if livestep.mono_expired(inn.get("deadline"), time.monotonic()) and step != "done":
+        if step == "done":
+            return actions + self._tick_done_wait(inn, now)
+        if livestep.mono_expired(inn.get("deadline"), now):
             return self._take_fail("процесс открытия не завершился за 35 минут")
         return actions
+
+    def _tick_done_wait(self, inn: dict, now: float) -> list[tuple]:
+        """После done у taking есть срок: аварийный путь ждёт `tg_taken` гостя
+        (бот основы поднялся и поставил вебхук), кнопка — `released` основы.
+        Гость не стартовал или не взял Telegram — отказ с причиной; основа с
+        `released` опоздала и мертва для меня — Telegram берёт гость (клон уже
+        несёт клиентов), жива — отказ."""
+        from awgbot.infra import rsvzone
+        done_at = inn.get("done_mono")
+        if not done_at:
+            self.rsv_update("rsv_in", done_mono=now)
+            return []
+        waited = livestep.mono_since(done_at, now)
+        if str(inn.get("kind") or "") != "button":
+            if waited < TAKEN_WAIT_S:
+                return []
+            if not rsvzone.guest_unit_active():
+                return self._take_fail("бот основы на резерве не поднялся (юнит гостя не активен)")
+            return self._take_fail("бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+        if waited < DONE_BUTTON_WAIT_S:
+            return []
+        if not inn.get("replica_at") and self.reserve_peer_seen() == "down" and not inn.get("tg_take_forced"):
+            # основа умерла между up и released: клон несёт клиентов — пусть гость заберёт и Telegram
+            log.warning("резерв: основа не отдала released и не на связи — гость берёт Telegram сам")
+            self.rsv_update("rsv_in", tg_take_forced=True)
+            try:
+                rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
+            except OSError as e:
+                return self._take_fail(f"отметка tg_take не записана: {e}")
+            return []
+        if inn.get("tg_take_forced") and waited < DONE_BUTTON_WAIT_S + TAKEN_WAIT_S:
+            return []
+        return self._take_fail("основа не передала бота (released) в срок")
 
     def _webhook_port(self) -> int:
         from awgbot.infra import rsvzone
@@ -248,6 +300,11 @@ class ReserveInboundMixin:
     def _take_fail(self, reason: str) -> list[tuple]:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
+        with _LOCK:                                            # обработчик кода и такт видят один и тот же fail: срыв — один раз
+            inn = self._inn()
+            if str(inn.get("state") or "") != "taking" or inn.get("failing"):
+                return []
+            self.rsv_update("rsv_in", failing=True)
         name = self.reserve_peer_name()
         extra: list[tuple] = []
         if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
@@ -262,7 +319,8 @@ class ReserveInboundMixin:
                 fn()
             except rsvzone.ZoneError as e:
                 log.warning("резерв: зона после отказа: %s", e)
-        self.reserve_set_in("idle", step="", reason=reason)
+        # ended_auto — только после состоявшегося переезда; после срыва — короткий демпфер (fail_at)
+        self.reserve_set_in("idle", step="", reason=reason, ended_auto=False, fail_at=timeutil.now_iso(), failing=False)
         gw_word = self.reserve_gw_state_actions(force=True, reason=reason) if hasattr(self, "reserve_gw_state_actions") else []
         return [("send", "down", {"reason": reason[:120]}), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra + gw_word
@@ -336,7 +394,17 @@ class ReserveInboundMixin:
                 blob = b""
             return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
         if str(inn.get("state") or "") not in ("serving", "taking"):
-            return []
+            # зоны нет (перезагрузка резерва посреди обслуживания, teardown мимо бота): что есть на
+            # диске — rep.bin под K основы — отдать, иначе released без реплики; основа вернёт
+            # клиентов без слияния, а не будет просить вечно
+            try:
+                blob = rsvzone.REP_PATH.read_bytes()
+            except OSError:
+                blob = b""
+            gen = int(self.rsv_get("rsv_pkg_in").get("gen") or 0)
+            log.warning("резерв: back_req при зоне в состоянии %s — отдаю %s", inn.get("state") or "idle",
+                        "rep.bin" if blob else "released без реплики")
+            return [("send_released", {"gen": gen, "blob": blob.hex()})]
         with _LOCK:
             self.reserve_set_in("releasing", kind=str(inn.get("kind") or ""), gen=int(inn.get("gen") or 0),
                                 deadline=time.monotonic() + REPLICA_WAIT_S, taken_at=str(inn.get("taken_at") or ""))
@@ -399,8 +467,12 @@ class ReserveInboundMixin:
         if str(inn.get("state") or "") == "relay":
             return [("send", "relay", {"until": str(inn.get("relay_until") or "")}), ("send", "wiped", {})]   # повтор
         if str(inn.get("state") or "") not in ("releasing", "serving", "taking"):
-            return []
+            return [("send", "wiped", {})]                    # зоны нет — основе нечего ждать
         name = self.reserve_peer_name()
+        # пересылка хвоста нужна, только если клиенты могли прийти на клон: зона обслуживала
+        # или процесс открытия дошёл до смены записи; срыв раньше — сразу idle
+        step = str(rsvzone.open_status().get("step") or "")
+        had_clients = str(inn.get("state") or "") != "taking" or step in ("record_set", "record_fact", "done")
         if str(inn.get("state") or "") == "taking":
             try:
                 self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь
@@ -410,7 +482,7 @@ class ReserveInboundMixin:
         host = str(peer.get("self_host") or (self.reserve_peer() or {}).get("host") or "")
         host = self._relay_host_ip(host)                      # в правило nft — адрес: имя резолвится при загрузке таблицы
         ports = [int(p) for p in (peer.get("ports") or []) if isinstance(p, int)]
-        to = f"{host}:{ports[0]}" if host and ports else ""
+        to = f"{host}:{ports[0]}" if host and ports and had_clients else ""
         until = timeutil.to_iso(timeutil.shift(timeutil.now(), settings.get_int("app.reserve.relay_max_days", 7) * 86400))
         try:
             self.reserve_traffic_in_close()

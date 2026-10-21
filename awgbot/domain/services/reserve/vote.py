@@ -33,6 +33,7 @@ from .state import _LOCK
 
 NEED_RETRY_S = 30                 # доля не пришла — need следующему «не вижу»
 CODE_TRIES = 3                    # попыток кода в час
+FAIL_DAMPER_S = 120               # после срыва открытия — пауза перед новой попыткой по взглядам
 CODE_WINDOW_S = 3600
 
 
@@ -246,7 +247,7 @@ class ReserveVoteMixin:
     # ── автоматический переезд (случаи 1 и 5) ───────────────────────────────
     def reserve_auto_block(self) -> str:
         """Пусто — переезд по взглядам возможен; иначе причина (строка карточки)."""
-        if self.reserve_in() != "idle":
+        if not self.reserve_zone_free():
             return "зона занята"
         if self.reserve_out() != "home":
             return "мои клиенты не на этом сервере"
@@ -259,6 +260,13 @@ class ReserveVoteMixin:
         if not pkg_in.get("gen") or not pkg_in.get("share"):
             return "данных для переезда нет"
         inn = self.rsv_get("rsv_in")
+        fail_at = str(inn.get("fail_at") or "")
+        if fail_at and str(inn.get("state") or "idle") == "idle":
+            try:
+                if timeutil.elapsed(timeutil.parse_iso(fail_at)) < FAIL_DAMPER_S:
+                    return "после отказа открытия — пауза две минуты"
+            except ValueError:
+                pass
         last = str(inn.get("since") or "")
         if last and str(inn.get("state") or "idle") == "idle" and inn.get("ended_auto"):
             try:
@@ -336,8 +344,9 @@ class ReserveVoteMixin:
         payload.update(secret)
         extra = self._hosting_extra(case)
         with _LOCK:
-            if self.reserve_in() != "idle":                   # проверка и запись — под одним замком
+            if not self.reserve_zone_free():                  # проверка и запись — под одним замком
                 return []
+            self._relay_yield()
             from awgbot.infra import rsvzone
             rsvzone.open_status_write("launching")
             self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra=extra,
@@ -387,9 +396,14 @@ class ReserveVoteMixin:
             if not cw.get("open"):
                 since = str(view.get("case_since") or timeutil.now_iso())
                 if cw.get("episode") == since:
-                    # тот же эпизод (окно закрывалось и открылось снова) — без повторных Т-РУ7/7б
+                    # тот же эпизод (окно закрывалось и открылось снова): Т-РУ7 резерву не повторяется,
+                    # но админу основы код снова нужен — Т-РУ7б без звука (зона могла быть снята)
                     cw.update(open=True)
                     self.rsv_update("rsv_view", code=cw)
+                    pid = self.reserve_peer_admin_id()
+                    if cw.get("told") and pid:
+                        actions.append(("notify", [Notification(tg_id=pid, silent=True, keyboard="peer_code",
+                                                                text=self._rn().code_needed_primary(primary, str(config.SERVER_NAME or ""), since))]))
                     return actions
                 opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
                 pid = self.reserve_peer_admin_id()
@@ -417,7 +431,7 @@ class ReserveVoteMixin:
     def _code_block(self) -> str:
         if not self.reserve_code_window()["open"]:
             return "приём кода закрыт"
-        if self.reserve_in() != "idle":
+        if not self.reserve_zone_free():
             return "зона занята"
         if self.reserve_out() != "home":
             return "мои клиенты не на этом сервере"
@@ -447,12 +461,16 @@ class ReserveVoteMixin:
         except ValueError:
             return self._code_try_failed(cw, "не разобран")
         pkg_in = self.rsv_get("rsv_pkg_in")
+        # окно закрывается ДО запуска: иначе такт голосования в окне между запуском и закрытием
+        # видел бы taking при открытом окне и закрыл бы его «шлюз видит основу»
+        cw.update(open=False, closed_why="used", closed_at=timeutil.now_iso(), pending=True)
+        self.rsv_update("rsv_view", code=cw, moved_by={"code": True, "at": timeutil.now_iso()})
         actions = self.reserve_open_by_points({"share": [rsvkeys.RESERVE_X, str(pkg_in.get("share") or "")], "code": norm},
                                               "code", "H4")
         if self.reserve_in() != "taking":
+            cw.update(open=True, closed_why="", pending=False)
+            self.rsv_update("rsv_view", code=cw)
             return {"ok": False, "why": "busy", "actions": actions}
-        cw.update(open=False, closed_why="used", closed_at=timeutil.now_iso(), pending=True)
-        self.rsv_update("rsv_view", code=cw, moved_by={"code": True, "at": timeutil.now_iso()})
         # итог — по ходу процесса открытия: конверт ключа код снимает за секунды, и
         # «не подошёл» админ основы видит ответом на своё сообщение, а не уведомлением
         verdict = codewait.verdict()

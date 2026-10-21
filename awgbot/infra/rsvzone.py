@@ -198,11 +198,21 @@ def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data.encode() if isinstance(data, str) else data)
+            f.flush()
+            os.fsync(f.fileno())                              # rep.bin и пакет переживают крах хоста
     except BaseException:
         os.unlink(str(tmp))
         raise
     os.chmod(str(tmp), mode)
     os.replace(str(tmp), str(path))
+    try:
+        dfd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
 
 
 def open_status_write(step: str, **fields) -> None:
