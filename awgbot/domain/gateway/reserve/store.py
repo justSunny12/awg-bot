@@ -206,15 +206,17 @@ class ReserveStoreMixin:
         return [("push",)]
 
     def reserve_counters_cached(self) -> tuple[int, int] | None:
-        """(rx, tx) линка к резерву — не чаще раза в 2 с (такт и панель спрашивают порознь)."""
-        import time as _t
-        now = _t.monotonic()
+        """(rx, tx) линка к резерву — один раз на такт (такт и панель спрашивают
+        порознь); такт сбрасывает кэш в начале (`reserve_counters_reset`)."""
         cache = self.__dict__.get("_rsv_counters")
-        if cache and now - cache[0] < 2.0:
-            return cache[1]
+        if cache is not None:
+            return cache
         c = rsvlink.counters()
-        self.__dict__["_rsv_counters"] = (now, c)
+        self.__dict__["_rsv_counters"] = c
         return c
+
+    def reserve_counters_reset(self) -> None:
+        self.__dict__["_rsv_counters"] = None
 
     def reserve_remove(self) -> None:
         try:

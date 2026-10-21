@@ -63,9 +63,10 @@ import subprocess
 import sys
 import time
 
+from awgbot.infra.nftguard.common import DEFAULT_TG_POOL   # тот же список, что у файервола хоста  # noqa: E402
+
 TARGET_WAIT_S = 30 * 60
 FACT_POLL_S = (15, 40)
-DEFAULT_TG_POOL = ["149.154.160.0/20", "91.108.4.0/22"]
 
 
 def _p(text: str) -> None:

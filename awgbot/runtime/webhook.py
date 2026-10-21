@@ -26,9 +26,7 @@ API отвергает (409 «webhook is active») — так Telegram сам р
 """
 from __future__ import annotations
 
-import asyncio
 import ipaddress
-import json
 import logging
 import ssl
 import time
@@ -209,10 +207,3 @@ def watch_delay() -> float:
     return random.uniform(WATCH_SECONDS * 0.6, WATCH_SECONDS * 1.4)
 
 
-def dump_conf(conf: WebhookConf) -> str:
-    return json.dumps({"port": conf.port, "path": conf.path, "secret": conf.secret, "cert": conf.cert,
-                       "key": conf.key, "host": conf.host})
-
-
-async def sleep_jitter(seconds: float) -> None:
-    await asyncio.sleep(seconds)

@@ -17,7 +17,7 @@ import os
 import sqlite3
 import tempfile
 
-from awgbot.infra.db.schema.selects import HISTORY_TABLES
+from awgbot.util.dbnames import HISTORY_TABLES
 
 # ключи server_state, которые едут в реплику (остальные — нет)
 GUEST_STATE: tuple[str, ...] = (

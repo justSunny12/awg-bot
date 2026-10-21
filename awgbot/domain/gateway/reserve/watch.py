@@ -51,6 +51,8 @@ class ReserveWatchMixin:
             return []
         now = time.monotonic() if now is None else now
         suspect_s, probe_s = self._rsv_thresholds()
+        if hasattr(self, "reserve_counters_reset"):
+            self.reserve_counters_reset()                     # счётчики линка — свежие на этот такт
         actions: list[tuple] = []
         # основа — по линку слота
         lp = self._rsv_lv_primary

@@ -105,7 +105,8 @@ class ReserveStateMixin:
     def reserve_set_poll(self, state: str, **why) -> dict:
         if state not in POLL_STATES:
             raise ValueError(f"не право ответа: {state}")
-        return self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), **why)
+        # why/url — только этого решения: прежнее «webhook» не должно пережить «mine»
+        return self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), **{"why": "", "url": "", **why})
 
     def reserve_busy(self) -> str:
         """Идёт переезд или возврат (в любую сторону) — человеку словами; пусто — нет."""

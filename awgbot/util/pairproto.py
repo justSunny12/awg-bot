@@ -26,10 +26,24 @@ PAIR_PROTO = "pair1"
 GUEST_PROTO = "rsv1"
 MAX_CHUNKS = 256                   # 256 × 64 КБ = 16 МБ — потолок пакета
 MAX_LINE = 256 * 1024              # как у канала шлюзов
-PAD = 512
 MAX_NAME = 64                      # имя сервера, имя линка, имя записи DNS
 MAX_HOST = 253
 MAX_REASON = 200
+DEFAULT_PAIR_PORT = 8788                 # порт канала пары в /30 линка (app.reserve.pair_channel_port)
+
+
+def pair_hosts(cidr: str) -> tuple[str, str]:
+    """(адрес принявшего, адрес пригласившего) в /30 линка пары: первый и
+    второй хост — так их раздаёт скрипт линка пары."""
+    import ipaddress
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return "", ""
+    if net.version != 4 or net.prefixlen != 30:
+        return "", ""
+    hosts = [str(h) for h in net.hosts()]
+    return hosts[0], hosts[1]
 MAX_LIST = 64                      # подсети, адреса, слоты в одном сообщении
 CHUNK_BYTES = 64 * 1024            # часть шифротекста: в hex 128 К знаков, в конверте (base64) — в предел строки
 MAX_BLOB = CHUNK_BYTES * 2         # одна часть шифротекста в hex

@@ -5,15 +5,11 @@ from __future__ import annotations
 # Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
 
-# Реестр исторических таблиц для дженерик-очистки (слой 3c). У всех есть столбец
-# archived_at, по которому считается ретеншн и идёт батч-DELETE.
-HISTORY_TABLES = [
-    "client_pause_histories", "client_grace_histories",
-    "client_subscription_histories", "client_quota_histories",
-    "device_friend_histories", "client_block_histories",
-    "clients_histories", "devices_histories", "device_quota_histories",
-    "traffic_monthly", "server_traffic_monthly",
-]
+# Реестр исторических таблиц для дженерик-очистки (слой 3c) — util/dbnames
+# (его же читает часть бота пакета переезда без зависимости от infra).
+from awgbot.util.dbnames import HISTORY_TABLES  # noqa: E402 — реэкспорт схемы
+
+__all_history__ = HISTORY_TABLES
 
 # JOIN-выборки: собирают нормализованные таблицы в одну строку для builder'ов.
 # Подписка и квота — INNER (всегда есть); grace/pause/friend — LEFT (ленивые).

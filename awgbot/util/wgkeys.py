@@ -20,10 +20,12 @@ def keypair() -> tuple[str, str]:
 
 
 def pubkey_of(priv_b64: str) -> str:
-    raw = base64.b64decode(priv_b64)
-    if len(raw) != 32:
-        raise ValueError("закрытый ключ — 32 байта")
-    return base64.b64encode(bytes(PrivateKey(raw).public_key)).decode()
+    """Публичный ключ из закрытого; не ключ — ValueError (wgconf.pubkey_of отдаёт пусто)."""
+    from awgbot.util import wgconf
+    pub = wgconf.pubkey_of(priv_b64)
+    if not pub:
+        raise ValueError("закрытый ключ — 32 байта base64")
+    return pub
 
 
 def psk() -> str:

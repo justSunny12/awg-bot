@@ -45,6 +45,25 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .state import _LOCK
 
+def rsvopen_sandbox_props(base: str) -> list[str]:
+    """Свойства systemd-run для процесса открытия — одним списком, чтобы стенд
+    запускал его ровно так же. Хранилище гостя и каталоги из ReadWritePaths
+    должны существовать до запуска (`_rsvopen_launch` их создаёт)."""
+    from awgbot.infra import rsvzone
+    pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
+    return ["-p", "MemoryMax=192M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
+            "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
+            "-p", "NoNewPrivileges=yes",
+            "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
+            "-p", f"WorkingDirectory={base}",
+            # скрипт зоны пишет юниты и настройки журнала гостя в /etc/systemd
+            "-p", f"ReadWritePaths=-{rsvzone.RUN_DIR} -{rsvzone.VAR_DIR} -{rsvzone.STATE_DIR} -/etc/systemd -/run/netns",
+            # из каталога данных резерва процессу виден только пакет второй стороны:
+            # ни база резерва (и её WAL), ни стороны линков, ни копии
+            "-p", f"TemporaryFileSystem={config.DATA_DIR}:ro",
+            "-p", f"BindReadOnlyPaths=-{pkg}"]
+
+
 OPEN_UNIT = "awg-bot-rsvopen"
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
 TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
@@ -66,14 +85,8 @@ class ReserveInboundMixin:
         pkg_in = self.rsv_get("rsv_pkg_in")
         if int(pkg_in.get("gen") or 0) != int(gen):
             return f"у меня пакет {pkg_in.get('gen') or 'нет'}, а не {gen}"
-        if not self.reserve_zone_free():
-            return "зона занята"
-        if self.reserve_out() != "home":
-            return "мои клиенты не на этом сервере"
-        if not settings.get_bool("app.reserve.ready", False):
-            return "готовность выключена"
-        ok, why = self.reserve_directions()["in"]
-        if not ok:
+        why = self.reserve_open_block(need_share=False)       # по K основы доля не нужна
+        if why:
             return why
         try:
             bytes.fromhex(str(k_hex))
@@ -153,18 +166,7 @@ class ReserveInboundMixin:
         env.update({"AWG_BOT_CONF_DIR": str(config.CONF_DIR), "AWG_BOT_DATA_DIR": str(config.DATA_DIR),
                     "AWG_BOT_ENV": "/dev/null"})
         if shutil.which("systemd-run"):
-            pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
-            props = ["-p", "MemoryMax=192M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
-                     "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
-                     "-p", "NoNewPrivileges=yes",
-                     "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
-                     "-p", f"WorkingDirectory={base}",
-                     # скрипт зоны пишет юниты и настройки журнала гостя в /etc/systemd
-                     "-p", f"ReadWritePaths=-{rsvzone.RUN_DIR} -{rsvzone.VAR_DIR} -{rsvzone.STATE_DIR} -/etc/systemd -/run/netns",
-                     # из каталога данных резерва процессу виден только пакет второй стороны:
-                     # ни база резерва (и её WAL), ни стороны линков, ни копии
-                     "-p", f"TemporaryFileSystem={config.DATA_DIR}:ro",
-                     "-p", f"BindReadOnlyPaths=-{pkg}"]
+            props = rsvopen_sandbox_props(base)
             setenv = [f"--setenv={k}={env[k]}" for k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV") if k in env]
             cmd = ["systemd-run", "--collect", "--quiet", "--pipe", f"--unit={OPEN_UNIT}", *props, *setenv, *argv]
         else:
@@ -206,9 +208,14 @@ class ReserveInboundMixin:
 
     @staticmethod
     def _rsvopen_stop() -> None:
-        """Остановить временный юнит процесса открытия (срыв, `back` на шаге up)."""
-        if shutil.which("systemctl"):
+        """Остановить временный юнит процесса открытия (срыв, `back` на шаге up);
+        отказ — строка в журнал, не исключение."""
+        if not shutil.which("systemctl"):
+            return
+        try:
             subprocess.run(["systemctl", "stop", f"{OPEN_UNIT}.service"], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.info("резерв: юнит процесса открытия не остановлен: %s", e)
 
     def reserve_in_tick(self) -> list[tuple]:
         """Такт автомата «клиенты основы у меня»."""
@@ -342,7 +349,7 @@ class ReserveInboundMixin:
             subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("резерв: реплика не положена гостю: %s", e)
-            return []
+            return self._take_fail(f"реплика не положена боту основы: {e}")   # гость остановлен — ждать нечего
         self.rsv_update("rsv_in", replica_at=timeutil.now_iso())
         return []
 
@@ -393,6 +400,8 @@ class ReserveInboundMixin:
             except OSError:
                 blob = b""
             return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
+        if str(inn.get("state") or "") == "releasing":
+            return []                                         # реплика ещё в пути (гость останавливается) — ждать
         if str(inn.get("state") or "") not in ("serving", "taking"):
             # зоны нет (перезагрузка резерва посреди обслуживания, teardown мимо бота): что есть на
             # диске — rep.bin под K основы — отдать, иначе released без реплики; основа вернёт

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import logging
 
 from awgbot.core import settings
@@ -20,17 +19,7 @@ def channel_port() -> int:
     return int(settings.get_int("app.reserve.pair_channel_port", DEFAULT_PORT) or DEFAULT_PORT)
 
 
-def pair_hosts(cidr: str) -> tuple[str, str]:
-    """(адрес принявшего, адрес пригласившего) в /30 линка пары: первый и
-    второй хост — так их раздаёт скрипт линка пары."""
-    try:
-        net = ipaddress.ip_network(cidr, strict=False)
-    except ValueError:
-        return "", ""
-    if net.version != 4 or net.prefixlen != 30:
-        return "", ""
-    hosts = [str(h) for h in net.hosts()]
-    return hosts[0], hosts[1]
+pair_hosts = pairproto.pair_hosts                      # чистая функция живёт в util — ею пользуется и domain
 
 
 def channel_key(secret_b64: str) -> bytes:

@@ -40,6 +40,7 @@ reserve — взаимный резерв серверов AWG на сторон
 from __future__ import annotations
 
 from .away import ReserveAwayMixin
+from .codewin import ReserveCodeWindowMixin
 from .dns import ReserveDnsMixin
 from .guest import ReserveGuestMixin
 from .gwside import ReserveGwSideMixin
@@ -47,8 +48,10 @@ from .inbound import ReserveInboundMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
 from .liveness import ReserveLivenessMixin
+from .merge_ops import ReserveMergeOpsMixin
 from .notify import ReserveNotifyMixin
 from .outbound import ReserveOutboundMixin
+from .outbound_return import ReserveReturnMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
@@ -68,7 +71,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
-                   ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin):
+                   ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
+                   ReserveCodeWindowMixin, ReserveReturnMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

@@ -14,7 +14,8 @@ from __future__ import annotations
 import ipaddress
 import re
 
-from awgbot.infra.awg.parsers import _OBFUSCATION_KEYS, _extract_param, _split_conf, parse_interface_params
+from awgbot.util.awgconf import OBFUSCATION_KEYS as _OBFUSCATION_KEYS, extract_param as _extract_param, \
+    parse_interface_params, split_conf as _split_conf
 
 _B64 = re.compile(r"[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=\Z")
 _OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")       # число или диапазон, ничего больше

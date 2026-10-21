@@ -177,7 +177,8 @@ def zone_link_ports() -> list[int]:
     `reserve/links/`, сокеты у хоста) — открыть во входе хоста."""
     out: list[int] = []
     try:
-        for path in sorted((Path(config.DATA_DIR) / "reserve" / "links").glob("awglink*.conf")):
+        from awgbot.infra import rsvzone
+        for path in sorted(rsvzone.links_dir().glob("awglink*.conf")):   # тот же каталог, что пишет zonelinks
             m = re.search(r"(?m)^\s*ListenPort\s*=\s*(\d+)", path.read_text(encoding="utf-8"))
             if m and 0 < int(m.group(1)) < 65536:
                 out.append(int(m.group(1)))

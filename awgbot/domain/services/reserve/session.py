@@ -16,7 +16,7 @@ import re
 
 from awgbot.core import config, settings
 from awgbot.domain.services.types import Notification
-from awgbot.util import timeutil
+from awgbot.util import pairproto, timeutil
 
 from ..gateway_link.common import log
 from awgbot.domain.notices import reserve as rn
@@ -52,15 +52,17 @@ class ReserveSessionMixin:
             return str(peer.get("pair_cidr") or "")
         return str(self.reserve_invite().get("cidr") or "")
 
+    @staticmethod
+    def reserve_channel_port() -> int:
+        return int(settings.get_int("app.reserve.pair_channel_port", pairproto.DEFAULT_PAIR_PORT) or pairproto.DEFAULT_PAIR_PORT)
+
     def reserve_listen_address(self) -> tuple[str, int] | None:
-        from awgbot.runtime.pairlink.common import channel_port, pair_hosts
-        _acc, inv = pair_hosts(self._pair_cidr())
-        return (inv, channel_port()) if inv else None
+        _acc, inv = pairproto.pair_hosts(self._pair_cidr())
+        return (inv, self.reserve_channel_port()) if inv else None
 
     def reserve_connect_address(self) -> tuple[str, int] | None:
-        from awgbot.runtime.pairlink.common import channel_port, pair_hosts
-        _acc, inv = pair_hosts(self._pair_cidr())
-        return (inv, channel_port()) if inv else None
+        _acc, inv = pairproto.pair_hosts(self._pair_cidr())
+        return (inv, self.reserve_channel_port()) if inv else None
 
     def reserve_channel_secret(self) -> str:
         """PSK линка пары (после сопряжения) или закрытый ключ стороны принявшего
@@ -74,8 +76,8 @@ class ReserveSessionMixin:
             psk = parsed.get("Peer", "PresharedKey")
             if psk:
                 return psk
-        except Exception:                                 # noqa: BLE001
-            pass
+        except Exception as e:                            # noqa: BLE001
+            log.info("резерв: конфиг линка пары не разобран (%s) — ключ канала по приглашению", e)
         st = self.reserve_invite()
         if st.get("role") == "acceptor":
             m = re.search(r"^\s*PrivateKey\s*=\s*(\S+)", conf, re.M)

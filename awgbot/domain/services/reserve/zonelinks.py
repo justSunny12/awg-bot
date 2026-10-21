@@ -23,7 +23,8 @@ PORT_LO, PORT_HI = 40000, 60000
 
 
 def links_dir() -> str:
-    return os.path.join(str(config.DATA_DIR), "reserve", "links")
+    from awgbot.infra import rsvzone
+    return str(rsvzone.links_dir())                           # один источник пути — его же получает скрипт зоны
 
 
 def _link_name(slot: int) -> str:
@@ -152,8 +153,8 @@ class ReserveZoneLinksMixin:
         from awgbot.infra import rsvzone
         try:
             netns.run_in(netns.path_of(rsvzone.ZONE), ["ip", "link", "del", _link_name(slot)], timeout=10)
-        except Exception:                                     # noqa: BLE001
-            pass
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: сторона линка слота %s в зоне не снята: %s", slot, e)
 
     def reserve_zone_links_drop(self) -> None:
         """Удаление пары: стороны зоны и их конфиги — прочь."""

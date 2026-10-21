@@ -37,6 +37,12 @@ K_FILE = RUN_DIR / "k"                          # ключ пакета в хр�
 WEBHOOK_FILE = RUN_DIR / "webhook.json"         # порт, путь, секрет, сертификат вебхука
 TG_POOL_FILE = RUN_DIR / "tg_pool.json"         # пул адресов Telegram для слушателя
 TG_TAKE_FILE = RUN_DIR / "tg_take"              # отметка: ставить вебхук (факт записи)
+
+
+def links_dir() -> Path:
+    """Стороны линков шлюзов основы — по текущему каталогу данных (не фиксируется
+    при импорте: тесты и CLI подменяют DATA_DIR позже); окружение RSV_LINKS_DIR — переопределение."""
+    return Path(os.environ.get("RSV_LINKS_DIR") or (Path(config.DATA_DIR) / "reserve" / "links"))
 GUEST_UNIT = "awg-bot-guest.service"
 PHASES = ("idle", "taking", "serving", "relay")
 
@@ -52,13 +58,16 @@ def _script() -> Path:
 def _zone_env() -> dict:
     """Подсети veth зоны и таблица РФ-доступа — из настроек, чтобы скрипт и бот не
     разошлись, если умолчания сменили."""
+    # пути — те же константы, что у бота: скрипт не должен угадывать их по своим умолчаниям
+    paths = {"RSV_ZONE": ZONE, "RSV_RUN": str(RUN_DIR), "RSV_VAR": str(VAR_DIR), "RSV_STATE_DIR": str(STATE_DIR),
+             "RSV_LINKS_DIR": str(links_dir())}
     try:
         from awgbot.core import settings
-        return {"ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
+        return {**paths, "ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
                 "ZONE_RF_CIDR": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "169.254.77.4/30"),
                 "RF_TABLE": str(int(config.ROUTING_TABLE))}
     except Exception:                                     # noqa: BLE001 — настройки недоступны (CLI без conf)
-        return {}
+        return paths
 
 
 def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout: int = 240) -> str:
