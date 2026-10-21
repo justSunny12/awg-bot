@@ -9,14 +9,19 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
-Переезд кнопкой (`go{K, gen, kind}`): процесс открытия временным юнитом с
-песочницей (stdin — JSON с `K`; запись DNS меняет основа) → `clone_up` →
-`up` основе → `released{реплика}` → `rep.bin`, перезапуск бота основы (он
+Переезд кнопкой (`go{K, gen, kind}`; отказ, если зона занята или мои
+клиенты не здесь): `open.status = launching`, процесс открытия временным
+юнитом с песочницей (stdin — JSON с `K`; запись DNS меняет основа; env и
+bot.db резерва юниту закрыты, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
+`up` основе → `released{реплика}` → гость стоп, `rep.bin`, гость старт (он
 подхватит реплику), отметка `tg_take` → `tg_taken` от гостя → `taken` основе,
-serving, Т-РУ4. Отказ процесса — `down{причина}`, зона снята.
+serving, Т-РУ4. Отказ процесса — `down{причина}`, юнит открытия стоп, зона
+снята.
 
-Возврат: `back_req` → гостю `stop` → `replica` → `released` основе
-(releasing) → `back` → пересылка хвоста (`--relay`, файервол), учёт,
+Возврат: `back_req` → гостю `stop` (открытие ещё шло — юнит стоп) →
+`replica` (гость молчит 90 с — `rep.bin`) → `released` основе (releasing;
+повторный `back_req` — та же реплика из `rep.bin` снова) → `back` (повтор в
+relay — снова `relay` и `wiped`) → пересылка хвоста (`--relay`, файервол), учёт,
 `relay{until}`, `--wipe`, прежний пакет и доля — прочь, `wiped`, Т-РУ5 →
 relay до `relay_max_days`/тишины → idle. `evict` — просьба вернуть клиентов
 по кнопке у резерва.
@@ -248,10 +253,22 @@ class ReserveInboundMixin:
                     str(inn.get("extra") or "")))])]
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
+        """Зона снята мимо бота (`awg-bot reserve teardown`, перезагрузка хоста): состояние
+        idle, шлюзам основы — idle, пакет и доля — прочь, админу — итог."""
         from awgbot.infra import rsvzone
-        if str(rsvzone.state().get("phase") or "") not in ("serving", "taking"):
-            log.warning("резерв: зона в состоянии %s, а я считаю serving — снимаю", rsvzone.state().get("phase"))
-        return []
+        from awgbot.domain.notices import reserve as rn
+        phase = str(rsvzone.state().get("phase") or "")
+        if phase in ("serving", "taking"):
+            return []
+        name = self.reserve_peer_name()
+        log.warning("резерв: зона в состоянии %s, а я считаю serving — клиентов «%s» больше не несу", phase or "idle", name)
+        self.reserve_pkg_in_drop()
+        with _LOCK:
+            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=True)
+        actions: list[tuple] = [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, "зона снята"))])]
+        if hasattr(self, "reserve_gw_state_actions"):
+            actions += self.reserve_gw_state_actions(force=True)
+        return actions
 
     # ── возврат ─────────────────────────────────────────────────────────────
     def reserve_back_req_in(self) -> list[tuple]:

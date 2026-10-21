@@ -144,8 +144,15 @@ class ReserveSessionMixin:
         return body
 
     def reserve_st_sent_reset(self) -> None:
-        """Новая сессия: первая отправка st — через сессию, отпечаток обнулить."""
+        """Отправка не прошла: отпечаток обнулить — такт отправит снова."""
         self.__dict__.pop("_rsv_st_sent", None)
+
+    def reserve_st_body_sent(self) -> dict:
+        """Тело st для отправки сессией — с отметкой отпечатка, чтобы такт не слал дубль."""
+        import json
+        body = self.reserve_st_body()
+        self.__dict__["_rsv_st_sent"] = json.dumps({k: v for k, v in body.items() if k not in ("mem_free", "online")}, sort_keys=True)
+        return body
 
     def _healthy_safe(self) -> bool:
         try:
@@ -244,7 +251,6 @@ class ReserveSessionMixin:
 
     def reserve_session_opened(self, hello: dict) -> list[Notification]:
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso())
-        self.reserve_st_sent_reset()
         return self.reserve_liveness_word()
 
     def reserve_session_closed(self) -> None:

@@ -48,7 +48,8 @@ class ReserveRfBlockMixin:
             why = "зона занята" if self.reserve_in() != "idle" else "мои клиенты не на этом сервере"
             if rf.get("blocked") != why:
                 rf["blocked"] = why
-                rf.setdefault("since", str(view.get("case_since") or timeutil.now_iso()))
+                if not rf.get("since"):
+                    rf.update(since=str(view.get("case_since") or timeutil.now_iso()), mono=now)
                 self.rsv_update("rsv_view", rf=rf)
             return []
         if not rf.get("since"):
@@ -58,6 +59,10 @@ class ReserveRfBlockMixin:
                         case, settings.get_int("app.reserve.rf_block_minutes", 15))
             return []
         held = livestep.mono_since(rf.get("mono"), now)
+        if held == float("inf"):
+            rf["mono"] = now                                  # отметка прежней загрузки — счёт заново
+            self.rsv_update("rsv_view", rf=rf)
+            return []
         if held < settings.get_int("app.reserve.rf_block_minutes", 15) * 60:
             return []
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)

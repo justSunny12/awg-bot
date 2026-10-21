@@ -14,15 +14,31 @@ outbound.py — часть пакета reserve (см. __init__): «мои кл�
 Переезд кнопкой: leaving/pkg (свежий пакет → `pkg_ok`) → `go{K, gen}` →
 leaving/up (`up` от резерва) → leaving/record (запись → адрес резерва,
 факт у авторитетного сервера) → leaving/release → `released{реплика}` →
-leaving/released (`taken` от резерва) → away. Отказ на любом шаге —
-`back` резерву (снять зону) и home.
+leaving/released (`taken` от резерва) → away (без `taken` в срок — away и
+`wake_poll`: право отвечать решает getWebhookInfo). Пачка обновлений не
+подтвердилась — передача откладывается, поллинг обратно. Отказ на любом
+шаге — `back` резерву (снять зону) и home; после отправки `go` (`go_sent`) —
+ещё новый `K` и пакет.
+
+Зависший вебхук резерва (away по поллингу, запись на собственный адрес,
+резерв `inn = idle` или пары нет ≥ STUCK_PAIR_S; так STUCK_IDLE_S подряд) —
+`("take_home",)`: `deleteWebhook`, поллинг, home без возврата, новый `K`.
+
+Сроки шагов и отметки проб — monotonic в базе; отметка прежней загрузки
+хоста считается вышедшей (util/livestep `mono_*`).
 
 Возврат: away (здоров ≥ 5 мин: свой AWG, линк пары, шлюз) → по рычагу
 «сразу» сам, «по кнопке» — Т-РУ6 через бот основы на резерве → returning/
 back_req → `released` (реплика) → слияние, пиры, блокировки → restart →
 take_tg (`deleteWebhook`, поллинг, `taken`) → record_back (запись → свой
 адрес, факт) → `back` → relay (`relay{until}`, `wiped`) → новый `K`, пакет →
-home. Подробности — в докстрингах шагов.
+home. Повторы: `back_req` по сроку (резерв на повтор отдаёт реплику из
+rep.bin), merge по сроку и после рестарта посреди — снова back_req,
+record_back без факта 30 мин — `back` всё равно и Т-РУ11, `back` раз в минуту
+до `relay`. Ошибка слияния — away со сбросом здоровья и `last_switch`
+(анти-дребезг). Поколение главного ключа после возврата — по своей отметке
+`go_sent` (K отдан мной — прямая цела), не по слову резерва. Подробности —
+в докстрингах шагов.
 """
 from __future__ import annotations
 
@@ -201,10 +217,17 @@ class ReserveOutboundMixin:
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
         if step == "released" and self._expired(out):
             # резерв не ответил `taken` — право отвечать решает Telegram: разбудить
-            # поллинг (getWebhookInfo), away — если вебхук у резерва
-            self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
-                                 last_switch=timeutil.now_iso())
-            return [("wake_poll",), ("live",)]
+            # поллинг (getWebhookInfo); away — только когда вебхук у резерва (poll away),
+            # иначе переезд не состоялся
+            if self.reserve_poll() == "away":
+                self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
+                                     last_switch=timeutil.now_iso())
+                return [("wake_poll",), ("live",)]
+            if not out.get("poll_woken"):
+                self.rsv_update("rsv_out", poll_woken=True)
+                self._out_step("released", 120)
+                return [("wake_poll",)]
+            return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True)
         return []
 
     def _tick_record(self, out: dict, target: str, next_step: str) -> list[tuple]:

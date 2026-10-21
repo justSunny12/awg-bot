@@ -179,13 +179,13 @@ def _strip(con) -> None:
             con.execute(f"DELETE FROM {t}")
     if "devices" in have and any(r[1] == "private_key" for r in con.execute("PRAGMA table_info(devices)")):
         con.execute("UPDATE devices SET private_key = NULL")
-        # локальные сети и подписи шлюзов основы, строка пары (с админом резерва) — не резерву
-        for sql in ("UPDATE gateways SET lan_subnets = '[]', label = '', lan_mode = 0",
-                    "DELETE FROM reserve_peer"):
-            try:
-                con.execute(sql)
-            except sqlite3.OperationalError:
-                pass
+    # локальные сети и подписи шлюзов основы, строка пары (с админом резерва) — не резерву
+    for sql in ("UPDATE gateways SET lan_subnets = '[]', label = '', lan_mode = 0",
+                "DELETE FROM reserve_peer"):
+        try:
+            con.execute(sql)
+        except sqlite3.OperationalError:
+            pass
     if "server_state" in have:
         marks = ",".join("?" * len(GUEST_STATE))
         con.execute(f"DELETE FROM server_state WHERE key NOT IN ({marks})", GUEST_STATE)

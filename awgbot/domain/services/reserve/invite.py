@@ -100,7 +100,8 @@ class ReserveInviteMixin:
         """Собственный адрес сервера (`network.self_host`) — IP, на который сейчас
         указывает запись для клиентов: линк пары и линки шлюзов смотрят на него,
         а имя записи при переезде уходит на резерв. Пусто — зафиксировать по
-        резолву; имя не резолвится — отказ."""
+        ответу авторитетного сервера записи (иначе системного резолвера); имя не
+        резолвится — предупреждение в журнал, ключ остаётся пустым."""
         import ipaddress
         own = str(settings.get("app.network.self_host", "") or "").strip()
         if own:
@@ -112,10 +113,14 @@ class ReserveInviteMixin:
         except ValueError:
             pass
         from awgbot.util import dnsapi
-        try:
-            addrs = [a for a in dnsapi.read_system(host) if a and ":" not in a] if host else []
-        except Exception:                                     # noqa: BLE001 — резолвер недоступен
-            addrs = []
+        addrs: list[str] = []
+        for reader in (dnsapi.read_authoritative, dnsapi.read_system):
+            try:
+                addrs = [a for a in reader(host) if a and ":" not in a] if host else []
+            except Exception:                                 # noqa: BLE001 — резолвер недоступен
+                addrs = []
+            if addrs:
+                break
         if not addrs:
             log.warning("резерв: имя %s не резолвится — собственный адрес сервера не зафиксирован (network.self_host)", host)
             return ""

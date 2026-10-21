@@ -397,7 +397,8 @@ class ReserveVoteMixin:
                 actions.append(("notify", notes))
         elif cw.get("open"):
             why = "primary_seen" if self.reserve_peer_seen() != "down" else ("gw_unseen" if case in MOVE_CASES else "gw_sees")
-            self.rsv_update("rsv_view", code={"open": False, "closed_why": why, "closed_at": timeutil.now_iso()})
+            self.rsv_update("rsv_view", code={"open": False, "closed_why": why, "closed_at": timeutil.now_iso(),
+                                              "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
             log.info("резерв: приём аварийного кода закрыт (%s)", why)
             pid = self.reserve_peer_admin_id()
             if cw.get("told") and pid:
