@@ -25,6 +25,7 @@ GUEST_STATE: tuple[str, ...] = (
     "private_dns_decision",                               # решение админа о резолвере
     "routing_active_gateway", "routing_manual_hold",      # активный слот и ручной выбор
     "move_notified",                                      # «переподключи VPN» уже ушло (один раз на переезд)
+    "migration_state", "migration_ready_announced",       # окно переезда профилей: двойники ждут рукопожатия и на клоне
 )
 # что не едет никогда — сторож: ключ с таким началом в реплике — ошибка сборки
 FORBIDDEN_STATE: tuple[str, ...] = ("backup_", "gw_", "gwcfg_", "gwlink_", "gwupd", "update_", "updates_",

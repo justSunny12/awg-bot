@@ -48,6 +48,31 @@ GUEST_UNIT = "awg-bot-guest.service"
 PHASES = ("idle", "taking", "serving", "relay")
 
 
+ZONE_TOOLS = ("dnsmasq", "conntrack")            # пакеты, без которых зона не полна (резолвер зоны, сброс хвоста)
+
+
+def install_tools(names: list[str], timeout: int = 900) -> str:
+    """Поставить недостающие пакеты зоны (Debian/Ubuntu: apt-get, без вопросов).
+    Нет apt-get — ZoneError с тем, что поставить руками."""
+    import shutil
+    names = [n for n in names if n in ZONE_TOOLS]
+    if not names:
+        return ""
+    if not shutil.which("apt-get"):
+        raise ZoneError("нет apt-get — поставь руками: " + " ".join(names))
+    env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+    try:
+        subprocess.run(["apt-get", "-q", "update"], capture_output=True, timeout=300, env=env)   # списки могли устареть
+        proc = subprocess.run(["apt-get", "-q", "-y", "--no-install-recommends", "install", *names],
+                              capture_output=True, timeout=timeout, env=env)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ZoneError(f"apt-get не запустился: {e}") from e
+    if proc.returncode != 0:
+        tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
+        raise ZoneError("apt-get: " + (" · ".join(t.strip() for t in tail) or f"код {proc.returncode}"))
+    return " ".join(names)
+
+
 class ZoneError(RuntimeError):
     """Скрипт зоны отказал; текст — его последние строки."""
 

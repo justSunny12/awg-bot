@@ -55,7 +55,14 @@ class ReserveAwayMixin:
             return f"🛟 Клиенты «{name}» возвращаются к нему — пересылка до {_date(str(inn.get('relay_until') or ''))}"
         if self.reserve_peer_seen() == "down":
             return f"🔴 Резерв «{name}» недоступен с {_when(self.reserve_down_since())}"
-        return ""
+        # обычное состояние: резерв есть — коротко, что он на связи и когда у него данные для переезда
+        ready = settings.get_bool("app.reserve.ready", False)
+        pkg = self.rsv_get("rsv_pkg_sent")
+        if self.reserve_online() and ready and pkg.get("at"):
+            return f"🛟 Резерв «{name}» на связи · данные для переезда от {_when(str(pkg.get('at') or ''))}"
+        if self.reserve_online():
+            return f"🛟 Резерв «{name}» на связи" + ("" if ready else " · готовность выключена")
+        return f"🛟 Резерв «{name}»: связи ещё не было"
 
     def reserve_blocks_to_send(self) -> list[str] | None:
         """Пока мои клиенты у резерва: адреса заблокированных устройств — ему

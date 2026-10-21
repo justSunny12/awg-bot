@@ -132,14 +132,71 @@ class ReserveInviteMixin:
         log.info("резерв: собственный адрес сервера зафиксирован как %s (запись %s)", addrs[0], host)
         return addrs[0]
 
-    @staticmethod
-    def reserve_require_zone_tools() -> None:
-        """Гостевой зоне нужен dnsmasq (резолвер зоны) — без него резерв принять
-        клиентов не сможет; план скрипта зоны говорит об этом заранее."""
+    _TOOLS_RETRY_S = 6 * 3600
+
+    def reserve_tools_missing(self) -> list[str]:
+        """Чего нет на сервере для гостевой зоны (по плану скрипта): dnsmasq, conntrack."""
         from awgbot.infra import rsvzone
         plan = rsvzone.plan()
-        if str(plan.get("dnsmasq") or "yes") == "no":
-            log.warning("резерв: на сервере нет dnsmasq — резолвер гостевой зоны не поднимется, принять клиентов не выйдет")
+        return [t for t in rsvzone.ZONE_TOOLS if str(plan.get(t) or "yes") == "no"]
+
+    def reserve_tools_ensure(self) -> str:
+        """Недостающие пакеты зоны ставятся сами — в фоне, при первом включении
+        готовности или сопряжении (и повтор тактом раз в 6 часов). Возвращает
+        строку состояния: пусто — всё на месте."""
+        from awgbot.infra import rsvzone
+        missing = self.reserve_tools_missing()
+        if not missing:
+            if self.rsv_get("rsv_view").get("tools_fail"):
+                self.rsv_update("rsv_view", tools_fail="", tools_told=False)
+            return ""
+        lock = self.__dict__.setdefault("_rsv_tools_lock", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return "ставлю " + ", ".join(missing)
+
+        def _run() -> None:
+            try:
+                try:
+                    done = rsvzone.install_tools(missing)
+                    log.warning("резерв: для гостевой зоны поставлены пакеты: %s", done)
+                    self.rsv_update("rsv_view", tools_fail="", tools_told=False, tools_at=timeutil.now_iso())
+                    try:
+                        from . import compat
+                        compat.zone_why.__dict__.clear()      # план зоны — заново
+                    except Exception:                         # noqa: BLE001
+                        pass
+                except rsvzone.ZoneError as e:
+                    log.warning("резерв: пакеты зоны не поставлены (%s): %s", ", ".join(missing), e)
+                    self.rsv_update("rsv_view", tools_fail=str(e)[:200], tools_at=timeutil.now_iso())
+            finally:
+                lock.release()
+        threading.Thread(target=_run, name="rsv-tools", daemon=True).start()
+        return "ставлю " + ", ".join(missing)
+
+    def reserve_tools_tick(self) -> list:
+        """Такт: повтор установки раз в 6 часов, пока чего-то нет; отказ — админу один раз."""
+        from awgbot.domain.notices import reserve as rn
+        if not self.reserve_paired() and not settings.get_bool("app.reserve.ready", False):
+            return []
+        view = self.rsv_get("rsv_view")
+        try:
+            due = not view.get("tools_at") or timeutil.elapsed(timeutil.parse_iso(str(view["tools_at"]))) >= self._TOOLS_RETRY_S
+        except ValueError:
+            due = True
+        if due:
+            self.reserve_tools_ensure()
+            view = self.rsv_get("rsv_view")
+        if view.get("tools_fail") and not view.get("tools_told"):
+            self.rsv_update("rsv_view", tools_told=True)
+            from ..types import Notification
+            return [Notification(tg_id=int(config.ADMIN_ID), text=rn.zone_tools_failed(str(view["tools_fail"])))]
+        return []
+
+    def reserve_require_zone_tools(self) -> None:
+        """Сопряжение и готовность: недостающие пакеты зоны — на установку в фоне."""
+        why = self.reserve_tools_ensure()
+        if why:
+            log.warning("резерв: гостевой зоне не хватает пакетов — %s", why)
 
     @staticmethod
     def _invite_expired(st: dict) -> bool:

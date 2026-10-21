@@ -37,6 +37,12 @@ def peer_up(peer: str) -> str:
     return f"🟢 Связь с резервом {_n(peer)} восстановлена"
 
 
+def zone_tools_failed(reason: str) -> str:
+    """Пакеты гостевой зоны (dnsmasq, conntrack) не поставились сами."""
+    return (f"⚠️ Для гостевой зоны резерва не поставились пакеты: {_e(reason)} — поставь руками "
+            "<code>apt-get install dnsmasq conntrack</code>, иначе клиентов второго сервера не принять")
+
+
 def pair_unconfirmed(peer: str) -> str:
     """Сопряжение разошлось: пара записана, а сессии на новых ключах не было."""
     return (f"⚠️ Сопряжение с {_n(peer)} не подтвердилось: линк на новых ключах не заработал за 10 минут — "

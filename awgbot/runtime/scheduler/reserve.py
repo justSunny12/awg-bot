@@ -159,7 +159,8 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
     async def job_slow_tick():
         from awgbot.runtime import rsvactions
         for fn, what in ((services.reserve_record_watch_tick, "надзор записи"),
-                         (services.reserve_return_notify_tick, "уведомление о возврате")):
+                         (services.reserve_return_notify_tick, "уведомление о возврате"),
+                         (services.reserve_tools_tick, "пакеты зоны")):
             try:
                 notes = await asyncio.to_thread(fn)
                 if notes:

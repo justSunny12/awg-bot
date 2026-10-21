@@ -51,10 +51,13 @@ lab_up() {
     ns lab-inet nft -f - <<EOF
 table ip lab {
     set private4 { type ipv4_addr; flags interval; elements = { $LAB_PRIVATE_NETS } }
-    chain post { type nat hook postrouting priority srcnat; policy accept;
+    chain post {
+        type nat hook postrouting priority srcnat; policy accept;
         ip saddr @private4 ip daddr != @private4 masquerade
     }
-    chain fwd { type filter hook forward priority filter; policy accept; }
+    chain lab_forward {                      # «fwd» — ключевое слово nft (fwd to …), именем цепочки быть не может
+        type filter hook forward priority filter; policy accept;
+    }
 }
 EOF
     say "стенд поднят: $LAB_NODES"
