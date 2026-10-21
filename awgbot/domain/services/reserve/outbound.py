@@ -468,19 +468,25 @@ class ReserveOutboundMixin:
         if not self.reserve_online():
             return []
         if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing"):
-            # резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего, новый K
-            from awgbot.domain.notices import reserve as rn
-            self.rsv_update("rsv_out", await_merge=False)
-            self.reserve_new_k()
-            self.reserve_pkg_mark()
-            log.warning("резерв: «%s» на связи без моего гостя — реплики не будет", self.reserve_peer_name())
-            return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_no_merge(self.reserve_peer_name()))])]
+            return self._forced_no_merge()
         with _LOCK:
             self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
                                  return_started_at=timeutil.now_iso(), await_merge=False)
             self._out_step("back_req", RELEASED_WAIT_S)
         log.info("резерв: «%s» снова на связи — сливаю его реплику", self.reserve_peer_name())
         return [("send", "back_req", {}), ("live",)]
+
+    def _forced_no_merge(self) -> list[tuple]:
+        """Резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего —
+        дома, отметка снята, новый K."""
+        from awgbot.domain.notices import reserve as rn
+        out = self._out()
+        self.reserve_set_out("home", step="", kind="", await_merge=False, last_switch=timeutil.now_iso(),
+                             returned_at=str(out.get("returned_at") or timeutil.now_iso()))
+        self.reserve_new_k()
+        self.reserve_pkg_mark()
+        log.warning("резерв: «%s» на связи без моего гостя — реплики не будет", self.reserve_peer_name())
+        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_no_merge(self.reserve_peer_name()))])]
 
     def reserve_return_start(self, why: str) -> list[tuple]:
         """Начать возврат: returning/back_req → `back_req` резерву."""
@@ -505,6 +511,9 @@ class ReserveOutboundMixin:
     def _tick_returning(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "back_req")
         if step == "back_req":
+            if str(out.get("return_why") or "") == "force" and self.reserve_online() \
+                    and str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing"):
+                return self._forced_no_merge()                # взгляд на него был старым: гостя у него уже нет
             if self._expired(out):
                 # реплика не пришла: повторить просьбу (резерв мог лечь) — не чаще раза в срок
                 self._out_step("back_req", RELEASED_WAIT_S)

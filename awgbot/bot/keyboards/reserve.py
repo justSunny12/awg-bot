@@ -86,7 +86,7 @@ def confirm_evict() -> InlineKeyboardMarkup:
 
 
 def confirm_force() -> InlineKeyboardMarkup:
-    return kc.confirm(SetCB(sec="rsv"), "⚠️ Вернуть без резерва", RsvCB(action="force_yes"), danger=True)
+    return kc.confirm(SetCB(sec="rsv"), "⚠️ Да, вернуть", RsvCB(action="force_yes"), danger=True)
 
 
 def confirm_return() -> InlineKeyboardMarkup:
