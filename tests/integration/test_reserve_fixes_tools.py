@@ -136,7 +136,7 @@ def _request(peer, xff: str = ""):
 
 async def _through(peer, xff=""):
     from aiogram.webhook.security import IPFilter
-    mw = webhook._peer_filter(IPFilter(["149.154.160.0/20", "91.108.4.0/22"]))
+    mw = webhook._peer_filter(IPFilter(["198.51.100.0/25"]))       # «пул Telegram» теста
     seen = []
 
     async def handler(req):
@@ -146,12 +146,12 @@ async def _through(peer, xff=""):
 
 
 async def test_a_telegram_socket_address_passes():
-    res, seen = await _through(("149.154.167.50", 41000))
+    res, seen = await _through(("198.51.100.9", 41000))
     assert res == "ok" and seen
 
 
-@pytest.mark.parametrize("peer, xff", [(("198.51.100.9", 41000), "149.154.167.50"), (("203.0.113.7", 1), ""),
-                                       (None, "149.154.167.50")], ids=["forged-xff", "stranger", "no-socket"])
+@pytest.mark.parametrize("peer, xff", [(("203.0.113.7", 41000), "198.51.100.9"), (("203.0.113.7", 1), ""),
+                                       (None, "198.51.100.9")], ids=["forged-xff", "stranger", "no-socket"])
 async def test_a_foreign_socket_address_is_401_whatever_the_header_says(peer, xff):
     from aiohttp import web
     with pytest.raises(web.HTTPUnauthorized):
