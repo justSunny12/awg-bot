@@ -46,21 +46,21 @@ class ReserveAwayMixin:
             return {"name": name, "dot": dot, "text": text}
 
         if o == "leaving":
-            return st("🟡", "клиенты переезжают к нему — жду смену записи")
+            return st("🟡", "твои клиенты переезжают — жду смену записи")
         if o == "away":
             return st("🟢", f"несёт твоих клиентов и бот с {_when(str(out.get('taken_at') or out.get('since') or ''))}")
         if o == "returning":
-            return st("🟡", "клиенты возвращаются сюда")
+            return st("🟡", "твои клиенты возвращаются на сервер")
         if o == "home" and out.get("relay_until") and i == "idle":
             try:
                 if timeutil.parse_iso(str(out["relay_until"])) > timeutil.now():
-                    return st("🟡", f"клиенты возвращаются сюда — пересылка до {_date(str(out['relay_until']))}")
+                    return st("🟡", f"твои клиенты возвращаются на сервер — пересылка до {_date(str(out['relay_until']))}")
             except ValueError:
                 pass
         if i in ("taking", "serving", "releasing"):
-            return st("🟢", f"его клиенты и бот у тебя с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}")
+            return st("🟢", f"чужие клиенты и бот у тебя с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}")
         if i == "relay":
-            return st("🟡", f"его клиенты возвращаются к нему — пересылка до {_date(str(inn.get('relay_until') or ''))}")
+            return st("🟡", f"чужие клиенты возвращаются на резерв — пересылка до {_date(str(inn.get('relay_until') or ''))}")
         if self.reserve_peer_seen() == "down":
             return st("🔴", f"недоступен с {_when(self.reserve_down_since())}")
         if not self.reserve_online():
@@ -69,10 +69,17 @@ class ReserveAwayMixin:
         ok, why = self.reserve_directions()["out"]
         pkg = self.rsv_get("rsv_pkg_sent")
         if ok and not pkg.get("at"):
-            ok, why = False, "данных для переезда у него ещё нет"
+            ok, why = False, "данных для переезда ещё нет"
         if not ok:
-            return st("🟡", f"не готов: {why}")
+            return st("🟡", f"не готов: {self._main_reason(why, name)}")
         return st("🟢", f"резерв готов · данные от {_when(str(pkg.get('at') or ''))}")
+
+    @staticmethod
+    def _main_reason(why: str, name: str) -> str:
+        """Причина для строки главной: имя резерва в строке уже есть, сторона — «у тебя»."""
+        why = why.replace("здесь выключено", "у тебя выключено").replace(f"у «{name}» выключено", "выключено")
+        why = why.replace(f"у «{name}»: ", "").replace("здесь: ", "у тебя: ")
+        return why.replace("у резерва устарели", "устарели")
 
     def reserve_main_line(self) -> str:
         """Та же строка одним текстом (журнал, тесты): «🛟 Beta 🟢 резерв готов · …»."""
