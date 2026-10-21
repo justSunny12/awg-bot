@@ -284,7 +284,7 @@ def _guest_forward(spec) -> list[str]:
         out.append(f"        iifname {r} drop")
         out.append(f"        oifname {r} drop")              # в зону через этот veth — только ответы (ct выше)
     if spec.relay_to and spec.relay_udp_port:
-        out.append("        ct status dnat udp accept")
+        out.append("        ct status dnat meta l4proto udp accept")
     return out
 
 
@@ -320,7 +320,7 @@ def _guest_postrouting(spec) -> list[str]:
     if spec.guest_rf_if and spec.guest_rf_zone4 and spec.link_ifs and spec.guest_phase in ("taking", "serving"):
         out.append(f"        oifname {nftjson.ifs(spec.link_ifs)} ip saddr {spec.guest_rf_zone4} masquerade")
     if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
-        out.append("        ct status dnat udp masquerade")
+        out.append("        ct status dnat meta l4proto udp masquerade")
     return out
 
 
