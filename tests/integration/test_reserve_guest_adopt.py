@@ -47,6 +47,14 @@ def _marker(path) -> str:
         con.close()
 
 
+DB_AT = "2026-10-21T10:00:00+00:00"          # метка базы из пакета (pkg.json db_at)
+
+
+def _set_mtime(path, iso: str) -> None:
+    ts = timeutil.parse_iso(iso).timestamp()
+    os.utime(path, (ts, ts))
+
+
 @pytest.fixture()
 def store(services, tmp_path, monkeypatch):
     run = tmp_path / "run"
@@ -57,7 +65,10 @@ def store(services, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", str(run / "data" / "bot.db"))
     rsvzone.write_private(run / "k", K.hex())
     (run / "data" / "bot.db").write_bytes(_db_bytes(tmp_path, "package"))
-    rsvzone.write_private(run / "pkg.json", json.dumps({"pkg_gen": 3, "db_at": "2026-10-21T10:00:00+00:00"}))
+    rsvzone.write_private(run / "pkg.json", json.dumps({"pkg_gen": 3, "db_at": DB_AT}))
+    # база из пакета записана в момент пакета, а не «сейчас»: иначе проверка «снимок
+    # не старее живой базы» сравнивает фиксированные даты теста с часами прогона
+    _set_mtime(run / "data" / "bot.db", DB_AT)
     return type("S", (), {"svc": services, "run": run, "tmp": tmp_path})()
 
 
@@ -130,3 +141,23 @@ def test_a_missing_marker_in_the_meta_means_any_replica_is_newer(store):
     rsvzone.write_private(store.run / "pkg.json", json.dumps({"pkg_gen": 3}))
     _put_rep(store, "replica", timeutil.now_iso())
     assert store.svc.guest_adopt_snapshot() is True
+
+
+def test_a_replica_older_than_the_live_database_file_is_not_adopted(store):
+    """Перезапуск гостя юнитом, не возврат: снимок новее метки пакета, но живая
+    база записана позже снимка — подхват откатил бы правки последних минут
+    на резерве (платежи, новые устройства)."""
+    _put_rep(store, "replica", "2026-10-21T11:00:00+00:00")
+    _set_mtime(store.run / "data" / "bot.db", "2026-10-21T11:30:00+00:00")
+    assert store.svc.guest_adopt_snapshot() is False, "снимок старее живой базы подхвачен"
+    assert _marker(store.run / "data" / "bot.db") == "package"
+    assert not (store.run / "data" / "bot.db.prev").exists(), "база отложена в сторону без подхвата"
+
+
+def test_a_replica_newer_than_the_live_database_file_is_adopted(store):
+    """Та же пара меток, но живая база записана раньше снимка — это и есть
+    финальная реплика основы: подхватывается."""
+    _put_rep(store, "replica", "2026-10-21T11:00:00+00:00")
+    _set_mtime(store.run / "data" / "bot.db", "2026-10-21T10:59:00+00:00")
+    assert store.svc.guest_adopt_snapshot() is True
+    assert _marker(store.run / "data" / "bot.db") == "replica"

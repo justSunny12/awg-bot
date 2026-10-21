@@ -353,13 +353,13 @@ async def test_the_admin_main_screen_shows_the_reserve_line_in_the_ordinary_and_
     суть; переезд — та же строка с другой сутью, а не вторая строка рядом."""
     from awgbot.bot.handlers.admin import panel
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 <b>Beta</b> 🟡 не готов: данных для переезда у него ещё нет" in parts[0], parts[0]
+    assert "🛟 <b>Beta</b> 🟡 не готов: данных для переезда ещё нет" in parts[0], parts[0]
     rm.confirm_package(ui.svc)
     parts = await panel._panel_parts(ui.svc)
     assert "🛟 <b>Beta</b> 🟢 резерв готов · данные от " in parts[0], "строки резерва нет на главной в обычном состоянии"
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 <b>Beta</b> 🟢 его клиенты и бот у тебя с" in parts[0] and "резерв готов" not in parts[0]
+    assert "🛟 <b>Beta</b> 🟢 чужие клиенты и бот у тебя с" in parts[0] and "резерв готов" not in parts[0]
     assert parts[0].count("🛟") == 1, "строка резерва на главной должна быть одна"
 
 

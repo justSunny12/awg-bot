@@ -11948,7 +11948,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 клиенты переезжают к нему — жду смену записи</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 твои клиенты переезжают — жду смену записи</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -11966,7 +11966,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 его клиенты и бот у тебя с 12:00 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 чужие клиенты и бот у тебя с 12:00 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -11984,7 +11984,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 клиенты возвращаются сюда — пересылка до 22.09 14:05 (UTC+5)</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 твои клиенты возвращаются на сервер — пересылка до 22.09 14:05 (UTC+5)</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12020,7 +12020,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: данных для переезда у него ещё нет</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: данных для переезда ещё нет</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
@@ -12056,7 +12056,7 @@ TTL: 60 с
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: здесь выключено «Готов быть резервом»</a>
+<a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: у тебя выключено «Готов быть резервом»</a>
 📈 CPU 12% · RAM 41% · диск 23%
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0

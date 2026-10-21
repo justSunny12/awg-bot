@@ -71,7 +71,7 @@ def _clock(iso: str) -> str:
 def test_online_without_confirmed_data_is_not_green(mv):
     """На связи, направление готово, но пакета у резерва ещё нет — переехать
     сейчас не на чем: зелёный кружок обещал бы админу переезд, которого не будет."""
-    assert _st(mv.svc) == ("Beta", "🟡", "не готов: данных для переезда у него ещё нет")
+    assert _st(mv.svc) == ("Beta", "🟡", "не готов: данных для переезда ещё нет")
 
 
 def test_ready_with_fresh_data_is_green_and_names_the_data_time(mv):
@@ -86,20 +86,21 @@ def test_ready_with_fresh_data_is_green_and_names_the_data_time(mv):
 
 def test_readiness_off_here_is_named_as_this_side_even_with_data(mv):
     """«Готов быть резервом» выключен у себя — переезда не будет, сколько бы
-    данных ни было; причина говорит «здесь», а не про второй сервер — иначе
+    данных ни было; причина говорит «у тебя», а не про второй сервер — иначе
     админ идёт чинить не ту сторону."""
     from awgbot.core import settings
     settings.set_value("app.reserve.ready", False)
     rm.confirm_package(mv.svc)
-    assert _st(mv.svc) == ("Beta", "🟡", "не готов: здесь выключено «Готов быть резервом»")
+    assert _st(mv.svc) == ("Beta", "🟡", "не готов: у тебя выключено «Готов быть резервом»")
 
 
-def test_peer_not_ready_names_the_peer(mv):
-    """У второго сервера выключена готовность — причина называет его, а не «здесь»."""
+def test_peer_readiness_off_is_said_without_repeating_its_name(mv):
+    """У второго сервера выключена готовность: его имя уже в начале строки,
+    причина — просто «выключено», без «у тебя» (иначе админ ищет переключатель у себя)."""
     rm.st_in(mv.svc, ready=False)
     rm.confirm_package(mv.svc)
     name, dot, text = _st(mv.svc)
-    assert (dot, text) == ("🟡", "не готов: у «Beta» выключено «Готов быть резервом»"), text
+    assert (dot, text) == ("🟡", "не готов: выключено «Готов быть резервом»"), text
 
 
 def test_stale_data_is_not_green(mv):
@@ -107,8 +108,36 @@ def test_stale_data_is_not_green(mv):
     в прошлое: 🟡 с причиной про устаревшие данные, а не «готов» со старым временем."""
     old = timeutil.to_iso(timeutil.shift(timeutil.now(), -3 * 3600))
     mv.svc.rsv_put("rsv_pkg_sent", {"gen": 7, "fp": "DUMMY-fp", "at": old})
-    name, dot, text = _st(mv.svc)
-    assert dot == "🟡" and text.startswith("не готов: ") and "устарели" in text, text
+    assert _st(mv.svc) == ("Beta", "🟡", "не готов: данные для переезда устарели")
+
+
+@pytest.mark.parametrize("why,want", [
+    ("здесь выключено «Готов быть резервом»", "у тебя выключено «Готов быть резервом»"),
+    ("у «Beta» выключено «Готов быть резервом»", "выключено «Готов быть резервом»"),
+    ("у «Beta»: на сервере нет dnsmasq", "на сервере нет dnsmasq"),
+    ("здесь: на сервере нет dnsmasq", "у тебя: на сервере нет dnsmasq"),
+    ("данные для переезда у резерва устарели", "данные для переезда устарели"),
+    ("«Beta» не читает формат данных переезда — нужен выпуск новее",
+     "не читает формат данных переезда — нужен выпуск новее"),
+    ("«Beta» не умеет принимать клиентов — нужен выпуск новее", "не умеет принимать клиентов — нужен выпуск новее"),
+    ("у «Beta» v4.0.0, здесь v4.1.0 — нужен резерв не младше", "v4.0.0, у тебя v4.1.0 — нужен резерв не младше"),
+    ("порт клиентов 443 занят у обеих сторон", "порт клиентов 443 занят у обеих сторон"),
+], ids=["своя готовность", "чужая готовность", "чужая зона", "своя зона", "устарели", "формат", "возможности",
+        "версии", "прочее как есть"])
+def test_the_main_reason_drops_the_repeated_name_and_says_you_for_this_side(why, want):
+    """Имя резерва уже стоит в начале строки главной: причина его не повторяет,
+    своя сторона — «у тебя», а не «здесь». Причины карточки, которых замена
+    не касается, проходят без изменений — иначе на главной теряется суть."""
+    assert awaymod.ReserveAwayMixin._main_reason(why, "Beta") == want
+
+
+@pytest.mark.parametrize("why", ["у «Gamma» выключено «Готов быть резервом»",
+                                 "«Gamma» не читает формат данных переезда — нужен выпуск новее",
+                                 "у «Gamma» v4.0.0, здесь v4.1.0 — нужен резерв не младше"])
+def test_the_main_reason_does_not_strip_another_name(why):
+    """Срезается только имя своего резерва: чужое имя в причине — уже не повтор."""
+    got = awaymod.ReserveAwayMixin._main_reason(why, "Beta")
+    assert "«Gamma»" in got, got
 
 
 def test_before_the_first_session(services, rsv):
@@ -135,11 +164,11 @@ def test_without_a_pair_the_status_and_the_line_are_empty(services, rsv):
 def test_the_status_follows_the_move_and_the_return(mv):
     svc = mv.svc
     svc.reserve_set_out("leaving")
-    assert _st(svc) == ("Beta", "🟡", "клиенты переезжают к нему — жду смену записи")
+    assert _st(svc) == ("Beta", "🟡", "твои клиенты переезжают — жду смену записи")
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
     assert _st(svc) == ("Beta", "🟢", f"несёт твоих клиентов и бот с {_clock('2026-10-21T03:12:00+05:00')}")
     svc.reserve_set_out("returning")
-    assert _st(svc) == ("Beta", "🟡", "клиенты возвращаются сюда")
+    assert _st(svc) == ("Beta", "🟡", "твои клиенты возвращаются на сервер")
 
 
 def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
@@ -147,7 +176,7 @@ def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
     soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
     svc.reserve_set_out("home", relay_until=soon)
     date = timeutil.fmt_dt_ui(timeutil.parse_iso(soon))
-    assert _st(svc) == ("Beta", "🟡", f"клиенты возвращаются сюда — пересылка до {date}")
+    assert _st(svc) == ("Beta", "🟡", f"твои клиенты возвращаются на сервер — пересылка до {date}")
     rm.confirm_package(svc)
     svc.reserve_set_out("home", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), -60)))
     assert _st(svc)[1:] == ("🟢", f"резерв готов · данные от {_clock(svc.rsv_get('rsv_pkg_sent')['at'])}"), \
@@ -160,13 +189,13 @@ def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
 def test_the_reserve_hosting_the_peer_clients_is_green(mv, state):
     """Резерв несёт клиентов второго сервера — это его работа, а не тревога."""
     mv.svc.reserve_set_in(state, taken_at="2026-10-21T03:12:00+05:00")
-    assert _st(mv.svc) == ("Beta", "🟢", f"его клиенты и бот у тебя с {_clock('2026-10-21T03:12:00+05:00')}")
+    assert _st(mv.svc) == ("Beta", "🟢", f"чужие клиенты и бот у тебя с {_clock('2026-10-21T03:12:00+05:00')}")
 
 
 def test_the_reserve_forwarding_the_peer_clients_back(mv):
     soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
     mv.svc.reserve_set_in("relay", relay_until=soon)
-    assert _st(mv.svc) == ("Beta", "🟡", f"его клиенты возвращаются к нему — пересылка до "
+    assert _st(mv.svc) == ("Beta", "🟡", f"чужие клиенты возвращаются на резерв — пересылка до "
                                           f"{timeutil.fmt_dt_ui(timeutil.parse_iso(soon))}")
 
 
