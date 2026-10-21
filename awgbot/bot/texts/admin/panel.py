@@ -43,7 +43,7 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                 bot_username: str = "", expiring: int = 0, routing_info: dict = None,
                 rf: dict = None, unassigned: int = 0, update_tag: str = "",
-                update_run: dict = None, rsv_line: str = "") -> str:
+                update_run: dict = None, rsv_line: str = "", rsv: dict = None) -> str:
     """Шапка главной: сервер и аптайм одной строкой, пустая строка, метрики,
     РФ-доступ, счётчики и трафик со ссылками на значении, РФ-ветка, доступное
     обновление и переезд — только когда есть что сказать. update_run — идёт
@@ -57,8 +57,11 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         dot = "🔴 AWG не отвечает"
     host = _e(_hostname() or "AWG")
     lines = [ui.head(f"🛠 {host}", dot)]
-    if rsv_line:
-        # Т-Р17: строка резерва (особое состояние или «на связи»); нажатие — карточка резерва
+    if rsv:
+        # Т-Р17: статус резерва в стиле строки сервера — имя, кружок, суть; нажатие — карточка резерва
+        line = f"🛟 <b>{_e(rsv.get('name') or 'резерв')}</b> {_e(rsv.get('dot') or '')} {_e(rsv.get('text') or '')}".rstrip()
+        lines.append(f'<a href="https://t.me/{bot_username}?start={RSV_PAYLOAD}">{line}</a>' if bot_username else line)
+    elif rsv_line:
         safe = _e(rsv_line)
         lines.append(f'<a href="https://t.me/{bot_username}?start={RSV_PAYLOAD}">{safe}</a>' if bot_username else safe)
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:

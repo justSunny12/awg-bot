@@ -57,6 +57,7 @@ class StatusMixin:
             "st": st, "ac": ac, "routing_ok": routing_ok, "routing_info": routing_info, "mig": mig,
             "rf": rf,
             "rsv_line": self.reserve_main_line() if hasattr(self, "reserve_main_line") else "",
+            "rsv": self.reserve_main_status() if hasattr(self, "reserve_main_status") else {},
             "expiring": len(self.expiring_subscriptions()),
             "unassigned": self.count_unassigned_devices(),
             "has_dev": n_dev > 0,

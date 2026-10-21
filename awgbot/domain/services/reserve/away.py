@@ -30,42 +30,54 @@ class ReserveAwayMixin:
         if self.reserve_in() in ("taking", "serving", "releasing"):
             raise ServiceError(HOSTING_REFUSED.format(name=self.reserve_peer_name()))
 
-    def reserve_main_line(self) -> str:
-        """Т-Р17: строка главной админа о резерве — особое состояние (переезд, возврат,
-        недоступен) или короткое «на связи»; пусто — пары нет."""
+    def reserve_main_status(self) -> dict:
+        """Т-Р17: статус резерва для шапки главной — {name, dot, text}; пусто — пары нет.
+        Как у строки сервера: имя, кружок, короткая суть. 🟢 — переехать можно прямо
+        сейчас (связь, направление готово, данные для переезда у резерва) или резерв
+        несёт клиентов; 🟡 — не готов, с причиной, либо ход переезда/возврата;
+        🔴 — недоступен физически (линк пары молчит)."""
         if not self.reserve_paired():
-            return ""
+            return {}
         name = self.reserve_peer_name()
         out, inn = self.rsv_get("rsv_out"), self.rsv_get("rsv_in")
         o, i = str(out.get("state") or "home"), str(inn.get("state") or "idle")
+
+        def st(dot: str, text: str) -> dict:
+            return {"name": name, "dot": dot, "text": text}
+
         if o == "leaving":
-            return f"🛟 Клиенты переезжают на резерв «{name}» — жду смену записи"
+            return st("🟡", "клиенты переезжают к нему — жду смену записи")
         if o == "away":
-            return f"🛟 Клиенты и бот — на «{name}» с {_when(str(out.get('taken_at') or out.get('since') or ''))}"
+            return st("🟢", f"несёт твоих клиентов и бот с {_when(str(out.get('taken_at') or out.get('since') or ''))}")
         if o == "returning":
-            return f"🛟 Клиенты возвращаются с резерва «{name}»"
+            return st("🟡", "клиенты возвращаются сюда")
         if o == "home" and out.get("relay_until") and i == "idle":
             try:
                 if timeutil.parse_iso(str(out["relay_until"])) > timeutil.now():
-                    return f"🛟 Клиенты возвращаются с резерва «{name}» — пересылка до {_date(str(out['relay_until']))}"
+                    return st("🟡", f"клиенты возвращаются сюда — пересылка до {_date(str(out['relay_until']))}")
             except ValueError:
                 pass
         if i in ("taking", "serving", "releasing"):
-            return f"🛟 У тебя клиенты и бот «{name}» с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}"
+            return st("🟢", f"его клиенты и бот у тебя с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}")
         if i == "relay":
-            return f"🛟 Клиенты «{name}» возвращаются к нему — пересылка до {_date(str(inn.get('relay_until') or ''))}"
+            return st("🟡", f"его клиенты возвращаются к нему — пересылка до {_date(str(inn.get('relay_until') or ''))}")
         if self.reserve_peer_seen() == "down":
-            return f"🔴 Резерв «{name}» недоступен с {_when(self.reserve_down_since())}"
-        # обычное состояние: резерв есть — коротко, что он на связи и когда у него данные для переезда
-        ready = settings.get_bool("app.reserve.ready", False)
+            return st("🔴", f"недоступен с {_when(self.reserve_down_since())}")
+        if not self.reserve_online():
+            # сессия была и оборвалась — «недоступен» скажет проба; не было ни разу — так и говорим
+            return st("🟡", "сейчас не на связи" if self.reserve_peer_state().get("session_at") else "связи ещё не было")
+        ok, why = self.reserve_directions()["out"]
         pkg = self.rsv_get("rsv_pkg_sent")
-        if self.reserve_online() and ready and pkg.get("at"):
-            return f"🛟 Резерв «{name}» на связи · данные для переезда от {_when(str(pkg.get('at') or ''))}"
-        if self.reserve_online():
-            return f"🛟 Резерв «{name}» на связи" + ("" if ready else " · готовность выключена")
-        if self.reserve_peer_state().get("session_at"):
-            return f"🛟 Резерв «{name}»: сейчас не на связи"   # сессия была и оборвалась; «недоступен» скажет проба
-        return f"🛟 Резерв «{name}»: связи ещё не было"
+        if ok and not pkg.get("at"):
+            ok, why = False, "данных для переезда у него ещё нет"
+        if not ok:
+            return st("🟡", f"не готов: {why}")
+        return st("🟢", f"резерв готов · данные от {_when(str(pkg.get('at') or ''))}")
+
+    def reserve_main_line(self) -> str:
+        """Та же строка одним текстом (журнал, тесты): «🛟 Beta 🟢 резерв готов · …»."""
+        s = self.reserve_main_status()
+        return f"🛟 {s['name']} {s['dot']} {s['text']}" if s else ""
 
     def reserve_blocks_to_send(self) -> list[str] | None:
         """Пока мои клиенты у резерва: адреса заблокированных устройств — ему

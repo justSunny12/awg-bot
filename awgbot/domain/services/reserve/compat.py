@@ -82,7 +82,9 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
     if vs is None or vd is None:
         return False, "версия второго сервера не прочитана"
     if not src.get("ready"):
-        return False, "у этого сервера выключено «Готов быть резервом»" if src is dst else "сторона не готова"
+        mine = str(src.get("name") or "") == str(config.SERVER_NAME or "")
+        return False, ("здесь выключено «Готов быть резервом»" if mine
+                       else f"у «{src.get('name') or 'резерв'}» выключено «Готов быть резервом»")
     if not dst.get("ready"):
         return False, f"«{dst.get('name') or 'резерв'}» не готов быть резервом"
     if not pkg_format(src.get("caps", []), dst.get("caps", [])):
