@@ -306,6 +306,8 @@ class ReservePackageMixin:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as f:
             f.write(blob)
+            f.flush()
+            os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
                                     "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns})

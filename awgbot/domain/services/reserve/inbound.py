@@ -9,32 +9,42 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
-Переезд кнопкой (`go{K, gen, kind}`; отказ, если зона занята или мои
-клиенты не здесь): `open.status = launching`, процесс открытия временным
-юнитом с песочницей (stdin — JSON с `K`; запись DNS меняет основа; env и
-bot.db резерва юниту закрыты, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
-`up` основе → `released{реплика}` → гость стоп, `rep.bin`, гость старт (он
-подхватит реплику), отметка `tg_take` → `tg_taken` от гостя → `taken` основе,
-serving, Т-РУ4. Отказ процесса — `down{причина}`, юнит открытия стоп, зона
-снята, шлюзам — `state{idle, reason}` (шлюз, отдавший долю, говорит своему
-админу «переезд не состоялся», Т-РА5). Зона снята мимо бота (фаза зоны idle
+Переезд кнопкой (`go{K, gen, kind}`; предусловия — `reserve_open_block`
+без доли: зона свободна, мои клиенты здесь, готовность, направление, пакет):
+пересылка хвоста прошлого возврата уступает (`_relay_yield`),
+`open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
+открытия временным юнитом с песочницей (`rsvopen_sandbox_props`; stdin — JSON
+с `K`; запись DNS меняет основа; env резерва закрыт, каталог данных подменён
+пустым — виден только guest.pkg, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
+`up` основе (повтор раз в 30 с, пока идёт подъём) → `released{реплика}` →
+гость стоп, `rep.bin`, гость старт (он подхватит реплику; не вышло — срыв),
+отметка `tg_take` → `tg_taken` от гостя → `taken` основе, serving, Т-РУ4.
+Такт проверяет код завершения процесса: кончился без `done`/`fail` — срыв
+сразу, хвост stderr (rsvopen.err) — в причину. После `done` у taking есть
+срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S, кнопка — `released`
+DONE_BUTTON_WAIT_S; основа с `released` опоздала и не на связи — `tg_take`
+гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв. Отказ процесса —
+один раз под замком: `down{причина}`, юнит открытия стоп, зона снята, шлюзам
+— `state{idle, reason}` (шлюз, отдавший долю, говорит своему админу «переезд
+не состоялся», Т-РА5), отметка `fail_at` (демпфер матрицы, vote
+FAIL_DAMPER_S), не `ended_auto`. Зона снята мимо бота (фаза зоны idle
 при моём serving) — idle без отметки автоматического переезда: паузы
 `min_interval_minutes` нет; пакет и доля остаются — матрица вправе открыть
-снова сразу (процесс возьмёт `rep.bin`, если он новее пакета).
+снова сразу (процесс возьмёт `rep.bin`, если он новее пакета). Пока taking,
+serving или releasing — новый пакет не принимается (package: «зона занята»).
 
 Возврат: `back_req` → гостю `stop` (открытие ещё шло — юнит стоп) →
 `replica` (гость молчит 90 с — `rep.bin`) → `released` основе (releasing;
-повторный `back_req` — та же реплика из `rep.bin` снова) → `back` (повтор в
-relay — снова `relay` и `wiped`) → пересылка хвоста (`--relay`, файервол), учёт,
-`relay{until}`, `--wipe`, прежний пакет и доля — прочь, `wiped`, Т-РУ5 →
-relay до `relay_max_days`/тишины → idle. `evict` — просьба вернуть клиентов
-по кнопке у резерва.
+повторный `back_req` — та же реплика из `rep.bin` снова; зоны нет — `rep.bin`
+с диска или `released` без реплики) → `back` (повтор в relay — снова `relay`
+и `wiped`; зоны нет — сразу `wiped`) → пересылка хвоста (`--relay`,
+файервол; адрес основы — IP, имя резолвится сейчас; срыв открытия до смены
+записи — без хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний
+пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days`/тишины →
+idle. `evict` — просьба вернуть клиентов по кнопке у резерва.
 """
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import subprocess
 import time
 
@@ -45,31 +55,10 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .state import _LOCK
 
-def rsvopen_sandbox_props(base: str) -> list[str]:
-    """Свойства systemd-run для процесса открытия — одним списком, чтобы стенд
-    запускал его ровно так же. Хранилище гостя и каталоги из ReadWritePaths
-    должны существовать до запуска (`_rsvopen_launch` их создаёт)."""
-    from awgbot.infra import rsvzone
-    pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
-    return ["-p", "MemoryMax=192M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
-            "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
-            "-p", "NoNewPrivileges=yes",
-            "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
-            "-p", f"WorkingDirectory={base}",
-            # скрипт зоны пишет юниты и настройки журнала гостя в /etc/systemd
-            "-p", f"ReadWritePaths=-{rsvzone.RUN_DIR} -{rsvzone.VAR_DIR} -{rsvzone.STATE_DIR} -/etc/systemd -/run/netns",
-            # из каталога данных резерва процессу виден только пакет второй стороны:
-            # ни база резерва (и её WAL), ни стороны линков, ни копии
-            "-p", f"TemporaryFileSystem={config.DATA_DIR}:ro",
-            "-p", f"BindReadOnlyPaths=-{pkg}"]
-
-
-OPEN_UNIT = "awg-bot-rsvopen"
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
 TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
 DONE_BUTTON_WAIT_S = 1800 + 300 + 120   # кнопка: основе на запись (30 мин) и передачу бота (5 мин) с запасом
 REPLICA_WAIT_S = 90              # реплика от гостя после stop
-
 
 class ReserveInboundMixin:
     def _inn(self) -> dict:
@@ -79,7 +68,7 @@ class ReserveInboundMixin:
         return self.rsv_update("rsv_in", step=step, step_at=timeutil.now_iso(), **fields)
 
     # ── процесс открытия ────────────────────────────────────────────────────
-    def reserve_go_in(self, k_hex: str, gen: int, kind: str) -> str:
+    def reserve_go_in(self, k_hex: str, gen: int, kind: str, ttl: int = 0) -> str:
         """`go` от основы: запустить процесс открытия. Пусто — запущен; иначе
         причина отказа (уйдёт в `down`)."""
         pkg_in = self.rsv_get("rsv_pkg_in")
@@ -96,6 +85,7 @@ class ReserveInboundMixin:
             self.reserve_zone_shell_ensure()                  # после перезагрузки хоста зоны нет — --take отказал бы
         payload = self._open_payload(kind)
         payload["k"] = str(k_hex)
+        payload["dns"] = {"ttl": int(ttl or 0)}               # по K конверта DNS нет: TTL записи — от основы
         with _LOCK:
             if not self.reserve_zone_free():                  # проверка и запись — под одним замком
                 return "зона занята"
@@ -126,96 +116,6 @@ class ReserveInboundMixin:
             log.info("резерв: пересылка хвоста при новом открытии снята с ошибкой: %s", e)
         self.reserve_set_in("idle", step="", relay_to="", relay_until="")
         log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
-
-    def _open_payload(self, kind: str) -> dict:
-        from awgbot.infra import nftguard, rsvzone
-        from ..selfhost import own_host
-        plan = rsvzone.plan()
-        try:
-            port = int(plan.get("webhook_port") or 0)
-        except ValueError:
-            port = 0
-        return {"set_record": kind != "button", "tg_take": False, "webhook_port": port, "self_host": own_host(),
-                "target_ip": self.reserve_own_ip(), "tg_pool": list(nftguard.tg_pool()),
-                "channel_port": int(settings.get_int("app.routing.link_channel_port", 8787) or 8787)}
-
-    def _rsvopen_launch(self, payload: dict) -> None:
-        """Временный юнит с песочницей (systemd-run); без systemd — просто процесс.
-        Секреты — только в stdin. Хранилище гостя монтирует бот — в пространстве
-        хоста, до запуска юнита: у юнита с файловой песочницей своё пространство
-        монтирования (slave), и tmpfs, смонтированный внутри него, хосту и
-        юнитам гостя не виден. Каталоги из ReadWritePaths создаются заранее и
-        помечены «-» — несуществующий путь без «-» роняет юнит (код 226)."""
-        from awgbot.infra import rsvzone
-        base = str(config.BASE_DIR)
-        argv = [os.path.join(base, "venv", "bin", "python"), "-m", "tools.rsvopen"]
-        if not os.path.exists(argv[0]):
-            argv[0] = "python3"
-        try:
-            rsvzone.store()                                   # tmpfs — у хоста, юнит его видит
-        except rsvzone.ZoneError as e:
-            raise ServiceError(f"хранилище гостя не смонтировано: {e}")
-        for d in (rsvzone.VAR_DIR, rsvzone.STATE_DIR):
-            try:
-                os.makedirs(d, mode=0o700, exist_ok=True)
-            except OSError as e:
-                raise ServiceError(f"каталог {d} не создан: {e}")
-        # env резерва (его токен) процессу не нужен: AWG_BOT_ENV — пустой файл, а
-        # /etc/awg-bot/env закрыт юниту; BOT_TOKEN/ADMIN_ID из окружения бота — вон
-        env = {k: v for k, v in os.environ.items() if k not in ("BOT_TOKEN", "ADMIN_ID")}
-        env.update({"AWG_BOT_CONF_DIR": str(config.CONF_DIR), "AWG_BOT_DATA_DIR": str(config.DATA_DIR),
-                    "AWG_BOT_ENV": "/dev/null"})
-        if shutil.which("systemd-run"):
-            props = rsvopen_sandbox_props(base)
-            setenv = [f"--setenv={k}={env[k]}" for k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV") if k in env]
-            cmd = ["systemd-run", "--collect", "--quiet", "--pipe", f"--unit={OPEN_UNIT}", *props, *setenv, *argv]
-        else:
-            cmd = argv
-        err_path = rsvzone.STATE_DIR / "rsvopen.err"          # хвост stderr — причина отказа без итога
-        try:
-            err_fd = os.open(str(err_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        except OSError:
-            err_fd = subprocess.DEVNULL
-        try:
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_fd,
-                                    cwd=base, env=env, close_fds=True)
-            proc.stdin.write(json.dumps(payload).encode())
-            proc.stdin.close()
-        except OSError as e:
-            raise ServiceError(f"процесс открытия не запустился: {e}")
-        finally:
-            if err_fd != subprocess.DEVNULL:
-                os.close(err_fd)
-        self.__dict__["_rsvopen_proc"] = proc
-        rsvzone.open_status_write("launched")
-
-    def _rsvopen_exit(self) -> tuple[int | None, str]:
-        """Код завершения процесса открытия (None — идёт или неизвестен после
-        перезапуска бота) и хвост его stderr."""
-        from awgbot.infra import rsvzone
-        proc = self.__dict__.get("_rsvopen_proc")
-        if proc is None:
-            return None, ""
-        rc = proc.poll()
-        if rc is None:
-            return None, ""
-        self.__dict__["_rsvopen_proc"] = None
-        try:
-            tail = (rsvzone.STATE_DIR / "rsvopen.err").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-3:]
-        except (OSError, IndexError):
-            tail = []
-        return int(rc), " · ".join(t.strip() for t in tail if t.strip())[:200]
-
-    @staticmethod
-    def _rsvopen_stop() -> None:
-        """Остановить временный юнит процесса открытия (срыв, `back` на шаге up);
-        отказ — строка в журнал, не исключение."""
-        if not shutil.which("systemctl"):
-            return
-        try:
-            subprocess.run(["systemctl", "stop", f"{OPEN_UNIT}.service"], capture_output=True, timeout=30)
-        except (OSError, subprocess.SubprocessError) as e:
-            log.info("резерв: юнит процесса открытия не остановлен: %s", e)
 
     def reserve_in_tick(self) -> list[tuple]:
         """Такт автомата «клиенты основы у меня»."""
@@ -530,9 +430,10 @@ class ReserveInboundMixin:
         except ValueError:
             done = True
         idle_h = settings.get_int("app.reserve.relay_idle_hours", 2)
-        if not done and idle_h and str(inn.get("relay_at") or ""):
+        if not done and idle_h:
+            last = self._relay_last_traffic(inn)
             try:
-                done = timeutil.elapsed(timeutil.parse_iso(str(inn["relay_at"]))) >= idle_h * 3600 and not self._relay_busy()
+                done = bool(last) and timeutil.elapsed(timeutil.parse_iso(last)) >= idle_h * 3600
             except ValueError:
                 done = True
         if not done:
@@ -544,9 +445,25 @@ class ReserveInboundMixin:
         self.reserve_set_in("idle", step="", relay_to="", relay_until="")
         return [("fw",), ("send", "st", self.reserve_st_body())]
 
-    def _relay_busy(self) -> bool:
-        """Есть ли ещё трафик на правиле пересылки — пока не считаем: по сроку тишины."""
-        return False
+    def _relay_last_traffic(self, inn: dict) -> str:
+        """Момент последнего пакета через правило пересылки (по счётчику правила DNAT
+        в таблице хоста): счётчик вырос с прошлого такта — «сейчас»; счётчика нет —
+        начало пересылки. Тишина считается от него."""
+        from awgbot.infra import nftguard
+        last = str(inn.get("relay_last_traffic") or inn.get("relay_at") or "")
+        try:
+            pkts = nftguard.relay_packets()
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: счётчик пересылки хвоста не прочитан: %s", e)
+            pkts = None
+        if pkts is None:
+            return last
+        seen = inn.get("relay_pkts")
+        if seen is not None and int(pkts) != int(seen):
+            last = timeutil.now_iso()
+        if seen is None or int(pkts) != int(seen) or not inn.get("relay_last_traffic"):
+            self.rsv_update("rsv_in", relay_pkts=int(pkts), relay_last_traffic=last)
+        return last
 
     # ── возврат по кнопке у резерва ─────────────────────────────────────────
     def reserve_evict_check(self) -> str:

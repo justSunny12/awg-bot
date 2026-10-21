@@ -1,6 +1,7 @@
 """
 outbound.py — часть пакета reserve (см. __init__): «мои клиенты» на стороне
-основы — переезд кнопкой и возврат.
+основы — переезд кнопкой, away и здоровье; шаги возврата — в outbound_return,
+слияние — в merge_ops (автомат и сроки шагов — общие, здесь).
 
 Автомат в `rsv_out` (`state`: home | leaving | away | returning; `step` —
 шаг внутри состояния; сроки шагов — `deadline`). Такт (`reserve_out_tick`,
@@ -14,39 +15,34 @@ outbound.py — часть пакета reserve (см. __init__): «мои кл�
 Переезд кнопкой: leaving/pkg (свежий пакет → `pkg_ok`) → `go{K, gen}` →
 leaving/up (`up` от резерва) → leaving/record (запись → адрес резерва,
 факт у авторитетного сервера) → leaving/release → `released{реплика}` →
-leaving/released (`taken` от резерва) → away (без `taken` в срок — away и
-`wake_poll`: право отвечать решает getWebhookInfo). Пачка обновлений не
+leaving/released (`taken` от резерва) → away. Без `taken` в срок решает
+слово Telegram, а не своя отметка: `wake_poll` (getWebhookInfo, до трёх раз
+по 2 мин), и только ответ, записанный после released: вебхук у резерва —
+away с уведомлением, вебхука нет или Telegram молчит — срыв. Передача бота
+(`("release",)`) повторяется раз в 30 с до срока шага. Пачка обновлений не
 подтвердилась — передача откладывается, поллинг обратно. Отказ на любом
-шаге — `back` резерву (снять зону) и home; после отправки `go` (`go_sent`) —
-ещё новый `K` и пакет. Финальная реплика передачи ложится и снимком слияния
-`base-<gen>.db` (с неё стартует гость), а не снимок из пакета.
+шаге — `back` резерву (снять зону) и home; запись, если успела смениться, —
+обратно на себя (API) или Т-РУ11 (вручную, отказ API); после отправки `go`
+(`go_sent`) — ещё новый `K` и пакет. Финальная реплика передачи ложится и
+снимком слияния `base-<gen>.db` (с неё стартует гость), а не снимок из
+пакета. В home факт «клиенты у резерва» мимо меня — только `in = serving` в
+`st`, полученном после моего перехода в home.
 
 Зависший вебхук резерва (away по поллингу, запись на собственный адрес,
 резерв `inn = idle` или пары нет ≥ STUCK_PAIR_S; так STUCK_IDLE_S подряд) —
 `("take_home",)`: `deleteWebhook`, поллинг, home без возврата, новый `K`.
 
-Возврат без резерва (С9, рычаг админа): away, резерв не на связи ≥
-FORCE_OFFLINE_S — запись на свой адрес (API, если провайдер не «вручную»),
-`await_merge` и тот же `("take_home",)`, но home без нового `K`. Резерв вышел
-на связь и всё ещё несёт гостя — returning/back_req (`return_why = force`) и
-дальше обычный возврат; вышел пустым — отметка снята, новый `K`, пакет и
-уведомление «не вольются». Пересылки хвоста до его выхода на связь нет.
+Возврат без резерва (С9, рычаг админа) и обычный возврат — outbound_return.
 
 Сроки шагов и отметки проб — monotonic в базе; отметка прежней загрузки
 хоста считается вышедшей (util/livestep `mono_*`).
 
-Возврат: away (здоров ≥ 5 мин: свой AWG, линк пары, шлюз) → по рычагу
-«сразу» сам, «по кнопке» — Т-РУ6 через бот основы на резерве → returning/
-back_req → `released` (реплика) → слияние, пиры, блокировки → restart →
-take_tg (`deleteWebhook`, поллинг, `taken`) → record_back (запись → свой
-адрес, факт) → `back` → relay (`relay{until}`, `wiped`) → новый `K`, пакет →
-home. Повторы: `back_req` по сроку (резерв на повтор отдаёт реплику из
-rep.bin), merge по сроку и после рестарта посреди — снова back_req,
-record_back без факта 30 мин — `back` всё равно и Т-РУ11, `back` раз в минуту
-до `relay`. Ошибка слияния — away со сбросом здоровья и `last_switch`
-(анти-дребезг). Поколение главного ключа после возврата — по своей отметке
-`go_sent` (K отдан мной — прямая цела), не по слову резерва. Подробности —
-в докстрингах шагов.
+Away: здоров ≥ HEALTHY_S (свой AWG, линк пары, шлюз, Telegram достижим с
+этого сервера) → по рычагу «сразу» возврат сам (не чаще min_interval_minutes;
+после повторной той же ошибки слияния — `merge_blocked`, сам больше не
+начинается), «по кнопке» — Т-РУ6 через бот основы на резерве. Поколение
+главного ключа после возврата — по своей отметке `go_sent` (K отдан мной —
+прямая цела), не по слову резерва. Подробности — в докстрингах шагов.
 """
 from __future__ import annotations
 
@@ -222,7 +218,8 @@ class ReserveOutboundMixin:
                 self._out_step("up", UP_WAIT_S, gen=int(sent["gen"]), pkg_at=str(sent.get("at") or ""))
                 self.rsv_update("rsv_out", go_sent=True)             # K отдан — своя отметка, не слово резерва
                 return [("send", "go", {"k": self.reserve_k().hex(), "gen": int(sent["gen"]),
-                                        "kind": str(out.get("kind") or "button")}), ("live",)]
+                                        "kind": str(out.get("kind") or "button"),
+                                        "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0)}), ("live",)]   # TTL — гостю
             return []
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
@@ -387,7 +384,12 @@ class ReserveOutboundMixin:
             if now - since < HEALTHY_S:
                 return []
             if out.get("merge_blocked"):
-                return []                                     # слияние дважды упало с той же причиной — только по кнопке
+                # слияние дважды упало с той же причиной — сам не повторяю, но кнопка «↩️ Вернуть клиентов»
+                # (у основы и у гостя) должна быть: can_return держится, пока основа здорова
+                if not out.get("can_return"):
+                    self.rsv_update("rsv_out", can_return=True)
+                    return [("live",)]
+                return []
             if str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate":
                 last = str(out.get("last_switch") or "")
                 gap = settings.get_int("app.reserve.min_interval_minutes", 30) * 60

@@ -167,10 +167,6 @@ def serve(webhook_port: int) -> str:
     return run("serve", env={"WEBHOOK_PORT": str(int(webhook_port or 0) or "")})
 
 
-def restart_clone() -> str:
-    return run("restart-clone", timeout=90)
-
-
 def relay(to: str) -> str:
     return run("relay", env={"RELAY_TO": to})
 

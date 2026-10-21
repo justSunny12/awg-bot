@@ -138,6 +138,8 @@ def card_text(d: dict) -> str:
             sent = d.get("pkg_sent_at") or ""
             tail = f"данные для переезда у {_n(name)} от {_e(_when(sent))}" if sent else f"данные для переезда у {_n(name)} ещё не отправлены"
             lines.append("└ " + tail + (f" · падение подтвердят шлюзы {gws}" if gws else ""))
+            if d.get("pkg_error"):
+                lines.append(f"└ ⚠️ данные для переезда не собираются: {_e(d['pkg_error'])}")
         else:
             lines.append("└ ⚠️ " + _e(out_why))
         for g in d.get("gw_links") or []:

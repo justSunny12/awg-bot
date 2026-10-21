@@ -80,14 +80,9 @@ def restart_server() -> None:
     маршрут клону ставила зона; перезапуск — вниз, setconf, вверх."""
     if config.GUEST:
         iface = config.AWG_INTERFACE
-        try:
-            from awgbot.infra import rsvzone
-            rsvzone.restart_clone()                        # скрипт зоны: все клоны, setconf из текущих конфигов
-            return
-        except Exception as e:                             # noqa: BLE001 — скрипта нет (стенд) — ниже руками
-            pkg.log.info("гость: перезапуск клона скриптом зоны не прошёл (%s) — сам", e)
-        # setconf не знает расширений awg-quick (Address, MTU, DNS, Table) — файл
-        # без них кладёт рядом скрипт зоны; нет его — отфильтровать самим
+        # гость уже внутри зоны (NetworkNamespacePath), скрипт зоны ему не нужен и недоступен
+        # (ip netns exec — CAP_SYS_ADMIN); setconf не знает расширений awg-quick (Address, MTU,
+        # DNS, Table) — файл без них собирается из ТЕКУЩЕГО .conf (пиры за время обслуживания)
         setconf = config.CONF_PATH[:-5] + ".setconf" if config.CONF_PATH.endswith(".conf") else config.CONF_PATH + ".setconf"
         try:
             with open(config.CONF_PATH, encoding="utf-8") as f:

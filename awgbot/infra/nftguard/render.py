@@ -307,10 +307,11 @@ def _guest_prerouting(spec) -> list[str]:
         ports = list(spec.relay_udp_ports) or [int(spec.relay_udp_port)]
         host = spec.relay_to.rsplit(":", 1)[0]
         wan = f"iifname {nftjson.ifs(spec.wan_ifs)} " if spec.wan_ifs else ""   # только с внешнего интерфейса
+        # counter — по нему бот видит, идёт ли ещё хвост (пересылка снимается после тишины)
         if len(ports) == 1:
-            rules.append(f"        {wan}udp dport {int(ports[0])} dnat ip to {spec.relay_to}")
+            rules.append(f"        {wan}udp dport {int(ports[0])} counter dnat ip to {spec.relay_to}")
         else:                                                 # каждый порт — на тот же порт основы
-            rules.append(f"        {wan}udp dport {pkg._ports(ports)} dnat ip to {host}")
+            rules.append(f"        {wan}udp dport {pkg._ports(ports)} counter dnat ip to {host}")
     if not rules:
         return []
     return ["", "    chain prerouting {", "        type nat hook prerouting priority dstnat; policy accept;",

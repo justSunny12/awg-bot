@@ -126,7 +126,7 @@ def emergency(has_code: bool, peer_bot_url: str = "", peer_name: str = "") -> In
              ("🔄 Сменить код", RsvCB(action="new_code")) if has_code else None]]
     markup = ui.rows(*rows, _back("rsv"))
     if peer_bot_url:
-        # кнопка-ссылка на бот второй стороны: там свой экран и ввод кода (концепт §6.1)
+        # кнопка-ссылка на бот второй стороны: там свой экран и ввод кода
         markup.inline_keyboard.insert(len(markup.inline_keyboard) - 1,
                                       [InlineKeyboardButton(text=f"🆘 Открыть бот «{peer_name or 'резерв'}»"[:32], url=peer_bot_url)])
     return markup

@@ -117,6 +117,31 @@ def live_set(name: str) -> Optional[set[str]]:
     return out
 
 
+def relay_packets() -> Optional[int]:
+    """Пакеты, прошедшие через правило пересылки хвоста (dnat в prerouting);
+    None — цепочки или правила нет."""
+    proc = pkg._nft(["-j", "list", "chain", pkg.TABLE_FAMILY, pkg.TABLE_NAME, "prerouting"], check=False)
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout.decode(errors="replace") or "{}")
+    except json.JSONDecodeError as e:
+        raise pkg.GuardError(f"nft -j: {e}")
+    total, found = 0, False
+    for item in doc.get("nftables", []):
+        rule = item.get("rule") if isinstance(item, dict) else None
+        if not rule:
+            continue
+        expr = rule.get("expr") or []
+        if not any(isinstance(e, dict) and "dnat" in e for e in expr):
+            continue
+        for e in expr:
+            if isinstance(e, dict) and isinstance(e.get("counter"), dict):
+                total += int(e["counter"].get("packets") or 0)
+                found = True
+    return total if found else None
+
+
 def live_set_counters(name: str) -> dict[str, int]:
     """Элементы динамического набора со счётчиками: адрес → пакеты; нет набора — пусто."""
     proc = pkg._nft(["-j", "list", "set", pkg.TABLE_FAMILY, pkg.TABLE_NAME, name], check=False)

@@ -17,8 +17,13 @@ reserve — взаимный резерв серверов AWG на сторон
 - `package` — пакет переезда: отметки, сборка, досылка, приём;
 - `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов;
 - `dns` — запись DNS: провайдер, смена, факт, надзор;
-- `outbound` — «мои клиенты»: переезд кнопкой, возврат, слияние;
-- `inbound` — «клиенты основы у меня»: процесс открытия, зона, handback;
+- `outbound` — «мои клиенты»: переезд кнопкой, away, здоровье, зависший
+  вебхук резерва;
+- `outbound_return` — «мои клиенты»: возврат с резерва (в том числе без
+  реплики и рычагом «вернуть без резерва»);
+- `merge_ops` — слияние реплики при возврате: базы, пиры, блокировки, отчёт;
+- `inbound` — «клиенты основы у меня»: процесс открытия (песочница —
+  `rsvopen_sandbox_props`), зона, handback;
 - `notify` — уведомления клиентам о переезде и возврате;
 - `traffic` — итоги трафика через резерв;
 - `away` — отказы при away, строка главной;
@@ -28,7 +33,8 @@ reserve — взаимный резерв серверов AWG на сторон
 - `zonelinks` — стороны линков шлюзов основы в гостевой зоне (резерв) и
   подъём оболочки зоны после перезагрузки хоста;
 - `vote` — матрица случаев, набор голосующих, `need` → `share` → процесс
-  открытия, строка Н4 и приём аварийного кода;
+  открытия, общие предусловия открытия (`reserve_open_block`);
+- `codewin` — Н4: окно аварийного кода и приём кода;
 - `codewait` — итог аварийного кода ответом на сообщение: короткое ожидание
   первого шага процесса открытия;
 - `rfblock` — случаи 3 и Н3: демпфер, `view`/`ask`/`ask_no`, согласие основы;
@@ -50,6 +56,7 @@ from .keys import ReserveKeysMixin
 from .liveness import ReserveLivenessMixin
 from .merge_ops import ReserveMergeOpsMixin
 from .notify import ReserveNotifyMixin
+from .openproc import ReserveOpenProcMixin
 from .outbound import ReserveOutboundMixin
 from .outbound_return import ReserveReturnMixin
 from .package import ReservePackageMixin
@@ -72,7 +79,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
                    ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
-                   ReserveCodeWindowMixin, ReserveReturnMixin):
+                   ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 
