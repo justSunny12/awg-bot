@@ -39,10 +39,11 @@ TG_POOL_FILE = RUN_DIR / "tg_pool.json"         # пул адресов Telegram
 TG_TAKE_FILE = RUN_DIR / "tg_take"              # отметка: ставить вебхук (факт записи)
 
 
-def links_dir() -> Path:
+def links_dir(data_dir=None) -> Path:
     """Стороны линков шлюзов основы — по текущему каталогу данных (не фиксируется
-    при импорте: тесты и CLI подменяют DATA_DIR позже); окружение RSV_LINKS_DIR — переопределение."""
-    return Path(os.environ.get("RSV_LINKS_DIR") or (Path(config.DATA_DIR) / "reserve" / "links"))
+    при импорте: тесты и CLI подменяют DATA_DIR позже; вызывающий может передать
+    свой config.DATA_DIR); окружение RSV_LINKS_DIR — переопределение."""
+    return Path(os.environ.get("RSV_LINKS_DIR") or (Path(data_dir or config.DATA_DIR) / "reserve" / "links"))
 GUEST_UNIT = "awg-bot-guest.service"
 PHASES = ("idle", "taking", "serving", "relay")
 

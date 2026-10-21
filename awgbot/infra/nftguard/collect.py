@@ -178,7 +178,7 @@ def zone_link_ports() -> list[int]:
     out: list[int] = []
     try:
         from awgbot.infra import rsvzone
-        for path in sorted(rsvzone.links_dir().glob("awglink*.conf")):   # тот же каталог, что пишет zonelinks
+        for path in sorted(rsvzone.links_dir(config.DATA_DIR).glob("awglink*.conf")):   # тот же каталог, что пишет zonelinks
             m = re.search(r"(?m)^\s*ListenPort\s*=\s*(\d+)", path.read_text(encoding="utf-8"))
             if m and 0 < int(m.group(1)) < 65536:
                 out.append(int(m.group(1)))

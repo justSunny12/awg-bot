@@ -24,7 +24,7 @@ PORT_LO, PORT_HI = 40000, 60000
 
 def links_dir() -> str:
     from awgbot.infra import rsvzone
-    return str(rsvzone.links_dir())                           # один источник пути — его же получает скрипт зоны
+    return str(rsvzone.links_dir(config.DATA_DIR))            # один источник пути — его же получает скрипт зоны
 
 
 def _link_name(slot: int) -> str:

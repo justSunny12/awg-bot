@@ -100,7 +100,7 @@ from .admin import (
     reassign_recipient_notice, reassign_recipient_notice_with_slot,
     activated_admin_notice, traffic_limit_changed_notice, period_changed_notice, pause_lifted_notice,
     INVITE_FORWARD_TEMPLATE, LIMIT_REACHED, LIMIT_REACHED_RACE, NUMBER_BAD_LIMIT, NUMBER_BAD_TRAFFIC, limit_reached_line,
-    MIGRATION_PAYLOAD, migration_overview_text, migration_client_text)
+    MIGRATION_PAYLOAD, RSV_PAYLOAD, migration_overview_text, migration_client_text)
 from .settings import (
     SETTINGS_NOTIFY_CLIENTS,
     settings_email_text, EMAIL_ASK_ADDRESS, EMAIL_ASK_IMAP_PORT,
@@ -201,7 +201,7 @@ __all__ = [
     "reassign_recipient_notice", "reassign_recipient_notice_with_slot", "activated_admin_notice",
     "traffic_limit_changed_notice", "period_changed_notice", "pause_lifted_notice", "INVITE_FORWARD_TEMPLATE",
     "LIMIT_REACHED", "LIMIT_REACHED_RACE", "NUMBER_BAD_LIMIT", "NUMBER_BAD_TRAFFIC", "limit_reached_line",
-    "MIGRATION_PAYLOAD", "migration_overview_text", "migration_client_text", "release_url", "SETTINGS_NOTIFY_CLIENTS",
+    "MIGRATION_PAYLOAD", "RSV_PAYLOAD", "migration_overview_text", "migration_client_text", "release_url", "SETTINGS_NOTIFY_CLIENTS",
     "unmanaged_device_dialog", "guest_access_line", "GUEST_NO_DEVICES_HINT", "OWN_DEVICE_CODE",
     "GUEST_NO_DEVICES_TOAST", "issue_failed", "grace_taken_toast", "EXPIRED_HINT", "ADMIN_PAUSE_STATUS",
     "settings_email_text", "EMAIL_ASK_ADDRESS", "EMAIL_ASK_IMAP_PORT", "EMAIL_ASK_SMTP_PORT",
