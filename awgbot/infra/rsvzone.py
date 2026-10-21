@@ -171,6 +171,12 @@ def relay(to: str) -> str:
     return run("relay", env={"RELAY_TO": to})
 
 
+def relay_flush() -> str:
+    """Записи conntrack по портам клонов — прочь, когда DNAT хвоста уже в таблице
+    хоста (иначе поток, пришедший между relay и перерисовкой, завёл бы запись без NAT)."""
+    return run("relay-flush", timeout=60)
+
+
 def teardown() -> str:
     return run("teardown")
 

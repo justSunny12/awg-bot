@@ -560,7 +560,6 @@ conntrack_flush_ports() {   # записи conntrack по портам клон�
 cmd_relay() {
     need_root
     guest_stop
-    conntrack_flush_ports
     state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces=
     say "relay: ok"
 }
@@ -603,6 +602,7 @@ case "${1:-}" in
     --serve) cmd_serve ;;
     --restart-clone) cmd_restart_clone ;;
     --relay) cmd_relay ;;
+    --relay-flush) need_root; conntrack_flush_ports; say "relay-flush: ok" ;;   # после отрисовки DNAT хвоста ботом
     --teardown) cmd_teardown ;;
     --wipe) cmd_wipe ;;
     --status) cmd_status ;;

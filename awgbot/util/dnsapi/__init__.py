@@ -17,6 +17,8 @@ dnsapi — A-запись адреса для клиентов: чтение и 
 """
 from __future__ import annotations
 
-from .common import DnsError, NotSupported, Provider, provider_for, read_authoritative, read_system, PROVIDERS
+from .common import (DnsError, NotSupported, Provider, provider_for, read_authoritative, read_authoritative_ttl,
+                     read_system, PROVIDERS)
 
-__all__ = ["DnsError", "NotSupported", "Provider", "provider_for", "read_authoritative", "read_system", "PROVIDERS"]
+__all__ = ["DnsError", "NotSupported", "Provider", "provider_for", "read_authoritative", "read_authoritative_ttl",
+           "read_system", "PROVIDERS"]

@@ -107,21 +107,23 @@ class ReserveStoreMixin:
         if not notes:
             return []
         now = _t.monotonic() if now is None else now
-        keep, out = [], []
+        keep, out, changed = [], [], False
         for n in notes:
             try:
                 age = timeutil.elapsed(timeutil.parse_iso(str(n.get("at") or "")))
             except ValueError:
                 age = NOTE_TTL_S + 1
             if age > NOTE_TTL_S or not self._note_still_true(cur, n.get("cond") or {}):
+                changed = True
                 continue                                      # устарело или уже не так — не слать
             keep.append(n)
             if livestep.mono_due(n.get("tried"), now, NOTE_RETRY_S):
-                n["tried"] = now
+                n["tried"] = now                              # отметка попытки — в файл: иначе повтор каждый такт
+                changed = True
                 out.append(Notification(tg_id=int(config.ADMIN_ID), text=str(n["text"]), force_sound=bool(n.get("sound")),
                                         silent=bool(n.get("silent")), critical=bool(n.get("critical")),
                                         on_sent=lambda nid=str(n["id"]): self.reserve_note_sent(nid)))
-        if keep != notes:
+        if changed:
             cur["pending_notes"] = keep
             _write(cur, self._RSV_STORE)
         return [("notify", out)] if out else []

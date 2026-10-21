@@ -63,6 +63,12 @@ async def _one(act: tuple) -> None:
     elif kind == "fw":
         if svc is not None:
             await asyncio.to_thread(svc.reconcile_ssh_access)
+    elif kind == "relay_flush":
+        from awgbot.infra import rsvzone
+        try:
+            await asyncio.to_thread(rsvzone.relay_flush)
+        except rsvzone.ZoneError as e:
+            log.info("резерв: записи conntrack хвоста не сброшены: %s", e)
     elif kind == "live":
         from awgbot.bot.handlers.settings.reserve import move as move_ui
         if bot is not None and svc is not None:

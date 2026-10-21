@@ -72,6 +72,11 @@ def apply_text(text: str) -> None:
     except pkg.GuardError:
         if prev:
             pkg.write_file(prev)
+        else:
+            try:
+                os.unlink(pkg.RULES_FILE)                     # первого файла не было — не оставлять отвергнутый
+            except OSError:
+                pass
         raise
 
 

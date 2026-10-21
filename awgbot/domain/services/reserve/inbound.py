@@ -405,7 +405,7 @@ class ReserveInboundMixin:
                 rsvzone.teardown()
         except rsvzone.ZoneError as e:
             log.warning("резерв: зона при возврате: %s", e)
-        actions: list[tuple] = [("fw",), ("send", "relay", {"until": until})]
+        actions: list[tuple] = [("fw",)] + ([("relay_flush",)] if to else []) + [("send", "relay", {"until": until})]
         try:
             rsvzone.wipe()
         except rsvzone.ZoneError as e:
@@ -460,7 +460,7 @@ class ReserveInboundMixin:
         if pkts is None:
             return last
         seen = inn.get("relay_pkts")
-        if seen is not None and int(pkts) != int(seen):
+        if seen is not None and int(pkts) > int(seen):       # меньше — перерисовка таблицы обнулила счётчик
             last = timeutil.now_iso()
         if seen is None or int(pkts) != int(seen) or not inn.get("relay_last_traffic"):
             self.rsv_update("rsv_in", relay_pkts=int(pkts), relay_last_traffic=last)

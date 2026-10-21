@@ -243,8 +243,8 @@ restore_prev_code() {  # restore_prev_code DIR — прежний код из DI
 # юнит и файл с долей ключа переезда остались бы на шлюзе без хозяина —
 # снять, пока скрипт ещё на месте (сервер выдаст долю заново при обновлении).
 reserve_gw_drop_for_old() {
-    [[ -x /usr/local/sbin/reserve-gw-setup.sh ]] || return 0
-    local v; v="$(sed -nE 's/^__version__ = "([0-9.]+)".*/\1/p' "$INSTALL_DIR/awgbot/__version__.py" 2>/dev/null | head -n1)"
+    [[ -x /usr/local/sbin/reserve-gw-setup.sh && -f "$INSTALL_DIR/awgbot/__version__.py" ]] || return 0
+    local v; v="$(sed -nE 's/^__version__ = "([0-9.]+)".*/\1/p' "$INSTALL_DIR/awgbot/__version__.py" 2>/dev/null | head -n1 || true)"
     [[ -n "$v" ]] || return 0
     [[ "$(printf '%s\n%s\n' "$v" "4.0.0" | sort -V | head -n1)" == "$v" && "$v" != "4.0.0" ]] || return 0
     sh /usr/local/sbin/reserve-gw-setup.sh --remove >/dev/null 2>&1 || true
