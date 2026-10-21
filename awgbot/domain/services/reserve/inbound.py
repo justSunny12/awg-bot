@@ -9,14 +9,19 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
-Переезд кнопкой (`go{K, gen, kind}`): процесс открытия временным юнитом с
-песочницей (stdin — JSON с `K`; запись DNS меняет основа) → `clone_up` →
-`up` основе → `released{реплика}` → `rep.bin`, перезапуск бота основы (он
+Переезд кнопкой (`go{K, gen, kind}`; отказ, если зона занята или мои
+клиенты не здесь): `open.status = launching`, процесс открытия временным
+юнитом с песочницей (stdin — JSON с `K`; запись DNS меняет основа; env и
+bot.db резерва юниту закрыты, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
+`up` основе → `released{реплика}` → гость стоп, `rep.bin`, гость старт (он
 подхватит реплику), отметка `tg_take` → `tg_taken` от гостя → `taken` основе,
-serving, Т-РУ4. Отказ процесса — `down{причина}`, зона снята.
+serving, Т-РУ4. Отказ процесса — `down{причина}`, юнит открытия стоп, зона
+снята.
 
-Возврат: `back_req` → гостю `stop` → `replica` → `released` основе
-(releasing) → `back` → пересылка хвоста (`--relay`, файервол), учёт,
+Возврат: `back_req` → гостю `stop` (открытие ещё шло — юнит стоп) →
+`replica` (гость молчит 90 с — `rep.bin`) → `released` основе (releasing;
+повторный `back_req` — та же реплика из `rep.bin` снова) → `back` (повтор в
+relay — снова `relay` и `wiped`) → пересылка хвоста (`--relay`, файервол), учёт,
 `relay{until}`, `--wipe`, прежний пакет и доля — прочь, `wiped`, Т-РУ5 →
 relay до `relay_max_days`/тишины → idle. `evict` — просьба вернуть клиентов
 по кнопке у резерва.
@@ -30,7 +35,7 @@ import subprocess
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import timeutil
+from awgbot.util import livestep, timeutil
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
@@ -57,6 +62,8 @@ class ReserveInboundMixin:
             return f"у меня пакет {pkg_in.get('gen') or 'нет'}, а не {gen}"
         if self.reserve_in() != "idle":
             return "зона занята"
+        if self.reserve_out() != "home":
+            return "мои клиенты не на этом сервере"
         if not settings.get_bool("app.reserve.ready", False):
             return "готовность выключена"
         ok, why = self.reserve_directions()["in"]
@@ -71,6 +78,10 @@ class ReserveInboundMixin:
         payload = self._open_payload(kind)
         payload["k"] = str(k_hex)
         with _LOCK:
+            if self.reserve_in() != "idle":                   # проверка и запись — под одним замком
+                return "зона занята"
+            from awgbot.infra import rsvzone
+            rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
                                 up_sent=False, tg_taken=False)
@@ -103,13 +114,21 @@ class ReserveInboundMixin:
         argv = [os.path.join(base, "venv", "bin", "python"), "-m", "tools.rsvopen"]
         if not os.path.exists(argv[0]):
             argv[0] = "python3"
-        env = {**os.environ, "AWG_BOT_CONF_DIR": str(config.CONF_DIR), "AWG_BOT_DATA_DIR": str(config.DATA_DIR)}
-        if config.ENV_PATH:
-            env["AWG_BOT_ENV"] = str(config.ENV_PATH)
+        # env резерва (его токен) процессу не нужен: AWG_BOT_ENV — пустой файл, а
+        # /etc/awg-bot/env закрыт юниту; BOT_TOKEN/ADMIN_ID из окружения бота — вон
+        env = {k: v for k, v in os.environ.items() if k not in ("BOT_TOKEN", "ADMIN_ID")}
+        env.update({"AWG_BOT_CONF_DIR": str(config.CONF_DIR), "AWG_BOT_DATA_DIR": str(config.DATA_DIR),
+                    "AWG_BOT_ENV": "/dev/null"})
         if shutil.which("systemd-run"):
             props = ["-p", "MemoryMax=96M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
-                     "-p", "PrivateTmp=yes", "-p", f"WorkingDirectory={base}",
-                     "-p", f"ReadWritePaths={rsvzone.RUN_DIR} {rsvzone.VAR_DIR} {rsvzone.STATE_DIR}"]
+                     "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=full",
+                     "-p", "NoNewPrivileges=yes",
+                     "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
+                     "-p", f"WorkingDirectory={base}",
+                     # скрипт зоны пишет юниты и настройки журнала гостя в /etc/systemd
+                     "-p", f"ReadWritePaths={rsvzone.RUN_DIR} {rsvzone.VAR_DIR} {rsvzone.STATE_DIR} /etc/systemd",
+                     # база резерва процессу не нужна: пакет лежит в reserve/, а клиенты основы — в части бота
+                     "-p", f"InaccessiblePaths=-{config.DATA_DIR / 'bot.db'}"]
             setenv = [f"--setenv={k}={env[k]}" for k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV") if k in env]
             cmd = ["systemd-run", "--collect", "--quiet", "--pipe", f"--unit={OPEN_UNIT}", *props, *setenv, *argv]
         else:
@@ -123,6 +142,12 @@ class ReserveInboundMixin:
             raise ServiceError(f"процесс открытия не запустился: {e}")
         self.__dict__["_rsvopen_proc"] = proc
         rsvzone.open_status_write("launched")
+
+    @staticmethod
+    def _rsvopen_stop() -> None:
+        """Остановить временный юнит процесса открытия (срыв, `back` на шаге up)."""
+        if shutil.which("systemctl"):
+            subprocess.run(["systemctl", "stop", f"{OPEN_UNIT}.service"], capture_output=True, timeout=30)
 
     def reserve_in_tick(self) -> list[tuple]:
         """Такт автомата «клиенты основы у меня»."""
@@ -161,7 +186,7 @@ class ReserveInboundMixin:
             if str(inn.get("kind") or "") != "button":
                 # аварийный переезд: право отвечать берёт гость сам по отметке tg_take
                 pass
-        if inn.get("deadline") and time.monotonic() > float(inn["deadline"]) and step != "done":
+        if livestep.mono_expired(inn.get("deadline"), time.monotonic()) and step != "done":
             return self._take_fail("процесс открытия не завершился за 35 минут")
         return actions
 
@@ -176,6 +201,10 @@ class ReserveInboundMixin:
         extra: list[tuple] = []
         if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
             extra = self.reserve_code_failed(reason)             # Н4: не подошёл — окно снова открыто
+        try:
+            self._rsvopen_stop()
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: юнит процесса открытия не остановлен: %s", e)
         log.warning("резерв: клиентов «%s» не принял: %s", name, reason)
         for fn in (rsvzone.teardown, rsvzone.wipe):
             try:
@@ -196,9 +225,11 @@ class ReserveInboundMixin:
             log.info("резерв: released вне приёма — пропущен")
             return []
         try:
+            # гость — стоп ДО записи реплики: его снимок раз в 30 с иначе мог бы перезаписать финальную
+            subprocess.run(["systemctl", "stop", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             rsvzone.write_private(rsvzone.REP_PATH, blob)
             rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
-            subprocess.run(["systemctl", "restart", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
+            subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("резерв: реплика не положена гостю: %s", e)
             return []
@@ -222,20 +253,45 @@ class ReserveInboundMixin:
                     str(inn.get("extra") or "")))])]
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
+        """Зона снята мимо бота (`awg-bot reserve teardown`, перезагрузка хоста): состояние
+        idle, шлюзам основы — idle, пакет и доля — прочь, админу — итог."""
         from awgbot.infra import rsvzone
-        if str(rsvzone.state().get("phase") or "") not in ("serving", "taking"):
-            log.warning("резерв: зона в состоянии %s, а я считаю serving — снимаю", rsvzone.state().get("phase"))
-        return []
+        from awgbot.domain.notices import reserve as rn
+        phase = str(rsvzone.state().get("phase") or "")
+        if phase in ("serving", "taking"):
+            return []
+        name = self.reserve_peer_name()
+        log.warning("резерв: зона в состоянии %s, а я считаю serving — клиентов «%s» больше не несу", phase or "idle", name)
+        self.reserve_pkg_in_drop()
+        with _LOCK:
+            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=True)
+        actions: list[tuple] = [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, "зона снята"))])]
+        if hasattr(self, "reserve_gw_state_actions"):
+            actions += self.reserve_gw_state_actions(force=True)
+        return actions
 
     # ── возврат ─────────────────────────────────────────────────────────────
     def reserve_back_req_in(self) -> list[tuple]:
         """`back_req` основы: гостю `stop`, ждать реплику."""
+        from awgbot.infra import rsvzone
         inn = self._inn()
+        if str(inn.get("state") or "") == "releasing" and inn.get("released_at"):
+            # повторная просьба (обрыв канала на частях released): отдать последнюю реплику снова
+            try:
+                blob = rsvzone.REP_PATH.read_bytes()
+            except OSError:
+                blob = b""
+            return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
         if str(inn.get("state") or "") not in ("serving", "taking"):
             return []
         with _LOCK:
             self.reserve_set_in("releasing", kind=str(inn.get("kind") or ""), gen=int(inn.get("gen") or 0),
                                 deadline=time.monotonic() + REPLICA_WAIT_S, taken_at=str(inn.get("taken_at") or ""))
+        if str(inn.get("state") or "") == "taking":
+            try:
+                self._rsvopen_stop()                          # открытие ещё шло — юнит прочь
+            except Exception as e:                            # noqa: BLE001
+                log.info("резерв: юнит процесса открытия не остановлен: %s", e)
         return [("guest", "stop", {})]
 
     def reserve_guest_replica_in(self, blob: bytes) -> list[tuple]:
@@ -250,7 +306,7 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         if inn.get("released_at"):
             return []
-        if time.monotonic() > float(inn.get("deadline") or 0):
+        if livestep.mono_expired(inn.get("deadline"), time.monotonic()):
             # гость не ответил — отдать последний снимок с диска
             try:
                 blob = rsvzone.REP_PATH.read_bytes()
@@ -268,9 +324,16 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         inn = self._inn()
+        if str(inn.get("state") or "") == "relay":
+            return [("send", "relay", {"until": str(inn.get("relay_until") or "")}), ("send", "wiped", {})]   # повтор
         if str(inn.get("state") or "") not in ("releasing", "serving", "taking"):
             return []
         name = self.reserve_peer_name()
+        if str(inn.get("state") or "") == "taking":
+            try:
+                self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь
+            except Exception as e:                            # noqa: BLE001
+                log.info("резерв: юнит процесса открытия не остановлен: %s", e)
         peer = self.reserve_peer_state()
         host = str(peer.get("self_host") or (self.reserve_peer() or {}).get("host") or "")
         ports = [int(p) for p in (peer.get("ports") or []) if isinstance(p, int)]

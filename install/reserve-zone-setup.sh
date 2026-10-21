@@ -31,8 +31,12 @@
 # умолчание routing.table, обёртка его не передаёт); --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
 #
 # Таблица nft зоны — inet awg_guest (input/forward с политикой drop, цепочка
-# zone_post — маскарад зоны наружу через veth). Файервол ХОСТА (порт клона,
-# маскарад veth, пересылка из awggr-h в линки слотов, DNAT вебхука с набора
+# zone_post — маскарад зоны наружу через veth). Рисуется целиком при каждом
+# вызове (delete + create: повторные --shell/--take правил не дописывают); вход
+# вебхука с veth (iifname awggv-n ip daddr <адрес зоны> tcp dport <порт>) — с
+# --serve, когда порт известен (webhook_port из state.json). Файервол ХОСТА
+# (порт клона, маскарад veth, пересылка из awggv-h только во внешние интерфейсы
+# хоста, из awggr-h — в линки слотов, DNAT вебхука с набора
 # tg_pool4 и обучение пула набором tg_seen4, пересылка хвоста в relay) этот
 # скрипт НЕ пишет: его рисует бот по состоянию зоны (state.json) в таблице
 # awg_bot_guard. Скрипт также НЕ переносит данные основы (хранилище гостя
@@ -41,7 +45,9 @@
 #
 # Режимы:
 #   --plan        без root: store=tmpfs-noswap|ramfs, cake=yes|no, netns=, awg=,
-#                 webhook_port=<свободный из 443/80/88/8443|none>, zone=present|absent
+#                 webhook_port=<свободный из 443/80/88/8443|none>, zone=present|absent,
+#                 dnsmasq=yes|no (без dnsmasq резолвер зоны не поднимется; пакет
+#                 скрипт не ставит)
 #   --selftest    «сокет у хоста» и диапазон keepalive на установленном модуле;
 #                 код 0 — обе гипотезы подтверждены, строки RESULT_*
 #   --shell       зона-оболочка: пространство, lo, таблица nft зоны, стороны
@@ -66,7 +72,8 @@
 #                 Без оболочки отказывает («сначала --shell»); GUEST_ADMIN —
 #                 адреса устройств админа основы в набор admin4 таблицы зоны
 #   --serve       обслуживание: состояние serving (порт гостя для файервола
-#                 хоста — его рисует бот), CAKE на внешнем интерфейсе, если
+#                 хоста — его рисует бот), таблица зоны заново со входом
+#                 вебхука с veth, CAKE на внешнем интерфейсе, если
 #                 есть модуль sch_cake (иначе cake=absent, дисциплина не
 #                 тронута); без клона отказывает («сначала --take»)
 #   --restart-clone  клон вниз/вверх по конфигу в хранилище
@@ -77,7 +84,10 @@
 #                 правило iif awggr-h (без
 #                 пересылки) — состояние idle; хранилище и rep.bin остаются
 #   --wipe        хранилище гостя, rep.bin, журнал гостя — прочь; CAKE —
-#                 прежняя дисциплина; зона остаётся оболочкой
+#                 прежняя дисциплина; зона остаётся оболочкой. В фазе relay
+#                 фаза и адрес основы остаются (пересылка хвоста живёт до
+#                 конца relay), сбрасывается только порт вебхука
+#   (`awg-bot reserve teardown` — аварийно --teardown и затем --wipe)
 #   --status      состояние строками key=value
 set -u
 
@@ -151,6 +161,7 @@ cmd_plan() {
     for p in $WEBHOOK_PORTS; do if port_free "$p"; then chosen="$p"; break; fi; done
     say "webhook_port=${chosen:-none}"
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
+    if [ -x /usr/sbin/dnsmasq ] || command -v dnsmasq >/dev/null 2>&1; then say "dnsmasq=yes"; else say "dnsmasq=no"; fi
 }
 
 # ── --selftest ──────────────────────────────────────────────────────────────
@@ -197,9 +208,13 @@ cmd_selftest() {
 }
 
 # ── зона-оболочка ───────────────────────────────────────────────────────────
-zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона; пересылка — см. §3.2
-    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}"
+zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
+    local chan="${GUEST_CHANNEL_PORT:-8787}" iface="${1:-}" whp
+    whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
+    # таблица рисуется целиком (delete + create): повторные --shell/--take не дописывают правила
     nsx nft -f - <<EOF
+table inet awg_guest
+delete table inet awg_guest
 table inet awg_guest {
     set admin4 { type ipv4_addr; }
     set private4 { type ipv4_addr; flags interval; elements = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } }
@@ -211,6 +226,7 @@ table inet awg_guest {
         ip protocol icmp accept
         iifname "awglink*" tcp dport $chan accept
         iifname "awglink*" drop
+$( [ -n "$iface" ] && [ -n "$whp" ] && printf '        iifname "%s" ip daddr %s tcp dport %s accept\n' "$VN" "$ZONE_V" "$whp" )
 $( [ -n "$iface" ] && printf '        iifname "%s" udp dport 53 accept\n        iifname "%s" tcp dport 53 accept\n' "$iface" "$iface" )
     }
     chain forward {
@@ -442,6 +458,7 @@ cmd_serve() {
     [ -n "$(state_get iface)" ] || die "клона нет — сначала --take"
     cake_on
     state_write phase=serving serving_at="$(date -Iseconds)" webhook_port="${WEBHOOK_PORT:-}"
+    zone_nft "$(state_get iface)"            # вход вебхука с veth — только теперь, когда порт известен
     say "serve: ok"
 }
 
@@ -475,7 +492,12 @@ cmd_wipe() {
     rm -rf /run/log/journal/*."$ZONE" /var/log/journal/*."$ZONE" 2>/dev/null
     rm -f "$UNIT" "$DNS_UNIT"; systemctl daemon-reload 2>/dev/null || true
     cake_off
-    state_write phase=idle iface= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+    if [ "$(state_get phase)" = "relay" ]; then
+        # пересылка хвоста идёт на хосте по state.json: фаза и адрес основы остаются до конца relay
+        state_write webhook_port= wiped_at="$(date -Iseconds)"
+    else
+        state_write phase=idle iface= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+    fi
     say "wipe: ok"
 }
 cmd_status() {

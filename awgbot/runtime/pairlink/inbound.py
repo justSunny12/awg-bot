@@ -55,6 +55,8 @@ class InboundMixin:
         gen, i, n = int(body["gen"]), int(body["i"]), int(body["n"])
         if not 0 < n <= pairproto.MAX_CHUNKS or not 0 <= i < n:
             raise pairproto.ProtocolError("часть пакета вне предела")
+        for other in [k for k in sess.parts if not isinstance(k, tuple) and k != gen]:
+            sess.parts.pop(other, None)                       # одна сборка пакета на сессию: прежнее поколение — прочь
         parts = sess.parts.setdefault(gen, [None] * n)
         if len(parts) != n:
             sess.parts[gen] = parts = [None] * n

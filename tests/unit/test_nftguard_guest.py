@@ -56,15 +56,33 @@ def test_serving_passes_the_webhook_port_to_the_zone_only_from_the_telegram_pool
 def test_serving_opens_the_clone_port_lets_the_zone_out_and_masquerades_it(filtering):
     lines = _lines(nftguard.render(_spec(filter=filtering, **SERVING)))
     assert "udp dport 45877 accept" in lines, "порт клона закрыт — клиенты основы не доходят"
-    assert 'iifname { "awggv-h" } accept' in lines, "бот основы в зоне не выйдет в Telegram"
+    assert 'iifname { "awggv-h" } ip daddr != @tunnel_nets4 accept' in lines, \
+        "бот основы в зоне не выйдет в Telegram (без известных внешних интерфейсов — всё, кроме сетей туннеля)"
     assert any(ln.endswith("ip saddr 169.254.77.0/30 masquerade") for ln in lines), "зона без маскарада наружу"
+
+
+@pytest.mark.parametrize("phase", ["taking", "serving"])
+def test_the_zone_goes_only_out_through_the_external_interfaces(phase):
+    """Из зоны гостя пересылка — только во внешние интерфейсы хоста, и сразу
+    за этим запрет всего остального с veth. Иначе бот основы в зоне (чужой
+    код с чужими данными) дотягивается до клиентов резерва в туннеле, до
+    линков слотов и до локальных сетей за шлюзами резерва."""
+    extra = dict(SERVING) if phase == "serving" else dict(guest_phase="taking", guest_udp_port=45877,
+                                                            guest_veth_if="awggv-h", guest_zone4="169.254.77.2",
+                                                            guest_zone_net4="169.254.77.0/30")
+    lines = _lines(nftguard.render(_spec(wan_ifs=["eth0", "ens3"], **extra)))
+    out = [ln for ln in lines if ln.startswith('iifname { "awggv-h" }')]
+    assert out[:2] == ['iifname { "awggv-h" } oifname { "eth0", "ens3" } accept', 'iifname { "awggv-h" } drop'], \
+        f"из зоны не только наружу: {out}"
+    assert 'iifname { "awggv-h" } accept' not in lines, "из зоны — куда угодно, в том числе в туннель резерва"
 
 
 def test_taking_has_the_port_and_the_exit_but_no_webhook_door_and_no_pool():
     """Пока факт записи DNS не подтверждён (taking), Telegram в зону не пускаем."""
     text = nftguard.render(_spec(guest_phase="taking", guest_udp_port=45877, guest_veth_if="awggv-h",
                                  guest_zone4="169.254.77.2", guest_zone_net4="169.254.77.0/30"))
-    assert "udp dport 45877 accept" in _lines(text) and 'iifname { "awggv-h" } accept' in _lines(text)
+    assert "udp dport 45877 accept" in _lines(text)
+    assert 'iifname { "awggv-h" } ip daddr != @tunnel_nets4 accept' in _lines(text), "зона без выхода наружу"
     assert "dnat" not in text and "tg_pool4" not in text and "prerouting" not in text
 
 

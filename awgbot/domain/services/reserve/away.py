@@ -2,7 +2,9 @@
 away.py — часть пакета reserve (см. __init__): «клиенты у резерва» глазами
 основы — отказы действий над хостом, пока клиенты не здесь (набор
 обновлений, переезд профилей, восстановление, обновление: они разошлись бы
-с репликой), строка главного экрана админа (Т-Р17) и данные гостю по
+с репликой) и пока здесь клиенты и бот второго сервера (taking, serving,
+releasing: код и данные менялись бы под гостем; в терминале то же решает
+tools/rsvbusy.py), строка главного экрана админа (Т-Р17) и данные гостю по
 локальному каналу (на стороне резерва — reserve_guest_state_view в guest.py).
 """
 from __future__ import annotations
@@ -12,15 +14,21 @@ from awgbot.util import timeutil
 
 from ..types import ServiceError
 
+HOSTING_REFUSED = "Сейчас здесь клиенты и бот «{name}» — сначала их возврат к нему"
 AWAY_REFUSED = ("Клиенты и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
                 "иначе изменения разойдутся с тем, что происходит на резерве")
 
 
 class ReserveAwayMixin:
     def reserve_refuse_if_away(self) -> None:
-        """В начале действий над хостом: пока мои клиенты у резерва — отказ."""
-        if self.reserve_paired() and self.reserve_away():
+        """В начале действий над хостом: пока мои клиенты у резерва — отказ; пока
+        у меня клиенты и бот резерва — тоже (код и данные менялись бы под гостем)."""
+        if not self.reserve_paired():
+            return
+        if self.reserve_away():
             raise ServiceError(AWAY_REFUSED.format(name=self.reserve_peer_name()))
+        if self.reserve_in() in ("taking", "serving", "releasing"):
+            raise ServiceError(HOSTING_REFUSED.format(name=self.reserve_peer_name()))
 
     def reserve_main_line(self) -> str:
         """Т-Р17: строка главной админа только в не-обычном состоянии; пусто — обычное."""

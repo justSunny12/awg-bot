@@ -131,6 +131,29 @@ class ReserveSessionMixin:
         except Exception:                                     # noqa: BLE001
             return []
 
+    def reserve_st_if_changed(self) -> dict | None:
+        """Тело `st`, если оно изменилось с последней отправки (направления,
+        здоровье, рычаг, пакет…), иначе None: второй стороне нужна каждая смена,
+        а не только начало сессии."""
+        import json
+        body = self.reserve_st_body()
+        packed = json.dumps({k: v for k, v in body.items() if k not in ("mem_free", "online")}, sort_keys=True)
+        if self.__dict__.get("_rsv_st_sent") == packed:
+            return None
+        self.__dict__["_rsv_st_sent"] = packed
+        return body
+
+    def reserve_st_sent_reset(self) -> None:
+        """Отправка не прошла: отпечаток обнулить — такт отправит снова."""
+        self.__dict__.pop("_rsv_st_sent", None)
+
+    def reserve_st_body_sent(self) -> dict:
+        """Тело st для отправки сессией — с отметкой отпечатка, чтобы такт не слал дубль."""
+        import json
+        body = self.reserve_st_body()
+        self.__dict__["_rsv_st_sent"] = json.dumps({k: v for k, v in body.items() if k not in ("mem_free", "online")}, sort_keys=True)
+        return body
+
     def _healthy_safe(self) -> bool:
         try:
             return bool(self.reserve_healthy())

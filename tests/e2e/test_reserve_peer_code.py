@@ -69,6 +69,7 @@ async def test_the_role_screen_offers_the_code_only_in_h4(box, fake_bot, monkeyp
     await peeradmin.start(msg, box.s)
     assert "🔑 Ввести аварийный код" not in _labels(msg.sent[-1][2])
     box.gone(1)
+    box.advance(60)                                     # обрыв сессии — подозрение на окно живости шлюза
     box.tick()                                          # Н4
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, box.s)

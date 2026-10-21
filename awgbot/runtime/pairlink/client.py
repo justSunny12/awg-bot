@@ -104,7 +104,7 @@ class PairClient(InboundMixin):
             self._sess = sess
             await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, {"caps": msg.get("caps") or []}))
             await self._handle_safe(sess, msg)
-            if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body)):
+            if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
                 return
             while True:
                 line = await reader.readline()

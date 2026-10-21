@@ -19,6 +19,14 @@ locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь
     done
     return 0
 }
+reserve_busy_guard() {  # reserve_busy_guard ДЕЙСТВИЕ — отказ, пока клиенты у резерва или клиенты резерва здесь
+    declare -F bot_tool >/dev/null 2>&1 || return 0
+    local why rc=0
+    why="$(bot_tool tools.rsvbusy 2>/dev/null)" || rc=$?      # прочий код (нет инструмента, упал) — не помеха
+    if [[ $rc -eq 3 ]]; then die "$1 сейчас нельзя: $why"; fi
+    return 0
+}
+
 cmd_update() {
     require_root; require_installed
     # одно обновление за раз: второй апдейтер (повтор шага набора, ручной поверх
@@ -52,6 +60,7 @@ cmd_update() {
         die "откат ниже $floor невозможен — только чистая установка"
     fi
     note_installed_digest "$tgz" "$newver"     # архив из выпуска — бэкапы будут знать выпуск
+    if declare -F reserve_busy_guard >/dev/null 2>&1; then reserve_busy_guard "обновление"; fi
 
     local wipe=0
     # AWG_UPDATE_KEEP=1 — установщик уже выбрал «обновить, сохранив данные»:

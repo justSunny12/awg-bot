@@ -151,6 +151,8 @@ class SlotsMixin:
         self.db.gateway_update(int(slot_id), device_id=int(device_id))
         self._backup_event(int(slot_id), "replace")
         self.gwlink_forget(int(slot_id))
+        if hasattr(self, "_reserve_after_gateway_change"):
+            self._reserve_after_gateway_change("после замены устройства шлюза")   # у прежнего была доля
 
 
     # ── переключение трафика ─────────────────────────────────────────────────

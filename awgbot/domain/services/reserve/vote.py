@@ -81,7 +81,7 @@ class ReserveVoteMixin:
         rec = self._gwv.get(int(slot))
         if rec:
             rec["online"] = False
-            rec["down_since"] = rec.get("down_since") or timeutil.now_iso()
+            rec["closed_mono"] = time.monotonic()            # обрыв сессии — подозрение, не «недоступен»
         return self.reserve_vote_eval()
 
     def reserve_guest_in(self, slot: int, kind: str, body: dict) -> list[tuple]:
@@ -132,8 +132,13 @@ class ReserveVoteMixin:
         m_gen = int(self.rsv_get("rsv_pkg_in").get("m_gen") or 0)
         out = {}
         for slot, rec in self._gwv.items():
-            if not rec.get("online") or rec["lv"].state == "down":
+            if rec["lv"].state == "down":
                 continue
+            if not rec.get("online"):
+                # сессия оборвалась: шлюз в наборе ещё окно живости (переподключится с отступом)
+                suspect_s, probe_s = self._gw_thresholds()
+                if livestep.mono_due(rec.get("closed_mono"), time.monotonic(), suspect_s + probe_s):
+                    continue
             if not m_gen or int(rec.get("m_gen") or 0) != m_gen:
                 continue
             out[int(slot)] = "unseen" if rec.get("seen") else "see"
@@ -165,7 +170,7 @@ class ReserveVoteMixin:
 
     def _state_body(self) -> dict:
         inn = self.rsv_get("rsv_in")
-        serving = str(inn.get("state") or "idle") in ("taking", "serving")
+        serving = str(inn.get("state") or "idle") in ("taking", "serving", "releasing")   # до возврата — открыто
         return {"state": "serving" if serving else "idle", "move": int(inn.get("gen") or 0)}
 
     def reserve_gw_state_actions(self, force: bool = False) -> list[tuple]:
@@ -275,7 +280,9 @@ class ReserveVoteMixin:
         unseen = [s for s, v in views.items() if v == "unseen"]
         if not unseen:
             return []
-        if need.get("slot") in unseen and time.monotonic() - float(need.get("mono") or 0) < NEED_RETRY_S:
+        if self.reserve_in() != "idle" or self.reserve_out() != "home":
+            return []                                         # зона занята или мои клиенты не здесь — долю не просим
+        if need.get("slot") in unseen and not livestep.mono_due(need.get("mono"), time.monotonic(), NEED_RETRY_S):
             return []
         asked = set(int(x) for x in need.get("asked") or [])
         pick = next((s for s in unseen if s not in asked), None)
@@ -321,6 +328,10 @@ class ReserveVoteMixin:
         payload.update(secret)
         extra = self._hosting_extra(case)
         with _LOCK:
+            if self.reserve_in() != "idle":                   # проверка и запись — под одним замком
+                return []
+            from awgbot.infra import rsvzone
+            rsvzone.open_status_write("launching")
             self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra=extra,
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
@@ -368,6 +379,11 @@ class ReserveVoteMixin:
         if case == "H4" and self.reserve_in() == "idle":
             if not cw.get("open"):
                 since = str(view.get("case_since") or timeutil.now_iso())
+                if cw.get("episode") == since:
+                    # тот же эпизод (окно закрывалось и открылось снова) — без повторных Т-РУ7/7б
+                    cw.update(open=True)
+                    self.rsv_update("rsv_view", code=cw)
+                    return actions
                 opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
                 pid = self.reserve_peer_admin_id()
                 notes = [Notification(tg_id=int(config.ADMIN_ID), text=self._rn().code_needed_reserve(primary, since, opened))]
@@ -375,12 +391,14 @@ class ReserveVoteMixin:
                     notes.append(Notification(tg_id=pid, force_sound=True,
                                               text=self._rn().code_needed_primary(primary, str(config.SERVER_NAME or ""), since),
                                               keyboard="peer_code"))
-                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": []})
+                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
+                                                  "episode": since})
                 log.warning("резерв: Н4 — основа и её шлюзы не отвечают; приём аварийного кода открыт")
                 actions.append(("notify", notes))
         elif cw.get("open"):
             why = "primary_seen" if self.reserve_peer_seen() != "down" else ("gw_unseen" if case in MOVE_CASES else "gw_sees")
-            self.rsv_update("rsv_view", code={"open": False, "closed_why": why, "closed_at": timeutil.now_iso()})
+            self.rsv_update("rsv_view", code={"open": False, "closed_why": why, "closed_at": timeutil.now_iso(),
+                                              "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
             log.info("резерв: приём аварийного кода закрыт (%s)", why)
             pid = self.reserve_peer_admin_id()
             if cw.get("told") and pid:
@@ -394,6 +412,8 @@ class ReserveVoteMixin:
             return "приём кода закрыт"
         if self.reserve_in() != "idle":
             return "зона занята"
+        if self.reserve_out() != "home":
+            return "мои клиенты не на этом сервере"
         pkg_in = self.rsv_get("rsv_pkg_in")
         if not pkg_in.get("gen") or not pkg_in.get("share"):
             return "данных для переезда нет"

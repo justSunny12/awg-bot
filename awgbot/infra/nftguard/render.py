@@ -266,7 +266,11 @@ def _guest_forward(spec) -> list[str]:
     out = []
     if spec.guest_veth_if and spec.guest_phase in ("taking", "serving"):
         v = nftjson.ifs([spec.guest_veth_if])
-        out.append(f"        iifname {v} accept")
+        if spec.wan_ifs:
+            out.append(f"        iifname {v} oifname {nftjson.ifs(spec.wan_ifs)} accept")   # только наружу
+            out.append(f"        iifname {v} drop")             # ни к своим клиентам, ни в линки, ни в локальные сети
+        else:
+            out.append(f"        iifname {v} ip daddr != @{pkg.SET_TUNNEL_NETS} accept")
         if spec.guest_webhook_port and spec.guest_zone4:
             out.append(f"        oifname {v} ip daddr {spec.guest_zone4} tcp dport {int(spec.guest_webhook_port)} "
                        f"ct status dnat accept")

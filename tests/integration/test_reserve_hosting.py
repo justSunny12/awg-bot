@@ -260,14 +260,18 @@ def test_a_finished_open_process_is_not_cut_off_by_the_timeout(host):
 
 # ── реплика, право отвечать ─────────────────────────────────────────────────
 
-def test_the_replica_goes_to_the_guest_storage_and_the_guest_is_restarted_to_take_telegram(host):
+def test_the_replica_goes_to_the_guest_storage_with_the_guest_stopped_and_then_started_to_take_telegram(host):
+    """Гость останавливается ДО записи реплики и запускается после: живой
+    гость пишет свой снимок раз в 30 с и иначе перезаписал бы финальную
+    реплику основы старым состоянием."""
     svc = host.svc
     _taking(host)
     assert svc.reserve_released_store(b"DUMMY-replica") == []
     assert host.zone.rep.read_bytes() == b"DUMMY-replica"
     assert (host.zone.rep.stat().st_mode & 0o777) == 0o600, "реплика с данными клиентов читается другими"
     assert host.zone.take.read_text() == "1", "отметка «ставь вебхук» не поставлена"
-    assert host.spawn.runs == [["systemctl", "restart", rsvzone.GUEST_UNIT]]
+    assert host.spawn.runs == [["systemctl", "stop", rsvzone.GUEST_UNIT], ["systemctl", "start", rsvzone.GUEST_UNIT]], \
+        "гость не остановлен до записи реплики — его снимок может затереть финальную"
     assert svc.rsv_get("rsv_in")["replica_at"]
 
 
@@ -402,11 +406,17 @@ def test_back_after_an_emergency_hosting_drops_the_share_but_after_a_button_keep
     assert svc.rsv_get("rsv_shares") == {}, "после аварийного переезда прямая скомпрометирована — доля прочь"
 
 
-def test_a_repeated_back_does_nothing(host):
+def test_a_repeated_back_repeats_relay_and_wiped_but_wipes_nothing_again(host):
+    """Основа повторяет `back`, пока не получит `relay`: если ответ потерялся
+    в обрыве, повтор должен снова дать relay с тем же сроком и wiped, но
+    зона второй раз не стирается."""
     svc = host.svc
     _releasing(host)
-    svc.reserve_back_in()
-    assert svc.reserve_back_in() == [] and host.zone.names().count("wipe") == 1
+    first = svc.reserve_back_in()
+    until = [a for a in first if a[:2] == ("send", "relay")][0][2]["until"]
+    again = svc.reserve_back_in()
+    assert again == [("send", "relay", {"until": until}), ("send", "wiped", {})], again
+    assert host.zone.names().count("wipe") == 1, "повтор back стёр зону ещё раз"
 
 
 def test_the_relay_stops_after_its_term(host):

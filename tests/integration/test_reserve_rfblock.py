@@ -93,9 +93,10 @@ def test_switching_between_3_and_h3_does_not_reset_the_damper(mine):
     box.primary(True)
     box.hello(1, sees=False)
     _run(box, 10 * 60)
-    box.gone(1)                                         # шлюз «не вижу» стал недоступен — Н3
-    assert box.case == "H3"
+    box.gone(1)                                         # сессия шлюза «не вижу» оборвалась — пока подозрение
+    assert box.case == "3", "обрыв сессии — ещё не «шлюза нет»: он переподключится с отступом"
     acts = _run(box, 5 * 60 + 10)
+    assert box.case == "H3", "шлюз так и не вернулся — Н3"
     asks = _asks(acts)
     assert len(asks) == 1 and asks[0]["case"] == "nogw", f"3 → Н3 сбросил счёт: {acts}"
 

@@ -82,6 +82,13 @@ class ReserveWatchMixin:
             self.__dict__["_rsv_reserve_since"] = ""
             log.info("reserve: резерв снова на связи")
             actions.append(("push",))
+        # пересылка — по правилу раздела каждый такт (факт записи кэшируется): событие
+        # `state{serving}` приходит раньше факта записи, а раздел основы с `away`
+        # применяется без действий
+        try:
+            actions += self.reserve_forward_decide()
+        except Exception as e:                                # noqa: BLE001
+            log.info("reserve: решение о пересылке: %s", e)
         return actions
 
     # ── счётчики ────────────────────────────────────────────────────────────

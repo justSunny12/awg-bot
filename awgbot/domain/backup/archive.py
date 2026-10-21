@@ -26,23 +26,43 @@ log = logging.getLogger("awgbot.backup")
 
 
 def _strip_foreign_share(con) -> None:
-    """Доля ключа переезда второй стороны (`rsv_pkg_in.share`) в копию не
-    идёт: копия — о своих данных; чужой пакет на диске и так не в архиве."""
+    """Доля ключа переезда второй стороны (`rsv_pkg_in.share`) и ключи с PSK
+    сторон линков её шлюзов (`rsv_guest_links`) в копию не идут: копия — о своих
+    данных; стороны переиздаются обменом slots, а по PSK выводится ключ
+    гостевого канала; чужой пакет на диске и так не в архиве."""
     import json
-    try:
-        row = con.execute("SELECT value FROM server_state WHERE key = 'rsv_pkg_in'").fetchone()
-    except Exception:                                          # noqa: BLE001 — схема без server_state
-        return
-    if not row or not str(row[0] or "").startswith("{"):
-        return
-    try:
-        data = json.loads(row[0])
-    except ValueError:
-        return
-    if isinstance(data, dict) and data.get("share"):
-        data["share"] = ""
-        con.execute("UPDATE server_state SET value = ? WHERE key = 'rsv_pkg_in'", (json.dumps(data, ensure_ascii=False),))
-        con.commit()
+
+    def _clean(key: str, fn) -> None:
+        try:
+            row = con.execute("SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
+        except Exception:                                      # noqa: BLE001 — схема без server_state
+            return
+        if not row or not str(row[0] or "").startswith("{"):
+            return
+        try:
+            data = json.loads(row[0])
+        except ValueError:
+            return
+        if isinstance(data, dict) and fn(data):
+            con.execute("UPDATE server_state SET value = ? WHERE key = ?", (json.dumps(data, ensure_ascii=False), key))
+            con.commit()
+
+    def _share(data: dict) -> bool:
+        if data.get("share"):
+            data["share"] = ""
+            return True
+        return False
+
+    def _links(links: dict) -> bool:
+        changed = False
+        for rec in links.values():
+            if isinstance(rec, dict) and ("priv" in rec or "psk" in rec):
+                rec.pop("priv", None)
+                rec.pop("psk", None)
+                changed = True
+        return changed
+    _clean("rsv_pkg_in", _share)
+    _clean("rsv_guest_links", _links)
 
 class BackupArchiveMixin:
     META_NAME = "state/backup-meta.json"

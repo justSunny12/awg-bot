@@ -3,8 +3,14 @@
 tools/rsvopen.py — процесс открытия: пакет переезда основы → гостевая зона
 резерва с её ботом и клоном VPN. Единственный код на резерве, который видит
 `M`, `K` и части пакета; бот резерва его только запускает (временным юнитом
-с песочницей, см. awg-bot.sh reserve open) и читает ход по
-/run/awg-bot/rsv/open.status (шаг, время, причина — без секретов).
+awg-bot-rsvopen с песочницей — domain/services/reserve/inbound.py
+`_rsvopen_launch`: MemoryMax=96M без swap и дампов, PrivateTmp, ProtectHome,
+ProtectSystem=full, NoNewPrivileges, запись — только хранилище гостя,
+/var/lib/awg-bot-guest, /run/awg-bot/rsv и /etc/systemd; /etc/awg-bot/env и
+bot.db резерва недоступны, в окружении нет BOT_TOKEN/ADMIN_ID резерва,
+AWG_BOT_ENV=/dev/null) и читает ход по /run/awg-bot/rsv/open.status (шаг,
+время, причина — без секретов; до запуска бот пишет туда `launching`, после —
+`launched`). Руками — `awg-bot reserve open` (root, без этой песочницы).
 
     echo '<JSON>' | python -m tools.rsvopen         вход — только stdin
 
@@ -34,6 +40,10 @@ false, нет `target_ip` или провайдера — переезд кно�
 переезда профилей едет в пакете, но не поднимается.
 Снимок `rep.bin` новее пакета (перезагрузка резерва во время обслуживания)
 — база гостя из него, а не из пакета.
+
+Токен бота основы из части бота — одна строка без пробелов, не длиннее 128
+знаков (он ложится строкой в env юнита гостя); иначе отказ «токен бота в
+пакете не того вида».
 
 Ничего открытого наружу не возвращает: ни ключей, ни частей; память с `M` и
 `K` затирается по выходу насколько это возможно в Python.
@@ -206,6 +216,8 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str) -
     token, admin_id = str(env.get("BOT_TOKEN") or ""), int(env.get("ADMIN_ID") or 0)
     if not token or not admin_id:
         raise OpenError("в части бота нет токена или ADMIN_ID")
+    if any(ch.isspace() for ch in token) or len(token) > 128:
+        raise OpenError("токен бота в пакете не того вида")     # файл env юнита — только одна строка токена
     run = rsvzone.RUN_DIR
     rsvzone.write_private(run / "env", f"BOT_TOKEN={token}\nADMIN_ID={admin_id}\n")
     conf = bot.get("conf") or {}

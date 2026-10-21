@@ -3,7 +3,8 @@ pollctl.py — право отвечать в Telegram у основного б�
 управляемая задача. Арбитр — вебхук Telegram: пока адрес
 вебхука стоит у бота основы на резерве, `getUpdates` отвечает 409 «webhook is
 active». Здесь: на старте и перед каждым возобновлением — `getWebhookInfo`
-(чужой адрес → не поллим, `rsv_poll = away`); посредник запросов сессии
+(чужой адрес → не поллим, `rsv_poll = away`), а в ожидании права отвечать —
+повторно раз в RECHECK_S ± 40 % или по `wake()` (вебхук пропал — поллинг сам); посредник запросов сессии
 ловит у `GetUpdates` отказ 409 и останавливает поллинг за один запрос
 (aiogram сам повторял бы с отступом); `release()` — остановить поллинг и
 подтвердить последнюю пачку (`getUpdates(offset = последний + 1, limit 1,
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import logging
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
@@ -24,6 +26,7 @@ from aiogram.methods import GetUpdates
 log = logging.getLogger(__name__)
 
 POLL_TIMEOUT = 50
+RECHECK_S = 300                   # в ожидании права отвечать — повторный getWebhookInfo
 
 
 class _Watch(BaseRequestMiddleware):
@@ -116,7 +119,9 @@ class PollControl:
         while not self._closing:
             if not await self._allowed():
                 self._wake.clear()
-                await self._wake.wait()
+                with contextlib.suppress(asyncio.TimeoutError):
+                    # право отвечать решает Telegram: перепроверять getWebhookInfo, а не ждать слова вечно
+                    await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
                 continue
             self._conflict = ""
             self._stopped = False
@@ -135,7 +140,8 @@ class PollControl:
             if self._closing or not (self._stopped or self._conflict):
                 return                                       # поллинг кончился сам (сигнал, заглушка теста) — выход, как прежде
             self._wake.clear()
-            await self._wake.wait()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
 
     def wake(self) -> None:
         self._wake.set()

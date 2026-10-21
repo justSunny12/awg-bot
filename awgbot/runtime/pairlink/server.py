@@ -130,7 +130,7 @@ class PairServer(InboundMixin):
         sess.hello = True
         sess.caps = [str(c)[:16] for c in (hello.get("caps") or [])[:16]]
         await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, hello))
-        if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body)):
+        if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
             return
         while True:
             line = await reader.readline()

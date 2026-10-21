@@ -14,6 +14,13 @@ livestep.py — живость постоянного линка AWG по про
 жизни (рост `rx`, слово по каналу, `pong`) — снова `ok`. Слово по каналу
 после «недоступна» ставит `pending_up`: «снова на связи» отдаёт ближайший
 такт (один путь для счётчика и для слова).
+
+Внизу — помощники для отметок `time.monotonic()`, записанных в базу (сроки
+шагов переезда и возврата, пробы, демпфер, повторы просьб): после
+перезагрузки хоста monotonic начинается заново, и отметка прежней загрузки
+оказывается в будущем. `mono_since`/`mono_due` считают её давней (пора),
+`mono_expired` — сроком, который вышел (в том числе срок дальше
+`MONO_SANE_S`, 30 суток).
 """
 from __future__ import annotations
 
@@ -100,3 +107,36 @@ def pong(lv: Liveness, now: float, nonce: str) -> bool:
         word(lv, now)
         return True
     return False
+
+
+# ── монотонные отметки в базе и перезагрузка хоста ───────────────────────────
+MONO_SANE_S = 30 * 24 * 3600      # срок дальше этого в будущем — отметка прежней загрузки
+
+def mono_since(mark, now: float) -> float:
+    """Секунды с отметки monotonic. Отметка из прежней загрузки хоста (после
+    перезагрузки monotonic начинается с нуля, и записанная в базе отметка
+    оказывается в будущем) — считается давней: срок истёк, проба пора."""
+    try:
+        m = float(mark or 0)
+    except (TypeError, ValueError):
+        return float("inf")
+    if not m or m > now + 1.0:
+        return float("inf")
+    return now - m
+
+
+def mono_expired(deadline, now: float) -> bool:
+    """Срок (отметка в будущем) вышел: прошёл — или он дальше MONO_SANE_S, то есть
+    записан в прежней загрузке хоста."""
+    try:
+        d = float(deadline or 0)
+    except (TypeError, ValueError):
+        return False
+    if not d:
+        return False
+    return now > d or d > now + MONO_SANE_S
+
+
+def mono_due(mark, now: float, interval: float) -> bool:
+    """Пора ли: с отметки прошло не меньше interval (или отметки нет / она из прежней загрузки)."""
+    return mono_since(mark, now) >= float(interval)

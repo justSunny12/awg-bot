@@ -30,7 +30,7 @@ from tests.conftest import fake_cmd
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "reserve-zone-setup.sh"
-KEYS = ("store", "cake", "netns", "awg", "webhook_port", "zone")
+KEYS = ("store", "cake", "netns", "awg", "webhook_port", "zone", "dnsmasq")
 
 
 class _Box:
@@ -76,7 +76,8 @@ def _plan(r) -> dict:
 def test_the_plan_prints_every_line_without_root(box):
     p = _plan(box.run("--plan"))
     assert p["netns"] in ("yes", "no"), "netns смотрит на /proc хоста прогона"
-    assert {k: v for k, v in p.items() if k != "netns"} == {"store": "tmpfs-noswap", "cake": "yes", "awg": "yes",
+    assert p["dnsmasq"] in ("yes", "no"), "dnsmasq смотрит на /usr/sbin хоста прогона"
+    assert {k: v for k, v in p.items() if k not in ("netns", "dnsmasq")} == {"store": "tmpfs-noswap", "cake": "yes", "awg": "yes",
                                                             "webhook_port": "443", "zone": "absent"}
 
 

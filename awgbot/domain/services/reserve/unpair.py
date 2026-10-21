@@ -42,6 +42,16 @@ class ReserveUnpairMixin:
                 self.reserve_zone_links_drop()                # стороны линков шлюзов основы в зоне — прочь
             except Exception as e:                        # noqa: BLE001
                 log.warning("резерв: стороны зоны не сняты при удалении пары: %s", e)
+            try:
+                self.reserve_pkg_in_drop()                    # пакет и доля второй стороны — прочь
+            except Exception as e:                            # noqa: BLE001
+                log.warning("резерв: пакет второй стороны не снят при удалении пары: %s", e)
+            try:
+                import shutil
+                from awgbot.core import config as _cfg
+                shutil.rmtree(str(_cfg.DATA_DIR / "reserve" / "out"), ignore_errors=True)   # снимки base-*
+            except Exception as e:                            # noqa: BLE001
+                log.warning("резерв: снимки слияния не сняты: %s", e)
             self.db.reserve_peer_delete()
             self.rsv_clear_all()
             try:
