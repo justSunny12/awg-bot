@@ -58,7 +58,7 @@
 #   --plan        без root: store=tmpfs-noswap|ramfs, cake=yes|no, netns=, awg=,
 #                 webhook_port=<свободный из 443/80/88/8443|none>, zone=present|absent,
 #                 dnsmasq=yes|no (без dnsmasq резолвер зоны не поднимется; пакет
-#                 скрипт не ставит), conntrack=yes|no (без него --relay не
+#                 скрипт не ставит), conntrack=yes|no (без него --relay-flush не
 #                 переведёт живые потоки), python=yes|no (для состояния зоны);
 #                 dnsmasq, python и webhook_port бот читает в готовность
 #                 направления «к себе» (поле zone в st)
@@ -108,12 +108,16 @@
 #                 резерве перезапускает клон сам изнутри зоны (ip netns exec в
 #                 его песочнице недоступен)
 #   --relay       возврат: бот основы и dnsmasq остановлены, клоны, veth и
-#                 правило iif awggr-h сняты, записи conntrack по портам клонов
-#                 удалены (NAT привязан к первому пакету потока; без утилиты
-#                 conntrack — строка ВНИМАНИЕ), состояние relay (RELAY_TO=IP:порт
+#                 правило iif awggr-h сняты, состояние relay (RELAY_TO=IP:порт
 #                 основы — правило пересылки рисует бот, со счётчиком: по нему
 #                 он снимает пересылку после тишины; ports остаются —
 #                 пересылаются все)
+#   --relay-flush записи conntrack по портам клонов (state.json ports) — прочь:
+#                 NAT привязан к первому пакету потока, и живые потоки клиентов
+#                 встают под DNAT хвоста только после сброса. Бот зовёт ПОСЛЕ
+#                 перерисовки файервола хоста с DNAT (иначе поток, пришедший
+#                 между --relay и перерисовкой, завёл бы запись без NAT); без
+#                 утилиты conntrack — строка ВНИМАНИЕ
 #   --teardown    остановить бота основы и dnsmasq зоны, снять клоны, veth и
 #                 правило iif awggr-h (без
 #                 пересылки) — состояние idle; хранилище и rep.bin остаются
@@ -606,5 +610,5 @@ case "${1:-}" in
     --teardown) cmd_teardown ;;
     --wipe) cmd_wipe ;;
     --status) cmd_status ;;
-    *) say "использование: $0 --plan|--selftest|--shell|--store|--take|--serve|--restart-clone|--relay|--teardown|--wipe|--status"; exit 2 ;;
+    *) say "использование: $0 --plan|--selftest|--shell|--store|--take|--serve|--restart-clone|--relay|--relay-flush|--teardown|--wipe|--status"; exit 2 ;;
 esac

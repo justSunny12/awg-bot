@@ -38,7 +38,7 @@ serving или releasing — новый пакет не принимается (
 повторный `back_req` — та же реплика из `rep.bin` снова; зоны нет — `rep.bin`
 с диска или `released` без реплики) → `back` (повтор в relay — снова `relay`
 и `wiped`; зоны нет — сразу `wiped`) → пересылка хвоста (`--relay`,
-файервол; адрес основы — IP, имя резолвится сейчас; срыв открытия до смены
+файервол с DNAT, затем `relay_flush` — сброс conntrack; адрес основы — IP, имя резолвится сейчас; срыв открытия до смены
 записи — без хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний
 пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины `relay_idle_hours` (по счётчику правила
 DNAT — nftguard.relay_packets, отметка `relay_last_traffic`) →
