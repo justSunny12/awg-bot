@@ -55,7 +55,8 @@ def _record(cfg: dict) -> dict:
     full = str(cfg.get("name", "")).strip().strip(".").lower()
     recs = [r for r in (_call(cfg, "GET", f"/domains/{dom}/dns/records").get("data") or [])
             if isinstance(r, dict) and str(r.get("type", "")).upper() == "A"
-            and str(r.get("name") or "@").strip(".").lower() in (rel, full)]
+            and (str(r.get("fqdn") or "").strip(".").lower() == full
+                 or str(r.get("name") or "@").strip(".").lower() in (rel, full))]
     if not recs:
         raise DnsError(f"DigitalPlat: A-записи {cfg.get('name')} нет")
     if len(recs) > 1:
