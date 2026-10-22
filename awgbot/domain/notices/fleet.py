@@ -78,11 +78,19 @@ def agent_updated(tag: str) -> str:
 
 
 def agent_update_failed(tag: str, prev: str, reason: str, server_bot: dict | None = None,
-                        state: str = "rolled_back") -> str:
+                        state: str = "rolled_back", why: str = "", tries: int = 0) -> str:
     """Неудача — строка панели до следующего удачного и уведомление. Обновлённый
     агент не вышел на связь (rolled_back) — «вернулся на»; до перезапуска не
-    дошло (refused, failed) — «не выполнено, остался на»."""
+    дошло (refused, failed) — «не выполнено, остался на». Команда вне хода
+    (догон, следование): сервер AWG повторит сам — через сколько (tries —
+    прошлых неудач) или уже не будет."""
     where = f"Подробности — в чате {chat_ref(server_bot, 'бота сервера AWG')}"
+    if why in ("catchup", "follow"):
+        if tries < len(RETRY_WORDS):
+            where = f"Сервер AWG повторит попытку через {RETRY_WORDS[tries]}. {where}"
+        else:
+            where = (f"Повторов больше не будет — «🔁 Повторить» в разделе обновлений "
+                     f"{chat_ref(server_bot, 'бота сервера AWG')}")
     if state != "rolled_back":
         return (f"⚠️ Обновление до {_e(_ver(tag))} не выполнено — агент остался на {_e(_ver(prev))}: "
                 f"{_e(reason)}. {where}")

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 
 from .order import GW_STEP_MAX_S, LOST_AFTER_S, FleetOut, _LOCK, _now_iso, _since
-from .state import ROLLBACK_FAILED, ROLLED_BACK, ROLLING_BACK
+from .state import ACTIVE_RUN, ROLLBACK_FAILED, ROLLED_BACK, ROLLING_BACK
 
 log = logging.getLogger("awgbot.fleet")
 
@@ -114,6 +114,20 @@ class FleetRollbackMixin:
         self.fleet_run_set(run)
 
     # ── «🔁 Повторить» ───────────────────────────────────────────────────────
+
+    def fleet_gw_retry(self, slot_id: int) -> str:
+        """«🔁 Повторить» на уведомлении о неудачном догоне одного шлюза: не
+        ждать расписания повтора — команда уйдёт ближайшим тактом. Пусто —
+        сброшено; «running» — идёт ход; «nothing» — повторять нечего."""
+        with _LOCK:
+            if self.fleet_run().get("state") in ACTIVE_RUN:
+                return "running"
+            st = self.fleet_slot(slot_id)
+            if st.get("run") or st.get("state") not in ("failed", "rolled_back", "refused"):
+                return "nothing"
+            st["tries"], st["next_at"], st["final"] = 0, "", False
+            self.fleet_slot_set(slot_id, st)
+            return ""
 
     def fleet_retry(self) -> str:
         """Набор откатился или откат не прошёл — ход заново с того, что стоит;

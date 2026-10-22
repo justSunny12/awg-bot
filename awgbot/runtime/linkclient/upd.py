@@ -42,7 +42,8 @@ class UpdMixin:
         if what == "failed":
             bot = await asyncio.to_thread(self.services.link_server_bot)
             text = notes_.agent_update_failed(cmd.get("target") or "", cmd.get("prev") or "",
-                                              cmd.get("error") or "", bot, state=cmd.get("state") or "")
+                                              cmd.get("error") or "", bot, state=cmd.get("state") or "",
+                                              why=str(cmd.get("why") or ""), tries=int(cmd.get("tries") or 0))
         else:
             text = notes_.agent_reverted(cmd.get("revert_to") or cmd.get("prev") or "", cmd.get("target") or "")
         try:

@@ -77,6 +77,19 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
         await cb.answer("Запись возвращена на этот сервер" if not why else f"Запись не изменена: {why}"[:200],
                         show_alert=bool(why))
         return
+    if kind == "gw_retry" and role == "admin":
+        # неудачный догон шлюза: не ждать расписания повтора — команда ближайшим тактом
+        why = await asyncio.to_thread(services.fleet_gw_retry, int(ref))
+        if why == "running":
+            await cb.answer("Обновление уже идёт", show_alert=True)
+            return
+        if why:
+            await cb.answer("Повторять нечего: шлюз не ждёт повтора", show_alert=True)
+            return
+        await cb.answer("Повторяю обновление шлюза")
+        from awgbot.runtime.linkserver import upd as fleet_upd
+        await fleet_upd.fleet_run_tick(services)
+        return
     if kind == "gwcfg":
         # «📤 Конфигурация» на уведомлении выпусков до 3.3.1: файла перевыпуска
         # больше нет — кнопка устаревшая (снимается со следующим сдвигом минимума)

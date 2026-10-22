@@ -107,8 +107,12 @@ class GatewayUpdMixin:
                    "error": f"занят: идёт обновление до {_v(cur.get('target'))}"}
             self.db.set_state(ACK_KEY, json.dumps(ack, ensure_ascii=False))
             return "busy"
+        try:
+            tries = min(max(int(msg.get("tries") or 0), 0), 9)       # прошлых неудач догона — для слов о повторе
+        except (TypeError, ValueError):
+            tries = 0
         self._upd_save({"id": rid, "target": _v(target), "digest": str(msg.get("digest") or "")[:80],
-                        "why": str(msg.get("why") or "fleet")[:16], "hold": bool(msg.get("hold")),
+                        "why": str(msg.get("why") or "fleet")[:16], "hold": bool(msg.get("hold")), "tries": tries,
                         "prev": _v(config.INSTALLED_VERSION), "step": "", "state": "checking",
                         "error": "", "at": timeutil.to_iso(timeutil.now())})
         self.upd_ack_clear()
@@ -305,7 +309,8 @@ class GatewayUpdMixin:
             return {"state": "updating", "target": cmd.get("target") or ""}
         if state in FAILED:
             return {"state": "failed", "target": cmd.get("target") or "", "prev": cmd.get("prev") or "",
-                    "error": cmd.get("error") or "", "how": state}
+                    "error": cmd.get("error") or "", "how": state,
+                    "why": str(cmd.get("why") or ""), "tries": int(cmd.get("tries") or 0)}
         return {}
 
     def update_applied_note(self, pending: str, ok: bool):

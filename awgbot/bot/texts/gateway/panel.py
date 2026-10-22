@@ -90,7 +90,8 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     elif upd and upd.get("state") == "failed":
         from awgbot.domain.notices.fleet import agent_update_failed
         parts.append(agent_update_failed(upd.get("target") or "", upd.get("prev") or "", upd.get("error") or "",
-                                         upd.get("server_bot"), state=upd.get("how") or "rolled_back"))
+                                         upd.get("server_bot"), state=upd.get("how") or "rolled_back",
+                                         why=str(upd.get("why") or ""), tries=int(upd.get("tries") or 0)))
     ssh_line = pkg.gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
     if ssh_line:
         parts.append(ssh_line)

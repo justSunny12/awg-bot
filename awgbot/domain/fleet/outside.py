@@ -208,7 +208,8 @@ class FleetOutsideMixin:
                 st["next_at"] = timeutil.to_iso(timeutil.shift(timeutil.now(), int(delay)))
                 text = notes_.gw_catchup_failed(name, label, st["target"], reason, tries, slot=slot_id,
                                                 bot_username=user)
-            out.notes.append(Notification(config.ADMIN_ID, text, silent=True))
+            # «🔁 Повторить» над «Скрыть»: не ждать расписания повтора
+            out.notes.append(Notification(config.ADMIN_ID, text, silent=True, action=("gw_retry", slot_id)))
             self.fleet_slot_set(slot_id, st)
         elif state in ("reverted", "revert_failed"):
             st["hold"] = False

@@ -311,4 +311,5 @@ def _v(ver: str) -> str:
 
 def _upd_body(st: dict) -> dict:
     return {"id": st["id"], "target": st["target"], "digest": st.get("digest") or "",
-            "why": st.get("why") or "fleet", "hold": bool(st.get("hold"))}
+            "why": st.get("why") or "fleet", "hold": bool(st.get("hold")),
+            "tries": int(st.get("tries") or 0)}           # прошлых неудач: агент скажет, когда повтор
