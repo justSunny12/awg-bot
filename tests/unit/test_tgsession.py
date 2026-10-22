@@ -117,10 +117,17 @@ async def test_a_network_error_without_a_cause_is_not_retried(monkeypatch):
     assert api.calls == 1
 
 
-def test_ipv4_only_pins_the_connector_family():
-    """На шлюзе сессия прибита к IPv4; у сервера семейство не ограничено."""
-    assert tgsession.make(ipv4_only=True)._connector_init["family"] == socket.AF_INET   # noqa: SLF001
-    assert "family" not in tgsession.make()._connector_init                           # noqa: SLF001
+def test_the_session_is_pinned_to_ipv4_by_default():
+    """Правило проекта: наружу только IPv4. Сессия без параметров — AF_INET у
+    обеих ролей; иначе резолвер с AAAA уводит Bot API мимо туннеля (шлюз) или
+    в никуда (ВПС), и каждый запрос стоит паузу перебора."""
+    assert tgsession.make()._connector_init["family"] == socket.AF_INET               # noqa: SLF001
+    assert tgsession.RetryingSession()._connector_init["family"] == socket.AF_INET    # noqa: SLF001
+
+
+def test_ipv4_only_false_lifts_the_pin():
+    """Явное `ipv4_only=False` снимает привязку — семейство не ограничено."""
+    assert "family" not in tgsession.make(ipv4_only=False)._connector_init            # noqa: SLF001
 
 
 def test_the_default_total_limit_is_ten_seconds():

@@ -178,7 +178,7 @@ def test_guard_masquerades_the_agent_into_the_uplink(script):
     в аплинк ставит сам скрипт, а не чужое правило локальной схемы."""
     assert 'UPLINK_MASQ="        oifname \\"$UPLINK_IF\\" masquerade"' in script
     body = script.split("GUARDEOF", 1)[1]
-    post = body.split("chain postrouting", 1)[1].split("}", 1)[0]
+    post = body.split("chain postrouting {", 1)[1].split("}", 1)[0]   # nat-цепочка, не postrouting_mss
     assert 'ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade' in post
     assert "$UPLINK_MASQ" in post, "маскарад в аплинк — в той же nat-цепочке"
     assert script.index('UPLINK_MASQ=""') < script.index("cat <<GUARDEOF"), "переменная считается до heredoc"
@@ -562,3 +562,35 @@ def test_the_plan_names_the_router_masquerade(script):
     assert "роутер $ROUTER4: маскарад адресом шлюза" in step2
     head = script.split("set -e", 1)[0]
     assert "маскарад их трафика к роутеру" in head and "ROUTER=" in head
+
+
+def _uplink_mss(script: str, uplink: str) -> str:
+    """Значение UPLINK_MSS так, как его считает сам скрипт для данного UPLINK_IF."""
+    at = script.index('UPLINK_MSS=""')
+    lines = script[at:].split("\n", 2)[:2]
+    r = _sh(f"UPLINK_IF='{uplink}'\n" + "\n".join(lines) + '\nprintf %s "$UPLINK_MSS"')
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_the_rendered_table_clamps_mss_into_the_uplink_for_own_and_transit_traffic(script):
+    """С аплинком в таблице есть цепочка postrouting_mss (hook postrouting,
+    priority mangle) с клампом `oifname "awg0" … maxseg size set rt mtu`, а в
+    forward клампа нет: кламп только в forward оставляет без него собственный
+    TCP шлюза — агент зависает на TLS-ответах Telegram и GitHub, пока ICMP
+    «fragmentation needed» теряется по дороге."""
+    table = _guard_table(script, UPLINK_IF="awg0", UPLINK_MSS=_uplink_mss(script, "awg0"))
+    assert "type filter hook postrouting priority mangle; policy accept;" in _chain(table, "postrouting_mss")
+    assert 'oifname "awg0" tcp flags syn / syn,rst tcp option maxseg size set rt mtu' in _chain(table, "postrouting_mss"), \
+        "клампа в postrouting_mss нет — свой трафик шлюза без MSS"
+    assert not any("maxseg" in ln for ln in _chain(table, "forward")), "кламп остался в forward"
+    assert not any("maxseg" in ln for ln in _chain(table, "postrouting")), "кламп попал в nat-цепочку"
+
+
+def test_without_an_uplink_the_mss_chain_is_empty(script):
+    """Шлюз без аплинка (UPLINK_IF пуст): цепочка postrouting_mss есть, но без
+    единого правила — клампить некуда, а правило с пустым oifname nft не примет."""
+    table = _guard_table(script, UPLINK_IF="", UPLINK_MSS=_uplink_mss(script, ""))
+    assert _chain(table, "postrouting_mss") == ["type filter hook postrouting priority mangle; policy accept;"], \
+        _chain(table, "postrouting_mss")
+    assert "maxseg" not in table

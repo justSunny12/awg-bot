@@ -114,14 +114,14 @@ def test_tgsend_sends_html_with_one_button_per_row(monkeypatch):
         def read(self):
             return b'{"ok": true, "result": {}}'
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, data=None):
         seen["url"] = req.full_url
         seen["params"] = dict(urllib.parse.parse_qsl(req.data.decode()))
         return Resp()
 
     monkeypatch.setattr(config, "BOT_TOKEN", "123:abc")
     monkeypatch.setattr(config, "ADMIN_ID", 777)
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(tgsend.net4, "urlopen", fake_urlopen)
     assert tgsend.send("<b>тест</b>", buttons=[("Да", "set:fw:do:confirm:"),
                                                ("Нет", "set:fw:do:rollback:")]) is True
     assert seen["url"].endswith("/bot123:abc/sendMessage")
@@ -139,12 +139,12 @@ def test_tgsend_swallows_network_errors(monkeypatch):
     from awgbot.core import config
     from awgbot.infra import tgsend
 
-    def boom(req, timeout=None):
+    def boom(req, timeout=None, data=None):
         raise urllib.error.URLError("нет сети")
 
     monkeypatch.setattr(config, "BOT_TOKEN", "123:abc")
     monkeypatch.setattr(config, "ADMIN_ID", 777)
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    monkeypatch.setattr(tgsend.net4, "urlopen", boom)
     assert tgsend.send("что-то") is False
 
 
@@ -264,7 +264,7 @@ def test_bootstrap_downloads_the_delivery_when_piped(bootstrap):
     assert "PIPED=1" in bootstrap and '-f "${BASH_SOURCE[0]:-}"' in bootstrap
     piped = bootstrap.split('if [[ "$PIPED" -eq 1', 1)[1].split("\nelif", 1)[0]
     assert "mktemp -d /tmp/awg-bot-install." in piped
-    assert "curl -fsSL" in piped and "tar xzf" in piped
+    assert "curl -4 -fsSL" in piped and "tar xzf" in piped
     assert piped.count('rm -rf "$SRC_ROOT"') >= 3, "на каждом отказе временное убирается"
     assert "releases/latest/download/awg-bot.tgz" in bootstrap
 

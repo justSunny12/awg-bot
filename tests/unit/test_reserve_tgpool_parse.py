@@ -77,7 +77,7 @@ def test_fetch_puts_the_asn_into_the_url_and_parses_the_answer(monkeypatch):
     def urlopen(url, timeout=None):
         urls.append((url, timeout))
         return _Resp(json.dumps(_doc([("91.108.4.0/22", "2026-10-21T00:00:00")])).encode())
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("awgbot.util.net4.urlopen", urlopen)
     got = tgpool.fetch_announced(62041, "https://stat.example.org/data.json?resource=AS{asn}")
     assert got == (["91.108.4.0/22"], "")
     assert urls == [("https://stat.example.org/data.json?resource=AS62041", tgpool.FETCH_TIMEOUT)], \
@@ -89,13 +89,13 @@ def test_a_failing_source_is_an_error_not_an_empty_announce(monkeypatch, exc):
     """Ошибка источника отличима от «анонсов нет»: иначе такт снял бы всё выученное."""
     def urlopen(url, timeout=None):
         raise exc
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("awgbot.util.net4.urlopen", urlopen)
     prefixes, err = tgpool.fetch_announced(62041, "https://stat.example.org/?AS{asn}")
     assert prefixes == [] and err and type(exc).__name__ in err, err
 
 
 def test_a_non_json_answer_is_an_error(monkeypatch):
-    monkeypatch.setattr("urllib.request.urlopen", lambda url, timeout=None: _Resp(b"<html>502</html>"))
+    monkeypatch.setattr("awgbot.util.net4.urlopen", lambda url, timeout=None: _Resp(b"<html>502</html>"))
     prefixes, err = tgpool.fetch_announced(1, "https://stat.example.org/{asn}")
     assert prefixes == [] and err
 

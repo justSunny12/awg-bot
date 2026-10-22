@@ -12,6 +12,7 @@ import urllib.request
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.util import net4
 
 from . import meta as _meta
 from .model import Release, UpdateError, parse_version
@@ -46,7 +47,7 @@ def _request(url: str, accept: str) -> bytes:
     last: Exception | None = None
     for attempt in range(1, _ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            with net4.urlopen(req, timeout=_TIMEOUT) as resp:         # только IPv4
                 return resp.read()
         except urllib.error.HTTPError as e:
             raise UpdateError(f"GitHub HTTP {e.code}: {e.reason}")

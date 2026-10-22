@@ -22,7 +22,6 @@ import json
 import socket
 import struct
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -251,7 +250,7 @@ def test_http_returns_the_code_and_body_even_for_an_http_error(monkeypatch):
     def urlopen(req, timeout):
         seen["req"] = req
         raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, _Resp(403, "nope"))
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(common.net4, "urlopen", urlopen)
     assert common.http("GET", "https://dns.example.net/x", auth=("user", "DUMMY-pass")) == (403, "nope")
     hdr = seen["req"].get_header("Authorization")
     assert hdr == "Basic " + base64.b64encode(b"user:DUMMY-pass").decode()
@@ -260,7 +259,7 @@ def test_http_returns_the_code_and_body_even_for_an_http_error(monkeypatch):
 def test_http_without_an_answer_is_a_dns_error(monkeypatch):
     def urlopen(req, timeout):
         raise urllib.error.URLError("timed out")
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(common.net4, "urlopen", urlopen)
     with pytest.raises(dnsapi.DnsError, match="не ответил"):
         common.http("GET", "https://dns.example.net/x")
 
@@ -271,7 +270,7 @@ def test_http_sends_a_json_body(monkeypatch):
     def urlopen(req, timeout):
         seen["req"] = req
         return _Resp(200, "{}")
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(common.net4, "urlopen", urlopen)
     assert common.http("PATCH", "https://dns.example.net/x", body={"a": 1}) == (200, "{}")
     assert json.loads(seen["req"].data) == {"a": 1} and seen["req"].get_method() == "PATCH"
     assert seen["req"].get_header("Content-type") == "application/json"

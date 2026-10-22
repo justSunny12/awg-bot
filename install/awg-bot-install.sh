@@ -210,7 +210,7 @@ verify_archive() {  # verify_archive TGZ SRC_ROOT — сверить sha256 с �
     [[ -n "$ver" && -n "$repo" ]] || return 0
     # все digest выпуска (поставка и метаданные), по строке; отказ curl под
     # pipefail — не выход из установщика, а «GitHub не ответил»
-    want="$({ curl -fsS --connect-timeout 5 --retry 2 --max-time 10 "https://api.github.com/repos/$repo/releases/tags/v$ver" 2>/dev/null \
+    want="$({ curl -4 -fsS --connect-timeout 5 --retry 2 --max-time 10 "https://api.github.com/repos/$repo/releases/tags/v$ver" 2>/dev/null \
              | grep -oE '"digest" *: *"sha256:[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}'; } || true)"
     if [[ -z "$want" ]]; then
         log "целостность: GitHub не ответил — ставлю без сверки (загрузку прикрывает TLS)"
@@ -295,7 +295,7 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     command -v tar  >/dev/null 2>&1 || die "нужен tar"
     SRC_ROOT="$(mktemp -d /tmp/awg-bot-install.XXXXXX)"
     log "качаю поставку: $TGZ_URL"
-    if ! curl -fsSL --retry 3 --connect-timeout 5 --speed-time 10 --speed-limit 1024 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL"; then
+    if ! curl -4 -fsSL --retry 3 --connect-timeout 5 --speed-time 10 --speed-limit 1024 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL"; then
         rm -rf "$SRC_ROOT"
         [[ -n "$JOIN_TOKEN" ]] && die "не скачался выпуск v$JOIN_VER с GitHub — шлюзу нужен доступ к GitHub
 на время установки. Без него — поставка с сервера AWG: на нём sudo awg-bot gw-kit --stdout (как — awg-bot help)"

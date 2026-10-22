@@ -81,7 +81,7 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
             stored.append((num, val))
         def logout(self): pass
 
-    monkeypatch.setattr(er.imaplib, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
     monkeypatch.setattr(er, "send_success_reply", lambda acc, to: replied.append(to))
 
     seen_codes = []
@@ -127,7 +127,7 @@ def test_poll_once_finds_code_in_spam(monkeypatch):
         def store(self, num, flag, val): pass
         def logout(self): pass
 
-    monkeypatch.setattr(er.imaplib, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
     monkeypatch.setattr(er, "send_success_reply", lambda acc, to: None)
 
     accepted = er.poll_once(acc, lambda code: code == "AbCd2345")

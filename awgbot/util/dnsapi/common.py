@@ -18,6 +18,8 @@ import urllib.error
 import urllib.request
 from typing import Protocol
 
+from awgbot.util import net4
+
 TIMEOUT = 3.0
 _IPV4 = ipaddress.IPv4Address
 
@@ -59,7 +61,7 @@ def http(method: str, url: str, *, headers: dict | None = None, body: dict | Non
         hdrs["Authorization"] = "Basic " + base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
     req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with net4.urlopen(req, timeout=timeout) as resp:              # только IPv4
             return int(resp.status), resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
         return int(e.code), e.read().decode("utf-8", errors="replace")

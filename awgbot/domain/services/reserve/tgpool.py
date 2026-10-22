@@ -82,10 +82,10 @@ def parse_ripestat(doc: dict) -> list[str]:
 
 def fetch_announced(asn: int, url_tpl: str) -> tuple[list[str], str]:
     """(префиксы, ошибка) по одной AS."""
-    import urllib.request
+    from awgbot.util import net4
     url = str(url_tpl).replace("{asn}", str(int(asn)))
     try:
-        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as resp:   # noqa: S310 — адрес из настроек
+        with net4.urlopen(url, timeout=FETCH_TIMEOUT) as resp:         # только IPv4; адрес из настроек
             raw = resp.read(4 * 1024 * 1024)
         return parse_ripestat(json.loads(raw.decode("utf-8", errors="replace"))), ""
     except Exception as e:                                # noqa: BLE001

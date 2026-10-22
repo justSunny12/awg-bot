@@ -46,6 +46,8 @@ NET_CALLS: dict[str, tuple[str, Optional[int]]] = {
     "SMTP": ("timeout", None),
     "SMTP_SSL": ("timeout", None),
     "IMAP4_SSL": ("timeout", None),
+    "SMTP4": ("timeout", None),          # обёртки net4 «только IPv4» — тот же выход наружу
+    "IMAP4_SSL4": ("timeout", None),
     "ClientTimeout": ("total", None),
 }
 # Свои обёртки над сетью: предел по умолчанию ловится у вызова наружу внутри
@@ -239,6 +241,42 @@ def test_the_python_scan_actually_sees_the_calls(tmp_path):
     assert not any(line == 20 for _, line, _ in hits), "обёртка без явного timeout — ложная тревога"
 
 
+def test_the_python_scan_sees_net4_urlopen_as_an_outbound_call(tmp_path):
+    """`net4.urlopen` — тот же выход наружу, что urllib: вызов с пределом
+    больше правила и вызов без предела должны быть замечены, иначе перевод
+    проекта на IPv4-опенер вывел бы все HTTP-запросы из-под сторожа."""
+    src = (
+        "from awgbot.util import net4\n"
+        "def a(req):\n    return net4.urlopen(req, timeout=30)\n"
+        "def b(req):\n    return net4.urlopen(req)\n"
+        "def c(req):\n    return net4.urlopen(req, timeout=5)\n"
+    )
+    tmp = tmp_path / "probe.py"
+    tmp.write_text(src, encoding="utf-8")
+    hits = {(name, line, v) for _, name, _, line, _, v in _py_hits(tmp, "probe.py")}
+    assert ("urlopen", 3, 30.0) in hits, "net4.urlopen с пределом 30 не замечен"
+    assert ("urlopen", 5, None) in hits, "net4.urlopen без timeout прошёл как ограниченный"
+    assert not any(line == 7 for _, line, _ in hits), "net4.urlopen с 5 с — ложная тревога"
+
+
+def test_the_python_scan_sees_net4_mail_classes_as_outbound_calls(tmp_path):
+    """`net4.SMTP4` и `net4.IMAP4_SSL4` — те же smtplib/imaplib наружу: без
+    timeout или с пределом больше правила должны быть замечены, иначе почта
+    выпала бы из-под сторожа при переводе на IPv4-соединение."""
+    src = (
+        "from awgbot.util import net4\n"
+        "def a(h):\n    return net4.SMTP4(h, 587)\n"
+        "def b(h):\n    return net4.IMAP4_SSL4(h, 993, timeout=30)\n"
+        "def c(h):\n    return net4.IMAP4_SSL4(h, 993, timeout=10)\n"
+    )
+    tmp = tmp_path / "probe.py"
+    tmp.write_text(src, encoding="utf-8")
+    hits = {(name, line, v) for _, name, _, line, _, v in _py_hits(tmp, "probe.py")}
+    assert ("SMTP4", 3, None) in hits, "net4.SMTP4 без timeout прошёл как ограниченный"
+    assert ("IMAP4_SSL4", 5, 30.0) in hits, "net4.IMAP4_SSL4 с пределом 30 не замечен"
+    assert not any(line == 7 for _, line, _ in hits), "net4.IMAP4_SSL4 с 10 с — ложная тревога"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Shell: curl
 # ─────────────────────────────────────────────────────────────────────────────
@@ -326,6 +364,48 @@ def test_every_curl_in_the_scripts_is_limited():
     assert not bad, "curl дольше правила:\n" + "\n".join(bad)
 
 
+def _curl_is_ipv4(line: str) -> bool:
+    """У вызова curl есть -4 (отдельно, в связке коротких флагов или --ipv4)."""
+    try:
+        words = shlex.split(line[_CURL.search(line).start():], posix=True)
+    except ValueError:
+        words = line[_CURL.search(line).start():].split()
+    for w in words[1:]:
+        if w == "--ipv4" or (w.startswith("-") and not w.startswith("--") and "4" in w):
+            return True
+    return False
+
+
+def _sh_curls_without_ipv4():
+    out = []
+    for path in SH_FILES:
+        rel = path.relative_to(REPO).as_posix()
+        for lineno, line in _logical_lines(path.read_text(encoding="utf-8")):
+            if line.lstrip().startswith("#") or not _CURL.search(line) or _sh_allowed(rel, line):
+                continue
+            if not _curl_is_ipv4(line):
+                out.append(f"{rel}:{lineno}: {line.strip()[:110]}")
+    return out
+
+
+def test_every_curl_in_the_scripts_goes_out_over_ipv4_only():
+    """Правило проекта: наружу только IPv4. curl без -4 берёт AAAA первым и на
+    шлюзе уходит мимо туннеля, на ВПС — в никуда: установка и обновление
+    стоят секунды на каждом запросе к GitHub и спискам."""
+    bad = _sh_curls_without_ipv4()
+    assert not bad, "curl без -4:\n" + "\n".join(bad)
+
+
+def test_the_shell_scan_sees_curl_without_ipv4(tmp_path):
+    """Сторож сторожа: -4 отдельно, в связке -4fsSL, --ipv4 — норма; без них —
+    находка; комментарий и `command -v curl` — не вызовы."""
+    assert _curl_is_ipv4('curl -4 -fsS --max-time 5 "$U"')
+    assert _curl_is_ipv4('x="$(curl -4fsSL --retry 3 -o f "$U")"')
+    assert _curl_is_ipv4('curl --ipv4 -fsS "$U"')
+    assert not _curl_is_ipv4('curl -fsSL --retry 3 -o f "$U"'), "curl без -4 прошёл как IPv4"
+    assert not _curl_is_ipv4('curl -fsS "$U" -o f4'), "цифра в имени файла сошла за -4"
+
+
 def test_every_shell_exception_still_covers_a_real_line():
     """Мёртвое исключение — молчаливый пропуск для следующей строки."""
     hits = _all_sh_hits()
@@ -399,7 +479,7 @@ def test_the_mailbox_poll_connects_with_a_ten_second_limit(monkeypatch):
         def select(self, box): return "NO", [b""]
         def logout(self): pass
 
-    monkeypatch.setattr(er.imaplib, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
     acc = MailAccount("box@example.org", "pass", "imap.example.org", 993, "smtp.example.org", 587)
     assert er.poll_once(acc, lambda code: False) == 0
     assert seen and seen[0].get("timeout") == 10, f"IMAP открыт с пределом {seen and seen[0].get('timeout')}"

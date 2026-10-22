@@ -8,6 +8,7 @@ import subprocess
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.util import net4
 
 from . import base, sets
 from .base import log, RoutingError
@@ -35,7 +36,7 @@ def fetch(url: str, timeout: int = 10) -> tuple[Optional[str], str, int]:
     import urllib.request
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "awg-bot"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with net4.urlopen(req, timeout=timeout) as resp:              # только IPv4
             return resp.read().decode("utf-8", errors="replace"), "", 200
     except urllib.error.HTTPError as e:
         log.warning("routing: не скачался %s (%s)", url, e)

@@ -622,13 +622,13 @@ configure_topology_auto() {
         case "$host" in
             10.*|192.168.*|127.*|169.254.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
                 local _pub
-                _pub="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+                _pub="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
                 if [[ -n "$_pub" && "$_pub" != "$host" ]]; then
                     log "локальный адрес $host приватный (хост за NAT) — беру внешний $_pub"
                     host="$_pub"
                 fi ;;
         esac
-        [[ -n "$host" ]] || host="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+        [[ -n "$host" ]] || host="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
         [[ -n "$host" ]] || { warn "внешний адрес не определился — спрошу"; configure_topology; return; }
         yaml_set "$app" server_host "\"$host\""
     fi

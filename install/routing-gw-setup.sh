@@ -19,7 +19,11 @@
 #      умолчанию на момент прогона, обычно eth0: маршрут переехал — агент видит
 #      это проверкой «маскарад клиентов» и перевыставляет обвязку); изоляцию клиентов от локальной
 #      сети (нужны НОВЫЕ соединения из туннеля, а это открывает путь к NAS,
-#      роутеру, торрент-клиенту — закрываем); метки Telegram для самого агента; и защиту
+#      роутеру, торрент-клиенту — закрываем); метки Telegram для самого агента;
+#      MSS-кламп в аплинк (UPLINK_IF) — своей цепочкой postrouting_mss (hook
+#      postrouting, priority mangle), НЕ в forward: в postrouting виден и
+#      собственный трафик устройства (агент к Telegram и GitHub по метке),
+#      которому без клампа нужен теряющийся ICMP «fragmentation needed»; и защиту
 #      САМОГО УСТРОЙСТВА от туннеля: с адресов туннеля на него пускается только ВПС
 #      по линку (SSH, ICMP), всё прочее дропается. Исключение — УСТРОЙСТВА
 #      АДМИНА (ADMIN_IPS, приезжают с ВПС документом конфигурации по каналу —
@@ -589,7 +593,7 @@ rc=0
 FROM="${AWG_LAN_FROM:-}"
 get_domains() {
     if [ -n "$FROM" ]; then cp "$FROM/domains.lst" "$TMP" 2>/dev/null
-    else curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$DOMAINS_URL" -o "$TMP"; fi
+    else curl -4 -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$DOMAINS_URL" -o "$TMP"; fi
 }
 # ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
 if get_domains && [ -s "$TMP" ]; then
@@ -656,11 +660,11 @@ if [ -n "$FROM" ]; then
 else
     nets_rc=0
     for svc in $SUBNET_SERVICES; do
-        curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
+        curl -4 -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
             || { echo "подсети: $svc не скачался" >&2; rc=1; nets_rc=1; }
         echo >> "$NETS"
     done
-    curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$GOOG_URL" 2>/dev/null \
+    curl -4 -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$GOOG_URL" 2>/dev/null \
         | grep -oE '"ipv4Prefix":[[:space:]]*"[0-9./]+"' \
         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
         || { echo "подсети: goog.json не скачался" >&2; rc=1; nets_rc=1; }
@@ -1889,9 +1893,12 @@ mkdir -p "$GW_ETC"
 # чужое правило прежней схемы, и отсутствие своего не было видно.
 UPLINK_MASQ=""
 [ -n "${UPLINK_IF:-}" ] && UPLINK_MASQ="        oifname \"$UPLINK_IF\" masquerade"
-# MSS-кламп в аплинк: транзитный TCP из локальной сети в туннель без него
-# упирается в MTU туннеля и виснет на больших ответах. Свойство аплинка, не
-# прежнего ручного слоя: агенту с его Telegram он тоже полезен.
+# MSS-кламп в аплинк: TCP в туннель без него упирается в MTU туннеля и виснет
+# на больших ответах (TLS-рукопожатие с сертификатом). Ставится в postrouting:
+# там виден и транзит из локальной сети, и СОБСТВЕННЫЙ трафик устройства
+# (агент: Telegram, GitHub) — SYN агента строится под MTU end0 и лишь потом
+# по метке уходит в аплинк; в forward его нет, и без клампа агент зависит от
+# ICMP «fragmentation needed», который по дороге теряется.
 UPLINK_MSS=""
 [ -n "${UPLINK_IF:-}" ] && UPLINK_MSS="        oifname \"$UPLINK_IF\" tcp flags syn / syn,rst tcp option maxseg size set rt mtu"
 {
@@ -1979,9 +1986,13 @@ $SSH_JUMP
         drop
     }
 
+    chain postrouting_mss {
+        type filter hook postrouting priority mangle; policy accept;
+$UPLINK_MSS
+    }
+
     chain forward {
         type filter hook forward priority filter; policy accept;
-$UPLINK_MSS
         oifname "$LINK_IF" ct state established,related accept
         iifname "$LINK_IF" ip saddr @admin4 accept
         iifname "$LINK_IF" ip saddr @peer_nets4 accept

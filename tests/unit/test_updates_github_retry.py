@@ -3,13 +3,13 @@
 кодом ошибки — не повторяется. Повод: аплинк сервера терял часть SYN, и
 ступень обновления падала на одном неудачном соединении.
 
-Сеть — подмена `urllib.request.urlopen` контекстным менеджером с `.read()`;
+Сеть — подмена `net4.urlopen` (опенер «только IPv4», которым ходит модуль)
+контекстным менеджером с `.read()`;
 пауза между попытками обнулена через модуль.
 """
 import hashlib
 import socket
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -42,13 +42,13 @@ def _net(monkeypatch, outcomes):
     calls = []
     queue = list(outcomes)
 
-    def fake(req, timeout=None):
+    def fake(req, timeout=None, data=None):
         calls.append(req)
         item = queue.pop(0)
         if isinstance(item, BaseException):
             raise item
         return _Resp(item)
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(gh.net4, "urlopen", fake)
     monkeypatch.setattr(gh, "_RETRY_PAUSE", 0)
     return calls
 
@@ -106,8 +106,8 @@ def test_retry_does_not_sleep_after_last_failure(monkeypatch):
     naps = []
     import time
     monkeypatch.setattr(time, "sleep", lambda s: naps.append(s))
-    monkeypatch.setattr(urllib.request, "urlopen",
-                        lambda req, timeout=None: (_ for _ in ()).throw(_timeout_err()))
+    monkeypatch.setattr(gh.net4, "urlopen",
+                        lambda req, timeout=None, data=None: (_ for _ in ()).throw(_timeout_err()))
     monkeypatch.setattr(gh, "_RETRY_PAUSE", 0.25)
     with pytest.raises(updates.UpdateError):
         gh._request(_URL, _ACCEPT)

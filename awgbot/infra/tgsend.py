@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 from awgbot.core import config
+from awgbot.util import net4
 
 log = logging.getLogger("awgbot.tgsend")
 _API = "https://api.telegram.org"
@@ -44,7 +45,7 @@ def send(text: str, buttons: list[tuple[str, str]] | None = None,
         req = urllib.request.Request(f"{_API}/bot{token}/sendMessage",
                                      data=urllib.parse.urlencode(params).encode(),
                                      method="POST")
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        with net4.urlopen(req, timeout=_TIMEOUT) as resp:         # только IPv4
             return json.loads(resp.read().decode("utf-8")).get("ok", False)
     except (urllib.error.URLError, OSError, ValueError) as e:
         log.warning("не отправлено админу: %s", e)

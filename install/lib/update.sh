@@ -140,7 +140,7 @@ release_sha256s() {  # release_sha256s VER → sha256 ассетов выпус�
     [[ -n "$repo" ]] || repo="$(yaml_get "$INSTALL_DIR/conf/updates.yaml" repo)"
     [[ -n "$repo" && -n "$1" ]] || return 0
     command -v curl >/dev/null 2>&1 || return 0
-    { curl -fsS --connect-timeout 5 --retry 2 --max-time 10 "https://api.github.com/repos/${repo// /}/releases/tags/v$1" 2>/dev/null \
+    { curl -4 -fsS --connect-timeout 5 --retry 2 --max-time 10 "https://api.github.com/repos/${repo// /}/releases/tags/v$1" 2>/dev/null \
         | grep -oE '"digest" *: *"sha256:[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}'; } || true
 }
 

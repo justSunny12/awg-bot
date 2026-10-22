@@ -9,6 +9,11 @@ CONNECT_S, и неудача ИМЕННО соединения (таймаут c
 повторяется до ATTEMPTS раз: запрос при этом ещё не ушёл, повтор безопасен
 для любого метода. Таймаут уже отправленного запроса и ответы Bot API —
 без повторов, как прежде.
+
+Сессия прибита к IPv4 по умолчанию у всех ролей (проект только IPv4, см.
+util/net4): v6-адрес API уходит мимо туннеля на шлюзе или в никуда на ВПС.
+`ipv4_only=False` оставлен выключателем — его даёт только агент по
+`app.gateway.ipv4_only`.
 """
 from __future__ import annotations
 
@@ -34,14 +39,14 @@ _CONNECT_ERRORS: tuple = (aiohttp.ServerTimeoutError, aiohttp.ClientConnectorErr
 class RetryingSession(AiohttpSession):
     """AiohttpSession с ограничением на соединение и повтором неудачного connect."""
 
-    def __init__(self, *, ipv4_only: bool = False, connect_s: float = CONNECT_S,
+    def __init__(self, *, ipv4_only: bool = True, connect_s: float = CONNECT_S,
                  attempts: int = ATTEMPTS, **kwargs: Any) -> None:
         kwargs.setdefault("timeout", TOTAL_S)
         super().__init__(**kwargs)
         self.connect_s = float(connect_s)
         self.attempts = max(1, int(attempts))
         if ipv4_only:
-            # v6-адрес API через v4-туннель — в никуда: не тратить на него даже паузу перебора
+            # проект только IPv4: v6-адрес API — мимо туннеля (шлюз) или в никуда (ВПС), не тратить на него и паузу перебора
             self._connector_init["family"] = socket.AF_INET
 
     async def make_request(self, bot, method, timeout: Optional[int] = None):
@@ -63,5 +68,5 @@ class RetryingSession(AiohttpSession):
         raise AssertionError("unreachable")
 
 
-def make(*, ipv4_only: bool = False) -> RetryingSession:
+def make(*, ipv4_only: bool = True) -> RetryingSession:
     return RetryingSession(ipv4_only=ipv4_only)

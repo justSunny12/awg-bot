@@ -16,7 +16,7 @@ getMe новым токеном, запись BOT_TOKEN в env агента, о�
 
 Хост подменён: env агента — настоящий файл во временном каталоге
 (AWG_BOT_ENV), getMe — подмена `_cfg_token_getme` (а сам он — подменой
-`urllib.request.urlopen`); юнит обвязки и конфиг линка — `_Host` из теста
+`net4.urlopen`); юнит обвязки и конфиг линка — `_Host` из теста
 документа конфигурации.
 """
 from __future__ import annotations
@@ -27,7 +27,6 @@ import json
 import os
 import stat
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -245,7 +244,7 @@ def _urlopen(monkeypatch, result):
         if isinstance(result, BaseException):
             raise result
         return _Resp(result)
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(tokenmod.net4, "urlopen", fake)
     return seen
 
 

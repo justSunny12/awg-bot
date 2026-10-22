@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 
 from awgbot.core import config
+from awgbot.util import net4
 from awgbot.domain import gwcfg
 
 from ..base import log
@@ -35,7 +36,7 @@ class CfgTokenMixin:
     def _cfg_token_getme(token: str) -> tuple[str, int]:
         """("ok", id) | ("bad", 0) — Telegram токен не принял | ("net", 0) — не ответил."""
         try:
-            with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getMe",
+            with net4.urlopen(f"https://api.telegram.org/bot{token}/getMe",
                                         timeout=GETME_TIMEOUT) as resp:
                 data = json.loads(resp.read().decode("utf-8", "replace") or "{}")
         except urllib.error.HTTPError as e:

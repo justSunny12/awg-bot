@@ -22,6 +22,8 @@ import email
 import imaplib
 import secrets
 import ssl
+
+from awgbot.util import net4
 from email.header import decode_header
 from typing import Callable
 
@@ -78,7 +80,7 @@ def poll_once(acc: MailAccount, on_code: Callable[[str], bool]) -> int:
         return 0
     accepted = 0
     ctx = ssl.create_default_context()
-    conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=ctx, timeout=10)
+    conn = net4.IMAP4_SSL4(acc.imap_host, acc.imap_port, ssl_context=ctx, timeout=10)
     try:
         conn.login(acc.login, acc.password)
         for mbox in _MAILBOXES:

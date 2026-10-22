@@ -155,13 +155,19 @@ def test_rp_filter_is_loose_everywhere_the_uplink_answers(script):
     assert "PostUp = sysctl -qw net.ipv4.conf.%%i.rp_filter=2" in awk
 
 
-def test_uplink_gets_mss_clamp_next_to_its_masquerade(script):
-    """Транзитный TCP из локальной сети в туннель без клампа виснет на больших
-    ответах. Свойство аплинка, не локального слоя."""
+def test_uplink_gets_mss_clamp_in_postrouting_not_in_forward(script):
+    """TCP в туннель без клампа виснет на больших ответах. Кламп — в своей
+    цепочке postrouting (hook postrouting, priority mangle): там виден и транзит
+    из локальной сети, и собственный трафик устройства (агент → Telegram,
+    GitHub); в forward его нет — SYN самого шлюза туда не попадает. Свойство
+    аплинка, не локального слоя."""
     assert 'UPLINK_MSS="        oifname \\"$UPLINK_IF\\" tcp flags syn / syn,rst tcp option maxseg size set rt mtu"' in script
     body = script.split("GUARDEOF", 1)[1]
-    fwd = body.split("chain forward", 1)[1].split("}", 1)[0]
-    assert "$UPLINK_MSS" in fwd
+    mss = body.split("chain postrouting_mss {", 1)[1].split("}", 1)[0]
+    assert "type filter hook postrouting priority mangle" in mss, "кламп не на postrouting — свой трафик агента мимо него"
+    assert "$UPLINK_MSS" in mss
+    fwd = body.split("chain forward {", 1)[1].split("}", 1)[0]
+    assert "$UPLINK_MSS" not in fwd, "кламп в forward — только транзит, агент без клампа"
     assert script.index('UPLINK_MSS=""') < script.index("cat <<GUARDEOF")
 
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 import imaplib
 import smtplib
 import ssl
+
+from awgbot.util import net4
 from dataclasses import dataclass
 from email.message import EmailMessage
 
@@ -83,7 +85,7 @@ def _ctx():
 def check_imap(acc: MailAccount, timeout: float = 10.0) -> None:
     """Вход по IMAP. Ошибка — MailError с понятным текстом."""
     try:
-        conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=_ctx(), timeout=timeout)
+        conn = net4.IMAP4_SSL4(acc.imap_host, acc.imap_port, ssl_context=_ctx(), timeout=timeout)
     except OSError as e:
         raise MailError(f"IMAP {acc.imap_host}:{acc.imap_port} недоступен: {e}") from e
     try:
@@ -102,7 +104,7 @@ def check_imap(acc: MailAccount, timeout: float = 10.0) -> None:
 def check_smtp(acc: MailAccount, timeout: float = 10.0) -> None:
     """Вход по SMTP (STARTTLS), без отправки."""
     try:
-        with smtplib.SMTP(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
+        with net4.SMTP4(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
             s.starttls(context=_ctx())
             s.login(acc.login, acc.password)
     except smtplib.SMTPAuthenticationError as e:
@@ -122,7 +124,7 @@ def send_mail(acc: MailAccount, to_addr: str, subject: str, body: str,
     for name, raw in (attachments or []):
         msg.add_attachment(raw, maintype="application", subtype="octet-stream", filename=name)
     try:
-        with smtplib.SMTP(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
+        with net4.SMTP4(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
             s.starttls(context=_ctx())
             s.login(acc.login, acc.password)
             s.send_message(msg)
