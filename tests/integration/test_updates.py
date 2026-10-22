@@ -6,6 +6,8 @@ changelog под лимит, список пропущенных ступене�
 import hashlib
 import json
 
+import pytest
+
 from awgbot.infra import updates
 from awgbot.bot import texts
 import awgbot.core.config as cfg
@@ -241,6 +243,91 @@ def test_new_version_notifies_even_after_previous_notified(services, monkeypatch
     rel2 = updates.Release("v1.3.0", (1, 3, 0), "b", "u", "b" * 64)
     monkeypatch.setattr(services, "update_next", lambda: rel2)
     assert services.update_to_notify().tag == "v1.3.0"    # новая ступень — снова да
+
+
+# ── откат набора: итог с «🔁 Повторить» и есть предложение ───────────────────
+
+def _run_to(tag, state):
+    """Ход набора к tag в заданном состоянии — как его оставляет откат."""
+    return {"id": "a1b2c3d4", "tag": tag, "state": state, "steps": [], "prev": "v1.1.0"}
+
+
+def _rel(tag):
+    return updates.Release(tag=tag, version=updates.parse_version(tag), body="- пункт",
+                           asset_url="u", sha256="a" * 64)
+
+
+def test_rolled_back_run_to_the_same_target_is_not_offered_again(services, monkeypatch):
+    """После отката набора в чате уже лежит «⚠️ Обновление до vX отменено …» с
+    кнопкой «🔁 Повторить». Второе «⬆️ Доступна vX» стартовой проверкой через
+    пять минут — дубль, и его отправка ещё и снимает кнопки с итога."""
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.2.0"))
+    services.fleet_run_set(_run_to("v1.2.0", "rolled_back"))
+
+    assert services.update_to_notify() is None, "откатившаяся цель объявлена второй раз"
+    assert services.db.get_state(services._NOTIFIED_KEY) == "v1.2.0", \
+        "цель не помечена объявленной — следующий такт пришлёт дубль"
+    assert services.update_to_notify() is None, "повторный такт прислал дубль"
+
+
+def test_run_with_failed_rollback_to_the_same_target_is_not_offered_again(services, monkeypatch):
+    """Неудавшийся откат — та же картина: итог хода в чате, повтор — кнопкой."""
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.2.0"))
+    services.fleet_run_set(_run_to("v1.2.0", "rollback_failed"))
+
+    assert services.update_to_notify() is None, "цель с неудавшимся откатом объявлена второй раз"
+    assert services.db.get_state(services._NOTIFIED_KEY) == "v1.2.0"
+    assert services.update_to_notify() is None, "повторный такт прислал дубль"
+
+
+def test_newer_target_is_offered_even_if_an_older_run_rolled_back(services, monkeypatch):
+    """Откат хода к vX не глушит vY новее: о ней итог хода ничего не говорит,
+    и кнопка «🔁 Повторить» поведёт к vX, а не к vY."""
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.2.0"))
+    services.fleet_run_set(_run_to("v1.2.0", "rolled_back"))
+    assert services.update_to_notify() is None
+
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.3.0"))
+    got = services.update_to_notify()
+    assert got is not None and got.tag == "v1.3.0", "новую ступень после отката старой не объявили"
+    assert services.update_to_notify() is None, "и её — ровно один раз"
+
+
+@pytest.mark.parametrize("state", ["running", "done"])
+def test_run_in_other_states_keeps_the_usual_once_per_version_rule(services, monkeypatch, state):
+    """Глушится только откат: ход, который идёт или уже зафиксирован, на
+    правило «один раз на версию» не влияет (у зафиксированного хода цель
+    обычно уже пуста — выпуск набора равен ей; здесь цель подменена)."""
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.2.0"))
+    services.fleet_run_set(_run_to("v1.2.0", state))
+
+    got = services.update_to_notify()
+    assert got is not None and got.tag == "v1.2.0", f"ход в состоянии {state} заглушил уведомление"
+    assert services.update_to_notify() is None, "второй раз — уже нет"
+
+
+def test_rolled_back_run_to_another_tag_does_not_mute_the_target(services, monkeypatch):
+    """Откатился ход к старой ступени, а цель уже другая — обычное уведомление."""
+    monkeypatch.setattr(services, "update_next", lambda: _rel("v1.3.0"))
+    services.fleet_run_set(_run_to("v1.2.0", "rolled_back"))
+    got = services.update_to_notify()
+    assert got is not None and got.tag == "v1.3.0"
+
+
+def test_role_without_a_fleet_run_notifies_as_before(tmp_path, monkeypatch):
+    """Агент шлюза набора не ведёт — у него правило «один раз на версию»
+    без оглядки на ход."""
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
+    d = Database(tmp_path / "gw.db")
+    d.init_schema()
+    gw = GatewayServices(d)
+    assert not callable(getattr(gw, "fleet_run", None)), "у агента шлюза появился ход набора — тест устарел"
+    monkeypatch.setattr(gw, "update_next", lambda: _rel("v1.2.0"))
+
+    got = gw.update_to_notify()
+    assert got is not None and got.tag == "v1.2.0"
+    assert gw.update_to_notify() is None
 
 
 # ── усечение changelog под лимит Telegram ────────────────────────────────────

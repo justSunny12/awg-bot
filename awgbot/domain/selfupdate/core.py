@@ -214,6 +214,12 @@ class SelfUpdateCoreMixin:
                 # сейчас ведёт в отказ, и после финала переезда о нём никто не
                 # напомнил бы. Экран «Обновления» причину показывает.
                 return None
+            run = self.fleet_run() if callable(getattr(self, "fleet_run", None)) else {}
+            if str(run.get("tag") or "") == str(nxt.tag) and run.get("state") in ("rolled_back", "rollback_failed"):
+                # ход к этой же цели откатился: его итог с «🔁 Повторить» уже в чате
+                # и он и есть предложение — второе (и снятие кнопки с итога) не нужно
+                self.db.set_state(self._NOTIFIED_KEY, nxt.tag)
+                return None
             self.db.set_state(self._NOTIFIED_KEY, nxt.tag)
             return nxt
 
