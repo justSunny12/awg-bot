@@ -114,6 +114,25 @@ class FleetPlanMixin:
 
     # ── шлюзы ────────────────────────────────────────────────────────────────
 
+    def _gw_agent_version(self, slot_id: int) -> str:
+        """Версия агента слота: из живой сессии, иначе из снимка; нечитаемая — пусто."""
+        sess = self.gwlink_session(slot_id)
+        ver = str(sess.get("agent") or "") if sess else ""
+        if updates.parse_version(ver) is None:
+            ver = str(self.gwlink_snapshot(slot_id).get("agent_version") or "")
+        return ver if updates.parse_version(ver) is not None else ""
+
+    def fleet_gateway_versions(self) -> set:
+        """Версии агентов всех слотов (кортежи) — кэш выпусков хранит и их
+        выпуски, даже ниже линии совместимости сервера: иначе шлюз на прежнем
+        выпуске перестал бы считаться «сборкой из выпуска» и выпал из набора."""
+        out = set()
+        for gw in self.db.gateways():
+            parsed = updates.parse_version(self._gw_agent_version(gw.id))
+            if parsed is not None:
+                out.add(parsed)
+        return out
+
     def fleet_gateways(self) -> list[dict]:
         """Слоты для набора, по порядку хода: резервные (по номеру), активный
         последним. Поля: slot, name, label, version, online, seen, caps,
@@ -124,12 +143,8 @@ class FleetPlanMixin:
         out = []
         for gw in self.db.gateways():
             sess = self.gwlink_session(gw.id)
-            ver = str(sess.get("agent") or "") if sess else ""
-            if updates.parse_version(ver) is None:
-                ver = str(self.gwlink_snapshot(gw.id).get("agent_version") or "")
+            ver = self._gw_agent_version(gw.id)
             parsed = updates.parse_version(ver)
-            if parsed is None:
-                ver = ""
             device = self.db.get_device(gw.device_id) is not None
             caps = self.gwlink_agent_caps(gw.id)
             release = parsed is not None and bool(releases) and updates._is_release_build(parsed, releases)

@@ -11,7 +11,9 @@ main/ — точка входа. Собирает всё вместе и зап�
   6. polling до остановки; на выходе — аккуратное закрытие
 
 Части: common — журнал (под journald без времени в строке, вне — ISO со
-смещением в поясе бота), строка пояса на старте и метки в каталоге данных;
+смещением в поясе бота; логгер apscheduler — только WARNING, задания резерва
+идут раз в несколько секунд), строка пояса на старте и метки в каталоге
+данных;
 startup — стартовые уведомления и финишеры (меню команд, переезд, свой DNS,
 реконсиляция, итог обновления, имя бота, перезагрузка хоста, пояс после
 обновления); alive — отметка жизни для сторожа обновления по ответу
@@ -48,6 +50,9 @@ from .common import FRESH_INSTALL_MARKER, ZONE_ADOPTED_MARKER, log, log_formatte
 _log_handler = logging.StreamHandler()
 _log_handler.setFormatter(log_formatter())
 logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+# задания планировщика резерва идут раз в 3–5 с: их «Running/executed job» на
+# INFO вытесняли бы из журнала всё остальное за минуты — только сбои
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 # части зовут через пакет всё, что подменяют тесты (Bot, Database, Services,
 # ConfWatcher, make_dispatcher, notify_one, функции старта)

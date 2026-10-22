@@ -34,6 +34,7 @@ from .state import (ACTIVE_RUN, DONE, FAILURES, IN_FLIGHT, ROLLING_BACK, RUNNING
 log = logging.getLogger("awgbot.fleet")
 
 LOST_AFTER_S = 15 * 60          # шаг шлюза без сессии столько — шлюз недоступен, ход идёт дальше
+_STARTED = timeutil.now()       # запуск этого процесса: от него окно ожидания переподключения шлюзов
 GW_STEP_MAX_S = 30 * 60         # шлюз на связи без ответа на шаг столько — шаг не удался
 
 _LOCK = threading.RLock()       # один такт за раз: слушатель, кнопка и старт решают в разных потоках
@@ -217,13 +218,16 @@ class FleetOrderMixin:
         run["expect_at"] = _now_iso()
 
     def _fleet_expecting(self, run: dict, gws: list) -> bool:
-        """Ждём ли ещё переподключения шлюзов после перезапуска сервера."""
+        """Ждём ли ещё переподключения шлюзов после перезапуска сервера. Окно
+        считается от запуска этого процесса, не от планирования шага: ступень
+        с ядром длится минуты, и окно от планирования истекало бы раньше, чем
+        шлюзы успели бы переподключиться к новому процессу."""
         expect = [int(x) for x in run.get("expect") or []]
         if not expect:
             return False
         online = {g["slot"] for g in gws if g["online"]}
         left = [x for x in expect if x not in online and any(g["slot"] == x for g in gws)]
-        if left and _since(str(run.get("expect_at") or "")) < LOST_AFTER_S:
+        if left and min(_since(str(run.get("expect_at") or "")), timeutil.elapsed(_STARTED)) < LOST_AFTER_S:
             return True
         run["expect"], run["expect_at"] = [], ""
         self.fleet_run_set(run)
