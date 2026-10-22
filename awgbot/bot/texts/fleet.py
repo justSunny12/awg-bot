@@ -261,6 +261,8 @@ def _server_line(run: dict, server: str, plan: dict) -> str:
             return f"⚠️ Сервер AWG — обновление не удалось, вернул {prev}: {_e(run.get('reason') or SERVER_SILENT)}"
         return f"↩️ Сервер AWG — вернул {prev}"
     if state == "running" and not did and plan.get("server_want"):
+        if plan.get("wait"):
+            return f"🟡 Сервер AWG — ждёт: {_e(plan['wait'])}"        # причина — та же, что в журнале
         return "🟡 Сервер AWG — ждёт очереди"
     return f"✅ Сервер AWG — {_e(_ver(server))}"
 

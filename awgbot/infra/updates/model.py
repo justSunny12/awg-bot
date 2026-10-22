@@ -41,7 +41,7 @@ class Release:
     tag: str                    # как в GitHub, напр. "v1.2.0"
     version: tuple              # (1, 2, 0) — для сравнения
     body: str                   # тело релиза (changelog этой версии, без заголовка)
-    asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
+    asset_url: Optional[str]    # адрес ассета-поставки: прямая ссылка releases/download/… (мимо лимита API)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
     title: str = ""             # заголовок релиза без тега
     meta: Optional[dict] = None  # проверенные метаданные (meta.py) или None

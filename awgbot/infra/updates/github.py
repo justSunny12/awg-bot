@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Optional
 
@@ -44,18 +45,39 @@ def _request(url: str, accept: str) -> bytes:
     req.add_header("Accept", accept)
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
     req.add_header("User-Agent", "awg-bot-updater")
+    host = urllib.parse.urlsplit(url).hostname or url               # какой именно запрос повис — в причине
     last: Exception | None = None
     for attempt in range(1, _ATTEMPTS + 1):
         try:
             with net4.urlopen(req, timeout=_TIMEOUT) as resp:         # только IPv4
                 return resp.read()
         except urllib.error.HTTPError as e:
-            raise UpdateError(f"GitHub HTTP {e.code}: {e.reason}")
+            raise UpdateError(_http_error(e, host))
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             last = e
             if attempt < _ATTEMPTS:
                 time.sleep(_RETRY_PAUSE)
-    raise UpdateError(f"сеть недоступна: {last}")
+    raise UpdateError(f"сеть недоступна ({host}): {last}")
+
+
+def _http_error(e: urllib.error.HTTPError, host: str) -> str:
+    """Текст отказа HTTP; исчерпанный лимит API GitHub (60 запросов в час на адрес —
+    у ВПС он общий со шлюзами за NAT) — со временем сброса, чтобы не стучать зря."""
+    hdrs = getattr(e, "headers", None)
+    remaining = str(hdrs.get("x-ratelimit-remaining", "") if hdrs else "").strip()
+    reset = str(hdrs.get("x-ratelimit-reset", "") if hdrs else "").strip()
+    if e.code in (403, 429) and remaining == "0" and reset.isdigit():
+        from datetime import datetime, timezone
+        from awgbot.util import timeutil
+        when = timeutil.fmt_clock_ui(datetime.fromtimestamp(int(reset), timezone.utc))
+        return f"лимит запросов к GitHub исчерпан — сброс в {when}"
+    return f"GitHub HTTP {e.code} ({host}): {e.reason}"
+
+
+def _asset_url(a: dict) -> Optional[str]:
+    """Адрес для скачивания ассета: прямая ссылка releases/download/… — она в лимит
+    API не считается (API-адрес ассета считается как запрос); её нет — API-адрес."""
+    return a.get("browser_download_url") or a.get("url")
 
 
 def _digest_hex(asset: dict) -> Optional[str]:
@@ -99,7 +121,7 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
         meta_asset = None
         for a in r.get("assets", []):
             if a.get("name") == config.UPDATES_ASSET_NAME:
-                asset_url = a.get("url")
+                asset_url = _asset_url(a)
                 sha256 = _digest_hex(a)
             elif a.get("name") == config.UPDATES_META_ASSET_NAME:
                 meta_asset = a
@@ -148,7 +170,7 @@ def _read_meta(tag: str, asset: dict, cache: Optional[dict]):
     hit = (cache or {}).get(tag)
     if isinstance(hit, dict) and hit.get("digest") == digest and isinstance(hit.get("meta"), dict):
         return hit["meta"], None
-    url = asset.get("url")
+    url = _asset_url(asset)
     if not url:
         return None, "у метаданных релиза нет адреса"
     if int(asset.get("size") or 0) > _meta.META_MAX:

@@ -81,6 +81,7 @@ class UpdMixin:
                 if not busy:
                     break
                 if waited >= svc_busy_wait():
+                    log.warning("набор: команда %s не принята — занят: %s", "отката" if revert else "обновления", busy)
                     await asyncio.to_thread(svc._upd_state, "revert_failed" if revert else "refused",
                                             error=f"занят: {busy}")
                     await self.flush_upd_ack()
@@ -90,10 +91,12 @@ class UpdMixin:
             plan = svc.upd_revert_plan if revert else svc.upd_plan
             step, outcome, reason = await asyncio.to_thread(plan)
             if outcome == "done":
+                log.info("набор: %s — уже на цели, делать нечего", "откат" if revert else "обновление")
                 await asyncio.to_thread(svc._upd_state, "reverted" if revert else "done")
                 await self.flush_upd_ack()
                 return
             if outcome != "step":
+                log.warning("набор: %s не выполнено (%s): %s", "откат" if revert else "обновление", outcome, reason)
                 await asyncio.to_thread(svc._upd_state, "revert_failed" if revert else outcome, error=reason)
                 await self.flush_upd_ack()
                 if not revert:
@@ -103,9 +106,12 @@ class UpdMixin:
                 await asyncio.to_thread(svc.upd_accept, step)
                 await self.flush_upd_ack()
             await asyncio.sleep(pkg.random.uniform(*PAUSE_S))
+            log.info("набор: ступень %s — скачиваю и ставлю", getattr(step, "tag", step))
             try:
                 await asyncio.to_thread(svc.upd_apply, step)
+                log.info("набор: ступень %s запущена — апдейтер перезапустит агент", getattr(step, "tag", step))
             except Exception as e:                        # noqa: BLE001 — сеть, sha256, место
+                log.warning("набор: ступень %s не запустилась: %s", getattr(step, "tag", step), e)
                 await asyncio.to_thread(svc._upd_state, "revert_failed" if revert else "failed", error=str(e))
                 await self.flush_upd_ack()
                 if not revert:

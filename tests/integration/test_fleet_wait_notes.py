@@ -79,6 +79,38 @@ def test_the_live_message_names_the_foreign_command_instead_of_the_queue(fleet):
     assert "«Шлюз 1» — ждёт очереди" not in text, text
 
 
+def test_the_plan_carries_the_wait_reason_and_the_server_line_shows_it_until_the_answer(fleet):
+    """Пока ход ждёт чужую команду, строка сервера в живом сообщении — «ждёт:
+    <причина>» (та же, что в журнале), а не «ждёт очереди»; план отдаёт
+    причину в `wait`. После ответа шлюза `wait` пуст, строка сервера обычная —
+    иначе снятое ожидание продолжает висеть в сообщении."""
+    _stand(fleet)
+    fleet.tick()
+    plan = fleet.s.fleet_run_plan()
+    assert "выполняет команду вне хода" in plan["wait"], plan["wait"]
+    text = ft.fleet_live(plan)
+    assert "🟡 Сервер AWG — ждёт: «Шлюз 1» выполняет команду вне хода (до v4.0.0)" in text, text
+    assert "Сервер AWG — ждёт очереди" not in text, text
+    fleet.ack(1, "done")
+    plan = fleet.s.fleet_run_plan()
+    assert plan["wait"] == "", f"ожидание снято ответом, а план всё ещё ждёт: {plan['wait']!r}"
+    text = ft.fleet_live(plan)
+    assert "ждёт:" not in text, text
+    assert "Сервер AWG — ждёт очереди" not in text, text
+
+
+def test_a_run_that_is_not_waiting_has_an_empty_wait_and_the_queue_line(fleet):
+    """Ход не ждёт (шлюзы на связи без чужих команд, шаг сервера ещё не
+    сделан): `wait` пуст и строка сервера — прежняя «ждёт очереди»."""
+    fleet.mp.setattr(config, "INSTALLED_VERSION", "4.0.0")
+    fleet.releases(rel("v4.0.0", both=True), rel("v4.0.1", both=True))
+    fleet.slot(1, "4.0.0")
+    assert fleet.start("v4.0.1") == ""
+    plan = fleet.s.fleet_run_plan()
+    assert plan["wait"] == "", plan["wait"]
+    assert "🟡 Сервер AWG — ждёт очереди" in ft.fleet_live(plan)
+
+
 def test_an_offline_gateway_with_a_foreign_command_neither_holds_the_run_nor_changes_its_line(fleet, caplog):
     """Слот не на связи с чужой командой — прежняя логика: ход его не ждёт
     (шаг сервера сразу), в живом сообщении — «обновится, когда выйдет на связь»."""

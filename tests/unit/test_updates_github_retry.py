@@ -73,7 +73,7 @@ def test_three_network_failures_raise_with_last_error_text(monkeypatch):
     calls = _net(monkeypatch, [_timeout_err(), _timeout_err(), last])
     with pytest.raises(updates.UpdateError) as ei:
         gh._request(_URL, _ACCEPT)
-    assert "сеть недоступна" in str(ei.value)
+    assert "сеть недоступна (api.github.com): " in str(ei.value), "в тексте — хост запроса в скобках"
     assert "connection reset by peer" in str(ei.value), "в тексте — последняя ошибка, не первая"
     assert "timed out" not in str(ei.value), "в тексте — последняя ошибка, не первая"
     assert len(calls) == gh._ATTEMPTS == 3, "ровно _ATTEMPTS попыток, и это 3"
@@ -86,7 +86,7 @@ def test_http_error_is_not_retried(monkeypatch):
     calls = _net(monkeypatch, [err, b"never"])
     with pytest.raises(updates.UpdateError) as ei:
         gh._request(_URL, _ACCEPT)
-    assert "GitHub HTTP 404" in str(ei.value)
+    assert "GitHub HTTP 404 (api.github.com): Not Found" in str(ei.value), "в тексте — код, хост в скобках и причина"
     assert len(calls) == 1, "ответ с кодом ошибки — без повторов"
 
 
@@ -131,3 +131,29 @@ def test_download_asset_survives_two_network_failures_and_checks_sha256(monkeypa
     _net(monkeypatch, [_timeout_err(), b"other-bytes"])
     with pytest.raises(updates.UpdateError, match="sha256 не совпал"):
         updates.download_asset(bad)
+
+
+_ASSET_URL = "https://objects.githubusercontent.com/github-production-release-asset/1/2?X-Amz-Expires=300"
+
+
+def test_the_host_in_the_error_is_the_one_of_the_request_not_the_api_by_default(monkeypatch):
+    """Поставка качается не с api.github.com, а с objects.githubusercontent.com:
+    в «сеть недоступна (…)» — хост именно этого запроса, иначе по журналу
+    ищут неполадку не у того адреса (API отвечает, а CDN поставки — нет)."""
+    _net(monkeypatch, [_timeout_err(), _timeout_err(), _timeout_err()])
+    with pytest.raises(updates.UpdateError) as ei:
+        gh._request(_ASSET_URL, "application/octet-stream")
+    assert "сеть недоступна (objects.githubusercontent.com): " in str(ei.value), str(ei.value)
+    assert "api.github.com" not in str(ei.value), "хост взят не из URL запроса, а по умолчанию"
+
+
+def test_an_http_error_on_the_asset_names_the_asset_host(monkeypatch):
+    """403 на скачивании поставки (истёкшая подпись ссылки) — «GitHub HTTP 403
+    (objects.githubusercontent.com)», не api.github.com: это другой хост
+    и другая причина."""
+    err = urllib.error.HTTPError(_ASSET_URL, 403, "Forbidden", hdrs=None, fp=None)
+    calls = _net(monkeypatch, [err, b"never"])
+    with pytest.raises(updates.UpdateError) as ei:
+        gh._request(_ASSET_URL, "application/octet-stream")
+    assert str(ei.value) == "GitHub HTTP 403 (objects.githubusercontent.com): Forbidden", str(ei.value)
+    assert len(calls) == 1

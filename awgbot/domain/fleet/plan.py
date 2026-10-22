@@ -216,6 +216,8 @@ class FleetPlanMixin:
         run = self.fleet_run()
         plan = self.fleet_plan(self.fleet_release_of(str(run.get("tag") or "")))
         plan["server_settled"] = self.fleet_server_settled()
+        from . import order as _order
+        plan["wait"] = str(_order._WAIT_NOTED.get(str(run.get("id") or ""), "") or "")   # почему ход стоит
         return plan
 
     def fleet_progress(self):
