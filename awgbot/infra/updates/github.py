@@ -29,18 +29,32 @@ def _up():
     return updates
 
 
+_ATTEMPTS = 3                   # попыток на один запрос: аплинк может терять часть SYN
+_RETRY_PAUSE = 1.0              # с между попытками
+
+
 def _request(url: str, accept: str) -> bytes:
+    """GET к GitHub. Сетевая неудача (нет соединения, таймаут, обрыв) —
+    повтор до _ATTEMPTS раз: запрос идемпотентный, а потеря части SYN на
+    аплинке иначе роняла бы ступень обновления на ровном месте. Ответ HTTP с
+    кодом ошибки — без повторов."""
+    import time
     req = urllib.request.Request(url)
     req.add_header("Accept", accept)
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
     req.add_header("User-Agent", "awg-bot-updater")
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        raise UpdateError(f"GitHub HTTP {e.code}: {e.reason}")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise UpdateError(f"сеть недоступна: {e}")
+    last: Exception | None = None
+    for attempt in range(1, _ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            raise UpdateError(f"GitHub HTTP {e.code}: {e.reason}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+            if attempt < _ATTEMPTS:
+                time.sleep(_RETRY_PAUSE)
+    raise UpdateError(f"сеть недоступна: {last}")
 
 
 def _digest_hex(asset: dict) -> Optional[str]:
