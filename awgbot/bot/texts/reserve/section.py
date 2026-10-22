@@ -354,6 +354,9 @@ def dns_token_prompt(provider: str, zone_hint: str) -> str:
         return "✏️ <b>DynDNS2</b>\n\nПришли строку <code>https://логин:пароль@сервер/nic/update</code> — сообщение удалю сразу"
     if provider == "duckdns":
         return "✏️ <b>Токен DuckDNS</b>\n\nПришли токен из личного кабинета DuckDNS — сообщение удалю сразу"
+    if provider == "digitalplat":
+        return ("✏️ <b>Ключ DigitalPlat</b>\n\nПришли API-ключ <code>dp_live_…</code> из кабинета DigitalPlat One "
+                "(«Аккаунт» → «API-ключи») с областями <code>dns.read</code> и <code>dns.write</code> — сообщение удалю сразу")
     return (f"✏️ <b>Токен Cloudflare</b>\n\nПришли API-токен с правом Zone → DNS → Edit на зону "
             f"<code>{_e(zone_hint)}</code> — сообщение удалю сразу")
 

@@ -302,11 +302,20 @@ async def test_the_dns_screen_in_manual_mode_has_no_token_button(ui):
 
 async def test_the_provider_button_cycles_through_all_providers(ui):
     seen = []
-    for _ in range(5):
+    for _ in range(6):
         e = _edits(await ui.run.press(RsvCB(action="dns_prov")))
         seen.append(ui.svc.reserve_dns_provider())
         assert any(x.startswith("🏷 Провайдер: ") for x in _labels(e[0]))
-    assert seen == ["cloudflare", "duckdns", "dyndns2", "manual", "cloudflare"]
+    assert seen == ["cloudflare", "duckdns", "dyndns2", "digitalplat", "manual", "cloudflare"]
+
+
+async def test_the_digitalplat_key_prompt_names_the_key_prefix_and_scopes(ui):
+    """Без подсказки про `dp_live_` и области dns.read/dns.write человек
+    принесёт ключ без права записи — переезд упадёт на смене записи."""
+    ui.svc.reserve_dns_set_provider("digitalplat")
+    e = _edits(await ui.run.press(RsvCB(action="dns_token")))
+    assert "Ключ DigitalPlat" in e[0].text and "сообщение удалю" in e[0].text
+    assert "dp_live_" in e[0].text and "dns.read" in e[0].text and "dns.write" in e[0].text
 
 
 async def test_the_token_is_asked_deleted_from_the_chat_and_stored(ui):

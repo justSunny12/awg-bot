@@ -6,8 +6,9 @@ dnsapi — A-запись адреса для клиентов: чтение и 
 конверта под `M`). Факт смены проверяется не ответом API, а чтением: у
 провайдера через API и у авторитетного сервера зоны напрямую (`common`).
 
-Провайдеры первой версии: Cloudflare (`cloudflare`), DuckDNS (`duckdns`),
-протокол DynDNS2 — No-IP, Dynu, OVH DynHost и подобные (`dyndns2`), и
+Провайдеры: Cloudflare (`cloudflare`), DuckDNS (`duckdns`), протокол DynDNS2 —
+No-IP, Dynu, OVH DynHost, deSEC, Hurricane Electric и подобные (`dyndns2`),
+DigitalPlat DNS — хостинг кабинета DigitalPlat One (`digitalplat`), и
 «вручную» (`manual`): запись меняет человек, автоматический переезд
 невозможен.
 

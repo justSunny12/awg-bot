@@ -21,8 +21,9 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .state import _LOCK
 
-PROVIDERS: tuple[str, ...] = ("manual", "cloudflare", "duckdns", "dyndns2")
-PROVIDER_LABELS = {"manual": "вручную", "cloudflare": "Cloudflare", "duckdns": "DuckDNS", "dyndns2": "DynDNS2"}
+PROVIDERS: tuple[str, ...] = ("manual", "cloudflare", "duckdns", "dyndns2", "digitalplat")
+PROVIDER_LABELS = {"manual": "вручную", "cloudflare": "Cloudflare", "duckdns": "DuckDNS", "dyndns2": "DynDNS2",
+                   "digitalplat": "DigitalPlat"}
 RECORD_WATCH_SECONDS = 120
 TTL_WARN_S = 300                  # TTL записи выше — предупреждение: клиенты переходят медленно
 _OWN_IP_TTL = 600
@@ -65,8 +66,8 @@ class ReserveDnsMixin:
         return d
 
     def reserve_dns_set_token(self, text: str) -> dict:
-        """Токен из чата: Cloudflare и DuckDNS — токен; DynDNS2 — строка
-        https://логин:пароль@сервер/nic/update."""
+        """Токен из чата: Cloudflare и DuckDNS — токен, DigitalPlat — ключ
+        dp_live_…; DynDNS2 — строка https://логин:пароль@сервер/nic/update."""
         text = str(text or "").strip()
         if not text or len(text) > 512 or any(ch.isspace() for ch in text):
             raise ServiceError("Это не похоже на токен: одна строка без пробелов")

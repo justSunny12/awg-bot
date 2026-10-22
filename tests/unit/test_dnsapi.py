@@ -27,7 +27,7 @@ import urllib.request
 import pytest
 
 from awgbot.util import dnsapi
-from awgbot.util.dnsapi import cloudflare, common, duckdns, dyndns2, manual
+from awgbot.util.dnsapi import cloudflare, common, digitalplat, duckdns, dyndns2, manual
 
 pytestmark = pytest.mark.unit
 
@@ -439,3 +439,114 @@ def test_the_ttl_of_the_record_is_the_smallest_of_the_answer(dns):
 
 def test_no_record_has_ttl_zero(dns):
     assert dnsapi.read_authoritative_ttl("nothing.example.net") == ([], 0)
+
+
+DP = {"provider": "digitalplat", "name": "vpn.example.dpdns.org", "token": "DUMMY-dp_live"}
+_DP_DOMAINS = json.dumps({"success": True, "data": [
+    {"domain": "dpdns.org", "status": "active"},            # короткий суффикс — ловушка
+    {"domain": "example.dpdns.org", "status": "active"},    # нужный, самый длинный
+    {"domain": "other.dpdns.org", "status": "active"},
+]})
+
+
+def _dp_records(*recs):
+    return json.dumps({"success": True, "data": list(recs)})
+
+
+_DP_A = {"id": "R7", "type": "A", "name": "vpn", "value": "198.51.100.7", "ttl": 120, "protected": False,
+         "etag": "W/\"e1\""}
+
+
+def _dp_routes(over=None):
+    # Порядок важен: заглушка матчит по вхождению начала пути, и «/domains»
+    # вошёл бы и в путь записей — записи первыми.
+    routes = {
+        ("GET", "/domains/example.dpdns.org/dns/records"): (200, _dp_records(_DP_A)),
+        ("GET", "/domains/dpdns.org/dns/records"): (200, _dp_records(
+            {"id": "X1", "type": "A", "name": "vpn.example", "value": "203.0.113.200", "ttl": 60})),
+        ("GET", "/domains"): (200, _DP_DOMAINS),
+        ("PATCH", "/domains/example.dpdns.org/dns/records/R7"):
+            (202, json.dumps({"success": True, "data": {"operation_id": "op1"}})),
+    }
+    routes.update(over or {})
+    return routes
+
+
+def test_digitalplat_picks_the_longest_domain_and_reads_the_record(monkeypatch):
+    """Домен — самый длинный суффикс имени: взяв `dpdns.org` вместо
+    `example.dpdns.org`, бот читал бы чужую зону и менял бы не ту запись."""
+    h = _Http(monkeypatch, digitalplat, _dp_routes())
+    assert digitalplat.read(DP) == "198.51.100.7"
+    urls = [c["url"] for c in h.calls]
+    assert any(u.endswith("/domains/example.dpdns.org/dns/records") for u in urls), urls
+    assert not any("/domains/dpdns.org/" in u for u in urls), "зона короткого суффикса не должна читаться"
+    assert all(c["headers"].get("Authorization") == "Bearer DUMMY-dp_live" for c in h.calls)
+
+
+def test_digitalplat_reads_the_domain_itself_as_the_at_record(monkeypatch):
+    cfg = dict(DP, name="example.dpdns.org")
+    rec = dict(_DP_A, name="@", value="203.0.113.4")
+    _Http(monkeypatch, digitalplat, _dp_routes({("GET", "/domains/example.dpdns.org/dns/records"):
+                                                  (200, _dp_records(rec))}))
+    assert digitalplat.read(cfg) == "203.0.113.4"
+    assert digitalplat.check(cfg) == "203.0.113.4", "check — это чтение через API"
+
+
+def test_digitalplat_set_patches_by_id_with_ttl_etag_and_a_fresh_idempotency_key(monkeypatch):
+    """Без `If-Match` правка сядет поверх чужой; с одинаковым `Idempotency-Key`
+    второй переезд провайдер посчитает повтором первого и адрес не сменит."""
+    h = _Http(monkeypatch, digitalplat, _dp_routes())
+    digitalplat.set(DP, "203.0.113.9")
+    digitalplat.set(DP, "203.0.113.10")
+    patch = [c for c in h.calls if c["method"] == "PATCH"]
+    assert len(patch) == 2 and all(c["url"].endswith("/domains/example.dpdns.org/dns/records/R7") for c in patch)
+    assert patch[0]["body"] == {"value": "203.0.113.9", "ttl": 120, "disabled": False}
+    assert patch[1]["body"]["value"] == "203.0.113.10"
+    assert all(c["headers"].get("If-Match") == "W/\"e1\"" for c in patch)
+    keys = [c["headers"].get("Idempotency-Key") for c in patch]
+    assert all(keys) and keys[0] != keys[1], f"ключ идемпотентности пуст или повторяется: {keys}"
+
+
+def test_digitalplat_set_without_an_etag_sends_no_if_match_and_defaults_the_ttl(monkeypatch):
+    rec = {"id": "R7", "type": "A", "name": "vpn", "value": "198.51.100.7"}
+    h = _Http(monkeypatch, digitalplat, _dp_routes({("GET", "/domains/example.dpdns.org/dns/records"):
+                                                      (200, _dp_records(rec))}))
+    digitalplat.set(DP, "203.0.113.9")
+    patch = [c for c in h.calls if c["method"] == "PATCH"]
+    assert len(patch) == 1 and "If-Match" not in patch[0]["headers"]
+    assert patch[0]["body"]["ttl"] == 300 and patch[0]["headers"].get("Idempotency-Key")
+
+
+def test_digitalplat_set_refuses_a_non_ipv4_before_the_patch(monkeypatch):
+    h = _Http(monkeypatch, digitalplat, _dp_routes())
+    with pytest.raises(dnsapi.DnsError):
+        digitalplat.set(DP, "vpn.example.dpdns.org")
+    assert not [c for c in h.calls if c["method"] == "PATCH"]
+
+
+@pytest.mark.parametrize("over, words", [
+    ({("GET", "/domains"): (200, json.dumps({"success": True, "data": [{"domain": "other.dpdns.org"}]}))},
+     "домен .* не найден"),
+    ({("GET", "/domains/example.dpdns.org/dns/records"): (200, _dp_records())}, "A-записи .* нет"),
+    ({("GET", "/domains/example.dpdns.org/dns/records"):
+        (200, _dp_records(_DP_A, dict(_DP_A, id="R8", value="198.51.100.8")))}, "несколько A-записей .* оставь одну"),
+    ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (409, json.dumps({"success": False, "error": {
+        "code": "etag_mismatch", "message": "Record was modified"}}))}, "Record was modified"),
+    ({("GET", "/domains"): (401, json.dumps({"success": False, "error": {
+        "code": "unauthorized", "message": "Invalid API key"}}))}, "Invalid API key"),
+    ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (200, json.dumps({"success": False}))}, "код 200"),
+    ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (502, "<html>Bad gateway</html>")}, "не JSON"),
+])
+def test_digitalplat_api_failures_are_dns_errors(monkeypatch, over, words):
+    _Http(monkeypatch, digitalplat, _dp_routes(over))
+    with pytest.raises(dnsapi.DnsError, match=words):
+        digitalplat.set(DP, "203.0.113.9")
+
+
+def test_digitalplat_record_with_a_cname_of_the_same_name_is_ignored(monkeypatch):
+    """Среди записей имени — только A: CNAME/TXT с тем же именем не должны
+    ни считаться «несколькими», ни подменять адрес."""
+    txt = {"id": "T1", "type": "TXT", "name": "vpn", "value": "v=spf1 -all"}
+    _Http(monkeypatch, digitalplat, _dp_routes({("GET", "/domains/example.dpdns.org/dns/records"):
+                                                  (200, _dp_records(txt, _DP_A))}))
+    assert digitalplat.read(DP) == "198.51.100.7"

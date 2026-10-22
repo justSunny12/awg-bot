@@ -233,8 +233,8 @@ def provider_for(cfg: dict) -> Provider:
 
 
 def _load() -> dict:
-    from . import cloudflare, duckdns, dyndns2, manual
-    return {m.id: m for m in (cloudflare, duckdns, dyndns2, manual)}
+    from . import cloudflare, digitalplat, duckdns, dyndns2, manual
+    return {m.id: m for m in (cloudflare, digitalplat, duckdns, dyndns2, manual)}
 
 
 PROVIDERS: dict = {}
