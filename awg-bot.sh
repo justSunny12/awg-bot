@@ -42,7 +42,10 @@
 #                          собирается.
 #   update [<tgz>]        обновить код/зависимости/юнит из архива (по умолчанию —
 #                          awg-bot.tgz рядом; conf/env/данные не трогаются,
-#                          если явно не согласиться на их удаление). Распаковка
+#                          если явно не согласиться на их удаление; без
+#                          терминала — самообновление из бота транзиентным
+#                          юнитом awg-bot-selfupdate-* — вопросы не задаются,
+#                          берётся умолчание, данные остаются). Распаковка
 #                          (--no-same-owner, код — root), проверка состава и сборка
 #                          ядра — ДО остановки сервиса; прежний код отодвигается в
 #                          $INSTALL_DIR/.prev-code и при отказе подмены возвращается
@@ -357,10 +360,14 @@ ask_masked() {  # ask_masked VAR "prompt" — ввод с маской: видн
     printf '\n' > /dev/tty
     printf -v "$__v" '%s' "$__s"
 }
-confirm() {  # confirm "prompt" "default(y/n)" → 0/1  (Enter = default)
+confirm() {  # confirm "prompt" "default(y/n)" → 0/1  (Enter = default; без терминала — default молча)
     local p="$1" d="${2:-n}" a hint="[y/N]"
     [[ "$d" == "y" ]] && hint="[Y/n]"
-    read -r -p "$p $hint: " a < /dev/tty; a="${a:-$d}"
+    if { : < /dev/tty; } 2>/dev/null; then
+        read -r -p "$p $hint: " a < /dev/tty; a="${a:-$d}"
+    else
+        a="$d"                                  # апдейтер под systemd-run: терминала нет, ответ — умолчание
+    fi
     [[ "${a,,}" == "y" ]]
 }
 require_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root: sudo awg-bot ${VERB:-}"; }

@@ -208,6 +208,11 @@ def _live_gw_line(g: dict, run: dict, user: str) -> str:
         return f"🟡 {name} — пропал посреди обновления: доведётся, когда выйдет на связь"
     want = g.get("want") or ""
     ver = g.get("version") or ""
+    if not mine and st.get("state") in ("sent", "accepted") and run.get("state") == "running" \
+            and g.get("online"):
+        # команда вне хода (догон, следование) ещё выполняется — ход ждёт её итога, а не очереди
+        return (f"🟡 {name} — выполняет команду вне хода: обновляется до {_e(_ver(st.get('target') or ''))}, "
+                f"ход ждёт её итога")
     if not mine and run.get("state") in ("rolling_back", "rolled_back", "rollback_failed") \
             and g.get("participant"):
         return ""                                         # ход его не трогал — он на прежнем

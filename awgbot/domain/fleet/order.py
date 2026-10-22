@@ -35,6 +35,7 @@ log = logging.getLogger("awgbot.fleet")
 
 LOST_AFTER_S = 15 * 60          # шаг шлюза без сессии столько — шлюз недоступен, ход идёт дальше
 _STARTED = timeutil.now()       # запуск этого процесса: от него окно ожидания переподключения шлюзов
+_WAIT_NOTED: dict = {}          # id хода → последняя записанная в журнал причина ожидания
 GW_STEP_MAX_S = 30 * 60         # шлюз на связи без ответа на шаг столько — шаг не удался
 
 _LOCK = threading.RLock()       # один такт за раз: слушатель, кнопка и старт решают в разных потоках
@@ -144,7 +145,8 @@ class FleetOrderMixin:
             return out                                    # сервер посреди своего шага — ждём факта
         target = self.fleet_release_of(str(run.get("tag") or ""))
         if target is None:
-            return out                                    # выпуски ещё не перечитаны после перезапуска
+            self._fleet_wait_note(run, "выпуски ещё не перечитаны после перезапуска")
+            return out
         gws = self.fleet_gateways()
         # шаг шлюза в пути: ждём его ответа или признаём недоступным
         for g in gws:
@@ -154,6 +156,8 @@ class FleetOrderMixin:
             if st.get("run") != run["id"]:
                 # команда вне хода у шлюза на связи — ждём её итога (второй агент не примет)
                 if g["online"] and _since(str(st.get("at") or "")) < GW_STEP_MAX_S:
+                    self._fleet_wait_note(run, f"«{g['name']}» выполняет команду вне хода "
+                                               f"(до {st.get('target') or '?'}) — ждём её итога")
                     return out
                 continue
             if g["online"]:
@@ -176,7 +180,9 @@ class FleetOrderMixin:
             out.live = True
             log.info("набор: «%s» пропал посреди обновления — ход идёт дальше", g["name"])
         if self._fleet_expecting(run, gws):
-            return out                                    # шлюзы прежнего процесса ещё переподключаются
+            self._fleet_wait_note(run, "шлюзы прежнего процесса ещё переподключаются")
+            return out
+        self._fleet_wait_note(run, "")
         step, needs_gw = self.fleet_server_step(target)
         if step is not None:
             run["steps"].append(["main", step.tag])
@@ -208,6 +214,16 @@ class FleetOrderMixin:
             return self._fleet_rollback_begin(run, out, "main",
                                               "серверу AWG нужны агенты шлюзов новее, чем в выпуске")
         return self._fleet_commit(run, out)
+
+    def _fleet_wait_note(self, run: dict, why: str) -> None:
+        """Тихое ожидание хода — одной строкой в журнал при смене причины:
+        иначе зависший ход по журналу неотличим от ожидания."""
+        key = str(run.get("id") or "")
+        if _WAIT_NOTED.get(key) == why:
+            return
+        _WAIT_NOTED[key] = why
+        if why:
+            log.info("набор: ход до %s ждёт: %s", run.get("tag") or "?", why)
 
     def _fleet_expect(self, run: dict, gws: list) -> None:
         """Сервер перезапускается своим шагом: доступные сейчас участники
