@@ -22,6 +22,14 @@ def _name(g: dict, user: str) -> str:
     return gw_ref(g.get("name") or "", g.get("label") or "", slot=int(g.get("slot") or 0), bot_username=user)
 
 
+def _clock(iso: str) -> str:
+    from awgbot.util import timeutil
+    try:
+        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
+    except ValueError:
+        return "?"
+
+
 def _since(g: dict) -> str:
     date = _seen_date(g.get("seen") or "")
     return f"не на связи с {date}" if date else "не на связи"
@@ -75,6 +83,10 @@ def gw_state_line(g: dict, *, release: str = "", run: dict | None = None) -> str
     if not st.get("run") and st.get("final") and state in ("failed", "rolled_back", "refused"):
         return (f"⚠️ не обновился до {_e(_ver(st.get('target')))} после выхода на связь: "
                 f"{_e(st.get('error') or state)}")
+    if not st.get("run") and state in ("failed", "rolled_back", "refused") and st.get("next_at"):
+        # догон не удался, повтор назначен — молчать нельзя: шлюз отстаёт от выпуска
+        return (f"⚠️ не обновился до {_e(_ver(st.get('target')))}: {_e(st.get('error') or state)} — "
+                f"повтор в {_e(_clock(str(st['next_at'])))}")
     if want and ver and _ver(ver) != _ver(want):
         from awgbot.infra import updates
         a, b = updates.parse_version(ver), updates.parse_version(want)

@@ -51,7 +51,8 @@ async def run_guest() -> None:
     services.guest_snapshot_hook_install()
     services.ensure_admin_client()
     services.gwlink_sessions_reset()
-    bot = pkg.Bot(config.BOT_TOKEN,
+    from awgbot.runtime import tgsession
+    bot = pkg.Bot(config.BOT_TOKEN, session=tgsession.make(),
                   default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
     try:
         me = await bot.get_me()

@@ -182,3 +182,40 @@ async def test_the_blocked_line_is_escaped_and_fits_the_message(fleet, monkeypat
     assert len(text) <= 4096, len(text)
     tail = text.rsplit("\n", 1)[-1]
     assert tail == "⛔ Обновление до v3.5.0 сейчас недоступно: занято &lt;b&gt;переездом&lt;/b&gt; &amp; ждёт", tail
+
+
+# ── строка шлюза: догон не удался, повтор назначен ──────────────────────────
+
+def _retry_gw(**st) -> dict:
+    base = {"run": "", "state": "failed", "target": "v4.0.0", "error": "GitHub не ответил",
+            "final": False, "next_at": "2026-10-22T07:30:00+03:00"}
+    return {"slot": 1, "name": "Шлюз 1", "version": "3.4.1", "want": "4.0.0", "online": True,
+            "release": True, "upd": True, "device": "x", "upd_state": {**base, **st}}
+
+
+def test_a_failed_catch_up_waiting_for_a_retry_says_why_and_when():
+    """Пока ждём повтор, шлюз отстаёт от выпуска — раздел обязан сказать,
+    почему и когда следующая попытка; пустая строка оставляла админа гадать."""
+    assert ft.gw_state_line(_retry_gw()) == \
+        "⚠️ не обновился до v4.0.0: GitHub не ответил — повтор в 09:30 (UTC+5)"
+    assert ft.gw_state_line(_retry_gw(state="rolled_back", error="")) == \
+        "⚠️ не обновился до v4.0.0: rolled_back — повтор в 09:30 (UTC+5)", "без текста ошибки — состояние"
+
+
+def test_after_the_last_retry_the_line_is_the_final_one():
+    """Повторы исчерпаны (final) — прежняя строка «после выхода на связь»,
+    без времени: его нет, повтора не будет."""
+    assert ft.gw_state_line(_retry_gw(final=True, next_at="")) == \
+        "⚠️ не обновился до v4.0.0 после выхода на связь: GitHub не ответил"
+    assert ft.gw_state_line(_retry_gw(final=True)) == \
+        "⚠️ не обновился до v4.0.0 после выхода на связь: GitHub не ответил", "final важнее остатка next_at"
+
+
+def test_an_unreadable_retry_time_does_not_hide_the_line():
+    assert ft.gw_state_line(_retry_gw(next_at="вчера")) == \
+        "⚠️ не обновился до v4.0.0: GitHub не ответил — повтор в ?"
+
+
+def test_a_failure_inside_a_run_is_not_shown_as_a_retry():
+    """Неудача шага хода (run задан) — её показывает ход, не строка повтора."""
+    assert "повтор в" not in ft.gw_state_line(_retry_gw(run="a1b2c3d4"))

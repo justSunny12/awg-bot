@@ -56,8 +56,10 @@ async def main() -> None:
     # переподключился. До поллинга — чтобы ни один экран их не увидел.
     services.gwlink_sessions_reset()
 
+    from awgbot.runtime import tgsession
     bot = pkg.Bot(
         config.BOT_TOKEN,
+        session=tgsession.make(),                    # короткий connect и повтор соединения
         # Превью ссылок выключены для всех сообщений: уведомление об обновлении
         # несёт список ссылок на релизы, и карточка первой из них — шум.
         default=DefaultBotProperties(parse_mode=ParseMode.HTML,

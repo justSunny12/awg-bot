@@ -97,6 +97,24 @@ def test_a_failed_catch_up_does_not_roll_back_and_retries_with_jitter(fleet, mon
     assert [s for s, _ in fleet.sent(fleet.tick())] == [1], "«🔁 Повторить» не вернул догон"
 
 
+def test_the_section_shows_the_retry_time_while_a_catch_up_waits(fleet, monkeypatch):
+    """Между неудачным догоном и повтором раздел «⬆️ Обновления» называет
+    причину и время повтора — иначе отставший шлюз в разделе без пояснения."""
+    import random
+    _gw_release(fleet)
+    fleet.slot(1, online=False)
+    fleet.start()
+    assert fleet.tick().send == [] and fleet.run()["state"] == "done"
+    at = datetime.datetime(2026, 10, 22, 10, 0, tzinfo=timeutil.TZ)
+    monkeypatch.setattr(timeutil, "now", lambda: at)
+    monkeypatch.setattr(random, "uniform", lambda lo, hi: 1.0)        # без джиттера: ровно 30 минут
+    fleet.hello(1, "3.4.0")
+    fleet.ack(1, "failed", error="GitHub не ответил")
+    assert not fleet.st(1).get("final") and fleet.st(1).get("next_at"), "догон не назначил повтор"
+    assert "🛰 «Шлюз 1»: v3.4.0 · ⚠️ не обновился до v3.4.1: GitHub не ответил — повтор в 10:30 (UTC+5)" \
+        in ft.fleet_section(fleet.s.fleet_plan(None))
+
+
 def test_a_gateway_back_mid_run_joins_the_end_of_the_queue_and_its_failure_rolls_back(fleet):
     fleet.releases(rel("v3.4.0", both=True), rel("v3.4.1", gw=BOTH))
     fleet.slot(1)

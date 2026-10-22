@@ -76,19 +76,9 @@ async def run_gateway() -> None:
     # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель
     # только IPv4, а резолвер отдаёт api.telegram.org сначала AAAA-адресом:
     # aiohttp полез бы по v6 в никуда и утонул в таймауте ещё до v4-попытки.
-    # Прибиваем сессию к IPv4. _connector_init — приватное поле aiogram, но
-    # это единственная точка, куда доезжают параметры TCPConnector; отказ его
-    # заполнить не фатален — тогда просто работаем как обычно.
-    session = None
-    if settings.get_bool("app.gateway.ipv4_only", True):
-        try:
-            import socket
-            from aiogram.client.session.aiohttp import AiohttpSession
-            session = AiohttpSession()
-            session._connector_init["family"] = socket.AF_INET   # noqa: SLF001
-        except Exception as e:                           # noqa: BLE001
-            log.warning("gateway: не смог ограничить сессию IPv4: %s", e)
-            session = None
+    # Прибиваем сессию к IPv4 (tgsession: там же короткий connect и повтор).
+    from awgbot.runtime import tgsession
+    session = tgsession.make(ipv4_only=settings.get_bool("app.gateway.ipv4_only", True))
     bot = pkg.Bot(config.BOT_TOKEN, session=session,
               default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                            link_preview_is_disabled=True))
