@@ -52,10 +52,26 @@ def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "", retry: bo
         back_button(br))
 
 
+def _same(a: str, b: str) -> bool:
+    return str(a or "").lstrip("v") == str(b or "").lstrip("v")
+
+
 def _retry_due(plan: dict) -> bool:
-    if (plan.get("run") or {}).get("state") in ("rolled_back", "rollback_failed"):
+    """«🔁 Повторить» честна, только пока цель та же, что у неудачи: откатился
+    ход до vX, а доступна уже vY — кнопка «⬆️ Обновить до vY» (повтор пошёл бы
+    на vY под чужим именем). Откат не прошёл — повтор нужен при любой цели:
+    пока он не нажат, сервер AWG шлюзам команд не шлёт."""
+    run = plan.get("run") or {}
+    tag = str(plan.get("tag") or "")
+    if run.get("state") == "rollback_failed":
         return True
-    return any((g.get("upd_state") or {}).get("final") for g in plan.get("gateways") or [])
+    if run.get("state") == "rolled_back" and (not tag or _same(tag, run.get("tag"))):
+        return True
+    for g in plan.get("gateways") or []:
+        st = g.get("upd_state") or {}
+        if st.get("final") and (not g.get("want") or _same(g.get("want"), st.get("target"))):
+            return True                               # повторы догона исчерпаны на нынешней же цели
+    return False
 
 
 async def screen(br, services, key: str = ""):

@@ -123,9 +123,13 @@ def fleet_section(plan: dict, *, scan_failed: bool = False, skipped=(), bot_user
         lines.append(f"⏳ Идёт обновление до {_e(_ver(run.get('tag')))}")
     elif state == "rolled_back":
         who, many = _who(run)
-        lines.append(f"⚠️ Обновление до {_e(_ver(run.get('tag')))} отменено — {who} "
-                     f"{'вернулись' if many else 'вернулся'} на {_e(_ver(run.get('prev')))}: "
-                     f"{_e(run.get('reason') or '')}".rstrip(": "))
+        line = (f"⚠️ Обновление до {_e(_ver(run.get('tag')))} отменено — {who} "
+                f"{'вернулись' if many else 'вернулся'} на {_e(_ver(run.get('prev')))}: "
+                f"{_e(run.get('reason') or '')}".rstrip(": "))
+        if tag and _ver(tag) != _ver(run.get("tag") or ""):
+            # цель ушла вперёд: повтора той же цели не будет — кнопка ниже ведёт на новую
+            line += f". Доступна новее — {_e(_ver(tag))}, обновление пойдёт на неё"
+        lines.append(line)
     elif state == "rollback_failed":
         lines.append("⚠️ Откат не удался — пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт")
     server = _ver(plan.get("server") or "")

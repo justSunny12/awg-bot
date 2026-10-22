@@ -144,6 +144,8 @@ class FleetRollbackMixin:
             target = self.fleet_target()
             if target is None:
                 return "nothing"
+            if run.get("state") == ROLLED_BACK and str(target.tag).lstrip("v") != str(run.get("tag") or "").lstrip("v"):
+                return "changed"                          # повтор пошёл бы на другую цель — пусть её и выберут
             if self._fleet_links_busy():
                 return "links"                            # итог и «🔁 Повторить» остаются на экране до конца смены ключей
             run["state"] = ""                             # ход закрыт — новый с того, что стоит
