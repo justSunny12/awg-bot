@@ -11,7 +11,7 @@ from awgbot.domain import gwcfg
 
 from ..base import log
 
-GETME_TIMEOUT = 15          # с — getMe новым токеном (через аплинк, как вся связь агента с Telegram)
+GETME_TIMEOUT = 10          # с — getMe новым токеном (через аплинк, как вся связь агента с Telegram)
 _NOTE_KEY = "cfg_token_note"   # после перезапуска — сказать в чат, что бот на новом токене
 
 

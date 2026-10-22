@@ -294,7 +294,7 @@ fetch() {   # fetch NAME URL SHA → путь к файлу
     local name="$1" url="$2" sha="$3" f="$SRC_CACHE/$1.tar.gz"
     mkdir -p "$SRC_CACHE"; chmod 700 "$SRC_CACHE"
     if [[ ! -f "$f" ]] || ! printf '%s  %s\n' "$sha" "$f" | sha256sum -c --quiet - >/dev/null 2>&1; then
-        run curl -fsSL --retry 3 -o "$f.part" "$url"
+        run curl -fsSL --retry 3 --connect-timeout 5 --speed-time 10 --speed-limit 1024 -o "$f.part" "$url"
         [[ "$PLAN" -eq 1 ]] && { printf '%s' "$f"; return 0; }
         printf '%s  %s\n' "$sha" "$f.part" | sha256sum -c --quiet - \
             || { rm -f "$f.part"; die "$name: sha256 не совпал с манифестом — файл не тот, ставить не буду"; }

@@ -80,7 +80,7 @@ def _ctx():
     return ssl.create_default_context()
 
 
-def check_imap(acc: MailAccount, timeout: float = 15.0) -> None:
+def check_imap(acc: MailAccount, timeout: float = 10.0) -> None:
     """Вход по IMAP. Ошибка — MailError с понятным текстом."""
     try:
         conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=_ctx(), timeout=timeout)
@@ -99,7 +99,7 @@ def check_imap(acc: MailAccount, timeout: float = 15.0) -> None:
             pass
 
 
-def check_smtp(acc: MailAccount, timeout: float = 15.0) -> None:
+def check_smtp(acc: MailAccount, timeout: float = 10.0) -> None:
     """Вход по SMTP (STARTTLS), без отправки."""
     try:
         with smtplib.SMTP(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
@@ -112,7 +112,7 @@ def check_smtp(acc: MailAccount, timeout: float = 15.0) -> None:
 
 
 def send_mail(acc: MailAccount, to_addr: str, subject: str, body: str,
-              timeout: float = 20.0, attachments=None) -> None:
+              timeout: float = 10.0, attachments=None) -> None:
     """attachments — [(имя файла, байты)], уходят как application/octet-stream."""
     msg = EmailMessage()
     msg["From"] = acc.login

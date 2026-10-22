@@ -31,7 +31,7 @@ from ..types import Notification
 from ..gateway_link.common import log
 
 LEARNED_MIN_PREFIX = 12               # шире /12 не учим
-FETCH_TIMEOUT = 15
+FETCH_TIMEOUT = 10              # с — правило проекта: наружу не дольше 10 с
 
 
 def pool_path() -> Path:

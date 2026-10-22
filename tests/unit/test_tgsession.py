@@ -72,7 +72,8 @@ def _bot() -> Bot:
 
 async def test_a_connect_timeout_is_retried_three_times_with_a_short_connect_limit(monkeypatch):
     """Соединение не установилось трижды — три попытки, у каждой connect 5 с
-    при общем пределе 60 с, и наружу уходит та же сетевая ошибка."""
+    при общем пределе 10 с (правило проекта: наружу не дольше 10 с), и наружу
+    уходит та же сетевая ошибка."""
     api = _Api(monkeypatch, *(_net(aiohttp.ServerTimeoutError("connect")) for _ in range(3)))
     with pytest.raises(TelegramNetworkError):
         await _bot()(GetMe())
@@ -80,7 +81,7 @@ async def test_a_connect_timeout_is_retried_three_times_with_a_short_connect_lim
     for tmo in api.timeouts:
         assert isinstance(tmo, aiohttp.ClientTimeout), "в aiohttp ушёл не ClientTimeout"
         assert tmo.sock_connect == 5.0, "установление соединения не ограничено 5 с"
-        assert tmo.total == 60.0, "общий предел запроса отличается от 60 с aiogram"
+        assert tmo.total == 10.0, "общий предел запроса отличается от 10 с правила проекта"
 
 
 async def test_a_refused_route_is_retried_and_the_second_attempt_returns_the_answer(monkeypatch):
@@ -122,9 +123,17 @@ def test_ipv4_only_pins_the_connector_family():
     assert "family" not in tgsession.make()._connector_init                           # noqa: SLF001
 
 
+def test_the_default_total_limit_is_ten_seconds():
+    """Правило проекта: запрос наружу — не дольше 10 с. Сессия без явного
+    таймаута берёт именно этот предел, а не 60 с aiogram по умолчанию —
+    иначе зависший запрос к Telegram держит кнопку минуту."""
+    assert tgsession.TOTAL_S == 10.0
+    assert tgsession.make().timeout == 10.0, "сессия не взяла TOTAL_S общим пределом запроса"
+
+
 async def test_an_explicit_timeout_becomes_the_total_limit(monkeypatch):
-    """Явный таймаут вызова (как у long polling) — общий предел запроса,
-    connect при этом остаётся коротким."""
+    """Явный таймаут вызова (как у long polling) — общий предел запроса и
+    приоритетнее TOTAL_S, connect при этом остаётся коротким."""
     api = _Api(monkeypatch, {"id": 1})
     await _bot()(GetMe(), request_timeout=25)
     assert api.timeouts[0].total == 25.0

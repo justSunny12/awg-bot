@@ -38,7 +38,8 @@ async def refresh(services, slot_id: int) -> bool:
         return False
     _next_try.pop(int(slot_id), None)             # явный вызов — без паузы
     from aiogram import Bot
-    bot = Bot(token)
+    from awgbot.runtime import tgsession
+    bot = Bot(token, session=tgsession.make())          # короткий connect, ≤ 10 с, повтор соединения
     try:
         me = await bot.get_me()
     except Exception as e:                                # noqa: BLE001

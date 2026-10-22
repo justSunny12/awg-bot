@@ -85,19 +85,19 @@ class FeedsMixin:
 
         def retry_soon() -> None:
             self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(1800 * random.uniform(0.6, 1.4))))
-        body, err, _code = routing.fetch(self._LAN_DOMAINS_URL, timeout=60)
+        body, err, _code = routing.fetch(self._LAN_DOMAINS_URL, timeout=10)
         if body is None or len(re.findall(r"(?m)^ipset=/", body)) < 10:
             log.warning("канал линка: фид доменов локальной сети не получен (%s)", err or "короткий")
             retry_soon()
             return False
         nets: list[str] = []
         for svc in self._LAN_SERVICES:
-            text, err, _code = routing.fetch(f"{self._LAN_ITDOG}/Subnets/IPv4/{svc}.lst", timeout=60)
+            text, err, _code = routing.fetch(f"{self._LAN_ITDOG}/Subnets/IPv4/{svc}.lst", timeout=10)
             if text is None:
                 log.info("канал линка: подсети %s не получены (%s)", svc, err)
                 continue
             nets += re.findall(r"(?m)^\d+\.\d+\.\d+\.\d+/\d+$", text)
-        goog, err, _code = routing.fetch(self._LAN_GOOG_URL, timeout=60)
+        goog, err, _code = routing.fetch(self._LAN_GOOG_URL, timeout=10)
         if goog is not None:
             nets += re.findall(r'"ipv4Prefix"\s*:\s*"(\d+\.\d+\.\d+\.\d+/\d+)"', goog)
         if not nets:

@@ -16,7 +16,7 @@ from .base import log, RoutingError
 # Внешние списки и конфиг dnsmasq
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fetch(url: str, timeout: int = 15) -> tuple[Optional[str], str, int]:
+def fetch(url: str, timeout: int = 10) -> tuple[Optional[str], str, int]:
     """Скачать текст. Возвращает (тело, ошибка, код ответа).
 
     Не исключение: недоступность апстрима не должна ронять ни старт бота, ни

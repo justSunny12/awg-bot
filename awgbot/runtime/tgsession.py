@@ -24,6 +24,7 @@ from aiogram.exceptions import TelegramNetworkError
 log = logging.getLogger("awgbot.tgsession")
 
 CONNECT_S = 5.0                 # на установление TCP-соединения с api.telegram.org
+TOTAL_S = 10.0                  # весь запрос: правило проекта — наружу не дольше 10 с (getUpdates — свой, от aiogram)
 ATTEMPTS = 3                    # попыток соединения на один запрос
 RETRY_PAUSE_S = 0.5             # пауза между попытками
 
@@ -35,6 +36,7 @@ class RetryingSession(AiohttpSession):
 
     def __init__(self, *, ipv4_only: bool = False, connect_s: float = CONNECT_S,
                  attempts: int = ATTEMPTS, **kwargs: Any) -> None:
+        kwargs.setdefault("timeout", TOTAL_S)
         super().__init__(**kwargs)
         self.connect_s = float(connect_s)
         self.attempts = max(1, int(attempts))

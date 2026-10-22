@@ -19,7 +19,7 @@ from .model import Release, UpdateError, parse_version
 _AWG_BOT_BIN = "/usr/local/bin/awg-bot"
 
 _API = "https://api.github.com"
-_TIMEOUT = 20
+_TIMEOUT = 10                   # с — правило проекта: наружу не дольше 10 с; повторы ниже
 
 
 def _up():

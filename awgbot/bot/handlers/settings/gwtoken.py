@@ -97,7 +97,8 @@ async def _getme(token: str) -> tuple[int, str]:
         raise ServiceError("это не похоже на токен бота — жду строку вида 123456789:AA…")
     from aiogram import Bot
     from aiogram.exceptions import TelegramUnauthorizedError
-    bot = Bot(token)
+    from awgbot.runtime import tgsession
+    bot = Bot(token, session=tgsession.make())
     try:
         me = await bot.get_me()
     except TelegramUnauthorizedError:

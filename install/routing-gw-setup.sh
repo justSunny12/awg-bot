@@ -589,7 +589,7 @@ rc=0
 FROM="${AWG_LAN_FROM:-}"
 get_domains() {
     if [ -n "$FROM" ]; then cp "$FROM/domains.lst" "$TMP" 2>/dev/null
-    else curl -sf --max-time 60 "$DOMAINS_URL" -o "$TMP"; fi
+    else curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$DOMAINS_URL" -o "$TMP"; fi
 }
 # ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
 if get_domains && [ -s "$TMP" ]; then
@@ -656,11 +656,11 @@ if [ -n "$FROM" ]; then
 else
     nets_rc=0
     for svc in $SUBNET_SERVICES; do
-        curl -sf --max-time 60 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
+        curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
             || { echo "подсети: $svc не скачался" >&2; rc=1; nets_rc=1; }
         echo >> "$NETS"
     done
-    curl -sf --max-time 60 "$GOOG_URL" 2>/dev/null \
+    curl -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$GOOG_URL" 2>/dev/null \
         | grep -oE '"ipv4Prefix":[[:space:]]*"[0-9./]+"' \
         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
         || { echo "подсети: goog.json не скачался" >&2; rc=1; nets_rc=1; }
