@@ -95,6 +95,9 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     ssh_line = pkg.gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
     if ssh_line:
         parts.append(ssh_line)
+    # дальше — блоками через пустую строку: железо, затем состояние (транзит,
+    # здоровье, трафик); пустой блок строки не оставляет
+    parts.append("")
     hw = []
     if st.cpu is not None:
         hw.append(f"CPU {st.cpu:.0f}%" + (f" | {st.temp:.0f} °C" if st.temp is not None else ""))
@@ -112,6 +115,7 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     parts.extend(disk_lines(getattr(st, "disks", None)))   # снимок без списка — строки нет
     if st.throttled is not None:
         parts.append("🔌 питание " + (("⚠️ " + "; ".join(st.throttled["now"])) if st.throttled.get("now") else "ОК"))
+    parts.append("")
     lan = getattr(st, "lan", None) or {}
     if lan:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
@@ -126,7 +130,17 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
         parts.append(f"📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}")
     parts.append("")
     parts.append(pkg.refreshed_line(st, bot_username))
-    return "\n".join(parts)
+    return "\n".join(_squeeze(parts))
+
+
+def _squeeze(parts: list) -> list:
+    """Пустые строки — разделители блоков: две подряд (пустой блок) схлопываются в одну."""
+    out: list = []
+    for p in parts:
+        if p == "" and out and out[-1] == "":
+            continue
+        out.append(p)
+    return out
 
 
 def reserve_panel_line(rsv: dict) -> str:

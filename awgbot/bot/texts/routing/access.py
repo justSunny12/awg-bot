@@ -8,7 +8,7 @@ from awgbot.util import timeutil
 from ..fmt import _e, holder_link, plural_ru, details
 
 from .slots import ROUTING_NAME
-from ..fmt import num
+from ..fmt import num, DISK_INDENT
 # замечание о шлюзе и уведомления о доступе — тексты уведомлений домена, общие с экранами
 from awgbot.domain.notices.routing import (  # noqa: F401
     routing_gateway_warning, ROUTING_GRANTED_NOTICE, routing_granted_holder_notice,
@@ -134,13 +134,18 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
         dead = [s for s in standby if s["state"] == "dead"]
         dot = "🟡" if dead else "🟢"
         line = f"🇷🇺 {ROUTING_NAME}: {dot} работает"
+        gw = []
         if active:
-            line += f" · {_link(active, info.get('active_slot'))}"
+            gw.append(f"шлюз: {_link(active, info.get('active_slot'))}")
         if standby:
             # ссылка — только на слове «резерв»: состояние остаётся текстом
             st = standby[0]
             tail = {"alive": "жив", "dead": "не отвечает"}.get(st["state"], "проверяется")
-            line += " · " + _link("резерв", st.get("slot")) + " " + tail
+            gw.append(_link("резерв", st.get("slot")) + " " + tail)
+        if gw:
+            # шлюзы — своей строкой под состоянием, с тем же отступом, что у носителей;
+            # без шлюзов строки нет
+            line += "\n" + DISK_INDENT + " · ".join(gw)
         return line
     names = ([(active, info.get("active_slot"))] if active else []) \
         + [(s["name"], s.get("slot")) for s in standby if s["state"] != "alive"]

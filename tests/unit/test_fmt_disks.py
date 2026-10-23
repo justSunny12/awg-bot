@@ -91,8 +91,9 @@ def test_every_disk_line_is_indented_under_the_hw_line(disks):
         assert not ln.startswith(DISK_INDENT + " "), f"отступ ровно один: {ln!r}"
 
 
-def test_indent_is_five_plain_spaces():
-    """Отступ — пять обычных пробелов: «диск» встаёт под «CPU» строки «📈 …»;
+def test_indent_is_seven_plain_spaces():
+    """Отступ — семь обычных пробелов (подобрано по экрану): «диск» встаёт под
+    «CPU» строки «📈 …»;
     Telegram не схлопывает их в начале строки, а неразрывные здесь не нужны
     и ломали бы копирование."""
-    assert DISK_INDENT == " " * 5
+    assert DISK_INDENT == " " * 7

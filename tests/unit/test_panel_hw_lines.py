@@ -30,10 +30,10 @@ def _lines(text: str) -> list[str]:
 # ── панель шлюза ─────────────────────────────────────────────────────────────
 
 def test_gateway_hw_line_has_cpu_temp_and_ram_used_of_total():
-    """RAM — «занято/всего», а не процент: по «1,31/8 ГБ» видно и сколько
+    """RAM — «занято/всего», а не процент: по «1 340/7 812 МБ» видно и сколько
     съедено, и сколько памяти у платы вообще; хвоста «(свободно …)» нет."""
     lines = _lines(texts.gateway_panel(_gw()))
-    assert "📈 CPU 0% | 46 °C · RAM 1,31/8 ГБ" in lines, lines
+    assert "📈 CPU 0% | 46 °C · RAM 1 340/7 812 МБ" in lines, lines
     assert not any("свободно" in ln or "17%" in ln for ln in lines), lines
     assert not any("диск" in ln and ln.startswith("📈") for ln in lines), "диск — не в строке CPU/RAM"
     assert not any("питание" in ln and ln.startswith("📈") for ln in lines), "питание — не в строке CPU/RAM"
@@ -55,15 +55,15 @@ def test_gateway_ram_falls_back_to_percent_without_used_or_total(kw):
 
 
 def test_gateway_ram_small_board_shows_megabytes():
-    """Плата на 1 ГБ: ядро видит 976 МБ — «478 МБ/1 ГБ», не «478 МБ/976 МБ»."""
+    """Плата на 1 ГБ: ядро видит 976 МБ — «478/976 МБ», единица один раз, без «1 ГБ»."""
     lines = _lines(texts.gateway_panel(_gw(ram_used_mb=478, ram_total_mb=976)))
-    assert "📈 CPU 0% | 46 °C · RAM 478 МБ/1 ГБ" in lines, lines
+    assert "📈 CPU 0% | 46 °C · RAM 478/976 МБ" in lines, lines
 
 
 def test_gateway_disks_follow_the_hw_line_two_per_line():
     lines = _lines(texts.gateway_panel(_gw(
         disks=[[10.4, 200.0, "/"], [100.0, 1720.3, "/srv/a"], [1228.8, 1720.3, "/srv/b"]])))
-    i = lines.index("📈 CPU 0% | 46 °C · RAM 1,31/8 ГБ")
+    i = lines.index("📈 CPU 0% | 46 °C · RAM 1 340/7 812 МБ")
     assert lines[i + 1:i + 4] == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
                                   f"{DISK_INDENT}диск 3 - 1,2/1,68 ТБ",
                                   "🔌 питание ОК"], lines
@@ -81,7 +81,7 @@ def test_gateway_without_disk_list_says_nothing_about_disks():
     ничего не говорит), остальное на месте."""
     lines = _lines(texts.gateway_panel(_gw(disks=[])))
     assert not any(ln.lstrip().startswith("диск") for ln in lines), lines
-    assert "📈 CPU 0% | 46 °C · RAM 1,31/8 ГБ" in lines and "🔌 питание ОК" in lines, lines
+    assert "📈 CPU 0% | 46 °C · RAM 1 340/7 812 МБ" in lines and "🔌 питание ОК" in lines, lines
 
 
 def test_gateway_power_is_its_own_line_ok_and_warning():
@@ -101,7 +101,7 @@ def test_gateway_without_power_reading_has_no_power_line():
 
 def test_gateway_hw_line_without_temperature_has_no_bar():
     lines = _lines(texts.gateway_panel(_gw(temp=None)))
-    assert "📈 CPU 0% · RAM 1,31/8 ГБ" in lines, lines
+    assert "📈 CPU 0% · RAM 1 340/7 812 МБ" in lines, lines
 
 
 def test_gateway_lan_line_has_no_packet_tail():
@@ -156,14 +156,14 @@ def _adm(**kw) -> str:
 
 def test_admin_hw_line_and_disk_line_from_the_disk_list():
     lines = _lines(_adm())
-    i = lines.index("📈 CPU 0% · RAM 1,31/8 ГБ")
+    i = lines.index("📈 CPU 0% · RAM 1 340/7 812 МБ")
     assert lines[i + 1] == f"{DISK_INDENT}диск 10/200 ГБ", lines
     assert not any("42%" in ln for ln in lines), "есть список носителей — процент не дублируем"
 
 
 def test_admin_several_disks_two_per_line():
     lines = _lines(_adm(disks=[[10.4, 200.0, "/"], [100.0, 1720.3, "/srv/a"], [1228.8, 1720.3, "/srv/b"]]))
-    i = lines.index("📈 CPU 0% · RAM 1,31/8 ГБ")
+    i = lines.index("📈 CPU 0% · RAM 1 340/7 812 МБ")
     assert lines[i + 1:i + 3] == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
                                   f"{DISK_INDENT}диск 3 - 1,2/1,68 ТБ"], lines
 
@@ -193,7 +193,7 @@ def test_admin_ram_falls_back_to_percent_without_used_or_total(kw):
 
 def test_admin_ram_in_megabytes_on_a_small_server():
     lines = _lines(_adm(ram_used_mb=300, ram_total_mb=512))
-    assert "📈 CPU 0% · RAM 300 МБ/512 МБ" in lines, lines
+    assert "📈 CPU 0% · RAM 300/512 МБ" in lines, lines
 
 
 def test_admin_without_any_snapshot_says_no_measurement_yet():
@@ -205,7 +205,7 @@ def test_admin_without_any_snapshot_says_no_measurement_yet():
 def test_admin_snapshot_without_disk_at_all_has_no_disk_line():
     """Процент не прочитался и списка нет — строки диска нет, «диск ?» не рисуем."""
     lines = _lines(_adm(disk=None, disks=[]))
-    assert "📈 CPU 0% · RAM 1,31/8 ГБ" in lines, lines
+    assert "📈 CPU 0% · RAM 1 340/7 812 МБ" in lines, lines
     assert not any(ln.lstrip().startswith("диск") for ln in lines), lines
 
 
@@ -224,7 +224,7 @@ def test_server_status_snapshot_carries_ram_used_total_and_disks(services):
     st = services.server_status_cached()
     assert (st["ram_free_mb"], st["disks"]) == (6436, [[10.4, 200.0, "/"]]), st
     assert (st["ram_used_mb"], st["ram_total_mb"]) == (1340, 7812), st
-    assert "📈 CPU 1% · RAM 1,31/8 ГБ" in texts.admin_panel(st), texts.admin_panel(st)
+    assert "📈 CPU 1% · RAM 1 340/7 812 МБ" in texts.admin_panel(st), texts.admin_panel(st)
     services.db.set_state(hostmetrics.STATE_METRICS, json.dumps({"cpu": 1, "ram": 17, "disk": 42, "ts": ts}))
     st = services.server_status_cached()
     assert (st["ram_free_mb"], st["ram_used_mb"], st["ram_total_mb"], st["disks"]) == (None, None, None, []), st

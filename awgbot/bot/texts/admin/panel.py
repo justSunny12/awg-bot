@@ -74,6 +74,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         lines.extend(disk_lines(st.get("disks")) or ([f"диск {_p(st.get('disk'))}"] if st.get("disk") is not None else []))
     elif st.get("age_seconds") is None:
         lines.append("📈 Метрики: ещё нет замера")
+    lines.append("")                                  # блок состояния — отдельно от метрик
     if routing_info is not None:
         rt_line = routing_admin_status_line(routing_info, bot_username)
         if rt_line:                                   # «выключен» без шлюзов — строки нет
@@ -126,7 +127,17 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     age = st.get("age_seconds")
     at = None if age is None else timeutil.shift(timeutil.now(), -int(age))   # None — живой замер: сейчас
     lines += ["", refreshed_line(bot_username, REFRESH_PAYLOAD, at)]
-    return "\n".join(lines)
+    return "\n".join(_squeeze(lines))                 # схлопывать — после всех строк, включая свежесть
+
+
+def _squeeze(lines: list) -> list:
+    """Пустые строки — разделители блоков: две подряд (пустой блок) схлопываются в одну."""
+    out: list = []
+    for ln in lines:
+        if ln == "" and out and out[-1] == "":
+            continue
+        out.append(ln)
+    return out
 
 
 MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор переезда и профиль в нём

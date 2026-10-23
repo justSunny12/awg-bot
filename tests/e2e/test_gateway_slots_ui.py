@@ -384,7 +384,7 @@ async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
     assert snap["routing_info"] and snap["routing_info"]["active"] == "NASPi"
     from awgbot.bot import texts
     text = texts.admin_panel(snap["st"], snap["routing_ok"], routing_info=snap["routing_info"])
-    assert "🇷🇺 РФ-доступ: 🟢 работает · NASPi" in text
+    assert "🇷🇺 РФ-доступ: 🟢 работает\n" in text and "шлюз: NASPi" in text, text
 
 
 # ── «🔀 VPN-транзит» ────────────────────────

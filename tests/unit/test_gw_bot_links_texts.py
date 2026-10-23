@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 
 from awgbot.bot import texts
+from awgbot.bot.texts.fmt import DISK_INDENT
 
 BOT = "awg_test_bot"
 
@@ -58,7 +59,7 @@ def test_without_username_the_line_stays_plain():
     без обрывков разметки."""
     assert texts.routing_admin_status_line(
         _info(standby=[{"name": "Pi2", "slot": 2, "state": "alive"}])) == \
-        "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив"
+        f"🇷🇺 РФ-доступ: 🟢 работает\n{DISK_INDENT}шлюз: NASPi · резерв жив"
     assert texts.routing_admin_status_line(
         _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "dead"}]), "") == \
         "🇷🇺 РФ-доступ: 🔴 недоступен — NASPi, Pi2 не отвечают"
@@ -69,4 +70,4 @@ def test_without_slot_numbers_there_is_nothing_to_link():
     текст: ссылка «gw-0» открыла бы «не найдено»."""
     line = texts.routing_admin_status_line(
         {"ok": True, "active": "NASPi", "standby": [{"name": "Pi2", "state": "alive"}]}, BOT)
-    assert line == "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив", line
+    assert line == f"🇷🇺 РФ-доступ: 🟢 работает\n{DISK_INDENT}шлюз: NASPi · резерв жив", line

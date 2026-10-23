@@ -14,7 +14,7 @@ from awgbot.util.textfmt.base import (  # noqa: F401
     _n_devices, num, more, unlimited, plural_ru, _days_word, _days, frac2)
 
 
-DISK_INDENT = " " * 5           # строки носителей — под строкой «📈 …»: «диск» встаёт под «CPU»
+DISK_INDENT = " " * 7           # строки носителей — под строкой «📈 …»: «диск» встаёт под «CPU» (подобрано по экрану)
 
 
 def _gb_size(gb: float) -> str:
@@ -25,14 +25,9 @@ def _gb_size(gb: float) -> str:
 
 
 def ram_pair(used_mb: int, total_mb: int) -> str:
-    """«478 МБ/1 ГБ», «1,31/8 ГБ»: занято — МБ целыми до 1024, дальше ГБ с двумя
-    значащими знаками; всего — МБ до 900, дальше ГБ целыми (планка памяти —
-    круглая: у платы «1 ГБ» ядро видит ~976 МБ)."""
-    total = f"{round(total_mb / 1024)} ГБ" if total_mb >= 900 else f"{int(total_mb)} МБ"
-    if used_mb < 1024:
-        return f"{int(used_mb)} МБ/{total}"
-    used = frac2(round(used_mb / 1024, 2))
-    return f"{used}/{total}" if total.endswith("ГБ") else f"{used} ГБ/{total}"
+    """«548/7 812 МБ» — занято/всего, всегда в МБ, единица только у последнего
+    числа (решение 23.10.2026: смешение МБ и ГБ в одной паре читалось плохо)."""
+    return f"{num(used_mb)}/{num(total_mb)} МБ"
 
 
 def disk_pair(used_gb: float, total_gb: float) -> str:
