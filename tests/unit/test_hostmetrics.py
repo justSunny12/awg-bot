@@ -79,7 +79,10 @@ def test_collect_and_store_and_get(tmp_path):
     from awgbot.infra.db import Database
     db = Database(str(tmp_path / "t.db")); db.init_schema()
     snap = hm.collect_and_store(db)
-    assert set(snap) == {"cpu", "ram", "disk"}
+    # снимок несёт и «свободно МБ», и список носителей — их читают панели
+    assert set(snap) == {"cpu", "ram", "disk", "ram_free_mb", "disks"}, snap
+    assert isinstance(snap["disks"], list)
+    assert all(len(d) == 3 for d in snap["disks"]), "элемент — [занято ГБ, всего ГБ, точка]"
     got = hm.get_host_metrics(db)
     assert got["cpu"] == snap["cpu"] and got["age_seconds"] is not None
     assert got["age_seconds"] < 5
@@ -213,3 +216,104 @@ def test_dev_root_is_resolved_through_sysfs(monkeypatch, tmp_path):
     assert hm.root_block_device(str(m)) == "/dev/nvme0n1"
     monkeypatch.setattr(hm, "_resolve_dev_root", lambda: "")
     assert hm.root_block_device(str(m)) == ""
+
+
+# ── носители по /proc/mounts ─────────────────────────────────────────────────
+
+class _Vfs:
+    """Подставной statvfs: объём по точке монтирования, блоки по 4096."""
+    def __init__(self, blocks: int, bfree: int):
+        self.f_blocks, self.f_bfree, self.f_bavail, self.f_frsize = blocks, bfree, bfree, 4096
+
+
+_G = 1024 ** 3 // 4096      # блоков в гигабайте при f_frsize = 4096
+
+
+@pytest.fixture()
+def mounts(tmp_path, monkeypatch):
+    """Файл mounts как на шлюзе под OMV: корень, bind того же устройства,
+    загрузочный vfat, overlay контейнера, tmpfs, два настоящих диска
+    (второй перечислен раньше по файлу, но позже по точке), snap."""
+    import os
+    m = tmp_path / "mounts"
+    m.write_text("\n".join([
+        "/dev/mmcblk0p2 / ext4 rw,noatime 0 0",
+        "/dev/mmcblk0p2 /var/lib/docker/containers ext4 rw,noatime 0 0",   # bind того же устройства, и под docker
+        "/dev/mmcblk0p2 /home/mirror ext4 rw 0 0",                         # bind того же устройства — не второй диск
+        "/dev/mmcblk0p1 /boot/firmware vfat rw 0 0",
+        "overlay /var/lib/docker/overlay2/abc/merged overlay rw 0 0",
+        "tmpfs /run tmpfs rw 0 0",
+        "/dev/sdb1 /srv/dev-disk-by-uuid-bbbb ext4 rw 0 0",
+        "/dev/sda1 /srv/dev-disk-by-uuid-aaaa xfs rw 0 0",
+        "/dev/loop3 /snap/core/1 squashfs ro 0 0",
+        "/dev/sdc1 /mnt/usb exfat rw 0 0",
+        "",
+    ]), encoding="utf-8")
+    sizes = {"/": _Vfs(200 * _G, 190 * _G),                      # 200 ГБ, занято 10
+             "/var/lib/docker/containers": _Vfs(200 * _G, 190 * _G),
+             "/home/mirror": _Vfs(200 * _G, 190 * _G),
+             "/boot/firmware": _Vfs(_G // 2, _G // 4),
+             "/srv/dev-disk-by-uuid-bbbb": _Vfs(1720 * _G + _G // 3, 1720 * _G + _G // 3 - 100 * _G),   # 1720,3 ГБ, занято 100
+             "/srv/dev-disk-by-uuid-aaaa": _Vfs(931 * _G + _G // 2, 931 * _G),                           # 931,5 ГБ, занято 0,5
+             "/mnt/usb": _Vfs(0, 0)}                               # пустой f_blocks — ещё не прочитался
+    monkeypatch.setattr(os, "statvfs", lambda p: sizes[p])
+    return m
+
+
+def test_read_disks_lists_real_devices_once_root_first_then_by_mount_point(mounts):
+    """Панель показывает носители: bind одного устройства — один раз (иначе
+    у админа «три диска» по 200 ГБ на одной SD-карте), /boot, overlay,
+    tmpfs и snap — не носители; корень первым, дальше по точке монтирования,
+    а не по порядку в файле; занято — f_blocks − f_bfree, как у df."""
+    assert hm.read_disks(str(mounts)) == [
+        {"mount": "/", "used_gb": 10.0, "total_gb": 200.0},
+        {"mount": "/srv/dev-disk-by-uuid-aaaa", "used_gb": 0.5, "total_gb": 931.5},
+        {"mount": "/srv/dev-disk-by-uuid-bbbb", "used_gb": 100.0, "total_gb": 1720.3},
+    ]
+
+
+def test_read_disks_skips_a_mount_statvfs_cannot_read(mounts, monkeypatch):
+    """Носитель отвалился между чтением mounts и statvfs — пропускаем его,
+    остальные остаются: тик монитора не должен падать из-за одного диска."""
+    import os
+    real = os.statvfs
+
+    def boom(p):
+        if p == "/srv/dev-disk-by-uuid-aaaa":
+            raise OSError("Input/output error")
+        return real(p)
+    monkeypatch.setattr(os, "statvfs", boom)
+    assert [d["mount"] for d in hm.read_disks(str(mounts))] == ["/", "/srv/dev-disk-by-uuid-bbbb"]
+
+
+def test_read_disks_without_mounts_file_is_empty(tmp_path):
+    assert hm.read_disks(str(tmp_path / "nope")) == []
+
+
+def test_read_disks_ignores_short_and_foreign_lines(tmp_path, monkeypatch):
+    """Строка без ФС, не-/dev источник (NFS, cifs) и устройство с неизвестной
+    ФС (squashfs) — не носители; остаётся только настоящий корень."""
+    import os
+    m = tmp_path / "mounts"
+    m.write_text("garbage\n"
+                 "nas:/export /mnt/nas nfs4 rw 0 0\n"
+                 "//srv/share /mnt/smb cifs rw 0 0\n"
+                 "/dev/loop0 /snap/x/1 squashfs ro 0 0\n"
+                 "/dev/sda2 / ext4 rw 0 0\n", encoding="utf-8")
+    monkeypatch.setattr(os, "statvfs", lambda p: _Vfs(10 * _G, 5 * _G))
+    assert hm.read_disks(str(m)) == [{"mount": "/", "used_gb": 5.0, "total_gb": 10.0}]
+
+
+def test_collect_carries_free_ram_and_disks_from_the_readers(monkeypatch):
+    """Снимок хоста для панели сервера: «свободно МБ» — из read_ram, носители —
+    списками [занято, всего, точка] (JSON в БД и канал)."""
+    monkeypatch.setattr(hm, "read_cpu_percent", lambda: 7.0)
+    monkeypatch.setattr(hm, "read_ram", lambda: (17.0, 6436))
+    monkeypatch.setattr(hm, "read_disk_percent", lambda path="/": 5.0)
+    monkeypatch.setattr(hm, "read_disks", lambda mounts="/proc/mounts": [
+        {"mount": "/", "used_gb": 10.0, "total_gb": 200.0}])
+    assert hm.collect() == {"cpu": 7.0, "ram": 17.0, "ram_free_mb": 6436, "disk": 5.0,
+                            "disks": [[10.0, 200.0, "/"]]}
+    monkeypatch.setattr(hm, "read_ram", lambda: None)
+    snap = hm.collect()
+    assert snap["ram"] is None and snap["ram_free_mb"] is None, "meminfo не прочитался — оба поля None, не падение"

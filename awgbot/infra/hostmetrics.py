@@ -111,6 +111,45 @@ def read_disk(path: str = "/") -> tuple[float, float] | None:
             round(st.f_bavail * st.f_frsize / 1024 ** 3, 1))
 
 
+_DISK_FS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs", "vfat", "exfat", "ntfs", "ntfs3", "zfs", "jfs"}
+_DISK_SKIP = ("/boot", "/snap", "/var/lib/docker", "/run", "/dev", "/sys", "/proc")
+
+
+def read_disks(mounts: str = "/proc/mounts") -> list[dict]:
+    """Смонтированные носители для панели: [{mount, used_gb, total_gb}], корень
+    первым, остальные по точке монтирования; одно устройство — один раз
+    (bind-монтирования не повторяются); загрузочный раздел, snap и слои
+    контейнеров — не носители. Занято — f_blocks − f_bfree (как у df),
+    ГБ — 1024³, с одним знаком."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    try:
+        with open(mounts, encoding="utf-8") as f:
+            rows = [ln.split() for ln in f]
+    except OSError:
+        return out
+    for parts in rows:
+        if len(parts) < 3:
+            continue
+        dev, mnt, fs = parts[0], parts[1], parts[2]
+        if not dev.startswith("/dev/") or fs not in _DISK_FS or dev in seen:
+            continue
+        if mnt != "/" and any(mnt == p or mnt.startswith(p + "/") for p in _DISK_SKIP):
+            continue
+        try:
+            st = os.statvfs(mnt)
+        except OSError:
+            continue
+        if st.f_blocks <= 0:
+            continue
+        seen.add(dev)
+        total = st.f_blocks * st.f_frsize / 1024 ** 3
+        used = (st.f_blocks - st.f_bfree) * st.f_frsize / 1024 ** 3
+        out.append({"mount": mnt, "used_gb": round(used, 1), "total_gb": round(total, 1)})
+    out.sort(key=lambda d: (d["mount"] != "/", d["mount"]))
+    return out
+
+
 def read_uptime_seconds() -> int | None:
     try:
         with open("/proc/uptime", encoding="ascii") as f:
@@ -259,11 +298,15 @@ def read_soc_temp() -> float | None:
 
 
 def collect() -> dict:
-    """Снимок {cpu, ram, disk} (float % или None по каждому ресурсу).
+    """Снимок {cpu, ram, disk} (float % или None по каждому ресурсу) плюс
+    ram_free_mb и disks ([[занято ГБ, всего ГБ, точка], …] для строк панели).
     Блокирующий (CPU-замер) — через asyncio.to_thread."""
+    ram = read_ram()
     return {"cpu": read_cpu_percent(),
-            "ram": read_ram_percent(),
-            "disk": read_disk_percent()}
+            "ram": ram[0] if ram else None,
+            "ram_free_mb": ram[1] if ram else None,
+            "disk": read_disk_percent(),
+            "disks": [[d["used_gb"], d["total_gb"], d["mount"]] for d in read_disks()]}
 
 
 def collect_and_store(db) -> dict:
@@ -276,7 +319,7 @@ def collect_and_store(db) -> dict:
 
 
 def get_host_metrics(db) -> dict | None:
-    """Последний снимок {cpu,ram,disk,ts,age_seconds} или None."""
+    """Последний снимок {cpu,ram,disk,ram_free_mb,disks,ts,age_seconds} или None."""
     raw = db.get_state(STATE_METRICS)
     if not raw:
         return None
@@ -291,6 +334,6 @@ def get_host_metrics(db) -> dict | None:
 
 
 __all__ = ["collect", "collect_and_store", "get_host_metrics", "STATE_METRICS",
-           "read_pi_throttled", "read_soc_temp", "read_ram", "read_disk",
+           "read_pi_throttled", "read_soc_temp", "read_ram", "read_disk", "read_disks",
            "read_uptime_seconds", "root_block_device", "read_smart_health",
            "read_cpu_percent", "read_ram_percent", "read_disk_percent"]

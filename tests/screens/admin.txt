@@ -3,7 +3,8 @@
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -20,7 +21,8 @@
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -38,7 +40,8 @@
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -57,7 +60,8 @@
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -76,7 +80,8 @@
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -1395,7 +1400,8 @@ https://t.me/test_bot?start=CDUMMY000005
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -1521,7 +1527,8 @@ https://t.me/test_bot?start=CDUMMY000005
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -3088,7 +3095,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> проверяется
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -3129,7 +3137,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -3764,7 +3773,8 @@ uci commit</pre>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -3903,7 +3913,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -3921,7 +3932,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
@@ -4071,7 +4083,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 3 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4221,7 +4234,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4275,7 +4289,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4312,7 +4327,8 @@ Pi4 — 🟢 Резерв
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4508,7 +4524,8 @@ https://t.me/test_bot?start=CDUMMY000005
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4549,7 +4566,8 @@ https://t.me/test_bot?start=CDUMMY000005
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4799,7 +4817,8 @@ IMAP и SMTP отвечают, вход выполнен
 = edit #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4969,7 +4988,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -4990,7 +5010,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5023,7 +5044,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5044,7 +5066,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5066,7 +5089,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5087,7 +5111,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5251,7 +5276,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 3 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5271,7 +5297,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
 
@@ -5287,7 +5314,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 12 дн 4 ч
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0 · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5305,7 +5333,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 3 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5326,7 +5355,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🔴 AWG не отвечает
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🔴 недоступен, <a href="https://t.me/test_bot?start=gw-1">NASPi</a> не отвечает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5345,7 +5375,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5546,7 +5577,8 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -5620,7 +5652,8 @@ IMAP и SMTP отвечают, вход выполнен
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -6472,7 +6505,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -6491,7 +6525,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -6589,7 +6624,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -6615,7 +6651,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -6633,7 +6670,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
 └ 🇷🇺 РФ-доступ: 0,6 ГБ
@@ -6650,7 +6688,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -6668,7 +6707,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -6686,7 +6726,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 2 профиля, 2 устройства · 🟡 Истекают: 1 · 📦 Без профиля: 1
 📊 Трафик за сентябрь: 6,7 ГБ
@@ -6758,7 +6799,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #1
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -7115,7 +7157,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -7147,7 +7190,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -7180,7 +7224,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -7278,7 +7323,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8550,7 +8596,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi (офис)</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8568,7 +8615,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> проверяется
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8586,7 +8634,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟡 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> не отвечает
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8604,7 +8653,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🔴 недоступен — <a href="https://t.me/test_bot?start=gw-1">NASPi</a>, <a href="https://t.me/test_bot?start=gw-2">Pi4</a> не отвечают
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8622,7 +8672,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🔴 недоступен, <a href="https://t.me/test_bot?start=gw-1">NASPi</a> не отвечает, <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив — переключи на резерв в «🛰 Шлюзы»
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8640,7 +8691,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-2">Pi4</a> · <a href="https://t.me/test_bot?start=gw-1">резерв</a> проверяется
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -8946,7 +8998,8 @@ NASPi — 🟢 Активен
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a> · <a href="https://t.me/test_bot?start=gw-2">резерв</a> жив
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -9802,7 +9855,8 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -9901,7 +9955,8 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
 📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
@@ -11343,7 +11398,8 @@ NASPi — 🟢 Активен
 
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -11933,7 +11989,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 несёт твоих клиентов и бот с 12:00 (UTC+5)</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -11951,7 +12008,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 твои клиенты переезжают — жду смену записи</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -11969,7 +12027,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 чужие клиенты и бот у тебя с 12:00 (UTC+5)</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -11987,7 +12046,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 твои клиенты возвращаются на сервер — пересылка до 22.09 14:05 (UTC+5)</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -12005,7 +12065,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🔴 недоступен с 11:40 (UTC+5)</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -12023,7 +12084,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: данных для переезда ещё нет</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -12041,7 +12103,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟢 резерв готов · данные от 11:30 (UTC+5)</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -12059,7 +12122,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 не готов: у тебя выключено «Готов быть резервом»</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ
@@ -12077,7 +12141,8 @@ TTL: 60 с
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
 <a href="https://t.me/test_bot?start=rsv">🛟 <b>Beta</b> 🟡 связи ещё не было</a>
-📈 CPU 12% · RAM 41% · диск 23%
+📈 CPU 12% · RAM 41% (свободно 6 436 МБ)
+диск 10/200 ГБ
 🇷🇺 РФ-доступ: 🟢 работает · <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
 📶 Онлайн: 0
 📊 Трафик за сентябрь: 0 ГБ

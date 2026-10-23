@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.domain import gwchecks
-from ..fmt import _e, human_bytes, updown_brief, num
+from ..fmt import _e, disk_lines, human_bytes, updown_brief, num
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -101,18 +101,20 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     elif st.temp is not None:
         hw.append(f"{st.temp:.0f} °C")
     if st.ram is not None:
-        hw.append(f"RAM {st.ram:.0f}%")
-    if st.disk is not None:
-        hw.append(f"диск {st.disk:.0f}%")
-    if st.throttled is not None:
-        hw.append("питание " + (("⚠️ " + "; ".join(st.throttled["now"])) if st.throttled.get("now") else "ОК"))
+        free = getattr(st, "ram_free_mb", None)
+        hw.append(f"RAM {st.ram:.0f}%" + (f" (свободно {num(free)} МБ)" if free is not None else ""))
     if hw:
         parts.append("📈 " + " · ".join(hw))
+    # носители — своей строкой (по два в строку), питание — своей: в одной строке
+    # с CPU и RAM они не читались
+    parts.extend(disk_lines(getattr(st, "disks", None)))   # снимок без списка — строки нет
+    if st.throttled is not None:
+        parts.append("🔌 питание " + (("⚠️ " + "; ".join(st.throttled["now"])) if st.throttled.get("now") else "ОК"))
     lan = getattr(st, "lan", None) or {}
     if lan:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         state = "🔴 " + ", ".join(pkg._uniq(_lan_fault(c) for c in bad)[:3]) if bad else "🟢"
-        parts.append(f"🔀 VPN-транзит {state} · {pkg._packets(lan.get('lan_pkts'))} с роутера")
+        parts.append(f"🔀 VPN-транзит {state}")           # счётчик пакетов — на экране транзита
         own = pkg.own_lists_short(lan)                     # своих нет — хвоста нет
         parts.append(f"📋 Списки: {pkg._lists_counts(lan)}" + (f" · {own}" if own else ""))
         svc = lan.get("svc") or {}

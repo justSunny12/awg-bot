@@ -420,13 +420,16 @@ class StatusMixin:
         rows = self.online_devices()
         online = len(rows)
         profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
-        cpu = ram = disk = age_seconds = None
+        cpu = ram = disk = age_seconds = ram_free = None
+        disks: list = []
         snap = hostmetrics.get_host_metrics(self.db)
         if snap:
             cpu, ram, disk = snap.get("cpu"), snap.get("ram"), snap.get("disk")
+            ram_free, disks = snap.get("ram_free_mb"), list(snap.get("disks") or [])
             age_seconds = snap.get("age_seconds")
         return {"ok": ok, "uptime": uptime, "online_count": online, "online_profiles": profiles,
-                "cpu": cpu, "ram": ram, "disk": disk, "age_seconds": age_seconds}
+                "cpu": cpu, "ram": ram, "disk": disk, "ram_free_mb": ram_free, "disks": disks,
+                "age_seconds": age_seconds}
 
     def server_ok(self) -> bool:
         """Живая проверка: awg отвечает — сервис жив (один exec)."""

@@ -71,6 +71,7 @@ def _status(**kw) -> GwStatus:
     d = dict(link_up=True, handshake_age=40.0, rx=3 * 1024 ** 3, tx=512 * 1024 ** 2,
              checks=copy.deepcopy(_CHECKS_OK), temp=48.3, throttled={"now": [], "ever": []},
              cpu=12.0, ram=41.0, ram_free_mb=2345, disk=23.0, disk_free_gb=87.4, smart="OK",
+             disks=[[26.1, 113.5, "/"], [1105.2, 1720.3, "/srv/dev-disk-by-uuid-a1"], [0.4, 931.5, "/srv/usb"]],
              uptime_seconds=12 * 86400 + 3 * 3600, hostname="pi", server_name="awg-srv",
              module_version="1.0.20260901", srcversion="ABCDEF0123456789", kernels_total=2,
              mark_status="confirmed", ssh=_ssh_panel())

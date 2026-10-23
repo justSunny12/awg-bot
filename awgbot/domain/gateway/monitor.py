@@ -313,6 +313,7 @@ class MonitorMixin:
         disk = hostmetrics.read_disk()
         if disk is not None:
             st.disk, st.disk_free_gb = disk
+        st.disks = [[d["used_gb"], d["total_gb"], d["mount"]] for d in hostmetrics.read_disks()]
         st.smart = smart
         st.uptime_seconds = hostmetrics.read_uptime_seconds()
         st.hostname = socket.gethostname()

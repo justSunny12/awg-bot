@@ -72,6 +72,7 @@ class GwStatus:
     ram_free_mb: int | None = None
     disk: float | None = None
     disk_free_gb: float | None = None
+    disks: list = field(default_factory=list)   # [[занято ГБ, всего ГБ, точка], …] — корень первым
     smart: str | None = None                # "OK" / "FAIL" / None — не смотрели
     uptime_seconds: int | None = None
     hostname: str = ""

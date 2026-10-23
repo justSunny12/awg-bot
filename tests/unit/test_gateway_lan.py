@@ -139,16 +139,18 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
                        "nets": 412, "updated_at": "2026-09-20T10:00:00+05:00",
                        "own_vpn": 2, "own_ru": 1, "lan_pkts": 12345})
     lines = texts.gateway_panel(st).splitlines()
-    # VPN-транзит — строкой состояния с трафиком, списки — одной строкой со
-    # своими; числа с разрядами; время обновления, адрес и DNS — на экране
-    # «🔀 VPN-транзит», не на панели
-    assert "🔀 VPN-транзит 🟢 · 12 345 пакетов с роутера" in lines, lines
+    # VPN-транзит — строкой состояния без счётчика, списки — одной строкой со
+    # своими; числа с разрядами; пакеты с роутера, время обновления, адрес и
+    # DNS — на экране «🔀 VPN-транзит», не на панели
+    assert "🔀 VPN-транзит 🟢" in lines, lines
+    assert not any("с роутера" in ln for ln in lines), ("хвост «N пакетов с роутера» с главной снят", lines)
+    assert "12 345 пакетов с роутера" in texts.gateway_transit_text(st), "счётчик остался на экране транзита"
     assert "📋 Списки: 1 180 доменов, 412 подсетей · свои: 2 в туннель, 1 напрямую" in lines, lines
     assert not any("192.168.68.222" in ln or ln.startswith("DNS") or "обн." in ln for ln in lines), lines
     assert not any(ln.startswith("🗂") for ln in lines), "svc не активен — строки SMB в панели быть не должно"
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))
     lines = texts.gateway_panel(st).splitlines()
-    assert "🔀 VPN-транзит 🔴 трафик с роутера · 12 345 пакетов с роутера" in lines, lines
+    assert "🔀 VPN-транзит 🔴 трафик с роутера" in lines, lines
     # снимок переживает JSON
     assert GwStatus.from_json(st.to_json()).lan["addr"] == "192.168.68.222"
 
