@@ -342,6 +342,61 @@ def test_an_envelope_not_for_this_opening_is_refused_and_never_reaches_the_proce
     assert svc.reserve_in() == "taking", "отказ конверта снял открытие — процесс ещё может получить верный"
 
 
+@pytest.mark.parametrize("case", ["foreign_oid", "foreign_gen"])
+def test_a_refused_envelope_while_the_process_waits_fails_the_hosting_and_frees_the_zone_at_once(host, case, monkeypatch):
+    """Конверт не к этому открытию, пока процесс его ждёт: конверта к этой
+    паре уже не будет — ждать 2 минуты значит держать зону занятой. Срыв
+    приёма целиком: юнит стоп, зона снята, `down` с причиной, зона свободна
+    для нового `go_req` сразу."""
+    monkeypatch.setattr(openproc.shutil, "which",
+                        lambda name: f"/usr/bin/{name}" if name in ("systemd-run", "systemctl") else None)
+    svc = host.svc
+    assert svc.reserve_go_req_in(7, "button") == ""
+    _priv, pub = eph_ready(host)
+    svc.reserve_in_tick()
+    if case == "foreign_oid":
+        why = svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub, oid="ffffffffffffffff"), oid="ffffffffffffffff")
+    else:
+        why = svc.reserve_go_in("", 8, "button", sealed=sealed_for(pub, gen=8), oid=OID)
+    assert why
+    acts = svc.reserve_go_refused(why, True)
+    assert svc.reserve_in() == "idle" and svc.rsv_get("rsv_in").get("fail_at"), "приём не сорван — зона занята до срока"
+    assert host.zone.names() == ["teardown", "wipe"], host.zone.calls
+    assert ["systemctl", "stop", f"{openproc.OPEN_UNIT}.service"] in host.spawn.runs, "юнит открытия жив и ждёт конверт"
+    assert [a[2]["reason"] for a in acts if a[:2] == ("send", "down")] == [why]
+    assert ("fw",) in acts and why in notices(acts)[0].text
+    assert len(stdin_lines(host.spawn.popen[0])) == 1, "чужой конверт ушёл процессу"
+    assert svc.reserve_go_refused(why, True) == [("send", "down", {"reason": why})], "второй отказ — второй срыв"
+    assert host.zone.names() == ["teardown", "wipe"]
+    assert svc.reserve_go_req_in(7, "button") == "", "зона не свободна для нового переезда сразу после срыва"
+    assert len(host.spawn.popen) == 2
+
+
+@pytest.mark.parametrize("state", ["idle", "k_passed", "legacy"])
+def test_a_refusal_when_no_process_waits_for_the_envelope_is_only_down(host, state):
+    """Нет ждущего процесса (нет открытия, ключ уже передан, прежний путь с
+    `k`) — отказ только `down`: зона не трогается."""
+    svc = host.svc
+    if state == "k_passed":
+        _taking(host)
+    elif state == "legacy":
+        _taking_legacy(host)
+    before = (svc.reserve_in(), dict(svc.rsv_get("rsv_in") or {}))
+    acts = svc.reserve_go_refused("ключ не к этому открытию", state != "legacy")
+    assert acts == [("send", "down", {"reason": "ключ не к этому открытию"})], acts
+    assert (svc.reserve_in(), dict(svc.rsv_get("rsv_in") or {})) == before, "отказ без ждущего процесса тронул состояние"
+    assert host.zone.names() == [], host.zone.calls
+    if state == "k_passed":
+        pub = bytes.fromhex(host.zone.status["eph"])
+        assert svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub), oid=OID) == "", "повтор go после передачи — не отказ"
+        assert svc.reserve_in() == "taking" and len(stdin_lines(host.spawn.popen[0])) == 2
+
+
+def test_the_refusal_reason_is_cut_to_the_channel_ceiling(host):
+    acts = host.svc.reserve_go_refused("x" * 200, True)
+    assert acts == [("send", "down", {"reason": "x" * 120})]
+
+
 def test_an_envelope_without_an_opening_in_progress_is_refused(host):
     _priv, pub = seal.new_eph()
     assert "не ждёт" in host.svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub), oid=OID)

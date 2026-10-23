@@ -236,14 +236,32 @@ async def test_go_with_a_refusal_answers_down_and_without_one_stays_silent(mv, a
     svc = act.svc
     h = _Handler(svc)
     await h._in_go_req(_sess(), {"gen": 99, "kind": "button"})
-    assert sess_sent and sess_sent[0][0] == "down" and "99" in sess_sent[0][1]["reason"]
+    assert sess_sent and sess_sent[0][0] == "down" and "99" in sess_sent[0][1]["reason"], "отказ go_req — down по сессии"
     sess_sent.clear()
+    # отказ конверту — действием автомата (при ждущем процессе это срыв приёма целиком)
     await h._in_go(_sess(), {"gen": 7, "kind": "button", "sealed": "ab" * 32, "oid": "0123456789abcdef"})
-    assert sess_sent and sess_sent[0][0] == "down" and "не ждёт" in sess_sent[0][1]["reason"]
-    sess_sent.clear()
+    assert sess_sent == [], "down на go ушёл мимо действий автомата"
+    assert len(act.sent) == 1 and act.sent[0][0] == "down" and "не ждёт" in act.sent[0][1]["reason"], act.sent
+    act.sent.clear()
     monkeypatch.setattr(svc, "reserve_go_in", lambda *a, **kw: "")
     await h._in_go(_sess(), {"gen": 7, "kind": "button", "sealed": "ab" * 32, "oid": "0123456789abcdef"})
-    assert sess_sent == [], "без причины отказа down уходить не должен"
+    assert sess_sent == [] and act.sent == [], "без причины отказа down уходить не должен"
+
+
+async def test_a_refused_envelope_while_the_process_waits_fails_the_hosting_through_the_actions(mv, act, monkeypatch):
+    """Отказ конверту при ждущем процессе — `_take_fail`: его действия (down,
+    fw, уведомление) исполняются как действия автомата."""
+    svc = act.svc
+    monkeypatch.setattr(svc, "reserve_go_in", lambda *a, **kw: "ключ не к этому открытию")
+    got = []
+    monkeypatch.setattr(svc, "reserve_go_refused",
+                        lambda why, sealed: got.append((why, sealed)) or [("send", "down", {"reason": why}), ("fw",)])
+    await _Handler(svc)._in_go(_sess(), {"gen": 7, "kind": "button", "sealed": "ab" * 32, "oid": "0123456789abcdef"})
+    assert got == [("ключ не к этому открытию", True)]
+    assert act.sent == [("down", {"reason": "ключ не к этому открытию"})], act.sent
+    got.clear()
+    await _Handler(svc)._in_go(_sess(), {"gen": 7, "kind": "button", "k": "ab" * 32})
+    assert got == [("ключ не к этому открытию", False)], "go старого вида без конверта помечен как конверт"
 
 
 async def test_open_eph_from_the_reserve_reaches_the_service_with_the_key_and_the_opening_id(mv, act, monkeypatch):

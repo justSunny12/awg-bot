@@ -97,16 +97,26 @@ class ReserveInboundMixin:
             return "ключ не hex"
         return self._go_launch(gen, kind, ttl, k_hex=str(k_hex))
 
+    def reserve_go_refused(self, why: str, sealed: bool) -> list[tuple]:
+        """Отказ на `go`: `down` основе. Отказ конверту, пока процесс открытия
+        его ждёт, — срыв приёма целиком (`_take_fail`: юнит стоп, зона снята,
+        `down`): конверта к этому открытию уже не будет, а ждать его 2 минуты —
+        держать зону занятой для нового переезда."""
+        inn = self._inn()
+        if sealed and str(inn.get("state") or "") == "taking" and inn.get("sealed") and not inn.get("k_passed"):
+            return self._take_fail(why)
+        return [("send", "down", {"reason": why[:120]})]
+
     def _go_sealed(self, gen: int, sealed: str, oid: str) -> str:
         from awgbot.infra import rsvzone
         try:
             bytes.fromhex(sealed)
         except ValueError:
-            return "конверт ключа не hex"
+            return "конверт ключа пакета не hex"
         with _LOCK:
             inn = self._inn()
             if str(inn.get("state") or "") != "taking" or not inn.get("sealed"):
-                return "процесс открытия конверт не ждёт"
+                return "процесс открытия не ждёт ключ"
             if int(inn.get("gen") or 0) != int(gen):
                 return f"открывается пакет {inn.get('gen')}, а не {gen}"
             if inn.get("k_passed"):

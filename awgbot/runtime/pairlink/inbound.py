@@ -96,7 +96,8 @@ class InboundMixin:
                                       str(body["kind"]), int(body.get("ttl") or 0),
                                       str(body.get("sealed") or ""), str(body.get("oid") or ""))
         if why:
-            await send_line(sess, "down", {"reason": why[:pairproto.MAX_REASON]})
+            # отказ конверту при ждущем процессе — срыв приёма (down уходит действием)
+            await self._actions(await asyncio.to_thread(self.services.reserve_go_refused, why, bool(body.get("sealed"))))
 
     async def _in_up(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_up_in))

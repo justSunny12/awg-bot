@@ -159,7 +159,7 @@ def await_sealed_k(pkg_gen: int, budget_s: float = K_WAIT_S) -> bytes:
             obj = json.loads(line)
             sealed = bytes.fromhex(str((obj or {}).get("sealed") or ""))
         except (ValueError, AttributeError) as e:
-            raise OpenError(f"конверт ключа пакета не того вида: {e}") from e
+            raise OpenError("конверт ключа пакета не того вида") from e
         if not sealed:
             raise OpenError("конверт ключа пакета пуст")
         try:

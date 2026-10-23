@@ -306,8 +306,12 @@ class ReserveOutboundMixin:
         if out.get("state") != "leaving" or out.get("step") != "eph" or int(out.get("gen") or 0) != int(gen):
             return []
         try:
-            sealed = seal.seal_k_to(bytes.fromhex(str(eph_hex)), self.reserve_k(), int(gen), str(oid))
-        except (ValueError, seal.PackageError) as e:
+            eph = bytes.fromhex(str(eph_hex))
+        except ValueError:
+            eph = b""                                            # не hex — та же причина, что не та длина
+        try:
+            sealed = seal.seal_k_to(eph, self.reserve_k(), int(gen), str(oid))
+        except seal.PackageError as e:
             return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не того вида — {e}", released=True)
         self._out_step("up", UP_WAIT_S, oid=str(oid))
         self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
@@ -323,6 +327,8 @@ class ReserveOutboundMixin:
         return [("live",)]
 
     def reserve_down_in(self, reason: str) -> list[tuple]:
+        """`down` резерва на переезде: срыв; `back` не нужен — резерв зону снял сам
+        (и когда отказал конверту ключа: ждавший его процесс открытия он гасит)."""
         out = self._out()
         if out.get("state") == "leaving":
             return self._move_fail(f"«{self.reserve_peer_name()}» не поднял клиентов — {reason}")
