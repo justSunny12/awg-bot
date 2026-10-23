@@ -14,6 +14,7 @@ import pytest
 
 from awgbot.infra import rfacct
 from awgbot.runtime import routing_doctor as doc
+from awgbot.util.textfmt.base import NBSP_THIN
 
 pytestmark = pytest.mark.unit
 
@@ -131,7 +132,8 @@ def test_zero_pause_reads_once(monkeypatch):
     (0, "0.00 МБ"), (1, "0.01 МБ"), (12345, "0.02 МБ"), (10_000, "0.01 МБ"),
     (1_000_000, "1.00 МБ"), (1_000_001, "1.01 МБ"), (570_000, "0.57 МБ"),
     (1_100_000, "1.10 МБ"), (2_300_000, "2.30 МБ"), (70_000, "0.07 МБ"),
-    (999_999_999, "1 000.00 МБ"), (12_068_860_000, "12 068.86 МБ"), (12_068_860_001, "12 068.87 МБ"),
+    (999_999_999, f"1{NBSP_THIN}000.00 МБ"), (12_068_860_000, f"12{NBSP_THIN}068.86 МБ"),
+    (12_068_860_001, f"12{NBSP_THIN}068.87 МБ"),
 ])
 def test_megabytes_round_up_to_two_digits(n, text):
     """Округление вверх — но ровные значения остаются ровными: 1 100 000 байт —

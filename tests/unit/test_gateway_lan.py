@@ -144,8 +144,8 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
     # DNS — на экране «🔀 VPN-транзит», не на панели
     assert "🔀 VPN-транзит 🟢" in lines, lines
     assert not any("с роутера" in ln for ln in lines), ("хвост «N пакетов с роутера» с главной снят", lines)
-    assert "12 345 пакетов с роутера" in texts.gateway_transit_text(st), "счётчик остался на экране транзита"
-    assert "📋 Списки: 1 180 доменов, 412 подсетей · свои: 2 в туннель, 1 напрямую" in lines, lines
+    assert "12 345 пакетов с роутера" in texts.gateway_transit_text(st), "счётчик остался на экране транзита"
+    assert "📋 Списки: 1 180 доменов, 412 подсетей · свои: 2 в туннель, 1 напрямую" in lines, lines
     assert not any("192.168.68.222" in ln or ln.startswith("DNS") or "обн." in ln for ln in lines), lines
     assert not any(ln.startswith("🗂") for ln in lines), "svc не активен — строки SMB в панели быть не должно"
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))

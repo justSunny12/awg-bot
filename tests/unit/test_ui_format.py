@@ -219,6 +219,38 @@ def test_volumes_switch_to_terabytes_from_a_terabyte():
     assert tc.traffic_short(TB, TB, 4 * TB) == "📊 2 из 4 ТБ"
 
 
+# ── разряды чисел ────────────────────────────────────────────────────────────
+
+def test_num_separates_groups_with_a_thin_nbsp():
+    """Разряды счётчиков — узким неразрывным пробелом U+202F: обычный пробел
+    клиент Telegram переносит, и «12 345 пакетов» разъезжается на две строки;
+    до тысячи разделителя нет, пустое значение — «0», а не ошибка."""
+    from awgbot.util.textfmt.base import NBSP_THIN, num
+    assert NBSP_THIN == "\u202f"
+    assert num(1234567) == "1\u202f234\u202f567"
+    assert num(999) == "999", "до тысячи разделителя нет"
+    assert num(None) == "0" and num(0) == "0", "пусто — ноль, а не исключение"
+    assert " " not in num(10 ** 9), "обычного пробела в счётчике быть не должно"
+
+
+def test_no_other_digit_grouping_in_the_code():
+    """Сторож: второго способа разбить число на разряды в awgbot/ нет —
+    любое `f"{x:,}".replace(",", " ")` с обычным пробелом вернуло бы на экран
+    переносимые разряды. Разбор пользовательского ввода
+    (`raw.replace(",", " ").split()`) — не форматирование, его не считаем."""
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[2] / "awgbot"
+    grouping = re.compile(r':,[}>]')              # f"{x:,}" — группировка запятой
+    plain = re.compile(r'\.replace\(",", " "\)')  # запятая → обычный пробел
+    bad = []
+    for f in sorted(root.rglob("*.py")):
+        for i, line in enumerate(f.read_text().splitlines(), 1):
+            if plain.search(line) and (grouping.search(line) or ".split(" not in line):
+                bad.append(f"{f.relative_to(root.parent)}:{i}: {line.strip()}")
+    assert not bad, "разряды обычным пробелом:\n" + "\n".join(bad)
+
+
 # ── метка пояса у времени ────────────────────────────────────────────────────
 
 def test_clock_and_hour_labels():

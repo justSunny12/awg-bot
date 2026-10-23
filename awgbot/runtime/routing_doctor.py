@@ -152,7 +152,8 @@ def _mb(n: int) -> str:
     Целочисленно: плавающая точка на границе давала лишнюю
     сотую."""
     hundredths = -(-int(n) // 10_000)
-    return f"{hundredths // 100:,}".replace(",", " ") + f".{hundredths % 100:02d} МБ"
+    from awgbot.util.textfmt.base import NBSP_THIN
+    return f"{hundredths // 100:,}".replace(",", NBSP_THIN) + f".{hundredths % 100:02d} МБ"
 
 
 def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:

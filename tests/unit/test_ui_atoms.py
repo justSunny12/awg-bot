@@ -85,9 +85,11 @@ def test_note_budget_counts_visible_text_only():
 
 # ── форматтеры ───────────────────────────────────────────────────────────────
 
-def test_num_groups_thousands_with_a_space():
+def test_num_groups_thousands_with_a_thin_nbsp():
+    """Разряды — узким неразрывным пробелом: обычный пробел клиент Telegram
+    переносит, и «1 234» разъезжается на две строки."""
     assert fmt.num(0) == "0" and fmt.num(None) == "0"
-    assert fmt.num(1234567) == "1 234 567" and fmt.num("42") == "42"
+    assert fmt.num(1234567) == "1\u202f234\u202f567" and fmt.num("42") == "42"
 
 
 def test_more_lists_up_to_twelve_then_counts_the_rest():
