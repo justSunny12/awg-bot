@@ -188,6 +188,64 @@ def test_the_replica_and_the_key_reach_the_disk_through_the_private_helper():
         assert not ('open(' in line and '"w' in line), f"прямая запись в rsvopen: {line.strip()}"
 
 
+# состояние автоматов переезда (rsv_in / rsv_out) и журнал — без ключа пакета и конверта
+STATE_SETTERS = {"rsv_update", "rsv_put", "reserve_set_in", "reserve_set_out", "_in_step", "_out_step"}
+SECRET_KEYS = {"k", "k_hex", "eph_priv", "priv", "envelope"}
+# `sealed` в rsv_in — признак пути (конверт ждём), не сам конверт: значение обязано быть булевым выражением
+FLAG_KEYS = {"sealed"}
+MOVE_MODULES = ("awgbot/domain/services/reserve/inbound.py", "awgbot/domain/services/reserve/outbound.py",
+                "awgbot/domain/services/reserve/openproc.py")
+
+
+def _is_bool_expr(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Constant) and isinstance(node.value, bool)) or \
+        (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)) or isinstance(node, (ast.Compare, ast.BoolOp)) or \
+        (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "bool")
+
+
+def _state_keywords(tree: ast.AST) -> list[tuple[int, str, ast.AST | None]]:
+    """(строка, имя поля, значение) всего, что кладётся в rsv_* через известные
+    сеттеры: именованные аргументы и ключи словарных литералов."""
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else "")
+        if name not in STATE_SETTERS:
+            continue
+        for kw in node.keywords:
+            if kw.arg:
+                out.append((node.lineno, kw.arg, kw.value))
+        for arg in node.args:
+            if isinstance(arg, ast.Dict):
+                out += [(node.lineno, k.value, v) for k, v in zip(arg.keys, arg.values)
+                        if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+    return out
+
+
+def test_the_move_state_never_holds_the_package_key_or_the_envelope():
+    """`rsv_in`/`rsv_out` лежат в базе бота: ключ пакета или конверт в них —
+    ключ основы на диске у резерва (и в бэкапе состояния)."""
+    offenders = []
+    seen = set()
+    for rel in MOVE_MODULES:
+        for line, key, value in _state_keywords(ast.parse((ROOT / rel).read_text(encoding="utf-8"))):
+            seen.add(key)
+            if key in SECRET_KEYS or (key in FLAG_KEYS and not _is_bool_expr(value)):
+                offenders.append(f"{rel}:{line} → {key}")
+    assert not offenders, "ключ пакета или конверт в состоянии автомата:\n" + "\n".join(offenders)
+    assert {"k_passed", "oid", "go_sent", "sealed"} <= seen, f"сторож не видит поля переезда — он слеп: {sorted(seen)}"
+
+
+def test_the_state_keyword_detector_sees_keywords_and_dict_keys():
+    src = 'self.rsv_update("rsv_in", k_passed=True, oid=oid)\nself.rsv_put("rsv_out", {"sealed": s})\nlog.info("k", k=1)'
+    found = _state_keywords(ast.parse(src))
+    assert [(ln, key) for ln, key, _v in found] == [(1, "k_passed"), (1, "oid"), (2, "sealed")]
+    assert not _is_bool_expr(found[2][2]) and _is_bool_expr(found[0][2])
+    assert _is_bool_expr(ast.parse("not k_hex").body[0].value) and not _is_bool_expr(ast.parse("sealed").body[0].value)
+
+
 def test_the_zone_script_writes_nothing_secret_to_arguments_or_logs():
     """Конфиг клона приходит только через stdin; ключ в аргументах виден в ps."""
     script = (ROOT / "install/reserve-zone-setup.sh").read_text(encoding="utf-8")

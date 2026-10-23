@@ -165,6 +165,13 @@ def go_away(svc, *, gen: int = 7, kind: str = "button", last_switch: str = "") -
     svc.reserve_set_poll("away")
 
 
+def open_eph(svc, gen: int = 7, oid: str = "0123456789abcdef") -> tuple[bytes, list[tuple]]:
+    """Резерв прислал разовый ключ своего процесса открытия (`open_eph`):
+    возвращает закрытую часть (память процесса у резерва) и действия основы."""
+    priv, pub = seal.new_eph()
+    return priv, svc.reserve_open_eph_in(gen, pub.hex(), oid)
+
+
 def actions_of(acts: list[tuple], kind: str) -> list[tuple]:
     return [a for a in acts if a and a[0] == kind]
 
@@ -213,5 +220,5 @@ def put_base(svc, gen: int = 7) -> str:
     return os.path.join(path, f"base-{gen}.db")
 
 
-__all__ = ["OWN_IP", "PEER_IP", "mv", "automatic", "confirm_package", "to_step", "actions_of", "notices", "sent",
-           "snapshot_blob", "put_base", "peer_st", "st_in"]
+__all__ = ["OWN_IP", "PEER_IP", "mv", "automatic", "confirm_package", "to_step", "open_eph", "actions_of", "notices",
+           "sent", "snapshot_blob", "put_base", "peer_st", "st_in"]

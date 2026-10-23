@@ -12,7 +12,10 @@ outbound.py — часть пакета reserve (см. __init__): «мои кл�
 `deleteWebhook` и поллинг, `("notify", [...])`, `("live",)` — перерисовать
 живое сообщение хода.
 
-Переезд кнопкой: leaving/pkg (свежий пакет → `pkg_ok`) → `go{K, gen}` →
+Переезд кнопкой: leaving/pkg (свежий пакет → `pkg_ok`) → `go_req{gen}` →
+leaving/eph (`open_eph{eph, oid}` от резерва — разовый ключ его процесса
+открытия) → `go{sealed, oid}` (`K` конвертом к разовому ключу: бот резерва
+видит только шифротекст; резерв без `seal1` — переезд не предлагается) →
 leaving/up (`up` от резерва) → leaving/record (запись → адрес резерва,
 факт у авторитетного сервера) → leaving/release → `released{реплика}` →
 leaving/released (`taken` от резерва) → away. Без `taken` в срок решает
@@ -57,7 +60,8 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .state import _LOCK
 
-PKG_WAIT_S = 120          # свежий пакет до `go`
+PKG_WAIT_S = 120          # свежий пакет до `go_req`
+EPH_WAIT_S = 60           # разовый ключ процесса открытия (`open_eph`) после `go_req`
 UP_WAIT_S = 300           # резерв поднял клон
 RECORD_WAIT_S = 1800      # факт записи
 RELEASED_WAIT_S = 300     # `taken` после `released`; возврат: `released` после `back_req`
@@ -116,6 +120,9 @@ class ReserveOutboundMixin:
             return f"адрес «{self.reserve_peer_name()}» не определился"
         if settings.get_bool("app.reserve.ready", False) is False:
             return "«Готов быть резервом» выключен"
+        if "seal1" not in (self.reserve_peer_state().get("caps") or []):
+            # ключ пакета уходит только конвертом к разовому ключу процесса открытия; открытым — нет
+            return f"«{self.reserve_peer_name()}» не принимает ключ пакета конвертом — нужен выпуск новее"
         return ""
 
     def reserve_move_dialog_data(self) -> dict:
@@ -208,18 +215,18 @@ class ReserveOutboundMixin:
     def _tick_leaving(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "pkg")
         if self._expired(out) and step not in ("released",):
-            why = {"pkg": "данные для переезда не подтверждены резервом", "up": f"«{self.reserve_peer_name()}» не поднял клиентов",
+            why = {"pkg": "данные для переезда не подтверждены резервом", "eph": f"разовый ключ от «{self.reserve_peer_name()}» не пришёл",
+                   "up": f"«{self.reserve_peer_name()}» не поднял клиентов",
                    "record": "запись не изменена за 30 минут", "release": "передача бота не завершилась"}.get(step, "срок шага вышел")
-            # резерву — `back` и на шаге подъёма: его процесс открытия мог кончиться позже срока
-            return self._move_fail(why, released=step in ("up", "record", "release"))
+            # резерву — `back` и на шагах ключа и подъёма: его процесс открытия ждёт или мог кончиться позже срока
+            return self._move_fail(why, released=step in ("eph", "up", "record", "release"))
         if step == "pkg":
             sent = self.rsv_get("rsv_pkg_sent")
             if sent.get("gen") and str(sent.get("at") or "") >= str(out.get("started_at") or ""):
-                self._out_step("up", UP_WAIT_S, gen=int(sent["gen"]), pkg_at=str(sent.get("at") or ""))
-                self.rsv_update("rsv_out", go_sent=True)             # K отдан — своя отметка, не слово резерва
-                return [("send", "go", {"k": self.reserve_k().hex(), "gen": int(sent["gen"]),
-                                        "kind": str(out.get("kind") or "button"),
-                                        "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0)}), ("live",)]   # TTL — гостю
+                # K уйдёт только конвертом к разовому ключу процесса открытия — сначала попросить ключ
+                self._out_step("eph", EPH_WAIT_S, gen=int(sent["gen"]), pkg_at=str(sent.get("at") or ""))
+                return [("send", "go_req", {"gen": int(sent["gen"]), "kind": str(out.get("kind") or "button"),
+                                            "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0)}), ("live",)]   # TTL — гостю
             return []
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
@@ -291,6 +298,23 @@ class ReserveOutboundMixin:
         return actions
 
     # ── события канала (переезд) ────────────────────────────────────────────
+    def reserve_open_eph_in(self, gen: int, eph_hex: str, oid: str) -> list[tuple]:
+        """`open_eph` от резерва: разовый ключ его процесса открытия — `K`
+        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор (`open_eph`
+        дошёл дважды) — молча: `go` уже ушёл."""
+        out = self._out()
+        if out.get("state") != "leaving" or out.get("step") != "eph" or int(out.get("gen") or 0) != int(gen):
+            return []
+        try:
+            sealed = seal.seal_k_to(bytes.fromhex(str(eph_hex)), self.reserve_k(), int(gen), str(oid))
+        except (ValueError, seal.PackageError) as e:
+            return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не того вида — {e}", released=True)
+        self._out_step("up", UP_WAIT_S, oid=str(oid))
+        self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
+        return [("send", "go", {"gen": int(gen), "kind": str(out.get("kind") or "button"),
+                                "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
+                                "sealed": sealed.hex(), "oid": str(oid)}), ("live",)]
+
     def reserve_up_in(self) -> list[tuple]:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "up":

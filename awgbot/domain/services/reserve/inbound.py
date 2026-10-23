@@ -9,13 +9,18 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
-Переезд кнопкой (`go{K, gen, kind}`; предусловия — `reserve_open_block`
+Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`
 без доли: зона свободна, мои клиенты здесь, готовность, направление, пакет):
 пересылка хвоста прошлого возврата уступает (`_relay_yield`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
-открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`; stdin — JSON
-с `K`; запись DNS меняет основа; env резерва закрыт, каталог данных подменён
-пустым — виден только guest.pkg, `AWG_BOT_ENV=/dev/null`) → `clone_up` →
+открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`;
+stdin — JSON входа первой строкой, труба открыта; запись DNS меняет основа;
+env резерва закрыт, каталог данных подменён пустым — виден только guest.pkg,
+`AWG_BOT_ENV=/dev/null`) → процесс выпускает разовую пару X25519, шаг `eph`
+→ `open_eph{gen, eph, oid}` основе (повтор раз в 10 с) → `go{sealed, oid}`
+— конверт с `K` второй строкой в stdin, труба закрыта: бот резерва `K` не
+видит ни в канале, ни в памяти (`k` открытым в `go` принимается только от
+основы без `seal1`) → `clone_up` →
 `up` основе (повтор раз в 30 с, пока идёт подъём) → `released{реплика}` →
 гость стоп, `rep.bin`, гость старт (он подхватит реплику; не вышло — срыв),
 отметка `tg_take` → `tg_taken` от гостя → `taken` основе, serving, Т-РУ4.
@@ -57,6 +62,7 @@ from ..gateway_link.common import log
 from .state import _LOCK
 
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
+EPH_RESEND_S = 10                # `open_eph` основе — повтор, пока процесс ждёт конверт
 TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
 DONE_BUTTON_WAIT_S = 1800 + 300 + 120   # кнопка: основе на запись (30 мин) и передачу бота (5 мин) с запасом
 REPLICA_WAIT_S = 90              # реплика от гостя после stop
@@ -69,23 +75,70 @@ class ReserveInboundMixin:
         return self.rsv_update("rsv_in", step=step, step_at=timeutil.now_iso(), **fields)
 
     # ── процесс открытия ────────────────────────────────────────────────────
-    def reserve_go_in(self, k_hex: str, gen: int, kind: str, ttl: int = 0) -> str:
-        """`go` от основы: запустить процесс открытия. Пусто — запущен; иначе
+    def reserve_go_req_in(self, gen: int, kind: str, ttl: int = 0) -> str:
+        """`go_req` от основы (переезд кнопкой): запустить процесс открытия в
+        режиме ожидания конверта с ключом пакета. Пусто — запущен; иначе
         причина отказа (уйдёт в `down`)."""
+        return self._go_launch(gen, kind, ttl, k_hex="")
+
+    def reserve_go_in(self, k_hex: str, gen: int, kind: str, ttl: int = 0, sealed: str = "", oid: str = "") -> str:
+        """`go` от основы. С конвертом (`sealed`, `oid`) — ключ пакета процессу
+        открытия, который его ждёт (шаг `eph` с тем же `oid`); повтор с тем же
+        `oid` после передачи — молча. `k` открытым — только от основы прежнего
+        выпуска (без `seal1`): процесс запускается с ключом во входе. Пусто —
+        принято; иначе причина отказа (уйдёт в `down`)."""
+        if sealed:
+            return self._go_sealed(gen, str(sealed), str(oid))
+        if "seal1" in (self.reserve_peer_state().get("caps") or []):
+            return "ключ пакета открытым не принимаю — пришли конвертом к разовому ключу"
+        try:
+            bytes.fromhex(str(k_hex))
+        except ValueError:
+            return "ключ не hex"
+        return self._go_launch(gen, kind, ttl, k_hex=str(k_hex))
+
+    def _go_sealed(self, gen: int, sealed: str, oid: str) -> str:
+        from awgbot.infra import rsvzone
+        try:
+            bytes.fromhex(sealed)
+        except ValueError:
+            return "конверт ключа не hex"
+        with _LOCK:
+            inn = self._inn()
+            if str(inn.get("state") or "") != "taking" or not inn.get("sealed"):
+                return "процесс открытия конверт не ждёт"
+            if int(inn.get("gen") or 0) != int(gen):
+                return f"открывается пакет {inn.get('gen')}, а не {gen}"
+            if inn.get("k_passed"):
+                if str(inn.get("oid") or "") == oid:
+                    log.info("резерв: ключ пакета уже передан процессу — повтор `go` пропущен")
+                    return ""
+                return "ключ не к этому открытию"
+            st = rsvzone.open_status()
+            if str(st.get("step") or "") != "eph" or str(st.get("oid") or "") != oid:
+                return "ключ не к этому открытию"
+            why = self._rsvopen_send({"sealed": sealed})
+            if why:
+                return why
+            self.rsv_update("rsv_in", k_passed=True, oid=oid, k_passed_at=timeutil.now_iso())
+        log.info("резерв: конверт с ключом пакета передан процессу открытия (пакет %s)", gen)
+        return ""
+
+    def _go_launch(self, gen: int, kind: str, ttl: int, k_hex: str) -> str:
+        """Общее для `go_req` и `go{k}`: предусловия, зона, запуск процесса."""
         pkg_in = self.rsv_get("rsv_pkg_in")
         if int(pkg_in.get("gen") or 0) != int(gen):
             return f"у меня пакет {pkg_in.get('gen') or 'нет'}, а не {gen}"
         why = self.reserve_open_block(need_share=False)       # по K основы доля не нужна
         if why:
             return why
-        try:
-            bytes.fromhex(str(k_hex))
-        except ValueError:
-            return "ключ не hex"
         if hasattr(self, "reserve_zone_shell_ensure"):
             self.reserve_zone_shell_ensure()                  # после перезагрузки хоста зоны нет — --take отказал бы
         payload = self._open_payload(kind)
-        payload["k"] = str(k_hex)
+        if k_hex:
+            payload["k"] = k_hex
+        else:
+            payload["await_k"] = True                         # конверт с K — второй строкой, когда процесс даст разовый ключ
         payload["dns"] = {"ttl": int(ttl or 0)}               # по K конверта DNS нет: TTL записи — от основы
         with _LOCK:
             if not self.reserve_zone_free():                  # проверка и запись — под одним замком
@@ -95,14 +148,14 @@ class ReserveInboundMixin:
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
-                                up_sent=False, tg_taken=False)
+                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0)
             self._in_step("open")
         try:
-            self._rsvopen_launch(payload)
+            self._rsvopen_launch(payload, keep_stdin=not k_hex)
         except ServiceError as e:
             self.reserve_set_in("idle", step="", reason=str(e))
             return str(e)
-        log.info("резерв: процесс открытия запущен (%s, пакет %s)", kind, gen)
+        log.info("резерв: процесс открытия запущен (%s, пакет %s%s)", kind, gen, ", ключ — конвертом" if not k_hex else "")
         return ""
 
     def _relay_yield(self) -> None:
@@ -146,6 +199,11 @@ class ReserveInboundMixin:
             if rc is not None:
                 return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
         now = time.monotonic()
+        if step == "eph" and inn.get("sealed") and not inn.get("k_passed") and livestep.mono_due(inn.get("eph_sent"), now, EPH_RESEND_S):
+            # процесс ждёт конверт: разовый ключ — основе (повтор, пока ждёт: сессия могла оборваться)
+            self.rsv_update("rsv_in", eph_sent=now)
+            actions.append(("send", "open_eph", {"gen": int(inn.get("gen") or 0), "eph": str(st.get("eph") or ""),
+                                                 "oid": str(st.get("oid") or "")}))
         if step in ("clone_up", "record_set", "record_fact", "done") and not inn.get("up_sent"):
             self.rsv_update("rsv_in", up_sent=True, up_resent=now, clone_at=timeutil.now_iso())
             actions += [("send", "up", {}), ("fw",)]

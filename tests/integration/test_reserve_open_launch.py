@@ -31,7 +31,7 @@ from awgbot.infra import rsvzone
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_move import notices, sent
-from tests.integration.test_reserve_hosting import K_HEX, _taking, host
+from tests.integration.test_reserve_hosting import K_HEX, _taking, host, stdin_lines
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
@@ -75,7 +75,7 @@ def test_the_writable_dirs_exist_before_the_unit_starts(host):
 
 def test_a_store_that_does_not_mount_refuses_the_go_and_launches_nothing(host):
     host.zone.fail_on["store"] = "нужен root"
-    why = host.svc.reserve_go_in(K_HEX, 7, "button")
+    why = host.svc.reserve_go_req_in(7, "button")
     assert "хранилище гостя не смонтировано" in why and "нужен root" in why, why
     assert not host.spawn.popen, "процесс открытия запущен без хранилища — гость стартует на пустом каталоге"
     assert host.svc.reserve_in() == "idle", "зона осталась занятой отказом монтирования"
@@ -85,7 +85,7 @@ def test_a_state_dir_that_cannot_be_made_refuses_the_go(host, monkeypatch, tmp_p
     blocker = tmp_path / "file-not-dir"
     blocker.write_text("DUMMY")
     monkeypatch.setattr(rsvzone, "STATE_DIR", blocker / "rsv")
-    why = host.svc.reserve_go_in(K_HEX, 7, "button")
+    why = host.svc.reserve_go_req_in(7, "button")
     assert "не создан" in why and str(blocker / "rsv") in why, why
     assert not host.spawn.popen and host.svc.reserve_in() == "idle"
 
@@ -122,6 +122,44 @@ def test_the_stderr_file_from_the_previous_opening_is_truncated(host):
     _taking(host)
     assert (rsvzone.STATE_DIR / "rsvopen.err").read_text() == "", \
         "хвост прошлого открытия попадёт в причину этого"
+
+
+# ── stdin процесса: вход первой строкой, конверт второй ─────────────────────
+
+def test_the_launch_with_await_k_keeps_the_pipe_open_and_the_plain_launch_closes_it(host):
+    host.svc._rsvopen_launch({"await_k": True}, keep_stdin=True)
+    run = host.spawn.popen[-1]
+    assert stdin_lines(run) == ['{"await_k": true}'] and run.get("flushed") and not run.get("closed"), \
+        "труба закрыта до конверта — процесс получит EOF вместо ключа"
+    host.svc._rsvopen_launch({"k": K_HEX})
+    run = host.spawn.popen[-1]
+    assert run.get("closed"), "без ожидания конверта труба обязана закрыться сразу: процесс читает вход до EOF"
+
+
+def test_the_second_line_is_written_once_and_closes_the_pipe(host):
+    svc = host.svc
+    svc._rsvopen_launch({"await_k": True}, keep_stdin=True)
+    run = host.spawn.popen[-1]
+    assert svc._rsvopen_send({"sealed": "ab" * 10}) == ""
+    assert stdin_lines(run) == ['{"await_k": true}', '{"sealed": "abababababababababab"}'] and run.get("closed")
+    assert "не ждёт" in svc._rsvopen_send({"sealed": "cd" * 10}), "вторая запись в закрытую трубу не отклонена"
+    assert len(stdin_lines(run)) == 2
+
+
+def test_the_second_line_is_refused_when_no_process_waits_for_it(host):
+    svc = host.svc
+    assert "не ждёт" in svc._rsvopen_send({"sealed": "ab" * 10}), "конверт без процесса"
+    svc._rsvopen_launch({"k": K_HEX})
+    assert "не ждёт" in svc._rsvopen_send({"sealed": "ab" * 10}), "процесс с ключом во входе конверта не ждёт"
+    assert len(stdin_lines(host.spawn.popen[-1])) == 1
+
+
+def test_a_broken_pipe_on_the_second_line_is_a_reason_not_an_exception(host):
+    svc = host.svc
+    svc._rsvopen_launch({"await_k": True}, keep_stdin=True)
+    host.spawn.stdin_error = BrokenPipeError("процесс умер")
+    why = svc._rsvopen_send({"sealed": "ab" * 10})
+    assert "не передан" in why and "процесс умер" in why, why
 
 
 # ── код завершения: такт ────────────────────────────────────────────────────

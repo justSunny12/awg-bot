@@ -1,20 +1,25 @@
 """Переезд кнопкой на стороне основы (domain/services/reserve/outbound.py):
-проверка возможности, шаги pkg → up → record → release → released → away,
-сроки шагов, отказы и события канала.
+проверка возможности, шаги pkg → eph → up → record → release → released →
+away, ключ пакета конвертом к разовому ключу процесса открытия резерва
+(`go_req` → `open_eph` → `go{sealed, oid}`), сроки шагов, отказы и события
+канала.
 
 Цена ошибки: переезд, объявленный до того, как запись DNS указывает на
 резерв, — клиенты остаются на основе без бота, а бот уже у резерва;
 `release` до факта записи — поллинг остановлен, а ответить в Telegram
 некому; зависший шаг без `back` резерву — клон и вебхук остаются у резерва
 навсегда; второе `taken` с тем же уведомлением — админ видит «перевёл» дважды;
-переезд, начатый с недоступным резервом, — человек ждёт, а `go` никуда не ушёл.
+переезд, начатый с недоступным резервом, — человек ждёт, а `go` никуда не ушёл;
+ключ пакета открытым в канале — бот резерва (а с ним чужой администратор)
+может снять пакет основы целиком; конверт к чужому разовому ключу — ключ
+уходит не тому процессу.
 """
 from __future__ import annotations
 
 import pytest
 
 from awgbot.core import settings
-from awgbot.domain.services.reserve import outbound
+from awgbot.domain.services.reserve import compat, outbound
 from awgbot.domain.services.types import ServiceError
 from awgbot.util import pairproto, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal
@@ -56,6 +61,20 @@ def test_every_obstacle_gives_its_own_reason_and_no_start(mv):
     assert "уже не на этом сервере" in svc.reserve_move_check()
 
 
+def test_a_reserve_that_cannot_take_the_key_sealed_gets_no_move_button(mv):
+    """Резерв без `seal1` принял бы ключ только открытым — переезд не
+    предлагается вовсе, без запасного пути с открытым `k`."""
+    svc = mv.svc
+    rm.st_in(svc, caps=[c for c in compat.CAPS if c != "seal1"])
+    why = svc.reserve_move_check()
+    assert "конвертом" in why and "Beta" in why and "новее" in why, why
+    with pytest.raises(ServiceError):
+        svc.reserve_move_start()
+    assert svc.reserve_out() == "home"
+    rm.st_in(svc)
+    assert svc.reserve_move_check() == ""
+
+
 def test_without_a_pair_the_move_check_says_there_is_no_reserve(services, rsv):
     assert services.reserve_move_check() == "резерва нет"
 
@@ -71,9 +90,9 @@ def test_the_move_starts_with_a_fresh_package_request_and_remembers_the_target(m
     assert svc.reserve_busy(), "идущий переезд обязан считаться занятостью — иначе рядом стартует второй"
 
 
-# ── pkg → up ────────────────────────────────────────────────────────────────
+# ── pkg → eph → up ──────────────────────────────────────────────────────────
 
-def test_go_waits_for_a_package_confirmed_after_the_start_and_carries_the_key(mv):
+def test_go_req_waits_for_a_package_confirmed_after_the_start_and_carries_no_key(mv):
     svc = mv.svc
     rm.confirm_package(svc, gen=3)                       # пакет подтверждён ДО старта
     svc.rsv_update("rsv_pkg_sent", at=timeutil.to_iso(timeutil.shift(timeutil.now(), -3600)))
@@ -81,13 +100,67 @@ def test_go_waits_for_a_package_confirmed_after_the_start_and_carries_the_key(mv
     assert svc.reserve_out_tick() == [], "старый пакет принят за свежий — резерв поднимет клиентов по прежним данным"
     rm.confirm_package(svc, gen=4)
     acts = svc.reserve_out_tick()
-    go = [a for a in acts if a[:2] == ("send", "go")]
-    assert len(go) == 1
-    body = go[0][2]
-    assert body == {"k": svc.reserve_k().hex(), "gen": 4, "kind": "button", "ttl": 0}, "TTL записи ещё не читали — 0"
+    assert sent(acts) == ["go_req"], f"после пакета ждём просьбу о разовом ключе, ушло: {sent(acts)}"
+    body = actions_of(acts, "send")[0][2]
+    assert body == {"gen": 4, "kind": "button", "ttl": 0}, "TTL записи ещё не читали — 0; ключа в go_req нет"
+    pairproto.check(pairproto.PAIR_PROTO, "go_req", body, pairproto.INVITER)
+    assert svc.rsv_get("rsv_out")["step"] == "eph"
+    assert svc.reserve_out_tick() == [], "go_req ушёл один раз: на шаге eph такт молчит"
+    assert svc.reserve_k().hex() not in " ".join(str(a) for a in acts), "ключ пакета ушёл в канал открытым"
+
+
+def test_the_ephemeral_key_of_the_reserve_turns_into_go_with_the_key_sealed_to_it(mv):
+    """`open_eph` от резерва → `go{sealed, oid}`: конверт открывается только
+    закрытой частью процесса открытия, внутри — K, поколение и oid; шаг up."""
+    svc = mv.svc
+    svc.rsv_update("rsv_dns", ttl=900)
+    svc.reserve_move_start()
+    rm.confirm_package(svc, gen=4)
+    svc.reserve_out_tick()
+    priv, acts = rm.open_eph(svc, gen=4)
+    assert sent(acts) == ["go"] and ("live",) in acts, acts
+    body = actions_of(acts, "send")[0][2]
     pairproto.check(pairproto.PAIR_PROTO, "go", body, pairproto.INVITER)
-    assert svc.rsv_get("rsv_out")["step"] == "up"
+    assert set(body) == {"gen", "kind", "ttl", "sealed", "oid"}, f"в go лишние или недостающие поля: {sorted(body)}"
+    assert body["gen"] == 4 and body["kind"] == "button" and body["ttl"] == 900 and body["oid"] == "0123456789abcdef"
+    assert "k" not in body and svc.reserve_k().hex() not in body["sealed"], "ключ пакета в go открытым"
+    assert seal.open_sealed_k(priv, bytes.fromhex(body["sealed"]), 4, "0123456789abcdef") == svc.reserve_k(), \
+        "конверт не открывается разовой парой резерва — процесс открытия ключа не получит"
+    out = svc.rsv_get("rsv_out")
+    assert out["step"] == "up" and out["go_sent"] is True and out["oid"] == "0123456789abcdef"
+    assert svc.reserve_k().hex() not in str(out) and body["sealed"] not in str(out), "ключ или конверт осели в rsv_out"
     assert svc.reserve_out_tick() == [], "go ушёл один раз: на шаге up такт молчит"
+
+
+def test_a_repeated_or_foreign_open_eph_is_ignored(mv):
+    """Второй `open_eph` (повтор резерва раз в 10 с, когда `go` уже ушёл),
+    чужое поколение или не тот шаг — молча: второго `go` нет."""
+    svc = mv.svc
+    svc.reserve_move_start()
+    rm.confirm_package(svc, gen=4)
+    svc.reserve_out_tick()
+    _priv, acts = rm.open_eph(svc, gen=5)
+    assert acts == [] and svc.rsv_get("rsv_out")["step"] == "eph", "чужое поколение дало go"
+    _priv, acts = rm.open_eph(svc, gen=4)
+    assert sent(acts) == ["go"]
+    _priv, again = rm.open_eph(svc, gen=4, oid="ffffffffffffffff")
+    assert again == [] and svc.rsv_get("rsv_out")["step"] == "up", "повтор open_eph дал второй go — два конверта к разным ключам"
+    assert svc.reserve_out() == "leaving"
+    assert rm.open_eph(svc, gen=4)[1] == [], "open_eph вне шага eph что-то сделал"
+
+
+def test_an_open_eph_with_a_malformed_key_fails_the_move_and_releases_the_reserve(mv):
+    svc = mv.svc
+    svc.reserve_move_start()
+    rm.confirm_package(svc, gen=4)
+    svc.reserve_out_tick()
+    k = svc.reserve_k()
+    acts = svc.reserve_open_eph_in(4, "zz", "0123456789abcdef")
+    assert svc.reserve_out() == "home" and sent(acts) == ["back"], "резерв держит процесс открытия — без back он ждёт 2 минуты впустую"
+    assert "не того вида" in " ".join(n.text for n in notices(acts))
+    assert svc.reserve_k() == k, "K не уходил — менять его незачем"
+    acts = svc.reserve_open_eph_in(4, "cd" * 16, "0123456789abcdef")
+    assert acts == [], "вне переезда open_eph что-то сделал"
 
 
 def test_up_from_the_reserve_moves_to_the_record_step_once(mv):
@@ -181,6 +254,7 @@ def test_an_unreadable_authoritative_server_is_not_a_fact(mv):
 
 @pytest.mark.parametrize("step,limit,back,reason", [
     ("pkg", outbound.PKG_WAIT_S, False, "не подтверждены"),
+    ("eph", outbound.EPH_WAIT_S, True, "разовый ключ от «Beta» не пришёл"),
     ("up", outbound.UP_WAIT_S, True, "не поднял клиентов"),
     ("record", outbound.RECORD_WAIT_S, True, "30 минут"),
     ("release", outbound.RELEASED_WAIT_S, True, "передача бота"),
@@ -449,14 +523,14 @@ def test_in_kind_of_the_reserve_lands_in_the_peer_state_and_decides_the_kind_of_
     assert svc.rsv_get("rsv_out")["kind"] == "rf", "вид переезда у резерва не дошёл до основы"
 
 
-def test_go_carries_the_ttl_of_the_record_for_the_pause_before_reconnect(mv):
-    """TTL записи у основы (последняя проверка) едет в go: гость ждёт его,
+def test_go_req_carries_the_ttl_of_the_record_for_the_pause_before_reconnect(mv):
+    """TTL записи у основы (последняя проверка) едет в go_req: гость ждёт его,
     прежде чем звать клиентов переподключиться."""
     svc = mv.svc
     svc.rsv_update("rsv_dns", ttl=900)
     svc.reserve_move_start()
     rm.confirm_package(svc, gen=4)
-    go = [a for a in svc.reserve_out_tick() if a[:2] == ("send", "go")]
+    go = [a for a in svc.reserve_out_tick() if a[:2] == ("send", "go_req")]
     assert go and go[0][2]["ttl"] == 900, go
 
 

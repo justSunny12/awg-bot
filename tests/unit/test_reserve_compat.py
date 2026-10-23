@@ -117,6 +117,18 @@ def test_my_side_carries_the_own_flag(monkeypatch):
 
 # ── «новый принимает старого» и мелочи версий ───────────────────────────────
 
+def test_the_sealed_key_capability_is_declared_and_does_not_decide_the_direction():
+    """`seal1` — в CAPS (резерв говорит основе, что примет ключ пакета только
+    конвертом); направление по-прежнему решают версия и прежние возможности:
+    без `seal1` у резерва кнопку переезда убирает `reserve_move_check`, а не
+    матрица — иначе аварийный путь по долям, которому конверт не нужен,
+    закрылся бы тоже."""
+    assert "seal1" in compat.CAPS
+    old = _side(name="Beta", ports=[443], caps=[c for c in compat.CAPS if c != "seal1"])
+    assert compat.direction_ready(_side(), old) == (True, ""), "без seal1 закрылось направление по долям"
+    assert compat.direction_ready(old, _side())[0] is True
+
+
 def test_different_versions_make_only_the_newer_one_a_reserve():
     """Разные выпуски: клиенты старого — к новому можно, обратно — нет."""
     old, new = _side(version="4.0.0"), _side(name="Beta", version="4.1.0", ports=[443])

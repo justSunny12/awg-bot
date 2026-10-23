@@ -81,9 +81,20 @@ class InboundMixin:
         from awgbot.runtime import rsvactions
         await rsvactions.run(actions)
 
-    async def _in_go(self, sess: _Session, body: dict) -> None:
-        why = await asyncio.to_thread(self.services.reserve_go_in, str(body["k"]), int(body["gen"]), str(body["kind"]),
+    async def _in_go_req(self, sess: _Session, body: dict) -> None:
+        why = await asyncio.to_thread(self.services.reserve_go_req_in, int(body["gen"]), str(body["kind"]),
                                       int(body.get("ttl") or 0))
+        if why:
+            await send_line(sess, "down", {"reason": why[:pairproto.MAX_REASON]})
+
+    async def _in_open_eph(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_open_eph_in, int(body["gen"]),
+                                                    str(body["eph"]), str(body["oid"])))
+
+    async def _in_go(self, sess: _Session, body: dict) -> None:
+        why = await asyncio.to_thread(self.services.reserve_go_in, str(body.get("k") or ""), int(body["gen"]),
+                                      str(body["kind"]), int(body.get("ttl") or 0),
+                                      str(body.get("sealed") or ""), str(body.get("oid") or ""))
         if why:
             await send_line(sess, "down", {"reason": why[:pairproto.MAX_REASON]})
 

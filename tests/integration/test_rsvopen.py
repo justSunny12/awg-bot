@@ -174,6 +174,56 @@ class Box:
         self.out = self.capsys.readouterr().out
         return rc
 
+    def open_awaiting(self, second, *, budget_s: float = 5.0, **data) -> int:
+        """Переезд кнопкой: вход `await_k` первой строкой в трубу, как пишет бот
+        резерва; `second(eph_pub, oid)` — что бот пишет второй строкой, когда
+        процесс дал разовый ключ: (строка | None, закрыть ли трубу). Срок
+        ожидания конверта — `budget_s` (в жизни K_WAIT_S)."""
+        import threading
+        import time
+        data.setdefault("target_ip", "203.0.113.20")
+        data.setdefault("webhook_port", 443)
+        data.setdefault("self_host", "203.0.113.20")
+        data["await_k"] = True
+        r, w = os.pipe()
+        reader = os.fdopen(r, "r")
+        self.mp.setattr(sys, "stdin", reader)
+        os.write(w, (json.dumps(data) + "\n").encode())
+        real = rsvopen.await_sealed_k
+        self.mp.setattr(rsvopen, "await_sealed_k", lambda gen, budget_s=budget_s: real(gen, budget_s=budget_s))
+        self.eph_status: dict = {}
+        state = {"open": True}
+
+        def feed():
+            deadline = time.monotonic() + 5
+            st: dict = {}
+            while time.monotonic() < deadline:
+                st = rsvzone.open_status()
+                if st.get("step") == "eph" or st.get("step") == "fail":
+                    break
+                time.sleep(0.01)
+            self.eph_status = dict(st)
+            if st.get("step") != "eph":
+                return
+            line, close = second(bytes.fromhex(str(st.get("eph") or "")), str(st.get("oid") or ""))
+            if line is not None:
+                os.write(w, (line + "\n").encode())
+            if close:
+                state["open"] = False
+                os.close(w)
+        t = threading.Thread(target=feed, daemon=True)
+        t.start()
+        self.capsys.readouterr()
+        try:
+            rc = rsvopen.main()
+        finally:
+            t.join(5)
+            if state["open"]:
+                os.close(w)
+            reader.close()
+        self.out = self.capsys.readouterr().out
+        return rc
+
     @property
     def steps(self) -> list[str]:
         return [ln.split()[0] for ln in self.out.splitlines() if ln.strip()]
@@ -673,3 +723,123 @@ def test_m_is_dropped_before_the_zone_and_the_dns_token_after_the_record(box):
     assert seen["wait"].get("dns") == {}, f"токен провайдера жив, пока ждём факт записи: {seen['wait'].get('dns')}"
     assert seen["wait"].get("name") == "vpn.example.net", "имя записи для ожидания факта потеряно"
     assert (seen["status"].get("step"), seen["status"].get("name")) == ("record_set", "vpn.example.net"), seen["status"]
+
+
+# ── переезд кнопкой: ключ пакета конвертом к разовому ключу процесса ────────
+
+OID_LEN_HEX = seal.OID_LEN
+
+
+def _envelope(box, gen=None, oid=None, k=None):
+    """Что бот резерва пишет второй строкой: конверт с K от основы."""
+    def second(eph_pub: bytes, real_oid: str):
+        sealed = seal.seal_k_to(eph_pub, k or box.k, box.gen_of_package if gen is None else gen,
+                                real_oid if oid is None else oid)
+        return json.dumps({"sealed": sealed.hex()}), True
+    return second
+
+
+@pytest.fixture()
+def abox(box):
+    box.gen_of_package = 5                                    # pkg_gen у write_package по умолчанию
+    return box
+
+
+def test_await_k_publishes_the_ephemeral_key_and_the_opening_id_and_opens_with_the_envelope(abox):
+    """Процесс выпускает разовую пару, кладёт публичную часть и oid в
+    open.status (шаг `eph`), ждёт конверт второй строкой и дальше идёт как по
+    готовому K — с шагом `k_sealed` вместо `k_given`."""
+    assert abox.open_awaiting(_envelope(abox)) == 0, abox.out
+    assert abox.steps == ["eph", "k_sealed", "parts", "store", "clone_up", "done"], abox.out
+    st = abox.eph_status
+    assert st["step"] == "eph" and len(st["eph"]) == seal.EPH_LEN * 2 and len(st["oid"]) == OID_LEN_HEX, st
+    bytes.fromhex(st["eph"]), bytes.fromhex(st["oid"])
+    assert "set_record" not in abox.kinds() and rsvzone.open_status()["step"] == "done"
+    assert rsvzone.K_FILE.read_text() == abox.k.hex(), "ключ из конверта не дошёл до хранилища гостя"
+
+
+def test_two_openings_give_different_ephemeral_keys_and_ids(abox):
+    abox.open_awaiting(_envelope(abox))
+    first = dict(abox.eph_status)
+    abox.open_awaiting(_envelope(abox))
+    second = abox.eph_status
+    assert first["eph"] != second["eph"] and first["oid"] != second["oid"], \
+        "разовый ключ повторился — конверт прежнего открытия подойдёт новому"
+
+
+def test_neither_stdout_nor_the_status_file_carries_the_key_or_the_envelope_on_the_sealed_path(abox):
+    """На пути конверта наружу уходят только публичная часть и oid: ни K, ни
+    конверт, ни токен основы — ни в stdout, ни в open.status."""
+    seen = []
+    real_write = rsvzone.open_status_write
+
+    def write(step, **fields):
+        real_write(step, **fields)
+        seen.append((abox.state_dir / "open.status").read_text())
+    abox.mp.setattr(rsvzone, "open_status_write", write)
+    envelopes = []
+
+    def second(eph_pub, oid):
+        line, close = _envelope(abox)(eph_pub, oid)
+        envelopes.append(json.loads(line)["sealed"])
+        return line, close
+    assert abox.open_awaiting(second) == 0, abox.out
+    secrets_ = [abox.k.hex(), abox.m.hex(), TOKEN, _b64(1)] + envelopes
+    for text in [abox.out] + seen:
+        leaked = [x for x in secrets_ if x in text]
+        assert not leaked, f"{leaked}\n{text}"
+
+
+@pytest.mark.parametrize("case, word", [
+    ("eof", "ключ пакета не получен"),
+    ("timeout", "ключ пакета не получен"),
+    ("foreign_gen", "поколение"),
+    ("foreign_oid", "не к этому открытию"),
+    ("foreign_key", "не тот ключ"),
+    ("garbage", "не того вида"),
+    ("empty", "пуст"),
+])
+def test_an_envelope_that_does_not_arrive_or_does_not_fit_this_opening_is_a_clean_failure(abox, case, word):
+    """EOF (бот резерва перезапустился), срок, конверт к другому пакету,
+    открытию или ключу — `fail` одной строкой, зона не тронута."""
+    if case == "eof":
+        second, budget = (lambda pub, oid: (None, True)), 5.0
+    elif case == "timeout":
+        second, budget = (lambda pub, oid: (None, False)), 0.3
+    elif case == "foreign_gen":
+        second, budget = _envelope(abox, gen=6), 5.0
+    elif case == "foreign_oid":
+        second, budget = _envelope(abox, oid="f" * OID_LEN_HEX), 5.0
+    elif case == "foreign_key":
+        def second(pub, oid):
+            _p, other = seal.new_eph()
+            return _envelope(abox)(other, oid)
+        budget = 5.0
+    elif case == "garbage":
+        second, budget = (lambda pub, oid: ("не json", True)), 5.0
+    else:
+        second, budget = (lambda pub, oid: (json.dumps({"sealed": ""}), True)), 5.0
+    assert abox.open_awaiting(second, budget_s=budget) == 1
+    assert abox.steps == ["eph", "fail"] and word in abox.out, abox.out
+    assert abox.calls == [], "зона тронута до получения ключа"
+    assert not rsvzone.K_FILE.exists() and not rsvzone.TG_TAKE_FILE.exists()
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and word in st["reason"], st
+    assert "Traceback" not in abox.out
+
+
+def test_an_envelope_with_a_key_that_is_not_the_package_key_fails_on_the_parts(abox):
+    assert abox.open_awaiting(_envelope(abox, k=seal.new_k())) == 1
+    assert abox.steps == ["eph", "k_sealed", "fail"] and "часть" in abox.out, abox.out
+    assert abox.calls == []
+
+
+def test_the_manual_run_still_reads_a_multi_line_json_input(box):
+    """Ручной `awg-bot reserve open` подаёт JSON с переводами строк: первая
+    строка не разбирается сама по себе — вход дочитывается до конца."""
+    data = {"k": box.k.hex(), "target_ip": "203.0.113.20", "webhook_port": 443, "self_host": "203.0.113.20"}
+    box.mp.setattr(sys, "stdin", io.StringIO(json.dumps(data, indent=2) + "\n"))
+    box.capsys.readouterr()
+    rc = rsvopen.main()
+    box.out = box.capsys.readouterr().out
+    assert rc == 0 and box.steps[0] == "k_given", box.out

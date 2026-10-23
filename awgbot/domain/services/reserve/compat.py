@@ -17,7 +17,9 @@ from awgbot.core import config
 from awgbot.core.compat import COMPAT_FLOOR, version_key
 
 # возможности основного бота в паре (контракт канала, не версия)
-CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1")
+# seal1 — ключ пакета при переезде кнопкой принимается только конвертом к разовому ключу
+# процесса открытия (`go_req` → `open_eph` → `go{sealed}`)
+CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1", "seal1")
 PKG_FORMATS: tuple[str, ...] = ("pkg2",)           # по старшинству: последний — самый новый
 _NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "vote1")
 

@@ -103,7 +103,13 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
     "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
     "ask_no":       (BOTH, {"reason": (_S, 16)}),
-    "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None)}),
+    # переезд кнопкой: `go_req` — запусти процесс открытия и дай разовый ключ; `open_eph` —
+    # его публичная часть и идентификатор открытия; `go` — ключ пакета конвертом к нему
+    # (`sealed` + `oid`); `k` открытым — только от основы прежнего выпуска
+    "go_req":       (BOTH, {"gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None)}),
+    "open_eph":     (BOTH, {"gen": (_I, None), "eph": (_S, 64), "oid": (_S, 16)}),
+    "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None),
+                            "sealed": (_S, 384), "oid": (_S, 16)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
     "up":           (BOTH, {}),
     "down":         (BOTH, {"reason": (_S, MAX_REASON)}),
     "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB)}),
@@ -147,7 +153,8 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone"}),
-                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"}), "go": frozenset({"ttl"}),
+                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
+                                  "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 

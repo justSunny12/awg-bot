@@ -25,7 +25,14 @@ reserve open` (root, без этой песочницы).
 Вход (один из ключей ключа плюс поля зоны):
     {"shares": [[x, "hex"], [x, "hex"]]}     две доли прямой (резерв + шлюз)
     {"share": [x, "hex"], "code": "…"}       доля резерва + аварийный код
-    {"k": "hex"}                             ключ пакета (переезд кнопкой, K от основы)
+    {"k": "hex"}                             ключ пакета (ручной запуск: K открытым)
+    {"await_k": true}                        переезд кнопкой: процесс выпускает разовую
+                                             пару X25519, пишет её публичную часть и
+                                             идентификатор открытия в open.status (шаг
+                                             `eph`) и ждёт второй строки stdin
+                                             {"sealed": "hex"} — конверт с K от основы
+                                             (не дольше K_WAIT_S); закрытая часть живёт
+                                             только в памяти процесса
     "target_ip": "203.0.113.7"               адрес этого сервера для записи DNS
     "dns": {provider…}                       настройка провайдера (K-путь: конверт недоступен)
     "set_record": true|false                 менять ли запись (по умолчанию — да, если есть чем)
@@ -38,7 +45,7 @@ reserve open` (root, без этой песочницы).
 (env, conf, data — база и кэш списков РФ-доступа `routing-<вид>.lst` из части
 бота: источники списков гостю недоступны, — ключ, вебхук, пул) → `clone_up`
 (--take: клон, veth, dnsmasq, юнит бота основы) → `record_set` → `record_fact` → `done`; отказ — `fail
-<причина>`, код 1. При готовом `k` вместо `m` → `k` — шаг `k_given`. Ждёт
+<причина>`, код 1. При готовом `k` вместо `m` → `k` — шаг `k_given`; по конверту — `eph` → `k_sealed`. Ждёт
 факта записи у авторитетного сервера до 30 минут; по факту кладёт отметку
 `tg_take` — бот основы на резерве ставит вебхук. Без записи (`set_record`
 false, нет `target_ip` или провайдера — переезд кнопкой и по согласию основы:
@@ -73,6 +80,7 @@ import json
 import os
 import random
 import secrets
+import select
 import subprocess
 import sys
 import time
@@ -81,6 +89,7 @@ from awgbot.infra.nftguard.common import DEFAULT_TG_POOL   # тот же спи�
 
 TARGET_WAIT_S = 30 * 60
 FACT_POLL_S = (15, 40)
+K_WAIT_S = 120                  # конверт с K от основы после публикации разового ключа
 
 
 def _p(text: str) -> None:
@@ -105,14 +114,60 @@ def _fail(reason: str) -> int:
 
 
 def _read_input() -> dict:
-    raw = sys.stdin.read()
+    """Первая строка stdin — вход. Не разобралась как строка (JSON в несколько
+    строк при ручном запуске) — дочитать до конца и разобрать целиком."""
+    raw = sys.stdin.readline()
     try:
         data = json.loads(raw or "{}")
-    except ValueError as e:
-        raise OpenError(f"вход не JSON: {e}") from e
+    except ValueError:
+        raw += sys.stdin.read()
+        try:
+            data = json.loads(raw or "{}")
+        except ValueError as e:
+            raise OpenError(f"вход не JSON: {e}") from e
     if not isinstance(data, dict):
         raise OpenError("вход не объект")
     return data
+
+
+def _read_line_within(budget_s: float) -> str:
+    """Строка из stdin не позже срока; пусто — EOF (бот закрыл трубу) или срок."""
+    deadline = time.monotonic() + budget_s
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return ""
+        ready, _w, _x = select.select([sys.stdin], [], [], min(left, 5.0))
+        if ready:
+            return sys.stdin.readline()
+
+
+def await_sealed_k(pkg_gen: int, budget_s: float = K_WAIT_S) -> bytes:
+    """Переезд кнопкой: разовая пара X25519 → публичная часть и идентификатор
+    открытия в open.status (шаг `eph`; бот резерва отдаёт их основе) → вторая
+    строка stdin {"sealed": hex} → `K`. Закрытая часть — только здесь, в
+    памяти; конверт с чужим поколением или идентификатором не открывается."""
+    from awgbot.util.rsvpkg import seal
+    priv, pub = seal.new_eph()
+    oid = secrets.token_hex(seal.OID_LEN // 2)
+    try:
+        _step("eph", pkg_gen=pkg_gen, eph=pub.hex(), oid=oid)
+        line = _read_line_within(budget_s)
+        if not line:
+            raise OpenError("ключ пакета не получен")
+        try:
+            obj = json.loads(line)
+            sealed = bytes.fromhex(str((obj or {}).get("sealed") or ""))
+        except (ValueError, AttributeError) as e:
+            raise OpenError(f"конверт ключа пакета не того вида: {e}") from e
+        if not sealed:
+            raise OpenError("конверт ключа пакета пуст")
+        try:
+            return seal.open_sealed_k(priv, sealed, pkg_gen, oid)
+        except seal.PackageError as e:
+            raise OpenError(str(e)) from e
+    finally:
+        priv = None                                            # noqa: F841 — закрытая часть дальше не нужна
 
 
 def _point(item) -> tuple[int, bytes]:
@@ -320,9 +375,15 @@ def run(data: dict) -> int:
         head = seal.header(blob)
     except seal.PackageError as e:
         return _fail(f"пакет: {e}")
+    sealed_path = bool(data.get("await_k"))
+    if sealed_path:
+        try:
+            data["k"] = await_sealed_k(head.pkg_gen).hex()
+        except OpenError as e:
+            return _fail(str(e))
     try:
         m, k = recover_keys(data, blob)
-        _step("m" if m else "k_given", pkg_gen=head.pkg_gen, m_gen=head.m_gen)
+        _step("m" if m else ("k_sealed" if sealed_path else "k_given"), pkg_gen=head.pkg_gen, m_gen=head.m_gen)
         if m:
             _step("k", pkg_gen=head.pkg_gen)
         parts = seal.open_parts(blob, k)

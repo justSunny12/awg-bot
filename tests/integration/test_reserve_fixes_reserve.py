@@ -34,7 +34,7 @@ from tests.conftest import FakeBot
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_vote_common import ADMIN, PEER_ADMIN, box, gw_sent, notes, sent
-from tests.integration.test_reserve_hosting import K_HEX, _serving, _taking, host
+from tests.integration.test_reserve_hosting import _serving, _taking, host
 from tests.integration.test_reserve_jobs import _Sched
 
 pytestmark = pytest.mark.integration
@@ -67,7 +67,7 @@ def test_the_open_status_says_launching_before_the_process_starts(host):
         return real(cmd, **kw)
     host.spawn.Popen = popen
     host.zone.status = {"step": "done"}                       # след прошлого открытия
-    _taking(host)
+    assert host.svc.reserve_go_req_in(7, "button") == ""
     assert seen and seen[0].get("step") == "launching", f"на момент запуска open.status: {seen}"
     assert host.zone.status["step"] == "launched"
 
@@ -98,14 +98,14 @@ def test_the_open_process_runs_without_the_reserves_token_and_cannot_read_its_ba
 
 def test_a_second_go_while_the_first_is_opening_is_refused(host):
     _taking(host)
-    assert "зона занята" in host.svc.reserve_go_in(K_HEX, 7, "button")
+    assert "зона занята" in host.svc.reserve_go_req_in(7, "button")
     assert len(host.spawn.popen) == 1, "второй процесс открытия поверх первого"
 
 
 @pytest.mark.parametrize("state", ["away", "leaving", "returning"])
 def test_go_is_refused_while_my_own_clients_are_not_here(host, state):
     host.svc.reserve_set_out(state)
-    why = host.svc.reserve_go_in(K_HEX, 7, "button")
+    why = host.svc.reserve_go_req_in(7, "button")
     assert "мои клиенты не на этом сервере" in why and not host.spawn.popen
 
 

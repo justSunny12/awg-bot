@@ -58,13 +58,15 @@ class ReserveOpenProcMixin:
                 "target_ip": self.reserve_own_ip(), "tg_pool": list(nftguard.tg_pool()),
                 "channel_port": int(settings.get_int("app.routing.link_channel_port", 8787) or 8787)}
 
-    def _rsvopen_launch(self, payload: dict) -> None:
+    def _rsvopen_launch(self, payload: dict, keep_stdin: bool = False) -> None:
         """Временный юнит с песочницей (systemd-run); без systemd — просто процесс.
         Секреты — только в stdin. Хранилище гостя монтирует бот — в пространстве
         хоста, до запуска юнита: у юнита с файловой песочницей своё пространство
         монтирования (slave), и tmpfs, смонтированный внутри него, хосту и
         юнитам гостя не виден. Каталоги из ReadWritePaths создаются заранее и
-        помечены «-» — несуществующий путь без «-» роняет юнит (код 226)."""
+        помечены «-» — несуществующий путь без «-» роняет юнит (код 226).
+        `keep_stdin` — переезд кнопкой: вход уходит первой строкой, труба
+        остаётся открытой до конверта с ключом пакета (`_rsvopen_send`)."""
         from awgbot.infra import rsvzone
         base = str(config.BASE_DIR)
         argv = [os.path.join(base, "venv", "bin", "python"), "-m", "tools.rsvopen"]
@@ -98,15 +100,34 @@ class ReserveOpenProcMixin:
         try:
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_fd,
                                     cwd=base, env=env, close_fds=True)
-            proc.stdin.write(json.dumps(payload).encode())
-            proc.stdin.close()
+            proc.stdin.write(json.dumps(payload).encode() + b"\n")
+            if keep_stdin:
+                proc.stdin.flush()
+            else:
+                proc.stdin.close()
         except OSError as e:
             raise ServiceError(f"процесс открытия не запустился: {e}")
         finally:
             if err_fd != subprocess.DEVNULL:
                 os.close(err_fd)
         self.__dict__["_rsvopen_proc"] = proc
+        self.__dict__["_rsvopen_stdin_open"] = bool(keep_stdin)
         rsvzone.open_status_write("launched")
+
+    def _rsvopen_send(self, line: dict) -> str:
+        """Вторая строка stdin процессу открытия (конверт с ключом пакета) и
+        закрытие трубы. Пусто — передано; иначе причина."""
+        proc = self.__dict__.get("_rsvopen_proc")
+        if proc is None or not self.__dict__.get("_rsvopen_stdin_open"):
+            return "процесс открытия не ждёт ключ"
+        self.__dict__["_rsvopen_stdin_open"] = False
+        try:
+            proc.stdin.write(json.dumps(line).encode() + b"\n")
+            proc.stdin.flush()
+            proc.stdin.close()
+        except (OSError, ValueError) as e:
+            return f"ключ процессу открытия не передан: {e}"
+        return ""
 
     def _rsvopen_exit(self) -> tuple[int | None, str]:
         """Код завершения процесса открытия (None — идёт или неизвестен после

@@ -35,8 +35,8 @@ def _date(iso: str) -> str:
 
 
 def _move_step(step: str) -> str:
-    return {"pkg": "обновляю данные для переезда", "up": "жду подъёма клиентов", "record": "жду смену записи",
-            "release": "передаю бот", "released": "передаю бот"}.get(step, "идёт переезд")
+    return {"pkg": "обновляю данные для переезда", "eph": "жду подъёма клиентов", "up": "жду подъёма клиентов",
+            "record": "жду смену записи", "release": "передаю бот", "released": "передаю бот"}.get(step, "идёт переезд")
 
 
 ABOUT = ("Два сервера AWG с разными админами страхуют друг друга: упадёт один — его клиенты и его бот будут "
@@ -257,6 +257,7 @@ def move_live(d: dict) -> str:
     if state != "leaving":
         return f"ℹ️ Перевод клиентов на {name} завершён"
     order = ["pkg", "up", "record", "release", "released"]
+    step = "up" if step == "eph" else step                    # разовый ключ процесса открытия — часть подъёма
     pos = order.index(step) + 1 if step in order else 1      # 1 — пакет в работе, 2 — резерв поднимает, 3 — запись, 4 — бот
     def mark(i):
         return "✅" if i < pos else "⏳"

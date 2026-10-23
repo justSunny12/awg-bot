@@ -32,7 +32,7 @@ from awgbot.util import livestep, timeutil
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_move import notices, sent
-from tests.integration.test_reserve_hosting import K_HEX, _taking, host
+from tests.integration.test_reserve_hosting import _taking, host, payload_of
 from tests.integration.test_reserve_return import away, merge_world
 
 pytestmark = pytest.mark.integration
@@ -214,7 +214,7 @@ def test_up_is_repeated_every_30_seconds_until_the_hosting_moves_on(host):
 def test_an_emergency_hosting_that_did_not_take_telegram_fails_after_ten_minutes(host, monkeypatch, active, why):
     svc = host.svc
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: active)
-    assert svc.reserve_go_in(K_HEX, 7, "dead") == ""
+    _taking(host, "dead")
     host.zone.status = {"step": "done"}
     svc.reserve_in_tick()
     svc.reserve_in_tick()
@@ -240,7 +240,7 @@ def test_the_tail_relay_yields_to_a_new_opening(host):
     svc = host.svc
     svc.reserve_set_in("relay", relay_to="203.0.113.9:45877", relay_until="2026-12-01T00:00:00+05:00")
     assert svc.reserve_zone_free() is True
-    assert svc.reserve_go_in(K_HEX, 7, "button") == "", "relay держит зону — новый переезд невозможен"
+    assert svc.reserve_go_req_in(7, "button") == "", "relay держит зону — новый переезд невозможен"
     assert svc.reserve_in() == "taking"
     assert host.zone.names()[:1] == ["teardown"], f"правило DNAT хвоста не снято до клона: {host.zone.calls}"
     assert not svc.rsv_get("rsv_in").get("relay_to")
@@ -319,9 +319,8 @@ def test_the_relay_counter_is_read_from_the_dnat_rules_of_prerouting(monkeypatch
 
 @pytest.mark.parametrize("ttl, want", [(900, 900), (0, 0)])
 def test_the_ttl_from_go_reaches_the_open_process(host, ttl, want):
-    import json
-    assert host.svc.reserve_go_in(K_HEX, 7, "button", ttl=ttl) == ""
-    payload = json.loads(host.spawn.popen[0]["stdin"])
+    assert host.svc.reserve_go_req_in(7, "button", ttl=ttl) == ""
+    payload = payload_of(host.spawn.popen[0])
     assert payload.get("dns") == {"ttl": want}, payload.get("dns")
 
 

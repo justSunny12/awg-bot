@@ -199,11 +199,23 @@ def _live_text(ui, step: str, **over) -> str:
     return st_t.move_live(d)
 
 
-@pytest.mark.parametrize("step,done", [("pkg", 0), ("up", 1), ("record", 2), ("release", 3), ("released", 4)])
+@pytest.mark.parametrize("step,done", [("pkg", 0), ("eph", 1), ("up", 1), ("record", 2), ("release", 3), ("released", 4)])
 def test_the_live_message_checks_off_the_steps_in_order(ui, step, done):
+    """Шаг `eph` (разовый ключ процесса открытия) — часть подъёма клиентов:
+    человеку он не показывается отдельным пунктом."""
     text = _live_text(ui, step)
     assert text.count("✅") == done, text
     assert "⏳ <b>Перевод клиентов на" in text
+
+
+def test_the_card_at_the_ephemeral_key_step_says_it_waits_for_the_clients(ui):
+    """Карточка резерва на шаге `eph` — та же фраза, что на подъёме: шаг ключа
+    человеку служебным словом не показывается."""
+    from awgbot.bot.texts.reserve.section import card_text
+    rm.to_step(ui.svc, "eph")
+    text = card_text(ui.svc.reserve_card_data())
+    assert "переезжают на «Beta» — жду подъёма клиентов" in text, text
+    assert "идёт переезд" not in text, "шаг ключа карточке неизвестен — показан общей фразой"
 
 
 def test_the_live_message_in_manual_mode_asks_for_the_record_change_at_the_record_step(ui):

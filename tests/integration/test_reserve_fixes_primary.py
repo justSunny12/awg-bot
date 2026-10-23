@@ -49,8 +49,9 @@ def _ago(minutes: float) -> str:
 # ── go_sent: своя отметка отправки K ────────────────────────────────────────
 
 def test_the_move_starts_without_the_mark_and_go_sets_it(mv):
-    """`go` с K — единственное, что даёт резерву ключ основы; отметка ставится
-    в тот момент, когда он уходит, и только тогда."""
+    """`go{sealed}` — единственное, что даёт процессу резерва ключ основы;
+    отметка ставится в тот момент, когда он уходит, и только тогда: `go_req`
+    ключа не несёт."""
     svc = mv.svc
     svc.rsv_update("rsv_out", go_sent=True)                    # след прежнего переезда
     svc.reserve_move_start()
@@ -59,6 +60,8 @@ def test_the_move_starts_without_the_mark_and_go_sets_it(mv):
     assert svc.rsv_get("rsv_out")["go_sent"] is False, "отметка без отправленного go"
     rm.confirm_package(svc, gen=4)
     acts = svc.reserve_out_tick()
+    assert sent(acts) == ["go_req"] and svc.rsv_get("rsv_out")["go_sent"] is False, "go_req ключа не несёт — отметка рано"
+    _priv, acts = rm.open_eph(svc, gen=4)
     assert sent(acts) == ["go"] and svc.rsv_get("rsv_out")["go_sent"] is True
 
 
@@ -69,6 +72,7 @@ def test_a_move_that_fails_after_go_gets_a_new_k_and_a_fresh_package(mv):
     svc.reserve_move_start()
     rm.confirm_package(svc, gen=4)
     svc.reserve_out_tick()
+    rm.open_eph(svc, gen=4)                                    # go{sealed} ушёл
     k = svc.reserve_k()
     svc.__dict__.pop("_rsv_pkg_due_at", None)
     svc.reserve_down_in("порт занят")
@@ -84,6 +88,20 @@ def test_a_move_that_fails_before_go_keeps_the_k(mv):
     mv.clock.advance(outbound.PKG_WAIT_S + 1)
     svc.reserve_out_tick()
     assert svc.reserve_out() == "home" and svc.reserve_k() == k, "K сменён, хотя резерву он не уходил"
+
+
+def test_a_move_refused_after_go_req_but_before_the_envelope_keeps_the_k(mv):
+    """`go_req` ключа не несёт: отказ резерва (`down`) или срок разового
+    ключа до `go{sealed}` — K остаётся, свежий пакет не нужен."""
+    svc = mv.svc
+    svc.reserve_move_start()
+    rm.confirm_package(svc, gen=4)
+    assert sent(svc.reserve_out_tick()) == ["go_req"]
+    k = svc.reserve_k()
+    svc.__dict__.pop("_rsv_pkg_due_at", None)
+    svc.reserve_down_in("зона занята")
+    assert svc.reserve_out() == "home" and svc.reserve_k() == k, "K сменён, хотя резерву ушёл только go_req"
+    assert not _pkg_due(svc), "свежий пакет запрошен, хотя K не менялся"
 
 
 # ── зависший вебхук резерва ─────────────────────────────────────────────────

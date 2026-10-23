@@ -235,8 +235,27 @@ async def test_go_with_a_refusal_answers_down_and_without_one_stays_silent(mv, a
     monkeypatch.setattr(inbound, "send_line", send_line)
     svc = act.svc
     h = _Handler(svc)
-    await h._in_go(_sess(), {"k": "ab" * 32, "gen": 99, "kind": "button"})
+    await h._in_go_req(_sess(), {"gen": 99, "kind": "button"})
     assert sess_sent and sess_sent[0][0] == "down" and "99" in sess_sent[0][1]["reason"]
+    sess_sent.clear()
+    await h._in_go(_sess(), {"gen": 7, "kind": "button", "sealed": "ab" * 32, "oid": "0123456789abcdef"})
+    assert sess_sent and sess_sent[0][0] == "down" and "не ждёт" in sess_sent[0][1]["reason"]
+    sess_sent.clear()
+    monkeypatch.setattr(svc, "reserve_go_in", lambda *a, **kw: "")
+    await h._in_go(_sess(), {"gen": 7, "kind": "button", "sealed": "ab" * 32, "oid": "0123456789abcdef"})
+    assert sess_sent == [], "без причины отказа down уходить не должен"
+
+
+async def test_open_eph_from_the_reserve_reaches_the_service_with_the_key_and_the_opening_id(mv, act, monkeypatch):
+    """`open_eph` — разовый ключ процесса открытия резерва: его действия
+    (`go{sealed}`) исполняются как действия автомата."""
+    svc = act.svc
+    got = []
+    go = ("send", "go", {"gen": 7, "kind": "button", "ttl": 0, "sealed": "ef" * 40, "oid": "0123456789abcdef"})
+    monkeypatch.setattr(svc, "reserve_open_eph_in", lambda gen, eph, oid: got.append((gen, eph, oid)) or [go])
+    await _Handler(svc)._in_open_eph(_sess(), {"gen": 7, "eph": "cd" * 32, "oid": "0123456789abcdef"})
+    assert got == [(7, "cd" * 32, "0123456789abcdef")]
+    assert act.sent == [("go", go[2])], f"go с конвертом не ушёл в канал: {act.sent}"
 
 
 async def test_blocks_from_the_primary_go_to_the_guest_and_are_capped(mv, act, monkeypatch):

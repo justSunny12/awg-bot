@@ -23,6 +23,7 @@ import subprocess
 import pytest
 
 from awgbot.core import settings
+from awgbot.domain.services.reserve import compat
 from awgbot.util import timeutil
 from tests.integration import _reserve_common as rc
 from tests.integration._reserve_vote_common import (ADMIN, GW_SHARE, RSV_SHARE, box, gateway_point, gw_sent, notes,
@@ -241,7 +242,7 @@ def primary(services, rsv, make_active_client, monkeypatch):
     cl = make_active_client(name="Шлюз", tg_id=7001)
     dev = services.add_device(cl.id, "NASPi").device_id
     services.db.gateway_add(dev, "awglink", 443, "10.99.99.0/30", slot_id=1)
-    services.rsv_update("rsv_peer_state", version="4.0.0", session=True)
+    services.rsv_update("rsv_peer_state", version="4.0.0", session=True, caps=list(compat.CAPS))
     services.rsv_put("rsv_keys", {"m": "11" * 16, "a": "22" * 16, "m_gen": 1, "k": "33" * 32, "k_gen": 1})
     services.reserve_set_out("home")
     monkeypatch.setattr(services, "reserve_directions", lambda: {"in": (True, ""), "out": (True, "")})
@@ -284,8 +285,8 @@ def test_ask_3_with_the_links_up_starts_the_move_with_the_rf_kind_and_go_carries
     out = services.rsv_get("rsv_out")
     assert out["state"] == "leaving" and out["kind"] == "rf" and out["dead_since"] == SINCE
     services.rsv_put("rsv_pkg_sent", {"gen": 3, "at": timeutil.now_iso()})
-    go = sent(services.reserve_out_tick(), "go")
-    assert len(go) == 1 and go[0]["kind"] == "rf" and go[0]["gen"] == 3, f"go без вида rf: {go}"
+    go = sent(services.reserve_out_tick(), "go_req")
+    assert len(go) == 1 and go[0]["kind"] == "rf" and go[0]["gen"] == 3, f"go_req без вида rf: {go}"
 
 
 def test_ask_nogw_while_the_primary_sees_its_own_gateway_is_refused_with_gw_seen(services, primary):

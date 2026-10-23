@@ -16,6 +16,13 @@ seal.py — упаковка пакета переезда: заголовок, 
 заголовок (поколения, отпечаток, размер) может любой; `K` — тот, у кого `M`
 (процесс открытия на резерве после сборки долей) или кому `K` отдали
 (переезд кнопкой); конверт DNS — только с `M`.
+
+Переезд кнопкой: `K` идёт основой не открытым, а конвертом к разовому ключу
+процесса открытия (`seal_k_to` / `open_sealed_k`): SealedBox к публичной
+части X25519, которую процесс выпускает на одно открытие; внутри — `K`,
+поколение пакета и идентификатор открытия, чтобы конверт не подошёл ни к
+другому пакету, ни к другому запуску процесса. Бот резерва видит только
+шифротекст.
 """
 from __future__ import annotations
 
@@ -27,6 +34,7 @@ import zlib
 from dataclasses import dataclass
 
 from nacl.exceptions import CryptoError
+from nacl.public import PrivateKey, PublicKey, SealedBox
 from nacl.secret import SecretBox
 
 from awgbot.util import rsvkeys
@@ -55,6 +63,46 @@ class Header:
 
 def new_k() -> bytes:
     return secrets.token_bytes(K_LEN)
+
+
+EPH_LEN = 32                     # публичная часть разового ключа процесса открытия
+OID_LEN = 16                     # идентификатор открытия — hex
+
+
+def new_eph() -> tuple[bytes, bytes]:
+    """(закрытая, открытая) — разовая пара X25519 процесса открытия; закрытая
+    живёт только в памяти процесса."""
+    k = PrivateKey.generate()
+    return bytes(k), bytes(k.public_key)
+
+
+def seal_k_to(eph_pub: bytes, k: bytes, pkg_gen: int, oid: str) -> bytes:
+    """Конверт `K` к публичной части разового ключа процесса открытия (переезд
+    кнопкой): внутри — `K`, поколение пакета и идентификатор открытия."""
+    if len(eph_pub) != EPH_LEN:
+        raise PackageError("разовый ключ не 32 байта")
+    if len(k) != K_LEN:
+        raise PackageError("K не той длины")
+    body = json.dumps({"k": k.hex(), "gen": int(pkg_gen), "oid": str(oid)}, separators=(",", ":")).encode()
+    return bytes(SealedBox(PublicKey(eph_pub)).encrypt(body))
+
+
+def open_sealed_k(eph_priv: bytes, sealed: bytes, pkg_gen: int, oid: str) -> bytes:
+    """`K` из конверта к своей разовой паре; не тот ключ, порча, чужое
+    поколение пакета или чужой идентификатор открытия — PackageError."""
+    try:
+        raw = bytes(SealedBox(PrivateKey(eph_priv)).decrypt(sealed))
+        obj = json.loads(raw.decode())
+        k = bytes.fromhex(str(obj.get("k") or ""))
+    except (CryptoError, ValueError, TypeError) as e:
+        raise PackageError("конверт ключа пакета: не тот ключ или порча") from e
+    if int(obj.get("gen") or 0) != int(pkg_gen):
+        raise PackageError(f"конверт ключа пакета: поколение {obj.get('gen')}, а пакет {pkg_gen}")
+    if str(obj.get("oid") or "") != str(oid):
+        raise PackageError("конверт ключа пакета: не к этому открытию")
+    if len(k) != K_LEN:
+        raise PackageError("конверт ключа пакета: K не той длины")
+    return k
 
 
 def _box(key: bytes, data: bytes) -> bytes:
