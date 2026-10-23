@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.domain import gwchecks
-from ..fmt import _e, disk_lines, human_bytes, updown_brief, num
+from ..fmt import _e, disk_lines, frac2, human_bytes, ram_pair, updown_brief, num
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -100,9 +100,11 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
         hw.append(f"CPU {st.cpu:.0f}%" + (f" | {st.temp:.0f} °C" if st.temp is not None else ""))
     elif st.temp is not None:
         hw.append(f"{st.temp:.0f} °C")
-    if st.ram is not None:
-        free = getattr(st, "ram_free_mb", None)
-        hw.append(f"RAM {st.ram:.0f}%" + (f" (свободно {num(free)} МБ)" if free is not None else ""))
+    used, total = getattr(st, "ram_used_mb", None), getattr(st, "ram_total_mb", None)
+    if used is not None and total:
+        hw.append(f"RAM {ram_pair(used, total)}")          # занято/всего
+    elif st.ram is not None:
+        hw.append(f"RAM {st.ram:.0f}%")                   # снимок прежнего выпуска
     if hw:
         parts.append("📈 " + " · ".join(hw))
     # носители — своей строкой (по два в строку), питание — своей: в одной строке
@@ -193,7 +195,7 @@ def gateway_health(st) -> str:
         hw.append(f"RAM: свободно {num(st.ram_free_mb)} МБ")
     disk = ""
     if st.disk_free_gb is not None:
-        free = f"{st.disk_free_gb:.1f}".replace(".", ",") if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
+        free = frac2(round(st.disk_free_gb, 2)) if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
         disk = f"диск: свободно {free} ГБ"
     if st.smart == "OK":
         disk = f"{disk}, SMART ОК" if disk else "SMART ОК"

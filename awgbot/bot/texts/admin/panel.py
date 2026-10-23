@@ -6,7 +6,7 @@ import datetime
 
 from awgbot.util import timeutil
 from awgbot.bot import ui
-from ..fmt import _e, disk_lines, human_bytes, num, rf_line, profile_link, plural_ru
+from ..fmt import _e, disk_lines, human_bytes, ram_pair, rf_line, profile_link, plural_ru
 from ..fmt import deep_link as _deep_link
 from ..routing import routing_status_line, routing_admin_status_line
 from ..updates import release_url
@@ -67,9 +67,9 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
-        free = st.get("ram_free_mb")
-        lines.append(f"📈 CPU {_p(st.get('cpu'))} · RAM {_p(st.get('ram'))}"
-                     + (f" (свободно {num(free)} МБ)" if free is not None else ""))
+        used, total = st.get("ram_used_mb"), st.get("ram_total_mb")
+        ram = ram_pair(used, total) if used is not None and total else _p(st.get("ram"))
+        lines.append(f"📈 CPU {_p(st.get('cpu'))} · RAM {ram}")
         # носители — своей строкой (по два в строку); снимок без списка — процент, как прежде
         lines.extend(disk_lines(st.get("disks")) or ([f"диск {_p(st.get('disk'))}"] if st.get("disk") is not None else []))
     elif st.get("age_seconds") is None:

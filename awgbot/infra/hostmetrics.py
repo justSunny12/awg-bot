@@ -97,6 +97,25 @@ def read_ram() -> tuple[float, int] | None:
     return round(100.0 * (1 - avail / total), 1), avail // 1024
 
 
+def read_ram_mb() -> tuple[int, int] | None:
+    """(занято МБ, всего МБ) по MemTotal/MemAvailable — для строки «RAM занято/всего»."""
+    total = avail = None
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total = int(line.split()[1])
+                elif line.startswith("MemAvailable:"):
+                    avail = int(line.split()[1])
+                if total is not None and avail is not None:
+                    break
+    except OSError:
+        return None
+    if not total or avail is None:
+        return None
+    return (total - avail) // 1024, total // 1024
+
+
 def read_disk(path: str = "/") -> tuple[float, float] | None:
     """(занято %, свободно ГБ) корневой ФС: свободно — f_bavail, то есть
     доступное НЕ-root пользователю; резерв ext4 в «свободно» не входит."""
@@ -299,12 +318,15 @@ def read_soc_temp() -> float | None:
 
 def collect() -> dict:
     """Снимок {cpu, ram, disk} (float % или None по каждому ресурсу) плюс
-    ram_free_mb и disks ([[занято ГБ, всего ГБ, точка], …] для строк панели).
+    ram_free_mb, ram_used_mb, ram_total_mb и disks ([[занято ГБ, всего ГБ, точка], …] для строк панели).
     Блокирующий (CPU-замер) — через asyncio.to_thread."""
     ram = read_ram()
+    ram_mb = read_ram_mb()
     return {"cpu": read_cpu_percent(),
             "ram": ram[0] if ram else None,
             "ram_free_mb": ram[1] if ram else None,
+            "ram_used_mb": ram_mb[0] if ram_mb else None,
+            "ram_total_mb": ram_mb[1] if ram_mb else None,
             "disk": read_disk_percent(),
             "disks": [[d["used_gb"], d["total_gb"], d["mount"]] for d in read_disks()]}
 
@@ -319,7 +341,7 @@ def collect_and_store(db) -> dict:
 
 
 def get_host_metrics(db) -> dict | None:
-    """Последний снимок {cpu,ram,disk,ram_free_mb,disks,ts,age_seconds} или None."""
+    """Последний снимок {cpu,ram,disk,ram_free_mb,ram_used_mb,ram_total_mb,disks,ts,age_seconds} или None."""
     raw = db.get_state(STATE_METRICS)
     if not raw:
         return None
@@ -334,6 +356,6 @@ def get_host_metrics(db) -> dict | None:
 
 
 __all__ = ["collect", "collect_and_store", "get_host_metrics", "STATE_METRICS",
-           "read_pi_throttled", "read_soc_temp", "read_ram", "read_disk", "read_disks",
+           "read_pi_throttled", "read_soc_temp", "read_ram", "read_ram_mb", "read_disk", "read_disks",
            "read_uptime_seconds", "root_block_device", "read_smart_health",
            "read_cpu_percent", "read_ram_percent", "read_disk_percent"]

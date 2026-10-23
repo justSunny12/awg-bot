@@ -251,6 +251,23 @@ def test_no_other_digit_grouping_in_the_code():
     assert not bad, "разряды обычным пробелом:\n" + "\n".join(bad)
 
 
+def test_fractions_in_the_code_are_whole_or_two_decimals_only():
+    """Сторож правила «две значащие цифры после запятой, хвостовые нули долой»:
+    в текстах экранов (awgbot/bot/texts/**) и общем форматтере (awgbot/util/
+    textfmt/**) нет форматов `:.1f` / `:.2f` / `:.3f` — только `:.0f` (целые)
+    и `frac2()`. Фиксированная ширина дроби даёт «1,50 ГБ» рядом с «1,68 ТБ»
+    или «0,00» при мелочи — разнобой, который никто не заметит до жалобы."""
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[2] / "awgbot"
+    odd = re.compile(r':\.[123]f\b')
+    bad = [f"{f.relative_to(root.parent)}:{i}: {line.strip()}"
+           for sub in ("bot/texts", "util/textfmt")
+           for f in sorted((root / sub).rglob("*.py"))
+           for i, line in enumerate(f.read_text().splitlines(), 1) if odd.search(line)]
+    assert not bad, "дробь фиксированной ширины вместо frac2():\n" + "\n".join(bad)
+
+
 # ── метка пояса у времени ────────────────────────────────────────────────────
 
 def test_clock_and_hour_labels():

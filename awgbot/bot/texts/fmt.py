@@ -11,26 +11,37 @@ from awgbot.util.textfmt.base import (  # noqa: F401
     _num, gb, _BYTES_PER_TB, unit_for, amount, volume, human_bytes, used_of_limit, _updown,
     rf_value, updown_brief, _BYTES_PER_GB, gb_str, _limit_devices_str, device_state, details,
     plain_ip, tg_link, client_link, owner_name, holder_name, owner_link, holder_link,
-    _n_devices, num, more, unlimited, plural_ru, _days_word, _days)
+    _n_devices, num, more, unlimited, plural_ru, _days_word, _days, frac2)
 
 
-DISK_INDENT = " " * 7           # строки носителей — под строкой «📈 …», отступом от её значка
+DISK_INDENT = " " * 5           # строки носителей — под строкой «📈 …»: «диск» встаёт под «CPU»
 
 
 def _gb_size(gb: float) -> str:
-    """Объём: ГБ — целыми, ТБ — с двумя знаками (1024 ГБ = 1 ТБ)."""
+    """Объём: ГБ — целыми, ТБ — с двумя значащими знаками (1024 ГБ = 1 ТБ)."""
     if gb >= 1024:
-        return f"{gb / 1024:.2f}".replace(".", ",") + " ТБ"
+        return frac2(round(gb / 1024, 2)) + " ТБ"
     return f"{round(gb)} ГБ"
 
 
+def ram_pair(used_mb: int, total_mb: int) -> str:
+    """«478 МБ/1 ГБ», «1,31/8 ГБ»: занято — МБ целыми до 1024, дальше ГБ с двумя
+    значащими знаками; всего — МБ до 900, дальше ГБ целыми (планка памяти —
+    круглая: у платы «1 ГБ» ядро видит ~976 МБ)."""
+    total = f"{round(total_mb / 1024)} ГБ" if total_mb >= 900 else f"{int(total_mb)} МБ"
+    if used_mb < 1024:
+        return f"{int(used_mb)} МБ/{total}"
+    used = frac2(round(used_mb / 1024, 2))
+    return f"{used}/{total}" if total.endswith("ГБ") else f"{used} ГБ/{total}"
+
+
 def disk_pair(used_gb: float, total_gb: float) -> str:
-    """«10/200 ГБ», «100 ГБ/1,68 ТБ», «1,20/1,68 ТБ» — занято/всего."""
+    """«10/200 ГБ», «100 ГБ/1,68 ТБ», «1,2/1,68 ТБ» — занято/всего."""
     if total_gb < 1024:
         return f"{round(used_gb)}/{round(total_gb)} ГБ"
     if used_gb < 1024:
         return f"{round(used_gb)} ГБ/{_gb_size(total_gb)}"
-    return f"{used_gb / 1024:.2f}".replace(".", ",") + f"/{_gb_size(total_gb)}"
+    return frac2(round(used_gb / 1024, 2)) + f"/{_gb_size(total_gb)}"
 
 
 def disk_lines(disks) -> list[str]:

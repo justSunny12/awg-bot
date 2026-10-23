@@ -89,13 +89,34 @@ def _e(s) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _num(value, unit_bytes: int) -> str:
-    """Число в единицах unit_bytes: арифметическое округление до сотых,
-    незначащие нули долой, дробная часть — через запятую, как в русском:
-    «8,99», «50», «0,5», «0»."""
+    """Число в единицах unit_bytes: арифметическое округление до сотых (единица
+    подбирается так, что сотые и есть две значащие цифры), хвостовые нули
+    долой, дробная часть — через запятую, как в русском: «8,99», «50», «0,5»,
+    «0»."""
     from decimal import Decimal, ROUND_HALF_UP
     d = (Decimal(int(value or 0)) / Decimal(unit_bytes)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP)
     s = f"{d:f}"
+    s = s.rstrip("0").rstrip(".") if "." in s else s
+    return s.replace(".", ",")
+
+
+def frac2(value: float) -> str:
+    """Число с двумя ЗНАЧАЩИМИ цифрами после запятой (правило проекта): целое —
+    без дробной части, иначе ведущие нули дроби не в счёт, хвостовые долой:
+    «1,5», «1,68», «0,0034», «8», «1,37» (из 1,368)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    d = Decimal(repr(float(value)))
+    frac = abs(d) - int(abs(d))
+    if frac == 0:
+        return str(int(d))
+    places = 2
+    scaled = frac
+    while scaled * 10 < 1:                            # ведущие нули дроби
+        scaled *= 10
+        places += 1
+    q = d.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    s = f"{q:f}"
     s = s.rstrip("0").rstrip(".") if "." in s else s
     return s.replace(".", ",")
 

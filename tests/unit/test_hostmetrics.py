@@ -80,7 +80,7 @@ def test_collect_and_store_and_get(tmp_path):
     db = Database(str(tmp_path / "t.db")); db.init_schema()
     snap = hm.collect_and_store(db)
     # снимок несёт и «свободно МБ», и список носителей — их читают панели
-    assert set(snap) == {"cpu", "ram", "disk", "ram_free_mb", "disks"}, snap
+    assert set(snap) == {"cpu", "ram", "disk", "ram_free_mb", "ram_used_mb", "ram_total_mb", "disks"}, snap
     assert isinstance(snap["disks"], list)
     assert all(len(d) == 3 for d in snap["disks"]), "элемент — [занято ГБ, всего ГБ, точка]"
     got = hm.get_host_metrics(db)
@@ -304,16 +304,65 @@ def test_read_disks_ignores_short_and_foreign_lines(tmp_path, monkeypatch):
     assert hm.read_disks(str(m)) == [{"mount": "/", "used_gb": 5.0, "total_gb": 10.0}]
 
 
-def test_collect_carries_free_ram_and_disks_from_the_readers(monkeypatch):
-    """Снимок хоста для панели сервера: «свободно МБ» — из read_ram, носители —
-    списками [занято, всего, точка] (JSON в БД и канал)."""
+def test_collect_carries_ram_used_total_and_disks_from_the_readers(monkeypatch):
+    """Снимок хоста для панели сервера: «занято/всего МБ» — из read_ram_mb,
+    «свободно МБ» — из read_ram, носители — списками [занято, всего, точка]
+    (JSON в БД и канал)."""
     monkeypatch.setattr(hm, "read_cpu_percent", lambda: 7.0)
     monkeypatch.setattr(hm, "read_ram", lambda: (17.0, 6436))
+    monkeypatch.setattr(hm, "read_ram_mb", lambda: (1340, 7812))
     monkeypatch.setattr(hm, "read_disk_percent", lambda path="/": 5.0)
     monkeypatch.setattr(hm, "read_disks", lambda mounts="/proc/mounts": [
         {"mount": "/", "used_gb": 10.0, "total_gb": 200.0}])
-    assert hm.collect() == {"cpu": 7.0, "ram": 17.0, "ram_free_mb": 6436, "disk": 5.0,
-                            "disks": [[10.0, 200.0, "/"]]}
+    assert hm.collect() == {"cpu": 7.0, "ram": 17.0, "ram_free_mb": 6436, "ram_used_mb": 1340,
+                            "ram_total_mb": 7812, "disk": 5.0, "disks": [[10.0, 200.0, "/"]]}
     monkeypatch.setattr(hm, "read_ram", lambda: None)
+    monkeypatch.setattr(hm, "read_ram_mb", lambda: None)
     snap = hm.collect()
-    assert snap["ram"] is None and snap["ram_free_mb"] is None, "meminfo не прочитался — оба поля None, не падение"
+    assert (snap["ram"], snap["ram_free_mb"], snap["ram_used_mb"], snap["ram_total_mb"]) == (None,) * 4, \
+        "meminfo не прочитался — все поля памяти None, не падение"
+
+
+# ── read_ram_mb: занято/всего по /proc/meminfo ───────────────────────────────
+
+@pytest.fixture()
+def meminfo(tmp_path, monkeypatch):
+    """Подставной /proc/meminfo: тест пишет в файл, open() отдаёт его."""
+    f = tmp_path / "meminfo"
+    real_open = open
+    monkeypatch.setattr("builtins.open",
+                        lambda p, *a, **k: real_open(f, *a, **k) if p == "/proc/meminfo" else real_open(p, *a, **k))
+    return f
+
+
+def test_read_ram_mb_is_used_and_total_in_whole_megabytes(meminfo):
+    """Занято — MemTotal − MemAvailable (кэш и буферы — не «занято», как у free),
+    оба — целыми МБ с округлением вниз; порядок строк в файле не важен."""
+    meminfo.write_text("MemFree:          10 kB\nMemAvailable:  6590464 kB\nMemTotal:       7999488 kB\n")
+    assert hm.read_ram_mb() == (1376, 7812), "(7999488−6590464)//1024, 7999488//1024"
+    # остаток меньше мегабайта отбрасывается, а не округляется вверх
+    meminfo.write_text("MemTotal:  1048575 kB\nMemAvailable:  1048 kB\n")
+    assert hm.read_ram_mb() == (1022, 1023), "1047527//1024 и 1048575//1024 — вниз, а не 1023/1024"
+
+
+@pytest.mark.parametrize("body", [
+    "MemFree: 10 kB\nBuffers: 1 kB\n",                  # нет ни MemTotal, ни MemAvailable
+    "MemTotal: 1000 kB\nMemFree: 10 kB\n",              # старое ядро без MemAvailable
+    "MemAvailable: 100 kB\n",                             # нет MemTotal
+    "MemTotal: 0 kB\nMemAvailable: 0 kB\n",             # нулевое всего — делить нечего
+    "",
+])
+def test_read_ram_mb_without_both_fields_is_none(meminfo, body):
+    """Нет пары MemTotal/MemAvailable — None, и панель рисует процент, а не
+    «занято 0 МБ/всего 0 МБ»."""
+    meminfo.write_text(body)
+    assert hm.read_ram_mb() is None
+
+
+def test_read_ram_mb_missing_file_is_none(monkeypatch):
+    def _boom(p, *a, **k):
+        if p == "/proc/meminfo":
+            raise OSError("nope")
+        raise AssertionError
+    monkeypatch.setattr("builtins.open", _boom)
+    assert hm.read_ram_mb() is None

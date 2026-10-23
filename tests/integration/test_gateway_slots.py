@@ -215,6 +215,7 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
     assert services.gateway_screen_state(2)["ping_ms"] == 1200
     from awgbot.bot import texts
     assert texts.ping_fmt(43) == "43 мс" and texts.ping_fmt(1200) == "1,2 с"
+    assert texts.ping_fmt(1250) == "1,25 с" and texts.ping_fmt(2000) == "2 с", "две значащие, хвостовые нули долой"
 
 
 # ── холодный старт ───────────────────────────────────────────────────────────

@@ -310,6 +310,9 @@ class MonitorMixin:
         ram = hostmetrics.read_ram()
         if ram is not None:
             st.ram, st.ram_free_mb = ram
+        ram_mb = hostmetrics.read_ram_mb()
+        if ram_mb is not None:
+            st.ram_used_mb, st.ram_total_mb = ram_mb
         disk = hostmetrics.read_disk()
         if disk is not None:
             st.disk, st.disk_free_gb = disk

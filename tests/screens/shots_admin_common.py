@@ -56,7 +56,8 @@ def _base(services, *, status: bool = True):
         services.db.set_state("server_ok_view", "1")
         services.db.set_state("service_started_at", "2026-09-12T07:00:00Z")
         services.db.set_state(hostmetrics.STATE_METRICS,
-                              json.dumps({"cpu": 12, "ram": 41, "ram_free_mb": 6436, "disk": 23,
+                              json.dumps({"cpu": 12, "ram": 41, "ram_free_mb": 6436,
+                                          "ram_used_mb": 3200, "ram_total_mb": 7812, "disk": 23,
                                           "disks": [[10.4, 200.0, "/"]], "ts": _iso(NOW)}))
     return config.ADMIN_ID, "Админ"
 

@@ -61,10 +61,13 @@ _ROUTER_MASQ_CHECKS = [
 
 
 def _status_bad(**kw) -> GwStatus:
-    """Линк лежит, обвязка разошлась, питание проседает сейчас."""
+    """Линк лежит, обвязка разошлась, питание проседает сейчас. Полей
+    ram_used_mb/ram_total_mb нет нарочно: эталон сторожит прежний «RAM 88%»
+    для снимка без «занято/всего»."""
     d = dict(link_up=False, handshake_age=None, checks=copy.deepcopy(_CHECKS_BAD),
              throttled={"now": ["недонапряжение"], "ever": ["недонапряжение", "троттлинг"]},
              cpu=97.0, temp=81.0, ram=88.0, disk=91.0, ram_free_mb=312, disk_free_gb=3.2,
+             ram_used_mb=None, ram_total_mb=None,
              smart="FAIL", mark_status="foreign", ssh=_ssh_panel(sshd_down=True))
     d.update(kw)
     return _status(**d)

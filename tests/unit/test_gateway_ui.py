@@ -38,7 +38,8 @@ def test_month_traffic_accumulates_across_counter_resets(svc, monkeypatch):
 def test_snapshot_roundtrip_keeps_checks_and_metrics(svc, monkeypatch):
     st = GwStatus(link_up=True, handshake_age=3.0, rx=5, tx=6,
                   checks=[GwCheck("линк", True), GwCheck("ядра", None, "нечем")],
-                  cpu=4.0, ram=51.0, ram_free_mb=999, disk=58.0, disk_free_gb=100.0,
+                  cpu=4.0, ram=51.0, ram_free_mb=999, ram_used_mb=1040, ram_total_mb=2048,
+                  disk=58.0, disk_free_gb=100.0,
                   smart="OK", uptime_seconds=90000, hostname="NASPi", server_name="awg-srv")
     monkeypatch.setattr(svc, "status", lambda: st)
     got = svc.snapshot()
@@ -47,6 +48,8 @@ def test_snapshot_roundtrip_keeps_checks_and_metrics(svc, monkeypatch):
     assert back is not None
     assert [c.name for c in back.checks] == ["линк", "ядра"] and back.checks[1].ok is None
     assert back.smart == "OK" and back.hostname == "NASPi" and back.server_name == "awg-srv"
+    assert (back.ram_used_mb, back.ram_total_mb) == (1040, 2048), \
+        "занято/всего переживают снимок — иначе панель после рестарта показывала бы процент"
 
 
 def test_server_name_prefers_setting_then_bundle_then_default(svc, monkeypatch):

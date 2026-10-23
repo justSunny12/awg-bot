@@ -70,6 +70,8 @@ class GwStatus:
     cpu: float | None = None
     ram: float | None = None
     ram_free_mb: int | None = None
+    ram_used_mb: int | None = None
+    ram_total_mb: int | None = None
     disk: float | None = None
     disk_free_gb: float | None = None
     disks: list = field(default_factory=list)   # [[занято ГБ, всего ГБ, точка], …] — корень первым

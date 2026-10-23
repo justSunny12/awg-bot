@@ -73,7 +73,8 @@ def ping_fmt(ms) -> str:
     ms = int(ms)
     if ms < 1000:
         return f"{ms} мс"
-    return f"{ms / 1000:.1f}".replace(".", ",") + " с"
+    from awgbot.util.textfmt.base import frac2
+    return frac2(round(ms / 1000, 2)) + " с"
 
 
 def _slot_dot(state) -> str:
