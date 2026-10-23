@@ -53,8 +53,8 @@ def refreshed_line(st, bot_username: str = "") -> str:
 def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending=(),
                   bot_username: str = "") -> str:
     """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк, канал
-    конфигурации, предупреждения, SSH, железо, VPN-транзит и списки, SMB,
-    здоровье и трафик, пустая строка, свежесть ссылкой.
+    конфигурации, предупреждения, SSH, железо, VPN-транзит (состояние; списки и
+    SMB — на его экране), здоровье, трафик месяца своей строкой, пустая строка, свежесть ссылкой.
     chan — состояние канала (linkclient.view()); None — спросить самим.
     upd — команда обновления с сервера AWG (upd_panel): идёт — строка хода, не
     удалась — строка неудачи до следующей удачной."""
@@ -114,19 +114,14 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     if lan:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         state = "🔴 " + ", ".join(pkg._uniq(_lan_fault(c) for c in bad)[:3]) if bad else "🟢"
-        parts.append(f"🔀 VPN-транзит {state}")           # счётчик пакетов — на экране транзита
-        own = pkg.own_lists_short(lan)                     # своих нет — хвоста нет
-        parts.append(f"📋 Списки: {pkg._lists_counts(lan)}" + (f" · {own}" if own else ""))
-        svc = lan.get("svc") or {}
-        if svc.get("active"):
-            parts.append(pkg.smb_line(svc))
+        # счётчик пакетов, списки и SMB — на экране транзита: на главной только состояние
+        parts.append(f"🔀 VPN-транзит {state}")
     if pending:
         parts.append(pkg.cfg_pending_line(pending))     # вопросы с сервера AWG ждут человека
+    parts.append(f"🩺 Здоровье {pkg._gw_health_summary(st.checks, st.smart)}")
     traffic = st.month_rx + st.month_tx
-    health = f"🩺 Здоровье {pkg._gw_health_summary(st.checks, st.smart)}"
-    if traffic:
-        health += f" · 📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}"
-    parts.append(health)
+    if traffic:                                           # трафик месяца — своей строкой
+        parts.append(f"📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}")
     parts.append("")
     parts.append(pkg.refreshed_line(st, bot_username))
     return "\n".join(parts)

@@ -14,6 +14,9 @@ from awgbot.util.textfmt.base import (  # noqa: F401
     _n_devices, num, more, unlimited, plural_ru, _days_word, _days)
 
 
+DISK_INDENT = " " * 7           # строки носителей — под строкой «📈 …», отступом от её значка
+
+
 def _gb_size(gb: float) -> str:
     """Объём: ГБ — целыми, ТБ — с двумя знаками (1024 ГБ = 1 ТБ)."""
     if gb >= 1024:
@@ -43,9 +46,9 @@ def disk_lines(disks) -> list[str]:
     if not pairs:
         return []
     if len(pairs) == 1:
-        return [f"диск {pairs[0]}"]
+        return [f"{DISK_INDENT}диск {pairs[0]}"]
     items = [f"диск {i} - {p}" for i, p in enumerate(pairs, 1)]
-    return [" · ".join(items[i:i + 2]) for i in range(0, len(items), 2)]
+    return [DISK_INDENT + " · ".join(items[i:i + 2]) for i in range(0, len(items), 2)]
 
 
 def rf_line(rx: int, tx: int, label: str = "", *, arrows: bool = True) -> str:

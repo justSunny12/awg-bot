@@ -9,7 +9,7 @@
 
 import pytest
 
-from awgbot.bot.texts.fmt import disk_lines, disk_pair
+from awgbot.bot.texts.fmt import DISK_INDENT, disk_lines, disk_pair
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +29,7 @@ def test_disk_pair_shows_gb_whole_and_tb_with_two_decimals(used, total, want):
 
 
 def test_single_disk_is_one_line_without_a_number():
-    assert disk_lines([[10.4, 200.0, "/"]]) == ["диск 10/200 ГБ"]
+    assert disk_lines([[10.4, 200.0, "/"]]) == [f"{DISK_INDENT}диск 10/200 ГБ"]
 
 
 def test_several_disks_go_two_per_line_and_are_numbered():
@@ -38,14 +38,15 @@ def test_several_disks_go_two_per_line_and_are_numbered():
     влезает), а различать носители по порядку человеку надо."""
     disks = [[10.0, 200.0, "/"], [100.0, 1720.3, "/srv/a"], [1228.8, 1720.3, "/srv/b"]]
     assert disk_lines(disks) == [
-        "диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
-        "диск 3 - 1,20/1,68 ТБ",
+        f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
+        f"{DISK_INDENT}диск 3 - 1,20/1,68 ТБ",
     ]
 
 
 def test_four_disks_fill_exactly_two_lines():
     disks = [[1, 2, "/"], [3, 4, "/a"], [5, 6, "/b"], [7, 8, "/c"]]
-    assert disk_lines(disks) == ["диск 1 - 1/2 ГБ · диск 2 - 3/4 ГБ", "диск 3 - 5/6 ГБ · диск 4 - 7/8 ГБ"]
+    assert disk_lines(disks) == [f"{DISK_INDENT}диск 1 - 1/2 ГБ · диск 2 - 3/4 ГБ",
+                                 f"{DISK_INDENT}диск 3 - 5/6 ГБ · диск 4 - 7/8 ГБ"]
 
 
 @pytest.mark.parametrize("disks", [None, [], [[None, None, "/"]], [{"used_gb": None, "total_gb": 5}]])
@@ -61,11 +62,33 @@ def test_dict_elements_are_read_like_lists():
     as_dicts = [{"mount": "/", "used_gb": 10.4, "total_gb": 200.0},
                 {"mount": "/srv", "used_gb": 1105.2, "total_gb": 1720.3}]
     as_lists = [[10.4, 200.0, "/"], [1105.2, 1720.3, "/srv"]]
-    assert disk_lines(as_dicts) == disk_lines(as_lists) == ["диск 1 - 10/200 ГБ · диск 2 - 1,08/1,68 ТБ"]
+    assert disk_lines(as_dicts) == disk_lines(as_lists) == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 1,08/1,68 ТБ"]
 
 
 def test_elements_without_numbers_are_skipped_but_the_rest_is_numbered_in_order():
     """Один носитель без чисел посреди списка пропускается, нумерация идёт по
     оставшимся: «диск 1 · диск 2», а не «диск 1 · диск 3»."""
     disks = [[10.0, 200.0, "/"], [None, None, "/x"], [5.0, 50.0, "/y"]]
-    assert disk_lines(disks) == ["диск 1 - 10/200 ГБ · диск 2 - 5/50 ГБ"]
+    assert disk_lines(disks) == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 5/50 ГБ"]
+
+
+@pytest.mark.parametrize("disks", [
+    [[10.4, 200.0, "/"]],                                                   # один носитель
+    [[10.0, 200.0, "/"], [100.0, 1720.3, "/srv/a"]],                        # одна строка на два
+    [[1, 2, "/"], [3, 4, "/a"], [5, 6, "/b"], [7, 8, "/c"], [9, 10, "/d"]],  # три строки
+])
+def test_every_disk_line_is_indented_under_the_hw_line(disks):
+    """Строки носителей стоят под строкой «📈 …» со сдвигом от значка —
+    каждая, включая одиночную и последнюю неполную; без отступа «диск …»
+    прилипает к левому краю и читается как отдельный пункт панели."""
+    lines = disk_lines(disks)
+    assert lines, "есть носители — есть строки"
+    for ln in lines:
+        assert ln.startswith(DISK_INDENT + "диск"), repr(ln)
+        assert not ln.startswith(DISK_INDENT + " "), f"отступ ровно один: {ln!r}"
+
+
+def test_indent_is_plain_spaces():
+    """Отступ — семь обычных пробелов: Telegram не схлопывает их в начале
+    строки, а неразрывные здесь не нужны и ломали бы копирование."""
+    assert DISK_INDENT == " " * 7

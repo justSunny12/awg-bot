@@ -10,6 +10,7 @@
 import pytest
 
 from awgbot.bot import texts
+from awgbot.bot.texts.fmt import DISK_INDENT
 from awgbot.domain.gateway import GwStatus
 
 pytestmark = pytest.mark.unit
@@ -47,15 +48,15 @@ def test_gateway_disks_follow_the_hw_line_two_per_line():
     lines = _lines(texts.gateway_panel(_gw(
         disks=[[10.4, 200.0, "/"], [100.0, 1720.3, "/srv/a"], [1228.8, 1720.3, "/srv/b"]])))
     i = lines.index("📈 CPU 0% | 46 °C · RAM 17% (свободно 6 436 МБ)")
-    assert lines[i + 1:i + 4] == ["диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
-                                  "диск 3 - 1,20/1,68 ТБ",
+    assert lines[i + 1:i + 4] == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
+                                  f"{DISK_INDENT}диск 3 - 1,20/1,68 ТБ",
                                   "🔌 питание ОК"], lines
 
 
 def test_gateway_single_disk_is_one_unnumbered_line():
     lines = _lines(texts.gateway_panel(_gw()))
-    assert "диск 10/200 ГБ" in lines, lines
-    assert not any(ln.startswith("диск 1 ") for ln in lines), "один носитель — без номера"
+    assert f"{DISK_INDENT}диск 10/200 ГБ" in lines, lines
+    assert not any(ln.lstrip().startswith("диск 1 ") for ln in lines), "один носитель — без номера"
 
 
 def test_gateway_without_disk_list_says_nothing_about_disks():
@@ -63,7 +64,7 @@ def test_gateway_without_disk_list_says_nothing_about_disks():
     на панели шлюза строки диска нет вовсе (процент один, без объёма,
     ничего не говорит), остальное на месте."""
     lines = _lines(texts.gateway_panel(_gw(disks=[])))
-    assert not any(ln.startswith("диск") for ln in lines), lines
+    assert not any(ln.lstrip().startswith("диск") for ln in lines), lines
     assert "📈 CPU 0% | 46 °C · RAM 17% (свободно 6 436 МБ)" in lines and "🔌 питание ОК" in lines, lines
 
 
@@ -97,6 +98,23 @@ def test_gateway_lan_line_has_no_packet_tail():
     assert not any("пакет" in ln for ln in lines), lines
 
 
+def test_gateway_month_traffic_is_its_own_line_right_after_health():
+    """Трафик месяца — своей строкой «📊 …» сразу после «🩺 Здоровье ✅», а не
+    хвостом строки здоровья: в одной строке значок трафика терялся, и на
+    телефоне строка переносилась посреди «↑… ↓…»."""
+    lines = _lines(texts.gateway_panel(_gw(month_rx=10 * 2**30, month_tx=2 * 2**30)))
+    i = lines.index("🩺 Здоровье ✅")
+    assert lines[i + 1].startswith("📊 12 ГБ ") and "↑" in lines[i + 1] and "↓" in lines[i + 1], lines
+    assert not any("📊" in ln and ln.startswith("🩺") for ln in lines), "трафик — не в строке здоровья"
+
+
+def test_gateway_without_month_traffic_has_health_but_no_traffic_line():
+    """Нулевой трафик — строки «📊» нет вовсе (нули не выводим), здоровье на месте."""
+    lines = _lines(texts.gateway_panel(_gw()))
+    assert "🩺 Здоровье ✅" in lines, lines
+    assert not any(ln.startswith("📊") for ln in lines), lines
+
+
 # ── главная админа ───────────────────────────────────────────────────────────
 
 def _adm(**kw) -> str:
@@ -109,14 +127,15 @@ def _adm(**kw) -> str:
 def test_admin_hw_line_and_disk_line_from_the_disk_list():
     lines = _lines(_adm())
     i = lines.index("📈 CPU 0% · RAM 17% (свободно 6 436 МБ)")
-    assert lines[i + 1] == "диск 10/200 ГБ", lines
+    assert lines[i + 1] == f"{DISK_INDENT}диск 10/200 ГБ", lines
     assert not any("42%" in ln for ln in lines), "есть список носителей — процент не дублируем"
 
 
 def test_admin_several_disks_two_per_line():
     lines = _lines(_adm(disks=[[10.4, 200.0, "/"], [100.0, 1720.3, "/srv/a"], [1228.8, 1720.3, "/srv/b"]]))
     i = lines.index("📈 CPU 0% · RAM 17% (свободно 6 436 МБ)")
-    assert lines[i + 1:i + 3] == ["диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ", "диск 3 - 1,20/1,68 ТБ"], lines
+    assert lines[i + 1:i + 3] == [f"{DISK_INDENT}диск 1 - 10/200 ГБ · диск 2 - 100 ГБ/1,68 ТБ",
+                                  f"{DISK_INDENT}диск 3 - 1,20/1,68 ТБ"], lines
 
 
 def test_admin_old_snapshot_without_disk_list_keeps_the_percent():
@@ -131,14 +150,14 @@ def test_admin_old_snapshot_without_disk_list_keeps_the_percent():
 def test_admin_without_any_snapshot_says_no_measurement_yet():
     lines = _lines(texts.admin_panel({"ok": True}))
     assert "📈 Метрики: ещё нет замера" in lines, lines
-    assert not any(ln.startswith("диск") for ln in lines), lines
+    assert not any(ln.lstrip().startswith("диск") for ln in lines), lines
 
 
 def test_admin_snapshot_without_disk_at_all_has_no_disk_line():
     """Процент не прочитался и списка нет — строки диска нет, «диск ?» не рисуем."""
     lines = _lines(_adm(disk=None, disks=[]))
     assert "📈 CPU 0% · RAM 17% (свободно 6 436 МБ)" in lines, lines
-    assert not any(ln.startswith("диск") for ln in lines), lines
+    assert not any(ln.lstrip().startswith("диск") for ln in lines), lines
 
 
 def test_server_status_snapshot_carries_free_ram_and_disks(services):

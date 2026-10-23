@@ -139,13 +139,16 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
                        "nets": 412, "updated_at": "2026-09-20T10:00:00+05:00",
                        "own_vpn": 2, "own_ru": 1, "lan_pkts": 12345})
     lines = texts.gateway_panel(st).splitlines()
-    # VPN-транзит — строкой состояния без счётчика, списки — одной строкой со
-    # своими; числа с разрядами; пакеты с роутера, время обновления, адрес и
+    # VPN-транзит на главной — только строкой состояния; счётчик пакетов,
+    # списки (числа с разрядами, свои хвостом), время обновления, адрес и
     # DNS — на экране «🔀 VPN-транзит», не на панели
     assert "🔀 VPN-транзит 🟢" in lines, lines
     assert not any("с роутера" in ln for ln in lines), ("хвост «N пакетов с роутера» с главной снят", lines)
-    assert "12 345 пакетов с роутера" in texts.gateway_transit_text(st), "счётчик остался на экране транзита"
-    assert "📋 Списки: 1 180 доменов, 412 подсетей · свои: 2 в туннель, 1 напрямую" in lines, lines
+    transit = texts.gateway_transit_text(st).splitlines()
+    assert any("12 345 пакетов с роутера" in ln for ln in transit), "счётчик остался на экране транзита"
+    assert not any(ln.startswith("📋") for ln in lines), ("строка списков с главной снята", lines)
+    assert any(ln.startswith("📋 Списки: 1 180 доменов, 412 подсетей · обн. ")
+               and ln.endswith(" · свои: 2 в туннель, 1 напрямую") for ln in transit), transit
     assert not any("192.168.68.222" in ln or ln.startswith("DNS") or "обн." in ln for ln in lines), lines
     assert not any(ln.startswith("🗂") for ln in lines), "svc не активен — строки SMB в панели быть не должно"
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))
@@ -153,6 +156,24 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
     assert "🔀 VPN-транзит 🔴 трафик с роутера" in lines, lines
     # снимок переживает JSON
     assert GwStatus.from_json(st.to_json()).lan["addr"] == "192.168.68.222"
+
+
+def test_smb_line_lives_on_the_transit_screen_not_on_the_panel():
+    """SMB активен — «🗂 SMB: …» есть на экране «🔀 VPN-транзит» и нет на
+    главной: главная — состояние одной строкой, подробности по кнопке.
+    Иначе на главной снова вырастает простыня, из-за которой строки и
+    унесли на свой экран."""
+    from awgbot.bot import texts
+    st = GwStatus(link_up=True, handshake_age=5.0, checks=[GwCheck("резолвер", True)],
+                  lan={"iface": "end0", "addr": "192.168.68.222", "resolver": "10.9.1.1", "domains": 10,
+                       "nets": 5, "updated_at": "2026-09-20T10:00:00+05:00",
+                       "svc": {"active": True, "own": ["nas"], "peer": ["a", "b"], "ever": True}})
+    panel = texts.gateway_panel(st).splitlines()
+    transit = texts.gateway_transit_text(st).splitlines()
+    assert "🗂 SMB: свои — 1, извне — 2" in transit, transit
+    assert not any(ln.startswith(("🗂", "📋")) for ln in panel), panel
+    i = panel.index("🔀 VPN-транзит 🟢")
+    assert panel[i + 1].startswith("🩺 Здоровье"), ("сразу под транзитом — здоровье, без списков и SMB", panel)
 
 
 def test_without_vpn_transit_the_panel_has_no_transit_lists_or_smb_lines():
