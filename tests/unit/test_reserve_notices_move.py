@@ -103,7 +103,7 @@ def test_the_lever_decides_what_the_returning_notice_promises():
 
 def test_the_move_failure_notice_mentions_the_reserve_only_when_it_had_taken_the_clone():
     assert "отпустил" not in rn.move_failed("Beta", "x")
-    assert "отпустил клиентов" in rn.move_failed("Beta", "x", released=True)
+    assert "отпустил профили" in rn.move_failed("Beta", "x", released=True)
 
 
 def test_the_return_failure_says_the_clients_stay_at_the_reserve():

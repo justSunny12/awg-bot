@@ -20,6 +20,7 @@ ReadWritePaths без «-», которого ещё нет, — юнит пад
 """
 from __future__ import annotations
 
+import logging
 import os
 import stat
 
@@ -154,12 +155,18 @@ def test_the_second_line_is_refused_when_no_process_waits_for_it(host):
     assert len(stdin_lines(host.spawn.popen[-1])) == 1
 
 
-def test_a_broken_pipe_on_the_second_line_is_a_reason_not_an_exception(host):
+def test_a_broken_pipe_on_the_second_line_is_a_reason_not_an_exception(host, caplog):
+    """Процесс открытия умер до второй строки: причина уходит основе и админу
+    по-русски, без английского текста ОС; сам текст ОС — в журнал, иначе
+    разбирать сбой нечем."""
+    caplog.set_level(logging.DEBUG)
     svc = host.svc
     svc._rsvopen_launch({"await_k": True}, keep_stdin=True)
-    host.spawn.stdin_error = BrokenPipeError("процесс умер")
+    host.spawn.stdin_error = BrokenPipeError(32, "Broken pipe")
     why = svc._rsvopen_send({"sealed": "ab" * 10})
-    assert "не передан" in why and "процесс умер" in why, why
+    assert why == "ключ процессу открытия не передан — процесс уже завершился", why
+    assert "Broken pipe" not in why and "Errno" not in why, f"текст ОС в причине: {why}"
+    assert "Broken pipe" in caplog.text and "не передан" in caplog.text, f"текста ОС нет в журнале: {caplog.text}"
 
 
 # ── код завершения: такт ────────────────────────────────────────────────────

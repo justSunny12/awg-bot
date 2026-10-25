@@ -90,7 +90,7 @@ class ReserveInboundMixin:
         if sealed:
             return self._go_sealed(gen, str(sealed), str(oid))
         if "seal1" in (self.reserve_peer_state().get("caps") or []):
-            return "ключ пакета открытым не принимаю — пришли конвертом к разовому ключу"
+            return "ключ пакета не зашифрован"
         try:
             bytes.fromhex(str(k_hex))
         except ValueError:
@@ -112,21 +112,22 @@ class ReserveInboundMixin:
         try:
             bytes.fromhex(sealed)
         except ValueError:
-            return "конверт ключа пакета не hex"
+            return "ключ пакета не hex"
         with _LOCK:
             inn = self._inn()
             if str(inn.get("state") or "") != "taking" or not inn.get("sealed"):
                 return "процесс открытия не ждёт ключ"
             if int(inn.get("gen") or 0) != int(gen):
-                return f"открывается пакет {inn.get('gen')}, а не {gen}"
+                older = int(inn.get("gen") or 0) < int(gen)
+                return "открывается пакет " + ("прошлого" if older else "более нового") + " поколения"
             if inn.get("k_passed"):
                 if str(inn.get("oid") or "") == oid:
                     log.info("резерв: ключ пакета уже передан процессу — повтор `go` пропущен")
                     return ""
-                return "ключ не к этому открытию"
+                return "ключ не к этому процессу открытия"
             st = rsvzone.open_status()
             if str(st.get("step") or "") != "eph" or str(st.get("oid") or "") != oid:
-                return "ключ не к этому открытию"
+                return "ключ не к этому процессу открытия"
             why = self._rsvopen_send({"sealed": sealed})
             if why:
                 return why

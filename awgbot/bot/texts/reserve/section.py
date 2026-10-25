@@ -35,7 +35,7 @@ def _date(iso: str) -> str:
 
 
 def _move_step(step: str) -> str:
-    return {"pkg": "обновляю данные для переезда", "eph": "жду подъёма клиентов", "up": "жду подъёма клиентов",
+    return {"pkg": "обновляю данные для переезда", "eph": "передаю зашифрованный ключ переезда", "up": "жду подъёма профилей",
             "record": "жду смену записи", "release": "передаю бот", "released": "передаю бот"}.get(step, "идёт переезд")
 
 
@@ -129,15 +129,15 @@ def card_text(d: dict) -> str:
     in_ok, in_why = d.get("dir_in") or (False, "")
     out, inn = str(d.get("out") or "home"), str(d.get("inn") or "idle")
     if out == "leaving":
-        lines.append(f"📤 Мои клиенты: переезжают на {_n(name)} — {_e(_move_step(d.get('out_step') or ''))}")
+        lines.append(f"📤 Мои пользователи: переезжают на {_n(name)} — {_e(_move_step(d.get('out_step') or ''))}")
     elif out == "away":
         here, there = int(d.get("here") or 0), int(d.get("there") or 0)
         tail = f" · здесь ещё {here}" + (f", там {there}" if there else "") if here or there else ""
-        lines.append(f"📤 Мои клиенты: на {_n(name)} с {_e(_when(d.get('out_since') or ''))}{tail}")
+        lines.append(f"📤 Мои пользователи: на {_n(name)} с {_e(_when(d.get('out_since') or ''))}{tail}")
     elif out == "returning":
-        lines.append(f"📤 Мои клиенты: возвращаются с {_n(name)}")
+        lines.append(f"📤 Мои пользователи: возвращаются с {_n(name)}")
     else:
-        lines.append("📤 Мои клиенты: на этом сервере")
+        lines.append("📤 Мои пользователи: на этом сервере")
         if out_ok:
             gws = ", ".join(_n(g) for g in d.get("voters") or [])
             sent = d.get("pkg_sent_at") or ""
@@ -238,10 +238,12 @@ def move_dialog(d: dict) -> str:
     else:
         first = f"Запись <code>{record}</code> переключится на <code>{target}</code> сама"
     return (f"🔀 <b>Перевести клиентов на {name}?</b>\n\n"
-            f"{first}. Устройства перейдут при переподключении VPN, бот переедет вместе с ними, подключение шлюзов к "
-            f"{name} не меняется. Настройки, шлюзы, бэкапы и обновления до возврата будут недоступны; {name} получит "
-            f"уведомление. Вернуть всё обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть "
-            "клиентов»; вернётся и всё, что изменилось там")
+            f"{first}, администратор сервера {name} получит уведомление. Активные устройства перейдут при "
+            f"переподключении VPN; новые подключения сразу пойдут через {name}.\n"
+            "Твои шлюзы продолжат работать с резервным сервером.\n\n"
+            "Функционал бота на резерве ограничен: настройки бота, шлюзов, бэкапов и обновлений будут недоступны.\n\n"
+            f"Вернуться обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть клиентов»; изменения "
+            "данных за время нахождения на резерве будут сохранены и перенесены.")
 
 
 def move_live(d: dict) -> str:
@@ -255,20 +257,20 @@ def move_live(d: dict) -> str:
     if state == "home" and d.get("reason"):
         return f"⚠️ Перевод не состоялся: {_e(d['reason'])}"
     if state != "leaving":
-        return f"ℹ️ Перевод клиентов на {name} завершён"
-    order = ["pkg", "up", "record", "release", "released"]
-    step = "up" if step == "eph" else step                    # разовый ключ процесса открытия — часть подъёма
-    pos = order.index(step) + 1 if step in order else 1      # 1 — пакет в работе, 2 — резерв поднимает, 3 — запись, 4 — бот
+        return f"ℹ️ Перевод пользователей на {name} завершён"
+    order = ["pkg", "eph", "up", "record", "release", "released"]
+    pos = order.index(step) + 1 if step in order else 1      # 1 — пакет, 2 — ключ, 3 — резерв поднимает, 4 — запись, 5 — бот
     def mark(i):
         return "✅" if i < pos else "⏳"
     record, target = _e(d.get("record") or ""), _e(d.get("target") or "")
-    lines = [f"⏳ <b>Перевод клиентов на {name}</b>", "",
+    lines = [f"⏳ <b>Перевод пользователей на {name}</b>", "",
              f"{mark(1)} данные для переезда у {name}" + (f" — от {_e(_when(d.get('pkg_at') or ''))}" if d.get("pkg_at") else ""),
-             f"{mark(2)} {name} поднял клиентов",
-             f"{mark(3)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 3
+             "✅ зашифрованный ключ переезда передан" if pos > 2 else f"{mark(2)} передаю зашифрованный ключ переезда…",
+             f"{mark(3)} {name} поднял профили",
+             f"{mark(4)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 4
                                else (f"смени запись <code>{record}</code> на <code>{target}</code> у провайдера — жду…"
                                      if d.get("manual") else f"жду смену записи <code>{record}</code> → <code>{target}</code>…")),
-             f"{mark(4)} передаю бот на {name}…" if pos < 5 else f"✅ бот передан на {name}"]
+             f"{mark(5)} передаю бот на {name}…" if pos < 6 else f"✅ бот передан на {name}"]
     return "\n".join(lines)
 
 

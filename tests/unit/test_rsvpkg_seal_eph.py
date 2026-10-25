@@ -55,17 +55,21 @@ def test_a_foreign_private_key_does_not_open_the_envelope(pair):
         seal.open_sealed_k(other_priv, sealed, 7, OID)
 
 
-def test_a_foreign_package_generation_does_not_open_the_envelope(pair):
+@pytest.mark.parametrize("pkg_gen,why", [(6, "ключ от более нового поколения"), (8, "ключ от прошлого поколения")])
+def test_a_foreign_package_generation_does_not_open_the_envelope(pair, pkg_gen, why):
+    """Конверт к поколению 7 не открывает пакет 6 или 8; причина называет
+    направление — админ видит, кто отстал: основа выслала старый ключ или
+    резерв держит устаревший пакет."""
     priv, pub = pair
     sealed = seal.seal_k_to(pub, seal.new_k(), 7, OID)
-    with pytest.raises(seal.PackageError, match="поколение 7, а пакет 8"):
-        seal.open_sealed_k(priv, sealed, 8, OID)
+    with pytest.raises(seal.PackageError, match=why):
+        seal.open_sealed_k(priv, sealed, pkg_gen, OID)
 
 
 def test_a_foreign_opening_id_does_not_open_the_envelope(pair):
     priv, pub = pair
     sealed = seal.seal_k_to(pub, seal.new_k(), 7, OID)
-    with pytest.raises(seal.PackageError, match="не к этому открытию"):
+    with pytest.raises(seal.PackageError, match="не к этому процессу открытия"):
         seal.open_sealed_k(priv, sealed, 7, "ffffffffffffffff")
 
 

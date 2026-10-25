@@ -143,7 +143,7 @@ async def test_the_card_offers_the_return_to_the_reserve_only_while_it_hosts_my_
 async def test_the_card_of_the_primary_that_is_away_shows_the_state_and_no_move(ui):
     rm.go_away(ui.svc)
     text, labels = await _card(ui)
-    assert "Мои клиенты: на «Beta»" in text.replace("<b>", "").replace("</b>", "") or "на <b>Beta</b>" in text or "Beta" in text
+    assert "Мои пользователи: на «Beta»" in text.replace("<b>", "").replace("</b>", "") or "на <b>Beta</b>" in text or "Beta" in text
     assert not any("Перевести" in x for x in labels)
 
 
@@ -179,7 +179,7 @@ async def test_confirming_the_move_starts_it_and_turns_the_dialog_into_the_live_
     calls = await ui.run.press(RsvCB(action="move_yes"))
     assert ui.svc.reserve_out() == "leaving" and ui.svc.rsv_get("rsv_out")["step"] == "pkg"
     e = _edits(calls)
-    assert e and "Перевод клиентов на" in e[0].text and "⏳" in e[0].text and not _labels(e[0])
+    assert e and "Перевод пользователей на" in e[0].text and "⏳" in e[0].text and not _labels(e[0])
     assert ui.svc.rsv_get("rsv_out")["msg"], "сообщение хода не запомнено — такты не смогут его править"
 
 
@@ -199,13 +199,31 @@ def _live_text(ui, step: str, **over) -> str:
     return st_t.move_live(d)
 
 
-@pytest.mark.parametrize("step,done", [("pkg", 0), ("eph", 1), ("up", 1), ("record", 2), ("release", 3), ("released", 4)])
+@pytest.mark.parametrize("step,done", [("pkg", 0), ("eph", 1), ("up", 2), ("record", 3), ("release", 4), ("released", 5)])
 def test_the_live_message_checks_off_the_steps_in_order(ui, step, done):
-    """Шаг `eph` (разовый ключ процесса открытия) — часть подъёма клиентов:
-    человеку он не показывается отдельным пунктом."""
+    """Шесть пунктов живого сообщения отмечаются по порядку: данные, ключ,
+    подъём, запись, бот. Сбой счёта — человек видит «готово» у шага, который
+    ещё идёт, или застрявший ⏳ у пройденного."""
     text = _live_text(ui, step)
     assert text.count("✅") == done, text
-    assert "⏳ <b>Перевод клиентов на" in text
+    assert "⏳ <b>Перевод пользователей на" in text
+
+
+@pytest.mark.parametrize("step,line", [
+    ("pkg", "⏳ передаю зашифрованный ключ переезда…"),
+    ("eph", "⏳ передаю зашифрованный ключ переезда…"),
+    ("up", "✅ зашифрованный ключ переезда передан"),
+    ("released", "✅ зашифрованный ключ переезда передан"),
+])
+def test_the_live_message_shows_the_key_step_as_its_own_line(ui, step, line):
+    """Передача ключа переезда — отдельный пункт между данными и подъёмом:
+    пока резерв ждёт конверт, человек видит, что ждём именно ключ, а не
+    подъёма профилей; после — пункт отмечен."""
+    lines = _live_text(ui, step).split("\n")
+    assert line in lines, lines
+    i = lines.index(line)
+    assert lines[i - 1].split(" ", 1)[1].startswith("данные для переезда"), f"пункт ключа не после данных: {lines}"
+    assert lines[i + 1].endswith("поднял профили"), f"пункт ключа не перед подъёмом: {lines}"
 
 
 def test_the_card_at_the_ephemeral_key_step_says_it_waits_for_the_clients(ui):
@@ -214,7 +232,7 @@ def test_the_card_at_the_ephemeral_key_step_says_it_waits_for_the_clients(ui):
     from awgbot.bot.texts.reserve.section import card_text
     rm.to_step(ui.svc, "eph")
     text = card_text(ui.svc.reserve_card_data())
-    assert "переезжают на «Beta» — жду подъёма клиентов" in text, text
+    assert "переезжают на «Beta» — передаю зашифрованный ключ переезда" in text, text
     assert "идёт переезд" not in text, "шаг ключа карточке неизвестен — показан общей фразой"
 
 
@@ -243,7 +261,7 @@ async def test_the_tick_edits_the_live_message_and_forgets_it_when_the_move_has_
     svc.rsv_update("rsv_out", msg=[ADMIN, 555])
     await move_h.refresh_live(bot, svc)
     edits = [r for r in bot.records if r[0] == "edit_message_text"]
-    assert len(edits) == 1 and edits[0][1] == ADMIN and "Перевод клиентов на" in edits[0][2]
+    assert len(edits) == 1 and edits[0][1] == ADMIN and "Перевод пользователей на" in edits[0][2]
     assert svc.rsv_get("rsv_out")["msg"] == [ADMIN, 555], "ход ещё идёт: сообщение держим"
     svc.reserve_set_out("away")
     await move_h.refresh_live(bot, svc)

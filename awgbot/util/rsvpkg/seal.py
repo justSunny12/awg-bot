@@ -95,13 +95,14 @@ def open_sealed_k(eph_priv: bytes, sealed: bytes, pkg_gen: int, oid: str) -> byt
         obj = json.loads(raw.decode())
         k = bytes.fromhex(str(obj.get("k") or ""))
     except (CryptoError, ValueError, TypeError) as e:
-        raise PackageError("конверт ключа пакета: не тот ключ или порча") from e
+        raise PackageError("ключ пакета не подходит — не тот ключ или порча") from e
     if int(obj.get("gen") or 0) != int(pkg_gen):
-        raise PackageError(f"конверт ключа пакета: поколение {obj.get('gen')}, а пакет {pkg_gen}")
+        newer = int(obj.get("gen") or 0) > int(pkg_gen)
+        raise PackageError("ключ пакета — ключ от " + ("более нового" if newer else "прошлого") + " поколения")
     if str(obj.get("oid") or "") != str(oid):
-        raise PackageError("конверт ключа пакета: не к этому открытию")
+        raise PackageError("ключ пакета: не к этому процессу открытия")
     if len(k) != K_LEN:
-        raise PackageError("конверт ключа пакета: K не той длины")
+        raise PackageError("ключ пакета — K не той длины")
     return k
 
 

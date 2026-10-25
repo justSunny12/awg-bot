@@ -793,8 +793,8 @@ def test_neither_stdout_nor_the_status_file_carries_the_key_or_the_envelope_on_t
 @pytest.mark.parametrize("case, word", [
     ("eof", "ключ пакета не получен"),
     ("timeout", "ключ пакета не получен"),
-    ("foreign_gen", "поколение"),
-    ("foreign_oid", "не к этому открытию"),
+    ("foreign_gen", "поколения"),
+    ("foreign_oid", "не к этому процессу открытия"),
     ("foreign_key", "не тот ключ"),
     ("garbage", "не того вида"),
     ("empty", "пуст"),

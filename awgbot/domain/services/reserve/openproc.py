@@ -126,7 +126,8 @@ class ReserveOpenProcMixin:
             proc.stdin.flush()
             proc.stdin.close()
         except (OSError, ValueError) as e:
-            return f"ключ процессу открытия не передан: {e}"
+            log.info("резерв: ключ процессу открытия не передан: %s", e)   # текст ОС — в журнал, не в уведомление
+            return "ключ процессу открытия не передан — процесс уже завершился"
         return ""
 
     def _rsvopen_exit(self) -> tuple[int | None, str]:

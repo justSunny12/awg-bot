@@ -122,7 +122,7 @@ class ReserveOutboundMixin:
             return "«Готов быть резервом» выключен"
         if "seal1" not in (self.reserve_peer_state().get("caps") or []):
             # ключ пакета уходит только конвертом к разовому ключу процесса открытия; открытым — нет
-            return f"«{self.reserve_peer_name()}» не принимает ключ пакета конвертом — нужен выпуск новее"
+            return f"«{self.reserve_peer_name()}» не принимает зашифрованный ключ — необходима v4.0.2 или выше"
         return ""
 
     def reserve_move_dialog_data(self) -> dict:
@@ -216,7 +216,7 @@ class ReserveOutboundMixin:
         step = str(out.get("step") or "pkg")
         if self._expired(out) and step not in ("released",):
             why = {"pkg": "данные для переезда не подтверждены резервом", "eph": f"разовый ключ от «{self.reserve_peer_name()}» не пришёл",
-                   "up": f"«{self.reserve_peer_name()}» не поднял клиентов",
+                   "up": f"«{self.reserve_peer_name()}» не поднял профили",
                    "record": "запись не изменена за 30 минут", "release": "передача бота не завершилась"}.get(step, "срок шага вышел")
             # резерву — `back` и на шагах ключа и подъёма: его процесс открытия ждёт или мог кончиться позже срока
             return self._move_fail(why, released=step in ("eph", "up", "record", "release"))
@@ -312,7 +312,7 @@ class ReserveOutboundMixin:
         try:
             sealed = seal.seal_k_to(eph, self.reserve_k(), int(gen), str(oid))
         except seal.PackageError as e:
-            return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не того вида — {e}", released=True)
+            return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не годится: {e}", released=True)
         self._out_step("up", UP_WAIT_S, oid=str(oid))
         self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
         return [("send", "go", {"gen": int(gen), "kind": str(out.get("kind") or "button"),
@@ -331,7 +331,7 @@ class ReserveOutboundMixin:
         (и когда отказал конверту ключа: ждавший его процесс открытия он гасит)."""
         out = self._out()
         if out.get("state") == "leaving":
-            return self._move_fail(f"«{self.reserve_peer_name()}» не поднял клиентов — {reason}")
+            return self._move_fail(f"«{self.reserve_peer_name()}» не поднял профили — {reason}")
         return []
 
     def reserve_release_build(self) -> dict | None:

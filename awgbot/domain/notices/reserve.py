@@ -90,7 +90,7 @@ def hosting_ended(primary: str, traffic: str) -> str:
 
 
 def hosting_failed(primary: str, reason: str) -> str:
-    return f"⚠️ Клиентов {_n(primary)} принять не удалось: {_e(reason)}"
+    return f"⚠️ Профили {_n(primary)} принять не удалось: {_e(reason)}"
 
 
 # ── админу основы (из бота основы на резерве) ───────────────────────────────
@@ -150,7 +150,7 @@ def primary_back(auto: bool) -> str:
 
 def move_failed(reserve: str, reason: str, released: bool = False) -> str:
     text = f"⚠️ Перевод не состоялся: {_e(reason)}"
-    return text + (f"; {_n(reserve)} отпустил клиентов" if released else "")
+    return text + (f"; {_n(reserve)} отпустил профили" if released else "")
 
 
 def return_failed(reserve: str, reason: str, final: bool = False) -> str:

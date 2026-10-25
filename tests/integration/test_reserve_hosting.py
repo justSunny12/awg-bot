@@ -310,7 +310,7 @@ def test_a_repeated_go_with_the_same_oid_is_silently_ignored(host):
     assert len(stdin_lines(run)) == 2 and svc.reserve_in() == "taking"
 
 
-@pytest.mark.parametrize("case", ["foreign_oid", "before_eph", "foreign_gen", "not_hex", "after_pass_other_oid"])
+@pytest.mark.parametrize("case", ["foreign_oid", "before_eph", "older_gen", "newer_gen", "not_hex", "after_pass_other_oid"])
 def test_an_envelope_not_for_this_opening_is_refused_and_never_reaches_the_process(host, case):
     """Конверт к чужому открытию (другой `oid`, не тот пакет, процесс ещё не
     дал ключ) — в stdin не пишется: `down` основе с причиной."""
@@ -320,29 +320,34 @@ def test_an_envelope_not_for_this_opening_is_refused_and_never_reaches_the_proce
     if case == "before_eph":
         _priv, pub = seal.new_eph()
         why = svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub), oid=OID)
-        assert "не к этому открытию" in why, why
+        assert "не к этому процессу открытия" in why, why
     else:
         _priv, pub = eph_ready(host)
         svc.reserve_in_tick()
         if case == "foreign_oid":
             why = svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub, oid="ffffffffffffffff"), oid="ffffffffffffffff")
-            assert "не к этому открытию" in why, why
-        elif case == "foreign_gen":
+            assert "не к этому процессу открытия" in why, why
+        elif case == "older_gen":
+            # открывается пакет 7, а `go` — к пакету 8: у резерва прошлое поколение
             why = svc.reserve_go_in("", 8, "button", sealed=sealed_for(pub, gen=8), oid=OID)
-            assert "7" in why and "8" in why, why
+            assert why == "открывается пакет прошлого поколения", why
+        elif case == "newer_gen":
+            # открывается пакет 7, а `go` — к пакету 6: основа прислала устаревший ключ
+            why = svc.reserve_go_in("", 6, "button", sealed=sealed_for(pub, gen=6), oid=OID)
+            assert why == "открывается пакет более нового поколения", why
         elif case == "not_hex":
             why = svc.reserve_go_in("", 7, "button", sealed="zz", oid=OID)
             assert "не hex" in why, why
         else:
             assert svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub), oid=OID) == ""
             why = svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub, oid="ffffffffffffffff"), oid="ffffffffffffffff")
-            assert "не к этому открытию" in why, why
+            assert "не к этому процессу открытия" in why, why
     want_lines = 2 if case == "after_pass_other_oid" else 1
     assert len(stdin_lines(run)) == want_lines, f"чужой конверт ушёл процессу: {stdin_lines(run)}"
     assert svc.reserve_in() == "taking", "отказ конверта снял открытие — процесс ещё может получить верный"
 
 
-@pytest.mark.parametrize("case", ["foreign_oid", "foreign_gen"])
+@pytest.mark.parametrize("case", ["foreign_oid", "older_gen", "newer_gen"])
 def test_a_refused_envelope_while_the_process_waits_fails_the_hosting_and_frees_the_zone_at_once(host, case, monkeypatch):
     """Конверт не к этому открытию, пока процесс его ждёт: конверта к этой
     паре уже не будет — ждать 2 минуты значит держать зону занятой. Срыв
@@ -357,7 +362,8 @@ def test_a_refused_envelope_while_the_process_waits_fails_the_hosting_and_frees_
     if case == "foreign_oid":
         why = svc.reserve_go_in("", 7, "button", sealed=sealed_for(pub, oid="ffffffffffffffff"), oid="ffffffffffffffff")
     else:
-        why = svc.reserve_go_in("", 8, "button", sealed=sealed_for(pub, gen=8), oid=OID)
+        gen = 8 if case == "older_gen" else 6
+        why = svc.reserve_go_in("", gen, "button", sealed=sealed_for(pub, gen=gen), oid=OID)
     assert why
     acts = svc.reserve_go_refused(why, True)
     assert svc.reserve_in() == "idle" and svc.rsv_get("rsv_in").get("fail_at"), "приём не сорван — зона занята до срока"
@@ -408,7 +414,7 @@ def test_an_open_key_from_a_primary_that_can_seal_is_refused_and_launches_nothin
     отказ: иначе любая ошибка на стороне основы сводит этап на нет."""
     svc = host.svc
     why = svc.reserve_go_in(K_HEX, 7, "button")
-    assert "открытым не принимаю" in why, why
+    assert "не зашифрован" in why, why
     assert not host.spawn.popen and svc.reserve_in() == "idle"
     assert K_HEX not in json.dumps(svc.rsv_get("rsv_in") or {})
 

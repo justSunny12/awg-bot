@@ -67,7 +67,7 @@ def test_a_reserve_that_cannot_take_the_key_sealed_gets_no_move_button(mv):
     svc = mv.svc
     rm.st_in(svc, caps=[c for c in compat.CAPS if c != "seal1"])
     why = svc.reserve_move_check()
-    assert "конвертом" in why and "Beta" in why and "новее" in why, why
+    assert "зашифрованный ключ" in why and "Beta" in why and "v4.0.2" in why, why
     with pytest.raises(ServiceError):
         svc.reserve_move_start()
     assert svc.reserve_out() == "home"
@@ -157,7 +157,7 @@ def test_an_open_eph_with_a_malformed_key_fails_the_move_and_releases_the_reserv
     k = svc.reserve_k()
     acts = svc.reserve_open_eph_in(4, "zz", "0123456789abcdef")
     assert svc.reserve_out() == "home" and sent(acts) == ["back"], "резерв держит процесс открытия — без back он ждёт 2 минуты впустую"
-    assert "не того вида" in " ".join(n.text for n in notices(acts))
+    assert "не годится" in " ".join(n.text for n in notices(acts))
     assert svc.reserve_k() == k, "K не уходил — менять его незачем"
     acts = svc.reserve_open_eph_in(4, "cd" * 16, "0123456789abcdef")
     assert acts == [], "вне переезда open_eph что-то сделал"
@@ -238,7 +238,7 @@ def test_a_failing_provider_during_a_move_aborts_it_and_releases_the_reserve(mv)
     assert svc.reserve_out() == "home"
     assert sent(acts) == ["back"], "резерв поднял клон — без back он останется у него"
     text = " ".join(n.text for n in notices(acts))
-    assert "Перевод не состоялся" in text and "токен отозван" in text and "отпустил клиентов" in text
+    assert "Перевод не состоялся" in text and "токен отозван" in text and "отпустил профили" in text
 
 
 def test_an_unreadable_authoritative_server_is_not_a_fact(mv):
@@ -255,7 +255,7 @@ def test_an_unreadable_authoritative_server_is_not_a_fact(mv):
 @pytest.mark.parametrize("step,limit,back,reason", [
     ("pkg", outbound.PKG_WAIT_S, False, "не подтверждены"),
     ("eph", outbound.EPH_WAIT_S, True, "разовый ключ от «Beta» не пришёл"),
-    ("up", outbound.UP_WAIT_S, True, "не поднял клиентов"),
+    ("up", outbound.UP_WAIT_S, True, "не поднял профили"),
     ("record", outbound.RECORD_WAIT_S, True, "30 минут"),
     ("release", outbound.RELEASED_WAIT_S, True, "передача бота"),
 ])
