@@ -262,7 +262,7 @@ class MarkMixin:
                        for s, _i in config.routing_client_subnets()):
                     # подсеть клиентов — в AllowedIPs линка и tunnel_nets4 каждого
                     # шлюза, аплинк шлюза — адрес из неё: адресный план сервера
-                    rejected.append((tok, "это подсеть пользователей AWG"))
+                    rejected.append((tok, "это подсеть профилей VPN"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(g.link_cidr, strict=False))
                        for g in self.db.gateways()):

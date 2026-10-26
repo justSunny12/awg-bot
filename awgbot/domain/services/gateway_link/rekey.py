@@ -131,7 +131,7 @@ class RekeyMixin:
         if ok:
             return i1
         if auto == "i1":
-            raise ServiceError("I1 интерфейса пользователей не прочитан")
+            raise ServiceError("у интерфейса AWG сервера не прочитана строка I1")
         return self.gateway_link_i1(gw)[1]
 
     def _rekey_stage(self, slot_id: int, auto: str = "") -> dict:

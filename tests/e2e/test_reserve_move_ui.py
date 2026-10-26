@@ -116,35 +116,35 @@ async def _card(ui) -> tuple[str, list[str]]:
 
 async def test_the_card_offers_the_move_when_it_is_possible_and_the_dns_screen_always(ui):
     text, labels = await _card(ui)
-    assert "🔀 Перевести пользователей на «Beta»" in labels and "🌐 Запись DNS" in labels
-    assert not any("Вернуть пользователей" in x for x in labels)
+    assert "🔀 Переезд на «Beta»" in labels and "🌐 Запись DNS" in labels
+    assert not any("Вернуть" in x for x in labels)
     assert "🌐 Запись <code>" not in text or rc.HOST_A in text
 
 
 async def test_the_card_hides_the_move_button_and_says_why_in_the_text(ui):
     ui.svc.rsv_update("rsv_peer_state", session=False)
     text, labels = await _card(ui)
-    assert not any("Перевести" in x for x in labels), "кнопка переезда при недоступном резерве"
+    assert not any("Переезд" in x for x in labels), "кнопка переезда при недоступном резерве"
     assert "Нет связи с" in text
 
 
 async def test_the_card_offers_the_return_to_the_reserve_only_while_it_hosts_my_clients_and_is_reachable(ui):
     _text, labels = await _card(ui)
-    assert not any("к нему" in x for x in labels)
+    assert not any("Вернуть всё на" in x for x in labels)
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     text, labels = await _card(ui)
-    assert "↩️ Вернуть пользователей «Beta» к нему" in labels and not any("Перевести" in x for x in labels)
+    assert "↩️ Вернуть всё на «Beta»" in labels and not any("Переезд" in x for x in labels)
     assert "Пользователи «Beta»" in text and "здесь" in text
     ui.svc.rsv_update("rsv_peer_state", session=False)
     _text, labels = await _card(ui)
-    assert not any("к нему" in x for x in labels), "резерв не на связи — просить его вернуть клиентов некому"
+    assert not any("Вернуть всё на" in x for x in labels), "резерв не на связи — просить его вернуть клиентов некому"
 
 
 async def test_the_card_of_the_primary_that_is_away_shows_the_state_and_no_move(ui):
     rm.go_away(ui.svc)
     text, labels = await _card(ui)
     assert "Мои пользователи: на «Beta»" in text.replace("<b>", "").replace("</b>", "") or "на <b>Beta</b>" in text or "Beta" in text
-    assert not any("Перевести" in x for x in labels)
+    assert not any("Переезд" in x for x in labels)
 
 
 async def test_the_card_names_the_record_state(ui):

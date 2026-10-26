@@ -82,7 +82,7 @@ def render(spec: pkg.GuardSpec) -> str:
                       *q_in,
                       "    }"]
         out = head + [
-            "# Форма NAT-only: firewall.enabled=false, фильтра нет, только NAT клиентов.",
+            "# Форма NAT-only: firewall.enabled=false, фильтра нет, только выход пользователей в интернет (NAT).",
             f"table {pkg.TABLE}",
             f"delete table {pkg.TABLE}",
             f"table {pkg.TABLE} {{",

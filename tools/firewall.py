@@ -279,7 +279,7 @@ def cmd_setup(_args) -> int:
     if spec.unresolved:
         print(f"[!] не резолвятся: {', '.join(spec.unresolved)} — в таблицу не попадут")
     if not spec.udp_ports and spec.per_peer:
-        print("[!] ListenPort не найден ни в одном conf — порт пользователей awg НЕ будет открыт")
+        print("[!] ListenPort не найден ни в одном conf — входящий порт AWG НЕ будет открыт — пользователи не подключатся")
         if not _yes("Продолжить?"):
             return 1
     if nftguard.ufw_active():
@@ -371,7 +371,7 @@ def cmd_rollback(_args) -> int:
     # читает, поэтому говорим в чат.
     from awgbot.infra import tgsend
     tgsend.send("↩️ <b>Файервол: откат.</b>\n\nПодтверждения не было, правила сняты — "
-                "SSH снова открыт всем адресам. NAT пользователей на месте.\n\n"
+                "SSH снова открыт всем адресам. Выход пользователей в интернет на месте.\n\n"
                 "Похоже, новый вход по SSH не прошёл: проверь список адресов "
                 "(⚙️ Настройки → 🛡 SSH-доступ) и включи фильтр заново.")
     return 0

@@ -80,7 +80,7 @@ def card_text(d: dict) -> str:
 
 
 def return_dialog(d: dict) -> str:
-    """Т-Р11: вернуть клиентов на основу (из бота основы на резерве)."""
+    """Т-Р11: вернуть пользователей на основу (из бота основы на резерве)."""
     own, name = _n(d.get("own_name") or "сервер"), _n(d.get("name") or "резерв")
     since = _when((d.get("primary") or {}).get("since") or "")
     rec = ""

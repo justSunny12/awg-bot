@@ -159,7 +159,7 @@ def _firewall_warnings(services) -> list[str]:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
     if not spec.udp_ports:
         out.append("файервол: не найден ListenPort ни в одном conf интерфейса — "
-                   "порт пользователей awg может быть закрыт")
+                   "входящий порт AWG может быть закрыт — пользователи не подключатся")
     if nftguard.ufw_active():
         out.append("ufw активен рядом с таблицей awg_bot_guard — два владельца "
                    "правил; после проверки входа: `awg-bot firewall confirm --disable-ufw`")

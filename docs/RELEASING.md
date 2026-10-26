@@ -126,8 +126,8 @@ GitHub `vX.Y.Z.P — …`.
 
 - `#requires_main_…` — релиз адресован основному боту (ВПС);
   `#requires_gw_…` — агенту шлюза. **Строка ставится только той роли, чей
-  код релиз меняет.** Только основной бот (клиентская механика, резолвер
-  клиентов, резолвер админа — `install/awg-admin-dns-setup.sh` и
+  код релиз меняет.** Только основной бот (механика пользователей, резолвер
+  пользователей, резолвер админа — `install/awg-admin-dns-setup.sh` и
   `infra/admindns.py`, переезд, файервол ВПС — `infra/nftguard/`, пакеты
   сервисного слоя `domain/services/gateway_link/` (слоты, линк, смена ключей
   линка и токена бота шлюза) и `domain/services/traffic/` (опрос трафика,
@@ -246,7 +246,7 @@ GitHub `vX.Y.Z.P — …`.
   бот основы на резерве (`config.GUEST`: `domain/services/reserve/guest.py`,
   `runtime/main/guest.py`, `runtime/webhook.py`, локальный канал
   `runtime/pairlink/guestctl.py`, планировщик `runtime/scheduler/guest.py` и
-  вынесенные из основного задания данных клиентов `runtime/scheduler/jobs.py`,
+  вынесенные из основного задания данных пользователей `runtime/scheduler/jobs.py`,
   `bot/handlers/guest.py`, тексты `bot/texts/reserve/guest.py`), слияние при
   возврате (`domain/backup/merge/policy.py`, `reserve.py`), процесс открытия
   `tools/rsvopen.py`, сторож обновления и восстановления `tools/rsvbusy.py` (его зовёт общий
@@ -268,7 +268,7 @@ GitHub `vX.Y.Z.P — …`.
   экран роли общего админа (`bot/filters.py` — `PeerAdminFilter`,
   `handlers/settings/reserve/card.py`). Правка `jobs.py` задевает и обычный основной бот (те же
   задания), но не агента. `bot/middleware.py` и `core/access_cache.py` (роль
-  админа второго сервера и его «👤 Меню клиента» на полчаса) собирают обе роли —
+  админа второго сервера и его «👤 Меню пользователя» на полчаса) собирают обе роли —
   их правка, как всякий общий код, адресуется обеим, даже когда меняет только
   поведение основного бота. **Только агент** — строка `gw`: скрипт линка к
   резерву `install/reserve-gw-setup.sh` (на ВПС его не зовут; на шлюзе юнит

@@ -111,7 +111,7 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
         return False, "у серверов разные поколения AmneziaWG"
     clash = sorted(set(src.get("ports", [])) & set(dst.get("ports", [])))
     if clash:
-        return False, f"порт пользователей {clash[0]} занят у обеих сторон"
+        return False, f"порт AWG {clash[0]} занят на обоих серверах"
     if not pkg_fresh:
         return False, "данные для переезда у резерва устарели"
     return True, ""

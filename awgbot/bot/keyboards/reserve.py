@@ -68,12 +68,12 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
     """Кнопки переезда видны, только когда действие возможно; невозможное —
     строкой причины в карточке."""
     return ui.rows(
-        (f"🔀 Перевести пользователей на «{name}»", RsvCB(action="move")) if can_move else None,
+        (f"🔀 Переезд на «{name}»", RsvCB(action="move")) if can_move else None,
         ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,
-        (f"⚠️ Вернуть пользователей без «{name}»", RsvCB(action="force")) if can_force else None,
-        (f"↩️ Вернуть пользователей «{name}» к нему", RsvCB(action="evict")) if can_evict else None,
+        (f"⚠️ Вернуть без «{name}»", RsvCB(action="force")) if can_force else None,
+        (f"↩️ Вернуть всё на «{name}»", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
-        (f"{_chk(rf_on)} РФ-доступ его пользователей через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
+        (f"{_chk(rf_on)} Мои шлюзы для его РФ-доступа", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
         ("🌐 Запись DNS", RsvCB(action="dns")),
         (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
@@ -112,7 +112,7 @@ def dns_token_prompt() -> InlineKeyboardMarkup:
 
 
 def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:
-    """Карточка резерва в боте основы на резерве: вернуть клиентов (когда
+    """Карточка резерва в боте основы на резерве: вернуть пользователей (когда
     основа снова в строю и рычаг «по кнопке»), обновить, назад."""
     return ui.rows(
         ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,

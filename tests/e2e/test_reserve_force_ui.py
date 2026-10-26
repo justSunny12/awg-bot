@@ -29,7 +29,7 @@ rsv = rc.rsv
 mv = rm.mv
 __all__ = ["ui", "gui"]
 
-FORCE = "⚠️ Вернуть пользователей без «Beta»"
+FORCE = "⚠️ Вернуть без «Beta»"
 
 
 def _ago(minutes: float) -> str:
