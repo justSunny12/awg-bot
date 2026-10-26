@@ -48,8 +48,8 @@ async def refresh(cb: CallbackQuery, services, role: str = "peer_admin", **_):
 
 @router.callback_query(PeerCB.filter(F.action == "client"))
 async def as_client(cb: CallbackQuery, services, **_):
-    """«👤 Меню клиента»: он ещё и клиент этого сервера — на время сессии
-    middleware ведёт его как клиента; экран роли вернётся сам через полчаса."""
+    """«👤 Меню пользователя»: он ещё и пользователь этого сервера — на время сессии
+    middleware ведёт его как пользователя; экран роли вернётся сам через полчаса."""
     from awgbot.bot import screens
     from awgbot.bot.handlers.common import send_menu
     from awgbot.core import access_cache

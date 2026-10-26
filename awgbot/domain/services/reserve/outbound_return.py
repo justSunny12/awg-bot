@@ -1,5 +1,5 @@
 """
-outbound_return.py — часть пакета reserve (см. __init__): возврат клиентов с
+outbound_return.py — часть пакета reserve (см. __init__): возврат пользователей с
 резерва на стороне основы (выделено из outbound: там переезд кнопкой и away).
 
 returning/back_req → `released{реплика}` → merge (merge_ops) → restart →
@@ -50,7 +50,7 @@ class ReserveReturnMixin:
 
     # ── С9: резерв не на связи — вернуть клиентов без него ──────────────────
     def reserve_force_check(self) -> str:
-        """Пусто — рычаг «вернуть без резерва» возможен: мои клиенты у резерва, а он
+        """Пусто — рычаг «вернуть без резерва» возможен: мои пользователи у резерва, а он
         не на связи дольше FORCE_OFFLINE_S."""
         if self.reserve_out() != "away":
             return "пользователи не у резерва"
@@ -128,7 +128,7 @@ class ReserveReturnMixin:
         return [("send", "back_req", {}), ("live",)]
 
     def reserve_evict_in(self) -> list[tuple]:
-        """`evict` резерва («вернуть клиентов к нему»): возврат, если клиенты у него."""
+        """`evict` резерва («вернуть пользователей к нему»): возврат, если пользователи у него."""
         try:
             return self.reserve_return_start("evict")
         except ServiceError as e:

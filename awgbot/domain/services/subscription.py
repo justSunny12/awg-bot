@@ -226,7 +226,7 @@ class SubscriptionMixin:
         return plan, notes
 
     def activate_grace(self, client_id: int, days: int):
-        """Клиент сам продлевает годовую подписку на `days` дней (один раз за
+        """Пользователь сам продлевает годовую подписку на `days` дней (один раз за
         период). Возвращает (ok, end|None): ok=False если предложение протухло
         (истёк / уже использовано / не годовой). Долг фиксируем снимком в секундах
         — вычтется при следующем продлении."""
@@ -296,7 +296,7 @@ class SubscriptionMixin:
         return PauseCredit(new_kind, bal, min(bal + add, cap), cap, "credited")
 
     def pause_available_days(self, client_id: int) -> int:
-        """Сколько дней приостановки клиент может взять ПРЯМО СЕЙЧАС — его счёт.
+        """Сколько дней приостановки пользователь может взять ПРЯМО СЕЙЧАС — его счёт.
         Бессрочной паузе нечего останавливать — 0. Ни остатком подписки, ни
         «максимумом за один вход» не ограничиваем."""
         client = self.db.get_client(client_id)
@@ -306,8 +306,8 @@ class SubscriptionMixin:
 
 
     def enter_pause(self, client_id: int, days: int = None):
-        """Клиентский самоблок (mode=user). Резервирует `days` дней вперёд
-        (сдвигает period_end), ставит PAUSED клиенту и каскадом устройствам.
+        """Самоблок пользователя (mode=user). Резервирует `days` дней вперёд
+        (сдвигает period_end), ставит PAUSED пользователю и каскадом устройствам.
         days=None — берёт весь доступный максимум (обратная совместимость);
         иначе резервирует ровно min(days, доступное). Возвращает
         (ok, reserved_days, notifications)."""
@@ -347,7 +347,7 @@ class SubscriptionMixin:
         return (True, reserved, notes, code)
 
     def enter_admin_pause(self, client_id: int, days: int):
-        """Приостановка подписки при АДМИНСКОМ блоке клиента. days>0 — срочная
+        """Приостановка подписки при АДМИНСКОМ блоке пользователя. days>0 — срочная
         (admin_fixed: +days вперёд, авто-выход по сроку); days==0 — бессрочная
         (admin_open: period_end→NULL temp, снимок в pause_saved_end, пересчёт при
         снятии). Без лимита 28 и без привязки к годовой. НЕ ставит сам блок-бит
@@ -447,7 +447,7 @@ class SubscriptionMixin:
         return (True, actual, new_end, notes)
 
     def resume_by_email_code(self, code: str):
-        """Аварийный email-выход: найти клиента с активной паузой и данным
+        """Аварийный email-выход: найти пользователя с активной паузой и данным
         одноразовым кодом, снять паузу (тот же exit_pause). Возвращает
         (ok, notifications): ok=False если код не найден/не на паузе (тогда
         вызывающий молчит — письмо помечается прочитанным без ответа).

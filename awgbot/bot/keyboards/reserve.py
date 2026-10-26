@@ -41,7 +41,7 @@ def code_prompt() -> InlineKeyboardMarkup:
 
 
 def accept_dialog(rf_on: bool, *, has_gateway: bool) -> InlineKeyboardMarkup:
-    """«Отмена» первой: принять чужих клиентов — действие с последствиями."""
+    """«Отмена» первой: принять чужих пользователей — действие с последствиями."""
     return ui.rows(
         ("⬅️ Отмена", SetCB(sec="rsv")),
         (f"{_chk(rf_on)} РФ-доступ через мои шлюзы", RsvCB(action="rf")) if has_gateway else None,
@@ -156,7 +156,7 @@ def peer_code_cancel() -> InlineKeyboardMarkup:
 
 def peer_admin(*, code_needed: bool, has_client: bool = False, in_card: bool = False) -> InlineKeyboardMarkup:
     """Экран роли админа второго сервера: обновить, ввод кода (только в Н4),
-    «👤 Меню клиента» (он ещё и клиент здесь), скрыть; у общего админа экран —
+    «👤 Меню пользователя» (он ещё и пользователь здесь), скрыть; у общего админа экран —
     раздел его «🛟 Резерв»: вместо «Скрыть» — назад."""
     from awgbot.bot.keyboards.common import hide_only
     rows = ui.rows(("🔄 Обновить", PeerCB(action="refresh")),

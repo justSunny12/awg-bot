@@ -148,7 +148,7 @@ class HistoryMixin:
         cur.execute("DELETE FROM device_friend WHERE device_id = ?", (device_id,))
 
     def archive_block(self, client_id: int, mask: int, reason: str, cur=None) -> None:
-        """Записать снятый эпизод блокировки клиента (какая маска была снята)."""
+        """Записать снятый эпизод блокировки пользователя (какая маска была снята)."""
         if cur is None:
             with self._tx() as c:
                 return self.archive_block(client_id, mask, reason, c)
@@ -162,7 +162,7 @@ class HistoryMixin:
             (client_id, int(mask), _now_iso(), reason))
 
     def archive_client_snapshot(self, client_id: int, reason: str, cur=None) -> None:
-        """Снимок клиента перед удалением (identity на момент смерти)."""
+        """Снимок пользователя перед удалением (identity на момент смерти)."""
         if cur is None:
             with self._tx() as c:
                 return self.archive_client_snapshot(client_id, reason, c)

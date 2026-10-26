@@ -1,5 +1,5 @@
 """
-reserve.py — трёхстороннее слияние при возврате клиентов с резерва.
+reserve.py — трёхстороннее слияние при возврате пользователей с резерва.
 
 Три базы: `base` — снимок, с которого резерв начал (`reserve/out/base-<gen>.db`
 у основы), `cur` — живая база основы (всё, что основа записала после снимка:
@@ -122,7 +122,7 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delet
 
 
 def _check_schema(con) -> None:
-    """У таблиц данных клиентов в живой базе нет колонок без правила."""
+    """У таблиц данных пользователей в живой базе нет колонок без правила."""
     for table, rules in P.TABLES.items():
         have = set(_cols(con, table))
         missing = have - set(P.columns(table))

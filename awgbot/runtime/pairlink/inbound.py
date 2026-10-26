@@ -147,7 +147,7 @@ class InboundMixin:
         await self._actions(await asyncio.to_thread(self.services.reserve_evict_in))
 
     async def _in_blocks(self, sess: _Session, body: dict) -> None:
-        """Блокировки основы, пока её клиенты у меня, — гостю в зону."""
+        """Блокировки основы, пока её пользователи у меня, — гостю в зону."""
         await self._actions([("guest", "blocks", {"addrs": list(body.get("addrs") or [])[:4096]})])
 
     async def _in_slots(self, sess: _Session, body: dict) -> None:

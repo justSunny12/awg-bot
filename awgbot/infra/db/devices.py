@@ -233,7 +233,7 @@ class DevicesMixin:
     def admin_device_addresses(self, admin_tg_id: int) -> list[str]:
         """Адреса (10.8.1.X) всех устройств, чей владелец — админ (по tg_id).
         Источник вайтлиста для пер-пирного SSH-к-хосту (reconcile_ssh_access).
-        Служебный клиент («устройства без профиля») исключён явно: сегодня у него
+        Служебный пользователь («устройства без профиля») исключён явно: сегодня у него
         нет tg_id, но SSH-вайтлист не должен зависеть от этого неявно."""
         rows = self._connection().execute(
             "SELECT d.address FROM devices d "
@@ -388,7 +388,7 @@ class DevicesMixin:
             cur.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 
     def reassign_device(self, device_id: int, new_client_id: int) -> None:
-        """Привязка устройства без профиля к реальному клиенту."""
+        """Привязка устройства без профиля к реальному пользователю."""
         self.update_device_fields(device_id, client_id=new_client_id)
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ class DevicesMixin:
         приложение и бот делят один пул и одну логику «первый свободный», поэтому
         источником занятости должен быть реальный конфиг, а не только БД.
 
-        start_host=1 — у прежней раскладки сервер занимает .0, клиенты — с .1.
+        start_host=1 — у прежней раскладки сервер занимает .0, пользователи — с .1.
         """
         occupied: set[str] = {
             r["address"] for r in self._connection().execute("SELECT address FROM devices")

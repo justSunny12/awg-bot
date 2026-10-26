@@ -80,7 +80,7 @@ def ipv4(text: str) -> str:
 # ── чтение записи ─────────────────────────────────────────────────────────────
 
 def read_system(name: str, timeout: float = TIMEOUT) -> list[str]:
-    """A-адреса имени через системный резолвер (с кэшем, как у клиентов)."""
+    """A-адреса имени через системный резолвер (с кэшем, как у пользователей)."""
     old = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout)
     try:

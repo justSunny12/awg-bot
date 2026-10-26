@@ -71,7 +71,7 @@ def _guest(client) -> bool:
 
 
 def _device(services, client, device_id: int):
-    """Устройство, которым человек владеет (клиент) или держит (гость)."""
+    """Устройство, которым человек владеет (пользователь) или держит (гость)."""
     if _guest(client):
         return held_device(services, client, device_id)
     return own_device(services, client, device_id)

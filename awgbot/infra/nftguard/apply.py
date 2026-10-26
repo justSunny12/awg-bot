@@ -83,7 +83,7 @@ def apply_text(text: str) -> None:
 def nat_covers(subnet: str) -> bool:
     """Живая таблица маскарадит эту подсеть? Проверка для доктора условной
     маршрутизации: NAT переехал сюда из iptables, и «нет правила iptables»
-    больше не означает «клиенты не выйдут наружу»."""
+    больше не означает «пользователи не выйдут наружу»."""
     proc = pkg._nft(["-j", "list", "table", pkg.TABLE_FAMILY, pkg.TABLE_NAME], check=False)
     if proc.returncode != 0:
         return False
@@ -262,7 +262,7 @@ def disarm_rollback() -> bool:
 
 def remove(transit_links=()) -> list[str]:
     """Снять фильтр; SSH становится открыт всем (доступ не теряется). В
-    таблица остаётся в NAT-only форме: без маскарада клиенты потеряли бы
+    таблица остаётся в NAT-only форме: без маскарада пользователи потеряли бы
     интернет — «выключить файервол» этого не обещает."""
     done: list[str] = []
     spec = pkg.build_spec([], transit_links=transit_links)

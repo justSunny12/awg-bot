@@ -48,7 +48,7 @@ class ServicesBase:
 
     def dev_link(self, dev) -> str:
         """Имя устройства — ссылка на его карточку (dev-<id>): у админа — своя,
-        у клиента и гостя — своё или удерживаемое."""
+        у пользователя и гостя — своё или удерживаемое."""
         if dev is None:
             return "?"
         return self._link(f"dev-{int(dev.id)}", f"«{dev.name}»")

@@ -83,7 +83,7 @@ def check_fatal() -> None:
 # ── WARNING ──────────────────────────────────────────────────────────────────
 def collect_warnings_gateway(services=None) -> list[str]:
     """Warnings роли gateway: свои у каждой роли, потому что чинится разное.
-    Клиентские проверки (сервер awg) шлюзу не о чем сказать — у него его нет."""
+    Проверки сервера awg шлюзу не о чем сказать — у него его нет."""
     import os
     from awgbot.core import config as _c
     warns: list[str] = []

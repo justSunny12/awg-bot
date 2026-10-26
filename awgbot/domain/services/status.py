@@ -112,7 +112,7 @@ class StatusMixin:
         }
 
     def client_info_data(self, client_id: int) -> Optional[dict]:
-        """«Управлять подпиской» у клиента — то же одним вызовом."""
+        """«Управлять подпиской» у пользователя — то же одним вызовом."""
         client = self.db.get_client(client_id)
         if client is None:
             return None
@@ -154,7 +154,7 @@ class StatusMixin:
 
     def traffic_by_profile(self) -> list[tuple]:
         """[(client, rx, tx, rf)] за календарный месяц. Админ первым, остальные
-        по имени — тот же порядок, что в списке клиентов. rf — (rx, tx) РФ-части
+        по имени — тот же порядок, что в списке пользователей. rf — (rx, tx) РФ-части
         под строкой профиля или None, если строка ему не положена."""
         by = self.db.rf_by_client()
         enabled = self.rf_enabled()
@@ -349,9 +349,9 @@ class StatusMixin:
         return (self.db.count_devices(client_id), client.device_limit)
 
     def is_only_device(self, device_id: int) -> bool:
-        """True, если это единственное устройство своего клиента (удаление =
+        """True, если это единственное устройство своего пользователя (удаление =
         потеря доступа к VPN и, возможно, к боту). Для устройств «без профиля»
-        (служебный клиент) — всегда False: у них нет tg_id-владельца, который
+        (служебный пользователь) — всегда False: у них нет tg_id-владельца, который
         «потеряет доступ через этот VPN», предупреждение неприменимо."""
         dev = self.db.get_device(device_id)
         if dev is None:
@@ -476,7 +476,7 @@ class StatusMixin:
 
     @staticmethod
     def carries_traffic() -> bool:
-        """Сервер AWG трафик несёт всегда: перезапуск рвёт соединения клиентов."""
+        """Сервер AWG трафик несёт всегда: перезапуск рвёт соединения пользователей."""
         return True
 
     def restart_service(self) -> None:

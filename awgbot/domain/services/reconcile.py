@@ -222,7 +222,7 @@ class ReconcileMixin:
 
         Пока firewall.enabled=false (таблицу ещё не включали через
         `awg-bot firewall setup`), фильтр не ставим — включение файервола
-        делается человеком с таймером отката, не ботом. Но NAT клиентов в
+        делается человеком с таймером отката, не ботом. Но NAT пользователей в
         host-режиме таблица держит всегда (nftguard: форма NAT-only)."""
         from awgbot.infra import nftguard
         try:

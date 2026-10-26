@@ -281,7 +281,7 @@ class ReserveGuestMixin:
         return True
 
     def guest_can_return(self) -> bool:
-        """«↩️ Вернуть клиентов» — когда основа сама сказала резерву, что здорова
+        """«↩️ Вернуть пользователей» — когда основа сама сказала резерву, что здорова
         и ждёт кнопки (рычаг «по кнопке»): признак идёт в `st` и дальше гостю."""
         d = self.guest_state()
         return bool((d.get("primary") or {}).get("can_return"))

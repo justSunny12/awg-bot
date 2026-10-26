@@ -191,8 +191,8 @@ class FirewallMixin:
         return nftguard.disarm_rollback()
 
     def firewall_disable(self) -> list[str]:
-        """Снять фильтр. NAT клиентов таблица держит дальше: «выключить
-        файервол» не обещает «оставить клиентов без интернета»."""
+        """Снять фильтр. NAT пользователей таблица держит дальше: «выключить
+        файервол» не обещает «оставить пользователей без интернета»."""
         from awgbot.infra import nftguard
         nftguard.disarm_rollback()
         done = nftguard.remove(transit_links=self.gateway_transit_links())
@@ -203,7 +203,7 @@ class FirewallMixin:
 
     def _smb_tunnel_follow(self) -> None:
         """«SMB в туннеле» держит записи только при фильтре снаружи: без него
-        имена увидели бы все клиенты — снять или вернуть сразу, не тактом."""
+        имена увидели бы все пользователи — снять или вернуть сразу, не тактом."""
         sync = getattr(self, "smb_tunnel_sync", None)
         if sync is None:
             return

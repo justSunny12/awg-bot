@@ -6,7 +6,7 @@ peeradmin.py — часть пакета reserve (см. __init__): роль ад
 под ключом сопряжения, меняется по `st.admin_id`). Роль — только чтение
 сведений о паре и ввод аварийного кода, когда этот сервер не видит второй и
 его шлюзов на связи нет (Н4, этап 5). Сводка экрана собирается из таблицы
-пары, ключей `rsv_*` и счётчиков — ни одного поля клиентов этого сервера.
+пары, ключей `rsv_*` и счётчиков — ни одного поля пользователей этого сервера.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class ReservePeerAdminMixin:
         return self.reserve_is_peer_admin(int(uid)) or (int(uid) == int(config.ADMIN_ID) and self.reserve_self_peer_admin())
 
     def reserve_peer_admin_client(self):
-        """Клиент этого сервера с аккаунтом админа второго (в. 51) или None."""
+        """Пользователь этого сервера с аккаунтом админа второго (в. 51) или None."""
         pid = self.reserve_peer_admin_id()
         if not pid or pid == int(config.ADMIN_ID):
             return None
@@ -48,7 +48,7 @@ class ReservePeerAdminMixin:
             return None
 
     def reserve_peer_admin_is_client(self) -> bool:
-        """Админ второго сервера — ещё и клиент этого: на экране роли «👤 Меню клиента»."""
+        """Админ второго сервера — ещё и пользователь этого: на экране роли «👤 Меню пользователя»."""
         return self.reserve_peer_admin_client() is not None
 
     def reserve_peer_admin_opened(self) -> None:
@@ -59,7 +59,7 @@ class ReservePeerAdminMixin:
 
     def reserve_peer_admin_summary(self) -> dict:
         """Данные экрана роли (Т-РН1): как этот сервер видит второй, готовность
-        направления «его клиенты → сюда», пакет, трафик; без клиентов."""
+        направления «его пользователи → сюда», пакет, трафик; без пользователей."""
         peer = self.reserve_peer() or {}
         ps = self.reserve_peer_state()
         dirs = self.reserve_directions()

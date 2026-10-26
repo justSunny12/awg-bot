@@ -165,7 +165,7 @@ def merge_iface_confs(copy_dir: str, p, *, awg_dir: str, link_ifs: set[str], cli
     устройствам). Другая — из бэкапа; пиры устройств текущих слотов —
     текущие, в конфиге своего интерфейса (двойник переезда — в интерфейсе
     переезда); пиры невставших и мёртвых устройств — прочь.
-    transplanted — {ключ: интерфейс устройства ('' — клиентский)}."""
+    transplanted — {ключ: интерфейс устройства ('' — основной интерфейс AWG)}."""
     from awgbot.infra.awg import parsers
     d = os.path.join(copy_dir, "awg")
     if not os.path.isdir(d):

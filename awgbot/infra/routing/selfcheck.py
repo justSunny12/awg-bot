@@ -83,7 +83,7 @@ def _check_static_plumbing() -> None:
 
 
 def _check_subnet_plumbing(subnet: str, iface: str) -> None:
-    """Маршрут и MASQUERADE для ОДНОЙ клиентской подсети.
+    """Маршрут и MASQUERADE для ОДНОЙ подсети пользователей.
 
     Вынесено из _check_static_plumbing, потому что подсетей стало две: на время
     переезда профилей рядом со старым интерфейсом живёт новый со своей подсетью.

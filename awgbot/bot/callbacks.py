@@ -38,7 +38,7 @@ class PresetCB(CallbackData, prefix="ps"):
 class NoteCB(CallbackData, prefix="nt"):
     """Кнопка действия на уведомлении (Notification.action): kind — extend
     (продлить профиль ref), unassigned (устройства без профиля), sub
-    (подписка клиента); gwcfg — «📤 Конфигурация» уведомлений до 3.3.1, кнопка
+    (подписка пользователя); gwcfg — «📤 Конфигурация» уведомлений до 3.3.1, кнопка
     устаревшая. Нажатие снимает кнопки с уведомления и открывает экран новым
     живым меню."""
     kind: str
@@ -46,7 +46,7 @@ class NoteCB(CallbackData, prefix="nt"):
 
 
 class ClientCB(CallbackData, prefix="c"):
-    """Действия над клиентом (админ). action: open|edit (подменю «✏️
+    """Действия над пользователем (админ). action: open|edit (подменю «✏️
     Изменить»)|devices|add_device|edit_name|edit_limit|edit_traffic|
     edit_period|extend|extend_exp (из списка истекающих)|resume_pause|delete|delete_yes|
     regen_invite|gen_for"""
@@ -66,7 +66,7 @@ class DeviceCB(CallbackData, prefix="d"):
 class PeriodCB(CallbackData, prefix="p"):
     """Выбор длительности периода. kind: day|week|month|year|never; keep_tgl —
     тумблер «сохранить остаток» на том же экране.
-    ctx — контекст (create|extend), ref — id клиента при extend, keep —
+    ctx — контекст (create|extend), ref — id пользователя при extend, keep —
     сохранить неистраченный остаток (1 по умолчанию); в колбэке, а не в FSM:
     переживает рестарт."""
     kind: str
@@ -77,7 +77,7 @@ class PeriodCB(CallbackData, prefix="p"):
 
 class GraceCB(CallbackData, prefix="gc"):
     """Кнопка отсрочки «Продли чуток?» в уведомлении об истечении.
-    action: take (активировать). ref — id клиента. Закрытие уведомления теперь
+    action: take (активировать). ref — id пользователя. Закрытие уведомления теперь
     через универсальный HideCB (последняя кнопка на любом уведомлении)."""
     action: str
     ref: int = 0
@@ -120,23 +120,23 @@ class UpdateCB(CallbackData, prefix="upd"):
 
 
 class PauseCB(CallbackData, prefix="pz"):
-    """Приостановка подписки клиентом. action: ask (экран паузы с пресетами
+    """Приостановка подписки пользователем. action: ask (экран паузы с пресетами
     дней) | pick (выбран пресет — пауза ставится сразу) | other (ввод своего
     числа) | resume (снять паузу, без подтверждения) | cancel (назад к
-    подписке). ref — id клиента, days — выбранное число дней (pick)."""
+    подписке). ref — id пользователя, days — выбранное число дней (pick)."""
     action: str
     ref: int = 0
     days: int = 0
 
 
 class BlockCB(CallbackData, prefix="bl"):
-    """Ручные блокировки (админ/клиент).
-    target: dev | cli — что блокируем (устройство/клиента).
+    """Ручные блокировки (админ/пользователь).
+    target: dev | cli — что блокируем (устройство/пользователя).
     action: menu_block | menu_unblock | block | unblock | pause_yes | pause_no |
             cancel.
     kind: silent | notified | user | all — тип бита (или «все» при снятии).
-    days: длительность приостановки при админ-блоке клиента (-1 = без паузы,
-          0 = бессрочно, N = срочная). ref — id устройства или клиента."""
+    days: длительность приостановки при админ-блоке пользователя (-1 = без паузы,
+          0 = бессрочно, N = срочная). ref — id устройства или пользователя."""
     target: str
     action: str
     ref: int = 0
@@ -145,7 +145,7 @@ class BlockCB(CallbackData, prefix="bl"):
 
 
 class ReassignCB(CallbackData, prefix="ra"):
-    """Привязка устройства без профиля к клиенту. device_id → client_id.
+    """Привязка устройства без профиля к пользователю. device_id → client_id.
     stage: go — привязать (проверив слот); slot_yes/slot_no — ответ на вопрос
     «добавить слот, раз лимит исчерпан?»."""
     device_id: int
@@ -179,7 +179,7 @@ class GuideCB(CallbackData, prefix="g"):
 
 
 class AdminSelfCB(CallbackData, prefix="as"):
-    """Личные VPN-действия админа над своей клиентской записью.
+    """Личные VPN-действия админа над своей записью пользователя.
     action: add | devices | gen_link | gen_qr | gen_file."""
     action: str
 

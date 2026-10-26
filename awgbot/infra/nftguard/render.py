@@ -261,7 +261,7 @@ def _guest_input(spec) -> list[str]:
 
 def _guest_forward(spec) -> list[str]:
     """Пересылка зоны: наружу через veth (бот основы, Telegram, почта, фиды,
-    клиенты в интернет), вебхук после DNAT — в зону, хвост после DNAT — к
+    пользователи в интернет), вебхук после DNAT — в зону, хвост после DNAT — к
     основе; в зону с внешнего интерфейса без DNAT хода нет."""
     out = []
     if not spec.filter and spec.guest_phase in ("taking", "serving"):
@@ -298,7 +298,7 @@ def _guest_forward(spec) -> list[str]:
 
 def _guest_prerouting(spec) -> list[str]:
     """DNAT: порт вебхука с пула Telegram — боту основы в зоне (serving); порт
-    клона — на основу (relay: хвост сессий, пока клиенты не переподключились)."""
+    клона — на основу (relay: хвост сессий, пока пользователи не переподключились)."""
     rules = []
     if spec.guest_phase == "serving" and spec.guest_webhook_port and spec.guest_zone4:
         rules.append(f"        tcp dport {int(spec.guest_webhook_port)} ip saddr @{pkg.SET_TG_POOL} "
@@ -320,7 +320,7 @@ def _guest_prerouting(spec) -> list[str]:
 
 def _guest_postrouting(spec) -> list[str]:
     """Маскарад зоны наружу и пересланного хвоста (ответ основы должен прийти
-    сюда же, чтобы вернуться клиенту через conntrack)."""
+    сюда же, чтобы вернуться пользователю через conntrack)."""
     out = []
     if spec.guest_zone_net4 and spec.guest_phase in ("taking", "serving"):
         rule = f"ip saddr {spec.guest_zone_net4} masquerade"
@@ -340,7 +340,7 @@ def _wan_private_drop(spec) -> list[str]:
     пакет шёл бы маршрутом по умолчанию к провайдеру: адрес в туннеле в окно,
     когда таблицы awg_lan_map нет (ребут до старта бота, адреса выключены,
     у слотов нет подсетей), и старые закладки на настоящие адреса сетей
-    шлюзов. Только из awg-интерфейсов клиентов и линков: проходящий трафик
+    шлюзов. Только из интерфейсов AWG сервера и линков: проходящий трафик
     хоста не из туннеля не задет. Резолвер и перехват DNS — локальные
     (input), РФ-доступ — публичные адреса, линки и awg-интерфейсы — не
     внешние: их это не касается."""

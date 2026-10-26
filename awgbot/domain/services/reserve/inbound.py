@@ -1,5 +1,5 @@
 """
-inbound.py — часть пакета reserve (см. __init__): «клиенты основы у меня» —
+inbound.py — часть пакета reserve (см. __init__): «пользователи основы у меня» —
 сторона резерва: процесс открытия, зона, обслуживание, возврат (handback).
 
 Автомат в `rsv_in` (`state`: idle | taking | serving | releasing | relay).
@@ -10,7 +10,7 @@ inbound.py — часть пакета reserve (см. __init__): «клиент�
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
 Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`
-без доли: зона свободна, мои клиенты здесь, готовность, направление, пакет):
+без доли: зона свободна, мои пользователи здесь, готовность, направление, пакет):
 пересылка хвоста прошлого возврата уступает (`_relay_yield`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
 открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`;
@@ -47,7 +47,7 @@ serving или releasing — новый пакет не принимается (
 записи — без хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний
 пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины `relay_idle_hours` (по счётчику правила
 DNAT — nftguard.relay_packets, отметка `relay_last_traffic`) →
-idle. `evict` — просьба вернуть клиентов по кнопке у резерва.
+idle. `evict` — просьба вернуть пользователей по кнопке у резерва.
 """
 from __future__ import annotations
 
@@ -171,7 +171,7 @@ class ReserveInboundMixin:
 
     def _relay_yield(self) -> None:
         """Фаза relay (пересылка хвоста) при новом открытии: правило DNAT снимается —
-        иначе оно увело бы клиентов нового клона на основу; состояние — idle."""
+        иначе оно увело бы пользователей нового клона на основу; состояние — idle."""
         from awgbot.infra import rsvzone
         if self.reserve_in() != "relay":
             return
@@ -183,7 +183,7 @@ class ReserveInboundMixin:
         log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
 
     def reserve_in_tick(self) -> list[tuple]:
-        """Такт автомата «клиенты основы у меня»."""
+        """Такт автомата «пользователи основы у меня»."""
         if not self.reserve_paired():
             return []
         inn = self._inn()
@@ -242,7 +242,7 @@ class ReserveInboundMixin:
         (бот основы поднялся и поставил вебхук), кнопка — `released` основы.
         Гость не стартовал или не взял Telegram — отказ с причиной; основа с
         `released` опоздала и мертва для меня — Telegram берёт гость (клон уже
-        несёт клиентов), жива — отказ."""
+        несёт пользователей), жива — отказ."""
         from awgbot.infra import rsvzone
         done_at = inn.get("done_mono")
         if not done_at:
@@ -549,7 +549,7 @@ class ReserveInboundMixin:
         return {"name": self.reserve_peer_name()}
 
     def reserve_guest_back_req(self) -> list[tuple]:
-        """Кнопка «↩️ Вернуть клиентов» в боте основы на резерве → `evict` основе."""
+        """Кнопка «↩️ Вернуть пользователей» в боте основы на резерве → `evict` основе."""
         if self.reserve_evict_check():
             return []
         return [("send", "evict", {})]

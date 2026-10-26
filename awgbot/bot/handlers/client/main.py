@@ -29,7 +29,7 @@ def _bot_username(services) -> str:
 # ── главная ──────────────────────────────────────────────────────────────────
 
 async def main_payload(services, client):
-    """(текст, клавиатура) главной клиента."""
+    """(текст, клавиатура) главной пользователя."""
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
     slots = await call(services.device_quota, client.id)
     routing_ok = await call(services.routing_health_for_client, client)
@@ -135,10 +135,10 @@ async def _notify_owner_activated(message: Message, services, res) -> None:
 
 
 async def take_code_as_member(message: Message, services, client, code: str) -> None:
-    """Код от того, у кого уже есть профиль — гость или клиент.
+    """Код от того, у кого уже есть профиль — гость или пользователь.
 
     F… — ещё одно устройство от того же владельца (иной владелец — отказ, код
-    цел). C… — у клиента отказ «уже есть доступ»; у гостя — переход во
+    цел). C… — у пользователя отказ «уже есть доступ»; у гостя — переход во
     владельцы с переносом всех переданных устройств.
     """
     code = code.strip()
@@ -206,7 +206,7 @@ def parse_link(payload: str) -> tuple[str, int] | None:
 @router.message(CommandStart(deep_link=True), RoleFilter("client"))
 async def start_client_with_code(message: Message, command: CommandObject, client, services,
                                  state: FSMContext):
-    """/start {payload} у действующего клиента: ссылка на экран (подписка,
+    """/start {payload} у действующего пользователя: ссылка на экран (подписка,
     РФ-доступ, устройство) или чужое устройство ему в держание."""
     await state.clear()
     payload = (command.args or "").strip()

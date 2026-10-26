@@ -134,7 +134,7 @@ class ReserveGwSideMixin:
                 "share": share, "link": {"conf": "\n".join(lines) + "\n"}}
 
     def reserve_gw_state(self) -> str:
-        """Слово основы шлюзам: `away` — клиенты у резерва (после подъёма клона),
+        """Слово основы шлюзам: `away` — пользователи у резерва (после подъёма клона),
         `idle` — здесь (и при возврате: номер переезда закрывает пересылку)."""
         out = self.rsv_get("rsv_out")
         state, step = str(out.get("state") or "home"), str(out.get("step") or "")

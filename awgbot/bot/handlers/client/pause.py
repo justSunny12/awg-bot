@@ -40,7 +40,7 @@ async def help_skip(cb: CallbackQuery, client, services):
 
 @router.callback_query(GraceCB.filter(F.action == "take"))
 async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services):
-    """Клиент активирует отсрочку. Защита от протухшей кнопки — внутри
+    """Пользователь активирует отсрочку. Защита от протухшей кнопки — внутри
     activate_grace (истёк/использовано/не годовой → неактуально)."""
     if callback_data.ref != client.id:
         await cb.answer(texts.GRACE_STALE, show_alert=True)
@@ -192,7 +192,7 @@ async def pause_other_apply(message: Message, client, services, state: FSMContex
 
 
 async def _user_pause_guard(cb, client, services) -> bool:
-    """True — у клиента активна ЕГО СОБСТВЕННАЯ пауза (mode=user)."""
+    """True — у пользователя активна ЕГО СОБСТВЕННАЯ пауза (mode=user)."""
     fresh = await call(services.db.get_client, client.id)
     if fresh is None or not fresh.is_paused:
         await cb.answer(ui.Toast.not_paused, show_alert=True)

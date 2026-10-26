@@ -47,7 +47,7 @@ class SessionMixin:
     def _io(self, rx: int = 0, tx: int = 0) -> None:
         """Байты канала поверх счётчиков линка (services.channel, слот 0) — зонд
         выхода наружу по уликам вычитает их: ответ канала серверу не должен
-        сходить за ответы из интернета, ушедшие клиентам."""
+        сходить за ответы из интернета, ушедшие пользователям."""
         self.services.channel.account(0, rx=rx, tx=tx)
 
     async def _connect_once(self) -> None:

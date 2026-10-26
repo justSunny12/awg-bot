@@ -67,12 +67,12 @@ def _host_ok(args: list[str]) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def user_set(client_id: int) -> str:
-    """Набор личных доменов клиента."""
+    """Набор личных доменов пользователя."""
     return f"{config.ROUTING_SET_USER_PREFIX}{int(client_id)}"
 
 
 def src_set(client_id: int) -> str:
-    """Набор адресов устройств клиента (для пер-клиентского правила)."""
+    """Набор адресов устройств пользователя (для правила на пользователя)."""
     return f"{config.ROUTING_SET_SRC_PREFIX}{int(client_id)}"
 
 

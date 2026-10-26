@@ -7,8 +7,8 @@ state.py — часть пакета reserve (см. __init__): пара в БД 
 пишутся через `rsv_get`/`rsv_put`. В пакет переезда они не едут никогда
 (сторож `util/rsvpkg/bot.FORBIDDEN_STATE`).
 
-Направления: `rsv_out` — мои клиенты (`home` / `leaving` / `away` /
-`returning`), `rsv_in` — клиенты резерва у меня (`idle` / `taking` /
+Направления: `rsv_out` — мои пользователи (`home` / `leaving` / `away` /
+`returning`), `rsv_in` — пользователи резерва у меня (`idle` / `taking` /
 `serving` / `releasing` / `relay`), `rsv_poll` — право отвечать в Telegram
 (`mine` / `away`).
 """
@@ -118,7 +118,7 @@ class ReserveStateMixin:
         return ""
 
     def reserve_hosting(self) -> bool:
-        """У меня сейчас клиенты и бот резерва."""
+        """У меня сейчас пользователи и бот резерва."""
         return self.reserve_in() in ("taking", "serving", "releasing")
 
     def reserve_zone_free(self) -> bool:
@@ -127,5 +127,5 @@ class ReserveStateMixin:
         return self.reserve_in() in ("idle", "relay")
 
     def reserve_away(self) -> bool:
-        """Мои клиенты и бот — у резерва."""
+        """Мои пользователи и бот — у резерва."""
         return self.reserve_out() in ("leaving", "away", "returning")

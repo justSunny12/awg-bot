@@ -2,8 +2,8 @@
 models.py — доменные объекты (нормализованное представление БД).
 
 Разные бизнес-сущности разведены в отдельные датаклассы, а не свалены в плоский
-Row: identity клиента, его подписка, квота потребления, процессы grace и pause —
-каждый своим типом. Ленивые процессы (grace/pause у клиента, friend у устройства)
+Row: identity пользователя, его подписка, квота потребления, процессы grace и pause —
+каждый своим типом. Ленивые процессы (grace/pause у пользователя, friend у устройства)
 представлены как Optional: None ⇔ процесс не активен (в БД нет строки).
 
 Доступ к полям под-объектов — через плоские @property (client.period_end,
@@ -22,7 +22,7 @@ from typing import Optional
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class Subscription:
-    """Биллинг-цикл клиента."""
+    """Биллинг-цикл пользователя."""
     period_start: Optional[str] = None    # ISO UTC+3; None у служебного/бессрочного
     period_end: Optional[str] = None
     period_kind: Optional[str] = None     # day|week|month|year|never
@@ -32,7 +32,7 @@ class Subscription:
 
 @dataclass
 class TrafficQuota:
-    """Лимиты потребления клиента (тотал за календарный месяц)."""
+    """Лимиты потребления пользователя (тотал за календарный месяц)."""
     limit: int = 0                        # байты; 0 = безлимит
     bonus_bytes: int = 0                  # разовая доп.квота текущего месяца
     bonus_granted_month: int = 0          # 0/1: выдавали ли в этом месяце
@@ -113,7 +113,7 @@ class Client:
     def status(self): return self.subscription.status
     @property
     def notified_thresholds(self) -> set[int]:
-        """Пороги истечения, о которых клиенту уже сказано (минуты до конца).
+        """Пороги истечения, о которых пользователю уже сказано (минуты до конца).
         В БД — CSV; наружу множество, как из db.get_notified, только без
         второго запроса: колонку уже привёз list_clients."""
         return {int(x) for x in self.subscription.notified_thresholds.split(",") if x.strip()}

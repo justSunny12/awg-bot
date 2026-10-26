@@ -314,8 +314,8 @@ class ReserveStoreMixin:
     def _reserve_sources(self) -> list[str]:
         """Что пускать с `awgrsv` при открытой пересылке: все AllowedIPs стороны зоны
         из конфига линка — адрес зоны (с него идут зонды живости бота основы) и
-        все подсети туннеля основы (клиентская и окно переезда профилей); конфига
-        нет — подсеть клиентов из окружения обвязки."""
+        все подсети туннеля основы (основная и окно переезда профилей); конфига
+        нет — подсеть пользователей из окружения обвязки."""
         import re
         cur = self.reserve_section()
         m = re.search(r"(?m)^\s*AllowedIPs\s*=\s*(.+)$", str(cur.get("conf") or ""))
@@ -330,7 +330,7 @@ class ReserveStoreMixin:
         return [net] if net else []
 
     def reserve_record_fact(self) -> bool:
-        """Запись для клиентов основы указывает на адрес резерва — факт у
+        """Запись для пользователей основы указывает на адрес резерва — факт у
         авторитетного сервера (кэш в record.py)."""
         from . import record
         cur = self.reserve_section()

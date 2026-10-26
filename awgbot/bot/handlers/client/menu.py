@@ -121,7 +121,7 @@ async def _issue(cb: CallbackQuery, services, client, dev, kind: str) -> None:
 # ── устройство ───────────────────────────────────────────────────────────────
 
 async def device_card_parts(services, client, dev):
-    """Карточка с точки зрения клиента: своё — полная; своё переданное — имя,
+    """Карточка с точки зрения пользователя: своё — полная; своё переданное — имя,
     лимит, удаление; чужое, которое он держит — карточка держателя."""
     back = Menu(action="devices").pack()
     if dev.holder_client_id == client.id:

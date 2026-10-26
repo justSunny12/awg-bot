@@ -105,7 +105,7 @@ class ReserveRfBlockMixin:
         return [("send", "ask", body)]
 
     def _nogw_worth(self) -> bool:
-        """Н3 — только если РФ-доступ клиентов основы есть чем дать: мои шлюзы
+        """Н3 — только если РФ-доступ пользователей основы есть чем дать: мои шлюзы
         разрешены и хотя бы один есть."""
         return settings.get_bool("app.reserve.rf_via_mine", True) and bool(self.db.gateways())
 

@@ -1,5 +1,5 @@
 """
-blocks.py — блокировки: биты причин, ручные блокировки (админ/клиент),
+blocks.py — блокировки: биты причин, ручные блокировки (админ/пользователь),
 изменение лимитов потребления с авто-разблокировкой.
 """
 from __future__ import annotations
@@ -143,7 +143,7 @@ class BlocksMixin:
                     log.warning("unblock: DROP %s не снят: %s", peer.address, e)
 
     def _client_set_block(self, client_id: int, bit: ClientBlock) -> None:
-        """Установить причину блокировки клиента (только маска клиента; физически
+        """Установить причину блокировки пользователя (только маска пользователя; физически
         трафик режется по устройствам — этим занимается вызывающий код)."""
         if self.db.get_client(client_id) is None:
             return
@@ -172,7 +172,7 @@ class BlocksMixin:
     def block_device_manual(self, device_id: int, bit: DeviceBlock,
                             notify: bool, actor_tg: int | None = None) -> list["Notification"]:
         """Ручной блок устройства заданным битом (ADMIN_SILENT/NOTIFIED/USER).
-        notify=True → уведомить пользователя (клиента-владельца и/или друга).
+        notify=True → уведомить пользователя (пользователя-владельца и/или друга).
         Тихий блок (notify=False) уведомлений не шлёт."""
         dev = self.db.get_device(device_id)
         if dev is None:
@@ -216,8 +216,8 @@ class BlocksMixin:
 
     def block_client_manual(self, client_id: int, bit: ClientBlock,
                            notify: bool, pause_days=None) -> list["Notification"]:
-        """Ручной блок клиента админом. Каскадит ТЕМ ЖЕ типом (silent/notified) на
-        все устройства (физический DROP). notify → уведомить клиента и друзей.
+        """Ручной блок пользователя админом. Каскадит ТЕМ ЖЕ типом (silent/notified) на
+        все устройства (физический DROP). notify → уведомить пользователя и друзей.
         pause_days: None — без приостановки подписки; 0 — бессрочная приостановка
         (admin_open); N>0 — срочная (admin_fixed). Приостановка тикания подписки
         реализуется через enter_admin_pause + бит PAUSED."""
@@ -247,7 +247,7 @@ class BlocksMixin:
 
     def unblock_client_manual(self, client_id: int, bit: ClientBlock,
                              notify: bool) -> list["Notification"]:
-        """Снять ручной бит с клиента и каскадно с устройств (тем же типом).
+        """Снять ручной бит с пользователя и каскадно с устройств (тем же типом).
         Если активна админская приостановка — сначала закрываем её через exit_pause
         (пересчёт периода по факту), затем снимаем биты."""
         client = self.db.get_client(client_id)
@@ -280,7 +280,7 @@ class BlocksMixin:
     def set_device_traffic_limit(self, device_id: int, limit_bytes: int) -> None:
         """Задать/изменить лимит устройства. Если новый лимит выше текущего
         расхода (или снят в безлимит) — снять причину TRAFFIC_USER (свой лимит
-        устройства). Каскад клиента (TRAFFIC_CLIENT) НЕ трогаем."""
+        устройства). Каскад пользователя (TRAFFIC_CLIENT) НЕ трогаем."""
         prev = self.db.get_device(device_id)
         if prev is not None and int(prev.traffic_limit) != int(limit_bytes):
             # аудит: снимок старого лимита перед изменением
@@ -305,8 +305,8 @@ class BlocksMixin:
         self._forget_traffic_marker(dev.client_id, f"dev80:{device_id}")
 
     def set_client_traffic_limit(self, client_id: int, limit_bytes: int) -> None:
-        """Задать/изменить тотал-лимит клиента. Если новый лимит выше текущего
-        расхода — снять КАСКАДНУЮ причину (TRAFFIC_CLIENT) с клиента и устройств.
+        """Задать/изменить тотал-лимит пользователя. Если новый лимит выше текущего
+        расхода — снять КАСКАДНУЮ причину (TRAFFIC_CLIENT) с пользователя и устройств.
         Собственный лимит устройства (DeviceBlock.TRAFFIC_USER) НЕ трогаем — его
         снимет только поднятие лимита самого устройства."""
         prev = self.db.get_client(client_id)

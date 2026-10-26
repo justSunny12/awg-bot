@@ -1,4 +1,4 @@
-"""clients.py — клиенты: создание/активация, точечные обновления по
+"""clients.py — пользователи: создание/активация, точечные обновления по
 нормализованным таблицам, типизированные врайтеры pause/grace, пороги
 уведомлений, гостевые профили и имена Telegram.
 """
@@ -27,8 +27,8 @@ class ClientsMixin:
         traffic_limit: int = 0,
         period_kind: Optional[str] = None,
     ) -> int:
-        """Создаёт клиента в статусе pending (ждёт активации инвайта). tg_id пока NULL.
-        Заводит сопутствующие 1:1 подписку и квоту. Возвращает id нового клиента."""
+        """Создаёт пользователя в статусе pending (ждёт активации инвайта). tg_id пока NULL.
+        Заводит сопутствующие 1:1 подписку и квоту. Возвращает id нового пользователя."""
         with self._tx() as cur:
             cur.execute(
                 """INSERT INTO clients
@@ -55,7 +55,7 @@ class ClientsMixin:
             _CLIENT_SELECT + " WHERE c.tg_id = ?", (tg_id,)).fetchone())
 
     def get_client_by_invite(self, invite_code: str):
-        """Ищет pending-клиента по неигашеному инвайт-коду."""
+        """Ищет pending-пользователя по неигашеному инвайт-коду."""
         return _client_from_row(self._connection().execute(
             _CLIENT_SELECT + " WHERE c.invite_code = ? AND c.activation_status = 'pending'",
             (invite_code,)).fetchone())
@@ -94,7 +94,7 @@ class ClientsMixin:
                 self._connection().execute(q, params).fetchall()]
 
     def activate_client(self, client_id: int, tg_id: int) -> None:
-        """Привязывает tg_id к клиенту и гасит инвайт-код (одноразовость)."""
+        """Привязывает tg_id к пользователю и гасит инвайт-код (одноразовость)."""
         with self._tx() as cur:
             cur.execute(
                 """UPDATE clients
@@ -167,7 +167,7 @@ class ClientsMixin:
                 (client_id, max(0, int(days))))
 
     def client_mask_apply(self, client_id: int, or_bits: int = 0, and_bits: int = -1) -> int:
-        """block_reason клиента = (block_reason | or_bits) & and_bits одним UPDATE;
+        """block_reason пользователя = (block_reason | or_bits) & and_bits одним UPDATE;
         возвращает новую маску."""
         with self._tx() as cur:
             cur.execute("UPDATE clients SET block_reason = (block_reason | ?) & ? WHERE id = ?",
@@ -176,7 +176,7 @@ class ClientsMixin:
         return int(row["block_reason"]) if row else 0
 
     def update_client_fields(self, client_id: int, **fields) -> None:
-        """Точечное обновление полей клиента с маршрутизацией по нормализованным
+        """Точечное обновление полей пользователя с маршрутизацией по нормализованным
         таблицам. Ленивые таблицы (grace/pause) создаются строкой при первой
         записи (INSERT OR IGNORE), затем UPDATE. Всё — в одной транзакции."""
         # сгруппировать поля по таблицам
@@ -202,9 +202,9 @@ class ClientsMixin:
                 cur.execute(f"UPDATE {table} SET {assignments} WHERE {key} = ?", values)
 
     def delete_client(self, client_id: int, archive_reason: str = "deleted") -> None:
-        """Удаляет клиента. Устройства уносятся каскадом (ON DELETE CASCADE).
-        Служебного клиента удалять нельзя. Перед удалением — снимки в историю
-        (клиент + все его устройства + их friend-эпизоды), если archive_reason
+        """Удаляет пользователя. Устройства уносятся каскадом (ON DELETE CASCADE).
+        Служебного пользователя удалять нельзя. Перед удалением — снимки в историю
+        (пользователь + все его устройства + их friend-эпизоды), если archive_reason
         задан (None у технических откатов)."""
         row = self.get_client(client_id)
         if row and row.is_service:
@@ -307,7 +307,7 @@ class ClientsMixin:
         return self._service_client_id
 
     def find_client_by_resume_code(self, code: str) -> "Optional[int]":
-        """id клиента с активной паузой и данным resume-кодом (или None).
+        """id пользователя с активной паузой и данным resume-кодом (или None).
         Матч только по активной паузе (pause_active_since NOT NULL) — код вне
         паузы недействителен. Точное сравнение (без LIKE), код чувствителен к
         регистру."""

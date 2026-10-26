@@ -1,7 +1,7 @@
 """edit.py — часть пакета clients (см. __init__): имя, лимиты устройств и трафика, период вручную.
 
-Правка условий профиля (лимиты, период) — с тумблером «уведомить клиента»
-(notify.py): уведомление уходит клиенту с кнопкой «💳 Подписка», когда тумблер
+Правка условий профиля (лимиты, период) — с тумблером «уведомить пользователя»
+(notify.py): уведомление уходит пользователю с кнопкой «💳 Подписка», когда тумблер
 включён."""
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ async def edit_limit_start(cb: CallbackQuery, callback_data: ClientCB, services,
 async def _apply_devs_limit(cb_or_msg, services, client, new_limit: int, *, via_cb: CallbackQuery | None,
                             data: dict | None = None, notify: bool = True) -> None:
     """Применить лимит устройств: без подтверждения, итог первой строкой
-    «✏️ Изменить», клиенту — уведомление по тумблеру."""
+    «✏️ Изменить», пользователю — уведомление по тумблеру."""
     old_limit = int(client.device_limit)
     used = await call(services.set_device_limit, client.id, new_limit)
     note = texts.devs_limit_note(old_limit, new_limit, used)

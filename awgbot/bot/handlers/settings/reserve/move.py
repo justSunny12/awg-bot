@@ -103,7 +103,7 @@ async def back_go(cb: CallbackQuery, services, **_):
 
 @router.callback_query(RsvCB.filter(F.action == "force"))
 async def force_ask(cb: CallbackQuery, services, **_):
-    """С9: резерв не на связи — вернуть клиентов без него (диалог)."""
+    """С9: резерв не на связи — вернуть пользователей без него (диалог)."""
     why = await call(services.reserve_force_check)
     if why:
         await cb.answer(ui.toast_cap(why), show_alert=True)

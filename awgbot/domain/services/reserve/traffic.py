@@ -28,7 +28,7 @@ class ReserveTrafficMixin:
         self.rsv_put("rsv_traffic", tr)
 
     def reserve_traffic_out_add(self, rx: int, tx: int) -> None:
-        """Расход моих клиентов через резерв (дельты реплики) — в итог месяца."""
+        """Расход моих пользователей через резерв (дельты реплики) — в итог месяца."""
         month = timeutil.now().strftime("%Y-%m")
         acc = dict(self._traffic().get("out") or {})
         if str(acc.get("month") or "") != month:

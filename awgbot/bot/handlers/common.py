@@ -308,7 +308,7 @@ async def admin_main_parts(services, chat_id: int):
 
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
     """Показать главное меню роли новым сообщением (через send_menu — трекается,
-    гасит прежнее активное). Экран — из реестра: у клиента с теми же кнопками
+    гасит прежнее активное). Экран — из реестра: у пользователя с теми же кнопками
     РФ-доступа и выдачи, что и по кнопке «В меню»."""
     from awgbot.bot import screens
     card_from_main(message.chat.id, False)
@@ -382,7 +382,7 @@ async def send_qr(target: Message, vpn: str, services=None, *, markup=None,
 
 
 def own_device(services, client, device_id: int):
-    """Устройство, только если принадлежит клиенту (защита от чужих id в callback).
+    """Устройство, только если принадлежит пользователю (защита от чужих id в callback).
     Синхронный — звать через call()."""
     dev = services.db.get_device(device_id)
     if dev is None or dev.client_id != client.id:
@@ -391,7 +391,7 @@ def own_device(services, client, device_id: int):
 
 
 def held_device(services, client, device_id: int):
-    """Чужое устройство, которое клиент ДЕРЖИТ, или None."""
+    """Чужое устройство, которое пользователь ДЕРЖИТ, или None."""
     dev = services.db.get_device(device_id)
     if dev is None or dev.holder_client_id != client.id:
         return None

@@ -1,4 +1,4 @@
-"""Меню клиента и гостя: устройства, карточка устройства, выдача конфигов, помощь, гайды, пауза."""
+"""Меню пользователя и гостя: устройства, карточка устройства, выдача конфигов, помощь, гайды, пауза."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _dot(dev) -> str:
 
 
 def _block_button(dev) -> tuple:
-    """«🔒 Заблокировать» / «🔓 Разблокировать» для карточки у клиента и гостя:
+    """«🔒 Заблокировать» / «🔓 Разблокировать» для карточки у пользователя и гостя:
     они управляют ТОЛЬКО своим битом USER — кнопка отражает лишь его, админские
     биты на устройстве ею не снять (и кнопка этого не обещает)."""
     if int(dev.block_reason) & int(_blocks.DeviceBlock.USER):
@@ -51,7 +51,7 @@ def menu_issue_row() -> list:
 
 def client_main(has_devices: bool = True, routing_visible: bool = False,
                 client_id: int = 0, can_add: bool = True) -> InlineKeyboardMarkup:
-    """Главная клиента: ряд выдачи (когда есть что выдавать), устройства и
+    """Главная пользователя: ряд выдачи (когда есть что выдавать), устройства и
     добавление (пока есть место в лимите), РФ-доступ (только когда админ
     выдал) и подписка, помощь. Без РФ-доступа подписка и помощь — одним рядом."""
     add = ("➕ Устройство", DeviceCB(action="add")) if can_add else None
@@ -115,7 +115,7 @@ def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def device_actions(dev, *, is_admin: bool, back_target: str) -> InlineKeyboardMarkup:
-    """Карточка своего устройства у клиента (is_admin — карточка админа тем
+    """Карточка своего устройства у пользователя (is_admin — карточка админа тем
     же набором). Ряд выдачи — только у созданных ботом (у пира без приватного
     ключа выдавать нечего); затем имя и лимит, передача (владельцу — другу,
     админу — в другой профиль) и блок, удаление; выход — последним рядом,
@@ -151,8 +151,8 @@ def lent_out_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
 
 
 def held_device_actions(dev, back_target: str, *, cb_cls=None) -> InlineKeyboardMarkup:
-    """Удерживаемое (от друга) у держателя — гостя или клиента: выдача, блок,
-    удаление. cb_cls — класс колбэков выдачи (DeviceCB у клиента, FriendCB у
+    """Удерживаемое (от друга) у держателя — гостя или пользователя: выдача, блок,
+    удаление. cb_cls — класс колбэков выдачи (DeviceCB у пользователя, FriendCB у
     гостя)."""
     return ui.rows(
         issue_row(cb_cls or DeviceCB, dev.id),
@@ -186,7 +186,7 @@ def unmanaged_device_dialog(device_id: int) -> InlineKeyboardMarkup:
 
 
 def client_device_limit_kb(ref: int, profile_limit_bytes: int, back_cb) -> InlineKeyboardMarkup:
-    """Лимит трафика устройства у клиента: пресеты по три в ряд, затем «∞ Без
+    """Лимит трафика устройства у пользователя: пресеты по три в ряд, затем «∞ Без
     лимита» (у профиля с лимитом — «∞ Как у профиля»: 0 = в рамках лимита
     профиля) и «✏️ Другое», выход — «⬅️ Назад» к карточке; у нового устройства
     другу (ref=0) — «✖️ Отмена»: добавление бросается, а не шаг назад к имени."""
@@ -330,7 +330,7 @@ def guide_connect_done(guide: str, device_id: int, *, apple_end: bool,
 def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
                           *, guest: bool = False) -> InlineKeyboardMarkup:
     """Шаг 0 подключения: устройства со значком состояния, затем добавить
-    (клиенту, пока есть место) — частое выше. Кнопки сами ведут дальше —
+    (пользователю, пока есть место) — частое выше. Кнопки сами ведут дальше —
     отдельной «Далее» нет."""
     used, limit = slots
     can_add = (not guest) and (limit == 0 or used < limit)

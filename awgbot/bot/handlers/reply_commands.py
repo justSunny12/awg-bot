@@ -62,7 +62,7 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
                          services, role: str = "", client=None):
     """Кнопка действия на уведомлении: кнопки снимаются (текст остаётся в
     истории), экран приходит новым живым меню. Роль — из middleware; чужая
-    подсказка (клиентская у админа и наоборот) — главная роли."""
+    подсказка (пользователя у админа и наоборот) — главная роли."""
     from awgbot.bot import screens
     from awgbot.bot.handlers.common import send_menu, cleanup_content
     await state.clear()

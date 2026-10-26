@@ -31,7 +31,7 @@ class RoutingMixin:
             cur.execute("DELETE FROM client_routing_domains WHERE client_id = ?", (src_client_id,))
 
     def list_routing_domains(self, client_id: int) -> list[str]:
-        """Личный список клиента, в порядке добавления."""
+        """Личный список пользователя, в порядке добавления."""
         return [r["domain"] for r in self._connection().execute(
             "SELECT domain FROM client_routing_domains WHERE client_id = ? "
             "ORDER BY added_at, domain", (client_id,)).fetchall()]
@@ -62,8 +62,8 @@ class RoutingMixin:
             return cur.rowcount
 
     def routing_domains_by_client(self) -> dict[int, list[str]]:
-        """{client_id: [домены]} по ВСЕМ клиентам — для генерации dnsmasq-конфига.
-        Клиенты без личных доменов в результат не попадают."""
+        """{client_id: [домены]} по ВСЕМ пользователям — для генерации dnsmasq-конфига.
+        Пользователи без личных доменов в результат не попадают."""
         out: dict[int, list[str]] = {}
         for r in self._connection().execute(
                 "SELECT client_id, domain FROM client_routing_domains "

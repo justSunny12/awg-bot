@@ -1,6 +1,6 @@
 """
-clients.py — инвайты и клиенты: создание, активация, апгрейд гостя,
-клиентская запись админа.
+clients.py — инвайты и пользователи: создание, активация, апгрейд гостя,
+запись админа как пользователя.
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class ClientsMixin:
         return {"failed": failed, "removed": removed, "n": len(devices)}
 
     def _gen_code(self, prefix: str) -> str:
-        """Код с префиксом (C — клиентский, F — друга), уникальный среди всех
+        """Код с префиксом (C — пользователя, F — друга), уникальный среди всех
         неиспользованных кодов обоих видов."""
         while True:
             code = prefix + self._gen_code_body()
@@ -133,7 +133,7 @@ class ClientsMixin:
                 self._device_clear_block(device_id, bit)
 
     def regenerate_invite(self, client_id: int) -> str:
-        """Перевыпуск инвайта для pending-клиента (потерял ссылку до активации)."""
+        """Перевыпуск инвайта для pending-пользователя (потерял ссылку до активации)."""
         client = self.db.get_client(client_id)
         if client is None:
             raise ServiceError("Пользователь не найден")
@@ -146,10 +146,10 @@ class ClientsMixin:
     # ── клиентская запись админа ─────────────────────────────────────────────
 
     def ensure_admin_client(self) -> int:
-        """Гарантирует существование клиентской записи админа (он тоже юзер VPN).
+        """Гарантирует существование записи админа как пользователя (он тоже юзер VPN).
         Бессрочная (period_end NULL), безлимит (device_limit 0), сразу active,
         привязана к ADMIN_ID. Опознаётся по tg_id == ADMIN_ID (без новой колонки),
-        скрыта из списка клиентов. Идемпотентно — зовётся при старте."""
+        скрыта из списка пользователей. Идемпотентно — зовётся при старте."""
         existing = self.db.get_client_by_tg(config.ADMIN_ID)
         if existing is not None:
             return existing.id
@@ -193,7 +193,7 @@ class ClientsMixin:
         return created
 
     def admin_client(self):
-        """Клиентская запись админа (или None, если ещё не создана)."""
+        """Запись админа как пользователя (или None, если ещё не создана)."""
         return self.db.get_client_by_tg(config.ADMIN_ID)
 
     def has_free_slot(self, client_id: int) -> bool:

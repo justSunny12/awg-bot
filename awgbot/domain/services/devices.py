@@ -268,7 +268,7 @@ class DevicesMixin:
     def activate_friend(self, code: str, tg_id: int, tg_name: str = "") -> "FriendActivation":
         """Активация кода F…. Держателем становится профиль
         этого tg: гость (заводится при первом коде, имя — из Telegram) или
-        обычный клиент. Правило одного дарителя: у держателя уже есть устройства
+        обычный пользователь. Правило одного дарителя: у держателя уже есть устройства
         от другого владельца → отказ other_donor, код не сгорает. Админ и своё
         устройство — отказ."""
         dev = self.db.get_device_by_friend_code(code)
@@ -328,7 +328,7 @@ class DevicesMixin:
 
     def reassign_device(self, device_id: int, new_client_id: int,
                         add_slot: bool = False) -> dict:
-        """Перепривязка устройства к клиенту. Если add_slot — заодно поднимаем
+        """Перепривязка устройства к пользователю. Если add_slot — заодно поднимаем
         лимит на 1 (когда у получателя не было свободного слота).
         Возвращает данные для уведомления ОБОИХ сторон:
           name, donor{tg_id,count,limit}, recipient{tg_id,count,limit},

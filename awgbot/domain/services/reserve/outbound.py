@@ -1,5 +1,5 @@
 """
-outbound.py — часть пакета reserve (см. __init__): «мои клиенты» на стороне
+outbound.py — часть пакета reserve (см. __init__): «мои пользователи» на стороне
 основы — переезд кнопкой, away и здоровье; шаги возврата — в outbound_return,
 слияние — в merge_ops (автомат и сроки шагов — общие, здесь).
 
@@ -28,7 +28,7 @@ away с уведомлением, вебхука нет или Telegram молч
 обратно на себя (API) или Т-РУ11 (вручную, отказ API); после отправки `go`
 (`go_sent`) — ещё новый `K` и пакет. Финальная реплика передачи ложится и
 снимком слияния `base-<gen>.db` (с неё стартует гость), а не снимок из
-пакета. В home факт «клиенты у резерва» мимо меня — только `in = serving` в
+пакета. В home факт «пользователи у резерва» мимо меня — только `in = serving` в
 `st`, полученном после моего перехода в home.
 
 Зависший вебхук резерва (away по поллингу, запись на собственный адрес,
@@ -181,7 +181,7 @@ class ReserveOutboundMixin:
         return actions
 
     def reserve_out_tick(self) -> list[tuple]:
-        """Такт автомата «мои клиенты»."""
+        """Такт автомата «мои пользователи»."""
         if not self.reserve_paired():
             return []
         out = self._out()
@@ -195,7 +195,7 @@ class ReserveOutboundMixin:
         return self._tick_home(out)
 
     def _tick_home(self, out: dict) -> list[tuple]:
-        """В состоянии home: факт «клиенты у резерва» мимо меня (переезд по взглядам, пока я
+        """В состоянии home: факт «пользователи у резерва» мимо меня (переезд по взглядам, пока я
         лежал) — `in = serving` у резерва → away."""
         peer = self.reserve_peer_state()
         if out.get("await_merge"):
@@ -433,7 +433,7 @@ class ReserveOutboundMixin:
         return []
 
     def _webhook_stuck(self, out: dict, now: float) -> bool:
-        """Право отвечать осталось у вебхука резерва, хотя клиентов он не несёт:
+        """Право отвечать осталось у вебхука резерва, хотя пользователей он не несёт:
         запись указывает на меня (проба не чаще раза в 2 мин), а резерв говорит
         `in = idle` (или пары нет на связи дольше STUCK_PAIR_S). Возврат оборвался
         после передачи бота — снять вебхук и поллить самому."""
@@ -466,7 +466,7 @@ class ReserveOutboundMixin:
             return False
 
     def reserve_stuck_home(self) -> list[tuple]:
-        """deleteWebhook прошёл (take): клиенты и так здесь — домой без возврата. По
+        """deleteWebhook прошёл (take): пользователи и так здесь — домой без возврата. По
         рычагу «без резерва» (await_merge) — домой с ожиданием его реплики."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()

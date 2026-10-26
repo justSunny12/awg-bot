@@ -1,4 +1,4 @@
-"""home.py — часть пакета client (см. __init__): главная клиента и гостя, заголовки устройств."""
+"""home.py — часть пакета client (см. __init__): главная пользователя и гостя, заголовки устройств."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .subscription import subscription_status_only
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
                     routing_ok: bool = None, held=(), traffic: dict | None = None,
                     *, routing_on: bool = False, bot_username: str = "") -> str:
-    """Главная клиента: имя, пустая строка, затем VPN и РФ-доступ; подписка и
+    """Главная пользователя: имя, пустая строка, затем VPN и РФ-доступ; подписка и
     трафик; устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
     lines = [ui.head(f"👋 {_e(client.name)}"), "",
              status_line(server_ok, routing_ok, routing_on, bot_username)]
@@ -65,7 +65,7 @@ def guest_access_line(donor) -> str:
     только когда VPN на переданных устройствах не работает, со значком по
     причине и именем профиля. Что реально режет доступ гостю: исчерпанный
     лимит трафика профиля (каскад TRAFFIC_CLIENT), пауза (каскад PAUSED,
-    тихая пауза администратора не видна, как и клиенту), истёкшая подписка
+    тихая пауза администратора не видна, как и пользователю), истёкшая подписка
     (EXPIRY), блокировка профиля администратором с уведомлением
     (ADMIN_NOTIFIED; тихая — не видна)."""
     from awgbot.core import blocks
@@ -103,7 +103,7 @@ def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = N
 
 
 def devices_header(used: int, limit: int, held=(), *, guest: bool = False) -> str:
-    """Заголовок «📱 Устройства»: клиент — «· 2 из 3 (+1 от профиля Вася)» и
+    """Заголовок «📱 Устройства»: пользователь — «· 2 из 3 (+1 от профиля Вася)» и
     строка «Лимит исчерпан…»; гость — «· 2 · от профиля Вася»."""
     if guest:
         n = len(list(held))

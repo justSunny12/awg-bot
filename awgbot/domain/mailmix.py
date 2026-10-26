@@ -45,7 +45,7 @@ class MailMixin:
     def email_save(self, login: str, password: str, imap_host: str, imap_port: int,
                    smtp_host: str, smtp_port: int) -> None:
         """Сохранить ящик: креды — в БД, серверы — в email.yaml. Адрес для писем
-        от клиентов по умолчанию — сам ящик, если раньше не задан."""
+        от пользователей по умолчанию — сам ящик, если раньше не задан."""
         self.db.set_state(self._MAIL_LOGIN_KEY, login.strip())
         self.db.set_state(self._MAIL_PASSWORD_KEY, password)
         settings.set_value("email.imap_host", imap_host.strip())
@@ -121,7 +121,7 @@ class MailMixin:
         return self.db.get_state(self._MAIL_LOGIN_KEY) or ""
 
     def email_resume_address(self) -> str:
-        """Куда клиент шлёт код: алиас из conf, иначе сам ящик."""
+        """Куда пользователь шлёт код: алиас из conf, иначе сам ящик."""
         alias = str(settings.get("email.resume_address", "") or "").strip()
         return alias or (self.db.get_state(self._MAIL_LOGIN_KEY) or "")
 

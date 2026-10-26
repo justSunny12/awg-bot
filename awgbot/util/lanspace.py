@@ -222,7 +222,7 @@ def twin_clashes(slot_id: int, nets: Iterable[str],
 def space_problem(space_net: NetLike, client_subnets: Iterable[str], link_nets: Iterable[str],
                   admin_dns: str = "", intercept_addr: str = "") -> str:
     """Причина, по которой пространство нельзя включить, или "". Пространство не
-    пересекается с подсетями клиентов (вместе с подсетью переезда) и с /30
+    пересекается с подсетями пользователей (вместе с подсетью переезда) и с /30
     линков; резолвер админа и адрес перехвата DNS — в служебной /16
     пространства или вне его. Пустые и нечитаемые входы — мимо."""
     sp = ipaddress.IPv4Network(str(space_net))

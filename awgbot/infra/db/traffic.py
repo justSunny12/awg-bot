@@ -41,7 +41,7 @@ class TrafficMixin:
             )
 
     def reset_period_traffic(self, client_id: int) -> None:
-        """Сброс ПЕРИОДНЫХ счётчиков устройств клиента (при новом периоде).
+        """Сброс ПЕРИОДНЫХ счётчиков устройств пользователя (при новом периоде).
         Месячные НЕ трогаем — у них свой цикл."""
         with self._tx() as cur:
             cur.execute(
@@ -51,7 +51,7 @@ class TrafficMixin:
             )
 
     def get_client_traffic(self, client_id: int) -> dict[str, int]:
-        """Суммарный трафик клиента по устройствам (месяц + период)."""
+        """Суммарный трафик пользователя по устройствам (месяц + период)."""
         row = self._connection().execute(
             """SELECT
                  COALESCE(SUM(t.traffic_rx_month), 0)  AS rx_month,

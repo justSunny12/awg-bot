@@ -75,7 +75,7 @@ async def extend_keep_toggle(cb: CallbackQuery, callback_data: PeriodCB, service
 @router.callback_query(PeriodCB.filter(F.ctx == "extend"))
 async def extend_period_chosen(cb: CallbackQuery, callback_data: PeriodCB, services, state: FSMContext):
     """Срок выбран — продление сразу; остаток — по тумблеру в колбэке,
-    уведомление клиенту — по тумблеру в FSM. «∞» и бессрочная подписка —
+    уведомление пользователю — по тумблеру в FSM. «∞» и бессрочная подписка —
     не продление: срок задаётся в «✏️ Изменить»."""
     data = await state.get_data()
     if callback_data.kind == "never":
@@ -119,7 +119,7 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
 
 @router.callback_query(ClientCB.filter(F.action == "resume_pause"))
 async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
-    """Запасной выход из клиентской паузы (клиент заперся: Telegram только через
+    """Запасной выход из паузы пользователя (пользователь заперся: Telegram только через
     этот VPN): подтверждение с тумблером уведомления."""
     client = await _client_or_alert(cb, services, callback_data.client_id)
     if client is None:
@@ -136,7 +136,7 @@ async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, service
 
 @router.callback_query(ClientCB.filter(F.action == "resume_pause_yes"))
 async def admin_resume_pause_yes(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
-    """Тот же exit_pause, что у клиента; клиенту — по тумблеру."""
+    """Тот же exit_pause, что у пользователя; пользователю — по тумблеру."""
     client = await _client_or_alert(cb, services, callback_data.client_id)
     if client is None:
         return

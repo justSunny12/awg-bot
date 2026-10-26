@@ -121,7 +121,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
     """Разрешение профилю на РФ-доступ — отметками на экране, применяет «✅
     Применить» одной операцией (set_routing_allowed_many) с уведомлениями
     адресатам. Верхний слой флага: снимая его, гасим эффект, но настройки
-    самого клиента не разрушаем."""
+    самого пользователя не разрушаем."""
     if callback_data.key == "provision":
         await _routing_provision(cb, services)
         return
