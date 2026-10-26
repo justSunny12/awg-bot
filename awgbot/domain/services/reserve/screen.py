@@ -31,8 +31,15 @@ class ReserveScreenMixin:
             is_ip = False
         inv = self.reserve_invite()
         live = self.reserve_invite_live()
+        dns = self.rsv_get("rsv_dns")
+        provider = self.reserve_dns_provider()
+        from .dns import PROVIDER_LABELS
         return {"paired": self.reserve_paired(), "host": host, "host_is_ip": is_ip,
                 "port": int(config.SERVER_PORT or 0), "gateways": self._reserve_gateways_view(),
+                # запись DNS — по настройке «🌐 Запись DNS»: провайдер, токен, итог последней проверки
+                "dns": {"provider": provider, "label": PROVIDER_LABELS.get(provider, "вручную"),
+                        "has_token": bool(dns.get("token")), "check_ok": dns.get("check_ok"),
+                        "checked_at": str(dns.get("checked_at") or ""), "check_why": str(dns.get("check_why") or "")},
                 "ready": settings.get_bool("app.reserve.ready", False),
                 "invite_live": live and inv.get("role") != "acceptor",
                 "accepting": live and inv.get("role") == "acceptor"}

@@ -53,7 +53,7 @@ def _peer_is_client(services, mp):
 
 RESERVE_STAGE7 = [
     Shot("adm.rsv.card.away.there", role="admin", press=[RSV], data=_paired(_away, _there),
-         title="карточка основы: клиенты у резерва — здесь ещё 7, там 12"),
+         title="карточка основы: пользователи у резерва — здесь ещё 7, там 12"),
     Shot("adm.rsv.card.lowmem", role="admin", press=[RSV], data=_paired(_low_mem),
          title="карточка основы: у «Beta» мало свободной памяти"),
     Shot("adm.rsv.card.self_admin", role="admin", press=[RSV], data=_paired(_self_admin),
@@ -63,5 +63,5 @@ RESERVE_STAGE7 = [
     Shot("adm.rsv.peer.extras", role="admin", start="", data=_peer_admin(_role_extras),
          title="админ «Beta»: мало памяти здесь, пул Telegram с выученными сетями"),
     Shot("adm.rsv.peer.client", role="admin", start="", data=_peer_admin(_peer_is_client),
-         title="админ «Beta» — ещё и клиент здесь: «👤 Меню клиента»"),
+         title="админ «Beta» — ещё и пользователь здесь: «👤 Меню пользователя»"),
 ]

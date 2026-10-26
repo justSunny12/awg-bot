@@ -198,8 +198,8 @@ CODE = RsvCB(action="code", pid=PID)
 RESERVE = [
     # ── раздел без пары (Т-Р1) ───────────────────────────────────────────
     Shot("adm.rsv", role="admin", press=[RSV], data=_rsv(), title="«🛟 Резерв» без пары: домен, шлюзов нет"),
-    Shot("adm.rsv.nohost", role="admin", press=[RSV], data=_rsv(host=""), title="адрес для клиентов не задан"),
-    Shot("adm.rsv.ip", role="admin", press=[RSV], data=_rsv(host="203.0.113.5"), title="адрес для клиентов — IP"),
+    Shot("adm.rsv.nohost", role="admin", press=[RSV], data=_rsv(host=""), title="адрес для пользователей не задан"),
+    Shot("adm.rsv.ip", role="admin", press=[RSV], data=_rsv(host="203.0.113.5"), title="адрес для пользователей — IP"),
     Shot("adm.rsv.gw", role="admin", press=[RSV], data=_rsv(ready=True, gw="rsv"),
          title="шлюз на агенте с rsv1, готовность включена"),
     Shot("adm.rsv.gw_old", role="admin", press=[RSV], data=_rsv(ready=True, gw="old"),
@@ -266,7 +266,7 @@ RESERVE = [
     Shot("adm.rsv.ready_off.yes", role="admin", press=[RSV, RsvCB(action="ready"), RsvCB(action="ready_off_yes")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="готовность выключена"),
     Shot("adm.rsv.rfmine", role="admin", press=[RSV, RsvCB(action="rfmine")],
-         data=_rsv(ready=True, gw="rsv", paired=True), title="РФ-доступ его клиентов через мои шлюзы: выкл"),
+         data=_rsv(ready=True, gw="rsv", paired=True), title="РФ-доступ его пользователей через мои шлюзы: выкл"),
     Shot("adm.rsv.ret", role="admin", press=[RSV, RsvCB(action="ret")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="рычаг возврата: по кнопке"),
     Shot("adm.rsv.unpair", role="admin", press=[RSV, RsvCB(action="unpair")],
@@ -292,7 +292,7 @@ RESERVE = [
     Shot("adm.rsv.guest.root", role="admin", press=[SetCB(sec="root")], data=_guest(), title="резерв: «⚙️ Настройки» — одна карточка"),
     Shot("adm.rsv.guest.card", role="admin", press=[RSV], data=_guest(), title="резерв: карточка, основа не отвечает"),
     Shot("adm.rsv.guest.return", role="admin", press=[RSV], data=_guest(alive=True),
-         title="резерв: основа в строю, рычаг «по кнопке» — «↩️ Вернуть клиентов»"),
+         title="резерв: основа в строю, рычаг «по кнопке» — «↩️ Вернуть пользователей»"),
     Shot("adm.rsv.guest.refused", role="admin", press=[SetCB(sec="backup")], data=_guest(), title="резерв: раздел хоста — всплывашка"),
     # ── роль админа второго сервера (Т-РН1) ─────────────────────────────
     Shot("adm.rsv.peer", role="admin", start="", data=_peer_admin(),
@@ -302,7 +302,7 @@ RESERVE = [
     Shot("adm.rsv.peer.not_ready", role="admin", start="", data=_peer_admin(_not_ready),
          title="админ «Beta»: этот сервер не готов быть резервом"),
     Shot("adm.rsv.peer.serving", role="admin", start="", data=_peer_admin(_serving),
-         title="админ «Beta»: его клиенты здесь, данные и трафик"),
+         title="админ «Beta»: его пользователи здесь, данные и трафик"),
     Shot("adm.rsv.peer.refresh", role="admin", steps=[("start", ""), ("press", PeerCB(action="refresh"))],
          data=_peer_admin(), title="админ «Beta»: «🔄 Обновить»"),
     Shot("adm.rsv.peer.text", role="admin", steps=[("start", ""), ("text", "что тут?")],
