@@ -18,7 +18,7 @@ from typing import Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Под-объекты клиента
+# Под-объекты пользователя
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class Subscription:
@@ -27,7 +27,7 @@ class Subscription:
     period_end: Optional[str] = None
     period_kind: Optional[str] = None     # day|week|month|year|never
     status: str = "active"                # active | expired
-    notified_thresholds: str = ""         # CSV порогов истечения, отправленных клиенту
+    notified_thresholds: str = ""         # CSV порогов истечения, отправленных пользователю
 
 
 @dataclass
@@ -63,7 +63,7 @@ class PauseState:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Клиент
+# Пользователь
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class Client:
@@ -89,7 +89,7 @@ class Client:
     # профиля нет — оно выводится из устройств (включено хоть на одном), см.
     # db.routing_device_counts. Хранить его ещё и здесь значило бы завести
     # второй источник истины, обязанный совпадать с первым.
-    routing_allowed: int = 0              # 0/1: админ разрешил фичу клиенту
+    routing_allowed: int = 0              # 0/1: админ разрешил фичу пользователю
     subscription: Subscription = field(default_factory=Subscription)
     quota: TrafficQuota = field(default_factory=TrafficQuota)
     grace: Optional[GraceState] = None
@@ -240,7 +240,7 @@ class Device:
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
     # Держатель — кто управляет устройством через бота, если это не владелец
-    #: гость или обычный клиент. Слот, квота, подписка и
+    #: гость или обычный пользователь. Слот, квота, подписка и
     # разрешение РФ-доступа — у владельца (client_id). None ⇔ своё устройство.
     holder_client_id: Optional[int] = None
     holder_tg_id: Optional[int] = None

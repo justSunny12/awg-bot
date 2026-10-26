@@ -295,7 +295,7 @@ class ReserveStoreMixin:
             else:
                 want_open = bool(fact)
         if cur.get("state") == "idle" and int(cur.get("move") or 0) >= int(cur.get("reserve_move") or 0) and reserve_serving:
-            # основа вернула клиентов и её слово новее: закрыть, даже если резерв ещё говорит serving
+            # основа вернула пользователей и её слово новее: закрыть, даже если резерв ещё говорит serving
             want_open = False
         if want_open and not is_open:
             srcs = self._reserve_sources()

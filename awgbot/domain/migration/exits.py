@@ -209,12 +209,12 @@ class MigrationExitsMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("promote: app.yaml не переписан: %s", e)
             return ""
-        # DNS клиентов: адрес двойников становится адресом всех, старый — со
+        # DNS пользователей: адрес двойников становится адресом всех, старый — со
         # старым интерфейсом — снимается с резолвера.
         try:
             self.private_dns_on_promote(config.SUBNET_PREFIX)
         except Exception as e:                            # noqa: BLE001
-            log.warning("promote: DNS клиентов не переписан: %s", e)
+            log.warning("promote: DNS пользователей не переписан: %s", e)
         if target > applied:
             awglock.write_state(applied=target, target=0)
         else:

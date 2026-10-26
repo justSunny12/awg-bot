@@ -118,7 +118,7 @@ class ReserveGwSideMixin:
             if zone.get("obf", {}).get(k):
                 lines.append(f"{k} = {zone['obf'][k]}")
         from awgbot.infra import nftguard
-        allowed = [f"{zone_addr}/32"] + [n for n in nftguard.tunnel_nets() if n]     # РФ-трафик клиентов основы
+        allowed = [f"{zone_addr}/32"] + [n for n in nftguard.tunnel_nets() if n]     # РФ-трафик пользователей основы
         lines += ["", "[Peer]", f"PublicKey = {zone['pub']}", f"PresharedKey = {rec['psk']}",
                   f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
@@ -141,7 +141,7 @@ class ReserveGwSideMixin:
         if state == "away" or (state == "leaving" and step in ("record", "release", "released")):
             return "away"
         if state == "returning" and step != "relay":
-            return "away"                                     # клиенты ещё на клоне: пересылка шлюзов нужна до `back`
+            return "away"                                     # пользователи ещё на клоне: пересылка шлюзов нужна до `back`
         return "idle"
 
     # ── взгляды шлюзов из снимков ───────────────────────────────────────────

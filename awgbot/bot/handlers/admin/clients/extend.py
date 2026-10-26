@@ -115,7 +115,7 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
     await send_menu(cb.message, services, *parts, keep_id=keep_id)
 
 
-# ── админ снимает паузу клиента ──────────────────────────────────────────────
+# ── админ снимает паузу пользователя ─────────────────────────────────────────
 
 @router.callback_query(ClientCB.filter(F.action == "resume_pause"))
 async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):

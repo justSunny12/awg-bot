@@ -454,7 +454,7 @@ cmd_take() {
     grep -q '^PrivateKey' "$RUN/awg/$iface.conf" || die "в конфиге клона нет ключа"
     # для awg setconf — без расширений awg-quick (Address, MTU, DNS, Table): их setconf не знает
     write_setconf "$iface"
-    # veth: бот основы и клиенты наружу (NAT хоста) и РФ-трафик к шлюзам резерва
+    # veth: бот основы и пользователи наружу (NAT хоста) и РФ-трафик к шлюзам резерва
     ip link show "$VH" >/dev/null 2>&1 || { ip link add "$VH" type veth peer name "$VN"; ip link set "$VN" netns "$ZONE"; }
     ip link show "$RH" >/dev/null 2>&1 || { ip link add "$RH" type veth peer name "$RN"; ip link set "$RN" netns "$ZONE"; }
     ip addr replace "$HOST_V/30" dev "$VH"; ip link set "$VH" up
@@ -468,7 +468,7 @@ cmd_take() {
     sysctl -qw "net.ipv4.conf.$RH.proxy_arp=1" 2>/dev/null || true
     ip rule show | grep -q "iif $RH lookup $RF_TABLE" || ip rule add iif "$RH" lookup "$RF_TABLE" pref 150
     # клоны: создаются у хоста (сокет — у хоста), переносятся в зону под именами основы;
-    # первый — клиентский интерфейс, остальные — интерфейсы окна переезда профилей
+    # первый — основной интерфейс AWG, остальные — интерфейсы окна переезда профилей
     local ifaces="$iface" ports="" pair extra_if extra_addr
     clone_up "$iface" "$addr" || die "клон $iface не поднялся"
     for pair in ${GUEST_EXTRA:-}; do
@@ -563,7 +563,7 @@ guest_stop() {
     zone_nft ""
 }
 conntrack_flush_ports() {   # записи conntrack по портам клонов: NAT привязан к первому пакету потока —
-    local p                  # живые потоки клиентов иначе не попадут под DNAT хвоста
+    local p                  # живые потоки пользователей иначе не попадут под DNAT хвоста
     command -v conntrack >/dev/null 2>&1 || { say "ВНИМАНИЕ: нет conntrack — потоки пользователей, идущие сейчас, пересылки не получат"; return 0; }
     for p in $(state_get ports); do conntrack -D -p udp --orig-port-dst "$p" >/dev/null 2>&1 || true; done
 }

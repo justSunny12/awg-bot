@@ -33,7 +33,7 @@ class LinkI1Mixin:
             params = awg.read_server_params()
         except Exception as e:                            # noqa: BLE001 — нет интерфейса, exec, права
             if failed is None or time.monotonic() - failed >= READ_FAIL_BACKOFF_S:
-                log.info("I1 клиентского интерфейса не прочитан: %s", e)
+                log.info("I1 интерфейса AWG сервера не прочитан: %s", e)
             self.__dict__["_client_i1_failed_at"] = time.monotonic()
             return False, ""
         self.__dict__.pop("_client_i1_failed_at", None)

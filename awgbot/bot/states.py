@@ -16,7 +16,7 @@ class AddDeviceGuide(StatesGroup):
 
 
 class CreateClient(StatesGroup):
-    name = State()                # имя клиента
+    name = State()                # имя пользователя
     limit = State()               # лимит устройств
     traffic = State()             # тотал-лимит потребления (ГБ, 0=безлимит)
     # период выбирается кнопками (PeriodCB ctx=create) — данные берём из FSM
@@ -44,7 +44,7 @@ class EditLimit(StatesGroup):
 
 
 class EditTrafficLimit(StatesGroup):
-    value = State()               # новый лимит потребления (ГБ); ref в FSM: клиент/устройство
+    value = State()               # новый лимит потребления (ГБ); ref в FSM: пользователь/устройство
 
 
 class BlockPauseDays(StatesGroup):
@@ -52,7 +52,7 @@ class BlockPauseDays(StatesGroup):
 
 
 class AdminAddDevice(StatesGroup):
-    name = State()                # админ вводит имя устройства для клиента
+    name = State()                # админ вводит имя устройства для пользователя
     traffic = State()             # лимит потребления устройства
 
 

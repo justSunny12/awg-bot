@@ -43,7 +43,7 @@ def addr() -> str:
         log.warning("app.client_config.admin_dns «%s» — не адрес, беру %s", raw, DEFAULT_ADDR)
         return DEFAULT_ADDR
     if not any(ip in n for n in _RFC1918) or _in_client_nets(ip):
-        log.warning("app.client_config.admin_dns %s — нужен частный адрес вне подсетей клиентов, беру %s",
+        log.warning("app.client_config.admin_dns %s — нужен частный адрес вне подсетей пользователей, беру %s",
                     ip, DEFAULT_ADDR)
         return DEFAULT_ADDR
     return str(ip)

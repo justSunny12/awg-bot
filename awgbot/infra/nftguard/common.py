@@ -22,7 +22,7 @@ SET_ALLOW6 = "ssh_allow6"
 SET_TUNNEL_NETS = "tunnel_nets4"
 SET_TUNNEL_ADMIN = "admin4"
 # Адреса шлюзов в /30 линков: им и только им открыт порт канала.
-# Клиентская подсеть в tunnel_nets4 сюда не входит — канал не для клиентов.
+# Подсеть пользователей в tunnel_nets4 сюда не входит — канал не для пользователей.
 SET_LINK_PEERS = "link_peers4"
 # Пул адресов Telegram: только с них порт вебхука гостевой зоны резерва уходит
 # DNAT в зону; ведёт бот резерва (ядро — диапазоны со страницы Bot API).
@@ -49,7 +49,7 @@ class GuardSpec:
     ssh_open: bool = False            # вайтлист пуст → SSH открыт всем (осознанно)
     tunnel_nets4: list[str] = field(default_factory=list)  # подсети туннеля
     tunnel_admin4: list[str] = field(default_factory=list) # устройства админа
-    tunnel_ifs: list[str] = field(default_factory=list)    # awg-интерфейсы клиентов
+    tunnel_ifs: list[str] = field(default_factory=list)    # интерфейсы AWG сервера
     udp_ports: list[int] = field(default_factory=list)     # порты интерфейсов awg
     open_tcp: list[int] = field(default_factory=list)      # прочие порты хоста
     open_udp: list[int] = field(default_factory=list)
@@ -79,7 +79,7 @@ class GuardSpec:
     pair_if: str = ""                                         # линк пары серверов (резерв): вход — только канал
     pair_peer4: str = ""                                      #   пары с адреса второй стороны в /30, пересылки нет
     pair_port: int = 0                                        #   порт канала пары (TCP внутри линка)
-    # гостевая зона резерва (клиенты основы у меня): состояние зоны из state.json
+    # гостевая зона резерва (пользователи основы у меня): состояние зоны из state.json
     guest_phase: str = ""                                     # idle | taking | serving | relay
     guest_udp_port: int = 0                                   # порт клона: сокет у хоста — вход открыт (taking, serving)
     guest_udp_ports: list[int] = field(default_factory=list)  # все клоны (второй — окно переезда профилей)

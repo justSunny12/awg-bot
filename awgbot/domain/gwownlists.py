@@ -27,7 +27,7 @@ import re
 KINDS = ("vpn", "ru")
 DEL = "del"
 DOMAIN_RE = re.compile(r"([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})")
-MAX_DOMAINS = 500                       # доменов в каноне (у клиента VPN — 100)
+MAX_DOMAINS = 500                       # доменов в каноне (у пользователя VPN — 100)
 MAX_EVENTS = 200                        # событий в одном сообщении
 MAX_DOMAIN_LEN = 253
 REJ_KEEP = 20                           # отвергнутых в ответе слоту

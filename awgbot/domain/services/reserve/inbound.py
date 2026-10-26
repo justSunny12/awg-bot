@@ -258,7 +258,7 @@ class ReserveInboundMixin:
         if waited < DONE_BUTTON_WAIT_S:
             return []
         if not inn.get("replica_at") and self.reserve_peer_seen() == "down" and not inn.get("tg_take_forced"):
-            # основа умерла между up и released: клон несёт клиентов — пусть гость заберёт и Telegram
+            # основа умерла между up и released: клон несёт пользователей — пусть гость заберёт и Telegram
             log.warning("резерв: основа не отдала released и не на связи — гость берёт Telegram сам")
             self.rsv_update("rsv_in", tg_take_forced=True)
             try:
@@ -290,7 +290,7 @@ class ReserveInboundMixin:
             self._rsvopen_stop()
         except Exception as e:                                # noqa: BLE001
             log.info("резерв: юнит процесса открытия не остановлен: %s", e)
-        log.warning("резерв: клиентов «%s» не принял: %s", name, reason)
+        log.warning("резерв: пользователей «%s» не принял: %s", name, reason)
         for fn in (rsvzone.teardown, rsvzone.wipe):
             try:
                 fn()
@@ -333,7 +333,7 @@ class ReserveInboundMixin:
             self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
                                 tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="")
         name = self.reserve_peer_name()
-        log.info("резерв: клиенты и бот «%s» у меня", name)
+        log.info("резерв: пользователи и бот «%s» у меня", name)
         return [("send", "taken", {}), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_started(
                     name, str(inn.get("kind") or "button"), str(inn.get("dead_since") or inn.get("open_started") or ""),
@@ -348,7 +348,7 @@ class ReserveInboundMixin:
         if phase in ("serving", "taking"):
             return []
         name = self.reserve_peer_name()
-        log.warning("резерв: зона в состоянии %s, а я считаю serving — клиентов «%s» больше не несу", phase or "idle", name)
+        log.warning("резерв: зона в состоянии %s, а я считаю serving — пользователей «%s» больше не несу", phase or "idle", name)
         # пакет и долю не трогаем: основа может быть всё ещё мертва — матрица откроет снова
         # (С11), процесс возьмёт `rep.bin`, если он новее пакета
         with _LOCK:
@@ -375,7 +375,7 @@ class ReserveInboundMixin:
         if str(inn.get("state") or "") not in ("serving", "taking"):
             # зоны нет (перезагрузка резерва посреди обслуживания, teardown мимо бота): что есть на
             # диске — rep.bin под K основы — отдать, иначе released без реплики; основа вернёт
-            # клиентов без слияния, а не будет просить вечно
+            # пользователей без слияния, а не будет просить вечно
             try:
                 blob = rsvzone.REP_PATH.read_bytes()
             except OSError:
@@ -448,7 +448,7 @@ class ReserveInboundMixin:
         if str(inn.get("state") or "") not in ("releasing", "serving", "taking"):
             return [("send", "wiped", {})]                    # зоны нет — основе нечего ждать
         name = self.reserve_peer_name()
-        # пересылка хвоста нужна, только если клиенты могли прийти на клон: зона обслуживала
+        # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
         # или процесс открытия дошёл до смены записи; срыв раньше — сразу idle
         step = str(rsvzone.open_status().get("step") or "")
         had_clients = str(inn.get("state") or "") != "taking" or step in ("record_set", "record_fact", "done")
@@ -488,7 +488,7 @@ class ReserveInboundMixin:
         actions.append(("send", "wiped", {}))
         tr = self._reserve_traffic_view().get("in") or ""
         actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_ended(name, tr))]))
-        log.info("резерв: клиенты и бот «%s» вернулись к нему; пересылка хвоста до %s", name, until)
+        log.info("резерв: пользователи и бот «%s» вернулись к нему; пересылка хвоста до %s", name, until)
         return actions
 
     def _tick_relay(self, inn: dict) -> list[tuple]:

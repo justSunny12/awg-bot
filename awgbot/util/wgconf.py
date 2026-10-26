@@ -260,7 +260,7 @@ def check_allowed_ips(entries, *, client_subnet: str, link_cidr: str, peer_nets,
             raise WgConfError(f"AllowedIPs: {net} вне частных диапазонов")
     want = [_net(t) for t in allowed_ips_want(client_subnet=client_subnet, link_cidr=link_cidr,
                                                peer_nets=peer_nets, resolver=resolver)]
-    # обязательны подсеть клиентов и /30 линка; подсети соседей и /32 резолвера
+    # обязательны подсеть пользователей и /30 линка; подсети соседей и /32 резолвера
     # правило допускает (только из документа), но не требует — сервер решает,
     # что класть, а шлюз — что это из того же документа
     for req in want[:2]:

@@ -66,7 +66,7 @@ class SubscriptionMixin:
         if client is None:
             raise ServiceError("Пользователь не найден")
 
-        # Клиент на паузе (любой режим) → корректно закрыть паузу ДО продления:
+        # Пользователь на паузе (любой режим) → корректно закрыть паузу ДО продления:
         # exit_pause пересчитает period_end по факту и снимет PAUSED-каскад с
         # устройств. Без этого archive_pause ниже снёс бы строку паузы, а биты
         # PAUSED остались бы навечно (снять их через UI больше нечем).
@@ -440,7 +440,7 @@ class SubscriptionMixin:
                 if fresh is not None and int(fresh.block_reason) == 0:
                     notes.append(Notification(dev.friend_tg_id,
                                  _pause_friend_ended(dev.name)))
-        # клиенту — только при АВТО-выходе клиентского самоблока (по макс. сроку)
+        # пользователю — только при АВТО-выходе самоблока пользователя (по макс. сроку)
         if auto and mode == PauseMode.USER and client.tg_id:
             notes.append(Notification(client.tg_id,
                          _pause_auto_ended_client(actual, new_end)))

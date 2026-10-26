@@ -29,7 +29,7 @@ class ActivationStatus(StrEnum):
 
 class PauseMode(StrEnum):
     """client_pause.pause_mode — кто и как приостановил подписку."""
-    USER = "user"                 # клиент сам, срочная (тикает reserved_days)
+    USER = "user"                 # пользователь сам, срочная (тикает reserved_days)
     ADMIN_FIXED = "admin_fixed"   # админ на фикс. срок
     ADMIN_OPEN = "admin_open"     # админ бессрочно (temp-бессрочный режим)
 

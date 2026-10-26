@@ -306,7 +306,7 @@ class ReserveVoteMixin:
         if not unseen:
             return []
         if self.reserve_in() != "idle" or self.reserve_out() != "home":
-            return []                                         # зона занята или мои клиенты не здесь — долю не просим
+            return []                                         # зона занята или мои пользователи не здесь — долю не просим
         if need.get("slot") in unseen and not livestep.mono_due(need.get("mono"), time.monotonic(), NEED_RETRY_S):
             return []
         asked = set(int(x) for x in need.get("asked") or [])

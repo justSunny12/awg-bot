@@ -61,7 +61,7 @@ def core_jobs(services, bot, db) -> dict:
         if last and last >= ym:
             # сделано — и когда записанный месяц новее «сейчас»: смена пояса на
             # западный в первые часы 1-го числа вернула бы прошлый месяц, и сброс
-            # (с рассылкой клиентам) прошёл бы второй раз
+            # (с рассылкой пользователям) прошёл бы второй раз
             return
         if catchup and not pkg.planned_moment_passed(settings.get_int("app.scheduler.monthly_reset_day", 1),
                                                  settings.get_int("app.scheduler.monthly_reset_hour", 0)):
@@ -95,7 +95,7 @@ def core_jobs(services, bot, db) -> dict:
         from awgbot.infra import email_resume
 
         def on_code(code: str) -> bool:
-            # синхронно (мы уже в to_thread): найти клиента по коду, снять паузу
+            # синхронно (мы уже в to_thread): найти пользователя по коду, снять паузу
             ok, notes = services.resume_by_email_code(code)
             if ok:
                 # уведомления шлём из loop — соберём и вернём через замыкание

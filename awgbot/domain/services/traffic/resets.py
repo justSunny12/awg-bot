@@ -32,7 +32,7 @@ class ResetsMixin:
         notes: list[Notification] = []
         friend_devs: dict[int, list] = {}     # friend_tg → [device rows] для их уведомлений
         # Одной транзакцией: и один fsync вместо ~5N+4NM, и атомарность —
-        # падение посередине не оставит половину клиентов сброшенной.
+        # падение посередине не оставит половину пользователей сброшенной.
         with self.db.transaction():
           self.db.snapshot_monthly_traffic(_prev_month)
           rf = self.rf_month_total()
@@ -49,7 +49,7 @@ class ResetsMixin:
                 self._client_clear_block(client.id, ClientBlock.TRAFFIC_CLIENT)
             own_lines = []                    # лимитные СВОИ (не переданные) устройства
             for dev in self.db.list_devices(client.id):
-                # месячный сброс снимает ОБЕ трафик-причины (свою и каскад клиента)
+                # месячный сброс снимает ОБЕ трафик-причины (свою и каскад пользователя)
                 for _tbit in (DeviceBlock.TRAFFIC_USER, DeviceBlock.TRAFFIC_CLIENT):
                     if int(dev.block_reason) & int(_tbit):
                         self._device_clear_block(dev.id, _tbit, twins)

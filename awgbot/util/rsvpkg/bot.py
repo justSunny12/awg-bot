@@ -39,7 +39,7 @@ FORBIDDEN_CONF: tuple[str, ...] = ("awg", "network", "docker", "backup", "gatewa
                                    "bot_identity", "dnsmasq_conf", "dnsmasq_service", "conf_dir")
 ENV_KEYS: tuple[str, ...] = ("BOT_TOKEN", "ADMIN_ID")
 # Ключи app.yaml из запрещённых разделов, которые гостю всё же нужны: без них
-# бот основы на резерве не соберёт ссылки и конфигурации клиентов (адрес,
+# бот основы на резерве не соберёт ссылки и конфигурации пользователей (адрес,
 # порт и подсеть — те же, что у основы: клон несёт её интерфейс) и не отличит
 # своего протокола. Ровно этот перечень, ничего с путями.
 APP_GUEST_KEYS: dict[str, tuple[str, ...]] = {
@@ -191,7 +191,7 @@ def _strip(con) -> None:
         marks = ",".join("?" * len(GUEST_STATE))
         con.execute(f"DELETE FROM server_state WHERE key NOT IN ({marks})", GUEST_STATE)
     if "ui_state" in have:
-        pass                                             # меню клиентов — едет (§2.4)
+        pass                                             # меню пользователей — едет (§2.4)
 
 
 def assert_clean(db_bytes: bytes) -> None:

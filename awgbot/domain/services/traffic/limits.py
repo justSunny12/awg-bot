@@ -41,14 +41,14 @@ class LimitsMixin:
               devices = self.db.list_devices(client.id, all_rows=True)
               sent = client.traffic_notified          # уже в объекте — без запроса
               # шлюз условной маршрутизации в лимитах не участвует: ни своим,
-              # ни в сумме профиля (его трафик — весь РФ-трафик клиентов)
+              # ни в сумме профиля (его трафик — весь РФ-трафик пользователей)
               devices = [d for d in devices if not d.is_gateway]
               by_id = {d.id: d for d in devices}
               # id старых строк, у которых есть двойник, — их расход учитывается
               # в проходе по двойнику, отдельно не судим
               paired_old = {d.twin_of for d in devices if d.twin_of is not None}
 
-              # ── лимиты устройств (независимо от клиентского) ──
+              # ── лимиты устройств (независимо от лимита пользователя) ──
               for dev in devices:
                   if dev.id in paired_old:
                       continue                  # учтён суммой у своего двойника
@@ -95,7 +95,7 @@ class LimitsMixin:
                                   dev.friend_tg_id, _dev_warn_text(self.dev_link(dev), warn_pct)))
                           self.db.add_traffic_notified(client.id, warn_marker)
 
-              # ── тотал клиента ──
+              # ── тотал пользователя ──
               climit = client.traffic_limit
               if climit == 0:
                   continue
@@ -138,7 +138,7 @@ class LimitsMixin:
                       # доп.квота уже выдавалась и тоже исчерпана (или бонус выключен) →
                       # блок всех устройств КАСКАДНЫМ битом (TRAFFIC_CLIENT), не
                       # собственным TRAFFIC: так поднятие лимита устройства не снимет
-                      # блок «по клиенту».
+                      # блок «по пользователю».
                       if "cli_over" not in sent:
                           off = not client.bonus_granted_month    # бонуса не было: выключен
                           self._client_set_block(client.id, ClientBlock.TRAFFIC_CLIENT)

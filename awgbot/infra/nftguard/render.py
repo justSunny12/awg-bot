@@ -51,7 +51,7 @@ def render(spec: pkg.GuardSpec) -> str:
                      *_guest_postrouting(spec), "    }"]
     nat_chain += _guest_prerouting(spec)
     if not spec.filter:
-        # NAT-only: файервол выключен, но клиентам нужен выход наружу.
+        # NAT-only: файервол выключен, но пользователям нужен выход наружу.
         # Фильтрующих цепочек нет вовсе — политика хоста остаётся его. Одно
         # исключение: транзит линк ↔ линк — только между линками слотов с
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
@@ -127,7 +127,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # Канал ВПС ↔ шлюз: вход только с адреса шлюза в /30 своего линка И
         # только из интерфейса линка: адрес /30 снаружи подделать можно, а
         # пакет, пришедший с публичного интерфейса, линком быть не может.
-        # Клиентам туннеля сюда хода нет — их подсеть в другом наборе.
+        # Пользователям туннеля сюда хода нет — их подсеть в другом наборе.
         ports = [int(spec.link_channel_port), *[int(p) for p in spec.link_channel_extra]]
         out.append(f"        iifname {nftjson.ifs(spec.link_ifs)} ip saddr @{pkg.SET_LINK_PEERS} "
                    f"tcp dport {pkg._ports(ports)} accept")
@@ -170,7 +170,7 @@ def render(spec: pkg.GuardSpec) -> str:
             out.append(f"        iifname {links} oifname {links} accept")
         if spec.tunnel_ifs:
             # пир → пир: только устройствам админа (шлюз, свои устройства);
-            # остальным клиентам друг до друга пути нет
+            # остальным пользователям друг до друга пути нет
             ifs = nftjson.ifs(spec.tunnel_ifs)
             out.append(f"        iifname {ifs} oifname {ifs} ip saddr @{pkg.SET_TUNNEL_ADMIN} accept")
             out.append(f"        iifname {ifs} oifname {ifs} drop")
@@ -274,7 +274,7 @@ def _guest_forward(spec) -> list[str]:
         v = nftjson.ifs([spec.guest_veth_if])
         if spec.wan_ifs:
             out.append(f"        iifname {v} oifname {nftjson.ifs(spec.wan_ifs)} accept")   # только наружу
-            out.append(f"        iifname {v} drop")             # ни к своим клиентам, ни в линки, ни в локальные сети
+            out.append(f"        iifname {v} drop")             # ни к своим пользователям, ни в линки, ни в локальные сети
         else:
             out.append(f"        iifname {v} ip daddr != @{pkg.SET_TUNNEL_NETS} accept")
         if spec.guest_webhook_port and spec.guest_zone4:
@@ -282,11 +282,11 @@ def _guest_forward(spec) -> list[str]:
                        f"ct status dnat accept")
         out.append(f"        oifname {v} drop")
     if spec.guest_rf_if and spec.guest_phase in ("taking", "serving"):
-        # РФ-трафик клиентов основы из зоны — только в линки моих слотов (запасной
+        # РФ-трафик пользователей основы из зоны — только в линки моих слотов (запасной
         # слот «шлюзы резерва»); ответы — по conntrack
         r = nftjson.ifs([spec.guest_rf_if])
         if spec.link_ifs:
-            # не к частным адресам: линк шлюза резерва и его локальная сеть — не для клиентов основы
+            # не к частным адресам: линк шлюза резерва и его локальная сеть — не для пользователей основы
             nets = "{ " + ", ".join(pkg.PRIVATE4) + " }"
             out.append(f"        iifname {r} oifname {nftjson.ifs(spec.link_ifs)} ip daddr != {nets} accept")
         out.append(f"        iifname {r} drop")
@@ -344,7 +344,7 @@ def _wan_private_drop(spec) -> list[str]:
     хоста не из туннеля не задет. Резолвер и перехват DNS — локальные
     (input), РФ-доступ — публичные адреса, линки и awg-интерфейсы — не
     внешние: их это не касается."""
-    # Только из туннеля клиентов и линков: прочий проходящий трафик хоста
+    # Только из туннеля пользователей и линков: прочий проходящий трафик хоста
     # (VM, резолвер сети провайдера) — не наше, в NAT-only тем более.
     src = list(dict.fromkeys([*spec.tunnel_ifs, *spec.link_ifs]))
     if spec.guest_veth_if and spec.guest_phase in ("taking", "serving"):

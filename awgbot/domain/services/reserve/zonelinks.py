@@ -48,7 +48,7 @@ class ReserveZoneLinksMixin:
     def _free_port(self, taken: set[int]) -> int:
         from awgbot.infra import nftguard
         busy = set(nftguard.listen_ports()) | taken
-        # порты клиентских интерфейсов второй стороны: клоны займут их у хоста при переезде
+        # порты интерфейсов AWG второй стороны: клоны займут их у хоста при переезде
         busy |= {int(p) for p in (self.reserve_peer_state().get("ports") or []) if isinstance(p, int)}
         for _ in range(200):
             p = PORT_LO + secrets.randbelow(PORT_HI - PORT_LO)
@@ -135,7 +135,7 @@ class ReserveZoneLinksMixin:
         for k in wgkeys.OBF_KEYS:
             if rec.get("obf", {}).get(k):
                 lines.append(f"{k} = {rec['obf'][k]}")
-        # единственный пир стороны зоны — шлюз: туда уходит и РФ-трафик клиентов основы
+        # единственный пир стороны зоны — шлюз: туда уходит и РФ-трафик пользователей основы
         # наружу (таблица РФ-доступа зоны ведёт в этот линк), обратно — ответы
         lines += ["", "[Peer]", f"PublicKey = {rec['gw_pub']}", f"PresharedKey = {rec['psk']}",
                   "AllowedIPs = 0.0.0.0/0", f"PersistentKeepalive = {ka}", ""]

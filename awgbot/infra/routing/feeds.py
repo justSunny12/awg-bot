@@ -123,7 +123,7 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
         raise RoutingError(f"Не записать {path}: {e}")
 
     # Синтаксис — до рестарта, с conf-dir (голый --test файлы каталога не читает):
-    # битая строка иначе роняла бы DNS всем клиентам до следующего удачного скачивания
+    # битая строка иначе роняла бы DNS всем пользователям до следующего удачного скачивания
     test = subprocess.run(["dnsmasq", "--test", "--conf-dir=" + DNSMASQ_CONF_DIR],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
     if test.returncode != 0:

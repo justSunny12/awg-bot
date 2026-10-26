@@ -86,7 +86,7 @@ class SmbTunnelMixin:
         if not items:
             return ""
         # домен обзора Mac ищет в обратной зоне своего адреса с маской: клиент
-        # AmneziaVPN на macOS ставит туннелю /32 — зона подсети клиентов его не
+        # AmneziaVPN на macOS ставит туннелю /32 — зона подсети пользователей его не
         # находит, нужна зона каждого адреса устройства админа
         own = list(nftguard.tunnel_nets()) + [f"{a}/32" for a in self._gw_ssh_allow()]
         return gwservices.render_dnsmasq(items, own,
@@ -178,7 +178,7 @@ class SmbTunnelMixin:
         if alive:
             self._admin_dns_fail_set("0")
         elif not said and self.db.get_state(_FAIL_KEY) != "1":
-            # первый тик отказа — ждём второго, как у резолвера клиентов
+            # первый тик отказа — ждём второго, как у резолвера пользователей
             self._admin_dns_fail_set("1")
             log.warning("резолвер админа не ответил — проверю на следующем тике")
             return []

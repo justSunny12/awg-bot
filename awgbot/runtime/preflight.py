@@ -94,7 +94,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     if _unit_enabled(_c.GW_UNIT) != "enabled":
         warns.append(f"автозапуск обвязки ({_c.GW_UNIT}) выключен — после перезагрузки обвязка "
                      f"шлюза не восстановится")
-    # Спрашиваем gwguard, а не конфиг: подсеть клиентов приезжает в бандле и
+    # Спрашиваем gwguard, а не конфиг: подсеть пользователей приезжает в бандле и
     # закрепляется в юните обвязки, а в conf агента её сознательно не просят.
     # Проверка «пуст ли ключ» жаловалась на то, что исправно работает, — и это
     # было ПЕРВЫМ сообщением агента новому админу.
@@ -104,7 +104,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
             warns.append("подсеть пользователей неизвестна (нет конфигурации с сервера AWG?) — "
                          "проверка MASQUERADE выключена")
     except Exception as e:                       # noqa: BLE001
-        log.warning("preflight(gw): подсеть клиентов: %s", e)
+        log.warning("preflight(gw): подсеть пользователей: %s", e)
     try:
         from awgbot.infra import gwguard
         if gwguard.table_info() is None:
@@ -206,7 +206,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight: проверка файервола: %s", e)
 
-    # свой DNS-резолвер клиентов: приватный адрес в конфигах обязан отвечать
+    # свой DNS-резолвер пользователей: приватный адрес в конфигах обязан отвечать
     try:
         warns += _resolver_warnings(services)
     except Exception as e:                       # noqa: BLE001
@@ -262,7 +262,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
             log.warning("preflight: проверка маршрутизации не удалась: %s", e)
 
     # адреса в туннеле локальных сетей шлюзов: служебное пространство не
-    # задевает подсети клиентов, линки и служебные адреса, метка РФ-доступа —
+    # задевает подсети пользователей, линки и служебные адреса, метка РФ-доступа —
     # биты слотов (иначе выключены); таблица встала (иначе — причина отказа)
     try:
         if _gateway_assigned(services):

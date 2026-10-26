@@ -132,13 +132,13 @@ class LinkScriptMixin:
         берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный), и
         keepalive линка."""
         env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
-        # живое значение, как у клиентских ссылок: после «✏️ Домен» файл шлюза
+        # живое значение, как у ссылок пользователей: после «✏️ Домен» файл шлюза
         # не должен нести прежний хост до рестарта бота; собственный адрес
-        # (network.self_host) главнее адреса для клиентов
+        # (network.self_host) главнее адреса для пользователей
         host = own_host()
         if host:
             env["ENDPOINT_HOST"] = host
-        # keepalive линка — тем же значением, что у клиентских пиров: бот читает
+        # keepalive линка — тем же значением, что у пиров устройств: бот читает
         # YAML целиком, а скрипт линка — только awk-ом по строке в двойных
         # кавычках, и `keepalive_seconds: 25` без них у него пропадал бы в «25-35»
         env["LINK_KEEPALIVE"] = str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS))

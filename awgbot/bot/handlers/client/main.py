@@ -117,7 +117,7 @@ async def _activate_friend(message: Message, services, code: str):
             await message.answer(texts.ACTIVATION_INVALID)
         return
     # одно сообщение: «тебе передали» и сразу выбор устройства для гайда, как у
-    # клиента; «✅ Настрою сам» — на главную гостя
+    # пользователя; «✅ Настрою сам» — на главную гостя
     await purge_menus(message.bot, services, message.chat.id)
     await send_menu(message, services, texts.friend_activated(res.device_name),
                     kb.help_menu(is_initial=True, guest=True))

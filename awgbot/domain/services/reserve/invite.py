@@ -117,7 +117,7 @@ class ReserveInviteMixin:
         host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         try:
             ipaddress.ip_address(host)
-            return host                                       # адрес для клиентов — IP, он и есть свой
+            return host                                       # адрес для пользователей — IP, он и есть свой
         except ValueError:
             pass
         from awgbot.util import dnsapi

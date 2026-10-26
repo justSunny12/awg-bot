@@ -49,7 +49,7 @@ class ReserveRfBlockMixin:
                 self.rsv_update("rsv_view", rf={"blocked": "nogw_off"})
             return []
         if not self.reserve_zone_free() or self.reserve_out() != "home":
-            # переезд уже идёт (согласие или доли) либо мои клиенты не здесь — ни ask, ни need
+            # переезд уже идёт (согласие или доли) либо мои пользователи не здесь — ни ask, ни need
             # метка — код, а не текст: она лежит в состоянии и сравнивается; текст — только при показе
             why = "zone_busy" if not self.reserve_zone_free() else "mine_away"
             if rf.get("blocked") != why:
@@ -224,7 +224,7 @@ class ReserveRfBlockMixin:
                     actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), text=note)]))
                 log.warning("резерв: просьба «%s» о переезде (%s) отклонена: %s", name, case, refuse)
             return actions
-        log.warning("резерв: по просьбе «%s» перевожу клиентов (%s, с %s)", name, kind, since)
+        log.warning("резерв: по просьбе «%s» перевожу пользователей (%s, с %s)", name, kind, since)
         self.reserve_move_start(kind=kind, dead_since=since)
         return [("live",)]
 

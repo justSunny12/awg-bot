@@ -137,7 +137,7 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
     except ServiceError as e:
         await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
         return
-    # клиенту — уведомление с рядом выдачи; себе админ добавляет иначе
+    # пользователю — уведомление с рядом выдачи; себе админ добавляет иначе
     if client.tg_id and client.tg_id != config.ADMIN_ID:
         used, limit = await call(services.device_quota, client.id)
         await notify_one(message.bot, client.tg_id,

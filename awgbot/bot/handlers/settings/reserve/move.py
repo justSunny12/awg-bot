@@ -99,7 +99,7 @@ async def back_go(cb: CallbackQuery, services, **_):
     await cb.answer("Возврат начат")
 
 
-# ── вернуть клиентов к основе (резерв) ───────────────────────────────────────
+# ── вернуть пользователей к основе (резерв) ──────────────────────────────────
 
 @router.callback_query(RsvCB.filter(F.action == "force"))
 async def force_ask(cb: CallbackQuery, services, **_):

@@ -235,7 +235,7 @@ async def _period_end_chosen(message: Message, services, state: FSMContext, clie
     except ServiceError as ex:
         await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(ex))}")
         return
-    # клиенту — по тумблеру: уведомления домена (истекла / продлена), а без них
+    # пользователю — по тумблеру: уведомления домена (истекла / продлена), а без них
     # — «Срок подписки изменён»; держателям его устройств — всегда
     await send_notifications(message.bot, client_notes(client, bool(data.get("notify", True)),
                                                        texts.period_changed_notice(e), notes))

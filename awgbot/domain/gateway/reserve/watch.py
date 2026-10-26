@@ -63,7 +63,7 @@ class ReserveWatchMixin:
         if act == "ping":
             actions.append(("gw_ping", lp.nonce))
             if self._uplink_probe():
-                livestep.word(lp, now)                   # аплинк ответил — основа жива для клиентов
+                livestep.word(lp, now)                   # аплинк ответил — основа жива для пользователей
         elif act == "down":
             self.__dict__["_rsv_primary_since"] = timeutil.now_iso()
             log.warning("reserve: сервер AWG не отвечает по линку слота и аплинку")
@@ -184,7 +184,7 @@ class ReserveWatchMixin:
         if not live or live != (own if up.is_ip(own) else up.resolve(own)):
             return False
         if reserve and live == (reserve if up.is_ip(reserve) else up.resolve(reserve)):
-            return False                                      # имя для клиентов уже указывает на резерв — это клон
+            return False                                      # имя для пользователей уже указывает на резерв — это клон
         try:
             subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
             parts = subnet.split(".")

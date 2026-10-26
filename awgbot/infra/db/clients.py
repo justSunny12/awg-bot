@@ -15,7 +15,7 @@ from .schema import _CLIENT_SELECT, _client_from_row
 
 class ClientsMixin:
 
-    # ── Клиенты ──────────────────────────────────────────────────────────────
+    # ── Пользователи ─────────────────────────────────────────────────────────
 
     def create_client(
         self,
@@ -215,7 +215,7 @@ class ClientsMixin:
                                       (client_id,)).fetchall():
                     self.archive_friend(dr["id"], archive_reason, cur)
                     self.archive_device_snapshot(dr["id"], archive_reason, cur)
-                # закрыть/снять все эпизоды клиента на момент смерти — иначе
+                # закрыть/снять все эпизоды пользователя на момент смерти — иначе
                 # CASCADE унесёт их без следа в аудите
                 self.archive_subscription(client_id, archive_reason, cur)
                 self.archive_quota(client_id, archive_reason, cur)

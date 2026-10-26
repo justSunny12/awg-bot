@@ -25,7 +25,7 @@ PROVIDERS: tuple[str, ...] = ("manual", "cloudflare", "duckdns", "dyndns2", "dig
 PROVIDER_LABELS = {"manual": "вручную", "cloudflare": "Cloudflare", "duckdns": "DuckDNS", "dyndns2": "DynDNS2",
                    "digitalplat": "DigitalPlat"}
 RECORD_WATCH_SECONDS = 120
-TTL_WARN_S = 300                  # TTL записи выше — предупреждение: клиенты переходят медленно
+TTL_WARN_S = 300                  # TTL записи выше — предупреждение: пользователи переходят медленно
 _OWN_IP_TTL = 600
 
 
@@ -152,7 +152,7 @@ class ReserveDnsMixin:
             return None
         self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
                         ttl=int(ttl))
-        return addrs == [ip]                                  # вторая A-запись увела бы половину клиентов мимо
+        return addrs == [ip]                                  # вторая A-запись увела бы половину пользователей мимо
 
     def reserve_own_ip(self) -> str:
         """Собственный публичный адрес: `self_host` (или адрес для пользователей)
@@ -222,7 +222,7 @@ class ReserveDnsMixin:
             return []
         self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
                         ttl=int(ttl))
-        if not addrs:                                         # записи нет вовсе — клиенты не резолвят имя
+        if not addrs:                                         # записи нет вовсе — пользователи не резолвят имя
             if w.get("told") == "missing":
                 return []
             self.rsv_update("rsv_record_watch", told="missing", told_at=timeutil.now_iso())

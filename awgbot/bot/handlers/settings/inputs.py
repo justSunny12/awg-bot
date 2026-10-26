@@ -28,7 +28,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
     key = callback_data.key
     if key == "now":
         # Решение записано, дальше — обычная подготовка переезда: она читает
-        # его и говорит, что DNS клиентов станет своим.
+        # его и говорит, что DNS пользователей станет своим.
         await call(services.set_private_dns_decision, "pending")
         blocked = await call(services.migration_blocked_reason)
         if blocked:

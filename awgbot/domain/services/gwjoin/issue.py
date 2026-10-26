@@ -251,7 +251,7 @@ class GwJoinIssueMixin:
 
     @staticmethod
     def _gwjoin_host() -> str:
-        host = own_host()      # собственный адрес, если задан, иначе адрес для клиентов
+        host = own_host()      # собственный адрес, если задан, иначе адрес для пользователей
         if not host:
             raise ServiceErrorHtml("Не задан адрес сервера AWG (<code>network.server_host</code>) — шлюзу некуда подключаться")
         return host

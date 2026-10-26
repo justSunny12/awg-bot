@@ -92,7 +92,7 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     state = "⏳ ждёт активации" if pending else "🟢 онлайн" if d["online"] else "🔴 офлайн"
     lines = [f"👤 {name} {state}", ""]
     # ручная блокировка — «⛔»; истечение, пауза и исчерпанный трафик —
-    # строкой состояния доступа (та же у клиента)
+    # строкой состояния доступа (та же у пользователя)
     manual = int(client.block_reason) & int(blocks.CLIENT_MANUAL)
     reasons = blocks.client_reasons_ru(manual, for_admin=True)
     if reasons:

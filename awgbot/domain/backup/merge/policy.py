@@ -28,7 +28,7 @@ from __future__ import annotations
 
 CHANGED, MASK, COUNTER, MAX, CUR, REP, KEY = "changed", "mask", "counter", "max", "cur", "rep", "key"
 
-# таблицы данных клиентов: ключ строки → правила колонок
+# таблицы данных пользователей: ключ строки → правила колонок
 TABLES: dict[str, dict] = {
     "clients": {
         "_key": ("id",), "_cascade": "client",

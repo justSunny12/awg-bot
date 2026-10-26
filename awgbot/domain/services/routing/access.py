@@ -365,7 +365,7 @@ class RoutingAccessMixin:
         return RoutingAddResult(added=added, rejected=rejected,
                                 over_limit=over, limit=limit)
 
-    _RT_PRESEED_MAX = 20                  # доменов за раз; дальше ждём резолва клиента
+    _RT_PRESEED_MAX = 20                  # доменов за раз; дальше ждём резолва устройства
 
     def _routing_preseed(self, client_id: int, domains: list[str]) -> None:
         """Досеять набор адресами только что добавленных доменов.

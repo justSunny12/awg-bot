@@ -36,7 +36,7 @@ from awgbot.bot.states import AddDeviceGuide
 _GUIDE_ASSETS = Path(__file__).resolve().parents[1].parent / "assets" / "guides"
 
 router = Router(name="guide")
-# те же пошаговые гайды — клиенту и гостю; добавить устройство может только клиент
+# те же пошаговые гайды — пользователю и гостю; добавить устройство может только пользователь
 router.message.filter(RoleFilter("client", "invited"))
 router.callback_query.filter(RoleFilter("client", "invited"))
 

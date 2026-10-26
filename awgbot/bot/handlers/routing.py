@@ -290,7 +290,7 @@ async def routing_add_start(cb: CallbackQuery, callback_data: RoutingCB, client,
     await cb.answer()
 
 
-# Команды во время ввода «➕ Сайт»: роутер маршрутизации стоит раньше клиентского,
+# Команды во время ввода «➕ Сайт»: роутер маршрутизации стоит раньше роутера пользователя,
 # и /start или /code ушли бы в список сайтов. Сброс ввода и обычная обработка —
 # как у гостя, чей роутер стоит раньше этого.
 @router.message(RoutingDomains.value, CommandStart(deep_link=True), RoleFilter("client"))

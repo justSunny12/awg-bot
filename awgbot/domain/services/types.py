@@ -48,13 +48,13 @@ class Notification:
     reply_markup: object = None        # опциональная inline-клавиатура
     grace_offer_client_id: int = 0     # >0 → прикрепить кнопку отсрочки (делает scheduler)
     force_sound: bool = False          # True → слать со звуком даже в тихие часы
-    critical: bool = False             # влияет на всех клиентов → при недоступном
+    critical: bool = False             # влияет на всех пользователей → при недоступном
                                        # Telegram уходит админу на почту (если включено)
     on_sent: object = None             # вызвать ПОСЛЕ доставки: смена состояния,
                                        # которая имеет смысл, только если адресат
                                        # уведомление получил (взведённый алерт)
     # подсказка представления: кнопка действия над «Скрыть» — («extend», id
-    # профиля) продлить, («unassigned», 0) устройства без профиля, («sub», 0) подписка клиента.
+    # профиля) продлить, («unassigned», 0) устройства без профиля, («sub», 0) подписка пользователя.
     # Логику не меняет: notifier превращает её в кнопку NoteCB.
     action: tuple = ()
     # подсказка представления: готовая клавиатура бота по имени, когда домену
@@ -111,7 +111,7 @@ class FriendActivation:
     reason: str = ""
     device_id: Optional[int] = None
     device_name: Optional[str] = None
-    holder: Optional[object] = None      # профиль держателя (гость или клиент)
+    holder: Optional[object] = None      # профиль держателя (гость или пользователь)
     donor: Optional[object] = None       # владелец устройства (при ok) / прежний даритель (other_donor)
     held: list = field(default_factory=list)   # устройства, которые держатель уже держит
 

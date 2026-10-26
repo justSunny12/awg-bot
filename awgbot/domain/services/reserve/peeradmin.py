@@ -66,7 +66,7 @@ class ReservePeerAdminMixin:
         pkg_in = self.rsv_get("rsv_pkg_in")
         return {
             "peer": peer, "me": str(config.SERVER_NAME or ""), "version": str(config.INSTALLED_VERSION).lstrip("v"),
-            "direction_in": dirs["in"],                          # его клиенты → сюда
+            "direction_in": dirs["in"],                          # его пользователи → сюда
             "awg_ok": bool(self.server_ok()) if hasattr(self, "server_ok") else True,
             "link_online": self.reserve_online(), "seen": self.reserve_peer_seen(),
             "down_since": self.reserve_down_since(),

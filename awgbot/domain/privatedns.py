@@ -86,7 +86,7 @@ class PrivateDnsMixin:
         addr = resolver.resolver_addr(new_prefix)
         resolver.add(addr)
         settings.set_value("app.awg.migration_dns", addr)
-        log.info("переезд: резолвер клиентов слушает %s", addr)
+        log.info("переезд: резолвер пользователей слушает %s", addr)
         return addr
 
     def private_dns_on_promote(self, old_prefix: str) -> str:
@@ -105,7 +105,7 @@ class PrivateDnsMixin:
                 resolver.remove(old)
             except resolver.ResolverError as e:
                 log.warning("финал переезда: старый адрес резолвера %s не снят: %s", old, e)
-        # резолвер админа отдаёт остальное резолверу клиентов — на новый адрес
+        # резолвер админа отдаёт остальное резолверу пользователей — на новый адрес
         # сразу, не при следующем старте бота (у устройств админа иначе нет DNS)
         ensure = getattr(self, "admin_dns_ensure", None)
         if ensure is not None:
@@ -160,7 +160,7 @@ class PrivateDnsMixin:
         elif not said and self.db.get_state(_FAIL_KEY) != "1":
             # первый тик отказа — ждём второго: тревога по факту, не по одной пробе
             self.db.set_state(_FAIL_KEY, "1")
-            log.warning("резолвер клиентов не ответил (%s) — проверю на следующем тике", ", ".join(addrs))
+            log.warning("резолвер пользователей не ответил (%s) — проверю на следующем тике", ", ".join(addrs))
             return []
         shown = ", ".join(f"<code>{a}</code>" for a in addrs)
         if alive and said:

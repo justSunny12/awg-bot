@@ -204,10 +204,10 @@ def test_the_slot_is_on_i1_only_after_the_hello(server, vps, clock, caplog):
     _switched(server, vps)
     with caplog.at_level(logging.INFO):
         server.gateway_i1_tick()
-        assert "на I1 клиентского интерфейса" not in caplog.text
+        assert "на I1 интерфейса AWG сервера" not in caplog.text
         assert server.gateway_rekey_hello(1, vps.session_key())["rekeyed"]
         server.gateway_i1_tick()
-    assert server.gateway_i1_plan(1) == {} and "на I1 клиентского интерфейса" in caplog.text
+    assert server.gateway_i1_plan(1) == {} and "на I1 интерфейса AWG сервера" in caplog.text
 
 
 def test_a_refused_stage_is_a_failure_too(server, clock, monkeypatch):

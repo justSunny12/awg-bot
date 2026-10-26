@@ -13,7 +13,7 @@ from awgbot.util import timeutil
 
 log = logging.getLogger("awgbot.gateway")
 
-# Notification переиспользуем клиентский: notifier один на обе роли.
+# Notification переиспользуем из основного бота: notifier один на обе роли.
 
 
 import threading  # noqa: E402

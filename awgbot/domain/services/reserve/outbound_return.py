@@ -48,7 +48,7 @@ class ReserveReturnMixin:
             return f"«{self.reserve_peer_name()}» не на связи"
         return ""
 
-    # ── С9: резерв не на связи — вернуть клиентов без него ──────────────────
+    # ── С9: резерв не на связи — вернуть пользователей без него ─────────────
     def reserve_force_check(self) -> str:
         """Пусто — рычаг «вернуть без резерва» возможен: мои пользователи у резерва, а он
         не на связи дольше FORCE_OFFLINE_S."""
@@ -124,7 +124,7 @@ class ReserveReturnMixin:
             self.reserve_set_out("returning", kind=str(self._out().get("kind") or ""), return_why=why,
                                  return_started_at=timeutil.now_iso())
             self._out_step("back_req", RELEASED_WAIT_S)
-        log.info("резерв: возврат клиентов с «%s» начат (%s)", self.reserve_peer_name(), why)
+        log.info("резерв: возврат пользователей с «%s» начат (%s)", self.reserve_peer_name(), why)
         return [("send", "back_req", {}), ("live",)]
 
     def reserve_evict_in(self) -> list[tuple]:
@@ -168,7 +168,7 @@ class ReserveReturnMixin:
             return [("take_tg",)]
         if step == "record_back":
             if self._expired(out):
-                # запись не вернулась в срок (API или факт): клиентов держит пересылка —
+                # запись не вернулась в срок (API или факт): пользователей держит пересылка —
                 # `back` всё равно, админу Т-РУ11 (запись менять руками)
                 from awgbot.domain.notices import reserve as rn
                 own = self.reserve_own_ip()
@@ -221,7 +221,7 @@ class ReserveReturnMixin:
         except Exception as e:                                # noqa: BLE001
             reason = str(e)[:200]
             same = reason == str(out.get("merge_error") or "")
-            log.error("резерв: слияние не удалось: %s — клиенты остаются у резерва", e)
+            log.error("резерв: слияние не удалось: %s — пользователи остаются у резерва", e)
             self.reserve_set_out("away", kind=str(out.get("kind") or ""), step="", merge_error=reason,
                                  merge_blocked=reason if same else "",
                                  healthy_mono=0, healthy_since="", can_return=False, last_switch=timeutil.now_iso())
@@ -295,7 +295,7 @@ class ReserveReturnMixin:
             self.reserve_new_generation("возврат после аварийного переезда")
             self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
             notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
-        log.info("резерв: клиенты и бот вернулись с «%s»", name)
+        log.info("резерв: пользователи и бот вернулись с «%s»", name)
         return actions + [("live",), ("notify", notes)]
 
     # ── живое сообщение хода (Т-Р10б) ───────────────────────────────────────

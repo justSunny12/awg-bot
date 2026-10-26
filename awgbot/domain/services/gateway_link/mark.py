@@ -260,7 +260,7 @@ class MarkMixin:
                     continue
                 if any(net.overlaps(ipaddress.ip_network(s, strict=False))
                        for s, _i in config.routing_client_subnets()):
-                    # подсеть клиентов — в AllowedIPs линка и tunnel_nets4 каждого
+                    # подсеть пользователей — в AllowedIPs линка и tunnel_nets4 каждого
                     # шлюза, аплинк шлюза — адрес из неё: адресный план сервера
                     rejected.append((tok, "это подсеть профилей VPN"))
                     continue

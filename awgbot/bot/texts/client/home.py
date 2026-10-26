@@ -12,7 +12,7 @@ from .subscription import subscription_status_only
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Главная клиента и гостя
+# Главная пользователя и гостя
 # ─────────────────────────────────────────────────────────────────────────────
 
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
@@ -24,7 +24,7 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
              status_line(server_ok, routing_ok, routing_on, bot_username)]
     paused, _, pause_visible = _pause_visibility(client)
     access = access_status_line(client)
-    if access and (pause_visible or not paused):   # тихая пауза админа клиенту не видна
+    if access and (pause_visible or not paused):   # тихая пауза админа пользователю не видна
         lines.append(access)
     sub = subscription_short(client, bot_username)
     if traffic is not None:

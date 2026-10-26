@@ -42,7 +42,7 @@ def _skip_actor(notes: list, actor_tg) -> list:
     return [n for n in notes if not (actor_tg and n.tg_id == actor_tg)]
 
 
-# ── Тексты ручных блокировок (админ/клиент) ──────────────────────────────────
+# ── Тексты ручных блокировок (админ/пользователь) ────────────────────────────
 
 def _manual_device_blocked_client(name: str, by_admin: bool = False) -> str:
     """Владельцу: кто заблокировал — из карточки через неделю не узнать."""
@@ -70,7 +70,7 @@ def _by_holder(dev, actor_tg) -> bool:
     return bool(actor_tg) and dev.friend_status == FriendStatus.ACTIVE and actor_tg == dev.friend_tg_id
 
 
-# Клиенту сообщаем о его же блокировке — имя не подставляем (адресат и есть
+# Пользователю сообщаем о его же блокировке — имя не подставляем (адресат и есть
 # субъект), поэтому текст без параметров.
 def _manual_client_blocked() -> str:
     return "🔒 Твой доступ приостановлен администратором"
@@ -155,11 +155,11 @@ class BlocksMixin:
             return
         old_mask = int(c.block_reason)
         new_mask = self.db.client_mask_apply(client_id, and_bits=~int(bit))
-        # эпизод бана завершён (клиент полностью разблокирован) → в аудит
+        # эпизод бана завершён (пользователь полностью разблокирован) → в аудит
         if old_mask and new_mask == 0:
             self.db.archive_block(client_id, old_mask, "unblocked")
 
-    # ── Ручные блокировки (админ / клиент) ───────────────────────────────────
+    # ── Ручные блокировки (админ / пользователь) ─────────────────────────────
 
     _TXT_GATEWAY_LOCKED = ("Это устройство — шлюз РФ-доступа: его нельзя "
                            "заблокировать, удалить, передать или выдать ему ссылку. "
@@ -225,7 +225,7 @@ class BlocksMixin:
         if client is None or client.is_service:
             return []
         if client.tg_id == config.ADMIN_ID:
-            return []                    # клиент админа не блокируется (defense-in-depth)
+            return []                    # пользователь админа не блокируется (defense-in-depth)
         self._client_set_block(client_id, bit)
         # приостановка подписки (если запрошена) — до каскада, чтобы PAUSED тоже лёг
         if pause_days is not None:
@@ -268,7 +268,7 @@ class BlocksMixin:
                     and dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id):
                 notes.append(Notification(dev.friend_tg_id,
                              _friend_unblocked_text(dev.name)))
-        # клиенту — одно уведомление о снятии, если полностью разблокирован и notify
+        # пользователю — одно уведомление о снятии, если полностью разблокирован и notify
         fresh_c = self.db.get_client(client_id)
         if notify and int(fresh_c.block_reason) == 0 and client.tg_id:
             notes.append(Notification(client.tg_id,
@@ -311,7 +311,7 @@ class BlocksMixin:
         снимет только поднятие лимита самого устройства."""
         prev = self.db.get_client(client_id)
         if prev is not None and prev.tg_id == config.ADMIN_ID:
-            return                       # клиент админа не ограничивается (defense-in-depth)
+            return                       # пользователь админа не ограничивается (defense-in-depth)
         if prev is not None and int(prev.traffic_limit) != int(limit_bytes):
             # аудит: снимок старой квоты перед изменением
             self.db.archive_quota(client_id, "limit_changed")

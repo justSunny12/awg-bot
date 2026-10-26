@@ -66,7 +66,7 @@ UP_WAIT_S = 300           # резерв поднял клон
 RECORD_WAIT_S = 1800      # факт записи
 RELEASED_WAIT_S = 300     # `taken` после `released`; возврат: `released` после `back_req`
 FORCE_OFFLINE_S = 10 * 60        # «вернуть без резерва» — не раньше, чем он не на связи столько
-STUCK_IDLE_S = 10 * 60           # столько подряд запись на мне, а резерв клиентов не несёт — вебхук зависший
+STUCK_IDLE_S = 10 * 60           # столько подряд запись на мне, а резерв пользователей не несёт — вебхук зависший
 STUCK_PAIR_S = 30 * 60           # пары нет на связи столько, запись на мне — вебхук резерва зависший
 HEALTHY_S = 300           # «здоров» — столько подряд
 RELAY_WAIT_S = 600        # `wiped` после `back`
@@ -208,7 +208,7 @@ class ReserveOutboundMixin:
                                  by="share", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
                                  last_switch=timeutil.now_iso(), healthy_mono=0, healthy_since="", can_return=False)
             self.reserve_set_poll("away")
-            log.warning("резерв: «%s» несёт моих клиентов — я в состоянии away", self.reserve_peer_name())
+            log.warning("резерв: «%s» несёт моих пользователей — я в состоянии away", self.reserve_peer_name())
             return [("live",)]
         return []
 
@@ -245,7 +245,7 @@ class ReserveOutboundMixin:
             poll = self.rsv_get("rsv_poll")
             fresh = str(poll.get("since") or "") >= str(out.get("released_at") or "")
             verdict = str(poll.get("why") or "") if fresh else ""
-            if verdict in ("webhook", "webhook_info"):          # Telegram: вебхук стоит — клиенты у резерва
+            if verdict in ("webhook", "webhook_info"):          # Telegram: вебхук стоит — пользователи у резерва
                 self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
                                      last_switch=timeutil.now_iso(), healthy_since="")
                 log.info("резерв: `taken` не пришёл, но вебхук у «%s» стоит — away", self.reserve_peer_name())
@@ -367,7 +367,7 @@ class ReserveOutboundMixin:
         self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
                              last_switch=timeutil.now_iso(), healthy_since="")
         self.reserve_set_poll("away")
-        log.info("резерв: клиенты и бот — на «%s»", self.reserve_peer_name())
+        log.info("резерв: пользователи и бот — на «%s»", self.reserve_peer_name())
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
             self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
             dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
@@ -414,7 +414,7 @@ class ReserveOutboundMixin:
             if now - since < HEALTHY_S:
                 return []
             if out.get("merge_blocked"):
-                # слияние дважды упало с той же причиной — сам не повторяю, но кнопка «↩️ Вернуть клиентов»
+                # слияние дважды упало с той же причиной — сам не повторяю, но кнопка «↩️ Вернуть пользователей»
                 # (у основы и у гостя) должна быть: can_return держится, пока основа здорова
                 if not out.get("can_return"):
                     self.rsv_update("rsv_out", can_return=True)
@@ -478,9 +478,9 @@ class ReserveOutboundMixin:
         if not forced:
             self.reserve_new_k()
             self.reserve_pkg_mark()
-            log.warning("резерв: вебхук «%s» снят — запись на мне, клиентов он не нёс; поллю сам", name)
+            log.warning("резерв: вебхук «%s» снят — запись на мне, пользователей он не нёс; поллю сам", name)
             return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
-        log.warning("резерв: клиенты возвращены без «%s» — его реплика вольётся, когда он выйдет на связь", name)
+        log.warning("резерв: пользователи возвращены без «%s» — его реплика вольётся, когда он выйдет на связь", name)
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name))])]
 
     def reserve_move_live(self) -> dict:

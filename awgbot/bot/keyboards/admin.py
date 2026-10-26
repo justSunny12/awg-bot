@@ -28,7 +28,7 @@ def admin_main(*, routing_visible: bool = False, self_client_id: int = 0, guest:
     # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
     # включению, других входов у функции нет
     return ui.rows(
-        menu_issue_row(),                     # выдача своим устройствам — первой строкой, как у клиента
+        menu_issue_row(),                     # выдача своим устройствам — первой строкой, как у пользователя
         [("📱 Мои устройства", Menu(action="devices")),
          (f"🇷🇺 Мой {_texts.ROUTING_NAME}", RoutingCB(action="panel", ref=self_client_id)) if routing_visible else None],
         [("👥 Профили", Menu(action="clients")), ("➕ Профиль", Menu(action="add_client"))],

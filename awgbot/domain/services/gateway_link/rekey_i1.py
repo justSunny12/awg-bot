@@ -30,7 +30,7 @@ WINDOW_S = (30 * 60, 6 * 3600)     # первая попытка — в случ
 RETRY_S = 24 * 3600                # повтор после неудачи
 RETRY_JITTER = 0.4
 TRIES_WARN = 3                     # столько неудач — строка карточки «не встало трижды»
-NONE_TOLD_KEY = "gw_i1_none_told"  # «у клиентов нет I1» сказано (один раз, пока его нет)
+NONE_TOLD_KEY = "gw_i1_none_told"  # «у пользователей нет I1» сказано (один раз, пока его нет)
 
 T_L1 = "⚠️ Новые ключи и обфускация линка не встали трижды — линк на прежних, повторю через сутки"
 T_L2 = "⚠️ Линк без I1: у интерфейса AWG сервера нет строки I1, а линк берёт её оттуда"
@@ -108,12 +108,12 @@ class RekeyI1Mixin:
                 if plan:
                     self._i1_plan_save(gw.id, {})
                     if plan.get("rid"):
-                        log.info("I1 линка: слот %s на I1 клиентского интерфейса", gw.id)   # после фиксации
+                        log.info("I1 линка: слот %s на I1 интерфейса AWG сервера", gw.id)   # после фиксации
                 continue
             if "rekey2" not in self.gwlink_agent_caps(gw.id):
                 continue                                  # агент без смены ключей без вопроса — попыток нет
             if plan.get("want") != want:
-                # новый план (или клиентский I1 сменили — прежние неудачи не о нём)
+                # новый план (или I1 сервера сменили — прежние неудачи не о нём)
                 plan = {"want": want, "next_at": _later(random.uniform(*WINDOW_S)), "tries": 0}
                 self._i1_plan_save(gw.id, plan)
             if plan.get("rid"):

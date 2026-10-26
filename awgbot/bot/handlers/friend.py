@@ -233,7 +233,7 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     if not await devcore.delete_by_holder(cb, services, dev):
         return
     from awgbot.bot import screens
-    # итог первой строкой: «📱 Устройства», как у клиента; удалили последнее — главная
+    # итог первой строкой: «📱 Устройства», как у пользователя; удалили последнее — главная
     if await _held(services, client):
         text, markup = await devices_payload(services, client, cb.message.chat.id)
     else:
@@ -241,7 +241,7 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     await edit(cb, screens.with_note(text, texts.device_removed(dev.name)), markup)
 
 
-# ── помощь: те же гайды, что у клиента (handlers/guide.py) ───────────────────
+# ── помощь: те же гайды, что у пользователя (handlers/guide.py) ──────────────
 
 @router.callback_query(FriendCB.filter(F.action == "help"))
 async def friend_help(cb: CallbackQuery):

@@ -70,7 +70,7 @@ class CfgMixin:
             self._gwcfg_link_error_set(gw.id, f"исходный файл не прочитан: {e}")
             return ""
         # собственный адрес сервера (network.self_host), если задан: адрес для
-        # клиентов при паре переезжает на резерв, линк шлюза — нет
+        # пользователей при паре переезжает на резерв, линк шлюза — нет
         host = own_host() or conf.get("Peer", "Endpoint").rpartition(":")[0]
         wgconf.set_value(conf, "Peer", "Endpoint", f"{host}:{self._gwcfg_live_port(gw)}")
         want = wgconf.allowed_ips_want(client_subnet=env["CLIENT_SUBNET"], link_cidr=gw.link_cidr,

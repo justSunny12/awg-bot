@@ -46,7 +46,7 @@ def activated_admin_notice(client_or_name, who: str, bot_username: str = "") -> 
     return f"🎉 {name}: доступ активирован ({_e(who)})"
 
 
-# ── клиенту о правке условий администратором (с тумблером «Уведомить») ──────
+# ── пользователю о правке условий администратором (с тумблером «Уведомить») ──────
 
 def traffic_limit_changed_notice(old_b: int, new_b: int) -> str:
     """«Лимит трафика изменён: ∞ → 100 ГБ в месяц»."""

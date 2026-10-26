@@ -21,7 +21,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     """Собирает и возвращает планировщик (не запущенный — start() в main)."""
     scheduler = AsyncIOScheduler(timezone=config.TZ)
 
-    # задания данных клиентов — общие с гостевым режимом (jobs.py): опрос
+    # задания данных пользователей — общие с гостевым режимом (jobs.py): опрос
     # трафика, сроки и паузы, месячный сброс с догоном, очистка истории,
     # опрос почты, имена Telegram-аккаунтов
     _core = pkg.core_jobs(services, bot, db)
@@ -80,7 +80,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 rt_src_notes = await asyncio.to_thread(services.routing_source_alerts)
                 # ...и отдельно — что реконсиляция вообще не применяется. Главный
                 # случай тут не «правила не встали», а не поднявшийся dnsmasq:
-                # у клиентов при этом нет DNS, а бот считает фичу живой.
+                # у пользователей при этом нет DNS, а бот считает фичу живой.
                 rt_src_notes += await asyncio.to_thread(services.routing_infra_alerts)
                 # ...и готовность переезда: один доклад на смену состояния, как
                 # и всё остальное в этом блоке.
@@ -94,7 +94,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 await linkserver.monitor_tick(services)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)
-            # свой резолвер клиентов: у людей с приватным DNS в конфиге это
+            # свой резолвер пользователей: у людей с приватным DNS в конфиге это
             # единственный DNS — упал, значит интернета нет ни у кого
             try:
                 dns_notes = await asyncio.to_thread(services.resolver_health_tick)
