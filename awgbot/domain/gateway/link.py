@@ -45,7 +45,7 @@ class LinkMixin:
         try:
             fwd = base.pathlib_read("/proc/sys/net/ipv4/ip_forward").strip() == "1"
             checks.append(GwCheck(gc.CHECK_IP_FORWARD, fwd,
-                                  "" if fwd else "выключен — транзита клиентов нет"))
+                                  "" if fwd else "выключен — транзита пользователей нет"))
         except Exception:                                # noqa: BLE001
             checks.append(GwCheck(gc.CHECK_IP_FORWARD, None, "не прочитался"))
 
@@ -74,7 +74,7 @@ class LinkMixin:
                                    "не приходит — проверь «🔧 Канал конфигурации» на главном экране бота шлюза")))
             else:
                 checks.append(GwCheck(gc.CHECK_MASQ_ISOLATION, None,
-                                      "подсеть клиентов неизвестна (нет конфигурации с сервера AWG) — "
+                                      "подсеть пользователей неизвестна (нет конфигурации с сервера AWG) — "
                                       "проверка выключена"))
             missing_chains = [c for c in gwguard.CHAINS if c not in info["chains"]]
             checks.append(GwCheck(gc.CHECK_CHAINS, not missing_chains,
@@ -91,7 +91,7 @@ class LinkMixin:
             checks.append(GwCheck(gc.CHECK_FORWARD_POLICY, ok_fwd,
                                   "" if ok_fwd else
                                   f"ip filter FORWARD: {pol} — drop чужой таблицы "
-                                  "перекрывает транзит клиентов"))
+                                  "перекрывает транзит пользователей"))
         # Включённость юнита меняется только руками — статический ярус (45
         # мин, кнопки «Статус»/«Монитор здоровья» сбрасывают), а не exec на тик.
         enabled = self._unit_enabled()
@@ -137,7 +137,7 @@ class LinkMixin:
             self.__dict__["_masq_stale"] = not ok
             checks.append(GwCheck(gc.CHECK_CLIENT_MASQ, ok,
                                   "" if ok else f"маршрут по умолчанию через {wan}, а маскарад "
-                                  f"клиентов стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"))
+                                  f"пользователей стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"))
         router = self._router_masq_check(info, route)
         if router is not None:
             checks.append(router)

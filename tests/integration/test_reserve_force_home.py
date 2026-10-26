@@ -139,7 +139,7 @@ def test_after_take_home_the_clients_are_home_waiting_for_the_replica_with_one_n
     assert out.get("await_merge") is True and out.get("kind") == "dead", f"вид переезда потерян: {out}"
     assert gone.svc.reserve_k() == k and not _pkg_due(gone.svc), "K сменён до слияния"
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "Клиенты и бот снова здесь" in texts[0] and "«Beta»" in texts[0], texts
+    assert len(texts) == 1 and "Пользователи и бот снова здесь" in texts[0] and "«Beta»" in texts[0], texts
     assert "вебхук снят" not in texts[0], "сказано про зависший вебхук вместо рычага"
     assert not texts[0].rstrip().endswith(".")
     assert ("live",) in acts

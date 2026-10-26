@@ -119,9 +119,9 @@ def test_stale_data_is_not_green(mv):
     ("данные для переезда у резерва устарели", "данные для переезда устарели"),
     ("«Beta» не читает формат данных переезда — нужен выпуск новее",
      "не читает формат данных переезда — нужен выпуск новее"),
-    ("«Beta» не умеет принимать клиентов — нужен выпуск новее", "не умеет принимать клиентов — нужен выпуск новее"),
+    ("«Beta» не умеет принимать пользователей — нужен выпуск новее", "не умеет принимать пользователей — нужен выпуск новее"),
     ("у «Beta» v4.0.0, здесь v4.1.0 — нужен резерв не младше", "v4.0.0, у тебя v4.1.0 — нужен резерв не младше"),
-    ("порт клиентов 443 занят у обеих сторон", "порт клиентов 443 занят у обеих сторон"),
+    ("порт пользователей 443 занят у обеих сторон", "порт пользователей 443 занят у обеих сторон"),
 ], ids=["своя готовность", "чужая готовность", "чужая зона", "своя зона", "устарели", "формат", "возможности",
         "версии", "прочее как есть"])
 def test_the_main_reason_drops_the_repeated_name_and_says_you_for_this_side(why, want):
@@ -164,11 +164,11 @@ def test_without_a_pair_the_status_and_the_line_are_empty(services, rsv):
 def test_the_status_follows_the_move_and_the_return(mv):
     svc = mv.svc
     svc.reserve_set_out("leaving")
-    assert _st(svc) == ("Beta", "🟡", "твои клиенты переезжают — жду смену записи")
+    assert _st(svc) == ("Beta", "🟡", "твои пользователи переезжают — жду смену записи")
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
-    assert _st(svc) == ("Beta", "🟢", f"несёт твоих клиентов и бот с {_clock('2026-10-21T03:12:00+05:00')}")
+    assert _st(svc) == ("Beta", "🟢", f"несёт твоих пользователей и бот с {_clock('2026-10-21T03:12:00+05:00')}")
     svc.reserve_set_out("returning")
-    assert _st(svc) == ("Beta", "🟡", "твои клиенты возвращаются на сервер")
+    assert _st(svc) == ("Beta", "🟡", "твои пользователи возвращаются на сервер")
 
 
 def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
@@ -176,7 +176,7 @@ def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
     soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
     svc.reserve_set_out("home", relay_until=soon)
     date = timeutil.fmt_dt_ui(timeutil.parse_iso(soon))
-    assert _st(svc) == ("Beta", "🟡", f"твои клиенты возвращаются на сервер — пересылка до {date}")
+    assert _st(svc) == ("Beta", "🟡", f"твои пользователи возвращаются на сервер — пересылка до {date}")
     rm.confirm_package(svc)
     svc.reserve_set_out("home", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), -60)))
     assert _st(svc)[1:] == ("🟢", f"резерв готов · данные от {_clock(svc.rsv_get('rsv_pkg_sent')['at'])}"), \
@@ -189,13 +189,13 @@ def test_the_forwarding_after_the_return_is_shown_until_its_term(mv):
 def test_the_reserve_hosting_the_peer_clients_is_green(mv, state):
     """Резерв несёт клиентов второго сервера — это его работа, а не тревога."""
     mv.svc.reserve_set_in(state, taken_at="2026-10-21T03:12:00+05:00")
-    assert _st(mv.svc) == ("Beta", "🟢", f"чужие клиенты и бот у тебя с {_clock('2026-10-21T03:12:00+05:00')}")
+    assert _st(mv.svc) == ("Beta", "🟢", f"чужие пользователи и бот у тебя с {_clock('2026-10-21T03:12:00+05:00')}")
 
 
 def test_the_reserve_forwarding_the_peer_clients_back(mv):
     soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 86400))
     mv.svc.reserve_set_in("relay", relay_until=soon)
-    assert _st(mv.svc) == ("Beta", "🟡", f"чужие клиенты возвращаются на резерв — пересылка до "
+    assert _st(mv.svc) == ("Beta", "🟡", f"чужие пользователи возвращаются на резерв — пересылка до "
                                           f"{timeutil.fmt_dt_ui(timeutil.parse_iso(soon))}")
 
 
@@ -213,7 +213,7 @@ def test_the_move_takes_precedence_over_the_unreachable_reserve(mv):
     svc = mv.svc
     svc._lv.state = "down"
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
-    assert _st(svc)[1:2] == ("🟢",) and _st(svc)[2].startswith("несёт твоих клиентов и бот с ")
+    assert _st(svc)[1:2] == ("🟢",) and _st(svc)[2].startswith("несёт твоих пользователей и бот с ")
 
 
 # ── блокировки резерву ──────────────────────────────────────────────────────

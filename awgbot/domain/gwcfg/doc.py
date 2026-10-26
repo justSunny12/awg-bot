@@ -29,7 +29,7 @@ MAIL_KEYS = ("login", "password", "imap_host", "imap_port", "smtp_host", "smtp_p
 # Человеческие имена — для уведомлений обеих сторон («применено: …», «не применилось: …»).
 HUMAN = {
     **gwlink.KEY_HUMAN,
-    "CLIENT_SUBNET": "подсеть клиентов",
+    "CLIENT_SUBNET": "подсеть пользователей",
     "LINK_CHANNEL_PORT": "порт канала конфигурации",
     "env": "настройки обвязки",
     "link": "конфиг линка",

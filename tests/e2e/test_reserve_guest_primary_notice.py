@@ -36,7 +36,7 @@ async def test_the_immediate_lever_says_the_clients_are_being_returned_once(serv
     told: dict = {}
     for _ in range(3):
         await _tick(services, said, told, primary={"status": "alive", "healthy": True}, **{"return": "immediate"})
-    assert said == [(config.ADMIN_ID, "🟢 Сервер AWG снова в строю — возвращаю клиентов и бот")]
+    assert said == [(config.ADMIN_ID, "🟢 Сервер AWG снова в строю — возвращаю пользователей и бот")]
 
 
 async def test_the_button_lever_says_to_press_the_button_once(services, said):
@@ -44,7 +44,7 @@ async def test_the_button_lever_says_to_press_the_button_once(services, said):
     for _ in range(3):
         await _tick(services, said, told, primary={"status": "alive", "healthy": True, "can_return": True},
                     **{"return": "button"})
-    assert said == [(config.ADMIN_ID, "🟢 Сервер AWG снова в строю — верни клиентов кнопкой")]
+    assert said == [(config.ADMIN_ID, "🟢 Сервер AWG снова в строю — верни пользователей кнопкой")]
 
 
 @pytest.mark.parametrize("state", [

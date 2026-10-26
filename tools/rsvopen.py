@@ -154,7 +154,7 @@ def await_sealed_k(pkg_gen: int, budget_s: float = K_WAIT_S) -> bytes:
         _step("eph", pkg_gen=pkg_gen, eph=pub.hex(), oid=oid)
         line = _read_line_within(budget_s)
         if not line:
-            raise OpenError("ключ пакета не получен")
+            raise OpenError("ключ пакета от основы не пришёл за 2 минуты")
         try:
             obj = json.loads(line)
             sealed = bytes.fromhex(str((obj or {}).get("sealed") or ""))
@@ -188,9 +188,9 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
         try:
             k = bytes.fromhex(str(data["k"]))
         except ValueError as e:
-            raise OpenError("K не hex") from e
+            raise OpenError("ключ пакета не hex") from e
         if len(k) != seal.K_LEN:
-            raise OpenError("K не той длины")
+            raise OpenError("ключ пакета не той длины")
         return None, k
     if data.get("shares"):
         shares = list(data["shares"])
@@ -204,7 +204,7 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
         except ValueError as e:
             raise OpenError(f"аварийный код: {e}") from e
     else:
-        raise OpenError("нет ни долей, ни кода, ни K")
+        raise OpenError("нет ни долей, ни кода, ни ключа пакета")
     if p1[0] == p2[0]:
         raise OpenError("две доли одной точки")
     try:

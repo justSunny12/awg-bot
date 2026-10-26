@@ -64,7 +64,7 @@ class MonitorMixin:
             log.warning("gateway: uplink_policy_heal: %s", e)
             fixed = []
         if self.__dict__.pop("_masq_stale", False):
-            self._reassert_throttled("маскарад клиентов не на интерфейсе маршрута по умолчанию")
+            self._reassert_throttled("маскарад пользователей не на интерфейсе маршрута по умолчанию")
         # перепроверка — exec'ы nft и ip: только когда реассерт вообще не под троттлингом
         if self.__dict__.pop("_router_masq_stale", False) and self._reassert_due() and self._router_masq_stale_now():
             self._reassert_throttled("маскарад подсетей других шлюзов к роутеру разошёлся с маршрутом по умолчанию")
@@ -95,7 +95,7 @@ class MonitorMixin:
         notes += self._streak_alert(
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
             "🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого"
-            + self._rf_note(". РФ-доступ у клиентов не работает"),
+            + self._rf_note(". РФ-доступ у пользователей не работает"),
             "✅ Линк до сервера AWG ожил, хендшейк свежий",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
@@ -299,7 +299,7 @@ class MonitorMixin:
             checks += own_checks
         st.egress_ok, st.egress_ms, st.egress_src = self._egress_verdict(st.rx, st.tx)
         checks.append(GwCheck(gc.CHECK_EGRESS, st.egress_ok,
-                              ("по обратному трафику клиентов" if st.egress_src == "трафик" else
+                              ("по обратному трафику пользователей" if st.egress_src == "трафик" else
                                f"{st.egress_ms:.0f} мс через провайдера" if st.egress_ok and st.egress_ms is not None
                                else "" if st.egress_ok else
                                "провайдер не отвечает — РФ-доступ через шлюз не работает")))

@@ -97,7 +97,7 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
         return False, f"«{dst.get('name') or 'резерв'}» не читает формат данных переезда — нужен выпуск новее"
     missing = [c for c in _NEEDED_TO_HOST if c not in dst.get("caps", [])]
     if missing:
-        return False, f"«{dst.get('name') or 'резерв'}» не умеет принимать клиентов — нужен выпуск новее"
+        return False, f"«{dst.get('name') or 'резерв'}» не умеет принимать пользователей — нужен выпуск новее"
     if dst.get("zone"):
         return False, (f"здесь: {dst['zone']}" if dst.get("me") else f"у «{dst.get('name') or 'резерв'}»: {dst['zone']}")
     if not src.get("gw"):
@@ -111,7 +111,7 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
         return False, "у серверов разные поколения AmneziaWG"
     clash = sorted(set(src.get("ports", [])) & set(dst.get("ports", [])))
     if clash:
-        return False, f"порт клиентов {clash[0]} занят у обеих сторон"
+        return False, f"порт пользователей {clash[0]} занят у обеих сторон"
     if not pkg_fresh:
         return False, "данные для переезда у резерва устарели"
     return True, ""

@@ -127,7 +127,7 @@ H3 = $H3
 H4 = $H4
 CONF_EOF
 chmod 600 "$tmp"; mv -f "$tmp" "$CONF"
-say "создан $CONF: порт $LISTEN_PORT, адрес ${SUBNET_PREFIX}.1/24, клиенты с .2"
+say "создан $CONF: порт $LISTEN_PORT, адрес ${SUBNET_PREFIX}.1/24, пользователи с .2"
 
 # ip_forward — сейчас и после перезагрузки, отдельным файлом (rollback его снимает)
 printf 'net.ipv4.ip_forward = 1\n' > "$SYSCTL_FILE"; chmod 644 "$SYSCTL_FILE"

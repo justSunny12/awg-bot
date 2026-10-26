@@ -74,7 +74,7 @@ def email_ask_address_change(current: str) -> str:
 
 def email_ask_resume_address(current: str) -> str:
     return (ui.head("✉️ Адрес для писем с кодом", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n\n"
-            "Сюда клиент на паузе, оставшийся без доступа к Telegram, присылает письмо с кодом. "
+            "Сюда пользователь на паузе, оставшийся без доступа к Telegram, присылает письмо с кодом. "
             "Обычно это сам ящик или его алиас.\n"
             "Пришли адрес или нажми «↩️ Сам ящик»")
 

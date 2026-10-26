@@ -116,8 +116,8 @@ async def _card(ui) -> tuple[str, list[str]]:
 
 async def test_the_card_offers_the_move_when_it_is_possible_and_the_dns_screen_always(ui):
     text, labels = await _card(ui)
-    assert "🔀 Перевести клиентов на «Beta»" in labels and "🌐 Запись DNS" in labels
-    assert not any("Вернуть клиентов" in x for x in labels)
+    assert "🔀 Перевести пользователей на «Beta»" in labels and "🌐 Запись DNS" in labels
+    assert not any("Вернуть пользователей" in x for x in labels)
     assert "🌐 Запись <code>" not in text or rc.HOST_A in text
 
 
@@ -133,8 +133,8 @@ async def test_the_card_offers_the_return_to_the_reserve_only_while_it_hosts_my_
     assert not any("к нему" in x for x in labels)
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     text, labels = await _card(ui)
-    assert "↩️ Вернуть клиентов «Beta» к нему" in labels and not any("Перевести" in x for x in labels)
-    assert "Клиенты «Beta»" in text and "здесь" in text
+    assert "↩️ Вернуть пользователей «Beta» к нему" in labels and not any("Перевести" in x for x in labels)
+    assert "Пользователи «Beta»" in text and "здесь" in text
     ui.svc.rsv_update("rsv_peer_state", session=False)
     _text, labels = await _card(ui)
     assert not any("к нему" in x for x in labels), "резерв не на связи — просить его вернуть клиентов некому"
@@ -249,7 +249,7 @@ def test_the_live_message_in_automatic_mode_only_waits(ui):
 
 def test_the_live_message_summarizes_success_and_failure(ui):
     away = _live_text(ui, "released", state="away", online=41)
-    assert away.startswith("✅ Клиенты и бот — на") and "ещё 41" in away
+    assert away.startswith("✅ Пользователи и бот — на") and "ещё 41" in away
     failed = _live_text(ui, "pkg", state="home", reason="запись не изменена — HTTP 403")
     assert failed == "⚠️ Перевод не состоялся: запись не изменена — HTTP 403"
 
@@ -294,7 +294,7 @@ async def test_the_evict_dialog_and_its_confirmation_send_the_request_to_the_pri
         return True
     monkeypatch.setattr(pairlink, "send", send)
     e = _edits(await ui.run.press(RsvCB(action="evict")))
-    assert "Вернуть клиентов и бот" in e[0].text and _labels(e[0]) == ["⬅️ Отмена", "↩️ Вернуть"]
+    assert "Вернуть пользователей и бот" in e[0].text and _labels(e[0]) == ["⬅️ Отмена", "↩️ Вернуть"]
     assert sent == [], "диалог сам ничего не просит"
     calls = await ui.run.press(RsvCB(action="evict_yes"))
     assert sent == ["evict"]
@@ -320,7 +320,7 @@ async def test_the_dns_screen_without_a_name_says_the_record_does_not_exist(ui):
     from awgbot.core import settings
     settings.set_value("app.network.server_host", "203.0.113.5")
     e = _edits(await ui.run.press(RsvCB(action="dns")))
-    assert "Адрес для клиентов — IP" in e[0].text and "без записи переезд невозможен" in e[0].text
+    assert "Адрес для пользователей — IP" in e[0].text and "без записи переезд невозможен" in e[0].text
     assert _labels(e[0]) == ["⬅️ Назад"], "кнопок провайдера и токена у IP быть не должно"
 
 
@@ -398,7 +398,7 @@ async def test_the_admin_main_screen_shows_the_reserve_line_in_the_ordinary_and_
     assert "🛟 <b>Beta</b> 🟢 резерв готов · данные от " in parts[0], "строки резерва нет на главной в обычном состоянии"
     ui.svc.reserve_set_in("serving", taken_at="2026-10-21T03:12:00+05:00")
     parts = await panel._panel_parts(ui.svc)
-    assert "🛟 <b>Beta</b> 🟢 чужие клиенты и бот у тебя с" in parts[0] and "резерв готов" not in parts[0]
+    assert "🛟 <b>Beta</b> 🟢 чужие пользователи и бот у тебя с" in parts[0] and "резерв готов" not in parts[0]
     assert parts[0].count("🛟") == 1, "строка резерва на главной должна быть одна"
 
 
@@ -498,7 +498,7 @@ async def test_the_guest_return_dialog_opens_only_when_the_primary_said_it_waits
                             "primary": {"status": "alive", "healthy": True, "can_return": True,
                                         "since": "2026-10-21T09:40:00+05:00"}, "return": "button"})
     e = _edits(await gui.run.press(RsvCB(action="back")))
-    assert e and "Вернуть клиентов на" in e[0].text and "Альфа" in e[0].text and "09:40" in e[0].text
+    assert e and "Вернуть пользователей на" in e[0].text and "Альфа" in e[0].text and "09:40" in e[0].text
     assert _labels(e[0]) == ["⬅️ Отмена", "↩️ Вернуть"]
 
 

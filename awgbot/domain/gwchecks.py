@@ -20,13 +20,13 @@ CHECK_GROUPS_QUIET_UNKNOWN = ("svc", "own", "ssh")   # «не проверено
 # обвязка
 CHECK_GUARD = "фильтр шлюза (awg_gw_guard)"
 CHECK_IP_FORWARD = "пересылка пакетов (ip_forward)"
-CHECK_MASQ_ISOLATION = "маскарад и изоляция клиентов"
+CHECK_MASQ_ISOLATION = "маскарад и изоляция пользователей"
 CHECK_CHAINS = "цепочки фильтра шлюза"
 CHECK_FORWARD_POLICY = "политика пересылки (FORWARD)"
 CHECK_UNIT = "автозапуск обвязки"
 CHECK_UPLINK_POLICY = "политика аплинка"
 CHECK_UPLINK_MASQ = "маскарад в аплинк"
-CHECK_CLIENT_MASQ = "маскарад клиентов"
+CHECK_CLIENT_MASQ = "маскарад пользователей"
 CHECK_ROUTER_MASQ = "маскарад к роутеру"
 # маршруты и подсети
 CHECK_TG_ROUTE = "маршрут к Telegram"

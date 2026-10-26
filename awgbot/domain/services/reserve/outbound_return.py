@@ -43,7 +43,7 @@ class ReserveReturnMixin:
 
     def reserve_return_check(self) -> str:
         if self.reserve_out() != "away":
-            return "клиенты не у резерва"
+            return "пользователи не у резерва"
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
         return ""
@@ -53,9 +53,9 @@ class ReserveReturnMixin:
         """Пусто — рычаг «вернуть без резерва» возможен: мои клиенты у резерва, а он
         не на связи дольше FORCE_OFFLINE_S."""
         if self.reserve_out() != "away":
-            return "клиенты не у резерва"
+            return "пользователи не у резерва"
         if self.reserve_online():
-            return f"«{self.reserve_peer_name()}» на связи — верни клиентов обычным путём"
+            return f"«{self.reserve_peer_name()}» на связи — верни пользователей обычным путём"
         since = self.reserve_down_since()
         try:
             if not since or timeutil.elapsed(timeutil.parse_iso(since)) < FORCE_OFFLINE_S:

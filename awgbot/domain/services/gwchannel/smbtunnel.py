@@ -46,7 +46,7 @@ class SmbTunnelMixin:
         if not admindns.serving():
             return "Резолвер админа не поднят — на сервере: awg-bot resolver admin status"
         if not nftguard.enabled():
-            return "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все клиенты"
+            return "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все пользователи"
         return ""
 
     def smb_tunnel_set(self, on: bool) -> bool:

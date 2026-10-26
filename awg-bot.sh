@@ -664,7 +664,7 @@ configure_topology() {
     # меняются. При reconfigure текущее имя предлагается как дефолт (Enter — оставить).
     local srv_name cur_name
     cur_name="$(yaml_get "$app" server_name)"; [[ -n "$cur_name" ]] || cur_name="Сервер 1"
-    ask srv_name "Имя сервера в ссылках (видно клиенту в приложении)" "$cur_name"
+    ask srv_name "Имя сервера в ссылках (видно пользователю в приложении)" "$cur_name"
     yaml_set "$app" server_name "\"$srv_name\""
 
     # Порт awg и VPN-подсеть: приоритет — текущее значение из конфига (так
@@ -1214,8 +1214,8 @@ cmd_post_uninstall() {
         for f in /etc/amnezia/amneziawg/awglink*.conf; do [[ -f "$f" ]] && had=1; done
         if [[ -n "$had" || -x /usr/local/sbin/routing-host-setup.sh || -f /etc/dnsmasq.d/awgbot-resolver.conf \
               || -f /etc/systemd/system/awgbot-admin-dns.service ]]; then
-            warn "Найдена обвязка РФ-доступа (линки до шлюзов, таблицы маршрутизации, резолвер клиентов и резолвер админа)."
-            if confirm "Снять её? (РФ-доступ у клиентов перестанет работать; интерфейсы awg с клиентами остаются)" y; then
+            warn "Найдена обвязка РФ-доступа (линки до шлюзов, таблицы маршрутизации, резолвер пользователей и резолвер админа)."
+            if confirm "Снять её? (РФ-доступ у пользователей перестанет работать; интерфейсы awg с пользователями остаются)" y; then
                 for f in /etc/amnezia/amneziawg/awglink*.conf; do
                     [[ -f "$f" ]] || continue
                     name="$(basename "$f" .conf)"
@@ -1431,18 +1431,18 @@ ensure_resolver() {  # первая установка клиентской ро
     # «через раз». Приватный адрес браузеру не за что подхватить. Ставим с
     # первого дня, чтобы первое же устройство получило свой резолвер.
     local app="$CONF_DIR/app.yaml" addr
-    addr="$(resolver_addr)" || { warn "подсеть не разобрана — DNS клиентов остаётся публичным"; return 0; }
+    addr="$(resolver_addr)" || { warn "подсеть не разобрана — DNS пользователей остаётся публичным"; return 0; }
     echo; log "─── Резолвер клиентов: dnsmasq на $addr ───"
     if bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr"; then
         yaml_set "$app" dns1 "\"$addr\""
         yaml_set "$app" dns2 "\"$addr\""
-        ok "DNS клиентов — свой резолвер $addr (оба поля)."
+        ok "DNS пользователей — свой резолвер $addr (оба поля)."
         # резолвер админа (имена SMB локальных сетей шлюзов для устройств
         # админа в туннеле); не поднялся — поставит бот на старте
         ADMIN_ADDR="$(admin_dns_addr)" bash "$INSTALL_DIR/install/awg-admin-dns-setup.sh" install "$addr" \
             || warn "резолвер админа не поднят — бот попробует на старте; awg-bot resolver admin status"
     else
-        warn "резолвер не поднят — DNS клиентов остаётся публичным; позже: awg-bot resolver install"
+        warn "резолвер не поднят — DNS пользователей остаётся публичным; позже: awg-bot resolver install"
     fi
 }
 
@@ -1736,9 +1736,9 @@ awg-bot — управление установленным ботом.
                              selftest — проверка механики зоны на модуле ядра;
                              open — процесс открытия пакета (вход — JSON в stdin, зовёт бот);
                              zone --<режим> — скрипт зоны напрямую;
-                             teardown — аварийно снять зону (клиенты второго сервера обрываются);
+                             teardown — аварийно снять зону (пользователи второго сервера обрываются);
                              tgpool show | refresh — пул адресов Telegram: показать / обновить анонсы
-  awg-bot resolver <cmd>     свой DNS-резолвер клиентов (dnsmasq на <подсеть>.1):
+  awg-bot resolver <cmd>     свой DNS-резолвер пользователей (dnsmasq на <подсеть>.1):
                              status | install [addr] | add <addr> | remove <addr> | plan |
                              dropin — обновить override юнита dnsmasq (зовёт бот на старте);
                              admin status|plan|install|remove — резолвер админа (client_config.admin_dns;

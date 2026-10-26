@@ -208,7 +208,7 @@ class ClientsMixin:
         задан (None у технических откатов)."""
         row = self.get_client(client_id)
         if row and row.is_service:
-            raise ValueError("Нельзя удалить служебного клиента")
+            raise ValueError("Нельзя удалить служебного пользователя")
         with self._tx() as cur:
             if archive_reason:
                 for dr in cur.execute("SELECT id FROM devices WHERE client_id = ?",

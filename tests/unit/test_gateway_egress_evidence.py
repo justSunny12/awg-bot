@@ -90,7 +90,7 @@ def test_return_traffic_proves_the_path_and_costs_no_probe(agent):
 
     agent.forbidden = True                        # дальше любой зонд — провал теста
     c = agent.tick(tx=_Agent.STEP)
-    assert c.ok is True and "по обратному трафику клиентов" in c.detail, (
+    assert c.ok is True and "по обратному трафику пользователей" in c.detail, (
         "улика обязана и доказывать выход, и объяснять человеку, чем доказан")
     assert agent.status.egress_src == "трафик" and agent.probes == [42.0]
     assert agent.svc.cached_status(60).egress_src == "трафик", (
@@ -110,7 +110,7 @@ def test_return_traffic_outweighs_a_failed_probe_and_never_prints_none_ms(agent)
     c = agent.tick(tx=_Agent.STEP)
     assert c.ok is True, "улика не подняла вердикт, оставленный неудачным зондом"
     assert agent.status.egress_ms is None and agent.status.egress_src == "трафик"
-    assert c.detail == "по обратному трафику клиентов", (
+    assert c.detail == "по обратному трафику пользователей", (
         f"деталь проверки должна говорить про трафик, а не про мс: {c.detail!r}")
     assert "None" not in c.detail
 
@@ -338,4 +338,4 @@ def test_the_dead_link_alert_mentions_rf_access_only_when_this_gateway_carries_i
     assert ("РФ-доступ" in notes[0]) is rf, (
         f"роль {role!r}, резерв {standby!r}: хвост про РФ-доступ {'потерян' if rf else 'лишний'} — {notes[0]!r}")
     if rf:
-        assert notes[0].endswith(". РФ-доступ у клиентов не работает"), notes[0]
+        assert notes[0].endswith(". РФ-доступ у пользователей не работает"), notes[0]

@@ -564,7 +564,7 @@ guest_stop() {
 }
 conntrack_flush_ports() {   # записи conntrack по портам клонов: NAT привязан к первому пакету потока —
     local p                  # живые потоки клиентов иначе не попадут под DNAT хвоста
-    command -v conntrack >/dev/null 2>&1 || { say "ВНИМАНИЕ: нет conntrack — потоки клиентов, идущие сейчас, пересылки не получат"; return 0; }
+    command -v conntrack >/dev/null 2>&1 || { say "ВНИМАНИЕ: нет conntrack — потоки пользователей, идущие сейчас, пересылки не получат"; return 0; }
     for p in $(state_get ports); do conntrack -D -p udp --orig-port-dst "$p" >/dev/null 2>&1 || true; done
 }
 cmd_relay() {

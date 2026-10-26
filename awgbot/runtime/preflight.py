@@ -101,7 +101,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     try:
         from awgbot.infra import gwguard as _gwg
         if not _gwg.client_subnet():
-            warns.append("подсеть клиентов неизвестна (нет конфигурации с сервера AWG?) — "
+            warns.append("подсеть пользователей неизвестна (нет конфигурации с сервера AWG?) — "
                          "проверка MASQUERADE выключена")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): подсеть клиентов: %s", e)
@@ -118,14 +118,14 @@ def collect_warnings_gateway(services=None) -> list[str]:
                 pass
             elif active == "failed" or st.get("Result", "success") not in ("success", ""):
                 warns.append("скрипт обвязки (awg-link-gw) не отработал, таблицы awg_gw_guard нет: "
-                             "шлюз открыт клиентам туннеля; смотри journalctl -u awg-link-gw -o short-iso -b")
+                             "шлюз открыт пользователям туннеля; смотри journalctl -u awg-link-gw -o short-iso -b")
             elif active == "inactive" or filestate in ("disabled", "masked"):
                 warns.append("обвязка не выставлена — автозапуск обвязки (awg-link-gw) не запущен, таблицы "
-                             "awg_gw_guard нет: шлюз открыт клиентам туннеля; включи его "
+                             "awg_gw_guard нет: шлюз открыт пользователям туннеля; включи его "
                              "(systemctl enable --now awg-link-gw)")
             else:
                 warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
-                             "шлюз открыт клиентам туннеля; «🚑 Восстановить» в панели агента")
+                             "шлюз открыт пользователям туннеля; «🚑 Восстановить» в панели агента")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): таблица: %s", e)
     return warns
@@ -159,7 +159,7 @@ def _firewall_warnings(services) -> list[str]:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
     if not spec.udp_ports:
         out.append("файервол: не найден ListenPort ни в одном conf интерфейса — "
-                   "порт клиентов awg может быть закрыт")
+                   "порт пользователей awg может быть закрыт")
     if nftguard.ufw_active():
         out.append("ufw активен рядом с таблицей awg_bot_guard — два владельца "
                    "правил; после проверки входа: `awg-bot firewall confirm --disable-ufw`")
@@ -179,7 +179,7 @@ def _resolver_warnings(services) -> list[str]:
     dead = [a for a in {info["dns1"], info["dns2"]} if a and not resolver.probe(a)]
     if not dead:
         return []
-    return [f"резолвер клиентов не отвечает на {', '.join(sorted(dead))} — у людей "
+    return [f"резолвер пользователей не отвечает на {', '.join(sorted(dead))} — у людей "
             "с приватным DNS в конфиге нет резолва; awg-bot resolver status, "
             "journalctl -u dnsmasq -o short-iso -e"]
 

@@ -165,7 +165,7 @@ def reserve_panel_line(rsv: dict) -> str:
         since = when(str(rsv.get("since_open") or ""))
         rx, tx = int(rsv.get("rx") or 0), int(rsv.get("tx") or 0)
         tail = f" · через резервный линк {updown_brief(rx, tx)}" if rx + tx else ""
-        return f"🛟 Резерв {name}: клиенты на нём" + (f" с {since}" if since else "") + tail
+        return f"🛟 Резерв {name}: пользователи на нём" + (f" с {since}" if since else "") + tail
     return f"🛟 Резерв {name}: на связи" + (" · часть ключа есть" if rsv.get("share") else " · части ключа ещё нет")
 
 

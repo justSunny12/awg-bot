@@ -28,6 +28,11 @@ from ..gateway_link.common import log
 REFUSE_RETRY_S = 15 * 60          # после link_down / gw_seen — спросить снова не раньше
 
 
+# свои метки блокировки (код в состоянии → слова на экране); прежние тексты — из
+# состояния, записанного выпуском до 4.0.2, снимаются той же веткой
+_BLOCK_WORDS = {"zone_busy": "зона занята", "mine_away": "мои пользователи не на этом сервере"}
+_OWN_BLOCKS = frozenset({*_BLOCK_WORDS, "зона занята", "мои клиенты не на этом сервере"})
+
 class ReserveRfBlockMixin:
     # ── резерв: демпфер и просьбы ───────────────────────────────────────────
     def reserve_rf_tick(self) -> list[tuple]:
@@ -45,14 +50,15 @@ class ReserveRfBlockMixin:
             return []
         if not self.reserve_zone_free() or self.reserve_out() != "home":
             # переезд уже идёт (согласие или доли) либо мои клиенты не здесь — ни ask, ни need
-            why = "зона занята" if not self.reserve_zone_free() else "мои клиенты не на этом сервере"
+            # метка — код, а не текст: она лежит в состоянии и сравнивается; текст — только при показе
+            why = "zone_busy" if not self.reserve_zone_free() else "mine_away"
             if rf.get("blocked") != why:
                 rf["blocked"] = why
                 if not rf.get("since"):
                     rf.update(since=str(view.get("case_since") or timeutil.now_iso()), mono=now)
                 self.rsv_update("rsv_view", rf=rf)
             return []
-        if rf.get("blocked") in ("зона занята", "мои клиенты не на этом сервере"):
+        if rf.get("blocked") in _OWN_BLOCKS:
             rf["blocked"] = ""                                # зона свободна — метка прочь, демпфер идёт своим счётом
             self.rsv_update("rsv_view", rf=rf)
         if not rf.get("since"):
@@ -122,15 +128,16 @@ class ReserveRfBlockMixin:
         if rf.get("ask_no"):
             why = {"link_down": "у него не поднят линк шлюзов", "gw_seen": "он видит свои шлюзы",
                    "busy": "он занят"}.get(rf["ask_no"], rf["ask_no"])
-            return f"⚠️ Просил «{name}» перевести клиентов — отказ: {why}"
+            return f"⚠️ Просил «{name}» перевести пользователей — отказ: {why}"
         if rf.get("blocked"):
-            return f"⚠️ Шлюзы «{name}» не видят его с {at} — переезд не идёт: {rf['blocked']}"
+            why = _BLOCK_WORDS.get(str(rf["blocked"]), str(rf["blocked"]))
+            return f"⚠️ Шлюзы «{name}» не видят его с {at} — переезд не идёт: {why}"
         if rf.get("ask_at"):
-            return f"⏳ Просил «{name}» перевести клиентов — жду ответа"
+            return f"⏳ Просил «{name}» перевести пользователей — жду ответа"
         until = self._clock_plus(rf["since"], settings.get_int("app.reserve.rf_block_minutes", 15))
         if case == "3":
-            return f"🟡 Шлюзы «{name}» не видят его с {at}, а этот сервер видит — если так останется до {until}, клиенты переедут сюда"
-        return f"🟡 Шлюзы «{name}» не на связи с этим сервером с {at} — если так останется до {until}, клиенты переедут сюда ради РФ-доступа"
+            return f"🟡 Шлюзы «{name}» не видят его с {at}, а этот сервер видит — если так останется до {until}, пользователи переедут сюда"
+        return f"🟡 Шлюзы «{name}» не на связи с этим сервером с {at} — если так останется до {until}, пользователи переедут сюда ради РФ-доступа"
 
     @staticmethod
     def _clock(iso: str) -> str:

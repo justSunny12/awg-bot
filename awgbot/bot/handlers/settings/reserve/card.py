@@ -92,7 +92,7 @@ async def return_lever(cb: CallbackQuery, services):
     if not await _set(cb, "app.reserve.return", nxt):
         return
     await _render(cb, "rsv", services)
-    await cb.answer("Возврат клиентов: сразу" if nxt == "immediate" else "Возврат клиентов: по кнопке")
+    await cb.answer("Возврат пользователей: сразу" if nxt == "immediate" else "Возврат пользователей: по кнопке")
 
 
 @router.callback_query(RsvCB.filter(F.action == "role"))

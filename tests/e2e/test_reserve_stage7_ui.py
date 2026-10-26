@@ -159,7 +159,7 @@ async def test_the_role_screen_opens_inside_the_card_with_back_instead_of_hide(u
     assert "Ты — админ «Beta»" in e[0].text, e[0].text
     labels = _labels(e[0])
     assert "Скрыть" not in labels and any("Назад" in x or "⬅️" in x for x in labels), labels
-    assert "👤 Меню клиента" not in labels
+    assert "👤 Меню пользователя" not in labels
 
 
 async def test_the_refresh_of_the_role_screen_works_for_the_admin_of_both(ui, monkeypatch):
@@ -199,10 +199,10 @@ async def test_the_client_menu_button_is_only_for_a_peer_admin_who_is_a_client_h
                                                                                    monkeypatch, make_active_client):
     rc.pair_as_inviter(services, rsv)
     _t, labels = await _role_screen(services, fake_bot, monkeypatch)
-    assert "👤 Меню клиента" not in labels
+    assert "👤 Меню пользователя" not in labels
     make_active_client(name="Совпал", tg_id=PEER_ADMIN)
     _t, labels = await _role_screen(services, fake_bot, monkeypatch)
-    assert "👤 Меню клиента" in labels, labels
+    assert "👤 Меню пользователя" in labels, labels
 
 
 async def test_the_client_menu_makes_him_a_client_for_half_an_hour(services, rsv, fake_bot, monkeypatch,
@@ -240,7 +240,7 @@ async def test_the_client_menu_for_a_non_client_is_an_alert_and_no_mark(services
     nav = FakeMessage(chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     cb = FakeCallback(message=nav, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.as_client(cb, services)
-    assert cb.answers and cb.answers[-1][1] is True and "не клиент" in cb.answers[-1][0]
+    assert cb.answers and cb.answers[-1][1] is True and "не пользователь" in cb.answers[-1][0]
     assert not access_cache.peer_client_active(PEER_ADMIN)
     assert await _role(services.db, PEER_ADMIN) == "peer_admin"
 

@@ -682,11 +682,11 @@ def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monk
     monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": True})
     monkeypatch.setattr(gwguard, "default_route", lambda: {"present": True, "dev": "br0", "via": ""})   # masquerade у подставки: end0, awg0
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["маскарад клиентов"].ok is False and "br0" in checks["маскарад клиентов"].detail
+    assert checks["маскарад пользователей"].ok is False and "br0" in checks["маскарад пользователей"].detail
     assert svc.__dict__.get("_masq_stale") is True
     monkeypatch.setattr(gwguard, "default_route", lambda: {"present": True, "dev": "end0", "via": ""})
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["маскарад клиентов"].ok is True and svc.__dict__.get("_masq_stale") is False
+    assert checks["маскарад пользователей"].ok is True and svc.__dict__.get("_masq_stale") is False
     # тик: красная проверка → реассерт (под замком и с интервалом)
     reasserts: list[str] = []
     monkeypatch.setattr(svc, "status", lambda: _quiet_status())

@@ -26,7 +26,7 @@ def _role_line(name: str, active: bool) -> str:
     """Что будет с трафиком при замене устройства слота."""
     if active:
         return f"{name} сейчас активный: трафик уйдёт на резерв, если он жив"
-    return "Шлюз резервный: трафик клиентов не затронут"
+    return "Шлюз резервный: трафик пользователей не затронут"
 
 
 def gateway_replace_intro(state: dict) -> str:

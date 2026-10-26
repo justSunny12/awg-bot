@@ -64,7 +64,7 @@ class SubscriptionMixin:
             raise ServiceError(f"Неизвестный период: {period_kind}")
         client = self.db.get_client(client_id)
         if client is None:
-            raise ServiceError("Клиент не найден")
+            raise ServiceError("Пользователь не найден")
 
         # Клиент на паузе (любой режим) → корректно закрыть паузу ДО продления:
         # exit_pause пересчитает period_end по факту и снимет PAUSED-каскад с

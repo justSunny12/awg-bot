@@ -78,7 +78,7 @@ class MigrationStartMixin:
         try:
             self.private_dns_on_migration_start(config.MIGRATION_SUBNET_PREFIX)
         except Exception as e:                            # noqa: BLE001
-            raise ServiceErrorMigration(f"резолвер клиентов на новом интерфейсе не поднят: {e}")
+            raise ServiceErrorMigration(f"резолвер пользователей на новом интерфейсе не поднят: {e}")
 
         origins = self._migratable()
         existing = self.db.twins_by_origin()

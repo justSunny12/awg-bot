@@ -252,7 +252,7 @@ class ReserveVoteMixin:
         if not self.reserve_zone_free():
             return "зона занята"
         if self.reserve_out() != "home":
-            return "мои клиенты не на этом сервере"
+            return "мои пользователи не на этом сервере"
         if not settings.get_bool("app.reserve.ready", False):
             return "готовность выключена"
         ok, why = self.reserve_directions()["in"]

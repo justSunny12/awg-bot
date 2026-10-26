@@ -15,11 +15,11 @@ UNAVAILABLE = GUEST_REFUSED                         # Т-РГ2
 __all__ = ["UNAVAILABLE", "DEVICE_CONFIG_LATER", "main_line", "primary_line", "settings_text", "card_text",
            "webhook_stalled", "webhook_restored"]
 SETTINGS_ABOUT = ("Бот работает на резерве {name} — настройки сервера, шлюзы, бэкапы и обновления вернутся "
-                  "вместе с клиентами")
+                  "вместе с пользователями")
 
 _REASONS = {
     "dead": "сервер AWG не отвечает",
-    "button": "ты перевёл клиентов кнопкой",
+    "button": "ты перевёл пользователей кнопкой",
     "rf": "сервер AWG недоступен из РФ",
     "nogw": "шлюзы не на связи с ним, РФ-доступ идёт через шлюзы {name}",
 }
@@ -33,7 +33,7 @@ def main_line(d: dict) -> str:
     head = f"🛟 Работаю на резерве {name}" + (f" с {since}" if since else "")
     primary = d.get("primary") or {}
     if primary.get("status") == "alive" and d.get("return") == "button" and d.get("reason") != "nogw":
-        return head + " · сервер AWG снова в строю — «⚙️ Настройки» → «🛟 Резерв» → «↩️ Вернуть клиентов»"
+        return head + " · сервер AWG снова в строю — «⚙️ Настройки» → «🛟 Резерв» → «↩️ Вернуть пользователей»"
     reason = _REASONS.get(str(d.get("reason") or ""), "")
     return head + (f" — {reason.format(name=name)}" if reason else "")
 
@@ -86,7 +86,7 @@ def return_dialog(d: dict) -> str:
     rec = ""
     if d.get("record") and d.get("own_ip"):
         rec = f"; запись <code>{_e(d['record'])}</code> вернётся на <code>{_e(d['own_ip'])}</code>"
-    return (f"↩️ <b>Вернуть клиентов на {own}?</b>\n\n"
+    return (f"↩️ <b>Вернуть пользователей на {own}?</b>\n\n"
             f"Сервер {own} в строю" + (f" с {since}" if since else "") + f". Бот вернётся туда же, всё, что изменилось "
             f"здесь, — тоже{rec}. Устройства, которые ещё ходят через {name}, он будет пересылать на {own}, пока они не "
             "переподключатся, — у каждого связь прервётся на секунды")

@@ -22,9 +22,9 @@ class ReserveUnpairMixin:
         if not self.reserve_paired():
             return "резерва нет"
         if self.reserve_away():
-            return f"твои клиенты и бот сейчас у «{self.reserve_peer_name()}» — сначала верни их"
+            return f"твои пользователи и бот сейчас у «{self.reserve_peer_name()}» — сначала верни их"
         if self.reserve_hosting():
-            return f"клиенты и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
+            return f"пользователи и бот «{self.reserve_peer_name()}» сейчас здесь — сначала верни их ему"
         return ""
 
     def _unpair_zone(self, why: str) -> None:

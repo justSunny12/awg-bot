@@ -106,16 +106,16 @@ class ReserveOutboundMixin:
         if not self.reserve_paired():
             return "резерва нет"
         if self.reserve_out() != "home":
-            return "клиенты уже не на этом сервере"
+            return "пользователи уже не на этом сервере"
         if self.reserve_hosting():
-            return f"сейчас здесь клиенты «{self.reserve_peer_name()}» — сначала их возврат"
+            return f"сейчас здесь пользователи «{self.reserve_peer_name()}» — сначала их возврат"
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
         ok, why = self.reserve_directions()["out"]
         if not ok:
             return why
         if not self.reserve_dns_name():
-            return "адрес для клиентов — IP, записи DNS нет: переезд невозможен"
+            return "адрес для пользователей — IP, записи DNS нет: переезд невозможен"
         if not self.reserve_peer_ip():
             return f"адрес «{self.reserve_peer_name()}» не определился"
         if settings.get_bool("app.reserve.ready", False) is False:

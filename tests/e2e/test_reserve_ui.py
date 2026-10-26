@@ -79,7 +79,7 @@ async def test_the_section_without_a_pair_offers_invite_and_accept(services, ui)
 async def test_an_ip_address_for_clients_is_a_stop_line(services, ui):
     settings.set_value("app.network.server_host", "203.0.113.5")
     text, _ = await card_h.reserve_screen(services)
-    assert "⛔ Адрес для клиентов — IP <code>203.0.113.5</code>" in text
+    assert "⛔ Адрес для пользователей — IP <code>203.0.113.5</code>" in text
 
 
 async def test_invite_sends_the_live_message_and_the_section_shows_it(services, ui, fake_bot):

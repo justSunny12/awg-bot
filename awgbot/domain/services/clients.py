@@ -136,9 +136,9 @@ class ClientsMixin:
         """Перевыпуск инвайта для pending-клиента (потерял ссылку до активации)."""
         client = self.db.get_client(client_id)
         if client is None:
-            raise ServiceError("Клиент не найден")
+            raise ServiceError("Пользователь не найден")
         if client.activation_status != ActivationStatus.PENDING:
-            raise ServiceError("Клиент уже активирован — инвайт не нужен")
+            raise ServiceError("Пользователь уже активирован — инвайт не нужен")
         code = self._gen_code("C")
         self.db.update_client_fields(client_id, invite_code=code)
         return code

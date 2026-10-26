@@ -29,7 +29,7 @@ from ..types import ServiceError
 from ..gateway_link.common import log
 
 SNAPSHOT_BATCH_SECONDS = 30
-GUEST_REFUSED = "На резерве это недоступно — вернётся вместе с клиентами"
+GUEST_REFUSED = "На резерве это недоступно — вернётся вместе с пользователями"
 DEVICE_CONFIG_LATER = ("📄 Конфигурацию этого устройства покажу, когда сервер вернётся в строй. VPN на нём "
                        "работает, как прежде")
 

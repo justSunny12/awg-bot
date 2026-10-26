@@ -207,7 +207,7 @@ def test_space_problem_clean():
                                      ["10.0.0.0/8"]])
 def test_space_problem_client_and_migration_subnets(clients):
     why = lanspace.space_problem(SPACE, clients, _LINKS, "10.255.53.53", "10.255.53.1")
-    assert "подсетью клиентов" in why and clients[-1] in why, why
+    assert "подсетью пользователей" in why and clients[-1] in why, why
 
 
 def test_space_problem_link():
@@ -253,13 +253,13 @@ def test_lan_space_problem_default_is_clean(services):
 
 def test_lan_space_problem_client_subnet(services, monkeypatch):
     monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "10.240.1.0/24")
-    assert "подсетью клиентов 10.240.1.0/24" in services.lan_space_problem()
+    assert "подсетью пользователей 10.240.1.0/24" in services.lan_space_problem()
 
 
 def test_lan_space_problem_migration_subnet(services, monkeypatch):
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
     monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.241.7")
-    assert "подсетью клиентов 10.241.7.0/24" in services.lan_space_problem()
+    assert "подсетью пользователей 10.241.7.0/24" in services.lan_space_problem()
 
 
 def test_lan_space_problem_link_of_slot(services, make_active_client, monkeypatch):

@@ -25,11 +25,11 @@ def screen(d: dict) -> str:
              f"Ты — админ {_n(peer)}. Здесь видно, как {_n(me)} страхует твой сервер; управлять {_n(me)} отсюда нельзя", ""]
     ok, why = d.get("direction_in") or (False, "")
     if ok:
-        lines.append("✅ Твои клиенты переедут сюда, если сервер упадёт")
+        lines.append("✅ Твои пользователи переедут сюда, если сервер упадёт")
     elif not d.get("my_ready"):
         lines.append(f"☑️ {_n(me)} не готов быть резервом")
     else:
-        lines.append("⚠️ Твои клиенты сюда не переедут: " + _e(why))
+        lines.append("⚠️ Твои пользователи сюда не переедут: " + _e(why))
     lines += ["", f"<b>Сервисы {_n(me)}</b>",
               "🟢 бот и AWG" if d.get("awg_ok") else "🔴 AWG не работает"]
     if d.get("link_online"):
@@ -42,7 +42,7 @@ def screen(d: dict) -> str:
                      else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его админом")
     mem = int(d.get("mem_free") or 0)
     if mem and mem < 400:
-        lines.append(f"⚠️ у {_n(me)} мало свободной памяти ({mem} МБ) — твоих клиентов он может не потянуть")
+        lines.append(f"⚠️ у {_n(me)} мало свободной памяти ({mem} МБ) — твоих пользователей он может не потянуть")
     tp = d.get("tg_pool") or {}
     if tp:
         learned = int(tp.get("learned") or 0)
@@ -82,40 +82,40 @@ def screen(d: dict) -> str:
     inn = d.get("inn") or "idle"
     if d.get("code_needed"):
         lines.append(f"🆘 Сервер и шлюзы не отвечают {_n(me)} с {_e(_when(d.get('code_since') or ''))} — пришли аварийный код "
-                     "резерва, и клиенты переедут сюда; вернётся шлюз, который не видит сервер, — переедут сами")
+                     "резерва, и пользователи переедут сюда; вернётся шлюз, который не видит сервер, — переедут сами")
     elif case in ("1", "5") and inn == "idle":
-        lines.append(f"🔴 Сервер не отвечает ни {_n(me)}, ни шлюзам — клиенты переезжают сюда")
+        lines.append(f"🔴 Сервер не отвечает ни {_n(me)}, ни шлюзам — пользователи переезжают сюда")
     elif d.get("rf_line"):
         lines.append(_e(d["rf_line"]))
     if inn in ("taking", "serving"):
         why = {"dead": " — сервер не отвечал", "button": " — ты перевёл их кнопкой", "rf": " — сервер недоступен из РФ",
                "nogw": f" — шлюзы не на связи с {_n(me)}", "code": " — по твоему аварийному коду"}.get(str(d.get("in_kind") or ""), "")
-        lines += ["", f"📥 Твои клиенты и бот здесь с {_e(_when(d.get('in_since') or ''))}{why}"]
+        lines += ["", f"📥 Твои пользователи и бот здесь с {_e(_when(d.get('in_since') or ''))}{why}"]
     if d.get("pkg_at"):
         lines += ["", f"📦 Данные для переезда — от {_e(_when(d['pkg_at']))}"]
     else:
         lines += ["", "📦 Данных для переезда ещё нет — они придут с твоего сервера"]
     tr = d.get("traffic") or {}
     if tr.get("in"):
-        lines.append(f"📊 Твои клиенты через {_n(me)} за {_e(tr.get('month_label') or 'месяц')}: {_e(tr['in'])}")
+        lines.append(f"📊 Твои пользователи через {_n(me)} за {_e(tr.get('month_label') or 'месяц')}: {_e(tr['in'])}")
     return "\n".join(lines)
 
 
 def code_prompt(d: dict) -> str:
     """Т-РН2: приглашение ввести аварийный код."""
     peer, me = _n(str(d.get("peer") or "")), _n(str(d.get("me") or ""))
-    rec = f" запись <code>{_e(d['record'])}</code> бот сменит сам." if d.get("record") else " запись для клиентов бот сменит сам."
+    rec = f" запись <code>{_e(d['record'])}</code> бот сменит сам." if d.get("record") else " запись для пользователей бот сменит сам."
     return (f"🔑 <b>Переезд {peer} на {me}</b>\n\n{peer} и его шлюзы не отвечают этому серверу с {_e(_when(d.get('since') or ''))}. "
-            f"Пришли аварийный код — клиенты и бот {peer} переедут сюда,{rec} Сообщение с кодом удалю сразу")
+            f"Пришли аварийный код — пользователи и бот {peer} переедут сюда,{rec} Сообщение с кодом удалю сразу")
 
 
 def code_result(res: dict, peer: str) -> str:
     """Т-РН3: итог ввода кода."""
     if res.get("ok"):
         if res.get("pending"):
-            return (f"✅ Код принят — поднимаю клиентов {_n(peer)}; если код не подойдёт, напишу сюда. "
+            return (f"✅ Код принят — поднимаю пользователей {_n(peer)}; если код не подойдёт, напишу сюда. "
                     "Дальше пиши своему боту — он ответит, как только будет готов")
-        return (f"✅ Код подошёл — поднимаю клиентов {_n(peer)}. "
+        return (f"✅ Код подошёл — поднимаю пользователей {_n(peer)}. "
                 "Дальше пиши своему боту — он ответит, как только будет готов")
     why = str(res.get("why") or "")
     if why == "garbled":
@@ -125,12 +125,12 @@ def code_result(res: dict, peer: str) -> str:
         head = "⚠️ Код не подошёл" if res.get("checked") else "⚠️ Код не разобран — проверь группы и знаки"
         return f"{head}. Осталось попыток: {left}" + (" — следующие через час" if left else "")
     if why == "open_failed":
-        return (f"⚠️ Код подошёл, но клиентов {_n(peer)} поднять не удалось: {_e(str(res.get('reason') or ''))}. "
+        return (f"⚠️ Код подошёл, но пользователей {_n(peer)} поднять не удалось: {_e(str(res.get('reason') or ''))}. "
                 "Приём кода снова открыт")
     if why == "limit":
         return "⚠️ Код не подошёл три раза — следующие попытки через час"
     if why == "busy":
-        return f"⚠️ Код подошёл, но клиентов {_n(peer)} поднять не удалось — админ этого сервера получил причину"
+        return f"⚠️ Код подошёл, но пользователей {_n(peer)} поднять не удалось — админ этого сервера получил причину"
     return f"ℹ️ {_n(peer)} снова на связи — переезд не нужен"
 
 

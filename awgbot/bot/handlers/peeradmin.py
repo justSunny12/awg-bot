@@ -56,7 +56,7 @@ async def as_client(cb: CallbackQuery, services, **_):
     uid = int(cb.from_user.id)
     client = await call(services.reserve_peer_admin_client)
     if client is None or int(getattr(client, "tg_id", 0) or 0) != uid:
-        await cb.answer("Ты не клиент этого сервера", show_alert=True)
+        await cb.answer("Ты не пользователь этого сервера", show_alert=True)
         return
     access_cache.peer_client_on(uid)
     parts = await screens.render("main", services=services, role="client", client=client, chat_id=cb.message.chat.id)

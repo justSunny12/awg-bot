@@ -29,7 +29,7 @@ rsv = rc.rsv
 mv = rm.mv
 __all__ = ["ui", "gui"]
 
-FORCE = "⚠️ Вернуть клиентов без «Beta»"
+FORCE = "⚠️ Вернуть пользователей без «Beta»"
 
 
 def _ago(minutes: float) -> str:
@@ -61,7 +61,7 @@ async def test_the_dialog_in_manual_mode_tells_what_to_change_and_puts_cancel_fi
     e = _edits(await ui.run.press(RsvCB(action="force")))
     assert e, "диалог не показан"
     text = e[0].text
-    assert "Вернуть клиентов без «Beta»?" in text and "смени у провайдера запись" in text and OWN_IP in text, text
+    assert "Вернуть пользователей без «Beta»?" in text and "смени у провайдера запись" in text and OWN_IP in text, text
     assert rc.HOST_A in text and "пока он не на связи, пересылки хвоста с него нет" in text, text
     assert _labels(e[0]) == ["⬅️ Отмена", "⚠️ Да, вернуть"], _labels(e[0])
     assert not ui.svc.rsv_get("rsv_out").get("await_merge"), "диалог сам запустил рычаг"

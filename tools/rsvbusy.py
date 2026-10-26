@@ -47,10 +47,10 @@ def main() -> int:
         except Exception:                                 # noqa: BLE001
             pass
     if out in ("leaving", "away", "returning"):
-        print(f"клиенты этого сервера сейчас у резерва «{name}» ({out}) — сначала их возврат")
+        print(f"пользователи этого сервера сейчас у резерва «{name}» ({out}) — сначала их возврат")
         return 3
     if inn in ("taking", "serving", "releasing"):
-        print(f"здесь сейчас клиенты и бот «{name}» ({inn}) — сначала их возврат к нему")
+        print(f"здесь сейчас пользователи и бот «{name}» ({inn}) — сначала их возврат к нему")
         return 3
     return 0
 

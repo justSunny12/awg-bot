@@ -97,8 +97,8 @@ def test_the_return_summary_counts_only_what_happened_and_appends_lost_devices()
 
 
 def test_the_lever_decides_what_the_returning_notice_promises():
-    assert "возвращаю клиентов и бот" in rn.primary_back(True)
-    assert "верни клиентов кнопкой" in rn.primary_back(False)
+    assert "возвращаю пользователей и бот" in rn.primary_back(True)
+    assert "верни пользователей кнопкой" in rn.primary_back(False)
 
 
 def test_the_move_failure_notice_mentions_the_reserve_only_when_it_had_taken_the_clone():

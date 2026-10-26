@@ -31,7 +31,7 @@ class DevicesMixin:
         """
         client = self.db.get_client(client_id)
         if client is None:
-            raise ServiceError("Клиент не найден")
+            raise ServiceError("Пользователь не найден")
         if not client.is_service:
             limit = client.device_limit
             if limit != 0 and self.db.count_devices(client_id) >= limit:  # 0 = безлимит
@@ -339,7 +339,7 @@ class DevicesMixin:
         self._refuse_if_gateway(dev)
         client = self.db.get_client(new_client_id)
         if client is None:
-            raise ServiceError("Клиент не найден")
+            raise ServiceError("Пользователь не найден")
         donor = self.db.get_client(dev.client_id)          # прежний владелец
         # Перевыпуск ключей — ВНЕ транзакции ниже: сервер транзакцией не
         # откатывается, и отказ на второй строке пары оставлял бы новый пир на
@@ -349,7 +349,7 @@ class DevicesMixin:
         if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
             if client.device_limit != 0 and not add_slot \
                     and self.db.count_devices(new_client_id) >= client.device_limit:
-                raise LimitReached("У клиента нет свободного слота — привязка отклонена")
+                raise LimitReached("У пользователя нет свободного слота — привязка отклонена")
             backup = self._rekey_snapshot(dev)
             self.rekey_device(dev.id)
             rekeyed = True
@@ -408,7 +408,7 @@ class DevicesMixin:
                 # и без add_slot привязывать нельзя (иначе появляется «3 из 2»).
                 if new_limit != 0 and self.db.count_devices(new_client_id) >= new_limit:
                     raise LimitReached(
-                        "У клиента нет свободного слота — привязка отклонена")
+                        "У пользователя нет свободного слота — привязка отклонена")
             # Парно: перенеси одну строку — и пара разорвётся между профилями,
             # старый пир останется у донора, а завершение переезда сольёт
             # трафик и заархивирует устройство не тому человеку.

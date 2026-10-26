@@ -112,9 +112,9 @@ class ReserveStateMixin:
         """Идёт переезд или возврат (в любую сторону) — человеку словами; пусто — нет."""
         out, inn = self.reserve_out(), self.reserve_in()
         if out in ("leaving", "returning"):
-            return "идёт переезд клиентов этого сервера" if out == "leaving" else "идёт возврат клиентов на этот сервер"
+            return "идёт переезд пользователей этого сервера" if out == "leaving" else "идёт возврат пользователей на этот сервер"
         if inn in ("taking", "releasing"):
-            return "принимаю клиентов резерва" if inn == "taking" else "возвращаю клиентов резерву"
+            return "принимаю пользователей резерва" if inn == "taking" else "возвращаю пользователей резерву"
         return ""
 
     def reserve_hosting(self) -> bool:

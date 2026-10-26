@@ -153,11 +153,11 @@ purge() {  # снять всё своё: юнит, интерфейс, конф�
 case "$MODE" in
     install|plan)
         [[ "$MODE" == "plan" ]] && PLAN=1
-        valid_addr "$ARG" || { echo "нужен адрес резолвера клиентов: $0 $MODE 10.8.1.1" >&2; exit 2; }
+        valid_addr "$ARG" || { echo "нужен адрес резолвера пользователей: $0 $MODE 10.8.1.1" >&2; exit 2; }
         valid_addr "$ADMIN_ADDR" || { echo "ADMIN_ADDR не адрес: $ADMIN_ADDR" >&2; exit 2; }
         [[ "$PLAN" -eq 1 || "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"
         if [[ "$PLAN" -eq 0 ]] && ! command -v dnsmasq >/dev/null 2>&1; then
-            die "нет dnsmasq — сначала свой резолвер клиентов (awg-resolver-setup.sh install)"
+            die "нет dnsmasq — сначала свой резолвер пользователей (awg-resolver-setup.sh install)"
         fi
         [[ "$PLAN" -eq 1 ]] || take_lock
         first=0; [[ -f "$CONF" ]] || first=1

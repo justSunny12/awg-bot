@@ -36,7 +36,7 @@ async def back_ask(cb: CallbackQuery, services, **_):
         await move.back_ask(cb, services)
         return
     if not await call(services.guest_can_return):
-        await cb.answer("Сервер ещё не в строю — вернуть клиентов пока нельзя", show_alert=True)
+        await cb.answer("Сервер ещё не в строю — вернуть пользователей пока нельзя", show_alert=True)
         return
     d = await call(services.guest_screen_data)
     await edit(cb, gt.return_dialog(d), rkb.confirm_return())

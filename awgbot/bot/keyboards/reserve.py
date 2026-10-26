@@ -68,12 +68,12 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
     """Кнопки переезда видны, только когда действие возможно; невозможное —
     строкой причины в карточке."""
     return ui.rows(
-        (f"🔀 Перевести клиентов на «{name}»", RsvCB(action="move")) if can_move else None,
-        ("↩️ Вернуть клиентов", RsvCB(action="back")) if can_return else None,
-        (f"⚠️ Вернуть клиентов без «{name}»", RsvCB(action="force")) if can_force else None,
-        (f"↩️ Вернуть клиентов «{name}» к нему", RsvCB(action="evict")) if can_evict else None,
+        (f"🔀 Перевести пользователей на «{name}»", RsvCB(action="move")) if can_move else None,
+        ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,
+        (f"⚠️ Вернуть пользователей без «{name}»", RsvCB(action="force")) if can_force else None,
+        (f"↩️ Вернуть пользователей «{name}» к нему", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
-        (f"{_chk(rf_on)} РФ-доступ его клиентов через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
+        (f"{_chk(rf_on)} РФ-доступ его пользователей через мои шлюзы", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
         ("🌐 Запись DNS", RsvCB(action="dns")),
         (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
@@ -115,7 +115,7 @@ def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:
     """Карточка резерва в боте основы на резерве: вернуть клиентов (когда
     основа снова в строю и рычаг «по кнопке»), обновить, назад."""
     return ui.rows(
-        ("↩️ Вернуть клиентов", RsvCB(action="back")) if can_return else None,
+        ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,
         ("🔄 Обновить", RsvCB(action="refresh")),
         _back())
 
@@ -161,7 +161,7 @@ def peer_admin(*, code_needed: bool, has_client: bool = False, in_card: bool = F
     from awgbot.bot.keyboards.common import hide_only
     rows = ui.rows(("🔄 Обновить", PeerCB(action="refresh")),
                    ("🔑 Ввести аварийный код", PeerCB(action="code")) if code_needed else None,
-                   ("👤 Меню клиента", PeerCB(action="client")) if has_client and not in_card else None,
+                   ("👤 Меню пользователя", PeerCB(action="client")) if has_client and not in_card else None,
                    _back("rsv") if in_card else None)
     if in_card:
         return rows

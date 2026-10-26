@@ -269,7 +269,7 @@ def remove(transit_links=()) -> list[str]:
     spec.filter = False
     try:
         pkg.apply_text(pkg.render(spec))
-        done.append("фильтр снят, NAT клиентов оставлен (таблица в форме NAT-only)")
+        done.append("фильтр снят, NAT пользователей оставлен (таблица в форме NAT-only)")
     except pkg.GuardError as e:
         done.append(f"NAT-only форма не применена: {e}")
     return done

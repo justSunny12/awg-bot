@@ -84,11 +84,11 @@ def test_a_broken_space_turns_the_addresses_off_entirely(two, fake_routing, monk
     assert fake_routing.lanmap is None and two.db.get_state("lanmap_text") == ""
     assert two.gateway_peer_nets(1) == [] and two.lan_twins(two.db.gateway(1)) == []
     problem = two.lan_space_card(two.db.gateway(1))["problem"]
-    assert problem == "служебное пространство 10.0.0.0/12 пересекается с подсетью клиентов 10.8.1.0/24", problem
+    assert problem == "служебное пространство 10.0.0.0/12 пересекается с подсетью пользователей 10.8.1.0/24", problem
     from awgbot.runtime import preflight
     warns = preflight.collect_warnings(two, server_ok=True)
     assert ("адреса в туннеле выключены: служебное пространство 10.0.0.0/12 пересекается с подсетью "
-            "клиентов 10.8.1.0/24 — поправь routing.lan_space в app.yaml") in warns, warns
+            "пользователей 10.8.1.0/24 — поправь routing.lan_space в app.yaml") in warns, warns
 
 
 def test_removing_a_slot_takes_its_twins_out_of_the_table(two, fake_routing):

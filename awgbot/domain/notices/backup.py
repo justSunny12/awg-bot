@@ -212,7 +212,7 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
         parts.append("Не откатятся: сроки и блокировки — истёкшее и заблокированное останется таким; "
                      "бонусы и отметки сброса трафика")
     elif plan.line == "clean":
-        parts.append("🆕 Сервер AWG новый: всё — из бэкапа, включая ключ сервера, порт и подсеть клиентов, — "
+        parts.append("🆕 Сервер AWG новый: всё — из бэкапа, включая ключ сервера, порт и подсеть пользователей, — "
                      "устройства и шлюзы подключатся со своими прежними конфигами")
     elif plan.line == "unreadable":
         kept = [_plan_ref(s, "") for s in plan.slots if s.case not in ("removed", "restored")]

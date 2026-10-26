@@ -109,12 +109,12 @@ class ReservePairingMixin:
             raise ServiceError("Сначала включи «Готов быть резервом»")
         my_gen = self._awg_generation()
         if tok.awg_gen and my_gen and tok.awg_gen != my_gen:
-            raise ServiceError(f"У второго сервера AmneziaWG поколения {tok.awg_gen}, здесь — {my_gen}: клиентов "
+            raise ServiceError(f"У второго сервера AmneziaWG поколения {tok.awg_gen}, здесь — {my_gen}: пользователей "
                                "друг друга серверы не обслужат. Сначала обновитесь до одного выпуска")
         warn = []
         if not self.reserve_has_gateway():
-            warn.append("У этого сервера шлюзов нет — твои клиенты к нему не переедут, пока не подключишь шлюз; "
-                        "его клиентов этот сервер принять сможет")
+            warn.append("У этого сервера шлюзов нет — твои пользователи к нему не переедут, пока не подключишь шлюз; "
+                        "его пользователей этот сервер принять сможет")
         from awgbot.core.compat import version_key
         ask_version = bool(version_key(tok.version) and version_key(config.INSTALLED_VERSION)
                            and version_key(tok.version)[:3] > version_key(config.INSTALLED_VERSION)[:3])

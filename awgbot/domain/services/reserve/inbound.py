@@ -538,7 +538,7 @@ class ReserveInboundMixin:
     # ── возврат по кнопке у резерва ─────────────────────────────────────────
     def reserve_evict_check(self) -> str:
         if not self.reserve_hosting():
-            return f"клиентов «{self.reserve_peer_name()}» здесь нет"
+            return f"пользователей «{self.reserve_peer_name()}» здесь нет"
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
         if self.reserve_in() == "releasing":

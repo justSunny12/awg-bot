@@ -48,7 +48,7 @@ def new_master() -> bytes:
 def box_key(m: bytes) -> bytes:
     """32-байтный ключ SecretBox из `M`."""
     if len(m) != M_LEN:
-        raise ValueError(f"M — {M_LEN} байт")
+        raise ValueError(f"главный ключ — {M_LEN} байт")
     return hashlib.blake2b(bytes(m), digest_size=32, person=_PERSON).digest()
 
 

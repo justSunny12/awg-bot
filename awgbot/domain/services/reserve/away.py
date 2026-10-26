@@ -14,8 +14,8 @@ from awgbot.util import timeutil
 
 from ..types import ServiceError
 
-HOSTING_REFUSED = "Сейчас здесь клиенты и бот «{name}» — сначала их возврат к нему"
-AWAY_REFUSED = ("Клиенты и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
+HOSTING_REFUSED = "Сейчас здесь пользователи и бот «{name}» — сначала их возврат к нему"
+AWAY_REFUSED = ("Пользователи и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
                 "иначе изменения разойдутся с тем, что происходит на резерве")
 
 
@@ -46,21 +46,21 @@ class ReserveAwayMixin:
             return {"name": name, "dot": dot, "text": text}
 
         if o == "leaving":
-            return st("🟡", "твои клиенты переезжают — жду смену записи")
+            return st("🟡", "твои пользователи переезжают — жду смену записи")
         if o == "away":
-            return st("🟢", f"несёт твоих клиентов и бот с {_when(str(out.get('taken_at') or out.get('since') or ''))}")
+            return st("🟢", f"несёт твоих пользователей и бот с {_when(str(out.get('taken_at') or out.get('since') or ''))}")
         if o == "returning":
-            return st("🟡", "твои клиенты возвращаются на сервер")
+            return st("🟡", "твои пользователи возвращаются на сервер")
         if o == "home" and out.get("relay_until") and i == "idle":
             try:
                 if timeutil.parse_iso(str(out["relay_until"])) > timeutil.now():
-                    return st("🟡", f"твои клиенты возвращаются на сервер — пересылка до {_date(str(out['relay_until']))}")
+                    return st("🟡", f"твои пользователи возвращаются на сервер — пересылка до {_date(str(out['relay_until']))}")
             except ValueError:
                 pass
         if i in ("taking", "serving", "releasing"):
-            return st("🟢", f"чужие клиенты и бот у тебя с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}")
+            return st("🟢", f"чужие пользователи и бот у тебя с {_when(str(inn.get('taken_at') or inn.get('since') or ''))}")
         if i == "relay":
-            return st("🟡", f"чужие клиенты возвращаются на резерв — пересылка до {_date(str(inn.get('relay_until') or ''))}")
+            return st("🟡", f"чужие пользователи возвращаются на резерв — пересылка до {_date(str(inn.get('relay_until') or ''))}")
         if self.reserve_peer_seen() == "down":
             return st("🔴", f"недоступен с {_when(self.reserve_down_since())}")
         if not self.reserve_online():

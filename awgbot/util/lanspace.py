@@ -227,7 +227,7 @@ def space_problem(space_net: NetLike, client_subnets: Iterable[str], link_nets: 
     пространства или вне его. Пустые и нечитаемые входы — мимо."""
     sp = ipaddress.IPv4Network(str(space_net))
     svc = service_net(sp)
-    for what, nets in (("подсетью клиентов", client_subnets), ("подсетью линка", link_nets)):
+    for what, nets in (("подсетью пользователей", client_subnets), ("подсетью линка", link_nets)):
         for raw in nets or ():
             try:
                 n = _net(raw)

@@ -106,7 +106,7 @@ def test_a_second_go_while_the_first_is_opening_is_refused(host):
 def test_go_is_refused_while_my_own_clients_are_not_here(host, state):
     host.svc.reserve_set_out(state)
     why = host.svc.reserve_go_req_in(7, "button")
-    assert "мои клиенты не на этом сервере" in why and not host.spawn.popen
+    assert "мои пользователи не на этом сервере" in why and not host.spawn.popen
 
 
 # ── процесс открытия: остановка юнита ───────────────────────────────────────
@@ -320,9 +320,10 @@ def _run(box, seconds: float, step: float = 5) -> list[tuple]:
     return acts
 
 
-@pytest.mark.parametrize("busy, why", [(lambda s: s.reserve_set_in("serving"), "зона занята"),
-                                       (lambda s: s.reserve_set_out("away"), "мои клиенты не на этом сервере")])
-def test_case_3_neither_asks_nor_needs_while_the_zone_is_busy(hermetic, busy, why):
+@pytest.mark.parametrize("busy, code, why", [
+    (lambda s: s.reserve_set_in("serving"), "zone_busy", "зона занята"),
+    (lambda s: s.reserve_set_out("away"), "mine_away", "мои пользователи не на этом сервере")])
+def test_case_3_neither_asks_nor_needs_while_the_zone_is_busy(hermetic, busy, code, why):
     box = hermetic
     box.primary(True)
     box.hello(1, sees=False)
@@ -330,9 +331,49 @@ def test_case_3_neither_asks_nor_needs_while_the_zone_is_busy(hermetic, busy, wh
     busy(box.s)
     acts = _run(box, DAMPER + 180)
     assert not sent(acts, "ask") and not gw_sent(acts, "need"), f"просьбы при «{why}»: {acts}"
-    assert box.s.rsv_get("rsv_view")["rf"].get("blocked") == why
+    # в состоянии — код (его сравнивают при снятии), на экране — слова
+    assert box.s.rsv_get("rsv_view")["rf"].get("blocked") == code, "в состоянии метка не кодом"
     line = box.s.reserve_rf_line()
-    assert line.startswith("⚠️") and why in line, line
+    assert line.startswith("⚠️") and line.endswith(why) and code not in line, line
+
+
+@pytest.mark.parametrize("legacy", ["зона занята", "мои клиенты не на этом сервере"])
+def test_a_block_written_as_text_by_the_previous_release_is_lifted_when_free(hermetic, legacy):
+    """Состояние, записанное выпуском до кодов, лежит в БД текстом. Если
+    снятие узнаёт только коды, после обновления метка висит вечно: карточка
+    пишет «переезд не идёт», а демпфер, дойдя до просьбы, снова и снова
+    упирается в чужую метку — клиенты основы без РФ-доступа."""
+    box = hermetic
+    box.primary(True)
+    box.hello(1, sees=False)
+    box.hello(2, sees=False)
+    _run(box, 30)
+    assert box.case == "3", f"случай не 3: {box.case}"
+    rf = dict(box.s.rsv_get("rsv_view").get("rf") or {})
+    assert rf.get("since"), f"случай 3 не начат: {rf}"
+    rf["blocked"] = legacy
+    box.s.rsv_update("rsv_view", rf=rf)
+    box.tick()
+    got = box.s.rsv_get("rsv_view")["rf"].get("blocked")
+    assert got == "", f"метка прежнего выпуска «{legacy}» не снята при свободной зоне: {got!r}"
+    assert legacy not in box.s.reserve_rf_line()
+
+
+def test_a_foreign_auto_block_reason_shows_on_the_card_as_is(hermetic):
+    """Причины reserve_auto_block (готовность, пауза, интервал) лежат текстом и
+    показываются как есть; подстановка слов по коду не должна их терять или
+    подменять — иначе админ не узнает, почему переезд не идёт."""
+    box = hermetic
+    box.primary(True)
+    box.hello(1, sees=False)
+    box.hello(2, sees=False)
+    _run(box, 30)
+    reason = "между автоматическими переездами не меньше 30 мин"
+    rf = dict(box.s.rsv_get("rsv_view").get("rf") or {})
+    rf["blocked"] = reason
+    box.s.rsv_update("rsv_view", rf=rf)
+    line = box.s.reserve_rf_line()
+    assert line.startswith("⚠️") and line.endswith(f"переезд не идёт: {reason}"), line
 
 
 def test_after_the_zone_frees_the_damper_still_counts_the_case(hermetic):

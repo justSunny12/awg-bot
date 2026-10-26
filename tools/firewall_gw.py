@@ -47,7 +47,7 @@ def gw_status(_args) -> int:
         acc = gwguard.forward_accepts()
         note = ("  (транзит линка открыт нашими ACCEPT)"
                 if {f"i:{config.GW_LINK_IF}", f"o:{config.GW_LINK_IF}"} <= acc
-                else "  ← drop перекроет транзит клиентов")
+                else "  ← drop перекроет транзит пользователей")
     print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}{note}")
     rc = subprocess.run(["systemctl", "is-enabled", config.GW_UNIT], capture_output=True).returncode
     print(f"юнит {config.GW_UNIT}: {'включён' if rc == 0 else 'НЕ включён'}")

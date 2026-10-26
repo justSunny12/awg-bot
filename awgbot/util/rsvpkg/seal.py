@@ -82,7 +82,7 @@ def seal_k_to(eph_pub: bytes, k: bytes, pkg_gen: int, oid: str) -> bytes:
     if len(eph_pub) != EPH_LEN:
         raise PackageError("разовый ключ не 32 байта")
     if len(k) != K_LEN:
-        raise PackageError("K не той длины")
+        raise PackageError("ключ пакета не той длины")
     body = json.dumps({"k": k.hex(), "gen": int(pkg_gen), "oid": str(oid)}, separators=(",", ":")).encode()
     return bytes(SealedBox(PublicKey(eph_pub)).encrypt(body))
 
@@ -102,7 +102,7 @@ def open_sealed_k(eph_priv: bytes, sealed: bytes, pkg_gen: int, oid: str) -> byt
     if str(obj.get("oid") or "") != str(oid):
         raise PackageError("ключ пакета: не к этому процессу открытия")
     if len(k) != K_LEN:
-        raise PackageError("ключ пакета — K не той длины")
+        raise PackageError("ключ пакета не той длины")
     return k
 
 
@@ -132,7 +132,7 @@ def seal(parts: dict[str, object], *, k: bytes, m: bytes, pkg_gen: int, m_gen: i
          dns: dict | None = None) -> bytes:
     """Собрать пакет. `parts` — имя → объект JSON (часть VPN, часть бота…)."""
     if len(k) != K_LEN:
-        raise PackageError(f"K — {K_LEN} байт")
+        raise PackageError(f"ключ пакета — {K_LEN} байт")
     mkey = rsvkeys.box_key(m)
     body = MAGIC + struct.pack(">BII", FORMAT, int(pkg_gen), int(m_gen))
     ek = _box(mkey, k)

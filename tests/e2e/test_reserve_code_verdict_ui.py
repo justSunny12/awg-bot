@@ -46,14 +46,14 @@ async def test_a_wrong_code_is_answered_in_place_and_the_input_stays_open(h4, fa
 
 async def test_a_code_that_fitted_but_did_not_raise_the_clients_says_why(h4, fake_bot, monkeypatch):
     msg, st = await _enter(h4, fake_bot, {"step": "fail", "reason": "зона: veth не поднялся"}, monkeypatch)
-    assert "Код подошёл, но клиентов «Beta» поднять не удалось: зона: veth не поднялся" in msg.sent[-1][1], msg.sent
+    assert "Код подошёл, но пользователей «Beta» поднять не удалось: зона: veth не поднялся" in msg.sent[-1][1], msg.sent
     assert "Приём кода снова открыт" in msg.sent[-1][1]
 
 
 async def test_a_code_that_took_the_key_is_answered_as_fitting_without_the_reservation(h4, fake_bot, monkeypatch):
     msg, st = await _enter(h4, fake_bot, {"step": "store"}, monkeypatch)
     text = msg.sent[-1][1]
-    assert text.startswith("✅ Код подошёл — поднимаю клиентов «Beta»") and "если код не подойдёт" not in text, text
+    assert text.startswith("✅ Код подошёл — поднимаю пользователей «Beta»") and "если код не подойдёт" not in text, text
     assert await st.get_state() is None
 
 

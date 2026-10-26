@@ -92,7 +92,7 @@ def test_a_peer_that_lost_a_capability_turns_my_direction_off_once(services, pai
     caps = [c for c in compat.CAPS if c != "zone1"]
     notes = services.reserve_st_in(_st(caps=caps))
     off = [n for n in notes if n.text.startswith("⚠️ Резерв")]
-    assert len(off) == 1 and "принимать клиентов" in off[0].text, notes
+    assert len(off) == 1 and "принимать пользователей" in off[0].text, notes
     assert not services.reserve_st_in(_st(caps=caps))
 
 

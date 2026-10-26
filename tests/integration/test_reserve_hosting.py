@@ -581,7 +581,7 @@ def test_tg_taken_from_the_guest_starts_serving_and_notifies_once(host):
     acts = svc.reserve_guest_tg_taken()
     assert svc.reserve_in() == "serving" and sent(acts) == ["taken"] and ("fw",) in acts
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "перевёл к тебе клиентов и бот" in texts[0] and not texts[0].endswith(".")
+    assert len(texts) == 1 and "перевёл к тебе пользователей и бот" in texts[0] and not texts[0].endswith(".")
     assert svc.reserve_guest_tg_taken() == [], "повтор слова гостя — повторное «taken» и уведомление"
 
 

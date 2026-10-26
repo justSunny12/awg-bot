@@ -95,7 +95,7 @@ def test_the_panel_line_by_state():
     assert down.startswith("⚠️ Резерв «Beta»: нет связи с ") and down.endswith("этот шлюз не голосует")
     moved = panel.reserve_panel_line({"name": "Beta", "seen": "ok", "open": True, "rx": 5_000_000, "tx": 1_000_000,
                                       "since_open": "2026-10-21T03:12:00+03:00"})
-    assert moved.startswith("🛟 Резерв «Beta»: клиенты на нём с ") and "через резервный линк" in moved
+    assert moved.startswith("🛟 Резерв «Beta»: пользователи на нём с ") and "через резервный линк" in moved
     assert "<" not in panel.reserve_panel_line({"name": "<b>x</b>", "seen": "ok"}), "имя резерва не экранировано"
 
 

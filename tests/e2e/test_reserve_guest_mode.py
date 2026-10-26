@@ -193,10 +193,10 @@ async def test_the_admin_main_screen_opens_with_the_reserve_line(services, guest
 def test_the_main_line_tells_where_the_return_lever_is_only_when_the_primary_is_alive_and_the_lever_is_a_button():
     from awgbot.bot.texts.reserve import guest as gt
     base = {"name": "Бета", "since": "2026-10-21T03:12:00+05:00", "reason": "dead"}
-    assert "Вернуть клиентов" not in gt.main_line({**base, "primary": {"status": "dead"}, "return": "button"})
-    assert "Вернуть клиентов" not in gt.main_line({**base, "primary": {"status": "alive"}, "return": "immediate"})
-    assert "Вернуть клиентов" in gt.main_line({**base, "primary": {"status": "alive"}, "return": "button"})
-    assert "Вернуть клиентов" not in gt.main_line({**base, "reason": "nogw", "primary": {"status": "alive"}, "return": "button"}), \
+    assert "Вернуть пользователей" not in gt.main_line({**base, "primary": {"status": "dead"}, "return": "button"})
+    assert "Вернуть пользователей" not in gt.main_line({**base, "primary": {"status": "alive"}, "return": "immediate"})
+    assert "Вернуть пользователей" in gt.main_line({**base, "primary": {"status": "alive"}, "return": "button"})
+    assert "Вернуть пользователей" not in gt.main_line({**base, "reason": "nogw", "primary": {"status": "alive"}, "return": "button"}), \
         "шлюзы не на связи — возвращать рано, РФ-доступ идёт через резерв"
 
 

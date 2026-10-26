@@ -13,7 +13,7 @@ log = logging.getLogger("awgbot.services")
 
 _TXT_RT_INFRA_BAD = (
     "🚨 РФ-доступ не работает:\n<code>{err}</code>\n\n"
-    "Если речь о <code>dnsmasq</code> — у клиентов сейчас нет DNS вообще, и выглядит это как "
+    "Если речь о <code>dnsmasq</code> — у пользователей сейчас нет DNS вообще, и выглядит это как "
     "«интернет работает через раз»: уже отрезолвленное ходит, новое — нет. "
     "Проверь <code>systemctl status dnsmasq</code> и "
     "<code>/etc/dnsmasq.d/awgbot-routing.conf</code>")

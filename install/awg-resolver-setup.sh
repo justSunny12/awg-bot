@@ -291,7 +291,7 @@ case "$MODE" in
         has_addr "$ADDR" $have || { log "$ADDR и так не слушали"; exit 0; }
         keep=""
         for a in $have; do [[ "$a" == "$ADDR" ]] || keep="$keep $a"; done
-        [[ -n "${keep// /}" ]] || die "$ADDR — последний адрес; снять его значит оставить клиентов без DNS"
+        [[ -n "${keep// /}" ]] || die "$ADDR — последний адрес; снять его значит оставить пользователей без DNS"
         write_conf $keep
         restart_service
         log "снят $ADDR; слушаем:$keep"

@@ -103,14 +103,14 @@ def test_a_failure_without_a_reason_gets_a_default_one(run):
     ({"ok": False, "why": "wrong", "checked": True, "left": 0}, "⚠️ Код не подошёл. Осталось попыток: 0"),
     ({"ok": False, "why": "wrong", "left": 1}, "⚠️ Код не разобран — проверь группы и знаки. Осталось попыток: 1 — следующие через час"),
     ({"ok": False, "why": "open_failed", "reason": ZONE},
-     f"⚠️ Код подошёл, но клиентов «Beta» поднять не удалось: {ZONE}. Приём кода снова открыт"),
+     f"⚠️ Код подошёл, но пользователей «Beta» поднять не удалось: {ZONE}. Приём кода снова открыт"),
 ])
 def test_the_answer_texts(res, want):
     assert pa_t.code_result(res, "Beta") == want
 
 
-@pytest.mark.parametrize("pending, head, reservation", [(False, "✅ Код подошёл — поднимаю клиентов «Beta»", False),
-                                                       (True, "✅ Код принят — поднимаю клиентов «Beta»", True)])
+@pytest.mark.parametrize("pending, head, reservation", [(False, "✅ Код подошёл — поднимаю пользователей «Beta»", False),
+                                                       (True, "✅ Код принят — поднимаю пользователей «Beta»", True)])
 def test_the_accepted_answer_promises_a_follow_up_only_while_pending(pending, head, reservation):
     text = pa_t.code_result({"ok": True, "pending": pending}, "Beta")
     assert text.startswith(head) and ("если код не подойдёт" in text) is reservation, text

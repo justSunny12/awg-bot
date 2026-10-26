@@ -17,7 +17,7 @@ class RoutingNotesMixin:
     def _txt_rt_switched(self, prev, new, verdict: str) -> str:
         head = (f"🔁 Шлюз переключён: {self._gw_link(prev) if prev else 'прежний'} не отвечает, "
                 f"трафик идёт через {self._gw_link(new)}.\n\n"
-                "Исходящий адрес у клиентов сменился — российские приложения могут "
+                "Исходящий адрес у пользователей сменился — российские приложения могут "
                 f"попросить войти заново. Останусь на {self._gw_display_h(new)} и после того, как "
                 f"{self._gw_display_h(prev) if prev else 'прежний'} оживёт; вернуть трафик "
                 f"обратно можно {self._gw_card_link(new)}.")
@@ -44,7 +44,7 @@ class RoutingNotesMixin:
         mins = max(1, ticks * settings.get_int("app.routing.probe_seconds", 30) // 60)
         via = f"трафик идёт через {self._gw_display_h(active)}" if active else "трафик не затронут"
         return (f"⚠️ Резервный шлюз {self._gw_link(g)} не отвечает уже {mins} мин — "
-                f"резерва сейчас нет. Клиенты не затронуты: {via}")
+                f"резерва сейчас нет. Пользователи не затронуты: {via}")
 
     def _txt_rt_standby_up(self, g, active) -> str:
         via = f". Трафик идёт через {self._gw_display_h(active)}" if active else ""

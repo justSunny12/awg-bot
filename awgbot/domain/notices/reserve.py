@@ -30,7 +30,7 @@ def _when(iso: str) -> str:
 def peer_down(peer: str, since: str = "") -> str:
     """Т-РУ8: линк пары молчит."""
     at = _when(since)
-    return f"🔴 Нет связи с резервом {_n(peer)}" + (f" с {at}" if at else "") + " — пока её нет, клиенты к нему не переедут"
+    return f"🔴 Нет связи с резервом {_n(peer)}" + (f" с {at}" if at else "") + " — пока её нет, пользователи к нему не переедут"
 
 
 def peer_up(peer: str) -> str:
@@ -40,7 +40,7 @@ def peer_up(peer: str) -> str:
 def zone_tools_failed(reason: str) -> str:
     """Пакеты гостевой зоны (dnsmasq, conntrack) не поставились сами."""
     return (f"⚠️ Для гостевой зоны резерва не поставились пакеты: {_e(reason)} — поставь руками "
-            "<code>apt-get install dnsmasq conntrack</code>, иначе клиентов второго сервера не принять")
+            "<code>apt-get install dnsmasq conntrack</code>, иначе пользователей второго сервера не принять")
 
 
 def pair_unconfirmed(peer: str) -> str:
@@ -71,22 +71,22 @@ def peer_admin_changed(peer: str) -> str:
 def hosting_started(primary: str, kind: str, since: str, extra: str = "") -> str:
     """Т-РУ4: клиенты и бот основы у меня; kind — button | dead | rf | nogw | code."""
     if kind == "button":
-        return f"📥 {_n(primary)} перевёл к тебе клиентов и бот"
+        return f"📥 {_n(primary)} перевёл к тебе пользователей и бот"
     at = _when(since)
     if kind == "rf":
-        return f"📥 Клиенты и бот {_n(primary)} у тебя: {_n(primary)} недоступен из РФ с {at} — его шлюзы его не видят, этот сервер видит"
+        return f"📥 Пользователи и бот {_n(primary)} у тебя: {_n(primary)} недоступен из РФ с {at} — его шлюзы его не видят, этот сервер видит"
     if kind == "nogw":
-        return f"📥 Клиенты и бот {_n(primary)} у тебя: его шлюзы не на связи с этим сервером с {at} — РФ-доступ его клиентов идёт через твои шлюзы"
+        return f"📥 Пользователи и бот {_n(primary)} у тебя: его шлюзы не на связи с этим сервером с {at} — РФ-доступ его пользователей идёт через твои шлюзы"
     if kind == "code":
-        return f"📥 Клиенты и бот {_n(primary)} у тебя по аварийному коду его админа: {_n(primary)} и его шлюзы не отвечают с {at}"
-    text = f"📥 Клиенты и бот {_n(primary)} у тебя: {_n(primary)} не отвечает с {at} ни этому серверу, ни своим шлюзам"
+        return f"📥 Пользователи и бот {_n(primary)} у тебя по аварийному коду его админа: {_n(primary)} и его шлюзы не отвечают с {at}"
+    text = f"📥 Пользователи и бот {_n(primary)} у тебя: {_n(primary)} не отвечает с {at} ни этому серверу, ни своим шлюзам"
     return text + (f"; {_e(extra)}" if extra else "")
 
 
 def hosting_ended(primary: str, traffic: str) -> str:
     """Т-РУ5: клиенты вернулись к основе."""
     tail = f" — через тебя прошло {_e(traffic)}" if traffic else ""
-    return f"↩️ Клиенты и бот {_n(primary)} вернулись к нему{tail}, данные {_n(primary)} сняты"
+    return f"↩️ Пользователи и бот {_n(primary)} вернулись к нему{tail}, данные {_n(primary)} сняты"
 
 
 def hosting_failed(primary: str, reason: str) -> str:
@@ -98,20 +98,20 @@ def hosting_failed(primary: str, reason: str) -> str:
 def moved_to_reserve(reserve: str, kind: str, since: str, dead_since: str = "", reserve_ip: str = "") -> str:
     """Т-РУ4а: клиенты и бот работают на резерве; kind как у hosting_started."""
     at, dead = _when(since), _when(dead_since)
-    mailed = "клиентам на связи ушло «переподключи VPN»"
+    mailed = "пользователям на связи ушло «переподключи VPN»"
     if kind == "button":
-        return f"✅ Клиенты и бот — на {_n(reserve)} с {at}; {mailed}"
+        return f"✅ Пользователи и бот — на {_n(reserve)} с {at}; {mailed}"
     if kind == "rf":
         tail = f". Следующим из РФ могут закрыть и адрес {_n(reserve)} <code>{_e(reserve_ip)}</code>" if reserve_ip else ""
-        return (f"🚫 Сервер AWG недоступен из РФ с {dead}: шлюзы его не видят, резерв {_n(reserve)} видит — клиенты и бот "
+        return (f"🚫 Сервер AWG недоступен из РФ с {dead}: шлюзы его не видят, резерв {_n(reserve)} видит — пользователи и бот "
                 f"работают на {_n(reserve)} с {at}; {mailed}{tail}")
     if kind == "nogw":
-        return (f"🛟 Шлюзы не на связи с резервом {_n(reserve)} с {dead} — клиенты и бот работают на {_n(reserve)} с {at}, "
-                f"РФ-доступ идёт через шлюзы {_n(reserve)}; {mailed}. Вернутся шлюзы — клиенты вернутся сюда")
+        return (f"🛟 Шлюзы не на связи с резервом {_n(reserve)} с {dead} — пользователи и бот работают на {_n(reserve)} с {at}, "
+                f"РФ-доступ идёт через шлюзы {_n(reserve)}; {mailed}. Вернутся шлюзы — пользователи вернутся сюда")
     if kind == "code":
-        return (f"🔴 Сервер AWG и шлюзы не отвечали резерву {_n(reserve)} с {dead} — по твоему аварийному коду клиенты и бот "
+        return (f"🔴 Сервер AWG и шлюзы не отвечали резерву {_n(reserve)} с {dead} — по твоему аварийному коду пользователи и бот "
                 f"работают на {_n(reserve)} с {at}; {mailed}")
-    return (f"🔴 Сервер AWG не отвечает с {dead} ни резерву, ни шлюзам — клиенты и бот работают на резерве {_n(reserve)} "
+    return (f"🔴 Сервер AWG не отвечает с {dead} ни резерву, ни шлюзам — пользователи и бот работают на резерве {_n(reserve)} "
             f"с {at}; {mailed}")
 
 
@@ -127,7 +127,7 @@ def returned_home(reserve: str, report: dict, traffic: str) -> str:
     if report.get("blocks"):
         parts.append(f"{int(report['blocks'])} блокировки")
     body = ", ".join(parts) if parts else "без новых профилей и устройств"
-    text = f"↩️ Клиенты и бот снова здесь. За время на {_n(reserve)}: {body}"
+    text = f"↩️ Пользователи и бот снова здесь. За время на {_n(reserve)}: {body}"
     if traffic:
         text += f" · через резерв {_e(traffic)}"
     for lost in report.get("lost") or []:
@@ -144,8 +144,8 @@ def lost_device(name: str, owner: str, taken_by: str, taken_owner: str, reserve:
 def primary_back(auto: bool) -> str:
     """Т-РУ6 (из бота основы на резерве): сервер основы снова в строю."""
     if auto:
-        return "🟢 Сервер AWG снова в строю — возвращаю клиентов и бот"
-    return "🟢 Сервер AWG снова в строю — верни клиентов кнопкой"
+        return "🟢 Сервер AWG снова в строю — возвращаю пользователей и бот"
+    return "🟢 Сервер AWG снова в строю — верни пользователей кнопкой"
 
 
 def move_failed(reserve: str, reason: str, released: bool = False) -> str:
@@ -154,9 +154,9 @@ def move_failed(reserve: str, reason: str, released: bool = False) -> str:
 
 
 def return_failed(reserve: str, reason: str, final: bool = False) -> str:
-    tail = ("сам возврат больше не повторяю — разберись по журналу и верни кнопкой «↩️ Вернуть клиентов»" if final
+    tail = ("сам возврат больше не повторяю — разберись по журналу и верни кнопкой «↩️ Вернуть пользователей»" if final
             else "проверь журнал и повтори возврат")
-    return (f"⚠️ Возврат не состоялся: слияние данных с {_n(reserve)} не удалось — {_e(reason)}. Клиенты и бот "
+    return (f"⚠️ Возврат не состоялся: слияние данных с {_n(reserve)} не удалось — {_e(reason)}. Пользователи и бот "
             f"остаются на {_n(reserve)}; {tail}")
 
 
@@ -168,24 +168,24 @@ def record_not_changed(name: str, reason: str, ip: str) -> str:
 
 def record_manual_needed(name: str, ip: str, back: bool = False) -> str:
     """Запись меняет человек: просьба сменить её — при возврате и при переезде без живого сообщения."""
-    what = "клиенты возвращаются" if back else "клиенты переезжают"
+    what = "пользователи возвращаются" if back else "пользователи переезжают"
     return f"✏️ {what.capitalize()}: смени у провайдера A-запись <code>{_e(name)}</code> на <code>{_e(ip)}</code> — бот увидит смену сам"
 
 
 def record_missing(name: str) -> str:
     """Записи нет у авторитетного сервера — клиенты не резолвят имя."""
-    return f"🚨 Записи <code>{_e(name)}</code> у авторитетного сервера нет — клиенты не находят сервер; заведи A-запись у провайдера"
+    return f"🚨 Записи <code>{_e(name)}</code> у авторитетного сервера нет — пользователи не находят сервер; заведи A-запись у провайдера"
 
 
 def record_multi(name: str, addrs: list) -> str:
     """У записи несколько адресов — часть клиентов уходит мимо."""
     return (f"⚠️ У записи <code>{_e(name)}</code> несколько адресов: {', '.join(f'<code>{_e(a)}</code>' for a in addrs)} — "
-            "часть клиентов уходит не сюда; оставь одну A-запись")
+            "часть пользователей уходит не сюда; оставь одну A-запись")
 
 
 def record_foreign(name: str, ip: str) -> str:
     """Т-РУ16: запись указывает не сюда, переезда не было."""
-    return (f"🚨 Запись <code>{_e(name)}</code> указывает на <code>{_e(ip)}</code>, а не на этот сервер, — клиенты "
+    return (f"🚨 Запись <code>{_e(name)}</code> указывает на <code>{_e(ip)}</code>, а не на этот сервер, — пользователи "
             "уходят туда. Переезда не было")
 
 
@@ -232,7 +232,7 @@ def gateway_reserve_down(gw: str, reserve: str, since: str = "") -> str:
 def gateways_reserve_all_down(reserve: str, since: str = "") -> str:
     at = _when(since)
     return (f"⚠️ Ни один шлюз не на связи с резервом {_n(reserve)}" + (f" с {at}" if at else "")
-            + " — если сервер упадёт, клиенты переедут только по твоему аварийному коду")
+            + " — если сервер упадёт, пользователи переедут только по твоему аварийному коду")
 
 
 def gateway_reserve_up(gw: str, reserve: str) -> str:
@@ -241,16 +241,16 @@ def gateway_reserve_up(gw: str, reserve: str) -> str:
 
 def code_needed_reserve(primary: str, since: str, admin_opened: bool) -> str:
     """Т-РУ7 (Н4, админу резерва): сам принять клиентов не могу."""
-    tail = (" — сам принять его клиентов он не может: нужен аварийный код админа " + _n(primary)
+    tail = (" — сам принять его пользователей он не может: нужен аварийный код админа " + _n(primary)
             + (", бот написал ему" if admin_opened else "; его админ этот бот ещё не открывал — написать ему некуда"))
     return (f"⚠️ {_n(primary)} не отвечает с {_when(since)}, его шлюзы тоже не на связи с этим сервером{tail}. "
-            f"Вернётся шлюз, который не видит {_n(primary)}, — клиенты переедут сами")
+            f"Вернётся шлюз, который не видит {_n(primary)}, — пользователи переедут сами")
 
 
 def code_needed_primary(primary: str, reserve: str, since: str) -> str:
     """Т-РУ7б (Н4, админу основы в чат его роли в боте резерва)."""
     return (f"🆘 Сервер {_n(primary)} и его шлюзы не отвечают резерву {_n(reserve)} с {_when(since)}. Если сервер упал — "
-            f"пришли аварийный код резерва; вернётся шлюз, который не видит сервер, — клиенты переедут сами")
+            f"пришли аварийный код резерва; вернётся шлюз, который не видит сервер, — пользователи переедут сами")
 
 
 def code_window_closed(primary: str, why: str) -> str:
@@ -268,7 +268,7 @@ def code_wrong(left: int) -> str:
 
 
 def code_open_failed(primary: str, reason: str) -> str:
-    return f"⚠️ Код подошёл, но клиентов {_n(primary)} поднять не удалось: {_e(reason)}. Приём кода снова открыт"
+    return f"⚠️ Код подошёл, но пользователей {_n(primary)} поднять не удалось: {_e(reason)}. Приём кода снова открыт"
 
 
 def rf_block_warning(reserve: str, gateways: list, since: str, until: str) -> str:
@@ -276,15 +276,15 @@ def rf_block_warning(reserve: str, gateways: list, since: str, until: str) -> st
     at, to = _when(since), _when(until)
     if len(gateways) == 1:
         return (f"🚫 Шлюз {_n(gateways[0])} не видит этот сервер с {at}, а {_n(reserve)} видит — похоже, сервер недоступен "
-                f"из РФ или у шлюза плохой путь до него. Если так останется до {to}, клиенты и бот переедут на {_n(reserve)}")
+                f"из РФ или у шлюза плохой путь до него. Если так останется до {to}, пользователи и бот переедут на {_n(reserve)}")
     return (f"🚫 Шлюзы {_names(gateways)} не видят этот сервер с {at}, а {_n(reserve)} видит — похоже, сервер недоступен "
-            f"из РФ. Если так останется до {to}, клиенты и бот переедут на {_n(reserve)}")
+            f"из РФ. Если так останется до {to}, пользователи и бот переедут на {_n(reserve)}")
 
 
 def nogw_warning(reserve: str, since: str, until: str) -> str:
     """Т-РУ23 (основе, Н3): шлюзы не на связи с резервом."""
     return (f"⚠️ Шлюзы не на связи с резервом {_n(reserve)} с {_when(since)} — если так останется до {_when(until)}, "
-            f"клиенты и бот переедут на {_n(reserve)} ради РФ-доступа через его шлюзы")
+            f"пользователи и бот переедут на {_n(reserve)} ради РФ-доступа через его шлюзы")
 
 
 def case4_notice(reserve: str, unseen: list, seen: list, since: str) -> str:
@@ -308,13 +308,13 @@ def ask_refused(reserve: str, case: str, since: str, link_if: str = "", reserve_
 
 def forced_home(reserve: str) -> str:
     """С9: клиенты возвращены без резерва."""
-    return (f"↩️ Клиенты и бот снова здесь: запись на этом сервере, Telegram забран. {_n(reserve)} не на связи — "
+    return (f"↩️ Пользователи и бот снова здесь: запись на этом сервере, Telegram забран. {_n(reserve)} не на связи — "
             f"всё, что изменилось там, вольётся, когда он выйдет на связь")
 
 
 def take_tg_stuck(reserve: str) -> str:
     """Возврат: deleteWebhook с этого сервера не проходит минутами."""
-    return (f"⚠️ Возврат клиентов с {_n(reserve)}: Telegram с этого сервера не отвечает (deleteWebhook) уже 5 минут — "
+    return (f"⚠️ Возврат пользователей с {_n(reserve)}: Telegram с этого сервера не отвечает (deleteWebhook) уже 5 минут — "
             "бот не отвечает никому, пока сеть не вернётся")
 
 
@@ -325,7 +325,7 @@ def forced_no_merge(reserve: str) -> str:
 
 def webhook_stuck_removed(reserve: str) -> str:
     """Вебхук резерва снят самим сервером: запись уже на нём, клиентов резерв не нёс."""
-    return (f"ℹ️ Право отвечать в Telegram оставалось у {_n(reserve)}, хотя запись уже указывала сюда и клиентов "
+    return (f"ℹ️ Право отвечать в Telegram оставалось у {_n(reserve)}, хотя запись уже указывала сюда и пользователей "
             f"он не нёс — вебхук снят, бот снова отвечает отсюда")
 
 
@@ -372,22 +372,22 @@ def gateway_moved(reserve: str, case: str, since: str, record: str = "", ip: str
     rec = f": запись <code>{_e(record)}</code> → <code>{_e(ip)}</code>" if record and ip else ""
     if case == "rf":
         return (f"🚫 Сервер AWG недоступен отсюда с {at}, а {_n(reserve)} его видит — похоже, сервер закрыт из РФ; "
-                f"клиенты переехали на {_n(reserve)}{rec}")
+                f"пользователи переехали на {_n(reserve)}{rec}")
     if case == "partial":
         unseen = _names((others or {}).get("unseen") or [])
         who = f" и шлюзу {unseen}" if unseen else ""
-        return (f"🟡 Клиенты переехали на резерв {_n(reserve)}: сервер AWG не отвечает ему{who}, этому шлюзу — отвечает. "
-                f"РФ-доступ клиентов с {_n(reserve)} идёт и через этот шлюз")
+        return (f"🟡 Пользователи переехали на резерв {_n(reserve)}: сервер AWG не отвечает ему{who}, этому шлюзу — отвечает. "
+                f"РФ-доступ пользователей с {_n(reserve)} идёт и через этот шлюз")
     if case == "nogw":
-        return (f"🟡 Клиенты переехали на резерв {_n(reserve)}: этот шлюз не на связи с ним с {at} — "
-                f"РФ-доступ клиентов идёт через шлюзы {_n(reserve)}")
-    return f"🔴 Сервер AWG не отвечает с {at} — клиенты переехали на резерв {_n(reserve)}{rec}"
+        return (f"🟡 Пользователи переехали на резерв {_n(reserve)}: этот шлюз не на связи с ним с {at} — "
+                f"РФ-доступ пользователей идёт через шлюзы {_n(reserve)}")
+    return f"🔴 Сервер AWG не отвечает с {at} — пользователи переехали на резерв {_n(reserve)}{rec}"
 
 
 def gateway_rf_warning(reserve: str, since: str, until: str) -> str:
     """Т-РА4 (случай 3, до переезда)."""
     return (f"⚠️ Сервер AWG не отвечает с {_when(since)}, а {_n(reserve)} его видит — похоже, сервер недоступен из РФ; "
-            f"если так останется до {_when(until)}, клиенты переедут на {_n(reserve)}")
+            f"если так останется до {_when(until)}, пользователи переедут на {_n(reserve)}")
 
 
 def gateway_case4(reserve: str, since: str, seen: list) -> str:

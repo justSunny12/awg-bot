@@ -655,7 +655,7 @@ def test_router_masquerade_is_part_of_the_plumbing_checks(svc, monkeypatch):
     monkeypatch.setattr(svc, "_unit_enabled", lambda: True)
     checks = svc.plumbing_checks()
     names = [c.name for c in checks]
-    assert names.index(ROUTER_CHECK) == names.index("маскарад клиентов") + 1, names
+    assert names.index(ROUTER_CHECK) == names.index("маскарад пользователей") + 1, names
     assert {c.name: c for c in checks}[ROUTER_CHECK].ok is False and _stale(svc) is True
     assert calls.count(["route", "show", "default"]) == 1, calls
 

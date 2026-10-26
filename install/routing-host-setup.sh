@@ -168,10 +168,10 @@ AWG_IF="${AWG_IF:-awg0}"
 LINK_IF="${LINK_IF:-$(awk -F'"' '/^  gw_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 MIGRATION_IF="${MIGRATION_IF:-$(awk -F'"' '/^  migration_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 say "Параметры:"
-say "  клиентская подсеть : $CLIENT_SUBNET"
-say "  awg-интерфейс      : $AWG_IF"
-say "  dnsmasq            : $DNS_ADDR на $DNS_IF"
-say "  апстримы DNS       : $UPSTREAM1, $UPSTREAM2"
+say "  подсеть пользователей: $CLIENT_SUBNET"
+say "  awg-интерфейс        : $AWG_IF"
+say "  dnsmasq              : $DNS_ADDR на $DNS_IF"
+say "  апстримы DNS         : $UPSTREAM1, $UPSTREAM2"
 [ "$MODE" = "plan" ] && { say ""; say "(режим показа: ничего не меняется, добавь --apply)"; }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ if [ "$MODE" = "rollback" ]; then
         # остаются — иначе у людей мёртвый DNS до перевыпуска. Уронит их
         # переезд профилей, когда перепишет dns1/dns2.
         say "  $DNS_ADDR указан в dns1/dns2 app.yaml — $DNS_IF и конфиг dnsmasq"
-        say "  оставлены: снять их значит оставить клиентов без DNS. Снимет переезд."
+        say "  оставлены: снять их значит оставить пользователей без DNS. Снимет переезд."
     else
         run "rm -f $DNSMASQ_CONF"
     fi
@@ -391,7 +391,7 @@ run "systemctl enable --now ${DNSMASQ_SERVICE}"
 run "systemctl restart ${DNSMASQ_SERVICE}"
 
 # 3) DNAT :53 — чтобы выданные конфиги с DNS=1.1.1.1 работали без перевыпуска
-step "3. Перехват DNS клиентов на dnsmasq"
+step "3. Перехват DNS пользователей на dnsmasq"
 ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p udp --dport 53 \
             -j DNAT --to-destination "$DNS_ADDR:53"
 ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
@@ -409,7 +409,7 @@ done
 # собственным адресом, и пакет идёт в INPUT, а не в FORWARD. При политике DROP
 # (ufw и подобные) он там и умирает: клиент подключается, ходит по голым
 # адресам — телеграм работает, — а всё, что требует резолва, мертво.
-step "3a. Пропустить DNS клиентов в INPUT"
+step "3a. Пропустить DNS пользователей в INPUT"
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
 if [ -n "$CLIENT_DNS_FACADE" ]; then
@@ -456,7 +456,7 @@ ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
 # ПОСЛЕ разрешающих правил, и это не косметика: ensure_rule вставляет через -I,
 # то есть каждое следующее правило встаёт ВЫШЕ предыдущего. Поставь этот блок
 # раньше — ACCEPT окажется над ним и REJECT не сработает никогда, молча.
-step "4a. DNS-over-TLS клиентов (853) — отказ"
+step "4a. DNS-over-TLS пользователей (853) — отказ"
 say "  NXDOMAIN'ом DoT не закрыть: Android Private DNS ходит на явно заданный"
 say "  адрес, имя резолвит заранее и нашего отказа не увидит."
 say "  REJECT, а не DROP: клиент получает отказ сразу и откатывается на :53,"
@@ -482,7 +482,7 @@ fi
 
 # 6) параметры ядра
 step "6. sysctl"
-say "  ip_forward — иначе хост не пропустит трафик клиентов вовсе"
+say "  ip_forward — иначе хост не пропустит трафик пользователей вовсе"
 say "  rp_filter=strict отбросил бы пакеты с 10.8.1.x, пришедшие с awg-интерфейса,"
 say "  если обратный маршрут покажется ядру несимметричным"
 if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" != "1" ]; then
@@ -515,8 +515,8 @@ say "  Ноль при живом резолве = dnsmasq не может пи�
 say ""
 say "ВАЖНО: правила iptables и адрес на $DNS_IF эфемерны — переживут перезапуск"
 say "бота, но не ребут хоста. Закрепи (netfilter-persistent / systemd-юнит):"
-say "здесь лежит не только маршрутизация, но и MASQUERADE клиентской подсети,"
-say "то есть после ребута интернет пропадёт у ВСЕХ клиентов, а не у включённых."
+say "здесь лежит не только маршрутизация, но и MASQUERADE подсети пользователей,"
+say "то есть после ребута интернет пропадёт у ВСЕХ пользователей, а не у включённых."
 say ""
 say "Дальше: линк-туннель до шлюза + routing.gw_interface в conf/app.yaml."
 say "Пока ключ пуст, бот фичу не поднимает."

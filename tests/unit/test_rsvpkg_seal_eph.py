@@ -86,7 +86,7 @@ def test_a_damaged_envelope_does_not_open(pair, where):
 
 def test_a_key_of_the_wrong_length_or_an_ephemeral_key_of_the_wrong_length_is_refused_before_sealing(pair):
     _priv, pub = pair
-    with pytest.raises(seal.PackageError, match="K не той длины"):
+    with pytest.raises(seal.PackageError, match="ключ пакета не той длины"):
         seal.seal_k_to(pub, b"\x01" * 16, 7, OID)
     with pytest.raises(seal.PackageError, match="32 байта"):
         seal.seal_k_to(pub[:31], seal.new_k(), 7, OID)
