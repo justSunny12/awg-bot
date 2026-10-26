@@ -51,7 +51,7 @@ async def test_block_device_silent_no_owner_notice(services, fake_bot, make_acti
     assert not any(r[0] == "send_message" and r[1] == 7101 for r in fake_bot.records), "тихий блок уведомил"
 
 
-# ── блок клиента ─────────────────────────────────────────────────────────────
+# ── блок пользователя ────────────────────────────────────────────────────────
 async def test_block_client_notified_cascades(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=7102)
     dc = services.add_device(client.id, "d")

@@ -243,7 +243,7 @@ def test_masquerade_check_disabled_without_subnet_is_unknown_not_ok(svc, monkeyp
 
 def test_foreign_drop_policy_on_forward_is_reported(svc, monkeypatch):
     """accept в нашей таблице не отменяет drop в чужой: чужой DROP на
-    FORWARD молча перекрыл бы транзит клиентов."""
+    FORWARD молча перекрыл бы транзит пользователей."""
     import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, fwd_policy="drop")
@@ -327,7 +327,7 @@ def test_tg_mark_ensure_reasserts_the_table_once_per_interval(svc, monkeypatch):
     assert svc.tg_mark_ensure([]) == 0, "нечего чинить — юнит не трогаем"
 
 
-# ── этап 3: самообновление — тот же механизм, что у клиентской роли ──────────
+# ── этап 3: самообновление — тот же механизм, что у основного бота ───────────
 
 def test_gateway_confirms_applied_update_like_the_client_role(svc, monkeypatch):
     """Механизм общий (SelfUpdateMixin): после рестарта агент сверяет
@@ -552,7 +552,7 @@ def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
 
 def test_foreign_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatch):
     """Чужой файервол поставил DROP, раздел 3a скрипта открыл транзит линку в
-    той же цепочке. Транзит клиентов идёт — красная проверка здесь была бы
+    той же цепочке. Транзит пользователей идёт — красная проверка здесь была бы
     ложной тревогой, из-за которой человек полез бы сносить чужой файервол."""
     c = _forward(svc, monkeypatch, "-P FORWARD DROP\n-A FORWARD -o awglink -j ACCEPT\n"
                                    "-A FORWARD -i awglink -j ACCEPT\n-A FORWARD -j ufw-user-forward\n")
@@ -567,7 +567,7 @@ def test_foreign_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatc
 ])
 def test_foreign_drop_without_our_link_accepts_stays_red(svc, monkeypatch, rules):
     """Без ACCEPT линка в обе стороны DROP чужой таблицы перекрывает транзит
-    клиентов — проверка обязана оставаться красной и говорить, почему."""
+    пользователей — проверка обязана оставаться красной и говорить, почему."""
     c = _forward(svc, monkeypatch, rules)
     assert c.ok is False, f"транзит перекрыт, а проверка зелёная при {rules!r}"
     assert "drop" in c.detail and "перекрывает транзит" in c.detail
@@ -668,7 +668,7 @@ def test_run_turns_a_timeout_into_a_refusal_not_an_exception(monkeypatch):
 
 
 def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monkeypatch):
-    """OMV собрал bridge: маршрут по умолчанию ушёл на br0, masquerade клиентов
+    """OMV собрал bridge: маршрут по умолчанию ушёл на br0, masquerade пользователей
     стоит на end0 — РФ-доступ у всех молчит, а зонд с адреса устройства
     проходит. Проверка красная, тик перевыставляет обвязку."""
     import subprocess as sp

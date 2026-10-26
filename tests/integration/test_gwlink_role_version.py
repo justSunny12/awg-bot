@@ -103,7 +103,7 @@ async def test_new_subnets_reach_the_agent_with_the_next_role(services, link, pi
 async def test_a_broken_space_sends_no_tunnel_addresses(services, link, monkeypatch):
     """Служебное пространство неисправно — адресов в туннеле нет ни у кого:
     поле пустое, а не настоящие подсети."""
-    monkeypatch.setattr(services, "lan_off", lambda slots=None: ("пересекается с подсетью клиентов", "routing.lan_space"))
+    monkeypatch.setattr(services, "lan_off", lambda slots=None: ("пересекается с подсетью пользователей", "routing.lan_space"))
     host, port = link._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port, limit=8 * gwlink.MAX_LINE), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0"})

@@ -324,7 +324,7 @@ def test_the_same_document_twice_changes_nothing_the_second_time(svc, host):
 
 
 def test_keepalive_change_goes_by_syncconf_without_the_unit(svc, host):
-    """Сменился keepalive клиентов: юнит не трогается, конфиг линка —
+    """Сменился keepalive пользователей: юнит не трогается, конфиг линка —
     через link.next, прежний — в link.prev для отката; реассерт один."""
     host.how = "syncconf"
     res = svc.apply_cfg(_doc(link=LINK_NEW_KA))

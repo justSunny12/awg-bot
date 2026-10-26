@@ -96,9 +96,9 @@ def test_both_sides_of_each_link_match(both):
         assert wgkeys.pubkey_of(zone.get("Interface", "PrivateKey")) == side.get("Peer", "PublicKey")
         assert zone.get("Peer", "PresharedKey") == side.get("Peer", "PresharedKey")
         z_addr, g_addr = zone.get("Interface", "Address").split("/")[0], side.get("Interface", "Address").split("/")[0]
-        # сторона зоны — единственный пир, через него РФ-трафик клиентов наружу;
-        # сторона шлюза — адрес зоны (гостевой канал) и подсеть клиентов основы
-        assert zone.get("Peer", "AllowedIPs") == "0.0.0.0/0", "РФ-трафик клиентов из зоны не уйдёт в линк шлюза"
+        # сторона зоны — единственный пир, через него РФ-трафик пользователей наружу;
+        # сторона шлюза — адрес зоны (гостевой канал) и подсеть пользователей основы
+        assert zone.get("Peer", "AllowedIPs") == "0.0.0.0/0", "РФ-трафик пользователей из зоны не уйдёт в линк шлюза"
         side_nets = [n.strip() for n in side.get("Peer", "AllowedIPs").split(",")]
         assert side_nets[0] == f"{z_addr}/32" and f"{config.SUBNET_PREFIX}.0/24" in side_nets, side_nets
         assert g_addr != z_addr
@@ -204,7 +204,7 @@ def test_the_section_says_away_only_while_clients_are_at_the_reserve(both):
     sec = both.gwcfg_reserve(gw)
     assert (sec["state"], sec["move"]) == ("idle", 0), sec
     both.reserve_set_out("leaving", kind="button", step="up", gen=4)
-    assert both.gwcfg_reserve(gw)["state"] == "idle", "away до подъёма клона — пересылка без клиентов у резерва"
+    assert both.gwcfg_reserve(gw)["state"] == "idle", "away до подъёма клона — пересылка без пользователей у резерва"
     both.reserve_set_out("leaving", kind="button", step="record", gen=4)
     assert (both.gwcfg_reserve(gw)["state"], both.gwcfg_reserve(gw)["move"]) == ("away", 4)
     both.reserve_set_out("away", gen=4)

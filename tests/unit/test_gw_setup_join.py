@@ -6,7 +6,7 @@
 
 Конфиг линка строит `awg-bot join` (tools/join.py) из токена: ключи и
 обфускация, AllowedIPs — только /30 линка. Проверка скрипта (wg_conf_check)
-принимает его видом join: подсеть клиентов шлюз узнает из документа после
+принимает его видом join: подсеть пользователей шлюз узнает из документа после
 кода.
 
 Цена ошибки: линк сопряжения, через который ходят пакеты в сеть шлюза или
@@ -68,7 +68,7 @@ def test_the_link_config_from_the_token_passes_the_join_check(tmp_path):
     assert r.returncode == 0, r.stderr
     r = _check(tmp_path, text, "link", CLIENT_SUBNET="10.8.1.0/24")
     assert r.returncode != 0 and "нет обязательной записи 10.8.1.0/24" in r.stderr, \
-        "вид link без подсети клиентов принял бы что угодно — проверка поменялась"
+        "вид link без подсети пользователей принял бы что угодно — проверка поменялась"
 
 
 @pytest.mark.parametrize("extra, why", [

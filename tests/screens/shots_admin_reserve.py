@@ -55,7 +55,7 @@ def _host(services, mp):
 
 def _rsv(*, host: str = "vpn.example.org", ready: bool = False, gw: str = "none", paired: bool = False,
          then=()):
-    """Сервер без пары (или с ней — paired): адрес для клиентов host, тумблер
+    """Сервер без пары (или с ней — paired): адрес для пользователей host, тумблер
     готовности, шлюз слота 1 — none (нет), rsv (агент с rsv1), old (агент
     3.4.0 без rsv1); then — шаги (services, mp) поверх."""
     def build(services, mp):

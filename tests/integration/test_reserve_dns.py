@@ -1,4 +1,4 @@
-"""Запись DNS адреса для клиентов (domain/services/reserve/dns.py): настройка
+"""Запись DNS адреса для пользователей (domain/services/reserve/dns.py): настройка
 провайдера и токена, проверка, смена, факт у авторитетного сервера и надзор
 за записью (Т-РУ16).
 
@@ -8,7 +8,7 @@
 Цена ошибки: токен, не доехавший в конверт пакета, — аварийный переезд не
 сможет сменить запись; токен в открытом виде вне состояния резерва — утечка;
 надзор, который шлёт Т-РУ16 при каждом тике, — админ глохнет к настоящей
-тревоге, а молчащий при чужом адресе — клиенты уходят на чужой сервер
+тревоге, а молчащий при чужом адресе — пользователи уходят на чужой сервер
 незамеченными; «Вернуть запись» без сброса отметки — следующий уход записи
 тоже промолчит.
 """
@@ -189,7 +189,7 @@ def test_the_fact_is_what_the_authoritative_server_says_not_what_the_api_accepte
     svc = mv.svc
     assert svc.reserve_dns_points_to(PEER_IP) is False
     mv.dns.auth = [PEER_IP, FOREIGN]
-    assert svc.reserve_dns_points_to(PEER_IP) is False, "вторая A-запись увела бы половину клиентов мимо"
+    assert svc.reserve_dns_points_to(PEER_IP) is False, "вторая A-запись увела бы половину пользователей мимо"
     mv.dns.auth = [PEER_IP]
     assert svc.reserve_dns_points_to(PEER_IP) is True
     assert svc.rsv_get("rsv_dns").get("addrs") == [PEER_IP] and svc.rsv_get("rsv_dns").get("ttl") == 60
@@ -266,7 +266,7 @@ def test_the_watch_does_not_poll_the_authoritative_server_more_often_than_its_pe
 
 @pytest.mark.parametrize("state", ["leaving", "away", "returning"])
 def test_the_watch_is_silent_while_the_clients_are_at_the_reserve(watch, state):
-    """Запись указывает на резерв — так и должно быть, пока клиенты там."""
+    """Запись указывает на резерв — так и должно быть, пока пользователи там."""
     watch.dns.auth = [PEER_IP]
     watch.svc.reserve_set_out(state)
     assert _tick(watch) == []

@@ -1,4 +1,4 @@
-"""Снимки экранов клиента (client.txt) и гостя (guest.txt): жмёт владелец профиля
+"""Снимки экранов пользователя (client.txt) и гостя (guest.txt): жмёт владелец профиля
 или гость, диспетчер основного бота.
 
 Состояние — построителями ниже, на свежей БД каждого снимка, поэтому номера
@@ -170,7 +170,7 @@ def with_mail(build):
 
 async def _expiry_tick(services, bot):
     """Такт проверки сроков, как в планировщике (runtime/scheduler/client.py,
-    job_expiry): уведомления сервиса и кнопка отсрочки к клиентскому."""
+    job_expiry): уведомления сервиса и кнопка отсрочки к уведомлению пользователя."""
     notes = services.check_expiry()
     for n in notes:
         if getattr(n, "grace_offer_client_id", 0):
@@ -242,7 +242,7 @@ def guest(n=1, *, rf=False, drop=False, owner_after=None, more=False, other=Fals
 
 
 def _client_gen_fails(services, mp):
-    """Клиент с одним устройством; выдача отказала (ServiceError — как в бою, когда устройство удалили в другом окне)."""
+    """Пользователь с одним устройством; выдача отказала (ServiceError — как в бою, когда устройство удалили в другом окне)."""
     from awgbot.domain.services import ServiceError
 
     def boom(device_id, **kw):
@@ -305,7 +305,7 @@ RF_SITES = vasya(["Телефон"], rf=True, domains="sber.ru\nya.ru\ngosuslugi
 DOMAINS = sorted(["sber.ru", "ya.ru", "gosuslugi.ru"])
 
 
-# ── клиент ───────────────────────────────────────────────────────────────────
+# ── пользователь ─────────────────────────────────────────────────────────────
 
 CLIENT_SHOTS = [
     # главная: /start в разных состояниях профиля
@@ -360,10 +360,10 @@ CLIENT_SHOTS = [
     Shot("cl.help.skip", role="client", start="CTEST0000001", press=[HelpCB(platform="skip")],
          data=stranger(_invite_waiting), title="после активации: «✅ Настрою сам»"),
 
-    # коды у действующего клиента
+    # коды у действующего пользователя
     Shot("cl.code.already", role="client", start="CTEST0000002",
          data=vasya(after=lambda s, c: s.create_client("Гена", 3, "year", 0)),
-         title="код клиента у того, у кого уже есть доступ"),
+         title="код пользователя у того, у кого уже есть доступ"),
     Shot("cl.code.own_device", role="client", start="FTEST0000002", data=vasya(["Телефон"], pending=(1,)),
          title="код на своё же устройство"),
     Shot("cl.code.friend", role="client", start="FTEST0000003",
@@ -376,7 +376,7 @@ CLIENT_SHOTS = [
          title="код от второго дарителя — отказ"),
     Shot("cl.code.invalid", role="client", text="/code FNOSUCHCODE1", data=ONE,
          title="/code с неверным кодом друга"),
-    Shot("cl.code.client_no_arg", role="client", text="/code", data=ONE, title="/code без кода у клиента"),
+    Shot("cl.code.client_no_arg", role="client", text="/code", data=ONE, title="/code без кода у пользователя"),
 
     # ссылки /start <payload>
     Shot("cl.link.sub", role="client", start="sub", data=ONE, title="ссылка на подписку"),
@@ -412,7 +412,7 @@ CLIENT_SHOTS = [
     Shot("cl.sub.admin_silent", role="client", press=[INFO], data=vasya(["Телефон"], after=_admin_silent),
          title="💳 Подписка: тихая пауза администратора не видна"),
     Shot("cl.sub.rf_bytes", role="client", press=[INFO], data=vasya(["Телефон"], rf=True, after=_rf_bytes),
-         title="💳 Подписка: РФ-байты накоплены — клиенту не видны"),
+         title="💳 Подписка: РФ-байты накоплены — пользователю не видны"),
 
     # пауза
     Shot("cl.pause.ask", role="client", press=[INFO, PauseCB(action="ask", ref=2)], data=ONE,
@@ -727,7 +727,7 @@ CLIENT_SHOTS = [
     *[Shot(f"cl.guide.toggle.{s}", role="client", press=[GuideCB(guide="toggle", step=s)], data=ONE,
            title=f"шторка, шаг {s + 1}") for s in range(2)],
 
-    # РФ-доступ клиента
+    # РФ-доступ пользователя
     Shot("cl.rf.panel", role="client", press=[rt("panel")], data=RF, title="🇷🇺 РФ-доступ: включён"),
     Shot("cl.rf.panel.off", role="client", press=[rt("panel")], data=vasya(["Телефон"], rf=True, rf_on=False),
          title="🇷🇺 РФ-доступ: выключен"),
@@ -849,10 +849,10 @@ GUEST_SHOTS = [
     Shot("gst.code.other_donor.many", role="guest", start="FTEST0000005", data=guest(2, other=True),
          title="код от другого владельца у гостя с двумя устройствами — отказ"),
     Shot("gst.code.upgrade", role="guest", start="CTEST0000003", data=guest(1, upgrade=True),
-         title="код клиента — гость становится владельцем"),
+         title="код пользователя — гость становится владельцем"),
     Shot("gst.code.upgrade.over", role="guest", start="CTEST0000005",
          data=guest(3, owner_after=lambda s, c: s.create_client("Артём", 2, "year", 0)),
-         title="код клиента: перенесено больше лимита подписки"),
+         title="код пользователя: перенесено больше лимита подписки"),
     Shot("gst.code.no_arg", role="guest", text="/code", data=G1, title="/code без кода"),
     Shot("gst.code.invalid", role="guest", text="/code FNOSUCHCODE1", data=G1, title="/code с неверным кодом"),
     Shot("gst.link.rf", role="guest", start="rf", data=guest(1, rf=True), title="ссылка на РФ-доступ"),

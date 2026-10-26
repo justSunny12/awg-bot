@@ -5,7 +5,7 @@ away, ключ пакета конвертом к разовому ключу п
 канала.
 
 Цена ошибки: переезд, объявленный до того, как запись DNS указывает на
-резерв, — клиенты остаются на основе без бота, а бот уже у резерва;
+резерв, — пользователи остаются на основе без бота, а бот уже у резерва;
 `release` до факта записи — поллинг остановлен, а ответить в Telegram
 некому; зависший шаг без `back` резерву — клон и вебхук остаются у резерва
 навсегда; второе `taken` с тем же уведомлением — админ видит «перевёл» дважды;
@@ -52,10 +52,10 @@ def test_every_obstacle_gives_its_own_reason_and_no_start(mv):
     assert "у «Beta» выключено «Готов быть резервом»" in svc.reserve_move_check(), "причина не называет сторону"
     rm.st_in(svc)
     settings.set_value("app.network.server_host", "203.0.113.5")
-    assert "записи DNS нет" in svc.reserve_move_check(), "адрес для клиентов — IP: менять нечего"
+    assert "записи DNS нет" in svc.reserve_move_check(), "адрес для пользователей — IP: менять нечего"
     settings.set_value("app.network.server_host", rc.HOST_A)
     svc.rsv_update("rsv_in", state="serving")
-    assert "возврат" in svc.reserve_move_check(), "у меня клиенты резерва — переезд поверх них невозможен"
+    assert "возврат" in svc.reserve_move_check(), "у меня пользователи резерва — переезд поверх них невозможен"
     svc.rsv_put("rsv_in", None)
     svc.reserve_set_out("away")
     assert "уже не на этом сервере" in svc.reserve_move_check()
@@ -97,7 +97,7 @@ def test_go_req_waits_for_a_package_confirmed_after_the_start_and_carries_no_key
     rm.confirm_package(svc, gen=3)                       # пакет подтверждён ДО старта
     svc.rsv_update("rsv_pkg_sent", at=timeutil.to_iso(timeutil.shift(timeutil.now(), -3600)))
     svc.reserve_move_start()
-    assert svc.reserve_out_tick() == [], "старый пакет принят за свежий — резерв поднимет клиентов по прежним данным"
+    assert svc.reserve_out_tick() == [], "старый пакет принят за свежий — резерв поднимет пользователей по прежним данным"
     rm.confirm_package(svc, gen=4)
     acts = svc.reserve_out_tick()
     assert sent(acts) == ["go_req"], f"после пакета ждём просьбу о разовом ключе, ушло: {sent(acts)}"
@@ -408,7 +408,7 @@ def test_taken_outside_a_move_changes_nothing(mv):
     assert mv.svc.reserve_taken_in() == [] and mv.svc.reserve_out() == "home" and mv.svc.reserve_poll() == "mine"
 
 
-# ── клиенты у резерва мимо меня ─────────────────────────────────────────────
+# ── пользователи у резерва мимо меня ────────────────────────────────────────
 
 def test_taking_at_the_reserve_is_not_yet_a_fact_that_my_clients_moved(mv):
     """taking — резерв только открывает пакет: клон может не встать, основа
@@ -477,7 +477,7 @@ def test_an_old_confirmed_package_blocks_the_move_start(mv):
 
 
 def test_a_move_that_failed_after_the_record_was_switched_returns_the_record_to_the_primary(mv):
-    """Запись уже указала на резерв, а передача бота не состоялась: без возврата записи клиенты
+    """Запись уже указала на резерв, а передача бота не состоялась: без возврата записи пользователи
     уходят на сервер, где нет ни клона, ни бота."""
     svc = mv.svc
     rm.automatic(svc)
@@ -525,7 +525,7 @@ def test_in_kind_of_the_reserve_lands_in_the_peer_state_and_decides_the_kind_of_
 
 def test_go_req_carries_the_ttl_of_the_record_for_the_pause_before_reconnect(mv):
     """TTL записи у основы (последняя проверка) едет в go_req: гость ждёт его,
-    прежде чем звать клиентов переподключиться."""
+    прежде чем звать пользователей переподключиться."""
     svc = mv.svc
     svc.rsv_update("rsv_dns", ttl=900)
     svc.reserve_move_start()

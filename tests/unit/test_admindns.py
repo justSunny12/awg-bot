@@ -1,6 +1,6 @@
 """
 infra/admindns.py — обёртка бота над скриптом резолвера админа: адрес из
-настроек, «поставлен ли», подтягивание к резолверу клиентов на старте,
+настроек, «поставлен ли», подтягивание к резолверу пользователей на старте,
 файл записей. Скрипт подменён (subprocess.run), хост не трогается.
 
 Цена ошибки: кривой адрес из app.yaml в DNS конфига админа — устройство без
@@ -61,8 +61,8 @@ def _addr_setting(monkeypatch, value):
                                       ("10.8.1.1", "10.255.53.53"), ("10.8.1.200", "10.255.53.53")])
 def test_the_address_falls_back_to_the_default_unless_private_and_outside_client_nets(monkeypatch, raw, want):
     """Опечатка в app.yaml не должна уехать в DNS конфига админа и в правило
-    nft. Адрес из подсети клиентов (например, резолвер клиентов 10.8.1.1)
-    правило «:53 — только админу» отрезало бы от DNS всех клиентов; публичный
+    nft. Адрес из подсети пользователей (например, резолвер пользователей 10.8.1.1)
+    правило «:53 — только админу» отрезало бы от DNS всех пользователей; публичный
     увёл бы DNS админа в интернет; loopback из туннеля недостижим."""
     from awgbot.infra import nftguard
     monkeypatch.setattr(nftguard, "tunnel_nets", lambda: ["10.8.1.0/24"])
@@ -171,7 +171,7 @@ DNAT = ("-A PREROUTING -s 10.8.1.0/24 -p udp -m udp --dport 53 -j DNAT --to-dest
 
 def test_nat_exempt_puts_the_admin_resolver_above_the_dns_interception_once(monkeypatch):
     """Перехват :53 обвязки уводил бы запросы к резолверу админа на резолвер
-    клиентов — без имён awg.internal. RETURN — по разу на протокол; второй
+    пользователей — без имён awg.internal. RETURN — по разу на протокол; второй
     старт бота ничего не дописывает."""
     from awgbot.infra import nftguard
     monkeypatch.setattr(nftguard, "tunnel_nets", lambda: ["10.8.1.0/24"])

@@ -299,7 +299,7 @@ def test_the_store_gets_env_conf_base_key_webhook_and_pool_with_private_rights(b
     app = yaml.safe_load((run / "conf" / "app.yaml").read_text())
     assert app["guest"] is True and app["role"] == "client"
     assert app["awg"]["interface"] == "awg0" and app["awg"]["conf_dir"] == str(run / "awg") and app["awg"]["protocol_id"] == 2
-    assert app["network"]["server_host"] == "203.0.113.7" and app["network"]["server_port"] == 51820, "адрес основы для ссылок клиентов — из пакета"
+    assert app["network"]["server_host"] == "203.0.113.7" and app["network"]["server_port"] == 51820, "адрес основы для ссылок пользователей — из пакета"
     assert app["client_config"]["server_name"] == "Альфа"
     assert app["routing"]["dnsmasq_conf"] == str(run / "dnsmasq-rf.conf") and app["routing"]["dnsmasq_service"] == "awg-bot-guest-dns.service"
     assert app["timezone"] == "Asia/Yekaterinburg"
@@ -637,7 +637,7 @@ def test_the_clone_config_has_only_keys_that_awg_setconf_accepts_or_the_script_s
 
 def test_the_routing_lists_of_the_package_land_in_the_guest_data_with_private_rights(box):
     """Источники списков гостю недоступны: без кэша из пакета маршрутизация
-    в зоне шла бы с пустым базовым списком — РФ-доступа у клиентов основы нет."""
+    в зоне шла бы с пустым базовым списком — РФ-доступа у пользователей основы нет."""
     box.write_package(lists={"tun_domains": ["gosuslugi.ru", "nalog.ru"], "tun_subnets": ["198.51.100.0/24"]})
     assert box.open(shares=box.shares(1), set_record=False) == 0, box.out
     data = box.run_dir / "data"

@@ -62,7 +62,7 @@ def test_lan_status_block_and_checks_when_healthy(svc, monkeypatch):
     assert by["резолвер"].ok is True and by["апстрим через аплинк"].ok is True
     assert by["таблица локальной сети"].ok is True and by["списки"].ok is True
     assert all(c.group == "lan" for c in checks), "свой стрик, не критичный"
-    assert "IPv6 на LAN" not in by, "IPv6 у клиентов режет резолвер (filter-AAAA), не sysctl на шлюзе"
+    assert "IPv6 на LAN" not in by, "IPv6 у пользователей режет резолвер (filter-AAAA), не sysctl на шлюзе"
     assert by["трафик с роутера"].ok is None and by["DNS с роутера"].ok is None, "первый замер — не с чем сравнить"
 
 
@@ -640,7 +640,7 @@ def test_no_router_masquerade_check_without_transit_or_peers(svc, monkeypatch, e
 
 
 def test_router_masquerade_is_part_of_the_plumbing_checks(svc, monkeypatch):
-    """Проверка стоит в обвязке сразу после «маскарад клиентов» и берёт
+    """Проверка стоит в обвязке сразу после «маскарад пользователей» и берёт
     маршрут по умолчанию из того же разбора — один `ip -j` на тик."""
     from awgbot.domain.gateway import base
     _router_env(monkeypatch)

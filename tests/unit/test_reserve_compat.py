@@ -1,15 +1,15 @@
 """Матрица готовности направлений пары (domain/services/reserve/compat.py):
-`direction_ready(src, dst)` — «клиенты src → на dst» — и старший общий
+`direction_ready(src, dst)` — «пользователи src → на dst» — и старший общий
 формат пакета.
 
 Правило вычисляется, списка совместимых версий нет: готовы обе стороны,
 резерв читает формат пакета и умеет зону, гостевой канал и голосование,
 у отдающего есть шлюз с `rsv1`, выпуск принимающего не младше (по X.Y.Z),
-линия совместимости одна, поколение AWG одно, порты клиентов не
+линия совместимости одна, поколение AWG одно, порты пользователей не
 пересекаются, пакет у резерва свежий.
 
 Цена ошибки: направление «готово», а резерв не прочитает пакет или поднимет
-клиентов на другом поколении AWG, — в аварии клиенты переедут в никуда;
+пользователей на другом поколении AWG, — в аварии пользователи переедут в никуда;
 направление «не готово» без причины — админ не знает, что чинить, и резерва
 у него на деле нет.
 """
@@ -51,7 +51,7 @@ _BROKEN = [
     ("dst младше src", dict(version="4.1.0"), dict(version="4.0.0"), "не младше"),
     ("разные линии совместимости", {}, dict(floor="5.0.0"), "линии"),
     ("разные поколения AWG", dict(gen=1), dict(gen=2), "поколения"),
-    ("порт клиентов у обоих", dict(ports=[51820, 443]), dict(ports=[443]), "443"),
+    ("входящий порт AWG у обоих", dict(ports=[51820, 443]), dict(ports=[443]), "443"),
 ]
 
 
@@ -130,9 +130,9 @@ def test_the_sealed_key_capability_is_declared_and_does_not_decide_the_direction
 
 
 def test_different_versions_make_only_the_newer_one_a_reserve():
-    """Разные выпуски: клиенты старого — к новому можно, обратно — нет."""
+    """Разные выпуски: пользователи старого — к новому можно, обратно — нет."""
     old, new = _side(version="4.0.0"), _side(name="Beta", version="4.1.0", ports=[443])
-    assert compat.direction_ready(old, new)[0] is True, "новый не принял клиентов старого"
+    assert compat.direction_ready(old, new)[0] is True, "новый не принял пользователей старого"
     ok, reason = compat.direction_ready(new, old)
     assert ok is False and "не младше" in reason, reason
 
@@ -150,8 +150,8 @@ def test_an_unknown_generation_does_not_block():
 
 
 def test_a_gateway_on_one_side_opens_only_its_own_direction():
-    """Шлюз с `rsv1` только у Alpha: её клиенты к Beta переехать могут
-    (падение подтвердит её шлюз), клиенты Beta к Alpha — нет."""
+    """Шлюз с `rsv1` только у Alpha: её пользователи к Beta переехать могут
+    (падение подтвердит её шлюз), пользователи Beta к Alpha — нет."""
     alpha, beta = _side(has_gateway=True), _side(name="Beta", has_gateway=False, ports=[443])
     assert compat.direction_ready(alpha, beta) == (True, "")
     ok, reason = compat.direction_ready(beta, alpha)

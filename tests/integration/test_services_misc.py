@@ -146,7 +146,7 @@ def test_restart_service_reapplies_blocks(services, fake_awg, make_active_client
 
 
 def test_admin_client_cannot_be_blocked(services, fake_awg, make_active_client):
-    """Клиент админа не блокируется (defense-in-depth в сервисе)."""
+    """Запись админа как пользователя не блокируется (defense-in-depth в сервисе)."""
     from awgbot.core import config
     from awgbot.core.blocks import ClientBlock
     admin = make_active_client(tg_id=config.ADMIN_ID, name="Админ")
@@ -185,7 +185,7 @@ def test_rename_device_survives_server_down(services, fake_awg, monkeypatch):
 
 
 def test_is_only_device_false_for_service_pool(services, fake_awg):
-    """Устройство «без профиля» (служебный клиент) не считается «единственным» —
+    """Устройство «без профиля» (служебный пользователь) не считается «единственным» —
     предупреждение о потере доступа к боту для него неприменимо."""
     svc = services.db.get_service_client_id()
     did = services.db.create_device(svc, "app", "PUBSRV", "PSK", "10.8.1.5")

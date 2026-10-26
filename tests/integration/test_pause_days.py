@@ -3,7 +3,7 @@ def test_pause_day_choice_and_days(services, fake_awg):
     from awgbot.bot import keyboards as kb
     from awgbot.util import timeutil
     from datetime import datetime, timedelta
-    # клиент с остатком лимита 10 (используем 4 из 14 single, но total ограничит)
+    # пользователь с остатком лимита 10 (используем 4 из 14 single, но total ограничит)
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=300))
     cid = services.db.create_client("P", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)

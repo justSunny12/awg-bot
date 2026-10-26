@@ -146,8 +146,8 @@ async def test_client_sub_button_opens_the_subscription(services, fake_bot, make
 
 
 async def test_admin_only_hints_never_open_admin_screens_for_a_client(services, fake_bot, make_active_client):
-    """Подсказка админа, дошедшая до клиента (старое сообщение, ошибка
-    адресата), открывает главную клиента — не экран продления чужого профиля."""
+    """Подсказка админа, дошедшая до пользователя (старое сообщение, ошибка
+    адресата), открывает главную пользователя — не экран продления чужого профиля."""
     other = make_active_client("Чужой", tg_id=5103)
     cl = make_active_client("Вася", tg_id=5104)
     for kind, ref in (("extend", other.id), ("unassigned", 0)):
@@ -190,7 +190,7 @@ def _period(services, client, start, end, kind):
 
 def test_expiring_and_expired_notes_link_the_profile_and_offer_extend(services, make_active_client):
     """Админу «⏳ [Имя]: подписка истекает…» и «🔴 [Имя]: подписка истекла» —
-    имя ссылкой cl-<id>, кнопка «⏱ Продлить»; клиенту — «💳 Подписка». По
+    имя ссылкой cl-<id>, кнопка «⏱ Продлить»; пользователю — «💳 Подписка». По
     одному разу на порог: второй проход молчит."""
     services.bot_username = BOT
     now = timeutil.now()
@@ -222,7 +222,7 @@ def test_without_bot_name_profile_names_stay_plain_text(services, make_active_cl
 
 async def test_year_client_expiring_note_keeps_subscription_button_next_to_grace(
         services, make_active_client):
-    """Годовому клиенту «подписка истекает» — «💳 Подписка» и «⏱ Отсрочка»
+    """Годовому пользователю «подписка истекает» — «💳 Подписка» и «⏱ Отсрочка»
     вместе: отсрочка не отменяет входа в подписку."""
     from awgbot.runtime.scheduler import setup_scheduler
     now = timeutil.now()
@@ -235,11 +235,11 @@ async def test_year_client_expiring_note_keeps_subscription_button_next_to_grace
     assert len(mine) == 1
     labels = [b.text for r in mine[0].inline_keyboard for b in r]
     assert any(l.startswith("⏱ Отсрочка") for l in labels), labels
-    assert "💳 Подписка" in labels, f"годовому клиенту пропала кнопка подписки: {labels}"
+    assert "💳 Подписка" in labels, f"годовому пользователю пропала кнопка подписки: {labels}"
 
 
 def test_device_limit_notes_link_the_device_without_a_button(services, make_active_client):
-    """Клиенту «⚠️ Устройство [iPhone]: израсходовано ~80%» и «🔴 … исчерпан»
+    """Пользователю «⚠️ Устройство [iPhone]: израсходовано ~80%» и «🔴 … исчерпан»
     — имя ссылкой dev-<id> на его карточку, кнопки действия нет; каждое — один
     раз на месяц."""
     services.bot_username = BOT

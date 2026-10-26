@@ -194,7 +194,7 @@ def test_gateway_agent_starts_after_the_plumbing_unit(tmp_path, script):
     после ребута её восстанавливает он же, теперь ещё и дождавшись аплинка.
     Без упорядочивания агент успевал сделать проверки раньше и первым
     сообщением после каждой перезагрузки говорил «таблицы нет, шлюз открыт
-    клиентам туннеля». Requires не ставим: не отработавшая обвязка не должна
+    пользователям туннеля». Requires не ставим: не отработавшая обвязка не должна
     уносить агента — через него её и чинят."""
     unit = _render_unit(tmp_path, script, role="gateway")
     assert "After=network-online.target awg-link-gw.service" in unit

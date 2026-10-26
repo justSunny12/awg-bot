@@ -14,7 +14,7 @@ from awgbot.bot.handlers import (admin, client, friend, guide,
 pytestmark = pytest.mark.smoke
 
 # Порядок включения — как в awgbot.runtime.main (reply_commands первым; routing
-# ДО client, иначе FSM ввода адресов перехватит общий message-хендлер клиента).
+# ДО client, иначе FSM ввода адресов перехватит общий message-хендлер пользователя).
 _HANDLER_MODULES = [reply_commands, admin, settings, guide, friend, routing, client]
 
 
@@ -42,7 +42,7 @@ def test_real_routers_assemble_into_dispatcher():
 def test_no_helper_is_registered_as_a_handler(mod):
     """Декоратор, вставший над вспомогательной функцией, вешает на кнопку
     помощник с чужой сигнатурой — aiogram зовёт его с cb/services и падает.
-    Ровно так «Мои устройства» у клиента упали в v2.20.0. Помощники — с
+    Ровно так «Мои устройства» у пользователя упали в v2.20.0. Помощники — с
     подчёркиванием, обработчики — без; регистрация помощника — брак.
     Роутер может быть пакетом из подроутеров (admin) — обходим всю цепочку."""
     handlers = [h.callback for sub in mod.router.chain_tail

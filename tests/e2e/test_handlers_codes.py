@@ -60,7 +60,7 @@ async def test_guest_refused_code_from_another_owner_code_survives(services, fak
 
 
 async def test_guest_becomes_owner_with_all_devices(services, fake_bot, make_active_client):
-    """Гость с тремя устройствами активирует клиентский код с лимитом 2:
+    """Гость с тремя устройствами активирует код пользователя с лимитом 2:
     все три переезжают и работают, владелец и админ получают по уведомлению.
     Итог с перебором лимита и тексты уведомлений — снимок gst.code.upgrade.over."""
     owner = make_active_client(tg_id=6206, name="Вася", device_limit=5)

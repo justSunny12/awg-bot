@@ -5,11 +5,11 @@
 Правила рисует бот по `state.json` зоны; скрипт зоны таблицу хоста не трогает.
 
 Цена ошибки: DNAT порта вебхука без фильтра по пулу — в бота основы (с токеном
-и данными клиентов основы) может стучаться кто угодно из интернета; пул без
+и данными пользователей основы) может стучаться кто угодно из интернета; пул без
 ядра — после неудачного обновления диапазонов Telegram перестаёт доставлять
 вебхуки, бот на резерве молчит; правила зоны в фазе `idle` — порт клона
 открыт, клона нет; пересылка хвоста без маскарада — ответ основы не возвращается
-клиенту.
+пользователю.
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def test_serving_passes_the_webhook_port_to_the_zone_only_from_the_telegram_pool
 @pytest.mark.parametrize("filtering", [True, False], ids=["filter", "nat-only"])
 def test_serving_opens_the_clone_port_lets_the_zone_out_and_masquerades_it(filtering):
     lines = _lines(nftguard.render(_spec(filter=filtering, **SERVING)))
-    assert "udp dport 45877 accept" in lines, "порт клона закрыт — клиенты основы не доходят"
+    assert "udp dport 45877 accept" in lines, "порт клона закрыт — пользователи основы не доходят"
     assert 'iifname { "awggv-h" } ip daddr != @tunnel_nets4 accept' in lines, \
         "бот основы в зоне не выйдет в Telegram (без известных внешних интерфейсов — всё, кроме сетей туннеля)"
     assert any(ln.endswith("ip saddr 169.254.77.0/30 masquerade") for ln in lines), "зона без маскарада наружу"
@@ -65,7 +65,7 @@ def test_serving_opens_the_clone_port_lets_the_zone_out_and_masquerades_it(filte
 def test_the_zone_goes_only_out_through_the_external_interfaces(phase):
     """Из зоны гостя пересылка — только во внешние интерфейсы хоста, и сразу
     за этим запрет всего остального с veth. Иначе бот основы в зоне (чужой
-    код с чужими данными) дотягивается до клиентов резерва в туннеле, до
+    код с чужими данными) дотягивается до пользователей резерва в туннеле, до
     линков слотов и до локальных сетей за шлюзами резерва."""
     extra = dict(SERVING) if phase == "serving" else dict(guest_phase="taking", guest_udp_port=45877,
                                                             guest_veth_if="awggv-h", guest_zone4="169.254.77.2",
@@ -99,7 +99,7 @@ def test_relay_forwards_the_clone_port_to_the_main_and_masquerades_the_answer(fi
     text = nftguard.render(_spec(filter=filtering, **RELAY))
     lines = _lines(text)
     assert "udp dport 45877 counter dnat ip to 203.0.113.5:45877" in lines, text
-    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
+    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся пользователю"
     assert "ct status dnat meta l4proto udp accept" in lines, "пересылка хвоста не пропущена фильтром хоста"
     assert "udp dport 45877 accept" not in lines, "клона уже нет, а порт для хоста открыт"
     assert "tg_pool4" not in text and "169.254.77" not in text
@@ -110,7 +110,7 @@ def test_a_relay_without_a_target_or_a_port_forwards_nothing(over):
     spec = dict(RELAY)
     spec.update(over)
     text = nftguard.render(_spec(**spec))
-    assert "dnat ip to 203.0.113.5" not in text and "masquerade" in text, text  # маскарад клиентов остаётся
+    assert "dnat ip to 203.0.113.5" not in text and "masquerade" in text, text  # маскарад пользователей остаётся
 
 
 @pytest.mark.parametrize("miss", ["guest_zone4", "guest_webhook_port"])
@@ -127,7 +127,7 @@ def test_the_table_is_deterministic_for_the_cheap_comparison_by_text():
 
 
 
-# ── два клона: клиентский интерфейс и окно переезда профилей ────────────────
+# ── два клона: основной интерфейс AWG и окно переезда профилей ──────────────
 
 def test_serving_with_two_clones_opens_both_ports_in_one_rule():
     """Основа в окне переезда профилей: часть устройств ещё на старом
@@ -148,7 +148,7 @@ def test_relay_with_two_ports_forwards_each_to_the_same_port_of_the_main(filteri
     lines = _lines(nftguard.render(_spec(filter=filtering, **spec)))
     assert "udp dport { 45877, 45878 } counter dnat ip to 203.0.113.5" in lines, "\n".join(lines)
     assert not [ln for ln in lines if "dnat ip to 203.0.113.5:" in ln], "при двух портах DNAT с портом назначения"
-    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся клиенту"
+    assert "ct status dnat meta l4proto udp masquerade" in lines, "ответ основы не вернётся пользователю"
     if filtering:
         assert "ct status dnat meta l4proto udp accept" in lines, "пересылка хвоста не пропущена фильтром хоста"
 

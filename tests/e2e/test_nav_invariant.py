@@ -148,7 +148,7 @@ async def test_add_device_for_friend_shows_slots_in_place(services, fake_bot, ma
     assert "1 из 3" in prompt and "для друга" in prompt
 
 
-# ── переименование своего устройства клиентом: итог и меню следом ────────────
+# ── переименование своего устройства пользователем: итог и меню следом ───────
 
 async def test_client_rename_returns_to_menu(services, fake_bot, make_active_client):
     """После ввода — карточка с итогом первой строкой, одним сообщением, и
@@ -216,10 +216,10 @@ async def test_gateway_token_message_deleted_even_when_rejected(services, fake_b
 
 def test_admin_router_has_no_device_add_alias():
     assert not hasattr(ah, "admin_dev_add_alias")
-    assert DeviceCB(action="add").pack() == "d:add:0"     # клиентская кнопка жива
+    assert DeviceCB(action="add").pack() == "d:add:0"     # кнопка пользователя жива
 
 
-# ── удаление устройства клиентом: финишер, потом меню ────────────────────────
+# ── удаление устройства пользователем: финишер, потом меню ───────────────────
 
 async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_active_client):
     from awgbot.bot.callbacks import DelDeviceCB
@@ -343,7 +343,7 @@ async def test_menu_under_the_issued_link_becomes_the_main_screen(services, fake
 
 
 async def test_own_block_does_not_notify_the_one_who_pressed(services, fake_bot, make_active_client):
-    """Клиент блокирует своё устройство: итог он видит на экране, уведомление
+    """Пользователь блокирует своё устройство: итог он видит на экране, уведомление
     самому себе — шум. Держатель узнаёт честную причину — «владельцем», а не
     «закончилась подписка»."""
     from awgbot.core.blocks import DeviceBlock

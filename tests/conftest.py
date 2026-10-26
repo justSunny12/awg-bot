@@ -110,7 +110,7 @@ def _repo_conf_digest() -> dict[str, str]:
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture()
 def db(tmp_path):
-    """Настоящая SQLite-БД во временном файле (со схемой и служебным клиентом)."""
+    """Настоящая SQLite-БД во временном файле (со схемой и служебным пользователем)."""
     from awgbot.infra.db import Database
     database = Database(str(tmp_path / "bot.db"))
     database.init_schema()
@@ -219,7 +219,7 @@ def fake_routing(monkeypatch, tmp_path):
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, probe="ok", enabled=True,
         dns={},                       # домен → IPv4, что «вернёт» резолвер
-        # Счётчики пира линка. По умолчанию мир такой: клиенты через линк
+        # Счётчики пира линка. По умолчанию мир такой: пользователи через линк
         # ходят (tx растёт), обратно не приходит ничего (rx стоит) — то есть
         # спрос есть, улик прохождения нет, и вердикт активного слота решает
         # зонд, как во всех тестах автомата. Тесты про простой ставят шаги
@@ -515,7 +515,7 @@ def fake_bot():
 
 @pytest.fixture()
 def make_active_client(services):
-    """Фабрика: создать клиента и сразу активировать инвайт. Возвращает Client."""
+    """Фабрика: создать пользователя и сразу активировать инвайт. Возвращает Client."""
     def _make(name="Клиент", tg_id=1000, period_kind="year", device_limit=3,
               traffic_limit=0):
         created = services.create_client(name, device_limit, period_kind, traffic_limit)
@@ -562,7 +562,7 @@ def _shared_conf_back_after_the_test():
     """Копия conf — одна на процесс: тест, дошедший до settings.set_value
     (финал переезда переписывает network.subnet_cidr на подсеть второго
     интерфейса), оставлял её соседям по воркеру. Под xdist сосед — любой: у
-    агента в тесте канала документ вёз «чужую» подсеть клиентов и
+    агента в тесте канала документ вёз «чужую» подсеть пользователей и
     перезапускал обвязку. После теста файлы копии — как до него."""
     def snap() -> dict[str, bytes]:
         out = {}

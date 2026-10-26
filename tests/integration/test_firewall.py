@@ -33,7 +33,7 @@ def test_reconcile_collects_only_admin_addresses(services, fake_awg, make_active
 def test_reconcile_runs_even_when_firewall_disabled(services, fake_awg, monkeypatch):
     """Решение «фильтр или только NAT» принимает nftguard, а не вызывающий:
     на хосте с выключенным файерволом таблица всё равно нужна — без неё у
-    клиентов нет выхода наружу."""
+    пользователей нет выхода наружу."""
     monkeypatch.setattr(nftguard, "enabled", lambda: False)
     services.reconcile_ssh_access()
     assert fake_awg.fw_calls == 1

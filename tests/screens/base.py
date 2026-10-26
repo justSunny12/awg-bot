@@ -31,7 +31,7 @@ DISPATCHER = {"admin": "client", "client": "client", "guest": "client", "gateway
 GUEST_TG = 2000          # гость «Артём» (shots_client)
 
 # подписи чатов-адресатов в записи («+ send #1 → чат админ»)
-PEERS = {config.ADMIN_ID: "админ", CLIENT_TG: "клиент", GUEST_TG: "гость"}
+PEERS = {config.ADMIN_ID: "админ", CLIENT_TG: "пользователь", GUEST_TG: "гость"}
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,7 @@ def in_zone(builder, name: str, **kw):
 # ── построители состояния ────────────────────────────────────────────────────
 
 def owner(services):
-    """Действующий клиент с годовой подпиской и без устройств."""
+    """Действующий пользователь с годовой подпиской и без устройств."""
     created = services.create_client("Вася", 3, "year", 0)
     res = services.activate_client(created.invite_code, CLIENT_TG)
     assert res.ok, res.reason

@@ -226,7 +226,7 @@ def test_a_single_missing_admin_device_reads_in_singular(services, slot):
 
 def test_a_removed_admin_device_left_on_the_gateway_is_named_from_history(services, slot):
     """Устройство удалено, а шлюз всё ещё пускает его адрес как админский —
-    это дыра: адрес достанется следующему устройству любого клиента. Имя
+    это дыра: адрес достанется следующему устройству любого пользователя. Имя
     удалённого берётся из истории, чтобы человек понял, о чём речь."""
     old = services.add_device(_admin(services).id, "Старый планшет")
     with_old = services.gwlink_issued_env(slot)["ADMIN_IPS"]
@@ -302,10 +302,10 @@ def test_no_all_clear_without_a_notification_before_it(services, slot):
 @pytest.mark.parametrize("value, want", [(25, "25"), ("20-30", "20-30"), ("25-35", "25-35")])
 def test_the_link_script_gets_the_link_keepalive_from_the_client_config(services, slot, monkeypatch,
                                                                      value, want):
-    """Ритм keepalive линка — тот же, что у клиентских пиров. Скрипт линка
+    """Ритм keepalive линка — тот же, что у пиров устройств. Скрипт линка
     читает YAML awk-ом только в двойных кавычках: `keepalive_seconds: 25` без
     них у него пропадал в «25-35». Бот читает YAML целиком и везёт значение
-    окружением — иначе линк шёл бы не в том ритме, что клиенты."""
+    окружением — иначе линк шёл бы не в том ритме, что пользователи."""
     real = settings.get
     monkeypatch.setattr(settings, "get", lambda k, d=None:
                         value if k == "app.client_config.keepalive_seconds" else real(k, d))
@@ -518,7 +518,7 @@ def test_a_cfg1_notification_carries_no_file_button(services, cfg1):
 
 
 def test_a_refused_link_alone_is_notified_too(services, cfg1, monkeypatch):
-    """Сменили keepalive клиентов — меняется только конфиг линка, окружение
+    """Сменили keepalive пользователей — меняется только конфиг линка, окружение
     обвязки совпадает. Шлюз отверг конфиг линка: это отказ на текущий
     документ, и о нём должно прийти уведомление, как об отказе в env, —
     иначе человек узнает о нём, только открыв карточку."""

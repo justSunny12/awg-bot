@@ -206,7 +206,7 @@ def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
 
 
 def test_previous_guard_table_is_loaded_before_the_link_comes_up(script):
-    """Между awg-quick up и nft -f свежей таблицы клиенты сервера AWG доходили
+    """Между awg-quick up и nft -f свежей таблицы пользователи сервера AWG доходили
     бы до самого устройства; прежняя таблица держит окно закрытым."""
     step1 = script.split('step "1. Конфиг и подъём $LINK_IF"', 1)[1].split('step "1a.', 1)[0]
     assert step1.index('nft -f $GUARD_FILE') < step1.index('run "$AWG_QUICK up $LINK_IF"')
@@ -310,7 +310,7 @@ def test_rollback_clears_accepts_on_every_interface(script):
 
 
 def test_bundle_values_are_taken_by_form(script):
-    """Значения из бандла и env идут в nft, юнит и sh -c: подсеть клиентов,
+    """Значения из бандла и env идут в nft, юнит и sh -c: подсеть пользователей,
     адреса админа и имя линка проходят фильтр формы, LAN_MODE — только 0/1;
     поиска сервера прежней схемы больше нет."""
     assert "detect_container" not in script

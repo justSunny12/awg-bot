@@ -41,7 +41,7 @@ def test_revoking_permission_kills_effect_but_keeps_flags(
 
     services.set_routing_allowed(c.id, False)
     assert not fake_routing.sets.get(_srcset(c.id))
-    assert db.get_device(dc.device_id).routing_on == 1        # выбор клиента цел
+    assert db.get_device(dc.device_id).routing_on == 1        # выбор пользователя цел
 
     services.set_routing_allowed(c.id, True)
     assert fake_routing.sets[_srcset(c.id)] == [dc.address]
@@ -150,7 +150,7 @@ def test_holder_has_own_domains_and_toggles(services, make_active_client, fake_r
 
 def test_client_holder_mixes_own_and_held_under_owner_permissions(
         services, make_active_client, fake_routing):
-    """Обычный клиент без разрешения держит устройство разрешённого владельца:
+    """Обычный пользователь без разрешения держит устройство разрешённого владельца:
     раздел виден, в режиме — только удерживаемое; свои — вне режима."""
     owner = make_active_client(tg_id=702, device_limit=3)
     services.set_routing_allowed(owner.id, True)

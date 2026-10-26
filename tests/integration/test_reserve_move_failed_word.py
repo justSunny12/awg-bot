@@ -15,9 +15,9 @@
 `gw` из test_gw_reserve_agent (скрипт линка и факт записи — моделью).
 
 Цена ошибки: шлюз, отдавший долю, молчит о срыве — его админ считает, что
-клиенты на резерве, а они без VPN; уведомление на каждый повтор `state` —
+пользователи на резерве, а они без VPN; уведомление на каждый повтор `state` —
 шум в чате шлюза; С11 с паузой или без пакета — после перезагрузки резерва
-клиенты мёртвой основы остаются без сервера до прихода нового пакета,
+пользователи мёртвой основы остаются без сервера до прихода нового пакета,
 которого мёртвая основа не пришлёт.
 """
 from __future__ import annotations
@@ -113,7 +113,7 @@ def test_a_zone_removed_behind_the_bot_ends_without_the_pause_and_keeps_the_pack
     assert inn.get("state") == "idle" and inn.get("ended_auto") is False, inn
     pkg = serving.s.rsv_get("rsv_pkg_in")
     assert pkg.get("gen") and pkg.get("share"), "пакет и доля стёрты — открыть снова нечем"
-    assert [n for n in notes(acts) if "зона снята" in n.text], "админу резерва не сказано, что клиенты основы не здесь"
+    assert [n for n in notes(acts) if "зона снята" in n.text], "админу резерва не сказано, что пользователи основы не здесь"
     assert gw_sent(acts, "state") and all(b["state"] == "idle" for _, b in gw_sent(acts, "state"))
     assert serving.s.reserve_auto_block() == "", f"матрица не вправе открыть снова: {serving.s.reserve_auto_block()}"
 

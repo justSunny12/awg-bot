@@ -4,7 +4,7 @@
 
 Это то место, где человек повторно запускает «ту же команду из инструкции»
 на живом хосте. Ошибка здесь стоит дорого в обе стороны: снести данные без
-второго «да» — потерять клиентов и ключи; тихо ничего не сделать — оставить
+второго «да» — потерять пользователей и ключи; тихо ничего не сделать — оставить
 шлюз со старым кодом и старой конфигурацией. Поэтому фрагменты установщика
 и awg-bot.sh гоняются настоящим bash с подставными systemctl, nft, tar и
 awg-bot.sh; все пути хоста уведены во временный корень.
@@ -176,7 +176,7 @@ class _Host:
             self.guard.parent.mkdir(parents=True)
             self.guard.write_text("table inet awg_bot_guard {}\n")
             # всё, что бот ставит на ВПС: обвязка линков и хоста, резолвер,
-            # интерфейсы awg (клиентский и два линка), файлы шлюзов в /root
+            # интерфейсы awg (основной и два линка), файлы шлюзов в /root
             self.sbin.mkdir(parents=True)
             for s in ("routing-link-setup.sh", "routing-host-setup.sh"):
                 (self.sbin / s).write_text(
@@ -381,7 +381,7 @@ def test_wipe_on_gateway_rolls_back_the_link_and_removes_its_state(host):
 
 def test_wipe_on_vps_removes_everything_the_bot_put_there(host):
     """Снос ВПС — всё, что ставил бот: линки до шлюзов и обвязка (своими
-    --rollback, по одному на линк), резолвер клиентов, интерфейсы awg,
+    --rollback, по одному на линк), резолвер пользователей, интерфейсы awg,
     файлы шлюзов в /root, таблица файервола. Останься что-то — новая
     установка начинала бы с чужими правилами, пирами и маршрутами."""
     host.installed("2.25.2", "client")
@@ -412,7 +412,7 @@ def test_wipe_on_vps_removes_everything_the_bot_put_there(host):
 
 @pytest.mark.parametrize("word", ["", "удалить", "y", "УДАЛИТЬ!"])
 def test_wipe_on_vps_needs_the_typed_word(host, word):
-    """На ВПС одного «y» мало: снос отрезает всех клиентов. Без слова
+    """На ВПС одного «y» мало: снос отрезает всех пользователей. Без слова
     «УДАЛИТЬ» дословно — отмена без единой правки."""
     host.installed("2.25.2", "client")
     before = host.snapshot()
@@ -425,7 +425,7 @@ def test_wipe_on_vps_needs_the_typed_word(host, word):
 
 
 def test_gateway_wipe_needs_only_one_confirmation(host):
-    """Шлюзу слово не нужно: снос агента клиентов ВПС не трогает, а лишний
+    """Шлюзу слово не нужно: снос агента пользователей ВПС не трогает, а лишний
     вопрос на шлюзе только мешает переустановке."""
     host.installed("2.25.2", "gateway")
     r = host.run(["2", "y"], role="gateway", tgz=host.archive("3.0.0"))
@@ -436,13 +436,13 @@ def test_gateway_wipe_needs_only_one_confirmation(host):
 def test_vps_wipe_asks_for_the_word_even_when_run_as_gateway(host):
     """На ВПС запустили установщик с --role gateway (скопировали команду для
     шлюза). Снос всё равно ВПС-ный — по роли из app.yaml: интерфейсы со
-    всеми пирами клиентов. Значит и подтверждение — ВПС-ное: одного «y» под
+    всеми пирами пользователей. Значит и подтверждение — ВПС-ное: одного «y» под
     текстом «Аплинк остаётся» мало."""
     host.installed("2.25.2", "client")
     before = host.snapshot()
     r = host.run(["2", "y"], role="gateway", tgz=host.archive("3.0.0"))
     assert host.snapshot() == before, (
-        "ВПС снесён (интерфейсы awg с пирами клиентов) по одному «y» под текстом шлюза:\n"
+        "ВПС снесён (интерфейсы awg с пирами устройств) по одному «y» под текстом шлюза:\n"
         + r.stderr)
 
 

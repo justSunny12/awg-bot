@@ -1,4 +1,4 @@
-"""Два клона в гостевой зоне (install/reserve-zone-setup.sh): клиентский
+"""Два клона в гостевой зоне (install/reserve-zone-setup.sh): основной
 интерфейс основы и интерфейс окна переезда профилей.
 
 `--take` поднимает первый клон из stdin и следом — клоны GUEST_EXTRA («имя=cidr
@@ -17,7 +17,7 @@
 интерфейс, без VPN всё время переезда; не снят при возврате — интерфейс с
 ключом основы живёт в зоне резерва; правила зоны только для первого клона —
 DNS и выход наружу у второго закрыты; отказ `--take` из-за второго
-интерфейса — переезд не состоялся вовсе, хотя клиентский интерфейс поднять
+интерфейса — переезд не состоялся вовсе, хотя основной интерфейс AWG поднять
 было можно.
 """
 from __future__ import annotations
@@ -186,7 +186,7 @@ def test_an_extra_clone_that_does_not_come_up_is_a_warning_and_is_left_out(zone)
 def test_the_first_clone_failing_refuses_the_take(zone):
     r = zone.take(extra="awg1=10.8.2.1/24", extra_confs={"awg1": _conf(45878, 2)}, AWG_FAIL="awg0")
     assert r.returncode != 0 and "клон awg0 не поднялся" in r.stderr, r.stdout + r.stderr
-    assert zone.state().get("phase") != "taking", "клиентский клон не встал, а зона «принимает»"
+    assert zone.state().get("phase") != "taking", "основной клон не встал, а зона «принимает»"
 
 
 @pytest.mark.parametrize("extra", ["awg1", "=10.8.2.1/24", "awg1="])

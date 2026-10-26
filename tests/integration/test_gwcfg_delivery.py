@@ -4,7 +4,7 @@
 
 Сервер не хранит «что выдал»: желаемое каждый раз вычисляется из тех же
 источников, из которых собирается файл первого применения, — подсеть
-клиентов, устройства админа, локальная сеть слота, порт канала, конфиг линка
+пользователей, устройства админа, локальная сеть слота, порт канала, конфиг линка
 шлюзовой стороны (`/root/gw-<линк>.conf` с поправками), почта, фраза, имя
 сервера. Доставка — по расхождению отпечатков снимка с желаемым; раздел,
 который шлюз держит в `wait` или `declined` с тем же отпечатком, не шлётся.
@@ -179,7 +179,7 @@ def test_env_comes_from_the_same_sources_as_the_link_script(services, slot):
 
 
 def test_the_client_subnet_follows_the_network_setting(services, slot, host):
-    """Подсеть клиентов — тот же ключ, что вшивает скрипт линка
+    """Подсеть пользователей — тот же ключ, что вшивает скрипт линка
     (`network.subnet_cidr`): она и в env, и первой записью AllowedIPs линка."""
     host.conf["app.network.subnet_cidr"] = "10.20.30.0/24"
     want = services.gwcfg_desired(slot)
@@ -242,7 +242,7 @@ def test_without_the_live_conf_the_slot_port_is_used(services, slot, host):
 
 def test_allowed_ips_are_built_by_the_rule_not_copied_from_the_source(services, slot, host):
     """`AllowedIPs = 0.0.0.0/0` в источнике (руками или подложено) в документ
-    не попадает: записи — ровно подсеть клиентов, /30 линка и подсети соседей."""
+    не попадает: записи — ровно подсеть пользователей, /30 линка и подсети соседей."""
     host.source(LINK.replace("AllowedIPs = 10.8.1.0/24, 10.99.99.0/30", "AllowedIPs = 0.0.0.0/0"))
     text = services.gwcfg_link_conf(slot, services.gwcfg_env(slot))
     assert _parsed(text).get("Peer", "AllowedIPs") == "10.8.1.0/24, 10.99.99.0/30", text
@@ -254,7 +254,7 @@ def test_allowed_ips_are_built_by_the_rule_not_copied_from_the_source(services, 
 
 @pytest.mark.parametrize("value, want", [("20-30", "20-30"), (25, "25"), ("каждые 25", "25-35"), ("", "25-35")])
 def test_the_link_keepalive_follows_the_client_config(services, slot, host, value, want):
-    """Ритм keepalive линка — тот же, что у клиентских пиров; мусор в настройке
+    """Ритм keepalive линка — тот же, что у пиров устройств; мусор в настройке
     не уходит в конфиг (агент отверг бы его), остаётся «25-35»."""
     host.conf["app.client_config.keepalive_seconds"] = value
     text = services.gwcfg_link_conf(slot, services.gwcfg_env(slot))

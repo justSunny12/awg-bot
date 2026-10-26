@@ -1,5 +1,5 @@
 """E2E: недобитые ветки check_traffic_limits — переданное устройство сверх лимита,
-самопревышение админ-клиента, клиентский порог предупреждения.
+самопревышение админа как пользователя, порог предупреждения пользователя.
 """
 import pytest
 
@@ -29,7 +29,7 @@ def test_friend_device_over_limit_notifies_host_and_friend(services, fake_awg, m
 
 
 def test_admin_client_cannot_be_traffic_limited(services, fake_awg, make_active_client):
-    # Клиент админа НЕ ограничивается: set_client_traffic_limit — no-op для него.
+    # Запись админа как пользователя НЕ ограничивается: set_client_traffic_limit — no-op для него.
     admin = make_active_client(tg_id=ADMIN, name="Админ")
     services.add_device(admin.id, "d")
     services.set_client_traffic_limit(admin.id, 100)

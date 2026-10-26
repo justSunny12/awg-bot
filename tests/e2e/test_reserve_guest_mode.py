@@ -11,7 +11,7 @@
 (обновляет чужой сервер, ставит чужие слоты, шлёт чужие бэкапы); хендлер
 админа раньше загородки — то же через другую дверь; роутер админа второго
 сервера в боте основы — чужой человек получает экран пары; `awg-quick` в
-песочнице клона — клон не поднимется, VPN клиентов основы встанет на резерве
+песочнице клона — клон не поднимется, VPN пользователей основы встанет на резерве
 в самый момент аварии.
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ def test_guest_routers_keep_the_client_ones_drop_the_peer_admin_and_put_the_fenc
     assert set(main) - set(guest) == {"peeradmin", "peercode"}, (
         f"у гостя лишилось не только роль админа второго сервера: {set(main) ^ set(guest)}")
     assert "peercode" not in guest, "ввод аварийного кода в боте основы на резерве"
-    assert {"client", "friend", "routing", "guide"} <= set(guest), "клиентские роутеры целиком"
+    assert {"client", "friend", "routing", "guide"} <= set(guest), "роутеры пользователя целиком"
 
 
 # ── сквозь диспетчер ─────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ async def test_a_file_from_the_admin_is_refused_not_taken_for_a_restore(run):
 
 
 async def test_the_refusal_does_not_touch_the_admins_row_of_clients_menu(run, services):
-    """Клиентские кнопки админа (профили) живут: загородка берёт только хостовое."""
+    """Кнопки админа как пользователя (профили) живут: загородка берёт только хостовое."""
     calls = await run.press("m:clients")
     texts = [getattr(c, "text", "") or "" for c in calls]
     assert guest_svc.GUEST_REFUSED not in texts, "список профилей на резерве закрыт загородкой"

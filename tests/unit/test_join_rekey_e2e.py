@@ -1,13 +1,13 @@
 """Смена ключей после верного кода сопряжения на шлюзе — сквозь настоящие
 функции (FIXES-uupd-3, flow-1): стоящий конфиг линка — по токену
 (tools/join._link_conf: AllowedIPs только /30), новый — как его собирает
-сервер (подсеть клиентов, /30, префиксы соседей); агент — настоящий
+сервер (подсеть пользователей, /30, префиксы соседей); агент — настоящий
 GatewayServices (rekey_next_in → rekey_go), проверка — настоящая
 wg_conf_check из routing-gw-setup.sh с окружением, которое агент передаёт
 в --link-apply.
 
 Цена ошибки: после верного кода линк на постоянные ключи не переходит
-никогда — проверка скрипта требует подсеть клиентов, которой в [Peer] по
+никогда — проверка скрипта требует подсеть пользователей, которой в [Peer] по
 токену нет, юнита с CLIENT_SUBNET у шлюза в сопряжении ещё нет.
 """
 from __future__ import annotations
@@ -157,7 +157,7 @@ def joined(svc, tmp_path, monkeypatch):
 def test_the_keys_after_the_code_pass_the_scripts_check(joined, peers, tmp_path):
     """link_next auto=join после кода: проверка ключей агентом, переключение,
     --link-apply — настоящая проверка скрипта принимает конфиг, и на месте —
-    [Peer] сервера (подсеть клиентов, соседи, PSK), [Interface] нового (I1)."""
+    [Peer] сервера (подсеть пользователей, соседи, PSK), [Interface] нового (I1)."""
     nxt = _script_next(tmp_path, joined.link.read_text(encoding="utf-8"), peers)
     res = joined.rekey_next_in({"t": "link_next", "id": "a1b2c3d4e5f6", "conf": nxt, "fp": "x", "auto": "join"})
     assert res["reply"]["state"] == "ready" and not res["ask"], res
@@ -172,7 +172,7 @@ def test_the_keys_after_the_code_pass_the_scripts_check(joined, peers, tmp_path)
 
 def test_the_old_merge_would_have_been_refused_by_the_script(joined, tmp_path):
     """Тот же переход прежним слиянием ([Peer] стоящего, только /30) с
-    подсетью клиентов — скрипт отказывает: ради этого [Peer] при сопряжении
+    подсетью пользователей — скрипт отказывает: ради этого [Peer] при сопряжении
     берётся из нового."""
     standing = joined.link.read_text(encoding="utf-8")
     new = gwcfg.check_link_rekey(_server_next(), standing)
@@ -208,7 +208,7 @@ def test_the_env_comes_from_the_conf_only_while_pairing(joined, monkeypatch):
 
 
 def test_the_full_apply_after_pairing_gets_the_client_subnet(joined, monkeypatch):
-    """Полная обвязка после сопряжения (--apply) — подсеть клиентов и соседи
+    """Полная обвязка после сопряжения (--apply) — подсеть пользователей и соседи
     из конфига линка на постоянных ключах, а не /30 и не умолчание."""
     from awgbot.infra import gwguard
     from awgbot.infra.gwguard import join as gj
@@ -222,7 +222,7 @@ def test_the_full_apply_after_pairing_gets_the_client_subnet(joined, monkeypatch
 
 def test_the_resolver_is_not_guessed_from_allowed_ips():
     """join-3: в AllowedIPs линка резолвера нет (gw_allowed_ips скрипта линка:
-    подсеть клиентов, /30, префиксы соседей) — /32 не принимается за него;
+    подсеть пользователей, /30, префиксы соседей) — /32 не принимается за него;
     резолвер довезёт документ."""
     env = gwcfg.join_link_env(_server_next("10.241.0.0/16, 10.242.0.7/32"))
     assert env == {"CLIENT_SUBNET": "10.8.1.0/24", "PEER_LAN_NETS": "10.241.0.0/16 10.242.0.7/32"}

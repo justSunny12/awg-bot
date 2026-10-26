@@ -6,7 +6,7 @@
 AWG_BOT_DATA_DIR, AWG_BOT_ENV, BOT_TOKEN и ADMIN_ID из env хранилища гостя.
 LAB_MAKE_CLIENT=<имя> — до старта завести в базе гостя активный профиль (так
 сценарий получает «запись, сделанную на резерве», не подключая настоящих
-клиентов).
+пользователей).
 
     ip netns exec awg-guest env … python -m tests.lab.guest_main
 """

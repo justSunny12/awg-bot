@@ -1,18 +1,18 @@
 """Дополнения резерва в боте: «здесь ещё N, там M» в карточке основы и в
 живом сообщении, строка «мало свободной памяти» (карточка основы и экран
 роли), строка пула Telegram на экране роли, экран роли для общего админа
-обоих серверов разделом его «🛟 Резерв» («🛰 Для «…»»), «👤 Меню клиента»
-у админа второго сервера, который ещё и клиент этого (роль клиента на
-полчаса сессии, middleware ведёт его как клиента).
+обоих серверов разделом его «🛟 Резерв» («🛰 Для «…»»), «👤 Меню пользователя»
+у админа второго сервера, который ещё и пользователь этого (роль пользователя на
+полчаса сессии, middleware ведёт его как пользователя).
 
 Нажатия админа — через настоящий диспетчер роли (как в
 test_reserve_move_ui.py); экран роли и шаг middleware — напрямую.
 
 Цена ошибки: «здесь ещё N» без «там M» — админ основы не видит, что
-клиенты уже у резерва, и ждёт; строка памяти при 0 (прежняя версия
+пользователи уже у резерва, и ждёт; строка памяти при 0 (прежняя версия
 резерва не шлёт поля) — ложная тревога о каждом старом резерве; кнопка
 «🛰 Для …» у админа, который не админ второго, — чужой экран; «👤 Меню
-клиента» для не клиента — меню чужого профиля; отметка клиента без срока
+пользователя» для не пользователя — меню чужого профиля; отметка пользователя без срока
 — экран роли не вернётся никогда.
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ __all__ = ["ui"]
 
 @pytest.fixture(autouse=True)
 def _no_peer_client_mark():
-    """Отметка «он сейчас клиент» — модульная: у каждого теста своя."""
+    """Отметка «он сейчас пользователь» — модульная: у каждого теста своя."""
     access_cache._peer_client.clear()
     access_cache.invalidate_all()
     yield
@@ -188,7 +188,7 @@ def test_the_code_is_accepted_from_the_admin_only_when_he_is_the_peers_admin(ser
     assert services.reserve_code_sender_ok(PEER_ADMIN) is False, "прежний аккаунт роли принимается после смены"
 
 
-# ── «👤 Меню клиента» ───────────────────────────────────────────────────────
+# ── «👤 Меню пользователя» ──────────────────────────────────────────────────
 
 async def _role(db, uid: int, text: str = "привет"):
     from tests.e2e.test_reserve_peer_admin import _role as role_of
@@ -214,10 +214,10 @@ async def test_the_client_menu_makes_him_a_client_for_half_an_hour(services, rsv
     nav = FakeMessage(chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     cb = FakeCallback(message=nav, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.as_client(cb, services)
-    assert not [a for a in cb.answers if a[1]], f"отказ клиенту: {cb.answers}"
-    assert fake_bot.records or nav.sent, "меню клиента не показано"
+    assert not [a for a in cb.answers if a[1]], f"отказ пользователю: {cb.answers}"
+    assert fake_bot.records or nav.sent, "меню пользователя не показано"
     access_cache.invalidate_all()
-    assert await _role(services.db, PEER_ADMIN) == "client", "middleware не ведёт его как клиента"
+    assert await _role(services.db, PEER_ADMIN) == "client", "middleware не ведёт его как пользователя"
     # полчаса прошли — снова роль
     import time
     access_cache._peer_client[PEER_ADMIN] = time.monotonic() - 1
@@ -246,7 +246,7 @@ async def test_the_client_menu_for_a_non_client_is_an_alert_and_no_mark(services
 
 
 async def test_a_stranger_with_the_mark_is_still_a_stranger(services, rsv):
-    """Отметка клиента касается только шага роли: чужой аккаунт она клиентом не делает."""
+    """Отметка пользователя касается только шага роли: чужой аккаунт она пользователем не делает."""
     rc.pair_row(services)
     access_cache.peer_client_on(PEER_ADMIN + 1)
     assert await _role(services.db, PEER_ADMIN + 1) is None

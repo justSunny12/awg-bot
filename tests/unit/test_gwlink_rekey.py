@@ -231,7 +231,7 @@ def test_stage_needs_an_agent_not_below_330(services, slot, vps):
 
 def test_stage_prepares_new_keys_and_remembers_the_transition(services, slot, vps):
     """«🔑 Сменить»: скрипт линка в режиме стадии с окружением слота (имя,
-    порт, /30, keepalive клиентов); живые конфиги не тронуты; состояние
+    порт, /30, keepalive пользователей); живые конфиги не тронуты; состояние
     staged с id и отпечатком пары новых ключей."""
     live_before = vps.live.read_text(encoding="utf-8")
     st = services.gateway_rekey_stage(1)

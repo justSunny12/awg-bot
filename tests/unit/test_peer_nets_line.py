@@ -65,7 +65,7 @@ def _dialog_state(problem: str) -> dict:
 def test_the_transit_dialog_promises_no_link_while_the_addresses_are_off():
     on = gateway_lan_ask(_dialog_state(""), True, "10.9.1.1")
     assert "из подсетей других шлюзов с включённым VPN-транзитом (Pi4)" in on
-    off = gateway_lan_ask(_dialog_state("служебное пространство 10.0.0.0/12 пересекается с подсетью клиентов"),
+    off = gateway_lan_ask(_dialog_state("служебное пространство 10.0.0.0/12 пересекается с подсетью пользователей"),
                           True, "10.9.1.1")
     assert "🔗 Связь подсетей:" not in off
 

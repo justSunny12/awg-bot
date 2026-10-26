@@ -1,5 +1,5 @@
 """E2E: роутер администратора (handlers/admin/) — панель, создание/правка/
-удаление клиента, устройства клиента, перепривязка устройства без профиля,
+удаление пользователя, устройства пользователя, перепривязка устройства без профиля,
 бэкап, перезапуск, личный VPN админа.
 
 Не дублирует уже покрытое в test_handlers_block / test_handlers_extend.
@@ -27,7 +27,7 @@ def _amsg(bot, text=""):
     return FakeMessage(text=text, chat_id=ADMIN, user_id=ADMIN, bot=bot)
 
 
-# ── создание клиента (FSM) ───────────────────────────────────────────────────
+# ── создание пользователя (FSM) ──────────────────────────────────────────────
 async def test_create_client_bad_inputs(services, fake_bot):
     """Пустое имя и нечисловой лимит не принимаются (переспросы — снимки
     adm.new.name.empty, adm.new.devs.bad)."""
@@ -41,7 +41,7 @@ async def test_create_client_bad_inputs(services, fake_bot):
     assert "limit" not in await st.get_data(), "нечисловой лимит принят"
 
 
-# ── добавление устройства клиенту (FSM) ──────────────────────────────────────
+# ── добавление устройства пользователю (FSM) ─────────────────────────────────
 async def test_admin_add_device_for_client(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=6002, device_limit=3)
     st = FakeState()
@@ -203,7 +203,7 @@ async def test_delete_client_keeps_profile_when_peer_stays_on_server(
         services, fake_bot, make_active_client, monkeypatch):
     """Пир не снялся — профиль обязан остаться, и об этом надо сказать.
 
-    Прежде отказ remove_peer глотался, запись клиента удалялась каскадом, а
+    Прежде отказ remove_peer глотался, запись пользователя удалялась каскадом, а
     админу докладывалось «удалено, устройств: N». Итог: VPN у человека
     продолжает работать, а записи, по которой его можно найти, больше нет.
     Соседний поток (удаление ОДНОГО устройства) на том же отказе

@@ -73,7 +73,7 @@ class _Wg:
 def world(mv, fake_awg, make_active_client, monkeypatch, tmp_path):
     """Основа «Alpha» в паре с «Beta»: окно переезда на awg1 открыто, у профиля
     «Аня» устройство «Ноут» и его двойник (без рукопожатия), снимок пакета
-    `base-7` снят, клиенты и бот ушли к резерву."""
+    `base-7` снят, пользователи и бот ушли к резерву."""
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
     monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")

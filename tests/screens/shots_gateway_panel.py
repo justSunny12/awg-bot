@@ -28,7 +28,7 @@ _CHECKS_BAD = [
 _CHECKS_WAITING = [
     GwCheck(gc.CHECK_LINK, True, "хендшейк 40 с назад"),
     GwCheck(gc.CHECK_GUARD, True),
-    GwCheck(gc.CHECK_CLIENT_MASQ, False, f"маршрут по умолчанию через br0, а маскарад клиентов стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"),
+    GwCheck(gc.CHECK_CLIENT_MASQ, False, f"маршрут по умолчанию через br0, а маскарад пользователей стоит на другом интерфейсе; {gc.SELF_HEAL_TAIL}"),
     GwCheck(gc.CHECK_TG_ROUTE, True),
     GwCheck(gc.CHECK_MODULE, False, "нет для 1 из 2 ядер (6.12.1-v8): перезагрузка в такое ядро оставит шлюз без туннелей"),
     GwCheck(gc.CHECK_TRANSIT, True, group="lan"),
@@ -38,7 +38,7 @@ _CHECKS_WAITING = [
 ]
 
 # Порядок — как в живом status(): обвязка (plumbing_checks: … «маскарад
-# клиентов», сразу за ним «маскарад к роутеру»), маршруты, линк, ядра,
+# пользователей», сразу за ним «маскарад к роутеру»), маршруты, линк, ядра,
 # локальная сеть, выход наружу.
 _ROUTER_MASQ_CHECKS = [
     GwCheck(gc.CHECK_IP_FORWARD, True),

@@ -182,7 +182,7 @@ def _gw_warns(monkeypatch, unit_state: dict) -> list[str]:
 def test_plumbing_still_starting_is_not_reported_as_missing(monkeypatch):
     """После ребута юнит обвязки ждёт аплинк и ставит таблицу позже агента.
     Жалоба на то, что вот-вот появится, была первым сообщением после КАЖДОЙ
-    перезагрузки — и выглядела как «шлюз открыт клиентам туннеля»."""
+    перезагрузки — и выглядела как «шлюз открыт пользователям туннеля»."""
     assert _gw_warns(monkeypatch, {"ActiveState": "activating", "UnitFileState": "enabled"}) == []
 
 

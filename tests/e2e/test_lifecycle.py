@@ -1,4 +1,4 @@
-"""E2E: жизненный цикл клиента — инвайт→активация→устройство→истечение→продление."""
+"""E2E: жизненный цикл пользователя — инвайт→активация→устройство→истечение→продление."""
 import datetime
 
 import pytest
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.e2e
 
 
 def _expire(db, client_id):
-    """Сдвинуть период клиента в прошлое (для проверки истечения)."""
+    """Сдвинуть период пользователя в прошлое (для проверки истечения)."""
     db.update_client_fields(
         client_id,
         period_start="2020-01-01T00:00:00+03:00",
@@ -24,7 +24,7 @@ def test_full_happy_path_expire_then_extend(services, fake_awg, make_active_clie
     dc = services.add_device(client.id, "Телефон")
     assert fake_awg.peers and dc.address not in fake_awg.blocked
 
-    # истечение → блокировка устройства и клиента, DROP наложен
+    # истечение → блокировка устройства и пользователя, DROP наложен
     _expire(services.db, client.id)
     notes = services.check_expiry()
     fresh = services.db.get_client(client.id)
@@ -33,7 +33,7 @@ def test_full_happy_path_expire_then_extend(services, fake_awg, make_active_clie
     assert int(fresh.block_reason) & int(ClientBlock.EXPIRY)
     assert int(dev.block_reason) & int(DeviceBlock.EXPIRY)
     assert dc.address in fake_awg.blocked
-    assert any(n.tg_id == 500 for n in notes)              # клиенту — уведомление
+    assert any(n.tg_id == 500 for n in notes)              # пользователю — уведомление
 
     # продление → снятие EXPIRY, DROP снят, статус active
     result = services.extend_period(client.id, "year", keep_remainder=False)
@@ -67,7 +67,7 @@ def test_expiry_threshold_notification_with_grace_offer(services, make_active_cl
         status=SubStatus.ACTIVE)
     notes = services.check_expiry()
     client_notes = [n for n in notes if n.tg_id == 501]
-    assert client_notes, "клиенту должно прийти пред-уведомление об истечении"
+    assert client_notes, "пользователю должно прийти пред-уведомление об истечении"
     # предложение отсрочки прикреплено (годовой период, grace ещё не брали)
     assert any(n.grace_offer_client_id == client.id for n in client_notes)
 

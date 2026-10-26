@@ -413,7 +413,7 @@ def test_iface_normalizes_after_the_default_flip(services, mig, make_active_clie
 
 
 def test_marking_hook_covers_every_client_subnet(monkeypatch):
-    """Хук маркировки ставится на КАЖДУЮ клиентскую подсеть.
+    """Хук маркировки ставится на КАЖДУЮ подсеть пользователей.
 
     Сужённый одной, он оставлял переехавших вообще без маркировки — и отказ был
     молчаливым и обманчивым: туннель работает, DNS отвечает, интернет есть, а

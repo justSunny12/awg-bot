@@ -167,7 +167,7 @@ SCREENS = {
     "devices (админ себе)": lambda n, p: kbc.client_devices(
         _devs(n), page=p, render=AdminSelfCB(action="devices").pack()),
     "gdevices": lambda n, p: kbc.guest_devices(_devs(n), page=p),
-    "pick (клиент)": lambda n, p: kbc.pick_device(_devs(n), "gen_file", page=p,
+    "pick (пользователь)": lambda n, p: kbc.pick_device(_devs(n), "gen_file", page=p,
                                                   render=Menu(action="gen_file").pack()),
     "pick (админ себе)": lambda n, p: kbc.pick_device(_devs(n), "gen_link", page=p,
                                                       render=AdminSelfCB(action="gen_link").pack()),
@@ -313,7 +313,7 @@ class _Session(BaseSession):
 
 @pytest.fixture()
 def dp(monkeypatch):
-    """Диспетчер с настоящим роутером листания и экраном «Клиенты», который
+    """Диспетчер с настоящим роутером листания и экраном «Пользователи», который
     записывает, с какой страницы его попросили нарисоваться."""
     monkeypatch.setattr(paging, "_pages", {})
     # роутер модульный и в процессе один; после теста — отцепить от диспетчера
@@ -333,7 +333,7 @@ def dp(monkeypatch):
 
 def _update(data: str, chat_id: int = CHAT) -> Update:
     msg = Message(message_id=7, date=datetime.datetime.now(), chat=Chat(id=chat_id, type="private"),
-                  text="👥 Клиенты")
+                  text="👥 Профили")
     return Update(update_id=1, callback_query=CallbackQuery(
         id="q1", chat_instance="ci", **{"from": User(id=chat_id, is_bot=False, first_name="A")},
         message=msg, data=data))

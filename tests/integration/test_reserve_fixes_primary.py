@@ -1,4 +1,4 @@
-"""Правки автоматов «мои клиенты» на стороне основы
+"""Правки автоматов «мои пользователи» на стороне основы
 (domain/services/reserve/outbound.py) после двух ревью: своя отметка
 отправки K (go_sent) вместо слова резерва, новый K при срыве после `go`,
 зависший вебхук резерва (take_home), повторы `back`/`back_req` и сроки шагов
@@ -9,10 +9,10 @@
 
 Цена ошибки: K, отданный резерву при сорванном переезде и не сменённый, —
 резерв открывает следующие пакеты без согласия основы; вебхук резерва,
-оставшийся после оборванного возврата, — бот основы молчит, хотя клиенты
+оставшийся после оборванного возврата, — бот основы молчит, хотя пользователи
 уже дома; снятый раньше 10 минут — короткий сбой пробы отбирает право
-отвечать у резерва, который клиентов ещё несёт; слияние, не нашедшее
-снимок по поколению, — клиенты застревают на резерве; смена Telegram у
+отвечать у резерва, который пользователей ещё несёт; слияние, не нашедшее
+снимок по поколению, — пользователи застревают на резерве; смена Telegram у
 профиля на резерве без строки в итоге — чужой аккаунт получает профиль
 незаметно; обновление посреди переезда — код меняется под гостем.
 """
@@ -108,7 +108,7 @@ def test_a_move_refused_after_go_req_but_before_the_envelope_keeps_the_k(mv):
 
 @pytest.fixture()
 def stuck(mv):
-    """Клиенты числятся у резерва, право отвечать у его вебхука, а запись уже
+    """Пользователи числятся у резерва, право отвечать у его вебхука, а запись уже
     указывает на меня; резерв на связи и говорит in=idle; основа нездорова
     (чтобы возврат по здоровью не вмешивался)."""
     svc = mv.svc
@@ -146,7 +146,7 @@ def test_the_stuck_probe_is_not_run_more_often_than_every_two_minutes(stuck):
 
 @pytest.mark.parametrize("prep, why", [
     (lambda w: setattr(w.dns, "auth", [PEER_IP]), "запись указывает на резерв"),
-    (lambda w: rm.st_in(w.svc, **{"in": "serving"}), "резерв несёт клиентов"),
+    (lambda w: rm.st_in(w.svc, **{"in": "serving"}), "резерв несёт пользователей"),
 ])
 def test_no_take_home_while_the_reserve_really_holds_the_clients(stuck, prep, why):
     prep(stuck)
@@ -185,7 +185,7 @@ async def test_take_home_deletes_the_webhook_first_and_only_then_goes_home(stuck
     rm.go_away(act.svc)
     act.pc.take_ok = False
     await rsvactions.run([("take_home",)])
-    assert act.log == ["pc.take"] and act.svc.reserve_out() == "away", "вебхук не снят, а клиенты «дома»"
+    assert act.log == ["pc.take"] and act.svc.reserve_out() == "away", "вебхук не снят, а пользователи «дома»"
     act.pc.take_ok = True
     await rsvactions.run([("take_home",)])
     assert act.svc.reserve_out() == "home" and act.svc.reserve_poll() == "mine"
@@ -214,7 +214,7 @@ def _at_step(w, step: str, wait: int = 300, **fields):
 
 
 def test_a_record_that_does_not_come_back_in_time_still_sends_back_and_asks_the_human(away):
-    """Запись не вернулась за RECORD_WAIT_S (API или факт): клиентов держит
+    """Запись не вернулась за RECORD_WAIT_S (API или факт): пользователей держит
     пересылка — `back` всё равно, админу Т-РУ11 со звуком, шаг relay."""
     svc = away.svc
     away.dns.auth = [PEER_IP]
@@ -254,7 +254,7 @@ def test_the_return_drops_the_reconnect_notice_mark(away):
     svc.db.set_state("move_notified", "1")
     _at_step(away, "relay")
     svc.reserve_wiped_in()
-    assert not svc.db.get_state("move_notified"), "после возврата клиентам не скажут переподключиться в следующий раз"
+    assert not svc.db.get_state("move_notified"), "после возврата пользователям не скажут переподключиться в следующий раз"
 
 
 # ── слияние: поколение снимка и строки о правках ────────────────────────────
@@ -387,7 +387,7 @@ def test_the_busy_guard_is_free_without_a_base(tmp_path, monkeypatch, capsys):
     assert _busy(capsys)[0] == 0
 
 
-# ── отказ действий над хостом, пока здесь клиенты резерва ───────────────────
+# ── отказ действий над хостом, пока здесь пользователи резерва ──────────────
 
 @pytest.mark.parametrize("inn, refused", [("taking", True), ("serving", True), ("releasing", True),
                                           ("relay", False), ("idle", False)])
@@ -431,7 +431,7 @@ def test_unpairing_drops_the_peers_package_and_the_merge_snapshots(mv, tmp_path)
     svc.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "DUMMY-fp", "share": "DUMMY"})
     svc.reserve_unpair("button")
     assert not pkg.exists(), "пакет второй стороны пережил удаление пары"
-    assert not (tmp_path / "reserve" / "out").exists(), "снимки base-* с базой клиентов остались"
+    assert not (tmp_path / "reserve" / "out").exists(), "снимки base-* с базой пользователей остались"
 
 
 # ── собственный адрес при сопряжении ────────────────────────────────────────

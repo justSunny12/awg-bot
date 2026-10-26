@@ -51,7 +51,7 @@ async def test_lowering_the_device_limit_by_preset_applies_at_once_and_notifies_
     await ah.edit_limit_preset(cb2, PresetCB(kind="cli_devs", ref=client.id, val=1), services, FakeState())
     assert services.db.get_client(client.id).device_limit == 1, "лимит не применён сразу"
     notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6300]
-    assert len(notes) == 1, "клиент должен узнать о новом лимите ровно одним уведомлением"
+    assert len(notes) == 1, "пользователь должен узнать о новом лимите ровно одним уведомлением"
 
 
 async def test_typed_device_limit_rejects_garbage_and_applies_the_number(services, fake_bot, make_active_client):
@@ -108,7 +108,7 @@ async def test_add_slot_raises_the_limit_notifies_the_owner_once_and_asks_the_na
         services, fake_bot, make_active_client):
     """«➕ Слот и добавить»: лимит = занято + 1, владельцу ровно одно
     сообщение (текст — снимок adm.cl.add_device.slot), дальше ввод имени и
-    устройство создаётся. Без уведомления клиент увидит чужой слот молча; без
+    устройство создаётся. Без уведомления пользователь увидит чужой слот молча; без
     ввода имени кнопка ничего не добавляет."""
     client = make_active_client("Коля", tg_id=6309, device_limit=1)
     services.add_device(client.id, "a")

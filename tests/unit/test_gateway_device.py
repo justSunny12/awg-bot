@@ -130,7 +130,7 @@ def test_link_script_rekey_mode_regenerates_keys():
 
 def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path):
     """configure_gateway на шаблоне conf/app.yaml: роль и секция gateway
-    раскомментированы, клиентскую подсеть не спрашивает и не
+    раскомментированы, подсеть пользователей не спрашивает и не
     пишет (она приезжает в юните обвязки из бандла). Вопросов нет вовсе:
     stdin закрыт, любой read упал бы."""
     text = flat()
@@ -289,7 +289,7 @@ def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypa
 def test_gateway_conf_allowed_ips_carry_peer_subnets(tmp_path):
     """Чужие подсети — в AllowedIPs пира ВПС в конфиге шлюза: awg-quick сам
     ставит маршруты. Мусор из окружения отсеивается; без чужих подсетей —
-    клиентская подсеть и /30 линка."""
+    подсеть пользователей и /30 линка."""
     link = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
     assert "AllowedIPs = $(gw_allowed_ips)" in link
     start = link.index('PEER_LAN_NETS="$(printf')

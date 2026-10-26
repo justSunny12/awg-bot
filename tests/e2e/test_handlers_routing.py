@@ -1,4 +1,4 @@
-"""E2E: условная маршрутизация в интерфейсе — раздел клиента, тумблеры,
+"""E2E: условная маршрутизация в интерфейсе — раздел пользователя, тумблеры,
 личный список адресов, админское разрешение.
 
 Инфраструктура подменена (fake_routing), поэтому проверяем, что реально
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.e2e
 
 
 def _srcset(client_id):
-    """Имя src-набора клиента: общего набора больше нет — каждый включённый
+    """Имя src-набора пользователя: общего набора больше нет — каждый включённый
     профиль получает своё правило и свой набор адресов."""
     from awgbot.infra import routing as _rt
     return _rt.src_set(client_id)
@@ -63,7 +63,7 @@ async def _allow_apply(bot, sh, client_id, services):
 
 
 def _allowed_client(services, make_active_client, tg_id):
-    """Клиент с выданным разрешением админа (верхний слой флага)."""
+    """Пользователь с выданным разрешением админа (верхний слой флага)."""
     c = make_active_client(tg_id=tg_id)
     services.set_routing_allowed(c.id, True)
     return services.db.get_client(c.id)
@@ -196,8 +196,8 @@ def test_admin_has_access_without_grant(services, make_active_client):
 
 async def test_admin_can_enable_feature_for_himself(services, make_active_client,
                                                     fake_bot, monkeypatch):
-    """Middleware отдаёт админу role=admin и client=None, поэтому клиентский
-    роутер должен уметь достать его собственный профиль сам — иначе админ мог бы
+    """Middleware отдаёт админу role=admin и client=None, поэтому роутер
+    пользователя должен уметь достать его собственный профиль сам — иначе админ мог бы
     раздавать доступ другим, но не включить функцию себе."""
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
@@ -473,7 +473,7 @@ async def test_admin_edits_foreign_list_not_his_own(services, make_active_client
                                                     fake_bot, monkeypatch):
     """Из панели чужого профиля «➕ / ➖ / 🗑» правят ЧУЖОЙ список. Раньше все
     четыре действия брали профиль «чей чат» — то есть самого админа: адреса
-    клиента уходили админу, а «удалить a.ru» стирало его собственный."""
+    пользователя уходили админу, а «удалить a.ru» стирало его собственный."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch)
 
     cb, _ = _admin_cb(fake_bot)
@@ -501,7 +501,7 @@ async def test_admin_edits_foreign_list_not_his_own(services, make_active_client
 
 async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
         services, make_active_client, fake_bot, monkeypatch):
-    """Без ref админ правит свой список (вход с главной). Клиент с чужим ref в
+    """Без ref админ правит свой список (вход с главной). Пользователь с чужим ref в
     кнопке всё равно правит только свой: чужой id для него не существует."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=141)
     services.set_routing_all(admin.id, True)
@@ -516,13 +516,13 @@ async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
     cb, _ = _cb(fake_bot, other.tg_id)
     await routing_h.routing_delete(cb, RoutingCB(action="del", ref=admin.id, idx=0,
                                                  tag=kb.entry_tag("a.ru")), other, services)
-    assert services.routing_domains(admin.id) == ["mine.ru"], "клиент удалил у админа"
+    assert services.routing_domains(admin.id) == ["mine.ru"], "пользователь удалил у админа"
     assert services.routing_domains(other.id) == ["b.ru"]
 
 
 async def test_device_switches_consistent_for_admin_and_client(
         services, make_active_client, fake_bot, monkeypatch):
-    """Экран устройств одного профиля одинаков для клиента и админа, и
+    """Экран устройств одного профиля одинаков для пользователя и админа, и
     переключения любого из них видны обоим — состояние одно, в БД (экран
     админа с выключенным устройством — снимок adm.rf.devs)."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=142)
@@ -539,11 +539,11 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    # кнопки одни; различается только выход: админ — в карточку профиля, клиент — на главную
-    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "админ и клиент видят разное"
+    # кнопки одни; различается только выход: админ — в карточку профиля, пользователь — на главную
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "админ и пользователь видят разное"
     assert (labels(nav_a)[-1], labels(nav_c)[-1]) == ("⬅️ Назад", "⬅️ В меню")
 
-    # админ включил второе — клиент видит; клиент выключил первое — админ видит
+    # админ включил второе — пользователь видит; пользователь выключил первое — админ видит
     await _dev_apply(fake_bot, config.ADMIN_ID, d2.device_id, other.id, None, services)
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
@@ -551,7 +551,7 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_a, nav_a = _admin_cb(fake_bot)
     await routing_h.routing_panel(cb_a, RoutingCB(action="devs", ref=other.id),
                                   None, services, FakeState())
-    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки админа клиент видит другое"
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки админа пользователь видит другое"
     assert services.routing_device_counts(other.id) == (2, 2), "правка админа не дошла до профиля"
 
     first = [d for d in services.db.list_devices(other.id) if d.name == "Чужой"][0]
@@ -562,14 +562,14 @@ async def test_device_switches_consistent_for_admin_and_client(
     cb_c, nav_c = _cb(fake_bot, other.tg_id)
     await routing_h.routing_panel(cb_c, RoutingCB(action="devs", ref=other.id),
                                   other, services, FakeState())
-    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки клиента админ видит другое"
+    assert labels(nav_a)[:-1] == labels(nav_c)[:-1], "после правки пользователя админ видит другое"
     assert services.routing_device_counts(other.id) == (1, 2)
 
 
 async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
         services, make_active_client, fake_bot, monkeypatch):
     """Разрешение отозвано — правка закрыта и админу в панели профиля (отказ —
-    снимок adm.rf.del.revoked, клиенту — эталон cl.rf.panel.hidden); вернули —
+    снимок adm.rf.del.revoked, пользователю — эталон cl.rf.panel.hidden); вернули —
     флаги устройств и список адресов как были."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=143)
     before = services.routing_device_counts(other.id)
@@ -725,7 +725,7 @@ def test_delete_buttons_carry_the_entry_tag(services, make_active_client):
 
 async def test_sites_page_is_remembered_per_viewer_not_per_profile(services, make_active_client, fake_bot, monkeypatch):
     """Админ листает чужой список из своего чата: страницу помнит смотрящий.
-    Раньше ключом был tg_id профиля — админ и клиент листали одну «страницу»."""
+    Раньше ключом был tg_id профиля — админ и пользователь листали одну «страницу»."""
     from awgbot.bot import paging
     monkeypatch.setattr(paging, "_pages", {})
     c = _allowed_client(services, make_active_client, 78)
@@ -735,7 +735,7 @@ async def test_sites_page_is_remembered_per_viewer_not_per_profile(services, mak
     _, own_view = await routing_h.sites_view(services, c, c.tg_id)
     admin_labels = [b.text for row in admin_view.inline_keyboard for b in row]
     own_labels = [b.text for row in own_view.inline_keyboard for b in row]
-    assert admin_labels != own_labels, "страница админа и клиента одна на двоих"
+    assert admin_labels != own_labels, "страница админа и пользователя одна на двоих"
     assert own_labels[0] == "➖ site0.example" and admin_labels[0] != "➖ site0.example"
 
 
@@ -756,7 +756,7 @@ async def test_add_site_from_the_panel_returns_to_the_panel(services, fake_bot, 
 
 
 async def test_a_command_during_site_input_resets_the_input_for_a_client(services, fake_bot, make_active_client):
-    """Роутер маршрутизации стоит раньше клиентского: /start во время ввода
+    """Роутер маршрутизации стоит раньше роутера пользователя: /start во время ввода
     «➕ Сайт» уходил в список сайтов. Теперь — сброс ввода и главная."""
     from awgbot.bot.states import RoutingDomains
     c = make_active_client(tg_id=9301)

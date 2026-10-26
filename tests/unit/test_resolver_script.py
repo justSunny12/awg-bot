@@ -1,7 +1,7 @@
 """
-install/awg-resolver-setup.sh — резолвер клиентов (dnsmasq на <подсеть>.1):
+install/awg-resolver-setup.sh — резолвер пользователей (dnsmasq на <подсеть>.1):
 прогоном с подставными systemctl/apt-get, а не чтением исходника. Скрипт
-переписывает конфиг демона, от которого у клиентов с приватным DNS зависит
+переписывает конфиг демона, от которого у пользователей с приватным DNS зависит
 весь резолв, — ошибка здесь оставляет людей без интернета.
 """
 from __future__ import annotations
@@ -113,7 +113,7 @@ def test_add_and_remove_keep_the_list_and_refuse_to_empty_it(host):
     assert _listen(host.conf()) == ["10.9.1.1"]
     r = host.run("remove", "10.9.1.1")
     assert r.returncode == 1 and "последний адрес" in r.stderr, \
-        "снять последний адрес значит оставить клиентов без DNS"
+        "снять последний адрес значит оставить пользователей без DNS"
     assert _listen(host.conf()) == ["10.9.1.1"]
     r = host.run("remove", "10.7.7.7")
     assert r.returncode == 0 and "и так не слушали" in r.stdout
@@ -137,7 +137,7 @@ def test_status_reports_addresses_and_liveness(host):
 
 def test_install_fails_loudly_and_rolls_back_when_the_daemon_does_not_come_up(host):
     """Битый конфиг с нашим именем нельзя оставлять: демон в рестарт-цикле —
-    все клиенты без DNS. Первая установка — файл снимается."""
+    все пользователи без DNS. Первая установка — файл снимается."""
     (host.dir / "active").unlink()
     r = host.run("install", "10.8.1.1")
     assert r.returncode == 1 and "не активен" in r.stderr and "возвращён" in r.stderr
@@ -240,7 +240,7 @@ def test_doh_lists_are_the_same_in_all_three_scripts():
 
 def test_dnsmasq_test_reads_the_conf_dir_like_the_unit_does():
     """Голый --test не читает /etc/dnsmasq.d: повтор однократного ключа между
-    файлами проходил проверку, а рестарт падал — DNS у клиентов лежал."""
+    файлами проходил проверку, а рестарт падал — DNS у пользователей лежал."""
     src = (Path(__file__).resolve().parents[2] / "install" / "awg-resolver-setup.sh").read_text(encoding="utf-8")
     assert 'dnsmasq --test --conf-dir="$DNSMASQ_CONF_DIR",.dpkg-dist,.dpkg-old,.dpkg-new' in src
 
@@ -250,7 +250,7 @@ def test_adopting_the_routing_config_drops_bind_interfaces(host):
     включили при публичном DNS) — однократные ключи переезжают в наш файл,
     адрес перехвата обвязки остаётся у неё, наши адреса из её файла уходят.
     Иначе после переезда на свой резолвер dnsmasq падал бы на «illegal
-    repeated keyword» — без DNS у всех клиентов."""
+    repeated keyword» — без DNS у всех пользователей."""
     base = host.confd / "awgbot-base.conf"
     base.write_text("bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\n"
                     "no-resolv\ncache-size=10000\n", encoding="utf-8")

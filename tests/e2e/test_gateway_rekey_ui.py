@@ -566,7 +566,7 @@ async def test_finish_dialog_names_the_gateway_still_on_the_old_uplink(services,
 
 
 async def test_finish_sends_no_file_to_any_slot(services, slots, fake_bot, monkeypatch):
-    """После финала подсеть клиентов сменилась: подсеть и AllowedIPs доедут
+    """После финала подсеть пользователей сменилась: подсеть и AllowedIPs доедут
     каналом документом — файл был бы лишним секретом в чате (ключ линка
     внутри), и его не шлют ни одному слоту."""
     _, pi, pi2 = slots

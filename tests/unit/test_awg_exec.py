@@ -201,7 +201,7 @@ def test_server_pubkey_is_derived_not_read_from_a_file(monkeypatch):
 
 
 def test_server_params_refuse_conf_without_private_key(monkeypatch):
-    """Нет PrivateKey — отказ, а не пустой публичный ключ в конфигах клиентов."""
+    """Нет PrivateKey — отказ, а не пустой публичный ключ в конфигах пользователей."""
     sep = awg._SEP
     monkeypatch.setattr(awg, "_exec_sh", lambda script, **k: _cp(
         ("[Interface]\nListenPort = 443\n" + sep + "PSK==").encode()))

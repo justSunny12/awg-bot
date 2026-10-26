@@ -3,7 +3,7 @@
 
 Роль получает ровно один аккаунт — `reserve_peer.peer_admin_id`, пришедший
 при сопряжении под ключом сопряжения; шаг стоит после админа (совпавший
-ADMIN_ID — админ) и раньше разбора клиентов; без пары шага нет;
+ADMIN_ID — админ) и раньше разбора пользователей; без пары шага нет;
 незнакомцы — как прежде (/start и /code — активация, прочее — молчание).
 
 Цена ошибки: роль у чужого аккаунта или у прежнего после смены админа
@@ -71,8 +71,8 @@ async def test_the_same_admin_id_on_both_sides_stays_the_admin(services, rsv):
 
 
 async def test_the_role_comes_before_the_client_profile(services, rsv, make_active_client):
-    """Тот же аккаунт и клиент этого сервера: отвечает роль (шаг раньше
-    клиентов) — клиентского меню ему здесь не показать."""
+    """Тот же аккаунт и пользователь этого сервера: отвечает роль (шаг раньше
+    пользователей) — меню пользователя ему здесь не показать."""
     make_active_client(name="Совпал", tg_id=PEER_ADMIN)
     rc.pair_row(services)
     assert await _role(services.db, PEER_ADMIN) == "peer_admin"
@@ -118,7 +118,7 @@ def test_every_role_handler_is_behind_the_role_filter():
 
 # только чтение сведений о паре; reserve_peer_admin_opened — отметка «админ
 # второго сервера открыл бот» (без неё бот не знает, можно ли ему писать)
-# reserve_peer_admin_client — чтение: клиент ли он здесь («👤 Меню клиента»)
+# reserve_peer_admin_client — чтение: пользователь ли он здесь («👤 Меню пользователя»)
 _ALLOWED = {"reserve_peer_admin_summary", "reserve_peer_admin_opened", "reserve_peer_admin_client"}
 
 

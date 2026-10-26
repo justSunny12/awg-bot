@@ -10,7 +10,7 @@ DNS подменены).
 Цена ошибки: отказ подъёма линка как отказ раздела — сервер AWG считает
 раздел отвергнутым до смены отпечатка, шлюз без резерва; без повтора — линк
 не встанет, пока не придёт новый документ; уведомление о переезде, ушедшее в
-мёртвый аплинк, — админ шлюза не узнает, что клиенты у резерва; повтор
+мёртвый аплинк, — админ шлюза не узнает, что пользователи у резерва; повтор
 устаревшего (пересылка уже закрыта) — ложная тревога; очередь, стёртая
 новым документом, — недоставленное пропало.
 """
@@ -73,7 +73,7 @@ def test_a_link_that_vanished_from_the_host_is_raised_again(gw, host):
 
 def _note(gw, **kw):
     cur = gw.reserve_section()
-    n = gw.reserve_note(cur, "🛟 DUMMY: клиенты переехали на резерв", **kw)
+    n = gw.reserve_note(cur, "🛟 DUMMY: пользователи переехали на резерв", **kw)
     store_mod._write(cur, gw._RSV_STORE)
     return n
 
@@ -88,7 +88,7 @@ def test_a_note_stays_queued_until_it_is_sent(gw, host):
 def test_an_undelivered_note_is_repeated_once_a_minute(gw, host):
     _note(gw)
     first = gw.reserve_notes_retry(now=100.0)
-    assert [n.text for n in first[0][1]] == ["🛟 DUMMY: клиенты переехали на резерв"]
+    assert [n.text for n in first[0][1]] == ["🛟 DUMMY: пользователи переехали на резерв"]
     assert gw.reserve_notes_retry(now=130.0) == [], "повтор чаще раза в минуту"
     again = gw.reserve_notes_retry(now=161.0)
     assert again and len(again[0][1]) == 1
@@ -127,7 +127,7 @@ def _notes(acts) -> list:
 @pytest.mark.parametrize("was_open", [False, True])
 def test_an_unreadable_record_fact_changes_nothing(gw, host, monkeypatch, was_open):
     """Факт записи не прочитался и кэша нет: ни открыть (переезда, может, и
-    не было), ни закрыть (клиенты, может, уже у резерва)."""
+    не было), ни закрыть (пользователи, может, уже у резерва)."""
     host.open = ["198.51.100.0/24"] if was_open else []
     monkeypatch.setattr(gw, "reserve_record_fact", lambda *a, **k: None)
     acts = gw.reserve_state_in("serving", 3)

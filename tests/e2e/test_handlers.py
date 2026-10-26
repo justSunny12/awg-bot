@@ -13,12 +13,12 @@ from tests.conftest import FakeCallback, FakeMessage, FakeState
 pytestmark = pytest.mark.e2e
 
 
-# ── активация клиента (/start {код}, /code) ──────────────────────────────────
+# ── активация пользователя (/start {код}, /code) ─────────────────────────────
 async def test_try_activate_valid_code(services, fake_bot):
     created = services.create_client("Клиент", 2, "year")
     msg = FakeMessage(text="/start", chat_id=42, user_id=42, bot=fake_bot)
     await client_h._try_activate(msg, services, created.invite_code)
-    # клиент активирован в БД
+    # пользователь активирован в БД
     row = services.db.get_client_by_tg(42)
     assert row is not None and row.activation_status == "active"
     # пользователю — подтверждение; админу — уведомление об активации
@@ -43,7 +43,7 @@ async def test_try_activate_already_has_access(services, make_active_client, fak
     assert any(s[1] == texts.ACTIVATION_ALREADY for s in msg.sent)
 
 
-# ── старт активного клиента → главное меню (send_menu) ───────────────────────
+# ── старт активного пользователя → главное меню (send_menu) ──────────────────
 async def test_start_client_shows_menu_and_tracks_nav(services, make_active_client, fake_bot):
     client = make_active_client(tg_id=50)
     msg = FakeMessage(text="/start", chat_id=50, user_id=50, bot=fake_bot)

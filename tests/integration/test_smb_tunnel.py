@@ -7,7 +7,7 @@
 `_AdminDns` — он ведёт «конфиг» (по нему бот решает, поставлен ли резолвер)
 и запоминает, какие записи ему отдали.
 
-Цена ошибки: адрес резолвера админа в конфиге клиента — клиент без DNS (его
+Цена ошибки: адрес резолвера админа в конфиге пользователя — пользователь без DNS (его
 :53 закрыт файерволом); у шлюзового устройства — DNS всей локальной сети за
 шлюзом идёт в резолвер, которому шлюз не админ; записи замолчавшего слота —
 Finder ведёт на сервер, до которого маршрута нет; скрипт на каждом такте —
@@ -52,7 +52,7 @@ class _AdminDns:
         # перехват :53 обвязки (iptables) — журналом, а не на хосте
         self.exempt: list[list[str]] = []
         monkeypatch.setattr(admindns, "nat_exempt", lambda subnets: self.exempt.append(list(subnets)) or [])
-        # свой резолвер клиентов стоит (по умолчанию); тест может убрать
+        # свой резолвер пользователей стоит (по умолчанию); тест может убрать
         monkeypatch.setattr(resolver, "installed", lambda: True)
         monkeypatch.setattr(resolver, "listen_addrs", lambda path=None: ["10.8.1.1"])
         if installed:
@@ -157,8 +157,8 @@ def test_a_broken_space_leaves_the_admin_device_only_the_resolver_32(services, m
 
 
 def test_a_client_device_keeps_the_common_dns(services, make_active_client, adm, host, monkeypatch):
-    """:53 резолвера админа клиентам закрыт файерволом — с его адресом в конфиге
-    клиент остался бы без DNS."""
+    """:53 резолвера админа пользователям закрыт файерволом — с его адресом в конфиге
+    пользователь остался бы без DNS."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     client = make_active_client(name="Ксюша", tg_id=2001)
@@ -180,7 +180,7 @@ def test_the_gateway_device_of_the_admin_keeps_the_common_dns(services, two_slot
 
 def test_without_the_admin_resolver_the_admin_device_still_gets_the_space(services, make_active_client, host,
                                                                   monkeypatch, tmp_path):
-    """Резолвер клиентов не свой — резолвера админа нет:
+    """Резолвер пользователей не свой — резолвера админа нет:
     DNS прежний, а строка пространства адресов в туннеле от резолвера не
     зависит — она есть."""
     _AdminDns(monkeypatch, tmp_path, installed=False)
@@ -196,7 +196,7 @@ def test_records_of_both_slots_reach_the_admin_resolver_through_the_line_whiteli
                                                                                    adm, toggle):
     """Тумблер включён — записи SMB обеих сетей под awg.internal в адресах в
     туннеле (слот 1 — 10.240.x.x, слот 2 — 10.241.x.x), обратная зона —
-    подсеть клиентов (по ней Mac находит домен обзора); каждая строка — из
+    подсеть пользователей (по ней Mac находит домен обзора); каждая строка — из
     белого списка шлюза."""
     services.gwlink_services_in(1, [NAS]); _seen(services, 1, 1)
     services.gwlink_services_in(2, [NAS2]); _seen(services, 2, 1)
@@ -208,9 +208,9 @@ def test_records_of_both_slots_reach_the_admin_resolver_through_the_line_whiteli
     assert "host-record=backup.awg.internal,10.241.68.20" in text
     assert "192.168." not in text, "настоящий адрес сети шлюза через туннель не открывается"
     assert "ptr-record=b._dns-sd._udp.0.1.8.10.in-addr.arpa,awg.internal" in text, \
-        "нет обратной зоны подсети клиентов — Finder не найдёт домен обзора"
+        "нет обратной зоны подсети пользователей — Finder не найдёт домен обзора"
     assert text.splitlines()[0].startswith("# awg-bot (сервер AWG)")
-    # клиент на macOS ставит туннелю /32 — Mac ищет домен обзора в зоне своего
+    # пользователь на macOS ставит туннелю /32 — Mac ищет домен обзора в зоне своего
     # адреса; зона встаёт сразу при добавлении устройства, не с ближайшего такта
     mac = services.add_device(services.db.get_client_by_tg(ADMIN).id, "MacBook")
     zone = ".".join(reversed(mac.address.split("/")[0].split("."))) + ".in-addr.arpa"
@@ -331,7 +331,7 @@ _WHY = {
 def test_turning_on_is_refused_where_names_would_leak_or_not_resolve(services, two_slots, toggle,
                                                                        monkeypatch, tmp_path, why):
     """Без резолвера админа (или лежащего) включать нечего; без фильтра
-    снаружи имена увидели бы все клиенты — отказ с причиной, настройка и
+    снаружи имена увидели бы все пользователи — отказ с причиной, настройка и
     записи не тронуты."""
     from awgbot.infra import nftguard
     a = _AdminDns(monkeypatch, tmp_path, installed=(why != "no_resolver"))

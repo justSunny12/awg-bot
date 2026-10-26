@@ -83,7 +83,7 @@ def test_dnsmasq_conf_uses_per_client_set(
 
 def test_dnsmasq_not_rewritten_when_nothing_changed(
         services, make_active_client, fake_routing):
-    """Дифф-скип: рестарт dnsmasq роняет кэш ВСЕМ клиентам, дёргать его на
+    """Дифф-скип: рестарт dnsmasq роняет кэш ВСЕМ пользователям, дёргать его на
     каждой плановой реконсиляции — портить резолвинг на ровном месте."""
     c = make_active_client()
     services.routing_add_domains(c.id, "bank.com")
@@ -98,7 +98,7 @@ def test_user_toggle_does_not_restart_the_resolver(
     """Нажатие тумблера не должно трогать конфиг dnsmasq.
 
     Его применение стоит РЕСТАРТА резолвера, а тот роняет кэш и на секунды
-    лишает DNS всех клиентов разом — включая тех, кто ничего не переключал.
+    лишает DNS всех пользователей разом — включая тех, кто ничего не переключал.
     Пока состав конфига зависел от того, у кого режим ВКЛЮЧЁН, каждое нажатие
     любым пользователем переписывало все ~600 строк и перезапускало dnsmasq.
     Снаружи это «включил режим — на минуту всё отвалилось», а для того, кто в
@@ -162,7 +162,7 @@ def test_added_domain_is_preseeded_into_the_set(
 def test_preseed_keeps_what_dnsmasq_collected(
         services, make_active_client, fake_routing):
     """Досев ДОПИСЫВАЕТ: в наборе живут адреса, накопленные dnsmasq по запросам
-    клиента, и перезапись оставила бы маркировать нечем."""
+    пользователя, и перезапись оставила бы маркировать нечем."""
     from awgbot.infra import routing
     c = make_active_client()
     services.routing_add_domains(c.id, "first.com")
@@ -176,7 +176,7 @@ def test_preseed_keeps_what_dnsmasq_collected(
 def test_failed_resolve_does_not_break_the_add(
         services, make_active_client, fake_routing):
     """Резолв — не критичный путь: набор всё равно наполнится по запросам
-    клиента, поэтому неудача не должна ронять добавление."""
+    пользователя, поэтому неудача не должна ронять добавление."""
     def boom(dom, timeout=3.0):
         raise OSError("нет сети")
     from awgbot.infra import routing

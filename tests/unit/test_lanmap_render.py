@@ -80,7 +80,7 @@ def test_two_slots_with_the_same_subnet_render_the_reference_table():
 def test_chains_hook_where_the_scheme_needs_them():
     """raw — до conntrack (зона); mangle — до перевода (метка по адресу в
     туннеле); dstnat − 10 — раньше перехвата :53 (−100); srcnat − 10 — раньше
-    маскарада клиентов; guard — раньше файервола ВПС."""
+    маскарада пользователей; guard — раньше файервола ВПС."""
     text = lanmap.render(SAME, SPACE, PREFIXES)
     hooks = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("type ")]
     assert hooks == ["type filter hook prerouting priority raw; policy accept;",

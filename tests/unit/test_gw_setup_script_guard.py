@@ -55,7 +55,7 @@ def test_unit_depends_only_on_the_network(script):
 
 
 def test_link_subnet_is_masqueraded_too(script):
-    """Зонд живости идёт с адреса линка, а не клиента.
+    """Зонд живости идёт с адреса линка, а не пользователя.
 
     Без маскарада линк-подсети его пакеты уходят наружу немаскараженными и не
     возвращаются — бот считает исправный шлюз непроходимым.
@@ -118,7 +118,7 @@ def test_plumbing_is_one_nft_table(script):
 
 
 def test_gateway_itself_is_closed_to_tunnel_clients(script):
-    """Изоляция в FORWARD не защищала саму машину: пакет клиента на адрес шлюза
+    """Изоляция в FORWARD не защищала саму машину: пакет пользователя на адрес шлюза
     идёт в INPUT. С адресов туннеля на шлюз пускаем ВПС по линку (SSH) и
     устройства админа (всё), остальное drop."""
     body = script.split("GUARDEOF", 1)[1]
@@ -456,7 +456,7 @@ def test_router_masquerade_is_one_rule_in_postrouting(script, tmp_path):
     """VPN-транзит, соседи есть, маршрут по умолчанию через адрес — ровно одно
     правило: трафик соседей из линка к адресу роутера уходит с адресом шлюза,
     и роутер отвечает шлюзу, а не мимо заворота провайдеру. Стоит в nat-цепочке
-    таблицы обвязки, после маскарада клиентов."""
+    таблицы обвязки, после маскарада пользователей."""
     table = _guard_with_router(script)
     post = _chain(table, "postrouting")
     assert post.count(ROUTER_RULE) == 1, post
@@ -471,7 +471,7 @@ def test_router_masquerade_is_one_rule_in_postrouting(script, tmp_path):
 def test_no_router_masquerade_without_transit_peers_or_router(script, tmp_path, env):
     """Без VPN-транзита, без соседей или без адреса роутера правила нет, а
     таблица остаётся годной: пустой адрес в правиле уронил бы `nft -c` всю
-    обвязку — и маскарад клиентов, и защиту шлюза."""
+    обвязку — и маскарад пользователей, и защиту шлюза."""
     table = _guard_with_router(script, **env)
     post = _chain(table, "postrouting")
     assert not any("@peer_nets4" in ln for ln in post), post

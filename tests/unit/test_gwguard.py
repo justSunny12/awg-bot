@@ -72,7 +72,7 @@ def test_table_info_lists_masqueraded_interfaces(monkeypatch):
 
 def test_table_info_lists_the_router_masquerade_addresses(monkeypatch):
     """Маскарад соседей к роутеру — правило с `ip saddr @peer_nets4` и
-    `ip daddr <роутер>`: адрес идёт в router_masq; маскарад клиентов (без
+    `ip daddr <роутер>`: адрес идёт в router_masq; маскарад пользователей (без
     peer_nets4) и прочие правила с daddr — нет."""
     def m(left, right):
         return {"match": {"op": "==", "left": left, "right": right}}

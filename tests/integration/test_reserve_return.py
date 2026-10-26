@@ -1,15 +1,15 @@
-"""Возврат клиентов с резерва на стороне основы (domain/services/reserve/outbound.py):
+"""Возврат пользователей с резерва на стороне основы (domain/services/reserve/outbound.py):
 здоровье основы и рычаг возврата, `back_req`, реплика и слияние (пиры до
 сверки, блокировки, расход через резерв), перезапуск, запись на себя, `back`,
 `wiped` и новый `K`.
 
-Цена ошибки: возврат по первой же секунде «здорова» — клиенты прыгают туда-сюда
+Цена ошибки: возврат по первой же секунде «здорова» — пользователи прыгают туда-сюда
 при каждом сбое; устройство, заведённое на резерве и не попавшее в конфиг до
 первой сверки пиров, сверка сочтёт чужим и удалит — человек без VPN после
 возврата; прежний `K` после возврата — резерв, которому мы только что
-отдали клиентов, остаётся способным открыть следующие пакеты; `wiped`,
+отдали пользователей, остаётся способным открыть следующие пакеты; `wiped`,
 обработанный дважды, — второй новый `K` при уже отправленном пакете;
-слияние, упавшее молча, — клиенты возвращены без данных резерва.
+слияние, упавшее молча, — пользователи возвращены без данных резерва.
 """
 from __future__ import annotations
 
@@ -45,11 +45,11 @@ def _healthy_for(w, seconds: float) -> list:
 
 @pytest.fixture()
 def away(mv):
-    """Клиенты у резерва, шлюзов нет (иначе здоровье зависит от их связи), рычаг «сразу»."""
+    """Пользователи у резерва, шлюзов нет (иначе здоровье зависит от их связи), рычаг «сразу»."""
     mv.rsv.gw = False
     settings.set_value("app.reserve.return", "immediate")
     rm.go_away(mv.svc)
-    # резерв несёт клиентов (st с in=serving): иначе «резерв на связи без моего гостя» —
+    # резерв несёт пользователей (st с in=serving): иначе «резерв на связи без моего гостя» —
     # возврат без реплики сразу, а не просьба реплики
     rm.st_in(mv.svc, **{"in": "serving"})
     return mv
@@ -71,7 +71,7 @@ def test_the_primary_is_healthy_when_its_awg_the_pair_link_and_the_gateways_are_
 
 
 def test_a_gateway_without_a_session_makes_the_primary_unhealthy(away, monkeypatch):
-    """РФ-доступ идёт через шлюзы резерва, пока свои не на связи: вернуться раньше — клиентов
+    """РФ-доступ идёт через шлюзы резерва, пока свои не на связи: вернуться раньше — пользователей
     лишить РФ-части."""
     import types
     svc = away.svc
@@ -156,7 +156,7 @@ def test_evict_from_the_reserve_starts_the_return_and_is_harmless_otherwise(away
     assert svc.rsv_get("rsv_out")["return_why"] == "evict"
     assert svc.reserve_evict_in() == [] or svc.reserve_out() == "returning", "повторный evict не ломает возврат"
     svc.reserve_set_out("home")
-    assert svc.reserve_evict_in() == [], "evict при клиентах дома — просьба без предмета, без исключения"
+    assert svc.reserve_evict_in() == [], "evict при пользователях дома — просьба без предмета, без исключения"
 
 
 def test_the_back_req_is_repeated_once_per_period_while_no_replica_arrives(away):
@@ -197,7 +197,7 @@ class _Peers:
 
 @pytest.fixture()
 def merge_world(away, fake_awg, make_active_client, monkeypatch):
-    """Основа: профиль «Аня» с устройствами `keep` и `gone`, снимок `base-7` снят, клиенты у
+    """Основа: профиль «Аня» с устройствами `keep` и `gone`, снимок `base-7` снят, пользователи у
     резерва, возврат начат. `peers` — журнал пиров."""
     svc = away.svc
     anna = make_active_client(name="Аня", tg_id=7001)

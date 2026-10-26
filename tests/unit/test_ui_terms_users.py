@@ -105,11 +105,14 @@ _QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'')
 
 
 def _sh_strings(path: pathlib.Path):
-    """(строка в кавычках, номер) из строк скрипта, которые печатают человеку;
-    хвостовой комментарий вне кавычек и Description= юнитов не в счёт."""
+    """(строка в кавычках, номер) из строк скрипта, которые печатают человеку,
+    и значения Description= юнитов из heredoc (их видно в `systemctl status`);
+    хвостовой комментарий вне кавычек не в счёт."""
     for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if line.lstrip().startswith("#") or line.lstrip().startswith("Description=") \
-                or not _SAY.match(line):
+        if line.lstrip().startswith("Description="):
+            yield line.split("=", 1)[1], i
+            continue
+        if line.lstrip().startswith("#") or not _SAY.match(line):
             continue
         for m in _QUOTED.finditer(line):
             yield m.group(1) if m.group(1) is not None else m.group(2), i
@@ -179,8 +182,9 @@ def test_the_client_scan_sees_ui_strings_and_skips_code_text(tmp_path):
 
 
 def test_the_client_scan_reads_terminal_lines_of_scripts(tmp_path):
-    """Сторож скана скриптов: печать человеку — в скане, комментарии,
-    хвостовые комментарии и Description= юнитов — нет."""
+    """Сторож скана скриптов: печать человеку и Description= юнитов — в
+    скане, комментарии и хвостовые комментарии — нет. Description= видна
+    админу в `systemctl status`, а живёт в heredoc без say/echo."""
     sh = tmp_path / "probe.sh"
     sh.write_text('# клиенты в комментарии\n'
                   'say "  перевыпуск для клиентов"\n'
@@ -189,7 +193,7 @@ def test_the_client_scan_reads_terminal_lines_of_scripts(tmp_path):
                   'Description=awg-bot: изоляция клиентов\n'
                   'x="клиентов"\n', encoding="utf-8")
     found = sorted(n for v, n in _sh_strings(sh) if _bad_words(v))
-    assert found == [2, 3], f"строки скрипта со «клиентом» для человека: {found}, ждём 2 и 3"
+    assert found == [2, 3, 5], f"строки скрипта со «клиентом» для человека: {found}, ждём 2, 3 и 5"
     assert any(p.name == "awg-bot.sh" for p in SCRIPTS) and any(p.parent.name == "install" for p in SCRIPTS)
     assert any(p.parent.name == "tools" for p in PY_FILES), "tools/ выпал из скана"
 

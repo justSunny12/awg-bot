@@ -325,14 +325,14 @@ def _probe_log(services, monkeypatch) -> list:
 
 
 def test_return_traffic_proves_the_path_and_costs_no_probe(two, services, fake_routing, monkeypatch):
-    """Обратный трафик клиентов через линк — доказательство пути ВПС → шлюз →
+    """Обратный трафик пользователей через линк — доказательство пути ВПС → шлюз →
     интернет → обратно, и оно сильнее зонда: зонд стучится в одну цель на 53-м
     порту, а это сессии живых людей. Пока rx растёт, наружу не уходит ни одного
     пакета — и «лежит» по зонду не имеет силы против того, что уже ходит.
     """
     _settle(services)
     probes = _probe_log(services, monkeypatch)
-    fake_routing.link_rx_step = 1 << 20          # ответы клиентам идут через линк
+    fake_routing.link_rx_step = 1 << 20          # ответы пользователям идут через линк
     services.probe[1] = "down"                   # зонд, если бы его позвали, соврал бы
     notes = []
     for _ in range(services._rt_fail_need() + 3):
@@ -345,7 +345,7 @@ def test_return_traffic_proves_the_path_and_costs_no_probe(two, services, fake_r
 
 
 def test_demand_without_answers_is_probed_every_tick(two, services, fake_routing, monkeypatch):
-    """Клиенты шлют в линк (tx растёт), обратно тихо — это худший случай: у
+    """Пользователи шлют в линк (tx растёт), обратно тихо — это худший случай: у
     шлюза лёг аплинк или слетел форвардинг, и люди прямо сейчас сидят без
     интернета. Тут экономить на зондах нельзя: проверяем каждый такт и
     переключаемся в тот же срок, что и до реформы."""
@@ -757,9 +757,9 @@ def _channel_on_link(services, monkeypatch, *, rx: int = 0, tx: int = 0, msgs: i
 
 
 def test_channel_replies_are_not_return_traffic_of_the_clients(two, services, fake_routing, monkeypatch):
-    """Аплинк шлюза лёг: клиенты шлют в линк, обратно тихо. Человек открыл
+    """Аплинк шлюза лёг: пользователи шлют в линк, обратно тихо. Человек открыл
     диагностику слота — шлюз отвечает таблицей и журналом тем же линком. Без
-    вычета эти ответы сходили бы за обратный трафик клиентов: автомат считал
+    вычета эти ответы сходили бы за обратный трафик пользователей: автомат считал
     бы путь живым и не переложил трафик на резерв ровно тогда, когда человек
     разбирается со сломанным слотом."""
     _settle(services)
@@ -776,7 +776,7 @@ def test_channel_replies_are_not_return_traffic_of_the_clients(two, services, fa
 
 def test_feeds_sent_over_the_channel_are_not_client_demand(two, services, fake_routing, monkeypatch):
     """ВПС везёт шлюзу фиды — сотни килобайт в линк. Приняв их за спрос
-    клиентов без ответа, автомат зондировал бы наружу каждым тактом — коннект
+    пользователей без ответа, автомат зондировал бы наружу каждым тактом — коннект
     раз в полминуты с адреса ВПС в одну цель, та самая сигнатура простоя."""
     import random
     import time as _time
@@ -784,7 +784,7 @@ def test_feeds_sent_over_the_channel_are_not_client_demand(two, services, fake_r
     monkeypatch.setattr(_time, "monotonic", lambda: clock["t"])
     monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
     _settle(services)
-    fake_routing.link_rx_step = fake_routing.link_tx_step = 0            # клиентов нет
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0            # пользователей нет
     _channel_on_link(services, monkeypatch, tx=300 * 1024, msgs=4)
     probes = _probe_log(services, monkeypatch)
     for _ in range(5):

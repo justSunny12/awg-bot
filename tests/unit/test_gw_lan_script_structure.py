@@ -65,7 +65,7 @@ def test_resolver_goes_upstream_through_the_uplink(script):
     assert "bind-dynamic" in sec and "listen-address=127.0.0.1,%s" in sec and "no-hosts" in sec
     assert "Restart=on-failure" in sec and "AmbientCapabilities" not in sec, "ambient-набор ядро чистит при setuid"
     assert "address=/use-application-dns.net/" in sec and "address=/dns.google/" in sec
-    assert "filter-AAAA" in sec, "IPv6 у клиентов режется ответами резолвера, не sysctl на шлюзе"
+    assert "filter-AAAA" in sec, "IPv6 у пользователей режется ответами резолвера, не sysctl на шлюзе"
     assert "disable_ipv6" not in sec and "rp_filter = 2" in sec
     # DNSMASQ_EXCEPT=lo init-скрипт Debian превращает в except-interface=lo, а тот
     # глушит listen-address=127.0.0.1: скрипт эту строку больше не пишет, только

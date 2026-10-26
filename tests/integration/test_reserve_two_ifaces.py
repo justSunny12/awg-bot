@@ -76,7 +76,7 @@ def test_two_interfaces_give_two_configs_in_the_store_before_the_take(box):
     kw = _take_call(box)
     assert kw["_awg_dir_at_take"] == ["awg1.conf"], f"конфига второго интерфейса не было к вызову скрипта: {kw}"
     assert kw["extra"] == [("awg1", "10.8.7.1/24")], kw
-    assert kw["iface"] == "awg0" and kw["addr"] == "10.8.1.1/24", "первым должен идти клиентский интерфейс"
+    assert kw["iface"] == "awg0" and kw["addr"] == "10.8.1.1/24", "первым должен идти основной интерфейс AWG"
     conf = (box.run_dir / "awg" / "awg1.conf").read_text()
     assert f"PrivateKey = {_b64(3)}" in conf and "ListenPort = 51821" in conf and "AllowedIPs = 10.8.7.2/32" in conf, conf
     assert f"PrivateKey = {_b64(1)}" not in conf, "в конфиг второго интерфейса попал ключ первого"

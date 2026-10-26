@@ -176,7 +176,7 @@ async def test_the_guest_tells_its_reserve_about_a_stall_and_the_recovery(servic
 
 @pytest.mark.parametrize("in_by", ["code", "share", "k", ""])
 def test_a_move_past_the_primary_counts_as_opened_without_my_key_whatever_the_reserve_says(mv, in_by):
-    """Основа лежала, резерв перевёл её клиентов сам: своего `go` с K основа
+    """Основа лежала, резерв перевёл её пользователей сам: своего `go` с K основа
     не отправляла, значит пакет открыт по долям или по коду — что бы ни
     говорил резерв в in_by. Слово резерва здесь не слушаем: подложное
     «k» оставило бы прежнее поколение после возврата, и резерв, собравший

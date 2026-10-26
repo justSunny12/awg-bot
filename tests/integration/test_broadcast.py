@@ -1,4 +1,4 @@
-"""Броадкаст: адресаты (дедуп клиент+друг, исключение админа, только активные
+"""Броадкаст: адресаты (дедуп пользователь+друг, исключение админа, только активные
 друзья), отчёт доставки, счётчик успех/провал."""
 
 from awgbot.bot import notifier
@@ -6,14 +6,14 @@ from awgbot.bot import notifier
 
 def test_recipients_dedup_and_exclude_admin(services, make_active_client):
     import awgbot.core.config as cfg
-    # админ (tg == ADMIN_ID) + два клиента; служебный клиент tg=None не в счёт
+    # админ (tg == ADMIN_ID) + два пользователя; служебный пользователь tg=None не в счёт
     make_active_client(name="admin", tg_id=cfg.ADMIN_ID)
     make_active_client(name="c2", tg_id=2002)
     make_active_client(name="c3", tg_id=2003)
     everyone = [c.id for c in services.db.list_clients()]
     ids = services.db.broadcast_recipients_for_clients(everyone, exclude_tg_id=cfg.ADMIN_ID)
     assert cfg.ADMIN_ID not in ids            # админ исключён
-    assert set(ids) == {2002, 2003}           # только реальные клиенты, без служебного
+    assert set(ids) == {2002, 2003}           # только реальные пользователи, без служебного
 
 
 async def test_broadcast_counts_ok_and_failed():

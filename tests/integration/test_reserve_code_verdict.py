@@ -66,7 +66,7 @@ def test_a_wrong_code_is_answered_at_once_counted_and_the_window_reopened(run):
     assert _tries(run) == 1, "неподошедший код не засчитан попыткой"
     told = notes(res["actions"])
     assert not [n for n in told if n.tg_id == PEER_ADMIN], "админу основы и ответ, и уведомление"
-    assert [n for n in told if n.tg_id == config.ADMIN_ID], "админу резерва не сказано, что клиентов не принял"
+    assert [n for n in told if n.tg_id == config.ADMIN_ID], "админу резерва не сказано, что пользователей не принял"
 
 
 def test_the_in_tick_after_an_answered_failure_says_nothing_more(run):

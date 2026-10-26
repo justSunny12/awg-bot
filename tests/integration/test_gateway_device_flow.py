@@ -142,7 +142,7 @@ def test_gateway_is_locked_against_everything(gw, services, make_active_client):
 
 def test_gateway_traffic_is_not_the_profiles_but_the_device_is_listed_first(
         gw, services):
-    """Трафик шлюза — это трафик ЧУЖИХ клиентов, идущий через него; в
+    """Трафик шлюза — это трафик ЧУЖИХ пользователей, идущий через него; в
     потреблении профиля админа и в его лимите ему не место. При этом само
     устройство — обычное: в списках первым, со своим значком. Счётчики —
     test_counters_agree_with_the_lists_they_head."""

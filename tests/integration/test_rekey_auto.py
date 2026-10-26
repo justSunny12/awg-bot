@@ -30,7 +30,7 @@ HOUR = 3600
 
 @pytest.fixture()
 def server(services, slot, vps, monkeypatch):
-    """Клиентский интерфейс с I1, агент слота 1 с rekey2; модель скрипта
+    """Интерфейс AWG сервера с I1, агент слота 1 с rekey2; модель скрипта
     пишет LINK_I1 в шлюзовую сторону, как настоящий --rekey-stage."""
     base = awg.read_server_params
     monkeypatch.setattr(awg, "read_server_params", lambda force=False, iface=None: {
@@ -247,7 +247,7 @@ def test_no_attempt_while_an_update_command_is_in_flight(server, clock):
 
 
 def test_a_failing_client_interface_read_is_not_retried_every_tick(server, monkeypatch):
-    """Неудача чтения клиентского I1 кешируется: такт не зовёт exec каждые 30 с;
+    """Неудача чтения I1 сервера кешируется: такт не зовёт exec каждые 30 с;
     ручная смена ключей читает заново."""
     calls = {"n": 0}
 
@@ -262,7 +262,7 @@ def test_a_failing_client_interface_read_is_not_retried_every_tick(server, monke
 
 
 def test_t_l2_only_when_a_link_really_has_no_i1(server, vps, monkeypatch):
-    """«У клиентов нет I1» — одним уведомлением без звука и только когда у линка I1
+    """«У пользователей нет I1» — одним уведомлением без звука и только когда у линка I1
     фактически нет; пока у линка стоит прежний — молчим (его снимет смена)."""
     from awgbot.domain.services.gateway_link.rekey_i1 import T_L2
     monkeypatch.setattr(awg, "read_server_params", lambda force=False, iface=None: {"obfuscation": {"I1": ""}})

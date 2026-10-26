@@ -6,7 +6,7 @@
 позже обещанного в уведомлении; выключенный бонус, выдавший «0 ГБ» и
 блок тиком позже, шлёт человеку «Добавлено 0 ГБ», а затем «Дополнительная
 квота исчерпана», которой не было; повторная выдача в месяце — бесконечная
-квота; уведомление, пришедшее дважды, — шум у клиента и админа.
+квота; уведомление, пришедшее дважды, — шум у пользователя и админа.
 """
 import re
 
@@ -68,7 +68,7 @@ def _blocked(services, c, dc, fake_awg):
 def test_bonus_is_granted_by_the_rule_and_announced_once(services, fake_awg, make_active_client, rule,
                                                          value, limit_gb, given, amount, note):
     """Первое исчерпание в месяце: bonus_bytes — ровно по правилу, доступ не
-    тронут, клиенту — сколько добавлено и когда лимит сбросится, админу —
+    тронут, пользователю — сколько добавлено и когда лимит сбросится, админу —
     сколько выдано и откуда число. Второй тик — ни новой выдачи, ни
     повторных уведомлений."""
     rule["v"] = value
@@ -110,7 +110,7 @@ def test_no_80_percent_warning_right_after_the_bonus(services, fake_awg, make_ac
 
 
 def test_admin_bonus_notice_respects_its_toggle(services, fake_awg, make_active_client, rule, monkeypatch):
-    """Тумблер «Бонусный объём» выключен — админ молчит, клиенту текст уходит."""
+    """Тумблер «Бонусный объём» выключен — админ молчит, пользователю текст уходит."""
     rule["v"] = "10%"
     real = settings.get_bool
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False
@@ -166,7 +166,7 @@ def test_off_blocks_at_once_with_its_own_texts(services, fake_awg, make_active_c
 def test_enabling_the_bonus_after_an_off_block_does_not_promise_traffic_to_a_blocked_profile(
         services, fake_awg, make_active_client, rule):
     """Бонус был выключен — профиль заблокирован; админ включил «10%» в том
-    же месяце. Следующий тик не должен сообщать клиенту «Добавлено N ГБ»,
+    же месяце. Следующий тик не должен сообщать пользователю «Добавлено N ГБ»,
     оставив доступ приостановленным: либо бонус выдан и доступ вернулся,
     либо обещания нет."""
     rule["v"] = 0
@@ -177,7 +177,7 @@ def test_enabling_the_bonus_after_an_off_block_does_not_promise_traffic_to_a_blo
     promised = any("Добавлено" in t for t in _texts(notes, 700))
     blocked = _blocked(services, c, dc, fake_awg)
     assert not (promised and any(blocked)), (
-        f"клиенту обещан бонус ({_texts(notes, 700)}), а доступ приостановлен: {blocked}")
+        f"пользователю обещан бонус ({_texts(notes, 700)}), а доступ приостановлен: {blocked}")
 
 
 # ── исчерпание выданного ─────────────────────────────────────────────────────

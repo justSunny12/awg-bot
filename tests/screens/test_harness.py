@@ -380,7 +380,7 @@ async def test_call_step_records_a_notification_without_a_human_action(tmp_path,
     rec = await harness.take(Shot("adm.ev", role="admin", data=lambda s: (owner(s), (1, "Админ"))[1],
                                   call=("notify_one", ping)), tmp_path, fakes)
     assert rec.action == "> call notify_one", rec.action
-    assert [(c.head, c.body) for c in rec.calls] == [("+ send #1 → чат клиент", "🔔 <b>Тест</b>")]
+    assert [(c.head, c.body) for c in rec.calls] == [("+ send #1 → чат пользователь", "🔔 <b>Тест</b>")]
 
 
 @pytest.mark.parametrize("photo, heads", [

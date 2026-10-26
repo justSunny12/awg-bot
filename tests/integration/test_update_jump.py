@@ -32,7 +32,7 @@ def _have_tag() -> bool:
 def floor_host(tmp_path_factory):
     """Каталоги conf/ и data/ так, как их оставила бы установка минимума после
     первого старта бота: шаблоны conf той версии, БД её схемы с админом,
-    клиентом и устройством."""
+    пользователем и устройством."""
     if not _have_tag():
         pytest.skip(f"нет тега {FLOOR_TAG} в репозитории")
     base = tmp_path_factory.mktemp("floor")

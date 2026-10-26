@@ -1,4 +1,4 @@
-"""E2E: входы в экраны клиента и гостя помимо кнопок — кнопка из старого
+"""E2E: входы в экраны пользователя и гостя помимо кнопок — кнопка из старого
 меню (обработчик устаревших) и коды F… через тот же /start, что и ссылки.
 
 Цена ошибки: устаревшая кнопка без обработчика крутит часики и молчит;
@@ -6,7 +6,7 @@
 за ссылку, — устройство не уходит в держание.
 
 Экраны по ссылкам (/start sub|rf|dev-<id>, в том числе правкой живого меню и
-на чужое устройство) и главная клиента во всех состояниях — в эталоне
+на чужое устройство) и главная пользователя во всех состояниях — в эталоне
 (cl.link.*, gst.link.*, cl.main.*). Устаревшую кнопку эталон не снимает (его
 сторож запрещает уход в обработчик устаревших) — она здесь.
 """
@@ -104,7 +104,7 @@ async def test_stale_router_catches_any_callback_no_screen_took(services):
     assert answers and answers[0].text == stale.STALE_BUTTON
 
 
-# ── коды через /start у клиента ──────────────────────────────────────────────
+# ── коды через /start у пользователя ─────────────────────────────────────────
 
 async def _start(services, fake_bot, cl, payload):
     msg = FakeMessage(text=f"/start {payload}", chat_id=cl.tg_id, user_id=cl.tg_id, bot=fake_bot)
@@ -114,7 +114,7 @@ async def _start(services, fake_bot, cl, payload):
 
 async def test_friend_code_through_start_still_activates_for_a_client(
         services, fake_bot, make_active_client):
-    """Код друга по «/start F…» у действующего клиента — не ссылка на экран,
+    """Код друга по «/start F…» у действующего пользователя — не ссылка на экран,
     а устройство в держание, как раньше."""
     owner = make_active_client(tg_id=9115, name="Вася", device_limit=3)
     cl = make_active_client(tg_id=9116, name="Петя")

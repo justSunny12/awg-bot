@@ -1,7 +1,7 @@
 """I1 линка: значение — строка
-`#I1` клиентского интерфейса сервера как есть, тем же разбором, что у
+`#I1` интерфейса AWG сервера как есть, тем же разбором, что у
 генератора конфигов (`parsers._extract_param`); у всех слотов одно; строки
-нет или она пустая — линк без I1, уведомление «нет I1»; сменили клиентский I1 — у
+нет или она пустая — линк без I1, уведомление «нет I1»; сменили I1 сервера — у
 каждого слота с другим I1 назначается автоматическая смена ключей.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ H4 = 4
 
 
 def _client(monkeypatch, text: str) -> None:
-    """Клиентский интерфейс сервера с этим текстом — разбор настоящий."""
+    """Интерфейс AWG сервера с этим текстом — разбор настоящий."""
     params = parsers.parse_interface_params(text)
     base = getattr(awg, "_i1_test_base", None) or awg.read_server_params
     monkeypatch.setattr(awg, "_i1_test_base", base, raising=False)
@@ -93,6 +93,6 @@ def test_a_changed_client_i1_plans_a_rekey_for_every_slot_with_another(services,
     monkeypatch.setattr(services, "gateway_link_i1", lambda gw: (True, have[gw.id]))
     services.gateway_i1_tick()
     assert services.gateway_i1_plan(1) == {} and services.gateway_i1_plan(2).get("want") == I1
-    _client(monkeypatch, AWG1.replace(I1, "<b 0x02>"))       # клиентский I1 сменили на хосте
+    _client(monkeypatch, AWG1.replace(I1, "<b 0x02>"))       # I1 сервера сменили на хосте
     services.gateway_i1_tick()
     assert services.gateway_i1_plan(1).get("want") == "<b 0x02>" and services.gateway_i1_plan(2).get("want") == "<b 0x02>"

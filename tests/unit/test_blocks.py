@@ -6,7 +6,7 @@ from awgbot.core.blocks import ClientBlock, DeviceBlock
 
 pytestmark = pytest.mark.unit
 
-# Причины, названные одинаково у устройства и клиента. Каскад блокировок
+# Причины, названные одинаково у устройства и пользователя. Каскад блокировок
 # конвертирует биты «тем же типом», полагаясь на равенство их числовых значений.
 _SHARED = ["EXPIRY", "TRAFFIC_USER", "TRAFFIC_CLIENT",
            "ADMIN_SILENT", "ADMIN_NOTIFIED", "USER", "PAUSED"]

@@ -106,7 +106,7 @@ def test_render_whitelist_mode_drops_ssh_before_auth(host_mode, monkeypatch):
     assert "elements = { 203.0.113.7/32 }" in lines
     assert "elements = { 10.9.1.5 }" in lines
     assert "type filter hook forward priority filter; policy drop;" in lines
-    # пир → пир: устройствам админа можно, остальным клиентам друг до друга нет
+    # пир → пир: устройствам админа можно, остальным пользователям друг до друга нет
     i_padm = lines.index('iifname { "awg1" } oifname { "awg1" } ip saddr @admin4 accept')
     i_pdrop = lines.index('iifname { "awg1" } oifname { "awg1" } drop')
     i_any = lines.index("ip saddr @tunnel_nets4 accept")
@@ -123,9 +123,9 @@ def test_render_open_mode_when_whitelist_is_empty(host_mode, monkeypatch):
 
 
 def test_render_masquerades_clients_but_not_into_tunnels(host_mode, monkeypatch):
-    """NAT клиентов живёт в этой же таблице. Исключения — awg-интерфейсы (пир
+    """NAT пользователей живёт в этой же таблице. Исключения — awg-интерфейсы (пир
     к пиру) и линк до шлюза: шлюз маскарадит сам и должен видеть настоящий
-    адрес клиента, иначе исключения из MASQUERADE на нём ни к чему применить."""
+    адрес пользователя, иначе исключения из MASQUERADE на нём ни к чему применить."""
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     _conf(monkeypatch, **{"app.firewall.ssh_allow": ["203.0.113.7"]})
     spec = nftguard.build_spec(["10.9.1.5"])
@@ -138,7 +138,7 @@ def test_render_masquerades_clients_but_not_into_tunnels(host_mode, monkeypatch)
 
 
 def test_remove_keeps_nat_on_host(host_mode, monkeypatch, tmp_path):
-    """`firewall off` снимает фильтр, но не выход наружу для клиентов."""
+    """`firewall off` снимает фильтр, но не выход наружу для пользователей."""
     _conf(monkeypatch)
     monkeypatch.setattr(nftguard, "RULES_FILE", str(tmp_path / "g.nft"))
     monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path))
@@ -225,7 +225,7 @@ def test_reconcile_resyncs_when_live_set_drifted(host_mode, monkeypatch, tmp_pat
 
 
 def test_reconcile_keeps_nat_when_firewall_is_off_on_host(host_mode, monkeypatch, tmp_path):
-    """Выключенный файервол не означает «клиенты без интернета»: на хосте
+    """Выключенный файервол не означает «пользователи без интернета»: на хосте
     таблица остаётся в форме NAT-only. Раньше MASQUERADE давал обвяз
     маршрутизации, и чистый хост оставался без выхода наружу."""
     _conf(monkeypatch, **{"app.firewall.enabled": False})
@@ -513,8 +513,8 @@ def test_nat_only_form_closes_every_link_pair_but_the_transit_ones(host_mode, mo
 
 def test_the_tunnel_addresses_of_gateway_networks_are_for_admin_devices_only(host_mode, monkeypatch):
     """Второй рубеж на ВПС: в пространство адресов в туннеле (исходное
-    назначение — к forward оно уже переведено) прочим клиентам хода нет,
-    устройствам админа — есть; правило стоит до общего «клиенты — наружу».
+    назначение — к forward оно уже переведено) прочим пользователям хода нет,
+    устройствам админа — есть; правило стоит до общего «пользователи — наружу».
     Только с фильтром: в NAT-only решает шлюз."""
     _conf(monkeypatch, **{"app.firewall.enabled": True})
     rule = "ip saddr @tunnel_nets4 ip saddr != @admin4 ct original ip daddr 10.240.0.0/12 drop"
@@ -545,7 +545,7 @@ def test_link_peer_addresses_are_computed_from_the_link_configs(monkeypatch, tmp
     _links(monkeypatch, tmp_path,
            awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n",
            awglink2="[Interface]\nTable = off\nAddress = 10.99.99.5/30\n",
-           awg1="[Interface]\nAddress = 10.9.1.1/24\n")          # клиентский — не линк
+           awg1="[Interface]\nAddress = 10.9.1.1/24\n")          # интерфейс AWG сервера — не линк
     assert nftguard.link_peer_addrs() == ["10.99.99.2", "10.99.99.6"]
 
 
@@ -563,7 +563,7 @@ def test_a_link_config_without_a_usable_30_gives_no_peer(monkeypatch, tmp_path, 
 
 def test_the_channel_rule_lets_in_the_gateway_and_nobody_else(host_mode, monkeypatch, tmp_path):
     """Единственное новое правило файервола: вход с адреса шлюза в его же /30 на
-    порт канала. Клиентская подсеть в другом наборе — канал не для клиентов, и
+    порт канала. Подсеть пользователей в другом наборе — канал не для пользователей, и
     открывать его туннелю целиком значило бы отдать снимок любому устройству."""
     _links(monkeypatch, tmp_path, awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n")
     _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.link_channel_port": 8787})
@@ -579,7 +579,7 @@ def test_the_channel_rule_lets_in_the_gateway_and_nobody_else(host_mode, monkeyp
     assert "type filter hook input priority filter; policy drop;" in inp, (
         "цепочка с policy drop — всё, что не разрешено строкой выше, не войдёт")
     peers_set = lines[lines.index("set link_peers4 {"):]
-    assert "10.9.1.0/24" not in peers_set[:peers_set.index("}")], "клиентская подсеть в наборе канала"
+    assert "10.9.1.0/24" not in peers_set[:peers_set.index("}")], "подсеть пользователей в наборе канала"
 
 
 def test_the_channel_port_follows_the_setting(host_mode, monkeypatch, tmp_path):
@@ -643,7 +643,7 @@ def test_the_admin_resolver_answers_only_admin_devices(host_mode, monkeypatch, t
     """Имена SMB локальных сетей шлюзов — только устройствам админа: :53 адреса
     резолвера админа открыт набору admin4, прочим — drop. И раньше общего
     «:53 из туннеля»: правило ниже него не действовало бы — первый accept
-    пустил бы любого клиента."""
+    пустил бы любого пользователя."""
     _admin_dns(monkeypatch, tmp_path, installed=True)
     _conf(monkeypatch)
     spec = nftguard.build_spec(["10.9.1.5"])
@@ -719,7 +719,7 @@ def test_the_wan_is_the_default_route_device_but_never_a_tunnel(monkeypatch):
 def test_the_private_rule_touches_only_traffic_from_the_tunnel_and_links(host_mode, monkeypatch):
     """Проходящий трафик хоста не из туннеля (VM, резолвер VPC
     провайдера) правило не задевает — особенно в NAT-only, где политику держит
-    хост: источник — только awg-интерфейсы клиентов и линки; их нет — правила
+    хост: источник — только awg-интерфейсы пользователей и линки; их нет — правила
     нет вовсе."""
     monkeypatch.setattr(nftguard, "wan_ifaces", lambda: ["eth0"])
     monkeypatch.setattr(nftguard, "link_ifaces", lambda: [])

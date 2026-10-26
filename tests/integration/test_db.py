@@ -5,7 +5,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-# ── клиенты ──────────────────────────────────────────────────────────────────
+# ── пользователи ─────────────────────────────────────────────────────────────
 def test_create_and_fetch_client(db):
     cid = db.create_client("Вася", 3, "2026-01-01T00:00:00+03:00",
                            "2027-01-01T00:00:00+03:00", "CabcABC12345",
@@ -122,7 +122,7 @@ def test_state_kv(db):
     assert db.get_state("k") == "v2"
 
 
-# ── схема поднимает служебного клиента ───────────────────────────────────────
+# ── схема поднимает служебного пользователя ──────────────────────────────────
 def test_service_client_exists(db):
     sid = db.get_service_client_id()
     assert sid > 0

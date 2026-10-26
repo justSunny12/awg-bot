@@ -5,10 +5,10 @@
 
 Цена ошибки: смена admin_id второй стороны, после которой прежний аккаунт
 ещё видит экран резерва, — чужой человек читает состояние этого сервера;
-удаление пары, пока клиенты у резерва, — клиенты без сервера и без пути
+удаление пары, пока пользователи у резерва, — пользователи без сервера и без пути
 назад; «недоступен» дважды или ни разу — админ не верит уведомлениям;
-сводка экрана роли с полями клиентов — админ другого сервера видит чужих
-клиентов.
+сводка экрана роли с полями пользователей — админ другого сервера видит чужих
+пользователей.
 """
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def test_st_updates_the_name_and_the_address(services, paired):
 
 
 def test_a_newer_peer_turns_its_direction_off_once(services, paired):
-    """Т-РУ9: второй сервер обновился (v4.1.0), этот — v4.0.0: его клиентов
+    """Т-РУ9: второй сервер обновился (v4.1.0), этот — v4.0.0: его пользователей
     этот сервер больше не примет — уведомление один раз на расхождение."""
     services.reserve_st_in(_st())
     notes = services.reserve_st_in(_st(version="4.1.0"))
@@ -86,7 +86,7 @@ def test_a_newer_peer_turns_its_direction_off_once(services, paired):
 
 
 def test_a_peer_that_lost_a_capability_turns_my_direction_off_once(services, paired):
-    """Второй сервер откатился на выпуск без зоны (`zone1`): мои клиенты к нему
+    """Второй сервер откатился на выпуск без зоны (`zone1`): мои пользователи к нему
     не переедут — уведомление один раз, повтор того же `st` — тишина."""
     services.reserve_st_in(_st())
     caps = [c for c in compat.CAPS if c != "zone1"]
@@ -109,7 +109,7 @@ def test_compatibility_back_says_so_once(services, paired):
 
 def test_my_own_update_turns_my_direction_off_once(services, paired, monkeypatch):
     """Т-РУ9: этот сервер обновился до v4.1.0, второй остался на v4.0.0 —
-    его `st` после переподключения прежний, но мои клиенты к нему больше не
+    его `st` после переподключения прежний, но мои пользователи к нему больше не
     переедут: уведомление один раз."""
     services.reserve_st_in(_st())
     monkeypatch.setattr(config, "INSTALLED_VERSION", "4.1.0")
@@ -260,7 +260,7 @@ SUMMARY_KEYS = {"peer", "me", "version", "direction_in", "awg_ok", "link_online"
 
 def test_the_role_summary_has_no_client_fields(services, paired, make_active_client, monkeypatch):
     """Сторож: сводка экрана роли — из таблицы пары, ключей `rsv_*` и
-    счётчиков; новых полей без пересмотра нет, клиентов этого сервера в ней
+    счётчиков; новых полей без пересмотра нет, пользователей этого сервера в ней
     нет ни одним значением."""
     who = make_active_client(name="Иван Секретный", tg_id=5050)
     services.add_device(who.id, "Телефон-Ивана")
@@ -268,7 +268,7 @@ def test_the_role_summary_has_no_client_fields(services, paired, make_active_cli
     d = services.reserve_peer_admin_summary()
     assert set(d) == SUMMARY_KEYS, f"поля сводки разошлись: {set(d) ^ SUMMARY_KEYS}"
     flat = repr(d)
-    assert "Иван" not in flat and "Телефон" not in flat and "5050" not in flat, "в сводке роли данные клиента"
+    assert "Иван" not in flat and "Телефон" not in flat and "5050" not in flat, "в сводке роли данные пользователя"
     assert set(d["peer"]) <= {"id", "name", "host", "pair_if", "pair_port", "peer_port", "pair_cidr", "listener",
                               "bot_username", "peer_admin_id", "created_at"}
 

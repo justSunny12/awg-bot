@@ -11,10 +11,10 @@
 с видом rf | nogw (`go{rf}`).
 
 Цена ошибки: переезд «недоступен из РФ» по короткому сбою пути у шлюза
-(перезагрузка, OMV Apply) — все клиенты основы переподключаются ради
+(перезагрузка, OMV Apply) — все пользователи основы переподключаются ради
 минут; `need` в Н3 — резерв собирает ключ, когда основа жива и сама может
 решить; согласие основы при опущенном у неё линке слота — переезд, который
-ничего не даёт клиентам; Т-РУ13 на каждый такт — шум у админа основы.
+ничего не даёт пользователям; Т-РУ13 на каждый такт — шум у админа основы.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ ASK = 60
 
 @pytest.fixture()
 def mine(box, monkeypatch):
-    """У резерва свой шлюз (РФ-доступ его клиентов через мои шлюзы разрешён)."""
+    """У резерва свой шлюз (РФ-доступ его пользователей через мои шлюзы разрешён)."""
     monkeypatch.setattr(box.s.db, "gateways", lambda: [object()])
     return box
 
@@ -308,7 +308,7 @@ def test_ask_nogw_with_a_stale_handshake_is_agreed_with_the_nogw_kind(services, 
 
 
 def test_ask_while_busy_is_refused_with_busy_and_no_notice(services, primary):
-    services.reserve_set_in("serving")                  # у меня клиенты резерва
+    services.reserve_set_in("serving")                  # у меня пользователи резерва
     acts = services.reserve_ask_in("3", SINCE, V3)
     assert sent(acts, "ask_no") == [{"reason": "busy"}] and not notes(acts)
     assert services.reserve_out() == "home"
@@ -321,7 +321,7 @@ def _views_h3(acts) -> list[dict]:
 
 
 def test_no_h3_warning_to_the_primary_when_the_reserve_has_no_gateways_to_give(box):
-    """Т-РУ23 говорит админу основы «если так останется до …, клиенты
+    """Т-РУ23 говорит админу основы «если так останется до …, пользователи
     переедут». Резерву нечем дать РФ-доступ (своих шлюзов нет) — Н3 не
     просит переезда никогда, и обещать его нельзя."""
     box.primary(True)

@@ -1,6 +1,6 @@
 """Снимки админа: «🛟 Резерв» — переезд кнопкой и возврат (карточка по
 состояниям, диалог перевода в ручном и автоматическом режиме, живое сообщение
-хода, возврат клиентов к основе у резерва, «🌐 Запись DNS» и ввод токена,
+хода, возврат пользователей к основе у резерва, «🌐 Запись DNS» и ввод токена,
 строка главной, диалог возврата в боте основы на резерве, уведомление о
 записи не туда с кнопкой).
 
@@ -83,7 +83,7 @@ def _foreign_record(services, bot):
 
 
 def _move_done(services, bot):
-    """Такт автомата после перевода: клиенты у резерва — живое сообщение хода
+    """Такт автомата после перевода: пользователи у резерва — живое сообщение хода
     становится итогом с кнопкой назад в раздел."""
     async def run():
         from awgbot.bot.handlers.settings.reserve import move as move_ui
@@ -93,7 +93,7 @@ def _move_done(services, bot):
 
 
 def _await_merge(services, mp):
-    """Клиенты возвращены без резерва (С9): жду его реплику."""
+    """Пользователи возвращены без резерва (С9): жду его реплику."""
     services.reserve_set_out("home", await_merge=True, kind="dead")
 
 
@@ -141,14 +141,14 @@ RESERVE_MOVE = [
     Shot("adm.rsv.move.twice", role="admin",
          press=[RSV, RsvCB(action="move"), RsvCB(action="move_yes"), RsvCB(action="move_yes")], data=_paired(),
          title="повторное подтверждение перевода — всплывашка"),
-    # ── вернуть клиентов к основе (Т-Р12) ───────────────────────────────
+    # ── вернуть пользователей к основе (Т-Р12) ──────────────────────────
     Shot("adm.rsv.evict", role="admin", press=[RSV, RsvCB(action="evict")], data=_paired(_serving),
          title="«↩️ Вернуть всё на «Beta»»: диалог"),
     Shot("adm.rsv.evict.yes", role="admin", press=[RSV, RsvCB(action="evict"), RsvCB(action="evict_yes")],
          data=_paired(_serving), title="просьба о возврате отправлена"),
     Shot("adm.rsv.evict.none", role="admin", press=[RSV, RsvCB(action="evict")], data=_paired(),
          title="вернуть некого — всплывашка"),
-    # ── вернуть клиентов без резерва (С9) ───────────────────────────────
+    # ── вернуть пользователей без резерва (С9) ──────────────────────────
     Shot("adm.rsv.card.force", role="admin", press=[RSV], data=_paired(_away, _peer_down),
          title="карточка: мои пользователи у резерва, он не на связи 20 минут — «⚠️ Вернуть без «Beta»»"),
     Shot("adm.rsv.force", role="admin", press=[RSV, RsvCB(action="force")], data=_paired(_away, _peer_down),

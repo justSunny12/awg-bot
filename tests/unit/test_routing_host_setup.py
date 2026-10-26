@@ -165,7 +165,7 @@ def test_stale_route_is_removed(script):
     """Мало НЕ ставить свой маршрут — надо снять чужой.
 
     Чужой via-маршрут перекрывает connected: наружу всё уходит, а ответы
-    клиентам отправляются в мёртвую сеть. Диагностика при этом зелёная —
+    пользователям отправляются в мёртвую сеть. Диагностика при этом зелёная —
     маршрут ведь есть.
     """
     body = script.split('step "5.', 1)[1].split("step ", 1)[0]
@@ -176,7 +176,7 @@ def test_stale_route_is_removed(script):
 def test_dnatted_dns_is_allowed_into_input(script):
     """После DNAT назначение — НАШ адрес, и пакет идёт в INPUT, а не в FORWARD.
 
-    При политике DROP он там умирает: клиент подключается, ходит по голым
+    При политике DROP он там умирает: пользователь подключается, ходит по голым
     адресам (телеграм работает), а всё, что требует резолва, мертво. В
     """
     assert 'ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT' in script
@@ -187,7 +187,7 @@ def test_dnatted_dns_is_allowed_into_input(script):
 
 
 def test_input_allow_is_rolled_back(script):
-    """Откат снимает и разрешения INPUT для DNS клиентов — иначе после отката
+    """Откат снимает и разрешения INPUT для DNS пользователей — иначе после отката
     на хосте остаётся дыра к резолверу, которую никто не помнит."""
     rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1].split("exit 0", 1)[0]
     drops = [ln.strip() for ln in rollback.splitlines() if ln.strip().startswith("drop_rule filter INPUT")]
@@ -196,7 +196,7 @@ def test_input_allow_is_rolled_back(script):
 
 
 def test_masquerade_is_skipped_when_the_bot_owns_it(script):
-    """NAT клиентов переехал в таблицу бота (awg_bot_guard), которая живёт и
+    """NAT пользователей переехал в таблицу бота (awg_bot_guard), которая живёт и
     при выключенном файерволе. Два маскарада рядом трафик не ломают, но
     «единственная точка» перестаёт быть единственной — поэтому свои правила
     только там, где таблицы бота нет: на установках прежней схемы."""
@@ -262,7 +262,7 @@ def test_without_the_bot_resolver_the_old_scheme_stays(script, tmp_path):
 
 
 def test_dummy_address_in_client_configs_keeps_the_dummy_alive(script, tmp_path):
-    """Адрес dummy вшит в конфиги клиентов (dns2) — dummy обязан жить даже при
+    """Адрес dummy вшит в конфиги пользователей (dns2) — dummy обязан жить даже при
     резолвере бота, и перехват остаётся на нём: снять значит оставить людей с
     мёртвым вторым DNS до перевыпуска."""
     p = _params(script, tmp_path, dns1="10.9.1.1", dns2="10.255.53.1", resolver_addrs=["10.9.1.1"])
@@ -313,7 +313,7 @@ def test_rollback_keeps_the_dummy_and_its_dnsmasq_while_client_configs_point_at_
 
 
 def test_a_stale_iptables_masquerade_is_dropped_when_the_bot_leads_nat():
-    """Правило прежней схемы стояло выше исключения для линка: клиенты
+    """Правило прежней схемы стояло выше исключения для линка: пользователи
     уходили к шлюзу с адресом ВПС. Когда NAT ведёт таблица бота, скрипт
     снимает его, а не оставляет «рядом»."""
     import pathlib
@@ -325,8 +325,8 @@ def test_a_stale_iptables_masquerade_is_dropped_when_the_bot_leads_nat():
 # ── резолвер админа мимо перехвата :53 ───────────────────────────────────────
 
 def test_the_admin_resolver_is_inserted_above_the_dns_interception(script):
-    """DNAT всего :53 клиентов увёл бы запросы устройств админа к резолверу
-    админа на резолвер клиентов — без записей awg.internal, то есть «SMB в
+    """DNAT всего :53 пользователей увёл бы запросы устройств админа к резолверу
+    админа на резолвер пользователей — без записей awg.internal, то есть «SMB в
     туннеле» молча не работал бы. RETURN обязан стоять в цепочке ВЫШЕ DNAT:
     -I кладёт в начало, значит в файле — после DNAT, и каждый прогон заново."""
     step3 = script[script.index('step "3. Перехват DNS'):script.index('step "3a.')]

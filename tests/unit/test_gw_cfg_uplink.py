@@ -64,7 +64,7 @@ RECOVERED = "⚠️ Применение конфига аплинка прер�
 
 
 def uplink_conf(priv: str, srv_pub: str, endpoint: str = "vps.example.org:43125") -> str:
-    """Конфиг аплинка так, как его шлёт сервер: клиентский, без DNS, Table = off."""
+    """Конфиг аплинка так, как его шлёт сервер: как у устройства, без DNS, Table = off."""
     return (f"[Interface]\nPrivateKey = {priv}\nAddress = 10.8.1.5/32\nTable = off\nJc = 4\nJmin = 40\nJmax = 70\n\n"
             f"[Peer]\nPublicKey = {srv_pub}\nPresharedKey = DUMMY-UPLINK-PSK=\nEndpoint = {endpoint}\n"
             "AllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n")
@@ -902,7 +902,7 @@ def test_a_refusal_in_the_gateway_chat_tells_the_admin_once_per_value(services, 
 
 
 def test_every_obfuscation_key_of_a_client_conf_is_allowed_in_the_uplink():
-    """Сторож: конфиг аплинка — клиентский конфиг из configgen; ключ
+    """Сторож: конфиг аплинка — конфиг устройства из configgen; ключ
     обфускации, который configgen печатает, а белый список аплинка не знает,
     — агент и скрипт отвергнут аплинк каждого шлюза, как только сервер AWG
     начнёт его задавать."""

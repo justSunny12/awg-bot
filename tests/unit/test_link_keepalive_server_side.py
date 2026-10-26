@@ -5,7 +5,7 @@ install/routing-link-setup.sh и шаг обновления `adopt_link_keepali
 С резервом шлюзу нужен взгляд на сервер за секунды, а до 4.0.0 keepalive
 слал только шлюз: сервер видел шлюз, шлюз сервер — лишь по рукопожатию раз
 в ~2 мин. Поэтому сторона сервера в `[Peer]` несёт `PersistentKeepalive`
-тем же диапазоном, что у клиентов (`client_config.keepalive_seconds`), а
+тем же диапазоном, что у пользователей (`client_config.keepalive_seconds`), а
 шаг обновления дописывает строку в живые конфиги без неё и ставит её на
 живой интерфейс (`awg set`), без перезапуска линка.
 
@@ -187,7 +187,7 @@ def test_without_link_confs_nothing_happens(tmp_path):
     r = s.run()
     assert r.returncode == 0, r.stderr
     assert s.calls() == [] and "PersistentKeepalive" not in (s.awg_dir / "awg0.conf").read_text(encoding="utf-8"), \
-        "клиентский интерфейс — не линк слота"
+        "интерфейс AWG сервера — не линк слота"
 
 
 def test_a_conf_without_the_final_newline_gets_a_separate_line(tmp_path):

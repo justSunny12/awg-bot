@@ -83,7 +83,7 @@ def test_lock_declares_a_generation_and_protocol_id(lock):
 
 def test_kernel_never_adds_a_repository(kernel):
     """PPA не подключаем никогда: apt однажды поднял бы ядро мимо поставки, и
-    клиенты прежнего поколения перестали бы ходить без всякого объяснения."""
+    пользователи прежнего поколения перестали бы ходить без всякого объяснения."""
     for forbidden in ("add-apt-repository", "ppa:amnezia", "apt-key", "sources.list"):
         assert forbidden not in kernel, f"в скрипте появился {forbidden}"
 
@@ -257,7 +257,7 @@ def test_status_rebuilds_when_nobody_recorded_the_tag(tmp_path):
 
 def test_status_flags_a_built_but_not_running_module(tmp_path):
     """Собрано по манифесту, а работает модуль других исходников: до подмены
-    или перезагрузки клиентов обслуживает прежнее ядро. Ловится ТОЛЬКО по
+    или перезагрузки пользователей обслуживает прежнее ядро. Ловится ТОЛЬКО по
     srcversion — строки версий тут совпадают."""
     ver = "3.1.20260812"
     res = _run_kernel(tmp_path, "status", module=ver, loaded=ver, tools=ver,
@@ -339,7 +339,7 @@ def test_generation_bump_raises_a_second_interface(bot_sh):
     """Растёт поколение — рядом со старым интерфейсом поднимается второй, на
     новых параметрах, и переезд ждёт админа в UI."""
     body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
-    assert 'yaml_get "$app" role' in body and "gateway" in body, "у шлюза клиентов нет"
+    assert 'yaml_get "$app" role' in body and "gateway" in body, "у шлюза пользователей нет"
     assert '[[ "$want" -gt "$applied" ]] || return 0' in body
     assert "awg-server-init.sh" in body
     assert 'yaml_set_soft "$app" migration_interface' in body
@@ -446,7 +446,7 @@ def test_missing_state_file_means_the_floor_generation(tmp_path):
 def test_generation_bump_raises_a_second_interface_that_does_not_collide(tmp_path):
     """Смена поколения: второй интерфейс поднимается сам, имя и подсеть
     подбираются мимо занятых — ровно то, где админ ошибётся, а отказ вылезет у
-    клиентов. Пул адресов начинается с .2, цель поколения — в состоянии."""
+    пользователей. Пул адресов начинается с .2, цель поколения — в состоянии."""
     proc, state, app, journal = _run_bot_func(
         tmp_path, "ensure_awg_generation", lock_gen="3", applied="2",
         app_yaml=_APP_YAML, confs=("awg1.conf",))     # awg1 и 10.9.1.x заняты
@@ -521,7 +521,7 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
         assert f'yaml_set "$app" {key}' in body, f"{key} не пишется"
     assert body.index('yaml_set "$app" server_port') < body.index('if [[ "$created" == "1" ]]'), \
         "запись топологии снова спрятана под created"
-    # первый клиентский адрес — следующий за адресом сервера, а не константа
+    # первый адрес пользователей — следующий за адресом сервера, а не константа
     assert "BASH_REMATCH[1]} + 1" in body and "ip_host_start" in body
 
 

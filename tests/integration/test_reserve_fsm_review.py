@@ -11,11 +11,11 @@
 следующей перезагрузки; возврат без Telegram — бот немой обеим сторонам;
 перезапуск на каждом такте — бот основы не успевает подняться; молчащий
 застрявший deleteWebhook — админ не знает, что бот не отвечает; пустая
-реплика, принятая за ошибку, — клиенты навсегда у резерва; одна реплика,
+реплика, принятая за ошибку, — пользователи навсегда у резерва; одна реплика,
 слитая дважды, — продления и трафик удвоены; повтор одной ошибки слияния
 громко и с автоматическим возвратом — шум каждые пять минут; back при пустой
 зоне без ответа — основа ждёт вечно; пересылка хвоста при сорванном до
-записи переезде — клиентов на клоне не было, а DNAT уводит чужие пакеты;
+записи переезде — пользователей на клоне не было, а DNAT уводит чужие пакеты;
 срыв дважды — два «принять не удалось» и двойной teardown; relay, держащий
 зону, — новый переезд невозможен неделю.
 """
@@ -274,7 +274,7 @@ def test_packets_through_the_tail_keep_the_relay_alive(host, monkeypatch):
     host.svc.reserve_in_tick()                                 # первое чтение — отметка счётчика
     old = timeutil.to_iso(timeutil.shift(timeutil.now(), -3 * 3600))
     host.svc.rsv_update("rsv_in", relay_at=old, relay_last_traffic=old)   # прошло три часа
-    box["pkts"] = 25                                          # клиенты, не сменившие запись, ещё шлют
+    box["pkts"] = 25                                          # пользователи, не сменившие запись, ещё шлют
     host.svc.reserve_in_tick()
     assert host.svc.reserve_in() == "relay", "пересылка снята, хотя пакеты через неё идут"
     assert host.svc.rsv_get("rsv_in").get("relay_pkts") == 25
@@ -337,7 +337,7 @@ def test_a_blocked_merge_keeps_the_return_button(merge_world):
     w.clock.advance(outbound.HEALTHY_S + 60)
     acts = w.svc.reserve_out_tick()
     assert ("send", "back_req", {}) not in acts and w.svc.reserve_out() == "away"
-    assert w.svc.rsv_get("rsv_out").get("can_return") is True, "кнопка «Вернуть клиентов» пропала"
+    assert w.svc.rsv_get("rsv_out").get("can_return") is True, "кнопка «Вернуть пользователей» пропала"
 
 
 # ── back: порядок действий — DNAT хвоста, затем сброс conntrack ─────────────

@@ -3,7 +3,7 @@ test_reserve_hosting*, test_reserve_dns): пара в рабочем состо�
 запись DNS и часы автоматов.
 
 Основа в паре с резервом `Beta` (198.51.100.7): второй сервер на связи, готов
-и совместим, свежий пакет не нужен (`rsv_pkg_sent` пуст), адрес для клиентов —
+и совместим, свежий пакет не нужен (`rsv_pkg_sent` пуст), адрес для пользователей —
 имя `vpn-a.example.org`, которое системный резолвер отдаёт как 198.51.100.10
 (свой адрес). Запись у авторитетного сервера по умолчанию указывает на свой
 адрес. Время автоматов (`time.monotonic` в outbound/inbound/dns/package) —
@@ -26,7 +26,7 @@ from awgbot.util.rsvpkg import bot as pkgbot, seal
 from tests.integration import _reserve_common as rc
 from tests.integration.test_reserve_package import LIVE
 
-OWN_IP = "198.51.100.10"        # свой адрес сервера (запись указывает сюда, пока клиенты дома)
+OWN_IP = "198.51.100.10"        # свой адрес сервера (запись указывает сюда, пока пользователи дома)
 PEER_IP = rc.ADDR_B             # адрес резерва
 
 
@@ -152,14 +152,14 @@ def confirm_package(svc, gen: int = 7) -> None:
 
 
 def to_step(svc, step: str, *, gen: int = 7, kind: str = "button", wait: int = 300) -> None:
-    """Автомат «мои клиенты» уже на шаге переезда (минуя предыдущие)."""
+    """Автомат «мои пользователи» уже на шаге переезда (минуя предыдущие)."""
     svc.reserve_set_out("leaving", kind=kind, started_at=timeutil.now_iso(), target_ip=PEER_IP,
                         record=rc.HOST_A, gen=gen, record_set_at="", record_probe=0)
     svc._out_step(step, wait)
 
 
 def go_away(svc, *, gen: int = 7, kind: str = "button", last_switch: str = "") -> None:
-    """Клиенты и бот основы уже у резерва; `last_switch` пуст — переключений давно не было."""
+    """Пользователи и бот основы уже у резерва; `last_switch` пуст — переключений давно не было."""
     svc.reserve_set_out("away", kind=kind, gen=gen, step="", taken_at=timeutil.now_iso(), last_switch=last_switch,
                         healthy_since="", healthy_mono=0, can_return=False)
     svc.reserve_set_poll("away")

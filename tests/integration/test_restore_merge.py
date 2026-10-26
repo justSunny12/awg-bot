@@ -4,8 +4,8 @@
 
 Инварианты:
 - связность, та же линия: у каждого слота, оставленного текущим, конфиги линка
-  обеих сторон, строка слота, устройство и его [Peer], [Interface] клиентского
-  конфига, env, сетевые параметры сервера и слотовые ключи CURRENT — байт в байт
+  обеих сторон, строка слота, устройство и его [Peer], [Interface] интерфейса
+  AWG сервера, env, сетевые параметры сервера и слотовые ключи CURRENT — байт в байт
   текущие;
 - связность, другая линия (новый сервер): [Interface], пиры, подсеть, порт,
   линки, слоты и токены ботов шлюзов — из бэкапа; адрес сервера, токен бота и
@@ -189,7 +189,7 @@ def test_a_new_server_takes_everything_from_the_copy_but_host_facts(world, fresh
     old_files = _copy_files(copy)
     report = fresh.run(copy)
     assert report["line"] == "clean" and report["empty"] is True and report["adopt"] == ["awglink"]
-    assert _copy_files(copy) == old_files, "линки и клиентский конфиг — не из бэкапа"
+    assert _copy_files(copy) == old_files, "линки и конфиг интерфейса AWG сервера — не из бэкапа"
     import yaml
     app = yaml.safe_load((copy / "state" / "conf" / "app.yaml").read_text(encoding="utf-8"))
     assert app["network"]["subnet_cidr"] == "10.8.1.0/24" and app["network"]["server_port"] == 51820

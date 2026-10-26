@@ -325,7 +325,7 @@ async def test_a_delta_before_any_snapshot_is_refused_and_a_full_one_is_asked(se
 # ── подпись, размер, мусор ───────────────────────────────────────────────────
 
 async def test_a_message_signed_by_another_key_ends_the_session(services, link):
-    """Клиент туннеля, дотянувшийся до порта канала, не имеет права
+    """Пользователь туннеля, дотянувшийся до порта канала, не имеет права
     рассказывать про шлюз. Подпись не сошлась — сессию рвём, а не «пропускаем
     сообщение»."""
     gw = await _connect(link)
@@ -585,7 +585,7 @@ def test_a_slot_is_recognised_by_the_pair_of_addresses_not_by_one_of_them(
     assert srv._slot_for("10.99.99.5", "10.99.99.6").id == 2
     assert srv._slot_for("10.99.99.1", "10.99.99.6") is None, "адрес пира из чужого линка"
     assert srv._slot_for("10.99.99.5", "10.99.99.2") is None, "пришли не на тот адрес линка"
-    assert srv._slot_for("10.8.1.5", "10.8.1.6") is None, "клиентская подсеть — не линк"
+    assert srv._slot_for("10.8.1.5", "10.8.1.6") is None, "подсеть пользователей — не линк"
     assert srv._slot_for("10.99.99.1", "10.99.99.1") is None, "адрес ВПС выдан за адрес шлюза"
 
 

@@ -40,7 +40,7 @@ def test_static_render_is_deterministic():
 
 
 def test_static_render_counts_both_client_subnets_including_migration():
-    """Подсеть переезда — тоже клиенты: без неё РФ-трафик двойников в окне
+    """Подсеть переезда — тоже пользователи: без неё РФ-трафик двойников в окне
     переезда прошёл бы мимо учёта."""
     text = rfacct.render_static(["awglink"], ["10.8.1.0/24", "10.9.1.5/24"])
     assert f"add element {T} clients4 {{ 10.8.1.0/24, 10.9.1.0/24 }}" in text, \

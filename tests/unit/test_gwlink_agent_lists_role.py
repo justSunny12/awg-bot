@@ -273,7 +273,7 @@ def _snap(svc, *, link_up: bool, hs: float | None, age: float = 0.0) -> None:
     ("active", True, None, 0, False),           # активный, хендшейка нет — трафик уже не идёт
     ("active", False, 20.0, 0, False),          # интерфейс лежит
     ("active", True, 20.0, 3600, False),        # снимок старше 15 минут — не знаем
-    ("standby", True, 20.0, 0, False),          # резерв: трафик клиентов не на нём
+    ("standby", True, 20.0, 0, False),          # резерв: трафик пользователей не на нём
     ("", True, 20.0, 0, False),                 # сервер роль не сообщал
 ])
 def test_carries_traffic_only_as_the_active_slot_with_a_live_link(svc, role, link_up, hs, age, carries):

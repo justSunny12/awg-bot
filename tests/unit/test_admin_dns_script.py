@@ -22,7 +22,7 @@ from tests.conftest import fake_cmd
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "install" / "awg-admin-dns-setup.sh"
-UPSTREAM = "10.9.1.1"           # резолвер клиентов — <подсеть>.1
+UPSTREAM = "10.9.1.1"           # резолвер пользователей — <подсеть>.1
 ADDR = "10.255.53.53"
 
 
@@ -86,7 +86,7 @@ REC = ("# awg-bot (сервер AWG): SMB локальных сетей шлюз
 def test_install_writes_its_own_config_and_unit_and_starts_the_instance(host):
     """Свой конфиг целиком, не /etc/dnsmasq.d: однократные ключи основного
     экземпляра не мешают; отвечает только на своём адресе, всё, кроме
-    awg.internal, — резолверу клиентов (кэш и блок DoH наследуются)."""
+    awg.internal, — резолверу пользователей (кэш и блок DoH наследуются)."""
     r = host.run("install", UPSTREAM)
     assert r.returncode == 0, r.stdout + r.stderr
     conf = host.conf().splitlines()
@@ -125,7 +125,7 @@ def test_install_restarts_a_dead_instance_even_without_changes(host):
 
 
 def test_a_moved_client_resolver_moves_the_upstream(host):
-    """Переезд подсети клиентов меняет адрес резолвера клиентов — server=
+    """Переезд подсети пользователей меняет адрес резолвера пользователей — server=
     тянется за ним, иначе всё, кроме SMB, у админа уходит в никуда."""
     assert host.run("install", UPSTREAM).returncode == 0
     host.reset_log()
@@ -166,7 +166,7 @@ def test_a_failed_first_install_does_not_leave_the_resolver_looking_installed(ho
     резолвер админа поставленным по наличию конфига (admindns.installed) и
     тогда отдаёт его адрес в DNS новых конфигов устройств админа и вешает
     правило nft на его :53. Конфиг без живого демона — админ без DNS совсем.
-    Так же устроен резолвер клиентов: «первая установка — файл снимается»."""
+    Так же устроен резолвер пользователей: «первая установка — файл снимается»."""
     host.alive(False)
     r = host.run("install", UPSTREAM, RESTART_RC="1")
     assert r.returncode == 1, r.stdout + r.stderr
@@ -340,8 +340,8 @@ def _cli_admin(tmp_path, *args, euid="0", admin_dns=None):
     (("admin", "status"), "admin [10.255.53.53] status\n"), (("admin",), "admin [10.255.53.53] status\n"),
     (("admin", "remove"), "admin [10.255.53.53] remove\n")])
 def test_cli_admin_goes_to_the_admin_script_with_the_client_resolver_as_upstream(tmp_path, args, want):
-    """`awg-bot resolver admin …` — к своему скрипту, а не к резолверу клиентов:
-    перепутай — remove снял бы DNS всех клиентов."""
+    """`awg-bot resolver admin …` — к своему скрипту, а не к резолверу пользователей:
+    перепутай — remove снял бы DNS всех пользователей."""
     r, calls = _cli_admin(tmp_path, *args)
     assert r.returncode == 0, r.stderr
     assert calls == want, calls
@@ -378,7 +378,7 @@ def test_uninstall_takes_the_admin_resolver_with_it():
 
 
 def test_first_client_resolver_install_also_installs_the_admin_resolver():
-    """Установщик ставит резолвер админа вместе с резолвером клиентов, на его
+    """Установщик ставит резолвер админа вместе с резолвером пользователей, на его
     адрес; отказ — предупреждение, не обрыв установки (поставит бот)."""
     from tests.unit.test_cli_script import _extract_func
     body = _extract_func(flat(), "ensure_resolver")

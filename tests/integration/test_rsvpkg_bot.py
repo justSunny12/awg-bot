@@ -9,7 +9,7 @@
 пакет ничего не знает (появится в следующих версиях), в реплику не попадает.
 
 Цена ошибки: фраза бэкапов в реплике — резерв (другой человек) читает все
-бэкапы основы; закрытые ключи устройств — резерв выдаёт себя за клиентов
+бэкапы основы; закрытые ключи устройств — резерв выдаёт себя за пользователей
 основы; токен бота шлюза — резерв управляет шлюзом основы; история — месяцы
 персональных данных у постороннего сервера без нужды.
 """
@@ -66,7 +66,7 @@ def _fill_history(con) -> None:
 
 @pytest.fixture()
 def live(services, db, make_active_client, fake_awg):
-    """База работающего сервера: клиент с устройствами (закрытые ключи),
+    """База работающего сервера: пользователь с устройствами (закрытые ключи),
     слот шлюза, меню в чате, истории, секреты в server_state."""
     admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
@@ -120,7 +120,7 @@ def test_the_replica_has_no_history_no_device_keys_and_only_whitelisted_state(li
 
 def test_what_the_base_bot_needs_travels(live, tmp_path):
     """Профили, устройства с открытыми ключами и адресами, слоты шлюзов и
-    меню клиентов — без них бот основы на резерве не обслужит никого."""
+    меню пользователей — без них бот основы на резерве не обслужит никого."""
     src = sqlite3.connect(_db_path(live))
     con = _open(bot.replica(_db_path(live)), tmp_path)
     for table, cols in (("clients", "id, tg_id, name"), ("devices", "id, public_key, address, preshared_key"),

@@ -2,7 +2,7 @@
 (domain/services/reserve/inbound.py — open.status до запуска, песочница
 юнита, остановка юнита при срыве и возврате, повтор реплики и `relay`),
 голосование шлюзов (vote.py — обрыв сессии как подозрение, Н4 один раз на
-эпизод, `state` шлюзам в releasing, отказ кода при чужих клиентах здесь),
+эпизод, `state` шлюзам в releasing, отказ кода при чужих пользователях здесь),
 случаи 3/Н3 при занятой зоне (rfblock.py) и `st` по смене тела (session.py,
 такт живости runtime/scheduler/reserve.py).
 
@@ -15,9 +15,9 @@
 `back`, — процесс дописывает хранилище гостя уже после стирания; обрыв
 сессии шлюза, принятый за «шлюза нет», — Н4 и аварийный код по каждому
 переподключению; Т-РУ7 на каждое повторное открытие окна — шум у двух
-админов; шлюзы, снявшие пересылку в releasing, — клиенты основы теряют
+админов; шлюзы, снявшие пересылку в releasing, — пользователи основы теряют
 связь до конца возврата; просьба основе при занятой зоне — переезд поверх
-чужих клиентов.
+чужих пользователей.
 """
 from __future__ import annotations
 
@@ -274,7 +274,7 @@ def test_the_code_is_refused_while_my_own_clients_are_at_the_other_server(hermet
     box.tick()
     box.s.reserve_set_out("away")
     res = box.s.reserve_code_in(PEER_ADMIN, CODE)
-    assert not res["ok"] and not box.launched, "код открыл пакет поверх отъезда моих клиентов"
+    assert not res["ok"] and not box.launched, "код открыл пакет поверх отъезда моих пользователей"
     assert any("не на этом сервере" in n.text for n in notes(res.get("actions"))), res
 
 
@@ -295,7 +295,7 @@ def test_the_opening_by_points_writes_launching_before_the_launch(hermetic):
 @pytest.mark.parametrize("inn, want", [("taking", "serving"), ("serving", "serving"), ("releasing", "serving"),
                                        ("relay", "idle"), ("idle", "idle")])
 def test_gateways_keep_serving_until_the_return_is_over(hermetic, inn, want):
-    """В releasing клиенты основы ещё здесь: шлюзы, снявшие пересылку, оставили
+    """В releasing пользователи основы ещё здесь: шлюзы, снявшие пересылку, оставили
     бы их без РФ-части до конца возврата."""
     box = hermetic
     box.hello(1, sees=True)
@@ -342,7 +342,7 @@ def test_a_block_written_as_text_by_the_previous_release_is_lifted_when_free(her
     """Состояние, записанное выпуском до кодов, лежит в БД текстом. Если
     снятие узнаёт только коды, после обновления метка висит вечно: карточка
     пишет «переезд не идёт», а демпфер, дойдя до просьбы, снова и снова
-    упирается в чужую метку — клиенты основы без РФ-доступа."""
+    упирается в чужую метку — пользователи основы без РФ-доступа."""
     box = hermetic
     box.primary(True)
     box.hello(1, sees=False)
@@ -400,7 +400,7 @@ def test_the_tail_relay_does_not_hold_the_zone_busy_for_case_3(hermetic):
     box.hello(2, sees=False)
     box.s.reserve_set_in("relay")
     acts = _run(box, DAMPER + 180)
-    assert sent(acts, "ask"), "relay держит зону занятой — клиенты основы без РФ-доступа до конца хвоста"
+    assert sent(acts, "ask"), "relay держит зону занятой — пользователи основы без РФ-доступа до конца хвоста"
     assert "зона занята" not in box.s.reserve_rf_line()
 
 

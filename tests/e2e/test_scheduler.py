@@ -48,7 +48,7 @@ async def test_job_monthly_same_month_is_noop(services, fake_bot, make_active_cl
 async def test_job_monthly_newer_recorded_month_is_noop(services, fake_bot, make_active_client):
     """Пояс сменился на западный в первые часы 1-го числа: «сейчас» — ещё
     прошлый месяц, а сброс этого уже был. Повторного сброса (и рассылки
-    клиентам) нет; то же у копии."""
+    пользователям) нет; то же у копии."""
     client = make_active_client(tg_id=9005)
     dc = services.add_device(client.id, "d")
     services.db.set_state("last_monthly_reset", "2999-01")

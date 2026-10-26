@@ -2066,7 +2066,7 @@ SELF="$(install_self)"
 _unit_old="$(cat "$UNIT" 2>/dev/null || true)"
 cat > "$UNIT" <<UNITEOF
 [Unit]
-Description=awg-bot: линк до сервера AWG и изоляция клиентов (шлюз)
+Description=awg-bot: линк до сервера AWG и изоляция пользователей (шлюз)
 After=network-online.target${UPLINK_IF:+ awg-quick@$UPLINK_IF.service}
 Wants=network-online.target${UPLINK_IF:+ awg-quick@$UPLINK_IF.service}
 

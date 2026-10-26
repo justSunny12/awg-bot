@@ -189,7 +189,7 @@ class Inviter:
 
 @pytest.fixture()
 def rsv(services, tmp_path, monkeypatch):
-    """Сервер AWG, готовый к паре: домен для клиентов, «Готов быть
+    """Сервер AWG, готовый к паре: домен для пользователей, «Готов быть
     резервом», выпуск 4.0.0, шлюз с rsv1 (подмена — rsv.gw), файервол —
     журнал вызовов (rsv.fw; rsv.fw_fail — отказ строгой перерисовки)."""
     monkeypatch.setattr(config, "INSTALLED_VERSION", "4.0.0")

@@ -1,7 +1,7 @@
 """Integration: ручной админ-блок КЛИЕНТА (block_client_manual / unblock_client_manual).
 
 Проверяем каскад бита на устройства, интеграцию с приостановкой подписки
-(pause_days None/0/N), уведомления клиенту и друзьям, и что снятие блока с
+(pause_days None/0/N), уведомления пользователю и друзьям, и что снятие блока с
 активной админ-паузой закрывает её через exit_pause (пересчёт периода).
 """
 import pytest
@@ -46,7 +46,7 @@ def test_block_client_silent_sends_nothing(services, fake_awg, make_active_clien
 
 
 def test_block_client_is_service_noop(services, fake_awg):
-    services.ensure_admin_client()               # админ-клиент существует, но нам нужен служебный
+    services.ensure_admin_client()               # запись админа как пользователя есть, но нам нужен служебный
     svc = services.db.get_service_client_id()
     notes = services.block_client_manual(svc, ClientBlock.ADMIN_NOTIFIED, notify=True)
     assert notes == []
@@ -86,7 +86,7 @@ def test_unblock_client_clears_cascade_and_notifies(services, fake_awg, make_act
     assert int(dev.block_reason) == 0
     assert dc.address not in fake_awg.blocked
     targets = {n.tg_id for n in notes}
-    assert 1005 in targets and 91005 in targets              # клиенту и другу — «разблокировано»
+    assert 1005 in targets and 91005 in targets              # пользователю и другу — «разблокировано»
 
 
 def test_unblock_client_closes_open_pause_and_restores_period(services, fake_awg, make_active_client):
@@ -111,4 +111,4 @@ def test_unblock_client_partial_keeps_other_reason(services, fake_awg, make_acti
     fresh = services.db.get_client(client.id)
     assert int(fresh.block_reason) & int(ClientBlock.ADMIN_NOTIFIED)  # второй бит цел
     assert int(fresh.block_reason) & int(ClientBlock.ADMIN_SILENT) == 0
-    assert notes == []                                       # не разблокирован → клиенту молчим
+    assert notes == []                                       # не разблокирован → пользователю молчим

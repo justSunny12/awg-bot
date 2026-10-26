@@ -21,7 +21,7 @@ script, domain_env, own_env = _c.script, _c.domain_env, _c.own_env
 
 def test_fill_puts_the_addresses_into_lan_vpn4_and_rewrites_the_snapshot(own_env, tmp_path):
     """Агент зовёт fill после sync: без него новые домены «в туннель» шли бы
-    мимо туннеля до первого запроса клиента к dnsmasq, а после перезагрузки —
+    мимо туннеля до первого запроса пользователя к dnsmasq, а после перезагрузки —
     до следующего (слепок не знал бы их адресов)."""
     tool, dns_d, dump, log, env = own_env
     _fill(_sets_of(dump), "lan_vpn4", ["10.3.3.3"])
@@ -105,7 +105,7 @@ def test_fill_of_an_empty_file_is_quiet_and_ok(own_env, tmp_path):
 
 def test_fill_where_dig_finds_nothing_is_still_ok(own_env, tmp_path):
     """DNS не ответил (dig пуст или упал) — не ошибка: dnsmasq наполнит набор
-    первым запросом клиента."""
+    первым запросом пользователя."""
     tool, dns_d, dump, log, env = own_env
     _fake(_bin(env), "dig", "echo ';; connection timed out' >&2; exit 9\n")
     r = _fill_run(tool, env, tmp_path, "news.org\n")
@@ -149,7 +149,7 @@ def test_fill_puts_an_address_shared_by_two_domains_once(own_env, tmp_path):
 def test_fill_goes_on_when_one_domain_gets_no_answer(own_env, tmp_path):
     """Один домен не ответил (таймаут dig, код 9) — остальные всё равно в
     наборе: иначе один мёртвый домен из сотни оставлял бы всю сотню мимо
-    туннеля до первых запросов клиентов."""
+    туннеля до первых запросов пользователей."""
     tool, dns_d, dump, log, env = own_env
     _dig_by(env, {"alpha.com": ["10.4.4.4"], "zeta.com": ["10.5.5.5"]},
             extra='case "$*" in *" silent.com "*) echo ";; connection timed out; no servers could be reached"; '

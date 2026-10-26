@@ -240,7 +240,7 @@ async def _ev_migration_needed(services, bot):
 
 
 def _dns_public(services, mp):
-    """Ядро на хосте, DNS клиентов публичный, решения о своём резолвере нет."""
+    """Ядро на хосте, DNS пользователей публичный, решения о своём резолвере нет."""
     from awgbot.core import settings
     who = _people(services)
     settings.set_value("app.client_config.dns1", "1.1.1.1")

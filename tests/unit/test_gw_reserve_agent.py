@@ -10,7 +10,7 @@
 
 Цена ошибки: пересылка, открытая по одному слову резерва без факта записи,
 — резерв пользуется шлюзами основы без переезда; закрытая по `idle` живой,
-но не знающей о переезде основы — клиенты у резерва без РФ-доступа; доля
+но не знающей о переезде основы — пользователи у резерва без РФ-доступа; доля
 без `need` или при живой основе — у резерва ключ без аварии; проба шлюза,
 ломающая гостевой канал, — шлюз выпадает из набора голосующих по одной
 потерянной keepalive.
@@ -36,7 +36,7 @@ from awgbot.util import pairproto, wgkeys
 pytestmark = pytest.mark.unit
 
 SUBNET = "10.9.1.0/24"
-OPEN = ["10.99.97.1/32", SUBNET]          # с awgrsv: адрес зоны (зонды бота основы) и подсеть клиентов
+OPEN = ["10.99.97.1/32", SUBNET]          # с awgrsv: адрес зоны (зонды бота основы) и подсеть пользователей
 RESERVE_IP = "198.51.100.7"
 PRIMARY_IP = "203.0.113.10"
 RECORD = "vpn-a.example.org"
@@ -149,7 +149,7 @@ def test_forwarding_is_closed_by_default(gw, host):
 
 def test_serving_without_the_record_fact_keeps_forwarding_closed(gw, host):
     """Слова одного резерва мало: запись он без M не сменит, а без записи
-    клиенты основы не у него."""
+    пользователи основы не у него."""
     host.run(gw.reserve_state_in("serving", 3))
     assert host.open == [], "пересылка открыта по serving без факта записи"
     assert host.fact_asks >= 1, "факт записи не спрашивали"
@@ -178,7 +178,7 @@ def test_idle_of_the_primary_newer_than_serving_closes(gw, host):
 
 def test_idle_of_the_primary_older_than_serving_does_not_close(gw, host):
     """Живая, но не знающая о переезде основа шлёт idle прежнего переезда —
-    РФ-доступ клиентам у резерва не закрываем."""
+    РФ-доступ пользователям у резерва не закрываем."""
     gw.reserve_apply(_checked(gw.conf, state="idle", move=2))
     host.fact = True
     host.run(gw.reserve_state_in("serving", 3))
@@ -255,7 +255,7 @@ def test_no_answer_on_either_path_makes_unseen_and_tells_the_reserve(gw, host):
 def test_an_answering_uplink_keeps_the_primary_seen(gw, host, monkeypatch):
     monkeypatch.setattr(gw, "_uplink_probe", lambda: True)
     acts = _watch(gw, 1000.0, 120)
-    assert gw.reserve_primary_seen()[0] != "down", "клиентский путь ответил, а шлюз «не видит» основу"
+    assert gw.reserve_primary_seen()[0] != "down", "аплинк ответил, а шлюз «не видит» основу"
     assert not [a for a in acts if a[0] == "guest" and a[1] == "seen"]
 
 
@@ -285,7 +285,7 @@ def test_the_uplink_probe_asks_the_servers_resolver_through_the_uplink(gw, uplin
 def test_the_uplink_probe_does_not_count_when_the_uplink_points_at_the_reserve(gw, uplink):
     """После перерезолва на клон живой Endpoint аплинка — резерв: клон
     ответит на <подсеть>.1:53, и «вижу основу» было бы ложью."""
-    gw.reserve_apply(_checked(gw.conf, **{"self": RECORD}))      # self_host не задан — адрес для клиентов
+    gw.reserve_apply(_checked(gw.conf, **{"self": RECORD}))      # self_host не задан — адрес для пользователей
     uplink["dns"][RECORD] = RESERVE_IP                           # запись уже на резерве
     uplink["live"] = RESERVE_IP                                  # аплинк перерезолвлен на клон
     assert gw._uplink_probe() is False, "проба через аплинк, смотрящий на резерв, засчитана как жизнь основы"
@@ -384,7 +384,7 @@ def test_opening_by_serving_tells_the_gateway_admin_that_clients_moved(gw, host)
 # ── аплинк по умолчанию ─────────────────────────────────────────────────────
 
 def test_the_default_uplink_is_never_the_reserve_link(monkeypatch):
-    """Шлюз с линком к резерву и одним клиентским туннелем: аплинк — туннель;
+    """Шлюз с линком к резерву и одним туннелем-аплинком: аплинк — туннель;
     без него — пусто, а не awgrsv."""
     monkeypatch.setattr(config, "GW_UPLINK_IF", "")
     monkeypatch.setattr(gwguard, "script_status", lambda: {})
@@ -485,7 +485,7 @@ def test_the_snapshot_keeps_the_suspect_view_of_the_reserve():
 
 def test_the_forward_lets_in_every_allowed_ip_of_the_zone_side(gw):
     """Адрес зоны (с него зонды живости бота основы) и все подсети туннеля
-    основы — клиентская и окно переезда профилей."""
+    основы — основная и окно переезда профилей."""
     conf = gw.conf.replace(f"AllowedIPs = 10.99.97.1/32, {SUBNET}\n",
                            f"AllowedIPs = 10.99.97.1/32 , {SUBNET},198.51.100.0/24\n")
     gw.reserve_apply(_checked(conf))

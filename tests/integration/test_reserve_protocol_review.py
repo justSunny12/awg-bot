@@ -12,7 +12,7 @@
 готовым — переезд упирается в «пакета нет» в момент аварии; удаление пары
 при обслуживании — клон и бот второй стороны живут без автомата; копия
 посреди сопряжения — ключ стороны принявшего в копии, которой нет пары;
-зона без dnsmasq «готова» — клиенты второй стороны без DNS при переезде.
+зона без dnsmasq «готова» — пользователи второй стороны без DNS при переезде.
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def test_no_resend_while_my_clients_are_away(paired, make_active_client, clock):
     paired.reserve_set_out("away")
     paired.rsv_put("rsv_peer_state", {"session": True, "pkg": {"fp": "00" * 32}})
     paired.reserve_pkg_resend_if_stale()
-    assert paired.__dict__.get("_rsv_pkg_due_at") is None, "пакет пересобран, пока клиенты у резерва"
+    assert paired.__dict__.get("_rsv_pkg_due_at") is None, "пакет пересобран, пока пользователи у резерва"
 
 
 def test_the_st_of_the_reserve_triggers_the_resend(paired, make_active_client, clock):
@@ -221,7 +221,7 @@ def test_a_package_while_the_zone_hosts_is_refused_and_nothing_is_written(servic
     ("away", "", "away"), ("home", "", "idle"), ("leaving", "up", "idle"), ("leaving", "record", "away"),
 ])
 def test_the_gateways_keep_forwarding_until_the_return_reaches_the_tail(services, state, step, want):
-    """Пока клиенты на клоне (возврат до шага relay), шлюзам — away: снятая
+    """Пока пользователи на клоне (возврат до шага relay), шлюзам — away: снятая
     пересылка оставила бы их без РФ-части до конца возврата."""
     services.reserve_set_out(state, step=step)
     assert services.reserve_gw_state() == want, f"{state}/{step}"

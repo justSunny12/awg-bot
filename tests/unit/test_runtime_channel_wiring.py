@@ -42,7 +42,7 @@ def test_the_admin_resolver_is_ensured_on_start_and_watched_on_the_monitor_tick(
     main = (ROOT / "main" / "client.py").read_text(encoding="utf-8")
     assert "services.admin_dns_ensure" in main
     assert main.index("services.resolver_ensure_dropin") < main.index("services.admin_dns_ensure"), \
-        "резолвер админа ставится раньше, чем подтянут override резолвера клиентов"
+        "резолвер админа ставится раньше, чем подтянут override резолвера пользователей"
     sched = (ROOT / "scheduler" / "client.py").read_text(encoding="utf-8")
     body = sched.split("services.admin_dns_health_tick", 1)
     assert len(body) == 2 and "send_notifications(bot, adm_notes)" in body[1].split("except", 1)[0], \

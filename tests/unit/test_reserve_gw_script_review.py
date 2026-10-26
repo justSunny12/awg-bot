@@ -14,7 +14,7 @@ FORWARD — файл-модель. Таблицу с новыми цепочка
 считает шлюз мёртвым; без марки ответов самого шлюза — ответы на соединения
 с линка резерва (DNS, канал) уходят маршрутом по умолчанию и теряются; без
 транзита в FORWARD с политикой DROP (Docker, OMV-плагины) — РФ-доступ
-клиентов основы у резерва мёртв, хотя набор открыт; транзит, оставшийся после
+пользователей основы у резерва мёртв, хотя набор открыт; транзит, оставшийся после
 `--down`, — дыра в чужом файерволе навсегда; повторный `--reassert`,
 дописывающий правила, — FORWARD пухнет каждые несколько минут.
 """
@@ -48,7 +48,7 @@ def test_the_zone_address_is_masqueraded_out_of_every_other_interface(gw):
     post = _chain(gw.prog(), "rsv_post")
     assert post == ["type nat hook postrouting priority srcnat; policy accept;",
                     'oifname != "awgrsv" ip saddr 10.99.97.1 masquerade'], post
-    assert "198.51.100.0" not in "\n".join(post), "маскарад клиентской подсети основы — у шлюза он свой, не этот"
+    assert "198.51.100.0" not in "\n".join(post), "маскарад подсети пользователей основы — у шлюза он свой, не этот"
 
 
 def test_the_zone_address_is_the_first_allowed_ip_even_with_one_entry(gw):

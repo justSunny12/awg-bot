@@ -3,7 +3,7 @@
 
 Цена ошибки: запись счётчиков, ставящая отметку, — пакет каждые 5 минут
 (маячок между серверами и износ диска резерва); пропущенная запись данных
-клиентов — резерв в аварию поднимет клиентов по устаревшим данным (нового
+пользователей — резерв в аварию поднимет пользователей по устаревшим данным (нового
 профиля нет, блокированный снова пускает); пакет, ушедший раньше 10 с или
 без живой пары, — гонка с пачкой правок и сборка на оборванном канале;
 отметка, снятая без `pkg_ok`, — правка потеряна, пока не сработает таймер;
@@ -112,7 +112,7 @@ def _base_gens(tmp_path) -> set[int]:
 
 @pytest.fixture()
 def ctx(services, make_active_client):
-    """Клиент с устройством и пустой журнал видов транзакций (хук писем в список)."""
+    """Пользователь с устройством и пустой журнал видов транзакций (хук писем в список)."""
     client = make_active_client(name="Профиль", tg_id=7001)
     dev = services.add_device(client.id, "Телефон")
     kinds: list[str] = []
@@ -248,7 +248,7 @@ def test_no_package_leaves_without_a_live_pair_session(paired, make_active_clien
 def test_no_package_when_unpaired_or_while_the_clients_are_away(paired, make_active_client, clock):
     make_active_client(name="Профиль", tg_id=7001)
     paired.reserve_set_out("away")
-    assert _tick(paired, clock) is None, "клиенты уже у резерва — данные ведёт бот основы на резерве"
+    assert _tick(paired, clock) is None, "пользователи уже у резерва — данные ведёт бот основы на резерве"
     paired.reserve_set_out("home")
     paired.db.reserve_peer_delete()
     assert paired.reserve_pkg_tick() is None
@@ -408,7 +408,7 @@ def test_the_replica_that_went_out_is_kept_as_base_until_the_next_one_is_confirm
     b1 = _tick(paired, clock)
     assert _base_gens(tmp_path) == {1}, "снимок для слияния при возврате не сохранён до подтверждения"
     mode = stat.S_IMODE(os.stat(tmp_path / "reserve" / "out" / "base-1.db").st_mode)
-    assert mode == 0o600, f"снимок с данными клиентов читаем шире 0600: {oct(mode)}"
+    assert mode == 0o600, f"снимок с данными пользователей читаем шире 0600: {oct(mode)}"
     _ack(paired, b1)
     make_active_client(name="П2", tg_id=7002)
     b2 = _tick(paired, clock)

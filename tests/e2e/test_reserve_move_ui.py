@@ -1,6 +1,6 @@
 """Переезд кнопкой, возврат и запись DNS в боте — что нажатия показывают и
 меняют: карточка с кнопками по возможностям, диалог перевода (Т-Р10, ручной и
-автоматический режим), живое сообщение хода (Т-Р10б), «вернуть клиентов к
+автоматический режим), живое сообщение хода (Т-Р10б), «вернуть пользователей к
 нему» у резерва (Т-Р12), экран «🌐 Запись DNS» (Т-Р16) и ввод токена,
 строка главной (Т-Р17), кнопка «↩️ Вернуть запись» на уведомлении Т-РУ16.
 
@@ -137,7 +137,7 @@ async def test_the_card_offers_the_return_to_the_reserve_only_while_it_hosts_my_
     assert "Пользователи «Beta»" in text and "здесь" in text
     ui.svc.rsv_update("rsv_peer_state", session=False)
     _text, labels = await _card(ui)
-    assert not any("Вернуть всё на" in x for x in labels), "резерв не на связи — просить его вернуть клиентов некому"
+    assert not any("Вернуть всё на" in x for x in labels), "резерв не на связи — просить его вернуть пользователей некому"
 
 
 async def test_the_card_of_the_primary_that_is_away_shows_the_state_and_no_move(ui):
@@ -283,7 +283,7 @@ async def test_an_edit_that_telegram_rejects_does_not_break_the_tick(ui):
     await move_h.refresh_live(Bad(), ui.svc)
 
 
-# ── вернуть клиентов к основе (резерв) ──────────────────────────────────────
+# ── вернуть пользователей к основе (резерв) ─────────────────────────────────
 
 async def test_the_evict_dialog_and_its_confirmation_send_the_request_to_the_primary(ui, monkeypatch):
     ui.svc.reserve_set_in("serving", taken_at=rm.timeutil.now_iso())
@@ -427,11 +427,11 @@ def test_the_reserve_line_on_the_main_screen_links_to_the_reserve_card():
     from awgbot.bot.handlers.admin.panel import parse_link
     from awgbot.bot.texts.admin.panel import admin_panel
     st = {"ok": True}
-    text = admin_panel(st, bot_username="srv_a_bot", rsv_line="🛟 У тебя клиенты и бот «<b>Beta</b>»")
+    text = admin_panel(st, bot_username="srv_a_bot", rsv_line="🛟 У тебя пользователи и бот «<b>Beta</b>»")
     assert f'<a href="https://t.me/srv_a_bot?start={texts.RSV_PAYLOAD}">' in text, text
     assert "&lt;b&gt;Beta&lt;/b&gt;" in text and "<b>Beta</b>" not in text, "имя второй стороны не экранировано"
-    plain = admin_panel(st, rsv_line="🛟 У тебя клиенты и бот «Beta»")
-    assert "href" not in plain and "🛟 У тебя клиенты и бот «Beta»" in plain
+    plain = admin_panel(st, rsv_line="🛟 У тебя пользователи и бот «Beta»")
+    assert "href" not in plain and "🛟 У тебя пользователи и бот «Beta»" in plain
     assert parse_link(texts.RSV_PAYLOAD) == ("set_rsv", 0)
 
 
@@ -462,12 +462,12 @@ async def test_the_return_button_reports_a_refusal_loudly(ui):
 # ── кнопки возврата: чьи хендлеры ловят нажатие ─────────────────────────────
 
 async def test_the_return_button_of_the_primary_is_handled_by_the_primarys_handler(ui):
-    """В основном боте «↩️ Вернуть клиентов» (рычаг «по кнопке») открывает диалог возврата: нажатие
+    """В основном боте «↩️ Вернуть пользователей» (рычаг «по кнопке») открывает диалог возврата: нажатие
     не должно уходить хендлеру гостевого режима, который в этой роли молчит."""
     rm.go_away(ui.svc)
     ui.svc.rsv_update("rsv_out", can_return=True)
     calls = await ui.run.press(RsvCB(action="back"))
-    assert _edits(calls), f"нажатие «Вернуть клиентов» без реакции: {[_kind(c) for c in calls]}"
+    assert _edits(calls), f"нажатие «Вернуть пользователей» без реакции: {[_kind(c) for c in calls]}"
     calls = await ui.run.press(RsvCB(action="back_yes"))
     assert ui.svc.reserve_out() == "returning", "подтверждение возврата проглочено чужим хендлером"
 

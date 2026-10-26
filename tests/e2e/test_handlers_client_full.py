@@ -1,4 +1,4 @@
-"""E2E: полный роутер клиента (handlers/client/) — меню, устройства, выдача
+"""E2E: полный роутер пользователя (handlers/client/) — меню, устройства, выдача
 конфигов, добавление/удаление, карточка устройства без ключа, самоблок,
 пауза подписки, отсрочка.
 
@@ -164,7 +164,7 @@ async def test_pause_other_accepts_a_number_in_range_only(services, fake_bot, ma
 
 
 async def test_resume_guard_blocks_non_user_pause(services, fake_bot, make_active_client):
-    """Паузу администратора клиент не снимает: она остаётся (отказ — в эталоне)."""
+    """Паузу администратора пользователь не снимает: она остаётся (отказ — в эталоне)."""
     client = make_active_client(tg_id=5019, period_kind="year")
     services.enter_admin_pause(client.id, 0)
     services._client_set_block(client.id, ClientBlock.PAUSED)
@@ -188,7 +188,7 @@ async def test_grace_take_happy_and_stale_ref(services, fake_bot, make_active_cl
 
 
 async def test_client_renames_own_device(services, fake_bot, make_active_client, monkeypatch):
-    """Клиент переименовывает СВОЁ устройство: имя в БД, приглашение и ввод
+    """Пользователь переименовывает СВОЁ устройство: имя в БД, приглашение и ввод
     убраны из чата. Итог на карточке — в эталоне."""
     cl = make_active_client(tg_id=7001, name="Клиент")
     dc = services.add_device(cl.id, "Старое")
@@ -204,7 +204,7 @@ async def test_client_renames_own_device(services, fake_bot, make_active_client,
 
 
 async def test_client_cannot_rename_foreign_device(services, fake_bot, make_active_client, monkeypatch):
-    """Чужое устройство (другого клиента) переименовать нельзя — own_device режет."""
+    """Чужое устройство (другого пользователя) переименовать нельзя — own_device режет."""
     owner = make_active_client(tg_id=7002, name="Владелец")
     other = make_active_client(tg_id=7003, name="Чужой")
     dc = services.add_device(owner.id, "ЧужоеУстройство")

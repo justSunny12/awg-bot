@@ -12,7 +12,7 @@ from awgbot.infra import gwguard
 from awgbot.util import gwlink
 
 UNIT_TEXT = """[Unit]
-Description=awg-bot: линк до сервера AWG и изоляция клиентов (шлюз)
+Description=awg-bot: линк до сервера AWG и изоляция пользователей (шлюз)
 After=network-online.target awg-quick@awg0.service
 Wants=network-online.target awg-quick@awg0.service
 

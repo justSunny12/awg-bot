@@ -1,4 +1,4 @@
-"""Integration: awgbot.domain.services — клиенты, устройства, блокировки, лимиты.
+"""Integration: awgbot.domain.services — пользователи, устройства, блокировки, лимиты.
 
 БД настоящая (временная SQLite), awg-слой — фейковый (fixture fake_awg).
 """
@@ -10,7 +10,7 @@ from awgbot.domain.services import LimitReached, ServiceError
 pytestmark = pytest.mark.integration
 
 
-# ── создание и активация клиента ─────────────────────────────────────────────
+# ── создание и активация пользователя ────────────────────────────────────────
 def test_create_client_returns_invite(services):
     created = services.create_client("Клиент", 3, "year", traffic_limit=0)
     assert created.invite_code.startswith("C") and len(created.invite_code) == 12
@@ -86,7 +86,7 @@ def test_add_device_respects_limit(services, make_active_client):
 
 def test_add_device_service_client_bypasses_limit(services):
     sid = services.db.get_service_client_id()
-    # у служебного клиента лимит не применяется
+    # у служебного пользователя лимит не применяется
     services.add_device(sid, "svc1")
     services.add_device(sid, "svc2")
     assert services.db.count_devices(sid) == 2
@@ -186,7 +186,7 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
 def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_client, monkeypatch):
     """Шлюзы доверяют адресу, а не устройству: пока в ADMIN_IPS обвязки слота
     (снимок канала) стоит освободившийся адрес админа, новое устройство любого
-    клиента его получить не должно — иначе чужой клиент попадёт в локальную
+    пользователя его получить не должно — иначе чужой пользователь попадёт в локальную
     сеть."""
     client = make_active_client(device_limit=5)
     a = services.add_device(client.id, "d1")

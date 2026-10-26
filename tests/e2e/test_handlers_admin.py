@@ -1,9 +1,9 @@
-"""E2E: admin-хендлеры (прямой вызов с фейками) — панель, клиенты, создание,
+"""E2E: admin-хендлеры (прямой вызов с фейками) — панель, пользователи, создание,
 удаление, обещание после перезапуска, окна и финишеры обновления.
 
 Главная (с РФ-строкой по состояниям), список и карточка профиля, создание,
 приглашение и удаление — в эталоне tests/screens/admin.txt; здесь — БД,
-память диалога, живое меню, история окон и главные клиента и гостя."""
+память диалога, живое меню, история окон и главные пользователя и гостя."""
 import pytest
 
 from awgbot.bot.handlers import admin as admin_h
@@ -33,7 +33,7 @@ async def test_admin_start_remembers_the_panel_as_the_live_menu(services, fake_b
     assert services.db.get_nav_message_id(ADMIN) is not None, "панель не стала активным меню"
 
 
-# ── создание клиента (FSM: имя → лимит → трафик → период) ─────────────────────
+# ── создание пользователя (FSM: имя → лимит → трафик → период) ────────────────
 async def test_create_client_full_fsm(services, fake_bot):
     """Каждый ввод ложится в память диалога, выбор срока создаёт профиль."""
     services.ensure_admin_client()
@@ -47,7 +47,7 @@ async def test_create_client_full_fsm(services, fake_bot):
     await admin_h.add_client_traffic(m("100"), services, state)
     assert (await state.get_data())["traffic_gb"] == 100
 
-    # выбор периода → создание клиента
+    # выбор периода → создание пользователя
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, state)
     names = [c.name for c in services.db.list_clients(include_service=False)]
@@ -224,7 +224,7 @@ def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error
 
 async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,
                                                                make_active_client, monkeypatch):
-    """РФ-потребление — сведения о человеке, только админу: главная клиента и
+    """РФ-потребление — сведения о человеке, только админу: главная пользователя и
     гостя с накопленным РФ та же, что без него."""
     from awgbot.bot.handlers import client as client_h
     from awgbot.bot.handlers import friend as fh
@@ -246,5 +246,5 @@ async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_b
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=5 * GB, tx=7 * GB)
     services.db.rf_add_bulk([(dc.device_id, GB, 2 * GB), (lent.device_id, GB, GB)])
     after = await homes()
-    assert after == before, "главная клиента или гостя изменилась от РФ-данных"
+    assert after == before, "главная пользователя или гостя изменилась от РФ-данных"
     assert all("учёт" not in t and "🇷🇺 РФ-доступ:" not in t for t in after)

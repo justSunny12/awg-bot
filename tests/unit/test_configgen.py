@@ -303,7 +303,7 @@ def test_admin_dns_goes_to_both_dns_fields_of_every_form(monkeypatch):
 
 def test_split_tunnel_admin_config_carries_the_admin_resolver_32(monkeypatch):
     """Раздельный туннель без пространства: адрес резолвера админа вне подсети
-    клиентов, без /32 в AllowedIPs запрос DNS ушёл бы мимо туннеля."""
+    пользователей, без /32 в AllowedIPs запрос DNS ушёл бы мимо туннеля."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     conf, embedded, _ = _both_forms(cg.generate("PRIV", "PUB", "10.8.1.2", _params(), admin_dns=ADMIN_DNS))
     assert _lines(conf, "AllowedIPs") == [f"{SPLIT}, {ADMIN_DNS}/32"]
@@ -363,7 +363,7 @@ def test_a_covering_allowed_ips_line_stays_byte_for_byte(monkeypatch, allowed):
 
 
 def test_without_admin_dns_the_config_is_exactly_the_old_one(monkeypatch):
-    """Клиенту, шлюзовому устройству и админу без резолвера админа —
+    """Пользователю, шлюзовому устройству и админу без резолвера админа —
     конфиг байт в байт тот же, что до «SMB в туннеле»."""
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     plain = cg.generate("PRIV", "PUB", "10.8.1.2", _params())

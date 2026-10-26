@@ -1,6 +1,6 @@
 """
 Общее для тестов слияния бэкапа с текущим: сервер AWG во временном каталоге
-(база сервисов, клиентский конфиг, линки слотов, app.yaml, env) и его сборка.
+(база сервисов, конфиг интерфейса AWG сервера, линки слотов, app.yaml, env) и его сборка.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _one(path, q, *a):
 
 
 class World:
-    """Сервер AWG во временном каталоге: база сервисов, клиентский конфиг,
+    """Сервер AWG во временном каталоге: база сервисов, конфиг интерфейса AWG сервера,
     линки слотов, выданные шлюзовые стороны, app.yaml, env."""
 
     def __init__(self, services, root: Path, *, prefix="10.8.1", host="vpn.example.org", port=51820,
@@ -72,7 +72,7 @@ class World:
         return name
 
     def write_client_conf(self):
-        """Клиентский конфиг — по составу устройств базы, как его держит бот."""
+        """Конфиг интерфейса AWG сервера — по составу устройств базы, как его держит бот."""
         lines = [f"[Interface]\nPrivateKey = {self.server_key}\nListenPort = 51820\nAddress = 10.8.1.1/24\n"]
         for d in self.db.list_all_devices():
             lines.append(f"[Peer]\nPublicKey = {d.public_key}\nPresharedKey = {d.preshared_key}\n"

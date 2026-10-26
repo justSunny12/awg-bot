@@ -73,8 +73,8 @@ def test_every_entry_since_the_jump_model_names_its_audience_with_a_floor():
 
 
 def test_main_only_releases_are_not_addressed_to_the_gateway():
-    """Резолвер клиентов и его хотфиксы — код основного бота: у агента шлюза
-    клиентов нет. Обе строки на них отправили агента обновляться впустую."""
+    """Резолвер пользователей и его хотфиксы — код основного бота: у агента шлюза
+    пользователей нет. Обе строки на них отправили агента обновляться впустую."""
     for tag, lines in _entries():
         if tag in ("v2.19.0", "v2.19.0.2", "v2.19.0.3"):
             assert not any(ln.startswith("#requires_gw_") for ln in lines), tag

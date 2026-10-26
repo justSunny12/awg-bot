@@ -111,10 +111,10 @@ def test_no_house_icon_in_keyboard_literals():
     assert found == set(), found
 
 
-# ── главная и карточки клиента и гостя ───────────────────────────────────────
+# ── главная и карточки пользователя и гостя ──────────────────────────────────
 
 def test_main_client_screen_is_four_rows_at_most():
-    """Главная клиента — ряд выдачи, устройства, РФ-доступ с подпиской,
+    """Главная пользователя — ряд выдачи, устройства, РФ-доступ с подпиской,
     помощь; без устройств — без ряда выдачи."""
     rows = [[b.text for b in r] for r in kbc.client_main(has_devices=True, routing_visible=True,
                                                         client_id=1).inline_keyboard]
