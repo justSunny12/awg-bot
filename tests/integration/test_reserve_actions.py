@@ -284,8 +284,11 @@ async def test_blocks_from_the_primary_go_to_the_guest_and_are_capped(mv, act, m
             got.append((kind, body))
             return True
     monkeypatch.setattr(guestctl, "server", lambda: Srv())
+    # блокировки основы гостю — только пока я несу её пользователей (иначе `blocks` — от
+    # держателя мне самой, следующей)
+    act.svc.reserve_set_in("serving")
     await _Handler(act.svc)._in_blocks(_sess(), {"addrs": ["10.8.1.2"] * 5000})
-    assert got[0][0] == "blocks" and len(got[0][1]["addrs"]) == 4096
+    assert got and got[0][0] == "blocks" and len(got[0][1]["addrs"]) == 4096, got
 
 
 # ── такты планировщика ──────────────────────────────────────────────────────

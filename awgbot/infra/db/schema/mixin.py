@@ -32,6 +32,7 @@ class SchemaMixin:
         self._ensure_service_client()
         self._ensure_db_line()
         self._ensure_jrn_meta()
+        self.__dict__["_jrn_ready"] = True               # соединения других потоков, открытые раньше, — доустановят
         self._jrn_triggers()                              # первый старт: таблиц до этого не было
 
     def _ensure_jrn_meta(self) -> None:

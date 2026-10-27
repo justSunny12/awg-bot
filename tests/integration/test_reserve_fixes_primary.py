@@ -251,7 +251,10 @@ def test_the_return_drops_the_reconnect_notice_mark(away):
     """«Переподключи VPN» — один раз на переезд: после возврата следующему
     переезду метка не должна остаться."""
     svc = away.svc
+    # отметку ставит гость, основе она приходит слиянием; здесь — записью держателя
+    svc.db.jrn_pass(holder="self", role="holder", why="тест: отметка гостя")
     svc.db.set_state("move_notified", "1")
+    svc.db.jrn_pass(holder="peer", role="follower", why="тест")
     _at_step(away, "relay")
     svc.reserve_wiped_in()
     assert not svc.db.get_state("move_notified"), "после возврата пользователям не скажут переподключиться в следующий раз"
@@ -308,8 +311,11 @@ def test_an_untouched_base_gives_no_warning_lines(merge_world):
 
 def test_a_device_added_to_the_admin_profile_on_the_reserve_is_named_in_the_report(merge_world, make_active_client):
     w = merge_world
+    # профиль админа — у основы до переезда (держатель на время подготовки здесь)
+    w.svc.db.jrn_pass(holder="self", role="holder", why="тест: данные до переезда")
     adm = make_active_client(name="Админ", tg_id=int(config.ADMIN_ID))
     rm.put_base(w.svc, gen=7)
+    w.svc.db.jrn_pass(holder="peer", role="follower", why="тест")
 
     def edit(db):
         db.create_device(adm.id, "Ноут чужой", "DUMMY-pub-adm", "DUMMY-psk", "10.8.1.78")

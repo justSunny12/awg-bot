@@ -200,6 +200,9 @@ def merge_world(away, fake_awg, make_active_client, monkeypatch):
     """Основа: профиль «Аня» с устройствами `keep` и `gone`, снимок `base-7` снят, пользователи у
     резерва, возврат начат. `peers` — журнал пиров."""
     svc = away.svc
+    # данные основы заводятся до переезда: в отъезде база решений не примет — держатель
+    # на время подготовки здесь, go_away ниже снова отдаёт эпоху резерву
+    svc.db.jrn_pass(holder="self", role="holder", why="тест: данные до переезда")
     anna = make_active_client(name="Аня", tg_id=7001)
     keep = svc.add_device(anna.id, "Телефон")
     gone = svc.add_device(anna.id, "Планшет")

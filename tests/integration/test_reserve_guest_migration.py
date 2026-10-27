@@ -121,6 +121,8 @@ def _back(w, gsvc) -> list:
 
 def test_the_migration_window_travels_in_the_replica_and_passes_the_guard(world, tmp_path):
     svc = world.svc
+    # отметка ставится до передачи бота (реплика собирается, пока основа держит эпоху)
+    svc.db.jrn_pass(holder="self", role="holder", why="тест: до передачи")
     svc.db.set_state("migration_ready_announced", "1")
     raw = pkgbot.replica(svc.db.path)
     pkgbot.assert_clean(raw)                          # сторож запретного: ключи окна — не «rsv_», «update_»…

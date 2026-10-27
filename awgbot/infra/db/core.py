@@ -40,6 +40,8 @@ class DatabaseCore:
         использовать нельзя — sqlite3 не потокобезопасен на одном connection.
         WAL позволяет много читателей + одного писателя через РАЗНЫЕ соединения."""
         conn = getattr(self._local, "conn", None)
+        if conn is not None and not getattr(self._local, "jrn_ok", False) and self.__dict__.get("_jrn_ready"):
+            self._jrn_triggers(conn)                    # соединение открыто до init_schema — триггеры теперь
         if conn is None:
             conn = sqlite3.connect(self.path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
@@ -64,8 +66,9 @@ class DatabaseCore:
         from awgbot.util.rsvjrn import triggers
         conn = conn or self._connection()
         try:
-            triggers.install(conn)
+            self._local.jrn_ok = triggers.install(conn)
         except sqlite3.Error as e:                          # повреждённая схема — пусть падает запрос, а не соединение
+            self._local.jrn_ok = True                       # не повторять на каждом запросе
             import logging
             logging.getLogger("awgbot.db").warning("журнал: триггеры запрета не поставлены: %s", e)
 

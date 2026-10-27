@@ -56,9 +56,14 @@ class ReserveFollowMixin:
         if ym and str(self.db.get_state("last_monthly_reset") or "") < ym:
             self.db.set_state("last_monthly_reset", ym)
             log.info("резерв: месячный сброс %s учтён слиянием", ym)
+        if ym:
+            self.rsv_update("rsv_follow", monthly_deferred="")
 
     def reserve_follow_clear(self) -> None:
-        self.rsv_put("rsv_follow", None)
+        """Конец следования: блокировки держателя прочь; отложенный месячный сброс
+        остаётся — его учитывает слияние после возврата (reserve_monthly_settle)."""
+        f = self.rsv_get("rsv_follow")
+        self.rsv_put("rsv_follow", {"monthly_deferred": f["monthly_deferred"]} if f.get("monthly_deferred") else None)
 
     # ── отказ базы ──────────────────────────────────────────────────────────
     def reserve_refusal(self, exc: BaseException) -> ServiceError | None:
