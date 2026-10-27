@@ -172,11 +172,14 @@ async def back_to_context(message: Message, services, data: dict, role: str, cli
     await send_menu(message, services, *parts)
 
 
-async def show_screen(message: Message, services, role: str, client, kind: str, ref: int = 0) -> bool:
+async def show_screen(message: Message, services, role: str, client, kind: str, ref: int = 0,
+                      new: bool = False) -> bool:
     """Экран реестра по ссылке /start <payload>: команду из чата убрать (она
     служебная), экран — на месте живого меню, как переход по кнопке; новым
-    сообщением — только если меню нет или его не отредактировать. False —
-    такого экрана нет (чужой объект): вызывающий покажет главную."""
+    сообщением — только если меню нет или его не отредактировать. new — ссылка
+    из уведомления или следа события (метка «-n»): живое меню может быть
+    далеко выше в чате — экран сразу новым сообщением внизу, прежнее гаснет.
+    False — такого экрана нет (чужой объект): вызывающий покажет главную."""
     from awgbot.bot import screens
     try:
         await message.delete()                         # служебная — и когда экрана нет
@@ -187,7 +190,13 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
     if parts is None:
         return False
     text, markup = parts
-    nav_id = await call(services.db.get_nav_message_id, message.chat.id)
+    await show_parts(message, services, text, markup, new=new)
+    return True
+
+
+async def show_parts(message: Message, services, text, markup, new: bool = False) -> None:
+    """Готовый экран по ссылке: на месте живого меню или, с new, новым сообщением."""
+    nav_id = None if new else await call(services.db.get_nav_message_id, message.chat.id)
     if nav_id is not None:
         edited = True
         try:
@@ -204,9 +213,8 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
             # при возврате в меню его не трогает; запись в БД — вне try: её
             # сбой не повод слать второе меню поверх уже отредактированного
             await call(services.db.remove_content_msg_id, message.chat.id, nav_id)
-            return True
+            return
     await send_menu(message, services, text, markup)
-    return True
 
 
 def role_of(client) -> str:

@@ -119,7 +119,9 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     lan = getattr(st, "lan", None) or {}
     if lan:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
-        state = "🔴 " + ", ".join(pkg._uniq(_lan_fault(c) for c in bad)[:3]) if bad else "🟢"
+        faults = pkg._uniq(_lan_fault(c) for c in bad)
+        rest = f" [+{len(faults) - 3}]" if len(faults) > 3 else ""   # все — на «🩺 Здоровье»
+        state = "🔴 " + ", ".join(faults[:3]) + rest if bad else "🟢"
         # счётчик пакетов, списки и SMB — на экране транзита: на главной только состояние
         parts.append(f"🔀 VPN-транзит {state}")
     if pending:

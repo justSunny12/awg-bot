@@ -89,7 +89,11 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
     """Одна отправка: RetryAfter → подождать и повторить один раз; прочие
     ошибки — залогировать и продолжить рассылку. Сетевой отказ на критичном
     алерте админу — запасной канал (почта). Возвращает отправленное
-    сообщение либо None; on_sent зовём при доставке любым из каналов."""
+    сообщение либо None; on_sent зовём при доставке любым из каналов.
+    Ссылкам на экраны и списки в тексте — метка «-n» (bot/links): из
+    уведомления экран открывается новым сообщением внизу, а не на месте меню выше."""
+    from awgbot.bot import links
+    text = links.mark_new(text)
     try:
         sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                       disable_notification=silent)

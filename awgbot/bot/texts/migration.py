@@ -84,9 +84,16 @@ def _rows_capped(rows) -> str:
     return "\n".join(lines)
 
 
-def _names_capped(names) -> str:
+def _names_capped(names, bot: str = "") -> str:
+    """Имена через запятую; больше _LIST_CAP — «и ещё N» (с именем бота —
+    ссылкой на экран «🚚 Потеряют связь при завершении»)."""
+    from awgbot.util.textfmt import more_link
     names = list(names)
-    return ", ".join(_e(n) for n in names[:_LIST_CAP]) + (f" и ещё {len(names) - _LIST_CAP}" if len(names) > _LIST_CAP else "")
+    out = ", ".join(_e(n) for n in names[:_LIST_CAP])
+    more = len(names) - _LIST_CAP
+    if more > 0:
+        out += more_link(more, bot, "list-migdrop") if bot else f" и ещё {more}"
+    return out
 
 
 def migration_pending_text(rows) -> str:
@@ -108,7 +115,7 @@ def migration_start_confirm(clients: int, devices: int, to_birth: int) -> str:
                       "будут только они. Прежние конфигурации продолжат работать до завершения переезда")
 
 
-def migration_finish_confirm(dropped, old_uplink=()) -> str:
+def migration_finish_confirm(dropped, old_uplink=(), bot: str = "") -> str:
     """Уронённых называем поимённо, а не числом. Шлюз, не подтвердивший новый
     аплинк, — отдельной строкой: после завершения его бот потеряет Telegram."""
     tail = "Прежние конфигурации снимутся, трафик старых и новых конфигураций сложится в одну историю"
@@ -116,7 +123,7 @@ def migration_finish_confirm(dropped, old_uplink=()) -> str:
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Все недавно активные устройства уже на новом интерфейсе. {tail}")
     else:
-        names = _names_capped(dropped)
+        names = _names_capped(dropped, bot)
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть их — перенастроить "
                           f"устройства на новую конфигурацию. {tail}")

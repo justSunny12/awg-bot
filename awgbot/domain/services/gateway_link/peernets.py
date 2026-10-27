@@ -77,7 +77,7 @@ class PeerNetsMixin:
         transit = self.gateway_transit_slots()
         if len(transit) < 2:
             return {"state": "few"}
-        return {"state": "ok",
+        return {"state": "ok", "bot_username": self.bot_username or "",
                 "pairs_named": [(self._gw_name(g), g.label, [t for _r, t in self.lan_twins(g)]) for g in transit]}
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:

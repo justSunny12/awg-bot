@@ -36,7 +36,8 @@ def _gw_health_summary(checks, smart: str = "") -> str:
     if smart and smart != "OK":
         names.append("диск")
     if names:
-        return f"🔴 Проблемы: {len(names)} — " + ", ".join(names[:4])
+        rest = f" [+{len(names) - 4}]" if len(names) > 4 else ""     # все — на «🩺 Здоровье»
+        return f"🔴 Проблемы: {len(names)} — " + ", ".join(names[:4]) + rest
     return "✅"
 
 

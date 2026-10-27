@@ -142,6 +142,11 @@ async def gw_start(message: Message, services, state: FSMContext, command: Comma
     if payload == texts.REFRESH_PAYLOAD:
         await pkg._refresh_by_link(message, services)
         return
+    from awgbot.bot import lists
+    from awgbot.util import listlink
+    lst = listlink.parse(payload)
+    if lst is not None and await lists.open_link(message, services, "admin", None, lst):
+        return                                        # экран со всем списком (хвост «и ещё N»)
     await purge_menus(message.bot, services, message.chat.id)
     await pkg._panel(message, services)
 

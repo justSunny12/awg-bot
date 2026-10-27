@@ -7,7 +7,7 @@ from .common import _cut
 class SettingsMixin:
     # ── сверка выданного с установленным ─────────────────────────────────────
 
-    def gwlink_config_drift_items(self, gw) -> list[tuple[str, str, str, str]]:
+    def gwlink_config_drift_items(self, gw, cut: bool = True) -> list[tuple[str, str, str, str]]:
         """Чем установленное на шлюзе расходится с тем, что ВПС выдал: (ключ,
         человеческое имя, у сервера, на шлюзе) — тексты рисуют его по-своему (подсети в <code>, режим словами).
         До 64 значений с каждой стороны — значение обрезается, иначе экран с
@@ -24,7 +24,8 @@ class SettingsMixin:
             mine = want[key]
             theirs = " ".join(str(got.get(gwlink.snap_field(key), "")).split())
             if mine != theirs:
-                items.append((key, gwlink.KEY_HUMAN[key], _cut(mine), _cut(theirs)))
+                # cut=False — экран «весь список» расхождения: значения целиком
+                items.append((key, gwlink.KEY_HUMAN[key], _cut(mine) if cut else mine, _cut(theirs) if cut else theirs))
         return items
 
     def gwlink_issued_env(self, gw) -> dict:

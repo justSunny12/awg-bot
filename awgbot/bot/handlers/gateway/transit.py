@@ -30,7 +30,7 @@ async def _transit_screen(services, chat_id: int):
     st = await pkg._status(services, fresh=False)
     items = await call(services.lan_own_lists)
     return (texts.gateway_transit_text(st, items, await pkg._own_info(services),
-                                       virtual=await call(services.lan_virtual)),
+                                       virtual=await call(services.lan_virtual), bot=pkg._bot_username(services)),
             kb.gateway_transit_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 

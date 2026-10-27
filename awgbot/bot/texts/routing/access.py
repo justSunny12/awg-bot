@@ -245,7 +245,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
     parts = []
     if added:
         shown = ", ".join(f"<code>{_e(_short(d))}</code>" for d in added[:5])
-        more = f" и ещё {len(added) - 5}" if len(added) > 5 else ""
+        more = f" [+{len(added) - 5}]" if len(added) > 5 else ""        # добавленные — кнопками экрана ниже
         parts.append(f"✅ Добавлено: {shown}{more}")
     if rejected:
         by_reason: dict[str, list[str]] = {}

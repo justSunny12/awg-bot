@@ -19,10 +19,22 @@ def _owner_name(kind: str) -> str:
 OUTSIDE = "Снаружи (проброс порта на роутере)"
 
 
-def gateway_ssh_text(st: dict) -> str:
+def _nets_tail(nets: list, bot: str, payload: str, shown: int = 3) -> str:
+    """«<code>a</code>, <code>b</code>, <code>c</code> и ещё N» — хвост ссылкой
+    на экран со всем списком (без имени бота — текстом)."""
+    from awgbot.util.textfmt import more_link
+    out = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:shown])
+    more_n = len(nets) - shown
+    if more_n > 0:
+        out += more_link(more_n, bot, payload) if bot else f" и ещё {more_n}"
+    return out
+
+
+def gateway_ssh_text(st: dict, bot: str = "") -> str:
     """Раздел: порт (факт) и его владелец, туннель, локальная сеть, снаружи,
     адреса, предупреждения — по месту. Блоки разделены пустой строкой;
-    статусные строки — без точки в конце."""
+    статусные строки — без точки в конце. bot — имя бота шлюза: хвосты
+    «и ещё N» — ссылками на экраны со всем списком."""
     port = st.get("port")
     lines = [ui.head("🛡 SSH-доступ"), ""]
     if st.get("sshd_down"):
@@ -40,16 +52,12 @@ def gateway_ssh_text(st: dict) -> str:
     server = f" (<code>{_e(st['server'])}</code>)" if st.get("server") else ""
     lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и с сервера AWG{server}")
     lan = st.get("lan") or []
-    lines.append("Из локальной сети: открыт всегда"
-                 + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3])
-                    + (f" и ещё {len(lan) - 3}" if len(lan) > 3 else "") + ")" if lan else ""))
+    lines.append("Из локальной сети: открыт всегда" + (f" ({_nets_tail(lan, bot, 'list-sshfrom')})" if lan else ""))
     # подсети других шлюзов открыты сами, как только на сервере включён доступ
     # между подсетями: отдельного действия и списка адресов не нужно
     peers = st.get("peer_nets") or []
     if peers:
-        lines.append("Из подсетей других шлюзов: открыт ("
-                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3])
-                     + (f" и ещё {len(peers) - 3}" if len(peers) > 3 else "") + ")")
+        lines.append(f"Из подсетей других шлюзов: открыт ({_nets_tail(peers, bot, 'list-sshfrom')})")
     else:
         lines.append("Из подсетей других шлюзов: откроется, когда VPN-транзит свяжет подсети")
     lines.append("")
@@ -70,8 +78,9 @@ def gateway_ssh_text(st: dict) -> str:
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
-        names = more(unresolved)
-        tail = (" — держу прошлый адрес: " + more(held)
+        link = (bot, "list-sshunres") if bot else None
+        names = more(unresolved, link=link)
+        tail = (" — держу прошлый адрес: " + more(held, link=link)
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
         warns.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")

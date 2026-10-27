@@ -163,7 +163,8 @@ def gateway_lan_text(state: dict) -> str:
     и что получится — адреса в туннеле как зеркало сети."""
     gw = state["gateway"]
     nets = gw.lan_subnets
-    cur = lan_pairs(nets, state.get("lan_twins"), limit=16) if nets else "не заданы"   # «· сейчас …» без двоеточия
+    # «· сейчас …» без двоеточия; хвост — «[+N]» без ссылки: /start сбросил бы ввод
+    cur = lan_pairs(nets, state.get("lan_twins"), limit=16, count=True) if nets else "не заданы"
     # «из подсетей других шлюзов» — только при живой связи подсетей
     linked = bool(state.get("peer_nets"))
     access = ("только твоим устройствам и подсетям других шлюзов" if linked
@@ -186,7 +187,10 @@ def gateway_lan_report(res: dict, state: dict) -> str:
     с «• » (внутри одного отказа «;» не ставим — читалось бы одной кашей)."""
     parts = []
     kept = res.get("kept") or []
-    shown = lan_pairs(kept, res.get("twins"), limit=8)
+    from awgbot.util import listlink
+    slot = int(getattr(state.get("gateway"), "id", 0) or 0)
+    shown = lan_pairs(kept, res.get("twins"), limit=8, bot=str(state.get("bot_username") or ""),
+                      payload=listlink.build("gwnets", slot) if slot else "")
     parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
     rejected = res.get("rejected") or []
     if rejected:

@@ -57,7 +57,7 @@ def lan_about(shared: bool) -> str:
             + "домен действует и на поддомены; если домен есть в обоих списках — побеждает «напрямую»")
 
 
-def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list | None = None) -> str:
+def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list | None = None, bot: str = "") -> str:
     """Экран «🔀 VPN-транзит»: состояние, факты, списки, свои списки, SMB,
     объяснение под «подробнее», состояние синхронизации открыто. items —
     свои домены (для «пока пусто»), own — состояние синхронизации
@@ -67,11 +67,13 @@ def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list 
     lan = getattr(st, "lan", None) or {}
     own = own or lan.get("own") or {}
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
-    state = ui.st("bad", ", ".join(pkg._uniq(c.name for c in bad)[:3])) if bad else ui.st("ok", "работает")
+    names = pkg._uniq(c.name for c in bad)
+    rest = f" [+{len(names) - 3}]" if len(names) > 3 else ""           # все — на «🩺 Здоровье»
+    state = ui.st("bad", ", ".join(names[:3]) + rest) if bad else ui.st("ok", "работает")
     lines = [ui.head("🔀 VPN-транзит", state),
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{pkg._packets(lan.get('lan_pkts'))} с роутера",
-             *([lan_virtual_line(virtual)] if virtual else []),
+             *([lan_virtual_line(virtual, bot)] if virtual else []),
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
              + (f"<code>{_e(lan['uplink'])}</code>" if lan.get("uplink") else "аплинк"),
              # одной строкой с общими: «📋 Списки: … · обн. 13.10 01:27 · свои: 1 в туннель»;
@@ -92,11 +94,15 @@ def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list 
     return "\n".join(lines)
 
 
-def lan_virtual_line(virtual: list) -> str:
+def lan_virtual_line(virtual: list, bot: str = "") -> str:
     """«в туннеле — 10.240.1.0/24»: как сеть видна снаружи шлюза; больше
-    шести — «и ещё N»."""
+    шести — «и ещё N» (с именем бота — ссылкой на экран «🔀 Адреса в туннеле»)."""
+    from awgbot.util.textfmt import more_link
     shown = ", ".join(f"<code>{_e(str(n))}</code>" for n in virtual[:6])
-    return f"Адреса в туннеле — {shown}" + (f" и ещё {len(virtual) - 6}" if len(virtual) > 6 else "")
+    more_n = len(virtual) - 6
+    if more_n <= 0:
+        return f"Адреса в туннеле — {shown}"
+    return f"Адреса в туннеле — {shown}" + (more_link(more_n, bot, "list-tunaddr") if bot else f" и ещё {more_n}")
 
 
 def gateway_transit_ask_domain(kind: str) -> str:

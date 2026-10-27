@@ -8,7 +8,7 @@ from aiogram.types import Message
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts
+from awgbot.bot import links, texts
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.notifier import notify_one
 from awgbot.bot.handlers.common import (
@@ -62,9 +62,14 @@ async def _show_main(target, services, client, *, via_edit=None):
 
 @router.message(CommandStart(deep_link=True), RoleFilter("activation"))
 async def start_activation(message: Message, command: CommandObject, services, state: FSMContext):
-    """Переход по ссылке-инвайту /start {код}."""
+    """Переход по ссылке-инвайту /start {код}; ссылка на список — не код:
+    незнакомцу — как холодный старт."""
+    from awgbot.util import listlink
     await state.clear()
     code = (command.args or "").strip()
+    if listlink.is_list(code):
+        await message.answer(texts.COLD_START_GREETING)
+        return
     await _try_activate(message, services, code)
 
 
@@ -191,16 +196,8 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
         await notify_one(message.bot, config.ADMIN_ID, admin_text)
 
 
-def parse_link(payload: str) -> tuple[str, int] | None:
-    """«sub», «rf», «dev-<id>» → (вид экрана, ref); иначе None (код)."""
-    if payload == texts.SUB_PAYLOAD:
-        return "sub", 0
-    if payload == texts.RF_PAYLOAD_CLIENT:
-        return "rf", 0
-    head = texts.DEV_PAYLOAD + "-"
-    if payload.startswith(head) and payload[len(head):].isdigit():
-        return "dev", int(payload[len(head):])
-    return None
+# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»)
+parse_link = links.parse_client
 
 
 @router.message(CommandStart(deep_link=True), RoleFilter("client"))
@@ -210,12 +207,33 @@ async def start_client_with_code(message: Message, command: CommandObject, clien
     РФ-доступ, устройство) или чужое устройство ему в держание."""
     await state.clear()
     payload = (command.args or "").strip()
-    link = parse_link(payload)
+    if await open_list_link(message, services, "client", client, payload):
+        return
+    bare, new = links.strip_new(payload)
+    link = parse_link(bare)
     if link is not None:
-        if not await show_screen(message, services, "client", client, *link):
+        if not await show_screen(message, services, "client", client, *link, new=new):
             await _show_main(message, services, client)
         return
-    await take_code_as_member(message, services, client, payload)
+    await take_code_as_member(message, services, client, payload)     # код — по исходному параметру
+
+
+async def open_list_link(message: Message, services, role: str, client, payload: str) -> bool:
+    """«list-…» у пользователя и гостя — раньше кода приглашения: свой вид открыть,
+    чужой — главная роли (без слова о том, что список существует)."""
+    from awgbot.bot import lists
+    from awgbot.util import listlink
+    lst = listlink.parse(payload)
+    if lst is None:
+        return False
+    if not await lists.open_link(message, services, role, client, lst):
+        try:
+            await message.delete()
+        except Exception:                                  # noqa: BLE001
+            pass
+        from awgbot.bot.handlers.common import show_main_menu
+        await show_main_menu(message, services, role, client)
+    return True
 
 
 @router.message(Command("code"), RoleFilter("client"))

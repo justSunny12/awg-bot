@@ -85,12 +85,28 @@ class DriftMixin:
                 lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
         return "\n".join(lines)
 
-    def _gw_admin_drift_lines(self, g) -> list[str]:
+    def gw_drift_view(self, slot_id: int) -> dict:
+        """Расхождение целиком — экрану «весь список» (`list-drift-<слот>`): значения
+        без обрезки, устройства админа группами без предела; {'name', 'lines', 'n'}
+        (n — число расхождений). Слота нет — ServiceError."""
+        from awgbot.domain.services.gwchannel import drift_lines
+        g = self._gw_slot(int(slot_id))
+        items = self.gwlink_config_drift_items(g, cut=False)
+        lines: list[str] = []
+        for key, human, mine, theirs in items:
+            if key == "ADMIN_IPS":
+                lines += self._gw_admin_drift_lines(g, limit=0)
+            else:
+                lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
+        return {"name": self._gw_display(g), "lines": lines, "n": len(items)}
+
+    def _gw_admin_drift_lines(self, g, limit: int | None = None) -> list[str]:
         """Разница по устройствам админа — строка на устройство: «у сервера, нет на
         шлюзе» — имена из devices по адресу; «на шлюзе, нет у сервера» — либо
         живое устройство другого профиля (адрес передан), либо удалённое — имя из
         истории, нет имени — только адрес. Адреса — из самого снимка, не из
-        обрезанной строки расхождения; группа длиннее предела — «…и ещё N»."""
+        обрезанной строки расхождения; группа длиннее предела — «…и ещё N»
+        ссылкой на экран со всем расхождением (limit=0 — без предела)."""
         import html
         from awgbot.util import gwlink
         snap = self.gwlink_snapshot(g.id)
@@ -112,10 +128,11 @@ class DriftMixin:
         def group(addrs: list[str], names: dict, one: str, many: str) -> list[str]:
             if not addrs:
                 return []
+            cap = self._GW_DRIFT_MAX_LINES if limit is None else (limit or len(addrs))
             rows = [one if len(addrs) == 1 else many]
-            rows += [line(a, names.get(a, "")) for a in addrs[:self._GW_DRIFT_MAX_LINES]]
-            if len(addrs) > self._GW_DRIFT_MAX_LINES:
-                rows.append(f" · …и ещё {len(addrs) - self._GW_DRIFT_MAX_LINES}")
+            rows += [line(a, names.get(a, "")) for a in addrs[:cap]]
+            if len(addrs) > cap:
+                rows.append(" · …" + self._link(f"list-drift-{g.id}", f"и ещё {len(addrs) - cap}"))
             return rows
 
         missing = sorted(want - have, key=ip_key)

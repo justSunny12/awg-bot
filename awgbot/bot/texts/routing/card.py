@@ -8,6 +8,9 @@ from awgbot.domain import gwcfg
 from awgbot.domain.notices.backup import chat_ref
 from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 
+from awgbot.util import listlink
+from awgbot.util.textfmt import deep_link, more_link
+
 from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
@@ -131,7 +134,7 @@ def cfg_more_lines(cfg: dict) -> list[str]:
     return out
 
 
-def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
+def channel_lines(ch: dict | None, server_ok, bot: str = "", slot: int = 0) -> tuple[str, list[str], str]:
     """Канал в карточке: (строка «🔧 Канал конфигурации …», предупреждения
     открытыми строками, «выход шлюза в интернет» для «подробнее»). Строка
     канала — только связь и версия агента: «конфигурация актуальна» не
@@ -183,7 +186,10 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                      "времени: от неё зависят TLS и расписания")
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
-        miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in (pn.get("missing") or [])[:8]) or "подсетей"
+        missing = list(pn.get("missing") or [])
+        miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in missing[:8]) or "подсетей"
+        if len(missing) > 8:                              # весь список — на экране связи подсетей слота
+            miss += more_link(len(missing) - 8, bot, listlink.build("gwpeers", slot))
         warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — сервер повторит доставку; "
                      f"не поможет — {RESTORE_BTN} в чате бота шлюза")
     lists = ch.get("lists") or {}
@@ -208,15 +214,18 @@ PEER_LINKS_SHOWN = 3         # соседей по имени в строке «
 LAN_ISSUES_SHOWN = 3         # строк ⚠️ о подсетях вне таблицы в карточке, дальше «и ещё N»
 
 
-def peer_links_line(links: list[str]) -> str:
+def peer_links_line(links: list[str], bot: str = "", slot: int = 0) -> str:
     """«🔗 Связь подсетей: с NASPi, Pi2» — соседи с VPN-транзитом, имена уже
-    ссылками на их карточки (HTML); больше трёх — «и ещё N»."""
+    ссылками на их карточки (HTML); больше трёх — «и ещё N» ссылкой на экран
+    связи подсетей слота (без слота и имени бота — текстом)."""
     more = len(links) - PEER_LINKS_SHOWN
-    return ("🔗 Связь подсетей: с " + ", ".join(links[:PEER_LINKS_SHOWN])
-            + (f" и ещё {more}" if more > 0 else ""))
+    tail = ""
+    if more > 0:
+        tail = more_link(more, bot, listlink.build("gwpeers", slot)) if slot else f" и ещё {more}"
+    return "🔗 Связь подсетей: с " + ", ".join(links[:PEER_LINKS_SHOWN]) + tail
 
 
-def lan_space_lines(info: dict | None) -> list[str]:
+def lan_space_lines(info: dict | None, bot: str = "", slot: int = 0) -> list[str]:
     """Карточка слота: адреса в туннеле выключены целиком (пространство или
     метка), таблица не поставилась, или подсети слота, не попавшие в таблицу,
     — данные до 3.3.0, которые ввод теперь не примет."""
@@ -225,26 +234,33 @@ def lan_space_lines(info: dict | None) -> list[str]:
         return [lan_space_off_line(info["problem"], info.get("key") or "routing.lan_space")]
     out = [lan_map_failed_line(info["error"])] if info.get("error") else []
     issues = info.get("issues") or []
-    for it in issues[:LAN_ISSUES_SHOWN]:
-        net = f"<code>{_e(it.get('net', ''))}</code>"
-        # подсеть накрывает префикс соседа в туннеле: на шлюзе она пересеклась
-        # бы с его AllowedIPs — конфиг линка не соберётся
-        link = ", и конфиг линка не соберётся (пересекается с адресами в туннеле другого шлюза)" \
-            if it.get("blocks_link") else ""
-        if it.get("kind") == "space":
-            out.append(f"⚠️ {net} — в служебном пространстве сервера AWG, в туннеле не видна{link}: смени подсеть "
-                       "в «🗺 Подсети»")
-        elif it.get("kind") == "clash":
-            out.append(f"⚠️ {net} в туннеле (<code>{_e(it.get('twin', ''))}</code>) пересекается с "
-                       f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>) "
-                       "и не видна: убери одну из них в «🗺 Подсети»")
-        elif it.get("kind") == "wide":
-            out.append(f"⚠️ {net} шире /16, в туннеле не видна{link}: сузь подсеть в «🗺 Подсети»")
+    out += [x for x in (lan_issue_line(it) for it in issues[:LAN_ISSUES_SHOWN]) if x]
     if len(issues) > LAN_ISSUES_SHOWN:
         n = len(issues) - LAN_ISSUES_SHOWN
-        out.append(f"⚠️ Ещё {n} " + plural_ru(n, "подсеть", "подсети", "подсетей") + " вне адресов в туннеле: "
-                   "проверь их в «🗺 Подсети»")
+        whole = deep_link(bot, listlink.build("gwnets", slot), "весь список") if slot and bot else ""
+        out.append(f"⚠️ Ещё {n} " + plural_ru(n, "подсеть", "подсети", "подсетей") + " вне адресов в туннеле"
+                   + (f" — {whole}, править — в «🗺 Подсети»" if whole else ": проверь их в «🗺 Подсети»"))
     return out
+
+
+def lan_issue_line(it: dict) -> str:
+    """Подсеть слота, не попавшая в таблицу адресов в туннеле, — строкой «⚠️ …»
+    с причиной (карточка и экран «весь список» подсетей)."""
+    net = f"<code>{_e(it.get('net', ''))}</code>"
+    # подсеть накрывает префикс соседа в туннеле: на шлюзе она пересеклась
+    # бы с его AllowedIPs — конфиг линка не соберётся
+    link = ", и конфиг линка не соберётся (пересекается с адресами в туннеле другого шлюза)" \
+        if it.get("blocks_link") else ""
+    if it.get("kind") == "space":
+        return (f"⚠️ {net} — в служебном пространстве сервера AWG, в туннеле не видна{link}: смени подсеть "
+                "в «🗺 Подсети»")
+    if it.get("kind") == "clash":
+        return (f"⚠️ {net} в туннеле (<code>{_e(it.get('twin', ''))}</code>) пересекается с "
+                f"<code>{_e(it.get('other', ''))}</code> (<code>{_e(it.get('other_twin', ''))}</code>) "
+                "и не видна: убери одну из них в «🗺 Подсети»")
+    if it.get("kind") == "wide":
+        return f"⚠️ {net} шире /16, в туннеле не видна{link}: сузь подсеть в «🗺 Подсети»"
+    return ""
 
 
 def keep_line(keep: dict | None, agent_bot: dict | None = None) -> str:
@@ -293,7 +309,8 @@ def gateway_card_text(state: dict, states: list) -> str:
                  + (_gw_traffic(dev) if dev is not None else ""))
     if state.get("active") and state.get("unavailable"):
         lines.append("🔴 РФ-доступ недоступен: российские сервисы открываются с зарубежного адреса")
-    ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"))
+    bot, slot = str(state.get("bot_username") or ""), int(gw.id)
+    ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"), bot, slot)
     if ch_head:
         lines.append(ch_head)
     fleet = state.get("fleet") or {}
@@ -347,17 +364,17 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append(state["i1"])                          # I1 линка — уже готовой строкой
     lines += ch_warns
     nets = gw.lan_subnets
-    nets_s = (lan_pairs(nets, state.get("lan_twins")) if nets
+    nets_s = (lan_pairs(nets, state.get("lan_twins"), bot=bot, payload=listlink.build("gwnets", slot)) if nets
               else "Подсети не заданы — без них сеть шлюза из туннеля не открыть")
     lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
-    lines += lan_space_lines(state.get("lan_space"))
+    lines += lan_space_lines(state.get("lan_space"), bot, slot)
     if gw.lan_mode:
         own = state.get("own_lists") or {}
         if own and own.get("state") != "off":
             lines.append(own_lists_line(own, state.get("agent_bot")))
     svc = state.get("services") or {}
     if state.get("peer_nets"):
-        lines.append(peer_links_line(state.get("peer_links") or []))
+        lines.append(peer_links_line(state.get("peer_links") or [], bot, slot))
         if svc:
             lines.append(services_line(svc, state.get("agent_bot"), ch.get("online") if ch else None))
     elif svc.get("tunnel") and svc.get("own"):

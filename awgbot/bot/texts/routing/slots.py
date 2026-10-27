@@ -11,16 +11,28 @@ from ..fmt import _e, human_bytes, _updown, plain_ip, details, num
 
 # ── адреса в туннеле: пары «настоящая → в туннеле» ──────────────────────────
 
-def lan_pairs(nets, twins, limit: int = 6) -> str:
+def lan_pair(net: str, twins: dict) -> str:
+    """Одна пара: «<code>192.168.1.0/24</code> · в туннеле <code>10.240.1.0/24</code>»
+    или « · вне туннеля»."""
+    return f"<code>{_e(net)}</code>" + (f" · в туннеле <code>{_e(twins[net])}</code>" if net in twins else " · вне туннеля")
+
+
+def lan_pairs(nets, twins, limit: int = 6, *, bot: str = "", payload: str = "", count: bool = False) -> str:
     """«<code>192.168.1.0/24</code> · в туннеле <code>10.240.1.0/24</code>; …»
     по порядку подсетей слота; подсеть без адреса в туннеле (не в таблице) —
     с хвостом « · вне туннеля», иначе читалась бы вторым адресом в туннеле
-    соседней пары; больше limit — «и ещё N». twins — [(реальная, в туннеле)]."""
+    соседней пары; больше limit — «и ещё N» (payload — ссылкой на экран со
+    всеми подсетями; count — « [+N]» без ссылки, в приглашении к вводу).
+    twins — [(реальная, в туннеле)]."""
+    from awgbot.util.textfmt import deep_link
     tw = dict(twins or [])
-    items = [f"<code>{_e(n)}</code>" + (f" · в туннеле <code>{_e(tw[n])}</code>" if n in tw else " · вне туннеля")
-             for n in list(nets or [])[:limit]]
+    items = [lan_pair(n, tw) for n in list(nets or [])[:limit]]
     more = len(nets or []) - limit
-    return "; ".join(items) + (f"; и ещё {more}" if more > 0 else "")
+    if more <= 0:
+        return "; ".join(items)
+    if count:
+        return "; ".join(items) + f" [+{more}]"
+    return "; ".join(items) + "; " + (deep_link(bot, payload, f"и ещё {more}") if payload else f"и ещё {more}")
 
 
 def lan_example(twins) -> str:
@@ -234,7 +246,8 @@ PEER_MANY = 9
 def peer_nets_line(info: dict) -> str:
     """Строка «🔗 Связь подсетей» на экране «Шлюзы» — инфобокс без кнопки:
     связь подсетей — часть VPN-транзита. Пары — в адресах в туннеле, до шести
-    на слот, при девяти слотах и больше — до трёх («и ещё N»); слотов с VPN-транзитом меньше двух — когда появится;
+    на слот, при девяти слотах и больше — до трёх («и ещё N» — ссылкой на экран
+    со всеми адресами); слотов с VPN-транзитом меньше двух — когда появится;
     адреса в туннеле выключены — отсылка к карточке."""
     st = info.get("state")
     if st == "off":
@@ -245,12 +258,19 @@ def peer_nets_line(info: dict) -> str:
     named = info.get("pairs_named") or []
     limit = PEER_NETS_SHOWN_MANY if len(named) >= PEER_MANY else PEER_NETS_SHOWN
 
+    from awgbot.util import listlink
+    from awgbot.util.textfmt import more_link
+    bot = str(info.get("bot_username") or "")
+
     def _nets(nets: list) -> str:
         if not nets:
             return ""
         shown = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:limit])
         more = len(nets) - limit
-        return ": " + shown + (f" и ещё {more}" if more > 0 else "")
+        if more <= 0:
+            return ": " + shown
+        # все адреса всех слотов — на экране связи подсетей
+        return ": " + shown + (more_link(more, bot, listlink.build("peernets")) if bot else f" и ещё {more}")
     # подписи слотов — на кнопках карточек ниже, в строке только имена
     pairs = " ↔️ ".join(f"{_e(name)}{_nets(nets)}" for name, _label, nets in named)
     return f"🔗 Связь подсетей: {pairs}"

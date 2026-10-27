@@ -19,7 +19,8 @@ from awgbot.bot.handlers import gateway as pkg       # имена пакета �
 def _ssh_section(services):
     from awgbot.bot import paging
     st = services.ssh_screen()
-    return texts.gateway_ssh_text(st), kb.gateway_ssh_kb(st, page=paging.page_of(config.ADMIN_ID, "gwssh"))
+    return (texts.gateway_ssh_text(st, pkg._bot_username(services)),
+            kb.gateway_ssh_kb(st, page=paging.page_of(config.ADMIN_ID, "gwssh")))
 
 
 _SECTIONS = {"ssh": _ssh_section}

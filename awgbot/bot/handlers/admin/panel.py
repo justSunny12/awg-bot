@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts
+from awgbot.bot import links, texts
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -154,45 +154,15 @@ async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
     return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
 
 
-def _payload_id(payload: str, head: str) -> int | None:
-    """«head-<id>» или «head-<id>-t» → id."""
-    if not payload.startswith(head + "-"):
-        return None
-    rest = payload[len(head) + 1:]
-    if rest.endswith("-t"):
-        rest = rest[:-2]
-    return int(rest) if rest.isdigit() else None
-
-
-def parse_link(payload: str) -> tuple[str, int] | None:
-    """Ссылка шапки и уведомлений → (вид экрана реестра, ref) или None."""
-    if payload == texts.ONLINE_PAYLOAD:
-        return "online", 0
-    if payload == texts.EXPIRING_PAYLOAD:
-        return "expiring", 0
-    if payload == texts.UNASSIGNED_PAYLOAD:
-        return "unassigned", 0
-    if payload == texts.UPD_PAYLOAD:
-        return "upd", 0
-    if payload in (texts.TRAFFIC_PAYLOAD, texts.RF_PAYLOAD):
-        return "traffic", 0
-    if payload == texts.MIGRATION_PAYLOAD:
-        return "migration", 0
-    if payload == texts.RSV_PAYLOAD:
-        return "set_rsv", 0
-    for head, kind in ((texts.TRAFFIC_PAYLOAD, "traffic_dev"), (texts.RF_PAYLOAD, "traffic_dev"),
-                       ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev"),
-                       (texts.MIGRATION_PAYLOAD, "migration_cl")):
-        ref = _payload_id(payload, head)
-        if ref is not None:
-            return kind, ref
-    return None
+# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»)
+parse_link = links.parse_admin
 
 
 async def _traffic_deep_link(message: Message, services, payload: str,
                              state: FSMContext | None = None) -> bool:
     """Переход по ссылке из шапки, экрана или уведомления: экран — на месте
-    живого меню, команда убирается из чата."""
+    живого меню (из уведомления, «-n» — новым сообщением внизу), команда
+    убирается из чата. «list-…» — экран со всем списком."""
     if payload == texts.REFRESH_PAYLOAD:
         # «обновлено в … 🔄» на главной: разово дёрнуть сервер и /proc,
         # главную перерисовать на месте (команду из чата убирает show_screen)
@@ -201,6 +171,14 @@ async def _traffic_deep_link(message: Message, services, payload: str,
             await _return_panel(message, services)
         await send_notifications(message.bot, notes)
         return True
+    from awgbot.bot import lists
+    from awgbot.util import listlink
+    lst = listlink.parse(payload)
+    if lst is not None:
+        if not await lists.open_link(message, services, "admin", None, lst):
+            await _return_panel(message, services)
+        return True
+    payload, new = links.strip_new(payload)
     link = parse_link(payload)
     if link is None:
         return False
@@ -209,7 +187,7 @@ async def _traffic_deep_link(message: Message, services, payload: str,
         await state.update_data(return_to="expiring")
     if kind == "gw":
         card_from_main(message.chat.id, True)         # «Назад» с карточки — на главную
-    if not await show_screen(message, services, "admin", None, kind, ref):
+    if not await show_screen(message, services, "admin", None, kind, ref, new=new):
         await _return_panel(message, services)
     return True
 

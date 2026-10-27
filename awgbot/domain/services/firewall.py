@@ -40,7 +40,7 @@ class FirewallMixin:
                 "ssh_port": spec.ssh_port, "allow": list(spec.ssh_allow4) + list(spec.ssh_allow6),
                 "raw_allow": list(settings.get("app.firewall.ssh_allow", []) or []),
                 "unresolved": list(spec.unresolved), "admin_ips": list(spec.tunnel_admin4),
-                "nat": spec.nat}
+                "nat": spec.nat, "bot_username": self.bot_username or ""}
 
     # ── порт SSH (кнопка «Изменить порт») ────────────────────────────────────
     # Порт живёт в conf (его фильтрует таблица) и в sshd; из чата меняются оба.

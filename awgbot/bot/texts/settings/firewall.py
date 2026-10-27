@@ -57,7 +57,10 @@ def settings_firewall_text(st: dict) -> str:
     lines.append(address_list_line(len(allow), bool(st.get("enabled"))))
     warns: list[str] = []
     if st.get("unresolved"):
-        warns.append("⚠️ Не резолвятся: " + _more_tail(st["unresolved"]))
+        # весь список — экраном «🛡 Не резолвятся» (без имени бота — «[+N]»)
+        bot = str(st.get("bot_username") or "")
+        warns.append("⚠️ Не резолвятся: " + (more(st["unresolved"], link=(bot, "list-fwunres")) if bot
+                                            else _more_tail(st["unresolved"])))
     if st.get("drift") and st.get("enabled"):
         warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → {st['listening']} "

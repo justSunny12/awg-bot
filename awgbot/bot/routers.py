@@ -23,12 +23,13 @@ from awgbot.bot.middleware import AccessMiddleware
 def routers_for(role: str) -> list[Router]:
     """Роутеры роли установки («client» — основной бот, «gateway» — агент)
     в порядке включения. Импорты ленивые: модуль не тянет хендлеры при загрузке."""
-    from awgbot.bot import paging, sections
+    from awgbot.bot import lists, paging, sections
     from awgbot.bot.handlers import hide, reply_commands, stale
     from awgbot.bot.roles import GATEWAY, GUEST, MAIN
     br = GATEWAY if role == "gateway" else (GUEST if role == "guest" else MAIN)
     # общие разделы — раньше роутеров роли: у тех широкие фильтры (act == "do")
-    head = [paging.make_router(), hide.make_router(), reply_commands.make_cancel_router()]
+    # экраны «весь список» — сразу за листанием: роль сверяют сами (их фильтры ролей не касаются)
+    head = [paging.make_router(), lists.make_router(), hide.make_router(), reply_commands.make_cancel_router()]
     shared = sections.make_router(br)
     if role == "gateway":
         from awgbot.bot.handlers import gateway as gateway_handlers

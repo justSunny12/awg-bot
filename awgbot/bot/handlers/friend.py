@@ -86,15 +86,19 @@ async def friend_start_with_code(message: Message, command: CommandObject, clien
                                  state: FSMContext):
     """/start {payload} у гостя: ссылка на экран (РФ-доступ, устройство), ещё
     одно устройство от того же владельца или переход во владельцы."""
-    from awgbot.bot.handlers.client import parse_link, take_code_as_member
+    from awgbot.bot import links
+    from awgbot.bot.handlers.client import open_list_link, parse_link, take_code_as_member
     await state.clear()                       # иначе текст после «➕ Сайт» ушёл бы в routing_add_apply
     payload = (command.args or "").strip()
-    link = parse_link(payload)
+    if await open_list_link(message, services, "invited", client, payload):
+        return
+    bare, new = links.strip_new(payload)
+    link = parse_link(bare)
     if link is not None:
-        if not await show_screen(message, services, "invited", client, *link):
+        if not await show_screen(message, services, "invited", client, *link, new=new):
             await show_guest_main(message, services, client)
         return
-    await take_code_as_member(message, services, client, payload)
+    await take_code_as_member(message, services, client, payload)     # код — по исходному параметру
 
 
 @router.message(Command("code"))

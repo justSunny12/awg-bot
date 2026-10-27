@@ -304,14 +304,19 @@ def num(n) -> str:
     return f"{int(n or 0):,}".replace(",", NBSP_THIN)
 
 
-def more(items, shown: int = 12, code: bool = True) -> str:
+def more(items, shown: int = 12, code: bool = True, link: tuple[str, str] | None = None) -> str:
     """Список через запятую, не длиннее shown — «и ещё N»: адреса и домены
     моноширинным (code), имена — текстом. Кнопки — до 8, текст — до 12:
-    лимит 4096 при длинных именах."""
+    лимит 4096 при длинных именах. link — (имя бота, параметр /start) экрана
+    со всем списком: хвост — ссылкой на него."""
     items = list(items)
     out = ", ".join((f"<code>{_e(x)}</code>" if code else _e(x)) for x in items[:shown])
     if len(items) > shown:
-        out += f" и ещё {len(items) - shown}"
+        if link is not None:
+            from .tail import more_link
+            out += more_link(len(items) - shown, *link)
+        else:
+            out += f" и ещё {len(items) - shown}"
     return out
 
 

@@ -333,3 +333,14 @@ class PeerCB(CallbackData, prefix="pa"):
     """Экран админа второго сервера: refresh («🔄 Обновить»), code («🔑 Ввести
     аварийный код», только в Н4)."""
     action: str
+
+
+class ListCB(CallbackData, prefix="ls"):
+    """Экран «весь список» (bot/lists): kind — вид, ref — слот (0 — без него),
+    key — ключ снимка события, new — открыт из уведомления или следа (шапка
+    живого вида — «· сейчас»). Листание — PageCB со screen="ls_<вид>" и back
+    этим колбэком."""
+    kind: str
+    ref: int = 0
+    key: str = ""
+    new: int = 0

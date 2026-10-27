@@ -340,6 +340,7 @@ class SlotsMixin:
                             if g.id != int(slot_id)] if st["peer_nets"] else []
         st["lan_space"] = self.lan_space_card(st["gateway"])
         st["lan_twins"] = self.lan_twins(st["gateway"])
+        st["bot_username"] = self.bot_username or ""        # хвосты «и ещё N» карточки — ссылками
         # канал линка: только из state, без запросов
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe

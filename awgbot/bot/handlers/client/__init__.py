@@ -21,7 +21,7 @@ from __future__ import annotations
 from .main import (
     router, ADD_FROM_DEVICES, _bot_username, main_payload, _show_main, start_activation, start_cold,
     code_activation, _try_activate, _activate_friend, _notify_owner_activated, take_code_as_member,
-    parse_link, start_client_with_code, code_client, start_client)
+    parse_link, start_client_with_code, open_list_link, code_client, start_client)
 from .menu import (
     menu_main, _pause_flags, sub_parts, menu_info, devices_payload, menu_devices, _issuable,
     menu_gen_pick, _issue, device_card_parts, device_open, client_device_edit_name_start,
@@ -39,7 +39,7 @@ from .pause import (
 
 __all__ = ["router", "ADD_FROM_DEVICES", "_bot_username", "main_payload", "_show_main", "start_activation",
     "start_cold", "code_activation", "_try_activate", "_activate_friend", "_notify_owner_activated",
-    "take_code_as_member", "parse_link", "start_client_with_code", "code_client", "start_client",
+    "take_code_as_member", "parse_link", "start_client_with_code", "open_list_link", "code_client", "start_client",
     "menu_main", "_pause_flags", "sub_parts", "menu_info", "devices_payload", "menu_devices",
     "_issuable", "menu_gen_pick", "_issue", "device_card_parts", "device_open",
     "client_device_edit_name_start", "client_device_edit_name_apply", "device_connect_menu",

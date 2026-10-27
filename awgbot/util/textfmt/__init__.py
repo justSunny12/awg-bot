@@ -8,7 +8,8 @@ bot/ui ре-экспортируют их под прежними именами
 
 Части: base — экранирование, ссылки на экраны, дерево вложенных строк,
 объёмы, устройства, ссылки на людей, склонения; atoms — сборщик экрана и
-атомы текста (шапка, статус, тумблер, подтверждение, итог, всплывашка).
+атомы текста (шапка, статус, тумблер, подтверждение, итог, всплывашка); tail —
+хвост обрезанного списка (ссылкой на экран со всем списком или «[+N]»).
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from .base import (
     rf_value, updown_brief, _BYTES_PER_GB, gb_str, _limit_devices_str, device_state, details,
     plain_ip, addr_codes, tg_link, client_link, owner_name, holder_name, owner_link, holder_link,
     _n_devices, num, more, unlimited, plural_ru, _days_word, _days)
+from .tail import more_link, more_count, more_line
 from .atoms import (
     STATUS, TOAST_MAX, TEXT_MAX, _TAG, st, tick, head, prompt, label, sub, screen, confirm,
     fail, result, changed, Toast, _u16, toast, note_budget)
@@ -28,6 +30,6 @@ __all__ = [
     "human_bytes", "used_of_limit", "_updown", "MONTHS_RU", "month_name", "rf_value", "updown_brief", "_BYTES_PER_GB",
     "gb_str", "_limit_devices_str", "device_state", "details", "plain_ip", "addr_codes", "tg_link",
     "client_link", "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices",
-    "num", "more", "unlimited", "plural_ru", "_days_word", "_days",
+    "num", "more", "more_link", "more_count", "more_line", "unlimited", "plural_ru", "_days_word", "_days",
     "STATUS", "TOAST_MAX", "TEXT_MAX", "_TAG", "st", "tick", "head", "prompt", "label", "sub",
     "screen", "confirm", "fail", "result", "changed", "Toast", "_u16", "toast", "note_budget"]
