@@ -226,11 +226,7 @@ async def open_list_link(message: Message, services, role: str, client, payload:
     lst = listlink.parse(payload)
     if lst is None:
         return False
-    if not await lists.open_link(message, services, role, client, lst):
-        try:
-            await message.delete()
-        except Exception:                                  # noqa: BLE001
-            pass
+    if not await lists.open_link(message, services, role, client, lst):   # команду open_link уже убрал
         from awgbot.bot.handlers.common import show_main_menu
         await show_main_menu(message, services, role, client)
     return True

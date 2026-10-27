@@ -100,9 +100,12 @@ async def drift(services, ref: int, key: str, chat_id: int) -> View | None:
         d = await call(services.gw_drift_view, ref)
     except ServiceError:
         return _gone()
-    return View(title=tl.drift_title(d["name"]), rows=list(d["lines"]),
+    lines = list(d["lines"])
+    # подписи групп устройств админа («На шлюзе не помечены …:») — строки без « · » в начале, с двоеточием в конце
+    labels = tuple(i for i, x in enumerate(lines) if x.endswith(":") and not x.startswith(" · "))
+    return View(title=tl.drift_title(d["name"]), rows=lines,
                 count=tl.drift_count(int(d["n"])) if d["n"] else "",
-                empty=tl.drift_empty(d["name"]), back=_card(ref))
+                empty=tl.drift_empty(d["name"]), back=_card(ref), labels=labels)
 
 
 register(Kind("gwnets", "main", ADMIN, gwnets))

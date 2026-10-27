@@ -35,8 +35,8 @@ def _clip(row: str, room: int) -> str:
     return html.escape("".join(out), quote=False) + "…"
 
 
-def split(rows: list[str], head_len: int, sep: str = "\n") -> list[list[str]]:
-    """Страницы строк: head_len — видимая длина шапки с её отступом."""
+def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_ROWS) -> list[list[str]]:
+    """Страницы строк: head_len — видимая длина шапки с её отступом (и хвоста экрана)."""
     pages: list[list[str]] = []
     cur: list[str] = []
     used = head_len
@@ -46,7 +46,7 @@ def split(rows: list[str], head_len: int, sep: str = "\n") -> list[list[str]]:
         if visible(row) > room:
             row = _clip(row, room)
         w = visible(row) + (gap if cur else 0)
-        if cur and (used + w > BUDGET or len(cur) >= MAX_ROWS):
+        if cur and (used + w > BUDGET or len(cur) >= max_rows):
             pages.append(cur)
             cur, used = [], head_len
             w = visible(row)

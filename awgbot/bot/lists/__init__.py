@@ -39,6 +39,7 @@ class View:
     empty: str = ""
     sep: str = "\n"                              # «\n\n» — строки с ведущим значком
     live: bool = True
+    labels: tuple[int, ...] = ()                 # номера строк-подписей групп: страница продолжения повторяет подпись
 
 
 @dataclass(frozen=True)
@@ -97,11 +98,19 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
         return view.empty or ui.head(view.title), ui.rows(*back_rows)
     now = "сейчас" if (view.live and new) else ""
     probe = ui.head(view.title, meta=[view.count, "стр. 99 из 99", now])
-    chunks = pages.split(view.rows, pages.visible(probe) + 2, view.sep)
+    widest = max((pages.visible(view.rows[i]) for i in view.labels), default=0)
+    chunks = pages.split(view.rows, pages.visible(probe) + 2 + (widest + 1 if view.labels else 0), view.sep,
+                         pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS)     # место под повтор подписи
     total = len(chunks)
     cur = min(max(int(page or 0), 0), total - 1)
     head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now])
-    text = head + "\n\n" + view.sep.join(chunks[cur])
+    body = list(chunks[cur])
+    first = sum(len(c) for c in chunks[:cur])            # номер первой строки страницы в полном списке
+    if body and first not in view.labels:
+        label = max((i for i in view.labels if i < first), default=None)
+        if label is not None:                             # группа началась на прошлой странице — подпись снова
+            body.insert(0, view.rows[label])
+    text = head + "\n\n" + view.sep.join(body)
     back = ListCB(kind=kind, ref=int(ref or 0), key=str(key or ""), new=1 if new else 0).pack()
     nav = []
     if cur > 0:

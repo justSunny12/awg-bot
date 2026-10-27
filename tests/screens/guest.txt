@@ -319,7 +319,6 @@
 ### gst.link.list — ссылка на список админа — главная гостя, без «Такого кода нет»
 > /start list-gwnets-2
 - delete #1
-- delete #1
 + send #2
 👋 <b>Артём</b>
 

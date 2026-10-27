@@ -455,7 +455,6 @@
 ### cl.link.list — ссылка на список админа — своя главная, без «уже есть доступ»
 > /start list-gwnets-2
 - delete #1
-- delete #1
 + send #2
 👋 <b>Вася</b>
 
@@ -468,7 +467,6 @@
 
 ### cl.link.list.live — ссылка на список админа с меткой при живом меню — главная, команда убрана
 > /start list-gwnets-2-n
-- delete #3
 - delete #3
 - markup off #2
 + send #4
