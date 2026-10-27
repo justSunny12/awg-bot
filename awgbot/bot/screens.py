@@ -96,21 +96,21 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "devices":
             return await devices.my_devices_parts(services, chat_id)
         if kind == "online":
-            return await panel.online_screen(services)
+            return await panel.online_screen(services, chat_id)
         if kind == "expiring":
-            return await panel.expiring_screen(services)
+            return await panel.expiring_screen(services, chat_id)
         if kind == "unassigned":
             return await panel.unassigned_screen(services, chat_id)
         if kind == "traffic":
-            return await panel.traffic_profiles_screen(services)
+            return await panel.traffic_profiles_screen(services, chat_id)
         if kind == "traffic_dev":
-            return await panel.traffic_devices_screen(services, ref)
+            return await panel.traffic_devices_screen(services, ref, chat_id)
         if kind == "gw":
             return await panel.gateway_card_screen(services, ref, chat_id)
         if kind == "migration":
-            return await panel.migration_overview_screen(services)
+            return await panel.migration_overview_screen(services, chat_id)
         if kind == "migration_cl":
-            return await panel.migration_client_screen(services, ref)
+            return await panel.migration_client_screen(services, ref, chat_id)
         if kind == "gwedit":
             from awgbot.bot.handlers import settings as sh
             return await sh.gateway_edit_screen(services, ref)

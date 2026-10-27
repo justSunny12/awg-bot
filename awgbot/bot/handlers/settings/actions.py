@@ -65,15 +65,17 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await _record(cb, texts.migration_started(res), services)
         return
 
-    if key == "pending":
-        rows = await call(services.migration_pending)
-        await edit(cb, texts.migration_pending_text(rows), kb.settings_back("svc"))
-        await cb.answer()
-        return
-
-    if key == "orphans":
-        rows = await call(services.migration_orphan_rows)    # имена одним проходом
-        await edit(cb, texts.migration_orphans_text(rows), kb.settings_back("svc"))
+    if key in ("pending", "orphans"):
+        from awgbot.bot import paging, ui
+        from awgbot.bot.keyboards.common import page_row
+        if key == "pending":
+            rows = await call(services.migration_pending)
+        else:
+            rows = await call(services.migration_orphan_rows)    # имена одним проходом
+        page = paging.page_of(cb.message.chat.id, f"mig_{key}")
+        pg = (texts.migration_pending_page if key == "pending" else texts.migration_orphans_page)(rows, page)
+        nav = page_row(f"mig_{key}", 0, pg, SetCB(sec="mig", act="do", key=key))
+        await edit(cb, pg.text, ui.rows(nav or None, ui.back(SetCB(sec="svc"))))
         await cb.answer()
         return
 

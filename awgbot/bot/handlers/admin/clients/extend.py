@@ -106,7 +106,7 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
     await edit(cb, texts.extended_note(fresh, kind, result.new_end, result.pause, _bot(services)), None)
     keep_id = cb.message.message_id
     if return_to == "expiring" and await call(services.expiring_subscriptions):
-        await send_menu(cb.message, services, *await expiring_screen(services), keep_id=keep_id)
+        await send_menu(cb.message, services, *await expiring_screen(services, cb.message.chat.id), keep_id=keep_id)
         return
     parts = await client_card_parts(services, client_id)
     if parts is None:

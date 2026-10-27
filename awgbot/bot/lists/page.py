@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import html
 import re
+from dataclasses import dataclass
+from typing import Callable
 
 BUDGET = 3500
 MAX_ROWS = 30
@@ -66,3 +68,42 @@ def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_R
     if cur or not pages:
         pages.append(cur)
     return pages
+
+
+@dataclass(frozen=True)
+class Page:
+    """Страница экрана-списка: текст, номер (после зажима), всего страниц и
+    срез строк [start, stop) — для кнопок той же страницы."""
+    text: str
+    cur: int
+    total: int
+    start: int
+    stop: int
+
+    @property
+    def has_prev(self) -> bool:
+        return self.cur > 0
+
+    @property
+    def has_next(self) -> bool:
+        return self.cur < self.total - 1
+
+
+def label(cur: int, total: int) -> str:
+    """«стр. 2 из 3» в шапке — только когда страниц больше одной."""
+    return f"стр. {cur + 1} из {total}" if total > 1 else ""
+
+
+def paged(rows: list[str], page: int, *, header: Callable[[str], str], sep: str = "\n", gap: str = "\n\n",
+          tail: str = "", max_rows: int = MAX_ROWS) -> Page:
+    """Экран, который сам список, — страницей на месте: header(метка страницы)
+    → шапка, строки страницы через sep, хвост экрана (строка «обновлено …»).
+    Номер вне диапазона (список сократился между нажатиями) — к последней."""
+    probe = header(label(98, 99))
+    chunks = split(list(rows), visible(probe) + visible(gap) + visible(tail), sep, max_rows)
+    total = len(chunks)
+    cur = min(max(int(page or 0), 0), total - 1)
+    start = sum(len(c) for c in chunks[:cur])
+    body = sep.join(chunks[cur])
+    text = header(label(cur, total)) + (gap + body if body else "") + tail
+    return Page(text=text, cur=cur, total=total, start=start, stop=start + len(chunks[cur]))

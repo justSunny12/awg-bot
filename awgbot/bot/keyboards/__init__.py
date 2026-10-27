@@ -39,7 +39,7 @@ from .admin import (
     period_input_kb, resume_pause_kb,
     new_profile_devs_kb, new_profile_traffic_kb, period_kb, extend_forever_kb, block_kb,
     traffic_profiles_kb, expiring_kb, online_devices_kb,
-    traffic_devices_kb, gateway_card_button, to_client_card, invite_menu, migration_back_kb, add_device_addslot, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
+    traffic_devices_kb, gateway_card_button, to_client_card, invite_menu, add_device_addslot, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
     settings_back, restart_now_or_later, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
@@ -71,7 +71,7 @@ __all__ = [
     "ADD_FROM_DEVICES", "admin_main", "admin_devices", "client_edit_kb", "client_delete_confirm",
     "client_delete_retry", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "period_input_kb", "resume_pause_kb",
     "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "extend_forever_kb", "block_kb",
-    "gateway_card_button", "to_client_card", "invite_menu", "migration_back_kb", "add_device_addslot",
+    "gateway_card_button", "to_client_card", "invite_menu", "add_device_addslot",
     "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients",
     "admin_client_actions", "client_device_limit_kb",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",

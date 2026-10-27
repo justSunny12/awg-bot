@@ -148,6 +148,13 @@ def page_slice(items, page: int, static: int) -> tuple[list, int, bool, bool]:
     return chunk, page, page > 0, page < pages - 1
 
 
+def page_row(screen: str, ref: int, pg, back) -> list[InlineKeyboardButton]:
+    """Ряд листания экрана, который сам список (страница текста — bot/lists/page.Page);
+    back — колбэк, который рисует этот экран (CallbackData или упакованный)."""
+    packed = back if isinstance(back, str) else back.pack()
+    return page_nav(screen, ref, pg.cur, pg.has_prev, pg.has_next, packed)
+
+
 def page_nav(screen: str, ref: int, page: int, has_prev: bool, has_next: bool,
              back: str) -> list[InlineKeyboardButton]:
     """Ряд листания: кнопки к соседним страницам (пустой — страниц нет)."""

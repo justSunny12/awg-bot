@@ -297,22 +297,40 @@ def block_kb(target: str, ref: int, *, pause: bool | None, notify: bool) -> Inli
 
 # ── списки главной ───────────────────────────────────────────────────────────
 
-traffic_profiles_kb = to_menu
-online_devices_kb = to_menu
+def _paged_to_menu(screen: str, pg, back) -> InlineKeyboardMarkup:
+    from .common import page_row
+    nav = page_row(screen, 0, pg, back) if pg is not None else []
+    return ui.rows(nav or None, ui.to_menu(Menu(action="main")))
 
 
-def traffic_devices_kb() -> InlineKeyboardMarkup:
-    return ui.rows(ui.back(Menu(action="traffic")))
+def online_devices_kb(pg=None) -> InlineKeyboardMarkup:
+    """Ряд листания (страниц больше одной) и «⬅️ В меню»."""
+    return _paged_to_menu("online", pg, Menu(action="online"))
 
 
-def expiring_kb(rows=()) -> InlineKeyboardMarkup:
-    """«⏱ Имя» по два в ряд — продлить прямо из списка; в меню."""
-    items = list(rows)[:2 * (MAX_ROWS - 1)]     # по два в ряд, ряд «В меню»
+def traffic_profiles_kb(pg=None) -> InlineKeyboardMarkup:
+    return _paged_to_menu("traffic", pg, Menu(action="traffic"))
+
+
+def traffic_devices_kb(pg=None, client_id: int = 0) -> InlineKeyboardMarkup:
+    from .common import page_row
+    nav = page_row("traffic_dev", client_id, pg, ClientCB(action="traffic", client_id=client_id)) \
+        if pg is not None and client_id else []
+    return ui.rows(nav or None, ui.back(Menu(action="traffic")))
+
+
+def expiring_kb(rows=(), pg=None) -> InlineKeyboardMarkup:
+    """«⏱ Имя» по два в ряд — продлить прямо из списка: те же профили, что в
+    строках страницы (pg — bot/lists/page.Page); листание и «В меню»."""
+    from .common import page_row
+    rows = list(rows)
+    items = rows[pg.start:pg.stop] if pg is not None else rows[:2 * (MAX_ROWS - 1)]   # по два в ряд, ряд «В меню»
     buttons = []
     for c, _secs in items:
         name = c.name if len(c.name) <= 15 else c.name[:14] + "…"
         buttons.append((f"⏱ {name}", ClientCB(action="extend_exp", client_id=c.id)))
-    return ui.rows(*ui.grid(buttons, 2), ui.to_menu(Menu(action="main")))
+    nav = page_row("expiring", 0, pg, Menu(action="expiring")) if pg is not None else []
+    return ui.rows(*ui.grid(buttons, 2), nav or None, ui.to_menu(Menu(action="main")))
 
 
 def invite_menu(plain_text: str, link: str, client_id: int) -> InlineKeyboardMarkup:
@@ -327,11 +345,6 @@ def to_client_card(client_id: int) -> InlineKeyboardMarkup:
     """«👤 В карточку» и «⬅️ В меню» — завершитель под приглашением профиля."""
     return ui.rows([("👤 В карточку", ClientCB(action="open", client_id=client_id)),
                     ui.to_menu(Menu(action="main"))])
-
-
-def migration_back_kb() -> InlineKeyboardMarkup:
-    """Экран переезда профиля: назад — в обзор переезда."""
-    return ui.rows(ui.back(Menu(action="migration")))
 
 
 def add_device_addslot(client_id: int) -> InlineKeyboardMarkup:

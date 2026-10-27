@@ -17,7 +17,7 @@ from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import Menu
+from awgbot.bot.callbacks import ClientCB, Menu
 from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu, card_from_main,
                                         show_screen)
 from awgbot.bot.notifier import send_notifications
@@ -83,18 +83,26 @@ async def restore_panel_after_restart(bot, services) -> None:
 
 # ── экраны шапки ─────────────────────────────────────────────────────────────
 
-async def expiring_screen(services):
+def _page(chat_id: int, screen: str, ref: int = 0) -> int:
+    """Страница экрана-списка, на которой человек был (память paging, до рестарта)."""
+    from awgbot.bot import paging
+    return paging.page_of(chat_id or config.ADMIN_ID, screen, ref)
+
+
+async def expiring_screen(services, chat_id: int = 0):
     rows = await call(services.expiring_subscriptions)
-    return texts.expiring_text(rows, _bot(services)), kb.expiring_kb(rows)
+    pg = texts.expiring_page(rows, _bot(services), page=_page(chat_id, "expiring"))
+    return pg.text, kb.expiring_kb(rows, pg)
 
 
-async def online_screen(services):
+async def online_screen(services, chat_id: int = 0):
     """Живой экран: последней строкой — «обновлено в … 🔄» ссылкой на самого
-    себя (/start online перерисовывает экран на месте)."""
+    себя (/start online перерисовывает экран на месте, с той же страницы)."""
     from awgbot.util import timeutil
     devs = await call(services.online_devices)
     refreshed = texts.refreshed_line(_bot(services), texts.ONLINE_PAYLOAD, timeutil.now())
-    return texts.online_devices_text(devs, _bot(services), refreshed=refreshed), kb.online_devices_kb()
+    pg = texts.online_devices_page(devs, _bot(services), refreshed=refreshed, page=_page(chat_id, "online"))
+    return pg.text, kb.online_devices_kb(pg)
 
 
 async def unassigned_screen(services, chat_id: int = 0):
@@ -105,17 +113,17 @@ async def unassigned_screen(services, chat_id: int = 0):
             kb.unassigned_devices(devices, page=paging.page_of(chat_id or config.ADMIN_ID, "unassigned")))
 
 
-async def traffic_profiles_screen(services):
+async def traffic_profiles_screen(services, chat_id: int = 0):
     rows = await call(services.traffic_by_profile)
     tot = await call(services.db.get_total_month_traffic)
     rf = await call(services.rf_screen_data)
     rf_total = (rf["rx"], rf["tx"]) if await call(services.rf_line_visible) else None
-    return (texts.traffic_profiles_text(rows, _bot(services), (int(tot["rx"]), int(tot["tx"])),
-                                        rf_total=rf_total, outside=rf.get("outside", 0)),
-            kb.traffic_profiles_kb())
+    pg = texts.traffic_profiles_page(rows, _bot(services), (int(tot["rx"]), int(tot["tx"])),
+                                     rf_total=rf_total, outside=rf.get("outside", 0), page=_page(chat_id, "traffic"))
+    return pg.text, kb.traffic_profiles_kb(pg)
 
 
-async def traffic_devices_screen(services, client_id: int):
+async def traffic_devices_screen(services, client_id: int, chat_id: int = 0):
     client = await call(services.db.get_client, client_id)
     if client is None:
         return None
@@ -123,22 +131,30 @@ async def traffic_devices_screen(services, client_id: int):
     t = await call(services.db.get_client_traffic, client_id)
     rf = await call(services.db.get_client_rf, client_id)
     rf_total = rf if await call(services.rf_client_visible, client, rf) else None
-    return (texts.traffic_devices_text(client, rows, (int(t["rx_month"]), int(t["tx_month"])),
-                                       rf_total=rf_total, bot_username=_bot(services)),
-            kb.traffic_devices_kb())
+    pg = texts.traffic_devices_page(client, rows, (int(t["rx_month"]), int(t["tx_month"])), rf_total=rf_total,
+                                    bot_username=_bot(services), page=_page(chat_id, "traffic_dev", client_id))
+    return pg.text, kb.traffic_devices_kb(pg, client_id)
 
 
-async def migration_overview_screen(services):
+async def migration_overview_screen(services, chat_id: int = 0):
+    from awgbot.bot import ui
+    from awgbot.bot.keyboards.common import page_row
     d = await call(services.migration_overview)
-    return texts.migration_overview_text(d, _bot(services)), kb.to_menu()
+    pg = texts.migration_overview_page(d, _bot(services), page=_page(chat_id, "migration"))
+    nav = page_row("migration", 0, pg, Menu(action="migration"))
+    return pg.text, ui.rows(nav or None, ui.to_menu(Menu(action="main")))
 
 
-async def migration_client_screen(services, client_id: int):
+async def migration_client_screen(services, client_id: int, chat_id: int = 0):
+    from awgbot.bot import ui
+    from awgbot.bot.keyboards.common import page_row
     client = await call(services.db.get_client, client_id)
     if client is None:
         return None
     rows = await call(services.migration_client_devices, client_id)
-    return texts.migration_client_text(client, rows, _bot(services)), kb.migration_back_kb()
+    pg = texts.migration_client_page(client, rows, _bot(services), page=_page(chat_id, "migration_cl", client_id))
+    nav = page_row("migration_cl", client_id, pg, ClientCB(action="mig", client_id=client_id))
+    return pg.text, ui.rows(nav or None, ui.back(Menu(action="migration")))
 
 
 async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
@@ -209,7 +225,18 @@ async def admin_start(message: Message, services, state: FSMContext,
 
 @router.callback_query(Menu.filter(F.action == "migration"))
 async def admin_migration_overview(cb: CallbackQuery, services):
-    await edit_nav(cb, services, *await migration_overview_screen(services))
+    await edit_nav(cb, services, *await migration_overview_screen(services, cb.message.chat.id))
+    await cb.answer()
+
+
+@router.callback_query(ClientCB.filter(F.action == "mig"))
+async def admin_migration_client(cb: CallbackQuery, callback_data: ClientCB, services):
+    """Переезд профиля — колбэком (листание страниц отдаёт его заново)."""
+    parts = await migration_client_screen(services, callback_data.client_id, cb.message.chat.id)
+    if parts is None:
+        await cb.answer()
+        return
+    await edit_nav(cb, services, *parts)
     await cb.answer()
 
 
@@ -225,7 +252,7 @@ async def admin_document(message: Message, services, state: FSMContext):
 @router.callback_query(Menu.filter(F.action == "expiring"))
 async def admin_expiring(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
-    await edit_nav(cb, services, *await expiring_screen(services))
+    await edit_nav(cb, services, *await expiring_screen(services, cb.message.chat.id))
     await cb.answer()
 
 
@@ -233,13 +260,24 @@ async def admin_expiring(cb: CallbackQuery, services, state: FSMContext):
 async def admin_traffic_profiles(cb: CallbackQuery, services):
     """«Назад» из разбивки по устройствам — в список по профилям (прежние
     кнопки «РФ-доступ» ведут туда же)."""
-    await edit_nav(cb, services, *await traffic_profiles_screen(services))
+    await edit_nav(cb, services, *await traffic_profiles_screen(services, cb.message.chat.id))
+    await cb.answer()
+
+
+@router.callback_query(ClientCB.filter(F.action == "traffic"))
+async def admin_traffic_devices(cb: CallbackQuery, callback_data: ClientCB, services):
+    """Трафик профиля по устройствам — колбэком (листание страниц отдаёт его заново)."""
+    parts = await traffic_devices_screen(services, callback_data.client_id, cb.message.chat.id)
+    if parts is None:
+        await cb.answer()
+        return
+    await edit_nav(cb, services, *parts)
     await cb.answer()
 
 
 @router.callback_query(Menu.filter(F.action == "online"))
 async def admin_online(cb: CallbackQuery, services):
-    await edit_nav(cb, services, *await online_screen(services))
+    await edit_nav(cb, services, *await online_screen(services, cb.message.chat.id))
     await cb.answer()
 
 

@@ -49,7 +49,8 @@ class ClientCB(CallbackData, prefix="c"):
     """Действия над пользователем (админ). action: open|edit (подменю «✏️
     Изменить»)|devices|add_device|edit_name|edit_limit|edit_traffic|
     edit_period|extend|extend_exp (из списка истекающих)|resume_pause|delete|delete_yes|
-    regen_invite|gen_for"""
+    regen_invite|gen_for|traffic (трафик профиля по устройствам) и mig (переезд профиля) — для
+    листания страниц"""
     action: str
     client_id: int = 0
 

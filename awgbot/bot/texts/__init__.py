@@ -31,9 +31,9 @@ from .fmt import (
     plain_ip, tg_link, client_link, owner_name,
     holder_name, owner_link, holder_link, _n_devices, plural_ru)
 from .migration import (
-    migration_pending_text,
+    migration_pending_page, migration_orphans_page,
     migration_start_confirm, migration_started, migration_finish_confirm,
-    migration_cancel_confirm, migration_hello, migration_ready, migration_orphans_text,
+    migration_cancel_confirm, migration_hello, migration_ready,
     migration_cancelled, migration_finished, migration_prepare_intro,
     MIGRATION_ASK_PORT, MIGRATION_PREPARING, migration_prepared, migration_prepare_failed,
     migration_generation_pending, migration_needed, migration_promoted)
@@ -83,9 +83,10 @@ from .client import (
     device_limit_over, NUMBER_BAD, NAME_EMPTY, limit_note, name_note, device_name_prompt,
     SUB_PAYLOAD, RF_PAYLOAD_CLIENT, DEV_PAYLOAD, device_link)
 from .admin import (
-    traffic_profiles_text, rf_traffic_line, client_devices_header, RF_PAYLOAD, TRAFFIC_PAYLOAD, UPD_PAYLOAD,
+    traffic_profiles_page, rf_traffic_line, client_devices_header, RF_PAYLOAD, TRAFFIC_PAYLOAD, UPD_PAYLOAD,
     UNASSIGNED_PAYLOAD, ONLINE_PAYLOAD, EXPIRING_PAYLOAD, REFRESH_PAYLOAD, month_label, refreshed_line,
-    online_value, online_devices_text, traffic_devices_text, expiring_text, unassigned_text,
+    online_value, online_devices_page, traffic_devices_page,
+    expiring_page, EXPIRING_PER_PAGE, unassigned_text,
     admin_panel, migration_line, migration_counts, my_devices_header, admin_device_card, admin_device_delete_ask,
     device_deleted_note, reassign_ask, reassign_slot_ask, reassigned_note, block_device_ask_admin,
     profiles_header, admin_client_card, client_edit_text, client_name_prompt, client_name_note,
@@ -100,7 +101,7 @@ from .admin import (
     reassign_recipient_notice, reassign_recipient_notice_with_slot,
     activated_admin_notice, traffic_limit_changed_notice, period_changed_notice, pause_lifted_notice,
     INVITE_FORWARD_TEMPLATE, LIMIT_REACHED, LIMIT_REACHED_RACE, NUMBER_BAD_LIMIT, NUMBER_BAD_TRAFFIC, limit_reached_line,
-    MIGRATION_PAYLOAD, RSV_PAYLOAD, migration_overview_text, migration_client_text)
+    MIGRATION_PAYLOAD, RSV_PAYLOAD, migration_overview_page, migration_client_page)
 from .settings import (
     SETTINGS_NOTIFY_CLIENTS,
     settings_email_text, EMAIL_ASK_ADDRESS, EMAIL_ASK_IMAP_PORT,
@@ -140,9 +141,9 @@ from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED, stal
 
 __all__ = [
     "_e", "gb", "human_bytes", "used_of_limit", "gb_str", "plain_ip", "tg_link", "client_link",
-    "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices", "plural_ru", "device_state", "details", "deep_link", "access_status_line", "profile_link", "admin_device_link", "tree", "sub_line", "rf_value", "updown_brief", "migration_pending_text", "migration_start_confirm",
+    "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices", "plural_ru", "device_state", "details", "deep_link", "access_status_line", "profile_link", "admin_device_link", "tree", "sub_line", "rf_value", "updown_brief", "migration_pending_page", "migration_orphans_page", "migration_start_confirm",
     "migration_started", "migration_finish_confirm", "migration_cancel_confirm",
-    "migration_hello", "migration_ready", "migration_orphans_text",
+    "migration_hello", "migration_ready",
     "migration_cancelled", "migration_finished", "migration_prepare_intro",
     "MIGRATION_ASK_PORT", "MIGRATION_PREPARING", "migration_prepared", "migration_prepare_failed",
     "migration_generation_pending", "migration_needed", "migration_promoted",
@@ -184,9 +185,10 @@ __all__ = [
     "pause_limit_exhausted", "pause_resumed_self", "PAUSE_WARNING_LINE", "add_device_prompt", "device_created",
     "device_limit_prompt", "device_limit_other_prompt", "device_limit_over", "NUMBER_BAD", "NAME_EMPTY", "limit_note",
     "name_note", "device_name_prompt", "SUB_PAYLOAD", "RF_PAYLOAD_CLIENT", "DEV_PAYLOAD", "device_link",
-    "traffic_profiles_text", "rf_traffic_line", "client_devices_header", "RF_PAYLOAD", "TRAFFIC_PAYLOAD",
+    "traffic_profiles_page", "rf_traffic_line", "client_devices_header", "RF_PAYLOAD", "TRAFFIC_PAYLOAD",
     "UPD_PAYLOAD", "UNASSIGNED_PAYLOAD", "ONLINE_PAYLOAD", "EXPIRING_PAYLOAD", "REFRESH_PAYLOAD", "month_label",
-    "refreshed_line", "online_value", "online_devices_text", "traffic_devices_text", "expiring_text",
+    "refreshed_line", "online_value", "online_devices_page",
+    "traffic_devices_page", "expiring_page", "EXPIRING_PER_PAGE",
     "unassigned_text", "admin_panel", "migration_line", "migration_counts", "my_devices_header", "admin_device_card",
     "admin_device_delete_ask", "device_deleted_note", "reassign_ask", "reassign_slot_ask", "reassigned_note",
     "block_device_ask_admin", "profiles_header", "admin_client_card", "client_edit_text", "client_name_prompt",
@@ -201,7 +203,7 @@ __all__ = [
     "reassign_recipient_notice", "reassign_recipient_notice_with_slot", "activated_admin_notice",
     "traffic_limit_changed_notice", "period_changed_notice", "pause_lifted_notice", "INVITE_FORWARD_TEMPLATE",
     "LIMIT_REACHED", "LIMIT_REACHED_RACE", "NUMBER_BAD_LIMIT", "NUMBER_BAD_TRAFFIC", "limit_reached_line",
-    "MIGRATION_PAYLOAD", "RSV_PAYLOAD", "migration_overview_text", "migration_client_text", "release_url", "SETTINGS_NOTIFY_CLIENTS",
+    "MIGRATION_PAYLOAD", "RSV_PAYLOAD", "migration_overview_page", "migration_client_page", "release_url", "SETTINGS_NOTIFY_CLIENTS",
     "unmanaged_device_dialog", "guest_access_line", "GUEST_NO_DEVICES_HINT", "OWN_DEVICE_CODE",
     "GUEST_NO_DEVICES_TOAST", "issue_failed", "grace_taken_toast", "EXPIRED_HINT", "ADMIN_PAUSE_STATUS",
     "settings_email_text", "EMAIL_ASK_ADDRESS", "EMAIL_ASK_IMAP_PORT", "EMAIL_ASK_SMTP_PORT",

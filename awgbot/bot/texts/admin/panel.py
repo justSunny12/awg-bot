@@ -165,10 +165,11 @@ def _mig_dot(done: int, total: int) -> str:
     return "🟢" if total and done >= total else "⏳"
 
 
-def migration_overview_text(d: dict, bot_username: str = "") -> str:
+def migration_overview_page(d: dict, bot_username: str = "", page: int = 0):
     """Обзор переезда: параметры одной строкой (только то, что меняется), затем
     профили — не переехавшие целиком сверху, по убыванию оставшегося; имя не
-    переехавшего — ссылка на его экран переезда."""
+    переехавшего — ссылка на его экран переезда. Длинный список — страницами."""
+    from awgbot.bot.lists.page import Page, paged
     params = []
     for key, label in (("port", "порт"), ("subnet", "подсеть"), ("generation", "поколение AWG")):
         old, new = d.get(key) or ("", "")
@@ -176,27 +177,27 @@ def migration_overview_text(d: dict, bot_username: str = "") -> str:
             fmt_ = ((lambda v: f"gen{v}") if key == "generation"
                     else (lambda v: f"<code>{_e(str(v))}</code>") if key == "subnet" else str)
             params.append(f"{label} {fmt_(old)} → {fmt_(new)}")
-    head = ui.head("🚚 Переезд", meta=params)
     rows = sorted(d.get("rows") or [], key=lambda r: -(int(r[2]) - int(r[1])))
     if not rows:
-        return head + "\n\nПереезжать некому"
+        return Page(text=ui.head("🚚 Переезд", meta=params) + "\n\nПереезжать некому", cur=0, total=1, start=0, stop=0)
     items = []
     for c, done, total in rows:
         name = (_e(c.name) if done >= total
                 else _deep_link(bot_username, f"{MIGRATION_PAYLOAD}-{int(c.id)}", c.name))
         items.append(f"{_mig_dot(done, total)} {name}: {done} из {total} "
                      f"{plural_ru(total, 'устройства', 'устройств', 'устройств')}")
-    return head + _LIST_SEP + "\n".join(items)
+    return paged(items, page, header=lambda lbl: ui.head("🚚 Переезд", meta=[*params, lbl]), gap=_LIST_SEP)
 
 
-def migration_client_text(client, rows, bot_username: str = "") -> str:
+def migration_client_page(client, rows, bot_username: str = "", page: int = 0):
     """Переезд одного профиля: «🚚 Переезд: [Ксюша], 1 из 3 устройств» и
     устройства с датой последнего подключения. rows — [(устройство,
-    переехало, unix-время последнего подключения)]."""
+    переехало, unix-время последнего подключения)]; длинный список — страницами."""
+    from awgbot.bot.lists.page import Page, paged
     done = sum(1 for _d, moved, _t in rows if moved)
     total = len(rows)
-    head = ui.head("🚚 Переезд", value=f"{profile_link(client, bot_username)}, {done} из {total} "
-                   f"{plural_ru(total, 'устройства', 'устройств', 'устройств')}")
+    value = (f"{profile_link(client, bot_username)}, {done} из {total} "
+             f"{plural_ru(total, 'устройства', 'устройств', 'устройств')}")
     items = []
     for dev, moved, ts in rows:
         if ts:
@@ -205,4 +206,6 @@ def migration_client_text(client, rows, bot_username: str = "") -> str:
         else:
             seen = "ещё не подключалось"
         items.append(f"{'🟢' if moved else '⏳'} {_e(dev.name)} — {seen}")
-    return head + (_LIST_SEP + "\n".join(items) if items else "")
+    if not items:
+        return Page(text=ui.head("🚚 Переезд", value=value), cur=0, total=1, start=0, stop=0)
+    return paged(items, page, header=lambda lbl: ui.head("🚚 Переезд", value=value, meta=[lbl]), gap=_LIST_SEP)

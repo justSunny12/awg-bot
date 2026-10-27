@@ -75,13 +75,9 @@ def migration_promoted(iface: str, dns: str = "") -> str:
 _LIST_CAP = 20
 
 
-def _rows_capped(rows) -> str:
-    """Список «профиль — устройство» с пределом: экран не отчёт, а лимит
-    Telegram — 4096 знаков."""
-    lines = [f"• {_e(client)} — {_e(device)}" for client, device in list(rows)[:_LIST_CAP]]
-    if len(rows) > _LIST_CAP:
-        lines.append(f"• … и ещё {len(rows) - _LIST_CAP}")
-    return "\n".join(lines)
+def _rows(rows) -> list[str]:
+    """Строки «• профиль — устройство» — экраны листаются страницами (bot/lists/page)."""
+    return [f"• {_e(client)} — {_e(device)}" for client, device in rows]
 
 
 def _names_capped(names, bot: str = "") -> str:
@@ -96,14 +92,17 @@ def _names_capped(names, bot: str = "") -> str:
     return out
 
 
-def migration_pending_text(rows) -> str:
-    """Кто ещё не переехал, поимённо."""
+def migration_pending_page(rows, page: int = 0):
+    """Кто ещё не переехал, поимённо; длинный список — страницами."""
+    from awgbot.bot.lists.page import Page, paged
+    rows = list(rows)
     if not rows:
-        return "✅ Непереехавших нет — все недавно активные устройства уже на новом интерфейсе"
-    lines = _rows_capped(rows)
-    return (ui.head("🚚 Ещё не переехали", meta=[f"из недавно активных ({len(rows)})"]) + f"\n{lines}\n"
-            "Каждому нужно заново получить конфигурацию — ссылкой, QR или файлом — и импортировать её; "
-            "прежняя работает до завершения переезда")
+        return Page(text="✅ Непереехавших нет — все недавно активные устройства уже на новом интерфейсе",
+                    cur=0, total=1, start=0, stop=0)
+    return paged(_rows(rows), page, gap="\n",
+                 header=lambda lbl: ui.head("🚚 Ещё не переехали", meta=[f"из недавно активных ({len(rows)})", lbl]),
+                 tail="\nКаждому нужно заново получить конфигурацию — ссылкой, QR или файлом — и импортировать её; "
+                      "прежняя работает до завершения переезда")
 
 
 def migration_start_confirm(clients: int, devices: int, to_birth: int) -> str:
@@ -151,14 +150,16 @@ def migration_cancel_confirm(moved: int) -> str:
                       f"Уже переехали: {_moved_phrase(moved)}. Список переехавших будет в разделе «🔧 Сервис»")
 
 
-def migration_orphans_text(rows) -> str:
-    """Конфигурации нового интерфейса, пережившие отмену."""
+def migration_orphans_page(rows, page: int = 0):
+    """Конфигурации нового интерфейса, пережившие отмену; длинный список — страницами."""
+    from awgbot.bot.lists.page import Page, paged
+    rows = list(rows)
     if not rows:
-        return "Переехавших после отмены нет"
-    lines = _rows_capped(rows)
-    return (ui.head("⚠️ Переехали до отмены", f"({len(rows)})") + f"\n{lines}\n"
-            "Они работают через новый интерфейс, а выдаются снова прежние конфигурации. Прежде чем снимать "
-            "новый интерфейс, перенастрой их на старый")
+        return Page(text="Переехавших после отмены нет", cur=0, total=1, start=0, stop=0)
+    return paged(_rows(rows), page, gap="\n",
+                 header=lambda lbl: ui.head("⚠️ Переехали до отмены", f"({len(rows)})", meta=[lbl]),
+                 tail="\nОни работают через новый интерфейс, а выдаются снова прежние конфигурации. Прежде чем "
+                      "снимать новый интерфейс, перенастрой их на старый")
 
 
 def migration_cancelled(moved: int) -> str:
@@ -232,7 +233,7 @@ def migration_prepared(res: dict) -> str:
 __all__ = [
     "migration_hello", "migration_ready", "migration_started", "migration_prepare_failed",
     "migration_generation_pending", "migration_needed", "migration_promoted", "_LIST_CAP",
-    "_rows_capped", "_names_capped", "migration_pending_text", "migration_start_confirm",
-    "migration_finish_confirm", "migration_cancel_confirm", "migration_orphans_text",
+    "_rows", "_names_capped", "migration_pending_page", "migration_orphans_page", "migration_start_confirm",
+    "migration_finish_confirm", "migration_cancel_confirm",
     "migration_cancelled", "migration_finished", "migration_prepare_intro", "MIGRATION_ASK_PORT",
     "MIGRATION_PREPARING", "migration_prepared"]
