@@ -13,7 +13,6 @@ middleware.py — охрана на входе. Бот реагирует тол
 from __future__ import annotations
 
 import sqlite3
-
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
