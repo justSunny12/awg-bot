@@ -243,6 +243,29 @@ CREATE TABLE migration_cohort (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
+CREATE TABLE reserve_peer (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT    NOT NULL DEFAULT '',           -- имя сервера резерва (его client_config.server_name)
+    host          TEXT    NOT NULL,                      -- собственный адрес резерва
+    pair_if       TEXT    NOT NULL,                      -- awgpair
+    pair_port     INTEGER NOT NULL,                      -- порт линка пары у меня
+    peer_port     INTEGER NOT NULL,                      -- порт линка пары у резерва
+    pair_cidr     TEXT    NOT NULL,                      -- 10.99.98.0/30
+    listener      INTEGER NOT NULL DEFAULT 0,            -- 1: канал пары слушаю я (пригласивший)
+    bot_username  TEXT    NOT NULL DEFAULT '',           -- @бот резерва: ссылка в мою роль у него
+    peer_admin_id INTEGER NOT NULL DEFAULT 0,            -- ADMIN_ID другой стороны: его роль в моём боте
+    created_at    TEXT    NOT NULL
+);
+
+CREATE TABLE reserve_traffic_monthly (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    month         TEXT    NOT NULL,                      -- 'YYYY-MM' по поясу бота
+    dir           TEXT    NOT NULL,                      -- out | in
+    rx            INTEGER NOT NULL DEFAULT 0,
+    tx            INTEGER NOT NULL DEFAULT 0,
+    archived_at   TEXT    NOT NULL
+);
+
 CREATE TABLE rf_samples (
     device_id           INTEGER PRIMARY KEY,
     last_up             INTEGER NOT NULL,
