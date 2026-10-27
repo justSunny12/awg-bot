@@ -129,7 +129,7 @@ def test_an_empty_replica_returns_without_a_merge(merge_world):
     acts = w.svc.reserve_released_in(b"")
     assert acts == [("take_tg",), ("live",)], acts
     out = w.svc.rsv_get("rsv_out")
-    assert out["step"] == "take_tg" and out["merge_report"] == {"lost": True}
+    assert out["step"] == "take_tg" and out["merge_report"]["lost"] == ["ℹ️ Гостя на «Beta» уже не было — правки, сделанные там, не вольются"]
     assert not [e for e in w.peers.events if e[0] in ("add", "remove")]
 
 

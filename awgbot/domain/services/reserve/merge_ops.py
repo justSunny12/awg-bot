@@ -9,6 +9,7 @@ merge_ops.py — часть пакета reserve (см. __init__): слияни�
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 
@@ -17,6 +18,10 @@ from awgbot.util.rsvpkg import seal
 
 from ..types import ServiceError
 from ..gateway_link.common import log
+
+
+def _e(s) -> str:
+    return html.escape(str(s or ""), quote=False)
 
 
 class ReserveMergeOpsMixin:
@@ -135,14 +140,14 @@ class ReserveMergeOpsMixin:
             for c in self.db.list_clients() if hasattr(self.db, "list_clients") else []:
                 old = before["tg"].get(int(c.id))
                 if old and old[0] and c.tg_id != old[0]:
-                    lines.append(f"⚠️ У профиля «{c.name}» на «{self.reserve_peer_name()}» сменён Telegram-аккаунт "
+                    lines.append(f"⚠️ У профиля «{_e(c.name)}» на «{_e(self.reserve_peer_name())}» сменён Telegram-аккаунт "
                                  f"({old[0]} → {c.tg_id}) — проверь, что это сделал ты")
             admin = self.db.get_client_by_tg(int(config.ADMIN_ID)) if hasattr(self.db, "get_client_by_tg") else None
             if admin is not None:
                 for d in self.db.list_all_devices():
                     if int(getattr(d, "client_id", 0) or 0) == int(admin.id) and int(d.id) not in before["dev"]:
-                        lines.append(f"⚠️ У профиля админа появилось устройство «{d.name}», заведённое на "
-                                     f"«{self.reserve_peer_name()}» — проверь, что это твоё")
+                        lines.append(f"⚠️ У профиля админа появилось устройство «{_e(d.name)}», заведённое на "
+                                     f"«{_e(self.reserve_peer_name())}» — проверь, что это твоё")
         except Exception as e:                                # noqa: BLE001
             log.info("резерв: сверка правок резерва не прошла: %s", e)
         return lines

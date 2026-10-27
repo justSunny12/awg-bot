@@ -130,8 +130,11 @@ def returned_home(reserve: str, report: dict, traffic: str) -> str:
     text = f"↩️ Пользователи и бот снова здесь. За время на {_n(reserve)}: {body}"
     if traffic:
         text += f" · через резерв {_e(traffic)}"
-    for lost in report.get("lost") or []:
-        text += "\n\n" + _e(lost)
+    lost = report.get("lost")
+    # строки собраны готовыми к разметке (имена экранированы при сборке: lost_device,
+    # returned_without_replica, сверка правок резерва); отчёт состояния до 4.1.0 мог нести True
+    for line in lost if isinstance(lost, list) else []:
+        text += "\n\n" + str(line)
     return text
 
 
@@ -316,6 +319,12 @@ def take_tg_stuck(reserve: str) -> str:
     """Возврат: deleteWebhook с этого сервера не проходит минутами."""
     return (f"⚠️ Возврат пользователей с {_n(reserve)}: Telegram с этого сервера не отвечает (deleteWebhook) уже 5 минут — "
             "бот не отвечает никому, пока сеть не вернётся")
+
+
+def returned_without_replica(reserve: str) -> str:
+    """Т-Ж10: строка Т-РУ5б — возврат прошёл без реплики (гостя на резерве уже не было
+    или реплика пуста)."""
+    return f"ℹ️ Гостя на {_n(reserve)} уже не было — правки, сделанные там, не вольются"
 
 
 def forced_no_merge(reserve: str) -> str:

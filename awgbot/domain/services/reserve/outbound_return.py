@@ -194,7 +194,10 @@ class ReserveReturnMixin:
     def _return_without_replica(self) -> list[tuple]:
         """Реплики нет (резерв потерял гостя, пустой released): слияния нет, пиры и
         блокировки — по своей базе, перезапуск не нужен — сразу забирать Telegram."""
-        self.rsv_update("rsv_out", merge_report={"lost": True})
+        from awgbot.domain.notices import reserve as rn
+        # отчёт — тот же вид, что у слияния: «lost» — строки Т-РУ5б (прежде здесь стояло True,
+        # и текст Т-РУ5б падал на нём уже после перехода домой — без итога и нового поколения)
+        self.rsv_update("rsv_out", merge_report={"lost": [rn.returned_without_replica(self.reserve_peer_name())]})
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)
         return [("take_tg",), ("live",)]
 
