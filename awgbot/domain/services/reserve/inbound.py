@@ -217,6 +217,11 @@ class ReserveInboundMixin:
                                                  "oid": str(st.get("oid") or "")}))
         if step in ("clone_up", "record_set", "record_fact", "done") and not inn.get("up_sent"):
             self.rsv_update("rsv_in", up_sent=True, up_resent=now, clone_at=timeutil.now_iso())
+            zst = rsvzone.state()
+            if zst.get("ifaces") and not zst.get("netmap"):
+                # вывод --take процесс открытия не пересказывает — факт берём из состояния зоны
+                log.warning("резерв: NETMAP подсетей клонов не встал (ядро не приняло или пул reserve.zone_pool "
+                            "занят) — устройства основы выходят одним адресом зоны, CAKE делит загрузку по назначению")
             actions += [("send", "up", {}), ("fw",)]
         elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт

@@ -142,7 +142,9 @@
 #   кода, — переустановка со сносом данных и удаление пары)
 #   --status      состояние строками key=value
 # Таблица зоны, отвергнутая nft, — отказ режима (--shell, --take, --serve):
-# прежняя таблица остаётся, звать следующий шаг нельзя.
+# прежняя таблица остаётся, звать следующий шаг нельзя. Таблицу с NETMAP
+# отвергнутой не считают, пока nft принимает её же без NETMAP (маскарад,
+# строка ВНИМАНИЕ).
 set -u
 
 ZONE="${RSV_ZONE:-awg-guest}"
@@ -456,11 +458,22 @@ state_ifaces() {    # все клоны из состояния; старое с
     local i; i="$(state_get ifaces)"; [ -n "$i" ] || i="$(state_get iface)"; printf '%s' "$i"
 }
 
-netmap_plan() {   # netmap_plan CIDR… — «подсеть=блок …»: подсети каждого клона — свой блок ZONE_POOL той же длины
+netmap_busy() {   # занятое у хоста: подсети veth зоны и маршруты main, кроме default и уже стоящих блоков на awggv-h
+    printf '%s %s ' "$ZONE_CIDR" "$ZONE_RF_CIDR"
+    ip -4 route show 2>/dev/null | awk -v vh="$VH" '$1 != "default" && $0 !~ (" dev " vh "( |$)") { printf "%s ", $1 }'
+}
+
+netmap_plan() {   # netmap_plan "занятое" CIDR… — «подсеть=блок …»: подсети каждого клона — свой свободный блок ZONE_POOL той же длины
     "$PY" - "$ZONE_POOL" "$@" <<'PYEOF' 2>/dev/null || true
 import ipaddress, sys
-pool, out, used = ipaddress.ip_network(sys.argv[1], strict=False), [], []
-for c in sys.argv[2:]:
+pool, out = ipaddress.ip_network(sys.argv[1], strict=False), []
+used = []                                          # блок не должен перекрыть маршрут хоста (ip route replace перекрыл бы молча)
+for b in sys.argv[2].split():
+    try:
+        used.append(ipaddress.ip_network(b, strict=False))
+    except ValueError:
+        continue
+for c in sys.argv[3:]:
     net = ipaddress.ip_interface(c).network
     if net.version != 4 or net.prefixlen < pool.prefixlen or any(net.overlaps(n) for n, _ in out):
         continue                                   # не влезает в пул или повтор — этот клон под маскарадом
@@ -518,7 +531,7 @@ cmd_take() {
     local i; for i in $ifaces; do ports="$ports $(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$i.conf")"; done
     ports="${ports# }"
     # пул NETMAP — до таблицы зоны: она берёт его из состояния (и при каждой перерисовке)
-    state_write admin="${GUEST_ADMIN:-}" netmap="$(netmap_plan $cidrs)"
+    state_write admin="${GUEST_ADMIN:-}" netmap="$(netmap_plan "$(netmap_busy)" $cidrs)"
     zone_nft "$ifaces" || die "nft отверг таблицу зоны"
     # ответы на блоки пула — через veth в зону (иначе хост увёл бы их маршрутом по умолчанию)
     for pair in $(state_get netmap); do ip route replace "${pair#*=}" via "$ZONE_V" dev "$VH"; done
