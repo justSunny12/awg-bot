@@ -19,6 +19,8 @@ import re
 import pytest
 
 from awgbot.bot import lists, ui
+from awgbot.bot.callbacks import PageCB
+from awgbot.bot.keyboards import common as kbm
 from awgbot.bot.lists import page as pages
 
 pytestmark = pytest.mark.unit
@@ -179,3 +181,110 @@ async def test_a_kind_of_the_other_installation_is_not_served(monkeypatch):
     monkeypatch.setattr(config, "ROLE", "gateway")
     assert lists.kind_for("sshfrom", "admin") is not None
     assert lists.kind_for("gwnets", "admin") is None
+
+
+# ── paged: экран, который сам список, — страницей на месте ──────────────────
+
+def _head(lbl: str) -> str:
+    return ui.head("📶 Онлайн", value="61", meta=[lbl])
+
+
+def test_paged_single_page_has_no_label_and_keeps_the_tail():
+    pg = pages.paged(["a", "b"], 0, header=_head, sep="\n\n", gap="\n\n", tail="\n\nобновлено")
+    assert pg.text == "📶 <b>Онлайн:</b> 61\n\na\n\nb\n\nобновлено", repr(pg.text)
+    assert (pg.cur, pg.total, pg.start, pg.stop, pg.has_prev, pg.has_next) == (0, 1, 0, 2, False, False)
+
+
+def test_paged_label_slice_and_tail_on_every_page():
+    """Три страницы: «стр. k из 3» в шапке, срез [start, stop) — ровно строки
+    этой страницы (по нему «🟡 Истекают» рисует кнопки), хвост экрана — на
+    каждой; страницы подряд — весь список."""
+    rows = [f"<code>r{i:02d}</code>" for i in range(61)]
+    seen = []
+    for k in range(3):
+        pg = pages.paged(rows, k, header=_head, sep="\n", gap="\n\n", tail="\n\nконец")
+        assert pg.text.splitlines()[0] == f"📶 <b>Онлайн:</b> 61 · стр. {k + 1} из 3", pg.text.splitlines()[0]
+        assert pg.text.endswith("\n\nконец")
+        body = pg.text.split("\n\n")[1].split("\n")
+        assert body == rows[pg.start:pg.stop], f"стр. {k + 1}: срез {pg.start}:{pg.stop} — не строки страницы"
+        seen += body
+    assert seen == rows, "страницы подряд — не весь список"
+
+
+@pytest.mark.parametrize("asked, cur", [(99, 2), (3, 2), (-1, 0), (None, 0)])
+def test_paged_clamps_the_page_number(asked, cur):
+    """Список сократился между нажатиями — последняя страница; мусор — первая."""
+    rows = [f"r{i}" for i in range(61)]
+    pg = pages.paged(rows, asked, header=_head)
+    assert pg.cur == cur and f"стр. {cur + 1} из 3" in pg.text, (asked, pg.cur, pg.text.splitlines()[0])
+
+
+def test_paged_counts_the_header_and_the_tail_into_the_budget():
+    """Шапка и хвост экрана — в том же бюджете 3500: длинная строка «обновлено»
+    не выталкивает страницу за предел Telegram."""
+    rows = ["я" * 300 for _ in range(30)]
+    tail = "\n\n" + "х" * 600
+    for k in range(pages.paged(rows, 0, header=_head, tail=tail).total):
+        pg = pages.paged(rows, k, header=_head, tail=tail)
+        assert pages.visible(pg.text) <= pages.BUDGET, f"стр. {k + 1}: {pages.visible(pg.text)}"
+
+
+def test_paged_label_room_is_reserved_before_the_split():
+    """Метка «стр. 10 из 12» длиннее «стр. 1 из 2»: место под неё — заранее,
+    иначе строка, впритык влезшая без метки, переполнит страницу с меткой."""
+    row = "ж" * 119              # 29 строк впритык к бюджету без метки: метка «· стр. k из m» их переполнила бы
+    rows = [row] * 400
+    first = pages.paged(rows, 0, header=_head, sep="\n")
+    assert first.total >= 10, first.total
+    for k in range(first.total):
+        pg = pages.paged(rows, k, header=_head, sep="\n")
+        assert pages.visible(pg.text) <= pages.BUDGET, f"стр. {k + 1}: {pages.visible(pg.text)}"
+
+
+# ── «🟡 Истекают»: кнопки «⏱» той же страницы, десять рядов ─────────────────
+
+def _expiring_rows(n: int, name=lambda i: f"Профиль {i:02d}"):
+    from types import SimpleNamespace
+    from awgbot.util import timeutil
+    import datetime as _dt
+    base = _dt.datetime(2026, 9, 15, 12, 0, tzinfo=_dt.timezone.utc)
+    return [(SimpleNamespace(id=100 + i, name=name(i), tg_id=7000 + i,
+                             period_end=timeutil.to_iso(base + _dt.timedelta(hours=1 + i))), 3600 * (1 + i))
+            for i in range(n)]
+
+
+@pytest.mark.parametrize("n", [1, 15, 16, 17, 25, 61])
+def test_expiring_page_fits_ten_rows_and_buttons_are_its_own_rows(n):
+    """Страница «Истекают» — восемь рядов по две «⏱», ряд листания и «⬅️ В
+    меню»: ровно десять, когда список длиннее страницы. Кнопки — те же
+    профили, что строки этой страницы: продление с кнопки чужой страницы —
+    подписка не того, кого человек видит."""
+    from awgbot.bot import texts
+    from awgbot.bot.callbacks import ClientCB
+    from awgbot.bot.keyboards import admin as kba
+    rows = _expiring_rows(n)
+    total = texts.expiring_page(rows, "test_bot").total
+    assert total == max(1, -(-n // texts.EXPIRING_PER_PAGE)), f"{n} профилей — {total} страниц"
+    reached = []
+    for p in range(total):
+        pg = texts.expiring_page(rows, "test_bot", page=p)
+        markup = kba.expiring_kb(rows, pg)
+        kb_rows = markup.inline_keyboard
+        assert len(kb_rows) <= kbm.MAX_ROWS, f"стр. {p + 1}: {len(kb_rows)} рядов"
+        if total > 1 and pg.stop - pg.start == texts.EXPIRING_PER_PAGE:
+            assert len(kb_rows) == kbm.MAX_ROWS, f"полная страница — не десять рядов: {len(kb_rows)}"
+        ids = [ClientCB.unpack(b.callback_data).client_id for r in kb_rows for b in r
+               if b.callback_data.startswith("c:extend_exp:")]
+        shown = [int(m) for m in re.findall(r"start=cl-(\d+)", pg.text)]
+        assert ids == shown, f"стр. {p + 1}: кнопки {ids}, строки {shown}"
+        assert all(len(r) <= 2 for r in kb_rows), "«⏱» — не по две в ряд"
+        assert [b.text for b in kb_rows[-1]] == ["⬅️ В меню"], kb_rows[-1]
+        nav = [b.text for b in kb_rows[-2]] if total > 1 else []
+        want = ([kbm.PREV_LABEL] if p > 0 else []) + ([kbm.NEXT_LABEL] if p < total - 1 else [])
+        assert nav == want, f"стр. {p + 1}: листание {nav}"
+        for b in kb_rows[-2] if total > 1 else []:
+            cb = PageCB.unpack(b.callback_data)
+            assert (cb.screen, cb.back) == ("expiring", "m:expiring"), cb
+        reached += ids
+    assert reached == [100 + i for i in range(n)], "листанием «⏱» видны не все профили или с повторами"
+

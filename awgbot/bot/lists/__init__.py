@@ -104,7 +104,8 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
     probe = ui.head(view.title, meta=[view.count, "стр. 99 из 99", now])
     widest = max((pages.visible(view.rows[i]) for i in view.labels), default=0)
     chunks = pages.split(view.rows, pages.visible(probe) + 2 + (widest + 1 if view.labels else 0), view.sep,
-                         pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS)     # место под повтор подписи
+                         pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS,     # место под повтор подписи
+                         pages.entities(probe) + max((pages.entities(view.rows[i]) for i in view.labels), default=0))
     # номера строк по страницам; подпись группы последней строкой страницы — на следующую
     spans: list[list[int]] = []
     at = 0

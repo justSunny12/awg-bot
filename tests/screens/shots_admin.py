@@ -94,6 +94,7 @@ SHOTS = [
     *reserve_vote.RESERVE_VOTE,
     *reserve_stage7.RESERVE_STAGE7,
     *lists.LISTS,
+    *lists.PAGED,
 ]
 
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних

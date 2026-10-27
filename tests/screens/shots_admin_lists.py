@@ -6,10 +6,14 @@
 имена по 64 знака с «<&>». Ссылки /start с меткой «-n» (из уведомления) —
 новым сообщением внизу чата, прежнее меню гаснет; без метки — на месте
 живого меню. Живое меню в чате перед ссылкой — шаг («start», «»): главная.
+
+PAGED — экраны, которые сами список («📶 Онлайн», «🟡 Истекают», «📊 Трафик»,
+«🚚 Переезд», списки переезда): листание на месте, на 1, 25 и 61 запись.
 """
 from __future__ import annotations
 
-from awgbot.bot.callbacks import GwSlotCB, ListCB, PageCB, SetCB
+from awgbot.bot.callbacks import ClientCB, GwSlotCB, ListCB, Menu, PageCB, SetCB
+from awgbot.core import config
 
 from tests.screens.base import NOW, Shot
 from tests.screens.shots_admin_common import ADM, IPHONE, KS, _fw, _iso, _mig_running, _people
@@ -225,4 +229,269 @@ LISTS = [
          title="«⬅️ В меню» с карточки, открытой из уведомления, — главная"),
     Shot("adm.link.gw.new.missing", role="admin", steps=[_MAIN, ("start", "gw-9-n")], data=_slots(1),
          title="/start gw-9-n — слота нет"),
+]
+
+
+# ── экраны, которые сами список: листание на месте ─────────────────────────
+# Каждый экран — на 1, 25 и 61 запись: одна страница без «стр.», граница
+# прежнего предела в 25 строк, три страницы (у «🟡 Истекают» — по 16 на
+# страницу, столько кнопок «⏱» влезает в десять рядов). Профили «Профиль NN»
+# по одному устройству «Тел NN»; номера профилей — с 3 (после админа).
+
+FIRST = 3                               # первый профиль после служебного и админа
+
+
+def _profiles(services, n: int, *, kind: str = "month") -> list[tuple[int, int]]:
+    """n профилей по одному устройству → [(профиль, устройство)]."""
+    from tests.screens.shots_admin_common import _base
+    _base(services)
+    out = []
+    for i in range(n):
+        created = services.create_client(f"Профиль {i:02d}", 1, kind)
+        assert services.activate_client(created.invite_code, 3000 + i).ok
+        out.append((created.client_id, services.add_device(created.client_id, f"Тел {i:02d}").device_id))
+    assert not out or out[0][0] == FIRST, out[0]
+    return out
+
+
+def _on(n: int):
+    """n устройств на связи."""
+    def build(services, mp):
+        from tests.screens.shots_admin_common import _online
+        _online(services, *[d for _c, d in _profiles(services, n)])
+        return _who()
+    return build
+
+
+def _exp(n: int):
+    """n месячных подписок, каждая кончается в свой час — ближайшая сверху."""
+    import datetime as _dt
+
+    def build(services, mp):
+        for i, (c, _d) in enumerate(_profiles(services, n)):
+            services.db.update_client_fields(c, period_start=_iso(NOW - _dt.timedelta(days=29)),
+                                             period_end=_iso(NOW + _dt.timedelta(hours=2, minutes=30 * i)))
+        return _who()
+    return build
+
+
+def _tr(n: int):
+    """n профилей с трафиком за месяц: чем больше номер, тем больше трафик."""
+    def build(services, mp):
+        from tests.screens.shots_admin_common import GB
+        services.db.add_traffic_bulk([(d, (i + 1) * GB // 10, GB // 100)
+                                      for i, (_c, d) in enumerate(_profiles(services, n))])
+        return _who()
+    return build
+
+
+def _one(services, n: int, *, live: bool = False) -> int:
+    """Профиль «Ксюша» с n устройствами «Тел NN» (номер профиля — FIRST)."""
+    from tests.screens.shots_admin_common import _base
+    _base(services)
+    created = services.create_client("Ксюша", n, "year")
+    assert services.activate_client(created.invite_code, 2001).ok and created.client_id == FIRST
+    ids = [services.add_device(FIRST, f"Тел {i:02d}").device_id for i in range(n)]
+    if live:
+        hour_ago = int(NOW.timestamp()) - 3600
+        for d in ids:
+            services.db.update_device_fields(d, last_handshake=hour_ago)
+    return ids
+
+
+def _trdev(n: int):
+    """У Ксюши n устройств с трафиком за месяц."""
+    def build(services, mp):
+        from tests.screens.shots_admin_common import GB
+        ids = _one(services, n)
+        services.db.add_traffic_bulk([(d, (i + 1) * GB // 10, GB // 100) for i, d in enumerate(ids)])
+        return _who()
+    return build
+
+
+def _mig_conf(mp) -> None:
+    """Переезд настроен (awg1, 10.9.1) — как в построителях переезда."""
+    from awgbot.core import config
+    from awgbot.infra import awglock
+    mp.setattr(config, "AWG_INTERFACE", "awg0")
+    mp.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    mp.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+    mp.setattr(config, "SERVER_PORT", 43125)
+    mp.setattr(awglock, "applied_generation", lambda: 1)
+    mp.setattr(awglock, "target_generation", lambda: 1)
+
+
+def _mig(n: int, *, cancelled: bool = False):
+    """Переезд идёт: n профилей по одному недавно активному устройству,
+    не переехал никто; cancelled — все переехали, и переезд отменён."""
+    def build(services, mp):
+        _mig_conf(mp)
+        hour_ago = int(NOW.timestamp()) - 3600
+        for _c, d in _profiles(services, n):
+            services.db.update_device_fields(d, last_handshake=hour_ago)
+        services.migration_start()
+        if cancelled:
+            for twin in services.db.twins_by_origin().values():
+                services.db.update_device_fields(twin, last_handshake=int(NOW.timestamp()))
+            services.migration_cancel()
+        return _who()
+    return build
+
+
+def _mig_one(n: int):
+    """Переезд идёт: у Ксюши n недавно активных устройств, не переехало ни одно."""
+    def build(services, mp):
+        _mig_conf(mp)
+        _one(services, n, live=True)
+        services.migration_start()
+        return _who()
+    return build
+
+
+async def _went_offline(services, bot):
+    """Между нажатиями 30 устройств отключились — осталась 31 запись, две страницы."""
+    for d, _c in services.online_devices()[31:]:
+        services.db.update_device_fields(d.id, last_handshake=0)
+
+
+def _turn(screen: str, back, page: int, ref: int = 0) -> tuple:
+    """Кнопка листания экрана: PageCB с колбэком, который рисует экран заново."""
+    packed = back if isinstance(back, str) else back.pack()
+    return ("press", PageCB(screen=screen, ref=ref, page=page, back=packed))
+
+
+def _who() -> tuple:
+    """Действует админ (как у _base)."""
+    return config.ADMIN_ID, "Админ"
+
+
+_ONLINE = ("press", Menu(action="online"))
+_EXPIRING = ("press", Menu(action="expiring"))
+_TRAFFIC = ("press", Menu(action="traffic"))
+_MIGRATION = ("press", Menu(action="migration"))
+_PENDING = ("press", SetCB(sec="mig", act="do", key="pending"))
+_ORPHANS = ("press", SetCB(sec="mig", act="do", key="orphans"))
+_TRDEV = ClientCB(action="traffic", client_id=FIRST)
+_MIGCL = ClientCB(action="mig", client_id=FIRST)
+
+
+def _on_pages(*pages: int) -> list:
+    return [_turn("online", Menu(action="online"), p) for p in pages]
+
+
+PAGED = [
+    # ── «📶 Онлайн» ─────────────────────────────────────────────────────────
+    Shot("adm.paged.online.1", role="admin", press=[Menu(action="online")], data=_on(1),
+         title="онлайн, одно устройство — без «стр.» и листания"),
+    Shot("adm.paged.online.25", role="admin", press=[Menu(action="online")], data=_on(25),
+         title="онлайн, 25 — одна страница, хвоста «и ещё N» нет"),
+    Shot("adm.paged.online.61", role="admin", press=[Menu(action="online")], data=_on(61),
+         title="онлайн, 61 — стр. 1 из 3, «След. страница ▶️»"),
+    Shot("adm.paged.online.61.p2", role="admin", steps=[_ONLINE, *_on_pages(1)], data=_on(61),
+         title="листание вперёд — стр. 2 из 3, обе стрелки"),
+    Shot("adm.paged.online.61.p3", role="admin", steps=[_ONLINE, *_on_pages(1, 2)], data=_on(61),
+         title="последняя страница — одна запись, только «◀️ Пред. страница»"),
+    Shot("adm.paged.online.61.back", role="admin", steps=[_ONLINE, *_on_pages(1, 2, 1)], data=_on(61),
+         title="листание назад — снова стр. 2 из 3"),
+    Shot("adm.paged.online.61.again", role="admin", steps=[_ONLINE, *_on_pages(1), ("start", "online")],
+         data=_on(61), title="/start online после листания — та же стр. 2 из 3"),
+    Shot("adm.paged.online.61.menu", role="admin", steps=[_ONLINE, *_on_pages(1), ("press", Menu(action="main"))],
+         data=_on(61), title="«⬅️ В меню» со второй страницы — главная"),
+    Shot("adm.paged.online.clamp", role="admin",
+         steps=[_ONLINE, *_on_pages(1, 2), ("call", _went_offline, "30 устройств отключились"), ("start", "online")],
+         data=_on(61), title="список сократился до двух страниц — /start online на стр. 3 открывает последнюю"),
+    # ── «🟡 Истекают» ───────────────────────────────────────────────────────
+    Shot("adm.paged.expiring.1", role="admin", press=[Menu(action="expiring")], data=_exp(1),
+         title="истекает один — без листания"),
+    Shot("adm.paged.expiring.25", role="admin", press=[Menu(action="expiring")], data=_exp(25),
+         title="истекают 25 — стр. 1 из 2: 16 строк и 16 кнопок «⏱» тех же профилей, десять рядов"),
+    Shot("adm.paged.expiring.25.p2", role="admin",
+         steps=[_EXPIRING, _turn("expiring", Menu(action="expiring"), 1)], data=_exp(25),
+         title="стр. 2 из 2 — девять строк и девять «⏱» тех же профилей"),
+    Shot("adm.paged.expiring.61", role="admin", press=[Menu(action="expiring")], data=_exp(61),
+         title="истекают 61 — стр. 1 из 4"),
+    Shot("adm.paged.expiring.61.p2", role="admin",
+         steps=[_EXPIRING, _turn("expiring", Menu(action="expiring"), 1)], data=_exp(61),
+         title="стр. 2 из 4 — кнопки «⏱» профилей 16–31, обе стрелки"),
+    Shot("adm.paged.expiring.61.p4", role="admin",
+         steps=[_EXPIRING, *[_turn("expiring", Menu(action="expiring"), p) for p in (1, 2, 3)]], data=_exp(61),
+         title="последняя страница — 13 строк и 13 «⏱»"),
+    Shot("adm.paged.expiring.61.again", role="admin",
+         steps=[_EXPIRING, _turn("expiring", Menu(action="expiring"), 1), ("start", "expiring")], data=_exp(61),
+         title="/start expiring после листания — та же стр. 2 из 4"),
+    # ── «📊 Трафик» по профилям ─────────────────────────────────────────────
+    Shot("adm.paged.traffic.1", role="admin", press=[Menu(action="traffic")], data=_tr(1),
+         title="трафик, один профиль — без листания"),
+    Shot("adm.paged.traffic.25", role="admin", press=[Menu(action="traffic")], data=_tr(25),
+         title="трафик, 25 профилей — одна страница"),
+    Shot("adm.paged.traffic.61", role="admin", press=[Menu(action="traffic")], data=_tr(61),
+         title="трафик, 61 профиль — стр. 1 из 3, итог в шапке"),
+    Shot("adm.paged.traffic.61.p3", role="admin",
+         steps=[_TRAFFIC, *[_turn("traffic", Menu(action="traffic"), p) for p in (1, 2)]], data=_tr(61),
+         title="последняя страница — итог в шапке тот же"),
+    Shot("adm.paged.traffic.61.again", role="admin",
+         steps=[_TRAFFIC, _turn("traffic", Menu(action="traffic"), 1), ("start", "traffic")], data=_tr(61),
+         title="/start traffic после листания — та же стр. 2 из 3"),
+    # ── «📊 Трафик» профиля по устройствам ─────────────────────────────────
+    Shot("adm.paged.trdev.1", role="admin", start=f"traffic-{FIRST}", data=_trdev(1),
+         title="трафик профиля, одно устройство — без листания"),
+    Shot("adm.paged.trdev.25", role="admin", start=f"traffic-{FIRST}", data=_trdev(25),
+         title="трафик профиля, 25 устройств — одна страница"),
+    Shot("adm.paged.trdev.61", role="admin", steps=[("start", ""), ("start", f"traffic-{FIRST}")], data=_trdev(61),
+         title="трафик профиля, 61 устройство — стр. 1 из 3"),
+    Shot("adm.paged.trdev.61.p2", role="admin",
+         steps=[("start", ""), ("start", f"traffic-{FIRST}"), _turn("traffic_dev", _TRDEV, 1, FIRST)],
+         data=_trdev(61), title="листание вперёд — стр. 2 из 3, профиль в шапке"),
+    Shot("adm.paged.trdev.61.back", role="admin",
+         steps=[("start", ""), ("start", f"traffic-{FIRST}"), _turn("traffic_dev", _TRDEV, 1, FIRST),
+                ("press", Menu(action="traffic"))],
+         data=_trdev(61), title="«⬅️ Назад» — трафик по профилям"),
+    # ── «🚚 Переезд»: обзор ─────────────────────────────────────────────────
+    Shot("adm.paged.migration.1", role="admin", press=[Menu(action="migration")], data=_mig(1),
+         title="обзор переезда, один профиль — без листания"),
+    Shot("adm.paged.migration.25", role="admin", press=[Menu(action="migration")], data=_mig(25),
+         title="обзор переезда, 25 профилей — одна страница"),
+    Shot("adm.paged.migration.61", role="admin", press=[Menu(action="migration")], data=_mig(61),
+         title="обзор переезда, 61 профиль — стр. 1 из 3"),
+    Shot("adm.paged.migration.61.p3", role="admin",
+         steps=[_MIGRATION, *[_turn("migration", Menu(action="migration"), p) for p in (1, 2)]], data=_mig(61),
+         title="последняя страница обзора"),
+    # ── «🚚 Переезд» профиля ────────────────────────────────────────────────
+    Shot("adm.paged.migcl.1", role="admin", start=f"migration-{FIRST}", data=_mig_one(1),
+         title="переезд профиля, одно устройство — без листания"),
+    Shot("adm.paged.migcl.25", role="admin", start=f"migration-{FIRST}", data=_mig_one(25),
+         title="переезд профиля, 25 устройств — одна страница"),
+    Shot("adm.paged.migcl.61", role="admin", steps=[("start", ""), ("start", f"migration-{FIRST}")],
+         data=_mig_one(61), title="переезд профиля, 61 устройство — стр. 1 из 3"),
+    Shot("adm.paged.migcl.61.p2", role="admin",
+         steps=[("start", ""), ("start", f"migration-{FIRST}"), _turn("migration_cl", _MIGCL, 1, FIRST)],
+         data=_mig_one(61), title="листание вперёд — стр. 2 из 3, счёт профиля в шапке"),
+    Shot("adm.paged.migcl.61.back", role="admin",
+         steps=[("start", ""), ("start", f"migration-{FIRST}"), _turn("migration_cl", _MIGCL, 1, FIRST),
+                ("press", Menu(action="migration"))],
+         data=_mig_one(61), title="«⬅️ Назад» — обзор переезда"),
+    # ── «🚚 Ещё не переехали» ───────────────────────────────────────────────
+    Shot("adm.paged.pending.1", role="admin", press=[SetCB(sec="mig", act="do", key="pending")], data=_mig(1),
+         title="не переехал один — без листания"),
+    Shot("adm.paged.pending.25", role="admin", press=[SetCB(sec="mig", act="do", key="pending")], data=_mig(25),
+         title="не переехали 25 — одна страница, хвоста «и ещё N» нет"),
+    Shot("adm.paged.pending.61", role="admin", press=[SetCB(sec="mig", act="do", key="pending")], data=_mig(61),
+         title="не переехали 61 — стр. 1 из 3, подсказка под списком"),
+    Shot("adm.paged.pending.61.p3", role="admin",
+         steps=[_PENDING, *[_turn("mig_pending", SetCB(sec="mig", act="do", key="pending"), p) for p in (1, 2)]],
+         data=_mig(61), title="последняя страница — подсказка та же"),
+    Shot("adm.paged.pending.61.back", role="admin",
+         steps=[_PENDING, _turn("mig_pending", SetCB(sec="mig", act="do", key="pending"), 1),
+                ("press", SetCB(sec="svc"))],
+         data=_mig(61), title="«⬅️ Назад» — «🔧 Сервис»"),
+    # ── «⚠️ Переехали до отмены» ────────────────────────────────────────────
+    Shot("adm.paged.orphans.1", role="admin", press=[SetCB(sec="mig", act="do", key="orphans")],
+         data=_mig(1, cancelled=True), title="переехал до отмены один — без листания"),
+    Shot("adm.paged.orphans.25", role="admin", press=[SetCB(sec="mig", act="do", key="orphans")],
+         data=_mig(25, cancelled=True), title="переехали до отмены 25 — одна страница"),
+    Shot("adm.paged.orphans.61", role="admin", press=[SetCB(sec="mig", act="do", key="orphans")],
+         data=_mig(61, cancelled=True), title="переехали до отмены 61 — стр. 1 из 3"),
+    Shot("adm.paged.orphans.61.p2", role="admin",
+         steps=[_ORPHANS, _turn("mig_orphans", SetCB(sec="mig", act="do", key="orphans"), 1)],
+         data=_mig(61, cancelled=True), title="листание вперёд — стр. 2 из 3"),
 ]

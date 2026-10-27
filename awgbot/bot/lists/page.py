@@ -46,11 +46,13 @@ def _clip(row: str, room: int) -> str:
     return html.escape("".join(out), quote=False) + "…"
 
 
-def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_ROWS) -> list[list[str]]:
-    """Страницы строк: head_len — видимая длина шапки с её отступом (и хвоста экрана)."""
+def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_ROWS,
+          head_ents: int = 0) -> list[list[str]]:
+    """Страницы строк: head_len — видимая длина шапки с её отступом (и хвоста экрана),
+    head_ents — сущности разметки шапки и хвоста (входят в предел страницы)."""
     pages: list[list[str]] = []
     cur: list[str] = []
-    used, ents = head_len, 0
+    used, ents = head_len, head_ents
     room = BUDGET - head_len
     gap = visible(sep)
     for row in rows:
@@ -60,7 +62,7 @@ def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_R
         e = entities(row)
         if cur and (used + w > BUDGET or len(cur) >= max_rows or ents + e > MAX_ENTITIES):
             pages.append(cur)
-            cur, used, ents = [], head_len, 0
+            cur, used, ents = [], head_len, head_ents
             w = visible(row)
         cur.append(row)
         used += w
@@ -100,7 +102,8 @@ def paged(rows: list[str], page: int, *, header: Callable[[str], str], sep: str 
     → шапка, строки страницы через sep, хвост экрана (строка «обновлено …»).
     Номер вне диапазона (список сократился между нажатиями) — к последней."""
     probe = header(label(98, 99))
-    chunks = split(list(rows), visible(probe) + visible(gap) + visible(tail), sep, max_rows)
+    chunks = split(list(rows), visible(probe) + visible(gap) + visible(tail), sep, max_rows,
+                   entities(probe) + entities(tail))
     total = len(chunks)
     cur = min(max(int(page or 0), 0), total - 1)
     start = sum(len(c) for c in chunks[:cur])

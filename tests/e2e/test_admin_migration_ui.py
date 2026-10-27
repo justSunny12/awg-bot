@@ -22,7 +22,7 @@ def test_overview_head_drops_equal_values():
     """Одинаковые значения в шапку не попадают: «подсеть: 10.8.1 → 10.8.1»
     читается как ошибка настройки."""
     d = {"port": ("", ""), "subnet": ("10.8.1", "10.8.1"), "generation": ("", ""), "rows": []}
-    assert texts.migration_overview_text(d).startswith("🚚 <b>Переезд</b>\n"), \
+    assert texts.migration_overview_page(d).text.startswith("🚚 <b>Переезд</b>\n"), \
         "одинаковые значения попали в шапку"
 
 

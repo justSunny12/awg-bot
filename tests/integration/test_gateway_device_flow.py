@@ -258,7 +258,7 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
     assert used == len(devices), "счётчик слотов разошёлся со списком устройств"
 
     rows = services.online_devices()
-    head = texts.online_devices_text(rows)
+    head = texts.online_devices_page(rows).text
     assert head.startswith("📶 <b>Онлайн:</b> ") and f"профиль, {len(rows)} устройства\n\n" in head, head
     assert len([d for d, _ in rows]) == 2
 
