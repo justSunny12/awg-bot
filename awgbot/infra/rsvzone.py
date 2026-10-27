@@ -87,7 +87,7 @@ def _script() -> Path:
 
 
 def _zone_env() -> dict:
-    """Подсети veth зоны и таблица РФ-доступа — из настроек, чтобы скрипт и бот не
+    """Подсети veth зоны, пул NETMAP и таблица РФ-доступа — из настроек, чтобы скрипт и бот не
     разошлись, если умолчания сменили."""
     # пути — те же константы, что у бота: скрипт не должен угадывать их по своим умолчаниям
     paths = {"RSV_ZONE": ZONE, "RSV_RUN": str(RUN_DIR), "RSV_VAR": str(VAR_DIR), "RSV_STATE_DIR": str(STATE_DIR),
@@ -96,6 +96,7 @@ def _zone_env() -> dict:
         from awgbot.core import settings
         return {**paths, "ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
                 "ZONE_RF_CIDR": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "169.254.77.4/30"),
+                "ZONE_POOL": str(settings.get("app.reserve.zone_pool", "169.254.96.0/19") or "169.254.96.0/19"),
                 "RF_TABLE": str(int(config.ROUTING_TABLE))}
     except Exception:                                     # noqa: BLE001 — настройки недоступны (CLI без conf)
         return paths

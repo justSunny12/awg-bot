@@ -17,6 +17,9 @@
 #   RSV_ZONE=awg-guest        имя пространства (и пространства журнала гостя)
 #   ZONE_CIDR=169.254.77.0/30 veth бота основы (хост .1, зона .2)
 #   ZONE_RF_CIDR=169.254.77.4/30  veth РФ-трафика к шлюзам резерва (хост .5, зона .6)
+#   ZONE_POOL=169.254.96.0/19 пул NETMAP: подсеть каждого клона 1:1 на свой блок той же
+#                             длины (хост видит устройства основы поодиночке — CAKE
+#                             делит загрузку по ним, а не по сайтам назначения)
 #   INSTALL_DIR=/opt/awg-bot  где код (ExecStart юнита гостя)
 #   RSV_RUN=/run/awg-bot-guest  хранилище гостя в памяти; RSV_STORE_SIZE=32M — его размер
 #   RSV_VAR=/var/lib/awg-bot-guest  на диске только rep.bin (шифротекст под K)
@@ -24,7 +27,7 @@
 #   RSV_LINKS_DIR=/var/lib/awg-bot/reserve/links  конфиги сторон постоянных линков
 #   RSV_SELFTEST_PORT=45999   порт пробы --selftest
 # Пути (RSV_ZONE, RSV_RUN, RSV_VAR, RSV_STATE_DIR, RSV_LINKS_DIR) и подсети
-# (ZONE_CIDR, ZONE_RF_CIDR, RF_TABLE) обёртка awgbot/infra/rsvzone.py передаёт
+# (ZONE_CIDR, ZONE_RF_CIDR, ZONE_POOL, RF_TABLE) обёртка awgbot/infra/rsvzone.py передаёт
 # при КАЖДОМ вызове — из тех же констант и настроек, что у бота (стороны линков
 # — по текущему каталогу данных); умолчания выше — для ручного запуска.
 # Состояние зоны и разбор JSON — python бота ($INSTALL_DIR/venv/bin/python),
@@ -41,11 +44,14 @@
 # умолчание routing.table, обёртка его не передаёт); --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
 #
 # Таблица nft зоны — inet awg_guest (input/forward с политикой drop, цепочка
-# zone_post — маскарад зоны наружу через veth). Рисуется целиком при каждом
+# zone_post — наружу через veth: подсети клонов NETMAP 1:1 на блоки ZONE_POOL,
+# прочее (бот основы, резолвер зоны) и РФ-veth — маскарад). Таблицу с NETMAP
+# ядро ниже 5.8 отвергает — тогда маскарад для всех и строка ВНИМАНИЕ (netmap
+# в state.json пуст). Рисуется целиком при каждом
 # вызове (delete + create: повторные --shell/--take правил не дописывают); вход
 # вебхука с veth (iifname awggv-n ip daddr <адрес зоны> tcp dport <порт>) — с
 # --serve, когда порт известен (webhook_port из state.json). Файервол ХОСТА
-# (порты клонов, маскарад veth, пересылка из awggv-h только во внешние интерфейсы
+# (порты клонов, маскарад veth и блоков пула, пересылка из awggv-h только во внешние интерфейсы
 # хоста, из awggr-h — в линки слотов, DNAT вебхука с набора
 # tg_pool4 и обучение пула набором tg_seen4, пересылка хвоста в relay по всем
 # портам клонов — каждый на тот же порт основы) этот
@@ -96,12 +102,16 @@
 #                 /etc/resolv.conf: заглушка хоста 127.0.0.53 в зоне не
 #                 отвечает), юнит бота основы с песочницей и пространством журнала;
 #                 бот стартует без права отвечать (его даёт бот резерва).
+#                 Подсети клонов — на блоки ZONE_POOL (NETMAP в таблице зоны,
+#                 маршрут блока через awggv-h у хоста); в state.json —
+#                 netmap «подсеть=блок …» (пусто — NETMAP не встал, маскарад)
 #                 Без оболочки отказывает («сначала --shell»); GUEST_ADMIN —
 #                 адреса устройств админа основы: в state.json (admin), из
 #                 него — в набор admin4 при каждой перерисовке таблицы зоны
 #   --serve       обслуживание: состояние serving (порт гостя для файервола
 #                 хоста — его рисует бот), таблица зоны заново со входом
-#                 вебхука с veth, CAKE на внешнем интерфейсе, если
+#                 вебхука с veth, CAKE на внешнем интерфейсе
+#                 (triple-isolate nat — при NETMAP, иначе dual-dsthost nat), если
 #                 есть модуль sch_cake (иначе cake=absent, дисциплина не
 #                 тронута; CAKE, стоявший там до зоны, — с параметрами админа —
 #                 не трогается: cake=kept); без клона отказывает («сначала --take»)
@@ -145,6 +155,7 @@ LINKS_DIR="${RSV_LINKS_DIR:-/var/lib/awg-bot/reserve/links}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/awg-bot}"
 ZONE_CIDR="${ZONE_CIDR:-169.254.77.0/30}"
 ZONE_RF_CIDR="${ZONE_RF_CIDR:-169.254.77.4/30}"
+ZONE_POOL="${ZONE_POOL:-169.254.96.0/19}"
 RF_TABLE="${RF_TABLE:-100}"
 VH="awggv-h"; VN="awggv-n"; RH="awggr-h"; RN="awggr-n"
 UNIT="/etc/systemd/system/awg-bot-guest.service"
@@ -255,8 +266,17 @@ cmd_selftest() {
 }
 
 # ── зона-оболочка ───────────────────────────────────────────────────────────
-zone_nft() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
-    local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" whp
+zone_nft() {   # zone_nft "клоны" — таблица зоны; NETMAP отвергнут ядром — та же таблица с маскарадом
+    local nm=""; [ -n "${1:-}" ] && nm="$(state_get netmap)"
+    zone_nft_load "${1:-}" "$nm" && return 0
+    [ -n "$nm" ] || return 1
+    zone_nft_load "${1:-}" "" || return 1
+    say "ВНИМАНИЕ: nft не принял NETMAP подсетей клонов — устройства основы выходят одним адресом зоны"
+    state_write netmap=
+}
+
+zone_nft_load() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
+    local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" nm="${2:-}" whp pair
     # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft
     local ifset=""; [ -n "$ifaces" ] && ifset="{ $(printf '"%s", ' $ifaces | sed 's/, $//') }"
     whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
@@ -295,6 +315,7 @@ $( [ -n "$iface" ] && printf '        iifname "awglink*" oifname %s ct state est
     }
     chain zone_post {
         type nat hook postrouting priority srcnat; policy accept;
+$( for pair in $nm; do printf '        oifname "%s" ip saddr %s snat ip prefix to ip saddr map { %s : %s }\n' "$VN" "${pair%%=*}" "${pair%%=*}" "${pair#*=}"; done )
         oifname { "$VN", "$RN" } masquerade
     }
 }
@@ -435,6 +456,21 @@ state_ifaces() {    # все клоны из состояния; старое с
     local i; i="$(state_get ifaces)"; [ -n "$i" ] || i="$(state_get iface)"; printf '%s' "$i"
 }
 
+netmap_plan() {   # netmap_plan CIDR… — «подсеть=блок …»: подсети каждого клона — свой блок ZONE_POOL той же длины
+    "$PY" - "$ZONE_POOL" "$@" <<'PYEOF' 2>/dev/null || true
+import ipaddress, sys
+pool, out, used = ipaddress.ip_network(sys.argv[1], strict=False), [], []
+for c in sys.argv[2:]:
+    net = ipaddress.ip_interface(c).network
+    if net.version != 4 or net.prefixlen < pool.prefixlen or any(net.overlaps(n) for n, _ in out):
+        continue                                   # не влезает в пул или повтор — этот клон под маскарадом
+    blk = next((b for b in pool.subnets(new_prefix=net.prefixlen) if not any(b.overlaps(u) for u in used)), None)
+    if blk is not None:
+        out.append((net, blk)); used.append(blk)
+print(" ".join(f"{n}={b}" for n, b in out))
+PYEOF
+}
+
 write_setconf() {   # write_setconf IFACE — конфиг для awg setconf: без расширений awg-quick (Address, MTU, DNS, Table)
     grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$RUN/awg/$1.conf" > "$RUN/awg/$1.setconf"
     chmod 0600 "$RUN/awg/$1.setconf"
@@ -469,7 +505,7 @@ cmd_take() {
     ip rule show | grep -q "iif $RH lookup $RF_TABLE" || ip rule add iif "$RH" lookup "$RF_TABLE" pref 150
     # клоны: создаются у хоста (сокет — у хоста), переносятся в зону под именами основы;
     # первый — основной интерфейс AWG, остальные — интерфейсы окна переезда профилей
-    local ifaces="$iface" ports="" pair extra_if extra_addr
+    local ifaces="$iface" ports="" pair extra_if extra_addr cidrs="$addr"
     clone_up "$iface" "$addr" || die "клон $iface не поднялся"
     for pair in ${GUEST_EXTRA:-}; do
         extra_if="${pair%%=*}"; extra_addr="${pair#*=}"
@@ -477,12 +513,15 @@ cmd_take() {
         [ -f "$RUN/awg/$extra_if.conf" ] || { say "ВНИМАНИЕ: конфига $extra_if нет — интерфейс не поднят"; continue; }
         write_setconf "$extra_if"
         clone_up "$extra_if" "$extra_addr" || { say "ВНИМАНИЕ: клон $extra_if не поднялся"; continue; }
-        ifaces="$ifaces $extra_if"
+        ifaces="$ifaces $extra_if"; cidrs="$cidrs $extra_addr"
     done
     local i; for i in $ifaces; do ports="$ports $(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$i.conf")"; done
     ports="${ports# }"
-    state_write admin="${GUEST_ADMIN:-}"
+    # пул NETMAP — до таблицы зоны: она берёт его из состояния (и при каждой перерисовке)
+    state_write admin="${GUEST_ADMIN:-}" netmap="$(netmap_plan $cidrs)"
     zone_nft "$ifaces" || die "nft отверг таблицу зоны"
+    # ответы на блоки пула — через veth в зону (иначе хост увёл бы их маршрутом по умолчанию)
+    for pair in $(state_get netmap); do ip route replace "${pair#*=}" via "$ZONE_V" dev "$VH"; done
     [ -n "$dns" ] || dns="${addr%/*}"
     for a in $dns; do [ "$a" = "${addr%/*}" ] || nsx ip addr replace "$a/32" dev lo; done
     write_dnsmasq "$dns" "$ups"
@@ -533,7 +572,10 @@ cake_on() {
         state_write cake=kept cake_dev= cake_prev=; return 0   # CAKE админа с его параметрами — не трогать
     fi
     [ "$prev" = "cake" ] && [ "$(state_get cake)" = "on" ] && prev="$(state_get cake_prev)"
-    tc qdisc replace dev "$wan" root cake besteffort dual-dsthost nat 2>/dev/null && state_write cake=on cake_dev="$wan" cake_prev="${prev:-none}"
+    # с NETMAP хост видит каждое устройство основы своим адресом — делить и по источнику, и по
+    # назначению; без него вся зона — один источник против каждого своего пользователя: только по назначению
+    local iso="dual-dsthost"; [ -n "$(state_get netmap)" ] && iso="triple-isolate"
+    tc qdisc replace dev "$wan" root cake besteffort "$iso" nat 2>/dev/null && state_write cake=on cake_dev="$wan" cake_prev="${prev:-none}"
 }
 cake_off() {
     local dev prev; dev="$(state_get cake_dev)"; prev="$(state_get cake_prev)"
@@ -570,13 +612,13 @@ conntrack_flush_ports() {   # записи conntrack по портам клон�
 cmd_relay() {
     need_root
     guest_stop
-    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces=
+    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces= netmap=
     say "relay: ok"
 }
 cmd_teardown() {
     need_root
     guest_stop
-    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port=
+    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap=
     say "teardown: ok"
 }
 cmd_wipe() {
@@ -591,13 +633,13 @@ cmd_wipe() {
         # пересылка хвоста идёт на хосте по state.json: фаза и адрес основы остаются до конца relay
         state_write webhook_port= wiped_at="$(date -Iseconds)"
     else
-        state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= wiped_at="$(date -Iseconds)"
+        state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= wiped_at="$(date -Iseconds)"
     fi
     say "wipe: ok"
 }
 cmd_status() {
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
-    say "phase=$(state_get phase)"; say "iface=$(state_get iface)"; say "ifaces=$(state_ifaces)"
+    say "phase=$(state_get phase)"; say "iface=$(state_get iface)"; say "ifaces=$(state_ifaces)"; say "netmap=$(state_get netmap)"
     if mountpoint -q "$RUN" 2>/dev/null; then say "store=mounted"; else say "store=absent"; fi
     systemctl is-active awg-bot-guest.service >/dev/null 2>&1 && say "guest=active" || say "guest=inactive"
     [ -f "$VAR/rep.bin" ] && say "rep=present" || say "rep=absent"

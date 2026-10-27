@@ -212,6 +212,14 @@ def guest_zone() -> dict:
         zone4, net4 = "", ""
     if phase in ("taking", "serving"):
         out.update(guest_udp_port=port, guest_udp_ports=ports, guest_veth_if="awggv-h", guest_zone4=zone4, guest_zone_net4=net4)
+        pool = []
+        for pair in str(st.get("netmap") or "").split():   # «подсеть=блок»: устройства основы — адресами блока
+            try:
+                pool.append(str(ipaddress.ip_network(pair.partition("=")[2], strict=False)))
+            except ValueError:
+                continue
+        if pool:
+            out["guest_pool4"] = pool
         try:
             rf_hosts = list(ipaddress.ip_network(str(st.get("zone_rf_cidr") or "169.254.77.4/30"), strict=False).hosts())
             if len(rf_hosts) >= 2:

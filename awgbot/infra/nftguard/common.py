@@ -86,6 +86,7 @@ class GuardSpec:
     guest_veth_if: str = ""                                   # veth хост ↔ зона: выход зоны наружу через NAT хоста
     guest_zone4: str = ""                                     # адрес зоны в veth: DNAT вебхука сюда
     guest_zone_net4: str = ""                                 # /30 veth: маскарад наружу
+    guest_pool4: list[str] = field(default_factory=list)      # блоки NETMAP подсетей клонов (зона → хост): маскарад наружу
     guest_webhook_port: int = 0                               # порт вебхука: DNAT в зону только с пула Telegram (serving)
     tg_pool4: list[str] = field(default_factory=list)         # пул адресов Telegram (набор tg_pool4)
     guest_rf_if: str = ""                                     # veth РФ-трафика зоны (хост): в линки слотов, маскарад

@@ -319,11 +319,12 @@ def _guest_prerouting(spec) -> list[str]:
 
 
 def _guest_postrouting(spec) -> list[str]:
-    """Маскарад зоны наружу и пересланного хвоста (ответ основы должен прийти
+    """Маскарад зоны наружу (veth и блоки NETMAP подсетей клонов) и пересланного хвоста (ответ основы должен прийти
     сюда же, чтобы вернуться пользователю через conntrack)."""
     out = []
     if spec.guest_zone_net4 and spec.guest_phase in ("taking", "serving"):
-        rule = f"ip saddr {spec.guest_zone_net4} masquerade"
+        nets = [spec.guest_zone_net4, *spec.guest_pool4]
+        rule = f"ip saddr {nets[0] if len(nets) == 1 else '{ ' + ', '.join(nets) + ' }'} masquerade"
         if spec.nat_exclude_ifs:
             rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
         out.append("        " + rule)
