@@ -175,9 +175,8 @@ async def _traffic_deep_link(message: Message, services, payload: str,
     from awgbot.util import listlink
     lst = listlink.parse(payload)
     if lst is not None:
-        if not await lists.open_link(message, services, "admin", None, lst):
-            await _return_panel(message, services)
-        return True
+        # вида у роли нет — как незнакомая ссылка: /start с уборкой меню
+        return await lists.open_link(message, services, "admin", None, lst)
     payload, new = links.strip_new(payload)
     link = parse_link(payload)
     if link is None:

@@ -71,6 +71,6 @@ def update_skipped_lines(skipped) -> list[str]:
     rest = len(skipped) - _NAMES_SHOWN
     if rest > 0:
         from .fmt import plural_ru
-        out.append(f"⚠️ Ещё {rest} {plural_ru(rest, 'релиз пропущен', 'релиза пропущены', 'релизов пропущены')} — "
+        out.append(f"⚠️ Ещё {rest} {plural_ru(rest, 'релиз пропущен', 'релиза пропущены', 'релизов пропущено')} — "
                    "метаданные не прочитаны")
     return out

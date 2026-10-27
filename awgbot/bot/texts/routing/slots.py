@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from awgbot.util.textfmt import more_count
+
 from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain.gwchecks import WRITE_ERROR
@@ -31,7 +33,7 @@ def lan_pairs(nets, twins, limit: int = 6, *, bot: str = "", payload: str = "", 
     if more <= 0:
         return "; ".join(items)
     if count:
-        return "; ".join(items) + f" [+{more}]"
+        return "; ".join(items) + more_count(more)
     return "; ".join(items) + "; " + (deep_link(bot, payload, f"и ещё {more}") if payload else f"и ещё {more}")
 
 

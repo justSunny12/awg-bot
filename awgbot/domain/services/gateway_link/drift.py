@@ -83,6 +83,11 @@ class DriftMixin:
                 continue                                  # конфиг линка назван в заголовке, значений у него нет
             else:
                 lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
+        full = {k: (m, t) for k, _h, m, t in self.gwlink_config_drift_items(g, cut=False)}
+        # устройства админа выводятся группами целиком (хвост группы — своя ссылка), конфиг линка значений не несёт
+        if any(full.get(k, (m, t)) != (m, t) for k, _h, m, t in pending if k not in ("ADMIN_IPS", "link")):
+            # значения обрезаны до 160 знаков — молча не режем: целиком на экране расхождения
+            lines.append("Значения целиком — " + self._link(f"list-drift-{g.id}", "весь список"))
         return "\n".join(lines)
 
     def gw_drift_view(self, slot_id: int) -> dict:
@@ -132,7 +137,7 @@ class DriftMixin:
             rows = [one if len(addrs) == 1 else many]
             rows += [line(a, names.get(a, "")) for a in addrs[:cap]]
             if len(addrs) > cap:
-                rows.append(" · …" + self._link(f"list-drift-{g.id}", f"и ещё {len(addrs) - cap}"))
+                rows.append(" · … " + self._link(f"list-drift-{g.id}", f"и ещё {len(addrs) - cap}"))
             return rows
 
         missing = sorted(want - have, key=ip_key)

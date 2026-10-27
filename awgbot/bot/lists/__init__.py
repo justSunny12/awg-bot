@@ -48,6 +48,7 @@ class Kind:
     branch: str                                   # main | gateway — установка, где вид есть
     roles: tuple[str, ...]
     build: Callable[..., Awaitable[View | None]]  # build(services, ref, key, chat_id) → View
+    anchored: bool = False                         # ref — номер группы, к которой ведёт хвост (см. render)
 
 
 _REGISTRY: dict[str, Kind] = {}
@@ -79,8 +80,11 @@ def screen_name(kind: str) -> str:
 
 
 async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "", new: bool = False,
-                 page: int = 0, chat_id: int = 0):
-    """(text, markup) экрана вида или None (вида нет у роли, сборка упала)."""
+                 page: int = 0, chat_id: int = 0, anchor: int = 0):
+    """(text, markup) экрана вида или None (вида нет у роли, сборка упала).
+    anchor — номер группы (с 1): открыть страницу, где она начинается (хвост
+    второй группы ведёт к ней, а не на первую страницу); страница запоминается."""
+    from awgbot.bot import paging
     from awgbot.bot.callbacks import ListCB, PageCB
     from . import page as pages
     k = kind_for(kind, role)
@@ -101,11 +105,24 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
     widest = max((pages.visible(view.rows[i]) for i in view.labels), default=0)
     chunks = pages.split(view.rows, pages.visible(probe) + 2 + (widest + 1 if view.labels else 0), view.sep,
                          pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS)     # место под повтор подписи
-    total = len(chunks)
+    # номера строк по страницам; подпись группы последней строкой страницы — на следующую
+    spans: list[list[int]] = []
+    at = 0
+    for c in chunks:
+        spans.append(list(range(at, at + len(c))))
+        at += len(c)
+    for n in range(len(spans) - 1):
+        if len(spans[n]) > 1 and spans[n][-1] in view.labels:
+            spans[n + 1].insert(0, spans[n].pop())
+    total = len(spans)
     cur = min(max(int(page or 0), 0), total - 1)
+    if anchor and 0 < anchor <= len(view.labels):
+        target = view.labels[anchor - 1]
+        cur = next((n for n, sp in enumerate(spans) if target in sp), cur)
+        paging.remember(chat_id, screen_name(kind), int(ref or 0), cur)
     head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now])
-    body = list(chunks[cur])
-    first = sum(len(c) for c in chunks[:cur])            # номер первой строки страницы в полном списке
+    body = [view.rows[i] for i in spans[cur]]
+    first = spans[cur][0] if spans[cur] else 0
     if body and first not in view.labels:
         label = max((i for i in view.labels if i < first), default=None)
         if label is not None:                             # группа началась на прошлой странице — подпись снова
@@ -143,8 +160,9 @@ async def open_link(message, services, role: str, client, link) -> bool:
     if kind_for(link.kind, role) is None:
         return False
     paging.remember(message.chat.id, screen_name(link.kind), link.ref, 0)   # по ссылке — первая страница
+    k = kind_for(link.kind, role)
     parts = await render(services, link.kind, role=role, ref=link.ref, key=link.key, new=link.new,
-                         chat_id=message.chat.id)
+                         chat_id=message.chat.id, anchor=link.ref if k.anchored else 0)
     if parts is None:
         return False
     await show_parts(message, services, *parts, new=link.new)

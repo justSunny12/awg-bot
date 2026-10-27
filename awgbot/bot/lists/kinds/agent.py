@@ -30,7 +30,7 @@ async def sshfrom(services, ref: int, key: str, chat_id: int) -> View | None:
             rows.append(ui.label(label))
             rows += _codes(nets)
     n = len(lan) + len(peers)
-    return View(title=tl.SSHFROM_TITLE, rows=rows, count=tl.subnets_count(n) if n else "",
+    return View(title=tl.SSHFROM_TITLE, rows=rows, count=tl.subnets_count(n) if n else "", empty=tl.SSHFROM_EMPTY,
                 back=ui.back(GwCB(action="ssh")), labels=tuple(labels))
 
 
@@ -41,7 +41,7 @@ async def sshunres(services, ref: int, key: str, chat_id: int) -> View | None:
     labels: tuple[int, ...] = ()
     if held:                                         # прошлые адреса этих имён — фильтр держит их
         labels = (len(rows),)
-        rows += [ui.label("Держу прошлые адреса"), *_codes(held)]
+        rows += [ui.label(tl.SSHUNRES_HELD), *_codes(held)]
     return View(title=tl.SSHUNRES_TITLE, rows=rows, count=str(len(names)) if names else "", empty=tl.UNRES_EMPTY,
                 back=ui.back(GwCB(action="ssh")), labels=labels)
 
@@ -52,6 +52,6 @@ async def tunaddr(services, ref: int, key: str, chat_id: int) -> View | None:
                 empty=tl.TUNADDR_EMPTY, back=ui.back(GwCB(action="lan")))
 
 
-register(Kind("sshfrom", "gateway", ADMIN, sshfrom))
-register(Kind("sshunres", "gateway", ADMIN, sshunres))
+register(Kind("sshfrom", "gateway", ADMIN, sshfrom, anchored=True))     # 1 — локальная сеть, 2 — другие шлюзы
+register(Kind("sshunres", "gateway", ADMIN, sshunres, anchored=True))   # 2 — прошлые адреса
 register(Kind("tunaddr", "gateway", ADMIN, tunaddr))

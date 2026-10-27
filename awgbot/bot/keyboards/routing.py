@@ -79,15 +79,16 @@ def slot_button_label(name: str, label: str = "", *, star: bool = False, fit: bo
 
 def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake: bool = True,
                 can_add: bool = True, failover_on: bool = True,
-                smb_on: bool | None = None, joins=()) -> InlineKeyboardMarkup:
+                smb_on: bool | None = None, joins=(), page: int = 0) -> InlineKeyboardMarkup:
     """Экран «🛰 Шлюзы» с главной: не развёрнуто — «🚀 Развернуть»; спит до
     перезапуска — только выход; выключено — «✅ Включить»; включено — слоты
     кнопками (⭐ у предпочтительного), переключение на резерв, тумблер
     автопереключения (при двух слотах), ниже «SMB в туннеле» (smb_on не None
     — есть слоты), «Кому доступен» и «Параметры». Кнопка слота — имя и подпись
-    («Pi4 (ЕК-22П10)»), в ряду из двух длиннее 18 знаков — режется имя, подпись
-    остаётся (slot_button_label). Связь подсетей — часть
-    VPN-транзита, своей кнопки у неё нет."""
+    («Pi4 (ЕК-22П10)»), не больше двух в ряд; в ряду из двух длиннее 18 знаков —
+    режется имя, подпись остаётся (slot_button_label). Не влезли в десять
+    рядов — страницы, ряд листания сразу под слотами (page — страница). Связь
+    подсетей — часть VPN-транзита, своей кнопки у неё нет."""
     menu = ui.to_menu(Menu(action="main"))
     if not provisioned:
         return ui.rows(("🚀 Развернуть", SetCB(sec="rt", act="do", key="provision")), menu)
@@ -98,6 +99,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
         return ui.rows(("✅ Включить", SetCB(sec="rt", act="toggle", key="app.routing.enabled")), menu)
     states = list(states)
     body: list = []
+    slot_rows: list = []
     if not states:
         body.append(("🛰 Подключить шлюз", SetCB(sec="rt_gw", act="open")))
     else:
@@ -111,7 +113,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
                           GwSlotCB(action="card", slot=gw.id)))
         if len(states) == 1 and can_add:
             slots.append(("➕ Резерв", GwSlotCB(action="add")))
-        body.append(slots)
+        slot_rows = ui.grid(slots, 2)
         standby = next((st for st in states if not st.get("active")), None)
         # лежащий резерв (🔴) не предлагаем: переключение на него — РФ-доступ без шлюза
         if standby is not None and not standby.get("unavailable"):
@@ -128,10 +130,18 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
                      GwJoinCB(action="cancel", slot=int(j["slot"]), jid=str(j.get("id") or ""))))
     if smb_on is not None:
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
-    return ui.rows(
-        *body,
-        [("👥 Кому доступен", SetCB(sec="rt_users", act="open")), ("⚙️ Параметры", SetCB(sec="rt_params", act="open"))],
-        menu)
+    tail = [[("👥 Кому доступен", SetCB(sec="rt_users", act="open")), ("⚙️ Параметры", SetCB(sec="rt_params", act="open"))],
+            menu]
+    from .common import MAX_ROWS, page_nav
+    room = MAX_ROWS - len(body) - len(tail)              # рядов под слоты
+    if len(slot_rows) > room:                            # страницы: ряд листания — под слотами
+        per = max(1, room - 1)
+        pages = (len(slot_rows) + per - 1) // per
+        cur = min(max(int(page or 0), 0), pages - 1)
+        shown = slot_rows[cur * per:(cur + 1) * per]
+        nav = page_nav("rt_gw", 0, cur, cur > 0, cur < pages - 1, SetCB(sec="rt").pack())
+        slot_rows = [*shown, nav]
+    return ui.rows(*slot_rows, *body, *tail)
 
 
 def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> InlineKeyboardMarkup:

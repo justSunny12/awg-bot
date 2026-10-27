@@ -49,7 +49,8 @@ async def deliver(services, bot, paths, log_tag: str, caption: str = "") -> tupl
     for p in paths:
         try:
             if caption:
-                await bot.send_document(config.ADMIN_ID, FSInputFile(p), caption=caption)
+                from awgbot.bot import links               # подпись — уведомление: ссылки на экраны с «-n»
+                await bot.send_document(config.ADMIN_ID, FSInputFile(p), caption=links.mark_new(caption))
             else:
                 await bot.send_document(config.ADMIN_ID, FSInputFile(p))
             delivered = True

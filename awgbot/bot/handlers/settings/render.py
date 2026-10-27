@@ -94,7 +94,7 @@ async def _screen(sec: str, services, key: str = ""):
     return await sections.screen("root", MAIN, services)
 
 
-async def gateways_screen(services):
+async def gateways_screen(services, chat_id: int = 0):
     """Экран «🛰 Шлюзы» с главной: не развёрнуто / спит до перезапуска /
     выключено / слоты со строками состояния."""
     if not config.ROUTING_ENABLED and not await call(services.routing_provisioned):
@@ -117,8 +117,10 @@ async def gateways_screen(services):
     # тумблер — только при слотах (снятие последнего его выключает)
     smb = (await call(services.smb_tunnel_on)) if states else None
     # живая команда подключения занимает номер слота — и в «➕ Резерв» тоже (ui-3)
+    from awgbot.bot import paging
     return text, kb.gateways_kb(states, can_add=len(states) + len(joins) < config.ROUTING_GATEWAYS_MAX,
-                                failover_on=auto, smb_on=smb, joins=joins)
+                                failover_on=auto, smb_on=smb, joins=joins,
+                                page=paging.page_of(chat_id or config.ADMIN_ID, "rt_gw"))
 
 
 async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):

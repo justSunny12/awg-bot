@@ -381,7 +381,7 @@ def test_a_long_group_is_cut_with_a_tail_count(services, slot):
     _snap(services, _installed(services, admin_ips=" ".join([mine, *extra])))
     lines = _admin_note(services).splitlines()
     i = lines.index("На шлюзе помечены админскими удалённые устройства:")
-    assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra[:20]] + [" · …и ещё 5"], lines[i:]
+    assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra[:20]] + [" · … и ещё 5"], lines[i:]
 
 
 def test_the_notification_signature_sees_the_whole_list_not_its_first_160_characters(services, slot):
@@ -554,7 +554,7 @@ async def test_the_tail_of_a_long_group_links_to_the_whole_drift_and_gets_the_ne
     _many_removed(services, slot)
     text = _admin_note(services)
     tail = text.splitlines()[-1]
-    assert tail == ' · …<a href="https://t.me/awgtestbot?start=list-drift-1">и ещё 5</a>', tail
+    assert tail == ' · … <a href="https://t.me/awgtestbot?start=list-drift-1">и ещё 5</a>', tail
     await notifier._send(fake_bot, ADMIN, text, None, True)
     sent = [r for r in fake_bot.records if r[0] == "send_message"]
     assert len(sent) == 1, fake_bot.records
@@ -569,7 +569,7 @@ def test_without_the_bot_name_the_tail_stays_text(services, slot):
     раньше, а не битая ссылка."""
     services.bot_username = ""
     _many_removed(services, slot)
-    assert _admin_note(services).splitlines()[-1] == " · …и ещё 5"
+    assert _admin_note(services).splitlines()[-1] == " · … и ещё 5"
 
 
 def test_the_whole_drift_view_lists_every_address_and_uncut_values(services, slot):

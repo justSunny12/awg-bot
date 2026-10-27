@@ -24,6 +24,13 @@ _REFUSALS = {"running": ft.UPDATE_RUNNING_TOAST, "nothing": texts.UPDATE_NOTHING
              "changed": texts.UPDATE_TARGET_CHANGED_TOAST, "links": ft.UPDATE_LINKS_BUSY_TOAST}
 
 
+def _live(plan, services) -> str:
+    """Ход обновления — живое сообщение, которое остаётся следом: ссылки на
+    карточки шлюзов с «-n» (живое меню к этому времени уже ниже)."""
+    from awgbot.bot import links
+    return links.mark_new(ft.fleet_live(plan, bot_username=_user(services)))
+
+
 def _user(services) -> str:
     return getattr(services, "bot_username", "") or ""
 
@@ -50,7 +57,7 @@ async def fleet_show(bot, services, out=None) -> None:
         final = state not in ("running", "rolling_back")
         markup = kb.fleet_final(retry=state in ("rolled_back", "rollback_failed")) if final else None
         try:
-            await bot.edit_message_text(ft.fleet_live(plan, bot_username=_user(services)), chat_id=msg[0],
+            await bot.edit_message_text(_live(plan, services), chat_id=msg[0],
                                         message_id=msg[1], reply_markup=markup)
         except Exception as e:                            # noqa: BLE001 — не изменилось или удалено
             if "not modified" not in str(e):
@@ -144,8 +151,7 @@ async def _begin(cb: CallbackQuery, services, *, drop: bool) -> None:
     if drop:
         await drop_message(cb, services)
     plan = await call(services.fleet_run_plan)
-    sent = await cb.bot.send_message(chat_id, ft.fleet_live(plan, bot_username=_user(services)),
-                                     disable_notification=True)
+    sent = await cb.bot.send_message(chat_id, _live(plan, services), disable_notification=True)
     await call(services.fleet_set_message, chat_id, sent.message_id)
     from awgbot.runtime.linkserver import upd as fleet_upd
     await fleet_upd.fleet_run_tick(services)

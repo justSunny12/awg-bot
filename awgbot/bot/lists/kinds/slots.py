@@ -44,8 +44,12 @@ async def gwnets(services, ref: int, key: str, chat_id: int) -> View | None:
     name = _slot_name(st)
     nets = list(st["gateway"].lan_subnets or [])
     tw = dict(st.get("lan_twins") or [])
-    rows = [lan_pair(n, tw) for n in nets]
-    rows += [x for x in (lan_issue_line(it) for it in (st.get("lan_space") or {}).get("issues") or []) if x]
+    issues = list((st.get("lan_space") or {}).get("issues") or [])
+    bad = {str(it.get("net") or "") for it in issues}
+    # подсети вне таблицы — первыми и один раз (строкой с причиной, а не ещё и парой «вне туннеля»):
+    # к ним ведёт «весь список» из «⚠️ Ещё N подсети …», и править надо их
+    rows = [x for x in (lan_issue_line(it) for it in issues) if x]
+    rows += [lan_pair(n, tw) for n in nets if n not in bad]
     return View(title=tl.gwnets_title(name), rows=rows, count=str(len(nets)) if nets else "",
                 empty=tl.gwnets_empty(name), back=_card(ref))
 
@@ -74,7 +78,9 @@ def _peer_rows(services, slot: int) -> list[str]:
     for g in services.gateway_transit_slots():
         if g.id == int(slot):
             continue
-        twins = ", ".join(f"<code>{_e(t)}</code>" for _r, t in services.lan_twins(g))
+        # адреса одной сущностью: на 64 адреса — одна, а не 64 (предел сущностей в сообщении)
+        twins = ", ".join(_e(t) for _r, t in services.lan_twins(g))
+        twins = f"<code>{twins}</code>" if twins else ""
         label = f" · {_e(g.label)}" if g.label else ""
         out.append(services._link(f"gw-{g.id}", services._gw_name(g)) + label + (f": {twins}" if twins else ""))
     return out
@@ -85,9 +91,11 @@ async def peernets(services, ref: int, key: str, chat_id: int) -> View | None:
     from awgbot.bot.texts.fmt import _e
     info = await call(services.gateway_peer_nets_info)
     if info.get("state") != "ok":
-        return View(title=tl.PEERNETS_TITLE, empty=tl.PEERNETS_EMPTY, back=ui.back(SetCB(sec="rt")))
+        empty = tl.PEERNETS_OFF if info.get("state") == "off" else tl.PEERNETS_EMPTY
+        return View(title=tl.PEERNETS_TITLE, empty=empty, back=ui.back(SetCB(sec="rt")))
     named = info.get("pairs_named") or []
-    rows = [f"{_e(n)}" + (f" · {_e(label)}" if label else "") + (": " + ", ".join(f"<code>{_e(x)}</code>" for x in nets)
+    # адреса слота одной сущностью: 15 слотов по 64 адреса — 15 сущностей, а не 960
+    rows = [f"{_e(n)}" + (f" · {_e(label)}" if label else "") + (f": <code>{', '.join(_e(x) for x in nets)}</code>"
                                                                 if nets else "")
             for n, label, nets in named]
     return View(title=tl.PEERNETS_TITLE, rows=rows, count=tl.gateways_count(len(named)),

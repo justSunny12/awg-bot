@@ -13,7 +13,16 @@ import re
 
 BUDGET = 3500
 MAX_ROWS = 30
+# сущности разметки (<code>, ссылки, <b>…) на страницу: предела Bot API не
+# документирует — держим тот, что проверен на «📶 Онлайн» (30 строк по 3)
+MAX_ENTITIES = 90
 _TAGS = re.compile(r"<[^>]+>")
+_OPEN = re.compile(r"<(?:a\s|code>|b>|i>|u>|s>|pre>|blockquote>)")
+
+
+def entities(text: str) -> int:
+    """Сколько сущностей разметки откроет текст."""
+    return len(_OPEN.findall(text))
 
 
 def visible(text: str) -> int:
@@ -39,19 +48,21 @@ def split(rows: list[str], head_len: int, sep: str = "\n", max_rows: int = MAX_R
     """Страницы строк: head_len — видимая длина шапки с её отступом (и хвоста экрана)."""
     pages: list[list[str]] = []
     cur: list[str] = []
-    used = head_len
+    used, ents = head_len, 0
     room = BUDGET - head_len
     gap = visible(sep)
     for row in rows:
-        if visible(row) > room:
+        if visible(row) > room or entities(row) > MAX_ENTITIES:
             row = _clip(row, room)
         w = visible(row) + (gap if cur else 0)
-        if cur and (used + w > BUDGET or len(cur) >= max_rows):
+        e = entities(row)
+        if cur and (used + w > BUDGET or len(cur) >= max_rows or ents + e > MAX_ENTITIES):
             pages.append(cur)
-            cur, used = [], head_len
+            cur, used, ents = [], head_len, 0
             w = visible(row)
         cur.append(row)
         used += w
+        ents += e
     if cur or not pages:
         pages.append(cur)
     return pages

@@ -1,6 +1,8 @@
 """common.py — часть пакета gateway (см. __init__)."""
 from __future__ import annotations
 
+from awgbot.util.textfmt import more_count
+
 import re
 
 from awgbot.domain import gwchecks
@@ -36,7 +38,7 @@ def _gw_health_summary(checks, smart: str = "") -> str:
     if smart and smart != "OK":
         names.append("диск")
     if names:
-        rest = f" [+{len(names) - 4}]" if len(names) > 4 else ""     # все — на «🩺 Здоровье»
+        rest = more_count(len(names) - 4)     # все — на «🩺 Здоровье»
         return f"🔴 Проблемы: {len(names)} — " + ", ".join(names[:4]) + rest
     return "✅"
 

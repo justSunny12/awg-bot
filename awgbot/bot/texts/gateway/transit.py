@@ -1,6 +1,8 @@
 """transit.py — часть пакета gateway (см. __init__)."""
 from __future__ import annotations
 
+from awgbot.util.textfmt import more_count
+
 from awgbot.domain import gwownlists
 from awgbot.domain.gwchecks import WRITE_ERROR, failure_detail
 from awgbot.bot import ui
@@ -68,7 +70,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list 
     own = own or lan.get("own") or {}
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
     names = pkg._uniq(c.name for c in bad)
-    rest = f" [+{len(names) - 3}]" if len(names) > 3 else ""           # все — на «🩺 Здоровье»
+    rest = more_count(len(names) - 3)           # все — на «🩺 Здоровье»
     state = ui.st("bad", ", ".join(names[:3]) + rest) if bad else ui.st("ok", "работает")
     lines = [ui.head("🔀 VPN-транзит", state),
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "

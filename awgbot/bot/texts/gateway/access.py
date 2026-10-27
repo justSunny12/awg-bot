@@ -57,7 +57,7 @@ def gateway_ssh_text(st: dict, bot: str = "") -> str:
     # между подсетями: отдельного действия и списка адресов не нужно
     peers = st.get("peer_nets") or []
     if peers:
-        lines.append(f"Из подсетей других шлюзов: открыт ({_nets_tail(peers, bot, 'list-sshfrom')})")
+        lines.append(f"Из подсетей других шлюзов: открыт ({_nets_tail(peers, bot, 'list-sshfrom-2')})")
     else:
         lines.append("Из подсетей других шлюзов: откроется, когда VPN-транзит свяжет подсети")
     lines.append("")
@@ -80,7 +80,7 @@ def gateway_ssh_text(st: dict, bot: str = "") -> str:
         held = st.get("held") or []
         link = (bot, "list-sshunres") if bot else None
         names = more(unresolved, link=link)
-        tail = (" — держу прошлый адрес: " + more(held, link=link)
+        tail = (" — держу прошлый адрес: " + more(held, link=(bot, "list-sshunres-2") if bot else None)
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
         warns.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")

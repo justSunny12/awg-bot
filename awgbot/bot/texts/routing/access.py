@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from awgbot.util.textfmt import more_count
+
 from awgbot.bot import ui
 from awgbot.util import timeutil
 
@@ -221,7 +223,7 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
             lines.append("🔴 временно недоступен — российские сайты пока открываются с зарубежного адреса")
     if domains:
         shown = ", ".join(f"<code>{_e(d)}</code>" for d in domains[:2])
-        more = f" [+{len(domains) - 2}]" if len(domains) > 2 else ""
+        more = more_count(len(domains) - 2)
         lines.append(f"Свои сайты: {shown}{more}")
     lines += _lent_out_lines(lent_out)
     return "\n".join(lines)
@@ -245,7 +247,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
     parts = []
     if added:
         shown = ", ".join(f"<code>{_e(_short(d))}</code>" for d in added[:5])
-        more = f" [+{len(added) - 5}]" if len(added) > 5 else ""        # добавленные — кнопками экрана ниже
+        more = more_count(len(added) - 5)        # добавленные — кнопками экрана ниже
         parts.append(f"✅ Добавлено: {shown}{more}")
     if rejected:
         by_reason: dict[str, list[str]] = {}
