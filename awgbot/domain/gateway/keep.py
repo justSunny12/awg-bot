@@ -31,19 +31,6 @@ from .base import log
 
 TRAFFIC_EVERY_S = 6 * 3600          # счёт линка — не чаще, ×uniform(0.6, 1.4)
 
-# Следы своих копий шлюза прежних версий: фраза и случайный ключ, отметки
-# месячной копии и почты «вслед за сервером», ключи расписания в conf. Своих
-# копий у шлюза больше нет, возврата на прежние версии тоже — держать незачем.
-LEFTOVER_STATE = ("backup_passphrase", "backup_key", "last_backup", "backup_nokey_noticed",
-                  "gwcfg_mail_hint", "gwcfg_backup_follow")
-LEFTOVER_CONF = ("app.scheduler.backup_enabled", "app.scheduler.backup_channel",
-                 "app.scheduler.backup_day", "app.scheduler.backup_hour")
-LEFTOVER_SECTION = "backup"          # раздел документа «фраза бэкапов» — в вопросах и памятках
-# файлы копий прежних версий в каталоге бэкапов агента: внутри ключи линка, а
-# применить их уже нельзя
-LEFTOVER_FILES = ("*.tgz", "*.tgz.enc", "*.tar.gz", "*.tar.gz.enc", "*.tgz.dec", "restore-pending*")
-# маркеры awg-bot restore прежних версий в каталоге данных агента
-LEFTOVER_MARKERS = ("restore-*.json", ".restore-prune")
 KINDS = ("restore", "device", "same")       # вопрос: после восстановления, новое устройство, та же машина заново
 
 
@@ -57,46 +44,6 @@ class KeepMixin:
     _KEEP_TRAFFIC_GOT_KEY = "gw_keep_traffic_got"   # месяц, чей счёт с сервера уже перенесён
     _KEEP_FW_PENDING_KEY = "gw_keep_fw_pending"     # «1» — файервол с сервера записан, юнит обвязки не перезапущен
     _KEEP_MSG_KEY = "gw_keep_msg"              # [chat, message] — сообщение с вопросом: снятый вопрос правится в итог
-
-    # ── следы своих копий прежних версий ─────────────────────────────────────
-
-    def backup_leftovers_drop(self) -> bool:
-        """На старте: стереть фразу, отметки, файлы и ключи расписания своих
-        копий, снять вопрос и памятку о фразе с сервера. Повторный вызов — ничего.
-        True — что-то стёрто."""
-        hit = False
-        for key in LEFTOVER_STATE:
-            if self.db.get_state(key):
-                self.db.set_state(key, "")
-                hit = True
-        for key in (self._CFG_KEEP_KEY, self._CFG_PENDING_KEY, self._CFG_WAIT_KEY):
-            data = self.db.get_state_json(key, {}) or {}
-            if isinstance(data, dict) and LEFTOVER_SECTION in data:
-                del data[LEFTOVER_SECTION]
-                self.db.set_state(key, json.dumps(data, ensure_ascii=False) if data else "")
-                hit = True
-        from awgbot.core import config
-        try:
-            olds = {p for pat in LEFTOVER_FILES for p in config.BACKUP_DIR.glob(pat) if p.is_file()}
-        except OSError:
-            olds = set()
-        try:
-            olds |= {p for pat in LEFTOVER_MARKERS for p in config.DATA_DIR.glob(pat) if p.is_file()}
-        except OSError:
-            pass
-        for path in sorted(olds):
-            try:
-                path.unlink()
-                hit = True
-            except OSError as e:
-                log.warning("gateway: файл копии прежних версий %s не удалён: %s", path.name, e)
-        try:
-            hit = bool(settings.drop_keys(LEFTOVER_CONF)) or hit
-        except Exception as e:                            # noqa: BLE001 — conf сломан руками: ключи подождут
-            log.warning("gateway: ключи расписания копий в conf не сняты: %s", e)
-        if hit:
-            log.info("gateway: следы своих копий прежних версий стёрты — настройки шлюза в бэкапе сервера AWG")
-        return hit
 
     # ── сбор ─────────────────────────────────────────────────────────────────
 

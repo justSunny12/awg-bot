@@ -392,7 +392,6 @@ def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script
     prog = (
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; UPDATE_PREV="{prev}"; UPDATE_TMP="{upd_tmp}"\n'
         'warn() { echo "WARN $*"; }\n'
-        'adopt_awg_section_for_old() { :; }\n'      # раздел app.yaml — test_adopt_awg_section
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}\n'
         + _extract_func(script, "restore_prev_code") + "\n"
         + _extract_func(script, "update_rescue")
@@ -497,7 +496,6 @@ def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; AWG_UPDATE_PREV="{prev}"',
         'ENV_FILE=/x; CONF_DIR=/x; DATA_DIR=/x',
         'warn() { echo "WARN $*"; }',
-        "adopt_awg_section_for_old() { :; }",      # раздел app.yaml — test_adopt_awg_section
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
         _extract_func(script, "venv_rollback"), _extract_func(script, "restore_prev_code"),
         _extract_func(script, "post_update_rescue"),
@@ -513,39 +511,5 @@ def test_post_update_rescue_brings_back_the_old_code_and_environment(script, tmp
 
 # ── откат ниже 3.3.0: таблица адресов в туннеле ──────────────────────────────
 
-@pytest.mark.parametrize("target, has_code, dropped", [
-    ("3.2.1", False, True), ("3.2.1.4", False, True), ("2.24.0", False, True),
-    ("3.2.1.7", True, False),                     # предрелизная сборка с кодом таблицы — та же функция
-    ("3.3.0", False, False), ("3.3.0.1", True, False), ("3.4.0", True, False), ("", False, False)])
-def test_an_update_below_330_drops_the_tunnel_address_table(script, tmp_path, target, has_code, dropped):
-    """Бот старше 3.3.0 о таблице awg_lan_map не знает, а оставшись в ядре до
-    ребута, она ломает его трафик (зоны conntrack, перевод источника).
-    Первая половина обновления — её исполняет установленный скрипт 3.3.0 —
-    снимает таблицу, если поставка ниже 3.3.0; версия не прочитана — не
-    трогает. Таблицы и правила слотов прежний бот держит сам."""
-    import subprocess
-    tree = tmp_path / "src"; (tree / "awgbot" / "infra" / "routing").mkdir(parents=True)
-    if has_code:
-        (tree / "awgbot" / "infra" / "routing" / "lanmap.py").write_text("", encoding="utf-8")
-    if target:
-        (tree / "awgbot" / "__version__.py").write_text(f'"""x"""\n\n__version__ = "{target}"\n', encoding="utf-8")
-    log = tmp_path / "log"; log.write_text("", encoding="utf-8")
-    prog = "\n".join([
-        "ok() { :; }",
-        f'nft() {{ echo "nft $*" >> "{log}"; }}',
-        _extract_func(script, "tree_version"), _extract_func(script, "version_lt"),
-        _extract_func(script, "lanmap_drop_for_older"),
-        f'test "$(tree_version "{tree}")" = "{target}" || exit 7',
-        f'lanmap_drop_for_older "{tree}"; echo RC=$?'])
-    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10,
-                       env={"PATH": "/usr/bin:/bin"})
-    assert r.returncode == 0 and "RC=0" in r.stdout, (r.stdout, r.stderr)
-    calls = log.read_text(encoding="utf-8").splitlines()
-    assert calls == (["nft delete table inet awg_lan_map"] if dropped else []), (target, calls)
-
-
-def test_the_tunnel_address_table_goes_right_after_the_stop_and_on_uninstall(script):
-    upd = _extract_func(script, "cmd_update")
-    stop = upd.index('systemctl stop "$SERVICE"')
-    assert stop < upd.index('lanmap_drop_for_older "$src"') < upd.index("trap update_rescue EXIT")
+def test_the_tunnel_address_table_goes_on_uninstall(script):
     assert "nft delete table inet awg_lan_map" in _extract_func(script, "cmd_post_uninstall")

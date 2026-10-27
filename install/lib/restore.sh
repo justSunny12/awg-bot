@@ -320,9 +320,12 @@ cmd_restore() {
     fi
     local bk_at
     bk_at="$(grep -o '"created_at": *"[^"]*"' "$copy/state/backup-meta.json" | sed 's/.*"\([^"]*\)"$/\1/')"
-    # Каталог конфигов интерфейсов и ключ timezone — по ТЕКУЩЕМУ app.yaml, до
-    # его подмены: иначе бэкап сам выбирал бы, куда положить свои конфиги.
+    # Каталог конфигов интерфейсов — по ТЕКУЩЕМУ app.yaml, до его подмены:
+    # иначе бэкап сам выбирал бы, куда положить свои конфиги.
     local awgdir; awgdir="$(awg_conf_dir)"
+    # RESTORE_TZ_HAD — договор со скриптом выпуска бэкапа 4.0.x (его
+    # restore_apply по нему решает ключ timezone копии); этот скрипт ключ
+    # копии не трогает. Снимается со сдвигом минимума выше 4.0.x.
     local tz_had=0
     grep -qE '^timezone:' "$CONF_DIR/app.yaml" 2>/dev/null && tz_had=1
 
@@ -420,7 +423,7 @@ cmd_restore_after_update() {  # __restore_after_update — вторая поло
 
 restore_apply() {  # после остановки: слияние, подготовка, DROP, замена, подъём, маркер, старт
     local copy="$RESTORE_COPY" expect="$RESTORE_EXPECT" bk_at="$RESTORE_BK_AT" awgdir="$RESTORE_AWGDIR"
-    local tz_had="$RESTORE_TZ_HAD" src="$RESTORE_SRC" err
+    local src="$RESTORE_SRC" err
     # Слияние — после остановки: читает живую базу неподвижной, пишет только в
     # распакованный бэкап и сверяет план с вопросом. Отказ — живое не тронуто.
     if ! err="$(bot_tool tools.restore_merge --copy "$copy" --expect "$expect" 2>&1 >/dev/null)"; then
@@ -473,7 +476,6 @@ restore_apply() {  # после остановки: слияние, подгот
     if ! restore_swap; then
         restore_die "замена не прошла — вернул прежнее, сервис поднят: ${RESTORE_ERR:-причина не названа}"
     fi
-    [[ "$tz_had" -eq 1 ]] || adopt_timezone quiet
     restore_finish                                      # точка невозврата: дальше — только вперёд
     if [[ "${RESTORE_CODE:-0}" -eq 1 ]]; then
         # переход на выпуск бэкапа доведён: digest установки — digest метки

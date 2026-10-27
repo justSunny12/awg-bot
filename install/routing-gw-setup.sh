@@ -87,10 +87,7 @@
 #      conf-dir: Debian читает оттуда всё, кроме .dpkg-*, и копия грузилась бы
 #      вместе с новым файлом.
 #      Таблица пишется БЕЗ delete table: наборы наполняет dnsmasq на лету, и
-#      реассерт обязан их сохранить — пересобираются только цепочки. Таблица
-#      прежнего имени (inet awg_home, обвязка 3.3.0 и раньше) переезжает в
-#      inet awg_lan на первом прогоне: наборы — слепками, строки nftset= — на
-#      новое имя (снимается со следующим сдвигом минимума). Личные
+#      реассерт обязан их сохранить — пересобираются только цепочки. Личные
 #      списки при снятии уходят в /var/lib/awg-gw/restore, и следующее
 #      включение берёт их оттуда; нет — пустые заготовки. Занят :53
 #      не-dnsmasq — честный отказ ДО
@@ -220,10 +217,6 @@
 #                   таблица --join (inet awg_gw_join, join.nft) снимается; без
 #                   него карантин остаётся и перегружается из join.nft
 #                   (прежний юнит посреди сопряжения). В юнит не закрепляется
-# Юнит, записанный скриптом 3.3.0 и раньше, держит подсети под прежними
-# именами HOME_SUBNETS / PEER_HOME_NETS: их скрипт читает, только если новых
-# в окружении нет вовсе, и переписывает юнит уже с новыми — снимается со следующим сдвигом
-# минимума.
 # Значения окружения (юнит, агент, руками) проходят фильтр формы до первого использования:
 # CLIENT_SUBNET — только цифры, точки и «/», вид a.b.c.d/n, иначе отказ;
 # LINK_IF — [A-Za-z0-9_.-], не длиннее 15 символов; ADMIN_IPS и
@@ -353,10 +346,6 @@ LAN_DUMP="/var/lib/awg-gw"                # слепки наборов: гру�
 DNSMASQ_DEFAULT="/etc/default/dnsmasq"
 DNSMASQ_MARK="$GW_ETC/dnsmasq.installed"  # dnsmasq ставили мы — при снятии выключаем
 # Локальные подсети и резолвер — те же фильтры, что у чужих подсетей ниже.
-# Прежнее имя (юнит 3.3.0 и раньше) — только когда нового в окружении нет
-# вовсе: намеренно пустое новое значение прежним не подменяется. Снимается
-# со следующим сдвигом минимума.
-[ -n "${LAN_SUBNETS+x}" ] || LAN_SUBNETS="${HOME_SUBNETS:-}"
 LAN_SUBNETS="$(printf '%s' "${LAN_SUBNETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
 RESOLVER="$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true)"
@@ -369,8 +358,6 @@ LINK_CHANNEL_PORT="$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | c
 case "$LINK_CHANNEL_PORT" in ''|0) LINK_CHANNEL_PORT=8787 ;; esac
 # Подсети за другими шлюзами: им из линка
 # открыт транзит в локальную сеть — по источнику, выше drop по приватным.
-# Прежнее имя — как у LAN_SUBNETS выше (снимается со следующим сдвигом минимума).
-[ -n "${PEER_LAN_NETS+x}" ] || PEER_LAN_NETS="${PEER_HOME_NETS:-}"
 PEER_LAN_NETS="$(printf '%s' "${PEER_LAN_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
 
@@ -501,52 +488,10 @@ _lan_remove_locked() {
     fi
     nft list table $LAN_TABLE >/dev/null 2>&1 && run "nft delete table $LAN_TABLE"
     [ -f "$LAN_FILE" ] && run "rm -f $LAN_FILE"
-    lan_table_old_drop          # прежнее имя таблицы — снимается со следующим сдвигом минимума
     [ -f "$LAN_SYSCTL" ] && run "rm -f $LAN_SYSCTL"
     [ -f "$LAN_LISTS" ] && run "rm -f $LAN_LISTS"
     [ -f "$LAN_DOMAIN" ] && run "rm -f $LAN_DOMAIN"
     [ -f "$LAN_SERVICES" ] && run "rm -f $LAN_SERVICES"
-    return 0
-}
-# Переход таблицы локальной сети с прежнего имени (inet awg_home — обвязка
-# 3.3.0 и раньше) на $LAN_TABLE. Строки nftset= своих списков, фида, слепков
-# и копий для отката — на новое имя ДО конфигов dnsmasq и по самим файлам, а
-# не по живой таблице: после перезагрузки, при выключенном режиме или откате
-# прежней таблицы в ядре нет, а строки с ней в файлах есть. Наборы живой
-# прежней таблицы — слепками в новую и снятие прежней ПОСЛЕ перезапуска
-# dnsmasq: до него демон пишет адреса в прежнюю, и они не теряются.
-# Снимается со следующим сдвигом минимума.
-LAN_TABLE_OLD="inet awg_home"
-LAN_FILE_OLD="$GW_ETC/home.nft"
-lan_table_move_prepare() {     # до конфигов dnsmasq: строки с прежним именем — на новое
-    for _f in "$DNSMASQ_D"/awg-gw-*.conf "$LAN_DUMP"/restore/*.conf "$LAN_DUMP"/rollback/*.prev \
-              "$LAN_DUMP"/vpn-feed.src "$LAN_DUMP"/lan_vpn4.nft "$LAN_DUMP"/lan_vpn_nets4.nft; do
-        [ -f "$_f" ] && grep -q -e 'inet#awg_home#' -e "^table $LAN_TABLE_OLD {" "$_f" || continue
-        # временный файл рядом (тот же раздел — mv атомарен) с суффиксом,
-        # который conf-dir Debian не читает; права и владелец — копией прежнего
-        _t="$_f.dpkg-new"
-        run "cp -p $_f $_t && sed 's|inet#awg_home#|inet#awg_lan#|g; s|^table $LAN_TABLE_OLD {|table $LAN_TABLE {|' $_f > $_t && mv -f $_t $_f" \
-            || { rm -f "$_t"; say "  $_f: строки прежней таблицы не переписаны"; continue; }
-        _dn_changed=1
-    done
-    return 0
-}
-lan_table_move_finish() {      # после перезапуска dnsmasq: наборы прежней — в новую, прежняя — вон
-    if nft list table $LAN_TABLE_OLD >/dev/null 2>&1; then
-        say "  таблица локальной сети переезжает: $LAN_TABLE_OLD → $LAN_TABLE (наборы и свои списки на месте)"
-        for _s in lan_vpn4 lan_vpn_nets4 lan_ru4; do
-            _m="$LAN_DUMP/$_s.move.nft"
-            nft list set $LAN_TABLE_OLD $_s 2>/dev/null \
-                | sed "s|^table $LAN_TABLE_OLD {|table $LAN_TABLE {|" > "$_m" || true
-            [ -s "$_m" ] && run "nft -f $_m 2>/dev/null || true"
-            rm -f "$_m"
-        done
-    fi
-    lan_table_old_drop
-}
-lan_table_old_drop() {
-    nft list table $LAN_TABLE_OLD >/dev/null 2>&1 && run "nft delete table $LAN_TABLE_OLD"
-    [ -f "$LAN_FILE_OLD" ] && run "rm -f $LAN_FILE_OLD"
     return 0
 }
 write_lan_scripts() {          # скрипты списков — из этого же файла, чтобы файл конфигурации был самодостаточен
@@ -2170,7 +2115,6 @@ _lan_apply_locked() {
         sed -n 's/^Endpoint *= *\(.*\):[0-9][0-9]*$/\1/p' "$_c" 2>/dev/null; done | grep -Ev '^[0-9.]+$|^\[' | sort -u)"
     _dn_changed=0
     run "mkdir -p $DNSMASQ_D $LAN_DUMP"
-    lan_table_move_prepare      # переход с прежнего имени таблицы — снимается со следующим сдвигом минимума
     # ── конфиги dnsmasq ДО установки пакета: первый старт демона сразу с нашим
     # listen-address, а не wildcard на :53. Временные файлы — вне conf-dir.
     _tmp="$(mktemp "$LAN_DUMP/dnsmasq.XXXXXX")"
@@ -2330,7 +2274,6 @@ LANEOF
     else
         say "  dnsmasq: конфиги не изменились"
     fi
-    lan_table_move_finish       # переход с прежнего имени таблицы — снимается со следующим сдвигом минимума
     say "  списки — обновляет агент (первый раз через несколько минут); руками: $LAN_LISTS"
     return 0
 }

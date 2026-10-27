@@ -6,36 +6,9 @@ from awgbot.bot.callbacks import ClientCB, Menu, NoteCB
 from tests.screens.base import Shot, in_zone
 from tests.screens.shots_admin_common import (BR, GB, IPHONE, KS, PHONE, _base, _mig_running, _people,
                                               _quiet, _two_expiring, _upd_found)
-from tests.screens.shots_admin_common_gw import NASPI, _gw_online, _routing, _slots
+from tests.screens.shots_admin_common_gw import _gw_online, _routing, _slots
 
 
-def _claim(services, mp):
-    """Пересланное сообщение агента: подпись проверена, устройство назначено."""
-    who = _slots(1)(services, mp)
-    dev = services.db.get_device(NASPI)
-    gw = services.db.gateways()[0]
-    services.gateway_claim = lambda text: {"status": "marked", "device": dev, "gateway": gw}
-    return who
-
-
-def _claim_already(services, mp):
-    who = _slots(1)(services, mp)
-    dev = services.db.get_device(NASPI)
-    gw = services.db.gateways()[0]
-    services.gateway_claim = lambda text: {"status": "already", "device": dev, "gateway": gw}
-    return who
-
-
-def _claim_bad(services, mp):
-    who = _slots(1)(services, mp)
-
-    def bad(text):
-        raise ValueError("подпись не сходится — сообщение не от этого шлюза или ключ линка другой")
-    services.gateway_claim = bad
-    return who
-
-
-CLAIM = "✅ Шлюз настроен. Перешли это сообщение основному боту:\nGW1:RFVNTVk.RFVNTVk"
 
 
 MAIN = [
@@ -93,10 +66,6 @@ LINKS = [
 
 OUTSIDE = [
     # ── 1.7 вне меню ────────────────────────────────────────────────────────
-    Shot("adm.claim", role="admin", text=CLAIM, data=_claim,
-         title="пересланное сообщение агента — назначено, конфигурацию везёт канал, файла нет"),
-    Shot("adm.claim.already", role="admin", text=CLAIM, data=_claim_already, title="этот шлюз уже назначен"),
-    Shot("adm.claim.bad", role="admin", text=CLAIM, data=_claim_bad, title="подпись не сошлась"),
     Shot("adm.note.extend", role="admin", press=[NoteCB(kind="extend", ref=BR)], data=_people,
          title="«Продлить» на уведомлении об истечении"),
     Shot("adm.note.unassigned", role="admin", press=[NoteCB(kind="unassigned")], data=_people,

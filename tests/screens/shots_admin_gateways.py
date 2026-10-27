@@ -1,14 +1,11 @@
 """Снимки админа: «🛰 Шлюзы» — слоты, назначение, параметры, снятие, автопереключение."""
 from __future__ import annotations
 
-import base64
-import json
-
 from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, SetCB
 from awgbot.core import config
 
 from tests.screens.base import NOW, Shot
-from tests.screens.shots_admin_common import BR, IPHONE, MAC, _base, _fw, _people, _raise
+from tests.screens.shots_admin_common import BR, MAC, _base, _fw, _people, _raise
 from tests.screens.shots_admin_common_gw import (LAN2, NASPI, PI4, TOKEN, TOKEN2, _active1, _card,
                                                  _drop_slot2, _gw, _label, _routing, _slots)
 
@@ -274,31 +271,6 @@ def _probe_down(services, mp):
     services.routing_probe = lambda: rt.PROBE_DOWN
 
 
-_PIN = "RERERERERERERERERERERERERERERERERERERERERERE="   # ключ аплинка Ксюшиного телефона — заглушка
-_CLAIM_PRIV = base64.b64encode(b"DUMMY-CLAIM-KEY-FOR-SCREENS-32B!").decode()   # ключ линка под claim — заглушка, 32 байта
-
-
-def _iphone_key(services, mp):
-    services.db.update_device_fields(IPHONE, public_key=_PIN)
-    services._link_privkey = lambda gw=None: _CLAIM_PRIV
-
-
-def _claim_key(services, mp):
-    services._link_privkey = lambda gw=None: _CLAIM_PRIV
-
-
-def _claim_text(pub: str) -> str:
-    """Токен claim, как его подписал бы агент, — с постоянными ts и nonce
-    (gwsign.sign берёт случайный nonce, а эталону нужен один и тот же текст)."""
-    import hashlib
-    import hmac
-    from awgbot.util import gwsign
-    payload = json.dumps({"act": "claim", "pub": pub, "ts": int(NOW.timestamp()), "nonce": "00" * 8, "host": ""},
-                         separators=(",", ":"), ensure_ascii=False).encode()
-    mac = hmac.new(gwsign._key(_CLAIM_PRIV), payload, hashlib.sha256).digest()[:20]
-    return gwsign.PREFIX + gwsign.b64u(payload) + "." + gwsign.b64u(mac)
-
-
 _FW_UNRESOLVED = [f"h{i}.example" for i in range(15)]
 
 
@@ -455,10 +427,6 @@ SLOTS = [
     # ── старые кнопки файла ──────────────────────────────────────────────
     Shot("adm.gw.bundle.menu.old", role="admin", press=[SetCB(sec="rt", act="do", key="bundle_menu", val="2")],
          data=_slots(2), title="«В меню» под файлом до 3.1.0 — убирает сообщение, главная"),
-    # ── пересланное сообщение агента ─────────────────────────────────────
-    Shot("adm.claim.foreign", role="admin", text=_claim_text(_PIN), data=_gw(1, _iphone_key),
-         title="claim другого устройства при назначенном шлюзе — не принято"),
-    Shot("adm.claim.garbage", role="admin", text="GW1:abc.def", data=_gw(1, _claim_key), title="мусор вместо токена"),
     # ── файервол ВПС ─────────────────────────────────────────────────────
     Shot("adm.set.fw.unresolved", role="admin", press=[SetCB(sec="fw")],
          data=_fw(enabled=True, present=True, allow=[], raw_allow=_FW_UNRESOLVED, unresolved=_FW_UNRESOLVED,

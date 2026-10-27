@@ -9,13 +9,7 @@
 # в один текст (tests/botscript.py).
 #
 # Шаги окружения новой версии (update_env_steps) — общие у второй половины
-# update и у восстановления (`update_env_steps restore`). Первым из шагов 4.0.0
-# стоит refuse_container_runtime: AmneziaWG в контейнере (раздел docker: со
-# строкой runtime: docker) 4.0.0 не поддерживает — отказ до переименования
-# раздела (adopt_awg_section), ловушка второй половины возвращает прежний код.
-# Любой возврат кода (restore_prev_code: ловушка, сторож, откат набора) ниже
-# 4.0.0 на шлюзе снимает постоянный линк к резерву и файл с долей ключа
-# переезда (reserve_gw_drop_for_old): прежний агент о них не знает.
+# update и у восстановления (`update_env_steps restore`).
 
 # ── update ───────────────────────────────────────────────────────────────────
 locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь или пусто
@@ -98,7 +92,6 @@ cmd_update() {
     # уходит ниже, откат теперь — на версию, работающую сейчас
     update_guard_disarm
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
-    lanmap_drop_for_older "$src"
     # Старый код — в сторону, а не под нож: отказ копирования (кончилось место,
     # битый архив) возвращает его на место и поднимает сервис. Ловушка — сразу
     # после остановки: с этого момента любой выход не по плану = откат.
@@ -183,30 +176,6 @@ version_lt() {  # version_lt A B — A строго старше B (X.Y.Z или
         && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
 }
 
-lanmap_drop_for_older() {  # lanmap_drop_for_older DIR — поставка без адресов в туннеле: таблицу прочь
-    # Таблицу inet awg_lan_map ставит бот 3.3.0 и только он; файла в
-    # /etc/nftables.d у неё нет. Код без неё (выпуск старше 3.3.0) о таблице
-    # не знает, а оставшись в ядре до ребута, она ломает его трафик: цепочка
-    # slot_zone кладёт ответы по реальным адресам сетей шлюзов в другую зону
-    # conntrack (invalid → drop файервола), twin_snat переводит источник.
-    # Снимаем при остановке сервиса, пока исполняется этот (новый) скрипт.
-    # Решает версия поставки ниже 3.3.0 И отсутствие в ней кода таблицы
-    # (awgbot/infra/routing/lanmap.py): предрелизная сборка 3.2.x.N с этим
-    # кодом — та же функция, таблицу не трогаем. Таблицы и правила слотов
-    # (fwmark → lookup 10N) прежний бот ставит сам и держит для зонда резерва
-    # — их не трогаем. Маршруты настоящих подсетей прежний бот возвращает сам:
-    # при перезагрузке ВПС, на первом такте живости при задействованном
-    # РФ-доступе, иначе — при сохранении «🗺 Подсети» слота.
-    local ver; ver="$(tree_version "$1")"
-    version_lt "$ver" "3.3.0" || return 0
-    [[ -f "$1/awgbot/infra/routing/lanmap.py" ]] && return 0
-    command -v nft >/dev/null 2>&1 || return 0
-    if nft delete table inet awg_lan_map 2>/dev/null; then
-        ok "поставка без адресов в туннеле (v$ver): таблица awg_lan_map снята — текущая версия её не поддерживает"
-    fi
-    return 0
-}
-
 update_rescue() {  # ловушка первой половины обновления: прежний код назад, сервис вверх
     local rc=$?
     [[ "$rc" -eq 0 ]] && return 0
@@ -219,8 +188,7 @@ update_rescue() {  # ловушка первой половины обновле
 }
 restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает); 1 — неполон
     # Единая точка всех откатов кода (ловушка второй половины, сторож, откат
-    # набора, несостоявшийся переход на выпуск копии): app.yaml приводится
-    # к раскладке возвращённого кода (adopt_awg_section_for_old)
+    # набора, несостоявшийся переход на выпуск копии)
     local prev="$1" _rc=0
     # текущий код удаляется только под полный прежний: иначе хост остался бы без кода
     if [[ ! -f "$prev/awg-bot.sh" || ! -f "$prev/awgbot/__main__.py" ]]; then
@@ -231,25 +199,11 @@ restore_prev_code() {  # restore_prev_code DIR — прежний код из DI
         -exec rm -rf {} + 2>/dev/null || true
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
     rm -rf "$prev"
-    adopt_awg_section_for_old
-    reserve_gw_drop_for_old
     # Копия обвязки шлюза — тоже код: ensure_host_autostart уже могла положить
     # скрипт новой версии, и прежний агент остался бы при чужой обвязке
     gw_plumbing_sync || _rc=$?
     [[ "$_rc" -eq 1 ]] && warn "не удалось вернуть прежнюю копию обвязки в /usr/local/sbin/routing-gw-setup.sh"
     return 0
-}
-# Возвращённый код ниже 4.0.0 о резерве не знает: линк awgrsv, его таблица,
-# юнит и файл с долей ключа переезда остались бы на шлюзе без хозяина —
-# снять, пока скрипт ещё на месте (сервер выдаст долю заново при обновлении).
-reserve_gw_drop_for_old() {
-    [[ -x /usr/local/sbin/reserve-gw-setup.sh && -f "$INSTALL_DIR/awgbot/__version__.py" ]] || return 0
-    local v; v="$(sed -nE 's/^__version__ = "([0-9.]+)".*/\1/p' "$INSTALL_DIR/awgbot/__version__.py" 2>/dev/null | head -n1 || true)"
-    [[ -n "$v" ]] || return 0
-    [[ "$(printf '%s\n%s\n' "$v" "4.0.0" | sort -V | head -n1)" == "$v" && "$v" != "4.0.0" ]] || return 0
-    sh /usr/local/sbin/reserve-gw-setup.sh --remove >/dev/null 2>&1 || true
-    rm -f /var/lib/awg-gw/reserve.json
-    log "резерв: линк к резерву и доля ключа переезда сняты — возвращённый код $v о них не знает"
 }
 # Копия routing-gw-setup.sh в /usr/local/sbin — по поставке в $INSTALL_DIR,
 # если копия уже есть (нет — обвязку тут не разворачивали, класть нечего).
@@ -273,8 +227,6 @@ post_update_rescue() {  # ловушка второй половины обно�
     if [[ -n "${AWG_UPDATE_PREV:-}" && -d "$AWG_UPDATE_PREV" ]]; then
         warn "обновление прервалось (код $rc) — возвращаю прежнюю версию и поднимаю сервис"
         restore_prev_code "$AWG_UPDATE_PREV" && back=1
-        adopt_timezone_undo                # ключ снял этот прогон — прежний код получает его назад
-        unit_guard_strip_for_old           # прежний скрипт сторожа не знает — его шаг из юнита прочь
     else
         warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
     fi
@@ -292,18 +244,6 @@ tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\n' + os.
             'Посмотреть причину: <code>journalctl -u awg-bot -e -o short-iso</code>, '
             'повторить: <code>sudo awg-bot update &lt;архив&gt;</code>.')
 " >/dev/null 2>&1 ) || true
-}
-unit_guard_strip_for_old() {  # возвращённый код не знает __update_guard: ExecStartPre из юнита — прочь
-    # Юнит переписал новый скрипт (install_unit) до отказа; прежний скрипт на
-    # глагол __update_guard отвечал бы «неизвестная команда» на каждом старте
-    # (строка с «-» старт не держит, но сорит в журнал)
-    local unit="$UNIT_PATH" tmp
-    grep -q '__update_guard' "$INSTALL_DIR/awg-bot.sh" 2>/dev/null && return 0
-    [[ -f "$unit" ]] && grep -q '__update_guard' "$unit" || return 0
-    tmp="$(mktemp)" || return 0
-    grep -v '__update_guard' "$unit" > "$tmp" && cat "$tmp" > "$unit"
-    rm -f "$tmp"
-    systemctl daemon-reload 2>/dev/null || true
 }
 update_done() {  # обновление доведено: прежние код и окружение больше не нужны
     rm -f "$DATA_DIR/update-running"       # апдейтер отработал — pid в файле больше ничего не значит
@@ -599,30 +539,9 @@ update_env_steps() {  # update_env_steps [restore] — окружение нов
     ensure_awg_module_loaded
     ensure_awg_generation
     adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
-    # ключ timezone снимается один раз — на переходе с выпуска, где его писали
-    # шаблон и установщик (ниже 3.4.0): с 3.4.0 ключ в app.yaml — переопределение
-    # человека, обновление его не трогает; восстановление решает пояс после
-    # замены conf (restore_apply)
-    if [[ "${1:-}" != "restore" ]] && update_adopts_timezone; then
-        adopt_timezone
-    fi
-    refuse_container_runtime               # AmneziaWG в контейнере: 4.0.0 не поддерживает — отказ до переименования
-    adopt_awg_section                      # раздел параметров AmneziaWG — под именем awg (с 4.0.0)
-    adopt_link_keepalive                   # keepalive стороны сервера AWG на линках слотов (с 4.0.0)
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
-}
-
-refuse_container_runtime() {  # установка с AmneziaWG в контейнере (runtime: "docker") — остаётся на прежних выпусках
-    # С 4.0.0 бот ходит только к awg/awg-quick хоста; у контейнерной установки
-    # интерфейсов на хосте нет — обновление сделало бы клиентов без обслуживания.
-    # Ловушка второй половины вернёт прежний код и скажет в чат.
-    local app="$CONF_DIR/app.yaml"
-    [[ -f "$app" ]] || return 0
-    if awk '/^docker:$/{inside=1; next} /^[^ #]/{inside=0} inside && /^  runtime:[[:space:]]*"?docker"?/{found=1} END{exit !found}' "$app"; then
-        die "AmneziaWG в контейнере (docker.runtime: docker) — выпуск 4.0.0 такие установки не поддерживает; переведи AmneziaWG на хост прежним выпуском (awg-host-migrate) и обнови снова"
-    fi
 }
 
 cmd_post_update() {
@@ -641,7 +560,7 @@ cmd_post_update() {
 
     if [[ "$wipe" -eq 1 ]]; then
         warn "удаляю данные и настройки по твоему запросу…"
-        rm -rf "$DATA_DIR"/*.db "$DATA_DIR"/*.db-* "$DATA_DIR/.tz-adopted" 2>/dev/null || true
+        rm -rf "$DATA_DIR"/*.db "$DATA_DIR"/*.db-* 2>/dev/null || true
         rm -f "$ENV_FILE" 2>/dev/null || true
         rm -rf "$CONF_DIR" 2>/dev/null || true
         warn "данные удалены — потребуется reconfigure перед стартом."

@@ -9,19 +9,10 @@
 """
 from __future__ import annotations
 
-import glob
-import os
-
 from awgbot.util import timeutil
 
-from ..gateway_link import slotkeys
-from ..gateway_link.common import log
 from .state import LIVE, OPEN, OPEN_OR_CLOSING, PAIRING
 
-# прежние файлы первого применения (выпуски до 3.4.0): внутри ключи линка,
-# токен бота шлюза и ADMIN_ID — на сервере им больше незачем лежать
-LEGACY_BUNDLES = "/root/awg-gw-bundle*.sh"
-LEGACY_KEYS = ("gw_bundle_issued_at", "gw_bundle_ssh_allow")
 
 
 class GwJoinQuarantineMixin:
@@ -112,19 +103,3 @@ class GwJoinQuarantineMixin:
         if st.get("kind") in ("replace", "same") and st.get("state") == "waiting":
             return {"state": "replace", "until": st["expires"]}
         return {"state": "code" if st.get("state") == "connected" else "waiting", "until": st["expires"]}
-
-    def gwjoin_boot(self) -> int:
-        """Старт сервера: прежние файлы первого применения — прочь, их
-        метки в базе — тоже. Идемпотентно; число удалённых файлов."""
-        n = 0
-        for path in glob.glob(LEGACY_BUNDLES):
-            try:
-                os.remove(path)
-                n += 1
-            except OSError as e:
-                log.warning("прежний файл конфигурации шлюза %s не удалён: %s", path, e)
-        for g in self.db.gateways():
-            slotkeys.forget(self.db, g.id, LEGACY_KEYS)
-        if n:
-            log.info("прежних файлов конфигурации шлюза удалено: %s", n)
-        return n

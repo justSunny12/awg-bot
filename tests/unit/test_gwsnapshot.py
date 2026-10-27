@@ -28,9 +28,6 @@ FACTS = ("bundle", "link_contract", "mark_status",
          "agent_version", "awg_generation", "agent_bot",   # agent_bot — кто бот шлюза, для ссылки в его чат
          "cfg")                                            # cfg — отпечатки разделов документа конфигурации
 BUNDLE = ("lan_mode", "lan_subnets", "resolver", "peer_lan_nets", "admin_ips")
-# прежние имена двух полей — их агент пишет рядом с новыми для сервера 3.3.0
-# (снимается со следующим сдвигом минимума)
-BUNDLE_OLD = ("home_subnets", "peer_home_nets")
 SERVICE = ("rev", "ts", "boot_id")
 VERDICTS = ("peer_nets", "egress_ok",
             "lan_addr")                     # lan_addr — адрес шлюза в локальной сети: в настройку роутера
@@ -119,7 +116,7 @@ def test_the_snapshot_carries_exactly_the_agreed_fields_and_nothing_else(pi):
         "состав снимка разошёлся с утверждённым списком: "
         f"лишние {sorted(set(snap) - set(FACTS + VERDICTS + SERVICE))}, "
         f"пропали {sorted(set(FACTS + VERDICTS + SERVICE) - set(snap))}")
-    assert set(snap["bundle"]) == set(BUNDLE + BUNDLE_OLD), "блок «что применено из конфигурации» изменился"
+    assert set(snap["bundle"]) == set(BUNDLE), "блок «что применено из конфигурации» изменился"
     assert set(gwsnapshot.FIELDS) == set(FACTS + VERDICTS + SERVICE + RESERVE)
     assert set(gwsnapshot.BUNDLE_FIELDS) == set(BUNDLE)
 
@@ -362,7 +359,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "",
                           "token": "", "server": "", "reserve": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
-    assert set(out["bundle"]) == set(BUNDLE + BUNDLE_OLD), "неизвестные ключи внутри bundle отброшены"
+    assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["lan_subnets"]) == 512, "длина значения не ограничена"
     assert out["bundle"]["peer_lan_nets"] == "", "недосланное поле стало пустым, а не пропало"
     assert len(out["peer_nets"]["missing"]) == 64, "список в вердикте не ограничен"
@@ -494,3 +491,8 @@ def test_sanitize_cuts_the_bot_name_to_64():
     подделка, и строка карточки не должна растягиваться на экран."""
     out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Я" * 1000}})
     assert out["agent_bot"]["name"] == "Я" * 64
+
+
+def test_the_snapshot_no_longer_carries_the_plumbing_generation(pi):
+    assert "plumbing_gen" not in pi.snap()
+    assert "plumbing_gen" not in gwsnapshot.sanitize({"plumbing_gen": "old"})

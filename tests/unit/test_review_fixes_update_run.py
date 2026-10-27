@@ -242,50 +242,6 @@ def test_a_plain_update_still_asks_about_the_data(box):
         f"ASKED Удалить пользовательские данные (БД в {box.data} + секреты {box.etc}/env + конфиг)?"]
 
 
-# ── upd-4: возвращённый прежний код и шаг сторожа в юните ───────────────────
-
-UNIT = ("[Unit]\nDescription=awg-bot\n\n[Service]\n"
-        "ExecStartPre=-/usr/local/bin/awg-bot __update_guard --start\n"
-        "ExecStart=/opt/awg-bot/venv/bin/python -m awgbot\n\n[Install]\nWantedBy=multi-user.target\n")
-
-
-def _failing_post_update(tmp_path, *, old_knows_guard: bool) -> _Host:
-    """Вторая половина падает на проверке conf; прежний код — выпуск ниже
-    3.4.0 (скрипт сторожа не знает) или знающий его."""
-    host = _Host(tmp_path, prev="3.3.9", floor="3.4.0")
-    if old_knows_guard:
-        (host.inst / ".prev-code" / "awg-bot.sh").write_text("# __update_guard\n", encoding="utf-8")
-    hook = tmp_path / "hook.sh"
-    hook.write_text(hook.read_text(encoding="utf-8")
-                    + 'validate_config() { echo "conf: битый ключ" >&2; return 1; }\n', encoding="utf-8")
-    text = host.script.read_text(encoding="utf-8").replace(UNIT_LITERAL, str(tmp_path / "awg-bot.service"))
-    host.script.write_text(text, encoding="utf-8")
-    (tmp_path / "awg-bot.service").write_text(UNIT, encoding="utf-8")
-    (host.data / "update-running").write_text("4242\n", encoding="utf-8")
-    r = host.run("__post_update", "0")
-    assert r.returncode != 0, "сценарий собран не так: вторая половина не упала"
-    return host
-
-
-def test_the_old_code_back_gets_a_unit_without_the_unknown_guard_step(tmp_path):
-    host = _failing_post_update(tmp_path, old_knows_guard=False)
-    assert host.whose() == "old", "прежний код не вернулся"
-    assert host.app.read_text(encoding="utf-8") == host.app_text, "прежний код вернулся без своего ключа timezone"
-    unit = (tmp_path / "awg-bot.service").read_text(encoding="utf-8")
-    assert "__update_guard" not in unit, "прежний скрипт получит неизвестный ему глагол на каждом старте"
-    assert unit == UNIT.replace("ExecStartPre=-/usr/local/bin/awg-bot __update_guard --start\n", "")
-    log = host.log()
-    assert "systemctl daemon-reload" in log and log.index("systemctl daemon-reload") < log.index("systemctl start awg-bot")
-    assert not (host.data / "update-running").exists(), "ловушка оставила pid апдейтера"
-    assert not (host.data / "update-guard").exists()
-
-
-def test_old_code_that_knows_the_guard_keeps_the_unit(tmp_path):
-    host = _failing_post_update(tmp_path, old_knows_guard=True)
-    assert host.whose() == "old"
-    assert (tmp_path / "awg-bot.service").read_text(encoding="utf-8") == UNIT
-
-
 # ── honest-8: самообновление кнопкой идёт тем же путём ──────────────────────
 
 def test_the_self_update_spawns_the_same_update_verb_outside_the_cgroup(monkeypatch):

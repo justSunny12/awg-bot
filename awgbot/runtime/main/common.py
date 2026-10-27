@@ -1,5 +1,5 @@
-"""common.py — часть пакета main (см. __init__): журнал, пояс на старте и метки
-в каталоге данных (свежая установка, снятый ключ пояса)."""
+"""common.py — часть пакета main (см. __init__): журнал, пояс на старте и метка
+свежей установки в каталоге данных."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Mapping, Optional
 
 FRESH_INSTALL_MARKER = ".fresh-install"   # кладёт установщик агента (awg-bot.sh), снимает первый запуск
-ZONE_ADOPTED_MARKER = ".tz-adopted"       # кладёт шаг обновления (awg-bot.sh): ключ timezone снят, внутри — прежнее значение
 
 LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
 

@@ -51,9 +51,7 @@
 #                   остаются (юнит при остановке)
 #   --remove        линк, таблица, маршруты, конфиг, юнит и состояние — прочь
 #                   (пары нет); копия в SELF_PATH остаётся. Зовут агент (раздела
-#                   reserve больше нет), awg-bot uninstall и откат кода агента
-#                   ниже 4.0.0 (reserve_gw_drop_for_old в install/lib/update.sh,
-#                   вместе с /var/lib/awg-gw/reserve.json)
+#                   reserve больше нет) и awg-bot uninstall
 #   --status        key=value: link, open, src, rx, tx, conf
 # Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
 # (/var/lib/awg-gw/rsv.status: open=0|1, src=…, admins=…), RSV_MARK (0x52),

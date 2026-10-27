@@ -13,21 +13,19 @@ handlers/admin — роутер администратора: пакет роу�
              трафик списком, обновить статус
   clients    профили: список, карточка, создание, имя/лимиты/период/продление/удаление
   devices    устройства: добавление профилю, выдача, без профиля, карточка, перенос
-  gateway    пометка шлюза по пересланному сообщению агента
   selfops    личные устройства админа (AdminSelfCB)
   blocks     ручные блокировки устройств и пользователей
   broadcast  объявления, в том числе с продлением
 
 Порядок включения — порядок проверки фильтров. panel идёт ПЕРВЫМ: его
 `admin_start` (CommandStart без ограничения по состоянию) обязан перехватывать
-«/start» раньше любого FSM-обработчика ввода из остальных модулей и раньше
-`gateway_claim_message`; сторож — tests/smoke/test_admin_router_order.py.
+«/start» раньше любого FSM-обработчика ввода из остальных модулей; сторож — tests/smoke/test_admin_router_order.py.
 """
 
 from aiogram import Router
 
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.admin import (blocks, broadcast, clients, devices, gateway, panel,
+from awgbot.bot.handlers.admin import (blocks, broadcast, clients, devices, panel,
                                        selfops)
 from awgbot.bot.handlers.admin.panel import (
     _panel_parts, restore_panel_after_restart,
@@ -49,7 +47,6 @@ from awgbot.bot.handlers.admin.devices import (
     device_reassign_slot_no, device_edit_name_start, device_edit_name_apply,
     edit_device_traffic_start, device_limit_preset, admin_del_ask, admin_del_confirm,
     device_card_parts, my_devices_parts)
-from awgbot.bot.handlers.admin.gateway import has_gw_token, gateway_claim_message
 from awgbot.bot.handlers.admin.selfops import self_devices, self_gen_pick, self_add_start, self_add_name
 from awgbot.bot.sections.updates import menu as update_menu, mute as update_mute  # для тестов
 from awgbot.bot.handlers.fleet import install as update_install  # для тестов
@@ -69,7 +66,6 @@ router.callback_query.filter(RoleFilter("admin"))
 router.include_router(panel.router)
 router.include_router(clients.router)
 router.include_router(devices.router)
-router.include_router(gateway.router)
 router.include_router(selfops.router)
 router.include_router(blocks.router)
 router.include_router(broadcast.router)
@@ -93,8 +89,6 @@ __all__ = [
     "device_reassign_slot_no", "device_edit_name_start", "device_edit_name_apply",
     "edit_device_traffic_start", "device_limit_preset", "admin_del_ask", "admin_del_confirm",
     "device_card_parts", "my_devices_parts",
-    "has_gw_token", "gateway_claim_message",
-    
     "self_devices", "self_gen_pick", "self_add_start", "self_add_name",
     "admin_block_menu", "admin_unblock_menu", "admin_block_do", "admin_unblock_do", "admin_block_cancel",
     "broadcast_pick", "broadcast_mode", "broadcast_extend_toggle", "broadcast_toggle",

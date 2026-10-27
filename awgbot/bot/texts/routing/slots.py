@@ -122,18 +122,6 @@ def gateway_device_card(dev, state=None) -> str:
     return head + tail + (f"\n{role}" if role else "") + (f"\n\n{agent}" if agent else "")
 
 
-def gateway_claim_marked(dev) -> str:
-    """Устройство назначено шлюзом по пересланному сообщению: конфигурацию
-    везёт канал — файла не будет."""
-    return (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) назначено шлюзом. "
-            "Настройки применятся по каналу конфигурации, когда шлюз подключится; не подключится — "
-            "см. причину в строке «🔧 Канал конфигурации» карточки шлюза")
-
-
-def gateway_claim_already(dev) -> str:
-    return f"🛰 «{_e(dev.name)}» уже шлюз, ничего не менял."
-
-
 # ── слоты шлюзов ───────────────────────────────
 
 

@@ -44,7 +44,7 @@ from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
 from awgbot.runtime.conf_watcher import ConfWatcher
 
-from .common import FRESH_INSTALL_MARKER, ZONE_ADOPTED_MARKER, log, log_formatter, log_zone  # noqa: E402
+from .common import FRESH_INSTALL_MARKER, log, log_formatter, log_zone  # noqa: E402
 
 # Журнал: под journald время ставит journald, вне — ISO со смещением в поясе бота.
 _log_handler = logging.StreamHandler()
@@ -57,8 +57,7 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 # части зовут через пакет всё, что подменяют тесты (Bot, Database, Services,
 # ConfWatcher, make_dispatcher, notify_one, функции старта)
 from .startup import (_menu_command, _notify_migration_needed, _notify_private_dns_offer,  # noqa: E402
-                      do_reconcile, report_update_result, _sync_bot_identity, _announce_reboot,
-                      _announce_zone)
+                      do_reconcile, report_update_result, _sync_bot_identity, _announce_reboot)
 from .gateway import run_gateway  # noqa: E402
 from .guest import run_guest  # noqa: E402
 from .join import join_pending, run_join  # noqa: E402
@@ -66,7 +65,7 @@ from .client import main  # noqa: E402
 
 __all__ = ["Bot", "TelegramUnauthorizedError", "DefaultBotProperties", "ParseMode", "config", "settings", "awg",
            "Database", "Services", "notify_one", "send_notifications", "make_dispatcher", "setup_scheduler",
-           "AwgWatcher", "ConfWatcher", "FRESH_INSTALL_MARKER", "ZONE_ADOPTED_MARKER", "log", "log_zone",
+           "AwgWatcher", "ConfWatcher", "FRESH_INSTALL_MARKER", "log", "log_zone",
            "_menu_command", "_notify_migration_needed", "_notify_private_dns_offer", "do_reconcile",
-           "report_update_result", "_sync_bot_identity", "_announce_reboot", "_announce_zone",
+           "report_update_result", "_sync_bot_identity", "_announce_reboot",
            "run_gateway", "run_guest", "join_pending", "run_join", "main"]

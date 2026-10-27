@@ -219,11 +219,10 @@ def test_addresses_from_the_gateway_snapshot_are_reserved_too(services, make_act
 
 
 def test_the_reserve_is_what_stands_and_an_old_file_reserves_nothing(
-        services, make_active_client, monkeypatch, tmp_path):
+        services, make_active_client, monkeypatch):
     """Адреса админа в карантине — только то, что стоит у шлюза по снимку:
     файлов первого применения больше нет, и метка прежнего файла адресов не
-    держит; старт сервера стирает и её, и сами прежние файлы (в них ключи)."""
-    from awgbot.domain.services.gwjoin import quarantine
+    держит."""
     client = make_active_client(device_limit=5)
     pi = services.add_device(client.id, "pi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
@@ -234,13 +233,3 @@ def test_the_reserve_is_what_stands_and_an_old_file_reserves_nothing(
     assert services.gateway_trusted_ips() == set(), "метка прежнего файла держит адреса"
     snaps[1] = {"bundle": {"admin_ips": "10.8.1.3"}}
     assert services.gateway_trusted_ips() == {"10.8.1.3"}
-    old = tmp_path / "awg-gw-bundle-awglink2.sh"
-    old.write_text("DUMMY")
-    keep = tmp_path / "gw-awglink.conf"
-    keep.write_text("DUMMY")
-    monkeypatch.setattr(quarantine, "LEGACY_BUNDLES", str(tmp_path / "awg-gw-bundle*.sh"))
-    assert services.gwjoin_boot() == 1
-    assert not old.exists() and keep.exists(), "убран не тот файл"
-    assert services.db.get_state(services._gw_slot_key("gw_bundle_ssh_allow", 1)) == ""
-    assert services.db.get_state(services._gw_slot_key("gw_bundle_issued_at", 1)) == ""
-    assert services.gwjoin_boot() == 0, "второй старт — убирать нечего"

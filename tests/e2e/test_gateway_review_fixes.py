@@ -89,18 +89,6 @@ async def test_a_failed_keep_answer_is_refused_honestly_and_the_question_stays(s
     assert svc.keep_section() == "keep", "вопрос пропал после сбоя"
 
 
-def test_restore_markers_of_older_versions_are_wiped(svc, tmp_path, monkeypatch):
-    from awgbot.core import settings
-    monkeypatch.setattr(settings, "drop_keys", lambda keys: [])
-    data = tmp_path / "data"; data.mkdir()
-    monkeypatch.setattr(cfg, "DATA_DIR", data)
-    for name in ("restore-done.json", "restore-failed.json", "restore-pending.plan.json", ".restore-prune"):
-        (data / name).write_text("{}", encoding="utf-8")
-    (data / "gw.db").write_text("", encoding="utf-8")
-    assert svc.backup_leftovers_drop() is True
-    assert sorted(p.name for p in data.iterdir()) == ["gw.db"]
-
-
 def test_the_card_names_what_the_question_waits_for():
     from awgbot.bot.texts.routing.card import keep_line
     assert keep_line({"state": "asked", "asked": "device"}) == ("⏳ Настройки прежнего устройства ждут решения "

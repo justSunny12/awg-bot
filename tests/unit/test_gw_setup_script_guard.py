@@ -372,8 +372,8 @@ def test_the_unit_carries_the_channel_port_and_no_channel_switch(script):
 
 def _subnets(script: str, **env) -> tuple[str, str]:
     """Прогнать настоящие строки скрипта, которые задают локальные подсети и
-    подсети соседей (с запасным чтением прежних имён юнита 3.3.0)."""
-    keep = ("LAN_SUBNETS=", "PEER_LAN_NETS=", "    | grep -E", '[ -n "${LAN_SUBNETS+x}" ]', '[ -n "${PEER_LAN_NETS+x}" ]')
+    подсети соседей."""
+    keep = ("LAN_SUBNETS=", "PEER_LAN_NETS=", "    | grep -E")
     lines = [ln for ln in script.splitlines() if ln.startswith(keep)]
     prog = "\n".join(lines) + '\nprintf "%s|%s" "$LAN_SUBNETS" "$PEER_LAN_NETS"'
     out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
@@ -382,13 +382,12 @@ def _subnets(script: str, **env) -> tuple[str, str]:
     return tuple(out.stdout.split("|"))
 
 
-def test_the_script_reads_the_old_unit_names_until_the_unit_is_rewritten(script):
-    """Перезагрузка шлюза между обновлением агента и его правкой юнита: юнит
-    3.3.0 ещё отдаёт HOME_SUBNETS / PEER_HOME_NETS — скрипт 3.3.1 обязан их
-    увидеть, иначе снимет VPN-транзит и связь подсетей. Новые имена — главнее."""
-    assert _subnets(script, HOME_SUBNETS="192.168.1.0/24", PEER_HOME_NETS="10.242.0.0/16") == \
-        ("192.168.1.0/24", "10.242.0.0/16")
-    assert _subnets(script, LAN_SUBNETS="10.0.0.0/24", HOME_SUBNETS="192.168.1.0/24") == ("10.0.0.0/24", "")
+def test_the_script_takes_only_the_new_unit_names_through_the_form_filter(script):
+    """Подсети — только под новыми именами юнита; прежние имена 3.3.0 скрипт
+    больше не читает. Фильтр формы — на месте."""
+    assert _subnets(script, HOME_SUBNETS="192.168.1.0/24", PEER_HOME_NETS="10.242.0.0/16") == ("", "")
+    assert _subnets(script, LAN_SUBNETS="10.0.0.0/24", PEER_LAN_NETS="10.242.0.0/16") == \
+        ("10.0.0.0/24", "10.242.0.0/16")
     assert _subnets(script, LAN_SUBNETS="10.0.0.0/24; reboot") == ("10.0.0.0/24", ""), "фильтр формы снят"
 
 

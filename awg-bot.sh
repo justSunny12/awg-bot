@@ -53,9 +53,7 @@
 #                          половина собирает РЯДОМ с рабочим (копия в
 #                          $INSTALL_DIR/.venvs/ + pip) и переключает ссылкой venv;
 #                          отказ любого шага до старта сервиса возвращает и код
-#                          (.prev-code), и окружение (.venvs/.prev). Поставка
-#                          старше 3.3.0 без кода адресов в туннеле — таблица
-#                          inet awg_lan_map снимается при остановке сервиса.
+#                          (.prev-code), и окружение (.venvs/.prev).
 #                          Из установщика (пункт «обновить» поверх установки):
 #                          AWG_UPDATE_KEEP=1 — вопрос об удалении данных не
 #                          задаётся; AWG_UPDATE_THEN_JOIN=<токен> — шлюзу после
@@ -79,46 +77,6 @@
 #                          /usr/local/sbin освежаются, если они там уже есть;
 #                          откат неудачного обновления шлюза возвращает и
 #                          прежнюю копию routing-gw-setup.sh (gw_plumbing_sync).
-#                          Конфигам линков слотов на ВПС (awglink*.conf) без
-#                          строки PersistentKeepalive она дописывается
-#                          (adopt_link_keepalive, с 4.0.0: keepalive с обеих
-#                          сторон линка; значение — client_config.keepalive_seconds)
-#                          и ставится на живой линк `awg set … persistent-keepalive`;
-#                          строка есть — линк не трогается. Тот же шаг —
-#                          у восстановления с переходом на выпуск бэкапа.
-#                          Ключ timezone в app.yaml комментируется один раз —
-#                          на переходе с выпуска ниже TZ_ADOPT_BELOW (3.4.0;
-#                          update_adopts_timezone): у тех ключ писали шаблон и
-#                          установщик. С 3.4.0 ключ — переопределение человека,
-#                          обновление его не трогает. Снят — пояс бота =
-#                          пояс хоста (adopt_timezone); прежнее значение — в
-#                          метке $DATA_DIR/.tz-adopted, по ней первый старт бота
-#                          скажет админу, в каком поясе теперь время; прервётся
-#                          вторая половина — ключ вернётся вместе с прежним
-#                          кодом (ловушка; сторож и откат набора ключа не
-#                          касаются: переход с выпуска ниже 3.4.0 идёт через
-#                          версию совместимости, где сторожа нет).
-#                          restore: ключ копии снимается снова,
-#                          если в текущем app.yaml его не было.
-#                          Ловушка второй половины (post_update_rescue),
-#                          вернувшая код, чей скрипт не знает __update_guard
-#                          (выпуск ниже 3.4.0), убирает шаг сторожа из юнита
-#                          (unit_guard_strip_for_old): юнит уже переписал новый
-#                          скрипт. Раздел параметров AmneziaWG в app.yaml с
-#                          4.0.0 зовётся awg (adopt_awg_section — на
-#                          обновлении и, идемпотентно, на восстановлении: копия
-#                          ниже версии совместимости не восстанавливается); любой откат
-#                          кода ниже AWG_SECTION_BELOW (restore_prev_code)
-#                          возвращает разделу прежнее имя и ключи
-#                          (adopt_awg_section_revert). Установку с AmneziaWG в
-#                          контейнере (docker: с runtime: docker) шаг окружения
-#                          refuse_container_runtime останавливает до
-#                          переименования: 4.0.0 её не поддерживает, ловушка
-#                          возвращает прежний код. Возврат кода ниже 4.0.0 на
-#                          шлюзе снимает и постоянный линк к резерву с долей
-#                          ключа (reserve_gw_drop_for_old). При версии совместимости
-#                          4.0.0 на переходе 3.4.x → 4.0.0 из всех откатов
-#                          срабатывает только ловушка второй половины.
 #                          Pid апдейтера под замком — в
 #                          $DATA_DIR/update-running (по нему бот видит, что
 #                          обновление ещё идёт); файл убирают и конец
@@ -1468,144 +1426,6 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
     log "dns1 = $addr — беру резолвер под опеку бота"
     bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr" \
         || warn "резолвер не взят под опеку — позже: awg-bot resolver install $addr"
-}
-
-host_timezone() {  # имя пояса хоста: timedatectl, запасной путь — ссылка /etc/localtime
-    local tz
-    tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
-    [[ -n "$tz" ]] || { tz="$(readlink -f /etc/localtime 2>/dev/null || true)"; [[ "$tz" == */zoneinfo/* ]] && tz="${tz#*/zoneinfo/}" || tz=""; }
-    printf '%s' "$tz"
-}
-
-adopt_link_keepalive() {  # keepalive стороны сервера AWG на линках слотов (с 4.0.0): строка в конфиге и живой линк
-    # До 4.0.0 keepalive слал только шлюз: сервер видел шлюз, а шлюз сервер — лишь
-    # по рукопожатию раз в ~2 мин. С резервом шлюзу нужен взгляд на сервер за
-    # секунды, поэтому keepalive — с обеих сторон, на всех серверах. Диапазон —
-    # как у пиров устройств (client_config.keepalive_seconds). Идемпотентно:
-    # строка есть — линк не трогается.
-    local app="$CONF_DIR/app.yaml" dir ka f name pub
-    [[ "$(yaml_get "$app" role)" == "gateway" ]] && return 0      # у шлюза keepalive линка стоит с его стороны и так
-    # каталог awg-quick — из раздела awg (conf_dir), у прежней раскладки — docker.awg_dir;
-    # ключ с тем же именем есть и в разделе gateway, поэтому не yaml_get по всему файлу
-    dir="$(awk '/^(awg|docker):/{s=1; next} /^[^ #]/{s=0} s && /^  (conf_dir|awg_dir):/{v=$2; gsub(/"/, "", v); print v; exit}' "$app" 2>/dev/null || true)"
-    dir="${dir:-/etc/amnezia/amneziawg}"
-    ka="$(awk -F'"' '/^  keepalive_seconds:/{print $2; exit}' "$app" 2>/dev/null || true)"
-    case "$ka" in ''|*[!0-9-]*|-*|*-|*-*-*) ka="25-35" ;; esac
-    for f in "$dir"/awglink*.conf; do
-        [[ -f "$f" ]] || continue
-        grep -q '^PersistentKeepalive' "$f" && continue
-        name="$(basename "$f" .conf)"
-        [[ -z "$(tail -c1 "$f")" ]] || printf '\n' >> "$f"      # файл без перевода строки в конце — не склеивать
-        printf 'PersistentKeepalive = %s\n' "$ka" >> "$f"
-        pub="$(sed -n 's/^PublicKey *= *//p' "$f" | head -n1)"
-        if [[ -n "$pub" ]]; then
-            awg set "$name" peer "$pub" persistent-keepalive "$ka" 2>/dev/null \
-                || warn "линк $name: keepalive не применился на живом интерфейсе — применится при следующем подъёме"
-        fi
-        log "линк $name: keepalive стороны сервера AWG — $ka"
-    done
-}
-
-TZ_ADOPT_BELOW="3.4.0"   # выпуски ниже писали timezone в app.yaml сами — у них ключ снимается на переходе
-update_adopts_timezone() {  # 0 — это обновление снимает ключ timezone: прежняя версия ниже TZ_ADOPT_BELOW
-    local prev
-    [[ -n "${AWG_UPDATE_PREV:-}" && -d "${AWG_UPDATE_PREV:-}" ]] || return 1
-    prev="$(tree_version "$AWG_UPDATE_PREV")"
-    [[ -n "$prev" ]] && version_lt "$prev" "$TZ_ADOPT_BELOW"
-}
-
-adopt_timezone() {  # adopt_timezone [quiet] — ключ timezone в app.yaml снимается, бот берёт пояс хоста
-    # Ключ остался от прежнего шаблона («Europe/Moscow») или его записал
-    # установщик; снимается любое значение, только верхнего уровня. Обновление
-    # зовёт это только на переходе с выпуска ниже TZ_ADOPT_BELOW. Комментируется, а не
-    # очищается: строка с прежним значением видна и возвращается одним движением.
-    # Обновление: прежнее значение — в метку $DATA_DIR/.tz-adopted (первый старт
-    # бота скажет админу, в каком поясе теперь время, и снимет её); TZ_ADOPTED=1
-    # — ключ снял этот прогон: прервётся вторая половина — ловушка вернёт его
-    # вместе с прежним кодом (adopt_timezone_undo). quiet (после восстановления
-    # копии) — без метки и без отката: пояс бота до восстановления и так был
-    # поясом хоста.
-    local app="$CONF_DIR/app.yaml" old tz tmp
-    [[ -f "$app" ]] && grep -qE '^timezone:' "$app" || return 0
-    old="$(yaml_get "$app" timezone)"; old="${old#\'}"; old="${old%\'}"
-    tmp="$(mktemp)" || return 0
-    sed -E 's|^timezone:|# timezone:|' "$app" > "$tmp" && cat "$tmp" > "$app"
-    rm -f "$tmp"
-    [[ "${1:-}" == "quiet" ]] || { TZ_ADOPTED=1; mkdir -p "$DATA_DIR" && printf '%s\n' "$old" > "$DATA_DIR/.tz-adopted"; }
-    tz="$(host_timezone)"
-    log "часовой пояс бота — пояс хоста (${tz:-не определён, UTC}); ключ timezone в app.yaml снят (был: ${old:-пусто})"
-}
-
-adopt_awg_section() {  # раздел app.yaml прежнего имени → `awg:` (обновление с выпуска ниже 4.0.0)
-    # Выпуски до 4.0.0 держали параметры AmneziaWG в разделе, названном по
-    # снятому контейнерному режиму, с ключами runtime/container/app_container/
-    # awg_dir. Переименование на месте: раздел → awg, app_container →
-    # protocol_id, awg_dir → conf_dir; ключи режима и имени контейнера — прочь
-    # вместе с их комментариями из шаблона. Идемпотентно. Зовётся только из
-    # update_env_steps: восстановление копии ниже версии совместимости (4.0.0)
-    # невозможно, и файл копии всегда уже с разделом awg.
-    local app="$CONF_DIR/app.yaml" tmp
-    [[ -f "$app" ]] && grep -qE '^docker:' "$app" || return 0
-    tmp="$(mktemp)" || return 0
-    sed -E \
-        -e 's|^docker:|awg:|' \
-        -e 's|^  app_container:|  protocol_id:|' \
-        -e 's|^  awg_dir:(.*)$|  conf_dir:\1|' \
-        -e '/^  runtime:/d' -e '/^  container:/d' \
-        -e '/^# Docker \/ AmneziaWG — deploy-параметры$/d' \
-        -e '/^  # host — awg установлен на самой машине/d' \
-        -e '/^  # docker — команды идут через/d' \
-        -e '/^  # для установок прежней схемы\)\. Работают оба/d' \
-        -e '/^  # Переезд с docker на host/d' \
-        -e '/^  # разбирается на телефоне\. Совпадает с container исторически/d' \
-        -e '/^  # жизнью — после переезда на хост docker-имя исчезнет/d' \
-        -e 's|^  conf_dir: (.*)# host: каталог awg-quick; у старых [^|]*|  conf_dir: \1# каталог awg-quick|' \
-        "$app" > "$tmp" && cat "$tmp" > "$app"
-    rm -f "$tmp"
-    log "app.yaml: раздел параметров AmneziaWG переименован в awg"
-}
-
-AWG_SECTION_BELOW="4.0.0"   # выпуски ниже читают раздел параметров AmneziaWG под прежним именем
-adopt_awg_section_revert() {  # раздел `awg:` app.yaml — обратно под прежнее имя, для кода ниже AWG_SECTION_BELOW
-    # Обратная сторона adopt_awg_section: возвращённый откатом код 3.4.0
-    # ищет раздел по прежнему имени с ключами app_container/awg_dir, а без
-    # runtime: "host" его install_unit вписал бы в юнит зависимость от
-    # службы контейнеров — сервис не поднялся бы. Значения — как были;
-    # комментарии прежнего шаблона не восстанавливаются (ключи важнее).
-    # Идемпотентно; следующее обновление переименует раздел снова.
-    local app="$CONF_DIR/app.yaml" tmp
-    [[ -f "$app" ]] && grep -qE '^awg:' "$app" || return 0
-    tmp="$(mktemp)" || return 0
-    # переименование ключей — только внутри раздела: conf_dir есть и в разделе
-    # gateway (шлюз), его трогать нельзя
-    awk '
-        /^awg:$/ { print "docker:"; print "  runtime: \"host\""; inside = 1; next }
-        /^[^ #]/ { inside = 0 }
-        inside { sub(/^  protocol_id:/, "  app_container:"); sub(/^  conf_dir:/, "  awg_dir:") }
-        { print }
-    ' "$app" > "$tmp" && cat "$tmp" > "$app"
-    rm -f "$tmp"
-    log "app.yaml: раздел параметров AmneziaWG — снова под прежним именем (возвращённый код ниже $AWG_SECTION_BELOW)"
-}
-
-adopt_awg_section_for_old() {  # возвращённый код ниже AWG_SECTION_BELOW — раздел app.yaml в его раскладке
-    local ver; ver="$(tree_version "$INSTALL_DIR")" || ver=""     # файла версии нет — под set -e не обрывать откат
-    [[ -n "$ver" ]] && version_lt "$ver" "$AWG_SECTION_BELOW" || return 0
-    adopt_awg_section_revert
-}
-
-adopt_timezone_undo() {  # ловушка второй половины: ключ timezone в app.yaml — снова в силе, метки нет
-    # Только когда ключ снял этот прогон (TZ_ADOPTED): возвращается строка —
-    # раскомментированием на месте
-    [[ "${TZ_ADOPTED:-0}" == "1" ]] || return 0
-    local app="$CONF_DIR/app.yaml" tmp
-    if [[ -f "$app" ]] && ! grep -qE '^timezone:' "$app" && grep -qE '^# timezone:' "$app" && tmp="$(mktemp)"; then
-        awk '!d && /^# timezone:/ { sub(/^# /, ""); d = 1 } { print }' "$app" > "$tmp" && cat "$tmp" > "$app"
-        rm -f "$tmp"
-    fi
-    rm -f "$DATA_DIR/.tz-adopted"
-    TZ_ADOPTED=0
-    warn "ключ timezone в app.yaml возвращён — прежняя версия работает в своём поясе"
 }
 
 cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR] | admin status|plan|install|remove

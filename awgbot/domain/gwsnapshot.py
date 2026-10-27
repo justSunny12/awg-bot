@@ -45,25 +45,6 @@ FACT_FIELDS = ("bundle", "link_contract", "mark_status",
 from awgbot.util import gwlink as _gwlink  # noqa: E402
 from awgbot.infra import bootid
 BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
-# Прежние имена двух полей блока bundle — сервер 3.3.0 читает только их: агент
-# пишет их рядом с новыми, сервер берёт их, когда новых нет (агент 3.3.0), и
-# хранит обе формы (откат сервера на 3.3.0 прочтёт свою). Снимается со
-# следующим сдвигом минимума.
-BUNDLE_OLD_FIELDS = {"lan_subnets": "home_subnets", "peer_lan_nets": "peer_home_nets"}
-
-
-def bundle_both_names(bundle: dict) -> dict:
-    """Блок bundle с обеими формами имён: новое, а нет его — прежнее; прежнее —
-    копия нового. Хранимый снимок сервера 3.3.0 знает только прежние: без
-    перевода при чтении подсети соседей до переподключения считались бы
-    пустыми. Снимается со следующим сдвигом минимума."""
-    out = dict(bundle)
-    for new, old in BUNDLE_OLD_FIELDS.items():
-        if new not in out and old in out:
-            out[new] = out[old]
-        if new in out:
-            out[old] = out[new]
-    return out
 # lan_addr — адрес шлюза в его локальной сети (интерфейс VPN-транзита): ВПС
 # подставляет его в настройку роутера вместо плейсхолдера. Локальное чтение,
 # как и всё остальное; агент без транзита шлёт пустую строку.
@@ -108,7 +89,6 @@ def collect(*, mark_status: str, egress_ok: bool | None,
     from awgbot.core import config
     from awgbot.infra import awglock, gwguard
     bundle = {_gwlink.snap_field(k): " ".join(gwguard.unit_env(k).split()) for k in _gwlink.BUNDLE_KEYS}
-    bundle.update({old: bundle[new] for new, old in BUNDLE_OLD_FIELDS.items()})
     snap = {
         "bundle": bundle,
         "link_contract": link_contract(config.GW_LINK_CONF),
@@ -185,9 +165,7 @@ def sanitize(raw: dict) -> dict:
     src = raw if isinstance(raw, dict) else {}
     bundle = src.get("bundle")
     if isinstance(bundle, dict):
-        out["bundle"] = bundle_both_names(
-            {k: _clean_str(bundle[k] if k in bundle else bundle.get(BUNDLE_OLD_FIELDS.get(k, ""), ""))
-             for k in BUNDLE_FIELDS})
+        out["bundle"] = {k: _clean_str(bundle.get(k, "")) for k in BUNDLE_FIELDS}
     for key in ("link_contract", "mark_status", "agent_version", "boot_id", "ts"):
         if key in src:
             out[key] = _clean_str(src[key])

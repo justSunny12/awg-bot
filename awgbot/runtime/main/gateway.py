@@ -18,21 +18,6 @@ from . import alive
 from .common import log
 
 
-# Переход имён обвязки 3.3.0 → 3.3.1 — снимается со следующим сдвигом минимума.
-_rename_task: "asyncio.Task | None" = None   # прогон обвязки после перехода имён: ссылка держит задачу
-
-
-async def _plumbing_rename(services) -> None:
-    """Прогон обвязки после перехода имён: перенесёт таблицу локальной сети и
-    перепишет юнит целиком. Юнит уже запущен извне (загрузка) — тот прогон
-    сделает то же сам. Снимается со следующим сдвигом минимума."""
-    ok, err = await asyncio.to_thread(services.reassert_guarded, "переход имён обвязки", timeout=600)
-    if ok:
-        log.info("gateway: обвязка перевыставлена под новые имена")
-    else:
-        log.warning("gateway: прогон обвязки после перехода имён: %s", err)
-
-
 async def run_gateway() -> None:
     """Сборка и запуск роли gateway: панель + монитор, больше ничего.
 
@@ -55,23 +40,8 @@ async def run_gateway() -> None:
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
     services.adopt_installed_digest()       # digest выпуска от установщика, `awg-bot update` или самообновления — в базу
-    services.upd_legacy_drop()              # ключи прежних «⬆️ Обновлений» агента: сам он больше не обновляется
-    try:
-        services.backup_leftovers_drop()    # своих копий у шлюза нет: фраза, отметки, ключи conf — прочь
-    except Exception as e:                               # noqa: BLE001
-        log.warning("gateway: следы своих копий не стёрты: %s", e)
     with contextlib.suppress(OSError):
         os.remove(marker)
-    # Обвязка прежнего образца после обновления: строки юнита — сразу, до
-    # первого снимка; таблица локальной сети — прогоном обвязки в фоне.
-    # Снимается со следующим сдвигом минимума.
-    try:
-        if services.plumbing_rename_due():
-            global _rename_task
-            _rename_task = asyncio.get_running_loop().create_task(_plumbing_rename(services))
-    except Exception as e:                               # noqa: BLE001
-        log.warning("gateway: переход имён обвязки не начат: %s", e)
-
     # Шлюз стоит в юрисдикции, где Telegram заблокирован, и ходит к нему через
     # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель
     # только IPv4, а резолвер отдаёт api.telegram.org сначала AAAA-адресом:
@@ -147,7 +117,6 @@ async def run_gateway() -> None:
         await pkg.report_update_result(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway confirm_applied_update: %s", e)
-    await pkg._announce_zone(bot)                    # ключ пояса снят обновлением — сказать
     # rt-18: очередь общего пула потоков в первые минуты — строкой в журнал
     from awgbot.runtime import poolprobe
     asyncio.create_task(poolprobe.run("gateway: "))

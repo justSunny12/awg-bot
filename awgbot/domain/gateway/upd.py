@@ -39,10 +39,6 @@ SPAWN_GRACE_S = 90            # апдейтер успевает взять з�
 APPLY_MAX_S = 20 * 60         # ступень (с ядром) или понижение дольше — не удались
 FAILED = ("failed", "rolled_back", "refused")
 
-# ключи прежних «⬆️ Обновлений» агента: с 3.4.0 агент сам не обновляется
-LEGACY_KEYS = ("update_available_tag", "update_notified_tag", "update_waiting", "update_releases",
-               "update_meta", "updates_muted")
-
 _ID_RE = re.compile(r"[0-9a-f]{8}\Z")
 _TAG_RE = re.compile(r"v?\d+\.\d+\.\d+(\.\d+)?\Z")
 
@@ -81,12 +77,6 @@ class GatewayUpdMixin:
                "version": config.INSTALLED_VERSION, "error": cmd["error"]}
         self.db.set_state(ACK_KEY, json.dumps(ack, ensure_ascii=False))
         return ack
-
-    def upd_legacy_drop(self) -> None:
-        """Первый старт 3.4.0: ключи прежних «⬆️ Обновлений» агента прочь."""
-        for key in LEGACY_KEYS:
-            if self.db.get_state(key):
-                self.db.set_state(key, "")
 
     # ── приём команды ───────────────────────────────────────────────────────
 

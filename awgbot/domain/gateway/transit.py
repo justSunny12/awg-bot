@@ -50,29 +50,6 @@ class TransitMixin:
             log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
         return ok, err
 
-    def plumbing_rename_due(self) -> bool:
-        """Обвязка прежнего образца после обновления: строки юнита под прежними
-        именами (их агент переписывает сразу) или таблица локальной сети под
-        прежним именем. True — нужен прогон обвязки: он перенесёт таблицу и
-        перепишет юнит целиком. Снимается со следующим сдвигом минимума."""
-        from awgbot.infra import gwguard
-        if not gwguard.plumbing_installed():
-            return False
-        due = False
-        if gwguard.unit_old_names():
-            due = True
-            try:
-                gwguard.unit_rename_old()
-                log.info("gateway: строки юнита обвязки переписаны под новые имена")
-            except (OSError, gwguard.GwGuardError) as e:
-                # прогон обвязки перепишет юнит сам: прежние имена скрипт ещё читает
-                log.warning("gateway: строки юнита обвязки не переписаны: %s", e)
-        try:
-            due = gwguard.lan_table_old() or due
-        except (OSError, gwguard.GwGuardError):
-            pass
-        return due
-
     def _reassert_due(self) -> bool:
         """Прошло ли окно троттлинга с последнего реассерта."""
         return time.monotonic() - self._last_reassert >= self._REASSERT_MIN_INTERVAL

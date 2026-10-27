@@ -448,11 +448,8 @@ def test_a_chain_under_one_command_holds_the_very_first_old_one(tmp_path):
 
 
 def test_an_update_within_the_line_keeps_a_timezone_key_set_by_hand(tmp_path):
-    """Ключ timezone в app.yaml с 3.4.0 — переопределение человека: обновление
-    3.4.0 → 3.4.1 (и любой догон набора) его не трогает и уведомления о поясе
-    не будет. Снимается он один раз — на переходе с выпуска ниже 3.4.0, где его
-    писали шаблон и установщик."""
-    host = _Host(tmp_path)                               # prev 3.4.0, new 3.4.1
+    """Ключ timezone в app.yaml — переопределение человека: обновление (и
+    любой догон набора) его не трогает."""
+    host = _Host(tmp_path)
     host.post_update()
     assert host.app.read_text(encoding="utf-8") == host.app_text, "ключ, вписанный руками, снят обновлением"
-    assert not (host.data / ".tz-adopted").exists()

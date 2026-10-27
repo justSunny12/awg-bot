@@ -52,7 +52,6 @@ def _run(script, tmp_path, inst, prev, sbin, *, trap: str):
         f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; AWG_UPDATE_PREV="{prev}"; UPDATE_PREV="{prev}"',
         'ENV_FILE=/x; CONF_DIR=/x; DATA_DIR=/x',
         'warn() { echo "WARN $*"; }',
-        "adopt_awg_section_for_old() { :; }",      # раздел app.yaml — test_adopt_awg_section
         f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}',
         *(_extract_func(script, f).replace("/usr/local/sbin", str(sbin)) for f in funcs
           if f"\n{f}() {{" in script),

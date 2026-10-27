@@ -167,11 +167,11 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
     sbin = tmp_path / "sbin"; sbin.mkdir()
     helper = sbin / "awg-lan-services.sh"; helper.write_text("#!/bin/sh\n", encoding="utf-8")
     fn = "\n".join(re.search(rf"^{name}\(\) \{{.*?^\}}$", script, re.S | re.M).group(0)
-                   for name in ("lan_remove", "_lan_remove_locked", "lan_table_old_drop"))
+                   for name in ("lan_remove", "_lan_remove_locked"))
     t = tmp_path
     prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
             f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nLAN_TABLE="inet awg_lan"\n'
-            f'LAN_FILE="{t}/lan.nft"\nLAN_TABLE_OLD="inet awg_home"\nLAN_FILE_OLD="{t}/home.nft"\n'
+            f'LAN_FILE="{t}/lan.nft"\n'
             f'LAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
             f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n'
             f'PEER_SVC_CONF="{dns_d}/awg-gw-peer-services.conf"\n' + fn + "\nlan_remove\n")

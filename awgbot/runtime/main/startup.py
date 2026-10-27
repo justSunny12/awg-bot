@@ -1,13 +1,11 @@
 """startup.py — часть пакета main (см. __init__): стартовые уведомления и финишеры обеих
 ролей — меню команд, переезд профилей, свой DNS, реконсиляция, итог обновления, имя бота,
-перезагрузка хоста, пояс после обновления."""
+перезагрузка хоста."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
-import os
 
 from aiogram import Bot
 
@@ -17,7 +15,7 @@ from awgbot.infra.db import Database
 from awgbot.domain.services import Services
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
-from .common import ZONE_ADOPTED_MARKER, log
+from .common import log
 
 
 async def _menu_command(bot) -> None:
@@ -151,32 +149,3 @@ async def _announce_reboot(bot, db, who: str) -> None:
         await notify_one(bot, config.ADMIN_ID, texts.host_rebooted(socket.gethostname(), who))
     except Exception as e:                               # noqa: BLE001
         log.warning("announce_reboot: %s", e)
-
-
-async def _announce_zone(bot, data_dir: str | None = None) -> None:
-    """Первый старт после обновления, снявшего ключ timezone (метка шага
-    обновления в каталоге данных, внутри — прежнее значение): одно сообщение
-    админу, в каком поясе теперь время. Метка снимается, только когда
-    сообщение ушло, — не ушло, скажем на следующем старте. Молча снимается,
-    когда говорить нечего: ключ успели вернуть руками (пояс не «пояс хоста»)
-    или пояс по сути не изменился (ключ совпадал с поясом хоста — то же имя или
-    те же правила). data_dir — каталог метки (None — каталог базы)."""
-    marker = os.path.join(data_dir or os.path.dirname(config.DB_PATH), ZONE_ADOPTED_MARKER)
-    try:
-        with open(marker, encoding="utf-8") as f:
-            prev = f.read().strip()
-    except OSError:
-        return
-    try:
-        from awgbot.core import zone
-        old = zone.load(prev)
-        changed = not (prev == config.TZ_NAME or (old is not None and zone.same_rules(old, config.TZ)))
-        if config.TZ_SOURCE == "host" and changed:
-            from awgbot.bot import roles
-            from awgbot.bot.texts.zone import zone_adopted
-            if await pkg.notify_one(bot, config.ADMIN_ID, zone_adopted(roles.current(), prev)) is None:
-                return
-        with contextlib.suppress(OSError):
-            os.remove(marker)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("announce_zone: %s", e)

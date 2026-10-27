@@ -39,14 +39,6 @@ RestartSec=10
 WantedBy=multi-user.target
 """
 
-# Юнит, записанный скриптом обвязки 3.3.0: подсети под прежними именами и
-# постоянная строка LINK_CHANNEL=1 (переход — gwguard.unit_rename_old)
-UNIT_TEXT_330 = (UNIT_TEXT.replace('Environment="LAN_SUBNETS=', 'Environment="HOME_SUBNETS=')
-                 .replace('Environment="PEER_LAN_NETS=', 'Environment="PEER_HOME_NETS=')
-                 .replace("Environment=LINK_CHANNEL_PORT=8787\n",
-                          "Environment=LINK_CHANNEL=1\nEnvironment=LINK_CHANNEL_PORT=8787\n"))
-
-
 def _cp(rc=0, out=b"", err=b""):
     return subprocess.CompletedProcess([], rc, stdout=out, stderr=err)
 

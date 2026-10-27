@@ -184,32 +184,16 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     assert _gw_dev_id(services) is None and services.modes == ["--rekey"], "повторное снятие что-то тронуло"
 
 
-async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
-    """Пересланный claim: помечает, когда шлюза нет (конфигурацию везёт
-    канал — файла нет); при назначенном другом шлюзе — отказ (текст с
-    отсылкой в карточку — эталон adm.claim.foreign), шлюз прежний."""
+def test_claim_marks_only_while_no_other_gateway_is_assigned(services, gwsetup):
+    """claim (агент присылает его каналом): помечает, когда шлюза нет; при
+    назначенном другом шлюзе — отказ с отсылкой в карточку, шлюз прежний."""
+    from awgbot.domain.services import ServiceError
     _, phone, pi = gwsetup
-    msg = _amsg(fake_bot, "Перешли основному боту:\n" + gwsign.sign(PRIV, "claim", pi.public_key))
-    await ah.gateway_claim_message(msg, services)
+    assert services.gateway_claim(gwsign.sign(PRIV, "claim", pi.public_key))["status"] == "marked"
     assert _gw_dev_id(services) == pi.id
-    assert not any(s[0] == "document" for s in msg.sent), "в ответ на пересылку выдан файл"
-    msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", phone.public_key))
-    await ah.gateway_claim_message(msg, services)
+    with pytest.raises(ServiceError, match="Заменить устройство можно в карточке шлюза"):
+        services.gateway_claim(gwsign.sign(PRIV, "claim", phone.public_key))
     assert _gw_dev_id(services) == pi.id, "claim другого устройства сменил назначенный шлюз"
-    assert not any(s[0] == "document" for s in msg.sent), "на отказ выдан файл конфигурации"
-    assert ah.has_gw_token("пояснение\n\n" + gwsign.sign(PRIV, "claim", "K=")) and not ah.has_gw_token(None)
-
-
-async def test_forwarded_claim_of_a_document_agent_gets_no_file(services, fake_bot, gwsetup):
-    """Агент подписывает в токене свои возможности: сервер назначает шлюз без
-    файла — конфигурацию везёт канал, и ответ говорит то же."""
-    _, _phone, pi = gwsetup
-    msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", pi.public_key, caps=("cfg1", "confirm1", "token1")))
-    await ah.gateway_claim_message(msg, services)
-    assert _gw_dev_id(services) == pi.id
-    assert not any(s[0] == "document" for s in msg.sent), "агенту с документом выдан файл"
-    text = " ".join(s[1] or "" for s in msg.sent)
-    assert "применятся по каналу конфигурации" in text and "📤" not in text, text
 
 
 def test_candidates_are_the_admins_devices_without_the_current_gateway(services, gwsetup, make_active_client):

@@ -124,7 +124,7 @@ def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int 
         "RESTORE_TMP=''; RESTORE_PENDING=''; RESTORE_PLAN_FILE=''; RESTORE_FAIL=''; RESTORE_YES=0",
         'log() { echo "LOG $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*" >&2; }',
         'die() { echo "DIE $*" >&2; exit 1; }',
-        "require_root() { :; }; confirm() { return 0; }; adopt_timezone() { :; }",
+        "require_root() { :; }; confirm() { return 0; }",
         f'apt-get() {{ echo "apt-get $*" >> "{log}"; }}',
         # сервис: после start — активен, после stop — нет (stays_active — stop не остановил)
         f'SVC_UP={1 if stays_active else 0}',

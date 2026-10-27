@@ -161,11 +161,6 @@ async def main() -> None:
 
     await pkg.do_reconcile(services, bot)                    # сверка состава пиров
     try:
-        # прежние файлы первого применения шлюзов (в них ключи) — с сервера прочь
-        await asyncio.to_thread(services.gwjoin_boot)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("gwjoin_boot: %s", e)
-    try:
         # восстановить блокировки; после восстановления — и снять лишние DROP,
         # наложенные restore до подъёма интерфейсов по собранной базе
         restored = await asyncio.to_thread(services.restore_done_pending)
@@ -179,7 +174,6 @@ async def main() -> None:
         await pkg.report_update_result(bot, services)       # тот же финишер, что у агента
     except Exception as e:                               # noqa: BLE001
         log.warning("report_update_result: %s", e)
-    await pkg._announce_zone(bot)                            # ключ пояса снят обновлением — сказать
 
     # Поставка привезла ядро нового поколения — переезд профилей обязателен, и
     # сказать об этом надо при КАЖДОМ старте, пока он не начат: пропустить такое

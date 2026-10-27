@@ -1,21 +1,16 @@
 """
 Юнит обвязки шлюза: строки Environment=, которые агент пишет по документу
-конфигурации (`unit_set_env`, `unit_restore`), и переход с прежних имён юнита
-3.3.0 (`unit_old_names`, `unit_rename_old`): HOME_SUBNETS / PEER_HOME_NETS →
-LAN_SUBNETS / PEER_LAN_NETS, строка LINK_CHANNEL=1 — вон.
+конфигурации (`unit_set_env`, `unit_restore`).
 
 Цена ошибки: правка чужой строки стирает ключ, по которому скрипт узнаёт своё
-устройство; юнит, оставшийся под прежними именами после обновления, — скрипт
-3.3.1 видит пустые подсети и снимает VPN-транзит локальной сети.
+устройство.
 """
 from __future__ import annotations
 
 import pytest
 
-from awgbot.domain.gateway import GatewayServices
 from awgbot.infra import gwguard
-from awgbot.infra.db import Database
-from tests.unit._gw_unit_common import UNIT_TEXT, UNIT_TEXT_330, _cp, _Unit
+from tests.unit._gw_unit_common import UNIT_TEXT, _Unit
 
 pytestmark = pytest.mark.unit
 
@@ -23,14 +18,6 @@ pytestmark = pytest.mark.unit
 @pytest.fixture()
 def unit(tmp_path, monkeypatch):
     return _Unit(tmp_path, monkeypatch)
-
-
-@pytest.fixture()
-def svc(tmp_path):
-    d = Database(tmp_path / "gw.db")
-    d.init_schema()
-    yield GatewayServices(d)
-    d.close()
 
 
 # ── правка юнита ─────────────────────────────────────────────────────────────
@@ -114,75 +101,3 @@ def test_restoring_the_unit_brings_back_the_text_byte_for_byte(unit):
     gwguard.unit_restore(before)
     assert unit.text() == UNIT_TEXT
     assert unit.calls.count(["systemctl", "daemon-reload"]) == 2
-
-
-# ── переход с прежних имён юнита (снимается со следующим сдвигом минимума) ──
-
-def test_the_current_unit_has_no_old_names(unit):
-    assert gwguard.unit_old_names() is False
-    assert gwguard.unit_rename_old() is False, "юнит нового образца переписан без нужды"
-    assert unit.text() == UNIT_TEXT and unit.calls == []
-
-
-def test_an_old_unit_gets_the_new_names_and_loses_the_channel_line(unit):
-    """Юнит 3.3.0 после обновления агента: те же значения под новыми именами,
-    строки LINK_CHANNEL=1 нет, остальное — байт в байт; systemd перечитал."""
-    unit.path.write_text(UNIT_TEXT_330, encoding="utf-8")
-    assert gwguard.unit_old_names() is True
-    assert gwguard.unit_rename_old() is True
-    assert unit.text() == UNIT_TEXT, "юнит после перехода не совпал с юнитом нового образца"
-    assert gwguard.unit_env("LAN_SUBNETS") == "192.168.68.0/24"
-    assert gwguard.unit_old_names() is False
-    assert ["systemctl", "daemon-reload"] in unit.calls
-
-
-def test_a_new_name_written_before_the_transition_wins(unit):
-    """Документ успел записать новое имя (строка добавлена перед EnvironmentFile),
-    а прежняя осталась: прежняя снимается, новое значение не трогается."""
-    unit.path.write_text(UNIT_TEXT_330, encoding="utf-8")
-    gwguard.unit_set_env({"LAN_SUBNETS": "192.168.70.0/24"})
-    gwguard.unit_rename_old()
-    text = unit.text()
-    assert "HOME_SUBNETS" not in text and text.count("LAN_SUBNETS=") == 1
-    assert gwguard.unit_env("LAN_SUBNETS") == "192.168.70.0/24"
-
-
-def test_the_channel_port_line_is_not_mistaken_for_the_channel_switch(unit):
-    unit.path.write_text(UNIT_TEXT_330, encoding="utf-8")
-    gwguard.unit_rename_old()
-    assert gwguard.unit_env("LINK_CHANNEL_PORT") == "8787"
-    assert "LINK_CHANNEL=1" not in unit.text()
-
-
-def test_a_failed_reload_puts_the_old_unit_back(unit):
-    unit.path.write_text(UNIT_TEXT_330, encoding="utf-8")
-    unit.reload = [_cp(1, err=b"boom")]
-    with pytest.raises(gwguard.GwGuardError):
-        gwguard.unit_rename_old()
-    assert unit.text() == UNIT_TEXT_330
-
-
-def test_the_agent_asks_for_a_plumbing_run_after_renaming_an_old_unit(svc, unit, monkeypatch):
-    """Старт агента после обновления: юнит под прежними именами — строки
-    переписаны сразу, прогон обвязки нужен (он перенесёт таблицу)."""
-    unit.path.write_text(UNIT_TEXT_330, encoding="utf-8")
-    monkeypatch.setattr(gwguard, "lan_table_old", lambda: False)
-    assert svc.plumbing_rename_due() is True
-    assert unit.text() == UNIT_TEXT
-
-
-def test_the_agent_asks_for_a_run_while_the_old_table_is_there(svc, unit, monkeypatch):
-    monkeypatch.setattr(gwguard, "lan_table_old", lambda: True)
-    assert svc.plumbing_rename_due() is True
-    assert unit.text() == UNIT_TEXT
-
-
-def test_nothing_is_due_on_a_current_gateway(svc, unit, monkeypatch):
-    monkeypatch.setattr(gwguard, "lan_table_old", lambda: False)
-    assert svc.plumbing_rename_due() is False
-
-
-def test_nothing_is_due_without_plumbing(svc, tmp_path, monkeypatch):
-    _Unit(tmp_path, monkeypatch, text=None)
-    monkeypatch.setattr(gwguard, "lan_table_old", lambda: True)
-    assert svc.plumbing_rename_due() is False

@@ -59,7 +59,6 @@ def test_no_update_window_is_left_in_either_role():
     gw = (ROOT / "main" / "gateway.py").read_text(encoding="utf-8")
     for src in (main, gw):
         assert "update_hold_start" not in src and "set_on_update(" not in src
-    assert "services.upd_legacy_drop()" in gw
     ls = (ROOT / "linkserver" / "__init__.py").read_text(encoding="utf-8")
     lc = (ROOT / "linkclient" / "__init__.py").read_text(encoding="utf-8")
     assert "update_regate" not in ls and "update_regate" not in lc

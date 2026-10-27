@@ -139,7 +139,7 @@ class _Client:
                             ("Services", _Services), ("make_dispatcher", lambda *a, **k: self.dp),
                             ("AwgWatcher", _Watcher), ("ConfWatcher", _Watcher),
                             ("setup_scheduler", lambda *a, **k: _Sched()), ("_menu_command", _noop),
-                            ("do_reconcile", _noop), ("report_update_result", _noop), ("_announce_zone", _noop),
+                            ("do_reconcile", _noop), ("report_update_result", _noop),
                             ("_notify_migration_needed", _noop), ("_notify_private_dns_offer", _noop),
                             ("_sync_bot_identity", _noop), ("notify_one", _noop)):
             monkeypatch.setattr(main, name, value)

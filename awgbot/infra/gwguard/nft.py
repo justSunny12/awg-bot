@@ -172,13 +172,6 @@ def lan_table_info() -> Optional[dict]:
             "lan_pkts": counters.get("prerouting", 0), "dns_pkts": counters.get("input", 0)}
 
 
-def lan_table_old() -> bool:
-    """Таблица локальной сети ещё под прежним именем (обвязка 3.3.0 и раньше):
-    скрипт обвязки 3.3.1 переносит её на первом прогоне. Снимается со
-    следующим сдвигом минимума."""
-    return pkg._nft(["-t", "list", "table", pkg.TABLE_FAMILY, pkg.LAN_TABLE_OLD]).returncode == 0
-
-
 def forward_accepts() -> set[str]:
     """Интерфейсы, для которых в чужой ip filter FORWARD стоят наши ACCEPT
     (раздел 3a скрипта обвязки). Пусто — не прочиталось или ничего нет."""

@@ -62,12 +62,7 @@ class SnapshotMixin:
         return raw[:40]
 
     def gwlink_snapshot(self, slot_id: int) -> dict:
-        snap = self.db.get_state_json(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id), {})
-        if isinstance(snap, dict) and isinstance(snap.get("bundle"), dict):
-            # снимок, сохранённый сервером 3.3.0, — с прежними именами полей
-            # (снимается со следующим сдвигом минимума)
-            snap["bundle"] = gwsnapshot.bundle_both_names(snap["bundle"])
-        return snap
+        return self.db.get_state_json(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id), {})
 
     def gwlink_snapshot_age(self, slot_id: int) -> int | None:
         """Секунд с приёма ПО ЧАСАМ ВПС; None — снимка не было."""

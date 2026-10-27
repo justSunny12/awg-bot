@@ -46,11 +46,8 @@ def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
     (real — эти остаются настоящими)."""
     names = ("update_guard_disarm", "ensure_python", "ensure_ping", "install_unit", "ensure_host_autostart",
              "ensure_awg_module_loaded", "ensure_awg_generation", "adopt_resolver", "seed_conf", "validate_config",
-             "venv_rollback", "venv_prune", "prune_old_kernel_builds", "gw_plumbing_sync",
-             "adopt_link_keepalive")
+             "venv_rollback", "venv_prune", "prune_old_kernel_builds", "gw_plumbing_sync")
     out = [f'{n}() {{ echo "{n}" >> "{log}"; return 0; }}' for n in names if n not in real]
-    # раздел app.yaml (test_adopt_awg_section) — без записи: журнал шагов не о нём
-    out += [f"{n}() {{ :; }}" for n in ("adopt_awg_section", "adopt_awg_section_for_old") if n not in real]
     out.append(f'build_venv() {{ echo "build_venv" >> "{log}"; '
                + ('die "pip: нет сети"; ' if env_fails else "") + "}")
     return out
@@ -356,11 +353,9 @@ def test_the_old_code_stays_when_the_service_does_not_come_up(script, tmp_path):
 
 def test_the_second_half_takes_the_same_steps_as_an_update(script, tmp_path):
     """restore-11: вторая половина — та же функция шагов, что у update (ping,
-    резолвер, проверка conf); пояс — после замены conf, не до."""
+    резолвер, проверка conf)."""
     after = _extract_func(script, "cmd_restore_after_update")
     assert "update_env_steps restore" in after
-    steps = _extract_func(script, "update_env_steps")
-    assert '[[ "${1:-}" != "restore" ]] && update_adopts_timezone' in steps
     h = Host(tmp_path)
     rel = Release(script, h)
     assert rel.run(script).returncode == 0

@@ -1,5 +1,4 @@
-"""zone.py — часовой пояс показа в текстах обеих ролей: строка «🔧 Сервис» и
-уведомление после обновления, снявшего ключ timezone.
+"""zone.py — часовой пояс показа в текстах обеих ролей: строка «🔧 Сервис».
 
 «сервера» / «шлюза» — br.host_gen роли."""
 
@@ -16,22 +15,6 @@ def zone_name_label(name: str, tz=None) -> str:
     from awgbot.util import timeutil
     label = timeutil.tz_label(tz=tz)
     return f"{_e(name)} ({label})" if name else label
-
-
-def zone_adopted(br, prev: str = "") -> str:
-    """Первый старт после обновления, снявшего ключ timezone: в каком поясе
-    теперь время и какой был раньше (пояс не изменился — уведомления нет вовсе,
-    runtime/main._announce_zone). Уведомление — без точки в конце."""
-    from awgbot.core import config, zone
-    line = f"🕐 Время теперь показываю в поясе {br.host_gen}: {zone_name_label(config.TZ_NAME)}"
-    old = zone.load(prev) if prev and prev != config.TZ_NAME else None
-    if old is not None:
-        line += f", раньше был {zone_name_label(prev, old)}"
-    # расписания — по роли: у шлюза ни бэкапа, ни проверки обновлений нет
-    what = "бэкап, проверка обновлений, чистка" if br.host == "сервер" else "монитор, списки"
-    line += f"\nЧасы в расписаниях ({what}) — тоже в этом поясе"
-    return (line + f"\nДругой пояс — {_SET_ZONE} на "
-            f"{br.host_loc} и «🔁 Перезапуск бота» в «⚙️ Настройки → 🔧 Сервис»")
 
 
 def svc_zone_warning(br) -> str:

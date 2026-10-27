@@ -219,35 +219,6 @@ async def test_link_threshold_absent_in_the_config_is_written_in_seconds(svc, fa
 
 # ── 💾 бэкапы ────────────────────────────────────────────────────────────────
 
-# ── ⬆️ обновления: у агента их нет — его обновляет сервер AWG ───────────────
-
-async def test_agent_start_wipes_the_keys_of_its_former_updates(tmp_path, monkeypatch):
-    """Первый старт 3.4.0: ключи прежних «⬆️ Обновлений» агента (цель,
-    объявленное, ожидание, список и метаданные, мьют) — прочь."""
-    from awgbot.domain.gateway.upd import LEGACY_KEYS
-    from awgbot.runtime import main as rt
-
-    class _Stop(Exception):
-        pass
-
-    def _no_bot(*a, **k):
-        raise _Stop()
-    monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "gw.db")
-    d = Database(tmp_path / "gw.db")
-    d.init_schema()
-    for key in LEGACY_KEYS:
-        d.set_state(key, "1")
-    d.close()
-    monkeypatch.setattr(rt, "Bot", _no_bot)
-    with pytest.raises(_Stop):
-        await rt.run_gateway()
-    d = Database(tmp_path / "gw.db")
-    try:
-        assert [k for k in LEGACY_KEYS if d.get_state(k)] == []
-    finally:
-        d.close()
-
-
 # ── мелочи, которые люди видят каждый день ───────────────────────────────────
 
 @pytest.mark.parametrize("sync", ["online", "offline"])

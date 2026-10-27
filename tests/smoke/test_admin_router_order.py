@@ -5,8 +5,7 @@ aiogram проверяет фильтры в порядке регистраци
 каждого модуля. Единственные пересекающиеся фильтры у админа — на сообщениях:
 `admin_start` (CommandStart, без ограничения по состоянию) должен видеть «/start»
 раньше любого FSM-обработчика ввода (иначе «/start» посреди диалога ушёл бы
-именем профиля или числом дней) и раньше `gateway_claim_message` (текст без
-состояния). Колбэки не пересекаются: у каждого класса CallbackData действия
+именем профиля или числом дней). Колбэки не пересекаются: у каждого класса CallbackData действия
 различны, GEN_ACTIONS не содержит прочих действий DeviceCB/AdminSelfCB.
 
 Перестановка include_router молча сломала бы это — отсюда сторож с явным
@@ -30,7 +29,6 @@ _MESSAGE_PAIRS = [
     ("admin_start", "edit_period_end_apply"),
     ("admin_start", "admin_add_device_name"),
     ("admin_start", "device_edit_name_apply"),
-    ("admin_start", "gateway_claim_message"),
     ("admin_start", "self_add_name"),
     ("admin_start", "broadcast_days"),
     ("admin_start", "broadcast_receive"),
