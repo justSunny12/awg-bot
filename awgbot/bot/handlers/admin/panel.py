@@ -234,7 +234,8 @@ async def admin_migration_client(cb: CallbackQuery, callback_data: ClientCB, ser
     """Переезд профиля — колбэком (листание страниц отдаёт его заново)."""
     parts = await migration_client_screen(services, callback_data.client_id, cb.message.chat.id)
     if parts is None:
-        await cb.answer()
+        from awgbot.bot import ui
+        await cb.answer(ui.Toast.no_profile, show_alert=True)   # профиль сняли, пока экран висел
         return
     await edit_nav(cb, services, *parts)
     await cb.answer()
@@ -269,7 +270,8 @@ async def admin_traffic_devices(cb: CallbackQuery, callback_data: ClientCB, serv
     """Трафик профиля по устройствам — колбэком (листание страниц отдаёт его заново)."""
     parts = await traffic_devices_screen(services, callback_data.client_id, cb.message.chat.id)
     if parts is None:
-        await cb.answer()
+        from awgbot.bot import ui
+        await cb.answer(ui.Toast.no_profile, show_alert=True)   # профиль сняли, пока экран висел
         return
     await edit_nav(cb, services, *parts)
     await cb.answer()
