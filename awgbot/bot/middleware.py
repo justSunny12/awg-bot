@@ -12,6 +12,8 @@ middleware.py — охрана на входе. Бот реагирует тол
 
 from __future__ import annotations
 
+import sqlite3
+
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
@@ -36,7 +38,13 @@ class AccessMiddleware(BaseMiddleware):
         name = (user.full_name or user.username or "").strip()[:128]
         uname = (user.username or "").strip()[:64]
         if name and (name != client.tg_name or uname != client.tg_username):
-            self.db.set_tg_identity(client.id, name, uname)
+            try:
+                self.db.set_tg_identity(client.id, name, uname)
+            except sqlite3.IntegrityError as e:
+                from awgbot.util import rsvjrn
+                if not rsvjrn.is_refusal(e):
+                    raise
+                return client                              # следование: имя запишет держатель эпохи
             return self.db.get_client(client.id)
         return client
 

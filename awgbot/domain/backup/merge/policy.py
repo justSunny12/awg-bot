@@ -82,7 +82,8 @@ TABLES: dict[str, dict] = {
     },
 }
 
-TABLE_CUR: tuple[str, ...] = ("traffic_samples", "rf_samples", "gateways", "reserve_peer", "reserve_traffic_monthly")
+TABLE_CUR: tuple[str, ...] = ("traffic_samples", "rf_samples", "gateways", "reserve_peer", "reserve_traffic_monthly",
+                               "jrn_meta")
 TABLE_REP: tuple[str, ...] = ("ui_state",)
 TABLE_APPEND: tuple[str, ...] = (
     "client_pause_histories", "client_grace_histories", "client_subscription_histories", "client_quota_histories",

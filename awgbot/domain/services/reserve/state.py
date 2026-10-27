@@ -22,7 +22,7 @@ from awgbot.util import timeutil
 KEYS: tuple[str, ...] = (
     "rsv_invite", "rsv_peer_state", "rsv_out", "rsv_in", "rsv_poll", "rsv_keys", "rsv_view",
     "rsv_shares", "rsv_pkg_due", "rsv_pkg_sent", "rsv_pkg_in", "rsv_peer_admin", "rsv_guest_links",
-    "rsv_gw_links", "rsv_traffic", "rsv_dns", "rsv_record_watch",
+    "rsv_gw_links", "rsv_traffic", "rsv_dns", "rsv_record_watch", "rsv_follow",
 )
 OUT_STATES = ("home", "leaving", "away", "returning")
 IN_STATES = ("idle", "taking", "serving", "releasing", "relay")
@@ -106,7 +106,13 @@ class ReserveStateMixin:
         if state not in POLL_STATES:
             raise ValueError(f"не право ответа: {state}")
         # why/url — только этого решения: прежнее «webhook» не должно пережить «mine»
-        return self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), **{"why": "", "url": "", **why})
+        out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), **{"why": "", "url": "", **why})
+        if state == "away":
+            # право отвечать у бота основы на резерве — у него и право записи решений
+            self.reserve_epoch_follow({"released": "передача бота", "webhook": "Telegram: 409, вебхук у резерва",
+                                       "webhook_info": "Telegram: вебхук у резерва"}.get(str(why.get("why") or ""),
+                                                                                          "пользователи и бот у резерва"))
+        return out
 
     def reserve_busy(self) -> str:
         """Идёт переезд или возврат (в любую сторону) — человеку словами; пусто — нет."""

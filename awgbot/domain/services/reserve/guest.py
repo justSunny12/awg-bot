@@ -215,6 +215,23 @@ class ReserveGuestMixin:
             text = rn.webhook_restored_reserve(name)
         return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text, silent=True)])]
 
+    GUEST_BLOCKS_RESEND_S = 120
+
+    def guest_blocks_to_send(self) -> list[str] | None:
+        """Адреса заблокированных устройств — основе (её оставшимся сессиям, пока она следует):
+        при изменении и раз в GUEST_BLOCKS_RESEND_S (сессия пары могла потерять прошлое);
+        None — слать нечего."""
+        import time
+        addrs = sorted({str(d.address) for d in self.db.list_all_devices() if getattr(d, "block_reason", 0) and d.address})
+        sent = self.__dict__.get("_guest_blocks_sent")
+        if sent is not None and sent[0] == addrs and time.monotonic() - sent[1] < self.GUEST_BLOCKS_RESEND_S:
+            return None
+        return addrs
+
+    def guest_blocks_sent(self, addrs: list[str]) -> None:
+        import time
+        self.__dict__["_guest_blocks_sent"] = (list(addrs), time.monotonic())
+
     def guest_apply_blocks(self, addrs: list[str]) -> None:
         """Блокировки основы (её живые сессии): DROP в зоне тем же механизмом."""
         from awgbot.infra import awg

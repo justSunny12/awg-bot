@@ -249,6 +249,19 @@ CREATE TABLE IF NOT EXISTS reserve_traffic_monthly (
     archived_at   TEXT    NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rsv_tm_month_dir ON reserve_traffic_monthly(month, dir);
+-- эпоха линии данных (журнал данных резерва, util/rsvjrn): одна строка; кто держит
+-- право записи решений. role follower — решения запрещены временными триггерами
+-- соединения; applying — 1 только внутри транзакции применения чужих решений.
+-- Местное: в реплику и бэкап не едет
+CREATE TABLE IF NOT EXISTS jrn_meta (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    epoch         INTEGER NOT NULL DEFAULT 0,            -- номер права записи; растёт на каждой передаче
+    holder        TEXT    NOT NULL DEFAULT 'self',       -- self | peer (бот основы на резерве)
+    role          TEXT    NOT NULL DEFAULT 'holder',     -- holder | follower: пишет ли решения этот процесс
+    applying      INTEGER NOT NULL DEFAULT 0,
+    changed_at    TEXT    NOT NULL DEFAULT '',           -- момент последней передачи
+    why           TEXT    NOT NULL DEFAULT ''            -- факт передачи (для журнала и карточки)
+);
 -- истечение: предфильтр «активные с конечным периодом до границы»
 CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);
 CREATE INDEX IF NOT EXISTS idx_friend_tg        ON device_friend(friend_tg_id);

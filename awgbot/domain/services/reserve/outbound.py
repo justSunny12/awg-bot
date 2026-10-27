@@ -170,6 +170,7 @@ class ReserveOutboundMixin:
         elif out.get("record_set_at"):
             record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
         self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
+        self.reserve_epoch_hold("переезд не состоялся")
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
         if record_back:
@@ -182,6 +183,7 @@ class ReserveOutboundMixin:
 
     def reserve_out_tick(self) -> list[tuple]:
         """Такт автомата «мои пользователи»."""
+        self.reserve_epoch_check()
         if not self.reserve_paired():
             return []
         out = self._out()
@@ -475,6 +477,7 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("mine")
         self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
                              stuck_home_at=timeutil.now_iso(), await_merge=forced, last_switch=timeutil.now_iso())
+        self.reserve_epoch_hold("вебхук резерва снят, поллинг здесь")
         if not forced:
             self.reserve_new_k()
             self.reserve_pkg_mark()

@@ -85,6 +85,8 @@ class ReserveReturnMixin:
                 actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                         text=rn.record_not_changed(self.reserve_dns_name(), str(e), own))]))
         self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
+        # решения — снова здесь: бот на резерве отрезан, его правки вольются при встрече (слиянием)
+        self.reserve_epoch_hold("вернуть без резерва")
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
 
@@ -108,6 +110,7 @@ class ReserveReturnMixin:
         состояние home, отметка снята, новый K."""
         from awgbot.domain.notices import reserve as rn
         out = self._out()
+        self.reserve_epoch_hold("резерв без гостя")
         self.reserve_set_out("home", step="", kind="", await_merge=False, last_switch=timeutil.now_iso(),
                              returned_at=str(out.get("returned_at") or timeutil.now_iso()))
         self.reserve_new_k()
@@ -210,6 +213,9 @@ class ReserveReturnMixin:
         if out.get("state") != "returning" or out.get("step") not in ("back_req", "merge"):
             log.info("резерв: released вне возврата — пропущен")
             return []
+        # бот основы на резерве остановлен и больше не пишет — право записи здесь до слияния:
+        # слияние пишет живую базу сырым соединением, запрет его не касается
+        self.reserve_epoch_hold("возврат: бот на резерве остановлен")
         if not blob:
             log.warning("резерв: «%s» отдал пустую реплику — возврат без слияния", self.reserve_peer_name())
             return self._return_without_replica()
@@ -233,6 +239,7 @@ class ReserveReturnMixin:
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=not same, silent=same,
                                              text=rn.return_failed(self.reserve_peer_name(), reason, final=same))])]
         self.rsv_update("rsv_out", merge_report=report, merged_fp=fp, merge_error="", merge_blocked="")
+        self.reserve_monthly_settle()
         self._out_step("restart", restart_at=0)
         return [("restart",)]
 
@@ -272,6 +279,7 @@ class ReserveReturnMixin:
 
     def _return_done(self, actions: list[tuple]) -> list[tuple]:
         from awgbot.domain.notices import reserve as rn
+        self.reserve_epoch_hold("возврат завершён")          # обычно уже здесь — с реплики возврата
         out = self._out()
         name = self.reserve_peer_name()
         self.reserve_new_k()

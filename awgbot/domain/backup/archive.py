@@ -38,6 +38,12 @@ def _strip_foreign_share(con) -> None:
             con.commit()
         except Exception:                                      # noqa: BLE001 — схема без server_state
             return
+    # эпоха — о живом процессе, не о данных: восстановленная база стартует держателем
+    try:
+        con.execute("DELETE FROM jrn_meta")
+        con.commit()
+    except Exception:                                          # noqa: BLE001 — схема старше эпохи
+        pass
 
 class BackupArchiveMixin:
     META_NAME = "state/backup-meta.json"

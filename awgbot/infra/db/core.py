@@ -54,7 +54,20 @@ class DatabaseCore:
             conn.execute("PRAGMA busy_timeout = 5000")   # мс: ждать до 5 с, а не падать на locked
             conn.commit()
             self._local.conn = conn
+            self._jrn_triggers(conn)
         return conn
+
+    def _jrn_triggers(self, conn: sqlite3.Connection | None = None) -> None:
+        """Запрет записи решений не держателю эпохи — временными триггерами на
+        соединение (util/rsvjrn): мимо них из процесса не пишет никто. До
+        init_schema таблиц нет — init_schema зовёт снова."""
+        from awgbot.util.rsvjrn import triggers
+        conn = conn or self._connection()
+        try:
+            triggers.install(conn)
+        except sqlite3.Error as e:                          # повреждённая схема — пусть падает запрос, а не соединение
+            import logging
+            logging.getLogger("awgbot.db").warning("журнал: триггеры запрета не поставлены: %s", e)
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)

@@ -84,7 +84,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 rt_src_notes += await asyncio.to_thread(services.routing_infra_alerts)
                 # ...и готовность переезда: один доклад на смену состояния, как
                 # и всё остальное в этом блоке.
-                rt_src_notes += await asyncio.to_thread(services.migration_ready_alerts)
+                if not await asyncio.to_thread(pkg.following, services):   # отметка доклада — решение окна
+                    rt_src_notes += await asyncio.to_thread(services.migration_ready_alerts)
                 # устройства админа сменились после сборки бандла шлюза → напомнить
                 rt_src_notes += await asyncio.to_thread(services.gw_bundle_drift_notes)
                 if rt_src_notes:
@@ -223,7 +224,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # опозданию, висят в очереди, пока не выполнятся; догон на старте — только
     # после назначенного момента месяца. Задания копии — в части backup.
     scheduler.add_job(job_monthly, _trig_monthly(), id="monthly", max_instances=1, **MANDATORY)
-    scheduler.add_job(job_monthly_catchup, "date", run_date=now, id="monthly_catchup", **MANDATORY)
+    # догон — на старте и раз в час: сброс, отложенный следованием (возврат без слияния),
+    # встаёт здесь вскоре после возврата, а не со следующим перезапуском
+    scheduler.add_job(job_monthly_catchup, IntervalTrigger(hours=1, jitter=600, timezone=config.TZ), next_run_time=now,
+                      id="monthly_catchup", **MANDATORY)
     pkg.add_server_backup(scheduler, services, bot, run_date=now)
     async def job_routing_liveness():
         """Проверка проходимости шлюза и деградация. Своё задание, потому что
@@ -262,6 +266,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         состояние), а внутри — не делает ни одного exec, когда ждать больше
         некого. Поэтому висит всегда, без флага и без перерегистрации.
         """
+        if await asyncio.to_thread(pkg.following, services):
+            return                                   # следование: окно переезда стоит до возврата
         try:
             await pkg.send_notifications(bot, await asyncio.to_thread(services.migration_watch))
         except Exception as e:                       # noqa: BLE001

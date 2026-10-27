@@ -31,6 +31,16 @@ class SchemaMixin:
             cur.executescript(SCHEMA)
         self._ensure_service_client()
         self._ensure_db_line()
+        self._ensure_jrn_meta()
+        self._jrn_triggers()                              # первый старт: таблиц до этого не было
+
+    def _ensure_jrn_meta(self) -> None:
+        """Строка эпохи (держатель — этот процесс, пока передачи не было); на
+        старте applying — 0: отметка, по ошибке ушедшая в коммит, не должна
+        заглушить запрет."""
+        with self._tx() as cur:
+            cur.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
+            cur.execute("UPDATE jrn_meta SET applying = 0 WHERE id = 1 AND applying <> 0")
 
     DB_LINE_KEY = "db_line"
 

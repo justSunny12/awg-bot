@@ -147,8 +147,14 @@ class InboundMixin:
         await self._actions(await asyncio.to_thread(self.services.reserve_evict_in))
 
     async def _in_blocks(self, sess: _Session, body: dict) -> None:
-        """Блокировки основы, пока её пользователи у меня, — гостю в зону."""
-        await self._actions([("guest", "blocks", {"addrs": list(body.get("addrs") or [])[:4096]})])
+        """`blocks` в обе стороны. Я несу пользователей основы — её блокировки гостю в зону
+        (основа 4.0.x решает их сама); мои пользователи у резерва и я следую — блокировки
+        держателя (бота основы на резерве) моим оставшимся сессиям."""
+        addrs = [str(a) for a in (body.get("addrs") or [])][:4096]
+        if await asyncio.to_thread(self.services.reserve_hosting):
+            await self._actions([("guest", "blocks", {"addrs": addrs})])
+        else:
+            await asyncio.to_thread(self.services.reserve_holder_blocks_in, addrs)
 
     async def _in_slots(self, sess: _Session, body: dict) -> None:
         """Ключи шлюзовых сторон основы → стороны зоны, ответ slots_ok."""

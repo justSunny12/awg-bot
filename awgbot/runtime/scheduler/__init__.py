@@ -32,6 +32,7 @@ from __future__ import annotations
 from awgbot.bot.notifier import send_notifications  # noqa: F401 — части зовут через пакет: подменяют тесты
 
 from .common import (log, notify_update_available, TG_NAME_MAX_AGE_DAYS, refresh_tg_names, MANDATORY,
+                     FOLLOWER_OFF, following,
                      planned_moment_passed, _UPDATE_JITTER,
                      update_check_trigger, update_check_hook, add_update_check)
 from .backup import monthly_backup, event_backup, BACKUP_JITTER, backup_trigger, add_server_backup
@@ -44,4 +45,4 @@ __all__ = ["setup_scheduler", "setup_gateway_scheduler", "send_notifications", "
            "notify_update_available", "TG_NAME_MAX_AGE_DAYS", "refresh_tg_names", "MANDATORY",
            "planned_moment_passed", "monthly_backup", "_UPDATE_JITTER", "BACKUP_JITTER",
            "update_check_trigger", "update_check_hook", "add_update_check", "backup_trigger",
-           "add_server_backup", "event_backup", "core_jobs", "setup_guest_scheduler"]
+           "add_server_backup", "event_backup", "core_jobs", "setup_guest_scheduler", "FOLLOWER_OFF", "following"]

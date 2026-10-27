@@ -156,6 +156,9 @@ class MigrationStartMixin:
                     block_reason=int(dev.block_reason),
                 )
             except sqlite3.IntegrityError as e:
+                refused = self.reserve_refusal(e) if hasattr(self, "reserve_refusal") else None
+                if refused is not None:                    # следование: решения пишет бот на резерве
+                    raise refused from e
                 raise ServiceErrorMigration(f"конфликт адресов: {e}")
             self.db.update_device_fields(new_id, routing_on=int(dev.routing_on))
             try:

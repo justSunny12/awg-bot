@@ -62,6 +62,9 @@ class DevicesMixin:
                     traffic_limit=traffic_limit,
                 )
             except sqlite3.IntegrityError as e:
+                refused = self.reserve_refusal(e) if hasattr(self, "reserve_refusal") else None
+                if refused is not None:                    # следование: решения пишет бот на резерве
+                    raise refused from e
                 raise ServiceError(f"Конфликт при создании устройства, попробуй ещё раз: {e}")
             try:
                 awg.add_peer(pub, psk, ip)

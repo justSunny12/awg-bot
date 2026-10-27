@@ -100,6 +100,10 @@ class ReconcileMixin:
         «не знаю», а не «пиров нет», и накапливать по нему пропажи значит
         готовить то же самое удаление, только медленнее.
         """
+        if getattr(self, "reserve_following", None) and self.reserve_following():
+            # следование: устройства решает бот основы на резерве — пропавший пир не удаляет
+            # устройство, неизвестный не заводится (это решения; база их и не примет)
+            return []
         db_devices = {d.public_key: d for d in self.db.list_all_devices()}
         service_id = self.db.get_service_client_id()
         notifications: list[Notification] = []
@@ -163,6 +167,9 @@ class ReconcileMixin:
                 self.db.create_device(service_id, name, pub, psk, ip, private_key=None,
                                       iface=iface)
             except sqlite3.IntegrityError as e:
+                if self.reserve_refusal(e) if hasattr(self, "reserve_refusal") else None:
+                    log.info("reconcile_peers: следование — пир %s (%s) не заводится", name, ip)
+                    continue
                 # Адрес ещё за уходящей записью (порог MISSING_SWEEPS_THRESHOLD
                 # не выбран). Пропускаем ЭТОТ пир, а не всю сверку: он попадёт в
                 # карантин на сверке, где прежний владелец адреса удалится.
@@ -192,7 +199,10 @@ class ReconcileMixin:
             present = set()
             prune = False                          # не с чем сверять — только наложить
         fixed = 0
-        for address in self.db.blocked_addresses():
+        holder = self.reserve_holder_blocks() if hasattr(self, "reserve_holder_blocks") else None
+        # в следовании — блокировки держателя (бот основы на резерве), а не устаревшей базы
+        wanted = list(holder) if holder is not None else list(self.db.blocked_addresses())
+        for address in wanted:
             if address in present:
                 continue
             try:
@@ -201,7 +211,7 @@ class ReconcileMixin:
             except awg.AwgError as e:
                 log.warning("reconcile_blocks: DROP %s не наложен: %s", address, e)
         if prune:
-            blocked = set(self.db.blocked_addresses())
+            blocked = set(wanted)
             for dev in self.db.list_all_devices():
                 if dev.address in present and dev.address not in blocked and not dev.is_gateway:
                     try:

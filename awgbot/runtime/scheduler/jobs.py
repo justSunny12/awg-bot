@@ -26,7 +26,10 @@ def core_jobs(services, bot, db) -> dict:
             # poll_traffic возвращает поздравления тем, чьё устройство только
             # что подключилось на новых настройках (обычно их ловит более
             # частый job_migration_watch, см. миграцию).
-            await pkg.send_notifications(bot, await asyncio.to_thread(services.poll_traffic))
+            greetings = await asyncio.to_thread(services.poll_traffic)
+            if await asyncio.to_thread(pkg.following, services):
+                return                               # следование: счётчики — да, лимиты и уведомления — у держателя
+            await pkg.send_notifications(bot, greetings)
             notifs = await asyncio.to_thread(services.check_traffic_limits)
             await pkg.send_notifications(bot, notifs)
         except Exception as e:                       # noqa: BLE001
@@ -34,6 +37,8 @@ def core_jobs(services, bot, db) -> dict:
 
     # ── проверка сроков + уведомления ────────────────────────────────────────
     async def job_expiry():
+        if await asyncio.to_thread(pkg.following, services):
+            return
         try:
             notifs = await asyncio.to_thread(services.check_expiry)
             # прикрепить кнопку отсрочки к отмеченным уведомлениям (UI-слой —
@@ -69,6 +74,11 @@ def core_jobs(services, bot, db) -> dict:
         if last is None:
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)   # первый запуск — только фиксация
             return
+        if await asyncio.to_thread(pkg.following, services):
+            # сброс делает держатель (бот основы на резерве); после возврата со слиянием он
+            # учтён, без слияния — догон после возврата сделает его здесь
+            await asyncio.to_thread(services.reserve_monthly_defer, ym)
+            return
         try:
             reset_notes = await asyncio.to_thread(services.reset_monthly_traffic)
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)
@@ -103,6 +113,8 @@ def core_jobs(services, bot, db) -> dict:
             return ok
 
         _pending_notes: list = []
+        if await asyncio.to_thread(pkg.following, services):
+            return                                   # ящик читает держатель: двоим один код не разделить
         try:
             if not await asyncio.to_thread(services.email_resume_enabled):
                 return
@@ -120,6 +132,8 @@ def core_jobs(services, bot, db) -> dict:
     # имена Telegram-аккаунтов: разово на старте (после обновления они пусты у
     # всех) и раз в сутки для тех, кто давно не писал; в сеть — с джиттером
     async def job_tg_names():
+        if await asyncio.to_thread(pkg.following, services):
+            return
         try:
             n = await pkg.refresh_tg_names(bot, db)
             if n:

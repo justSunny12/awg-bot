@@ -92,6 +92,9 @@ async def run_guest() -> None:
         nonlocal watch_due
         if ctl.connected():
             await ctl.send_online()
+            addrs = await asyncio.to_thread(services.guest_blocks_to_send)
+            if addrs is not None and await ctl.send("blocks", {"addrs": addrs}):
+                await asyncio.to_thread(services.guest_blocks_sent, addrs)
         if wh is not None:
             try:
                 wh.refresh_pool()                         # хост выучил сеть Telegram — в фильтр без перезапуска

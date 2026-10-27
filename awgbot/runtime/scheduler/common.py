@@ -37,6 +37,23 @@ async def notify_update_available(bot, services, nxt) -> None:
         reply_markup=kb.update_notify(nxt.tag))])
 
 
+# Задания решений над данными пользователей: у основы в следовании (её пользователи и
+# бот у резерва) выходят сразу — решения пишет бот основы на резерве, а база здесь
+# их и не примет. Опрос трафика идёт (счётчики своего интерфейса), но без лимитов и
+# без уведомлений. Сторож сверяет список с планировщиком.
+FOLLOWER_OFF: tuple[str, ...] = ("expiry", "monthly", "monthly_catchup", "email_resume", "tg_names",
+                                 "tg_names_startup", "migration_watch")
+
+
+def following(services) -> bool:
+    """Основа в следовании (журнал данных резерва, reserve/journal)."""
+    f = getattr(services, "reserve_following", None)
+    try:
+        return bool(f()) if f is not None else False
+    except Exception:                                 # noqa: BLE001 — без базы эпохи следования нет
+        return False
+
+
 TG_NAME_MAX_AGE_DAYS = 7      # имя аккаунта старше — переспросить у Telegram
 
 

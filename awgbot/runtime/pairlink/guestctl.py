@@ -10,7 +10,9 @@ guestctl.py — локальный канал между основным бот
 отдаёт число устройств на связи, нажатие кнопки возврата и шифротексты
 реплики. По сети гость с основой не говорит — всё через бот резерва.
 
-Гость → резерв: hello{online}, online{n}, tg_taken{}, back_req{}, replica{blob}, bye{}.
+Гость → резерв: hello{online}, online{n}, tg_taken{}, back_req{}, replica{blob}, blocks{addrs}, bye{}
+(blocks — адреса заблокированных устройств по решениям гостя: резерв шлёт их основе, та
+держит DROP своим оставшимся сессиям).
 Резерв → гость: state{name, since, reason, primary, return, self_host},
 take_tg{}, blocks{addrs}, stop{} (гость пишет финальный снимок, шлёт replica и выходит).
 """
@@ -140,6 +142,8 @@ class GuestCtlServer:
                 self.replica = None
             if self.replica:
                 self._words.append(("replica", self.replica))
+        elif kind == "blocks":
+            self._words.append(("blocks", [str(a) for a in (msg.get("addrs") or [])][:4096]))
         elif kind == "bye":
             pass
 

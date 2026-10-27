@@ -140,6 +140,9 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_back_req))
                     elif word[0] == "webhook":
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_webhook_in, word[1]))
+                    elif word[0] == "blocks" and await asyncio.to_thread(services.reserve_hosting):
+                        # блокировки по решениям бота основы у меня — основе: её оставшимся сессиям
+                        await rsvactions.run([("send", "blocks", {"addrs": word[1]})])
                 await asyncio.to_thread(services.reserve_guest_online_set, srv.online_count if srv.connected() else 0)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: слова гостя: %s", e)
