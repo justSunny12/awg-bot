@@ -7,7 +7,7 @@ import secrets
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 from .ddl import SCHEMA
-from .selects import SERVICE_CLIENT_NAME
+from .selects import LEGACY_SERVICE_CLIENT_NAME, SERVICE_CLIENT_NAME
 
 
 class SchemaMixin:
@@ -47,7 +47,7 @@ class SchemaMixin:
                           (self.DB_LINE_KEY, secrets.token_hex(8)))
 
     def _ensure_service_client(self) -> None:
-        """Служебный пользователь «Устройства без клиента» — ровно один, создаётся один раз.
+        """Служебный пользователь «Устройства без пользователя» — ровно один, создаётся один раз.
 
         К нему цепляются подхваченные с сервера пиры, пока админ не привяжет их к реальному
         пользователю. У него нет tg_id/периода, is_service=1, и логика уведомлений/
@@ -71,3 +71,8 @@ class SchemaMixin:
                     "period_end, period_kind, status) VALUES (?, NULL, NULL, NULL, 'active')",
                     (cid,))
                 cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (cid,))
+        else:
+            # прежнее имя — только если админ его не менял
+            with self._tx() as cur:
+                cur.execute("UPDATE clients SET name = ? WHERE id = ? AND name = ?",
+                            (SERVICE_CLIENT_NAME, row[0], LEGACY_SERVICE_CLIENT_NAME))

@@ -127,6 +127,23 @@ def test_service_client_exists(db):
     sid = db.get_service_client_id()
     assert sid > 0
     assert db.get_client(sid).is_service == 1
+    assert db.get_client(sid).name == "Устройства без пользователя"
+
+
+def test_service_client_legacy_name_renamed_on_start(db):
+    """База до переименования: прежнее имя служебной группы меняется на старте."""
+    sid = db.get_service_client_id()
+    db.update_client_fields(sid, name="Устройства без клиента")
+    db.init_schema()
+    assert db.get_client(sid).name == "Устройства без пользователя"
+
+
+def test_service_client_admin_name_kept_on_start(db):
+    """Имя, которое админ дал служебной группе сам, старт не трогает."""
+    sid = db.get_service_client_id()
+    db.update_client_fields(sid, name="Карантин")
+    db.init_schema()
+    assert db.get_client(sid).name == "Карантин"
 
 
 def test_content_msg_ids_track_and_pop(db):

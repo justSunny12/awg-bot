@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS clients (
     block_reason        INTEGER NOT NULL DEFAULT 0,   -- маска ClientBlock; 0 = не заблокирован
     activation_status   TEXT    NOT NULL DEFAULT 'pending',  -- pending | active
     invite_code         TEXT,                         -- гасится (NULL) после активации
-    is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
+    is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без пользователя»
     created_at          TEXT    NOT NULL,
     -- Тип профиля: owner — со своей подпиской; guest —
     -- гость без подписки, держит переданные ему устройства одного владельца.
