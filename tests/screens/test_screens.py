@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 
-from tests.screens import catalog, harness, timelabels
+from tests.screens import catalog, harness, marks, timelabels
 from tests.screens.harness import take
 
 pytestmark = pytest.mark.screens
@@ -52,9 +52,11 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
     """Все снимки роли — через диспетчер; ни одно нажатие не ушло в обработчик
     устаревшей кнопки; лимиты и HTML в порядке; каждый общий раздел, доступный
     роли файла, снят хотя бы одним снимком; запись совпадает с эталоном байт
-    в байт."""
+    в байт. Ссылки на экраны в уведомлениях — с меткой «-n», на экранах — без
+    неё (tests/screens/marks)."""
     shots = [s for s in catalog.SHOTS if s.role == name]
     drawn = harness.record_section_screens(monkeypatch)
+    notified = marks.record(monkeypatch)
     parts, bad, circles = [], [], set()
     for shot in shots:
         rec = await take(shot, tmp_path, fakes)
@@ -66,6 +68,7 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
         assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
         assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
+        bad += marks.problems(shot.id, rec, notified)
         found, used = timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS, _expected_labels(shot))
         bad += found
         spare_t = catalog.TIME_LABEL_EXCEPTIONS.get(shot.id, set()) - used

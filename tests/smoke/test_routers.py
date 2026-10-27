@@ -56,17 +56,21 @@ def test_no_helper_is_registered_as_a_handler(mod):
 # ── один источник роутеров роли ──────────────────────────────────────────────
 
 def test_routers_for_lists_both_roles_in_the_documented_order():
-    """routers.py — единственное место с порядком включения: листание и
-    «Скрыть» первыми, устаревшая кнопка последней; у основного бота
-    reply_commands раньше общих разделов и FSM, routing раньше client."""
+    """routers.py — единственное место с порядком включения: листание,
+    экраны «весь список» и «Скрыть» первыми, устаревшая кнопка последней; у
+    основного бота reply_commands раньше общих разделов и FSM, routing раньше
+    client. Роутер списков стоит до роутеров роли в обеих установках: его
+    ListCB фильтры ролей не пропустили бы (роль он сверяет сам)."""
     from awgbot.bot.routers import routers_for
     main_names = [r.name for r in routers_for("client")]
     gw_names = [r.name for r in routers_for("gateway")]
-    assert main_names[:5] == ["paging", "hide", "cancel", "reply_commands", "sections"] and main_names[-1] == "stale", main_names
-    assert gw_names[:4] == ["paging", "hide", "cancel", "sections"] and gw_names[-1] == "stale", gw_names
+    assert main_names[:6] == ["paging", "lists", "hide", "cancel", "reply_commands", "sections"] and main_names[-1] == "stale", main_names
+    assert gw_names[:5] == ["paging", "lists", "hide", "cancel", "sections"] and gw_names[-1] == "stale", gw_names
     assert main_names.index("sections") < main_names.index("settings"), "общие разделы — раньше настроек роли"
     assert main_names.index("routing") < main_names.index("client"), main_names
     assert "gateway" in gw_names and "admin" not in gw_names, gw_names
+    assert main_names.index("lists") < min(main_names.index(n) for n in ("admin", "client", "settings")), main_names
+    assert gw_names.index("lists") < gw_names.index("gateway"), gw_names
 
 
 def test_both_dispatchers_build_in_one_process(services, monkeypatch):
@@ -78,8 +82,8 @@ def test_both_dispatchers_build_in_one_process(services, monkeypatch):
     gw_dp = make_dispatcher("gateway", services, services.db, reattach=True)
     assert main_dp["services"] is services and gw_dp["services"] is services
     assert [r.name for r in main_dp.sub_routers][-1] == "stale"
-    assert [r.name for r in gw_dp.sub_routers] == ["paging", "hide", "cancel", "sections", "gateway", "stale"]
+    assert [r.name for r in gw_dp.sub_routers] == ["paging", "lists", "hide", "cancel", "sections", "gateway", "stale"]
     assert main_dp.message.outer_middleware and main_dp.callback_query.outer_middleware
     # повторная сборка той же роли в том же процессе — снова через reattach
     again = make_dispatcher("gateway", services, services.db, reattach=True)
-    assert [r.name for r in again.sub_routers] == ["paging", "hide", "cancel", "sections", "gateway", "stale"]
+    assert [r.name for r in again.sub_routers] == ["paging", "lists", "hide", "cancel", "sections", "gateway", "stale"]

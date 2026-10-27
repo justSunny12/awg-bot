@@ -528,3 +528,78 @@ def test_a_refused_link_alone_is_notified_too(services, cfg1, monkeypatch):
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1, "отказ применить конфиг линка прошёл без уведомления"
     assert "Шлюз не применил: проба линка не прошла" in notes[0].text
+
+
+# ── хвост группы — ссылкой на экран со всем расхождением ─────────────────────
+# Группа устройств админа в уведомлении режется на 20 строк; хвост «и ещё N»
+# — ссылка list-drift-<слот>. Уведомление уходит через notifier._send, и там
+# ссылка получает метку «-n»: экран откроется новым сообщением внизу чата, а
+# не на месте меню где-то выше. Экран собирается из того же снимка заново —
+# без обрезки значений и без предела строк в группе.
+
+def _many_removed(services, slot, n: int = 25) -> list[str]:
+    mine = services.gwlink_issued_env(slot)["ADMIN_IPS"]
+    extra = [f"10.8.1.{a}" for a in range(100, 100 + n)]
+    _snap(services, _installed(services, admin_ips=" ".join([mine, *extra])))
+    return extra
+
+
+async def test_the_tail_of_a_long_group_links_to_the_whole_drift_and_gets_the_new_mark_on_sending(
+        services, slot, fake_bot):
+    """Хвост «и ещё 5» — ссылка на экран расхождения слота; в чат она уходит
+    с меткой «-n» один раз, имя шлюза в шапке — тоже. Без ссылки человек
+    знал бы, что адресов больше, и не мог бы их увидеть нигде."""
+    from awgbot.bot import notifier
+    services.bot_username = "awgtestbot"
+    _many_removed(services, slot)
+    text = _admin_note(services)
+    tail = text.splitlines()[-1]
+    assert tail == ' · …<a href="https://t.me/awgtestbot?start=list-drift-1">и ещё 5</a>', tail
+    await notifier._send(fake_bot, ADMIN, text, None, True)
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1, fake_bot.records
+    out = sent[0][2]
+    assert 'start=list-drift-1-n">и ещё 5</a>' in out, out.splitlines()[-1]
+    assert 'start=gw-1-n">NASPi</a>' in out.splitlines()[0], out.splitlines()[0]
+    assert "-n-n" not in out, "метка дописана дважды"
+
+
+def test_without_the_bot_name_the_tail_stays_text(services, slot):
+    """Первые секунды после старта имени бота ещё нет — хвост текстом, как
+    раньше, а не битая ссылка."""
+    services.bot_username = ""
+    _many_removed(services, slot)
+    assert _admin_note(services).splitlines()[-1] == " · …и ещё 5"
+
+
+def test_the_whole_drift_view_lists_every_address_and_uncut_values(services, slot):
+    """Экран «весь список» расхождения: все 25 адресов группы, а не 20; строка
+    значения подсетей соседей — целиком, без обрезки «…» в 160 знаков, и
+    совпадает с расхождением, собранным без обрезки."""
+    from awgbot.domain.services.gwchannel import drift_lines
+    extra = _many_removed(services, slot)
+    long_peers = " ".join(f"192.168.{n}.0/24" for n in range(100, 130))
+    got = services.gwlink_snapshot(1)["bundle"]
+    _snap(services, {**got, "peer_lan_nets": long_peers})
+    cut = services.gwlink_config_drift_items(slot)
+    whole = services.gwlink_config_drift_items(slot, cut=False)
+    assert any(t.endswith("…") for _k, _h, _m, t in cut), "значение не обрезано — сценарий не тот"
+    view = services.gw_drift_view(1)
+    assert view["name"] == "NASPi" and view["n"] == len(whole) == 2, view["n"]
+    lines = view["lines"]
+    want = drift_lines([x for x in whole if x[0] != "ADMIN_IPS"], html=True)
+    assert want[0] in lines and "…" not in want[0] and "192.168.129.0/24" in want[0], (
+        "строка значения на экране обрезана или не та")
+    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    assert lines[i + 1:i + 1 + len(extra)] == [f" · <code>{a}</code>" for a in extra], lines[i:]
+    assert not any("и ещё" in x for x in lines), "на экране всего списка — снова хвост"
+
+
+def test_the_whole_drift_view_of_a_settled_slot_is_empty_and_of_a_removed_slot_fails(services, slot):
+    """Шлюз догнал — расхождений сейчас нет (экран скажет это словами); слот
+    снят — ошибка сервиса, экран покажет «🛰 Выбранный шлюз снят»."""
+    from awgbot.domain.services import ServiceError
+    _snap(services, _installed(services))
+    assert services.gw_drift_view(1) == {"name": "NASPi", "lines": [], "n": 0}
+    with pytest.raises(ServiceError):
+        services.gw_drift_view(9)

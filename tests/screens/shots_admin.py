@@ -23,6 +23,7 @@ from tests.screens import shots_admin_gw_channel as gw_channel
 from tests.screens import shots_admin_gw_keys as gw_keys
 from tests.screens import shots_admin_home as home
 from tests.screens import shots_admin_join as join
+from tests.screens import shots_admin_lists as lists
 from tests.screens import shots_admin_migration as migration
 from tests.screens import shots_admin_profiles as profiles
 from tests.screens import shots_admin_reserve as reserve
@@ -92,6 +93,7 @@ SHOTS = [
     *reserve_move.RESERVE_MOVE,
     *reserve_vote.RESERVE_VOTE,
     *reserve_stage7.RESERVE_STAGE7,
+    *lists.LISTS,
 ]
 
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних

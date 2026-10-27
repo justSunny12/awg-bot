@@ -138,3 +138,52 @@ async def test_guest_second_code_through_start_still_activates(services, fake_bo
     d2 = services.add_device(owner.id, "Ноут")
     await _guest_start(services, fake_bot, guest, services.make_device_friendly(d2.device_id))
     assert services.db.get_device(d2.device_id).holder_client_id == guest.id
+
+
+# ── метка «-n» и ссылки на списки: код проверяется по исходному параметру ───
+
+def _codes_seen(monkeypatch) -> list[str]:
+    """Что дошло до проверки кода (пользователь — main, гость — пакет client)."""
+    seen: list[str] = []
+
+    async def take(message, services, client, code):
+        seen.append(code)
+    monkeypatch.setattr("awgbot.bot.handlers.client.main.take_code_as_member", take)
+    monkeypatch.setattr("awgbot.bot.handlers.client.take_code_as_member", take)
+    return seen
+
+
+@pytest.mark.parametrize("role", ["client", "invited"])
+@pytest.mark.parametrize("payload", ["FAbCdEfGhIj-n", "CTEST0000001-n", "Fdev-7-n", "cl-5-n"])
+async def test_a_code_ending_in_the_mark_is_checked_whole(services, fake_bot, make_active_client, monkeypatch,
+                                                          role, payload):
+    """Параметр, который без «-n» не стал бы ссылкой на экран этой роли, — код:
+    он уходит в проверку целиком, с «-n». Срезанная метка сделала бы из
+    чужого кода другой код (и он не нашёлся бы), а друг остался бы без доступа."""
+    seen = _codes_seen(monkeypatch)
+    owner = make_active_client(tg_id=9130, name="Вася", device_limit=3)
+    if role == "client":
+        await _start(services, fake_bot, owner, payload)
+    else:
+        _, guest = _lend(services, owner, 99130, "Тел")
+        await _guest_start(services, fake_bot, guest, payload)
+    assert seen == [payload], f"до проверки кода дошло {seen}, а не исходный параметр"
+
+
+@pytest.mark.parametrize("role", ["client", "invited"])
+@pytest.mark.parametrize("payload", ["dev-1-n", "sub-n", "rf-n", "list-gwnets-2", "list-drift-2-n", "list-snap-k3x9a2bq7d"])
+async def test_screen_and_list_links_never_reach_the_code_check(services, fake_bot, make_active_client, monkeypatch,
+                                                                role, payload):
+    """Ссылки на экраны с меткой и ссылки на списки — не коды: «уже есть
+    доступ» или «такого кода нет» на нажатую ссылку из пересланного
+    уведомления — ровно то, что у людей было до разбора list- раньше кодов."""
+    seen = _codes_seen(monkeypatch)
+    owner = make_active_client(tg_id=9131, name="Вася", device_limit=3)
+    if role == "client":
+        msg = await _start(services, fake_bot, owner, payload)
+        sent = [s for s in msg.sent if s[0] == "answer"]
+    else:
+        _, guest = _lend(services, owner, 99131, "Тел")
+        sent = await _guest_start(services, fake_bot, guest, payload)
+    assert seen == [], f"ссылка {payload} ушла в проверку кода"
+    assert not any("уже есть доступ" in (s[1] or "") or "Такого кода нет" in (s[1] or "") for s in sent), sent

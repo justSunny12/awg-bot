@@ -15,7 +15,7 @@ import itertools
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import (BlockCB, CancelCB, DelDeviceCB, DeviceCB, FriendCB, GraceCB, GuideCB,
-                                  HelpCB, HideCB, Menu, NoteCB, PageCB, PauseCB, PresetCB, RoutingCB)
+                                  HelpCB, HideCB, ListCB, Menu, NoteCB, PageCB, PauseCB, PresetCB, RoutingCB)
 from awgbot.bot.keyboards.common import entry_tag
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.core.blocks import ClientBlock, DeviceBlock
@@ -390,6 +390,21 @@ CLIENT_SHOTS = [
     Shot("cl.link.dev.foreign_existing", role="client", start="dev-2",
          data=vasya(["Телефон"], after=_foreign_device),
          title="ссылка на существующее чужое устройство — главная"),
+    # экран «весь список» админа и метка «-n» (ссылки из пересланных уведомлений)
+    Shot("cl.link.list", role="client", start="list-gwnets-2", data=ONE,
+         title="ссылка на список админа — своя главная, без «уже есть доступ»"),
+    Shot("cl.link.list.live", role="client", steps=[("start", ""), ("start", "list-gwnets-2-n")], data=ONE,
+         title="ссылка на список админа с меткой при живом меню — главная, команда убрана"),
+    Shot("cl.link.list.press", role="client", press=[ListCB(kind="gwnets", ref=2)], data=ONE,
+         title="упакованная кнопка списка админа — молча, экран не меняется"),
+    Shot("cl.link.dev.new", role="client", steps=[("start", ""), ("start", "dev-1-n")], data=ONE,
+         title="ссылка на устройство из уведомления — новым сообщением, прежнее меню погашено"),
+    Shot("cl.link.sub.new", role="client", steps=[("start", ""), ("start", "sub-n")], data=ONE,
+         title="ссылка на подписку из уведомления — новым сообщением"),
+    Shot("cl.link.code_marked", role="client", start="CTEST0000099-n", data=ONE,
+         title="код, оканчивающийся на «-n», — проверен целиком как код"),
+    Shot("cl.start.list", role="client", start="list-gwnets-2", data=stranger(),
+         title="незнакомец по ссылке на список — как холодный старт"),
 
     # подписка
     Shot("cl.sub", role="client", press=[INFO], data=ONE, title="💳 Подписка: годовая активна"),
@@ -860,6 +875,12 @@ GUEST_SHOTS = [
     Shot("gst.link.dev.foreign", role="guest", start="dev-2", data=guest(1, more=True),
          title="ссылка на устройство владельца, не переданное гостю — главная"),
     Shot("gst.link.sub", role="guest", start="sub", data=G1, title="ссылка на подписку — у гостя главная"),
+    Shot("gst.link.list", role="guest", start="list-gwnets-2", data=G1,
+         title="ссылка на список админа — главная гостя, без «Такого кода нет»"),
+    Shot("gst.link.list.press", role="guest", press=[ListCB(kind="drift", ref=1)], data=G1,
+         title="упакованная кнопка списка админа — молча"),
+    Shot("gst.link.dev.new", role="guest", steps=[("start", ""), ("start", "dev-1-n")], data=G1,
+         title="ссылка на устройство из уведомления — новым сообщением"),
 
     # устройства
     Shot("gst.devices", role="guest", press=[fr("list")], data=G1, title="📱 Устройства гостя"),

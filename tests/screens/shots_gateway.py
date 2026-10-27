@@ -14,6 +14,7 @@ from __future__ import annotations
 from tests.screens import shots_gateway_backup as backup
 from tests.screens import shots_gateway_document as document
 from tests.screens import shots_gateway_lan as lan
+from tests.screens import shots_gateway_lists as lists
 from tests.screens import shots_gateway_panel as panel
 from tests.screens import shots_gateway_settings as settings
 from tests.screens import shots_gateway_ssh as ssh
@@ -33,6 +34,7 @@ SHOTS = [
     *settings.SERVICE,
     *backup.FILES,
     *panel.EVENTS,
+    *lists.LISTS,
 ]
 
 # Длинная подпись в ряду из 2+ разрешена макетом экрана — {id снимка: подписи};
