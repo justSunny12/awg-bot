@@ -27,6 +27,7 @@ RESERVE = {
     "pair_channel_port": 8788,
     "zone_cidr": "169.254.77.0/30",
     "zone_rf_cidr": "169.254.77.4/30",
+    "zone_pool": "169.254.96.0/19",
     "rsv_cidrs": ["10.99.97.0/30", "10.99.97.4/30"],
     "suspect_seconds": 40,
     "probe_seconds": 15,
@@ -68,7 +69,7 @@ def test_self_host_is_empty_by_default_next_to_server_host(app):
 def test_the_reserve_subnets_do_not_overlap_each_other():
     import ipaddress
     nets = [ipaddress.ip_network(n) for n in (RESERVE["pair_cidr"], RESERVE["zone_cidr"], RESERVE["zone_rf_cidr"],
-                                               *RESERVE["rsv_cidrs"])]
+                                               RESERVE["zone_pool"], *RESERVE["rsv_cidrs"])]
     for i, a in enumerate(nets):
         for b in nets[i + 1:]:
             assert not a.overlaps(b), f"{a} и {b} пересекаются"
@@ -83,3 +84,18 @@ def test_the_code_defaults_match_the_template():
     from awgbot.runtime.pairlink import common
     assert invite.DEFAULT_PAIR_PORT == RESERVE["pair_port"]
     assert common.DEFAULT_PORT == RESERVE["pair_channel_port"]
+
+
+@pytest.mark.parametrize("stored", ["absent", ""], ids=["no-key", "empty"])
+def test_the_zone_wrapper_defaults_match_the_template(monkeypatch, stored):
+    """Подсети veth и пул NETMAP обёртка зоны передаёт скрипту окружением при
+    каждом вызове; без ключа в app.yaml сервера (досев не дошёл) или с пустым
+    значением — умолчание кода. Разойдись оно с шаблоном — зона отобразит
+    подсети клонов на один пул, а файервол хоста по документации и ожиданиям
+    админа будет считать своим другой."""
+    from awgbot.core import settings
+    from awgbot.infra import rsvzone
+    monkeypatch.setattr(settings, "get", lambda key, default=None: default if stored == "absent" else "")
+    env = rsvzone._zone_env()
+    assert (env["ZONE_CIDR"], env["ZONE_RF_CIDR"], env["ZONE_POOL"]) == \
+        (RESERVE["zone_cidr"], RESERVE["zone_rf_cidr"], RESERVE["zone_pool"]), env

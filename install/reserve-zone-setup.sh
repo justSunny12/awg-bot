@@ -467,19 +467,26 @@ netmap_plan() {   # netmap_plan "занятое" CIDR… — «подсеть=б
     "$PY" - "$ZONE_POOL" "$@" <<'PYEOF' 2>/dev/null || true
 import ipaddress, sys
 pool, out = ipaddress.ip_network(sys.argv[1], strict=False), []
-used = []                                          # блок не должен перекрыть маршрут хоста (ip route replace перекрыл бы молча)
+# маршрут хоста внутри блока ip route replace перекрыл бы молча; маршрут шире блока
+# проигрывает ему по длине префикса и не мешает (link-local /16 у avahi и NetworkManager)
+busy = []
 for b in sys.argv[2].split():
     try:
-        used.append(ipaddress.ip_network(b, strict=False))
+        busy.append(ipaddress.ip_network(b, strict=False))
     except ValueError:
         continue
+busy = [r for r in busy if r.version == 4]
 for c in sys.argv[3:]:
-    net = ipaddress.ip_interface(c).network
+    try:
+        net = ipaddress.ip_interface(c).network
+    except ValueError:
+        continue                                   # битый адрес — только этот клон без NETMAP
     if net.version != 4 or net.prefixlen < pool.prefixlen or any(net.overlaps(n) for n, _ in out):
         continue                                   # не влезает в пул или повтор — этот клон под маскарадом
-    blk = next((b for b in pool.subnets(new_prefix=net.prefixlen) if not any(b.overlaps(u) for u in used)), None)
+    blk = next((b for b in pool.subnets(new_prefix=net.prefixlen)
+                if not any(r.subnet_of(b) for r in busy if r.overlaps(b)) and not any(b.overlaps(t) for _, t in out)), None)
     if blk is not None:
-        out.append((net, blk)); used.append(blk)
+        out.append((net, blk))
 print(" ".join(f"{n}={b}" for n, b in out))
 PYEOF
 }

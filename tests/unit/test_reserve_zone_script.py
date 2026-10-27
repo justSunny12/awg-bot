@@ -143,7 +143,7 @@ def test_status_prints_key_value_lines_without_root_on_a_bare_host(box):
     r = box.run("--status")
     assert r.returncode == 0, r.stderr
     got = dict(line.split("=", 1) for line in r.stdout.splitlines())
-    assert got == {"zone": "absent", "phase": "", "iface": "", "ifaces": "", "store": "absent", "guest": "inactive",
+    assert got == {"zone": "absent", "phase": "", "iface": "", "ifaces": "", "netmap": "", "store": "absent", "guest": "inactive",
                    "rep": "absent"}
 
 

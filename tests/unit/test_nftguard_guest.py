@@ -253,3 +253,71 @@ def test_the_pool_has_no_duplicates_and_normalizes_hosts(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     _pool_file(tmp_path, {"pool": ["149.154.160.0/20", "198.51.100.7", "198.51.100.7/32"]})
     assert nftguard.tg_pool() == ["149.154.160.0/20", "91.108.4.0/22", "198.51.100.7/32"]
+
+
+# ── блоки NETMAP подсетей клонов: маскарад у хоста ───────────────────────────
+#
+# Зона отображает подсеть каждого клона основы на свой блок пула (state.json:
+# netmap «подсеть=блок …»); пакеты устройств основы приходят на хост с адресами
+# блока. Без маскарада блоков у хоста они уходят в интернет с адресами
+# 169.254.x.x — ответа нет, пользователи основы на резерве без интернета.
+
+POOL = ["169.254.96.0/24", "169.254.97.0/24"]
+
+
+def _post(text: str) -> list[str]:
+    """Правила маскарада зоны в postrouting хоста."""
+    return [ln for ln in _lines(text) if "169.254.77.0/30" in ln and ln.endswith("masquerade")]
+
+
+@pytest.mark.parametrize("phase", ["taking", "serving"])
+def test_the_collection_reads_the_netmap_blocks_into_the_guest_pool(zone_state, phase):
+    zone_state(phase=phase, port="45877", zone_cidr="169.254.77.0/30",
+               netmap="10.8.1.0/24=169.254.96.0/24 10.8.2.0/24=169.254.97.0/24")
+    assert nftguard.guest_zone()["guest_pool4"] == POOL
+
+
+@pytest.mark.parametrize("netmap", ["", "мусор 10.8.1.0/24= =не-сеть 10.8.1.0/24=300.1.1.0/24"])
+def test_an_empty_or_garbage_netmap_gives_no_guest_pool(zone_state, netmap):
+    zone_state(phase="serving", port="45877", zone_cidr="169.254.77.0/30", netmap=netmap)
+    z = nftguard.guest_zone()
+    assert "guest_pool4" not in z, f"мусор из состояния попал в правило маскарада: {z.get('guest_pool4')}"
+    assert z["guest_zone_net4"] == "169.254.77.0/30", "мусор в netmap сорвал остальной сбор"
+
+
+def test_garbage_pairs_are_dropped_and_good_ones_kept(zone_state):
+    zone_state(phase="serving", port="45877", zone_cidr="169.254.77.0/30",
+               netmap="10.8.1.0/24=169.254.96.0/24 мусор 10.8.2.0/24=не-сеть 10.8.3.0/24=169.254.97.0/24")
+    assert nftguard.guest_zone()["guest_pool4"] == POOL, "одна битая пара выкинула и верные блоки"
+
+
+@pytest.mark.parametrize("phase", ["relay", "idle"])
+def test_a_zone_without_clones_has_no_guest_pool_even_with_a_stale_netmap(zone_state, phase):
+    zone_state(phase=phase, port="45877", relay_to="203.0.113.5:45877", netmap="10.8.1.0/24=169.254.96.0/24")
+    assert "guest_pool4" not in nftguard.guest_zone()
+
+
+@pytest.mark.parametrize("phase", ["taking", "serving"])
+def test_the_zone_masquerade_covers_the_veth_and_every_block(phase):
+    spec = dict(SERVING, guest_phase=phase, guest_pool4=POOL)
+    assert _post(nftguard.render(_spec(**spec))) == \
+        ["ip saddr { 169.254.77.0/30, 169.254.96.0/24, 169.254.97.0/24 } masquerade"]
+
+
+def test_without_blocks_the_zone_masquerade_is_the_old_single_subnet_rule():
+    """Без NETMAP (старое ядро, повтор подсети) — строка прежняя: таблица
+    сравнивается текстом, лишняя перерисовка на каждом тике не нужна."""
+    assert _post(nftguard.render(_spec(**SERVING))) == ["ip saddr 169.254.77.0/30 masquerade"]
+
+
+def test_the_block_masquerade_keeps_the_exclusion_of_the_tunnel_and_link_interfaces():
+    """В awg-интерфейсы и линк маскарад не идёт и для блоков — иначе трафик
+    в туннель резерва ушёл бы с адресом хоста вместо адреса устройства."""
+    spec = dict(SERVING, guest_pool4=POOL, nat_exclude_ifs=["awg1", "awglink"])
+    assert _post(nftguard.render(_spec(**spec))) == \
+        ['oifname != { "awg1", "awglink" } ip saddr { 169.254.77.0/30, 169.254.96.0/24, 169.254.97.0/24 } masquerade']
+
+
+def test_blocks_without_a_veth_subnet_draw_no_masquerade():
+    spec = dict(SERVING, guest_zone_net4="", guest_pool4=POOL)
+    assert "169.254.96.0/24" not in nftguard.render(_spec(**spec))
