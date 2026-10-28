@@ -118,7 +118,9 @@ class ReserveEpochMixin:
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
         else:
-            meta = self.db.jrn_pass(holder="self", role="holder", why=why)
+            applied = int(self.db.jrn_meta()["applied"])
+            meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied
+            self.db.jrn_tail_drop_held()                      # отложенный хвост: точки уже не будет, правки в базе
             if meta is not None:
                 log.warning("резерв: эпоха %s здесь (%s)", meta["epoch"], why)
                 self.reserve_follow_clear()

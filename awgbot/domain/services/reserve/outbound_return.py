@@ -89,7 +89,7 @@ class ReserveReturnMixin:
         self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
-        self.reserve_epoch_sync()
+        self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
         if guest_e and hasattr(self, "reserve_c9_start"):
             self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
@@ -102,7 +102,7 @@ class ReserveReturnMixin:
         if not self.reserve_online():
             return []
         if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing") \
-                and not (hasattr(self, "reserve_c9_disk_waiting") and self.reserve_c9_disk_waiting()):
+                and not (hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting()):
             return self._forced_no_merge()
         with _LOCK:
             self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
@@ -117,6 +117,7 @@ class ReserveReturnMixin:
         from awgbot.domain.notices import reserve as rn
         out = self._out()
         self.rsv_update("rsv_out", guest_stopped=True)
+        self.rsv_put("rsv_c9", None)                          # правок бота на резерве не будет — ждать нечего
         self.reserve_set_out("home", step="", kind="", await_merge=False, last_switch=timeutil.now_iso(),
                              returned_at=str(out.get("returned_at") or timeutil.now_iso()))
         self.reserve_new_k()
@@ -153,9 +154,11 @@ class ReserveReturnMixin:
         if step == "back_req":
             peer_idle = self.reserve_online() and \
                 str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing")
-            if peer_idle and str(out.get("return_why") or "") == "force":
+            disk = hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting()
+            if peer_idle and str(out.get("return_why") or "") == "force" and not disk:
                 return self._forced_no_merge()                # взгляд на него был старым: гостя у него уже нет
-            if peer_idle and str(self.reserve_peer_state().get("at") or "") >= str(out.get("return_started_at") or ""):
+            if peer_idle and not disk and \
+                    str(self.reserve_peer_state().get("at") or "") >= str(out.get("return_started_at") or ""):
                 # резерв потерял зону (перезагрузка): реплики не будет — забрать Telegram и запись без слияния
                 log.warning("резерв: «%s» на связи без моего гостя — возврат без реплики", self.reserve_peer_name())
                 return self._return_without_replica()
@@ -308,6 +311,7 @@ class ReserveReturnMixin:
         if hasattr(self, "reserve_tail_notes"):
             notes += self.reserve_tail_notes()                # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
             notes += self.reserve_tail_self()                 # хвост, который бот на резерве так и не принял
+            self.reserve_tail_keys_clear()
             notes += self.reserve_c9_notes()                  # и правки бота на резерве после «вернуть без резерва»
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
         # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается

@@ -399,6 +399,12 @@ class JrnMixin:
             c.execute("UPDATE jrn_tail SET state = ? WHERE state IN ('wait', 'sent')", (str(state),))
             self._tx_note(self._TX_COUNTERS)
 
+    def jrn_tail_drop_held(self) -> None:
+        """Отложенный хвост (точки не было) — прочь: правки так и остались в базе."""
+        with self._tx() as c:
+            c.execute("DELETE FROM jrn_tail WHERE state = 'hold'")
+            self._tx_note(self._TX_COUNTERS)
+
     def jrn_tail_drop(self) -> None:
         with self._tx() as c:
             c.execute("DELETE FROM jrn_tail")

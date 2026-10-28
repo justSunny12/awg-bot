@@ -120,7 +120,13 @@ class ReserveHandoverMixin:
             log.info("резерв: released вне возврата — пропущен")
             return []
         if self.db.jrn_meta()["role"] == "holder":
-            # «вернуть без резерва» (С9): эпоха и так здесь, правки бота на резерве — хвостом (jtail)
+            # «вернуть без резерва» (С9): эпоха и так здесь, правки бота на резерве — хвостом при
+            # получении; не всё перенесено — ждать (jneed), по сроку — без недостающего
+            c9 = self.rsv_get("rsv_c9")
+            if c9 and int(c9.get("upto") or 0) < int(last):
+                self.rsv_update("rsv_out", jrn_back={"epoch": int(epoch), "last": int(last), "mono": time.monotonic(),
+                                                     "need": time.monotonic(), "c9": True})
+                return [("send", "jneed", {"line": self.db.jrn_line(), "from": int(c9.get("upto") or 0) + 1})]
             return self._jrn_back_take(int(epoch), int(last))
         applied = int(self.db.jrn_meta()["applied"])
         if applied < int(last):
@@ -145,13 +151,14 @@ class ReserveHandoverMixin:
         строкой журнала."""
         jb = dict(out.get("jrn_back") or {})
         now = time.monotonic()
-        applied = int(self.db.jrn_meta()["applied"])
+        applied = int(self.rsv_get("rsv_c9").get("upto") or 0) if jb.get("c9") else int(self.db.jrn_meta()["applied"])
         if applied >= int(jb.get("last") or 0):
             return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
         if now - float(jb.get("mono") or 0) > RELEASED_WAIT_S:
             log.error("резерв: правки бота на «%s» с %s по %s не пришли — возврат без них",
                       self.reserve_peer_name(), applied + 1, jb.get("last"))
-            self.db.jrn_bump(int(jb.get("last") or 0))
+            if not jb.get("c9"):
+                self.db.jrn_bump(int(jb.get("last") or 0))
             return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
         if now - float(jb.get("need") or 0) > JRN_NEED_S:
             self.rsv_update("rsv_out", jrn_back={**jb, "need": now})

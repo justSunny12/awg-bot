@@ -286,7 +286,7 @@ def _update(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
     secret = SECRET_COLUMNS.get(ev.t, ())
     # секрет основы у бота на резерве пустой: не сравнивать; пустое — «не трогать»
     c = {x: v for x, v in _remap(ev.t, dict(ev.c or {}), id_map).items() if not (x in secret and v is None)}
-    o = {x: v for x, v in _remap(ev.t, dict(ev.o or {}), id_map).items() if x not in secret}
+    o = {x: v for x, v in _remap(ev.t, dict(ev.o or {}), id_map).items() if not (x in secret and v is None)}
     if row is None:
         rpt.disputed.append({"kind": "gone", "table": ev.t, "key": dict(ev.k), "op": "U",
                              "client_id": _client_of(conn, ev.t, k, c), "col": "", "tail": None, "kept": None,

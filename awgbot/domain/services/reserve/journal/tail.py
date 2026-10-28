@@ -69,7 +69,11 @@ class ReserveTailMixin:
             held = self.db.jrn_tail_rows(("hold",))
             top = max((ev.i for ev in held), default=0)
             fork = int(fork)
-            if not int(meta["acked"]) <= fork <= max(top, int(meta["acked"])):
+            try:                                              # у резерва моих номеров бывает больше (пропало питание)
+                keep_last = int((self.reserve_peer_state().get("jrn_keep") or {}).get("last") or 0)
+            except (TypeError, ValueError):
+                keep_last = 0
+            if not int(meta["acked"]) <= fork <= max(top, int(meta["acked"]), keep_last):
                 log.warning("резерв: точка расхождения %s вне моих номеров (подтверждено %s, хвост по %s) — пропущена",
                             fork, meta["acked"], top)
                 return
@@ -175,6 +179,7 @@ class ReserveTailMixin:
             log.error("резерв: свой хвост не перенесён: %s", ex)
             return []
         self._tail_side_effects(before)
+        self.db.jrn_keys_restore()                            # вставки хвоста — без закрытого ключа: он отложен
         self.db.jrn_tail_drop()
         self.rsv_put("rsv_tail", None)
         if rpt.disputed:
@@ -211,7 +216,8 @@ class ReserveTailMixin:
         meta = self.db.jrn_meta()
         done = self.rsv_get("rsv_tail_done")
         if done.get("epoch") is not None and int(done["epoch"]) == int(meta["epoch"]):
-            return self._tail_reply(done)                      # повтор: перенесён — тот же ответ
+            # повтор: перенесён — тот же ответ (на последнюю часть повтора, не на каждую)
+            return self._tail_reply(done) if part == parts - 1 else []
         key = [e, fork, parts]
         acc = self.__dict__.get("_tail_acc_in")
         if not acc or acc["key"] != key:
@@ -409,16 +415,20 @@ class ReserveTailMixin:
         log.warning("резерв: правки бота на «%s» эпохи %s после %s — хвостом при встрече", self.reserve_peer_name(),
                     guest_e, fork)
 
-    def reserve_c9_disk_waiting(self) -> bool:
-        """Гостя у резерва нет, но его журнал на диске новее того, что уже перенесено."""
-        c9 = self.rsv_get("rsv_c9")
-        if not c9:
-            return False
+    def reserve_disk_waiting(self) -> bool:
+        """Гостя у резерва нет, но его журнал на диске новее того, что здесь уже есть: в С9 —
+        перенесённого хвостом, в следовании — применённого (возврат заберёт его, не «пусто»)."""
         keep = self.reserve_peer_state().get("jrn_keep") or {}
         try:
-            return int(keep.get("gj_e") or -1) == int(c9["e"]) and int(keep.get("gj_last") or 0) > int(c9["upto"])
-        except (TypeError, ValueError, KeyError):
+            gj_e, gj_last = int(keep.get("gj_e") or -1), int(keep.get("gj_last") or 0)
+        except (TypeError, ValueError):
             return False
+        c9 = self.rsv_get("rsv_c9")
+        if c9:
+            return gj_e == int(c9.get("e") or -2) and gj_last > int(c9.get("upto") or 0)
+        if self.reserve_following():
+            return gj_last > int(self.db.jrn_meta()["applied"])
+        return False
 
     def reserve_c9_tail_in(self, body: dict, c9: dict) -> list[tuple]:
         """Записи бота на резерве эпохи, которую я сменил: строго подряд после перенесённого —
@@ -439,8 +449,14 @@ class ReserveTailMixin:
         before = self.db.jrn_last_i()
 
         def mark(conn, rpt) -> None:
-            cur = dict(c9)
-            cur.update(upto=evs[-1].i, moved=int(cur.get("moved") or 0) + rpt.moved,
+            row = conn.execute("SELECT value FROM server_state WHERE key = 'rsv_c9'").fetchone()
+            try:
+                cur = json.loads(row[0]) if row and row[0] else {}
+            except ValueError:
+                cur = {}
+            if not cur:
+                return                                        # возврат уже снял ожидание — не воскрешать
+            cur.update(upto=max(int(cur.get("upto") or 0), evs[-1].i), moved=int(cur.get("moved") or 0) + rpt.moved,
                        total=int(cur.get("total") or 0) + len(rpt.disputed),
                        disputed=(list(cur.get("disputed") or []) + rpt.disputed)[:DISPUTED_MAX])
             conn.execute("INSERT INTO server_state (key, value) VALUES ('rsv_c9', ?) "
@@ -465,3 +481,17 @@ class ReserveTailMixin:
         self.rsv_put("rsv_c9", None)
         return self._tail_notes("c9", int(c9.get("moved") or 0), list(c9.get("disputed") or []),
                                 int(c9.get("total") or 0))
+
+    def reserve_tail_keys_clear(self) -> None:
+        """После возврата: отложенные ключи устройств, которые так и не вернулись, — прочь
+        (строкой журнала: эти устройства — среди спорного Т-Ж4)."""
+        raw = self.db.get_state("rsv_tail_keys") or ""
+        if not raw:
+            return
+        try:
+            n = len(json.loads(raw))
+        except ValueError:
+            n = 0
+        if n:
+            log.warning("резерв: закрытые ключи %d устройств хвоста не понадобились — устройства не вернулись", n)
+        self.db.set_state("rsv_tail_keys", "")
