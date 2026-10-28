@@ -141,3 +141,42 @@ def test_a_users_subnet_overlapping_the_block_switches_the_probe_rule_off(user_n
 def test_a_users_subnet_beside_the_block_keeps_the_rule(user_nets):
     assert not probenet.overlaps(user_nets), f"{user_nets} не пересекает блок"
     assert probenet.peer_is_probe("169.254.88.5/32", user_nets)
+
+
+# ── единые помощники потребителей ────────────────────────────────────────────
+
+@pytest.mark.parametrize("conf, expected", [
+    ("[Interface]\nAddress = 10.8.1.1/24\nListenPort = 1\n", ["10.8.1.1/24"]),
+    ("[Interface]\nAddress = 10.8.1.1/24\nAddress = 169.254.88.1/26 # кворум\n", ["10.8.1.1/24", "169.254.88.1/26"]),
+    ("[Interface]\n  Address=169.254.88.65/26, 10.8.1.1/24\n\n[Peer]\nAllowedIPs = 10.8.1.2/32\n",
+     ["169.254.88.65/26", "10.8.1.1/24"]),
+    ("[Interface]\nAddressBook = x\nPrivateKey = DUMMY\n", []),
+    ("", []),
+])
+def test_iface_addrs_reads_every_address_line_and_nothing_else(conf, expected):
+    """Один разбор строк Address для сверки, опроса, части VPN и топологии:
+    несколько строк, через запятую, с комментарием; у пиров строк Address нет."""
+    assert probenet.iface_addrs(conf) == expected
+
+
+@pytest.mark.parametrize("addrs, want", [
+    (["10.8.1.1/24"], "10.8.1.1/24"),
+    (["169.254.88.1/26", "10.8.1.1/24"], "10.8.1.1/24"),
+    (["10.8.1.1/24", "169.254.88.1/26"], "10.8.1.1/24"),
+    (["169.254.88.1/24", "169.254.88.65/26"], "169.254.88.1/24"),
+    ([], ""),
+])
+def test_primary_addr_is_the_first_outside_the_block_or_the_first_at_all(addrs, want):
+    assert probenet.primary_addr(addrs) == want
+
+
+def test_rule_on_and_in_block_split_the_probe_rule_so_it_is_computed_once_per_interface():
+    """`peer_is_probe` = `in_block` при `rule_on`: потребители считают правило один
+    раз на интерфейс, а на пира — только принадлежность блоку."""
+    assert probenet.rule_on(["10.8.1.1/24"]) and probenet.rule_on([])
+    assert not probenet.rule_on(["169.254.88.1/24"]) and not probenet.rule_on(["10.8.1.1/24", "169.254.0.1/16"])
+    assert probenet.in_block("169.254.88.5/32") and probenet.in_block(["169.254.88.5/32", "169.254.88.70/32"])
+    assert not probenet.in_block("169.254.88.5/32, 10.8.1.7/32") and not probenet.in_block("") and not probenet.in_block([])
+    for allowed in ("169.254.88.5/32", "10.8.1.7/32", "169.254.88.5/32, 0.0.0.0/0"):
+        for nets in ([], ["10.8.1.1/24"], ["169.254.88.1/24"]):
+            assert probenet.peer_is_probe(allowed, nets) == (probenet.in_block(allowed) and probenet.rule_on(nets))

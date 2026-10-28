@@ -142,11 +142,9 @@ def detect_topology() -> dict:
 
     # Address = 10.8.1.0/24 (серверный адрес интерфейса) → префикс + CIDR.
     from awgbot.util import probenet
-    addrs = probenet.values([ln.split("=", 1)[1] for ln in conf.splitlines()
-                             if ln.strip().startswith("Address") and "=" in ln])
-    if addrs:
-        # может быть список v4,v6; адрес блока зондов кворума (util/probenet) — не подсеть пользователей
-        first = next((a for a in addrs if not probenet.is_probe(a)), addrs[0])
+    # может быть список v4,v6; адрес блока зондов кворума (util/probenet) — не подсеть пользователей
+    first = probenet.primary_addr(probenet.iface_addrs(conf))
+    if first:
         ippart = first.split("/")[0]
         octs = ippart.split(".")
         if len(octs) == 4 and all(o.isdigit() for o in octs):

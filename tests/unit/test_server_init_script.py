@@ -45,6 +45,10 @@ def _conf(address: str) -> str:
     "Address = 10.8.1.1/24\nAddress = 169.254.88.1/26",
     "Address = 169.254.88.1/26\nAddress = 10.8.1.1/24",
     "Address = 169.254.88.65/26 # кворум\nAddress = 10.8.1.1/24",
+    # адреса одной строкой через запятую (как разбирает util/probenet.iface_addrs): раньше sed брал
+    # только первый адрес строки — при адресе блока первым установщик записал бы префикс 169.254.88
+    "Address = 169.254.88.65/26, 10.8.1.1/24",
+    "Address = 169.254.88.65/26,10.8.1.1/24 # кворум",
 ])
 def test_an_existing_server_reports_the_users_subnet_not_the_probe_block(tmp_path, address):
     cp, kv = _run(tmp_path, _conf(address))

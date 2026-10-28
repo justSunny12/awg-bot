@@ -1,5 +1,7 @@
 """poll.py — опрос трафика и учёт РФ-трафика. Пиры-зонды кворума резерва
-(блок util/probenet) в онлайн не считаются: они не устройства."""
+(блок util/probenet) в онлайн не считаются: они не устройства. Подсети
+пользователей для правила зондов — строки Address конфига интерфейса, как у
+сверки (один источник), правило — один раз на интерфейс."""
 from __future__ import annotations
 
 import logging
@@ -38,11 +40,21 @@ class PollMixin:
         migrating = self.migration_running()
         peers: dict[str, dict] = {}
         for raw in self._migration_ifaces():
+            name = awg.iface_of(raw)
             try:
-                for p in awg.show_dump(awg.iface_of(raw)):
-                    peers[p["public_key"]] = p
+                dump = awg.show_dump(name)
             except awg.AwgError as e:
-                log.warning("poll_traffic: %s не опрошен: %s", awg.iface_of(raw), e)
+                log.warning("poll_traffic: %s не опрошен: %s", name, e)
+                continue
+            # правило зондов — по подсетям пользователей интерфейса (строки Address), один раз на интерфейс;
+            # конфиг не прочитан — правило действует (адрес блока без подсети в нём — не устройство)
+            try:
+                rule = probenet.rule_on(probenet.user_nets(probenet.iface_addrs(awg.read_file(awg.conf_path(name)))))
+            except awg.AwgError:
+                rule = True
+            for p in dump:
+                p["probe"] = rule and probenet.in_block(str(p.get("allowed_ips") or ""))
+                peers[p["public_key"]] = p
         # учёт РФ-трафика: чтение таблицы счётчиков —
         # вне транзакции, накопление — внутри той же, что у awg
         rf_links = self.rf_links()
@@ -55,10 +67,8 @@ class PollMixin:
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
         polled_at = timeutil.now()
-        user_nets = [c for c, _i in config.routing_client_subnets()]
         online = sum(1 for p in peers.values()                  # пиры-зонды кворума — не устройства
-                     if timeutil.handshake_is_online(p["last_handshake"], polled_at)
-                     and not probenet.peer_is_probe(str(p.get("allowed_ips") or ""), user_nets))
+                     if timeutil.handshake_is_online(p["last_handshake"], polled_at) and not p.get("probe"))
         with self.db.transaction():
             if self.db.get_state("online_count") != str(online):
                 self.db.set_state("online_count", str(online))   # только при изменении

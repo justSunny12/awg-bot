@@ -2,12 +2,15 @@
 служебным пользователем и линией базы (db_line)."""
 from __future__ import annotations
 
+import logging
 import secrets
 
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (хранение — UTC+3)
 
 from .ddl import SCHEMA
 from .selects import LEGACY_SERVICE_CLIENT_NAME, SERVICE_CLIENT_NAME
+
+log = logging.getLogger("awgbot.db")
 
 
 class SchemaMixin:
@@ -65,7 +68,7 @@ class SchemaMixin:
         блокировок его игнорирует. Подписка/квота (1:1) создаются вместе с ним.
         """
         row = self._connection().execute(
-            "SELECT id FROM clients WHERE is_service = 1 LIMIT 1"
+            "SELECT id, name FROM clients WHERE is_service = 1 LIMIT 1"
         ).fetchone()
         if row is None:
             with self._tx() as cur:
@@ -82,8 +85,11 @@ class SchemaMixin:
                     "period_end, period_kind, status) VALUES (?, NULL, NULL, NULL, 'active')",
                     (cid,))
                 cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (cid,))
-        else:
-            # прежнее имя — только если админ его не менял
+        elif row[1] == LEGACY_SERVICE_CLIENT_NAME:
+            # прежнее имя — только если админ его не менял; имя сверяется тем же SELECT, а не
+            # условием UPDATE: пустой UPDATE на каждом старте всё равно открывал бы транзакцию
+            # (коммит и сброс кэша доступа). Один раз — и строка в журнал: иначе факт виден только базой
             with self._tx() as cur:
                 cur.execute("UPDATE clients SET name = ? WHERE id = ? AND name = ?",
                             (SERVICE_CLIENT_NAME, row[0], LEGACY_SERVICE_CLIENT_NAME))
+            log.info("служебная группа «%s» переименована в «%s»", LEGACY_SERVICE_CLIENT_NAME, SERVICE_CLIENT_NAME)

@@ -252,15 +252,65 @@ def test_devices_of_a_users_subnet_inside_the_block_never_go_missing(services, f
 def test_online_counts_devices_of_a_users_subnet_inside_the_block(services, fake_awg, make_active_client,
                                                                   monkeypatch):
     """Подсеть пользователей в блоке — устройства 169.254.88.x на связи считаются
-    в «📶 Онлайн», а не выпадают как зонды."""
-    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "169.254.88.0/24")
+    в «📶 Онлайн», а не выпадают как зонды. Подсеть опрос берёт оттуда же, откуда
+    сверка, — из строк Address конфига интерфейса (один источник), а не из
+    `routing.client_subnet`: с разными источниками сверка считала бы пиры
+    устройствами, а опрос — зондами."""
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "", raising=False)
     devs = _users_in_block(services, make_active_client, tg_id=7121)
+    header = "[Interface]\nPrivateKey = DUMMY\nAddress = 169.254.88.1/24\nListenPort = 43125\n"
+    _set_conf(monkeypatch, header + "".join(f"\n[Peer]\nPublicKey = {d.public_key}\nAllowedIPs = {d.address}/32\n"
+                                         for d in devs))
     now = int(timeutil.now().timestamp())
     _set_dump(monkeypatch, [(d.public_key, d.address, now - 10, 1, 1) for d in devs])
     services.poll_traffic()
     assert services.db.get_state("online_count") == "3", \
         f"устройства подсети 169.254.88.0/24 не в онлайне: {services.db.get_state('online_count')}"
+
+
+def test_the_setting_alone_does_not_switch_the_probe_rule_for_the_online_count(services, fake_awg,
+                                                                                 make_active_client, monkeypatch):
+    """`routing.client_subnet` в блоке, а Address интерфейса — обычная подсеть:
+    источник один (Address), зонды остаются зондами."""
+    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "169.254.88.0/24")
+    _users(services, make_active_client, n=1, tg_id=7123)
+    _set_conf(monkeypatch, _conf_42([]))
+    now = int(timeutil.now().timestamp())
+    _set_dump(monkeypatch, [(pub, ip, now - 5, 1, 1) for pub, ip in PROBES])
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "0", services.db.get_state("online_count")
+
+
+def test_an_unreadable_conf_keeps_the_probe_rule_on_for_the_online_count(services, fake_awg, make_active_client,
+                                                                          monkeypatch):
+    """Конфиг не прочитан — подсети не известны, правило действует: адрес блока
+    без подсети пользователей в нём — не устройство."""
+    _users(services, make_active_client, n=1, tg_id=7124)
+
+    def boom(path):
+        raise awg.AwgError("нет файла")
+    monkeypatch.setattr(awg, "read_file", boom, raising=False)
+    now = int(timeutil.now().timestamp())
+    _set_dump(monkeypatch, [(pub, ip, now - 5, 1, 1) for pub, ip in PROBES])
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "0"
+
+
+def test_a_skipped_probe_peer_is_logged_once_per_key(services, fake_awg, make_active_client, monkeypatch, caplog):
+    """В 4.1.0 законных зондов нет: пир в блоке — ручная правка, и след ему
+    нужен, но одной строкой на ключ, а не на каждую сверку."""
+    import logging
+    services.ensure_admin_client()
+    _client, devs = _users(services, make_active_client, tg_id=7125)
+    _set_conf(monkeypatch, _conf_42([(d.public_key, d.address) for d in devs]))
+    caplog.set_level(logging.INFO)
+    for _ in range(3):
+        assert services.reconcile_peers() == []
+    lines = [r.getMessage() for r in caplog.records if "в блоке зондов кворума — не устройство, пропущен" in r.getMessage()]
+    assert len(lines) == len(PROBES), lines
+    for pub, ip in PROBES:
+        assert any(pub[:8] in ln and ip in ln for ln in lines), (pub, lines)
+    assert not any(d.public_key[:8] in ln for d in devs for ln in lines), "устройство названо зондом"
 
 
 def test_online_counts_a_block_peer_that_also_has_another_address(services, fake_awg, make_active_client,

@@ -7,8 +7,9 @@ vpn.py — часть VPN пакета: интерфейсы AWG основы и
 (`PreUp`/`PostUp`/`PreDown`/`PostDown`), `Table`, `DNS`, пути и комментарии не
 передаются никогда: пакет — данные, а конфиг клона резерв собирает сам из
 проверенных полей (`clone_conf`). Пир с адресом вне подсети интерфейса
-отбрасывается; пиры-зонды кворума резерва (все AllowedIPs в блоке
-util/probenet) клону не нужны, адрес интерфейса из блока не берётся.
+отбрасывается — этим же отсекаются и пиры-зонды кворума резерва (их адреса в
+блоке util/probenet, вне подсети пользователей); адрес интерфейса из блока
+не берётся (`probenet.primary_addr`).
 """
 from __future__ import annotations
 
@@ -23,12 +24,6 @@ _B64 = re.compile(r"[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=\Z")
 _OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")       # число или диапазон, ничего больше
 _EXCLUDED_OBF = ("I1", "I2", "I3", "I4", "I5")
 MAX_PEERS = 4096
-
-
-def _all_params(header: str, key: str) -> list[str]:
-    """Значения всех строк `key = …` секции [Interface] (Address бывает и несколькими строками)."""
-    pat = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=[ \t]*(.*)$", re.MULTILINE)
-    return [m.group(1).split("#", 1)[0].strip() for m in pat.finditer(header)]
 
 
 class VpnPartError(ValueError):
@@ -65,8 +60,7 @@ def iface_part(name: str, conf_text: str) -> dict:
     params = parse_interface_params(header)          # обфускация и ListenPort
     # адрес интерфейса — первый не из блока зондов кворума (4.2.0 пишет свой отдельной строкой после
     # основного; здесь — страховка порядка); все адреса в блоке — это подсеть пользователей, а не зонды
-    addrs = probenet.values(_all_params(header, "Address"))
-    addr = next((a for a in addrs if not probenet.is_probe(a)), addrs[0] if addrs else "")
+    addr = probenet.primary_addr(probenet.iface_addrs(header))
     try:
         net = ipaddress.ip_interface(addr).network
     except ValueError as e:
@@ -87,10 +81,9 @@ def iface_part(name: str, conf_text: str) -> dict:
         out["mtu"] = int(mtu)
     for p in peers[:MAX_PEERS]:
         ip = _peer_ip(p["lines"])
-        allowed = [s.split("=", 1)[1] for s in (l.strip() for l in p["lines"]) if s.startswith("AllowedIPs")]
-        if probenet.peer_is_probe(allowed, [addr]):
-            continue                                      # пир-зонд кворума — клону его не нести
         try:
+            # адрес вне подсети интерфейса — не в клон; так же отсекаются пиры-зонды кворума (блок
+            # util/probenet вне подсети пользователей — а если подсеть его накрывает, это устройства)
             if not ip or ipaddress.ip_address(ip) not in net:
                 continue
         except ValueError:

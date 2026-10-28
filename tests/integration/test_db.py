@@ -130,12 +130,43 @@ def test_service_client_exists(db):
     assert db.get_client(sid).name == "Устройства без пользователя"
 
 
-def test_service_client_legacy_name_renamed_on_start(db):
-    """База до переименования: прежнее имя служебной группы меняется на старте."""
+def test_service_client_legacy_name_renamed_on_start(db, caplog):
+    """База до переименования: прежнее имя служебной группы меняется на старте —
+    один раз и со строкой в журнале (иначе факт виден только базой)."""
+    import logging
     sid = db.get_service_client_id()
     db.update_client_fields(sid, name="Устройства без клиента")
+    caplog.set_level(logging.INFO, logger="awgbot.db")
     db.init_schema()
     assert db.get_client(sid).name == "Устройства без пользователя"
+    told = [r.getMessage() for r in caplog.records if "переименована" in r.getMessage()]
+    assert told == ["служебная группа «Устройства без клиента» переименована в «Устройства без пользователя»"], told
+    db.init_schema()
+    assert len([r for r in caplog.records if "переименована" in r.getMessage()]) == 1, "переименование объявлено дважды"
+
+
+def test_a_start_without_the_legacy_name_opens_no_write_transaction(db, monkeypatch):
+    """UPDATE без совпадений всё равно открывал бы транзакцию на каждом старте
+    (коммит, сброс кэша доступа): имя сверяется тем же SELECT, что ищет группу,
+    и UPDATE уходит только при прежнем имени."""
+    import contextlib
+    seen: list[str] = []
+    orig_tx = db._tx
+
+    @contextlib.contextmanager
+    def tx():
+        with orig_tx() as cur:
+            class Spy:
+                def __getattr__(self, name):
+                    return getattr(cur, name)
+
+                def execute(self, sql, *a, **kw):
+                    seen.append(str(sql))
+                    return cur.execute(sql, *a, **kw)
+            yield Spy()
+    monkeypatch.setattr(db, "_tx", tx)
+    db.init_schema()
+    assert not [q for q in seen if q.lstrip().upper().startswith("UPDATE CLIENTS")], seen
 
 
 def test_service_client_admin_name_kept_on_start(db):

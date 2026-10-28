@@ -57,14 +57,15 @@ class ReconcileMixin:
                 raw.add(config.MIGRATION_INTERFACE)
         return sorted(raw)
 
-    @staticmethod
-    def _peers_with_ip(conf_text: str) -> dict[str, str]:
+    def _peers_with_ip(self, conf_text: str) -> dict[str, str]:
         """pubkey → ip из живого conf интерфейса. Пиры-зонды кворума (все
         AllowedIPs в блоке util/probenet) — не устройства: в результат не
-        попадают; пир с адресом блока и ещё чем-то — попадает (сторож «чужой пир»)."""
+        попадают, о каждом ключе — строка журнала при первой встрече (в 4.1.0
+        законных зондов нет: такой пир — ручная правка, и след ему нужен);
+        пир с адресом блока и ещё чем-то — попадает (сторож «чужой пир»)."""
         header, peers = awg._split_conf(conf_text)
-        user_nets = probenet.user_nets([ln.split("=", 1)[1] for ln in header.splitlines()
-                                        if ln.strip().startswith("Address") and "=" in ln])
+        rule = probenet.rule_on(probenet.user_nets(probenet.iface_addrs(header)))   # один раз на интерфейс
+        told: set = self.__dict__.setdefault("_probe_peers_told", set())
         result: dict[str, str] = {}
         for p in peers:
             if not p["pubkey"]:
@@ -75,8 +76,15 @@ class ReconcileMixin:
                 if line.strip().startswith("AllowedIPs"):
                     ip = line.split("=", 1)[1].strip().split("/")[0]
                     allowed.append(line.split("=", 1)[1])
-            if ip and not probenet.peer_is_probe(allowed, user_nets):
-                result[p["pubkey"]] = ip
+            if not ip:
+                continue
+            if rule and probenet.in_block(allowed):
+                if p["pubkey"] not in told:
+                    told.add(p["pubkey"])
+                    log.info("сверка: пир %s… (%s) в блоке зондов кворума — не устройство, пропущен",
+                             p["pubkey"][:8], ", ".join(probenet.values(allowed)))
+                continue
+            result[p["pubkey"]] = ip
         return result
 
     def reconcile_peers(self) -> list[Notification]:
