@@ -67,6 +67,25 @@ class PeerNetsMixin:
         return [str(lanspace.slot_prefix(g.id)) for g in self.gateway_transit_slots()
                 if g.id != me.id and g.id <= lanspace.MAX_SLOTS]
 
+    def gateway_peer_cards(self, slot_id: int) -> list[dict]:
+        """Соседи слота по связи подсетей — экрану «весь список» (`list-gwpeers`):
+        {'link': имя-ссылка на карточку соседа (как peer_links карточки слота),
+        'label': подпись, 'twins': адреса в туннеле}, по порядку слотов."""
+        return [{"link": self._link(f"gw-{g.id}", self._gw_name(g)), "label": g.label or "",
+                 "twins": [t for _r, t in self.lan_twins(g)]}
+                for g in self.gateway_transit_slots() if g.id != int(slot_id)]
+
+    def gateway_peers_off(self, slot_id: int) -> str:
+        """Почему у слота нет связи подсетей: "off" — адреса в туннеле выключены
+        целиком, "transit" — у самого слота выключен VPN-транзит, "few" — слотов
+        с транзитом меньше двух, "" — связь есть."""
+        if self.lan_space_problem():
+            return "off"
+        me = self.db.gateway(int(slot_id))
+        if me is None or not me.lan_mode:
+            return "transit"
+        return "few" if len(self.gateway_transit_slots()) < 2 else ""
+
     def gateway_peer_nets_info(self) -> dict:
         """Строка «🔗 Связь подсетей» экрана «Шлюзы»: {'state', …}.
         state: off — адреса в туннеле выключены (пространство или метка, см.

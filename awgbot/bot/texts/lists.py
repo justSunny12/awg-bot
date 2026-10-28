@@ -25,9 +25,17 @@ def gateways_count(n: int) -> str:
     return f"{n} {plural_ru(n, 'шлюз', 'шлюза', 'шлюзов')}"
 
 
-def gwpeers_empty(name: str) -> str:
-    return (f"🔗 <b>Связь подсетей {_e(name)}</b>\n\n"
-            "Связи нет: VPN-транзит включён меньше чем у двух шлюзов")
+def gwpeers_empty(name: str, why: str = "") -> str:
+    """why — причина из gateway_peers_off: адреса в туннеле выключены (off), у
+    самого слота выключен VPN-транзит (transit), иначе — слотов с транзитом
+    меньше двух."""
+    if why == "off":
+        reason = "Выключена вместе с адресами в туннеле — см. карточку шлюза"
+    elif why == "transit":
+        reason = f"Связи нет: у {_e(name)} VPN-транзит выключен"
+    else:
+        reason = "Связи нет: VPN-транзит включён меньше чем у двух шлюзов"
+    return f"🔗 <b>Связь подсетей {_e(name)}</b>\n\n{reason}"
 
 
 PEERNETS_TITLE = "🔗 Связь подсетей"

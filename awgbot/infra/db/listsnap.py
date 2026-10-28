@@ -47,7 +47,7 @@ MAX_BYTES = 256 * 1024
 LOG_TAIL_ROWS = 50
 LOG_ROW_CHARS = 200
 _ALPHABET = string.ascii_lowercase + string.digits
-_WHERE = "substr(key, 1, 10) = 'list_snap:'"      # не LIKE: «_» там — подстановка
+WHERE = f"substr(key, 1, {len(PREFIX)}) = '{PREFIX}'"   # все снимки; не LIKE: «_» там — подстановка (и бэкапу)
 
 log = logging.getLogger("awgbot.db")
 
@@ -61,7 +61,7 @@ class ListSnapMixin:
 
     def _snaps(self) -> list[tuple[str, dict]]:
         out = []
-        for row in self._connection().execute(f"SELECT key, value FROM server_state WHERE {_WHERE}").fetchall():
+        for row in self._connection().execute(f"SELECT key, value FROM server_state WHERE {WHERE}").fetchall():
             try:
                 data = json.loads(row[1] or "{}")
             except ValueError:

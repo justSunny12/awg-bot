@@ -58,8 +58,9 @@ def settings_firewall_text(st: dict) -> str:
     warns: list[str] = []
     if st.get("unresolved"):
         # весь список — экраном «🛡 Не резолвятся» (без имени бота — «[+N]»)
+        from awgbot.util import listlink
         bot = str(st.get("bot_username") or "")
-        warns.append("⚠️ Не резолвятся: " + (more(st["unresolved"], link=(bot, "list-fwunres")) if bot
+        warns.append("⚠️ Не резолвятся: " + (more(st["unresolved"], link=(bot, listlink.build("fwunres"))) if bot
                                             else _more_tail(st["unresolved"])))
     if st.get("drift") and st.get("enabled"):
         warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "

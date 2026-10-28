@@ -105,11 +105,11 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     else:
         slots = []
         two_up = len(states) > 1 or can_add       # ряд из двух и больше — подписи режутся
+        from awgbot.bot.texts.routing.slots import slot_raw_name
         for st in states:
-            dev, gw = st.get("device"), st["gateway"]
-            name = dev.name if dev is not None else f"шлюз {gw.id}"
-            slots.append((slot_button_label(name, gw.label or "", star=bool(st.get("preferred")) and len(states) > 1,
-                                            fit=two_up),
+            gw = st["gateway"]
+            slots.append((slot_button_label(slot_raw_name(st), gw.label or "",
+                                            star=bool(st.get("preferred")) and len(states) > 1, fit=two_up),
                           GwSlotCB(action="card", slot=gw.id)))
         if len(states) == 1 and can_add:
             slots.append(("➕ Резерв", GwSlotCB(action="add")))

@@ -122,6 +122,7 @@ class MigrationExitsMixin:
         pairs, dropped = self._finish_plan()
         removed = 0
         failed: list[str] = []
+        owners: dict[int, str] = {}                       # имя профиля — один запрос на профиль
 
         for old, twin in pairs:
             try:
@@ -129,8 +130,10 @@ class MigrationExitsMixin:
             except awg.AwgError as e:
                 log.warning("migration_finish: пир %s не снят, пара оставлена: %s",
                             old.name, e)
-                owner = self.db.get_client(old.client_id)
-                failed.append(f"{owner.name if owner else '?'} — {old.name}")
+                if old.client_id not in owners:
+                    owner = self.db.get_client(old.client_id)
+                    owners[old.client_id] = owner.name if owner else "?"
+                failed.append(f"{owners[old.client_id]} — {old.name}")
                 continue
             removed += 1
             self.db.merge_traffic(old.id, twin.id)

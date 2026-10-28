@@ -98,6 +98,7 @@ class MigrationStartMixin:
             res.cohort_devices = len(ids)
             res.cohort_clients = len({d.client_id for d in origins if d.id in ids})
 
+        owners: dict[int, str] = {}                       # имя профиля — один запрос на профиль
         for dev in origins:
             if dev.id in existing:
                 res.already += 1
@@ -108,8 +109,10 @@ class MigrationStartMixin:
             except Exception as e:                        # noqa: BLE001
                 log.warning("migration: двойник для %s (id=%s) не создан: %s",
                             dev.name, dev.id, e)
-                owner = self.db.get_client(dev.client_id)
-                res.failed.append(f"{owner.name if owner else '?'} — {dev.name}")   # чьё — видно в итоге и снимке
+                if dev.client_id not in owners:
+                    owner = self.db.get_client(dev.client_id)
+                    owners[dev.client_id] = owner.name if owner else "?"
+                res.failed.append(f"{owners[dev.client_id]} — {dev.name}")   # чьё — видно в итоге и снимке
 
         if res.born == 0 and res.already == 0 and res.failed:
             # Не родился НИ ОДИН, и опереться не на что — рычаг не включаем.

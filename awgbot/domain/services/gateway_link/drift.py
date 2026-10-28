@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from typing import Optional
 from awgbot.core import config
+from awgbot.domain.services.gwchannel.common import _cut
 from awgbot.domain.services.types import Notification
+from awgbot.util import listlink
 
 
 class DriftMixin:
@@ -41,7 +43,9 @@ class DriftMixin:
         snap = self.gwlink_snapshot(g.id)
         if not isinstance(snap.get("bundle"), dict):
             return None
-        items = self.gwlink_config_drift_items(g)
+        # один сбор: значения целиком — для экрана и подписи, обрезанные — в уведомление
+        full = self.gwlink_config_drift_items(g, cut=False)
+        items = [(k, h, _cut(m), _cut(t)) for k, h, m, t in full]
         key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
         told = self.db.get_state(key) or ""
         # отказ бывает и без расхождения в bundle (конфиг линка)
@@ -62,12 +66,13 @@ class DriftMixin:
         if told == sig:
             return None
         self.db.set_state(key, sig)
-        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending))
+        return Notification(config.ADMIN_ID, self._gw_drift_text(g, pending, full))
 
-    def _gw_drift_text(self, g, pending: list) -> str:
+    def _gw_drift_text(self, g, pending: list, full: list) -> str:
         """Текст уведомления: что разошлось — именами; отказ шлюза — второй
         строкой; устройства админа — группами по именам, прочее — «у сервера …,
-        на шлюзе …»."""
+        на шлюзе …». full — те же расхождения со значениями целиком: обрезанное
+        значение в строке — повод дать ссылку на экран."""
         import html
         from awgbot.domain.services.gwchannel import drift_lines
         names = ", ".join(html.escape(human, quote=False) for _k, human, _m, _t in pending)
@@ -83,11 +88,11 @@ class DriftMixin:
                 continue                                  # конфиг линка назван в заголовке, значений у него нет
             else:
                 lines.append(drift_lines([(key, human, mine, theirs)], html=True)[0])
-        full = {k: (m, t) for k, _h, m, t in self.gwlink_config_drift_items(g, cut=False)}
+        whole = {k: (m, t) for k, _h, m, t in full}
         # устройства админа выводятся группами целиком (хвост группы — своя ссылка), конфиг линка значений не несёт
-        if any(full.get(k, (m, t)) != (m, t) for k, _h, m, t in pending if k not in ("ADMIN_IPS", "link")):
+        if any(whole.get(k, (m, t)) != (m, t) for k, _h, m, t in pending if k not in ("ADMIN_IPS", "link")):
             # значения обрезаны до 160 знаков — молча не режем: целиком на экране расхождения
-            lines.append("Значения целиком — " + self._link(f"list-drift-{g.id}", "весь список"))
+            lines.append("Значения целиком — " + self._link(listlink.build("drift", g.id), "весь список"))
         return "\n".join(lines)
 
     def gw_drift_view(self, slot_id: int) -> dict:
@@ -137,7 +142,7 @@ class DriftMixin:
             rows = [one if len(addrs) == 1 else many]
             rows += [line(a, names.get(a, "")) for a in addrs[:cap]]
             if len(addrs) > cap:
-                rows.append(" · … " + self._link(f"list-drift-{g.id}", f"и ещё {len(addrs) - cap}"))
+                rows.append(" · … " + self._link(listlink.build("drift", g.id), f"и ещё {len(addrs) - cap}"))
             return rows
 
         missing = sorted(want - have, key=ip_key)

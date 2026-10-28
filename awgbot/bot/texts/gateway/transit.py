@@ -98,13 +98,12 @@ def gateway_transit_text(st, items=None, own: dict | None = None, virtual: list 
 
 def lan_virtual_line(virtual: list, bot: str = "") -> str:
     """«в туннеле — 10.240.1.0/24»: как сеть видна снаружи шлюза; больше
-    шести — «и ещё N» (с именем бота — ссылкой на экран «🔀 Адреса в туннеле»)."""
+    шести — «и ещё N» ссылкой на экран «🔀 Адреса в туннеле» (без имени бота
+    — текстом)."""
+    from awgbot.util import listlink
     from awgbot.util.textfmt import more_link
     shown = ", ".join(f"<code>{_e(str(n))}</code>" for n in virtual[:6])
-    more_n = len(virtual) - 6
-    if more_n <= 0:
-        return f"Адреса в туннеле — {shown}"
-    return f"Адреса в туннеле — {shown}" + (more_link(more_n, bot, "list-tunaddr") if bot else f" и ещё {more_n}")
+    return f"Адреса в туннеле — {shown}" + more_link(len(virtual) - 6, bot, listlink.build("tunaddr"))
 
 
 def gateway_transit_ask_domain(kind: str) -> str:

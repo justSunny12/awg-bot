@@ -145,7 +145,8 @@ async def _report_snaps(services, chat_id: int, clients: list, failed, bot_u: st
     failed = list(failed) if not isinstance(failed, int) else []
     if failed:
         rows = tb.undelivered_rows(failed, clients, bot_u)
-        named = sum(1 for c in clients if getattr(c, "tg_id", 0) in set(failed))
+        lost = set(failed)
+        named = sum(1 for c in clients if getattr(c, "tg_id", 0) in lost)
         rest = len(failed) - min(named, 3)
         if rest > 0 and named:
             key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True,

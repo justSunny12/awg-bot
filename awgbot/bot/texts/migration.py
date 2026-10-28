@@ -20,15 +20,17 @@ def _n_devices(n: int) -> str:
 FAILED_TITLE = "⚠️ Не создано новых конфигураций"
 DROPPED_TITLE = "⚠️ Потеряли связь при завершении переезда"
 NOT_REMOVED_TITLE = "⚠️ Не снято прежних конфигураций"
+LIST_CAP = 20                 # имён поимённо в итогах переезда; дальше — «и ещё N»
+STARTED_FAILED_SHOWN = 5      # «⚠️ Переезд не начат»: у кого не создано — в скобках, коротко
 
 
 def migration_started(res, more: str = "") -> str:
     """Итог включения функции переезда; more — хвост «и ещё N» ссылкой на снимок всех,
     у кого не создано (пусто — текстом)."""
     if not res.started:
-        names = ", ".join(_e(n) for n in res.failed[:5])
-        if len(res.failed) > 5:
-            names += more or f" и ещё {len(res.failed) - 5}"
+        names = ", ".join(_e(n) for n in res.failed[:STARTED_FAILED_SHOWN])
+        if len(res.failed) > STARTED_FAILED_SHOWN:
+            names += more or f" и ещё {len(res.failed) - STARTED_FAILED_SHOWN}"
         return (ui.head("⚠️ Переезд не начат", value=f"не удалось создать ни одной новой конфигурации ({names}).")
                 + "\n\nПохоже, новый интерфейс ещё не поднят на сервере. Функция осталась выключенной, "
                 "выдача идёт по-старому — подними интерфейс и включи снова.")
@@ -80,28 +82,23 @@ def migration_promoted(iface: str, dns: str = "") -> str:
             + "\n\nПараметры интерфейса бот читает при старте — нужен перезапуск")
 
 
-_LIST_CAP = 20
-
-
 def _rows(rows) -> list[str]:
     """Строки «• профиль — устройство» — экраны листаются страницами (bot/lists/page)."""
     return [f"• {_e(client)} — {_e(device)}" for client, device in rows]
 
 
 def _names_capped(names, bot: str = "", more: str = "") -> str:
-    """Имена через запятую; больше _LIST_CAP — «и ещё N»: more — готовый хвост ссылкой на
-    снимок события; иначе с именем бота — ссылкой на экран «🚚 Потеряют связь при
-    завершении»; иначе текстом."""
+    """Имена через запятую; больше LIST_CAP — «и ещё N»: more — готовый хвост ссылкой на
+    снимок события; иначе ссылкой на экран «🚚 Потеряют связь при завершении»
+    (без имени бота more_link даёт текст)."""
+    from awgbot.util import listlink
     from awgbot.util.textfmt import more_link
     names = list(names)
-    out = ", ".join(_e(n) for n in names[:_LIST_CAP])
-    rest = len(names) - _LIST_CAP
+    out = ", ".join(_e(n) for n in names[:LIST_CAP])
+    rest = len(names) - LIST_CAP
     if rest > 0:
-        out += more or (more_link(rest, bot, "list-migdrop") if bot else f" и ещё {rest}")
+        out += more or more_link(rest, bot, listlink.build("migdrop"))
     return out
-
-
-LIST_CAP = _LIST_CAP
 
 
 def migration_pending_page(rows, page: int = 0):
@@ -138,8 +135,8 @@ def migration_finish_confirm(dropped, old_uplink=(), bot: str = "") -> str:
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть их — перенастроить "
                           f"устройства на новую конфигурацию. {tail}")
-    for name, bot in old_uplink:
-        link = _bot_link(bot)
+    for name, gw_bot in old_uplink:
+        link = _bot_link(gw_bot)
         where = f"в чате бота шлюза ({link})" if link else "в чате бота шлюза"
         text += (f"\n⚠️ {_e(name)} ещё на прежнем аплинке: после завершения бот шлюза потеряет Telegram. "
                  f"Подтверди новый аплинк {where}, затем заверши переезд")
@@ -245,7 +242,7 @@ def migration_prepared(res: dict) -> str:
 
 __all__ = [
     "migration_hello", "migration_ready", "migration_started", "migration_prepare_failed",
-    "migration_generation_pending", "migration_needed", "migration_promoted", "_LIST_CAP",
+    "migration_generation_pending", "migration_needed", "migration_promoted", "LIST_CAP", "STARTED_FAILED_SHOWN",
     "_rows", "_names_capped", "migration_pending_page", "migration_orphans_page", "migration_start_confirm",
     "migration_finish_confirm", "migration_cancel_confirm",
     "migration_cancelled", "migration_finished", "migration_prepare_intro", "MIGRATION_ASK_PORT",

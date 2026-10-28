@@ -1,6 +1,8 @@
 """access.py — часть пакета gateway (см. __init__)."""
 from __future__ import annotations
 
+from awgbot.util import listlink
+
 from awgbot.bot import ui
 from ..fmt import _e, plural_ru, more
 from ..settings import warnings_block, address_list_line
@@ -21,13 +23,10 @@ OUTSIDE = "Снаружи (проброс порта на роутере)"
 
 def _nets_tail(nets: list, bot: str, payload: str, shown: int = 3) -> str:
     """«<code>a</code>, <code>b</code>, <code>c</code> и ещё N» — хвост ссылкой
-    на экран со всем списком (без имени бота — текстом)."""
+    на экран со всем списком (без имени бота more_link даёт текст)."""
     from awgbot.util.textfmt import more_link
     out = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:shown])
-    more_n = len(nets) - shown
-    if more_n > 0:
-        out += more_link(more_n, bot, payload) if bot else f" и ещё {more_n}"
-    return out
+    return out + more_link(len(nets) - shown, bot, payload)
 
 
 def gateway_ssh_text(st: dict, bot: str = "") -> str:
@@ -52,12 +51,13 @@ def gateway_ssh_text(st: dict, bot: str = "") -> str:
     server = f" (<code>{_e(st['server'])}</code>)" if st.get("server") else ""
     lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и с сервера AWG{server}")
     lan = st.get("lan") or []
-    lines.append("Из локальной сети: открыт всегда" + (f" ({_nets_tail(lan, bot, 'list-sshfrom')})" if lan else ""))
+    lines.append("Из локальной сети: открыт всегда"
+                 + (f" ({_nets_tail(lan, bot, listlink.build('sshfrom'))})" if lan else ""))
     # подсети других шлюзов открыты сами, как только на сервере включён доступ
     # между подсетями: отдельного действия и списка адресов не нужно
     peers = st.get("peer_nets") or []
     if peers:
-        lines.append(f"Из подсетей других шлюзов: открыт ({_nets_tail(peers, bot, 'list-sshfrom-2')})")
+        lines.append(f"Из подсетей других шлюзов: открыт ({_nets_tail(peers, bot, listlink.build('sshfrom', 2))})")
     else:
         lines.append("Из подсетей других шлюзов: откроется, когда VPN-транзит свяжет подсети")
     lines.append("")
@@ -78,9 +78,8 @@ def gateway_ssh_text(st: dict, bot: str = "") -> str:
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
-        link = (bot, "list-sshunres") if bot else None
-        names = more(unresolved, link=link)
-        tail = (" — держу прошлый адрес: " + more(held, link=(bot, "list-sshunres-2") if bot else None)
+        names = more(unresolved, shown=SSH_SHOWN, link=(bot, listlink.build("sshunres")))
+        tail = (" — держу прошлый адрес: " + more(held, shown=SSH_SHOWN, link=(bot, listlink.build("sshunres", 2)))
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
         warns.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")
@@ -116,8 +115,9 @@ GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\
                     "адрес по имени буду обновлять сам")
 
 
-SSH_ADDED_TITLE = "✅ Добавлено для SSH-доступа"
+# заголовок снимка «✅ Добавлено для SSH-доступа» общий с основным ботом — texts.settings.inputs.SSH_ADDED_TITLE
 SSH_MERGED_TITLE = "ℹ️ Вошли в добавленные подсети"
+SSH_SHOWN = 12                      # адресов и имён SSH-доступа поимённо; дальше — «и ещё N» ссылкой
 
 
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None, link: tuple | None = None,
@@ -126,10 +126,10 @@ def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None,
     принимает пересечения; человеку — что объединено, а не отказ); link,
     link_merged — (имя бота, параметр /start) снимков всего списка для хвоста."""
     # адреса и подсети — моноширинным: жирный адрес Telegram превращает в ссылку
-    text = "✅ Адреса для SSH-доступа: добавлено " + more(entries, link=link) \
+    text = "✅ Адреса для SSH-доступа: добавлено " + more(entries, shown=SSH_SHOWN, link=link) \
         if entries else "✅ Адреса для SSH-доступа"
     if merged:
-        text += "; вошли в неё и убраны из списка: " + more(merged, link=link_merged)
+        text += "; вошли в неё и убраны из списка: " + more(merged, shown=SSH_SHOWN, link=link_merged)
     return text
 
 

@@ -305,7 +305,7 @@ def restore_report(created_at: str, report: dict, *, bot_username: str = "", sna
         rest = len(lost) - LOST_SHOWN
         if rest > 0:
             from awgbot.util.textfmt import more_line
-            rows.append(more_line(rest, bot_username, snap) if snap and bot_username else f"… и ещё {rest}")
+            rows.append(more_line(rest, bot_username, snap) if snap else f"… и ещё {rest}")
         parts.append("\n".join(rows))
     if any(str(s.get("case")) != "removed" for s in slots):
         parts.append("Свои списки шлюзов: добавленное после бэкапа сохранится, удалённое — вернётся")

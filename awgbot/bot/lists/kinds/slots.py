@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from awgbot.bot import ui
 from awgbot.bot.texts import lists as tl
+from awgbot.bot.texts.routing.slots import slot_raw_name
 from awgbot.bot.callbacks import GwSlotCB, SetCB
 from awgbot.bot.handlers.common import call
 from awgbot.domain.services import ServiceError
@@ -15,12 +16,6 @@ ADMIN = ("admin",)
 
 def _gone() -> View:
     return View(title="", empty=tl.SLOT_GONE, back=ui.back(SetCB(sec="rt")))
-
-
-def _slot_name(st: dict) -> str:
-    """Имя шлюза сырым (экранирует текст вида): имя устройства слота."""
-    dev, gw = st.get("device"), st.get("gateway")
-    return dev.name if dev is not None else f"шлюз {gw.id}"
 
 
 def _card(slot: int) -> tuple:
@@ -41,7 +36,7 @@ async def gwnets(services, ref: int, key: str, chat_id: int) -> View | None:
     st = await _state(services, ref)
     if st is None:
         return _gone()
-    name = _slot_name(st)
+    name = slot_raw_name(st)
     nets = list(st["gateway"].lan_subnets or [])
     tw = dict(st.get("lan_twins") or [])
     issues = list((st.get("lan_space") or {}).get("issues") or [])
@@ -56,34 +51,30 @@ async def gwnets(services, ref: int, key: str, chat_id: int) -> View | None:
 
 async def gwpeers(services, ref: int, key: str, chat_id: int) -> View | None:
     """Соседи слота по связи подсетей: имя-ссылка, подпись, адреса в туннеле; подсети,
-    которых на этом шлюзе нет, — строками ⚠️."""
+    которых на этом шлюзе нет, — строками ⚠️. Пусто — по причине: адреса в
+    туннеле выключены, у слота выключен VPN-транзит, слотов с транзитом меньше двух."""
     from awgbot.bot.texts.fmt import _e
     st = await _state(services, ref)
     if st is None:
         return _gone()
-    name = _slot_name(st)
-    peers = await call(_peer_rows, services, ref) if st.get("peer_nets") else []
+    name = slot_raw_name(st)
+    peers = [_peer_row(p) for p in await call(services.gateway_peer_cards, ref)] if st.get("peer_nets") else []
     rows = list(peers)
     pn = (st.get("channel") or {}).get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         rows += [f"⚠️ На шлюзе нет <code>{_e(str(n))}</code>" for n in pn.get("missing") or []]
+    empty = tl.gwpeers_empty(name, await call(services.gateway_peers_off, ref) if not rows else "")
     return View(title=tl.gwpeers_title(name), rows=rows,
-                count=tl.gateways_count(len(peers)) if peers else "",
-                empty=tl.gwpeers_empty(name), back=_card(ref))
+                count=tl.gateways_count(len(peers)) if peers else "", empty=empty, back=_card(ref))
 
 
-def _peer_rows(services, slot: int) -> list[str]:
+def _peer_row(peer: dict) -> str:
+    """«<a>NASPi</a> · дача: <code>10.240.1.0/24, …</code>» — адреса одной
+    сущностью: на 64 адреса — одна, а не 64 (предел сущностей в сообщении)."""
     from awgbot.bot.texts.fmt import _e
-    out = []
-    for g in services.gateway_transit_slots():
-        if g.id == int(slot):
-            continue
-        # адреса одной сущностью: на 64 адреса — одна, а не 64 (предел сущностей в сообщении)
-        twins = ", ".join(_e(t) for _r, t in services.lan_twins(g))
-        twins = f"<code>{twins}</code>" if twins else ""
-        label = f" · {_e(g.label)}" if g.label else ""
-        out.append(services._link(f"gw-{g.id}", services._gw_name(g)) + label + (f": {twins}" if twins else ""))
-    return out
+    twins = ", ".join(_e(t) for t in peer.get("twins") or [])
+    label = f" · {_e(peer['label'])}" if peer.get("label") else ""
+    return str(peer["link"]) + label + (f": <code>{twins}</code>" if twins else "")
 
 
 async def peernets(services, ref: int, key: str, chat_id: int) -> View | None:

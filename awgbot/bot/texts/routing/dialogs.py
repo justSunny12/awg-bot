@@ -212,7 +212,7 @@ def gateway_lan_report(res: dict, state: dict, snap: str = "") -> str:
         if rest > 0:
             from awgbot.util.textfmt import more_link
             bot = str(state.get("bot_username") or "")
-            items.append("•" + more_link(rest, bot, snap) if snap and bot else f"• и ещё {rest}")
+            items.append("•" + (more_link(rest, bot, snap) if snap else f" и ещё {rest}"))
         parts.append("⚠️ Не принято:\n" + "\n".join(items))
     return "\n".join(parts)
 

@@ -104,7 +104,8 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     new = [x for x in after if x not in before]
     gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
     from awgbot.bot.texts.gateway import access as ta
-    link = await _snap_codes(message, services, ta.SSH_ADDED_TITLE, new)
+    from awgbot.bot.texts.settings.inputs import SSH_ADDED_TITLE
+    link = await _snap_codes(message, services, SSH_ADDED_TITLE, new)
     link_m = await _snap_codes(message, services, ta.SSH_MERGED_TITLE, gone)
     await core.after_input(message, services, pkg._hooks(), "ssh",
                            texts.gateway_ssh_allow_added(new, gone, link, link_m) if new or gone

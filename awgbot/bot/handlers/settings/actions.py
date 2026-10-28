@@ -63,7 +63,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "start!":
         await cb.answer("Создаю новые конфигурации…")
         res = await call(services.migration_start)
-        cap = 5 if not res.started else texts.migration.LIST_CAP
+        cap = texts.migration.STARTED_FAILED_SHOWN if not res.started else texts.migration.LIST_CAP
         more = await _snap_more(cb, services, texts.migration.FAILED_TITLE, res.failed, cap)
         await _record(cb, links.mark_new(texts.migration_started(res, more)), services)
         return

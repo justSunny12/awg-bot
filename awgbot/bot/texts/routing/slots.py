@@ -215,11 +215,18 @@ def slot_status(state) -> str:
     return f"🟡 {role}, проверка связи"
 
 
+def slot_raw_name(state) -> str:
+    """Имя шлюза сырым, без подписи и адреса: имя устройства слота, без
+    устройства — «шлюз N». Экранирует тот, кто кладёт в разметку (slot_ref);
+    заголовки снимков и экрана «весь список» берут отсюда же."""
+    dev, gw = state.get("device"), state.get("gateway")
+    return dev.name if dev is not None else f"шлюз {gw.id}"
+
+
 def slot_ref(state) -> str:
     """Имя шлюза для фраз («упадёт NASPi», «останется в резерве»): только имя
     устройства, без подписи и адреса."""
-    dev, gw = state.get("device"), state.get("gateway")
-    return _e(dev.name) if dev is not None else f"шлюз {gw.id}"
+    return _e(slot_raw_name(state))
 
 
 def _slot_ping_tail(state) -> str:
@@ -268,11 +275,8 @@ def peer_nets_line(info: dict) -> str:
         if not nets:
             return ""
         shown = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:limit])
-        more = len(nets) - limit
-        if more <= 0:
-            return ": " + shown
-        # все адреса всех слотов — на экране связи подсетей
-        return ": " + shown + (more_link(more, bot, listlink.build("peernets")) if bot else f" и ещё {more}")
+        # все адреса всех слотов — на экране связи подсетей (без имени бота — текстом)
+        return ": " + shown + more_link(len(nets) - limit, bot, listlink.build("peernets"))
     # подписи слотов — на кнопках карточек ниже, в строке только имена
     pairs = " ↔️ ".join(f"{_e(name)}{_nets(nets)}" for name, _label, nets in named)
     return f"🔗 Связь подсетей: {pairs}"
