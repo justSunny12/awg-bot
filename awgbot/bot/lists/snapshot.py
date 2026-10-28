@@ -11,19 +11,10 @@ links.mark_new). Без имени бота снимок не пишется: с
 пределу текста, который этот список рисует."""
 from __future__ import annotations
 
-from awgbot.util import listlink
 
 
-def snap_param_sync(db, bot_username: str, chat: int, role: str, title: str, rows, back: str = "",
-                    new: bool = False, n: int | None = None, missing: int = 0, tail_note: str = "") -> str:
-    """Параметр /start снимка или пусто. Синхронный — для домена (сервис пишет
-    снимок сам, без цикла событий); обработчики зовут snap_param.
-    tail_note — чем кончить строку «… и ещё N — …» снимка, когда остаток
-    списка лежит не в журнале этого бота."""
-    if not bot_username:
-        return ""
-    key = db.list_snap_keep(int(chat), role, title, list(rows), back, new, n, missing, tail_note)
-    return listlink.build("snap", key=key) if key else ""
+from awgbot.infra.db.listsnap import snap_param as snap_param_sync   # noqa: F401 — синхронный, живёт у базы
+
 
 
 async def snap_param(services, chat: int, role: str, title: str, rows, back: str = "", new: bool = False,

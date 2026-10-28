@@ -19,8 +19,10 @@
 и отрезанное целиком уходит в журнал порциями по LOG_TAIL_ROWS строк (строка —
 до LOG_ROW_CHARS знаков), каждая строка журнала — с ключом снимка и чатом.
 Когда источник сам отдал не все (`missing`), в журнале их нет, и хвост
-говорит это (или текст вызывающего — `tail_note`, когда остаток лежит не в
-журнале этого бота). N в шапке — настоящее число
+говорит это («… и ещё N — в снимок не вошли»); обрезало и хранилище — обе
+части («… и ещё N — K в снимок не вошли, остальные — в журнале бота»). Текст
+вызывающего (`tail_note`, когда остаток лежит не в журнале этого бота: Т-Ж4
+после аварии — в журнале бота на резерве) заменяет оба варианта. N в шапке — настоящее число
 элементов от производителя (`n`), а не строк: строк может быть меньше
 (свёрнутые в одну), и это не обрезка. Одна строка больше 256 КБ — снимок не
 пишется (сбой записи, хвост у вызывающего остаётся текстом).
@@ -41,7 +43,7 @@ import logging
 import secrets
 import string
 
-from awgbot.util import timeutil
+from awgbot.util import listlink, timeutil
 
 PREFIX = "list_snap:"
 TTL_S = 30 * 86400
@@ -64,6 +66,19 @@ log = logging.getLogger("awgbot.db")
 def new_key() -> str:
     """Ключ снимка: 10 знаков [a-z0-9] из secrets (≈ 52 бита)."""
     return "".join(secrets.choice(_ALPHABET) for _ in range(10))
+
+
+def snap_param(db, bot_username: str, chat: int, role: str, title: str, rows, back: str = "",
+               new: bool = False, n: int | None = None, missing: int = 0, tail_note: str = "") -> str:
+    """Параметр /start снимка (`list-snap-<ключ>`) или пусто. Здесь, а не в слое бота:
+    зовут и сервисы домена (Т-Ж4), и обработчики (bot/lists/snapshot.snap_param — в потоке).
+    Без имени бота снимок не пишется: ссылки в тексте всё равно не будет, а запись
+    занимала бы место в двадцати снимках чата. tail_note — чем кончить строку
+    «… и ещё N — …», когда остаток лежит не в журнале этого бота."""
+    if not bot_username:
+        return ""
+    key = db.list_snap_keep(int(chat), role, title, list(rows), back, new, n, missing, tail_note)
+    return listlink.build("snap", key=key) if key else ""
 
 
 class ListSnapMixin:

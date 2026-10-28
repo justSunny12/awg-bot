@@ -25,11 +25,13 @@ locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь
 reserve_busy_guard() {  # reserve_busy_guard ДЕЙСТВИЕ — отказ, пока свои пользователи у резерва, здесь пользователи резерва или ждём правки журнала (tools/rsvbusy.py: причины, AWG_RESERVE_IGNORE_WAIT)
     declare -F bot_tool >/dev/null 2>&1 || return 0
     local why rc=0 err
-    err="$(mktemp)"
-    why="$(bot_tool tools.rsvbusy 2>"$err")" || rc=$?         # прочий код (нет инструмента, упал) — не помеха
-    # stderr сторожа — человеку: «база не прочитана — считаю свободным», обход по AWG_RESERVE_IGNORE_WAIT
-    [[ $rc -eq 0 || $rc -eq 3 ]] && [[ -s "$err" ]] && cat "$err" >&2
-    rm -f "$err"
+    err="$(mktemp 2>/dev/null)" || err=""                     # временных файлов нет — сторож без его stderr
+    why="$(bot_tool tools.rsvbusy 2>"${err:-/dev/null}")" || rc=$?   # прочий код (нет инструмента, упал) — не помеха
+    if [[ -n "$err" ]]; then
+        # stderr сторожа — человеку: «база не прочитана — считаю свободным», обход по AWG_RESERVE_IGNORE_WAIT
+        if [[ $rc -eq 0 || $rc -eq 3 ]] && [[ -s "$err" ]]; then cat "$err" >&2; fi
+        rm -f "$err"
+    fi
     if [[ $rc -eq 3 ]]; then die "$1 сейчас нельзя: $why"; fi
     return 0
 }

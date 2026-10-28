@@ -33,7 +33,7 @@ class ReserveTailNotesMixin:
             # весь список — снимком в базе бота основы (переживает --wipe резерва), хвост — ссылкой на него;
             # чего источник не прислал строками (missing), в журнале этого бота нет — после аварии остаток
             # лежит в журнале бота на резерве
-            from awgbot.bot.lists.snapshot import snap_param_sync
+            from awgbot.infra.db.listsnap import snap_param as snap_param_sync
             from awgbot.util.textfmt.tail import more_line
             bot = str(getattr(self, "bot_username", "") or "")
             note = rt.tail_snap_rest(name) if variant == "crash" and total > len(rows) else ""

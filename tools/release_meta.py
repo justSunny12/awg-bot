@@ -9,14 +9,16 @@ release_meta.py — метаданные релиза (awg-bot-release.json) д�
 (awgbot/infra/updates/meta.py). Файл — docs/releases/vX.Y.Z[.P].json; его
 build_release.sh кладёт вторым артефактом, выпуск загружает рядом с поставкой.
 
-    python -m tools.release_meta --main 3.2.0 --gw 3.2.0 --write
-    python -m tools.release_meta --main 3.3.0 --needs-gw 3.3.0 --gw 3.3.0 --needs-main 3.3.0
+    python -m tools.release_meta --main 4.0.0 --gw 4.0.0 --write
+    python -m tools.release_meta --main 4.0.0 --needs-gw 4.0.0 --gw 4.0.0 --needs-main 4.0.0
     python -m tools.release_meta --hashtags docs/releases/v3.3.1.json
     python -m tools.release_meta --check docs/releases/v3.3.0.json --expect-version 3.3.0
 
---check читает файл так же, как бот (предел 16 КБ, UTF-8, схема); с
---expect-version сверяет ещё версию сборки и поколение ядра с
-install/awg.lock. --check и --hashtags — взаимоисключающие.
+--main/--gw обязаны равняться UPDATE_FROM (awgbot/core/compat.py) — иначе код 1,
+«минимум … ≠ UPDATE_FROM»: сторож терминала и цепочка бота разошлись бы (сдвиг
+минимума ставит оба, docs/RELEASING.md §2). --check читает файл так же, как
+бот (предел 16 КБ, UTF-8, схема); с --expect-version сверяет ещё версию сборки
+и поколение ядра с install/awg.lock. --check и --hashtags — взаимоисключающие.
 
 --hashtags печатает машинные строки тела записи журнала — только для релизов
 моложе 3.3.2 (переход: их читают боты 3.2.x); перекрёстных условий в теле нет
