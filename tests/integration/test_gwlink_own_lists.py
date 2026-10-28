@@ -777,13 +777,20 @@ async def test_a_failing_fill_leaves_the_answer_and_the_base_alone(pair, pi, cap
 
 
 @pytest.mark.parametrize("seeded", [False, True])
-async def test_a_day_of_ticks_without_edits_sends_not_a_byte(pair, pi, seeded):
-    """Простой — ноль пакетов от синхронизации: сутки тиков монитора (480 по
-    три минуты) и тактов живости без правок — ни байта со шлюза, ни с ВПС.
-    В том числе на свежем сервере, где канона ещё не было: поколение,
-    созданное при первом чтении, обязано сохраниться, иначе каждый такт — новый
-    отпечаток и новый канон."""
+async def test_a_day_of_ticks_without_edits_sends_not_a_byte(pair, pi, seeded, monkeypatch):
+    """Простой — ноль пакетов от синхронизации: сутки тиков монитора и тактов
+    живости без правок — ни байта со шлюза, ни с ВПС. В том числе на свежем
+    сервере, где канона ещё не было: поколение, созданное при первом чтении,
+    обязано сохраниться, иначе каждый такт — новый отпечаток и новый канон.
+
+    Шаги тика (on_tick: снимок, свои списки, сервисы соседей, смена ключей,
+    аплинк, свой блок) и доставка сервера решают по состоянию и часам, счётчиков
+    тиков в них нет: тики в одну секунду неотличимы. Поэтому часы прыгают к
+    границам периодов — повтор пинка через 10 минут, час, счёт линка раз в ~6
+    часов (с разбросом до ×1,4), сутки — по два тика у каждой (на границе и
+    тиком позже)."""
     s = pair.services
+    clock = _Clock(monkeypatch)
     if seeded:
         _seed(s, {"news.org": "vpn", "shop.ru": "ru"})
     a = pi.agent()
@@ -792,9 +799,11 @@ async def test_a_day_of_ticks_without_edits_sends_not_a_byte(pair, pi, seeded):
     await pair.srv.deliver_all()
     await asyncio.sleep(0.3)
     before_agent, before_srv = c._sent_bytes, len(pair.sent)
-    for _ in range(480):
-        await linkclient.on_tick(a)
-        await pair.srv.deliver_all()
+    for edge in (180, 600, 3600, 6 * 3600 * 1.4, 24 * 3600):
+        for t in (edge, edge + 180):
+            clock.shift = t
+            await linkclient.on_tick(a)
+            await pair.srv.deliver_all()
     await asyncio.sleep(0.2)
     assert c._sent_bytes == before_agent, f"за сутки простоя агент отправил {c._sent_bytes - before_agent} байт"
     assert pair.sent[before_srv:] == [], f"сервер в простое говорил: {pair.sent[before_srv:]}"
