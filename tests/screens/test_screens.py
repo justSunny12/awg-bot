@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import difflib
 import inspect
+import json
+import os
 import pathlib
+import time
 
 import pytest
 
@@ -47,36 +50,73 @@ def _expected_labels(shot) -> set[str]:
     return {timeutil.tz_label(catalog.NOW, tz=ZoneInfo(zone) if zone else config.TZ)}
 
 
+# ── вызванные построители: сверка эталона отдаёт их сторожу полноты ─────────
+# Сторож полноты не снимает каталог второй раз: каждый элемент сверки пишет,
+# какие построители вызвали его снимки, в каталог сеанса — общий для всех
+# процессов xdist (родитель basetemp воркера) или basetemp без xdist. Файл
+# «<роль>.started» — сверка роли началась, «<роль>.json» — дошла до конца
+# (список вызванных), «<роль>.failed» — оборвалась раньше: её список неполон.
+BUILDERS_START_S = 120   # сверка роли в сеансе есть, но не началась (упала подготовка)
+BUILDERS_WAIT_S = 600    # началась и не кончилась (процесс xdist умер)
+
+
+def _builders_dir(factory) -> pathlib.Path:
+    base = factory.getbasetemp()
+    path = (base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base) / "screens-builders"
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def _builders_write(folder: pathlib.Path, name: str, seen: set[str]) -> None:
+    # через переименование: читатель в другом процессе не увидит половину файла
+    tmp = folder / f"{name}.json.part"
+    tmp.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    tmp.replace(folder / f"{name}.json")
+
+
+def _builders_read(folder: pathlib.Path, name: str, scheduled: bool) -> set[str] | None:
+    """Список построителей роли от её сверки в этом сеансе. Сверка роли в
+    сеансе есть (scheduled) — ждём её итога: под xdist она идёт в другом
+    процессе, и тот же процесс её раньше сторожа уже прошёл (элементы
+    раздаются по порядку сборки, сверка в файле выше). None — сверки нет
+    (отбор -k), она оборвалась или не дала итога за отведённое время —
+    тогда сторож снимает роль сам."""
+    started = folder / f"{name}.started"
+    done, failed = folder / f"{name}.json", folder / f"{name}.failed"
+    if not scheduled:
+        return None
+    t0 = time.monotonic()
+    while not (done.exists() or failed.exists()):
+        waited = time.monotonic() - t0
+        if waited > BUILDERS_WAIT_S or (waited > BUILDERS_START_S and not started.exists()):
+            return None
+        time.sleep(0.2)
+    if not done.exists():
+        return None
+    return set(json.loads(done.read_text(encoding="utf-8")))
+
+
 @pytest.mark.parametrize("name", FILES)
-async def test_screens_match_the_reference_file(name, request, tmp_path, frozen, fakes, monkeypatch):
+async def test_screens_match_the_reference_file(name, request, tmp_path, tmp_path_factory, frozen, fakes,
+                                                monkeypatch):
     """Все снимки роли — через диспетчер; ни одно нажатие не ушло в обработчик
     устаревшей кнопки; лимиты и HTML в порядке; каждый общий раздел, доступный
     роли файла, снят хотя бы одним снимком; запись совпадает с эталоном байт
     в байт. Ссылки на экраны в уведомлениях — с меткой «-n», на экранах — без
-    неё (tests/screens/marks)."""
+    неё (tests/screens/marks). Вызванные построители клавиатур уходят сторожу
+    полноты (_builders_write)."""
     shots = [s for s in catalog.SHOTS if s.role == name]
     drawn = harness.record_section_screens(monkeypatch)
     notified = marks.record(monkeypatch)
-    parts, bad, circles = [], [], set()
-    for shot in shots:
-        rec = await take(shot, tmp_path, fakes)
-        # ровно текст обработчика устаревшей кнопки (handlers/stale.py); alert
-        # раздела «Кнопка устарела — открой раздел заново» — осознанный ответ
-        from awgbot.bot.handlers.stale import STALE_BUTTON
-        stale = [c.head for c in rec.everything
-                 if STALE_BUTTON in (c.toast or "") or STALE_BUTTON in (c.body or "")]
-        assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
-        assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
-        bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
-        bad += marks.problems(shot.id, rec, notified)
-        found, used = timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS, _expected_labels(shot))
-        bad += found
-        spare_t = catalog.TIME_LABEL_EXCEPTIONS.get(shot.id, set()) - used
-        assert not spare_t, f"{shot.id}: исключение больше не нужно — убери из TIME_LABEL_EXCEPTIONS: {spare_t}"
-        spare = catalog.LABEL_EXCEPTIONS.get(shot.id, set()) - harness.long_labels(rec)
-        assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
-        circles |= harness.circle_actions_seen(rec)
-        parts.append(harness.serialize(shot.id, shot.title, rec))
+    folder = _builders_dir(tmp_path_factory)
+    (folder / f"{name}.started").touch()
+    try:
+        with harness.BuilderCalls(harness.keyboard_builders()) as calls:
+            parts, bad, circles = await _take_role(shots, tmp_path, fakes, notified)
+    except BaseException:
+        (folder / f"{name}.failed").touch()
+        raise
+    _builders_write(folder, name, calls.seen)
     assert not bad, "нарушения ограничений Telegram:\n" + "\n".join(bad)
     if name == "admin":
         unused = set(harness.CIRCLE_ACTIONS) - circles
@@ -97,6 +137,32 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
     diff = "".join(difflib.unified_diff(want.splitlines(True), got.splitlines(True),
                                         f"{name}.txt (эталон)", f"{name}.txt (снято)"))
     assert got == want, f"экраны разошлись с эталоном (--update-screens — перезаписать):\n{diff}"
+
+
+async def _take_role(shots, tmp_path, fakes, notified):
+    """Снимки роли по порядку каталога: записи, нарушения лимитов и действия
+    кружка; падает на первом снимке с устаревшим нажатием или лишним исключением."""
+    parts, bad, circles = [], [], set()
+    for shot in shots:
+        rec = await take(shot, tmp_path, fakes)
+        # ровно текст обработчика устаревшей кнопки (handlers/stale.py); alert
+        # раздела «Кнопка устарела — открой раздел заново» — осознанный ответ
+        from awgbot.bot.handlers.stale import STALE_BUTTON
+        stale = [c.head for c in rec.everything
+                 if STALE_BUTTON in (c.toast or "") or STALE_BUTTON in (c.body or "")]
+        assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
+        assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
+        bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
+        bad += marks.problems(shot.id, rec, notified)
+        found, used = timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS, _expected_labels(shot))
+        bad += found
+        spare_t = catalog.TIME_LABEL_EXCEPTIONS.get(shot.id, set()) - used
+        assert not spare_t, f"{shot.id}: исключение больше не нужно — убери из TIME_LABEL_EXCEPTIONS: {spare_t}"
+        spare = catalog.LABEL_EXCEPTIONS.get(shot.id, set()) - harness.long_labels(rec)
+        assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
+        circles |= harness.circle_actions_seen(rec)
+        parts.append(harness.serialize(shot.id, shot.title, rec))
+    return parts, bad, circles
 
 
 def test_every_shot_id_is_unique_and_names_its_role():
@@ -149,21 +215,42 @@ def test_every_keyboard_function_says_what_it_returns():
     assert not bare, f"нет аннотации результата: {bare}"
 
 
-async def test_every_keyboard_builder_is_drawn_by_some_shot(tmp_path, frozen, fakes):
+async def test_every_keyboard_builder_is_drawn_by_some_shot(request, tmp_path, tmp_path_factory, frozen, fakes):
     """Полнота каталога: каждый публичный построитель клавиатур вызван хотя бы
     одним снимком. Новая клавиатура без снимка — красный тест: её экран
     никто не видел в эталоне, и рефакторинг унесёт его без следа. Исключение
     (UNREACHABLE) — только для построителя, которого не рисует ни действие
-    человека, ни событие; исключение, которое не нужно, — тоже красное."""
+    человека, ни событие; исключение, которое не нужно, — тоже красное.
+
+    Каталог второй раз не снимается: вызванные построители каждой роли пишет
+    её сверка с эталоном (test_screens_match_the_reference_file) в каталог
+    сеанса. Порядок под xdist явный: сверка роли выбрана в сеансе — сторож
+    ждёт её итога (файл роли); роль не сверяется в этом сеансе (отбор -k,
+    прогон одного теста) или сверка оборвалась — сторож снимает роль сам.
+    Так полнота считается по всему каталогу при любом отборе."""
     builders = harness.keyboard_builders()
-    with harness.BuilderCalls(builders) as calls:
-        for shot in catalog.SHOTS:
-            await take(shot, tmp_path, fakes)
+    folder = _builders_dir(tmp_path_factory)
+    scheduled = {it.callspec.params["name"] for it in request.session.items
+                 if it.originalname == "test_screens_match_the_reference_file"
+                 and it.path == request.node.path}
+    seen, own = set(), []
+    for name in FILES:
+        got = _builders_read(folder, name, name in scheduled)
+        if got is None:
+            own.append(name)
+        else:
+            seen |= got
+    if own:
+        with harness.BuilderCalls(builders) as calls:
+            for shot in catalog.SHOTS:
+                if shot.role in own:
+                    await take(shot, tmp_path, fakes)
+        seen |= calls.seen
     unknown = set(catalog.UNREACHABLE) - set(builders)
     assert not unknown, f"в UNREACHABLE имена, которых нет среди построителей: {sorted(unknown)}"
-    spare = set(catalog.UNREACHABLE) & calls.seen
+    spare = set(catalog.UNREACHABLE) & seen
     assert not spare, f"исключение больше не нужно — построитель снят: {sorted(spare)}"
-    missing = sorted(set(builders) - calls.seen - set(catalog.UNREACHABLE))
+    missing = sorted(set(builders) - seen - set(catalog.UNREACHABLE))
     assert not missing, ("построители клавиатур без снимка:\n" + "\n".join(
         f"  {k} — {(inspect.getdoc(builders[k]) or '').splitlines()[0] if inspect.getdoc(builders[k]) else ''}"
         for k in missing))
