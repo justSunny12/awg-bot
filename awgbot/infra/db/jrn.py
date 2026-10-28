@@ -25,7 +25,7 @@ class JrnMixin:
         return str(self.get_state("db_line") or "")
 
     def jrn_pass(self, *, holder: str, role: str, why: str, fork_i: int | None = None,
-                 epoch: int | None = None) -> dict | None:
+                 epoch: int | None = None, keep_own: bool = False) -> dict | None:
         """Передача права записи: эпоха + 1, держатель и роль. Уже так — None.
         Коммит с synchronous = FULL: переход редок, а потерять его при пропаже
         питания нельзя — на диске осталась бы прежняя роль."""
@@ -34,7 +34,7 @@ class JrnMixin:
             return None
         new_e = max(int(cur_meta["epoch"]) + 1, int(epoch or 0))
         fork = self.jrn_last_i() if fork_i is None else int(fork_i)
-        return self._jrn_meta_set(why, epoch=new_e, holder=holder, role=role, fork_i=fork)
+        return self._jrn_meta_set(why, epoch=new_e, holder=holder, role=role, fork_i=fork, _keep_own=keep_own)
 
     def jrn_hand_over(self, *, why: str) -> dict | None:
         """Передача бота кнопкой: если все свои события этой эпохи подтверждены резервом —
@@ -100,15 +100,17 @@ class JrnMixin:
         """Переход эпохи одной транзакцией с synchronous = FULL. Уход в следование от
         чужого держателя: свои события, которых резерв не подтвердил, — в хвост старой
         эпохи (jrn_tail): события держателя ложатся под теми же номерами и затёрли бы их."""
+        keep_own = bool(fields.pop("_keep_own", False))
         conn = self._connection()
         conn.execute("PRAGMA synchronous = FULL")
         try:
             with self._tx() as c:
                 c.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
-                if fields.get("holder") == "peer" and fields.get("role") == "follower" and "fork_i" in fields:
+                if fields.get("holder") == "peer" and fields.get("role") == "follower" and "fork_i" in fields \
+                        and not keep_own:
                     # события держателя пойдут с fork_i + 1: применённое — по точку расхождения
                     fields["applied"] = int(fields["fork_i"])
-                if fields.get("holder") == "peer" and fields.get("role") == "follower":
+                if fields.get("holder") == "peer" and fields.get("role") == "follower" and not keep_own:
                     c.execute("INSERT OR REPLACE INTO jrn_tail (i, e, t, op, k, c, o, at, state) "
                               "SELECT i, e, t, op, k, c, o, at, 'wait' FROM jrn_events "
                               "WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "

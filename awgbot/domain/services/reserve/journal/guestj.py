@@ -220,6 +220,8 @@ class ReserveGuestJournalMixin:
         epoch = int(meta["epoch"])
         if meta["role"] == "holder":
             self._gj()["own_e"] = epoch
-            # без права записи, но свои события остаются в базе — досылаются, пока основа не подтвердит
-            self.db.jrn_fence(why="возврат: право записи — основе")
+            # право записи — основе (эпоха + 1 у неё), но свои события остаются в базе — досылаются,
+            # пока основа не подтвердит (не хвост: она их ждёт и применит)
+            self.db.jrn_pass(holder="peer", role="follower", why="возврат: право записи — основе", fork_i=last,
+                             epoch=epoch, keep_own=True)
         return {"line": self.db.jrn_line(), "epoch": epoch, "last": last}
