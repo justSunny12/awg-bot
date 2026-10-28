@@ -41,16 +41,21 @@ def main() -> int:
                 data = {}
             return str(data.get("state") or "")
         out, inn = st("rsv_out"), st("rsv_in")
+        # порядок — как у бота (reserve_refuse_update_if_waiting): свой хвост, потом С9
         waiting = ""
         try:
             from awgbot.domain.services.reserve.journal.tail import own_tail_blocks_raw
-            raw_out = json.loads(db.get_state("rsv_out") or "{}")
-            if isinstance(raw_out, dict) and raw_out.get("await_merge"):
-                waiting = "ждём правки бота с резерва после «вернуть без резерва»"
-            elif own_tail_blocks_raw(db):
+            if own_tail_blocks_raw(db):
                 waiting = "свой хвост правок ещё не перенесён на резерв"
         except Exception:                                 # noqa: BLE001 — старая база: не ждём
             pass
+        if not waiting:
+            try:
+                raw_out = json.loads(db.get_state("rsv_out") or "{}")
+            except ValueError:
+                raw_out = {}
+            if isinstance(raw_out, dict) and raw_out.get("await_merge"):
+                waiting = "ждём правки бота с резерва после «вернуть без резерва»"
         peer = db.reserve_peer() or {}
         name = str(peer.get("name") or "резерв")
     finally:
