@@ -278,3 +278,20 @@ def test_input_is_the_wall_clock_of_the_display_zone():
     got = t.parse_dt_sec("01.02.2027 18:30")
     assert (got.hour, got.minute, got.tzinfo) == (18, 30, TZ)
     assert t.to_iso(got) == "2027-02-01T16:30:00+03:00"
+
+
+# ── дата с годом всегда ──────────────────────────────────────────────────────
+def test_fmt_date_yy_has_the_year_even_in_the_current_year(monkeypatch):
+    """Строки журнала данных: год — всегда, двумя цифрами (в отличие от экранов)."""
+    monkeypatch.setattr(t, "now", lambda: _dt(2026, 11, 20, 12))
+    assert t.fmt_date_yy(_dt(2026, 11, 15, 9)) == "15.11.26"
+    assert t.fmt_date_ui(_dt(2026, 11, 15, 9)) == "15.11", "условие: экранная дата текущего года — без года"
+    assert t.fmt_date_yy(_dt(2027, 1, 2)) == "02.01.27"
+
+
+def test_fmt_date_yy_is_the_date_in_the_display_zone():
+    """Момент в другом поясе — дата по поясу показа: 31.12 22:30 UTC — уже 01.01
+    следующего года у админа в UTC+5; хранение (UTC+3) — тоже переводится."""
+    assert t.fmt_date_yy(datetime(2026, 12, 31, 22, 30, tzinfo=timezone.utc)) == "01.01.27"
+    assert t.fmt_date_yy(t.parse_iso("2026-03-09T21:30:00+03:00")) == "09.03.26"
+    assert t.fmt_date_yy(t.parse_iso("2026-03-09T22:30:00+03:00")) == "10.03.26"

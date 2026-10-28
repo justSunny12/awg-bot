@@ -156,3 +156,28 @@ def test_the_two_channels_sign_with_different_keys_from_the_same_secret():
     assert pp.pair_key(PRIV) != pp.guest_key(PRIV), "домены каналов не разведены"
     assert pp.pair_key(PRIV) == pp.pair_key(PRIV) and len(pp.pair_key(PRIV)) == 32
     assert pp.pair_key(PRIV) != pp.pair_key(PSK) and pp.guest_key(PSK) != pp.guest_key(PRIV)
+
+
+# ── журнал данных резерва ─────────────────────────────────────────────────────
+def test_a_jack_needs_only_the_line_and_the_number():
+    """`jack{line, i}`: эпохи в подтверждении нет (её не читала ни одна сторона);
+    подтверждение предрелизной сборки с `e` — тоже проходит, поле отбрасывается."""
+    assert pp.check(pp.PAIR_PROTO, "jack", {"line": "ab" * 8, "i": 12}, pp.INVITER) == {"line": "ab" * 8, "i": 12}
+    out = pp.check(pp.PAIR_PROTO, "jack", {"line": "ab" * 8, "e": 3, "i": 12}, pp.ACCEPTOR)
+    assert out == {"line": "ab" * 8, "i": 12}, f"лишнее поле подтверждения дошло до разбора: {out}"
+    with pytest.raises(ProtocolError, match="нет поля 'i'"):
+        pp.check(pp.PAIR_PROTO, "jack", {"line": "ab" * 8, "e": 3}, pp.INVITER)
+
+
+def test_the_journal_kinds_are_exactly_the_journal_entries_of_the_dictionary():
+    """Один кортеж видов журнала на оба канала (разбор канала пары и локальный канал
+    гостя): вид журнала, которого в нём нет, у гостя молча пропадал бы."""
+    in_dict = {k for k in pp.PAIR_KINDS if k.startswith("j")}
+    assert set(pp.JRN_KINDS) == in_dict and len(pp.JRN_KINDS) == len(in_dict), (pp.JRN_KINDS, sorted(in_dict))
+
+
+def test_the_dead_tail_kind_of_the_pair_channel_is_unknown_now():
+    """Вид `tail` (без отправителя и обработчика) снят: пришедший — рвёт сессию, а не
+    принимается в никуда."""
+    with pytest.raises(ProtocolError, match="неизвестный вид"):
+        pp.check(pp.PAIR_PROTO, "tail", {"i": 0, "n": 1, "blob": ""}, pp.INVITER)

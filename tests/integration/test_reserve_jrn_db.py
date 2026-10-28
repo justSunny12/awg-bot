@@ -111,6 +111,36 @@ def test_the_pass_commits_under_full_sync_and_puts_normal_back(db):
     assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1, "после перехода synchronous не вернулся к NORMAL"
 
 
+def test_a_transition_that_fails_inside_puts_normal_back_and_changes_nothing(db, monkeypatch):
+    """Переход упал посреди транзакции (замок, диск) — откат целиком, а соединение
+    снова NORMAL: иначе каждый коммит событий и опроса трафика дальше платил бы fsync,
+    а следующий переход начинался бы с половины прежнего."""
+    before = db.jrn_meta()
+
+    def boom(*_a, **_k):
+        raise sqlite3.OperationalError("тест: database is locked")
+    monkeypatch.setattr(db, "_tx_note", boom)
+    with pytest.raises(sqlite3.OperationalError, match="тест"):
+        follow(db)
+    conn = db._connection()
+    assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1, "после упавшего перехода synchronous не NORMAL"
+    assert db.jrn_meta() == before, f"упавший переход оставил половину: {db.jrn_meta()}"
+    monkeypatch.undo()
+    follow(db)
+    assert db.jrn_meta()["role"] == "follower", "после упавшего перехода следующий не прошёл"
+
+
+def test_an_error_inside_the_full_sync_block_rolls_back_and_puts_normal_back(db):
+    """Блок под FULL с исключением внутри: запись блока не остаётся, synchronous — NORMAL."""
+    with pytest.raises(RuntimeError):
+        with db._full_sync() as c:
+            c.execute("UPDATE jrn_meta SET why = 'тест: недописано' WHERE id = 1")
+            assert db._connection().execute("PRAGMA synchronous").fetchone()[0] == 2, "условие: внутри блока — FULL"
+            raise RuntimeError("тест")
+    assert db._connection().execute("PRAGMA synchronous").fetchone()[0] == 1, "после исключения synchronous не NORMAL"
+    assert db.jrn_meta()["why"] != "тест: недописано", "запись блока с исключением осталась"
+
+
 def test_the_pass_survives_a_power_loss_copy_of_the_base_files(db, tmp_path):
     """«Пропажа питания»: копия файлов базы, снятая сразу после перехода (без
     закрытия соединения), уже хранит следование — на диске не осталось
