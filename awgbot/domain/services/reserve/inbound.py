@@ -206,9 +206,17 @@ class ReserveInboundMixin:
             self.rsv_update("rsv_in", up_sent=True, up_resent=now, clone_at=timeutil.now_iso())
             zst = rsvzone.state()
             if zst.get("ifaces") and not zst.get("netmap"):
-                # вывод --take процесс открытия не пересказывает — факт берём из состояния зоны
-                log.warning("резерв: NETMAP подсетей клонов не встал (ядро не приняло или пул reserve.zone_pool "
-                            "занят) — устройства основы выходят одним адресом зоны, CAKE делит загрузку по назначению")
+                # вывод --take процесс открытия не пересказывает — факт и причина из состояния зоны
+                why = {"kernel": "ядро или nft не приняли NETMAP",
+                       "pool": "в пуле reserve.zone_pool нет свободного блока или подсети клонов в него не влезают",
+                       "bad_pool": "пул reserve.zone_pool не разобран"}.get(str(zst.get("netmap_why") or ""),
+                                                                             "причина не записана")
+                log.warning("резерв: NETMAP подсетей клонов не встал (%s) — устройства основы выходят одним адресом "
+                            "зоны, CAKE делит загрузку по назначению", why)
+            elif zst.get("netmap") and zst.get("netmap_miss"):
+                log.warning("резерв: NETMAP не на все клоны — без блока: %s (подсеть не влезает в пул "
+                            "reserve.zone_pool или свободного блока нет); их устройства выходят одним адресом зоны, "
+                            "CAKE делит загрузку по назначению", zst["netmap_miss"])
             actions += [("send", "up", {}), ("fw",)]
         elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт

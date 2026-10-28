@@ -56,6 +56,35 @@ def test_a_clone_without_netmap_is_logged_once_as_a_warning(host, monkeypatch, c
     assert len(_marks(caplog)) == 1, "строка повторяется на каждом такте переезда"
 
 
+@pytest.mark.parametrize("why, words", [
+    ("kernel", "ядро или nft не приняли NETMAP"),
+    ("pool", "нет свободного блока"),
+    ("bad_pool", "пул reserve.zone_pool не разобран"),
+    ("", "причина не записана"),
+], ids=["kernel", "pool", "bad_pool", "unknown"])
+def test_the_line_names_the_one_reason_from_the_zone_state(host, monkeypatch, caplog, why, words):
+    """Причину пишет скрипт (netmap_why); строка «ядро или пул» заставляла бы
+    админа сверять версию ядра и маршруты руками."""
+    _clone_up(host, monkeypatch, caplog, ifaces="awg0", netmap="", netmap_why=why)
+    host.svc.reserve_in_tick()
+    got = _marks(caplog)
+    assert len(got) == 1 and words in got[0].getMessage(), [r.getMessage() for r in caplog.records]
+
+
+def test_a_partial_plan_names_the_clones_without_a_block_once(host, monkeypatch, caplog):
+    """Клонов больше, чем пар в плане: их устройства выходят одним адресом, а
+    `netmap=` не пуст — без своей строки это не видно нигде."""
+    _clone_up(host, monkeypatch, caplog, ifaces="awg0 awg1", netmap="10.8.1.0/24=169.254.96.0/24", netmap_miss="awg1")
+    assert "up" in sent(host.svc.reserve_in_tick())
+    part = [r for r in caplog.records if "NETMAP не на все клоны" in r.getMessage()]
+    assert len(part) == 1 and part[0].levelno == logging.WARNING and "awg1" in part[0].getMessage(), \
+        [r.getMessage() for r in caplog.records]
+    assert not _marks(caplog), "частичный план назван «не встал»"
+    for _ in range(3):
+        host.svc.reserve_in_tick()
+    assert len([r for r in caplog.records if "NETMAP не на все клоны" in r.getMessage()]) == 1
+
+
 def test_a_clone_with_netmap_logs_nothing(host, monkeypatch, caplog):
     _clone_up(host, monkeypatch, caplog, ifaces="awg0", netmap="10.8.1.0/24=169.254.96.0/24")
     assert "up" in sent(host.svc.reserve_in_tick())

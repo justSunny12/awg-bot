@@ -48,7 +48,7 @@
 # zone_post — наружу через veth: подсети клонов NETMAP 1:1 на блоки ZONE_POOL,
 # прочее (бот основы, резолвер зоны) и РФ-veth — маскарад). Таблицу с NETMAP
 # ядро ниже 5.8 отвергает — тогда маскарад для всех и строка ВНИМАНИЕ (netmap
-# в state.json пуст). Рисуется целиком при каждом
+# в state.json пуст, netmap_why=kernel). Рисуется целиком при каждом
 # вызове (delete + create: повторные --shell/--take правил не дописывают); вход
 # вебхука с veth (iifname awggv-n ip daddr <адрес зоны> tcp dport <порт>) — с
 # --serve, когда порт известен (webhook_port из state.json). Файервол ХОСТА
@@ -105,14 +105,18 @@
 #                 бот стартует без права отвечать (его даёт бот резерва).
 #                 Подсети клонов — на блоки ZONE_POOL (NETMAP в таблице зоны,
 #                 маршрут блока через awggv-h у хоста); в state.json —
-#                 netmap «подсеть=блок …» (пусто — NETMAP не встал, маскарад)
+#                 netmap «подсеть=блок …» (пусто — NETMAP не встал, маскарад;
+#                 причина — netmap_why: kernel — nft отверг, pool — в ZONE_POOL
+#                 нет свободного блока или подсети не влезают, bad_pool — пул
+#                 не разобран), netmap_miss — клоны без блока при частичном
+#                 плане (ВНИМАНИЕ; CAKE тогда dual-dsthost)
 #                 Без оболочки отказывает («сначала --shell»); GUEST_ADMIN —
 #                 адреса устройств админа основы: в state.json (admin), из
 #                 него — в набор admin4 при каждой перерисовке таблицы зоны
 #   --serve       обслуживание: состояние serving (порт гостя для файервола
 #                 хоста — его рисует бот), таблица зоны заново со входом
 #                 вебхука с veth, CAKE на внешнем интерфейсе
-#                 (triple-isolate nat — при NETMAP, иначе dual-dsthost nat), если
+#                 (triple-isolate nat — при NETMAP на всех клонах, иначе dual-dsthost nat), если
 #                 есть модуль sch_cake (иначе cake=absent, дисциплина не
 #                 тронута; CAKE, стоявший там до зоны, — с параметрами админа —
 #                 не трогается: cake=kept); без клона отказывает («сначала --take»)
@@ -276,7 +280,7 @@ zone_nft() {   # zone_nft "клоны" — таблица зоны; NETMAP от�
     [ -n "$nm" ] || return 1
     zone_nft_load "${1:-}" "" || return 1
     say "ВНИМАНИЕ: nft не принял NETMAP подсетей клонов — устройства основы выходят одним адресом зоны"
-    state_write netmap=
+    state_write netmap= netmap_why=kernel netmap_miss=
 }
 
 zone_nft_load() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
@@ -462,10 +466,35 @@ state_ifaces() {    # все клоны из состояния; старое с
 
 netmap_busy() {   # занятое у хоста: подсети veth зоны и маршруты main, кроме default и уже стоящих блоков на awggv-h
     printf '%s %s ' "$ZONE_CIDR" "$ZONE_RF_CIDR"
-    ip -4 route show 2>/dev/null | awk -v vh="$VH" '$1 != "default" && $0 !~ (" dev " vh "( |$)") { printf "%s ", $1 }'
+    # у маршрутов с типом (blackhole, unreachable, prohibit, throw) первое поле — тип, префикс — второе
+    ip -4 route show 2>/dev/null \
+        | awk -v vh="$VH" '$1 != "default" && $0 !~ (" dev " vh "( |$)") { printf "%s ", ($1 ~ /^[0-9]/) ? $1 : $2 }'
+}
+
+netmap_pool_ok() {   # пул ZONE_POOL — сеть IPv4; иначе NETMAP не ставится (netmap_why=bad_pool), а не падает молча
+    "$PY" -c 'import ipaddress, sys; sys.exit(0 if ipaddress.ip_network(sys.argv[1], strict=False).version == 4 else 1)' \
+        "$ZONE_POOL" 2>/dev/null
+}
+
+netmap_miss() {   # netmap_miss "план" имя=cidr… — клоны, чьей подсети в плане нет (частичный план)
+    "$PY" - "$@" <<'PYEOF' 2>/dev/null || true
+import ipaddress, sys
+have = {p.split("=", 1)[0] for p in sys.argv[1].split()}
+out = []
+for item in sys.argv[2:]:
+    name, _, cidr = item.partition("=")
+    try:
+        net = str(ipaddress.ip_interface(cidr).network)
+    except ValueError:
+        net = ""
+    if net not in have:
+        out.append(name)
+print(" ".join(out))
+PYEOF
 }
 
 netmap_plan() {   # netmap_plan "занятое" CIDR… — «подсеть=блок …»: подсети каждого клона — свой свободный блок ZONE_POOL той же длины
+    # пул разобран раньше (netmap_pool_ok): здесь глушится только трассировка самого плана
     "$PY" - "$ZONE_POOL" "$@" <<'PYEOF' 2>/dev/null || true
 import ipaddress, sys
 pool, out = ipaddress.ip_network(sys.argv[1], strict=False), []
@@ -527,7 +556,7 @@ cmd_take() {
     ip rule show | grep -q "iif $RH lookup $RF_TABLE" || ip rule add iif "$RH" lookup "$RF_TABLE" pref 150
     # клоны: создаются у хоста (сокет — у хоста), переносятся в зону под именами основы;
     # первый — основной интерфейс AWG, остальные — интерфейсы окна переезда профилей
-    local ifaces="$iface" ports="" pair extra_if extra_addr cidrs="$addr"
+    local ifaces="$iface" ports="" pair extra_if extra_addr cidrs="$addr" named="$iface=$addr"
     clone_up "$iface" "$addr" || die "клон $iface не поднялся"
     for pair in ${GUEST_EXTRA:-}; do
         extra_if="${pair%%=*}"; extra_addr="${pair#*=}"
@@ -535,12 +564,24 @@ cmd_take() {
         [ -f "$RUN/awg/$extra_if.conf" ] || { say "ВНИМАНИЕ: конфига $extra_if нет — интерфейс не поднят"; continue; }
         write_setconf "$extra_if"
         clone_up "$extra_if" "$extra_addr" || { say "ВНИМАНИЕ: клон $extra_if не поднялся"; continue; }
-        ifaces="$ifaces $extra_if"; cidrs="$cidrs $extra_addr"
+        ifaces="$ifaces $extra_if"; cidrs="$cidrs $extra_addr"; named="$named $extra_if=$extra_addr"
     done
     local i; for i in $ifaces; do ports="$ports $(awk '/^ListenPort/{print $3; exit}' "$RUN/awg/$i.conf")"; done
     ports="${ports# }"
-    # пул NETMAP — до таблицы зоны: она берёт его из состояния (и при каждой перерисовке)
-    state_write admin="${GUEST_ADMIN:-}" netmap="$(netmap_plan "$(netmap_busy)" $cidrs)"
+    # план NETMAP — до таблицы зоны: она берёт его из состояния (и при каждой перерисовке).
+    # Пустой план — причина в netmap_why (bad_pool — пул не разобран, pool — свободного блока
+    # нет или подсети не влезают; kernel ставит zone_nft), клоны без блока — netmap_miss
+    local nm="" why="" miss=""
+    if netmap_pool_ok; then
+        nm="$(netmap_plan "$(netmap_busy)" $cidrs)"
+        [ -n "$nm" ] || why=pool
+    else
+        say "ВНИМАНИЕ: пул $ZONE_POOL (reserve.zone_pool) не разобран — подсети клонов идут маскарадом"
+        why=bad_pool
+    fi
+    miss="$(netmap_miss "$nm" $named)"
+    [ -z "$nm" ] || [ -z "$miss" ] || say "ВНИМАНИЕ: NETMAP не на все клоны — без блока: $miss (подсеть не влезает в пул или свободного блока нет)"
+    state_write admin="${GUEST_ADMIN:-}" netmap="$nm" netmap_why="$why" netmap_miss="$miss"
     zone_nft "$ifaces" || die "nft отверг таблицу зоны"
     # ответы на блоки пула — через veth в зону (иначе хост увёл бы их маршрутом по умолчанию)
     for pair in $(state_get netmap); do ip route replace "${pair#*=}" via "$ZONE_V" dev "$VH"; done
@@ -596,7 +637,8 @@ cake_on() {
     [ "$prev" = "cake" ] && [ "$(state_get cake)" = "on" ] && prev="$(state_get cake_prev)"
     # с NETMAP хост видит каждое устройство основы своим адресом — делить и по источнику, и по
     # назначению; без него вся зона — один источник против каждого своего пользователя: только по назначению
-    local iso="dual-dsthost"; [ -n "$(state_get netmap)" ] && iso="triple-isolate"
+    # частичный план (клон без блока — netmap_miss) — его устройства для хоста один адрес: только по назначению
+    local iso="dual-dsthost"; [ -n "$(state_get netmap)" ] && [ -z "$(state_get netmap_miss)" ] && iso="triple-isolate"
     tc qdisc replace dev "$wan" root cake besteffort "$iso" nat 2>/dev/null && state_write cake=on cake_dev="$wan" cake_prev="${prev:-none}"
 }
 cake_off() {
@@ -634,13 +676,13 @@ conntrack_flush_ports() {   # записи conntrack по портам клон�
 cmd_relay() {
     need_root
     guest_stop
-    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces= netmap=
+    state_write phase=relay relay_to="${RELAY_TO:-}" relay_at="$(date -Iseconds)" iface= ifaces= netmap= netmap_why= netmap_miss=
     say "relay: ok"
 }
 cmd_teardown() {
     need_root
     guest_stop
-    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap=
+    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= netmap_why= netmap_miss=
     say "teardown: ok"
 }
 cmd_wipe() {
@@ -655,13 +697,14 @@ cmd_wipe() {
         # пересылка хвоста идёт на хосте по state.json: фаза и адрес основы остаются до конца relay
         state_write webhook_port= wiped_at="$(date -Iseconds)"
     else
-        state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= wiped_at="$(date -Iseconds)"
+        state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= netmap_why= netmap_miss= wiped_at="$(date -Iseconds)"
     fi
     say "wipe: ok"
 }
 cmd_status() {
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
     say "phase=$(state_get phase)"; say "iface=$(state_get iface)"; say "ifaces=$(state_ifaces)"; say "netmap=$(state_get netmap)"
+    say "netmap_why=$(state_get netmap_why)"; say "netmap_miss=$(state_get netmap_miss)"
     if mountpoint -q "$RUN" 2>/dev/null; then say "store=mounted"; else say "store=absent"; fi
     systemctl is-active awg-bot-guest.service >/dev/null 2>&1 && say "guest=active" || say "guest=inactive"
     [ -f "$VAR/rep.bin" ] && say "rep=present" || say "rep=absent"

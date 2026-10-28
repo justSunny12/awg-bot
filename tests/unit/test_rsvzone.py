@@ -127,6 +127,22 @@ def test_a_nonzero_exit_is_a_zone_error_with_the_tail_of_the_output(monkeypatch)
         rsvzone.run("take")
 
 
+def test_warnings_of_a_successful_mode_go_to_the_journal_and_the_rest_is_debug(monkeypatch, caplog):
+    """Код 0, а в выводе «ВНИМАНИЕ» (NETMAP не встал, клон окна не поднялся, нет
+    conntrack): вывод --take никто не пересказывает — без строки здесь
+    предупреждения скрипта терялись бы все."""
+    import logging
+    _Proc(monkeypatch, out="ВНИМАНИЕ: nft не принял NETMAP подсетей клонов — …\ntake: ok\n".encode(),
+          err="ВНИМАНИЕ: конфига awg1 нет — интерфейс не поднят\n".encode())
+    caplog.set_level(logging.DEBUG, logger="awgbot.infra.rsvzone")
+    assert rsvzone.run("take").endswith("интерфейс не поднят")
+    warns = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warns == ["резерв: зона --take: ВНИМАНИЕ: nft не принял NETMAP подсетей клонов — …",
+                     "резерв: зона --take: ВНИМАНИЕ: конфига awg1 нет — интерфейс не поднят"], warns
+    debug = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
+    assert debug == ["резерв: зона --take: take: ok"], debug
+
+
 @pytest.mark.parametrize("exc", [OSError("нет bash"), subprocess.TimeoutExpired("bash", 1)])
 def test_a_script_that_cannot_start_or_hangs_is_a_zone_error(monkeypatch, exc):
     _Proc(monkeypatch, exc=exc)

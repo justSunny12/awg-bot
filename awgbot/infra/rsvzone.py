@@ -19,15 +19,22 @@ rsvzone.py — обёртка install/reserve-zone-setup.sh (гостевая з
 
 Секретное в аргументы не кладётся никогда: конфиг клона — через stdin
 скрипта, ключи — только в файлах хранилища (0600).
+
+Вывод режима при коде 0 никто не пересказывает (процесс открытия — тоже):
+строки «ВНИМАНИЕ» скрипта (NETMAP не встал, клон окна не поднялся, нет
+conntrack) идут в журнал бота предупреждением здесь, остальное — отладкой.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+
+log = logging.getLogger(__name__)
 
 ZONE = os.environ.get("RSV_ZONE", "awg-guest")
 RUN_DIR = Path(os.environ.get("RSV_RUN", "/run/awg-bot-guest"))
@@ -86,6 +93,30 @@ def _script() -> Path:
     return config.BASE_DIR / "install" / "reserve-zone-setup.sh"
 
 
+DEFAULT_POOL = "169.254.96.0/19"                 # умолчание reserve.zone_pool — то же, что в conf/app.yaml и скрипте
+_pool_told: set[str] = set()                     # битые значения пула, о которых журнал уже сказал
+
+
+def _zone_pool() -> str:
+    """Пул NETMAP из `reserve.zone_pool`: сеть IPv4 — как есть; битое значение (опечатка,
+    IPv6) скрипту не передаётся — строка в журнал один раз на значение и умолчание:
+    иначе план молча остался бы пустым, а причина «NETMAP не встал» — ложной."""
+    import ipaddress
+    from awgbot.core import settings
+    raw = str(settings.get("app.reserve.zone_pool", DEFAULT_POOL) or DEFAULT_POOL).strip()
+    try:
+        net = ipaddress.ip_network(raw, strict=False)
+        if net.version != 4:
+            raise ValueError("не IPv4")
+        return str(net)
+    except ValueError as e:
+        if raw not in _pool_told:
+            _pool_told.add(raw)
+            log.warning("резерв: reserve.zone_pool = %r не разобран (%s) — NETMAP подсетей клонов по умолчанию %s",
+                        raw, e, DEFAULT_POOL)
+        return DEFAULT_POOL
+
+
 def _zone_env() -> dict:
     """Подсети veth зоны, пул NETMAP и таблица РФ-доступа — из настроек, чтобы скрипт и бот не
     разошлись, если умолчания сменили."""
@@ -96,7 +127,7 @@ def _zone_env() -> dict:
         from awgbot.core import settings
         return {**paths, "ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
                 "ZONE_RF_CIDR": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "169.254.77.4/30"),
-                "ZONE_POOL": str(settings.get("app.reserve.zone_pool", "169.254.96.0/19") or "169.254.96.0/19"),
+                "ZONE_POOL": _zone_pool(),
                 "RF_TABLE": str(int(config.ROUTING_TABLE))}
     except Exception:                                     # noqa: BLE001 — настройки недоступны (CLI без conf)
         return paths
@@ -116,6 +147,11 @@ def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout
     if proc.returncode != 0:
         tail = "\n".join(out.splitlines()[-4:]) if out else f"код {proc.returncode}"
         raise ZoneError(tail)
+    for line in out.splitlines():                        # код 0: предупреждения скрипта — в журнал, прочее — отладкой
+        if line.startswith("ВНИМАНИЕ"):
+            log.warning("резерв: зона --%s: %s", mode.lstrip("-"), line)
+        elif line.strip():
+            log.debug("резерв: зона --%s: %s", mode.lstrip("-"), line)
     return out
 
 

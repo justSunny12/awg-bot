@@ -2,8 +2,10 @@
 (install/reserve-zone-setup.sh): план блоков пула `ZONE_POOL` (`netmap_plan`),
 правила `snat ip prefix` в таблице зоны и откат на маскарад, если nft их не
 принял (`zone_nft`), маршрут блока у хоста через veth (`--take`), режим CAKE
-по наличию NETMAP (`cake_on`) и сброс `netmap` в состоянии при `--relay`,
-`--teardown`, `--wipe`.
+по наличию NETMAP (`cake_on`), причина пустого плана в состоянии
+(`netmap_why`: kernel | pool | bad_pool), клоны без блока при частичном
+плане (`netmap_miss`) и сброс всего этого при `--relay`, `--teardown`,
+`--wipe`.
 
 Функции скрипта подключаются целиком (без разбора режима в конце), root,
 `ip`, `nft`, `tc`, `mount`, `systemctl` подменены в PATH; пространство зоны —
@@ -260,6 +262,87 @@ def test_take_avoids_a_block_the_host_already_routes(zone):
         ["ip route replace 169.254.97.0/24 via 169.254.77.2 dev awggv-h"], "маршрут хоста на 169.254.96.0/24 перебит"
 
 
+def test_typed_routes_are_busy_by_their_prefix_not_by_their_type(zone):
+    """У `blackhole`/`unreachable`/`prohibit`/`throw` первое поле — тип, префикс
+    — второе: не возьми его — `ip route replace` блока молча перекрыл бы
+    затычку админа, а с --teardown она и вовсе пропала бы."""
+    zone.routes("default via 203.0.113.1 dev eth0\n"
+                "blackhole 169.254.96.0/24\n"
+                "unreachable 169.254.97.0/24 proto static\n"
+                "prohibit 169.254.98.0/24\n"
+                "throw 169.254.99.0/24\n"
+                "10.8.1.0/24 dev awg0 proto kernel scope link src 10.8.1.1\n")
+    r = zone.sh("netmap_busy", ZONE_CIDR="169.254.77.0/30", ZONE_RF_CIDR="169.254.77.4/30")
+    assert r.returncode == 0, r.stderr
+    got = r.stdout.split()
+    for pfx in ("169.254.96.0/24", "169.254.97.0/24", "169.254.98.0/24", "169.254.99.0/24", "10.8.1.0/24"):
+        assert pfx in got, f"{pfx} не в занятом: {got}"
+    assert not {"blackhole", "unreachable", "prohibit", "throw"} & set(got), got
+    zone.routes("default via 203.0.113.1 dev eth0\nblackhole 169.254.96.0/24\n")
+    assert _take(zone, extra=False).returncode == 0
+    assert zone.read_state()["netmap"] == "10.8.1.0/24=169.254.97.0/24", "блок затычки админа взят под NETMAP"
+
+
+# ── причина пустого плана и частичный план ───────────────────────────────────
+
+def test_a_pool_that_does_not_parse_is_a_warning_with_its_own_reason(zone):
+    """Опечатка в reserve.zone_pool: раньше трассировка Python уходила в /dev/null,
+    и «NETMAP не встал» было не отличить от «ядро не приняло»."""
+    r = _take(zone, extra=False, ZONE_POOL="169.254.96.0/33")
+    assert r.returncode == 0 and "take: ok" in r.stdout, r.stdout + r.stderr
+    assert "ВНИМАНИЕ: пул 169.254.96.0/33 (reserve.zone_pool) не разобран" in r.stdout, r.stdout
+    st = zone.read_state()
+    assert (st["netmap"], st["netmap_why"]) == ("", "bad_pool"), st
+    assert not [c for c in zone.calls() if c.startswith("ip route replace 169.254.9")]
+    assert all("snat" not in t for t, _ in zone.tables())
+
+
+def test_a_busy_pool_is_reason_pool_and_a_rejecting_kernel_is_reason_kernel(zone):
+    zone.routes("default via 203.0.113.1 dev eth0\n" + "".join(f"169.254.{96 + i}.0/24 dev ens4\n" for i in range(32)))
+    assert _take(zone, extra=False).returncode == 0
+    st = zone.read_state()
+    assert (st["netmap"], st["netmap_why"]) == ("", "pool"), st
+    zone.routes("default via 203.0.113.1 dev eth0\n")
+    zone.reject_prefix()
+    assert _take(zone, extra=False).returncode == 0
+    st = zone.read_state()
+    assert (st["netmap"], st["netmap_why"]) == ("", "kernel"), st
+
+
+def test_a_full_plan_has_no_reason_and_no_missing_clones(zone):
+    assert _take(zone).returncode == 0
+    st = zone.read_state()
+    assert st["netmap"] and st["netmap_why"] == "" and st["netmap_miss"] == "", st
+
+
+def test_a_partial_plan_names_the_clones_without_a_block_and_keeps_cake_by_destination_only(zone):
+    """Два клона, в пуле место на один: второй идёт маскарадом — строка ВНИМАНИЕ
+    с его именем, `netmap_miss` в состоянии, CAKE — dual-dsthost: для хоста
+    устройства этого клона один адрес, triple-isolate делил бы их долей одного."""
+    r = _take(zone, ZONE_POOL="169.254.96.0/24")
+    assert r.returncode == 0 and "take: ok" in r.stdout, r.stdout + r.stderr
+    st = zone.read_state()
+    assert st["netmap"] == "10.8.1.0/24=169.254.96.0/24" and st["netmap_why"] == "" and st["netmap_miss"] == "awg1", st
+    assert any(ln.startswith("ВНИМАНИЕ: NETMAP не на все клоны") and "awg1" in ln for ln in r.stdout.splitlines()), r.stdout
+    assert zone.sh("cake_on").returncode == 0
+    cake = [c for c in zone.calls() if c.startswith("tc qdisc replace")]
+    assert cake == ["tc qdisc replace dev eth0 root cake besteffort dual-dsthost nat"], cake
+
+
+@pytest.mark.parametrize("mode", ["cmd_serve", "cmd_shell"])
+def test_redrawing_the_table_in_serve_and_shell_keeps_the_netmap_from_the_state(zone, mode):
+    """Перерисовка таблицы посреди обслуживания берёт клоны и план из состояния:
+    правка, передавшая туда пустой список клонов, молча сняла бы NETMAP."""
+    zone.put_state(phase="taking", iface="awg0", ifaces="awg0 awg1",
+                   netmap="10.8.1.0/24=169.254.96.0/24 10.8.2.0/24=169.254.97.0/24")
+    (zone.d / "links").mkdir(exist_ok=True)
+    r = zone.sh(mode, WEBHOOK_PORT="8443")
+    assert r.returncode == 0, r.stdout + r.stderr
+    (table, _), = zone.tables()
+    assert "map { 10.8.1.0/24 : 169.254.96.0/24 }" in table and "map { 10.8.2.0/24 : 169.254.97.0/24 }" in table, table
+    assert zone.read_state()["netmap"].split() == ["10.8.1.0/24=169.254.96.0/24", "10.8.2.0/24=169.254.97.0/24"]
+
+
 # ── таблица зоны ─────────────────────────────────────────────────────────────
 
 def _post(table: str) -> list[str]:
@@ -333,8 +416,9 @@ def test_a_table_without_netmap_rejected_is_not_retried(zone):
 
 # ── --take ───────────────────────────────────────────────────────────────────
 
-def _take(zone: _Zone, *, extra: bool = True) -> subprocess.CompletedProcess:
-    env = {"GUEST_IF": "awg0", "GUEST_ADDR": "10.8.1.1/24", "GUEST_DNS": "", "GUEST_UPSTREAMS": "", "GUEST_ADMIN": ""}
+def _take(zone: _Zone, *, extra: bool = True, **more: str) -> subprocess.CompletedProcess:
+    env = {"GUEST_IF": "awg0", "GUEST_ADDR": "10.8.1.1/24", "GUEST_DNS": "", "GUEST_UPSTREAMS": "", "GUEST_ADMIN": "",
+           **more}
     if extra:
         (zone.run_dir / "awg").mkdir(parents=True, exist_ok=True)
         (zone.run_dir / "awg" / "awg1.conf").write_text(CONF.format(port=45878, addr="10.8.2.1/24"))
@@ -404,15 +488,18 @@ def test_leaving_the_zone_clears_the_netmap(zone, mode):
     блоков у хоста по пустому месту и неверный режим CAKE при следующем
     переезде до --take."""
     zone.put_state(phase="serving", iface="awg0", ifaces="awg0", netmap="10.8.1.0/24=169.254.96.0/24",
-                   relay_to="", port="45877", ports="45877")
+                   netmap_why="", netmap_miss="awg1", relay_to="", port="45877", ports="45877")
     r = zone.sh(mode, RELAY_TO="203.0.113.5")
     assert r.returncode == 0, r.stdout + r.stderr
     st = zone.read_state()
     assert st.get("netmap", "") == "", f"{mode}: netmap остался {st.get('netmap')!r}"
+    assert (st.get("netmap_why", ""), st.get("netmap_miss", "")) == ("", ""), f"{mode}: причина или клоны без блока остались: {st}"
     assert all("snat" not in t for t, _ in zone.tables()), "таблица без клонов нарисована с NETMAP"
 
 
-def test_status_prints_the_netmap(zone):
-    zone.put_state(phase="serving", netmap="10.8.1.0/24=169.254.96.0/24")
+def test_status_prints_the_netmap_its_reason_and_the_clones_without_a_block(zone):
+    zone.put_state(phase="serving", netmap="10.8.1.0/24=169.254.96.0/24", netmap_why="", netmap_miss="awg1")
     lines = zone.sh("cmd_status").stdout.splitlines()
-    assert "netmap=10.8.1.0/24=169.254.96.0/24" in lines, lines
+    assert "netmap=10.8.1.0/24=169.254.96.0/24" in lines and "netmap_why=" in lines and "netmap_miss=awg1" in lines, lines
+    zone.put_state(phase="serving", netmap="", netmap_why="kernel")
+    assert "netmap_why=kernel" in zone.sh("cmd_status").stdout.splitlines()
