@@ -605,6 +605,21 @@ def test_a_source_short_of_rows_and_cut_by_the_storage_counts_both_but_logs_only
     assert logged == src[1999:], len(logged)
 
 
+def test_the_callers_tail_note_wins_over_the_combined_line_when_short_and_cut(db, clock, caplog):
+    """Источник недодал (missing) и хранилище обрезало — но вызывающий назвал, где
+    остальное (Т-Ж4: «в журнале бота на «Beta»»): хвост — ровно его текст.
+    Объединённая строка «N в снимок не вошли, остальные — в журнале бота» здесь
+    отправила бы админа искать спорные правки в журнале не того бота."""
+    src = _rows(2100)
+    note = "остальные — в журнале бота на «Beta»"
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", src, n=2200, missing=100, tail_note=note)
+    rows = db.list_snap_get(key, CHAT)["rows"]
+    assert len(rows) == listsnap.MAX_ROWS and rows[:-1] == src[:1999], len(rows)
+    assert rows[-1] == f"… и ещё 201 — {note}", rows[-1]
+    _portions, logged = _cut_log(caplog, key)
+    assert logged == src[1999:], f"отрезанное хранилищем не в журнале: {len(logged)} строк из 101"
+
 def test_one_row_over_the_byte_limit_among_short_ones_still_is_not_written(db, clock, caplog):
     """Строка больше 256 КБ первой — снимок из короткого остатка не собрать (в
     снимок входят только первые строки): сбой записи, базе ничего, журналу —

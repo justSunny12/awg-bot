@@ -258,6 +258,70 @@ def test_the_bot_and_the_terminal_guard_judge_the_c9_wait_the_same(mv, capsys):
     agree("отметка битая")
 
 
+# ── сторож терминала: слова причины и обход ─────────────────────────────────
+# Причина ожидания — теми же словами, что отказ «⬆️ Обновить» в боте, и с
+# подсказкой обхода: человек у терминала, увидевший другие слова, чем в чате,
+# не узнаёт тот же случай; без подсказки он не знает, как выйти из ожидания,
+# когда резерв не вернётся.
+
+_HINT = "; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (правки с резерва не придут)"
+
+
+def _busy_err(capsys) -> tuple[int, str, str]:
+    from tools import rsvbusy
+    code = rsvbusy.main()
+    got = capsys.readouterr()
+    return code, got.out.strip(), got.err.strip()
+
+
+def test_the_own_tail_reason_uses_the_bots_words_for_update_and_restore(duo, wall, capsys):
+    _tail_on_its_way(duo)
+    duo.a.rsv_update("rsv_tail", at=wall.ago(1))
+    code, out, err = _busy_err(capsys)
+    want = tailmod.OWN_TAIL_REFUSED.format(name="Beta", what="обновление и восстановление") + _HINT
+    assert (code, out) == (3, want), f"причина «свой хвост» не словами бота или без подсказки: {code} {out!r}"
+    assert err == "", f"при отказе лишнее в stderr: {err!r}"
+
+
+def test_the_c9_reason_uses_the_bots_words(mv, capsys):
+    rm.go_away(mv.svc)
+    mv.svc.reserve_set_out("home", await_merge=True)
+    code, out, _err = _busy_err(capsys)
+    want = tailmod.C9_WAIT_REFUSED.format(name="Beta") + _HINT
+    assert (code, out) == (3, want), f"причина С9 не словами бота или без подсказки: {code} {out!r}"
+
+
+def test_the_bypass_lets_the_own_tail_go_and_says_so_on_stderr(duo, wall, capsys, monkeypatch):
+    """AWG_RESERVE_IGNORE_WAIT=1: код 0, stdout пуст (сторож обновления смотрит на него
+    при коде 3), в stderr — что пропущено и что правки не придут."""
+    _tail_on_its_way(duo)
+    duo.a.rsv_update("rsv_tail", at=wall.ago(1))
+    monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
+    code, out, err = _busy_err(capsys)
+    assert (code, out) == (0, ""), f"обход не пустил: {code} {out!r}"
+    reason = tailmod.OWN_TAIL_REFUSED.format(name="Beta", what="обновление и восстановление")
+    assert err == f"резерв: {reason} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: правки с резерва не придут", err
+
+
+def test_the_bypass_lets_the_c9_wait_go_and_says_so_on_stderr(mv, capsys, monkeypatch):
+    rm.go_away(mv.svc)
+    mv.svc.reserve_set_out("home", await_merge=True)
+    monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
+    code, out, err = _busy_err(capsys)
+    assert (code, out) == (0, ""), f"обход не пустил: {code} {out!r}"
+    assert err.startswith("резерв: " + tailmod.C9_WAIT_REFUSED.format(name="Beta")) and "ПРОДОЛЖАЮ" in err, err
+
+
+def test_the_bypass_does_not_lift_clients_away_and_is_silent_when_nothing_waits(mv, capsys, monkeypatch):
+    """Обход снимает только ожидание: пользователи у резерва — по-прежнему отказ; ждать
+    нечего — в stderr ни слова о «ПРОДОЛЖАЮ»."""
+    monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
+    assert _busy_err(capsys) == (0, "", ""), "свободный сервер с обходом пишет лишнее"
+    mv.svc.reserve_set_out("away")
+    code, out, err = _busy_err(capsys)
+    assert code == 3 and "(away)" in out and err == "", f"обход снял отъезд пользователей: {code} {out!r} {err!r}"
+
+
 # ── карточка: «данные для переезда у … от …» ────────────────────────────────
 
 def _card_at(svc) -> str:

@@ -246,6 +246,25 @@ def test_no_space_at_the_reserve_gives_no_jack_keeps_the_session_and_tells_once(
     assert len(rm.notices(again)) == 1, "новый эпизод нехватки места не сказан"
 
 
+
+@pytest.mark.parametrize("err, advice, not_advice", [
+    (errno.ENOSPC, "освободи место на диске", "проверь диск"),
+    (errno.EIO, "проверь диск", "освободи место"),
+], ids=["no-space", "io-error"])
+def test_the_disk_advice_follows_the_errno(duo, monkeypatch, err, advice, not_advice):
+    """Совет в уведомлении — по причине: нет места — освободить; прочий сбой ввода-
+    вывода — проверить диск (чистка места умирающему диску не поможет, а админ
+    потратит на неё время, пока журнал второй стороны стоит)."""
+    duo.journal_on()
+
+    def broken(records):
+        raise OSError(err, "disk says no")
+    monkeypatch.setattr(duo.b_keep, "append_events", broken)
+    duo.edit("Пётр")
+    told = [n.text for n in rm.notices(duo.a_to_b(duo.a.reserve_jrn_tick()))]
+    assert len(told) == 1 and "не пишется" in told[0], told
+    assert advice in told[0] and not_advice not in told[0], told[0]
+
 # ── A19, F4-7: копия базы только когда нужна ─────────────────────────────────
 
 @pytest.fixture()

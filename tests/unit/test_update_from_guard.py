@@ -180,3 +180,21 @@ def test_a_shift_waiting_for_the_next_release_passes_and_a_minimum_ahead_of_rele
     monkeypatch.setattr(compat, "UPDATE_FROM", "4.1.0")
     with pytest.raises(AssertionError, match="новее последнего выпуска"):
         test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
+
+
+def test_a_release_to_one_role_with_its_minimum_at_update_from_passes(tmp_path, monkeypatch):
+    """Выпуск только main (как 4.0.1) с requires = UPDATE_FROM: дерево выпущено,
+    сторож зелёный — выпуск одной роли не обязан ломать сборку следующей."""
+    _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.0", "gw": "4.0.0"},
+                                     "4.1.1": {"main": "4.0.0"}}, tree="4.1.1", update_from="4.0.0")
+    test_update_from_is_a_released_step_addressed_to_both_roles()
+    test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
+    test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()   # без skip
+
+
+def test_a_release_to_one_role_with_a_minimum_above_update_from_is_caught(tmp_path, monkeypatch):
+    """Выпуск одной роли — не лазейка: его requires выше константы ловится так же."""
+    _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.0", "gw": "4.0.0"},
+                                     "4.1.1": {"main": "4.0.2"}}, tree="4.1.1", update_from="4.0.0")
+    with pytest.raises(AssertionError, match="не равенство и не сдвиг вверх"):
+        test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()

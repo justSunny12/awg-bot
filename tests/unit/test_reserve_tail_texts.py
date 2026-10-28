@@ -162,3 +162,54 @@ def test_tj6_texts_and_no_final_period():
     assert ok == "🟢 Данные здесь снова идут за ботом на «Beta»"
     for t in (stalled, ok, rn.tail_moved("crash", "Beta", 1), rn.tail_disputed("crash", "Beta", ["a"], 1)):
         assert not t.rstrip().endswith("."), t
+
+
+# ── «не дошла / не дошли» по форме числа ────────────────────────────────────
+# Глагол согласуется с числом так же, как существительное: «21 правка не дошли» —
+# безграмотная строка в уведомлении, которое админ должен прочитать и поверить.
+
+@pytest.mark.parametrize("n, noun, verb", [
+    (1, "1 правка", "не дошла"), (2, "2 правки", "не дошли"), (5, "5 правок", "не дошли"),
+    (21, "21 правка", "не дошла"), (11, "11 правок", "не дошли"),
+])
+def test_lost_edits_agree_with_the_number(n, noun, verb):
+    text = rn.jrn_lost("Beta", 100, 100 + n - 1)
+    assert text.startswith(f"⚠️ {noun} бота на «Beta» {verb} до возврата"), text
+
+
+@pytest.mark.parametrize("n, noun, verb", [
+    (1, "1 моё решение", "не дошло"), (2, "2 моих решения", "не дошли"), (5, "5 моих решений", "не дошли"),
+    (21, "21 моё решение", "не дошло"), (11, "11 моих решений", "не дошли"),
+])
+def test_my_lost_decisions_agree_with_the_number(n, noun, verb):
+    text = rn.jrn_mine_lost("Beta", 7, 7 + n - 1)
+    assert text.startswith(f"⚠️ {noun} перед переездом до базы бота на «Beta» {verb} (журнал"), text
+
+
+# ── журнал второй стороны не пишется: совет по причине ──────────────────────
+
+def test_a_full_disk_asks_to_free_space():
+    text = rn.keep_write_failed("Alpha", "[Errno 28] No space left on device", no_space=True)
+    assert "освободи место на диске, запись возобновится сама" in text and "проверь диск" not in text, text
+    assert not text.endswith("."), text
+
+
+def test_another_disk_error_asks_to_check_the_disk_not_to_free_space():
+    """EIO, EROFS: место есть — совет «освободи место» уводит админа чистить диск,
+    пока тот сыплется."""
+    text = rn.keep_write_failed("Alpha", "[Errno 5] Input/output error", no_space=False)
+    assert "проверь диск, запись возобновится сама" in text and "освободи место" not in text, text
+    assert rn.keep_write_failed("Alpha", "x") == rn.keep_write_failed("Alpha", "x", no_space=False), \
+        "по умолчанию — не «нет места»"
+
+
+# ── отказ С9 во всплывашке ──────────────────────────────────────────────────
+
+def test_the_c9_refusal_with_a_long_pair_name_keeps_its_advice_within_a_toast():
+    """Отказ «⬆️ Обновить» идёт всплывашкой `str(e)[:200]` (handlers/fleet.py): с
+    именем пары в 60 знаков совет «удали пару» обязан уцелеть — иначе админ, чей
+    резерв не вернётся, не узнаёт, как выйти из ожидания."""
+    from awgbot.domain.services.reserve.journal.tail import C9_WAIT_REFUSED
+    toast = C9_WAIT_REFUSED.format(name="Ж" * 60)[:200]
+    assert toast.endswith("удали пару в «🛟 Резерв»"), toast
+    assert toast.count("Ж" * 60) == 1, "имя пары в отказе дважды — съедает место совета"

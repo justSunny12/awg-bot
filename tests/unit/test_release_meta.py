@@ -135,3 +135,42 @@ def test_the_tool_is_not_shipped():
     import tarfile
     info = tarfile.TarInfo("./tools/release_meta.py")
     assert dist._tar_filter(info) is None
+
+
+# ── requires адресатов = UPDATE_FROM ────────────────────────────────────────
+
+def test_the_tool_refuses_a_minimum_other_than_update_from():
+    """`--main X --gw X` с X ≠ UPDATE_FROM — код 1 и причина: иначе в выпуск ушёл бы
+    минимум, с которым разошёлся бы сторож терминала (`awg-bot update` читает
+    UPDATE_FROM), — бот скажет «сначала vX», а терминал пустит или откажет иначе."""
+    floor = tool.update_from()
+    other = "3.3.0" if floor != "3.3.0" else "3.2.0"
+    for args in (("--main", other, "--gw", other), ("--main", floor, "--gw", other), ("--gw", other)):
+        proc = _run(*args)
+        assert proc.returncode == 1 and f"≠ UPDATE_FROM {floor}" in proc.stderr, (args, proc.returncode, proc.stderr)
+        assert proc.stdout == "", f"при отказе метаданные всё равно напечатаны: {proc.stdout!r}"
+
+
+def test_the_tool_builds_with_the_minimum_equal_to_update_from():
+    floor = tool.update_from()
+    for args, roles in ((("--main", floor, "--gw", floor), {"main", "gw"}), (("--main", floor), {"main"})):
+        proc = _run(*args)
+        assert proc.returncode == 0, (args, proc.stderr)
+        meta = json.loads(proc.stdout)
+        assert {r: s["requires"] for r, s in meta["roles"].items()} == {r: floor for r in roles}, meta
+
+
+def test_update_from_is_read_exactly_as_the_package_sees_it():
+    from awgbot.core import compat
+    assert tool.update_from() == compat.UPDATE_FROM
+
+
+def test_the_check_of_a_ready_file_does_not_compare_with_update_from(tmp_path):
+    """--check проверяет выпущенный файл (в том числе старых выпусков с другим
+    минимумом) — сверка с нынешним UPDATE_FROM ему не нужна."""
+    floor = tool.update_from()
+    old = "3.3.0" if floor != "3.3.0" else "3.2.0"
+    path = tmp_path / "v3.3.1.json"
+    path.write_text(json.dumps(_meta(roles={"main": {"requires": old}, "gw": {"requires": old}})), encoding="utf-8")
+    proc = _run("--check", str(path))
+    assert proc.returncode == 0 and "UPDATE_FROM" not in proc.stderr, proc.stderr

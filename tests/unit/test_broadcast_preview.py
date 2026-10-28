@@ -50,3 +50,22 @@ def test_the_extension_footer_of_twelve_or_fewer_has_no_counter():
 ])
 def test_the_refusal_of_a_preview_is_named_by_its_cause(err, head):
     assert tb.broadcast_preview_refused(err).startswith(head), tb.broadcast_preview_refused(err)
+
+
+@pytest.mark.parametrize("n, head", [(1, "1 адресат"), (21, "21 адресат"), (22, "22 адресата"), (25, "25 адресатов"),
+                                     (11, "11 адресатов"), (112, "112 адресатов")])
+def test_the_extension_footer_head_agrees_with_the_number(n, head):
+    """«21 адресатов» — склонение по последней цифре, а не «1 / 2–4 / прочее»."""
+    foot = tb._extension_footer(30, _plan(n), n)
+    assert foot.split("\n")[0] == f"{head} · продление на <b>30 дней</b>:", foot.split("\n")[0]
+
+
+def test_the_rest_counter_is_its_own_last_line_and_the_last_dates_stay_clean():
+    """150 адресатов: двенадцать строк с датами, последняя кончается датой; счёт
+    остатка — отдельной строкой в самом конце, к «01.11 → 01.12» не приклеен
+    (иначе он читается как часть срока последнего профиля)."""
+    lines = tb._extension_footer(30, _plan(150), 150).split("\n")
+    assert lines[-1] == "… и ещё 138", lines[-3:]
+    dated = lines[1:-1]
+    assert len(dated) == tb.NAMES_SHOWN and all(ln.startswith("• ") for ln in dated), dated
+    assert re.search(r"→ \d\d\.\d\d(\.\d\d)?$", dated[-1]), f"после даты последнего профиля хвост: {dated[-1]!r}"
