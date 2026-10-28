@@ -20,6 +20,8 @@ journal — эпоха и следование (журнал данных рез
 - `tail` — хвост старой эпохи: отправка бывшим держателем, перебазирование у
   держателя, `jtail_ok` со списком спорного, Т-Ж4/Т-Ж5 (только у основы), отказ
   обновления, пока хвост не пришёл;
+- `tail_notes` — Т-Ж4 (строки спорного, снимок всего списка) и Т-Ж5 — только у
+  основы;
 - `c9` — «вернуть без резерва»: правки бота на резерве после потери связи —
   хвостом при встрече, Т-Ж4/Т-Ж5 после возврата;
 - `guestj` — бот основы на резерве с журналом: свой журнал данных на диске,
@@ -35,6 +37,7 @@ from .follow import ReserveFollowMixin
 from .guestj import ReserveGuestJournalMixin
 from .handover import ReserveHandoverMixin
 from .tail import ReserveTailMixin
+from .tail_notes import ReserveTailNotesMixin
 from .keep import ReserveKeepMixin
 from .route import ReserveJournalRouteMixin
 from .ship import ReserveShipMixin
@@ -42,7 +45,7 @@ from .ship import ReserveShipMixin
 
 class ReserveJournalMixin(ReserveEpochMixin, ReserveFollowMixin, ReserveShipMixin, ReserveKeepMixin,
                           ReserveJournalRouteMixin, ReserveGuestJournalMixin, ReserveHandoverMixin, ReserveTailMixin,
-                          ReserveC9Mixin):
+                          ReserveTailNotesMixin, ReserveC9Mixin):
     """Эпоха, следование, доставка и хранение журнала."""
 
 
