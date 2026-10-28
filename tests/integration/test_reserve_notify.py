@@ -29,6 +29,14 @@ mv = rm.mv
 NOW = int(timeutil.now().timestamp())
 
 
+@pytest.fixture(autouse=True)
+def _fresh_now():
+    """«Сейчас» — на начало каждого теста, а не на импорт модуля: под нагрузкой прогон
+    доходит до теста через минуты, и «рукопожатие минуту назад» переставало быть свежим."""
+    global NOW
+    NOW = int(timeutil.now().timestamp())
+
+
 @pytest.fixture()
 def world(mv, make_active_client, monkeypatch):
     """Несколько пользователей с устройствами; `dump` — что показывает `awg show dump` клона/сервера."""
