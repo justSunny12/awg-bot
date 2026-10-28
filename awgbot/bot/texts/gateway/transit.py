@@ -182,23 +182,74 @@ def short_name(name: str, limit: int = 80) -> str:
     return name if len(name) <= limit else name[:limit - 1] + "…"
 
 
+_NOT_DOMAIN = ": не похоже на домен, пропущен"
+
+
+def _clean(r: str) -> str:
+    """Домены в строках итога скрипт сам обернул в <code> (иначе Telegram делает
+    из них ссылки): остальное экранируем, его теги возвращаем."""
+    return _e(r).replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+
+
 def _result_line(row: str) -> str:
-    """Строка итога скрипта — со значком по исходу: добавлен/убран — ✅,
-    уже в списке / в списках нет — ℹ️, пропущен / нельзя — ⚠️."""
+    """Строка итога скрипта — готовой разметкой, со значком по исходу: добавлен/убран
+    — ✅, уже в списке / в списках нет — ℹ️, пропущен / нельзя — ⚠️. Строку «не
+    похоже на домен» скрипт печатает с вводом человека как есть: экранируем его
+    целиком и оборачиваем в <code> сами — <code> из ввода в разметку не вернётся."""
+    if row.endswith(_NOT_DOMAIN):
+        return "⚠️ <code>" + _e(row[:-len(_NOT_DOMAIN)]) + "</code>: не домен, пропущен"
+    row = _clean(row)
     if row.endswith((": добавлен", ": убран")):
         return "✅ " + row
     if row.endswith((": уже в списке", ": в списках нет")):
         return "ℹ️ " + row
-    if row.endswith(": не похоже на домен, пропущен"):
-        # скрипт печатает ввод как есть: моноширинным, как домены соседних строк
-        # (экранирует clean() в gateway_transit_result, теги <code> он оставляет)
-        return "⚠️ <code>" + row[:-len(": не похоже на домен, пропущен")] + "</code>: не домен, пропущен"
     if row.endswith(": это адрес самого сервера AWG — в туннель его не направить"):
         return "⚠️ " + row
     return row
 
 
 BATCH_SUMMARY_FROM = 6        # с такого числа доменов итог — сводкой, перечень только пропущенных
+
+
+def _result_parts(out: str, cmd: str) -> tuple[list[str], list[str]]:
+    """(сводка, перечень) из вывода скрипта — один разбор для итога на экране и
+    снимка: строки «домен: исход» без служебных (с отступом); от
+    BATCH_SUMMARY_FROM доменов (кроме del) — сводка «✅ Добавлено: 80 · уже в
+    списке: 3 · пропущено: 2» (нули не выводим) и перечень только пропущенных.
+    Строки перечня — готовые, со значками и экранированием."""
+    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
+    if len(rows) >= BATCH_SUMMARY_FROM and cmd != "del":
+        added = sum(1 for r in rows if r.endswith(": добавлен"))
+        known = sum(1 for r in rows if r.endswith(": уже в списке"))
+        skipped = [r for r in rows if not r.endswith((": добавлен", ": уже в списке"))]
+        parts = [f"✅ Добавлено: {added}"]
+        if known:
+            parts.append(f"уже в списке: {known}")
+        if skipped:
+            parts.append(f"пропущено: {len(skipped)}")
+        return [" · ".join(parts)], [_result_line(r) for r in skipped]
+    return [], [_result_line(r) for r in rows]
+
+
+def _fit(summary: list[str], rows: list[str], budget: int) -> list[str]:
+    """Сколько строк перечня влезает в budget знаков после сводки (итог идёт
+    первой строкой экрана, см. note_budget)."""
+    keep, size = [], sum(len(ln) + 1 for ln in summary)
+    for line in rows:
+        if size + len(line) > budget:
+            break
+        keep.append(line)
+        size += len(line) + 1
+    return keep
+
+
+def transit_result_cut(ok: bool, out: str, budget: int = 3300, cmd: str = "add") -> int:
+    """Сколько строк перечня в итог не влезает: больше нуля — обработчик пишет
+    снимок всех строк (transit_result_rows) и даёт хвосту ссылку на него."""
+    if not ok:
+        return 0
+    summary, rows = _result_parts(out, cmd)
+    return len(rows) - len(_fit(summary, rows, budget))
 
 
 def _fail_reason(out: str, cmd: str) -> str:
@@ -219,18 +270,8 @@ def transit_result_title(cmd: str) -> str:
 
 
 def transit_result_rows(ok: bool, out: str, cmd: str = "add") -> list[str]:
-    """Все строки итога, как на экране, — для снимка, когда итог не влез."""
-    if not ok:
-        return []
-    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
-    if len(rows) >= BATCH_SUMMARY_FROM and cmd != "del":
-        rows = [r for r in rows if not r.endswith((": добавлен", ": уже в списке"))]
-    return [_clean(_result_line(r)) for r in rows]
-
-
-def _clean(r: str) -> str:
-    # домены скрипт обернул в <code> (иначе Telegram делает из них ссылки): остальное экранируем
-    return _e(r).replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+    """Все строки перечня итога, как на экране, — для снимка, когда итог не влез."""
+    return _result_parts(out, cmd)[1] if ok else []
 
 
 def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 3300,
@@ -239,11 +280,11 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     списке» со значками по исходу; служебные строки про адреса в наборе (с
     отступом) не показываем. Больше BATCH_SUMMARY_FROM доменов — сводка
     «✅ Добавлено: 80 · пропущено: 2» (нулевые части опущены) и перечень только
-    пропущенных. Отказ — «⚠️ example.org не добавлен: <причина>» (всплывашка
-    у «➖», без разметки). sync — хвост про синхронизацию: "online" |
+    пропущенных (_result_parts). Отказ — «⚠️ example.org не добавлен: <причина>»
+    (всплывашка у «➖», без разметки). sync — хвост про синхронизацию: "online" |
     "offline" | "". budget — предел в знаках (итог идёт первой строкой
     экрана, см. note_budget). link — (имя бота, параметр /start) снимка всех строк:
-    «…и ещё N строк» — ссылкой на него."""
+    «…и ещё N строк» — ссылкой на него (без имени бота — текстом)."""
     tail = pkg.SYNC_TAILS.get(sync, "")
     if not ok:
         names = ", ".join(domains) if domains else ""
@@ -251,40 +292,14 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
                 ("не добавлены" if len(domains) > 1 else "не добавлен"))
         head = f"{pkg.short_name(names, 120)} {what}" if names else ("Не убран" if cmd == "del" else "Не добавлен")
         return f"⚠️ {_e(head)}: {_e(_fail_reason(out, cmd))}" + (f"\n{tail}" if tail else "")
-    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
-    # Домены в строках итога скрипт сам обернул в <code> (иначе Telegram делает из
-    # них ссылки): остальное экранируем, свои теги пропускаем.
-    def clean(r):
-        return _e(r).replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
-    if len(rows) >= BATCH_SUMMARY_FROM and cmd != "del":
-        added = sum(1 for r in rows if r.endswith(": добавлен"))
-        known = sum(1 for r in rows if r.endswith(": уже в списке"))
-        skipped = [r for r in rows if not r.endswith((": добавлен", ": уже в списке"))]
-        # нули не выводим: «✅ Добавлено: 80» без пустых «уже в списке: 0 · пропущено: 0»
-        parts = [f"✅ Добавлено: {added}"]
-        if known:
-            parts.append(f"уже в списке: {known}")
-        if skipped:
-            parts.append(f"пропущено: {len(skipped)}")
-        lines = [" · ".join(parts)]
-        rows = skipped
-    else:
-        lines = []
-    keep, size = [], sum(len(ln) + 1 for ln in lines)
-    for r in rows:
-        line = _result_line(r)
-        if size + len(line) > budget:
-            break
-        keep.append(line)
-        size += len(line) + 1
-    body = "\n".join(lines + [clean(r) for r in keep])
-    if len(rows) > len(keep):
-        rest = len(rows) - len(keep)
-        if link is not None:
-            from awgbot.util.textfmt import deep_link
-            body += "\n…" + deep_link(link[0], link[1], f"и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк"))
-        else:
-            body += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
+    summary, rows = _result_parts(out, cmd)
+    keep = _fit(summary, rows, budget)
+    body = "\n".join(summary + keep)
+    rest = len(rows) - len(keep)
+    if rest > 0:
+        from awgbot.util.textfmt import deep_link
+        label = f"и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
+        body += "\n…" + (deep_link(link[0], link[1], label) if link is not None else label)
     if not body:
         body = "✅ готово"
     return body + (f"\n{tail}" if tail else "")
