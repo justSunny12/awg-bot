@@ -19,9 +19,16 @@ def _all_submodules():
     return mods
 
 
-@pytest.mark.parametrize("modname", _all_submodules())
-def test_import_every_awgbot_module(modname):
-    importlib.import_module(modname)
+def test_import_every_awgbot_module():
+    """Все модули одним тестом; в сообщении — каждый неимпортируемый модуль
+    с причиной, а не первый."""
+    bad = []
+    for modname in _all_submodules():
+        try:
+            importlib.import_module(modname)
+        except Exception as e:                            # noqa: BLE001
+            bad.append(f"{modname}: {type(e).__name__}: {e}")
+    assert not bad, "модули не импортируются:\n" + "\n".join(bad)
 
 
 def test_import_entrypoint_and_tools():

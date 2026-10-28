@@ -22,7 +22,6 @@ import ast
 from functools import lru_cache
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[2] / "awgbot"
 
@@ -115,14 +114,17 @@ def _shadowing(path: Path, tree: ast.Module) -> list[str]:
     return sorted(set(bad))
 
 
-@pytest.mark.parametrize("path", _modules(), ids=lambda p: p.name)
-def test_no_local_name_shadows_a_module_it_uses(path: Path):
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    bad = _shadowing(path, tree)
+def test_no_local_name_shadows_a_module_it_uses():
+    """Все модули awgbot/ одним проходом; в сообщении — каждый модуль с
+    затенением, а не первый попавшийся."""
+    bad = []
+    for path in _modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        bad += [f"{path.relative_to(ROOT.parent)}: {b}" for b in _shadowing(path, tree)]
     assert not bad, (
-        f"{path.relative_to(ROOT.parent)}: локальное имя затеняет модуль, а по нему берут имя из "
-        f"этого модуля — {bad}. В рабочем коде это AttributeError в момент вызова; переименуй "
-        f"локальное имя или импортируй модуль под псевдонимом.")
+        "локальное имя затеняет модуль, а по нему берут имя из этого модуля:\n" + "\n".join(bad)
+        + "\nВ рабочем коде это AttributeError в момент вызова; переименуй локальное имя или "
+        "импортируй модуль под псевдонимом.")
 
 
 def test_the_guard_sees_the_original_slip(tmp_path):
