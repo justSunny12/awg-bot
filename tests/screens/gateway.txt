@@ -3661,6 +3661,45 @@ IMAP и SMTP отвечают, вход выполнен
   [След. страница ▶️ | pg|ls_sshfrom|0|1|ls:sshfrom:0::0]
   [⬅️ Назад | gw:ssh:]
 
+### gw.list.sshfrom.peers — хвост «Из подсетей других шлюзов» — сразу страница с их подписью
+> /start list-sshfrom-2
+- delete #3
+= edit #2
+🛡 <b>SSH изнутри</b> · 128 подсетей · стр. 3 из 5
+
+<b>Из локальной сети:</b>
+<code>192.168.57.0/24</code>
+<code>192.168.58.0/24</code>
+<code>192.168.59.0/24</code>
+<code>192.168.60.0/24</code>
+<code>192.168.61.0/24</code>
+<code>192.168.62.0/24</code>
+<code>192.168.63.0/24</code>
+<b>Из подсетей других шлюзов:</b>
+<code>10.0.0.0/8&lt;b&gt;</code>
+<code>10.241.0.0/24</code>
+<code>10.241.1.0/24</code>
+<code>10.241.2.0/24</code>
+<code>10.241.3.0/24</code>
+<code>10.241.4.0/24</code>
+<code>10.241.5.0/24</code>
+<code>10.241.6.0/24</code>
+<code>10.241.7.0/24</code>
+<code>10.241.8.0/24</code>
+<code>10.241.9.0/24</code>
+<code>10.241.10.0/24</code>
+<code>10.241.11.0/24</code>
+<code>10.241.12.0/24</code>
+<code>10.241.13.0/24</code>
+<code>10.241.14.0/24</code>
+<code>10.241.15.0/24</code>
+<code>10.242.16.0/24</code>
+<code>10.242.17.0/24</code>
+<code>10.242.18.0/24</code>
+<code>10.242.19.0/24</code>
+  [◀️ Пред. страница | pg|ls_sshfrom|2|1|ls:sshfrom:2::0] [След. страница ▶️ | pg|ls_sshfrom|2|3|ls:sshfrom:2::0]
+  [⬅️ Назад | gw:ssh:]
+
 ### gw.list.sshunres — 40 имён в 64 знака и 40 прошлых адресов, стр. 1
 > /start list-sshunres
 - delete #3
@@ -3771,6 +3810,44 @@ IMAP и SMTP отвечают, вход выполнен
   [⬅️ Назад | gw:ssh:]
 ~ (пустой ответ)
 ~ (повторный ответ)
+
+### gw.list.sshunres.held — хвост «держу прошлый адрес» — сразу страница с подписью «Держу прошлые адреса»
+> /start list-sshunres-2
+- delete #3
+= edit #2
+🛡 <b>Не резолвятся</b> · 40 · стр. 2 из 3
+
+<code>h29.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h30.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h31.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h32.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h33.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h34.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h35.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h36.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h37.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h38.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<code>h39.dyn.example &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</code>
+<b>Держу прошлые адреса:</b>
+<code>203.0.113.1</code>
+<code>203.0.113.2</code>
+<code>203.0.113.3</code>
+<code>203.0.113.4</code>
+<code>203.0.113.5</code>
+<code>203.0.113.6</code>
+<code>203.0.113.7</code>
+<code>203.0.113.8</code>
+<code>203.0.113.9</code>
+<code>203.0.113.10</code>
+<code>203.0.113.11</code>
+<code>203.0.113.12</code>
+<code>203.0.113.13</code>
+<code>203.0.113.14</code>
+<code>203.0.113.15</code>
+<code>203.0.113.16</code>
+<code>203.0.113.17</code>
+  [◀️ Пред. страница | pg|ls_sshunres|2|0|ls:sshunres:2::0] [След. страница ▶️ | pg|ls_sshunres|2|2|ls:sshunres:2::0]
+  [⬅️ Назад | gw:ssh:]
 
 ### gw.list.sshunres.empty — все имена резолвятся — пустое состояние словами
 > /start list-sshunres

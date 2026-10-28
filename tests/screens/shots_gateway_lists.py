@@ -41,12 +41,16 @@ LISTS = [
           title="«⬅️ Назад» — «🛡 SSH-доступ» на месте"),
     _shot("gw.list.sshfrom.lan_only", steps=[_MAIN, ("start", "list-sshfrom")], ssh=_ssh(lan=list(_LAN[:40])),
           title="подсетей других шлюзов нет — их группа не выводится"),
+    _shot("gw.list.sshfrom.peers", steps=[_MAIN, _SSH_OPEN, ("start", "list-sshfrom-2")], ssh=_SSH,
+          title="хвост «Из подсетей других шлюзов» — сразу страница с их подписью"),
     # ── имена, которые не резолвятся ────────────────────────────────────────
     _shot("gw.list.sshunres", steps=[_MAIN, _SSH_OPEN, ("start", "list-sshunres")], ssh=_SSH,
           title="40 имён в 64 знака и 40 прошлых адресов, стр. 1"),
     *[_shot(f"gw.list.sshunres.p{p + 1}",
             steps=[_MAIN, _SSH_OPEN, ("start", "list-sshunres"), *[_page("sshunres", k) for k in range(1, p + 1)]],
             ssh=_SSH, title=f"не резолвятся, стр. {p + 1}") for p in range(1, 3)],
+    _shot("gw.list.sshunres.held", steps=[_MAIN, _SSH_OPEN, ("start", "list-sshunres-2")], ssh=_SSH,
+          title="хвост «держу прошлый адрес» — сразу страница с подписью «Держу прошлые адреса»"),
     _shot("gw.list.sshunres.empty", steps=[_MAIN, ("start", "list-sshunres")],
           title="все имена резолвятся — пустое состояние словами"),
     # ── адреса в туннеле своей сети ─────────────────────────────────────────

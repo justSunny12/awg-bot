@@ -41,6 +41,9 @@ class View:
     sep: str = "\n"                              # «\n\n» — строки с ведущим значком
     live: bool = True
     labels: tuple[int, ...] = ()                 # номера строк-подписей групп: страница продолжения повторяет подпись
+    # номера строк, с которых начинаются группы (якорь k → anchors[k-1]); у группы
+    # без подписи — тоже, поэтому это не labels
+    anchors: tuple[int, ...] = ()
     at: str = ""                                 # «на 27.10 14:05 (UTC+3)» — снимок события, последним в шапке
 
 
@@ -50,7 +53,7 @@ class Kind:
     branch: str                                   # main | gateway | * — установка, где вид есть
     roles: tuple[str, ...]
     build: Callable[..., Awaitable[View | None]]  # build(services, ref, key, chat_id) → View
-    anchored: bool = False                         # ref — номер группы, к которой ведёт хвост (см. render)
+    anchored: bool = False                         # ref — номер группы, к которой ведёт хвост (View.anchors, см. render)
 
 
 _REGISTRY: dict[str, Kind] = {}
@@ -84,8 +87,9 @@ def screen_name(kind: str) -> str:
 async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "", new: bool = False,
                  page: int = 0, chat_id: int = 0, anchor: int = 0):
     """(text, markup) экрана вида или None (вида нет у роли, сборка упала).
-    anchor — номер группы (с 1): открыть страницу, где она начинается (хвост
-    второй группы ведёт к ней, а не на первую страницу); страница запоминается."""
+    anchor — номер группы (с 1, по View.anchors): открыть страницу, где она
+    начинается (хвост второй группы ведёт к ней, а не на первую страницу);
+    страница запоминается. Группы нет — страница из памяти, как без якоря."""
     from awgbot.bot import paging
     from awgbot.bot.callbacks import ListCB, PageCB
     from . import page as pages
@@ -119,8 +123,8 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
             spans[n + 1].insert(0, spans[n].pop())
     total = len(spans)
     cur = min(max(int(page or 0), 0), total - 1)
-    if anchor and 0 < anchor <= len(view.labels):
-        target = view.labels[anchor - 1]
+    if anchor and 0 < anchor <= len(view.anchors):
+        target = view.anchors[anchor - 1]
         cur = next((n for n, sp in enumerate(spans) if target in sp), cur)
         paging.remember(chat_id, screen_name(kind), int(ref or 0), cur)
     head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now, view.at])

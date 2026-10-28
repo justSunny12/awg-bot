@@ -19,31 +19,37 @@ def _codes(items) -> list[str]:
 
 async def sshfrom(services, ref: int, key: str, chat_id: int) -> View | None:
     """Две группы с подписями: «Из локальной сети», «Из подсетей других шлюзов»;
-    группа без подсетей не выводится."""
+    группа без подсетей не выводится. Якоря — по номеру группы: хвост
+    «list-sshfrom-2» открывает страницу подсетей других шлюзов."""
     st = await call(services.ssh_screen)
     lan, peers = list(st.get("lan") or []), list(st.get("peer_nets") or [])
     rows: list[str] = []
     labels: list[int] = []
+    anchors: list[int] = []
     for label, nets in ((tl.SSHFROM_LAN, lan), (tl.SSHFROM_PEERS, peers)):
+        anchors.append(len(rows))                    # и у пустой группы: номер группы в ссылке постоянный
         if nets:
             labels.append(len(rows))
             rows.append(ui.label(label))
             rows += _codes(nets)
     n = len(lan) + len(peers)
     return View(title=tl.SSHFROM_TITLE, rows=rows, count=tl.subnets_count(n) if n else "", empty=tl.SSHFROM_EMPTY,
-                back=ui.back(GwCB(action="ssh")), labels=tuple(labels))
+                back=ui.back(GwCB(action="ssh")), labels=tuple(labels), anchors=tuple(anchors))
 
 
 async def sshunres(services, ref: int, key: str, chat_id: int) -> View | None:
+    """Имена без подписи — первая группа; прошлые адреса под подписью — вторая:
+    хвост «list-sshunres-2» открывает страницу, где они начинаются."""
     st = await call(services.ssh_screen)
     names, held = list(st.get("unresolved") or []), list(st.get("held") or [])
     rows = _codes(names)
     labels: tuple[int, ...] = ()
+    anchors: tuple[int, ...] = (0,)
     if held:                                         # прошлые адреса этих имён — фильтр держит их
-        labels = (len(rows),)
+        labels, anchors = (len(rows),), (0, len(rows))
         rows += [ui.label(tl.SSHUNRES_HELD), *_codes(held)]
     return View(title=tl.SSHUNRES_TITLE, rows=rows, count=str(len(names)) if names else "", empty=tl.UNRES_EMPTY,
-                back=ui.back(GwCB(action="ssh")), labels=labels)
+                back=ui.back(GwCB(action="ssh")), labels=labels, anchors=anchors)
 
 
 async def tunaddr(services, ref: int, key: str, chat_id: int) -> View | None:
@@ -53,5 +59,5 @@ async def tunaddr(services, ref: int, key: str, chat_id: int) -> View | None:
 
 
 register(Kind("sshfrom", "gateway", ADMIN, sshfrom, anchored=True))     # 1 — локальная сеть, 2 — другие шлюзы
-register(Kind("sshunres", "gateway", ADMIN, sshunres, anchored=True))   # 2 — прошлые адреса
+register(Kind("sshunres", "gateway", ADMIN, sshunres, anchored=True))   # 1 — имена, 2 — прошлые адреса
 register(Kind("tunaddr", "gateway", ADMIN, tunaddr))

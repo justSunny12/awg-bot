@@ -170,6 +170,44 @@ async def test_another_role_or_an_unknown_kind_renders_nothing(kind, monkeypatch
     assert await lists.render(None, "nosuchkind", role="admin") is None
 
 
+async def _grouped(services, ref, key, chat_id):
+    """Две группы: 40 имён без подписи и 40 адресов под подписью (как sshunres):
+    якорь считается по началам групп, а не по подписям."""
+    rows = [f"<code>h{i}.example</code>" for i in range(40)] + [ui.label("Держу")] + [f"<code>203.0.113.{i}</code>"
+                                                                                       for i in range(40)]
+    return lists.View(title="🛡 Не резолвятся", rows=rows, count="40", back=ui.back("m:main"),
+                      labels=(40,), anchors=(0, 40))
+
+
+@pytest.fixture()
+def grouped(monkeypatch):
+    from awgbot.bot import roles
+    lists._load()
+    monkeypatch.setitem(lists._REGISTRY, "zzgroups", lists.Kind("zzgroups", roles.current().name, ("admin",), _grouped,
+                                                                anchored=True))
+    return "zzgroups"
+
+
+async def test_the_anchor_of_a_group_without_a_label_before_it_opens_its_page(grouped):
+    """Хвост второй группы («держу прошлый адрес: … и ещё N») ведёт к странице с
+    её подписью, хотя подпись у вида одна: якорь — номер группы, первая без
+    подписи тоже считается."""
+    text, _ = await lists.render(None, grouped, role="admin", anchor=2, chat_id=5)
+    assert "стр. 2 из 3" in text.splitlines()[0], text.splitlines()[0]
+    assert "<b>Держу:</b>" in text.split("\n\n", 1)[1], "на странице якоря нет подписи второй группы"
+    from awgbot.bot import paging
+    assert paging.page_of(5, lists.screen_name(grouped), 0) == 1, "страница якоря не запомнена"
+    first, _ = await lists.render(None, grouped, role="admin", anchor=1, chat_id=5)
+    assert "стр. 1 из 3" in first.splitlines()[0], first.splitlines()[0]
+
+
+async def test_an_anchor_of_a_group_the_view_has_not_got_falls_back_to_the_remembered_page(grouped):
+    from awgbot.bot import paging
+    paging.remember(6, lists.screen_name(grouped), 0, 2)
+    text, _ = await lists.render(None, grouped, role="admin", anchor=3, chat_id=6, page=2)
+    assert "стр. 3 из 3" in text.splitlines()[0], text.splitlines()[0]
+
+
 async def test_a_kind_of_the_other_installation_is_not_served(monkeypatch):
     """Виды агента у основного бота и виды основного у агента не открываются:
     данных под ними у этой установки нет."""
