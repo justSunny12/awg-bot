@@ -92,7 +92,8 @@ class DriftMixin:
         # устройства админа выводятся группами целиком (хвост группы — своя ссылка), конфиг линка значений не несёт
         if any(whole.get(k, (m, t)) != (m, t) for k, _h, m, t in pending if k not in ("ADMIN_IPS", "link")):
             # значения обрезаны до 160 знаков — молча не режем: целиком на экране расхождения
-            lines.append("Значения целиком — " + self._link(listlink.build("drift", g.id), "весь список"))
+            # (ref — именованно: сторож слотовых ключей принял бы пару «строка, слот» за ключ состояния)
+            lines.append("Значения целиком — " + self._link(listlink.build("drift", ref=g.id), "весь список"))
         return "\n".join(lines)
 
     def gw_drift_view(self, slot_id: int) -> dict:
@@ -142,7 +143,7 @@ class DriftMixin:
             rows = [one if len(addrs) == 1 else many]
             rows += [line(a, names.get(a, "")) for a in addrs[:cap]]
             if len(addrs) > cap:
-                rows.append(" · … " + self._link(listlink.build("drift", g.id), f"и ещё {len(addrs) - cap}"))
+                rows.append(" · … " + self._link(listlink.build("drift", ref=g.id), f"и ещё {len(addrs) - cap}"))
             return rows
 
         missing = sorted(want - have, key=ip_key)
