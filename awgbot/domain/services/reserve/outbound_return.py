@@ -142,6 +142,8 @@ class ReserveReturnMixin:
     def _tick_returning(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "back_req")
         now = time.monotonic()
+        if step == "back_req" and out.get("jrn_back"):
+            return self.reserve_jrn_back_tick(out)            # журнал: бот на резерве передал право — догоняю
         if step == "back_req":
             peer_idle = self.reserve_online() and \
                 str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing")

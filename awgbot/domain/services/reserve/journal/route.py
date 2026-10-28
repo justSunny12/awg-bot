@@ -22,6 +22,13 @@ from ...gateway_link.common import log
 _ACKS = ("jack", "jneed", "jstale", "jcack")
 
 
+def _schema(kind: str, body: dict) -> dict:
+    """Транзитом — только поля вида по словарю канала пары (лишнее не пересылается)."""
+    from awgbot.util import pairproto
+    fields = pairproto.PAIR_KINDS.get(kind, ("", {}))[1]
+    return {k: body[k] for k in fields if k in body}
+
+
 class ReserveJournalRouteMixin:
 
     def reserve_jrn_in(self, kind: str, body: dict) -> list[tuple]:
@@ -34,7 +41,7 @@ class ReserveJournalRouteMixin:
         if kind in ("jev", "jcnt"):
             return self._keep_jev_in(body) if kind == "jev" else self._keep_jcnt_in(body)
         if line and line == keep:
-            return [("guest", kind, dict(body))]               # ответ основы её боту у меня
+            return [("guest", kind, _schema(kind, body))]      # ответ основы её боту у меня
         log.info("резерв: «%s» линии %s — не моя и не храню — пропущено", kind, line[:8] or "—")
         return []
 
@@ -56,9 +63,15 @@ class ReserveJournalRouteMixin:
     def _jrn_stale_in(self, e: int) -> None:
         """Резерв знает эпоху моей линии больше моей: держатель — мой бот у него. Принять
         её (следование), только если резерв и правда несёт моих (иначе — строка)."""
+        from .ship import epoch_sane
         peer = self.reserve_peer_state()
+        meta_now = self.db.jrn_meta()
+        if not epoch_sane(e, int(meta_now["epoch"])):
+            log.warning("резерв: «%s» называет эпоху %s моей линии — вне разумного, пропущено", self.reserve_peer_name(), e)
+            return
         if str(peer.get("inn") or "") == "serving":
-            meta = self.db.jrn_adopt(int(e), why="эпоха больше моей у резерва")
+            fork = int((peer.get("jrn_keep") or {}).get("guest_fork") or 0) or int(meta_now["acked"])
+            meta = self.db.jrn_adopt(int(e), why="эпоха больше моей у резерва", fork_i=fork)
             if meta is not None:
                 log.warning("резерв: эпоха %s у бота на «%s» — здесь следование", meta["epoch"], self.reserve_peer_name())
         else:
@@ -77,7 +90,7 @@ class ReserveJournalRouteMixin:
             return self._keep_serve_guest(int(body.get("from") or 0))
         if kind not in ("jev", "jcnt"):
             return []
-        return [("send", kind, dict(body))]
+        return [("send", kind, _schema(kind, body))]
 
     def _keep_serve_guest(self, frm: int) -> list[tuple]:
         from awgbot.util.rsvjrn import event

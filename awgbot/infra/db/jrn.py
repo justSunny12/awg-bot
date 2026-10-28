@@ -36,6 +36,29 @@ class JrnMixin:
         fork = self.jrn_last_i() if fork_i is None else int(fork_i)
         return self._jrn_meta_set(why, epoch=new_e, holder=holder, role=role, fork_i=fork)
 
+    def jrn_hand_over(self, *, why: str) -> dict | None:
+        """Передача бота кнопкой: если все свои события этой эпохи подтверждены резервом —
+        эпоха + 1 второй стороне, здесь следование, точка расхождения — подтверждённое;
+        проверка и переход — одной транзакцией (решение из другого потока не вклинится).
+        Не всё подтверждено — None."""
+        conn = self._connection()
+        conn.execute("PRAGMA synchronous = FULL")
+        try:
+            with self._tx() as c:
+                c.execute("UPDATE jrn_meta SET why = why WHERE id = 1")      # замок писателя — до проверки
+                row = c.execute("SELECT epoch, acked FROM jrn_meta WHERE id = 1").fetchone()
+                if row is None:
+                    return None
+                epoch, acked = int(row[0]), int(row[1])
+                if c.execute("SELECT 1 FROM jrn_events WHERE e = ? AND i > ? LIMIT 1", (epoch, acked)).fetchone():
+                    return None
+                c.execute("UPDATE jrn_meta SET epoch = ?, holder = 'peer', role = 'follower', fork_i = ?, applied = ?, "
+                          "changed_at = ?, why = ? WHERE id = 1", (epoch + 1, acked, acked, _now_iso(), why))
+                self._tx_note(self._TX_COUNTERS)
+        finally:
+            conn.execute("PRAGMA synchronous = NORMAL")
+        return self.jrn_meta()
+
     def jrn_adopt(self, epoch: int, *, why: str, fork_i: int | None = None) -> dict | None:
         """Чужая эпоха больше моей (st.jrn, событие держателя, jstale) — принять её без
         приращения: держатель — вторая сторона, здесь следование. Не больше — None."""
@@ -46,11 +69,17 @@ class JrnMixin:
         return self._jrn_meta_set(why, epoch=int(epoch), holder="peer", role="follower", fork_i=fork)
 
     def jrn_adopt_epoch(self, epoch: int) -> None:
-        """В следовании: держатель тот же, его эпоха больше известной мне (он открылся
-        сам после аварии) — номер его эпохи, роль та же."""
+        """В следовании: номер эпохи — держателя (он открылся сам после аварии, или моя
+        выросла сменой роли без событий), роль та же."""
         with self._tx() as c:
-            c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND epoch < ? AND role = 'follower'",
-                      (int(epoch), int(epoch)))
+            c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND role = 'follower' AND holder = 'peer'",
+                      (int(epoch),))
+            self._tx_note(self._TX_COUNTERS)
+
+    def jrn_seen_reset(self, host: str) -> None:
+        """Новый отъезд: счёт пачек клона начинается заново (новый гость)."""
+        with self._tx() as c:
+            c.execute("DELETE FROM jrn_seen WHERE host = ?", (str(host),))
             self._tx_note(self._TX_COUNTERS)
 
     def jrn_fence(self, *, why: str) -> dict | None:
@@ -76,6 +105,9 @@ class JrnMixin:
         try:
             with self._tx() as c:
                 c.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
+                if fields.get("holder") == "peer" and fields.get("role") == "follower" and "fork_i" in fields:
+                    # события держателя пойдут с fork_i + 1: применённое — по точку расхождения
+                    fields["applied"] = int(fields["fork_i"])
                 if fields.get("holder") == "peer" and fields.get("role") == "follower":
                     c.execute("INSERT OR REPLACE INTO jrn_tail (i, e, t, op, k, c, o, at, state) "
                               "SELECT i, e, t, op, k, c, o, at, 'wait' FROM jrn_events "
@@ -121,10 +153,13 @@ class JrnMixin:
             self._tx_note(self._TX_COUNTERS)
         return True
 
-    def jrn_events_after(self, after: int, limit: int = 256) -> list:
+    def jrn_events_after(self, after: int, limit: int = 256, epoch: int | None = None) -> list:
+        """События с номером больше after (только эпохи epoch, если задана) — по порядку."""
         from awgbot.util.rsvjrn.apply import Event
-        rows = self._connection().execute("SELECT i, e, t, op, k, c, o, at FROM jrn_events WHERE i > ? ORDER BY i LIMIT ?",
-                                          (int(after), int(limit))).fetchall()
+        sql, args = "SELECT i, e, t, op, k, c, o, at FROM jrn_events WHERE i > ?", [int(after)]
+        if epoch is not None:
+            sql, args = sql + " AND e = ?", args + [int(epoch)]
+        rows = self._connection().execute(sql + " ORDER BY i LIMIT ?", args + [int(limit)]).fetchall()
         return [Event.from_row(tuple(r)) for r in rows]
 
     def jrn_first_i(self) -> int:
@@ -144,18 +179,75 @@ class JrnMixin:
             c.execute("UPDATE jrn_meta SET snap_i = ? WHERE id = 1", (int(i),))
             self._tx_note(self._TX_COUNTERS)
 
-    def jrn_counts_fold(self, host: str, after: int):
+    # Пачки счётчиков этого хоста: одна неподтверждённая (cnt_bn > cnt_ack) повторяется той же —
+    # те же строки (cnt_s0, cnt_s1]; новая — только после подтверждения. Состояние — в jrn_meta
+    # с synchronous = FULL: потеряй его пропажа питания, повтор вышел бы другой пачкой под тем же
+    # номером, и получатель счёл бы её повтором.
+
+    def _cnt_meta(self) -> tuple[int, int, int, int]:
+        row = self._connection().execute("SELECT cnt_bn, cnt_ack, cnt_s0, cnt_s1 FROM jrn_meta WHERE id = 1").fetchone()
+        return tuple(int(x or 0) for x in row) if row else (0, 0, 0, 0)
+
+    def _cnt_set(self, **fields) -> None:
+        conn = self._connection()
+        conn.execute("PRAGMA synchronous = FULL")
+        try:
+            with self._tx() as c:
+                sets = ", ".join(f"{k} = ?" for k in fields)
+                c.execute(f"UPDATE jrn_meta SET {sets} WHERE id = 1", tuple(fields.values()))
+                self._tx_note(self._TX_COUNTERS)
+        finally:
+            conn.execute("PRAGMA synchronous = NORMAL")
+
+    def jrn_counts_out(self, host: str):
+        """Пачка к отправке: неподтверждённая — она же; иначе новая из строк после
+        последней; нечего — None."""
         from awgbot.util.rsvjrn import counts
-        return counts.fold(self._connection(), host, after)
+        bn, ack, s0, s1 = self._cnt_meta()
+        conn = self._connection()
+        if bn > ack:
+            b = counts.fold(conn, host, s0, s1, bn=bn)
+            if b is not None:
+                return b
+            self._cnt_set(cnt_ack=bn)                         # строк пачки нет (сняты снимком) — подтверждена
+        b = counts.fold(conn, host, s1, bn=bn + 1)
+        if b is None:
+            return None
+        self._cnt_set(cnt_bn=b.bn, cnt_s0=b.s0, cnt_s1=b.s1)
+        return b
 
-    def jrn_counts_drop(self, upto: int) -> None:
+    def jrn_counts_acked(self, bn: int) -> bool:
+        """Получатель подтвердил пачку bn: её строки — прочь. Номер не той пачки — нет."""
+        cbn, ack, _s0, s1 = self._cnt_meta()
+        if int(bn) != cbn or cbn <= ack:
+            return False
         with self._tx() as c:
-            c.execute("DELETE FROM jrn_counts WHERE s <= ?", (int(upto),))
+            c.execute("DELETE FROM jrn_counts WHERE s <= ?", (s1,))
             self._tx_note(self._TX_COUNTERS)
+        self._cnt_set(cnt_ack=cbn)
+        return True
 
-    def jrn_counts_last(self) -> int:
-        row = self._connection().execute("SELECT seq FROM sqlite_sequence WHERE name = 'jrn_counts'").fetchone()
-        return int(row[0]) if row and row[0] is not None else 0
+    def jrn_counts_cover(self, cs: int, cb: int) -> None:
+        """Снимок принят: строки по cs в нём учтены, пачки по cb — тоже."""
+        cbn, ack, s0, s1 = self._cnt_meta()
+        with self._tx() as c:
+            c.execute("DELETE FROM jrn_counts WHERE s <= ?", (int(cs),))
+            self._tx_note(self._TX_COUNTERS)
+        fields = {"cnt_s1": max(s1, int(cs))}
+        if cbn <= int(cb):
+            fields["cnt_ack"] = cbn
+        self._cnt_set(**fields)
+
+    def jrn_counts_raise(self, bn: int) -> None:
+        """У получателя номер пачек больше моего (моё состояние потеряно: восстановление):
+        счёт — от его номера, строки неподтверждённой пачки уйдут следующей."""
+        cbn, ack, s0, s1 = self._cnt_meta()
+        if int(bn) <= cbn:
+            return
+        self._cnt_set(cnt_bn=int(bn), cnt_ack=int(bn), cnt_s1=s0 if cbn > ack else s1)
+
+    def jrn_counts_bn(self) -> int:
+        return self._cnt_meta()[0]
 
     # ── применение чужого (следование, гость) ────────────────────────────────
 

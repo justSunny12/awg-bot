@@ -35,7 +35,8 @@ from awgbot.runtime import main as pkg          # подменяемое тес�
 from .common import log
 
 MOVE_NOTIFY_DELAY_S = 60          # TTL записи: переподключение раньше попало бы на прежний адрес из кэша
-JRN_DRAIN_S = 20                  # возврат: подтверждения основы на последние записи
+JRN_DRAIN_S = 20                  # возврат: подтверждения основы на последние записи до released
+JRN_AFTER_S = 600                 # после released — досылать неподтверждённое, пока основа не возьмёт всё
 
 
 async def run_guest() -> None:
@@ -107,7 +108,8 @@ async def run_guest() -> None:
                 wh.refresh_pool()                         # хост выучил сеть Telegram — в фильтр без перезапуска
             except Exception as e:                        # noqa: BLE001
                 log.info("гость: пул вебхука не перечитан: %s", e)
-        if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()):
+        if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()) \
+                and await asyncio.to_thread(services.guest_can_take_tg):   # с журналом — только держателем
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
@@ -211,8 +213,15 @@ async def _jrn_release(services, ctl, jrn_task) -> None:
         jrn_task.cancel()
     body = await asyncio.to_thread(services.guest_jrn_release)
     await ctl.send("released", body)
-    await ctl.send("bye")
     log.info("гость: передал право записи по %s (эпоха %s)", body.get("last"), body.get("epoch"))
+    # основа не берёт эпоху без догона: неподтверждённое — досылать (её jneed приходит через бот
+    # резерва), пока не подтвердит всё; бот резерва снимет зону после её `back`
+    deadline = loop.time() + JRN_AFTER_S
+    while loop.time() < deadline and not await asyncio.to_thread(services.guest_jrn_drained):
+        for kind, b in await asyncio.to_thread(services.guest_jrn_tick):
+            await ctl.send(kind, b)
+        await asyncio.sleep(1)
+    await ctl.send("bye")
 
 
 async def _primary_back_notice(bot, services, told: dict) -> None:

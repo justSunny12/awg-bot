@@ -20,7 +20,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .event import RecordError, head
+from .event import HEAD, RecordError, head
+
+HEAD_SIZE = HEAD.size
 
 SEG_MAX = 1024 * 1024
 
@@ -38,19 +40,21 @@ def _fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def _scan(data: bytes) -> tuple[list[bytes], int]:
-    """(целые записи, длина целой части): оборванный или испорченный хвост — не запись."""
+def _scan(data: bytes) -> tuple[list[bytes], int, bool]:
+    """(целые записи, длина целой части, хвост оборван): оборванный хвост — заголовок цел,
+    а файл короче заявленной длины (пропало питание посреди дописки); мусор посреди
+    файла — тоже конец чтения, но не «оборван»: его не обрезают."""
     out, p = [], 0
     while p < len(data):
         try:
             h = head(data, p)
         except RecordError:
-            break
+            return out, p, len(data) - p < HEAD_SIZE
         if p + h.size > len(data):
-            break
+            return out, p, True
         out.append(data[p:p + h.size])
         p += h.size
-    return out, p
+    return out, p, False
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -83,7 +87,7 @@ class Store:
                 continue
             try:
                 e, first = n[3:-4].split("-")
-                out.append((int(e), int(first), self.path / n))
+                out.append((int(e), int(first.split(".")[0]), self.path / n))   # «.N» — запасной файл рядом с испорченным
             except ValueError:
                 continue
         return sorted(out, key=lambda x: (x[1], x[0]))
@@ -95,17 +99,27 @@ class Store:
             data = path.read_bytes()
         except OSError:
             return [], 0, 0
-        recs, good = _scan(data)
+        recs, good, _torn = _scan(data)
         return recs, good, len(data)
 
-    def _append(self, path: Path, records: list[bytes]) -> None:
+    def _append(self, path: Path, records: list[bytes]) -> Path:
+        """Дописать в path; вернуть файл, куда легло. Оборванный хвост — обрезать до него;
+        мусор посреди файла — не трогать (там могут быть подтверждённые записи), писать
+        в новый файл рядом."""
         self.path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if path.exists():
+            try:
+                data = path.read_bytes()
+            except OSError:
+                data = b""
+            recs, good, torn = _scan(data)
+            if good != len(data):
+                if torn:
+                    with open(path, "r+b") as f:
+                        f.truncate(good)
+                else:
+                    path = path.with_name(f"{path.stem}.{len(data)}{path.suffix}")
         new = not path.exists()
-        if not new:
-            _recs, good, size = self._read(path)
-            if good != size:                                 # оборванный хвост прошлой дописки — до него
-                with open(path, "r+b") as f:
-                    f.truncate(good)
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as f:
             f.write(b"".join(records))
@@ -113,6 +127,7 @@ class Store:
             os.fsync(f.fileno())
         if new:
             _fsync_dir(self.path)
+        return path
 
     # ── события ────────────────────────────────────────────────────────────
     def append_events(self, records: list[bytes]) -> None:
@@ -131,12 +146,16 @@ class Store:
         self._append(path, records)
 
     def events(self, after: int = 0) -> list[bytes]:
-        """Записи событий с номером больше after — по порядку номеров."""
-        out = []
+        """Записи событий с номером больше after — по порядку номеров, без повторов
+        (повтор дописки после пропажи питания: первая запись номера остаётся)."""
+        seen: dict[int, bytes] = {}
         for _e, _first, path in self._segments():
             recs, _good, _size = self._read(path)
-            out.extend(r for r in recs if head(r).n > after)
-        return sorted(out, key=lambda r: head(r).n)
+            for r in recs:
+                n = head(r).n
+                if n > after and n not in seen:
+                    seen[n] = r
+        return [seen[n] for n in sorted(seen)]
 
     def last(self) -> tuple[int, int]:
         """(эпоха, номер) последнего события; пусто — (0, 0)."""
@@ -184,32 +203,48 @@ class Store:
     def _cnt(self, side: str) -> Path:
         return self.path / f"cnt-{side}.seg"
 
+    def _cnt_files(self, side: str) -> list[Path]:
+        """Файл пачек стороны и запасные рядом с испорченным (`cnt-a.N.seg`) — по порядку."""
+        try:
+            names = os.listdir(self.path)
+        except OSError:
+            return []
+        files = [n for n in names if n.startswith(f"cnt-{side}") and n.endswith(".seg")]
+        return [self.path / n for n in sorted(files, key=lambda n: (len(n), n))]
+
     def append_counts(self, side: str, records: list[bytes]) -> None:
         if records:
-            self._append(self._cnt(side), records)
+            files = self._cnt_files(side)
+            self._append(files[-1] if files else self._cnt(side), records)
 
     def counts(self, side: str, after: int = 0) -> list[bytes]:
-        recs, _good, _size = self._read(self._cnt(side))
-        return [r for r in recs if head(r).n > after]
+        """Пачки стороны с номером больше after — по порядку номеров, без повторов."""
+        seen: dict[int, bytes] = {}
+        for path in self._cnt_files(side):
+            recs, _good, _size = self._read(path)
+            for r in recs:
+                n = head(r).n
+                if n > after and n not in seen:
+                    seen[n] = r
+        return [seen[n] for n in sorted(seen)]
 
     def counts_last(self, side: str) -> int:
-        recs = self.counts(side)
-        return max((head(r).n for r in recs), default=0)
+        return max((head(r).n for r in self.counts(side)), default=0)
 
     def drop_counts_upto(self, side: str, upto: int) -> None:
-        path = self._cnt(side)
-        recs, _good, _size = self._read(path)
-        keep = [r for r in recs if head(r).n > upto]
-        if len(keep) == len(recs):
+        keep = self.counts(side, after=upto)
+        files = self._cnt_files(side)
+        if not files or len(keep) == sum(len(self._read(f)[0]) for f in files):
             return
         if keep:
-            _write_atomic(path, b"".join(keep))
-        else:
-            try:
-                path.unlink()
-            except OSError:
-                pass
-            _fsync_dir(self.path)
+            _write_atomic(self._cnt(side), b"".join(keep))
+        for f in files:
+            if f != self._cnt(side) or not keep:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+        _fsync_dir(self.path)
 
     # ── целиком ────────────────────────────────────────────────────────────
     def wipe(self) -> None:

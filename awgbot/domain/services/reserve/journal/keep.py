@@ -41,23 +41,57 @@ class ReserveKeepMixin:
         return str(self._keep().get("line") or "")
 
     def reserve_keep_snapshot_in(self, marks: dict) -> None:
-        """Принят снимок `pkg3` с отметками журнала: новая линия — хранилище заново;
-        учтённое снимком — прочь."""
-        line, e, i, cs = str(marks.get("line") or ""), int(marks.get("e") or 0), int(marks.get("i") or 0), int(marks.get("cs") or 0)
+        """Принят снимок `pkg3` с отметками журнала: новая линия или сброс (база основы
+        потеряла хвост, восстановлена, новый K) — хранилище заново; учтённое снимком
+        (события по `i`, пачки по `cb`) — прочь."""
+        try:
+            line, e, i, cb = (str(marks.get("line") or ""), int(marks.get("e") or 0), int(marks.get("i") or 0),
+                              int(marks.get("cb") or 0))
+        except (TypeError, ValueError):
+            return
         if not line:
             return
         st = self.reserve_keep_store()
         cur = self._keep()
-        if str(cur.get("line") or "") != line:
+        if str(cur.get("line") or "") != line or marks.get("reset"):
             st.wipe()
             cur = {}
         dropped = st.drop_events_upto(i)
-        st.drop_counts_upto("a", cs)
+        st.drop_counts_upto("a", cb)
         last_e, last_i = st.last()
-        self.rsv_put("rsv_jrn_in", {"line": line, "e": max(e, last_e, int(cur.get("e") or 0)), "snap_e": e, "snap_i": i,
-                                    "cs": cs, "last": max(i, last_i), "snap_at": timeutil.now_iso()})
+        known = max(e, last_e, int(cur.get("e") or 0))
+        self.rsv_put("rsv_jrn_in", {"line": line, "e": known, "snap_e": e, "snap_i": i, "cb": cb,
+                                    "last": max(i, last_i), "snap_at": timeutil.now_iso()})
+        self._keep_meta_write(line, known)
+        self.__dict__["_keep_synced"] = True
         if dropped:
             log.info("резерв: снимок «%s» по %d — снято событий журнала: %d", self.reserve_peer_name(), i, dropped)
+
+    def _keep_meta_write(self, line: str, e: int) -> None:
+        """Эпоха линии, известная резерву, — процессу открытия (он не видит базу резерва):
+        гость откроется с эпохой больше неё."""
+        import json
+        from awgbot.infra import rsvzone
+        try:
+            rsvzone.write_private(self.reserve_keep_store().path / "meta.json", json.dumps({"line": line, "e": int(e)}))
+        except OSError as ex:
+            log.info("резерв: отметка эпохи журнала не записана: %s", ex)
+
+    def reserve_keep_mine_in(self, mine: dict | None) -> None:
+        """`st.jrn.mine` основы: её эпоха (смена роли без событий её поднимает) — в известную."""
+        from .ship import epoch_sane
+        cur = self._keep()
+        try:
+            line, e = str((mine or {}).get("line") or ""), int((mine or {}).get("e") or 0)
+        except (TypeError, ValueError):
+            return
+        if not cur.get("line") or line != str(cur["line"]) or e <= int(cur.get("e") or 0):
+            return
+        if not epoch_sane(e, int(cur.get("e") or 0)):
+            log.warning("резерв: «%s» называет эпоху %s своей линии — вне разумного, пропущено", self.reserve_peer_name(), e)
+            return
+        self.rsv_update("rsv_jrn_in", e=e)
+        self._keep_meta_write(line, e)
 
     def reserve_keep_drop(self) -> None:
         """Пара снята или возврат: журнал второй стороны — прочь (его K я знал)."""
@@ -75,7 +109,25 @@ class ReserveKeepMixin:
         st = self.reserve_keep_store()
         last = int(cur.get("last") or 0)
         return {"line": str(cur["line"]), "e": int(cur.get("e") or 0), "last": last, "snap_i": int(cur.get("snap_i") or 0),
-                "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": st.events_size()}
+                "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": st.events_size(),
+                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0))}
+
+    def _keep_guest_fork(self) -> int:
+        if not self._keep_guest():
+            return 0
+        try:
+            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("fork") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _keep_guest_e(self) -> int:
+        """Эпоха моего гостя (его hello/online), если он поднят; иначе 0."""
+        if not self._keep_guest():
+            return 0
+        try:
+            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("e") or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _keep_guest(self) -> bool:
         """Гость основы у меня поднят — её записи нужны и ему."""
@@ -94,7 +146,8 @@ class ReserveKeepMixin:
         except (ValueError, event.RecordError) as e:
             log.warning("резерв: события «%s» не разобрались: %s", self.reserve_peer_name(), e)
             return [("send", "jneed", {"line": line, "from": int(cur.get("last") or 0) + 1})]
-        e_body, known = int(body["e"]), int(cur.get("e") or 0)
+        # известная эпоха линии: основы и, пока он поднят, моего гостя — события старше не храню
+        e_body, known = int(body["e"]), max(int(cur.get("e") or 0), self._keep_guest_e())
         if not heads or any(h.kind != "E" or h.line != line or h.e != e_body for h in heads) or \
                 [h.n for h in heads] != list(range(int(body["from"]), int(body["from"]) + len(heads))):
             log.warning("резерв: события «%s» с заголовками не по порядку — отказ", self.reserve_peer_name())
@@ -102,6 +155,9 @@ class ReserveKeepMixin:
         if e_body < known:
             return [("send", "jstale", {"line": line, "e": known})]
         last = int(cur.get("last") or 0)
+        if not self.__dict__.get("_keep_synced"):              # отметка могла отстать от сегмента (пропало питание)
+            last = max(last, self.reserve_keep_store().last()[1])
+            self.__dict__["_keep_synced"] = True
         new = [r for r, h in zip(recs, heads) if h.n > last]
         if new and event.head(new[0]).n != last + 1:
             return [("send", "jneed", {"line": line, "from": last + 1})]
@@ -130,7 +186,7 @@ class ReserveKeepMixin:
             return []
         st = self.reserve_keep_store()
         acts: list[tuple] = []
-        if h.n > st.counts_last("a") and h.n > int(cur.get("cs") or 0):
+        if h.n > st.counts_last("a") and h.n > int(cur.get("cb") or 0):
             st.append_counts("a", [raw])
             if self._keep_guest():
                 acts.append(("guest", "jcnt", {"line": line, "side": "a", "s": h.n, "blob": raw.hex()}))

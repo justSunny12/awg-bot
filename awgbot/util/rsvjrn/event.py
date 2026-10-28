@@ -5,8 +5,8 @@ event.py — часть пакета rsvjrn (см. __init__): запечатка
 Запись — открытый заголовок и шифротекст:
 
     2  метка «AJ»            1  вид: E — событие, a / b — пачка счётчиков стороны
-    8  линия (db_line)       4  эпоха (у пачки — 0)
-    8  номер (событие — i, пачка — последний s)
+    8  линия (db_line)       8  эпоха (у пачки — 0)
+    8  номер (событие — i, пачка — номер пачки хоста)
     4  длина шифротекста     …  SecretBox_K(JSON, добитый пробелами)
 
 Заголовок видит резерв без `K`: по нему он раскладывает записи по сегментам,
@@ -31,7 +31,7 @@ MAGIC = b"AJ"
 KIND_EVENT = b"E"
 SIDES = ("a", "b")                     # a — основа, b — клон на резерве (бот основы на резерве)
 STEP = 256
-HEAD = struct.Struct(">2sc8sIQI")      # метка, вид, линия, эпоха, номер, длина
+HEAD = struct.Struct(">2sc8sQQI")      # метка, вид, линия, эпоха, номер, длина
 MAX_RECORD = 4 * 1024 * 1024           # одна запись — с запасом под пачку счётчиков сотен устройств
 VERSION = 1
 
@@ -130,7 +130,7 @@ def seal_counts(k: bytes, line: str, side: str, batch: Batch) -> bytes:
     if side not in SIDES:
         raise RecordError("сторона пачки — a или b")
     inner = {**batch.as_json(), "line": line, "side": side}
-    return _seal(k, side.encode(), line, 0, batch.s, inner)
+    return _seal(k, side.encode(), line, 0, batch.bn, inner)
 
 
 def open_counts(k: bytes, raw: bytes, line: str = "") -> tuple[str, Batch]:
@@ -140,7 +140,7 @@ def open_counts(k: bytes, raw: bytes, line: str = "") -> tuple[str, Batch]:
         raise RecordError("запись не пачка счётчиков")
     if line and h.line != line:
         raise RecordError("пачка чужой линии")
-    if str(inner.get("side") or "") != h.kind or int(inner.get("s", -1)) != h.n:
+    if str(inner.get("side") or "") != h.kind or int(inner.get("bn", -1)) != h.n:
         raise RecordError("сторона или номер внутри пачки не те, что в заголовке")
     try:
         return h.kind, Batch.from_json(inner)

@@ -270,7 +270,7 @@ class ReserveInboundMixin:
                 rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
             except OSError as e:
                 return self._take_fail(f"отметка tg_take не записана: {e}")
-            return []
+            return [("guest", "takeover", {})]                # с журналом: эпоха — гостю (он следовал за основой)
         if inn.get("tg_take_forced") and waited < DONE_BUTTON_WAIT_S + TAKEN_WAIT_S:
             return []
         return self._take_fail("основа не передала бота (released) в срок")

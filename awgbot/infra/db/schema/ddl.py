@@ -264,6 +264,10 @@ CREATE TABLE IF NOT EXISTS jrn_meta (
     acked         INTEGER NOT NULL DEFAULT 0,            -- последний номер, подтверждённый резервом
     snap_i        INTEGER NOT NULL DEFAULT 0,            -- номер, по который резерв держит снимок
     fork_i        INTEGER NOT NULL DEFAULT 0,            -- точка расхождения последней передачи
+    cnt_bn        INTEGER NOT NULL DEFAULT 0,            -- пачки счётчиков этого хоста: последний выданный номер,
+    cnt_ack       INTEGER NOT NULL DEFAULT 0,            --   последний подтверждённый,
+    cnt_s0        INTEGER NOT NULL DEFAULT 0,            --   строки последней пачки (s0, s1]
+    cnt_s1        INTEGER NOT NULL DEFAULT 0,
     changed_at    TEXT    NOT NULL DEFAULT '',           -- момент последней передачи
     why           TEXT    NOT NULL DEFAULT ''            -- факт передачи (для журнала и карточки)
 );

@@ -32,18 +32,21 @@ def _strip_foreign_share(con) -> None:
     заставит основу прислать его заново, а новая сессия — переиздать стороны
     обменом `slots`; половинная запись (поколение без доли, сторона без ключа)
     выглядела бы для основы как «всё доставлено»."""
-    for key in ("rsv_pkg_in", "rsv_guest_links"):
+    for key in ("rsv_pkg_in", "rsv_guest_links", "rsv_jrn_in", "rsv_jrn_out"):
         try:
             con.execute("DELETE FROM server_state WHERE key = ?", (key,))
             con.commit()
         except Exception:                                      # noqa: BLE001 — схема без server_state
             return
-    # эпоха — о живом процессе, не о данных: восстановленная база стартует держателем
-    try:
-        con.execute("DELETE FROM jrn_meta")
-        con.commit()
-    except Exception:                                          # noqa: BLE001 — схема старше эпохи
-        pass
+    # эпоха — о живом процессе, не о данных: восстановленная база стартует держателем;
+    # журнал (события, хвост, дельты, принятые пачки) — местный: после восстановления сверка
+    # с резервом даст снимок со сбросом
+    for table in ("jrn_meta", "jrn_events", "jrn_tail", "jrn_counts", "jrn_seen"):
+        try:
+            con.execute(f"DELETE FROM {table}")
+            con.commit()
+        except Exception:                                      # noqa: BLE001 — схема старше эпохи
+            pass
 
 class BackupArchiveMixin:
     META_NAME = "state/backup-meta.json"

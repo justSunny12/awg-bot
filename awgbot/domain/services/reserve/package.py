@@ -105,6 +105,7 @@ class ReservePackageMixin:
         try:
             built = self.reserve_pkg_build(force=by_event)
         except Exception as e:                            # noqa: BLE001
+            self.__dict__.pop("_jrn_snap_pending", None)
             if str(e) != str(self.__dict__.get("_rsv_pkg_err") or ""):   # не каждые 5 с
                 log.warning("резерв: пакет не собрался: %s", e)
                 self.__dict__["_rsv_pkg_err"] = str(e)
@@ -114,6 +115,7 @@ class ReservePackageMixin:
         if self.rsv_get("rsv_view").get("pkg_error"):
             self.rsv_update("rsv_view", pkg_error="")
         if built is None:
+            self.__dict__.pop("_jrn_snap_pending", None)
             return None
         self.__dict__["_rsv_pkg_sending"] = {"gen": built["gen"], "at": time.monotonic()}
         return built
@@ -123,6 +125,7 @@ class ReservePackageMixin:
         s = self.__dict__.get("_rsv_pkg_sending")
         if s and time.monotonic() - s["at"] > 120:
             self.__dict__.pop("_rsv_pkg_sending", None)
+            self.__dict__.pop("_jrn_snap_pending", None)
             return True
         return False
 
@@ -183,7 +186,12 @@ class ReservePackageMixin:
                 return None
             journal = self._pkg_journal()
             self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
+            if journal:
+                self.__dict__["_jrn_snap_pending"] = True     # пачки счётчиков — не сворачивать, пока снимок в пути
             db_bytes, marks = pkgbot.replica_marked(self.db.path if hasattr(self.db, "path") else self._db_path())
+            if journal:
+                marks["cb"] = self.db.jrn_counts_bn()         # пачки по этот номер — из строк, учтённых снимком
+                marks["reset"] = bool(self.rsv_get("rsv_jrn_out").get("reset"))
             pkgbot.assert_clean(db_bytes)
             vpn_part = pkgvpn.build(self._pkg_ifaces(), admin=self._pkg_admin_addrs(), dns=self._pkg_dns_addrs(),
                                     upstreams=self._pkg_upstreams(), tz=str(config.TZ_NAME or ""))
@@ -199,6 +207,7 @@ class ReservePackageMixin:
                 sort_keys=True).encode(), digest_size=16).hexdigest()
             sent = self.rsv_get("rsv_pkg_sent")
             if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
+                self.__dict__.pop("_jrn_snap_pending", None)
                 return None                               # по таймеру без изменений — не уходит
             gen = max(int(sent.get("gen") or 0), int(sent.get("pending_gen") or 0)) + 1
             dns = self._pkg_dns_envelope()
@@ -218,7 +227,9 @@ class ReservePackageMixin:
                      f", журнал по {marks['i']}" if journal else "")
             built = {"gen": gen, "fp": fp, "blob": blob.hex(), "share": share, "m_gen": m_gen}
             if jrn:
-                built["jrn"] = {k: jrn[k] for k in ("line", "e", "i", "cs")}
+                # открыто — только то, что резерву нужно для снятия учтённого (номер строки счётчиков
+                # cs — внутри: по нему видно, сколько раз устройства были активны)
+                built["jrn"] = {k: jrn[k] for k in ("line", "e", "i", "cb", "reset")}
             return built
 
     def _db_path(self) -> str:
@@ -296,6 +307,7 @@ class ReservePackageMixin:
 
     def reserve_pkg_bad(self, gen: int, reason: str) -> None:
         self.__dict__.pop("_rsv_pkg_sending", None)
+        self.__dict__.pop("_jrn_snap_pending", None)
         log.warning("резерв: пакет %s отвергнут: %s", gen, reason[:120])
 
     def reserve_pkg_resend_if_stale(self) -> None:

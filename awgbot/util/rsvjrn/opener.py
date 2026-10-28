@@ -14,10 +14,15 @@ opener.py — часть пакета rsvjrn (см. __init__): база бота
 - аварийный переезд — эпоха основы + 1, гость держатель.
 
 Линия базы гостя — линия основы (его события и пачки помечены ею); месяц
-сброса — основы (метка её дельт).
+сброса — основы (метка её дельт). Эпоха основы — наибольшая из снимка, её
+событий и отметки резерва (`meta.json`: смена роли без событий её поднимает).
+Запись, которая не открылась (порча, чужой ключ), — разрыв: дальше её не
+берётся, открытие идёт по тому, что до неё. Пачки основы — с номером после
+`cb` снимка (раньше — учтены в нём).
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,10 +44,14 @@ class Opened:
 
 
 def _events(store: Store, k: bytes, line: str, after: int) -> tuple[list[_apply.Event], int]:
-    """События хранилища с номером больше after подряд; (события, первый недостающий или 0)."""
+    """События хранилища с номером больше after подряд; (события, первый недостающий или 0).
+    Не открылась — тоже разрыв."""
     out, nxt = [], after + 1
     for raw in store.events(after=after):
-        ev = event.open_event(k, raw, line)
+        try:
+            ev = event.open_event(k, raw, line)
+        except event.RecordError:
+            return out, nxt
         if ev.i != nxt:
             return out, nxt
         out.append(ev)
@@ -50,10 +59,19 @@ def _events(store: Store, k: bytes, line: str, after: int) -> tuple[list[_apply.
     return out, 0
 
 
+def _meta_e(keep_dir: Path, line: str) -> int:
+    """Эпоха линии, известная резерву (его отметка в хранилище); не та линия или нет — 0."""
+    try:
+        data = json.loads((keep_dir / "meta.json").read_text(encoding="utf-8"))
+        return int(data.get("e") or 0) if str(data.get("line") or "") == line else 0
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0
+
+
 def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, guest_dir: str | Path,
           *, button: bool) -> Opened:
     line = str(marks.get("line") or "")
-    snap_i, snap_e = int(marks.get("i") or 0), int(marks.get("e") or 0)
+    snap_i, snap_e, cb = int(marks.get("i") or 0), int(marks.get("e") or 0), int(marks.get("cb") or 0)
     res = Opened()
     keep, mine = Store(keep_dir), Store(guest_dir)
     base_ev, res.gap = _events(keep, k, line, snap_i)
@@ -72,12 +90,22 @@ def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, gues
         res.lost = [f"{ev.i} {ev.op} {ev.t}: {why}" for ev, why in done.lost]
         res.events, res.guest_events, res.fork = len(base_ev), len(guest_ev), fork
         month = counts.current_month(con)
-        for side, store, after in (("a", keep, int(marks.get("cs") or 0)), ("b", mine, 0)):
+        con.execute("INSERT INTO jrn_seen (host, s) VALUES (?, ?) ON CONFLICT(host) DO UPDATE SET s = excluded.s",
+                    (f"{line}:a", cb))                          # пачки основы по cb — в снимке
+        con.commit()
+        last_b = 0
+        for side, store, after in (("a", keep, cb), ("b", mine, 0)):
             for raw in store.counts(side, after=after):
-                got_side, batch = event.open_counts(k, raw, line)
+                try:
+                    got_side, batch = event.open_counts(k, raw, line)
+                except event.RecordError:
+                    continue
                 if got_side == side and counts.apply(con, batch, month):
                     res.counts += 1
-        base_e = max([snap_e] + [ev.e for ev in base_ev])
+                if side == "b":
+                    last_b = max(last_b, batch.bn)
+        known_e = _meta_e(Path(keep_dir), line)
+        base_e = max([snap_e, known_e] + [ev.e for ev in base_ev])
         guest_e = max([ev.e for ev in guest_ev], default=0)
         if guest_e:
             res.epoch, res.role, holder = guest_e, "holder", "self"
@@ -86,6 +114,8 @@ def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, gues
         else:
             res.epoch, res.role, holder = base_e + 1, "holder", "self"
         last_guest = guest_ev[-1].i if guest_ev else fork
+        if last_b:                                             # счёт пачек гостя — после записанных им
+            con.execute("UPDATE jrn_meta SET cnt_bn = ?, cnt_ack = ? WHERE id = 1", (last_b, last_b))
         con.execute("UPDATE jrn_meta SET epoch = ?, holder = ?, role = ?, capture = 1, applied = ?, acked = ?, "
                     "fork_i = ?, why = ? WHERE id = 1",
                     (res.epoch, holder, res.role, fork, fork, fork,

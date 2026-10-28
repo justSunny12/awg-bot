@@ -3,9 +3,13 @@ counts.py — часть пакета rsvjrn (см. __init__): поток счё
 
 Трафик, РФ-трафик и последнее рукопожатие — измерения, а не решения: каждая
 сторона шлёт свои дельты, получатель их складывает (рукопожатие — максимум),
-эпоха их не ограждает, хвоста у них не бывает. Пачка — свёртка `jrn_counts`
-по месяцу и устройству с номером хоста; получатель принимает номер больше
-последнего принятого от этого хоста (`jrn_seen`) — повтор отбрасывается.
+эпоха их не ограждает, хвоста у них не бывает. Пачка — свёртка строк
+`jrn_counts` ровно с s0 + 1 по s1 по месяцу и устройству; номер пачки `bn` —
+счётчик пачек хоста (он и в открытом заголовке: номер строки выдавал бы
+резерву, сколько раз устройства были активны). Получатель принимает номер
+больше последнего принятого от этого хоста (`jrn_seen`) — повтор
+отбрасывается; отправитель держит одну неподтверждённую пачку и повторяет
+её той же (те же строки), новую — только после подтверждения.
 Номер хоста — линия и сторона («…:a» основа, «…:b» клон на резерве): стороны
 меряют разные интерфейсы, их дельты не пересекаются. Месяц пачки старше
 текущего — в архив того месяца (traffic_monthly), а не в счётчики.
@@ -19,26 +23,31 @@ from dataclasses import dataclass, field
 @dataclass
 class Batch:
     host: str
-    s: int                                            # последний номер строк jrn_counts в пачке
+    bn: int                                           # номер пачки хоста (подряд по одной)
+    s0: int = 0                                       # строки jrn_counts: с s0 + 1 …
+    s1: int = 0                                       # … по s1 включительно
     months: dict[str, dict[int, list]] = field(default_factory=dict)   # месяц → устройство → [rx, tx, rf_rx, rf_tx, hs]
 
     def as_json(self) -> dict:
-        return {"v": 1, "host": self.host, "s": self.s,
+        return {"v": 1, "host": self.host, "bn": self.bn, "s0": self.s0, "s1": self.s1,
                 "m": {m: {str(d): v for d, v in devs.items()} for m, devs in self.months.items()}}
 
     @classmethod
     def from_json(cls, data: dict) -> "Batch":
         months = {str(m): {int(d): list(v) for d, v in (devs or {}).items()} for m, devs in (data.get("m") or {}).items()}
-        return cls(host=str(data["host"]), s=int(data["s"]), months=months)
+        return cls(host=str(data["host"]), bn=int(data["bn"]), s0=int(data.get("s0") or 0), s1=int(data.get("s1") or 0),
+                   months=months)
 
 
-def fold(conn: sqlite3.Connection, host: str, after: int = 0) -> Batch | None:
-    """Свёртка своих дельт с номером больше after; нечего слать — None."""
-    rows = conn.execute("SELECT s, month, device_id, rx, tx, rf_rx, rf_tx, hs FROM main.jrn_counts "
-                        "WHERE s > ? ORDER BY s", (int(after),)).fetchall()
+def fold(conn: sqlite3.Connection, host: str, after: int = 0, upto: int | None = None, bn: int = 0) -> Batch | None:
+    """Свёртка своих дельт с номером строки больше after (и не больше upto); нечего — None."""
+    sql, args = "SELECT s, month, device_id, rx, tx, rf_rx, rf_tx, hs FROM main.jrn_counts WHERE s > ?", [int(after)]
+    if upto is not None:
+        sql, args = sql + " AND s <= ?", args + [int(upto)]
+    rows = conn.execute(sql + " ORDER BY s", args).fetchall()
     if not rows:
         return None
-    b = Batch(host=host, s=int(rows[-1][0]))
+    b = Batch(host=host, bn=int(bn), s0=int(after), s1=int(rows[-1][0]))
     for _s, month, dev, rx, tx, rf_rx, rf_tx, hs in rows:
         acc = b.months.setdefault(str(month), {}).setdefault(int(dev), [0, 0, 0, 0, None])
         acc[0] += int(rx)
@@ -74,7 +83,7 @@ def apply(conn: sqlite3.Connection, batch: Batch, month: str = "") -> bool | Non
         return None
     conn.execute("BEGIN IMMEDIATE")
     seen = conn.execute("SELECT s FROM main.jrn_seen WHERE host = ?", (batch.host,)).fetchone()
-    if seen is not None and int(seen[0]) >= batch.s:
+    if seen is not None and int(seen[0]) >= batch.bn:
         conn.execute("ROLLBACK")
         return False
     try:
@@ -95,7 +104,7 @@ def apply(conn: sqlite3.Connection, batch: Batch, month: str = "") -> bool | Non
                                  "(last_handshake IS NULL OR last_handshake = '' OR CAST(last_handshake AS INTEGER) < ?)",
                                  (int(hs), dev, int(hs)))
         conn.execute("INSERT INTO main.jrn_seen (host, s) VALUES (?, ?) ON CONFLICT(host) DO UPDATE SET s = excluded.s",
-                     (batch.host, batch.s))
+                     (batch.host, batch.bn))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")

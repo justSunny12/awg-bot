@@ -136,6 +136,10 @@ class GuestCtlServer:
                 self.services.__dict__["_rsv_guest_jrn"] = dict(msg["jrn"])
             if kind == "hello":
                 await self.push_state(force=True)
+                fn = getattr(self.services, "reserve_guest_hello_jrn", None)
+                if fn is not None:                         # передача бота, пришедшая, пока гостя не было на связи
+                    from awgbot.runtime import rsvactions
+                    await rsvactions.run(await asyncio.to_thread(fn))
         elif kind == "back_req":
             self.back_requested_at = time.time()
             self._words.append(("back_req", None))
@@ -267,7 +271,7 @@ class GuestCtlClient:
         elif kind == "blocks":
             self.blocks = [str(a) for a in (msg.get("addrs") or [])][:4096]
             await asyncio.to_thread(self.services.guest_apply_blocks, self.blocks)
-        elif kind in JRN_KINDS or kind == "released":
+        elif kind in JRN_KINDS or kind in ("released", "takeover"):
             for k, body in await asyncio.to_thread(self.services.guest_jrn_in, kind, msg):
                 await self.send(k, body)
 

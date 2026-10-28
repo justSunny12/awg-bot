@@ -33,7 +33,9 @@ away с уведомлением, вебхука нет или Telegram молч
 
 Зависший вебхук резерва (away по поллингу, запись на собственный адрес,
 резерв `inn = idle` или пары нет ≥ STUCK_PAIR_S; так STUCK_IDLE_S подряд) —
-`("take_home",)`: `deleteWebhook`, поллинг, home без возврата, новый `K`.
+`("take_home",)`: `deleteWebhook`, поллинг, home без возврата, новый `K`. Так же
+и дома: Telegram сказал «вебхук не здесь» — основа следует (journal/epoch), и
+зависший вебхук без гостя держал бы её без права записи бессрочно.
 
 Возврат без резерва (С9, рычаг админа) и обычный возврат — outbound_return.
 
@@ -203,6 +205,8 @@ class ReserveOutboundMixin:
         peer = self.reserve_peer_state()
         if out.get("await_merge"):
             return self._tick_await_merge(out)
+        if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
+            return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
         fresh = str(peer.get("at") or "") >= str(out.get("since") or "")   # st получен после моего перехода домой
         if str(peer.get("inn") or "") == "serving" and self.reserve_online() and fresh:
             # переезд прошёл мимо меня — пакет открыт не моим K (своего `go` не было): по долям или
@@ -344,8 +348,8 @@ class ReserveOutboundMixin:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "release":
             return None
-        if self._pkg_journal():
-            return self._release_jrn(out)
+        if self._pkg_journal() and self.reserve_jrn_moved():
+            return self._release_jrn(out)                     # у резерва открыт снимок журнала — без реплики
         db_bytes = pkgbot.replica(self._db_path())
         try:
             pkgbot.assert_clean(db_bytes)

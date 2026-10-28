@@ -127,9 +127,8 @@ class ReserveSessionMixin:
                         "applied": int(meta["applied"]), "acked": int(meta["acked"])}}
         keep = self.reserve_keep_view()
         if keep:
-            g = self.__dict__.get("_rsv_guest_jrn") or {}
-            if g.get("e"):
-                keep["guest_e"] = int(g["e"])
+            if self._keep_guest_e():
+                keep["guest_e"], keep["guest_fork"] = self._keep_guest_e(), self._keep_guest_fork()
             out["keep"] = keep
         return out
 
@@ -226,8 +225,9 @@ class ReserveSessionMixin:
                 self.reserve_pkg_resend_if_stale()           # у резерва не тот пакет (или никакого) — отметка заново
             if hasattr(self, "reserve_jrn_keep_in"):
                 jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
-                self.rsv_update("rsv_peer_state", jrn_keep=dict(jrn.get("keep") or {}))
+                self.rsv_update("rsv_peer_state", jrn_keep=dict(jrn.get("keep") or {}) if isinstance(jrn.get("keep"), dict) else {})
                 self.reserve_jrn_keep_in(jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None)
+                self.reserve_keep_mine_in(jrn.get("mine") if isinstance(jrn.get("mine"), dict) else None)
             row = self.reserve_peer() or {}
             fields = {}
             if peer["name"] and peer["name"] != row.get("name"):

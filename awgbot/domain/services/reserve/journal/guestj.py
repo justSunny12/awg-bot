@@ -3,17 +3,21 @@ guestj.py — часть пакета journal (см. __init__): бот осно�
 (гость) с журналом.
 
 Процесс открытия кладёт гостю базу из снимка и событий основы и строку эпохи:
-аварийный переезд — гость держатель сразу; переезд кнопкой — гость следует
-за основой (её события приходят через бот резерва), пока основа не передаст
-бота (`released{epoch, last}`): догнал по `last` — эпоха его, отметка «ставь
-вебхук».
+аварийный переезд — гость держатель сразу; переезд кнопкой (и по согласию
+основы) — гость следует за основой (её события приходят через бот резерва),
+пока основа не передаст бота (`released{epoch, last}`): догнал по `last` —
+эпоха его, отметка «ставь вебхук». Основа умерла, не передав бота
+(`takeover` от бота резерва), — эпоха + 1 его. Вебхук гость с журналом
+ставит только держателем.
 
 Держатель пишет решения; события (захват с секретами и историей — гость) и
 пачки счётчиков клона (сторона b) ложатся его журналом данных на диск
 резерва (`jrn/` каталога гостя, шифротекст под `K`; вместо `rep.bin`) и
 уходят основе по локальному каналу через бот резерва; подтверждает основа
-(`jack`, `jcack`). На возврат (`stop`) — последние записи, ожидание
-подтверждений, следование и `released{epoch, last}` вместо реплики.
+(`jack`, `jcack`). На возврат (`stop`) — последние записи, следование и
+`released{epoch, last}` вместо реплики; неподтверждённое своё гость
+досылает и после этого — пока основа не подтвердит всё (она не берёт эпоху
+без догона).
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ import time
 from awgbot.util import pairproto
 
 from ...gateway_link.common import log
-from .ship import EV_BYTES, EV_LIMIT, RESEND_S
+from .ship import EV_BYTES, EV_LIMIT, RESEND_S, epoch_sane
 
 NEED_EVERY_S = 10
 
@@ -46,14 +50,22 @@ class ReserveGuestJournalMixin:
             return {}
         meta = self.db.jrn_meta()
         return {"e": int(meta["epoch"]), "role": str(meta["role"]), "applied": int(meta["applied"]),
-                "last": self.db.jrn_last_i()}
+                "last": self.db.jrn_last_i(), "fork": int(meta["fork_i"])}
+
+    def guest_can_take_tg(self) -> bool:
+        """Ставить ли вебхук: с журналом — только держателем (следующий ждёт передачи бота)."""
+        if not self.guest_jrn_on():
+            return True
+        return self.db.jrn_meta()["role"] == "holder"
 
     def _gj(self) -> dict:
         s = self.__dict__.get("_gj_d")
         if s is None:
             meta = self.db.jrn_meta()
-            s = self.__dict__["_gj_d"] = {"sent": int(meta["acked"]), "sent_at": 0.0, "stored": self.guest_jrn_store().last()[1],
-                                        "cnt_sent": 0, "cnt_at": 0.0, "need_at": 0.0, "released": None}
+            own = int(meta["epoch"]) if meta["role"] == "holder" else 0
+            s = self.__dict__["_gj_d"] = {"sent": int(meta["acked"]), "top": self.db.jrn_last_i(), "sent_at": 0.0,
+                                          "stored": self.guest_jrn_store().last()[1], "cnt_at": 0.0, "need_at": 0.0,
+                                          "released": None, "own_e": own}
         return s
 
     # ── такт ────────────────────────────────────────────────────────────────
@@ -64,18 +76,22 @@ class ReserveGuestJournalMixin:
         s, meta, now = self._gj(), self.db.jrn_meta(), time.monotonic()
         out: list[tuple[str, dict]] = []
         if meta["role"] == "holder":
+            s["own_e"] = int(meta["epoch"])
+        own = int(s.get("own_e") or 0)
+        if own:
+            # своё — и после передачи права записи (возврат), пока основа не подтвердит
             if int(s["sent"]) > int(meta["acked"]) and now - float(s["sent_at"]) > RESEND_S:
                 s["sent"] = int(meta["acked"])
-            out += self._gj_events(s, int(meta["epoch"]), now)
+            out += self._gj_events(s, own, now)
             if out or now - float(s["cnt_at"]) > self._jrn_cnt_delay():
-                out += self._gj_counts(s, now)
-        else:
+                out += self._gj_counts(now)
+        if meta["role"] != "holder":
             out += self._gj_catch_up(s, meta, now)
         return out
 
     def _gj_events(self, s: dict, epoch: int, now: float) -> list[tuple[str, dict]]:
         from awgbot.util.rsvjrn import event
-        evs = [e for e in self.db.jrn_events_after(int(s["sent"]), EV_LIMIT) if e.e == epoch]
+        evs = self.db.jrn_events_after(int(s["sent"]), EV_LIMIT, epoch=epoch)
         if not evs:
             return []
         k, line = self.reserve_k(), self.db.jrn_line()
@@ -90,23 +106,27 @@ class ReserveGuestJournalMixin:
         if new:
             self.guest_jrn_store().append_events(new)         # журнал данных гостя на диске — до отправки
             s["stored"] = event.head(new[-1]).n
-        s.update(sent=evs[0].i + len(recs) - 1, sent_at=now)
+        last = evs[0].i + len(recs) - 1
+        s.update(sent=last, top=max(int(s.get("top") or 0), last), sent_at=now)
         return [("jev", {"line": line, "e": epoch, "from": evs[0].i, "n": len(recs), "blob": b"".join(recs).hex()})]
 
-    def _gj_counts(self, s: dict, now: float) -> list[tuple[str, dict]]:
+    def _gj_counts(self, now: float) -> list[tuple[str, dict]]:
         from awgbot.util.rsvjrn import event
         line = self.db.jrn_line()
-        s["cnt_at"] = now
-        batch = self.db.jrn_counts_fold(f"{line}:b", int(s["cnt_sent"]))
+        self._gj()["cnt_at"] = now
+        batch = self.db.jrn_counts_out(f"{line}:b")
         if batch is None:
             return []
         rec = event.seal_counts(self.reserve_k(), line, "b", batch)
         if len(rec) * 2 > pairproto.MAX_BLOB:
-            log.warning("гость: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
+            if not self.__dict__.get("_gj_cnt_big"):
+                log.warning("гость: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
+                self.__dict__["_gj_cnt_big"] = True
             return []
-        self.guest_jrn_store().append_counts("b", [rec])
-        s["cnt_sent"] = batch.s
-        return [("jcnt", {"line": line, "side": "b", "s": batch.s, "blob": rec.hex()})]
+        st = self.guest_jrn_store()
+        if batch.bn > st.counts_last("b"):
+            st.append_counts("b", [rec])                      # на диск — до отправки (перезагрузка резерва)
+        return [("jcnt", {"line": line, "side": "b", "s": batch.bn, "blob": rec.hex()})]
 
     def _gj_catch_up(self, s: dict, meta: dict, now: float) -> list[tuple[str, dict]]:
         """Следую за основой (переезд кнопкой): передача бота пришла и догнал — эпоха моя."""
@@ -134,43 +154,72 @@ class ReserveGuestJournalMixin:
         if not self.guest_jrn_on():
             return []
         s = self._gj()
-        if kind == "jev":
-            replies = self._follow_jev_in(body)
-            return [(r[1], r[2]) for r in replies if r[0] == "send" and r[1] == "jneed"]
-        if kind == "jcnt":
-            self._follow_jcnt_in(body)
+        try:
+            if kind == "jev":
+                replies = self._follow_jev_in(body)
+                return [(r[1], r[2]) for r in replies if r[0] == "send" and r[1] == "jneed"]
+            if kind == "jcnt":
+                self._follow_jcnt_in(body)
+                return []
+            if kind == "jack":
+                i = int(body["i"])
+                if i <= int(s.get("top") or 0):
+                    self.db.jrn_acked_set(i, drop=False)       # события — и в журнале на диске: jneed досылает из базы
+                return []
+            if kind == "jneed":
+                frm = int(body["from"])
+                if 0 < frm <= self.db.jrn_last_i() + 1:
+                    s.update(sent=frm - 1, sent_at=0.0)
+                return []
+            if kind == "jstale":
+                e = int(body["e"])
+                meta_now = self.db.jrn_meta()
+                if meta_now["role"] == "holder" and epoch_sane(e, int(meta_now["epoch"])):
+                    meta = self.db.jrn_adopt(e, why="основа взяла эпоху", fork_i=int(meta_now["acked"]))
+                    if meta is not None:
+                        log.warning("гость: эпоха %s у основы — здесь следование, мои правки после — хвост", meta["epoch"])
+                return []
+            if kind == "jcack" and str(body.get("side") or "") == "b":
+                self.db.jrn_counts_acked(int(body["s"]))
+                return []
+            if kind == "released":
+                s["released"] = {"epoch": int(body["epoch"]), "last": int(body["last"])}
+                s["need_at"] = 0.0
+                return self._gj_catch_up(s, self.db.jrn_meta(), time.monotonic())
+            if kind == "takeover":
+                return self._gj_takeover()
+        except (KeyError, TypeError, ValueError) as e:
+            log.warning("гость: «%s» не того вида: %s", kind, e)
+        return []
+
+    def _gj_takeover(self) -> list[tuple[str, dict]]:
+        """Основа не передала бота и не на связи (бот резерва решил забрать Telegram сам) —
+        эпоха + 1 моя, держатель с последнего применённого."""
+        meta = self.db.jrn_meta()
+        if meta["role"] == "holder":
             return []
-        if kind == "jack":
-            self.db.jrn_acked_set(int(body["i"]), drop=False)  # события — и в журнале на диске: jneed досылает из базы
-            return []
-        if kind == "jneed":
-            frm = int(body["from"])
-            s.update(sent=max(0, frm - 1), sent_at=0.0)
-            return []
-        if kind == "jstale":
-            meta = self.db.jrn_adopt(int(body["e"]), why="основа взяла эпоху")
-            if meta is not None:
-                log.warning("гость: эпоха %s у основы — здесь следование, мои правки после — хвост", meta["epoch"])
-            return []
-        if kind == "jcack" and str(body.get("side") or "") == "b":
-            self.db.jrn_counts_drop(int(body["s"]))
-            return []
-        if kind == "released":
-            s["released"] = {"epoch": int(body["epoch"]), "last": int(body["last"])}
-            s["need_at"] = 0.0
-            return self._gj_catch_up(s, self.db.jrn_meta(), time.monotonic())
+        got = self.db.jrn_pass(holder="self", role="holder", why="основа не передала бота",
+                               fork_i=int(meta["applied"]))
+        if got is not None:
+            log.warning("гость: основа не передала бота — эпоха %s здесь", got["epoch"])
+            self._gj()["released"] = None
+            self.__dict__["_gj_take_tg"] = True
         return []
 
     # ── возврат ─────────────────────────────────────────────────────────────
     def guest_jrn_drained(self) -> bool:
-        """Основа подтвердила все мои события этой эпохи."""
+        """Основа подтвердила все мои события эпохи, которую я держал."""
         meta = self.db.jrn_meta()
-        return not [e for e in self.db.jrn_events_after(int(meta["acked"]), 1) if e.e == int(meta["epoch"])]
+        own = int(self._gj().get("own_e") or 0) or int(meta["epoch"])
+        return not self.db.jrn_events_after(int(meta["acked"]), 1, epoch=own)
 
     def guest_jrn_release(self) -> dict:
         """Возврат: решений больше не пишу (следование), основе — до какого номера моё."""
         meta = self.db.jrn_meta()
         last = self.db.jrn_last_i()
         epoch = int(meta["epoch"])
-        self.db.jrn_pass(holder="peer", role="follower", why="возврат", fork_i=last, epoch=epoch)
+        if meta["role"] == "holder":
+            self._gj()["own_e"] = epoch
+            # без права записи, но свои события остаются в базе — досылаются, пока основа не подтвердит
+            self.db.jrn_fence(why="возврат: право записи — основе")
         return {"line": self.db.jrn_line(), "epoch": epoch, "last": last}

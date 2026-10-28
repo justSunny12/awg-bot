@@ -15,11 +15,14 @@ handover.py — часть пакета journal (см. __init__): передач
 from __future__ import annotations
 
 import json
+import time
 
 from awgbot.util import timeutil
 
 from ...gateway_link.common import log
 from ..outbound import RELEASED_WAIT_S
+
+JRN_NEED_S = 10
 
 
 class ReserveHandoverMixin:
@@ -28,12 +31,11 @@ class ReserveHandoverMixin:
         """Передача бота с журналом: всё моё у резерва (подтверждено) — эпоха второй
         стороне одной транзакцией (здесь следование), `released{epoch, last}` без реплики:
         бот основы на резерве догонит события по `last` и возьмёт эпоху."""
-        if not self.reserve_jrn_all_acked():
+        meta = self.db.jrn_hand_over(why="передача бота")     # проверка и переход — одной транзакцией
+        if meta is None:
             log.warning("резерв: не все правки подтверждены резервом — передачу бота откладываю")
             return None
-        last = self.db.jrn_last_i()
-        meta = self.db.jrn_pass(holder="peer", role="follower", why="передача бота", fork_i=last)
-        epoch = int((meta or self.db.jrn_meta())["epoch"])
+        epoch, last = int(meta["epoch"]), int(meta["fork_i"])
         self._out_step("released", RELEASED_WAIT_S, released_at=timeutil.now_iso(), poll_woken=0)
         self.reserve_set_poll("away", why="released")
         log.info("резерв: бот передан «%s» — эпоха %s, правки по %s", self.reserve_peer_name(), epoch, last)
@@ -48,6 +50,20 @@ class ReserveHandoverMixin:
             return []
         self.rsv_update("rsv_in", replica_at=timeutil.now_iso(), jrn_released={"epoch": int(epoch), "last": int(last)})
         return [("guest", "released", {"line": self.reserve_keep_line(), "epoch": int(epoch), "last": int(last)})]
+
+    def reserve_guest_hello_jrn(self) -> list[tuple]:
+        """Гость (пере)подключился к локальному каналу: передача бота от основы, если она
+        уже была, — ему снова (она живёт у него только в памяти)."""
+        inn = self._inn()
+        if str(inn.get("state") or "") not in ("taking", "serving"):
+            return []
+        if inn.get("tg_take_forced"):
+            return [("guest", "takeover", {})]                # основа не передала бота — эпоха гостю
+        rel = inn.get("jrn_released")
+        if str(inn.get("state") or "") != "taking" or not rel:
+            return []
+        return [("guest", "released", {"line": self.reserve_keep_line(), "epoch": int(rel["epoch"]),
+                                       "last": int(rel["last"])})]
 
     def reserve_guest_released_jrn(self, body: dict) -> list[tuple]:
         """Возврат с журналом: гость передал право записи (`released{epoch, last}`) — основе."""
@@ -68,12 +84,46 @@ class ReserveHandoverMixin:
             return []
         applied = int(self.db.jrn_meta()["applied"])
         if applied < int(last):
-            log.warning("резерв: правки бота на «%s» применены по %s из %s — остальное придёт хвостом",
-                        self.reserve_peer_name(), applied, last)
+            # не догнала: эпоху не беру, пока правки бота на резерве не применены (он ждёт и досылает)
+            self.rsv_update("rsv_out", jrn_back={"epoch": int(epoch), "last": int(last), "mono": time.monotonic(),
+                                                 "need": time.monotonic()})
+            log.info("резерв: бот на «%s» передал право записи по %s, применено по %s — догоняю",
+                     self.reserve_peer_name(), last, applied)
+            return [("send", "jneed", {"line": self.db.jrn_line(), "from": applied + 1})]
+        return self._jrn_back_take(int(epoch), int(last))
+
+    def _jrn_back_caught_up(self) -> list[tuple]:
+        """После применения: возврат ждал догона и догнал — эпоха сюда."""
+        jb = self.rsv_get("rsv_out").get("jrn_back") if not getattr(self, "guest", False) else None
+        if not jb or int(self.db.jrn_meta()["applied"]) < int(jb.get("last") or 0):
+            return []
+        return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
+
+    def reserve_jrn_back_tick(self, out: dict) -> list[tuple]:
+        """Возврат ждёт догона: просьба досылки раз в JRN_NEED_S; не догнала за срок шага —
+        эпоха сюда всё равно (номера — после последнего у бота на резерве), недостающее —
+        строкой журнала."""
+        jb = dict(out.get("jrn_back") or {})
+        now = time.monotonic()
+        applied = int(self.db.jrn_meta()["applied"])
+        if applied >= int(jb.get("last") or 0):
+            return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
+        if now - float(jb.get("mono") or 0) > RELEASED_WAIT_S:
+            log.error("резерв: правки бота на «%s» с %s по %s не пришли — возврат без них",
+                      self.reserve_peer_name(), applied + 1, jb.get("last"))
+            self.db.jrn_bump(int(jb.get("last") or 0))
+            return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
+        if now - float(jb.get("need") or 0) > JRN_NEED_S:
+            self.rsv_update("rsv_out", jrn_back={**jb, "need": now})
+            return [("send", "jneed", {"line": self.db.jrn_line(), "from": applied + 1})]
+        return []
+
+    def _jrn_back_take(self, epoch: int, last: int) -> list[tuple]:
+        out = self._out()
         report = dict(out.get("jrn_report") or {})
         report.setdefault("lost", [])
         log.info("резерв: сводка эпохи %s: %s", epoch, json.dumps(report, ensure_ascii=False))
-        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None)
+        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None, jrn_back=None)
         self.reserve_monthly_settle()
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)   # эпоха — здесь (reserve_epoch_sync)
         return [("take_tg",), ("live",)]

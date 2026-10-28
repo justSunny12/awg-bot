@@ -22,8 +22,16 @@ epoch.py — часть пакета journal (см. __init__): эпоха лин
 from __future__ import annotations
 
 from ...gateway_link.common import log
+from .ship import epoch_sane
 
 _HOSTING = ("taking", "serving", "releasing")
+
+
+def _int(v) -> int:
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _earlier(a: dict, b: dict) -> bool:
@@ -89,11 +97,20 @@ class ReserveEpochMixin:
         if want == self.reserve_following():
             return
         if want:
-            # эпоха бота на резерве, если он открылся сам (авария), — его номер, а не мой + 1
-            guest_e = int((self.reserve_peer_state().get("jrn_keep") or {}).get("guest_e") or 0)
-            meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None)
+            # эпоха и точка расхождения бота на резерве, если он открылся сам (авария), — его, а не
+            # моя + 1 и мой последний номер; не знаю — подтверждённое резервом (дальше — хвост)
+            keep = self.reserve_peer_state().get("jrn_keep") or {}
+            guest_e, fork = _int(keep.get("guest_e")), _int(keep.get("guest_fork"))
+            meta_now = self.db.jrn_meta()
+            if guest_e and not epoch_sane(guest_e, int(meta_now["epoch"])):
+                guest_e = 0
+            if fork and not 0 < fork <= max(self.db.jrn_last_i(), int(meta_now["acked"])) + 1:
+                fork = 0
+            meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None,
+                                    fork_i=fork or int(meta_now["acked"]))
             if meta is not None:
                 self.rsv_update("rsv_out", jrn_report=None)   # сводка эпохи для Т-РУ5б — с начала следования
+                self.db.jrn_seen_reset(f"{self.db.jrn_line()}:b")   # новый гость — счёт его пачек заново
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
         else:

@@ -42,7 +42,7 @@ class ReserveFollowMixin:
     def reserve_holder_blocks(self) -> list[str] | None:
         """Адреса для DROP в следовании; None — не следование или держатель их ещё не прислал
         (тогда — по своей базе: решения в ней с начала следования не меняются)."""
-        if not self.reserve_following() or self.reserve_jrn_on():
+        if not self.reserve_following() or self.reserve_jrn_moved():
             return None                                       # журнал: решения держателя уже в моей базе
         f = self.rsv_get("rsv_follow")
         if not f.get("blocks_at"):
@@ -74,16 +74,23 @@ class ReserveFollowMixin:
 
     # ── журнал: события и счётчики держателя ────────────────────────────────
     def _follow_jev_in(self, body: dict) -> list[tuple]:
-        """События бота основы на резерве (через резерв): применить по порядку, затем
-        пиры и блокировки по итогу; `jack` — после применения. Не следую — `jstale`
-        не шлю (эпоха могла уйти сюда), отбрасываю; эпоха меньше моей — `jstale`."""
+        """События держателя линии (бот основы на резерве — через резерв; у гостя,
+        следующего до передачи бота, — события основы): применить строго подряд с
+        `applied + 1`, затем пиры и блокировки по итогу; `jack` — после применения.
+        Следующий принимает эпоху держателя как есть (в любую сторону: смена роли без
+        событий поднимает мою, а держатель — один); держатель здесь на события эпохи
+        меньше своей отвечает `jstale`, остальное пропускает (роль решает сверка)."""
         from awgbot.util.rsvjrn import event
+        from .ship import epoch_sane
         line, e_body = str(body["line"]), int(body["e"])
         meta = self.db.jrn_meta()
-        if e_body < int(meta["epoch"]):
-            return [("send", "jstale", {"line": line, "e": int(meta["epoch"])})]
         if meta["role"] != "follower" or meta["holder"] != "peer":
+            if e_body < int(meta["epoch"]):
+                return [("send", "jstale", {"line": line, "e": int(meta["epoch"])})]
             log.info("резерв: события эпохи %s от «%s», а эпоха здесь — пропущены", e_body, self.reserve_peer_name())
+            return []
+        if not epoch_sane(e_body, int(meta["epoch"])):
+            log.warning("резерв: события эпохи %s от «%s» — вне разумного, пропущены", e_body, self.reserve_peer_name())
             return []
         try:
             k = self.reserve_k()
@@ -95,10 +102,10 @@ class ReserveFollowMixin:
             return [("send", "jneed", {"line": line, "from": int(meta["applied"]) + 1})]
         applied = int(meta["applied"])
         evs = [ev for ev in evs if ev.i > applied]
-        if evs and evs[0].i != applied + 1:
-            return [("send", "jneed", {"line": line, "from": applied + 1})]
-        if e_body > int(meta["epoch"]):
-            self.db.jrn_adopt_epoch(e_body)                   # держатель тот же, номер его эпохи — его
+        if evs and [ev.i for ev in evs] != list(range(applied + 1, applied + 1 + len(evs))):
+            return [("send", "jneed", {"line": line, "from": applied + 1})]   # разрыв или перестановка — не применять
+        if e_body != int(meta["epoch"]):
+            self.db.jrn_adopt_epoch(e_body)                   # держатель один — номер его эпохи и здесь
         if evs:
             before = self._follow_watch()
             res = self.db.jrn_apply(evs)
@@ -106,7 +113,7 @@ class ReserveFollowMixin:
             for ev, why in res.lost:
                 log.warning("резерв: событие %s (%s %s) не встало: %s", ev.i, ev.op, ev.t, why)
             applied = res.last
-        return [("send", "jack", {"line": line, "e": e_body, "i": applied})]
+        return [("send", "jack", {"line": line, "e": e_body, "i": applied})] + self._jrn_back_caught_up()
 
     def _follow_jcnt_in(self, body: dict) -> list[tuple]:
         """Пачка счётчиков второй стороны — сложить: у основы — клона (b), расход через
@@ -119,7 +126,7 @@ class ReserveFollowMixin:
             log.warning("резерв: пачка счётчиков от «%s» не открылась: %s", self.reserve_peer_name(), e)
             return []
         guest = bool(getattr(self, "guest", False))
-        if side != ("a" if guest else "b") or batch.s != int(body["s"]):
+        if side != ("a" if guest else "b") or batch.bn != int(body["s"]):
             return []
         got = self.db.jrn_counts_apply(batch)
         if got is None:
@@ -131,7 +138,7 @@ class ReserveFollowMixin:
                 self.reserve_traffic_out_add(rx, tx)
             except Exception as e:                            # noqa: BLE001
                 log.info("резерв: расход через резерв не учтён: %s", e)
-        return [("send", "jcack", {"line": line, "side": "b", "s": batch.s})]
+        return [("send", "jcack", {"line": line, "side": "b", "s": batch.bn})]
 
     def _follow_watch(self) -> dict:
         admin = self.db.get_client_by_tg(int(config.ADMIN_ID)) if hasattr(self.db, "get_client_by_tg") else None

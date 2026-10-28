@@ -123,7 +123,7 @@ async def _release(bot, svc, pc) -> None:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001
         log.info("резерв: опрос вне очереди перед репликой: %s", e)
-    if await asyncio.to_thread(svc.reserve_jrn_on):
+    if await asyncio.to_thread(svc.reserve_jrn_moved):
         await _jrn_drain(svc)                                # журнал: последние правки и счётчики — до передачи
     built = await asyncio.to_thread(svc.reserve_release_build)
     if not built:

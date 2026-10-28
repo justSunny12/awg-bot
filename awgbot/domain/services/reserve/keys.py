@@ -77,12 +77,15 @@ class ReserveKeysMixin:
         self.rsv_update("rsv_keys", code_notify_why="")
 
     def reserve_new_k(self) -> dict:
-        """Новый ключ пакета после каждого возврата: резерв прежний знал."""
+        """Новый ключ пакета после каждого возврата: резерв прежний знал. Журнал — снимком
+        со сбросом: записи под прежним ключом новым не открыть."""
         with _LOCK:
             keys = self.reserve_keys()
             keys.update(k=seal.new_k().hex(), k_gen=int(keys.get("k_gen") or 0) + 1)
             self.rsv_put("rsv_keys", keys)
-            return keys
+        if hasattr(self, "reserve_jrn_new_k"):
+            self.reserve_jrn_new_k()
+        return keys
 
     def reserve_mark_compromised(self, why: str) -> None:
         self.rsv_update("rsv_keys", compromised=True, compromised_why=why)

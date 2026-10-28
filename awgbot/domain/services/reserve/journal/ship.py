@@ -9,16 +9,25 @@ ship.py — часть пакета journal (см. __init__): своя лини�
 событий после снимка, раз в сутки, смена ключей и частей вне базы.
 
 Сверка до первой отправки в сессии: пока не пришёл `st` резерва с его
-взглядом на мою линию (`st.jrn.keep`), не уходит ничего. У резерва номер
-больше моего последнего (база потеряла хвост при пропаже питания или
-восстановлена) — номера поднимаются выше его (`jrn_bump`) и сначала снимок;
-меньше — досылка с его последнего + 1, если эти события у меня ещё есть,
-иначе снимок. Подтверждённое резервом (`jack`) удаляется; без подтверждения
-дольше RESEND_S — повтор с подтверждённого.
+взглядом на мою линию (`st.jrn.keep`), не уходит ничего. Снимка этой базы у
+резерва нет, у резерва номер больше моего последнего (база потеряла хвост
+при пропаже питания или восстановлена) или нужных ему событий у меня уже
+нет — снимок со сбросом (`reset`: резерв снимает всё своё по этой линии и
+начинает с номера снимка); иначе — досылка с его последнего + 1.
+Подтверждённое резервом (`jack`, не дальше отправленного) удаляется; без
+подтверждения дольше RESEND_S — повтор с подтверждённого. Смена `K` — тоже
+снимок со сбросом: записи под прежним ключом новым не открыть.
+
+Не шлётся ничего, пока идёт возврат (решения нового держателя не уходят под
+прежним `K`, который резерв знал), и событий — пока резерв несёт моих
+(serving): держатель там, сверка роли переведёт меня в следование.
 
 Пачки счётчиков — по таймеру `pkg_minutes` ± 40 % и с ближайшей пачкой
-событий; держатель пачек основы — резерв (для открытия) и, в отъезде, бот
-основы на резерве (лимит по сумме).
+событий, по одной: неподтверждённая повторяется той же (infra/db/jrn
+`jrn_counts_out`), новая — после `jcack`; пока снимок в пути — не
+сворачиваются (строки по `cs` снимка учтены в нём, пачки по `cb` — тоже).
+Получатели пачек основы — резерв (для открытия) и, в отъезде, бот основы на
+резерве (лимит по сумме).
 """
 from __future__ import annotations
 
@@ -30,6 +39,7 @@ from awgbot.util import pairproto, timeutil
 
 from ...gateway_link.common import log
 from .. import compat
+from ..state import _LOCK
 
 EV_LIMIT = 256                    # событий в одной пачке
 EV_BYTES = pairproto.CHUNK_BYTES - 4096   # запись целиком в одно сообщение (hex — в MAX_BLOB)
@@ -38,6 +48,13 @@ SNAP_EVENTS = 2000                # событий у резерва после 
 SNAP_BYTES = 1024 * 1024
 SNAP_DAY_S = 24 * 3600
 CAPS_TTL_S = 60
+EPOCH_STEP_MAX = 1000             # эпоха от второй стороны — не дальше моей на столько (мусор и подделка)
+EPOCH_MAX = 2 ** 62
+
+
+def epoch_sane(e: int, mine: int) -> bool:
+    """Эпоха из сообщения второй стороны годится: в пределах заголовка и недалеко от моей."""
+    return 0 <= int(e) < EPOCH_MAX and int(e) <= int(mine) + EPOCH_STEP_MAX
 
 
 class ReserveShipMixin:
@@ -57,6 +74,11 @@ class ReserveShipMixin:
             return False
         peer = self.reserve_peer_state()
         return compat.journal_pair(self._jrn_caps(), list(peer.get("caps") or []))
+
+    def reserve_jrn_moved(self) -> bool:
+        """Мои пользователи у резерва ушли журналом: у него открыт снимок `pkg3` (а не
+        пакет прежнего пути, если журнал включился, а снимок не успел)."""
+        return self.reserve_jrn_on() and bool(self.rsv_get("rsv_pkg_sent").get("jrn"))
 
     def reserve_jrn_sync(self) -> None:
         """Захват — по направлению; смена — снимок (или пакет прежнего пути) заново.
@@ -84,7 +106,7 @@ class ReserveShipMixin:
     def _jrn_sess(self) -> dict:
         s = self.__dict__.get("_jrn_sess_d")
         if s is None:
-            s = self.__dict__["_jrn_sess_d"] = {"ok": False, "hold": True, "sent": 0, "sent_at": 0.0, "cnt_sent": 0}
+            s = self.__dict__["_jrn_sess_d"] = {"ok": False, "hold": True, "sent": 0, "sent_at": 0.0, "top": 0}
         return s
 
     def _jrn_sess_reset(self) -> None:
@@ -94,12 +116,20 @@ class ReserveShipMixin:
     def _jrn_out(self) -> dict:
         return self.rsv_get("rsv_jrn_out")
 
-    def _jrn_snap_need(self, why: str) -> None:
+    def _jrn_snap_need(self, why: str, *, reset: bool = True) -> None:
+        """Снимок раньше событий; reset — резерв снимает всё своё по этой линии."""
         s = self._jrn_sess()
         if not s.get("snap_why"):
             log.info("резерв: журнал к «%s» — сначала снимок (%s)", self.reserve_peer_name(), why)
-        s.update(hold=True, snap_why=why)
+        s.update(ok=True, hold=True, snap_why=why)
+        if reset:
+            self.rsv_update("rsv_jrn_out", reset=True)
         self.reserve_pkg_mark()
+
+    def reserve_jrn_new_k(self) -> None:
+        """Новый `K`: записи у резерва под прежним ключом новым не открыть — снимок со сбросом."""
+        if self.reserve_jrn_on() and not getattr(self, "guest", False):
+            self._jrn_snap_need("новый ключ пакета")
 
     def reserve_jrn_keep_in(self, keep: dict | None) -> None:
         """Взгляд резерва на мою линию из его `st` — сверка до первой отправки."""
@@ -108,9 +138,14 @@ class ReserveShipMixin:
         s = self._jrn_sess()
         line = self.db.jrn_line()
         keep = dict(keep or {})
-        last = int(keep.get("last") or 0)
+        try:
+            last, cnt_bn = int(keep.get("last") or 0), int(keep.get("cnt_bn") or 0)
+        except (TypeError, ValueError):
+            last, cnt_bn = 0, 0
         if int(keep.get("size") or 0) > SNAP_BYTES:
             self.reserve_pkg_mark()                           # плановый снимок: у резерва больше мегабайта событий
+        if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():
+            self.db.jrn_counts_raise(cnt_bn)                  # счёт пачек — не ниже принятого резервом
         if s.get("ok"):
             return
         s["ok"] = True
@@ -119,7 +154,6 @@ class ReserveShipMixin:
             self._jrn_snap_need("у резерва нет снимка этой базы")
             return
         if last > mine:
-            self.db.jrn_bump(last)
             self._jrn_snap_need(f"у резерва события до {last}, здесь до {mine}")
             return
         first = self.db.jrn_first_i()
@@ -127,27 +161,32 @@ class ReserveShipMixin:
             self._jrn_snap_need("событий, которых нет у резерва, здесь уже нет")
             return
         self.db.jrn_acked_set(last)
-        s.update(hold=False, sent=last, sent_at=0.0, snap_why="")
+        s.update(hold=False, sent=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="")
 
     def reserve_jrn_snap_ok(self, marks: dict) -> None:
         """Резерв принял снимок `pkg3`: всё по номер снимка у него — подтверждено."""
-        i, cs = int(marks.get("i") or 0), int(marks.get("cs") or 0)
+        i, cs, cb = int(marks.get("i") or 0), int(marks.get("cs") or 0), int(marks.get("cb") or 0)
         self.db.jrn_acked_set(i)
         self.db.jrn_snap_set(i)
-        self.db.jrn_counts_drop(cs)
+        self.db.jrn_counts_cover(cs, cb)
+        self.__dict__.pop("_jrn_snap_pending", None)
         out = self._jrn_out()
-        self.rsv_put("rsv_jrn_out", {**out, "snap_i": i, "cs": cs, "cnt_acked": max(int(out.get("cnt_acked") or 0), cs),
+        self.rsv_put("rsv_jrn_out", {**out, "snap_i": i, "cs": cs, "cb": cb, "reset": False,
                                      "snap_at": timeutil.now_iso(), "snap_next": self._jrn_snap_next()})
         s = self._jrn_sess()
-        s.update(ok=True, hold=False, sent=max(int(s.get("sent") or 0), i), sent_at=0.0, snap_why="",
-                 cnt_sent=max(int(s.get("cnt_sent") or 0), cs))
+        s.update(ok=True, hold=False, sent=max(int(s.get("sent") or 0), i), top=max(int(s.get("top") or 0), i),
+                 sent_at=0.0, snap_why="")
+
+    def reserve_jrn_snap_dropped(self) -> None:
+        """Снимок не принят или не дошёл — пачки счётчиков снова сворачиваются."""
+        self.__dict__.pop("_jrn_snap_pending", None)
 
     @staticmethod
     def _jrn_snap_next() -> str:
         return timeutil.to_iso(timeutil.shift(timeutil.now(), SNAP_DAY_S * random.uniform(0.6, 1.4)))
 
     def reserve_jrn_snap_due(self) -> bool:
-        """Пора ли плановый снимок: много событий у резерва или сутки, если события были."""
+        """Пора ли плановый снимок: много событий после снимка или сутки, если события были."""
         out = self._jrn_out()
         if self.db.jrn_last_i() - int(out.get("snap_i") or 0) > SNAP_EVENTS:
             return True
@@ -160,10 +199,18 @@ class ReserveShipMixin:
             return True
 
     # ── такт ────────────────────────────────────────────────────────────────
+    def _jrn_quiet(self) -> bool:
+        """Возврат идёт — журнал молчит: новый держатель пишет под прежним K, который резерв
+        знал; после возврата — новый K и снимок со сбросом."""
+        return str(self.rsv_get("rsv_out").get("state") or "home") == "returning"
+
+    def _jrn_peer_serving(self) -> bool:
+        return str(self.reserve_peer_state().get("inn") or "idle") == "serving"
+
     def reserve_jrn_tick(self) -> list[tuple]:
         """Такт журнала (1 с): события и пачки счётчиков к резерву."""
         self.reserve_jrn_sync()
-        if not self.reserve_jrn_on() or not self.reserve_online():
+        if not self.reserve_jrn_on() or not self.reserve_online() or self._jrn_quiet():
             return []
         s = self._jrn_sess()
         if not s.get("ok") or s.get("hold"):
@@ -174,15 +221,15 @@ class ReserveShipMixin:
         acked = int(meta["acked"])
         if int(s.get("sent") or 0) > acked and now - float(s.get("sent_at") or 0) > RESEND_S:
             s["sent"] = acked                                  # подтверждения нет — повтор с подтверждённого
-        if meta["role"] == "holder":
+        if meta["role"] == "holder" and not self._jrn_peer_serving():
             acts += self._jrn_events_out(s, int(meta["epoch"]), now)
         if acts or self._jrn_cnt_timer_due(now):
-            acts += self._jrn_counts_out(s)
+            acts += self._jrn_counts_out()
         return acts
 
     def _jrn_events_out(self, s: dict, epoch: int, now: float) -> list[tuple]:
         from awgbot.util.rsvjrn import event
-        evs = [e for e in self.db.jrn_events_after(int(s.get("sent") or 0), EV_LIMIT) if e.e == epoch]
+        evs = self.db.jrn_events_after(int(s.get("sent") or 0), EV_LIMIT, epoch=epoch)
         if not evs:
             return []
         k, line = self.reserve_k(), self.db.jrn_line()
@@ -193,7 +240,8 @@ class ReserveShipMixin:
                 break
             recs.append(r)
             size += len(r)
-        s.update(sent=evs[0].i + len(recs) - 1, sent_at=now)
+        last = evs[0].i + len(recs) - 1
+        s.update(sent=last, top=max(int(s.get("top") or 0), last), sent_at=now)
         return [("send", "jev", {"line": line, "e": epoch, "from": evs[0].i, "n": len(recs),
                                  "blob": b"".join(recs).hex()})]
 
@@ -211,19 +259,22 @@ class ReserveShipMixin:
     def _jrn_cnt_delay() -> float:
         return max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60 * random.uniform(0.6, 1.4)
 
-    def _jrn_counts_out(self, s: dict, side: str = "a") -> list[tuple]:
+    def _jrn_counts_out(self, side: str = "a") -> list[tuple]:
         from awgbot.util.rsvjrn import event
-        line = self.db.jrn_line()
-        after = max(int(s.get("cnt_sent") or 0), int(self._jrn_out().get("cnt_acked") or 0))
-        batch = self.db.jrn_counts_fold(f"{line}:{side}", after)
+        with _LOCK:                                           # снимок собирается под тем же замком
+            if self.__dict__.get("_jrn_snap_pending"):
+                return []                                     # строки по cs снимка учтены в нём — не сворачивать
+            line = self.db.jrn_line()
+            batch = self.db.jrn_counts_out(f"{line}:{side}")
         if batch is None:
             return []
         rec = event.seal_counts(self.reserve_k(), line, side, batch)
         if len(rec) * 2 > pairproto.MAX_BLOB:
-            log.warning("резерв: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
+            if not self.__dict__.get("_jrn_cnt_big"):
+                log.warning("резерв: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
+                self.__dict__["_jrn_cnt_big"] = True
             return []
-        s["cnt_sent"] = batch.s
-        return [("send", "jcnt", {"line": line, "side": side, "s": batch.s, "blob": rec.hex()})]
+        return [("send", "jcnt", {"line": line, "side": side, "s": batch.bn, "blob": rec.hex()})]
 
     def reserve_jrn_flush(self) -> list[tuple]:
         """Передача эпохи: всё неотправленное — сейчас (события и счётчики)."""
@@ -234,18 +285,21 @@ class ReserveShipMixin:
             return []
         meta = self.db.jrn_meta()
         acts = self._jrn_events_out(s, int(meta["epoch"]), time.monotonic()) if meta["role"] == "holder" else []
-        return acts + self._jrn_counts_out(s)
+        return acts + self._jrn_counts_out()
 
     def reserve_jrn_all_acked(self) -> bool:
         """Резерв подтвердил всё моё (события этой эпохи): эпоху можно передавать."""
         meta = self.db.jrn_meta()
-        last = [e for e in self.db.jrn_events_after(int(meta["acked"]), 1) if e.e == int(meta["epoch"])]
-        return not last
+        return not self.db.jrn_events_after(int(meta["acked"]), 1, epoch=int(meta["epoch"]))
 
     # ── ответы резерва на мою линию ─────────────────────────────────────────
     def _jrn_ack_in(self, i: int) -> None:
-        self.db.jrn_acked_set(i)
         s = self._jrn_sess()
+        if int(i) > int(s.get("top") or 0):
+            log.warning("резерв: «%s» подтверждает событие %s, а отправлено по %s — пропущено",
+                        self.reserve_peer_name(), i, s.get("top") or 0)
+            return
+        self.db.jrn_acked_set(i)
         if int(s.get("sent") or 0) < i:
             s["sent"] = i
 
@@ -254,16 +308,18 @@ class ReserveShipMixin:
         if frm <= 0:
             self._jrn_snap_need("резерв просит снимок")
             return
+        last = self.db.jrn_last_i()
+        if frm > last + 1:
+            log.warning("резерв: «%s» просит события с %s, а последнее здесь %s — пропущено",
+                        self.reserve_peer_name(), frm, last)
+            return
         first = self.db.jrn_first_i()
         if first and first <= frm:
             s.update(sent=frm - 1, sent_at=0.0)
-        elif frm > self.db.jrn_last_i():
-            s.update(sent=self.db.jrn_last_i(), sent_at=0.0)
+        elif frm == last + 1:
+            s.update(sent=last, sent_at=0.0)
         else:
             self._jrn_snap_need(f"резерв просит события с {frm}, их здесь уже нет")
 
-    def _jrn_cack_in(self, s_no: int) -> None:
-        self.db.jrn_counts_drop(s_no)
-        out = self._jrn_out()
-        if int(out.get("cnt_acked") or 0) < s_no:
-            self.rsv_update("rsv_jrn_out", cnt_acked=int(s_no))
+    def _jrn_cack_in(self, bn: int) -> None:
+        self.db.jrn_counts_acked(int(bn))
