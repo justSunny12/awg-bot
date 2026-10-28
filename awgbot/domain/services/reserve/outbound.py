@@ -145,8 +145,8 @@ class ReserveOutboundMixin:
                                        target_ip=target_ip, record=self.reserve_dns_name(), go_sent=False,
                                        pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
                                        taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False)
-            self._out_step("pkg", PKG_WAIT_S)
-            self.reserve_pkg_mark()
+            self._out_step("pkg", PKG_WAIT_S, pkg_unchanged=False)
+            self.reserve_pkg_mark()                           # журнал: такт соберёт снимок, только если изменилось вне базы
         log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
         return out
 
@@ -228,7 +228,9 @@ class ReserveOutboundMixin:
             return self._move_fail(why, released=step in ("eph", "up", "record", "release"))
         if step == "pkg":
             sent = self.rsv_get("rsv_pkg_sent")
-            if sent.get("gen") and str(sent.get("at") or "") >= str(out.get("started_at") or ""):
+            fresh = str(sent.get("at") or "") >= str(out.get("started_at") or "")
+            # журнал: у резерва снимок и все события подтверждены, вне базы ничего не изменилось — снимок тот же
+            if sent.get("gen") and (fresh or (out.get("pkg_unchanged") and self.reserve_jrn_all_acked())):
                 # K уйдёт только конвертом к разовому ключу процесса открытия — сначала попросить ключ
                 self._out_step("eph", EPH_WAIT_S, gen=int(sent["gen"]), pkg_at=str(sent.get("at") or ""))
                 return [("send", "go_req", {"gen": int(sent["gen"]), "kind": str(out.get("kind") or "button"),

@@ -108,8 +108,15 @@ class ReservePackageMixin:
             by_event = True                                   # плановый снимок журнала
         if not by_event and not by_timer:
             return None
+        move = by_event and self._pkg_for_move() and self._pkg_journal()
         try:
-            built = self.reserve_pkg_build(force=by_event)
+            # шаг pkg переезда кнопкой при журнале: снимок — только если изменилось что-то вне базы
+            # (события у резерва и так все); не изменилось — отметка автомату, go_req уйдёт с прежним
+            built = self.reserve_pkg_build(force=by_event and not move)
+            if built is None and move:
+                self.__dict__.pop("_rsv_pkg_due_at", None)
+                self.rsv_update("rsv_out", pkg_unchanged=True)
+                return None
         except Exception as e:                            # noqa: BLE001
             self.__dict__.pop("_jrn_snap_pending", None)
             if str(e) != str(self.__dict__.get("_rsv_pkg_err") or ""):   # не каждые 5 с

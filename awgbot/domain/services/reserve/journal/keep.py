@@ -111,14 +111,31 @@ class ReserveKeepMixin:
         cur = self._keep()
         if not cur.get("line"):
             return {}
-        st = self.reserve_keep_store()
         last = int(cur.get("last") or 0)
+        size, cnt_last = self._keep_disk_view()
         return {"line": str(cur["line"]), "e": int(cur.get("e") or 0), "last": last, "snap_i": int(cur.get("snap_i") or 0),
-                "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": st.events_size(),
+                "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": size,
                 "snap": bool(cur.get("snap_at")),             # снимок есть (и снятый до первого события, snap_i = 0)
-                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0)),
+                "cnt_bn": max(cnt_last, int(cur.get("cb") or 0)),
                 **({"gap": int(self.rsv_get("rsv_in").get("jgap") or 0)} if self._keep_guest() and self.rsv_get("rsv_in").get("jgap") else {}),
                 **self._keep_guest_disk(str(cur["line"]))}
+
+    def _keep_disk_view(self) -> tuple[int, int]:
+        """Размер хранилища событий и номер последней пачки — с диска, но перечитывается
+        только при смене файлов (st собирается раз в 5 с; файлы пачек читать целиком каждый
+        раз незачем)."""
+        st = self.reserve_keep_store()
+        try:
+            stamp = tuple(sorted((n, os.stat(os.path.join(st.path, n)).st_size) for n in os.listdir(st.path)
+                                 if n.endswith(".seg")))
+        except OSError:
+            stamp = ()
+        cached = self.__dict__.get("_keep_disk_cache")
+        if cached and cached[0] == stamp:
+            return cached[1]
+        view = (int(st.events_size()), int(st.counts_last("a")))
+        self.__dict__["_keep_disk_cache"] = (stamp, view)
+        return view
 
     def _keep_guest_disk(self, line: str) -> dict:
         """Гостя нет, а его журнал данных на диске есть (перезагрузка посреди обслуживания):
@@ -127,14 +144,25 @@ class ReserveKeepMixin:
             return {}
         try:
             from awgbot.util.rsvjrn import event
-            recs = self.guest_jrn_store().events()
+            store = self.guest_jrn_store()
+            try:
+                stamp = max((os.stat(os.path.join(store.path, n)).st_mtime_ns for n in os.listdir(store.path)
+                             if n.endswith(".seg")), default=0)
+            except OSError:
+                stamp = 0
+            cached = self.__dict__.get("_keep_gj_cache")
+            if cached and cached[0] == (line, stamp):
+                return dict(cached[1])                        # st раз в 5 с — журнал гостя не перечитывать без смены
+            recs = store.events()
         except Exception:                                     # noqa: BLE001
             return {}
         recs = [r for r in recs if event.head(r).line == line]
-        if not recs:
-            return {}
-        h = event.head(recs[-1])
-        return {"gj_e": h.e, "gj_last": h.n}
+        out = {}
+        if recs:
+            h = event.head(recs[-1])
+            out = {"gj_e": h.e, "gj_last": h.n}
+        self.__dict__["_keep_gj_cache"] = ((line, stamp), dict(out))
+        return out
 
     def _keep_guest_fork(self) -> int:
         if not self._keep_guest():

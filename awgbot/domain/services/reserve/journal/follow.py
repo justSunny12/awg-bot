@@ -101,6 +101,10 @@ class ReserveFollowMixin:
                 return self.reserve_c9_tail_in(body, c9)      # «вернуть без резерва»: его правки — хвост
             if e_body < int(meta["epoch"]):
                 # точка расхождения — с какого номера моя эпоха: бывшему держателю — для хвоста
+                if self.__dict__.get("_follow_stale_told") != e_body:
+                    self.__dict__["_follow_stale_told"] = e_body
+                    log.info("резерв: события эпохи %s от «%s» при моей %s — отклонены (jstale, точка %s)",
+                             e_body, self.reserve_peer_name(), meta["epoch"], meta["fork_i"])
                 return [("send", "jstale", {"line": line, "e": int(meta["epoch"]), "F": int(meta["fork_i"])})]
             log.info("резерв: события эпохи %s от «%s», а эпоха здесь — пропущены", e_body, self.reserve_peer_name())
             return []
@@ -127,6 +131,9 @@ class ReserveFollowMixin:
         applied = int(meta["applied"])
         evs = [ev for ev in evs if ev.i > applied]
         if evs and [ev.i for ev in evs] != list(range(applied + 1, applied + 1 + len(evs))):
+            if self.__dict__.get("_follow_need_told") != applied + 1:          # один раз на номер
+                self.__dict__["_follow_need_told"] = applied + 1
+                log.info("резерв: события держателя с %s, применено по %s — прошу досылку", evs[0].i, applied)
             return [("send", "jneed", {"line": line, "from": applied + 1})]   # разрыв или перестановка — не применять
         if e_body != int(meta["epoch"]):
             self.db.jrn_adopt_epoch(e_body)                   # держатель один — номер его эпохи и здесь

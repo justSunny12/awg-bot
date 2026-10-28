@@ -45,6 +45,7 @@ from ..state import _LOCK
 EV_LIMIT = 256                    # событий в одной пачке
 EV_BYTES = pairproto.CHUNK_BYTES - 4096   # запись целиком в одно сообщение (hex — в MAX_BLOB)
 RESEND_S = 20
+CHECK_S = 30                      # такт без отметки коммита базу не читает; страховка — полный проход раз в CHECK_S
 SNAP_EVENTS = 2000                # событий у резерва после снимка — пора снимок
 SNAP_BYTES = 1024 * 1024
 SNAP_DAY_S = 24 * 3600
@@ -86,8 +87,12 @@ class ReserveShipMixin:
         У бота основы на резерве захват ставит процесс открытия, а не пара."""
         if getattr(self, "guest", False):
             return
+        on = self.reserve_jrn_on()
+        if self.__dict__.get("_jrn_on_last") is on and "_jrn_capture_on" in self.__dict__:
+            return                                            # направление то же — базу не трогать (такт раз в секунду)
+        self.__dict__["_jrn_on_last"] = on
         try:
-            changed = self.db.jrn_capture_set(self.reserve_jrn_on())
+            changed = self.db.jrn_capture_set(on)
             self.__dict__["_jrn_capture_on"] = bool(self.db.jrn_meta()["capture"])
         except Exception as e:                                # noqa: BLE001
             if not schema_too_old(e):
@@ -96,8 +101,10 @@ class ReserveShipMixin:
             return
         if changed:
             on = bool(self.db.jrn_meta()["capture"])
-            log.info("резерв: данные для переезда к «%s» — %s", self.reserve_peer_name(),
-                     "журналом правок" if on else "пакетом целиком (у резерва нет журнала)")
+            why = ("журналом правок" if on else
+                   "пакетом целиком (здесь журнал не пишется: SQLite без JSON-функций или захват не встал)"
+                   if not compat.journal_capable() else "пакетом целиком (у резерва нет журнала)")
+            log.info("резерв: данные для переезда к «%s» — %s", self.reserve_peer_name(), why)
             self.rsv_put("rsv_jrn_out", None)
             self._jrn_sess_reset()
             self.reserve_pkg_mark()
@@ -146,7 +153,10 @@ class ReserveShipMixin:
         except (TypeError, ValueError):
             last, cnt_bn = 0, 0
         if int(keep.get("size") or 0) > SNAP_BYTES:
-            self.reserve_pkg_mark()                           # плановый снимок: у резерва больше мегабайта событий
+            now = time.monotonic()
+            if now - float(self.__dict__.get("_jrn_size_mark_at") or 0) > max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60:
+                self.__dict__["_jrn_size_mark_at"] = now        # не чаще раза в pkg_minutes: слово резерва — не рычаг
+                self.reserve_pkg_mark()                       # плановый снимок: у резерва больше мегабайта событий
         if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():
             self.db.jrn_counts_raise(cnt_bn)                  # счёт пачек — не ниже принятого резервом
         try:
@@ -181,14 +191,15 @@ class ReserveShipMixin:
             self._jrn_snap_need("событий, которых нет у резерва, здесь уже нет")
             return
         self.db.jrn_acked_set(last)
-        s.update(hold=False, sent=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="",
+        s.update(hold=False, sent=last, acked=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="",
                  ack_at=timeutil.now_iso())
+        self._jrn_touch()                                     # сверено — первый такт проверит, что осталось послать
 
     def reserve_jrn_snap_ok(self, marks: dict) -> None:
         """Резерв принял снимок `pkg3`: всё по номер снимка у него — подтверждено."""
         i, cs, cb = int(marks.get("i") or 0), int(marks.get("cs") or 0), int(marks.get("cb") or 0)
         self.db.jrn_acked_set(i)
-        self._jrn_sess()["ack_at"] = timeutil.now_iso()
+        self._jrn_sess().update(ack_at=timeutil.now_iso(), acked=max(int(self._jrn_sess().get("acked") or 0), int(i)))
         self.db.jrn_snap_set(i)
         self.db.jrn_counts_cover(cs, cb)
         self.__dict__.pop("_jrn_snap_pending", None)
@@ -238,14 +249,24 @@ class ReserveShipMixin:
         acts: list[tuple] = self.reserve_tail_out() + self.reserve_follow_lag_tick()   # и при hold: хвост и отставание сверки не ждут
         if not s.get("ok") or s.get("hold"):
             return acts
-        meta = self.db.jrn_meta()
         now = time.monotonic()
+        cnt_due = self._jrn_cnt_timer_due(now)
+        # в простое — один дешёвый запрос вместо десятка: есть неотправленное (номер последнего события
+        # больше отправленного), ждём подтверждения дольше RESEND_S, пора пачку счётчиков; страховка —
+        # полный проход раз в CHECK_S
+        resend = int(s.get("sent") or 0) > int(s.get("acked") or 0) and now - float(s.get("sent_at") or 0) > RESEND_S
+        check = now - float(self.__dict__.get("_jrn_check_at") or 0) > CHECK_S
+        if not (resend or cnt_due or check or acts) and self.db.jrn_last_i() <= int(s.get("sent") or 0):
+            return acts
+        self.__dict__["_jrn_check_at"] = now
+        meta = self.db.jrn_meta()
         acked = int(meta["acked"])
+        s["acked"] = acked
         if int(s.get("sent") or 0) > acked and now - float(s.get("sent_at") or 0) > RESEND_S:
             s["sent"] = acked                                  # подтверждения нет — повтор с подтверждённого
         if meta["role"] == "holder" and not self._jrn_peer_serving():
             acts += self._jrn_events_out(s, int(meta["epoch"]), now)
-        if acts or self._jrn_cnt_timer_due(now):
+        if acts or cnt_due:
             acts += self._jrn_counts_out()
         return acts
 
@@ -263,7 +284,7 @@ class ReserveShipMixin:
             recs.append(r)
             size += len(r)
         last = evs[0].i + len(recs) - 1
-        s.update(sent=last, top=max(int(s.get("top") or 0), last), sent_at=now)
+        s.update(sent=last, top=max(int(s.get("top") or 0), last), sent_at=now, sent_mono=now)
         return [("send", "jev", {"line": line, "e": epoch, "from": evs[0].i, "n": len(recs),
                                  "blob": b"".join(recs).hex()})]
 
@@ -334,11 +355,13 @@ class ReserveShipMixin:
             return
         self.db.jrn_acked_set(i)
         s["ack_at"] = timeutil.now_iso()
+        s["acked"] = max(int(s.get("acked") or 0), int(i))
         if int(s.get("sent") or 0) < i:
             s["sent"] = i
 
     def _jrn_need_in(self, frm: int) -> None:
         s = self._jrn_sess()
+        self._jrn_touch()
         if frm <= 0:
             self._jrn_snap_need("резерв просит снимок")
             return
@@ -356,4 +379,5 @@ class ReserveShipMixin:
             self._jrn_snap_need(f"резерв просит события с {frm}, их здесь уже нет")
 
     def _jrn_cack_in(self, bn: int) -> None:
+        self.__dict__.pop("_jrn_cnt_big", None)             # следующая слишком большая пачка — снова строкой
         self.db.jrn_counts_acked(int(bn))

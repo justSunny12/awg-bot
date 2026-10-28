@@ -26,18 +26,25 @@ JOURNAL_CAPS: tuple[str, ...] = ("pkg3", "jrn1")
 PKG_FORMATS: tuple[str, ...] = ("pkg2", "pkg3")    # по старшинству: последний — самый новый
 
 
+_JSON_OK: dict = {}
+
+
 def journal_capable() -> bool:
-    """Умеет ли этот процесс журнал: JSON-функции SQLite есть, захват не отказал."""
+    """Умеет ли этот процесс журнал: JSON-функции SQLite есть, захват не отказал.
+    Проба JSON — один раз за процесс (зовётся из `st` раз в 5 с)."""
     import sqlite3
     from awgbot.util import rsvjrn
     from awgbot.util.rsvjrn import triggers
     if triggers.capture_failed():
         return False
-    con = sqlite3.connect(":memory:")
-    try:
-        return rsvjrn.json_ok(con)
-    finally:
-        con.close()
+    probe = rsvjrn.json_ok                                   # ключ — сама проба (подмена в тестах — своя запись)
+    if probe not in _JSON_OK:
+        con = sqlite3.connect(":memory:")
+        try:
+            _JSON_OK[probe] = probe(con)
+        finally:
+            con.close()
+    return bool(_JSON_OK[probe])
 
 
 def caps() -> list[str]:

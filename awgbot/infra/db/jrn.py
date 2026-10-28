@@ -97,10 +97,15 @@ class JrnMixin:
     def jrn_adopt_epoch(self, epoch: int) -> None:
         """В следовании: номер эпохи — держателя (он открылся сам после аварии, или моя
         выросла сменой роли без событий), роль та же."""
-        with self._tx() as c:
-            c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND role = 'follower' AND holder = 'peer'",
-                      (int(epoch),))
-            self._tx_note(self._TX_COUNTERS)
+        conn = self._connection()
+        conn.execute("PRAGMA synchronous = FULL")             # переход эпохи — как остальные: не потерять при пропаже питания
+        try:
+            with self._tx() as c:
+                c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND role = 'follower' AND holder = 'peer'",
+                          (int(epoch),))
+                self._tx_note(self._TX_COUNTERS)
+        finally:
+            conn.execute("PRAGMA synchronous = NORMAL")
 
     def jrn_seen_reset(self, host: str) -> None:
         """Новый отъезд: счёт пачек клона начинается заново (новый гость)."""

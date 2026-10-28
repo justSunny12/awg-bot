@@ -166,6 +166,8 @@ def install(conn: sqlite3.Connection, guest: bool = False) -> bool:
     for s in deny:
         conn.execute(s)
     if not json_ok(conn):
+        if "json" not in _CAPTURE_FAILED:
+            log.warning("журнал: в SQLite нет JSON-функций — журнал правок не пишется, направление пойдёт прежним путём")
         _CAPTURE_FAILED.setdefault("json", "в SQLite нет JSON-функций")
         return True
     try:

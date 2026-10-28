@@ -199,6 +199,8 @@ class ReserveSessionMixin:
 
     def _can_return_safe(self) -> bool:
         try:
+            if hasattr(self, "reserve_tail_return_why") and self.reserve_tail_return_why():
+                return False                                  # мой хвост ещё переносится — возврат отказал бы
             return bool(self.reserve_can_return())
         except Exception:                                     # noqa: BLE001
             return False

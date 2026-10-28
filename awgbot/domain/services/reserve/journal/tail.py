@@ -53,7 +53,7 @@ TAIL_SELF_TELL = 5                # неудач переноса своего �
 TAIL_WAIT_S = 10 * 60             # свой хвост без ответа держателя дольше — возврат не держит, после него хвост переносит основа
 DISPUTED_MAX = 2000                # в jtail_ok — не больше; сверх — числом `more`, сами — строкой журнала
 TAIL_WAIT_REFUSED = ("Жду правки бота на «{name}», сделанные после потери связи, — обновление после того, как "
-                     "они придут")
+                     "они придут; «{name}» не вернётся — удали пару в «🛟 Резерв»")
 OWN_TAIL_REFUSED = "Правки, сделанные здесь перед переездом на «{name}», ещё переносятся туда — {what} после этого"
 
 
@@ -132,8 +132,9 @@ class ReserveTailMixin:
                 elif ev.op == "D" and o.get("public_key") and o.get("address"):
                     awg.add_peer(str(o["public_key"]), str(o.get("preshared_key") or ""), str(o["address"]),
                                  awg.iface_of(o.get("iface")))
-                elif ev.op == "U" and o.get("public_key") and c.get("public_key") != o.get("public_key"):
-                    awg.remove_peer(str(c.get("public_key") or ""), awg.iface_of(c.get("iface")))
+                elif ev.op == "U" and o.get("public_key") and any(
+                        k in c and c.get(k) != o.get(k) for k in ("public_key", "address", "iface", "preshared_key")):
+                    awg.remove_peer(str(c.get("public_key") or o["public_key"]), awg.iface_of(c.get("iface") or o.get("iface")))
                     awg.add_peer(str(o["public_key"]), str(o.get("preshared_key") or ""), str(o.get("address") or ""),
                                  awg.iface_of(o.get("iface")))
             except Exception as e:                            # noqa: BLE001
@@ -296,7 +297,8 @@ class ReserveTailMixin:
             log.error("резерв: хвост эпохи %s не перенесён: %s", e, ex)
             return []
         self._tail_side_effects(before)
-        log.info("резерв: хвост эпохи %s: %d событий, перенесено %d, спорных %d", e, len(evs), rpt.moved, len(rpt.disputed))
+        log.info("резерв: хвост эпохи %s: %d событий, перенесено %d, спорных %d, пропущено %d", e, len(evs), rpt.moved,
+                 len(rpt.disputed), int(getattr(rpt, "skipped", 0) or 0))
         if rpt.disputed:
             log.info("резерв: хвост эпохи %s: спорные: %s", e, rpt.disputed)
         acts = self._tail_reply(self.rsv_get("rsv_tail_done"))

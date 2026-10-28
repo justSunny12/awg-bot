@@ -157,11 +157,16 @@ class ReserveEpochMixin:
             if meta_now["holder"] == "self" and meta_now["role"] == "follower":
                 return                                        # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
             applied = int(meta_now["applied"])
+            prev_e = int(meta_now["epoch"]) if meta_now["holder"] == "peer" else 0
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied
             self.db.jrn_tail_drop_held()                      # отложенный хвост: точки уже не будет, правки в базе
             if meta is not None:
-                log.warning("резерв: эпоха %s здесь (%s)", meta["epoch"], why)
+                log.warning("резерв: эпоха %s здесь (%s, применено по %s)", meta["epoch"], why, applied)
                 self.reserve_follow_clear()
+                if prev_e and not self.rsv_get("rsv_c9"):
+                    # эпоху взял у бота на резерве без его released (срыв, зависший вебхук, «вернуть без
+                    # резерва»): его правки после applied — хвостом при встрече, одним путём (rsv_c9)
+                    self.reserve_c9_start(prev_e)
 
     def reserve_epoch_check(self) -> None:
         """Такт: страховка — роль снова сверяется с состоянием."""

@@ -119,7 +119,11 @@ class ReserveJournalRouteMixin:
             log.warning("резерв: «%s» называет эпоху %s моей линии — вне разумного, пропущено", self.reserve_peer_name(), e)
             return
         if str(peer.get("inn") or "") == "serving":
-            fork = int((peer.get("jrn_keep") or {}).get("guest_fork") or 0) or int(meta_now["acked"])
+            fork = int((peer.get("jrn_keep") or {}).get("guest_fork") or 0)
+            if fork and not int(meta_now["acked"]) <= fork <= max(self.db.jrn_last_i(), int(meta_now["acked"])) + 1:
+                log.warning("резерв: точка гостя %s из st вне моих номеров — беру подтверждённое", fork)
+                fork = 0
+            fork = fork or int(meta_now["acked"])
             meta = self.db.jrn_adopt(int(e), why="эпоха больше моей у резерва", fork_i=fork)
             if meta is not None and (peer.get("jrn_keep") or {}).get("guest_fork"):
                 self.reserve_tail_finalize(fork)

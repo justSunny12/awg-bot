@@ -14,6 +14,7 @@ serving / releasing) — код в /opt меняется под работающ
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 
@@ -57,7 +58,10 @@ def main() -> int:
             except ValueError:
                 raw_out = {}
             if isinstance(raw_out, dict) and raw_out.get("await_merge"):
-                waiting = "ждём правки бота с резерва после «вернуть без резерва»"
+                waiting = "ждём правки бота с резерва после «вернуть без резерва» (не вернётся — удали пару в «🛟 Резерв»)"
+        if waiting and os.environ.get("AWG_RESERVE_IGNORE_WAIT") == "1":
+            print(f"резерв: {waiting} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: эти правки не придут", file=sys.stderr)
+            waiting = ""
         peer = db.reserve_peer() or {}
         name = str(peer.get("name") or "резерв")
     finally:
