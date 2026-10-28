@@ -2,8 +2,8 @@
 
 Сторож зовёт `bot_tool tools.rsvbusy` до остановки сервиса. Его stderr — это
 строки для человека у терминала: «резерв: база не прочитана — считаю
-свободным» и «… ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: правки с резерва не
-придут». Прежде stderr уходил в /dev/null.
+свободным» и «резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — …».
+Прежде stderr уходил в /dev/null.
 
 Цена ошибки: админ ставит AWG_RESERVE_IGNORE_WAIT=1, обновление идёт, а
 предупреждения, что правки с резерва потеряны, он не видел — и не проверяет
@@ -44,7 +44,7 @@ def _guard(tmp_path, tool: str, mktemp: str = _MKTEMP) -> subprocess.CompletedPr
     return subprocess.run(["bash", "-c", "\n".join(lines)], capture_output=True, text=True, env=env, timeout=10)
 
 
-_IGNORED = "резерв: Жду правки бота на «Beta» — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: правки с резерва не придут"
+_IGNORED = "резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — правки бота на «Beta» сюда не придут"
 
 
 def test_the_bypass_warning_reaches_the_terminal_and_the_update_goes_on(tmp_path):

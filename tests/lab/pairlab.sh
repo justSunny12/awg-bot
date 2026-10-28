@@ -153,7 +153,7 @@ pl_pair_up() {
     pl_start B --poll
     pl_wait A 's.get("jrn_on") and s["jrn"]["capture"] == 1 and (s.get("pkg_sent") or {}).get("jrn")' 90 \
         "журнал включён, снимок A подтверждён резервом" || exit 1
-    pl_wait B '(s.get("pkg_in") or {}).get("jrn")' 30 "у B — снимок A (pkg3)" || exit 1
+    pl_wait B '(s.get("pkg_in") or {}).get("gen")' 30 "у B — снимок A (pkg3)" || exit 1
 }
 
 pl_open_wait() {

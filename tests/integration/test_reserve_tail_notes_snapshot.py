@@ -57,13 +57,13 @@ def _snap_rows(services, text: str) -> list[str]:
 
 def test_after_a_crash_the_snapshot_says_the_rest_is_in_the_reserves_bot_log(tj4):
     """9 записей строками из 12 спорных: в снимке девять строк и хвост
-    «… и ещё 3 — остальные — в журнале бота на «Beta»»; в уведомлении «и ещё 7» — ссылкой."""
+    «… и ещё 3 — в журнале бота на «Beta»»; в уведомлении «и ещё 7» — ссылкой."""
     text = _note(tj4, "crash", 9, 12)
     assert re.search(r'… <a href="https://t\.me/test_bot\?start=list-snap-[a-z0-9]{10}[^"]*">и ещё 7</a>$', text), \
         text.split("\n")[-1]
     rows = _snap_rows(tj4, text)
     assert len(rows) == 10, len(rows)
-    assert rows[-1] == "… и ещё 3 — остальные — в журнале бота на «Beta»", rows[-1]
+    assert rows[-1] == "… и ещё 3 — в журнале бота на «Beta»", rows[-1]
 
 
 def test_after_a_crash_with_every_row_given_the_snapshot_has_no_tail(tj4):

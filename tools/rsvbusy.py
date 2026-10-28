@@ -3,8 +3,8 @@ rsvbusy.py — сторож для скриптов поставки: занят
 обновление или восстановление сейчас нельзя. Код 0 — свободен; 3 — занят,
 причина в stdout (одной строкой; при ожидании — теми же словами, что отказ
 «⬆️ Обновить» в боте, journal/tail OWN_TAIL_REFUSED / C9_WAIT_REFUSED, с хвостом
-«; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (правки с
-резерва не придут)»). Читает только базу бота — ни сети, ни Telegram.
+«; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (<что при
+этом теряется>)»). Читает только базу бота — ни сети, ни Telegram.
 
     awg-bot update / restore зовут его до остановки сервиса (bot_tool tools.rsvbusy).
 
@@ -20,8 +20,8 @@ serving / releasing) — код в /opt меняется под работающ
 резерва не прочитано … — повтори через минуту»): пустить обновление поверх
 непрочитанного хвоста нельзя. AWG_RESERVE_IGNORE_WAIT=1 в окружении снимает
 только ожидание (хвост, правки после «вернуть без резерва», непрочитанное
-состояние) — строкой в stderr «резерв: … — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1:
-правки с резерва не придут»; отъезд и гостя не снимает. Базу не открыть вовсе —
+состояние) — строкой в stderr «резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — …»
+с тем, что при этом теряется (своя ветка у каждой причины); отъезд и гостя не снимает. Базу не открыть вовсе —
 свободен, строкой в stderr «резерв: база не прочитана (…) — считаю свободным».
 stderr при кодах 0 и 3 reserve_busy_guard (install/lib/update.sh) показывает человеку.
 """
@@ -57,7 +57,7 @@ def main() -> int:
             return data if isinstance(data, dict) else {}
         out, inn = str(st("rsv_out").get("state") or ""), str(st("rsv_in").get("state") or "")
         # порядок и правила — как у бота (reserve_refuse_update_if_waiting): свой хвост, потом С9
-        waiting = ""
+        waiting, lose = "", ""
         peer = db.reserve_peer() or {}
         name = str(peer.get("name") or "резерв")
         try:
@@ -66,14 +66,16 @@ def main() -> int:
             from awgbot.util.rsvjrn import schema_too_old
             if own_tail_blocks_raw(db):                   # те же слова, что у отказа «⬆️ Обновить» в боте
                 waiting = OWN_TAIL_REFUSED.format(name=name, what="обновление и восстановление")
+                lose = f"правки, сделанные здесь перед переездом, на «{name}» не попадут"
             elif c9_wait_raw(db):
-                waiting = C9_WAIT_REFUSED.format(name=name)
+                waiting = C9_WAIT_REFUSED.format(name=name, what="обновление и восстановление")
+                lose = f"правки бота на «{name}» сюда не придут"
         except Exception as e:                            # noqa: BLE001
             if not schema_too_old(e):                     # старая база — не ждём; ошибка базы — не пускать
                 waiting = f"состояние резерва не прочитано ({e}) — повтори через минуту"
+                lose = "чего ждём, неизвестно"
         if waiting and os.environ.get("AWG_RESERVE_IGNORE_WAIT") == "1":
-            print(f"резерв: {waiting} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: правки с резерва не придут",
-                  file=sys.stderr)
+            print(f"резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — {lose}", file=sys.stderr)
             waiting = ""
     finally:
         try:
@@ -87,7 +89,7 @@ def main() -> int:
         print(f"здесь сейчас пользователи и бот «{name}» ({inn}) — сначала их возврат к нему")
         return 3
     if waiting:
-        print(f"{waiting}; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (правки с резерва не придут)")
+        print(f"{waiting}; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой ({lose})")
         return 3
     return 0
 

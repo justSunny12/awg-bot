@@ -53,7 +53,7 @@ TAIL_RESEND_S = 60
 TAIL_SELF_TELL = 5                # неудач переноса своего хвоста подряд — до уведомления админу
 TAIL_WAIT_S = 10 * 60             # свой хвост без ответа держателя дольше — возврат не держит, после него хвост переносит основа
 DISPUTED_MAX = 2000                # в jtail_ok — не больше; сверх — числом `more`, сами — строкой журнала
-C9_WAIT_REFUSED = ("Жду правки бота на «{name}», сделанные после потери связи, — обновление после них; "
+C9_WAIT_REFUSED = ("Жду правки бота на «{name}», сделанные после потери связи, — {what} после них; "
                    "он не вернётся — удали пару в «🛟 Резерв»")
 OWN_TAIL_REFUSED = "Правки, сделанные здесь перед переездом на «{name}», ещё переносятся туда — {what} после этого"
 
@@ -472,7 +472,7 @@ class ReserveTailMixin:
         if self.reserve_tail_blocks():
             raise ServiceError(OWN_TAIL_REFUSED.format(name=self.reserve_peer_name(), what="обновление"))
         if c9_wait_raw(self.db):
-            raise ServiceError(C9_WAIT_REFUSED.format(name=self.reserve_peer_name()))
+            raise ServiceError(C9_WAIT_REFUSED.format(name=self.reserve_peer_name(), what="обновление"))
 
     def reserve_tail_return_why(self) -> str:
         """Возврат ждёт перенос моего хвоста (держатель на резерве его ещё не принял)."""

@@ -181,7 +181,7 @@ def tail_disputed(variant: str, reserve: str, lines: list[str], total: int, more
 
 def tail_snap_rest(reserve: str) -> str:
     """Хвост снимка Т-Ж4 после аварии: строк больше, чем прислал резерв, — остальные в журнале его бота."""
-    return f"остальные — в журнале бота на {_n(reserve)}"
+    return f"в журнале бота на {_n(reserve)}"
 
 
 def tail_snap_title(variant: str, reserve: str) -> str:

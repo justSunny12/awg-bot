@@ -220,8 +220,8 @@ def test_a_source_that_gave_fewer_rows_than_n_gets_an_honest_left_out_line(db, c
 def test_the_caller_can_say_where_the_rest_is(db, clock):
     """tail_note — текст хвоста от вызывающего: у Т-Ж4 после аварии остаток
     спорных правок лежит в журнале бота на резерве, и строка снимка говорит это."""
-    key = db.list_snap_keep(CHAT, "admin", "t", _rows(5), n=12, missing=7, tail_note="остальные — в журнале бота на «Beta»")
-    assert db.list_snap_get(key, CHAT)["rows"][-1] == "… и ещё 7 — остальные — в журнале бота на «Beta»"
+    key = db.list_snap_keep(CHAT, "admin", "t", _rows(5), n=12, missing=7, tail_note="в журнале бота на «Beta»")
+    assert db.list_snap_get(key, CHAT)["rows"][-1] == "… и ещё 7 — в журнале бота на «Beta»"
 
 
 def test_n_above_the_rows_without_missing_is_not_a_cut(db, clock):
@@ -584,10 +584,10 @@ def test_the_callers_tail_note_ends_a_cut_made_by_the_storage_and_the_cut_still_
     а отрезанное здесь всё равно уходит в журнал этого бота."""
     src = _rows(2100)
     with caplog.at_level(logging.INFO, logger="awgbot.db"):
-        key = db.list_snap_keep(CHAT, "admin", "t", src, n=2100, tail_note="остальные — в журнале бота на «Beta»")
+        key = db.list_snap_keep(CHAT, "admin", "t", src, n=2100, tail_note="в журнале бота на «Beta»")
     rows = db.list_snap_get(key, CHAT)["rows"]
     assert len(rows) == listsnap.MAX_ROWS and rows[:-1] == src[:1999], len(rows)
-    assert rows[-1] == "… и ещё 101 — остальные — в журнале бота на «Beta»", rows[-1]
+    assert rows[-1] == "… и ещё 101 — в журнале бота на «Beta»", rows[-1]
     _portions, logged = _cut_log(caplog, key)
     assert logged == src[1999:], f"отрезанное хранилищем не в журнале: {len(logged)} строк из 101"
 
@@ -611,7 +611,7 @@ def test_the_callers_tail_note_wins_over_the_combined_line_when_short_and_cut(db
     Объединённая строка «N в снимок не вошли, остальные — в журнале бота» здесь
     отправила бы админа искать спорные правки в журнале не того бота."""
     src = _rows(2100)
-    note = "остальные — в журнале бота на «Beta»"
+    note = "в журнале бота на «Beta»"
     with caplog.at_level(logging.INFO, logger="awgbot.db"):
         key = db.list_snap_keep(CHAT, "admin", "t", src, n=2200, missing=100, tail_note=note)
     rows = db.list_snap_get(key, CHAT)["rows"]

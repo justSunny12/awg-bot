@@ -210,6 +210,6 @@ def test_the_c9_refusal_with_a_long_pair_name_keeps_its_advice_within_a_toast():
     именем пары в 60 знаков совет «удали пару» обязан уцелеть — иначе админ, чей
     резерв не вернётся, не узнаёт, как выйти из ожидания."""
     from awgbot.domain.services.reserve.journal.tail import C9_WAIT_REFUSED
-    toast = C9_WAIT_REFUSED.format(name="Ж" * 60)[:200]
+    toast = C9_WAIT_REFUSED.format(name="Ж" * 60, what="обновление")[:200]
     assert toast.endswith("удали пару в «🛟 Резерв»"), toast
     assert toast.count("Ж" * 60) == 1, "имя пары в отказе дважды — съедает место совета"

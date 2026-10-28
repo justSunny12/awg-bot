@@ -197,7 +197,7 @@ def test_the_terminal_guard_bypass_lets_the_update_go_and_says_so(mv, monkeypatc
     monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
     code, out, err = _busy(capsys)
     assert (code, out) == (0, ""), f"обход не пустил обновление: {code} ({out!r})"
-    assert "ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1" in err and "не придут" in err, err
+    assert "ожидание снято по AWG_RESERVE_IGNORE_WAIT=1" in err and "не придут" in err, err
 
 
 def test_the_terminal_guard_bypass_does_not_override_the_users_at_the_reserve(mv, monkeypatch, capsys):
