@@ -101,7 +101,7 @@ def test_after_force_home_and_an_empty_reserve_the_own_tail_is_moved_here(duo):
     acts = duo.a.reserve_out_tick()
     assert duo.a.reserve_out() == "home" and not duo.a.rsv_get("rsv_out").get("await_merge"), acts
     assert "Вера" in _names(duo.a.db), f"свой хвост остался откачен после возврата без резерва: {acts}"
-    assert duo.a.db.jrn_tail_rows(("wait", "sent", "hold")) == [], "хвост остался — уйдёт при следующем переезде"
+    assert duo.a.db.jrn_tail_rows(("wait", "hold")) == [], "хвост остался — уйдёт при следующем переезде"
     assert duo.a.rsv_get("rsv_tail") == {}
     assert (duo.a.db.get_state("rsv_tail_keys") or "") == "", "отложенные ключи хвоста не сняты"
     assert _priv(duo.a.db, ids["vera_dev"]) == "DUMMY-priv-vera", "закрытый ключ устройства из хвоста не вернулся"
@@ -240,7 +240,7 @@ def test_a_jneed_beyond_the_reserve_store_goes_to_the_guest_as_before(duo):
 def test_a_return_that_never_catches_up_says_so_in_the_return_report(duo, monkeypatch):
     """Возврат по сроку без недостающих правок бота на резерве: эпоха здесь, а в Т-РУ5б —
     строка, сколько не дошло (прежде — только строка журнала)."""
-    from awgbot.domain.notices import reserve as rn
+    from awgbot.domain.notices import reserve_tail as rn
     from awgbot.domain.services.reserve.outbound import RELEASED_WAIT_S
     from tests.integration.test_reserve_jrn_follow_pair import _return_lagging
     body, _acts = _return_lagging(duo, monkeypatch)
@@ -425,7 +425,7 @@ def test_a_return_without_a_replica_on_the_journal_path_keeps_the_epoch_report(d
 def test_a_return_without_a_replica_says_the_last_guest_edits_may_be_missing(duo):
     """Гость присылал больше, чем применено (пачка с разрывом, досылки не было), и ушёл:
     строка Т-РУ5б «последние правки там могли не дойти» — один раз."""
-    from awgbot.domain.notices import reserve as rn
+    from awgbot.domain.notices import reserve_tail as rn
     _following_world(duo)
     with duo.as_guest():
         duo.g.db.create_client("Ольга", 1, _START, _FUTURE, "INV-DUMMY-O")
@@ -499,7 +499,7 @@ def test_an_open_without_a_gap_tells_nothing(duo, monkeypatch):
 def test_the_open_gap_notice_counts_the_unread_records(duo, monkeypatch):
     """«не прочитано записей: N» — число записей, которые гость не взял (с первой
     недостающей по последнюю у резерва), а не номер первой недостающей."""
-    from awgbot.domain.notices import reserve as rn
+    from awgbot.domain.notices import reserve_tail as rn
     from awgbot.util.rsvjrn import opener
     from tools import rsvopen
     ids = _gap_world(duo)
@@ -516,7 +516,7 @@ def test_with_a_gap_the_primary_takes_the_guest_fork_and_tells_about_its_own_dec
     """Гость открылся с разрывом: основа принимает его точку (раньше подтверждённого) —
     его правки после неё применяются, а о своих решениях, которых он не видел, — строка
     Т-РУ5б; без отметки разрыва точка раньше подтверждённого отвергается, как прежде."""
-    from awgbot.domain.notices import reserve as rn
+    from awgbot.domain.notices import reserve_tail as rn
     from tests.integration.test_reserve_jrn_tail_pair import _follow_after_crash
     ids = _gap_world(duo)
     duo.b.rsv_update("rsv_in", jgap=int(ids["res"].gap))

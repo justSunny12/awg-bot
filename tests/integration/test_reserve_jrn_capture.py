@@ -26,6 +26,7 @@ from awgbot.infra.db import Database
 from awgbot.util import rsvjrn, timeutil
 from awgbot.util.rsvjrn import apply as japply
 from awgbot.util.rsvjrn import classes, triggers
+from tests import jrnequiv
 
 pytestmark = pytest.mark.integration
 
@@ -46,7 +47,7 @@ def top(db) -> int:
 
 
 def events(db, after: int = 0, table: str | None = None) -> list[japply.Event]:
-    out = japply.events_after(db._connection(), after)
+    out = jrnequiv.events_after(db._connection(), after)
     return [e for e in out if table is None or e.t == table]
 
 

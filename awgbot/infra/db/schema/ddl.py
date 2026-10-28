@@ -293,7 +293,7 @@ CREATE TABLE IF NOT EXISTS jrn_tail (
     c             TEXT,
     o             TEXT,
     at            TEXT    NOT NULL,
-    state         TEXT    NOT NULL DEFAULT 'wait'        -- wait | sent | done
+    state         TEXT    NOT NULL DEFAULT 'wait'        -- hold (отложен до точки расхождения) | wait (откачен, к отправке)
 );
 -- исходящие дельты счётчиков этого хоста (трафик, РФ, последнее рукопожатие)
 CREATE TABLE IF NOT EXISTS jrn_counts (

@@ -129,7 +129,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     # jcnt/jcack — пачки счётчиков стороны a (основа) или b (клон на резерве)
     "jev":          (BOTH, {"line": (_S, 16), "e": (_I, None), "from": (_I, None), "n": (_I, None),
                             "blob": (_S, MAX_BLOB)}),
-    "jack":         (BOTH, {"line": (_S, 16), "e": (_I, None), "i": (_I, None)}),
+    "jack":         (BOTH, {"line": (_S, 16), "i": (_I, None)}),
     "jneed":        (BOTH, {"line": (_S, 16), "from": (_I, None)}),
     "jstale":       (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None)}),
     "jcnt":         (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None), "blob": (_S, MAX_BLOB)}),

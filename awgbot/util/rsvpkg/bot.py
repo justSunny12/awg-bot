@@ -17,7 +17,7 @@ import os
 import sqlite3
 import tempfile
 
-from awgbot.util.dbnames import HISTORY_TABLES
+from awgbot.util.dbnames import HISTORY_TABLES, HOST_TRIMMED
 
 # ключи server_state, которые едут в реплику (остальные — нет)
 GUEST_STATE: tuple[str, ...] = (
@@ -203,14 +203,17 @@ def _strip(con) -> None:
             con.execute(f"DELETE FROM {t}")
     if "devices" in have and any(r[1] == "private_key" for r in con.execute("PRAGMA table_info(devices)")):
         con.execute("UPDATE devices SET private_key = NULL")
-    # локальные сети и подписи шлюзов основы, строка пары (с админом резерва) — не резерву
+    # локальные сети и подписи шлюзов основы (dbnames.HOST_TRIMMED — те же колонки журнал не
+    # захватывает), строка пары (с админом резерва) — не резерву
     # эпоха — своя у каждой базы: гость стартует держателем (init_schema заведёт строку)
     # журнал — местный у каждой базы (события, хвост, дельты, принятые пачки)
-    for sql in ("UPDATE gateways SET lan_subnets = '', label = '', lan_mode = 0",
-                "DELETE FROM reserve_peer", "DELETE FROM jrn_meta", "DELETE FROM jrn_events", "DELETE FROM jrn_tail",
-                "DELETE FROM jrn_counts", "DELETE FROM jrn_seen"):
+    trims = [(f"UPDATE {t} SET " + ", ".join(f"{c} = ?" for c in cols), tuple(cols.values()))
+             for t, cols in HOST_TRIMMED.items()]
+    for sql, args in trims + [(s, ()) for s in (
+            "DELETE FROM reserve_peer", "DELETE FROM jrn_meta", "DELETE FROM jrn_events", "DELETE FROM jrn_tail",
+            "DELETE FROM jrn_counts", "DELETE FROM jrn_seen")]:
         try:
-            con.execute(sql)
+            con.execute(sql, args)
         except sqlite3.OperationalError:
             pass
     if "server_state" in have:

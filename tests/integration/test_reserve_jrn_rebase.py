@@ -31,6 +31,7 @@ from awgbot.core import config
 from awgbot.infra.db import Database
 from awgbot.util.rsvjrn import apply as japply
 from awgbot.util.rsvjrn import rebase as jrebase
+from tests import jrnequiv
 
 pytestmark = pytest.mark.integration
 
@@ -85,7 +86,7 @@ class Fork:
         self.holder_from = _top(holder)
 
     def events(self) -> list[japply.Event]:
-        return japply.events_after(self.tail._connection(), self.tail_from)
+        return jrnequiv.events_after(self.tail._connection(), self.tail_from)
 
     def rebase(self, **kw) -> jrebase.Report:
         return self.holder.jrn_rebase(self.events(), **kw)
@@ -94,7 +95,7 @@ class Fork:
         return [tuple(r) for r in self.holder._connection().execute(sql, args).fetchall()]
 
     def holder_events(self) -> list[japply.Event]:
-        return japply.events_after(self.holder._connection(), self.holder_from)
+        return jrnequiv.events_after(self.holder._connection(), self.holder_from)
 
     def close(self):
         self.tail.close()

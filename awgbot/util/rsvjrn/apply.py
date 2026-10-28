@@ -19,6 +19,8 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
+from .classes import NOT_TAIL, SECRET_COLUMNS
+
 
 @dataclass
 class Event:
@@ -45,10 +47,10 @@ class Event:
 
 @dataclass
 class Applied:
-    """Итог пачки: последний номер, применённые, пропущенные повторы, не вставшие (таблица или ключ)."""
+    """Итог пачки: последний номер, применённые (повторы с номером не больше `applied`
+    пропущены), не вставшие (таблица или ключ)."""
     last: int = 0
     done: list[Event] = field(default_factory=list)
-    skipped: int = 0
     lost: list[tuple[Event, str]] = field(default_factory=list)
 
 
@@ -68,7 +70,6 @@ def _where(k: dict) -> tuple[str, list]:
 
 def _drop_null_secrets(table: str, vals: dict) -> dict:
     """Пустой секрет в событии — «не трогать»: у бота на резерве закрытых ключей основы нет."""
-    from .classes import SECRET_COLUMNS
     sec = SECRET_COLUMNS.get(table, ())
     return {c: v for c, v in vals.items() if not (c in sec and v is None)}
 
@@ -137,8 +138,7 @@ def apply(conn: sqlite3.Connection, events: list[Event]) -> Applied:
         conn.execute("UPDATE main.jrn_meta SET applying = 1 WHERE id = 1")
         for ev in sorted(events, key=lambda x: x.i):
             if ev.i <= last:
-                out.skipped += 1
-                continue
+                continue                                     # повтор — идемпотентно
             if ev.op in COUNTER_OPS:
                 _counter_op(conn, ev)
             elif ev.t not in tables:
@@ -175,7 +175,6 @@ def undo(conn: sqlite3.Connection, events: list[Event]) -> list[tuple[Event, str
     (они не решения о строках). Не откатившееся — в ответ (строкой журнала)."""
     lost: list[tuple[Event, str]] = []
     cols_cache: dict[str, list[str]] = {}
-    from .rebase import NOT_TAIL
     for ev in sorted(events, key=lambda x: x.i, reverse=True):
         if ev.op in COUNTER_OPS or ev.t in NOT_TAIL:
             continue                                     # данные хоста держатель не вернёт — не откатывать
@@ -208,9 +207,3 @@ def undo(conn: sqlite3.Connection, events: list[Event]) -> list[tuple[Event, str
             conn.execute("RELEASE jrn_undo")
             lost.append((ev, str(e)))
     return lost
-
-
-def events_after(conn: sqlite3.Connection, after: int) -> list[Event]:
-    """Свои события с номером больше after — по порядку (отправка, хвост)."""
-    return [Event.from_row(r) for r in conn.execute(
-        "SELECT i, e, t, op, k, c, o, at FROM main.jrn_events WHERE i > ? ORDER BY i", (int(after),))]

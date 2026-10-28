@@ -210,10 +210,10 @@ def test_the_tail_goes_to_the_guest_who_rebases_it_and_answers_with_the_disputes
     assert ok["moved"] >= 1 and ok["blob"], ok
     assert "Иван здесь" not in bytes.fromhex(ok["blob"]).decode("latin-1"), "список спорного не под K"
     duo.b_to_a(duo.guest_to_b([(a[1], a[2]) for a in acts]))
-    assert duo.a.db.jrn_tail_rows(("wait", "sent", "hold")) == [] and duo.a.rsv_get("rsv_tail") == {}, \
+    assert duo.a.db.jrn_tail_rows(("wait", "hold")) == [] and duo.a.rsv_get("rsv_tail") == {}, \
         "основа не сняла хвост по ответу"
     rep = duo.a.rsv_get("rsv_out").get("tail_report") or {}
-    assert rep.get("variant") == "crash" and rep.get("total") == 1, rep
+    assert set(rep) == {"moved", "disputed", "total"} and rep["total"] == 1, rep
     (d,) = rep["disputed"]
     assert (d["col"], d["tail"], d["kept"], d["client_id"]) == ("name", "Иван здесь", "Иван на резерве", ids["ivan"]), d
 
@@ -376,7 +376,7 @@ def test_more_than_2000_disputes_go_as_2000_records_and_more(duo, monkeypatch):
         [{x: v for x, v in b.items() if x != "blob"} for _, b in msgs]
     _to_main(duo, msgs)
     rep = duo.a.rsv_get("rsv_out").get("tail_report") or {}
-    assert len(rep.get("disputed") or []) == 2000 and rep.get("more") == 1 and rep.get("total") == 2001, \
+    assert len(rep.get("disputed") or []) == 2000 and rep.get("total") == 2001, \
         {k: (len(v) if isinstance(v, list) else v) for k, v in rep.items()}
     tj4 = [n.text for n in duo.a.reserve_tail_notes()][0]
     assert "Не перенесена 2001 правка, сделанная" in tj4 and "… и ещё 1996" in tj4, tj4

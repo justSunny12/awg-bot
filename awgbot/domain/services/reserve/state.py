@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 from awgbot.util import timeutil
 
@@ -26,6 +27,7 @@ KEYS: tuple[str, ...] = (
 )
 OUT_STATES = ("home", "leaving", "away", "returning")
 IN_STATES = ("idle", "taking", "serving", "releasing", "relay")
+HOSTING = ("taking", "serving", "releasing")     # у стороны — пользователи и бот второй (`rsv_in` и `st.in`)
 POLL_STATES = ("mine", "away")
 
 _LOCK = threading.RLock()
@@ -95,7 +97,6 @@ class ReserveStateMixin:
     def reserve_set_out(self, state: str, **why) -> dict:
         if state not in OUT_STATES:
             raise ValueError(f"не состояние направления: {state}")
-        import time
         # at_ts — порядок с точностью до долей секунды: роль эпохи сверяет «что было раньше»
         out = self.rsv_update("rsv_out", state=state, since=timeutil.now_iso(), at_ts=time.time(), **why)
         self.reserve_epoch_sync()                         # право записи — по новому состоянию
@@ -110,7 +111,6 @@ class ReserveStateMixin:
         if state not in POLL_STATES:
             raise ValueError(f"не право ответа: {state}")
         # why/url — только этого решения: прежнее «webhook» не должно пережить «mine»
-        import time
         out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), at_ts=time.time(),
                               **{"why": "", "url": "", **why})
         self.reserve_epoch_sync()                         # право записи — по новому состоянию (не по слову Telegram)
@@ -127,7 +127,7 @@ class ReserveStateMixin:
 
     def reserve_hosting(self) -> bool:
         """У меня сейчас пользователи и бот резерва."""
-        return self.reserve_in() in ("taking", "serving", "releasing")
+        return self.reserve_in() in HOSTING
 
     def reserve_zone_free(self) -> bool:
         """Зона свободна для нового открытия: idle — или relay (пересылка хвоста

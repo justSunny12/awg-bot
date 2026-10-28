@@ -208,12 +208,12 @@ class ReserveInboundMixin:
             if jgap or jlost:
                 # база гостя собрана не по всему журналу (порча записи, дыра): его решения с этого места
                 # основа примет поверх своих — ей об этом скажет st, админу резерва — здесь
-                from awgbot.domain.notices import reserve as rn
+                from awgbot.domain.notices import reserve_tail as rt
                 log.warning("резерв: база гостя открыта с разрывом журнала основы: не прочитано событий %d, не встало %d",
                             jgap, jlost)
                 self.rsv_update("rsv_in", jgap=jgap, jlost=jlost)
                 actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID),
-                                                        text=rn.open_gap(self.reserve_peer_name(), jgap, jlost))]))
+                                                        text=rt.open_gap(self.reserve_peer_name(), jgap, jlost))]))
             zst = rsvzone.state()
             if zst.get("ifaces") and not zst.get("netmap"):
                 # вывод --take процесс открытия не пересказывает — факт и причина из состояния зоны

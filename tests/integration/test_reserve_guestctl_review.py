@@ -45,7 +45,7 @@ class _JrnGuest(_GuestSvc):
         self.calls += 1
         if self.calls <= self.fail:
             raise self.exc
-        return [("jack", {"line": msg["line"], "e": msg["e"], "i": msg["from"]})]
+        return [("jack", {"line": msg["line"], "i": msg["from"]})]
 
 
 class _JrnRes(_ResSvc):
@@ -111,12 +111,12 @@ async def test_a_failing_word_handler_at_the_reserve_closes_the_session_and_the_
         assert await _until(lambda: w.server.connected() and w.client.connected(), 3)
         first = w.res.calls
         caplog.set_level(logging.WARNING)
-        assert await w.client.send("jack", {"line": "00" * 8, "e": 1, "i": 1}) is True
+        assert await w.client.send("jack", {"line": "00" * 8, "i": 1}) is True
         assert await _until(lambda: w.res.calls > first, 8), "гость не вернулся после сбоя у слушателя"
         assert any("локальный канал гостя: обработчик упал" in r.getMessage() for r in caplog.records), \
             [r.getMessage() for r in caplog.records]
         assert await _until(lambda: w.client.connected(), 3)
-        assert await w.client.send("jack", {"line": "00" * 8, "e": 1, "i": 2}) is True
+        assert await w.client.send("jack", {"line": "00" * 8, "i": 2}) is True
         assert await _until(lambda: [b["i"] for _, b in w.res.words] == [2], 3), w.res.words
     finally:
         await _close(w)

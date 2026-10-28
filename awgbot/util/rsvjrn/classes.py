@@ -20,7 +20,7 @@ classes.py — часть пакета rsvjrn (см. __init__): реестр к�
 """
 from __future__ import annotations
 
-from awgbot.util.dbnames import HISTORY_TABLES
+from awgbot.util.dbnames import HISTORY_TABLES, HOST_TRIMMED
 from awgbot.util.rsvpkg.bot import GUEST_STATE
 
 DECISION = "решение"
@@ -103,16 +103,18 @@ def denied_columns(table: str, columns: list[str]) -> list[str]:
     return [c for c in columns if class_of(table, c) in DENIED]
 
 
-# хост основы — резерву без локальных сетей и подписей шлюзов (как в реплике, rsvpkg/bot._strip)
-HOST_TRIMMED: dict[str, tuple[str, ...]] = {"gateways": ("lan_subnets", "label", "lan_mode")}
+# в хвост старой эпохи не идут (rebase, apply.undo): данные хоста (их держатель не захватывает — не
+# вернутся) и архивы месяца (их пишет сброс месяца, а сброс хвоста пропускается)
+NOT_TAIL = ("gateways", "traffic_monthly", "server_traffic_monthly")
 
 
 def captured_columns(table: str, columns: list[str], guest: bool = False) -> list[str]:
     """Колонки, которые держатель пишет событием: решения и маски; секреты — только
     у бота основы на резерве (от основы к резерву закрытые ключи не едут); данные
-    хоста основы — только у основы (гостю они нужны, основе от гостя — нет), без обрезанных."""
+    хоста основы — только у основы (гостю они нужны, основе от гостя — нет), без обрезанных
+    (dbnames.HOST_TRIMMED — те же, что режет реплика)."""
     want = (DECISION, MASK, SECRET) if guest else (DECISION, MASK, HOST)
-    trimmed = HOST_TRIMMED.get(table, ())
+    trimmed = HOST_TRIMMED.get(table, {})
     return [c for c in columns if class_of(table, c) in want and c not in trimmed]
 
 

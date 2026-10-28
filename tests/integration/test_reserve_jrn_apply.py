@@ -39,7 +39,7 @@ def capture(db, on: bool = True) -> None:
 
 
 def evs(db, after: int = 0) -> list[japply.Event]:
-    return japply.events_after(db._connection(), after)
+    return jrnequiv.events_after(db._connection(), after)
 
 
 def traffic(db, did) -> tuple:
@@ -141,9 +141,9 @@ def test_a_repeated_batch_changes_nothing(pair):
     first = japply.apply(f._connection(), all_ev[:3])
     assert first.last == all_ev[2].i and len(first.done) == 3
     again = japply.apply(f._connection(), all_ev)
-    assert again.skipped == 3 and len(again.done) == len(all_ev) - 3, again
+    assert len(again.done) == len(all_ev) - 3, again
     once_more = japply.apply(f._connection(), all_ev)
-    assert once_more.skipped == len(all_ev) and once_more.done == [] and once_more.last == all_ev[-1].i
+    assert once_more.done == [] and once_more.last == all_ev[-1].i
     assert pair.diff() == []
     assert pair.meta()[0] == all_ev[-1].i
 

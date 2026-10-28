@@ -1,4 +1,4 @@
-"""Тексты хвоста старой эпохи (domain/notices/reserve.py): строки Т-Ж4 по записи
+"""Тексты хвоста старой эпохи (domain/notices/reserve_tail.py): строки Т-Ж4 по записи
 спорного, заголовок со склонениями, «… и ещё N», Т-Ж5 трёх вариантов, Т-Ж6.
 
 Строка собирается из записи отчёта перебазирования (rsvjrn.rebase) — поля по
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from awgbot.domain.notices import reserve as rn
+from awgbot.domain.notices import reserve_tail as rn
 
 
 def line(d: dict, *, profile: str = "Иван", device: str = "", taken: str = "", variant: str = "crash") -> str:

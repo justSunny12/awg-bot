@@ -31,6 +31,14 @@ def _q(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def events_after(conn: sqlite3.Connection, after: int):
+    """События базы с номером больше after — по порядку (для сверок и тестов; рабочий код
+    берёт их через infra/db/jrn `jrn_events_after`, пачками и по эпохе)."""
+    from awgbot.util.rsvjrn.apply import Event
+    return [Event.from_row(r) for r in conn.execute(
+        "SELECT i, e, t, op, k, c, o, at FROM main.jrn_events WHERE i > ? ORDER BY i", (int(after),))]
+
+
 def start(db, copy_path: str) -> None:
     """Включить захват на живой базе и снять её копию (до записей теста)."""
     conn = db._connection()
@@ -82,8 +90,7 @@ def check(live_path: str, copy_path: str, guest: bool) -> list[str]:
     copy = sqlite3.connect(copy_path, isolation_level=None)
     try:
         copy.execute("PRAGMA foreign_keys = ON")              # как у следующего: соединение DatabaseCore
-        events = japply.events_after(live, 0)
-        res = japply.apply(copy, events)
+        res = japply.apply(copy, events_after(live, 0))
         return [f"не встало: {ev.t} {ev.op} {ev.k}: {why}" for ev, why in res.lost] + diff(live, copy, guest)
     finally:
         live.close()

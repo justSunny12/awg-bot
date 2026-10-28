@@ -233,12 +233,12 @@ class ReserveKeepMixin:
             if self._keep_guest():
                 acts.append(("guest", "jev", {"line": line, "e": e_body, "from": event.head(new[0]).n,
                                               "n": len(new), "blob": b"".join(new).hex()}))
-        return [("send", "jack", {"line": line, "e": e_body, "i": last})] + acts
+        return [("send", "jack", {"line": line, "i": last})] + acts
 
     def _keep_store_failed(self, e: OSError) -> list[tuple]:
         """Журнал второй стороны не дописан (диск кончился, ввод-вывод): строка — с демпфером,
         админу — один раз на эпизод; подтверждения нет, основа повторит с подтверждённого."""
-        from awgbot.domain.notices import reserve as rn
+        from awgbot.domain.notices import reserve_tail as rt
         now = time.monotonic()
         if now - float(self.__dict__.get("_keep_oserr_at") or 0) > 60:
             self.__dict__["_keep_oserr_at"] = now
@@ -246,7 +246,7 @@ class ReserveKeepMixin:
         if self.__dict__.get("_keep_oserr_told"):
             return []
         self.__dict__["_keep_oserr_told"] = True
-        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.keep_write_failed(self.reserve_peer_name(), str(e)))])]
+        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rt.keep_write_failed(self.reserve_peer_name(), str(e)))])]
 
     def _keep_jcnt_in(self, body: dict) -> list[tuple]:
         from awgbot.util.rsvjrn import event

@@ -42,31 +42,26 @@ def main() -> int:
         if not paired:
             return 0
 
-        def st(key: str) -> str:
+        def st(key: str) -> dict:
             raw = db.get_state(key) or ""
             try:
                 data = json.loads(raw) if raw.startswith("{") else {}
             except ValueError:
                 data = {}
-            return str(data.get("state") or "")
-        out, inn = st("rsv_out"), st("rsv_in")
-        # порядок — как у бота (reserve_refuse_update_if_waiting): свой хвост, потом С9
+            return data if isinstance(data, dict) else {}
+        out, inn = str(st("rsv_out").get("state") or ""), str(st("rsv_in").get("state") or "")
+        # порядок и правила — как у бота (reserve_refuse_update_if_waiting): свой хвост, потом С9
         waiting = ""
         try:
-            from awgbot.domain.services.reserve.journal.tail import own_tail_blocks_raw
+            from awgbot.domain.services.reserve.journal.tail import c9_wait_raw, own_tail_blocks_raw
             from awgbot.util.rsvjrn import schema_too_old
             if own_tail_blocks_raw(db):
                 waiting = "свой хвост правок ещё не перенесён на резерв"
+            elif c9_wait_raw(db):
+                waiting = "ждём правки бота с резерва после «вернуть без резерва» (не вернётся — удали пару в «🛟 Резерв»)"
         except Exception as e:                            # noqa: BLE001
             if not schema_too_old(e):                     # старая база — не ждём; ошибка базы — не пускать
                 waiting = f"состояние резерва не прочитано ({e}) — повтори через минуту"
-        if not waiting:
-            try:
-                raw_out = json.loads(db.get_state("rsv_out") or "{}")
-            except ValueError:
-                raw_out = {}
-            if isinstance(raw_out, dict) and raw_out.get("await_merge"):
-                waiting = "ждём правки бота с резерва после «вернуть без резерва» (не вернётся — удали пару в «🛟 Резерв»)"
         if waiting and os.environ.get("AWG_RESERVE_IGNORE_WAIT") == "1":
             print(f"резерв: {waiting} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: эти правки не придут", file=sys.stderr)
             waiting = ""
@@ -80,7 +75,7 @@ def main() -> int:
     if out in ("leaving", "away", "returning"):
         print(f"пользователи этого сервера сейчас у резерва «{name}» ({out}) — сначала их возврат")
         return 3
-    if inn in ("taking", "serving", "releasing"):
+    if inn in ("taking", "serving", "releasing"):             # state.HOSTING (импорт домена — только под try выше)
         print(f"здесь сейчас пользователи и бот «{name}» ({inn}) — сначала их возврат к нему")
         return 3
     if waiting:

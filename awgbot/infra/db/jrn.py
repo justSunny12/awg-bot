@@ -417,18 +417,14 @@ class JrnMixin:
 
     # ── хвост старой эпохи ────────────────────────────────────────────────────
 
-    def jrn_tail_rows(self, states: tuple[str, ...] = ("wait", "sent")) -> list:
-        """События хвоста (свои, после точки расхождения) — по порядку."""
+    def jrn_tail_rows(self, states: tuple[str, ...] = ("wait",)) -> list:
+        """События хвоста (свои, после точки расхождения) — по порядку: `wait` — откачены,
+        к отправке; `hold` — отложены до точки расхождения."""
         from awgbot.util.rsvjrn.apply import Event
         marks = ", ".join("?" for _ in states)
         rows = self._connection().execute(f"SELECT i, e, t, op, k, c, o, at FROM jrn_tail WHERE state IN ({marks}) "
                                           "ORDER BY i", tuple(states)).fetchall()
         return [Event.from_row(tuple(r)) for r in rows]
-
-    def jrn_tail_mark(self, state: str) -> None:
-        with self._tx() as c:
-            c.execute("UPDATE jrn_tail SET state = ? WHERE state IN ('wait', 'sent')", (str(state),))
-            self._tx_note(self._TX_COUNTERS)
 
     def jrn_tail_drop_held(self) -> None:
         """Отложенный хвост (точки не было) — прочь: правки так и остались в базе."""

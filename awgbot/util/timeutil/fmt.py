@@ -58,6 +58,12 @@ def fmt_end_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     return fmt_date_ui(dt, ref)
 
 
+def fmt_date_yy(dt: datetime) -> str:
+    """Дата с годом двумя цифрами всегда: «15.11.26» (сроки в строках журнала данных,
+    даты бэкапов и просьб шлюзов — там, где год нужен независимо от текущего)."""
+    return dt.astimezone(pkg.TZ).strftime("%d.%m.%y")
+
+
 def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     """Дата для экранов: «12.10», другой год — «12.10.27»."""
     dt = dt.astimezone(pkg.TZ)

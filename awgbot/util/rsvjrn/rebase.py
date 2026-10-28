@@ -33,8 +33,8 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-from .apply import Event, _counter_op
-from .classes import MASK_COLUMNS, SECRET_COLUMNS
+from .apply import Event, _columns, _counter_op, _drop_null_secrets, _q
+from .classes import MASK_COLUMNS, NOT_TAIL, SECRET_COLUMNS
 
 # уникальные значения, за которые спорят строки хвоста и держателя
 UNIQUE: dict[str, tuple[str, ...]] = {"devices": ("address", "public_key"), "clients": ("tg_id", "invite_code")}
@@ -52,11 +52,9 @@ QUIET: dict[str, tuple[str, ...]] = {
     "clients": ("tg_name", "tg_name_at", "tg_username"), "client_subscription": ("notified_thresholds",),
     "client_quota": ("traffic_notified", "bonus_granted_month"), "client_grace": ("grace_pending_cut",),
 }
-# в хвост не идут: данные хоста (их держатель не захватывает — не вернутся) и архивы месяца
-# (их пишет сброс месяца, а сброс хвоста пропускается)
-NOT_TAIL = ("gateways", "traffic_monthly", "server_traffic_monthly")
-# значения, которые в отчёт (и в Т-Ж4, и в журнал) не идут
-SECRET_COLS: dict[str, tuple[str, ...]] = {
+# значения, которые в отчёт (и в Т-Ж4, и в журнал) не идут — не путать с SECRET_COLUMNS реестра
+# (пустой секрет основы — «не трогать»): здесь только то, что нельзя показывать
+HIDDEN_VALUE_COLS: dict[str, tuple[str, ...]] = {
     "devices": ("private_key", "preshared_key"), "clients": ("invite_code",), "client_pause": ("resume_code",),
     "device_friend": ("friend_code",), "server_state": ("value",),
 }
@@ -65,12 +63,8 @@ SECRET_COLS: dict[str, tuple[str, ...]] = {
 @dataclass
 class Report:
     moved: int = 0
-    skipped: int = 0
+    skipped: int = 0                                          # не хвост: данные хоста, сбросы по времени, таблицы нет
     disputed: list[dict] = field(default_factory=list)
-
-
-def _q(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
 
 
 def _where(k: dict) -> tuple[str, list]:
@@ -85,16 +79,10 @@ def _remap(table: str, values: dict, id_map: dict) -> dict:
         if history:
             cols += ["client_id"] if parent == "clients" else ["device_id"]
         for c in cols:
-            if out.get(c) is not None:
-                try:
-                    out[c] = id_map[parent].get(int(out[c]), out[c])
-                except (TypeError, ValueError):
-                    pass
-    if table in REMAPPED and out.get("id") is not None:
-        try:
-            out["id"] = id_map[table].get(int(out["id"]), out["id"])
-        except (TypeError, ValueError):
-            pass
+            if _int(out.get(c)) is not None:
+                out[c] = id_map[parent].get(_int(out[c]), out[c])
+    if table in REMAPPED and _int(out.get("id")) is not None:
+        out["id"] = id_map[table].get(_int(out["id"]), out["id"])
     return out
 
 
@@ -111,11 +99,10 @@ def _client_of(conn, table: str, k: dict, vals: dict) -> int | None:
     """Профиль, к которому относится строка (для строки отчёта)."""
     if table == "clients":
         return _int(k.get("id"))
-    for col in ("client_id",):
-        if vals.get(col) is not None:
-            return _int(vals[col])
-        if k.get(col) is not None:
-            return _int(k[col])
+    if vals.get("client_id") is not None:
+        return _int(vals["client_id"])
+    if k.get("client_id") is not None:
+        return _int(k["client_id"])
     dev = vals.get("device_id", k.get("device_id")) if table != "devices" else k.get("id")
     if dev is not None:
         row = conn.execute("SELECT client_id FROM main.devices WHERE id = ?", (dev,)).fetchone()
@@ -136,11 +123,7 @@ def _taken_by(conn, table: str, vals: dict) -> dict | None:
         v = vals.get(col)
         if v is None:
             continue
-        prev, conn.row_factory = conn.row_factory, sqlite3.Row
-        try:
-            row = conn.execute(f"SELECT * FROM main.{_q(table)} WHERE {_q(col)} = ?", (v,)).fetchone()
-        finally:
-            conn.row_factory = prev
+        row = _row(conn, table, {col: v})
         if row is not None:
             keys = row.keys()
             return {"col": col, "id": row["id"], "name": row["name"] if "name" in keys else "",
@@ -199,7 +182,7 @@ def rebase(conn: sqlite3.Connection, events: list[Event], *, before_commit=None)
             if n:
                 rpt.moved += 1
         for d in rpt.disputed:
-            if d.get("col") in SECRET_COLS.get(str(d.get("table")), ()):
+            if d.get("col") in HIDDEN_VALUE_COLS.get(str(d.get("table")), ()):
                 d.update(tail=None, kept=None, secret=True)    # значения ключей и кодов — никуда
         if before_commit is not None:
             before_commit(conn, rpt)
@@ -257,10 +240,8 @@ def _one(conn, ev: Event, id_map: dict, tables: set, rpt: Report) -> bool:
 
 
 def _insert(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
-    vals = _remap(ev.t, {**(ev.c or {}), **k}, id_map)
-    cols = {r[1] for r in conn.execute(f"PRAGMA main.table_info({_q(ev.t)})")}
-    secret = SECRET_COLUMNS.get(ev.t, ())
-    vals = {c: v for c, v in vals.items() if c in cols and not (c in secret and v is None)}
+    cols = set(_columns(conn, ev.t))
+    vals = _drop_null_secrets(ev.t, {c: v for c, v in _remap(ev.t, {**(ev.c or {}), **k}, id_map).items() if c in cols})
     if ev.t in REMAPPED and vals.get("id") is not None and \
             conn.execute(f"SELECT 1 FROM main.{_q(ev.t)} WHERE id = ?", (vals["id"],)).fetchone():
         old = int(ev.k.get("id"))
@@ -283,10 +264,9 @@ def _ins(conn, table: str, vals: dict) -> None:
 
 def _update(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
     row = _row(conn, ev.t, k)
-    secret = SECRET_COLUMNS.get(ev.t, ())
-    # секрет основы у бота на резерве пустой: не сравнивать; пустое — «не трогать»
-    c = {x: v for x, v in _remap(ev.t, dict(ev.c or {}), id_map).items() if not (x in secret and v is None)}
-    o = {x: v for x, v in _remap(ev.t, dict(ev.o or {}), id_map).items() if not (x in secret and v is None)}
+    # секрет основы у бота на резерве пустой: не сравнивать; пустое — «не трогать» (apply)
+    c = _drop_null_secrets(ev.t, _remap(ev.t, dict(ev.c or {}), id_map))
+    o = _drop_null_secrets(ev.t, _remap(ev.t, dict(ev.o or {}), id_map))
     if row is None:
         rpt.disputed.append({"kind": "gone", "table": ev.t, "key": dict(ev.k), "op": "U",
                              "client_id": _client_of(conn, ev.t, k, c), "col": "", "tail": None, "kept": None,

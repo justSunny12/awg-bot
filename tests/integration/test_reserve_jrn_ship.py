@@ -196,7 +196,7 @@ def test_an_event_is_sent_stored_acked_and_then_dropped_at_the_primary(duo):
     (kind, body), = sends(acts)
     assert kind == "jev" and body["line"] == duo.line and body["from"] + body["n"] - 1 == last, body
     replies = duo.a_to_b(acts)
-    assert sends(replies) == [("jack", {"line": duo.line, "e": body["e"], "i": last})], replies
+    assert sends(replies) == [("jack", {"line": duo.line, "i": last})], replies
     assert _kept(duo)[-1] == last
     duo.b_to_a(replies)
     assert duo.a.db.jrn_meta()["acked"] == last
@@ -509,20 +509,20 @@ def test_each_server_is_primary_of_its_line_and_reserve_of_the_other(duo):
     # встречные сообщения
     to_b = duo.a_to_b(a_acts)
     to_a = a.reserve_jrn_in("jev", jev_b)
-    assert sends(to_a) == [("jack", {"line": bline, "e": 0, "i": bevs[-1].i})], to_a
+    assert sends(to_a) == [("jack", {"line": bline, "i": bevs[-1].i})], to_a
     assert [event.head(r).n for r in duo.a_keep.events()] == [ev.i for ev in bevs], "события Beta не у Alpha на хранении"
     assert len(a.db.list_clients()) == clients_before + 1, "события второй линии попали в базу основы"
     duo.b_to_a(to_b)
     assert a.db.jrn_meta()["acked"] == a.db.jrn_last_i(), "свой jack не дошёл до своей линии"
     # jack Alpha на линию Beta — ответ основы Beta её боту у меня: только гостю
-    assert b.reserve_jrn_in("jack", {"line": bline, "e": 0, "i": 1}) == [], \
+    assert b.reserve_jrn_in("jack", {"line": bline, "i": 1}) == [], \
         "ответ на свою линию у Beta ушёл не туда"
 
 
 def test_a_message_of_an_unknown_line_is_dropped(duo):
     duo.journal_on()
     acked = duo.a.db.jrn_meta()["acked"]
-    assert duo.a.reserve_jrn_in("jack", {"line": "00" * 8, "e": 0, "i": 999}) == []
+    assert duo.a.reserve_jrn_in("jack", {"line": "00" * 8, "i": 999}) == []
     assert duo.a.db.jrn_meta()["acked"] == acked, "jack чужой линии сдвинул подтверждённое"
 
 
@@ -637,7 +637,7 @@ def test_a_jack_beyond_what_was_sent_is_ignored(duo):
     duo.journal_on()
     duo.edit("Иван")
     acked = duo.a.db.jrn_meta()["acked"]
-    duo.a.reserve_jrn_in("jack", {"line": duo.line, "e": 0, "i": duo.a.db.jrn_last_i()})
+    duo.a.reserve_jrn_in("jack", {"line": duo.line, "i": duo.a.db.jrn_last_i()})
     assert duo.a.db.jrn_meta()["acked"] == acked, "подтверждено то, что не отправлялось"
     assert duo.a.db.jrn_events_after(acked), "неотправленные события удалены по чужому jack"
 

@@ -146,7 +146,7 @@ class ReserveFollowMixin:
             for ev, why in res.lost:
                 log.warning("резерв: событие %s (%s %s) не встало: %s", ev.i, ev.op, ev.t, why)
             applied = res.last
-        return [("send", "jack", {"line": line, "e": e_body, "i": applied})] + self._jrn_back_caught_up()
+        return [("send", "jack", {"line": line, "i": applied})] + self._jrn_back_caught_up()
 
     def _follow_jcnt_in(self, body: dict) -> list[tuple]:
         """Пачка счётчиков второй стороны — сложить: у основы — клона (b), расход через
@@ -308,7 +308,7 @@ class ReserveFollowMixin:
 
     def reserve_follow_lag_tick(self) -> list[tuple]:
         """Т-Ж6: отставание дольше минуты — один раз на расхождение; догнал — 🟢."""
-        from awgbot.domain.notices import reserve as rn
+        from awgbot.domain.notices import reserve_tail as rt
         if not self.reserve_following() or not self.reserve_jrn_moved():
             return []
         lag, applied, last = self._follow_lag()
@@ -321,11 +321,11 @@ class ReserveFollowMixin:
             why = (f"данные по {timeutil.fmt_clock_ui(timeutil.parse_iso(view['at']))}" if view.get("at") else
                    "отстают")
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
-                                             text=rn.follow_stalled(self.reserve_peer_name(), why))])]
+                                             text=rt.follow_stalled(self.reserve_peer_name(), why))])]
         if told and not lag and last <= applied:
             self.rsv_update("rsv_follow", lag_told=False)
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
-                                             text=rn.follow_ok(self.reserve_peer_name()))])]
+                                             text=rt.follow_ok(self.reserve_peer_name()))])]
         return []
 
     # ── отказ базы ──────────────────────────────────────────────────────────

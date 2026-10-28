@@ -4,19 +4,24 @@ outbound_return.py — часть пакета reserve (см. __init__): воз�
 
 returning/back_req → `released{реплика}` → merge (merge_ops) → restart →
 take_tg (`deleteWebhook`, поллинг) → record_back (запись → свой адрес, факт)
-→ `back` → relay (`relay{until}`, `wiped`) → home с новым `K`. Рычаг
-«вернуть без резерва» (резерв не на связи): запись на себя, Telegram
-забирается, реплика вольётся по выходу резерва на связь (await_merge) — или
-не вольётся (резерв вернулся пустым). Резерв на связи без гостя (по `st`
-после начала возврата) или пустая реплика — возврат без слияния (сразу
-take_tg). Та же реплика (по отпечатку, `merged_fp`) второй раз не сливается.
-Повтор той же ошибки слияния — молча и без автоматического возврата
-(`merge_blocked`). Повторы: `back_req` по сроку (резерв на повтор отдаёт
-реплику из rep.bin), merge по сроку и после рестарта посреди — снова
-back_req, restart — не чаще раза в минуту, take_tg — каждый такт, ~5 мин
-отказов — уведомление, record_back без факта 30 мин — `back` всё равно и
-Т-РУ11 (при «вручную» просьба сменить запись — сразу), `back` раз в минуту до
-`relay`.
+→ `back` → relay (`relay{until}`, `wiped`) → home с новым `K`. С журналом
+(journal/handover) реплики и слияния нет: `released{epoch, last}` → догон
+(`jrn_back`, `reserve_jrn_back_tick`) → сразу take_tg; отчёт Т-РУ5б — сводка
+эпохи. Рычаг «вернуть без резерва» (резерв не на связи): запись на себя,
+Telegram забирается, реплика вольётся по выходу резерва на связь (await_merge)
+— или не вольётся (резерв вернулся пустым); с журналом вместо реплики — правки
+бота на резерве хвостом (`reserve_c9_start`, journal/c9), и пока его журнал
+данных на диске резерва новее перенесённого (`reserve_disk_waiting`), возврат
+ждёт его, а не считает гостя пустым. Резерв на связи без гостя (по `st` после
+начала возврата) или пустая реплика — возврат без слияния (сразу take_tg).
+Та же реплика (по отпечатку, `merged_fp`) второй раз не сливается. Повтор той
+же ошибки слияния — молча и без автоматического возврата (`merge_blocked`).
+Повторы: `back_req` по сроку (резерв на повтор отдаёт реплику из rep.bin),
+merge по сроку и после рестарта посреди — снова back_req, restart — не чаще
+раза в минуту, take_tg — каждый такт, ~5 мин отказов — уведомление,
+record_back без факта 30 мин — `back` всё равно и Т-РУ11 (при «вручную»
+просьба сменить запись — сразу), `back` раз в минуту до `relay`. Возврат и
+пока не перенесён мой хвост (journal/tail) — ждёт, не дольше TAIL_WAIT_S.
 """
 from __future__ import annotations
 
@@ -28,7 +33,7 @@ from awgbot.util import livestep, timeutil
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .outbound import FORCE_OFFLINE_S, RECORD_WAIT_S, RELAY_WAIT_S, RELEASED_WAIT_S
-from .state import _LOCK
+from .state import HOSTING, _LOCK
 
 
 class ReserveReturnMixin:
@@ -46,9 +51,7 @@ class ReserveReturnMixin:
             return "пользователи не у резерва"
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
-        if hasattr(self, "reserve_tail_return_why") and self.reserve_tail_return_why():
-            return self.reserve_tail_return_why()             # мой хвост ещё переносится на резерв
-        return ""
+        return self.reserve_tail_return_why()                 # мой хвост ещё переносится на резерв — ждать
 
     # ── С9: резерв не на связи — вернуть пользователей без него ─────────────
     def reserve_force_check(self) -> str:
@@ -90,7 +93,7 @@ class ReserveReturnMixin:
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
-        if guest_e and hasattr(self, "reserve_c9_start"):
+        if guest_e:
             self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
@@ -101,8 +104,7 @@ class ReserveReturnMixin:
         peer = self.reserve_peer_state()
         if not self.reserve_online():
             return []
-        if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing") \
-                and not (hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting()):
+        if str(peer.get("inn") or "idle") not in HOSTING and not self.reserve_disk_waiting():
             return self._forced_no_merge()
         with _LOCK:
             self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
@@ -152,9 +154,8 @@ class ReserveReturnMixin:
         if step == "back_req" and out.get("jrn_back"):
             return self.reserve_jrn_back_tick(out)            # журнал: бот на резерве передал право — догоняю
         if step == "back_req":
-            peer_idle = self.reserve_online() and \
-                str(self.reserve_peer_state().get("inn") or "idle") not in ("taking", "serving", "releasing")
-            disk = hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting()
+            peer_idle = self.reserve_online() and str(self.reserve_peer_state().get("inn") or "idle") not in HOSTING
+            disk = self.reserve_disk_waiting()
             if peer_idle and str(out.get("return_why") or "") == "force" and not disk:
                 return self._forced_no_merge()                # взгляд на него был старым: гостя у него уже нет
             if peer_idle and not disk and \
@@ -210,6 +211,7 @@ class ReserveReturnMixin:
         """Реплики нет (резерв потерял гостя, пустой released): слияния нет, пиры и
         блокировки — по своей базе, перезапуск не нужен — сразу забирать Telegram."""
         from awgbot.domain.notices import reserve as rn
+        from awgbot.domain.notices import reserve_tail as rt
         out = self._out()
         name = self.reserve_peer_name()
         if self.reserve_jrn_moved():
@@ -218,12 +220,11 @@ class ReserveReturnMixin:
             report = dict(out.get("jrn_report") or {})
             report.setdefault("lost", [])
             if int(self.__dict__.get("_follow_seen_top") or 0) > int(self.db.jrn_meta()["applied"]):
-                report["lost"].append(rn.returned_without_guest_tail(name))
+                report["lost"].append(rt.returned_without_guest_tail(name))
             report.pop("extended", None)
-            self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None)
         else:
-            # отчёт — тот же вид, что у слияния: «lost» — строки Т-РУ5б
-            self.rsv_update("rsv_out", guest_stopped=True, merge_report={"lost": [rn.returned_without_replica(name)]})
+            report = {"lost": [rn.returned_without_replica(name)]}   # отчёт — тот же вид, что у слияния: «lost» — строки Т-РУ5б
+        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None)
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)
         return [("take_tg",), ("live",)]
 
@@ -307,9 +308,8 @@ class ReserveReturnMixin:
         self.reserve_new_k()
         self.reserve_pkg_mark()
         self.rsv_put("rsv_shares", None)
-        if hasattr(self, "_jrn_sess_reset"):
-            self._jrn_sess_reset()                            # журнал резерв снял — новый снимок под новым K
-            self.rsv_put("rsv_jrn_out", None)
+        self._jrn_sess_reset()                                # журнал резерв снял — новый снимок под новым K
+        self.rsv_put("rsv_jrn_out", None)
         self.reserve_set_out("home", step="", kind="", relay_until=str(out.get("relay_until") or ""),
                              returned_at=timeutil.now_iso(), last_switch=timeutil.now_iso(),
                              back_fact_at=str(out.get("record_fact_at") or timeutil.now_iso()), notified=False,
@@ -318,11 +318,10 @@ class ReserveReturnMixin:
         self.db.set_state("move_notified", "")              # «переподключи VPN» — заново на следующий переезд
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
-        if hasattr(self, "reserve_tail_notes"):
-            notes += self.reserve_tail_notes()                # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
-            notes += self.reserve_tail_self()                 # хвост, который бот на резерве так и не принял
-            self.reserve_tail_keys_clear()
-            notes += self.reserve_c9_notes()                  # и правки бота на резерве после «вернуть без резерва»
+        notes += self.reserve_tail_notes()                    # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
+        notes += self.reserve_tail_self()                     # хвост, который бот на резерве так и не принял
+        self.reserve_tail_keys_clear()
+        notes += self.reserve_c9_notes()                      # и правки бота на резерве после «вернуть без резерва»
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
         # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается
         kind = str(out.get("kind") or "")
