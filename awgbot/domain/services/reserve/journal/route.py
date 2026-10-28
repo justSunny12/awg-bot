@@ -146,11 +146,18 @@ class ReserveJournalRouteMixin:
 
     def _keep_serve_guest(self, frm: int) -> list[tuple]:
         """События основы гостю с номера `frm` (его `jneed`): из хранилища, подряд, не больше
-        EV_BYTES; с `frm` в хранилище не начинается — ничего (досылку попросит у основы сам)."""
+        EV_BYTES. С `frm` в хранилище не начинается — ничего: основа подтверждённые события у
+        себя не держит, досылать их некому — гость в следовании остаётся на своей точке, а
+        основа скажет о недошедших решениях после возврата (jrn_mine_lost); дыру — в журнал,
+        один раз на номер."""
         from awgbot.util.rsvjrn import event
         line = self.reserve_keep_line()
         recs = self._store_run(self.reserve_keep_store(), line, frm)
         if not recs:
+            if self.__dict__.get("_keep_hole_told") != frm:
+                self.__dict__["_keep_hole_told"] = frm
+                log.warning("резерв: в хранилище журнала «%s» нет записи %s — гостю досылать нечего, его база "
+                            "отстанет от основы с этого номера", self.reserve_peer_name(), frm)
             return []
         h = event.head(recs[0])
         return [("guest", "jev", {"line": line, "e": h.e, "from": h.n, "n": len(recs), "blob": b"".join(recs).hex()})]

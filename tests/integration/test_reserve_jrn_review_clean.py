@@ -124,14 +124,19 @@ def test_a_jneed_into_a_hole_gives_the_guest_nothing(duo):
     assert not to_guest(acts), f"резерв отдал гостю события не с того номера: {acts}"
 
 
-def test_a_jneed_into_a_hole_goes_to_the_primary_in_transit(duo):
-    """Досылать из хранилища нечего — просьба гостя уходит основе транзитом (как
-    остальные его записи журнала); молча проглоченная — гость в следовании застревает
-    на дыре навсегда."""
+def test_a_jneed_into_a_hole_is_a_warning_once_per_number(duo, caplog):
+    """Досылать из хранилища нечего, и основе переслать некому — подтверждённые события она
+    у себя не держит: гостю ничего, а дыра — строкой журнала уровня warning, один раз на
+    номер (гость повторяет `jneed` каждые JRN_NEED_S); о недошедших решениях основа скажет
+    после возврата."""
+    import logging
+    caplog.set_level(logging.WARNING)
     hole, _after = _store_with_a_hole(duo)
-    acts = duo.guest_to_b([("jneed", {"line": duo.line, "from": hole})])
-    assert sends(acts, "jneed") == [("jneed", {"line": duo.line, "from": hole})], \
-        f"просьба гостя о пропавших событиях не ушла основе: {acts}"
+    for _ in range(3):
+        acts = duo.guest_to_b([("jneed", {"line": duo.line, "from": hole})])
+        assert not acts, f"на дыру в хранилище резерв что-то ответил: {acts}"
+    told = _lines(caplog, f"нет записи {hole}")
+    assert len(told) == 1, told
 
 
 # ── сборка частей хвоста ────────────────────────────────────────────────────
