@@ -100,7 +100,7 @@ class ReserveReturnMixin:
             return self._forced_no_merge()
         with _LOCK:
             self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
-                                 return_started_at=timeutil.now_iso(), await_merge=False)
+                                 return_started_at=timeutil.now_iso(), await_merge=False, step="back_req")
             self._out_step("back_req", RELEASED_WAIT_S)
         log.info("резерв: «%s» снова на связи — сливаю его реплику", self.reserve_peer_name())
         return [("send", "back_req", {}), ("live",)]
@@ -124,8 +124,9 @@ class ReserveReturnMixin:
         if why_not:
             raise ServiceError(why_not)
         with _LOCK:
+            # шаг — сразу с состоянием: иначе роль на миг сверилась бы с «returning» без шага
             self.reserve_set_out("returning", kind=str(self._out().get("kind") or ""), return_why=why,
-                                 return_started_at=timeutil.now_iso())
+                                 return_started_at=timeutil.now_iso(), step="back_req")
             self._out_step("back_req", RELEASED_WAIT_S)
         log.info("резерв: возврат пользователей с «%s» начат (%s)", self.reserve_peer_name(), why)
         return [("send", "back_req", {}), ("live",)]

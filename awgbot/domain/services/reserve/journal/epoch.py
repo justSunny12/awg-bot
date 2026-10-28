@@ -57,7 +57,10 @@ class ReserveEpochMixin:
                 return False, "вернуть без резерва"
             return True, "пользователи и бот у резерва"
         if state == "returning":
-            if step == "merge" or (step == "back_req" and not out.get("guest_stopped")):
+            # после «вернуть без резерва» (return_why=force) основа давно решает сама: просьба реплики
+            # у вернувшегося резерва право записи не отдаёт
+            forced = str(out.get("return_why") or "") == "force"
+            if step == "merge" or (step == "back_req" and not out.get("guest_stopped") and not forced):
                 return True, "возврат: ждём реплику и слияние"
             return False, "возврат: бот на резерве остановлен"
         # home: решает слово Telegram, сказанное уже дома (прежнее «away» — до возврата)
