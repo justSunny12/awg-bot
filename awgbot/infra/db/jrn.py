@@ -5,14 +5,28 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from awgbot.util.timeutil import now_iso as _now_iso
 
-_COLS = ("epoch", "holder", "role", "changed_at", "why", "capture", "applied", "acked", "snap_i", "fork_i")
+_COLS = ("epoch", "holder", "role", "changed_at", "why", "capture", "applied", "acked", "fork_i")
 _EMPTY = {"epoch": 0, "holder": "self", "role": "holder", "changed_at": "", "why": "", "capture": 0, "applied": 0,
-          "acked": 0, "snap_i": 0, "fork_i": 0}
+          "acked": 0, "fork_i": 0}
 
 
 class JrnMixin:
+
+    @contextlib.contextmanager
+    def _full_sync(self):
+        """Транзакция под `synchronous = FULL` (переход эпохи, состояние пачек счётчиков):
+        потерять её при пропаже питания нельзя; после — снова NORMAL."""
+        conn = self._connection()
+        conn.execute("PRAGMA synchronous = FULL")
+        try:
+            with self._tx() as c:
+                yield c
+        finally:
+            conn.execute("PRAGMA synchronous = NORMAL")
 
     def jrn_meta(self) -> dict:
         row = self._connection().execute("SELECT " + ", ".join(_COLS) + " FROM jrn_meta WHERE id = 1").fetchone()
@@ -37,34 +51,29 @@ class JrnMixin:
             return None
         new_e = max(int(cur_meta["epoch"]) + 1, int(epoch or 0))
         fork = self.jrn_last_i() if fork_i is None else int(fork_i)
-        return self._jrn_meta_set(why, epoch=new_e, holder=holder, role=role, fork_i=fork, _keep_own=keep_own)
+        return self._jrn_meta_set(why, keep_own=keep_own, epoch=new_e, holder=holder, role=role, fork_i=fork)
 
     def jrn_hand_over(self, *, why: str) -> dict | None:
         """Передача бота кнопкой: если все свои события этой эпохи подтверждены резервом —
         эпоха + 1 второй стороне, здесь следование, точка расхождения — подтверждённое;
         проверка и переход — одной транзакцией (решение из другого потока не вклинится).
         Не всё подтверждено — None."""
-        conn = self._connection()
-        conn.execute("PRAGMA synchronous = FULL")
-        try:
-            with self._tx() as c:
-                c.execute("UPDATE jrn_meta SET why = why WHERE id = 1")      # замок писателя — до проверки
-                row = c.execute("SELECT epoch, acked FROM jrn_meta WHERE id = 1").fetchone()
-                if row is None:
-                    return None
-                epoch, acked = int(row[0]), int(row[1])
-                if c.execute("SELECT 1 FROM jrn_events WHERE e = ? AND i > ? LIMIT 1", (epoch, acked)).fetchone():
-                    return None
-                c.execute("UPDATE jrn_meta SET epoch = ?, holder = 'peer', role = 'follower', fork_i = ?, applied = ?, "
-                          "changed_at = ?, why = ? WHERE id = 1", (epoch + 1, acked, acked, _now_iso(), why))
-                self._tx_note(self._TX_COUNTERS)
-        finally:
-            conn.execute("PRAGMA synchronous = NORMAL")
+        with self._full_sync() as c:
+            c.execute("UPDATE jrn_meta SET why = why WHERE id = 1")      # замок писателя — до проверки
+            row = c.execute("SELECT epoch, acked FROM jrn_meta WHERE id = 1").fetchone()
+            if row is None:
+                return None
+            epoch, acked = int(row[0]), int(row[1])
+            if c.execute("SELECT 1 FROM jrn_events WHERE e = ? AND i > ? LIMIT 1", (epoch, acked)).fetchone():
+                return None
+            c.execute("UPDATE jrn_meta SET epoch = ?, holder = 'peer', role = 'follower', fork_i = ?, applied = ?, "
+                      "changed_at = ?, why = ? WHERE id = 1", (epoch + 1, acked, acked, _now_iso(), why))
+            self._tx_note(self._TX_COUNTERS)
         return self.jrn_meta()
 
     def jrn_adopt(self, epoch: int, *, why: str, fork_i: int | None = None) -> dict | None:
-        """Чужая эпоха больше моей (jstale) — принять её без приращения: держатель — вторая
-        сторона, здесь следование. Равная при держателе здесь — тоже (своя поднята по слову
+        """Чужая эпоха больше моей (по `jstale`; из `st` её берёт jrn_pass, из события —
+        jrn_adopt_epoch) — принять её без приращения: держатель — вторая сторона, здесь следование. Равная при держателе здесь — тоже (своя поднята по слову
         резерва, `jrn_raise`, а его гость держит тот же номер — два писателя под одним
         номером недопустимы). Меньше или уже следую — None."""
         cur_meta = self.jrn_meta()
@@ -81,31 +90,21 @@ class JrnMixin:
         cur_meta = self.jrn_meta()
         if cur_meta["role"] != "holder" or int(epoch) <= int(cur_meta["epoch"]):
             return None
-        conn = self._connection()
-        conn.execute("PRAGMA synchronous = FULL")
-        try:
-            with self._tx() as c:
-                c.execute("UPDATE jrn_events SET e = ? WHERE e = ? AND i > (SELECT acked FROM jrn_meta WHERE id = 1)",
-                          (int(epoch), int(cur_meta["epoch"])))
-                c.execute("UPDATE jrn_meta SET epoch = ?, changed_at = ?, why = ? WHERE id = 1",
-                          (int(epoch), _now_iso(), why))
-                self._tx_note(self._TX_COUNTERS)
-        finally:
-            conn.execute("PRAGMA synchronous = NORMAL")
+        with self._full_sync() as c:
+            c.execute("UPDATE jrn_events SET e = ? WHERE e = ? AND i > (SELECT acked FROM jrn_meta WHERE id = 1)",
+                      (int(epoch), int(cur_meta["epoch"])))
+            c.execute("UPDATE jrn_meta SET epoch = ?, changed_at = ?, why = ? WHERE id = 1",
+                      (int(epoch), _now_iso(), why))
+            self._tx_note(self._TX_COUNTERS)
         return self.jrn_meta()
 
     def jrn_adopt_epoch(self, epoch: int) -> None:
         """В следовании: номер эпохи — держателя (он открылся сам после аварии, или моя
-        выросла сменой роли без событий), роль та же."""
-        conn = self._connection()
-        conn.execute("PRAGMA synchronous = FULL")             # переход эпохи — как остальные: не потерять при пропаже питания
-        try:
-            with self._tx() as c:
-                c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND role = 'follower' AND holder = 'peer'",
-                          (int(epoch),))
-                self._tx_note(self._TX_COUNTERS)
-        finally:
-            conn.execute("PRAGMA synchronous = NORMAL")
+        выросла сменой роли без событий), роль та же. Под FULL — как остальные переходы эпохи."""
+        with self._full_sync() as c:
+            c.execute("UPDATE jrn_meta SET epoch = ? WHERE id = 1 AND role = 'follower' AND holder = 'peer'",
+                      (int(epoch),))
+            self._tx_note(self._TX_COUNTERS)
 
     def jrn_seen_reset(self, host: str) -> None:
         """Новый отъезд: счёт пачек клона начинается заново (новый гость)."""
@@ -131,6 +130,17 @@ class JrnMixin:
         """Хвост отложен: точка расхождения ещё не известна."""
         return bool(self._connection().execute("SELECT 1 FROM jrn_tail WHERE state = 'hold' LIMIT 1").fetchone())
 
+    @staticmethod
+    def _tail_keys_load(c) -> dict:
+        """Отложенные закрытые ключи устройств хвоста (`rsv_tail_keys`): открытый → закрытый."""
+        import json
+        row = c.execute("SELECT value FROM server_state WHERE key = 'rsv_tail_keys'").fetchone()
+        try:
+            keys = json.loads(row[0]) if row and row[0] else {}
+        except ValueError:
+            keys = {}
+        return keys if isinstance(keys, dict) else {}
+
     def _jrn_keys_stash(self, c, events: list) -> None:
         """Закрытые ключи устройств, которые откат удалит (вставки хвоста): держатель вернёт
         устройство без ключа (его у бота на резерве нет) — ключ ждёт тут (rsv_tail_keys)."""
@@ -143,23 +153,14 @@ class JrnMixin:
                     keys[str(row[0])] = str(row[1])
         if not keys:
             return
-        old = c.execute("SELECT value FROM server_state WHERE key = 'rsv_tail_keys'").fetchone()
-        try:
-            have = json.loads(old[0]) if old and old[0] else {}
-        except ValueError:
-            have = {}
         c.execute("INSERT INTO server_state (key, value) VALUES ('rsv_tail_keys', ?) "
-                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (json.dumps({**have, **keys}),))
+                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (json.dumps({**self._tail_keys_load(c), **keys}),))
 
     def jrn_keys_restore(self) -> int:
         """Устройства из отложенных ключей вернулись событиями держателя без закрытого ключа —
         ключ на место (под applying: у следующего запись секрета иначе запрещена)."""
         import json
-        row = self._connection().execute("SELECT value FROM server_state WHERE key = 'rsv_tail_keys'").fetchone()
-        try:
-            keys = json.loads(row[0]) if row and row[0] else {}
-        except ValueError:
-            keys = {}
+        keys = self._tail_keys_load(self._connection())
         if not keys:
             return 0
         n = 0
@@ -192,10 +193,11 @@ class JrnMixin:
             c.execute("DELETE FROM jrn_tail WHERE state = 'hold' AND i <= ?", (fork,))
             rows = c.execute("SELECT i, e, t, op, k, c, o, at FROM jrn_tail WHERE state = 'hold' ORDER BY i").fetchall()
             if rows:
-                self._jrn_keys_stash(c, [Event.from_row(tuple(r)) for r in rows])
+                events = [Event.from_row(tuple(r)) for r in rows]
+                self._jrn_keys_stash(c, events)
                 c.execute("UPDATE jrn_meta SET applying = 1 WHERE id = 1")
                 try:
-                    lost = undo(c.connection, [Event.from_row(tuple(r)) for r in rows])
+                    lost = undo(c.connection, events)
                 finally:
                     c.execute("UPDATE jrn_meta SET applying = 0 WHERE id = 1")
                 for ev, why in lost:
@@ -207,34 +209,29 @@ class JrnMixin:
             log.warning("журнал: хвост старой эпохи после %s — %d событий откачено, уйдут держателю", fork, len(rows))
         return len(rows)
 
-    def _jrn_meta_set(self, why: str, **fields) -> dict:
+    def _jrn_meta_set(self, why: str, *, keep_own: bool = False, **fields) -> dict:
         """Переход эпохи одной транзакцией с synchronous = FULL. Уход в следование от
         чужого держателя: свои события, которых резерв не подтвердил, — в хвост старой
-        эпохи (jrn_tail): события держателя ложатся под теми же номерами и затёрли бы их."""
-        keep_own = bool(fields.pop("_keep_own", False))
-        conn = self._connection()
-        conn.execute("PRAGMA synchronous = FULL")
-        try:
-            with self._tx() as c:
-                c.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
-                if fields.get("holder") == "peer" and fields.get("role") == "follower" and "fork_i" in fields \
-                        and not keep_own:
-                    # события держателя пойдут с fork_i + 1: применённое — по точку расхождения
-                    fields["applied"] = int(fields["fork_i"])
-                if fields.get("holder") == "peer" and fields.get("role") == "follower" and not keep_own:
-                    # хвост — отложен (hold): откат и отправка — когда известна точка расхождения
-                    c.execute("INSERT OR REPLACE INTO jrn_tail (i, e, t, op, k, c, o, at, state) "
-                              "SELECT i, e, t, op, k, c, o, at, 'hold' FROM jrn_events "
-                              "WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
-                              "AND e = (SELECT epoch FROM jrn_meta WHERE id = 1)")
-                    c.execute("DELETE FROM jrn_events WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
-                              "AND e = (SELECT epoch FROM jrn_meta WHERE id = 1)")
-                sets = ", ".join(f"{k} = ?" for k in fields)
-                c.execute(f"UPDATE jrn_meta SET {sets}, changed_at = ?, why = ? WHERE id = 1",
-                          (*fields.values(), _now_iso(), why))
-                self._tx_note(self._TX_COUNTERS)          # переход эпохи — не данные пользователей: пакет не собирать
-        finally:
-            conn.execute("PRAGMA synchronous = NORMAL")
+        эпохи (jrn_tail): события держателя ложатся под теми же номерами и затёрли бы их;
+        keep_own — оставить их в базе (возврат: основа их ждёт и применит, не хвост)."""
+        to_follow = fields.get("holder") == "peer" and fields.get("role") == "follower" and not keep_own
+        with self._full_sync() as c:
+            c.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
+            if to_follow and "fork_i" in fields:
+                # события держателя пойдут с fork_i + 1: применённое — по точку расхождения
+                fields["applied"] = int(fields["fork_i"])
+            if to_follow:
+                # хвост — отложен (hold): откат и отправка — когда известна точка расхождения
+                c.execute("INSERT OR REPLACE INTO jrn_tail (i, e, t, op, k, c, o, at, state) "
+                          "SELECT i, e, t, op, k, c, o, at, 'hold' FROM jrn_events "
+                          "WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
+                          "AND e = (SELECT epoch FROM jrn_meta WHERE id = 1)")
+                c.execute("DELETE FROM jrn_events WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
+                          "AND e = (SELECT epoch FROM jrn_meta WHERE id = 1)")
+            sets = ", ".join(f"{k} = ?" for k in fields)
+            c.execute(f"UPDATE jrn_meta SET {sets}, changed_at = ?, why = ? WHERE id = 1",
+                      (*fields.values(), _now_iso(), why))
+            self._tx_note(self._TX_COUNTERS)          # переход эпохи — не данные пользователей: пакет не собирать
         return self.jrn_meta()
 
     # ── доставка: свои события и пачки ───────────────────────────────────────
@@ -288,11 +285,6 @@ class JrnMixin:
                 c.execute("DELETE FROM jrn_events WHERE i <= ?", (int(i),))
             self._tx_note(self._TX_COUNTERS)
 
-    def jrn_snap_set(self, i: int) -> None:
-        with self._tx() as c:
-            c.execute("UPDATE jrn_meta SET snap_i = ? WHERE id = 1", (int(i),))
-            self._tx_note(self._TX_COUNTERS)
-
     # Пачки счётчиков этого хоста: одна неподтверждённая (cnt_bn > cnt_ack) повторяется той же —
     # те же строки (cnt_s0, cnt_s1]; новая — только после подтверждения. Состояние — в jrn_meta
     # с synchronous = FULL: потеряй его пропажа питания, повтор вышел бы другой пачкой под тем же
@@ -303,15 +295,10 @@ class JrnMixin:
         return tuple(int(x or 0) for x in row) if row else (0, 0, 0, 0)
 
     def _cnt_set(self, **fields) -> None:
-        conn = self._connection()
-        conn.execute("PRAGMA synchronous = FULL")
-        try:
-            with self._tx() as c:
-                sets = ", ".join(f"{k} = ?" for k in fields)
-                c.execute(f"UPDATE jrn_meta SET {sets} WHERE id = 1", tuple(fields.values()))
-                self._tx_note(self._TX_COUNTERS)
-        finally:
-            conn.execute("PRAGMA synchronous = NORMAL")
+        with self._full_sync() as c:
+            sets = ", ".join(f"{k} = ?" for k in fields)
+            c.execute(f"UPDATE jrn_meta SET {sets} WHERE id = 1", tuple(fields.values()))
+            self._tx_note(self._TX_COUNTERS)
 
     def jrn_counts_out(self, host: str):
         """Пачка к отправке: неподтверждённая — она же; иначе новая из строк после
@@ -394,13 +381,12 @@ class JrnMixin:
         у следующего — отказ, у держателя при журнале — событие той же транзакцией."""
         import json
         import sqlite3
-        from awgbot.util import rsvjrn
+        from awgbot.util.rsvjrn import triggers
         row = cur.execute("SELECT role, applying FROM jrn_meta WHERE id = 1").fetchone()
         if row is not None and row[0] != "holder" and not row[1]:
-            raise sqlite3.IntegrityError(f"{rsvjrn.REFUSAL_PREFIX} эпоха не у этого процесса — решения пишет держатель")
-        cur.execute("INSERT INTO jrn_events (e, t, op, k, at) SELECT epoch, 'device_traffic', ?, ?, "
-                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+00:00' FROM jrn_meta "
-                    "WHERE id = 1 AND capture = 1 AND applying = 0", (op, json.dumps(args, sort_keys=True)))
+            raise sqlite3.IntegrityError(triggers.REFUSAL_MSG)
+        cur.execute(f"INSERT INTO jrn_events (e, t, op, k, at) SELECT m.epoch, 'device_traffic', ?, ?, {triggers.AT_NOW} "
+                    f"{triggers.CAPTURE_FROM}", (op, json.dumps(args, sort_keys=True)))
 
     def _jrn_counts(self, cur, rows: list[tuple]) -> None:
         """Дельты счётчиков этого хоста — в jrn_counts той же транзакцией (при журнале,
@@ -411,11 +397,11 @@ class JrnMixin:
         if not rows:
             return
         from awgbot.util import timeutil
+        from awgbot.util.rsvjrn import triggers
         month = timeutil.now().strftime("%Y-%m")
         cur.executemany("INSERT INTO jrn_counts (month, device_id, rx, tx, rf_rx, rf_tx, hs) "
                         "SELECT COALESCE((SELECT value FROM server_state WHERE key = 'last_monthly_reset'), ?), "
-                        "?, ?, ?, ?, ?, ? FROM jrn_meta WHERE id = 1 AND capture = 1 AND applying = 0",
-                        [(month, *r) for r in rows])
+                        f"?, ?, ?, ?, ?, ? {triggers.CAPTURE_FROM}", [(month, *r) for r in rows])
 
     # ── хвост старой эпохи ────────────────────────────────────────────────────
 

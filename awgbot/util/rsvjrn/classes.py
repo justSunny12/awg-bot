@@ -65,28 +65,24 @@ TABLES: dict[str, str | dict[str, str]] = {
 # ключи server_state — решения (белый список реплики), кроме выбора слота шлюзов
 # (его меняет живость шлюзов самого хоста, routing/liveness) и итога проверки ящика
 # (email_check пишет запасной канал критичных алертов и предстартовая проверка — на
-# каждом хосте свои): у следующего они остаются своими
+# каждом хосте свои; концепт §2.2 называет только два ключа маршрутизации — третий
+# добавлен по коду): у следующего они остаются своими
 _HOST_KEYS = ("routing_active_gateway", "routing_manual_hold", "email_check")
 STATE_DECISION: tuple[str, ...] = tuple(k for k in GUEST_STATE if k not in _HOST_KEYS)
 
 
 
-def _masks() -> dict[str, tuple[str, ...]]:
-    return {t: tuple(c for c, k in spec.items() if k == MASK) for t, spec in TABLES.items()
-            if isinstance(spec, dict) and MASK in spec.values()}
+def _of_class(kind: str) -> dict[str, tuple[str, ...]]:
+    """Таблица → колонки класса kind (только смешанные таблицы, где он назван)."""
+    return {t: tuple(c for c, k in spec.items() if k == kind) for t, spec in TABLES.items()
+            if isinstance(spec, dict) and kind in spec.values()}
 
 
-MASK_COLUMNS: dict[str, tuple[str, ...]] = _masks()       # маски — побитно при перебазировании
-
-
-def _secrets() -> dict[str, tuple[str, ...]]:
-    return {t: tuple(c for c, k in spec.items() if k == SECRET) for t, spec in TABLES.items()
-            if isinstance(spec, dict) and SECRET in spec.values()}
-
-
+MASK_COLUMNS: dict[str, tuple[str, ...]] = _of_class(MASK)       # маски — побитно при перебазировании
 # секреты основы (закрытый ключ устройства): у бота на резерве их нет — пусто в событии значит
 # «не трогать» (концепт §2.8), а не «стереть»
-SECRET_COLUMNS: dict[str, tuple[str, ...]] = _secrets()
+SECRET_COLUMNS: dict[str, tuple[str, ...]] = _of_class(SECRET)
+
 
 def class_of(table: str, column: str) -> str | None:
     """Класс колонки; None — таблицы или колонки в реестре нет."""

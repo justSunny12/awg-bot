@@ -197,3 +197,26 @@ def test_split_refuses_a_cut_tail(k):
         event.split(blob[:-10])
     with pytest.raises(event.RecordError):
         event.split(blob + b"AJ")
+
+
+# ── группы к отправке (runs) ──────────────────────────────────────────────────
+
+def _recs(k, spec: list[tuple[int, int]]) -> list[bytes]:
+    return [event.seal_event(k, LINE, _ev(i=i, e=e)) for e, i in spec]
+
+
+def test_runs_cuts_groups_at_an_epoch_change_and_a_gap_in_numbers(k):
+    """Одна группа — одна эпоха и номера подряд: смена эпохи и дыра в номерах начинают
+    новую (иначе получатель отверг бы пачку целиком или применил не по порядку)."""
+    recs = _recs(k, [(7, 10), (7, 11), (8, 12), (8, 13), (8, 15)])
+    groups = event.runs(recs, 10 ** 9)
+    assert [[event.head(r).n for r in g] for g in groups] == [[10, 11], [12, 13], [15]]
+    assert sum(groups, []) == recs, "записи потерялись или переставлены"
+
+
+def test_runs_keeps_a_group_under_the_byte_limit_but_never_drops_the_first_record(k):
+    recs = _recs(k, [(7, 1), (7, 2), (7, 3)])
+    size = len(recs[0])
+    assert [len(g) for g in event.runs(recs, size * 2)] == [2, 1]
+    assert [len(g) for g in event.runs(recs, size - 1)] == [1, 1, 1], "запись больше предела должна уйти одна"
+    assert event.runs([], 100) == []

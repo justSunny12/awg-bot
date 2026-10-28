@@ -231,6 +231,32 @@ def test_the_bot_and_the_terminal_guard_judge_the_tail_the_same(duo, wall, capsy
     assert seen == [False, True, False, False, False, False], f"контроль: состояния не те, что задумано: {seen}"
 
 
+def test_the_bot_and_the_terminal_guard_judge_the_c9_wait_the_same(mv, capsys):
+    """Ожидание правок бота на резерве после «вернуть без резерва» — одно правило по базе
+    (`c9_wait_raw`): бот отказывает обновлению ровно тогда, когда сторож терминала."""
+    from awgbot.domain.services.types import ServiceError
+    svc = mv.svc
+    rm.go_away(svc)
+    svc.reserve_set_out("home", await_merge=True)
+
+    def agree(label: str) -> None:
+        raw = tailmod.c9_wait_raw(svc.db)
+        try:
+            svc.reserve_refuse_update_if_waiting()
+            bot = False
+        except ServiceError as e:
+            bot = True
+            assert str(e) == tailmod.C9_WAIT_REFUSED.format(name="Beta"), e
+        code, _ = _busy(capsys)
+        assert bot == raw == (code == 3), f"{label}: бот {bot}, по базе {raw}, сторож {code}"
+
+    agree("ждём правки")
+    svc.rsv_update("rsv_out", await_merge=False)
+    agree("ожидание снято")
+    svc.db.set_state("rsv_out", "не JSON")
+    agree("отметка битая")
+
+
 # ── карточка: «данные для переезда у … от …» ────────────────────────────────
 
 def _card_at(svc) -> str:

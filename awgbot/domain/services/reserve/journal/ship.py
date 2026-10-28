@@ -40,7 +40,7 @@ from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
 from .. import compat
-from ..state import _LOCK
+from ..state import HOSTING, _LOCK
 
 EV_LIMIT = 256                    # событий в одной пачке
 EV_BYTES = pairproto.CHUNK_BYTES - 4096   # запись целиком в одно сообщение (hex — в MAX_BLOB)
@@ -162,7 +162,7 @@ class ReserveShipMixin:
         except (TypeError, ValueError):
             keep_e = 0
         if str(keep.get("line") or "") == line and keep_e and str(self.reserve_peer_state().get("inn") or "idle") \
-                not in ("taking", "serving", "releasing"):
+                not in HOSTING:
             meta = self.db.jrn_raise(keep_e, why="эпоха линии у резерва выше — восстановление из копии")
             if meta is not None:                              # восстановление из копии: jrn_meta в копию не идёт
                 log.warning("резерв: эпоха линии поднята до %s по сверке с «%s»", meta["epoch"], self.reserve_peer_name())

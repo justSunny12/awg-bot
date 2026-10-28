@@ -262,14 +262,14 @@ CREATE TABLE IF NOT EXISTS jrn_meta (
     applying      INTEGER NOT NULL DEFAULT 0,
     applied       INTEGER NOT NULL DEFAULT 0,            -- последний применённый номер чужого события
     acked         INTEGER NOT NULL DEFAULT 0,            -- последний номер, подтверждённый резервом
-    snap_i        INTEGER NOT NULL DEFAULT 0,            -- номер, по который резерв держит снимок
+    snap_i        INTEGER NOT NULL DEFAULT 0,            -- не используется (снимок — rsv_jrn_out.snap_i); снять при следующей правке схемы
     fork_i        INTEGER NOT NULL DEFAULT 0,            -- точка расхождения последней передачи
     cnt_bn        INTEGER NOT NULL DEFAULT 0,            -- пачки счётчиков этого хоста: последний выданный номер,
     cnt_ack       INTEGER NOT NULL DEFAULT 0,            --   последний подтверждённый,
     cnt_s0        INTEGER NOT NULL DEFAULT 0,            --   строки последней пачки (s0, s1]
     cnt_s1        INTEGER NOT NULL DEFAULT 0,
-    changed_at    TEXT    NOT NULL DEFAULT '',           -- момент последней передачи
-    why           TEXT    NOT NULL DEFAULT ''            -- факт передачи (для журнала и карточки)
+    changed_at    TEXT    NOT NULL DEFAULT '',           -- момент последней передачи (для диагностики: sqlite3)
+    why           TEXT    NOT NULL DEFAULT ''            -- факт передачи (для диагностики: sqlite3)
 );
 -- события решений: физический образ строки (ключ, новые и прежние значения колонок
 -- решений) или операция держателя над счётчиками (month | period | tmerge)

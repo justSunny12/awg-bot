@@ -23,7 +23,10 @@ env резерва закрыт, каталог данных подменён п
 основы без `seal1`) → `clone_up` →
 `up` основе (повтор раз в 30 с, пока идёт подъём) → `released{реплика}` →
 гость стоп, `rep.bin`, гость старт (он подхватит реплику; не вышло — срыв),
-отметка `tg_take` → `tg_taken` от гостя → `taken` основе, serving, Т-РУ4.
+отметка `tg_take` → `tg_taken` от гостя → `taken` основе, serving, Т-РУ4. С
+журналом (`pkg3`, journal) гость открыт по снимку и событиям основы и следует
+за ней: `released{epoch, last}` уходит ему без перезапуска (handover), он
+догоняет и ставит вебхук сам; основа с `released` опоздала — `takeover`.
 Такт проверяет код завершения процесса: кончился без `done`/`fail` — срыв
 сразу, хвост stderr (rsvopen.err) — в причину. После `done` у taking есть
 срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S, кнопка — `released`
@@ -41,13 +44,11 @@ serving или releasing — новый пакет не принимается (
 Возврат: `back_req` → гостю `stop` (открытие ещё шло — юнит стоп) →
 `replica` (гость молчит 90 с — `rep.bin`) → `released` основе (releasing;
 повторный `back_req` — та же реплика из `rep.bin` снова; зоны нет — `rep.bin`
-с диска или `released` без реплики) → `back` (повтор в relay — снова `relay`
-и `wiped`; зоны нет — сразу `wiped`) → пересылка хвоста (`--relay`,
-файервол с DNAT, затем `relay_flush` — сброс conntrack; адрес основы — IP, имя резолвится сейчас; срыв открытия до смены
-записи — без хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний
-пакет и доля — прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины `relay_idle_hours` (по счётчику правила
-DNAT — nftguard.relay_packets, отметка `relay_last_traffic`) →
-idle. `evict` — просьба вернуть пользователей по кнопке у резерва.
+с диска или `released` без реплики); с журналом вместо реплики — последние
+записи гостя и его `released{epoch, last}` (гостя нет — его журнал данных с
+диска, handover). Дальше `back` основы — пересылка хвоста, учёт, `relay`,
+`--wipe`, `wiped`, Т-РУ5 и relay до срока или тишины — inbound_back. `evict` —
+просьба вернуть пользователей по кнопке у резерва.
 """
 from __future__ import annotations
 
@@ -370,7 +371,8 @@ class ReserveInboundMixin:
 
     # ── возврат ─────────────────────────────────────────────────────────────
     def reserve_back_req_in(self) -> list[tuple]:
-        """`back_req` основы: гостю `stop`, ждать реплику."""
+        """`back_req` основы: гостю `stop`, ждать реплику (с журналом — его `released{epoch,
+        last}`; повтор просьбы — тот же ответ снова; гостя нет — его журнал данных с диска)."""
         from awgbot.infra import rsvzone
         inn = self._inn()
         if str(inn.get("state") or "") == "releasing" and inn.get("released_at") and inn.get("jrn_back"):

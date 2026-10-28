@@ -33,7 +33,8 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-from .apply import Event, _columns, _counter_op, _drop_null_secrets, _q
+from . import qname as _q
+from .apply import Event, _columns, _counter_op, _drop_null_secrets
 from .classes import MASK_COLUMNS, NOT_TAIL, SECRET_COLUMNS
 
 # уникальные значения, за которые спорят строки хвоста и держателя

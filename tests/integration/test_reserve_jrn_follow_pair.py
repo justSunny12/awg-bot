@@ -469,6 +469,44 @@ def test_released_outside_of_taking_is_ignored_by_the_reserve(duo):
     assert duo.b.reserve_released_jrn_store(3, 10) == []
 
 
+def test_a_hand_over_of_a_foreign_line_is_ignored_by_the_guest(duo):
+    """`released{line, epoch, last}` не моей линии (мусор по локальному каналу) — гость
+    эпоху не берёт и вебхук не ставит."""
+    _ivan(duo)
+    duo.open_guest(button=True)
+    built = _button_release(duo)
+    (_g, body), = to_guest(duo.b.reserve_released_jrn_store(built["epoch"], built["last"]))
+    with duo.as_guest():
+        assert duo.g.guest_jrn_in("released", {**body, "line": "00" * 8}) == []
+        assert duo.gdb.jrn_meta()["role"] == "follower" and duo.g.guest_jrn_take_tg() is False
+        assert duo.g.guest_jrn_in("released", body) == [] and duo.gdb.jrn_meta()["role"] == "holder"
+
+
+def test_a_guest_release_of_a_foreign_line_is_not_passed_to_the_primary(duo):
+    _ivan(duo)
+    _away(duo)
+    duo.b.rsv_update("rsv_in", state="releasing")
+    with duo.as_guest():
+        rel = duo.g.guest_jrn_release()
+    assert duo.b.reserve_guest_released_jrn({**rel, "line": "00" * 8}) == [], "released чужой линии ушёл основе"
+    assert duo.b.rsv_get("rsv_in").get("jrn_back") is None
+    assert duo.b.reserve_guest_released_jrn(rel), "настоящий released не прошёл"
+
+
+def test_the_guests_word_about_its_journal_is_kept_as_numbers(duo):
+    """hello/online гостя по локальному каналу: эпоха, точка и последний номер — числами,
+    мусор — нули; без поднятого гостя слово не действует."""
+    _ivan(duo)
+    duo.b.reserve_guest_jrn_seen({"e": "7", "fork": None, "last": "x"})
+    assert (duo.b._keep_guest_int("e"), duo.b._keep_guest_int("fork"), duo.b._keep_guest_int("last")) == (0, 0, 0)
+    duo.b.rsv_update("rsv_in", state="serving")
+    assert (duo.b._keep_guest_int("e"), duo.b._keep_guest_int("fork"), duo.b._keep_guest_int("last")) == (7, 0, 0)
+    duo.b.reserve_guest_jrn_seen({"e": 8, "fork": 12, "last": 15})
+    assert (duo.b._keep_guest_int("e"), duo.b._keep_guest_int("fork"), duo.b._keep_guest_int("last")) == (8, 12, 15)
+    duo.b.rsv_update("rsv_in", state="idle")
+    assert duo.b._keep_guest_int("e") == 0, "слово гостя действует без поднятого гостя"
+
+
 # ── возврат без слияния и перезапуска ───────────────────────────────────────
 
 def _return(duo) -> list[tuple]:

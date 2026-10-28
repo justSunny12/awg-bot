@@ -19,6 +19,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
+from . import qname as _q
 from .classes import NOT_TAIL, SECRET_COLUMNS
 
 
@@ -52,10 +53,6 @@ class Applied:
     last: int = 0
     done: list[Event] = field(default_factory=list)
     lost: list[tuple[Event, str]] = field(default_factory=list)
-
-
-def _q(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
 
 
 def _columns(conn, table: str) -> list[str]:

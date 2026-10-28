@@ -28,19 +28,17 @@ import logging
 import sqlite3
 
 from . import REFUSAL_PREFIX, json_ok
+from . import qname as _q
 from .classes import STATE_DECISION, TABLES, captured_columns, denied_columns, history_captured
 
 log = logging.getLogger("awgbot.db")
 
-_MSG = f"{REFUSAL_PREFIX} эпоха не у этого процесса — решения пишет держатель"
+# те же слова и условия — у событий, которые пишет сам держатель мимо триггеров (infra/db/jrn `_jrn_op`, `_jrn_counts`)
+REFUSAL_MSG = f"{REFUSAL_PREFIX} эпоха не у этого процесса — решения пишет держатель"
+CAPTURE_FROM = "FROM main.jrn_meta m WHERE m.id = 1 AND m.capture = 1 AND m.applying = 0"   # захват: пара с журналом, не применение
+AT_NOW = "strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+00:00'"   # с поясом: наивное местное время хоста читалось бы как UTC+3
 _GUARD = ("(SELECT role FROM main.jrn_meta WHERE id = 1) <> 'holder' "
           "AND (SELECT applying FROM main.jrn_meta WHERE id = 1) = 0")
-_CAPTURE = "FROM main.jrn_meta m WHERE m.id = 1 AND m.capture = 1 AND m.applying = 0"
-_AT = "strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+00:00'"   # с поясом: наивное местное время хоста читалось бы как UTC+3
-
-
-def _q(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
 
 
 def _lit(s: str) -> str:
@@ -58,7 +56,7 @@ def _event(table: str, op: str, keys, side_k: str, c_cols, c_side: str | None, o
     c = _obj(c_cols, c_side) if c_side else "NULL"
     o = _obj(o_cols, o_side) if o_side else "NULL"
     return (f"INSERT INTO jrn_events (e, t, op, k, c, o, at) SELECT m.epoch, {_lit(table)}, {_lit(op)}, "
-            f"{_obj(keys, side_k)}, {c}, {o}, {_AT} {_CAPTURE};")
+            f"{_obj(keys, side_k)}, {c}, {o}, {AT_NOW} {CAPTURE_FROM};")
 
 
 def _trig(name: str, when: str, body: str) -> str:
@@ -70,7 +68,7 @@ def deny_statements(schema: dict[str, list[tuple[str, int]]]) -> list[str]:
     out: list[str] = []
     if "jrn_meta" not in schema:
         return out                                    # схема старше эпохи — запрещать не по чему
-    body = f"SELECT RAISE(ABORT, {_lit(_MSG)}) WHERE {_GUARD};"
+    body = f"SELECT RAISE(ABORT, {_lit(REFUSAL_MSG)}) WHERE {_GUARD};"
     for table, spec in schema.items():
         if table not in TABLES or table == "server_state":
             continue

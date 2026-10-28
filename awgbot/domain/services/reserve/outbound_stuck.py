@@ -66,7 +66,7 @@ class ReserveStuckMixin:
         forced = bool(out.get("await_merge"))
         self.reserve_set_poll("mine")
         self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
-                             stuck_home_at=timeutil.now_iso(), await_merge=forced, last_switch=timeutil.now_iso())
+                             await_merge=forced, last_switch=timeutil.now_iso())
         if not forced:
             self.reserve_new_k()
             self.reserve_pkg_mark()

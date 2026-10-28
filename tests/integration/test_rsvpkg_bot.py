@@ -239,3 +239,20 @@ def test_the_lists_part_of_a_missing_dir_is_empty_and_a_huge_list_is_capped(tmp_
     (tmp_path / "routing-big.lst").write_text("\n".join(f"d{i}.example" for i in range(bot.LISTS_MAX + 5)),
                                               encoding="utf-8")
     assert len(bot.lists_part(str(tmp_path))["big"]) == bot.LISTS_MAX, "пакет без потолка разрастается без меры"
+
+
+def test_the_replica_trims_exactly_the_host_columns_the_journal_does_not_capture(live, tmp_path):
+    """Данные хоста, которые резерву не едут, названы один раз (util/dbnames.HOST_TRIMMED):
+    реплика ставит ровно эти значения, а захват журнала эти же колонки не пишет событием —
+    колонку, добавленную в один список, нельзя забыть во втором."""
+    from awgbot.util import dbnames
+    from awgbot.util.rsvjrn import classes
+    with sqlite3.connect(_db_path(live)) as src:
+        src.execute("UPDATE gateways SET lan_subnets = '192.168.1.0/24', label = 'Дом', lan_mode = 1")
+    con = _open(bot.replica(_db_path(live)), tmp_path)
+    for table, cols in dbnames.HOST_TRIMMED.items():
+        rows = con.execute(f"SELECT {', '.join(cols)} FROM {table}").fetchall()
+        assert rows and all(tuple(r) == tuple(cols.values()) for r in rows), (table, rows)
+        schema = [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
+        captured = classes.captured_columns(table, schema)
+        assert set(cols) <= set(schema) and not set(cols) & set(captured), (captured, cols)

@@ -174,7 +174,7 @@ class ReserveFollowMixin:
         return [("send", "jcack", {"line": line, "side": "b", "s": batch.bn})]
 
     def _follow_watch(self) -> dict:
-        admin = self.db.get_client_by_tg(int(config.ADMIN_ID)) if hasattr(self.db, "get_client_by_tg") else None
+        admin = self.db.get_client_by_tg(int(config.ADMIN_ID))
         return {"admin": int(admin.id) if admin is not None else 0}
 
     def _follow_after(self, done: list, before: dict) -> None:
@@ -201,7 +201,7 @@ class ReserveFollowMixin:
                 old_tg = (ev.o or {}).get("tg_id")
                 new_tg = (ev.c or {}).get("tg_id")
                 if ev.op == "U" and old_tg and "tg_id" in (ev.c or {}) and new_tg != old_tg:
-                    cl = self.db.get_client(int(ev.k.get("id") or 0)) if hasattr(self.db, "get_client") else None
+                    cl = self.db.get_client(int(ev.k.get("id") or 0))
                     cname = cl.name if cl is not None else f"#{ev.k.get('id')}"
                     lost.append(f"⚠️ У профиля «{_e(cname)}» на «{_e(name)}» сменён Telegram-аккаунт "
                                 f"({old_tg} → {new_tg}) — проверь, что это сделал ты")
