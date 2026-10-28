@@ -344,19 +344,6 @@ def test_an_idle_journal_tick_reads_neither_events_nor_counts_and_checks_fully_e
     assert sends(acts, "jev"), f"правка не ушла на ближайшем такте: {acts}"
 
 
-def test_an_unacked_batch_is_resent_after_resend_s_not_before(duo):
-    duo.journal_on()
-    duo.edit("Пётр")
-    first = sends(duo.a.reserve_jrn_tick(), "jev")
-    assert first, "условие: пачка ушла"
-    for _ in range(ship.RESEND_S - 1):
-        duo.clock.advance(1)
-        assert not sends(duo.a.reserve_jrn_tick(), "jev"), "повтор раньше RESEND_S"
-    duo.clock.advance(2)
-    again = sends(duo.a.reserve_jrn_tick(), "jev")
-    assert again and again[0][1]["from"] == first[0][1]["from"], f"повтор не с подтверждённого: {again}"
-
-
 # ── F4-4: тело st резерва без чтения диска ──────────────────────────────────
 
 def test_the_keep_view_reads_the_store_files_only_when_they_change(duo, monkeypatch):

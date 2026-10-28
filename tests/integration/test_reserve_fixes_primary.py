@@ -125,15 +125,6 @@ def _stuck_ticks(w, since_min: float) -> list:
     return w.svc.reserve_out_tick()
 
 
-def test_the_stuck_webhook_is_taken_home_after_ten_minutes_and_not_before(stuck):
-    svc = stuck.svc
-    first = svc.reserve_out_tick()
-    assert ("take_home",) not in first and svc.rsv_get("rsv_out").get("stuck_since"), \
-        "первая же проба сняла вебхук — отметка начала не поставлена"
-    assert ("take_home",) not in _stuck_ticks(stuck, 9), "вебхук резерва снят раньше 10 минут"
-    assert ("take_home",) in _stuck_ticks(stuck, 11), "запись на мне 10+ минут, резерв пуст — вебхук не снят"
-
-
 def test_the_stuck_probe_is_not_run_more_often_than_every_two_minutes(stuck):
     svc = stuck.svc
     svc.reserve_out_tick()

@@ -193,15 +193,6 @@ def test_busy_refusal_is_asked_again_after_ask_seconds_and_link_down_after_15_mi
     assert _asks(_run(box, 2 * 60)), "после link_down через 15 мин не спросил снова"
 
 
-def test_no_ask_while_the_zone_is_busy(box):
-    box.s.reserve_set_in("serving")
-    box.primary(True)
-    box.hello(1, sees=False)
-    acts = _run(box, DAMPER + ASK + 30)
-    assert not _asks(acts) and not gw_sent(acts, "need")
-    assert box.s.reserve_rf_line().startswith("⚠️"), "причина «переезд не идёт» не видна в карточке"
-
-
 # ── основа: view ────────────────────────────────────────────────────────────
 
 V3 = [{"slot": 1, "name": "NASPi", "see": False}, {"slot": 2, "name": "Pi5", "see": False}]

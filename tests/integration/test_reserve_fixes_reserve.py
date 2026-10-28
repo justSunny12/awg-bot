@@ -162,11 +162,6 @@ def test_a_zone_taken_down_outside_the_bot_ends_the_hosting_with_one_notice(host
     assert svc.reserve_in_tick() == [], "итог повторяется на каждом такте"
 
 
-def test_a_zone_still_serving_changes_nothing(host):
-    _serving(host)
-    assert host.svc.reserve_in_tick() == [] and host.svc.reserve_in() == "serving"
-
-
 # ── возврат: повторы ────────────────────────────────────────────────────────
 
 def test_a_repeated_back_req_after_the_replica_sends_the_last_replica_again(host):

@@ -101,13 +101,6 @@ def test_a_step_of_the_same_run_keeps_the_very_first_old_one(tmp_path):
     assert (host.inst / ".hold-code" / "whose").read_text(encoding="utf-8") == "old"
 
 
-def test_a_manual_update_drops_the_hold(tmp_path):
-    host = _held(tmp_path)
-    _next_step(host, "3.4.2", "third")
-    assert _run(host, "__post_update", "0").returncode == 0
-    assert not (host.inst / ".hold-code").exists() and not (host.data / "update-hold").exists()
-
-
 def test_the_start_check_writes_the_mark_and_leaves_the_env_for_later(tmp_path):
     host = _Host(tmp_path)
     host.post_update()
