@@ -37,3 +37,11 @@ def json_ok(conn) -> bool:
 def is_refusal(exc: BaseException) -> bool:
     """Отказ базы «эпоха не у этого процесса» — а не конфликт уникальности."""
     return str(exc).startswith(REFUSAL_PREFIX)
+
+
+def schema_too_old(exc: BaseException) -> bool:
+    """База без таблиц журнала (копия старше эпохи, сырое соединение в тестах) — а не
+    ошибка базы: замок дольше busy_timeout или сбой диска так не глушат, иначе путь
+    молча меняется (снимок вместо событий, «хвоста нет» при живом хвосте)."""
+    import sqlite3
+    return isinstance(exc, sqlite3.OperationalError) and "no such" in str(exc)

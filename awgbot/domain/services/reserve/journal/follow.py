@@ -224,7 +224,8 @@ class ReserveFollowMixin:
                 log.info("резерв: прежний пир не снят: %s", e)
         try:
             dev = self.db.get_device(int(ev.k.get("id") or 0))
-        except Exception:                                     # noqa: BLE001
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: устройство %s по событию не прочитано — пир не поставлен: %s", ev.k.get("id"), e)
             dev = None
         if dev is None or not dev.public_key or getattr(dev, "is_gateway", 0):
             return 0

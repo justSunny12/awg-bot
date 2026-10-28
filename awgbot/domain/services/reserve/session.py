@@ -17,7 +17,7 @@ import time
 
 from awgbot.core import config, settings
 from awgbot.domain.services.types import Notification
-from awgbot.util import pairproto, timeutil
+from awgbot.util import pairproto, rsvjrn, timeutil
 
 from ..gateway_link.common import log
 from awgbot.domain.notices import reserve as rn
@@ -121,8 +121,10 @@ class ReserveSessionMixin:
             return {}
         try:
             meta = self.db.jrn_meta()
-        except Exception:                                     # noqa: BLE001 — база старше журнала
-            return {}
+        except Exception as e:                                # noqa: BLE001
+            if rsvjrn.schema_too_old(e):
+                return {}
+            raise
         out = {"mine": {"line": self.db.jrn_line(), "e": int(meta["epoch"]), "holder": str(meta["holder"]),
                         "applied": int(meta["applied"]), "acked": int(meta["acked"])}}
         keep = self.reserve_keep_view()

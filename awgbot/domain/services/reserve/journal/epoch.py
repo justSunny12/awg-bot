@@ -21,6 +21,8 @@ epoch.py — часть пакета journal (см. __init__): эпоха лин
 """
 from __future__ import annotations
 
+from awgbot.util.rsvjrn import schema_too_old
+
 from ...gateway_link.common import log
 from .ship import epoch_sane
 
@@ -47,8 +49,11 @@ class ReserveEpochMixin:
         """Основа следует за ботом на резерве: решения здесь не пишутся."""
         try:
             return bool(self.db.jrn_following())
-        except Exception:                                     # noqa: BLE001 — база старше эпохи (тесты, CLI)
-            return False
+        except Exception as e:                                # noqa: BLE001
+            if schema_too_old(e):                             # база старше эпохи (копия, CLI) — держатель
+                return False
+            log.warning("резерв: роль не прочитана (%s) — на этот такт считаю следование", e)
+            return True                                       # безопаснее не писать, чем писать не держателем
 
     def _follow_wanted(self) -> tuple[bool, str]:
         """(следовать ли, почему) — по состоянию пары, переезда и права отвечать."""
@@ -71,26 +76,38 @@ class ReserveEpochMixin:
             if step == "merge" or (step == "back_req" and not out.get("guest_stopped") and not forced):
                 return True, "возврат: ждём реплику и слияние"
             return False, "возврат: бот на резерве остановлен"
-        # home: резерв несёт моих — serving, его st свежее моего перехода домой (переезд мимо
-        # меня; такт home переведёт и автомат в away; taking — ещё не факт: клон может не
-        # встать); после «вернуть без резерва» — нет
+        # home: резерв несёт моих (переезд мимо меня; такт home переведёт и автомат в away) —
+        # одним правилом с автоматом (`_peer_serving_after_home`); иначе решает слово Telegram,
+        # сказанное уже дома (прежнее «away» — до возврата)
         peer = self.reserve_peer_state()
-        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
-        later = (float(peer["at_ts"]) > float(out["at_ts"]) if peer.get("at_ts") is not None and out.get("at_ts") is not None
-                 else str(peer.get("at") or "") > str(out.get("since") or ""))   # строго после перехода домой
-        # на связи — сессия и живость: TCP-сеанс мёртвого линка держится до ~23 мин (keepalive),
-        # живость падает через ~60 с; st, полученный до потери связи (st_stale), — не в счёт: после
-        # восстановления связи он старый (резерв ещё idle), пока не дошёл новый
-        alive = self.reserve_online() and self.reserve_peer_seen() != "down" and not peer.get("st_stale")
-        serving = (alive and later and str(peer.get("inn") or "idle") == "serving"
-                   and not out.get("await_merge") and str(out.get("return_why") or "") != "force")
-        # иначе решает слово Telegram, сказанное уже дома (прежнее «away» — до возврата)
+        serving = self._peer_serving_after_home(out, peer)
         poll = self.rsv_get("rsv_poll")
         if self.reserve_poll() != "away" or _earlier(poll, out):
             return (True, "резерв несёт моих пользователей") if serving else (False, "пользователи и Telegram здесь")
-        if alive and fresh and str(peer.get("inn") or "idle") not in _HOSTING:
+        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
+        if self._peer_alive(peer) and fresh and str(peer.get("inn") or "idle") not in _HOSTING:
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
+
+    def _peer_alive(self, peer: dict) -> bool:
+        """Резерв на связи живым словом: сессия есть, живость не `down`, и его `st` получен
+        после последней потери связи. Один флаг TCP-сеанса — не то: сеанс мёртвого линка
+        держится до ~23 мин (keepalive), живость падает через ~60 с, а `st`, полученный до
+        потери связи (`st_stale`), после её восстановления старый, пока не дошёл новый."""
+        return bool(self.reserve_online() and self.reserve_peer_seen() != "down" and not peer.get("st_stale"))
+
+    def _peer_serving_after_home(self, out: dict, peer: dict) -> bool:
+        """Резерв несёт моих пользователей — факт, сказанный живым `st` строго после моего
+        перехода домой (переезд по взглядам, пока я лежал; `taking` — ещё не факт: клон может
+        не встать); после «вернуть без резерва» — нет. Одно правило и для роли
+        (`_follow_wanted`), и для автомата (`_tick_home` → away)."""
+        if out.get("await_merge") or str(out.get("return_why") or "") == "force":
+            return False
+        if not self._peer_alive(peer) or str(peer.get("inn") or "idle") != "serving":
+            return False
+        if peer.get("at_ts") is not None and out.get("at_ts") is not None:
+            return float(peer["at_ts"]) > float(out["at_ts"])
+        return str(peer.get("at") or "") > str(out.get("since") or "")   # строго после перехода домой
 
     def reserve_epoch_sync(self) -> None:
         """Роль — по правилу; переход — передача эпохи (эпоха + 1, synchronous = FULL).

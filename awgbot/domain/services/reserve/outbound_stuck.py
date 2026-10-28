@@ -36,7 +36,7 @@ class ReserveStuckMixin:
         stuck = False
         if own and self.reserve_dns_points_to(own):
             peer = self.reserve_peer_state()
-            if self.reserve_online():
+            if self._peer_alive(peer):                        # живым словом, не флагом сеанса (journal/epoch)
                 stuck = str(peer.get("inn") or "idle") == "idle"
             else:
                 since = str(peer.get("down_since") or "")

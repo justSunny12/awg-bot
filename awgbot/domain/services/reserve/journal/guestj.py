@@ -25,6 +25,7 @@ from __future__ import annotations
 import time
 
 from awgbot.util import pairproto
+from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
 from .ship import EV_BYTES, EV_LIMIT, RESEND_S, epoch_sane
@@ -42,8 +43,10 @@ class ReserveGuestJournalMixin:
     def guest_jrn_on(self) -> bool:
         try:
             return bool(self.guest and self.db.jrn_meta()["capture"])
-        except Exception:                                     # noqa: BLE001 — база старше журнала
-            return False
+        except Exception as e:                                # noqa: BLE001
+            if schema_too_old(e):
+                return False
+            raise
 
     def guest_jrn_status(self) -> dict:
         """Эпоха и номера гостя — боту резерва (в его `st.jrn.keep.guest_e`)."""

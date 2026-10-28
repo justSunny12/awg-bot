@@ -45,10 +45,12 @@ def main() -> int:
         waiting = ""
         try:
             from awgbot.domain.services.reserve.journal.tail import own_tail_blocks_raw
+            from awgbot.util.rsvjrn import schema_too_old
             if own_tail_blocks_raw(db):
                 waiting = "свой хвост правок ещё не перенесён на резерв"
-        except Exception:                                 # noqa: BLE001 — старая база: не ждём
-            pass
+        except Exception as e:                            # noqa: BLE001
+            if not schema_too_old(e):                     # старая база — не ждём; ошибка базы — не пускать
+                waiting = f"состояние резерва не прочитано ({e}) — повтори через минуту"
         if not waiting:
             try:
                 raw_out = json.loads(db.get_state("rsv_out") or "{}")

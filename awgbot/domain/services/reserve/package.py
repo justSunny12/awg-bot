@@ -31,7 +31,7 @@ import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import pairproto, rsvkeys, timeutil
+from awgbot.util import pairproto, rsvjrn, rsvkeys, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -181,8 +181,10 @@ class ReservePackageMixin:
         """Пакет — снимок журнала (`pkg3`): направление журналом и захват включён."""
         try:
             return bool(self.reserve_jrn_on() and self.db.jrn_meta()["capture"])
-        except Exception:                                     # noqa: BLE001 — база старше журнала
-            return False
+        except Exception as e:                                # noqa: BLE001
+            if rsvjrn.schema_too_old(e):                      # база без журнала (копия, тесты) — прежний путь
+                return False
+            raise                                             # ошибка базы — не повод собрать pkg2 (резерв снёс бы журнал)
 
     def reserve_pkg_build(self, force: bool = False) -> dict | None:
         """Собрать пакет. Без force — только если логический отпечаток изменился."""

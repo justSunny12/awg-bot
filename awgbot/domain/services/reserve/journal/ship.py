@@ -36,6 +36,7 @@ import time
 
 from awgbot.core import settings
 from awgbot.util import pairproto, timeutil
+from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
 from .. import compat
@@ -88,7 +89,9 @@ class ReserveShipMixin:
         try:
             changed = self.db.jrn_capture_set(self.reserve_jrn_on())
             self.__dict__["_jrn_capture_on"] = bool(self.db.jrn_meta()["capture"])
-        except Exception as e:                                # noqa: BLE001 — база старше журнала (тесты)
+        except Exception as e:                                # noqa: BLE001
+            if not schema_too_old(e):
+                raise                                         # замок, сбой диска — наружу, не менять путь молча
             log.debug("резерв: захват журнала не переключён: %s", e)
             return
         if changed:

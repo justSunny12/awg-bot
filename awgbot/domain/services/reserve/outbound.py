@@ -196,7 +196,7 @@ class ReserveOutboundMixin:
             return self._tick_away(out)
         if state == "returning":
             return self._tick_returning(out)
-        return self._tick_home(out)
+        return self._tick_home(out) + self.reserve_tail_settle()   # свой хвост при держателе дома — переносить
 
     def _tick_home(self, out: dict) -> list[tuple]:
         """В состоянии home: факт «пользователи у резерва» мимо меня (переезд по взглядам, пока я
@@ -206,8 +206,7 @@ class ReserveOutboundMixin:
             return self._tick_await_merge(out)
         if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
             return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
-        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")   # st получен после моего перехода домой
-        if str(peer.get("inn") or "") == "serving" and self.reserve_online() and fresh:
+        if self._peer_serving_after_home(out, peer):          # то же правило, что у роли (journal/epoch)
             # переезд прошёл мимо меня — пакет открыт не моим K (своего `go` не было): по долям или
             # по коду; слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),

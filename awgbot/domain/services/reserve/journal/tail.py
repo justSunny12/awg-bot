@@ -42,12 +42,14 @@ import time
 
 from awgbot.core import config
 from awgbot.util import pairproto, timeutil
+from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
 from ...types import Notification, ServiceError
 from .ship import EV_BYTES, epoch_sane
 
 TAIL_RESEND_S = 60
+TAIL_SELF_TELL = 5                # неудач переноса своего хвоста подряд — до уведомления админу
 TAIL_WAIT_S = 10 * 60             # свой хвост без ответа держателя дольше — возврат не держит, после него хвост переносит основа
 DISPUTED_MAX = 2000                # в jtail_ok — не больше; сверх — числом `more`, сами — строкой журнала
 TAIL_WAIT_REFUSED = ("Жду правки бота на «{name}», сделанные после потери связи, — обновление после того, как "
@@ -58,25 +60,35 @@ OWN_TAIL_REFUSED = "Правки, сделанные здесь перед пе�
 
 def own_tail_blocks_raw(db) -> bool:
     """Свой хвост не перенесён и ждём не дольше TAIL_WAIT_S — по одной базе (и для
-    сторожа терминала tools/rsvbusy, без сервисов)."""
+    сторожа терминала tools/rsvbusy, без сервисов). Ошибка базы — наружу: «хвоста нет»
+    по замку пустило бы обновление при живом хвосте."""
     try:
-        if not db.jrn_tail_rows():
+        rows = db.jrn_tail_rows()
+    except Exception as e:                                    # noqa: BLE001
+        if schema_too_old(e):
             return False
-        raw = db.get_state("rsv_tail") or ""
+        raise
+    if not rows:
+        return False
+    raw = db.get_state("rsv_tail") or ""
+    try:
         meta_t = json.loads(raw) if raw.startswith("{") else {}
         return timeutil.elapsed(timeutil.parse_iso(str(meta_t.get("at") or ""))) <= TAIL_WAIT_S
-    except Exception:                                         # noqa: BLE001 — база старше журнала, нет отметки
+    except ValueError:                                        # отметки нет или она битая — не держит
         return False
 
 class ReserveTailMixin:
 
     # ── бывший держатель: подготовка и отправка ─────────────────────────────
     def reserve_tail_pending(self) -> bool:
-        """Свой хвост готов и не перенесён (отложенный до точки расхождения — не в счёт)."""
+        """Свой хвост готов и не перенесён (отложенный до точки расхождения — не в счёт).
+        Ошибка базы — наружу: «хвоста нет» по замку осушило бы гостя при живом хвосте."""
         try:
             return bool(self.db.jrn_tail_rows())
-        except Exception:                                     # noqa: BLE001 — база старше журнала
-            return False
+        except Exception as e:                                # noqa: BLE001
+            if schema_too_old(e):
+                return False
+            raise
 
     def reserve_tail_finalize(self, fork: int) -> None:
         """Точка расхождения стала известна: хвост — откатить в базе и пиры за ним, к отправке.
@@ -177,9 +189,30 @@ class ReserveTailMixin:
         возврата основа перенесёт его сама (`reserve_tail_self`)."""
         return own_tail_blocks_raw(self.db)
 
+    def reserve_tail_settle(self) -> list[tuple]:
+        """Такт дома: держатель здесь, а свой хвост так и не перенесён — эпоху взяли без
+        возврата («вернуть без резерва», снятый зависший вебхук, резерв вернулся пустым),
+        и бот на резерве его уже не примет (ему — `jstale`). Перенести здесь, как после
+        возврата; не вышло — повтор раз в TAIL_RESEND_S, после TAIL_SELF_TELL неудач —
+        админу. В отъезде и возврате — свой путь (`_return_done`)."""
+        if getattr(self, "guest", False) or self.reserve_out() != "home" or not self.reserve_tail_pending():
+            return []
+        if self.db.jrn_meta()["role"] != "holder":
+            return []
+        now = time.monotonic()
+        if now < float(self.__dict__.get("_tail_self_next") or 0):
+            return []
+        self.__dict__["_tail_self_next"] = now + TAIL_RESEND_S
+        notes = self.reserve_tail_self()
+        if not self.reserve_tail_pending():
+            self.reserve_tail_keys_clear()
+        return [("notify", notes)] if notes else []
+
     def reserve_tail_self(self) -> list[Notification]:
-        """После возврата (держатель — здесь) свой хвост, который бот на резерве так и не
-        принял, — перенести самой поверх своей базы; Т-Ж4/Т-Ж5 — как от него."""
+        """Держатель здесь, а свой хвост бот на резерве так и не принял (после возврата или
+        при становлении держателем без возврата) — перенести самой поверх своей базы;
+        Т-Ж4/Т-Ж5 — как от него. Не вышло — хвост остаётся, зовущий повторит."""
+        from awgbot.domain.notices import reserve as rn
         if not self.reserve_tail_pending() or self.db.jrn_meta()["role"] != "holder":
             return []
         evs = self.db.jrn_tail_rows()
@@ -190,8 +223,13 @@ class ReserveTailMixin:
         try:
             rpt = self.db.jrn_rebase(evs)
         except Exception as ex:                                # noqa: BLE001
-            log.error("резерв: свой хвост не перенесён: %s", ex)
+            fails = int(self.__dict__.get("_tail_self_fails") or 0) + 1
+            self.__dict__["_tail_self_fails"] = fails
+            log.error("резерв: свой хвост не перенесён (%d): %s", fails, ex)
+            if fails == TAIL_SELF_TELL:                        # один раз на эпизод: дальше — строки журнала
+                return [Notification(tg_id=int(config.ADMIN_ID), text=rn.tail_self_failed(self.reserve_peer_name(), str(ex)))]
             return []
+        self.__dict__.pop("_tail_self_fails", None)
         self._tail_side_effects(before)
         self.db.jrn_keys_restore()                            # вставки хвоста — без закрытого ключа: он отложен
         self.db.jrn_tail_drop()
