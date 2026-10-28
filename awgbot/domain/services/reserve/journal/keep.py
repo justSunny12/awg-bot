@@ -13,8 +13,9 @@ keep.py — часть пакета journal (см. __init__): сторона р�
 Пока у меня бот основы на резерве (гость), записи основы идут и ему — по
 локальному каналу (он следует за основой до передачи бота и складывает
 счётчики её оставшихся сессий); его записи и подтверждения основы —
-транзитом (relay). `st.jrn.keep` — что я храню: основа сверяется по нему
-до первой отправки.
+транзитом (route). Его эпоха и номера — из его hello/online
+(`reserve_guest_jrn_seen`) — в `st.jrn.keep.guest_*`. `st.jrn.keep` — что я
+храню: основа сверяется по нему до первой отправки.
 """
 from __future__ import annotations
 
@@ -28,8 +29,6 @@ from ...types import Notification
 
 from ...gateway_link.common import log
 from ..package import reserve_dir
-
-_HOSTING = ("taking", "serving", "releasing")
 
 
 class ReserveKeepMixin:
@@ -65,8 +64,8 @@ class ReserveKeepMixin:
         st.drop_counts_upto("a", cb)
         last_e, last_i = st.last()
         known = max(e, last_e, prev_e)
-        self.rsv_put("rsv_jrn_in", {"line": line, "e": known, "snap_e": e, "snap_i": i, "cb": cb,
-                                    "last": max(i, last_i), "snap_at": timeutil.now_iso()})
+        self.rsv_put("rsv_jrn_in", {"line": line, "e": known, "snap_i": i, "cb": cb, "last": max(i, last_i),
+                                    "snap_at": timeutil.now_iso()})
         self._keep_meta_write(line, known)
         self.__dict__["_keep_synced"] = True
         if dropped:
@@ -114,10 +113,10 @@ class ReserveKeepMixin:
         last = int(cur.get("last") or 0)
         size, cnt_last = self._keep_disk_view()
         return {"line": str(cur["line"]), "e": int(cur.get("e") or 0), "last": last, "snap_i": int(cur.get("snap_i") or 0),
-                "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": size,
+                "size": size,
                 "snap": bool(cur.get("snap_at")),             # снимок есть (и снятый до первого события, snap_i = 0)
                 "cnt_bn": max(cnt_last, int(cur.get("cb") or 0)),
-                **({"gap": int(self.rsv_get("rsv_in").get("jgap") or 0)} if self._keep_guest() and self.rsv_get("rsv_in").get("jgap") else {}),
+                **({"gap": int(self.rsv_get("rsv_in").get("jgap") or 0)} if self.reserve_hosting() and self.rsv_get("rsv_in").get("jgap") else {}),
                 **self._keep_guest_disk(str(cur["line"]))}
 
     def _keep_disk_view(self) -> tuple[int, int]:
@@ -140,7 +139,7 @@ class ReserveKeepMixin:
     def _keep_guest_disk(self, line: str) -> dict:
         """Гостя нет, а его журнал данных на диске есть (перезагрузка посреди обслуживания):
         основе — что он есть (она заберёт его возвратом)."""
-        if self._keep_guest():
+        if self.reserve_hosting():
             return {}
         try:
             from awgbot.util.rsvjrn import event
@@ -164,34 +163,24 @@ class ReserveKeepMixin:
         self.__dict__["_keep_gj_cache"] = ((line, stamp), dict(out))
         return out
 
-    def _keep_guest_fork(self) -> int:
-        if not self._keep_guest():
-            return 0
-        try:
-            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("fork") or 0)
-        except (TypeError, ValueError):
-            return 0
+    def reserve_guest_jrn_seen(self, jrn: dict) -> None:
+        """Слово гостя о своём журнале (hello/online по локальному каналу): эпоха `e`, точка
+        расхождения `fork`, последний номер `last` — числами, в памяти (гость переподключится
+        и скажет снова); не числа — нули."""
+        out = {}
+        for key in ("e", "fork", "last"):
+            try:
+                out[key] = int((jrn or {}).get(key) or 0)
+            except (TypeError, ValueError):
+                out[key] = 0
+        self.__dict__["_rsv_guest_jrn"] = out
 
-    def _keep_guest_last(self) -> int:
-        if not self._keep_guest():
+    def _keep_guest_int(self, key: str) -> int:
+        """Эпоха (`e`), точка (`fork`) или последний номер (`last`) моего гостя, если он
+        поднят и сказал о себе; иначе 0."""
+        if not self.reserve_hosting():
             return 0
-        try:
-            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("last") or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    def _keep_guest_e(self) -> int:
-        """Эпоха моего гостя (его hello/online), если он поднят; иначе 0."""
-        if not self._keep_guest():
-            return 0
-        try:
-            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("e") or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    def _keep_guest(self) -> bool:
-        """Гость основы у меня поднят — её записи нужны и ему."""
-        return str(self.rsv_get("rsv_in").get("state") or "idle") in _HOSTING
+        return int((self.__dict__.get("_rsv_guest_jrn") or {}).get(key) or 0)
 
     # ── приём от основы ─────────────────────────────────────────────────────
     def _keep_jev_in(self, body: dict) -> list[tuple]:
@@ -207,7 +196,7 @@ class ReserveKeepMixin:
             log.warning("резерв: события «%s» не разобрались: %s", self.reserve_peer_name(), e)
             return [("send", "jneed", {"line": line, "from": int(cur.get("last") or 0) + 1})]
         # известная эпоха линии: основы и, пока он поднят, моего гостя — события старше не храню
-        e_body, known = int(body["e"]), max(int(cur.get("e") or 0), self._keep_guest_e())
+        e_body, known = int(body["e"]), max(int(cur.get("e") or 0), self._keep_guest_int("e"))
         if not heads or any(h.kind != "E" or h.line != line or h.e != e_body for h in heads) or \
                 [h.n for h in heads] != list(range(int(body["from"]), int(body["from"]) + len(heads))):
             log.warning("резерв: события «%s» с заголовками не по порядку — отказ", self.reserve_peer_name())
@@ -230,7 +219,7 @@ class ReserveKeepMixin:
             self.__dict__.pop("_keep_oserr_told", None)
             last = event.head(new[-1]).n
             self.rsv_update("rsv_jrn_in", e=e_body, last=last)
-            if self._keep_guest():
+            if self.reserve_hosting():
                 acts.append(("guest", "jev", {"line": line, "e": e_body, "from": event.head(new[0]).n,
                                               "n": len(new), "blob": b"".join(new).hex()}))
         return [("send", "jack", {"line": line, "i": last})] + acts
@@ -265,6 +254,6 @@ class ReserveKeepMixin:
         acts: list[tuple] = []
         if h.n > st.counts_last("a") and h.n > int(cur.get("cb") or 0):
             st.append_counts("a", [raw])
-            if self._keep_guest():
+            if self.reserve_hosting():
                 acts.append(("guest", "jcnt", {"line": line, "side": "a", "s": h.n, "blob": raw.hex()}))
         return [("send", "jcack", {"line": line, "side": "a", "s": h.n})] + acts

@@ -109,9 +109,6 @@ class ReserveShipMixin:
             self._jrn_sess_reset()
             self.reserve_pkg_mark()
 
-    def _jrn_touch(self) -> None:
-        self.__dict__["_jrn_due_at"] = time.monotonic()
-
     # ── сессия ──────────────────────────────────────────────────────────────
     def _jrn_sess(self) -> dict:
         s = self.__dict__.get("_jrn_sess_d")
@@ -193,26 +190,27 @@ class ReserveShipMixin:
             return
         self.db.jrn_acked_set(last)
         s.update(hold=False, sent=last, acked=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="",
-                 ack_at=timeutil.now_iso())
-        self._jrn_touch()                                     # сверено — первый такт проверит, что осталось послать
+                 ack_at=timeutil.now_iso())                   # сверено — первый такт проверит, что осталось послать
 
     def reserve_jrn_snap_ok(self, marks: dict) -> None:
         """Резерв принял снимок `pkg3`: всё по номер снимка у него — подтверждено."""
         i, cs, cb = int(marks.get("i") or 0), int(marks.get("cs") or 0), int(marks.get("cb") or 0)
         self.db.jrn_acked_set(i)
         self._jrn_sess().update(ack_at=timeutil.now_iso(), acked=max(int(self._jrn_sess().get("acked") or 0), int(i)))
-        self.db.jrn_snap_set(i)
         self.db.jrn_counts_cover(cs, cb)
-        self.__dict__.pop("_jrn_snap_pending", None)
-        out = self._jrn_out()
-        self.rsv_put("rsv_jrn_out", {**out, "snap_i": i, "cs": cs, "cb": cb, "reset": False,
-                                     "snap_at": timeutil.now_iso(), "snap_next": self._jrn_snap_next()})
+        self.reserve_jrn_snap_dropped()
+        self.rsv_put("rsv_jrn_out", {**self._jrn_out(), "snap_i": i, "reset": False, "snap_next": self._jrn_snap_next()})
         s = self._jrn_sess()
         s.update(ok=True, hold=False, sent=max(int(s.get("sent") or 0), i), top=max(int(s.get("top") or 0), i),
                  sent_at=0.0, snap_why="")
 
+    def _jrn_snap_begin(self) -> None:
+        """Снимок собирается: пачки счётчиков не сворачивать, пока он в пути (строки по `cs`
+        снимка учтены в нём) — до `reserve_jrn_snap_ok` или `reserve_jrn_snap_dropped`."""
+        self.__dict__["_jrn_snap_pending"] = True
+
     def reserve_jrn_snap_dropped(self) -> None:
-        """Снимок не принят или не дошёл — пачки счётчиков снова сворачиваются."""
+        """Снимок принят, не принят или не дошёл — пачки счётчиков снова сворачиваются."""
         self.__dict__.pop("_jrn_snap_pending", None)
 
     @staticmethod
@@ -277,13 +275,7 @@ class ReserveShipMixin:
         if not evs:
             return []
         k, line = self.reserve_k(), self.db.jrn_line()
-        recs, size = [], 0
-        for ev in evs:
-            r = event.seal_event(k, line, ev)
-            if recs and (size + len(r) > EV_BYTES or ev.i != evs[0].i + len(recs)):
-                break
-            recs.append(r)
-            size += len(r)
+        recs = event.runs([event.seal_event(k, line, ev) for ev in evs], EV_BYTES)[0]   # подряд, в одно сообщение
         last = evs[0].i + len(recs) - 1
         s.update(sent=last, top=max(int(s.get("top") or 0), last), sent_at=now, sent_mono=now)
         return [("send", "jev", {"line": line, "e": epoch, "from": evs[0].i, "n": len(recs),
@@ -303,8 +295,20 @@ class ReserveShipMixin:
     def _jrn_cnt_delay() -> float:
         return max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60 * random.uniform(0.6, 1.4)
 
-    def _jrn_counts_out(self, side: str = "a") -> list[tuple]:
+    def _jrn_counts_rec(self, side: str, batch) -> bytes | None:
+        """Пачка счётчиков записью под K (основа — сторона a, бот основы на резерве — b);
+        больше части канала — не уходит (строкой журнала один раз, до подтверждения следующей)."""
         from awgbot.util.rsvjrn import event
+        rec = event.seal_counts(self.reserve_k(), self.db.jrn_line(), side, batch)
+        if len(rec) * 2 > pairproto.MAX_BLOB:
+            if not self.__dict__.get("_jrn_cnt_big"):
+                log.warning("%s: пачка счётчиков %d КБ больше части канала — не уходит",
+                            "гость" if getattr(self, "guest", False) else "резерв", len(rec) // 1024)
+                self.__dict__["_jrn_cnt_big"] = True
+            return None
+        return rec
+
+    def _jrn_counts_out(self, side: str = "a") -> list[tuple]:
         with _LOCK:                                           # снимок собирается под тем же замком
             if self.__dict__.get("_jrn_snap_pending"):
                 return []                                     # строки по cs снимка учтены в нём — не сворачивать
@@ -312,11 +316,8 @@ class ReserveShipMixin:
             batch = self.db.jrn_counts_out(f"{line}:{side}")
         if batch is None:
             return []
-        rec = event.seal_counts(self.reserve_k(), line, side, batch)
-        if len(rec) * 2 > pairproto.MAX_BLOB:
-            if not self.__dict__.get("_jrn_cnt_big"):
-                log.warning("резерв: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
-                self.__dict__["_jrn_cnt_big"] = True
+        rec = self._jrn_counts_rec(side, batch)
+        if rec is None:
             return []
         return [("send", "jcnt", {"line": line, "side": side, "s": batch.bn, "blob": rec.hex()})]
 
@@ -362,7 +363,6 @@ class ReserveShipMixin:
 
     def _jrn_need_in(self, frm: int) -> None:
         s = self._jrn_sess()
-        self._jrn_touch()
         if frm <= 0:
             self._jrn_snap_need("резерв просит снимок")
             return

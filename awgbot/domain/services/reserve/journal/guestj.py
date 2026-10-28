@@ -24,13 +24,11 @@ from __future__ import annotations
 
 import time
 
-from awgbot.util import pairproto
 from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
+from .handover import JRN_NEED_S
 from .ship import EV_BYTES, EV_LIMIT, RESEND_S, epoch_sane
-
-NEED_EVERY_S = 10
 
 
 class ReserveGuestJournalMixin:
@@ -49,12 +47,12 @@ class ReserveGuestJournalMixin:
             raise
 
     def guest_jrn_status(self) -> dict:
-        """Эпоха и номера гостя — боту резерва (в его `st.jrn.keep.guest_e`)."""
+        """Эпоха и номера гостя — боту резерва (`reserve_guest_jrn_seen` → `st.jrn.keep.guest_*`
+        основе: эпоха, точка расхождения, последний номер)."""
         if not self.guest_jrn_on():
             return {}
         meta = self.db.jrn_meta()
-        return {"e": int(meta["epoch"]), "role": str(meta["role"]), "applied": int(meta["applied"]),
-                "last": self.db.jrn_last_i(), "fork": int(meta["fork_i"])}
+        return {"e": int(meta["epoch"]), "last": self.db.jrn_last_i(), "fork": int(meta["fork_i"])}
 
     def guest_can_take_tg(self) -> bool:
         """Ставить ли вебхук: с журналом — только держателем (следующий ждёт передачи бота)."""
@@ -100,13 +98,7 @@ class ReserveGuestJournalMixin:
         if not evs:
             return []
         k, line = self.reserve_k(), self.db.jrn_line()
-        recs, size = [], 0
-        for ev in evs:
-            r = event.seal_event(k, line, ev)
-            if recs and (size + len(r) > EV_BYTES or ev.i != evs[0].i + len(recs)):
-                break
-            recs.append(r)
-            size += len(r)
+        recs = event.runs([event.seal_event(k, line, ev) for ev in evs], EV_BYTES)[0]   # подряд, в одно сообщение
         new = [r for r in recs if event.head(r).n > int(s["stored"])]
         if new:
             self.guest_jrn_store().append_events(new)         # журнал данных гостя на диске — до отправки
@@ -116,17 +108,13 @@ class ReserveGuestJournalMixin:
         return [("jev", {"line": line, "e": epoch, "from": evs[0].i, "n": len(recs), "blob": b"".join(recs).hex()})]
 
     def _gj_counts(self, now: float) -> list[tuple[str, dict]]:
-        from awgbot.util.rsvjrn import event
         line = self.db.jrn_line()
         self._gj()["cnt_at"] = now
         batch = self.db.jrn_counts_out(f"{line}:b")
         if batch is None:
             return []
-        rec = event.seal_counts(self.reserve_k(), line, "b", batch)
-        if len(rec) * 2 > pairproto.MAX_BLOB:
-            if not self.__dict__.get("_gj_cnt_big"):
-                log.warning("гость: пачка счётчиков %d КБ больше части канала — не уходит", len(rec) // 1024)
-                self.__dict__["_gj_cnt_big"] = True
+        rec = self._jrn_counts_rec("b", batch)
+        if rec is None:
             return []
         st = self.guest_jrn_store()
         if batch.bn > st.counts_last("b"):
@@ -145,7 +133,7 @@ class ReserveGuestJournalMixin:
                 log.info("гость: эпоха %s здесь — пишу решения (передача бота по %s)", got["epoch"], rel["last"])
                 self.__dict__["_gj_take_tg"] = True
             return []
-        if rel and now - float(s["need_at"]) > NEED_EVERY_S:
+        if rel and now - float(s["need_at"]) > JRN_NEED_S:
             s["need_at"] = now
             return [("jneed", {"line": self.db.jrn_line(), "from": int(meta["applied"]) + 1})]
         return []
@@ -186,9 +174,13 @@ class ReserveGuestJournalMixin:
                         log.warning("гость: эпоха %s у основы — здесь следование, мои правки после — хвост", meta["epoch"])
                 return []
             if kind == "jcack" and str(body.get("side") or "") == "b":
+                self.__dict__.pop("_jrn_cnt_big", None)       # следующая слишком большая пачка — снова строкой
                 self.db.jrn_counts_acked(int(body["s"]))
                 return []
             if kind == "released":
+                if str(body.get("line") or "") != self.db.jrn_line():
+                    log.warning("гость: передача бота не моей линии — пропущена")
+                    return []
                 s["released"] = {"epoch": int(body["epoch"]), "last": int(body["last"])}
                 s["need_at"] = 0.0
                 return self._gj_catch_up(s, self.db.jrn_meta(), time.monotonic())

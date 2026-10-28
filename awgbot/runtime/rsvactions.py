@@ -1,7 +1,8 @@
 """
 rsvactions.py — исполнитель действий автоматов резерва (домен возвращает
 кортежи, слой runtime делает): `("send", вид, тело)` — по каналу пары,
-`("send_released", {gen, blob})` — реплика частями, `("guest", команда,
+`("send_released", {gen, blob})` — реплика частями (с журналом — `{gen, blob: "",
+epoch, last}`: передача права записи по номеру), `("guest", команда,
 тело)` — боту основы на резерве по локальному каналу, `("gw", слот, вид,
 тело)` — шлюзу основы по гостевому каналу, `("notify", [...])`,
 `("fw",)` — перерисовать файервол хоста, `("relay_flush",)` — сбросить
@@ -94,14 +95,15 @@ async def _one(act: tuple) -> None:
         log.info("резерв: неизвестное действие %s", kind)
 
 
-JRN_DRAIN_S = 15
+JRN_HANDOVER_S = 15               # передача бота: подтверждения резерва на последние записи — до released
 
 
 async def _jrn_drain(svc) -> bool:
     """Неотправленные события и счётчики — резерву; ждать его подтверждений (не дольше
-    JRN_DRAIN_S). False — не дождались (передача отложится сервисом)."""
+    JRN_HANDOVER_S). False — не дождались: `_release_jrn` (jrn_hand_over) передачу отложит,
+    такт повторит `("release",)`."""
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + JRN_DRAIN_S
+    deadline = loop.time() + JRN_HANDOVER_S
     while loop.time() < deadline:
         await run(await asyncio.to_thread(svc.reserve_jrn_flush))
         if await asyncio.to_thread(svc.reserve_jrn_all_acked):
@@ -123,8 +125,9 @@ async def _release(bot, svc, pc) -> None:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001
         log.info("резерв: опрос вне очереди перед репликой: %s", e)
-    if await asyncio.to_thread(svc.reserve_jrn_moved):
-        await _jrn_drain(svc)                                # журнал: последние правки и счётчики — до передачи
+    if await asyncio.to_thread(svc.reserve_jrn_moved) and not await _jrn_drain(svc):
+        log.info("резерв: последние правки не подтверждены резервом за %d с — передача бота по подтверждённому",
+                 JRN_HANDOVER_S)                             # журнал: правки и счётчики — до передачи
     built = await asyncio.to_thread(svc.reserve_release_build)
     if not built:
         log.warning("резерв: финальная реплика не собралась — поллинг обратно")

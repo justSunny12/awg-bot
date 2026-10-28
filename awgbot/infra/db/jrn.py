@@ -332,20 +332,22 @@ class JrnMixin:
 
     def jrn_counts_acked(self, bn: int) -> bool:
         """Получатель подтвердил пачку bn: её строки — прочь. Номер не той пачки — нет."""
+        from awgbot.util.rsvjrn import counts
         cbn, ack, _s0, s1 = self._cnt_meta()
         if int(bn) != cbn or cbn <= ack:
             return False
         with self._tx() as c:
-            c.execute("DELETE FROM jrn_counts WHERE s <= ?", (s1,))
+            counts.drop_sent(c.connection, s1)
             self._tx_note(self._TX_COUNTERS)
         self._cnt_set(cnt_ack=cbn)
         return True
 
     def jrn_counts_cover(self, cs: int, cb: int) -> None:
         """Снимок принят: строки по cs в нём учтены, пачки по cb — тоже."""
+        from awgbot.util.rsvjrn import counts
         cbn, ack, s0, s1 = self._cnt_meta()
         with self._tx() as c:
-            c.execute("DELETE FROM jrn_counts WHERE s <= ?", (int(cs),))
+            counts.drop_sent(c.connection, int(cs))
             self._tx_note(self._TX_COUNTERS)
         fields = {"cnt_s1": max(s1, int(cs))}
         if cbn <= int(cb):

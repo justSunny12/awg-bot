@@ -44,6 +44,9 @@ class InboundMixin:
             with contextlib.suppress(Exception):
                 await self.stop()
             return
+        if kind in pairproto.JRN_KINDS:                       # журнал данных: разбор по линии — journal/route
+            await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, kind, body))
+            return
         handler = getattr(self, f"_in_{kind}", None)
         if handler is None:
             log.info("канал пары: сообщение «%s» — этот выпуск его не ведёт", kind)
@@ -183,30 +186,6 @@ class InboundMixin:
     async def _in_view(self, sess: _Session, body: dict) -> None:
         await self.notes(await asyncio.to_thread(self.services.reserve_view_in, str(body["case"]), str(body["since"]),
                                                  list(body.get("voters") or [])))
-
-    async def _in_jev(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jev", body))
-
-    async def _in_jack(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jack", body))
-
-    async def _in_jneed(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jneed", body))
-
-    async def _in_jstale(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jstale", body))
-
-    async def _in_jcnt(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jcnt", body))
-
-    async def _in_jcack(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jcack", body))
-
-    async def _in_jtail(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jtail", body))
-
-    async def _in_jtail_ok(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jtail_ok", body))
 
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))

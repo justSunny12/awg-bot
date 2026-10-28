@@ -235,7 +235,7 @@ def test_going_follower_sets_applied_to_the_fork_and_the_first_jev_needs_no_jnee
     _ivan(duo)
     duo.open_guest(button=False)
     fork = duo.gdb.jrn_meta()["fork_i"]
-    duo.b.__dict__["_rsv_guest_jrn"] = {"e": duo.gdb.jrn_meta()["epoch"], "fork": fork}
+    duo.b.reserve_guest_jrn_seen({"e": duo.gdb.jrn_meta()["epoch"], "fork": fork})
     duo.st_b(**{"in": "serving"})
     rm.go_away(duo.a)
     duo.a.reserve_epoch_sync()

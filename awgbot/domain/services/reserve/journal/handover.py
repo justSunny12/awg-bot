@@ -8,9 +8,11 @@ handover.py — часть пакета journal (см. __init__): передач
   стороне одной транзакцией (здесь следование) → `released{epoch, last}`;
   резерв отдаёт это гостю, тот догоняет события основы по `last`, берёт
   эпоху и ставит вебхук — без перезапуска;
-- возврат (гость → резерв → основа): гость дождался подтверждений основы,
-  ушёл в следование и сказал `released{epoch, last}`; основа берёт эпоху
-  (шаг take_tg) — без слияния и перезапуска, отчёт Т-РУ5б — сводка эпохи.
+- возврат (гость → резерв → основа): гость ждёт подтверждений основы на
+  последние записи (не дольше JRN_DRAIN_S гостя), уходит в следование и говорит
+  `released{epoch, last}`; основа берёт эпоху, догнав по `last` (иначе — `jneed`
+  раз в JRN_NEED_S, по сроку шага — без недостающего), — без слияния и
+  перезапуска, отчёт Т-РУ5б — сводка эпохи.
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from awgbot.util import timeutil
 from ...gateway_link.common import log
 from ..outbound import RELEASED_WAIT_S
 
-JRN_NEED_S = 10
+JRN_NEED_S = 10                   # возврат и догон гостя: просьба досылки `jneed` — не чаще
 
 
 class ReserveHandoverMixin:
@@ -80,25 +82,15 @@ class ReserveHandoverMixin:
         if not recs:
             return []                                         # своих событий гость не оставил — прежний ответ
         acts: list[tuple] = []
-        group: list[bytes] = []
-        size = 0
-        for r in recs + [b""]:
-            h = event.head(r) if r else None
-            if group and (not r or size + len(r) > EV_BYTES or h.e != event.head(group[0]).e
-                          or h.n != event.head(group[-1]).n + 1):
-                g0 = event.head(group[0])
-                acts.append(("send", "jev", {"line": line, "e": g0.e, "from": g0.n, "n": len(group),
-                                             "blob": b"".join(group).hex()}))
-                group, size = [], 0
-            if r:
-                group.append(r)
-                size += len(r)
+        for group in event.runs(recs, EV_BYTES):
+            g0 = event.head(group[0])
+            acts.append(("send", "jev", {"line": line, "e": g0.e, "from": g0.n, "n": len(group),
+                                         "blob": b"".join(group).hex()}))
         for r in cnts:
             acts.append(("send", "jcnt", {"line": line, "side": "b", "s": event.head(r).n, "blob": r.hex()}))
-        last = event.head(recs[-1]) if recs else None
-        if last is not None:
-            acts.append(("send_released", {"gen": int(self.rsv_get("rsv_pkg_in").get("gen") or 0), "blob": "",
-                                           "epoch": last.e, "last": last.n}))
+        last = event.head(recs[-1])
+        acts.append(("send_released", {"gen": int(self.rsv_get("rsv_pkg_in").get("gen") or 0), "blob": "",
+                                       "epoch": last.e, "last": last.n}))
         log.warning("резерв: гостя нет — основе журнал данных гостя с диска: событий %d, пачек %d", len(recs), len(cnts))
         return acts
 
@@ -106,6 +98,9 @@ class ReserveHandoverMixin:
         """Возврат с журналом: гость передал право записи (`released{epoch, last}`) — основе."""
         inn = self._inn()
         if str(inn.get("state") or "") != "releasing":
+            return []
+        if str(body.get("line") or "") != self.reserve_keep_line():
+            log.warning("резерв: гость передал право записи не той линии — пропущено")
             return []
         rel = {"epoch": int(body.get("epoch") or 0), "last": int(body.get("last") or 0)}
         self.rsv_update("rsv_in", released_at=timeutil.now_iso(), jrn_back=rel)

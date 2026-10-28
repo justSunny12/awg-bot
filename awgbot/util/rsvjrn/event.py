@@ -44,10 +44,10 @@ class RecordError(ValueError):
 
 @dataclass(frozen=True)
 class Head:
-    kind: str            # "E" | "a" | "b"
+    kind: str            # "E" | "T" | "a" | "b"
     line: str            # hex
     e: int
-    n: int               # номер события или последний номер пачки
+    n: int               # номер события или номер пачки (bn)
     size: int            # длина всей записи (заголовок + шифротекст)
 
 
@@ -161,6 +161,23 @@ def split(blob: bytes) -> list[bytes]:
         out.append(blob[p:p + h.size])
         p += h.size
     return out
+
+
+def runs(records: list[bytes], limit: int) -> list[list[bytes]]:
+    """Записи группами к отправке одним `jev`: одна эпоха, номера подряд, не больше limit
+    байт (первая запись группы — всегда, и больше предела). Пусто — []."""
+    groups: list[list[bytes]] = []
+    size = 0
+    prev: Head | None = None
+    for r in records:
+        h = head(r)
+        if prev is None or size + len(r) > limit or h.e != prev.e or h.n != prev.n + 1:
+            groups.append([])
+            size = 0
+        groups[-1].append(r)
+        size += len(r)
+        prev = h
+    return groups
 
 
 def seal_obj(k: bytes, obj: dict) -> bytes:

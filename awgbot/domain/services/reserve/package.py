@@ -35,7 +35,7 @@ from awgbot.util import pairproto, rsvjrn, rsvkeys, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
-from .state import _LOCK
+from .state import HOSTING, _LOCK
 
 PKG_BATCH_SECONDS = 10
 PKG_PART = "vpn"
@@ -62,8 +62,7 @@ class ReservePackageMixin:
         if kind != "data":
             return
         if self.__dict__.get("_jrn_capture_on"):
-            self._jrn_touch()                                 # журнал: правка — событие, а не пакет
-            return
+            return                                            # журнал: правку пишет триггер событием, такт журнала её увидит
         self.__dict__["_rsv_pkg_due_at"] = time.monotonic()
 
     def reserve_pkg_mark(self) -> None:
@@ -118,7 +117,7 @@ class ReservePackageMixin:
                 self.rsv_update("rsv_out", pkg_unchanged=True)
                 return None
         except Exception as e:                            # noqa: BLE001
-            self.__dict__.pop("_jrn_snap_pending", None)
+            self.reserve_jrn_snap_dropped()
             if str(e) != str(self.__dict__.get("_rsv_pkg_err") or ""):   # не каждые 5 с
                 log.warning("резерв: пакет не собрался: %s", e)
                 self.__dict__["_rsv_pkg_err"] = str(e)
@@ -128,7 +127,7 @@ class ReservePackageMixin:
         if self.rsv_get("rsv_view").get("pkg_error"):
             self.rsv_update("rsv_view", pkg_error="")
         if built is None:
-            self.__dict__.pop("_jrn_snap_pending", None)
+            self.reserve_jrn_snap_dropped()
             return None
         self.__dict__["_rsv_pkg_sending"] = {"gen": built["gen"], "at": time.monotonic()}
         return built
@@ -138,7 +137,7 @@ class ReservePackageMixin:
         s = self.__dict__.get("_rsv_pkg_sending")
         if s and time.monotonic() - s["at"] > 120:
             self.__dict__.pop("_rsv_pkg_sending", None)
-            self.__dict__.pop("_jrn_snap_pending", None)
+            self.reserve_jrn_snap_dropped()
             return True
         return False
 
@@ -220,7 +219,7 @@ class ReservePackageMixin:
                 logical = _logical(b"")
                 if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
                     return None                           # по таймеру без изменений — не уходит
-                self.__dict__["_jrn_snap_pending"] = True     # пачки счётчиков — не сворачивать, пока снимок в пути
+                self._jrn_snap_begin()                        # пачки счётчиков — не сворачивать, пока снимок в пути
             self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
             db_bytes, marks = pkgbot.replica_marked(self.db.path if hasattr(self.db, "path") else self._db_path())
             if journal:
@@ -330,7 +329,7 @@ class ReservePackageMixin:
 
     def reserve_pkg_bad(self, gen: int, reason: str) -> None:
         self.__dict__.pop("_rsv_pkg_sending", None)
-        self.__dict__.pop("_jrn_snap_pending", None)
+        self.reserve_jrn_snap_dropped()
         log.warning("резерв: пакет %s отвергнут: %s", gen, reason[:120])
 
     def reserve_pkg_resend_if_stale(self) -> None:
@@ -357,7 +356,7 @@ class ReservePackageMixin:
                        jrn: dict | None = None) -> tuple[str, str]:
         """Целый пакет от основы: проверка, запись на диск, доля. Возвращает
         (ответ: pkg_ok | pkg_bad, причина)."""
-        if self.reserve_in() in ("taking", "serving", "releasing"):
+        if self.reserve_in() in HOSTING:
             return "pkg_bad", "зона занята"                  # гость стартовал с прежнего пакета — новый сбил бы поколение слияния
         try:
             head = seal.header(blob)
@@ -383,8 +382,7 @@ class ReservePackageMixin:
             os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
-                                    "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns,
-                                    "jrn": dict(jrn) if jrn else None})
+                                    "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns})
         if jrn:
             self.reserve_keep_snapshot_in(dict(jrn))          # учтённое снимком — из сегментов прочь
         elif self.reserve_keep_line():

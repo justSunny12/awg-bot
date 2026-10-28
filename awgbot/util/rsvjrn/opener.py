@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import apply as _apply, counts, event
@@ -39,7 +39,7 @@ class Opened:
     events: int = 0                              # события основы после снимка
     guest_events: int = 0
     counts: int = 0
-    lost: list[str] = field(default_factory=list)
+    lost: int = 0                                # события, которые не встали (таблицы нет, уникальность)
     gap: int = 0                                 # первый недостающий номер (события после него не взяты)
     gap_n: int = 0                               # сколько записей хранилища за разрывом не взято
 
@@ -79,7 +79,7 @@ def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, gues
     if res.gap:
         res.gap_n = max(1, keep.last()[1] - res.gap + 1)   # от разрыва до последнего у резерва: всё это не взято
     fork = base_ev[-1].i if base_ev else snap_i
-    guest_ev, _gap = _events(mine, k, line, fork) if mine.events() else ([], 0)
+    guest_ev, _gap = _events(mine, k, line, fork)              # пустое хранилище — пусто и без разрыва
     con = sqlite3.connect(str(db_path))
     try:
         con.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
@@ -90,7 +90,7 @@ def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, gues
                             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, val))
         con.commit()
         done = _apply.apply(con, base_ev + guest_ev)
-        res.lost = [f"{ev.i} {ev.op} {ev.t}: {why}" for ev, why in done.lost]
+        res.lost = len(done.lost)
         res.events, res.guest_events, res.fork = len(base_ev), len(guest_ev), fork
         month = counts.current_month(con)
         con.execute("INSERT INTO jrn_seen (host, s) VALUES (?, ?) ON CONFLICT(host) DO UPDATE SET s = excluded.s",

@@ -86,8 +86,8 @@ class Duo:
     def st_b(self, **over) -> list:
         """`st` резерва основе: его возможности и взгляд на линию основы."""
         keep = self.b.reserve_keep_view()
-        if self.b.__dict__.get("_rsv_guest_jrn", {}).get("e") and keep:
-            keep["guest_e"] = int(self.b.__dict__["_rsv_guest_jrn"]["e"])
+        if self.b._keep_guest_int("e") and keep:
+            keep["guest_e"] = self.b._keep_guest_int("e")
         body = {"caps": list(self.b_caps), **over}
         if "jrn1" in self.b_caps:
             body["jrn"] = {"keep": keep}

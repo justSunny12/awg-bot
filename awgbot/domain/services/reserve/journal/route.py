@@ -11,15 +11,15 @@ route.py — часть пакета journal (см. __init__): разбор со
 | `jev` | события бота основы на резерве → применить (следование) | события основы → хранить |
 | `jcnt` | пачка клона (b) → сложить | пачка основы (a) → хранить |
 | `jack`, `jneed`, `jstale`, `jcack` | ответ резерва на мои записи | ответ основы на записи её бота у меня → ему |
+| `jtail`, `jtail_ok` | хвост бота основы на резерве (С9) и ответ на мой хвост (tail) | хвост основы после аварии и ответ её бота у меня → ему |
 
 Записи бота основы на резерве (гостя) приходят от него по локальному каналу
-и уходят основе как есть — бот резерва видит только заголовки.
+и уходят основе как есть — бот резерва видит только заголовки. Набор видов —
+pairproto.JRN_KINDS.
 """
 from __future__ import annotations
 
 from ...gateway_link.common import log
-
-_ACKS = ("jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 
 def _schema(kind: str, body: dict) -> dict:
@@ -76,19 +76,10 @@ class ReserveJournalRouteMixin:
         `frm` — пусто (разрыв не прикрывать)."""
         from awgbot.util.rsvjrn import event
         from .ship import EV_BYTES
-        recs: list[bytes] = []
-        size = 0
-        for r in store.events(after=max(0, frm - 1)):
-            h = event.head(r)
-            if h.line != line:
-                continue
-            if not recs and h.n != frm:
-                return []
-            if recs and (size + len(r) > EV_BYTES or h.e != event.head(recs[0]).e or h.n != event.head(recs[-1]).n + 1):
-                break
-            recs.append(r)
-            size += len(r)
-        return recs
+        recs = [r for r in store.events(after=max(0, frm - 1)) if event.head(r).line == line]
+        if not recs or event.head(recs[0]).n != frm:
+            return []
+        return event.runs(recs, EV_BYTES)[0]
 
     def _jrn_mine_in(self, kind: str, body: dict) -> list[tuple]:
         if kind == "jev":
@@ -154,15 +145,11 @@ class ReserveJournalRouteMixin:
         return [("send", kind, _schema(kind, body))]
 
     def _keep_serve_guest(self, frm: int) -> list[tuple]:
+        """События основы гостю с номера `frm` (его `jneed`): из хранилища, подряд, не больше
+        EV_BYTES; с `frm` в хранилище не начинается — ничего (досылку попросит у основы сам)."""
         from awgbot.util.rsvjrn import event
-        from .ship import EV_BYTES
         line = self.reserve_keep_line()
-        recs, size = [], 0
-        for r in self.reserve_keep_store().events(after=max(0, frm - 1)):
-            if recs and (size + len(r) > EV_BYTES or event.head(r).e != event.head(recs[0]).e):
-                break
-            recs.append(r)
-            size += len(r)
+        recs = self._store_run(self.reserve_keep_store(), line, frm)
         if not recs:
             return []
         h = event.head(recs[0])

@@ -90,7 +90,7 @@ def _follow_after_crash(duo) -> dict:
     gm = duo.gdb.jrn_meta()
     keep = duo.b.reserve_keep_view()
     keep.update(guest_e=gm["epoch"], guest_fork=gm["fork_i"])
-    duo.b.__dict__["_rsv_guest_jrn"] = {"e": gm["epoch"], "fork": gm["fork_i"]}
+    duo.b.reserve_guest_jrn_seen({"e": gm["epoch"], "fork": gm["fork_i"]})
     rm.st_in(duo.a, caps=JCAPS, jrn={"keep": keep}, **{"in": "serving"})
     rm.go_away(duo.a, kind="dead")
     duo.a.reserve_epoch_sync()

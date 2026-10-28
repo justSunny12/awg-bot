@@ -55,6 +55,8 @@ def caps() -> list[str]:
 def journal_pair(mine: list[str], theirs: list[str]) -> bool:
     """Направление идёт журналом, когда `jrn1` у обеих сторон."""
     return "jrn1" in (mine or []) and "jrn1" in (theirs or [])
+
+
 _NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "vote1")
 
 

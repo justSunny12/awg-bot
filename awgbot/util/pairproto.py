@@ -109,7 +109,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "go_req":       (BOTH, {"gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None)}),
     "open_eph":     (BOTH, {"gen": (_I, None), "eph": (_S, 64), "oid": (_S, 16)}),
     "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None),
-                            "sealed": (_S, 384), "oid": (_S, 16), "epoch": (_I, None)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
+                            "sealed": (_S, 384), "oid": (_S, 16)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
     "up":           (BOTH, {}),
     "down":         (BOTH, {"reason": (_S, MAX_REASON)}),
     "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB),
@@ -118,7 +118,6 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "blocks":       (BOTH, {"addrs": (_L, 4096)}),
     "back_req":     (BOTH, {}),
     "back":         (BOTH, {}),
-    "tail":         (BOTH, {"i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB)}),
     "relay":        (BOTH, {"until": (_S, 32)}),
     "wiped":        (BOTH, {}),
     "evict":        (BOTH, {}),
@@ -142,6 +141,10 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "disputed_n": (_I, None), "more": (_I, None), "part": (_I, None), "parts": (_I, None),
                             "blob": (_S, MAX_BLOB)}),
 }
+
+# виды журнала: по каналу пары разбирает journal/route (`reserve_jrn_in`), по локальному каналу
+# гостя — те же имена (guestctl)
+JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "hello":  (GATEWAY, {"slot": (_I, None), "caps": (_L, 16), "m_gen": (_I, None), "seen": (_S, 32),
@@ -173,7 +176,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                                      "jrn"}),
                                   "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
-                                  "go": frozenset({"ttl", "k", "sealed", "oid", "epoch"}), "go_req": frozenset({"ttl"}),
+                                  "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                                   "jstale": frozenset({"F"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair

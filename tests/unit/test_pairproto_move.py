@@ -152,7 +152,7 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_need_and_state():
     assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                             "jrn"}),
                            "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
-                           "go": frozenset({"ttl", "k", "sealed", "oid", "epoch"}), "go_req": frozenset({"ttl"}),
+                           "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                            "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи
                            "jstale": frozenset({"F"}),

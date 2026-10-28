@@ -198,7 +198,8 @@ async def run_guest() -> None:
 
 async def _jrn_release(services, ctl, jrn_task) -> None:
     """Возврат с журналом: последние записи, ожидание подтверждений основы, следование
-    и `released{epoch, last}` боту резерва; не дождались — основа догонит хвостом."""
+    и `released{epoch, last}` боту резерва; не дождались — свои события остаются в базе
+    (`jrn_pass(keep_own=True)`, не хвост): основа просит их `jneed`, досылка — до JRN_AFTER_S."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + JRN_DRAIN_S
     while loop.time() < deadline:

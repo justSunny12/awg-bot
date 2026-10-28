@@ -35,11 +35,12 @@ import os
 import random
 import time
 
+from awgbot.util.pairproto import JRN_KINDS
+
 log = logging.getLogger(__name__)
 
 MAX_LINE = 64 * 1024 * 1024 + 1024     # реплика шифротекстом в одной строке
 _BACKOFF = (2, 5, 10, 20, 30)
-JRN_KINDS = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 
 def _dumps(kind: str, body: dict | None = None) -> bytes:
@@ -137,13 +138,11 @@ class GuestCtlServer:
             self.online_count = int(msg.get("online", msg.get("n", 0)) or 0)
             self.online_at = time.time()
             if isinstance(msg.get("jrn"), dict):
-                self.services.__dict__["_rsv_guest_jrn"] = dict(msg["jrn"])
+                await asyncio.to_thread(self.services.reserve_guest_jrn_seen, msg["jrn"])
             if kind == "hello":
                 await self.push_state(force=True)
-                fn = getattr(self.services, "reserve_guest_hello_jrn", None)
-                if fn is not None:                         # передача бота, пришедшая, пока гостя не было на связи
-                    from awgbot.runtime import rsvactions
-                    await rsvactions.run(await asyncio.to_thread(fn))
+                from awgbot.runtime import rsvactions      # передача бота, пришедшая, пока гостя не было на связи
+                await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_hello_jrn))
         elif kind == "back_req":
             self.back_requested_at = time.time()
             self._words.append(("back_req", None))
@@ -297,8 +296,7 @@ class GuestCtlClient:
                                           "jrn": await asyncio.to_thread(self._jrn_status)})
 
     def _jrn_status(self) -> dict:
-        fn = getattr(self.services, "guest_jrn_status", None)   # сервисы без журнала (прежний путь)
-        return fn() if fn is not None else {}
+        return self.services.guest_jrn_status()               # без журнала — пусто
 
     async def send_replica(self, blob: bytes) -> bool:
         return await self.send("replica", {"blob": blob.hex()})

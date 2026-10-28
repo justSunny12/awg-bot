@@ -397,7 +397,7 @@ def test_a_snapshot_removes_what_it_holds_at_the_reserve(duo):
     assert built["jrn"]["i"] == duo.a.db.jrn_last_i()
     assert _kept(duo) == [], f"резерв не снял учтённое снимком: {_kept(duo)}"
     assert duo.b_keep.counts("a") == [], "пачки, учтённые снимком, остались у резерва"
-    assert duo.a.db.jrn_meta()["acked"] == built["jrn"]["i"] and duo.a.db.jrn_meta()["snap_i"] == built["jrn"]["i"]
+    assert duo.a.db.jrn_meta()["acked"] == built["jrn"]["i"] and duo.a.rsv_get("rsv_jrn_out")["snap_i"] == built["jrn"]["i"]
     assert _bases() == [], f"база слияния пишется на пути журнала: {_bases()}"
     duo.edit("Ольга")
     duo.tick()
@@ -655,7 +655,7 @@ def test_the_reserve_answers_jstale_with_the_epoch_of_its_guest(duo):
     duo.journal_on()
     e = duo.a.db.jrn_meta()["epoch"]
     duo.b.rsv_update("rsv_in", state="serving")
-    duo.b.__dict__["_rsv_guest_jrn"] = {"e": e + 1, "fork": duo.a.db.jrn_last_i()}
+    duo.b.reserve_guest_jrn_seen({"e": e + 1, "fork": duo.a.db.jrn_last_i()})
     duo.edit("Иван")
     replies = duo.a_to_b(duo.a.reserve_jrn_tick())
     assert sends(replies) == [("jstale", {"line": duo.line, "e": e + 1})], replies

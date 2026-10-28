@@ -50,6 +50,12 @@ class _ResSvc:
     def reserve_paired(self):
         return True
 
+    def reserve_guest_jrn_seen(self, jrn):
+        self.guest_jrn = dict(jrn)
+
+    def reserve_guest_hello_jrn(self):
+        return []
+
 
 class _GuestSvc:
     def __init__(self, online=3):
@@ -61,6 +67,9 @@ class _GuestSvc:
 
     def guest_devices_online(self):
         return self.online
+
+    def guest_jrn_status(self):
+        return {}
 
 
 @pytest.fixture()

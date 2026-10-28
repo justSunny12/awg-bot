@@ -195,7 +195,7 @@ def _status(svc, w: Path) -> dict:
           "last_i": svc.db.jrn_last_i(), "out": svc.rsv_get("rsv_out"), "in": svc.rsv_get("rsv_in"),
           "poll": svc.rsv_get("rsv_poll"), "pkg_sent": {k: v for k, v in svc.rsv_get("rsv_pkg_sent").items()
                                                           if k in ("gen", "at", "jrn")},
-          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at", "jrn")},
+          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at")},
           "peer": {k: v for k, v in svc.reserve_peer_state().items() if k in ("ready", "caps", "version", "inn", "out")},
           "jrn_on": svc.reserve_jrn_on(), "code_window": svc.reserve_code_window(),
           "tail_meta": svc.rsv_get("rsv_tail")}

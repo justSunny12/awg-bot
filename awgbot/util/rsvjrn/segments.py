@@ -93,14 +93,13 @@ class Store:
         return sorted(out, key=lambda x: (x[1], x[0]))
 
     @staticmethod
-    def _read(path: Path) -> tuple[list[bytes], int, int]:
-        """(целые записи, длина целой части, длина файла)."""
+    def _read(path: Path) -> list[bytes]:
+        """Целые записи файла (оборванный хвост и мусор — не записи)."""
         try:
             data = path.read_bytes()
         except OSError:
-            return [], 0, 0
-        recs, good, _torn = _scan(data)
-        return recs, good, len(data)
+            return []
+        return _scan(data)[0]
 
     def _append(self, path: Path, records: list[bytes]) -> Path:
         """Дописать в path; вернуть файл, куда легло. Оборванный хвост — обрезать до него;
@@ -150,8 +149,7 @@ class Store:
         (повтор дописки после пропажи питания: первая запись номера остаётся)."""
         seen: dict[int, bytes] = {}
         for _e, _first, path in self._segments():
-            recs, _good, _size = self._read(path)
-            for r in recs:
+            for r in self._read(path):
                 n = head(r).n
                 if n > after and n not in seen:
                     seen[n] = r
@@ -161,7 +159,7 @@ class Store:
         """(эпоха, номер) последнего события; пусто — (0, 0)."""
         segs = self._segments()
         for _e, _first, path in reversed(segs):
-            recs, _good, _size = self._read(path)
+            recs = self._read(path)
             if recs:
                 h = head(recs[-1])
                 return h.e, h.n
@@ -171,7 +169,7 @@ class Store:
         """Снимок держит всё по номер upto включительно — события до него прочь; число снятых."""
         dropped = 0
         for _e, _first, path in self._segments():
-            recs, _good, _size = self._read(path)
+            recs = self._read(path)
             keep = [r for r in recs if head(r).n > upto]
             dropped += len(recs) - len(keep)
             if not keep:
@@ -221,8 +219,7 @@ class Store:
         """Пачки стороны с номером больше after — по порядку номеров, без повторов."""
         seen: dict[int, bytes] = {}
         for path in self._cnt_files(side):
-            recs, _good, _size = self._read(path)
-            for r in recs:
+            for r in self._read(path):
                 n = head(r).n
                 if n > after and n not in seen:
                     seen[n] = r
@@ -234,7 +231,7 @@ class Store:
     def drop_counts_upto(self, side: str, upto: int) -> None:
         keep = self.counts(side, after=upto)
         files = self._cnt_files(side)
-        if not files or len(keep) == sum(len(self._read(f)[0]) for f in files):
+        if not files or len(keep) == sum(len(self._read(f)) for f in files):
             return
         if keep:
             _write_atomic(self._cnt(side), b"".join(keep))

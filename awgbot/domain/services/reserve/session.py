@@ -129,9 +129,10 @@ class ReserveSessionMixin:
                         "applied": int(meta["applied"]), "acked": int(meta["acked"])}}
         keep = self.reserve_keep_view()
         if keep:
-            if self._keep_guest_e():
-                keep["guest_e"], keep["guest_fork"] = self._keep_guest_e(), self._keep_guest_fork()
-                keep["guest_last"] = self._keep_guest_last()
+            ge = self._keep_guest_int("e")
+            if ge:
+                keep["guest_e"], keep["guest_fork"] = ge, self._keep_guest_int("fork")
+                keep["guest_last"] = self._keep_guest_int("last")
             out["keep"] = keep
         return out
 

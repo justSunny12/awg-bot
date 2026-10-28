@@ -197,7 +197,7 @@ def test_snapshot_events_and_counts_give_the_base_of_the_primary(w):
         assert _traffic(con) == _traffic(w.db._connection()), "счётчики гостя не равны счётчикам основы"
     finally:
         con.close()
-    assert res.events == w.db.jrn_last_i() - marks["i"] and res.gap == 0 and res.lost == [], res
+    assert res.events == w.db.jrn_last_i() - marks["i"] and res.gap == 0 and res.lost == 0, res
     assert res.fork == w.db.jrn_last_i() and res.counts == 1, res
     assert _one(path, "SELECT value FROM server_state WHERE key = 'db_line'") == w.line, "линия гостя — не основы"
 
