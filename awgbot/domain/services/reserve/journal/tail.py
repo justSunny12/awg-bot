@@ -518,8 +518,9 @@ class ReserveTailMixin:
         точки взятия эпохи — хвост; они придут его же записями (живой гость при возврате или
         журнал данных гостя с диска резерва) и перебазируются здесь при получении."""
         fork = int(self.db.jrn_meta()["fork_i"])
+        # записи гостя запечатаны прежним K — он здесь ещё сменится (снятый вебхук, новый пакет): открывать ими
         self.rsv_put("rsv_c9", {"e": int(guest_e), "F": fork, "upto": fork, "moved": 0, "disputed": [], "total": 0,
-                                "at": timeutil.now_iso()})
+                                "at": timeutil.now_iso(), "k": self.reserve_k().hex()})
         log.warning("резерв: правки бота на «%s» эпохи %s после %s — хвостом при встрече", self.reserve_peer_name(),
                     guest_e, fork)
 
@@ -544,7 +545,8 @@ class ReserveTailMixin:
         from awgbot.util.rsvjrn import event
         line, e = str(body["line"]), int(body["e"])
         try:
-            evs = [event.open_event(self.reserve_k(), r, line) for r in event.split(bytes.fromhex(str(body["blob"])))]
+            k = bytes.fromhex(str(c9["k"])) if c9.get("k") else self.reserve_k()   # ключ времени его эпохи
+            evs = [event.open_event(k, r, line) for r in event.split(bytes.fromhex(str(body["blob"])))]
         except (ValueError, event.RecordError) as ex:
             log.warning("резерв: правки бота на «%s» не открылись: %s", self.reserve_peer_name(), ex)
             return []

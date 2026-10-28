@@ -41,6 +41,7 @@ class Opened:
     counts: int = 0
     lost: list[str] = field(default_factory=list)
     gap: int = 0                                 # первый недостающий номер (события после него не взяты)
+    gap_n: int = 0                               # сколько записей хранилища за разрывом не взято
 
 
 def _events(store: Store, k: bytes, line: str, after: int) -> tuple[list[_apply.Event], int]:
@@ -75,6 +76,8 @@ def build(db_path: str | Path, k: bytes, marks: dict, keep_dir: str | Path, gues
     res = Opened()
     keep, mine = Store(keep_dir), Store(guest_dir)
     base_ev, res.gap = _events(keep, k, line, snap_i)
+    if res.gap:
+        res.gap_n = max(1, keep.last()[1] - res.gap + 1)   # от разрыва до последнего у резерва: всё это не взято
     fork = base_ev[-1].i if base_ev else snap_i
     guest_ev, _gap = _events(mine, k, line, fork) if mine.events() else ([], 0)
     con = sqlite3.connect(str(db_path))

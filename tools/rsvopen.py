@@ -256,7 +256,7 @@ def _journal(k: bytes, jrn: dict, *, button: bool) -> dict:
         raise OpenError(f"журнал не применён: {type(e).__name__}: {str(e)[:120]}") from e
     _step("journal", epoch=res.epoch, role=res.role, fork=res.fork, events=res.events, guest_events=res.guest_events,
           counts=res.counts, gap=res.gap, lost=len(res.lost))
-    return {"jgap": int(res.gap or 0), "jlost": len(res.lost)}   # дальше по шагам — боту резерва (разрыв — не молча)
+    return {"jgap": int(res.gap_n or 0), "jlost": len(res.lost)}   # дальше по шагам — боту резерва (разрыв — не молча)
 
 
 def _yaml_dump(obj) -> str:

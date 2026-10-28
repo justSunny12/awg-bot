@@ -72,7 +72,7 @@ class ReserveStuckMixin:
             self.reserve_pkg_mark()
             log.warning("резерв: вебхук «%s» снят — запись на мне, пользователей он не нёс; поллю сам", name)
             return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
-        journal = bool(self.rsv_get("rsv_c9"))
+        journal = bool(self.reserve_jrn_on())                 # пара без журнала — реплика, как прежде
         log.warning("резерв: пользователи возвращены без «%s» — %s, когда он выйдет на связь", name,
                     "его правки перенесутся хвостом" if journal else "его реплика вольётся")
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name, journal))])]

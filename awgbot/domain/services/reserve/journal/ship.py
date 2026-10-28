@@ -154,7 +154,8 @@ class ReserveShipMixin:
             last, cnt_bn = 0, 0
         if int(keep.get("size") or 0) > SNAP_BYTES:
             now = time.monotonic()
-            if now - float(self.__dict__.get("_jrn_size_mark_at") or 0) > max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60:
+            prev = self.__dict__.get("_jrn_size_mark_at")
+            if prev is None or now - float(prev) > max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60:
                 self.__dict__["_jrn_size_mark_at"] = now        # не чаще раза в pkg_minutes: слово резерва — не рычаг
                 self.reserve_pkg_mark()                       # плановый снимок: у резерва больше мегабайта событий
         if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():

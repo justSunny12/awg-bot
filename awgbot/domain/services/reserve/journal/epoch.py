@@ -132,6 +132,8 @@ class ReserveEpochMixin:
                 log.warning("резерв: точка гостя %s дальше моих номеров (здесь по %s) — база потеряла хвост, "
                             "применяю с %s", fork, last_i, last_i)
                 fork = last_i
+            if fork and meta_now["holder"] == "peer" and fork < int(meta_now["applied"]):
+                fork = int(meta_now["applied"])               # уже применял его события дальше (мигание роли по старому st)
             elif fork and fork < int(meta_now["acked"]):
                 if int(keep.get("gap") or 0):
                     # гость открылся с разрывом журнала (резерв сказал): его точка раньше моего подтверждённого —
