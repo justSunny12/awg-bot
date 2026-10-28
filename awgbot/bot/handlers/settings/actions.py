@@ -187,4 +187,6 @@ async def _snap_more(cb, services, title: str, names, cap: int) -> str:
     if len(names) <= cap:
         return ""
     key = await call(services.db.list_snap_keep, cb.message.chat.id, "admin", title, [_e(n) for n in names], "", True)
+    if not key:
+        return ""
     return more_link(len(names) - cap, getattr(services, "bot_username", "") or "", listlink.build("snap", key=key, new=True))

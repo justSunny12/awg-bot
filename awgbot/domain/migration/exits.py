@@ -129,7 +129,8 @@ class MigrationExitsMixin:
             except awg.AwgError as e:
                 log.warning("migration_finish: пир %s не снят, пара оставлена: %s",
                             old.name, e)
-                failed.append(old.name)
+                owner = self.db.get_client(old.client_id)
+                failed.append(f"{owner.name if owner else '?'} — {old.name}")
                 continue
             removed += 1
             self.db.merge_traffic(old.id, twin.id)

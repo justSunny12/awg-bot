@@ -33,19 +33,17 @@ async def snap(services, ref: int, key: str, chat_id: int) -> View | None:
         at = timeutil.fmt_dt_ui(timeutil.parse_iso(str(data.get("at") or "")))
     except ValueError:
         at = ""
-    count = " · ".join(x for x in (str(len(rows)) if rows else "", f"на {at}" if at else "") if x)
-    return View(title=str(data.get("title") or ""), rows=rows, count=count, back=back, live=False,
-                empty=tl.SNAP_GONE)
+    n = int(data.get("n") or len(rows))
+    return View(title=str(data.get("title") or ""), rows=rows, count=str(n) if n else "", back=back, live=False,
+                empty=tl.SNAP_GONE, at=f"на {at}" if at else "")
 
 
 def _back(services, data: dict | None) -> tuple | None:
-    """«⬅️ Назад» на экран-источник (колбэк в снимке) или «⬅️ В меню» роли."""
+    """«⬅️ Назад» на экран-источник (колбэк в снимке); без него — None: «⬅️ В меню»
+    роли того, кто смотрит, подставит экран (bot/lists render)."""
     from awgbot.bot import ui
     packed = str((data or {}).get("back") or "")
-    if packed:
-        return ui.back(packed)
-    from awgbot.bot import roles
-    return ui.to_menu(roles.current().cb.menu())
+    return ui.back(packed) if packed else None
 
 
 register(Kind("snap", "*", ROLES, snap))

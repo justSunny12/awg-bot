@@ -205,7 +205,7 @@ async def report_restore_result(bot, services) -> None:
             from awgbot.util import listlink
             key = await call(services.db.list_snap_keep, config.ADMIN_ID, "admin", nb.LOST_TITLE,
                              nb.restore_lost_rows(lost, bot_u), "", True)
-            snap = listlink.build("snap", key=key)
+            snap = listlink.build("snap", key=key) if key else ""
         await notify_one(bot, config.ADMIN_ID,
                          texts.restore_done_report(str(done.get("created_at") or ""), report, bot_u, version=version,
                                                    snap=snap))

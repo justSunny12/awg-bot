@@ -242,4 +242,4 @@ async def _snap_codes(message, services, title: str, items: list, back: str, sho
     from awgbot.util import listlink
     rows = [f"<code>{texts._e(x)}</code>" for x in items]
     key = await call(services.db.list_snap_keep, message.chat.id, "admin", title, rows, back, False)
-    return (getattr(services, "bot_username", "") or "", listlink.build("snap", key=key))
+    return (getattr(services, "bot_username", "") or "", listlink.build("snap", key=key)) if key else None

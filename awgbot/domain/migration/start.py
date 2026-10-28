@@ -108,7 +108,8 @@ class MigrationStartMixin:
             except Exception as e:                        # noqa: BLE001
                 log.warning("migration: двойник для %s (id=%s) не создан: %s",
                             dev.name, dev.id, e)
-                res.failed.append(dev.name)
+                owner = self.db.get_client(dev.client_id)
+                res.failed.append(f"{owner.name if owner else '?'} — {dev.name}")   # чьё — видно в итоге и снимке
 
         if res.born == 0 and res.already == 0 and res.failed:
             # Не родился НИ ОДИН, и опереться не на что — рычаг не включаем.

@@ -117,7 +117,7 @@ GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\
 
 
 SSH_ADDED_TITLE = "✅ Добавлено для SSH-доступа"
-SSH_MERGED_TITLE = "Вошли в добавленные подсети"
+SSH_MERGED_TITLE = "ℹ️ Вошли в добавленные подсети"
 
 
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None, link: tuple | None = None,

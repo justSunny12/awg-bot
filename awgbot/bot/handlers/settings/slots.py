@@ -292,7 +292,7 @@ async def gateway_lan_received(message: Message, state: FSMContext, services):
         name = str(getattr(st.get("gateway"), "name", "") or "")
         key = await call(services.db.list_snap_keep, message.chat.id, "admin", td.lan_rejected_title(name),
                          td.lan_rejected_rows(rejected), GwSlotCB(action="card", slot=slot).pack(), False)
-        snap = listlink.build("snap", key=key)
+        snap = listlink.build("snap", key=key) if key else ""
     await send_menu(message, services,
                     screens.with_note(texts.gateway_card_text(st, st["states"]), texts.gateway_lan_report(res, st, snap)),
                     card_kb(st, message.chat.id))

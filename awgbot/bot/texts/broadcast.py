@@ -60,8 +60,8 @@ def _names(clients, bot_username: str, more: str = "") -> str:
 def broadcast_days_prompt(plan, bot_username: str = "") -> str:
     """Шаг дней: «📢 Продление подписки: [Ксюша], [Петя]» ⏎ «Без продления (∞):
     [Вечный]» ⏎ «На сколько дней продлеваем?»."""
-    names = ", ".join(profile_link(e.client, bot_username) for e in plan if not e.unlimited)
-    unl = ", ".join(profile_link(e.client, bot_username) for e in plan if e.unlimited)
+    names = _names([e.client for e in plan if not e.unlimited], bot_username)
+    unl = _names([e.client for e in plan if e.unlimited], bot_username)
     lines = [ui.head("📢 Продление подписки", value=names)]
     if unl:
         lines.append(f"Без продления (∞): {unl}")
@@ -233,10 +233,10 @@ def broadcast_report(clients: list, with_friends: bool, delivered: int,
     line = f"✅ Разослано: {_bc_audience(clients, with_friends, bot_username, audience_more)} — доставлено: {delivered} {w}"
     if extension is not None:
         days, plan = extension
-        unl = [profile_link(e.client, bot_username) for e in plan if e.unlimited]
+        unl = [e.client for e in plan if e.unlimited]
         line += f" · продлено на {_days(days)}"
         if unl:
-            line += f" ({', '.join(unl)} — без продления)"
+            line += f" ({_names(unl, bot_username)} — без продления)"
     failed = list(failed) if not isinstance(failed, int) else [0] * failed
     if failed:
         # молчать о недоставленных нельзя: «доставлено» стало бы неправдой

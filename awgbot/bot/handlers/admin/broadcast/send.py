@@ -141,13 +141,14 @@ async def _report_snaps(services, chat_id: int, clients: list, failed, bot_u: st
     if len(clients) > tb.NAMES_SHOWN:
         rows = [f"профиль {profile_link(c, bot_u)}" for c in clients]
         key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.AUDIENCE_TITLE, rows, "", True)
-        aud = more_link(len(clients) - tb.NAMES_SHOWN, bot_u, listlink.build("snap", key=key))
+        aud = more_link(len(clients) - tb.NAMES_SHOWN, bot_u, listlink.build("snap", key=key)) if key else ""
     failed = list(failed) if not isinstance(failed, int) else []
     if failed:
         rows = tb.undelivered_rows(failed, clients, bot_u)
         named = sum(1 for c in clients if getattr(c, "tg_id", 0) in set(failed))
         rest = len(failed) - min(named, 3)
         if rest > 0 and named:
-            key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True)
-            und = more_link(rest, bot_u, listlink.build("snap", key=key))
+            key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True,
+                                 len(failed))
+            und = more_link(rest, bot_u, listlink.build("snap", key=key)) if key else ""
     return aud, und

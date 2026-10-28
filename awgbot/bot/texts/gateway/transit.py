@@ -283,7 +283,7 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
         rest = len(rows) - len(keep)
         if link is not None:
             from awgbot.util.textfmt import deep_link
-            body += f"\n…и ещё {deep_link(link[0], link[1], str(rest))} " + plural_ru(rest, "строка", "строки", "строк")
+            body += "\n…" + deep_link(link[0], link[1], f"и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк"))
         else:
             body += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
     if not body:

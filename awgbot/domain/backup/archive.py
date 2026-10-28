@@ -40,7 +40,7 @@ def _strip_foreign_share(con) -> None:
             return
     # снимки списков событий (экран «весь список») — следы интерфейса, а не данные
     try:
-        con.execute("DELETE FROM server_state WHERE key LIKE 'list_snap:%'")
+        con.execute("DELETE FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'")
         con.commit()
     except Exception:                                          # noqa: BLE001 — схема без server_state
         pass

@@ -335,7 +335,7 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
         from awgbot.util import listlink
         key = await call(services.db.list_snap_keep, message.chat.id, role, ta.REJECTED_TITLE,
                          ta.rejected_rows(res.rejected), RoutingCB(action="sites", ref=profile.id).pack(), False)
-        snap = listlink.build("snap", key=key)
+        snap = listlink.build("snap", key=key) if key else ""
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit,
                                       owner=_foreign(profile, client),
                                       bot_username=getattr(services, "bot_username", "") or "", snap=snap)

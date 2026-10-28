@@ -41,6 +41,7 @@ class View:
     sep: str = "\n"                              # «\n\n» — строки с ведущим значком
     live: bool = True
     labels: tuple[int, ...] = ()                 # номера строк-подписей групп: страница продолжения повторяет подпись
+    at: str = ""                                 # «на 27.10 14:05 (UTC+3)» — снимок события, последним в шапке
 
 
 @dataclass(frozen=True)
@@ -98,11 +99,11 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
         return None
     if view is None:
         return None
-    back_rows = [view.back] if view.back else []
+    back_rows = [view.back or _menu(role)]
     if not view.rows:
         return view.empty or ui.head(view.title), ui.rows(*back_rows)
     now = "сейчас" if (view.live and new) else ""
-    probe = ui.head(view.title, meta=[view.count, "стр. 99 из 99", now])
+    probe = ui.head(view.title, meta=[view.count, "стр. 99 из 99", now, view.at])
     widest = max((pages.visible(view.rows[i]) for i in view.labels), default=0)
     chunks = pages.split(view.rows, pages.visible(probe) + 2 + (widest + 1 if view.labels else 0), view.sep,
                          pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS,     # место под повтор подписи
@@ -122,7 +123,7 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
         target = view.labels[anchor - 1]
         cur = next((n for n, sp in enumerate(spans) if target in sp), cur)
         paging.remember(chat_id, screen_name(kind), int(ref or 0), cur)
-    head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now])
+    head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now, view.at])
     body = [view.rows[i] for i in spans[cur]]
     first = spans[cur][0] if spans[cur] else 0
     if body and first not in view.labels:
@@ -137,6 +138,15 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
     if cur < total - 1:
         nav.append(ui.btn(_next(), PageCB(screen=screen_name(kind), ref=int(ref or 0), page=cur + 1, back=back)))
     return text, ui.rows(nav or None, *back_rows)
+
+
+def _menu(role: str) -> tuple:
+    """«⬅️ В меню» — на главную роли того, кто смотрит (у гостя она своя)."""
+    from awgbot.bot import roles
+    if role == "invited":
+        from awgbot.bot.callbacks import FriendCB
+        return ui.to_menu(FriendCB(action="refresh"))
+    return ui.to_menu(roles.current().cb.menu())
 
 
 def _prev() -> str:
