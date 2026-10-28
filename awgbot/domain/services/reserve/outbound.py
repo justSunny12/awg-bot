@@ -429,7 +429,8 @@ class ReserveOutboundMixin:
                     self.rsv_update("rsv_out", can_return=True)
                     return [("live",)]
                 return []
-            if str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate":
+            if str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate" \
+                    and not self.reserve_return_check():
                 last = str(out.get("last_switch") or "")
                 gap = settings.get_int("app.reserve.min_interval_minutes", 30) * 60
                 if not last or timeutil.elapsed(timeutil.parse_iso(last)) >= gap:

@@ -111,7 +111,23 @@ class ReserveKeepMixin:
         return {"line": str(cur["line"]), "e": int(cur.get("e") or 0), "last": last, "snap_i": int(cur.get("snap_i") or 0),
                 "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": st.events_size(),
                 "snap": bool(cur.get("snap_at")),             # снимок есть (и снятый до первого события, snap_i = 0)
-                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0))}
+                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0)), **self._keep_guest_disk(str(cur["line"]))}
+
+    def _keep_guest_disk(self, line: str) -> dict:
+        """Гостя нет, а его журнал данных на диске есть (перезагрузка посреди обслуживания):
+        основе — что он есть (она заберёт его возвратом)."""
+        if self._keep_guest():
+            return {}
+        try:
+            from awgbot.util.rsvjrn import event
+            recs = self.guest_jrn_store().events()
+        except Exception:                                     # noqa: BLE001
+            return {}
+        recs = [r for r in recs if event.head(r).line == line]
+        if not recs:
+            return {}
+        h = event.head(recs[-1])
+        return {"gj_e": h.e, "gj_last": h.n}
 
     def _keep_guest_fork(self) -> int:
         if not self._keep_guest():

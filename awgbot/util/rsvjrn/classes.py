@@ -78,6 +78,16 @@ def _masks() -> dict[str, tuple[str, ...]]:
 
 MASK_COLUMNS: dict[str, tuple[str, ...]] = _masks()       # маски — побитно при перебазировании
 
+
+def _secrets() -> dict[str, tuple[str, ...]]:
+    return {t: tuple(c for c, k in spec.items() if k == SECRET) for t, spec in TABLES.items()
+            if isinstance(spec, dict) and SECRET in spec.values()}
+
+
+# секреты основы (закрытый ключ устройства): у бота на резерве их нет — пусто в событии значит
+# «не трогать» (концепт §2.8), а не «стереть»
+SECRET_COLUMNS: dict[str, tuple[str, ...]] = _secrets()
+
 def class_of(table: str, column: str) -> str | None:
     """Класс колонки; None — таблицы или колонки в реестре нет."""
     spec = TABLES.get(table)

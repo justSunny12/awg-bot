@@ -100,6 +100,54 @@ class JrnMixin:
         """Хвост отложен: точка расхождения ещё не известна."""
         return bool(self._connection().execute("SELECT 1 FROM jrn_tail WHERE state = 'hold' LIMIT 1").fetchone())
 
+    def _jrn_keys_stash(self, c, events: list) -> None:
+        """Закрытые ключи устройств, которые откат удалит (вставки хвоста): держатель вернёт
+        устройство без ключа (его у бота на резерве нет) — ключ ждёт тут (rsv_tail_keys)."""
+        import json
+        keys = {}
+        for ev in events:
+            if ev.t == "devices" and ev.op == "I" and ev.k.get("id") is not None:
+                row = c.execute("SELECT public_key, private_key FROM devices WHERE id = ?", (ev.k["id"],)).fetchone()
+                if row is not None and row[0] and row[1]:
+                    keys[str(row[0])] = str(row[1])
+        if not keys:
+            return
+        old = c.execute("SELECT value FROM server_state WHERE key = 'rsv_tail_keys'").fetchone()
+        try:
+            have = json.loads(old[0]) if old and old[0] else {}
+        except ValueError:
+            have = {}
+        c.execute("INSERT INTO server_state (key, value) VALUES ('rsv_tail_keys', ?) "
+                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (json.dumps({**have, **keys}),))
+
+    def jrn_keys_restore(self) -> int:
+        """Устройства из отложенных ключей вернулись событиями держателя без закрытого ключа —
+        ключ на место (под applying: у следующего запись секрета иначе запрещена)."""
+        import json
+        row = self._connection().execute("SELECT value FROM server_state WHERE key = 'rsv_tail_keys'").fetchone()
+        try:
+            keys = json.loads(row[0]) if row and row[0] else {}
+        except ValueError:
+            keys = {}
+        if not keys:
+            return 0
+        n = 0
+        with self._tx() as c:
+            c.execute("UPDATE jrn_meta SET applying = 1 WHERE id = 1")
+            try:
+                for pub, priv in list(keys.items()):
+                    cur = c.execute("UPDATE devices SET private_key = ? WHERE public_key = ? AND "
+                                    "(private_key IS NULL OR private_key = '')", (priv, pub))
+                    if cur.rowcount:
+                        n += 1
+                        keys.pop(pub)
+            finally:
+                c.execute("UPDATE jrn_meta SET applying = 0 WHERE id = 1")
+            c.execute("INSERT INTO server_state (key, value) VALUES ('rsv_tail_keys', ?) "
+                      "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (json.dumps(keys) if keys else "",))
+            self._tx_note(self._TX_COUNTERS)
+        return n
+
     def jrn_tail_finalize(self, fork: int) -> int:
         """Точка расхождения известна (fork — последний номер, который есть у держателя): события
         хвоста по fork у него есть — прочь из хвоста, в базе остаются; после — откатить в базе
@@ -113,6 +161,7 @@ class JrnMixin:
             c.execute("DELETE FROM jrn_tail WHERE state = 'hold' AND i <= ?", (fork,))
             rows = c.execute("SELECT i, e, t, op, k, c, o, at FROM jrn_tail WHERE state = 'hold' ORDER BY i").fetchall()
             if rows:
+                self._jrn_keys_stash(c, [Event.from_row(tuple(r)) for r in rows])
                 c.execute("UPDATE jrn_meta SET applying = 1 WHERE id = 1")
                 try:
                     lost = undo(c.connection, [Event.from_row(tuple(r)) for r in rows])
@@ -355,7 +404,7 @@ class JrnMixin:
             c.execute("DELETE FROM jrn_tail")
             self._tx_note(self._TX_COUNTERS)
 
-    def jrn_rebase(self, events: list):
+    def jrn_rebase(self, events: list, before_commit=None):
         """Хвост второй стороны — поверх моей базы (держатель): rsvjrn.rebase обычным
         соединением — перенесённое захватывается событиями моей эпохи."""
         from awgbot.core import access_cache
@@ -363,6 +412,6 @@ class JrnMixin:
         conn = self._connection()
         if conn.in_transaction:
             conn.commit()
-        res = rebase.rebase(conn, events)
+        res = rebase.rebase(conn, events, before_commit=before_commit)
         access_cache.invalidate_all()
         return res

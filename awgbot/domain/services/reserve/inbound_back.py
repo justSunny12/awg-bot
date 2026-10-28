@@ -81,7 +81,13 @@ class ReserveInboundBackMixin:
         if str(inn.get("state") or "") == "relay":
             return [("send", "relay", {"until": str(inn.get("relay_until") or "")}), ("send", "wiped", {})]   # повтор
         if str(inn.get("state") or "") not in ("releasing", "serving", "taking"):
-            return [("send", "wiped", {})]                    # зоны нет — основе нечего ждать
+            # зоны нет — основе нечего ждать; журнал данных гостя и rep.bin под прежним K — прочь
+            try:
+                self.guest_jrn_store().wipe()
+                rsvzone.REP_PATH.unlink(missing_ok=True)
+            except OSError as e:
+                log.info("резерв: остатки гостя на диске не сняты: %s", e)
+            return [("send", "wiped", {})]
         name = self.reserve_peer_name()
         # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
         # или процесс открытия дошёл до смены записи; срыв раньше — сразу idle

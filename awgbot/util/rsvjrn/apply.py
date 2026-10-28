@@ -66,6 +66,13 @@ def _where(k: dict) -> tuple[str, list]:
     return " WHERE " + " AND ".join(f"{_q(c)} IS ?" for c in k), list(k.values())
 
 
+def _drop_null_secrets(table: str, vals: dict) -> dict:
+    """Пустой секрет в событии — «не трогать»: у бота на резерве закрытых ключей основы нет."""
+    from .classes import SECRET_COLUMNS
+    sec = SECRET_COLUMNS.get(table, ())
+    return {c: v for c, v in vals.items() if not (c in sec and v is None)}
+
+
 def _row(conn, ev: Event, cols: list[str]) -> None:
     have = set(cols)
     k = {c: v for c, v in ev.k.items() if c in have}
@@ -73,6 +80,7 @@ def _row(conn, ev: Event, cols: list[str]) -> None:
         vals = {**{c: v for c, v in (ev.c or {}).items() if c in have}, **k}
         where, args = _where(k)
         if k and conn.execute(f"SELECT 1 FROM main.{_q(ev.t)}{where}", args).fetchone():
+            vals = _drop_null_secrets(ev.t, vals)
             if vals:                                       # строка уже есть (снимок её нёс) — значения события
                 sets = ", ".join(f"{_q(c)} = ?" for c in vals)
                 conn.execute(f"UPDATE main.{_q(ev.t)} SET {sets}{where}", list(vals.values()) + args)
@@ -81,7 +89,7 @@ def _row(conn, ev: Event, cols: list[str]) -> None:
         marks = ", ".join("?" for _ in vals)
         conn.execute(f"INSERT INTO main.{_q(ev.t)} ({names}) VALUES ({marks})", list(vals.values()))
     elif ev.op == "U":
-        vals = {c: v for c, v in (ev.c or {}).items() if c in have}
+        vals = _drop_null_secrets(ev.t, {c: v for c, v in (ev.c or {}).items() if c in have})
         if not vals:
             return
         where, args = _where(k)
@@ -167,9 +175,10 @@ def undo(conn: sqlite3.Connection, events: list[Event]) -> list[tuple[Event, str
     (они не решения о строках). Не откатившееся — в ответ (строкой журнала)."""
     lost: list[tuple[Event, str]] = []
     cols_cache: dict[str, list[str]] = {}
+    from .rebase import NOT_TAIL
     for ev in sorted(events, key=lambda x: x.i, reverse=True):
-        if ev.op in COUNTER_OPS:
-            continue
+        if ev.op in COUNTER_OPS or ev.t in NOT_TAIL:
+            continue                                     # данные хоста держатель не вернёт — не откатывать
         if ev.t not in cols_cache:
             cols_cache[ev.t] = _columns(conn, ev.t)
         have = set(cols_cache[ev.t])

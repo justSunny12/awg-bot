@@ -417,25 +417,35 @@ def gateway_move_failed(reserve: str, since: str, reason: str) -> str:
 
 TAIL_LINES_MAX = 5
 
-# (таблица, колонка) → как назвать правку в строке Т-Ж4
+# (таблица, колонка) → как назвать правку в строке Т-Ж4 (по схеме); остальные — общей строкой без значений
 _TAIL_FIELDS = {
     ("clients", "name"): "имя", ("clients", "tg_id"): "Telegram-аккаунт", ("clients", "device_limit"): "устройств не больше",
-    ("clients", "block_reason"): "блокировка", ("clients", "kind"): "вид профиля",
+    ("clients", "activation_status"): "активация", ("clients", "routing_allowed"): "РФ-доступ",
     ("client_subscription", "period_end"): "срок до", ("client_subscription", "period_start"): "период с",
-    ("client_subscription", "status"): "подписка", ("client_quota", "limit_bytes"): "квота",
-    ("client_pause", "until"): "пауза до", ("devices", "name"): "имя устройства", ("devices", "block_reason"): "блокировка",
+    ("client_subscription", "status"): "подписка", ("client_quota", "traffic_limit"): "квота",
+    ("client_quota", "bonus_bytes"): "бонус", ("devices", "name"): "имя устройства", ("devices", "routing_on"): "РФ-доступ",
     ("device_traffic", "traffic_limit"): "лимит трафика",
 }
+_TAIL_DATES = ("period_end", "period_start")
+_TAIL_BYTES = ("traffic_limit", "bonus_bytes")
+_TAIL_FLAGS = ("routing_allowed", "routing_on")
 
 
 def _tail_value(table: str, col: str, v) -> str:
     if v is None or v == "":
         return "—"
-    if col in ("period_end", "period_start", "until") and isinstance(v, str):
+    if col in _TAIL_DATES and isinstance(v, str):
         return _e(_date_yy(v))
     if col == "name":
         return f"«{_e(v)}»"
-    return _e(v)
+    if col in _TAIL_FLAGS:
+        return "вкл" if v else "выкл"
+    if col in _TAIL_BYTES:
+        if not v:
+            return "без ограничения"
+        from awgbot.util.textfmt.base import volume
+        return _e(volume(int(v)))
+    return _e(str(v))
 
 
 def tail_where(variant: str, reserve: str) -> str:
@@ -454,24 +464,36 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
     else:
         subject = f"профиль {profile or '?'}"
     if kind == "unique":
-        made = "заведённый там" if variant != "c9" else "заведённый здесь"
+        made = f"заведённый на {_n(reserve)}" if variant != "c9" else "заведённый здесь"
         return (f"{subject} — его адрес занял {taken_by}, {made}. Выдай «{device}» конфигурацию заново"
                 if col == "address" else f"{subject}: не встало — значение уже занято ({_e(col) or 'уникальное'})")
     if kind == "delete":
         return f"{subject}: удаление не перенесено — {where} его успели поменять"
     if kind == "gone":
         return f"{subject}: правка не перенесена — {where} этой записи уже нет"
-    field = _TAIL_FIELDS.get((table, col), col)
-    return (f"{subject}: {field} {_tail_value(table, col, d.get('tail'))} — {where} осталось "
-            f"{_tail_value(table, col, d.get('kept'))}")
+    if kind == "failed":
+        return f"{subject}: правка не встала"
+    if d.get("secret") or col == "public_key":
+        return f"{subject}: ключи изменены на обеих сторонах — остались {where.replace('на ', 'с ', 1)}. Выдай конфигурацию заново"
+    if col == "block_reason":
+        return f"{subject}: блокировку поменяли и там, и здесь — {where} осталась своя"
+    field = _TAIL_FIELDS.get((table, col))
+    if field is None:
+        return f"{subject}: правку поменяли и там, и здесь — {where} осталась своя"
+    tail, kept = _tail_value(table, col, d.get("tail")), _tail_value(table, col, d.get("kept"))
+    if col in _TAIL_DATES and field.endswith(" до"):
+        return f"{subject}: {field} {tail} — {where} осталось до {kept}"
+    return f"{subject}: {field} {tail} — {where} осталось {kept}"
 
 
 def _tail_head(variant: str, reserve: str, n: int) -> str:
     word = f"{n} {_plural(n, 'правка', 'правки', 'правок')}"
+    verb = _plural(n, "перенесена", "перенесены", "перенесены")
+    made = _plural(n, "сделанная", "сделанные", "сделанные")
     if variant == "c9":
-        return (f"⚠️ Не перенесены {word} бота на {_n(reserve)}, сделанные после потери связи: здесь те же поля "
+        return (f"⚠️ Не {verb} {word} бота на {_n(reserve)}, {made} после потери связи: здесь те же поля "
                 "успели поменять по-своему")
-    return (f"⚠️ Не перенесены {word}, сделанные здесь перед переездом на {_n(reserve)}: те же поля там успели "
+    return (f"⚠️ Не {verb} {word}, {made} здесь перед переездом на {_n(reserve)}: те же поля там успели "
             "поменять по-своему")
 
 

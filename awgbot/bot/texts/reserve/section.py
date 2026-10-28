@@ -114,7 +114,7 @@ def section_text(d: dict) -> str:
     if d.get("accepting"):
         lines.append("")
         lines.append("📥 Подключаюсь ко второму серверу — код для его админа выше в чате")
-    more = MORE + (" " + MORE_JRN if d.get("jrn_capable") else "")
+    more = MORE + (". " + MORE_JRN if d.get("jrn_capable") else "")
     lines += ["", details("▸ подробнее: " + more)]
     return "\n".join(lines)
 

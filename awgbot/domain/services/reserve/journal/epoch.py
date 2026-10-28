@@ -104,7 +104,9 @@ class ReserveEpochMixin:
             meta_now = self.db.jrn_meta()
             if guest_e and not epoch_sane(guest_e, int(meta_now["epoch"])):
                 guest_e = 0
-            if fork and not 0 < fork <= max(self.db.jrn_last_i(), int(meta_now["acked"])) + 1:
+            if fork and not int(meta_now["acked"]) <= fork <= max(self.db.jrn_last_i(), int(meta_now["acked"])) + 1:
+                log.warning("резерв: точка гостя %s вне моих номеров (подтверждено %s) — беру подтверждённое",
+                            fork, meta_now["acked"])
                 fork = 0
             meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None,
                                     fork_i=fork or int(meta_now["acked"]))

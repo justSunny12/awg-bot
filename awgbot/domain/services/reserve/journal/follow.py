@@ -85,6 +85,9 @@ class ReserveFollowMixin:
         line, e_body = str(body["line"]), int(body["e"])
         meta = self.db.jrn_meta()
         if meta["role"] != "follower" or meta["holder"] != "peer":
+            c9 = self.rsv_get("rsv_c9") if not getattr(self, "guest", False) else {}
+            if c9 and e_body == int(c9.get("e") or -1):
+                return self.reserve_c9_tail_in(body, c9)      # «вернуть без резерва»: его правки — хвост
             if e_body < int(meta["epoch"]):
                 # точка расхождения — с какого номера моя эпоха: бывшему держателю — для хвоста
                 return [("send", "jstale", {"line": line, "e": int(meta["epoch"]), "F": int(meta["fork_i"])})]
@@ -101,10 +104,15 @@ class ReserveFollowMixin:
             return [("send", "jneed", {"line": line, "from": int(meta["applied"]) + 1})]
         if any(ev.e != e_body for ev in evs):
             return [("send", "jneed", {"line": line, "from": int(meta["applied"]) + 1})]
-        if evs and self.db.jrn_tail_held() and evs[0].i > int(meta["applied"]) + 1:
-            # мой хвост отложен: первое событие держателя называет точку расхождения
-            self.reserve_tail_finalize(evs[0].i - 1)
-            meta = self.db.jrn_meta()
+        if evs and self.db.jrn_tail_held():
+            if evs[0].i == int(meta["applied"]) + 1:
+                self.reserve_tail_finalize(int(meta["applied"]))   # точка — моя же: держатель начал сразу после
+                meta = self.db.jrn_meta()
+            else:
+                # мой хвост отложен, а точку расхождения держатель не назвал: из разрыва в номерах её
+                # не угадывать — ждать st резерва (точка гостя); держатель повторит без подтверждения
+                log.info("резерв: события держателя с %s, мой хвост ждёт точку расхождения — жду её", evs[0].i)
+                return []
         applied = int(meta["applied"])
         evs = [ev for ev in evs if ev.i > applied]
         if evs and [ev.i for ev in evs] != list(range(applied + 1, applied + 1 + len(evs))):
@@ -115,6 +123,8 @@ class ReserveFollowMixin:
             before = self._follow_watch()
             res = self.db.jrn_apply(evs)
             self._follow_after(res.done, before)
+            if any(ev.t == "devices" for ev in res.done):
+                self.db.jrn_keys_restore()                    # закрытые ключи откаченных устройств — на место
             for ev, why in res.lost:
                 log.warning("резерв: событие %s (%s %s) не встало: %s", ev.i, ev.op, ev.t, why)
             applied = res.last
@@ -271,7 +281,9 @@ class ReserveFollowMixin:
             self.rsv_update("rsv_follow", lag_told=True)
             log.warning("резерв: журнал отстаёт от бота на «%s»: применено %s, у него %s", self.reserve_peer_name(),
                         applied, last)
-            why = f"применено по {applied}, у бота на {self.reserve_peer_name()} — по {last}"
+            view = self.reserve_follow_view()
+            why = (f"здесь — по {timeutil.parse_iso(view['at']).strftime('%H:%M')}" if view.get("at") else
+                   "здесь отстают")
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
                                              text=rn.follow_stalled(self.reserve_peer_name(), why))])]
         if told and not lag and last <= applied:

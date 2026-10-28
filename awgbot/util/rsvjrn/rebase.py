@@ -34,7 +34,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from .apply import Event, _counter_op
-from .classes import MASK_COLUMNS
+from .classes import MASK_COLUMNS, SECRET_COLUMNS
 
 # уникальные значения, за которые спорят строки хвоста и держателя
 UNIQUE: dict[str, tuple[str, ...]] = {"devices": ("address", "public_key"), "clients": ("tg_id", "invite_code")}
@@ -47,6 +47,19 @@ REFS: dict[str, list[tuple[str, str]]] = {
                 ("devices", "twin_of")],
 }
 REMAPPED = ("clients", "devices")
+# служебные колонки: спор по ним — не спор (держатель прав, админу это шум)
+QUIET: dict[str, tuple[str, ...]] = {
+    "clients": ("tg_name", "tg_name_at", "tg_username"), "client_subscription": ("notified_thresholds",),
+    "client_quota": ("traffic_notified", "bonus_granted_month"), "client_grace": ("grace_pending_cut",),
+}
+# в хвост не идут: данные хоста (их держатель не захватывает — не вернутся) и архивы месяца
+# (их пишет сброс месяца, а сброс хвоста пропускается)
+NOT_TAIL = ("gateways", "traffic_monthly", "server_traffic_monthly")
+# значения, которые в отчёт (и в Т-Ж4, и в журнал) не идут
+SECRET_COLS: dict[str, tuple[str, ...]] = {
+    "devices": ("private_key", "preshared_key"), "clients": ("invite_code",), "client_pause": ("resume_code",),
+    "device_friend": ("friend_code",), "server_state": ("value",),
+}
 
 
 @dataclass
@@ -66,9 +79,13 @@ def _where(k: dict) -> tuple[str, list]:
 
 def _remap(table: str, values: dict, id_map: dict) -> dict:
     out = dict(values)
+    history = table.endswith("_histories")                    # история — ссылки по имени колонки
     for parent, refs in REFS.items():
-        for t, c in refs:
-            if t == table and out.get(c) is not None:
+        cols = [c for t, c in refs if t == table]
+        if history:
+            cols += ["client_id"] if parent == "clients" else ["device_id"]
+        for c in cols:
+            if out.get(c) is not None:
                 try:
                     out[c] = id_map[parent].get(int(out[c]), out[c])
                 except (TypeError, ValueError):
@@ -143,15 +160,24 @@ def _mask(base: int, mine: int, cur: int) -> tuple[int, bool]:
     return result, bool(clash)
 
 
-def rebase(conn: sqlite3.Connection, events: list[Event], *, epoch: int = 0, fork: int = 0) -> Report:
+def rebase(conn: sqlite3.Connection, events: list[Event], *, before_commit=None) -> Report:
     """Перенести хвост поверх базы держателя одной транзакцией (каждое событие — своей
-    точкой сохранения: спорное и не вставшее не отменяют остального)."""
+    точкой сохранения: спорное и не вставшее не отменяют остального). before_commit(conn,
+    report) — в той же транзакции (отметка «хвост перенесён»)."""
     rpt = Report()
     id_map: dict[str, dict[int, int]] = {t: {} for t in REMAPPED}
+    failed: dict[str, set] = {t: set() for t in REMAPPED}     # вставки, не вставшие по уникальности
     tables = {r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type = 'table'")}
     conn.execute("BEGIN IMMEDIATE")
     try:
         for ev in sorted(events, key=lambda x: x.i):
+            if _orphan(ev, failed):
+                # строка хвоста не встала — её дальнейшие правки не должны лечь на чужую строку держателя
+                rpt.disputed.append({"kind": "gone", "table": ev.t, "key": dict(ev.k), "op": ev.op,
+                                     "client_id": None, "col": "", "tail": None, "kept": None, "taken_by": None,
+                                     "i": ev.i, "name": str((ev.c or {}).get("name") or (ev.o or {}).get("name") or ""),
+                                     "orphan": True})
+                continue
             conn.execute("SAVEPOINT jrn_rb")
             try:
                 n = _one(conn, ev, id_map, tables, rpt)
@@ -161,7 +187,10 @@ def rebase(conn: sqlite3.Connection, events: list[Event], *, epoch: int = 0, for
                 conn.execute("RELEASE jrn_rb")
                 vals = _remap(ev.t, dict(ev.c or {}), id_map)
                 tb = _taken_by(conn, ev.t, vals) if ev.op == "I" else None
-                rpt.disputed.append({"kind": "unique", "table": ev.t, "key": dict(ev.k), "op": ev.op,
+                kind = "unique" if "UNIQUE" in str(e).upper() else "failed"
+                if ev.op == "I" and ev.t in REMAPPED and ev.k.get("id") is not None:
+                    failed[ev.t].add(int(ev.k["id"]))
+                rpt.disputed.append({"kind": kind, "table": ev.t, "key": dict(ev.k), "op": ev.op,
                                      "client_id": _client_of(conn, ev.t, ev.k, vals), "col": tb["col"] if tb else "",
                                      "tail": {k: vals.get(k) for k in ("name", "address", "tg_id")
                                               if vals.get(k) is not None}, "kept": None,
@@ -169,6 +198,11 @@ def rebase(conn: sqlite3.Connection, events: list[Event], *, epoch: int = 0, for
                 continue
             if n:
                 rpt.moved += 1
+        for d in rpt.disputed:
+            if d.get("col") in SECRET_COLS.get(str(d.get("table")), ()):
+                d.update(tail=None, kept=None, secret=True)    # значения ключей и кодов — никуда
+        if before_commit is not None:
+            before_commit(conn, rpt)
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -176,8 +210,25 @@ def rebase(conn: sqlite3.Connection, events: list[Event], *, epoch: int = 0, for
     return rpt
 
 
+def _orphan(ev: Event, failed: dict) -> bool:
+    """Событие про строку (или её детей), чья вставка из хвоста не встала."""
+    vals = {**(ev.o or {}), **(ev.c or {}), **(ev.k or {})}
+    for parent, ids in failed.items():
+        if not ids:
+            continue
+        if ev.t == parent and _int(vals.get("id")) in ids:
+            return True
+        cols = [c for t, c in REFS[parent] if t == ev.t] + (["client_id"] if parent == "clients" else ["device_id"])
+        if any(_int(vals.get(c)) in ids for c in cols if vals.get(c) is not None):
+            return True
+    return False
+
+
 def _one(conn, ev: Event, id_map: dict, tables: set, rpt: Report) -> bool:
     """Одно событие хвоста; True — что-то применено."""
+    if ev.t in NOT_TAIL:
+        rpt.skipped += 1
+        return False
     if ev.op in ("month", "period"):
         rpt.skipped += 1                                     # сбросы по времени держатель делает сам
         return False
@@ -208,7 +259,8 @@ def _one(conn, ev: Event, id_map: dict, tables: set, rpt: Report) -> bool:
 def _insert(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
     vals = _remap(ev.t, {**(ev.c or {}), **k}, id_map)
     cols = {r[1] for r in conn.execute(f"PRAGMA main.table_info({_q(ev.t)})")}
-    vals = {c: v for c, v in vals.items() if c in cols}
+    secret = SECRET_COLUMNS.get(ev.t, ())
+    vals = {c: v for c, v in vals.items() if c in cols and not (c in secret and v is None)}
     if ev.t in REMAPPED and vals.get("id") is not None and \
             conn.execute(f"SELECT 1 FROM main.{_q(ev.t)} WHERE id = ?", (vals["id"],)).fetchone():
         old = int(ev.k.get("id"))
@@ -231,12 +283,14 @@ def _ins(conn, table: str, vals: dict) -> None:
 
 def _update(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
     row = _row(conn, ev.t, k)
-    c = _remap(ev.t, dict(ev.c or {}), id_map)
-    o = dict(ev.o or {})
+    secret = SECRET_COLUMNS.get(ev.t, ())
+    # секрет основы у бота на резерве пустой: не сравнивать; пустое — «не трогать»
+    c = {x: v for x, v in _remap(ev.t, dict(ev.c or {}), id_map).items() if not (x in secret and v is None)}
+    o = {x: v for x, v in _remap(ev.t, dict(ev.o or {}), id_map).items() if x not in secret}
     if row is None:
         rpt.disputed.append({"kind": "gone", "table": ev.t, "key": dict(ev.k), "op": "U",
                              "client_id": _client_of(conn, ev.t, k, c), "col": "", "tail": None, "kept": None,
-                             "taken_by": None, "i": ev.i})
+                             "taken_by": None, "i": ev.i, "name": str(o.get("name") or c.get("name") or "")})
         return False
     have = set(row.keys())
     sets: dict = {}
@@ -249,6 +303,10 @@ def _update(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
         cur = row[col]
         if cur == mine:
             continue
+        if col in QUIET.get(ev.t, ()):
+            if o and col in o and cur == o[col]:
+                sets[col] = mine                              # служебное — применить, если держатель не трогал
+            continue                                          # иначе — его значение, без спора
         base = o.get(col, cur) if o else None
         if col in masks and base is not None:
             res, clash = _mask(base, mine, cur)
@@ -273,7 +331,8 @@ def _delete(conn, ev: Event, k: dict, rpt: Report) -> bool:
     row = _row(conn, ev.t, k)
     if row is None:
         return False
-    o = dict(ev.o or {})
+    secret = SECRET_COLUMNS.get(ev.t, ())
+    o = {x: v for x, v in dict(ev.o or {}).items() if x not in secret}
     changed = [col for col, v in o.items() if col in row.keys() and row[col] != v and col not in k]
     if changed:
         rpt.disputed.append({"kind": "delete", "table": ev.t, "key": dict(ev.k), "op": "D",

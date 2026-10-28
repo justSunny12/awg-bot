@@ -4,7 +4,8 @@ event.py — часть пакета rsvjrn (см. __init__): запечатка
 
 Запись — открытый заголовок и шифротекст:
 
-    2  метка «AJ»            1  вид: E — событие, a / b — пачка счётчиков стороны
+    2  метка «AJ»            1  вид: E — событие, T — событие хвоста старой эпохи,
+                                a / b — пачка счётчиков стороны
     8  линия (db_line)       8  эпоха (у пачки — 0)
     8  номер (событие — i, пачка — номер пачки хоста)
     4  длина шифротекста     …  SecretBox_K(JSON, добитый пробелами)
@@ -29,6 +30,7 @@ from .counts import Batch
 
 MAGIC = b"AJ"
 KIND_EVENT = b"E"
+KIND_TAIL = b"T"                       # хвост старой эпохи — свой вид: обычное событие за хвост не выдать
 SIDES = ("a", "b")                     # a — основа, b — клон на резерве (бот основы на резерве)
 STEP = 256
 HEAD = struct.Struct(">2sc8sQQI")      # метка, вид, линия, эпоха, номер, длина
@@ -81,7 +83,7 @@ def head(raw: bytes, offset: int = 0) -> Head:
     if magic != MAGIC:
         raise RecordError("это не запись журнала")
     k = kind.decode("ascii", errors="replace")
-    if k != "E" and k not in SIDES:
+    if k not in ("E", "T") and k not in SIDES:
         raise RecordError("вид записи неизвестен")
     if ln > MAX_RECORD:
         raise RecordError("запись больше предела")
@@ -104,17 +106,18 @@ def _open(k: bytes, raw: bytes) -> tuple[Head, dict]:
     return h, inner
 
 
-def seal_event(k: bytes, line: str, ev: Event) -> bytes:
+def seal_event(k: bytes, line: str, ev: Event, *, tail: bool = False) -> bytes:
     inner = {"v": VERSION, "line": line, "e": ev.e, "i": ev.i, "t": ev.t, "op": ev.op, "k": ev.k,
-             "c": ev.c, "o": ev.o, "at": ev.at}
-    return _seal(k, KIND_EVENT, line, ev.e, ev.i, inner)
+             "c": ev.c, "o": ev.o, "at": ev.at, **({"tail": True} if tail else {})}
+    return _seal(k, KIND_TAIL if tail else KIND_EVENT, line, ev.e, ev.i, inner)
 
 
-def open_event(k: bytes, raw: bytes, line: str = "") -> Event:
-    """Событие из записи; линия (если задана), эпоха и номер внутри = заголовку — иначе RecordError."""
+def open_event(k: bytes, raw: bytes, line: str = "", *, tail: bool = False) -> Event:
+    """Событие из записи (tail — событие хвоста); линия (если задана), вид, эпоха и номер внутри
+    = заголовку — иначе RecordError."""
     h, inner = _open(k, raw)
-    if h.kind != "E":
-        raise RecordError("запись не событие")
+    if h.kind != ("T" if tail else "E") or bool(inner.get("tail")) != bool(tail):
+        raise RecordError("запись не хвоста" if tail else "запись не событие")
     if line and h.line != line:
         raise RecordError("событие чужой линии")
     if int(inner.get("e", -1)) != h.e or int(inner.get("i", -1)) != h.n:
@@ -158,3 +161,19 @@ def split(blob: bytes) -> list[bytes]:
         out.append(blob[p:p + h.size])
         p += h.size
     return out
+
+
+def seal_obj(k: bytes, obj: dict) -> bytes:
+    """Объект целиком под K (список спорного хвоста): JSON, добитый до ступени 256 байт."""
+    body = _pad(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode())
+    return bytes(SecretBox(k).encrypt(body))
+
+
+def open_obj(k: bytes, blob: bytes) -> dict:
+    try:
+        obj = json.loads(bytes(SecretBox(k).decrypt(blob)).decode())
+    except (CryptoError, ValueError, UnicodeDecodeError) as e:
+        raise RecordError("объект не открылся — не тот ключ или порча") from e
+    if not isinstance(obj, dict):
+        raise RecordError("объект не того вида")
+    return obj

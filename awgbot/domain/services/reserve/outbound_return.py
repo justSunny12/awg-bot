@@ -46,6 +46,8 @@ class ReserveReturnMixin:
             return "пользователи не у резерва"
         if not self.reserve_online():
             return f"«{self.reserve_peer_name()}» не на связи"
+        if hasattr(self, "reserve_tail_return_why") and self.reserve_tail_return_why():
+            return self.reserve_tail_return_why()             # мой хвост ещё переносится на резерв
         return ""
 
     # ── С9: резерв не на связи — вернуть пользователей без него ─────────────
@@ -86,7 +88,10 @@ class ReserveReturnMixin:
                                                         text=rn.record_not_changed(self.reserve_dns_name(), str(e), own))]))
         self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
+        guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()
+        if guest_e and hasattr(self, "reserve_c9_start"):
+            self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
 
@@ -96,7 +101,8 @@ class ReserveReturnMixin:
         peer = self.reserve_peer_state()
         if not self.reserve_online():
             return []
-        if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing"):
+        if str(peer.get("inn") or "idle") not in ("taking", "serving", "releasing") \
+                and not (hasattr(self, "reserve_c9_disk_waiting") and self.reserve_c9_disk_waiting()):
             return self._forced_no_merge()
         with _LOCK:
             self.reserve_set_out("returning", kind=str(out.get("kind") or ""), return_why="force",
@@ -301,6 +307,7 @@ class ReserveReturnMixin:
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
         if hasattr(self, "reserve_tail_notes"):
             notes += self.reserve_tail_notes()                # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
+            notes += self.reserve_c9_notes()                  # и правки бота на резерве после «вернуть без резерва»
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
         # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается
         kind = str(out.get("kind") or "")
