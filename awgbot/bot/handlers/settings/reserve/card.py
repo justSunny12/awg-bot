@@ -82,7 +82,7 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
     if not await _set(cb, "app.reserve.rf_via_mine", not on):
         return
     await _render(cb, "rsv", services)
-    await cb.answer("РФ-доступ через мои шлюзы: " + ("выкл" if on else "вкл"))
+    await cb.answer("Мои шлюзы для его РФ-доступа: " + ("выкл" if on else "вкл"))
 
 
 @router.callback_query(RsvCB.filter(F.action == "ret"))

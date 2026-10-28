@@ -186,16 +186,28 @@ class ReserveDnsMixin:
             return addrs[0] if addrs else ""
 
     # ── экран ────────────────────────────────────────────────────────────────
+    def reserve_dns_line_data(self) -> dict:
+        """Описание записи по настройке «🌐 Запись DNS» без запросов в сеть — один
+        сборщик для строки раздела без пары и карточки пары: провайдер и его
+        подпись, токен, итог последней проверки (включая адреса и TTL — строка
+        предупреждает о нескольких A и большом TTL, а не зеленеет)."""
+        d = self.rsv_get("rsv_dns")
+        p = str(d.get("provider") or "manual")
+        provider = p if p in PROVIDERS else "manual"
+        return {"provider": provider, "provider_label": PROVIDER_LABELS.get(provider, "вручную"),
+                "has_token": bool(d.get("token")), "check_ok": d.get("check_ok"),
+                "checked_at": str(d.get("checked_at") or ""), "check_why": str(d.get("check_why") or ""),
+                "ttl": int(d.get("ttl") or 0), "addrs": [str(a) for a in (d.get("addrs") or [])],
+                "ttl_warn": TTL_WARN_S}
+
     def reserve_dns_screen_data(self) -> dict:
+        """Экран «🌐 Запись DNS» и карточка пары: описание записи плюс имя,
+        текущий адрес и свой (резолв через системный резолвер, кэш 10 мин)."""
         d = self.reserve_dns()
         own = self.reserve_own_ip()
         cur = str(d.get("current") or "")
-        return {"name": d["name"], "provider": self.reserve_dns_provider(),
-                "provider_label": PROVIDER_LABELS.get(self.reserve_dns_provider(), "вручную"),
-                "has_token": bool(d.get("token")), "current": cur, "own_ip": own, "points_here": bool(cur and cur == own),
-                "checked_at": str(d.get("checked_at") or ""), "check_ok": d.get("check_ok"),
-                "check_why": str(d.get("check_why") or ""), "ttl": int(d.get("ttl") or 0),
-                "addrs": [str(a) for a in (d.get("addrs") or [])], "ttl_warn": TTL_WARN_S}
+        return {**self.reserve_dns_line_data(), "name": d["name"], "current": cur, "own_ip": own,
+                "points_here": bool(cur and cur == own)}
 
     # ── надзор ───────────────────────────────────────────────────────────────
     def reserve_record_watch_tick(self) -> list[Notification]:

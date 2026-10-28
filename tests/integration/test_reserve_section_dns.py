@@ -47,7 +47,8 @@ def test_section_data_carries_the_checked_provider_with_its_token_and_check_resu
     """Провайдер с токеном и прошедшей проверкой — экран получает именно это, а не пустую заготовку."""
     _checked_digitalplat(mv.svc)
     dns = mv.svc.reserve_section_data()["dns"]
-    assert dns["provider"] == "digitalplat" and dns["label"] == "DigitalPlat"
+    assert dns["provider"] == "digitalplat" and dns["provider_label"] == "DigitalPlat"
+    assert dns["addrs"] and dns["ttl"] >= 0 and dns["ttl_warn"] == 300, "адреса и TTL проверки — строке нужны для ⚠️"
     assert dns["has_token"] is True and dns["check_ok"] is True and dns["check_why"] == ""
     assert dns["checked_at"], "время проверки есть в состоянии — экран без него не покажет «проверено в»"
     assert KEY not in str(dns), "сам токен на экран раздела не нужен"
@@ -56,8 +57,8 @@ def test_section_data_carries_the_checked_provider_with_its_token_and_check_resu
 def test_section_data_without_a_provider_is_manual_without_a_token(mv):
     """Ничего не настроено — «вручную» без токена и без итога проверки: красная строка про переезд кнопкой."""
     dns = mv.svc.reserve_section_data()["dns"]
-    assert dns == {"provider": "manual", "label": "вручную", "has_token": False, "check_ok": None,
-                   "checked_at": "", "check_why": ""}
+    assert dns == {"provider": "manual", "provider_label": "вручную", "has_token": False, "check_ok": None,
+                   "checked_at": "", "check_why": "", "addrs": [], "ttl": 0, "ttl_warn": 300}
 
 
 def test_changing_the_provider_drops_the_check_result_in_section_data(mv):
@@ -65,7 +66,7 @@ def test_changing_the_provider_drops_the_check_result_in_section_data(mv):
     _checked_digitalplat(mv.svc)
     mv.svc.reserve_dns_set_provider("cloudflare")
     dns = mv.svc.reserve_section_data()["dns"]
-    assert dns["provider"] == "cloudflare" and dns["label"] == "Cloudflare"
+    assert dns["provider"] == "cloudflare" and dns["provider_label"] == "Cloudflare"
     assert dns["check_ok"] is None and dns["checked_at"] == "", "итог проверки прежнего провайдера показан как свежий"
     assert dns["has_token"] is False, "токен прежнего провайдера не годится новому"
 

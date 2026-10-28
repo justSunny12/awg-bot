@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from awgbot.util import timeutil
-from awgbot.util.textfmt.base import details
+from awgbot.util.textfmt.base import details, plural_ru
 
 from ..fmt import _e
 
@@ -60,10 +60,26 @@ MORE = ("Резерв хранит у себя зашифрованные дан
         "бот пришлёт его после подключения резерва, показать снова — «🆘 На крайний случай»")
 
 
+def _checked(iso: str) -> str:
+    """«проверено …» строки записи DNS: сегодня — «в 14:05 (UTC+5)», в другой день
+    — «12.10 14:05 (UTC+5)»: без пары проверка обычно давняя, и одно время на
+    следующий день читалось бы как сегодняшнее."""
+    try:
+        at = timeutil.parse_iso(iso)
+    except ValueError:
+        return ""
+    now = timeutil.now()
+    if at.astimezone(timeutil.TZ).date() == now.astimezone(timeutil.TZ).date():
+        return "в " + timeutil.fmt_clock_ui(at)
+    return timeutil.fmt_dt_ui(at, now)
+
+
 def dns_line(dns: dict) -> str:
-    """Строка записи DNS раздела — по настройке «🌐 Запись DNS»: провайдер, токен,
-    итог последней проверки (без домена в адресе строки нет вовсе)."""
-    label = _e(dns.get("label") or "вручную")
+    """Строка записи DNS раздела — по настройке «🌐 Запись DNS» (данные —
+    reserve_dns_line_data): провайдер, токен, итог последней проверки; несколько
+    A-адресов или большой TTL — ⚠️ с причиной, как на экране записи (без домена
+    в адресе строки нет вовсе)."""
+    label = _e(dns.get("provider_label") or "вручную")
     if (dns.get("provider") or "manual") == "manual":
         return "🔴 Запись DNS: вручную — переезд только кнопкой, запись меняешь у провайдера сам"
     if not dns.get("has_token"):
@@ -72,9 +88,20 @@ def dns_line(dns: dict) -> str:
         why = dns.get("check_why") or "провайдер отказал"
         return f"🔴 Запись DNS: {label} — проверка не прошла: {_e(why)}"
     if dns.get("check_ok") is None or not dns.get("checked_at"):
-        return f"🟡 Запись DNS: {label}, токен задан — не проверена: «🌐 Запись DNS» → «🧪 Проверить»"
-    at = _when(dns.get("checked_at") or "")
-    return f"🟢 Запись DNS: {label} — бот меняет её сам" + (f" · проверено в {_e(at)}" if at else "")
+        return f"⚠️ Запись DNS: {label}, токен задан — не проверена: «🌐 Запись DNS» → «🧪 Проверить»"
+    at = _checked(dns.get("checked_at") or "")
+    tail = f" · проверено {_e(at)}" if at else ""
+    addrs = [str(a) for a in (dns.get("addrs") or [])]
+    ttl, warn = int(dns.get("ttl") or 0), int(dns.get("ttl_warn") or 300)
+    if len(addrs) > 1:
+        n = len(addrs)
+        return (f"⚠️ Запись DNS: {label} — у записи {n} {plural_ru(n, 'адрес', 'адреса', 'адресов')} "
+                f"({_e(', '.join(addrs))}), оставь одну A-запись: при переезде часть пользователей осталась бы "
+                f"на прежнем{tail}")
+    if ttl > warn:
+        return (f"⚠️ Запись DNS: {label} — TTL {ttl} с (лучше ≤ {warn}): часть пользователей перейдёт на новый "
+                f"адрес не раньше чем через {ttl // 60} мин{tail}")
+    return f"🟢 Запись DNS: {label} — бот меняет её сам{tail}"
 
 
 def section_text(d: dict) -> str:
