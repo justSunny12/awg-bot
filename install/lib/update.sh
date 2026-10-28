@@ -9,7 +9,7 @@
 # в один текст (tests/botscript.py).
 #
 # Шаги окружения новой версии (update_env_steps) — общие у второй половины
-# update и у восстановления (`update_env_steps restore`).
+# update и у восстановления (cmd_restore_after_update в restore.sh).
 
 # ── update ───────────────────────────────────────────────────────────────────
 locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь или пусто
@@ -543,7 +543,7 @@ cmd_update_revert() {  # __update_revert [--check] — откат набора: 
     return 0
 }
 
-update_env_steps() {  # update_env_steps [restore] — окружение новой версии: вторая половина update и восстановления
+update_env_steps() {  # окружение новой версии: вторая половина update и восстановления (без режимов)
     # Одна функция на оба пути: восстановление с переходом на выпуск бэкапа
     # раньше копировало шаги руками и теряло их (ping, резолвер, проверка conf)
     ensure_python

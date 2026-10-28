@@ -416,7 +416,7 @@ cmd_restore_after_update() {  # __restore_after_update — вторая поло
     [[ -n "${RESTORE_COPY:-}" && -d "$RESTORE_COPY" ]] || restore_die "распакованный бэкап потерялся по дороге"
     export AWG_IN_UPDATE=1
     RESTORE_FAIL="окружение выпуска v$RESTORE_TO не собралось"   # die посреди шагов — причина для маркера
-    update_env_steps restore                    # те же шаги, что у второй половины update
+    update_env_steps                            # те же шаги, что у второй половины update
     RESTORE_FAIL=""
     restore_apply
 }

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import io
-import shutil
 import json
+import re
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -355,7 +356,8 @@ def test_the_second_half_takes_the_same_steps_as_an_update(script, tmp_path):
     """restore-11: вторая половина — та же функция шагов, что у update (ping,
     резолвер, проверка conf)."""
     after = _extract_func(script, "cmd_restore_after_update")
-    assert "update_env_steps restore" in after
+    assert re.search(r"^\s*update_env_steps\s*(#.*)?$", after, re.M), \
+        "восстановление зовёт шаги с аргументом, которого функция не читает"
     h = Host(tmp_path)
     rel = Release(script, h)
     assert rel.run(script).returncode == 0

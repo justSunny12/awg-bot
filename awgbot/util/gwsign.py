@@ -14,8 +14,10 @@ JSON: {"act": "claim", "pub": <ключ аплинка>, "ts": <unix>, "nonce": 
        "host": <имя машины>[, "caps": [<возможность>, …]]}
 caps — что агент умеет по каналу (контракт канала).
 Единственное действие — claim: агент просит пометить своё устройство шлюзом.
-Лишние поля в JSON (прежние агенты подписывали ещё и "addr") проверке не
+Лишние поля в JSON (агенты до 4.0.0 подписывали ещё и "addr") проверке не
 мешают — подпись покрывает весь payload, а читаются только нужные ключи.
+Токен приходит только полем `token` сообщения канала (ручной приём
+пересланного сообщения снят вместе с шимами ниже минимума).
 """
 from __future__ import annotations
 
@@ -30,7 +32,11 @@ import time
 from awgbot.util import bundlecrypt
 
 PREFIX = "GW1:"
-MAX_AGE_SECONDS = 7 * 24 * 3600            # токен старше — отказ
+# Окно свежести токена. Семь суток — наследие пересылки токена человеком; по каналу
+# claim приходит сразу, и окно держит только расхождение часов сторон (шлюз без
+# RTC до синхронизации) и повтор claim после долгого разрыва канала. Нонс
+# повторный приём отсекает отдельно (MarkMixin._gw_nonce_seen).
+MAX_AGE_SECONDS = 7 * 24 * 3600
 _TOKEN_RE = re.compile(r"GW1:([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)")
 
 
@@ -55,15 +61,9 @@ def sign(link_privkey_b64: str, act: str, pub: str, host: str = "", caps: tuple[
     return PREFIX + b64u(payload) + "." + b64u(mac)
 
 
-def find_token(text: str) -> str | None:
-    m = _TOKEN_RE.search(text or "")
-    return m.group(0) if m else None
-
-
-def verify(link_privkey_b64: str, text: str, now: float | None = None) -> dict:
-    """Разобрать и проверить токен из текста. ValueError — не наш, битый,
-    просрочен."""
-    m = _TOKEN_RE.search(text or "")
+def verify(link_privkey_b64: str, token: str, now: float | None = None) -> dict:
+    """Разобрать и проверить токен. ValueError — не наш, битый, просрочен."""
+    m = _TOKEN_RE.search(token or "")
     if not m:
         raise ValueError("в сообщении нет токена шлюза")
     try:

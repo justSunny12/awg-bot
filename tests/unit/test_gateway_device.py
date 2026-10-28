@@ -26,17 +26,16 @@ PUB = base64.b64encode(os.urandom(32)).decode()
 
 # ── подпись ──────────────────────────────────────────────────────────────────
 
-def test_sign_verify_roundtrip_inside_surrounding_text():
+def test_sign_verify_roundtrip():
     token = gwsign.sign(PRIV, "claim", PUB, host="NASPi")
-    text = f"Перешли это основному боту:\n\n{token}\n\nспасибо"
-    data = gwsign.verify(PRIV, text)
+    data = gwsign.verify(PRIV, token)
     assert data["act"] == "claim" and data["pub"] == PUB and data["host"] == "NASPi"
-    assert gwsign.find_token(text) == token
+    assert not hasattr(gwsign, "find_token"), "поиск токена в тексте снят вместе с ручным приёмом пересланного сообщения"
 
 
 def test_verify_tolerates_extra_fields_from_older_agents():
-    """Прежние агенты подписывали ещё и "addr": подпись покрывает весь payload,
-    лишний ключ проверке не мешает — шлюз на старом агенте помечается."""
+    """Агенты до 4.0.0 подписывали ещё и "addr": подпись покрывает весь payload,
+    лишний ключ проверке не мешает."""
     import json
     payload = json.dumps({"act": "claim", "pub": PUB, "addr": "10.9.1.15",
                           "ts": int(time.time()), "nonce": "ab" * 8, "host": "NASPi"},

@@ -1,4 +1,5 @@
-"""mark.py — пометка устройства шлюзом: запасной путь через пересланный токен."""
+"""mark.py — пометка устройства шлюзом по claim канала, снятие слота, подпись
+сообщений, локальные подсети слота, политика слотов."""
 
 from __future__ import annotations
 
@@ -13,8 +14,9 @@ from .common import log
 
 
 class MarkMixin:
-    """Пометка устройства шлюзом: запасной путь через пересланный токен."""
-    # ── пометка устройства: запасной путь через пересланный токен ────────────
+    """Пометка устройства шлюзом по claim канала (gwchannel/claim), снятие слота,
+    подпись сообщений, локальные подсети слота, политика слотов."""
+    # ── пометка устройства по claim канала ───────────────────────────────────
     _GW_NONCES_KEY = "gw_claim_nonces"
 
     def _gw_nonce_seen(self, nonce: str) -> bool:
@@ -24,7 +26,7 @@ class MarkMixin:
         self.db.set_state(self._GW_NONCES_KEY, " ".join((seen + [nonce])[-50:]))
         return False
 
-    def gateway_claim(self, text: str) -> dict:
+    def gateway_claim(self, token: str) -> dict:
         """Токен `claim`, присланный агентом по каналу. Подпись — ключом
         линка одного из слотов (перебираем все: по ключу и находится слот),
         устройство — по ключу аплинка. Возвращает {'status': 'marked'|'already',
@@ -38,7 +40,7 @@ class MarkMixin:
         last_err: Exception | None = None
         for gw in slots or [None]:
             try:
-                data = gwsign.verify(self._link_privkey(gw), text)
+                data = gwsign.verify(self._link_privkey(gw), token)
                 slot = gw
                 break
             except (ValueError, ServiceError) as e:
