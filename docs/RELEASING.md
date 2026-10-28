@@ -253,7 +253,8 @@ GitHub `vX.Y.Z.P — …`.
   `install/lib/update.sh` на обеих ролях, но у агента пары нет — он всегда «свободен»), обёртка зоны `infra/rsvzone.py` и файервол резерва в
   `infra/nftguard/`. Туда же — запись DNS, переезд кнопкой и возврат:
   автоматы `domain/services/reserve/{dns,outbound,outbound_return,merge_ops,inbound,openproc,notify,traffic,away}.py`,
-  уведомления `domain/notices/reserve.py`, управляемый поллинг `runtime/pollctl.py`
+  уведомления `domain/notices/reserve.py` и `domain/notices/reserve_tail.py`
+  (журнал правок: хвост старой эпохи, сбои журнала, потерянные правки), управляемый поллинг `runtime/pollctl.py`
   (право отвечать в Telegram) и исполнитель действий `runtime/rsvactions.py`,
   экраны `handlers/settings/reserve/{move,dns}.py`. Туда же — шлюзы и переезд
   по взглядам: стороны основы и резерва
@@ -342,11 +343,14 @@ GitHub `vX.Y.Z.P — …`.
   (README §9). Двигается вместе с минимумом: коммит со строками «минимум
   main → X» и «минимум gw → X» (§3) ставит и `UPDATE_FROM = "X"`, а выпуск
   пишет `--main X --gw X` — `requires` обеих ролей в его
-  `docs/releases/vX.json` равен `UPDATE_FROM`. Сторож —
+  `docs/releases/vX.json` равен `UPDATE_FROM`. `tools/release_meta.py` иначе и
+  не даст: `--main` или `--gw`, не равный `UPDATE_FROM`, — код 1 и «метаданные
+  релиза: минимум … ≠ UPDATE_FROM …» в stderr. Сторож —
   `tests/unit/test_update_from_guard.py`: минимум — выпуск, адресованный
   обеим ролям; не ниже `requires` последнего выпуска и не новее его; в
-  выпущенном дереве `requires` обеих ролей равен `UPDATE_FROM` или ниже
-  него (сдвиг, который ждёт выпуска); `sed` скриптов читает то же число.
+  выпущенном дереве `requires` его адресатов равен `UPDATE_FROM` или ниже
+  него (сдвиг, который ждёт выпуска) — выпуск одной роли, как 4.0.1, сверяет
+  только её; `sed` скриптов читает то же число.
   Разойдись константа и метаданные — терминал отказал бы хосту, которого бот
   обновил бы, или пустил бы того, кому бот сказал «сначала vX».
 - `#awg_genN` / `awg_gen` — поколение AmneziaWG в поставке
@@ -502,7 +506,8 @@ app.yaml docker → awg, ключи runtime/container сняты»). Значи�
    tools.release_meta [--main A.B.C [--needs-gw X]] [--gw D.E.F [--needs-main
    Y]] --write` — хотя бы один адресат (адресаты — по §2, минимумы — из
    последнего `docs/releases/vX.json` роли и строк «минимум … →»; при сдвиге
-   — `--main X --gw X` с X = `UPDATE_FROM`, §2), условия —
+   — `--main X --gw X` с X = `UPDATE_FROM`, §2; минимум адресата, не равный
+   `UPDATE_FROM`, инструмент отвергает кодом 1), условия —
    по строкам коммитов §3; ступень перехода — по правилу §2; поколение ядра
    инструмент берёт из `install/awg.lock`; пишет `docs/releases/vX.Y.Z.P.json`,
    проверив схему); запись в
