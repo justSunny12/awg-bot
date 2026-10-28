@@ -16,8 +16,8 @@ from awgbot.util import listlink
 
 def snap_param_sync(db, bot_username: str, chat: int, role: str, title: str, rows, back: str = "",
                     new: bool = False, n: int | None = None, missing: int = 0, tail_note: str = "") -> str:
-    """Параметр /start снимка или пусто. Синхронный — для домена (Т-Ж4 в
-    reserve/journal/tail пишет снимок из сервиса); обработчики зовут snap_param.
+    """Параметр /start снимка или пусто. Синхронный — для домена (сервис пишет
+    снимок сам, без цикла событий); обработчики зовут snap_param.
     tail_note — чем кончить строку «… и ещё N — …» снимка, когда остаток
     списка лежит не в журнале этого бота."""
     if not bot_username:
