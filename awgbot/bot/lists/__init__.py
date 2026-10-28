@@ -16,7 +16,8 @@ util/listlink); экран собирается в момент открытия
 
 Части: page — разбиватель страниц; router — ListCB; kinds — виды по
 установкам (slots, server — основной бот; agent — агент шлюза; snap — снимки
-событий, обе установки и все роли: infra/db/listsnap).
+событий, обе установки и все роли: infra/db/listsnap); snapshot — как
+источники снимок создают (одна схема на итоги, отчёты и уведомления).
 """
 from __future__ import annotations
 

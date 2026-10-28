@@ -208,18 +208,35 @@ def broadcast_preview_refused(err: str) -> str:
     return "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли заново."
 
 
-_UNDELIVERED_SHOWN = 3
+UNDELIVERED_SHOWN = 3                  # недоставленных поимённо в отчёте; дальше — «и ещё N» ссылкой на снимок
+
+
+def _undelivered_named(failed, clients: list, bot_username: str) -> list[str]:
+    """Недоставленные с профилем — имена ссылками; гости (чужие tg) сюда не входят."""
+    by_tg = {c.tg_id: c for c in clients if getattr(c, "tg_id", 0)}
+    return [profile_link(by_tg[t], bot_username) for t in failed if t in by_tg]
+
+
+def undelivered_tail(failed, clients: list) -> int:
+    """Сколько недоставленных уходит в хвост «и ещё N» со ссылкой на снимок; 0 —
+    хвоста со ссылкой нет: все названы или никто не назван поимённо (одни гости —
+    в отчёте только число, без ссылки). Обработчик по этому числу решает,
+    писать ли снимок."""
+    named = _undelivered_named(failed, clients, "")
+    return len(failed) - min(len(named), UNDELIVERED_SHOWN) if named else 0
 
 
 def _undelivered_names(failed, clients: list, bot_username: str, more: str = "") -> str:
     """«[Петя], [Вася]» — недоставленные по tg_id поимённо (ссылками); больше
-    трёх или чужие tg (гости) — «и ещё N» (more — ссылкой на снимок всего списка)."""
-    by_tg = {c.tg_id: c for c in clients if getattr(c, "tg_id", 0)}
-    named = [profile_link(by_tg[t], bot_username) for t in failed if t in by_tg]
-    rest = len(failed) - min(len(named), _UNDELIVERED_SHOWN)
-    out = ", ".join(named[:_UNDELIVERED_SHOWN])
+    UNDELIVERED_SHOWN или чужие tg (гости) — «и ещё N» (more — ссылкой на снимок
+    всего списка)."""
+    named = _undelivered_named(failed, clients, bot_username)
+    out = ", ".join(named[:UNDELIVERED_SHOWN])
+    if not named:
+        return f"{len(failed)}"
+    rest = undelivered_tail(failed, clients)
     if rest > 0:
-        out += (more or f" и ещё {rest}") if out else f"{rest}"
+        out += more or f" и ещё {rest}"
     return out
 
 

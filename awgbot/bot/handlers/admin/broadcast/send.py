@@ -132,24 +132,21 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
 
 async def _report_snaps(services, chat_id: int, clients: list, failed, bot_u: str) -> tuple[str, str]:
     """Отчёт рассылки — след события: адресаты сверх NAMES_SHOWN и недоставленные сверх
-    трёх — снимками (экран «весь список»), в отчёте хвост — ссылкой на снимок."""
+    названных поимённо — снимками (экран «весь список»), в отчёте хвост — ссылкой
+    на снимок; где кончается поимённо, знает текст отчёта (undelivered_tail)."""
+    from awgbot.bot.lists.snapshot import snap_param
     from awgbot.bot.texts import broadcast as tb
     from awgbot.bot.texts.fmt import profile_link
-    from awgbot.util import listlink
     from awgbot.util.textfmt.tail import more_link
     aud = und = ""
     if len(clients) > tb.NAMES_SHOWN:
         rows = [f"профиль {profile_link(c, bot_u)}" for c in clients]
-        key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.AUDIENCE_TITLE, rows, "", True)
-        aud = more_link(len(clients) - tb.NAMES_SHOWN, bot_u, listlink.build("snap", key=key)) if key else ""
+        param = await snap_param(services, chat_id, "admin", tb.AUDIENCE_TITLE, rows, "", True)
+        aud = more_link(len(clients) - tb.NAMES_SHOWN, bot_u, param) if param else ""
     failed = list(failed) if not isinstance(failed, int) else []
-    if failed:
+    rest = tb.undelivered_tail(failed, clients)
+    if rest > 0:
         rows = tb.undelivered_rows(failed, clients, bot_u)
-        lost = set(failed)
-        named = sum(1 for c in clients if getattr(c, "tg_id", 0) in lost)
-        rest = len(failed) - min(named, 3)
-        if rest > 0 and named:
-            key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True,
-                                 len(failed))
-            und = more_link(rest, bot_u, listlink.build("snap", key=key)) if key else ""
+        param = await snap_param(services, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True, len(failed))
+        und = more_link(rest, bot_u, param) if param else ""
     return aud, und

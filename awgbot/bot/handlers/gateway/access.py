@@ -103,10 +103,12 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     await state.clear()
     new = [x for x in after if x not in before]
     gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
+    from awgbot.bot.lists.snapshot import snap_codes
     from awgbot.bot.texts.gateway import access as ta
-    from awgbot.bot.texts.settings.inputs import SSH_ADDED_TITLE
-    link = await _snap_codes(message, services, SSH_ADDED_TITLE, new)
-    link_m = await _snap_codes(message, services, ta.SSH_MERGED_TITLE, gone)
+    from awgbot.bot.texts.settings.inputs import SSH_ADDED_TITLE, SSH_SHOWN
+    back = GwCB(action="ssh").pack()                      # «⬅️ Назад» со снимка — в «🛡 SSH-доступ»
+    link = await snap_codes(message, services, SSH_ADDED_TITLE, new, back, SSH_SHOWN)
+    link_m = await snap_codes(message, services, ta.SSH_MERGED_TITLE, gone, back, SSH_SHOWN)
     await core.after_input(message, services, pkg._hooks(), "ssh",
                            texts.gateway_ssh_allow_added(new, gone, link, link_m) if new or gone
                            else texts.GW_SSH_ALLOW_ALREADY)
@@ -173,15 +175,3 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     await edit_nav(cb, services, texts.gateway_op_result("Шлюз восстановлен", "Шлюз не восстановлен", ok, detail,
                                                                  texts.REASSERT_FAIL_HINT), None)
     await pkg._panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
-
-
-
-async def _snap_codes(message, services, title: str, items: list, shown: int = 12):
-    """Итог ввода — больше shown адресов: все снимком («⬅️ Назад» — в «🛡 SSH-доступ»)."""
-    if len(items) <= shown:
-        return None
-    from awgbot.util import listlink
-    rows = [f"<code>{texts._e(x)}</code>" for x in items]
-    key = await call(services.db.list_snap_keep, message.chat.id, "admin", title, rows,
-                     GwCB(action="ssh").pack(), False)
-    return (getattr(services, "bot_username", "") or "", listlink.build("snap", key=key)) if key else None

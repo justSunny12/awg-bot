@@ -75,11 +75,11 @@ async def gw_transit_domain_received(message: Message, state: FSMContext, servic
     if tt.transit_result_cut(ok, out, budget=budget, cmd=kind):
         # итог не влез в экран — все строки снимком, хвост — ссылкой на него
         from awgbot.bot.callbacks import GwCB
-        from awgbot.util import listlink
-        key = await call(services.db.list_snap_keep, message.chat.id, "admin", tt.transit_result_title(kind),
-                         tt.transit_result_rows(ok, out, kind), GwCB(action="lan").pack(), False)
-        if key:
-            link = (getattr(services, "bot_username", "") or "", listlink.build("snap", key=key))
+        from awgbot.bot.lists.snapshot import snap_param
+        param = await snap_param(services, message.chat.id, "admin", tt.transit_result_title(kind),
+                                 tt.transit_result_rows(ok, out, kind), GwCB(action="lan").pack())
+        if param:
+            link = (getattr(services, "bot_username", "") or "", param)
     note = texts.gateway_transit_result(ok, out, sync, budget=budget, domains=domains, cmd=kind, link=link)
     await send_menu(message, services, screens.with_note(text, note), markup)
 

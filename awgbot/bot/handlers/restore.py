@@ -202,10 +202,9 @@ async def report_restore_result(bot, services) -> None:
         lost = report.get("lost") or []
         if len(lost) > nb.LOST_SHOWN:
             # отчёт — уведомление: весь список не вставших — снимком, хвост ссылкой (метку -n ставит отправка)
-            from awgbot.util import listlink
-            key = await call(services.db.list_snap_keep, config.ADMIN_ID, "admin", nb.LOST_TITLE,
-                             nb.restore_lost_rows(lost, bot_u), "", True)
-            snap = listlink.build("snap", key=key) if key else ""
+            from awgbot.bot.lists.snapshot import snap_param
+            snap = await snap_param(services, config.ADMIN_ID, "admin", nb.LOST_TITLE, nb.restore_lost_rows(lost, bot_u),
+                                    "", True)
         await notify_one(bot, config.ADMIN_ID,
                          texts.restore_done_report(str(done.get("created_at") or ""), report, bot_u, version=version,
                                                    snap=snap))

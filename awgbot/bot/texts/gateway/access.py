@@ -6,6 +6,7 @@ from awgbot.util import listlink
 from awgbot.bot import ui
 from ..fmt import _e, plural_ru, more
 from ..settings import warnings_block, address_list_line
+from ..settings.inputs import SSH_SHOWN               # предел поимённо — общий с основным ботом
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -117,7 +118,6 @@ GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\
 
 # заголовок снимка «✅ Добавлено для SSH-доступа» общий с основным ботом — texts.settings.inputs.SSH_ADDED_TITLE
 SSH_MERGED_TITLE = "ℹ️ Вошли в добавленные подсети"
-SSH_SHOWN = 12                      # адресов и имён SSH-доступа поимённо; дальше — «и ещё N» ссылкой
 
 
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None, link: tuple | None = None,

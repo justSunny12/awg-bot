@@ -111,9 +111,11 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
             return
         await state.clear()
         added = [x for x in after if x not in before] or [raw]
+        from awgbot.bot.lists.snapshot import snap_codes
+        from awgbot.bot.texts.settings.inputs import SSH_ADDED_TITLE, SSH_SHOWN
         await after_input(message, services, hooks, sec,
-                          texts.settings_ssh_allow_added(added, await _snap_codes(
-                              message, services, texts.settings.inputs.SSH_ADDED_TITLE, added, SetCB(sec="fw").pack())))
+                          texts.settings_ssh_allow_added(added, await snap_codes(
+                              message, services, SSH_ADDED_TITLE, added, SetCB(sec="fw").pack(), SSH_SHOWN)))
         return
     else:
         ok, err = _validate_server_value(key, raw)
@@ -233,13 +235,3 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
         return
     await state.clear()
     await after_input(message, services, hooks, sec, texts.settings_changed(key, old, val))
-
-
-async def _snap_codes(message, services, title: str, items: list, back: str, shown: int = 12):
-    """Итог ввода — больше shown адресов: все снимком; (имя бота, параметр ссылки) для хвоста."""
-    if len(items) <= shown:
-        return None
-    from awgbot.util import listlink
-    rows = [f"<code>{texts._e(x)}</code>" for x in items]
-    key = await call(services.db.list_snap_keep, message.chat.id, "admin", title, rows, back, False)
-    return (getattr(services, "bot_username", "") or "", listlink.build("snap", key=key)) if key else None

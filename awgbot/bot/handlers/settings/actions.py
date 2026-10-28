@@ -181,13 +181,11 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
 async def _snap_more(cb, services, title: str, names, cap: int) -> str:
     """Итог переезда — след: имён больше cap — снимок всех («профиль — устройство»),
     в тексте хвост «и ещё N» ссылкой на него (метку «-n» следу ставит links.mark_new)."""
+    from awgbot.bot.lists.snapshot import snap_param
     from awgbot.bot.texts.fmt import _e
-    from awgbot.util import listlink
     from awgbot.util.textfmt.tail import more_link
     names = list(names or [])
     if len(names) <= cap:
         return ""
-    key = await call(services.db.list_snap_keep, cb.message.chat.id, "admin", title, [_e(n) for n in names], "", True)
-    if not key:
-        return ""
-    return more_link(len(names) - cap, getattr(services, "bot_username", "") or "", listlink.build("snap", key=key))
+    param = await snap_param(services, cb.message.chat.id, "admin", title, [_e(n) for n in names], "", True)
+    return more_link(len(names) - cap, getattr(services, "bot_username", "") or "", param) if param else ""

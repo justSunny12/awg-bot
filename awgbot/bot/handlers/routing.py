@@ -329,13 +329,12 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
     res = await call(services.routing_add_domains, profile.id, message.text or "")
     snap = ""
     from awgbot.bot.texts.routing import access as ta
-    if any(n > ta.REJECTED_SHOWN for n in _reason_counts(res.rejected)):
+    if any(len(raws) > ta.REJECTED_SHOWN for raws in ta.rejected_by_reason(res.rejected).values()):
         # отказов по какой-то причине больше показанных — все отказы снимком; «⬅️ Назад» — к списку сайтов
         from awgbot.bot.callbacks import RoutingCB
-        from awgbot.util import listlink
-        key = await call(services.db.list_snap_keep, message.chat.id, role, ta.REJECTED_TITLE,
-                         ta.rejected_rows(res.rejected), RoutingCB(action="sites", ref=profile.id).pack(), False)
-        snap = listlink.build("snap", key=key) if key else ""
+        from awgbot.bot.lists.snapshot import snap_param
+        snap = await snap_param(services, message.chat.id, role, ta.REJECTED_TITLE, ta.rejected_rows(res.rejected),
+                                RoutingCB(action="sites", ref=profile.id).pack())
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit,
                                       owner=_foreign(profile, client),
                                       bot_username=getattr(services, "bot_username", "") or "", snap=snap)
@@ -383,10 +382,3 @@ async def routing_clear_apply(cb: CallbackQuery, callback_data: RoutingCB, clien
 
 
 __all__ = ["router", "panel_view", "sites_view", "screen_for"]
-
-
-def _reason_counts(rejected) -> list[int]:
-    by: dict[str, int] = {}
-    for _raw, reason in rejected:
-        by[reason] = by.get(reason, 0) + 1
-    return list(by.values())

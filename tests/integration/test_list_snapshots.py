@@ -317,6 +317,18 @@ def test_a_miss_at_opening_leaves_a_log_line_with_the_key_and_the_chat(db, clock
     assert any(f"снимок {real} — из другого чата, открывал {OTHER}" in ln for ln in log), log
 
 
+def test_the_producer_helper_writes_nothing_without_a_bot_username(db, clock):
+    """Без имени бота ссылки в тексте не будет (deep_link даёт текст) — снимок в
+    базу не идёт, место в двадцати снимках чата не занимает; с именем — параметр
+    /start на записанный снимок."""
+    from awgbot.bot.lists.snapshot import snap_param_sync
+    assert snap_param_sync(db, "", CHAT, "admin", "t", _rows(30)) == "" and not _snap_keys(db)
+    param = snap_param_sync(db, "test_bot", CHAT, "admin", "t", _rows(30), n=40, missing=10, tail_note="остальные там")
+    assert _KEY.fullmatch(param.removeprefix("list-snap-")), param
+    got = db.list_snap_get(param.removeprefix("list-snap-"), CHAT)
+    assert got["n"] == 40 and got["rows"][-1] == "… и ещё 10 — остальные там", got["rows"][-1]
+
+
 def test_a_broken_snapshot_record_is_read_as_no_snapshot(db, clock):
     db._connection().execute("INSERT INTO server_state (key, value) VALUES (?, ?)",
                              (listsnap.PREFIX + "brokenkey1", "{не json"))

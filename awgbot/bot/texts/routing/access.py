@@ -239,8 +239,18 @@ def routing_sites_text(domains: list) -> str:
     return f"{ui.head('📋 Свои сайты', meta=[len(domains)])}\n{ROUTING_SITES_ABOUT}"
 
 
-REJECTED_SHOWN = 5
+REJECTED_SHOWN = 5                     # отказов одной причины поимённо; дальше — «и ещё N» ссылкой на снимок
 REJECTED_TITLE = "⚠️ Не добавлено"
+
+
+def rejected_by_reason(rejected: list) -> dict[str, list[str]]:
+    """Отказы, сгруппированные по причине, в порядке первого появления — так
+    их рисует итог; больше REJECTED_SHOWN в какой-либо причине — обработчик
+    пишет снимок всех отказов."""
+    by_reason: dict[str, list[str]] = {}
+    for raw, reason in rejected:
+        by_reason.setdefault(reason, []).append(raw)
+    return by_reason
 
 
 def rejected_rows(rejected: list) -> list[str]:
@@ -261,10 +271,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
         more = more_count(len(added) - 5)        # добавленные — кнопками экрана ниже
         parts.append(f"✅ Добавлено: {shown}{more}")
     if rejected:
-        by_reason: dict[str, list[str]] = {}
-        for raw, reason in rejected:
-            by_reason.setdefault(reason, []).append(raw)
-        for reason, raws in by_reason.items():
+        for reason, raws in rejected_by_reason(rejected).items():
             shown = ", ".join(f"<code>{_e(_short(r, 40))}</code>" for r in raws[:REJECTED_SHOWN])
             rest = len(raws) - REJECTED_SHOWN
             more = (more_link(rest, bot_username, snap) if snap and rest > 0
