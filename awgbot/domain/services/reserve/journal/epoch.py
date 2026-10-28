@@ -78,13 +78,17 @@ class ReserveEpochMixin:
         fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
         later = (float(peer["at_ts"]) > float(out["at_ts"]) if peer.get("at_ts") is not None and out.get("at_ts") is not None
                  else str(peer.get("at") or "") > str(out.get("since") or ""))   # строго после перехода домой
-        serving = (self.reserve_online() and later and str(peer.get("inn") or "idle") == "serving"
+        # на связи — сессия и живость: TCP-сеанс мёртвого линка держится до ~23 мин (keepalive),
+        # живость падает через ~60 с; st, полученный до потери связи (st_stale), — не в счёт: после
+        # восстановления связи он старый (резерв ещё idle), пока не дошёл новый
+        alive = self.reserve_online() and self.reserve_peer_seen() != "down" and not peer.get("st_stale")
+        serving = (alive and later and str(peer.get("inn") or "idle") == "serving"
                    and not out.get("await_merge") and str(out.get("return_why") or "") != "force")
         # иначе решает слово Telegram, сказанное уже дома (прежнее «away» — до возврата)
         poll = self.rsv_get("rsv_poll")
         if self.reserve_poll() != "away" or _earlier(poll, out):
             return (True, "резерв несёт моих пользователей") if serving else (False, "пользователи и Telegram здесь")
-        if self.reserve_online() and fresh and str(peer.get("inn") or "idle") not in _HOSTING:
+        if alive and fresh and str(peer.get("inn") or "idle") not in _HOSTING:
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
 

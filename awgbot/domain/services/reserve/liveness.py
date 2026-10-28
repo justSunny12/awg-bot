@@ -69,7 +69,8 @@ class ReserveLivenessMixin:
         notes: list[Notification] = []
         if act == "down":
             lv.told = True
-            self.rsv_update("rsv_peer_state", down_since=timeutil.now_iso())
+            # st до потери связи — устаревший, пока не придёт новый (journal/epoch: «гостя нет»)
+            self.rsv_update("rsv_peer_state", down_since=timeutil.now_iso(), st_stale=True)
             notes.append(Notification(tg_id=int(config.ADMIN_ID),
                                       text=rn.peer_down(self.reserve_peer_name(), self.reserve_down_since())))
             log.warning("резерв: «%s» недоступен — линк пары молчит", self.reserve_peer_name())

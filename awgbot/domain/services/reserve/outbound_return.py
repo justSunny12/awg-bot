@@ -322,10 +322,12 @@ class ReserveReturnMixin:
         by = "k" if own_go else "share"
         if by in ("share", "code"):
             # процесс открытия держал вторую точку прямой (или видел код) и конверт
-            # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен
+            # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен —
+            # только если токен был (запись вручную — конверта DNS в пакете нет)
             self.reserve_new_generation("возврат после аварийного переезда")
             self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
+            if self.reserve_dns_automatic():
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
         log.info("резерв: пользователи и бот вернулись с «%s»", name)
         return actions + [("live",), ("notify", notes)]
 

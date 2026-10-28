@@ -219,7 +219,7 @@ class ReserveSessionMixin:
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),
                         mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0),
-                        in_by=str(body.get("in_by") or ""))
+                        in_by=str(body.get("in_by") or ""), st_stale=False)
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             if hasattr(self, "reserve_pkg_resend_if_stale"):

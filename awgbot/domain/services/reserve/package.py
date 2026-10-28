@@ -81,6 +81,12 @@ class ReservePackageMixin:
             return True
         return False
 
+    def _pkg_for_move(self) -> bool:
+        """Переезд кнопкой на шаге `pkg` ждёт свежий пакет (`rsv_pkg_sent.at` не раньше
+        начала переезда) — в `leaving` до этого шага такт пакета не молчит."""
+        out = self.rsv_get("rsv_out")
+        return out.get("state") == "leaving" and str(out.get("step") or "pkg") == "pkg"
+
     @staticmethod
     def _pkg_timer_delay() -> float:
         minutes = max(1, settings.get_int("app.reserve.pkg_minutes", 30))
@@ -91,7 +97,7 @@ class ReservePackageMixin:
     def reserve_pkg_tick(self) -> dict | None:
         """Такт пары: пора ли слать пакет. Возвращает {gen, fp, blob (hex),
         share, m_gen} для отправки частями или None."""
-        if not self.reserve_paired() or not self.reserve_online() or self.reserve_away():
+        if not self.reserve_paired() or not self.reserve_online() or (self.reserve_away() and not self._pkg_for_move()):
             return None
         if self.__dict__.get("_rsv_pkg_sending"):
             return None
