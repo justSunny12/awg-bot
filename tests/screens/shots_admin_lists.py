@@ -156,7 +156,9 @@ LISTS = [
     Shot("adm.list.gwpeers", role="admin", steps=[_MAIN, _CARD2, ("start", "list-gwpeers-1")], data=_PEERS,
          title="связь подсетей слота: соседи ссылками, подсети, которых на шлюзе нет, — ⚠️"),
     Shot("adm.list.gwpeers.none", role="admin", start="list-gwpeers-1", data=_slots(1, lan=True),
-         title="соседей нет — пустое состояние словами"),
+         title="соседей нет — пустое состояние словами: транзит меньше чем у двух"),
+    Shot("adm.list.gwpeers.transit_off", role="admin", start="list-gwpeers-1", data=_slots(1, subnets=True),
+         title="у самого слота VPN-транзит выключен — пустое состояние называет это"),
     # ── связь подсетей всех слотов ──────────────────────────────────────────
     Shot("adm.list.peernets.rt", role="admin", press=[SetCB(sec="rt")], data=_FIFTEEN,
          title="«🛰 Шлюзы» на 15 слотов по 64 адреса — у каждого «и ещё 61» ссылкой"),

@@ -69,7 +69,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     if key in ("pending", "orphans"):
-        from awgbot.bot import paging, ui
+        from awgbot.bot import paging
         from awgbot.bot.keyboards.common import page_row
         if key == "pending":
             rows = await call(services.migration_pending)
