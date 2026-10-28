@@ -75,7 +75,8 @@ class ReserveScreenMixin:
                 "mem_free": int(ps.get("mem_free") or 0), "here": self._online_count(), "there": int(ps.get("there") or 0),
                 "force_why": self.reserve_force_check() if self.reserve_out() == "away" else "пользователи не у резерва",
                 "await_merge": bool(out.get("await_merge")),
-                "jrn_on": self.reserve_jrn_on(), "jrn_follow": self.reserve_follow_view(),
+                "jrn_on": self.reserve_jrn_on(), "jrn_moved": self.reserve_jrn_moved(),
+                "jrn_follow": self.reserve_follow_view(),
                 "self_admin": self.reserve_self_peer_admin()}
 
     def _jrn_caps_safe(self) -> bool:

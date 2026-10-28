@@ -17,6 +17,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.handlers.common import call, cleanup_content, dismiss_update_reports, drop_message, edit_nav
 from awgbot.bot.texts import fleet as ft
+from awgbot.domain.services.types import ServiceError
 
 log = logging.getLogger("awgbot.fleet")
 
@@ -114,7 +115,11 @@ async def start(cb: CallbackQuery, services, tag: str) -> None:
     if failed:
         await cb.answer(texts.UPDATE_CHECK_FAILED_TOAST, show_alert=True)
         return
-    why = await call(services.fleet_start, tag)
+    try:
+        why = await call(services.fleet_start, tag)
+    except ServiceError as e:                             # отказ сервиса (пользователи на резерве, ждём правки) — словами
+        await cb.answer(str(e)[:200], show_alert=True)
+        return
     if why:
         await cb.answer(_REFUSALS.get(why, texts.UPDATE_TARGET_CHANGED_TOAST), show_alert=True)
         return

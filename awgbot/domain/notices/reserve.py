@@ -431,9 +431,15 @@ _TAIL_BYTES = ("traffic_limit", "bonus_bytes")
 _TAIL_FLAGS = ("routing_allowed", "routing_on")
 
 
+_TAIL_WORDS = {"activation_status": {"pending": "ждёт входа", "active": "активен"},
+               "status": {"active": "активна", "expired": "истекла"}}
+
+
 def _tail_value(table: str, col: str, v) -> str:
     if v is None or v == "":
         return "—"
+    if col in _TAIL_WORDS and str(v) in _TAIL_WORDS[col]:
+        return _TAIL_WORDS[col][str(v)]
     if col in _TAIL_DATES and isinstance(v, str):
         return _e(_date_yy(v))
     if col == "name":
@@ -460,7 +466,7 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
     where = tail_where(variant, reserve)
     kind, table, col = str(d.get("kind") or ""), str(d.get("table") or ""), str(d.get("col") or "")
     if device:
-        subject = f"устройство «{device}»" + (f" профиля {profile}" if profile else "")
+        subject = f"устройство «{device}»" + (f" профиля {profile}" if profile and profile != device else "")
     else:
         subject = f"профиль {profile or '?'}"
     if kind == "unique":
@@ -473,8 +479,10 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
         return f"{subject}: правка не перенесена — {where} этой записи уже нет"
     if kind == "failed":
         return f"{subject}: правка не встала"
-    if d.get("secret") or col == "public_key":
-        return f"{subject}: ключи изменены на обеих сторонах — остались {where.replace('на ', 'с ', 1)}. Выдай конфигурацию заново"
+    if col in ("private_key", "preshared_key", "public_key"):
+        return f"{subject}: ключи поменяли и там, и здесь — {where} остались свои. Выдай конфигурацию заново"
+    if d.get("secret"):
+        return f"{subject}: код поменяли и там, и здесь — {where} остался свой"
     if col == "block_reason":
         return f"{subject}: блокировку поменяли и там, и здесь — {where} осталась своя"
     field = _TAIL_FIELDS.get((table, col))
@@ -508,9 +516,12 @@ def tail_disputed(variant: str, reserve: str, lines: list[str], total: int) -> s
 
 
 def tail_moved(variant: str, reserve: str, n: int) -> str:
-    """Т-Ж5: хвост перенесён целиком."""
+    """Т-Ж5: хвост перенесён целиком (self — свой хвост перенесён здесь после возврата: бот на
+    резерве его не принял)."""
     if variant == "c9":
         return f"ℹ️ Правки бота на {_n(reserve)} после потери связи перенесены сюда: {int(n)}"
+    if variant == "self":
+        return f"ℹ️ Правки, сделанные здесь перед переездом на {_n(reserve)}, перенесены после возврата: {int(n)}"
     return f"ℹ️ Правки, сделанные здесь перед переездом на {_n(reserve)}, перенесены туда: {int(n)}"
 
 

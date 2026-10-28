@@ -179,6 +179,8 @@ class ReserveTailMixin:
         self.rsv_put("rsv_tail", None)
         if rpt.disputed:
             log.info("резерв: свой хвост: спорные: %s", rpt.disputed)
+        if not rpt.disputed:
+            return self._tail_notes("self", rpt.moved, [], 0)
         return self._tail_notes("crash", rpt.moved, rpt.disputed, len(rpt.disputed))
 
     # ── держатель: приём ────────────────────────────────────────────────────
@@ -350,8 +352,11 @@ class ReserveTailMixin:
                 client = self.db.get_client(int(d["client_id"]))
         except Exception:                                     # noqa: BLE001
             client = None
-        profile = profile_link(client, bot) if client is not None else html.escape(str(d.get("name") or "?"), quote=False)
         device = ""
+        if client is not None:
+            profile = profile_link(client, bot)
+        else:                                                 # владелец не определён: у строки профиля — её имя
+            profile = "" if d.get("table") == "devices" else html.escape(str(d.get("name") or "?"), quote=False)
         if d.get("table") == "devices":
             tail_name = (d.get("tail") or {}).get("name") if isinstance(d.get("tail"), dict) else ""
             device = html.escape(str(d.get("name") or tail_name or "?"), quote=False)
