@@ -208,8 +208,9 @@ def test_a_holder_answers_jstale_to_events_of_a_smaller_epoch(duo):
     duo.open_guest(button=False)
     body = _guest_jev(duo, lambda db: db.create_client("Вера", 1, _START, _FUTURE, "INV-DUMMY-V"))
     duo.a.db.jrn_pass(holder="self", role="holder", why="тест", epoch=body["e"] + 3)
-    e = duo.a.db.jrn_meta()["epoch"]
-    assert sends(duo.a.reserve_jrn_in("jev", body)) == [("jstale", {"line": duo.line, "e": e})]
+    e, fork = duo.a.db.jrn_meta()["epoch"], duo.a.db.jrn_meta()["fork_i"]
+    # F — точка расхождения держателя: по ней отправитель откатывает и шлёт свой хвост
+    assert sends(duo.a.reserve_jrn_in("jev", body)) == [("jstale", {"line": duo.line, "e": e, "F": fork})]
     assert not [c for c in duo.a.db.list_clients() if c.name == "Вера"]
 
 
