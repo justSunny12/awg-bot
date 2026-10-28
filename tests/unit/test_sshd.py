@@ -75,6 +75,26 @@ class _Host:
         return subprocess.CompletedProcess(args, rc, out, "")
 
 
+class _Clock:
+    """Подмена модуля time для sshd: sleep двигает monotonic.
+
+    Пустой sleep при настоящих часах превращает ожидание слушателя в
+    холостой цикл на весь срок — тысячи вызовов subprocess.run копятся в
+    host.calls, и под нагрузкой процесс-исполнитель падает по памяти.
+    Здесь время идёт только сном, и цикл кончается за считанные проходы."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.slept = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, s: float) -> None:
+        self.now += s
+        self.slept += s
+
+
 @pytest.fixture()
 def cfg(tmp_path, monkeypatch):
     main = tmp_path / "sshd_config"
@@ -85,7 +105,9 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(sshd, "SSHD_CONFIG", str(main))
     monkeypatch.setattr(sshd, "SSHD_DROPIN_DIR", str(dd))
     monkeypatch.setattr(sshd, "SOCKET_DROPIN", str(tmp_path / "ssh.socket.d" / "awg-bot.conf"))
-    monkeypatch.setattr(sshd.time, "sleep", lambda s: None)
+    # Подменяем сам модуль time у sshd, а не его атрибуты: глобальные
+    # time.sleep/time.monotonic остаются настоящими для остального процесса.
+    monkeypatch.setattr(sshd, "time", _Clock())
     return main, dd / "10-cloud.conf", tmp_path / "ssh.socket.d" / "awg-bot.conf"
 
 
@@ -155,12 +177,15 @@ def test_nobody_listening_after_restart_rolls_back_and_restarts_again(cfg, monke
     before = main.read_text()
     host = _Host(listening=False)
     monkeypatch.setattr(sshd.subprocess, "run", host)
-    monkeypatch.setattr(sshd.time, "sleep", lambda s: None)   # ожидание слушателя — без реальных секунд
+    clock = sshd.time   # часы фикстуры cfg: сон двигает monotonic
     with pytest.raises(sshd.SshdError, match="никто не слушает"):
         sshd.set_port(2222)
     assert main.read_text() == before
     assert sum(1 for c in host.calls if c[:2] == ["systemctl", "restart"]) == 2, \
         "второй рестарт — уже со старым конфигом"
+    assert clock.slept >= 5.0, "откат — только после полного срока ожидания слушателя"
+    probes = sum(1 for c in host.calls if c[0] == "ss")
+    assert 2 <= probes <= 20, f"слушатель опрашивается с паузами, а не холостым циклом: {probes} проб"
 
 
 def test_port_busy_reports_the_listener(monkeypatch):
