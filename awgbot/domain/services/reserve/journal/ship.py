@@ -150,7 +150,7 @@ class ReserveShipMixin:
             return
         s["ok"] = True
         mine = self.db.jrn_last_i()
-        if str(keep.get("line") or "") != line or not int(keep.get("snap_i") or 0):
+        if str(keep.get("line") or "") != line or not (keep.get("snap") or int(keep.get("snap_i") or 0)):
             self._jrn_snap_need("у резерва нет снимка этой базы")
             return
         if last > mine:

@@ -189,10 +189,13 @@ class ReserveFollowMixin:
     def _follow_peer(self, awg, ev) -> int:
         """Устройство появилось или сменило ключ, адрес, интерфейс — пир по строке базы
         после применения (прежний ключ снимается)."""
-        c = ev.c or {}
-        if ev.op not in ("I", "U") or not ({"public_key", "address", "iface", "preshared_key"} & set(c)):
+        c, old = ev.c or {}, ev.o or {}
+        keys = ("public_key", "address", "iface", "preshared_key")
+        if ev.op not in ("I", "U"):
             return 0
-        old = ev.o or {}
+        # событие U несёт строку целиком — пир трогаем, только если сменилось то, что в нём
+        if ev.op == "U" and not any(k in c and c.get(k) != old.get(k) for k in keys):
+            return 0
         if ev.op == "U" and old.get("public_key"):
             try:
                 awg.remove_peer(str(old["public_key"]), awg.iface_of(old.get("iface") if "iface" in old else c.get("iface")))

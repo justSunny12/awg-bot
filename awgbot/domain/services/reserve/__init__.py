@@ -19,10 +19,12 @@ reserve — взаимный резерв серверов AWG на сторон
 - `dns` — запись DNS: провайдер, смена, факт, надзор;
 - `outbound` — «мои пользователи»: переезд кнопкой, away, здоровье, зависший
   вебхук резерва;
+- `outbound_stuck` — «мои пользователи»: зависший вебхук резерва (away и home);
 - `outbound_return` — «мои пользователи»: возврат с резерва (в том числе без
   реплики и рычагом «вернуть без резерва»);
 - `merge_ops` — слияние реплики при возврате: базы, пиры, блокировки, отчёт;
 - `inbound` — «пользователи основы у меня»: автомат приёма, зона, handback;
+- `inbound_back` — их возврат основе (`back`), пересылка хвоста, relay;
 - `openproc` — запуск процесса открытия временным юнитом (`OPEN_UNIT`,
   свойства песочницы `rsvopen_sandbox_props`), код завершения и его stderr;
 - `notify` — уведомления пользователям о переезде и возврате;
@@ -54,6 +56,7 @@ from .dns import ReserveDnsMixin
 from .guest import ReserveGuestMixin
 from .gwside import ReserveGwSideMixin
 from .inbound import ReserveInboundMixin
+from .inbound_back import ReserveInboundBackMixin
 from .journal import ReserveJournalMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
@@ -63,6 +66,7 @@ from .notify import ReserveNotifyMixin
 from .openproc import ReserveOpenProcMixin
 from .outbound import ReserveOutboundMixin
 from .outbound_return import ReserveReturnMixin
+from .outbound_stuck import ReserveStuckMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
@@ -83,7 +87,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
                    ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
-                   ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin):
+                   ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
+                   ReserveInboundBackMixin, ReserveStuckMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

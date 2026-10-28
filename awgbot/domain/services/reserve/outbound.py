@@ -51,7 +51,6 @@ Away: здоров ≥ HEALTHY_S (свой AWG, линк пары, шлюз, Tel
 """
 from __future__ import annotations
 
-import random
 import time
 
 from awgbot.core import config, settings
@@ -441,57 +440,6 @@ class ReserveOutboundMixin:
         elif out.get("healthy_mono") or out.get("can_return"):
             self.rsv_update("rsv_out", healthy_mono=0, healthy_since="", can_return=False)
         return []
-
-    def _webhook_stuck(self, out: dict, now: float) -> bool:
-        """Право отвечать осталось у вебхука резерва, хотя пользователей он не несёт:
-        запись указывает на меня (проба не чаще раза в 2 мин), а резерв говорит
-        `in = idle` (или пары нет на связи дольше STUCK_PAIR_S). Возврат оборвался
-        после передачи бота — снять вебхук и поллить самому."""
-        if not livestep.mono_due(out.get("stuck_probe"), now, 120 * random.uniform(0.6, 1.4)):
-            return False
-        self.rsv_update("rsv_out", stuck_probe=now)
-        own = self.reserve_own_ip()
-        stuck = False
-        if own and self.reserve_dns_points_to(own):
-            peer = self.reserve_peer_state()
-            if self.reserve_online():
-                stuck = str(peer.get("inn") or "idle") == "idle"
-            else:
-                since = str(peer.get("down_since") or "")
-                try:
-                    stuck = bool(since) and timeutil.elapsed(timeutil.parse_iso(since)) >= STUCK_PAIR_S
-                except ValueError:
-                    stuck = False
-        if not stuck:
-            if out.get("stuck_since"):
-                self.rsv_update("rsv_out", stuck_since="")
-            return False
-        since_iso = str(out.get("stuck_since") or "")
-        if not since_iso:
-            self.rsv_update("rsv_out", stuck_since=timeutil.now_iso())
-            return False
-        try:
-            return timeutil.elapsed(timeutil.parse_iso(since_iso)) >= STUCK_IDLE_S
-        except ValueError:
-            return False
-
-    def reserve_stuck_home(self) -> list[tuple]:
-        """deleteWebhook прошёл (take): пользователи и так здесь — домой без возврата. По
-        рычагу «без резерва» (await_merge) — домой с ожиданием его реплики."""
-        from awgbot.domain.notices import reserve as rn
-        name = self.reserve_peer_name()
-        out = self._out()
-        forced = bool(out.get("await_merge"))
-        self.reserve_set_poll("mine")
-        self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
-                             stuck_home_at=timeutil.now_iso(), await_merge=forced, last_switch=timeutil.now_iso())
-        if not forced:
-            self.reserve_new_k()
-            self.reserve_pkg_mark()
-            log.warning("резерв: вебхук «%s» снят — запись на мне, пользователей он не нёс; поллю сам", name)
-            return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
-        log.warning("резерв: пользователи возвращены без «%s» — его реплика вольётся, когда он выйдет на связь", name)
-        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name))])]
 
     def reserve_move_live(self) -> dict:
         out = self._out()
