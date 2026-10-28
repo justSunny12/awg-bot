@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery
 from awgbot.bot.callbacks import ListCB
 
 
-async def list_screen(cb: CallbackQuery, callback_data: ListCB, services, role: str = "", client=None):
+async def list_screen(cb: CallbackQuery, callback_data: ListCB, services, role: str = ""):
     from awgbot.bot import lists, paging
     from awgbot.bot.handlers.common import edit_nav
     d = callback_data

@@ -196,7 +196,8 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
         await notify_one(message.bot, config.ADMIN_ID, admin_text)
 
 
-# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»)
+# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»); имя
+# здесь — для пакета handlers.client и тестов, обработчики зовут links напрямую
 parse_link = links.parse_client
 
 
@@ -210,7 +211,7 @@ async def start_client_with_code(message: Message, command: CommandObject, clien
     if await open_list_link(message, services, "client", client, payload):
         return
     bare, new = links.strip_new(payload)
-    link = parse_link(bare)
+    link = links.parse_client(bare)
     if link is not None:
         if not await show_screen(message, services, "client", client, *link, new=new):
             await _show_main(message, services, client)

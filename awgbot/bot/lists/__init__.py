@@ -65,8 +65,8 @@ def register(kind: Kind) -> Kind:
 
 
 def _load() -> None:
-    if _REGISTRY:
-        return
+    """Все модули видов — импортом (регистрируются при нём); повторный импорт
+    бесплатен, а ранний импорт одного модуля видов остальных не прячет."""
     from .kinds import agent, server, slots, snap  # noqa: F401 — виды регистрируются при импорте
 
 
@@ -166,17 +166,18 @@ def _next() -> str:
 async def open_link(message, services, role: str, client, link) -> bool:
     """Вход из /start list-…: команду из чата убрать (служебная), экран — на месте
     живого меню или, с меткой «-n», новым сообщением. False — вида у роли нет
-    (вызывающий покажет главную)."""
+    (вызывающий покажет главную). client — профиль говорящего: виды его не
+    читают (у них chat_id), параметр зарезервирован под виды пользователя."""
     from awgbot.bot import paging
     from awgbot.bot.handlers.common import show_parts
     try:
         await message.delete()
     except Exception:                                  # noqa: BLE001
         pass
-    if kind_for(link.kind, role) is None:
-        return False
-    paging.remember(message.chat.id, screen_name(link.kind), link.ref, 0)   # по ссылке — первая страница
     k = kind_for(link.kind, role)
+    if k is None:
+        return False
+    paging.forget(message.chat.id, screen_name(link.kind), link.ref)   # по ссылке — первая страница
     parts = await render(services, link.kind, role=role, ref=link.ref, key=link.key, new=link.new,
                          chat_id=message.chat.id, anchor=link.ref if k.anchored else 0)
     if parts is None:

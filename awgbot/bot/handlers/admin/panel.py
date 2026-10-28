@@ -170,7 +170,8 @@ async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
     return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
 
 
-# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»)
+# грамматика ссылок — bot/links.py (её знает и уведомитель: метка «-n»); имя
+# здесь — для пакета handlers.admin и тестов, обработчик зовёт links напрямую
 parse_link = links.parse_admin
 
 
@@ -194,7 +195,7 @@ async def _traffic_deep_link(message: Message, services, payload: str,
         # вида у роли нет — как незнакомая ссылка: /start с уборкой меню
         return await lists.open_link(message, services, "admin", None, lst)
     payload, new = links.strip_new(payload)
-    link = parse_link(payload)
+    link = links.parse_admin(payload)
     if link is None:
         return False
     kind, ref = link

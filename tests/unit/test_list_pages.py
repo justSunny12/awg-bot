@@ -208,6 +208,32 @@ async def test_an_anchor_of_a_group_the_view_has_not_got_falls_back_to_the_remem
     assert "стр. 3 из 3" in text.splitlines()[0], text.splitlines()[0]
 
 
+async def test_a_link_opens_the_first_page_without_growing_the_page_memory(kind, monkeypatch):
+    """Ссылка /start несёт ref из ввода человека: открытие по ссылке сбрасывает
+    страницу, но записи в памяти страниц на каждый ref не заводит (иначе
+    «list-snap-1», «list-snap-2», … растили бы словарь процесса)."""
+    from types import SimpleNamespace
+    from awgbot.bot import paging
+    from awgbot.bot.handlers import common
+    from awgbot.util import listlink
+
+    async def _delete():
+        pass
+
+    async def _shown(message, services, text, markup, new=False):
+        pass
+
+    monkeypatch.setattr(common, "show_parts", _shown)
+    _ROWS[:] = [f"r{i}" for i in range(65)]
+    message = SimpleNamespace(chat=SimpleNamespace(id=9), delete=_delete)
+    paging.remember(9, lists.screen_name(kind), 777, 2)
+    assert await lists.open_link(message, None, "admin", None, listlink.parse(f"list-{kind}-777"))
+    assert paging.page_of(9, lists.screen_name(kind), 777) == 0, "по ссылке — не первая страница"
+    assert (9, lists.screen_name(kind), 777) not in paging._pages, "открытие по ссылке завело запись в памяти"
+    assert await lists.open_link(message, None, "admin", None, listlink.parse(f"list-{kind}-778"))
+    assert (9, lists.screen_name(kind), 778) not in paging._pages
+
+
 async def test_a_kind_of_the_other_installation_is_not_served(monkeypatch):
     """Виды агента у основного бота и виды основного у агента не открываются:
     данных под ними у этой установки нет."""

@@ -74,6 +74,15 @@ def test_junk_is_not_a_list_link(junk):
     assert not listlink.is_list(junk or "")
 
 
+def test_ten_digits_are_a_key_and_up_to_seven_a_slot():
+    """Десять знаков [a-z0-9] — ключ снимка, и десять цифр подряд тоже: число
+    длиннее семи цифр слотом не бывает, третьего разбора нет."""
+    assert listlink.parse("list-snap-1234567890") == listlink.Link("snap", 0, "1234567890", False)
+    assert listlink.parse("list-gwnets-1234567") == listlink.Link("gwnets", 1234567, "", False) \
+        if 1234567 <= listlink.REF_MAX else listlink.parse("list-gwnets-1234567") is None
+    assert listlink.parse("list-gwnets-15-n") == listlink.Link("gwnets", 15, "", True)
+
+
 def test_build_without_ref_has_no_dangling_dash():
     """Вид без слота — без «-0»: такой параметр parse отверг бы."""
     assert listlink.build("peernets") == "list-peernets"

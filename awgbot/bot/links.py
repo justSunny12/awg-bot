@@ -23,6 +23,10 @@ from awgbot.bot import texts
 from awgbot.util import listlink
 
 NEW = "-n"
+# id в ссылке — ASCII-цифры с пределом, как в listlink: параметр /start — ввод
+# человека; str.isdigit пропускал цифры Юникода («²»), а число без предела
+# роняло запрос к базе
+_ID = re.compile(r"[0-9]{1,9}")
 
 
 def _payload_id(payload: str, head: str) -> int | None:
@@ -32,7 +36,7 @@ def _payload_id(payload: str, head: str) -> int | None:
     rest = payload[len(head) + 1:]
     if rest.endswith("-t"):
         rest = rest[:-2]
-    return int(rest) if rest.isdigit() else None
+    return int(rest) if _ID.fullmatch(rest) else None
 
 
 def parse_admin(payload: str) -> tuple[str, int] | None:
@@ -67,7 +71,7 @@ def parse_client(payload: str) -> tuple[str, int] | None:
     if payload == texts.RF_PAYLOAD_CLIENT:
         return "rf", 0
     head = texts.DEV_PAYLOAD + "-"
-    if payload.startswith(head) and payload[len(head):].isdigit():
+    if payload.startswith(head) and _ID.fullmatch(payload[len(head):]):
         return "dev", int(payload[len(head):])
     return None
 

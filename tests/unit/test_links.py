@@ -85,14 +85,14 @@ def test_a_link_to_another_bot_screen_is_marked_too():
 
 
 def test_the_mark_never_pushes_a_payload_past_64_characters():
-    """Параметр на границе 64 знаков метку не получает: Telegram не принял бы
-    ссылку целиком, а экран на месте лучше, чем мёртвый текст."""
+    """Самый длинный параметр экрана с меткой — в 64 знаках Telegram (id — до
+    девяти цифр); номер длиннее — не ссылка вовсе, и метку он не получает."""
+    longest = f"{links.texts.TRAFFIC_PAYLOAD}-999999999-t"
+    assert links.is_screen(longest) and len(longest) + len(links.NEW) <= 64, longest
+    assert _payloads(links.mark_new(_a(longest))) == [longest + "-n"]
     edge = "cl-" + "1" * 61
-    assert len(edge) == 64 and links.is_screen(edge)
-    text = _a(edge)
-    assert links.mark_new(text) == text
-    near = "cl-" + "1" * 59
-    assert _payloads(links.mark_new(_a(near))) == [near + "-n"]
+    assert not links.is_screen(edge)
+    assert links.mark_new(_a(edge)) == _a(edge)
 
 
 @pytest.mark.parametrize("text", ["", None, "без ссылок", "start=cl-5"])
@@ -143,6 +143,18 @@ def test_the_admin_grammar_is_what_it_was(payload, want):
 ])
 def test_the_client_grammar_is_what_it_was(payload, want):
     assert links.parse_client(payload) == want
+
+
+@pytest.mark.parametrize("payload", ["cl-²", "cl-²-n", "dev-²", "dev-٣-n", "traffic-²-t", "cl-99999999999999999999",
+                                     "dev-99999999999999999999", "gw-0000000000"])
+def test_unicode_digits_and_endless_numbers_are_not_links_and_do_not_raise(payload):
+    """Параметр /start — ввод человека: цифра Юникода проходила str.isdigit и
+    роняла int(); число без предела роняло запрос к базе. У пользователя и
+    гостя такой параметр идёт дальше как код приглашения, а не исключением."""
+    assert links.parse_admin(payload.removesuffix("-n")) is None, payload
+    assert links.parse_client(payload.removesuffix("-n")) is None, payload
+    assert links.strip_new(payload) == (payload, False), payload
+    assert not links.is_screen(payload)
 
 
 @pytest.mark.parametrize("payload, want", [
