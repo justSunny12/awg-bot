@@ -101,7 +101,8 @@ def test_the_busy_guard_refuses_while_waiting_for_the_reserves_edits(mv, capsys)
     mv.svc.rsv_update("rsv_out", await_merge=True)
     code, text = _busy(capsys)
     assert code == 3, f"обновление пустили, пока ждём правки бота на резерве: {code} ({text!r})"
-    assert "вернуть без резерва" in text and "«Beta»" in text, f"причина без сути или без имени резерва: {text!r}"
+    assert "после потери связи" in text and "«Beta»" in text, f"причина без сути или без имени резерва: {text!r}"
+    assert "AWG_RESERVE_IGNORE_WAIT=1" in text, f"отказ без подсказки обхода: {text!r}"
     assert "\n" not in text, f"причина не одной строкой: {text!r}"
     mv.svc.rsv_update("rsv_out", await_merge=False)
     assert _busy(capsys) == (0, ""), "правки пришли — сторож всё ещё держит"
@@ -133,7 +134,7 @@ def test_the_busy_guard_refuses_while_the_own_tail_is_on_its_way(duo, wall, caps
     duo.a.rsv_update("rsv_tail", at=wall.ago(9))
     code, text = _busy(capsys)
     assert code == 3, f"обновление пустили посреди переноса своего хвоста: {code} ({text!r})"
-    assert "хвост" in text and "«Beta»" in text and "\n" not in text, f"причина не та или не одной строкой: {text!r}"
+    assert "переносятся" in text and "«Beta»" in text and "\n" not in text, f"причина не та или не одной строкой: {text!r}"
     duo.a.rsv_update("rsv_tail", at=wall.ago(11))
     assert _busy(capsys) == (0, ""), "сторож держит обновление дольше TAIL_WAIT_S"
 

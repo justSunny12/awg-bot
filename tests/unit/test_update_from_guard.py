@@ -78,16 +78,16 @@ def test_update_from_never_falls_below_the_last_released_minimum_and_never_outru
 
 
 def test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards():
-    """Файл версии дерева есть: либо `requires` обеих ролей = UPDATE_FROM
-    (выпущенное дерево), либо UPDATE_FROM выше обоих (сдвиг минимума ждёт
-    следующего выпуска). Разные минимумы у ролей при сдвиге — не бывает:
+    """Файл версии дерева есть: либо `requires` его адресатов = UPDATE_FROM
+    (выпущенное дерево; выпуск одной роли сверяет её одну), либо UPDATE_FROM
+    выше всех (сдвиг минимума ждёт следующего выпуска). Разные минимумы у ролей при сдвиге — не бывает:
     ступень-минимум адресуется обеим (RELEASING §2)."""
     mine = _releases().get(__version__)
     if mine is None:
         pytest.skip(f"docs/releases/v{__version__}.json ещё нет — дерево до выпуска")
     req = _requires(mine)
-    assert set(req) == {"main", "gw"}, f"выпуск {__version__} адресован не обеим ролям: {sorted(req)}"
-    if req == {"main": compat.UPDATE_FROM, "gw": compat.UPDATE_FROM}:
+    assert req, f"выпуск {__version__} без адресата: {mine}"
+    if all(v == compat.UPDATE_FROM for v in req.values()):   # выпуск одной роли (как 4.0.1) — сверяем её
         return
     assert all(_key(compat.UPDATE_FROM) > _key(v) for v in req.values()), (
         f"UPDATE_FROM {compat.UPDATE_FROM} против requires выпуска {__version__} {req}: "

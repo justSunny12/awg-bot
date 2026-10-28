@@ -152,6 +152,9 @@ class ListSnapMixin:
         # отрезанное здесь целиком уйдёт в журнал; чего источник не дал, в журнале нет
         note = tail_note or (TAIL_IN_LOG if not missing else TAIL_LEFT_OUT)
         while True:
+            if not tail_note and missing and keep < len(rows):
+                # обрезали и здесь: часть хвоста в журнале есть, часть источник не дал
+                note = f"{missing} {TAIL_LEFT_OUT}, остальные — в журнале бота"
             tail = [f"… и ещё {total - keep} — {note}"] if keep < total else []
             body["rows"] = rows[:keep] + tail
             raw = json.dumps(body, ensure_ascii=False)

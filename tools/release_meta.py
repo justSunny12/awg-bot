@@ -63,6 +63,16 @@ def awg_generation(root: Path = ROOT) -> int:
     return int(m.group(1))
 
 
+def update_from() -> str:
+    """UPDATE_FROM из awgbot/core/compat.py — той же строкой, что читает `update_from`
+    в install/lib/update.sh (пакет не импортируем: тянет конфиг)."""
+    src = (ROOT / "awgbot" / "core" / "compat.py").read_text(encoding="utf-8")
+    mt = re.search(r'^UPDATE_FROM\s*=\s*"([^"]+)"', src, re.M)
+    if not mt:
+        raise ValueError("UPDATE_FROM не найден в awgbot/core/compat.py")
+    return mt.group(1)
+
+
 def build(version: str, gen: int, main: str | None = None, gw: str | None = None,
           needs_gw: str | None = None, needs_main: str | None = None) -> dict:
     """Метаданные схемы 1 (проверенные). Адресаты — те роли, чей минимум задан."""
@@ -120,6 +130,11 @@ def main(argv: list[str]) -> int:
             print("нужен хотя бы один адресат: --main и/или --gw", file=sys.stderr)
             return 2
         version = args.version or installed_version()
+        floor = update_from()
+        for role, req in (("main", args.main), ("gw", args.gw)):
+            if req and req != floor:
+                raise ValueError(f"минимум {role} {req} ≠ UPDATE_FROM {floor} (awgbot/core/compat.py): сторож "
+                                  "терминала и цепочка бота разошлись бы — сдвиг минимума ставит оба")
         meta = build(version, awg_generation(), args.main, args.gw, args.needs_gw, args.needs_main)
     except (m.MetaError, ValueError, OSError) as e:
         print(f"метаданные релиза: {e}", file=sys.stderr)

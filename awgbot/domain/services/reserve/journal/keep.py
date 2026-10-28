@@ -235,7 +235,9 @@ class ReserveKeepMixin:
         if self.__dict__.get("_keep_oserr_told"):
             return []
         self.__dict__["_keep_oserr_told"] = True
-        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rt.keep_write_failed(self.reserve_peer_name(), str(e)))])]
+        import errno
+        text = rt.keep_write_failed(self.reserve_peer_name(), str(e), no_space=e.errno == errno.ENOSPC)
+        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text)])]
 
     def _keep_jcnt_in(self, body: dict) -> list[tuple]:
         from awgbot.util.rsvjrn import event

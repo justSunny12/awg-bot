@@ -203,15 +203,17 @@ def test_marks_older_than_ninety_days_are_dropped(db, clock):
 
 # ── пределы 2000 строк и 256 КБ ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("n, given, kept, more", [(2005, 2000, 1999, 6), (600, 500, 500, 100)])
-def test_a_source_that_gave_fewer_rows_than_n_gets_an_honest_left_out_line(db, clock, n, given, kept, more):
+@pytest.mark.parametrize("n, given, kept, tail", [(2005, 2000, 1999, "6 — 5 в снимок не вошли, остальные — в журнале бота"),
+                                                   (600, 500, 500, "100 — в снимок не вошли")])
+def test_a_source_that_gave_fewer_rows_than_n_gets_an_honest_left_out_line(db, clock, n, given, kept, tail):
     """Источник отдал не все элементы (missing): последней строкой — сколько
     не вошло, без обещания журнала (чего не дали, в журнале здесь нет); при
-    полных 2000 строках место под неё — за счёт последней."""
+    полных 2000 строках место под неё — за счёт последней, и тогда хвост
+    различает: одна строка отрезана здесь (она в журнале), пять не дали."""
     src = _rows(given)
     got = db.list_snap_get(db.list_snap_keep(CHAT, "admin", "t", src, n=n, missing=n - given), CHAT)
     assert got["rows"][:-1] == src[:kept] and len(got["rows"]) == kept + 1, len(got["rows"])
-    assert got["rows"][-1] == f"… и ещё {more} — в снимок не вошли", got["rows"][-1]
+    assert got["rows"][-1] == f"… и ещё {tail}", got["rows"][-1]
     assert got["n"] == n
 
 
@@ -592,13 +594,13 @@ def test_the_callers_tail_note_ends_a_cut_made_by_the_storage_and_the_cut_still_
 
 def test_a_source_short_of_rows_and_cut_by_the_storage_counts_both_but_logs_only_what_it_had(db, clock, caplog):
     """Источник отдал 2100 из 2200, хранилище оставило 1999: в хвосте — все 201
-    не вошедшие, без обещания журнала (сотни, которых не дали, в нём нет), а в
-    журнал ушли ровно 101 отрезанная строка."""
+    не вошедшие, и честно про обе части (сотни, которых не дали, в журнале нет;
+    отрезанные здесь — есть), а в журнал ушли ровно 101 отрезанная строка."""
     src = _rows(2100)
     with caplog.at_level(logging.INFO, logger="awgbot.db"):
         key = db.list_snap_keep(CHAT, "admin", "t", src, n=2200, missing=100)
     rows = db.list_snap_get(key, CHAT)["rows"]
-    assert rows[-1] == "… и ещё 201 — в снимок не вошли", rows[-1]
+    assert rows[-1] == "… и ещё 201 — 100 в снимок не вошли, остальные — в журнале бота", rows[-1]
     _portions, logged = _cut_log(caplog, key)
     assert logged == src[1999:], len(logged)
 

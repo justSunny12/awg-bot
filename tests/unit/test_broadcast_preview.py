@@ -35,13 +35,13 @@ def test_the_extension_footer_shows_twelve_profiles_and_counts_the_rest():
     assert lines[0].endswith("150 адресатов · продление на <b>30 дней</b>:"), lines[0]
     dated = [ln for ln in lines if ln.startswith("• ")]
     assert len(dated) == tb.NAMES_SHOWN, len(dated)
-    assert dated[-1].endswith(" [+138]"), dated[-1]
+    assert not dated[-1].endswith("]") and "… и ещё 138" in lines, lines[-3:]   # счёт своей строкой, не к датам
     assert len(_TAGS.sub("", foot)) <= config.TG_TEXT_MAX, len(_TAGS.sub("", foot))
 
 
 def test_the_extension_footer_of_twelve_or_fewer_has_no_counter():
     foot = tb.broadcast_preview_photos(12, extension=(7, _plan(12)))
-    assert "[+" not in foot and foot.count("\n• ") == 12, foot
+    assert "и ещё" not in foot and foot.count("\n• ") == 12, foot
 
 
 @pytest.mark.parametrize("err, head", [

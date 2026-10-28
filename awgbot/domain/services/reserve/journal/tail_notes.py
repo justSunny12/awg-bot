@@ -30,14 +30,17 @@ class ReserveTailNotesMixin:
         lines = rows[:rt.TAIL_LINES_MAX]
         more = ""
         if total > rt.TAIL_LINES_MAX:
-            # весь список — снимком в базе бота основы (переживает --wipe резерва), хвост — ссылкой на него
-            from awgbot.util import listlink
+            # весь список — снимком в базе бота основы (переживает --wipe резерва), хвост — ссылкой на него;
+            # чего источник не прислал строками (missing), в журнале этого бота нет — после аварии остаток
+            # лежит в журнале бота на резерве
+            from awgbot.bot.lists.snapshot import snap_param_sync
             from awgbot.util.textfmt.tail import more_line
-            key = self.db.list_snap_keep(int(config.ADMIN_ID), "admin", rt.tail_snap_title(variant, name), rows,
-                                         new=True, n=total, missing=total - len(rows))
-            if key:
-                more = more_line(total - len(lines), str(getattr(self, "bot_username", "") or ""),
-                                 listlink.build("snap", key=key))
+            bot = str(getattr(self, "bot_username", "") or "")
+            note = rt.tail_snap_rest(name) if variant == "crash" and total > len(rows) else ""
+            param = snap_param_sync(self.db, bot, int(config.ADMIN_ID), "admin", rt.tail_snap_title(variant, name),
+                                    rows, new=True, n=total, missing=total - len(rows), tail_note=note)
+            if param:
+                more = more_line(total - len(lines), bot, param)
         return [Notification(tg_id=int(config.ADMIN_ID), text=rt.tail_disputed(variant, name, lines, total, more),
                              silent=True)]
 

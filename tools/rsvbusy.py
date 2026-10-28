@@ -52,21 +52,23 @@ def main() -> int:
         out, inn = str(st("rsv_out").get("state") or ""), str(st("rsv_in").get("state") or "")
         # порядок и правила — как у бота (reserve_refuse_update_if_waiting): свой хвост, потом С9
         waiting = ""
+        peer = db.reserve_peer() or {}
+        name = str(peer.get("name") or "резерв")
         try:
-            from awgbot.domain.services.reserve.journal.tail import c9_wait_raw, own_tail_blocks_raw
+            from awgbot.domain.services.reserve.journal.tail import (C9_WAIT_REFUSED, OWN_TAIL_REFUSED, c9_wait_raw,
+                                                                     own_tail_blocks_raw)
             from awgbot.util.rsvjrn import schema_too_old
-            if own_tail_blocks_raw(db):
-                waiting = "свой хвост правок ещё не перенесён на резерв"
+            if own_tail_blocks_raw(db):                   # те же слова, что у отказа «⬆️ Обновить» в боте
+                waiting = OWN_TAIL_REFUSED.format(name=name, what="обновление и восстановление")
             elif c9_wait_raw(db):
-                waiting = "ждём правки бота с резерва после «вернуть без резерва» (не вернётся — удали пару в «🛟 Резерв»)"
+                waiting = C9_WAIT_REFUSED.format(name=name)
         except Exception as e:                            # noqa: BLE001
             if not schema_too_old(e):                     # старая база — не ждём; ошибка базы — не пускать
                 waiting = f"состояние резерва не прочитано ({e}) — повтори через минуту"
         if waiting and os.environ.get("AWG_RESERVE_IGNORE_WAIT") == "1":
-            print(f"резерв: {waiting} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: эти правки не придут", file=sys.stderr)
+            print(f"резерв: {waiting} — ПРОДОЛЖАЮ по AWG_RESERVE_IGNORE_WAIT=1: правки с резерва не придут",
+                  file=sys.stderr)
             waiting = ""
-        peer = db.reserve_peer() or {}
-        name = str(peer.get("name") or "резерв")
     finally:
         try:
             db.close()
@@ -79,7 +81,7 @@ def main() -> int:
         print(f"здесь сейчас пользователи и бот «{name}» ({inn}) — сначала их возврат к нему")
         return 3
     if waiting:
-        print(f"{waiting} («{name}») — обновление и восстановление после этого")
+        print(f"{waiting}; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (правки с резерва не придут)")
         return 3
     return 0
 

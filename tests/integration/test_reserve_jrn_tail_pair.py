@@ -457,8 +457,8 @@ def test_the_update_is_refused_while_waiting_for_the_reserves_edits(mv):
     mv.svc.rsv_update("rsv_out", await_merge=True)
     with pytest.raises(ServiceError) as e:
         mv.svc.reserve_refuse_update_if_waiting()
-    assert str(e.value) == ("Жду правки бота на «Beta», сделанные после потери связи, — обновление после того, как они "
-                            "придут; «Beta» не вернётся — удали пару в «🛟 Резерв»")
+    assert str(e.value) == ("Жду правки бота на «Beta», сделанные после потери связи, — обновление после них; "
+                            "он не вернётся — удали пару в «🛟 Резерв»"), str(e.value)
     mv.svc.rsv_update("rsv_out", await_merge=False)
     mv.svc.reserve_refuse_update_if_waiting()
 

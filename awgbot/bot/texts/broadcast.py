@@ -111,8 +111,7 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
     """Подвал превью с продлением: даты каждого адресата, не больше NAMES_SHOWN
     строк — дальше «[+N]» (превью — подтверждение, ссылок на снимок тут нет;
     список без предела пробивал 4096 уже на ~60 профилях)."""
-    from awgbot.util.textfmt.tail import more_count
-    who = "адресат" if n == 1 else "адресата" if 2 <= n <= 4 else "адресатов"
+    who = plural_ru(n, "адресат", "адресата", "адресатов")
     lines = [f"{n} {who} · продление на <b>{_days(days)}</b>:"]
     plan = list(plan)
     for e in plan[:NAMES_SHOWN]:
@@ -122,7 +121,7 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
         old, new = timeutil.fmt_date_ui(e.old_end), timeutil.fmt_date_ui(e.new_end)
         lines.append(f"• {profile_link(e.client, bot_username)}: {'🔴 ' if e.from_now else ''}{old} → {new}")
     if len(plan) > NAMES_SHOWN:
-        lines[-1] += more_count(len(plan) - NAMES_SHOWN)
+        lines.append(f"… и ещё {len(plan) - NAMES_SHOWN}")   # своей строкой: к датам последнего не клеить
     return "\n".join(lines)
 
 
