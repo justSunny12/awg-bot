@@ -18,8 +18,6 @@ from awgbot.bot import keyboards as kbm
 
 BOT = pathlib.Path(kbm.__file__).parent.parent              # awgbot/bot
 PKG = BOT.parent                                             # awgbot/
-MODULES = [*sorted((BOT / "texts").rglob("*.py")), *sorted((BOT / "keyboards").glob("*.py")),
-           *sorted((BOT / "sections").glob("*.py"))]
 _ALL = re.compile(r"__all__\s*=\s*\[[^\]]*\]", re.S)
 _IDENT = re.compile(r"[A-Za-z_]\w*")
 
@@ -36,9 +34,13 @@ def _public_names(src: str) -> set[str]:
     return {n for n in out if not n.startswith("__")}
 
 
-def _definitions(src: str, name: str) -> int:
-    return len(re.findall(r"^(?:async def |def |class )" + re.escape(name) + r"\b|^"
-                          + re.escape(name) + r"\s*(?::[^=\n]*)?=", src, re.M))
+_DEF = re.compile(r"^(?:async def |def |class )([A-Za-z_]\w*)\b|^([A-Za-z_]\w*)\s*(?::[^=\n]*)?=", re.M)
+
+
+def _definitions(src: str) -> Counter:
+    """Определения верхнего уровня файла по именам (def, class, присваивание
+    с начала строки) — одним проходом на файл: ссылкой они не считаются."""
+    return Counter(m.group(1) or m.group(2) for m in _DEF.finditer(src))
 
 
 def _identifiers(src: str) -> Counter:
@@ -69,29 +71,40 @@ def _identifiers(src: str) -> Counter:
     return out
 
 
-def dead_names(extra: dict | None = None) -> list[str]:
-    """extra — {модуль: текст}, подменяет исходник (для проверки сторожа)."""
-    code = {p: _ALL.sub("", (extra or {}).get(p) or p.read_text(encoding="utf-8")) for p in PKG.rglob("*.py")}
+def _modules(bot: pathlib.Path) -> list[pathlib.Path]:
+    return [*sorted((bot / "texts").rglob("*.py")), *sorted((bot / "keyboards").glob("*.py")),
+            *sorted((bot / "sections").glob("*.py"))]
+
+
+def dead_names(pkg_root: pathlib.Path = PKG) -> list[str]:
+    """pkg_root — каталог пакета awgbot (сторож сторожа подставляет свой)."""
+    bot = pkg_root / "bot"
+    code = {p: _ALL.sub("", p.read_text(encoding="utf-8")) for p in pkg_root.rglob("*.py")}
+    # ссылки файла — его идентификаторы без его же определений
+    refs_in = {p: _identifiers(src) - _definitions(src) for p, src in code.items()}
     counts = {p: _identifiers(src) for p, src in code.items()}
+    readers_of: dict[str, list[pathlib.Path]] = {}
     out = []
-    for mod in MODULES:
+    for mod in _modules(bot):
         if mod.name == "__init__.py":
             continue
-        pkg = mod.relative_to(BOT).parts[0]                   # texts | keyboards | sections
+        pkg = mod.relative_to(bot).parts[0]                   # texts | keyboards | sections
         reexport = mod.parent / "__init__.py" if pkg != "sections" else None
         # считают только файлы, которым пакет виден: сам пакет и те, кто его
         # импортирует; одноимённый обработчик или метод сервиса — не ссылка
-        readers = [p for p, src in code.items()
-                   if p.is_relative_to(BOT / pkg) or re.search(r"\b" + pkg + r"\b", src)]
+        if pkg not in readers_of:
+            word = re.compile(r"\b" + pkg + r"\b")
+            readers_of[pkg] = [p for p, src in code.items() if p.is_relative_to(bot / pkg) or word.search(src)]
+        readers = readers_of[pkg]
         for name in sorted(_public_names(code[mod])):
-            refs = sum(counts[p][name] - _definitions(code[p], name) for p in readers)
+            refs = sum(refs_in[p][name] for p in readers)
             if reexport is not None:
                 refs -= counts[reexport][name]
                 outer = reexport.parent.parent / "__init__.py"          # texts/__init__ над texts/routing
                 if outer.exists() and outer in counts:
                     refs -= counts[outer][name]
             if refs == 0:
-                out.append(f"{mod.relative_to(BOT)}:{name}")
+                out.append(f"{mod.relative_to(bot)}:{name}")
     return out
 
 
@@ -99,19 +112,32 @@ def test_every_public_name_of_texts_keyboards_and_sections_is_used():
     assert dead_names() == [], "имена без ссылок в awgbot/ — снять вместе с тестами на них"
 
 
-def test_the_guard_notices_a_fresh_dead_name():
-    """Сторож сторожа: имя, на которое ссылается только тест, докстринг или
-    реэкспорт, — мёртвое; и в подпакете routing тоже."""
-    fmt = BOT / "texts" / "fmt.py"
-    src = fmt.read_text(encoding="utf-8") + "\nONLY_IN_TESTS = 1\n"
-    assert dead_names({fmt: src}) == ["texts/fmt.py:ONLY_IN_TESTS"]
-    init = BOT / "texts" / "__init__.py"
-    reexported = init.read_text(encoding="utf-8") + "\nfrom .fmt import ONLY_IN_TESTS\n"
-    handler = BOT / "handlers" / "client" / "main.py"
-    doc = '"""Упоминание ONLY_IN_TESTS в докстринге — не ссылка."""\n' + handler.read_text(encoding="utf-8")
-    assert dead_names({fmt: src, init: reexported, handler: doc}) == ["texts/fmt.py:ONLY_IN_TESTS"]
-    slots = BOT / "texts" / "routing" / "slots.py"
-    rinit = BOT / "texts" / "routing" / "__init__.py"
-    assert dead_names({slots: slots.read_text(encoding="utf-8") + "\nDEAD_IN_ROUTING = 1\n",
-                       rinit: rinit.read_text(encoding="utf-8") + "\nfrom .slots import DEAD_IN_ROUTING\n"}) \
-        == ["texts/routing/slots.py:DEAD_IN_ROUTING"]
+def _tree(root: pathlib.Path, files: dict[str, str]) -> pathlib.Path:
+    for rel, src in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(src, encoding="utf-8")
+    return root
+
+
+def test_the_guard_notices_a_fresh_dead_name(tmp_path):
+    """Сторож сторожа на своём пакете: имя, на которое ссылается только тест,
+    докстринг или реэкспорт, — мёртвое; и в подпакете routing тоже. Имя,
+    которое зовёт обработчик, — живое. Иначе зелёный сторож ничего не значит."""
+    pkg = _tree(tmp_path / "awgbot", {
+        "__init__.py": "",
+        "bot/__init__.py": "",
+        "bot/texts/__init__.py": "from .fmt import USED, ONLY_IN_TESTS\n",
+        "bot/texts/fmt.py": "USED = 1\nONLY_IN_TESTS = 2\n",
+        "bot/texts/routing/__init__.py": "from .slots import DEAD_IN_ROUTING, LIVE_IN_ROUTING\n",
+        "bot/texts/routing/slots.py": "DEAD_IN_ROUTING = 1\nLIVE_IN_ROUTING = 2\n",
+        "bot/keyboards/__init__.py": "",
+        "bot/sections/__init__.py": "",
+        "bot/handlers/__init__.py": "",
+        "bot/handlers/main.py": ('"""Упоминание ONLY_IN_TESTS в докстринге — не ссылка."""\n'
+                                 "from awgbot.bot import texts\n\n\n"
+                                 "def show():\n    return texts.USED, texts.routing.LIVE_IN_ROUTING\n"),
+    })
+    _tree(tmp_path, {"tests/test_fmt.py": "from awgbot.bot.texts import ONLY_IN_TESTS\n"})
+    assert dead_names(pkg) == ["texts/fmt.py:ONLY_IN_TESTS", "texts/routing/slots.py:DEAD_IN_ROUTING"], \
+        "имя только из теста, докстринга и реэкспорта — мёртвое, живое из обработчика — нет"
