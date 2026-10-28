@@ -96,3 +96,27 @@ def test_a_zone_state_without_clones_logs_nothing(host, monkeypatch, caplog):
     _clone_up(host, monkeypatch, caplog, netmap="")
     host.svc.reserve_in_tick()
     assert not _marks(caplog)
+
+
+PART = "NETMAP не на все клоны"
+
+
+def test_clones_without_a_block_under_an_empty_plan_give_only_the_one_line(host, monkeypatch, caplog):
+    """План пуст, а скрипт записал и `netmap_miss` (все клоны без блока): это
+    один факт «NETMAP не встал», а не два — вторая строка про частичный план
+    сбила бы админа (частичного плана нет, NETMAP нет ни на одном клоне)."""
+    _clone_up(host, monkeypatch, caplog, ifaces="awg0 awg1", netmap="", netmap_why="pool", netmap_miss="awg0 awg1")
+    assert "up" in sent(host.svc.reserve_in_tick())
+    assert len(_marks(caplog)) == 1, [r.getMessage() for r in caplog.records]
+    assert not [r for r in caplog.records if PART in r.getMessage()], \
+        "при пустом плане ещё и строка частичного плана"
+
+
+@pytest.mark.parametrize("why", ["kernel", "pool", "bad_pool"])
+def test_a_reason_without_clones_in_the_zone_state_logs_nothing(host, monkeypatch, caplog, why):
+    """Причина в состоянии есть, а клонов нет (состояние от прошлого раза или
+    не дописано): судить не о чем — ни строки «не встал», ни частичного плана."""
+    _clone_up(host, monkeypatch, caplog, netmap="", netmap_why=why, netmap_miss="awg1")
+    host.svc.reserve_in_tick()
+    assert not _marks(caplog) and not [r for r in caplog.records if PART in r.getMessage()], \
+        [r.getMessage() for r in caplog.records]

@@ -130,3 +130,22 @@ def test_a_good_zone_pool_goes_through_normalized_and_without_a_line(monkeypatch
     caplog.set_level(logging.WARNING)
     assert rsvzone._zone_env()["ZONE_POOL"] == "100.127.0.0/20"
     assert not [r for r in caplog.records if "zone_pool" in r.getMessage()]
+
+
+def test_each_broken_zone_pool_value_gets_its_own_line_once(monkeypatch, caplog):
+    """Админ поправил одну опечатку на другую: новое битое значение — своя
+    строка (иначе журнал молчит о свежей ошибке, потому что «уже говорил»);
+    возврат к прежнему битому и повторы — без новых строк."""
+    import logging
+    from awgbot.core import settings
+    from awgbot.infra import rsvzone
+    current = {"v": "169.254.96.0/33"}
+    monkeypatch.setattr(settings, "get", lambda key, default=None: current["v"] if key.endswith("zone_pool") else default)
+    monkeypatch.setattr(rsvzone, "_pool_told", set())
+    caplog.set_level(logging.WARNING)
+    for value in ("169.254.96.0/33", "169.254.96.0/33", "fd00:96::/64", "fd00:96::/64", "169.254.96.0/33"):
+        current["v"] = value
+        assert rsvzone._zone_env()["ZONE_POOL"] == RESERVE["zone_pool"], f"{value!r} ушло скрипту вместо умолчания"
+    told = [r.getMessage() for r in caplog.records if "zone_pool" in r.getMessage()]
+    assert len(told) == 2, f"ждали по строке на каждое из двух битых значений: {told}"
+    assert "169.254.96.0/33" in told[0] and "fd00:96::/64" in told[1], told

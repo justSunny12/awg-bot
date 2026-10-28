@@ -325,3 +325,66 @@ def test_online_counts_a_block_peer_that_also_has_another_address(services, fake
     services.poll_traffic()
     assert services.db.get_state("online_count") == "1", \
         f"онлайн: {services.db.get_state('online_count')} (ожидался один пир «блок + ещё»)"
+
+
+# ── окно переезда: два интерфейса, правило — у каждого своё ─────────────────
+
+def _two_ifaces(monkeypatch, confs: dict, dumps: dict):
+    """Переезд профилей: опрос обходит awg0 и awg1. Конфиг и дамп — свои у
+    каждого интерфейса (конфиг None — не читается)."""
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    by_path = {awg.conf_path(name): text for name, text in confs.items()}
+
+    def read_file(path):
+        text = by_path.get(path)
+        if text is None:
+            raise awg.AwgError(f"нет файла {path}")
+        return text
+
+    def show_dump(iface=None):
+        return awg.parse_dump(_dump(dumps[awg.iface_of(iface)]))
+    monkeypatch.setattr(awg, "read_file", read_file, raising=False)
+    monkeypatch.setattr(awg, "show_dump", show_dump, raising=False)
+
+
+def _block_users_conf(devs) -> str:
+    return ("[Interface]\nPrivateKey = DUMMY\nAddress = 169.254.88.1/24\nListenPort = 43126\n"
+            + "".join(f"\n[Peer]\nPublicKey = {d.public_key}\nAllowedIPs = {d.address}/32\n" for d in devs))
+
+
+def test_in_the_migration_window_the_probe_rule_is_per_interface_not_global(services, fake_awg,
+                                                                             make_active_client, monkeypatch):
+    """Окно переезда: на awg0 обычная подсеть и живые зонды, на awg1 подсеть
+    пользователей внутри блока 169.254.88.0/24. Правило, посчитанное на все
+    интерфейсы сразу, ошиблось бы в одну из сторон: выключенное глобально —
+    «📶 Онлайн» больше на число голосующих; включённое глобально — устройства
+    awg1 выпадают из онлайна как зонды."""
+    _client, devs = _users(services, make_active_client, n=1, tg_id=7130)
+    block_devs = _users_in_block(services, make_active_client, tg_id=7131, n=2)
+    now = int(timeutil.now().timestamp())
+    _two_ifaces(monkeypatch,
+                confs={"awg0": _conf_42([(d.public_key, d.address) for d in devs]),
+                       "awg1": _block_users_conf(block_devs)},
+                dumps={"awg0": [(d.public_key, d.address, now - 10, 1, 1) for d in devs]
+                       + [(pub, ip, now - 5, 1, 1) for pub, ip in PROBES],
+                       "awg1": [(d.public_key, d.address, now - 10, 1, 1) for d in block_devs]})
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "3", (
+        f"онлайн {services.db.get_state('online_count')}: ждали 1 устройство awg0 + 2 устройства awg1 "
+        "из подсети в блоке, без 3 зондов awg0")
+
+
+def test_an_unreadable_conf_of_one_interface_does_not_switch_the_rule_of_the_other(services, fake_awg,
+                                                                                    make_active_client, monkeypatch):
+    """Конфиг awg1 не прочитан — правило действует только на awg1; awg0 с
+    подсетью в блоке своё правило выключает сам, и его устройства — в онлайне."""
+    block_devs = _users_in_block(services, make_active_client, tg_id=7132, n=2)
+    now = int(timeutil.now().timestamp())
+    _two_ifaces(monkeypatch,
+                confs={"awg0": _block_users_conf(block_devs), "awg1": None},
+                dumps={"awg0": [(d.public_key, d.address, now - 10, 1, 1) for d in block_devs],
+                       "awg1": [(pub, ip, now - 5, 1, 1) for pub, ip in PROBES]})
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "2", (
+        f"онлайн {services.db.get_state('online_count')}: ждали 2 устройства awg0, зонды awg1 без конфига — не в счёт")

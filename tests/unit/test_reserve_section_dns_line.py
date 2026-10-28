@@ -116,3 +116,30 @@ def test_label_and_reason_are_html_escaped():
     assert "<b>" not in st.dns_line(_dns(provider_label="<b>Dns</b>"))
     assert "<b>" not in st.dns_line(_dns(provider_label="<b>Dns</b>", addrs=["<b>", "x"]))
     assert "<b>" not in st.dns_line(_dns(provider_label="<b>Dns</b>", ttl=9000))
+
+
+def test_without_ttl_warn_the_threshold_is_300():
+    """Данные без порога (прежний сборщик, неполный словарь) — порог 300 с, как
+    у экрана записи: без него любой TTL выше нуля стал бы предупреждением или,
+    наоборот, ни один."""
+    base = {k: v for k, v in _dns().items() if k != "ttl_warn"}
+    assert st.dns_line({**base, "ttl": 300}).startswith("🟢"), "TTL 300 без порога в данных — уже предупреждение"
+    line = st.dns_line({**base, "ttl": 301})
+    assert line.startswith("⚠️ Запись DNS: DigitalPlat — TTL 301 с (лучше ≤ 300)"), line
+
+
+def test_one_address_is_green_and_does_not_ask_to_leave_one_record():
+    line = st.dns_line(_dns(addrs=["203.0.113.5"]))
+    assert line.startswith("🟢 Запись DNS: DigitalPlat — бот меняет её сам"), line
+    assert "оставь одну A-запись" not in line and "203.0.113.5" not in line, line
+
+
+def test_a_passed_check_without_addresses_is_green():
+    """Проверка прошла, а адресов в состоянии нет (провайдер их не вернул или
+    состояние до 4.1.0) — это не «несколько A-записей»: строка зелёная, а не
+    падение и не ⚠️ на пустом месте."""
+    for addrs in ([], None):
+        line = st.dns_line(_dns(addrs=addrs))
+        assert line.startswith("🟢 Запись DNS: DigitalPlat — бот меняет её сам · проверено в "), (addrs, line)
+    no_key = {k: v for k, v in _dns().items() if k not in ("addrs", "ttl")}
+    assert st.dns_line(no_key).startswith("🟢"), "данные без addrs и ttl — не зелёная строка"

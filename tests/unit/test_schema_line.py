@@ -250,6 +250,33 @@ def test_the_tag_snapshot_is_taken_from_the_tag_tree_not_from_this_one(tmp_path)
     assert f'__version__ = "{tag[1:]}"' in ver, f"дерево тега {tag} несёт не свою версию: {ver!r}"
 
 
+def test_without_git_the_tag_guard_is_skipped_not_failed(tmp_path, monkeypatch):
+    """Архив поставки и чужая копия без git: сторож тега обязан пропуститься с
+    причиной, а не упасть — иначе набор тестов красный у всякого, кто гоняет
+    его не из клона репозитория."""
+    import shutil
+    import subprocess
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **kw: None)
+
+    def no_git(*a, **kw):
+        raise AssertionError(f"без git его всё равно позвали: {a[0] if a else kw}")
+    monkeypatch.setattr(subprocess, "run", no_git)
+    assert _tag_snapshot("v4.0.2", tmp_path) is None
+    with pytest.raises(pytest.skip.Exception, match="нет git или тега"):
+        test_the_schema_and_conf_are_a_superset_of_the_last_released_tag(tmp_path)
+    with pytest.raises(pytest.skip.Exception, match="нет git или тега"):
+        test_the_tag_snapshot_is_taken_from_the_tag_tree_not_from_this_one(tmp_path)
+
+
+def test_a_tag_missing_in_the_clone_is_skipped_not_failed(tmp_path):
+    """Клон без тегов (`git clone --no-tags`, мелкий клон CI): тега нет — пропуск."""
+    import shutil
+    if not shutil.which("git"):
+        pytest.skip("нет git")
+    assert _tag_snapshot("v0.0.0-no-such-tag", tmp_path) is None
+    assert not (tmp_path / "tag").exists(), "без тега дерево всё равно распаковывали"
+
+
 # ── переснять снимок (только со сдвигом COMPAT_FLOOR) ──────────────────────
 
 def _write_snapshots() -> None:

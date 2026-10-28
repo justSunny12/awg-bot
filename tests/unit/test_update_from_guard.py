@@ -113,3 +113,70 @@ def test_the_shell_side_reads_the_constant_exactly_as_python_sees_it():
     r = subprocess.run(["bash", "-c", f'{pat.group(0)} "{ROOT}/awgbot/core/compat.py"'],
                        capture_output=True, text=True, timeout=30, env={"PATH": "/usr/bin:/bin"})
     assert r.stdout.strip() == compat.UPDATE_FROM, r.stdout + r.stderr
+
+
+# ── сторож на подставном каталоге выпусков ───────────────────────────────────
+
+def _catalog(tmp_path, monkeypatch, releases: dict[str, dict], *, tree: str, update_from: str):
+    """Каталог docs/releases из файлов {версия: {роль: requires}}, версия дерева и
+    UPDATE_FROM — подставные: сторож проверяется на состоянии «после выпуска»,
+    которого в репозитории ещё нет."""
+    import sys
+    me = sys.modules[__name__]
+    d = tmp_path / "releases"; d.mkdir()
+    for ver, roles in releases.items():
+        meta = {"schema": 1, "version": ver, "awg_gen": 1,
+                "roles": {role: {"requires": req} for role, req in roles.items()}}
+        (d / f"v{ver}.json").write_text(json.dumps(meta), encoding="utf-8")
+    monkeypatch.setattr(me, "RELEASES", d)
+    monkeypatch.setattr(me, "__version__", tree)
+    monkeypatch.setattr(compat, "UPDATE_FROM", update_from)
+
+
+_BEFORE = {"4.0.0": {"main": "3.3.0", "gw": "3.3.0"}, "4.0.1": {"main": "3.3.0"},
+           "4.0.2": {"main": "3.3.0", "gw": "3.3.0"}}
+
+
+def test_after_the_release_of_the_shift_the_tree_agrees_with_its_own_file(tmp_path, monkeypatch):
+    """Выпуск 4.1.0 записал requires 4.0.0 обеим ролям, дерево — 4.1.0, UPDATE_FROM
+    4.0.0: все три сторожа зелёные, и третий идёт веткой равенства, а не
+    пропуском «файла ещё нет»."""
+    _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.0", "gw": "4.0.0"}},
+             tree="4.1.0", update_from="4.0.0")
+    test_update_from_is_a_released_step_addressed_to_both_roles()
+    test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
+    test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()   # без skip
+
+
+def test_a_release_minimum_above_update_from_is_caught(tmp_path, monkeypatch):
+    """Выпуск записал requires выше константы (4.0.2), а UPDATE_FROM остался 4.0.0:
+    бот скажет «сначала 4.0.2», терминал пустит 4.0.0 — оба сторожа обязаны
+    покраснеть."""
+    _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.2", "gw": "4.0.2"}},
+             tree="4.1.0", update_from="4.0.0")
+    with pytest.raises(AssertionError, match="ниже минимума"):
+        test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
+    with pytest.raises(AssertionError, match="не равенство и не сдвиг вверх"):
+        test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()
+
+
+def test_a_minimum_released_to_one_role_only_or_never_released_is_caught(tmp_path, monkeypatch):
+    """Подсказка «сначала обнови до v4.0.1» на шлюзе вела бы на выпуск, которого
+    у шлюза нет; на 4.0.5 — на выпуск, которого нет вовсе."""
+    _catalog(tmp_path, monkeypatch, dict(_BEFORE), tree="4.0.2", update_from="4.0.1")
+    with pytest.raises(AssertionError, match="адресован не обеим ролям"):
+        test_update_from_is_a_released_step_addressed_to_both_roles()
+    monkeypatch.setattr(compat, "UPDATE_FROM", "4.0.5")
+    with pytest.raises(AssertionError, match="нет docs/releases/v4.0.5.json"):
+        test_update_from_is_a_released_step_addressed_to_both_roles()
+
+
+def test_a_shift_waiting_for_the_next_release_passes_and_a_minimum_ahead_of_releases_does_not(tmp_path, monkeypatch):
+    """Дерево 4.0.2 (последний выпуск), UPDATE_FROM поднят до 4.0.2 — сдвиг ждёт
+    выпуска: зелёный; UPDATE_FROM новее последнего выпуска — прыгать не с чего."""
+    _catalog(tmp_path, monkeypatch, dict(_BEFORE), tree="4.0.2", update_from="4.0.2")
+    test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
+    test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()
+    monkeypatch.setattr(compat, "UPDATE_FROM", "4.1.0")
+    with pytest.raises(AssertionError, match="новее последнего выпуска"):
+        test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()

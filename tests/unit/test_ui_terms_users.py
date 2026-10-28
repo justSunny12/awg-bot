@@ -260,6 +260,31 @@ def test_the_client_scan_reads_terminal_lines_of_scripts(tmp_path):
     assert sorted(n for v, n in _text_strings(md) if _bad_words(v)) == [3, 4]
 
 
+def test_the_scan_follows_indented_heredocs_and_reads_after_or(tmp_path):
+    """`<<-` (слово без кавычек и с пробелом) закрывается строкой с табами — и
+    после неё скан снова обычный: не заметь он конец, всё ниже читалось бы
+    как печать (ложные красные на присваиваниях), не заметь начало — текст
+    справки с табами прошёл бы мимо. `read -p` после `||` и `&&` — вопрос
+    человеку, как и в начале строки."""
+    sh = tmp_path / "probe.sh"
+    sh.write_text('if true; then\n'                                             # 1
+                  '\tcat <<-EOF\n'                                              # 2
+                  '\t\tсправка для клиентов\n'                                  # 3
+                  '\t\t# клиенты: комментарий конфига в heredoc\n'              # 4
+                  '\tEOF\n'                                                     # 5
+                  '\tx="клиентов"\n'                                            # 6
+                  'fi\n'                                                        # 7
+                  'cat <<- END\n'                                               # 8
+                  '\tклиентам с пробелом после <<-\n'                           # 9
+                  '\t\tEND\n'                                                   # 10
+                  'y="клиенты после конца"\n'                                    # 11
+                  '[ -n "$n" ] || read -r -p "Сколько клиентов? " n\n'           # 12
+                  'ok=1 && read -p "Имя клиента: " m\n'                          # 13
+                  'z="$(read_conf)" # клиентов\n', encoding="utf-8")             # 14
+    found = sorted(n for v, n in _sh_strings(sh) if _bad_words(v))
+    assert found == [3, 9, 12, 13], f"строки скрипта со «клиентом» для человека: {found}"
+
+
 @pytest.mark.parametrize("text, bad", [
     ("Мои клиенты", ["клиенты"]),
     ("нет клиентов", ["клиентов"]),

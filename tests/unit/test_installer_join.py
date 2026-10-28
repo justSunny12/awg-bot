@@ -132,7 +132,8 @@ def test_a_broken_token_is_refused_before_the_network(tmp_path):
 
 
 def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway", *, tty: bool = True,
-              yes: bool = False, state: str = "", update_from: str = ""):
+              yes: bool = False, state: str = "", update_from: str = "", tgz: Path | None = None,
+              path: str = "/usr/bin:/bin"):
     """Фрагмент «агент уже стоит» с командой подключения: подставной
     awg-bot.sh пишет, чем его позвали; tty — есть ли терминал для вопроса
     (подменён дескриптором 3); state — файл сопряжения агента."""
@@ -158,6 +159,8 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
     jf = tmp_path / "join.json"
     if state:
         jf.write_text(state, encoding="utf-8")
+    # поставка распакована рядом или — архивом (кит шлюза), без распакованного дерева
+    where = f'TGZ=""; SRC_ROOT="{src_root}"' if tgz is None else f'TGZ="{tgz}"; SRC_ROOT=""'
     prog = (
         "set -euo pipefail\n"
         f'INSTALL_DIR="{inst}"; ETC_DIR="{etc}"\n'
@@ -165,11 +168,11 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
         "log() { printf '[install] %s\\n' \"$*\"; }\n"
         "die() { printf '[install:ОШИБКА] %s\\n' \"$*\" >&2; exit 1; }\n"
         + "".join(_func(src, f) for f in ("ver_of", "ver_lt", "src_update_from", "update_from_why")) +
-        f'JOIN_TOKEN="AWGJ1.DUMMY"; export AWG_JOIN_TOKEN="$JOIN_TOKEN"; JOIN_VER="{want}"; TGZ=""; SRC_ROOT="{src_root}"\n'
+        f'JOIN_TOKEN="AWGJ1.DUMMY"; export AWG_JOIN_TOKEN="$JOIN_TOKEN"; JOIN_VER="{want}"; {where}\n'
         f'JOIN_ID="0123456789abcdef"; JOIN_STATE_FILE="{jf}"; ASSUME_YES={int(yes)}\n'
         + (f'exec 3<"{ans}"\n' if tty else "") + frag + "echo CONTINUE_INSTALL\n")
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
-                       env={"PATH": "/usr/bin:/bin", "TMPDIR": str(tmp_path)})
+                       env={"PATH": path, "TMPDIR": str(tmp_path)})
     return r, (log.read_text(encoding="utf-8").splitlines() if log.exists() else [])
 
 
@@ -198,6 +201,70 @@ def test_an_installed_agent_below_the_update_from_of_the_release_is_refused_befo
     assert "с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, r.stderr
     r, calls = _existing(tmp_path / "ok", "4.0.2", "4.1.0", "y", update_from="4.0.0")
     assert r.returncode == 0 and len(calls) == 1 and calls[0].startswith("awg-bot update "), (r.stderr, calls)
+
+
+# tar с поведением GNU tar для `-xzOf АРХИВ --wildcards ШАБЛОН` (на стенде и
+# на хостах — GNU; bsdtar --wildcards не знает): содержимое совпавших членов —
+# в stdout, вызов — в журнал. Прочие режимы фрагменту не нужны — код 2.
+GNU_TAR = ('#!/usr/bin/env python3\n'
+           'import fnmatch, sys, tarfile\n'
+           'open(sys.argv[0] + ".log", "a").write(" ".join(sys.argv[1:]) + "\\n")\n'
+           'a = sys.argv[1:]\n'
+           'if a[:1] != ["-xzOf"] or "--wildcards" not in a: sys.exit(2)\n'
+           'pats = a[a.index("--wildcards") + 1:]\n'
+           'with tarfile.open(a[1], "r:gz") as t:\n'
+           '    for m in t.getmembers():\n'
+           '        if m.isfile() and any(fnmatch.fnmatch(m.name, p) for p in pats):\n'
+           '            sys.stdout.buffer.write(t.extractfile(m).read())\n')
+
+
+def _kit(tmp_path: Path, update_from: str) -> Path:
+    """Архив поставки, как его собирает `tar czf … -C поставка .` (члены «./…»)."""
+    import io
+    import tarfile
+    tgz = tmp_path / "kit" / "awg-bot.tgz"; tgz.parent.mkdir(parents=True)
+    files = {"./awgbot/__version__.py": b'__version__ = "4.1.0"\n'}
+    if update_from:
+        files["./awgbot/core/compat.py"] = f'COMPAT_FLOOR = "4.0.0"\nUPDATE_FROM = "{update_from}"\n'.encode()
+    with tarfile.open(tgz, "w:gz") as t:
+        for name, raw in files.items():
+            ti = tarfile.TarInfo(name); ti.size = len(raw); t.addfile(ti, io.BytesIO(raw))
+    return tgz
+
+
+def _gnu_tar(tmp_path: Path) -> tuple[str, Path]:
+    d = tmp_path / "gnubin"; d.mkdir(parents=True)
+    (d / "tar").write_text(GNU_TAR, encoding="utf-8")       # исполняемый Python сам, не телом sh (как у fake_cmd)
+    (d / "tar").chmod(0o755)
+    return f"{d}:/usr/bin:/bin", d / "tar.log"
+
+
+@pytest.mark.parametrize("have, refused", [("3.4.1", True), ("4.0.2", False)], ids=["below", "at-or-above"])
+def test_with_an_archive_the_join_path_reads_the_minimum_from_inside_the_archive(tmp_path, have, refused):
+    """Кит шлюза — архив без распакованного дерева: минимум обновления берётся
+    из compat.py внутри архива. Не прочти его — агент 3.4.1 поехал бы на 4.1.0
+    прыжком через минимум (conf и обвязка прежней раскладки без единой ошибки)."""
+    path, tar_log = _gnu_tar(tmp_path)
+    tgz = _kit(tmp_path, "4.0.0")
+    r, calls = _existing(tmp_path, have, "4.1.0", "y", tgz=tgz, path=path)
+    reads = tar_log.read_text(encoding="utf-8").splitlines() if tar_log.exists() else []
+    assert any(ln.startswith(f"-xzOf {tgz} ") and "compat.py" in ln for ln in reads), \
+        f"минимум не читался из архива: {reads}"
+    if refused:
+        assert r.returncode != 0 and calls == [], (r.stderr, calls)
+        assert "с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, r.stderr
+    else:
+        assert r.returncode == 0, r.stderr
+        assert len(calls) == 1 and calls[0].startswith(f"awg-bot update {tgz} "), calls
+
+
+def test_an_archive_without_update_from_is_not_refused_on_the_join_path(tmp_path):
+    """Поставка до появления минимума (compat.py без UPDATE_FROM или его нет в
+    архиве) — сравнивать не с чем: обновление и подключение, как раньше."""
+    path, tar_log = _gnu_tar(tmp_path)
+    tgz = _kit(tmp_path, "")
+    r, calls = _existing(tmp_path, "3.4.1", "4.1.0", "y", tgz=tgz, path=path)
+    assert r.returncode == 0 and len(calls) == 1 and calls[0].startswith(f"awg-bot update {tgz} "), (r.stderr, calls)
 
 
 def test_no_means_nothing_changes(tmp_path):

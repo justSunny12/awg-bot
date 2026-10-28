@@ -329,6 +329,20 @@ def test_a_partial_plan_names_the_clones_without_a_block_and_keeps_cake_by_desti
     assert cake == ["tc qdisc replace dev eth0 root cake besteffort dual-dsthost nat"], cake
 
 
+def test_a_retake_after_a_failed_plan_clears_the_old_reason_and_missing_clones(zone):
+    """Повтор --take, когда пул освободился: причина и клоны без блока прошлого
+    раза обязаны уйти из состояния — иначе журнал резерва и --status
+    продолжали бы говорить «пул занят» при вставшем NETMAP."""
+    zone.routes("default via 203.0.113.1 dev eth0\n" + "".join(f"169.254.{96 + i}.0/24 dev ens4\n" for i in range(32)))
+    assert _take(zone).returncode == 0
+    st = zone.read_state()
+    assert (st["netmap"], st["netmap_why"]) == ("", "pool"), st
+    zone.routes("default via 203.0.113.1 dev eth0\n")
+    assert _take(zone).returncode == 0
+    st = zone.read_state()
+    assert st["netmap"] and (st["netmap_why"], st["netmap_miss"]) == ("", ""), f"хвост прошлого --take: {st}"
+
+
 @pytest.mark.parametrize("mode", ["cmd_serve", "cmd_shell"])
 def test_redrawing_the_table_in_serve_and_shell_keeps_the_netmap_from_the_state(zone, mode):
     """Перерисовка таблицы посреди обслуживания берёт клоны и план из состояния:

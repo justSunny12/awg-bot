@@ -143,6 +143,31 @@ def test_warnings_of_a_successful_mode_go_to_the_journal_and_the_rest_is_debug(m
     assert debug == ["резерв: зона --take: take: ok"], debug
 
 
+@pytest.mark.parametrize("out, err", [(b"", b""), (b"\n  \n", b"\t\n")], ids=["empty", "blank-lines"])
+def test_a_silent_successful_mode_returns_empty_text_and_writes_nothing_to_the_journal(monkeypatch, caplog, out, err):
+    """Режим отработал молча (или одними пустыми строками): ни предупреждения,
+    ни пустых отладочных строк — журнал бота не засоряется на каждом такте."""
+    import logging
+    _Proc(monkeypatch, out=out, err=err)
+    caplog.set_level(logging.DEBUG, logger="awgbot.infra.rsvzone")
+    assert rsvzone.run("status") == "", "пустой вывод вернулся не пустой строкой"
+    got = [r.getMessage() for r in caplog.records if r.name == "awgbot.infra.rsvzone"]
+    assert got == [], f"на пустой вывод в журнале: {got}"
+
+
+def test_debug_lines_skip_blanks_and_keep_the_mode_name(monkeypatch, caplog):
+    """Каждая непустая строка — своей отладочной записью с именем режима
+    (иначе в журнале не понять, чей это вывод); пустые между ними — не записи."""
+    import logging
+    _Proc(monkeypatch, out=b"zone=present\n\nphase=serving\n")
+    caplog.set_level(logging.DEBUG, logger="awgbot.infra.rsvzone")
+    rsvzone.run("--status")
+    recs = [r for r in caplog.records if r.name == "awgbot.infra.rsvzone"]
+    assert [r.getMessage() for r in recs] == ["резерв: зона --status: zone=present",
+                                              "резерв: зона --status: phase=serving"], [r.getMessage() for r in recs]
+    assert all(r.levelno == logging.DEBUG for r in recs), "обычная строка вывода поднята до предупреждения"
+
+
 @pytest.mark.parametrize("exc", [OSError("нет bash"), subprocess.TimeoutExpired("bash", 1)])
 def test_a_script_that_cannot_start_or_hangs_is_a_zone_error(monkeypatch, exc):
     _Proc(monkeypatch, exc=exc)
