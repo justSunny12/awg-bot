@@ -149,24 +149,37 @@ class ReserveTailMixin:
         return [(send, "jtail", p) for p in parts]
 
     def reserve_tail_blocks(self) -> bool:
-        """Свой хвост не перенесён и ждём не дольше TAIL_WAIT_S; дольше — хвост снимается
-        строкой журнала (держатель так и не ответил) и больше ничего не держит."""
+        """Свой хвост не перенесён и ждём не дольше TAIL_WAIT_S; дольше — не держит: после
+        возврата основа перенесёт его сама (`reserve_tail_self`)."""
         if not self.reserve_tail_pending():
             return False
         meta_t = self.rsv_get("rsv_tail")
         try:
-            at = timeutil.parse_iso(str(meta_t.get("at") or ""))
-            late = timeutil.elapsed(at) > TAIL_WAIT_S
+            return timeutil.elapsed(timeutil.parse_iso(str(meta_t.get("at") or ""))) <= TAIL_WAIT_S
         except ValueError:
-            late = False
-        if late:
-            rows = self.db.jrn_tail_rows()
-            log.error("резерв: хвост эпохи %s (%d событий) держатель не принял за %d мин — снят: %s",
-                      meta_t.get("e"), len(rows), TAIL_WAIT_S // 60, [(ev.i, ev.op, ev.t) for ev in rows][:200])
-            self.db.jrn_tail_drop()
-            self.rsv_put("rsv_tail", None)
             return False
-        return True
+
+    def reserve_tail_self(self) -> list[Notification]:
+        """После возврата (держатель — здесь) свой хвост, который бот на резерве так и не
+        принял, — перенести самой поверх своей базы; Т-Ж4/Т-Ж5 — как от него."""
+        if not self.reserve_tail_pending() or self.db.jrn_meta()["role"] != "holder":
+            return []
+        evs = self.db.jrn_tail_rows()
+        meta_t = self.rsv_get("rsv_tail")
+        log.warning("резерв: хвост эпохи %s (%d событий) бот на «%s» не принял — переношу здесь",
+                    meta_t.get("e"), len(evs), self.reserve_peer_name())
+        before = self.db.jrn_last_i()
+        try:
+            rpt = self.db.jrn_rebase(evs)
+        except Exception as ex:                                # noqa: BLE001
+            log.error("резерв: свой хвост не перенесён: %s", ex)
+            return []
+        self._tail_side_effects(before)
+        self.db.jrn_tail_drop()
+        self.rsv_put("rsv_tail", None)
+        if rpt.disputed:
+            log.info("резерв: свой хвост: спорные: %s", rpt.disputed)
+        return self._tail_notes("crash", rpt.moved, rpt.disputed, len(rpt.disputed))
 
     # ── держатель: приём ────────────────────────────────────────────────────
     def _tail_expected(self, e: int, fork: int) -> str:

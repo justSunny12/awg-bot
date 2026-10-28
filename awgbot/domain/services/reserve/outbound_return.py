@@ -307,6 +307,7 @@ class ReserveReturnMixin:
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
         if hasattr(self, "reserve_tail_notes"):
             notes += self.reserve_tail_notes()                # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
+            notes += self.reserve_tail_self()                 # хвост, который бот на резерве так и не принял
             notes += self.reserve_c9_notes()                  # и правки бота на резерве после «вернуть без резерва»
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
         # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается
