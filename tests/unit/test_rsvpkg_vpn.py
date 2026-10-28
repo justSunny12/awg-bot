@@ -181,3 +181,91 @@ def test_garbage_in_the_zone_lists_is_a_vpn_part_error(key, value):
     part[key] = value
     with pytest.raises(vpn.VpnPartError):
         vpn.check(part)
+
+
+# ── пиры-зонды кворума и второй адрес интерфейса ─────────────────────────────
+# Выпуск с кворумом кладёт на интерфейс пользователей пиры-зонды голосующих
+# (169.254.88.0/24) и второй Address из того же блока; после отката они так и
+# лежат в конфиге. Клон на резерве обязан встать с адресом подсети
+# пользователей и без зондов: клон с адресом 169.254.88.1/26 — все
+# пользователи без сети ровно в аварию.
+
+Q4, Q5, Q6 = _k(40), _k(41), _k(42)
+_PROBES = (f"\n[Peer]\nPublicKey = {Q4}\nAllowedIPs = 169.254.88.4/32\n"
+           f"\n[Peer]\nPublicKey = {Q5}\nPresharedKey = {PSK1}\nAllowedIPs = 169.254.88.5/32\n"
+           f"\n[Peer]\nPublicKey = {Q6}\nAllowedIPs = 169.254.88.6/32\n")
+_PROBE_KEYS = {Q4, Q5, Q6}
+
+
+def _with_probe_address(how: str) -> str:
+    """LIVE с адресом блока зондов: первой строкой, второй строкой или через запятую."""
+    if how == "first_line":
+        live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.1/26\nAddress = 10.8.1.1/24")
+    elif how == "second_line":
+        live = LIVE.replace("Address = 10.8.1.1/24", "Address = 10.8.1.1/24\nAddress = 169.254.88.1/26")
+    elif how == "comma_first":
+        live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.65/26, 10.8.1.1/24")
+    elif how == "comma_second":
+        live = LIVE.replace("Address = 10.8.1.1/24", "Address = 10.8.1.1/24,169.254.88.65/26")
+    else:
+        raise AssertionError(how)
+    assert live != LIVE
+    return live + _PROBES
+
+
+_HOWS = ["first_line", "second_line", "comma_first", "comma_second"]
+
+
+@pytest.mark.parametrize("how", _HOWS)
+def test_the_clone_address_is_always_from_the_users_subnet(how):
+    i = vpn.iface_part("awg0", _with_probe_address(how))
+    assert i["addr"] == "10.8.1.1/24", f"адрес клона взят из блока зондов ({how}): {i['addr']}"
+
+
+@pytest.mark.parametrize("how", _HOWS)
+def test_probe_peers_never_get_into_the_part(how):
+    i = vpn.iface_part("awg0", _with_probe_address(how))
+    got = {p["pub"] for p in i["peers"]}
+    assert not got & _PROBE_KEYS, f"пиры-зонды доехали в часть VPN ({how})"
+    assert not any(p["ip"].startswith("169.254.88.") for p in i["peers"])
+    assert i["peers"] == [{"pub": P1, "psk": PSK1, "ip": "10.8.1.2"}, {"pub": P2, "psk": "", "ip": "10.8.1.3"}], \
+        "пользователи интерфейса потерялись рядом с зондами"
+
+
+@pytest.mark.parametrize("how", _HOWS)
+def test_a_package_with_probes_in_the_live_conf_builds_seals_opens_and_checks(how):
+    """Собранный пакет открывается и проходит проверку резерва (`check` тот
+    же, что у выпусков без рельса), конфиг клона — без следа блока зондов."""
+    from awgbot.util import rsvkeys
+    from awgbot.util.rsvpkg import seal
+
+    part = vpn.build([("awg0", _with_probe_address(how))], admin=["10.8.1.2"], dns=["10.8.1.1"],
+                     upstreams=["198.51.100.53"], tz="Asia/Yekaterinburg")
+    m, k = rsvkeys.new_master(), seal.new_k()
+    blob = seal.seal({"vpn": part}, k=k, m=m, pkg_gen=1, m_gen=1, dns=None)
+    opened = seal.open_parts(blob, k)["vpn"]
+    checked = vpn.check(opened)
+    conf = vpn.clone_conf(checked["ifaces"][0])
+    assert "169.254.88." not in conf, f"блок зондов попал в конфиг клона ({how}):\n{conf}"
+    assert conf.startswith("[Interface]\nAddress = 10.8.1.1/24\n")
+    assert conf.count("[Peer]") == 2
+
+
+def test_a_probe_peer_is_skipped_even_when_the_users_subnet_covers_the_block():
+    """Пир блока пропускается явным правилом, а не потому, что он случайно вне
+    подсети: подсеть пользователей 169.254.0.0/16 накрывает блок зондов, и без
+    явного правила зонды уехали бы клону как пользователи."""
+    live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.1/26\nAddress = 169.254.0.1/16") \
+        .replace("10.8.1.2/32", "169.254.1.2/32").replace("10.8.1.3/32", "169.254.1.3/32") + _PROBES
+    i = vpn.iface_part("awg0", live)
+    assert i["addr"] == "169.254.0.1/16"
+    assert {p["ip"] for p in i["peers"]} == {"169.254.1.2", "169.254.1.3"}, \
+        f"зонды внутри подсети пользователей доехали в часть VPN: {i['peers']}"
+
+
+def test_an_interface_with_only_a_probe_address_is_a_vpn_part_error():
+    """Нет ни одного адреса вне блока — клон поднять не с чем: отказ сборки, а
+    не клон на адресе зонда."""
+    live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.1/26") + _PROBES
+    with pytest.raises(vpn.VpnPartError, match="адрес"):
+        vpn.iface_part("awg0", live)
