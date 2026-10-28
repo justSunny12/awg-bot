@@ -101,7 +101,8 @@ def test_the_unit_is_sandboxed_strictly_with_optional_writable_paths(host):
     assert all(x.startswith("-") for x in rw), "путь без «-», которого нет, — юнит падает кодом 226"
     data = str(config.DATA_DIR)
     assert p["TemporaryFileSystem"] == [f"{data}:ro"], "каталог данных резерва (база, WAL, стороны линков) открыт процессу"
-    assert p["BindReadOnlyPaths"] == [f"-{data}/reserve/guest.pkg"], p.get("BindReadOnlyPaths")
+    assert p["BindReadOnlyPaths"] == [f"-{data}/reserve/guest.pkg -{data}/reserve/jrn"], \
+        f"процессу видны только пакет и журнал второй стороны на чтение: {p.get('BindReadOnlyPaths')}"
     assert not any(v.endswith("bot.db") for v in p.get("InaccessiblePaths", [])), \
         "прежнее закрытие одной базы оставляет открытыми её WAL и копии"
 

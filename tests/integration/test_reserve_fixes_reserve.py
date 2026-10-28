@@ -87,11 +87,12 @@ def test_the_open_process_runs_without_the_reserves_token_and_cannot_read_its_ba
     rw = [c for c in run["cmd"] if c.startswith("ReadWritePaths=")]
     assert rw and "-/etc/systemd" in rw[0].split("=", 1)[1].split(), "скрипт зоны не запишет юниты гостя"
     # каталог данных резерва закрыт временной ФС целиком (база, её WAL, стороны линков, копии);
-    # виден только пакет второй стороны
+    # видны только пакет и журнал второй стороны (на чтение)
     data = str(config.DATA_DIR)
     assert f"TemporaryFileSystem={data}:ro" in run["cmd"], f"каталог данных резерва открыт процессу: {run['cmd']}"
     binds = [c for c in run["cmd"] if c.startswith("BindReadOnlyPaths=")]
-    assert binds == [f"BindReadOnlyPaths=-{data}/reserve/guest.pkg"], f"процессу привязано не только пакет: {binds}"
+    assert binds == [f"BindReadOnlyPaths=-{data}/reserve/guest.pkg -{data}/reserve/jrn"], \
+        f"процессу привязано не только пакет и журнал: {binds}"
     hidden = [c for c in run["cmd"] if c.startswith("InaccessiblePaths=")]
     assert any("env" in c for c in hidden), f"env резерва доступен процессу: {hidden}"
 

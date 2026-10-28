@@ -1,6 +1,6 @@
 """Сеть резерва после ревью — части с базой: порт стороны зоны мимо портов
 клонов второй стороны (zonelinks `_free_port`), адрес основы для DNAT хвоста
-— IP (inbound `_relay_host_ip`), маршрут запасного слота гостя через адрес
+— IP (inbound_back `_relay_host_ip`), маршрут запасного слота гостя через адрес
 хоста в /30 (rfzone `_slot_route_via`), внеплановое обновление пула Telegram
 при serving и при кандидате вне анонсов (tgpool `reserve_tg_pool_refresh_soon`).
 
@@ -21,7 +21,7 @@ import types
 
 import pytest
 
-from awgbot.domain.services.reserve import inbound, rfzone, tgpool, zonelinks
+from awgbot.domain.services.reserve import inbound_back, rfzone, tgpool, zonelinks
 from awgbot.infra import nftguard
 
 from tests.integration import _reserve_common as rc
@@ -67,20 +67,20 @@ def test_garbage_in_the_peer_ports_is_ignored(ports):
 @pytest.mark.parametrize("host_in, want", [("203.0.113.9", "203.0.113.9"), ("", "")])
 def test_an_ip_is_taken_as_it_is(host_in, want, monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: pytest.fail("IP-литерал резолвится"))
-    assert inbound.ReserveInboundMixin._relay_host_ip(host_in) == want
+    assert inbound_back.ReserveInboundBackMixin._relay_host_ip(host_in) == want
 
 
 def test_a_name_is_resolved_to_its_first_address(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(2, 2, 17, "", ("203.0.113.9", 0)),
                                                                 (2, 2, 17, "", ("203.0.113.10", 0))])
-    assert inbound.ReserveInboundMixin._relay_host_ip("vpn.example.net") == "203.0.113.9"
+    assert inbound_back.ReserveInboundBackMixin._relay_host_ip("vpn.example.net") == "203.0.113.9"
 
 
 def test_a_name_that_does_not_resolve_gives_nothing(monkeypatch):
     def fail(*a, **k):
         raise socket.gaierror(-2, "Name or service not known")
     monkeypatch.setattr(socket, "getaddrinfo", fail)
-    assert inbound.ReserveInboundMixin._relay_host_ip("vpn.example.net") == ""
+    assert inbound_back.ReserveInboundBackMixin._relay_host_ip("vpn.example.net") == ""
 
 
 def _named_primary(host, monkeypatch, *, resolves: bool):

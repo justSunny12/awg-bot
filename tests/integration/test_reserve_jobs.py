@@ -56,10 +56,12 @@ def wired(services, rsv, monkeypatch):
 
 
 def test_the_jobs_are_registered_with_their_periods(wired):
-    assert set(wired.jobs) == {"rsv_liveness", "rsv_invite_tick", "rsv_pkg_tick", "rsv_move_tick", "rsv_slow_tick"}
+    assert set(wired.jobs) == {"rsv_liveness", "rsv_invite_tick", "rsv_pkg_tick", "rsv_jrn_tick",
+                               "rsv_move_tick", "rsv_slow_tick"}
     assert wired.jobs["rsv_liveness"][1].interval.total_seconds() == 5
     assert wired.jobs["rsv_invite_tick"][1].interval.total_seconds() == 60
     assert wired.jobs["rsv_pkg_tick"][1].interval.total_seconds() == 5
+    assert wired.jobs["rsv_jrn_tick"][1].interval.total_seconds() == 1, "события журнала — пачкой не реже раза в секунду"
     assert wired.jobs["rsv_move_tick"][1].interval.total_seconds() == 3
     assert wired.jobs["rsv_slow_tick"][1].interval.total_seconds() == 60
     assert wired.jobs["rsv_slow_tick"][1].jitter == 15, "строго периодический запрос выглядит маячком"

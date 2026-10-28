@@ -275,7 +275,7 @@ def test_the_fold_sums_by_month_and_device_and_takes_the_latest_handshake(pair):
     db.reset_month_traffic_all("2026-11")
     db.add_traffic_bulk([(did, 7, 7)])
     b = jcounts.fold(db._connection(), "line:a")
-    assert b.host == "line:a" and b.s == _jrn_counts(db)[-1][0]
+    assert b.host == "line:a" and b.s1 == _jrn_counts(db)[-1][0] and b.s0 == 0
     assert b.months["2026-10"][did] == [30, 3, 4, 2, 1_700_000_500], b.months
     assert b.months["2026-10"][other] == [3, 3, 0, 0, None]
     assert b.months["2026-11"] == {did: [7, 7, 0, 0, None]}
@@ -294,11 +294,12 @@ def test_the_fold_after_a_number_and_drop_sent(pair):
     with db._tx() as cur:
         jcounts.drop_sent(cur.connection, s[1])
     assert [r[0] for r in _jrn_counts(db)] == [s[2]], "подтверждённые строки остались или ушли лишние"
-    assert jcounts.fold(db._connection(), "h").s == s[2]
+    assert jcounts.fold(db._connection(), "h").s1 == s[2]
 
 
 def _batch(month, did, rx=0, tx=0, rf_rx=0, rf_tx=0, hs=None, s=1, host="line:b") -> jcounts.Batch:
-    return jcounts.Batch(host=host, s=s, months={month: {did: [rx, tx, rf_rx, rf_tx, hs]}})
+    # s — номер пачки хоста (bn): по нему получатель отсекает повтор
+    return jcounts.Batch(host=host, bn=s, months={month: {did: [rx, tx, rf_rx, rf_tx, hs]}})
 
 
 def test_a_batch_adds_to_the_counters_once(pair):

@@ -481,8 +481,8 @@ def test_an_unresolvable_name_pins_nothing_and_does_not_fail(services, rsv, monk
 def test_the_stuck_probe_is_jittered(stuck, monkeypatch):
     """Проба зависшего вебхука — сетевая задача по расписанию: строго
     периодический запрос к DNS выглядит маячком."""
-    from awgbot.domain.services.reserve import outbound
+    from awgbot.domain.services.reserve import outbound_stuck
     seen = []
-    monkeypatch.setattr(outbound.random, "uniform", lambda a, b: seen.append((a, b)) or 1.0)
+    monkeypatch.setattr(outbound_stuck.random, "uniform", lambda a, b: seen.append((a, b)) or 1.0)
     stuck.svc.reserve_out_tick()
     assert (0.6, 1.4) in seen, f"проба без джиттера: {seen}"
