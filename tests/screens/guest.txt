@@ -763,3 +763,116 @@ VPN на нём перестанет работать, пока не разбл�
 > press hd
 - delete #1
 ~ (пустой ответ)
+
+### gst.snap.sites.report — гость: 40 неадресов — «и ещё 35» ссылкой
+> text «bad00..ru
+bad01..ru
+bad02..ru
+bad03..ru
+bad04..ru
+bad05..ru
+bad06..ru
+bad07..ru
+bad08..ru
+bad09..ru
+bad10..ru
+bad11..ru
+bad12..ru
+bad13..ru
+bad14..ru
+bad15..ru
+bad16..ru
+bad17..ru
+bad18..ru
+bad19..ru
+bad20..ru
+bad21..ru
+bad22..ru
+bad23..ru
+bad24..ru
+bad25..ru
+bad26..ru
+bad27..ru
+bad28..ru
+bad29..ru
+bad30..ru
+bad31..ru
+bad32..ru
+bad33..ru
+bad34..ru
+bad35..ru
+bad36..ru
+bad37..ru
+bad38..ru
+bad39..ru»
+- delete #1
+- delete #2
++ send #3
+⚠️ Не добавлено: <code>bad00..ru</code>, <code>bad01..ru</code>, <code>bad02..ru</code>, <code>bad03..ru</code>, <code>bad04..ru</code> <a href="https://t.me/test_bot?start=list-snap-snapkey001">и ещё 35</a> — недопустимые символы в имени
+
+📋 <b>Свои сайты</b>
+Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй те, что пишут «вы не из России».
+  [➕ Сайт | rt:add:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:back]
+
+### gst.snap.sites.open — гость: снимок отказов
+> /start list-snap-snapkey001
+- delete #4
+= edit #3
+⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · на 15.09 12:00 (UTC+5)
+
+<code>bad00..ru</code> — недопустимые символы в имени
+<code>bad01..ru</code> — недопустимые символы в имени
+<code>bad02..ru</code> — недопустимые символы в имени
+<code>bad03..ru</code> — недопустимые символы в имени
+<code>bad04..ru</code> — недопустимые символы в имени
+<code>bad05..ru</code> — недопустимые символы в имени
+<code>bad06..ru</code> — недопустимые символы в имени
+<code>bad07..ru</code> — недопустимые символы в имени
+<code>bad08..ru</code> — недопустимые символы в имени
+<code>bad09..ru</code> — недопустимые символы в имени
+<code>bad10..ru</code> — недопустимые символы в имени
+<code>bad11..ru</code> — недопустимые символы в имени
+<code>bad12..ru</code> — недопустимые символы в имени
+<code>bad13..ru</code> — недопустимые символы в имени
+<code>bad14..ru</code> — недопустимые символы в имени
+<code>bad15..ru</code> — недопустимые символы в имени
+<code>bad16..ru</code> — недопустимые символы в имени
+<code>bad17..ru</code> — недопустимые символы в имени
+<code>bad18..ru</code> — недопустимые символы в имени
+<code>bad19..ru</code> — недопустимые символы в имени
+<code>bad20..ru</code> — недопустимые символы в имени
+<code>bad21..ru</code> — недопустимые символы в имени
+<code>bad22..ru</code> — недопустимые символы в имени
+<code>bad23..ru</code> — недопустимые символы в имени
+<code>bad24..ru</code> — недопустимые символы в имени
+<code>bad25..ru</code> — недопустимые символы в имени
+<code>bad26..ru</code> — недопустимые символы в имени
+<code>bad27..ru</code> — недопустимые символы в имени
+<code>bad28..ru</code> — недопустимые символы в имени
+<code>bad29..ru</code> — недопустимые символы в имени
+  [След. страница ▶️ | pg|ls_snap|0|1|ls:snap:0:snapkey001:0]
+  [⬅️ Назад | rt:sites:3:-1:]
+
+### gst.snap.menu — гость: снимок без источника — «⬅️ В меню» на главную гостя
+> /start list-snap-snapkey001
+- delete #3
+= edit #2
+⚠️ <b>Не добавлено</b> · 3 · на 15.09 12:00 (UTC+5)
+
+<code>bad00..ru</code> — не похоже на адрес
+<code>bad01..ru</code> — не похоже на адрес
+<code>bad02..ru</code> — не похоже на адрес
+  [⬅️ В меню | fr:refresh:0]
+
+### gst.snap.menu.press — гость: «⬅️ В меню» — его главная
+> press fr:refresh:0
+= edit #2
+👋 <b>Артём</b>
+
+🟢 Сервер доступен · 🇷🇺 РФ-доступ 🟢
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0] [🇷🇺 РФ-доступ | rt:panel:3:-1:]
+  [❓ Как подключить | fr:help:0]
+~ (пустой ответ)

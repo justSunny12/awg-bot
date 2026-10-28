@@ -523,3 +523,18 @@ def test_my_own_go_keeps_the_generation_even_if_the_reserve_says_shares(away):
     svc.reserve_wiped_in()
     assert int(svc.reserve_keys()["m_gen"]) == m_gen, "поколение сменилось после переезда моим K"
     assert svc.rsv_get("rsv_out").get("go_sent") is False, "отметка go_sent пережила возврат — следующий переезд её унаследует"
+
+
+def test_the_return_without_a_journal_sends_the_report_as_before_and_keeps_no_snapshot(away):
+    """Прежний путь (пара без журнала данных): Т-РУ5б — как раньше, снимков списков нет."""
+    svc = away.svc
+    svc.bot_username = "test_bot"
+    lines = [svc._lost_line({"name": f"Планшет {i}", "owner": "Аня", "taken_by": "Ноутбук", "taken_owner": "Вера"})
+             for i in range(9)]
+    _at_step(away, "relay", merge_report={"lost": lines})
+    texts = [n.text for n in notices(svc.reserve_wiped_in())]
+    assert texts and "снова здесь" in texts[0] and "Планшет 8" in texts[0], texts
+    assert not [t for t in texts if t.startswith("⚠️ Не перенесен")], "Т-Ж4 на прежнем пути"
+    left = svc.db._connection().execute(
+        "SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'").fetchone()[0]
+    assert left == 0, "на прежнем пути возврата лёг снимок списка"

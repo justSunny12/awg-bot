@@ -5,13 +5,13 @@ LABEL_EXCEPTIONS; здесь — общий список, константы и 
 """
 from __future__ import annotations
 
-from tests.screens import shots_admin, shots_client, shots_gateway
+from tests.screens import shots_admin, shots_client, shots_gateway, shots_snaps
 from tests.screens.base import CLIENT_TG, DISPATCHER, HOST, NOW, PEERS, VERSION, Shot, owner
 
 __all__ = ["CLIENT_TG", "DISPATCHER", "HOST", "NOW", "PEERS", "VERSION", "Shot", "owner", "SHOTS", "LABEL_EXCEPTIONS", "TIME_LABEL_EXCEPTIONS",
            "UNREACHABLE"]
 
-SHOTS = [*shots_admin.SHOTS, *shots_client.SHOTS, *shots_gateway.SHOTS]
+SHOTS = [*shots_admin.SHOTS, *shots_client.SHOTS, *shots_gateway.SHOTS, *shots_snaps.SHOTS]
 
 LABEL_EXCEPTIONS: dict[str, set[str]] = {**shots_admin.LABEL_EXCEPTIONS, **shots_client.LABEL_EXCEPTIONS,
                                          **shots_gateway.LABEL_EXCEPTIONS}

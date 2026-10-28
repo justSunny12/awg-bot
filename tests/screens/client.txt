@@ -2516,3 +2516,108 @@ https://www.ya.ru/path
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
   [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.snap.sites.report — 40 неадресов — «и ещё 35» ссылкой
+> text «bad00..ru
+bad01..ru
+bad02..ru
+bad03..ru
+bad04..ru
+bad05..ru
+bad06..ru
+bad07..ru
+bad08..ru
+bad09..ru
+bad10..ru
+bad11..ru
+bad12..ru
+bad13..ru
+bad14..ru
+bad15..ru
+bad16..ru
+bad17..ru
+bad18..ru
+bad19..ru
+bad20..ru
+bad21..ru
+bad22..ru
+bad23..ru
+bad24..ru
+bad25..ru
+bad26..ru
+bad27..ru
+bad28..ru
+bad29..ru
+bad30..ru
+bad31..ru
+bad32..ru
+bad33..ru
+bad34..ru
+bad35..ru
+bad36..ru
+bad37..ru
+bad38..ru
+bad39..ru»
+- delete #1
+- delete #2
++ send #3
+⚠️ Не добавлено: <code>bad00..ru</code>, <code>bad01..ru</code>, <code>bad02..ru</code>, <code>bad03..ru</code>, <code>bad04..ru</code> <a href="https://t.me/test_bot?start=list-snap-snapkey001">и ещё 35</a> — недопустимые символы в имени
+
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ ya.ru | rt:del:2:2:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
+
+### cl.snap.sites.open — снимок отказов у пользователя
+> /start list-snap-snapkey001
+- delete #4
+= edit #3
+⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · на 15.09 12:00 (UTC+5)
+
+<code>bad00..ru</code> — недопустимые символы в имени
+<code>bad01..ru</code> — недопустимые символы в имени
+<code>bad02..ru</code> — недопустимые символы в имени
+<code>bad03..ru</code> — недопустимые символы в имени
+<code>bad04..ru</code> — недопустимые символы в имени
+<code>bad05..ru</code> — недопустимые символы в имени
+<code>bad06..ru</code> — недопустимые символы в имени
+<code>bad07..ru</code> — недопустимые символы в имени
+<code>bad08..ru</code> — недопустимые символы в имени
+<code>bad09..ru</code> — недопустимые символы в имени
+<code>bad10..ru</code> — недопустимые символы в имени
+<code>bad11..ru</code> — недопустимые символы в имени
+<code>bad12..ru</code> — недопустимые символы в имени
+<code>bad13..ru</code> — недопустимые символы в имени
+<code>bad14..ru</code> — недопустимые символы в имени
+<code>bad15..ru</code> — недопустимые символы в имени
+<code>bad16..ru</code> — недопустимые символы в имени
+<code>bad17..ru</code> — недопустимые символы в имени
+<code>bad18..ru</code> — недопустимые символы в имени
+<code>bad19..ru</code> — недопустимые символы в имени
+<code>bad20..ru</code> — недопустимые символы в имени
+<code>bad21..ru</code> — недопустимые символы в имени
+<code>bad22..ru</code> — недопустимые символы в имени
+<code>bad23..ru</code> — недопустимые символы в имени
+<code>bad24..ru</code> — недопустимые символы в имени
+<code>bad25..ru</code> — недопустимые символы в имени
+<code>bad26..ru</code> — недопустимые символы в имени
+<code>bad27..ru</code> — недопустимые символы в имени
+<code>bad28..ru</code> — недопустимые символы в имени
+<code>bad29..ru</code> — недопустимые символы в имени
+  [След. страница ▶️ | pg|ls_snap|0|1|ls:snap:0:snapkey001:0]
+  [⬅️ Назад | rt:sites:2:-1:]
+
+### cl.snap.sites.back — «⬅️ Назад» — «📋 Свои сайты»
+> press rt:sites:2:-1:
+= edit #3
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ ya.ru | rt:del:2:2:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:back]
+~ (пустой ответ)

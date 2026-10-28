@@ -312,7 +312,7 @@ def test_finish_keeps_running_when_server_refuses(services, mig, make_active_cli
     monkeypatch.setattr(infra_awg, "remove_peer", refuse)
 
     removed, dropped, failed = services.migration_finish()
-    assert removed == 0 and failed == ["Тел"]
+    assert removed == 0 and failed == ["c — Тел"], "в итоге — «профиль — устройство»"
     assert services.migration_running(), "рычаг погашен при живых старых пирах"
     assert services.db.get_device(dc.device_id) is not None, "строка удалена без снятия пира"
     assert services.db.get_device(twin.id).traffic_rx_month == 0, "история слита до снятия"
@@ -343,7 +343,7 @@ def test_start_aborts_when_nothing_is_born(services, mig, make_active_client,
     monkeypatch.setattr(infra_awg, "add_peer", down)
 
     res = services.migration_start()
-    assert res.started is False and res.failed == ["Тел"]
+    assert res.started is False and res.failed == ["c — Тел"], "в итоге — «профиль — устройство»"
     assert not services.migration_running(), "рычаг включился без единого двойника"
     assert services.db.cohort_ids() == set(), "когорта осталась замороженной"
 

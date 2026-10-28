@@ -628,3 +628,109 @@ def test_tj6_is_silent_without_a_lag(duo):
     _lag(duo, duo.a.db.jrn_meta()["applied"])
     duo.a.__dict__["_follow_lag_since"] = time.monotonic() - 3600
     assert duo.a.reserve_follow_lag_tick() == []
+
+
+# ── Т-Ж4 на 9 спорных: снимок всего списка в базе основы ────────────────────
+
+def _snap_keys(db) -> list[str]:
+    return [r[0][len("list_snap:"):] for r in db._connection().execute(
+        "SELECT key FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'").fetchall()]
+
+
+def _tj4_link(text: str) -> str:
+    """Ключ снимка из последней строки Т-Ж4 «… и ещё 4» (ссылкой)."""
+    import re
+    last = text.rstrip().split("\n")[-1]
+    m = re.fullmatch(r'… <a href="https://t\.me/test_bot\?start=list-snap-([a-z0-9]{10})">и ещё 4</a>', last)
+    assert m, f"хвост Т-Ж4 — не ссылка «и ещё 4» на снимок: {last!r}"
+    return m.group(1)
+
+
+async def _open_snap(svc, key: str):
+    from awgbot.bot import lists
+    return await lists.render(svc, "snap", role="admin", key=key, chat_id=int(config.ADMIN_ID), new=True)
+
+
+def _nine(duo, *, here: str, there: str):
+    def tail(db, ids):
+        for cid in ids["many"]:
+            db.update_client_fields(cid, name=f"{here} {cid}")
+
+    def guest(db, ids):
+        for cid in ids["many"]:
+            db.update_client_fields(cid, name=f"{there} {cid}")
+    return tail, guest
+
+
+async def test_tj4_on_nine_disputes_after_a_crash_links_a_snapshot_kept_at_the_primary(duo):
+    """Авария, 9 спорных: Т-Ж4 — пять строк и «… и ещё 4» ссылкой; снимок всех девяти
+    лежит в базе бота основы (не гостя), открывается после --wipe резерва; метку «-n»
+    ссылке ставит отправка уведомления."""
+    from awgbot.bot import links
+    duo.a.bot_username = "test_bot"
+    tail, guest = _nine(duo, here="Здесь", there="Там")
+    _crash(duo, tail=tail, guest=guest, extra=9)
+    duo.b_to_a(duo.guest_to_b(_to_guest(duo, "jtail", _jtail_parts(duo))))
+    notes = _return_to_done(duo)
+    tj4 = notes[1].text
+    assert tj4.startswith("⚠️ Не перенесены 9 правок, сделанные здесь перед переездом на «Beta»"), tj4
+    assert tj4.count("\n• ") == 5, tj4
+    key = _tj4_link(tj4)
+    assert f"list-snap-{key}-n" in links.mark_new(tj4), "из уведомления ссылка не получает метку «-n»"
+    assert _snap_keys(duo.a.db) == [key], f"снимки основы: {_snap_keys(duo.a.db)}"
+    assert not _snap_keys(duo.gdb), "снимок Т-Ж4 лёг в базу гостя — уйдёт с --wipe резерва"
+    duo.b_keep.wipe()
+    shutil.rmtree(rsvzone.VAR_DIR / "jrn", ignore_errors=True)
+    text, markup = await _open_snap(duo.a, key)
+    head, body = text.split("\n\n", 1)
+    assert head.startswith("⚠️ <b>Не перенесены правки, сделанные здесь перед переездом на «Beta»</b> · 9 · на "), head
+    rows = body.split("\n")
+    shown = [ln[2:] for ln in tj4.split("\n") if ln.startswith("• ")]
+    assert len(rows) == 9 and rows[:5] == shown, f"строки снимка — не строки Т-Ж4:\n{rows[:2]}\n{shown[:2]}"
+    assert all("«Здесь " in r and "«Там " in r for r in rows), rows
+    assert [b.text for row in markup.inline_keyboard for b in row] == ["⬅️ В меню"]
+
+
+async def test_tj4_on_nine_disputes_in_c9_links_a_snapshot_with_the_c9_title(duo):
+    duo.a.bot_username = "test_bot"
+    ids = _base(duo, extra=9)
+    _away(duo)
+    _force_home(duo)
+    with duo.as_guest():
+        for cid in ids["many"]:
+            duo.g.db.update_client_fields(cid, name=f"Там {cid}")
+    for cid in ids["many"]:
+        duo.a.db.update_client_fields(cid, name=f"Здесь {cid}")
+    notes = _c9_return_done(duo)
+    tj4 = [n.text for n in notes if n.text.startswith("⚠️ Не перенесен")]
+    assert len(tj4) == 1, [n.text[:60] for n in notes]
+    assert tj4[0].startswith("⚠️ Не перенесены 9 правок бота на «Beta», сделанные после потери связи"), tj4[0]
+    key = _tj4_link(tj4[0])
+    assert _snap_keys(duo.a.db) == [key] and not _snap_keys(duo.gdb), (_snap_keys(duo.a.db), _snap_keys(duo.gdb))
+    duo.b_keep.wipe()
+    text, _ = await _open_snap(duo.a, key)
+    assert text.startswith("⚠️ <b>Не перенесены правки бота на «Beta»</b> · 9 · на "), text[:120]
+    assert len(text.split("\n\n", 1)[1].split("\n")) == 9
+
+
+def test_tj4_with_one_dispute_has_no_tail_and_no_snapshot(duo):
+    duo.a.bot_username = "test_bot"
+    _crash(duo, tail=_rename_ivan, guest=_guest_rename_ivan)
+    duo.b_to_a(duo.guest_to_b(_to_guest(duo, "jtail", _jtail_parts(duo))))
+    tj4 = _return_to_done(duo)[1].text
+    assert "и ещё" not in tj4 and "list-snap-" not in tj4, tj4
+    assert not _snap_keys(duo.a.db), "снимок при одной спорной правке — хвоста нет"
+
+
+def test_tj4_keeps_the_text_tail_when_the_snapshot_is_not_written(duo, monkeypatch):
+    from awgbot.infra.db import listsnap
+
+    def locked(self, *a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(listsnap.ListSnapMixin, "_snap_keep", locked)
+    duo.a.bot_username = "test_bot"
+    tail, guest = _nine(duo, here="Здесь", there="Там")
+    _crash(duo, tail=tail, guest=guest, extra=9)
+    duo.b_to_a(duo.guest_to_b(_to_guest(duo, "jtail", _jtail_parts(duo))))
+    tj4 = _return_to_done(duo)[1].text
+    assert tj4.rstrip().endswith("\n… и ещё 4") and "list-snap-" not in tj4, tj4

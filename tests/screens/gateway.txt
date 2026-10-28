@@ -2959,7 +2959,7 @@ IMAP и SMTP отвечают, вход выполнен
 - delete #1
 - delete #2
 + send #3
-✅ Адреса для SSH-доступа: добавлено <code>198.51.100.1</code>, <code>198.51.100.2</code>, <code>198.51.100.3</code>, <code>198.51.100.4</code>, <code>198.51.100.5</code>, <code>198.51.100.6</code>, <code>198.51.100.7</code>, <code>198.51.100.8</code>, <code>198.51.100.9</code>, <code>198.51.100.10</code>, <code>198.51.100.11</code>, <code>198.51.100.12</code> и ещё 3
+✅ Адреса для SSH-доступа: добавлено <code>198.51.100.1</code>, <code>198.51.100.2</code>, <code>198.51.100.3</code>, <code>198.51.100.4</code>, <code>198.51.100.5</code>, <code>198.51.100.6</code>, <code>198.51.100.7</code>, <code>198.51.100.8</code>, <code>198.51.100.9</code>, <code>198.51.100.10</code>, <code>198.51.100.11</code>, <code>198.51.100.12</code> <a href="https://t.me/test_bot?start=list-snap-snapkey001">и ещё 3</a>
 
 🛡 <b>SSH-доступ</b>
 
@@ -3937,3 +3937,213 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 ### gw.list.press.foreign — кнопка вида основного бота у агента — молча
 > press ls:gwnets:2::0
 ~ (пустой ответ)
+
+### gw.snap.ssh.open — снимок добавленных адресов SSH-доступа
+> /start list-snap-snapkey001
+- delete #4
+= edit #3
+✅ <b>Добавлено для SSH-доступа</b> · 15 · на 15.09 12:00 (UTC+5)
+
+<code>198.51.100.1</code>
+<code>198.51.100.2</code>
+<code>198.51.100.3</code>
+<code>198.51.100.4</code>
+<code>198.51.100.5</code>
+<code>198.51.100.6</code>
+<code>198.51.100.7</code>
+<code>198.51.100.8</code>
+<code>198.51.100.9</code>
+<code>198.51.100.10</code>
+<code>198.51.100.11</code>
+<code>198.51.100.12</code>
+<code>198.51.100.13</code>
+<code>198.51.100.14</code>
+<code>198.51.100.15</code>
+  [⬅️ Назад | gw:ssh:]
+
+### gw.snap.ssh.back — «⬅️ Назад» — «🛡 SSH-доступ»
+> press gw:ssh:
+= edit #3
+🛡 <b>SSH-доступ</b>
+
+Порт SSH: 22
+
+Из туннеля SSH открыт устройствам админа (2) и с сервера AWG (<code>203.0.113.10</code>)
+Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)
+Из подсетей других шлюзов: откроется, когда VPN-транзит свяжет подсети
+
+🟢 Снаружи (проброс порта на роутере): фильтр включён — только адреса из списка и сервер AWG
+
+Адреса для SSH-доступа (фильтр): 15 адресов — убрать: «➖» ниже
+  [🅿️ Порт | gw:ssh_port:] [➕ Адрес | gw:ssh_add:]
+  [➖ 198.51.100.1 | gw:ssh_del!:0.5b51acf5]
+  [➖ 198.51.100.2 | gw:ssh_del!:1.4f7c140a]
+  [➖ 198.51.100.3 | gw:ssh_del!:2.1c3e1a12]
+  [➖ 198.51.100.4 | gw:ssh_del!:3.c73061ae]
+  [➖ 198.51.100.5 | gw:ssh_del!:4.ff830559]
+  [➖ 198.51.100.6 | gw:ssh_del!:5.ba79b105]
+  [След. страница ▶️ | pg|gwssh|0|1|gw:ssh:]
+  [✅ Фильтр снаружи | gw:ssh_off!:]
+  [⬅️ Назад | gw:settings:]
+~ (пустой ответ)
+
+### gw.snap.transit — «➕ В туннель» на 400 доменов — «…и ещё N строк» ссылкой
+> text «shop000.example.com shop001.example.com shop002.example.com shop003.example.com shop004.example.com shop005.example.com shop006.example.com shop007.example.com shop008.example.com shop009.example.com shop010.example.com shop011.example.com shop012.example.com shop013.example.com shop014.example.com shop015.example.com shop016.example.com shop017.example.com shop018.example.com shop019.example.com shop020.example.com shop021.example.com shop022.example.com shop023.example.com shop024.example.com shop025.example.com shop026.example.com shop027.example.com shop028.example.com shop029.example.com shop030.example.com shop031.example.com shop032.example.com shop033.example.com shop034.example.com shop035.example.com shop036.example.com shop037.example.com shop038.example.com shop039.example.com shop040.example.com shop041.example.com shop042.example.com shop043.example.com shop044.example.com shop045.example.com shop046.example.com shop047.example.com shop048.example.com shop049.example.com shop050.example.com shop051.example.com shop052.example.com shop053.example.com shop054.example.com shop055.example.com shop056.example.com shop057.example.com shop058.example.com shop059.example.com shop060.example.com shop061.example.com shop062.example.com shop063.example.com shop064.example.com shop065.example.com shop066.example.com shop067.example.com shop068.example.com shop069.example.com shop070.example.com shop071.example.com shop072.example.com shop073.example.com shop074.example.com shop075.example.com shop076.example.com shop077.example.com shop078.example.com shop079.example.com shop080.example.com shop081.example.com shop082.example.com shop083.example.com shop084.example.com shop085.example.com shop086.example.com shop087.example.com shop088.example.com shop089.example.com shop090.example.com shop091.example.com shop092.example.com shop093.example.com shop094.example.com shop095.example.com shop096.example.com shop097.example.com shop098.example.com shop099.example.com shop100.example.com shop101.example.com shop102.example.com shop103.example.com shop104.example.com shop105.example.com shop106.example.com shop107.example.com shop108.example.com shop109.example.com shop110.example.com shop111.example.com shop112.example.com shop113.example.com shop114.example.com shop115.example.com shop116.example.com shop117.example.com shop118.example.com shop119.example.com shop120.example.com shop121.example.com shop122.example.com shop123.example.com shop124.example.com shop125.example.com shop126.example.com shop127.example.com shop128.example.com shop129.example.com shop130.example.com shop131.example.com shop132.example.com shop133.example.com shop134.example.com shop135.example.com shop136.example.com shop137.example.com shop138.example.com shop139.example.com shop140.example.com shop141.example.com shop142.example.com shop143.example.com shop144.example.com shop145.example.com shop146.example.com shop147.example.com shop148.example.com shop149.example.com shop150.example.com shop151.example.com shop152.example.com shop153.example.com shop154.example.com shop155.example.com shop156.example.com shop157.example.com shop158.example.com shop159.example.com shop160.example.com shop161.example.com shop162.example.com shop163.example.com shop164.example.com shop165.example.com shop166.example.com shop167.example.com shop168.example.com shop169.example.com shop170.example.com shop171.example.com shop172.example.com shop173.example.com shop174.example.com shop175.example.com shop176.example.com shop177.example.com shop178.example.com shop179.example.com shop180.example.com shop181.example.com shop182.example.com shop183.example.com shop184.example.com shop185.example.com shop186.example.com shop187.example.com shop188.example.com shop189.example.com shop190.example.com shop191.example.com shop192.example.com shop193.example.com shop194.example.com shop195.example.com shop196.example.com shop197.example.com shop198.example.com shop199.example.com bad-name-000 bad-name-001 bad-name-002 bad-name-003 bad-name-004 bad-name-005 bad-name-006 bad-name-007 bad-name-008 bad-name-009 bad-name-010 bad-name-011 bad-name-012 bad-name-013 bad-name-014 bad-name-015 bad-name-016 bad-name-017 bad-name-018 bad-name-019 bad-name-020 bad-name-021 bad-name-022 bad-name-023 bad-name-024 bad-name-025 bad-name-026 bad-name-027 bad-name-028 bad-name-029 bad-name-030 bad-name-031 bad-name-032 bad-name-033 bad-name-034 bad-name-035 bad-name-036 bad-name-037 bad-name-038 bad-name-039 bad-name-040 bad-name-041 bad-name-042 bad-name-043 bad-name-044 bad-name-045 bad-name-046 bad-name-047 bad-name-048 bad-name-049 bad-name-050 bad-name-051 bad-name-052 bad-name-053 bad-name-054 bad-name-055 bad-name-056 bad-name-057 bad-name-058 bad-name-059 bad-name-060 bad-name-061 bad-name-062 bad-name-063 bad-name-064 bad-name-065 bad-name-066 bad-name-067 bad-name-068 bad-name-069 bad-name-070 bad-name-071 bad-name-072 bad-name-073 bad-name-074 bad-name-075 bad-name-076 bad-name-077 bad-name-078 bad-name-079 bad-name-080 bad-name-081 bad-name-082 bad-name-083 bad-name-084 bad-name-085 bad-name-086 bad-name-087 bad-name-088 bad-name-089 bad-name-090 bad-name-091 bad-name-092 bad-name-093 bad-name-094 bad-name-095 bad-name-096 bad-name-097 bad-name-098 bad-name-099 bad-name-100 bad-name-101 bad-name-102 bad-name-103 bad-name-104 bad-name-105 bad-name-106 bad-name-107 bad-name-108 bad-name-109 bad-name-110 bad-name-111 bad-name-112 bad-name-113 bad-name-114 bad-name-115 bad-name-116 bad-name-117 bad-name-118 bad-name-119 bad-name-120 bad-name-121 bad-name-122 bad-name-123 bad-name-124 bad-name-125 bad-name-126 bad-name-127 bad-name-128 bad-name-129 bad-name-130 bad-name-131 bad-name-132 bad-name-133 bad-name-134 bad-name-135 bad-name-136 bad-name-137 bad-name-138 bad-name-139 bad-name-140 bad-name-141 bad-name-142 bad-name-143 bad-name-144 bad-name-145 bad-name-146 bad-name-147 bad-name-148 bad-name-149 bad-name-150 bad-name-151 bad-name-152 bad-name-153 bad-name-154 bad-name-155 bad-name-156 bad-name-157 bad-name-158 bad-name-159 bad-name-160 bad-name-161 bad-name-162 bad-name-163 bad-name-164 bad-name-165 bad-name-166 bad-name-167 bad-name-168 bad-name-169 bad-name-170 bad-name-171 bad-name-172 bad-name-173 bad-name-174 bad-name-175 bad-name-176 bad-name-177 bad-name-178 bad-name-179 bad-name-180 bad-name-181 bad-name-182 bad-name-183 bad-name-184 bad-name-185 bad-name-186 bad-name-187 bad-name-188 bad-name-189 bad-name-190 bad-name-191 bad-name-192 bad-name-193 bad-name-194 bad-name-195 bad-name-196 bad-name-197 bad-name-198 bad-name-199»
+- delete #1
+- delete #2
++ send #3
+✅ Добавлено: 200 · пропущено: 200
+⚠️ <code>bad-name-000</code>: не домен, пропущен
+⚠️ <code>bad-name-001</code>: не домен, пропущен
+⚠️ <code>bad-name-002</code>: не домен, пропущен
+⚠️ <code>bad-name-003</code>: не домен, пропущен
+⚠️ <code>bad-name-004</code>: не домен, пропущен
+⚠️ <code>bad-name-005</code>: не домен, пропущен
+⚠️ <code>bad-name-006</code>: не домен, пропущен
+⚠️ <code>bad-name-007</code>: не домен, пропущен
+⚠️ <code>bad-name-008</code>: не домен, пропущен
+⚠️ <code>bad-name-009</code>: не домен, пропущен
+⚠️ <code>bad-name-010</code>: не домен, пропущен
+⚠️ <code>bad-name-011</code>: не домен, пропущен
+⚠️ <code>bad-name-012</code>: не домен, пропущен
+⚠️ <code>bad-name-013</code>: не домен, пропущен
+⚠️ <code>bad-name-014</code>: не домен, пропущен
+⚠️ <code>bad-name-015</code>: не домен, пропущен
+⚠️ <code>bad-name-016</code>: не домен, пропущен
+⚠️ <code>bad-name-017</code>: не домен, пропущен
+⚠️ <code>bad-name-018</code>: не домен, пропущен
+⚠️ <code>bad-name-019</code>: не домен, пропущен
+⚠️ <code>bad-name-020</code>: не домен, пропущен
+⚠️ <code>bad-name-021</code>: не домен, пропущен
+⚠️ <code>bad-name-022</code>: не домен, пропущен
+⚠️ <code>bad-name-023</code>: не домен, пропущен
+⚠️ <code>bad-name-024</code>: не домен, пропущен
+⚠️ <code>bad-name-025</code>: не домен, пропущен
+⚠️ <code>bad-name-026</code>: не домен, пропущен
+⚠️ <code>bad-name-027</code>: не домен, пропущен
+⚠️ <code>bad-name-028</code>: не домен, пропущен
+⚠️ <code>bad-name-029</code>: не домен, пропущен
+⚠️ <code>bad-name-030</code>: не домен, пропущен
+⚠️ <code>bad-name-031</code>: не домен, пропущен
+⚠️ <code>bad-name-032</code>: не домен, пропущен
+⚠️ <code>bad-name-033</code>: не домен, пропущен
+⚠️ <code>bad-name-034</code>: не домен, пропущен
+⚠️ <code>bad-name-035</code>: не домен, пропущен
+⚠️ <code>bad-name-036</code>: не домен, пропущен
+⚠️ <code>bad-name-037</code>: не домен, пропущен
+⚠️ <code>bad-name-038</code>: не домен, пропущен
+⚠️ <code>bad-name-039</code>: не домен, пропущен
+⚠️ <code>bad-name-040</code>: не домен, пропущен
+⚠️ <code>bad-name-041</code>: не домен, пропущен
+⚠️ <code>bad-name-042</code>: не домен, пропущен
+⚠️ <code>bad-name-043</code>: не домен, пропущен
+⚠️ <code>bad-name-044</code>: не домен, пропущен
+⚠️ <code>bad-name-045</code>: не домен, пропущен
+⚠️ <code>bad-name-046</code>: не домен, пропущен
+⚠️ <code>bad-name-047</code>: не домен, пропущен
+⚠️ <code>bad-name-048</code>: не домен, пропущен
+⚠️ <code>bad-name-049</code>: не домен, пропущен
+⚠️ <code>bad-name-050</code>: не домен, пропущен
+⚠️ <code>bad-name-051</code>: не домен, пропущен
+⚠️ <code>bad-name-052</code>: не домен, пропущен
+⚠️ <code>bad-name-053</code>: не домен, пропущен
+⚠️ <code>bad-name-054</code>: не домен, пропущен
+⚠️ <code>bad-name-055</code>: не домен, пропущен
+⚠️ <code>bad-name-056</code>: не домен, пропущен
+⚠️ <code>bad-name-057</code>: не домен, пропущен
+⚠️ <code>bad-name-058</code>: не домен, пропущен
+⚠️ <code>bad-name-059</code>: не домен, пропущен
+⚠️ <code>bad-name-060</code>: не домен, пропущен
+⚠️ <code>bad-name-061</code>: не домен, пропущен
+⚠️ <code>bad-name-062</code>: не домен, пропущен
+⚠️ <code>bad-name-063</code>: не домен, пропущен
+⚠️ <code>bad-name-064</code>: не домен, пропущен
+⚠️ <code>bad-name-065</code>: не домен, пропущен
+⚠️ <code>bad-name-066</code>: не домен, пропущен
+…<a href="https://t.me/test_bot?start=list-snap-snapkey001">и ещё 133 строки</a>
+
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей · обн. 15.09 06:00 (UTC+5) · свои: 200 в туннель
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер отправляет трафик локальной сети на шлюз; шлюз пускает домены и подсети из списков в туннель (через сервер AWG), остальное — напрямую (через провайдера);
+домен действует и на поддомены; если домен есть в обоих списках — побеждает «напрямую»</blockquote>
+  [➕ 🌍 В туннель | gw:lan_add:] [➕ 🇷🇺 Напрямую | gw:lan_ru:]
+  [➖ 🌍 shop000.example.com | gw:lan_rm:0.2eadb009]
+  [➖ 🌍 shop001.example.com | gw:lan_rm:1.df459093]
+  [➖ 🌍 shop002.example.com | gw:lan_rm:2.6d1db159]
+  [➖ 🌍 shop003.example.com | gw:lan_rm:3.bc2e1021]
+  [➖ 🌍 shop004.example.com | gw:lan_rm:4.752a8cb5]
+  [➖ 🌍 shop005.example.com | gw:lan_rm:5.96bded64]
+  [➖ 🌍 shop006.example.com | gw:lan_rm:6.f994a326]
+  [След. страница ▶️ | pg|lanlist|0|1|gw:lan:]
+  [🛜 Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+
+### gw.snap.transit.open — снимок итога «в туннель» — все пропущенные строки
+> /start list-snap-snapkey001
+- delete #4
+= edit #3
+🔀 <b>Итог: в туннель</b> · 200 · стр. 1 из 7 · на 15.09 12:00 (UTC+5)
+
+⚠️ <code>bad-name-000</code>: не домен, пропущен
+⚠️ <code>bad-name-001</code>: не домен, пропущен
+⚠️ <code>bad-name-002</code>: не домен, пропущен
+⚠️ <code>bad-name-003</code>: не домен, пропущен
+⚠️ <code>bad-name-004</code>: не домен, пропущен
+⚠️ <code>bad-name-005</code>: не домен, пропущен
+⚠️ <code>bad-name-006</code>: не домен, пропущен
+⚠️ <code>bad-name-007</code>: не домен, пропущен
+⚠️ <code>bad-name-008</code>: не домен, пропущен
+⚠️ <code>bad-name-009</code>: не домен, пропущен
+⚠️ <code>bad-name-010</code>: не домен, пропущен
+⚠️ <code>bad-name-011</code>: не домен, пропущен
+⚠️ <code>bad-name-012</code>: не домен, пропущен
+⚠️ <code>bad-name-013</code>: не домен, пропущен
+⚠️ <code>bad-name-014</code>: не домен, пропущен
+⚠️ <code>bad-name-015</code>: не домен, пропущен
+⚠️ <code>bad-name-016</code>: не домен, пропущен
+⚠️ <code>bad-name-017</code>: не домен, пропущен
+⚠️ <code>bad-name-018</code>: не домен, пропущен
+⚠️ <code>bad-name-019</code>: не домен, пропущен
+⚠️ <code>bad-name-020</code>: не домен, пропущен
+⚠️ <code>bad-name-021</code>: не домен, пропущен
+⚠️ <code>bad-name-022</code>: не домен, пропущен
+⚠️ <code>bad-name-023</code>: не домен, пропущен
+⚠️ <code>bad-name-024</code>: не домен, пропущен
+⚠️ <code>bad-name-025</code>: не домен, пропущен
+⚠️ <code>bad-name-026</code>: не домен, пропущен
+⚠️ <code>bad-name-027</code>: не домен, пропущен
+⚠️ <code>bad-name-028</code>: не домен, пропущен
+⚠️ <code>bad-name-029</code>: не домен, пропущен
+  [След. страница ▶️ | pg|ls_snap|0|1|ls:snap:0:snapkey001:0]
+  [⬅️ Назад | gw:lan:]
+
+### gw.snap.transit.back — «⬅️ Назад» — «🔀 VPN-транзит»
+> press gw:lan:
+= edit #3
+🔀 <b>VPN-транзит</b> 🟢 работает
+<code>end0</code> · <code>192.168.1.10</code> · 123 456 пакетов с роутера
+DNS — <code>10.8.0.1</code> через <code>awg0</code>
+📋 Списки: 1 234 домена, 56 подсетей · обн. 15.09 06:00 (UTC+5) · свои: 200 в туннель
+🗂 SMB: свои — 1, извне — 2
+<blockquote expandable>роутер отправляет трафик локальной сети на шлюз; шлюз пускает домены и подсети из списков в туннель (через сервер AWG), остальное — напрямую (через провайдера);
+домен действует и на поддомены; если домен есть в обоих списках — побеждает «напрямую»</blockquote>
+  [➕ 🌍 В туннель | gw:lan_add:] [➕ 🇷🇺 Напрямую | gw:lan_ru:]
+  [➖ 🌍 shop000.example.com | gw:lan_rm:0.2eadb009]
+  [➖ 🌍 shop001.example.com | gw:lan_rm:1.df459093]
+  [➖ 🌍 shop002.example.com | gw:lan_rm:2.6d1db159]
+  [➖ 🌍 shop003.example.com | gw:lan_rm:3.bc2e1021]
+  [➖ 🌍 shop004.example.com | gw:lan_rm:4.752a8cb5]
+  [➖ 🌍 shop005.example.com | gw:lan_rm:5.96bded64]
+  [➖ 🌍 shop006.example.com | gw:lan_rm:6.f994a326]
+  [След. страница ▶️ | pg|lanlist|0|1|gw:lan:]
+  [🛜 Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
+~ (пустой ответ)
+
+### gw.snap.menu — агент: снимка нет — «⬅️ В меню» на панель
+> /start list-snap-zzzzzzzzzz
+- delete #3
+= edit #2
+📋 Этого списка больше нет
+  [⬅️ В меню | gw:panel:]

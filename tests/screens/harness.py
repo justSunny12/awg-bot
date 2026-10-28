@@ -437,6 +437,11 @@ def _reset_module_state(mp) -> None:
     mp.setattr(pairlink, "_on_event", None)
     mp.setattr(pairlink, "_on_notes", None)
     rsv_invite._live_set(None)
+    # ключ снимка события — по счёту внутри снимка, а не из secrets: ссылка
+    # «и ещё N» (list-snap-<ключ>) в эталоне иначе менялась бы от прогона к прогону
+    from awgbot.infra.db import listsnap
+    seq = itertools.count(1)
+    mp.setattr(listsnap, "new_key", lambda: f"snapkey{next(seq):03d}")
 
 
 def run_builder(shot: base.Shot, services, mp):
