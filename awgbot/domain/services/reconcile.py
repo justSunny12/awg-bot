@@ -1,6 +1,7 @@
 """
 reconcile.py — сверка состава пиров (вотчдог), реконсиляция блокировок и
-SSH-фильтра после рестарта, детект рестарта сервиса.
+SSH-фильтра после рестарта, детект рестарта сервиса. Пиры-зонды кворума
+резерва (блок util/probenet) сверка не трогает: они не устройства.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import sqlite3
 from awgbot.core import config
 from awgbot.infra import awg
 from awgbot.infra import routing
+from awgbot.util import probenet
 from awgbot.core.enums import FriendStatus
 from awgbot.domain.services.base import _e
 from awgbot.domain.services.types import Notification
@@ -57,19 +59,23 @@ class ReconcileMixin:
 
     @staticmethod
     def _peers_with_ip(conf_text: str) -> dict[str, str]:
-        """pubkey → ip из живого conf интерфейса. Пиры-зонды кворума (блок
-        util/probenet) — не устройства: в результат не попадают."""
-        from awgbot.util import probenet
+        """pubkey → ip из живого conf интерфейса. Пиры-зонды кворума (все
+        AllowedIPs в блоке util/probenet) — не устройства: в результат не
+        попадают; пир с адресом блока и ещё чем-то — попадает (сторож «чужой пир»)."""
         header, peers = awg._split_conf(conf_text)
+        user_nets = probenet.user_nets([ln.split("=", 1)[1] for ln in header.splitlines()
+                                        if ln.strip().startswith("Address") and "=" in ln])
         result: dict[str, str] = {}
         for p in peers:
             if not p["pubkey"]:
                 continue
             ip = None
+            allowed = []
             for line in p["lines"]:
                 if line.strip().startswith("AllowedIPs"):
                     ip = line.split("=", 1)[1].strip().split("/")[0]
-            if ip and not probenet.is_probe(ip):
+                    allowed.append(line.split("=", 1)[1])
+            if ip and not probenet.peer_is_probe(allowed, user_nets):
                 result[p["pubkey"]] = ip
         return result
 

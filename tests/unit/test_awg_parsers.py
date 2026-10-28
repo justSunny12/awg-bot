@@ -198,3 +198,30 @@ def test_detect_topology_cat_missing(monkeypatch):
     monkeypatch.setattr(_awg.subprocess, "run", _boom)
     assert awg.detect_topology() == {
         "listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
+
+
+# Выпуск с кворумом добавляет интерфейсу второй адрес из блока зондов
+# 169.254.88.0/24. Установщик (обновление, переустановка) не должен принять
+# его за подсеть пользователей: app.yaml получил бы префикс 169.254.88, и
+# новые устройства — адреса вне awg0, то есть без сети.
+@pytest.mark.parametrize("address", [
+    "Address = 169.254.88.1/26\nAddress = 10.8.1.1/24",
+    "Address = 10.8.1.1/24\nAddress = 169.254.88.1/26",
+    "Address = 169.254.88.65/26, 10.8.1.1/24",
+    "Address = 169.254.88.1/26 # кворум\nAddress = 10.8.1.1/24 # основной",
+])
+def test_detect_topology_never_takes_the_probe_block_for_the_users_subnet(monkeypatch, address):
+    _mock_conf(monkeypatch, conf=f"[Interface]\nPrivateKey = X\n{address}\nListenPort = 43125\n")
+    t = awg.detect_topology()
+    assert (t["subnet_prefix"], t["subnet_cidr"]) == ("10.8.1", "10.8.1.0/24"), \
+        f"подсеть пользователей взята из блока зондов: {t}"
+    assert t["listen_port"] == 43125
+
+
+def test_detect_topology_falls_back_to_a_block_address_when_it_is_the_only_one(monkeypatch):
+    """Подсеть пользователей 169.254.88.0/24 — экзотика, но законная: других
+    адресов нет — берётся адрес блока, а не «не знаю» (установщик спросил бы
+    заново и мог бы записать подсеть, не совпадающую с awg0)."""
+    _mock_conf(monkeypatch, conf="[Interface]\nAddress = 169.254.88.1/24\nListenPort = 43125\n")
+    t = awg.detect_topology()
+    assert (t["subnet_prefix"], t["subnet_cidr"]) == ("169.254.88", "169.254.88.0/24")

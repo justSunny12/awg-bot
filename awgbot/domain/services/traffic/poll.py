@@ -1,11 +1,12 @@
-"""poll.py — опрос трафика и учёт РФ-трафика."""
+"""poll.py — опрос трафика и учёт РФ-трафика. Пиры-зонды кворума резерва
+(блок util/probenet) в онлайн не считаются: они не устройства."""
 from __future__ import annotations
 
 import logging
 
 from awgbot.core import config
 from awgbot.core import settings
-from awgbot.util import timeutil
+from awgbot.util import probenet, timeutil
 from awgbot.infra import awg, rfacct
 from awgbot.domain.services.types import Notification
 
@@ -54,10 +55,10 @@ class PollMixin:
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
         polled_at = timeutil.now()
-        from awgbot.util import probenet
+        user_nets = [c for c, _i in config.routing_client_subnets()]
         online = sum(1 for p in peers.values()                  # пиры-зонды кворума — не устройства
                      if timeutil.handshake_is_online(p["last_handshake"], polled_at)
-                     and not probenet.is_probe(p.get("address") or ""))
+                     and not probenet.peer_is_probe(str(p.get("allowed_ips") or ""), user_nets))
         with self.db.transaction():
             if self.db.get_state("online_count") != str(online):
                 self.db.set_state("online_count", str(online))   # только при изменении

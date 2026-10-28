@@ -180,3 +180,98 @@ def test_device_counters_are_untouched_by_probes(services, fake_awg, make_active
     assert fa.last_handshake == now - 20 and not fb.last_handshake
     assert {d.id for d in services.db.list_all_devices()} == devices_before, "опрос завёл записи на зонды"
     assert set(services.db.get_samples_all()) <= devices_before
+
+
+# ── пир блока с чем-то ещё — чужой ───────────────────────────────────────────
+
+@pytest.mark.parametrize("allowed", [
+    "AllowedIPs = 169.254.88.9/32, 10.8.1.77/32",
+    "AllowedIPs = 169.254.88.9/32\nAllowedIPs = 10.8.1.77/32",
+    "AllowedIPs = 169.254.88.9/32,0.0.0.0/0",
+    "AllowedIPs = 169.254.88.9/32\nAllowedIPs = 0.0.0.0/0",
+    "AllowedIPs = 169.254.88.9/0",                    # адрес блока, а маршрут — весь интернет
+], ids=["comma_user", "lines_user", "comma_default", "lines_default", "block_ip_wide_prefix"])
+def test_a_block_peer_that_also_routes_something_else_is_a_stranger_with_one_alarm(
+        services, fake_awg, make_active_client, monkeypatch, allowed):
+    """Адрес из блока зондов не должен быть пропуском: пир, которому кроме
+    адреса блока выдан адрес пользователей или весь интернет, — чужой доступ.
+    Сверка заводит его в карантин и шлёт тревогу со звуком — ровно одну;
+    настоящие зонды рядом в тревогу не попадают."""
+    services.ensure_admin_client()
+    _client, devs = _users(services, make_active_client, n=1, tg_id=7104)
+    conf = _conf_42([(d.public_key, d.address) for d in devs])
+    conf += f"\n[Peer]\nPublicKey = DUMMY-mixed\nPresharedKey = DUMMY\n{allowed}\n"
+    _set_conf(monkeypatch, conf)
+
+    notes = [n for n in services.reconcile_peers() if n.tg_id == config.ADMIN_ID]
+    assert len(notes) == 1, f"ожидалась одна тревога на пир «блок + ещё», пришло: {[n.text for n in notes]}"
+    assert notes[0].force_sound
+    q = [d for d in services.db.list_all_devices() if d.public_key == "DUMMY-mixed"]
+    assert q and q[0].client_id == services.db.get_service_client_id(), "пир «блок + ещё» не в карантине"
+    assert not {d.public_key for d in services.db.list_all_devices()} & PROBE_KEYS, "настоящий зонд в карантине"
+    assert services.reconcile_peers() == [], "тревога о том же пире повторилась на второй сверке"
+
+
+# ── подсеть пользователей в блоке: правило зондов выключено ─────────────────
+
+def _users_in_block(services, make_active_client, tg_id, n=3):
+    """Устройства с адресами 169.254.88.2… — как у сервера, чья подсеть
+    пользователей пересекает блок зондов."""
+    client = make_active_client(tg_id=tg_id, device_limit=5)
+    ids = [services.db.create_device(client.id, f"b{i}", f"DUMMY-user-{tg_id}-{i}", "DUMMY", f"169.254.88.{i + 2}",
+                                     private_key="DUMMY") for i in range(n)]
+    return [services.db.get_device(i) for i in ids]
+
+
+@pytest.mark.parametrize("address", [
+    "Address = 169.254.88.1/24",
+    "Address = 169.254.88.1/24 # пользователи",
+    "Address = 169.254.0.1/16",
+    "Address = 169.254.88.1/26\nAddress = 169.254.0.1/16",
+], ids=["block_only", "block_only_commented", "wider_net", "block_line_and_wider_net"])
+def test_devices_of_a_users_subnet_inside_the_block_never_go_missing(services, fake_awg, make_active_client,
+                                                                     monkeypatch, address):
+    """Подсеть пользователей 169.254.88.x — экзотика, но законная. Прими сверка
+    её устройства за зонды — каждое копит пропажи и через порог сверок
+    удаляется молча, вместе с доступом людей."""
+    services.ensure_admin_client()
+    devs = _users_in_block(services, make_active_client, tg_id=7120)
+    header = f"[Interface]\nPrivateKey = DUMMY\n{address}\nListenPort = 43125\nJc = 4"
+    peers = [f"[Peer]\nPublicKey = {d.public_key}\nPresharedKey = DUMMY\nAllowedIPs = {d.address}/32" for d in devs]
+    _set_conf(monkeypatch, header + "\n\n" + "\n\n".join(peers) + "\n")
+
+    for sweep in range(config.MISSING_SWEEPS_THRESHOLD + 1):
+        notes = services.reconcile_peers()
+        assert notes == [], f"сверка {sweep + 1}: {[n.text for n in notes]}"
+    for d in devs:
+        fresh = services.db.get_device(d.id)
+        assert fresh is not None, f"устройство {d.address} удалено сверкой как «пропавшее»"
+        assert fresh.missing_count == 0, f"устройство {d.address}: missing_count={fresh.missing_count}"
+
+
+def test_online_counts_devices_of_a_users_subnet_inside_the_block(services, fake_awg, make_active_client,
+                                                                  monkeypatch):
+    """Подсеть пользователей в блоке — устройства 169.254.88.x на связи считаются
+    в «📶 Онлайн», а не выпадают как зонды."""
+    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "169.254.88.0/24")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "", raising=False)
+    devs = _users_in_block(services, make_active_client, tg_id=7121)
+    now = int(timeutil.now().timestamp())
+    _set_dump(monkeypatch, [(d.public_key, d.address, now - 10, 1, 1) for d in devs])
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "3", \
+        f"устройства подсети 169.254.88.0/24 не в онлайне: {services.db.get_state('online_count')}"
+
+
+def test_online_counts_a_block_peer_that_also_has_another_address(services, fake_awg, make_active_client,
+                                                                  monkeypatch):
+    """Пир «адрес блока + адрес пользователей» — не зонд: на связи он — в
+    онлайне (как и любой чужой пир), настоящие зонды — нет."""
+    _users(services, make_active_client, n=1, tg_id=7122)
+    now = int(timeutil.now().timestamp())
+    text = _dump([(pub, ip, now - 5, 1, 1) for pub, ip in PROBES])
+    text += f"DUMMY-mixed\t(none)\t198.51.100.9:5000\t169.254.88.9/32,10.8.1.77/32\t{now - 5}\t1\t1\t25\n"
+    monkeypatch.setattr(awg, "show_dump", lambda iface=None: awg.parse_dump(text), raising=False)
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "1", \
+        f"онлайн: {services.db.get_state('online_count')} (ожидался один пир «блок + ещё»)"

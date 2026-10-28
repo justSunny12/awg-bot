@@ -50,7 +50,9 @@ emit() {  # KEY=VALUE для установщика — на stdout, всё пр
 
 if [[ -f "$CONF" ]]; then
     port="$(sed -nE 's/^ListenPort *= *([0-9]+).*/\1/p' "$CONF" | head -n1)"
-    addr="$(sed -nE 's/^Address *= *([0-9.]+)\/.*/\1/p' "$CONF" | head -n1)"
+    # адрес блока пиров-зондов кворума резерва (169.254.88.0/24) — не подсеть пользователей
+    addr="$(sed -nE 's/^Address *= *([0-9.]+)\/.*/\1/p' "$CONF" | { grep -v '^169\.254\.88\.' || true; } | head -n1)"
+    [[ -n "$addr" ]] || addr="$(sed -nE 's/^Address *= *([0-9.]+)\/.*/\1/p' "$CONF" | head -n1)"
     if [[ -n "$addr" ]]; then
         SUBNET_PREFIX="${addr%.*}"
         # Адрес сервера берём КАК ЕСТЬ: у прежней раскладки он .0, и объявить

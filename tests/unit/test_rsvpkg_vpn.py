@@ -251,21 +251,61 @@ def test_a_package_with_probes_in_the_live_conf_builds_seals_opens_and_checks(ho
     assert conf.count("[Peer]") == 2
 
 
-def test_a_probe_peer_is_skipped_even_when_the_users_subnet_covers_the_block():
-    """Пир блока пропускается явным правилом, а не потому, что он случайно вне
-    подсети: подсеть пользователей 169.254.0.0/16 накрывает блок зондов, и без
-    явного правила зонды уехали бы клону как пользователи."""
+def test_block_peers_are_ordinary_users_when_the_users_subnet_covers_the_block():
+    """Подсеть пользователей 169.254.0.0/16 накрывает блок зондов — правило
+    зондов не действует: пиры 169.254.88.x там — настоящие устройства, и без
+    них клон поднялся бы в аварию без части пользователей. Адрес клона — из
+    подсети пользователей, даже если строка блока стоит первой."""
     live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.1/26\nAddress = 169.254.0.1/16") \
         .replace("10.8.1.2/32", "169.254.1.2/32").replace("10.8.1.3/32", "169.254.1.3/32") + _PROBES
     i = vpn.iface_part("awg0", live)
     assert i["addr"] == "169.254.0.1/16"
-    assert {p["ip"] for p in i["peers"]} == {"169.254.1.2", "169.254.1.3"}, \
-        f"зонды внутри подсети пользователей доехали в часть VPN: {i['peers']}"
+    assert {p["ip"] for p in i["peers"]} == {"169.254.1.2", "169.254.1.3", "169.254.88.4", "169.254.88.5",
+                                             "169.254.88.6"}, \
+        f"устройства подсети пользователей, пересекающей блок, не доехали в часть VPN: {i['peers']}"
 
 
-def test_an_interface_with_only_a_probe_address_is_a_vpn_part_error():
-    """Нет ни одного адреса вне блока — клон поднять не с чем: отказ сборки, а
-    не клон на адресе зонда."""
-    live = LIVE.replace("Address = 10.8.1.1/24", "Address = 169.254.88.1/26") + _PROBES
-    with pytest.raises(vpn.VpnPartError, match="адрес"):
-        vpn.iface_part("awg0", live)
+@pytest.mark.parametrize("address", [
+    "Address = 169.254.88.1/24",
+    "Address = 169.254.88.1/24\nAddress = 169.254.88.65/26",
+    "Address = 169.254.88.1/24, 169.254.88.65/26 # кворум",
+])
+def test_an_interface_whose_every_address_is_in_the_block_takes_the_first_one(address):
+    """Все адреса интерфейса в блоке — это подсеть пользователей, а не зонды:
+    часть VPN строится на первом адресе, и устройства 169.254.88.x едут клону
+    как обычные пользователи. Отказ сборки здесь оставил бы такой сервер без
+    переезда вовсе."""
+    live = LIVE.replace("Address = 10.8.1.1/24", address) \
+        .replace("10.8.1.2/32", "169.254.88.2/32").replace("10.8.1.3/32", "169.254.88.3/32")
+    i = vpn.iface_part("awg0", live)
+    assert i["addr"] == "169.254.88.1/24", f"адрес клона не первый из Address: {i['addr']}"
+    assert [p["ip"] for p in i["peers"]] == ["169.254.88.2", "169.254.88.3"], \
+        f"устройства подсети 169.254.88.0/24 пропущены как зонды: {i['peers']}"
+    conf = vpn.clone_conf(vpn.check(vpn.build([("awg0", live)], admin=["169.254.88.2"], dns=["169.254.88.1"],
+                                              upstreams=["198.51.100.53"], tz="Asia/Yekaterinburg"))["ifaces"][0])
+    assert conf.count("[Peer]") == 2 and "Address = 169.254.88.1/24\n" in conf
+
+
+@pytest.mark.parametrize("address", [
+    "Address = 10.8.1.1/24 # основной",
+    "Address = 10.8.1.1/24\nAddress = 169.254.88.1/26 # кворум",
+    "Address = 169.254.88.1/26 # кворум\nAddress = 10.8.1.1/24",
+    "Address = 169.254.88.65/26 # кворум\nAddress = 10.8.1.1/24 # основной",
+])
+def test_a_comment_at_the_end_of_an_address_line_does_not_break_the_part(address):
+    """4.2.0 подписывает свою строку Address комментарием: без его обрезки
+    адрес не разбирается, и пакет переезда не собирается вообще."""
+    i = vpn.iface_part("awg0", LIVE.replace("Address = 10.8.1.1/24", address) + _PROBES)
+    assert i["addr"] == "10.8.1.1/24", f"адрес клона с комментарием в Address: {i['addr']!r}"
+    assert {p["ip"] for p in i["peers"]} == {"10.8.1.2", "10.8.1.3"}
+
+
+def test_a_block_peer_with_a_users_address_as_well_is_not_dropped_as_a_probe():
+    """Пир «адрес блока + адрес пользователей» — не зонд (сверка поднимает на
+    него тревогу); часть VPN обращается с ним как с любым пиром — по первому
+    значению AllowedIPs и подсети интерфейса."""
+    q7 = _k(43)
+    live = LIVE + _PROBES + f"\n[Peer]\nPublicKey = {q7}\nAllowedIPs = 10.8.1.9/32, 169.254.88.9/32\n"
+    i = vpn.iface_part("awg0", live)
+    assert {"pub": q7, "psk": "", "ip": "10.8.1.9"} in i["peers"], f"пир пропущен как зонд: {i['peers']}"
+    assert not {p["pub"] for p in i["peers"]} & _PROBE_KEYS
