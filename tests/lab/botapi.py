@@ -14,8 +14,10 @@ botapi.py — макет Bot API Telegram для стенда: нескольк�
   заголовком `X-Telegram-Bot-Api-Secret-Token`; сертификат из `setWebhook`
   — единственный доверенный; ответ не 2xx — повтор с нарастающим интервалом,
   в `getWebhookInfo` — `last_error_message`, `pending_update_count`.
-- `sendMessage` и прочие методы отправки — строка в журнал (JSONL) и ответ,
-  похожий на настоящий; неизвестные методы — `ok: true, result: true`.
+- `sendMessage` и прочие методы отправки — строка в журнал (JSONL, с адресом
+  отправителя `from`: у двух процессов одного бота — основы и бота основы на
+  резерве — токен один) и ответ, похожий на настоящий; неизвестные методы —
+  `ok: true, result: true`.
 - Служебное (не Bot API): `POST /inject/<token>` — положить обновление боту
   (тело — объект обновления без `update_id`); `GET /journal/<token>` — журнал.
 
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextvars
 import json
 import ssl
 import tempfile
@@ -32,6 +35,7 @@ import time
 
 from aiohttp import ClientSession, TCPConnector, web
 
+_REMOTE: contextvars.ContextVar[str] = contextvars.ContextVar("remote", default="")   # адрес отправителя запроса
 CONFLICT = ("Conflict: can't use getUpdates method while webhook is active; "
             "use deleteWebhook to delete the webhook first")
 
@@ -53,10 +57,10 @@ class Bot:
         uid = int(self.token.split(":", 1)[0]) if self.token.split(":", 1)[0].isdigit() else 1
         return {"id": uid, "is_bot": True, "first_name": f"bot{uid}", "username": f"lab{uid}_bot"}
 
-    def log(self, method: str, params: dict) -> None:
+    def log(self, method: str, params: dict, remote: str = "") -> None:
         with open(self.journal, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": time.time(), "bot": self.me["id"], "method": method, "params": params},
-                               ensure_ascii=False) + "\n")
+            f.write(json.dumps({"ts": time.time(), "bot": self.me["id"], "method": method, "params": params,
+                                "from": remote}, ensure_ascii=False) + "\n")
 
     def inject(self, update: dict) -> int:
         uid = self.next_id
@@ -177,6 +181,7 @@ class Api:
             except ValueError:
                 params = dict(await request.post())
         params.update(request.query)
+        _REMOTE.set(request.remote or "")                    # у каждого запроса aiohttp — своя задача и контекст
         return await self.call(bot, method, params, cert)
 
     async def call(self, bot: Bot, method: str, params: dict, cert: bytes | None) -> web.Response:
@@ -198,7 +203,7 @@ class Api:
             return ok(True)
         if method == "getWebhookInfo":
             return ok(bot.webhook_info())
-        bot.log(method, params)
+        bot.log(method, params, _REMOTE.get())
         if method in ("sendMessage", "editMessageText", "sendPhoto", "sendDocument", "sendAnimation"):
             bot.msg_id += 1
             chat = params.get("chat_id", 0)
