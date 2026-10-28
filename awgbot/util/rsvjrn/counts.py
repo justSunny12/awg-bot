@@ -62,15 +62,21 @@ def current_month(conn: sqlite3.Connection) -> str:
     return str(row[0]) if row and row[0] else timeutil.now().strftime("%Y-%m")
 
 
-def apply(conn: sqlite3.Connection, batch: Batch, month: str = "") -> bool:
+def apply(conn: sqlite3.Connection, batch: Batch, month: str = "") -> bool | None:
     """Принять пачку чужого хоста одной транзакцией: месяц пачки = месяц счётчиков
-    получателя — в счётчики устройства, старше — в архив того месяца; рукопожатие —
-    максимум. False — повтор (номер не больше принятого)."""
+    получателя — в счётчики устройства (месяц и период), старше — в архив того
+    месяца и в период (месячный сброс период не трогает); рукопожатие — максимум.
+    False — повтор (номер не больше принятого). None — в пачке месяц новее, чем у
+    получателя (событие сброса ещё не доехало): не применена и не отмечена —
+    отправитель повторит её позже."""
     month = month or current_month(conn)
+    if any(m > month for m in batch.months):
+        return None
+    conn.execute("BEGIN IMMEDIATE")
     seen = conn.execute("SELECT s FROM main.jrn_seen WHERE host = ?", (batch.host,)).fetchone()
     if seen is not None and int(seen[0]) >= batch.s:
+        conn.execute("ROLLBACK")
         return False
-    conn.execute("BEGIN IMMEDIATE")
     try:
         for m, devs in batch.months.items():
             for dev, (rx, tx, rf_rx, rf_tx, hs) in devs.items():
@@ -82,6 +88,8 @@ def apply(conn: sqlite3.Connection, batch: Batch, month: str = "") -> bool:
                                  (rx, tx, rx, tx, rf_rx, rf_tx, dev))
                 elif m < month:
                     _archive(conn, dev, m, rx, tx, rf_rx, rf_tx)
+                    conn.execute("UPDATE device_traffic SET traffic_rx_period = traffic_rx_period + ?, "
+                                 "traffic_tx_period = traffic_tx_period + ? WHERE device_id = ?", (rx, tx, dev))
                 if hs is not None:
                     conn.execute("UPDATE device_traffic SET last_handshake = ? WHERE device_id = ? AND "
                                  "(last_handshake IS NULL OR last_handshake = '' OR CAST(last_handshake AS INTEGER) < ?)",

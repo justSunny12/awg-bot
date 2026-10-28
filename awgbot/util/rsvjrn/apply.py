@@ -119,13 +119,13 @@ def apply(conn: sqlite3.Connection, events: list[Event]) -> Applied:
     """Применить события по номеру одной транзакцией (commit/rollback — здесь же).
     Соединение — с триггерами (DatabaseCore) или сырое: отметка applying глушит их."""
     out = Applied()
-    meta = conn.execute("SELECT applied FROM main.jrn_meta WHERE id = 1").fetchone()
-    last = int(meta[0]) if meta else 0
-    out.last = last
-    tables = {r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type = 'table'")}
     cols_cache: dict[str, list[str]] = {}
-    conn.execute("BEGIN IMMEDIATE")
+    conn.execute("BEGIN IMMEDIATE")                      # номер и схема — внутри: два применителя не применят одно дважды
     try:
+        meta = conn.execute("SELECT applied FROM main.jrn_meta WHERE id = 1").fetchone()
+        last = int(meta[0]) if meta else 0
+        out.last = last
+        tables = {r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type = 'table'")}
         conn.execute("UPDATE main.jrn_meta SET applying = 1 WHERE id = 1")
         for ev in sorted(events, key=lambda x: x.i):
             if ev.i <= last:

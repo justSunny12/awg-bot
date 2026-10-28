@@ -70,7 +70,7 @@ class DatabaseCore:
         except sqlite3.Error as e:                          # повреждённая схема — пусть падает запрос, а не соединение
             self._local.jrn_ok = True                       # не повторять на каждом запросе
             import logging
-            logging.getLogger("awgbot.db").warning("журнал: триггеры запрета не поставлены: %s", e)
+            logging.getLogger("awgbot.db").error("журнал: триггеры запрета не поставлены: %s", e)
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)

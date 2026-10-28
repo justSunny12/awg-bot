@@ -118,6 +118,45 @@ def db(tmp_path):
     database.close()
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "jrn_raw(reason): тест законно пишет мимо журнала данных резерва "
+                                       "(сырое соединение, подмена файла базы) — сторож эквивалентности его не сверяет")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    if call.when == "call":
+        item._jrn_call_failed = outcome.get_result().failed     # сторожу эквивалентности: тело упало — не сверять
+
+
+@pytest.fixture(autouse=True)
+def _jrn_equivalence(request, tmp_path_factory):
+    """Сторож эквивалентности журнала (tests/jrnequiv.py): при AWG_JRN_EQUIV=1
+    на каждом интеграционном тесте с базой события держателя, применённые к
+    копии базы на начало теста, должны дать те же решения, маски и данные хоста,
+    что живая база. В обычном прогоне выключен."""
+    from tests import jrnequiv
+    if (not jrnequiv.enabled() or "db" not in request.fixturenames
+            or "integration" not in request.node.path.parts or request.node.get_closest_marker("jrn_raw")):
+        yield
+        return
+    database = request.getfixturevalue("db")
+    # режим триггеров соединения базы — тот, что был при его открытии (гость или основа);
+    # подмена config.GUEST посреди теста уже открытого соединения не меняет
+    guest = bool(getattr(_config, "GUEST", False))
+    copy = str(tmp_path_factory.mktemp("jrn-equiv") / "copy.db")
+    jrnequiv.start(database, copy)
+    path = database.path
+    yield
+    if getattr(request.node, "_jrn_call_failed", True):
+        return                                          # тело упало или не дошло — сверять нечего
+    problems = jrnequiv.check(path, copy, guest)
+    if problems:
+        pytest.fail("журнал: запись мимо событий — следующий получил бы другую базу:\n  " + "\n  ".join(problems),
+                    pytrace=False)
+
+
 @pytest.fixture()
 def fake_awg(monkeypatch):
     """Замена awg-слоя (exec) на in-memory фейк. Патчим модуль
