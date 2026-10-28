@@ -261,6 +261,9 @@ class ReserveVoteMixin:
         pkg_in = self.rsv_get("rsv_pkg_in")
         if not pkg_in.get("gen") or (need_share and not pkg_in.get("share")):
             return "данных для переезда нет"
+        if need_share and pkg_in.get("has_dns") is False:
+            # запись меняет процесс открытия на резерве — без конверта DNS (провайдер «вручную») ему нечем
+            return "запись DNS у основы «вручную» — аварийный переезд невозможен"
         return ""
 
     def reserve_auto_block(self) -> str:

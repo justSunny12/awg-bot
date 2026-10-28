@@ -19,8 +19,12 @@ keep.py — часть пакета journal (см. __init__): сторона р�
 from __future__ import annotations
 
 import os
+import time
 
+from awgbot.core import config
 from awgbot.util import timeutil
+
+from ...types import Notification
 
 from ...gateway_link.common import log
 from ..package import reserve_dir
@@ -112,7 +116,9 @@ class ReserveKeepMixin:
         return {"line": str(cur["line"]), "e": int(cur.get("e") or 0), "last": last, "snap_i": int(cur.get("snap_i") or 0),
                 "snap_n": max(0, last - int(cur.get("snap_i") or 0)), "size": st.events_size(),
                 "snap": bool(cur.get("snap_at")),             # снимок есть (и снятый до первого события, snap_i = 0)
-                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0)), **self._keep_guest_disk(str(cur["line"]))}
+                "cnt_bn": max(st.counts_last("a"), int(cur.get("cb") or 0)),
+                **({"gap": int(self.rsv_get("rsv_in").get("jgap") or 0)} if self._keep_guest() and self.rsv_get("rsv_in").get("jgap") else {}),
+                **self._keep_guest_disk(str(cur["line"]))}
 
     def _keep_guest_disk(self, line: str) -> dict:
         """Гостя нет, а его журнал данных на диске есть (перезагрузка посреди обслуживания):
@@ -189,13 +195,30 @@ class ReserveKeepMixin:
             return [("send", "jneed", {"line": line, "from": last + 1})]
         acts: list[tuple] = []
         if new:
-            self.reserve_keep_store().append_events(new)       # fsync — до подтверждения
+            try:
+                self.reserve_keep_store().append_events(new)   # fsync — до подтверждения
+            except OSError as e:
+                return self._keep_store_failed(e)             # без jack — основа повторит; сессию не рвать
+            self.__dict__.pop("_keep_oserr_told", None)
             last = event.head(new[-1]).n
             self.rsv_update("rsv_jrn_in", e=e_body, last=last)
             if self._keep_guest():
                 acts.append(("guest", "jev", {"line": line, "e": e_body, "from": event.head(new[0]).n,
                                               "n": len(new), "blob": b"".join(new).hex()}))
         return [("send", "jack", {"line": line, "e": e_body, "i": last})] + acts
+
+    def _keep_store_failed(self, e: OSError) -> list[tuple]:
+        """Журнал второй стороны не дописан (диск кончился, ввод-вывод): строка — с демпфером,
+        админу — один раз на эпизод; подтверждения нет, основа повторит с подтверждённого."""
+        from awgbot.domain.notices import reserve as rn
+        now = time.monotonic()
+        if now - float(self.__dict__.get("_keep_oserr_at") or 0) > 60:
+            self.__dict__["_keep_oserr_at"] = now
+            log.error("резерв: журнал «%s» не дописан: %s", self.reserve_peer_name(), e)
+        if self.__dict__.get("_keep_oserr_told"):
+            return []
+        self.__dict__["_keep_oserr_told"] = True
+        return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.keep_write_failed(self.reserve_peer_name(), str(e)))])]
 
     def _keep_jcnt_in(self, body: dict) -> list[tuple]:
         from awgbot.util.rsvjrn import event

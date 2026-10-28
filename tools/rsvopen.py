@@ -242,7 +242,7 @@ def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
         return None, ""
 
 
-def _journal(k: bytes, jrn: dict, *, button: bool) -> None:
+def _journal(k: bytes, jrn: dict, *, button: bool) -> dict:
     """База гостя по журналу: снимок уже в хранилище — события, счётчики, эпоха."""
     from awgbot.core import config
     from awgbot.infra import rsvzone
@@ -256,6 +256,7 @@ def _journal(k: bytes, jrn: dict, *, button: bool) -> None:
         raise OpenError(f"журнал не применён: {type(e).__name__}: {str(e)[:120]}") from e
     _step("journal", epoch=res.epoch, role=res.role, fork=res.fork, events=res.events, guest_events=res.guest_events,
           counts=res.counts, gap=res.gap, lost=len(res.lost))
+    return {"jgap": int(res.gap or 0), "jlost": len(res.lost)}   # дальше по шагам — боту резерва (разрыв — не молча)
 
 
 def _yaml_dump(obj) -> str:
@@ -414,6 +415,7 @@ def run(data: dict) -> int:
         dns = dict(data.get("dns") or {})
         if m and not dns:
             dns = seal.open_dns(blob, m) or {}
+        by_m = bool(m)                                        # по долям или коду: запись меняю я — без провайдера нельзя
         m = None                                              # M нужен был только для K и конверта DNS
         data["_ttl"] = int((dns or {}).get("ttl") or 0)      # TTL записи — гостю: пауза перед «переподключи VPN»
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
@@ -435,23 +437,24 @@ def run(data: dict) -> int:
         rsvzone.store()
         data["_pkg_gen"] = head.pkg_gen
         fill_store(data, k, parts, db_bytes, iface["name"], extra)
-        if jrn is not None:
-            _journal(k, jrn, button=sealed_path)
+        jinfo = _journal(k, jrn, button=sealed_path) if jrn is not None else {}
         _step("store", from_snapshot=int(from_snapshot))
         for x in extra:                                       # конфиги вторых интерфейсов — в хранилище, скрипт поднимет их
             rsvzone.write_private(rsvzone.RUN_DIR / "awg" / f"{x['name']}.conf", pkgvpn.clone_conf(x))
         rsvzone.take(pkgvpn.clone_conf(iface), iface=iface["name"], addr=iface["addr"], dns=list(vpn.get("dns") or []),
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
                      channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra])
-        _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]))
+        _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]), **jinfo)
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")
     finally:
         del parts, blob
     target = str(data.get("target_ip") or "")
+    if by_m and bool(data.get("set_record", True)) and target and not dns.get("provider"):
+        return _fail("запись DNS: провайдер «вручную» — аварийный переезд невозможен")
     want_record = bool(data.get("set_record", True)) and bool(target) and bool(dns.get("provider"))
     if not want_record:
-        _step("done", record="skipped")
+        _step("done", record="skipped", **jinfo)
         if data.get("tg_take"):
             rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
         return 0
@@ -466,7 +469,7 @@ def run(data: dict) -> int:
         return _fail("факт записи не подтвердился за 30 минут")
     _step("record_fact", name=name, ip=target)
     rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
-    _step("done")
+    _step("done", **jinfo)
     return 0
 
 

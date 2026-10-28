@@ -210,10 +210,20 @@ class ReserveReturnMixin:
         """Реплики нет (резерв потерял гостя, пустой released): слияния нет, пиры и
         блокировки — по своей базе, перезапуск не нужен — сразу забирать Telegram."""
         from awgbot.domain.notices import reserve as rn
-        self.rsv_update("rsv_out", guest_stopped=True)       # гостя нет — писать там некому
-        # отчёт — тот же вид, что у слияния: «lost» — строки Т-РУ5б (прежде здесь стояло True,
-        # и текст Т-РУ5б падал на нём уже после перехода домой — без итога и нового поколения)
-        self.rsv_update("rsv_out", merge_report={"lost": [rn.returned_without_replica(self.reserve_peer_name())]})
+        out = self._out()
+        name = self.reserve_peer_name()
+        if self.reserve_jrn_moved():
+            # журнал: всё подтверждённое уже применено в следовании — сводка эпохи и есть отчёт; потеряться
+            # могли только последние записи гостя (ушёл, не досказав) — об этом строкой, если он их присылал
+            report = dict(out.get("jrn_report") or {})
+            report.setdefault("lost", [])
+            if int(self.__dict__.get("_follow_seen_top") or 0) > int(self.db.jrn_meta()["applied"]):
+                report["lost"].append(rn.returned_without_guest_tail(name))
+            report.pop("extended", None)
+            self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None)
+        else:
+            # отчёт — тот же вид, что у слияния: «lost» — строки Т-РУ5б
+            self.rsv_update("rsv_out", guest_stopped=True, merge_report={"lost": [rn.returned_without_replica(name)]})
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)
         return [("take_tg",), ("live",)]
 

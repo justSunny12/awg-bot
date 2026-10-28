@@ -193,30 +193,38 @@ class ReservePackageMixin:
             if not keys.get("k") or not keys.get("m"):
                 return None
             journal = self._pkg_journal()
-            self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
+            vpn_part = pkgvpn.build(self._pkg_ifaces(), admin=self._pkg_admin_addrs(), dns=self._pkg_dns_addrs(),
+                                    upstreams=self._pkg_upstreams(), tz=str(config.TZ_NAME or ""))
+            bot_part = {"conf": pkgbot.conf_part(str(config.CONF_DIR)),
+                        "app_guest": pkgbot.guest_part(str(config.CONF_DIR)),
+                        "env": pkgbot.env_part(config.BOT_TOKEN, config.ADMIN_ID),
+                        "lists": pkgbot.lists_part(str(config.DATA_DIR))}
+            import json
+
+            def _logical(db: bytes) -> str:
+                return hashlib.blake2b(db + json.dumps(
+                    [vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"], bot_part["lists"],
+                     int(keys.get("m_gen") or 0), int(keys.get("k_gen") or 0), "pkg3" if journal else "pkg2"],
+                    sort_keys=True).encode(), digest_size=16).hexdigest()
+            sent = self.rsv_get("rsv_pkg_sent")
             if journal:
+                # журнал: база едет событиями — отпечаток таймера только по частям вне базы; решить
+                # «снимок не нужен» — до копии базы (таймер раз в pkg_minutes делал бы её впустую)
+                logical = _logical(b"")
+                if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
+                    return None                           # по таймеру без изменений — не уходит
                 self.__dict__["_jrn_snap_pending"] = True     # пачки счётчиков — не сворачивать, пока снимок в пути
+            self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
             db_bytes, marks = pkgbot.replica_marked(self.db.path if hasattr(self.db, "path") else self._db_path())
             if journal:
                 marks["cb"] = self.db.jrn_counts_bn()         # пачки по этот номер — из строк, учтённых снимком
                 marks["reset"] = bool(self.rsv_get("rsv_jrn_out").get("reset"))
             pkgbot.assert_clean(db_bytes)
-            vpn_part = pkgvpn.build(self._pkg_ifaces(), admin=self._pkg_admin_addrs(), dns=self._pkg_dns_addrs(),
-                                    upstreams=self._pkg_upstreams(), tz=str(config.TZ_NAME or ""))
-            bot_part = {"db": db_bytes.hex(), "conf": pkgbot.conf_part(str(config.CONF_DIR)),
-                        "app_guest": pkgbot.guest_part(str(config.CONF_DIR)),
-                        "env": pkgbot.env_part(config.BOT_TOKEN, config.ADMIN_ID),
-                        "lists": pkgbot.lists_part(str(config.DATA_DIR))}
-            import json
-            # журнал: база едет событиями — отпечаток таймера только по частям вне базы
-            logical = hashlib.blake2b((b"" if journal else db_bytes) + json.dumps(
-                [vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"], bot_part["lists"],
-                 int(keys.get("m_gen") or 0), int(keys.get("k_gen") or 0), "pkg3" if journal else "pkg2"],
-                sort_keys=True).encode(), digest_size=16).hexdigest()
-            sent = self.rsv_get("rsv_pkg_sent")
-            if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
-                self.__dict__.pop("_jrn_snap_pending", None)
-                return None                               # по таймеру без изменений — не уходит
+            bot_part["db"] = db_bytes.hex()
+            if not journal:
+                logical = _logical(db_bytes)
+                if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
+                    return None                           # по таймеру без изменений — не уходит
             gen = max(int(sent.get("gen") or 0), int(sent.get("pending_gen") or 0)) + 1
             dns = self._pkg_dns_envelope()
             parts = {PKG_PART: vpn_part, "bot": bot_part}

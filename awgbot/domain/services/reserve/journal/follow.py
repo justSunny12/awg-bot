@@ -173,13 +173,21 @@ class ReserveFollowMixin:
     def _follow_after(self, done: list, before: dict) -> None:
         """Пиры и блокировки по применённому; сводка эпохи для Т-РУ5б."""
         from awgbot.infra import awg
-        rep = dict(self.rsv_get("rsv_out").get("jrn_report") or {})
+        out = self.rsv_get("rsv_out")
+        rep = dict(out.get("jrn_report") or {})
         for k in ("clients", "devices", "extensions", "blocks", "peers_added", "peers_removed"):
             rep[k] = int(rep.get(k) or 0)
         lost = list(rep.get("lost") or [])
+        skip = [int(x) for x in (out.get("tail_skip") or [])][:2]   # мой хвост, перебазированный держателем, — не «с резерва»
         blocks = False
         name = self.reserve_peer_name()
         for ev in done:
+            if len(skip) == 2 and skip[0] <= ev.i <= skip[1]:
+                if ev.t == "devices":
+                    rep["peers_added"] += self._follow_peer(awg, ev)
+                    rep["peers_removed"] += self._follow_peer_gone(awg, ev)
+                blocks = blocks or "block_reason" in (ev.c or {})
+                continue
             if ev.t == "clients":
                 if ev.op == "I":
                     rep["clients"] += 1
@@ -192,7 +200,12 @@ class ReserveFollowMixin:
                                 f"({old_tg} → {new_tg}) — проверь, что это сделал ты")
                 blocks = blocks or "block_reason" in (ev.c or {})
             elif ev.t == "client_subscription" and ev.op == "U":
-                rep["extensions"] += 1
+                # продление — срок вырос (напоминания и истечение пишут ту же строку), по профилю один раз
+                new_end, old_end = str((ev.c or {}).get("period_end") or ""), str((ev.o or {}).get("period_end") or "")
+                cid = int((ev.k or {}).get("client_id") or 0)
+                if new_end and new_end > old_end and cid not in rep.setdefault("extended", []):
+                    rep["extended"].append(cid)
+                    rep["extensions"] += 1
             elif ev.t == "client_block_histories" and ev.op == "I":
                 rep["blocks"] += 1
             elif ev.t == "devices":

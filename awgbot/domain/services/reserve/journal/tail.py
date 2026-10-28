@@ -291,7 +291,7 @@ class ReserveTailMixin:
         before = self.db.jrn_last_i()
         guest = bool(getattr(self, "guest", False))
         try:
-            rpt = self.db.jrn_rebase(evs, before_commit=lambda conn, r: self._tail_done_write(conn, e, fork, r, guest))
+            rpt = self.db.jrn_rebase(evs, before_commit=lambda conn, r: self._tail_done_write(conn, e, fork, r, guest, before))
         except Exception as ex:                                # noqa: BLE001 — sqlite3.OperationalError и прочее
             log.error("резерв: хвост эпохи %s не перенесён: %s", e, ex)
             return []
@@ -304,11 +304,16 @@ class ReserveTailMixin:
             acts.append(("notify", self._tail_notes("c9", rpt.moved, rpt.disputed, len(rpt.disputed))))
         return acts
 
-    def _tail_done_write(self, conn, e: int, fork: int, rpt, guest: bool) -> None:
-        """В транзакции перебазирования: отметка «хвост этой эпохи перенесён» и ответ на повтор."""
+    def _tail_done_write(self, conn, e: int, fork: int, rpt, guest: bool, before: int) -> None:
+        """В транзакции перебазирования: отметка «хвост этой эпохи перенесён» и ответ на повтор;
+        `range` — номера событий моей эпохи, порождённых переносом (подряд после before): основа
+        по ним не считает свои же правки «сделанными на резерве» в Т-РУ5б."""
         meta_e = int(conn.execute("SELECT epoch FROM jrn_meta WHERE id = 1").fetchone()[0])
+        row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'jrn_events'").fetchone()
+        last_i = int(row[0]) if row and row[0] is not None else before
         done = {"epoch": meta_e, "e": e, "F": fork, "moved": rpt.moved, "disputed_n": len(rpt.disputed),
-                "more": max(0, len(rpt.disputed) - DISPUTED_MAX), "at": timeutil.now_iso()}
+                "more": max(0, len(rpt.disputed) - DISPUTED_MAX), "at": timeutil.now_iso(),
+                "range": [before + 1, last_i] if last_i > before else []}
         if guest:
             done["disputed"] = rpt.disputed[:DISPUTED_MAX]     # основе — полным списком под K
         conn.execute("INSERT INTO server_state (key, value) VALUES ('rsv_tail_done', ?) "
@@ -323,25 +328,60 @@ class ReserveTailMixin:
         if not guest:
             return [(send, "jtail_ok", {**reply, "part": 0, "parts": 1, "blob": ""})]
         blob = event.seal_obj(self.reserve_k(), {"v": 1, "line": reply["line"], "e": reply["e"], "F": reply["F"],
-                                                 "disputed": list(done.get("disputed") or []), "more": reply["more"]}).hex()
+                                                 "disputed": list(done.get("disputed") or []), "more": reply["more"],
+                                                 "range": list(done.get("range") or [])}).hex()
         chunks = pairproto.chunks(blob)
         return [(send, "jtail_ok", {**reply, "part": n, "parts": len(chunks), "blob": c}) for n, c in enumerate(chunks)]
 
-    def _tail_side_effects(self, before: int) -> None:
-        """Перенесённое хвостом — события моей эпохи после before: пиры и блокировки по ним."""
+    def _tail_side_effects(self, before: int, report: bool = False) -> None:
+        """Перенесённое хвостом — события моей эпохи после before: пиры и блокировки по ним,
+        пересчёт сроков по итогу; report — это правки бота на резерве (С9): они идут и в
+        сводку эпохи Т-РУ5б со строками «проверь глазами», как при следовании."""
         from awgbot.infra import awg
         evs = self.db.jrn_events_after(before, 100000)
-        blocks = False
+        if report:
+            self._follow_after(evs, self._follow_watch())
+        else:
+            blocks = False
+            for ev in evs:
+                if ev.t == "devices":
+                    self._follow_peer(awg, ev)
+                    self._follow_peer_gone(awg, ev)
+                blocks = blocks or "block_reason" in (ev.c or {})
+            if blocks:
+                try:
+                    self.reconcile_blocks(True)
+                except Exception as e:                        # noqa: BLE001
+                    log.warning("резерв: блокировки после хвоста не наложены: %s", e)
+        self._tail_recheck(evs)
+
+    def _tail_recheck(self, evs: list) -> None:
+        """После перебазирования — пересчёт по итогу (концепт §3.7): продление из хвоста легло
+        поверх истечения у держателя (колонки разные — спора нет) — подписка снова активна, бит
+        EXPIRY снят с профиля и устройств. Истечение в обратную сторону делает задание держателя."""
+        from awgbot.core.blocks import ClientBlock, DeviceBlock
+        from awgbot.core.enums import SubStatus
+        ids: set[int] = set()
         for ev in evs:
-            if ev.t == "devices":
-                self._follow_peer(awg, ev)
-                self._follow_peer_gone(awg, ev)
-            blocks = blocks or "block_reason" in (ev.c or {})
-        if blocks:
+            if ev.t in ("clients", "client_subscription", "client_quota"):
+                ids.add(int((ev.k or {}).get("client_id") or (ev.k or {}).get("id") or 0))
+            elif ev.t == "devices":
+                ids.add(int(((ev.c or {}).get("client_id") or (ev.o or {}).get("client_id")) or 0))
+        now = timeutil.now()
+        for cid in sorted(i for i in ids if i):
+            cl = self.db.get_client(cid)
+            if cl is None or cl.status != SubStatus.EXPIRED or not cl.period_end:
+                continue
             try:
-                self.reconcile_blocks(True)
-            except Exception as e:                            # noqa: BLE001
-                log.warning("резерв: блокировки после хвоста не наложены: %s", e)
+                if timeutil.parse_iso(cl.period_end) <= now:
+                    continue
+            except ValueError:
+                continue
+            self.db.update_client_fields(cid, status=SubStatus.ACTIVE)
+            self._client_clear_block(cid, ClientBlock.EXPIRY)
+            for dev in self.db.list_devices(cid):
+                self._device_clear_block(int(dev.id), DeviceBlock.EXPIRY)
+            log.info("резерв: после переноса хвоста подписка профиля %s снова активна (срок до %s)", cid, cl.period_end)
 
     # ── бывший держатель: ответ ─────────────────────────────────────────────
     def reserve_tail_ok_in(self, body: dict) -> list[tuple]:
@@ -378,9 +418,11 @@ class ReserveTailMixin:
             log.warning("резерв: список спорного — не к этому хвосту — хвост не снят")
             return []
         disputed = [d for d in (obj.get("disputed") or []) if isinstance(d, dict)][:DISPUTED_MAX]
+        rng = [int(x) for x in (obj.get("range") or []) if isinstance(x, int)][:2]
         self.rsv_update("rsv_out", tail_report={"variant": "crash", "moved": int(body.get("moved") or 0),
                                                 "disputed": disputed, "total": int(body.get("disputed_n") or 0),
-                                                "more": int(obj.get("more") or 0), "at": timeutil.now_iso()})
+                                                "more": int(obj.get("more") or 0), "at": timeutil.now_iso()},
+                        tail_skip=rng if len(rng) == 2 else None)   # мой же хвост вернётся его событиями — не «с резерва»
         self.db.jrn_tail_drop()
         self.rsv_put("rsv_tail", None)
         log.info("резерв: хвост этой базы перенесён на «%s»: %s, спорных %s", self.reserve_peer_name(),
@@ -530,7 +572,7 @@ class ReserveTailMixin:
         except Exception as ex:                                # noqa: BLE001
             log.error("резерв: правки бота на «%s» не перенесены: %s", self.reserve_peer_name(), ex)
             return []
-        self._tail_side_effects(before)
+        self._tail_side_effects(before, report=True)   # правки гостя — в сводку Т-РУ5б и «проверь глазами»
         log.info("резерв: правки бота на «%s» %s…%s: перенесено %d, спорных %d", self.reserve_peer_name(), evs[0].i,
                  evs[-1].i, rpt.moved, len(rpt.disputed))
         if rpt.disputed:

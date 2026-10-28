@@ -174,8 +174,13 @@ class ReserveHandoverMixin:
         lost = list(out.get("jrn_lost") or [])
         if len(lost) == 2 and int(lost[1]) >= int(lost[0]):
             report["lost"].append(rn.jrn_lost(self.reserve_peer_name(), int(lost[0]), int(lost[1])))
+        mine = list(out.get("jrn_lost_mine") or [])
+        if len(mine) == 2 and int(mine[1]) >= int(mine[0]):
+            report["lost"].append(rn.jrn_mine_lost(self.reserve_peer_name(), int(mine[0]), int(mine[1])))
+        report.pop("extended", None)
         log.info("резерв: сводка эпохи %s: %s", epoch, json.dumps(report, ensure_ascii=False))
-        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None, jrn_back=None, jrn_lost=None)
+        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None, jrn_back=None, jrn_lost=None,
+                        jrn_lost_mine=None, tail_skip=None)
         self.reserve_monthly_settle()
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)   # эпоха — здесь (reserve_epoch_sync)
         return [("take_tg",), ("live",)]

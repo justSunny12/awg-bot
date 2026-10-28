@@ -166,7 +166,10 @@ class ReserveShipMixin:
         if s.get("ok"):
             return
         s["ok"] = True
-        mine = self.db.jrn_last_i()
+        meta = self.db.jrn_meta()
+        # в следовании свои номера — подтверждённое и применённое: jrn_events пуст (своё — в хвосте), а
+        # sqlite_sequence вырос за счёт хвоста — по нему сверка держала бы hold на весь отъезд
+        mine = self.db.jrn_last_i() if meta["role"] == "holder" else max(int(meta["acked"]), int(meta["applied"]))
         if str(keep.get("line") or "") != line or not (keep.get("snap") or int(keep.get("snap_i") or 0)):
             self._jrn_snap_need("у резерва нет снимка этой базы")
             return
@@ -232,9 +235,9 @@ class ReserveShipMixin:
         if not self.reserve_jrn_on() or not self.reserve_online() or self._jrn_quiet():
             return []
         s = self._jrn_sess()
+        acts: list[tuple] = self.reserve_tail_out() + self.reserve_follow_lag_tick()   # и при hold: хвост и отставание сверки не ждут
         if not s.get("ok") or s.get("hold"):
-            return []
-        acts: list[tuple] = self.reserve_tail_out() + self.reserve_follow_lag_tick()
+            return acts
         meta = self.db.jrn_meta()
         now = time.monotonic()
         acked = int(meta["acked"])

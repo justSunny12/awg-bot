@@ -150,6 +150,15 @@ def lab_world(svc, shared: Path) -> None:
     for name in ("read_system", "read_authoritative", "read_authoritative_ttl", "provider_for"):
         setattr(dnsapi, name, getattr(dns, name))
     svc.reserve_has_gateway = lambda: True
+    # запись DNS у основы — «автоматическая» (провайдер подменён LabDns): конверт DNS едет в пакете, и
+    # аварийное открытие на резерве разрешено; саму запись меняет сценарий (у стенда нет провайдера
+    # и авторитетного DNS), поэтому процессу открытия — set_record=False, отметку tg_take кладёт сценарий
+    svc.rsv_update("rsv_dns", provider="digitalplat", token="lab")
+    real_launch = svc._rsvopen_launch
+
+    def launch(payload: dict, keep_stdin: bool = False) -> None:
+        real_launch({**payload, "set_record": False}, keep_stdin)
+    svc._rsvopen_launch = launch
     api = os.environ.get("LAB_BOTAPI", "")
 
     def tg_reachable() -> bool:

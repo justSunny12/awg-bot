@@ -133,9 +133,16 @@ class ReserveEpochMixin:
                             "применяю с %s", fork, last_i, last_i)
                 fork = last_i
             elif fork and fork < int(meta_now["acked"]):
-                log.warning("резерв: точка гостя %s раньше подтверждённого %s — беру подтверждённое",
-                            fork, meta_now["acked"])
-                fork = 0
+                if int(keep.get("gap") or 0):
+                    # гость открылся с разрывом журнала (резерв сказал): его точка раньше моего подтверждённого —
+                    # мои решения между ними он не видел, его — поверх; админу об этом строкой в Т-РУ5б
+                    self.rsv_update("rsv_out", jrn_lost_mine=[fork + 1, int(meta_now["acked"])])
+                    log.warning("резерв: гость открылся с разрывом — точка %s раньше подтверждённого %s, мои решения "
+                                "между ними — под его", fork, meta_now["acked"])
+                else:
+                    log.warning("резерв: точка гостя %s раньше подтверждённого %s — беру подтверждённое",
+                                fork, meta_now["acked"])
+                    fork = 0
             meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None,
                                     fork_i=fork or int(meta_now["acked"]))
             if meta is not None:
@@ -146,7 +153,10 @@ class ReserveEpochMixin:
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
         else:
-            applied = int(self.db.jrn_meta()["applied"])
+            meta_now = self.db.jrn_meta()
+            if meta_now["holder"] == "self" and meta_now["role"] == "follower":
+                return                                        # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
+            applied = int(meta_now["applied"])
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied
             self.db.jrn_tail_drop_held()                      # отложенный хвост: точки уже не будет, правки в базе
             if meta is not None:
