@@ -286,6 +286,9 @@ class ReserveReturnMixin:
         self.reserve_new_k()
         self.reserve_pkg_mark()
         self.rsv_put("rsv_shares", None)
+        if hasattr(self, "_jrn_sess_reset"):
+            self._jrn_sess_reset()                            # журнал резерв снял — новый снимок под новым K
+            self.rsv_put("rsv_jrn_out", None)
         self.reserve_set_out("home", step="", kind="", relay_until=str(out.get("relay_until") or ""),
                              returned_at=timeutil.now_iso(), last_switch=timeutil.now_iso(),
                              back_fact_at=str(out.get("record_fact_at") or timeutil.now_iso()), notified=False,

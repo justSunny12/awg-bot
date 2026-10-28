@@ -143,6 +143,28 @@ def env_part(token: str, admin_id: int) -> dict:
 
 def replica(db_path: str) -> bytes:
     """Снимок базы без истории и лишних секретов — байты файла SQLite."""
+    return replica_marked(db_path)[0]
+
+
+def _jrn_marks(con) -> dict:
+    """Отметки журнала из копии базы (до чистки): линия, эпоха, последний номер
+    события и последней дельты счётчиков — снимок держит всё по них включительно."""
+    def one(sql: str, args=()) -> object:
+        try:
+            row = con.execute(sql, args).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return row[0] if row else None
+    return {"line": str(one("SELECT value FROM server_state WHERE key = 'db_line'") or ""),
+            "e": int(one("SELECT epoch FROM jrn_meta WHERE id = 1") or 0),
+            "i": int(one("SELECT seq FROM sqlite_sequence WHERE name = 'jrn_events'") or 0),
+            "cs": int(one("SELECT seq FROM sqlite_sequence WHERE name = 'jrn_counts'") or 0),
+            "month": str(one("SELECT value FROM server_state WHERE key = 'last_monthly_reset'") or "")}
+
+
+def replica_marked(db_path: str) -> tuple[bytes, dict]:
+    """Реплика и отметки журнала той же копии: события с номером не больше `i` и
+    дельты с номером не больше `cs` в ней уже учтены (снимок `pkg3`)."""
     fd, tmp = tempfile.mkstemp(prefix="rsv-rep-", suffix=".db")
     os.close(fd)
     try:
@@ -152,6 +174,7 @@ def replica(db_path: str) -> bytes:
             try:
                 src.backup(dst)
                 dst.execute("PRAGMA journal_mode = DELETE")
+                marks = _jrn_marks(dst)
                 _strip(dst)
                 dst.commit()
                 dst.execute("VACUUM")
@@ -160,7 +183,7 @@ def replica(db_path: str) -> bytes:
         finally:
             src.close()
         with open(tmp, "rb") as f:
-            return f.read()
+            return f.read(), marks
     finally:
         for suffix in ("", "-wal", "-shm", "-journal"):
             try:
@@ -182,8 +205,10 @@ def _strip(con) -> None:
         con.execute("UPDATE devices SET private_key = NULL")
     # локальные сети и подписи шлюзов основы, строка пары (с админом резерва) — не резерву
     # эпоха — своя у каждой базы: гость стартует держателем (init_schema заведёт строку)
+    # журнал — местный у каждой базы (события, хвост, дельты, принятые пачки)
     for sql in ("UPDATE gateways SET lan_subnets = '', label = '', lan_mode = 0",
-                "DELETE FROM reserve_peer", "DELETE FROM jrn_meta"):
+                "DELETE FROM reserve_peer", "DELETE FROM jrn_meta", "DELETE FROM jrn_events", "DELETE FROM jrn_tail",
+                "DELETE FROM jrn_counts", "DELETE FROM jrn_seen"):
         try:
             con.execute(sql)
         except sqlite3.OperationalError:

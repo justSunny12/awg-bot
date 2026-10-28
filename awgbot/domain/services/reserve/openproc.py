@@ -30,6 +30,7 @@ def rsvopen_sandbox_props(base: str) -> list[str]:
     должны существовать до запуска (`_rsvopen_launch` их создаёт)."""
     from awgbot.infra import rsvzone
     pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
+    jrn = str(config.DATA_DIR / "reserve" / "jrn")
     return ["-p", "MemoryMax=192M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
             "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
             "-p", "NoNewPrivileges=yes",
@@ -37,10 +38,11 @@ def rsvopen_sandbox_props(base: str) -> list[str]:
             "-p", f"WorkingDirectory={base}",
             # скрипт зоны пишет юниты и настройки журнала гостя в /etc/systemd
             "-p", f"ReadWritePaths=-{rsvzone.RUN_DIR} -{rsvzone.VAR_DIR} -{rsvzone.STATE_DIR} -/etc/systemd -/run/netns",
-            # из каталога данных резерва процессу виден только пакет второй стороны:
-            # ни база резерва (и её WAL), ни стороны линков, ни копии
+            # из каталога данных резерва процессу виден только пакет второй стороны и её
+            # журнал (сегменты событий и пачки счётчиков под её K) — на чтение: ни база
+            # резерва (и её WAL), ни стороны линков, ни копии
             "-p", f"TemporaryFileSystem={config.DATA_DIR}:ro",
-            "-p", f"BindReadOnlyPaths=-{pkg}"]
+            "-p", f"BindReadOnlyPaths=-{pkg} -{jrn}"]
 
 
 

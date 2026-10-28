@@ -14,6 +14,14 @@ package.py — часть пакета reserve (см. __init__): пакет пе
 Резерв: части складываются в сессии, целый пакет проверяется по отпечатку
 (заголовок открыт, ключей нет), кладётся в `reserve/guest.pkg` (0600) вместе
 с долей `M` в `rsv_pkg_in`; ответ — `pkg_ok` / `pkg_bad`.
+
+Журнал (`jrn1` у обеих сторон, journal/ship): пакет — снимок `pkg3`. Запись в
+данные пользователей — событие журнала, а не отметка пакета; таймер собирает
+снимок, только если изменились части вне базы или пора плановый снимок
+(`reserve_jrn_snap_due`); в снимке — часть `jrn` (линия, эпоха, номер
+последнего учтённого события и дельты счётчиков, из той же копии базы), её
+открытая копия идёт в `pkg{jrn}` — резерв по ней снимает учтённое. Базы
+слияния `base-<gen>.db` нет: возврат идёт без слияния.
 """
 from __future__ import annotations
 
@@ -53,6 +61,9 @@ class ReservePackageMixin:
     def _reserve_pkg_touch(self, kind: str) -> None:
         if kind != "data":
             return
+        if self.__dict__.get("_jrn_capture_on"):
+            self._jrn_touch()                                 # журнал: правка — событие, а не пакет
+            return
         self.__dict__["_rsv_pkg_due_at"] = time.monotonic()
 
     def reserve_pkg_mark(self) -> None:
@@ -87,6 +98,8 @@ class ReservePackageMixin:
         due_at = self.__dict__.get("_rsv_pkg_due_at")
         by_event = due_at is not None and time.monotonic() - due_at >= PKG_BATCH_SECONDS
         by_timer = self._pkg_timer_due()
+        if self._pkg_journal() and by_timer and self.reserve_jrn_snap_due():
+            by_event = True                                   # плановый снимок журнала
         if not by_event and not by_timer:
             return None
         try:
@@ -155,14 +168,22 @@ class ReservePackageMixin:
                 out.append(line.split("=", 1)[1].split("#", 1)[0].strip())
         return out[:8]
 
+    def _pkg_journal(self) -> bool:
+        """Пакет — снимок журнала (`pkg3`): направление журналом и захват включён."""
+        try:
+            return bool(self.reserve_jrn_on() and self.db.jrn_meta()["capture"])
+        except Exception:                                     # noqa: BLE001 — база старше журнала
+            return False
+
     def reserve_pkg_build(self, force: bool = False) -> dict | None:
         """Собрать пакет. Без force — только если логический отпечаток изменился."""
         with _LOCK:
             keys = self.reserve_keys()
             if not keys.get("k") or not keys.get("m"):
                 return None
+            journal = self._pkg_journal()
             self.__dict__["_rsv_pkg_built_mono"] = time.monotonic()   # что записано после — не в пакете
-            db_bytes = pkgbot.replica(self.db.path if hasattr(self.db, "path") else self._db_path())
+            db_bytes, marks = pkgbot.replica_marked(self.db.path if hasattr(self.db, "path") else self._db_path())
             pkgbot.assert_clean(db_bytes)
             vpn_part = pkgvpn.build(self._pkg_ifaces(), admin=self._pkg_admin_addrs(), dns=self._pkg_dns_addrs(),
                                     upstreams=self._pkg_upstreams(), tz=str(config.TZ_NAME or ""))
@@ -171,23 +192,34 @@ class ReservePackageMixin:
                         "env": pkgbot.env_part(config.BOT_TOKEN, config.ADMIN_ID),
                         "lists": pkgbot.lists_part(str(config.DATA_DIR))}
             import json
-            logical = hashlib.blake2b(db_bytes + json.dumps([vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"],
-                                                             bot_part["lists"], int(keys.get("m_gen") or 0), int(keys.get("k_gen") or 0)],
-                                                            sort_keys=True).encode(), digest_size=16).hexdigest()
+            # журнал: база едет событиями — отпечаток таймера только по частям вне базы
+            logical = hashlib.blake2b((b"" if journal else db_bytes) + json.dumps(
+                [vpn_part, bot_part["conf"], bot_part["app_guest"], bot_part["env"], bot_part["lists"],
+                 int(keys.get("m_gen") or 0), int(keys.get("k_gen") or 0), "pkg3" if journal else "pkg2"],
+                sort_keys=True).encode(), digest_size=16).hexdigest()
             sent = self.rsv_get("rsv_pkg_sent")
             if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
                 return None                               # по таймеру без изменений — не уходит
             gen = max(int(sent.get("gen") or 0), int(sent.get("pending_gen") or 0)) + 1
             dns = self._pkg_dns_envelope()
-            blob = seal.seal({PKG_PART: vpn_part, "bot": bot_part}, k=bytes.fromhex(keys["k"]), m=bytes.fromhex(keys["m"]),
+            parts = {PKG_PART: vpn_part, "bot": bot_part}
+            jrn = {"v": 1, **marks} if journal else None
+            if jrn:
+                parts["jrn"] = jrn
+            blob = seal.seal(parts, k=bytes.fromhex(keys["k"]), m=bytes.fromhex(keys["m"]),
                              pkg_gen=gen, m_gen=int(keys.get("m_gen") or 0), dns=dns)
-            self._pkg_store_base(gen, db_bytes)
+            if not journal:
+                self._pkg_store_base(gen, db_bytes)           # база слияния — только прежнему пути
             m_gen, share = self.reserve_share_reserve()
             fp = seal.digest(blob)
             self.rsv_update("rsv_pkg_sent", pending_gen=gen, pending_fp=fp, pending_logical=logical,
-                            pending_at=timeutil.now_iso())
-            log.info("резерв: пакет %s собран (%d КБ)", gen, len(blob) // 1024)
-            return {"gen": gen, "fp": fp, "blob": blob.hex(), "share": share, "m_gen": m_gen}
+                            pending_at=timeutil.now_iso(), pending_jrn=jrn)
+            log.info("резерв: %s %s собран (%d КБ%s)", "снимок" if journal else "пакет", gen, len(blob) // 1024,
+                     f", журнал по {marks['i']}" if journal else "")
+            built = {"gen": gen, "fp": fp, "blob": blob.hex(), "share": share, "m_gen": m_gen}
+            if jrn:
+                built["jrn"] = {k: jrn[k] for k in ("line", "e", "i", "cs")}
+            return built
 
     def _db_path(self) -> str:
         return os.path.join(str(config.DATA_DIR), "bot.db")
@@ -248,9 +280,14 @@ class ReservePackageMixin:
                 log.info("резерв: pkg_ok на пакет %s не того поколения — игнорирую", gen)
                 return
             prev = int(sent.get("gen") or 0)
+            jrn = sent.get("pending_jrn") or None
             self.rsv_put("rsv_pkg_sent", {"gen": int(gen), "fp": str(fp), "logical": sent.get("pending_logical", ""),
-                                          "at": timeutil.now_iso(), "prev_gen": prev})
-            self._pkg_prune_bases([int(gen), prev] if prev else [int(gen)])
+                                          "at": timeutil.now_iso(), "prev_gen": prev, "jrn": jrn})
+            if jrn:
+                self._pkg_prune_bases([])                     # журнал: возврат без слияния, базы не нужны
+                self.reserve_jrn_snap_ok(jrn)
+            else:
+                self._pkg_prune_bases([int(gen), prev] if prev else [int(gen)])
             due_at = self.__dict__.get("_rsv_pkg_due_at")
             built = self.__dict__.get("_rsv_pkg_built_mono")
             if due_at is not None and built is not None and due_at <= built:
@@ -281,7 +318,8 @@ class ReservePackageMixin:
 
     # ── приём (резерв) ──────────────────────────────────────────────────────
 
-    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, share: str, m_gen: int) -> tuple[str, str]:
+    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, share: str, m_gen: int,
+                       jrn: dict | None = None) -> tuple[str, str]:
         """Целый пакет от основы: проверка, запись на диск, доля. Возвращает
         (ответ: pkg_ok | pkg_bad, причина)."""
         if self.reserve_in() in ("taking", "serving", "releasing"):
@@ -310,7 +348,12 @@ class ReservePackageMixin:
             os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
-                                    "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns})
+                                    "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns,
+                                    "jrn": dict(jrn) if jrn else None})
+        if jrn:
+            self.reserve_keep_snapshot_in(dict(jrn))          # учтённое снимком — из сегментов прочь
+        elif self.reserve_keep_line():
+            self.reserve_keep_drop()                          # основа ушла на прежний путь — журнал не нужен
         log.info("резерв: принят пакет %s от «%s» (%d КБ)", gen, self.reserve_peer_name(), len(blob) // 1024)
         return "pkg_ok", ""
 
@@ -321,6 +364,7 @@ class ReservePackageMixin:
         except OSError:
             pass
         self.rsv_put("rsv_pkg_in", None)
+        self.reserve_keep_drop()
 
     @staticmethod
     def pkg_chunks(blob_hex: str) -> list[str]:

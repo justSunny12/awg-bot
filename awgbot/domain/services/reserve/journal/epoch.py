@@ -63,24 +63,37 @@ class ReserveEpochMixin:
             if step == "merge" or (step == "back_req" and not out.get("guest_stopped") and not forced):
                 return True, "возврат: ждём реплику и слияние"
             return False, "возврат: бот на резерве остановлен"
-        # home: решает слово Telegram, сказанное уже дома (прежнее «away» — до возврата)
-        poll = self.rsv_get("rsv_poll")
-        if self.reserve_poll() != "away" or _earlier(poll, out):
-            return False, "пользователи и Telegram здесь"
+        # home: резерв несёт моих — serving, его st свежее моего перехода домой (переезд мимо
+        # меня; такт home переведёт и автомат в away; taking — ещё не факт: клон может не
+        # встать); после «вернуть без резерва» — нет
         peer = self.reserve_peer_state()
         fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
+        later = (float(peer["at_ts"]) > float(out["at_ts"]) if peer.get("at_ts") is not None and out.get("at_ts") is not None
+                 else str(peer.get("at") or "") > str(out.get("since") or ""))   # строго после перехода домой
+        serving = (self.reserve_online() and later and str(peer.get("inn") or "idle") == "serving"
+                   and not out.get("await_merge") and str(out.get("return_why") or "") != "force")
+        # иначе решает слово Telegram, сказанное уже дома (прежнее «away» — до возврата)
+        poll = self.rsv_get("rsv_poll")
+        if self.reserve_poll() != "away" or _earlier(poll, out):
+            return (True, "резерв несёт моих пользователей") if serving else (False, "пользователи и Telegram здесь")
         if self.reserve_online() and fresh and str(peer.get("inn") or "idle") not in _HOSTING:
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
 
     def reserve_epoch_sync(self) -> None:
-        """Роль — по правилу; переход — передача эпохи (эпоха + 1, synchronous = FULL)."""
+        """Роль — по правилу; переход — передача эпохи (эпоха + 1, synchronous = FULL).
+        Бот основы на резерве эпоху берёт и отдаёт по журналу (guestj), не по паре."""
+        if getattr(self, "guest", False):
+            return
         want, why = self._follow_wanted()
         if want == self.reserve_following():
             return
         if want:
-            meta = self.db.jrn_pass(holder="peer", role="follower", why=why)
+            # эпоха бота на резерве, если он открылся сам (авария), — его номер, а не мой + 1
+            guest_e = int((self.reserve_peer_state().get("jrn_keep") or {}).get("guest_e") or 0)
+            meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None)
             if meta is not None:
+                self.rsv_update("rsv_out", jrn_report=None)   # сводка эпохи для Т-РУ5б — с начала следования
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
         else:

@@ -13,6 +13,7 @@ session.py — часть пакета reserve (см. __init__): что серв
 from __future__ import annotations
 
 import re
+import time
 
 from awgbot.core import config, settings
 from awgbot.domain.services.types import Notification
@@ -110,7 +111,27 @@ class ReserveSessionMixin:
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
                 "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
-                "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or "")}
+                "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
+                **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {})}
+
+    def _jrn_st_part(self) -> dict:
+        """Журнал в `st`: своя линия (эпоха, держатель, применённое, подтверждённое) и что
+        храню о линии второй стороны (`keep`; с эпохой её бота у меня, если он поднят)."""
+        if not hasattr(self, "reserve_keep_view") or not self.reserve_jrn_on():
+            return {}
+        try:
+            meta = self.db.jrn_meta()
+        except Exception:                                     # noqa: BLE001 — база старше журнала
+            return {}
+        out = {"mine": {"line": self.db.jrn_line(), "e": int(meta["epoch"]), "holder": str(meta["holder"]),
+                        "applied": int(meta["applied"]), "acked": int(meta["acked"])}}
+        keep = self.reserve_keep_view()
+        if keep:
+            g = self.__dict__.get("_rsv_guest_jrn") or {}
+            if g.get("e"):
+                keep["guest_e"] = int(g["e"])
+            out["keep"] = keep
+        return out
 
     @staticmethod
     def reserve_mem_free_mb() -> int:
@@ -140,9 +161,8 @@ class ReserveSessionMixin:
         """Тело `st`, если оно изменилось с последней отправки (направления,
         здоровье, рычаг, пакет…), иначе None: второй стороне нужна каждая смена,
         а не только начало сессии."""
-        import json
         body = self.reserve_st_body()
-        packed = json.dumps({k: v for k, v in body.items() if k not in ("mem_free", "online")}, sort_keys=True)
+        packed = self._st_packed(body)
         if self.__dict__.get("_rsv_st_sent") == packed:
             return None
         self.__dict__["_rsv_st_sent"] = packed
@@ -154,10 +174,20 @@ class ReserveSessionMixin:
 
     def reserve_st_body_sent(self) -> dict:
         """Тело st для отправки сессией — с отметкой отпечатка, чтобы такт не слал дубль."""
-        import json
         body = self.reserve_st_body()
-        self.__dict__["_rsv_st_sent"] = json.dumps({k: v for k, v in body.items() if k not in ("mem_free", "online")}, sort_keys=True)
+        self.__dict__["_rsv_st_sent"] = self._st_packed(body)
         return body
+
+    @staticmethod
+    def _st_packed(body: dict) -> str:
+        """Отпечаток смены `st`: без памяти и онлайна; у журнала — только линии, эпохи и
+        снимок (номера растут с каждой правкой — st на каждую пачку был бы лишним)."""
+        import json
+        out = {k: v for k, v in body.items() if k not in ("mem_free", "online", "jrn")}
+        jrn = body.get("jrn") or {}
+        out["jrn"] = {"mine": {k: (jrn.get("mine") or {}).get(k) for k in ("line", "e", "holder")},
+                      "keep": {k: (jrn.get("keep") or {}).get(k) for k in ("line", "e", "snap_i", "guest_e")}}
+        return json.dumps(out, sort_keys=True)
 
     def _healthy_safe(self) -> bool:
         try:
@@ -185,7 +215,7 @@ class ReserveSessionMixin:
                                zone=str(body.get("zone") or ""))
             peer.update(out=str(body.get("out") or ""), inn=str(body.get("in") or ""), self_host=str(body.get("self") or ""),
                         pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
-                        admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(),
+                        admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(), at_ts=time.time(),
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),
                         mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0),
@@ -194,6 +224,10 @@ class ReserveSessionMixin:
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             if hasattr(self, "reserve_pkg_resend_if_stale"):
                 self.reserve_pkg_resend_if_stale()           # у резерва не тот пакет (или никакого) — отметка заново
+            if hasattr(self, "reserve_jrn_keep_in"):
+                jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
+                self.rsv_update("rsv_peer_state", jrn_keep=dict(jrn.get("keep") or {}))
+                self.reserve_jrn_keep_in(jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None)
             row = self.reserve_peer() or {}
             fields = {}
             if peer["name"] and peer["name"] != row.get("name"):
@@ -266,6 +300,8 @@ class ReserveSessionMixin:
         восстановлен из копии без них; `slots` идемпотентен)."""
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
         self.rsv_update("rsv_view", slots_sent=[], slots_at="")
+        if hasattr(self, "_jrn_sess_reset"):
+            self._jrn_sess_reset()                            # журнал: ничего не слать до сверки по st резерва
         return self.reserve_liveness_word()
 
     def reserve_pair_confirm_tick(self) -> list[Notification]:

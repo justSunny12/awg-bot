@@ -92,13 +92,13 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
-                            "zone": (_S, 120)}),
+                            "zone": (_S, 120), "jrn": (_D, None)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
     "slots_ok":     (BOTH, {"slots": (_L, MAX_LIST)}),
     "pkg":          (BOTH, {"gen": (_I, None), "fp": (_S, 64), "i": (_I, None), "n": (_I, None),
-                            "blob": (_S, MAX_BLOB), "share": (_S, 64), "m_gen": (_I, None)}),
+                            "blob": (_S, MAX_BLOB), "share": (_S, 64), "m_gen": (_I, None), "jrn": (_D, None)}),
     "pkg_ok":       (BOTH, {"gen": (_I, None), "fp": (_S, 64)}),
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
     "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
@@ -109,10 +109,11 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "go_req":       (BOTH, {"gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None)}),
     "open_eph":     (BOTH, {"gen": (_I, None), "eph": (_S, 64), "oid": (_S, 16)}),
     "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None),
-                            "sealed": (_S, 384), "oid": (_S, 16)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
+                            "sealed": (_S, 384), "oid": (_S, 16), "epoch": (_I, None)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
     "up":           (BOTH, {}),
     "down":         (BOTH, {"reason": (_S, MAX_REASON)}),
-    "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB)}),
+    "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB),
+                            "epoch": (_I, None), "last": (_I, None)}),
     "taken":        (BOTH, {}),
     "blocks":       (BOTH, {"addrs": (_L, 4096)}),
     "back_req":     (BOTH, {}),
@@ -123,6 +124,16 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "evict":        (BOTH, {}),
     "view":         (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
     "gone":         (BOTH, {}),
+    # журнал данных (jrn1, util/rsvjrn): линия — db_line базы, чьи это данные; записи — под K
+    # с открытым заголовком (rsvjrn.event). jev/jack/jneed/jstale — события держателя линии,
+    # jcnt/jcack — пачки счётчиков стороны a (основа) или b (клон на резерве)
+    "jev":          (BOTH, {"line": (_S, 16), "e": (_I, None), "from": (_I, None), "n": (_I, None),
+                            "blob": (_S, MAX_BLOB)}),
+    "jack":         (BOTH, {"line": (_S, 16), "e": (_I, None), "i": (_I, None)}),
+    "jneed":        (BOTH, {"line": (_S, 16), "from": (_I, None)}),
+    "jstale":       (BOTH, {"line": (_S, 16), "e": (_I, None)}),
+    "jcnt":         (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None), "blob": (_S, MAX_BLOB)}),
+    "jcack":        (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None)}),
 }
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
@@ -152,9 +163,11 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
-OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone"}),
+OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
+                                                     "jrn"}),
                                   "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
-                                  "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
+                                  "go": frozenset({"ttl", "k", "sealed", "oid", "epoch"}), "go_req": frozenset({"ttl"}),
+                                  "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 

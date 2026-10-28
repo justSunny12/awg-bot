@@ -70,7 +70,7 @@ class InboundMixin:
             await send_line(sess, "pkg_bad", {"gen": gen, "reason": "части не склеились"})
             return
         reply, why = await asyncio.to_thread(self.services.reserve_pkg_in, gen, str(body["fp"]), blob,
-                                             str(body["share"]), int(body["m_gen"]))
+                                             str(body["share"]), int(body["m_gen"]), body.get("jrn") or None)
         if reply == "pkg_ok":
             await send_line(sess, "pkg_ok", {"gen": gen, "fp": str(body["fp"])})
             await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body))
@@ -106,7 +106,16 @@ class InboundMixin:
         await self._actions(await asyncio.to_thread(self.services.reserve_down_in, str(body["reason"])))
 
     async def _in_released(self, sess: _Session, body: dict) -> None:
-        """Реплика частями: у основы (возврат) — слияние; у резерва (кнопка) — гостю."""
+        """Реплика частями: у основы (возврат) — слияние; у резерва (кнопка) — гостю.
+        С журналом (`epoch`, `last`) реплики нет: передача права записи по номеру."""
+        if body.get("epoch") is not None:
+            if await asyncio.to_thread(self.services.reserve_out) == "returning":
+                await self._actions(await asyncio.to_thread(self.services.reserve_released_jrn_in, int(body["epoch"]),
+                                                            int(body.get("last") or 0)))
+            else:
+                await self._actions(await asyncio.to_thread(self.services.reserve_released_jrn_store, int(body["epoch"]),
+                                                            int(body.get("last") or 0)))
+            return
         gen, i, n = int(body["gen"]), int(body["i"]), int(body["n"])
         if not 0 < n <= pairproto.MAX_CHUNKS or not 0 <= i < n:
             raise pairproto.ProtocolError("часть реплики вне предела")
@@ -174,6 +183,24 @@ class InboundMixin:
     async def _in_view(self, sess: _Session, body: dict) -> None:
         await self.notes(await asyncio.to_thread(self.services.reserve_view_in, str(body["case"]), str(body["since"]),
                                                  list(body.get("voters") or [])))
+
+    async def _in_jev(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jev", body))
+
+    async def _in_jack(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jack", body))
+
+    async def _in_jneed(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jneed", body))
+
+    async def _in_jstale(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jstale", body))
+
+    async def _in_jcnt(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jcnt", body))
+
+    async def _in_jcack(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jcack", body))
 
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))

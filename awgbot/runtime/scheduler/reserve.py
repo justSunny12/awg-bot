@@ -117,6 +117,21 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                       id="rsv_pkg_tick", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
+    # журнал данных (jrn1): события пачкой за такт (≤ 1 с), пачки счётчиков по таймеру —
+    # решает сервис; в простое такт ничего не шлёт
+    async def job_jrn_tick():
+        try:
+            acts = await asyncio.to_thread(services.reserve_jrn_tick)
+            if acts:
+                from awgbot.runtime import rsvactions
+                await rsvactions.run(acts)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: такт журнала: %s", e)
+
+    scheduler.add_job(job_jrn_tick, IntervalTrigger(seconds=1, timezone=config.TZ),
+                      id="rsv_jrn_tick", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     # переезд и возврат: автоматы обоих направлений, слово гостя по локальному
     # каналу (вебхук поставлен, реплика, кнопка возврата), блокировки основы
     # резерву — действия исполняет runtime/rsvactions
@@ -136,6 +151,8 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_tg_taken))
                     elif word[0] == "replica":
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_replica_in, word[1]))
+                    elif word[0] == "released_jrn":
+                        await rsvactions.run(await asyncio.to_thread(services.reserve_guest_released_jrn, word[1]))
                     elif word[0] == "back_req":
                         await rsvactions.run(await asyncio.to_thread(services.reserve_guest_back_req))
                     elif word[0] == "webhook":

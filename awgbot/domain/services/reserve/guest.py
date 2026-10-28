@@ -86,7 +86,10 @@ class ReserveGuestMixin:
         return due is not None and time.monotonic() - due >= SNAPSHOT_BATCH_SECONDS
 
     def guest_snapshot_tick(self, force: bool = False) -> bool:
-        """Снимок базы под `K` в `rep.bin`, если отметка старше такта (или force)."""
+        """Снимок базы под `K` в `rep.bin`, если отметка старше такта (или force). С журналом
+        снимков нет: на диске — журнал данных гостя."""
+        if self.guest_jrn_on():
+            return False
         if not force and not self.guest_snapshot_due():
             return False
         try:
@@ -220,8 +223,10 @@ class ReserveGuestMixin:
     def guest_blocks_to_send(self) -> list[str] | None:
         """Адреса заблокированных устройств — основе (её оставшимся сессиям, пока она следует):
         при изменении и раз в GUEST_BLOCKS_RESEND_S (сессия пары могла потерять прошлое);
-        None — слать нечего."""
+        None — слать нечего. С журналом не шлются: блокировки едут основе событиями."""
         import time
+        if self.guest_jrn_on():
+            return None
         addrs = sorted({str(d.address) for d in self.db.list_all_devices() if getattr(d, "block_reason", 0) and d.address})
         sent = self.__dict__.get("_guest_blocks_sent")
         if sent is not None and sent[0] == addrs and time.monotonic() - sent[1] < self.GUEST_BLOCKS_RESEND_S:
@@ -248,6 +253,8 @@ class ReserveGuestMixin:
         бота или снимок до перезагрузки резерва) — база из него."""
         from awgbot.infra import rsvzone
         from awgbot.util.rsvpkg import seal
+        if self.guest_jrn_on():
+            return False                                      # база собрана процессом открытия по журналу
         try:
             blob = rsvzone.REP_PATH.read_bytes()
             k = bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())

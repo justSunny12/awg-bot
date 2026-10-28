@@ -85,8 +85,11 @@ async def send_package(built: dict) -> bool:
     from awgbot.util import pairproto
     parts = pairproto.chunks(str(built["blob"]))
     for i, blob in enumerate(parts):
-        ok = await send(("pkg"), {"gen": int(built["gen"]), "fp": str(built["fp"]), "i": i, "n": len(parts),
-                                  "blob": blob, "share": str(built["share"]), "m_gen": int(built["m_gen"])})
+        body = {"gen": int(built["gen"]), "fp": str(built["fp"]), "i": i, "n": len(parts),
+                "blob": blob, "share": str(built["share"]), "m_gen": int(built["m_gen"])}
+        if built.get("jrn"):
+            body["jrn"] = dict(built["jrn"])                  # снимок журнала: что в нём учтено (открыто)
+        ok = await send("pkg", body)
         if not ok:
             return False
     return True
@@ -96,8 +99,9 @@ async def send_released(built: dict) -> bool:
     """Реплика при передаче бота частями: released{gen, i, n, blob}; пустой blob — одна часть."""
     from awgbot.util import pairproto
     parts = pairproto.chunks(str(built.get("blob") or "")) or [""]
+    jrn = {k: int(built[k]) for k in ("epoch", "last") if built.get(k) is not None}   # журнал: без реплики
     for i, blob in enumerate(parts):
-        if not await send("released", {"gen": int(built.get("gen") or 0), "i": i, "n": len(parts), "blob": blob}):
+        if not await send("released", {"gen": int(built.get("gen") or 0), "i": i, "n": len(parts), "blob": blob, **jrn}):
             return False
     return True
 

@@ -22,7 +22,7 @@ from awgbot.util import timeutil
 KEYS: tuple[str, ...] = (
     "rsv_invite", "rsv_peer_state", "rsv_out", "rsv_in", "rsv_poll", "rsv_keys", "rsv_view",
     "rsv_shares", "rsv_pkg_due", "rsv_pkg_sent", "rsv_pkg_in", "rsv_peer_admin", "rsv_guest_links",
-    "rsv_gw_links", "rsv_traffic", "rsv_dns", "rsv_record_watch", "rsv_follow",
+    "rsv_gw_links", "rsv_traffic", "rsv_dns", "rsv_record_watch", "rsv_follow", "rsv_jrn_out", "rsv_jrn_in",
 )
 OUT_STATES = ("home", "leaving", "away", "returning")
 IN_STATES = ("idle", "taking", "serving", "releasing", "relay")

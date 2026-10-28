@@ -68,7 +68,7 @@ class ReservePairingMixin:
     def _my_hello_fields(self) -> dict:
         """Что о себе говорит сторона в `hello`/`pair_eph`/`st`."""
         return {"name": str(config.SERVER_NAME or ""), "version": str(config.INSTALLED_VERSION).lstrip("v"),
-                "caps": list(compat.CAPS), "gen": self._awg_generation(), "ports": self._client_ports(),
+                "caps": compat.caps(), "gen": self._awg_generation(), "ports": self._client_ports(),
                 "bot": getattr(self, "bot_username", "") or "", "gw": self.reserve_has_gateway()}
 
     def _client_ports(self) -> list[int]:

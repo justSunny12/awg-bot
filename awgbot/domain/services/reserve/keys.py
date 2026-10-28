@@ -11,6 +11,7 @@ keys.py — часть пакета reserve (см. __init__): `K`, `M`, поко
 """
 from __future__ import annotations
 
+from awgbot.core import config
 from awgbot.util import rsvkeys, shamir, timeutil
 from awgbot.util.rsvpkg import seal
 
@@ -118,4 +119,10 @@ class ReserveKeysMixin:
         return bytes.fromhex(self.reserve_keys().get("m") or "")
 
     def reserve_k(self) -> bytes:
+        if config.GUEST:                                      # бот основы на резерве: K — в его хранилище
+            from awgbot.infra import rsvzone
+            try:
+                return bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                return b""
         return bytes.fromhex(self.reserve_keys().get("k") or "")

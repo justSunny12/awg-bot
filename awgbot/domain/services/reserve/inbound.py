@@ -368,6 +368,8 @@ class ReserveInboundMixin:
         """`back_req` основы: гостю `stop`, ждать реплику."""
         from awgbot.infra import rsvzone
         inn = self._inn()
+        if str(inn.get("state") or "") == "releasing" and inn.get("released_at") and inn.get("jrn_back"):
+            return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": "", **dict(inn["jrn_back"])})]
         if str(inn.get("state") or "") == "releasing" and inn.get("released_at"):
             # повторная просьба (обрыв канала на частях released): отдать последнюю реплику снова
             try:

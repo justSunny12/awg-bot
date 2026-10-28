@@ -59,7 +59,11 @@ false, нет `target_ip` или провайдера — переезд кно�
 `migration_subnet_prefix` из его адреса: бот основы на резерве ведёт
 устройства на обоих.
 Снимок `rep.bin` новее пакета (перезагрузка резерва во время обслуживания)
-— база гостя из него, а не из пакета. Наборы настроек из части бота ложатся в
+— база гостя из него, а не из пакета. Пакет-снимок журнала (`pkg3`, часть
+`jrn`) — база гостя по журналу (util/rsvjrn/opener): снимок + события основы
+из `reserve/jrn/` (виден только на чтение) + журнал данных гостя + пачки
+счётчиков, строка эпохи (переезд кнопкой — гость следует за основой до
+передачи бота; аварийный — держатель); `rep.bin` на этом пути не читается. Наборы настроек из части бота ложатся в
 хранилище только с именами из белого списка пакета (util/rsvpkg/bot.py
 CONF_FILES): имя из пакета второй стороны путём не становится. `M` и
 настройка провайдера DNS (с токеном) отбрасываются, как только сделали своё;
@@ -238,6 +242,22 @@ def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
         return None, ""
 
 
+def _journal(k: bytes, jrn: dict, *, button: bool) -> None:
+    """База гостя по журналу: снимок уже в хранилище — события, счётчики, эпоха."""
+    from awgbot.core import config
+    from awgbot.infra import rsvzone
+    from awgbot.util.rsvjrn import event, opener
+    try:
+        res = opener.build(rsvzone.RUN_DIR / "data" / "bot.db", k, jrn, os.path.join(str(config.DATA_DIR), "reserve", "jrn"),
+                           rsvzone.VAR_DIR / "jrn", button=button)
+    except (event.RecordError, OSError) as e:
+        raise OpenError(f"журнал не применён: {e}") from e
+    except Exception as e:                                     # noqa: BLE001 — sqlite3.Error и прочее
+        raise OpenError(f"журнал не применён: {type(e).__name__}: {str(e)[:120]}") from e
+    _step("journal", epoch=res.epoch, role=res.role, fork=res.fork, events=res.events, guest_events=res.guest_events,
+          counts=res.counts, gap=res.gap, lost=len(res.lost))
+
+
 def _yaml_dump(obj) -> str:
     import yaml
     return yaml.safe_dump(obj, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -400,7 +420,8 @@ def run(data: dict) -> int:
         return _fail(str(e))
     iface = vpn["ifaces"][0]
     extra = [i for i in vpn["ifaces"][1:] if i.get("name") and i.get("addr")]   # окно переезда профилей
-    db_bytes, db_at = _db_from_snapshot(k, head.pkg_gen)
+    jrn = parts.get("jrn") if isinstance(parts.get("jrn"), dict) else None
+    db_bytes, db_at = _db_from_snapshot(k, head.pkg_gen) if jrn is None else (None, "")
     from_snapshot = db_bytes is not None
     data["_db_at"] = db_at
     if db_bytes is None:
@@ -414,6 +435,8 @@ def run(data: dict) -> int:
         rsvzone.store()
         data["_pkg_gen"] = head.pkg_gen
         fill_store(data, k, parts, db_bytes, iface["name"], extra)
+        if jrn is not None:
+            _journal(k, jrn, button=sealed_path)
         _step("store", from_snapshot=int(from_snapshot))
         for x in extra:                                       # конфиги вторых интерфейсов — в хранилище, скрипт поднимет их
             rsvzone.write_private(rsvzone.RUN_DIR / "awg" / f"{x['name']}.conf", pkgvpn.clone_conf(x))

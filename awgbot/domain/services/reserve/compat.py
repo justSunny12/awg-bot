@@ -20,7 +20,34 @@ from awgbot.core.compat import COMPAT_FLOOR, version_key
 # seal1 — ключ пакета при переезде кнопкой принимается только конвертом к разовому ключу
 # процесса открытия (`go_req` → `open_eph` → `go{sealed}`)
 CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1", "seal1")
-PKG_FORMATS: tuple[str, ...] = ("pkg2",)           # по старшинству: последний — самый новый
+# журнал данных (util/rsvjrn): события вместо пакета на каждое изменение, снимок `pkg3`, возврат
+# без слияния — объявляется, только если у SQLite есть JSON-функции и захват событий встал
+JOURNAL_CAPS: tuple[str, ...] = ("pkg3", "jrn1")
+PKG_FORMATS: tuple[str, ...] = ("pkg2", "pkg3")    # по старшинству: последний — самый новый
+
+
+def journal_capable() -> bool:
+    """Умеет ли этот процесс журнал: JSON-функции SQLite есть, захват не отказал."""
+    import sqlite3
+    from awgbot.util import rsvjrn
+    from awgbot.util.rsvjrn import triggers
+    if triggers.capture_failed():
+        return False
+    con = sqlite3.connect(":memory:")
+    try:
+        return rsvjrn.json_ok(con)
+    finally:
+        con.close()
+
+
+def caps() -> list[str]:
+    """Возможности этого процесса в паре: постоянные и, если умеет, журнал."""
+    return list(CAPS) + (list(JOURNAL_CAPS) if journal_capable() else [])
+
+
+def journal_pair(mine: list[str], theirs: list[str]) -> bool:
+    """Направление идёт журналом, когда `jrn1` у обеих сторон."""
+    return "jrn1" in (mine or []) and "jrn1" in (theirs or [])
 _NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "vote1")
 
 
@@ -74,7 +101,7 @@ def my_side(ready: bool, has_gateway: bool, ports: list[int]) -> dict:
     except Exception:                                     # noqa: BLE001 — план недоступен
         zone = ""
     return {**side(name=str(config.SERVER_NAME or ""), version=str(config.INSTALLED_VERSION).lstrip("v"),
-                   caps=list(CAPS), gen=gen, ports=ports, ready=ready, has_gateway=has_gateway, zone=zone), "me": True}
+                   caps=caps(), gen=gen, ports=ports, ready=ready, has_gateway=has_gateway, zone=zone), "me": True}
 
 
 def _not_ready(s: dict) -> str:

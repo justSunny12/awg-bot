@@ -270,7 +270,7 @@ CREATE TABLE IF NOT EXISTS jrn_meta (
 -- события решений: физический образ строки (ключ, новые и прежние значения колонок
 -- решений) или операция держателя над счётчиками (month | period | tmerge)
 CREATE TABLE IF NOT EXISTS jrn_events (
-    i             INTEGER PRIMARY KEY,                   -- сквозной номер линии
+    i             INTEGER PRIMARY KEY AUTOINCREMENT,     -- сквозной номер линии: не переиспользуется и после удаления
     e             INTEGER NOT NULL,                      -- эпоха
     t             TEXT    NOT NULL,                      -- таблица
     op            TEXT    NOT NULL,                      -- I | U | D | month | period | tmerge
@@ -293,7 +293,7 @@ CREATE TABLE IF NOT EXISTS jrn_tail (
 );
 -- исходящие дельты счётчиков этого хоста (трафик, РФ, последнее рукопожатие)
 CREATE TABLE IF NOT EXISTS jrn_counts (
-    s             INTEGER PRIMARY KEY,
+    s             INTEGER PRIMARY KEY AUTOINCREMENT,     -- номер пачки у получателя (jrn_seen) — только растёт
     month         TEXT    NOT NULL,                      -- 'YYYY-MM' по поясу бота
     device_id     INTEGER NOT NULL,
     rx            INTEGER NOT NULL DEFAULT 0,

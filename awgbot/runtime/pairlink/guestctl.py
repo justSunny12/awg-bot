@@ -15,6 +15,13 @@ guestctl.py — локальный канал между основным бот
 держит DROP своим оставшимся сессиям).
 Резерв → гость: state{name, since, reason, primary, return, self_host},
 take_tg{}, blocks{addrs}, stop{} (гость пишет финальный снимок, шлёт replica и выходит).
+
+Журнал (jrn1, services/reserve/journal): гость → резерв — свои записи `jev`,
+`jcnt` (уходят основе как есть), `jneed` (событий основы не хватает —
+резерв досылает из хранилища), `released{line, epoch, last}` на возврат
+вместо реплики; в hello/online — `jrn` (эпоха и номера). Резерв → гость —
+записи основы (`jev`, `jcnt`), её ответы на записи гостя (`jack`, `jneed`,
+`jstale`, `jcack`) и передача бота `released{epoch, last}`.
 """
 from __future__ import annotations
 
@@ -30,6 +37,7 @@ log = logging.getLogger(__name__)
 
 MAX_LINE = 64 * 1024 * 1024 + 1024     # реплика шифротекстом в одной строке
 _BACKOFF = (2, 5, 10, 20, 30)
+JRN_KINDS = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack")
 
 
 def _dumps(kind: str, body: dict | None = None) -> bytes:
@@ -124,6 +132,8 @@ class GuestCtlServer:
         if kind in ("hello", "online"):
             self.online_count = int(msg.get("online", msg.get("n", 0)) or 0)
             self.online_at = time.time()
+            if isinstance(msg.get("jrn"), dict):
+                self.services.__dict__["_rsv_guest_jrn"] = dict(msg["jrn"])
             if kind == "hello":
                 await self.push_state(force=True)
         elif kind == "back_req":
@@ -144,6 +154,11 @@ class GuestCtlServer:
                 self._words.append(("replica", self.replica))
         elif kind == "blocks":
             self._words.append(("blocks", [str(a) for a in (msg.get("addrs") or [])][:4096]))
+        elif kind in JRN_KINDS:
+            from awgbot.runtime import rsvactions
+            await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_jrn_word, kind, msg))
+        elif kind == "released":
+            self._words.append(("released_jrn", {k: msg.get(k) for k in ("line", "epoch", "last")}))
         elif kind == "bye":
             pass
 
@@ -222,7 +237,7 @@ class GuestCtlClient:
             self._attempt = 0
             self._writer = writer
             try:
-                await self.send("hello", {"online": self.services.guest_devices_online()})
+                await self.send("hello", {"online": self.services.guest_devices_online(), "jrn": self._jrn_status()})
                 while True:
                     line = await reader.readline()
                     if not line:
@@ -252,6 +267,9 @@ class GuestCtlClient:
         elif kind == "blocks":
             self.blocks = [str(a) for a in (msg.get("addrs") or [])][:4096]
             await asyncio.to_thread(self.services.guest_apply_blocks, self.blocks)
+        elif kind in JRN_KINDS or kind == "released":
+            for k, body in await asyncio.to_thread(self.services.guest_jrn_in, kind, msg):
+                await self.send(k, body)
 
     async def send(self, kind: str, body: dict | None = None) -> bool:
         w = self._writer
@@ -265,7 +283,12 @@ class GuestCtlClient:
             return False
 
     async def send_online(self) -> bool:
-        return await self.send("online", {"n": await asyncio.to_thread(self.services.guest_devices_online)})
+        return await self.send("online", {"n": await asyncio.to_thread(self.services.guest_devices_online),
+                                          "jrn": await asyncio.to_thread(self._jrn_status)})
+
+    def _jrn_status(self) -> dict:
+        fn = getattr(self.services, "guest_jrn_status", None)   # сервисы без журнала (прежний путь)
+        return fn() if fn is not None else {}
 
     async def send_replica(self, blob: bytes) -> bool:
         return await self.send("replica", {"blob": blob.hex()})

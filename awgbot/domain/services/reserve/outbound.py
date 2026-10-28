@@ -344,6 +344,8 @@ class ReserveOutboundMixin:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "release":
             return None
+        if self._pkg_journal():
+            return self._release_jrn(out)
         db_bytes = pkgbot.replica(self._db_path())
         try:
             pkgbot.assert_clean(db_bytes)

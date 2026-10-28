@@ -94,6 +94,22 @@ async def _one(act: tuple) -> None:
         log.info("резерв: неизвестное действие %s", kind)
 
 
+JRN_DRAIN_S = 15
+
+
+async def _jrn_drain(svc) -> bool:
+    """Неотправленные события и счётчики — резерву; ждать его подтверждений (не дольше
+    JRN_DRAIN_S). False — не дождались (передача отложится сервисом)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + JRN_DRAIN_S
+    while loop.time() < deadline:
+        await run(await asyncio.to_thread(svc.reserve_jrn_flush))
+        if await asyncio.to_thread(svc.reserve_jrn_all_acked):
+            return True
+        await asyncio.sleep(0.5)
+    return False
+
+
 async def _release(bot, svc, pc) -> None:
     """Передача бота резерву: поллинг стоп, пачка подтверждена, опрос вне
     очереди (свежие рукопожатия адресатам Т-РК1), финальная реплика → released."""
@@ -107,6 +123,8 @@ async def _release(bot, svc, pc) -> None:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001
         log.info("резерв: опрос вне очереди перед репликой: %s", e)
+    if await asyncio.to_thread(svc.reserve_jrn_on):
+        await _jrn_drain(svc)                                # журнал: последние правки и счётчики — до передачи
     built = await asyncio.to_thread(svc.reserve_release_build)
     if not built:
         log.warning("резерв: финальная реплика не собралась — поллинг обратно")

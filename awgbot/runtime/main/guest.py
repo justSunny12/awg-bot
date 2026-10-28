@@ -13,6 +13,12 @@ Telegram отдаёт обновления сюда после `setWebhook`, к�
 факту записи DNS (отметка `tg_take` от процесса открытия или команда бота
 резерва по локальному каналу). Остановка — по команде `stop` того же канала
 (возврат) или сигналу: финальный снимок, реплика боту резерва, выход.
+
+С журналом (база открыта процессом с отметкой `capture`): такт журнала раз в
+секунду — свои записи основе, догон основы до передачи бота (эпоха взята —
+ставить вебхук); снимков `rep.bin` нет — журнал данных гостя на диске; на
+возврат вместо реплики — последние записи, ожидание подтверждений основы
+(не дольше JRN_DRAIN_S), следование и `released{epoch, last}`.
 """
 from __future__ import annotations
 
@@ -29,6 +35,7 @@ from awgbot.runtime import main as pkg          # подменяемое тес�
 from .common import log
 
 MOVE_NOTIFY_DELAY_S = 60          # TTL записи: переподключение раньше попало бы на прежний адрес из кэша
+JRN_DRAIN_S = 20                  # возврат: подтверждения основы на последние записи
 
 
 async def run_guest() -> None:
@@ -122,6 +129,21 @@ async def run_guest() -> None:
             watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
             await _watch(wh, bot, services, ctl)
 
+    async def jrn_loop() -> None:
+        """Такт журнала гостя: записи основе, эпоха после передачи бота — вебхук."""
+        while True:
+            await asyncio.sleep(1)
+            try:
+                for kind, body in await asyncio.to_thread(services.guest_jrn_tick):
+                    await ctl.send(kind, body)
+                if await asyncio.to_thread(services.guest_jrn_take_tg):
+                    ctl.take_tg.set()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:                       # noqa: BLE001
+                log.warning("гость: такт журнала: %s", e)
+
+    jrn_task = asyncio.get_running_loop().create_task(jrn_loop()) if services.guest_jrn_on() else None
     scheduler = setup_guest_scheduler(services, bot, db, on_ctl_tick=ctl_tick)
     if wh is not None:
         try:
@@ -133,7 +155,9 @@ async def run_guest() -> None:
     log.info("гость: бот основы на резерве запущен (клон %s, данные в памяти)", config.AWG_INTERFACE)
     try:
         await ctl.stop_req.wait()
-        log.info("гость: команда возврата — финальный снимок и реплика боту резерва")
+        journal = services.guest_jrn_on()
+        log.info("гость: команда возврата — %s", "последние записи журнала основе" if journal
+                 else "финальный снимок и реплика боту резерва")
         try:
             if wh is not None:
                 await wh.stop()                          # слушатель закрыт: Telegram копит обновления у себя
@@ -142,6 +166,9 @@ async def run_guest() -> None:
                 await asyncio.to_thread(services.poll_traffic)   # свежие счётчики и рукопожатия в реплику
             except Exception as e:                       # noqa: BLE001
                 log.info("гость: опрос перед репликой: %s", e)
+            if journal:
+                await _jrn_release(services, ctl, jrn_task)
+                return
             blob = await asyncio.to_thread(services.guest_snapshot_bytes)
             await asyncio.to_thread(services.guest_snapshot_tick, True)
             await ctl.send_replica(blob)
@@ -150,7 +177,9 @@ async def run_guest() -> None:
             log.warning("гость: финальная реплика не ушла: %s", e)
     finally:
         log.info("гость: останавливаюсь…")
-        if not ctl.stop_req.is_set():
+        if jrn_task is not None:
+            jrn_task.cancel()
+        if not ctl.stop_req.is_set() and not services.guest_jrn_on():
             # остановка не по команде (сигнал юнита, перезапуск): последние правки — в rep.bin
             try:
                 await asyncio.to_thread(services.guest_snapshot_tick, True)
@@ -163,6 +192,27 @@ async def run_guest() -> None:
         with contextlib.suppress(Exception):
             await bot.session.close()
         db.close()
+
+
+async def _jrn_release(services, ctl, jrn_task) -> None:
+    """Возврат с журналом: последние записи, ожидание подтверждений основы, следование
+    и `released{epoch, last}` боту резерва; не дождались — основа догонит хвостом."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + JRN_DRAIN_S
+    while loop.time() < deadline:
+        for kind, body in await asyncio.to_thread(services.guest_jrn_tick):
+            await ctl.send(kind, body)
+        if await asyncio.to_thread(services.guest_jrn_drained):
+            break
+        await asyncio.sleep(0.5)
+    else:
+        log.warning("гость: основа не подтвердила последние записи за %d с", JRN_DRAIN_S)
+    if jrn_task is not None:
+        jrn_task.cancel()
+    body = await asyncio.to_thread(services.guest_jrn_release)
+    await ctl.send("released", body)
+    await ctl.send("bye")
+    log.info("гость: передал право записи по %s (эпоха %s)", body.get("last"), body.get("epoch"))
 
 
 async def _primary_back_notice(bot, services, told: dict) -> None:
