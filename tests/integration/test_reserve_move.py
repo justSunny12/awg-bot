@@ -92,6 +92,51 @@ def test_the_move_starts_with_a_fresh_package_request_and_remembers_the_target(m
 
 # ── pkg → eph → up ──────────────────────────────────────────────────────────
 
+def test_the_package_tick_builds_the_fresh_package_of_a_move_and_its_ack_leads_to_go_req(mv):
+    """Настоящий путь шага `pkg`: старт переезда ставит отметку, такт пакета
+    собирает пакет (основа уже в `leaving`), резерв подтверждает — и автомат
+    просит разовый ключ. Если такт пакета молчит в `leaving`, свежего пакета
+    нет никогда, и каждый переезд кнопкой срывается через PKG_WAIT_S с
+    «данные для переезда не подтверждены резервом»."""
+    svc = mv.svc
+    svc.reserve_move_start(chat_id=ADMIN_CHAT, message_id=55)
+    assert svc.reserve_out_tick() == [], "go_req ушёл без пакета, подтверждённого после старта"
+    mv.clock.advance(11)                                  # пачка правок закончилась
+    built = svc.reserve_pkg_tick()
+    assert built is not None, "в leaving на шаге pkg такт пакета промолчал — переезд сорвётся по сроку"
+    assert seal.open_parts(bytes.fromhex(built["blob"]), svc.reserve_k()), "пакет не читается ключом пакета"
+    assert svc.reserve_pkg_tick() is None, "пакет ещё в пути — второй такт собрал второй"
+    svc.reserve_pkg_ok(built["gen"], built["fp"])        # резерв принял части и ответил pkg_ok
+    acts = svc.reserve_out_tick()
+    assert sent(acts) == ["go_req"], f"подтверждённый пакет не перевёл переезд к разовому ключу: {sent(acts)}"
+    assert actions_of(acts, "send")[0][2]["gen"] == built["gen"], "go_req называет не тот пакет, что подтверждён"
+    out = svc.rsv_get("rsv_out")
+    assert out["state"] == "leaving" and out["step"] == "eph", out
+
+
+@pytest.mark.parametrize("step", ["eph", "up", "record", "release", "released"])
+def test_after_the_pkg_step_of_a_move_the_package_tick_stays_silent(mv, step):
+    """После шага `pkg` пакет уже у резерва и K ушёл (или уходит) к его процессу
+    открытия: новый пакет посреди переезда — гонка с открытием прежнего и
+    лишний пакет при передаче бота."""
+    svc = mv.svc
+    rm.to_step(svc, step)
+    svc.reserve_pkg_mark()
+    mv.clock.advance(11)
+    assert svc.reserve_pkg_tick() is None, f"на шаге {step} переезда такт собрал пакет"
+
+
+@pytest.mark.parametrize("state, step", [("away", ""), ("returning", "back_req"), ("returning", "merge")])
+def test_while_the_clients_are_away_or_returning_the_package_tick_stays_silent(mv, state, step):
+    """Пользователи у резерва или возвращаются: данные ведёт бот основы на
+    резерве, пакет по устаревшей базе основы резерву не нужен."""
+    svc = mv.svc
+    svc.reserve_set_out(state, kind="button", gen=7, step=step, taken_at=timeutil.now_iso())
+    svc.reserve_pkg_mark()
+    mv.clock.advance(11)
+    assert svc.reserve_pkg_tick() is None, f"в {state}/{step} такт собрал пакет"
+
+
 def test_go_req_waits_for_a_package_confirmed_after_the_start_and_carries_no_key(mv):
     svc = mv.svc
     rm.confirm_package(svc, gen=3)                       # пакет подтверждён ДО старта

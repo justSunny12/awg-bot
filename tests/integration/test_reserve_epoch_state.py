@@ -3,8 +3,9 @@
 сверяется при каждой смене `rsv_out` и `rsv_poll`, на каждом шаге автомата и на
 такте. Здесь — сценарии, в которых роль по одному слову Telegram выходила
 неверной: вебхук, оставшийся у остановленного гостя или у резерва без гостя,
-отказ слияния, сбой отправки финальной реплики, окно слияния, две отметки в
-одну секунду, «вернуть без резерва», отметки прежнего переезда; а ещё — что
+мёртвый линк при живом TCP-сеансе и старом `st`, отказ слияния, сбой отправки
+финальной реплики, окно слияния, две отметки в одну секунду, «вернуть без
+резерва», отметки прежнего переезда; а ещё — что
 следующий пишет итог проверки ящика и что переход эпохи не собирает пакет.
 
 Мир — пара из tests/integration/_reserve_move.py; Bot API у поллинга —
@@ -153,6 +154,141 @@ async def test_a_webhook_left_after_a_failed_move_is_followed_while_the_reserve_
     rm.st_in(svc, **{"in": "idle"})
     svc.reserve_out_tick()
     assert not _following(svc), "резерв на связи без гостя — а основа всё ещё следует"
+
+
+def _home_webhook_at_the_reserve(svc, liveness: str) -> None:
+    """Дома, Telegram сказал «вебхук у резерва» уже после перехода домой; TCP-сеанс
+    пары жив (session), `st` резерва получен после перехода домой и говорит idle;
+    живость линка — `liveness`."""
+    svc.reserve_set_poll("away", why="webhook_info", url=HOOK)
+    rm.st_in(svc, **{"in": "idle"})
+    svc._lv.state = liveness
+    svc.reserve_epoch_sync()
+
+
+def test_a_webhook_at_a_reserve_whose_link_is_down_is_followed_despite_a_live_session_and_an_idle_st(mv):
+    """Линк пары мёртв (живость down через ~60 с), а TCP-сеанс держится до
+    ~23 минут и `st` с idle — последний перед смертью. Резерв за это время мог
+    поднять гостя по аварии и поставить вебхук: верим Telegram. Иначе основа
+    решает по своей базе, пока на резерве пишет бот основы, — продление
+    отменяется, слияние закрепляет блокировку."""
+    svc = mv.svc
+    _home_webhook_at_the_reserve(svc, "down")
+    assert svc.reserve_online() and svc.reserve_out() == "home", "сценарий не о том: сессия должна быть жива"
+    assert svc._follow_wanted() == (True, "Telegram: вебхук у резерва"), svc._follow_wanted()
+    assert _following(svc), "мёртвый линк с живым TCP-сеансом и старым idle — основа не следует за вебхуком"
+
+
+def test_a_webhook_at_a_live_reserve_saying_idle_is_still_not_followed(mv):
+    """Живость ok и свежий `st` с idle — вебхук остался от срыва или возврата,
+    гостя нет: основа решает сама (следовать — значит запретить решения всем)."""
+    svc = mv.svc
+    _home_webhook_at_the_reserve(svc, "ok")
+    assert svc._follow_wanted() == (False, "вебхук у резерва без гостя"), svc._follow_wanted()
+    assert not _following(svc), "живой резерв без гостя увёл эпоху по остатку вебхука"
+
+
+def test_a_serving_st_from_a_reserve_whose_link_is_down_does_not_count(mv):
+    """Telegram у меня (poll mine), `st` резерва после перехода домой говорит
+    serving, сеанс жив, а живость down: это слово мёртвого линка, а не факт —
+    основа не отдаёт право записи и не перестаёт решать."""
+    svc = mv.svc
+    assert svc.reserve_poll() == "mine"
+    rm.st_in(svc, **{"in": "serving"})
+    svc._lv.state = "down"
+    svc.reserve_epoch_sync()
+    assert svc._follow_wanted() == (False, "пользователи и Telegram здесь"), svc._follow_wanted()
+    assert not _following(svc), "serving от мёртвого линка увёл эпоху"
+    svc._lv.state = "ok"
+    svc.reserve_epoch_sync()
+    assert _following(svc), "живой резерв несёт моих — основа не следует (контроль сценария)"
+
+
+class _Link:
+    """Линк пары глазами живости: счётчик rx растёт, пока `alive`; часы живости —
+    свои (такт в 5 с), на них же слово по каналу и pong."""
+
+    def __init__(self, svc, monkeypatch):
+        from awgbot.domain.services.reserve import liveness as lvm
+        self.svc, self.alive, self.rx, self.t = svc, True, 100, 1000.0
+        monkeypatch.setattr(lvm, "time", types.SimpleNamespace(monotonic=lambda: self.t))
+        monkeypatch.setattr(svc, "_pair_rx", self._read)
+
+    def _read(self) -> int:
+        if self.alive:
+            self.rx += 148
+        return self.rx
+
+    def run(self, seconds: float) -> list:
+        """Такты живости и автомата «мои пользователи» каждые 5 с; уведомления живости."""
+        notes = []
+        end = self.t + seconds
+        while self.t < end:
+            self.t += 5
+            notes += self.svc.reserve_liveness_tick(now=self.t)[1]
+            self.svc.reserve_out_tick()
+        return notes
+
+
+def _webhook_left_at_an_idle_reserve(mv, monkeypatch) -> _Link:
+    """Дома, Telegram: «вебхук у резерва»; резерв на связи и сказал idle — основа
+    держатель (остаток вебхука, гостя нет)."""
+    svc = mv.svc
+    link = _Link(svc, monkeypatch)
+    svc.reserve_set_poll("away", why="webhook_info", url=HOOK)
+    rm.st_in(svc, **{"in": "idle"})
+    link.run(30)
+    assert svc.reserve_peer_seen() == "ok" and not _following(svc), "сценарий не о том: исходно основа — держатель"
+    return link
+
+
+@pytest.mark.parametrize("how", ["word", "pong", "rx"])
+def test_an_idle_st_from_before_the_cut_does_not_take_the_epoch_back_once_the_link_returns(mv, monkeypatch, how):
+    """Разрез линка: st с idle получен до него. Живость упала — верим Telegram
+    (следование: резерв мог поднять гостя). Связь вернулась (слово, pong или рост
+    счётчика) раньше нового st — старое idle не в счёт, основа следует дальше;
+    иначе она забирает эпоху у гостя, который уже пишет решения на резерве, и
+    решает по устаревшей базе. Новый st решает: idle — держатель, serving —
+    следование."""
+    svc = mv.svc
+    link = _webhook_left_at_an_idle_reserve(mv, monkeypatch)
+    link.alive = False
+    downs = [n for n in link.run(120) if "Нет связи" in n.text]
+    assert svc.reserve_peer_seen() == "down" and len(downs) == 1, (svc.reserve_peer_seen(), downs)
+    assert svc.reserve_online(), "сценарий не о том: TCP-сеанс мёртвого линка ещё держится"
+    assert _following(svc), "линк мёртв, Telegram говорит «вебхук у резерва» — а основа решает сама"
+    epoch = _epoch(svc)
+    if how == "word":
+        svc.reserve_liveness_word()
+    elif how == "pong":
+        assert svc.reserve_ping_nonce(), "проба не ушла — pong не к чему привязать"
+        svc.reserve_pong_in(svc.reserve_ping_nonce())
+    link.alive = True
+    ups = [n for n in link.run(15) if "восстановлена" in n.text]
+    assert svc.reserve_peer_seen() == "ok" and len(ups) == 1, (how, svc.reserve_peer_seen(), ups)
+    assert _following(svc), f"связь вернулась ({how}) без нового st — основа забрала эпоху по idle до разреза"
+    assert _epoch(svc) == epoch, "эпоха мигнула на возврате связи"
+    rm.st_in(svc, **{"in": "idle"})
+    link.run(5)
+    assert not _following(svc), "новый st: резерв без гостя — а основа всё ещё следует"
+    assert svc._follow_wanted() == (False, "вебхук у резерва без гостя"), svc._follow_wanted()
+    rm.st_in(svc, **{"in": "serving"})
+    link.run(5)
+    assert _following(svc), "новый st: резерв несёт моих — а основа держатель"
+
+
+def test_without_a_loss_of_the_link_a_webhook_left_at_an_idle_reserve_keeps_the_epoch_here(mv, monkeypatch):
+    """Без разреза (вебхук остался, резерв на связи и idle) — прежнее поведение:
+    основа держатель все такты, эпоха не мигает, «нет связи» не приходит."""
+    svc = mv.svc
+    link = _webhook_left_at_an_idle_reserve(mv, monkeypatch)
+    epoch = _epoch(svc)
+    notes = link.run(600)
+    rm.st_in(svc, **{"in": "idle"})
+    notes += link.run(300)
+    assert not _following(svc), "живой резерв без гостя увёл эпоху"
+    assert _epoch(svc) == epoch, f"эпоха мигала при живом линке: {epoch} → {_epoch(svc)}"
+    assert not [n for n in notes if "Нет связи" in n.text], [n.text for n in notes]
 
 
 # ── 3. отказ слияния ────────────────────────────────────────────────────────

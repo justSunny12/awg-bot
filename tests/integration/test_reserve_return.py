@@ -403,6 +403,7 @@ def _package_under(svc):
 @pytest.mark.parametrize("kind", ["button", "dead"])
 def test_wiped_ends_the_return_with_a_new_k_and_the_old_package_is_unreadable_for_it(away, kind):
     svc = away.svc
+    svc.rsv_update("rsv_dns", provider="cloudflare", token="DUMMY")   # токен был — конверт DNS в пакете
     old_k = svc.reserve_k()
     old_pkg = _package_under(svc)
     _at_step(away, "relay", merge_report={"clients": 1, "devices": 2})
@@ -485,6 +486,7 @@ def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_
     лишний перевыпуск долей шлюзов). Чем открыт пакет, основа решает по своей
     отметке отправки K (go_sent), а без неё — по виду переезда."""
     svc = away.svc
+    svc.rsv_update("rsv_dns", provider="cloudflare", token="DUMMY")   # токен был — конверт DNS в пакете
     m_gen = int(svc.reserve_keys()["m_gen"])
     _at_step(away, "relay")
     fields = dict(kind=kind, by="", record_fact_at=timeutil.now_iso())
@@ -496,6 +498,20 @@ def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_
     assert (int(svc.reserve_keys()["m_gen"]) == m_gen + 1) is regen, f"{tag}: поколение M"
     assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is regen, f"{tag}: код админу"
     assert bool([t for t in texts if "Токен API DNS" in t]) is regen, f"{tag}: просьба сменить токен"
+
+
+def test_a_manual_record_gets_a_new_generation_but_no_token_request_after_a_crash_return(away):
+    """Запись вручную — токена в пакете не было: после возврата по долям новое
+    поколение и код админу, а просьбы сменить токен DNS нет."""
+    svc = away.svc
+    svc.rsv_update("rsv_dns", provider="manual", token="")
+    m_gen = int(svc.reserve_keys()["m_gen"])
+    _at_step(away, "relay")
+    svc.rsv_update("rsv_out", kind="dead", by="", go_sent=False, record_fact_at=timeutil.now_iso())
+    texts = [n.text for n in notices(svc.reserve_wiped_in())]
+    assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1
+    assert svc.rsv_get("rsv_keys").get("code_notify_why")
+    assert not [t for t in texts if "Токен API DNS" in t], texts
 
 
 @pytest.mark.parametrize("in_by", ["k", "share", ""])

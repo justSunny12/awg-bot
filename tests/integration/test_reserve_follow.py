@@ -199,6 +199,7 @@ def test_a_return_without_a_replica_reaches_the_end_with_its_report(world, kind,
     переезда (пакет открыт не моим K) — новое поколение ключа и просьба сменить
     токен DNS, после переезда кнопкой — ни того, ни другого."""
     svc = world.svc
+    svc.rsv_update("rsv_dns", provider="cloudflare", token="DUMMY")   # токен был — конверт DNS в пакете
     svc.rsv_update("rsv_out", kind=kind, go_sent=go_sent)
     gen_before = int(svc.rsv_get("rsv_keys").get("m_gen") or 0)
     svc.reserve_return_start("button")
