@@ -53,13 +53,14 @@ class ReserveKeepMixin:
             return
         st = self.reserve_keep_store()
         cur = self._keep()
+        prev_e = int(cur.get("e") or 0) if str(cur.get("line") or "") == line else 0   # эпоха линии только растёт
         if str(cur.get("line") or "") != line or marks.get("reset"):
             st.wipe()
             cur = {}
         dropped = st.drop_events_upto(i)
         st.drop_counts_upto("a", cb)
         last_e, last_i = st.last()
-        known = max(e, last_e, int(cur.get("e") or 0))
+        known = max(e, last_e, prev_e)
         self.rsv_put("rsv_jrn_in", {"line": line, "e": known, "snap_e": e, "snap_i": i, "cb": cb,
                                     "last": max(i, last_i), "snap_at": timeutil.now_iso()})
         self._keep_meta_write(line, known)

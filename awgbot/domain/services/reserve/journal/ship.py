@@ -149,6 +149,15 @@ class ReserveShipMixin:
             self.reserve_pkg_mark()                           # плановый снимок: у резерва больше мегабайта событий
         if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():
             self.db.jrn_counts_raise(cnt_bn)                  # счёт пачек — не ниже принятого резервом
+        try:
+            keep_e = int(keep.get("e") or 0)
+        except (TypeError, ValueError):
+            keep_e = 0
+        if str(keep.get("line") or "") == line and keep_e and str(self.reserve_peer_state().get("inn") or "idle") \
+                not in ("taking", "serving", "releasing"):
+            meta = self.db.jrn_raise(keep_e, why="эпоха линии у резерва выше — восстановление из копии")
+            if meta is not None:                              # восстановление из копии: jrn_meta в копию не идёт
+                log.warning("резерв: эпоха линии поднята до %s по сверке с «%s»", meta["epoch"], self.reserve_peer_name())
         if str(keep.get("line") or "") == line and keep.get("guest_fork"):
             try:
                 self.reserve_tail_finalize(int(keep["guest_fork"]))   # точка гостя пришла — отложенный хвост готовить

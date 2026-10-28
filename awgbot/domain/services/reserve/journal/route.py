@@ -41,9 +41,54 @@ class ReserveJournalRouteMixin:
         if kind in ("jev", "jcnt"):
             return self._keep_jev_in(body) if kind == "jev" else self._keep_jcnt_in(body)
         if line and line == keep:
+            if kind == "jneed":
+                # основе не хватает её же событий (база потеряла хвост при пропаже питания) или
+                # событий гостя, которого уже нет: что есть на диске — отдаю сам, остальное — гостю
+                acts = self._keep_serve_base(int(body.get("from") or 0))
+                return acts or [("guest", kind, _schema(kind, body))]
             return [("guest", kind, _schema(kind, body))]      # ответ основы её боту у меня
         log.info("резерв: «%s» линии %s — не моя и не храню — пропущено", kind, line[:8] or "—")
         return []
+
+    def _keep_serve_base(self, frm: int) -> list[tuple]:
+        """`jneed` основы по её линии: подряд с `frm` — из хранилища её событий (она их
+        потеряла: пропажа питания после отправки), иначе из журнала данных гостя на диске
+        (гость ушёл, не досказав). Нет ни там, ни там — пусто (спросит гостя)."""
+        from awgbot.util.rsvjrn import event
+        line = self.reserve_keep_line()
+        recs = self._store_run(self.reserve_keep_store(), line, frm)
+        if not recs:
+            try:
+                recs = self._store_run(self.guest_jrn_store(), line, frm)
+            except Exception as e:                            # noqa: BLE001 — журнала гостя нет
+                log.debug("резерв: журнал гостя на диске не прочитан: %s", e)
+                recs = []
+        if not recs:
+            return []
+        h = event.head(recs[0])
+        log.info("резерв: «%s» просит события с %s — отдаю из хранилища %d (эпоха %s)", self.reserve_peer_name(),
+                 frm, len(recs), h.e)
+        return [("send", "jev", {"line": line, "e": h.e, "from": h.n, "n": len(recs), "blob": b"".join(recs).hex()})]
+
+    @staticmethod
+    def _store_run(store, line: str, frm: int) -> list[bytes]:
+        """Записи линии подряд с номера `frm`, одной эпохи, не больше EV_BYTES; первая не
+        `frm` — пусто (разрыв не прикрывать)."""
+        from awgbot.util.rsvjrn import event
+        from .ship import EV_BYTES
+        recs: list[bytes] = []
+        size = 0
+        for r in store.events(after=max(0, frm - 1)):
+            h = event.head(r)
+            if h.line != line:
+                continue
+            if not recs and h.n != frm:
+                return []
+            if recs and (size + len(r) > EV_BYTES or h.e != event.head(recs[0]).e or h.n != event.head(recs[-1]).n + 1):
+                break
+            recs.append(r)
+            size += len(r)
+        return recs
 
     def _jrn_mine_in(self, kind: str, body: dict) -> list[tuple]:
         if kind == "jev":
@@ -79,6 +124,13 @@ class ReserveJournalRouteMixin:
             if meta is not None and (peer.get("jrn_keep") or {}).get("guest_fork"):
                 self.reserve_tail_finalize(fork)
                 log.warning("резерв: эпоха %s у бота на «%s» — здесь следование", meta["epoch"], self.reserve_peer_name())
+        elif meta_now["role"] == "holder":
+            # он моих не несёт, а эпоху линии помнит выше моей: база восстановлена из копии (jrn_meta в
+            # копию не идёт) — поднять свою, иначе каждое событие получало бы jstale без конца
+            meta = self.db.jrn_raise(int(e), why="эпоха линии у резерва выше — восстановление из копии")
+            if meta is not None:
+                log.warning("резерв: эпоха линии поднята до %s по слову «%s» (моих он не несёт)", meta["epoch"],
+                            self.reserve_peer_name())
         else:
             log.warning("резерв: «%s» знает эпоху %s моей линии, но моих не несёт", self.reserve_peer_name(), e)
 

@@ -36,7 +36,7 @@ _MSG = f"{REFUSAL_PREFIX} эпоха не у этого процесса — р�
 _GUARD = ("(SELECT role FROM main.jrn_meta WHERE id = 1) <> 'holder' "
           "AND (SELECT applying FROM main.jrn_meta WHERE id = 1) = 0")
 _CAPTURE = "FROM main.jrn_meta m WHERE m.id = 1 AND m.capture = 1 AND m.applying = 0"
-_AT = "strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime')"
+_AT = "strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+00:00'"   # с поясом: наивное местное время хоста читалось бы как UTC+3
 
 
 def _q(name: str) -> str:

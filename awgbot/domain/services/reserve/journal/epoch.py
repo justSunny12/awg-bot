@@ -125,8 +125,15 @@ class ReserveEpochMixin:
             meta_now = self.db.jrn_meta()
             if guest_e and not epoch_sane(guest_e, int(meta_now["epoch"])):
                 guest_e = 0
-            if fork and not int(meta_now["acked"]) <= fork <= max(self.db.jrn_last_i(), int(meta_now["acked"])) + 1:
-                log.warning("резерв: точка гостя %s вне моих номеров (подтверждено %s) — беру подтверждённое",
+            last_i = self.db.jrn_last_i()
+            if fork and fork > max(last_i, int(meta_now["acked"])) + 1:
+                # у гостя есть мои события, которых здесь уже нет (пропажа питания после отправки):
+                # применяю с того, что база правда имеет, недостающее попрошу — резерв отдаст из хранилища
+                log.warning("резерв: точка гостя %s дальше моих номеров (здесь по %s) — база потеряла хвост, "
+                            "применяю с %s", fork, last_i, last_i)
+                fork = last_i
+            elif fork and fork < int(meta_now["acked"]):
+                log.warning("резерв: точка гостя %s раньше подтверждённого %s — беру подтверждённое",
                             fork, meta_now["acked"])
                 fork = 0
             meta = self.db.jrn_pass(holder="peer", role="follower", why=why, epoch=guest_e or None,

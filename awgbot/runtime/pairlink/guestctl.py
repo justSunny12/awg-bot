@@ -123,6 +123,8 @@ class GuestCtlServer:
                 await self._handle(msg)
         except (asyncio.IncompleteReadError, ConnectionError, ValueError, OSError) as e:
             log.debug("локальный канал гостя: сессия закрыта: %s", e)
+        except Exception as e:                                # noqa: BLE001 — гость переподключится; причину — в журнал
+            log.warning("локальный канал гостя: обработчик упал (%s) — сессия закрыта", e)
         finally:
             if self._writer is writer:
                 self._writer = None
@@ -253,6 +255,8 @@ class GuestCtlClient:
                         await self._handle(msg)
             except (asyncio.IncompleteReadError, ConnectionError, ValueError, OSError) as e:
                 log.debug("гость: локальный канал закрыт: %s", e)
+            except Exception as e:                            # noqa: BLE001 — обработчик (замок базы…) канал не убивает
+                log.warning("гость: локальный канал: обработчик упал (%s) — переподключаюсь", e)
             finally:
                 self._writer = None
                 with contextlib.suppress(Exception):

@@ -567,10 +567,27 @@ def test_a_return_behind_the_guest_does_not_take_the_epoch_and_asks(duo, monkeyp
     assert duo.a.reserve_following(), "основа взяла эпоху, не догнав правки бота на резерве"
 
 
-def test_a_return_behind_catches_up_from_the_guest_and_then_takes_the_epoch(duo, monkeypatch):
-    """Просьба досылки доходит до гостя (он уже без права записи, но своё досылает),
-    основа догоняет — и только тогда эпоха её; базы равны."""
+def test_a_return_behind_catches_up_from_the_reserve_disk_and_then_takes_the_epoch(duo, monkeypatch):
+    """Недостающее резерв отдаёт сам — из журнала данных гостя на диске (гостя спрашивать
+    незачем, а его может уже и не быть); основа догоняет — и только тогда эпоха её; базы равны."""
     _body, acts = _return_lagging(duo, monkeypatch)
+    to_g = duo.a_to_b(acts)
+    assert not to_guest(to_g, "jneed"), f"просьба ушла гостю, хотя записи есть на диске: {to_g}"
+    assert [a[1] for a in to_g if a[0] == "send"] == ["jev"], to_g
+    at_a = duo.b_to_a(to_g)
+    assert ("take_tg",) in at_a, f"догнала — а эпоха не взята: {at_a}"
+    assert [c for c in duo.a.db.list_clients() if c.name == "Вера"]
+    duo.a.reserve_epoch_sync()
+    assert duo.a.db.jrn_meta()["role"] == "holder"
+    assert _diff(duo) == []
+
+
+def test_a_return_behind_asks_the_guest_when_the_disk_has_nothing(duo, monkeypatch):
+    """На диске резерва записей нет (гость ещё не успел дописать) — просьба досылки
+    доходит до гостя (он уже без права записи, но своё досылает)."""
+    _body, acts = _return_lagging(duo, monkeypatch)
+    with duo.as_guest():
+        duo.g.guest_jrn_store().wipe()
     to_g = duo.a_to_b(acts)
     assert to_guest(to_g, "jneed"), "просьба досылки не ушла гостю"
     duo.b_to_guest(to_g)
@@ -579,9 +596,6 @@ def test_a_return_behind_catches_up_from_the_guest_and_then_takes_the_epoch(duo,
     assert [k for k, _ in msgs] == ["jev"], f"гость без права записи не досылает своё: {msgs}"
     at_a = duo.b_to_a(duo.guest_to_b(msgs))
     assert ("take_tg",) in at_a, f"догнала — а эпоха не взята: {at_a}"
-    assert [c for c in duo.a.db.list_clients() if c.name == "Вера"]
-    duo.a.reserve_epoch_sync()
-    assert duo.a.db.jrn_meta()["role"] == "holder"
     assert _diff(duo) == []
 
 

@@ -159,6 +159,7 @@ class ReserveHandoverMixin:
                       self.reserve_peer_name(), applied + 1, jb.get("last"))
             if not jb.get("c9"):
                 self.db.jrn_bump(int(jb.get("last") or 0))
+            self.rsv_update("rsv_out", jrn_lost=[applied + 1, int(jb.get("last") or 0)])   # в Т-РУ5б — строкой
             return self._jrn_back_take(int(jb.get("epoch") or 0), int(jb.get("last") or 0))
         if now - float(jb.get("need") or 0) > JRN_NEED_S:
             self.rsv_update("rsv_out", jrn_back={**jb, "need": now})
@@ -166,11 +167,15 @@ class ReserveHandoverMixin:
         return []
 
     def _jrn_back_take(self, epoch: int, last: int) -> list[tuple]:
+        from awgbot.domain.notices import reserve as rn
         out = self._out()
         report = dict(out.get("jrn_report") or {})
         report.setdefault("lost", [])
+        lost = list(out.get("jrn_lost") or [])
+        if len(lost) == 2 and int(lost[1]) >= int(lost[0]):
+            report["lost"].append(rn.jrn_lost(self.reserve_peer_name(), int(lost[0]), int(lost[1])))
         log.info("резерв: сводка эпохи %s: %s", epoch, json.dumps(report, ensure_ascii=False))
-        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None, jrn_back=None)
+        self.rsv_update("rsv_out", guest_stopped=True, merge_report=report, jrn_report=None, jrn_back=None, jrn_lost=None)
         self.reserve_monthly_settle()
         self._out_step("take_tg", take_tg_tries=0, take_tg_told=False)   # эпоха — здесь (reserve_epoch_sync)
         return [("take_tg",), ("live",)]

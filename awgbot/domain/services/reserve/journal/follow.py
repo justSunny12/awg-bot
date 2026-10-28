@@ -77,6 +77,8 @@ class ReserveFollowMixin:
         остаётся — его учитывает слияние после возврата (reserve_monthly_settle)."""
         f = self.rsv_get("rsv_follow")
         self.rsv_put("rsv_follow", {"monthly_deferred": f["monthly_deferred"]} if f.get("monthly_deferred") else None)
+        self.__dict__.pop("_follow_seen_top", None)
+        self.__dict__.pop("_follow_lag_since", None)
 
     # ── журнал: события и счётчики держателя ────────────────────────────────
     def _follow_jev_in(self, body: dict) -> list[tuple]:
@@ -90,6 +92,9 @@ class ReserveFollowMixin:
         from .ship import epoch_sane
         line, e_body = str(body["line"]), int(body["e"])
         meta = self.db.jrn_meta()
+        top = int(body.get("from") or 0) + int(body.get("n") or 0) - 1
+        if top > int(self.__dict__.get("_follow_seen_top") or 0):
+            self.__dict__["_follow_seen_top"] = top            # что держатель уже прислал — мерка отставания
         if meta["role"] != "follower" or meta["holder"] != "peer":
             c9 = self.rsv_get("rsv_c9") if not getattr(self, "guest", False) else {}
             if c9 and e_body == int(c9.get("e") or -1):
@@ -251,7 +256,10 @@ class ReserveFollowMixin:
     FOLLOW_LAG_S = 60
 
     def _follow_lag(self) -> tuple[bool, int, int]:
-        """(отстаю ли дольше FOLLOW_LAG_S, применено, последнее у бота на резерве)."""
+        """(отстаю ли дольше FOLLOW_LAG_S, применено, последнее у бота на резерве). Последнее —
+        по тому, что он прислал (`_follow_seen_top`, и не применённое тоже), а не только по
+        `st.jrn.keep.guest_last`: `st` уходит по смене линии, эпохи и снимка, в следовании
+        число в нём застывает."""
         import time
         meta = self.db.jrn_meta()
         applied = int(meta["applied"])
@@ -259,6 +267,7 @@ class ReserveFollowMixin:
             last = int((self.reserve_peer_state().get("jrn_keep") or {}).get("guest_last") or 0)
         except (TypeError, ValueError):
             last = 0
+        last = max(last, int(self.__dict__.get("_follow_seen_top") or 0))
         now = time.monotonic()
         if last <= applied:
             self.__dict__.pop("_follow_lag_since", None)

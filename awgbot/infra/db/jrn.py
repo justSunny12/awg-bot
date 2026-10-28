@@ -63,13 +63,36 @@ class JrnMixin:
         return self.jrn_meta()
 
     def jrn_adopt(self, epoch: int, *, why: str, fork_i: int | None = None) -> dict | None:
-        """Чужая эпоха больше моей (st.jrn, событие держателя, jstale) — принять её без
-        приращения: держатель — вторая сторона, здесь следование. Не больше — None."""
+        """Чужая эпоха больше моей (jstale) — принять её без приращения: держатель — вторая
+        сторона, здесь следование. Равная при держателе здесь — тоже (своя поднята по слову
+        резерва, `jrn_raise`, а его гость держит тот же номер — два писателя под одним
+        номером недопустимы). Меньше или уже следую — None."""
         cur_meta = self.jrn_meta()
-        if int(epoch) <= int(cur_meta["epoch"]):
+        if int(epoch) < int(cur_meta["epoch"]) or (int(epoch) == int(cur_meta["epoch"]) and cur_meta["holder"] == "peer"):
             return None
         fork = self.jrn_last_i() if fork_i is None else int(fork_i)
         return self._jrn_meta_set(why, epoch=int(epoch), holder="peer", role="follower", fork_i=fork)
+
+    def jrn_raise(self, epoch: int, *, why: str) -> dict | None:
+        """Держатель: эпоха моей линии у резерва больше моей (база восстановлена из копии —
+        jrn_meta в копию не идёт — или откатилась) — поднять свою до известной, оставаясь
+        держателем. Свои неподтверждённые события — под новый номер: они мои, эпоха — метка
+        периода писателя, а не их содержания. Не больше или не держатель — None."""
+        cur_meta = self.jrn_meta()
+        if cur_meta["role"] != "holder" or int(epoch) <= int(cur_meta["epoch"]):
+            return None
+        conn = self._connection()
+        conn.execute("PRAGMA synchronous = FULL")
+        try:
+            with self._tx() as c:
+                c.execute("UPDATE jrn_events SET e = ? WHERE e = ? AND i > (SELECT acked FROM jrn_meta WHERE id = 1)",
+                          (int(epoch), int(cur_meta["epoch"])))
+                c.execute("UPDATE jrn_meta SET epoch = ?, changed_at = ?, why = ? WHERE id = 1",
+                          (int(epoch), _now_iso(), why))
+                self._tx_note(self._TX_COUNTERS)
+        finally:
+            conn.execute("PRAGMA synchronous = NORMAL")
+        return self.jrn_meta()
 
     def jrn_adopt_epoch(self, epoch: int) -> None:
         """В следовании: номер эпохи — держателя (он открылся сам после аварии, или моя
@@ -369,7 +392,7 @@ class JrnMixin:
         if row is not None and row[0] != "holder" and not row[1]:
             raise sqlite3.IntegrityError(f"{rsvjrn.REFUSAL_PREFIX} эпоха не у этого процесса — решения пишет держатель")
         cur.execute("INSERT INTO jrn_events (e, t, op, k, at) SELECT epoch, 'device_traffic', ?, ?, "
-                    "strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime') FROM jrn_meta "
+                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+00:00' FROM jrn_meta "
                     "WHERE id = 1 AND capture = 1 AND applying = 0", (op, json.dumps(args, sort_keys=True)))
 
     def _jrn_counts(self, cur, rows: list[tuple]) -> None:
