@@ -54,8 +54,10 @@ class PollMixin:
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
         polled_at = timeutil.now()
-        online = sum(1 for p in peers.values()
-                     if timeutil.handshake_is_online(p["last_handshake"], polled_at))
+        from awgbot.util import probenet
+        online = sum(1 for p in peers.values()                  # пиры-зонды кворума — не устройства
+                     if timeutil.handshake_is_online(p["last_handshake"], polled_at)
+                     and not probenet.is_probe(p.get("address") or ""))
         with self.db.transaction():
             if self.db.get_state("online_count") != str(online):
                 self.db.set_state("online_count", str(online))   # только при изменении

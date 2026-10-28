@@ -57,7 +57,9 @@ class ReconcileMixin:
 
     @staticmethod
     def _peers_with_ip(conf_text: str) -> dict[str, str]:
-        """pubkey → ip из живого conf интерфейса."""
+        """pubkey → ip из живого conf интерфейса. Пиры-зонды кворума (блок
+        util/probenet) — не устройства: в результат не попадают."""
+        from awgbot.util import probenet
         header, peers = awg._split_conf(conf_text)
         result: dict[str, str] = {}
         for p in peers:
@@ -67,7 +69,7 @@ class ReconcileMixin:
             for line in p["lines"]:
                 if line.strip().startswith("AllowedIPs"):
                     ip = line.split("=", 1)[1].strip().split("/")[0]
-            if ip:
+            if ip and not probenet.is_probe(ip):
                 result[p["pubkey"]] = ip
         return result
 
