@@ -85,7 +85,9 @@ class ReserveOutboundMixin:
         data = {"step": step, "step_at": timeutil.now_iso(), **fields}
         if wait_s:
             data["deadline"] = time.monotonic() + wait_s
-        return self.rsv_update("rsv_out", **data)
+        out = self.rsv_update("rsv_out", **data)
+        self.reserve_epoch_sync()                         # шаг меняет право записи (released, merge, …)
+        return out
 
     @staticmethod
     def _expired(out: dict) -> bool:
@@ -141,7 +143,7 @@ class ReserveOutboundMixin:
                                        msg=[int(chat_id), int(message_id)] if chat_id else [],
                                        target_ip=target_ip, record=self.reserve_dns_name(), go_sent=False,
                                        pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
-                                       taken_at="", reason="", gen=0)
+                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False)
             self._out_step("pkg", PKG_WAIT_S)
             self.reserve_pkg_mark()
         log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
@@ -170,7 +172,6 @@ class ReserveOutboundMixin:
         elif out.get("record_set_at"):
             record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
         self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
-        self.reserve_epoch_hold("переезд не состоялся")
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
         if record_back:
@@ -208,6 +209,7 @@ class ReserveOutboundMixin:
             # по коду; слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
                                  by="share", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
+                                 guest_stopped=False, await_merge=False,
                                  last_switch=timeutil.now_iso(), healthy_mono=0, healthy_since="", can_return=False)
             self.reserve_set_poll("away")
             log.warning("резерв: «%s» несёт моих пользователей — я в состоянии away", self.reserve_peer_name())
@@ -477,7 +479,6 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("mine")
         self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
                              stuck_home_at=timeutil.now_iso(), await_merge=forced, last_switch=timeutil.now_iso())
-        self.reserve_epoch_hold("вебхук резерва снят, поллинг здесь")
         if not forced:
             self.reserve_new_k()
             self.reserve_pkg_mark()

@@ -95,7 +95,11 @@ class ReserveStateMixin:
     def reserve_set_out(self, state: str, **why) -> dict:
         if state not in OUT_STATES:
             raise ValueError(f"не состояние направления: {state}")
-        return self.rsv_update("rsv_out", state=state, since=timeutil.now_iso(), **why)
+        import time
+        # at_ts — порядок с точностью до долей секунды: роль эпохи сверяет «что было раньше»
+        out = self.rsv_update("rsv_out", state=state, since=timeutil.now_iso(), at_ts=time.time(), **why)
+        self.reserve_epoch_sync()                         # право записи — по новому состоянию
+        return out
 
     def reserve_set_in(self, state: str, **why) -> dict:
         if state not in IN_STATES:
@@ -106,12 +110,10 @@ class ReserveStateMixin:
         if state not in POLL_STATES:
             raise ValueError(f"не право ответа: {state}")
         # why/url — только этого решения: прежнее «webhook» не должно пережить «mine»
-        out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), **{"why": "", "url": "", **why})
-        if state == "away":
-            # право отвечать у бота основы на резерве — у него и право записи решений
-            self.reserve_epoch_follow({"released": "передача бота", "webhook": "Telegram: 409, вебхук у резерва",
-                                       "webhook_info": "Telegram: вебхук у резерва"}.get(str(why.get("why") or ""),
-                                                                                          "пользователи и бот у резерва"))
+        import time
+        out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), at_ts=time.time(),
+                              **{"why": "", "url": "", **why})
+        self.reserve_epoch_sync()                         # право записи — по новому состоянию (не по слову Telegram)
         return out
 
     def reserve_busy(self) -> str:

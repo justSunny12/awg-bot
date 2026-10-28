@@ -75,7 +75,7 @@ class ReserveUnpairMixin:
                 log.warning("резерв: снимки слияния не сняты: %s", e)
             self.db.reserve_peer_delete()
             self.rsv_clear_all()
-            self.reserve_epoch_hold("пара снята")
+            self.reserve_epoch_sync()                         # пары нет — держатель здесь
             try:
                 from awgbot.core import access_cache
                 access_cache.invalidate_all()

@@ -384,10 +384,12 @@ def test_the_registry_sentinel_catches_a_table_without_a_class():
 
 
 def test_the_routing_keys_are_not_decisions_of_the_follower():
-    """Выбор слота шлюзов меняет живость шлюзов самого хоста — у следующего он
-    свой; остальные ключи белого списка реплики — решения."""
+    """Выбор слота шлюзов меняет живость шлюзов самого хоста, итог проверки ящика пишут
+    запасной канал алертов и предстартовая проверка — у следующего они свои;
+    остальные ключи белого списка реплики — решения."""
     from awgbot.util.rsvpkg.bot import GUEST_STATE
-    assert set(classes.STATE_DECISION) == set(GUEST_STATE) - {"routing_active_gateway", "routing_manual_hold"}
+    assert set(classes.STATE_DECISION) == set(GUEST_STATE) - {"routing_active_gateway", "routing_manual_hold",
+                                                               "email_check"}
 
 
 def test_a_schema_older_than_the_epoch_gets_no_triggers():

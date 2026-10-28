@@ -148,10 +148,11 @@ async def test_an_extension_made_on_the_reserve_is_not_undone_by_the_primary_awa
 
 # ── прежний путь возврата: эпоха до слияния ─────────────────────────────────
 
-def test_the_epoch_comes_back_with_the_return_replica_before_the_merge(world):
-    """Реплика возврата пришла — бот на резерве остановлен: право записи у основы
-    уже на слиянии (слияние пишет живую базу сырым соединением и проходит), а
-    правки резерва в базе."""
+def test_the_epoch_comes_back_with_the_return_replica_right_after_the_merge(world):
+    """Реплика возврата пришла — бот на резерве остановлен. Пока слияние пишет живую
+    базу сырым соединением (запрет его не касается), основа ещё следует: задания
+    решений по устаревшей базе в это окно не идут; сразу после слияния право
+    записи — у основы, правки резерва — в базе."""
     svc = world.svc
     assert svc.reserve_following() is True
     seen = []
@@ -167,7 +168,7 @@ def test_the_epoch_comes_back_with_the_return_replica_before_the_merge(world):
         db.update_client_fields(ivan, period_end=_iso(60))
     svc.reserve_return_start("button")
     assert svc.reserve_released_in(rm.snapshot_blob(svc, on_the_reserve, gen=7)) == [("restart",)]
-    assert seen == [False], f"слияние шло, пока основа следовала: {seen}"
+    assert seen == [True], f"на слиянии основа уже решала сама: {seen}"
     assert svc.reserve_following() is False
     assert svc.db.get_client(ivan).period_end > _iso(59), "слияние сырым соединением не записало правку резерва"
 

@@ -32,6 +32,7 @@ class JrnMixin:
                 c.execute("INSERT OR IGNORE INTO jrn_meta (id) VALUES (1)")
                 c.execute("UPDATE jrn_meta SET epoch = epoch + 1, holder = ?, role = ?, changed_at = ?, why = ? "
                           "WHERE id = 1", (holder, role, _now_iso(), why))
+                self._tx_note(self._TX_COUNTERS)          # переход эпохи — не данные пользователей: пакет не собирать
         finally:
             conn.execute("PRAGMA synchronous = NORMAL")
         return self.jrn_meta()

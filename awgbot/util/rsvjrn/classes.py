@@ -58,11 +58,12 @@ TABLES: dict[str, str | dict[str, str]] = {
     **{t: HISTORY for t in HISTORY_TABLES},
 }
 
-# ключи server_state — решения (белый список реплики), кроме выбора слота шлюзов:
-# его меняет живость шлюзов самого хоста (routing/liveness), а не человек или
-# правило над данными пользователей — у следующего он остаётся своим
-_ROUTING_KEYS = ("routing_active_gateway", "routing_manual_hold")
-STATE_DECISION: tuple[str, ...] = tuple(k for k in GUEST_STATE if k not in _ROUTING_KEYS)
+# ключи server_state — решения (белый список реплики), кроме выбора слота шлюзов
+# (его меняет живость шлюзов самого хоста, routing/liveness) и итога проверки ящика
+# (email_check пишет запасной канал критичных алертов и предстартовая проверка — на
+# каждом хосте свои): у следующего они остаются своими
+_HOST_KEYS = ("routing_active_gateway", "routing_manual_hold", "email_check")
+STATE_DECISION: tuple[str, ...] = tuple(k for k in GUEST_STATE if k not in _HOST_KEYS)
 
 
 def class_of(table: str, column: str) -> str | None:

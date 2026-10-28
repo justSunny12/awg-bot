@@ -98,6 +98,7 @@ def test_a_reserve_only_taking_does_not_pass_the_epoch(mv):
 
 
 async def test_a_foreign_webhook_seen_by_the_polling_passes_the_epoch(mv):
+    rm.st_in(mv.svc, **{"in": "serving"})                 # резерв несёт моих пользователей — вебхук его гостя
     ctl = pollctl.PollControl(None, _Bot("https://backup.example.net:8443/hook"), mv.svc)
     assert await ctl._allowed() is False
     assert mv.svc.reserve_poll() == "away" and _following(mv.svc)
@@ -105,6 +106,7 @@ async def test_a_foreign_webhook_seen_by_the_polling_passes_the_epoch(mv):
 
 
 async def test_a_409_on_get_updates_passes_the_epoch(mv):
+    rm.st_in(mv.svc, **{"in": "serving"})
     ctl = pollctl.PollControl(None, _Bot(), mv.svc)
     ctl.conflict("Conflict: can't use getUpdates method while webhook is active")
     for _ in range(20):
@@ -112,6 +114,14 @@ async def test_a_409_on_get_updates_passes_the_epoch(mv):
         if _following(mv.svc):
             break
     assert mv.svc.reserve_poll() == "away" and _following(mv.svc), "409 «webhook is active» не отдал эпоху"
+
+
+async def test_a_webhook_left_at_a_reserve_without_my_guest_does_not_pass_the_epoch(mv):
+    """Вебхук у резерва, а сам резерв на связи и говорит «у меня никого» (idle):
+    остаток после возврата или срыва переезда — не держатель; основа решает сама."""
+    ctl = pollctl.PollControl(None, _Bot("https://backup.example.net:8443/hook"), mv.svc)
+    assert await ctl._allowed() is False
+    assert mv.svc.reserve_poll() == "away" and not _following(mv.svc)
 
 
 async def test_no_webhook_does_not_pass_the_epoch(mv):
@@ -226,6 +236,7 @@ def test_the_tick_keeps_following_while_the_clients_are_away(away, poll):
 
 def test_the_tick_keeps_following_while_home_but_telegram_is_at_the_reserve(mv):
     svc = mv.svc
+    rm.st_in(svc, **{"in": "serving", "at": ""})          # слово резерва есть, но тик ещё не перевёл в away
     svc.reserve_set_poll("away", why="webhook")
     assert svc.reserve_out() == "home" and _following(svc)
     svc.reserve_out_tick()

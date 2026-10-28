@@ -219,11 +219,16 @@ def test_the_move_takes_precedence_over_the_unreachable_reserve(mv):
 # ── блокировки резерву ──────────────────────────────────────────────────────
 
 def test_blocked_addresses_go_to_the_reserve_only_while_away_and_only_on_change(mv, make_active_client):
+    """Блокировки основы — зоне резерва, только когда пользователи у резерва, а решает
+    основа (бот на резерве остановлен: отказ слияния — VPN у резерва, решения здесь)."""
     svc = mv.svc
     client = make_active_client(name="Профиль", tg_id=7001)
     dev = svc.add_device(client.id, "Телефон")
     assert svc.reserve_blocks_to_send() is None, "дома блокировки резерву не нужны"
     svc.reserve_set_out("away")
+    assert svc.reserve_following() and svc.reserve_blocks_to_send() is None, \
+        "гость решает сам — устаревшие блокировки основы ему не нужны"
+    svc.reserve_set_out("away", guest_stopped=True)
     assert svc.reserve_blocks_to_send() == [], "первый раз — текущий (пустой) набор, чтобы резерв узнал состояние"
     assert svc.reserve_blocks_to_send() is None, "набор не изменился — повторять незачем"
     svc.db.update_device_fields(dev.device_id, block_reason=1)
@@ -232,9 +237,9 @@ def test_blocked_addresses_go_to_the_reserve_only_while_away_and_only_on_change(
     assert svc.reserve_blocks_to_send() is None
     svc.db.update_device_fields(dev.device_id, block_reason=0)
     assert svc.reserve_blocks_to_send() == [], "блокировку сняли — резерв должен узнать"
-    svc.reserve_set_out("home")
+    svc.reserve_set_out("home", guest_stopped=False)
     assert svc.reserve_blocks_to_send() is None
-    svc.reserve_set_out("away")
+    svc.reserve_set_out("away", guest_stopped=True)
     assert svc.reserve_blocks_to_send() == [], "после возврата и нового ухода набор шлётся заново"
 
 
