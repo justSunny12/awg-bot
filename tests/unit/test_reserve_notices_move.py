@@ -51,9 +51,11 @@ def _all_texts() -> list[tuple[str, str]]:
     ]
 
 
-@pytest.mark.parametrize("name,text", _all_texts(), ids=[n for n, _ in _all_texts()])
-def test_no_notice_ends_with_a_period(name, text):
-    assert text.strip() and not text.rstrip().endswith("."), f"{name}: точка в конце уведомления"
+def test_no_notice_ends_with_a_period():
+    """Все варианты текстов одним проходом; в сообщении — каждый провал."""
+    bad = [f"{name}: {'пустой текст' if not text.strip() else 'точка в конце уведомления'}"
+           for name, text in _all_texts() if not text.strip() or text.rstrip().endswith(".")]
+    assert not bad, "\n".join(bad)
 
 
 def test_server_names_and_reasons_are_html_escaped():

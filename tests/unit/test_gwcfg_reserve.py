@@ -131,11 +131,15 @@ TEXTS = {
 }
 
 
-@pytest.mark.parametrize("name", list(TEXTS))
-def test_notices_of_the_voting_stage_have_no_final_period_and_no_holes(name):
-    text = TEXTS[name]
-    assert text and not text.rstrip().endswith("."), f"{name}: точка в конце уведомления"
-    assert "{" not in text and "None" not in text, f"{name}: недоподставленная строка"
+def test_notices_of_the_voting_stage_have_no_final_period_and_no_holes():
+    """Все тексты этапа голосования одним проходом; в сообщении — каждый провал."""
+    bad = []
+    for name, text in TEXTS.items():
+        if not text or text.rstrip().endswith("."):
+            bad.append(f"{name}: пустой текст или точка в конце уведомления")
+        if "{" in text or "None" in text:
+            bad.append(f"{name}: недоподставленная строка")
+    assert not bad, "\n".join(bad)
 
 
 # ── порт гостевого канала (chan) ────────────────────────────────────────────

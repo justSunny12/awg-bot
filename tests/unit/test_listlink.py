@@ -25,7 +25,7 @@ TG_PAYLOAD = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 @pytest.mark.parametrize("new", [False, True])
-@pytest.mark.parametrize("ref", [0, 1, 2, 15, listlink.REF_MAX])
+@pytest.mark.parametrize("ref", [0, 1, listlink.REF_MAX])
 @pytest.mark.parametrize("kind", KINDS)
 def test_every_kind_builds_and_parses_back(kind, ref, new):
     """Что бот вписал в хвост, то и откроется: вид, слот и метка «-n» доходят

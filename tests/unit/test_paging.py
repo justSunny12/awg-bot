@@ -50,13 +50,21 @@ def _walk(n: int, static: int):
         assert page < 1000, "листание не кончается"
 
 
+# классы длины списка при static постоянных рядах: пустой; ровно влезает
+# целиком (MAX − static); на один больше — листание; ровно две полные страницы
+# (по MAX − static − 1, ряд под стрелки) и на один больше — третья страница
+SIZES = {"empty": lambda st: 0, "fits": lambda st: MAX - st, "one_over": lambda st: MAX - st + 1,
+         "two_pages": lambda st: 2 * (MAX - st - 1), "two_pages_and_one": lambda st: 2 * (MAX - st - 1) + 1}
+
+
 @pytest.mark.parametrize("static", range(0, 8))
-@pytest.mark.parametrize("n", [0, 1, 2, 5, 7, 8, 9, 10, 11, 12, 17, 25, 40])
-def test_every_page_fits_ten_rows_and_the_pages_cover_the_whole_list(static, n):
+@pytest.mark.parametrize("size", sorted(SIZES))
+def test_every_page_fits_ten_rows_and_the_pages_cover_the_whole_list(static, size):
     """Сумма рядов «постоянные + элементы (по одному в ряду) + ряд листания»
     ни на одной странице не больше десяти, и листанием доступен каждый
     элемент ровно один раз, с номером по полному списку — по нему удаляют и
     переключают."""
+    n = SIZES[size](static)
     items, pages = _walk(n, static)
     seen = []
     for chunk, page, prev, nxt in pages:
@@ -203,10 +211,13 @@ def _buttons(markup):
 
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))
-@pytest.mark.parametrize("n", [0, 1, 6, 9, 10, 11, 23])
+@pytest.mark.parametrize("n", [0, 9, 10, 23])
 def test_each_paged_screen_keeps_ten_rows_and_reaches_every_item(screen, n):
     """Реальные клавиатуры, а не арифметика: сколько рядов легло на экран и
-    доходит ли листание (по страницам из самих стрелок) до каждого элемента."""
+    доходит ли листание (по страницам из самих стрелок) до каждого элемента.
+    Целиком на экран ложится 7–9 элементов (по постоянным рядам экрана): 9 —
+    ровно влезает или первое листание, 10 — листание у всех, 23 — три страницы
+    и больше, 0 — пустой список."""
     build = SCREENS[screen]
     page, found, turns = 0, [], 0
     while True:
