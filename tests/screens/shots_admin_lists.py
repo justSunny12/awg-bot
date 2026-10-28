@@ -80,6 +80,15 @@ _MISSING = {"ok": False, "missing": [f"10.24{1 + i // 4}.{i}.0/24" for i in rang
 _PEERS = _gw(2, _ch_base, _transit5, _ch(peer_nets=_MISSING), lan=True, lan2=True)
 
 
+def _space_off(services, mp):
+    """Служебное пространство задевает подсети пользователей: адреса в туннеле
+    выключены целиком (lan_space_problem), хотя транзит у обоих слотов включён."""
+    mp.setattr(config, "ROUTING_LAN_SPACE", "10.0.0.0/12")
+
+
+_SPACE_OFF = _gw(2, _space_off, lan=True, lan2=True)
+
+
 # ── расхождение конфигурации слота 1: шлюз отверг текущий документ ─────────
 
 _EXTRA = [f"10.8.1.{a}" for a in range(100, 140)]
@@ -159,6 +168,8 @@ LISTS = [
          title="соседей нет — пустое состояние словами: транзит меньше чем у двух"),
     Shot("adm.list.gwpeers.transit_off", role="admin", start="list-gwpeers-1", data=_slots(1, subnets=True),
          title="у самого слота VPN-транзит выключен — пустое состояние называет это"),
+    Shot("adm.list.gwpeers.space_off", role="admin", start="list-gwpeers-1", data=_SPACE_OFF,
+         title="адреса в туннеле выключены (пространство задевает подсети) — связь выключена вместе с ними"),
     # ── связь подсетей всех слотов ──────────────────────────────────────────
     Shot("adm.list.peernets.rt", role="admin", press=[SetCB(sec="rt")], data=_FIFTEEN,
          title="«🛰 Шлюзы» на 15 слотов по 64 адреса — у каждого «и ещё 61» ссылкой"),

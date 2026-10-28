@@ -532,3 +532,197 @@ def test_the_package_guard_refuses_a_replica_with_a_snapshot(db, clock, tmp_path
     con.close()
     with pytest.raises(bot.BotPartError):
         bot.assert_clean(p.read_bytes())
+
+
+# ── обрезка по объёму и хвост вызывающего ────────────────────────────────────
+
+def _cut_log(caplog, key: str) -> tuple[list[str], list[str]]:
+    """(строки журнала порций снимка key, все отрезанные строки из них по порядку)."""
+    import ast
+    portions = [r.getMessage() for r in caplog.records
+                if r.getMessage().startswith(f"lists: снимок {key} — не вошли")]
+    rows: list[str] = []
+    for ln in portions:
+        rows += ast.literal_eval(ln.split("): ", 1)[1])
+    return portions, rows
+
+
+def test_a_cut_by_the_byte_limit_puts_every_cut_row_into_the_log_in_portions(db, clock, caplog):
+    """Снимок упёрся не в 2000 строк, а в 256 КБ: «полный список в журнале
+    бота» и тогда правда — каждая отрезанная строка в журнале ровно один раз,
+    по порядку, порциями по LOG_TAIL_ROWS (строка — первые LOG_ROW_CHARS знаков)."""
+    src = [f"<code>{i:04d}</code> " + "ж" * 900 for i in range(400)]       # ≈ 720 КБ в UTF-8
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "⚠️ Не добавлено", src)
+    rows = db.list_snap_get(key, CHAT)["rows"]
+    m = re.fullmatch(r"… и ещё (\d+) — полный список в журнале бота", rows[-1])
+    assert m, rows[-1][:80]
+    kept, cut = len(rows) - 1, int(m.group(1))
+    assert kept + cut == 400 and cut > listsnap.LOG_TAIL_ROWS, (kept, cut)
+    portions, logged = _cut_log(caplog, key)
+    assert logged == [r[:listsnap.LOG_ROW_CHARS] for r in src[kept:]], \
+        f"в журнале {len(logged)} отрезанных строк из {cut}, или не те, или не по порядку"
+    assert len(portions) == -(-cut // listsnap.LOG_TAIL_ROWS), f"порций {len(portions)} на {cut} строк"
+    head = [r.getMessage() for r in caplog.records if f"(снимок {key}, чат {CHAT})" in r.getMessage()]
+    assert head == [f"lists: «⚠️ Не добавлено» (снимок {key}, чат {CHAT}) — 400 строк, в снимок вошли {kept}, "
+                    "остальные — ниже"], head
+
+
+def test_a_whole_snapshot_leaves_no_cut_lines_in_the_log(db, clock, caplog):
+    """Влезло целиком — журнал о снимке молчит: строка «остальные — ниже» без
+    порций сбила бы того, кто ищет хвост."""
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", _rows(300))
+    assert not [r for r in caplog.records if key in r.getMessage()], [r.getMessage() for r in caplog.records]
+
+
+def test_the_callers_tail_note_ends_a_cut_made_by_the_storage_and_the_cut_still_goes_to_the_log(db, clock, caplog):
+    """tail_note (текст вызывающего о том, где остальное) — и тогда, когда режет
+    само хранилище: строка хвоста кончается им, число в ней — все не вошедшие,
+    а отрезанное здесь всё равно уходит в журнал этого бота."""
+    src = _rows(2100)
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", src, n=2100, tail_note="остальные — в журнале бота на «Beta»")
+    rows = db.list_snap_get(key, CHAT)["rows"]
+    assert len(rows) == listsnap.MAX_ROWS and rows[:-1] == src[:1999], len(rows)
+    assert rows[-1] == "… и ещё 101 — остальные — в журнале бота на «Beta»", rows[-1]
+    _portions, logged = _cut_log(caplog, key)
+    assert logged == src[1999:], f"отрезанное хранилищем не в журнале: {len(logged)} строк из 101"
+
+
+def test_a_source_short_of_rows_and_cut_by_the_storage_counts_both_but_logs_only_what_it_had(db, clock, caplog):
+    """Источник отдал 2100 из 2200, хранилище оставило 1999: в хвосте — все 201
+    не вошедшие, без обещания журнала (сотни, которых не дали, в нём нет), а в
+    журнал ушли ровно 101 отрезанная строка."""
+    src = _rows(2100)
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", src, n=2200, missing=100)
+    rows = db.list_snap_get(key, CHAT)["rows"]
+    assert rows[-1] == "… и ещё 201 — в снимок не вошли", rows[-1]
+    _portions, logged = _cut_log(caplog, key)
+    assert logged == src[1999:], len(logged)
+
+
+def test_one_row_over_the_byte_limit_among_short_ones_still_is_not_written(db, clock, caplog):
+    """Строка больше 256 КБ первой — снимок из короткого остатка не собрать (в
+    снимок входят только первые строки): сбой записи, базе ничего, журналу —
+    причина, а не порции отрезанного."""
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", ["ж" * (300 * 1024)] + _rows(5))
+    assert key == "" and not _snap_keys(db), (key, _snap_keys(db))
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("снимок «t» не записан: одна строка не влезает в 256 КБ" in m for m in msgs), msgs
+    assert not any("не вошли (строки" in m for m in msgs), "порции журнала у снимка, которого нет"
+
+
+# ── производители без имени бота ─────────────────────────────────────────────
+
+class _Msg:
+    def __init__(self, chat: int):
+        self.chat = type("Chat", (), {"id": chat})()
+
+
+async def test_without_a_bot_username_neither_producer_writes_a_snapshot(db, clock):
+    """Имени бота нет (getMe не ответил на старте) — ссылки в хвосте не будет
+    всё равно: ни snap_param, ни snap_codes в базу не пишут и параметра не
+    дают, хвост остаётся текстом."""
+    from awgbot.bot.lists.snapshot import snap_codes, snap_param
+    svc = _Svc(db)
+    svc.bot_username = ""
+    assert await snap_param(svc, CHAT, "admin", "t", _rows(40)) == ""
+    assert await snap_codes(_Msg(CHAT), svc, "➕ Добавлено", [f"10.0.0.{i}" for i in range(30)], "", 12) is None
+    assert not _snap_keys(db), f"без имени бота записаны снимки: {_snap_keys(db)}"
+
+
+async def test_snap_codes_writes_only_past_the_shown_and_escapes_every_item(db, clock):
+    """Адресов не больше показанных — снимка нет (всё видно в итоге); больше —
+    снимок всех строками <code> с экранированием и «⬅️ Назад» на экран ввода."""
+    from awgbot.bot.lists.snapshot import snap_codes
+    svc = _Svc(db)
+    svc.bot_username = "test_bot"
+    items = [f"h{i}.example" for i in range(12)]
+    assert await snap_codes(_Msg(CHAT), svc, "➕ Добавлено", items, "s:fw", 12) is None and not _snap_keys(db)
+    items.append("a<b>&c")
+    got = await snap_codes(_Msg(CHAT), svc, "➕ Добавлено", items, "s:fw", 12)
+    assert got is not None and got[0] == "test_bot", got
+    snap = db.list_snap_get(got[1].removeprefix("list-snap-"), CHAT)
+    assert snap["rows"][-1] == "<code>a&lt;b&gt;&amp;c</code>" and len(snap["rows"]) == 13, snap["rows"][-3:]
+    assert snap["back"] == "s:fw", snap["back"]
+
+
+# ── отчёт рассылки: снимок недоставленных ───────────────────────────────────
+
+def _cl(i: int):
+    return type("Cl", (), {"id": i, "tg_id": 1000 + i, "name": f"Профиль {i}"})()
+
+
+async def test_the_broadcast_report_writes_no_undelivered_snapshot_when_only_guests_failed(db, clock):
+    """Не дошло троим гостям: в отчёте — число, снимка недоставленных нет (в нём
+    была бы одна строка «3 адресата без профиля», а ссылка — на неё)."""
+    from awgbot.bot.handlers.admin.broadcast import send
+    svc = _Svc(db)
+    svc.bot_username = "test_bot"
+    aud, und = await send._report_snaps(svc, CHAT, [_cl(1), _cl(2)], [9001, 9002, 9003], "test_bot")
+    assert (aud, und) == ("", ""), (aud, und)
+    assert not _snap_keys(db), "у одних гостей записан снимок недоставленных"
+
+
+async def test_three_named_and_guests_undelivered_get_one_snapshot_with_everyone(db, clock):
+    """Трое с профилем и двое гостей: хвост «и ещё 2» — ссылкой с «-n» на снимок
+    всех пятерых (три профиля и строка гостей), в шапке — 5."""
+    from awgbot.bot.handlers.admin.broadcast import send
+    svc = _Svc(db)
+    svc.bot_username = "test_bot"
+    clients = [_cl(1), _cl(2), _cl(3)]
+    aud, und = await send._report_snaps(svc, CHAT, clients, [1001, 1002, 1003, 9001, 9002], "test_bot")
+    m = re.fullmatch(r' <a href="https://t\.me/test_bot\?start=list-snap-([a-z0-9]{10})">и ещё 2</a>', und)
+    assert aud == "" and m, (aud, und)
+    snap = db.list_snap_get(m.group(1), CHAT)
+    assert snap["n"] == 5 and snap["new"] is True, snap
+    assert len(snap["rows"]) == 4 and snap["rows"][-1] == "2 адресата без профиля — те, с кем делятся устройствами", \
+        snap["rows"]
+
+
+# ── «Свои сайты»: снимок — по тем же группам причин, что итог ───────────────
+
+async def _sites_report(services, make_active_client, fake_bot, monkeypatch, rejected):
+    from types import SimpleNamespace
+    from awgbot.bot.handlers import routing as routing_h
+    from tests.conftest import FakeMessage, FakeState
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    services.bot_username = "test_bot"
+    c = make_active_client(tg_id=7102, name="Петя")
+    services.set_routing_allowed(c.id, True)
+    services.set_routing_all(c.id, True)
+    c = services.db.get_client(c.id)
+    monkeypatch.setattr(services, "routing_add_domains",
+                        lambda cid, text: SimpleNamespace(added=[], rejected=list(rejected), over_limit=0, limit=100))
+    st = FakeState()
+    await st.update_data(rt_client=c.id)
+    msg = FakeMessage(text="x", chat_id=7102, user_id=7102, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, c, services, st)
+    return [s for s in msg.sent if s[0] == "answer"][-1][1]
+
+
+async def test_twelve_rejections_spread_over_three_reasons_need_no_snapshot(services, make_active_client, fake_bot,
+                                                                           monkeypatch):
+    """12 отказов, по 4 на причину: каждая причина в итоге целиком, хвостов «и
+    ещё N» нет — снимка тоже нет (решение по сумме отказов писало бы его зря)."""
+    rejected = [(f"r{k}{i}", reason) for k, reason in enumerate(("не похоже на адрес", "адрес локальной сети",
+                                                                  "уже в общем списке")) for i in range(4)]
+    report = await _sites_report(services, make_active_client, fake_bot, monkeypatch, rejected)
+    assert "и ещё" not in report and "list-snap-" not in report, report
+    assert not _snap_keys(services.db), "снимок отказов, хотя каждая причина видна целиком"
+
+
+async def test_six_rejections_of_one_reason_among_others_get_the_snapshot_link(services, make_active_client, fake_bot,
+                                                                              monkeypatch):
+    """Шесть отказов одной причины (вторая по счёту в итоге) — у её строки «и ещё 1»
+    ссылкой на снимок всех отказов; у причины, что влезла, хвоста нет."""
+    rejected = [("a..ru", "не похоже на адрес")] + [(f"10.0.0.{i}", "адрес локальной сети") for i in range(6)]
+    report = await _sites_report(services, make_active_client, fake_bot, monkeypatch, rejected)
+    lines = [ln for ln in report.split("\n") if ln.startswith("⚠️ Не добавлено:")]
+    assert len(lines) == 2 and "и ещё" not in lines[0], lines
+    m = re.search(r'start=list-snap-([a-z0-9]{10})">и ещё 1</a> — адрес локальной сети$', lines[1])
+    assert m, lines[1]
+    assert len(services.db.list_snap_get(m.group(1), 7102)["rows"]) == 7

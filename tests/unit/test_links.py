@@ -157,6 +157,21 @@ def test_unicode_digits_and_endless_numbers_are_not_links_and_do_not_raise(paylo
     assert not links.is_screen(payload)
 
 
+@pytest.mark.parametrize("payload, admin, client", [
+    ("cl-999999999", ("cl", 999999999), None), ("cl-1234567890", None, None),
+    ("dev-999999999", ("dev", 999999999), ("dev", 999999999)), ("dev-1000000000", None, None),
+    ("traffic-999999999-t", ("traffic_dev", 999999999), None), ("traffic-1000000000-t", None, None),
+    ("gw-007", ("gw", 7), None), ("dev-0", ("dev", 0), ("dev", 0)),
+])
+def test_an_id_in_a_link_is_up_to_nine_ascii_digits(payload, admin, client):
+    """Предел — девять цифр, у админа и у пользователя одинаковый: id базы в
+    ссылку влезает, десятая цифра — уже не ссылка (у пользователя параметр
+    идёт дальше кодом приглашения). Без предела двадцать цифр уходили в запрос
+    к базе и роняли его переполнением целого SQLite."""
+    assert links.parse_admin(payload) == admin, (payload, links.parse_admin(payload))
+    assert links.parse_client(payload) == client, (payload, links.parse_client(payload))
+
+
 @pytest.mark.parametrize("payload, want", [
     ("cl-5-n", ("cl", 5)), ("traffic-3-t-n", ("traffic_dev", 3)), ("gw-2-n", ("gw", 2)), ("online-n", ("online", 0)),
 ])

@@ -271,6 +271,43 @@ def test_gateways_with_many_slots_and_a_long_body_stay_within_ten_rows():
         assert kbm.PREV_LABEL in labels or kbm.NEXT_LABEL in labels, labels
 
 
+def test_gateway_slot_buttons_on_the_pages_forced_by_joins_are_the_buttons_without_paging():
+    """Восемь слотов влезают в «🛰 Шлюзы» без листания; два сопряжения в теле
+    («⬅️ Не подключать …») отнимают у слотов два ряда — слоты уходят на две
+    страницы. Кнопки слотов на страницах подряд — те же кнопки и в том же
+    порядке, что без листания (ни один слот не пропал и не повторился, подписи
+    не обрезались иначе); сопряжения — на каждой странице, вторая тоже; ряд
+    листания — под слотами; не больше десяти рядов."""
+    from awgbot.bot.keyboards import routing as kbr
+    states = [{"gateway": SimpleNamespace(id=i, label=f"дача {i}", lan_mode=0),
+               "device": SimpleNamespace(name=f"Шлюз с длинным именем {i}"),
+               "active": i == 1, "preferred": i == 1, "unavailable": False} for i in range(1, 9)]
+    joins = [{"slot": 20 + k, "name": f"Новый {k}", "id": f"id{k}"} for k in range(2)]
+
+    def slot_buttons(rows):
+        return [(b.text, b.callback_data) for r in rows for b in r if b.callback_data.startswith("gws:card:")]
+
+    plain = kbr.gateways_kb(states, smb_on=True).inline_keyboard
+    labels = [b.text for r in plain for b in r]
+    assert kbm.PREV_LABEL not in labels and kbm.NEXT_LABEL not in labels, f"восемь слотов без сопряжений листаются: {labels}"
+    want = slot_buttons(plain)
+    assert len(want) == 8, want
+    seen = []
+    for page in (0, 1):
+        rows = kbr.gateways_kb(states, smb_on=True, joins=joins, page=page).inline_keyboard
+        texts = [[b.text for b in r] for r in rows]
+        assert len(rows) <= kbm.MAX_ROWS, (page, texts)
+        got = slot_buttons(rows)
+        seen += got
+        nav = len({i for i, r in enumerate(rows) for b in r if b.callback_data.startswith("gws:card:")})
+        assert [b.text for b in rows[nav]] == ([kbm.NEXT_LABEL] if page == 0 else [kbm.PREV_LABEL]), \
+            f"стр. {page + 1}: ряд листания не сразу под слотами: {texts}"
+        cancels = [b.text for r in rows for b in r if b.text.startswith("⬅️ Не подключать")]
+        assert cancels == ["⬅️ Не подключать «Новый 0»", "⬅️ Не подключать «Новый 1»"], \
+            f"стр. {page + 1}: сопряжений не видно: {texts}"
+    assert seen == want, f"кнопки слотов при листании — не те, что без него:\n{seen}\n{want}"
+
+
 def test_edit_submenu_rows():
     rows = [[b.text for b in r] for r in kba.client_edit_kb(1).inline_keyboard]
     assert rows == [["✏️ Имя", "✏️ Период"], ["✏️ Устройства", "✏️ Трафик"],

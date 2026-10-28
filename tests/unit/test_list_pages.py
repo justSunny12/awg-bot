@@ -361,3 +361,65 @@ def test_expiring_page_fits_ten_rows_and_buttons_are_its_own_rows(n):
         reached += ids
     assert reached == [100 + i for i in range(n)], "листанием «⏱» видны не все профили или с повторами"
 
+
+
+async def test_a_user_opening_snapshot_links_with_numbers_does_not_grow_the_page_memory(monkeypatch):
+    """У пользователя «list-snap-<число>» — ввод человека, разбирается как вид
+    snap со слотом: сотня таких /start (перебор, пересланные ссылки) не
+    заводит в памяти процесса ни одной записи страниц — а ответ у каждой
+    «📋 Этого списка больше нет»."""
+    from types import SimpleNamespace
+    from awgbot.bot import paging
+    from awgbot.bot.handlers import common
+    from awgbot.util import listlink
+
+    shown = []
+
+    async def _delete():
+        pass
+
+    async def _show(message, services, text, markup, new=False):
+        shown.append(text)
+
+    monkeypatch.setattr(common, "show_parts", _show)
+    monkeypatch.setattr(paging, "_pages", {})
+    message = SimpleNamespace(chat=SimpleNamespace(id=7101), delete=_delete)
+    for n in range(1, 101):
+        link = listlink.parse(f"list-snap-{n}")
+        assert link is not None and link.ref == n, link
+        assert await lists.open_link(message, None, "client", None, link), f"list-snap-{n}: вид snap у пользователя не открылся"
+    assert paging._pages == {}, f"память страниц выросла на ссылках пользователя: {len(paging._pages)} записей"
+    assert shown and set(shown) == {"📋 Этого списка больше нет"}, set(shown)
+
+
+@pytest.fixture()
+def agent(monkeypatch):
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROLE", "gateway")
+    lists._load()
+
+
+async def test_the_peers_anchor_of_sshfrom_opens_their_page_even_without_lan_subnets(agent):
+    """«🛡 Из подсетей других шлюзов: … и ещё N» ведёт на «list-sshfrom-2»: когда
+    подсетей локальной сети нет, их группа пустая, но номер группы в ссылке
+    тот же — открывается первая страница с подписью подсетей шлюзов, а не
+    страница, запомненная с прошлого раза."""
+    from types import SimpleNamespace
+    from awgbot.bot import paging
+    services = SimpleNamespace(ssh_screen=lambda: {"lan": [], "peer_nets": [f"10.24{k}.{i}.0/24"
+                                                                           for k in range(1, 3) for i in range(60)]})
+    paging.remember(77, lists.screen_name("sshfrom"), 2, 3)
+    text, _ = await lists.render(services, "sshfrom", role="admin", ref=2, anchor=2, chat_id=77, page=3)
+    assert "стр. 1 из" in text.splitlines()[0], f"якорь пустой первой группы промахнулся: {text.splitlines()[0]}"
+    assert "<b>Из подсетей других шлюзов:</b>" in text, text[:300]
+    assert paging.page_of(77, lists.screen_name("sshfrom"), 2) == 0, "страница якоря не запомнена"
+
+
+async def test_the_held_anchor_of_sshunres_without_held_addresses_keeps_the_page(agent):
+    """Прошлых адресов уже нет (имена снова резолвятся), а ссылка «list-sshunres-2»
+    в старом итоге осталась: группы нет — страница как без якоря, без падения."""
+    from types import SimpleNamespace
+    services = SimpleNamespace(ssh_screen=lambda: {"unresolved": [f"h{i:02d}.example" for i in range(80)], "held": []})
+    text, _ = await lists.render(services, "sshunres", role="admin", ref=2, anchor=2, chat_id=78, page=1)
+    assert "стр. 2 из" in text.splitlines()[0], text.splitlines()[0]
+    assert "Держу прошлые адреса" not in text, text[:300]

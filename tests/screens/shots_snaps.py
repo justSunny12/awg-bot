@@ -137,6 +137,19 @@ def _with_snap(builder, chat: int, *, at: _dt.datetime | None = None, rows: int 
     return build
 
 
+def _evicted(builder, chat: int):
+    """Построитель роли и 21 снимок в чате chat за одну минуту: первый
+    (snapkey001) вытеснен двадцать первым — не протух."""
+    def build(services, mp):
+        who = _call(builder, services, mp)
+        for n in range(21):
+            services.db.list_snap_keep(chat, "admin", f"⚠️ Не добавлено №{n + 1}",
+                                       [f"<code>bad{n:02d}..ru</code> — не похоже на адрес"],
+                                       RoutingCB(action="sites", ref=KS).pack())
+        return who
+    return build
+
+
 _MAIN = ("start", "")
 _SITES = ("press", RoutingCB(action="sites", ref=KS))
 _ADD = ("press", RoutingCB(action="add", ref=KS))
@@ -215,6 +228,8 @@ ADMIN = [
          data=_with_snap(_people, config.ADMIN_ID, at=NOW - _dt.timedelta(days=31),
                          back=RoutingCB(action="sites", ref=KS).pack()),
          title="снимок старше 30 дней — «больше не хранится», «⬅️ В меню»"),
+    Shot("adm.snap.evicted", role="admin", steps=[_MAIN, snap()], data=_evicted(_people, config.ADMIN_ID),
+         title="21-й снимок чата вытеснил первый — «бот держит 20 последних списков чата», «⬅️ В меню»"),
     Shot("adm.snap.gone", role="admin", steps=[_MAIN, snap("zzzzzzzzzz")], data=_people,
          title="снимка нет — «Этого списка больше нет»"),
     Shot("adm.snap.foreign", role="admin", steps=[_MAIN, snap()], data=_with_snap(_people, 42),
