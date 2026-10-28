@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS reserve_peer (
     peer_admin_id INTEGER NOT NULL DEFAULT 0,            -- ADMIN_ID другой стороны: его роль в моём боте
     created_at    TEXT    NOT NULL
 );
--- месячный итог трафика через резерв: out — мои клиенты у резерва, in — его у меня
+-- месячный итог трафика через резерв: out — мои пользователи у резерва, in — его у меня
 CREATE TABLE IF NOT EXISTS reserve_traffic_monthly (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     month         TEXT    NOT NULL,                      -- 'YYYY-MM' по поясу бота

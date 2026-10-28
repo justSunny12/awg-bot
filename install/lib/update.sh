@@ -22,7 +22,7 @@ locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь
     done
     return 0
 }
-reserve_busy_guard() {  # reserve_busy_guard ДЕЙСТВИЕ — отказ, пока клиенты у резерва или клиенты резерва здесь
+reserve_busy_guard() {  # reserve_busy_guard ДЕЙСТВИЕ — отказ, пока свои пользователи у резерва или здесь пользователи резерва
     declare -F bot_tool >/dev/null 2>&1 || return 0
     local why rc=0
     why="$(bot_tool tools.rsvbusy 2>/dev/null)" || rc=$?      # прочий код (нет инструмента, упал) — не помеха

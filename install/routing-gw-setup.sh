@@ -655,7 +655,7 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 #                    делает fill, которым агент зовёт скрипт фоном после sync
 #   fill <файл>    — домены по одному на строку: их адреса (dig) — в lan_vpn4,
 #                    затем слепок набора; без блокировки списков (набор пополняет
-#                    и сам dnsmasq первым запросом пользователя, это лишь ускорение)
+#                    и сам dnsmasq первым запросом устройства локальной сети, это лишь ускорение)
 # Домен накрывает поддомены. Схема и www. отбрасываются. Хост сервера AWG
 # (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя.
 # Одна блокировка со скриптом фидов (lists.lock): два писателя одних файлов и
@@ -2248,7 +2248,7 @@ add rule $LAN_TABLE prerouting ip daddr @lan_vpn4 meta mark set $TG_MARK
 add rule $LAN_TABLE input iifname "$LAN_IF" udp dport 53 counter
 # DoT мимо резолвера — как на ВПС для пользователей
 add rule $LAN_TABLE forward iifname "$LAN_IF" tcp dport 853 drop
-# ответ на прямой трафик должен вернуться на шлюз, а не на пользователя мимо него
+# ответ на прямой трафик должен вернуться на шлюз, а не на устройство локальной сети мимо него
 add rule $LAN_TABLE postrouting ip saddr $_net oifname "$LAN_IF" masquerade
 LANEOF
     } > "$LAN_FILE.tmp"

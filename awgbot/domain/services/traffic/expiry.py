@@ -107,7 +107,7 @@ class ExpiryMixin:
                   if mins_left < tightest_min:
                       tightest_label = _left_label(mins_left)
                   if client.tg_id:
-                      # кнопка отсрочки: только КЛИЕНТУ (не другу — друзья идут иным
+                      # кнопка отсрочки: только ПОЛЬЗОВАТЕЛЮ (не другу — друзья идут иным
                       # путём), только на ГОДОВОМ периоде и один раз за период.
                       grace_offer = (client.period_kind == PeriodKind.YEAR
                                      and not client.grace_used)
