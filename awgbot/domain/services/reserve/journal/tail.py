@@ -352,7 +352,7 @@ class ReserveTailMixin:
             from awgbot.util.textfmt.tail import more_line
             rows = [self._tail_line(d, variant) for d in disputed]
             key = self.db.list_snap_keep(int(config.ADMIN_ID), "admin", rn.tail_snap_title(variant, name), rows,
-                                         new=True, n=total)
+                                         new=True, n=total, missing=total - len(rows))
             if key:
                 more = more_line(total - len(lines), str(getattr(self, "bot_username", "") or ""),
                                  listlink.build("snap", key=key))

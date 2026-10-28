@@ -289,7 +289,8 @@ async def gateway_lan_received(message: Message, state: FSMContext, services):
         # отказы после ввода больше нигде не видны — все снимком; «⬅️ Назад» — на карточку слота
         from awgbot.bot.callbacks import GwSlotCB
         from awgbot.util import listlink
-        name = str(getattr(st.get("gateway"), "name", "") or "")
+        dev = st.get("device")
+        name = dev.name if dev is not None else f"шлюз {st['gateway'].id}"   # как slot_ref, без экранирования
         key = await call(services.db.list_snap_keep, message.chat.id, "admin", td.lan_rejected_title(name),
                          td.lan_rejected_rows(rejected), GwSlotCB(action="card", slot=slot).pack(), False)
         snap = listlink.build("snap", key=key) if key else ""

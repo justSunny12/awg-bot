@@ -12,9 +12,11 @@
 после восстановления базы); открыть снимок можно только из чата, где он
 создан. Срок — 30 дней, в чате — не больше 20 снимков (вытесняется самый
 ранний по порядковому номеру `seq`), в снимке — не больше 2000 строк и
-256 КБ; сверх — последняя строка «… и ещё N — полный список в журнале бота»,
-а в журнал — заголовок, числа и отрезанный хвост (с пределом длины). N в
-шапке — настоящее число элементов от производителя (`n`), а не строк.
+256 КБ; сверх (или когда источник сам отдал не все — `missing`) — последняя
+строка «… и ещё N — полный список в журнале бота», а в журнал — заголовок,
+числа и отрезанный хвост (с пределом длины). N в шапке — настоящее число
+элементов от производителя (`n`), а не строк: строк может быть меньше
+(свёрнутые в одну), и это не обрезка.
 
 Протухший или вытесненный снимок оставляет отметку `{"chat", "at", "gone": 1}`
 (десятки байт, держится TOMB_TTL_S): ссылка на него отвечает «список больше не
@@ -108,27 +110,29 @@ class ListSnapMixin:
                 self._tx_note(self._TX_COUNTERS)
 
     def list_snap_keep(self, chat: int, role: str, title: str, rows: list[str], back: str = "",
-                       new: bool = False, n: int | None = None) -> str:
+                       new: bool = False, n: int | None = None, missing: int = 0) -> str:
         """Положить снимок списка; вернуть его ключ (пусто — не записан: строка журнала,
-        хвост у вызывающего останется текстом). n — сколько элементов на деле (шапка)."""
+        хвост у вызывающего останется текстом). n — сколько элементов на деле (шапка);
+        missing — сколько их источник не передал строками (в журнале — у него)."""
         try:
-            return self._snap_keep(chat, role, title, rows, back, new, n)
+            return self._snap_keep(chat, role, title, rows, back, new, n, max(0, int(missing or 0)))
         except Exception as e:                                # noqa: BLE001 — снимок не должен ронять итог
             log.error("lists: снимок «%s» не записан: %s", title, e)
             return ""
 
-    def _snap_keep(self, chat, role, title, rows, back, new, n) -> str:
+    def _snap_keep(self, chat, role, title, rows, back, new, n, missing) -> str:
         rows = [str(r) for r in rows]
         snaps = self._snaps()
         seq = max((int(d.get("seq") or 0) for _k, d in snaps), default=0) + 1
         body = {"v": 1, "chat": int(chat), "role": str(role), "at": timeutil.now_iso(), "seq": seq,
                 "title": str(title), "n": int(n if n is not None else len(rows)), "rows": rows,
                 "back": str(back or ""), "new": bool(new)}
+        total = len(rows) + missing                          # источник мог отдать не все
         keep = min(len(rows), MAX_ROWS)
-        if keep < len(rows):
+        if keep < total and keep == MAX_ROWS:
             keep -= 1                                         # место под строку «и ещё N»
         while True:
-            tail = [f"… и ещё {len(rows) - keep} — полный список в журнале бота"] if keep < len(rows) else []
+            tail = [f"… и ещё {total - keep} — полный список в журнале бота"] if keep < total else []
             body["rows"] = rows[:keep] + tail
             raw = json.dumps(body, ensure_ascii=False)
             if len(raw.encode()) <= MAX_BYTES or keep <= 1:
