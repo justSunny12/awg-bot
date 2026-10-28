@@ -21,12 +21,19 @@ jrn); когда точка расхождения F известна — отк
 только по ответу на свой хвост (эпоха и F те же; у основы — с открывшимся
 списком).
 
+«Вернуть без резерва» (С9): основа взяла эпоху сама (`reserve_c9_start`) —
+записи бота на резерве эпохи, которую она сменила, приходят при возврате
+(живой гость или его журнал данных с диска резерва) и перебазируются здесь
+при получении (`reserve_c9_tail_in`, подтверждение — `jack`).
+
 Уведомления Т-Ж4 (спорное) и Т-Ж5 (всё перенесено) шлёт всегда бот основы:
-хвост бота на резерве (С9) — сразу после перебазирования; свой хвост после
-аварии — после возврата, отдельным сообщением сразу за Т-РУ5б
-(`reserve_tail_notes`). Пока свой хвост не перенесён — возврат и обновление
-ждут (не дольше TAIL_WAIT_S: дальше хвост снимается строкой журнала); пока
-ждём правки бота на резерве («вернуть без резерва») — обновление отказывает.
+хвост бота на резерве, пришедший `jtail`, — сразу после перебазирования; С9 —
+после возврата (`reserve_c9_notes`); свой хвост после аварии — после
+возврата, отдельным сообщением сразу за Т-РУ5б (`reserve_tail_notes`). Пока
+свой хвост не перенесён — возврат и обновление ждут, но не дольше
+TAIL_WAIT_S: дальше не держит, и после возврата основа переносит его сама
+поверх своей базы (`reserve_tail_self`, вариант Т-Ж5 «self»). Пока ждём правки
+бота на резерве («вернуть без резерва») — обновление отказывает.
 """
 from __future__ import annotations
 
@@ -41,12 +48,25 @@ from ...types import Notification, ServiceError
 from .ship import EV_BYTES, epoch_sane
 
 TAIL_RESEND_S = 60
-TAIL_WAIT_S = 10 * 60             # свой хвост без ответа держателя дольше — возврат не держит, хвост — строкой журнала
+TAIL_WAIT_S = 10 * 60             # свой хвост без ответа держателя дольше — возврат не держит, после него хвост переносит основа
 DISPUTED_MAX = 2000                # в jtail_ok — не больше; сверх — числом `more`, сами — строкой журнала
 TAIL_WAIT_REFUSED = ("Жду правки бота на «{name}», сделанные после потери связи, — обновление после того, как "
                      "они придут")
 OWN_TAIL_REFUSED = "Правки, сделанные здесь перед переездом на «{name}», ещё переносятся туда — {what} после этого"
 
+
+
+def own_tail_blocks_raw(db) -> bool:
+    """Свой хвост не перенесён и ждём не дольше TAIL_WAIT_S — по одной базе (и для
+    сторожа терминала tools/rsvbusy, без сервисов)."""
+    try:
+        if not db.jrn_tail_rows():
+            return False
+        raw = db.get_state("rsv_tail") or ""
+        meta_t = json.loads(raw) if raw.startswith("{") else {}
+        return timeutil.elapsed(timeutil.parse_iso(str(meta_t.get("at") or ""))) <= TAIL_WAIT_S
+    except Exception:                                         # noqa: BLE001 — база старше журнала, нет отметки
+        return False
 
 class ReserveTailMixin:
 
@@ -155,13 +175,7 @@ class ReserveTailMixin:
     def reserve_tail_blocks(self) -> bool:
         """Свой хвост не перенесён и ждём не дольше TAIL_WAIT_S; дольше — не держит: после
         возврата основа перенесёт его сама (`reserve_tail_self`)."""
-        if not self.reserve_tail_pending():
-            return False
-        meta_t = self.rsv_get("rsv_tail")
-        try:
-            return timeutil.elapsed(timeutil.parse_iso(str(meta_t.get("at") or ""))) <= TAIL_WAIT_S
-        except ValueError:
-            return False
+        return own_tail_blocks_raw(self.db)
 
     def reserve_tail_self(self) -> list[Notification]:
         """После возврата (держатель — здесь) свой хвост, который бот на резерве так и не

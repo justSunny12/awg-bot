@@ -166,12 +166,14 @@ class ReserveShipMixin:
             self._jrn_snap_need("событий, которых нет у резерва, здесь уже нет")
             return
         self.db.jrn_acked_set(last)
-        s.update(hold=False, sent=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="")
+        s.update(hold=False, sent=last, top=max(int(s.get("top") or 0), last), sent_at=0.0, snap_why="",
+                 ack_at=timeutil.now_iso())
 
     def reserve_jrn_snap_ok(self, marks: dict) -> None:
         """Резерв принял снимок `pkg3`: всё по номер снимка у него — подтверждено."""
         i, cs, cb = int(marks.get("i") or 0), int(marks.get("cs") or 0), int(marks.get("cb") or 0)
         self.db.jrn_acked_set(i)
+        self._jrn_sess()["ack_at"] = timeutil.now_iso()
         self.db.jrn_snap_set(i)
         self.db.jrn_counts_cover(cs, cb)
         self.__dict__.pop("_jrn_snap_pending", None)
@@ -292,6 +294,17 @@ class ReserveShipMixin:
         acts = self._jrn_events_out(s, int(meta["epoch"]), time.monotonic()) if meta["role"] == "holder" else []
         return acts + self._jrn_counts_out()
 
+    def reserve_jrn_synced_at(self) -> str:
+        """С какого времени данные у резерва такие же, как здесь (строка карточки «данные для
+        переезда у … от …»): всё подтверждено и связь есть — сейчас; иначе — последнее
+        подтверждение этой сессии. Пусто — журнал не идёт (тогда — время снимка)."""
+        if not self.reserve_jrn_on():
+            return ""
+        s = self._jrn_sess()
+        if s.get("ok") and not s.get("hold") and self.reserve_online() and self.reserve_jrn_all_acked():
+            return timeutil.now_iso()
+        return str(s.get("ack_at") or "")
+
     def reserve_jrn_all_acked(self) -> bool:
         """Резерв подтвердил всё моё (события этой эпохи): эпоху можно передавать."""
         meta = self.db.jrn_meta()
@@ -305,6 +318,7 @@ class ReserveShipMixin:
                         self.reserve_peer_name(), i, s.get("top") or 0)
             return
         self.db.jrn_acked_set(i)
+        s["ack_at"] = timeutil.now_iso()
         if int(s.get("sent") or 0) < i:
             s["sent"] = i
 

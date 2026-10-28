@@ -61,7 +61,7 @@ class ReserveScreenMixin:
                 "online": self.reserve_online(), "seen": self.reserve_peer_seen(), "down_since": self.reserve_down_since(),
                 "out": self.reserve_out(), "out_since": out.get("since") or "", "inn": self.reserve_in(),
                 "dir_out": dirs["out"], "dir_in": dirs["in"], "voters": voters,
-                "pkg_sent_at": sent.get("at") or "", "traffic": self._reserve_traffic_view(),
+                "pkg_sent_at": max(str(sent.get("at") or ""), self.reserve_jrn_synced_at()), "traffic": self._reserve_traffic_view(),
                 "pkg_error": str(self.rsv_get("rsv_view").get("pkg_error") or ""),
                 "move_why": self.reserve_move_check(), "evict_why": self.reserve_evict_check(),
                 "in_since": str(self.rsv_get("rsv_in").get("taken_at") or self.rsv_get("rsv_in").get("since") or ""),
