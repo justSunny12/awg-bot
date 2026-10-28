@@ -19,6 +19,7 @@ class TrafficMixin:
         Складываем, а не переносим: у двойника уже есть свой накопленный трафик.
         """
         with self._tx() as cur:
+            self._jrn_op(cur, "tmerge", {"src": int(src_device_id), "dst": int(dst_device_id)})
             cur.execute(
                 """UPDATE device_traffic SET
                      traffic_rx_month  = traffic_rx_month  + COALESCE((SELECT traffic_rx_month  FROM device_traffic WHERE device_id = ?), 0),
@@ -32,9 +33,16 @@ class TrafficMixin:
                  src_device_id, src_device_id, dst_device_id),
             )
 
-    def reset_month_traffic_all(self) -> None:
-        """Сброс месячных счётчиков у всех устройств (1-го числа 00:00 по поясу бота)."""
+    def reset_month_traffic_all(self, month: str = "") -> None:
+        """Сброс месячных счётчиков у всех устройств (1-го числа 00:00 по поясу бота).
+        Отметка месяца сброса (`last_monthly_reset`) — той же транзакцией: по ней
+        метятся дельты счётчиков журнала (до сброса — прошлый месяц)."""
         with self._tx() as cur:
+            from awgbot.util import timeutil
+            ym = month or timeutil.now().strftime("%Y-%m")
+            self._jrn_op(cur, "month", {"month": ym})
+            cur.execute("INSERT INTO server_state (key, value) VALUES ('last_monthly_reset', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (ym,))
             cur.execute(
                 "UPDATE device_traffic SET traffic_rx_month = 0, traffic_tx_month = 0, "
                 "rf_rx_month = 0, rf_tx_month = 0"
@@ -44,6 +52,7 @@ class TrafficMixin:
         """Сброс ПЕРИОДНЫХ счётчиков устройств пользователя (при новом периоде).
         Месячные НЕ трогаем — у них свой цикл."""
         with self._tx() as cur:
+            self._jrn_op(cur, "period", {"client_id": int(client_id)})
             cur.execute(
                 """UPDATE device_traffic SET traffic_rx_period = 0, traffic_tx_period = 0
                    WHERE device_id IN (SELECT id FROM devices WHERE client_id = ?)""",
@@ -114,6 +123,7 @@ class TrafficMixin:
                 """UPDATE device_traffic SET rf_rx_month = rf_rx_month + ?, rf_tx_month = rf_tx_month + ?
                    WHERE device_id = ?""",
                 [(up, dn, d) for d, up, dn in rows])
+            self._jrn_counts(cur, [(d, 0, 0, up, dn, None) for d, up, dn in rows])
             self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи
 
     def get_client_rf(self, client_id: int) -> tuple[int, int]:
@@ -175,4 +185,5 @@ class TrafficMixin:
                    WHERE device_id = ?""",
                 [(rx, tx, rx, tx, d) for d, rx, tx in rows],
             )
+            self._jrn_counts(cur, [(d, rx, tx, 0, 0, None) for d, rx, tx in rows])
             self._tx_note(self._TX_COUNTERS)        # счётчики — не повод для пакета переезда; отметка ПОСЛЕ записи

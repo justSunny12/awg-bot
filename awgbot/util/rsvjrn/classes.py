@@ -55,6 +55,10 @@ TABLES: dict[str, str | dict[str, str]] = {
     "reserve_peer": LOCAL,
     "reserve_traffic_monthly": LOCAL,
     "jrn_meta": LOCAL,
+    "jrn_events": LOCAL,
+    "jrn_tail": LOCAL,
+    "jrn_counts": LOCAL,
+    "jrn_seen": LOCAL,
     **{t: HISTORY for t in HISTORY_TABLES},
 }
 
@@ -79,6 +83,24 @@ def class_of(table: str, column: str) -> str | None:
 def denied_columns(table: str, columns: list[str]) -> list[str]:
     """Колонки таблицы, запись которых следующему запрещена (по порядку схемы)."""
     return [c for c in columns if class_of(table, c) in DENIED]
+
+
+# хост основы — резерву без локальных сетей и подписей шлюзов (как в реплике, rsvpkg/bot._strip)
+HOST_TRIMMED: dict[str, tuple[str, ...]] = {"gateways": ("lan_subnets", "label", "lan_mode")}
+
+
+def captured_columns(table: str, columns: list[str], guest: bool = False) -> list[str]:
+    """Колонки, которые держатель пишет событием: решения и маски; секреты — только
+    у бота основы на резерве (от основы к резерву закрытые ключи не едут); данные
+    хоста основы — только у основы (гостю они нужны, основе от гостя — нет), без обрезанных."""
+    want = (DECISION, MASK, SECRET) if guest else (DECISION, MASK, HOST)
+    trimmed = HOST_TRIMMED.get(table, ())
+    return [c for c in columns if class_of(table, c) in want and c not in trimmed]
+
+
+def history_captured(table: str, guest: bool = False) -> bool:
+    """История едет только от бота основы на резерве к основе (дописками)."""
+    return bool(guest) and TABLES.get(table) == HISTORY
 
 
 def unclassified(schema: dict[str, list[str]]) -> list[str]:

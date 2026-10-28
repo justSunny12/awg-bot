@@ -66,7 +66,7 @@ class DatabaseCore:
         from awgbot.util.rsvjrn import triggers
         conn = conn or self._connection()
         try:
-            self._local.jrn_ok = triggers.install(conn)
+            self._local.jrn_ok = triggers.install(conn, guest=bool(getattr(config, "GUEST", False)))
         except sqlite3.Error as e:                          # повреждённая схема — пусть падает запрос, а не соединение
             self._local.jrn_ok = True                       # не повторять на каждом запросе
             import logging

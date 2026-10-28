@@ -18,6 +18,15 @@ from __future__ import annotations
 REFUSAL_PREFIX = "jrn:"
 
 
+def json_ok(conn) -> bool:
+    """Есть ли у SQLite JSON-функции: без них журнал не пишется, направление идёт
+    прежним путём (пакет и слияние) — возможность пары jrn1 не объявляется."""
+    try:
+        return conn.execute("SELECT json_object('a', 1)").fetchone()[0] == '{"a":1}'
+    except Exception:                                  # noqa: BLE001 — sqlite3.OperationalError: no such function
+        return False
+
+
 def is_refusal(exc: BaseException) -> bool:
     """Отказ базы «эпоха не у этого процесса» — а не конфликт уникальности."""
     return str(exc).startswith(REFUSAL_PREFIX)

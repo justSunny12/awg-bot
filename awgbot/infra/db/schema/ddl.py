@@ -258,9 +258,54 @@ CREATE TABLE IF NOT EXISTS jrn_meta (
     epoch         INTEGER NOT NULL DEFAULT 0,            -- номер права записи; растёт на каждой передаче
     holder        TEXT    NOT NULL DEFAULT 'self',       -- self | peer (бот основы на резерве)
     role          TEXT    NOT NULL DEFAULT 'holder',     -- holder | follower: пишет ли решения этот процесс
+    capture       INTEGER NOT NULL DEFAULT 0,            -- 1 — пара с журналом: решения пишутся событиями
     applying      INTEGER NOT NULL DEFAULT 0,
+    applied       INTEGER NOT NULL DEFAULT 0,            -- последний применённый номер чужого события
+    acked         INTEGER NOT NULL DEFAULT 0,            -- последний номер, подтверждённый резервом
+    snap_i        INTEGER NOT NULL DEFAULT 0,            -- номер, по который резерв держит снимок
+    fork_i        INTEGER NOT NULL DEFAULT 0,            -- точка расхождения последней передачи
     changed_at    TEXT    NOT NULL DEFAULT '',           -- момент последней передачи
     why           TEXT    NOT NULL DEFAULT ''            -- факт передачи (для журнала и карточки)
+);
+-- события решений: физический образ строки (ключ, новые и прежние значения колонок
+-- решений) или операция держателя над счётчиками (month | period | tmerge)
+CREATE TABLE IF NOT EXISTS jrn_events (
+    i             INTEGER PRIMARY KEY,                   -- сквозной номер линии
+    e             INTEGER NOT NULL,                      -- эпоха
+    t             TEXT    NOT NULL,                      -- таблица
+    op            TEXT    NOT NULL,                      -- I | U | D | month | period | tmerge
+    k             TEXT    NOT NULL,                      -- JSON ключа строки (или аргументов операции)
+    c             TEXT,                                  -- JSON: колонки решений → новые значения
+    o             TEXT,                                  -- JSON: прежние значения тех же колонок
+    at            TEXT    NOT NULL
+);
+-- хвост старой эпохи, отложенный до перебазирования
+CREATE TABLE IF NOT EXISTS jrn_tail (
+    i             INTEGER PRIMARY KEY,
+    e             INTEGER NOT NULL,
+    t             TEXT    NOT NULL,
+    op            TEXT    NOT NULL,
+    k             TEXT    NOT NULL,
+    c             TEXT,
+    o             TEXT,
+    at            TEXT    NOT NULL,
+    state         TEXT    NOT NULL DEFAULT 'wait'        -- wait | sent | done
+);
+-- исходящие дельты счётчиков этого хоста (трафик, РФ, последнее рукопожатие)
+CREATE TABLE IF NOT EXISTS jrn_counts (
+    s             INTEGER PRIMARY KEY,
+    month         TEXT    NOT NULL,                      -- 'YYYY-MM' по поясу бота
+    device_id     INTEGER NOT NULL,
+    rx            INTEGER NOT NULL DEFAULT 0,
+    tx            INTEGER NOT NULL DEFAULT 0,
+    rf_rx         INTEGER NOT NULL DEFAULT 0,
+    rf_tx         INTEGER NOT NULL DEFAULT 0,
+    hs            INTEGER                                -- последнее рукопожатие (unix), максимум
+);
+-- принятые пачки счётчиков чужих хостов: идемпотентность по номеру
+CREATE TABLE IF NOT EXISTS jrn_seen (
+    host          TEXT    PRIMARY KEY,
+    s             INTEGER NOT NULL
 );
 -- истечение: предфильтр «активные с конечным периодом до границы»
 CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);

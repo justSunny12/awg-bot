@@ -36,3 +36,35 @@ class JrnMixin:
         finally:
             conn.execute("PRAGMA synchronous = NORMAL")
         return self.jrn_meta()
+
+    # ── журнал: операции держателя над счётчиками и дельты ──────────────────
+    # Запись счётчиков опросом триггер не отличит от сброса или сложения пары —
+    # эти три метода пишут событие сами, в своей транзакции (cur — её курсор).
+
+    def _jrn_op(self, cur, op: str, args: dict) -> None:
+        """Сброс месяца, сброс периода, сложение пары переезда — решения держателя:
+        у следующего — отказ, у держателя при журнале — событие той же транзакцией."""
+        import json
+        import sqlite3
+        from awgbot.util import rsvjrn
+        row = cur.execute("SELECT role, applying FROM jrn_meta WHERE id = 1").fetchone()
+        if row is not None and row[0] != "holder" and not row[1]:
+            raise sqlite3.IntegrityError(f"{rsvjrn.REFUSAL_PREFIX} эпоха не у этого процесса — решения пишет держатель")
+        cur.execute("INSERT INTO jrn_events (e, t, op, k, at) SELECT epoch, 'device_traffic', ?, ?, "
+                    "strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime') FROM jrn_meta "
+                    "WHERE id = 1 AND capture = 1 AND applying = 0", (op, json.dumps(args, sort_keys=True)))
+
+    def _jrn_counts(self, cur, rows: list[tuple]) -> None:
+        """Дельты счётчиков этого хоста — в jrn_counts той же транзакцией (при журнале,
+        не при применении чужих): [(device_id, rx, tx, rf_rx, rf_tx, hs)]. Метка
+        месяца — месяц последнего сброса (`last_monthly_reset`), а не календарь:
+        дельта, снятая до сброса, у получателя уйдёт в архив того месяца, а не в
+        счётчики после сброса (сброс бывает и не 1-го числа)."""
+        if not rows:
+            return
+        from awgbot.util import timeutil
+        month = timeutil.now().strftime("%Y-%m")
+        cur.executemany("INSERT INTO jrn_counts (month, device_id, rx, tx, rf_rx, rf_tx, hs) "
+                        "SELECT COALESCE((SELECT value FROM server_state WHERE key = 'last_monthly_reset'), ?), "
+                        "?, ?, ?, ?, ?, ? FROM jrn_meta WHERE id = 1 AND capture = 1 AND applying = 0",
+                        [(month, *r) for r in rows])

@@ -296,7 +296,7 @@ def test_the_temporary_triggers_never_reach_the_base_file(world):
     conn = world.db._connection()
     assert conn.execute("SELECT count(*) FROM main.sqlite_master WHERE type = 'trigger'").fetchone()[0] == 0
     temp = [r[0] for r in conn.execute("SELECT name FROM sqlite_temp_master WHERE type = 'trigger'")]
-    assert any(n.startswith("jrn_deny_") for n in temp), f"запрет на соединение не поставлен: {temp}"
+    assert any(n.startswith("jrn_") for n in temp), f"запрет на соединение не поставлен: {temp}"
     raw = sqlite3.connect(world.db.path)
     try:
         assert raw.execute("SELECT count(*) FROM sqlite_master WHERE type = 'trigger'").fetchone()[0] == 0

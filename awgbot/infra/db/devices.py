@@ -282,6 +282,8 @@ class DevicesMixin:
                 assignments = ", ".join(f"{c} = ?" for c in cols)
                 values = list(cols.values()) + [device_id]
                 cur.execute(f"UPDATE {table} SET {assignments} WHERE {key} = ?", values)
+            if "last_handshake" in fields and fields["last_handshake"]:
+                self._jrn_counts(cur, [(device_id, 0, 0, 0, 0, _hs_int(fields["last_handshake"]))])
             # рукопожатие пишет каждый опрос — счётчик; остальные поля — данные (отметка — после записи)
             self._tx_note(self._TX_COUNTERS if set(fields) <= {"last_handshake"} else self._TX_DATA)
 
@@ -301,7 +303,10 @@ class DevicesMixin:
                 "UPDATE device_traffic SET last_handshake = ? WHERE device_id = ? "
                 "AND (last_handshake IS NULL OR last_handshake = '')",
                 (value, device_id))
-            return cur.rowcount == 1
+            won = cur.rowcount == 1
+            if won:
+                self._jrn_counts(cur, [(device_id, 0, 0, 0, 0, _hs_int(value))])
+            return won
 
     # ── слоты шлюзов условной маршрутизации ───────
     # Порядок везде один: предпочтительный первым, затем по номеру слота. Он же
@@ -419,3 +424,11 @@ class DevicesMixin:
             if candidate not in occupied:
                 return candidate
         raise RuntimeError("Пул IP исчерпан")
+
+
+def _hs_int(v) -> int | None:
+    """Рукопожатие для пачки счётчиков — unix-время числом (максимум у получателя)."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
