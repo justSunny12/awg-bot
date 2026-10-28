@@ -100,11 +100,11 @@ def _remap(table: str, values: dict, id_map: dict) -> dict:
 
 def _row(conn, table: str, k: dict):
     where, args = _where(k)
-    conn.row_factory = sqlite3.Row
+    prev, conn.row_factory = conn.row_factory, sqlite3.Row
     try:
         return conn.execute(f"SELECT * FROM main.{_q(table)} WHERE {where}", args).fetchone()
     finally:
-        conn.row_factory = None
+        conn.row_factory = prev                              # соединение держателя — дальше всему процессу
 
 
 def _client_of(conn, table: str, k: dict, vals: dict) -> int | None:
@@ -136,11 +136,11 @@ def _taken_by(conn, table: str, vals: dict) -> dict | None:
         v = vals.get(col)
         if v is None:
             continue
-        conn.row_factory = sqlite3.Row
+        prev, conn.row_factory = conn.row_factory, sqlite3.Row
         try:
             row = conn.execute(f"SELECT * FROM main.{_q(table)} WHERE {_q(col)} = ?", (v,)).fetchone()
         finally:
-            conn.row_factory = None
+            conn.row_factory = prev
         if row is not None:
             keys = row.keys()
             return {"col": col, "id": row["id"], "name": row["name"] if "name" in keys else "",
@@ -186,7 +186,7 @@ def rebase(conn: sqlite3.Connection, events: list[Event], *, before_commit=None)
                 conn.execute("ROLLBACK TO jrn_rb")
                 conn.execute("RELEASE jrn_rb")
                 vals = _remap(ev.t, dict(ev.c or {}), id_map)
-                tb = _taken_by(conn, ev.t, vals) if ev.op == "I" else None
+                tb = _taken_by(conn, ev.t, vals) if ev.op in ("I", "U") else None
                 kind = "unique" if "UNIQUE" in str(e).upper() else "failed"
                 if ev.op == "I" and ev.t in REMAPPED and ev.k.get("id") is not None:
                     failed[ev.t].add(int(ev.k["id"]))

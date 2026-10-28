@@ -474,7 +474,8 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
         return (f"{subject} — его адрес занял {taken_by}, {made}. Выдай «{device}» конфигурацию заново"
                 if col == "address" else f"{subject}: не встало — значение уже занято ({_e(col) or 'уникальное'})")
     if kind == "delete":
-        return f"{subject}: удаление не перенесено — {where} его успели поменять"
+        tail = ". Выдай конфигурацию заново" if table == "devices" else ""   # закрытого ключа после отката нет
+        return f"{subject}: удаление не перенесено — {where} его успели поменять{tail}"
     if kind == "gone":
         return f"{subject}: правка не перенесена — {where} этой записи уже нет"
     if kind == "failed":
