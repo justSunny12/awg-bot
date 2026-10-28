@@ -107,6 +107,19 @@ def test_compatibility_back_says_so_once(services, paired):
     assert not [n for n in services.reserve_st_in(_st()) if "снова совместим" in n.text]
 
 
+def test_a_changed_wording_of_the_same_reason_is_not_a_second_notification(services, paired):
+    """Т-РУ9 один раз на расхождение, а не на формулировку: второй сервер обновился ещё
+    раз (v4.1.0 → v4.2.0) — причина та же, слова другие; текст в отметке обновляется тихо,
+    «снова совместим» — когда расхождение ушло."""
+    services.reserve_st_in(_st())
+    assert [n for n in services.reserve_st_in(_st(version="4.1.0")) if n.text.startswith("⚠️ Резерв")]
+    again = services.reserve_st_in(_st(version="4.2.0"))
+    assert not [n for n in again if n.text.startswith("⚠️ Резерв")], f"смена слов причины — второе уведомление: {again}"
+    assert "4.2.0" in services.rsv_get("rsv_view")["compat"]["in"], "текст причины в отметке не обновился"
+    back = services.reserve_st_in(_st())
+    assert len([n for n in back if "снова совместим" in n.text]) == 1, back
+
+
 def test_my_own_update_turns_my_direction_off_once(services, paired, monkeypatch):
     """Т-РУ9: этот сервер обновился до v4.1.0, второй остался на v4.0.0 —
     его `st` после переподключения прежний, но мои пользователи к нему больше не

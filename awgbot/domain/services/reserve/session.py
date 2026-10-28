@@ -117,7 +117,7 @@ class ReserveSessionMixin:
     def _jrn_st_part(self) -> dict:
         """Журнал в `st`: своя линия (эпоха, держатель, применённое, подтверждённое) и что
         храню о линии второй стороны (`keep`; с эпохой её бота у меня, если он поднят)."""
-        if not hasattr(self, "reserve_keep_view") or not self.reserve_jrn_on():
+        if not self.reserve_jrn_on():
             return {}
         try:
             meta = self.db.jrn_meta()
@@ -200,7 +200,7 @@ class ReserveSessionMixin:
 
     def _can_return_safe(self) -> bool:
         try:
-            if hasattr(self, "reserve_tail_return_why") and self.reserve_tail_return_why():
+            if self.reserve_tail_return_why():
                 return False                                  # мой хвост ещё переносится — возврат отказал бы
             return bool(self.reserve_can_return())
         except Exception:                                     # noqa: BLE001
@@ -227,13 +227,13 @@ class ReserveSessionMixin:
                         in_by=str(body.get("in_by") or ""), st_stale=False)
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
-            if hasattr(self, "reserve_pkg_resend_if_stale"):
-                self.reserve_pkg_resend_if_stale()           # у резерва не тот пакет (или никакого) — отметка заново
-            if hasattr(self, "reserve_jrn_keep_in"):
-                jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
-                self.rsv_update("rsv_peer_state", jrn_keep=dict(jrn.get("keep") or {}) if isinstance(jrn.get("keep"), dict) else {})
-                self.reserve_jrn_keep_in(jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None)
-                self.reserve_keep_mine_in(jrn.get("mine") if isinstance(jrn.get("mine"), dict) else None)
+            self.reserve_pkg_resend_if_stale()               # у резерва не тот пакет (или никакого) — отметка заново
+            jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
+            keep = jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None
+            mine = jrn.get("mine") if isinstance(jrn.get("mine"), dict) else None
+            self.rsv_update("rsv_peer_state", jrn_keep=dict(keep or {}))
+            self.reserve_jrn_keep_in(keep)
+            self.reserve_keep_mine_in(mine)
             row = self.reserve_peer() or {}
             fields = {}
             if peer["name"] and peer["name"] != row.get("name"):
@@ -261,7 +261,9 @@ class ReserveSessionMixin:
         """Т-РУ9: направление выключилось по версии или возможностям — один раз
         на расхождение, в обе стороны; ловит и своё обновление (сравнение с
         последним сосчитанным состоянием, а не с прежним `st`); вернулось —
-        «снова совместим» один раз."""
+        «снова совместим» один раз. Расхождение — факт «направление выключено»,
+        а не слова причины: сменились слова (номер версии в `st`, другая
+        возможность) — текст в отметке обновляется тихо."""
         mine = self._my_side()
         out_ok, out_why = compat.direction_ready(mine, peer)
         in_ok, in_why = compat.direction_ready(peer, mine)
@@ -274,7 +276,7 @@ class ReserveSessionMixin:
         name = peer.get("name") or "резерв"
         notes = []
         for key in ("out", "in"):
-            if now[key] and now[key] != marks.get(key):
+            if now[key] and not marks.get(key):
                 notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_off(name, now[key])))
         if "out" in marks and (marks.get("out") or marks.get("in")) and not (now["out"] or now["in"]):
             notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_on(name)))
@@ -292,7 +294,7 @@ class ReserveSessionMixin:
         mine = self._my_side()
         sent = self.rsv_get("rsv_pkg_sent")
         fresh = bool(sent.get("at")) and timeutil.elapsed(timeutil.parse_iso(sent["at"])) < 2 * 3600 if sent.get("at") else False
-        pkg_here = self.reserve_pkg_in_present() if hasattr(self, "reserve_pkg_in_present") else True
+        pkg_here = self.reserve_pkg_in_present()
         inn = compat.direction_ready(peer, mine)
         if inn[0] and not pkg_here:
             inn = (False, f"данных для переезда от «{peer.get('name') or 'резерв'}» ещё нет")
@@ -306,8 +308,7 @@ class ReserveSessionMixin:
         восстановлен из копии без них; `slots` идемпотентен)."""
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
         self.rsv_update("rsv_view", slots_sent=[], slots_at="")
-        if hasattr(self, "_jrn_sess_reset"):
-            self._jrn_sess_reset()                            # журнал: ничего не слать до сверки по st резерва
+        self._jrn_sess_reset()                                # журнал: ничего не слать до сверки по st резерва
         return self.reserve_liveness_word()
 
     def reserve_pair_confirm_tick(self) -> list[Notification]:
