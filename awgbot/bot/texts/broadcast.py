@@ -108,14 +108,21 @@ def extension_reserve() -> int:
 
 
 def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
+    """Подвал превью с продлением: даты каждого адресата, не больше NAMES_SHOWN
+    строк — дальше «[+N]» (превью — подтверждение, ссылок на снимок тут нет;
+    список без предела пробивал 4096 уже на ~60 профилях)."""
+    from awgbot.util.textfmt.tail import more_count
     who = "адресат" if n == 1 else "адресата" if 2 <= n <= 4 else "адресатов"
     lines = [f"{n} {who} · продление на <b>{_days(days)}</b>:"]
-    for e in plan:
+    plan = list(plan)
+    for e in plan[:NAMES_SHOWN]:
         if e.unlimited:
             lines.append(f"• {profile_link(e.client, bot_username)}: ∞ — без продления")
             continue
         old, new = timeutil.fmt_date_ui(e.old_end), timeutil.fmt_date_ui(e.new_end)
         lines.append(f"• {profile_link(e.client, bot_username)}: {'🔴 ' if e.from_now else ''}{old} → {new}")
+    if len(plan) > NAMES_SHOWN:
+        lines[-1] += more_count(len(plan) - NAMES_SHOWN)
     return "\n".join(lines)
 
 
@@ -190,6 +197,15 @@ def broadcast_too_long(actual: int, limit: int, with_photos: bool) -> str:
     return (f"✂️ Не отправлено: в объявлении <b>{actual}</b> символов при лимите "
             f"<b>{limit}</b>{why}.\n\nЛишних: {over}. Сократи и пришли заново — "
             "картинки и адресаты сохранены.")
+
+
+def broadcast_preview_refused(err: str) -> str:
+    """Telegram не принял превью: длина — своим именем (с подвалом «кому» текст
+    перерос 4096), всё остальное — разметка: тот же текст провалил бы и рассылку."""
+    if "too long" in str(err):
+        return ("⚠️ Превью не отправлено: вместе с подвалом «кому» текст длиннее лимита Telegram. "
+                "Сократи текст и пришли заново")
+    return "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли заново."
 
 
 _UNDELIVERED_SHOWN = 3

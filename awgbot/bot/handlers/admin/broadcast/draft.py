@@ -214,8 +214,6 @@ async def _bc_preview(message: Message, state: FSMContext, services):
                 confirm = await message.answer(confirm_text,
                                                reply_markup=kb.broadcast_confirm())
                 await state.update_data(preview_ids=[confirm.message_id])
-        except TelegramBadRequest:
-            await ask_tracked(
-                message, services,
-                "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли "
-                "заново.")
+        except TelegramBadRequest as e:
+            from awgbot.bot.texts import broadcast as tb
+            await ask_tracked(message, services, tb.broadcast_preview_refused(str(e)))
