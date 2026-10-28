@@ -131,7 +131,7 @@ def test_a_foreign_chat_does_not_learn_that_a_stale_snapshot_existed(db, clock):
     key = db.list_snap_keep(CHAT, "admin", "x", _rows(2))
     clock.advance(31 * DAY)
     assert db.list_snap_get(key, OTHER) is None, "чужому чату сказали «больше не хранится» — ключ подтверждён"
-    assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0)}
+    assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}
 
 
 # ── срок 30 дней ────────────────────────────────────────────────────────────
@@ -142,9 +142,9 @@ def test_a_snapshot_lives_thirty_days_and_then_answers_stale(db, clock):
     assert db.list_snap_get(key, CHAT)["rows"] == _rows(2), "снимок протух раньше 30 дней"
     clock.advance(120)
     got = db.list_snap_get(key, CHAT)
-    assert got == {"stale": True, "at": timeutil.to_iso(T0)}, got
+    assert got == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}, got
     raw = _raw(db, key)
-    assert raw == {"chat": CHAT, "at": timeutil.to_iso(T0), "gone": 1}, \
+    assert raw == {"chat": CHAT, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}, \
         f"протухший снимок не сжат в отметку — строки лежат в базе дальше: {raw}"
 
 
@@ -153,7 +153,7 @@ def test_expired_snapshots_of_any_chat_become_marks_on_the_next_write(db, clock)
     old = db.list_snap_keep(OTHER, "admin", "x", _rows(50))
     clock.advance(31 * DAY)
     db.list_snap_keep(CHAT, "admin", "y", _rows(1))
-    assert _raw(db, old) == {"chat": OTHER, "at": timeutil.to_iso(T0), "gone": 1}, _raw(db, old)
+    assert _raw(db, old) == {"chat": OTHER, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}, _raw(db, old)
 
 
 # ── 20 на чат: вытеснение по порядковому номеру ─────────────────────────────
@@ -163,7 +163,7 @@ def test_the_21st_snapshot_of_a_chat_evicts_the_earliest_even_in_the_same_second
     из одной секунды; соседний чат не трогается."""
     neighbour = db.list_snap_keep(OTHER, "admin", "сосед", _rows(1))
     keys = [db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)) for n in range(21)]
-    assert db.list_snap_get(keys[0], CHAT) == {"stale": True, "at": timeutil.to_iso(T0)}, \
+    assert db.list_snap_get(keys[0], CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": "evicted"}, \
         "21-й снимок не вытеснил самый ранний"
     alive = [k for k in keys[1:] if not (db.list_snap_get(k, CHAT) or {}).get("stale")]
     assert alive == keys[1:], "вытеснен не самый ранний по порядку"
@@ -195,7 +195,7 @@ def test_marks_older_than_ninety_days_are_dropped(db, clock):
     assert db.list_snap_get(key, CHAT)["stale"]
     clock.advance(58 * DAY)                                 # 89 дней от события
     db.list_snap_keep(OTHER, "admin", "y", _rows(1))
-    assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0)}, "отметка ушла раньше 90 дней"
+    assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}, "отметка ушла раньше 90 дней"
     clock.advance(2 * DAY)                                  # 91 день
     db.list_snap_keep(OTHER, "admin", "z", _rows(1))
     assert db.list_snap_get(key, CHAT) is None and _raw(db, key) is None, "отметка старше 90 дней осталась в базе"
@@ -204,14 +204,22 @@ def test_marks_older_than_ninety_days_are_dropped(db, clock):
 # ── пределы 2000 строк и 256 КБ ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("n, given, kept, more", [(2005, 2000, 1999, 6), (600, 500, 500, 100)])
-def test_a_source_that_gave_fewer_rows_than_n_gets_the_journal_line(db, clock, n, given, kept, more):
+def test_a_source_that_gave_fewer_rows_than_n_gets_an_honest_left_out_line(db, clock, n, given, kept, more):
     """Источник отдал не все элементы (missing): последней строкой — сколько
-    не вошло; при полных 2000 строках место под неё — за счёт последней."""
+    не вошло, без обещания журнала (чего не дали, в журнале здесь нет); при
+    полных 2000 строках место под неё — за счёт последней."""
     src = _rows(given)
     got = db.list_snap_get(db.list_snap_keep(CHAT, "admin", "t", src, n=n, missing=n - given), CHAT)
     assert got["rows"][:-1] == src[:kept] and len(got["rows"]) == kept + 1, len(got["rows"])
-    assert got["rows"][-1] == f"… и ещё {more} — полный список в журнале бота", got["rows"][-1]
+    assert got["rows"][-1] == f"… и ещё {more} — в снимок не вошли", got["rows"][-1]
     assert got["n"] == n
+
+
+def test_the_caller_can_say_where_the_rest_is(db, clock):
+    """tail_note — текст хвоста от вызывающего: у Т-Ж4 после аварии остаток
+    спорных правок лежит в журнале бота на резерве, и строка снимка говорит это."""
+    key = db.list_snap_keep(CHAT, "admin", "t", _rows(5), n=12, missing=7, tail_note="остальные — в журнале бота на «Beta»")
+    assert db.list_snap_get(key, CHAT)["rows"][-1] == "… и ещё 7 — остальные — в журнале бота на «Beta»"
 
 
 def test_n_above_the_rows_without_missing_is_not_a_cut(db, clock):
@@ -227,7 +235,10 @@ def test_exactly_two_thousand_rows_fit_without_a_tail(db, clock):
     assert rows == _rows(2000), "2000 строк обрезаны"
 
 
-def test_over_two_thousand_rows_end_with_the_journal_line_and_only_the_cut_goes_to_the_log(db, clock, caplog):
+def test_over_two_thousand_rows_end_with_the_journal_line_and_the_whole_cut_goes_to_the_log(db, clock, caplog):
+    """Строка «полный список в журнале бота» — правда: отрезанное уходит в журнал
+    целиком, порциями по LOG_TAIL_ROWS, каждая строка журнала — с ключом снимка
+    (две рассылки с одним заголовком различимы) и чатом."""
     src = _rows(2500)
     with caplog.at_level(logging.INFO, logger="awgbot.db"):
         key = db.list_snap_keep(CHAT, "admin", "⚠️ Не добавлено", src)
@@ -236,12 +247,16 @@ def test_over_two_thousand_rows_end_with_the_journal_line_and_only_the_cut_goes_
     assert got["rows"][:1999] == src[:1999], "в снимок вошли не первые строки"
     assert got["rows"][-1] == "… и ещё 501 — полный список в журнале бота", got["rows"][-1]
     assert got["n"] == 2500, "в шапке — число строк снимка, а не настоящее число элементов"
-    log = "\n".join(r.getMessage() for r in caplog.records if "lists:" in r.getMessage())
-    assert "«⚠️ Не добавлено» — 2500 строк, в снимок вошли 1999" in log, log[:300]
+    lines = [r.getMessage() for r in caplog.records if "lists:" in r.getMessage()]
+    log = "\n".join(lines)
+    assert f"«⚠️ Не добавлено» (снимок {key}, чат {CHAT}) — 2500 строк, в снимок вошли 1999" in log, log[:300]
     assert "r1999.example" in log, "первая отрезанная строка не попала в журнал"
     assert "r0000.example" not in log and "r1998.example" not in log, \
         "в журнал ушли строки, которые и так в снимке"
-    assert "r2048.example" in log and "r2049.example" not in log, "в журнал — не 50 первых отрезанных строк"
+    assert "r2049.example" in log and "r2499.example" in log, "в журнал ушли не все отрезанные строки"
+    portions = [ln for ln in lines if ln.startswith(f"lists: снимок {key} — не вошли")]
+    assert len(portions) == -(-501 // listsnap.LOG_TAIL_ROWS), f"порций {len(portions)}"
+    assert all(len(ln) < 20000 for ln in portions), "строка журнала длиннее, чем journald держит"
 
 
 def test_the_log_line_of_a_cut_row_is_limited_in_length(db, clock, caplog):
@@ -279,6 +294,27 @@ def test_a_failed_write_returns_an_empty_key_and_a_log_line_instead_of_raising(d
     assert key == "", f"ключ снимка, которого нет: {key!r}"
     assert any("снимок «⚠️ Не добавлено» не записан" in r.getMessage() and "database is locked" in r.getMessage()
                for r in caplog.records), [r.getMessage() for r in caplog.records]
+
+
+def test_one_row_over_the_byte_limit_is_not_written_at_all(db, clock, caplog):
+    """Единственная строка больше 256 КБ в базу не идёт: это сбой записи
+    (строка журнала, пустой ключ), а не запись сверх предела."""
+    with caplog.at_level(logging.ERROR, logger="awgbot.db"):
+        key = db.list_snap_keep(CHAT, "admin", "t", ["ж" * (300 * 1024)])
+    assert key == "" and not _snap_keys(db), (key, _snap_keys(db))
+    assert any("снимок «t» не записан" in r.getMessage() and "256 КБ" in r.getMessage() for r in caplog.records)
+
+
+def test_a_miss_at_opening_leaves_a_log_line_with_the_key_and_the_chat(db, clock, caplog):
+    """«📋 Этого списка больше нет» по экрану не разобрать: промах — строкой
+    журнала с ключом и чатом (не создавался / из другого чата)."""
+    real = db.list_snap_keep(CHAT, "admin", "t", _rows(1))
+    with caplog.at_level(logging.INFO, logger="awgbot.db"):
+        assert db.list_snap_get("zzzzzzzzzz", CHAT) is None
+        assert db.list_snap_get(real, OTHER) is None
+    log = [r.getMessage() for r in caplog.records if "lists:" in r.getMessage()]
+    assert any(f"снимок zzzzzzzzzz не найден (чат {CHAT})" in ln for ln in log), log
+    assert any(f"снимок {real} — из другого чата, открывал {OTHER}" in ln for ln in log), log
 
 
 def test_a_broken_snapshot_record_is_read_as_no_snapshot(db, clock):
@@ -367,10 +403,14 @@ async def test_a_stale_snapshot_says_so_with_the_time_and_the_menu(db, clock):
         f"у протухшего — «Назад» в источник или нет выхода: {_buttons(markup)}"
 
 
-async def test_an_evicted_snapshot_says_stale_not_gone(db, clock):
+async def test_an_evicted_snapshot_says_it_was_pushed_out_not_that_it_expired(db, clock):
+    """Вытесненный 21-м снимок того же дня — не «хранит 30 дней» (это было бы
+    неправдой), а «держит 20 последних списков чата»."""
     keys = [db.list_snap_keep(CHAT, "admin", "t", _rows(1)) for _ in range(21)]
     text, _ = await _open(db, keys[0])
-    assert text.startswith("📋 Список от ") and "больше не хранится" in text, text
+    assert text == (f"📋 Список от {timeutil.fmt_dt_ui(T0)} больше не хранится — бот держит "
+                    f"{listsnap.PER_CHAT} последних списков чата"), text
+    assert db.list_snap_get(keys[0], CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": "evicted"}
 
 
 @pytest.mark.parametrize("chat, key", [(OTHER, None), (CHAT, "zzzzzzzzzz")])
