@@ -116,14 +116,20 @@ GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\
                     "адрес по имени буду обновлять сам")
 
 
-def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None) -> str:
+SSH_ADDED_TITLE = "✅ Добавлено для SSH-доступа"
+SSH_MERGED_TITLE = "Вошли в добавленные подсети"
+
+
+def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None, link: tuple | None = None,
+                            link_merged: tuple | None = None) -> str:
     """merged — записи, которые схлопнулись в добавленную подсеть (nft не
-    принимает пересечения; человеку — что объединено, а не отказ)."""
+    принимает пересечения; человеку — что объединено, а не отказ); link,
+    link_merged — (имя бота, параметр /start) снимков всего списка для хвоста."""
     # адреса и подсети — моноширинным: жирный адрес Telegram превращает в ссылку
-    text = "✅ Адреса для SSH-доступа: добавлено " + more(entries) \
+    text = "✅ Адреса для SSH-доступа: добавлено " + more(entries, link=link) \
         if entries else "✅ Адреса для SSH-доступа"
     if merged:
-        text += "; вошли в неё и убраны из списка: " + more(merged)
+        text += "; вошли в неё и убраны из списка: " + more(merged, link=link_merged)
     return text
 
 

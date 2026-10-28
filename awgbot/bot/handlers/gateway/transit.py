@@ -68,8 +68,19 @@ async def gw_transit_domain_received(message: Message, state: FSMContext, servic
     # итог — первыми строками экрана, с новым доменом уже в кнопках
     from awgbot.bot import screens
     text, markup = await pkg._transit_screen(services, message.chat.id)
-    note = texts.gateway_transit_result(ok, out, await pkg._own_sync_tail(services, ok, out),
-                                        budget=ui.note_budget(text), domains=domains, cmd=kind)
+    sync = await pkg._own_sync_tail(services, ok, out)
+    budget = ui.note_budget(text)
+    note = texts.gateway_transit_result(ok, out, sync, budget=budget, domains=domains, cmd=kind)
+    if "…и ещё " in note:
+        # итог не влез в экран — все строки снимком, хвост — ссылкой на него
+        from awgbot.bot.callbacks import GwCB
+        from awgbot.bot.texts.gateway import transit as tt
+        from awgbot.util import listlink
+        key = await call(services.db.list_snap_keep, message.chat.id, "admin", tt.transit_result_title(kind),
+                         tt.transit_result_rows(ok, out, kind), GwCB(action="lan").pack(), False)
+        note = texts.gateway_transit_result(ok, out, sync, budget=budget, domains=domains, cmd=kind,
+                                            link=(getattr(services, "bot_username", "") or "",
+                                                  listlink.build("snap", key=key)))
     await send_menu(message, services, screens.with_note(text, note), markup)
 
 

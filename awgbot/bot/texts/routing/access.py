@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from awgbot.util.textfmt import more_count
+from awgbot.util.textfmt import more_count, more_link
 
 from awgbot.bot import ui
 from awgbot.util import timeutil
@@ -239,11 +239,22 @@ def routing_sites_text(domains: list) -> str:
     return f"{ui.head('📋 Свои сайты', meta=[len(domains)])}\n{ROUTING_SITES_ABOUT}"
 
 
-def routing_add_report(added: list, rejected: list, over_limit: int, limit: int, *, owner: bool = False) -> str:
+REJECTED_SHOWN = 5
+REJECTED_TITLE = "⚠️ Не добавлено"
+
+
+def rejected_rows(rejected: list) -> list[str]:
+    """Строки снимка всех отказов: «`адрес` — причина»."""
+    return [f"<code>{_e(_short(raw, 60))}</code> — {_reason_html(reason)}" for raw, reason in rejected]
+
+
+def routing_add_report(added: list, rejected: list, over_limit: int, limit: int, *, owner: bool = False,
+                       bot_username: str = "", snap: str = "") -> str:
     """Итог разбора пачки — первыми строками экрана «Свои сайты»: что взято,
     что нет и почему (отказы — по причине, одной строкой на причину), когда
     заработает; человек вставляет списком, и молча взять половину нельзя.
-    owner — список чужой (админ): переподключается владелец."""
+    owner — список чужой (админ): переподключается владелец. snap — параметр
+    ссылки на снимок всех отказов (хвост каждой причины ведёт туда)."""
     parts = []
     if added:
         shown = ", ".join(f"<code>{_e(_short(d))}</code>" for d in added[:5])
@@ -254,8 +265,10 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
         for raw, reason in rejected:
             by_reason.setdefault(reason, []).append(raw)
         for reason, raws in by_reason.items():
-            shown = ", ".join(f"<code>{_e(_short(r, 40))}</code>" for r in raws[:5])
-            more = f" и ещё {len(raws) - 5}" if len(raws) > 5 else ""
+            shown = ", ".join(f"<code>{_e(_short(r, 40))}</code>" for r in raws[:REJECTED_SHOWN])
+            rest = len(raws) - REJECTED_SHOWN
+            more = (more_link(rest, bot_username, snap) if snap and rest > 0
+                    else f" и ещё {rest}" if rest > 0 else "")
             parts.append(f"⚠️ Не добавлено: {shown}{more} — {_reason_html(reason)}")
     if over_limit:
         parts.append(f"📦 Не поместилось: {over_limit} — в списке максимум {limit} "

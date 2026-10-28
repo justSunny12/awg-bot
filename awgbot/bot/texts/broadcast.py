@@ -45,8 +45,16 @@ def subscription_mark(c) -> str:
     return ""
 
 
-def _names(clients, bot_username: str) -> str:
-    return ", ".join(profile_link(c, bot_username) for c in clients)
+NAMES_SHOWN = 12                       # адресатов поимённо; дальше — «[+N]» или ссылка на снимок
+
+
+def _names(clients, bot_username: str, more: str = "") -> str:
+    """Имена ссылками, не больше NAMES_SHOWN; дальше — more (« и ещё <ссылка>») или « [+N]»."""
+    from awgbot.util.textfmt.tail import more_count
+    clients = list(clients)
+    out = ", ".join(profile_link(c, bot_username) for c in clients[:NAMES_SHOWN])
+    rest = len(clients) - NAMES_SHOWN
+    return out + ((more or more_count(rest)) if rest > 0 else "")
 
 
 def broadcast_days_prompt(plan, bot_username: str = "") -> str:
@@ -111,10 +119,10 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
     return "\n".join(lines)
 
 
-def _bc_audience(clients: list, with_friends: bool, bot_username: str = "") -> str:
+def _bc_audience(clients: list, with_friends: bool, bot_username: str = "", more: str = "") -> str:
     """«профили Ксюша, Петя и те, с кем они делятся устройствами» — имена
     ссылками; про друзей — только когда они есть среди адресатов."""
-    who = _names(clients, bot_username)
+    who = _names(clients, bot_username, more)
     solo = len(clients) == 1
     head = f"профиль {who}" if solo else f"профили {who}"
     if not with_friends:
@@ -187,26 +195,42 @@ def broadcast_too_long(actual: int, limit: int, with_photos: bool) -> str:
 _UNDELIVERED_SHOWN = 3
 
 
-def _undelivered_names(failed, clients: list, bot_username: str) -> str:
+def _undelivered_names(failed, clients: list, bot_username: str, more: str = "") -> str:
     """«[Петя], [Вася]» — недоставленные по tg_id поимённо (ссылками); больше
-    трёх или чужие tg (гости) — «и ещё N»."""
+    трёх или чужие tg (гости) — «и ещё N» (more — ссылкой на снимок всего списка)."""
     by_tg = {c.tg_id: c for c in clients if getattr(c, "tg_id", 0)}
     named = [profile_link(by_tg[t], bot_username) for t in failed if t in by_tg]
     rest = len(failed) - min(len(named), _UNDELIVERED_SHOWN)
     out = ", ".join(named[:_UNDELIVERED_SHOWN])
     if rest > 0:
-        out += f" и ещё {rest}" if out else f"{rest}"
+        out += (more or f" и ещё {rest}") if out else f"{rest}"
     return out
 
 
+def undelivered_rows(failed, clients: list, bot_username: str) -> list[str]:
+    """Строки снимка «⚠️ Не доставлено»: профили ссылками и одной строкой — гости без профиля."""
+    by_tg = {c.tg_id: c for c in clients if getattr(c, "tg_id", 0)}
+    rows = [f"профиль {profile_link(by_tg[t], bot_username)}" for t in failed if t in by_tg]
+    guests = sum(1 for t in failed if t not in by_tg)
+    if guests:
+        w = plural_ru(guests, "адресат", "адресата", "адресатов")
+        rows.append(f"{guests} {w} без профиля — те, с кем делятся устройствами")
+    return rows
+
+
+UNDELIVERED_TITLE = "⚠️ Не доставлено"
+AUDIENCE_TITLE = "📢 Адресаты рассылки"
+
+
 def broadcast_report(clients: list, with_friends: bool, delivered: int,
-                    failed, extension=None, bot_username: str = "") -> str:
+                    failed, extension=None, bot_username: str = "", audience_more: str = "",
+                    undelivered_more: str = "") -> str:
     """Отчёт: только факт доставки. Само объявление остаётся в чате строкой
     выше. «✅ Разослано: профили [Ксюша], [Петя] и те, с кем они делятся
     устройствами — доставлено: 3 адресата · продлено на 7 дн.» ⏎ «⚠️ Не доставлено: [Петя] —
     бот заблокирован или аккаунт удалён». failed — tg_id недоставленных."""
     w = plural_ru(delivered, "адресат", "адресата", "адресатов")
-    line = f"✅ Разослано: {_bc_audience(clients, with_friends, bot_username)} — доставлено: {delivered} {w}"
+    line = f"✅ Разослано: {_bc_audience(clients, with_friends, bot_username, audience_more)} — доставлено: {delivered} {w}"
     if extension is not None:
         days, plan = extension
         unl = [profile_link(e.client, bot_username) for e in plan if e.unlimited]
@@ -216,7 +240,7 @@ def broadcast_report(clients: list, with_friends: bool, delivered: int,
     failed = list(failed) if not isinstance(failed, int) else [0] * failed
     if failed:
         # молчать о недоставленных нельзя: «доставлено» стало бы неправдой
-        line += (f"\n⚠️ Не доставлено: {_undelivered_names(failed, clients, bot_username)} — "
+        line += (f"\n⚠️ Не доставлено: {_undelivered_names(failed, clients, bot_username, undelivered_more)} — "
                  "бот заблокирован или аккаунт удалён"
                  + ("; подписка всё равно продлена" if extension is not None else ""))
     return line

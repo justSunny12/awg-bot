@@ -62,7 +62,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "start!":
         await cb.answer("Создаю новые конфигурации…")
         res = await call(services.migration_start)
-        await _record(cb, texts.migration_started(res), services)
+        cap = 5 if not res.started else texts.migration.LIST_CAP
+        more = await _snap_more(cb, services, texts.migration.FAILED_TITLE, res.failed, cap)
+        await _record(cb, texts.migration_started(res, more), services)
         return
 
     if key in ("pending", "orphans"):
@@ -97,7 +99,10 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "finish!":
         await cb.answer("Завершаю…")
         removed, dropped, failed = await call(services.migration_finish)
-        await _record(cb, texts.migration_finished(removed, dropped, failed), services)
+        cap = texts.migration.LIST_CAP
+        more_f = await _snap_more(cb, services, texts.migration.NOT_REMOVED_TITLE, failed, cap)
+        more_d = await _snap_more(cb, services, texts.migration.DROPPED_TITLE, dropped, cap) if not failed else ""
+        await _record(cb, texts.migration_finished(removed, dropped, failed, more_f, more_d), services)
         # Смена поколения могла ждать финала этого переезда (установщик её не
         # начинал, чтобы не подменить цель). Теперь очередь дошла.
         if not failed:
@@ -170,3 +175,16 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         await _migration_prepare(cb, services, callback_data.val)
         return
     await cb.answer(ui.Toast.stale, show_alert=True)
+
+
+async def _snap_more(cb, services, title: str, names, cap: int) -> str:
+    """Итог переезда — след: имён больше cap — снимок всех («профиль — устройство»),
+    в тексте хвост «и ещё N» ссылкой на него (новым сообщением)."""
+    from awgbot.bot.texts.fmt import _e
+    from awgbot.util import listlink
+    from awgbot.util.textfmt.tail import more_link
+    names = list(names or [])
+    if len(names) <= cap:
+        return ""
+    key = await call(services.db.list_snap_keep, cb.message.chat.id, "admin", title, [_e(n) for n in names], "", True)
+    return more_link(len(names) - cap, getattr(services, "bot_username", "") or "", listlink.build("snap", key=key, new=True))

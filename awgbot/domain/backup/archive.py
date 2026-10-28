@@ -38,6 +38,12 @@ def _strip_foreign_share(con) -> None:
             con.commit()
         except Exception:                                      # noqa: BLE001 — схема без server_state
             return
+    # снимки списков событий (экран «весь список») — следы интерфейса, а не данные
+    try:
+        con.execute("DELETE FROM server_state WHERE key LIKE 'list_snap:%'")
+        con.commit()
+    except Exception:                                          # noqa: BLE001 — схема без server_state
+        pass
     # эпоха — о живом процессе, не о данных: восстановленная база стартует держателем;
     # журнал (события, хвост, дельты, принятые пачки) — местный: после восстановления сверка
     # с резервом даст снимок со сбросом

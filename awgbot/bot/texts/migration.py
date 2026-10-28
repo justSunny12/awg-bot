@@ -17,10 +17,18 @@ def _n_devices(n: int) -> str:
     return f"{n} {plural_ru(n, 'устройство', 'устройства', 'устройств')}"
 
 
-def migration_started(res) -> str:
-    """Итог включения функции переезда."""
+FAILED_TITLE = "⚠️ Не создано новых конфигураций"
+DROPPED_TITLE = "⚠️ Потеряли связь при завершении переезда"
+NOT_REMOVED_TITLE = "⚠️ Не снято прежних конфигураций"
+
+
+def migration_started(res, more: str = "") -> str:
+    """Итог включения функции переезда; more — хвост «и ещё N» ссылкой на снимок всех,
+    у кого не создано (пусто — текстом)."""
     if not res.started:
-        names = ", ".join(_e(n) for n in res.failed[:5]) + ("…" if len(res.failed) > 5 else "")
+        names = ", ".join(_e(n) for n in res.failed[:5])
+        if len(res.failed) > 5:
+            names += more or f" и ещё {len(res.failed) - 5}"
         return (ui.head("⚠️ Переезд не начат", value=f"не удалось создать ни одной новой конфигурации ({names}).")
                 + "\n\nПохоже, новый интерфейс ещё не поднят на сервере. Функция осталась выключенной, "
                 "выдача идёт по-старому — подними интерфейс и включи снова.")
@@ -31,7 +39,7 @@ def migration_started(res) -> str:
     lines.append(f"Готовность считаем по списку: {_n_profiles(res.cohort_clients)}, "
                  f"{_n_devices(res.cohort_devices)}")
     if res.failed:
-        lines.append(f"\n⚠️ Не создано у: {', '.join(_e(n) for n in res.failed)}. "
+        lines.append(f"\n⚠️ Не создано у: {_names_capped(res.failed, more=more)}. "
                      f"Повтори включение — недостающие докинутся, существующие "
                      f"не задвоятся.")
     lines.append("\nТеперь выдаются только новые конфигурации. Проверь на своём "
@@ -80,16 +88,20 @@ def _rows(rows) -> list[str]:
     return [f"• {_e(client)} — {_e(device)}" for client, device in rows]
 
 
-def _names_capped(names, bot: str = "") -> str:
-    """Имена через запятую; больше _LIST_CAP — «и ещё N» (с именем бота —
-    ссылкой на экран «🚚 Потеряют связь при завершении»)."""
+def _names_capped(names, bot: str = "", more: str = "") -> str:
+    """Имена через запятую; больше _LIST_CAP — «и ещё N»: more — готовый хвост ссылкой на
+    снимок события; иначе с именем бота — ссылкой на экран «🚚 Потеряют связь при
+    завершении»; иначе текстом."""
     from awgbot.util.textfmt import more_link
     names = list(names)
     out = ", ".join(_e(n) for n in names[:_LIST_CAP])
-    more = len(names) - _LIST_CAP
-    if more > 0:
-        out += more_link(more, bot, "list-migdrop") if bot else f" и ещё {more}"
+    rest = len(names) - _LIST_CAP
+    if rest > 0:
+        out += more or (more_link(rest, bot, "list-migdrop") if bot else f" и ещё {rest}")
     return out
+
+
+LIST_CAP = _LIST_CAP
 
 
 def migration_pending_page(rows, page: int = 0):
@@ -169,16 +181,17 @@ def migration_cancelled(moved: int) -> str:
             "список переехавших — в разделе «🔧 Сервис»")
 
 
-def migration_finished(removed: int, dropped, failed=()) -> str:
-    """Итог завершения: первые строки открыто, что делать руками — под «подробнее»."""
+def migration_finished(removed: int, dropped, failed=(), more_failed: str = "", more_dropped: str = "") -> str:
+    """Итог завершения: первые строки открыто, что делать руками — под «подробнее»;
+    more_* — хвосты ссылками на снимки полных списков."""
     from .fmt import details
     if failed:
         return (f"⚠️ Завершено не до конца: снято прежних конфигураций {removed}, не закрыто {len(failed)} — "
-                "сервер не дал снять конфигурацию: " + _names_capped(failed)
+                "сервер не дал снять конфигурацию: " + _names_capped(failed, more=more_failed)
                 + ". Функция оставлена включённой, повтори завершение — доберутся только они")
     head = f"✅ Переезд завершён · снято прежних конфигураций: {removed}"
     if dropped:
-        head += (f"\n⚠️ Потеряли связь ({len(dropped)}): " + _names_capped(dropped)
+        head += (f"\n⚠️ Потеряли связь ({len(dropped)}): " + _names_capped(dropped, more=more_dropped)
                  + " — вернуть можно повторной настройкой устройства")
     # старый интерфейс и его юнит, app.yaml — завершение делает само
     # (migration_finish); здесь — то, чего бот на хосте не знает

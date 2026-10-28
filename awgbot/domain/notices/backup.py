@@ -268,9 +268,19 @@ _DONE_CASE = {
 WAITING = "🟡 жду выхода на связь"
 
 
-def restore_report(created_at: str, report: dict, *, bot_username: str = "") -> str:
+LOST_SHOWN = 5
+LOST_TITLE = "⚠️ Не восстановлено из бэкапа"
+
+
+def restore_lost_rows(lost: list, bot_username: str = "") -> list[str]:
+    """Строки устройств, которые не встали, — и отчёта, и снимка всего списка."""
+    return [f"устройство «{_e(d.get('device'))}» профиля {_client_ref(d, bot_username)} не восстановлено: "
+            f"его адрес <code>{_e(d.get('address'))}</code> уже у устройства шлюза" for d in lost]
+
+
+def restore_report(created_at: str, report: dict, *, bot_username: str = "", snap: str = "") -> str:
     """Отчёт админу после восстановления: итог по каждому шлюзу и
-    устройства, которые не встали."""
+    устройства, которые не встали (пять и «и ещё N» — ссылкой на снимок snap)."""
     head = f"✅ Восстановлено из бэкапа от {_when(created_at)}"
     slots = report.get("slots") or []
     lines = []
@@ -291,9 +301,12 @@ def restore_report(created_at: str, report: dict, *, bot_username: str = "") -> 
         parts.append("🛰 Шлюзы:\n" + "\n".join(lines))
     lost = report.get("lost") or []
     if lost:
-        parts.append("\n".join(
-            f"• устройство «{_e(d.get('device'))}» профиля {_client_ref(d, bot_username)} не восстановлено: "
-            f"его адрес <code>{_e(d.get('address'))}</code> уже у устройства шлюза" for d in lost))
+        rows = [f"• {r}" for r in restore_lost_rows(lost[:LOST_SHOWN], bot_username)]
+        rest = len(lost) - LOST_SHOWN
+        if rest > 0:
+            from awgbot.util.textfmt import more_line
+            rows.append(more_line(rest, bot_username, snap) if snap and bot_username else f"… и ещё {rest}")
+        parts.append("\n".join(rows))
     if any(str(s.get("case")) != "removed" for s in slots):
         parts.append("Свои списки шлюзов: добавленное после бэкапа сохранится, удалённое — вернётся")
     return "\n\n".join(parts)

@@ -114,7 +114,9 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     from awgbot.bot import links
     bot_u = getattr(services, "bot_username", "") or ""
     # отчёт — след события: ссылки на профили открывают карточку новым сообщением («-n»)
-    report = links.mark_new(texts.broadcast_report(clients, friends, ok, failed, extension, bot_username=bot_u))
+    aud_more, und_more = await _report_snaps(services, cb.message.chat.id, clients, failed, bot_u)
+    report = links.mark_new(texts.broadcast_report(clients, friends, ok, failed, extension, bot_username=bot_u,
+                                                   audience_more=aud_more, undelivered_more=und_more))
     if photos:
         await edit(cb, report, None)
     else:
@@ -126,3 +128,26 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # меню — инвариант «одно активное» держать было нечем.
     await send_menu(cb.message, services, *await _panel_parts(services),
                     keep_id=cb.message.message_id)
+
+
+async def _report_snaps(services, chat_id: int, clients: list, failed, bot_u: str) -> tuple[str, str]:
+    """Отчёт рассылки — след события: адресаты сверх NAMES_SHOWN и недоставленные сверх
+    трёх — снимками (экран «весь список»), в отчёте хвост — ссылкой на снимок."""
+    from awgbot.bot.texts import broadcast as tb
+    from awgbot.bot.texts.fmt import profile_link
+    from awgbot.util import listlink
+    from awgbot.util.textfmt.tail import more_link
+    aud = und = ""
+    if len(clients) > tb.NAMES_SHOWN:
+        rows = [f"профиль {profile_link(c, bot_u)}" for c in clients]
+        key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.AUDIENCE_TITLE, rows, "", True)
+        aud = more_link(len(clients) - tb.NAMES_SHOWN, bot_u, listlink.build("snap", key=key))
+    failed = list(failed) if not isinstance(failed, int) else []
+    if failed:
+        rows = tb.undelivered_rows(failed, clients, bot_u)
+        named = sum(1 for c in clients if getattr(c, "tg_id", 0) in set(failed))
+        rest = len(failed) - min(named, 3)
+        if rest > 0 and named:
+            key = await pkg.call(services.db.list_snap_keep, chat_id, "admin", tb.UNDELIVERED_TITLE, rows, "", True)
+            und = more_link(rest, bot_u, listlink.build("snap", key=key))
+    return aud, und

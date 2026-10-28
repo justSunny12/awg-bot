@@ -182,9 +182,22 @@ def gateway_lan_text(state: dict) -> str:
     return "\n".join(lines)
 
 
-def gateway_lan_report(res: dict, state: dict) -> str:
+LAN_REJECTED_SHOWN = 3
+
+
+def lan_rejected_title(name: str) -> str:
+    return f"⚠️ Подсети {_e(name)}: не принято"
+
+
+def lan_rejected_rows(rejected) -> list[str]:
+    """Строки снимка всех отказов: «`10.0.0.0/7` — шире /16: …»."""
+    return [f"<code>{_e(raw[:60])}</code> — {addr_codes(why)}" for raw, why in rejected]
+
+
+def gateway_lan_report(res: dict, state: dict, snap: str = "") -> str:
     """Итог правки подсетей — первыми строками карточки; отказы — построчно
-    с «• » (внутри одного отказа «;» не ставим — читалось бы одной кашей)."""
+    с «• » (внутри одного отказа «;» не ставим — читалось бы одной кашей);
+    snap — параметр ссылки на снимок всех отказов (хвост «и ещё N» — туда)."""
     parts = []
     kept = res.get("kept") or []
     from awgbot.util import listlink
@@ -194,9 +207,12 @@ def gateway_lan_report(res: dict, state: dict) -> str:
     parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
     rejected = res.get("rejected") or []
     if rejected:
-        items = [f"• <code>{_e(raw[:40])}</code> — {addr_codes(why)}" for raw, why in rejected[:3]]
-        if len(rejected) > 3:
-            items.append(f"• и ещё {len(rejected) - 3}")
+        items = [f"• <code>{_e(raw[:40])}</code> — {addr_codes(why)}" for raw, why in rejected[:LAN_REJECTED_SHOWN]]
+        rest = len(rejected) - LAN_REJECTED_SHOWN
+        if rest > 0:
+            from awgbot.util.textfmt import more_link
+            bot = str(state.get("bot_username") or "")
+            items.append("•" + more_link(rest, bot, snap) if snap and bot else f"• и ещё {rest}")
         parts.append("⚠️ Не принято:\n" + "\n".join(items))
     return "\n".join(parts)
 

@@ -34,12 +34,13 @@ from .nav import NavMixin
 from .broadcast import BroadcastMixin
 from .reserve import ReserveMixin
 from .jrn import JrnMixin
+from .listsnap import ListSnapMixin
 
 log = logging.getLogger(__name__)
 
 
 class Database(SchemaMixin, ClientsMixin, DevicesMixin, TrafficMixin, HistoryMixin,
-               RoutingMixin, NavMixin, BroadcastMixin, ReserveMixin, JrnMixin, DatabaseCore):
+               RoutingMixin, NavMixin, BroadcastMixin, ReserveMixin, JrnMixin, ListSnapMixin, DatabaseCore):
     """Тонкая обёртка над sqlite3. Один экземпляр на процесс.
 
     sqlite3 в Python потокобезопасен при check_same_thread=False + отдельные

@@ -128,10 +128,15 @@ def settings_changed(key: str, old, new) -> str:
     return ui.changed(_e(label), old_s, new_s, unit)
 
 
-def settings_ssh_allow_added(entries: list) -> str:
+SSH_ADDED_TITLE = "✅ Добавлено для SSH-доступа"
+
+
+def settings_ssh_allow_added(entries: list, link: tuple[str, str] | None = None) -> str:
+    """Не больше 12 адресов; дальше «и ещё N» — ссылкой на снимок всех (link: имя бота
+    и параметр /start), без него — текстом."""
+    from awgbot.util.textfmt.base import more
     # адреса — моноширинным: жирный адрес Telegram превращает в ссылку
-    return ("✅ Адреса для SSH-доступа: добавлено "
-            + ", ".join(f"<code>{_e(x)}</code>" for x in entries))
+    return "✅ Адреса для SSH-доступа: добавлено " + more(entries, link=link)
 
 
 def settings_bad_value(key: str) -> str:

@@ -343,8 +343,19 @@ class ReserveTailMixin:
             if not moved:
                 return []
             return [Notification(tg_id=int(config.ADMIN_ID), text=rn.tail_moved(variant, name, moved), silent=True)]
+        total = max(total, len(disputed))
         lines = [self._tail_line(d, variant) for d in disputed[:rn.TAIL_LINES_MAX]]
-        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.tail_disputed(variant, name, lines, max(total, len(disputed))),
+        more = ""
+        if total > rn.TAIL_LINES_MAX:
+            # весь список — снимком в базе бота основы (переживает --wipe резерва), хвост — ссылкой на него
+            from awgbot.util import listlink
+            from awgbot.util.textfmt.tail import more_line
+            rows = [self._tail_line(d, variant) for d in disputed]
+            if total > len(rows):
+                rows.append(f"… и ещё {total - len(rows)} — полный список в журнале бота")
+            key = self.db.list_snap_keep(int(config.ADMIN_ID), "admin", rn.tail_snap_title(variant, name), rows, new=True)
+            more = more_line(total - len(lines), str(getattr(self, "bot_username", "") or ""), listlink.build("snap", key=key))
+        return [Notification(tg_id=int(config.ADMIN_ID), text=rn.tail_disputed(variant, name, lines, total, more),
                              silent=True)]
 
     def _tail_line(self, d: dict, variant: str) -> str:

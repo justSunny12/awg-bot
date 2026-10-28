@@ -508,14 +508,22 @@ def _tail_head(variant: str, reserve: str, n: int) -> str:
             "поменять по-своему")
 
 
-def tail_disputed(variant: str, reserve: str, lines: list[str], total: int) -> str:
-    """Т-Ж4: хвост старой эпохи со спорным — пять строк и «и ещё N»."""
+def tail_disputed(variant: str, reserve: str, lines: list[str], total: int, more: str = "") -> str:
+    """Т-Ж4: хвост старой эпохи со спорным — пять строк и «и ещё N» (more — готовая
+    строка-хвост ссылкой на снимок всего списка; пусто — текстом)."""
     shown = lines[:TAIL_LINES_MAX]
     text = _tail_head(variant, reserve, total) + "".join(f"\n• {line}" for line in shown)
     rest = int(total) - len(shown)
     if rest > 0:
-        text += f"\n… и ещё {rest}"
+        text += "\n" + (more or f"… и ещё {rest}")
     return text
+
+
+def tail_snap_title(variant: str, reserve: str) -> str:
+    """Заголовок снимка всего списка Т-Ж4 (экран «весь список»)."""
+    if variant == "c9":
+        return f"⚠️ Не перенесены правки бота на {_n(reserve)}"
+    return f"⚠️ Не перенесены правки, сделанные здесь перед переездом на {_n(reserve)}"
 
 
 def tail_moved(variant: str, reserve: str, n: int) -> str:

@@ -214,8 +214,28 @@ def _fail_reason(out: str, cmd: str) -> str:
     return last.split(": ", 1)[1] if ": " in last and not last.startswith(("dnsmasq", "скрипт")) else last
 
 
+def transit_result_title(cmd: str) -> str:
+    """Заголовок снимка всех строк итога (экран «весь список»)."""
+    return "🔀 Итог: напрямую" if cmd == "ru" else "🔀 Итог: в туннель"
+
+
+def transit_result_rows(ok: bool, out: str, cmd: str = "add") -> list[str]:
+    """Все строки итога, как на экране, — для снимка, когда итог не влез."""
+    if not ok:
+        return []
+    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
+    if len(rows) >= BATCH_SUMMARY_FROM and cmd != "del":
+        rows = [r for r in rows if not r.endswith((": добавлен", ": уже в списке"))]
+    return [_clean(_result_line(r)) for r in rows]
+
+
+def _clean(r: str) -> str:
+    # домены скрипт обернул в <code> (иначе Telegram делает из них ссылки): остальное экранируем
+    return _e(r).replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+
+
 def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 3300,
-                           domains=(), cmd: str = "add") -> str:
+                           domains=(), cmd: str = "add", link: tuple | None = None) -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
     списке» со значками по исходу; служебные строки про адреса в наборе (с
     отступом) не показываем. Больше BATCH_SUMMARY_FROM доменов — сводка
@@ -223,7 +243,8 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     пропущенных. Отказ — «⚠️ example.org не добавлен: <причина>» (всплывашка
     у «➖», без разметки). sync — хвост про синхронизацию: "online" |
     "offline" | "". budget — предел в знаках (итог идёт первой строкой
-    экрана, см. note_budget)."""
+    экрана, см. note_budget). link — (имя бота, параметр /start) снимка всех строк:
+    «…и ещё N строк» — ссылкой на него."""
     tail = pkg.SYNC_TAILS.get(sync, "")
     if not ok:
         names = ", ".join(domains) if domains else ""
@@ -260,7 +281,11 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     body = "\n".join(lines + [clean(r) for r in keep])
     if len(rows) > len(keep):
         rest = len(rows) - len(keep)
-        body += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
+        if link is not None:
+            from awgbot.util.textfmt import deep_link
+            body += f"\n…и ещё {deep_link(link[0], link[1], str(rest))} " + plural_ru(rest, "строка", "строки", "строк")
+        else:
+            body += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
     if not body:
         body = "✅ готово"
     return body + (f"\n{tail}" if tail else "")

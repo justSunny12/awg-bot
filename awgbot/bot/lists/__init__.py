@@ -15,7 +15,8 @@ util/listlink); экран собирается в момент открытия
 что такой список существует.
 
 Части: page — разбиватель страниц; router — ListCB; kinds — виды по
-установкам (slots, server — основной бот; agent — агент шлюза).
+установкам (slots, server — основной бот; agent — агент шлюза; snap — снимки
+событий, обе установки и все роли: infra/db/listsnap).
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ class View:
 @dataclass(frozen=True)
 class Kind:
     name: str
-    branch: str                                   # main | gateway — установка, где вид есть
+    branch: str                                   # main | gateway | * — установка, где вид есть
     roles: tuple[str, ...]
     build: Callable[..., Awaitable[View | None]]  # build(services, ref, key, chat_id) → View
     anchored: bool = False                         # ref — номер группы, к которой ведёт хвост (см. render)
@@ -62,7 +63,7 @@ def register(kind: Kind) -> Kind:
 def _load() -> None:
     if _REGISTRY:
         return
-    from .kinds import agent, server, slots  # noqa: F401 — виды регистрируются при импорте
+    from .kinds import agent, server, slots, snap  # noqa: F401 — виды регистрируются при импорте
 
 
 def kind_for(name: str, role: str) -> Kind | None:
@@ -70,7 +71,7 @@ def kind_for(name: str, role: str) -> Kind | None:
     from awgbot.bot import roles
     _load()
     k = _REGISTRY.get(name)
-    if k is None or role not in k.roles or k.branch != roles.current().name:
+    if k is None or role not in k.roles or k.branch not in (roles.current().name, "*"):
         return None
     return k
 

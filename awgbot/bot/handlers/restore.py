@@ -196,9 +196,19 @@ async def report_restore_result(bot, services) -> None:
         if version and hasattr(services, "fleet_after_restore"):
             # выпуск набора — версия бэкапа: шлюзы пойдут следом по hello
             await call(services.fleet_after_restore, version)
+        bot_u = getattr(services, "bot_username", "") or ""
+        snap = ""
+        from awgbot.domain.notices import backup as nb
+        lost = report.get("lost") or []
+        if len(lost) > nb.LOST_SHOWN:
+            # отчёт — уведомление: весь список не вставших — снимком, хвост ссылкой (метку -n ставит отправка)
+            from awgbot.util import listlink
+            key = await call(services.db.list_snap_keep, config.ADMIN_ID, "admin", nb.LOST_TITLE,
+                             nb.restore_lost_rows(lost, bot_u), "", True)
+            snap = listlink.build("snap", key=key)
         await notify_one(bot, config.ADMIN_ID,
-                         texts.restore_done_report(str(done.get("created_at") or ""), report,
-                                                   getattr(services, "bot_username", "") or "", version=version))
+                         texts.restore_done_report(str(done.get("created_at") or ""), report, bot_u, version=version,
+                                                   snap=snap))
         if hasattr(services, "restore_wait_start"):
             await call(services.restore_wait_start, report)
     if failed or done:
