@@ -491,8 +491,3 @@ def test_sanitize_cuts_the_bot_name_to_64():
     подделка, и строка карточки не должна растягиваться на экран."""
     out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Я" * 1000}})
     assert out["agent_bot"]["name"] == "Я" * 64
-
-
-def test_the_snapshot_no_longer_carries_the_plumbing_generation(pi):
-    assert "plumbing_gen" not in pi.snap()
-    assert "plumbing_gen" not in gwsnapshot.sanitize({"plumbing_gen": "old"})

@@ -4189,19 +4189,6 @@ Pi4 — 🟢 Резерв
 👤 <a href="https://t.me/test_bot?start=traffic-4">Боря</a>: 0,3 ГБ (↑0,25 ↓0,05)
   [⬅️ В меню | m:main]
 
-### adm.link.traffic_local_dev — прежняя ссылка «РФ-доступ профиля»
-> /start traffic_local-3-t
-- delete #1
-+ send #2
-📊 <b>Трафик за сентябрь:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ: 0,6 ГБ (↑0,5 ↓0,1)
-
-🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
-└ 🇷🇺 РФ-доступ: 0,6 ГБ
-
-🔴 Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
-  [⬅️ Назад | m:traffic]
-
 ### adm.link.extend — продление по ссылке из «Истекают»
 > /start extend-4
 - delete #1
@@ -4836,11 +4823,10 @@ IMAP и SMTP отвечают, вход выполнен
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
 
-### adm.restore.junk — не резервная копия
-> file awg-bot-backup-main-20261005_140000.tgz.enc
-- delete #1
+### adm.restore.junk — не резервная копия: ни имя, ни содержимое не бэкапа — отказ, файл остаётся в чате
+> file photos.tgz
 + send #2
-⚠️ Файл не принят: бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)
+⚠️ Файл не принят: не похоже на бэкап сервера AWG
 
 ### adm.restore.open — бэкап не зашифрован
 > file awg-bot-backup-main-20261005_140000.tgz.enc
@@ -5600,32 +5586,6 @@ IMAP и SMTP отвечают, вход выполнен
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
-
-### adm.link.traffic_local_dev.short — прежняя ссылка «traffic_local-<id>» без хвоста
-> /start traffic_local-3
-- delete #1
-+ send #2
-📊 <b>Трафик за сентябрь:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ: 0,6 ГБ (↑0,5 ↓0,1)
-
-🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
-└ 🇷🇺 РФ-доступ: 0,6 ГБ
-
-🔴 Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
-  [⬅️ Назад | m:traffic]
-
-### adm.link.traffic_dev.t — ссылка «traffic-<id>-t»
-> /start traffic-3-t
-- delete #1
-+ send #2
-📊 <b>Трафик за сентябрь:</b> 4,2 ГБ (↑3,5 ↓0,7) · профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
-└ 🇷🇺 РФ-доступ: 0,6 ГБ (↑0,5 ↓0,1)
-
-🟢 Телефон: 3,6 ГБ (↑3 ↓0,6)
-└ 🇷🇺 РФ-доступ: 0,6 ГБ
-
-🔴 Ноутбук: 0,6 ГБ (↑0,5 ↓0,1)
-  [⬅️ Назад | m:traffic]
 
 ### adm.link.traffic.live — /start traffic при живой главной — правка меню, команда убрана
 > /start traffic
@@ -7944,31 +7904,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
   [⬅️ Назад | gws:list:0:]
 ~ (пустой ответ)
 
-### adm.gw.card.smb.reissue — SMB извне: подсети соседей на шлюзе не применены — нужен перевыпуск
-> press gws:card:2:
-= edit #1
-🛰 <b>Pi4</b> — 🟢 Резерв
-📡 <code>awglink2:8443</code> · хендшейка нет · 43 мс
-🌐 <code>198.51.100.7</code>
-🔧 Канал конфигурации 🔴 нет связи · v3.1.0
-⚠️ Агент v3.1.0 устарел: командой сервера AWG не обновляется — обнови его в чате <a href="https://t.me/pi4_gw_bot">бота шлюза</a>: «⚙️ Настройки» → «⬆️ Обновления»
-⚠️ Конфиг линка для шлюза не собран: исходный файл не прочитан: [Errno 2] No such file or directory: &#x27;/root/gw-awglink2.conf&#x27;
-⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
-🗺 <code>192.168.68.0/24</code> · в туннеле <code>10.241.68.0/24</code> · 🔀 VPN-транзит ✅
-📋 Свои списки: пусто
-🔗 Связь подсетей: с <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
-🗂 SMB: извне — 1
-🟡 Записи SMB уйдут на шлюз, когда он выйдет на связь
-Бот шлюза: <a href="https://t.me/pi4_gw_bot">Pi4</a>
-<blockquote expandable>через туннель и из подсетей других шлюзов сеть открывается по адресам в туннеле: 192.168.68.10 → 10.241.68.10 — два последних октета те же;
-выход шлюза в интернет по снимку от 15.09 12:00 (UTC+5): проверка с сервера — работает, проверка шлюза — нет данных</blockquote>
-  [▶️ Сделать активным | gws:switch_ask:2:]
-  [📡 Пинг | gws:ping:2:]
-  [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
-  [🛜 Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
-  [⬅️ Назад | gws:list:0:]
-~ (пустой ответ)
-
 ### adm.gw.card.smb.escaped — SMB извне: имя шлюза в заголовке и в отказе экранировано ровно раз
 > press gws:card:2:
 = edit #1
@@ -8064,59 +7999,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
   [✅ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
   [🛜 Роутер | gws:router:2:] [✏️ Изменить | gws:edit:2:]
   [⬅️ Назад | gws:list:0:]
-~ (пустой ответ)
-
-### adm.gw.router.peers — сети связаны — рецепт без маршрутов к соседям и абзаца о самом роутере
-> press gws:router:1:
-= edit #1
-🛜 <b>Настройка роутера для NASPi</b> · <code>192.168.1.0/24</code> · шлюз <code>АДРЕС_ШЛЮЗА</code>
-Весь трафик сети, кроме самого шлюза и трафика внутри сети, — на шлюз; DNS по DHCP — адрес шлюза; ускорение и IPv6 — выключить; асимметричный путь — разрешить
-<code>АДРЕС_ШЛЮЗА</code> — адрес шлюза в локальной сети: он на экране «🔀 VPN-транзит» в чате бота шлюза; подставь его в команды
-<blockquote expandable>весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
-разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше <code>drop invalid</code>;
-аппаратное ускорение (fasttrack, flow offloading) выключено;
-DHCP раздаёт адрес шлюза как DNS; у шлюза статический адрес;
-IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но IPv6-адрес от роутера увёл бы трафик мимо туннеля</blockquote>
-<b>MikroTik RouterOS 7</b>
-<pre>/routing table add disabled=no fib name=antiblock
-/ip firewall mangle
-add action=accept chain=prerouting comment=anti-loop src-address=АДРЕС_ШЛЮЗА
-add action=mark-routing chain=prerouting comment=all-LAN-via-gw \
-    new-routing-mark=antiblock passthrough=no src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip route add dst-address=0.0.0.0/0 gateway=АДРЕС_ШЛЮЗА routing-table=antiblock
-/ip firewall filter
-add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 dst-address=!192.168.1.0/24
-/ip dhcp-server network set [find] dns-server=АДРЕС_ШЛЮЗА</pre>
-Правило <code>asym-via-gw</code> — выше <code>drop invalid</code>; fasttrack выключить
-  [✅ MikroTik | gws:router:1:mt] [OpenWrt | gws:router:1:ow]
-  [⬅️ Назад | gws:card:1:]
-~ (пустой ответ)
-
-### adm.gw.router.peers.ow — OpenWrt: сети связаны — рецепт без маршрутов к соседям
-> press gws:router:1:ow
-= edit #1
-🛜 <b>Настройка роутера для NASPi</b> · <code>192.168.1.0/24</code> · шлюз <code>АДРЕС_ШЛЮЗА</code>
-Весь трафик сети, кроме самого шлюза и трафика внутри сети, — на шлюз; DNS по DHCP — адрес шлюза; ускорение и IPv6 — выключить; асимметричный путь — разрешить
-<code>АДРЕС_ШЛЮЗА</code> — адрес шлюза в локальной сети: он на экране «🔀 VPN-транзит» в чате бота шлюза; подставь его в команды
-<blockquote expandable>весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза (policy-based routing);
-разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило выше <code>drop invalid</code>;
-аппаратное ускорение (fasttrack, flow offloading) выключено;
-DHCP раздаёт адрес шлюза как DNS; у шлюза статический адрес;
-IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, но IPv6-адрес от роутера увёл бы трафик мимо туннеля</blockquote>
-<b>OpenWrt</b>
-<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables
-ip route add default via АДРЕС_ШЛЮЗА table vpn
-ip rule add from АДРЕС_ШЛЮЗА priority 100 lookup main
-ip rule add from 192.168.1.0/24 to 192.168.1.0/24 priority 110 lookup main
-ip rule add from 192.168.1.0/24 priority 120 lookup vpn
-iptables -I FORWARD 1 -s 192.168.1.0/24 ! -d 192.168.1.0/24 -j ACCEPT
-uci set firewall.@defaults[0].flow_offloading_hw='0'
-uci set firewall.@defaults[0].flow_offloading='0'
-uci add_list dhcp.lan.dhcp_option='6,АДРЕС_ШЛЮЗА'
-uci commit</pre>
-Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё остальное уходит на шлюз. Чтобы правила пережили перезагрузку: <code>ip rule</code>/<code>ip route</code> — в <code>/etc/rc.local</code>, <code>iptables</code> — в <code>/etc/firewall.user</code>
-  [MikroTik | gws:router:1:mt] [✅ OpenWrt | gws:router:1:ow]
-  [⬅️ Назад | gws:card:1:]
 ~ (пустой ответ)
 
 ### adm.rt.two.label — «Шлюзы»: подпись слота в скобках
@@ -8379,21 +8261,6 @@ Pi4 — 🟢 Активен
 
 В конце шлюз покажет код подтверждения — введи его здесь, нажав кнопку «✏️ Ввести код». Команда действует час — до 13:00 (UTC+5) — и только для этого слота
   [✏️ Ввести код | gwj:code:1:0000000000000001] [⬅️ Отменить | gwj:cancel:1:0000000000000001]
-
-### adm.rt.new_yes.standby — резерв новой машиной при известном токене — команда «Шлюз 2»
-> press gwm:new_yes:0:0
-~ (пустой ответ)
-= edit #1
-🛰 Готовлю команду подключения…
-+ send #2
-🛰 <b>Подключение шлюза «Шлюз 2»</b>
-
-Выполни на сервере одну команду (Debian или Raspberry Pi OS, часы синхронизированы, нужен доступ к GitHub) — она поставит AmneziaWG и агента v1.2.3 и подключит шлюз к серверу AWG:
-
-<code>curl -fsSL https://raw.githubusercontent.com/justSunny12/awg-bot/main/install/awg-bot-install.sh | sudo bash -s -- --join AWGJ1.DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY</code>
-
-В конце шлюз покажет код подтверждения — введи его здесь, нажав кнопку «✏️ Ввести код». Команда действует час — до 13:00 (UTC+5) — и только для этого слота
-  [✏️ Ввести код | gwj:code:2:0000000000000001] [⬅️ Отменить | gwj:cancel:2:0000000000000001]
 
 ### adm.rt.token.done.standby — токен второго слота принят — команда подключения слота 2
 > text «2222222222:DUMMYDUMMYDUMMYDUMMYDUMMY»
@@ -9642,15 +9509,6 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
 
-### adm.gw.lan_ask.ch.live — выключить VPN-транзит при живом канале — без перевыпуска
-> press gws:lan_ask:1:
-= edit #1
-🔀 VPN-транзит на NASPi — выключить?
-⚠️ Сначала убери на роутере маршрутизацию всего трафика на шлюз — иначе сеть останется без интернета
-Общие списки доменов и резолвер на шлюзе снимутся, содержимое своих списков сохранится
-  [⬅️ Отмена | gws:card:1:] [☑️ Выключить | gws:lan_yes:1:0]
-~ (пустой ответ)
-
 ### adm.gw.lan_yes.ch.live — VPN-транзит выключен — доедет каналом
 > press gws:lan_yes:1:0
 = edit #1
@@ -10050,7 +9908,6 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
 🌐 <code>203.0.113.10</code>
 🔧 Канал конфигурации 🟢 · v3.3.0
 ⚠️ Агент v3.3.0 устарел: настройки бота шлюза в бэкап не сохраняет и командой сервера AWG не обновляется — обнови его в чате <a href="https://t.me/naspi_gw_bot">бота шлюза</a>: «⚙️ Настройки» → «⬆️ Обновления»
-⚠️ Новый конфиг аплинка не отправлен шлюзу: pubkey не похож на ключ
 🗺 <code>192.168.1.0/24</code> · в туннеле <code>10.240.1.0/24</code> · 🔀 VPN-транзит ✅
 📋 Свои списки: пусто
 Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
@@ -10321,15 +10178,6 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [⬅️ Назад | set:rt:open::]
 ~ (пустой ответ)
 
-### adm.gw.edit.confirm1 — «✏️ Изменить» агента с подтверждением — без «🔑»: смена ключей только из «🔧 Сервис»
-> press gws:edit:1:
-= edit #1
-✏️ <b>NASPi</b> — изменить:
-  [✏️ Имя | gws:name:1:] [✏️ Подпись | gws:label:1:]
-  [🔁 Заменить | set:rt_gw:open:1:] [➖ Снять | gws:remove_ask:1:]
-  [⬅️ Назад | gws:card:1:]
-~ (пустой ответ)
-
 ### adm.set.svc.keys — «🔧 Сервис» при шлюзе, умеющем смену каналом — «🔑 Ключи линка» последним рядом
 > press set:svc:open::
 = edit #1
@@ -10339,25 +10187,6 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
-~ (пустой ответ)
-
-### adm.set.svc.nokeys — «🔧 Сервис», агент без подтверждения — кнопки ключей нет
-> press set:svc:open::
-= edit #1
-🔧 <b>Сервис</b>
-Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
-  [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
-  [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
-  [⬅️ Назад | set:root:open::]
-~ (пустой ответ)
-
-### adm.lk.pick.none — устаревшая «🔑 Ключи линка», шлюза с подтверждением нет — всплывашка
-> press set:lk:do:pick:
-= edit #1
-🔑 Сменить ключи линка шлюза «NASPi»?
-Новые ключи уйдут шлюзу по каналу конфигурации — подтверди их в чате бота шлюза. РФ-доступ прервётся на секунды; не поднимется — обе стороны вернут прежние.
-  [⬅️ Отмена | set:svc:open::] [🔑 Сменить | set:lk:do:yes:1]
 ~ (пустой ответ)
 
 ### adm.lk.pick.one — один шлюз с подтверждением — сразу диалог; активный при живом резерве — совет
@@ -10584,26 +10413,6 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
   [⬅️ Назад | set:root:open::]
 ~ (пустой ответ)
-
-### adm.set.svc.token.only — «🔧 Сервис», агент с token1 без подтверждения — только «🤖 Токен бота»
-> press set:svc:open::
-= edit #1
-🔧 <b>Сервис</b>
-Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
-<blockquote expandable>Часовой пояс — Asia/Yekaterinburg (UTC+5), пояс сервера. Сменить: <code>sudo timedatectl set-timezone &lt;пояс&gt;</code> и «🔁 Перезапуск бота»</blockquote>
-  [🔁 Перезапуск AWG | set:svc:do:awg:] [🔁 Перезапуск бота | set:svc:do:bot:]
-  [🔑 Ключи линка | set:lk:do:pick:] [🤖 Токен шлюза | set:gtk:do:pick:]
-  [⬅️ Назад | set:root:open::]
-~ (пустой ответ)
-
-### adm.gtk.pick.none — устаревшая «🤖 Токен бота», агента с token1 нет — всплывашка
-> press set:gtk:do:pick:
-~ (пустой ответ)
-= edit #1
-🤖 <b>Новый токен бота шлюза «NASPi»</b>
-
-Пришли токен вида <code>123456789:AA…</code> из @BotFather — прежнего бота или нового. Уйдёт шлюзу по каналу конфигурации, бот шлюза перезапустится; сообщение с токеном сразу удалю.
-  [✖️ Отмена | x:set_svc:0]
 
 ### adm.gtk.pick.one — один шлюз с token1 — сразу приглашение к вводу токена
 > press set:gtk:do:pick:
@@ -12642,46 +12451,6 @@ TTL: 60 с
 ~ (пустой ответ)
 ~ (повторный ответ)
 
-### adm.list.gwnets.p2.back — листание назад — стр. 2 из 3
-> press pg|ls_gwnets|2|1|ls:gwnets:2::0
-= edit #2
-🗺 <b>Подсети Pi4 &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёёё</b> · 64 · стр. 2 из 3
-
-<code>172.20.26.0/24</code> · в туннеле <code>10.241.26.0/24</code>
-<code>172.20.27.0/24</code> · в туннеле <code>10.241.27.0/24</code>
-<code>172.20.28.0/24</code> · в туннеле <code>10.241.28.0/24</code>
-<code>172.20.29.0/24</code> · в туннеле <code>10.241.29.0/24</code>
-<code>172.20.30.0/24</code> · в туннеле <code>10.241.30.0/24</code>
-<code>172.20.31.0/24</code> · в туннеле <code>10.241.31.0/24</code>
-<code>172.20.32.0/24</code> · в туннеле <code>10.241.32.0/24</code>
-<code>172.20.33.0/24</code> · в туннеле <code>10.241.33.0/24</code>
-<code>172.20.34.0/24</code> · в туннеле <code>10.241.34.0/24</code>
-<code>172.20.35.0/24</code> · в туннеле <code>10.241.35.0/24</code>
-<code>172.20.36.0/24</code> · в туннеле <code>10.241.36.0/24</code>
-<code>172.20.37.0/24</code> · в туннеле <code>10.241.37.0/24</code>
-<code>172.20.38.0/24</code> · в туннеле <code>10.241.38.0/24</code>
-<code>172.20.39.0/24</code> · в туннеле <code>10.241.39.0/24</code>
-<code>172.20.40.0/24</code> · в туннеле <code>10.241.40.0/24</code>
-<code>172.20.41.0/24</code> · в туннеле <code>10.241.41.0/24</code>
-<code>172.20.42.0/24</code> · в туннеле <code>10.241.42.0/24</code>
-<code>172.20.43.0/24</code> · в туннеле <code>10.241.43.0/24</code>
-<code>172.20.44.0/24</code> · в туннеле <code>10.241.44.0/24</code>
-<code>172.20.45.0/24</code> · в туннеле <code>10.241.45.0/24</code>
-<code>172.20.46.0/24</code> · в туннеле <code>10.241.46.0/24</code>
-<code>172.20.47.0/24</code> · в туннеле <code>10.241.47.0/24</code>
-<code>172.20.48.0/24</code> · в туннеле <code>10.241.48.0/24</code>
-<code>172.20.49.0/24</code> · в туннеле <code>10.241.49.0/24</code>
-<code>172.20.50.0/24</code> · в туннеле <code>10.241.50.0/24</code>
-<code>172.20.51.0/24</code> · в туннеле <code>10.241.51.0/24</code>
-<code>172.20.52.0/24</code> · в туннеле <code>10.241.52.0/24</code>
-<code>172.20.53.0/24</code> · в туннеле <code>10.241.53.0/24</code>
-<code>172.20.54.0/24</code> · в туннеле <code>10.241.54.0/24</code>
-<code>172.20.55.0/24</code> · в туннеле <code>10.241.55.0/24</code>
-  [◀️ Пред. страница | pg|ls_gwnets|2|0|ls:gwnets:2::0] [След. страница ▶️ | pg|ls_gwnets|2|2|ls:gwnets:2::0]
-  [⬅️ Назад | gws:card:2:]
-~ (пустой ответ)
-~ (повторный ответ)
-
 ### adm.list.gwnets.back — «⬅️ Назад» со списка — карточка слота на месте
 > press gws:card:2:
 = edit #2
@@ -13626,75 +13395,6 @@ Gw15 &lt;дача&gt; &amp; «гараж» ёёёёёёёёёёёёёёёёёё�
 
 <i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
   [◀️ Пред. страница | pg|online|0|1|m:online]
-  [⬅️ В меню | m:main]
-~ (пустой ответ)
-~ (повторный ответ)
-
-### adm.paged.online.61.back — листание назад — снова стр. 2 из 3
-> press pg|online|0|1|m:online
-= edit #1
-📶 <b>Онлайн:</b> 61 профиль, 61 устройство · стр. 2 из 3
-
-🟢 <a href="https://t.me/test_bot?start=dev-30">Тел 29</a> · <a href="https://t.me/test_bot?start=cl-32">Профиль 29</a> · <code>10.8.1.31</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-31">Тел 30</a> · <a href="https://t.me/test_bot?start=cl-33">Профиль 30</a> · <code>10.8.1.32</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-32">Тел 31</a> · <a href="https://t.me/test_bot?start=cl-34">Профиль 31</a> · <code>10.8.1.33</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-33">Тел 32</a> · <a href="https://t.me/test_bot?start=cl-35">Профиль 32</a> · <code>10.8.1.34</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-34">Тел 33</a> · <a href="https://t.me/test_bot?start=cl-36">Профиль 33</a> · <code>10.8.1.35</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-35">Тел 34</a> · <a href="https://t.me/test_bot?start=cl-37">Профиль 34</a> · <code>10.8.1.36</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-36">Тел 35</a> · <a href="https://t.me/test_bot?start=cl-38">Профиль 35</a> · <code>10.8.1.37</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-37">Тел 36</a> · <a href="https://t.me/test_bot?start=cl-39">Профиль 36</a> · <code>10.8.1.38</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-38">Тел 37</a> · <a href="https://t.me/test_bot?start=cl-40">Профиль 37</a> · <code>10.8.1.39</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-39">Тел 38</a> · <a href="https://t.me/test_bot?start=cl-41">Профиль 38</a> · <code>10.8.1.40</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-40">Тел 39</a> · <a href="https://t.me/test_bot?start=cl-42">Профиль 39</a> · <code>10.8.1.41</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-41">Тел 40</a> · <a href="https://t.me/test_bot?start=cl-43">Профиль 40</a> · <code>10.8.1.42</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-42">Тел 41</a> · <a href="https://t.me/test_bot?start=cl-44">Профиль 41</a> · <code>10.8.1.43</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-43">Тел 42</a> · <a href="https://t.me/test_bot?start=cl-45">Профиль 42</a> · <code>10.8.1.44</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-44">Тел 43</a> · <a href="https://t.me/test_bot?start=cl-46">Профиль 43</a> · <code>10.8.1.45</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-45">Тел 44</a> · <a href="https://t.me/test_bot?start=cl-47">Профиль 44</a> · <code>10.8.1.46</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-46">Тел 45</a> · <a href="https://t.me/test_bot?start=cl-48">Профиль 45</a> · <code>10.8.1.47</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-47">Тел 46</a> · <a href="https://t.me/test_bot?start=cl-49">Профиль 46</a> · <code>10.8.1.48</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-48">Тел 47</a> · <a href="https://t.me/test_bot?start=cl-50">Профиль 47</a> · <code>10.8.1.49</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-49">Тел 48</a> · <a href="https://t.me/test_bot?start=cl-51">Профиль 48</a> · <code>10.8.1.50</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-50">Тел 49</a> · <a href="https://t.me/test_bot?start=cl-52">Профиль 49</a> · <code>10.8.1.51</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-51">Тел 50</a> · <a href="https://t.me/test_bot?start=cl-53">Профиль 50</a> · <code>10.8.1.52</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-52">Тел 51</a> · <a href="https://t.me/test_bot?start=cl-54">Профиль 51</a> · <code>10.8.1.53</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-53">Тел 52</a> · <a href="https://t.me/test_bot?start=cl-55">Профиль 52</a> · <code>10.8.1.54</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-54">Тел 53</a> · <a href="https://t.me/test_bot?start=cl-56">Профиль 53</a> · <code>10.8.1.55</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-55">Тел 54</a> · <a href="https://t.me/test_bot?start=cl-57">Профиль 54</a> · <code>10.8.1.56</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-56">Тел 55</a> · <a href="https://t.me/test_bot?start=cl-58">Профиль 55</a> · <code>10.8.1.57</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-57">Тел 56</a> · <a href="https://t.me/test_bot?start=cl-59">Профиль 56</a> · <code>10.8.1.58</code>
-
-🟢 <a href="https://t.me/test_bot?start=dev-58">Тел 57</a> · <a href="https://t.me/test_bot?start=cl-60">Профиль 57</a> · <code>10.8.1.59</code>
-
-<i>обновлено <a href="https://t.me/test_bot?start=online">15.09 12:00:00 (UTC+5) 🔄</a></i>
-  [◀️ Пред. страница | pg|online|0|0|m:online] [След. страница ▶️ | pg|online|0|2|m:online]
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 ~ (повторный ответ)

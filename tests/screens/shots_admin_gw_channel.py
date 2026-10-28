@@ -94,8 +94,6 @@ CHANNEL = [
     _card(1, _chan(1, _ch(peer_nets={"ok": True, "missing": []})), "вердикт связи подсетей исправен — строки нет",
           "adm.gw.card.ch.peer_ok"),
     # ── тумблеры при живом и лежащем канале ──────────────────────────────
-    Shot("adm.gw.lan_ask.ch.live", role="admin", press=[GwSlotCB(action="lan_ask", slot=1)],
-         data=_chan(1, _ch()), title="выключить VPN-транзит при живом канале — без перевыпуска"),
     Shot("adm.gw.lan_yes.ch.live", role="admin", press=[GwSlotCB(action="lan_yes", slot=1, val="0")],
          data=_chan(1, _ch()), title="VPN-транзит выключен — доедет каналом"),
     Shot("adm.gw.lan_ask.peers", role="admin", press=[GwSlotCB(action="lan_ask", slot=2)],

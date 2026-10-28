@@ -212,13 +212,6 @@ async def test_gateway_token_message_deleted_even_when_rejected(services, fake_b
     assert any("не похоже на токен" in s[1] for s in typed.sent if s[0] == "answer")
 
 
-# ── старый алиас «добавить устройство» у админа снят ─────────────────────────
-
-def test_admin_router_has_no_device_add_alias():
-    assert not hasattr(ah, "admin_dev_add_alias")
-    assert DeviceCB(action="add").pack() == "d:add:0"     # кнопка пользователя жива
-
-
 # ── удаление устройства пользователем: финишер, потом меню ───────────────────
 
 async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_active_client):

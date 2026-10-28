@@ -127,6 +127,7 @@ def test_a_code_ending_in_the_mark_stays_whole(code):
     ("upd", ("upd", 0)), ("traffic", ("traffic", 0)), ("traffic_local", ("traffic", 0)),
     ("migration", ("migration", 0)), ("rsv", ("set_rsv", 0)),
     ("traffic-3", ("traffic_dev", 3)), ("traffic-3-t", ("traffic_dev", 3)), ("traffic_local-4-t", ("traffic_dev", 4)),
+    ("traffic_local-4", ("traffic_dev", 4)),
     ("extend-4", ("extend", 4)), ("gw-2", ("gw", 2)), ("cl-5", ("cl", 5)), ("dev-7", ("dev", 7)),
     ("migration-3", ("migration_cl", 3)),
     ("cl-x", None), ("gw-", None), ("whatever", None), ("refresh", None), ("list-drift-2", None), ("sub", None),

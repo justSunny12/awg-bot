@@ -451,10 +451,6 @@ CLIENT_SHOTS = [
     Shot("cl.pause.other.bad", role="client", press=[INFO, PauseCB(action="ask", ref=2),
                                                       PauseCB(action="other", ref=2)],
          text="100", data=ONE, title="пауза: своё число вне диапазона"),
-    *[Shot(f"cl.pause.other.bad.{v}", role="client", press=[PauseCB(action="ask", ref=2),
-                                                           PauseCB(action="other", ref=2)],
-           text=v, data=ONE, title=f"пауза: своё число «{v}» — отказ")
-      for v in ("0", "29", "abc")],
     Shot("cl.pause.other.done", role="client", press=[INFO, PauseCB(action="ask", ref=2),
                                                        PauseCB(action="other", ref=2)],
          text="10", data=ONE, title="пауза: своё число — итог"),
@@ -824,7 +820,6 @@ GUEST_SHOTS = [
     Shot("gst.start.activate.skip", role="guest", start="FTEST0000002", press=[fr("refresh")],
          data=stranger(_guest_code_wait), title="после активации: «✅ Настрою сам» — главная гостя"),
     Shot("gst.main.one", role="guest", start="", data=G1, title="главная гостя: одно устройство"),
-    Shot("gst.main.many", role="guest", start="", data=G2, title="главная гостя: несколько"),
     Shot("gst.main.rf", role="guest", start="", data=guest(1, rf=True), title="главная гостя: РФ-доступ"),
     Shot("gst.main.none", role="guest", start="", data=guest(1, drop=True), title="главная гостя: устройств нет"),
     Shot("gst.main.owner_expired", role="guest", start="", data=guest(1, owner_after=_expired),

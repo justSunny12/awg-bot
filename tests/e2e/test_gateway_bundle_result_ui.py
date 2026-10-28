@@ -12,7 +12,7 @@
 слота новым живым сообщением.
 
 Тексты, подписи и кнопки этих экранов — в эталоне tests/screens/admin.txt
-(adm.gw.bundle*, adm.rt.mark_yes.standby*, adm.rt.new_yes.standby,
+(adm.gw.bundle*, adm.rt.mark_yes.standby*, adm.rt.new_yes*,
 adm.ev.gw_installed*); здесь — что удаляется, что
 запоминается и что становится живым меню.
 

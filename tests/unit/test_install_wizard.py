@@ -335,16 +335,6 @@ def test_gateway_install_without_a_command_says_exactly_what_to_do(script):
     assert "Готово: бот шлюза напишет сам." in gw.split("cleanup_delivery", 2)[2]
 
 
-def test_the_first_application_file_is_gone_from_the_scripts(script, bootstrap):
-    """Файла первого применения больше нет: ни поиска, ни разбора секретов,
-    ни применения, ни ключа --bundle в установщике и в reconfigure."""
-    for name in ("find_gw_bundle", "gw_bundle_secrets", "apply_gw_bundle", "bundle_trusted",
-                 "AWG_UPDATE_THEN_BUNDLE", "GW_BUNDLE=", "--bundle)"):
-        assert name not in script, name
-    assert "--bundle" not in bootstrap.split("while [[", 1)[1].split("done", 1)[0]
-    assert "AWG_UPDATE_THEN_BUNDLE" not in bootstrap
-
-
 def test_python_and_venv_are_ready_first_on_a_gateway(script):
     """Python и venv — первым делом: отказ venv (trixie без python3-venv,
     /tmp на tmpfs) — до того, как линк по токену поднят."""

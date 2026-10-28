@@ -179,8 +179,8 @@ def test_a_channel_that_never_came_up_notifies_nothing(services, slot):
 async def test_the_lan_mode_turns_off_with_a_live_channel(
         services, slot, fake_bot):
     """Канал доставит смену режима сам — гнать человека перевыпускать файл значит
-    заставить его делать руками то, что уже едет (вопрос и всплывашка —
-    эталоны adm.gw.lan_ask.ch.live, adm.gw.lan_yes.ch.live). Режим снят."""
+    заставить его делать руками то, что уже едет (вопрос от канала не зависит —
+    эталон adm.gw.lan_ask.off; итог — adm.gw.lan_yes.ch.live). Режим снят."""
     _snap(services)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)

@@ -45,8 +45,6 @@ LINKS = [
          title="трафик профиля по устройствам"),
     Shot("adm.link.traffic_local", role="admin", start="traffic_local", data=_people,
          title="прежняя ссылка «РФ-доступ» — трафик"),
-    Shot("adm.link.traffic_local_dev", role="admin", start=f"traffic_local-{KS}-t", data=_people,
-         title="прежняя ссылка «РФ-доступ профиля»"),
     Shot("adm.link.extend", role="admin", start=f"extend-{BR}", data=_people,
          title="продление по ссылке из «Истекают»"),
     Shot("adm.link.cl", role="admin", start=f"cl-{KS}", data=_people, title="карточка профиля по ссылке"),

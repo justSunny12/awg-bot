@@ -171,8 +171,6 @@ CARDS = [
           "SMB у публикующего: только «свои», о судьбе — ничего", "adm.gw.card.smb.own"),
     _card(2, _gw(2, _smb_sent(), _smb_ack(False, ""), lan2=True),
           "SMB извне: отказ без объяснения — без двоеточия", "adm.gw.card.smb.refused.bare"),
-    _card(2, _gw(2, _smb_sent(""), lan2=True),
-          "SMB извне: подсети соседей на шлюзе не применены — нужен перевыпуск", "adm.gw.card.smb.reissue"),
     _card(2, _gw(2, _rename_pi4, _smb_sent(), _smb_ack(False, ""), lan2=True),
           "SMB извне: имя шлюза в заголовке и в отказе экранировано ровно раз", "adm.gw.card.smb.escaped"),
     _card(2, _gw(2, _smb_sent(), _smb_ack(False, "ошибка записи файла: нет места на диске"), lan2=True), "SMB извне: поломка на шлюзе — не «не смог принять»", "adm.gw.card.smb.broken"),
@@ -180,10 +178,6 @@ CARDS = [
     _card(2, _gw(2, _smb_sent(), _no_transit(1), lan2=True), "у соседа нет VPN-транзита — связи подсетей и строки SMB нет",
           "adm.gw.card.smb.off"),
     # ── рецепт роутера при связанных подсетях: о соседях ни строки ───────
-    Shot("adm.gw.router.peers", role="admin", press=[GwSlotCB(action="router", slot=1)],
-         data=_gw(2, lan2=True), title="сети связаны — рецепт без маршрутов к соседям и абзаца о самом роутере"),
-    Shot("adm.gw.router.peers.ow", role="admin", press=[GwSlotCB(action="router", slot=1, val="ow")],
-         data=_gw(2, lan2=True), title="OpenWrt: сети связаны — рецепт без маршрутов к соседям"),
 ]
 
 

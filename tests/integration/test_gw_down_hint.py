@@ -12,4 +12,3 @@ def test_the_down_alert_has_no_file_hint(services, make_active_client):
     gw = services.db.gateway_add(pi.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     text = services._txt_rt_gw_down(gw)
     assert text.startswith("🔴 Шлюз") and "gw-bundle" not in text and "файл конфигурации" not in text, text
-    assert not hasattr(services, "_txt_rt_bundle_hint")

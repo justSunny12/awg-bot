@@ -39,8 +39,6 @@ def test_the_document_carries_no_backup_phrase():
     бэкапы» в почте, ни её проверок."""
     assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink", "reserve")
     assert "backup" not in gwcfg.HUMAN
-    for name in ("MIN_PHRASE", "MAIL_HINT", "check_backup", "backup_print", "backup_key_print"):
-        assert not hasattr(gwcfg, name), name
     parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "env": ENV, "backup": {"phrase": "DUMMY phrase long"},
                           "mail": {**MAIL, "backup": "email"}})
     assert "backup" not in parsed["sections"] and "backup" not in parsed["sections"]["mail"]

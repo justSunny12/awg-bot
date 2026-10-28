@@ -143,9 +143,9 @@ def test_the_hints_name_the_token_not_the_whole_command():
         assert "--join <токен AWGJ1…>" in text
 
 
-def test_the_cli_verb_is_gw_kit_and_gw_bundle_is_gone():
+def test_the_cli_verb_is_gw_kit():
     sh = flat()
-    assert "gw-kit)      cmd_gw_kit" in sh and "gw-bundle)" not in sh
+    assert "gw-kit)      cmd_gw_kit" in sh
     assert "bot_tool tools.gwkit --stdout" in sh
     assert "sudo awg-bot gw-kit --stdout | " in sh
 

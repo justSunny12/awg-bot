@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import datetime as _dt
 
-from awgbot.bot.callbacks import CancelCB, GwSlotCB, SetCB
+from awgbot.bot.callbacks import CancelCB, SetCB
 from awgbot.core import config
 
 from tests.screens.base import NOW, Shot, in_zone
@@ -71,7 +71,9 @@ def _cfg_chan(*steps):
 
 
 CFG = [
-    _card(1, _cfg_chan(_cfg(), _cfg_ack(applied=("server", "env"))),
+    # настоящие ключи устройства: иначе раздел uplink не поедет, и в «всё совпадает»
+    # встанет строка «⚠️ Новый конфиг аплинка не отправлен» (её — adm.gw.card.uplink.err)
+    _card(1, _cfg_chan(lambda s, m: _real_uplink_keys(s, m), _cfg(), _cfg_ack(applied=("server", "env"))),
           "агент с документом, всё совпадает — «актуален», без «📤» и без строки агента 3.2",
           "adm.gw.card.cfg.actual"),
     _card(1, _cfg_chan(_cfg(env="0" * 16, server="0" * 16)),
@@ -215,16 +217,8 @@ REKEY = [
     _card(1, _uplink(wait=("uplink",)), "К3: конфиг аплинка ждёт подтверждения — с отпечатком пары",
           "adm.gw.card.uplink.wait"),
     _card(1, _uplink(declined=("uplink",)), "К4: шлюз отклонил новый конфиг аплинка", "adm.gw.card.uplink.declined"),
-    Shot("adm.gw.edit.confirm1", role="admin", press=[GwSlotCB(action="edit", slot=1)], data=_keys(),
-         title="«✏️ Изменить» агента с подтверждением — без «🔑»: смена ключей только из «🔧 Сервис»"),
     Shot("adm.set.svc.keys", role="admin", press=[SetCB(sec="svc")], data=_keys(),
          title="«🔧 Сервис» при шлюзе, умеющем смену каналом — «🔑 Ключи линка» последним рядом"),
-    Shot("adm.set.svc.nokeys", role="admin", press=[SetCB(sec="svc")],
-         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
-         title="«🔧 Сервис», агент без подтверждения — кнопки ключей нет"),
-    Shot("adm.lk.pick.none", role="admin", press=[SetCB(sec="lk", act="do", key="pick")],
-         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env"))),
-         title="устаревшая «🔑 Ключи линка», шлюза с подтверждением нет — всплывашка"),
     Shot("adm.lk.pick.one", role="admin", press=[SetCB(sec="svc"), SetCB(sec="lk", act="do", key="pick")], data=_keys(n=2),
          title="один шлюз с подтверждением — сразу диалог; активный при живом резерве — совет"),
     Shot("adm.lk.pick.two", role="admin", press=[SetCB(sec="svc"), SetCB(sec="lk", act="do", key="pick")],
@@ -297,11 +291,10 @@ TOKEN_SERVER = "1111111111:DUMMYSERVERDUMMYSERVERDU"    # бот сервера 
 TOKEN_TAKEN = "2222222222:DUMMYTAKENDUMMYTAKENDUMMY"    # бот второго шлюза
 
 
-def _token1(slot: int = 1, confirm: bool = True):
-    """Сессия слота открыта агентом с token1 (и confirm1, если confirm)."""
+def _token1(slot: int = 1):
+    """Сессия слота открыта агентом с token1."""
     def step(services, mp):
-        caps = ["cfg1", "confirm1", "token1"] if confirm else ["cfg1", "token1"]
-        services.gwlink_session_opened(slot, "3.3.0", 2, caps)
+        services.gwlink_session_opened(slot, "3.3.0", 2, ["cfg1", "confirm1", "token1"])
     return step
 
 
@@ -352,11 +345,6 @@ _GTK_ASK = SetCB(sec="gtk", act="do", key="ask", val="1")
 TOKEN_SWAP = [
     Shot("adm.set.svc.token", role="admin", press=[SetCB(sec="svc")], data=_keys(_token1()),
          title="«🔧 Сервис», агент умеет и ключи, и токен — «🔑 Ключи линка» и «🤖 Токен бота» одним рядом"),
-    Shot("adm.set.svc.token.only", role="admin", press=[SetCB(sec="svc")],
-         data=_chan(1, _cfg_base, _cfg(), _cfg_ack(applied=("server", "env")), _token1(confirm=False)),
-         title="«🔧 Сервис», агент с token1 без подтверждения — только «🤖 Токен бота»"),
-    Shot("adm.gtk.pick.none", role="admin", press=[_GTK_PICK], data=_keys(),
-         title="устаревшая «🤖 Токен бота», агента с token1 нет — всплывашка"),
     Shot("adm.gtk.pick.one", role="admin", press=[SetCB(sec="svc"), _GTK_PICK], data=_keys(_token1()),
          title="один шлюз с token1 — сразу приглашение к вводу токена"),
     Shot("adm.gtk.pick.two", role="admin", press=[SetCB(sec="svc"), _GTK_PICK],

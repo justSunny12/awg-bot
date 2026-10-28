@@ -86,7 +86,9 @@ def test_the_reason_word_goes_even_if_idle_was_already_said(opening, monkeypatch
 
 def test_a_long_reason_is_cut_to_what_the_dictionary_takes(opening, monkeypatch):
     monkeypatch.setattr(rsvzone, "open_status", lambda: {"step": "fail", "reason": "я" * 500})
-    for _slot, body in gw_sent(opening.s.reserve_in_tick(), "state"):
+    sent = gw_sent(opening.s.reserve_in_tick(), "state")
+    assert sent, "слово срыва с длинной причиной не ушло — проверять нечего"
+    for _slot, body in sent:
         pairproto.check(pairproto.GUEST_PROTO, "state", dict(body), pairproto.RESERVE)
 
 
